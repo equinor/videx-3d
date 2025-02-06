@@ -1,0 +1,15 @@
+svg.well-map {
+  g.tracks {
+    g.track:hover {
+      cursor: help;
+    }
+    g.track.interactive:hover {
+      cursor: pointer;
+      filter: brightness(1.1)
+    }
+    g.track.interactive.selected:hover {
+      cursor: pointer;
+      filter: none
+    }
+  }
+}

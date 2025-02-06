@@ -1,0 +1,110 @@
+import type { Meta, StoryObj } from '@storybook/react'
+import storyArgs from '../../../storybook/story-args.json'
+import { Wellbore } from '../Wellbore/Wellbore'
+import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator'
+import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator'
+import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
+import { useContext, useEffect } from 'react'
+import { PerformanceDecorator } from '../../../storybook/decorators/performance-decorator'
+import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator'
+import { WellboreSelectedEvent } from '../../../events/wellbore-events'
+import { WellboreBounds } from './WellboreBounds'
+import { BasicTrajectory } from '../BasicTrajectory/BasicTrajectory'
+import { DistanceContext } from '../../Distance/DistanceContext'
+import { useOutputPanel, useOutputPanelState } from '../../Html/OutputPanel/output-panel-state'
+import { useFrame } from '@react-three/fiber'
+import { OutputPanelDecorator } from '../../../storybook/decorators/output-panel-decorator'
+
+const meta = {
+  title: 'Components/Wellbores/WellboreBounds',
+  component: Wellbore,
+  loaders: [
+    async () => useOutputPanelState.setState({ groups: {} })
+  ]
+} satisfies Meta<typeof Wellbore>
+
+type StoryArgs = React.ComponentProps<typeof WellboreBounds>
+
+export default meta
+
+const wellboreId = storyArgs.defaultWellbore
+
+type Story = StoryObj<StoryArgs>
+
+const OutputLogger = (() => {
+  const distanceContext = useContext(DistanceContext)
+  const outputPanel = useOutputPanel()
+
+  useEffect(() => {
+    if (outputPanel) {
+      outputPanel.add('distance', {
+        label: 'Distance',
+        value: '-',
+      })
+    }
+
+    return () => {
+      if (outputPanel) {
+        outputPanel.remove('distance')
+      }
+    }
+  }, [outputPanel])
+
+  useFrame(() => {
+    if (outputPanel && distanceContext) {
+      outputPanel.update('distance', distanceContext.current)
+    }
+  })
+
+  return null
+})
+
+export const Default: Story = {
+  args: {
+    id: wellboreId,
+    boundsSampleSize: 250
+  },
+  argTypes: {
+    id: {
+      options: Object.keys(storyArgs.wellboreOptions),
+      control: { type: 'select', labels: storyArgs.wellboreOptions },
+    },
+    boundsSampleSize: {
+      type: 'number',
+      control: {
+        type: 'range',
+        max: 1000,
+        min: 10,
+        step: 10,
+      },
+    }
+  },
+  decorators: [
+    PerformanceDecorator,
+    Canvas3dDecorator,
+    GeneratorsProviderDecorator,
+    OutputPanelDecorator,
+    DepthSelectorDecorator,
+    DataProviderDecorator,
+  ],
+  render: args => {
+    useEffect(() => {
+      dispatchEvent(new WellboreSelectedEvent({ id: args.id }))
+    }, [args.id])
+
+    return (
+      <>
+        <Wellbore id={args.id}>
+          <BasicTrajectory />
+          <WellboreBounds {...args} visible>
+            <OutputLogger />
+          </WellboreBounds>
+        </Wellbore>
+      </>
+    )
+  },
+  parameters: {
+    scale: 1000,
+    cameraPosition: [0, 15000, 20000],
+  }
+}

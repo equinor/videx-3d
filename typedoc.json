@@ -1,0 +1,13 @@
+{
+  "commentStyle": "all",
+  "navigation": true,
+  "sort": [
+    "kind",
+    "alphabetical-ignoring-documents"
+  ],
+  "entryPoints": ["src/main.ts", "src/sdk", "src/generators"],
+  "excludeExternals": true,
+  "exclude": ["node_modules"],
+  "projectDocuments": ["documents/*.md"],
+  "out": "./static/docs"
+}

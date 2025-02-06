@@ -1,0 +1,1 @@
+export type SurfaceValues = Float32Array

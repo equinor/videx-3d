@@ -1,0 +1,100 @@
+{
+  "name": "videx-3d",
+  "version": "0.1.0-beta",
+  "private": false,
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/main.js",
+      "types": "./dist/types/main.d.ts"
+    },
+    "./sdk": {
+      "import": "./dist/sdk.js",
+      "types": "./dist/types/sdk/index.d.ts"
+    },
+    "./generators": {
+      "import": "./dist/generators.js",
+      "types": "./dist/types/generators/index.d.ts"
+    }
+  },
+  "scripts": {
+    "start": "npm run storybook",
+    "build": "npm run build-lib && npm run build-static",
+    "build-lib": "tsc && vite build",
+    "build-static": "node scripts/generate-story-args.js && storybook build -o static && typedoc",
+    "lint": "eslint .",
+    "storybook": "node scripts/generate-story-args.js && storybook dev -p 6006"
+  },
+  "dependencies": {
+    "@react-three/drei": "^9.121.4",
+    "curve-interpolator": "^3.3.1",
+    "d3-array": "^3.2.4",
+    "d3-axis": "^3.0.0",
+    "d3-drag": "^3.0.0",
+    "d3-format": "^3.1.0",
+    "d3-interpolate": "^3.0.1",
+    "d3-path": "^3.1.0",
+    "d3-scale": "^4.0.2",
+    "d3-selection": "^3.0.0",
+    "lodash.filter": "^4.6.0",
+    "nanoid": "^5.0.7",
+    "p-limit": "^6.1.0",
+    "p-queue": "^8.0.1",
+    "proj4": "^2.11.0",
+    "rbush": "^3.0.1",
+    "react-use-measure": "^2.1.1",
+    "use-zustand": "^0.2.0",
+    "zustand": "^5.0.0-rc.2"
+  },
+  "devDependencies": {
+    "@chromatic-com/storybook": "^3.2.4",
+    "@eslint/js": "^9.17.0",
+    "@storybook/addon-essentials": "8.4.7",
+    "@storybook/addon-interactions": "8.4.7",
+    "@storybook/blocks": "8.4.7",
+    "@storybook/react": "8.4.7",
+    "@storybook/react-vite": "8.4.7",
+    "@types/d3-array": "^3.2.1",
+    "@types/d3-axis": "^3.0.6",
+    "@types/d3-drag": "^3.0.7",
+    "@types/d3-format": "^3.0.4",
+    "@types/d3-interpolate": "^3.0.4",
+    "@types/d3-path": "^3.1.0",
+    "@types/d3-scale": "^4.0.8",
+    "@types/d3-selection": "^3.0.11",
+    "@types/lodash.filter": "^4.6.9",
+    "@types/node": "^22.12.0",
+    "@types/proj4": "^2.5.5",
+    "@types/rbush": "^3.0.3",
+    "@types/react": "^18.2.66",
+    "@types/react-dom": "^18.2.22",
+    "@typescript-eslint/eslint-plugin": "^8.19.1",
+    "@typescript-eslint/parser": "8.19.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^9.18.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-plugin-react-refresh": "^0.4.18",
+    "eslint-plugin-storybook": "^0.11.2",
+    "globals": "^15.14.0",
+    "minimist": "^1.2.8",
+    "r3f-perf": "^7.2.1",
+    "rimraf": "^6.0.1",
+    "sass": "^1.83.1",
+    "storybook": "8.4.7",
+    "typedoc": "^0.27.6",
+    "typescript": "^5.2.2",
+    "typescript-eslint": "^8.18.2",
+    "vite": "^5.0.0",
+    "vite-plugin-css-injected-by-js": "^3.5.2",
+    "vite-plugin-dts": "^4.4.0",
+    "vite-plugin-glsl": "^1.3.1",
+    "vite-plugin-static-copy": "^2.2.0"
+  },
+  "peerDependencies": {
+    "@react-three/fiber": ">=8",
+    "comlink": ">=4.4",
+    "react": ">=18 <19",
+    "react-dom": ">=18 <19",
+    "three": ">=0.169"
+  }
+}
