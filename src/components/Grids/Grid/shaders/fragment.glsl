@@ -144,7 +144,7 @@ vec4 drawRulerLines(vec4 color, vec2 uv, vec3 lineColor, vec2 lineWidth, float o
 void main() {
   #include <logdepthbuf_fragment>
   
-  vec2 originOffset = uOriginOffset / uCellSize; //mod(uOriginOffset, uCellSize) / uCellSize;
+  vec2 originOffset = clamp(uOriginOffset, -uSize / 2.0, uSize / 2.0) / uCellSize; //mod(uOriginOffset, uCellSize) / uCellSize;
   vec2 axesOffset = uAxesOffset / uCellSize;
 
   vec2 uv = (vUv.xy - 0.5) * (uSize / uCellSize); 

@@ -14,11 +14,17 @@ export async function loadWellboreHeaders(): Promise<
   Record<string, WellboreHeader>
 > {
   const data = await get('/data/wellbore-headers.json')
+  const output: Record<string, WellboreHeader> = {}
   Object.keys(data).forEach((key) => {
-    const drilled = data[key].drilled ? new Date(data[key].drilled) : null
-    data[key].drilled = drilled
+    const record = data[key]
+    const drilled = record.drilled ? new Date(record.drilled) : null
+    
+    output[key] = {
+      ...record,
+      drilled,
+    }
   })
-  return data
+  return output
 }
 
 export async function loadPositionLogs(): Promise<Record<string, PositionLog>> {

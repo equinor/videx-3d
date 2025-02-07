@@ -1,9 +1,9 @@
+import { PropsWithChildren, useEffect, useRef, useState } from 'react'
 import { Color, Group, Vector3 } from 'three'
 import { Vec3 } from '../../../sdk/types/common'
-import { Grid } from '../Grid/Grid'
-import { PropsWithChildren, useEffect, useRef, useState } from 'react'
 import { CommonComponentProps } from '../../common'
 import { BoxPadding, ObservableGroup } from '../../ObservableGroup/ObservableGroup'
+import { Grid } from '../Grid/Grid'
 
 
 /**

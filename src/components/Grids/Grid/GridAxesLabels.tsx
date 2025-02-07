@@ -1,8 +1,9 @@
 import { Text } from '@react-three/drei'
-import { Vec2 } from '../../../sdk/types/common'
-import { useMemo, useState } from 'react'
 import { useFrame } from '@react-three/fiber'
+import { useMemo, useState } from 'react'
 import { Color, Vector3 } from 'three'
+import { clamp } from '../../../sdk'
+import { Vec2 } from '../../../sdk/types/common'
 
 
 export type GridAxesLabelsProps = {
@@ -102,8 +103,8 @@ export const GridAxesLabels = ({
     ]
 
     const distanceToAxis = [
-      distanceToOrigin[0] + axesOffset[0],
-      distanceToOrigin[1] + axesOffset[1],
+      distanceToOrigin[0] + clamp(axesOffset[0], -halfSize[0], halfSize[0]),
+      distanceToOrigin[1] + clamp(axesOffset[1], -halfSize[1], halfSize[1]),
     ]
     const ticksToOrigin = [
       Math.floor((distanceToOrigin[0] - (distanceToOrigin[0] % units)) / units),
@@ -124,8 +125,19 @@ export const GridAxesLabels = ({
     const xAxis: Tick[] = []
     const yAxis: Tick[] = []
 
+    const fontSizeOffset = axesTickSize * units + fontSize * 0.6
+    
+    const clampedOffset = [
+      clamp(axesOffset[1] + originOffset[1], -halfSize[1], +halfSize[1]),
+      clamp(axesOffset[0] + originOffset[0], -halfSize[0], +halfSize[0]),
+    ]
+    
     for (let x = trimAxesLabels ? 1 : 0; x < nTicks[0] - (trimAxesLabels ? 1 : 0); x++) {
-      const pos: Vec2 = [offset[0] + x * units, axesOffset[1] + originOffset[1] + axesTickSize * units + fontSize * 0.6]
+      const pos: Vec2 = [
+        offset[0] + x * units, 
+        clampedOffset[0] + fontSizeOffset,
+      ]
+      
       const value = Math.round(10 * (start[0] + (x - ticksToOrigin[0]) * units * scale[0])) / 10
       if (Math.abs(distanceToAxis[0] - (pos[0] + halfSize[0])) > units / 4) {
         xAxis.push({
@@ -137,7 +149,11 @@ export const GridAxesLabels = ({
     }
 
     for (let y = trimAxesLabels ? 1 : 0; y < nTicks[1] - (trimAxesLabels ? 1 : 0); y++) {
-      const pos: Vec2 = [axesOffset[0] + originOffset[0] - axesTickSize * units - fontSize * 0.6, offset[1] + y * units]
+      
+      const pos: Vec2 = [
+        clampedOffset[1] - fontSizeOffset, 
+        offset[1] + y * units,
+      ]
       const value = Math.round(10 * (start[1] + (y - ticksToOrigin[1]) * units * scale[1])) / 10
       if (Math.abs(distanceToAxis[1] - (pos[1] + halfSize[1])) > units / 4) {
         yAxis.push({

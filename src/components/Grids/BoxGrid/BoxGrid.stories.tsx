@@ -1,18 +1,18 @@
 import type { Meta, StoryObj } from '@storybook/react'
 
+import { useEffect, useMemo } from 'react'
+import { WellboreSelectedEvent } from '../../../events/wellbore-events'
 import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
-import { BoxGrid } from './BoxGrid'
-import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator'
 import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator'
-import { Wellbore } from '../../Wellbores/Wellbore/Wellbore'
+import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator'
+import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator'
+import { useWellboreHeaders } from '../../../storybook/hooks/useWellboreHeaders'
+import storyArgs from '../../../storybook/story-args.json'
 import { BasicTrajectory } from '../../Wellbores/BasicTrajectory/BasicTrajectory'
 import { Casings } from '../../Wellbores/Casings/Casings'
 import { CompletionTools } from '../../Wellbores/CompletionTools/CompletionTools'
-import { useEffect, useMemo } from 'react'
-import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator'
-import { WellboreSelectedEvent } from '../../../events/wellbore-events'
-import { useWellboreHeaders } from '../../../storybook/hooks/useWellboreHeaders'
-import storyArgs from '../../../storybook/story-args.json'
+import { Wellbore } from '../../Wellbores/Wellbore/Wellbore'
+import { BoxGrid } from './BoxGrid'
 
 const wellboreId = storyArgs.defaultWellbore
 

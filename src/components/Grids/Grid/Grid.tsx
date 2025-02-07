@@ -1,3 +1,5 @@
+import { ThreeEvent, useThree } from '@react-three/fiber'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BackSide,
   Color,
@@ -16,15 +18,13 @@ import {
   Vector3,
   WebGLRenderTarget
 } from 'three'
-import vertexShader from './shaders/vertex.glsl'
-import fragmentShader from './shaders/fragment.glsl'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Vec2, Vec3 } from '../../../sdk/types/common'
 import { clamp } from '../../../sdk/utils/numbers'
-import { GridAxesLabels } from './GridAxesLabels'
-import { ThreeEvent, useThree } from '@react-three/fiber'
-import { getGridPositionFromUV } from './grid-helpers'
 import { CommonComponentProps } from '../../common'
+import { getGridPositionFromUV } from './grid-helpers'
+import { GridAxesLabels } from './GridAxesLabels'
+import fragmentShader from './shaders/fragment.glsl'
+import vertexShader from './shaders/vertex.glsl'
 
 /**
  * Grid props
