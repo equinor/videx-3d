@@ -1,13 +1,13 @@
-import type { Meta, StoryObj } from '@storybook/react'
-import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
-import { TubeGeometryOptions, createTubeGeometry } from './tube-geometry'
 import { Helper, useTexture } from '@react-three/drei'
-import { VertexNormalsHelper } from 'three/examples/jsm/Addons.js'
+import type { Meta, StoryObj } from '@storybook/react'
 import { useEffect, useState } from 'react'
-import { PerformanceDecorator } from '../../../storybook/decorators/performance-decorator'
 import { BufferGeometry } from 'three'
-import { getSplineCurve } from './curve-3d'
+import { VertexNormalsHelper } from 'three/examples/jsm/Addons.js'
+import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
+import { PerformanceDecorator } from '../../../storybook/decorators/performance-decorator'
 import { Vec3 } from '../../types/common'
+import { getSplineCurve } from './curve-3d'
+import { TubeGeometryOptions, createTubeGeometry } from './tube-geometry'
 
 // const points = [
 //   [1.2,-3,1],[2,-5,5],[10,-5,4.5],[12,-5,7.5],
@@ -174,6 +174,7 @@ export const Default: Story = {
     Canvas3dDecorator
   ],
   parameters: {
-    scale: 2
+    scale: 2,
+    autoClear: true,
   }
 }

@@ -1,6 +1,9 @@
 import { transfer } from 'comlink'
 import { BufferAttribute, BufferGeometry } from 'three'
+import { SurfaceTexturesResponse } from '../main'
 import {
+  elevationMapNormalsToRGBA,
+  elevationMapToRGBA,
   limit,
   packBufferGeometry,
   PackedBufferGeometry,
@@ -9,12 +12,47 @@ import {
   triangulateGridDelaunay,
 } from '../sdk'
 
+
 const nullValue = -1
+
+
+
+export async function generateSurfaceTexturesData(
+  this: ReadonlyStore,
+  id: string,
+) {
+  const surface = await limit(() => this.get<SurfaceMeta>('surface-meta', id))
+
+  if (!surface) return null
+
+  const surfaceValues = await limit(() =>
+    this.get<Float32Array>('surface-values', id)
+  )
+  if (!surfaceValues) return null
+
+  const elevationImageBuffer = elevationMapToRGBA(surfaceValues, nullValue)
+
+  const normalsImageBuffer = elevationMapNormalsToRGBA(
+    surfaceValues,
+    surface.header.nx,
+    surface.header.xinc,
+    surface.header.yinc,
+    surface.header.rot,
+    nullValue,
+  )
+
+  const response: SurfaceTexturesResponse = {
+    elevationImageBuffer,
+    normalsImageBuffer,
+  }
+
+  return transfer(response, [elevationImageBuffer.buffer, normalsImageBuffer.buffer])
+}
 
 export async function generateSurfaceGeometry(
   this: ReadonlyStore,
   id: string,
-  maxError: number = 5
+  maxError: number = 5,
 ): Promise<PackedBufferGeometry | null> {
   const surface = await limit(() => this.get<SurfaceMeta>('surface-meta', id))
 
@@ -55,15 +93,7 @@ export async function generateSurfaceGeometry(
   geometry.setAttribute('position', new BufferAttribute(positions, 3))
   geometry.setAttribute('uv', new BufferAttribute(uvs, 2))
   geometry.setIndex(new BufferAttribute(indices, 1))
-
-  // const normals = new Float32Array(positions.length)
-  // for (let i = 0; i < normals.length; i+=3) {
-  //   normals[i] = 0
-  //   normals[i + 1] = 1
-  //   normals[i + 2] = 0
-  // }
-  // geometry.setAttribute('normal', new BufferAttribute(normals, 3))
-  geometry.computeVertexNormals()
+  //geometry.computeVertexNormals()
   //geometry.computeTangents();
 
   // move the surface with its bottom-left to the center (center of rotation)

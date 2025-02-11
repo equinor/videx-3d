@@ -1,5 +1,4 @@
 import { transfer } from 'comlink'
-import { rotate3d } from 'curve-interpolator'
 import { Matrix4, Vector3 } from 'three'
 import {
   calculateFrenetFrames,
@@ -13,6 +12,7 @@ import {
   PI2,
   PositionLog,
   ReadonlyStore,
+  rotateVec3,
   SymbolData,
   SymbolsType,
   Vec3,
@@ -130,7 +130,7 @@ export async function generatePerforations(
     let angle = PI2
     for (let f = 0; f < frames.length; f++) {
       const frame = frames[f]
-      const normal = rotate3d(
+      const normal = rotateVec3(
         crossVec3(frame.tangent, [0, -1, 0]),
         frame.tangent,
         angle

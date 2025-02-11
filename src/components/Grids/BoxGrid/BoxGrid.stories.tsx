@@ -30,6 +30,7 @@ const meta = {
     scale: 100,
     cameraPosition: [150, 2000, 1500],
     cameraTarget: [0, 0, 0],
+    autoClear: true
   },
   render: (args) => {
     const wellbores = useWellboreHeaders()

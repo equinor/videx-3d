@@ -1,8 +1,9 @@
-import { clamp, copyValues, cross, dot, normalize, rotate3d } from 'curve-interpolator'
-import { Tuplet, Vec3 } from '../../types/common'
 import { BufferAttribute, BufferGeometry } from 'three'
 import { lerp } from 'three/src/math/MathUtils.js'
+import { Tuplet, Vec3 } from '../../types/common'
+import { clamp } from '../../utils/numbers'
 import { PI } from '../../utils/trigonometry'
+import { copyVec3, crossVec3, dotVec3, normalizeVec3, rotateVec3 } from '../../utils/vector-operations'
 import { calculateFrenetFrames, Curve3D, FrenetFrame } from './curve-3d'
 
 export type RadiusModifier = {
@@ -158,7 +159,7 @@ function calculateTubeSegments(
     for (let j = 1; j < nSegments; j++) {
       const curvePosition = startPos + j * stepSize;
       const candidateTangent = simplificationThreshold ? curve.getTangentAt(curvePosition) : null
-      if (!simplificationThreshold || Math.abs(dot(guideTangent!, candidateTangent!)) < (1 - simplificationThreshold)) {
+      if (!simplificationThreshold || Math.abs(dotVec3(guideTangent!, candidateTangent!)) < (1 - simplificationThreshold)) {
         const [fromStep, toStep] = getStepsAtPosition(curvePosition, steps)
         const calculatedRadius = modifierType === 'linear' ? interpolateRadius(curvePosition, fromStep, toStep) : fromStep[1]
         segments.push([curvePosition, calculatedRadius, modifierType === 'linear' ? angle : 0])
@@ -201,8 +202,6 @@ function generateCap(segment: TubeSegment, radialSegments: number, clockwise = t
   const normals: number[] | null = options.computeNormals ? [] : null
   const uvs: number[] | null = options.computeUvs ? [] : null
   
-  const vector: Vec3 = [0, 0, 0] 
-
   const capNormal = clockwise ? [-segment.tangent[0], -segment.tangent[1], -segment.tangent[2]] : segment.tangent
 
   vertices.push(...segment.position)
@@ -217,11 +216,11 @@ function generateCap(segment: TubeSegment, radialSegments: number, clockwise = t
     const sin = Math.sin(v);
     const cos = - Math.cos(v);
 
-    normalize([
+    const vector = normalizeVec3([
       cos * segment.normal[0] + sin * segment.binormal[0],
       cos * segment.normal[1] + sin * segment.binormal[1],
       cos * segment.normal[2] + sin * segment.binormal[2],
-    ], vector);
+    ]);
 
 
     // vertex
@@ -276,8 +275,6 @@ function generateRingCap(outerSegment: TubeSegment, innerSegment: TubeSegment, r
   const normals: number[] | null = options.computeNormals ? [] : null
   const uvs: number[] | null = options.computeUvs ? [] : null
   
-  const vector: Vec3 = [0, 0, 0] 
-
   const capNormal = clockwise ? [-outerSegment.tangent[0], -outerSegment.tangent[1], -outerSegment.tangent[2]] : outerSegment.tangent
 
   const innerRadiusRatio = innerSegment.radius / outerSegment.radius
@@ -288,11 +285,11 @@ function generateRingCap(outerSegment: TubeSegment, innerSegment: TubeSegment, r
     const sin = Math.sin(v)
     const cos = - Math.cos(v)
 
-    normalize([
+    const vector = normalizeVec3([
       cos * outerSegment.normal[0] + sin * outerSegment.binormal[0],
       cos * outerSegment.normal[1] + sin * outerSegment.binormal[1],
       cos * outerSegment.normal[2] + sin * outerSegment.binormal[2],
-    ], vector);
+    ]);
 
 
     // outer ring vertex
@@ -370,8 +367,6 @@ function generateTube(segments: TubeSegment[], radialSegments: number, closed: b
   const normals: number[] | null = options.computeNormals ? [] : null
   const uvs: number[] | null = options.computeUvs ? [] : null
   
-  const vector: Vec3 = [0, 0, 0] 
-
   const generateTubeSegment = (segment: TubeSegment) => {
     for (let j = 0; j <= radialSegments; j++) {
       const v = j / radialSegments * PI * 2
@@ -380,11 +375,11 @@ function generateTube(segments: TubeSegment[], radialSegments: number, closed: b
       const cos = - Math.cos(v);
 
       // normal
-      normalize([
+      const vector = normalizeVec3([
         cos * segment.normal[0] + sin * segment.binormal[0],
         cos * segment.normal[1] + sin * segment.binormal[1],
         cos * segment.normal[2] + sin * segment.binormal[2],
-      ], vector);
+      ]);
 
       // vertex     
       const position: Vec3 = [
@@ -394,11 +389,11 @@ function generateTube(segments: TubeSegment[], radialSegments: number, closed: b
       ];
       
       if (normals) {
-        const surfaceNormal = copyValues(vector) as Vec3;
+        let surfaceNormal = copyVec3(vector)
         // adjust normal if radius is modulated
         if (segment.theta) {
-          const rotationAxis = normalize(cross(segment.tangent, vector))
-          rotate3d(vector, rotationAxis, segment.theta, surfaceNormal) as Vec3 
+          const rotationAxis = normalizeVec3(crossVec3(segment.tangent, vector))
+          surfaceNormal = rotateVec3(vector, rotationAxis, segment.theta) 
         }       
         normals.push(...surfaceNormal)
       }

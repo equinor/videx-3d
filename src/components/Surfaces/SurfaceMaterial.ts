@@ -1,24 +1,24 @@
 import {
-  ShaderMaterial,
-  UniformsUtils,
-  ShaderLib,
-  Vector2,
-  Color,
   CanvasTexture,
+  Color,
   LinearFilter,
-  NearestFilter,
-  ShaderMaterialParameters,
-  Texture,
   MeshLambertMaterialParameters,
   MultiplyOperation,
-  TangentSpaceNormalMap,
+  NearestFilter,
   //NoColorSpace,
   RGBAFormat,
+  ShaderLib,
+  ShaderMaterial,
+  ShaderMaterialParameters,
   SRGBColorSpace,
-} from 'three';
-import vertexShader from './shaders/vertex.glsl'
-import fragmentShader from './shaders/fragment.glsl'
+  TangentSpaceNormalMap,
+  Texture,
+  UniformsUtils,
+  Vector2,
+} from 'three'
 import { colorRamps, createColorRamps } from './color-ramps'
+import fragmentShader from './shaders/fragment.glsl'
+import vertexShader from './shaders/vertex.glsl'
 
 const canvas = createColorRamps(colorRamps, 512)
 const colorRampTexture = new CanvasTexture(canvas)
@@ -37,7 +37,6 @@ export enum ContourColorMode {
   mixed = 2,
 }
 
-// TODO: Make some utils for making it simpler to ctreate custom color ramps
 export type SurfaceMaterialParameters = ShaderMaterialParameters & MeshLambertMaterialParameters & {
   useColorRamp?: boolean
   saturation?: number

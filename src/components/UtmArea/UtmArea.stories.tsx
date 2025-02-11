@@ -1,16 +1,16 @@
 import type { Meta, StoryObj } from '@storybook/react'
 
+import proj4 from 'proj4'
+import { useMemo } from 'react'
+import { getProjectionDefFromUtmZone, wgs84Def } from '../../sdk/projection/crs'
+import { Vec2 } from '../../sdk/types/common'
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator'
+import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders'
+import storyArgs from '../../storybook/story-args.json'
+import { UtmGrid } from '../Grids/Grid/UtmGrid'
 import { UtmArea } from './UtmArea'
 import { UtmPosition } from './UtmPosition'
 import { Wgs84Position } from './Wgs84Position'
-import { Vec2 } from '../../sdk/types/common'
-import { UtmGrid } from '../Grids/Grid/UtmGrid'
-import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders'
-import { useMemo } from 'react'
-import storyArgs from '../../storybook/story-args.json'
-import proj4 from 'proj4'
-import { getProjectionDefFromUtmZone, wgs84Def } from '../../sdk/projection/crs'
 
 const utmZone = storyArgs.utmZone
 
@@ -36,6 +36,7 @@ export const Default: Story = {
     Canvas3dDecorator,
   ],
   parameters: {
+    autoClear: true,
     scale: 1000,
     cameraPosition: [0, 5000, 0],
     cameraTarget: [0, 0, 0],

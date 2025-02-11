@@ -1,6 +1,6 @@
 import { expose } from 'comlink'
 
-import { surfaceGeometry } from '../../../components/Surfaces/surface-defs'
+import { surfaceGeometry, surfaceTextures } from '../../../components/Surfaces/surface-defs'
 import { basicTrajectory } from '../../../components/Wellbores/BasicTrajectory/basic-trajectory-defs'
 import { casingAnnotations } from '../../../components/Wellbores/Casings/CasingAnnotations/casing-annotations-defs'
 import { casings } from '../../../components/Wellbores/Casings/casings-defs'
@@ -29,6 +29,7 @@ import {
   generatePositionMarkers,
   generateShoes,
   generateSurfaceGeometry,
+  generateSurfaceTexturesData,
   generateTubeTrajectory,
   generateWellboreLabel,
 } from '../../../generators'
@@ -50,6 +51,7 @@ registry.add(pickSymbols, generatePicks)
 registry.add(depthMarkers, generateDepthMarkers)
 registry.add(wellboreLabel, generateWellboreLabel)
 registry.add(surfaceGeometry, generateSurfaceGeometry)
+registry.add(surfaceTextures, generateSurfaceTexturesData)
 registry.add(perforationSymbols, generatePerforations)
 registry.add(positionMarkers, generatePositionMarkers)
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { loadSurfaceMeta } from '../dependencies/loaders'
 import { SurfaceMeta } from '../../sdk/data/types/SurfaceMeta'
+import { loadSurfaceMeta } from '../dependencies/loaders'
 
 export const useSurfaceMetaDict = () => {
   const [surfaceMetaData, setSurfaceMetaData] = useState<Record<string, SurfaceMeta>>({})

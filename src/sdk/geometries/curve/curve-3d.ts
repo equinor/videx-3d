@@ -1,5 +1,7 @@
+import { CurveInterpolator, EPS } from 'curve-interpolator'
 import { Vec3 } from '../../types/common'
-import { CurveInterpolator, EPS, clamp, copyValues, cross, dot, magnitude, normalize, rotate3d } from 'curve-interpolator'
+import { clamp } from '../../utils/numbers'
+import { copyVec3, crossVec3, dotVec3, lengthVec3, normalizeVec3, rotateVec3 } from '../../utils/vector-operations'
 
 /**
  * Interface for interpolating points on a 3d curve
@@ -90,7 +92,7 @@ export function calculateFrenetFrames(curve: Curve3D, curvePositions: number[]) 
     }
   })
 
-  let normal = [0, 1, 0]
+  let normal: Vec3 = [0, 1, 0]
   let min = Math.abs(frames[0].tangent[1])
 
   const tx = Math.abs(frames[0].tangent[0])
@@ -105,20 +107,20 @@ export function calculateFrenetFrames(curve: Curve3D, curvePositions: number[]) 
     normal = [0, 0, 1]
   }
   
-  let vec = normalize(cross(frames[0].tangent, normal))
+  let vec = normalizeVec3(crossVec3(frames[0].tangent, normal))
   
-  frames[0].normal = cross(frames[0].tangent, vec) as Vec3
-  frames[0].binormal = cross(frames[0].tangent, frames[0].normal) as Vec3
+  frames[0].normal = crossVec3(frames[0].tangent, vec) as Vec3
+  frames[0].binormal = crossVec3(frames[0].tangent, frames[0].normal) as Vec3
 
   for (let i = 1; i < curvePositions.length; i++) {
-    vec = cross(frames[i - 1].tangent, frames[i].tangent)
-    frames[i].normal = copyValues(frames[i - 1].normal) as Vec3
-    if (magnitude(vec) > EPS) {
-      normalize(vec)
-      const theta = Math.acos(clamp(dot(frames[i - 1].tangent, frames[i].tangent), -1, 1)) // clamp for floating pt errors
-      rotate3d(frames[i - 1].normal, vec, theta, frames[i].normal)
+    vec = crossVec3(frames[i - 1].tangent, frames[i].tangent)
+    frames[i].normal = copyVec3(frames[i - 1].normal)
+    if (lengthVec3(vec) > EPS) {
+      normalizeVec3(vec)
+      const theta = Math.acos(clamp(dotVec3(frames[i - 1].tangent, frames[i].tangent), -1, 1)) // clamp for floating pt errors
+      frames[i].normal = rotateVec3(frames[i - 1].normal, vec, theta)
     }
-    frames[i].binormal = cross(frames[i].tangent, frames[i].normal) as Vec3
+    frames[i].binormal = crossVec3(frames[i].tangent, frames[i].normal) as Vec3
   }
 
   return frames

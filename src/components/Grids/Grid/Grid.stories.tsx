@@ -1,9 +1,9 @@
 import type { Meta, StoryObj } from '@storybook/react'
 
+import { Float } from '@react-three/drei'
+import { TextureLoader } from 'three'
 import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
 import { Grid, GridProps } from './Grid'
-import { TextureLoader } from 'three'
-import { Float } from '@react-three/drei'
 
 const GridObjects = ({ units = 1 }: { units?: number}) => (
   <>
@@ -26,6 +26,7 @@ const meta = {
     Canvas3dDecorator,
   ],
   parameters: {
+    autoClear: true,
     scale: 100,
     cameraPosition: [150, 1000, 500],
     cameraTarget: [0, 0, 0],

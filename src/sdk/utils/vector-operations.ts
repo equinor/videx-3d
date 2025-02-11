@@ -86,6 +86,29 @@ export function angleVec3(v1: Vec3, v2: Vec3): number {
   return Math.acos(clamp(theta, -1, 1))
 }
 
+export function rotateVec3(vector: Vec3, axis: Vec3 = [0, 1, 0], angle = 0) : Vec3 {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+
+  const t = 1 - c;
+
+  const vx = vector[0];
+  const vy = vector[1];
+  const vz = vector[2];
+
+  const ax = axis[0];
+  const ay = axis[1];
+  const az = axis[2];
+
+  const tx = t * ax, ty = t * ay;
+  
+  return [
+    (tx * ax + c) * vx + (tx * ay - s * az) * vy + (tx * az + s * ay) * vz,
+    (tx * ay + s * az) * vx + (ty * ay + c) * vy + (ty * az - s * ax) * vz,
+    (tx * az - s * ay) * vx + (ty * az + s * ax) * vy + (t * az * az + c) * vz,
+  ]
+}
+
 
 // Vec2
 export function setVec2(buffer: number[], id: number, value: Vec2): void {
@@ -126,3 +149,4 @@ export function mixVec2(v1: Vec2, v2: Vec2, t = 0.5): Vec2 {
     v1[1] * t2 + v2[1] * t,
   ]
 }
+

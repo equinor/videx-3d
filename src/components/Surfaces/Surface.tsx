@@ -1,19 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useGenerator } from '../../hooks/useGenerator'
-import { surfaceGeneratorResponse, surfaceGeometry } from './surface-defs'
-import { BackSide, BufferGeometry, DataTexture, DoubleSide, FrontSide, LinearFilter, Mesh, MeshBasicMaterial, Texture } from 'three'
-import { createLayers, LAYERS } from '../../layers/layers'
-import { queue } from '../../sdk/utils/limiter'
-import { unpackBufferGeometry } from '../../sdk/geometries/packing'
-import { SurfaceMeta } from '../../sdk/data/types/SurfaceMeta'
-import { ContourColorMode, SurfaceMaterial } from './SurfaceMaterial'
-import { useData } from '../../hooks/useData'
-import { toRGB } from '../../sdk/utils/numbers'
-import { createNormalTexture } from './normal-texture'
-import { EventEmitterCallback, useEventEmitter } from '../Handlers/EventEmitter/EventEmitterContext'
+import { BackSide, BufferGeometry, DataTexture, DoubleSide, FrontSide, Mesh, MeshBasicMaterial, Texture } from 'three'
 import { PointerEvents } from '../../events/interaction-events'
-import { Vec2 } from '../../sdk/types/common'
+import { useGenerator } from '../../hooks/useGenerator'
+import { createLayers, LAYERS } from '../../layers/layers'
+import { createElevationTexture, createNormalTexture, queue, SurfaceMeta, unpackBufferGeometry, Vec2 } from '../../sdk'
 import { CommonComponentProps } from '../common'
+import { EventEmitterCallback, useEventEmitter } from '../Handlers/EventEmitter/EventEmitterContext'
+import { surfaceGeometry, SurfaceGeometryResponse, surfaceTextures, SurfaceTexturesResponse } from './surface-defs'
+import { ContourColorMode, SurfaceMaterial } from './SurfaceMaterial'
 
 /**
  * Surface props
@@ -50,11 +44,7 @@ export type SurfaceProps = CommonComponentProps & PointerEvents & {
  * 
  * Surface values are expected to be in a regular grid. An optimized triangulation is used for the geometry, but color ramp 
  * values and contour lines are always using the full resolution of the data for accuracy. 
- * 
- * The surface requires the `SurfaceMeta` type as input data. It will fetch the `SurfaceValues` on the component side
- * from the store. This is because the component will need this data to generate a data texture and calculate normals at a 
- * higher resolution than the generated geometry.
- * 
+ *  
  * @example
  * <Surface meta={meta} />
  * 
@@ -95,10 +85,9 @@ export const Surface = ({
   onPointerMove,
 }: SurfaceProps) => {
   const ref = useRef<Mesh>(null!)
-  const generator = useGenerator<surfaceGeneratorResponse>(surfaceGeometry)
-  const store = useData()
+  const geometryGenerator = useGenerator<SurfaceGeometryResponse>(surfaceGeometry)
+  const texturesGenerator = useGenerator<SurfaceTexturesResponse>(surfaceTextures)
 
-  const [ready, setReady] = useState(false)
   const [geometry, setGeometry] = useState<BufferGeometry | null>(null)
   const [depthTexture, setDepthTexture] = useState<DataTexture | null>(null)
   const [normals, setNormals] = useState<DataTexture | null>(null)
@@ -113,19 +102,18 @@ export const Surface = ({
       brightness: 0,
       colorRampIndex: 0,
       colorRampReverse: false,
-      colorRampMin: meta.displayMin,
-      colorRampMax: meta.displayMax,
-      referenceDepth: meta.max,
-      normalMap,
+      colorRampMin: 0,
+      colorRampMax: 0,
+      referenceDepth: 0,
       side: FrontSide,
       wireframe: false,
       flatShading: false,
       transparent: true,
       opacity: 1,
     })
-    
+
     return m
-  }, [meta, normalMap])
+  }, [])
 
   /* This is used to write back-side faces to the depth buffer to avoid self-transparency issues when opacity < 1 */
   const maskMaterial = useMemo(() => {
@@ -136,6 +124,7 @@ export const Surface = ({
       depthWrite: true,
     })
     return m
+
   }, [])
 
   const eventHandler = useEventEmitter()
@@ -143,7 +132,7 @@ export const Surface = ({
   // register event handlers
   useEffect(() => {
     let unregister: (() => void) | null = null
-    if (ready && eventHandler && ref.current) {
+    if (eventHandler && ref.current) {
       const handlers: Record<string, EventEmitterCallback> = {}
 
       if (onPointerClick) handlers.click = onPointerClick
@@ -159,8 +148,8 @@ export const Surface = ({
     return () => {
       if (unregister) unregister()
     }
-  }, [eventHandler, onPointerClick, onPointerEnter, onPointerLeave, onPointerMove, ready, meta.id])
-  
+  }, [eventHandler, onPointerClick, onPointerEnter, onPointerLeave, onPointerMove, meta.id])
+
   useEffect(() => {
     material.uniforms.colorRampIndex.value = colorRamp
     material.uniforms.opacity.value = opacity
@@ -171,11 +160,13 @@ export const Surface = ({
     material.uniforms.colorRampMin.value = rampMin
     material.uniforms.colorRampMax.value = rampMax
     material.uniforms.colorRampReverse.value = reverseRamp
+    material.uniforms.referenceDepth.value = meta.max
     if (normalScale) {
       material.uniforms.normalScale.value.set(...normalScale)
     }
   }, [
     material,
+    meta.max,
     colorRamp,
     opacity,
     showContours,
@@ -186,7 +177,7 @@ export const Surface = ({
     rampMin,
     rampMax,
     reverseRamp,
-    normalScale
+    normalScale,
   ])
 
   useEffect(() => {
@@ -196,6 +187,9 @@ export const Surface = ({
     material.useColorRamp = useColorRamp
     material.color = color || material.color
     material.side = doubleSide ? DoubleSide : FrontSide
+    if (normalMap) {
+      material.normalMap = normalMap
+    }
   }, [
     material,
     useColorRamp,
@@ -204,48 +198,45 @@ export const Surface = ({
     contoursColor,
     color,
     doubleSide,
+    normalMap,
   ])
 
   useEffect(() => {
-    if (store) {
-      store.get<Float32Array>('surface-values', meta.id).then(response => {
-        if (response && response instanceof Float32Array) {
-          const colorData = new Uint8Array(response.length * 4)
-          for (let i = 0; i < response.length; i++) {
-            const v = response[i]
-            const rgb = v === -1 ? [0, 0, 0] : toRGB(v)
-            const j = i * 4
-            colorData[j] = rgb[0]
-            colorData[j + 1] = rgb[1]
-            colorData[j + 2] = rgb[2]
-            colorData[j + 3] = v === -1 ? 0 : 255
-          }
-          const tex = new DataTexture(colorData, meta.header.nx, meta.header.ny)
-          tex.minFilter = LinearFilter
-          tex.magFilter = LinearFilter
-          //tex.anisotropy = 4
-          tex.needsUpdate = true
-          tex.flipY = true
-
-          const normalTexture = createNormalTexture(response, meta.header.nx, meta.header.xinc, meta.header.yinc, meta.header.rot)
+    if (texturesGenerator) {
+      queue(() => texturesGenerator(meta.id).then(response => {
+        if (response) {
+          const {
+            elevationImageBuffer,
+            normalsImageBuffer,
+          } = response
           
+          const elevationTextures = createElevationTexture(
+            elevationImageBuffer,
+            meta.header.nx,
+            meta.header.ny,
+          )
+          const normalTexture = createNormalTexture(
+            normalsImageBuffer,
+            meta.header.nx - 1,
+            meta.header.ny - 1,
+          )
+
+          setDepthTexture(prev => {
+            if (prev) prev.dispose()
+            return elevationTextures || prev
+          })
           setNormals(prev => {
             if (prev) prev.dispose()
             return normalTexture || prev
           })
-          setDepthTexture(prev => {
-            if (prev) prev.dispose()
-            return tex || prev
-          })
         }
-      })
+      }), priority)
     }
-  }, [store, meta.id, meta.header.nx, meta.header.ny, meta.header.xinc, meta.header.yinc, meta.header.rot])
+  }, [texturesGenerator, meta.id, meta.header.nx, meta.header.ny, priority])
 
   useEffect(() => {
-    setReady(false)
-    if (generator) {
-      queue(() => generator(meta.id, maxError).then((response) => {
+    if (geometryGenerator) {
+      queue(() => geometryGenerator(meta.id, maxError).then((response) => {
         let bufferGeometry: BufferGeometry | null = null
         if (response) {
           bufferGeometry = unpackBufferGeometry(response)
@@ -254,11 +245,10 @@ export const Surface = ({
           if (prev) prev.dispose()
           return bufferGeometry || prev
         })
-        setReady(true)
-      }), priority)
 
+      }), priority)
     }
-  }, [generator, meta, maxError, priority])
+  }, [geometryGenerator, meta.id, maxError, priority])
 
   useEffect(() => {
     if (depthTexture && material) {
@@ -279,7 +269,7 @@ export const Surface = ({
     }
   }, [material])
 
-  if (!ready || !geometry || !meta) return null
+
 
   return (
     <group
@@ -289,7 +279,7 @@ export const Surface = ({
       renderOrder={renderOrder}
       position={position}
     >
-      { opacity < 1 && (
+      {(geometry && opacity < 1) && (
         <mesh
           ref={ref}
           geometry={geometry}
@@ -298,7 +288,7 @@ export const Surface = ({
           layers={notEmitterLayers}
         />
       )}
-      <mesh
+      {geometry && (<mesh
         ref={ref}
         castShadow={castShadow}
         receiveShadow={receiveShadow}
@@ -306,7 +296,7 @@ export const Surface = ({
         material={material}
         layers={layers}
         renderOrder={2}
-      />
+      />)}
     </group>
   )
 }

@@ -31,3 +31,6 @@ import
 
 # Deprecated
 .deprecated
+
+# Static
+static

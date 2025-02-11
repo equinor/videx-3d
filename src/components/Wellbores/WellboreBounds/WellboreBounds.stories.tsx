@@ -1,19 +1,18 @@
+import { useFrame } from '@react-three/fiber'
 import type { Meta, StoryObj } from '@storybook/react'
-import storyArgs from '../../../storybook/story-args.json'
-import { Wellbore } from '../Wellbore/Wellbore'
-import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator'
-import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator'
-import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
 import { useContext, useEffect } from 'react'
-import { PerformanceDecorator } from '../../../storybook/decorators/performance-decorator'
-import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator'
 import { WellboreSelectedEvent } from '../../../events/wellbore-events'
-import { WellboreBounds } from './WellboreBounds'
-import { BasicTrajectory } from '../BasicTrajectory/BasicTrajectory'
+import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
+import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator'
+import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator'
+import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator'
+import { OutputPanelDecorator } from '../../../storybook/decorators/output-panel-decorator'
+import storyArgs from '../../../storybook/story-args.json'
 import { DistanceContext } from '../../Distance/DistanceContext'
 import { useOutputPanel, useOutputPanelState } from '../../Html/OutputPanel/output-panel-state'
-import { useFrame } from '@react-three/fiber'
-import { OutputPanelDecorator } from '../../../storybook/decorators/output-panel-decorator'
+import { BasicTrajectory } from '../BasicTrajectory/BasicTrajectory'
+import { Wellbore } from '../Wellbore/Wellbore'
+import { WellboreBounds } from './WellboreBounds'
 
 const meta = {
   title: 'Components/Wellbores/WellboreBounds',
@@ -80,7 +79,6 @@ export const Default: Story = {
     }
   },
   decorators: [
-    PerformanceDecorator,
     Canvas3dDecorator,
     GeneratorsProviderDecorator,
     OutputPanelDecorator,
@@ -104,6 +102,7 @@ export const Default: Story = {
     )
   },
   parameters: {
+    autoClear: true,
     scale: 1000,
     cameraPosition: [0, 15000, 20000],
   }
