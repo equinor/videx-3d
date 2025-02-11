@@ -23,6 +23,7 @@ The generator functions can be imported from `videx-3d/generators` (default impl
 | **Picks** | pickSymbols | generatePicks | - position-logs<br/>- picks |
 | **Shoes** | shoeSymbols | generateShoes | - position-logs<br/>- casings |
 | **Surface** | surfaceGeometry | generateSurfaceGeometry | - surface-meta<br/>- surface-values |
+| **Surface** | surfaceTextures | generateSurfaceTextureData | - surface-meta<br/>- surface-values |
 | **TubeTrajectory** | tubeTrajectory | generateTubeTrajectory | - position-logs |
 | **WellboreBounds** | wellboreBounds | calculateWellboreBounds | - position-logs |
 | **WellboreLabel** | wellboreLabel | generateWellboreLabel | - position-logs<br/>- wellbore-headers |

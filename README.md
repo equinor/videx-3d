@@ -99,5 +99,5 @@ If instead you want to run the data store and/or registry on the main thread, si
 For more information see the API docs.
 
 ## Documentation
-- [Storybooks](/)
-- [API docs](/docs)
+- [Storybooks](https://ubiquitous-doodle-7k8q9pg.pages.github.io/)
+- [API docs](https://ubiquitous-doodle-7k8q9pg.pages.github.io/docs)
