@@ -1,4 +1,10 @@
 export async function get(url: string): Promise<any> {
+
+  // avoid CORS issue when hosted on Github Pages
+  if (!self.location.origin.startsWith('http://localhost')) {
+    url = url.slice(1)
+  }
+
   const response = await fetch(
     url,
     {
@@ -7,7 +13,6 @@ export async function get(url: string): Promise<any> {
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
       },
     },
   );
