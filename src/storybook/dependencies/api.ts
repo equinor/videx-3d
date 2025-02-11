@@ -7,7 +7,7 @@ export async function get(url: string): Promise<any> {
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': 'https://github.com/login'
+        'Access-Control-Allow-Origin': '*'
       },
     },
   );
