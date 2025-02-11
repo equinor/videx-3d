@@ -1,4 +1,10 @@
 export async function get(url: string): Promise<any> {
+
+  // use relative path when not running local
+  if (!self.location.origin.startsWith('http://localhost')) {
+    url = url.slice(1)
+  }
+
   const response = await fetch(
     url,
     {
