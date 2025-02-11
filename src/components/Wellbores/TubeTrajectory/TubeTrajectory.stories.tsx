@@ -55,6 +55,6 @@ export const Default: Story = {
   parameters: {
     autoClear: true,
     scale: 1000,
-    cameraPosition: [0, 1500, 2000],
+    cameraPosition: [0, 150, 150],
   }
 }

@@ -3,7 +3,6 @@ import { useEffect } from 'react'
 import { WellboreSelectedEvent } from '../../../events/wellbore-events'
 import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
 import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator'
-import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator'
 import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator'
 import storyArgs from '../../../storybook/story-args.json'
 import { Wellbore } from './Wellbore'
@@ -34,7 +33,6 @@ export const Default: Story = {
   decorators: [
     Canvas3dDecorator,
     GeneratorsProviderDecorator,
-    DepthSelectorDecorator,
     DataProviderDecorator,
   ],
   render: args => {

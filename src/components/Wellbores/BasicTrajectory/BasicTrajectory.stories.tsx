@@ -28,7 +28,10 @@ export const Default: Story = {
       </Wellbore>
     )
   },
-  parameters: { autoClear: true },
+  parameters: { 
+    autoClear: true,
+    cameraPosition: [150, 0, 150],
+  },
   decorators: [
     Canvas3dDecorator,
     GeneratorsProviderDecorator,

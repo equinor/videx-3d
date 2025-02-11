@@ -63,8 +63,8 @@ export const Default: Story = {
     reverseRamp: false,
     color: 'white',
     colorRamp: 0,
-    opacity: 0.98,
-    maxError: 5,
+    opacity: 1,
+    maxError: 2.5,
     wireframe: false,
     showContours: true,
     contoursColorMode: ContourColorMode.darken,
@@ -177,7 +177,8 @@ export const Default: Story = {
   ],
   parameters: {
     autoClear: true,
-    scale: 10000
+    scale: 1000,
+    cameraPosition: [-10000, 10000, 5000]
   },
   render: (args) => (
     <SurfaceStory {...args} />
