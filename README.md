@@ -1,3 +1,5 @@
+[![SCM Compliance](https://scm-compliance-api.radix.equinor.com/repos/equinor/videx-wellog/badge)](https://scm-compliance-api.radix.equinor.com/repos/equinor/videx-wellog/badge)
+
 # Introduction
 The purpose of this library is to help you add 3D visualizations of sub surface data to your web applications. It offers a paradigm for connecting data to React components, utilizing Three js and React Three Fiber.
 
