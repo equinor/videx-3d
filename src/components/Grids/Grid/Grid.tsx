@@ -1,22 +1,22 @@
 import { ThreeEvent, useThree } from '@react-three/fiber'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  BackSide,
-  Color,
-  DoubleSide,
-  FrontSide,
-  Group,
-  HalfFloatType,
-  LinearFilter,
-  OrthographicCamera,
-  Plane,
-  Ray,
-  ShaderMaterial,
-  Texture,
-  Uniform,
-  Vector2,
-  Vector3,
-  WebGLRenderTarget
+    BackSide,
+    Color,
+    DoubleSide,
+    FrontSide,
+    Group,
+    HalfFloatType,
+    LinearFilter,
+    OrthographicCamera,
+    Plane,
+    Ray,
+    ShaderMaterial,
+    Texture,
+    Uniform,
+    Vector2,
+    Vector3,
+    WebGLRenderTarget
 } from 'three'
 import { Vec2, Vec3 } from '../../../sdk/types/common'
 import { clamp } from '../../../sdk/utils/numbers'
@@ -101,7 +101,7 @@ const defaultCellSizeDistanceFactors = [
  * The Grid component is very flexible and has many different options which allows you 
  * to customize both behaviours and appearances. See the storybook linked below for examples.
  * 
- * @see [Storybook](/?path=/docs/components-grids-grid--docs) 
+ * @see [Storybook](/videx-3d/?path=/docs/components-grids-grid--docs) 
  * 
  * @group Components
  */

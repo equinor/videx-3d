@@ -1,11 +1,11 @@
 import { useEffect, useRef } from 'react'
-import { useGenerator } from '../../../hooks/useGenerator'
-import { AnnotationProps } from '../../Annotations/types'
-import { useWellboreContext } from '../../../hooks/useWellboreContext'
 import { Color, Object3D, Vector3 } from 'three'
+import { useGenerator } from '../../../hooks/useGenerator'
+import { useWellboreContext } from '../../../hooks/useWellboreContext'
 import { queue } from '../../../sdk/utils/limiter'
-import { wellboreLabel } from './wellbore-label-defs'
 import { useAnnotations } from '../../Annotations/annotations-state'
+import { AnnotationProps } from '../../Annotations/types'
+import { wellboreLabel } from './wellbore-label-defs'
 
 /**
  * WellboreLabel props
@@ -25,7 +25,7 @@ export type WellboreLabelProps = {
  *  <WellboreLabel position="bottom" /> 
  * </Wellbore>
  * 
- * @see [Storybook](/?path=/docs/components-wellbores-wellborelabel--docs)
+ * @see [Storybook](/videx-3d/?path=/docs/components-wellbores-wellborelabel--docs)
  * @see {@link Wellbore}
  * @see {@link Annotations}
  * @group Components

@@ -1,7 +1,7 @@
 import { PropsWithChildren, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
-import { AnnotationLayer } from './types'
 import { useAnnotationsState } from './annotations-state'
 import { DefaultLabelComponent } from './DefaultLabelComponent'
+import { AnnotationLayer } from './types'
 
 /**
  * AnnotationsLayer props
@@ -41,7 +41,7 @@ export type AnnotationsLayerProps = Partial<AnnotationLayer> & {
  * The AnnotationsLayer component is for adding and configuring a layer. Annotations are added to a layer 
  * using the `useAnnotations` hook with a layer id and a user defined scope.
  * 
- * @see [Storybook](/?path=/docs/components-misc-annotations--docs)
+ * @see [Storybook](/videx-3d/?path=/docs/components-misc-annotations--docs)
  * @see {@link Annotations}
  * @see {@link useAnnotations}
  * 

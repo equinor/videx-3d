@@ -48,7 +48,7 @@ export type BoxGridProps = CommonComponentProps & {
  *   opacity={0.8}
  * />
  * 
- * @see [Storybook](/?path=/docs/components-grids-boxgrid--docs) 
+ * @see [Storybook](/videx-3d/?path=/docs/components-grids-boxgrid--docs) 
  * @see {@link Grid}
  * 
  * @group Components

@@ -1,15 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { unpackBufferGeometry } from '../../../sdk/geometries/packing'
-import { BufferGeometry, Color, DoubleSide, Group, Material, ShaderMaterial, Uniform } from 'three'
-import vertexShader from './shaders/vertex.glsl'
-import fragmentShader from './shaders/fragment.glsl'
 import { useFrame } from '@react-three/fiber'
-import { useWellboreContext } from '../../../hooks/useWellboreContext'
-import { limit } from '../../../sdk/utils/limiter'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { BufferGeometry, Color, DoubleSide, Group, Material, ShaderMaterial, Uniform } from 'three'
 import { useGenerator } from '../../../hooks/useGenerator'
-import { PerimeterGeneratorResponse, perimeterGeometry } from './perimeter-defs'
-import { CommonComponentProps, CustomMaterialProps } from '../../common'
+import { useWellboreContext } from '../../../hooks/useWellboreContext'
 import { createLayers, LAYERS } from '../../../layers/layers'
+import { unpackBufferGeometry } from '../../../sdk/geometries/packing'
+import { limit } from '../../../sdk/utils/limiter'
+import { CommonComponentProps, CustomMaterialProps } from '../../common'
+import { PerimeterGeneratorResponse, perimeterGeometry } from './perimeter-defs'
+import fragmentShader from './shaders/fragment.glsl'
+import vertexShader from './shaders/vertex.glsl'
 
 
 /**
@@ -33,7 +33,7 @@ export type PerimeterProps = CommonComponentProps & CustomMaterialProps & {
  *  <Perimeter from={1000} to={5000} radius={10} /> 
  * </Wellbore>
  * 
- * @see [Storybook](/?path=/docs/components-wellbores-perimeter--docs)
+ * @see [Storybook](/videx-3d/?path=/docs/components-wellbores-perimeter--docs)
  * @see {@link Wellbore}
  * 
  * @group Components

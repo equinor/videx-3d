@@ -31,7 +31,7 @@ export type DistanceProps = {
  * @remarks
  * This component depends on a `DistanceContext` being provided by a parent component.
  * 
- * @see [Storybook](/?path=/docs/components-misc-distance--docs) 
+ * @see [Storybook](/videx-3d/?path=/docs/components-misc-distance--docs) 
  * @see {@link DistanceContext}
  * @see {@link WellboreBounds}
  * 

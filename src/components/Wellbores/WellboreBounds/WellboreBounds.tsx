@@ -1,9 +1,9 @@
+import { useFrame } from '@react-three/fiber'
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Object3D, PerspectiveCamera, Sphere, Vector3 } from 'three'
 import { useGenerator } from '../../../hooks/useGenerator'
-import { queue } from '../../../sdk/utils/limiter'
 import { Vec3 } from '../../../sdk/types/common'
-import { useFrame } from '@react-three/fiber'
+import { queue } from '../../../sdk/utils/limiter'
 import { DistanceContext } from '../../Distance/DistanceContext'
 import { wellboreBounds } from './wellbore-bounds-defs'
 
@@ -50,7 +50,7 @@ const sphere = new Sphere()
  * @remarks
  * This component does not use the `WellboreContext` to retrieve the wellbore id, and must be provided as a prop.
  * 
- * @see [Storybook](/?path=/docs/components-wellbores-wellborebounds--docs)
+ * @see [Storybook](/videx-3d/?path=/docs/components-wellbores-wellborebounds--docs)
  * @see {@link Distance}
  * @see {@link DistanceContext}
  * 

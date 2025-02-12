@@ -1,12 +1,12 @@
 import { ForwardedRef, forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { Object3D, Vector3 } from 'three'
-import { useWellboreContext } from '../../../hooks/useWellboreContext'
 import { useGenerator } from '../../../hooks/useGenerator'
-import { depthMarkers } from './depth-markers-defs'
+import { useWellboreContext } from '../../../hooks/useWellboreContext'
+import { DepthReferencePoint } from '../../../sdk/data/types/DepthReferencePoint'
 import { queue } from '../../../sdk/utils/limiter'
 import { useAnnotations } from '../../Annotations/annotations-state'
 import { AnnotationProps } from '../../Annotations/types'
-import { DepthReferencePoint } from '../../../sdk/data/types/DepthReferencePoint'
+import { depthMarkers } from './depth-markers-defs'
 
 /**
  * DepthMarkers props
@@ -26,7 +26,7 @@ export type DepthMarkersProps = {
  *  <DepthMarkers interval={250} /> 
  * </Wellbore>
  * 
- * @see [Storybook](/?path=/docs/components-wellbores-depthmarkers--docs)
+ * @see [Storybook](/videx-3d/?path=/docs/components-wellbores-depthmarkers--docs)
  * @see {@link DepthMarkerLabel}
  * @see {@link Wellbore}
  * @see {@link Annotations}

@@ -28,7 +28,7 @@ export type TubeTrajectoryProps = CommonComponentProps & CustomMaterialProps & {
  *  <TubeTrajectory radius={2} color="cyan" radialSegments={36} />
  * </Wellbore>
  * 
- * @see [Storybook](/?path=/docs/components-wellbores-tubetrajectory--docs)
+ * @see [Storybook](/videx-3d/?path=/docs/components-wellbores-tubetrajectory--docs)
  * @see {@link Wellbore}
  * 
  * @group Components

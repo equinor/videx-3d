@@ -71,7 +71,7 @@ let x1: number, x2: number, y1: number, y2: number
  * at any time in your project. Using this compoent with an EffectsComposer may cause issues, 
  * and we will likely convert it from being a component into being a post-processing pass at some point. 
  * 
- * @see [Storybook](/?path=/docs/components-misc-annotations--docs)
+ * @see [Storybook](/videx-3d/?path=/docs/components-misc-annotations--docs)
  * @see {@link AnnotationsLayer}
  * 
  * @group Components

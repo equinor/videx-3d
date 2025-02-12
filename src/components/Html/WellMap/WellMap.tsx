@@ -1,13 +1,13 @@
-import './well-map-styles.scss'
 import { PropsWithChildren, useContext, useEffect, useMemo } from 'react'
 import { DataContext } from '../../../contexts/DataContext'
 import { WellboreHeader } from '../../../sdk/data/types/WellboreHeader'
-import { Schematic } from './Schematic'
-import { DepthReadout } from './DepthReadout'
-import { createWellMapState } from './well-map-state'
-import { WellMapContext } from './well-map-context'
-import { DarkTheme, WellMapStyles } from './themes'
 import { clamp } from '../../../sdk/utils/numbers'
+import { DepthReadout } from './DepthReadout'
+import { Schematic } from './Schematic'
+import { DarkTheme, WellMapStyles } from './themes'
+import { WellMapContext } from './well-map-context'
+import { createWellMapState } from './well-map-state'
+import './well-map-styles.scss'
 
 
 /**
@@ -43,7 +43,7 @@ export type WellMapProps = {
  * @remarks
  * The WellMap must be placed as a child of the `DataProvider` component, but outside of the R3F fiber `Canvas` component.
  *  
- * @see [Storybook](/?path=/docs/components-html-wellmap--docs) 
+ * @see [Storybook](/videx-3d/?path=/docs/components-html-wellmap--docs) 
  * @see {@link WellMapStyles}
  * @see {@link WellMapCasingShoes}
  * @see {@link WellMapCompletionIntervals}

@@ -1,13 +1,13 @@
+import { extend, ReactThreeFiber } from '@react-three/fiber'
 import { useEffect, useMemo, useState } from 'react'
+import { BufferGeometry, Color, Line, LineBasicMaterial, Material } from 'three'
 import { useGenerator } from '../../../hooks/useGenerator'
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing'
-import { BufferGeometry, Color, Line, LineBasicMaterial, Material } from 'three'
-import { ReactThreeFiber, extend } from '@react-three/fiber'
 
 import { useWellboreContext } from '../../../hooks/useWellboreContext'
 import { queue } from '../../../sdk/utils/limiter'
-import { basicTrajectory, BasicTrajectoryGeneratorResponse } from './basic-trajectory-defs'
 import { CommonComponentProps, CustomMaterialProps } from '../../common'
+import { basicTrajectory, BasicTrajectoryGeneratorResponse } from './basic-trajectory-defs'
 
 /**
  * BasicTrajectory props
@@ -30,7 +30,7 @@ export type BasicTrajectoryProps = CommonComponentProps & CustomMaterialProps & 
  * @remarks
  * This component depends on the {@link basicTrajectory} generator.
  * 
- * @see [Storybook](/?path=/docs/components-wellbores-basictrajectory--docs) 
+ * @see [Storybook](/videx-3d/?path=/docs/components-wellbores-basictrajectory--docs) 
  * @see [Generators](/docs/documents/generators.html)
  * 
  * @group Components

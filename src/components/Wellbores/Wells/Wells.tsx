@@ -1,7 +1,7 @@
-import { forwardRef, Fragment, ReactNode, useImperativeHandle, useMemo } from 'react'
-import { WellboreHeader } from '../../../sdk/data/types/WellboreHeader'
 import { group } from 'd3-array'
+import { forwardRef, Fragment, ReactNode, useImperativeHandle, useMemo } from 'react'
 import { calculateWellSegments } from '../../../sdk/data/helpers/well-helpers'
+import { WellboreHeader } from '../../../sdk/data/types/WellboreHeader'
 
 /**
  * Wells props
@@ -69,7 +69,7 @@ function calculateSegments(allWellbores: WellboreHeader[], includedWellbores: st
  *   }}
  * />
  * 
- * @see [Storybook](/?path=/docs/components-wellbores-wells--docs) 
+ * @see [Storybook](/videx-3d/?path=/docs/components-wellbores-wells--docs) 
  * 
  * @group Components
  */
