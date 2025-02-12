@@ -3,6 +3,8 @@
 # Introduction
 The purpose of this library is to help you add 3D visualizations of sub surface data to your web applications. It offers a paradigm for connecting data to React components, utilizing Three js and React Three Fiber.
 
+<img src="documents/videx-3d.png" alt="" width="800px">
+
 The library includes a variety of components, both for visualizing and managing data, including:
 - Wellbore trajectories
 - Wellbore data (such as casings, completion tools, picks, shoes etc.)

@@ -23,6 +23,10 @@ const meta = {
     DepthSelectorDecorator,
     DataProviderDecorator,
   ],
+  parameters: {
+    autoClear: true,
+    scale: 1000
+  },
   component: Distance,
 } satisfies Meta<typeof Distance>
 
@@ -56,9 +60,6 @@ export const Default: Story = {
       </>
     )
   },
-  parameters: {
-    scale: 1000
-  }
 }
 
 export const OnDemand: Story = {
@@ -87,7 +88,4 @@ export const OnDemand: Story = {
       </>
     )
   },
-  parameters: {
-    scale: 1000
-  }
 }

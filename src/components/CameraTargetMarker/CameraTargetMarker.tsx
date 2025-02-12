@@ -48,6 +48,8 @@ export const CameraTargetMarker = ({ radius = 3, opacity = 0.1, color, fixedX, f
       controls.addEventListener('update', onUpdate)
     }
 
+    onUpdate()
+
     return () => {
       if (controls) {
         // @ts-expect-error not type declared
