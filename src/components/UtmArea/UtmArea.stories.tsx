@@ -13,7 +13,7 @@ import { UtmPosition } from './UtmPosition'
 import { Wgs84Position } from './Wgs84Position'
 
 const utmZone = storyArgs.utmZone
-
+const origin = storyArgs.origin as Vec2
 
 const converter = proj4(getProjectionDefFromUtmZone(utmZone), wgs84Def)
 
@@ -28,7 +28,7 @@ type Story = StoryObj<typeof meta>
 export const Default: Story = {
   args: {
     utmZone,
-    origin: storyArgs.origin as Vec2,
+    origin,
     originUnits: 'utm',
     offset: [0, 0, 0],
   },

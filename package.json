@@ -3,6 +3,16 @@
   "version": "0.1.0-beta",
   "private": false,
   "type": "module",
+  "license": "MIT",
+  "description": "React 3D component library designed for sub surface visualizations in the browser",
+  "repository": "https://github.com/equinor/videx-3d",
+  "keywords": [
+    "3d",
+    "React",
+    "threejs",
+    "Subsurface",
+    "visualization"
+  ],
   "exports": {
     ".": {
       "import": "./dist/main.js",

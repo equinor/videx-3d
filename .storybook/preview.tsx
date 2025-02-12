@@ -1,4 +1,4 @@
-import type { Preview } from "@storybook/react";
+import type { Preview } from "@storybook/react"
 
 const preview: Preview = {
   parameters: {
@@ -7,12 +7,12 @@ const preview: Preview = {
         height: '600px',
       },
     },
-    // controls: {
-    //   matchers: {
-    //     color: /(background|color)$/i,
-    //     date: /Date$/i,
-    //   },
-    // },
+    controls: {
+      matchers: {
+        color: /(background|color)$/i,
+        date: /Date$/i,
+      },
+    },
   },
   tags: ['autodocs'],  
 };

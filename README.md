@@ -46,7 +46,7 @@ npm i comlink
 
 
 ## Configure
-Rendering complex scenes in the browser (single threaded) can quickly become bottlenecked, degrading user experience. For this reason, components are generally dependant on external data management and processing, which can be offloaded to web workers (but not required).
+Rendering complex scenes in the browser (single threaded) can quickly become bottlenecked, degrading user experience. For this reason, most of the components have been decoupled from data management and processing, by depending on a _store interface_ and _generator_ functions. This allows the heavy work to be offloaded to web workers (but not required).
 
 The recommended setup is to run the data store implementation and generator registry in seperate web workers, and then pass a proxy for these instances to the respective providers. You need to use [Comlink](https://github.com/GoogleChromeLabs/comlink) for this to work.
 
