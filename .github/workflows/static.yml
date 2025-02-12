@@ -38,7 +38,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Build static content
-        run: node scripts/generate-story-args.js && npx storybook build -o static && npx typedoc
+        run: npm run build-static
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
