@@ -1,11 +1,14 @@
 {
   "name": "videx-3d",
-  "version": "0.1.0-beta",
+  "version": "0.1.1-beta",
   "private": false,
   "type": "module",
   "license": "MIT",
   "description": "React 3D component library designed for sub surface visualizations in the browser",
-  "repository": "https://github.com/equinor/videx-3d",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/equinor/videx-3d.git"
+  },
   "keywords": [
     "3d",
     "React",
@@ -13,6 +16,7 @@
     "Subsurface",
     "visualization"
   ],
+  "files": ["dist"],
   "exports": {
     ".": {
       "import": "./dist/main.js",
