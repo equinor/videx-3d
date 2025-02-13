@@ -1,25 +1,25 @@
 import { ThreeEvent, useThree } from '@react-three/fiber'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-    BackSide,
-    Color,
-    DoubleSide,
-    FrontSide,
-    Group,
-    HalfFloatType,
-    LinearFilter,
-    OrthographicCamera,
-    Plane,
-    Ray,
-    ShaderMaterial,
-    Texture,
-    Uniform,
-    Vector2,
-    Vector3,
-    WebGLRenderTarget
+  BackSide,
+  Color,
+  DoubleSide,
+  FrontSide,
+  Group,
+  HalfFloatType,
+  LinearFilter,
+  OrthographicCamera,
+  Plane,
+  Ray,
+  ShaderMaterial,
+  Texture,
+  Uniform,
+  Vector2,
+  Vector3,
+  WebGLRenderTarget
 } from 'three'
+import { clamp } from '../../../sdk'
 import { Vec2, Vec3 } from '../../../sdk/types/common'
-import { clamp } from '../../../sdk/utils/numbers'
 import { CommonComponentProps } from '../../common'
 import { getGridPositionFromUV } from './grid-helpers'
 import { GridAxesLabels } from './GridAxesLabels'
@@ -75,6 +75,12 @@ type Offsets = {
   originOffset: Vec2,
   axesOffset: Vec2,
 }
+
+const initialOffset: Offsets = { originOffset: [0, 0], axesOffset: [0, 0] }
+
+const worldPosition = new Vector3()
+const direction = new Vector3()
+const ray = new Ray()
 
 const projectionMaterial = new ShaderMaterial()
 
@@ -154,7 +160,7 @@ export const Grid = ({
   layers,
 }: GridProps) => {
 
-  const [offsets, setOffsets] = useState<Offsets>({ originOffset: [0, 0], axesOffset: [0, 0] })
+  const [offsets, setOffsets] = useState<Offsets>(initialOffset)
   const [cellSizeFactor, setCellSizeFactor] = useState(1)
   const gridPlane = useMemo(() => new Plane(), [])
 
@@ -188,6 +194,7 @@ export const Grid = ({
     uTextureMix: new Uniform(1),
   })
 
+
   const { controls, camera, gl, scene } = useThree()
 
   const planeOffsetPosition = useMemo<Vec3>(() => [
@@ -215,51 +222,50 @@ export const Grid = ({
   useEffect(() => {
     const container = containerRef.current
     if (container) {
-      const worldPosition = new Vector3()
+
       container.getWorldPosition(worldPosition)
 
-      const offsets: Offsets = {
-        axesOffset: [0, 0],
-        originOffset: [0, 0],
+      const newOffsets: Offsets = {
+        ...initialOffset
       }
 
       if (gridOrigin) {
         // x = uv.x, z = -uv.y
         if (plane === 'xz') {
-          offsets.originOffset[0] = (gridOrigin[0] - worldPosition.x)
-          offsets.originOffset[1] = -(gridOrigin[1] - worldPosition.z)
+          newOffsets.originOffset[0] = (gridOrigin[0] - worldPosition.x)
+          newOffsets.originOffset[1] = -(gridOrigin[1] - worldPosition.z)
         }
         // x = uv.x, y = uv.y
         else if (plane === 'xy') {
-          offsets.originOffset[0] = (gridOrigin[0] - worldPosition.x)
-          offsets.originOffset[1] = (gridOrigin[1] - worldPosition.y)
+          newOffsets.originOffset[0] = (gridOrigin[0] - worldPosition.x)
+          newOffsets.originOffset[1] = (gridOrigin[1] - worldPosition.y)
         }
         // z = -uv.x, y = uv.y
         else if (plane === 'zy') {
-          offsets.originOffset[0] = -(gridOrigin[0] - worldPosition.z)
-          offsets.originOffset[1] = (gridOrigin[1] - worldPosition.y)
+          newOffsets.originOffset[0] = -(gridOrigin[0] - worldPosition.z)
+          newOffsets.originOffset[1] = (gridOrigin[1] - worldPosition.y)
         }
       } else {
-        offsets.originOffset[0] = 0
-        offsets.originOffset[1] = 0
+        newOffsets.originOffset[0] = 0
+        newOffsets.originOffset[1] = 0
       }
 
       if (axesOffset) {
         if (plane === 'xz') {
-          offsets.axesOffset[0] = axesOffset[0] * gridScale[0] - offsets.originOffset[0]
-          offsets.axesOffset[1] = -axesOffset[1] * gridScale[1] - offsets.originOffset[1]
+          newOffsets.axesOffset[0] = axesOffset[0] * gridScale[0] - newOffsets.originOffset[0]
+          newOffsets.axesOffset[1] = -axesOffset[1] * gridScale[1] - newOffsets.originOffset[1]
         }
         else if (plane === 'xy') {
-          offsets.axesOffset[0] = axesOffset[0] * gridScale[0] - offsets.originOffset[0]
-          offsets.axesOffset[1] = axesOffset[1] * gridScale[1] - offsets.originOffset[1]
+          newOffsets.axesOffset[0] = axesOffset[0] * gridScale[0] - newOffsets.originOffset[0]
+          newOffsets.axesOffset[1] = axesOffset[1] * gridScale[1] - newOffsets.originOffset[1]
         }
         else if (plane === 'zy') {
-          offsets.axesOffset[0] = -axesOffset[0] * gridScale[0] - offsets.originOffset[0]
-          offsets.axesOffset[1] = axesOffset[1] * gridScale[1] - offsets.originOffset[1]
+          newOffsets.axesOffset[0] = -axesOffset[0] * gridScale[0] - newOffsets.originOffset[0]
+          newOffsets.axesOffset[1] = axesOffset[1] * gridScale[1] - newOffsets.originOffset[1]
         }
       } else {
-        offsets.axesOffset[0] = 0
-        offsets.axesOffset[1] = 0
+        newOffsets.axesOffset[0] = 0
+        newOffsets.axesOffset[1] = 0
       }
 
       if (plane === 'xz') {
@@ -274,9 +280,18 @@ export const Grid = ({
         gridPlane.normal.set(1, 0, 0)
       }
       gridPlane.constant = worldPosition.length()
-      setOffsets(offsets)
 
-
+      setOffsets(current => {
+        if (
+          current.axesOffset[0] !== newOffsets.axesOffset[0] ||
+          current.axesOffset[1] !== newOffsets.axesOffset[1] ||
+          current.originOffset[0] !== newOffsets.originOffset[0] ||
+          current.originOffset[1] !== newOffsets.originOffset[1]
+        ) {
+          return newOffsets
+        }
+        return current
+      })
     }
   }, [plane, gridOrigin, axesOffset, gridScale, gridPlane])
 
@@ -325,45 +340,8 @@ export const Grid = ({
   ])
 
   useEffect(() => {
-    const direction = new Vector3()
-    const ray = new Ray()
-    // const v0 = new Vector3()
-    // const v1 = new Vector3()
-    // const v2 = new Vector3()
-    // const v3 = new Vector3()
-
-    // const gridArea = size[0] * size[1]
-
     function onControlsUpdate() {
-      if (containerRef.current) {
-        // ray.origin.setFromMatrixPosition(camera.matrixWorld)
-
-        // // cast rays from edges of screen to grid plane
-        // ray.direction.set(-1, 1, 0.5).unproject(camera).sub(ray.origin).normalize()
-        // ray.intersectPlane(gridPlane, v0)
-
-        // ray.direction.set(1, 1, 0.5).unproject(camera).sub(ray.origin).normalize()
-        // ray.intersectPlane(gridPlane, v1)
-
-        // ray.direction.set(1, -1, 0.5).unproject(camera).sub(ray.origin).normalize()
-        // ray.intersectPlane(gridPlane, v2)
-
-        // ray.direction.set(-1, -1, 0.5).unproject(camera).sub(ray.origin).normalize()
-        // ray.intersectPlane(gridPlane, v3)
-
-        // // what if (when) one or more rays don't intersect with the grid plane???
-        // containerRef.current.worldToLocal(v0)
-        // containerRef.current.worldToLocal(v1)
-        // containerRef.current.worldToLocal(v2)
-        // containerRef.current.worldToLocal(v3)
-
-        // const area = 0.5 * Math.abs((v0.x * v1.y - v0.y * v1.x) + (v1.x * v2.y - v1.y * v2.x) + (v2.x * v3.y - v2.y * v3.x) + (v3.x * v0.y - v3.y * v0.x))
-
-
-        // console.log((area / gridArea), area, v0, v1, v2, v3)
-
-        // END TEST
-
+      if (containerRef.current && camera) {
         camera.getWorldDirection(direction)
         ray.set(camera.position, direction)
         const distanceToRay = ray.distanceToPlane(gridPlane)
@@ -397,14 +375,14 @@ export const Grid = ({
       controls?.removeEventListener('update', onControlsUpdate)
     }
   }, [controls, camera, gridPlane, dynamicCellSize, cellSize, cellSizeDistanceFactors, size])
-
+  
   useEffect(() => {
     if (materialRef.current) {
       materialRef.current.needsUpdate = true
     }
   }, [radial, showAxes, dynamicSegments, showRulers])
 
-
+  
   useEffect(() => {
     let renderTarget: WebGLRenderTarget | null = null
     let timer = null
@@ -441,6 +419,7 @@ export const Grid = ({
       renderTarget?.dispose()
     }
   }, [enableProjection, gl, scene, size, projectionDistance, projectionResolution, projectionRefreshRate])
+  
 
   const trackCursor = useCallback((event: ThreeEvent<PointerEvent>) => {
     uniforms.current.uCursorPosition.value.set(event.uv?.x || 0, event.uv?.y || 0)
@@ -453,7 +432,7 @@ export const Grid = ({
     uniforms.current.uCursorPosition.value.set(0, 0)
     if (onRulerUpdate) onRulerUpdate(null)
   }, [onRulerUpdate])
-
+  
   return (
     <group
       ref={containerRef}
@@ -464,7 +443,7 @@ export const Grid = ({
       rotation-y={plane === 'zy' ? Math.PI / 2 : 0}
       position={planeOffsetPosition}
       renderOrder={renderOrder}
-    >
+    >   
       <mesh
         position-z={-0.001 * cellSize}
         onPointerMove={showRulers ? trackCursor : undefined}

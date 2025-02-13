@@ -16,7 +16,9 @@
     "Subsurface",
     "visualization"
   ],
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "import": "./dist/main.js",
@@ -63,11 +65,13 @@
   "devDependencies": {
     "@chromatic-com/storybook": "^3.2.4",
     "@eslint/js": "^9.17.0",
-    "@storybook/addon-essentials": "8.4.7",
-    "@storybook/addon-interactions": "8.4.7",
-    "@storybook/blocks": "8.4.7",
-    "@storybook/react": "8.4.7",
-    "@storybook/react-vite": "8.4.7",
+    "@storybook/addon-essentials": "^8.5.5",
+    "@storybook/addon-interactions": "^8.5.5",
+    "@storybook/blocks": "^8.5.5",
+    "@storybook/manager-api": "^8.5.5",
+    "@storybook/react": "^8.5.5",
+    "@storybook/react-vite": "^8.5.5",
+    "@storybook/theming": "^8.5.5",
     "@types/d3-array": "^3.2.1",
     "@types/d3-axis": "^3.0.6",
     "@types/d3-drag": "^3.0.7",
@@ -94,7 +98,7 @@
     "r3f-perf": "^7.2.1",
     "rimraf": "^6.0.1",
     "sass": "^1.83.1",
-    "storybook": "8.4.7",
+    "storybook": "^8.5.5",
     "typedoc": "^0.27.6",
     "typescript": "^5.2.2",
     "typescript-eslint": "^8.18.2",
