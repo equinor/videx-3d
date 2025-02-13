@@ -5,6 +5,7 @@ import { CommonComponentProps } from '../../common'
 import { BoxPadding, ObservableGroup } from '../../ObservableGroup/ObservableGroup'
 import { Grid } from '../Grid/Grid'
 
+const pos = new Vector3()
 
 /**
  * BoxGrid props
@@ -97,15 +98,32 @@ export const BoxGrid = ({
 
   useEffect(() => {
     if (!autoSize) {
-      setGridPosition(position)
-      setGridSize(size)
+      setGridPosition(current => {
+        if (
+          current[0] !== position[0] ||
+          current[1] !== position[1] ||
+          current[2] !== position[2]
+        ) {
+          return position
+        }
+        return current
+      })
+      setGridSize(current => {
+        if (
+          current[0] !== size[0] ||
+          current[1] !== size[1] ||
+          current[2] !== size[2] 
+        ) {
+          return size
+        }
+        return current
+      })
     }
   }, [size, position, autoSize])
 
   useEffect(() => {
     if (containerRef.current) {
-      const pos = new Vector3()
-      containerRef.current?.getWorldPosition(pos)
+      containerRef.current.getWorldPosition(pos)
       setWorldPosition(pos.toArray())
     }
   }, [gridPosition])

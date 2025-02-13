@@ -76,13 +76,9 @@ type Offsets = {
   axesOffset: Vec2,
 }
 
-const initialOffset: Offsets = { originOffset: [0, 0], axesOffset: [0, 0] }
-
-const worldPosition = new Vector3()
+const projectionMaterial = new ShaderMaterial()
 const direction = new Vector3()
 const ray = new Ray()
-
-const projectionMaterial = new ShaderMaterial()
 
 const defaultCellSizeDistanceFactors = [
   [0, 0.1],
@@ -160,10 +156,10 @@ export const Grid = ({
   layers,
 }: GridProps) => {
 
-  const [offsets, setOffsets] = useState<Offsets>(initialOffset)
+  const [offsets, setOffsets] = useState<Offsets>({ originOffset: [0, 0], axesOffset: [0, 0] })
   const [cellSizeFactor, setCellSizeFactor] = useState(1)
   const gridPlane = useMemo(() => new Plane(), [])
-
+  const worldPosition = useMemo(() => new Vector3(), [])
   const containerRef = useRef<Group>(null)
   const materialRef = useRef<ShaderMaterial>(null)
   const projectionCameraRef = useRef<OrthographicCamera>(null)
@@ -225,9 +221,7 @@ export const Grid = ({
 
       container.getWorldPosition(worldPosition)
 
-      const newOffsets: Offsets = {
-        ...initialOffset
-      }
+      const newOffsets: Offsets = { originOffset: [0, 0], axesOffset: [0, 0] }
 
       if (gridOrigin) {
         // x = uv.x, z = -uv.y
@@ -293,7 +287,7 @@ export const Grid = ({
         return current
       })
     }
-  }, [plane, gridOrigin, axesOffset, gridScale, gridPlane])
+  }, [plane, gridOrigin, axesOffset, gridScale, gridPlane, worldPosition])
 
   useEffect(() => {
     uniforms.current.uBackground.value = new Color(background != undefined ? background : 0x707070)
@@ -342,6 +336,7 @@ export const Grid = ({
   useEffect(() => {
     function onControlsUpdate() {
       if (containerRef.current && camera) {
+
         camera.getWorldDirection(direction)
         ray.set(camera.position, direction)
         const distanceToRay = ray.distanceToPlane(gridPlane)
@@ -375,14 +370,14 @@ export const Grid = ({
       controls?.removeEventListener('update', onControlsUpdate)
     }
   }, [controls, camera, gridPlane, dynamicCellSize, cellSize, cellSizeDistanceFactors, size])
-  
+
   useEffect(() => {
     if (materialRef.current) {
       materialRef.current.needsUpdate = true
     }
   }, [radial, showAxes, dynamicSegments, showRulers])
 
-  
+
   useEffect(() => {
     let renderTarget: WebGLRenderTarget | null = null
     let timer = null
@@ -397,7 +392,7 @@ export const Grid = ({
         if (renderTarget && containerRef.current && projectionCameraRef.current) {
           const projectionCamera = projectionCameraRef.current
           const prevTarget = gl.getRenderTarget()
-          
+
           gl.setRenderTarget(renderTarget)
           scene.overrideMaterial = projectionMaterial
           containerRef.current.visible = false
@@ -419,7 +414,7 @@ export const Grid = ({
       renderTarget?.dispose()
     }
   }, [enableProjection, gl, scene, size, projectionDistance, projectionResolution, projectionRefreshRate])
-  
+
 
   const trackCursor = useCallback((event: ThreeEvent<PointerEvent>) => {
     uniforms.current.uCursorPosition.value.set(event.uv?.x || 0, event.uv?.y || 0)
@@ -432,7 +427,7 @@ export const Grid = ({
     uniforms.current.uCursorPosition.value.set(0, 0)
     if (onRulerUpdate) onRulerUpdate(null)
   }, [onRulerUpdate])
-  
+
   return (
     <group
       ref={containerRef}
@@ -443,7 +438,7 @@ export const Grid = ({
       rotation-y={plane === 'zy' ? Math.PI / 2 : 0}
       position={planeOffsetPosition}
       renderOrder={renderOrder}
-    >   
+    >
       <mesh
         position-z={-0.001 * cellSize}
         onPointerMove={showRulers ? trackCursor : undefined}
@@ -491,7 +486,7 @@ export const Grid = ({
           />
         )}
       </mesh>
-      { enableProjection && (
+      {enableProjection && (
         <orthographicCamera
           ref={projectionCameraRef}
           args={side === 'back' ? [size[0] / 2, size[0] / -2, size[1] / 2, size[1] / -2, 1, projectionDistance] : [size[0] / -2, size[0] / 2, size[1] / 2, size[1] / -2, 1, projectionDistance]}
