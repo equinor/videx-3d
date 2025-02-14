@@ -8,6 +8,6 @@
   "entryPoints": ["src/main.ts", "src/sdk", "src/generators"],
   "excludeExternals": true,
   "exclude": ["node_modules"],
-  "projectDocuments": ["documents/*.md"],
+  "projectDocuments": ["documents/architecture.md", "documents/data.md", "documents/generators.md", "documents/index.md"],
   "out": "./static/docs"
 }
