@@ -103,5 +103,6 @@ If instead you want to run the data store and/or registry on the main thread, si
 For more information see the API docs.
 
 ## Documentation
+- [Getting Started](https://equinor.github.io/videx-3d/docs/documents/getting-started.html)
 - [Storybooks](https://equinor.github.io/videx-3d/)
 - [API docs](https://equinor.github.io/videx-3d/docs)
