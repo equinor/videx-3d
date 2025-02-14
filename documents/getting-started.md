@@ -343,7 +343,7 @@ So let's add the following:
 +   {
 +     segmentsPerMeter: 20,
 +     radialSegments: 60,
-+     computeCurveNormals: true
++     computeNormals: true
 +   }
   )
 ```
