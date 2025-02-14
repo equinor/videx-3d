@@ -31,7 +31,7 @@ export type BasicTrajectoryProps = CommonComponentProps & CustomMaterialProps & 
  * This component depends on the {@link basicTrajectory} generator.
  * 
  * @see [Storybook](/videx-3d/?path=/docs/components-wellbores-basictrajectory--docs) 
- * @see [Generators](/videx-3d/docs/generators.html)
+ * @see [Generators](/videx-3d/docs/documents/generators.html)
  * 
  * @group Components
  */
