@@ -420,11 +420,11 @@ With `thickness` set to 0.3
 
 ![Tube thickness](tube-thickness.png)
 
-There are many more features available. You can play around in [this storybook](/videx-3d/?path=/story/sdk-tube-geometry--default) and [reference the docs](/videx-3d/docs/functions/sdk.createTubeGeometry.html).
+There are many more features available. You can play around in [this storybook](https://equinor.github.io/videx-3d/?path=/story/sdk-tube-geometry--default) and [reference the docs](https://equinor.github.io/videx-3d/docs/functions/sdk.createTubeGeometry.html).
 
 ## Now what?
 This was just a brief introduction with the purpose of getting you up and running. Using the included components are a bit more involved, as you will need to set up a data provider and a generators rigistry. 
 
-Expect more examples to be added in due time, and while waiting, review the existing [documents listed here](/videx-3d/docs/documents/index.html). Also, take a look at the source code to see how the [storybooks](https://github.com/equinor/videx-3d/tree/main/src/storybook) was implemented.
+Expect more examples to be added in due time, and while waiting, review the existing [documents listed here](https://equinor.github.io/videx-3d/docs/documents/index.html). Also, take a look at the source code to see how the [storybooks](https://github.com/equinor/videx-3d/tree/main/src/storybook) was implemented.
 
 Use our library as you see best fit; whether it's using the components as-is or specific functions provided - or just use it as an inspiration or reference for your own creations. But remember to add credits where credits are due :-)
