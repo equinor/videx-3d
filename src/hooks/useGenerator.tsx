@@ -39,7 +39,7 @@ import { GeneratorsContext } from '../contexts/GeneratorsContext'
  *  </mesh>
  * )
  * 
- * @see [Generators](/docs/documents/generators.html)
+ * @see [Generators](/videx-3d/docs/documents/generators.html)
  * 
  * @group Hooks
  */

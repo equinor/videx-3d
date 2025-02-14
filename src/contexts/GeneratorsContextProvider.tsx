@@ -1,7 +1,7 @@
-import { ReactNode, useContext, useEffect, useMemo, useState } from 'react'
-import { DataContext } from './DataContext'
 import { Remote, createEndpoint, proxy, transfer } from 'comlink'
+import { ReactNode, useContext, useEffect, useMemo, useState } from 'react'
 import { GeneratorRegistry } from '../sdk/data/GeneratorRegistry'
+import { DataContext } from './DataContext'
 import { GeneratorsContext } from './GeneratorsContext'
 
 /**
@@ -35,7 +35,7 @@ function isRemoteRegistry(registry: GeneratorRegistry | Remote<GeneratorRegistry
  * @see {@link GeneratorRegistry}
  * @see {@link GeneratorsContext}
  * @see {@link useGenerator}
- * @see [Generators](/docs/documents/generators.html)
+ * @see [Generators](/videx-3d/docs/documents/generators.html)
  * 
  * @group Components
  */

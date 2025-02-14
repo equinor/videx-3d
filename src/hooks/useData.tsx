@@ -21,7 +21,7 @@ import { Store } from '../sdk/data/Store'
  *   }
  * }, [store, id])
  * 
- * @see [Data](/docs/documents/data.html)
+ * @see [Data](/videx-3d/docs/documents/data.html)
  * 
  * @group Hooks
  */

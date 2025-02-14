@@ -1,6 +1,6 @@
+import { Remote, createEndpoint } from 'comlink'
 import { ReactNode, useCallback, useMemo } from 'react'
 import { Store } from '../sdk/data/Store'
-import { Remote, createEndpoint } from 'comlink'
 import { DataContext } from './DataContext'
 
 /**
@@ -34,7 +34,7 @@ function isRemoteStore(store: Store | Remote<Store>): store is Remote<Store> {
  * @see {@link Store}
  * @see {@link DataContext}
  * @see {@link useData}
- * @see [Data](/docs/documents/data.html)
+ * @see [Data](/videx-3d/docs/documents/data.html)
  * 
  * @group Components
  */
