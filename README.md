@@ -34,7 +34,7 @@ npm i videx-3d
 You also need to install the peer-dependicies:
 ```
 // react
-npm i react react-dom
+npm i react@18 react-dom@18
 
 // three js
 npm i three

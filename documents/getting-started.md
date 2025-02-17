@@ -263,6 +263,7 @@ Let's start by adding the package to our project:
   npm i videx-3d
 ```
 
+### Example using the tube geometry
 We will start simple, and experiment with the `createTubeGeometry` function from the SDK. This is a very flexible procedure for generating tube shapes. It is based on the implementation of the `TubeGeometry` from Thee.js, but heavily adapted to the needs of this library as you will see.
 
 A tube is basically a curve with dimensions, and to define a smooth curve from a set of points we need to interpolate. The SDK includes a function `getSplineCurve`, which takes a set of 3d coordinates and returns an interpolator as defined by the `Curve3D` interface. Our implementation is using the [curve-interpolator](https://github.com/kjerandp/curve-interpolator) library, which is set up to interpolate a chordal cubic Hermite spline curve. You can use your own interpolation implementation as long as it implements the `Curve3D` interface.
@@ -422,8 +423,56 @@ With `thickness` set to 0.3
 
 There are many more features available. You can play around in [this storybook](https://equinor.github.io/videx-3d/?path=/story/sdk-tube-geometry--default) and [reference the docs](https://equinor.github.io/videx-3d/docs/functions/sdk.createTubeGeometry.html).
 
+### Adding a BoxGrid
+The grid components included in the `videx-3d` library are not data dependant, so they should be easy to add to our test project. We'll have a look at the `BoxGrid` component, which will add 5 grid planes in a box configuration (imagine an open box with the top removed). This component is using the `Grid` component internally for the grid planes.
+
+The `BoxGrid` component will only render the back sides of the grid planes. If the front face of a grid plane is in the camera's line of sight, it will be hidden, and not obstructing the view of objects inside the grid box. 
+
+First import the component in the `Test.tsx` file:
+
+```ts
+  // Test.tsx
+  import { BoxGrid } from 'videx-3d'
+```
+
+We can wrap our tube inside the box grid and set `autoSize` to true, which will dynamically adjust the grid to its content:
+
+```tsx
+  // Test.tsx
+
+  export const Test = () => {
+    return (
+      <Canvas>
+        <ambientLight intensity={0.1}/>
+        <directionalLight intensity={1.2} position={[1, 2, 3]}/>
+        <CameraControls />
+        <BoxGrid autoSize>
+          <Tube points={[
+            [-10.2, -3, -10],
+            [-2, -5, -15],
+            [10, -5, -14.5],
+            [12, -5, -17.5],
+          ]}/>
+        </BoxGrid>
+      </Canvas>
+    )
+  }
+```
+We should now see a grid surrounding the tube:
+
+![Box grid](box-grid.png)
+
+Let's look at a few features of the `BoxGrid`. The auto size feature we just enabled, is implemented using the lib's `ObservableGroup` component. This is simply a container (`Group` object in Three.js) that will observe it's child components and invoke a callback function when it's content boundary change position or size. The `BoxGrid` component will automatically adjusts its size and position to fit the child objects to the nearest grid unit, determined by the `cellSize` property (default 10). We can also add padding to this behaviour, using the `autoSizePadding` prop, which can either be a:
+- `number`: uniform padding in all directions
+- `Vec3`: uniform padding specified per axis
+- `BoxPadding`: padding specified per direction (x0, x1, y0, y1, z0, z1)
+
+Cross-referencing grid positions in 3d can be tricky using a perspective camera. The `Grid` component has the option to project objects onto the grid plane by adding the prop `enableProjection`, which is also available in the `BoxGrid`. This will draw a _shadow_ (customize the color using the `projectionColor` prop) of the tube on all the grid planes using an ortographic camera aligned with the grid plane normals:
+
+![Grid projection](grid-projection.png)
+
 ## Now what?
-This was just a brief introduction with the purpose of getting you up and running. Using the included components are a bit more involved, as you will need to set up a data provider and a generators rigistry. 
+This was just a brief introduction with the purpose of getting you up and running. Using the data dependant components are a bit more involved, as you will need to set up a data provider and a generators rigistry.
 
 Expect more examples to be added in due time, and while waiting, review the existing [documents listed here](https://equinor.github.io/videx-3d/docs/documents/index.html). Also, take a look at the source code to see how the [storybooks](https://github.com/equinor/videx-3d/tree/main/src/storybook) was implemented.
 
