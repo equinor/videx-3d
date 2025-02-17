@@ -46,7 +46,7 @@ const meta = {
 
     return (
       <group>
-        <group position={[0, 0, 0]}>
+        <group position={[50, 100, -50]}>
           <BoxGrid
             {...args}
           >

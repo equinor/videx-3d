@@ -85,6 +85,14 @@ const Wrapper = () => {
           axesColor="#eee"
           opacity={0.8}
           autoSize
+          autoSizePadding={{
+            x0: 1000,
+            x1: 1000,
+            y0: 100,
+            y1: 0,
+            z0: 1000,
+            z1: 1000,
+          }}
         >
           <Wells
             wellbores={wellbores}

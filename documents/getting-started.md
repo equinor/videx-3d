@@ -472,7 +472,7 @@ Cross-referencing grid positions in 3d can be tricky using a perspective camera.
 ![Grid projection](grid-projection.png)
 
 ## Now what?
-This was just a brief introduction with the purpose of getting you up and running. Using the data dependant components are a bit more involved, as you will need to set up a data provider and a generators rigistry.
+This was just a brief introduction with the purpose of getting you up and running. Using the data dependant components are a bit more involved, as you will need to set up a data provider and a generators registry.
 
 Expect more examples to be added in due time, and while waiting, review the existing [documents listed here](https://equinor.github.io/videx-3d/docs/documents/index.html). Also, take a look at the source code to see how the [storybooks](https://github.com/equinor/videx-3d/tree/main/src/storybook) was implemented.
 
