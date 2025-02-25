@@ -441,6 +441,9 @@ function generateTube(segments: TubeSegment[], radialSegments: number, closed: b
   return { vertices, indices, normals, uvs, vertexCount, indexCount }
 }
 
+/**
+ * Generates a fully customized tube geometry extruded from a curve.
+ */
 export function createTubeGeometry(curve: Curve3D, options: TubeGeometryOptions = {}) {
   const from = clamp(options.from || 0, 0, 1)
   const to = clamp(options.to || 1)

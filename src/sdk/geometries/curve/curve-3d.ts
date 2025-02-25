@@ -7,20 +7,28 @@ import { copyVec3, crossVec3, dotVec3, lengthVec3, normalizeVec3, rotateVec3 } f
  * Interface for interpolating points on a 3d curve
  */
 export interface Curve3D {
+  // get a point at the normalized position (time) along the full curve (0 = start, 1 = end)
   getPointAt: (pos: number) => Vec3
+  // get a number of samples along the curve, optionally specifying a start and end position
   getPoints: (nSamples: number, from?: number, to?: number) => Vec3[]
+  // get the tangent at the normalized position (time) along the full curve (0 = start, 1 = end)
   getTangentAt: (pos: number) => Vec3
+  // get a normal at the normalized position (time) along the full curve (0 = start, 1 = end)
   getNormalAt: (pos: number) => Vec3
+  // get the bounding box of the full curve or optinally the segment between a from and/or to position
   getBoundingBox: (from?: number, to?: number) => {
     min: Vec3,
     max: Vec3,
   }
+  // get the position, point and distance to this point from an abritary point
   nearest: (point: Vec3) => {
     position: number,
     point: Vec3,
     distance: number,
   }
+  // the calculated length of the curve
   length: number,
+  // when enabled, the curve will be closed having it's end point and start point joined
   closed: boolean,
 }
 

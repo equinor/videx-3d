@@ -8,9 +8,13 @@ import { DistanceContext } from './DistanceContext'
  * @expand
  */
 export type DistanceProps = {
+  // the minimal distance for which the child elements of this component is rendered
   min?: number,
+  // the maximum distance for which the child elements of this component is rendered
   max: number,
+  // if enabled, the child elements will only be loaded when within visible range, and will be unloaded/unmounted once it falls out of visible range 
   onDemand?: boolean,
+  // the elements that should be rendered when in visible range (min, max)
   children: ReactNode
 }
 

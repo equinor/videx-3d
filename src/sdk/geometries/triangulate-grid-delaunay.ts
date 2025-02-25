@@ -1,6 +1,8 @@
 import { Delatin } from './delatin'
 
-
+/**
+ * Triangulate an elevation grid using Delaunay triangulation
+ */
 export function triangulateGridDelaunay(grid: Float32Array, columns: number, scaleX = 1, scaleY = 1, nullValue: number = -1, maxError: number = 5) {
   const width = columns
   const height = grid.length / width

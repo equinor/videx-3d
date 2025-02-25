@@ -1,7 +1,7 @@
 import { useContext, useEffect, useState } from 'react'
-import { Grid, GridProps } from './Grid'
 import { Vec2 } from '../../../sdk/types/common'
 import { UtmAreaContext } from '../../UtmArea/UtmAreaContext'
+import { Grid, GridProps } from './Grid'
 
 type GridConfig = {
   origin: Vec2,
@@ -14,6 +14,7 @@ type GridConfig = {
  * @expand
  */
 export type UtmGridProps = GridProps & {
+  // use relative values for axes labels instead of absolute values if enabled
   relativeValues?: boolean
 }
 

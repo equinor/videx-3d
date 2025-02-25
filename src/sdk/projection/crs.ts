@@ -2,6 +2,10 @@ import proj4, { Converter } from "proj4"
 
 export const wgs84Def = '+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs'
 
+/**
+ * Maps between real world UTM coordinates and 3d world coordinates by assigning a known real world 
+ * position to the center of the 3d world and specifying an UTM zone.
+ */
 export class CRS {
   utmDef: string
   originWgs84: [number, number]

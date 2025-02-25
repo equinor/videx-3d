@@ -32,6 +32,10 @@ let renderTarget: WebGLRenderTarget | null = null
 let pixelBuffer: Uint8Array | null = null
 let ndcZs: Float32Array | null = null
 
+/**
+ * Generate a depth buffer and read-back values as normalized device coordinates (ndc)
+ * for objects assigned to the occluder layer
+ */
 export async function getDepthBuffer(
   renderer: WebGLRenderer,
   scene: Scene,

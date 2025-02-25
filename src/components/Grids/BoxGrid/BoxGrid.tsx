@@ -12,28 +12,51 @@ const pos = new Vector3()
  * @expand
  */
 export type BoxGridProps = CommonComponentProps & {
+  // size of the grid box in world units
   size?: Vec3,
+  // the size of a grid cell in world units
   cellSize?: number,
+  // number of sub divisions of a grid cell
   subDivisions?: number,
+  // scale determining axes values and direction along each axis
   gridScale?: Vec3,
+  // world coordinates of the grid origin (origo)
   gridOrigin?: Vec3,
+  // the axes values at the specified origin (default 0,0,0)
   originValue?: Vec3,
+  // line width as a factor of the cell size
   gridLineWidth?: number,
+  // background color of the grid planes
   background?: string | Color | number,
+  // opacity of the grid planes background color 
   backgroundOpacity?: number,
+  // opacity of the grid planes (including grid lines)
   opacity?: number,
+  // the color of the major grid lines
   gridColorMajor?: string | number | Color,
+  // the color of the minor/sub division grid lines
   gridColorMinor?: string | number | Color,
+  // axes color
   axesColor?: string | number | Color,
+  // axes line width as a factor of cell size
   axesLineWidth?: number,
+  // the axes tick size as a factor of cell size
   axesTickSize?: number,
+  // if enabled, project a shade of the objects within the grid planes, using an orthographic camera
   enableProjection?: boolean,
+  // the color of the projected shade when projection is enabled
   projectionColor?: string | number | Color,
+  // the quality/size of the projection texture used when projection is enabled
   projectionResolution?: number,
+  // the update frequency of the projected texture when projection is enabled (ms)
   projectionRefreshRate?: number,
+  // show rulers on the grid planes at the intersection point of the pointer
   showRulers?: boolean,
+  // enable automatic sizing and positioning of the box grid according to its child elements
   autoSize?: boolean,
+  // padding when autosize is enabled
   autoSizePadding?: number | Vec3 | BoxPadding,
+  // update frequency in ms when autosize is enabled
   autoSizeUpdateRate?: number,
 }
 

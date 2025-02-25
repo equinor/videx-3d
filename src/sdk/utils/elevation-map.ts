@@ -14,6 +14,10 @@ export function triangleNormal(p0: Vec3, p1: Vec3, p2: Vec3) {
   return normalizeVec3(crossVec3(a, b))
 }
 
+/**
+ * Encode elevation data to RGBA image values so it can be used as a data texture. Depth
+ * values are required by the surface material to map to color ramps and also for contours.
+ */
 export function elevationMapToRGBA(
   data: Float32Array,
   nullValue: number = -1,
@@ -32,6 +36,9 @@ export function elevationMapToRGBA(
   return buffer
 }
 
+/**
+ * Calcukate and encode surface normals from an elevation grid as RGBA image values. 
+ */
 export function elevationMapNormalsToRGBA(
   data: Float32Array,
   columns: number,
@@ -100,6 +107,9 @@ export function elevationMapNormalsToRGBA(
   return buffer
 }
 
+/**
+ * Create a data texture from RGBA encoded normals
+ */
 export function createNormalTexture(
   buffer: Uint8Array,
   width: number,
@@ -117,6 +127,9 @@ export function createNormalTexture(
   return normalTexture
 }
 
+/**
+ * Create a data texture from RGBA encoded depth values
+ */
 export function createElevationTexture(
   buffer: Uint8Array,
   width: number,

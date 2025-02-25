@@ -31,43 +31,81 @@ import vertexShader from './shaders/vertex.glsl'
  * @expand
  */
 export type GridProps = CommonComponentProps & {
+  // which 2D plane to use for the grid (xz, xy or zy)
   plane: 'xz' | 'xy' | 'zy',
+  // size of the grid plane in world units
   size: Vec2,
+  // the size of a grid cell in world units
   cellSize?: number,
+  // number of sub divisions of a grid cell
   subDivisions?: number,
+  // world coordinates of the grid origin (origo)
   gridOrigin?: Vec2,
+  // scale determining axes values and direction along each axis
   gridScale?: Vec2,
+  // background color of the grid plane
   background?: string | Color | number,
+  // opacity of the grid plane background color 
   backgroundOpacity?: number,
+  // opacity of the grid plane (including grid lines)
   opacity?: number,
+  // the color of the major grid lines
   gridColorMajor?: string | number | Color,
+  // the color of the minor/sub division grid lines
   gridColorMinor?: string | number | Color,
+  // line width as a factor of the cell size
   gridLineWidth?: number,
+  // show/hide axes including labels
   showAxes?: boolean,
+  // show/hide axes labels if showAxes is true
   showAxesLabels?: boolean,
+  // omit the first and last axis label if enabled
   trimAxesLabels?: boolean,
+  // the relative offset of the axes in local coordinates
   axesOffset?: Vec2,
+  // axes color
   axesColor?: string | number | Color,
+  // axes line width as a factor of cell size
   axesLineWidth?: number,
+  // the axes tick size as a factor of cell size
   axesTickSize?: number,
+  // the axes values at the specified origin (default 0,0)
   originValue?: Vec2,
+  // shows a radial grid if set to true 
   radial?: boolean,
+  // progressively adds new segments as distance from the center increases when using radial grid 
   dynamicSegments?: boolean,
+  // show rulers on the grid plane at the intersection point of the pointer
   showRulers?: boolean,
+  // the color of the rulers
   rulerColor?: string | number | Color,
+  // the ruler line width as a factor of the cell size
   rulerLineWidth?: number,
+  // the ruler opacity
   rulerOpacity?: number,
+  // offset along the axis perpendicular to the plane
   planeOffset?: number,
+  // dynamically change cell size depending on camera distance (if set to true)
   dynamicCellSize?: boolean,
+  // control thresholds and extremes when dynamic cell size is enabled
   cellSizeDistanceFactors?: number[][],
+  // side to render 
   side?: 'front' | 'back' | 'both',
+  // allow a texture to be added to the grid plane
   texture?: Texture,
+  // mixing factor for blending texture (if present) with the grid plane (0..1)
   textureMix?: number,
+  // if enabled, project a shade of the objects within range onto the grid plane, using an orthographic camera
   enableProjection?: boolean,
+  // determines the range used for projecting objects onto the plane when enableProjection is set to true 
   projectionDistance?: number,
+  // the color of the projected shade when projection is enabled
   projectionColor?: string | number | Color,
+  // the quality/size of the projection texture used when projection is enabled
   projectionResolution?: number,
+  // the update frequency of the projected texture when projection is enabled (ms)
   projectionRefreshRate?: number,
+  // callback function for retrieving the grid coordinates when grid rulers are enabled
   onRulerUpdate?: ((coords: Vec2 | null) => void) | null,
 }
 
