@@ -266,7 +266,7 @@ Let's start by adding the package to our project:
 ### Example using the tube geometry
 We will start simple, and experiment with the `createTubeGeometry` function from the SDK. This is a very flexible procedure for generating tube shapes. It is based on the implementation of the `TubeGeometry` from Thee.js, but heavily adapted to the needs of this library as you will see.
 
-A tube is basically a curve with dimensions, and to define a smooth curve from a set of points we need to interpolate. The SDK includes a function `getSplineCurve`, which takes a set of 3d coordinates and returns an interpolator as defined by the `Curve3D` interface. Our implementation is using the [curve-interpolator](https://github.com/kjerandp/curve-interpolator) library, which is set up to interpolate a chordal cubic Hermite spline curve. You can use your own interpolation implementation as long as it implements the `Curve3D` interface.
+A tube is basically a curve with dimensions, and to define a smooth curve from a set of points we need to interpolate. The SDK (Software Developement Kit: `videx-3d/sdk`) includes a function `getSplineCurve`, which takes a set of 3d coordinates and returns an interpolator as defined by the `Curve3D` interface. Our implementation is using the [curve-interpolator](https://github.com/kjerandp/curve-interpolator) library, which is set up to interpolate a chordal cubic Hermite spline curve. You can use your own interpolation implementation as long as it implements the `Curve3D` interface.
 
 In this example we will create a new component, which will generate a tube geometry and render it using the standard material from Three.js. Let's create a new file and component `Tube.tsx`:
 
