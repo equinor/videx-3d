@@ -8,12 +8,19 @@ import { Color, Group, Vector3 } from 'three'
  * @expand
  */
 export type CameraTargetMarkerProps = {
+  // radius in world units of the camera target marker
   radius?: number
+  // opacity of the rendered marker
   opacity?: number,
+  // color of the rendered marker
   color?: number | string | Color
+  // fix/lock the position of the camera target marker to a specific position along the x-axis. Can be useful if you add multiple camera targets
   fixedX?: number
+  // fix/lock the position of the camera target marker to a specific position along the y-axis. Can be useful if you add multiple camera targets
   fixedY?: number
+  // fix/lock the position of the camera target marker to a specific position along the z-axis. Can be useful if you add multiple camera targets
   fixedZ?: number
+  // render order
   renderOrder?: number
 }
 

@@ -1,3 +1,6 @@
+/**
+ * Parses irabin surface/horizon binary files and return the header information and elevation data 
+ */
 export async function parseIrapbin(blob: Blob, nullValue = -1, refDepth: number | null = null) {
   const buffer = await blob.arrayBuffer()
   const view = new DataView(buffer)

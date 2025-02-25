@@ -1,18 +1,44 @@
-import { PositionLog } from "../data/types/PositionLog";
+import { PositionLog } from "../data/types/PositionLog"
+import { Curve3D, getSplineCurve } from '../geometries/curve/curve-3d'
 import { Vec3 } from '../types/common'
-import { getSplineCurve } from '../geometries/curve/curve-3d'
 import { clamp } from './numbers'
-import { Curve3D } from '../geometries/curve/curve-3d'
 
+/**
+ * Interface for defining a trajectory. This can be used to work with wellbore trajectories,
+ * where the measured top, termination point and length are known. The measured length should 
+ * be used when calculating positions of data given in MD, so that the position on the curve is
+ * given by:
+ * 
+ * @example
+ * const pos = (md - trajectory.measuredTop) / trajectory.measuredLength
+ * 
+ * @remarks
+ * Avoid using the calculated length of the curve for this purpose, as this may potentially be less precise/consistant.
+ * The `getPointAtDepth` function in this interface is calculated as in the above example when created using the `getTrajectory` function.
+ * 
+ * @see {@link getTrajectory}
+ * @see {@link Curve3D}
+ */
 export interface Trajectory {
+  // a unique id, typically wellbore id
   id: string | number
+  // the known measured length of the trajectory
   measuredLength: number
+  // the known measured depth (msl) at the top of the trajectory
   measuredTop: number
+  // the known measured depth (msl) at the termination point of the trajectory
   measuredBottom: number
+  // curve defining the trajectory for interpolation purposes
   curve: Curve3D
+  // get the point along the trajectory according to a MD msl value. Returns null if out of range.
   getPointAtDepth: (md: number, clamped?: boolean) => Vec3 | null
 }
 
+/**
+ * Creates an instance conforming to the `Trajectory` interface, given an id and a position log normalized to MSL depths.
+ * 
+ * @see {@link Trajectory}
+ */
 export function getTrajectory(id: string, poslogMsl: PositionLog | null) : Trajectory | null {
   if (!poslogMsl || poslogMsl.length < 2 * 4) return null;
   const [origEast, , origNorth] = poslogMsl;

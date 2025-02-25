@@ -42,6 +42,9 @@ let pixelBuffer: Uint8Array | null = null
 
 postScene.add(postQuad);
 
+/**
+ * Read-back the normalized device coordinates from a depth texture
+ */
 export async function readDepth(depthTexture: Texture, renderer: WebGLRenderer, camera: PerspectiveCamera, idx?: number) {
   if (!depthTexture) return null;
  
