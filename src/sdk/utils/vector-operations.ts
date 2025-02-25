@@ -7,7 +7,6 @@ export function negateVec3(vec: Vec3) {
   vec[0] = -vec[0]
   vec[1] = -vec[1]
   vec[2] = -vec[2]
-
   return vec
 }
 
@@ -87,20 +86,20 @@ export function angleVec3(v1: Vec3, v2: Vec3): number {
 }
 
 export function rotateVec3(vector: Vec3, axis: Vec3 = [0, 1, 0], angle = 0) : Vec3 {
-  const c = Math.cos(angle);
-  const s = Math.sin(angle);
+  const c = Math.cos(angle)
+  const s = Math.sin(angle)
 
   const t = 1 - c;
 
-  const vx = vector[0];
-  const vy = vector[1];
-  const vz = vector[2];
+  const vx = vector[0]
+  const vy = vector[1]
+  const vz = vector[2]
 
-  const ax = axis[0];
-  const ay = axis[1];
-  const az = axis[2];
+  const ax = axis[0]
+  const ay = axis[1]
+  const az = axis[2]
 
-  const tx = t * ax, ty = t * ay;
+  const tx = t * ax, ty = t * ay
   
   return [
     (tx * ax + c) * vx + (tx * ay - s * az) * vy + (tx * az + s * ay) * vz,
@@ -111,6 +110,10 @@ export function rotateVec3(vector: Vec3, axis: Vec3 = [0, 1, 0], angle = 0) : Ve
 
 
 // Vec2
+export function getVec2(buffer: number[], id: number): Vec2 {
+  return [buffer[id], buffer[id + 1]]
+}
+
 export function setVec2(buffer: number[], id: number, value: Vec2): void {
   buffer[id] = value[0]
   buffer[id + 1] = value[1]
@@ -129,6 +132,13 @@ export function addVec2(v1: Vec2, v2: Vec2): Vec2 {
 
 export function subVec2(v1: Vec2, v2: Vec2): Vec2 {
   return [v1[0] - v2[0], v1[1] - v2[1]]
+}
+
+export function negateVec2(vec: Vec2) {
+  vec[0] = -vec[0]
+  vec[1] = -vec[1]
+
+  return vec
 }
 
 export function scaleVec2(vec: Vec2, factor: number): Vec2 {

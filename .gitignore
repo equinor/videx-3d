@@ -34,3 +34,6 @@ import
 
 # Static
 static
+
+# Test coverage
+coverage
