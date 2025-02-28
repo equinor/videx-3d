@@ -31,7 +31,7 @@ This library has dependencies to the following libs:
 npm i videx-3d
 ```
 
-You also need to install the peer-dependicies:
+You also need to install the peer-dependencies:
 ```
 // react
 npm i react@18 react-dom@18
@@ -100,7 +100,7 @@ const ExampleApp = () => (
 ```
 If instead you want to run the data store and/or registry on the main thread, simply create and pass an instance directly to the provider.
 
-For more information see the API docs.
+For more information see the documentation section below.
 
 ## Documentation
 - [Getting Started](https://github.com/equinor/videx-3d/blob/main/documents/getting-started.md)

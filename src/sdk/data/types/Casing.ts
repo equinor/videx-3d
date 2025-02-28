@@ -8,7 +8,3 @@ export type CasingItem = {
   
 }
 
-export type CasingSection = CasingItem & {
-  shoe: CasingItem | null,
-}
-

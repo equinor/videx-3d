@@ -41,6 +41,8 @@ export async function myGeneratorFunction(this: ReadonlyStore, id: string) {
   // return processed data 
 }
 ```
+Have a look in the [source code](https://github.com/equinor/videx-3d/tree/main/src/generators) to see examples of how generator functions can be implemented.
+
 Note that if the generators are run in a web worker context, you need to be aware of how data is moved from one thread to another (see [The structured clone algorithm](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Structured_clone_algorithm)).
 
 As data is serialized and copied when passed across threads, you should take advantage of data types that are [_transferable_](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Transferable_objects). This can be done using the [`transfer`](https://github.com/GoogleChromeLabs/comlink?tab=readme-ov-file#comlinktransfervalue-transferables-and-comlinkproxyvalue) function with `comlink` in the return statement:
