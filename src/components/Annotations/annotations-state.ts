@@ -1,14 +1,14 @@
+import { createRef } from 'react'
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import { AnnotationInstance, AnnotationLayer, AnnotationProps } from './types'
-import { createRef } from 'react'
 
 export type AnnotationsState = {
   visible: boolean
   update: {
     required: boolean
-    ref: number | null
-    setRef: (v: number) => void
+    ref: ReturnType<typeof setTimeout> | null
+    setRef: (v: ReturnType<typeof setTimeout>) => void
   }
   layers: Record<string, AnnotationLayer>
   annotations: Record<string, AnnotationProps[]>
@@ -45,7 +45,7 @@ export const useAnnotationsState = create<
     update: {
       required: false,
       ref: null,
-      setRef: (v:number) =>
+      setRef: (v:ReturnType<typeof setTimeout>) =>
         set((state) => ({ update: { ...state.update, ref: v } })),
     },
     layers: {},
@@ -226,7 +226,7 @@ useAnnotationsState.subscribe(
       if (updateState.ref) {
         clearTimeout(updateState.ref)
       }
-      const timeoutRef = setTimeout(() => updateInstances(), 500)
+      const timeoutRef: ReturnType<typeof setTimeout> = setTimeout(() => updateInstances(), 500)
       updateState.setRef(timeoutRef)
       // if (updateState.ref === null) {
       //   const timeoutRef = setTimeout(() => updateInstances(), 1000)

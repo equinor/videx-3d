@@ -13,7 +13,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "types": ["vite-plugin-glsl/ext", "jest"],
+    "types": ["vite-plugin-glsl/ext", "vitest/globals"],
 
     /* Linting */
     "strict": true,
@@ -21,6 +21,6 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"],
+  "include": ["src", "tests"],
   "exclude": ["vite.config.ts", "vite.config.static.ts"],
 }
