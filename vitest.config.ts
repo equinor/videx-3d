@@ -5,7 +5,7 @@ export default defineConfig({
     globals: true,
     environment: 'node', 
     coverage: {
-      reporter: ['text', 'json', 'html', 'clover'],
+      reporter: ['text', 'json', 'html'],
       include: ['src'],
       exclude: ['src/storybook', '**/*.tsx']
     },
