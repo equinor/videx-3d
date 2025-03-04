@@ -13,7 +13,7 @@ dist-ssr
 *.local
 
 # Editor directories and files
-.VSCodeCounter
+.VSCodeCounter/
 #.vscode
 !.vscode/extensions.json
 .idea
@@ -26,14 +26,14 @@ dist-ssr
 .cache
 
 # private folder
-private
-import
+private/
+import/
 
 # Deprecated
-.deprecated
+.deprecated/
 
 # Static
-static
+static/
 
 # Test coverage
-coverage
+coverage/
