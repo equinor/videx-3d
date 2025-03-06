@@ -143,7 +143,7 @@ export const ObservableGroup = (props: PropsWithChildren<ObservableGroupProps>) 
   }, [padding])
 
   useEffect(() => {
-    let interval: number | null = null
+    let interval: ReturnType<typeof setTimeout> | null = null
 
     if (onChange && enabled) {
       interval = setInterval(() => {
