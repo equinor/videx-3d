@@ -1,4 +1,4 @@
-import { GroupProps } from '@react-three/fiber'
+import { ThreeElements } from '@react-three/fiber'
 import { PropsWithChildren, useEffect, useMemo, useRef } from 'react'
 import { Box3, Group, Vector3 } from 'three'
 import { Vec3 } from '../../sdk'
@@ -66,7 +66,7 @@ export type BoxPadding = {
  * ObservableGroup props
  * @expand
  */
-export type ObservableGroupProps = GroupProps & {
+export type ObservableGroupProps = ThreeElements['group'] & {
   padding?: number | Vec3 | BoxPadding
   snapTo?: number
   updateRate?: number

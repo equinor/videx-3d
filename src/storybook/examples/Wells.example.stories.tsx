@@ -211,13 +211,6 @@ const Example = (args: ExampleProps) => {
           />
         )}
 
-        {/* <UtmPosition easting={origin[0]} northing={origin[1]} altitude={-2500}>
-          <mesh>
-            <sphereGeometry args={[100]} />
-            <meshNormalMaterial />
-          </mesh>
-        </UtmPosition> */}
-
         {surface && (<UtmPosition easting={surface.header.xori} northing={surface.header.yori}>
           <Surface
             meta={surface}
@@ -473,7 +466,7 @@ export const Default: Story = {
     showDepthMarkers: false,
     showCasingAndCompletion: false,
     showPerforations: true,
-    showCameraTarget: true,
+    showCameraTarget: false,
     sizeMultiplier: 3,
     casingOpacity: 1,
     gridCellSize: 500,

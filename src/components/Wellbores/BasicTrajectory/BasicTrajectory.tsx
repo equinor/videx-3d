@@ -1,6 +1,6 @@
-import { extend, ReactThreeFiber } from '@react-three/fiber'
+
 import { useEffect, useMemo, useState } from 'react'
-import { BufferGeometry, Color, Line, LineBasicMaterial, Material } from 'three'
+import { BufferGeometry, Color, LineBasicMaterial, Material } from 'three'
 import { useGenerator } from '../../../hooks/useGenerator'
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing'
 
@@ -97,7 +97,7 @@ export const BasicTrajectory = ({
   if (!geometry) return null
 
   return (
-    <line_ 
+    <threeLine 
       name={name}
       position={position}
       userData={userData}
@@ -113,16 +113,3 @@ export const BasicTrajectory = ({
     />
   )
 }
-
-
-/** Typescript/JSX namespace workaround */
-declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
-  namespace JSX {
-    interface IntrinsicElements {
-      line_: ReactThreeFiber.Object3DNode<Line, typeof Line>
-    }
-  }
-}
-
-extend({ Line_: Line })

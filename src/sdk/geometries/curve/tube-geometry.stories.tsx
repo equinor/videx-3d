@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { BufferGeometry } from 'three'
 import { VertexNormalsHelper } from 'three/examples/jsm/Addons.js'
 import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
-import { PerformanceDecorator } from '../../../storybook/decorators/performance-decorator'
+//import { PerformanceDecorator } from '../../../storybook/decorators/performance-decorator'
 import { Vec3 } from '../../types/common'
 import { getSplineCurve } from './curve-3d'
 import { TubeGeometryOptions, createTubeGeometry } from './tube-geometry'
@@ -170,7 +170,7 @@ export const Default: Story = {
     },
   },
   decorators: [
-    PerformanceDecorator,
+    //PerformanceDecorator,
     Canvas3dDecorator
   ],
   parameters: {

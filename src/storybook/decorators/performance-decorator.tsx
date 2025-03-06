@@ -1,8 +1,8 @@
-import { Perf } from 'r3f-perf'
+// import { Perf } from 'r3f-perf'
 
-export const PerformanceDecorator = (Story: any) => (
-  <>
-    <Perf />
-    <Story />
-  </>
-)
+// export const PerformanceDecorator = (Story: any) => (
+//   <>
+//     <Perf />
+//     <Story />
+//   </>
+// )

@@ -1,16 +1,16 @@
 import type { Meta, StoryObj } from '@storybook/react'
-import { Wellbore } from '../Wellbore/Wellbore'
 import { useEffect } from 'react'
-import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator'
-import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator'
 import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
-import { PerformanceDecorator } from '../../../storybook/decorators/performance-decorator'
-import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator'
+import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator'
+import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator'
+import { Wellbore } from '../Wellbore/Wellbore'
+//import { PerformanceDecorator } from '../../../storybook/decorators/performance-decorator'
 import { WellboreSelectedEvent } from '../../../events/wellbore-events'
 import { AnnotationsDecorator } from '../../../storybook/decorators/annotations-decorator'
+import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator'
+import storyArgs from '../../../storybook/story-args.json'
 import { TubeTrajectory } from '../TubeTrajectory/TubeTrajectory'
 import { DepthMarkers } from './DepthMarkers'
-import storyArgs from '../../../storybook/story-args.json'
 
 const wellboreOptions = storyArgs.wellboreOptions
 const wellboreId = storyArgs.defaultWellbore
@@ -47,7 +47,7 @@ export const Default: Story = {
     }
   },
   decorators: [
-    PerformanceDecorator,
+    //PerformanceDecorator,
     AnnotationsDecorator,
     Canvas3dDecorator,
     GeneratorsProviderDecorator,
