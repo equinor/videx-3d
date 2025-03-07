@@ -31,21 +31,33 @@ This library has dependencies to the following libs:
 npm i videx-3d
 ```
 
-You also need to install the peer-dependencies:
+You also need to install the required peer-dependencies. 
+
+First, if not already installed, you'll need React version 18 or later:
 ```
 // react
-npm i react@18 react-dom@18
+npm i react react-dom
+```
 
+React Three Fiber (R3F):
+```
+// react three fiber 
+npm i @react-three/fiber
+```
+Note that if using React 18, you need `@react-three/fiber` version 8.
+
+Depending on your needs you might consider installing the following additional packages:
+```
 // three js
 npm i three
 
-// react three fiber
-npm i @react-three/fiber
+// drei 
+npm i @react-three/drei
 
-// comlink
+// comlink - if using web workers
 npm i comlink
 ```
-
+Note that if using React 18, you need `@react-three/drei` version 9.
 
 ## Configure
 Rendering complex scenes in the browser (single threaded) can quickly become bottlenecked, degrading user experience. For this reason, most of the components have been decoupled from data management and processing, by depending on a _store interface_ and _generator_ functions. This allows the heavy work to be offloaded to web workers (but not required).

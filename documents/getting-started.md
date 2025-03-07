@@ -2,22 +2,23 @@
 
 ## Creating a React app
 
-First, we need a basic React web application running. At the time being this must be React v18 due to missing support for v19 in peer dependencies.
-
-To create a new React v18 app, you can use Next.js:
+First, we need a basic React web application running. Quickest and easiest way to do so it to use Vite:
 
 ```
-npx create-next-app@14
+npm create vite@latest my-app --template react
+cd my-app
+npm install
+npm run dev
 ```
 
-Please note that we have to use next version 14 for react v18!
+Note that we need react v18 or later, and typescript is recommended.
 
 ## Installing peer dependencies
 
-Besides React, we will also need threejs, react three fiber and comlink:
+Besides React, we will also need to install react three fiber:
 
 ```
-npm install three @react-three/fiber comlink
+npm install three @react-three/fiber
 ```
 
 ## Make a simple 3d scene
@@ -27,8 +28,6 @@ Before adding the `videx-3d` components library we should create a basic 3d scen
 In this example, we will be using typescript. We start by creating a new file for a component named "Test.tsx":
 
 ```tsx
-'use client' // <-- if using next
-
 // Test.tsx
 import { Canvas } from '@react-three/fiber'
 
@@ -47,10 +46,10 @@ export const Test = () => {
 Then import this file and render the Scene component in your app:
 
 ```tsx
-// page.tsx
+// App.tsx
 import { Test } from './Test'
 
-export default function Home() {
+export default function App() {
   return (
     <div style={{ width: `100vw`, height: `100vh` }}>
       <Test />
@@ -308,10 +307,8 @@ We return a mesh element, this time passing the generated geometry as a prop to 
 Let's replace the cubes from our earlier example with the new Tube component:
 
 ```tsx
-'use client' // <-- if using next
 
 // Test.tsx
-
 import { CameraControls } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
 import { Tube } from './Tube'

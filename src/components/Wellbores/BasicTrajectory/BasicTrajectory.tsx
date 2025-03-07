@@ -1,14 +1,16 @@
 
 import { useEffect, useMemo, useState } from 'react'
-import { BufferGeometry, Color, LineBasicMaterial, Material } from 'three'
+import { BufferGeometry, Color, Line, LineBasicMaterial, Material } from 'three'
 import { useGenerator } from '../../../hooks/useGenerator'
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing'
 
+import { extend } from '@react-three/fiber'
 import { useWellboreContext } from '../../../hooks/useWellboreContext'
 import { queue } from '../../../sdk/utils/limiter'
 import { CommonComponentProps, CustomMaterialProps } from '../../common'
 import { basicTrajectory, BasicTrajectoryGeneratorResponse } from './basic-trajectory-defs'
 
+extend({ 'ThreeLine': Line })
 /**
  * BasicTrajectory props
  * @expand
