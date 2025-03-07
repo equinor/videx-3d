@@ -1,7 +1,7 @@
 export async function get(url: string): Promise<any> {
 
   // use correct path when not running locally
-  if (!self.location.origin.startsWith('http://localhost')) {
+  if (!self.location.origin.startsWith('http://')) {
     url = '/videx-3d' + url
   }
 

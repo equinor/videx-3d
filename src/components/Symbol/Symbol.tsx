@@ -1,7 +1,7 @@
-import { BufferGeometry, InstancedBufferAttribute, InstancedMesh, Layers, Material } from 'three'
-import { SymbolsType } from '../../sdk/data/types/Symbol'
 import { forwardRef, useEffect, useImperativeHandle, useMemo } from 'react'
+import { BufferGeometry, InstancedBufferAttribute, InstancedMesh, Layers, Material } from 'three'
 import { PointerEvents } from '../../events/interaction-events'
+import { SymbolsType } from '../../sdk/data/types/Symbol'
 import { EventEmitterCallback, useEventEmitter } from '../Handlers/EventEmitter/EventEmitterContext'
 import { CommonComponentProps } from '../common'
 
@@ -71,7 +71,7 @@ export const Symbols = forwardRef<InstancedMesh, SymbolProps>(({
     }
 
     if (layers) {
-      const mask =  layers instanceof Layers ? layers.mask : layers
+      const mask =  layers instanceof Layers ? layers.mask : layers as number
       mesh.layers.mask = mask
     }
 

@@ -1,7 +1,7 @@
 import { CameraControls } from '@react-three/drei'
-import { Vec3 } from '../types/common'
 import { Vector3 } from 'three'
 import { cameraFocusAtPointEventType, cameraSetPositionEventType } from '../../events/camera-events'
+import { Vec3 } from '../types/common'
 
 const cameraTarget = new Vector3()
 const cameraPosition = new Vector3()

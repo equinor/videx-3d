@@ -3,15 +3,9 @@ import { resolve } from 'path'
 import { defineConfig } from 'vite'
 import cssInjectedByJsPlugin from "vite-plugin-css-injected-by-js"
 import dts from 'vite-plugin-dts'
+import { externalizeDeps } from 'vite-plugin-externalize-deps'
 import glsl from 'vite-plugin-glsl'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
-import pkg from './package.json' with { type: 'json' }
-
-
-const externalDependencies = Object.keys({
-  ...pkg.peerDependencies,
-  ...pkg.dependencies,
-})
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -23,6 +17,7 @@ export default defineConfig({
     }
   },
   plugins: [
+    externalizeDeps(),
     react(),
     glsl(),
     cssInjectedByJsPlugin({
@@ -60,7 +55,6 @@ export default defineConfig({
       output: {
         chunkFileNames: 'chunk-[hash].js',
       },
-      external: ['@babel/runtime', 'react/jsx-runtime', ...externalDependencies],
       treeshake: 'recommended'
     },
   }

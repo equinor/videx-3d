@@ -30,7 +30,7 @@ export type AnnotationLayer = {
   connectorWidth: number
   connectorColor: string
   onClick?: (annotation: AnnotationComponentProps) => void
-  labelComponent?: (props: AnnotationComponentProps) => JSX.Element
+  labelComponent?: (props: AnnotationComponentProps) => React.JSX.Element
   //annotations: AnnotationProps[],
 }
 
@@ -74,7 +74,7 @@ export type AnnotationInstanceState = {
 
 export type AnnotationInstance = {
   id: string
-  ref: RefObject<HTMLDivElement> | null
+  ref: RefObject<HTMLDivElement | null> | null
   layer: AnnotationLayer
   annotation: AnnotationProps
   priority: number

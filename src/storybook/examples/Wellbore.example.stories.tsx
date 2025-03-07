@@ -1,26 +1,26 @@
 import type { Meta, StoryObj } from '@storybook/react'
-import storyArgs from '../story-args.json'
-import { Wellbore } from '../../components/Wellbores/Wellbore/Wellbore'
-import { GeneratorsProviderDecorator } from '../decorators/generators-provider-decorator'
-import { DataProviderDecorator } from '../decorators/data-provider-decorator'
-import { Canvas3dDecorator } from '../decorators/canvas-3d-decorator'
-import { BasicTrajectory } from '../../components/Wellbores/BasicTrajectory/BasicTrajectory'
-import { CompletionTools } from '../../components/Wellbores/CompletionTools/CompletionTools'
-import { Casings } from '../../components/Wellbores/Casings/Casings'
 import { useEffect } from 'react'
-import { PerformanceDecorator } from '../decorators/performance-decorator'
-import { Perimeter } from '../../components/Wellbores/Perimeter/Perimeter'
-import { CasingAnnotations } from '../../components/Wellbores/Casings/CasingAnnotations/CasingAnnotations'
-import { DepthSelectorDecorator } from '../decorators/depth-selector-decorator'
-import { WellboreSelectedEvent } from '../../events/wellbore-events'
+import { BasicTrajectory } from '../../components/Wellbores/BasicTrajectory/BasicTrajectory'
+import { Casings } from '../../components/Wellbores/Casings/Casings'
+import { CompletionTools } from '../../components/Wellbores/CompletionTools/CompletionTools'
+import { Wellbore } from '../../components/Wellbores/Wellbore/Wellbore'
+import { Canvas3dDecorator } from '../decorators/canvas-3d-decorator'
+import { DataProviderDecorator } from '../decorators/data-provider-decorator'
+import { GeneratorsProviderDecorator } from '../decorators/generators-provider-decorator'
+import storyArgs from '../story-args.json'
+//import { PerformanceDecorator } from '../decorators/performance-decorator'
 import { Annotations } from '../../components/Annotations/Annotations'
-import { AnnotationsLayer } from '../../components/Annotations/AnnotationsLayer'
-import { CasingLabel } from '../../components/Wellbores/Casings/CasingAnnotations/CasingLabel'
-import { AnnotationComponentProps } from '../../components/Annotations/types'
-import { CameraFocusAtPointEvent } from '../../events/camera-events'
-import { CompletionAnnotations } from '../../components/Wellbores/CompletionTools/CompletionAnnotations/CompletionAnnotations'
 import { useAnnotationsState } from '../../components/Annotations/annotations-state'
+import { AnnotationsLayer } from '../../components/Annotations/AnnotationsLayer'
+import { AnnotationComponentProps } from '../../components/Annotations/types'
+import { CasingAnnotations } from '../../components/Wellbores/Casings/CasingAnnotations/CasingAnnotations'
+import { CasingLabel } from '../../components/Wellbores/Casings/CasingAnnotations/CasingLabel'
+import { CompletionAnnotations } from '../../components/Wellbores/CompletionTools/CompletionAnnotations/CompletionAnnotations'
 import { Perforations } from '../../components/Wellbores/Perforations/Perforations'
+import { Perimeter } from '../../components/Wellbores/Perimeter/Perimeter'
+import { CameraFocusAtPointEvent } from '../../events/camera-events'
+import { WellboreSelectedEvent } from '../../events/wellbore-events'
+import { DepthSelectorDecorator } from '../decorators/depth-selector-decorator'
 
 const meta = {
   title: 'examples/Wellbore',
@@ -98,7 +98,7 @@ export const Default: Story = {
     },
   },
   decorators: [
-    PerformanceDecorator,
+    //PerformanceDecorator,
     Canvas3dDecorator,
     GeneratorsProviderDecorator,
     DepthSelectorDecorator,
