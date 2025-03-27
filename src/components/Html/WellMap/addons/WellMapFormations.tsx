@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useData } from '../../../../hooks/useData'
 import { scaleLinear } from 'd3-scale'
 import { nanoid } from 'nanoid'
-import { Pick } from '../../../../sdk/data/types/Pick'
+import { useEffect, useMemo, useState } from 'react'
+import { useData } from '../../../../hooks/useData'
+import { createFormationIntervals, FormationColumnInterval, getUnitPicks, mergeFormationIntervals } from '../../../../sdk/data/helpers/picks-helpers'
 import { useWellMapState } from '../well-map-context'
 
 type Interval = {
@@ -20,7 +20,7 @@ type Interval = {
  * @expand
  */
 export type WellMapFormationsProps = {
-  formations: string[]
+  stratColumnId: string
 }
 
 /**
@@ -29,15 +29,14 @@ export type WellMapFormationsProps = {
  * 
  * @see {@link WellMap}
  */
-export const WellMapFormations = ({ formations }: WellMapFormationsProps) => {
+export const WellMapFormations = ({ stratColumnId }: WellMapFormationsProps) => {
 
   const store = useData()
 
-  const [picksData, setPicksData] = useState<Record<string, Pick[]> | null>(null)
+  const [picksData, setPicksData] = useState<Record<string, FormationColumnInterval[]> | null>(null)
 
   const wellMapState = useWellMapState()
   const wellboreIds = wellMapState(state => state.wellboreIds)
-  const wellboresById = wellMapState(state => state.wellboresById)
   const domain = wellMapState(state => state.domain)
   const range = wellMapState(state => state.measures.range)
   const ratio = wellMapState(state => state.measures.ratio)
@@ -49,19 +48,26 @@ export const WellMapFormations = ({ formations }: WellMapFormationsProps) => {
 
   useEffect(() => {
     if (store) {
-      const pickDataPromises = wellboreIds.map(id => store.get<Pick[]>('picks', id))
+      const pickDataPromises = wellboreIds.map(id => getUnitPicks(id, stratColumnId, store, true))
 
       Promise.all(pickDataPromises).then(response => {
         if (response) {
-          const data = response.reduce((acc, d, i) => ({
-            ...acc,
-            [wellboreIds[i]]: d !== null ? d.sort((a, b) => a.mdMsl - b.mdMsl) : [],
-          }), {})
+          const data = response.reduce((acc, d, i) => {
+            let intervals: FormationColumnInterval[] = []
+            if (d?.matched) {
+              const formations = createFormationIntervals(d.matched, d.wellbore.depthMdMsl)
+              intervals = mergeFormationIntervals(formations)
+            }
+            return {
+              ...acc,
+              [wellboreIds[i]]: intervals,
+            }
+          }, {})
           setPicksData(data)
         }
       })
     }
-  }, [wellboreIds, store])
+  }, [wellboreIds, stratColumnId, store])
 
   const intervals = useMemo(() => {
     const output: Interval[] = []
@@ -69,42 +75,26 @@ export const WellMapFormations = ({ formations }: WellMapFormationsProps) => {
     if (picksData) {
       wellboreIds.forEach((id) => {
         if (picksData[id]) {
-          const wellbore = wellboresById[id]
-
-          const fromMsl = wellbore.kickoffDepthMsl !== null ? wellbore.kickoffDepthMsl : wellbore.depthReferenceElevation
           const slot = slotsById[id]
           const position = getSlotPosition(slot)
-          formations.forEach(formation => {
-            //console.log(picksData[id].filter(d => d.name.endsWith('Top') && d.level === 1).map(d => d.name.replace(' Top', '')))
-            const tops = picksData[id].filter(d => d.mdMsl <= wellbore.depthMdMsl && d.name === `${formation} Top`)
-            tops.forEach(top => {
-              let base = picksData[id].find(d => d.mdMsl > top.mdMsl && d.name === `${formation} Base`) 
-              if (!base) {
-                base = picksData[id].find(d => d.level <= top.level && d.mdMsl > top.mdMsl)
-              }
-              const baseDepth = Math.min(wellbore.depthMdMsl, base ? base.mdMsl : wellbore.depthMdMsl)
-              if (baseDepth > fromMsl) {
-                const topDepth = Math.max(fromMsl, top.mdMsl)
-                const interval: Interval = {
-                  id: nanoid(),
-                  formation,
-                  color: top.color,
-                  level: top.level,
-                  x: position,
-                  y1: depthScale(topDepth),
-                  y2: depthScale(baseDepth),
-                }
+          picksData[id].forEach(fi => {
+            const interval: Interval = {
+              id: nanoid(),
+              formation: fi.unit.name,
+              color: fi.unit.color,
+              level: fi.unit.level,
+              x: position,
+              y1: depthScale(fi.mdMslTop),
+              y2: depthScale(fi.mdMslBottom),
+            }
 
-                output.push(interval)
-              }
-            })
+            output.push(interval)
           })
         }
       })
     }
-    output.sort((a, b) => a.x - b.x || a.y1 - b.y1 || a.level - b.level)
     return output
-  }, [picksData, formations, depthScale, getSlotPosition, slotsById, wellboreIds, wellboresById])
+  }, [picksData, depthScale, getSlotPosition, slotsById, wellboreIds])
 
   const filterColor = useMemo(() => {
     const v = styles.darkMode ? 0 : 240
@@ -115,7 +105,7 @@ export const WellMapFormations = ({ formations }: WellMapFormationsProps) => {
 
   return <g>
     {intervals.map(interval => {
-      const width = (ratio * (35 - interval.level * 4))
+      const width = (ratio * 30)
       return (
         <g
           key={interval.id}
@@ -138,7 +128,7 @@ export const WellMapFormations = ({ formations }: WellMapFormationsProps) => {
             stroke={interval.color}
             strokeWidth={0.5}
             strokeOpacity={0.75}
-            style={{ filter: `drop-shadow( 1px 1px 2px ${filterColor})`}}
+            style={{ filter: `drop-shadow( 1px 1px 2px ${filterColor})` }}
           />
           <line
             x1={interval.x - (width * 1.5 / 2)}
@@ -148,7 +138,7 @@ export const WellMapFormations = ({ formations }: WellMapFormationsProps) => {
             stroke={interval.color}
             strokeWidth={1.5}
             strokeOpacity={1}
-            style={{ filter: `drop-shadow( 1px 1px 2px ${filterColor})`}}
+            style={{ filter: `drop-shadow( 1px 1px 2px ${filterColor})` }}
           />
         </g>
       )

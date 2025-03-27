@@ -223,11 +223,11 @@ export const Surface = ({
 
           setDepthTexture(prev => {
             if (prev) prev.dispose()
-            return elevationTextures || prev
+            return elevationTextures
           })
           setNormals(prev => {
             if (prev) prev.dispose()
-            return normalTexture || prev
+            return normalTexture
           })
         }
       }), priority)
@@ -243,7 +243,7 @@ export const Surface = ({
         }
         setGeometry(prev => {
           if (prev) prev.dispose()
-          return bufferGeometry || prev
+          return bufferGeometry
         })
 
       }), priority)

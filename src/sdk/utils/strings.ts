@@ -10,3 +10,7 @@ export function calculateHashValue(str?: string) {
   }
   return hash;
 }
+
+export function titleCase(str: string) {
+  return str.replace(/(^|\s)\S/g, t => t.toUpperCase())
+}

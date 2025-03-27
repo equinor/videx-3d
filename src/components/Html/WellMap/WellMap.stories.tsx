@@ -1,6 +1,6 @@
 import type { Decorator, Meta, StoryObj } from '@storybook/react'
 import { scaleOrdinal } from 'd3-scale'
-import { ComponentProps, CSSProperties, useMemo, useState } from 'react'
+import { ComponentProps, CSSProperties, useState } from 'react'
 import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator'
 import storyArgs from '../../../storybook/story-args.json'
 import { WellMapCasingShoes } from './addons/WellMapCasingShoes'
@@ -89,15 +89,12 @@ export const WithCasingAndCompletionIntervals: Story = {
   }
 }
 
-export const WithAllAddons: Story = {
+export const WithFormationsAndTvdDepths: Story = {
   decorators: [darkThemeDecorator],
   render: (args: ComponentProps<typeof WellMap>) => {
-    const formations = useMemo(() => ['NORDLAND GP.', 'HORDALAND GP.', 'ROGALAND GP.', 'SHETLAND GP.', 'CROMER KNOLL GP.', 'VIKING GP.'], [])
     return (
       <WellMap {...args} colors={w => colorScale(w.id)}>
-        <WellMapFormations formations={formations} />
-        <WellMapCompletionIntervals />
-        <WellMapCasingShoes />
+        <WellMapFormations stratColumnId={storyArgs.defaultStratColumn} />
         <WellMapTvd />
       </WellMap>
     )
@@ -135,7 +132,10 @@ export const LightThemed: Story = {
   decorators: [lightThemeDecorator],
   render: (args: ComponentProps<typeof WellMap>) => {
     return (
-      <WellMap {...args} colors={w => colorScale(w.id)} />
+      <WellMap {...args} colors={w => colorScale(w.id)}>
+        <WellMapFormations stratColumnId={storyArgs.defaultStratColumn} />
+        <WellMapCasingShoes color="black" />
+      </WellMap>
     )
   }
 }
