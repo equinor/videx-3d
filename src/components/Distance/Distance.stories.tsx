@@ -36,6 +36,7 @@ export default meta
 type Story = StoryObj<StoryArgs>
 
 const wellboreId = storyArgs.defaultWellbore
+const stratColumnId = storyArgs.defaultStratColumn
 
 export const Default: Story = {
   args: {
@@ -53,7 +54,7 @@ export const Default: Story = {
           <WellboreBounds id={wellboreId}>
             <TubeTrajectory color="white" radius={2} />
             <Distance {...args}>
-              <Picks />
+              <Picks stratColumnId={stratColumnId} />
             </Distance>
           </WellboreBounds>
         </Wellbore>

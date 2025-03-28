@@ -1,19 +1,20 @@
 import { CameraControls, Environment } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
-import { useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 import { cameraManager } from '../../sdk/managers/CameraManager'
 import { PI2 } from '../../sdk/utils/trigonometry'
 
 export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
   const scale = parameters.scale || 100
 
+  const initControls = useCallback((controls: CameraControls) => {
+    cameraManager.setControls(controls)
+    if (parameters.cameraTarget) cameraManager.setTarget(parameters.cameraTarget)
+  }, [parameters.cameraTarget])
+
   useEffect(() => {
     if (cameraManager.controls && parameters.cameraTarget) {
-      cameraManager.controls.setTarget(
-        parameters.cameraTarget[0],
-        parameters.cameraTarget[1],
-        parameters.cameraTarget[2],
-      )
+      cameraManager.setTarget(parameters.cameraTarget)
     }
   }, [parameters.cameraTarget])
 
@@ -45,12 +46,12 @@ export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
 
       <Environment
         preset='studio'
-        environmentIntensity={1.2}
+        environmentIntensity={1.}
         backgroundRotation={[0, PI2, 0]}
       />
       <Story />
       {/* <axesHelper args={[1000]} /> */}
-      <CameraControls ref={cameraManager.setControls} makeDefault />
+      <CameraControls ref={initControls} makeDefault />
     </Canvas>
   )
 }

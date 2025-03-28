@@ -22,7 +22,7 @@ void main() {
   float modulatedLength = mod(vLength - uFrom, uDensity); 
   
   float coord1 = modulatedLength / 10.0;
-  float coord2 = vUv.y * 20.0;
+  float coord2 = vUv.x * 20.0;
   float line1 = abs(fract(coord1 - 0.5) - 0.5) / fwidth(coord1);
   float line2 = abs(fract(coord2 - 0.5) - 0.5) / fwidth(coord2);
 

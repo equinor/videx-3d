@@ -1,6 +1,7 @@
 export * from './Casing'
 export * from './CompletionTool'
 export * from './DepthReferencePoint'
+export * from './Formation'
 export * from './PerforationInterval'
 export * from './Pick'
 export * from './PositionLog'
@@ -8,3 +9,4 @@ export * from './StratColumn'
 export * from './SurfaceMeta'
 export * from './Symbol'
 export * from './WellboreHeader'
+

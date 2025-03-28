@@ -1,17 +1,19 @@
 import { transfer } from 'comlink'
+import { clamp } from 'curve-interpolator'
 import { Color, Matrix4, Vector3 } from 'three'
 import {
-  clamp,
   getTrajectory,
   limit,
   PI2,
-  Pick,
   PositionLog,
   ReadonlyStore,
   SymbolData,
   SymbolsType,
-  Vec3,
+  titleCase,
+  Vec3
 } from '../sdk'
+import { createFormationIntervals, getFormationMarkers, getUnitPicks } from '../sdk/data/helpers/picks-helpers'
+
 
 const positionVector = new Vector3()
 const targetVector = new Vector3()
@@ -23,32 +25,31 @@ const color = new Color()
 
 export async function generatePicks(
   this: ReadonlyStore,
-  id: string,
+  wellboreId: string,
+  stratColumnId: string,
   fromMsl?: number,
   baseRadius: number = 10
 ): Promise<SymbolsType | null> {
-  const data = await limit(() => this.get<Pick[]>('picks', id))
+ 
+  const picksData = await getUnitPicks(wellboreId, stratColumnId, this, true, fromMsl)
 
-  if (!data) return null
+  if (!picksData) return null
+
+  const surfaceIntervals = createFormationIntervals(picksData.matched, picksData.wellbore.depthMdMsl)
+  const formationMarkers = getFormationMarkers(surfaceIntervals)
+
+  if (!formationMarkers.length) return null
 
   const poslogMsl = await limit(() =>
-    this.get<PositionLog>('position-logs', id)
+    this.get<PositionLog>('position-logs', wellboreId)
   )
-
-  const trajectory = getTrajectory(id, poslogMsl)
+ 
+  
+  const trajectory = getTrajectory(wellboreId, poslogMsl)
 
   if (!trajectory) return null
 
-  const filteredPicks = data.filter(
-    (d) =>
-      d.name.endsWith('Top') &&
-      (fromMsl === undefined || d.mdMsl >= fromMsl) &&
-      d.mdMsl <= trajectory.measuredBottom
-  )
-
-  if (!filteredPicks.length) return null
-
-  const mappedPicks = filteredPicks.map((d) => {
+  const mappedPicks = formationMarkers.map((d) => {
     const pos = clamp(
       (d.mdMsl - trajectory.measuredTop) / trajectory.measuredLength,
       0,
@@ -60,23 +61,12 @@ export async function generatePicks(
       direction: trajectory.curve.getTangentAt(pos) as Vec3,
     }
   })
-  mappedPicks.sort((a, b) => a.mdMsl - b.mdMsl || b.level - a.level)
 
-  const cleanedPicks: typeof mappedPicks = []
-
-  let currentDepth = -Infinity
-  mappedPicks.forEach((p) => {
-    if (p.mdMsl > currentDepth) {
-      cleanedPicks.push(p)
-      currentDepth = p.mdMsl
-    }
-  })
-
-  const transformations = new Float32Array(cleanedPicks.length * 16 * 3)
-  const colors = new Float32Array(cleanedPicks.length * 3 * 3)
+  const transformations = new Float32Array(mappedPicks.length * 16 * 3)
+  const colors = new Float32Array(mappedPicks.length * 3 * 3)
   const symbolData: SymbolData[] = []
 
-  cleanedPicks.forEach((pick, i) => {
+  mappedPicks.forEach((pick, i) => {
     positionVector.set(...pick.position)
     transformationMatrix.identity()
     const radius = baseRadius
@@ -99,8 +89,8 @@ export async function generatePicks(
     color.toArray(colors, i * 3)
 
     symbolData[i] = {
-      id: `${id}_${i}`,
-      name: pick.name,
+      id: `${wellboreId}_${i}`,
+      name: `${pick.name} ${titleCase(pick.type)}`,
       depth: pick.mdMsl,
       tvd: pick.tvdMsl,
       level: pick.level,
@@ -116,4 +106,5 @@ export async function generatePicks(
     },
     [transformations.buffer]
   )
+
 }

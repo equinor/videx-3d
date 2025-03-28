@@ -1,6 +1,7 @@
 export type StratColumnUnit = {
   id: string,
   name: string,
+  unitType: string,
   level: number,
   top: string,
   base: string,

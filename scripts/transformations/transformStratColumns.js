@@ -16,6 +16,7 @@ function mapStratColumnsData(stratColumnData) {
       stratCol.units.push({
         id: s.uuid,
         name: s.identifier,
+        unitType: s.strat_unit_type || 'unknown',
         top: s.top,
         topAge: s.top_age,
         base: s.base,

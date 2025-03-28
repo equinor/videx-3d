@@ -1,6 +1,6 @@
 import { Color, MeshBasicMaterialParameters, ShaderLib, ShaderMaterial, UniformsUtils } from 'three'
-import vertexShader from './shaders/trajectory/vertex.glsl'
 import fragmentShader from './shaders/trajectory/fragment.glsl'
+import vertexShader from './shaders/trajectory/vertex.glsl'
 
 
 export class TubeMaterial extends ShaderMaterial {
@@ -25,5 +25,5 @@ export class TubeMaterial extends ShaderMaterial {
 
   set color(color: Color) {
     this.uniforms.diffuse.value.set(color)
-  } 
+  }
 }

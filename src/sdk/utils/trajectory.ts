@@ -32,6 +32,7 @@ export interface Trajectory {
   curve: Curve3D
   // get the point along the trajectory according to a MD msl value. Returns null if out of range.
   getPointAtDepth: (md: number, clamped?: boolean) => Vec3 | null
+  getPositionAtDepth: (md: number, clamped?: boolean) => number | null
 }
 
 /**
@@ -61,20 +62,31 @@ export function getTrajectory(id: string, poslogMsl: PositionLog | null) : Traje
   const bottom = poslogMsl[poslogMsl.length - 1]
   const length = bottom - top
 
+  const getPositionAtDepth = (md: number, clamped = false) => {
+    let pos = (md - top) / length
+    if (clamped) {
+      pos = clamp(pos, 0, 1)
+    }
+    if (pos < 0 || pos > 1) return null
+    
+    return pos
+  }
+
   const trajectory: Trajectory = {
     id,
     curve,
     get measuredLength() { return length },
     get measuredTop() { return top },
     get measuredBottom() { return bottom },
+    getPositionAtDepth,
     getPointAtDepth: (md, clamped = false) => {
-      let pos = (md - top) / length
-      if (clamped) {
-        pos = clamp(pos, 0, 1)
-      }
-      if (pos < 0 || pos > 1) return null
-      
-      return curve.getPointAt(pos)
+      // let pos = (md - top) / length
+      // if (clamped) {
+      //   pos = clamp(pos, 0, 1)
+      // }
+      // if (pos < 0 || pos > 1) return null
+      const pos = getPositionAtDepth(md, clamped)
+      return pos !== null ? curve.getPointAt(pos) : null
     }
   }
 

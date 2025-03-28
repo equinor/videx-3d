@@ -31,7 +31,7 @@
  *
  * !!!IMPORTANT: surface irapbin files must be put in the /public/data/surfaces folder, named by surface id!
  *
- * node scripts/generate-data --input import/_troll && node scripts/generate-story-args
+ * node scripts/generate-data --input import/_volve && node scripts/generate-story-args
  */
 
 import minimist from 'minimist'

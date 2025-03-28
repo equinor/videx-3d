@@ -72,6 +72,18 @@ export class CameraManager {
     }
   }
 
+  async setTarget(target: Vec3) {
+    const controls = this.controls
+    if (controls) {
+      cameraTarget.set(...target)
+      controls.getPosition(cameraPosition)
+      direction.subVectors(cameraTarget, cameraPosition)
+      direction.normalize()
+      return controls.setLookAt(cameraPosition.x, cameraPosition.y, cameraPosition.z, cameraTarget.x, cameraTarget.y, cameraTarget.z, true)
+    }
+    return null
+  }
+
   setControls(controls: CameraControls) {
     this.controls = controls
     if (this.removeEventlisteners) {

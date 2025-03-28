@@ -88,7 +88,7 @@ export const TubeTrajectory = ({
         }
         setGeometry(prev => {
           if (prev) prev.dispose()
-          return bufferGeometry || prev
+          return bufferGeometry
         })
       }), priority)
 

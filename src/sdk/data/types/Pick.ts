@@ -1,7 +1,8 @@
 export type Pick = {
-  name: string,
-  color: string,
-  mdMsl: number,
-  tvdMsl: number,
-  level: number,
+  id: string
+  wellboreId: string
+  pickIdentifier: string
+  mdMsl: number
+  tvdMsl?: number
+  properties?: Record<string, any>
 }

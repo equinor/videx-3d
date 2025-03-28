@@ -25,6 +25,7 @@ export * from './components/Wellbores/Shoes'
 export * from './components/Wellbores/TubeTrajectory'
 export * from './components/Wellbores/Wellbore'
 export * from './components/Wellbores/WellboreBounds'
+export * from './components/Wellbores/WellboreFormationColumn'
 export * from './components/Wellbores/WellboreLabel'
 export * from './components/Wellbores/Wells'
 

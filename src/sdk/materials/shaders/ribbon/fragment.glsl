@@ -1,12 +1,8 @@
-#define LAMBERT
+#define RIBBON_MATERIAL
 
-uniform vec3 uColor1;
-uniform vec3 uColor2;
+uniform vec3 diffuse;
 uniform vec3 emissive;
 uniform float opacity;
-
-varying vec2 vUv;
-varying float vCurveLength;
 
 #include <common>
 #include <packing>
@@ -36,11 +32,8 @@ varying float vCurveLength;
 
 void main() {
 
-  float strength = mod(vCurveLength + vUv.x * 2.0, 2.0);
-  strength = step(1.5, strength);
-
-  vec4 diffuseColor = vec4( uColor1 * strength + uColor2 * (1.0 - strength), opacity );
-  
+	vec4 diffuseColor = vec4( diffuse, opacity );
+  //diffuseColor.rgb = vec3(vUv, 1.0);
 	#include <clipping_planes_fragment>
 
 	ReflectedLight reflectedLight = ReflectedLight( vec3( 0.0 ), vec3( 0.0 ), vec3( 0.0 ), vec3( 0.0 ) );
@@ -57,7 +50,13 @@ void main() {
 	#include <normal_fragment_maps>
 	#include <emissivemap_fragment>
 
-	// accumulation
+  #ifdef NO_LIGHT
+	
+  vec3 outgoingLight = diffuseColor.rgb;
+  
+  #else
+
+  // accumulation
 	#include <lights_lambert_fragment>
 	#include <lights_fragment_begin>
 	#include <lights_fragment_maps>
@@ -65,8 +64,10 @@ void main() {
 
 	// modulation
 	#include <aomap_fragment>
-
-	vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + totalEmissiveRadiance;
+  vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + totalEmissiveRadiance;
+  
+  
+  #endif
 
 	#include <envmap_fragment>
 	#include <opaque_fragment>
@@ -75,6 +76,4 @@ void main() {
 	#include <fog_fragment>
 	#include <premultiplied_alpha_fragment>
 	#include <dithering_fragment>
-
 }
-  
