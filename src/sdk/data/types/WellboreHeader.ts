@@ -11,5 +11,5 @@ export type WellboreHeader = {
   depthMdMsl: number,
   waterDepth: number | null
   status: string,
-  properties: Record<string, any>
+  properties?: Record<string, any>
 }

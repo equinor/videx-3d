@@ -8,7 +8,7 @@ export type StratColumnUnit = {
   topAge: number,
   baseAge: number,
   color: string,
-  parent: string,
+  parent: string | null,
 }
 
 

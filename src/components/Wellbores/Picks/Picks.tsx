@@ -34,7 +34,7 @@ export type PicksProps = CommonComponentProps & {
  * 
  * @example
  * <Wellbore id={wellboreId}>
- *  <Picks showAnnotations />
+ *  <Picks showAnnotations stratColumnId="abcd" />
  * </Wellbore>
  * 
  * @see {@link Wellbore}

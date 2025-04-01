@@ -29,6 +29,15 @@ export type FormationMarker = {
   level: number
 }
 
+/**
+ * Match picks bottom-up (wellbore -> parent chain) with stratigraphy units.
+ * As we traverse to a parent wellbore, ignore any picks that are deeper than 
+ * the current pick depth or the child's kickoff depth.
+ * 
+ * If a wellbore has picks above its kickoff depth, we prioritize these picks
+ * above corresponding picks from the parent wellbore
+ * 
+ */
 export async function getUnitPicks(
   wellboreId: string,
   stratColumnId: string,
@@ -73,8 +82,9 @@ export async function getUnitPicks(
   // to keep track of which picks we've already added
   const added = new Set<string>()
 
-  // keep track of depth as we progress from bottom-up of the wellbore
+  fromMsl = fromMsl === undefined ? -Infinity : fromMsl
 
+  // keep track of depth as we progress from bottom-up of the wellbore
   let md = Infinity
   let bottom = Infinity
 
@@ -126,7 +136,7 @@ export async function getUnitPicks(
     }
 
     bottom = top
-    if (traverse && header.parent && md > top) {
+    if (traverse && header.parent && md > fromMsl) {
       const parent = headers.get(header.parent)
       if (parent) await addPicks(parent)
     }
@@ -137,6 +147,13 @@ export async function getUnitPicks(
   return { matched, unmatched, wellbore }
 }
 
+/**
+ * Create groups of entry and exit picks for each stratigraphy unit level:
+ * 
+ * - Sort the matched picks by ascending level and ascending depth
+ * - Traverse the matched picks, keeping a reference of the current level and unit to find the correct entry and exit pick
+ * - Remove picks from list as formations are identified
+ */
 export function createFormationIntervals(
   unitPicks: UnitPick[],
   maxDepth: number = Infinity,
@@ -221,6 +238,17 @@ export function createFormationIntervals(
   return intervals
 }
 
+/**
+ * Merge into a single column, where higher levels takes precedence over lower levels:
+ *  
+ * - Sort the intervals by ascending entry depth and ascending stratigraphy unit level
+ * - Start with a stack containing the first item from the sorted list and keep track of the entry depth
+ * - iterate to find the next item that has an entry depth lower than current depth
+ *  - define a range limit from the current depth and the entry of the item with a lower entry depth
+ *  - pop the stack and draw sections while adjusting the current depth and keep doing this until the current depth reaches the range limit
+ *  - any items on the stack with an exit md greater than the limit gets pushed back on the stack
+ *  - the current item is pushed to the stack and the iteration continues
+ */
 export function mergeFormationIntervals(
   formationIntervals: FormationInterval[]
 ) {
@@ -289,6 +317,11 @@ export function mergeFormationIntervals(
   return merged
 }
 
+/**
+ * Identify surface entry picks, where the highest level picks has precedence:
+ * - Sort intervals by ascending entry depth and descending stratigraphy unit level
+ * - Pick only the first pick of a depth, ignoring any following picks with the same depth as the previous pick
+ */
 export function getFormationMarkers(
   intervals: FormationInterval[]
 ): FormationMarker[] {
