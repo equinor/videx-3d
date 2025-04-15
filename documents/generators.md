@@ -17,10 +17,11 @@ The generator functions can be imported from `videx-3d/generators` (default impl
 | **Casings** | casings | generateCasings | - position-logs<br/>- casings |
 | **CompletionAnnotations** | completionToolAnnotations | generateCompletionToolAnnotations | - position-logs<br/>- completion-tools |
 | **CompletionTools** | completionTools | generateCompletionTools | - position-logs<br/>- completion-tools |
+| **WellboreFormationColumn** | wellboreFormationColumn | generateWellboreFormationColumnGeometries | - position-logs<br/>- picks<br/>- strat column |
 | **DepthMarkers** | depthMarkers | generateDepthMarkers | - position-logs |
 | **Perforations** | perforationSymbols | generatePerforations | - position-logs<br/>- perforations |
 | **Perimeter** | perimeterGeometry | generatePerimeterGeometry | - position-logs |
-| **Picks** | pickSymbols | generatePicks | - position-logs<br/>- picks |
+| **Picks** | pickSymbols | generatePicks | - position-logs<br/>- picks<br/>- strat column |
 | **Shoes** | shoeSymbols | generateShoes | - position-logs<br/>- casings |
 | **Surface** | surfaceGeometry | generateSurfaceGeometry | - surface-meta<br/>- surface-values |
 | **Surface** | surfaceTextures | generateSurfaceTextureData | - surface-meta<br/>- surface-values |

@@ -14,7 +14,9 @@ import { positionMarkers } from '../../../components/Wellbores/PositionMarkers/p
 import { shoeSymbols } from '../../../components/Wellbores/Shoes/shoes-defs'
 import { tubeTrajectory } from '../../../components/Wellbores/TubeTrajectory/tube-geometry-defs'
 import { wellboreBounds } from '../../../components/Wellbores/WellboreBounds/wellbore-bounds-defs'
+import { wellboreFormationColumn } from '../../../components/Wellbores/WellboreFormationColumn/wellbore-formation-column-defs'
 import { wellboreLabel } from '../../../components/Wellbores/WellboreLabel/wellbore-label-defs'
+
 import {
   calculateWellboreBounds,
   generateBasicTrajectory,
@@ -31,6 +33,7 @@ import {
   generateSurfaceGeometry,
   generateSurfaceTexturesData,
   generateTubeTrajectory,
+  generateWellboreFormationColumnGeometries,
   generateWellboreLabel,
 } from '../../../generators'
 
@@ -54,5 +57,6 @@ registry.add(surfaceGeometry, generateSurfaceGeometry)
 registry.add(surfaceTextures, generateSurfaceTexturesData)
 registry.add(perforationSymbols, generatePerforations)
 registry.add(positionMarkers, generatePositionMarkers)
+registry.add(wellboreFormationColumn, generateWellboreFormationColumnGeometries)
 
 expose(registry)

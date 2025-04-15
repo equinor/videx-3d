@@ -19,6 +19,10 @@ export function createStoryArgs() {
     fs.readFileSync('public/data/surface-meta.json')
   )
   
+  const stratColumns = JSON.parse(
+    fs.readFileSync('public/data/strat-columns.json')
+  )
+
   const wellboreOptions = Object.values(wellboreHeadersData)
     .filter(d => d.drilled)
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -38,13 +42,26 @@ export function createStoryArgs() {
         [surface.id]: surface.name 
       }), {})
   
+  const stratUnitTypes = new Set()
+  const stratUnits = new Set()
+
+  Object.values(stratColumns).forEach(stratColumn => {
+    stratColumn.units.forEach(unit => {
+      stratUnitTypes.add(unit.unitType)
+      stratUnits.add(unit.name)
+    })
+  })
+
   const output = {
     utmZone: config.utmZone || '31N',
     origin: config.origin,
     defaultWellbore: config.wellbore,
     defaultWell: config.well,
+    defaultStratColumn: config.stratColumn,
     wellboreOptions,
     surfaceOptions,
+    stratUnitOptions: Array.from(stratUnits),
+    stratUnitTypeOptions: Array.from(stratUnitTypes),
   }
   
   fs.writeFile('src/storybook/story-args.json', JSON.stringify(output), (err) => {

@@ -2,11 +2,13 @@
  * @module sdk
  */
 export * from './data/GeneratorRegistry'
+export * from './data/helpers/picks-helpers'
 export * from './data/helpers/well-helpers'
 export * from './data/Store'
 export * from './data/types'
 
 export * from './geometries/curve/curve-3d'
+export * from './geometries/curve/ribbon-geometry'
 export * from './geometries/curve/tube-geometry'
 export * from './geometries/delatin'
 export * from './geometries/packing'

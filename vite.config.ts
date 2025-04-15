@@ -25,7 +25,7 @@ export default defineConfig({
     }),
     dts({
       outDir: ['dist/types'],
-      exclude: ['**/*.stories.tsx', 'src/storybook'],
+      exclude: ['**/*.stories.tsx', 'src/storybook', 'tests'],
     }),
     viteStaticCopy({
       targets: [
@@ -57,5 +57,5 @@ export default defineConfig({
       },
       treeshake: 'recommended'
     },
-  }
+  },
 })
