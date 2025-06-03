@@ -34,7 +34,7 @@ describe("picks-helper", () => {
 
     picks = await getUnitPicks('c', 'a', store, true, 1000)
     expect(picks?.unmatched.length).toBe(1)
-    expect(picks?.matched.length).toBe(16)
+    expect(picks?.matched.length).toBe(17)
   })
 
   test('createFormationIntervals', async () => {

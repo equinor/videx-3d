@@ -45,6 +45,26 @@ function createStripeGeometry(trajectory: Trajectory, segmentsPerMeter: number, 
   return geometry
 }
 
+/**
+ * The WellboreRibbon component serves as a controller for ribbon stripe components. It provides a context for
+ * child components, including geometry needed to create stripe components. 
+ * 
+ * @example
+ * <WellboreRibbon>
+ *  <MeasuredDepthStripe ... />
+ *  <FormationsStripe ... /> 
+ * </WellboreRibbon>
+ * 
+ * @remarks
+ * This is an experimental component and may be changed/removed
+ * 
+ * @see [Storybook](/videx-3d/?path=/docs/components-wellbores-wellboreformationcolumn--docs)
+ * @see {@link WellboreRibbonContext}
+ * @see {@link FormationsStripe}
+ * @see {@link MeasuredDepthStripe}
+ * 
+ * @group Components
+ */
 export const WellboreRibbon = ({ children }: PropsWithChildren) => {
   const store = useData()
   const { id, fromMsl, segmentsPerMeter } = useWellboreContext()

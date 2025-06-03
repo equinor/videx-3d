@@ -9,6 +9,10 @@ import { WellboreRibbonContext } from '../WellboreRibbonContext'
 import fragmentShader from '../shaders/formations.glsl'
 import vertexShader from '../shaders/vertex.glsl'
 
+/**
+ * FormationsStripe props
+ * @expand
+ */
 export type FormationsStripeProps = {
   width: number
   offset: number
@@ -27,6 +31,24 @@ type FormationData = {
   units: Unit[]
 }
 
+/**
+ * This is a stripe component used with the WellboreRibbon component for visualizing 
+ * formations along a wellbore trajectory.
+ * 
+ * @example
+ * <WellboreRibbon>
+ *  <FormationsStripe ... /> 
+ * </WellboreRibbon>
+ * 
+ * @remarks
+ * This is an experimental component and may be changed/removed
+ * 
+ * @see [Storybook](/videx-3d/?path=/docs/components-wellbores-wellboreformationcolumn--docs)
+ * @see {@link WellboreRibbon}
+ * @see {@link WellboreRibbonContext}
+ * 
+ * @group Components
+ */
 export const FormationsStripe = ({ width, offset, stratColumnId, level }: FormationsStripeProps) => {
   const store = useData()
   const ribbonContext = useContext(WellboreRibbonContext)

@@ -41,6 +41,25 @@ async function get(url: string) {
   throw new Error(response.toString());
 }
 
+/**
+ * Provides sub components with a GlyphContext, which contains data and utilities needed to
+ * add text support to fragment shaders. This includes a reference to a glyph atlas texture
+ * and a supporting uniforms group, which will contain glyph config and metrics. 
+ * 
+ * It currently relies on a pre-generated font atlas and json config file using [msdf-bmfont-xml](https://github.com/soimy/msdf-bmfont-xml)
+ * 
+ * @example
+ * <GlyphsProvider fontAtlasUrl="OpenSans-Regular.png" fontConfigUrl="OpenSans-Regular.json">
+ *  { ... }
+ * </GlyphsProvider>
+ * 
+ * @remarks 
+ * This component should be considered experimental. 
+ * 
+ * @see {@link GlyphContext}
+ * 
+ * @group Components
+ */
 export const GlyphsProvider = ({ fontAtlasUrl, fontConfigUrl, children }: PropsWithChildren<GlyphsProviderProps>) => {
   const glyphAtlas = useTexture(fontAtlasUrl, (tex: Texture) => {
     tex.generateMipmaps = false

@@ -6,7 +6,7 @@ import { Trajectory, Vec3 } from '../../../sdk'
 
 
 /**
- * GlyphsContext props
+ * WellboreRibbonContext props
  * @expand
  */
 export type WellboreRibbonContextProps = {
@@ -16,7 +16,7 @@ export type WellboreRibbonContextProps = {
 }
 
 /**
- * Glyphs context
+ * WellboreRibbon context
  * @group Contexts
  */
 export const WellboreRibbonContext = createContext<WellboreRibbonContextProps | null>(null)

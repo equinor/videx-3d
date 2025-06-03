@@ -5,13 +5,34 @@ import { WellboreRibbonContext } from '../WellboreRibbonContext'
 import fragmentShader from '../shaders/measured-depth.glsl'
 import vertexShader from '../shaders/vertex.glsl'
 
-
+/**
+ * MeasuredDepthStripe props
+ * @expand
+ */
 export type MeasuredDepthStripeProps = {
   width: number
   offset: number
   stepSize?: number
 }
 
+/**
+ * This is a stripe component used with the WellboreRibbon component for adding a measured
+ * depth scale along a wellbore trajectory.
+ * 
+ * @example
+ * <WellboreRibbon>
+ *  <MeasuredDepthStripe ... /> 
+ * </WellboreRibbon>
+ * 
+ * @remarks
+ * This is an experimental component and may be changed/removed
+ * 
+ * @see [Storybook](/videx-3d/?path=/docs/components-wellbores-wellboreformationcolumn--docs)
+ * @see {@link WellboreRibbon}
+ * @see {@link WellboreRibbonContext}
+ * 
+ * @group Components
+ */
 export const MeasuredDepthStripe = ({ width, offset, stepSize = 50 }: MeasuredDepthStripeProps) => {
 
   const ribbonContext = useContext(WellboreRibbonContext)

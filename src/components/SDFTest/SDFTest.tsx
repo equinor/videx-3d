@@ -26,6 +26,7 @@ type Props = {
 
 const fileName = 'OpenSans-Regular'
 
+
 export const SDFTest = ({ text, inBias = 0, outBias = 0, fontSize = 32, rotation = 0, spacing = 0, verticalAlign = 0.0, horizontalAlign = 0.0 }: Props) => {
 
   const glyphAtlas = useTexture(`glyphs/${fileName}.png`, (tex: Texture) => {
