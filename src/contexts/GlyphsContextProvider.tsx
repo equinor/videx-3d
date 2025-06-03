@@ -42,7 +42,7 @@ async function get(url: string) {
 }
 
 /**
- * Provides sub components with a GlyphContext, which contains data and utilities needed to
+ * Provides sub components with a GlyphsContext, which contains data and utilities needed to
  * add text support to fragment shaders. This includes a reference to a glyph atlas texture
  * and a supporting uniforms group, which will contain glyph config and metrics. 
  * 
@@ -56,7 +56,7 @@ async function get(url: string) {
  * @remarks 
  * This component should be considered experimental. 
  * 
- * @see {@link GlyphContext}
+ * @see {@link GlyphsContext}
  * 
  * @group Components
  */
