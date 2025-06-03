@@ -36,6 +36,7 @@ export type TubeGeometryOptions = AttributeOptions & {
   radiusModifier?: RadiusModifier, 
   simplificationThreshold?: number,
   computeLengths?: boolean,
+  computeRelativeLengths?: boolean,
   computeCurveNormals?: boolean,
   computeCurveTangents?: boolean,
   computeCurveBinormals?: boolean,
@@ -416,8 +417,8 @@ function generateTube(segments: TubeSegment[], radialSegments: number, closed: b
     for (let i = 0; i < segments.length; i++) {
       for (let j = 0; j <= radialSegments; j++) {
         uvs.push(
-          segments[i].curvePosition,
           j / radialSegments,
+          i / (segments.length - 1),
         )
       }
     }
@@ -561,8 +562,9 @@ export function createTubeGeometry(curve: Curve3D, options: TubeGeometryOptions 
   }
 
   // add optional attributes
-  if (options.computeLengths || options.computeCurveNormals || options.computeCurveTangents || options.computeCurveBinormals) {
+  if (options.computeLengths || options.computeCurveNormals || options.computeCurveTangents || options.computeCurveBinormals || options.computeRelativeLengths) {
     const lengths: number[] | null = options.computeLengths ? [] : null
+    const relativeLengths: number[] | null = options.computeRelativeLengths ? [] : null
     const curveNormals: number[] | null = options.computeCurveNormals ? [] : null
     const curveTangents: number[] | null = options.computeCurveTangents ? [] : null
     const curveBinormals: number[] | null = options.computeCurveBinormals ? [] : null
@@ -571,6 +573,7 @@ export function createTubeGeometry(curve: Curve3D, options: TubeGeometryOptions 
     for (let i = 0; i < segments.length; i++) {
       for (let j = 0; j <= radialSegments; j++) {
         if (lengths) lengths.push(segments[i].curvePosition * curveLength)
+        if (relativeLengths) relativeLengths.push((segments[i].curvePosition - from) * curveLength)
         if (curveNormals) curveNormals.push(...segments[i].normal)
         if (curveTangents) curveTangents.push(...segments[i].tangent)
         if (curveBinormals) curveBinormals.push(...segments[i].binormal)
@@ -580,6 +583,7 @@ export function createTubeGeometry(curve: Curve3D, options: TubeGeometryOptions 
       for (let i = 0; i < innerSegments.length; i++) {
         for (let j = 0; j <= radialSegments; j++) {
           if (lengths) lengths.push(innerSegments[i].curvePosition * curveLength)
+          if (relativeLengths) relativeLengths.push((segments[i].curvePosition - from) * curveLength)
           if (curveNormals) curveNormals.push(...innerSegments[i].normal)
           if (curveTangents) curveTangents.push(...innerSegments[i].tangent)
           if (curveBinormals) curveBinormals.push(...innerSegments[i].binormal)
@@ -588,7 +592,8 @@ export function createTubeGeometry(curve: Curve3D, options: TubeGeometryOptions 
     }
     if (startCap) {
       for (let i = 0; i < startCap.vertexCount; i++) {
-        if (lengths) lengths.push(0)
+        if (lengths) lengths.push(from * curveLength)
+        if (relativeLengths) relativeLengths.push(0)
         if (curveNormals) curveNormals.push(...segments[0].normal)
         if (curveTangents) curveTangents.push(...segments[0].tangent)
         if (curveBinormals) curveBinormals.push(...segments[0].binormal)
@@ -596,7 +601,8 @@ export function createTubeGeometry(curve: Curve3D, options: TubeGeometryOptions 
     }
     if (endCap) {
       for (let i = 0; i < endCap.vertexCount; i++) {
-        if (lengths) lengths.push(curveLength)
+        if (lengths) lengths.push(to * curveLength)
+        if (relativeLengths) relativeLengths.push(curveLength)
         if (curveNormals) curveNormals.push(...segments[segments.length - 1].normal)
         if (curveTangents) curveTangents.push(...segments[segments.length - 1].tangent)
         if (curveBinormals) curveBinormals.push(...segments[segments.length - 1].binormal)
@@ -604,6 +610,7 @@ export function createTubeGeometry(curve: Curve3D, options: TubeGeometryOptions 
     }
     
     if (lengths) geometry.setAttribute('curveLength', new BufferAttribute(Float32Array.from(lengths), 1))
+    if (relativeLengths) geometry.setAttribute('curveRelativeLength', new BufferAttribute(Float32Array.from(relativeLengths), 1))
     if (curveNormals) geometry.setAttribute('curveNormal', new BufferAttribute(Float32Array.from(curveNormals), 3))
     if (curveTangents) geometry.setAttribute('curveTangent', new BufferAttribute(Float32Array.from(curveTangents), 3))
     if (curveBinormals) geometry.setAttribute('curveBinormal', new BufferAttribute(Float32Array.from(curveBinormals), 3))

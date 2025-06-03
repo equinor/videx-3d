@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import { scaleOrdinal } from 'd3-scale'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { GlyphsProvider } from '../../../contexts/GlyphsContextProvider'
 import { WellboreSelectedEvent, wellboreSelectedEventType } from '../../../events/wellbore-events'
 import { CRS } from '../../../sdk/projection/crs'
 import { Vec2 } from '../../../sdk/types/common'
@@ -25,6 +26,9 @@ import { TubeTrajectory } from '../TubeTrajectory/TubeTrajectory'
 import { Wellbore } from '../Wellbore/Wellbore'
 import { WellboreBounds } from '../WellboreBounds/WellboreBounds'
 import { WellboreLabel } from '../WellboreLabel/WellboreLabel'
+import { FormationsStripe } from '../WellboreRibbon/stripes/FormationsStripe'
+import { MeasuredDepthStripe } from '../WellboreRibbon/stripes/MeasuredDepthStripe'
+import { WellboreRibbon } from '../WellboreRibbon/WellboreRibbon'
 import { Wells } from './Wells'
 
 const colorScale = scaleOrdinal(["tomato", "#4e79a7", "#f28e2c", "#76b7b2", "#59a14f", "#edc949", "#af7aa1", "#ff9da7", "#9c755f", "#bab0ab", "darkgreen", "purple", "#24ca85"])
@@ -32,6 +36,7 @@ const colorScale = scaleOrdinal(["tomato", "#4e79a7", "#f28e2c", "#76b7b2", "#59
 const utmZone = storyArgs.utmZone
 const origin = storyArgs.origin as Vec2
 const well = storyArgs.defaultWell
+const stratColumnId = storyArgs.defaultStratColumn
 
 const Wrapper = () => {
   const [selected, setSelected] = useState<string | undefined>()
@@ -71,7 +76,7 @@ const Wrapper = () => {
   }, [highlighter])
 
   return (
-    <>
+    <GlyphsProvider fontAtlasUrl='glyphs/OpenSans-Regular.png' fontConfigUrl='glyphs/OpenSans-Regular.json'>
       <Highlighter />
       <UtmArea ref={crsRef} origin={origin} utmZone={utmZone}>
         <CameraTargetMarker />
@@ -125,6 +130,13 @@ const Wrapper = () => {
                       </Distance>
                     </WellboreBounds>
                     <WellboreLabel color="cyan" size={16} />
+                    { isSelected && (
+                      <WellboreRibbon>
+                        <MeasuredDepthStripe width={15} offset={-7.5} />
+                        <FormationsStripe width={10} offset={5} stratColumnId={stratColumnId} />          
+                      </WellboreRibbon>
+
+                    )}
                   </Wellbore>
                 </UtmPosition>
               )
@@ -132,7 +144,7 @@ const Wrapper = () => {
           />
         </BoxGrid>
       </UtmArea>
-    </>
+    </GlyphsProvider>
   )
 }
 

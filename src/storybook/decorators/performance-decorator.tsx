@@ -1,8 +1,9 @@
-// import { Perf } from 'r3f-perf'
+import { Stats } from '@react-three/drei'
+import './perf.css'
 
-// export const PerformanceDecorator = (Story: any) => (
-//   <>
-//     <Perf />
-//     <Story />
-//   </>
-// )
+export const PerformanceDecorator = (Story: any) => (
+  <>
+    <Stats className='perf-stats'/>
+    <Story />
+  </>
+)

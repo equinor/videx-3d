@@ -25,6 +25,7 @@ import { Shoes } from '../../components/Wellbores/Shoes/Shoes'
 import { TubeTrajectory } from '../../components/Wellbores/TubeTrajectory/TubeTrajectory'
 import { Wellbore } from '../../components/Wellbores/Wellbore/Wellbore'
 import { WellboreBounds } from '../../components/Wellbores/WellboreBounds/WellboreBounds'
+import { WellboreFormationColumn } from '../../components/Wellbores/WellboreFormationColumn/WellboreFormationColumn'
 import { WellboreLabel } from '../../components/Wellbores/WellboreLabel/WellboreLabel'
 import { Wells } from '../../components/Wellbores/Wells/Wells'
 import { WellboreSelectedEvent, wellboreSelectedEventType } from '../../events/wellbore-events'
@@ -50,6 +51,7 @@ const colorScale = scaleOrdinal(["tomato", "#4e79a7", "#f28e2c", "#76b7b2", "#59
 
 const utmZone = storyArgs.utmZone
 const origin = storyArgs.origin as Vec2
+const stratColumnId = storyArgs.defaultStratColumn
 
 const v = new Vector3()
 
@@ -71,6 +73,7 @@ type ExampleProps = {
   contoursColor: string,
   depthMarkerInterval: number,
   showPicks: boolean,
+  showFormationColumns: boolean,
   showShoes: boolean,
   showDepthMarkers: boolean,
   showCasingAndCompletion: boolean,
@@ -303,6 +306,11 @@ const Example = (args: ExampleProps) => {
                         <TubeTrajectory radius={0.1 * args.sizeMultiplier} color={color} priority={8} radialSegments={8} />
                         {args.showShoes && (<Shoes radialSegments={32} sizeMultiplier={args.sizeMultiplier * 1.3} color={isSelected ? color : 'orange'} />)}
                       </Distance>
+                      {args.showFormationColumns && (
+                        <Distance min={0} max={40000} onDemand>
+                          <WellboreFormationColumn stratColumnId={stratColumnId} />
+                        </Distance>
+                      )}
                       {args.showCasingAndCompletion && (
                         <Distance min={0} max={10} onDemand>
                           <Casings radialSegments={16} sizeMultiplier={args.sizeMultiplier} shoeFactor={1.3} opacity={args.casingOpacity} />
@@ -313,7 +321,14 @@ const Example = (args: ExampleProps) => {
                     {args.showPerforations && <Perforations sizeMultiplier={args.sizeMultiplier} />}
                     {(args.showDepthMarkers && isActiveWell) && <DepthMarkers interval={args.depthMarkerInterval} priority={10} depthReferencePoint='MSL' />}
 
-                    {args.showPicks && <Picks radialSegments={16} baseRadius={args.sizeMultiplier * 0.4} showAnnotations={isActiveWell} />}
+                    {args.showPicks && (
+                      <Picks
+                        stratColumnId={stratColumnId}
+                        radialSegments={16}
+                        baseRadius={args.sizeMultiplier * 0.4}
+                        showAnnotations={isActiveWell}
+                      />
+                    )}
                     {/* {isSelected && <PositionMarkers radius={20} interval={100} opacity={1} />} */}
                     <WellboreLabel color="cyan" size={16} />
                   </Wellbore>
@@ -462,6 +477,7 @@ export const Default: Story = {
     contoursColor: '#000000',
     depthMarkerInterval: 250,
     showPicks: false,
+    showFormationColumns: false,
     showShoes: true,
     showDepthMarkers: false,
     showCasingAndCompletion: false,

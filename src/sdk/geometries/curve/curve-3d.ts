@@ -133,3 +133,21 @@ export function calculateFrenetFrames(curve: Curve3D, curvePositions: number[]) 
 
   return frames
 }
+
+export function getCurveSegments(curve: Curve3D, segmentsPerMeter: number, from: number = 0, to: number = 1, useTopAsReference = true): number[] {
+  const segments: number[] = [Math.max(from, 0)]
+  const curveLength = curve.length
+  const deltaPos = useTopAsReference ? 1 : to - from
+  const segmentLength = deltaPos * curveLength
+  const nSegments = Math.floor(segmentsPerMeter * segmentLength)
+  const stepSize = deltaPos / nSegments
+  for (let i = 0; i <= nSegments; i++) {
+    const position = i * stepSize
+    if (position > from && position < to) {
+      segments.push(position)
+    }
+  }
+  segments.push(Math.min(to, 1))
+
+  return segments
+}

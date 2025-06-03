@@ -36,7 +36,7 @@ varying float vCurveLength;
 
 void main() {
 
-  float strength = mod(vCurveLength + vUv.y * 2.0, 2.0);
+  float strength = mod(vCurveLength + vUv.x * 2.0, 2.0);
   strength = step(1.5, strength);
 
   vec4 diffuseColor = vec4( uColor1 * strength + uColor2 * (1.0 - strength), opacity );

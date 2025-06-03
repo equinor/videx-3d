@@ -1,10 +1,10 @@
 import { ChangeEvent, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { DataContext } from '../../contexts/DataContext'
-import { PositionLog } from '../../sdk/data/types/PositionLog'
-import { Vec3 } from '../../sdk/types/common'
-import { WellboreManager } from '../../sdk/managers/WellboreManager'
-import { WellboreSelectedEvent, wellboreSelectedEventType } from '../../events/wellbore-events'
 import { CameraFocusAtPointEvent, CameraSetPositionEvent } from '../../events/camera-events'
+import { WellboreSelectedEvent, wellboreSelectedEventType } from '../../events/wellbore-events'
+import { PositionLog } from '../../sdk/data/types/PositionLog'
+import { WellboreManager } from '../../sdk/managers/WellboreManager'
+import { Vec3 } from '../../sdk/types/common'
 import { getTrajectory, Trajectory } from '../../sdk/utils/trajectory'
 
 export const DepthSelector = () => {

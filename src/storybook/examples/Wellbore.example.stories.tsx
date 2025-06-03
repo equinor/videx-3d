@@ -108,7 +108,7 @@ export const Default: Story = {
     useEffect(() => {
       dispatchEvent(new WellboreSelectedEvent({ id: args.id }))
     }, [args.id])
-    console.log(args.id)
+
     return (
       <>
         <Wellbore {...args}>

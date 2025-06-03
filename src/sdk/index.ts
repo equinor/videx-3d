@@ -2,6 +2,7 @@
  * @module sdk
  */
 export * from './data/GeneratorRegistry'
+export * from './data/helpers/picks-helpers'
 export * from './data/helpers/well-helpers'
 export * from './data/Store'
 export * from './data/types'

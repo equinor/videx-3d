@@ -25,6 +25,7 @@ export type PicksProps = CommonComponentProps & {
   radialSegments?: number
   baseRadius?: number
   priority?: number
+  stratColumnId: string,
   showAnnotations?: boolean
 }
 
@@ -33,7 +34,7 @@ export type PicksProps = CommonComponentProps & {
  * 
  * @example
  * <Wellbore id={wellboreId}>
- *  <Picks showAnnotations />
+ *  <Picks showAnnotations stratColumnId="abcd" />
  * </Wellbore>
  * 
  * @see {@link Wellbore}
@@ -42,6 +43,10 @@ export type PicksProps = CommonComponentProps & {
  * @group Components
  */
 export const Picks = forwardRef(({
+  radialSegments = 8,
+  baseRadius = 10,
+  stratColumnId,
+  showAnnotations = true,
   name,
   userData,
   position,
@@ -50,10 +55,7 @@ export const Picks = forwardRef(({
   layers = createLayers(LAYERS.NOT_EMITTER),
   castShadow,
   receiveShadow,
-  radialSegments = 8,
-  baseRadius = 10,
   priority = 0,
-  showAnnotations = true
 }: PicksProps, fref: ForwardedRef<Group>) => {
 
   const ref = useRef<Group>(null)
@@ -85,13 +87,14 @@ export const Picks = forwardRef(({
     if (generator && id) {
       queue(() => generator(
         id,
+        stratColumnId,
         fromMsl,
         baseRadius,
       ).then(response => {
         setData(response)
       }), priority)
     }
-  }, [generator, id, fromMsl, baseRadius, priority])
+  }, [generator, id, fromMsl, baseRadius, stratColumnId, priority])
 
 
 
