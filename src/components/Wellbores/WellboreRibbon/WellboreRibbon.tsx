@@ -1,12 +1,12 @@
 import { PropsWithChildren, useEffect, useMemo, useState } from 'react'
 import { BufferAttribute, InstancedBufferGeometry, InstancedInterleavedBuffer, InterleavedBufferAttribute } from 'three'
 import { CameraFocusAtPointEvent, cameraFocusAtPointEventType, CameraSetPositionEvent, cameraSetPositionEventType, useData, useWellboreContext } from '../../../main'
-import { calculateFrenetFrames, getCurveSegments, getTrajectory, PositionLog, Trajectory, Vec3 } from '../../../sdk'
+import { calculateFrenetFrames, getCurvePositions, getTrajectory, PositionLog, Trajectory, Vec3 } from '../../../sdk'
 import { WellboreRibbonContext, WellboreRibbonContextProps } from './WellboreRibbonContext'
 
 
 
-function createStripeGeometry(trajectory: Trajectory, segmentsPerMeter: number, fromMsl?: number) {
+function createStripeGeometry(trajectory: Trajectory, segmentsPerMeter: number, simplificationThreshold: number, fromMsl?: number) {
   const positions = new Float32Array([
     0, -0.5,
     1, -0.5,
@@ -14,7 +14,14 @@ function createStripeGeometry(trajectory: Trajectory, segmentsPerMeter: number, 
     0, 0.5,
   ])
   const from = fromMsl !== undefined ? trajectory.getPositionAtDepth(fromMsl, true)! : 0
-  const segments = getCurveSegments(trajectory.curve, segmentsPerMeter, from, 1)
+  
+  const segments = getCurvePositions(
+    trajectory.curve,
+    from,
+    1,
+    segmentsPerMeter,
+    simplificationThreshold
+  )
   const frenetFrames = calculateFrenetFrames(trajectory.curve, segments)
 
   const attributesBuffer = new Float32Array(frenetFrames.length * 7)
@@ -67,15 +74,15 @@ function createStripeGeometry(trajectory: Trajectory, segmentsPerMeter: number, 
  */
 export const WellboreRibbon = ({ children }: PropsWithChildren) => {
   const store = useData()
-  const { id, fromMsl, segmentsPerMeter } = useWellboreContext()
+  const { id, fromMsl, segmentsPerMeter, simplificationThreshold } = useWellboreContext()
   const [trajectory, setTrajectory] = useState<Trajectory | null>(null)
   const [direction, setDirection] = useState<Vec3>([0, -1, 0])
   const stripeGeometry = useMemo(() => {
     if (trajectory) {
-      return createStripeGeometry(trajectory, segmentsPerMeter, fromMsl)
+      return createStripeGeometry(trajectory, segmentsPerMeter, simplificationThreshold, fromMsl)
     }
     return null
-  }, [trajectory, segmentsPerMeter, fromMsl])
+  }, [trajectory, segmentsPerMeter, simplificationThreshold, fromMsl])
 
   const context = useMemo<WellboreRibbonContextProps | null>(() => {
     if (trajectory && stripeGeometry) {

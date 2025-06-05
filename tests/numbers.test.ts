@@ -38,7 +38,7 @@ describe('numbers', () => {
     expect(toRGB(1000.21)).toEqual([15, 67, 18])
     expect(toRGB(16777.215)).toEqual([255, 255, 255])
     expect(toRGB(-1)).toEqual([0, 0, 0])
-    expect(toRGB(16777.216)).toEqual([255, 255, 255])
+    expect(() => toRGB(16777.216)).toThrowError('Value out of range!')
     
   })
 })

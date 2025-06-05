@@ -26,8 +26,7 @@ export function remap(
 
 export const toRGB = (v: number) => {
   if (v < 0) return [0, 0, 0]
-  if (v > 1677.215) return [255, 255, 255]
-   
+  if (v > 16777.215) throw Error('Value out of range!')
   const m = Math.round(v * 1000)
   const r = Math.floor(m / 65536)
   const g = Math.floor(m / 256) - r * 256

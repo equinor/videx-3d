@@ -37,6 +37,7 @@ import { DataProviderDecorator } from '../decorators/data-provider-decorator'
 import { EventEmitterDecorator } from '../decorators/event-emitter-decorator'
 import { GeneratorsProviderDecorator } from '../decorators/generators-provider-decorator'
 import { OutputPanelDecorator } from '../decorators/output-panel-decorator'
+import { PerformanceDecorator } from '../decorators/performance-decorator'
 import { WellMapDecorator } from '../decorators/well-map-decorator'
 import { useSurfaceMetaDict } from '../hooks/useSurfaceMeta'
 import { useWellboreHeaders } from '../hooks/useWellboreHeaders'
@@ -82,7 +83,8 @@ type ExampleProps = {
   casingOpacity: number,
   sizeMultiplier: number,
   gridCellSize: number,
-
+  segmentsPerMeter: number,
+  simplificationThreshold: number,
 }
 
 const Example = (args: ExampleProps) => {
@@ -261,6 +263,8 @@ const Example = (args: ExampleProps) => {
               return (
                 <UtmPosition easting={wellbore.easting} northing={wellbore.northing}>
                   <Wellbore
+                    segmentsPerMeter={args.segmentsPerMeter}
+                    simplificationThreshold={args.simplificationThreshold}
                     id={wellbore.id}
                     fromMsl={fromMsl}
                     onPointerClick={async (event) => {
@@ -436,6 +440,12 @@ const meta = {
         type: 'select'
       }
     },
+    segmentsPerMeter: {
+      control: { type: 'range', min: 0.1, max: 2, step: 0.1 }
+    },
+    simplificationThreshold: {
+      control: { type: 'range', min: 0, max: 0.0001, step: 0.000001 }
+    },
   },
   parameters: {
     scale: 1000,
@@ -444,7 +454,7 @@ const meta = {
     colorScale,
   },
   decorators: [
-    //PerformanceDecorator,
+    PerformanceDecorator,
     EventEmitterDecorator,
     AnnotationsDecorator,
     Canvas3dDecorator,
@@ -486,6 +496,8 @@ export const Default: Story = {
     sizeMultiplier: 3,
     casingOpacity: 1,
     gridCellSize: 500,
+    segmentsPerMeter: 0.1,
+    simplificationThreshold: 0,
   },
 }
 
