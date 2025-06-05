@@ -1,16 +1,16 @@
 /**
  * @module main
  */
-export * from './components/common'
-
 export * from './components/Annotations'
 export * from './components/CameraTargetMarker/CameraTargetMarker'
+export * from './components/common'
 export * from './components/Distance'
 export * from './components/Grids'
 export * from './components/Handlers/EventEmitter'
 export * from './components/Handlers/Highlighter'
 export * from './components/Html'
 export * from './components/ObservableGroup/ObservableGroup'
+export * from './components/SDFTest/SDFTest'
 export * from './components/Surfaces'
 export * from './components/Symbol'
 export * from './components/UtmArea'
@@ -27,12 +27,15 @@ export * from './components/Wellbores/Wellbore'
 export * from './components/Wellbores/WellboreBounds'
 export * from './components/Wellbores/WellboreFormationColumn'
 export * from './components/Wellbores/WellboreLabel'
+export * from './components/Wellbores/WellboreRibbon'
 export * from './components/Wellbores/Wells'
 
 export * from './contexts/DataContext'
 export * from './contexts/DataContextProvider'
 export * from './contexts/GeneratorsContext'
 export * from './contexts/GeneratorsContextProvider'
+export * from './contexts/GlyphsContext'
+export * from './contexts/GlyphsContextProvider'
 
 export * from './events/camera-events'
 export * from './events/depth-events'

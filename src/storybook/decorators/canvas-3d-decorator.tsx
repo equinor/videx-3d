@@ -26,7 +26,7 @@ export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
         position: parameters.cameraPosition || [-1 * scale, 1 * scale, -1 * scale],
         fov: 30,
       }}
-      gl={{ logarithmicDepthBuffer: true, autoClear: !!parameters.autoClear, stencil: false }}
+      gl={{ logarithmicDepthBuffer: true, autoClear: !!parameters.autoClear, stencil: false, pixelRatio: parameters.pixelRatio || devicePixelRatio }}
       style={{
         backgroundColor: parameters.background || '#000',
         position: 'absolute',

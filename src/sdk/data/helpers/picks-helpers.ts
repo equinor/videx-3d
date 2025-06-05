@@ -105,20 +105,15 @@ export async function getUnitPicks(
     } else {
       wellborePicks = await limit(() => store.get<Pick[]>('picks', header.id))
       if (wellborePicks) {
+        wellborePicks = wellborePicks.filter(d => d.mdMsl <= bottom && d.mdMsl >= top).sort((a, b) => b.mdMsl - a.mdMsl);
         picksFromPrev = wellborePicks
       } else {
         return
       }
     }
 
-    const picks = wellborePicks.filter(
-      (d) => d.mdMsl <= bottom && d.mdMsl >= top
-    )
-
-    picks.sort((a, b) => b.mdMsl - a.mdMsl)
-
-    for (let i = 0; i < picks.length; i++) {
-      const pick = picks[i]
+    for (let i = 0; i < wellborePicks.length; i++) {
+      const pick = wellborePicks[i]
 
       if (pick.mdMsl <= md && !added.has(pick.id)) {
         const unit = unitsMap.get(pick.pickIdentifier)
@@ -267,15 +262,14 @@ export function mergeFormationIntervals(
 
   for (let i = 1; i < items.length; i++) {
     const a = items[i]
-
     if (a.entry.mdMsl > depth) {
-      const limit = a.entry.mdMsl
+      const lim = a.entry.mdMsl
 
-      while (stack.length && depth < limit) {
+      while (stack.length && depth < lim) {
         const b = stack.pop()!
 
         if (b.exit.mdMsl > depth) {
-          const bottom = Math.min(b.exit.mdMsl, limit)
+          const bottom = a.unit.level >= b.unit.level ? Math.min(b.exit.mdMsl, lim) : b.exit.mdMsl
 
           merged.push({
             mdMslTop: depth,
@@ -285,13 +279,13 @@ export function mergeFormationIntervals(
 
           depth = bottom
 
-          if (b.exit.mdMsl > limit) {
+          if (b.exit.mdMsl > depth) {
             stack.push(b)
           }
         }
       }
 
-      depth = limit
+      depth = Math.max(lim, depth)
     }
 
     stack.push(a)

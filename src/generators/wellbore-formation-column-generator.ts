@@ -44,7 +44,7 @@ export async function generateWellboreFormationColumnGeometries(
   if (!surfaceIntervals.length) return null
 
   const mergedIntervals = mergeFormationIntervals(surfaceIntervals)
-  
+
   const poslogMsl = await limit(() =>
     this.get<PositionLog>('position-logs', wellboreId)
   )

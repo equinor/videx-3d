@@ -1,5 +1,5 @@
 import { BufferAttribute, BufferGeometry, TypedArray } from 'three'
-
+// TODO: Add support for InterleavedBufferAttribute and InstancedBufferGeometry
 export type BufferAttributeDrawRange = {
   start: number,
   count: number,
