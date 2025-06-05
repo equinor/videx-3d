@@ -26,7 +26,6 @@ export function remap(
 
 export const toRGB = (v: number) => {
   if (v < 0) return [0, 0, 0]
-  if (v > 1677.215) return [255, 255, 255]
    
   const m = Math.round(v * 1000)
   const r = Math.floor(m / 65536)

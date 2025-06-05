@@ -1,13 +1,13 @@
 import { ReactElement, useEffect, useMemo, useState } from 'react'
-import { useGenerator } from '../../../hooks/useGenerator'
 import { BufferGeometry, Material, MeshLambertMaterial, MeshStandardMaterial, Object3D } from 'three'
-import { ScreenMaterial } from './Screen/screen-material'
+import { useGenerator } from '../../../hooks/useGenerator'
 import { useWellboreContext } from '../../../hooks/useWellboreContext'
-import { queue } from '../../../sdk/utils/limiter'
-import { completionTools, CompletionToolsGeneratorResponse } from './completion-tools-defs'
 import { createLayers, LAYERS } from '../../../layers/layers'
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing'
+import { queue } from '../../../sdk/utils/limiter'
 import { CommonComponentProps, CustomMaterialProps } from '../../common'
+import { completionTools, CompletionToolsGeneratorResponse } from './completion-tools-defs'
+import { ScreenMaterial } from './Screen/screen-material'
 
 /**
  * CompletionTools props
@@ -16,8 +16,8 @@ import { CommonComponentProps, CustomMaterialProps } from '../../common'
 export type CompletionToolsProps = CommonComponentProps & CustomMaterialProps & {
   radialSegments?: number,
   sizeMultiplier?: number,
-  segmentsPerMeter?: number,
-  simplificationThreshold?: number,
+  overrideSegmentsPerMeter?: number,
+  overrideSimplificationThreshold?: number,
   fallback?: (() => ReactElement<Object3D>),
   priority?: number,
 }
@@ -51,16 +51,29 @@ export const CompletionTools = ({
   customDistanceMaterial,
   radialSegments = 16,
   sizeMultiplier = 1,
-  segmentsPerMeter = 0.1,
-  simplificationThreshold = 0,
+  overrideSegmentsPerMeter,
+  overrideSimplificationThreshold,
   priority = 0,
   fallback,
 }: CompletionToolsProps) => {
-  const { id, fromMsl } = useWellboreContext()
+  const { 
+    id,
+    fromMsl,
+    segmentsPerMeter: defaultSegmentsPerMeter,
+    simplificationThreshold: defaultSimplificationThreshold,
+  } = useWellboreContext()
+
   const generator = useGenerator<CompletionToolsGeneratorResponse>(completionTools)
   const [geometry, setGeometry] = useState<BufferGeometry | null>(null)
   const [useFallback, setUseFallback] = useState(false)
 
+  const { segmentsPerMeter, simplificationThreshold } = useMemo(() => {
+    return {
+      segmentsPerMeter: overrideSegmentsPerMeter !== undefined ? overrideSegmentsPerMeter : defaultSegmentsPerMeter || 0.1,
+      simplificationThreshold: overrideSimplificationThreshold !== undefined ? overrideSimplificationThreshold : defaultSimplificationThreshold || 0
+    }
+  }, [defaultSegmentsPerMeter, defaultSimplificationThreshold, overrideSegmentsPerMeter, overrideSimplificationThreshold])
+  
   const material = useMemo<Material | Material[]>(() => {
       if (customMaterial) {
         return customMaterial
@@ -132,6 +145,7 @@ export const CompletionTools = ({
           color: '#ccc',
         })
       ]
+
       return m
     }, [customMaterial])
 

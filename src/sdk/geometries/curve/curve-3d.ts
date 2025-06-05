@@ -134,20 +134,62 @@ export function calculateFrenetFrames(curve: Curve3D, curvePositions: number[]) 
   return frames
 }
 
-export function getCurveSegments(curve: Curve3D, segmentsPerMeter: number, from: number = 0, to: number = 1, useTopAsReference = true): number[] {
-  const segments: number[] = [Math.max(from, 0)]
+/**
+ * Get a set of positions along a curve according to a number of segments per meter,
+ * optionally simplified/optimized by specifying a simplification threshold.
+ * 
+ * To get a sub section, use the from and/or to parameters. 
+ * 
+ * @remark segments per meter is always calculated from the start of the curve to ensure alingment when optimizing the number of vertices
+ */
+export function getCurvePositions(
+  curve: Curve3D, 
+  from = 0, 
+  to = 1, 
+  segmentsPerMeter = 0.1, 
+  simplificationThreshold = 0
+) {
+  const segments: number[] = []
   const curveLength = curve.length
-  const deltaPos = useTopAsReference ? 1 : to - from
-  const segmentLength = deltaPos * curveLength
-  const nSegments = Math.floor(segmentsPerMeter * segmentLength)
-  const stepSize = deltaPos / nSegments
-  for (let i = 0; i <= nSegments; i++) {
-    const position = i * stepSize
-    if (position > from && position < to) {
-      segments.push(position)
+  const nSegments = Math.ceil(segmentsPerMeter * curveLength)
+  const stepSize = 1 / nSegments
+
+  const MIN_SEGMENT_LENGTH = 1 / (curveLength * 0.01)
+
+  if (simplificationThreshold) {
+    simplificationThreshold *= 0.1
+  }
+
+  // add first position
+  segments.push(from);
+  let guideTangent = simplificationThreshold
+    ? curve.getTangentAt(from)
+    : null
+
+  const startAt = Math.floor(from * nSegments)
+  let lastPosition = from
+  
+  for (let j = startAt; j <= nSegments; j++) {
+    const curvePosition = j * stepSize
+    const currentSegmentLength = curvePosition - lastPosition
+    const candidateTangent = simplificationThreshold
+      ? curve.getTangentAt(curvePosition)
+      : null
+    if (curvePosition > from && curvePosition < to &&
+      (currentSegmentLength >= MIN_SEGMENT_LENGTH ||
+      !simplificationThreshold ||
+      Math.abs(dotVec3(guideTangent!, candidateTangent!)) <
+        1 - simplificationThreshold
+      )
+    ) {
+      segments.push(curvePosition)
+      guideTangent = candidateTangent
+      lastPosition = curvePosition
     }
   }
-  segments.push(Math.min(to, 1))
+
+  // add final position
+  segments.push(to)
 
   return segments
 }

@@ -23,9 +23,11 @@ type DemoProps = {
   merged: boolean
   scaleFactor: number
   stepSize: number
+  segmentsPerMeter: number
+  simplificationThreshold: number
 } 
 
-const DemoComponent = ({ showRibbon, merged, scaleFactor, stepSize }: DemoProps) => {
+const DemoComponent = ({ showRibbon, merged, scaleFactor, stepSize, segmentsPerMeter, simplificationThreshold }: DemoProps) => {
   useEffect(() => {
       dispatchEvent(new WellboreSelectedEvent({ id: wellboreId }))
     }, [])
@@ -34,7 +36,7 @@ const DemoComponent = ({ showRibbon, merged, scaleFactor, stepSize }: DemoProps)
     <>
         <GlyphsProvider fontAtlasUrl='glyphs/OpenSans-Regular.png' fontConfigUrl='glyphs/OpenSans-Regular.json'>
           <group>
-            <Wellbore id={wellboreId}>
+            <Wellbore id={wellboreId} segmentsPerMeter={segmentsPerMeter} simplificationThreshold={simplificationThreshold}>
               {showRibbon && (
                 <WellboreRibbon>
                   <MeasuredDepthStripe stepSize={stepSize} width={15} offset={-7.5} />
@@ -88,6 +90,8 @@ export const Default: Story = {
     merged: true,
     scaleFactor: 5,
     stepSize: 10,
+    segmentsPerMeter: 0.1,
+    simplificationThreshold: 0,
     // stratColumnId,
     // startRadius: 0.5,
     // formationWidth: 2,
@@ -111,6 +115,22 @@ export const Default: Story = {
         min: 5,
         max: 100,
         step: 1
+      }
+    },
+    segmentsPerMeter: {
+      control: {
+        type: 'range',
+        min: 0.1,
+        max: 1,
+        step: 0.1
+      }
+    },
+    simplificationThreshold: {
+      control: {
+        type: 'range',
+        min: 0,
+        max: 0.00005,
+        step: 0.000001
       }
     },
     // formationWidth: {

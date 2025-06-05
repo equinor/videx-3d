@@ -1,12 +1,12 @@
 import { ForwardedRef, forwardRef, ReactElement, useEffect, useMemo, useState } from 'react'
-import { useGenerator } from '../../../hooks/useGenerator'
 import { BufferGeometry, Group, Material, MeshStandardMaterial, Object3D } from 'three'
+import { useGenerator } from '../../../hooks/useGenerator'
 import { useWellboreContext } from '../../../hooks/useWellboreContext'
-import { queue } from '../../../sdk/utils/limiter'
-import { casings, CasingsGeneratorResponse } from './casings-defs'
 import { createLayers, LAYERS } from '../../../layers/layers'
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing'
+import { queue } from '../../../sdk/utils/limiter'
 import { CommonComponentProps, CustomMaterialProps } from '../../common'
+import { casings, CasingsGeneratorResponse } from './casings-defs'
 
 /**
  * Casing props
@@ -17,8 +17,8 @@ export type CasingProps = CommonComponentProps & CustomMaterialProps & {
   radialSegments?: number,
   sizeMultiplier?: number,
   shoeFactor?: number,
-  segmentsPerMeter?: number,
-  simplificationThreshold?: number,
+  overrideSegmentsPerMeter?: number,
+  overrideSimplificationThreshold?: number,
   opacity?: number,
   priority?: number,
 }
@@ -54,18 +54,30 @@ export const Casings = forwardRef(({
   radialSegments = 16,
   sizeMultiplier = 1,
   shoeFactor = 1,
-  segmentsPerMeter = 0.1,
-  simplificationThreshold = 0,
+  overrideSegmentsPerMeter,
+  overrideSimplificationThreshold,
   opacity = 1,
   fallback,
   priority = 0
 }: CasingProps, ref: ForwardedRef<Group>) => {
 
-  const { id, fromMsl } = useWellboreContext()
+  const { 
+    id,
+    fromMsl,
+    segmentsPerMeter: defaultSegmentsPerMeter,
+    simplificationThreshold: defaultSimplificationThreshold,
+  } = useWellboreContext()
   const generator = useGenerator<CasingsGeneratorResponse>(casings)
   const [geometry, setGeometry] = useState<BufferGeometry | null>(null)
   const [useFallback, setUseFallback] = useState(false)
 
+  const { segmentsPerMeter, simplificationThreshold } = useMemo(() => {
+    return {
+      segmentsPerMeter: overrideSegmentsPerMeter !== undefined ? overrideSegmentsPerMeter : defaultSegmentsPerMeter || 0.1,
+      simplificationThreshold: overrideSimplificationThreshold !== undefined ? overrideSimplificationThreshold : defaultSimplificationThreshold || 0
+    }
+  }, [defaultSegmentsPerMeter, defaultSimplificationThreshold, overrideSegmentsPerMeter, overrideSimplificationThreshold])
+  
   const material = useMemo<Material | Material[]>(() => {
     if (customMaterial) {
       return customMaterial
@@ -75,7 +87,7 @@ export const Casings = forwardRef(({
       new MeshStandardMaterial({
         color: 'black',
         metalness: 0,
-        roughness: 1
+        roughness: 1,
       }),
       new MeshStandardMaterial({
         color: '#555',

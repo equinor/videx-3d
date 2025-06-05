@@ -55,6 +55,7 @@ export const Default: Story = {
     id: wellboreId,
     sizeMultiplier: 10,
     segmentsPerMeter: 0.1,
+    simplificationThreshold: 0,
     showTrajectory: true,
     showCompletion: true,
     showCompletionAnnotations: true,
@@ -79,7 +80,7 @@ export const Default: Story = {
     sizeMultiplier: { control: { type: 'range', min: 1, max: 10, step: 1 } },
     casingOpacity: { control: { type: 'range', min: 0.1, max: 1, step: 0.1 } },
     segmentsPerMeter: {
-      control: { type: 'range', min: 0.1, max: 20, step: 0.1 }
+      control: { type: 'range', min: 0.1, max: 2, step: 0.1 }
     },
     simplificationThreshold: {
       control: { type: 'range', min: 0, max: 0.0001, step: 0.000001 }
