@@ -1,17 +1,13 @@
 #include <common>
 #include <logdepthbuf_pars_fragment>
 
-vec3 BLACK = vec3(0.0);
-vec3 WHITE = vec3(1.0);
-vec3 GRAY = vec3(0.5);
-vec3 LIGHTGRAY = vec3(0.75);
-
 uniform float fontSize;
 uniform float stepSize;
 uniform float startDepth;
 
 #include ../../../../sdk/materials/shaderLib/glyphs.glsl
 #include ../../../../sdk/materials/shaderLib/render-number.glsl
+#include ../../../../sdk/materials/shaderLib/colors.glsl
 
 float lines(float v, float lineWidth) {
   float uvDeriv = fwidth(v * 2.0);
