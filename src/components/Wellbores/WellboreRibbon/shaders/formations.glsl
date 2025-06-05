@@ -5,6 +5,7 @@
 #include ../../../../sdk/materials/shaderLib/render-text.glsl
 #include ../../../../sdk/materials/shaderLib/sdf-functions.glsl
 #include ../../../../sdk/materials/shaderLib/rotation.glsl
+#include ../../../../sdk/materials/shaderLib/colors.glsl
 
 struct Unit {
   uint index;
@@ -15,10 +16,6 @@ uniform vec3 intervals[INTERVALS_LENGTH];
 uniform Unit units[UNITS_LENGTH];
 uniform float startDepth;
 
-const vec3 BLACK = vec3(0.0);
-const vec3 WHITE = vec3(1.0);
-const vec3 GRAY = vec3(0.5);
-const vec3 LIGHTGRAY = vec3(0.75);
 const float padding = 0.9;
 
 float lines(float v, float lineWidth) {
