@@ -37,7 +37,7 @@ uvec3 readTextPointerFromTexture(uint index) {
 }
 
 void renderText(
-  out vec3 outColor,
+  inout vec3 outColor,
   vec2 position,
   uvec3 textPointer,
   float verticalAlign,
@@ -46,7 +46,6 @@ void renderText(
   float spacing,
   float scale
 ) {
-
   // do nothing if the text widht is 0
   if(textPointer.z == 0u)
     return;

@@ -17,7 +17,7 @@ uniform float horizontalAlign;
 #include ../../../sdk/materials/shaderLib/sdf-functions.glsl
 
 // Debug
-void textGuides(out vec3 outColor, vec2 position) {
+void textGuides(inout vec3 outColor, vec2 position) {
   float helper;
 
   // helper = sdfBox(position - vec2(0.0, 8.5), vec2(1000.0, glyphFontSize / 2.0));
@@ -40,7 +40,7 @@ void textGuides(out vec3 outColor, vec2 position) {
 }
 
 // Examples
-void example1(out vec3 color, vec2 pixelCoords) {
+void example1(inout vec3 color, vec2 pixelCoords) {
   // the scale we need for a specific font size
   float scale = glyphFontSize / fontSize;
 
@@ -74,7 +74,7 @@ void example1(out vec3 color, vec2 pixelCoords) {
   renderText(color, pixelCoords, textPointer, verticalAlign, horizontalAlign, vec3(0.09, 0.74, 0.51), spacing, scale);
 }
 
-void example2(out vec3 color, vec2 pixelCoords) {
+void example2(inout vec3 color, vec2 pixelCoords) {
   uint i = 0u;
 
   uvec3 textPointer = readTextPointerFromTexture(i);
@@ -101,7 +101,7 @@ void example2(out vec3 color, vec2 pixelCoords) {
   renderText(color, pixelCoords, textPointer, verticalAlign, horizontalAlign, textColor, spacing, scale);
 }
 
-void exmaple3(out vec3 color, vec2 pixelCoords) {
+void exmaple3(inout vec3 color, vec2 pixelCoords) {
   float scale = glyphFontSize / fontSize;
 
   float number = time;//-495.549221;

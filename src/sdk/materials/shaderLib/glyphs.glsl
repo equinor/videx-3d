@@ -68,7 +68,7 @@ float _sdfGlyph(vec2 p, uint glyphId) {
   return sigDist;
 }
 
-void renderGlyph(out vec3 outColor, vec2 position, uint glyphId, vec3 glyphColor, float pxRange) {
+void renderGlyph(inout vec3 outColor, vec2 position, uint glyphId, vec3 glyphColor, float pxRange) {
   float dist = _sdfGlyph(position, glyphId);
   float e = pxRange * (dist - 0.5 + in_bias) + 0.5 + out_bias;
 

@@ -1,7 +1,7 @@
 uniform uint digits[12];
 
 float renderNumber(
-  out vec3 outColor,
+  inout vec3 outColor,
   vec2 position,
   float number,
   uint decimals,
