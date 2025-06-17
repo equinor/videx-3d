@@ -1,10 +1,8 @@
-import { useTexture } from '@react-three/drei'
 import { extend, useFrame } from '@react-three/fiber'
 import { MeshLineGeometry, MeshLineMaterial } from 'meshline'
-import { useEffect, useMemo, useState } from 'react'
-import { DataTexture, DoubleSide, LinearFilter, Texture, Uniform, Vector2 } from 'three'
-import { createConfig, GlyphConfig, MsdfFontJson } from '../../sdk/utils/glyphs'
-import { get } from '../../storybook/dependencies/api'
+import { useContext, useEffect, useMemo } from 'react'
+import { DataTexture, DoubleSide, Texture, Uniform, Vector2 } from 'three'
+import { GlyphsContext } from '../../main'
 import fragmentShader from './shaders/fragment.glsl'
 import vertexShader from './shaders/vertex.glsl'
 
@@ -24,25 +22,10 @@ type Props = {
   horizontalAlign?: number
 }
 
-const fileName = 'OpenSans-Regular'
-
 
 export const SDFTest = ({ text, inBias = 0, outBias = 0, fontSize = 32, rotation = 0, spacing = 0, verticalAlign = 0.0, horizontalAlign = 0.0 }: Props) => {
 
-  const glyphAtlas = useTexture(`./glyphs/${fileName}.png`, (tex: Texture) => {
-    tex.generateMipmaps = false
-    tex.magFilter = LinearFilter
-    tex.minFilter = LinearFilter
-    tex.flipY = true
-  })
-
-  const [glyphConfig, setGlyphConfig] = useState<GlyphConfig | null>()
-
-  useEffect(() => {
-    get(`./glyphs/${fileName}.json`).then((json: MsdfFontJson) => {
-      setGlyphConfig(createConfig(json))
-    }).catch(() => setGlyphConfig(null))
-  }, [])
+  const glyphContext = useContext(GlyphsContext)
 
   const uniforms = useMemo(() => {
     return {
@@ -64,26 +47,32 @@ export const SDFTest = ({ text, inBias = 0, outBias = 0, fontSize = 32, rotation
   }, [])
 
   useEffect(() => {
-    if (glyphConfig) {
+    if (glyphContext) {
+      uniforms.glyphAtlas.value = glyphContext.glyphAtlas
+    }
+  }, [uniforms, glyphContext])
+
+  useEffect(() => {
+    if (glyphContext) {
       if (uniforms.textTexture.value) {
         uniforms.textTexture.value.dispose()
       }
-      const { texture, textPointersOffset, textPointersCount } = glyphConfig.encodeTextTexture(text.split('\n'))
+      const { texture, textPointersOffset, textPointersCount } = glyphContext.encodeTextTexture(text.split('\n'))
       uniforms.textTexture.value = texture
       uniforms.textPointersOffset.value = textPointersOffset
       uniforms.textPointersCount.value = textPointersCount
-      uniforms.digits.value = [...glyphConfig.encodeText('0123456789.-').indices]
+      uniforms.digits.value = [...glyphContext.encodeText('0123456789.-').indices]
     }
     
     return () => {
-      if (glyphConfig) {
-        glyphConfig.dispose()
+      if (glyphContext) {
+        glyphContext.dispose()
       }
     }
-  }, [uniforms, glyphConfig, text])
+  }, [uniforms, glyphContext, text])
+
 
   useEffect(() => {
-    uniforms.glyphAtlas.value = glyphAtlas    
     uniforms.in_bias.value = inBias
     uniforms.out_bias.value = outBias
     uniforms.fontSize.value = fontSize
@@ -91,13 +80,13 @@ export const SDFTest = ({ text, inBias = 0, outBias = 0, fontSize = 32, rotation
     uniforms.spacing.value = spacing
     uniforms.verticalAlign.value = verticalAlign
     uniforms.horizontalAlign.value = horizontalAlign
-  }, [uniforms, glyphAtlas, glyphConfig, inBias, outBias, fontSize, rotation, spacing, verticalAlign, horizontalAlign])
+  }, [uniforms, inBias, outBias, fontSize, rotation, spacing, verticalAlign, horizontalAlign])
 
   useFrame(({ clock }) => {
     uniforms.time.value = clock.elapsedTime
   })
 
-  if (!glyphConfig) return null
+  if (!glyphContext) return null
 
   return (
     <group>
@@ -107,10 +96,10 @@ export const SDFTest = ({ text, inBias = 0, outBias = 0, fontSize = 32, rotation
         {/* <icosahedronGeometry args={[WIDTH, 32]} /> */}
         <shaderMaterial
           defines={{
-            GLYPHS_LENGTH: glyphConfig.glyphsCount,
+            GLYPHS_LENGTH: glyphContext.glyphsCount,
           }}
           uniforms={uniforms}
-          uniformsGroups={[glyphConfig.glyphData]}
+          uniformsGroups={[glyphContext.glyphData]}
           vertexShader={vertexShader}
           fragmentShader={fragmentShader}
           side={DoubleSide}

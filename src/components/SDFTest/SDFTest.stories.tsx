@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator'
+import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator'
 import { PerformanceDecorator } from '../../storybook/decorators/performance-decorator'
 import { SDFTest } from './SDFTest'
 
@@ -7,6 +8,7 @@ const meta = {
   title: 'Components/Misc/SDFTest',
   component: SDFTest,
   decorators: [
+    GlyphsDecorator,
     PerformanceDecorator,
     Canvas3dDecorator,
   ],
