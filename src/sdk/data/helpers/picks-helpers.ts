@@ -31,12 +31,12 @@ export type FormationMarker = {
 
 /**
  * Match picks bottom-up (wellbore -> parent chain) with stratigraphy units.
- * As we traverse to a parent wellbore, ignore any picks that are deeper than 
+ * As we traverse to a parent wellbore, ignore any picks that are deeper than
  * the current pick depth or the child's kickoff depth.
- * 
+ *
  * If a wellbore has picks above its kickoff depth, we prioritize these picks
  * above corresponding picks from the parent wellbore
- * 
+ *
  */
 export async function getUnitPicks(
   wellboreId: string,
@@ -80,58 +80,50 @@ export async function getUnitPicks(
   const unmatched: Pick[] = []
 
   // to keep track of which picks we've already added
-  const added = new Set<string>()
+  const visited = new Set<string>()
 
   fromMsl = fromMsl === undefined ? -Infinity : fromMsl
 
   // keep track of depth as we progress from bottom-up of the wellbore
   let md = Infinity
-  let bottom = Infinity
 
-  // fallback
-  let picksFromPrev: Pick[] = []
 
   // add all picks in range (top, bottom) from a wellbore header
   const addPicks = async (header: WellboreHeader) => {
-    let top = fromMsl !== undefined ? fromMsl : -Infinity
-    if (header.kickoffDepthMsl !== null && header.kickoffDepthMsl > top) {
-      top = header.kickoffDepthMsl
-    }
-    let wellborePicks: Pick[] | null = null
+    if (header.kickoffDepthMsl === null || header.kickoffDepthMsl < md) {
+      let wellborePicks: Pick[] | null = null
 
-    // we prioritize picks from previous wellbores if they exist above the bottom of the current range
-    if (picksFromPrev && picksFromPrev.length > 0 && picksFromPrev[0].mdMsl < bottom) {
-      wellborePicks = picksFromPrev
-    } else {
+      // we prioritize picks from previous wellbores if they exist above the bottom of the current range
       wellborePicks = await limit(() => store.get<Pick[]>('picks', header.id))
       if (wellborePicks) {
-        wellborePicks = wellborePicks.filter(d => d.mdMsl <= bottom && d.mdMsl >= top).sort((a, b) => b.mdMsl - a.mdMsl);
-        picksFromPrev = wellborePicks
-      } else {
-        return
-      }
-    }
+        wellborePicks = wellborePicks
+          .filter((d) => d.mdMsl <= md && d.mdMsl)
+          .sort((a, b) => b.mdMsl - a.mdMsl)
 
-    for (let i = 0; i < wellborePicks.length; i++) {
-      const pick = wellborePicks[i]
+        for (let i = 0; i < wellborePicks.length; i++) {
+          const pick = wellborePicks[i]
 
-      if (pick.mdMsl <= md && !added.has(pick.id)) {
-        const unit = unitsMap.get(pick.pickIdentifier)
-        if (unit) {
-          matched.push({
-            pick,
-            unit,
-          })
-        } else {
-          unmatched.push(pick)
+          if (pick.mdMsl <= md && !visited.has(pick.id)) {
+            const unit = unitsMap.get(pick.pickIdentifier)
+            if (unit) {
+              matched.push({
+                pick,
+                unit,
+              })
+              md = pick.mdMsl
+            } else {
+              unmatched.push(pick)
+            }
+            visited.add(pick.id)
+          }
         }
-        added.add(pick.id)
-        md = pick.mdMsl
       }
     }
-
-    bottom = top
     if (traverse && header.parent && md > fromMsl) {
+      if (header.kickoffDepthMsl !== null) {
+        // we should never use picks from parent wellbore below current wellbore kickoff point
+        md = Math.min(md, header.kickoffDepthMsl) 
+      }
       const parent = headers.get(header.parent)
       if (parent) await addPicks(parent)
     }
@@ -144,14 +136,14 @@ export async function getUnitPicks(
 
 /**
  * Create groups of entry and exit picks for each stratigraphy unit level:
- * 
+ *
  * - Sort the matched picks by ascending level and ascending depth
  * - Traverse the matched picks, keeping a reference of the current level and unit to find the correct entry and exit pick
  * - Remove picks from list as formations are identified
  */
 export function createFormationIntervals(
   unitPicks: UnitPick[],
-  maxDepth: number = Infinity,
+  maxDepth: number = Infinity
 ): FormationInterval[] {
   const intervals: FormationInterval[] = []
 
@@ -235,7 +227,7 @@ export function createFormationIntervals(
 
 /**
  * Merge into a single column, where higher levels takes precedence over lower levels:
- *  
+ *
  * - Sort the intervals by ascending entry depth and ascending stratigraphy unit level
  * - Start with a stack containing the first item from the sorted list and keep track of the entry depth
  * - iterate to find the next item that has an entry depth lower than current depth
@@ -269,7 +261,10 @@ export function mergeFormationIntervals(
         const b = stack.pop()!
 
         if (b.exit.mdMsl > depth) {
-          const bottom = a.unit.level >= b.unit.level ? Math.min(b.exit.mdMsl, lim) : b.exit.mdMsl
+          const bottom =
+            a.unit.level >= b.unit.level
+              ? Math.min(b.exit.mdMsl, lim)
+              : b.exit.mdMsl
 
           merged.push({
             mdMslTop: depth,
