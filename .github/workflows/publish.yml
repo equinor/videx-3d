@@ -1,9 +1,8 @@
 name: NPM Publish
 
 on:
-  pull_request:
-    branches: [main]
-    types: [closed]
+  release:
+    types: [published]
 
 permissions: {}
 
