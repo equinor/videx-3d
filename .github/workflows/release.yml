@@ -1,0 +1,13 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    name: Release
+    uses: equinor/ops-actions/.github/workflows/release-please.yml@v9.21.0
+    with:
+      release_type: 'node'
