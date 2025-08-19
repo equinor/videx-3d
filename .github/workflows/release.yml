@@ -12,6 +12,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      issues: write
     name: Release
     uses: equinor/ops-actions/.github/workflows/release-please.yml@v9.22.0
     with:
