@@ -5,9 +5,15 @@ on:
     branches:
       - main
 
+permissions: {}
+
 jobs:
   release:
+    permissions:
+      contents: write
+      pull-requests: write
     name: Release
     uses: equinor/ops-actions/.github/workflows/release-please.yml@v9.22.0
     with:
       release_type: 'node'
+      runs_on: ubuntu-24.04
