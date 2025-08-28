@@ -5,9 +5,17 @@ on:
     branches:
       - main
 
+permissions: {}
+
 jobs:
   release:
     name: Release
-    uses: equinor/ops-actions/.github/workflows/release-please.yml@a4fa978f95792466d3f127fd4be9203508648fb3
-    with:
-      release_type: 'node'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Release Please
+        uses: googleapis/release-please-action@c2a5a2bd6a758a0937f1ddb1e8950609867ed15c
+        with:
+          release-type: node
