@@ -85,6 +85,13 @@ type ExampleProps = {
   gridCellSize: number,
   segmentsPerMeter: number,
   simplificationThreshold: number,
+  colors: {
+    wellbore: string,
+    gridColorMajor?: string,
+    gridColorMinor?: string,
+    gridBackground?: string,
+    axesColor?: string,
+  }
 }
 
 const Example = (args: ExampleProps) => {
@@ -211,7 +218,10 @@ const Example = (args: ExampleProps) => {
             position={gridPosition}
             gridLineWidth={6 / args.gridCellSize}
             backgroundOpacity={0.5}
-            axesColor="#eee"
+            axesColor={args.colors.axesColor}
+            background={args.colors.gridBackground}
+            gridColorMajor={args.colors.gridColorMajor}
+            gridColorMinor={args.colors.gridColorMinor}
             renderOrder={0}
           />
         )}
@@ -258,7 +268,7 @@ const Example = (args: ExampleProps) => {
             included={included}
             selected={selected}
             renderWellbore={(wellbore, fromMsl, isSelected, isActiveWell) => {
-              const color = isActiveWell ? colorScale(wellbore.name.replace(wellbore.well, '') || 'Main') : '#aaa'
+              const color = isActiveWell ? colorScale(wellbore.name.replace(wellbore.well, '') || 'Main') : args.colors.wellbore
 
               return (
                 <UtmPosition easting={wellbore.easting} northing={wellbore.northing}>
@@ -446,12 +456,7 @@ const meta = {
     simplificationThreshold: {
       control: { type: 'range', min: 0, max: 0.0001, step: 0.000001 }
     },
-  },
-  parameters: {
-    scale: 1000,
-    cameraPosition: [0, 15000, 20000],
-    cameraTarget: [0, 0, 0],
-    colorScale,
+    colors: { control: { disable: true } }
   },
   decorators: [
     PerformanceDecorator,
@@ -469,35 +474,69 @@ const meta = {
 
 type Story = StoryObj<typeof meta>
 
+const commonArgs = {
+  surfaceId: undefined,
+  useColorRamp: true,
+  reverseRamp: false,
+  color: 'white',
+  colorRamp: 0,
+  opacity: 0.98,
+  maxError: 5,
+  wireframe: false,
+  showContours: false,
+  contoursColorMode: ContourColorMode.darken,
+  contoursColorModeFactor: 0.5,
+  contoursInterval: 10,
+  contoursThickness: 0.8,
+  contoursColor: '#000000',
+  depthMarkerInterval: 250,
+  showPicks: false,
+  showFormationColumns: false,
+  showShoes: true,
+  showDepthMarkers: false,
+  showCasingAndCompletion: false,
+  showPerforations: true,
+  showCameraTarget: false,
+  sizeMultiplier: 3,
+  casingOpacity: 1,
+  gridCellSize: 500,
+  segmentsPerMeter: 0.1,
+  simplificationThreshold: 0,
+}
+
 export const Default: Story = {
   args: {
-    surfaceId: undefined,
-    useColorRamp: true,
-    reverseRamp: false,
-    color: 'white',
-    colorRamp: 0,
-    opacity: 0.98,
-    maxError: 5,
-    wireframe: false,
-    showContours: false,
-    contoursColorMode: ContourColorMode.darken,
-    contoursColorModeFactor: 0.5,
-    contoursInterval: 10,
-    contoursThickness: 0.8,
-    contoursColor: '#000000',
-    depthMarkerInterval: 250,
-    showPicks: false,
-    showFormationColumns: false,
-    showShoes: true,
-    showDepthMarkers: false,
-    showCasingAndCompletion: false,
-    showPerforations: true,
-    showCameraTarget: false,
-    sizeMultiplier: 3,
-    casingOpacity: 1,
-    gridCellSize: 500,
-    segmentsPerMeter: 0.1,
-    simplificationThreshold: 0,
+    ...commonArgs,
+    colors: {
+      wellbore: "#aaa",
+      axesColor: "#eee",
+    }
+  },
+  parameters: {
+    scale: 1000,
+    cameraPosition: [0, 15000, 20000],
+    cameraTarget: [0, 0, 0],
+    colorScale,
+  },
+}
+
+export const Light: Story = {
+  args: {
+    ...commonArgs,
+    colors: {
+      wellbore: "#444",
+      gridColorMajor: "#ddd",
+      gridColorMinor: "#eee",
+      gridBackground: "#fff",
+      axesColor: "#555",
+    }
+  },
+  parameters: {
+    scale: 1000,
+    cameraPosition: [0, 15000, 20000],
+    cameraTarget: [0, 0, 0],
+    colorScale,
+    background: '#eee'
   },
 }
 
