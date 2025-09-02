@@ -16,6 +16,28 @@ jobs:
       pull-requests: write
     steps:
       - name: Release Please
+        id: release
         uses: googleapis/release-please-action@c2a5a2bd6a758a0937f1ddb1e8950609867ed15c
         with:
           release-type: node
+      - name: Checkout
+        if: ${{ steps.release.outputs.release_created }}
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+      - name: Setup Node
+        if: ${{ steps.release.outputs.release_created }}
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 20.x
+      - name: Install dependencies
+        if: ${{ steps.release.outputs.release_created }}
+        run: npm ci
+      - name: Build library
+        if: ${{ steps.release.outputs.release_created }}
+        run: npm run build-lib
+      - name: Publish package
+        if: ${{ steps.release.outputs.release_created }}
+        uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c
+        with:
+          token: ${{ secrets.NPM_TOKEN}}
+          access: public
+          provenance: true
