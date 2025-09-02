@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.0-beta](https://github.com/equinor/videx-3d/compare/v2.0.0-beta...v2.1.0-beta) (2025-09-02)
+
+
+### Features
+
+* add publish step to release.yml ([3c5d807](https://github.com/equinor/videx-3d/commit/3c5d8071c798d26df7e3656f132933df2d3cad48))
+* add publish step to release.yml ([ee75acc](https://github.com/equinor/videx-3d/commit/ee75acc460dc545413c3a908d6e5d93738ddc8ca))
+
 ## [2.0.0-beta](https://github.com/equinor/videx-3d/compare/v1.0.0-beta...v2.0.0-beta) (2025-08-28)
 
 
