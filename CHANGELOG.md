@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.1-beta](https://github.com/equinor/videx-3d/compare/v2.1.0-beta...v2.1.1-beta) (2025-09-02)
+
+
+### Bug Fixes
+
+* add id-token write permission to workflow ([fc003b7](https://github.com/equinor/videx-3d/commit/fc003b76431fca5e3d99a4248dd70f3f191f980b))
+* add id-token write permission to workflow ([89f58d3](https://github.com/equinor/videx-3d/commit/89f58d342fcfc1f153ea240ab2f343662a714d7f))
+
 ## [2.1.0-beta](https://github.com/equinor/videx-3d/compare/v2.0.0-beta...v2.1.0-beta) (2025-09-02)
 
 
