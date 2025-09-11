@@ -140,7 +140,7 @@ export function calculateFrenetFrames(curve: Curve3D, curvePositions: number[]) 
  * 
  * To get a sub section, use the from and/or to parameters. 
  * 
- * @remark segments per meter is always calculated from the start of the curve to ensure alingment when optimizing the number of vertices
+ * @remarks segments per meter is always calculated from the start of the curve to ensure alingment when optimizing the number of vertices
  */
 export function getCurvePositions(
   curve: Curve3D, 

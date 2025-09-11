@@ -2,14 +2,14 @@ import { useMemo } from 'react'
 import { AnnotationComponentProps } from '../../Annotations/types'
 
 /**
- * Annotation label component used for `Picks`
+ * Annotation label component used for `FormationMarkers`
  * 
- * @see {@link Picks}
+ * @see {@link FormationMarkers}
  * @see {@link Annotations}
  * 
  * @group Components
  */
-export const PicksLabel = ({ id, name, data }: AnnotationComponentProps) => {
+export const FormationMarkerLabel = ({ id, name, data }: AnnotationComponentProps) => {
   const color = useMemo(() => {
     return `#${data.color}`
   }, [data])

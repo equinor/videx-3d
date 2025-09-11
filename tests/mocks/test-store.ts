@@ -1,14 +1,12 @@
 import _filter from 'lodash.filter'
 import { KeyType, ReadonlyStore } from '../../src/sdk'
-import picks from './mock-data/picks-mocks'
-import stratColumns from './mock-data/stratcolumn-mocks'
+import { formations } from './mock-data/formations-mock'
 import wellboreHeaders from './mock-data/wellbore-mocks'
 
 export class TestStore implements ReadonlyStore {
   data: Record<string, any> = {
     'wellbore-headers': wellboreHeaders,
-    'strat-columns': stratColumns,
-    'picks': picks,
+    'formations': formations,
   }
 
   async get<T>(dataType: string, key: KeyType) {

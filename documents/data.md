@@ -11,6 +11,7 @@ Data type declarations can be found in `src/sdk/data/types/`
 | completion-tools | CompletionTool | Contains meta data and MD MSL depths for completion tools |
 | perforations | PerforationInterval | Contains meta data and MD MSL depth from perforation intervals |
 | picks | Pick | Contains meta data and MD MSL depths for picks |
+| formations | Formation | Contains formation meta data and entry/exit depths |
 | surface-meta | SurfaceMeta | Contains meta data about horizons/surface grids |
 | surface-values | Float32Array | Contains grid elevation data for surfaces |
 | strat-columns | StratColumn | Contains stratigraphy column meta and unit definitions |

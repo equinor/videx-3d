@@ -1,6 +1,7 @@
 import {
   CasingItem,
   CompletionTool,
+  Formation,
   PerforationInterval,
   Pick,
   PositionLog,
@@ -61,6 +62,10 @@ export async function loadPerforations(): Promise<
 
 export async function loadSurfaceMeta(): Promise<Record<string, SurfaceMeta>> {
   return get('/data/surface-meta.json')
+}
+
+export async function loadFormations(): Promise<Record<string, Formation[]>> {
+  return get('/data/formations.json')
 }
 
 export async function loadStratColumns(): Promise<Record<string, StratColumn>> {

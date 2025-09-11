@@ -2,7 +2,8 @@ import { scaleLinear } from 'd3-scale'
 import { nanoid } from 'nanoid'
 import { useEffect, useMemo, useState } from 'react'
 import { useData } from '../../../../hooks/useData'
-import { createFormationIntervals, FormationColumnInterval, getUnitPicks, mergeFormationIntervals } from '../../../../sdk/data/helpers/picks-helpers'
+import { MergedFormationInterval } from '../../../../sdk'
+import { getWellboreFormations, mergeFormationIntervals } from '../../../../sdk/data/helpers/formations-helpers'
 import { useWellMapState } from '../well-map-context'
 
 type Interval = {
@@ -33,7 +34,7 @@ export const WellMapFormations = ({ stratColumnId }: WellMapFormationsProps) => 
 
   const store = useData()
 
-  const [picksData, setPicksData] = useState<Record<string, FormationColumnInterval[]> | null>(null)
+  const [formationsData, setFormationsData] = useState<Record<string, MergedFormationInterval[]> | null>(null)
 
   const wellMapState = useWellMapState()
   const wellboreIds = wellMapState(state => state.wellboreIds)
@@ -48,22 +49,21 @@ export const WellMapFormations = ({ stratColumnId }: WellMapFormationsProps) => 
 
   useEffect(() => {
     if (store) {
-      const pickDataPromises = wellboreIds.map(id => getUnitPicks(id, stratColumnId, store, true))
+      const formationsDataPromises = wellboreIds.map(id => getWellboreFormations(id, stratColumnId, store))
 
-      Promise.all(pickDataPromises).then(response => {
+      Promise.all(formationsDataPromises).then(response => {
         if (response) {
           const data = response.reduce((acc, d, i) => {
-            let intervals: FormationColumnInterval[] = []
-            if (d?.matched) {
-              const formations = createFormationIntervals(d.matched, d.wellbore.depthMdMsl)
-              intervals = mergeFormationIntervals(formations)
+            let intervals: MergedFormationInterval[] = []
+            if (d) {
+              intervals = mergeFormationIntervals(d)
             }
             return {
               ...acc,
               [wellboreIds[i]]: intervals,
             }
           }, {})
-          setPicksData(data)
+          setFormationsData(data)
         }
       })
     }
@@ -72,20 +72,20 @@ export const WellMapFormations = ({ stratColumnId }: WellMapFormationsProps) => 
   const intervals = useMemo(() => {
     const output: Interval[] = []
 
-    if (picksData) {
+    if (formationsData) {
       wellboreIds.forEach((id) => {
-        if (picksData[id]) {
+        if (formationsData[id]) {
           const slot = slotsById[id]
           const position = getSlotPosition(slot)
-          picksData[id].forEach(fi => {
+          formationsData[id].forEach(fi => {
             const interval: Interval = {
               id: nanoid(),
-              formation: fi.unit.name,
-              color: fi.unit.color,
-              level: fi.unit.level,
+              formation: fi.name,
+              color: fi.color,
+              level: fi.level,
               x: position,
-              y1: depthScale(fi.mdMslTop),
-              y2: depthScale(fi.mdMslBottom),
+              y1: depthScale(fi.mdMslFrom),
+              y2: depthScale(fi.mdMslTo),
             }
 
             output.push(interval)
@@ -94,7 +94,7 @@ export const WellMapFormations = ({ stratColumnId }: WellMapFormationsProps) => 
       })
     }
     return output
-  }, [picksData, depthScale, getSlotPosition, slotsById, wellboreIds])
+  }, [formationsData, depthScale, getSlotPosition, slotsById, wellboreIds])
 
   const filterColor = useMemo(() => {
     const v = styles.darkMode ? 0 : 240

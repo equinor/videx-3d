@@ -23,8 +23,7 @@ export type WellboreFormationColumnProps = CommonComponentProps & {
 }
 
 /**
- * Renders colored tube geometeries for visualizing formations. Using picks data and strat column
- * units to generate formation intervals.
+ * Renders colored tube geometeries for visualizing formations for a specific strat column.
  * 
  * @example
  * <Wellbore id={wellboreId}>
@@ -32,7 +31,6 @@ export type WellboreFormationColumnProps = CommonComponentProps & {
  * </Wellbore>
  * 
  * @see [Storybook](/videx-3d/?path=/docs/components-wellbores-wellboreformationcolumn--docs)
- * @see {@link Picks}
  * @see {@link Wellbore}
  * 
  * @group Components

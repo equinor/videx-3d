@@ -19,9 +19,9 @@ export function createStoryArgs() {
     fs.readFileSync('public/data/surface-meta.json')
   )
   
-  const stratColumns = JSON.parse(
-    fs.readFileSync('public/data/strat-columns.json')
-  )
+  // const stratColumns = JSON.parse(
+  //   fs.readFileSync('public/data/strat-columns.json')
+  // )
 
   const wellboreOptions = Object.values(wellboreHeadersData)
     .filter(d => d.drilled)
@@ -42,15 +42,15 @@ export function createStoryArgs() {
         [surface.id]: surface.name 
       }), {})
   
-  const stratUnitTypes = new Set()
-  const stratUnits = new Set()
+  // const stratUnitTypes = new Set()
+  // const stratUnits = new Set()
 
-  Object.values(stratColumns).forEach(stratColumn => {
-    stratColumn.units.forEach(unit => {
-      stratUnitTypes.add(unit.unitType)
-      stratUnits.add(unit.name)
-    })
-  })
+  // Object.values(stratColumns).forEach(stratColumn => {
+  //   stratColumn.units.forEach(unit => {
+  //     stratUnitTypes.add(unit.unitType)
+  //     stratUnits.add(unit.name)
+  //   })
+  // })
 
   const output = {
     utmZone: config.utmZone || '31N',
@@ -60,8 +60,8 @@ export function createStoryArgs() {
     defaultStratColumn: config.stratColumn,
     wellboreOptions,
     surfaceOptions,
-    stratUnitOptions: Array.from(stratUnits),
-    stratUnitTypeOptions: Array.from(stratUnitTypes),
+    //stratUnitOptions: Array.from(stratUnits),
+    //stratUnitTypeOptions: Array.from(stratUnitTypes),
   }
   
   fs.writeFile('src/storybook/story-args.json', JSON.stringify(output), (err) => {

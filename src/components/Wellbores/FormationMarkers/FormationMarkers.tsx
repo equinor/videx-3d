@@ -11,17 +11,17 @@ import { useAnnotations } from '../../Annotations/annotations-state'
 import { AnnotationProps } from '../../Annotations/types'
 import { CommonComponentProps } from '../../common'
 import { Symbols } from '../../Symbol/Symbol'
-import { pickSymbols } from './picks-defs'
+import { formationMarkerSymbols } from './formation-markers-defs'
 
 const transform = new Matrix4()
 const origin = new Vector3()
 const color = new Color()
 
 /**
- * Picks props
+ * FormationMarker props
  * @expand
  */
-export type PicksProps = CommonComponentProps & {
+export type FormationMarkerProps = CommonComponentProps & {
   radialSegments?: number
   baseRadius?: number
   priority?: number
@@ -30,11 +30,11 @@ export type PicksProps = CommonComponentProps & {
 }
 
 /**
- * Render pick markers along a wellbore trajectory. This uses the `Symbols` component internally.
+ * Render formation markers along a wellbore trajectory. This uses the `Symbols` component internally.
  * 
  * @example
  * <Wellbore id={wellboreId}>
- *  <Picks showAnnotations stratColumnId="abcd" />
+ *  <FormationMarkers showAnnotations stratColumnId="abcd" />
  * </Wellbore>
  * 
  * @see {@link Wellbore}
@@ -42,7 +42,7 @@ export type PicksProps = CommonComponentProps & {
  * 
  * @group Components
  */
-export const Picks = forwardRef(({
+export const FormationMarkers = forwardRef(({
   radialSegments = 8,
   baseRadius = 10,
   stratColumnId,
@@ -56,13 +56,13 @@ export const Picks = forwardRef(({
   castShadow,
   receiveShadow,
   priority = 0,
-}: PicksProps, fref: ForwardedRef<Group>) => {
+}: FormationMarkerProps, fref: ForwardedRef<Group>) => {
 
   const ref = useRef<Group>(null)
 
   const { id, fromMsl } = useWellboreContext()
-  const generator = useGenerator<SymbolsType>(pickSymbols)
-  const { addAnnotations } = useAnnotations('picks', id)
+  const generator = useGenerator<SymbolsType>(formationMarkerSymbols)
+  const { addAnnotations } = useAnnotations('formation-markers', id)
 
   const [data, setData] = useState<SymbolsType | null>(null)
 
