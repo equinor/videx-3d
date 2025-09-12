@@ -46,7 +46,7 @@ import { transformPositionLogs } from './transformations/transformPositionLogs.j
 import { transformSurfaceFiles } from './transformations/transformSurfaceFiles.js'
 import { transformSurfaceMeta } from './transformations/transformSurfaceMeta.js'
 import { transformWellboreHeaders } from './transformations/transformWellboreHeaders.js'
-import { transformWellboreStratigraphy } from './transformations/transformWellboreStratigrapy,js'
+import { transformWellboreStratigraphy } from './transformations/transformWellboreStratigraphy.js'
 import { verify } from './utils.js'
 
 const args = minimist(process.argv.slice(2))
