@@ -15,6 +15,8 @@
  *
  * picks from SMDA: /wellbore-picks?field_identifier={field name}&interpreter=STAT
  *
+ * formations from SMDA: /wellbore-stratigraphy?field_identifier={field name}&interpreter=STAT
+ * 
  * casings from SSDL: /Field/{fieldUuid}/casings&normalized-data=true
  *
  * completion from SSDL: /Field/{fieldUuid}/completions&normalized-data=true
@@ -40,12 +42,11 @@ import { rimrafSync } from 'rimraf'
 import { transformCasings } from './transformations/transformCasings.js'
 import { transformCompletion } from './transformations/transformCompletion.js'
 import { transformPerforations } from './transformations/transformPerforations.js'
-import { transformPicks } from './transformations/transformPicks.js'
 import { transformPositionLogs } from './transformations/transformPositionLogs.js'
-import { transformStratColumns } from './transformations/transformStratColumns.js'
 import { transformSurfaceFiles } from './transformations/transformSurfaceFiles.js'
 import { transformSurfaceMeta } from './transformations/transformSurfaceMeta.js'
 import { transformWellboreHeaders } from './transformations/transformWellboreHeaders.js'
+import { transformWellboreStratigraphy } from './transformations/transformWellboreStratigraphy.js'
 import { verify } from './utils.js'
 
 const args = minimist(process.argv.slice(2))
@@ -60,8 +61,9 @@ const fileNames = [
   'casings',
   'completion',
   'perforations',
-  'strat-columns',
-  'picks',
+  //'strat-columns',
+  //'picks',
+  'wellbore-stratigraphy',
   'surface-meta',
 ]
 
@@ -106,10 +108,12 @@ console.info('> transforming completion data')
 transformCompletion(input, output)
 console.info('> transforming perforation data')
 transformPerforations(input, output)
-console.info('> transforming strat columns')
-transformStratColumns(input, output)
-console.info('> transforming pick data')
-transformPicks(input, output)
+//console.info('> transforming strat columns')
+//transformStratColumns(input, output)
+//console.info('> transforming pick data')
+//transformPicks(input, output)
+console.info('> transforming wellbore stratigraphy')
+transformWellboreStratigraphy(input, output)
 console.info('> transforming surface meta data')
 transformSurfaceMeta(input, output)
 

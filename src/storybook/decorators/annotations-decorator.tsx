@@ -3,7 +3,7 @@ import { AnnotationsLayer } from '../../components/Annotations/AnnotationsLayer'
 import { AnnotationComponentProps } from '../../components/Annotations/types'
 import { CasingLabel } from '../../components/Wellbores/Casings/CasingAnnotations/CasingLabel'
 import { DepthMarkerLabel } from '../../components/Wellbores/DepthMarkers/DepthMarkerLabel'
-import { PicksLabel } from '../../components/Wellbores/Picks/PicksLabel'
+import { FormationMarkerLabel } from '../../components/Wellbores/FormationMarkers/FormationMarkerLabel'
 import { WellboreAnnotationLabel } from '../../components/Wellbores/WellboreLabel/WellboreAnnotationLabel'
 import { CameraFocusAtPointEvent } from '../../events/camera-events'
 
@@ -56,15 +56,15 @@ export const AnnotationsDecorator = (Story: any) => (
         }}
       />
       <AnnotationsLayer
-        id="picks"
-        name="Picks"
+        id="formation-markers"
+        name="Formation Markers"
         priority={2}
         anchorSize={2}
         distanceFactor={200}
         labelOffset={100}
         minDistance={10}
         maxDistance={500}
-        labelComponent={PicksLabel}
+        labelComponent={FormationMarkerLabel}
         anchorOcclusionRadius={10}
         onClick={(annotation: AnnotationComponentProps) => {
           dispatchEvent(new CameraFocusAtPointEvent({ point: annotation.position, distance: 200 }))

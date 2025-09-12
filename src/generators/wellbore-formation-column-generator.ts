@@ -11,11 +11,8 @@ import {
   ReadonlyStore,
   TubeGeometryOptions,
 } from '../sdk'
-import {
-  createFormationIntervals,
-  getUnitPicks,
-  mergeFormationIntervals,
-} from '../sdk/data/helpers/picks-helpers'
+
+import { getWellboreFormations, mergeFormationIntervals } from '../sdk/data/helpers/formations-helpers'
 
 export async function generateWellboreFormationColumnGeometries(
   this: ReadonlyStore,
@@ -31,14 +28,14 @@ export async function generateWellboreFormationColumnGeometries(
   radialSegments: number = 16,
   simplificationThreshold: number = 0
 ): Promise<PackedBufferGeometry | null> {
-  const picksData = await getUnitPicks(wellboreId, stratColumnId, this, true)
+  const formationsData = await getWellboreFormations(wellboreId, stratColumnId, this)
 
-  if (!picksData) return null
+  if (!formationsData) return null
 
-  const surfaceIntervals = createFormationIntervals(picksData.matched, picksData.wellbore.depthMdMsl)
+  const surfaceIntervals = formationsData
     .filter(d => 
-      (unitTypes === undefined || unitTypes.includes(d.unit.unitType)) &&
-      (units === undefined || units.includes(d.unit.name))
+      (unitTypes === undefined || (d.type && unitTypes.includes(d.type))) &&
+      (units === undefined || units.includes(d.name))
   )
 
   if (!surfaceIntervals.length) return null
@@ -67,16 +64,16 @@ export async function generateWellboreFormationColumnGeometries(
   const geometries: BufferGeometry[] = []
 
   mergedIntervals.forEach((interval) => {
-    if (fromMsl === undefined || interval.mdMslBottom > fromMsl) {
-      let top = interval.mdMslTop
+    if (fromMsl === undefined || interval.mdMslTo > fromMsl) {
+      let top = interval.mdMslFrom
       if (fromMsl !== undefined && fromMsl > top) {
         top = fromMsl
       }
       const from = trajectory.getPositionAtDepth(top, true)
-      const to = trajectory.getPositionAtDepth(interval.mdMslBottom, true)
+      const to = trajectory.getPositionAtDepth(interval.mdMslTo, true)
       if (from !== null && to !== null) {
         const radius = formationWidth + startRadius
-        const color = new Color(interval.unit.color)
+        const color = new Color(interval.color)
         
         const geometery = createTubeGeometry(trajectory.curve, {
           ...options,

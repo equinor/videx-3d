@@ -1,7 +1,9 @@
 import type { Meta, StoryObj } from '@storybook/react'
-import { useEffect } from 'react'
+import { range } from 'd3-array'
+import { useEffect, useMemo, useState } from 'react'
 import { GlyphsProvider } from '../../../contexts/GlyphsContextProvider'
-import { WellboreFormationColumn, WellboreSelectedEvent } from '../../../main'
+import { useData, WellboreFormationColumn, WellboreSelectedEvent } from '../../../main'
+import { Formation, getWellboreFormations } from '../../../sdk'
 import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
 import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator'
 import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator'
@@ -25,48 +27,69 @@ type DemoProps = {
   stepSize: number
   segmentsPerMeter: number
   simplificationThreshold: number
-} 
+}
 
 const DemoComponent = ({ showRibbon, merged, scaleFactor, stepSize, segmentsPerMeter, simplificationThreshold }: DemoProps) => {
+  const store = useData()
+
+  const [formationData, setFormationData] = useState<Formation[] | null>(null)
+
   useEffect(() => {
-      dispatchEvent(new WellboreSelectedEvent({ id: wellboreId }))
-    }, [])
-    
+    if (store) {
+      getWellboreFormations(wellboreId, stratColumnId, store).then(formationData => {
+        setFormationData(formationData)
+      })
+    }
+  }, [store])
+
+  useEffect(() => {
+    dispatchEvent(new WellboreSelectedEvent({ id: wellboreId }))
+  }, [])
+
+  const maxLevels = useMemo(() => {
+    if (formationData) {
+      return Math.max(...formationData.map(d => d.level))
+    }
+    return 0
+  }, [formationData])
+
   return (
     <>
-        <GlyphsProvider fontAtlasUrl='glyphs/OpenSans-Regular.png' fontConfigUrl='glyphs/OpenSans-Regular.json'>
-          <group>
-            <Wellbore id={wellboreId} segmentsPerMeter={segmentsPerMeter} simplificationThreshold={simplificationThreshold}>
-              {showRibbon && (
-                <WellboreRibbon>
-                  <MeasuredDepthStripe stepSize={stepSize} width={15} offset={-7.5} />
-                  {!merged && (
-                    <>
-                      <FormationsStripe width={10} offset={5} stratColumnId={stratColumnId} level={1} />
-                      <FormationsStripe width={10} offset={15} stratColumnId={stratColumnId} level={2} />
-                      <FormationsStripe width={10} offset={25} stratColumnId={stratColumnId} level={3} />
-                    </>
-                  )}
-                  {merged && (
-                    <>
-                      <FormationsStripe width={10} offset={5} stratColumnId={stratColumnId} />
-                    </>
-                  )}
-                </WellboreRibbon>
-              )}
+      <GlyphsProvider fontAtlasUrl='glyphs/OpenSans-Regular.png' fontConfigUrl='glyphs/OpenSans-Regular.json'>
+        <group>
+          <Wellbore id={wellboreId} segmentsPerMeter={segmentsPerMeter} simplificationThreshold={simplificationThreshold}>
+            {showRibbon && (
+              <WellboreRibbon>
+                <MeasuredDepthStripe stepSize={stepSize} width={15} offset={-7.5} />
+                {(!merged && maxLevels) && (
+                  <>
+                    { 
+                      range(1, maxLevels + 1, 1).map(level => (
+                        <FormationsStripe key={level} width={10} offset={5 + (level - 1) * 10} formationData={formationData} level={level} />
+                      ))
+                    }
+                  </>
+                )}
+                {(merged || !maxLevels) && (
+                  <>
+                    <FormationsStripe width={10} offset={5} formationData={formationData} />
+                  </>
+                )}
+              </WellboreRibbon>
+            )}
 
-              <group renderOrder={2}>
-                <BasicTrajectory />
-                <Casings sizeMultiplier={scaleFactor} />
-                <CompletionTools sizeMultiplier={scaleFactor} />
-              </group>
-              { (!showRibbon) && <WellboreFormationColumn stratColumnId={stratColumnId} startRadius={0.5 * scaleFactor} renderOrder={200} opacity={0.85} /> }
-            </Wellbore>
-          </group>
+            <group renderOrder={2}>
+              <BasicTrajectory />
+              <Casings sizeMultiplier={scaleFactor} />
+              <CompletionTools sizeMultiplier={scaleFactor} />
+            </group>
+            {(!showRibbon) && <WellboreFormationColumn stratColumnId={stratColumnId} startRadius={0.5 * scaleFactor} renderOrder={200} opacity={0.85} />}
+          </Wellbore>
+        </group>
 
-        </GlyphsProvider>
-        <CameraTargetMarker renderOrder={10} opacity={0.25} color="red" radius={1} />
-      </>
+      </GlyphsProvider>
+      <CameraTargetMarker renderOrder={10} opacity={0.25} color="red" radius={1} />
+    </>
   )
 }
 
@@ -133,33 +156,6 @@ export const Default: Story = {
         step: 0.000001
       }
     },
-    // formationWidth: {
-    //   control: {
-    //     type: 'range',
-    //     min: 0,
-    //     max: 20,
-    //     step: 1,
-    //   },
-    // },
-    // opacity: {
-    //   control: {
-    //     type: 'range',
-    //     min: 0,
-    //     max: 1,
-    //     step: 0.1,
-    //   },
-    // },
-    // unitTypes: {
-    //   options: storyArgs.stratUnitTypeOptions,
-    //   control: 'check',
-    // },
-    // units: {
-    //   options: ['', ...storyArgs.stratUnitOptions],
-    //   control: 'select',
-    //   mapping: {
-    //     '': undefined
-    //   }
-    // }
   },
   decorators: [
     PerformanceDecorator,

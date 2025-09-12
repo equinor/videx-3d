@@ -8,7 +8,7 @@ import { GeneratorsProviderDecorator } from '../../storybook/decorators/generato
 import storyArgs from '../../storybook/story-args.json'
 import { BasicTrajectory } from '../Wellbores/BasicTrajectory/BasicTrajectory'
 import { Casings } from '../Wellbores/Casings/Casings'
-import { Picks } from '../Wellbores/Picks'
+import { FormationMarkers } from '../Wellbores/FormationMarkers'
 import { TubeTrajectory } from '../Wellbores/TubeTrajectory'
 import { Wellbore } from '../Wellbores/Wellbore/Wellbore'
 import { WellboreBounds } from '../Wellbores/WellboreBounds/WellboreBounds'
@@ -54,7 +54,7 @@ export const Default: Story = {
           <WellboreBounds id={wellboreId}>
             <TubeTrajectory color="white" radius={2} />
             <Distance {...args}>
-              <Picks stratColumnId={stratColumnId} />
+              <FormationMarkers stratColumnId={stratColumnId} />
             </Distance>
           </WellboreBounds>
         </Wellbore>

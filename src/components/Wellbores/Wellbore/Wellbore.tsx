@@ -1,10 +1,10 @@
 import { ReactNode, useEffect, useMemo, useRef } from 'react'
-import { WellboreContext } from './WellboreContext'
 import { Object3D, Vector3 } from 'three'
+import { WellboreContext } from './WellboreContext'
 
+import { PointerEvents } from '../../../events/interaction-events'
 import { WellboreAddedEvent, WellboreRemovedEvent } from '../../../events/wellbore-events'
 import { Vec3 } from '../../../sdk/types/common'
-import { PointerEvents } from '../../../events/interaction-events'
 import { EventEmitterCallback, useEventEmitter } from '../../Handlers/EventEmitter/EventEmitterContext'
 
 /**
@@ -43,7 +43,7 @@ const vec = new Vector3()
  * @see {@link DepthMarkers}
  * @see {@link Perforations}
  * @see {@link Perimeter}
- * @see {@link Picks}
+ * @see {@link FormationMarkers}
  * @see {@link Shoes}
  * @see {@link WellboreBounds}
  * @see {@link WellboreLabel}

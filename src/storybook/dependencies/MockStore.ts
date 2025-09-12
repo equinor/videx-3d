@@ -5,10 +5,11 @@ import { get } from './api'
 import {
   loadCasings,
   loadCompletion,
+  loadFormations,
   loadPerforations,
-  loadPicks,
+  //loadPicks,
   loadPositionLogs,
-  loadStratColumns,
+  //loadStratColumns,
   loadSurfaceMeta,
   loadWellboreHeaders,
 } from './loaders'
@@ -20,9 +21,10 @@ export class MockStore implements Store {
     casings: loadCasings,
     'completion-tools': loadCompletion,
     perforations: loadPerforations,
-    picks: loadPicks,
+    //picks: loadPicks,
     'surface-meta': loadSurfaceMeta,
-    'strat-columns': loadStratColumns,
+    //'strat-columns': loadStratColumns,
+    'formations': loadFormations,
   }
   private data: Record<string, Record<KeyType, any>> = {}
 

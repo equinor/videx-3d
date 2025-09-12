@@ -6,3 +6,18 @@ export function verify(data, ...deps) {
     }
   }
 }
+
+export function groupBy(array, groupBy) {
+  return array.reduce((grouped, d) => {
+    const key = groupBy(d)
+    let group = grouped[key]
+    if (!group) {
+      group = []
+      grouped[key] = group
+    }
+   
+    group.push(d)
+    
+    return grouped
+  }, {})
+}

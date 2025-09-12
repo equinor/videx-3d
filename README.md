@@ -7,7 +7,7 @@ The purpose of this library is to help you add 3D visualizations of sub surface 
 
 The library includes a variety of components, both for visualizing and managing data, including:
 - Wellbore trajectories
-- Wellbore data (such as casings, completion tools, picks, shoes etc.)
+- Wellbore data (such as casings, completion tools, formations, shoes etc.)
 - Horizons/surfaces
 - Generic support for pointer events (click, move, enter, exit)
 - A flexible point-feature label system

@@ -21,7 +21,7 @@ export type SymbolProps = {
  * A generic component used for simplifying mesh instancing. Use this component if you need a large number of
  * meshes sharing the same base geometry and material, but that may be transformed or colored individually.
  * 
- * Typical use case is for visualizations of data along a wellbore, such as in the `Shoes` and `Picks` component.
+ * Typical use case is for visualizations of data along a wellbore, such as in the `Shoes` and `FormationMarkers` component.
  * 
  * @remarks
  * Data, including colors, transformations and user defined data, must be mapped to the `SymbolsType` type.

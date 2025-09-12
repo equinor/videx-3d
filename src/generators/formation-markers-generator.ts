@@ -12,8 +12,7 @@ import {
   titleCase,
   Vec3
 } from '../sdk'
-import { createFormationIntervals, getFormationMarkers, getUnitPicks } from '../sdk/data/helpers/picks-helpers'
-
+import { getFormationMarkers, getWellboreFormations } from '../sdk/data/helpers/formations-helpers'
 
 const positionVector = new Vector3()
 const targetVector = new Vector3()
@@ -23,7 +22,7 @@ const transformationMatrix = new Matrix4()
 const rotationMatrix = new Matrix4().makeRotationX(PI2)
 const color = new Color()
 
-export async function generatePicks(
+export async function generateFormationMarkers(
   this: ReadonlyStore,
   wellboreId: string,
   stratColumnId: string,
@@ -31,11 +30,10 @@ export async function generatePicks(
   baseRadius: number = 10
 ): Promise<SymbolsType | null> {
  
-  const picksData = await getUnitPicks(wellboreId, stratColumnId, this, true, fromMsl)
+  const surfaceIntervals = await getWellboreFormations(wellboreId, stratColumnId, this, fromMsl)
 
-  if (!picksData) return null
+  if (!surfaceIntervals) return null
 
-  const surfaceIntervals = createFormationIntervals(picksData.matched, picksData.wellbore.depthMdMsl)
   const formationMarkers = getFormationMarkers(surfaceIntervals)
 
   if (!formationMarkers.length) return null
@@ -49,7 +47,7 @@ export async function generatePicks(
 
   if (!trajectory) return null
 
-  const mappedPicks = formationMarkers.map((d) => {
+  const mappedFormationMarkers = formationMarkers.map((d) => {
     const pos = clamp(
       (d.mdMsl - trajectory.measuredTop) / trajectory.measuredLength,
       0,
@@ -62,11 +60,11 @@ export async function generatePicks(
     }
   })
 
-  const transformations = new Float32Array(mappedPicks.length * 16 * 3)
-  const colors = new Float32Array(mappedPicks.length * 3 * 3)
+  const transformations = new Float32Array(mappedFormationMarkers.length * 16 * 3)
+  const colors = new Float32Array(mappedFormationMarkers.length * 3 * 3)
   const symbolData: SymbolData[] = []
 
-  mappedPicks.forEach((pick, i) => {
+  mappedFormationMarkers.forEach((pick, i) => {
     positionVector.set(...pick.position)
     transformationMatrix.identity()
     const radius = baseRadius

@@ -19,8 +19,8 @@ import { BasicTrajectory } from '../../components/Wellbores/BasicTrajectory/Basi
 import { Casings } from '../../components/Wellbores/Casings/Casings'
 import { CompletionTools } from '../../components/Wellbores/CompletionTools/CompletionTools'
 import { DepthMarkers } from '../../components/Wellbores/DepthMarkers/DepthMarkers'
+import { FormationMarkers } from '../../components/Wellbores/FormationMarkers/FormationMarkers'
 import { Perforations } from '../../components/Wellbores/Perforations/Perforations'
-import { Picks } from '../../components/Wellbores/Picks/Picks'
 import { Shoes } from '../../components/Wellbores/Shoes/Shoes'
 import { TubeTrajectory } from '../../components/Wellbores/TubeTrajectory/TubeTrajectory'
 import { Wellbore } from '../../components/Wellbores/Wellbore/Wellbore'
@@ -73,7 +73,7 @@ type ExampleProps = {
   contoursThickness: number,
   contoursColor: string,
   depthMarkerInterval: number,
-  showPicks: boolean,
+  showFormationMarkers: boolean,
   showFormationColumns: boolean,
   showShoes: boolean,
   showDepthMarkers: boolean,
@@ -335,8 +335,8 @@ const Example = (args: ExampleProps) => {
                     {args.showPerforations && <Perforations sizeMultiplier={args.sizeMultiplier} />}
                     {(args.showDepthMarkers && isActiveWell) && <DepthMarkers interval={args.depthMarkerInterval} priority={10} depthReferencePoint='MSL' />}
 
-                    {args.showPicks && (
-                      <Picks
+                    {args.showFormationMarkers && (
+                      <FormationMarkers
                         stratColumnId={stratColumnId}
                         radialSegments={16}
                         baseRadius={args.sizeMultiplier * 0.4}
@@ -490,7 +490,7 @@ const commonArgs = {
   contoursThickness: 0.8,
   contoursColor: '#000000',
   depthMarkerInterval: 250,
-  showPicks: false,
+  showFormationMarkers: false,
   showFormationColumns: false,
   showShoes: true,
   showDepthMarkers: false,

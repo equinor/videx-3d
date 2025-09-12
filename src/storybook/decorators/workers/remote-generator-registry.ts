@@ -7,9 +7,9 @@ import { casings } from '../../../components/Wellbores/Casings/casings-defs'
 import { completionTools } from '../../../components/Wellbores/CompletionTools/completion-tools-defs'
 import { completionToolAnnotations } from '../../../components/Wellbores/CompletionTools/CompletionAnnotations/completion-annotations-defs'
 import { depthMarkers } from '../../../components/Wellbores/DepthMarkers/depth-markers-defs'
+import { formationMarkerSymbols } from '../../../components/Wellbores/FormationMarkers/formation-markers-defs'
 import { perforationSymbols } from '../../../components/Wellbores/Perforations/perforations-defs'
 import { perimeterGeometry } from '../../../components/Wellbores/Perimeter/perimeter-defs'
-import { pickSymbols } from '../../../components/Wellbores/Picks/picks-defs'
 import { positionMarkers } from '../../../components/Wellbores/PositionMarkers/position-markers-defs'
 import { shoeSymbols } from '../../../components/Wellbores/Shoes/shoes-defs'
 import { tubeTrajectory } from '../../../components/Wellbores/TubeTrajectory/tube-geometry-defs'
@@ -25,9 +25,9 @@ import {
   generateCompletionToolAnnotations,
   generateCompletionTools,
   generateDepthMarkers,
+  generateFormationMarkers,
   generatePerforations,
   generatePerimeterGeometry,
-  generatePicks,
   generatePositionMarkers,
   generateShoes,
   generateSurfaceGeometry,
@@ -50,7 +50,7 @@ registry.add(perimeterGeometry, generatePerimeterGeometry)
 registry.add(casingAnnotations, generateCasingAnnotations)
 registry.add(completionToolAnnotations, generateCompletionToolAnnotations)
 registry.add(shoeSymbols, generateShoes)
-registry.add(pickSymbols, generatePicks)
+registry.add(formationMarkerSymbols, generateFormationMarkers)
 registry.add(depthMarkers, generateDepthMarkers)
 registry.add(wellboreLabel, generateWellboreLabel)
 registry.add(surfaceGeometry, generateSurfaceGeometry)

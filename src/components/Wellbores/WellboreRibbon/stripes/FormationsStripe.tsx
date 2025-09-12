@@ -1,10 +1,9 @@
 import { useContext, useEffect, useMemo, useState } from 'react'
 import { Color, DataTexture, DoubleSide, Texture, Uniform, Vector2, Vector3 } from 'three'
 import { GlyphsContext } from '../../../../contexts/GlyphsContext'
-import { useData } from '../../../../hooks/useData'
-import { createFormationIntervals, getUnitPicks, mergeFormationIntervals } from '../../../../sdk'
+import { Formation } from '../../../../sdk'
+import { mergeFormationIntervals } from '../../../../sdk/data/helpers/formations-helpers'
 import { EncodedTextTexture } from '../../../../sdk/utils/glyphs'
-import { WellboreContext } from '../../Wellbore/WellboreContext'
 import { WellboreRibbonContext } from '../WellboreRibbonContext'
 import fragmentShader from '../shaders/formations.glsl'
 import vertexShader from '../shaders/vertex.glsl'
@@ -16,7 +15,7 @@ import vertexShader from '../shaders/vertex.glsl'
 export type FormationsStripeProps = {
   width: number
   offset: number
-  stratColumnId: string
+  formationData: Formation[] | null
   level?: number
 }
 
@@ -25,7 +24,7 @@ type Unit = {
   color: Color
 }
 
-type FormationData = {
+type FormationStripeData = {
   text: EncodedTextTexture
   intervals: Vector3[]
   units: Unit[]
@@ -49,14 +48,12 @@ type FormationData = {
  * 
  * @group Components
  */
-export const FormationsStripe = ({ width, offset, stratColumnId, level }: FormationsStripeProps) => {
-  const store = useData()
+export const FormationsStripe = ({ width, offset, formationData, level }: FormationsStripeProps) => {
+
   const ribbonContext = useContext(WellboreRibbonContext)
   const glyphContext = useContext(GlyphsContext)
 
-  const { id } = useContext(WellboreContext)
-
-  const [formationData, setFormationData] = useState<FormationData | null>(null)
+  const [formationStripeData, setFormationStripeData] = useState<FormationStripeData | null>(null)
 
   const uniforms = useMemo(() => {
     return {
@@ -76,52 +73,52 @@ export const FormationsStripe = ({ width, offset, stratColumnId, level }: Format
 
 
   useEffect(() => {
-    if (store && glyphContext) {
-      getUnitPicks(id, stratColumnId, store, true).then(picksData => {
-        if (picksData) {
-          const surfaceIntervals = createFormationIntervals(picksData.matched, picksData.wellbore.depthMdMsl)
-          let filteredIntervals = surfaceIntervals
-          if (level !== undefined) {
-            filteredIntervals = surfaceIntervals.filter(d => d.unit.level === level)
-          }
-          const mergedIntervals = mergeFormationIntervals(filteredIntervals) 
-          const unitsMap = new Map<string, number>()
-          const units: Unit[] = []
-          const labels: string[] = []
+    if (formationData && glyphContext) {
 
-          const intervals: Vector3[] = []
-          mergedIntervals.forEach(s => {
-            const label = s.unit.name
-            let index = unitsMap.get(label)
-            if (index === undefined) {
-
-              index = units.length
-              const unit = {
-                index,
-                color: new Color(s.unit.color)
-              }
-              unitsMap.set(label, index)
-              units.push(unit)
-              labels.push(label)
-            }
-            intervals.push(new Vector3(s.mdMslTop, s.mdMslBottom, index))
-          })
-
-          const textTexture = glyphContext.encodeTextTexture(labels)
-          setFormationData(prev => {
-            if (prev) {
-              prev.text.texture.dispose()
-            }
-            return {
-              intervals,
-              text: textTexture,
-              units
-            }
-          })
+      if (formationData) {
+        let filteredIntervals = formationData
+        if (level !== undefined) {
+          filteredIntervals = formationData.filter(d => d.level === level)
         }
-      }).catch(console.error)
+
+        const mergedIntervals = mergeFormationIntervals(filteredIntervals)
+        const unitsMap = new Map<string, number>()
+        const units: Unit[] = []
+        const labels: string[] = []
+
+        const intervals: Vector3[] = []
+        mergedIntervals.forEach(s => {
+          const label = s.name
+          let index = unitsMap.get(label)
+          if (index === undefined) {
+
+            index = units.length
+            const unit = {
+              index,
+              color: new Color(s.color)
+            }
+            unitsMap.set(label, index)
+            units.push(unit)
+            labels.push(label)
+          }
+          intervals.push(new Vector3(s.mdMslFrom, s.mdMslTo, index))
+        })
+
+        const textTexture = glyphContext.encodeTextTexture(labels)
+        setFormationStripeData(prev => {
+          if (prev) {
+            prev.text.texture.dispose()
+          }
+          return {
+            intervals,
+            text: textTexture,
+            units
+          }
+        })
+
+      }
     }
-  }, [store, stratColumnId, id, glyphContext, level])
+  }, [formationData, glyphContext, level])
 
   useEffect(() => {
     uniforms.offset.value = offset
@@ -131,36 +128,36 @@ export const FormationsStripe = ({ width, offset, stratColumnId, level }: Format
       uniforms.direction.value.set(...ribbonContext.direction)
       uniforms.startDepth.value = ribbonContext.trajectory.measuredTop
     }
-    if (formationData) {
-      uniforms.intervals.value = formationData.intervals
-      uniforms.units.value = formationData.units
-      uniforms.textTexture.value = formationData.text.texture
-      uniforms.textPointersCount.value = formationData.text.textPointersCount
-      uniforms.textPointersOffset.value = formationData.text.textPointersOffset
+    if (formationStripeData) {
+      uniforms.intervals.value = formationStripeData.intervals
+      uniforms.units.value = formationStripeData.units
+      uniforms.textTexture.value = formationStripeData.text.texture
+      uniforms.textPointersCount.value = formationStripeData.text.textPointersCount
+      uniforms.textPointersOffset.value = formationStripeData.text.textPointersOffset
     }
-  }, [uniforms, width, offset, formationData, ribbonContext])
+  }, [uniforms, width, offset, formationStripeData, ribbonContext])
 
 
 
-   useEffect(() => {
+  useEffect(() => {
     if (glyphContext) {
       uniforms.glyphAtlas.value = glyphContext.glyphAtlas
     }
   }, [uniforms, glyphContext])
 
   useEffect(() => {
-    
+
   }, [ribbonContext, uniforms, width])
 
-  if (!ribbonContext || !glyphContext || !formationData) return null
+  if (!ribbonContext || !glyphContext || !formationStripeData) return null
 
   return (
     <mesh frustumCulled={false} geometry={ribbonContext.geometry}>
       <shaderMaterial
         defines={{
           GLYPHS_LENGTH: glyphContext.glyphsCount,
-          INTERVALS_LENGTH: formationData.intervals.length,
-          UNITS_LENGTH: formationData.units.length,
+          INTERVALS_LENGTH: formationStripeData.intervals.length,
+          UNITS_LENGTH: formationStripeData.units.length,
         }}
         uniforms={uniforms}
         uniformsGroups={[glyphContext.glyphData]}
