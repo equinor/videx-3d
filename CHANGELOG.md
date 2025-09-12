@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.0.0-beta](https://github.com/equinor/videx-3d/compare/v2.1.1-beta...v3.0.0-beta) (2025-09-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* Renamed Picks component to FormationMarkers ([#44](https://github.com/equinor/videx-3d/issues/44))
+
+### Miscellaneous Chores
+
+* Renamed Picks component to FormationMarkers ([#44](https://github.com/equinor/videx-3d/issues/44)) ([6bcc68c](https://github.com/equinor/videx-3d/commit/6bcc68c4f5e2472b303ba97e3650d02560349d81))
+
 ## [2.1.1-beta](https://github.com/equinor/videx-3d/compare/v2.1.0-beta...v2.1.1-beta) (2025-09-02)
 
 
