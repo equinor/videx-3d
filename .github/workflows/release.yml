@@ -37,7 +37,7 @@ jobs:
         run: npm run build-lib
       - name: Publish package
         if: ${{ steps.release.outputs.release_created }}
-        uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c
+        uses: JS-DevTools/npm-publish@b6b0bb6ebf081acc55469774087b431d6034e6d7
         with:
           token: ${{ secrets.NPM_TOKEN}}
           access: public
