@@ -44,6 +44,7 @@ const size = new Vector2()
 
 let x1: number, x2: number, y1: number, y2: number
 
+const id = `annotations_root`;
 
 /**
  * The Annotations component is special provider component responsible for managing 
@@ -107,14 +108,20 @@ export const Annotations = ({ maxVisible = 100, children }: AnnotationsProviderP
 
   const root = useMemo(() => {
     const parent = renderer.domElement.parentElement
-    let container: HTMLElement | null = null
 
     if (!parent) throw Error('Unable to create root!')
-    container = document.createElement('div')
-    container.setAttribute('id', 'annotations')
-    container.setAttribute('style', 'position:absolute;top:0;left:0;z-index: 1;pointer-events:none;padding:0;width:100%;height:100%;user-select:none')
+    
+    let container: HTMLElement | null = parent.querySelector(id)
 
+    if (container) {
+      container.remove()
+    }
+
+    container = document.createElement('div')
+    container.setAttribute('id', id)
+    container.setAttribute('style', 'position:absolute;top:0;left:0;z-index: 1;pointer-events:none;padding:0;width:100%;height:100%;user-select:none')
     parent.appendChild(container)
+
     const annotationsRoot = createRoot(container)
 
     return annotationsRoot
