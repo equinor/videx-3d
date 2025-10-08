@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.0.1-beta](https://github.com/equinor/videx-3d/compare/v3.0.0-beta...v3.0.1-beta) (2025-10-08)
+
+
+### Bug Fixes
+
+* **48:** remove existing  annotations container before creating new one ([#49](https://github.com/equinor/videx-3d/issues/49)) ([5119c5b](https://github.com/equinor/videx-3d/commit/5119c5b02ad663f0b1393e75112945bed097f279))
+
 ## [3.0.0-beta](https://github.com/equinor/videx-3d/compare/v2.1.1-beta...v3.0.0-beta) (2025-09-12)
 
 
