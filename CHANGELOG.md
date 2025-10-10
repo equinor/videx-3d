@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.0.3-beta](https://github.com/equinor/videx-3d/compare/v3.0.2-beta...v3.0.3-beta) (2025-10-10)
+
+
+### Bug Fixes
+
+* **48:** Revert trying to reuse annotations root, but leave fix for q… ([db0f832](https://github.com/equinor/videx-3d/commit/db0f83220b095f1b1f56758d77e2c397b9e4443a))
+* **48:** Revert trying to reuse annotations root, but leave fix for query selector ([00285d5](https://github.com/equinor/videx-3d/commit/00285d558fe81c86e0f67d2a91b6d595e857dd2e))
+
 ## [3.0.2-beta](https://github.com/equinor/videx-3d/compare/v3.0.1-beta...v3.0.2-beta) (2025-10-10)
 
 
