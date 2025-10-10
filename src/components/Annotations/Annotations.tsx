@@ -111,16 +111,14 @@ export const Annotations = ({ maxVisible = 100, children }: AnnotationsProviderP
 
     if (!parent) throw Error('Unable to create root!')
     
-    let container: HTMLElement | null = parent.querySelector(id)
+    let container: HTMLElement | null = parent.querySelector(`#${id}`)
 
-    if (container) {
-      container.remove()
+    if (!container) {
+      container = document.createElement('div')
+      container.setAttribute('id', id)
+      container.setAttribute('style', 'position:absolute;top:0;left:0;z-index: 1;pointer-events:none;padding:0;width:100%;height:100%;user-select:none')
+      parent.appendChild(container)
     }
-
-    container = document.createElement('div')
-    container.setAttribute('id', id)
-    container.setAttribute('style', 'position:absolute;top:0;left:0;z-index: 1;pointer-events:none;padding:0;width:100%;height:100%;user-select:none')
-    parent.appendChild(container)
 
     const annotationsRoot = createRoot(container)
 
