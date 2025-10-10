@@ -111,18 +111,14 @@ export const Annotations = ({ maxVisible = 100, children }: AnnotationsProviderP
 
     if (!parent) throw Error('Unable to create root!')
     
-    let container: HTMLElement | null = parent.querySelector(`#${id}`)
+    parent.querySelector(`#${id}`)?.remove() // remove any existing annotations container
+  
+    const container = document.createElement('div')
+    container.setAttribute('id', id)
+    container.setAttribute('style', 'position:absolute;top:0;left:0;z-index: 1;pointer-events:none;padding:0;width:100%;height:100%;user-select:none')
+    parent.appendChild(container)
 
-    if (!container) {
-      container = document.createElement('div')
-      container.setAttribute('id', id)
-      container.setAttribute('style', 'position:absolute;top:0;left:0;z-index: 1;pointer-events:none;padding:0;width:100%;height:100%;user-select:none')
-      parent.appendChild(container)
-    }
-
-    const annotationsRoot = createRoot(container)
-
-    return annotationsRoot
+    return createRoot(container)
   }, [renderer])
 
   useEffect(() => {
@@ -132,7 +128,6 @@ export const Annotations = ({ maxVisible = 100, children }: AnnotationsProviderP
       dispose()
     }
   }, [root, dispose])
-
 
 
   useFrame(({ gl, camera, scene, clock, pointer }) => {
