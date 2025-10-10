@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.0.2-beta](https://github.com/equinor/videx-3d/compare/v3.0.1-beta...v3.0.2-beta) (2025-10-10)
+
+
+### Bug Fixes
+
+* **48:** re-use existing container if present and fix query selector ([7e401e8](https://github.com/equinor/videx-3d/commit/7e401e8416b06636a947c84cbf2e2c2a8091b4e2))
+* **48:** re-use existing container if present and fix query selector ([b188050](https://github.com/equinor/videx-3d/commit/b188050cb2bb932bb06c936601fe61c025b002ef))
+
 ## [3.0.1-beta](https://github.com/equinor/videx-3d/compare/v3.0.0-beta...v3.0.1-beta) (2025-10-08)
 
 
