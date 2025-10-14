@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.1.0-beta](https://github.com/equinor/videx-3d/compare/v3.0.3-beta...v3.1.0-beta) (2025-10-14)
+
+
+### Features
+
+* allow CRS instance to be used as input as an alternative to UTM zone ([#56](https://github.com/equinor/videx-3d/issues/56)) ([3a25959](https://github.com/equinor/videx-3d/commit/3a259593639890d234ebda94f14511f7da9450bf))
+
 ## [3.0.3-beta](https://github.com/equinor/videx-3d/compare/v3.0.2-beta...v3.0.3-beta) (2025-10-10)
 
 
