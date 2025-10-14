@@ -9,7 +9,8 @@ import { UtmAreaContext, UtmAreaContextProps } from './UtmAreaContext'
  * @expand
  */
 export type UtmAreaProps = {
-  utmZone: string,
+  crsInstance?: CRS,
+  utmZone?: string,
   origin: [number, number],
   originUnits?: 'utm' | 'lnglat',
   offset?: Vec3,
@@ -37,12 +38,16 @@ export type UtmAreaProps = {
  *  
  * @group Components
  */
-export const UtmArea = forwardRef<CRS, PropsWithChildren<UtmAreaProps>>(({ utmZone, origin, originUnits = 'utm', offset = [0, 0, 0], children }, fref) => {
+export const UtmArea = forwardRef<CRS, PropsWithChildren<UtmAreaProps>>(({ crsInstance, utmZone, origin, originUnits = 'utm', offset = [0, 0, 0], children }, fref) => {
   const ref = useRef<Group>(null)
   const crs = useMemo(()=> {
-    const utmDef = getProjectionDefFromUtmZone(utmZone.toUpperCase())
-    return new CRS(utmDef, origin, originUnits)
-  }, [utmZone, origin, originUnits])
+    if (crsInstance) return crsInstance;
+    if (utmZone) {
+      const utmDef = getProjectionDefFromUtmZone(utmZone.toUpperCase())
+      return new CRS(utmDef, origin, originUnits)
+    }
+    throw Error('Either a UTM zone (string containing zone number + N/S for north/south hemisphere) or a CRS instance must be provided as props to the UtmArea component!')
+  }, [crsInstance, utmZone, origin, originUnits])
 
   useImperativeHandle(fref, () => crs, [crs])
 
