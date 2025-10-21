@@ -24,7 +24,7 @@ export class MockStore implements Store {
     //picks: loadPicks,
     'surface-meta': loadSurfaceMeta,
     //'strat-columns': loadStratColumns,
-    'formations': loadFormations,
+    formations: loadFormations,
   }
   private data: Record<string, Record<KeyType, any>> = {}
 
@@ -56,6 +56,7 @@ export class MockStore implements Store {
 
   public async get<T>(dataType: string, key: KeyType): Promise<T | null> {
     // read surface values from file due to size
+
     if (dataType === 'surface-values') {
       const values = await get(`/data/surfaces/${key}.json`)
       const data = new Float32Array(values)

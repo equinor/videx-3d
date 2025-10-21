@@ -44,10 +44,7 @@ export const TestAnnotations = ({ layer, count = 10, radius = 1000, position = [
   }, [count, position, radius])
 
   useEffect(() => {
-    const dispose = addAnnotations(annotations)
-    return () => {
-      dispose()
-    }
+    return addAnnotations(annotations)
   }, [annotations, addAnnotations])
 
   return null

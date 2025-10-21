@@ -1,16 +1,20 @@
 import { Remote, createEndpoint, proxy, transfer } from 'comlink'
-import { ReactNode, useContext, useEffect, useMemo, useState } from 'react'
+import PQueue from 'p-queue'
+import { ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { GeneratorRegistry } from '../sdk/data/GeneratorRegistry'
 import { DataContext } from './DataContext'
 import { GeneratorsContext } from './GeneratorsContext'
+
+// TODO: Should I create a controller class that contains the queue logic?
 
 /**
  * GeneratorsProvider props
  * @expand
  */
 export type GeneratorsProviderProps = {
-  registry: GeneratorRegistry | Remote<GeneratorRegistry>,
-  isRemote?: boolean,
+  registry: GeneratorRegistry | Remote<GeneratorRegistry>
+  concurrency?: number
+  signal?: AbortSignal
   children: ReactNode
 }
 
@@ -39,13 +43,39 @@ function isRemoteRegistry(registry: GeneratorRegistry | Remote<GeneratorRegistry
  * 
  * @group Components
  */
-export const GeneratorsProvider = ({ registry, children }: GeneratorsProviderProps) => {
+export const GeneratorsProvider = ({ registry, concurrency = Infinity, signal, children }: GeneratorsProviderProps) => {
   const [isReady, setIsReady] = useState(false)
+  const queue = useRef<PQueue>(new PQueue({ concurrency }))
+  const suspended = useRef(false);
 
   const dataContext = useContext(DataContext)
 
   const isRemote = useMemo(() => isRemoteRegistry(registry), [registry])
-  
+
+  const registryContext = useMemo(() => {
+    const invoke = async <T,>(key: string, priority: number, args: any[]) => {
+      if (suspended.current) return Promise.reject('aborted')
+      return queue.current.add(() => {
+        if (suspended.current) return Promise.reject('aborted')
+        return registry.invoke<T>(key, ...args)
+      }, { priority }) as T
+    }
+    return { invoke }
+  }, [registry])
+
+  useEffect(() => {
+    const currentQueue = queue.current
+    return () => {
+      if (currentQueue) {
+        currentQueue.clear()
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    suspended.current = !!signal?.aborted
+  }, [signal])
+
   useEffect(() => {
     if (dataContext) {
       if (dataContext.isRemote && isRemote) {
@@ -66,9 +96,19 @@ export const GeneratorsProvider = ({ registry, children }: GeneratorsProviderPro
     }
   }, [dataContext, registry, isRemote])
 
+  useEffect(() => {
+    if (signal && !signal.aborted) {
+      function onAbort() {
+        suspended.current = true
+        queue.current?.clear()
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+    }
+  }, [signal])
+
   return (
-    <GeneratorsContext.Provider value={registry}>
-      { isReady && children }
+    <GeneratorsContext.Provider value={registryContext}>
+      {isReady && children}
     </GeneratorsContext.Provider>
   )
 }

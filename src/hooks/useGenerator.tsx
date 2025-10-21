@@ -43,9 +43,11 @@ import { GeneratorsContext } from '../contexts/GeneratorsContext'
  * 
  * @group Hooks
  */
-export const useGenerator = <T,>(generator: string) => {
-  const registry = useContext(GeneratorsContext)
-  const callback = useCallback((...args: any[]) => registry!.invoke<T>(generator, ...args), [generator, registry]) as ((...args: any[]) => Promise<T>)
+export const useGenerator = <T,>(generator: string, priority = 0) => {
+  const context = useContext(GeneratorsContext)
+  const callback = useCallback((...args: any[]) => {
+    return context!.invoke<T>(generator, priority, args)
+  }, [generator, priority, context]) 
 
-  return registry ? callback : () => Promise.resolve(null)
+  return context ? callback : () => Promise.resolve(null)
 }

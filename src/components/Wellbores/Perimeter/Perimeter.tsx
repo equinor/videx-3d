@@ -5,7 +5,6 @@ import { useGenerator } from '../../../hooks/useGenerator'
 import { useWellboreContext } from '../../../hooks/useWellboreContext'
 import { createLayers, LAYERS } from '../../../layers/layers'
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing'
-import { limit } from '../../../sdk/utils/limiter'
 import { CommonComponentProps, CustomMaterialProps } from '../../common'
 import { PerimeterGeneratorResponse, perimeterGeometry } from './perimeter-defs'
 import fragmentShader from './shaders/fragment.glsl'
@@ -22,6 +21,7 @@ export type PerimeterProps = CommonComponentProps & CustomMaterialProps & {
   from: number,
   to: number,
   opacity?: number,
+  priority?: number
 }
 
 /**
@@ -56,6 +56,7 @@ export const Perimeter = ({
   customDistanceMaterial,
   customMaterial,
   onMaterialPropertiesChange,
+  priority = 0,
 }: PerimeterProps) => {
   const { id, segmentsPerMeter, simplificationThreshold } = useWellboreContext()
 
@@ -68,14 +69,13 @@ export const Perimeter = ({
     time: 0,
   })
 
-  const generator = useGenerator<PerimeterGeneratorResponse>(perimeterGeometry)
+  const generator = useGenerator<PerimeterGeneratorResponse>(perimeterGeometry, priority)
 
   const [geometry, setGeometry] = useState<BufferGeometry | null>(null)
 
   useEffect(() => {
     if (generator) {
-
-      limit(() => generator(id, radius, segmentsPerMeter, simplificationThreshold)).then((response) => {
+      generator(id, radius, segmentsPerMeter, simplificationThreshold).then((response) => {
         if (response) {
           const bufferGeometry = unpackBufferGeometry(response)
           bufferGeometry.computeBoundingBox()

@@ -1,11 +1,10 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Object3D, Vector3 } from 'three'
 import { useGenerator } from '../../../../hooks/useGenerator'
 import { useWellboreContext } from '../../../../hooks/useWellboreContext'
-import { queue } from '../../../../sdk/utils/limiter'
-import { Object3D, Vector3 } from 'three'
-import { completionToolAnnotations } from './completion-annotations-defs'
-import { AnnotationProps } from '../../../Annotations/types'
 import { useAnnotations } from '../../../Annotations/annotations-state'
+import { AnnotationProps } from '../../../Annotations/types'
+import { completionToolAnnotations } from './completion-annotations-defs'
 
 
 const v = new Vector3()
@@ -23,35 +22,16 @@ export const CompletionAnnotations = () => {
 
   const positionRef = useRef<Object3D>(null!)
 
-  const generator = useGenerator<AnnotationProps[]>(completionToolAnnotations)
-
-  // const layerOptions = useMemo<AnnotationLayerProps>(() => ({
-  //   name: 'Completion Tools' + id,
-  //   priority: 1,
-  //   visible: false,
-  //   distanceFactor: 150,
-  //   labelOffset: 100,
-  //   anchorSize: 3,
-  //   connector: false,
-  //   anchorOcclusionRadius: 30,
-  //   minDistance: 10,
-  //   maxDistance: 8000,
-  //   onClick: (annotation: AnnotationProps) => {
-  //     dispatchEvent(
-  //       new CameraFocusAtPointEvent({
-  //         point: annotation.position,
-  //         distance: 200,
-  //       })
-  //     )
-  //   }
-  // }), [id])
+  const generator = useGenerator<AnnotationProps[]>(completionToolAnnotations, 0)
 
   const { addAnnotations } = useAnnotations('completion', id)
 
+  const [labelData, setLabelData] = useState<AnnotationProps[]>([])
+
   useEffect(() => {
-    let dispose: (() => void) | null = null
+
     if (generator && id) {
-      queue(() => generator(id).then(response => {
+      generator(id).then(response => {
         if (response && positionRef.current) {
           response.forEach((d, i) => {
             v.set(...d.position)
@@ -59,16 +39,17 @@ export const CompletionAnnotations = () => {
             d.position = v.toArray()
             d.id = i.toString()
           })
-          dispose = addAnnotations(response || [])
+          setLabelData(response || [])
           //console.log(response)
         }
-      }), 0)
+      })
     }
+  }, [id, generator])
 
-    return () => {
-      if (dispose) dispose()
-    }
-  }, [id, generator, addAnnotations])
+  useEffect(() => {
+    const dispose = addAnnotations(labelData)
+    return dispose
+  }, [labelData, addAnnotations])
 
   return <object3D ref={positionRef} visible={false} />
 }

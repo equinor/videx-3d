@@ -139,9 +139,6 @@ const Wrapper = () => {
 const meta = {
   title: 'Components/Wellbores/Wells',
   component: Wrapper,
-  loaders: [() => {
-    useAnnotationsState.getState().clear()
-  }]
 } satisfies Meta<typeof Wrapper>
 
 export default meta

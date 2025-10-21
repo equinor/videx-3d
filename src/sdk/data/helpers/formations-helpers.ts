@@ -1,4 +1,3 @@
-import { limit } from '../../utils/limiter'
 import { ReadonlyStore } from '../Store'
 import { Formation, FormationMarker, MergedFormationInterval } from '../types'
 
@@ -11,9 +10,7 @@ export async function getWellboreFormations(
   store: ReadonlyStore,
   fromMsl?: number
 ) {
-  const formationIntervals = await limit(() =>
-    store.get<Formation[]>('formations', wellboreId)
-  ) || []
+  const formationIntervals = await store.get<Formation[]>('formations', wellboreId) || []
   
   fromMsl = fromMsl === undefined ? -Infinity : fromMsl
 

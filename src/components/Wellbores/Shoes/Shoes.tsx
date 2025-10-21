@@ -5,7 +5,6 @@ import { useWellboreContext } from '../../../hooks/useWellboreContext'
 import { SymbolsType } from '../../../sdk/data/types/Symbol'
 import { TubeMaterial } from '../../../sdk/materials/tube-material'
 import { Vec3 } from '../../../sdk/types/common'
-import { queue } from '../../../sdk/utils/limiter'
 import { useAnnotations } from '../../Annotations/annotations-state'
 import { AnnotationProps } from '../../Annotations/types'
 import { CommonComponentProps } from '../../common'
@@ -59,7 +58,7 @@ export const Shoes = forwardRef(({
 
   const ref = useRef<Group>(null)
   const { id, fromMsl } = useWellboreContext()
-  const generator = useGenerator<SymbolsType>(shoeSymbols)
+  const generator = useGenerator<SymbolsType>(shoeSymbols, priority)
   const { addAnnotations } = useAnnotations('shoes', id)
 
   const [data, setData] = useState<SymbolsType | null>(null)
@@ -81,18 +80,18 @@ export const Shoes = forwardRef(({
 
   useEffect(() => {
     if (generator && id) {
-      queue(() => generator(
+      generator(
         id,
         fromMsl,
         sizeMultiplier,
       ).then(response => {
         setData(response)
-      }), priority)
+      })
     }
-  }, [generator, id, fromMsl, sizeMultiplier, priority])
+  }, [generator, id, fromMsl, sizeMultiplier])
 
   useEffect(() => {
-    let dispose: (() => void) | null = null
+
     if (data) {
       const annotations = data.data!.map((d, i) => {
         transform.fromArray(data.transformations, i * 16)
@@ -107,11 +106,9 @@ export const Shoes = forwardRef(({
         }
         return annotation
       })
-      dispose = addAnnotations(annotations)
+      return addAnnotations(annotations)
     }
-    return () => {
-      if (dispose) dispose()
-    }
+    return undefined
   }, [data, addAnnotations])
 
   return (

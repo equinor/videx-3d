@@ -4,7 +4,6 @@ import { useGenerator } from '../../../hooks/useGenerator'
 import { useWellboreContext } from '../../../hooks/useWellboreContext'
 import { createLayers, LAYERS } from '../../../layers/layers'
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing'
-import { queue } from '../../../sdk/utils/limiter'
 import { CommonComponentProps, CustomMaterialProps } from '../../common'
 import { casings, CasingsGeneratorResponse } from './casings-defs'
 
@@ -67,7 +66,7 @@ export const Casings = forwardRef(({
     segmentsPerMeter: defaultSegmentsPerMeter,
     simplificationThreshold: defaultSimplificationThreshold,
   } = useWellboreContext()
-  const generator = useGenerator<CasingsGeneratorResponse>(casings)
+  const generator = useGenerator<CasingsGeneratorResponse>(casings, priority)
   const [geometry, setGeometry] = useState<BufferGeometry | null>(null)
   const [useFallback, setUseFallback] = useState(false)
 
@@ -122,7 +121,7 @@ export const Casings = forwardRef(({
 
   useEffect(() => {
     if (generator && id) {
-      queue(() => generator(
+      generator(
         id,
         fromMsl,
         radialSegments,
@@ -143,9 +142,9 @@ export const Casings = forwardRef(({
           }
         })
         if (!response) setUseFallback(true)
-      }), priority)
+      })
     }
-  }, [generator, id, fromMsl, radialSegments, sizeMultiplier, shoeFactor, segmentsPerMeter, simplificationThreshold, priority])
+  }, [generator, id, fromMsl, radialSegments, sizeMultiplier, shoeFactor, segmentsPerMeter, simplificationThreshold])
 
   return (
     <group

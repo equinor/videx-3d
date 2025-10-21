@@ -1,8 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Color, Object3D, Vector3 } from 'three'
 import { useGenerator } from '../../../hooks/useGenerator'
 import { useWellboreContext } from '../../../hooks/useWellboreContext'
-import { queue } from '../../../sdk/utils/limiter'
 import { useAnnotations } from '../../Annotations/annotations-state'
 import { AnnotationProps } from '../../Annotations/types'
 import { wellboreLabel } from './wellbore-label-defs'
@@ -14,8 +13,11 @@ import { wellboreLabel } from './wellbore-label-defs'
 export type WellboreLabelProps = {
   color?: number | string | Color
   size?: number,
-  position?: 'top' | 'center' | 'bottom'
+  position?: 'top' | 'center' | 'bottom',
+  priority?: number,
 }
+
+const v = new Vector3()
 
 /**
  * Displays a wellbore label as an annotation at the bottom, top or middle of a wellbore trajectory.
@@ -30,36 +32,34 @@ export type WellboreLabelProps = {
  * @see {@link Annotations}
  * @group Components
  */
-export const WellboreLabel = ({ size = 12, color = 'white', position = 'bottom' }: WellboreLabelProps) => {
+export const WellboreLabel = ({ size = 12, color = 'white', position = 'bottom', priority = 0 }: WellboreLabelProps) => {
   const { id, fromMsl } = useWellboreContext()
 
   const positionRef = useRef<Object3D>(null!)
-  const generator = useGenerator<AnnotationProps[]>(wellboreLabel)
+  const generator = useGenerator<AnnotationProps[]>(wellboreLabel, priority)
 
   const { addAnnotations } = useAnnotations('wellbore-labels', id)
 
-  useEffect(() => {
-    let dispose: (() => void) | null = null
-    if (generator && id) {
-      const v = new Vector3()
-      queue(() => generator(id, position, fromMsl).then(response => {
-        if (response && positionRef.current) {
-          response.forEach(d => {
-            v.set(...d.position)
-            positionRef.current.localToWorld(v)
-            d.position = v.toArray()
-            d.data = { color, size }
-          })
-          dispose = addAnnotations(response || [])
-          //console.log(response)
-        }
-      }), 1)
-    }
+  const [labelData, setLabelData] = useState<AnnotationProps | null>(null)
 
-    return () => {
-      if (dispose) dispose()
+  useEffect(() => {
+    if (generator && id) {
+      generator(id, position, fromMsl).then(response => {
+        if (response && response.length === 1 && positionRef.current) {
+          const [label] = response
+          v.set(...label.position)
+          positionRef.current.localToWorld(v)
+          label.position = v.toArray()
+          label.data = { color, size }
+          setLabelData(label)
+        }
+      })
     }
-  }, [addAnnotations, id, generator, fromMsl, position, positionRef, color, size])
+  }, [id, generator, fromMsl, position, color, size])
+
+  useEffect(() => {
+    return addAnnotations(labelData ? [labelData] : [])
+  }, [labelData, addAnnotations])
 
   return <object3D ref={positionRef} visible={false} />
 }

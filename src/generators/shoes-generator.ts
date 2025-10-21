@@ -4,12 +4,11 @@ import {
   CasingItem,
   clamp,
   getTrajectory,
-  limit,
   PI2,
   PositionLog,
   ReadonlyStore,
   SymbolData,
-  SymbolsType,
+  SymbolsType
 } from '../sdk'
 
 const positionVector = new Vector3()
@@ -25,13 +24,11 @@ export async function generateShoes(
   fromMsl?: number,
   sizeMultiplier?: number
 ): Promise<SymbolsType | null> {
-  const data = await limit(() => this.get<CasingItem[]>('casings', id))
+  const data = await this.get<CasingItem[]>('casings', id)
 
   if (!data) return null
 
-  const poslogMsl = await limit(() =>
-    this.get<PositionLog>('position-logs', id)
-  )
+  const poslogMsl = await this.get<PositionLog>('position-logs', id)
 
   const trajectory = getTrajectory(id, poslogMsl)
 

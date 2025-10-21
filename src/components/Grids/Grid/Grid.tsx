@@ -204,26 +204,26 @@ export const Grid = ({
 
   const uniforms = useRef({
     uSize: new Uniform(new Vector2(0, 0)),
-    uBackground: new Uniform(new Color(0x102030)),
+    uBackground: new Uniform(new Color(background || 0x102030)),
     uBackgroundOpacity: new Uniform(1),
-    uOpacity: new Uniform(1.0),
-    uCellSize: new Uniform(10),
-    uSubDivisions: new Uniform(0),
+    uOpacity: new Uniform(opacity || 1.0),
+    uCellSize: new Uniform(cellSize || 10),
+    uSubDivisions: new Uniform(subDivisions || 0),
     uOriginOffset: new Uniform(new Vector2(0, 0)),
     uDistanceFactor: new Uniform(0),
-    uGridColorMajor: new Uniform(new Color("#abc")),
-    uGridColorMinor: new Uniform(new Color("#789")),
-    uGridLineWidth: new Uniform(0.05),
+    uGridColorMajor: new Uniform(new Color(gridColorMajor || "#abc")),
+    uGridColorMinor: new Uniform(new Color(gridColorMinor || "#789")),
+    uGridLineWidth: new Uniform(gridLineWidth || 0.05),
     uAxesOffset: new Uniform(new Vector2(0, 0)),
-    uAxesColor: new Uniform(new Color("#fff")),
-    uAxesLineWidth: new Uniform(1),
-    uAxesTickSize: new Uniform(0.1),
+    uAxesColor: new Uniform(new Color(axesColor || "#fff")),
+    uAxesLineWidth: new Uniform(axesLineWidth || 1),
+    uAxesTickSize: new Uniform(axesTickSize || 0.1),
     uCursorPosition: new Uniform(new Vector2()),
-    uRulerColor: new Uniform(new Color("#fff")),
-    uRulerLineWidth: new Uniform(1),
-    uRulerOpacity: new Uniform(0.5),
+    uRulerColor: new Uniform(new Color(rulerColor || "#fff")),
+    uRulerLineWidth: new Uniform(rulerLineWidth || 1),
+    uRulerOpacity: new Uniform(rulerOpacity || 0.5),
     uProjectionTexture: new Uniform<Texture | undefined>(undefined),
-    uProjectionColor: new Uniform(new Color("#456")),
+    uProjectionColor: new Uniform(new Color(projectionColor || "#456")),
     uTexture: new Uniform<Texture | undefined>(undefined),
     uTextureMix: new Uniform(1),
   })
@@ -489,6 +489,7 @@ export const Grid = ({
         <planeGeometry
           args={size}
         />
+        
         <shaderMaterial
           ref={materialRef}
           uniforms={uniforms.current}
@@ -508,6 +509,7 @@ export const Grid = ({
           transparent
         />
         {showAxes && showAxesLabels && (
+
           <GridAxesLabels
             originOffset={offsets.originOffset}
             axesOffset={offsets.axesOffset}
@@ -522,6 +524,7 @@ export const Grid = ({
             side={side}
             renderOrder={renderOrder !== undefined && Number.isFinite(renderOrder) ? renderOrder + 1 : undefined}
           />
+
         )}
       </mesh>
       {enableProjection && (

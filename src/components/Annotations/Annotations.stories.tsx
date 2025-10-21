@@ -1,10 +1,10 @@
 import type { Meta, StoryObj } from '@storybook/react'
-import { Annotations } from './Annotations'
-import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator'
-import { AnnotationsLayer } from './AnnotationsLayer'
 import { ComponentProps, useEffect } from 'react'
+import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator'
+import { Annotations } from './Annotations'
+import { useAnnotations } from './annotations-state'
+import { AnnotationsLayer } from './AnnotationsLayer'
 import { AnnotationProps } from './types'
-import { useAnnotations, useAnnotationsState } from './annotations-state'
 
 const count = 1000
 const annotations = new Array<AnnotationProps>(count)
@@ -24,9 +24,6 @@ for (let i = 0; i < annotations.length; i++) {
 const meta = {
   title: 'Components/Misc/Annotations',
   component: Annotations,
-  loaders: [() => {
-    useAnnotationsState.getState().clear()
-  }]
 } satisfies Meta<typeof Annotations>
 
 export default meta

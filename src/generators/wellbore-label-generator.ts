@@ -1,10 +1,9 @@
 import {
   clamp,
   getTrajectory,
-  limit,
   PositionLog,
   ReadonlyStore,
-  WellboreHeader,
+  WellboreHeader
 } from '../sdk'
 
 export async function generateWellboreLabel(
@@ -13,15 +12,11 @@ export async function generateWellboreLabel(
   position: 'top' | 'center' | 'bottom',
   fromMsl?: number
 ) {
-  const header = await limit(() =>
-    this.get<WellboreHeader>('wellbore-headers', id)
-  )
+  const header = await this.get<WellboreHeader>('wellbore-headers', id)
 
   if (!header) return null
 
-  const poslogMsl = await limit(() =>
-    this.get<PositionLog>('position-logs', id)
-  )
+  const poslogMsl = await this.get<PositionLog>('position-logs', id)
 
   const trajectory = getTrajectory(id, poslogMsl)
 

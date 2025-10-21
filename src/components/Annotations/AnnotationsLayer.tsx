@@ -128,6 +128,7 @@ export const AnnotationsLayer = ({
       }
     }
   }, [])
+
   return (
     <group>
       {children}

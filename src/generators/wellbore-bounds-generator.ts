@@ -7,10 +7,9 @@ import {
   clamp,
   getTrajectory,
   lengthVec3,
-  limit,
   PositionLog,
   ReadonlyStore,
-  Vec3,
+  Vec3
 } from '../sdk'
 
 export async function calculateWellboreBounds(
@@ -19,9 +18,7 @@ export async function calculateWellboreBounds(
   fromMsl?: number,
   sampleSize: number = 250
 ) {
-  const poslogMsl = await limit(() =>
-    this.get<PositionLog>('position-logs', id)
-  )
+  const poslogMsl = await this.get<PositionLog>('position-logs', id)
 
   const bounds: WellboreBoundsType = {
     main: {

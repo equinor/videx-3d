@@ -3,7 +3,6 @@ import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 're
 import { Object3D, PerspectiveCamera, Sphere, Vector3 } from 'three'
 import { useGenerator } from '../../../hooks/useGenerator'
 import { Vec3 } from '../../../sdk/types/common'
-import { queue } from '../../../sdk/utils/limiter'
 import { DistanceContext } from '../../Distance/DistanceContext'
 import { wellboreBounds } from './wellbore-bounds-defs'
 
@@ -16,6 +15,7 @@ export type WellboreBoundsProps = {
   fromMsl?: number,
   boundsSampleSize?: number,
   visible?: boolean,
+  priority?: number,
   children?: ReactNode,
 }
 
@@ -61,11 +61,12 @@ export const WellboreBounds = ({
   fromMsl,
   boundsSampleSize = 250,
   visible = false,
+  priority = 0,
   children,
 }: WellboreBoundsProps) => {
   const boundsRef = useRef<Object3D>(null!)
 
-  const boundsGenerator = useGenerator<Float32Array>(wellboreBounds)
+  const boundsGenerator = useGenerator<Float32Array>(wellboreBounds, priority)
 
   const [bounds, setBounds] = useState<WellboreBoundsType | null>(null)
   const currentDistanceRef = useMemo<{ current: number }>(() => ({ current: Infinity }), [])
@@ -95,7 +96,7 @@ export const WellboreBounds = ({
   useEffect(() => {
     if (boundsGenerator) {
 
-      queue(() => boundsGenerator(id, fromMsl, boundsSampleSize), 0).then(boundsData => {
+      boundsGenerator(id, fromMsl, boundsSampleSize).then(boundsData => {
         if (boundsData) {
           const generatedBounds: WellboreBoundsType = {
             main: {

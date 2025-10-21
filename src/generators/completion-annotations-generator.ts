@@ -1,4 +1,4 @@
-import { clamp, getTrajectory, limit, PositionLog, ReadonlyStore } from '../sdk'
+import { clamp, getTrajectory, PositionLog, ReadonlyStore } from '../sdk'
 
 export async function generateCompletionToolAnnotations(
   this: ReadonlyStore,
@@ -8,9 +8,7 @@ export async function generateCompletionToolAnnotations(
 
   if (!data) return null
 
-  const poslogMsl = await limit(() =>
-    this.get<PositionLog>('position-logs', id)
-  )
+  const poslogMsl = await this.get<PositionLog>('position-logs', id)
 
   const trajectory = getTrajectory(id, poslogMsl)
 

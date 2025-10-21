@@ -1,4 +1,4 @@
-import { createRef } from 'react'
+import { createRef, useMemo } from 'react'
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import { AnnotationInstance, AnnotationLayer, AnnotationProps } from './types'
@@ -31,9 +31,9 @@ export type AnnotationsState = {
  * Get access to annotations global state.
  * This is used internally and should not be used by other components. Use the `useAnnotations` hook instead.
  * @internal
- * 
+ *
  * @see {@link useAnnotations}
- * 
+ *
  * @group Hooks
  */
 export const useAnnotationsState = create<
@@ -45,18 +45,19 @@ export const useAnnotationsState = create<
     update: {
       required: false,
       ref: null,
-      setRef: (v:ReturnType<typeof setTimeout>) =>
+      setRef: (v: ReturnType<typeof setTimeout>) =>
         set((state) => ({ update: { ...state.update, ref: v } })),
     },
     layers: {},
     annotations: {},
     instances: [],
-    clear: () =>
+    clear: () => {
       set({
         layers: {},
         annotations: {},
         instances: [],
-      }),
+      })
+    },
     setInstances: (newInstances) => set({ instances: newInstances }),
     layerExist: (id: string) => {
       return !!get().layers[id]
@@ -75,7 +76,6 @@ export const useAnnotationsState = create<
           throw Error('Layer already exist!')
         }
         //newLayer.annotations = []
-
         return { layers: { ...layers, [id]: newLayer } }
       })
 
@@ -226,7 +226,10 @@ useAnnotationsState.subscribe(
       if (updateState.ref) {
         clearTimeout(updateState.ref)
       }
-      const timeoutRef: ReturnType<typeof setTimeout> = setTimeout(() => updateInstances(), 500)
+      const timeoutRef: ReturnType<typeof setTimeout> = setTimeout(
+        () => updateInstances(),
+        500
+      )
       updateState.setRef(timeoutRef)
       // if (updateState.ref === null) {
       //   const timeoutRef = setTimeout(() => updateInstances(), 1000)
@@ -240,20 +243,20 @@ useAnnotationsState.subscribe(
  * This hook allow you to add annotations to an exisiting `AnnotationsLayer`.
  * A scope is a user defined string, which should uniquely tie the added anotations to your component.
  * If your annotations belong to a specific wellbore, the wellbore name or id would work well as a scope.
- *  
+ *
  * A single function `addAnnotations` is returned, which you can call from within a `useEffect`
- * hook to set annotations. Annotations must be an array of `AnnotationProps`. 
+ * hook to set annotations. Annotations must be an array of `AnnotationProps`.
  * The `addAnnotations` function will return a dispose function when invoked, which you should
  * call within the effect dispose function.
- * 
+ *
  * @example
  * const { addAnnotations } = useAnnotations('casings', scope)
  *
  * @remarks
  * Note that annotation positions needs to be in world space. If your data is relative to
- * for instance a wellbore, you could add an Object3D element with a ref in your component render function 
+ * for instance a wellbore, you could add an Object3D element with a ref in your component render function
  * and update the position data in a `useEffect` hook:
- * 
+ *
  * @example
  * useEffect(() => {
  *   let dispose: (() => void) | null = null
@@ -271,25 +274,34 @@ useAnnotationsState.subscribe(
  *       }
  *     })
  *   }
- * 
+ *
  *   return () => {
  *     if (dispose) dispose()
  *   }
  * }, [addAnnotations, id, generator, positionRef])
- * 
+ *
  * @see {@link AnnotationsLayer}
  * @see {@link Annotations}
- * 
+ *
  * @group Hooks
  */
 export const useAnnotations = (layer: string, scope: string) => {
   const add = useAnnotationsState((state) => state.addLayerAnnotations)
   const remove = useAnnotationsState((state) => state.removeLayerAnnotations)
 
-  return {
-    addAnnotations: (annotations: AnnotationProps[]) => {
-      add(layer, scope, annotations)
-      return () => remove(layer, scope)
-    },
-  }
+  const annotations = useMemo(() => {
+    return {
+      addAnnotations: (annotations: AnnotationProps[]) => {
+        if (annotations.length) {
+          add(layer, scope, annotations)
+          return () => {
+            remove(layer, scope)
+          }
+        } 
+        return undefined
+      },
+    }
+  }, [add, remove, layer, scope])
+
+  return annotations
 }
