@@ -5,7 +5,6 @@ import { useWellboreContext } from '../../../hooks/useWellboreContext'
 import { createLayers, LAYERS } from '../../../layers/layers'
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing'
 import { TubeMaterial } from '../../../sdk/materials/tube-material'
-import { queue } from '../../../sdk/utils/limiter'
 import { CommonComponentProps, CustomMaterialProps } from '../../common'
 import { tubeTrajectory, tubeTrajectoryGeneratorResponse } from './tube-geometry-defs'
 
@@ -53,7 +52,7 @@ export const TubeTrajectory = ({
 }: TubeTrajectoryProps) => {
   const { id, fromMsl, segmentsPerMeter, simplificationThreshold } = useWellboreContext()
 
-  const generator = useGenerator<tubeTrajectoryGeneratorResponse>(tubeTrajectory)
+  const generator = useGenerator<tubeTrajectoryGeneratorResponse>(tubeTrajectory, priority)
 
   const [geometry, setGeometry] = useState<BufferGeometry | null>(null)
 
@@ -81,7 +80,7 @@ export const TubeTrajectory = ({
   useEffect(() => {
     if (generator) {
 
-      queue(() => generator(id, segmentsPerMeter, simplificationThreshold, fromMsl, radius, radialSegments).then((response: any) => {
+      generator(id, segmentsPerMeter, simplificationThreshold, fromMsl, radius, radialSegments).then((response: any) => {
         let bufferGeometry: BufferGeometry | null = null
         if (response) {
           bufferGeometry = unpackBufferGeometry(response)
@@ -90,10 +89,10 @@ export const TubeTrajectory = ({
           if (prev) prev.dispose()
           return bufferGeometry
         })
-      }), priority)
+      })
 
     }
-  }, [generator, id, fromMsl, segmentsPerMeter, simplificationThreshold, radius, radialSegments, priority])
+  }, [generator, id, fromMsl, segmentsPerMeter, simplificationThreshold, radius, radialSegments])
 
   if (!geometry) return null
 

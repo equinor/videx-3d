@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { BackSide, BufferGeometry, FrontSide, ShaderLib, Uniform, UniformsUtils } from 'three'
 import { CommonComponentProps, createLayers, LAYERS, useGenerator, useWellboreContext } from '../../../main'
-import { queue, unpackBufferGeometry } from '../../../sdk'
+import { unpackBufferGeometry } from '../../../sdk'
 import fragmentShader from './shaders/fragment.glsl'
 import vertexShader from './shaders/vertex.glsl'
 import { wellboreFormationColumn, WellboreFormationColumnResponse } from './wellbore-formation-column-defs'
@@ -55,7 +55,7 @@ export const WellboreFormationColumn = ({
   priority = 0,
 }: WellboreFormationColumnProps) => {
   const { id, fromMsl, segmentsPerMeter, simplificationThreshold } = useWellboreContext()
-  const generator = useGenerator<WellboreFormationColumnResponse>(wellboreFormationColumn)
+  const generator = useGenerator<WellboreFormationColumnResponse>(wellboreFormationColumn, priority)
 
   const [geometry, setGeometry] = useState<BufferGeometry | null>(null)
 
@@ -73,7 +73,7 @@ export const WellboreFormationColumn = ({
   useEffect(() => {
     if (generator) {
 
-      queue(() => generator(
+      generator(
         id,
         stratColumnId,
         segmentsPerMeter,
@@ -94,7 +94,7 @@ export const WellboreFormationColumn = ({
           if (prev) prev.dispose()
           return bufferGeometry
         })
-      }), priority)
+      })
 
     }
   }, [
@@ -109,7 +109,6 @@ export const WellboreFormationColumn = ({
     startRadius,
     formationWidth,
     radialSegments,
-    priority,
     inverted
   ])
 

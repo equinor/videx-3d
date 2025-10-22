@@ -7,7 +7,6 @@ import {
   degreesToRadians,
   feetToMeters,
   getTrajectory,
-  limit,
   PerforationInterval,
   PI2,
   PositionLog,
@@ -15,7 +14,7 @@ import {
   rotateVec3,
   SymbolData,
   SymbolsType,
-  Vec3,
+  Vec3
 } from '../sdk'
 
 //const perforationsPerMeter = 0.5
@@ -35,15 +34,11 @@ export async function generatePerforations(
   fromMsl?: number,
   sizeMultiplier: number = 1
 ): Promise<SymbolsType | null> {
-  const perforationData = await limit(() =>
-    this.get<PerforationInterval[]>('perforations', id)
-  )
+  const perforationData = await this.get<PerforationInterval[]>('perforations', id)
 
   if (!perforationData) return null
 
-  const poslogMsl = await limit(() =>
-    this.get<PositionLog>('position-logs', id)
-  )
+  const poslogMsl = await this.get<PositionLog>('position-logs', id)
 
   const trajectory = getTrajectory(id, poslogMsl)
 

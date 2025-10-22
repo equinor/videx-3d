@@ -3,11 +3,10 @@ import {
   clamp,
   createTubeGeometry,
   getTrajectory,
-  limit,
   packBufferGeometry,
   PositionLog,
   ReadonlyStore,
-  TubeGeometryOptions,
+  TubeGeometryOptions
 } from '../sdk'
 
 export async function generateTubeTrajectory(
@@ -20,9 +19,7 @@ export async function generateTubeTrajectory(
   radialSegments: number = 16,
   includeLengths: boolean = false
 ) {
-  const poslogMsl = await limit(() =>
-    this.get<PositionLog>('position-logs', id)
-  )
+  const poslogMsl = await this.get<PositionLog>('position-logs', id)
 
   const trajectory = getTrajectory(id, poslogMsl)
 

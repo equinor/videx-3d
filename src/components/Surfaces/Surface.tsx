@@ -3,7 +3,7 @@ import { BackSide, BufferGeometry, DataTexture, DoubleSide, FrontSide, Mesh, Mes
 import { PointerEvents } from '../../events/interaction-events'
 import { useGenerator } from '../../hooks/useGenerator'
 import { createLayers, LAYERS } from '../../layers/layers'
-import { createElevationTexture, createNormalTexture, queue, SurfaceMeta, unpackBufferGeometry, Vec2 } from '../../sdk'
+import { createElevationTexture, createNormalTexture, SurfaceMeta, unpackBufferGeometry, Vec2 } from '../../sdk'
 import { CommonComponentProps } from '../common'
 import { EventEmitterCallback, useEventEmitter } from '../Handlers/EventEmitter/EventEmitterContext'
 import { surfaceGeometry, SurfaceGeometryResponse, surfaceTextures, SurfaceTexturesResponse } from './surface-defs'
@@ -85,8 +85,8 @@ export const Surface = ({
   onPointerMove,
 }: SurfaceProps) => {
   const ref = useRef<Mesh>(null!)
-  const geometryGenerator = useGenerator<SurfaceGeometryResponse>(surfaceGeometry)
-  const texturesGenerator = useGenerator<SurfaceTexturesResponse>(surfaceTextures)
+  const geometryGenerator = useGenerator<SurfaceGeometryResponse>(surfaceGeometry, priority)
+  const texturesGenerator = useGenerator<SurfaceTexturesResponse>(surfaceTextures, priority)
 
   const [geometry, setGeometry] = useState<BufferGeometry | null>(null)
   const [depthTexture, setDepthTexture] = useState<DataTexture | null>(null)
@@ -203,13 +203,13 @@ export const Surface = ({
 
   useEffect(() => {
     if (texturesGenerator) {
-      queue(() => texturesGenerator(meta.id).then(response => {
+      texturesGenerator(meta.id).then(response => {
         if (response) {
           const {
             elevationImageBuffer,
             normalsImageBuffer,
           } = response
-          
+
           const elevationTextures = createElevationTexture(
             elevationImageBuffer,
             meta.header.nx,
@@ -230,13 +230,13 @@ export const Surface = ({
             return normalTexture
           })
         }
-      }), priority)
+      })
     }
-  }, [texturesGenerator, meta.id, meta.header.nx, meta.header.ny, priority])
+  }, [texturesGenerator, meta.id, meta.header.nx, meta.header.ny])
 
   useEffect(() => {
     if (geometryGenerator) {
-      queue(() => geometryGenerator(meta.id, maxError).then((response) => {
+      geometryGenerator(meta.id, maxError).then((response) => {
         let bufferGeometry: BufferGeometry | null = null
         if (response) {
           bufferGeometry = unpackBufferGeometry(response)
@@ -246,9 +246,9 @@ export const Surface = ({
           return bufferGeometry
         })
 
-      }), priority)
+      })
     }
-  }, [geometryGenerator, meta.id, maxError, priority])
+  }, [geometryGenerator, meta.id, maxError])
 
   useEffect(() => {
     if (depthTexture && material) {

@@ -9,13 +9,12 @@ import {
   CompletionTool,
   createTubeGeometry,
   getTrajectory,
-  limit,
   packBufferGeometry,
   PositionLog,
   ReadonlyStore,
   Trajectory,
   TubeGeometryOptions,
-  Tuplet,
+  Tuplet
 } from '../sdk'
 
 function createGenericShape(
@@ -83,13 +82,11 @@ export async function generateCompletionTools(
   simplificationThreshold: number = 0
 ) {
   //console.time('build completion tools')
-  const data = await limit(() => this.get<any[]>('completion-tools', id))
+  const data = await this.get<any[]>('completion-tools', id)
 
   if (!data) return null
 
-  const poslogMsl = await limit(() =>
-    this.get<PositionLog>('position-logs', id)
-  )
+  const poslogMsl = await this.get<PositionLog>('position-logs', id)
 
   const trajectory = getTrajectory(id, poslogMsl)
 

@@ -2,22 +2,19 @@ import {
   CasingItem,
   clamp,
   getTrajectory,
-  limit,
   PositionLog,
-  ReadonlyStore,
+  ReadonlyStore
 } from '../sdk'
 
 export async function generateCasingAnnotations(
   this: ReadonlyStore,
   id: string
 ) {
-  const data = await limit(() => this.get<CasingItem[]>('casings', id))
+  const data = await this.get<CasingItem[]>('casings', id)
 
   if (!data) return null
 
-  const poslogMsl = await limit(() =>
-    this.get<PositionLog>('position-logs', id)
-  )
+  const poslogMsl = await this.get<PositionLog>('position-logs', id)
 
   const trajectory = getTrajectory(id, poslogMsl)
 

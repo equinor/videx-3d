@@ -3,12 +3,11 @@ import { Matrix4, Vector3 } from 'three'
 import {
   clamp,
   getTrajectory,
-  limit,
   PI2,
   PositionLog,
   ReadonlyStore,
   SymbolData,
-  SymbolsType,
+  SymbolsType
 } from '../sdk'
 
 const positionVector = new Vector3()
@@ -25,9 +24,7 @@ export async function generatePositionMarkers(
   interval: number,
   fromMsl?: number
 ): Promise<SymbolsType | null> {
-  const poslogMsl = await limit(() =>
-    this.get<PositionLog>('position-logs', id)
-  )
+  const poslogMsl = await this.get<PositionLog>('position-logs', id)
 
   const trajectory = getTrajectory(id, poslogMsl)
 

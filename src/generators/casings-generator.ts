@@ -14,7 +14,7 @@ import {
 import { CasingItem, Tuplet } from '../sdk'
 
 import { casingsMaterialIndices } from '../components/Wellbores/Casings/casings-defs'
-import { clamp, getTrajectory, limit, Trajectory } from '../sdk'
+import { clamp, getTrajectory, Trajectory } from '../sdk'
 
 function createGenericShape(
   trajectory: Trajectory,
@@ -123,13 +123,11 @@ export async function generateCasings(
   segmentsPerMeter: number = 0.1,
   simplificationThreshold: number = 0
 ) {
-  const data = await limit(() => this.get<CasingItem[]>('casings', id))
+  const data = await this.get<CasingItem[]>('casings', id)
 
   if (!data) return null
 
-  const poslogMsl = await limit(() =>
-    this.get<PositionLog>('position-logs', id)
-  )
+  const poslogMsl = await this.get<PositionLog>('position-logs', id)
 
   const trajectory = getTrajectory(id, poslogMsl)
 

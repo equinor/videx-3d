@@ -6,7 +6,6 @@ import { createLayers, LAYERS } from '../../../layers/layers'
 import { SymbolsType } from '../../../sdk/data/types/Symbol'
 import { TubeMaterial } from '../../../sdk/materials/tube-material'
 import { Vec3 } from '../../../sdk/types/common'
-import { queue } from '../../../sdk/utils/limiter'
 import { useAnnotations } from '../../Annotations/annotations-state'
 import { AnnotationProps } from '../../Annotations/types'
 import { CommonComponentProps } from '../../common'
@@ -61,7 +60,7 @@ export const FormationMarkers = forwardRef(({
   const ref = useRef<Group>(null)
 
   const { id, fromMsl } = useWellboreContext()
-  const generator = useGenerator<SymbolsType>(formationMarkerSymbols)
+  const generator = useGenerator<SymbolsType>(formationMarkerSymbols, priority)
   const { addAnnotations } = useAnnotations('formation-markers', id)
 
   const [data, setData] = useState<SymbolsType | null>(null)
@@ -85,22 +84,21 @@ export const FormationMarkers = forwardRef(({
 
   useEffect(() => {
     if (generator && id) {
-      queue(() => generator(
+      generator(
         id,
         stratColumnId,
         fromMsl,
         baseRadius,
       ).then(response => {
         setData(response)
-      }), priority)
+      })
     }
-  }, [generator, id, fromMsl, baseRadius, stratColumnId, priority])
+  }, [generator, id, fromMsl, baseRadius, stratColumnId])
 
 
 
   useEffect(() => {
-    let dispose: (() => void) | null = null
-    if (showAnnotations && data && data.data && addAnnotations) {
+    if (showAnnotations && data && data.data) {
       const annotations = data.data.map((d, i) => {
         transform.fromArray(data.transformations, i * 16)
         origin.setFromMatrixPosition(transform)
@@ -121,11 +119,9 @@ export const FormationMarkers = forwardRef(({
         }
         return annotation
       })
-      dispose = addAnnotations(annotations)
+      return addAnnotations(annotations)
     }
-    return () => {
-      if (dispose) dispose()
-    }
+    return undefined
   }, [data, addAnnotations, showAnnotations])
 
   return (

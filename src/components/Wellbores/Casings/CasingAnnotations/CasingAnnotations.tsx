@@ -1,11 +1,12 @@
-import { useEffect, useRef } from 'react'
-import { useGenerator } from '../../../../hooks/useGenerator'
-import { AnnotationProps } from '../../../Annotations/types'
-import { useWellboreContext } from '../../../../hooks/useWellboreContext'
+import { useEffect, useRef, useState } from 'react'
 import { Object3D, Vector3 } from 'three'
-import { queue } from '../../../../sdk/utils/limiter'
-import { casingAnnotations } from './casing-annotations-defs'
+import { useGenerator } from '../../../../hooks/useGenerator'
+import { useWellboreContext } from '../../../../hooks/useWellboreContext'
 import { useAnnotations } from '../../../Annotations/annotations-state'
+import { AnnotationProps } from '../../../Annotations/types'
+import { casingAnnotations } from './casing-annotations-defs'
+
+const v = new Vector3()
 
 /**
  * Adds annotations for casing data. This component needs to be a child of the `Wellbore` component.
@@ -19,15 +20,15 @@ export const CasingAnnotations = () => {
   const { id } = useWellboreContext()
 
   const positionRef = useRef<Object3D>(null!)
-  const generator = useGenerator<AnnotationProps[]>(casingAnnotations)
+  const generator = useGenerator<AnnotationProps[]>(casingAnnotations, 1)
 
   const { addAnnotations } = useAnnotations('casings', id)
 
+  const [labelData, setLabelData] = useState<AnnotationProps[]>([])
+
   useEffect(() => {
-    let dispose: (() => void) | null = null
     if (generator && id) {
-      const v = new Vector3()
-      queue(() => generator(id).then(response => {
+      generator(id).then(response => {
         if (response && positionRef.current) {
           response.forEach((d, i) => {
             v.set(...d.position)
@@ -35,16 +36,17 @@ export const CasingAnnotations = () => {
             d.position = v.toArray()
             d.id = i.toString()
           })
-          dispose = addAnnotations(response || [])
+          setLabelData(response || [])
           //console.log(response)
         }
-      }), 1)
+      })
     }
+  }, [id, generator, positionRef])
 
-    return () => {
-      if (dispose) dispose()
-    }
-  }, [addAnnotations, id, generator, positionRef])
+   useEffect(() => {
+    const dispose = addAnnotations(labelData)
+    return dispose
+  }, [labelData, addAnnotations])
 
   return <object3D ref={positionRef} visible={false} />
 }

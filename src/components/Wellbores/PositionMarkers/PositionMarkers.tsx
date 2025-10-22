@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CircleGeometry, Color, DoubleSide, ShaderMaterial, Texture, Uniform, Vector2 } from 'three'
-import { useWellboreContext } from '../../../hooks/useWellboreContext'
-import { SymbolsType } from '../../../sdk/data/types/Symbol'
-import { queue } from '../../../sdk/utils/limiter'
 import { useGenerator } from '../../../hooks/useGenerator'
-import { positionMarkers } from './position-markers-defs'
-import { Symbols } from '../../Symbol/Symbol'
+import { useWellboreContext } from '../../../hooks/useWellboreContext'
 import { createLayers, LAYERS } from '../../../layers/layers'
+import { SymbolsType } from '../../../sdk/data/types/Symbol'
 import { PI2 } from '../../../sdk/utils/trigonometry'
-import vertexShader from '../../Grids/Grid/shaders/vertex.glsl'
 import fragmentShader from '../../Grids/Grid/shaders/fragment.glsl'
+import vertexShader from '../../Grids/Grid/shaders/vertex.glsl'
+import { Symbols } from '../../Symbol/Symbol'
+import { positionMarkers } from './position-markers-defs'
 
 /**
  * Test
@@ -30,7 +29,7 @@ export const PositionMarkers = ({
 }: Props) => {
   //const positionRef = useRef<Object3D>(null!)
   const { id, fromMsl } = useWellboreContext()
-  const generator = useGenerator<SymbolsType>(positionMarkers)
+  const generator = useGenerator<SymbolsType>(positionMarkers, priority)
 
   const [data, setData] = useState<SymbolsType | null>(null)
 
@@ -82,16 +81,16 @@ export const PositionMarkers = ({
 
   useEffect(() => {
     if (generator && id) {
-      queue(() => generator(
+      generator(
         id,
         radius,
         interval,
         fromMsl,
       ).then(response => {
         setData(response)
-      }), priority)
+      })
     }
-  }, [generator, id, fromMsl, radius, interval, priority])
+  }, [generator, id, fromMsl, radius, interval])
 
   useEffect(() => {
     material.uniforms.uSize.value.set(radius * 2, radius * 2)

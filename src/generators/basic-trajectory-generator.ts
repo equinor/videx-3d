@@ -4,10 +4,9 @@ import {
   clamp,
   getCurvePositions,
   getTrajectory,
-  limit,
   packBufferGeometryLike,
   PositionLog,
-  ReadonlyStore,
+  ReadonlyStore
 } from '../sdk'
 
 export async function generateBasicTrajectory(
@@ -18,9 +17,7 @@ export async function generateBasicTrajectory(
   fromMsl?: number,
   includeLengths: boolean = false
 ) {
-  const poslogMsl = await limit(() =>
-    this.get<PositionLog>('position-logs', id)
-  )
+  const poslogMsl = await this.get<PositionLog>('position-logs', id)
 
   const trajectory = getTrajectory(id, poslogMsl)
 

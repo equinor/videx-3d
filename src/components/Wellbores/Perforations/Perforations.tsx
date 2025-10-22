@@ -1,16 +1,15 @@
+import { useFrame } from '@react-three/fiber'
 import { ForwardedRef, forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { AdditiveBlending, ConeGeometry, Group, Material, ShaderMaterial, Uniform } from 'three'
-import { useWellboreContext } from '../../../hooks/useWellboreContext'
 import { useGenerator } from '../../../hooks/useGenerator'
-import { SymbolsType } from '../../../sdk/data/types/Symbol'
-import { perforationSymbols } from './perforations-defs'
-import { queue } from '../../../sdk/utils/limiter'
-import { Symbols } from '../../Symbol/Symbol'
+import { useWellboreContext } from '../../../hooks/useWellboreContext'
 import { createLayers, LAYERS } from '../../../layers/layers'
-import vertexShader from './shaders/vertex.glsl'
-import fragmentShader from './shaders/fragment.glsl'
-import { useFrame } from '@react-three/fiber'
+import { SymbolsType } from '../../../sdk/data/types/Symbol'
 import { CommonComponentProps, CustomMaterialProps } from '../../common'
+import { Symbols } from '../../Symbol/Symbol'
+import { perforationSymbols } from './perforations-defs'
+import fragmentShader from './shaders/fragment.glsl'
+import vertexShader from './shaders/vertex.glsl'
 
 /**
  * Perforations props
@@ -63,7 +62,7 @@ export const Perforations = forwardRef(({
     lenght: 0,
   })
   const { id, fromMsl } = useWellboreContext()
-  const generator = useGenerator<SymbolsType>(perforationSymbols)
+  const generator = useGenerator<SymbolsType>(perforationSymbols, priority)
 
   const [data, setData] = useState<SymbolsType | null>(null)
 
@@ -111,15 +110,15 @@ export const Perforations = forwardRef(({
 
   useEffect(() => {
     if (generator && id) {
-      queue(() => generator(
+      generator(
         id,
         fromMsl,
         sizeMultiplier,
       ).then(response => {
         setData(response)
-      }), priority)
+      })
     }
-  }, [generator, id, fromMsl, sizeMultiplier, priority])
+  }, [generator, id, fromMsl, sizeMultiplier])
 
   useFrame(({ clock }) => {
     matProps.current.time = clock.elapsedTime

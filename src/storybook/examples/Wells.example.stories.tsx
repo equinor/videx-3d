@@ -236,7 +236,7 @@ const Example = (args: ExampleProps) => {
             rampMin={surface.displayMin}
             rampMax={surface.displayMax}
             opacity={args.opacity}
-            priority={0}
+            priority={9}
             maxError={args.maxError}
             wireframe={args.wireframe}
             showContours={args.showContours}
@@ -359,7 +359,6 @@ const Example = (args: ExampleProps) => {
 const meta = {
   title: 'examples/Wells',
   loaders: [async () => {
-    useAnnotationsState.getState().clear()
     useOutputPanelState.setState({ groups: {} })
   }],
   component: Example,

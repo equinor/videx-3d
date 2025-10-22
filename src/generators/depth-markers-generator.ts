@@ -3,11 +3,10 @@ import {
   clamp,
   DepthReferencePoint,
   getTrajectory,
-  limit,
   PositionLog,
   ReadonlyStore,
   Vec3,
-  WellboreHeader,
+  WellboreHeader
 } from '../sdk'
 
 export async function generateDepthMarkers(
@@ -17,17 +16,14 @@ export async function generateDepthMarkers(
   depthReferencePoint: DepthReferencePoint = 'MSL',
   fromMsl?: number
 ): Promise<AnnotationProps[] | null> {
-  const poslogMsl = await limit(() =>
-    this.get<PositionLog>('position-logs', id)
+  const poslogMsl = await this.get<PositionLog>('position-logs', id
   )
 
   if (!poslogMsl || poslogMsl.length < 8) return null
 
   let offset = 0
   if (depthReferencePoint === 'RT') {
-    const header = await limit(() =>
-      this.get<WellboreHeader>('wellbore-headers', id)
-    )
+    const header = await this.get<WellboreHeader>('wellbore-headers', id)
     if (header) {
       offset = header.depthReferenceElevation
     }

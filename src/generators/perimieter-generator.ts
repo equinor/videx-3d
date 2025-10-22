@@ -5,8 +5,7 @@ import {
   TubeGeometryOptions,
   createTubeGeometry,
   getTrajectory,
-  limit,
-  packBufferGeometry,
+  packBufferGeometry
 } from '../sdk'
 
 export async function generatePerimeterGeometry(
@@ -16,9 +15,7 @@ export async function generatePerimeterGeometry(
   segmentsPerMeter: number = 0.1,
   simplificationThreshold: number = 0
 ) {
-  const poslogMsl = await limit(() =>
-    this.get<PositionLog>('position-logs', id)
-  )
+  const poslogMsl = await this.get<PositionLog>('position-logs', id)
 
   const trajectory = getTrajectory(id, poslogMsl)
 

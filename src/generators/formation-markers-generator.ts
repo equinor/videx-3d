@@ -3,7 +3,6 @@ import { clamp } from 'curve-interpolator'
 import { Color, Matrix4, Vector3 } from 'three'
 import {
   getTrajectory,
-  limit,
   PI2,
   PositionLog,
   ReadonlyStore,
@@ -38,9 +37,7 @@ export async function generateFormationMarkers(
 
   if (!formationMarkers.length) return null
 
-  const poslogMsl = await limit(() =>
-    this.get<PositionLog>('position-logs', wellboreId)
-  )
+  const poslogMsl = await this.get<PositionLog>('position-logs', wellboreId)
  
   
   const trajectory = getTrajectory(wellboreId, poslogMsl)

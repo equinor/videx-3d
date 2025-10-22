@@ -4,7 +4,6 @@ import { useGenerator } from '../../../hooks/useGenerator'
 import { useWellboreContext } from '../../../hooks/useWellboreContext'
 import { createLayers, LAYERS } from '../../../layers/layers'
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing'
-import { queue } from '../../../sdk/utils/limiter'
 import { CommonComponentProps, CustomMaterialProps } from '../../common'
 import { completionTools, CompletionToolsGeneratorResponse } from './completion-tools-defs'
 import { ScreenMaterial } from './Screen/screen-material'
@@ -63,7 +62,7 @@ export const CompletionTools = ({
     simplificationThreshold: defaultSimplificationThreshold,
   } = useWellboreContext()
 
-  const generator = useGenerator<CompletionToolsGeneratorResponse>(completionTools)
+  const generator = useGenerator<CompletionToolsGeneratorResponse>(completionTools, priority)
   const [geometry, setGeometry] = useState<BufferGeometry | null>(null)
   const [useFallback, setUseFallback] = useState(false)
 
@@ -151,7 +150,7 @@ export const CompletionTools = ({
 
   useEffect(() => {
     if (generator && id) {
-      queue(() => generator(id, fromMsl, radialSegments, sizeMultiplier, segmentsPerMeter, simplificationThreshold).then(response => {
+      generator(id, fromMsl, radialSegments, sizeMultiplier, segmentsPerMeter, simplificationThreshold).then(response => {
         setGeometry(prev => {
           if (prev) {
             prev.dispose()
@@ -164,9 +163,9 @@ export const CompletionTools = ({
           }
         })
         if (!response) setUseFallback(true)
-      }), priority)
+      })
     }
-  }, [generator, id, fromMsl, sizeMultiplier, segmentsPerMeter, simplificationThreshold, priority, radialSegments])
+  }, [generator, id, fromMsl, sizeMultiplier, segmentsPerMeter, simplificationThreshold, radialSegments])
 
   return (
     <group

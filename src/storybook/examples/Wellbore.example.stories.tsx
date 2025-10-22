@@ -10,7 +10,6 @@ import { GeneratorsProviderDecorator } from '../decorators/generators-provider-d
 import storyArgs from '../story-args.json'
 //import { PerformanceDecorator } from '../decorators/performance-decorator'
 import { Annotations } from '../../components/Annotations/Annotations'
-import { useAnnotationsState } from '../../components/Annotations/annotations-state'
 import { AnnotationsLayer } from '../../components/Annotations/AnnotationsLayer'
 import { AnnotationComponentProps } from '../../components/Annotations/types'
 import { CasingAnnotations } from '../../components/Wellbores/Casings/CasingAnnotations/CasingAnnotations'
@@ -24,9 +23,6 @@ import { DepthSelectorDecorator } from '../decorators/depth-selector-decorator'
 
 const meta = {
   title: 'examples/Wellbore',
-  loaders: [() => {
-    useAnnotationsState.getState().clear()
-  }],
   component: Wellbore,
 } satisfies Meta<typeof Wellbore>
 

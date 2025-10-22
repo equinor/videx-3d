@@ -6,7 +6,6 @@ import { unpackBufferGeometry } from '../../../sdk/geometries/packing'
 
 import { extend } from '@react-three/fiber'
 import { useWellboreContext } from '../../../hooks/useWellboreContext'
-import { queue } from '../../../sdk/utils/limiter'
 import { CommonComponentProps, CustomMaterialProps } from '../../common'
 import { basicTrajectory, BasicTrajectoryGeneratorResponse } from './basic-trajectory-defs'
 
@@ -57,7 +56,7 @@ export const BasicTrajectory = ({
 
   const { id, fromMsl, segmentsPerMeter, simplificationThreshold } = useWellboreContext()
 
-  const generator = useGenerator<BasicTrajectoryGeneratorResponse>(basicTrajectory)
+  const generator = useGenerator<BasicTrajectoryGeneratorResponse>(basicTrajectory, priority)
 
   const [geometry, setGeometry] = useState<BufferGeometry | null>(null)
 
@@ -81,7 +80,7 @@ export const BasicTrajectory = ({
 
   useEffect(() => {
     if (generator) {
-      queue(() => generator(id, segmentsPerMeter, simplificationThreshold, fromMsl, !!customMaterial).then(response => {
+      generator(id, segmentsPerMeter, simplificationThreshold, fromMsl, !!customMaterial).then(response => {
         if (response) {
           const bufferGeometry = unpackBufferGeometry(response)
           setGeometry(prev => {
@@ -91,10 +90,10 @@ export const BasicTrajectory = ({
         } else {
           setGeometry(null)
         }
-      }), priority)
+      })
 
     }
-  }, [generator, id, fromMsl, segmentsPerMeter, simplificationThreshold, customMaterial, priority])
+  }, [generator, id, fromMsl, segmentsPerMeter, simplificationThreshold, customMaterial])
 
   if (!geometry) return null
 

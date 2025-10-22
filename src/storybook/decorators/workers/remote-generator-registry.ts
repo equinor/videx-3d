@@ -18,28 +18,28 @@ import { wellboreFormationColumn } from '../../../components/Wellbores/WellboreF
 import { wellboreLabel } from '../../../components/Wellbores/WellboreLabel/wellbore-label-defs'
 
 import {
-  calculateWellboreBounds,
-  generateBasicTrajectory,
-  generateCasingAnnotations,
-  generateCasings,
-  generateCompletionToolAnnotations,
-  generateCompletionTools,
-  generateDepthMarkers,
-  generateFormationMarkers,
-  generatePerforations,
-  generatePerimeterGeometry,
-  generatePositionMarkers,
-  generateShoes,
-  generateSurfaceGeometry,
-  generateSurfaceTexturesData,
-  generateTubeTrajectory,
-  generateWellboreFormationColumnGeometries,
-  generateWellboreLabel,
+    calculateWellboreBounds,
+    generateBasicTrajectory,
+    generateCasingAnnotations,
+    generateCasings,
+    generateCompletionToolAnnotations,
+    generateCompletionTools,
+    generateDepthMarkers,
+    generateFormationMarkers,
+    generatePerforations,
+    generatePerimeterGeometry,
+    generatePositionMarkers,
+    generateShoes,
+    generateSurfaceGeometry,
+    generateSurfaceTexturesData,
+    generateTubeTrajectory,
+    generateWellboreFormationColumnGeometries,
+    generateWellboreLabel,
 } from '../../../generators'
 
 import { GeneratorRegistry } from '../../../sdk'
 
-const registry = new GeneratorRegistry()
+const registry = new GeneratorRegistry({ concurrentStoreCalls: 50 })
 
 registry.add(wellboreBounds, calculateWellboreBounds)
 registry.add(basicTrajectory, generateBasicTrajectory)

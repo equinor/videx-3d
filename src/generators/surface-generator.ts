@@ -4,12 +4,11 @@ import { SurfaceTexturesResponse } from '../main'
 import {
   elevationMapNormalsToRGBA,
   elevationMapToRGBA,
-  limit,
   packBufferGeometry,
   PackedBufferGeometry,
   ReadonlyStore,
   SurfaceMeta,
-  triangulateGridDelaunay,
+  triangulateGridDelaunay
 } from '../sdk'
 
 
@@ -21,13 +20,11 @@ export async function generateSurfaceTexturesData(
   this: ReadonlyStore,
   id: string,
 ) {
-  const surface = await limit(() => this.get<SurfaceMeta>('surface-meta', id))
+  const surface = await this.get<SurfaceMeta>('surface-meta', id)
 
   if (!surface) return null
 
-  const surfaceValues = await limit(() =>
-    this.get<Float32Array>('surface-values', id)
-  )
+  const surfaceValues = await this.get<Float32Array>('surface-values', id)
   if (!surfaceValues) return null
 
   const elevationImageBuffer = elevationMapToRGBA(surfaceValues, nullValue)
@@ -54,14 +51,12 @@ export async function generateSurfaceGeometry(
   id: string,
   maxError: number = 5,
 ): Promise<PackedBufferGeometry | null> {
-  const surface = await limit(() => this.get<SurfaceMeta>('surface-meta', id))
+  const surface = await this.get<SurfaceMeta>('surface-meta', id)
 
   if (!surface) return null
 
   const refDepth = surface.max
-  const surfaceValues = await limit(() =>
-    this.get<Float32Array>('surface-values', id)
-  )
+  const surfaceValues = await this.get<Float32Array>('surface-values', id)
 
   if (!surfaceValues) return null
 

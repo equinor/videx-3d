@@ -4,12 +4,11 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import {
   createTubeGeometry,
   getTrajectory,
-  limit,
   packBufferGeometry,
   PackedBufferGeometry,
   PositionLog,
   ReadonlyStore,
-  TubeGeometryOptions,
+  TubeGeometryOptions
 } from '../sdk'
 
 import { getWellboreFormations, mergeFormationIntervals } from '../sdk/data/helpers/formations-helpers'
@@ -42,9 +41,7 @@ export async function generateWellboreFormationColumnGeometries(
 
   const mergedIntervals = mergeFormationIntervals(surfaceIntervals)
 
-  const poslogMsl = await limit(() =>
-    this.get<PositionLog>('position-logs', wellboreId)
-  )
+  const poslogMsl = await this.get<PositionLog>('position-logs', wellboreId)
 
   const trajectory = getTrajectory(wellboreId, poslogMsl)
 
