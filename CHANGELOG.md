@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.0.0-beta](https://github.com/equinor/videx-3d/compare/v3.1.0-beta...v4.0.0-beta) (2025-10-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* Allow passing an AbortSignal to the GeneratorRegistryProvider … ([#63](https://github.com/equinor/videx-3d/issues/63))
+
+### Features
+
+* Allow passing an AbortSignal to the GeneratorRegistryProvider … ([#63](https://github.com/equinor/videx-3d/issues/63)) ([6d28348](https://github.com/equinor/videx-3d/commit/6d28348ebde087d7eb649345404cae3b5f502f45))
+
 ## [3.1.0-beta](https://github.com/equinor/videx-3d/compare/v3.0.3-beta...v3.1.0-beta) (2025-10-14)
 
 
