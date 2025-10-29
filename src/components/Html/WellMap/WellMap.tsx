@@ -16,6 +16,7 @@ import './well-map-styles.scss'
  */
 export type WellMapProps = {
   wellIdentifier: string
+  excluded?: string[]
   selected?: string
   onSelect?: (wellbore: string, depth: number) => void
   depth?: number
@@ -54,6 +55,7 @@ export type WellMapProps = {
  */
 export const WellMap = ({
   wellIdentifier,
+  excluded,
   selected,
   onSelect,
   depth,
@@ -102,12 +104,13 @@ export const WellMap = ({
       if (store) {
         store.query<WellboreHeader>('wellbore-headers', { well: wellIdentifier }).then(response => {
           if (response && Array.isArray(response)) {
-            setWellbores(response)
+            const wellbores = Array.isArray(excluded) ? response.filter(d => !excluded.includes(d.id)) : response;
+            setWellbores(wellbores)
           }
         })
       }
     }
-  }, [dataContext, wellIdentifier, setWellbores])
+  }, [dataContext, wellIdentifier, setWellbores, excluded])
 
   const colorMap: Record<string, string> | undefined = useMemo(() => {
     if (!colors) return undefined
