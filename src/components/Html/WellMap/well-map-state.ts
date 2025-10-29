@@ -172,7 +172,7 @@ export const createWellMapState = () => create<WellMapState>((set, get) => ({
         const wellbore = wellboresById[id]
         if (wellbore) {
           let fromMsl = -wellbore.depthReferenceElevation
-          if (wellbore.kickoffDepthMsl) {
+          if (wellbore.kickoffDepthMsl && wellbore.parent) {
             fromMsl = wellbore.kickoffDepthMsl
           }
           if (fromMsl < bounds[0]) {
