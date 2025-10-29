@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.1.0-beta](https://github.com/equinor/videx-3d/compare/v4.0.0-beta...v4.1.0-beta) (2025-10-29)
+
+
+### Features
+
+* allow some customization of highligter component ([#68](https://github.com/equinor/videx-3d/issues/68)) ([852db52](https://github.com/equinor/videx-3d/commit/852db52eb092c1d13e59a72af898eb8d0a200c28))
+* well map not limited to kickoff depth of root wellbore and allow passing an exclusion list for wellbores not wanted in the well tree ([#66](https://github.com/equinor/videx-3d/issues/66)) ([ee73930](https://github.com/equinor/videx-3d/commit/ee7393091667c890c6c537a689186d855cd2f2e8))
+
 ## [4.0.0-beta](https://github.com/equinor/videx-3d/compare/v3.1.0-beta...v4.0.0-beta) (2025-10-22)
 
 
