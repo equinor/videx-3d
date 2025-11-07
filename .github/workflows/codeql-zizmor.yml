@@ -1,0 +1,20 @@
+name: GitHub Actions Security Analysis with zizmor 🌈
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+permissions: {}
+
+jobs:
+  zizmor:
+    name: Run zizmor
+    uses: equinor/ops-actions/.github/workflows/zizmor-codeql.yml@0180226a24d7a338fe0eb3539780f37ac9e36066 # v9.29.0
+    with:
+      config_file: .github/zizmor.yml
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
