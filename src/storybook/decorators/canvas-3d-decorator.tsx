@@ -1,22 +1,31 @@
 import { CameraControls, Environment } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
-import { useCallback, useEffect } from 'react'
-import { cameraManager } from '../../sdk/managers/CameraManager'
+import { useCallback, useEffect, useRef } from 'react'
+import { CameraManager } from '../../sdk/managers/CameraManager'
 import { PI2 } from '../../sdk/utils/trigonometry'
 
 export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
   const scale = parameters.scale || 100
+  const cameraManager = useRef(new CameraManager())
 
   const initControls = useCallback((controls: CameraControls) => {
-    cameraManager.setControls(controls)
-    if (parameters.cameraTarget) cameraManager.setTarget(parameters.cameraTarget)
+    if (cameraManager.current) {
+      cameraManager.current.setControls(controls)
+      if (parameters.cameraTarget) cameraManager.current.setTarget(parameters.cameraTarget)
+    }
   }, [parameters.cameraTarget])
 
   useEffect(() => {
-    if (cameraManager.controls && parameters.cameraTarget) {
-      cameraManager.setTarget(parameters.cameraTarget)
+    if (cameraManager.current.controls && parameters.cameraTarget) {
+      cameraManager.current.setTarget(parameters.cameraTarget)
     }
   }, [parameters.cameraTarget])
+
+  useEffect(() => () => {
+    if (cameraManager.current) {
+      cameraManager.current.dispose()
+    }
+  }, [])
 
   return (
     <Canvas

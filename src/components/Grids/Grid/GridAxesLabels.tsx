@@ -53,7 +53,7 @@ export const GridAxesLabels = ({
   color,
   side,
   trimAxesLabels = false,
-  renderOrder = 2
+  renderOrder
 }: GridAxesLabelsProps) => {
   const [rotations, setRotations] = useState({ x: 0, y: 0, flipped: false })
 
@@ -126,18 +126,18 @@ export const GridAxesLabels = ({
     const yAxis: Tick[] = []
 
     const fontSizeOffset = axesTickSize * units + fontSize * 0.6
-    
+
     const clampedOffset = [
       clamp(axesOffset[1] + originOffset[1], -halfSize[1], +halfSize[1]),
       clamp(axesOffset[0] + originOffset[0], -halfSize[0], +halfSize[0]),
     ]
-    
+
     for (let x = trimAxesLabels ? 1 : 0; x < nTicks[0] - (trimAxesLabels ? 1 : 0); x++) {
       const pos: Vec2 = [
-        offset[0] + x * units, 
+        offset[0] + x * units,
         clampedOffset[0] + fontSizeOffset,
       ]
-      
+
       const value = Math.round(10 * (start[0] + (x - ticksToOrigin[0]) * units * scale[0])) / 10
       if (Math.abs(distanceToAxis[0] - (pos[0] + halfSize[0])) > units / 4) {
         xAxis.push({
@@ -149,9 +149,9 @@ export const GridAxesLabels = ({
     }
 
     for (let y = trimAxesLabels ? 1 : 0; y < nTicks[1] - (trimAxesLabels ? 1 : 0); y++) {
-      
+
       const pos: Vec2 = [
-        clampedOffset[1] - fontSizeOffset, 
+        clampedOffset[1] - fontSizeOffset,
         offset[1] + y * units,
       ]
       const value = Math.round(10 * (start[1] + (y - ticksToOrigin[1]) * units * scale[1])) / 10
@@ -180,13 +180,14 @@ export const GridAxesLabels = ({
 
   return (
     <group
-      renderOrder={renderOrder} 
+      renderOrder={renderOrder}
       position={[0, 0, (rotations.flipped ? -1 : 1) * (units / 1000)]}
       visible={side === 'both' || (side === 'front' && !rotations.flipped) || (side === 'back' && rotations.flipped)}
     >
       {ticks.xAxis.map(tick => (
         <Text
           key={tick.index}
+          renderOrder={renderOrder}
           characters='123456789,.0'
           position={[...tick.pos, 0]}
           fontSize={fontSize}
@@ -205,6 +206,7 @@ export const GridAxesLabels = ({
       {ticks.yAxis.map(tick => (
         <Text
           key={tick.index}
+          renderOrder={renderOrder}
           characters='123456789,.0'
           position={[...tick.pos, 0]}
           fontSize={fontSize}

@@ -19,6 +19,7 @@ type Props = {
   opacity?: number
   interval?: number
   priority?: number
+  renderOrder?: number
 }
 
 export const PositionMarkers = ({
@@ -26,6 +27,7 @@ export const PositionMarkers = ({
   opacity = 1.0,
   interval = 100,
   priority = 0,
+  renderOrder,
 }: Props) => {
   //const positionRef = useRef<Object3D>(null!)
   const { id, fromMsl } = useWellboreContext()
@@ -98,7 +100,7 @@ export const PositionMarkers = ({
   }, [radius, opacity, material])
 
   return (
-    <group renderOrder={999}>
+    <group renderOrder={renderOrder}>
       {data && <Symbols data={data} geometry={geometry} material={material} layers={layers} />}
     </group>
   )

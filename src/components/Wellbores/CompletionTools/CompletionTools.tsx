@@ -39,7 +39,7 @@ export type CompletionToolsProps = CommonComponentProps & CustomMaterialProps & 
 export const CompletionTools = ({
   name,
   userData,
-  renderOrder = 1,
+  renderOrder,
   layers = createLayers(LAYERS.OCCLUDER),
   position,
   visible,
@@ -55,7 +55,7 @@ export const CompletionTools = ({
   priority = 0,
   fallback,
 }: CompletionToolsProps) => {
-  const { 
+  const {
     id,
     fromMsl,
     segmentsPerMeter: defaultSegmentsPerMeter,
@@ -72,81 +72,81 @@ export const CompletionTools = ({
       simplificationThreshold: overrideSimplificationThreshold !== undefined ? overrideSimplificationThreshold : defaultSimplificationThreshold || 0
     }
   }, [defaultSegmentsPerMeter, defaultSimplificationThreshold, overrideSegmentsPerMeter, overrideSimplificationThreshold])
-  
-  const material = useMemo<Material | Material[]>(() => {
-      if (customMaterial) {
-        return customMaterial
-      }
-  
-      const m = [
-        // blank pipe
-        new MeshStandardMaterial({
-          color: '#999',
-          metalness: 1,
-          roughness: 0.25
-        }),
-        // tube
-        new MeshStandardMaterial({
-          color: '#999',
-          metalness: 0.8,
-          roughness: 0.5,
-        }),
-        // packer
-        new MeshStandardMaterial({
-          color: '#000',
-          metalness: 0,
-          roughness: 0.95,
-        }),
-        // gauge
-        new MeshStandardMaterial({
-          color: '#097',
-          metalness: 0,
-          roughness: 1,
-        }),
-        // plug
-        new MeshStandardMaterial({
-          color: '#444',
-          metalness: 0.2,
-          roughness: 1,
-        }),
-        // pbr
-        new MeshStandardMaterial({
-          color: '#ccc',
-          metalness: 0,
-          roughness: 1,
-          transparent: true,
-          opacity: 0.9
-        }),
-        // safety valve
-        new MeshStandardMaterial({
-          color: '#c00',
-          metalness: 0.5,
-          roughness: 0.75,
-        }),
-        // spm
-        new MeshStandardMaterial({
-          color: '#4e3e86',
-          metalness: 0.5,
-          roughness: 0.75,
-        }),
-        // screen
-        new ScreenMaterial({
-          color1: '#777',
-          color2: '#fff',
-        }),
-        // tracer
-        new ScreenMaterial({
-          color1: '#777',
-          color2: 'orange',
-        }),
-        // unknown
-        new MeshLambertMaterial({
-          color: '#ccc',
-        })
-      ]
 
-      return m
-    }, [customMaterial])
+  const material = useMemo<Material | Material[]>(() => {
+    if (customMaterial) {
+      return customMaterial
+    }
+
+    const m = [
+      // blank pipe
+      new MeshStandardMaterial({
+        color: '#999',
+        metalness: 1,
+        roughness: 0.25
+      }),
+      // tube
+      new MeshStandardMaterial({
+        color: '#999',
+        metalness: 0.8,
+        roughness: 0.5,
+      }),
+      // packer
+      new MeshStandardMaterial({
+        color: '#000',
+        metalness: 0,
+        roughness: 0.95,
+      }),
+      // gauge
+      new MeshStandardMaterial({
+        color: '#097',
+        metalness: 0,
+        roughness: 1,
+      }),
+      // plug
+      new MeshStandardMaterial({
+        color: '#444',
+        metalness: 0.2,
+        roughness: 1,
+      }),
+      // pbr
+      new MeshStandardMaterial({
+        color: '#ccc',
+        metalness: 0,
+        roughness: 1,
+        transparent: true,
+        opacity: 0.9
+      }),
+      // safety valve
+      new MeshStandardMaterial({
+        color: '#c00',
+        metalness: 0.5,
+        roughness: 0.75,
+      }),
+      // spm
+      new MeshStandardMaterial({
+        color: '#4e3e86',
+        metalness: 0.5,
+        roughness: 0.75,
+      }),
+      // screen
+      new ScreenMaterial({
+        color1: '#777',
+        color2: '#fff',
+      }),
+      // tracer
+      new ScreenMaterial({
+        color1: '#777',
+        color2: 'orange',
+      }),
+      // unknown
+      new MeshLambertMaterial({
+        color: '#ccc',
+      })
+    ]
+
+    return m
+  }, [customMaterial])
 
   useEffect(() => {
     if (generator && id) {

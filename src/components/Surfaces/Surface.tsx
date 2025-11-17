@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { BackSide, BufferGeometry, DataTexture, DoubleSide, FrontSide, Mesh, MeshBasicMaterial, Texture } from 'three'
+import { BufferGeometry, DataTexture, DoubleSide, FrontSide, Mesh, MeshBasicMaterial, Texture } from 'three'
 import { PointerEvents } from '../../events/interaction-events'
 import { useGenerator } from '../../hooks/useGenerator'
 import { createLayers, LAYERS } from '../../layers/layers'
@@ -77,7 +77,7 @@ export const Surface = ({
   castShadow,
   layers = createLayers(LAYERS.OCCLUDER),
   position,
-  renderOrder = 10,
+  renderOrder,
   visible = true,
   onPointerClick,
   onPointerEnter,
@@ -119,7 +119,7 @@ export const Surface = ({
   const maskMaterial = useMemo(() => {
     const m = new MeshBasicMaterial({
       transparent: true,
-      side: BackSide,
+      side: DoubleSide,
       colorWrite: false,
       depthWrite: true,
     })

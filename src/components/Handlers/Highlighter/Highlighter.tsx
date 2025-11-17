@@ -5,8 +5,9 @@ import { useHighlightState } from './highlight-state'
 const instanceMatrix = new Matrix4()
 
 export type HighlighterProps = {
-  color?: string | number | Color,
-  blending?: Blending,
+  color?: string | number | Color
+  blending?: Blending
+  renderOrder?: number
 }
 
 /**
@@ -28,6 +29,7 @@ export type HighlighterProps = {
 export const Highlighter = ({
   color,
   blending,
+  renderOrder,
 }: HighlighterProps) => {
   const { highlighted } = useHighlightState()
 
@@ -70,13 +72,12 @@ export const Highlighter = ({
         item.object.getWorldPosition(primitiveObject.position)
       }
       primitiveObject.visible = item.object.visible
-
       return primitiveObject
     })
   }, [highlighted, material])
 
 
-  return <group renderOrder={999}>
+  return <group renderOrder={renderOrder}>
     {highlightObjects.map(po => (
       <primitive key={po.uuid} object={po} />
     ))}

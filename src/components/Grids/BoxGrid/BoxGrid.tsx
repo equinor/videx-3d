@@ -135,7 +135,7 @@ export const BoxGrid = ({
         if (
           current[0] !== size[0] ||
           current[1] !== size[1] ||
-          current[2] !== size[2] 
+          current[2] !== size[2]
         ) {
           return size
         }
@@ -157,7 +157,6 @@ export const BoxGrid = ({
       name={name}
       userData={userData}
       visible={visible}
-      renderOrder={renderOrder}
     >
       <Grid
         plane='xz'
@@ -188,6 +187,7 @@ export const BoxGrid = ({
         castShadow={castShadow}
         receiveShadow={receiveShadow}
         layers={layers}
+        renderOrder={renderOrder}
       />
       <Grid
         plane='xy'
@@ -219,6 +219,7 @@ export const BoxGrid = ({
         castShadow={castShadow}
         receiveShadow={receiveShadow}
         layers={layers}
+        renderOrder={renderOrder}
       />
       <Grid
         plane='zy'
@@ -250,6 +251,7 @@ export const BoxGrid = ({
         castShadow={castShadow}
         receiveShadow={receiveShadow}
         layers={layers}
+        renderOrder={renderOrder}
       />
       <Grid
         plane='xy'
@@ -281,6 +283,7 @@ export const BoxGrid = ({
         castShadow={castShadow}
         receiveShadow={receiveShadow}
         layers={layers}
+        renderOrder={renderOrder}
       />
       <Grid
         plane='zy'
@@ -312,6 +315,7 @@ export const BoxGrid = ({
         castShadow={castShadow}
         receiveShadow={receiveShadow}
         layers={layers}
+        renderOrder={renderOrder}
       />
       {autoSize && (
         <ObservableGroup

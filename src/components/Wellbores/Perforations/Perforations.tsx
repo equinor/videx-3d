@@ -38,7 +38,7 @@ export type PerforationsProps = CommonComponentProps & CustomMaterialProps & {
 export const Perforations = forwardRef(({
   name,
   userData,
-  renderOrder = 11,
+  renderOrder,
   layers = createLayers(LAYERS.NOT_EMITTER),
   position,
   visible,

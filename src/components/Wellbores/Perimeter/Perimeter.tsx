@@ -49,7 +49,7 @@ export const Perimeter = ({
   visible,
   layers = createLayers(LAYERS.NOT_EMITTER),
   position,
-  renderOrder = 3,
+  renderOrder,
   castShadow,
   receiveShadow,
   customDepthMaterial,

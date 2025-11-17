@@ -1,11 +1,11 @@
-import { ReactNode, useCallback, useEffect, useMemo } from 'react'
-import { EventEmitterContext, EventEmitterContextProps, EventEmitterCallback, Listener, KeysPressed } from './EventEmitterContext'
-import { BufferGeometry, Color, InstancedBufferAttribute, InstancedMesh, Material, MeshBasicMaterial, Object3D, PerspectiveCamera, Scene, WebGLRenderer } from 'three'
 import { useThree } from '@react-three/fiber'
+import { ReactNode, useCallback, useEffect, useMemo } from 'react'
+import { BufferGeometry, Color, InstancedBufferAttribute, InstancedMesh, Material, MeshBasicMaterial, Object3D, PerspectiveCamera, Scene, WebGLRenderer } from 'three'
 import { LAYERS } from '../../../layers/layers'
-import { PickingHelper } from './picking-helper'
 import { Vec2 } from '../../../sdk/types/common'
 import { idToHexColor } from '../../../sdk/utils/colors'
+import { EventEmitterCallback, EventEmitterContext, EventEmitterContextProps, KeysPressed, Listener } from './EventEmitterContext'
+import { PickingHelper } from './picking-helper'
 
 const CLICK_SPEED = 300
 const MOVE_THRESHOLD = 10
@@ -15,6 +15,7 @@ const MOVE_THRESHOLD = 10
  * @expand
  */
 export type EventEmitterProps = {
+  threshold?: 1 | 2 | 3,
   children?: ReactNode
 }
 
@@ -158,7 +159,7 @@ function processObject(object: Object3D, eventState: EventState, rootId: number,
  * 
  * @group Components
  */
-export const EventEmitter = ({ children }: EventEmitterProps) => {
+export const EventEmitter = ({ threshold, children }: EventEmitterProps) => {
   const { gl, camera, scene, pointer } = useThree()
 
   const eventState = useMemo<EventState>(() => ({
@@ -169,13 +170,13 @@ export const EventEmitter = ({ children }: EventEmitterProps) => {
     posX: -1,
     posY: -1,
     deltaTime: 0,
-    pickingHelper: new PickingHelper(),
+    pickingHelper: threshold ? new PickingHelper({ threshold }) : new PickingHelper(),
     emitters: new Map(),
     listeners: new Map(),
     objectMap: { map: new Map(), index: 0 },
     pickingMaterials: { index: 0, pool: [] },
     moveTest: false,
-  }), [])
+  }), [threshold])
 
   const context = useMemo<EventEmitterContextProps>(() => {
     return {
@@ -251,7 +252,7 @@ export const EventEmitter = ({ children }: EventEmitterProps) => {
         if (listener && listener.handlers.move) {
           const source = eventState.current.emitter.source
           const instanceIndex = eventState.current.index
-          
+
           if (result.position) {
             result.position.then(value => {
               listener.handlers.move({
@@ -284,7 +285,7 @@ export const EventEmitter = ({ children }: EventEmitterProps) => {
         const picked = result.match
         const listener = eventState.listeners.get(picked.emitter.listener)
         if (listener && listener.handlers.click) {
-          
+
           if (result.position) {
             result.position.then(value => {
               listener.handlers.click({

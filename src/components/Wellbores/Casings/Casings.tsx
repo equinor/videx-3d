@@ -40,7 +40,7 @@ export type CasingProps = CommonComponentProps & CustomMaterialProps & {
 export const Casings = forwardRef(({
   name,
   userData,
-  renderOrder = 2,
+  renderOrder,
   layers = createLayers(LAYERS.OCCLUDER),
   position,
   visible,
@@ -60,7 +60,7 @@ export const Casings = forwardRef(({
   priority = 0
 }: CasingProps, ref: ForwardedRef<Group>) => {
 
-  const { 
+  const {
     id,
     fromMsl,
     segmentsPerMeter: defaultSegmentsPerMeter,
@@ -76,7 +76,7 @@ export const Casings = forwardRef(({
       simplificationThreshold: overrideSimplificationThreshold !== undefined ? overrideSimplificationThreshold : defaultSimplificationThreshold || 0
     }
   }, [defaultSegmentsPerMeter, defaultSimplificationThreshold, overrideSegmentsPerMeter, overrideSimplificationThreshold])
-  
+
   const material = useMemo<Material | Material[]>(() => {
     if (customMaterial) {
       return customMaterial
@@ -151,29 +151,23 @@ export const Casings = forwardRef(({
       ref={ref}
       name={name}
       userData={userData}
-      renderOrder={renderOrder}
       visible={visible}
       position={position}
+      renderOrder={renderOrder}
     >
       {geometry && (
-        <>
-          <group>
-            {geometry && (
-              <mesh
-                key={geometry.uuid}
-                geometry={geometry}
-                material={material}
-                layers={layers}
-                castShadow={castShadow}
-                receiveShadow={receiveShadow}
-                customDepthMaterial={customDepthMaterial}
-                customDistanceMaterial={customDistanceMaterial}
-              />
-            )}
-          </group>
-        </>
+        <mesh
+          key={geometry.uuid}
+          geometry={geometry}
+          material={material}
+          layers={layers}
+          castShadow={castShadow}
+          receiveShadow={receiveShadow}
+          customDepthMaterial={customDepthMaterial}
+          customDistanceMaterial={customDistanceMaterial}
+        />
       )}
-      {(useFallback && fallback) && fallback() }
+      {(useFallback && fallback) && fallback()}
     </group>
   )
 })

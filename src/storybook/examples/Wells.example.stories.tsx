@@ -208,7 +208,7 @@ const Example = (args: ExampleProps) => {
       <Highlighter />
 
       <UtmArea ref={crsRef} origin={origin} utmZone={utmZone}>
-        {args.showCameraTarget && <CameraTargetMarker />}
+        {args.showCameraTarget && <CameraTargetMarker renderOrder={999} />}
         {!surface && (
           <BoxGrid
             size={gridSize}
@@ -247,6 +247,7 @@ const Example = (args: ExampleProps) => {
             contoursColor={args.contoursColor}
             normalMap={normalMap}
             normalScale={[0.1, 0.1]}
+            doubleSide
           // onPointerMove={async (e) => {
           //   console.log(e.position && e.position[1])
           // }}
@@ -328,11 +329,11 @@ const Example = (args: ExampleProps) => {
                       {args.showCasingAndCompletion && (
                         <Distance min={0} max={10} onDemand>
                           <Casings radialSegments={16} sizeMultiplier={args.sizeMultiplier} shoeFactor={1.3} opacity={args.casingOpacity} />
-                          <CompletionTools radialSegments={16} sizeMultiplier={args.sizeMultiplier} fallback={() => <TubeTrajectory radius={0.1 * args.sizeMultiplier} color={color} priority={8} radialSegments={16} />} />
+                          <CompletionTools radialSegments={1} sizeMultiplier={args.sizeMultiplier} fallback={() => <TubeTrajectory radius={0.1 * args.sizeMultiplier} color={color} priority={8} radialSegments={16} />} />
                         </Distance>
                       )}
                     </WellboreBounds>
-                    {args.showPerforations && <Perforations sizeMultiplier={args.sizeMultiplier} />}
+                    {args.showPerforations && <Perforations renderOrder={10} sizeMultiplier={args.sizeMultiplier} />}
                     {(args.showDepthMarkers && isActiveWell) && <DepthMarkers interval={args.depthMarkerInterval} priority={10} depthReferencePoint='MSL' />}
 
                     {args.showFormationMarkers && (
