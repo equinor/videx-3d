@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.1.2-beta](https://github.com/equinor/videx-3d/compare/v4.1.1-beta...v4.1.2-beta) (2025-11-18)
+
+
+### Bug Fixes
+
+* Fixed issue with renderOrder on surfaces and improved the CameraTargetMarker component allowing to specify depthTest and depthWrite as well as providing a custom object as a child component ([#76](https://github.com/equinor/videx-3d/issues/76)) ([d58ed21](https://github.com/equinor/videx-3d/commit/d58ed2130d1d4c67624ad4f2b7d60730ba7173da))
+
 ## [4.1.1-beta](https://github.com/equinor/videx-3d/compare/v4.1.0-beta...v4.1.1-beta) (2025-11-18)
 
 
