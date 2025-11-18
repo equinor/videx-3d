@@ -81,7 +81,6 @@ export class PickingHelper {
     })
 
     this._pixelBuffer = new Uint8Array(4 * this._size ** 2)
-
   }
 
   async pick(
@@ -91,11 +90,11 @@ export class PickingHelper {
     camera: PerspectiveCamera,
     emitters: Map<number, Emitter>,
     objectMap: ObjectMap,
-    force: boolean = true,
+    force: boolean = true
   ): Promise<PickResult> {
     const id = (this._currentId + 1) % 10000
     this._currentId = id
-    
+
     const { _renderTarget, _pixelBuffer, _threshold, _size } = this
 
     const w = renderer.getContext().drawingBufferWidth
@@ -226,5 +225,3 @@ export class PickingHelper {
     this._renderTarget.dispose()
   }
 }
-
-export const wellborePickingHelper = new PickingHelper({ threshold: 3 })

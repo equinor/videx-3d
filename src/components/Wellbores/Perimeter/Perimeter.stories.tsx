@@ -52,7 +52,7 @@ export const Default: Story = {
         <Wellbore id={args.id}>
           <BasicTrajectory />
           <Casings sizeMultiplier={10} />
-          <Perimeter {...args} />
+          <Perimeter renderOrder={1} {...args} />
         </Wellbore>
       </>
     )

@@ -481,15 +481,16 @@ export const Grid = ({
         position-z={-0.001 * cellSize}
         onPointerMove={showRulers ? trackCursor : undefined}
         onPointerLeave={showRulers ? hideCursor : undefined}
-        renderOrder={1}
+        renderOrder={(renderOrder || 0) + 1}
         castShadow={castShadow}
         receiveShadow={receiveShadow}
         layers={layers}
+
       >
         <planeGeometry
           args={size}
         />
-        
+
         <shaderMaterial
           ref={materialRef}
           uniforms={uniforms.current}

@@ -34,7 +34,7 @@ const pos = new Vector3()
  * 
  * @group Components
  */
-export const CameraTargetMarker = ({ radius = 3, opacity = 0.1, color, fixedX, fixedY, fixedZ, renderOrder = 1000 }: CameraTargetMarkerProps) => {
+export const CameraTargetMarker = ({ radius = 3, opacity = 0.1, color, fixedX, fixedY, fixedZ, renderOrder }: CameraTargetMarkerProps) => {
   const { controls } = useThree()
   const ref = useRef<Group>(null)
 
@@ -66,11 +66,10 @@ export const CameraTargetMarker = ({ radius = 3, opacity = 0.1, color, fixedX, f
   }, [controls, fixedX, fixedY, fixedZ])
 
   return (
-    <group ref={ref} visible={false} renderOrder={renderOrder}>
-      <mesh>
-        <sphereGeometry args={[radius]} />
-        <meshBasicMaterial color={color} transparent opacity={opacity} depthTest={false} depthWrite={false} />
-      </mesh>
-    </group>
+    <mesh ref={ref} visible={false} renderOrder={renderOrder}>
+      <sphereGeometry args={[radius]} />
+      <meshBasicMaterial color={color} transparent opacity={opacity} depthTest={false} depthWrite={false} />
+    </mesh>
+
   )
 }

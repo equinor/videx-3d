@@ -112,7 +112,7 @@ export const Default: Story = {
           {args.showTrajectory && <BasicTrajectory color="red" />}
           {args.showCompletion && <CompletionTools sizeMultiplier={args.sizeMultiplier} radialSegments={32} />}
           {args.showCasings && <Casings shoeFactor={args.shoeFactor} opacity={args.casingOpacity} sizeMultiplier={args.sizeMultiplier} radialSegments={64} />}
-          {args.showPerimeter && <Perimeter radius={args.perimeterRadius} from={args.perimeterFrom} to={args.perimeterTo} />}
+          {args.showPerimeter && <Perimeter radius={args.perimeterRadius} from={args.perimeterFrom} to={args.perimeterTo} renderOrder={1} />}
           <Perforations sizeMultiplier={args.sizeMultiplier} />
           <CasingAnnotations />
           <CompletionAnnotations />

@@ -1,6 +1,9 @@
 import { CameraControls } from '@react-three/drei'
 import { Vector3 } from 'three'
-import { cameraFocusAtPointEventType, cameraSetPositionEventType } from '../../events/camera-events'
+import {
+  cameraFocusAtPointEventType,
+  cameraSetPositionEventType,
+} from '../../events/camera-events'
 import { Vec3 } from '../types/common'
 
 const cameraTarget = new Vector3()
@@ -9,7 +12,11 @@ const direction = new Vector3()
 const v1 = new Vector3()
 const v2 = new Vector3()
 
-async function focusAtPoint(point: Vec3, distance: number, controls: CameraControls) {
+async function focusAtPoint(
+  point: Vec3,
+  distance: number,
+  controls: CameraControls
+) {
   const useDistance = Math.min(controls.distance, distance)
   cameraTarget.set(...point)
   controls.getPosition(cameraPosition)
@@ -17,10 +24,17 @@ async function focusAtPoint(point: Vec3, distance: number, controls: CameraContr
   distance = Math.min(direction.length() * 1.5, useDistance)
   direction.normalize()
   cameraPosition.copy(cameraTarget).addScaledVector(direction, -useDistance)
-  
-  return controls.setLookAt(cameraPosition.x, cameraPosition.y, cameraPosition.z, cameraTarget.x, cameraTarget.y, cameraTarget.z, true)
-}
 
+  return controls.setLookAt(
+    cameraPosition.x,
+    cameraPosition.y,
+    cameraPosition.z,
+    cameraTarget.x,
+    cameraTarget.y,
+    cameraTarget.z,
+    true
+  )
+}
 
 function setPosition(point: Vec3, controls: CameraControls) {
   v1.set(...point)
@@ -56,7 +70,7 @@ export class CameraManager {
         focusAtPoint(
           event.detail.point as Vec3,
           event.detail.distance || 200,
-          this.controls,
+          this.controls
         ).then(() => {
           if (callback) callback()
         })
@@ -79,7 +93,15 @@ export class CameraManager {
       controls.getPosition(cameraPosition)
       direction.subVectors(cameraTarget, cameraPosition)
       direction.normalize()
-      return controls.setLookAt(cameraPosition.x, cameraPosition.y, cameraPosition.z, cameraTarget.x, cameraTarget.y, cameraTarget.z, true)
+      return controls.setLookAt(
+        cameraPosition.x,
+        cameraPosition.y,
+        cameraPosition.z,
+        cameraTarget.x,
+        cameraTarget.y,
+        cameraTarget.z,
+        true
+      )
     }
     return null
   }
@@ -99,5 +121,3 @@ export class CameraManager {
     }
   }
 }
-
-export const cameraManager = new CameraManager()
