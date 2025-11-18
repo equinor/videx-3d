@@ -475,13 +475,12 @@ export const Grid = ({
       rotation-x={plane === 'xz' ? -Math.PI / 2 : 0}
       rotation-y={plane === 'zy' ? Math.PI / 2 : 0}
       position={planeOffsetPosition}
-      renderOrder={renderOrder}
     >
       <mesh
         position-z={-0.001 * cellSize}
         onPointerMove={showRulers ? trackCursor : undefined}
         onPointerLeave={showRulers ? hideCursor : undefined}
-        renderOrder={(renderOrder || 0) + 1}
+        renderOrder={renderOrder}
         castShadow={castShadow}
         receiveShadow={receiveShadow}
         layers={layers}

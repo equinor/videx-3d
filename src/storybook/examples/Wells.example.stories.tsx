@@ -237,6 +237,7 @@ const Example = (args: ExampleProps) => {
             rampMax={surface.displayMax}
             opacity={args.opacity}
             priority={9}
+            renderOrder={10}
             maxError={args.maxError}
             wireframe={args.wireframe}
             showContours={args.showContours}

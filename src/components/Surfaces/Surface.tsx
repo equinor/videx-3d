@@ -276,7 +276,7 @@ export const Surface = ({
       name={name}
       userData={userData}
       visible={visible}
-      renderOrder={renderOrder}
+
       position={position}
     >
       {(geometry && opacity < 1) && (
@@ -284,8 +284,8 @@ export const Surface = ({
           ref={ref}
           geometry={geometry}
           material={maskMaterial}
-          renderOrder={1}
           layers={notEmitterLayers}
+          renderOrder={(renderOrder || 0) - 0.1}
         />
       )}
       {geometry && (<mesh
@@ -295,7 +295,7 @@ export const Surface = ({
         geometry={geometry}
         material={material}
         layers={layers}
-        renderOrder={2}
+        renderOrder={renderOrder}
       />)}
     </group>
   )

@@ -1,6 +1,6 @@
 import { CameraControls } from '@react-three/drei'
 import { useThree } from '@react-three/fiber'
-import { useEffect, useRef } from 'react'
+import { PropsWithChildren, useEffect, useRef } from 'react'
 import { Color, Group, Vector3 } from 'three'
 
 /**
@@ -22,6 +22,10 @@ export type CameraTargetMarkerProps = {
   fixedZ?: number
   // render order
   renderOrder?: number
+  // depth test
+  depthTest?: boolean
+  // depth write
+  depthWrite?: boolean
 }
 
 const pos = new Vector3()
@@ -29,12 +33,15 @@ const pos = new Vector3()
 /**
  * A simple component for indicating the current camera target.
  * 
+ * NOTE: You may pass a child node to this component if you want to use a custom object representing the camera target. If you do, you'll have to 
+ * manage the material settings yourself, as depthTest and depthWrite only have an effect on the default object's material.
+ * 
  * @example
  * <CameraTargetMarker />
  * 
  * @group Components
  */
-export const CameraTargetMarker = ({ radius = 3, opacity = 0.1, color, fixedX, fixedY, fixedZ, renderOrder }: CameraTargetMarkerProps) => {
+export const CameraTargetMarker = ({ radius = 3, opacity = 0.1, color, fixedX, fixedY, fixedZ, renderOrder, depthTest = false, depthWrite = false, children }: PropsWithChildren<CameraTargetMarkerProps>) => {
   const { controls } = useThree()
   const ref = useRef<Group>(null)
 
@@ -65,11 +72,17 @@ export const CameraTargetMarker = ({ radius = 3, opacity = 0.1, color, fixedX, f
     }
   }, [controls, fixedX, fixedY, fixedZ])
 
+
   return (
-    <mesh ref={ref} visible={false} renderOrder={renderOrder}>
-      <sphereGeometry args={[radius]} />
-      <meshBasicMaterial color={color} transparent opacity={opacity} depthTest={false} depthWrite={false} />
-    </mesh>
+    <group ref={ref} visible={false} renderOrder={renderOrder}>
+      {!!children && children}
+      {!children && (
+        <mesh>
+          <sphereGeometry args={[radius]} />
+          <meshBasicMaterial color={color} transparent opacity={opacity} depthTest={depthTest} depthWrite={depthWrite} />
+        </mesh>
+      )}
+    </group>
 
   )
 }
