@@ -32,7 +32,6 @@ uniform vec3 diffuse;
 uniform vec3 emissive;
 uniform float opacity;
 
-
 #include <common>
 #include <packing>
 #include <dithering_pars_fragment>
@@ -71,7 +70,7 @@ varying vec3 vBitangent;
 
 vec3 adjustColor(vec3 color, float saturation, float brightness) {
   vec3 hsl = rgb2hsl(color);
-  hsl.y = hsl.y * saturation; 
+  hsl.y = hsl.y * saturation;
   vec3 rgb = hsl2rgb(hsl);
   rgb += vec3(brightness);
   return clamp(rgb, 0.0, 1.0);
@@ -92,7 +91,6 @@ vec3 getColor(float v) {
 }
 
 #endif
-
 
 float getPointValue(vec2 pos) {
   vec4 pixel = texture2D(depthTexture, pos);
@@ -115,19 +113,19 @@ void main() {
 
   vec3 textureNormal = texture2D(normalTexture, vUv).rgb * 2. - 1.;
   vec3 vNormal = normalize(normalMatrix * textureNormal);
- 
+
 	#include <clipping_planes_fragment>
 
   vec4 diffuseColor = vec4(diffuse, opacity);
-  
+
   float texDepth = getPointValue(vUv.xy);
-  
+
   if(texDepth <= -1.) {
-     discard;
+    discard;
   }
-  
+
   #ifdef USE_COLOR_RAMP
-  
+
   vec3 sampledColor = getColor(texDepth);
   diffuseColor = vec4(sampledColor, opacity);
 
@@ -137,12 +135,12 @@ void main() {
   float h = (texDepth + contoursInterval / 2.) / contoursInterval;
 
   float t = contourLine(h);
-  
+
   float colorMod = 1.;
 
-  if (contoursColorMode == 0) { // darken
+  if(contoursColorMode == 0) { // darken
     colorMod = 1. - (1. - t) * contoursColorModeFactor;
-  } else if (contoursColorMode == 1) { // lighten
+  } else if(contoursColorMode == 1) { // lighten
     colorMod = 1.0 + (1. - t) * contoursColorModeFactor;
   }
 
@@ -151,12 +149,11 @@ void main() {
   ReflectedLight reflectedLight = ReflectedLight(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0));
   vec3 totalEmissiveRadiance = emissive;
 
-	#include <logdepthbuf_fragment>
-	#include <map_fragment>
-
-  // TODO: Something is not correct with this
+	  // TODO: Something is not correct with this
   diffuseColor = vec4(adjustColor(diffuseColor.rgb, saturation, brightness), diffuseColor.w);
 
+  #include <logdepthbuf_fragment>
+	#include <map_fragment>
 	#include <color_fragment>
 	#include <alphamap_fragment>
 	#include <alphatest_fragment>
@@ -179,8 +176,8 @@ void main() {
 
   #ifdef USE_CONTOURS
   outgoingLight *= colorMod;
-  
-  if (contoursColorMode == 2) { // mixed
+
+  if(contoursColorMode == 2) { // mixed
     outgoingLight = mix(outgoingLight, contoursColor, (1. - t) * contoursColorModeFactor);
   }
 
