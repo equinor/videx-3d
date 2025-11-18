@@ -3,7 +3,7 @@
 ## [4.1.1-beta](https://github.com/equinor/videx-3d/compare/v4.1.0-beta...v4.1.1-beta) (2025-11-18)
 
 
-### Bug Fixes
+### Chore
 
 * only add render order to groups with immediate children and remo… ([#74](https://github.com/equinor/videx-3d/issues/74)) ([bec6a46](https://github.com/equinor/videx-3d/commit/bec6a461081570fabfaba4c4a217646dc1de55e9))
 
