@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.2.0-beta](https://github.com/equinor/videx-3d/compare/v4.1.2-beta...v4.2.0-beta) (2025-11-24)
+
+
+### Features
+
+* Added onWellboreOver callback option to well map tracks in order to track which wellbore is hovered and at which depth. Will return null for wellbore and undefined depth when no wellbore is currently hovered. ([#82](https://github.com/equinor/videx-3d/issues/82)) ([143d6c1](https://github.com/equinor/videx-3d/commit/143d6c1112b634c613ebe5cf23e4c1ad8a4887e4))
+
 ## [4.1.2-beta](https://github.com/equinor/videx-3d/compare/v4.1.1-beta...v4.1.2-beta) (2025-11-18)
 
 
