@@ -3,6 +3,7 @@ import { MouseEvent, useCallback, useMemo } from 'react'
 import { path } from 'd3-path'
 import { scaleLinear } from 'd3-scale'
 import { pointer } from 'd3-selection'
+import { WellboreHeader } from '../../../sdk'
 import { clamp } from '../../../sdk/utils/numbers'
 import { useWellMapState } from './well-map-context'
 
@@ -12,6 +13,7 @@ type Props = {
   isSelected: boolean
   setSelected?: (wellbore: string, depth: number) => void
   setDepth?: (depth: number) => void
+  onWellboreOver?: (wellbore: WellboreHeader | null, depth: number | undefined) => void
   interactive: boolean
   color?: string
 }
@@ -22,6 +24,7 @@ export const Track = ({
   isSelected,
   setSelected,
   setDepth,
+  onWellboreOver,
   interactive,
   color = 'white'
 }: Props) => {
@@ -120,7 +123,7 @@ export const Track = ({
   const dash = strokeWidth / 2
   const dashArr = `${dash},${dash / 2}`
 
-  
+
   return (
     <g
       className={`track ${isSelected ? 'selected' : ''} ${interactive ? 'interactive' : ''}`}
@@ -136,6 +139,20 @@ export const Track = ({
         }
         if (setSelected && !isSelected) {
           setSelected(wellboreId, depth)
+        }
+      } : undefined}
+      onPointerMove={interactive && onWellboreOver ? (event: MouseEvent<SVGGElement>) => {
+        let depth = 0
+        if (event && event.clientY && event.target instanceof SVGPathElement) {
+          const [, y] = pointer(event)
+          const pos = clamp(y, range[0], range[1])
+          depth = depthScale.invert(pos)
+          onWellboreOver(wellbore, depth)
+        }
+      } : undefined}
+      onPointerLeave={interactive && onWellboreOver ? (event: MouseEvent<SVGGElement>) => {
+        if (event && event.target instanceof SVGPathElement) {
+          onWellboreOver(null, undefined)
         }
       } : undefined}
     >

@@ -21,6 +21,7 @@ export type WellMapProps = {
   onSelect?: (wellbore: string, depth: number) => void
   depth?: number
   onDepthChanged?: (depth: number) => void
+  onWellboreOver?: (wellbore: WellboreHeader | null, depth: number | undefined) => void
   color?: string
   colors?: Record<string, string> | ((wellbore: WellboreHeader, slot: number) => string)
   interactive?: boolean
@@ -60,6 +61,7 @@ export const WellMap = ({
   onSelect,
   depth,
   onDepthChanged,
+  onWellboreOver,
   color,
   colors,
   interactive = true,
@@ -68,9 +70,9 @@ export const WellMap = ({
   theme = { ...DarkTheme },
   children
 }: PropsWithChildren<WellMapProps>) => {
-  
+
   const dataContext = useContext(DataContext)
-  
+
   const wellMapstate = useMemo(() => createWellMapState(), [])
 
   const setWellbores = wellMapstate(state => state.setWellbores)
@@ -104,7 +106,7 @@ export const WellMap = ({
       if (store) {
         store.query<WellboreHeader>('wellbore-headers', { well: wellIdentifier }).then(response => {
           if (response && Array.isArray(response)) {
-            const wellbores = Array.isArray(excluded) ? response.filter(d => !excluded.includes(d.id)) : response;
+            const wellbores = Array.isArray(excluded) ? response.filter(d => !excluded.includes(d.id)) : response
             setWellbores(wellbores)
           }
         })
@@ -138,29 +140,30 @@ export const WellMap = ({
       zIndex: 10,
     }}>
       <WellMapContext.Provider value={wellMapstate}>
-      {!headless && (
-        <div style={{ textAlign: 'center', fontSize: `${Math.min(15, 0.15 * svgWidth)}px` }}>
-          <div style={{ textTransform: 'uppercase', fontSize: `9pt`, textAlign: 'left', opacity: 0.5 }}>Well Map</div>
-          <div>{wellIdentifier}</div>
-          {(interactive && validDepth !== undefined) && (
-            <DepthReadout depth={validDepth} color={theme.readoutColor} />
-          )}
-        </div>
-      )}
+        {!headless && (
+          <div style={{ textAlign: 'center', fontSize: `${Math.min(15, 0.15 * svgWidth)}px` }}>
+            <div style={{ textTransform: 'uppercase', fontSize: `9pt`, textAlign: 'left', opacity: 0.5 }}>Well Map</div>
+            <div>{wellIdentifier}</div>
+            {(interactive && validDepth !== undefined) && (
+              <DepthReadout depth={validDepth} color={theme.readoutColor} />
+            )}
+          </div>
+        )}
 
-      <Schematic
-        selected={selected}
-        setSelected={onSelect}
-        depth={validDepth}
-        setDepth={onDepthChanged}
-        color={color}
-        colorMap={colorMap}
-        interactive={interactive}
-        depthCursor={depthCursor}
-      >
-        {children}
-      </Schematic>
-      {/* <div style={{ color: 'gray' }}>
+        <Schematic
+          selected={selected}
+          setSelected={onSelect}
+          depth={validDepth}
+          setDepth={onDepthChanged}
+          onWellboreOver={onWellboreOver}
+          color={color}
+          colorMap={colorMap}
+          interactive={interactive}
+          depthCursor={depthCursor}
+        >
+          {children}
+        </Schematic>
+        {/* <div style={{ color: 'gray' }}>
         <center>
           <i>Footer</i>
         </center>
