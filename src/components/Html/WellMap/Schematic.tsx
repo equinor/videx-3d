@@ -1,13 +1,14 @@
-import useMeasure from 'react-use-measure'
-import { PropsWithChildren, useEffect, useMemo, useRef } from 'react'
 import { range as d3range } from 'd3-array'
 import { axisLeft } from 'd3-axis'
-import { select } from 'd3-selection'
-import { Track } from './Track'
-import { DepthCursor } from './DepthCursor'
-import { scaleLinear } from 'd3-scale'
 import { format } from 'd3-format'
+import { scaleLinear } from 'd3-scale'
+import { select } from 'd3-selection'
+import { PropsWithChildren, useEffect, useMemo, useRef } from 'react'
+import useMeasure from 'react-use-measure'
+import { WellboreHeader } from '../../../sdk'
 import { ActiveTrack } from './ActiveTrack'
+import { DepthCursor } from './DepthCursor'
+import { Track } from './Track'
 import { useWellMapState } from './well-map-context'
 
 type Props = {
@@ -16,6 +17,7 @@ type Props = {
   setSelected?: (wellbore: string, depth: number) => void
   depth?: number,
   setDepth?: (depth: number) => void
+  onWellboreOver?: (wellbore: WellboreHeader | null, depth: number | undefined) => void
   colorMap?: Record<string, string>
   interactive?: boolean
   depthCursor?: boolean
@@ -26,6 +28,7 @@ export const Schematic = ({
   setSelected,
   depth,
   setDepth,
+  onWellboreOver,
   color,
   colorMap,
   interactive,
@@ -172,6 +175,7 @@ export const Schematic = ({
                 setSelected={setSelected}
                 interactive={!!interactive}
                 setDepth={setDepth}
+                onWellboreOver={onWellboreOver}
               />
             ))}
           </g>
