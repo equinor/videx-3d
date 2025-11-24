@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.2.1-beta](https://github.com/equinor/videx-3d/compare/v4.2.0-beta...v4.2.1-beta) (2025-11-24)
+
+
+### Bug Fixes
+
+* Correct ref set to mesh rather than group. Fixes event registration. ([#84](https://github.com/equinor/videx-3d/issues/84)) ([c60da22](https://github.com/equinor/videx-3d/commit/c60da229fc98051d500bb7dd24b1ff3bf57e3499))
+
 ## [4.2.0-beta](https://github.com/equinor/videx-3d/compare/v4.1.2-beta...v4.2.0-beta) (2025-11-24)
 
 
