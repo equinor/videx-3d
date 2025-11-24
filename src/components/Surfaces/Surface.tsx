@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { BufferGeometry, DataTexture, DoubleSide, FrontSide, Mesh, MeshBasicMaterial, Texture } from 'three'
+import { BufferGeometry, DataTexture, DoubleSide, FrontSide, Group, MeshBasicMaterial, Texture } from 'three'
 import { PointerEvents } from '../../events/interaction-events'
 import { useGenerator } from '../../hooks/useGenerator'
 import { createLayers, LAYERS } from '../../layers/layers'
@@ -84,7 +84,7 @@ export const Surface = ({
   onPointerLeave,
   onPointerMove,
 }: SurfaceProps) => {
-  const ref = useRef<Mesh>(null!)
+  const ref = useRef<Group>(null!)
   const geometryGenerator = useGenerator<SurfaceGeometryResponse>(surfaceGeometry, priority)
   const texturesGenerator = useGenerator<SurfaceTexturesResponse>(surfaceTextures, priority)
 
@@ -273,6 +273,7 @@ export const Surface = ({
 
   return (
     <group
+      ref={ref}
       name={name}
       userData={userData}
       visible={visible}
@@ -281,7 +282,6 @@ export const Surface = ({
     >
       {(geometry && opacity < 1) && (
         <mesh
-          ref={ref}
           geometry={geometry}
           material={maskMaterial}
           layers={notEmitterLayers}
@@ -289,7 +289,6 @@ export const Surface = ({
         />
       )}
       {geometry && (<mesh
-        ref={ref}
         castShadow={castShadow}
         receiveShadow={receiveShadow}
         geometry={geometry}
