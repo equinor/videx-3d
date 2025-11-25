@@ -217,6 +217,8 @@ export const EventEmitter = ({ threshold, children }: EventEmitterProps) => {
             ref: listener.ref,
             instanceIndex: eventState.previous.index,
             keys,
+            pointer,
+            camera,
           })
           gl.domElement.style.cursor = ''
         }
@@ -236,6 +238,8 @@ export const EventEmitter = ({ threshold, children }: EventEmitterProps) => {
             ref: listener.ref,
             instanceIndex: eventState.current.index,
             keys,
+            pointer,
+            camera,
           })
           gl.domElement.style.cursor = listener.handlers.click ? 'pointer' : ''
         }
@@ -262,6 +266,8 @@ export const EventEmitter = ({ threshold, children }: EventEmitterProps) => {
                 instanceIndex,
                 position: value,
                 keys,
+                pointer,
+                camera,
               })
             })
           }
@@ -295,6 +301,8 @@ export const EventEmitter = ({ threshold, children }: EventEmitterProps) => {
                 ref: listener.ref,
                 instanceIndex: picked.index,
                 keys,
+                pointer,
+                camera,
               })
             })
           }
