@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.3.0-beta](https://github.com/equinor/videx-3d/compare/v4.2.1-beta...v4.3.0-beta) (2025-11-25)
+
+
+### Features
+
+* Added pointer position and camera to event callback data ([#86](https://github.com/equinor/videx-3d/issues/86)) ([d803877](https://github.com/equinor/videx-3d/commit/d803877aa5795ba34a614cc159c8b60d0b9967fe))
+
 ## [4.2.1-beta](https://github.com/equinor/videx-3d/compare/v4.2.0-beta...v4.2.1-beta) (2025-11-24)
 
 
