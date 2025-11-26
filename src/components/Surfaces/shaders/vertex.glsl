@@ -1,6 +1,9 @@
 #define MESH_SURFACE_MATERIAL
 
+uniform mat3 depthUvMat;
+
 varying vec3 vViewPosition;
+varying vec2 vDepthUv;
 
 #include <common>
 #include <uv_pars_vertex>
@@ -35,7 +38,8 @@ void main() {
 	#include <logdepthbuf_vertex>
 	#include <clipping_planes_vertex>
 
-	vViewPosition = - mvPosition.xyz;
+  vViewPosition = -mvPosition.xyz;
+  vDepthUv = (depthUvMat * vec3(uv, 1.0)).xy;
 
 	#include <worldpos_vertex>
 	#include <envmap_vertex>

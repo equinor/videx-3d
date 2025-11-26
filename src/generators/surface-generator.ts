@@ -8,17 +8,14 @@ import {
   PackedBufferGeometry,
   ReadonlyStore,
   SurfaceMeta,
-  triangulateGridDelaunay
+  triangulateGridDelaunay,
 } from '../sdk'
-
 
 const nullValue = -1
 
-
-
 export async function generateSurfaceTexturesData(
   this: ReadonlyStore,
-  id: string,
+  id: string
 ) {
   const surface = await this.get<SurfaceMeta>('surface-meta', id)
 
@@ -35,7 +32,7 @@ export async function generateSurfaceTexturesData(
     surface.header.xinc,
     surface.header.yinc,
     surface.header.rot,
-    nullValue,
+    nullValue
   )
 
   const response: SurfaceTexturesResponse = {
@@ -43,13 +40,16 @@ export async function generateSurfaceTexturesData(
     normalsImageBuffer,
   }
 
-  return transfer(response, [elevationImageBuffer.buffer, normalsImageBuffer.buffer])
+  return transfer(response, [
+    elevationImageBuffer.buffer,
+    normalsImageBuffer.buffer,
+  ])
 }
 
 export async function generateSurfaceGeometry(
   this: ReadonlyStore,
   id: string,
-  maxError: number = 5,
+  maxError: number = 5
 ): Promise<PackedBufferGeometry | null> {
   const surface = await this.get<SurfaceMeta>('surface-meta', id)
 
@@ -92,8 +92,7 @@ export async function generateSurfaceGeometry(
   //geometry.computeTangents();
 
   // move the surface with its bottom-left to the center (center of rotation)
-
-  geometry.translate(0, 0, -header.ny * header.yinc)
+  geometry.translate(0, 0, -(header.ny - 1) * header.yinc)
   // rotate according to rotation angle from surface header
   geometry.rotateY(header.rot * (Math.PI / 180))
   // offset the surface according to where the xori and yori is in world coordinates
