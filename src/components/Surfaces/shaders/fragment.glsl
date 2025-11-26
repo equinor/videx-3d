@@ -32,6 +32,8 @@ uniform vec3 diffuse;
 uniform vec3 emissive;
 uniform float opacity;
 
+varying vec2 vDepthUv;
+
 #include <common>
 #include <packing>
 #include <dithering_pars_fragment>
@@ -118,7 +120,7 @@ void main() {
 
   vec4 diffuseColor = vec4(diffuse, opacity);
 
-  float texDepth = getPointValue(vUv.xy);
+  float texDepth = getPointValue(vDepthUv);
 
   if(texDepth <= -1.) {
     discard;

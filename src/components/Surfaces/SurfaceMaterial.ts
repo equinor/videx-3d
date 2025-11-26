@@ -2,6 +2,7 @@ import {
   CanvasTexture,
   Color,
   LinearFilter,
+  Matrix3,
   MeshLambertMaterialParameters,
   MultiplyOperation,
   NearestFilter,
@@ -29,7 +30,7 @@ colorRampTexture.generateMipmaps = false
 //colorRampTexture.colorSpace = NoColorSpace
 colorRampTexture.colorSpace = SRGBColorSpace
 colorRampTexture.format = RGBAFormat
-colorRampTexture.anisotropy = 4;
+colorRampTexture.anisotropy = 4
 
 export enum ContourColorMode {
   darken = 0,
@@ -37,30 +38,31 @@ export enum ContourColorMode {
   mixed = 2,
 }
 
-export type SurfaceMaterialParameters = ShaderMaterialParameters & MeshLambertMaterialParameters & {
-  useColorRamp?: boolean
-  saturation?: number
-  brightness?: number
-  colorRampIndex?: number
-  colorRampReverse?: boolean
-  colorRampMin?: number
-  colorRampMax?: number
-  referenceDepth?: number
-  showContours?: boolean
-  contoursInterval?: number
-  contoursColorMode?: ContourColorMode
-  contoursColorModeFactor?: number
-  contoursColor?: string | number | Color
-  depthTexture?: Texture
-  normalTexture?: Texture
-}
+export type SurfaceMaterialParameters = ShaderMaterialParameters &
+  MeshLambertMaterialParameters & {
+    useColorRamp?: boolean
+    saturation?: number
+    brightness?: number
+    colorRampIndex?: number
+    colorRampReverse?: boolean
+    colorRampMin?: number
+    colorRampMax?: number
+    referenceDepth?: number
+    showContours?: boolean
+    contoursInterval?: number
+    contoursColorMode?: ContourColorMode
+    contoursColorModeFactor?: number
+    contoursColor?: string | number | Color
+    depthTexture?: Texture
+    normalTexture?: Texture
+  }
 
 const shader = {
   name: 'MeshSurfaceShader',
   defines: {
     USE_COLOR_RAMP: false,
     USE_CONTOURS: false,
-    USE_UV: true
+    USE_UV: true,
   },
   uniforms: UniformsUtils.merge([
     UniformsUtils.clone(ShaderLib['lambert'].uniforms),
@@ -81,7 +83,7 @@ const shader = {
       contoursColorModeFactor: { value: 0.5 },
       contoursColor: { value: new Color('black') },
       contoursThickness: { value: 0.8 },
-      size: { value: new Vector2() },
+      depthUvMat: { value: new Matrix3() },
     },
   ]),
   vertexShader,
@@ -90,7 +92,7 @@ const shader = {
 
 /**
  * Shader material for `Surface` component.
- * 
+ *
  * @see {@link Surface}
  */
 export class SurfaceMaterial extends ShaderMaterial {
@@ -105,32 +107,54 @@ export class SurfaceMaterial extends ShaderMaterial {
   normalMapType: number
 
   constructor(parameters: SurfaceMaterialParameters) {
+    super()
 
-    super();
-
-    this.defines = Object.assign( {}, shader.defines )
-    this.uniforms = UniformsUtils.clone( shader.uniforms )
+    this.defines = Object.assign({}, shader.defines)
+    this.uniforms = UniformsUtils.clone(shader.uniforms)
     this.vertexShader = shader.vertexShader
     this.fragmentShader = shader.fragmentShader
     this.combine = MultiplyOperation
     this.normalMapType = TangentSpaceNormalMap
-    this.wireframe = false;
+    this.wireframe = false
     this.wireframeLinewidth = 1
     this.wireframeLinecap = 'round'
     this.wireframeLinejoin = 'round'
     this.flatShading = false
     this.lights = true
     this.clipping = true
-    this.fog = true    
-    
+    this.fog = true
+
     const exposePropertyNames = [
-      'map', 'lightMap', 'lightMapIntensity', 'aoMap', 'aoMapIntensity',
-      'emissive', 'emissiveIntensity', 'emissiveMap', 'specularMap', 'alphaMap',
-      'envMap', 'reflectivity', 'refractionRatio', 'opacity', 'diffuse',
-      'normalMap', 'normalScale', 'referenceDepth', 'colorRampIndex',
-      'colorRampMin', 'colorRampMax', 'colorRampReverse', 'saturation', 'brightness',
-      'contoursInterval', 'contoursColorMode', 'contoursColorModeFactor', 'contoursThickness',
-      'normalTexture', 'depthTexture'
+      'map',
+      'lightMap',
+      'lightMapIntensity',
+      'aoMap',
+      'aoMapIntensity',
+      'emissive',
+      'emissiveIntensity',
+      'emissiveMap',
+      'specularMap',
+      'alphaMap',
+      'envMap',
+      'reflectivity',
+      'refractionRatio',
+      'opacity',
+      'diffuse',
+      'normalMap',
+      'normalScale',
+      'referenceDepth',
+      'colorRampIndex',
+      'colorRampMin',
+      'colorRampMax',
+      'colorRampReverse',
+      'saturation',
+      'brightness',
+      'contoursInterval',
+      'contoursColorMode',
+      'contoursColorModeFactor',
+      'contoursThickness',
+      'normalTexture',
+      'depthTexture',
     ]
 
     for (const propertyName of exposePropertyNames) {
@@ -141,7 +165,7 @@ export class SurfaceMaterial extends ShaderMaterial {
 
         set: function (value) {
           this.uniforms[propertyName].value = value
-        }
+        },
       })
     }
 
@@ -172,7 +196,9 @@ export class SurfaceMaterial extends ShaderMaterial {
 
   set useColorRamp(value) {
     this.defines.USE_COLOR_RAMP = !!value
-    this.uniforms.colorRampTexture.value = this.defines.USE_COLOR_RAMP ? colorRampTexture : null
+    this.uniforms.colorRampTexture.value = this.defines.USE_COLOR_RAMP
+      ? colorRampTexture
+      : null
     this.needsUpdate = true
   }
 
@@ -184,7 +210,7 @@ export class SurfaceMaterial extends ShaderMaterial {
     this.defines.USE_CONTOURS = !!value
     this.needsUpdate = true
   }
-  
+
   // @ignore
   dispose(): void {
     super.dispose()
@@ -207,4 +233,3 @@ export class SurfaceMaterial extends ShaderMaterial {
     }
   }
 }
-

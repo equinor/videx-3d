@@ -32,8 +32,8 @@ function parseIrapbin(buffer, nullValue = -1, refDepth = null) {
     for (let i = 0; i < batchSize; i += 4) {
       val = view.getFloat32(pos + i, false)
       col = n % header.nx
-      row = header.ny - Math.floor(n / header.nx)
-      idx = (row - 1) * header.nx + col
+      row = header.ny - Math.floor(n / header.nx) - 1
+      idx = row * header.nx + col
       data[idx] =
         val < eplison || val > maxValue
           ? nullValue

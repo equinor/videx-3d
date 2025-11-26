@@ -210,7 +210,7 @@ export const Surface = ({
             normalsImageBuffer,
           } = response
 
-          const elevationTextures = createElevationTexture(
+          const elevationTexture = createElevationTexture(
             elevationImageBuffer,
             meta.header.nx,
             meta.header.ny,
@@ -223,7 +223,7 @@ export const Surface = ({
 
           setDepthTexture(prev => {
             if (prev) prev.dispose()
-            return elevationTextures
+            return elevationTexture
           })
           setNormals(prev => {
             if (prev) prev.dispose()
@@ -252,7 +252,13 @@ export const Surface = ({
 
   useEffect(() => {
     if (depthTexture && material) {
+      const { width, height } = depthTexture.image
+      const sx = (width - 1) / width
+      const sy = (height - 1) / height
+      const tx = (1 - sx) / 2
+      const ty = (1 - sy) / 2
       material.uniforms.depthTexture.value = depthTexture
+      material.uniforms.depthUvMat.value.setUvTransform(tx, ty, sx, sy, 0, 0, 0)
     }
   }, [depthTexture, material])
 
@@ -268,8 +274,6 @@ export const Surface = ({
       material.dispose()
     }
   }, [material])
-
-
 
   return (
     <group
