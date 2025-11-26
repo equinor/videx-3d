@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.3.1-beta](https://github.com/equinor/videx-3d/compare/v4.3.0-beta...v4.3.1-beta) (2025-11-26)
+
+
+### Bug Fixes
+
+* Corrected surface geometry transformations and transformed uv coordinates used to look up depth values in surface material ([#89](https://github.com/equinor/videx-3d/issues/89)) ([ca9cfcd](https://github.com/equinor/videx-3d/commit/ca9cfcd05d736aee194dcb3210a03685e48d2925))
+
 ## [4.3.0-beta](https://github.com/equinor/videx-3d/compare/v4.2.1-beta...v4.3.0-beta) (2025-11-25)
 
 
