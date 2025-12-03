@@ -1,5 +1,16 @@
 # Changelog
 
+## [5.0.0-beta](https://github.com/equinor/videx-3d/compare/v4.3.1-beta...v5.0.0-beta) (2025-12-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* changed event emitter logic to make thin/small objects easier to select among larger objects ([#92](https://github.com/equinor/videx-3d/issues/92))
+
+### Bug Fixes
+
+* changed event emitter logic to make thin/small objects easier to select among larger objects ([#92](https://github.com/equinor/videx-3d/issues/92)) ([5a94357](https://github.com/equinor/videx-3d/commit/5a94357540c634de9d4695a33cfa5885efcec12e))
+
 ## [4.3.1-beta](https://github.com/equinor/videx-3d/compare/v4.3.0-beta...v4.3.1-beta) (2025-11-26)
 
 
