@@ -18,6 +18,7 @@ export type WellboreProps = {
   simplificationThreshold?: number,
   position?: Vec3,
   visible?: boolean,
+  emitterThreshold?: number,
   children?: ReactNode,
 } & PointerEvents
 
@@ -61,6 +62,7 @@ export const Wellbore = ({
   onPointerEnter,
   onPointerLeave,
   onPointerMove,
+  emitterThreshold = 3,
   children,
 }: WellboreProps) => {
   const wellboreRef = useRef<Object3D>(null!)
@@ -87,14 +89,14 @@ export const Wellbore = ({
       if (onPointerMove) handlers.move = onPointerMove
 
       if (Object.keys(handlers).length) {
-        unregister = eventHandler.register(wellboreRef.current, handlers, id)
+        unregister = eventHandler.register(wellboreRef.current, handlers, id, emitterThreshold)
       }
     }
 
     return () => {
       if (unregister) unregister()
     }
-  }, [eventHandler, onPointerClick, onPointerEnter, onPointerLeave, onPointerMove, id])
+  }, [eventHandler, onPointerClick, onPointerEnter, onPointerLeave, onPointerMove, emitterThreshold, id])
 
   useEffect(() => {
     wellboreRef.current.getWorldPosition(vec)

@@ -15,6 +15,7 @@ export type EventEmitterCallbackEvent = {
   position?: Vec3
   pointer: Vec2
   camera: Camera
+  domElement: HTMLElement
   keys: KeysPressed
   ref: any
 }
@@ -26,6 +27,7 @@ export type EventEmitterCallback = (
 export type Listener = {
   object: Object3D
   ref?: any
+  threshold?: number
   handlers: Record<string, EventEmitterCallback>
 }
 
@@ -33,7 +35,8 @@ export type EventEmitterContextProps = {
   register: (
     obj: Object3D,
     handlers: Record<string, EventEmitterCallback>,
-    ref?: any
+    ref?: any,
+    threshold?: number
   ) => () => void
 }
 
@@ -58,6 +61,10 @@ export const EventEmitterContext = createContext<EventEmitterContextProps>(
  * The generator is an async function that process and returns data required
  * by your components, such as geometry for a mesh.
  *
+ * An optional threshold value may be provided in the register method. This is used
+ * to weight the distance when performing GPU picking, making objects with a
+ * higher threshold more likely to be hit. This is usually used for thin/small objects,
+ * which may otherwise be hard to hit.
  * @example
  *
  * useEffect(() => {

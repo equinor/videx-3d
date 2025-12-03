@@ -26,27 +26,14 @@ const normalizedDeviceToScreen = (pos: Vec2, width = 1, height = 1): Vec2 => [
 
 const v = new Vector3()
 
-// contains indices in prioritized order for searching the pixel buffer for hits, depending on threshold _size
-const searchPatterns = [
-  [0],
-  [4, 3, 1, 5, 7, 0, 2, 6, 8],
-  [
-    12, 11, 7, 13, 17, 6, 8, 16, 18, 10, 2, 14, 22, 5, 1, 3, 9, 15, 21, 19, 23,
-    0, 4, 20, 24,
-  ],
-  [
-    24, 23, 17, 25, 31, 16, 18, 30, 32, 22, 10, 26, 38, 15, 9, 11, 19, 33, 39,
-    37, 28, 8, 12, 40, 36, 21, 3, 27, 45, 28, 14, 2, 4, 20, 34, 46, 44, 7, 1, 5,
-    13, 41, 47, 43, 35, 0, 6, 48, 42,
-  ],
-]
-
 const defaults = {
-  threshold: 2,
+  radius: 3,
 }
 
 export type PickResult =
   | {
+      id: number
+      offset: Vec2 | null
       match: ObjectMapEntry | null
       position: Promise<Vec3> | null
     }
@@ -58,15 +45,15 @@ export type PickResult =
  */
 export class PickingHelper {
   private _size: number
-  private _threshold: number
+  private _radius: number
   private _renderTarget: WebGLRenderTarget
   private _pixelBuffer: Uint8Array
   private _currentId: number = 0
 
   constructor(options = {}) {
-    const { threshold } = { ...defaults, ...options }
-    this._threshold = Math.max(Math.min(3, threshold), 0)
-    this._size = 2 * this._threshold + 1
+    const { radius } = { ...defaults, ...options }
+    this._radius = Math.max(Math.min(10, radius), 0)
+    this._size = 2 * this._radius + 1
 
     const depthTexture = new DepthTexture(this._size, this._size)
 
@@ -95,21 +82,21 @@ export class PickingHelper {
     const id = (this._currentId + 1) % 10000
     this._currentId = id
 
-    const { _renderTarget, _pixelBuffer, _threshold, _size } = this
+    //const { _renderTarget, _pixelBuffer, _radius, _size } = this
 
-    const w = renderer.getContext().drawingBufferWidth
-    const h = renderer.getContext().drawingBufferHeight
+    const w = renderer.domElement.clientWidth //getContext().drawingBufferWidth
+    const h = renderer.domElement.clientHeight //getContext().drawingBufferHeight
 
     const screen = normalizedDeviceToScreen(point, w, h)
 
-    const x = screen[0] - _threshold
-    const y = screen[1] - _threshold
+    const x = screen[0] - this._radius
+    const y = screen[1] - this._radius
 
-    //console.time('prepare emitters')
     emitters.forEach((emitter) => {
       const material = emitter.source.material
       emitter.source.material = emitter.material
       emitter.material = material
+
       if (emitter.instanced) {
         const instanced = emitter.source as InstancedMesh
         const colors = new Float32Array(instanced.instanceColor!.array)
@@ -118,17 +105,16 @@ export class PickingHelper {
         emitter.instanceColor = colors
       }
     })
-    //console.timeEnd('prepare emitters')
-    // render picking scene to texture and depth texture
-    //console.time('RENDER')
+
     // set the view offset to represent just the patch we need to render under the mouse
-    camera.setViewOffset(w, h, x, y, _size, _size)
+    camera.setViewOffset(w, h, x, y, this._size, this._size)
 
     const prevLayers = camera.layers.mask
+
     camera.layers.disableAll()
     camera.layers.set(LAYERS.EMITTER)
 
-    renderer.setRenderTarget(_renderTarget)
+    renderer.setRenderTarget(this._renderTarget)
 
     renderer.clear()
     renderer.render(scene, camera)
@@ -138,9 +124,6 @@ export class PickingHelper {
     camera.clearViewOffset()
     camera.layers.mask = prevLayers
 
-    //console.timeEnd('RENDER')
-
-    //console.time('restore emitters')
     // set original material to emitter object
     emitters.forEach((emitter) => {
       emitter.source.material = emitter.material
@@ -151,73 +134,85 @@ export class PickingHelper {
         emitter.instanceColor = undefined
       }
     })
-    //console.timeEnd('restore emitters')
 
-    //console.time('readRenderTargetPixels')
     // read the pixel
-
     await renderer.readRenderTargetPixelsAsync(
-      _renderTarget,
+      this._renderTarget,
       0, // x
       0, // y
-      _size, // width
-      _size, // height
-      _pixelBuffer
+      this._size, // width
+      this._size, // height
+      this._pixelBuffer
     )
 
     // cancel if a new request has been issued while waiting for readback
     if (!force && id !== this._currentId) return false
 
-    //console.timeEnd('readRenderTargetPixels')
+    let match: {
+      mapEntry: ObjectMapEntry
+      lsqr: number
+      x: number
+      y: number
+      i: number
+    } | null = null
+    let i = 0
 
-    const pattern = searchPatterns[_threshold]
+    for (let r = this._size - 1; r >= 0; r--) {
+      for (let c = 0; c < this._size; c++, i += 4) {
+        if (this._pixelBuffer[i + 3] === 255) {
+          // there is a pixel value if the alpha is 255
+          const objId =
+            (this._pixelBuffer[i] << 16) |
+            (this._pixelBuffer[i + 1] << 8) |
+            this._pixelBuffer[i + 2]
+
+          const mapEntry = objectMap.map.get(objId)
+
+          if (mapEntry) {
+            const { threshold } = mapEntry.emitter
+            const ox = c - this._radius
+            const oy = r - this._radius
+            const lsqr = ox ** 2 + oy ** 2 - threshold ** 2
+
+            if (!match || match.lsqr > lsqr) {
+              match = { mapEntry, lsqr, x: ox, y: oy, i }
+            }
+          }
+        }
+      }
+    }
 
     const result: PickResult = {
+      id,
+      offset: null,
       match: null,
       position: null,
     }
 
-    //console.time('patternsearch')
-    for (let i = 0; i < pattern.length; i++) {
-      const searchPos = pattern[i]
-      const idx = searchPos * 4
-      const id =
-        (_pixelBuffer[idx] << 16) |
-        (_pixelBuffer[idx + 1] << 8) |
-        _pixelBuffer[idx + 2]
+    if (match) {
+      result.match = match.mapEntry
 
-      const mapEntry = objectMap.map.get(id)
+      const ndc = screenToNormalizedDevice(
+        [screen[0] + match.x, screen[1] + match.y],
+        w,
+        h
+      )
 
-      if (mapEntry) {
-        result.match = mapEntry
-        const offsetX = (searchPos % _size) - _threshold
-        const offsetY = _threshold - ~~(searchPos / _size)
-        //console.log(Array.from(_pixelBuffer))
-        const ndc = screenToNormalizedDevice(
-          [screen[0] + offsetX, screen[1] + offsetY],
-          w,
-          h
-        )
+      result.offset = [point[0] - ndc[0], point[1] - ndc[1]]
 
-        const positionPromise = readDepth(
-          this._renderTarget.depthTexture!,
-          renderer,
-          camera,
-          idx
-        ).then((depth) => {
-          const ndcZ = depth as number
-          v.set(ndc[0], ndc[1], ndcZ)
-          v.unproject(camera)
-          return v.toArray() as Vec3
-        })
-
-        result.position = positionPromise
-
-        break
-      }
+      const positionPromise = readDepth(
+        this._renderTarget.depthTexture!,
+        renderer,
+        camera,
+        match.i
+      ).then((depth) => {
+        const ndcZ = depth as number
+        v.set(ndc[0], ndc[1], ndcZ)
+        v.unproject(camera)
+        return v.toArray() as Vec3
+      })
+      result.position = positionPromise
     }
-    //console.timeEnd('patternsearch')
-
     return result
   }
 
