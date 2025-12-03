@@ -288,8 +288,10 @@ const Example = (args: ExampleProps) => {
                       if (!isSelected) {
                         highlighter.highlight(event.target)
                       }
+                      event.domElement.style.cursor = 'pointer'
                     }}
-                    onPointerLeave={async () => {
+                    onPointerLeave={async (event) => {
+                      event.domElement.style.cursor = ''
                       highlighter.removeAll()
                       outputPanel.update('readout', '(none)', {
                         easting: '-',
