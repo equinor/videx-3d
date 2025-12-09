@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.0.1-beta](https://github.com/equinor/videx-3d/compare/v5.0.0-beta...v5.0.1-beta) (2025-12-09)
+
+
+### Bug Fixes
+
+* **58:** Improved depth reading in EventEmitter. Fixes [#58](https://github.com/equinor/videx-3d/issues/58) ([#95](https://github.com/equinor/videx-3d/issues/95)) ([49950b7](https://github.com/equinor/videx-3d/commit/49950b7cf67f70e22108c0c8221b751499d148c3))
+
 ## [5.0.0-beta](https://github.com/equinor/videx-3d/compare/v4.3.1-beta...v5.0.0-beta) (2025-12-03)
 
 
