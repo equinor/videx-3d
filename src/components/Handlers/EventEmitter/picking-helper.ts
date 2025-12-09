@@ -1,7 +1,9 @@
 import {
-  DepthTexture,
+  DoubleSide,
   InstancedMesh,
+  MeshDepthMaterial,
   PerspectiveCamera,
+  RGBADepthPacking,
   RGBAFormat,
   Scene,
   SRGBColorSpace,
@@ -11,8 +13,21 @@ import {
   WebGLRenderTarget,
 } from 'three'
 import { LAYERS } from '../../../layers/layers'
-import { readDepth, Vec2, Vec3 } from '../../../sdk'
+import { Vec2, Vec3 } from '../../../sdk'
+import { unpackRGBAToDepth } from '../../../sdk/utils/packing'
 import { Emitter, ObjectMap, ObjectMapEntry } from './EventEmitter'
+
+const v = new Vector3()
+
+const depthMaterial = new MeshDepthMaterial({
+  depthPacking: RGBADepthPacking,
+  precision: 'highp',
+  side: DoubleSide,
+})
+
+const defaults = {
+  radius: 3,
+}
 
 const screenToNormalizedDevice = (pos: Vec2, width = 1, height = 1): Vec2 => [
   (pos[0] / width) * 2 - 1,
@@ -24,18 +39,12 @@ const normalizedDeviceToScreen = (pos: Vec2, width = 1, height = 1): Vec2 => [
   ((1 - pos[1]) / 2) * height,
 ]
 
-const v = new Vector3()
-
-const defaults = {
-  radius: 3,
-}
-
 export type PickResult =
   | {
       id: number
       offset: Vec2 | null
       match: ObjectMapEntry | null
-      position: Promise<Vec3> | null
+      position: Vec3 | null
     }
   | false
 
@@ -47,7 +56,9 @@ export class PickingHelper {
   private _size: number
   private _radius: number
   private _renderTarget: WebGLRenderTarget
+  private _renderTargetDepth: WebGLRenderTarget
   private _pixelBuffer: Uint8Array
+  private _pixelDepthBuffer: Uint8Array
   private _currentId: number = 0
 
   constructor(options = {}) {
@@ -55,19 +66,20 @@ export class PickingHelper {
     this._radius = Math.max(Math.min(10, radius), 0)
     this._size = 2 * this._radius + 1
 
-    const depthTexture = new DepthTexture(this._size, this._size)
-
     this._renderTarget = new WebGLRenderTarget(this._size, this._size, {
       colorSpace: SRGBColorSpace,
       format: RGBAFormat,
       type: UnsignedByteType,
       generateMipmaps: false,
       stencilBuffer: false,
-      depthBuffer: true,
-      depthTexture,
+    })
+
+    this._renderTargetDepth = new WebGLRenderTarget(this._size, this._size, {
+      type: UnsignedByteType,
     })
 
     this._pixelBuffer = new Uint8Array(4 * this._size ** 2)
+    this._pixelDepthBuffer = new Uint8Array(4)
   }
 
   async pick(
@@ -81,8 +93,6 @@ export class PickingHelper {
   ): Promise<PickResult> {
     const id = (this._currentId + 1) % 10000
     this._currentId = id
-
-    //const { _renderTarget, _pixelBuffer, _radius, _size } = this
 
     const w = renderer.domElement.clientWidth //getContext().drawingBufferWidth
     const h = renderer.domElement.clientHeight //getContext().drawingBufferHeight
@@ -110,17 +120,22 @@ export class PickingHelper {
     camera.setViewOffset(w, h, x, y, this._size, this._size)
 
     const prevLayers = camera.layers.mask
-
     camera.layers.disableAll()
     camera.layers.set(LAYERS.EMITTER)
 
     renderer.setRenderTarget(this._renderTarget)
-
     renderer.clear()
     renderer.render(scene, camera)
-    renderer.setRenderTarget(null)
+
+    // render depth
+    scene.overrideMaterial = depthMaterial
+    renderer.setRenderTarget(this._renderTargetDepth)
+    renderer.clear()
+    renderer.render(scene, camera)
+    scene.overrideMaterial = null
 
     // clear the view offset so rendering returns to normal
+    renderer.setRenderTarget(null)
     camera.clearViewOffset()
     camera.layers.mask = prevLayers
 
@@ -157,6 +172,7 @@ export class PickingHelper {
     } | null = null
     let i = 0
 
+    // Find closest match if any
     for (let r = this._size - 1; r >= 0; r--) {
       for (let c = 0; c < this._size; c++, i += 4) {
         if (this._pixelBuffer[i + 3] === 255) {
@@ -200,18 +216,33 @@ export class PickingHelper {
 
       result.offset = [point[0] - ndc[0], point[1] - ndc[1]]
 
-      const positionPromise = readDepth(
-        this._renderTarget.depthTexture!,
-        renderer,
-        camera,
-        match.i
-      ).then((depth) => {
-        const ndcZ = depth as number
-        v.set(ndc[0], ndc[1], ndcZ)
-        v.unproject(camera)
-        return v.toArray() as Vec3
-      })
-      result.position = positionPromise
+      // read the pixel
+      await renderer.readRenderTargetPixelsAsync(
+        this._renderTargetDepth,
+        this._radius + match.x, // x
+        this._radius - match.y, // y
+        1, // width
+        1, // height
+        this._pixelDepthBuffer
+      )
+
+      // cancel if a new request has been issued while waiting for readback
+      if (!force && id !== this._currentId) return false
+
+      const ndcZ =
+        unpackRGBAToDepth(
+          this._pixelDepthBuffer[0],
+          this._pixelDepthBuffer[1],
+          this._pixelDepthBuffer[2],
+          this._pixelDepthBuffer[3]
+        ) *
+          2 -
+        1
+
+      v.set(ndc[0], ndc[1], ndcZ)
+      v.unproject(camera)
+
+      result.position = v.toArray() as Vec3
     }
     return result
   }

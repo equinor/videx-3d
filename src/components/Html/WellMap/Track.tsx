@@ -240,7 +240,7 @@ export const Track = ({
           fill={styles.textColor}
           fillOpacity={isSelected ? 1 : 0.75}
           textAnchor='middle'
-          dominantBaseline='top'
+          dominantBaseline='auto'
           fontFamily='monospace'
         >
           {wellbore.depthMdMsl}m
