@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useData } from '../../../../hooks/useData'
 import { PositionLog } from '../../../../sdk/data/types/PositionLog'
-import { useWellMapState } from '../well-map-context'
 import { getTrajectory, Trajectory } from '../../../../sdk/utils/trajectory'
+import { useWellMapState } from '../well-map-context'
 
 /**
  * WellMapTvd props
@@ -30,7 +30,7 @@ export const WellMapTvd = ({ color = 'rgb(113, 216, 253)' }: WellMapTvdProps) =>
   const trackWidth = wellMapState(state => state.measures.trackWidth)
   const svgHeight = wellMapState(state => state.measures.svgHeight)
   const getSlotPosition = wellMapState(state => state.measures.getSlotPosition)
-  
+
   useEffect(() => {
     if (store) {
       const dataPromises = wellboreIds.map(id => store.get<PositionLog>('position-logs', id))
@@ -45,11 +45,11 @@ export const WellMapTvd = ({ color = 'rgb(113, 216, 253)' }: WellMapTvdProps) =>
   }, [wellboreIds, store])
 
   const tvds = useMemo(() => {
-    const tvds: [number, number|null][] = []
+    const tvds: [number, number | null][] = []
     if (trajectories) {
       wellboreIds.forEach((id, slot) => {
         const position = getSlotPosition(slot)
-        const tvd: [number, number|null] = [position, null]
+        const tvd: [number, number | null] = [position, null]
         if (depth !== undefined && trajectories[id]) {
           const p = trajectories[id].getPointAtDepth(depth, false)
           if (p) {
@@ -74,7 +74,7 @@ export const WellMapTvd = ({ color = 'rgb(113, 216, 253)' }: WellMapTvdProps) =>
       fillOpacity={0.75}
       x={-30}
       y={y}
-      textAnchor='left'
+      textAnchor='start'
       alignmentBaseline={'after-edge'}
     >
       TVD:
@@ -85,25 +85,25 @@ export const WellMapTvd = ({ color = 'rgb(113, 216, 253)' }: WellMapTvdProps) =>
       fillOpacity={0.5}
       x={-30}
       y={y + 10}
-      textAnchor='left'
+      textAnchor='start'
       alignmentBaseline={'after-edge'}
     >
       (Msl)
     </text>
     {tvds.map(tvd => (
-        <text
-          key={tvd.toString()}
-          style={{ fontSize: '12px' }}
-          fill={color}
-          fillOpacity={tvd[1] === null ? 0.5 : 1}
-          alignmentBaseline={'after-edge'}
-          textAnchor='middle'
-          x={tvd[0]}
-          y={y}
-        >
-          {tvd[1] !== null && tvd[1].toFixed(1) + 'm' || '---'}
-        </text>
-      )
+      <text
+        key={tvd.toString()}
+        style={{ fontSize: '12px' }}
+        fill={color}
+        fillOpacity={tvd[1] === null ? 0.5 : 1}
+        alignmentBaseline={'after-edge'}
+        textAnchor='middle'
+        x={tvd[0]}
+        y={y}
+      >
+        {tvd[1] !== null && tvd[1].toFixed(1) + 'm' || '---'}
+      </text>
+    )
     )}
   </g>
 }

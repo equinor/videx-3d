@@ -16,7 +16,7 @@ export type EmitterResultEvent = {
   match: RenderableObject | undefined
   instanced?: boolean
   instanceIndex?: number
-  position: Promise<Vec3> | null
+  position: Vec3 | null
 }
 export type EmitterCallback = (e: EmitterResultEvent) => void
 
@@ -26,8 +26,9 @@ export type EmitterCallback = (e: EmitterResultEvent) => void
  */
 export type EventEmitterProps = {
   threshold?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10,
-  children?: ReactNode
   onResult?: EmitterCallback
+  throttle?: boolean
+  children?: ReactNode
 }
 
 export type RenderableObject = Object3D & { material: Material, geometry: BufferGeometry }
@@ -147,6 +148,7 @@ const buildEmitterMap = (eventState: EventState) => {
 export const EventEmitter = ({
   threshold,
   onResult,
+  throttle = false,
   children
 }: EventEmitterProps) => {
   const { gl, camera, scene, pointer } = useThree()
@@ -228,7 +230,7 @@ export const EventEmitter = ({
 
       if (listener && listener.handlers.click) {
         listener.handlers.click({
-          position: await result.position,
+          position: result.position,
           target: listener.object,
           source: picked.emitter.source,
           ref: listener.ref,
@@ -254,7 +256,7 @@ export const EventEmitter = ({
       eventState.camera,
       eventState.emitters,
       eventState.objectMap,
-      false,
+      throttle ? false : true,
     )
     //console.timeEnd('pick')
     if (!result) return // aborted
@@ -317,7 +319,7 @@ export const EventEmitter = ({
     }
 
     // Determine pointer move event
-    if (eventState.current) {
+    if (eventState.current && result.position) {
       const listener = eventState.listeners.get(eventState.current.emitter.listener)
       if (listener && listener.handlers.move) {
         const source = eventState.current.emitter.source
@@ -327,7 +329,7 @@ export const EventEmitter = ({
           source,
           ref: listener.ref,
           instanceIndex,
-          position: await result.position!,
+          position: result.position,
           keys,
           pointer: point,
           camera: eventState.camera,
@@ -336,7 +338,7 @@ export const EventEmitter = ({
       }
     }
 
-  }, [eventState, onResult])
+  }, [eventState, onResult, throttle])
 
   useEffect(() => {
     const { gl } = eventState

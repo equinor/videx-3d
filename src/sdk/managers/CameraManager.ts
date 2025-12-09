@@ -24,7 +24,7 @@ async function focusAtPoint(
   distance = Math.min(direction.length() * 1.5, useDistance)
   direction.normalize()
   cameraPosition.copy(cameraTarget).addScaledVector(direction, -useDistance)
-
+  controls.normalizeRotations()
   return controls.setLookAt(
     cameraPosition.x,
     cameraPosition.y,
@@ -43,7 +43,7 @@ function setPosition(point: Vec3, controls: CameraControls) {
   controls.getTarget(cameraTarget)
 
   v2.subVectors(cameraTarget, v1)
-
+  controls.normalizeRotations()
   controls.getPosition(cameraPosition)
   cameraPosition.sub(v2)
   controls.setPosition(cameraPosition.x, cameraPosition.y, cameraPosition.z)
