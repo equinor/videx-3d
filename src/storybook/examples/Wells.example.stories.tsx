@@ -5,7 +5,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { RepeatWrapping, TextureLoader, Vector3 } from 'three'
 import { useAnnotationsState } from '../../components/Annotations/annotations-state'
 import { CameraTargetMarker } from '../../components/CameraTargetMarker/CameraTargetMarker'
-import { Distance } from '../../components/Distance/Distance'
 import { BoxGrid } from '../../components/Grids/BoxGrid/BoxGrid'
 import { useHighlighter } from '../../components/Handlers/Highlighter/highlight-state'
 import { Highlighter } from '../../components/Handlers/Highlighter/Highlighter'
@@ -16,19 +15,15 @@ import { ContourColorMode } from '../../components/Surfaces/SurfaceMaterial'
 import { UtmArea } from '../../components/UtmArea/UtmArea'
 import { UtmPosition } from '../../components/UtmArea/UtmPosition'
 import { BasicTrajectory } from '../../components/Wellbores/BasicTrajectory/BasicTrajectory'
-import { Casings } from '../../components/Wellbores/Casings/Casings'
-import { CompletionTools } from '../../components/Wellbores/CompletionTools/CompletionTools'
 import { DepthMarkers } from '../../components/Wellbores/DepthMarkers/DepthMarkers'
 import { FormationMarkers } from '../../components/Wellbores/FormationMarkers/FormationMarkers'
 import { Perforations } from '../../components/Wellbores/Perforations/Perforations'
-import { Shoes } from '../../components/Wellbores/Shoes/Shoes'
 import { TubeTrajectory } from '../../components/Wellbores/TubeTrajectory/TubeTrajectory'
 import { Wellbore } from '../../components/Wellbores/Wellbore/Wellbore'
-import { WellboreBounds } from '../../components/Wellbores/WellboreBounds/WellboreBounds'
-import { WellboreFormationColumn } from '../../components/Wellbores/WellboreFormationColumn/WellboreFormationColumn'
 import { WellboreLabel } from '../../components/Wellbores/WellboreLabel/WellboreLabel'
 import { Wells } from '../../components/Wellbores/Wells/Wells'
 import { WellboreSelectedEvent, wellboreSelectedEventType } from '../../events/wellbore-events'
+import { CameraFocusAtPointEvent, Casings, CompletionTools, Distance, Shoes, WellboreBounds, WellboreFormationColumn } from '../../main'
 import { CRS } from '../../sdk/projection/crs'
 import { Vec2, Vec3 } from '../../sdk/types/common'
 import { AnnotationsDecorator } from '../decorators/annotations-decorator'
@@ -104,7 +99,7 @@ const Example = (args: ExampleProps) => {
   const highlighter = useHighlighter()
   const outputPanel = useOutputPanel()
 
-  const { camera } = useThree()
+  const camera = useThree(state => state.camera)
 
   const toggleVisibility = useAnnotationsState(state => state.toggleVisibility)
 
@@ -228,6 +223,7 @@ const Example = (args: ExampleProps) => {
 
         {surface && (<UtmPosition easting={surface.header.xori} northing={surface.header.yori}>
           <Surface
+            name="Surface"
             meta={surface}
             color={args.color}
             useColorRamp={args.useColorRamp}
@@ -249,7 +245,12 @@ const Example = (args: ExampleProps) => {
             normalMap={normalMap}
             normalScale={[0.1, 0.1]}
             doubleSide
-          // onPointerMove={async (e) => {
+            onPointerClick={e => {
+              if (e.position && e.keys.ctrlKey) {
+                dispatchEvent(new CameraFocusAtPointEvent({ point: e.position, distance: 1000 }))
+              }
+            }}
+          // onPointerMove={(e) => {
           //   console.log(e.position && e.position[1])
           // }}
           />
@@ -279,18 +280,18 @@ const Example = (args: ExampleProps) => {
                     simplificationThreshold={args.simplificationThreshold}
                     id={wellbore.id}
                     fromMsl={fromMsl}
-                    onPointerClick={async (event) => {
+                    onPointerClick={(event) => {
                       setSelected(event.ref)
                       dispatchEvent(new WellboreSelectedEvent({ id: event.ref, position: event.position, flyTo: !event.keys.ctrlKey }))
-                      console.log(wellbore.id)
+                      console.log(event.ref)
                     }}
-                    onPointerEnter={async (event) => {
+                    onPointerEnter={(event) => {
                       if (!isSelected) {
                         highlighter.highlight(event.target)
                       }
                       event.domElement.style.cursor = 'pointer'
                     }}
-                    onPointerLeave={async (event) => {
+                    onPointerLeave={(event) => {
                       event.domElement.style.cursor = ''
                       highlighter.removeAll()
                       outputPanel.update('readout', '(none)', {
@@ -301,7 +302,7 @@ const Example = (args: ExampleProps) => {
                       },
                       )
                     }}
-                    onPointerMove={async (event) => {
+                    onPointerMove={(event) => {
                       if (crsRef.current && event.position) {
                         const utmPos = crsRef.current.worldToUtm(...event.position)
                         let distance = '-'
@@ -324,9 +325,18 @@ const Example = (args: ExampleProps) => {
                         <TubeTrajectory radius={0.1 * args.sizeMultiplier} color={color} priority={8} radialSegments={8} />
                         {args.showShoes && (<Shoes radialSegments={32} sizeMultiplier={args.sizeMultiplier * 1.3} color={isSelected ? color : 'orange'} />)}
                       </Distance>
-                      {args.showFormationColumns && (
+                      {(args.showFormationColumns || args.showFormationMarkers) && (
                         <Distance min={0} max={40000} onDemand>
-                          <WellboreFormationColumn stratColumnId={stratColumnId} />
+                          {args.showFormationColumns && <WellboreFormationColumn stratColumnId={stratColumnId} />}
+                          {args.showFormationMarkers && (
+                            <FormationMarkers
+                              stratColumnId={stratColumnId}
+                              radialSegments={16}
+                              baseRadius={args.sizeMultiplier * 0.4}
+                              showAnnotations={isActiveWell}
+                            />
+                          )}
+                          {args.showPerforations && <Perforations renderOrder={10} sizeMultiplier={args.sizeMultiplier} />}
                         </Distance>
                       )}
                       {args.showCasingAndCompletion && (
@@ -336,17 +346,10 @@ const Example = (args: ExampleProps) => {
                         </Distance>
                       )}
                     </WellboreBounds>
-                    {args.showPerforations && <Perforations renderOrder={10} sizeMultiplier={args.sizeMultiplier} />}
+
                     {(args.showDepthMarkers && isActiveWell) && <DepthMarkers interval={args.depthMarkerInterval} priority={10} depthReferencePoint='MSL' />}
 
-                    {args.showFormationMarkers && (
-                      <FormationMarkers
-                        stratColumnId={stratColumnId}
-                        radialSegments={16}
-                        baseRadius={args.sizeMultiplier * 0.4}
-                        showAnnotations={isActiveWell}
-                      />
-                    )}
+
                     {/* {isSelected && <PositionMarkers radius={20} interval={100} opacity={1} />} */}
                     <WellboreLabel color="cyan" size={16} />
                   </Wellbore>

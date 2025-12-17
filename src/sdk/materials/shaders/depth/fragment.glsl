@@ -7,25 +7,26 @@ uniform float cameraFar;
 uniform float cameraNear;
 
 float linearizeDepth(in float depth) {
-    float a = cameraFar / (cameraFar - cameraNear);
+  float a = cameraFar / (cameraFar - cameraNear);
   float b = cameraFar * cameraNear / (cameraNear - cameraFar);
+
   return a + b / depth;
 }
 
-float reconstructDepth(const in float depth) {
-  return pow(2.0, depth * log2(cameraFar + 1.0)) - 1.0;
+float linearizeLogDepth(in float depth) {
+  float z = exp2(depth * log2(cameraFar + 1.0)) - 1.0;
+  return linearizeDepth(z);
 }
 
-float getDepth(vec2 uv) {
-  float depth = texture2D(depthTexture, uv).x;
-  #if defined( USE_LOGDEPTHBUF )
-      return linearizeDepth(reconstructDepth(depth));
-  #else
-      return texture2D(depthTexture, uv).x;
-  #endif
-}
-
-// may need to also include check if camera was persepective camera
+// assumes perspective camera
 void main() {
-	gl_FragColor = packDepthToRGBA(getDepth(vUv));
+  float depth = texture(depthTexture, vUv).r;
+  float viewZ;
+  #if defined( USE_LOGARITHMIC_DEPTH_BUFFER ) || defined( USE_LOGDEPTHBUF ) // USE_LOGDEPTHBUF used to support THREE version <= 0.179 
+  viewZ = linearizeLogDepth(depth);
+  #else
+  viewZ = depth;
+  #endif
+
+  gl_FragColor = packDepthToRGBA(viewZ);
 }

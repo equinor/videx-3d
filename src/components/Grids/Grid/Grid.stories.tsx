@@ -5,7 +5,7 @@ import { TextureLoader } from 'three'
 import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
 import { Grid, GridProps } from './Grid'
 
-const GridObjects = ({ units = 1 }: { units?: number}) => (
+const GridObjects = ({ units = 1 }: { units?: number }) => (
   <>
     <axesHelper args={[units]} />
     <mesh position={[350, 0, -500]} visible={true}>
@@ -342,7 +342,7 @@ export const Projections: Story = {
     subDivisions: 10,
     gridLineWidth: 0.01,
     enableProjection: true,
-    projectionColor: '#789'
+    projectionColor: '#789',
   },
   render: (args: GridProps) => (
     <group>

@@ -5,8 +5,6 @@ import { GeneratorRegistry } from '../sdk/data/GeneratorRegistry'
 import { DataContext } from './DataContext'
 import { GeneratorsContext } from './GeneratorsContext'
 
-// TODO: Should I create a controller class that contains the queue logic?
-
 /**
  * GeneratorsProvider props
  * @expand
@@ -46,7 +44,7 @@ function isRemoteRegistry(registry: GeneratorRegistry | Remote<GeneratorRegistry
 export const GeneratorsProvider = ({ registry, concurrency = Infinity, signal, children }: GeneratorsProviderProps) => {
   const [isReady, setIsReady] = useState(false)
   const queue = useRef<PQueue>(new PQueue({ concurrency }))
-  const suspended = useRef(false);
+  const suspended = useRef(false)
 
   const dataContext = useContext(DataContext)
 

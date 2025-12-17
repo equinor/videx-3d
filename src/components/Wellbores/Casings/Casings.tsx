@@ -2,7 +2,6 @@ import { ForwardedRef, forwardRef, ReactElement, useEffect, useMemo, useState } 
 import { BufferGeometry, Group, Material, MeshStandardMaterial, Object3D } from 'three'
 import { useGenerator } from '../../../hooks/useGenerator'
 import { useWellboreContext } from '../../../hooks/useWellboreContext'
-import { createLayers, LAYERS } from '../../../layers/layers'
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing'
 import { CommonComponentProps, CustomMaterialProps } from '../../common'
 import { casings, CasingsGeneratorResponse } from './casings-defs'
@@ -41,7 +40,7 @@ export const Casings = forwardRef(({
   name,
   userData,
   renderOrder,
-  layers = createLayers(LAYERS.OCCLUDER),
+  layers,
   position,
   visible,
   castShadow,

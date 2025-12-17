@@ -1,9 +1,4 @@
-import {
-  Clock,
-  PerspectiveCamera,
-  Vector2,
-  Vector3,
-} from 'three'
+import { Clock, PerspectiveCamera, Vector3 } from 'three'
 
 import RBush from 'rbush'
 import { PI, Vec2, Vec3, clamp, edgeOfRectangle, mixVec2 } from '../../sdk'
@@ -36,7 +31,7 @@ const distantTree = new RBush() // used for distant annotations
 function calculateLabelPosition(
   instance: AnnotationInstance,
   positionSlot: number,
-  size: Vector2,
+  size: Vec2
 ) {
   const scale = instance.state.scaleFactor!
   const positionOptions = labelAnglesMap[instance.state.quadrant!]
@@ -54,9 +49,9 @@ function calculateLabelPosition(
   const offset = instance.layer.labelOffset! * scale
 
   const anchorPosition: Vec2 = [
-    (instance.state.screenPosition![0] * 0.5 + 0.5) * size.x +
+    (instance.state.screenPosition![0] * 0.5 + 0.5) * size[0] +
       direction[0] * offset,
-    (-instance.state.screenPosition![1] * 0.5 + 0.5) * size.y +
+    (-instance.state.screenPosition![1] * 0.5 + 0.5) * size[1] +
       direction[1] * offset,
   ]
 
@@ -248,20 +243,19 @@ export function preprocessInstances(
  * OCCLUSION TEST
  */
 export async function occlustionTestIntstances(
-  candidates: { instance: AnnotationInstance, position: Vec3 }[],
-  depthBuffer: Float32Array,
+  candidates: { instance: AnnotationInstance; position: Vec3 }[],
+  depthBuffer: Uint8Array,
   depthBufferWidth: number,
-  depthBufferHeight: number,
+  depthBufferHeight: number
 ) {
-  candidates.forEach(candidate => {
-    
+  candidates.forEach((candidate) => {
     const isOccluded = occlusionTest(
       candidate.position,
       depthBufferWidth,
       depthBufferHeight,
       depthBuffer
     )
-    
+
     if (!candidate.instance.state.occluded && isOccluded) {
       candidate.instance.state.kill = true
     }
@@ -274,7 +268,7 @@ export async function occlustionTestIntstances(
  */
 export function postProcessInstances(
   instances: AnnotationInstance[],
-  size: Vector2,
+  size: Vec2
 ) {
   nearTree.clear()
   distantTree.clear()
@@ -359,26 +353,28 @@ export function postProcessInstances(
       instance.state.zIndex = instance.state.labelHovered
         ? 1000000
         : instance.state.kill
-          ? 0
-          : Math.round((1 / instance.state.distance!) * 100000)
+        ? 0
+        : Math.round((1 / instance.state.distance!) * 100000)
       instance.state.opacity =
         Math.max(0.75, instance.state.scaleFactor!) * instance.state.health
 
       if (instance.state.inTransition && instance.state.prevLabelPosition) {
-        [x, y] = mixVec2(
+        ;[x, y] = mixVec2(
           instance.state.prevLabelPosition,
           instance.state.labelPosition!,
           instance.state.transitionTime
         )
       } else {
-        [x, y] = instance.state.labelPosition!
+        ;[x, y] = instance.state.labelPosition!
       }
 
       instance.state.labelX = x - instance.state.scaledOffset![0]
       instance.state.labelY = y - instance.state.scaledOffset![1]
 
       if (element) {
-        _transform = `translate(${instance.state.labelX}px,${instance.state.labelY}px) scale(${instance.state.scaleFactor!})`
+        _transform = `translate(${instance.state.labelX}px,${
+          instance.state.labelY
+        }px) scale(${instance.state.scaleFactor!})`
         if (_transform !== instance.state._transform) {
           instance.state._transform = _transform
           instance.state._needsUpdate = true

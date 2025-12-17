@@ -1,5 +1,6 @@
 import { PerspectiveCamera, Vector3 } from 'three'
 import { normalizeVec2, PI, PI2, PI4, PI8, subVec2, Vec3 } from '../../sdk'
+import { unpackRGBAToDepth } from '../../sdk/utils/packing'
 
 const position = new Vector3()
 
@@ -56,11 +57,20 @@ export const occlusionTest = (
   ndc: Vec3,
   depthBufferWidth: number,
   depthBufferHeight: number,
-  depthBuffer: Float32Array
+  depthBuffer: Uint8Array
 ) => {
   const c = Math.floor((ndc[0] * 0.5 + 0.5) * depthBufferWidth)
   const r = Math.floor((ndc[1] * 0.5 + 0.5) * depthBufferHeight)
-  const depth = depthBuffer[r * depthBufferWidth + c] as number
+  const i = (r * depthBufferWidth + c) * 4
+  const depth =
+    unpackRGBAToDepth(
+      depthBuffer[i],
+      depthBuffer[i + 1],
+      depthBuffer[i + 2],
+      depthBuffer[i + 3]
+    ) *
+      2 -
+    1
 
   return depth > -1 && depth < ndc[2]
 }

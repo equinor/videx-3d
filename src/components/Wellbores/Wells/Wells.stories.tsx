@@ -105,16 +105,16 @@ const Wrapper = () => {
                   <Wellbore
                     id={wellbore.id}
                     fromMsl={fromMsl}
-                    onPointerClick={async (event) => {
+                    onPointerClick={(event) => {
                       setSelected(event.ref)
                       dispatchEvent(new WellboreSelectedEvent({ id: event.ref, position: event.position, flyTo: !event.keys.ctrlKey }))
                     }}
-                    onPointerEnter={async (event) => {
+                    onPointerEnter={(event) => {
                       if (!isSelected) {
                         highlighter.highlight(event.target)
                       }
                     }}
-                    onPointerLeave={async () => {
+                    onPointerLeave={() => {
                       highlighter.removeAll()
                     }}
                   >

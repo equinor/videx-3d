@@ -41,8 +41,19 @@ const pos = new Vector3()
  * 
  * @group Components
  */
-export const CameraTargetMarker = ({ radius = 3, opacity = 0.1, color, fixedX, fixedY, fixedZ, renderOrder, depthTest = false, depthWrite = false, children }: PropsWithChildren<CameraTargetMarkerProps>) => {
-  const { controls } = useThree()
+export const CameraTargetMarker = ({
+  radius = 3,
+  opacity = 0.1,
+  color,
+  fixedX,
+  fixedY,
+  fixedZ,
+  renderOrder,
+  depthTest = false,
+  depthWrite = false,
+  children,
+}: PropsWithChildren<CameraTargetMarkerProps>) => {
+  const controls = useThree(state => state.controls)
   const ref = useRef<Group>(null)
 
   useEffect(() => {

@@ -113,7 +113,7 @@ export const Shoes = forwardRef(({
 
   return (
     <group ref={ref}>
-      {data && (
+      {(data && data.transformations.length) && (
         <Symbols
           name={name}
           userData={userData}

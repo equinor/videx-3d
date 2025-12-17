@@ -75,7 +75,7 @@ export const Surface = ({
   userData,
   receiveShadow,
   castShadow,
-  layers = createLayers(LAYERS.OCCLUDER),
+  layers,
   position,
   renderOrder,
   visible = true,
@@ -141,7 +141,7 @@ export const Surface = ({
       if (onPointerMove) handlers.move = onPointerMove
 
       if (Object.keys(handlers).length) {
-        unregister = eventHandler.register(ref.current, handlers, meta.id)
+        unregister = eventHandler.register({ object: ref.current, handlers, ref: meta.id })
       }
     }
 

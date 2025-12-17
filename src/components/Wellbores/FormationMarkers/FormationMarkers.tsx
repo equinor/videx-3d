@@ -125,7 +125,7 @@ export const FormationMarkers = forwardRef(({
   }, [data, addAnnotations, showAnnotations])
 
   return (
-    <group ref={ref}>
+    <group ref={ref} layers={layers}>
       {data && (
         <Symbols
           name={name}
