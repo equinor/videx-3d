@@ -10,7 +10,7 @@ updates:
       time: "02:00"
       timezone: Europe/Oslo
     commit-message:
-      prefix: "[github-actions] "
+      prefix: fix(github-actions)
 
   - package-ecosystem: npm
     directory: /
@@ -28,4 +28,4 @@ updates:
         patterns:
           - "*"
     commit-message:
-      prefix: "[npm] "
+      prefix: fix(npm)
