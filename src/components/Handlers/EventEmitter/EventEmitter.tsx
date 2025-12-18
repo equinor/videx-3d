@@ -417,7 +417,7 @@ export const EventEmitter = ({
       }
 
       if (eventState.needCheckOnMove && !eventState.buttonDown) {
-        checkOnMove(keys)//.finally(() => console.timeEnd('move'))
+        checkOnMove(keys)
       }
     }
 
@@ -493,14 +493,12 @@ export const EventEmitter = ({
     gl.domElement.addEventListener('pointerdown', onPointerDown, { passive: true, capture: true })
     gl.domElement.addEventListener('pointerup', onPointerUp, { passive: true, capture: true })
     gl.domElement.addEventListener('wheel', onWheel, { passive: true, capture: true })
-    //gl.domElement.addEventListener('pointercancel', onCancel, { passive: true, capture: true })
     gl.domElement.addEventListener('pointerleave', onCancel, { passive: true, capture: true })
     return () => {
       gl.domElement.removeEventListener('pointermove', onPointerMove)
       gl.domElement.removeEventListener('pointerdown', onPointerDown)
       gl.domElement.removeEventListener('pointerup', onPointerUp)
       gl.domElement.removeEventListener('wheel', onWheel)
-      //gl.domElement.removeEventListener('pointercancel', onCancel)
       gl.domElement.removeEventListener('pointerleave', onCancel)
     }
   }, [eventState, checkOnMove, checkOnClick, gl, camera])

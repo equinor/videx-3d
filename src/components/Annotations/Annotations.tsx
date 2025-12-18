@@ -116,7 +116,7 @@ export const Annotations = ({ maxVisible = 100, depthBufferSize = 512, children 
       depthTexture,
       generateMipmaps: false,
       stencilBuffer: false,
-      samples: msaa || 0
+      samples: msaa
     })
     return pbo
   }, [])

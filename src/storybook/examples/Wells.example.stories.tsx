@@ -250,9 +250,6 @@ const Example = (args: ExampleProps) => {
                 dispatchEvent(new CameraFocusAtPointEvent({ point: e.position, distance: 1000 }))
               }
             }}
-          // onPointerMove={(e) => {
-          //   console.log(e.position && e.position[1])
-          // }}
           />
         </UtmPosition>
         )}

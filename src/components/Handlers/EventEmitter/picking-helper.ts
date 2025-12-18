@@ -149,8 +149,7 @@ export class PickingHelper {
     const prevLayers = camera.layers.mask
     camera.layers.disableAll()
     camera.layers.set(LAYERS.EMITTER)
-    //console.timeEnd('pick setup')
-    //console.time('render')
+
     renderer.setRenderTarget(this._renderTarget)
     renderer.clear()
     renderer.render(scene, camera)
