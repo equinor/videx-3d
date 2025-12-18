@@ -1,5 +1,14 @@
 # Changelog
 
+## [5.0.2-beta](https://github.com/equinor/videx-3d/compare/v5.0.1-beta...v5.0.2-beta) (2025-12-18)
+
+
+### Bug Fixes
+
+* **github-actions:** bump codecov/codecov-action from 5.5.1 to 5.5.2 ([#104](https://github.com/equinor/videx-3d/issues/104)) ([2efd100](https://github.com/equinor/videx-3d/commit/2efd1004461c4b5f2dd00773898ff3c81ba5cc10))
+### Improvements
+* Further optimizations and improvements to annotation depth testing and emitter GPU picking.
+
 ## [5.0.1-beta](https://github.com/equinor/videx-3d/compare/v5.0.0-beta...v5.0.1-beta) (2025-12-09)
 
 
