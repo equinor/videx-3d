@@ -1,22 +1,28 @@
 import { useFrame, useThree } from '@react-three/fiber'
-import { ReactNode, useEffect, useMemo, useRef } from 'react'
+import { ReactNode, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   CanvasTexture,
   createCanvasElement,
+  DepthTexture,
   Mesh,
   MeshBasicMaterial,
   OrthographicCamera,
   PerspectiveCamera,
   PlaneGeometry,
+  RGBAFormat,
   Scene,
-  Vector2,
+  SRGBColorSpace,
+  UnsignedByteType,
   Vector3,
+  WebGLRenderTarget
 } from 'three'
-import { getDepthBuffer, mixVec2, normalizeVec3, TAU } from '../../sdk'
+import { DepthReadMaterial, mixVec2, normalizeVec3, TAU, Vec2 } from '../../sdk'
 import { AnnotationsHTML } from './AnnotationsHMTL'
 import { useAnnotationsState } from './annotations-state'
 import { occlustionTestIntstances, postProcessInstances, preprocessInstances, updateInstanceDOMElements } from './update-annotations'
+
+const msaa = 4
 
 /**
  * Annotations provider component props
@@ -24,27 +30,24 @@ import { occlustionTestIntstances, postProcessInstances, preprocessInstances, up
  */
 export type AnnotationsProviderProps = {
   maxVisible?: number,
+  depthBufferSize?: number | [number, number],
   children?: ReactNode
 }
 
 type PostData = {
   postCamera: OrthographicCamera,
   postScene: Scene,
+  postQuad: Mesh,
   postMaterial: MeshBasicMaterial,
-  size: Vector2,
   texture: CanvasTexture | null,
   ctx: CanvasRenderingContext2D,
 }
 
-const depthBufferWidth = 512
-const depthBufferHeight = 512
-
 const position = new Vector3()
-const size = new Vector2()
 
 let x1: number, x2: number, y1: number, y2: number
 
-const id = `annotations_root`;
+const id = `annotations_root`
 
 /**
  * The Annotations component is special provider component responsible for managing 
@@ -77,30 +80,85 @@ const id = `annotations_root`;
  * 
  * @group Components
  */
-export const Annotations = ({ maxVisible = 100, children }: AnnotationsProviderProps) => {
-  const { gl: renderer } = useThree()
 
+
+const depthReadMaterial = new DepthReadMaterial()
+const renderMaterial = new MeshBasicMaterial()
+
+export const Annotations = ({ maxVisible = 100, depthBufferSize = 512, children }: AnnotationsProviderProps) => {
+  const renderer = useThree(state => state.gl)
+  const viewport = useThree(state => state.viewport)
+  const renderSize = useThree(state => state.size)
   const instances = useAnnotationsState(state => state.instances)
-  const depthBufferPending = useRef<boolean>(false)
+
   const dispose = useAnnotationsState(state => state.clear)
+
+  const depthBufferRead = useRef(false)
+
+  const size = useMemo(() => {
+    const size: Vec2 = [
+      renderSize.width,
+      renderSize.height,
+    ]
+    return size
+  }, [renderSize])
+
+  const renderTarget = useMemo(() => {
+    const w = 0
+    const h = 0
+    const depthTexture = new DepthTexture(w, h)
+
+    const pbo = new WebGLRenderTarget(w, h, {
+      colorSpace: SRGBColorSpace,
+      format: RGBAFormat,
+      type: UnsignedByteType,
+      depthBuffer: true,
+      depthTexture,
+      generateMipmaps: false,
+      stencilBuffer: false,
+      samples: msaa
+    })
+    return pbo
+  }, [])
+
+  const [depthBufferWidth, depthBufferHeight] = useMemo(() =>
+    Array.isArray(depthBufferSize) ? depthBufferSize : [depthBufferSize, depthBufferSize]
+    , [depthBufferSize])
+
+  const { renderTargetDepth, depthBuffer } = useMemo(() => {
+    const pbo = new WebGLRenderTarget(depthBufferWidth, depthBufferHeight, {
+      type: UnsignedByteType,
+      format: RGBAFormat,
+      generateMipmaps: false,
+      stencilBuffer: false,
+      depthBuffer: false
+    })
+    const buffer = new Uint8Array(depthBufferWidth * depthBufferHeight * 4)
+    return { renderTargetDepth: pbo, depthBuffer: buffer }
+  }, [depthBufferWidth, depthBufferHeight])
+
+  useLayoutEffect(() => {
+    renderTarget.setSize(size[0] * viewport.dpr, size[1] * viewport.dpr)
+  }, [size, renderTarget, renderer, viewport])
 
   const post = useMemo<PostData | null>(() => {
     const ctx = createCanvasElement().getContext('2d')
     if (!ctx) return null
 
     const postCamera = new OrthographicCamera(- 1, 1, 1, - 1, 0, 1)
-    const postMaterial = new MeshBasicMaterial({ transparent: true })
+    const postMaterial = new MeshBasicMaterial({ transparent: true, toneMapped: false })
 
     const postScene = new Scene()
     const postPlane = new PlaneGeometry(2, 2)
     const postQuad = new Mesh(postPlane, postMaterial)
+
     postScene.add(postQuad)
 
     return {
       postCamera,
       postScene,
+      postQuad,
       postMaterial,
-      size: new Vector2(),
       texture: null,
       ctx,
     }
@@ -110,9 +168,9 @@ export const Annotations = ({ maxVisible = 100, children }: AnnotationsProviderP
     const parent = renderer.domElement.parentElement
 
     if (!parent) throw Error('Unable to create root!')
-    
+
     parent.querySelector(`#${id}`)?.remove() // remove any existing annotations container
-  
+
     const container = document.createElement('div')
     container.setAttribute('id', id)
     container.setAttribute('style', 'position:absolute;top:0;left:0;z-index: 1;pointer-events:none;padding:0;width:100%;height:100%;user-select:none')
@@ -129,16 +187,31 @@ export const Annotations = ({ maxVisible = 100, children }: AnnotationsProviderP
     }
   }, [root, dispose])
 
-
-  useFrame(({ gl, camera, scene, clock, pointer }) => {
+  useFrame(({ camera, scene, clock, pointer }) => {
     // take over the render loop so we can ensure we render on top of the last frame
-    gl.getSize(size)
-    gl.clear()
-    gl.render(scene, camera)
-
     if (post) {
-      const { postCamera, postScene, ctx, postMaterial } = post
-      ctx.clearRect(0, 0, size.x, size.y)
+      // render the scene to color and depth textures
+      renderer.setRenderTarget(renderTarget)
+      renderer.clear()
+      renderer.render(scene, camera)
+
+      const { postCamera, postScene, ctx, postMaterial, postQuad } = post
+
+      // render the depth texture to a readable rendertarget
+      depthReadMaterial.uniforms.depthTexture.value = renderTarget.depthTexture
+      depthReadMaterial.uniforms.cameraNear.value = camera.near
+      depthReadMaterial.uniforms.cameraFar.value = camera.far
+      postQuad.material = depthReadMaterial
+      renderer.setRenderTarget(renderTargetDepth)
+      renderer.clear()
+      renderer.render(postScene, postCamera)
+
+      // render the color texture to the framebuffer
+      postQuad.material = renderMaterial
+      renderMaterial.map = renderTarget.texture
+      renderer.setRenderTarget(null)
+      renderer.clear()
+      renderer.render(postScene, postCamera)
 
       if (!instances.length) return
 
@@ -162,73 +235,74 @@ export const Annotations = ({ maxVisible = 100, children }: AnnotationsProviderP
         size,
       )
 
-      // occlusion test
-      if (!depthBufferPending.current) {
-        requestAnimationFrame(() => {
-          depthBufferPending.current = true
-          const candidates = inViewSpace.map(instance => {
-            const thresholdRadius = instance.layer.anchorOcclusionRadius!
-            const direction = normalizeVec3([
-              camera.position.x - instance.annotation.position[0],
-              camera.position.y - instance.annotation.position[1],
-              camera.position.z - instance.annotation.position[2],
-            ])
-            position.set(
-              instance.annotation.position[0] + direction[0] * thresholdRadius,
-              instance.annotation.position[1] + direction[1] * thresholdRadius,
-              instance.annotation.position[2] + direction[2] * thresholdRadius
-            )
+      if (!depthBufferRead.current) {
+        depthBufferRead.current = true
 
-            position.project(camera)
+        // occlusion test
+        const candidates = inViewSpace.map(instance => {
+          const thresholdRadius = instance.layer.anchorOcclusionRadius!
+          const direction = normalizeVec3([
+            camera.position.x - instance.annotation.position[0],
+            camera.position.y - instance.annotation.position[1],
+            camera.position.z - instance.annotation.position[2],
+          ])
+          position.set(
+            instance.annotation.position[0] + direction[0] * thresholdRadius,
+            instance.annotation.position[1] + direction[1] * thresholdRadius,
+            instance.annotation.position[2] + direction[2] * thresholdRadius
+          )
 
-            return { instance, position: position.toArray() }
-          })
+          position.project(camera)
 
-          getDepthBuffer(
-            gl,
-            scene,
-            camera,
-            depthBufferWidth,
-            depthBufferHeight,
-          ).then(buffer => {
-            if (buffer) {
-              return occlustionTestIntstances(
-                candidates,
-                buffer,
-                depthBufferWidth,
-                depthBufferHeight,
-              )
-            }
-          }).finally(() => {
-            depthBufferPending.current = false
-          })
+          return { instance, position: position.toArray() }
         })
 
+        if (candidates.length) {
+          renderer.readRenderTargetPixelsAsync(
+            renderTargetDepth,
+            0,
+            0,
+            depthBufferWidth,
+            depthBufferHeight,
+            depthBuffer
+          ).then(buffer => {
+            occlustionTestIntstances(
+              candidates,
+              buffer as Uint8Array,
+              depthBufferWidth,
+              depthBufferHeight,
+            )
+          }).finally(() => {
+            depthBufferRead.current = false
+          })
+        }
       }
 
 
       updateInstanceDOMElements(instances)
 
-      if (post.texture === null || post.texture.image.width !== size.x || post.texture.image.height !== size.y) {
-        ctx.canvas.width = size.x
-        ctx.canvas.height = size.y
+      if (post.texture === null || post.texture.image.width !== size[0] || post.texture.image.height !== size[1]) {
+        ctx.canvas.width = size[0]
+        ctx.canvas.height = size[1]
         post.texture?.dispose()
         post.texture = new CanvasTexture(ctx.canvas)
-        postMaterial.map = post.texture
       }
 
       const cursor = [
-        (pointer.x * 0.5 + 0.5) * size.x,
-        (-pointer.y * 0.5 + 0.5) * size.y,
+        (pointer.x * 0.5 + 0.5) * size[0],
+        (-pointer.y * 0.5 + 0.5) * size[1],
       ]
+
+      // prepare the canvas context
+      ctx.clearRect(0, 0, size[0], size[1])
 
       // draw overlay to canvas
       inViewSpace
         .filter(d => !d.state.occluded && !d.state.capped)
         .sort((a, b) => b.state.distance - a.state.distance)
         .forEach(instance => {
-          x1 = (instance.state.screenPosition[0] * 0.5 + 0.5) * size.x
-          y1 = (-instance.state.screenPosition[1] * 0.5 + 0.5) * size.y
+          x1 = (instance.state.screenPosition[0] * 0.5 + 0.5) * size[0]
+          y1 = (-instance.state.screenPosition[1] * 0.5 + 0.5) * size[1]
 
 
           let radius = instance.layer.anchorSize * instance.state.scaleFactor!
@@ -295,8 +369,11 @@ export const Annotations = ({ maxVisible = 100, children }: AnnotationsProviderP
         })
 
       post.texture.needsUpdate = true
-      // finally render the overlay
-      gl.render(postScene, postCamera)
+      postMaterial.map = post.texture
+      postQuad.material = postMaterial
+
+      // finally render the overlay to the framebuffer     
+      renderer.render(postScene, postCamera)
     }
 
   }, 1)

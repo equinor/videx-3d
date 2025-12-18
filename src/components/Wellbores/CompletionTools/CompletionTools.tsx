@@ -2,7 +2,6 @@ import { ReactElement, useEffect, useMemo, useState } from 'react'
 import { BufferGeometry, Material, MeshLambertMaterial, MeshStandardMaterial, Object3D } from 'three'
 import { useGenerator } from '../../../hooks/useGenerator'
 import { useWellboreContext } from '../../../hooks/useWellboreContext'
-import { createLayers, LAYERS } from '../../../layers/layers'
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing'
 import { CommonComponentProps, CustomMaterialProps } from '../../common'
 import { completionTools, CompletionToolsGeneratorResponse } from './completion-tools-defs'
@@ -40,7 +39,7 @@ export const CompletionTools = ({
   name,
   userData,
   renderOrder,
-  layers = createLayers(LAYERS.OCCLUDER),
+  layers,
   position,
   visible,
   castShadow,

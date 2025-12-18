@@ -1,13 +1,18 @@
-import { WellboreAddedEvent, wellboreAddedEventType, WellboreRemovedEvent, wellboreRemovedEventType } from '../../events/wellbore-events'
+import { Object3D, Vector3 } from 'three'
+import {
+  WellboreAddedEvent,
+  wellboreAddedEventType,
+  WellboreRemovedEvent,
+  wellboreRemovedEventType,
+} from '../../events/wellbore-events'
 import { Vec3 } from '../types/common'
 
 export type WellboreManagerRecord = {
-  wellboreId: string,
-  objectId: number,
-  objectUuid: string,
-  position: Vec3,
+  wellboreId: string
+  object: Object3D
 }
 
+const position = new Vector3()
 export class WellboreManager {
   private map: Map<string, WellboreManagerRecord> = new Map()
 
@@ -22,9 +27,7 @@ export class WellboreManager {
   private onWellboreAdded(event: WellboreAddedEvent) {
     this.map.set(event.detail.id, {
       wellboreId: event.detail.id,
-      position: event.detail.position,
-      objectId: event.detail.objectId,
-      objectUuid: event.detail.objectUuid,
+      object: event.detail.object,
     })
   }
 
@@ -33,11 +36,14 @@ export class WellboreManager {
   }
 
   getInfo(id: string) {
-    return this.map.get(id)
-  }
-
-  getAll() {
-    return this.map.values()
+    const record = this.map.get(id)
+    if (record) {
+      record.object.getWorldPosition(position)
+      return {
+        ...record,
+        position: position.toArray() as Vec3,
+      }
+    }
   }
 
   dispose() {

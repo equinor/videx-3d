@@ -223,13 +223,15 @@ export const Grid = ({
     uRulerLineWidth: new Uniform(rulerLineWidth || 1),
     uRulerOpacity: new Uniform(rulerOpacity || 0.5),
     uProjectionTexture: new Uniform<Texture | undefined>(undefined),
-    uProjectionColor: new Uniform(new Color(projectionColor || "#456")),
+    uProjectionColor: new Uniform(new Color(projectionColor || "rgba(255, 255, 255, 1)")),
     uTexture: new Uniform<Texture | undefined>(undefined),
     uTextureMix: new Uniform(1),
   })
 
-
-  const { controls, camera, gl, scene } = useThree()
+  const controls = useThree(state => state.controls)
+  const camera = useThree(state => state.camera)
+  const gl = useThree(state => state.gl)
+  const scene = useThree(state => state.scene)
 
   const planeOffsetPosition = useMemo<Vec3>(() => [
     (plane === 'zy' ? planeOffset : 0) + position[0],
@@ -424,20 +426,23 @@ export const Grid = ({
         minFilter: LinearFilter,
         magFilter: LinearFilter,
         type: HalfFloatType,
+        samples: 4
       })
       uniforms.current.uProjectionTexture.value = renderTarget.texture
       const takeSnapShot = () => {
         if (renderTarget && containerRef.current && projectionCameraRef.current) {
           const projectionCamera = projectionCameraRef.current
           const prevTarget = gl.getRenderTarget()
-
+          const prevClearAlpha = gl.getClearAlpha()
           gl.setRenderTarget(renderTarget)
+          gl.setClearAlpha(0)
           scene.overrideMaterial = projectionMaterial
           containerRef.current.visible = false
           gl.clear()
           gl.render(scene, projectionCamera)
           scene.overrideMaterial = null
           gl.setRenderTarget(prevTarget)
+          gl.setClearAlpha(prevClearAlpha)
           containerRef.current.visible = true
         }
       }

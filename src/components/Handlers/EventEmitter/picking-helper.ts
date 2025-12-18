@@ -1,9 +1,10 @@
 import {
-  DoubleSide,
+  DepthTexture,
   InstancedMesh,
-  MeshDepthMaterial,
+  Mesh,
+  OrthographicCamera,
   PerspectiveCamera,
-  RGBADepthPacking,
+  PlaneGeometry,
   RGBAFormat,
   Scene,
   SRGBColorSpace,
@@ -13,38 +14,27 @@ import {
   WebGLRenderTarget,
 } from 'three'
 import { LAYERS } from '../../../layers/layers'
-import { Vec2, Vec3 } from '../../../sdk'
+import {
+  DepthReadMaterial,
+  normalizedDeviceToScreen,
+  screenToNormalizedDevice,
+  Vec2,
+  Vec3,
+} from '../../../sdk'
 import { unpackRGBAToDepth } from '../../../sdk/utils/packing'
-import { Emitter, ObjectMap, ObjectMapEntry } from './EventEmitter'
+import { Emitter, ObjectMapEntry } from './EventEmitter'
 
 const v = new Vector3()
-
-const depthMaterial = new MeshDepthMaterial({
-  depthPacking: RGBADepthPacking,
-  precision: 'highp',
-  side: DoubleSide,
-})
-
 const defaults = {
   radius: 3,
 }
 
-const screenToNormalizedDevice = (pos: Vec2, width = 1, height = 1): Vec2 => [
-  (pos[0] / width) * 2 - 1,
-  -(pos[1] / height) * 2 + 1,
-]
-
-const normalizedDeviceToScreen = (pos: Vec2, width = 1, height = 1): Vec2 => [
-  ((pos[0] + 1) / 2) * width,
-  ((1 - pos[1]) / 2) * height,
-]
-
 export type PickResult =
   | {
-      id: number
-      offset: Vec2 | null
       match: ObjectMapEntry | null
       position: Vec3 | null
+      point: Vec2
+      offset: Vec2 | null
     }
   | false
 
@@ -56,15 +46,28 @@ export class PickingHelper {
   private _size: number
   private _radius: number
   private _renderTarget: WebGLRenderTarget
+  private _depthTexture: DepthTexture
   private _renderTargetDepth: WebGLRenderTarget
   private _pixelBuffer: Uint8Array
   private _pixelDepthBuffer: Uint8Array
-  private _currentId: number = 0
+  private _postCamera: OrthographicCamera
+  private _postMaterial: DepthReadMaterial
+  private _postScene: Scene
+  private _postPlane: PlaneGeometry
+  private _postQuad: Mesh
+  private _renderState = {
+    screen: [0, 0] as Vec2,
+    point: [0, 0] as Vec2,
+    w: 0,
+    h: 0,
+  }
 
   constructor(options = {}) {
     const { radius } = { ...defaults, ...options }
     this._radius = Math.max(Math.min(10, radius), 0)
     this._size = 2 * this._radius + 1
+
+    this._depthTexture = new DepthTexture(this._size, this._size)
 
     this._renderTarget = new WebGLRenderTarget(this._size, this._size, {
       colorSpace: SRGBColorSpace,
@@ -72,28 +75,40 @@ export class PickingHelper {
       type: UnsignedByteType,
       generateMipmaps: false,
       stencilBuffer: false,
+      depthBuffer: true,
+      depthTexture: this._depthTexture,
     })
 
     this._renderTargetDepth = new WebGLRenderTarget(this._size, this._size, {
       type: UnsignedByteType,
+      format: RGBAFormat,
+      depthBuffer: false,
+      stencilBuffer: false,
     })
+    const bufferSize = 4 * this._size * this._size
+    this._pixelBuffer = new Uint8Array(bufferSize)
+    this._pixelDepthBuffer = new Uint8Array(bufferSize)
 
-    this._pixelBuffer = new Uint8Array(4 * this._size ** 2)
-    this._pixelDepthBuffer = new Uint8Array(4)
+    this._postCamera = new OrthographicCamera(-1, 1, 1, -1, 0, 1)
+    this._postMaterial = new DepthReadMaterial()
+
+    this._postScene = new Scene()
+    this._postScene.matrixAutoUpdate = false
+    this._postPlane = new PlaneGeometry(2, 2)
+    this._postQuad = new Mesh(this._postPlane, this._postMaterial)
+
+    this._postScene.add(this._postQuad)
+
+    this._postMaterial.uniforms.depthTexture.value = this._depthTexture
   }
 
-  async pick(
+  render(
     point: Vec2,
     renderer: WebGLRenderer,
     scene: Scene,
     camera: PerspectiveCamera,
-    emitters: Map<number, Emitter>,
-    objectMap: ObjectMap,
-    force: boolean = true
-  ): Promise<PickResult> {
-    const id = (this._currentId + 1) % 10000
-    this._currentId = id
-
+    emitters: Map<number, Emitter>
+  ) {
     const w = renderer.domElement.clientWidth //getContext().drawingBufferWidth
     const h = renderer.domElement.clientHeight //getContext().drawingBufferHeight
 
@@ -102,19 +117,31 @@ export class PickingHelper {
     const x = screen[0] - this._radius
     const y = screen[1] - this._radius
 
+    this._renderState.w = w
+    this._renderState.h = h
+    this._renderState.point = point
+    this._renderState.screen = screen
+
     emitters.forEach((emitter) => {
-      const material = emitter.source.material
-      emitter.source.material = emitter.material
-      emitter.material = material
+      if (emitter.source && emitter.source.visible) {
+        const sourceMaterial = emitter.source.material
+        emitter.source.material = emitter.material
+        emitter.sourceMaterial = sourceMaterial
+      }
 
       if (emitter.instanced) {
         const instanced = emitter.source as InstancedMesh
-        const colors = new Float32Array(instanced.instanceColor!.array)
-        instanced.instanceColor!.set(emitter.instanceColor!)
-        instanced.instanceColor!.needsUpdate = true
-        emitter.instanceColor = colors
+        const sourceAttribute = instanced.instanceColor
+        instanced.instanceColor = emitter.instanceColor!
+        emitter.sourceInstanceColor = sourceAttribute || undefined
       }
     })
+
+    const prevSortObjects = renderer.sortObjects
+    const prevmatrixAutoUpdate = scene.matrixAutoUpdate
+
+    renderer.sortObjects = false
+    scene.matrixAutoUpdate = false
 
     // set the view offset to represent just the patch we need to render under the mouse
     camera.setViewOffset(w, h, x, y, this._size, this._size)
@@ -127,31 +154,19 @@ export class PickingHelper {
     renderer.clear()
     renderer.render(scene, camera)
 
-    // render depth
-    scene.overrideMaterial = depthMaterial
-    renderer.setRenderTarget(this._renderTargetDepth)
-    renderer.clear()
-    renderer.render(scene, camera)
-    scene.overrideMaterial = null
-
     // clear the view offset so rendering returns to normal
-    renderer.setRenderTarget(null)
     camera.clearViewOffset()
     camera.layers.mask = prevLayers
 
-    // set original material to emitter object
-    emitters.forEach((emitter) => {
-      emitter.source.material = emitter.material
-      if (emitter.instanced) {
-        const instanced = emitter.source as InstancedMesh
-        instanced.instanceColor!.set(emitter.instanceColor!)
-        instanced.instanceColor!.needsUpdate = true
-        emitter.instanceColor = undefined
-      }
-    })
+    this._postMaterial.uniforms.cameraNear.value = camera.near
+    this._postMaterial.uniforms.cameraFar.value = camera.far
 
-    // read the pixel
-    await renderer.readRenderTargetPixelsAsync(
+    renderer.setRenderTarget(this._renderTargetDepth)
+
+    renderer.clear()
+    renderer.render(this._postScene, this._postCamera)
+
+    renderer.readRenderTargetPixelsAsync(
       this._renderTarget,
       0, // x
       0, // y
@@ -160,8 +175,40 @@ export class PickingHelper {
       this._pixelBuffer
     )
 
-    // cancel if a new request has been issued while waiting for readback
-    if (!force && id !== this._currentId) return false
+    renderer.setRenderTarget(null)
+
+    renderer.readRenderTargetPixelsAsync(
+      this._renderTargetDepth,
+      0, // x
+      0, // y
+      this._size, // width
+      this._size, // height
+      this._pixelDepthBuffer
+    )
+    renderer.sortObjects = prevSortObjects
+    scene.matrixAutoUpdate = prevmatrixAutoUpdate
+
+    // set original material to emitter object
+    emitters.forEach((emitter) => {
+      if (emitter.source && emitter.sourceMaterial) {
+        const sourceMaterial = emitter.sourceMaterial
+        emitter.sourceMaterial = undefined
+        emitter.source.material = sourceMaterial
+      }
+
+      if (emitter.instanced) {
+        const instanced = emitter.source as InstancedMesh
+        instanced.instanceColor = emitter.sourceInstanceColor || null
+        emitter.sourceInstanceColor = undefined
+      }
+    })
+  }
+
+  pick(
+    camera: PerspectiveCamera,
+    objectMap: Map<number, ObjectMapEntry>
+  ): PickResult {
+    const { w, h, point, screen } = this._renderState
 
     let match: {
       mapEntry: ObjectMapEntry
@@ -182,7 +229,7 @@ export class PickingHelper {
             (this._pixelBuffer[i + 1] << 8) |
             this._pixelBuffer[i + 2]
 
-          const mapEntry = objectMap.map.get(objId)
+          const mapEntry = objectMap.get(objId)
 
           if (mapEntry) {
             const { threshold } = mapEntry.emitter
@@ -199,10 +246,10 @@ export class PickingHelper {
     }
 
     const result: PickResult = {
-      id,
       offset: null,
       match: null,
       position: null,
+      point,
     }
 
     if (match) {
@@ -216,25 +263,12 @@ export class PickingHelper {
 
       result.offset = [point[0] - ndc[0], point[1] - ndc[1]]
 
-      // read the pixel
-      await renderer.readRenderTargetPixelsAsync(
-        this._renderTargetDepth,
-        this._radius + match.x, // x
-        this._radius - match.y, // y
-        1, // width
-        1, // height
-        this._pixelDepthBuffer
-      )
-
-      // cancel if a new request has been issued while waiting for readback
-      if (!force && id !== this._currentId) return false
-
       const ndcZ =
         unpackRGBAToDepth(
-          this._pixelDepthBuffer[0],
-          this._pixelDepthBuffer[1],
-          this._pixelDepthBuffer[2],
-          this._pixelDepthBuffer[3]
+          this._pixelDepthBuffer[match.i],
+          this._pixelDepthBuffer[match.i + 1],
+          this._pixelDepthBuffer[match.i + 2],
+          this._pixelDepthBuffer[match.i + 3]
         ) *
           2 -
         1
@@ -244,10 +278,13 @@ export class PickingHelper {
 
       result.position = v.toArray() as Vec3
     }
+
     return result
   }
 
   dispose() {
     this._renderTarget.dispose()
+    this._renderTargetDepth.dispose()
+    this._depthTexture.dispose()
   }
 }

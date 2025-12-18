@@ -36,7 +36,7 @@ export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
         fov: 30,
       }}
       dpr={parameters.pixelRatio || devicePixelRatio}
-      gl={{ logarithmicDepthBuffer: true, autoClear: !!parameters.autoClear, stencil: false }}
+      gl={{ logarithmicDepthBuffer: true, autoClear: !!parameters.autoClear, stencil: false, antialias: true }}
       style={{
         backgroundColor: parameters.background || '#000',
         position: 'absolute',
@@ -45,6 +45,10 @@ export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
         top: 0,
         left: 0,
         right: 0,
+      }}
+      onCreated={({ gl }) => {
+        gl.setClearColor(parameters.background)
+        gl.setClearAlpha(1)
       }}
     >
       <ambientLight intensity={0.2} />

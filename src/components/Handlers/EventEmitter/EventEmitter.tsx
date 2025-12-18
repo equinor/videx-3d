@@ -1,10 +1,10 @@
-import { useThree } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import { ReactNode, useCallback, useEffect, useMemo } from 'react'
-import { BufferGeometry, Color, InstancedBufferAttribute, InstancedMesh, Material, MeshBasicMaterial, Object3D, PerspectiveCamera, Scene, Vector2, WebGLRenderer } from 'three'
+import { BufferGeometry, Color, InstancedBufferAttribute, InstancedMesh, Material, MeshBasicMaterial, Object3D, PerspectiveCamera, SRGBColorSpace } from 'three'
 import { LAYERS } from '../../../main'
-import { idToHexColor, Vec2, Vec3 } from '../../../sdk'
-import { EventEmitterCallback, EventEmitterContext, EventEmitterContextProps, KeysPressed, Listener } from './EventEmitterContext'
-import { PickingHelper } from './picking-helper'
+import { Vec2, Vec3 } from '../../../sdk'
+import { EventEmitterContext, EventEmitterContextProps, KeysPressed, Listener } from './EventEmitterContext'
+import { PickingHelper, PickResult } from './picking-helper'
 
 const CLICK_SPEED = 300
 const MOVE_THRESHOLD = 10
@@ -27,35 +27,35 @@ export type EmitterCallback = (e: EmitterResultEvent) => void
 export type EventEmitterProps = {
   threshold?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10,
   onResult?: EmitterCallback
-  throttle?: boolean
   children?: ReactNode
 }
 
 export type RenderableObject = Object3D & { material: Material, geometry: BufferGeometry }
 
+export type PickingMaterial = Material & {
+  color: Color
+}
+
 export type Emitter = {
-  source: RenderableObject,
-  depth: number,
-  material: Material,
-  listener: number,
-  instanced?: boolean,
-  instanceColor?: Float32Array,
+  source?: RenderableObject
+  depth: number
+  material: PickingMaterial
+  sourceMaterial?: Material
+  indices: number[]
+  listener: number
+  instanced?: boolean
+  instanceColor?: InstancedBufferAttribute
+  sourceInstanceColor?: InstancedBufferAttribute | undefined
   threshold: number
 }
 
 export type ObjectMapEntry = {
-  emitter: Emitter,
-  index?: number,
+  emitter: Emitter
+  index?: number
 }
-
-export type ObjectMap = {
-  map: Map<number, ObjectMapEntry>,
-  index: number,
-}
-
-type PickingMaterials = { pool: MeshBasicMaterial[], index: number }
 
 type EventState = {
+  prevResult: PickResult,
   current: ObjectMapEntry | null
   buttonDown: boolean
   deltaTime: number
@@ -65,95 +65,158 @@ type EventState = {
   emitters: Map<number, Emitter>
   listeners: Map<number, Listener>
   needCheckOnMove: boolean
-  pickingMaterials: PickingMaterials
-  objectMap: ObjectMap
-  gl: WebGLRenderer
-  scene: Scene
-  camera: PerspectiveCamera
-  pointer: Vector2
+  objectMap: Map<number, ObjectMapEntry>
+  emitterPool: Emitter[]
+  emitterIndex: number
+  indexPool: number[]
 }
 
-function processObject(object: Object3D, eventState: EventState, rootId: number, threshold: number = 0, depth: number) {
+function traverseObject(
+  object: Object3D,
+  eventState: EventState,
+  rootId: number,
+  threshold: number = 0,
+  depth: number
+) {
   if (object.visible && !object.layers.isEnabled(LAYERS.NOT_EMITTER)) {
     if (object.type === 'Mesh' || object.type === 'Line' || object.type === 'Points') {
-      let emitter = eventState.emitters.get(object.id)
-      if (!emitter) {
-        if (eventState.pickingMaterials.index >= eventState.pickingMaterials.pool.length) {
-          // double the materials pool
-          const count = eventState.pickingMaterials.pool.length || 100
-          for (let i = 0; i < count; i++) {
-            eventState.pickingMaterials.pool.push(new MeshBasicMaterial())
+      if (!eventState.emitters.has(object.id)) {
+        const source = object as RenderableObject
+        const emitterThreshold = Number.isFinite(threshold) ? threshold : (object.type === 'Mesh' ? 0 : 3)
+        const instanced = (object as InstancedMesh).isInstancedMesh
+
+        if (!instanced || (instanced && (object as InstancedMesh).count > 0)) {
+          let emitter = eventState.emitterPool.pop()
+          if (!emitter) {
+            emitter = {
+              material: new MeshBasicMaterial(),
+              depth,
+              listener: -1,
+              threshold: 0,
+              indices: []
+            }
           }
-        }
 
-        const pickingMaterial = eventState.pickingMaterials.pool[eventState.pickingMaterials.index]
+          emitter.listener = rootId
+          emitter.source = source
+          emitter.depth = depth
+          emitter.threshold = emitterThreshold
+          emitter.instanced = instanced
 
-        emitter = {
-          source: object as RenderableObject,
-          material: pickingMaterial,
-          depth,
-          listener: null!,
-          threshold: Number.isFinite(threshold) ? threshold : (object.type === 'Mesh' ? 0 : 3)
-        }
+          if (instanced) {
+            const instancedObject = object as InstancedMesh
+            emitter.instanceColor = new InstancedBufferAttribute(new Float32Array(instancedObject.count * 3), 3)
+            emitter.material.color.set(0xffffff)
+            for (let i = 0; i < instancedObject.count; i++) {
+              const index = eventState.indexPool.pop() || (++eventState.emitterIndex)
+              emitter.indices.push(index)
+              eventState.objectMap.set(index, { emitter, index: i })
+              color.setRGB(
+                ((index >> 16) & 0xff) / 255,
+                ((index >> 8) & 0xff) / 255,
+                (index & 0xff) / 255,
+                SRGBColorSpace
+              ).toArray(emitter.instanceColor.array, i * 3)
 
-        pickingMaterial.side = emitter.source.material.side
-
-        if ((object as InstancedMesh).isInstancedMesh) {
-          const instancedObject = object as InstancedMesh
-          emitter.instanced = true
-          emitter.instanceColor = new Float32Array(instancedObject.count * 3)
-          // Need to disable frustum culling, otherwise instance will not be rendered to the render target
-          object.frustumCulled = false
-          pickingMaterial.color.set(0xffffff)
-          for (let i = 0; i < instancedObject.count; i++) {
-            const id = eventState.objectMap.index++
-            eventState.objectMap.map.set(id, { emitter, index: i })
-            color.set(idToHexColor(id)).toArray(emitter.instanceColor, i * 3)
+            }
+            emitter.instanceColor.needsUpdate = true
+          } else {
+            const index = eventState.indexPool.pop() || (++eventState.emitterIndex)
+            emitter.material.color.setRGB(
+              ((index >> 16) & 0xff) / 255,
+              ((index >> 8) & 0xff) / 255,
+              (index & 0xff) / 255,
+              SRGBColorSpace
+            )
+            emitter.indices.push(index)
+            eventState.objectMap.set(index, { emitter })
           }
-          // Set instance colors to white if not exists
-          if (!instancedObject.instanceColor) {
-            instancedObject.instanceColor = new InstancedBufferAttribute(new Float32Array(emitter.instanceColor.length).fill(1), 3)
-          }
-        } else {
-          const id = eventState.objectMap.index++
-          pickingMaterial.color.set(idToHexColor(id))
-          eventState.objectMap.map.set(id, { emitter })
+          emitter.material.side = source.material.side
+          eventState.emitters.set(object.id, emitter)
+
+          object.layers.enable(LAYERS.EMITTER)
         }
-        eventState.emitters.set(object.id, emitter)
-        eventState.pickingMaterials.index++
+      } else {
+        const emitter = eventState.emitters.get(object.id)
+        if (emitter && depth > emitter.depth) {
+          emitter.depth = depth
+          emitter.listener = rootId
+        }
       }
-      if (!emitter.listener || emitter.depth > depth) {
-        emitter.listener = rootId
-        emitter.depth = depth
-      }
-      object.layers.enable(LAYERS.EMITTER)
     }
 
     for (let i = 0; i < object.children.length; i++) {
-      processObject(object.children[i], eventState, rootId, threshold, depth + 1)
+      traverseObject(object.children[i], eventState, rootId, threshold, depth + 1)
     }
   }
 }
 
-const buildEmitterMap = (eventState: EventState) => {
-  eventState.emitters = new Map()
-  eventState.objectMap = {
-    map: new Map(),
-    index: 1,
+// Needed because child objects may not be in the scene when the listener is registered.
+// This ensures that any missing objects are traversed and any missing emitters are created.
+const updateListeners = (eventState: EventState) => {
+  //console.time('updateListeners')
+  eventState.listeners.forEach(listener => traverseObject(listener.object, eventState, listener.object.id, listener.threshold, 0))
+  //console.timeEnd('updateListeners')
+}
+
+const addListener = (listener: Listener, eventState: EventState) => {
+  if (listener.handlers.enter || listener.handlers.leave || listener.handlers.move) {
+    eventState.needCheckOnMove = true
   }
-  eventState.pickingMaterials.index = 0
-  eventState.listeners.forEach(listener => processObject(listener.object, eventState, listener.object.id, listener.threshold, 0))
+  eventState.listeners.set(listener.object.id, listener)
+  traverseObject(listener.object, eventState, listener.object.id, listener.threshold, 0)
+}
+
+const removeListener = (id: number, eventState: EventState) => {
+  const listener = eventState.listeners.get(id)
+  if (listener) {
+    const { object } = listener
+    // clear and put all emitters into pool for re-use
+    eventState.emitters.forEach((emitter, objId) => {
+      if (emitter.listener === id) {
+        emitter.indices.forEach(index => {
+          // remove link from object map and add to pool
+          eventState.objectMap.delete(index)
+          eventState.indexPool.push(index)
+        })
+        eventState.emitters.delete(objId)
+        if (emitter.sourceMaterial && emitter.source) {
+          emitter.source.material = emitter.sourceMaterial
+        }
+        if (emitter.sourceInstanceColor && emitter.source) {
+          const instanceMesh = emitter.source as InstancedMesh
+          instanceMesh.instanceColor = emitter.sourceInstanceColor || null
+        }
+        emitter.listener = -1
+        emitter.indices = []
+        emitter.depth = 0
+        emitter.threshold = 0
+        emitter.instanced = false
+        emitter.instanceColor = undefined
+        emitter.source = undefined
+        emitter.sourceMaterial = undefined
+
+        eventState.emitterPool.push(emitter)
+      }
+    })
+
+    object.traverse(obj => obj.layers.disable(LAYERS.EMITTER))
+    eventState.listeners.delete(id)
+  }
 }
 
 export const EventEmitter = ({
   threshold,
   onResult,
-  throttle = false,
   children
 }: EventEmitterProps) => {
-  const { gl, camera, scene, pointer } = useThree()
+  const pointer = useThree(state => state.pointer)
+  const camera = useThree(state => state.camera)
+  const gl = useThree(state => state.gl)
+  const scene = useThree(state => state.scene)
 
   const eventState = useMemo<EventState>(() => ({
+    prevResult: false,
     current: null,
     buttonDown: false,
     needCheckOnMove: false,
@@ -163,112 +226,97 @@ export const EventEmitter = ({
     pickingHelper: Number.isFinite(threshold) ? new PickingHelper({ radius: threshold }) : new PickingHelper(),
     emitters: new Map(),
     listeners: new Map(),
-    objectMap: { map: new Map(), index: 0 },
+    objectMap: new Map(),
     pickingMaterials: { index: 0, pool: [] },
-    gl,
-    scene,
-    camera: camera as PerspectiveCamera,
-    pointer
+    emitterPool: [],
+    emitterIndex: 0,
+    indexPool: []
   }), [
-    threshold,
-    gl,
-    scene,
-    camera,
-    pointer,
+    threshold
   ])
 
   const context = useMemo<EventEmitterContextProps>(() => {
+    const queue = new Set<number>()
     return {
-      register: (obj: Object3D, handlers: Record<string, EventEmitterCallback>, ref?: any, threshold?: number) => {
-        eventState.listeners.set(obj.id, { object: obj, handlers, ref, threshold })
-        if (handlers.enter || handlers.leave || handlers.move) {
-          eventState.needCheckOnMove = true
-        }
+      register: (listener: Listener) => {
+        if (!listener?.object) throw Error('Unable to register event listener without an object reference!')
+        const id = listener.object.id
+        queue.add(id)
+        // delay registering of event listener
+        setTimeout(() => {
+          if (queue.has(id)) {
+            queue.delete(id)
+            addListener(listener, eventState)
+          }
+        }, 250)
+
         return () => {
-          obj.traverse(obj => obj.layers.disable(LAYERS.EMITTER))
-          eventState.listeners.delete(obj.id)
+          removeListener(id, eventState)
         }
       }
     }
   }, [eventState])
 
   const checkOnClick = useCallback(async (keys: KeysPressed) => {
-    buildEmitterMap(eventState)
     const {
-      gl,
-      scene,
-      camera,
-      pointer,
-      emitters,
       objectMap,
       pickingHelper,
     } = eventState
 
-    const point = pointer.toArray()
-    const result = await pickingHelper.pick(
-      point,
-      gl,
-      scene,
-      camera,
-      emitters,
+    // if there's already a valid result from the "checkOnMove" function, we can reuse it for the click event
+    const result = eventState.prevResult && eventState.prevResult.match ? eventState.prevResult : pickingHelper.pick(
+      camera as PerspectiveCamera,
       objectMap,
-      true,
     )
 
     if (result && onResult) {
-      onResult({
+      requestAnimationFrame(() => onResult({
         offset: result.offset,
         match: result.match?.emitter.source,
         instanced: result.match?.emitter.instanced,
         instanceIndex: result.match?.index,
         position: result.position
-      })
+      }))
     }
     if (result && result.match && result.position) {
       const picked = result.match
       const listener = eventState.listeners.get(picked.emitter.listener)
 
-      if (listener && listener.handlers.click) {
-        listener.handlers.click({
+      if (listener && listener.handlers.click && picked.emitter.source) {
+        const clickEvent = {
           position: result.position,
           target: listener.object,
           source: picked.emitter.source,
           ref: listener.ref,
           instanceIndex: picked.index,
           keys,
-          pointer: point,
+          pointer: result.point,
           camera,
           domElement: gl.domElement
-        })
+        }
+        requestAnimationFrame(() => listener.handlers.click(clickEvent))
       }
     }
-  }, [eventState, onResult])
+  }, [eventState, onResult, gl, camera])
 
   const checkOnMove = useCallback(async (keys: KeysPressed) => {
-    buildEmitterMap(eventState)
-
-    const point = eventState.pointer.toArray()
-    //console.time('pick')
-    const result = await eventState.pickingHelper.pick(
-      point,
-      eventState.gl,
-      eventState.scene,
-      eventState.camera,
-      eventState.emitters,
+    const result = eventState.pickingHelper.pick(
+      camera as PerspectiveCamera,
       eventState.objectMap,
-      throttle ? false : true,
     )
-    //console.timeEnd('pick')
+
     if (!result) return // aborted
 
+    eventState.prevResult = result // save to state to resuse in a click event if exist
+
     if (onResult) {
-      onResult({
+      requestAnimationFrame(() => onResult({
         offset: result.offset,
         match: result.match?.emitter.source,
         instanced: result.match?.emitter.instanced,
         instanceIndex: result.match?.index,
         position: result.position
-      })
+      }))
     }
 
     const previous = eventState.current
@@ -282,17 +330,18 @@ export const EventEmitter = ({
       )
     ) {
       const listener = eventState.listeners.get(previous.emitter.listener)
-      if (listener && listener.handlers.leave) {
-        listener.handlers.leave({
+      if (listener && listener.handlers.leave && previous.emitter.source) {
+        const leaveEvent = {
           target: listener.object,
           source: previous.emitter.source,
           ref: listener.ref,
           instanceIndex: previous.index,
           keys,
-          pointer: point,
-          camera: eventState.camera,
-          domElement: eventState.gl.domElement
-        })
+          pointer: result.point,
+          camera: camera,
+          domElement: gl.domElement
+        }
+        requestAnimationFrame(() => listener.handlers.leave(leaveEvent))
       }
     }
 
@@ -304,57 +353,72 @@ export const EventEmitter = ({
       )
     ) {
       const listener = eventState.listeners.get(eventState.current.emitter.listener)
-      if (listener && listener.handlers.enter) {
-        listener.handlers.enter({
+      if (listener && listener.handlers.enter && eventState.current.emitter.source) {
+        const enterEvent = {
           target: listener.object,
           source: eventState.current.emitter.source,
           ref: listener.ref,
           instanceIndex: eventState.current.index,
           keys,
-          pointer: point,
-          camera: eventState.camera,
-          domElement: eventState.gl.domElement
-        })
+          pointer: result.point,
+          camera: camera,
+          domElement: gl.domElement
+        }
+        requestAnimationFrame(() => listener.handlers.enter(enterEvent))
       }
     }
 
     // Determine pointer move event
     if (eventState.current && result.position) {
       const listener = eventState.listeners.get(eventState.current.emitter.listener)
-      if (listener && listener.handlers.move) {
-        const source = eventState.current.emitter.source
-        const instanceIndex = eventState.current.index
-        listener.handlers.move({
+      if (listener && listener.handlers.move && eventState.current.emitter.source) {
+        const moveEvent = {
           target: listener.object,
-          source,
+          source: eventState.current.emitter.source,
           ref: listener.ref,
-          instanceIndex,
+          instanceIndex: eventState.current.index,
           position: result.position,
           keys,
-          pointer: point,
-          camera: eventState.camera,
-          domElement: eventState.gl.domElement
-        })
+          pointer: result.point,
+          camera: camera,
+          domElement: gl.domElement
+        }
+        requestAnimationFrame(() => listener.handlers.move(moveEvent))
       }
     }
+  }, [eventState, onResult, gl, camera])
 
-  }, [eventState, onResult, throttle])
+  useFrame(() => {
+    const point = pointer.toArray()
+    eventState.pickingHelper.render(
+      point,
+      gl,
+      scene,
+      camera as PerspectiveCamera,
+      eventState.emitters,
+    )
+  })
 
   useEffect(() => {
-    const { gl } = eventState
-    let debounce: any = undefined
+    const ref = setInterval(() => {
+      updateListeners(eventState)
+    }, 1000)
+    return () => {
+      clearInterval(ref)
+    }
+  }, [eventState])
+
+  useEffect(() => {
     function onPointerMove(event: PointerEvent) {
-      clearTimeout(debounce)
       const keys: KeysPressed = {
         ctrlKey: event.ctrlKey,
         shiftKey: event.shiftKey,
         altKey: event.altKey,
       }
-      debounce = setTimeout(() => {
-        if (eventState.needCheckOnMove && !eventState.buttonDown) {
-          checkOnMove(keys)//.finally(() => console.timeEnd('move'))
-        }
-      }, 1)
+
+      if (eventState.needCheckOnMove && !eventState.buttonDown) {
+        checkOnMove(keys)
+      }
     }
 
     function onPointerDown(event: PointerEvent) {
@@ -380,7 +444,6 @@ export const EventEmitter = ({
             shiftKey: event.shiftKey,
             altKey: event.altKey,
           }
-
           checkOnClick(keys)
         }
         eventState.buttonDown = false
@@ -405,7 +468,7 @@ export const EventEmitter = ({
     function onCancel() {
       if (eventState.current) {
         const listener = eventState.listeners.get(eventState.current.emitter.listener)
-        if (listener && listener.handlers.leave) {
+        if (listener && listener.handlers.leave && eventState.current.emitter.source) {
           listener.handlers.leave({
             target: listener.object,
             source: eventState.current.emitter.source,
@@ -417,7 +480,7 @@ export const EventEmitter = ({
               altKey: false,
             },
             pointer: [0, 0],
-            camera: eventState.camera,
+            camera,
             domElement: gl.domElement
           })
         }
@@ -426,21 +489,19 @@ export const EventEmitter = ({
       eventState.buttonDown = false
     }
 
-    gl?.domElement.addEventListener('pointermove', onPointerMove, { passive: true, capture: true })
-    gl?.domElement.addEventListener('pointerdown', onPointerDown, { passive: true, capture: true })
-    gl?.domElement.addEventListener('pointerup', onPointerUp, { passive: true, capture: true })
-    gl?.domElement.addEventListener('wheel', onWheel, { passive: true, capture: true })
-    gl?.domElement.addEventListener('pointercancel', onCancel, { passive: true, capture: true })
-    gl?.domElement.addEventListener('pointerleave', onCancel, { passive: true, capture: true })
+    gl.domElement.addEventListener('pointermove', onPointerMove, { passive: true, capture: true })
+    gl.domElement.addEventListener('pointerdown', onPointerDown, { passive: true, capture: true })
+    gl.domElement.addEventListener('pointerup', onPointerUp, { passive: true, capture: true })
+    gl.domElement.addEventListener('wheel', onWheel, { passive: true, capture: true })
+    gl.domElement.addEventListener('pointerleave', onCancel, { passive: true, capture: true })
     return () => {
-      gl?.domElement.removeEventListener('pointermove', onPointerMove)
-      gl?.domElement.removeEventListener('pointerdown', onPointerDown)
-      gl?.domElement.removeEventListener('pointerup', onPointerUp)
-      gl?.domElement.removeEventListener('wheel', onWheel)
-      gl?.domElement.removeEventListener('pointercancel', onCancel)
-      gl?.domElement.removeEventListener('pointerleave', onPointerMove)
+      gl.domElement.removeEventListener('pointermove', onPointerMove)
+      gl.domElement.removeEventListener('pointerdown', onPointerDown)
+      gl.domElement.removeEventListener('pointerup', onPointerUp)
+      gl.domElement.removeEventListener('wheel', onWheel)
+      gl.domElement.removeEventListener('pointerleave', onCancel)
     }
-  }, [eventState, checkOnMove, checkOnClick])
+  }, [eventState, checkOnMove, checkOnClick, gl, camera])
 
   // dispose
   useEffect(() => {
@@ -448,7 +509,6 @@ export const EventEmitter = ({
       eventState.current = null
       eventState.listeners.clear()
       eventState.pickingHelper.dispose()
-      eventState.pickingMaterials.pool.splice(0, eventState.pickingMaterials.pool.length)
     }
   }, [eventState])
 

@@ -72,7 +72,8 @@ export const Default: Story = {
     gridOrigin: [0, 0, 0],
     cellSize: 250,
     enableProjection: true,
-    showRulers: false,
+    projectionColor: '#abc',
+    showRulers: true,
     autoSize: true,
     autoSizePadding: {
       x0: 1000,
@@ -97,7 +98,7 @@ export const Light: Story = {
     background: "#fff",
     axesColor: "#555",
     enableProjection: true,
-    projectionColor: "#f7f7f7",
+    projectionColor: "#ddd",
     showRulers: false,
     autoSize: true,
     autoSizePadding: [2000, 0, 2000],

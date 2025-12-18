@@ -20,9 +20,7 @@ export type EventEmitterCallbackEvent = {
   ref: any
 }
 
-export type EventEmitterCallback = (
-  event: EventEmitterCallbackEvent
-) => Promise<void>
+export type EventEmitterCallback = (event: EventEmitterCallbackEvent) => void
 
 export type Listener = {
   object: Object3D
@@ -32,12 +30,7 @@ export type Listener = {
 }
 
 export type EventEmitterContextProps = {
-  register: (
-    obj: Object3D,
-    handlers: Record<string, EventEmitterCallback>,
-    ref?: any,
-    threshold?: number
-  ) => () => void
+  register: (listener: Listener) => () => void
 }
 
 /**

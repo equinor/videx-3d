@@ -89,7 +89,12 @@ export const Wellbore = ({
       if (onPointerMove) handlers.move = onPointerMove
 
       if (Object.keys(handlers).length) {
-        unregister = eventHandler.register(wellboreRef.current, handlers, id, emitterThreshold)
+        unregister = eventHandler.register({
+          object: wellboreRef.current,
+          handlers,
+          ref: id,
+          threshold: emitterThreshold
+        })
       }
     }
 
@@ -102,9 +107,7 @@ export const Wellbore = ({
     wellboreRef.current.getWorldPosition(vec)
     dispatchEvent(new WellboreAddedEvent({
       id,
-      position: vec.toArray() as Vec3,
-      objectId: wellboreRef.current.id,
-      objectUuid: wellboreRef.current.uuid,
+      object: wellboreRef.current,
     }))
 
     return () => {

@@ -1,25 +1,24 @@
+import { Object3D } from 'three'
 import { Vec3 } from '../sdk'
 
-export const wellboreSelectedEventType = "wellbore-selected" as const
-export const wellboreAddedEventType = "wellbore-added" as const
-export const wellboreRemovedEventType = "wellbore-removed" as const
+export const wellboreSelectedEventType = 'wellbore-selected' as const
+export const wellboreAddedEventType = 'wellbore-added' as const
+export const wellboreRemovedEventType = 'wellbore-removed' as const
 
 export interface WellboreAddedEventDetails {
-  id: string,
-  objectId: number,
-  objectUuid: string,
-  position: Vec3,
+  id: string
+  object: Object3D
 }
 
 export interface WellboreRemovedEventDetails {
-  id: string,
+  id: string
 }
 
 export interface WellboreSelectedEventDetails {
-  id: string,
-  position?: Vec3,
-  depth?: number,
-  flyTo?: boolean,
+  id: string
+  position?: Vec3
+  depth?: number
+  flyTo?: boolean
 }
 
 /**

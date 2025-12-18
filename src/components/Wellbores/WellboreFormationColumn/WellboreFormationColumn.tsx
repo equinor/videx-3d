@@ -43,7 +43,7 @@ export const WellboreFormationColumn = ({
   castShadow,
   receiveShadow,
   renderOrder,
-  layers = createLayers(LAYERS.NOT_EMITTER, LAYERS.OCCLUDER),
+  layers = createLayers(LAYERS.NOT_EMITTER),
   visible,
   stratColumnId,
   units,
