@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.0.3-beta](https://github.com/equinor/videx-3d/compare/v5.0.2-beta...v5.0.3-beta) (2025-12-29)
+
+
+### Bug Fixes
+
+* **github-actions:** bump github/codeql-action from 4.31.4 to 4.31.9 ([#108](https://github.com/equinor/videx-3d/issues/108)) ([233c1b7](https://github.com/equinor/videx-3d/commit/233c1b700e11ad243f961412913bad9cf5b33fa0))
+
 ## [5.0.2-beta](https://github.com/equinor/videx-3d/compare/v5.0.1-beta...v5.0.2-beta) (2025-12-18)
 
 
