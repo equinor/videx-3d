@@ -19,6 +19,9 @@
   "files": [
     "dist"
   ],
+  "engines": {
+    "npm": "^11.7.0"
+  },
   "exports": {
     ".": {
       "import": "./dist/main.js",
@@ -68,12 +71,12 @@
     "@eslint/js": "^9.32.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.4.2",
-    "@storybook/addon-essentials": "^8.5.5",
-    "@storybook/addon-interactions": "^8.5.5",
+    "@storybook/addon-essentials": "^8.6.15",
+    "@storybook/addon-interactions": "^8.6.15",
     "@storybook/blocks": "^8.5.5",
     "@storybook/manager-api": "^8.5.5",
-    "@storybook/react": "^8.5.5",
-    "@storybook/react-vite": "^8.5.5",
+    "@storybook/react": "^8.6.15",
+    "@storybook/react-vite": "^8.6.15",
     "@storybook/theming": "^8.5.5",
     "@types/d3-array": "^3.2.1",
     "@types/d3-axis": "^3.0.6",
