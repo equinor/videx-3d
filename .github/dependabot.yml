@@ -15,7 +15,7 @@ updates:
         patterns:
           - "*"
     commit-message:
-      prefix: fix(github-actions)
+      prefix: "[github-actions] "
 
   - package-ecosystem: npm
     directory: /
@@ -34,3 +34,4 @@ updates:
           - "*"
     commit-message:
       prefix: fix(npm)
+
