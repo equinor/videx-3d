@@ -15,7 +15,8 @@ updates:
         patterns:
           - "*"
     commit-message:
-      prefix: "chore(github-actions) "
+      prefix: chore(github-actions) 
+      
 
   - package-ecosystem: npm
     directory: /
