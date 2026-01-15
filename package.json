@@ -1,6 +1,6 @@
 {
   "name": "videx-3d",
-  "version": "5.0.1-beta",
+  "version": "5.0.3-beta",
   "private": false,
   "type": "module",
   "license": "MIT",
@@ -19,6 +19,9 @@
   "files": [
     "dist"
   ],
+  "engines": {
+    "npm": "^11.7.0"
+  },
   "exports": {
     ".": {
       "import": "./dist/main.js",

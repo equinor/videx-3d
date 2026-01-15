@@ -1,5 +1,22 @@
 # Changelog
 
+## [5.0.3-beta](https://github.com/equinor/videx-3d/compare/v5.0.2-beta...v5.0.3-beta) (2026-01-06)
+
+
+### Bug Fixes
+
+* **7143:** add npm as engine ([#111](https://github.com/equinor/videx-3d/issues/111)) ([49fac82](https://github.com/equinor/videx-3d/commit/49fac823623840c99e9e1c51c118e90ffed36f3d))
+* **github-actions:** bump github/codeql-action from 4.31.4 to 4.31.9 ([#108](https://github.com/equinor/videx-3d/issues/108)) ([233c1b7](https://github.com/equinor/videx-3d/commit/233c1b700e11ad243f961412913bad9cf5b33fa0))
+
+## [5.0.2-beta](https://github.com/equinor/videx-3d/compare/v5.0.1-beta...v5.0.2-beta) (2025-12-18)
+
+
+### Bug Fixes
+
+* **github-actions:** bump codecov/codecov-action from 5.5.1 to 5.5.2 ([#104](https://github.com/equinor/videx-3d/issues/104)) ([2efd100](https://github.com/equinor/videx-3d/commit/2efd1004461c4b5f2dd00773898ff3c81ba5cc10))
+### Improvements
+* Further optimizations and improvements to annotation depth testing and emitter GPU picking.
+
 ## [5.0.1-beta](https://github.com/equinor/videx-3d/compare/v5.0.0-beta...v5.0.1-beta) (2025-12-09)
 
 
