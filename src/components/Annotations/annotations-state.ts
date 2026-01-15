@@ -187,7 +187,7 @@ const updateInstances = () => {
                 health: 0,
                 labelWidht: 0,
                 labelHeight: 0,
-                screenPosition: [0, 0, 0],
+                screenPosition: [0, 0],
                 zIndex: 0,
               },
             }
@@ -297,7 +297,7 @@ export const useAnnotations = (layer: string, scope: string) => {
           return () => {
             remove(layer, scope)
           }
-        } 
+        }
         return undefined
       },
     }

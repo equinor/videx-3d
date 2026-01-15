@@ -197,8 +197,7 @@ export const GridAxesLabels = ({
           rotation-z={rotations.x}
           rotation-y={rotations.flipped ? Math.PI : 0}
           color={textColor}
-          material-depthWrite={false}
-        //material-alphaToCoverage={true}
+          material-depthWrite={true}
         >
           {tick.value}
         </Text>
@@ -216,8 +215,7 @@ export const GridAxesLabels = ({
           rotation-z={rotations.y + Math.PI / 2}
           rotation-x={rotations.flipped ? Math.PI : 0}
           color={textColor}
-          material-depthWrite={false}
-        //material-alphaToCoverage={true}
+          material-depthWrite={true}
         >
           {tick.value}
         </Text>

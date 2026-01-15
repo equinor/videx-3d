@@ -1,4 +1,4 @@
-import type { Decorator, Meta, StoryObj } from '@storybook/react'
+import type { Decorator, Meta, StoryObj } from '@storybook/react-vite'
 import { scaleOrdinal } from 'd3-scale'
 import { ComponentProps, CSSProperties, useState } from 'react'
 import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator'

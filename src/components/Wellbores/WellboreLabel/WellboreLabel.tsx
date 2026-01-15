@@ -61,5 +61,5 @@ export const WellboreLabel = ({ size = 12, color = 'white', position = 'bottom',
     return addAnnotations(labelData ? [labelData] : [])
   }, [labelData, addAnnotations])
 
-  return <object3D ref={positionRef} visible={false} />
+  return <object3D ref={positionRef} visible={false} name="wellbore-label" />
 }

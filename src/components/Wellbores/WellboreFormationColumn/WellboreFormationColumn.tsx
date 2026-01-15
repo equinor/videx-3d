@@ -136,6 +136,7 @@ export const WellboreFormationColumn = ({
         transparent={opacity === undefined || opacity < 1}
         opacity={opacity}
         depthTest={true}
+        depthWrite={true}
       />
     </mesh>
   )

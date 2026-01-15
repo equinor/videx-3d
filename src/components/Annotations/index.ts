@@ -1,4 +1,5 @@
-export * from './annotations-state'
 export * from './Annotations'
+export * from './annotations-renderer'
+export * from './annotations-state'
 export * from './AnnotationsLayer'
 export * from './types'

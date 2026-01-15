@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react'
 import { Camera, Object3D } from 'three'
-import { Vec2, Vec3 } from '../../../sdk'
+import { Vec2, Vec3 } from '../../sdk'
 
 export type KeysPressed = {
   altKey: boolean
@@ -29,8 +29,23 @@ export type Listener = {
   handlers: Record<string, EventEmitterCallback>
 }
 
+export type Emitter = {
+  source: Object3D
+  depth: number
+  listener: number
+  instanced: boolean
+  instanceCount: number
+  threshold: number
+}
+
+export type ObjectMapEntry = {
+  emitter: number
+  index: number
+}
+
 export type EventEmitterContextProps = {
   register: (listener: Listener) => () => void
+  update: () => void
 }
 
 /**

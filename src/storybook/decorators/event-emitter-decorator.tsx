@@ -1,4 +1,4 @@
-import { EventEmitter } from '../../components/Handlers/EventEmitter/EventEmitter'
+import { EventEmitter } from '../../components/EventEmitter/EventEmitter'
 
 export const EventEmitterDecorator = (Story: any) => (
   <EventEmitter>

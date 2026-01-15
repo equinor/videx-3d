@@ -1,24 +1,16 @@
 import { Clock, PerspectiveCamera, Vector3 } from 'three'
 
 import RBush from 'rbush'
-import { PI, Vec2, Vec3, clamp, edgeOfRectangle, mixVec2 } from '../../sdk'
-import {
-  getLabelQuadrant,
-  labelAngles,
-  labelAnglesMap,
-  occlusionTest,
-} from './helpers'
+import { PI, Vec2, clamp, edgeOfRectangle, mixVec2 } from '../../sdk'
+import { getLabelQuadrant, labelAngles, labelAnglesMap } from './helpers'
 import { AnnotationInstance } from './types'
 
-const viewportX = [-0.99, 0.99]
-const viewportY = [-0.99, 0.99]
 const collisionMargin = 1
 const collisionMargin2 = collisionMargin * 2
 
 const healthChangeRate = 3
 const transitionRate = 5
 
-const viewDirection = new Vector3()
 const position = new Vector3()
 
 let prevTime = 0
@@ -33,10 +25,11 @@ function calculateLabelPosition(
   positionSlot: number,
   size: Vec2
 ) {
+  if (!instance || !size) return
   const scale = instance.state.scaleFactor!
   const positionOptions = labelAnglesMap[instance.state.quadrant!]
 
-  const angle = labelAngles[positionOptions[positionSlot]]
+  const angle = labelAngles[positionOptions[positionSlot || 0]]
 
   const labelWidth = instance.state.labelWidht || 0
   const labelHeight = instance.state.labelHeight || 0
@@ -99,14 +92,12 @@ export function preprocessInstances(
   maxVisible: number
 ) {
   const deltaTime = clock.elapsedTime - prevTime
-  const fov = camera.fov
-  const fovRad = (fov * PI) / 180
+  const halfFovRad = (camera.fov * PI) / 360
 
-  camera.getWorldDirection(viewDirection)
   let nInViewSpace = 0
   const inViewspace: AnnotationInstance[] = []
 
-  instances.forEach((instance, i) => {
+  instances.forEach((instance) => {
     instance.state.capped = false
     instance.state._needsUpdate = false
     if (!instance.state.visible) {
@@ -142,93 +133,91 @@ export function preprocessInstances(
       }
     }
 
-    position.set(...instance.annotation.position)
-    const distance = position.distanceTo(camera.position)
-    const scaleFactor = Math.max(
-      0.25,
-      Math.min(
-        1,
-        (1 / (2 * Math.tan(fovRad / 2) * distance)) *
-          instance.layer.distanceFactor
+    if (instance.state.inViewSpace) {
+      position.set(...instance.annotation.position)
+      instance.state.distance = position.distanceTo(camera.position)
+      instance.state.scaleFactor = Math.max(
+        0.25,
+        Math.min(
+          1,
+          (1 / (2 * Math.tan(halfFovRad) * instance.state.distance)) *
+            instance.layer.distanceFactor
+        )
       )
-    )
 
-    position.project(camera)
-    const screenPosition: Vec3 = [position.x, position.y, position.z]
+      position.project(camera)
+      instance.state.screenPosition = [position.x, position.y]
 
-    const isInViewSpace =
-      screenPosition[2] >= 0 &&
-      screenPosition[2] <= 1 &&
-      screenPosition[0] >= viewportX[0] &&
-      screenPosition[0] <= viewportX[1] &&
-      screenPosition[1] >= viewportY[0] &&
-      screenPosition[1] <= viewportY[1] &&
-      (!instance.layer.minDistance || distance >= instance.layer.minDistance) &&
-      (!instance.layer.maxDistance || distance <= instance.layer.maxDistance)
+      const withinLimits =
+        (!instance.layer.minDistance ||
+          instance.state.distance >= instance.layer.minDistance) &&
+        (!instance.layer.maxDistance ||
+          instance.state.distance <= instance.layer.maxDistance)
 
-    instance.state.screenPosition = screenPosition
-    instance.state.distance = distance
-    instance.state.scaleFactor = scaleFactor
-    instance.state.inViewSpace = isInViewSpace
-
-    if (instance.state.cooldown && instance.state.visible === false) {
-      instance.state.cooldown = Math.max(0, instance.state.cooldown - deltaTime)
-      instance.rank = 0
-    } else {
-      // calculate heuristics
-      const hPositionPenalty = clamp(
-        (screenPosition[0] ** 2 + screenPosition[1] ** 2) / 2,
-        0,
-        1
-      )
-      const hDistancePenalty = Math.min(distance, 1000)
-      instance.rank = 1000
-      instance.rank +=
-        instance.priority * 1000 - (hPositionPenalty * 100 + hDistancePenalty)
-
-      if (instance.state.visible) {
-        instance.rank += 100
-      } else {
-        instance.rank -= 100
-      }
-
-      if (isInViewSpace && nInViewSpace < maxVisible) {
+      if (withinLimits && nInViewSpace < maxVisible) {
         nInViewSpace++
+
+        // calculate heuristics
+        const hPositionPenalty = clamp(
+          (instance.state.screenPosition[0] ** 2 +
+            instance.state.screenPosition[1] ** 2) /
+            2,
+          0,
+          1
+        )
+        const hDistancePenalty = Math.min(instance.state.distance, 1000)
+        instance.rank = 1000
+        instance.rank +=
+          instance.priority * 1000 - (hPositionPenalty * 100 + hDistancePenalty)
+
+        if (instance.state.visible) {
+          instance.rank += 100
+        } else {
+          instance.rank -= 100
+        }
+
+        if (instance.state.boost) {
+          instance.state.kill = false
+          instance.state.cooldown = 0
+          instance.state.visible = true
+          instance.rank += 100000
+          instance.state.positionSlot = 0
+          instance.state.boost = false
+        }
+
         instance.state.prevQuadrant = instance.state.quadrant
         instance.state.quadrant = instance.annotation.direction
           ? getLabelQuadrant(
-              screenPosition,
+              instance.state.screenPosition,
               instance.annotation.position,
               instance.annotation.direction,
               camera
             )
           : 0
       } else {
-        instance.state.quadrant = 0
-        instance.state.visible = false
-        if (i >= maxVisible) {
-          instance.state.capped = true
-        }
+        instance.state.capped = true
       }
-    }
 
-    if (instance.state.boost) {
-      instance.state.kill = false
-      instance.state.cooldown = 0
-      instance.state.visible = true
-      instance.rank += 100000
-      instance.state.positionSlot = 0
-      instance.state.boost = false
-    }
-
-    if (instance.state.inViewSpace && !instance.state.capped) {
-      inViewspace.push(instance)
+      if (!instance.state.capped) {
+        inViewspace.push(instance)
+      }
     } else {
-      if (instance.state._visibility !== 'hidden') {
-        instance.state.visible = false
-        instance.state._visibility = 'hidden'
-        instance.state._needsUpdate = true
-      }
+      instance.state.quadrant = 0
+      instance.state.visible = false
+    }
+
+    if (instance.state.cooldown && instance.state.visible === false) {
+      instance.state.cooldown = Math.max(0, instance.state.cooldown - deltaTime)
+      instance.rank = 0
+    }
+
+    if (
+      instance.state._visibility !== 'hidden' &&
+      (!instance.state.inViewSpace || instance.state.capped)
+    ) {
+      instance.state.visible = false
+      instance.state._visibility = 'hidden'
+      instance.state._needsUpdate = true
     }
   })
 
@@ -237,30 +226,6 @@ export function preprocessInstances(
   inViewspace.sort((a, b) => b.rank - a.rank)
 
   return inViewspace
-}
-
-/**
- * OCCLUSION TEST
- */
-export async function occlustionTestIntstances(
-  candidates: { instance: AnnotationInstance; position: Vec3 }[],
-  depthBuffer: Uint8Array,
-  depthBufferWidth: number,
-  depthBufferHeight: number
-) {
-  candidates.forEach((candidate) => {
-    const isOccluded = occlusionTest(
-      candidate.position,
-      depthBufferWidth,
-      depthBufferHeight,
-      depthBuffer
-    )
-
-    if (!candidate.instance.state.occluded && isOccluded) {
-      candidate.instance.state.kill = true
-    }
-    candidate.instance.state.occluded = isOccluded
-  })
 }
 
 /**

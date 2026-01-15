@@ -37,13 +37,12 @@ export const CasingAnnotations = () => {
             d.id = i.toString()
           })
           setLabelData(response || [])
-          //console.log(response)
         }
       })
     }
   }, [id, generator, positionRef])
 
-   useEffect(() => {
+  useEffect(() => {
     const dispose = addAnnotations(labelData)
     return dispose
   }, [labelData, addAnnotations])

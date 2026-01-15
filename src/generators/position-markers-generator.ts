@@ -7,7 +7,7 @@ import {
   PositionLog,
   ReadonlyStore,
   SymbolData,
-  SymbolsType
+  SymbolsType,
 } from '../sdk'
 
 const positionVector = new Vector3()
@@ -52,7 +52,7 @@ export async function generatePositionMarkers(
 
   ticks.push(lastTick)
 
-  const transformations = new Float32Array(ticks.length * 16 * 3)
+  const transformations = new Float32Array(ticks.length * 16)
   const markerData: SymbolData[] = []
 
   ticks.forEach((tick, i) => {

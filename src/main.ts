@@ -5,9 +5,9 @@ export * from './components/Annotations'
 export * from './components/CameraTargetMarker/CameraTargetMarker'
 export * from './components/common'
 export * from './components/Distance'
+export * from './components/EventEmitter'
 export * from './components/Grids'
-export * from './components/Handlers/EventEmitter'
-export * from './components/Handlers/Highlighter'
+export * from './components/Highlighter'
 export * from './components/Html'
 export * from './components/ObservableGroup/ObservableGroup'
 export * from './components/SDFTest/SDFTest'
@@ -48,4 +48,4 @@ export * from './hooks/useWellboreContext'
 
 export * from './layers/layers'
 
-
+export * from './rendering'

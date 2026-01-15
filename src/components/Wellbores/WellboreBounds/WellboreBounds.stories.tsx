@@ -1,5 +1,5 @@
 import { useFrame } from '@react-three/fiber'
-import type { Meta, StoryObj } from '@storybook/react'
+import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useContext, useEffect } from 'react'
 import { WellboreSelectedEvent } from '../../../events/wellbore-events'
 import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'

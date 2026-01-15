@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'rea
 import { BufferGeometry, Group, InstancedBufferAttribute, InstancedMesh, Layers, Material } from 'three'
 import { PointerEvents } from '../../events/interaction-events'
 import { SymbolsType } from '../../sdk/data/types/Symbol'
-import { EventEmitterCallback, useEventEmitter } from '../Handlers/EventEmitter/EventEmitterContext'
+import { EventEmitterCallback, useEventEmitter } from '../EventEmitter/EventEmitterContext'
 import { CommonComponentProps } from '../common'
 
 /**

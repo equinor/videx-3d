@@ -1,8 +1,9 @@
 import { CameraControls, Environment } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
 import { useCallback, useEffect, useRef } from 'react'
+import { Color, NoToneMapping } from 'three'
+import { PI2 } from '../../sdk'
 import { CameraManager } from '../../sdk/managers/CameraManager'
-import { PI2 } from '../../sdk/utils/trigonometry'
 
 export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
   const scale = parameters.scale || 100
@@ -31,12 +32,18 @@ export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
     <Canvas
       camera={{
         near: 0.1,
-        far: 1000 * scale,
+        far: 500 * scale,
         position: parameters.cameraPosition || [-1 * scale, 1 * scale, -1 * scale],
-        fov: 30,
+        fov: 60,
       }}
-      dpr={parameters.pixelRatio || devicePixelRatio}
-      gl={{ logarithmicDepthBuffer: true, autoClear: !!parameters.autoClear, stencil: false, antialias: true }}
+      dpr={Math.min(2, parameters.pixelRatio || devicePixelRatio)}
+      gl={{
+        logarithmicDepthBuffer: true,
+        autoClear: !!parameters.autoClear,
+        antialias: false,
+        powerPreference: 'high-performance',
+        toneMapping: NoToneMapping
+      }}
       style={{
         backgroundColor: parameters.background || '#000',
         position: 'absolute',
@@ -46,23 +53,25 @@ export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
         left: 0,
         right: 0,
       }}
-      onCreated={({ gl }) => {
-        gl.setClearColor(parameters.background)
-        gl.setClearAlpha(1)
+      onCreated={({ scene }) => {
+        if (parameters.background) {
+          scene.background = new Color(parameters.background)
+
+        }
       }}
     >
-      <ambientLight intensity={0.2} />
+      <ambientLight intensity={0.5} />
       <directionalLight
         castShadow
         position={[-1, 2, -3]}
-        intensity={1.2}
+        intensity={3.2}
       />
-
       <Environment
         preset='studio'
         environmentIntensity={1.}
         backgroundRotation={[0, PI2, 0]}
       />
+
       <Story />
       {/* <axesHelper args={[1000]} /> */}
       <CameraControls ref={initControls} makeDefault />

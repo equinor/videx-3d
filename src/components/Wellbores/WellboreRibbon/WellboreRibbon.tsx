@@ -14,7 +14,7 @@ function createStripeGeometry(trajectory: Trajectory, segmentsPerMeter: number, 
     0, 0.5,
   ])
   const from = fromMsl !== undefined ? trajectory.getPositionAtDepth(fromMsl, true)! : 0
-  
+
   const segments = getCurvePositions(
     trajectory.curve,
     from,
@@ -48,7 +48,7 @@ function createStripeGeometry(trajectory: Trajectory, segmentsPerMeter: number, 
   geometry.setAttribute('tangent0', new InterleavedBufferAttribute(buffer, 3, 4))
   geometry.setAttribute('tangent1', new InterleavedBufferAttribute(buffer, 3, 11))
 
-  
+
   return geometry
 }
 
@@ -124,7 +124,6 @@ export const WellboreRibbon = ({ children }: PropsWithChildren) => {
       }).catch(err => console.error(err))
     }
   }, [store, id])
-  //console.log(direction)
   if (!trajectory) return null
   return (
     <WellboreRibbonContext value={context}>

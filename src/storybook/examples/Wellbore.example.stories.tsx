@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/react'
+import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useEffect } from 'react'
 import { BasicTrajectory } from '../../components/Wellbores/BasicTrajectory/BasicTrajectory'
 import { Casings } from '../../components/Wellbores/Casings/Casings'

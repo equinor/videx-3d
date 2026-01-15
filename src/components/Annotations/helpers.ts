@@ -1,6 +1,14 @@
 import { PerspectiveCamera, Vector3 } from 'three'
-import { normalizeVec2, PI, PI2, PI4, PI8, subVec2, Vec3 } from '../../sdk'
-import { unpackRGBAToDepth } from '../../sdk/utils/packing'
+import {
+  normalizeVec2,
+  PI,
+  PI2,
+  PI4,
+  PI8,
+  subVec2,
+  Vec2,
+  Vec3,
+} from '../../sdk'
 
 const position = new Vector3()
 
@@ -28,49 +36,32 @@ export const labelAnglesMap = [
 ]
 
 export const getLabelQuadrant = (
-  originScreen: Vec3,
+  originScreen: Vec2,
   origin3d: Vec3,
   direction3d: Vec3,
   camera: PerspectiveCamera
 ) => {
-  position.set(
-    origin3d[0] + direction3d[0] * 100,
-    origin3d[1] + direction3d[1] * 100,
-    origin3d[2] + direction3d[2] * 100
-  )
+  if (camera) {
+    position.set(
+      origin3d[0] + direction3d[0] * 100,
+      origin3d[1] + direction3d[1] * 100,
+      origin3d[2] + direction3d[2] * 100
+    )
 
-  position.project(camera)
+    position.project(camera)
 
-  const directionScreen = normalizeVec2(
-    subVec2([position.x, position.y], [originScreen[0], originScreen[1]])
-  )
+    const directionScreen = normalizeVec2(
+      subVec2([position.x, position.y], [originScreen[0], originScreen[1]])
+    )
 
-  let angle = Math.atan2(directionScreen[1], directionScreen[0])
-  if (angle < 0) angle = PI + angle // normalize to 0-PI
+    let angle = Math.atan2(directionScreen[1], directionScreen[0])
+    if (isNaN(angle)) return 0
 
-  const quadrant = Math.floor((angle + PI8) / PI4) % 4
+    if (angle < 0) angle = PI + angle // normalize to 0-PI
 
-  return quadrant
-}
+    const quadrant = Math.floor((angle + PI8) / PI4) % 4
 
-export const occlusionTest = (
-  ndc: Vec3,
-  depthBufferWidth: number,
-  depthBufferHeight: number,
-  depthBuffer: Uint8Array
-) => {
-  const c = Math.floor((ndc[0] * 0.5 + 0.5) * depthBufferWidth)
-  const r = Math.floor((ndc[1] * 0.5 + 0.5) * depthBufferHeight)
-  const i = (r * depthBufferWidth + c) * 4
-  const depth =
-    unpackRGBAToDepth(
-      depthBuffer[i],
-      depthBuffer[i + 1],
-      depthBuffer[i + 2],
-      depthBuffer[i + 3]
-    ) *
-      2 -
-    1
-
-  return depth > -1 && depth < ndc[2]
+    return quadrant
+  }
+  return 0
 }

@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/react'
+import type { Meta, StoryObj } from '@storybook/react-vite'
 
 import { useEffect, useMemo } from 'react'
 import { WellboreSelectedEvent } from '../../../events/wellbore-events'
@@ -49,6 +49,7 @@ const meta = {
         <group position={[50, 100, -50]}>
           <BoxGrid
             {...args}
+            projectionRefreshRate={1000}
           >
             <Wellbore id={wellbore.id}>
               <BasicTrajectory />
@@ -101,10 +102,23 @@ export const Light: Story = {
     projectionColor: "#ddd",
     showRulers: false,
     autoSize: true,
-    autoSizePadding: [2000, 0, 2000],
+    autoSizePadding: {
+      x0: 1000,
+      x1: 1000,
+      z0: 1000,
+      z1: 1000,
+      y0: 500,
+      y1: 0,
+    },
     autoSizeUpdateRate: 100,
   },
   parameters: {
+    scale: 100,
+    cameraPosition: [150, 2000, 1500],
+    cameraTarget: [0, 0, 0],
+    autoClear: true,
     background: '#eee',
   },
+  tags: ['autodocs'],
 }
+

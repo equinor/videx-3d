@@ -5,7 +5,7 @@ import { WellboreContext } from './WellboreContext'
 import { PointerEvents } from '../../../events/interaction-events'
 import { WellboreAddedEvent, WellboreRemovedEvent } from '../../../events/wellbore-events'
 import { Vec3 } from '../../../sdk/types/common'
-import { EventEmitterCallback, useEventEmitter } from '../../Handlers/EventEmitter/EventEmitterContext'
+import { EventEmitterCallback, useEventEmitter } from '../../EventEmitter/EventEmitterContext'
 
 /**
  * Wellbore props
@@ -117,7 +117,7 @@ export const Wellbore = ({
 
   return (
     <WellboreContext.Provider value={wellboreContext}>
-      <object3D position={position} visible={visible} ref={wellboreRef}>
+      <object3D name="wellbore" position={position} visible={visible} ref={wellboreRef}>
         {children}
       </object3D>
     </WellboreContext.Provider>

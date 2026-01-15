@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/react'
+import type { Meta, StoryObj } from '@storybook/react-vite'
 import { scaleOrdinal } from 'd3-scale'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { WellboreSelectedEvent, wellboreSelectedEventType } from '../../../events/wellbore-events'
@@ -15,9 +15,10 @@ import storyArgs from '../../../storybook/story-args.json'
 import { useAnnotationsState } from '../../Annotations/annotations-state'
 import { CameraTargetMarker } from '../../CameraTargetMarker/CameraTargetMarker'
 import { Distance } from '../../Distance/Distance'
+import { EventEmitterCallbackEvent } from '../../EventEmitter'
 import { BoxGrid } from '../../Grids/BoxGrid/BoxGrid'
-import { useHighlighter } from '../../Handlers/Highlighter/highlight-state'
-import { Highlighter } from '../../Handlers/Highlighter/Highlighter'
+import { useHighlighter } from '../../Highlighter/highlight-state'
+import { Highlighter } from '../../Highlighter/Highlighter'
 import { UtmArea } from '../../UtmArea/UtmArea'
 import { UtmPosition } from '../../UtmArea/UtmPosition'
 import { BasicTrajectory } from '../BasicTrajectory/BasicTrajectory'
@@ -105,11 +106,11 @@ const Wrapper = () => {
                   <Wellbore
                     id={wellbore.id}
                     fromMsl={fromMsl}
-                    onPointerClick={(event) => {
+                    onPointerClick={(event: EventEmitterCallbackEvent) => {
                       setSelected(event.ref)
                       dispatchEvent(new WellboreSelectedEvent({ id: event.ref, position: event.position, flyTo: !event.keys.ctrlKey }))
                     }}
-                    onPointerEnter={(event) => {
+                    onPointerEnter={(event: EventEmitterCallbackEvent) => {
                       if (!isSelected) {
                         highlighter.highlight(event.target)
                       }

@@ -52,7 +52,7 @@ export const DepthMarkers = forwardRef(({
 
   useEffect(() => {
     if (generator && id) {
-      
+
       generator(id, interval, depthReferencePoint, fromMsl).then(response => {
         if (response && positionRef.current) {
           response.forEach(d => {
@@ -61,7 +61,6 @@ export const DepthMarkers = forwardRef(({
             d.position = v.toArray()
           })
           setLabelData(response || [])
-          //console.log(response)
         }
       })
     }
