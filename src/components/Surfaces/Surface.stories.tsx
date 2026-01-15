@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/react'
+import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useMemo } from 'react'
 import { SurfaceMeta, Vec2 } from '../../sdk'
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator'

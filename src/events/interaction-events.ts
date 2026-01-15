@@ -1,9 +1,8 @@
-import { EventEmitterCallback } from '../components/Handlers/EventEmitter/EventEmitterContext'
-
+import { EventEmitterCallback } from '../components/EventEmitter/EventEmitterContext'
 
 export type PointerEvents = {
-  onPointerEnter?: EventEmitterCallback,
-  onPointerLeave?: EventEmitterCallback,
-  onPointerMove?: EventEmitterCallback,
-  onPointerClick?: EventEmitterCallback,
+  onPointerEnter?: EventEmitterCallback
+  onPointerLeave?: EventEmitterCallback
+  onPointerMove?: EventEmitterCallback
+  onPointerClick?: EventEmitterCallback
 }

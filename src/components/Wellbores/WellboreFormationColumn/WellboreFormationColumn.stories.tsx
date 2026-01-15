@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/react'
+import type { Meta, StoryObj } from '@storybook/react-vite'
 import { range } from 'd3-array'
 import { useEffect, useMemo, useState } from 'react'
 import { GlyphsProvider } from '../../../contexts/GlyphsContextProvider'

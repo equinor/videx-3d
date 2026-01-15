@@ -1,15 +1,19 @@
 import { Line, Mesh, Object3D } from 'three'
 import { create } from 'zustand'
-import { LAYERS } from '../../../layers/layers'
+import { LAYERS } from '../../layers/layers'
 
 type ObjectRef = {
-  object: Mesh | Line,
-  instanceIndex?: number,
+  object: Mesh | Line
+  instanceIndex?: number
 }
 
 type HighlightState = {
   highlighted: ObjectRef[]
-  set: (partial: ((state: HighlightState) => Partial<HighlightState>) | Partial<HighlightState>) => void
+  set: (
+    partial:
+      | ((state: HighlightState) => Partial<HighlightState>)
+      | Partial<HighlightState>
+  ) => void
 }
 
 const keyOf = (o: Object3D, idx?: number) => {
@@ -17,17 +21,28 @@ const keyOf = (o: Object3D, idx?: number) => {
   return `${o.id}`
 }
 
-function addObjects(object: Object3D, set: Record<string, ObjectRef>, index?: number) {
+function addObjects(
+  object: Object3D,
+  set: Record<string, ObjectRef>,
+  index?: number
+) {
   object.traverseVisible((o) => {
     if (!o.layers.isEnabled(LAYERS.NOT_EMITTER)) {
       if (o.type === 'Mesh' || o.type === 'Line') {
-        set[keyOf(o, index)] = { object: o as (Mesh | Line), instanceIndex: index }
+        set[keyOf(o, index)] = {
+          object: o as Mesh | Line,
+          instanceIndex: index,
+        }
       }
     }
   })
 }
 
-function removeObjects(object: Object3D, set: Record<string, ObjectRef>, index?: number) {
+function removeObjects(
+  object: Object3D,
+  set: Record<string, ObjectRef>,
+  index?: number
+) {
   object.traverse((o) => {
     if (o.type === 'Mesh' || o.type === 'Line') {
       delete set[keyOf(o, index)]
@@ -42,10 +57,10 @@ export const useHighlightState = create<HighlightState>((set) => ({
 
 /**
  * Allows a component to interact with the `Highlighter` handler component.
- * 
+ *
  * @example
  * const highlighter = useHighlighter()
- * 
+ *
  * return (
  *   <Wellbore
  *     id={wellbore.id}
@@ -61,10 +76,10 @@ export const useHighlightState = create<HighlightState>((set) => ({
  *    ...
  *  />
  * )
- * 
+ *
  * @see {@link EventEmitter}
  * @see {@link Highlighter}
- * 
+ *
  * @group Hooks
  */
 export const useHighlighter = () => {
@@ -73,7 +88,10 @@ export const useHighlighter = () => {
   return {
     highlight: (obj: Object3D, index?: number) =>
       set((prev) => {
-        const objSet: Record<string, ObjectRef> = prev.highlighted.reduce((acc, d) => ({ ...acc, [keyOf(d.object, d.instanceIndex)]: d }), {})
+        const objSet: Record<string, ObjectRef> = prev.highlighted.reduce(
+          (acc, d) => ({ ...acc, [keyOf(d.object, d.instanceIndex)]: d }),
+          {}
+        )
         addObjects(obj, objSet, index)
         return {
           highlighted: Object.values(objSet).filter(
@@ -83,7 +101,10 @@ export const useHighlighter = () => {
       }),
     removeHighlight: (obj: Object3D, index?: number) =>
       set((prev) => {
-        const objSet: Record<string, ObjectRef> = prev.highlighted.reduce((acc, d) => ({ ...acc, [keyOf(d.object, d.instanceIndex)]: d }), {})
+        const objSet: Record<string, ObjectRef> = prev.highlighted.reduce(
+          (acc, d) => ({ ...acc, [keyOf(d.object, d.instanceIndex)]: d }),
+          {}
+        )
         removeObjects(obj, objSet, index)
         return {
           highlighted: Object.values(objSet).filter(
@@ -93,6 +114,6 @@ export const useHighlighter = () => {
       }),
     removeAll: () => {
       set({ highlighted: [] })
-    }
+    },
   }
 }

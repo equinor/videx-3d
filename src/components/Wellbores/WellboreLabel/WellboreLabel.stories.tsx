@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/react'
+import type { Meta, StoryObj } from '@storybook/react-vite'
 import storyArgs from '../../../storybook/story-args.json'
 import { Wellbore } from '../Wellbore/Wellbore'
 import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator'

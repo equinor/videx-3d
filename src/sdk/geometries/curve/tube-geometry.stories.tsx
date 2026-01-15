@@ -1,5 +1,5 @@
 import { Helper, useTexture } from '@react-three/drei'
-import type { Meta, StoryObj } from '@storybook/react'
+import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useEffect, useState } from 'react'
 import { BufferGeometry } from 'three'
 import { VertexNormalsHelper } from 'three/examples/jsm/Addons.js'
@@ -109,7 +109,7 @@ const DemoComponent = ({
 
   return (
     <mesh geometry={geometry}>
-      <meshStandardMaterial wireframe={showWireframe} color="#999" metalness={1} roughness={0.25} map={showUvMap ? uvMap : null} />
+      <meshStandardMaterial wireframe={showWireframe} color="#999" metalness={0.75} roughness={0.25} map={showUvMap ? uvMap : null} />
       {showNormals && <Helper type={VertexNormalsHelper} args={[0.2 * radius, 0xcc0000]} />}
     </mesh>
   )
@@ -176,5 +176,6 @@ export const Default: Story = {
   parameters: {
     scale: 2,
     autoClear: true,
+
   }
 }
