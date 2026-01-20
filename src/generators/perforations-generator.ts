@@ -14,7 +14,7 @@ import {
   rotateVec3,
   SymbolData,
   SymbolsType,
-  Vec3
+  Vec3,
 } from '../sdk'
 
 //const perforationsPerMeter = 0.5
@@ -34,7 +34,10 @@ export async function generatePerforations(
   fromMsl?: number,
   sizeMultiplier: number = 1
 ): Promise<SymbolsType | null> {
-  const perforationData = await this.get<PerforationInterval[]>('perforations', id)
+  const perforationData = await this.get<PerforationInterval[]>(
+    'perforations',
+    id
+  )
 
   if (!perforationData) return null
 
@@ -140,7 +143,7 @@ export async function generatePerforations(
       angle += degreesToRadians(current.phase)
     }
   }
-  const transformations = new Float32Array(perforations.length * 16 * 3)
+  const transformations = new Float32Array(perforations.length * 16)
   const symbolData: SymbolData[] = []
 
   for (let i = 0; i < perforations.length; i++) {

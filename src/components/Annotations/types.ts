@@ -44,7 +44,7 @@ export type AnnotationInstanceState = {
   transitionTime?: number
   quadrant?: number
   positionSlot?: number
-  screenPosition: Vec3
+  screenPosition: Vec2
   labelPosition?: Vec2
   scaledOffset?: Vec2
   anchorPosition?: Vec2
@@ -81,4 +81,3 @@ export type AnnotationInstance = {
   rank: number
   state: AnnotationInstanceState
 }
-

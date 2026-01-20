@@ -1,4 +1,4 @@
-import { ThreeEvent, useThree } from '@react-three/fiber'
+import { ThreeEvent, useFrame, useThree } from '@react-three/fiber'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BackSide,
@@ -184,11 +184,11 @@ export const Grid = ({
   projectionDistance = 1000,
   projectionColor = "#456",
   projectionResolution = 1024,
-  projectionRefreshRate = 100,
+  projectionRefreshRate = 1000,
   name,
   userData,
   renderOrder,
-  visible,
+  visible = true,
   castShadow,
   receiveShadow,
   layers,
@@ -201,6 +201,7 @@ export const Grid = ({
   const containerRef = useRef<Group>(null)
   const materialRef = useRef<ShaderMaterial>(null)
   const projectionCameraRef = useRef<OrthographicCamera>(null)
+  const timer = useRef(0)
 
   const uniforms = useRef({
     uSize: new Uniform(new Vector2(0, 0)),
@@ -230,8 +231,6 @@ export const Grid = ({
 
   const controls = useThree(state => state.controls)
   const camera = useThree(state => state.camera)
-  const gl = useThree(state => state.gl)
-  const scene = useThree(state => state.scene)
 
   const planeOffsetPosition = useMemo<Vec3>(() => [
     (plane === 'zy' ? planeOffset : 0) + position[0],
@@ -375,7 +374,7 @@ export const Grid = ({
 
   useEffect(() => {
     function onControlsUpdate() {
-      if (containerRef.current && camera) {
+      if (containerRef.current && camera && controls) {
 
         camera.getWorldDirection(direction)
         ray.set(camera.position, direction)
@@ -391,13 +390,12 @@ export const Grid = ({
           }
           index = Math.max(0, index)
           const factor = cellSizeDistanceFactors[index][1]
-          //console.log(distanceFactor)
           setCellSizeFactor(current => current !== factor ? factor : current)
         }
       }
     }
 
-    if (containerRef.current && controls && dynamicCellSize) {
+    if (dynamicCellSize && containerRef.current && controls && camera) {
       // @ts-expect-error generic type never
       controls.addEventListener('update', onControlsUpdate)
       onControlsUpdate()
@@ -417,47 +415,41 @@ export const Grid = ({
     }
   }, [radial, showAxes, dynamicSegments, showRulers])
 
-
-  useEffect(() => {
-    let renderTarget: WebGLRenderTarget | null = null
-    let timer = null
+  const projectionRenderTarget = useMemo(() => {
     if (enableProjection) {
-      renderTarget = new WebGLRenderTarget(projectionResolution, projectionResolution, {
+      return new WebGLRenderTarget(projectionResolution, projectionResolution, {
         minFilter: LinearFilter,
         magFilter: LinearFilter,
         type: HalfFloatType,
         samples: 4
       })
-      uniforms.current.uProjectionTexture.value = renderTarget.texture
-      const takeSnapShot = () => {
-        if (renderTarget && containerRef.current && projectionCameraRef.current) {
+    }
+    return null
+  }, [enableProjection, projectionResolution])
+
+  useFrame(({ gl, scene }, delta) => {
+    if (enableProjection && projectionRenderTarget) {
+      timer.current += delta * 1000
+      if (timer.current >= projectionRefreshRate) {
+        timer.current -= projectionRefreshRate
+        uniforms.current.uProjectionTexture.value = projectionRenderTarget.texture
+        if (containerRef.current && projectionCameraRef.current) {
           const projectionCamera = projectionCameraRef.current
-          const prevTarget = gl.getRenderTarget()
-          const prevClearAlpha = gl.getClearAlpha()
-          gl.setRenderTarget(renderTarget)
-          gl.setClearAlpha(0)
+          const sceneBackground = scene.background
+          gl.setRenderTarget(projectionRenderTarget)
           scene.overrideMaterial = projectionMaterial
           containerRef.current.visible = false
+          scene.background = null
           gl.clear()
           gl.render(scene, projectionCamera)
           scene.overrideMaterial = null
-          gl.setRenderTarget(prevTarget)
-          gl.setClearAlpha(prevClearAlpha)
+          gl.setRenderTarget(null)
+          scene.background = sceneBackground
           containerRef.current.visible = true
         }
       }
-
-      timer = setInterval(takeSnapShot, projectionRefreshRate)
     }
-
-    return () => {
-      if (timer) {
-        clearInterval(timer)
-      }
-      renderTarget?.dispose()
-    }
-  }, [enableProjection, gl, scene, size, projectionDistance, projectionResolution, projectionRefreshRate])
-
+  })
 
   const trackCursor = useCallback((event: ThreeEvent<PointerEvent>) => {
     uniforms.current.uCursorPosition.value.set(event.uv?.x || 0, event.uv?.y || 0)

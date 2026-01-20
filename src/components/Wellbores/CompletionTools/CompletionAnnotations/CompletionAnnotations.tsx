@@ -40,7 +40,6 @@ export const CompletionAnnotations = () => {
             d.id = i.toString()
           })
           setLabelData(response || [])
-          //console.log(response)
         }
       })
     }

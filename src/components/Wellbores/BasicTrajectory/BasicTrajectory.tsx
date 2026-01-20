@@ -68,7 +68,7 @@ export const BasicTrajectory = ({
   }, [onMaterialPropertiesChange])
 
   const material = useMemo<Material | Material[]>(() => {
-    const m = customMaterial ? customMaterial : new LineBasicMaterial({ transparent: true, opacity: 0.8 })
+    const m = customMaterial ? customMaterial : new LineBasicMaterial({ transparent: true, opacity: 0.95 })
     return m
   }, [customMaterial])
 
@@ -98,7 +98,7 @@ export const BasicTrajectory = ({
   if (!geometry) return null
 
   return (
-    <threeLine 
+    <threeLine
       name={name}
       position={position}
       userData={userData}

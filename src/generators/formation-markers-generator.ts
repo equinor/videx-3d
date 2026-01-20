@@ -9,9 +9,12 @@ import {
   SymbolData,
   SymbolsType,
   titleCase,
-  Vec3
+  Vec3,
 } from '../sdk'
-import { getFormationMarkers, getWellboreFormations } from '../sdk/data/helpers/formations-helpers'
+import {
+  getFormationMarkers,
+  getWellboreFormations,
+} from '../sdk/data/helpers/formations-helpers'
 
 const positionVector = new Vector3()
 const targetVector = new Vector3()
@@ -28,8 +31,12 @@ export async function generateFormationMarkers(
   fromMsl?: number,
   baseRadius: number = 10
 ): Promise<SymbolsType | null> {
- 
-  const surfaceIntervals = await getWellboreFormations(wellboreId, stratColumnId, this, fromMsl)
+  const surfaceIntervals = await getWellboreFormations(
+    wellboreId,
+    stratColumnId,
+    this,
+    fromMsl
+  )
 
   if (!surfaceIntervals) return null
 
@@ -38,8 +45,7 @@ export async function generateFormationMarkers(
   if (!formationMarkers.length) return null
 
   const poslogMsl = await this.get<PositionLog>('position-logs', wellboreId)
- 
-  
+
   const trajectory = getTrajectory(wellboreId, poslogMsl)
 
   if (!trajectory) return null
@@ -57,8 +63,8 @@ export async function generateFormationMarkers(
     }
   })
 
-  const transformations = new Float32Array(mappedFormationMarkers.length * 16 * 3)
-  const colors = new Float32Array(mappedFormationMarkers.length * 3 * 3)
+  const transformations = new Float32Array(mappedFormationMarkers.length * 16)
+  const colors = new Float32Array(mappedFormationMarkers.length * 3)
   const symbolData: SymbolData[] = []
 
   mappedFormationMarkers.forEach((pick, i) => {
@@ -101,5 +107,4 @@ export async function generateFormationMarkers(
     },
     [transformations.buffer]
   )
-
 }

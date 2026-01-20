@@ -8,7 +8,7 @@ import {
   PositionLog,
   ReadonlyStore,
   SymbolData,
-  SymbolsType
+  SymbolsType,
 } from '../sdk'
 
 const positionVector = new Vector3()
@@ -56,7 +56,7 @@ export async function generateShoes(
       }
     })
 
-  const transformations = new Float32Array(shoes.length * 16 * 3)
+  const transformations = new Float32Array(shoes.length * 16)
   const symbolData: SymbolData[] = []
 
   shoes.forEach((shoe, i) => {

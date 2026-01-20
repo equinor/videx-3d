@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/react'
+import type { Meta, StoryObj } from '@storybook/react-vite'
 
 import { Float } from '@react-three/drei'
 import { TextureLoader } from 'three'
@@ -343,6 +343,7 @@ export const Projections: Story = {
     gridLineWidth: 0.01,
     enableProjection: true,
     projectionColor: '#789',
+    projectionRefreshRate: 100
   },
   render: (args: GridProps) => (
     <group>

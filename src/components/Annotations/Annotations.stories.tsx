@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from '@storybook/react'
+import type { Meta, StoryObj } from '@storybook/react-vite'
 import { ComponentProps, useEffect } from 'react'
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator'
 import { Annotations } from './Annotations'

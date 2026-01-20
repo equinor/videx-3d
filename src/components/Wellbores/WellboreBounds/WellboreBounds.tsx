@@ -119,7 +119,7 @@ export const WellboreBounds = ({
     }
   }, [id, boundsGenerator, fromMsl, boundsSampleSize])
 
-  
+
 
   useFrame(({ camera }) => {
     if (bounds) {
@@ -128,13 +128,13 @@ export const WellboreBounds = ({
   })
 
   return (
-    <object3D ref={boundsRef}>
+    <object3D name="wellbore-bounds" ref={boundsRef}>
       <DistanceContext.Provider value={currentDistanceRef}>
         {children}
       </DistanceContext.Provider>
       { // for debug purposes
         visible && bounds && (
-          <mesh position={bounds.main.center}>
+          <mesh name="wellbore-bounds-debug" position={bounds.main.center}>
             <sphereGeometry args={[bounds.main.radius, 32, 16]} />
             <meshBasicMaterial color="green" wireframe transparent opacity={0.1} />
           </mesh>
@@ -142,7 +142,7 @@ export const WellboreBounds = ({
       }
       {
         visible && bounds && bounds.sampled.map((s, i) => (
-          <mesh key={i} position={s.center}>
+          <mesh name="wellbore-bounds-debug" key={i} position={s.center}>
             <sphereGeometry args={[s.radius, 16, 8]} />
             <meshBasicMaterial color="gray" wireframe transparent opacity={0.25} />
           </mesh>

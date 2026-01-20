@@ -5,7 +5,7 @@ import { useGenerator } from '../../hooks/useGenerator'
 import { createLayers, LAYERS } from '../../layers/layers'
 import { createElevationTexture, createNormalTexture, SurfaceMeta, unpackBufferGeometry, Vec2 } from '../../sdk'
 import { CommonComponentProps } from '../common'
-import { EventEmitterCallback, useEventEmitter } from '../Handlers/EventEmitter/EventEmitterContext'
+import { EventEmitterCallback, useEventEmitter } from '../EventEmitter/EventEmitterContext'
 import { surfaceGeometry, SurfaceGeometryResponse, surfaceTextures, SurfaceTexturesResponse } from './surface-defs'
 import { ContourColorMode, SurfaceMaterial } from './SurfaceMaterial'
 
