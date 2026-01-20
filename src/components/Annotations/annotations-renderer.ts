@@ -58,7 +58,7 @@ export class AnnotationsRenderer {
     camera: Camera,
     clock: Clock,
     pointer: Vector2,
-    maxVisible: number = 100
+    maxVisible: number = 100,
   ) {
     this.camera = camera as PerspectiveCamera
     this.clock = clock
@@ -82,7 +82,7 @@ export class AnnotationsRenderer {
         samples: 0,
         colorSpace: NoColorSpace,
         generateMipmaps: false,
-      }
+      },
     )
 
     this.annotationsBuffer = new Uint8Array(this.annotationsTexSize * 2)
@@ -108,7 +108,7 @@ export class AnnotationsRenderer {
 
     this.unsubscribeState = useAnnotationsState.subscribe(
       (state) => state.instances,
-      (instances) => this.updateDataTexture(instances)
+      (instances) => this.updateDataTexture(instances),
     )
   }
 
@@ -187,7 +187,7 @@ export class AnnotationsRenderer {
             ;[x2, y2] = mixVec2(
               instance.state.prevAnchorPosition,
               instance.state.anchorPosition!,
-              instance.state.transitionTime
+              instance.state.transitionTime,
             )
           } else {
             ;[x2, y2] = instance.state.anchorPosition!
@@ -195,7 +195,7 @@ export class AnnotationsRenderer {
 
           let strokeWidth = Math.max(
             0.1,
-            instance.layer.connectorWidth * instance.state.scaleFactor!
+            instance.layer.connectorWidth * instance.state.scaleFactor!,
           )
           if (instance.state.labelHovered || anchorHovered) {
             strokeWidth *= 2
@@ -234,7 +234,6 @@ export class AnnotationsRenderer {
       const size = instances.length
       if (size !== this.annotationsTexSize) {
         this.annotationsRenderTarget.setSize(size, 1, 0)
-        // this.occlusionBuffer = new Uint8Array(size * 4)
         this.annotationsBuffer = new Uint8Array(size * 2)
         this.annotationsTexSize = size
       }
@@ -261,7 +260,6 @@ export class AnnotationsRenderer {
   }
 
   dispose() {
-    console.log('disposing annotations renderer')
     this.unsubscribeState()
     this.annotationsMaterial.dispose()
     if (this.annotationsMaterial.uniforms.dataTexture.value) {
@@ -292,7 +290,7 @@ export class AnnotationsRenderer {
       this.fullscreenRenderer.renderMaterial(
         renderer,
         this.annotationsRenderTarget,
-        this.annotationsMaterial
+        this.annotationsMaterial,
       )
       renderer
         .readRenderTargetPixelsAsync(
@@ -301,7 +299,7 @@ export class AnnotationsRenderer {
           0,
           this.annotationsTexSize,
           1,
-          this.annotationsBuffer
+          this.annotationsBuffer,
         )
         .then((buffer) => this.updateAnnotationsData(buffer as Uint8Array))
         .finally(() => {
@@ -312,7 +310,7 @@ export class AnnotationsRenderer {
       instances,
       camera,
       this.clock,
-      maxVisible
+      maxVisible,
     )
     postProcessInstances(visibleInstances, [size.x, size.y])
     updateInstanceDOMElements(instances)

@@ -67,7 +67,7 @@ export class PickingHelper {
     object: Object3D,
     rootId: number,
     depth: number,
-    threshold?: number
+    threshold?: number,
   ) => {
     if (object.visible && !object.layers.isEnabled(LAYERS.NOT_EMITTER)) {
       if (
@@ -80,8 +80,8 @@ export class PickingHelper {
         const emitterThreshold: number = Number.isFinite(threshold)
           ? threshold!
           : object.type === 'Mesh'
-          ? 0
-          : 3
+            ? 0
+            : 3
 
         if (instanceCount > 0) {
           let emitter = this._material.emitters.get(object.id)
@@ -129,7 +129,7 @@ export class PickingHelper {
         listener.object,
         listener.object.id,
         0,
-        listener.threshold
+        listener.threshold,
       )
     })
   }
@@ -159,10 +159,10 @@ export class PickingHelper {
     pointer: Vector2,
     renderer: WebGLRenderer,
     scene: Scene,
-    camera: PerspectiveCamera
+    camera: PerspectiveCamera,
   ) {
-    const width = renderer.domElement.clientWidth //getContext().drawingBufferWidth
-    const height = renderer.domElement.clientHeight //getContext().drawingBufferHeight
+    const width = renderer.domElement.clientWidth
+    const height = renderer.domElement.clientHeight
     const point = pointer.toArray()
     const screen = normalizedDeviceToScreen(point, width, height)
 
@@ -170,13 +170,9 @@ export class PickingHelper {
     const y = screen[1] - this._radius
 
     const prevLayers = camera.layers.mask
-    // const prevSortObjects = renderer.sortObjects
-    // const prevMatrixAutoUpdate = scene.matrixAutoUpdate
     const prevSceneBackground = scene.background
     const prevClearColor = renderer.clearColor
     const prevClearAlpha = renderer.getClearAlpha()
-    // renderer.sortObjects = false
-    // scene.matrixAutoUpdate = false
     scene.background = null
     scene.overrideMaterial = this._material
 
@@ -199,8 +195,6 @@ export class PickingHelper {
     camera.clearViewOffset()
     camera.layers.mask = prevLayers
 
-    // renderer.sortObjects = prevSortObjects
-    // scene.matrixAutoUpdate = prevMatrixAutoUpdate
     scene.background = prevSceneBackground
 
     this._material.currentObjectMap = null
@@ -217,7 +211,7 @@ export class PickingHelper {
         0, // y
         this._size, // width
         this._size, // height
-        this._buffer
+        this._buffer,
       )
       .then((buffer) => this.pick(buffer as Float32Array, objectMap, point))
   }
@@ -225,7 +219,7 @@ export class PickingHelper {
   private pick(
     buffer: Float32Array,
     objectMap: Array<number>,
-    point: Vec2
+    point: Vec2,
   ): PickResult {
     const match: {
       object: PickedObject | null
@@ -286,7 +280,7 @@ export class PickingHelper {
     const listeners = Array.from(this._material.listeners.values())
     this._material.dispose()
     listeners.forEach((listener) =>
-      listener.object.traverse((obj) => obj.layers.disable(LAYERS.EMITTER))
+      listener.object.traverse((obj) => obj.layers.disable(LAYERS.EMITTER)),
     )
   }
 }

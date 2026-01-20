@@ -231,9 +231,6 @@ export const Grid = ({
 
   const controls = useThree(state => state.controls)
   const camera = useThree(state => state.camera)
-  // const gl = useThree(state => state.gl)
-  // const scene = useThree(state => state.scene)
-
 
   const planeOffsetPosition = useMemo<Vec3>(() => [
     (plane === 'zy' ? planeOffset : 0) + position[0],
