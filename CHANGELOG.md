@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.0.4-beta](https://github.com/equinor/videx-3d/compare/v5.0.3-beta...v5.0.4-beta) (2026-01-20)
+
+
+### Bug Fixes
+
+* **performance:** redone picking and annotations processing and overall fixes ([#115](https://github.com/equinor/videx-3d/issues/115)) ([878b5b2](https://github.com/equinor/videx-3d/commit/878b5b29381fa835f1fa8314d5bf2820d587e8e6))
+
 ## [5.0.3-beta](https://github.com/equinor/videx-3d/compare/v5.0.2-beta...v5.0.3-beta) (2026-01-06)
 
 
