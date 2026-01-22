@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.0.5-beta](https://github.com/equinor/videx-3d/compare/v5.0.4-beta...v5.0.5-beta) (2026-01-22)
+
+
+### Bug Fixes
+
+* **surface:** pass elevation data as float32 texture to avoid precisi… ([#119](https://github.com/equinor/videx-3d/issues/119)) ([8ce1c71](https://github.com/equinor/videx-3d/commit/8ce1c71749ecb6fcbad658fef5b160c7612ddc4d))
+
 ## [5.0.4-beta](https://github.com/equinor/videx-3d/compare/v5.0.3-beta...v5.0.4-beta) (2026-01-20)
 
 
