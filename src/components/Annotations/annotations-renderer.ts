@@ -10,8 +10,8 @@ import {
   NearestFilter,
   NoColorSpace,
   PerspectiveCamera,
+  RedFormat,
   RGBAFormat,
-  RGFormat,
   ShaderMaterial,
   Texture,
   Uniform,
@@ -75,7 +75,7 @@ export class AnnotationsRenderer {
       {
         depthBuffer: false,
         stencilBuffer: false,
-        format: RGFormat,
+        format: RedFormat,
         type: UnsignedByteType,
         magFilter: NearestFilter,
         minFilter: NearestFilter,
@@ -85,7 +85,7 @@ export class AnnotationsRenderer {
       },
     )
 
-    this.annotationsBuffer = new Uint8Array(this.annotationsTexSize * 2)
+    this.annotationsBuffer = new Uint8Array(this.annotationsTexSize)
 
     const perspectiveCamera = camera as PerspectiveCamera
     const depthConstant =
@@ -116,10 +116,9 @@ export class AnnotationsRenderer {
     const { annotationsData } = this
 
     annotationsData.forEach((instance, i) => {
-      const j = i * 2
-      if (j + 1 < buffer.length) {
-        const isOccluded = buffer[j] > 0
-        const isInViewSpace = buffer[j + 1] > 0
+      if (i < buffer.length) {
+        const isOccluded = (buffer[i] & 0b01) == 1
+        const isInViewSpace = (buffer[i] & 0b10) == 2
 
         instance.state.inViewSpace = isInViewSpace
 

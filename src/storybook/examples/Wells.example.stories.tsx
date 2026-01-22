@@ -86,7 +86,7 @@ type ExampleProps = {
     gridColorMinor?: string,
     gridBackground?: string,
     axesColor?: string,
-  }
+  },
 }
 
 const Example = (args: ExampleProps) => {
@@ -456,7 +456,7 @@ const meta = {
     simplificationThreshold: {
       control: { type: 'range', min: 0, max: 0.0001, step: 0.000001 }
     },
-    colors: { control: { disable: true } }
+    colors: { control: { disable: true } },
   },
   decorators: [
     PerformanceDecorator,

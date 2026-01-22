@@ -1,12 +1,5 @@
-import { DataTexture, LinearFilter } from 'three'
-import {
-  crossVec3,
-  normalizeVec3,
-  rotateVec3,
-  subVec3,
-  toRGB,
-  Vec3
-} from '../../sdk'
+import { DataTexture, FloatType, LinearFilter, RedFormat } from 'three'
+import { crossVec3, normalizeVec3, rotateVec3, subVec3, Vec3 } from '../../sdk'
 
 export function triangleNormal(p0: Vec3, p1: Vec3, p2: Vec3) {
   const a = subVec3(p0, p1)
@@ -15,29 +8,7 @@ export function triangleNormal(p0: Vec3, p1: Vec3, p2: Vec3) {
 }
 
 /**
- * Encode elevation data to RGBA image values so it can be used as a data texture. Depth
- * values are required by the surface material to map to color ramps and also for contours.
- */
-export function elevationMapToRGBA(
-  data: Float32Array,
-  nullValue: number = -1,
-) {
-  const buffer = new Uint8Array(data.length * 4)
-  for (let i = 0; i < data.length; i++) {
-    const v = data[i]
-    const rgb = v === nullValue ? [0, 0, 0] : toRGB(v)
-    const j = i * 4
-    buffer[j] = rgb[0]
-    buffer[j + 1] = rgb[1]
-    buffer[j + 2] = rgb[2]
-    buffer[j + 3] = v === -1 ? 0 : 255
-  }
-
-  return buffer
-}
-
-/**
- * Calcukate and encode surface normals from an elevation grid as RGBA image values. 
+ * Calcukate and encode surface normals from an elevation grid as RGBA image values.
  */
 export function elevationMapNormalsToRGBA(
   data: Float32Array,
@@ -55,7 +26,7 @@ export function elevationMapNormalsToRGBA(
   let i = 0
 
   const value = (x: number, y: number) => data[y * columns + x]
-  
+
   for (let y0 = 0; y0 < h; y0++) {
     const y1 = y0 + 1
     const yc = y0 + 0.5
@@ -67,7 +38,6 @@ export function elevationMapNormalsToRGBA(
         const z01 = value(x0, y1)
         const z10 = value(x1, y0)
         const z11 = value(x1, y1)
-
 
         const zc = (z00 + z01 + z10 + z11) / 4
         const p00: Vec3 = [x0 * xScale, y0 * yScale, z00]
@@ -101,7 +71,7 @@ export function elevationMapNormalsToRGBA(
         buffer[i + 2] = 0
         buffer[i + 3] = 0
       }
-      i+=4
+      i += 4
     }
   }
   return buffer
@@ -115,7 +85,6 @@ export function createNormalTexture(
   width: number,
   height: number,
 ) {
- 
   const normalTexture = new DataTexture(buffer, width, height)
 
   normalTexture.minFilter = LinearFilter
@@ -131,14 +100,20 @@ export function createNormalTexture(
  * Create a data texture from RGBA encoded depth values
  */
 export function createElevationTexture(
-  buffer: Uint8Array,
+  buffer: Float32Array,
   width: number,
   height: number,
 ) {
-  const elevationTexture = new DataTexture(buffer, width, height)
+  const elevationTexture = new DataTexture(
+    buffer,
+    width,
+    height,
+    RedFormat,
+    FloatType,
+  )
   elevationTexture.minFilter = LinearFilter
   elevationTexture.magFilter = LinearFilter
-  //tex.anisotropy = 4
+  //elevationTexture.anisotropy = 4
   elevationTexture.needsUpdate = true
   elevationTexture.flipY = true
 

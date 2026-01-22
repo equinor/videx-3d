@@ -4,6 +4,7 @@ import { SurfaceMeta, Vec2 } from '../../sdk'
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator'
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator'
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator'
+import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator'
 import { useSurfaceMeta } from '../../storybook/hooks/useSurfaceMeta'
 import storyArgs from '../../storybook/story-args.json'
 import { UtmArea, UtmPosition } from '../UtmArea'
@@ -18,7 +19,7 @@ const utmZone = storyArgs.utmZone
 const origin = storyArgs.origin as Vec2
 
 type SurfaceStoryProps = Omit<SurfaceProps, 'meta'> & {
-  surfaceId: string
+  surfaceId: string,
 }
 
 const SurfaceStory = (props: SurfaceStoryProps) => {
@@ -74,6 +75,7 @@ export const Default: Story = {
     contoursColor: '#000000',
     rampMin: 0,
     rampMax: 0,
+    debug: false
   },
   argTypes: {
     surfaceId: {
@@ -168,9 +170,13 @@ export const Default: Story = {
         max: 100,
         step: 1,
       }
+    },
+    debug: {
+      control: { type: 'boolean' }
     }
   },
   decorators: [
+    GlyphsDecorator,
     Canvas3dDecorator,
     GeneratorsProviderDecorator,
     DataProviderDecorator,

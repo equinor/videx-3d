@@ -87,7 +87,7 @@ export const EventEmitter = ({
     ) {
       const listener = pickingHelper.getListener(previous.emitter.listener)
       if (listener && listener.handlers.leave) {
-        listener.handlers.leave({
+        const leaveEvent = {
           target: listener.object,
           source: previous.emitter.source,
           ref: listener.ref,
@@ -97,7 +97,8 @@ export const EventEmitter = ({
           keys,
           camera,
           domElement: gl.domElement,
-        })
+        }
+        setTimeout(() => listener.handlers.leave(leaveEvent))
       }
     }
 
@@ -113,7 +114,7 @@ export const EventEmitter = ({
       ) {
         const listener = pickingHelper.getListener(current.emitter.listener)
         if (listener && listener.handlers.enter) {
-          listener.handlers.enter({
+          const enterEvent = {
             target: listener.object,
             source: current.emitter.source,
             ref: listener.ref,
@@ -123,13 +124,14 @@ export const EventEmitter = ({
             keys,
             camera,
             domElement: gl.domElement,
-          })
+          }
+          setTimeout(() => listener.handlers.enter(enterEvent))
         }
       }
 
       // pointer move check
       if (listener && listener.handlers.move) {
-        listener.handlers.move({
+        const moveEvent = {
           target: listener.object,
           source: current.emitter.source,
           ref: listener.ref,
@@ -139,7 +141,8 @@ export const EventEmitter = ({
           keys,
           camera,
           domElement: gl.domElement,
-        })
+        }
+        setTimeout(() => listener.handlers.move(moveEvent))
       }
     }
 
@@ -174,7 +177,7 @@ export const EventEmitter = ({
       eventState.pickingHelper.updateListeners()
       eventState.pickingHelper.render(pointer, gl, scene, camera as PerspectiveCamera)
         .then(pickResultHandler)
-        .finally(() => eventState.busy = false)
+        .finally(() => { eventState.busy = false })
     }
 
   }, [gl, camera, scene, pointer, eventState, pickResultHandler])

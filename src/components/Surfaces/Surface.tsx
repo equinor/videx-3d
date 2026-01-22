@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { BufferGeometry, DataTexture, DoubleSide, FrontSide, Group, MeshBasicMaterial, Texture } from 'three'
 import { PointerEvents } from '../../events/interaction-events'
 import { useGenerator } from '../../hooks/useGenerator'
 import { createLayers, LAYERS } from '../../layers/layers'
-import { createElevationTexture, createNormalTexture, SurfaceMeta, unpackBufferGeometry, Vec2 } from '../../sdk'
+import { GlyphsContext } from '../../main'
+import { createElevationTexture, SurfaceMeta, unpackBufferGeometry, Vec2 } from '../../sdk'
 import { CommonComponentProps } from '../common'
 import { EventEmitterCallback, useEventEmitter } from '../EventEmitter/EventEmitterContext'
 import { surfaceGeometry, SurfaceGeometryResponse, surfaceTextures, SurfaceTexturesResponse } from './surface-defs'
@@ -34,6 +35,7 @@ export type SurfaceProps = CommonComponentProps & PointerEvents & {
   wireframe?: boolean,
   normalMap?: Texture,
   normalScale?: Vec2,
+  debug?: boolean
 }
 
 
@@ -79,6 +81,7 @@ export const Surface = ({
   position,
   renderOrder,
   visible = true,
+  debug = false,
   onPointerClick,
   onPointerEnter,
   onPointerLeave,
@@ -89,10 +92,11 @@ export const Surface = ({
   const texturesGenerator = useGenerator<SurfaceTexturesResponse>(surfaceTextures, priority)
 
   const [geometry, setGeometry] = useState<BufferGeometry | null>(null)
-  const [depthTexture, setDepthTexture] = useState<DataTexture | null>(null)
-  const [normals, setNormals] = useState<DataTexture | null>(null)
+  const [elevationTexture, setElevationTexture] = useState<DataTexture | null>(null)
 
   const notEmitterLayers = useMemo(() => createLayers(LAYERS.NOT_EMITTER), [])
+
+  const glyphContext = useContext(GlyphsContext)
 
   const material = useMemo(() => {
     const m = new SurfaceMaterial({
@@ -110,10 +114,28 @@ export const Surface = ({
       flatShading: false,
       transparent: true,
       opacity: 1,
+      debug: false,
     })
 
     return m
   }, [])
+
+  useEffect(() => {
+    if (debug && glyphContext) {
+      material.uniformsGroups = [glyphContext.glyphData]
+      material.defines.GLYPHS_LENGTH = glyphContext.glyphsCount
+      material.uniforms.glyphAtlas.value = glyphContext.glyphAtlas
+      material.uniforms.digits.value = [...glyphContext.encodeText('0123456789.-').indices]
+    } else {
+      material.uniformsGroups = []
+      material.defines.GLYPHS_LENGTH = 1
+      material.uniforms.glyphAtlas.value = null
+      material.uniforms.digits.value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    }
+    material.debug = debug
+    material.needsUpdate = true
+    material.uniformsNeedUpdate = true
+  }, [debug, material, glyphContext])
 
   /* This is used to write back-side faces to the depth buffer to avoid self-transparency issues when opacity < 1 */
   const maskMaterial = useMemo(() => {
@@ -161,12 +183,16 @@ export const Surface = ({
     material.uniforms.colorRampMax.value = rampMax
     material.uniforms.colorRampReverse.value = reverseRamp
     material.uniforms.referenceDepth.value = meta.max
+    material.uniforms.size.value.set(meta.header.nx, meta.header.ny)
+    material.uniforms.scale.value.set(meta.header.xinc, meta.header.yinc)
+    material.uniforms.rotation.value = meta.header.rot * (Math.PI / 180)
+    material.uniformsNeedUpdate = true
     if (normalScale) {
       material.uniforms.normalScale.value.set(...normalScale)
     }
   }, [
     material,
-    meta.max,
+    meta,
     colorRamp,
     opacity,
     showContours,
@@ -207,7 +233,6 @@ export const Surface = ({
         if (response) {
           const {
             elevationImageBuffer,
-            normalsImageBuffer,
           } = response
 
           const elevationTexture = createElevationTexture(
@@ -215,24 +240,16 @@ export const Surface = ({
             meta.header.nx,
             meta.header.ny,
           )
-          const normalTexture = createNormalTexture(
-            normalsImageBuffer,
-            meta.header.nx - 1,
-            meta.header.ny - 1,
-          )
 
-          setDepthTexture(prev => {
+          setElevationTexture(prev => {
             if (prev) prev.dispose()
             return elevationTexture
           })
-          setNormals(prev => {
-            if (prev) prev.dispose()
-            return normalTexture
-          })
+
         }
       })
     }
-  }, [texturesGenerator, meta.id, meta.header.nx, meta.header.ny])
+  }, [texturesGenerator, meta])
 
   useEffect(() => {
     if (geometryGenerator) {
@@ -251,22 +268,16 @@ export const Surface = ({
   }, [geometryGenerator, meta.id, maxError])
 
   useEffect(() => {
-    if (depthTexture && material) {
-      const { width, height } = depthTexture.image
+    if (elevationTexture && material) {
+      const { width, height } = elevationTexture.image
       const sx = (width - 1) / width
       const sy = (height - 1) / height
       const tx = (1 - sx) / 2
       const ty = (1 - sy) / 2
-      material.uniforms.depthTexture.value = depthTexture
-      material.uniforms.depthUvMat.value.setUvTransform(tx, ty, sx, sy, 0, 0, 0)
+      material.uniforms.elevationTexture.value = elevationTexture
+      material.uniforms.gridUvMat.value.setUvTransform(tx, ty, sx, sy, 0, 0, 0)
     }
-  }, [depthTexture, material])
-
-  useEffect(() => {
-    if (normals && material) {
-      material.uniforms.normalTexture.value = normals
-    }
-  }, [normals, material])
+  }, [elevationTexture, material])
 
   useEffect(() => {
     return () => {
@@ -274,6 +285,8 @@ export const Surface = ({
       material.dispose()
     }
   }, [material])
+
+  if (debug && !glyphContext) return null
 
   return (
     <group

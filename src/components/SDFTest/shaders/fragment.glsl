@@ -1,7 +1,6 @@
 #include <common>
 #include <logdepthbuf_pars_fragment>
 
-
 uniform float time;
 
 uniform float fontSize;
@@ -10,6 +9,7 @@ uniform float spacing;
 uniform float verticalAlign;
 uniform float horizontalAlign;
 
+varying vec2 vUv;
 #include ../../../sdk/materials/shaderLib/glyphs.glsl
 #include ../../../sdk/materials/shaderLib/render-text.glsl
 #include ../../../sdk/materials/shaderLib/render-number.glsl
@@ -34,8 +34,6 @@ void textGuides(inout vec3 outColor, vec2 position) {
 
   helper = sdfLine(position, vec2(0.0), vec2(size.x, 0.0));
   outColor = mix(outColor, vec3(0.0, 1.0, 0.0), smoothstep(1.0, -1.0, helper));
-
-  
 
 }
 
