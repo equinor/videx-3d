@@ -6,7 +6,6 @@ import {
   MeshLambertMaterialParameters,
   MultiplyOperation,
   NearestFilter,
-  //NoColorSpace,
   RGBAFormat,
   ShaderLib,
   ShaderMaterial,
@@ -18,8 +17,8 @@ import {
   Vector2,
 } from 'three'
 import { colorRamps, createColorRamps } from './color-ramps'
-import fragmentShader from './shaders/fragment.glsl'
-import vertexShader from './shaders/vertex.glsl'
+import fragmentShader from './shaders/surface-frag.glsl'
+import vertexShader from './shaders/surface-vert.glsl'
 
 const canvas = createColorRamps(colorRamps, 512)
 const colorRampTexture = new CanvasTexture(canvas)
@@ -27,7 +26,6 @@ colorRampTexture.magFilter = LinearFilter
 colorRampTexture.minFilter = NearestFilter
 colorRampTexture.flipY = false
 colorRampTexture.generateMipmaps = false
-//colorRampTexture.colorSpace = NoColorSpace
 colorRampTexture.colorSpace = SRGBColorSpace
 colorRampTexture.format = RGBAFormat
 colorRampTexture.anisotropy = 4
@@ -53,8 +51,9 @@ export type SurfaceMaterialParameters = ShaderMaterialParameters &
     contoursColorMode?: ContourColorMode
     contoursColorModeFactor?: number
     contoursColor?: string | number | Color
-    depthTexture?: Texture
+    elevationTexture?: Texture
     normalTexture?: Texture
+    debug?: boolean
   }
 
 const shader = {
@@ -63,6 +62,8 @@ const shader = {
     USE_COLOR_RAMP: false,
     USE_CONTOURS: false,
     USE_UV: true,
+    USE_DEBUG: false,
+    GLYPHS_LENGTH: 1,
   },
   uniforms: UniformsUtils.merge([
     UniformsUtils.clone(ShaderLib['lambert'].uniforms),
@@ -76,14 +77,20 @@ const shader = {
       referenceDepth: { value: 1000 },
       saturation: { value: 1 },
       brightness: { value: 0 },
-      depthTexture: { value: null },
+      elevationTexture: { value: null },
       normalTexture: { value: null },
       contoursInterval: { value: 100 },
       contoursColorMode: { value: 0 },
       contoursColorModeFactor: { value: 0.5 },
       contoursColor: { value: new Color('black') },
       contoursThickness: { value: 0.8 },
-      depthUvMat: { value: new Matrix3() },
+      gridUvMat: { value: new Matrix3() },
+      size: { value: new Vector2() },
+      scale: { value: new Vector2() },
+      rotation: { value: 0 },
+      // for debug mode
+      glyphAtlas: { value: null },
+      digits: { value: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
     },
   ]),
   vertexShader,
@@ -154,7 +161,7 @@ export class SurfaceMaterial extends ShaderMaterial {
       'contoursColorModeFactor',
       'contoursThickness',
       'normalTexture',
-      'depthTexture',
+      'elevationTexture',
     ]
 
     for (const propertyName of exposePropertyNames) {
@@ -211,10 +218,19 @@ export class SurfaceMaterial extends ShaderMaterial {
     this.needsUpdate = true
   }
 
+  get debug() {
+    return this.defines.USE_DEBUG || false
+  }
+
+  set debug(value) {
+    this.defines.USE_DEBUG = !!value
+    this.needsUpdate = true
+  }
+
   // @ignore
   dispose(): void {
     super.dispose()
-    this.uniforms.depthTexture.value?.dispose()
+    this.uniforms.elevationTexture.value?.dispose()
   }
 
   // @ignore

@@ -6,7 +6,7 @@ uniform mat4 vMatrix;
 
 varying vec2 vUv;
 
-layout(location = 0) out vec2 value;
+layout(location = 0) out float value;
 
 const float epsilon = 1e-8;
 const vec4 viewSpace = vec4(-0.99, 0.99, -0.99, 0.99);
@@ -47,7 +47,10 @@ void main() {
 
   float sceneDepth = texture2D(depthTexture, uvDepth).r;
 
-  bool isOccluded = (sceneDepth + epsilon) < pointDepth;
+  value = 0.0;
+  if((sceneDepth + epsilon) < pointDepth)
+    value += 1.0 / 255.0;
+  if(inViewSpace)
+    value += 2.0 / 255.0;
 
-  value = vec2(isOccluded ? 1. : 0., inViewSpace ? 1. : 0.);
 }

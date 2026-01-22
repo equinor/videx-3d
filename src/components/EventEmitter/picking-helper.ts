@@ -232,22 +232,29 @@ export class PickingHelper {
     }
 
     let i = 0
+    let ox = 0
+    let oy = 0
+    let lsqr = 0
+    let emitterId = 0
+    let mapIndex = 0
+    let objectId = 0
+    let instanceIndex = 0
+    let emitter: Emitter | undefined = undefined
 
     // Find closest match if any
     for (let r = this._size - 1; r >= 0; r--) {
       for (let c = 0; c < this._size; c++, i += 4) {
-        const emitterId = buffer[i] - 1
+        emitterId = buffer[i] - 1
         if (emitterId >= 0 && emitterId < objectMap.length - 1) {
-          const mapIndex = emitterId * 2
-          const objectId = objectMap[mapIndex]
-          const instanceIndex = objectMap[mapIndex + 1]
+          mapIndex = emitterId * 2
+          objectId = objectMap[mapIndex]
+          instanceIndex = objectMap[mapIndex + 1]
 
-          const emitter = this._material.emitters.get(objectId)
+          emitter = this._material.emitters.get(objectId)
           if (emitter) {
-            const { threshold } = emitter
-            const ox = c - this._radius
-            const oy = r - this._radius
-            const lsqr = ox ** 2 + oy ** 2 - threshold ** 2
+            ox = c - this._radius
+            oy = r - this._radius
+            lsqr = ox ** 2 + oy ** 2 - emitter.threshold ** 2
 
             if (!match.object || match.lsqr > lsqr) {
               match.object = {

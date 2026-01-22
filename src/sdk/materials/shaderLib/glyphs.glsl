@@ -14,7 +14,7 @@ uniform GlyphData {
   float glyphBaseLine;
 };
 
-varying vec2 vUv;
+//varying vec2 vUv;
 
 struct GlyphParams {
   vec2 position;
@@ -76,4 +76,3 @@ void renderGlyph(inout vec3 outColor, vec2 position, uint glyphId, vec3 glyphCol
 
   outColor = mix(outColor, glyphColor, contour);
 }
-

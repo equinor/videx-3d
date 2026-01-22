@@ -1,29 +1,30 @@
 #define MESH_SURFACE_MATERIAL
 
-uniform sampler2D normalTexture;
+uniform mat3 gridUvMat;
 uniform mat3 normalMatrix;
 uniform float referenceDepth;
-uniform sampler2D depthTexture;
+uniform sampler2D elevationTexture;
+uniform vec2 scale;
+uniform float rotation;
+#ifndef USE_DEBUG
+uniform vec2 size;
+#endif
 
 #ifdef USE_COLOR_RAMP
-
 uniform sampler2D colorRampTexture;
 uniform int colorRampIndex;
 uniform float colorRampMin;
 uniform float colorRampMax;
 uniform bool colorRampReverse;
 uniform int colorRamps;
-
 #endif
 
 #ifdef USE_CONTOURS
-
 uniform float contoursInterval;
 uniform int contoursColorMode;
 uniform float contoursColorModeFactor;
 uniform float contoursThickness;
 uniform vec3 contoursColor;
-
 #endif
 
 uniform float saturation;
@@ -32,7 +33,7 @@ uniform vec3 diffuse;
 uniform vec3 emissive;
 uniform float opacity;
 
-varying vec2 vDepthUv;
+varying vec2 vGridUv;
 
 #include <common>
 #include <packing>
@@ -70,12 +71,48 @@ varying vec3 vBitangent;
 // custom fragments
 #include ../../../sdk/materials/shaderLib/color-conversion.glsl
 
+#ifdef USE_DEBUG
+#include ../../../sdk/materials/shaderLib/glyphs.glsl
+#include ../../../sdk/materials/shaderLib/render-number.glsl
+
+float pristineGrid(vec2 uv, vec2 lineWidth) {
+  vec2 uvDeriv = fwidth(uv * 2.0);
+
+  vec2 drawWidth = clamp(lineWidth, uvDeriv, vec2(0.5));
+  vec2 lineAA = uvDeriv * 1.5;
+  vec2 gridUV = 1.0 - abs(fract(uv) * 2.0 - 1.0);
+  vec2 grid2 = smoothstep(drawWidth + lineAA, drawWidth - lineAA, gridUV);
+  grid2 *= saturate(lineWidth / drawWidth);
+  grid2 = mix(grid2, lineWidth, clamp(uvDeriv * 2.0 - 1.0, 0.0, 1.0));
+
+  return max(grid2.x, grid2.y);
+}
+
+vec4 drawGrid(vec4 color, vec2 uv, vec3 lineColor, vec2 lineWidth) {
+  float grid = pristineGrid(uv, lineWidth);
+  color = mix(color, vec4(lineColor, 1.0), grid);
+  return color;
+}
+#endif
+
 vec3 adjustColor(vec3 color, float saturation, float brightness) {
   vec3 hsl = rgb2hsl(color);
   hsl.y = hsl.y * saturation;
   vec3 rgb = hsl2rgb(hsl);
   rgb += vec3(brightness);
   return clamp(rgb, 0.0, 1.0);
+}
+
+vec3 rotateVec3(vec3 v, vec3 a, float angle) {
+  float c = cos(angle);
+  float s = sin(angle);
+
+  float t = 1.0 - c;
+
+  float tx = t * a.x;
+  float ty = t * a.y;
+
+  return vec3((tx * a.x + c) * v.x + (tx * a.y - s * a.z) * v.y + (tx * a.z + s * a.y) * v.z, (tx * a.y + s * a.z) * v.x + (ty * a.y + c) * v.y + (ty * a.z - s * a.x) * v.z, (tx * a.z - s * a.y) * v.x + (ty * a.z + s * a.x) * v.y + (t * a.z * a.z + c) * v.z);
 }
 
 #ifdef USE_COLOR_RAMP
@@ -94,47 +131,108 @@ vec3 getColor(float v) {
 
 #endif
 
-float getPointValue(vec2 pos) {
-  vec4 pixel = texture2D(depthTexture, pos);
-  if(pixel.a == 0.)
-    return -1.;
-  return (referenceDepth - ((pixel.r * 256. * 256. * 256.) + (pixel.g * 256. * 256.) + (pixel.b * 256.)) / 1000.);
+float getElevation(vec2 pos) {
+  float value = texture2D(elevationTexture, pos).r;
+  return value;
 }
 
 #ifdef USE_CONTOURS
 
 float contourLine(float v) {
   float f = abs(fract(v) - .5);
-  float df = fwidth(v) * contoursThickness;
+  float df = max(0.0025, fwidth(v) * contoursThickness);
   return smoothstep(0., df, f);
 }
 
 #endif
 
 void main() {
-
-  vec3 textureNormal = texture2D(normalTexture, vUv).rgb * 2. - 1.;
-  vec3 vNormal = normalize(normalMatrix * textureNormal);
-
 	#include <clipping_planes_fragment>
 
-  vec4 diffuseColor = vec4(diffuse, opacity);
+  float elevation = getElevation(vGridUv);
 
-  float texDepth = getPointValue(vDepthUv);
-
-  if(texDepth <= -1.) {
+  if(elevation < 0.0) {
     discard;
   }
 
+  vec2 gridSegments = size - 1.0;
+
+  float depth = referenceDepth - elevation;
+
+  // normal
+
+  float distanceFactor = 1.;
+  vec2 offset = distanceFactor / gridSegments;
+  vec2 dist = scale * distanceFactor;
+
+  float nw = getElevation(saturate(vGridUv + vec2(-offset.x, offset.y)));
+  float ne = getElevation(saturate(vGridUv + vec2(offset.x, offset.y)));
+  float sw = getElevation(saturate(vGridUv + vec2(-offset.x, -offset.y)));
+  float se = getElevation(saturate(vGridUv + vec2(offset.x, -offset.y)));
+
+  vec3 p1 = vec3(-dist.x, nw - elevation, -dist.y);
+  vec3 p2 = vec3(dist.x, ne - elevation, -dist.y);
+  vec3 p3 = vec3(-dist.x, sw - elevation, dist.y);
+  vec3 p4 = vec3(dist.x, se - elevation, dist.y);
+
+  vec3 n0 = vec3(0.0, 0.0001, 0.0);
+
+  if(nw >= 0.0 && ne >= 0.0)
+    n0 += cross(p2, p1);
+  if(ne >= 0.0 && se >= 0.0)
+    n0 += cross(p4, p2);
+  if(sw >= 0.0 && se >= 0.0)
+    n0 += cross(p3, p4);
+  if(se >= 0.0 && nw >= 0.0)
+    n0 += cross(p1, p3);
+
+  n0 = rotateVec3(n0, vec3(0.0, 1.0, 0.0), rotation);
+  vec3 vNormal = normalize(normalMatrix * n0);
+
+  // color
+  vec4 diffuseColor = vec4(diffuse, opacity);
+
   #ifdef USE_COLOR_RAMP
 
-  vec3 sampledColor = getColor(texDepth);
+  vec3 sampledColor = getColor(depth);
   diffuseColor = vec4(sampledColor, opacity);
 
   #endif
 
+  // debug
+  #ifdef USE_DEBUG
+
+  vec2 pixelCoords = vec2(vUv.x, 1.0 - vUv.y) * gridSegments;
+
+  vec2 guv = vGridUv * size;
+  diffuseColor = drawGrid(diffuseColor, guv, vec3(0.), vec2(0.01));
+
+  float fontSize = .2;
+  float scale = glyphFontSize / fontSize;
+
+  float spacing = scale;
+
+  vec2 xy = pixelCoords.xy * scale;
+  vec2 ixy = round(xy / spacing);
+
+  vec2 p = xy - spacing * ixy;
+  vec2 px = vec2(p.x, p.y + 0.25 * scale);
+  vec2 py = vec2(p.x, p.y - 0.25 * scale);
+  vec3 clr = diffuseColor.rgb;
+  vec2 uv = ixy / gridSegments;
+  uv.y = 1.0 - uv.y;
+  uv = (gridUvMat * vec3(uv, 1.0)).xy;
+  float v = referenceDepth - getElevation(uv);
+  renderNumber(clr, p, v, 1u, 0., 0.5, vec3(1., 0., 1.), 0., scale);
+  renderNumber(clr, px, ixy.x, 0u, 0., 0.5, vec3(1., 0., 0.), 0., scale);
+  renderNumber(clr, py, ixy.y, 0u, 0., 0.5, vec3(0., 0., 1.), 0., scale);
+
+  diffuseColor.rgb = clr;
+  #endif
+
+  // contour lines
   #ifdef USE_CONTOURS
-  float h = (texDepth + contoursInterval / 2.) / contoursInterval;
+  float h = (depth + contoursInterval * 0.5) / contoursInterval;
 
   float t = contourLine(h);
 
@@ -192,6 +290,5 @@ void main() {
 	#include <premultiplied_alpha_fragment>
 	#include <dithering_fragment>
 
-  //gl_FragColor = vec4(vNormal, opacity);
-
+  //gl_FragColor = vec4(vNormal, 1.0);
 }

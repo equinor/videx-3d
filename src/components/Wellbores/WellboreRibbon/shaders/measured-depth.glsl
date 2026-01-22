@@ -5,6 +5,8 @@ uniform float fontSize;
 uniform float stepSize;
 uniform float startDepth;
 
+varying vec2 vUv;
+
 #include ../../../../sdk/materials/shaderLib/glyphs.glsl
 #include ../../../../sdk/materials/shaderLib/render-number.glsl
 #include ../../../../sdk/materials/shaderLib/colors.glsl
