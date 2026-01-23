@@ -108,7 +108,9 @@ export class AnnotationsRenderer {
 
     this.unsubscribeState = useAnnotationsState.subscribe(
       (state) => state.instances,
-      (instances) => this.updateDataTexture(instances),
+      (instances) => {
+        this.updateDataTexture(instances)
+      },
     )
   }
 
@@ -237,8 +239,6 @@ export class AnnotationsRenderer {
         this.annotationsTexSize = size
       }
 
-      this.annotationsData = instances
-
       const data = new Float32Array(size * 4)
       for (let i = 0, j = 0; i < instances.length; i++, j += 4) {
         const instance = instances[i]
@@ -256,6 +256,8 @@ export class AnnotationsRenderer {
       dataTexture.needsUpdate = true
       this.annotationsMaterial.uniforms.dataTexture.value = dataTexture
     }
+    // update local reference
+    this.annotationsData = instances
   }
 
   dispose() {
