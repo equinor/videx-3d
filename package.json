@@ -47,7 +47,6 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@react-three/postprocessing": "^3.0.4",
     "curve-interpolator": "^3.3.1",
     "d3-array": "^3.2.4",
     "d3-axis": "^3.0.0",
@@ -61,7 +60,6 @@
     "nanoid": "^5.1.2",
     "p-limit": "^6.2.0",
     "p-queue": "^8.1.0",
-    "postprocessing": "^6.38.2",
     "proj4": "^2.15.0",
     "rbush": "^4.0.1",
     "react-use-measure": "^2.1.7",
