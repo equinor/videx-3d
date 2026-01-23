@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.0.6-beta](https://github.com/equinor/videx-3d/compare/v5.0.5-beta...v5.0.6-beta) (2026-01-23)
+
+
+### Bug Fixes
+
+* **pointermove:** prevent pointer move event to continiously being triggered while the cursor/pointer coordinates are the same ([#123](https://github.com/equinor/videx-3d/issues/123)) ([ed63032](https://github.com/equinor/videx-3d/commit/ed6303232309419d54530272adee289fb189384f))
+
 ## [5.0.5-beta](https://github.com/equinor/videx-3d/compare/v5.0.4-beta...v5.0.5-beta) (2026-01-22)
 
 
