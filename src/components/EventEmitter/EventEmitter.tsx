@@ -75,6 +75,7 @@ export const EventEmitter = ({
 
     const current = result.match
     const previous = currentResult.match
+    const prevPoint = currentResult.point
 
     // pointer leave check
     if (
@@ -130,7 +131,7 @@ export const EventEmitter = ({
       }
 
       // pointer move check
-      if (listener && listener.handlers.move) {
+      if (listener && listener.handlers.move && (result.point[0] !== prevPoint[0] || result.point[1] !== prevPoint[1])) {
         const moveEvent = {
           target: listener.object,
           source: current.emitter.source,
