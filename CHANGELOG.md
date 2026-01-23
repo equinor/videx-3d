@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.0.7-beta](https://github.com/equinor/videx-3d/compare/v5.0.6-beta...v5.0.7-beta) (2026-01-23)
+
+
+### Bug Fixes
+
+* **annotations state:** fixed issue where annotation instances is empty the local state of the annotations renderer was not updated ([#126](https://github.com/equinor/videx-3d/issues/126)) ([ef82592](https://github.com/equinor/videx-3d/commit/ef82592b8e299219dd3119789b08a3e7848bd107))
+
 ## [5.0.6-beta](https://github.com/equinor/videx-3d/compare/v5.0.5-beta...v5.0.6-beta) (2026-01-23)
 
 
