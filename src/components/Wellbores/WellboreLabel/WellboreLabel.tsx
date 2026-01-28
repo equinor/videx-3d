@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Color, Object3D, Vector3 } from 'three'
+import { Color, Object3D } from 'three'
 import { useGenerator } from '../../../hooks/useGenerator'
 import { useWellboreContext } from '../../../hooks/useWellboreContext'
 import { useAnnotations } from '../../Annotations/annotations-state'
@@ -16,8 +16,6 @@ export type WellboreLabelProps = {
   position?: 'top' | 'center' | 'bottom',
   priority?: number,
 }
-
-const v = new Vector3()
 
 /**
  * Displays a wellbore label as an annotation at the bottom, top or middle of a wellbore trajectory.
@@ -47,9 +45,7 @@ export const WellboreLabel = ({ size = 12, color = 'white', position = 'bottom',
       generator(id, position, fromMsl).then(response => {
         if (response && response.length === 1 && positionRef.current) {
           const [label] = response
-          v.set(...label.position)
-          positionRef.current.localToWorld(v)
-          label.position = v.toArray()
+          label.matrixWorld = positionRef.current.matrixWorld
           label.data = { color, size }
           setLabelData(label)
         }

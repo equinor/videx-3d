@@ -96,12 +96,12 @@ export const Shoes = forwardRef(({
       const annotations = data.data!.map((d, i) => {
         transform.fromArray(data.transformations, i * 16)
         origin.setFromMatrixPosition(transform)
-        ref.current?.localToWorld(origin)
 
         const annotation: AnnotationProps = {
           id: d.id as string,
           name: d.name as string,
           position: origin.toArray(),
+          matrixWorld: ref.current?.matrixWorld,
           direction: d.direction as Vec3,
         }
         return annotation

@@ -98,16 +98,16 @@ export const FormationMarkers = forwardRef(({
 
 
   useEffect(() => {
-    if (showAnnotations && data && data.data) {
+    if (showAnnotations && data?.data) {
       const annotations = data.data.map((d, i) => {
         transform.fromArray(data.transformations, i * 16)
         origin.setFromMatrixPosition(transform)
-        ref.current?.localToWorld(origin)
         color.fromArray(data.colors!, i * 3)
         const annotation: AnnotationProps = {
           id: d.id as string,
           name: d.name as string,
           position: origin.toArray(),
+          matrixWorld: ref.current?.matrixWorld,
           direction: d.direction as Vec3,
           priority: d.level as number,
           data: {

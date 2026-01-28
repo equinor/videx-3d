@@ -3,6 +3,7 @@ import { Clock, PerspectiveCamera, Vector3 } from 'three'
 import RBush from 'rbush'
 import { PI, Vec2, clamp, edgeOfRectangle, mixVec2 } from '../../sdk'
 import { getLabelQuadrant, labelAngles, labelAnglesMap } from './helpers'
+import { getAnnotationPosition } from './index'
 import { AnnotationInstance } from './types'
 
 const collisionMargin = 1
@@ -23,7 +24,7 @@ const distantTree = new RBush() // used for distant annotations
 function calculateLabelPosition(
   instance: AnnotationInstance,
   positionSlot: number,
-  size: Vec2
+  size: Vec2,
 ) {
   if (!instance || !size) return
   const scale = instance.state.scaleFactor!
@@ -65,7 +66,7 @@ function setTransition(
   instance: AnnotationInstance,
   assignedSlot: number,
   prevLabelPosition: Vec2 | null,
-  prevAnchorPosition: Vec2 | null
+  prevAnchorPosition: Vec2 | null,
 ) {
   if (
     instance.state.visible &&
@@ -89,15 +90,26 @@ export function preprocessInstances(
   instances: AnnotationInstance[],
   camera: PerspectiveCamera,
   clock: Clock,
-  maxVisible: number
+  maxVisible: number,
 ) {
   const deltaTime = clock.elapsedTime - prevTime
   const halfFovRad = (camera.fov * PI) / 360
 
   let nInViewSpace = 0
   const inViewspace: AnnotationInstance[] = []
-
+  let positionChanged = false
   instances.forEach((instance) => {
+    const prevPosition = instance.state.position
+    const worldPosition = getAnnotationPosition(instance.annotation)
+    if (
+      worldPosition[0] !== prevPosition[0] ||
+      worldPosition[1] !== prevPosition[1] ||
+      worldPosition[2] !== prevPosition[2]
+    ) {
+      positionChanged = true
+      instance.state.position = worldPosition
+    }
+
     instance.state.capped = false
     instance.state._needsUpdate = false
     if (!instance.state.visible) {
@@ -113,13 +125,13 @@ export function preprocessInstances(
       } else if (instance.state.health > 0) {
         instance.state.health = Math.max(
           0,
-          instance.state.health - deltaTime * healthChangeRate
+          instance.state.health - deltaTime * healthChangeRate,
         )
       }
     } else if (instance.state.health < 1) {
       instance.state.health = Math.min(
         1,
-        Math.max(0, instance.state.health + deltaTime * healthChangeRate)
+        Math.max(0, instance.state.health + deltaTime * healthChangeRate),
       )
     }
 
@@ -134,15 +146,15 @@ export function preprocessInstances(
     }
 
     if (instance.state.inViewSpace) {
-      position.set(...instance.annotation.position)
+      position.set(...instance.state.position)
       instance.state.distance = position.distanceTo(camera.position)
       instance.state.scaleFactor = Math.max(
         0.25,
         Math.min(
           1,
           (1 / (2 * Math.tan(halfFovRad) * instance.state.distance)) *
-            instance.layer.distanceFactor
-        )
+            instance.layer.distanceFactor,
+        ),
       )
 
       position.project(camera)
@@ -163,7 +175,7 @@ export function preprocessInstances(
             instance.state.screenPosition[1] ** 2) /
             2,
           0,
-          1
+          1,
         )
         const hDistancePenalty = Math.min(instance.state.distance, 1000)
         instance.rank = 1000
@@ -189,9 +201,9 @@ export function preprocessInstances(
         instance.state.quadrant = instance.annotation.direction
           ? getLabelQuadrant(
               instance.state.screenPosition,
-              instance.annotation.position,
+              instance.state.position,
               instance.annotation.direction,
-              camera
+              camera,
             )
           : 0
       } else {
@@ -225,6 +237,9 @@ export function preprocessInstances(
 
   inViewspace.sort((a, b) => b.rank - a.rank)
 
+  if (positionChanged) {
+    dispatchEvent(new CustomEvent('annotations-position-changed'))
+  }
   return inViewspace
 }
 
@@ -233,7 +248,7 @@ export function preprocessInstances(
  */
 export function postProcessInstances(
   instances: AnnotationInstance[],
-  size: Vec2
+  size: Vec2,
 ) {
   nearTree.clear()
   distantTree.clear()
@@ -260,7 +275,7 @@ export function postProcessInstances(
         instance,
         currentSlot,
         prevLabelPosition,
-        prevAnchorPosition
+        prevAnchorPosition,
       )
     } else if (!instance.state.cooldown) {
       let positionFound = false
@@ -297,7 +312,7 @@ export function postProcessInstances(
             instance,
             slots[i],
             prevLabelPosition,
-            prevAnchorPosition
+            prevAnchorPosition,
           )
           instance.state.positionSlot = slots[i]
           break
@@ -318,8 +333,8 @@ export function postProcessInstances(
       instance.state.zIndex = instance.state.labelHovered
         ? 1000000
         : instance.state.kill
-        ? 0
-        : Math.round((1 / instance.state.distance!) * 100000)
+          ? 0
+          : Math.round((1 / instance.state.distance!) * 100000)
       instance.state.opacity =
         Math.max(0.75, instance.state.scaleFactor!) * instance.state.health
 
@@ -327,7 +342,7 @@ export function postProcessInstances(
         ;[x, y] = mixVec2(
           instance.state.prevLabelPosition,
           instance.state.labelPosition!,
-          instance.state.transitionTime
+          instance.state.transitionTime,
         )
       } else {
         ;[x, y] = instance.state.labelPosition!

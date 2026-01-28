@@ -1,4 +1,4 @@
-import { Annotations } from '../../components/Annotations/Annotations'
+import { Annotations, getAnnotationPosition } from '../../components/Annotations'
 import { AnnotationsLayer } from '../../components/Annotations/AnnotationsLayer'
 import { AnnotationComponentProps } from '../../components/Annotations/types'
 import { CasingLabel } from '../../components/Wellbores/Casings/CasingAnnotations/CasingLabel'
@@ -6,7 +6,6 @@ import { DepthMarkerLabel } from '../../components/Wellbores/DepthMarkers/DepthM
 import { FormationMarkerLabel } from '../../components/Wellbores/FormationMarkers/FormationMarkerLabel'
 import { WellboreAnnotationLabel } from '../../components/Wellbores/WellboreLabel/WellboreAnnotationLabel'
 import { CameraFocusAtPointEvent } from '../../events/camera-events'
-
 
 export const AnnotationsDecorator = (Story: any) => (
   <>
@@ -24,7 +23,7 @@ export const AnnotationsDecorator = (Story: any) => (
         anchorOcclusionRadius={10}
         labelComponent={CasingLabel}
         onClick={(annotation: AnnotationComponentProps) => {
-          dispatchEvent(new CameraFocusAtPointEvent({ point: annotation.position, distance: 300 }))
+          dispatchEvent(new CameraFocusAtPointEvent({ point: getAnnotationPosition(annotation), distance: 300 }))
         }}
       />
       <AnnotationsLayer
@@ -38,7 +37,7 @@ export const AnnotationsDecorator = (Story: any) => (
         maxDistance={5000}
         anchorOcclusionRadius={10}
         onClick={(annotation: AnnotationComponentProps) => {
-          dispatchEvent(new CameraFocusAtPointEvent({ point: annotation.position, distance: 200 }))
+          dispatchEvent(new CameraFocusAtPointEvent({ point: getAnnotationPosition(annotation), distance: 200 }))
         }}
       />
       <AnnotationsLayer
@@ -52,7 +51,7 @@ export const AnnotationsDecorator = (Story: any) => (
         maxDistance={5000}
         anchorOcclusionRadius={10}
         onClick={(annotation: AnnotationComponentProps) => {
-          dispatchEvent(new CameraFocusAtPointEvent({ point: annotation.position, distance: 200 }))
+          dispatchEvent(new CameraFocusAtPointEvent({ point: getAnnotationPosition(annotation), distance: 200 }))
         }}
       />
       <AnnotationsLayer
@@ -67,7 +66,7 @@ export const AnnotationsDecorator = (Story: any) => (
         labelComponent={FormationMarkerLabel}
         anchorOcclusionRadius={10}
         onClick={(annotation: AnnotationComponentProps) => {
-          dispatchEvent(new CameraFocusAtPointEvent({ point: annotation.position, distance: 200 }))
+          dispatchEvent(new CameraFocusAtPointEvent({ point: getAnnotationPosition(annotation), distance: 200 }))
         }}
       />
       <AnnotationsLayer
@@ -83,7 +82,7 @@ export const AnnotationsDecorator = (Story: any) => (
         anchorOcclusionRadius={10}
         labelComponent={DepthMarkerLabel}
         onClick={(annotation: AnnotationComponentProps) => {
-          dispatchEvent(new CameraFocusAtPointEvent({ point: annotation.position, distance: 200 }))
+          dispatchEvent(new CameraFocusAtPointEvent({ point: getAnnotationPosition(annotation), distance: 200 }))
         }}
       />
       <AnnotationsLayer
@@ -100,7 +99,7 @@ export const AnnotationsDecorator = (Story: any) => (
         anchorOcclusionRadius={20}
         labelComponent={WellboreAnnotationLabel}
         onClick={(annotation: AnnotationComponentProps) => {
-          dispatchEvent(new CameraFocusAtPointEvent({ point: annotation.position, distance: 500 }))
+          dispatchEvent(new CameraFocusAtPointEvent({ point: getAnnotationPosition(annotation), distance: 500 }))
         }}
       />
       <AnnotationsLayer

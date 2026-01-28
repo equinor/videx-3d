@@ -9,14 +9,14 @@ import {
   lengthVec3,
   PositionLog,
   ReadonlyStore,
-  Vec3
+  Vec3,
 } from '../sdk'
 
 export async function calculateWellboreBounds(
   this: ReadonlyStore,
   id: string,
   fromMsl?: number,
-  sampleSize: number = 250
+  sampleSize: number = 250,
 ) {
   const poslogMsl = await this.get<PositionLog>('position-logs', id)
 
@@ -36,7 +36,7 @@ export async function calculateWellboreBounds(
           ? clamp(
               (fromMsl - trajectory.measuredTop) / trajectory.measuredLength,
               0,
-              1
+              1,
             )
           : 0
 
@@ -60,8 +60,9 @@ export async function calculateWellboreBounds(
 
       if (sampleSize > 0) {
         // create samples along trajectory
-        const nSamples = Math.ceil(
-          ((1 - from) * trajectory.curve.length) / sampleSize
+        const nSamples = Math.max(
+          2,
+          Math.ceil(((1 - from) * trajectory.curve.length) / sampleSize),
         )
         const sampledPoints = trajectory.curve.getPoints(nSamples, from, 1)
         const samples: WellboreBoundingSphere[] = []
