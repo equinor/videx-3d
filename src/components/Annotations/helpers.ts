@@ -39,19 +39,19 @@ export const getLabelQuadrant = (
   originScreen: Vec2,
   origin3d: Vec3,
   direction3d: Vec3,
-  camera: PerspectiveCamera
+  camera: PerspectiveCamera,
 ) => {
   if (camera) {
     position.set(
       origin3d[0] + direction3d[0] * 100,
       origin3d[1] + direction3d[1] * 100,
-      origin3d[2] + direction3d[2] * 100
+      origin3d[2] + direction3d[2] * 100,
     )
 
     position.project(camera)
 
     const directionScreen = normalizeVec2(
-      subVec2([position.x, position.y], [originScreen[0], originScreen[1]])
+      subVec2([position.x, position.y], [originScreen[0], originScreen[1]]),
     )
 
     let angle = Math.atan2(directionScreen[1], directionScreen[0])

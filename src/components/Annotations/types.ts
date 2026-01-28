@@ -1,10 +1,12 @@
 import { RefObject } from 'react'
+import { Matrix4 } from 'three'
 import { Vec2, Vec3 } from '../../sdk'
 
 export type AnnotationProps = {
   id: string
   name: string
   position: Vec3
+  matrixWorld?: Matrix4
   scope?: string
   data?: any
   priority?: number
@@ -38,6 +40,7 @@ export type AnnotationInstanceState = {
   visible: boolean
   health: number
   distance: number
+  position: Vec3
   inViewSpace?: boolean
   occluded?: boolean
   inTransition?: boolean

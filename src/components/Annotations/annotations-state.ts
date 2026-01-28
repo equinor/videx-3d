@@ -21,7 +21,7 @@ export type AnnotationsState = {
   addLayerAnnotations: (
     layerId: string,
     scope: string,
-    annotations: AnnotationProps[]
+    annotations: AnnotationProps[],
   ) => void
   removeLayerAnnotations: (layerId: string, scope?: string) => void
   setInstances: (newInstances: AnnotationInstance[]) => void
@@ -140,7 +140,7 @@ export const useAnnotationsState = create<
         }
       })
     },
-  }))
+  })),
 )
 
 const updateInstances = () => {
@@ -172,6 +172,7 @@ const updateInstances = () => {
             instance.annotation.data = annotation.data
             instance.annotation.direction = annotation.direction
             instance.annotation.position = annotation.position
+            instance.annotation.matrixWorld = annotation.matrixWorld
             instance.annotation.priority = annotation.priority
           } else {
             instance = {
@@ -183,6 +184,7 @@ const updateInstances = () => {
               rank: 0,
               state: {
                 visible: false,
+                position: annotation.position,
                 distance: Infinity,
                 health: 0,
                 labelWidht: 0,
@@ -228,7 +230,7 @@ useAnnotationsState.subscribe(
       }
       const timeoutRef: ReturnType<typeof setTimeout> = setTimeout(
         () => updateInstances(),
-        500
+        500,
       )
       updateState.setRef(timeoutRef)
       // if (updateState.ref === null) {
@@ -236,8 +238,10 @@ useAnnotationsState.subscribe(
       //   updateState.setRef(timeoutRef)
       // }
     }
-  }
+  },
 )
+
+// TODO: Compare performance of this branch with current main branch using troll data
 
 /**
  * This hook allow you to add annotations to an exisiting `AnnotationsLayer`.
@@ -253,9 +257,10 @@ useAnnotationsState.subscribe(
  * const { addAnnotations } = useAnnotations('casings', scope)
  *
  * @remarks
- * Note that annotation positions needs to be in world space. If your data is relative to
- * for instance a wellbore, you could add an Object3D element with a ref in your component render function
- * and update the position data in a `useEffect` hook:
+ * Note that annotation positions needs to be in world space. You can optionally provide a matrixWorld to
+ * the annotation props that can be used to transform the local postion to world position. In the components
+ * using annotations, this is done by rendering a "dummy" Object3D and passing its matrixWorld instance to the
+ * annotation props.
  *
  * @example
  * useEffect(() => {

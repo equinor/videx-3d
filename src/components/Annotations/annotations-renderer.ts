@@ -52,7 +52,8 @@ export class AnnotationsRenderer {
   fullscreenRenderer: FullscreenRenderer = new FullscreenRenderer()
   annotationsData: AnnotationInstance[] = []
   isBusy: boolean = false
-  unsubscribeState: () => void
+  dataTextureNeedsUpdate = false
+  unsubscribeListeners: () => void
 
   constructor(
     camera: Camera,
@@ -106,12 +107,24 @@ export class AnnotationsRenderer {
 
     this.annotationsMaterial = material
 
-    this.unsubscribeState = useAnnotationsState.subscribe(
+    const unsubInstanceState = useAnnotationsState.subscribe(
       (state) => state.instances,
       (instances) => {
-        this.updateDataTexture(instances)
+        this.annotationsData = instances
+        this.dataTextureNeedsUpdate = true
       },
     )
+
+    const onPositionChanged = () => {
+      this.dataTextureNeedsUpdate = true
+    }
+
+    addEventListener('annotations-position-changed', onPositionChanged)
+
+    this.unsubscribeListeners = () => {
+      unsubInstanceState()
+      removeEventListener('annotations-position-changed', onPositionChanged)
+    }
   }
 
   updateAnnotationsData(buffer: Uint8Array) {
@@ -230,38 +243,51 @@ export class AnnotationsRenderer {
     this.overlayTexture.needsUpdate = true
   }
 
-  updateDataTexture(instances: AnnotationInstance[]) {
+  updateDataTexture() {
+    const instances = this.annotationsData
+    let dataTexture: DataTexture | undefined =
+      this.annotationsMaterial.uniforms.dataTexture.value
+
     if (instances.length) {
       const size = instances.length
+
       if (size !== this.annotationsTexSize) {
         this.annotationsRenderTarget.setSize(size, 1, 0)
         this.annotationsBuffer = new Uint8Array(size * 2)
         this.annotationsTexSize = size
+        dataTexture?.dispose()
+        dataTexture = undefined
       }
 
       const data = new Float32Array(size * 4)
       for (let i = 0, j = 0; i < instances.length; i++, j += 4) {
         const instance = instances[i]
 
-        data[j] = instance.annotation.position[0]
-        data[j + 1] = instance.annotation.position[1]
-        data[j + 2] = instance.annotation.position[2]
+        data[j] = instance.state.position[0]
+        data[j + 1] = instance.state.position[1]
+        data[j + 2] = instance.state.position[2]
         data[j + 3] = instance.layer.anchorOcclusionRadius
       }
 
       if (this.annotationsMaterial.uniforms.dataTexture.value) {
         this.annotationsMaterial.uniforms.dataTexture.value.dispose()
       }
-      const dataTexture = new DataTexture(data, size, 1, RGBAFormat, FloatType)
+
+      if (!dataTexture) {
+        dataTexture = new DataTexture(data, size, 1, RGBAFormat, FloatType)
+      } else {
+        dataTexture.image.data = data
+      }
+
       dataTexture.needsUpdate = true
       this.annotationsMaterial.uniforms.dataTexture.value = dataTexture
     }
-    // update local reference
-    this.annotationsData = instances
+
+    this.dataTextureNeedsUpdate = false
   }
 
   dispose() {
-    this.unsubscribeState()
+    this.unsubscribeListeners()
     this.annotationsMaterial.dispose()
     if (this.annotationsMaterial.uniforms.dataTexture.value) {
       this.annotationsMaterial.uniforms.dataTexture.value.dispose()
@@ -283,6 +309,9 @@ export class AnnotationsRenderer {
     } = this
 
     if (buffer?.depthTexture && this.annotationsData.length && !isBusy) {
+      if (this.dataTextureNeedsUpdate) {
+        this.updateDataTexture()
+      }
       this.isBusy = true
       occlusionMaterial.uniforms.cameraPosition.value.copy(camera.position)
       occlusionMaterial.uniforms.depthTexture.value = buffer.depthTexture

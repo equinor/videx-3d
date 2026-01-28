@@ -1,13 +1,11 @@
 import { ForwardedRef, forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
-import { Object3D, Vector3 } from 'three'
+import { Object3D } from 'three'
 import { useGenerator } from '../../../hooks/useGenerator'
 import { useWellboreContext } from '../../../hooks/useWellboreContext'
 import { DepthReferencePoint } from '../../../sdk/data/types/DepthReferencePoint'
 import { useAnnotations } from '../../Annotations/annotations-state'
 import { AnnotationProps } from '../../Annotations/types'
 import { depthMarkers } from './depth-markers-defs'
-
-const v = new Vector3()
 
 /**
  * DepthMarkers props
@@ -56,9 +54,7 @@ export const DepthMarkers = forwardRef(({
       generator(id, interval, depthReferencePoint, fromMsl).then(response => {
         if (response && positionRef.current) {
           response.forEach(d => {
-            v.set(...d.position)
-            positionRef.current.localToWorld(v)
-            d.position = v.toArray()
+            d.matrixWorld = positionRef.current.matrixWorld
           })
           setLabelData(response || [])
         }
