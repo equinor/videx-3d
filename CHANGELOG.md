@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.0.8-beta](https://github.com/equinor/videx-3d/compare/v5.0.7-beta...v5.0.8-beta) (2026-01-28)
+
+
+### Bug Fixes
+
+* **labels:** annotations updated to calculate world position on the fly, allowing repositioning of the labels when the passed matrixWorld is updated + some minor bug fixes ([#129](https://github.com/equinor/videx-3d/issues/129)) ([a5b9c99](https://github.com/equinor/videx-3d/commit/a5b9c998e075954b292fb6ebe29cbc3bbb50c1f2))
+
 ## [5.0.7-beta](https://github.com/equinor/videx-3d/compare/v5.0.6-beta...v5.0.7-beta) (2026-01-23)
 
 
