@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 
 import { Vec2 } from '../../../sdk/types/common'
-import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
+import { Canvas3dWebGLDecorator } from '../../../storybook/decorators/canvas-3d-webgl-decorator'
 import storyArgs from '../../../storybook/story-args.json'
 import { UtmArea } from '../../UtmArea'
 import { UtmGrid } from './UtmGrid'
@@ -34,7 +34,7 @@ export const Default: Story = {
     }
   },
   decorators: [
-    Canvas3dDecorator,
+    Canvas3dWebGLDecorator,
   ],
   parameters: {
     autoClear: true,

@@ -1,4 +1,4 @@
-import { Clock, PerspectiveCamera, Vector3 } from 'three'
+import { PerspectiveCamera, Vector3 } from 'three'
 
 import RBush from 'rbush'
 import { PI, Vec2, clamp, edgeOfRectangle, mixVec2 } from '../../sdk'
@@ -89,10 +89,10 @@ function setTransition(
 export function preprocessInstances(
   instances: AnnotationInstance[],
   camera: PerspectiveCamera,
-  clock: Clock,
+  elapsedTime: number,
   maxVisible: number,
 ) {
-  const deltaTime = clock.elapsedTime - prevTime
+  const deltaTime = elapsedTime - prevTime
   const halfFovRad = (camera.fov * PI) / 360
 
   let nInViewSpace = 0
@@ -233,7 +233,7 @@ export function preprocessInstances(
     }
   })
 
-  prevTime = clock.elapsedTime
+  prevTime = elapsedTime
 
   inViewspace.sort((a, b) => b.rank - a.rank)
 

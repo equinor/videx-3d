@@ -120,8 +120,8 @@ export const Perforations = forwardRef(({
     }
   }, [generator, id, fromMsl, sizeMultiplier])
 
-  useFrame(({ clock }) => {
-    matProps.current.time = clock.elapsedTime
+  useFrame(({ elapsed }) => {
+    matProps.current.time = elapsed
     onPropsChange(matProps.current, material)
   })
 

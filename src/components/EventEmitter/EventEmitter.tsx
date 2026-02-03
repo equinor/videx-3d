@@ -259,7 +259,7 @@ export const EventEmitter = ({
     if (autoUpdate) {
       update()
     }
-  }, autoUpdateRenderPriority)
+  }, { priority: autoUpdateRenderPriority })
 
   return (
     <EventEmitterContext.Provider value={context}>

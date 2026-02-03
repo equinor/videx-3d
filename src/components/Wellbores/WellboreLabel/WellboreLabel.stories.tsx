@@ -1,15 +1,15 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import storyArgs from '../../../storybook/story-args.json'
-import { Wellbore } from '../Wellbore/Wellbore'
-import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator'
-import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator'
-import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
 import { useEffect } from 'react'
-import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator'
 import { WellboreSelectedEvent } from '../../../events/wellbore-events'
-import { WellboreLabel } from './WellboreLabel'
 import { AnnotationsDecorator } from '../../../storybook/decorators/annotations-decorator'
+import { Canvas3dWebGLDecorator } from '../../../storybook/decorators/canvas-3d-webgl-decorator'
+import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator'
+import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator'
+import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator'
+import storyArgs from '../../../storybook/story-args.json'
 import { BasicTrajectory } from '../BasicTrajectory/BasicTrajectory'
+import { Wellbore } from '../Wellbore/Wellbore'
+import { WellboreLabel } from './WellboreLabel'
 
 const meta = {
   title: 'Components/Wellbores/WellboreLabel',
@@ -41,7 +41,7 @@ export const Default: Story = {
   },
   decorators: [
     AnnotationsDecorator,
-    Canvas3dDecorator,
+    Canvas3dWebGLDecorator,
     GeneratorsProviderDecorator,
     DepthSelectorDecorator,
     DataProviderDecorator,

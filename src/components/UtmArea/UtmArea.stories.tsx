@@ -4,7 +4,7 @@ import proj4 from 'proj4'
 import { useMemo } from 'react'
 import { getProjectionDefFromUtmZone, wgs84Def } from '../../sdk/projection/crs'
 import { Vec2 } from '../../sdk/types/common'
-import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator'
+import { Canvas3dWebGLDecorator } from '../../storybook/decorators/canvas-3d-webgl-decorator'
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders'
 import storyArgs from '../../storybook/story-args.json'
 import { UtmGrid } from '../Grids/Grid/UtmGrid'
@@ -33,7 +33,7 @@ export const Default: Story = {
     offset: [0, 0, 0],
   },
   decorators: [
-    Canvas3dDecorator,
+    Canvas3dWebGLDecorator,
   ],
   parameters: {
     autoClear: true,
@@ -56,7 +56,7 @@ export const Default: Story = {
               </mesh>
             </UtmPosition>
           ))}
-          { wgs84coords && (
+          {wgs84coords && (
             <Wgs84Position long={wgs84coords[0]} lat={wgs84coords[1]} altitude={500}>
               <mesh>
                 <sphereGeometry args={[150]} />

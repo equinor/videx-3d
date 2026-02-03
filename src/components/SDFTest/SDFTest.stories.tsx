@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator'
+import { Canvas3dWebGLDecorator } from '../../storybook/decorators/canvas-3d-webgl-decorator'
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator'
 import { PerformanceDecorator } from '../../storybook/decorators/performance-decorator'
 import { SDFTest } from './SDFTest'
@@ -10,7 +10,7 @@ const meta = {
   decorators: [
     GlyphsDecorator,
     PerformanceDecorator,
-    Canvas3dDecorator,
+    Canvas3dWebGLDecorator,
   ],
   parameters: {
     autoClear: true,

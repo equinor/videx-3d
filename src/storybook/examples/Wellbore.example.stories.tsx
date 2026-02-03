@@ -4,7 +4,7 @@ import { BasicTrajectory } from '../../components/Wellbores/BasicTrajectory/Basi
 import { Casings } from '../../components/Wellbores/Casings/Casings'
 import { CompletionTools } from '../../components/Wellbores/CompletionTools/CompletionTools'
 import { Wellbore } from '../../components/Wellbores/Wellbore/Wellbore'
-import { Canvas3dDecorator } from '../decorators/canvas-3d-decorator'
+import { Canvas3dWebGLDecorator } from '../decorators/canvas-3d-webgl-decorator'
 import { DataProviderDecorator } from '../decorators/data-provider-decorator'
 import { GeneratorsProviderDecorator } from '../decorators/generators-provider-decorator'
 import storyArgs from '../story-args.json'
@@ -96,7 +96,7 @@ export const Default: Story = {
   },
   decorators: [
     //PerformanceDecorator,
-    Canvas3dDecorator,
+    Canvas3dWebGLDecorator,
     GeneratorsProviderDecorator,
     DepthSelectorDecorator,
     DataProviderDecorator,

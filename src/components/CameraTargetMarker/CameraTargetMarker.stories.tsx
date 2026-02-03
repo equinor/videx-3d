@@ -11,34 +11,34 @@ const meta = {
   component: CameraTargetMarker,
 } satisfies Meta<typeof CameraTargetMarker>
 
-type StoryArgs = React.ComponentProps<typeof CameraTargetMarker> 
+type StoryArgs = React.ComponentProps<typeof CameraTargetMarker>
 
 export default meta
 type Story = StoryObj<StoryArgs>
 
 export const Default: Story = {
   args: {
-    color: 'white',
+    color: 'red',
     fixedX: undefined,
     fixedY: undefined,
     fixedZ: undefined,
-    opacity: 0.9,
+    opacity: 0.25,
     radius: 0.5,
   },
   render: args => {
     return (
       <>
         <mesh rotation-x={-Math.PI / 2}>
-          <planeGeometry args={[50, 50]}/>
-          <meshBasicMaterial color="#050533" />
+          <planeGeometry args={[50, 50]} />
+          <meshBasicNodeMaterial color="#050533" />
         </mesh>
         <mesh position={[0, 0.5, 0]}>
           <boxGeometry />
-          <meshNormalMaterial />
+          <meshNormalNodeMaterial />
         </mesh>
         <mesh position={[10, 2.5, -5]}>
-          <boxGeometry args={[2, 5, 1]}/>
-          <meshNormalMaterial />
+          <boxGeometry args={[2, 5, 1]} />
+          <meshNormalNodeMaterial />
         </mesh>
         <CameraTargetMarker {...args} />
       </>

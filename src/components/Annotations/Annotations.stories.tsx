@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { ComponentProps, useEffect } from 'react'
-import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator'
+import { Canvas3dWebGLDecorator } from '../../storybook/decorators/canvas-3d-webgl-decorator'
 import { Annotations } from './Annotations'
 import { useAnnotations } from './annotations-state'
 import { AnnotationsLayer } from './AnnotationsLayer'
@@ -17,7 +17,7 @@ for (let i = 0; i < annotations.length; i++) {
       (Math.random() - 0.5) * 100,
       (Math.random() - 0.5) * 100,
     ],
-    
+
   }
 }
 
@@ -44,14 +44,14 @@ export const Default: Story = {
           name="Test"
           anchorSize={2}
           labelOffset={15}
-          //labelComponent={({ name }) => (<div style={{ color: 'lime'}}>{name}</div>)}
+        //labelComponent={({ name }) => (<div style={{ color: 'lime'}}>{name}</div>)}
         />
       </Annotations>
-      
+
     )
   },
   decorators: [
-    Canvas3dDecorator
+    Canvas3dWebGLDecorator
   ]
 }
 

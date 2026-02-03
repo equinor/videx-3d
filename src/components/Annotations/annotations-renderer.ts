@@ -1,7 +1,6 @@
 import {
   Camera,
   CanvasTexture,
-  Clock,
   createCanvasElement,
   DataTexture,
   FloatType,
@@ -41,7 +40,6 @@ let x1: number, y1: number, x2: number, y2: number
 export class AnnotationsRenderer {
   maxVisible: number
   camera: PerspectiveCamera
-  clock: Clock
   pointer: Vector2
   ctx: CanvasRenderingContext2D
   overlayTexture: CanvasTexture | null = null
@@ -55,14 +53,8 @@ export class AnnotationsRenderer {
   dataTextureNeedsUpdate = false
   unsubscribeListeners: () => void
 
-  constructor(
-    camera: Camera,
-    clock: Clock,
-    pointer: Vector2,
-    maxVisible: number = 100,
-  ) {
+  constructor(camera: Camera, pointer: Vector2, maxVisible: number = 100) {
     this.camera = camera as PerspectiveCamera
-    this.clock = clock
     this.pointer = pointer
     this.maxVisible = maxVisible
 
@@ -296,7 +288,11 @@ export class AnnotationsRenderer {
     this.annotationsRenderTarget.dispose()
   }
 
-  render(renderer: WebGLRenderer, buffer: WebGLRenderTarget | null) {
+  render(
+    renderer: WebGLRenderer,
+    buffer: WebGLRenderTarget | null,
+    elapsedTime: number,
+  ) {
     renderer.getSize(size)
 
     const {
@@ -339,7 +335,7 @@ export class AnnotationsRenderer {
     const visibleInstances = preprocessInstances(
       instances,
       camera,
-      this.clock,
+      elapsedTime,
       maxVisible,
     )
     postProcessInstances(visibleInstances, [size.x, size.y])

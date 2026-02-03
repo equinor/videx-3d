@@ -5,7 +5,7 @@ import { Color, NoToneMapping } from 'three'
 import { PI2 } from '../../sdk'
 import { CameraManager } from '../../sdk/managers/CameraManager'
 
-export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
+export const Canvas3dWebGLDecorator = (Story: any, { parameters }: any) => {
   const scale = parameters.scale || 100
   const cameraManager = useRef(new CameraManager())
 
@@ -37,12 +37,12 @@ export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
         fov: 60,
       }}
       dpr={Math.min(2, parameters.pixelRatio || devicePixelRatio)}
-      renderer={{
+      gl={{
         logarithmicDepthBuffer: true,
         autoClear: !!parameters.autoClear,
-        antialias: true,
-        toneMapping: NoToneMapping,
-        //forceWebGL: true,
+        antialias: false,
+        powerPreference: 'high-performance',
+        toneMapping: NoToneMapping
       }}
       style={{
         backgroundColor: parameters.background || '#000',
@@ -53,11 +53,12 @@ export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
         left: 0,
         right: 0,
       }}
-      onCreated={({ scene, webGPUSupported, renderer }) => {
+      onCreated={({ scene, renderer }) => {
         if (parameters.background) {
-          scene.background = new Color()
+          scene.background = new Color(parameters.background)
+
         }
-        console.log('WebGPU support:', webGPUSupported, renderer)
+        console.log('Renderer: ', renderer)
       }}
     >
       <ambientLight intensity={0.5} />
