@@ -1,11 +1,18 @@
 [![SCM Compliance](https://scm-compliance-api.radix.equinor.com/repos/equinor/videx-wellog/badge)](https://scm-compliance-api.radix.equinor.com/repos/equinor/videx-wellog/badge)
 ![](https://img.shields.io/npm/v/videx-3d)
+
+# Experimental Branch
+
+This branch is intended for experiments migrating from WebGLRenderer to WebGPURenderer and TSL. Moving videx-3d from WebGL to WebGPU is planned, but not expected before the WebGPU renderer becomes the default renderer in Three.js.
+
 # Introduction
+
 The purpose of this library is to help you add 3D visualizations of sub surface data to your web applications. It offers a paradigm for connecting data to React components, utilizing Three js and React Three Fiber.
 
 <img src="documents/videx-3d.png" alt="" width="800px">
 
 The library includes a variety of components, both for visualizing and managing data, including:
+
 - Wellbore trajectories
 - Wellbore data (such as casings, completion tools, formations, shoes etc.)
 - Horizons/surfaces
@@ -14,52 +21,63 @@ The library includes a variety of components, both for visualizing and managing 
 - HTML well map schematic
 
 ## Overview
+
 This library contains multiple exports:
+
 - `videx-3d` main export containing the components
 - `videx-3d/sdk` shared code and declarations
 - `videx-3d/generators` generator functions required by the included components
 
 ### Dependencies
+
 This library has dependencies to the following libs:
+
 - React and react-dom
 - THREE js (javascript 3d rendering library using WebGL)
 - React Three Fiber (bridge React and THREE js)
 - Comlink (simplifies working with web workers)
 
 ## Install
+
 ```
 npm i videx-3d
 ```
 
-You also need to install the required peer-dependencies. 
+You also need to install the required peer-dependencies.
 
 First, if not already installed, you'll need React version 18 or later:
+
 ```
 // react
 npm i react react-dom
 ```
 
 React Three Fiber (R3F):
+
 ```
-// react three fiber 
+// react three fiber
 npm i @react-three/fiber
 ```
+
 Note that if using React 18, you need `@react-three/fiber` version 8.
 
 Depending on your needs you might consider installing the following additional packages:
+
 ```
 // three js
 npm i three
 
-// drei 
+// drei
 npm i @react-three/drei
 
 // comlink - if using web workers
 npm i comlink
 ```
+
 Note that if using React 18, you need `@react-three/drei` version 9.
 
 ## Configure
+
 Rendering complex scenes in the browser (single threaded) can quickly become bottlenecked, degrading user experience. For this reason, most of the components have been decoupled from data management and processing, by depending on a _store interface_ and _generator_ functions. This allows the heavy work to be offloaded to web workers (but not required).
 
 The recommended setup is to run the data store implementation and generator registry in seperate web workers, and then pass a proxy for these instances to the respective providers. You need to use [Comlink](https://github.com/GoogleChromeLabs/comlink) for this to work.
@@ -103,18 +121,20 @@ const ExampleApp = () => (
     { ... }
     <DataProvider store={store}>
       <RegistryProvider registry={registry}>
-        { ... }   
+        { ... }
       </RegistryProvider>
     </DataProvider>
     { ... }
   <>
 )
 ```
+
 If instead you want to run the data store and/or registry on the main thread, simply create and pass an instance directly to the provider.
 
 For more information see the documentation section below.
 
 ## Documentation
+
 - [Getting Started](https://github.com/equinor/videx-3d/blob/main/documents/getting-started.md)
 - [Storybooks](https://equinor.github.io/videx-3d/)
 - [API docs](https://equinor.github.io/videx-3d/docs)
