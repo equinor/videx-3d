@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 
 import { useEffect, useMemo } from 'react'
 import { WellboreSelectedEvent } from '../../../events/wellbore-events'
-import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
+import { Canvas3dWebGLDecorator } from '../../../storybook/decorators/canvas-3d-webgl-decorator'
 import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator'
 import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator'
 import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator'
@@ -21,7 +21,7 @@ const meta = {
   component: BoxGrid,
   decorators: [
     //PerformanceDecorator,
-    Canvas3dDecorator,
+    Canvas3dWebGLDecorator,
     GeneratorsProviderDecorator,
     DepthSelectorDecorator,
     DataProviderDecorator,

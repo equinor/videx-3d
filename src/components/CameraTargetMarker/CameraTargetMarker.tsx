@@ -1,7 +1,7 @@
 import { CameraControls } from '@react-three/drei'
 import { useThree } from '@react-three/fiber'
 import { PropsWithChildren, useEffect, useRef } from 'react'
-import { Color, Group, Vector3 } from 'three'
+import { Color, Group, Vector3 } from 'three/webgpu'
 
 /**
  * Props for CameraTargetMarker
@@ -90,7 +90,7 @@ export const CameraTargetMarker = ({
       {!children && (
         <mesh>
           <sphereGeometry args={[radius]} />
-          <meshBasicMaterial color={color} transparent opacity={opacity} depthTest={depthTest} depthWrite={depthWrite} />
+          <meshBasicNodeMaterial color={color} transparent opacity={opacity} depthTest={depthTest} depthWrite={depthWrite} />
         </mesh>
       )}
     </group>

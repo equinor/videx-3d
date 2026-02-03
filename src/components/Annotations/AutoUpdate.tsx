@@ -8,7 +8,7 @@ const samples = 8
 const supersample = 1
 
 export const AutoUpdate = ({ maxVisible }: { maxVisible: number }) => {
-  const { gl: renderer, scene, camera, pointer, clock } = useThree()
+  const { gl: renderer, scene, camera, pointer } = useThree()
   const size = useThree(state => state.size)
 
   const renderTarget = useMemo(() => {
@@ -31,10 +31,9 @@ export const AutoUpdate = ({ maxVisible }: { maxVisible: number }) => {
   const outputPass = useMemo(() => new OutputPass(), [])
   const annotationsRenderer = useMemo(() => new AnnotationsRenderer(
     camera,
-    clock,
     pointer,
     maxVisible),
-    [camera, clock, pointer, maxVisible]
+    [camera, pointer, maxVisible]
   )
 
   useEffect(() => {
@@ -65,11 +64,11 @@ export const AutoUpdate = ({ maxVisible }: { maxVisible: number }) => {
   }, [renderTarget, renderer, size])
 
 
-  useFrame(() => {
+  useFrame(({ elapsed }) => {
     renderPass.render(renderer, renderTarget)
-    annotationsRenderer.render(renderer, renderTarget)
+    annotationsRenderer.render(renderer, renderTarget, elapsed)
     outputPass.render(renderer, renderTarget)
-  }, 1)
+  }, { phase: 'render' })
 
 
   return null

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { GlyphsProvider } from '../../../contexts/GlyphsContextProvider'
 import { useData, WellboreFormationColumn, WellboreSelectedEvent } from '../../../main'
 import { Formation, getWellboreFormations } from '../../../sdk'
-import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
+import { Canvas3dWebGLDecorator } from '../../../storybook/decorators/canvas-3d-webgl-decorator'
 import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator'
 import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator'
 import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator'
@@ -63,7 +63,7 @@ const DemoComponent = ({ showRibbon, merged, scaleFactor, stepSize, segmentsPerM
                 <MeasuredDepthStripe stepSize={stepSize} width={15} offset={-7.5} />
                 {(!merged && maxLevels) && (
                   <>
-                    { 
+                    {
                       range(1, maxLevels + 1, 1).map(level => (
                         <FormationsStripe key={level} width={10} offset={5 + (level - 1) * 10} formationData={formationData} level={level} />
                       ))
@@ -159,7 +159,7 @@ export const Default: Story = {
   },
   decorators: [
     PerformanceDecorator,
-    Canvas3dDecorator,
+    Canvas3dWebGLDecorator,
     GeneratorsProviderDecorator,
     DepthSelectorDecorator,
     DataProviderDecorator,

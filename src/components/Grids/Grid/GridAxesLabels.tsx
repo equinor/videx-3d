@@ -1,4 +1,3 @@
-import { Text } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { useMemo, useState } from 'react'
 import { Color, Vector3 } from 'three'
@@ -184,7 +183,7 @@ export const GridAxesLabels = ({
       position={[0, 0, (rotations.flipped ? -1 : 1) * (units / 1000)]}
       visible={side === 'both' || (side === 'front' && !rotations.flipped) || (side === 'back' && rotations.flipped)}
     >
-      {ticks.xAxis.map(tick => (
+      {/* {ticks.xAxis.map(tick => (
         <Text
           key={tick.index}
           renderOrder={renderOrder}
@@ -219,7 +218,7 @@ export const GridAxesLabels = ({
         >
           {tick.value}
         </Text>
-      ))}
+      ))} */}
     </group>
   )
 }

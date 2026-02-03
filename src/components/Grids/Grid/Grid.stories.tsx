@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 
 import { Float } from '@react-three/drei'
 import { TextureLoader } from 'three'
-import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
+import { Canvas3dWebGLDecorator } from '../../../storybook/decorators/canvas-3d-webgl-decorator'
 import { Grid, GridProps } from './Grid'
 
 const GridObjects = ({ units = 1 }: { units?: number }) => (
@@ -23,7 +23,7 @@ const meta = {
   title: 'Components/Grids/Grid',
   component: Grid,
   decorators: [
-    Canvas3dDecorator,
+    Canvas3dWebGLDecorator,
   ],
   parameters: {
     autoClear: true,

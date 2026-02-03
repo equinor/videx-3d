@@ -1,10 +1,10 @@
 import { Helper, useTexture } from '@react-three/drei'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useEffect, useState } from 'react'
-import { BufferGeometry } from 'three'
 import { VertexNormalsHelper } from 'three/examples/jsm/Addons.js'
-import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
+import { BufferGeometry } from 'three/webgpu'
 //import { PerformanceDecorator } from '../../../storybook/decorators/performance-decorator'
+import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
 import { Vec3 } from '../../types/common'
 import { getSplineCurve } from './curve-3d'
 import { TubeGeometryOptions, createTubeGeometry } from './tube-geometry'
@@ -109,7 +109,7 @@ const DemoComponent = ({
 
   return (
     <mesh geometry={geometry}>
-      <meshStandardMaterial wireframe={showWireframe} color="#999" metalness={0.75} roughness={0.25} map={showUvMap ? uvMap : null} />
+      <meshStandardNodeMaterial wireframe={showWireframe} color="#999" metalness={0.75} roughness={0.25} map={showUvMap ? uvMap : null} />
       {showNormals && <Helper type={VertexNormalsHelper} args={[0.2 * radius, 0xcc0000]} />}
     </mesh>
   )

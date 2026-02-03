@@ -5,7 +5,7 @@ import { WellboreSelectedEvent, wellboreSelectedEventType } from '../../../event
 import { CRS } from '../../../sdk/projection/crs'
 import { Vec2 } from '../../../sdk/types/common'
 import { AnnotationsDecorator } from '../../../storybook/decorators/annotations-decorator'
-import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
+import { Canvas3dWebGLDecorator } from '../../../storybook/decorators/canvas-3d-webgl-decorator'
 import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator'
 import { EventEmitterDecorator } from '../../../storybook/decorators/event-emitter-decorator'
 import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator'
@@ -149,7 +149,7 @@ export const Default: Story = {
   decorators: [
     EventEmitterDecorator,
     AnnotationsDecorator,
-    Canvas3dDecorator,
+    Canvas3dWebGLDecorator,
     GeneratorsProviderDecorator,
     WellMapDecorator,
     DataProviderDecorator,

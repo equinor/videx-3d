@@ -124,8 +124,8 @@ export const Perimeter = ({
     onPropsChange(matProps.current, material)
   }, [from, to, opacity, color, material, onPropsChange])
 
-  useFrame(({ clock }) => {
-    matProps.current.time = clock.getElapsedTime()
+  useFrame(({ elapsed }) => {
+    matProps.current.time = elapsed
     onPropsChange(matProps.current, material)
   })
   if (!geometry) return null

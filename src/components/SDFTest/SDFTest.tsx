@@ -1,12 +1,11 @@
-import { extend, useFrame } from '@react-three/fiber'
-import { MeshLineGeometry, MeshLineMaterial } from 'meshline'
+import { useFrame } from '@react-three/fiber'
 import { useContext, useEffect, useMemo } from 'react'
 import { DataTexture, DoubleSide, Texture, Uniform, Vector2 } from 'three'
 import { GlyphsContext } from '../../main'
 import fragmentShader from './shaders/fragment.glsl'
 import vertexShader from './shaders/vertex.glsl'
 
-extend({ MeshLineGeometry, MeshLineMaterial })
+
 
 const WIDTH = 800
 const HEIGHT = 600
@@ -63,7 +62,7 @@ export const SDFTest = ({ text, inBias = 0, outBias = 0, fontSize = 32, rotation
       uniforms.textPointersCount.value = textPointersCount
       uniforms.digits.value = [...glyphContext.encodeText('0123456789.-').indices]
     }
-    
+
     return () => {
       if (glyphContext) {
         glyphContext.dispose()
@@ -82,8 +81,8 @@ export const SDFTest = ({ text, inBias = 0, outBias = 0, fontSize = 32, rotation
     uniforms.horizontalAlign.value = horizontalAlign
   }, [uniforms, inBias, outBias, fontSize, rotation, spacing, verticalAlign, horizontalAlign])
 
-  useFrame(({ clock }) => {
-    uniforms.time.value = clock.elapsedTime
+  useFrame(({ elapsed }) => {
+    uniforms.time.value = elapsed
   })
 
   if (!glyphContext) return null
@@ -91,7 +90,7 @@ export const SDFTest = ({ text, inBias = 0, outBias = 0, fontSize = 32, rotation
   return (
     <group>
       <mesh>
-        <planeGeometry args={[WIDTH, HEIGHT]} /> 
+        <planeGeometry args={[WIDTH, HEIGHT]} />
         {/* <cylinderGeometry args={[WIDTH / 2, WIDTH / 2, HEIGHT]} />
         {/* <icosahedronGeometry args={[WIDTH, 32]} /> */}
         <shaderMaterial
@@ -105,7 +104,7 @@ export const SDFTest = ({ text, inBias = 0, outBias = 0, fontSize = 32, rotation
           side={DoubleSide}
         />
       </mesh>
-      
+
     </group>
   )
 }

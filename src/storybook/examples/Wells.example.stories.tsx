@@ -27,7 +27,7 @@ import { CameraFocusAtPointEvent, Casings, CompletionTools, Distance, EventEmitt
 import { CRS } from '../../sdk/projection/crs'
 import { Vec2, Vec3 } from '../../sdk/types/common'
 import { AnnotationsDecorator } from '../decorators/annotations-decorator.tsx'
-import { Canvas3dDecorator } from '../decorators/canvas-3d-decorator'
+import { Canvas3dWebGLDecorator } from '../decorators/canvas-3d-webgl-decorator.tsx'
 import { DataProviderDecorator } from '../decorators/data-provider-decorator'
 import { EventEmitterDecorator } from '../decorators/event-emitter-decorator.tsx'
 import { GeneratorsProviderDecorator } from '../decorators/generators-provider-decorator'
@@ -462,7 +462,7 @@ const meta = {
     PerformanceDecorator,
     EventEmitterDecorator,
     AnnotationsDecorator,
-    Canvas3dDecorator,
+    Canvas3dWebGLDecorator,
     GeneratorsProviderDecorator,
     WellMapDecorator,
     OutputPanelDecorator,
