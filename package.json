@@ -104,7 +104,7 @@
     "rimraf": "^6.0.1",
     "sass": "^1.83.1",
     "storybook": "^10.1.11",
-    "three": "^0.172.0",
+    "three": "^0.182.0",
     "typedoc": "^0.27.6",
     "typescript": "^5.2.2",
     "typescript-eslint": "^8.18.2",
@@ -117,11 +117,11 @@
     "vitest": "^3.0.7"
   },
   "peerDependencies": {
-    "@react-three/drei": ">=9",
-    "@react-three/fiber": ">=8",
+    "@react-three/drei": ">=10",
+    "@react-three/fiber": ">=9",
     "comlink": ">=4.4",
-    "react": ">=18",
-    "react-dom": ">=18",
+    "react": ">=19",
+    "react-dom": ">=19",
     "three": ">=0.172"
   }
 }
