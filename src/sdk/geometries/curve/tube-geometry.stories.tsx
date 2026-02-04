@@ -1,11 +1,9 @@
-import { Helper, useTexture } from '@react-three/drei'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { useEffect, useState } from 'react'
-import { VertexNormalsHelper } from 'three/examples/jsm/Addons.js'
-import { BufferGeometry } from 'three/webgpu'
-//import { PerformanceDecorator } from '../../../storybook/decorators/performance-decorator'
+import { useEffect, useMemo, useState } from 'react'
+import { BufferGeometry, LinearFilter, Texture } from 'three/webgpu'
 import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
 import { Vec3 } from '../../types/common'
+import { textureLoader } from '../../utils/loaders'
 import { getSplineCurve } from './curve-3d'
 import { TubeGeometryOptions, createTubeGeometry } from './tube-geometry'
 
@@ -46,7 +44,7 @@ const DemoComponent = ({
   innerRadius,
   thickness,
   showWireframe,
-  showNormals,
+  //showNormals,
   closed,
   radiusModificationType,
   segmentsPerMeter,
@@ -102,7 +100,15 @@ const DemoComponent = ({
     }
   }, [radius, closed, radiusModificationType, simplificationThreshold, segmentsPerMeter, radialSegments, to, from, innerRadius, thickness])
 
-  const uvMap = useTexture('uv_grid.jpg')
+  const uvMap = useMemo(() => {
+    return textureLoader.load('uv_grid.jpg', (tex: Texture) => {
+      tex.generateMipmaps = false
+      tex.magFilter = LinearFilter
+      tex.minFilter = LinearFilter
+      tex.flipY = true
+    })
+  }, [])
+
   const showUvMap = false
 
   if (!geometry) return null
@@ -110,7 +116,7 @@ const DemoComponent = ({
   return (
     <mesh geometry={geometry}>
       <meshStandardNodeMaterial wireframe={showWireframe} color="#999" metalness={0.75} roughness={0.25} map={showUvMap ? uvMap : null} />
-      {showNormals && <Helper type={VertexNormalsHelper} args={[0.2 * radius, 0xcc0000]} />}
+      {/* {showNormals && <Helper type={VertexNormalsHelper} args={[0.2 * radius, 0xcc0000]} />} */}
     </mesh>
   )
 }
@@ -170,7 +176,6 @@ export const Default: Story = {
     },
   },
   decorators: [
-    //PerformanceDecorator,
     Canvas3dDecorator
   ],
   parameters: {

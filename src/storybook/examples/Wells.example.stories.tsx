@@ -2,7 +2,7 @@ import { useThree } from '@react-three/fiber'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { scaleOrdinal } from 'd3-scale'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { RepeatWrapping, TextureLoader, Vector3 } from 'three'
+import { RepeatWrapping, Vector3 } from 'three'
 import { useAnnotationsState } from '../../components/Annotations/annotations-state'
 import { CameraTargetMarker } from '../../components/CameraTargetMarker/CameraTargetMarker'
 import { BoxGrid } from '../../components/Grids/BoxGrid/BoxGrid'
@@ -26,21 +26,19 @@ import { WellboreSelectedEvent, wellboreSelectedEventType } from '../../events/w
 import { CameraFocusAtPointEvent, Casings, CompletionTools, Distance, EventEmitterCallbackEvent, Shoes, WellboreBounds, WellboreFormationColumn } from '../../main'
 import { CRS } from '../../sdk/projection/crs'
 import { Vec2, Vec3 } from '../../sdk/types/common'
+import { textureLoader } from '../../sdk/utils/loaders.ts'
 import { AnnotationsDecorator } from '../decorators/annotations-decorator.tsx'
 import { Canvas3dWebGLDecorator } from '../decorators/canvas-3d-webgl-decorator.tsx'
 import { DataProviderDecorator } from '../decorators/data-provider-decorator'
 import { EventEmitterDecorator } from '../decorators/event-emitter-decorator.tsx'
 import { GeneratorsProviderDecorator } from '../decorators/generators-provider-decorator'
 import { OutputPanelDecorator } from '../decorators/output-panel-decorator'
-import { PerformanceDecorator } from '../decorators/performance-decorator'
 import { WellMapDecorator } from '../decorators/well-map-decorator'
 import { useSurfaceMetaDict } from '../hooks/useSurfaceMeta'
 import { useWellboreHeaders } from '../hooks/useWellboreHeaders'
 import storyArgs from '../story-args.json'
-//import { PerformanceDecorator } from '../decorators/performance-decorator'
 
-const loader = new TextureLoader()
-const normalMap = loader.load('normal_map.jpg')
+const normalMap = textureLoader.load('normal_map.jpg')
 normalMap.anisotropy = 4
 
 const colorScale = scaleOrdinal(["tomato", "#4e79a7", "#f28e2c", "#76b7b2", "#59a14f", "#edc949", "#af7aa1", "#ff9da7", "#9c755f", "#86a68c", "darkgreen", "purple", "#c3b380"])
@@ -459,7 +457,6 @@ const meta = {
     colors: { control: { disable: true } },
   },
   decorators: [
-    PerformanceDecorator,
     EventEmitterDecorator,
     AnnotationsDecorator,
     Canvas3dWebGLDecorator,

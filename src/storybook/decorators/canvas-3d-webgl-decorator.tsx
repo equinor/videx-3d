@@ -1,8 +1,7 @@
-import { CameraControls, Environment } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber'
 import { useCallback, useEffect, useRef } from 'react'
 import { Color, NoToneMapping } from 'three'
-import { PI2 } from '../../sdk'
+import { CameraControls } from '../../components/CameraControls/CameraControls'
 import { CameraManager } from '../../sdk/managers/CameraManager'
 
 export const Canvas3dWebGLDecorator = (Story: any, { parameters }: any) => {
@@ -66,11 +65,6 @@ export const Canvas3dWebGLDecorator = (Story: any, { parameters }: any) => {
         castShadow
         position={[-1, 2, -3]}
         intensity={3.2}
-      />
-      <Environment
-        preset='studio'
-        environmentIntensity={1.}
-        backgroundRotation={[0, PI2, 0]}
       />
 
       <Story />

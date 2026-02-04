@@ -1,8 +1,7 @@
-
-import { useTexture } from '@react-three/drei'
 import { PropsWithChildren, useEffect, useMemo, useState } from 'react'
 import { LinearFilter, Texture } from 'three'
 import { createConfig, GlyphConfig } from '../sdk/utils/glyphs'
+import { textureLoader } from '../sdk/utils/loaders'
 import { GlyphsContext, GlyphsContextProps } from './GlyphsContext'
 
 /**
@@ -25,20 +24,20 @@ async function get(url: string) {
         'Content-Type': 'application/json',
       },
     },
-  );
+  )
 
-  const { status } = response;
+  const { status } = response
 
   if ([404, 202, 204].includes(status)) {
-    return null;
+    return null
   }
 
   if (response.ok) {
-    const data = await response.json();
-    return data;
+    const data = await response.json()
+    return data
   }
 
-  throw new Error(response.toString());
+  throw new Error(response.toString())
 }
 
 /**
@@ -61,13 +60,15 @@ async function get(url: string) {
  * @group Components
  */
 export const GlyphsProvider = ({ fontAtlasUrl, fontConfigUrl, children }: PropsWithChildren<GlyphsProviderProps>) => {
-  const glyphAtlas = useTexture(fontAtlasUrl, (tex: Texture) => {
-    tex.generateMipmaps = false
-    tex.magFilter = LinearFilter
-    tex.minFilter = LinearFilter
-    tex.flipY = true
-  })
-  
+  const glyphAtlas = useMemo(() => {
+    return textureLoader.load(fontAtlasUrl, (tex: Texture) => {
+      tex.generateMipmaps = false
+      tex.magFilter = LinearFilter
+      tex.minFilter = LinearFilter
+      tex.flipY = true
+    })
+  }, [fontAtlasUrl])
+
   const [config, setConfig] = useState<GlyphConfig | null>(null)
 
   useEffect(() => {
@@ -80,7 +81,7 @@ export const GlyphsProvider = ({ fontAtlasUrl, fontConfigUrl, children }: PropsW
     if (!config) return null
     return {
       glyphAtlas,
-      encodeText: (text: string ) => config.encodeText(text),
+      encodeText: (text: string) => config.encodeText(text),
       encodeTextTexture: (textSegments: string[] | string) => config.encodeTextTexture(textSegments),
       glyphData: config.glyphData,
       glyphsCount: config.glyphsCount,
@@ -99,7 +100,7 @@ export const GlyphsProvider = ({ fontAtlasUrl, fontConfigUrl, children }: PropsW
 
   return (
     <GlyphsContext.Provider value={context}>
-      { children }
+      {children}
     </GlyphsContext.Provider>
   )
 }

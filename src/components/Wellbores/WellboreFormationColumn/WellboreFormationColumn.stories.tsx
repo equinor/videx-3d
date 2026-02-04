@@ -8,7 +8,6 @@ import { Canvas3dWebGLDecorator } from '../../../storybook/decorators/canvas-3d-
 import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator'
 import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator'
 import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator'
-import { PerformanceDecorator } from '../../../storybook/decorators/performance-decorator'
 import storyArgs from '../../../storybook/story-args.json'
 import { CameraTargetMarker } from '../../CameraTargetMarker/CameraTargetMarker'
 import { BasicTrajectory } from '../BasicTrajectory'
@@ -158,7 +157,6 @@ export const Default: Story = {
     },
   },
   decorators: [
-    PerformanceDecorator,
     Canvas3dWebGLDecorator,
     GeneratorsProviderDecorator,
     DepthSelectorDecorator,

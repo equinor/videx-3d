@@ -17,7 +17,6 @@ import { Distance } from './Distance'
 const meta = {
   title: 'Components/Misc/Distance',
   decorators: [
-    //PerformanceDecorator,
     Canvas3dWebGLDecorator,
     GeneratorsProviderDecorator,
     DepthSelectorDecorator,
