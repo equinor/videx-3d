@@ -1,7 +1,10 @@
-import { CameraControls, Environment } from '@react-three/drei'
-import { Canvas } from '@react-three/fiber'
+import { Environment } from '@react-three/fiber'
+import { Canvas } from '@react-three/fiber/webgpu'
 import { useCallback, useEffect, useRef } from 'react'
 import { Color, NoToneMapping } from 'three'
+import { Inspector } from 'three/addons/inspector/Inspector.js'
+import { Renderer } from 'three/webgpu'
+import { CameraControls } from '../../components/CameraControls/CameraControls'
 import { PI2 } from '../../sdk'
 import { CameraManager } from '../../sdk/managers/CameraManager'
 
@@ -53,11 +56,15 @@ export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
         left: 0,
         right: 0,
       }}
-      onCreated={({ scene, webGPUSupported, renderer }) => {
+      onCreated={({ scene, renderer }) => {
         if (parameters.background) {
           scene.background = new Color()
         }
-        console.log('WebGPU support:', webGPUSupported, renderer)
+        const inspector = new Inspector();
+
+        // setup inspector for perf monitoring
+        (renderer as Renderer).inspector = inspector
+        inspector.init()
       }}
     >
       <ambientLight intensity={0.5} />
@@ -70,6 +77,7 @@ export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
         preset='studio'
         environmentIntensity={1.}
         backgroundRotation={[0, PI2, 0]}
+        background={false}
       />
 
       <Story />

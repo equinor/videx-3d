@@ -1,7 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { Canvas3dWebGLDecorator } from '../../storybook/decorators/canvas-3d-webgl-decorator'
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator'
-import { PerformanceDecorator } from '../../storybook/decorators/performance-decorator'
 import { SDFTest } from './SDFTest'
 
 const meta = {
@@ -9,7 +8,6 @@ const meta = {
   component: SDFTest,
   decorators: [
     GlyphsDecorator,
-    PerformanceDecorator,
     Canvas3dWebGLDecorator,
   ],
   parameters: {

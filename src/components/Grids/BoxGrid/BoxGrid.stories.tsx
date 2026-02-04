@@ -20,7 +20,6 @@ const meta = {
   title: 'Components/Grids/BoxGrid',
   component: BoxGrid,
   decorators: [
-    //PerformanceDecorator,
     Canvas3dWebGLDecorator,
     GeneratorsProviderDecorator,
     DepthSelectorDecorator,

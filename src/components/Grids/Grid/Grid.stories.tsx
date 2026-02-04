@@ -1,7 +1,9 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 
-import { Float } from '@react-three/drei'
-import { TextureLoader } from 'three'
+import { useFrame } from '@react-three/fiber'
+import { useRef } from 'react'
+import { Mesh } from 'three'
+import { textureLoader } from '../../../sdk/utils/loaders'
 import { Canvas3dWebGLDecorator } from '../../../storybook/decorators/canvas-3d-webgl-decorator'
 import { Grid, GridProps } from './Grid'
 
@@ -313,7 +315,7 @@ export const RadialDynamicSegments: Story = {
 export const Customized: Story = {
   args: {
     plane: 'xz',
-    texture: new TextureLoader().load('old-paper.jpg'),
+    texture: textureLoader.load('old-paper.jpg'),
     size: [1000, 1000],
     cellSize: 50,
     subDivisions: 10,
@@ -345,22 +347,32 @@ export const Projections: Story = {
     projectionColor: '#789',
     projectionRefreshRate: 100
   },
-  render: (args: GridProps) => (
-    <group>
-      <group position={[0, 0, 0]}>
-        <Grid {...args} />
-      </group>
-      <axesHelper args={[args.cellSize]} />
-      <mesh position={[250, 50, -400]} visible={true}>
-        <sphereGeometry args={[10]} />
-        <meshStandardMaterial />
-      </mesh>
-      <Float floatingRange={[0, 1000]}>
-        <mesh position={[-200, 50, 250]} visible={true}>
+  render: (args: GridProps) => {
+    const ref = useRef<Mesh>(null)
+
+    useFrame(({ elapsed }) => {
+      if (ref.current) {
+        ref.current.position.x = (Math.cos(elapsed) + Math.sin(elapsed)) * 10
+        ref.current.position.y = 50 + Math.abs(Math.sin(elapsed * 0.1) * 500)
+      }
+    })
+    return (
+      <group>
+        <group position={[0, 0, 0]}>
+          <Grid {...args} />
+        </group>
+        <axesHelper args={[args.cellSize]} />
+        <mesh position={[250, 50, -400]} visible={true}>
+          <sphereGeometry args={[10]} />
+          <meshStandardMaterial />
+        </mesh>
+
+        <mesh ref={ref} position={[-200, 50, 250]} visible={true}>
           <boxGeometry args={[100, 100, 100]} />
           <meshStandardMaterial />
         </mesh>
-      </Float>
-    </group>
-  )
+
+      </group>
+    )
+  }
 }

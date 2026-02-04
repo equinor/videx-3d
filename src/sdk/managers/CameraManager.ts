@@ -1,5 +1,5 @@
-import { CameraControls } from '@react-three/drei'
 import { Vector3 } from 'three'
+import { CameraControls } from '../../components/CameraControls/CameraControls'
 import {
   cameraFocusAtPointEventType,
   cameraSetPositionEventType,
@@ -15,7 +15,7 @@ const v2 = new Vector3()
 async function focusAtPoint(
   point: Vec3,
   distance: number,
-  controls: CameraControls
+  controls: CameraControls,
 ) {
   controls.normalizeRotations()
   const useDistance = Math.min(controls.distance, distance)
@@ -33,7 +33,7 @@ async function focusAtPoint(
     cameraTarget.x,
     cameraTarget.y,
     cameraTarget.z,
-    true
+    true,
   )
 }
 
@@ -72,7 +72,7 @@ export class CameraManager {
         focusAtPoint(
           event.detail.point as Vec3,
           event.detail.distance || 200,
-          this.controls
+          this.controls,
         ).then(() => {
           if (callback) callback()
         })
@@ -102,7 +102,7 @@ export class CameraManager {
         cameraTarget.x,
         cameraTarget.y,
         cameraTarget.z,
-        true
+        true,
       )
     }
     return null

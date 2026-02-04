@@ -47,6 +47,7 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
+    "camera-controls": "^3.1.2",
     "curve-interpolator": "^3.3.1",
     "d3-array": "^3.2.4",
     "d3-axis": "^3.0.0",
@@ -69,8 +70,7 @@
   "devDependencies": {
     "@chromatic-com/storybook": "^5.0.0",
     "@eslint/js": "^9.32.0",
-    "@react-three/drei": "^11.0.0-alpha.5",
-    "@react-three/fiber": "^10.0.0-alpha.2",
+    "@react-three/fiber": "^10.0.0-canary.aecbafb",
     "@storybook/addon-docs": "^10.1.11",
     "@storybook/react": "^10.1.11",
     "@storybook/react-vite": "^10.1.11",
@@ -88,6 +88,7 @@
     "@types/rbush": "^3.0.3",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
+    "@types/three": "^0.182.0",
     "@typescript-eslint/eslint-plugin": "^8.49.0",
     "@typescript-eslint/parser": "8.49.0",
     "@vitejs/plugin-react": "^4.3.4",
@@ -117,8 +118,7 @@
     "vitest": "^3.0.7"
   },
   "peerDependencies": {
-    "@react-three/drei": ">=10",
-    "@react-three/fiber": ">=9",
+    "@react-three/fiber": ">=10",
     "comlink": ">=4.4",
     "react": ">=19",
     "react-dom": ">=19",

@@ -5,7 +5,6 @@ import { CameraTargetMarker } from './CameraTargetMarker'
 const meta = {
   title: 'Components/Misc/CameraTargetMarker',
   decorators: [
-    //PerformanceDecorator,
     Canvas3dDecorator,
   ],
   component: CameraTargetMarker,
@@ -22,7 +21,7 @@ export const Default: Story = {
     fixedX: undefined,
     fixedY: undefined,
     fixedZ: undefined,
-    opacity: 0.25,
+    opacity: 1,
     radius: 0.5,
   },
   render: args => {

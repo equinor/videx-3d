@@ -1,25 +1,24 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useEffect } from 'react'
-import { BasicTrajectory } from '../../components/Wellbores/BasicTrajectory/BasicTrajectory'
-import { Casings } from '../../components/Wellbores/Casings/Casings'
-import { CompletionTools } from '../../components/Wellbores/CompletionTools/CompletionTools'
-import { Wellbore } from '../../components/Wellbores/Wellbore/Wellbore'
-import { Canvas3dWebGLDecorator } from '../decorators/canvas-3d-webgl-decorator'
-import { DataProviderDecorator } from '../decorators/data-provider-decorator'
-import { GeneratorsProviderDecorator } from '../decorators/generators-provider-decorator'
-import storyArgs from '../story-args.json'
-//import { PerformanceDecorator } from '../decorators/performance-decorator'
 import { Annotations } from '../../components/Annotations/Annotations'
 import { AnnotationsLayer } from '../../components/Annotations/AnnotationsLayer'
 import { AnnotationComponentProps } from '../../components/Annotations/types'
+import { BasicTrajectory } from '../../components/Wellbores/BasicTrajectory/BasicTrajectory'
 import { CasingAnnotations } from '../../components/Wellbores/Casings/CasingAnnotations/CasingAnnotations'
 import { CasingLabel } from '../../components/Wellbores/Casings/CasingAnnotations/CasingLabel'
+import { Casings } from '../../components/Wellbores/Casings/Casings'
 import { CompletionAnnotations } from '../../components/Wellbores/CompletionTools/CompletionAnnotations/CompletionAnnotations'
+import { CompletionTools } from '../../components/Wellbores/CompletionTools/CompletionTools'
 import { Perforations } from '../../components/Wellbores/Perforations/Perforations'
 import { Perimeter } from '../../components/Wellbores/Perimeter/Perimeter'
+import { Wellbore } from '../../components/Wellbores/Wellbore/Wellbore'
 import { CameraFocusAtPointEvent } from '../../events/camera-events'
 import { WellboreSelectedEvent } from '../../events/wellbore-events'
+import { Canvas3dWebGLDecorator } from '../decorators/canvas-3d-webgl-decorator'
+import { DataProviderDecorator } from '../decorators/data-provider-decorator'
 import { DepthSelectorDecorator } from '../decorators/depth-selector-decorator'
+import { GeneratorsProviderDecorator } from '../decorators/generators-provider-decorator'
+import storyArgs from '../story-args.json'
 
 const meta = {
   title: 'examples/Wellbore',
@@ -95,7 +94,6 @@ export const Default: Story = {
     },
   },
   decorators: [
-    //PerformanceDecorator,
     Canvas3dWebGLDecorator,
     GeneratorsProviderDecorator,
     DepthSelectorDecorator,
