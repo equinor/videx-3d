@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.0.9-beta](https://github.com/equinor/videx-3d/compare/v5.0.8-beta...v5.0.9-beta) (2026-02-06)
+
+
+### Bug Fixes
+
+* **surface depth:** set depth write to false when surface has an opacity below zero ([#134](https://github.com/equinor/videx-3d/issues/134)) ([aece06a](https://github.com/equinor/videx-3d/commit/aece06acd74efd02b77478ff588467fcfbb96530))
+
 ## [5.0.8-beta](https://github.com/equinor/videx-3d/compare/v5.0.7-beta...v5.0.8-beta) (2026-01-28)
 
 
