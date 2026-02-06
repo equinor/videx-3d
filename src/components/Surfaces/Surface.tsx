@@ -115,6 +115,7 @@ export const Surface = ({
       transparent: true,
       opacity: 1,
       debug: false,
+      depthWrite: false,
     })
 
     return m
@@ -216,6 +217,11 @@ export const Surface = ({
     if (normalMap) {
       material.normalMap = normalMap
     }
+    const depthWrite = opacity === 1
+    if (depthWrite !== material.depthWrite) {
+      material.depthWrite = depthWrite
+      material.needsUpdate = true
+    }
   }, [
     material,
     useColorRamp,
@@ -225,6 +231,7 @@ export const Surface = ({
     color,
     doubleSide,
     normalMap,
+    opacity
   ])
 
   useEffect(() => {
