@@ -1,23 +1,23 @@
-import type { Meta, StoryObj } from '@storybook/react-vite'
-import { useEffect } from 'react'
-import { WellboreSelectedEvent } from '../../../events/wellbore-events'
-import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
-import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator'
-import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator'
-import storyArgs from '../../../storybook/story-args.json'
-import { Wellbore } from './Wellbore'
+import type { Meta, StoryObj } from '@storybook/react-vite';
+import { useEffect } from 'react';
+import { WellboreSelectedEvent } from '../../../events/wellbore-events';
+import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator';
+import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator';
+import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator';
+import storyArgs from '../../../storybook/story-args.json';
+import { Wellbore } from './Wellbore';
 
 const meta = {
   title: 'Components/Wellbores/Wellbore',
   component: Wellbore,
-} satisfies Meta<typeof Wellbore>
+} satisfies Meta<typeof Wellbore>;
 
-type StoryArgs = React.ComponentProps<typeof Wellbore>
+type StoryArgs = React.ComponentProps<typeof Wellbore>;
 
-export default meta
-type Story = StoryObj<StoryArgs>
+export default meta;
+type Story = StoryObj<StoryArgs>;
 
-const wellboreId = storyArgs.defaultWellbore
+const wellboreId = storyArgs.defaultWellbore;
 
 export const Default: Story = {
   args: {
@@ -37,19 +37,17 @@ export const Default: Story = {
   ],
   render: args => {
     useEffect(() => {
-      dispatchEvent(new WellboreSelectedEvent({ id: args.id }))
-    }, [args.id])
+      dispatchEvent(new WellboreSelectedEvent({ id: args.id }));
+    }, [args.id]);
 
     return (
       <>
-        <Wellbore {...args}>
-       
-        </Wellbore>
+        <Wellbore {...args}></Wellbore>
       </>
-    )
+    );
   },
   parameters: {
     autoClear: true,
-    scale: 100
-  }
-}
+    scale: 100,
+  },
+};

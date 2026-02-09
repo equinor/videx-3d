@@ -1,38 +1,54 @@
-import { useEffect, useMemo, useState } from 'react'
-import { BackSide, BufferGeometry, FrontSide, ShaderLib, Uniform, UniformsUtils } from 'three'
-import { CommonComponentProps, createLayers, LAYERS, useGenerator, useWellboreContext } from '../../../main'
-import { unpackBufferGeometry } from '../../../sdk'
-import fragmentShader from './shaders/fragment.glsl'
-import vertexShader from './shaders/vertex.glsl'
-import { wellboreFormationColumn, WellboreFormationColumnResponse } from './wellbore-formation-column-defs'
+import { useEffect, useMemo, useState } from 'react';
+import {
+  BackSide,
+  BufferGeometry,
+  FrontSide,
+  ShaderLib,
+  Uniform,
+  UniformsUtils,
+} from 'three';
+import {
+  CommonComponentProps,
+  createLayers,
+  LAYERS,
+  useGenerator,
+  useWellboreContext,
+} from '../../../main';
+import { unpackBufferGeometry } from '../../../sdk';
+import fragmentShader from './shaders/fragment.glsl';
+import vertexShader from './shaders/vertex.glsl';
+import {
+  wellboreFormationColumn,
+  WellboreFormationColumnResponse,
+} from './wellbore-formation-column-defs';
 
 /**
  * WellboreFormationColumn props
  * @expand
  */
 export type WellboreFormationColumnProps = CommonComponentProps & {
-  stratColumnId: string
-  units?: string[]
-  unitTypes?: string[]
-  inverted?: boolean
-  opacity?: number
-  radialSegments?: number
-  startRadius?: number
-  formationWidth?: number
-  priority?: number
-}
+  stratColumnId: string;
+  units?: string[];
+  unitTypes?: string[];
+  inverted?: boolean;
+  opacity?: number;
+  radialSegments?: number;
+  startRadius?: number;
+  formationWidth?: number;
+  priority?: number;
+};
 
 /**
  * Renders colored tube geometeries for visualizing formations for a specific strat column.
- * 
+ *
  * @example
  * <Wellbore id={wellboreId}>
  *  <WellboreFormationColumn stratColumnId="abcde" />
  * </Wellbore>
- * 
+ *
  * @see [Storybook](/videx-3d/?path=/docs/components-wellbores-wellboreformationcolumn--docs)
  * @see {@link Wellbore}
- * 
+ *
  * @group Components
  */
 export const WellboreFormationColumn = ({
@@ -54,25 +70,32 @@ export const WellboreFormationColumn = ({
   formationWidth = 1,
   priority = 0,
 }: WellboreFormationColumnProps) => {
-  const { id, fromMsl, segmentsPerMeter, simplificationThreshold } = useWellboreContext()
-  const generator = useGenerator<WellboreFormationColumnResponse>(wellboreFormationColumn, priority)
+  const { id, fromMsl, segmentsPerMeter, simplificationThreshold } =
+    useWellboreContext();
+  const generator = useGenerator<WellboreFormationColumnResponse>(
+    wellboreFormationColumn,
+    priority,
+  );
 
-  const [geometry, setGeometry] = useState<BufferGeometry | null>(null)
+  const [geometry, setGeometry] = useState<BufferGeometry | null>(null);
 
-  const uniforms = useMemo(() => UniformsUtils.merge([
-    UniformsUtils.clone(ShaderLib['basic'].uniforms),
-    {
-      opacity: new Uniform(1),
-    }
-  ]), [])
+  const uniforms = useMemo(
+    () =>
+      UniformsUtils.merge([
+        UniformsUtils.clone(ShaderLib['basic'].uniforms),
+        {
+          opacity: new Uniform(1),
+        },
+      ]),
+    [],
+  );
 
   useEffect(() => {
-    uniforms.opacity.value = opacity
-  }, [opacity, uniforms])
+    uniforms.opacity.value = opacity;
+  }, [opacity, uniforms]);
 
   useEffect(() => {
     if (generator) {
-
       generator(
         id,
         stratColumnId,
@@ -86,16 +109,15 @@ export const WellboreFormationColumn = ({
         radialSegments,
         simplificationThreshold,
       ).then((response: any) => {
-        let bufferGeometry: BufferGeometry | null = null
+        let bufferGeometry: BufferGeometry | null = null;
         if (response) {
-          bufferGeometry = unpackBufferGeometry(response)
+          bufferGeometry = unpackBufferGeometry(response);
         }
         setGeometry(prev => {
-          if (prev) prev.dispose()
-          return bufferGeometry
-        })
-      })
-
+          if (prev) prev.dispose();
+          return bufferGeometry;
+        });
+      });
     }
   }, [
     generator,
@@ -109,10 +131,10 @@ export const WellboreFormationColumn = ({
     startRadius,
     formationWidth,
     radialSegments,
-    inverted
-  ])
+    inverted,
+  ]);
 
-  if (!geometry) return null
+  if (!geometry) return null;
 
   return (
     <mesh
@@ -139,5 +161,5 @@ export const WellboreFormationColumn = ({
         depthWrite={true}
       />
     </mesh>
-  )
-}
+  );
+};

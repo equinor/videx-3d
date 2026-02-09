@@ -1,1 +1,1 @@
-export const wellboreBounds = 'wellboreBounds'
+export const wellboreBounds = 'wellboreBounds';

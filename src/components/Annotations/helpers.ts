@@ -1,4 +1,4 @@
-import { PerspectiveCamera, Vector3 } from 'three'
+import { PerspectiveCamera, Vector3 } from 'three';
 import {
   normalizeVec2,
   PI,
@@ -8,9 +8,9 @@ import {
   subVec2,
   Vec2,
   Vec3,
-} from '../../sdk'
+} from '../../sdk';
 
-const position = new Vector3()
+const position = new Vector3();
 
 export const labelAngles = [
   /* 0 */ 0,
@@ -21,7 +21,7 @@ export const labelAngles = [
   /* 5 */ -PI + PI4,
   /* 6 */ -PI2,
   /* 7 */ -PI4,
-]
+];
 /**
  * 0 = [-] annotation is pointing approx. horizontally
  * 1 = [/] annotation is pointing approx. diagonally (from lower left to upper right)
@@ -33,7 +33,7 @@ export const labelAnglesMap = [
   [7, 3],
   [0, 4],
   [1, 5],
-]
+];
 
 export const getLabelQuadrant = (
   originScreen: Vec2,
@@ -46,22 +46,22 @@ export const getLabelQuadrant = (
       origin3d[0] + direction3d[0] * 100,
       origin3d[1] + direction3d[1] * 100,
       origin3d[2] + direction3d[2] * 100,
-    )
+    );
 
-    position.project(camera)
+    position.project(camera);
 
     const directionScreen = normalizeVec2(
       subVec2([position.x, position.y], [originScreen[0], originScreen[1]]),
-    )
+    );
 
-    let angle = Math.atan2(directionScreen[1], directionScreen[0])
-    if (isNaN(angle)) return 0
+    let angle = Math.atan2(directionScreen[1], directionScreen[0]);
+    if (isNaN(angle)) return 0;
 
-    if (angle < 0) angle = PI + angle // normalize to 0-PI
+    if (angle < 0) angle = PI + angle; // normalize to 0-PI
 
-    const quadrant = Math.floor((angle + PI8) / PI4) % 4
+    const quadrant = Math.floor((angle + PI8) / PI4) % 4;
 
-    return quadrant
+    return quadrant;
   }
-  return 0
-}
+  return 0;
+};

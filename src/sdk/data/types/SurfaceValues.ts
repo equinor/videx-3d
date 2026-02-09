@@ -1,1 +1,1 @@
-export type SurfaceValues = Float32Array
+export type SurfaceValues = Float32Array;

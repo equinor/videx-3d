@@ -1,2 +1,2 @@
-export * from './WellboreBounds'
-export * from './wellbore-bounds-defs'
+export * from './WellboreBounds';
+export * from './wellbore-bounds-defs';

@@ -2,15 +2,15 @@ function mapStratColumnsData(stratColumnData) {
   const grouped = stratColumnData
     .sort((a, b) => a.top_age - b.top_age)
     .reduce((map, s) => {
-      let stratCol = map[s.strat_column_uuid]
+      let stratCol = map[s.strat_column_uuid];
       if (!stratCol) {
         stratCol = {
           id: s.strat_column_uuid,
           name: s.strat_column_identifier,
           type: s.strat_column_type,
           units: [],
-        }
-        map[s.strat_column_uuid] = stratCol
+        };
+        map[s.strat_column_uuid] = stratCol;
       }
 
       stratCol.units.push({
@@ -24,20 +24,19 @@ function mapStratColumnsData(stratColumnData) {
         color: s.color_html || 'gray',
         level: s.strat_unit_level,
         parent: s.strat_unit_parent,
-      })
-      return map
-    }, {})
-  return grouped
+      });
+      return map;
+    }, {});
+  return grouped;
 }
 
-
 export function transformStratColumns(input, output) {
-  const stratColumnData = input['strat-columns']
-  
+  const stratColumnData = input['strat-columns'];
+
   if (!stratColumnData) {
-    output['strat-columns'] = {}
-    return  
+    output['strat-columns'] = {};
+    return;
   }
 
-  output['strat-columns'] = mapStratColumnsData(stratColumnData)
+  output['strat-columns'] = mapStratColumnsData(stratColumnData);
 }

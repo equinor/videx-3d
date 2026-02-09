@@ -1,2 +1,2 @@
-export * from './OutputPanel'
-export * from './output-panel-state'
+export * from './OutputPanel';
+export * from './output-panel-state';

@@ -1,1 +1,1 @@
-export const depthMarkers = 'depth-markers'
+export const depthMarkers = 'depth-markers';

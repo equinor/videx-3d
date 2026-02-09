@@ -1,4 +1,4 @@
-import { transfer } from 'comlink'
+import { transfer } from 'comlink';
 import {
   clamp,
   createTubeGeometry,
@@ -6,8 +6,8 @@ import {
   packBufferGeometry,
   PositionLog,
   ReadonlyStore,
-  TubeGeometryOptions
-} from '../sdk'
+  TubeGeometryOptions,
+} from '../sdk';
 
 export async function generateTubeTrajectory(
   this: ReadonlyStore,
@@ -17,22 +17,22 @@ export async function generateTubeTrajectory(
   fromMsl?: number,
   radius: number = 0.5,
   radialSegments: number = 16,
-  includeLengths: boolean = false
+  includeLengths: boolean = false,
 ) {
-  const poslogMsl = await this.get<PositionLog>('position-logs', id)
+  const poslogMsl = await this.get<PositionLog>('position-logs', id);
 
-  const trajectory = getTrajectory(id, poslogMsl)
+  const trajectory = getTrajectory(id, poslogMsl);
 
-  if (!trajectory) return null
+  if (!trajectory) return null;
 
   const from =
     fromMsl !== undefined
       ? clamp(
           (fromMsl - trajectory.measuredTop) / trajectory.measuredLength,
           0,
-          1
+          1,
         )
-      : 0
+      : 0;
 
   const options: TubeGeometryOptions = {
     from,
@@ -45,10 +45,10 @@ export async function generateTubeTrajectory(
     computeUvs: true,
     computeLengths: !!includeLengths,
     radialSegments,
-  }
-  const geometery = createTubeGeometry(trajectory.curve, options)
+  };
+  const geometery = createTubeGeometry(trajectory.curve, options);
 
-  const [geometry, transferrables] = packBufferGeometry(geometery)
+  const [geometry, transferrables] = packBufferGeometry(geometery);
 
-  return transfer(geometry, transferrables)
+  return transfer(geometry, transferrables);
 }

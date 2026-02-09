@@ -1,38 +1,48 @@
-import { ReactElement, useEffect, useMemo, useState } from 'react'
-import { BufferGeometry, Material, MeshLambertMaterial, MeshStandardMaterial, Object3D } from 'three'
-import { useGenerator } from '../../../hooks/useGenerator'
-import { useWellboreContext } from '../../../hooks/useWellboreContext'
-import { unpackBufferGeometry } from '../../../sdk/geometries/packing'
-import { CommonComponentProps, CustomMaterialProps } from '../../common'
-import { completionTools, CompletionToolsGeneratorResponse } from './completion-tools-defs'
-import { ScreenMaterial } from './Screen/screen-material'
+import { ReactElement, useEffect, useMemo, useState } from 'react';
+import {
+  BufferGeometry,
+  Material,
+  MeshLambertMaterial,
+  MeshStandardMaterial,
+  Object3D,
+} from 'three';
+import { useGenerator } from '../../../hooks/useGenerator';
+import { useWellboreContext } from '../../../hooks/useWellboreContext';
+import { unpackBufferGeometry } from '../../../sdk/geometries/packing';
+import { CommonComponentProps, CustomMaterialProps } from '../../common';
+import {
+  completionTools,
+  CompletionToolsGeneratorResponse,
+} from './completion-tools-defs';
+import { ScreenMaterial } from './Screen/screen-material';
 
 /**
  * CompletionTools props
  * @expand
  */
-export type CompletionToolsProps = CommonComponentProps & CustomMaterialProps & {
-  radialSegments?: number,
-  sizeMultiplier?: number,
-  overrideSegmentsPerMeter?: number,
-  overrideSimplificationThreshold?: number,
-  fallback?: (() => ReactElement<Object3D>),
-  priority?: number,
-}
+export type CompletionToolsProps = CommonComponentProps &
+  CustomMaterialProps & {
+    radialSegments?: number;
+    sizeMultiplier?: number;
+    overrideSegmentsPerMeter?: number;
+    overrideSimplificationThreshold?: number;
+    fallback?: () => ReactElement<Object3D>;
+    priority?: number;
+  };
 
 /**
  * Generic render of completion tools based on depths, diameters and type. Must be a child of the `Wellbore` component.
- * 
+ *
  * @example
  * <Wellbore id={wellbore.id}>
- *  <CompletionTools sizeMultiplier={5} /> 
+ *  <CompletionTools sizeMultiplier={5} />
  * </Wellbore>
- * 
+ *
  * @remarks
  * The `fallback` prop may be used to render a different component if there is no completion tool data available for the wellbore.
- * 
+ *
  * @see {@link Wellbore}
- * 
+ *
  * @group Components
  */
 export const CompletionTools = ({
@@ -59,22 +69,36 @@ export const CompletionTools = ({
     fromMsl,
     segmentsPerMeter: defaultSegmentsPerMeter,
     simplificationThreshold: defaultSimplificationThreshold,
-  } = useWellboreContext()
+  } = useWellboreContext();
 
-  const generator = useGenerator<CompletionToolsGeneratorResponse>(completionTools, priority)
-  const [geometry, setGeometry] = useState<BufferGeometry | null>(null)
-  const [useFallback, setUseFallback] = useState(false)
+  const generator = useGenerator<CompletionToolsGeneratorResponse>(
+    completionTools,
+    priority,
+  );
+  const [geometry, setGeometry] = useState<BufferGeometry | null>(null);
+  const [useFallback, setUseFallback] = useState(false);
 
   const { segmentsPerMeter, simplificationThreshold } = useMemo(() => {
     return {
-      segmentsPerMeter: overrideSegmentsPerMeter !== undefined ? overrideSegmentsPerMeter : defaultSegmentsPerMeter || 0.1,
-      simplificationThreshold: overrideSimplificationThreshold !== undefined ? overrideSimplificationThreshold : defaultSimplificationThreshold || 0
-    }
-  }, [defaultSegmentsPerMeter, defaultSimplificationThreshold, overrideSegmentsPerMeter, overrideSimplificationThreshold])
+      segmentsPerMeter:
+        overrideSegmentsPerMeter !== undefined
+          ? overrideSegmentsPerMeter
+          : defaultSegmentsPerMeter || 0.1,
+      simplificationThreshold:
+        overrideSimplificationThreshold !== undefined
+          ? overrideSimplificationThreshold
+          : defaultSimplificationThreshold || 0,
+    };
+  }, [
+    defaultSegmentsPerMeter,
+    defaultSimplificationThreshold,
+    overrideSegmentsPerMeter,
+    overrideSimplificationThreshold,
+  ]);
 
   const material = useMemo<Material | Material[]>(() => {
     if (customMaterial) {
-      return customMaterial
+      return customMaterial;
     }
 
     const m = [
@@ -82,7 +106,7 @@ export const CompletionTools = ({
       new MeshStandardMaterial({
         color: '#999',
         metalness: 1,
-        roughness: 0.25
+        roughness: 0.25,
       }),
       // tube
       new MeshStandardMaterial({
@@ -114,7 +138,7 @@ export const CompletionTools = ({
         metalness: 0,
         roughness: 1,
         transparent: true,
-        opacity: 0.9
+        opacity: 0.9,
       }),
       // safety valve
       new MeshStandardMaterial({
@@ -141,30 +165,45 @@ export const CompletionTools = ({
       // unknown
       new MeshLambertMaterial({
         color: '#ccc',
-      })
-    ]
+      }),
+    ];
 
-    return m
-  }, [customMaterial])
+    return m;
+  }, [customMaterial]);
 
   useEffect(() => {
     if (generator && id) {
-      generator(id, fromMsl, radialSegments, sizeMultiplier, segmentsPerMeter, simplificationThreshold).then(response => {
+      generator(
+        id,
+        fromMsl,
+        radialSegments,
+        sizeMultiplier,
+        segmentsPerMeter,
+        simplificationThreshold,
+      ).then(response => {
         setGeometry(prev => {
           if (prev) {
-            prev.dispose()
+            prev.dispose();
           }
           if (response) {
-            const unpackedGeometry = unpackBufferGeometry(response)
-            return unpackedGeometry
+            const unpackedGeometry = unpackBufferGeometry(response);
+            return unpackedGeometry;
           } else {
-            return null
+            return null;
           }
-        })
-        if (!response) setUseFallback(true)
-      })
+        });
+        if (!response) setUseFallback(true);
+      });
     }
-  }, [generator, id, fromMsl, sizeMultiplier, segmentsPerMeter, simplificationThreshold, radialSegments])
+  }, [
+    generator,
+    id,
+    fromMsl,
+    sizeMultiplier,
+    segmentsPerMeter,
+    simplificationThreshold,
+    radialSegments,
+  ]);
 
   return (
     <group
@@ -188,5 +227,5 @@ export const CompletionTools = ({
       )}
       {useFallback && fallback && fallback()}
     </group>
-  )
-}
+  );
+};

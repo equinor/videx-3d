@@ -1,6 +1,5 @@
-
-import { createContext } from 'react'
-import { Store } from '../sdk'
+import { createContext } from 'react';
+import { Store } from '../sdk';
 
 /**
  * DataContext props
@@ -8,15 +7,15 @@ import { Store } from '../sdk'
  */
 export type DataContextProps = {
   // indicates if the store is a direct instance or remote (proxy)
-  isRemote: boolean,
+  isRemote: boolean;
   // connect directly to a non-remote store
-  connect: () => Store | null,
+  connect: () => Store | null;
   // connect to a remote store by opening a `MessagePort`
-  connectByMessagePort: () => Promise<MessagePort>,
-}
+  connectByMessagePort: () => Promise<MessagePort>;
+};
 
 /**
  * Data context
  * @group Contexts
  */
-export const DataContext = createContext<DataContextProps | null>(null)
+export const DataContext = createContext<DataContextProps | null>(null);
