@@ -1,31 +1,31 @@
-import { createRef, useMemo } from 'react'
-import { create } from 'zustand'
-import { subscribeWithSelector } from 'zustand/middleware'
-import { AnnotationInstance, AnnotationLayer, AnnotationProps } from './types'
+import { createRef, useMemo } from 'react';
+import { create } from 'zustand';
+import { subscribeWithSelector } from 'zustand/middleware';
+import { AnnotationInstance, AnnotationLayer, AnnotationProps } from './types';
 
 export type AnnotationsState = {
-  visible: boolean
+  visible: boolean;
   update: {
-    required: boolean
-    ref: ReturnType<typeof setTimeout> | null
-    setRef: (v: ReturnType<typeof setTimeout>) => void
-  }
-  layers: Record<string, AnnotationLayer>
-  annotations: Record<string, AnnotationProps[]>
-  instances: AnnotationInstance[]
-  toggleVisibility: () => void
-  clear: () => void
-  createLayer: (newLayer: AnnotationLayer) => () => void
-  updateLayer: (id: string, updatedLayer: Partial<AnnotationLayer>) => void
-  layerExist: (id: string) => boolean
+    required: boolean;
+    ref: ReturnType<typeof setTimeout> | null;
+    setRef: (v: ReturnType<typeof setTimeout>) => void;
+  };
+  layers: Record<string, AnnotationLayer>;
+  annotations: Record<string, AnnotationProps[]>;
+  instances: AnnotationInstance[];
+  toggleVisibility: () => void;
+  clear: () => void;
+  createLayer: (newLayer: AnnotationLayer) => () => void;
+  updateLayer: (id: string, updatedLayer: Partial<AnnotationLayer>) => void;
+  layerExist: (id: string) => boolean;
   addLayerAnnotations: (
     layerId: string,
     scope: string,
     annotations: AnnotationProps[],
-  ) => void
-  removeLayerAnnotations: (layerId: string, scope?: string) => void
-  setInstances: (newInstances: AnnotationInstance[]) => void
-}
+  ) => void;
+  removeLayerAnnotations: (layerId: string, scope?: string) => void;
+  setInstances: (newInstances: AnnotationInstance[]) => void;
+};
 
 /**
  * Get access to annotations global state.
@@ -46,7 +46,7 @@ export const useAnnotationsState = create<
       required: false,
       ref: null,
       setRef: (v: ReturnType<typeof setTimeout>) =>
-        set((state) => ({ update: { ...state.update, ref: v } })),
+        set(state => ({ update: { ...state.update, ref: v } })),
     },
     layers: {},
     annotations: {},
@@ -56,80 +56,80 @@ export const useAnnotationsState = create<
         layers: {},
         annotations: {},
         instances: [],
-      })
+      });
     },
-    setInstances: (newInstances) => set({ instances: newInstances }),
+    setInstances: newInstances => set({ instances: newInstances }),
     layerExist: (id: string) => {
-      return !!get().layers[id]
+      return !!get().layers[id];
     },
     toggleVisibility: () => {
-      set((state) => ({
+      set(state => ({
         visible: !state.visible,
         update: { ...state.update, required: true },
-      }))
+      }));
     },
-    createLayer: (newLayer) => {
-      const id = newLayer.id
-      set((state) => {
-        const layers = state.layers
+    createLayer: newLayer => {
+      const id = newLayer.id;
+      set(state => {
+        const layers = state.layers;
         if (layers[id]) {
-          throw Error('Layer already exist!')
+          throw Error('Layer already exist!');
         }
         //newLayer.annotations = []
-        return { layers: { ...layers, [id]: newLayer } }
-      })
+        return { layers: { ...layers, [id]: newLayer } };
+      });
 
       return () => {
-        set((state) => {
-          const layers = { ...state.layers }
-          delete layers[id]
+        set(state => {
+          const layers = { ...state.layers };
+          delete layers[id];
 
           return {
             layers,
             update: { ...state.update, required: true },
-          }
-        })
-      }
+          };
+        });
+      };
     },
     updateLayer: (id, updatedLayer) => {
-      set((state) => {
-        const layers = state.layers
+      set(state => {
+        const layers = state.layers;
         if (!layers[id]) {
-          throw Error('Layer does not exist!')
+          throw Error('Layer does not exist!');
         }
         return {
           layers: { ...layers, [id]: { ...layers[id], ...updatedLayer } },
           update: { ...state.update, required: true },
-        }
-      })
+        };
+      });
     },
     addLayerAnnotations: (layerId, scope, annotations) => {
-      set((state) => {
-        annotations.forEach((a) => {
-          a.scope = scope
-        })
+      set(state => {
+        annotations.forEach(a => {
+          a.scope = scope;
+        });
 
-        const existing = state.annotations
+        const existing = state.annotations;
         const existingLayerAnnotations = existing[layerId]
-          ? existing[layerId].filter((d) => d.scope !== scope)
-          : []
+          ? existing[layerId].filter(d => d.scope !== scope)
+          : [];
 
         const newAnnotationsState = {
           ...existing,
           [layerId]: [...existingLayerAnnotations, ...annotations],
-        }
+        };
         return {
           annotations: newAnnotationsState,
           update: { ...state.update, required: true },
-        }
-      })
+        };
+      });
     },
     removeLayerAnnotations: (layerId, scope?) => {
-      set((state) => {
-        const existing = state.annotations
+      set(state => {
+        const existing = state.annotations;
         const existingLayerAnnotations = existing[layerId]
-          ? existing[layerId].filter((d) => d.scope !== scope)
-          : []
+          ? existing[layerId].filter(d => d.scope !== scope)
+          : [];
 
         return {
           annotations: {
@@ -137,43 +137,43 @@ export const useAnnotationsState = create<
             [layerId]: existingLayerAnnotations,
           },
           update: { ...state.update, required: true },
-        }
-      })
+        };
+      });
     },
   })),
-)
+);
 
 const updateInstances = () => {
-  useAnnotationsState.setState((state) => {
+  useAnnotationsState.setState(state => {
     if (!state.visible) {
       return {
         instances: [],
         update: { ...state.update, required: false, ref: null },
-      }
+      };
     }
 
-    const layers = state.layers
-    const instanceMap = new Map(state.instances.map((d) => [d.id, d]))
-    const instances: AnnotationInstance[] = []
-    const priorityRange = [0, 0]
+    const layers = state.layers;
+    const instanceMap = new Map(state.instances.map(d => [d.id, d]));
+    const instances: AnnotationInstance[] = [];
+    const priorityRange = [0, 0];
 
-    Object.keys(layers).forEach((layerId) => {
-      const layer = layers[layerId]
+    Object.keys(layers).forEach(layerId => {
+      const layer = layers[layerId];
       if (layer.visible) {
-        state.annotations[layerId]?.forEach((annotation) => {
-          const id = `${layerId}_${annotation.scope}_${annotation.id}`
-          let instance: AnnotationInstance
-          const existing = instanceMap.get(id)
+        state.annotations[layerId]?.forEach(annotation => {
+          const id = `${layerId}_${annotation.scope}_${annotation.id}`;
+          let instance: AnnotationInstance;
+          const existing = instanceMap.get(id);
 
           if (existing) {
-            instance = existing
+            instance = existing;
             // update annotation properties
-            instance.annotation.name = annotation.name
-            instance.annotation.data = annotation.data
-            instance.annotation.direction = annotation.direction
-            instance.annotation.position = annotation.position
-            instance.annotation.matrixWorld = annotation.matrixWorld
-            instance.annotation.priority = annotation.priority
+            instance.annotation.name = annotation.name;
+            instance.annotation.data = annotation.data;
+            instance.annotation.direction = annotation.direction;
+            instance.annotation.position = annotation.position;
+            instance.annotation.matrixWorld = annotation.matrixWorld;
+            instance.annotation.priority = annotation.priority;
           } else {
             instance = {
               id,
@@ -192,54 +192,55 @@ const updateInstances = () => {
                 screenPosition: [0, 0],
                 zIndex: 0,
               },
-            }
+            };
           }
 
-          instance.priority = (annotation.priority || 0) + (layer.priority || 0)
-          priorityRange[0] = Math.min(priorityRange[0], instance.priority)
-          priorityRange[1] = Math.max(priorityRange[1], instance.priority)
+          instance.priority =
+            (annotation.priority || 0) + (layer.priority || 0);
+          priorityRange[0] = Math.min(priorityRange[0], instance.priority);
+          priorityRange[1] = Math.max(priorityRange[1], instance.priority);
 
-          instances.push(instance)
-        })
+          instances.push(instance);
+        });
       }
-    })
-    const prioritySpan = Math.abs(priorityRange[1] - priorityRange[0])
+    });
+    const prioritySpan = Math.abs(priorityRange[1] - priorityRange[0]);
 
-    instances.forEach((instance) => {
+    instances.forEach(instance => {
       instance.priority =
         prioritySpan > 0
           ? (instance.priority - priorityRange[0]) / prioritySpan
-          : 0
-    })
+          : 0;
+    });
 
     return {
       instances,
       update: { ...state.update, required: false, ref: null },
-    }
-  })
-}
+    };
+  });
+};
 
 // update instances when layers changes
 useAnnotationsState.subscribe(
-  (state) => state.update.required,
-  (required) => {
+  state => state.update.required,
+  required => {
     if (required) {
-      const updateState = useAnnotationsState.getState().update
+      const updateState = useAnnotationsState.getState().update;
       if (updateState.ref) {
-        clearTimeout(updateState.ref)
+        clearTimeout(updateState.ref);
       }
       const timeoutRef: ReturnType<typeof setTimeout> = setTimeout(
         () => updateInstances(),
         500,
-      )
-      updateState.setRef(timeoutRef)
+      );
+      updateState.setRef(timeoutRef);
       // if (updateState.ref === null) {
       //   const timeoutRef = setTimeout(() => updateInstances(), 1000)
       //   updateState.setRef(timeoutRef)
       // }
     }
   },
-)
+);
 
 // TODO: Compare performance of this branch with current main branch using troll data
 
@@ -291,22 +292,22 @@ useAnnotationsState.subscribe(
  * @group Hooks
  */
 export const useAnnotations = (layer: string, scope: string) => {
-  const add = useAnnotationsState((state) => state.addLayerAnnotations)
-  const remove = useAnnotationsState((state) => state.removeLayerAnnotations)
+  const add = useAnnotationsState(state => state.addLayerAnnotations);
+  const remove = useAnnotationsState(state => state.removeLayerAnnotations);
 
   const annotations = useMemo(() => {
     return {
       addAnnotations: (annotations: AnnotationProps[]) => {
         if (annotations.length) {
-          add(layer, scope, annotations)
+          add(layer, scope, annotations);
           return () => {
-            remove(layer, scope)
-          }
+            remove(layer, scope);
+          };
         }
-        return undefined
+        return undefined;
       },
-    }
-  }, [add, remove, layer, scope])
+    };
+  }, [add, remove, layer, scope]);
 
-  return annotations
-}
+  return annotations;
+};

@@ -1,5 +1,4 @@
-
-import { DataProvider } from '../../contexts/DataContextProvider'
+import { DataProvider } from '../../contexts/DataContextProvider';
 
 /* Run in main thread */
 
@@ -7,13 +6,17 @@ import { DataProvider } from '../../contexts/DataContextProvider'
 // const store = new MockStore()
 
 /* Use worker */
-import { Remote, wrap } from 'comlink'
-import { Store } from '../../sdk/data/Store'
+import { Remote, wrap } from 'comlink';
+import { Store } from '../../sdk/data/Store';
 
-const store: Remote<Store> = wrap(new Worker(new URL('workers/remote-mock-store.ts', import.meta.url), { type: 'module'}))
+const store: Remote<Store> = wrap(
+  new Worker(new URL('workers/remote-mock-store.ts', import.meta.url), {
+    type: 'module',
+  }),
+);
 
 export const DataProviderDecorator = (Story: any) => (
   <DataProvider store={store}>
     <Story />
   </DataProvider>
-)
+);

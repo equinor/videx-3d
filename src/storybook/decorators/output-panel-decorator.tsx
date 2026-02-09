@@ -1,4 +1,4 @@
-import { OutputPanel } from '../../components/Html/OutputPanel/OutputPanel'
+import { OutputPanel } from '../../components/Html/OutputPanel/OutputPanel';
 
 export const OutputPanelDecorator = (Story: any) => {
   //const outputPanel = useOutputPanel()
@@ -9,8 +9,13 @@ export const OutputPanelDecorator = (Story: any) => {
   // }, [outputPanel])
   return (
     <>
-      <OutputPanel origin='bottom-right' offset={[10, 10]} width={300} height={400} />
+      <OutputPanel
+        origin="bottom-right"
+        offset={[10, 10]}
+        width={300}
+        height={400}
+      />
       <Story />
     </>
-  )
-}
+  );
+};

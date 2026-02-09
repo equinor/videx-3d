@@ -1,11 +1,11 @@
-import { PackedBufferGeometry } from '../../../sdk'
+import { PackedBufferGeometry } from '../../../sdk';
 
-export const casings = 'casings'
+export const casings = 'casings';
 
-export type CasingsGeneratorResponse = { geometry: PackedBufferGeometry }
+export type CasingsGeneratorResponse = { geometry: PackedBufferGeometry };
 
 export const casingsMaterialIndices: Record<string, number> = {
-  'Shoe': 0,
-  'Casing': 1,
-  'Generic': 2,
-}
+  Shoe: 0,
+  Casing: 1,
+  Generic: 2,
+};

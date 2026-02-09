@@ -1,6 +1,6 @@
-import { ShaderMaterial } from 'three'
-import vertexShader from './shaders/depth/vertex.glsl'
-import fragmentShader from './shaders/depth/fragment.glsl'
+import { ShaderMaterial } from 'three';
+import vertexShader from './shaders/depth/vertex.glsl';
+import fragmentShader from './shaders/depth/fragment.glsl';
 
 export class DepthReadMaterial extends ShaderMaterial {
   constructor() {

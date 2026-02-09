@@ -1,2 +1,2 @@
-export * from './Distance'
-export * from './DistanceContext'
+export * from './Distance';
+export * from './DistanceContext';

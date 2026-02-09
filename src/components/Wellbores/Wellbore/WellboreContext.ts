@@ -1,4 +1,4 @@
-import { createContext } from 'react'
+import { createContext } from 'react';
 
 /**
  * WellboreContext props
@@ -6,21 +6,21 @@ import { createContext } from 'react'
  */
 export type WellboreContextProps = {
   // wellbore id
-  id: string,
+  id: string;
   // what should be considered the top of the wellbore for visualization purposes (may be different from kickoff)
-  fromMsl?: number,
+  fromMsl?: number;
   // number of segments to use per meter for visualization purposes
-  segmentsPerMeter: number,
-  // a threshold value that can be set to reduce the number of segments where the trajectory is near linear 
-  simplificationThreshold: number,
-}
+  segmentsPerMeter: number;
+  // a threshold value that can be set to reduce the number of segments where the trajectory is near linear
+  simplificationThreshold: number;
+};
 
 /**
  * Wellbore context
- * 
+ *
  * @see {@link Wellbore}
  * @see {@link useWellboreContext}
- *  
+ *
  * @group Contexts
  */
-export const WellboreContext = createContext<WellboreContextProps>(null!)
+export const WellboreContext = createContext<WellboreContextProps>(null!);

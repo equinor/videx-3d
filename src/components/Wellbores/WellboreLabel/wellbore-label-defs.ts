@@ -1,1 +1,1 @@
-export const wellboreLabel = 'wellboreLabel'
+export const wellboreLabel = 'wellboreLabel';

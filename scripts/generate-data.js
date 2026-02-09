@@ -16,7 +16,7 @@
  * picks from SMDA: /wellbore-picks?field_identifier={field name}&interpreter=STAT
  *
  * formations from SMDA: /wellbore-stratigraphy?field_identifier={field name}&interpreter=STAT
- * 
+ *
  * casings from SSDL: /Field/{fieldUuid}/casings&normalized-data=true
  *
  * completion from SSDL: /Field/{fieldUuid}/completions&normalized-data=true
@@ -36,23 +36,23 @@
  * node scripts/generate-data --input import/_volve && node scripts/generate-story-args
  */
 
-import minimist from 'minimist'
-import fs from 'node:fs'
-import { rimrafSync } from 'rimraf'
-import { transformCasings } from './transformations/transformCasings.js'
-import { transformCompletion } from './transformations/transformCompletion.js'
-import { transformPerforations } from './transformations/transformPerforations.js'
-import { transformPositionLogs } from './transformations/transformPositionLogs.js'
-import { transformSurfaceFiles } from './transformations/transformSurfaceFiles.js'
-import { transformSurfaceMeta } from './transformations/transformSurfaceMeta.js'
-import { transformWellboreHeaders } from './transformations/transformWellboreHeaders.js'
-import { transformWellboreStratigraphy } from './transformations/transformWellboreStratigraphy.js'
-import { verify } from './utils.js'
+import minimist from 'minimist';
+import fs from 'node:fs';
+import { rimrafSync } from 'rimraf';
+import { transformCasings } from './transformations/transformCasings.js';
+import { transformCompletion } from './transformations/transformCompletion.js';
+import { transformPerforations } from './transformations/transformPerforations.js';
+import { transformPositionLogs } from './transformations/transformPositionLogs.js';
+import { transformSurfaceFiles } from './transformations/transformSurfaceFiles.js';
+import { transformSurfaceMeta } from './transformations/transformSurfaceMeta.js';
+import { transformWellboreHeaders } from './transformations/transformWellboreHeaders.js';
+import { transformWellboreStratigraphy } from './transformations/transformWellboreStratigraphy.js';
+import { verify } from './utils.js';
 
-const args = minimist(process.argv.slice(2))
+const args = minimist(process.argv.slice(2));
 
-const inPath = ((args.input || '.') + '/').replace('//', '/')
-const outPath = ((args.output || './public/data') + '/').replace('//', '/')
+const inPath = ((args.input || '.') + '/').replace('//', '/');
+const outPath = ((args.output || './public/data') + '/').replace('//', '/');
 
 const fileNames = [
   'config',
@@ -65,70 +65,70 @@ const fileNames = [
   //'picks',
   'wellbore-stratigraphy',
   'surface-meta',
-]
+];
 
-const input = new Object(null)
-const output = new Object(null)
+const input = new Object(null);
+const output = new Object(null);
 
-console.info('Generating data...')
+console.info('Generating data...');
 
 /// read input data from source files
 for (let i = 0; i < fileNames.length; i++) {
-  const name = fileNames[i]
-  const fileName = name + '.json'
+  const name = fileNames[i];
+  const fileName = name + '.json';
   try {
-    console.info('> reading source file: ' + inPath + fileName)
-    const fileData = fs.readFileSync(inPath + fileName)
-    input[name] = JSON.parse(fileData.toString())
+    console.info('> reading source file: ' + inPath + fileName);
+    const fileData = fs.readFileSync(inPath + fileName);
+    input[name] = JSON.parse(fileData.toString());
   } catch {
-    console.warn(fileName + ' was not found in ' + inPath)
-    input[name] = null
+    console.warn(fileName + ' was not found in ' + inPath);
+    input[name] = null;
   }
 }
 
 /// verify we have required data
-verify(input, 'config', 'wellbore-headers', 'position-logs')
+verify(input, 'config', 'wellbore-headers', 'position-logs');
 
-output['config'] = input['config'] // pass through
+output['config'] = input['config']; // pass through
 
-console.info('> cleaning/preparing destination folder: ' + outPath)
+console.info('> cleaning/preparing destination folder: ' + outPath);
 if (fs.existsSync(outPath)) {
-  rimrafSync(outPath)
+  rimrafSync(outPath);
 }
-fs.mkdirSync(outPath)
+fs.mkdirSync(outPath);
 
 /// transformations
-console.info('> transforming wellbore headers')
-transformWellboreHeaders(input, output)
-console.info('> transforming position logs')
-transformPositionLogs(input, output)
-console.info('> transforming casing data')
-transformCasings(input, output)
-console.info('> transforming completion data')
-transformCompletion(input, output)
-console.info('> transforming perforation data')
-transformPerforations(input, output)
+console.info('> transforming wellbore headers');
+transformWellboreHeaders(input, output);
+console.info('> transforming position logs');
+transformPositionLogs(input, output);
+console.info('> transforming casing data');
+transformCasings(input, output);
+console.info('> transforming completion data');
+transformCompletion(input, output);
+console.info('> transforming perforation data');
+transformPerforations(input, output);
 //console.info('> transforming strat columns')
 //transformStratColumns(input, output)
 //console.info('> transforming pick data')
 //transformPicks(input, output)
-console.info('> transforming wellbore stratigraphy')
-transformWellboreStratigraphy(input, output)
-console.info('> transforming surface meta data')
-transformSurfaceMeta(input, output)
+console.info('> transforming wellbore stratigraphy');
+transformWellboreStratigraphy(input, output);
+console.info('> transforming surface meta data');
+transformSurfaceMeta(input, output);
 
 /// write transformed data to output path
 for (const name in output) {
-  const data = output[name]
-  const fileName = name + '.json'
-  console.info('> writing target file: ' + outPath + fileName)
-  fs.writeFileSync(outPath + fileName, JSON.stringify(data))
+  const data = output[name];
+  const fileName = name + '.json';
+  console.info('> writing target file: ' + outPath + fileName);
+  fs.writeFileSync(outPath + fileName, JSON.stringify(data));
 }
 
 /// transform surface values from binary files
 if (output['surface-meta']) {
-  const meta = output['surface-meta']
-  transformSurfaceFiles(meta, inPath, outPath)
+  const meta = output['surface-meta'];
+  transformSurfaceFiles(meta, inPath, outPath);
 }
 
-console.info('Generate data complete!')
+console.info('Generate data complete!');

@@ -1,6 +1,6 @@
-import { transfer } from 'comlink'
-import { BufferAttribute, BufferGeometry, Color } from 'three'
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
+import { transfer } from 'comlink';
+import { BufferAttribute, BufferGeometry, Color } from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {
   createTubeGeometry,
   getTrajectory,
@@ -8,10 +8,13 @@ import {
   PackedBufferGeometry,
   PositionLog,
   ReadonlyStore,
-  TubeGeometryOptions
-} from '../sdk'
+  TubeGeometryOptions,
+} from '../sdk';
 
-import { getWellboreFormations, mergeFormationIntervals } from '../sdk/data/helpers/formations-helpers'
+import {
+  getWellboreFormations,
+  mergeFormationIntervals,
+} from '../sdk/data/helpers/formations-helpers';
 
 export async function generateWellboreFormationColumnGeometries(
   this: ReadonlyStore,
@@ -25,27 +28,31 @@ export async function generateWellboreFormationColumnGeometries(
   formationWidth: number = 2,
   caps: boolean = true,
   radialSegments: number = 16,
-  simplificationThreshold: number = 0
+  simplificationThreshold: number = 0,
 ): Promise<PackedBufferGeometry | null> {
-  const formationsData = await getWellboreFormations(wellboreId, stratColumnId, this)
+  const formationsData = await getWellboreFormations(
+    wellboreId,
+    stratColumnId,
+    this,
+  );
 
-  if (!formationsData) return null
+  if (!formationsData) return null;
 
-  const surfaceIntervals = formationsData
-    .filter(d => 
+  const surfaceIntervals = formationsData.filter(
+    d =>
       (unitTypes === undefined || (d.type && unitTypes.includes(d.type))) &&
-      (units === undefined || units.includes(d.name))
-  )
+      (units === undefined || units.includes(d.name)),
+  );
 
-  if (!surfaceIntervals.length) return null
+  if (!surfaceIntervals.length) return null;
 
-  const mergedIntervals = mergeFormationIntervals(surfaceIntervals)
+  const mergedIntervals = mergeFormationIntervals(surfaceIntervals);
 
-  const poslogMsl = await this.get<PositionLog>('position-logs', wellboreId)
+  const poslogMsl = await this.get<PositionLog>('position-logs', wellboreId);
 
-  const trajectory = getTrajectory(wellboreId, poslogMsl)
+  const trajectory = getTrajectory(wellboreId, poslogMsl);
 
-  if (!trajectory) return null
+  if (!trajectory) return null;
 
   const options: TubeGeometryOptions = {
     startCap: caps,
@@ -54,51 +61,51 @@ export async function generateWellboreFormationColumnGeometries(
     simplificationThreshold,
     radialSegments,
     computeRelativeLengths: true,
-  }
+  };
 
   //const maxLevel = max(mergedIntervals, (d) => d.unit.level)!
 
-  const geometries: BufferGeometry[] = []
+  const geometries: BufferGeometry[] = [];
 
-  mergedIntervals.forEach((interval) => {
+  mergedIntervals.forEach(interval => {
     if (fromMsl === undefined || interval.mdMslTo > fromMsl) {
-      let top = interval.mdMslFrom
+      let top = interval.mdMslFrom;
       if (fromMsl !== undefined && fromMsl > top) {
-        top = fromMsl
+        top = fromMsl;
       }
-      const from = trajectory.getPositionAtDepth(top, true)
-      const to = trajectory.getPositionAtDepth(interval.mdMslTo, true)
+      const from = trajectory.getPositionAtDepth(top, true);
+      const to = trajectory.getPositionAtDepth(interval.mdMslTo, true);
       if (from !== null && to !== null) {
-        const radius = formationWidth + startRadius
-        const color = new Color(interval.color)
-        
+        const radius = formationWidth + startRadius;
+        const color = new Color(interval.color);
+
         const geometery = createTubeGeometry(trajectory.curve, {
           ...options,
           radius,
           from,
           to,
-        })
+        });
 
         if (geometery.attributes.position.count) {
           const colors = new Float32Array(
-            geometery.attributes.position.count * 3
-          )
+            geometery.attributes.position.count * 3,
+          );
 
           for (let i = 0; i < geometery.attributes.position.count; i++) {
-            color.toArray(colors, i * 3)
+            color.toArray(colors, i * 3);
           }
 
-          geometery.attributes.color = new BufferAttribute(colors, 3)
-          geometries.push(geometery)
+          geometery.attributes.color = new BufferAttribute(colors, 3);
+          geometries.push(geometery);
         }
       }
     }
-  })
+  });
 
-  if (!geometries.length) return null
+  if (!geometries.length) return null;
 
-  const geometry = mergeGeometries(geometries, false)
-  const [packed, buffers] = packBufferGeometry(geometry)
+  const geometry = mergeGeometries(geometries, false);
+  const [packed, buffers] = packBufferGeometry(geometry);
 
-  return transfer(packed, buffers)
+  return transfer(packed, buffers);
 }

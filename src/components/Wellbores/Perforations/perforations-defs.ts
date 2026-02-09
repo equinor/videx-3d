@@ -1,5 +1,5 @@
-import { SymbolsType } from '../../../sdk'
+import { SymbolsType } from '../../../sdk';
 
-export const perforationSymbols = 'perforationSymbols'
+export const perforationSymbols = 'perforationSymbols';
 
-export type PerformationsGeneratorResponse = SymbolsType
+export type PerformationsGeneratorResponse = SymbolsType;

@@ -1,21 +1,27 @@
-import { PropsWithChildren, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
-import { useAnnotationsState } from './annotations-state'
-import { DefaultLabelComponent } from './DefaultLabelComponent'
-import { AnnotationLayer } from './types'
+import {
+  PropsWithChildren,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from 'react';
+import { useAnnotationsState } from './annotations-state';
+import { DefaultLabelComponent } from './DefaultLabelComponent';
+import { AnnotationLayer } from './types';
 
 /**
  * AnnotationsLayer props
  * @expand
  */
 export type AnnotationsLayerProps = Partial<AnnotationLayer> & {
-  id: string,
-  name: string,
-}
+  id: string;
+  name: string;
+};
 
 /**
- * Use the AnnotationsLayer component to register and configure a layer for adding 
+ * Use the AnnotationsLayer component to register and configure a layer for adding
  * annotations. This needs to be added as a child of the `Annotations` component.
- * 
+ *
  * @example
  * <Annotations>
  *  <AnnotationsLayer
@@ -36,15 +42,15 @@ export type AnnotationsLayerProps = Partial<AnnotationLayer> & {
  *   }}
  *  />
  * </Annotations>
- * 
+ *
  * @remarks
- * The AnnotationsLayer component is for adding and configuring a layer. Annotations are added to a layer 
+ * The AnnotationsLayer component is for adding and configuring a layer. Annotations are added to a layer
  * using the `useAnnotations` hook with a layer id and a user defined scope.
- * 
+ *
  * @see [Storybook](/videx-3d/?path=/docs/components-misc-annotations--docs)
  * @see {@link Annotations}
  * @see {@link useAnnotations}
- * 
+ *
  * @group Components
  */
 export const AnnotationsLayer = ({
@@ -65,11 +71,11 @@ export const AnnotationsLayer = ({
   onClick,
   children,
 }: PropsWithChildren<AnnotationsLayerProps>) => {
-  const create = useAnnotationsState(state => state.createLayer)
-  const update = useAnnotationsState(state => state.updateLayer)
-  const layerExist = useAnnotationsState(state => state.layerExist)
+  const create = useAnnotationsState(state => state.createLayer);
+  const update = useAnnotationsState(state => state.updateLayer);
+  const layerExist = useAnnotationsState(state => state.layerExist);
 
-  const dispose = useRef<(() => void) | null>(null)
+  const dispose = useRef<(() => void) | null>(null);
 
   const layer = useMemo(() => {
     return {
@@ -88,7 +94,7 @@ export const AnnotationsLayer = ({
       connectorColor,
       labelComponent,
       onClick,
-    }
+    };
   }, [
     id,
     name,
@@ -105,33 +111,24 @@ export const AnnotationsLayer = ({
     distanceFactor,
     labelComponent,
     onClick,
-  ])
+  ]);
 
   useLayoutEffect(() => {
-    const exist = layerExist(layer.id)
+    const exist = layerExist(layer.id);
     if (!exist) {
-      dispose.current = create(layer)
+      dispose.current = create(layer);
     } else {
-      update(layer.id, layer)
+      update(layer.id, layer);
     }
-  }, [
-    create,
-    update,
-    layerExist,
-    layer
-  ])
+  }, [create, update, layerExist, layer]);
 
   useEffect(() => {
     return () => {
       if (dispose.current) {
-        dispose.current()
+        dispose.current();
       }
-    }
-  }, [])
+    };
+  }, []);
 
-  return (
-    <group>
-      {children}
-    </group>
-  )
-}
+  return <group>{children}</group>;
+};

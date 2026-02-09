@@ -1,12 +1,11 @@
-
 function mapPicksData(picksData) {
   const grouped = picksData.reduce((map, p) => {
-    let picks = map[p.wellbore_uuid]
+    let picks = map[p.wellbore_uuid];
     if (!picks) {
-      picks = []
-      map[p.wellbore_uuid] = picks
+      picks = [];
+      map[p.wellbore_uuid] = picks;
     }
-   
+
     picks.push({
       id: p.uuid,
       wellboreId: p.wellbore_uuid,
@@ -16,21 +15,21 @@ function mapPicksData(picksData) {
       properties: {
         confidence: p.confidence,
         qualifier: p.qualifier,
-      }
-    })
-    
-    return map
-  }, {})
+      },
+    });
 
-  return grouped
+    return map;
+  }, {});
+
+  return grouped;
 }
 
 export function transformPicks(input, output) {
-  const picksData = input['picks']
+  const picksData = input['picks'];
 
-  output['picks'] = {}
+  output['picks'] = {};
 
-  if (!picksData) return
+  if (!picksData) return;
 
-  output['picks'] = mapPicksData(picksData)
+  output['picks'] = mapPicksData(picksData);
 }

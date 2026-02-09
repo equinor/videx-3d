@@ -1,39 +1,48 @@
+import { useEffect, useMemo, useState } from 'react';
+import {
+  BufferGeometry,
+  Color,
+  Line,
+  LineBasicMaterial,
+  Material,
+} from 'three';
+import { useGenerator } from '../../../hooks/useGenerator';
+import { unpackBufferGeometry } from '../../../sdk/geometries/packing';
 
-import { useEffect, useMemo, useState } from 'react'
-import { BufferGeometry, Color, Line, LineBasicMaterial, Material } from 'three'
-import { useGenerator } from '../../../hooks/useGenerator'
-import { unpackBufferGeometry } from '../../../sdk/geometries/packing'
+import { extend } from '@react-three/fiber';
+import { useWellboreContext } from '../../../hooks/useWellboreContext';
+import { CommonComponentProps, CustomMaterialProps } from '../../common';
+import {
+  basicTrajectory,
+  BasicTrajectoryGeneratorResponse,
+} from './basic-trajectory-defs';
 
-import { extend } from '@react-three/fiber'
-import { useWellboreContext } from '../../../hooks/useWellboreContext'
-import { CommonComponentProps, CustomMaterialProps } from '../../common'
-import { basicTrajectory, BasicTrajectoryGeneratorResponse } from './basic-trajectory-defs'
-
-extend({ 'ThreeLine': Line })
+extend({ ThreeLine: Line });
 /**
  * BasicTrajectory props
  * @expand
  */
-export type BasicTrajectoryProps = CommonComponentProps & CustomMaterialProps & {
-  color?: string
-  priority?: number,
-}
+export type BasicTrajectoryProps = CommonComponentProps &
+  CustomMaterialProps & {
+    color?: string;
+    priority?: number;
+  };
 
 /**
- * The BasicTrajectory renders a wellbore trajectory as a 1 pixel line. 
+ * The BasicTrajectory renders a wellbore trajectory as a 1 pixel line.
  * This component must be a child of the `Wellbore` component.
- * 
+ *
  * @example
  * <Wellbore id="abc">
  *  <BasicTrajectory />
  * </Wellbore>
- * 
+ *
  * @remarks
  * This component depends on the {@link basicTrajectory} generator.
- * 
- * @see [Storybook](/videx-3d/?path=/docs/components-wellbores-basictrajectory--docs) 
+ *
+ * @see [Storybook](/videx-3d/?path=/docs/components-wellbores-basictrajectory--docs)
  * @see [Generators](/videx-3d/docs/documents/generators.html)
- * 
+ *
  * @group Components
  */
 
@@ -51,51 +60,73 @@ export const BasicTrajectory = ({
   customMaterial,
   onMaterialPropertiesChange,
   color = 'red',
-  priority = 0
+  priority = 0,
 }: BasicTrajectoryProps) => {
+  const { id, fromMsl, segmentsPerMeter, simplificationThreshold } =
+    useWellboreContext();
 
-  const { id, fromMsl, segmentsPerMeter, simplificationThreshold } = useWellboreContext()
+  const generator = useGenerator<BasicTrajectoryGeneratorResponse>(
+    basicTrajectory,
+    priority,
+  );
 
-  const generator = useGenerator<BasicTrajectoryGeneratorResponse>(basicTrajectory, priority)
-
-  const [geometry, setGeometry] = useState<BufferGeometry | null>(null)
+  const [geometry, setGeometry] = useState<BufferGeometry | null>(null);
 
   const onPropsChange = useMemo(() => {
-    return onMaterialPropertiesChange ? onMaterialPropertiesChange : (props: Record<string, any>, material: Material | Material[]) => {
-      const m = material as LineBasicMaterial
-      m.color = new Color(props.color)
-    }
-  }, [onMaterialPropertiesChange])
+    return onMaterialPropertiesChange
+      ? onMaterialPropertiesChange
+      : (props: Record<string, any>, material: Material | Material[]) => {
+          const m = material as LineBasicMaterial;
+          m.color = new Color(props.color);
+        };
+  }, [onMaterialPropertiesChange]);
 
   const material = useMemo<Material | Material[]>(() => {
-    const m = customMaterial ? customMaterial : new LineBasicMaterial({ transparent: true, opacity: 0.95 })
-    return m
-  }, [customMaterial])
+    const m = customMaterial
+      ? customMaterial
+      : new LineBasicMaterial({ transparent: true, opacity: 0.95 });
+    return m;
+  }, [customMaterial]);
 
   useEffect(() => {
-    onPropsChange({
-      color,
-    }, material)
-  }, [color, material, onPropsChange])
+    onPropsChange(
+      {
+        color,
+      },
+      material,
+    );
+  }, [color, material, onPropsChange]);
 
   useEffect(() => {
     if (generator) {
-      generator(id, segmentsPerMeter, simplificationThreshold, fromMsl, !!customMaterial).then(response => {
+      generator(
+        id,
+        segmentsPerMeter,
+        simplificationThreshold,
+        fromMsl,
+        !!customMaterial,
+      ).then(response => {
         if (response) {
-          const bufferGeometry = unpackBufferGeometry(response)
+          const bufferGeometry = unpackBufferGeometry(response);
           setGeometry(prev => {
-            if (prev) prev.dispose()
-            return bufferGeometry
-          })
+            if (prev) prev.dispose();
+            return bufferGeometry;
+          });
         } else {
-          setGeometry(null)
+          setGeometry(null);
         }
-      })
-
+      });
     }
-  }, [generator, id, fromMsl, segmentsPerMeter, simplificationThreshold, customMaterial])
+  }, [
+    generator,
+    id,
+    fromMsl,
+    segmentsPerMeter,
+    simplificationThreshold,
+    customMaterial,
+  ]);
 
-  if (!geometry) return null
+  if (!geometry) return null;
 
   return (
     <threeLine
@@ -112,5 +143,5 @@ export const BasicTrajectory = ({
       customDepthMaterial={customDepthMaterial}
       customDistanceMaterial={customDistanceMaterial}
     />
-  )
-}
+  );
+};

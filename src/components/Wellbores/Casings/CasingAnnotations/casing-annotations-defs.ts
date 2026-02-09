@@ -1,1 +1,1 @@
-export const casingAnnotations = 'casingToolAnnotations'
+export const casingAnnotations = 'casingToolAnnotations';

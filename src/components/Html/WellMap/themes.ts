@@ -1,14 +1,14 @@
 export type WellMapStyles = {
-  depthAxisWidth: number
-  depthAxisColor: string
-  kickoffAxisColor: string
-  cursorColor: string
-  rulerColor: string
-  activeTrackColor: string
-  readoutColor: string,
-  textColor: string
-  darkMode: boolean
-}
+  depthAxisWidth: number;
+  depthAxisColor: string;
+  kickoffAxisColor: string;
+  cursorColor: string;
+  rulerColor: string;
+  activeTrackColor: string;
+  readoutColor: string;
+  textColor: string;
+  darkMode: boolean;
+};
 
 export const DarkTheme: WellMapStyles = {
   depthAxisWidth: 30,
@@ -19,8 +19,8 @@ export const DarkTheme: WellMapStyles = {
   rulerColor: 'red',
   activeTrackColor: 'white',
   textColor: 'white',
-  darkMode: true 
-}
+  darkMode: true,
+};
 
 export const LightTheme: WellMapStyles = {
   depthAxisWidth: 30,
@@ -32,4 +32,4 @@ export const LightTheme: WellMapStyles = {
   activeTrackColor: 'white',
   textColor: '#555',
   darkMode: false,
-}
+};

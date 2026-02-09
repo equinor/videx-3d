@@ -1,20 +1,20 @@
-import { useCallback, useContext } from 'react'
-import { GeneratorsContext } from '../contexts/GeneratorsContext'
+import { useCallback, useContext } from 'react';
+import { GeneratorsContext } from '../contexts/GeneratorsContext';
 
 /**
  * Access a generator function from within a component.
- * 
+ *
  * @example
  * const generator = useGenerator(generatorKey)
  *
  * @remarks
  * The generator is an async function that process and returns data required
  * by your components, such as geometry for a mesh.
- * 
+ *
  * @example
- * 
+ *
  * const [geometry, setGeometry] = useState<BufferGeometry | null>(null)
- * 
+ *
  * useEffect(() => {
  *   if (generator) {
  *     generator(id).then(response => {
@@ -30,24 +30,27 @@ import { GeneratorsContext } from '../contexts/GeneratorsContext'
  *     })
  *   }
  * }, [generator, id])
- * 
+ *
  * if (!geometry) return null
- * 
+ *
  * return (
  *  <mesh geometry={geometry}>
  *    <meshBasicMaterial />
  *  </mesh>
  * )
- * 
+ *
  * @see [Generators](/videx-3d/docs/documents/generators.html)
- * 
+ *
  * @group Hooks
  */
 export const useGenerator = <T,>(generator: string, priority = 0) => {
-  const context = useContext(GeneratorsContext)
-  const callback = useCallback((...args: any[]) => {
-    return context!.invoke<T>(generator, priority, args)
-  }, [generator, priority, context]) 
+  const context = useContext(GeneratorsContext);
+  const callback = useCallback(
+    (...args: any[]) => {
+      return context!.invoke<T>(generator, priority, args);
+    },
+    [generator, priority, context],
+  );
 
-  return context ? callback : () => Promise.resolve(null)
-}
+  return context ? callback : () => Promise.resolve(null);
+};

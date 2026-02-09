@@ -1,27 +1,27 @@
-import react from '@vitejs/plugin-react'
-import { resolve } from 'path'
-import { defineConfig } from 'vite'
-import cssInjectedByJsPlugin from "vite-plugin-css-injected-by-js"
-import dts from 'vite-plugin-dts'
-import { externalizeDeps } from 'vite-plugin-externalize-deps'
-import glsl from 'vite-plugin-glsl'
-import { viteStaticCopy } from 'vite-plugin-static-copy'
+import react from '@vitejs/plugin-react';
+import { resolve } from 'path';
+import { defineConfig } from 'vite';
+import cssInjectedByJsPlugin from 'vite-plugin-css-injected-by-js';
+import dts from 'vite-plugin-dts';
+import { externalizeDeps } from 'vite-plugin-externalize-deps';
+import glsl from 'vite-plugin-glsl';
+import { viteStaticCopy } from 'vite-plugin-static-copy';
 
 // https://vitejs.dev/config/
 export default defineConfig({
   css: {
     preprocessorOptions: {
       scss: {
-        api: "modern-compiler"
-      }
-    }
+        api: 'modern-compiler',
+      },
+    },
   },
   plugins: [
     externalizeDeps(),
     react(),
     glsl(),
     cssInjectedByJsPlugin({
-      jsAssetsFilterFunction: chunk => chunk.name === 'main'
+      jsAssetsFilterFunction: chunk => chunk.name === 'main',
     }),
     dts({
       outDir: ['dist/types'],
@@ -31,14 +31,14 @@ export default defineConfig({
       targets: [
         {
           src: 'public/normal_map.jpg',
-          dest: './textures'
+          dest: './textures',
         },
         {
           src: 'src/sdk/materials/shaderLib',
-          dest: '.'
+          dest: '.',
         },
-      ]
-    })
+      ],
+    }),
   ],
   build: {
     lib: {
@@ -55,7 +55,7 @@ export default defineConfig({
       output: {
         chunkFileNames: 'chunk-[hash].js',
       },
-      treeshake: 'recommended'
+      treeshake: 'recommended',
     },
   },
-})
+});

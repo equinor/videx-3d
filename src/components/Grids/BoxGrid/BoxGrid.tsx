@@ -1,11 +1,14 @@
-import { PropsWithChildren, useEffect, useRef, useState } from 'react'
-import { Color, Group, Vector3 } from 'three'
-import { Vec3 } from '../../../sdk/types/common'
-import { CommonComponentProps } from '../../common'
-import { BoxPadding, ObservableGroup } from '../../ObservableGroup/ObservableGroup'
-import { Grid } from '../Grid/Grid'
+import { PropsWithChildren, useEffect, useRef, useState } from 'react';
+import { Color, Group, Vector3 } from 'three';
+import { Vec3 } from '../../../sdk/types/common';
+import { CommonComponentProps } from '../../common';
+import {
+  BoxPadding,
+  ObservableGroup,
+} from '../../ObservableGroup/ObservableGroup';
+import { Grid } from '../Grid/Grid';
 
-const pos = new Vector3()
+const pos = new Vector3();
 
 /**
  * BoxGrid props
@@ -13,56 +16,56 @@ const pos = new Vector3()
  */
 export type BoxGridProps = CommonComponentProps & {
   // size of the grid box in world units
-  size?: Vec3,
+  size?: Vec3;
   // the size of a grid cell in world units
-  cellSize?: number,
+  cellSize?: number;
   // number of sub divisions of a grid cell
-  subDivisions?: number,
+  subDivisions?: number;
   // scale determining axes values and direction along each axis
-  gridScale?: Vec3,
+  gridScale?: Vec3;
   // world coordinates of the grid origin (origo)
-  gridOrigin?: Vec3,
+  gridOrigin?: Vec3;
   // the axes values at the specified origin (default 0,0,0)
-  originValue?: Vec3,
+  originValue?: Vec3;
   // line width as a factor of the cell size
-  gridLineWidth?: number,
+  gridLineWidth?: number;
   // background color of the grid planes
-  background?: string | Color | number,
-  // opacity of the grid planes background color 
-  backgroundOpacity?: number,
+  background?: string | Color | number;
+  // opacity of the grid planes background color
+  backgroundOpacity?: number;
   // opacity of the grid planes (including grid lines)
-  opacity?: number,
+  opacity?: number;
   // the color of the major grid lines
-  gridColorMajor?: string | number | Color,
+  gridColorMajor?: string | number | Color;
   // the color of the minor/sub division grid lines
-  gridColorMinor?: string | number | Color,
+  gridColorMinor?: string | number | Color;
   // axes color
-  axesColor?: string | number | Color,
+  axesColor?: string | number | Color;
   // axes line width as a factor of cell size
-  axesLineWidth?: number,
+  axesLineWidth?: number;
   // the axes tick size as a factor of cell size
-  axesTickSize?: number,
+  axesTickSize?: number;
   // if enabled, project a shade of the objects within the grid planes, using an orthographic camera
-  enableProjection?: boolean,
+  enableProjection?: boolean;
   // the color of the projected shade when projection is enabled
-  projectionColor?: string | number | Color,
+  projectionColor?: string | number | Color;
   // the quality/size of the projection texture used when projection is enabled
-  projectionResolution?: number,
+  projectionResolution?: number;
   // the update frequency of the projected texture when projection is enabled (ms)
-  projectionRefreshRate?: number,
+  projectionRefreshRate?: number;
   // show rulers on the grid planes at the intersection point of the pointer
-  showRulers?: boolean,
+  showRulers?: boolean;
   // enable automatic sizing and positioning of the box grid according to its child elements
-  autoSize?: boolean,
+  autoSize?: boolean;
   // padding when autosize is enabled
-  autoSizePadding?: number | Vec3 | BoxPadding,
+  autoSizePadding?: number | Vec3 | BoxPadding;
   // update frequency in ms when autosize is enabled
-  autoSizeUpdateRate?: number,
-}
+  autoSizeUpdateRate?: number;
+};
 
 /**
  * Renders 5 grid planes in a box form (bottom and sides). See `Grid` for more info.
- * 
+ *
  * @example
  * <BoxGrid
  *   size={[5000, 2000, 5000]}
@@ -71,10 +74,10 @@ export type BoxGridProps = CommonComponentProps & {
  *   axesColor="#eee"
  *   opacity={0.8}
  * />
- * 
- * @see [Storybook](/videx-3d/?path=/docs/components-grids-boxgrid--docs) 
+ *
+ * @see [Storybook](/videx-3d/?path=/docs/components-grids-boxgrid--docs)
  * @see {@link Grid}
- * 
+ *
  * @group Components
  */
 export const BoxGrid = ({
@@ -96,10 +99,10 @@ export const BoxGrid = ({
   background = 0x102030,
   backgroundOpacity = 1,
   opacity = 1,
-  gridColorMajor = "#89a",
-  gridColorMinor = "#789",
-  axesColor = "#fff",
-  axesLineWidth = (gridLineWidth || 0.05),
+  gridColorMajor = '#89a',
+  gridColorMinor = '#789',
+  axesColor = '#fff',
+  axesLineWidth = gridLineWidth || 0.05,
   axesTickSize = 0.1,
   enableProjection,
   projectionColor,
@@ -111,13 +114,11 @@ export const BoxGrid = ({
   autoSizeUpdateRate = 1000,
   children,
 }: PropsWithChildren<BoxGridProps>) => {
+  const [gridPosition, setGridPosition] = useState(position);
+  const [gridSize, setGridSize] = useState(size);
 
-  const [gridPosition, setGridPosition] = useState(position)
-  const [gridSize, setGridSize] = useState(size)
-
-  const containerRef = useRef<Group>(null)
-  const [worldPosition, setWorldPosition] = useState<Vec3>(gridPosition)
-
+  const containerRef = useRef<Group>(null);
+  const [worldPosition, setWorldPosition] = useState<Vec3>(gridPosition);
 
   useEffect(() => {
     if (!autoSize) {
@@ -127,43 +128,42 @@ export const BoxGrid = ({
           current[1] !== position[1] ||
           current[2] !== position[2]
         ) {
-          return position
+          return position;
         }
-        return current
-      })
+        return current;
+      });
       setGridSize(current => {
         if (
           current[0] !== size[0] ||
           current[1] !== size[1] ||
           current[2] !== size[2]
         ) {
-          return size
+          return size;
         }
-        return current
-      })
+        return current;
+      });
     }
-  }, [size, position, autoSize])
+  }, [size, position, autoSize]);
 
   useEffect(() => {
     if (containerRef.current) {
-      containerRef.current.getWorldPosition(pos)
-      setWorldPosition(pos.toArray())
+      containerRef.current.getWorldPosition(pos);
+      setWorldPosition(pos.toArray());
     }
-  }, [gridPosition])
+  }, [gridPosition]);
 
   return (
-    <group
-      ref={containerRef}
-      name={name}
-      userData={userData}
-      visible={visible}
-    >
+    <group ref={containerRef} name={name} userData={userData} visible={visible}>
       <Grid
-        plane='xz'
+        plane="xz"
         originValue={[originValue[0], originValue[2]]}
         cellSize={cellSize}
         size={[gridSize[0], gridSize[2]]}
-        position={[gridPosition[0], gridPosition[1] - gridSize[1] * 0.5, gridPosition[2]]}
+        position={[
+          gridPosition[0],
+          gridPosition[1] - gridSize[1] * 0.5,
+          gridPosition[2],
+        ]}
         gridScale={[gridScale[0], gridScale[2]]}
         gridOrigin={[gridOrigin[0], gridOrigin[2]]}
         subDivisions={subDivisions}
@@ -177,7 +177,7 @@ export const BoxGrid = ({
         axesLineWidth={axesLineWidth}
         axesTickSize={axesTickSize}
         trimAxesLabels
-        side='both'
+        side="both"
         enableProjection={enableProjection}
         projectionResolution={projectionResolution}
         projectionColor={projectionColor}
@@ -190,13 +190,20 @@ export const BoxGrid = ({
         renderOrder={renderOrder}
       />
       <Grid
-        plane='xy'
+        plane="xy"
         originValue={[originValue[0], originValue[1]]}
         cellSize={cellSize}
         size={[gridSize[0], gridSize[1]]}
-        position={[gridPosition[0], gridPosition[1], gridPosition[2] - gridSize[2] * 0.5]}
+        position={[
+          gridPosition[0],
+          gridPosition[1],
+          gridPosition[2] - gridSize[2] * 0.5,
+        ]}
         gridScale={[gridScale[0], gridScale[1]]}
-        axesOffset={[(-worldPosition[0] - gridPosition[0]) / gridScale[0], gridSize[1] * 0.5 * gridScale[1]]}
+        axesOffset={[
+          (-worldPosition[0] - gridPosition[0]) / gridScale[0],
+          gridSize[1] * 0.5 * gridScale[1],
+        ]}
         gridOrigin={[gridOrigin[0], gridOrigin[1]]}
         subDivisions={subDivisions}
         gridLineWidth={gridLineWidth}
@@ -209,7 +216,7 @@ export const BoxGrid = ({
         axesLineWidth={axesLineWidth}
         axesTickSize={axesTickSize}
         trimAxesLabels
-        side='front'
+        side="front"
         enableProjection={enableProjection}
         projectionResolution={projectionResolution}
         projectionColor={projectionColor}
@@ -222,13 +229,20 @@ export const BoxGrid = ({
         renderOrder={renderOrder}
       />
       <Grid
-        plane='zy'
+        plane="zy"
         originValue={[originValue[2], originValue[1]]}
         cellSize={cellSize}
         size={[gridSize[2], gridSize[1]]}
-        position={[gridPosition[0] - gridSize[0] * 0.5, gridPosition[1], gridPosition[2]]}
+        position={[
+          gridPosition[0] - gridSize[0] * 0.5,
+          gridPosition[1],
+          gridPosition[2],
+        ]}
         gridScale={[gridScale[2], gridScale[1]]}
-        axesOffset={[(-worldPosition[2] - gridPosition[2]) / gridScale[2], gridSize[1] * 0.5 * gridScale[1]]}
+        axesOffset={[
+          (-worldPosition[2] - gridPosition[2]) / gridScale[2],
+          gridSize[1] * 0.5 * gridScale[1],
+        ]}
         gridOrigin={[gridOrigin[2], gridOrigin[1]]}
         subDivisions={subDivisions}
         gridLineWidth={gridLineWidth}
@@ -241,7 +255,7 @@ export const BoxGrid = ({
         axesLineWidth={axesLineWidth}
         axesTickSize={axesTickSize}
         trimAxesLabels
-        side='front'
+        side="front"
         enableProjection={enableProjection}
         projectionResolution={projectionResolution}
         projectionColor={projectionColor}
@@ -254,13 +268,20 @@ export const BoxGrid = ({
         renderOrder={renderOrder}
       />
       <Grid
-        plane='xy'
+        plane="xy"
         originValue={[originValue[0], originValue[1]]}
         cellSize={cellSize}
         size={[gridSize[0], gridSize[1]]}
-        position={[gridPosition[0], gridPosition[1], gridPosition[2] + gridSize[2] * 0.5]}
+        position={[
+          gridPosition[0],
+          gridPosition[1],
+          gridPosition[2] + gridSize[2] * 0.5,
+        ]}
         gridScale={[gridScale[0], gridScale[1]]}
-        axesOffset={[(-worldPosition[0] - gridPosition[0]) / gridScale[0], gridSize[1] * 0.5 * gridScale[1]]}
+        axesOffset={[
+          (-worldPosition[0] - gridPosition[0]) / gridScale[0],
+          gridSize[1] * 0.5 * gridScale[1],
+        ]}
         gridOrigin={[gridOrigin[0], gridOrigin[1]]}
         subDivisions={subDivisions}
         gridLineWidth={gridLineWidth}
@@ -273,7 +294,7 @@ export const BoxGrid = ({
         axesLineWidth={axesLineWidth}
         axesTickSize={axesTickSize}
         trimAxesLabels
-        side='back'
+        side="back"
         enableProjection={enableProjection}
         projectionResolution={projectionResolution}
         projectionColor={projectionColor}
@@ -286,13 +307,20 @@ export const BoxGrid = ({
         renderOrder={renderOrder}
       />
       <Grid
-        plane='zy'
+        plane="zy"
         originValue={[originValue[2], originValue[1]]}
         cellSize={cellSize}
         size={[gridSize[2], gridSize[1]]}
-        position={[gridPosition[0] + gridSize[0] * 0.5, gridPosition[1], gridPosition[2]]}
+        position={[
+          gridPosition[0] + gridSize[0] * 0.5,
+          gridPosition[1],
+          gridPosition[2],
+        ]}
         gridScale={[gridScale[2], gridScale[1]]}
-        axesOffset={[(-worldPosition[2] - gridPosition[2]) / gridScale[2], gridSize[1] * 0.5 * gridScale[1]]}
+        axesOffset={[
+          (-worldPosition[2] - gridPosition[2]) / gridScale[2],
+          gridSize[1] * 0.5 * gridScale[1],
+        ]}
         gridOrigin={[gridOrigin[2], gridOrigin[1]]}
         subDivisions={subDivisions}
         gridLineWidth={gridLineWidth}
@@ -305,7 +333,7 @@ export const BoxGrid = ({
         axesLineWidth={axesLineWidth}
         axesTickSize={axesTickSize}
         trimAxesLabels
-        side='back'
+        side="back"
         enableProjection={enableProjection}
         projectionResolution={projectionResolution}
         projectionColor={projectionColor}
@@ -323,15 +351,14 @@ export const BoxGrid = ({
           updateRate={autoSizeUpdateRate}
           snapTo={cellSize}
           onChange={state => {
-            setGridSize(state.size)
-            setGridPosition(state.center)
-          }}>
+            setGridSize(state.size);
+            setGridPosition(state.center);
+          }}
+        >
           {children}
         </ObservableGroup>
       )}
       {!autoSize && children}
-
     </group>
-
-  )
-}
+  );
+};

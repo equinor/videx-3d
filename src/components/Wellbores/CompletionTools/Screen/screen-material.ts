@@ -1,12 +1,18 @@
-import { Color, ShaderLib, ShaderMaterial, Uniform, UniformsUtils } from 'three'
-import vertexShader from './shaders/vertex.glsl'
-import fragmentShader from './shaders/fragment.glsl'
+import {
+  Color,
+  ShaderLib,
+  ShaderMaterial,
+  Uniform,
+  UniformsUtils,
+} from 'three';
+import vertexShader from './shaders/vertex.glsl';
+import fragmentShader from './shaders/fragment.glsl';
 
 export class ScreenMaterial extends ShaderMaterial {
-  constructor(params:any = {}) {
+  constructor(params: any = {}) {
     super({
       uniforms: UniformsUtils.merge([
-        UniformsUtils.clone( ShaderLib['lambert'].uniforms),
+        UniformsUtils.clone(ShaderLib['lambert'].uniforms),
         {
           uColor1: new Uniform(new Color(params.color || 'white')),
           uColor2: new Uniform(new Color(params.color || 'black')),
@@ -14,26 +20,26 @@ export class ScreenMaterial extends ShaderMaterial {
       ]),
       vertexShader,
       fragmentShader,
-    })
+    });
 
-    this.setValues(params)
+    this.setValues(params);
 
-    this.lights = true
-  } 
-
-  get color1() {
-    return this.uniforms.uColor1.value
+    this.lights = true;
   }
 
-  set color1(value:any) {
-    this.uniforms.uColor1.value.set(value)
+  get color1() {
+    return this.uniforms.uColor1.value;
+  }
+
+  set color1(value: any) {
+    this.uniforms.uColor1.value.set(value);
   }
 
   get color2() {
-    return this.uniforms.uColor2.value
+    return this.uniforms.uColor2.value;
   }
 
-  set color2(value:any) {
-    this.uniforms.uColor2.value.set(value)
+  set color2(value: any) {
+    this.uniforms.uColor2.value.set(value);
   }
 }

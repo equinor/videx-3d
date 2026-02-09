@@ -15,20 +15,20 @@ import {
   Texture,
   UniformsUtils,
   Vector2,
-} from 'three'
-import { colorRamps, createColorRamps } from './color-ramps'
-import fragmentShader from './shaders/surface-frag.glsl'
-import vertexShader from './shaders/surface-vert.glsl'
+} from 'three';
+import { colorRamps, createColorRamps } from './color-ramps';
+import fragmentShader from './shaders/surface-frag.glsl';
+import vertexShader from './shaders/surface-vert.glsl';
 
-const canvas = createColorRamps(colorRamps, 512)
-const colorRampTexture = new CanvasTexture(canvas)
-colorRampTexture.magFilter = LinearFilter
-colorRampTexture.minFilter = NearestFilter
-colorRampTexture.flipY = false
-colorRampTexture.generateMipmaps = false
-colorRampTexture.colorSpace = SRGBColorSpace
-colorRampTexture.format = RGBAFormat
-colorRampTexture.anisotropy = 4
+const canvas = createColorRamps(colorRamps, 512);
+const colorRampTexture = new CanvasTexture(canvas);
+colorRampTexture.magFilter = LinearFilter;
+colorRampTexture.minFilter = NearestFilter;
+colorRampTexture.flipY = false;
+colorRampTexture.generateMipmaps = false;
+colorRampTexture.colorSpace = SRGBColorSpace;
+colorRampTexture.format = RGBAFormat;
+colorRampTexture.anisotropy = 4;
 
 export enum ContourColorMode {
   darken = 0,
@@ -38,23 +38,23 @@ export enum ContourColorMode {
 
 export type SurfaceMaterialParameters = ShaderMaterialParameters &
   MeshLambertMaterialParameters & {
-    useColorRamp?: boolean
-    saturation?: number
-    brightness?: number
-    colorRampIndex?: number
-    colorRampReverse?: boolean
-    colorRampMin?: number
-    colorRampMax?: number
-    referenceDepth?: number
-    showContours?: boolean
-    contoursInterval?: number
-    contoursColorMode?: ContourColorMode
-    contoursColorModeFactor?: number
-    contoursColor?: string | number | Color
-    elevationTexture?: Texture
-    normalTexture?: Texture
-    debug?: boolean
-  }
+    useColorRamp?: boolean;
+    saturation?: number;
+    brightness?: number;
+    colorRampIndex?: number;
+    colorRampReverse?: boolean;
+    colorRampMin?: number;
+    colorRampMax?: number;
+    referenceDepth?: number;
+    showContours?: boolean;
+    contoursInterval?: number;
+    contoursColorMode?: ContourColorMode;
+    contoursColorModeFactor?: number;
+    contoursColor?: string | number | Color;
+    elevationTexture?: Texture;
+    normalTexture?: Texture;
+    debug?: boolean;
+  };
 
 const shader = {
   name: 'MeshSurfaceShader',
@@ -95,7 +95,7 @@ const shader = {
   ]),
   vertexShader,
   fragmentShader,
-}
+};
 
 /**
  * Shader material for `Surface` component.
@@ -103,33 +103,33 @@ const shader = {
  * @see {@link Surface}
  */
 export class SurfaceMaterial extends ShaderMaterial {
-  isMeshSurfaceShader = true
-  normalScale: Vector2
-  map?: Texture
-  normalMap?: Texture
-  wireframeLinecap: string
-  wireframeLinejoin: string
-  flatShading: boolean
-  combine: number
-  normalMapType: number
+  isMeshSurfaceShader = true;
+  normalScale: Vector2;
+  map?: Texture;
+  normalMap?: Texture;
+  wireframeLinecap: string;
+  wireframeLinejoin: string;
+  flatShading: boolean;
+  combine: number;
+  normalMapType: number;
 
   constructor(parameters: SurfaceMaterialParameters) {
-    super()
+    super();
 
-    this.defines = Object.assign({}, shader.defines)
-    this.uniforms = UniformsUtils.clone(shader.uniforms)
-    this.vertexShader = shader.vertexShader
-    this.fragmentShader = shader.fragmentShader
-    this.combine = MultiplyOperation
-    this.normalMapType = TangentSpaceNormalMap
-    this.wireframe = false
-    this.wireframeLinewidth = 1
-    this.wireframeLinecap = 'round'
-    this.wireframeLinejoin = 'round'
-    this.flatShading = false
-    this.lights = true
-    this.clipping = true
-    this.fog = true
+    this.defines = Object.assign({}, shader.defines);
+    this.uniforms = UniformsUtils.clone(shader.uniforms);
+    this.vertexShader = shader.vertexShader;
+    this.fragmentShader = shader.fragmentShader;
+    this.combine = MultiplyOperation;
+    this.normalMapType = TangentSpaceNormalMap;
+    this.wireframe = false;
+    this.wireframeLinewidth = 1;
+    this.wireframeLinecap = 'round';
+    this.wireframeLinejoin = 'round';
+    this.flatShading = false;
+    this.lights = true;
+    this.clipping = true;
+    this.fog = true;
 
     const exposePropertyNames = [
       'map',
@@ -162,90 +162,90 @@ export class SurfaceMaterial extends ShaderMaterial {
       'contoursThickness',
       'normalTexture',
       'elevationTexture',
-    ]
+    ];
 
     for (const propertyName of exposePropertyNames) {
       Object.defineProperty(this, propertyName, {
         get: function () {
-          return this.uniforms[propertyName].value
+          return this.uniforms[propertyName].value;
         },
 
         set: function (value) {
-          this.uniforms[propertyName].value = value
+          this.uniforms[propertyName].value = value;
         },
-      })
+      });
     }
 
-    this.normalScale = new Vector2(0.25, 0.25)
-    this.color = 'white'
-    this.setValues(parameters)
+    this.normalScale = new Vector2(0.25, 0.25);
+    this.color = 'white';
+    this.setValues(parameters);
   }
 
   get color() {
-    return '#' + this.uniforms.diffuse.value.getHexString()
+    return '#' + this.uniforms.diffuse.value.getHexString();
   }
 
   set color(value) {
-    this.uniforms.diffuse.value = new Color(value)
+    this.uniforms.diffuse.value = new Color(value);
   }
 
   get contoursColor() {
-    return '#' + this.uniforms.contoursColor.value.getHexString()
+    return '#' + this.uniforms.contoursColor.value.getHexString();
   }
 
   set contoursColor(value) {
-    this.uniforms.contoursColor.value = new Color(value)
+    this.uniforms.contoursColor.value = new Color(value);
   }
 
   get useColorRamp() {
-    return this.defines.USE_COLOR_RAMP || false
+    return this.defines.USE_COLOR_RAMP || false;
   }
 
   set useColorRamp(value) {
-    this.defines.USE_COLOR_RAMP = !!value
+    this.defines.USE_COLOR_RAMP = !!value;
     this.uniforms.colorRampTexture.value = this.defines.USE_COLOR_RAMP
       ? colorRampTexture
-      : null
-    this.needsUpdate = true
+      : null;
+    this.needsUpdate = true;
   }
 
   get showContours() {
-    return this.defines.USE_CONTOURS || false
+    return this.defines.USE_CONTOURS || false;
   }
 
   set showContours(value) {
-    this.defines.USE_CONTOURS = !!value
-    this.needsUpdate = true
+    this.defines.USE_CONTOURS = !!value;
+    this.needsUpdate = true;
   }
 
   get debug() {
-    return this.defines.USE_DEBUG || false
+    return this.defines.USE_DEBUG || false;
   }
 
   set debug(value) {
-    this.defines.USE_DEBUG = !!value
-    this.needsUpdate = true
+    this.defines.USE_DEBUG = !!value;
+    this.needsUpdate = true;
   }
 
   // @ignore
   dispose(): void {
-    super.dispose()
-    this.uniforms.elevationTexture.value?.dispose()
+    super.dispose();
+    this.uniforms.elevationTexture.value?.dispose();
   }
 
   // @ignore
   onBeforeCompile() {
     if (this.map) {
       if (this.map.matrixAutoUpdate === true) {
-        this.map.updateMatrix()
+        this.map.updateMatrix();
       }
-      this.uniforms.mapTransform.value.copy(this.map.matrix)
+      this.uniforms.mapTransform.value.copy(this.map.matrix);
     }
     if (this.normalMap) {
       if (this.normalMap.matrixAutoUpdate === true) {
-        this.normalMap.updateMatrix()
+        this.normalMap.updateMatrix();
       }
-      this.uniforms.normalMapTransform.value.copy(this.normalMap.matrix)
+      this.uniforms.normalMapTransform.value.copy(this.normalMap.matrix);
     }
   }
 }
