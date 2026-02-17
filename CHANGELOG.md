@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.0.10-beta](https://github.com/equinor/videx-3d/compare/v5.0.9-beta...v5.0.10-beta) (2026-02-17)
+
+
+### Bug Fixes
+
+* **140:** call EventEmitter onResult callback ([#141](https://github.com/equinor/videx-3d/issues/141)) ([ad6760a](https://github.com/equinor/videx-3d/commit/ad6760a3ae14d9b3c1ad93d26765ae93eb84532f))
+
 ## [5.0.9-beta](https://github.com/equinor/videx-3d/compare/v5.0.8-beta...v5.0.9-beta) (2026-02-06)
 
 
