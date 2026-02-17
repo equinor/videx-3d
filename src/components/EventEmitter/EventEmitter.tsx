@@ -1,6 +1,5 @@
 import { ReactNode, useCallback, useEffect, useMemo } from 'react';
 import { BufferGeometry, Material, Object3D, PerspectiveCamera } from 'three';
-import { Vec2, Vec3 } from '../../sdk';
 import {
   EventEmitterContext,
   EventEmitterContextProps,
@@ -14,14 +13,7 @@ import { PickingHelper, PickResult } from './picking-helper';
 const CLICK_SPEED = 300;
 const MOVE_THRESHOLD = 10;
 
-export type EmitterResultEvent = {
-  offset: Vec2 | null;
-  match: RenderableObject | undefined;
-  instanced?: boolean;
-  instanceIndex?: number;
-  position: Vec3 | null;
-};
-export type EmitterCallback = (e: EmitterResultEvent) => void;
+export type EmitterCallback = (e: PickResult) => void;
 
 /**
  * EventEmitter props
@@ -55,6 +47,7 @@ export const EventEmitter = ({
   autoUpdate = true,
   autoUpdateRenderPriority,
   threshold,
+  onResult,
   children,
 }: EventEmitterProps) => {
   const { gl, camera, scene, pointer } = useThree();
@@ -165,9 +158,14 @@ export const EventEmitter = ({
         }
       }
 
+      // result event
+      if (onResult && (current !== null || previous !== null)) {
+        setTimeout(() => onResult(result));
+      }
+
       eventState.currentResult = result;
     },
-    [eventState, gl, camera],
+    [eventState, gl, camera, onResult],
   );
 
   const checkOnClick = useCallback(() => {
