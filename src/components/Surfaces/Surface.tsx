@@ -1,9 +1,8 @@
-import { useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { BufferGeometry, DataTexture, DoubleSide, FrontSide, Group, MeshBasicMaterial, Texture } from 'three'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { BufferGeometry, DataTexture, DoubleSide, FrontSide, Group, MeshBasicNodeMaterial, Texture } from 'three/webgpu'
 import { PointerEvents } from '../../events/interaction-events'
 import { useGenerator } from '../../hooks/useGenerator'
 import { createLayers, LAYERS } from '../../layers/layers'
-import { GlyphsContext } from '../../main'
 import { createElevationTexture, SurfaceMeta, unpackBufferGeometry, Vec2 } from '../../sdk'
 import { CommonComponentProps } from '../common'
 import { EventEmitterCallback, useEventEmitter } from '../EventEmitter/EventEmitterContext'
@@ -81,7 +80,7 @@ export const Surface = ({
   position,
   renderOrder,
   visible = true,
-  debug = false,
+  //debug = false,
   onPointerClick,
   onPointerEnter,
   onPointerLeave,
@@ -96,7 +95,7 @@ export const Surface = ({
 
   const notEmitterLayers = useMemo(() => createLayers(LAYERS.NOT_EMITTER), [])
 
-  const glyphContext = useContext(GlyphsContext)
+  //const glyphContext = useContext(GlyphsContext)
 
   const material = useMemo(() => {
     const m = new SurfaceMaterial({
@@ -120,26 +119,26 @@ export const Surface = ({
     return m
   }, [])
 
-  useEffect(() => {
-    if (debug && glyphContext) {
-      material.uniformsGroups = [glyphContext.glyphData]
-      material.defines.GLYPHS_LENGTH = glyphContext.glyphsCount
-      material.uniforms.glyphAtlas.value = glyphContext.glyphAtlas
-      material.uniforms.digits.value = [...glyphContext.encodeText('0123456789.-').indices]
-    } else {
-      material.uniformsGroups = []
-      material.defines.GLYPHS_LENGTH = 1
-      material.uniforms.glyphAtlas.value = null
-      material.uniforms.digits.value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    }
-    material.debug = debug
-    material.needsUpdate = true
-    material.uniformsNeedUpdate = true
-  }, [debug, material, glyphContext])
+  // useEffect(() => {
+  //   if (debug && glyphContext) {
+  //     material.uniformsGroups = [glyphContext.glyphData]
+  //     material.defines.GLYPHS_LENGTH = glyphContext.glyphsCount
+  //     material.uniforms.glyphAtlas.value = glyphContext.glyphAtlas
+  //     material.uniforms.digits.value = [...glyphContext.encodeText('0123456789.-').indices]
+  //   } else {
+  //     material.uniformsGroups = []
+  //     material.defines.GLYPHS_LENGTH = 1
+  //     material.uniforms.glyphAtlas.value = null
+  //     material.uniforms.digits.value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  //   }
+  //   material.debug = debug
+  //   material.needsUpdate = true
+  //   material.uniformsNeedUpdate = true
+  // }, [debug, material, glyphContext])
 
   /* This is used to write back-side faces to the depth buffer to avoid self-transparency issues when opacity < 1 */
   const maskMaterial = useMemo(() => {
-    const m = new MeshBasicMaterial({
+    const m = new MeshBasicNodeMaterial({
       transparent: true,
       side: DoubleSide,
       colorWrite: false,
@@ -173,29 +172,27 @@ export const Surface = ({
   }, [eventHandler, onPointerClick, onPointerEnter, onPointerLeave, onPointerMove, meta.id])
 
   useEffect(() => {
-    material.uniforms.colorRampIndex.value = colorRamp
-    material.uniforms.opacity.value = opacity
-    material.uniforms.contoursColorMode.value = contoursColorMode
-    material.uniforms.contoursColorModeFactor.value = contoursColorModeFactor
-    material.uniforms.contoursInterval.value = contoursInterval
-    material.uniforms.contoursThickness.value = contoursThickness
-    material.uniforms.colorRampMin.value = rampMin
-    material.uniforms.colorRampMax.value = rampMax
-    material.uniforms.colorRampReverse.value = reverseRamp
-    material.uniforms.referenceDepth.value = meta.max
-    material.uniforms.size.value.set(meta.header.nx, meta.header.ny)
-    material.uniforms.scale.value.set(meta.header.xinc, meta.header.yinc)
-    material.uniforms.rotation.value = meta.header.rot * (Math.PI / 180)
-    material.uniformsNeedUpdate = true
+    material.colorRampIndex = colorRamp
+    material.opacity = opacity
+    material.contoursColorMode = contoursColorMode
+    material.contoursColorModeFactor = contoursColorModeFactor
+    material.contoursInterval = contoursInterval
+    material.contoursThickness = contoursThickness
+    material.colorRampMin = rampMin
+    material.colorRampMax = rampMax
+    material.colorRampReverse = reverseRamp
+    material.referenceDepth = meta.max
+    material.size.set(meta.header.nx, meta.header.ny)
+    material.scale.set(meta.header.xinc, meta.header.yinc)
+    material.rotation = meta.header.rot * (Math.PI / 180)
     if (normalScale) {
-      material.uniforms.normalScale.value.set(...normalScale)
+      material.normalScale.set(...normalScale)
     }
   }, [
     material,
     meta,
     colorRamp,
     opacity,
-    showContours,
     contoursColorMode,
     contoursColorModeFactor,
     contoursInterval,
@@ -211,7 +208,7 @@ export const Surface = ({
     material.showContours = showContours
     material.contoursColor = contoursColor
     material.useColorRamp = useColorRamp
-    material.color = color || material.color
+    material.color.set(color || material.color)
     material.side = doubleSide ? DoubleSide : FrontSide
     if (normalMap) {
       material.normalMap = normalMap
@@ -269,13 +266,7 @@ export const Surface = ({
 
   useEffect(() => {
     if (elevationTexture && material) {
-      const { width, height } = elevationTexture.image
-      const sx = (width - 1) / width
-      const sy = (height - 1) / height
-      const tx = (1 - sx) / 2
-      const ty = (1 - sy) / 2
-      material.uniforms.elevationTexture.value = elevationTexture
-      material.uniforms.gridUvMat.value.setUvTransform(tx, ty, sx, sy, 0, 0, 0)
+      material.elevationTexture = elevationTexture
     }
   }, [elevationTexture, material])
 
@@ -286,7 +277,7 @@ export const Surface = ({
     }
   }, [material])
 
-  if (debug && !glyphContext) return null
+  //if (debug && !glyphContext) return null
 
   return (
     <group

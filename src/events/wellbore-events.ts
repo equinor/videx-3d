@@ -1,4 +1,4 @@
-import { Object3D } from 'three'
+import { Object3D } from 'three/webgpu'
 import { Vec3 } from '../sdk'
 
 export const wellboreSelectedEventType = 'wellbore-selected' as const

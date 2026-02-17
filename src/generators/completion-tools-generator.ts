@@ -1,8 +1,8 @@
 import { transfer } from 'comlink'
 import { group } from 'd3-array'
 
-import { BufferGeometry } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
+import { BufferGeometry } from 'three/webgpu'
 import { completionToolsMaterialIndices } from '../components/Wellbores/CompletionTools/completion-tools-defs'
 import {
   clamp,
@@ -14,7 +14,7 @@ import {
   ReadonlyStore,
   Trajectory,
   TubeGeometryOptions,
-  Tuplet
+  Tuplet,
 } from '../sdk'
 
 function createGenericShape(
@@ -22,7 +22,7 @@ function createGenericShape(
   tool: CompletionTool,
   sizeMultiplier: number,
   min: number,
-  tubeOptions: TubeGeometryOptions
+  tubeOptions: TubeGeometryOptions,
 ) {
   const toolLength = clamp(tool.length, 0.0001, trajectory.measuredLength)
 
@@ -32,12 +32,12 @@ function createGenericShape(
   const top = clamp(
     (tool.mdTopMsl - trajectory.measuredTop) / trajectory.measuredLength,
     0,
-    1
+    1,
   )
   const bottom = clamp(
     (tool.mdBottomMsl - trajectory.measuredTop) / trajectory.measuredLength,
     0,
-    1
+    1,
   )
 
   const radiusTop =
@@ -79,7 +79,7 @@ export async function generateCompletionTools(
   radialSegments: number = 16,
   sizeMultiplier: number = 1,
   segmentsPerMeter: number = 0.1,
-  simplificationThreshold: number = 0
+  simplificationThreshold: number = 0,
 ) {
   //console.time('build completion tools')
   const data = await this.get<any[]>('completion-tools', id)
@@ -97,7 +97,7 @@ export async function generateCompletionTools(
       ? clamp(
           (fromMsl - trajectory.measuredTop) / trajectory.measuredLength,
           0,
-          1
+          1,
         )
       : 0
 
@@ -105,7 +105,7 @@ export async function generateCompletionTools(
     .filter(
       (d) =>
         d.mdBottomMsl > trajectory.measuredTop &&
-        (fromMsl === undefined || d.mdBottomMsl > fromMsl)
+        (fromMsl === undefined || d.mdBottomMsl > fromMsl),
     )
     .sort((a, b) => a.mdTopMsl - b.mdTopMsl)
 
@@ -132,7 +132,7 @@ export async function generateCompletionTools(
         tool,
         sizeMultiplier,
         minFrom,
-        tubeOptions
+        tubeOptions,
       )
       return geometry
     })

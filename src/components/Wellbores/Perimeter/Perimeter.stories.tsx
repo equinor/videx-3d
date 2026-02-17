@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useEffect } from 'react'
 import { WellboreSelectedEvent } from '../../../events/wellbore-events'
-import { Canvas3dWebGLDecorator } from '../../../storybook/decorators/canvas-3d-webgl-decorator'
+import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
 import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator'
 import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator'
 import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator'
@@ -29,15 +29,23 @@ export const Default: Story = {
     radius: 20,
     from: 1000,
     to: 2500,
+    color: '#56af3b',
+    opacity: 0.5
   },
   argTypes: {
     id: {
       options: Object.keys(storyArgs.wellboreOptions),
       control: { type: 'select', labels: storyArgs.wellboreOptions },
     },
+    color: {
+      control: { type: 'color' }
+    },
+    opacity: {
+      control: { type: 'range', min: 0, max: 1, step: 0.1 }
+    }
   },
   decorators: [
-    Canvas3dWebGLDecorator,
+    Canvas3dDecorator,
     GeneratorsProviderDecorator,
     DepthSelectorDecorator,
     DataProviderDecorator,

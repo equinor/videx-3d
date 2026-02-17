@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react'
-import { BufferGeometry, Group, InstancedBufferAttribute, InstancedMesh, Layers, Material } from 'three'
+import { BufferGeometry, Group, InstancedBufferAttribute, InstancedMesh, Layers, Material } from 'three/webgpu'
 import { PointerEvents } from '../../events/interaction-events'
 import { SymbolsType } from '../../sdk/data/types/Symbol'
 import { EventEmitterCallback, useEventEmitter } from '../EventEmitter/EventEmitterContext'

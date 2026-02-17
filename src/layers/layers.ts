@@ -1,4 +1,4 @@
-import { Layers } from 'three'
+import { Layers } from 'three/webgpu'
 
 export const LAYERS = {
   NOT_EMITTER: 29, // can be used to exclude an object from being used as an event emitter

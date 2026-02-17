@@ -1,5 +1,5 @@
 import { transfer } from 'comlink'
-import { Matrix4, Vector3 } from 'three'
+import { Matrix4, Vector3 } from 'three/webgpu'
 import {
   calculateFrenetFrames,
   clamp,
@@ -32,11 +32,11 @@ export async function generatePerforations(
   this: ReadonlyStore,
   id: string,
   fromMsl?: number,
-  sizeMultiplier: number = 1
+  sizeMultiplier: number = 1,
 ): Promise<SymbolsType | null> {
   const perforationData = await this.get<PerforationInterval[]>(
     'perforations',
-    id
+    id,
   )
 
   if (!perforationData) return null
@@ -50,7 +50,7 @@ export async function generatePerforations(
   scaleVector.set(
     Math.max(1, sizeMultiplier / 2),
     sizeMultiplier,
-    Math.max(1, sizeMultiplier / 2)
+    Math.max(1, sizeMultiplier / 2),
   )
 
   const perforationSections: {
@@ -67,7 +67,7 @@ export async function generatePerforations(
       (d) =>
         d.status === 'Open' &&
         d.mdBottomMsl > trajectory.measuredTop &&
-        (fromMsl === undefined || d.mdBottomMsl > fromMsl)
+        (fromMsl === undefined || d.mdBottomMsl > fromMsl),
     )
     .sort((a, b) => a.mdTopMsl - b.mdTopMsl)
 
@@ -107,17 +107,17 @@ export async function generatePerforations(
     const segmentLength = current.bottom - current.top
     const positionCount = Math.max(
       1,
-      Math.floor(segmentLength * current.density)
+      Math.floor(segmentLength * current.density),
     )
     const u1 = clamp(
       (current.top - trajectory.measuredTop) / trajectory.measuredLength,
       0,
-      1
+      1,
     )
     const u2 = clamp(
       (current.bottom - trajectory.measuredTop) / trajectory.measuredLength,
       0,
-      1
+      1,
     )
     const step = (u2 - u1) / positionCount
     const positions = []
@@ -131,7 +131,7 @@ export async function generatePerforations(
       const normal = rotateVec3(
         crossVec3(frame.tangent, [0, -1, 0]),
         frame.tangent,
-        angle
+        angle,
       ) as Vec3
 
       perforations.push({
@@ -152,11 +152,11 @@ export async function generatePerforations(
     targetVector.set(
       positionVector.x + perf.normal[0],
       positionVector.y + perf.normal[1],
-      positionVector.z + perf.normal[2]
+      positionVector.z + perf.normal[2],
     )
 
     scaleVector.setY(
-      sizeMultiplier + sizeMultiplier * (Math.random() - 0.5) * 0.25
+      sizeMultiplier + sizeMultiplier * (Math.random() - 0.5) * 0.25,
     )
 
     transformationMatrix.identity()
@@ -177,6 +177,6 @@ export async function generatePerforations(
       data: symbolData,
       transformations,
     },
-    [transformations.buffer]
+    [transformations.buffer],
   )
 }

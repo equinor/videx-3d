@@ -1,6 +1,5 @@
-
 import { Layers } from '@react-three/fiber'
-import { Material } from 'three'
+import { Material } from 'three/webgpu'
 import { Vec3 } from '../sdk'
 
 /**
@@ -35,6 +34,9 @@ export type CustomMaterialProps = {
   customDepthMaterial?: Material
   // set a custom distance material if required
   customDistanceMaterial?: Material
-  // callback to invoke when component is updated. Use this for setting/uppdaing uniforms in your custom material(s) 
-  onMaterialPropertiesChange?: (props: Record<string, any>, material: Material | Material[]) => void
+  // callback to invoke when component is updated. Use this for setting/uppdaing uniforms in your custom material(s)
+  onMaterialPropertiesChange?: (
+    props: Record<string, any>,
+    material: Material | Material[],
+  ) => void
 }

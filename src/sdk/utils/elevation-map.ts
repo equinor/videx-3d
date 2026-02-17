@@ -1,4 +1,4 @@
-import { DataTexture, FloatType, LinearFilter, RedFormat } from 'three'
+import { DataTexture, FloatType, LinearFilter, RedFormat } from 'three/webgpu'
 import { crossVec3, normalizeVec3, rotateVec3, subVec3, Vec3 } from '../../sdk'
 
 export function triangleNormal(p0: Vec3, p1: Vec3, p2: Vec3) {

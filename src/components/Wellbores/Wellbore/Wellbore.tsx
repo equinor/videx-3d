@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useMemo, useRef } from 'react'
-import { Object3D, Vector3 } from 'three'
+import { Object3D, Vector3 } from 'three/webgpu'
 import { WellboreContext } from './WellboreContext'
 
 import { PointerEvents } from '../../../events/interaction-events'

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BufferGeometry, Color, Material } from 'three'
+import { BufferGeometry, Color, Material, MeshBasicNodeMaterial } from 'three/webgpu'
 import { useGenerator } from '../../../hooks/useGenerator'
 import { useWellboreContext } from '../../../hooks/useWellboreContext'
+import { TubeMaterial } from '../../../materials/tube-material'
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing'
-import { TubeMaterial } from '../../../sdk/materials/tube-material'
 import { CommonComponentProps, CustomMaterialProps } from '../../common'
 import { tubeTrajectory, tubeTrajectoryGeneratorResponse } from './tube-geometry-defs'
 
@@ -57,7 +57,7 @@ export const TubeTrajectory = ({
 
   const onPropsChange = useMemo(() => {
     return onMaterialPropertiesChange ? onMaterialPropertiesChange : (props: Record<string, any>, material: Material | Material[]) => {
-      const m = material as TubeMaterial
+      const m = material as MeshBasicNodeMaterial
       m.color = new Color(props.color)
     }
   }, [onMaterialPropertiesChange])
@@ -66,6 +66,7 @@ export const TubeTrajectory = ({
     if (customMaterial) {
       return customMaterial
     }
+
     return new TubeMaterial()
   }, [customMaterial])
 

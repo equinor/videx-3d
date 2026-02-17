@@ -1,10 +1,13 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useEffect } from 'react'
 import { WellboreSelectedEvent } from '../../../events/wellbore-events'
-import { Canvas3dWebGLDecorator } from '../../../storybook/decorators/canvas-3d-webgl-decorator'
+import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
 import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator'
+import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator'
 import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator'
 import storyArgs from '../../../storybook/story-args.json'
+import { Shoes } from '../Shoes'
+import { TubeTrajectory } from '../TubeTrajectory'
 import { Wellbore } from './Wellbore'
 
 const meta = {
@@ -31,8 +34,9 @@ export const Default: Story = {
     },
   },
   decorators: [
-    Canvas3dWebGLDecorator,
+    Canvas3dDecorator,
     GeneratorsProviderDecorator,
+    DepthSelectorDecorator,
     DataProviderDecorator,
   ],
   render: args => {
@@ -43,7 +47,8 @@ export const Default: Story = {
     return (
       <>
         <Wellbore {...args}>
-
+          <TubeTrajectory />
+          <Shoes color="blue" sizeMultiplier={5} />
         </Wellbore>
       </>
     )

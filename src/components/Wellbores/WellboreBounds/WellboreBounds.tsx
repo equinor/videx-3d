@@ -1,6 +1,6 @@
 import { useFrame } from '@react-three/fiber'
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Object3D, PerspectiveCamera, Sphere, Vector3 } from 'three'
+import { Object3D, PerspectiveCamera, Sphere, Vector3 } from 'three/webgpu'
 import { useGenerator } from '../../../hooks/useGenerator'
 import { Vec3 } from '../../../sdk/types/common'
 import { DistanceContext } from '../../Distance/DistanceContext'
@@ -136,7 +136,7 @@ export const WellboreBounds = ({
         visible && bounds && (
           <mesh name="wellbore-bounds-debug" position={bounds.main.center}>
             <sphereGeometry args={[bounds.main.radius, 32, 16]} />
-            <meshBasicMaterial color="green" wireframe transparent opacity={0.1} />
+            <meshBasicNodeMaterial color="green" wireframe transparent opacity={0.1} />
           </mesh>
         )
       }
@@ -144,7 +144,7 @@ export const WellboreBounds = ({
         visible && bounds && bounds.sampled.map((s, i) => (
           <mesh name="wellbore-bounds-debug" key={i} position={s.center}>
             <sphereGeometry args={[s.radius, 16, 8]} />
-            <meshBasicMaterial color="gray" wireframe transparent opacity={0.25} />
+            <meshBasicNodeMaterial color="gray" wireframe transparent opacity={0.25} />
           </mesh>
         ))
       }

@@ -1,7 +1,11 @@
-import { Object3D, Scene } from 'three'
+import { Object3D, Scene } from 'three/webgpu'
 
-export function getObjectByCustomProperty(propName: string, value: any, scene: Scene) {
-  const traverse = (obj: Object3D) : Object3D | null => {
+export function getObjectByCustomProperty(
+  propName: string,
+  value: any,
+  scene: Scene,
+) {
+  const traverse = (obj: Object3D): Object3D | null => {
     if (obj.userData[propName] && obj.userData[propName] === value) {
       return obj
     }

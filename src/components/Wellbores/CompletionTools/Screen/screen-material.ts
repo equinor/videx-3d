@@ -1,39 +1,53 @@
-import { Color, ShaderLib, ShaderMaterial, Uniform, UniformsUtils } from 'three'
-import vertexShader from './shaders/vertex.glsl'
-import fragmentShader from './shaders/fragment.glsl'
+import {
+  attribute,
+  Fn,
+  materialColor,
+  mix,
+  mod,
+  step,
+  uniform,
+  uv,
+} from 'three/tsl'
+import {
+  Color,
+  ColorRepresentation,
+  MeshLambertMaterialParameters,
+  MeshLambertNodeMaterial,
+  Node,
+} from 'three/webgpu'
 
-export class ScreenMaterial extends ShaderMaterial {
-  constructor(params:any = {}) {
-    super({
-      uniforms: UniformsUtils.merge([
-        UniformsUtils.clone( ShaderLib['lambert'].uniforms),
-        {
-          uColor1: new Uniform(new Color(params.color || 'white')),
-          uColor2: new Uniform(new Color(params.color || 'black')),
-        },
-      ]),
-      vertexShader,
-      fragmentShader,
-    })
+export type ScreenMaterialParameters = MeshLambertMaterialParameters & {
+  altColor?: ColorRepresentation
+}
+
+export class ScreenMaterial extends MeshLambertNodeMaterial {
+  private _altColor: UniformNode<Color>
+
+  constructor(params: ScreenMaterialParameters = {}) {
+    super()
+
+    this._altColor = uniform(new Color('black'))
 
     this.setValues(params)
-
-    this.lights = true
-  } 
-
-  get color1() {
-    return this.uniforms.uColor1.value
+    this._buildScreenMaterial()
   }
 
-  set color1(value:any) {
-    this.uniforms.uColor1.value.set(value)
+  private _buildScreenMaterial() {
+    const altColor = this._altColor
+    this.colorNode = Fn<Node>(() => {
+      const curvelLength = attribute('curveLength', 'float').toVarying()
+      const strength = mod(curvelLength.add(uv().x.mul(2.0)), 2.0)
+      strength.assign(step(1.5, strength))
+
+      return mix(altColor, materialColor, strength)
+    })()
   }
 
-  get color2() {
-    return this.uniforms.uColor2.value
+  get altColor() {
+    return this._altColor.value as ColorRepresentation
   }
 
-  set color2(value:any) {
-    this.uniforms.uColor2.value.set(value)
+  set altColor(value: ColorRepresentation) {
+    this._altColor.value.set(value)
   }
 }

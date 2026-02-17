@@ -1,5 +1,5 @@
 import { ReactElement, useEffect, useMemo, useState } from 'react'
-import { BufferGeometry, Material, MeshLambertMaterial, MeshStandardMaterial, Object3D } from 'three'
+import { BufferGeometry, Material, MeshLambertNodeMaterial, MeshStandardMaterial, MeshStandardNodeMaterial, Object3D } from 'three/webgpu'
 import { useGenerator } from '../../../hooks/useGenerator'
 import { useWellboreContext } from '../../../hooks/useWellboreContext'
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing'
@@ -79,37 +79,37 @@ export const CompletionTools = ({
 
     const m = [
       // blank pipe
-      new MeshStandardMaterial({
+      new MeshStandardNodeMaterial({
         color: '#999',
         metalness: 1,
         roughness: 0.25
       }),
       // tube
-      new MeshStandardMaterial({
+      new MeshStandardNodeMaterial({
         color: '#999',
         metalness: 0.8,
         roughness: 0.5,
       }),
       // packer
-      new MeshStandardMaterial({
+      new MeshStandardNodeMaterial({
         color: '#000',
         metalness: 0,
         roughness: 0.95,
       }),
       // gauge
-      new MeshStandardMaterial({
+      new MeshStandardNodeMaterial({
         color: '#097',
         metalness: 0,
         roughness: 1,
       }),
       // plug
-      new MeshStandardMaterial({
+      new MeshStandardNodeMaterial({
         color: '#444',
         metalness: 0.2,
         roughness: 1,
       }),
       // pbr
-      new MeshStandardMaterial({
+      new MeshStandardNodeMaterial({
         color: '#ccc',
         metalness: 0,
         roughness: 1,
@@ -117,7 +117,7 @@ export const CompletionTools = ({
         opacity: 0.9
       }),
       // safety valve
-      new MeshStandardMaterial({
+      new MeshStandardNodeMaterial({
         color: '#c00',
         metalness: 0.5,
         roughness: 0.75,
@@ -130,16 +130,16 @@ export const CompletionTools = ({
       }),
       // screen
       new ScreenMaterial({
-        color1: '#777',
-        color2: '#fff',
+        color: '#777',
+        altColor: '#fff',
       }),
       // tracer
       new ScreenMaterial({
-        color1: '#777',
-        color2: 'orange',
+        color: '#777',
+        altColor: 'orange',
       }),
       // unknown
-      new MeshLambertMaterial({
+      new MeshLambertNodeMaterial({
         color: '#ccc',
       })
     ]

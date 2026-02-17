@@ -1,5 +1,5 @@
 import { forwardRef, PropsWithChildren, useImperativeHandle, useMemo, useRef } from 'react'
-import { Group, Vector3 } from 'three'
+import { Group, Vector3 } from 'three/webgpu'
 import { CRS, getProjectionDefFromUtmZone } from '../../sdk/projection/crs'
 import { Vec3 } from '../../sdk/types/common'
 import { UtmAreaContext, UtmAreaContextProps } from './UtmAreaContext'
@@ -40,8 +40,8 @@ export type UtmAreaProps = {
  */
 export const UtmArea = forwardRef<CRS, PropsWithChildren<UtmAreaProps>>(({ crsInstance, utmZone, origin, originUnits = 'utm', offset = [0, 0, 0], children }, fref) => {
   const ref = useRef<Group>(null)
-  const crs = useMemo(()=> {
-    if (crsInstance) return crsInstance;
+  const crs = useMemo(() => {
+    if (crsInstance) return crsInstance
     if (utmZone) {
       const utmDef = getProjectionDefFromUtmZone(utmZone.toUpperCase())
       return new CRS(utmDef, origin, originUnits)
@@ -52,7 +52,7 @@ export const UtmArea = forwardRef<CRS, PropsWithChildren<UtmAreaProps>>(({ crsIn
   useImperativeHandle(fref, () => crs, [crs])
 
   const contextValue = useMemo<UtmAreaContextProps>(() => {
-    const utmToArea = (easting: number, northing: number, altitude = 0) : Vec3 => {
+    const utmToArea = (easting: number, northing: number, altitude = 0): Vec3 => {
       const pos = crs.utmToWorld(easting, northing, altitude)
       return [pos.x, pos.y, pos.z]
     }
@@ -92,15 +92,15 @@ export const UtmArea = forwardRef<CRS, PropsWithChildren<UtmAreaProps>>(({ crsIn
       if (!ref.current) throw Error('Missing reference!')
       const v = new Vector3()
       ref.current.getWorldPosition(v)
-      return  [v.x, v.y, v.z]
+      return [v.x, v.y, v.z]
     }
 
-    const getUtmOrigin = (): Vec3 =>  {
+    const getUtmOrigin = (): Vec3 => {
       const worldPosition = getWorldPosition()
       const origin: Vec3 = [
         worldPosition[0] - crs.originUtm[0],
         -worldPosition[1],
-        worldPosition[2] + crs.originUtm[1], 
+        worldPosition[2] + crs.originUtm[1],
       ]
       return origin
     }

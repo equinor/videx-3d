@@ -1,5 +1,5 @@
-import { BufferAttribute, BufferGeometry } from 'three'
 import { lerp } from 'three/src/math/MathUtils.js'
+import { BufferAttribute, BufferGeometry } from 'three/webgpu'
 import { Tuplet, Vec3 } from '../../types/common'
 import { clamp } from '../../utils/numbers'
 import { PI } from '../../utils/trigonometry'
@@ -7,7 +7,7 @@ import {
   copyVec3,
   crossVec3,
   normalizeVec3,
-  rotateVec3
+  rotateVec3,
 } from '../../utils/vector-operations'
 import {
   calculateFrenetFrames,
@@ -63,7 +63,7 @@ type TubeSegment = FrenetFrame & {
 function interpolateRadius(
   position: number,
   fromStep: Tuplet<number>,
-  toStep: Tuplet<number>
+  toStep: Tuplet<number>,
 ) {
   if (fromStep[0] === toStep[0]) return toStep[1]
   const delta = toStep[0] - fromStep[0]
@@ -71,7 +71,6 @@ function interpolateRadius(
 
   return lerp(fromStep[1], toStep[1], t)
 }
-
 
 function calculateTubeSegments(
   curve: Curve3D,
@@ -81,7 +80,7 @@ function calculateTubeSegments(
   radius: number,
   radiSteps: Tuplet<number>[],
   segmentsPerMeter: number,
-  simplificationThreshold: number
+  simplificationThreshold: number,
 ): TubeSegment[] {
   // determine radius steps
   const steps: Tuplet<number>[] = []
@@ -141,7 +140,7 @@ function calculateTubeSegments(
     from,
     to,
     segmentsPerMeter,
-    simplificationThreshold
+    simplificationThreshold,
   )
   let j = 0
   let p = curvePositions[j]
@@ -196,7 +195,7 @@ function calculateTubeSegments(
         positions.push(
           [endPos, startRadius, 0],
           [endPos, startRadius, steppedAngle],
-          [endPos, endRadius, steppedAngle]
+          [endPos, endRadius, steppedAngle],
         )
       }
     }
@@ -208,7 +207,7 @@ function calculateTubeSegments(
 
   const frenetFrames = calculateFrenetFrames(
     curve,
-    positions.map((s) => s[0])
+    positions.map((s) => s[0]),
   )
 
   return positions.map((s, i) => ({
@@ -223,7 +222,7 @@ function generateCap(
   radialSegments: number,
   clockwise = true,
   options: AttributeOptions,
-  indexOffset = 0
+  indexOffset = 0,
 ): Geometry {
   let vertexCount = 0,
     indexCount = 0
@@ -260,7 +259,7 @@ function generateCap(
     vertices.push(
       segment.position[0] + segment.radius * vector[0],
       segment.position[1] + segment.radius * vector[1],
-      segment.position[2] + segment.radius * vector[2]
+      segment.position[2] + segment.radius * vector[2],
     )
     vertexCount++
 
@@ -304,7 +303,7 @@ function generateRingCap(
   radialSegments: number,
   clockwise = true,
   options: AttributeOptions,
-  indexOffset = 0
+  indexOffset = 0,
 ): Geometry {
   let vertexCount = 0,
     indexCount = 0
@@ -341,7 +340,7 @@ function generateRingCap(
     vertices.push(
       outerSegment.position[0] + outerSegment.radius * vector[0],
       outerSegment.position[1] + outerSegment.radius * vector[1],
-      outerSegment.position[2] + outerSegment.radius * vector[2]
+      outerSegment.position[2] + outerSegment.radius * vector[2],
     )
     vertexCount++
 
@@ -349,7 +348,7 @@ function generateRingCap(
     vertices.push(
       innerSegment.position[0] + innerSegment.radius * vector[0],
       innerSegment.position[1] + innerSegment.radius * vector[1],
-      innerSegment.position[2] + innerSegment.radius * vector[2]
+      innerSegment.position[2] + innerSegment.radius * vector[2],
     )
     vertexCount++
 
@@ -386,7 +385,7 @@ function generateRingCap(
         b + indexOffset,
         b + indexOffset,
         d + indexOffset,
-        c + indexOffset
+        c + indexOffset,
       )
     } else {
       indices.push(
@@ -395,7 +394,7 @@ function generateRingCap(
         b + indexOffset,
         b + indexOffset,
         c + indexOffset,
-        d + indexOffset
+        d + indexOffset,
       )
     }
     indexCount += 6
@@ -409,7 +408,7 @@ function generateTube(
   radialSegments: number,
   closed: boolean,
   options: AttributeOptions,
-  indexOffset = 0
+  indexOffset = 0,
 ): Geometry {
   let vertexCount = 0,
     indexCount = 0
@@ -495,7 +494,7 @@ function generateTube(
  */
 export function createTubeGeometry(
   curve: Curve3D,
-  options: TubeGeometryOptions = {}
+  options: TubeGeometryOptions = {},
 ) {
   const from = clamp(options.from || 0, 0, 1)
   const to = clamp(options.to || 1)
@@ -520,7 +519,7 @@ export function createTubeGeometry(
   const simplificationThreshold = clamp(
     options.simplificationThreshold || 0,
     0,
-    1
+    1,
   )
 
   const segments = calculateTubeSegments(
@@ -531,7 +530,7 @@ export function createTubeGeometry(
     radius,
     radiSteps,
     segmentsPerMeter,
-    simplificationThreshold
+    simplificationThreshold,
   )
 
   //console.log(segments)
@@ -539,7 +538,7 @@ export function createTubeGeometry(
     segments,
     radialSegments,
     closed,
-    options
+    options,
   )
 
   let innerTube: Geometry | null = null
@@ -566,7 +565,7 @@ export function createTubeGeometry(
       radialSegments,
       closed,
       options,
-      indexOffset
+      indexOffset,
     )
 
     indexOffset += innerTube.vertexCount
@@ -575,7 +574,7 @@ export function createTubeGeometry(
       geometry.addGroup(
         indexStart,
         innerTube.indexCount,
-        geometry.groups.length
+        geometry.groups.length,
       )
       indexStart += innerTube.indexCount
     }
@@ -589,7 +588,7 @@ export function createTubeGeometry(
         radialSegments,
         true,
         options,
-        indexOffset
+        indexOffset,
       )
     } else {
       startCap = generateCap(
@@ -597,7 +596,7 @@ export function createTubeGeometry(
         radialSegments,
         true,
         options,
-        indexOffset
+        indexOffset,
       )
     }
     indexOffset += startCap.vertexCount
@@ -615,7 +614,7 @@ export function createTubeGeometry(
         radialSegments,
         false,
         options,
-        indexOffset
+        indexOffset,
       )
     } else {
       endCap = generateCap(
@@ -623,7 +622,7 @@ export function createTubeGeometry(
         radialSegments,
         false,
         options,
-        indexOffset
+        indexOffset,
       )
     }
     indexOffset += endCap.vertexCount
@@ -653,7 +652,7 @@ export function createTubeGeometry(
 
   geometry.setAttribute(
     'position',
-    new BufferAttribute(Float32Array.from(vertices), 3)
+    new BufferAttribute(Float32Array.from(vertices), 3),
   )
 
   if (options.computeNormals) {
@@ -669,7 +668,7 @@ export function createTubeGeometry(
     }
     geometry.setAttribute(
       'normal',
-      new BufferAttribute(Float32Array.from(normals), 3)
+      new BufferAttribute(Float32Array.from(normals), 3),
     )
   }
 
@@ -713,7 +712,7 @@ export function createTubeGeometry(
             lengths.push(innerSegments[i].curvePosition * curveLength)
           if (relativeLengths)
             relativeLengths.push(
-              (segments[i].curvePosition - from) * curveLength
+              (segments[i].curvePosition - from) * curveLength,
             )
           if (curveNormals) curveNormals.push(...innerSegments[i].normal)
           if (curveTangents) curveTangents.push(...innerSegments[i].tangent)
@@ -746,27 +745,27 @@ export function createTubeGeometry(
     if (lengths)
       geometry.setAttribute(
         'curveLength',
-        new BufferAttribute(Float32Array.from(lengths), 1)
+        new BufferAttribute(Float32Array.from(lengths), 1),
       )
     if (relativeLengths)
       geometry.setAttribute(
         'curveRelativeLength',
-        new BufferAttribute(Float32Array.from(relativeLengths), 1)
+        new BufferAttribute(Float32Array.from(relativeLengths), 1),
       )
     if (curveNormals)
       geometry.setAttribute(
         'curveNormal',
-        new BufferAttribute(Float32Array.from(curveNormals), 3)
+        new BufferAttribute(Float32Array.from(curveNormals), 3),
       )
     if (curveTangents)
       geometry.setAttribute(
         'curveTangent',
-        new BufferAttribute(Float32Array.from(curveTangents), 3)
+        new BufferAttribute(Float32Array.from(curveTangents), 3),
       )
     if (curveBinormals)
       geometry.setAttribute(
         'curveBinormal',
-        new BufferAttribute(Float32Array.from(curveBinormals), 3)
+        new BufferAttribute(Float32Array.from(curveBinormals), 3),
       )
   }
 

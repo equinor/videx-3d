@@ -1,5 +1,5 @@
 import { transfer } from 'comlink'
-import { Matrix4, Vector3 } from 'three'
+import { Matrix4, Vector3 } from 'three/webgpu'
 import {
   CasingItem,
   clamp,
@@ -22,7 +22,7 @@ export async function generateShoes(
   this: ReadonlyStore,
   id: string,
   fromMsl?: number,
-  sizeMultiplier?: number
+  sizeMultiplier?: number,
 ): Promise<SymbolsType | null> {
   const data = await this.get<CasingItem[]>('casings', id)
 
@@ -39,13 +39,13 @@ export async function generateShoes(
       (d) =>
         d.type === 'Shoe' &&
         d.mdBottomMsl > trajectory.measuredTop &&
-        (fromMsl === undefined || d.mdBottomMsl > fromMsl)
+        (fromMsl === undefined || d.mdBottomMsl > fromMsl),
     )
     .map((d) => {
       const pos = clamp(
         (d.mdBottomMsl - trajectory.measuredTop) / trajectory.measuredLength,
         0,
-        1
+        1,
       )
       return {
         name: `${d.properties['Diameter']} ${d.properties['Type']}`,
@@ -68,7 +68,7 @@ export async function generateShoes(
     targetVector.set(
       positionVector.x + shoe.direction[0],
       positionVector.y + shoe.direction[1],
-      positionVector.z + shoe.direction[2]
+      positionVector.z + shoe.direction[2],
     )
 
     transformationMatrix.lookAt(positionVector, targetVector, upVector)
@@ -90,6 +90,6 @@ export async function generateShoes(
       data: symbolData,
       transformations,
     },
-    [transformations.buffer]
+    [transformations.buffer],
   )
 }

@@ -1,6 +1,6 @@
 import { useFrame } from '@react-three/fiber'
 import { ReactNode, startTransition, useContext, useRef, useState } from 'react'
-import { Group } from 'three'
+import { Group } from 'three/webgpu'
 import { DistanceContext } from './DistanceContext'
 
 /**
@@ -55,15 +55,15 @@ export const Distance = ({ min = 0, max, onDemand = false, children }: DistanceP
       } else if (onDemand && !isVisible && demanded) {
         startTransition(() => setDemanded(false))
       } else if (ref.current.visible !== isVisible) {
-        ref.current.visible = isVisible 
-      }  
+        ref.current.visible = isVisible
+      }
     }
 
   })
 
   return (
     <group ref={ref} visible={false}>
-      { demanded && children}
+      {demanded && children}
     </group>
   )
 }

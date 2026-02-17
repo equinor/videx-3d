@@ -1,6 +1,6 @@
 import { transfer } from 'comlink'
-import { BufferAttribute, BufferGeometry, Color } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
+import { BufferAttribute, BufferGeometry, Color } from 'three/webgpu'
 import {
   createTubeGeometry,
   getTrajectory,
@@ -8,10 +8,13 @@ import {
   PackedBufferGeometry,
   PositionLog,
   ReadonlyStore,
-  TubeGeometryOptions
+  TubeGeometryOptions,
 } from '../sdk'
 
-import { getWellboreFormations, mergeFormationIntervals } from '../sdk/data/helpers/formations-helpers'
+import {
+  getWellboreFormations,
+  mergeFormationIntervals,
+} from '../sdk/data/helpers/formations-helpers'
 
 export async function generateWellboreFormationColumnGeometries(
   this: ReadonlyStore,
@@ -25,16 +28,20 @@ export async function generateWellboreFormationColumnGeometries(
   formationWidth: number = 2,
   caps: boolean = true,
   radialSegments: number = 16,
-  simplificationThreshold: number = 0
+  simplificationThreshold: number = 0,
 ): Promise<PackedBufferGeometry | null> {
-  const formationsData = await getWellboreFormations(wellboreId, stratColumnId, this)
+  const formationsData = await getWellboreFormations(
+    wellboreId,
+    stratColumnId,
+    this,
+  )
 
   if (!formationsData) return null
 
-  const surfaceIntervals = formationsData
-    .filter(d => 
+  const surfaceIntervals = formationsData.filter(
+    (d) =>
       (unitTypes === undefined || (d.type && unitTypes.includes(d.type))) &&
-      (units === undefined || units.includes(d.name))
+      (units === undefined || units.includes(d.name)),
   )
 
   if (!surfaceIntervals.length) return null
@@ -71,7 +78,7 @@ export async function generateWellboreFormationColumnGeometries(
       if (from !== null && to !== null) {
         const radius = formationWidth + startRadius
         const color = new Color(interval.color)
-        
+
         const geometery = createTubeGeometry(trajectory.curve, {
           ...options,
           radius,
@@ -81,7 +88,7 @@ export async function generateWellboreFormationColumnGeometries(
 
         if (geometery.attributes.position.count) {
           const colors = new Float32Array(
-            geometery.attributes.position.count * 3
+            geometery.attributes.position.count * 3,
           )
 
           for (let i = 0; i < geometery.attributes.position.count; i++) {

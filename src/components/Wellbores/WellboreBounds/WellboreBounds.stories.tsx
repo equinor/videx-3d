@@ -2,7 +2,7 @@ import { useFrame } from '@react-three/fiber'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useContext, useEffect } from 'react'
 import { WellboreSelectedEvent } from '../../../events/wellbore-events'
-import { Canvas3dWebGLDecorator } from '../../../storybook/decorators/canvas-3d-webgl-decorator'
+import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
 import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator'
 import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator'
 import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator'
@@ -79,7 +79,7 @@ export const Default: Story = {
     }
   },
   decorators: [
-    Canvas3dWebGLDecorator,
+    Canvas3dDecorator,
     GeneratorsProviderDecorator,
     OutputPanelDecorator,
     DepthSelectorDecorator,

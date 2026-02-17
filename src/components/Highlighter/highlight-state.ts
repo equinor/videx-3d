@@ -1,4 +1,4 @@
-import { Line, Mesh, Object3D } from 'three'
+import { Line, Mesh, Object3D } from 'three/webgpu'
 import { create } from 'zustand'
 import { LAYERS } from '../../layers/layers'
 
@@ -12,7 +12,7 @@ type HighlightState = {
   set: (
     partial:
       | ((state: HighlightState) => Partial<HighlightState>)
-      | Partial<HighlightState>
+      | Partial<HighlightState>,
   ) => void
 }
 
@@ -24,7 +24,7 @@ const keyOf = (o: Object3D, idx?: number) => {
 function addObjects(
   object: Object3D,
   set: Record<string, ObjectRef>,
-  index?: number
+  index?: number,
 ) {
   object.traverseVisible((o) => {
     if (!o.layers.isEnabled(LAYERS.NOT_EMITTER)) {
@@ -41,7 +41,7 @@ function addObjects(
 function removeObjects(
   object: Object3D,
   set: Record<string, ObjectRef>,
-  index?: number
+  index?: number,
 ) {
   object.traverse((o) => {
     if (o.type === 'Mesh' || o.type === 'Line') {
@@ -90,12 +90,13 @@ export const useHighlighter = () => {
       set((prev) => {
         const objSet: Record<string, ObjectRef> = prev.highlighted.reduce(
           (acc, d) => ({ ...acc, [keyOf(d.object, d.instanceIndex)]: d }),
-          {}
+          {},
         )
         addObjects(obj, objSet, index)
         return {
           highlighted: Object.values(objSet).filter(
-            (d) => d.object.layers.isEnabled(LAYERS.EMITTER) && d.object.visible
+            (d) =>
+              d.object.layers.isEnabled(LAYERS.EMITTER) && d.object.visible,
           ),
         }
       }),
@@ -103,12 +104,13 @@ export const useHighlighter = () => {
       set((prev) => {
         const objSet: Record<string, ObjectRef> = prev.highlighted.reduce(
           (acc, d) => ({ ...acc, [keyOf(d.object, d.instanceIndex)]: d }),
-          {}
+          {},
         )
         removeObjects(obj, objSet, index)
         return {
           highlighted: Object.values(objSet).filter(
-            (d) => d.object.layers.isEnabled(LAYERS.EMITTER) && d.object.visible
+            (d) =>
+              d.object.layers.isEnabled(LAYERS.EMITTER) && d.object.visible,
           ),
         }
       }),

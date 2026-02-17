@@ -1,6 +1,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
-import { BufferGeometry, Color, Line, LineBasicMaterial, Material } from 'three'
+import * as TSL from 'three/tsl'
+import { BufferGeometry, Line, LineBasicNodeMaterial, Material, NodeMaterial } from 'three/webgpu'
 import { useGenerator } from '../../../hooks/useGenerator'
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing'
 
@@ -62,13 +63,13 @@ export const BasicTrajectory = ({
 
   const onPropsChange = useMemo(() => {
     return onMaterialPropertiesChange ? onMaterialPropertiesChange : (props: Record<string, any>, material: Material | Material[]) => {
-      const m = material as LineBasicMaterial
-      m.color = new Color(props.color)
+      const m = material as NodeMaterial
+      m.colorNode = TSL.color(props.color)
     }
   }, [onMaterialPropertiesChange])
 
   const material = useMemo<Material | Material[]>(() => {
-    const m = customMaterial ? customMaterial : new LineBasicMaterial({ transparent: true, opacity: 0.95 })
+    const m = customMaterial ? customMaterial : new LineBasicNodeMaterial({ transparent: true, opacity: 0.95 })
     return m
   }, [customMaterial])
 

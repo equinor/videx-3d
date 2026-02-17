@@ -1,10 +1,10 @@
 import { ForwardedRef, forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
-import { Color, CylinderGeometry, Group, Matrix4, Vector3 } from 'three'
+import { Color, CylinderGeometry, Group, Matrix4, Vector3 } from 'three/webgpu'
 import { useGenerator } from '../../../hooks/useGenerator'
 import { useWellboreContext } from '../../../hooks/useWellboreContext'
 import { createLayers, LAYERS } from '../../../layers/layers'
+import { TubeMaterial } from '../../../materials/tube-material'
 import { SymbolsType } from '../../../sdk/data/types/Symbol'
-import { TubeMaterial } from '../../../sdk/materials/tube-material'
 import { Vec3 } from '../../../sdk/types/common'
 import { useAnnotations } from '../../Annotations/annotations-state'
 import { AnnotationProps } from '../../Annotations/types'
@@ -74,13 +74,7 @@ export const FormationMarkers = forwardRef(({
     return g
   }, [radialSegments])
 
-  const material = useMemo(() => {
-    // const m = new MeshBasicMaterial({
-    //   side: DoubleSide,
-    // })
-    const m = new TubeMaterial()
-    return m
-  }, [])
+  const material = useMemo(() => new TubeMaterial(), [])
 
   useEffect(() => {
     if (generator && id) {

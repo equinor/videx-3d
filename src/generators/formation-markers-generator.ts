@@ -1,6 +1,6 @@
 import { transfer } from 'comlink'
 import { clamp } from 'curve-interpolator'
-import { Color, Matrix4, Vector3 } from 'three'
+import { Color, Matrix4, Vector3 } from 'three/webgpu'
 import {
   getTrajectory,
   PI2,
@@ -29,13 +29,13 @@ export async function generateFormationMarkers(
   wellboreId: string,
   stratColumnId: string,
   fromMsl?: number,
-  baseRadius: number = 10
+  baseRadius: number = 10,
 ): Promise<SymbolsType | null> {
   const surfaceIntervals = await getWellboreFormations(
     wellboreId,
     stratColumnId,
     this,
-    fromMsl
+    fromMsl,
   )
 
   if (!surfaceIntervals) return null
@@ -54,7 +54,7 @@ export async function generateFormationMarkers(
     const pos = clamp(
       (d.mdMsl - trajectory.measuredTop) / trajectory.measuredLength,
       0,
-      1
+      1,
     )
     return {
       ...d,
@@ -76,7 +76,7 @@ export async function generateFormationMarkers(
     targetVector.set(
       positionVector.x + pick.direction[0],
       positionVector.y + pick.direction[1],
-      positionVector.z + pick.direction[2]
+      positionVector.z + pick.direction[2],
     )
 
     transformationMatrix.lookAt(positionVector, targetVector, upVector)
@@ -105,6 +105,6 @@ export async function generateFormationMarkers(
       transformations,
       colors,
     },
-    [transformations.buffer]
+    [transformations.buffer],
   )
 }

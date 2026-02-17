@@ -1,7 +1,8 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useMemo } from 'react'
 import { SurfaceMeta, Vec2 } from '../../sdk'
-import { Canvas3dWebGLDecorator } from '../../storybook/decorators/canvas-3d-webgl-decorator'
+import { textureLoader } from '../../sdk/utils/loaders'
+import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator'
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator'
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator'
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator'
@@ -11,9 +12,11 @@ import { UtmArea, UtmPosition } from '../UtmArea'
 import { Surface, SurfaceProps } from './Surface'
 import { ContourColorMode } from './SurfaceMaterial'
 
-// const loader = new TextureLoader()
-// const normalMap = loader.load('normal_map.jpg')
-// normalMap.anisotropy = 4
+const normalMap = textureLoader.load('normal_map.jpg')
+// normalMap.repeat.set(2, 2)
+// normalMap.wrapS = RepeatWrapping
+// normalMap.wrapT = RepeatWrapping
+normalMap.anisotropy = 4
 
 const utmZone = storyArgs.utmZone
 const origin = storyArgs.origin as Vec2
@@ -39,6 +42,8 @@ const SurfaceStory = (props: SurfaceStoryProps) => {
             meta={meta}
             rampMin={meta.displayMin + (props.rampMin || 0)}
             rampMax={meta.displayMax + (props.rampMax || 0)}
+            normalMap={normalMap}
+            normalScale={[0.1, 0.1]}
           />
         </UtmPosition>
       )}
@@ -177,7 +182,7 @@ export const Default: Story = {
   },
   decorators: [
     GlyphsDecorator,
-    Canvas3dWebGLDecorator,
+    Canvas3dDecorator,
     GeneratorsProviderDecorator,
     DataProviderDecorator,
   ],

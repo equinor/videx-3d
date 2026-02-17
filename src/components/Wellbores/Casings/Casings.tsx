@@ -1,5 +1,5 @@
 import { ForwardedRef, forwardRef, ReactElement, useEffect, useMemo, useState } from 'react'
-import { BufferGeometry, Group, Material, MeshStandardMaterial, Object3D } from 'three'
+import { BufferGeometry, Group, Material, MeshStandardNodeMaterial, Object3D } from 'three/webgpu'
 import { useGenerator } from '../../../hooks/useGenerator'
 import { useWellboreContext } from '../../../hooks/useWellboreContext'
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing'
@@ -82,19 +82,19 @@ export const Casings = forwardRef(({
     }
 
     const m = [
-      new MeshStandardMaterial({
+      new MeshStandardNodeMaterial({
         color: 'black',
         metalness: 0,
         roughness: 1,
       }),
-      new MeshStandardMaterial({
+      new MeshStandardNodeMaterial({
         color: '#555',
         metalness: 1,
         roughness: 0.5,
         transparent: true,
         opacity: 1,
       }),
-      new MeshStandardMaterial({
+      new MeshStandardNodeMaterial({
         color: '#9a9a98',
         metalness: 1,
         roughness: 0.5,

@@ -1,5 +1,5 @@
 import { transfer } from 'comlink'
-import { BufferAttribute, BufferGeometry } from 'three'
+import { BufferAttribute, BufferGeometry } from 'three/webgpu'
 import { SurfaceTexturesResponse } from '../main'
 import {
   packBufferGeometry,

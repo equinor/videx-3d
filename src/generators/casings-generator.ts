@@ -1,7 +1,7 @@
 import { transfer } from 'comlink'
 import { group } from 'd3-array'
-import { BufferGeometry } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
+import { BufferGeometry } from 'three/webgpu'
 
 import {
   createTubeGeometry,
@@ -21,12 +21,12 @@ function createGenericShape(
   item: CasingItem,
   sizeMultiplier: number,
   tubeOptions: TubeGeometryOptions,
-  min: number = 0
+  min: number = 0,
 ) {
   const itemLength = clamp(
     item.mdBottomMsl - item.mdTopMsl,
     0.0001,
-    trajectory.measuredLength
+    trajectory.measuredLength,
   )
 
   const curveLengthFactor = 1 / trajectory.measuredLength
@@ -35,19 +35,19 @@ function createGenericShape(
   const top = clamp(
     (item.mdTopMsl - trajectory.measuredTop) / trajectory.measuredLength,
     0,
-    1
+    1,
   )
   const bottom = clamp(
     (item.mdBottomMsl - trajectory.measuredTop) / trajectory.measuredLength,
     0,
-    1
+    1,
   )
 
   const radius = sizeMultiplier * (item.outerDiameter / 2)
   const radiusMin = Math.max(
     ((item.innerDiameter + (item.outerDiameter - item.innerDiameter) / 4) / 2) *
       sizeMultiplier,
-    radius * 0.95
+    radius * 0.95,
   )
 
   steps.push([top, radiusMin])
@@ -79,17 +79,17 @@ function createShoe(
   sizeMultiplier: number,
   tubeOptions: TubeGeometryOptions,
   shoeFactor: number,
-  min: number = 0
+  min: number = 0,
 ) {
   const shoeTop = clamp(
     (shoe.mdTopMsl - trajectory.measuredTop) / trajectory.measuredLength,
     0,
-    1
+    1,
   )
   const shoeBottom = clamp(
     (shoe.mdBottomMsl - trajectory.measuredTop) / trajectory.measuredLength,
     0,
-    1
+    1,
   )
   const shoeOuterRadiusTop = (shoe.outerDiameter / 2) * sizeMultiplier
   const shoeOuterRadiusBottom = shoeOuterRadiusTop * shoeFactor
@@ -121,7 +121,7 @@ export async function generateCasings(
   sizeMultiplier: number = 1,
   shoeFactor: number = 2,
   segmentsPerMeter: number = 0.1,
-  simplificationThreshold: number = 0
+  simplificationThreshold: number = 0,
 ) {
   const data = await this.get<CasingItem[]>('casings', id)
 
@@ -138,7 +138,7 @@ export async function generateCasings(
       ? clamp(
           (fromMsl - trajectory.measuredTop) / trajectory.measuredLength,
           0,
-          1
+          1,
         )
       : 0
 
@@ -160,7 +160,7 @@ export async function generateCasings(
     .filter(
       (d) =>
         d.mdBottomMsl > trajectory.measuredTop &&
-        (fromMsl === undefined || d.mdBottomMsl > fromMsl)
+        (fromMsl === undefined || d.mdBottomMsl > fromMsl),
     )
     .sort((a, b) => a.outerDiameter - b.outerDiameter)
 
@@ -182,7 +182,7 @@ export async function generateCasings(
           sizeMultiplier,
           tubeOptions,
           shoeFactor,
-          minFrom
+          minFrom,
         )
       } else {
         geometry = createGenericShape(
@@ -190,7 +190,7 @@ export async function generateCasings(
           item,
           sizeMultiplier,
           tubeOptions,
-          minFrom
+          minFrom,
         )
       }
       return geometry

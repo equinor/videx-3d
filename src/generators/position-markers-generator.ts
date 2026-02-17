@@ -1,5 +1,5 @@
 import { transfer } from 'comlink'
-import { Matrix4, Vector3 } from 'three'
+import { Matrix4, Vector3 } from 'three/webgpu'
 import {
   clamp,
   getTrajectory,
@@ -22,7 +22,7 @@ export async function generatePositionMarkers(
   id: string,
   radius: number,
   interval: number,
-  fromMsl?: number
+  fromMsl?: number,
 ): Promise<SymbolsType | null> {
   const poslogMsl = await this.get<PositionLog>('position-logs', id)
 
@@ -34,7 +34,7 @@ export async function generatePositionMarkers(
   const wellboreLength = trajectory.measuredLength
   const start = Math.max(
     trajectory.measuredTop,
-    fromMsl && Number.isFinite(fromMsl) ? fromMsl : trajectory.measuredTop
+    fromMsl && Number.isFinite(fromMsl) ? fromMsl : trajectory.measuredTop,
   )
   const firstTick = start
   const ticks: number[] = [firstTick]
@@ -68,7 +68,7 @@ export async function generatePositionMarkers(
     targetVector.set(
       positionVector.x + direction[0],
       positionVector.y + direction[1],
-      positionVector.z + direction[2]
+      positionVector.z + direction[2],
     )
 
     transformationMatrix.lookAt(positionVector, targetVector, upVector)
@@ -90,6 +90,6 @@ export async function generatePositionMarkers(
       data: markerData,
       transformations,
     },
-    [transformations.buffer]
+    [transformations.buffer],
   )
 }

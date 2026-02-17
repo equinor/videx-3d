@@ -1,15 +1,12 @@
-import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { BufferGeometry, Color, DoubleSide, Group, Material, ShaderMaterial, Uniform } from 'three'
+import { BufferGeometry, Color, Group, Material } from 'three/webgpu'
 import { useGenerator } from '../../../hooks/useGenerator'
 import { useWellboreContext } from '../../../hooks/useWellboreContext'
 import { createLayers, LAYERS } from '../../../layers/layers'
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing'
 import { CommonComponentProps, CustomMaterialProps } from '../../common'
 import { PerimeterGeneratorResponse, perimeterGeometry } from './perimeter-defs'
-import fragmentShader from './shaders/fragment.glsl'
-import vertexShader from './shaders/vertex.glsl'
-
+import { PerimeterMaterial } from './PerimeterMaterial'
 
 /**
  * Perimeter props
@@ -66,7 +63,6 @@ export const Perimeter = ({
     opacity,
     from,
     to,
-    time: 0,
   })
 
   const generator = useGenerator<PerimeterGeneratorResponse>(perimeterGeometry, priority)
@@ -90,30 +86,31 @@ export const Perimeter = ({
 
   const onPropsChange = useMemo(() => {
     return onMaterialPropertiesChange ? onMaterialPropertiesChange : (props: Record<string, any>, material: Material | Material[]) => {
-      const m = material as ShaderMaterial
-      m.uniforms.uColor.value = new Color(props.color)
-      m.uniforms.uFrom.value = props.from
-      m.uniforms.uTo.value = props.to
-      m.uniforms.uOpacity.value = props.opacity
-      m.uniforms.uTime.value = props.time
+      const m = material as PerimeterMaterial
+      m.color = new Color(props.color)
+      m.from = props.from
+      m.to = props.to
+      m.opacity = props.opacity
     }
   }, [onMaterialPropertiesChange])
 
   const material = useMemo<Material | Material[]>(() => {
-    const m = customMaterial ? customMaterial : new ShaderMaterial({
-      transparent: true,
-      side: DoubleSide,
-      vertexShader,
-      fragmentShader,
-      uniforms: {
-        uTime: new Uniform(0),
-        uFrom: new Uniform(0),
-        uTo: new Uniform(0),
-        uOpacity: new Uniform(0),
-        uColor: new Uniform(new Color('#56af3b')),
-      }
-    })
-    return m
+    // const m = customMaterial ? customMaterial : new ShaderMaterial({
+    //   transparent: true,
+    //   side: DoubleSide,
+    //   vertexShader,
+    //   fragmentShader,
+    //   uniforms: {
+    //     uTime: new Uniform(0),
+    //     uFrom: new Uniform(0),
+    //     uTo: new Uniform(0),
+    //     uOpacity: new Uniform(0),
+    //     uColor: new Uniform(new Color('#56af3b')),
+    //   }
+    // })
+    // return m
+    if (customMaterial) return customMaterial
+    return new PerimeterMaterial()
   }, [customMaterial])
 
   useEffect(() => {
@@ -124,10 +121,6 @@ export const Perimeter = ({
     onPropsChange(matProps.current, material)
   }, [from, to, opacity, color, material, onPropsChange])
 
-  useFrame(({ elapsed }) => {
-    matProps.current.time = elapsed
-    onPropsChange(matProps.current, material)
-  })
   if (!geometry) return null
 
   return (
