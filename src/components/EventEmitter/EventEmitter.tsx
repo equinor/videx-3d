@@ -1,14 +1,14 @@
-import { ReactNode, useCallback, useEffect, useMemo } from 'react'
-import { BufferGeometry, Material, Object3D, PerspectiveCamera } from 'three'
+import { ReactNode, useCallback, useEffect, useMemo } from 'react';
+import { BufferGeometry, Material, Object3D, PerspectiveCamera } from 'three';
 import {
   EventEmitterContext,
   EventEmitterContextProps,
   KeysPressed,
   Listener,
-} from './EventEmitterContext'
+} from './EventEmitterContext';
 
-import { useFrame, useThree } from '@react-three/fiber'
-import { PickingHelper, PickResult } from './picking-helper'
+import { useFrame, useThree } from '@react-three/fiber';
+import { PickingHelper, PickResult } from './picking-helper';
 
 const CLICK_SPEED = 300;
 const MOVE_THRESHOLD = 10;
