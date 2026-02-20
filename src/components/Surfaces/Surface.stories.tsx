@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
+import { RepeatWrapping } from 'three'
 import { SurfaceMeta, Vec2 } from '../../sdk'
 import { textureLoader } from '../../sdk/utils/loaders'
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator'
@@ -13,10 +14,10 @@ import { Surface, SurfaceProps } from './Surface'
 import { ContourColorMode } from './SurfaceMaterial'
 
 const normalMap = textureLoader.load('normal_map.jpg')
-// normalMap.repeat.set(2, 2)
-// normalMap.wrapS = RepeatWrapping
-// normalMap.wrapT = RepeatWrapping
+normalMap.wrapS = RepeatWrapping
+normalMap.wrapT = RepeatWrapping
 normalMap.anisotropy = 4
+normalMap.updateMatrix()
 
 const utmZone = storyArgs.utmZone
 const origin = storyArgs.origin as Vec2
@@ -32,6 +33,15 @@ const SurfaceStory = (props: SurfaceStoryProps) => {
     return (surfaceHeaders.find(d => d.id === props.surfaceId) || null)
   }, [props.surfaceId, surfaceHeaders])
 
+  useEffect(() => {
+    if (meta) {
+      normalMap.repeat.set(
+        Math.ceil((meta.header.nx * meta.header.xinc) / 500),
+        Math.ceil((meta.header.ny * meta.header.yinc) / 500),
+      )
+      normalMap.updateMatrix()
+    }
+  }, [meta])
 
   return (
     <UtmArea origin={origin} utmZone={utmZone}>
@@ -44,6 +54,7 @@ const SurfaceStory = (props: SurfaceStoryProps) => {
             rampMax={meta.displayMax + (props.rampMax || 0)}
             normalMap={normalMap}
             normalScale={[0.1, 0.1]}
+
           />
         </UtmPosition>
       )}
@@ -66,12 +77,13 @@ export const Default: Story = {
   args: {
     surfaceId: Object.keys(storyArgs.surfaceOptions)[0],
     useColorRamp: true,
-    reverseRamp: false,
+    reverseRamp: true,
     color: 'white',
     colorRamp: 0,
     opacity: 1,
     maxError: 2.5,
     wireframe: false,
+    doubleSide: true,
     showContours: true,
     contoursColorMode: ContourColorMode.darken,
     contoursColorModeFactor: 0.5,
