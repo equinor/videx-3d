@@ -45,7 +45,7 @@ export type PackedBufferGeometryCollection = Record<
   PackedBufferGeometry
 >;
 
-export function getTypedArrayType(array: ArrayBufferLike) {
+export function getTypedArrayType(array: ArrayBufferLike | TypedArray) {
   if (array.constructor === Uint8Array) return 'Uint8Array';
   if (array.constructor === Uint16Array) return 'Uint16Array';
   if (array.constructor === Uint32Array) return 'Uint32Array';
