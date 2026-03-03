@@ -1,5 +1,15 @@
 # Changelog
 
+## [5.0.11-beta](https://github.com/equinor/videx-3d/compare/v5.0.10-beta...v5.0.11-beta) (2026-03-03)
+
+
+### Bug Fixes
+
+* **npm deps:** updated npm packages ([#151](https://github.com/equinor/videx-3d/issues/151)) ([1b4d320](https://github.com/equinor/videx-3d/commit/1b4d3207d5733a2e48f69e5862ff969492509e6e))
+* **npm:** bump minimatch from 3.1.2 to 3.1.5 ([#145](https://github.com/equinor/videx-3d/issues/145)) ([5e41a1d](https://github.com/equinor/videx-3d/commit/5e41a1d36e5c13ec4d13c2d2c1a9123c3845dbca))
+* **npm:** bump rollup from 4.53.3 to 4.59.0 ([#146](https://github.com/equinor/videx-3d/issues/146)) ([f584006](https://github.com/equinor/videx-3d/commit/f584006e8a101ea2f2405a4e5df46ea215429ff2))
+* **storybook:** upgrade to latest version ([#149](https://github.com/equinor/videx-3d/issues/149)) ([0c13a3a](https://github.com/equinor/videx-3d/commit/0c13a3aa3b4ebc5a4f4d42e3f8278d5b8da04e02))
+
 ## [5.0.10-beta](https://github.com/equinor/videx-3d/compare/v5.0.9-beta...v5.0.10-beta) (2026-02-17)
 
 
