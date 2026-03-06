@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.0.12-beta](https://github.com/equinor/videx-3d/compare/v5.0.11-beta...v5.0.12-beta) (2026-03-06)
+
+
+### Bug Fixes
+
+* **npm:** bump immutable from 5.1.4 to 5.1.5 ([#157](https://github.com/equinor/videx-3d/issues/157)) ([9e241ee](https://github.com/equinor/videx-3d/commit/9e241eeb8f28ad7f6f368162b1a94ecbacc82ea6))
+
 ## [5.0.11-beta](https://github.com/equinor/videx-3d/compare/v5.0.10-beta...v5.0.11-beta) (2026-03-03)
 
 
