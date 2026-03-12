@@ -23,7 +23,7 @@ export type LoaderConfig = {
   noCache?: boolean;
   transform?: (record: any) => any;
   init?: <T>(...args: any[]) => Promise<[KeyType, T][]>;
-  load?: <T>(...args: any[]) => Promise<T | null>;
+  load?: <T>(id: KeyType, args?: any) => Promise<T | null>;
   batchLoad?: <T>(...args: any[]) => Promise<[KeyType, T][]>;
 };
 

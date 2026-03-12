@@ -8,6 +8,7 @@ import {
   MeshBasicMaterial,
   Texture,
 } from 'three';
+import { CommonComponentProps } from '../../common/types';
 import { PointerEvents } from '../../events/interaction-events';
 import { useGenerator } from '../../hooks/useGenerator';
 import { createLayers, LAYERS } from '../../layers/layers';
@@ -18,7 +19,6 @@ import {
   unpackBufferGeometry,
   Vec2,
 } from '../../sdk';
-import { CommonComponentProps } from '../common';
 import {
   EventEmitterCallback,
   useEventEmitter,

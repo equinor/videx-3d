@@ -13,10 +13,10 @@ import {
   MeshStandardMaterial,
   Object3D,
 } from 'three';
+import { CommonComponentProps, CustomMaterialProps } from '../../../common/types';
 import { useGenerator } from '../../../hooks/useGenerator';
 import { useWellboreContext } from '../../../hooks/useWellboreContext';
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing';
-import { CommonComponentProps, CustomMaterialProps } from '../../common';
 import { casings, CasingsGeneratorResponse } from './casings-defs';
 
 /**
@@ -138,10 +138,10 @@ export const Casings = forwardRef(
       return onMaterialPropertiesChange
         ? onMaterialPropertiesChange
         : (props: Record<string, any>, material: Material | Material[]) => {
-            const m = material as Material[];
-            m[1].opacity = props.opacity;
-            m[2].opacity = props.opacity;
-          };
+          const m = material as Material[];
+          m[1].opacity = props.opacity;
+          m[2].opacity = props.opacity;
+        };
     }, [onMaterialPropertiesChange]);
 
     useEffect(() => {

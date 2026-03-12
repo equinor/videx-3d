@@ -6,10 +6,10 @@ import {
   MeshStandardMaterial,
   Object3D,
 } from 'three';
+import { CommonComponentProps, CustomMaterialProps } from '../../../common/types';
 import { useGenerator } from '../../../hooks/useGenerator';
 import { useWellboreContext } from '../../../hooks/useWellboreContext';
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing';
-import { CommonComponentProps, CustomMaterialProps } from '../../common';
 import {
   completionTools,
   CompletionToolsGeneratorResponse,

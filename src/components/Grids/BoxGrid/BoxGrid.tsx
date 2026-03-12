@@ -1,7 +1,7 @@
 import { PropsWithChildren, useEffect, useRef, useState } from 'react';
 import { Color, Group, Vector3 } from 'three';
+import { CommonComponentProps } from '../../../common/types';
 import { Vec3 } from '../../../sdk/types/common';
-import { CommonComponentProps } from '../../common';
 import {
   BoxPadding,
   ObservableGroup,

@@ -9,11 +9,11 @@ import {
   ShaderMaterial,
   Uniform,
 } from 'three';
+import { CommonComponentProps, CustomMaterialProps } from '../../../common/types';
 import { useGenerator } from '../../../hooks/useGenerator';
 import { useWellboreContext } from '../../../hooks/useWellboreContext';
 import { createLayers, LAYERS } from '../../../layers/layers';
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing';
-import { CommonComponentProps, CustomMaterialProps } from '../../common';
 import {
   PerimeterGeneratorResponse,
   perimeterGeometry,
@@ -109,31 +109,31 @@ export const Perimeter = ({
     return onMaterialPropertiesChange
       ? onMaterialPropertiesChange
       : (props: Record<string, any>, material: Material | Material[]) => {
-          const m = material as ShaderMaterial;
-          m.uniforms.uColor.value = new Color(props.color);
-          m.uniforms.uFrom.value = props.from;
-          m.uniforms.uTo.value = props.to;
-          m.uniforms.uOpacity.value = props.opacity;
-          m.uniforms.uTime.value = props.time;
-        };
+        const m = material as ShaderMaterial;
+        m.uniforms.uColor.value = new Color(props.color);
+        m.uniforms.uFrom.value = props.from;
+        m.uniforms.uTo.value = props.to;
+        m.uniforms.uOpacity.value = props.opacity;
+        m.uniforms.uTime.value = props.time;
+      };
   }, [onMaterialPropertiesChange]);
 
   const material = useMemo<Material | Material[]>(() => {
     const m = customMaterial
       ? customMaterial
       : new ShaderMaterial({
-          transparent: true,
-          side: DoubleSide,
-          vertexShader,
-          fragmentShader,
-          uniforms: {
-            uTime: new Uniform(0),
-            uFrom: new Uniform(0),
-            uTo: new Uniform(0),
-            uOpacity: new Uniform(0),
-            uColor: new Uniform(new Color('#56af3b')),
-          },
-        });
+        transparent: true,
+        side: DoubleSide,
+        vertexShader,
+        fragmentShader,
+        uniforms: {
+          uTime: new Uniform(0),
+          uFrom: new Uniform(0),
+          uTo: new Uniform(0),
+          uOpacity: new Uniform(0),
+          uColor: new Uniform(new Color('#56af3b')),
+        },
+      });
     return m;
   }, [customMaterial]);
 

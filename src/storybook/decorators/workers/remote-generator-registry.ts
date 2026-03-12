@@ -38,8 +38,10 @@ import {
   generateTubeTrajectory,
   generateWellboreFormationColumnGeometries,
   generateWellboreLabel,
+  generateWellboreSeismicSection,
 } from '../../../generators';
 
+import { wellboreSeismicSection } from '../../../components/Wellbores/WellboreSeismicSection/wellbore-seismic-section-defs';
 import { GeneratorRegistry } from '../../../sdk';
 
 const registry = new GeneratorRegistry({ concurrentStoreCalls: 50 });
@@ -64,5 +66,6 @@ registry.add(
   wellboreFormationColumn,
   generateWellboreFormationColumnGeometries,
 );
+registry.add(wellboreSeismicSection, generateWellboreSeismicSection);
 
 expose(registry);

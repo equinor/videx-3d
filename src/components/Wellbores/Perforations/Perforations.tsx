@@ -16,11 +16,11 @@ import {
   ShaderMaterial,
   Uniform,
 } from 'three';
+import { CommonComponentProps, CustomMaterialProps } from '../../../common/types';
 import { useGenerator } from '../../../hooks/useGenerator';
 import { useWellboreContext } from '../../../hooks/useWellboreContext';
 import { createLayers, LAYERS } from '../../../layers/layers';
 import { SymbolsType } from '../../../sdk/data/types/Symbol';
-import { CommonComponentProps, CustomMaterialProps } from '../../common';
 import { Symbols } from '../../Symbol/Symbol';
 import { perforationSymbols } from './perforations-defs';
 import fragmentShader from './shaders/fragment.glsl';
@@ -118,11 +118,11 @@ export const Perforations = forwardRef(
       return onMaterialPropertiesChange
         ? onMaterialPropertiesChange
         : (props: Record<string, any>, material: Material | Material[]) => {
-            const m = material as ShaderMaterial;
-            m.uniforms.uTime.value = props.time;
-            m.uniforms.uRadius.value = props.baseRadius;
-            m.uniforms.uLength.value = props.length;
-          };
+          const m = material as ShaderMaterial;
+          m.uniforms.uTime.value = props.time;
+          m.uniforms.uRadius.value = props.baseRadius;
+          m.uniforms.uLength.value = props.length;
+        };
     }, [onMaterialPropertiesChange]);
 
     useEffect(() => {

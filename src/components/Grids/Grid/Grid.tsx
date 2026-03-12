@@ -18,9 +18,9 @@ import {
   Vector3,
   WebGLRenderTarget,
 } from 'three';
+import { CommonComponentProps } from '../../../common/types';
 import { clamp } from '../../../sdk';
 import { Vec2, Vec3 } from '../../../sdk/types/common';
-import { CommonComponentProps } from '../../common';
 import { getGridPositionFromUV } from './grid-helpers';
 import { GridAxesLabels } from './GridAxesLabels';
 import fragmentShader from './shaders/fragment.glsl';
@@ -568,21 +568,21 @@ export const Grid = ({
           args={
             side === 'back'
               ? [
-                  size[0] / 2,
-                  size[0] / -2,
-                  size[1] / 2,
-                  size[1] / -2,
-                  1,
-                  projectionDistance,
-                ]
+                size[0] / 2,
+                size[0] / -2,
+                size[1] / 2,
+                size[1] / -2,
+                1,
+                projectionDistance,
+              ]
               : [
-                  size[0] / -2,
-                  size[0] / 2,
-                  size[1] / 2,
-                  size[1] / -2,
-                  1,
-                  projectionDistance,
-                ]
+                size[0] / -2,
+                size[0] / 2,
+                size[1] / 2,
+                size[1] / -2,
+                1,
+                projectionDistance,
+              ]
           }
           rotation-y={side === 'back' ? 0 : Math.PI}
         />

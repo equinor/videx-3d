@@ -3,7 +3,6 @@
  */
 export * from './components/Annotations';
 export * from './components/CameraTargetMarker/CameraTargetMarker';
-export * from './components/common';
 export * from './components/Distance';
 export * from './components/EventEmitter';
 export * from './components/Grids';
@@ -28,6 +27,7 @@ export * from './components/Wellbores/WellboreBounds';
 export * from './components/Wellbores/WellboreFormationColumn';
 export * from './components/Wellbores/WellboreLabel';
 export * from './components/Wellbores/WellboreRibbon';
+export * from './components/Wellbores/WellboreSeismicSection';
 export * from './components/Wellbores/Wells';
 
 export * from './contexts/DataContext';
@@ -49,3 +49,6 @@ export * from './hooks/useWellboreContext';
 export * from './layers/layers';
 
 export * from './rendering';
+
+export * from './common/color-ramps';
+export * from './common/types';

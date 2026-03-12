@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BufferGeometry, Color, Material } from 'three';
+import { CommonComponentProps, CustomMaterialProps } from '../../../common/types';
 import { useGenerator } from '../../../hooks/useGenerator';
 import { useWellboreContext } from '../../../hooks/useWellboreContext';
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing';
 import { TubeMaterial } from '../../../sdk/materials/tube-material';
-import { CommonComponentProps, CustomMaterialProps } from '../../common';
 import {
   tubeTrajectory,
   tubeTrajectoryGeneratorResponse,
@@ -67,9 +67,9 @@ export const TubeTrajectory = ({
     return onMaterialPropertiesChange
       ? onMaterialPropertiesChange
       : (props: Record<string, any>, material: Material | Material[]) => {
-          const m = material as TubeMaterial;
-          m.color = new Color(props.color);
-        };
+        const m = material as TubeMaterial;
+        m.color = new Color(props.color);
+      };
   }, [onMaterialPropertiesChange]);
 
   const material = useMemo(() => {

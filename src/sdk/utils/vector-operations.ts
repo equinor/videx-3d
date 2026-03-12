@@ -54,6 +54,8 @@ export function dotVec3(v1: Vec3, v2: Vec3): number {
 
 export function normalizeVec3(v: Vec3): Vec3 {
   const l = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+  if (!l) return [0, 0, 0]; // throw instead?
+
   v[0] = v[0] / l;
   v[1] = v[1] / l;
   v[2] = v[2] / l;
@@ -112,6 +114,14 @@ export function rotateVec3(
   ];
 }
 
+export function directionVec3(v1: Vec3, v2: Vec3): Vec3 {
+  return normalizeVec3(subVec3(v2, v1));
+}
+
+export function distanceVec3(v1: Vec3, v2: Vec3): number {
+  return lengthVec3(subVec3(v2, v1));
+}
+
 // Vec2
 export function getVec2(buffer: number[], id: number): Vec2 {
   return [buffer[id], buffer[id + 1]];
@@ -124,6 +134,7 @@ export function setVec2(buffer: number[], id: number, value: Vec2): void {
 
 export function normalizeVec2(v: Vec2): Vec2 {
   const l = Math.sqrt(v[0] * v[0] + v[1] * v[1]);
+  if (!l) return [0, 0]; // throw error instead?
   v[0] = v[0] / l;
   v[1] = v[1] / l;
   return v;
@@ -135,6 +146,10 @@ export function addVec2(v1: Vec2, v2: Vec2): Vec2 {
 
 export function subVec2(v1: Vec2, v2: Vec2): Vec2 {
   return [v1[0] - v2[0], v1[1] - v2[1]];
+}
+
+export function dotVec2(v1: Vec2, v2: Vec2): number {
+  return v1[0] * v2[0] + v1[1] * v2[1];
 }
 
 export function negateVec2(vec: Vec2) {
@@ -158,4 +173,12 @@ export function lengthVec2(vec: Vec2): number {
 export function mixVec2(v1: Vec2, v2: Vec2, t = 0.5): Vec2 {
   const t2 = 1 - t;
   return [v1[0] * t2 + v2[0] * t, v1[1] * t2 + v2[1] * t];
+}
+
+export function directionVec2(v1: Vec2, v2: Vec2): Vec2 {
+  return normalizeVec2(subVec2(v2, v1));
+}
+
+export function distanceVec2(v1: Vec2, v2: Vec2): number {
+  return lengthVec2(subVec2(v2, v1));
 }

@@ -13,13 +13,13 @@ import {
   Layers,
   Material,
 } from 'three';
+import { CommonComponentProps } from '../../common/types';
 import { PointerEvents } from '../../events/interaction-events';
 import { SymbolsType } from '../../sdk/data/types/Symbol';
 import {
   EventEmitterCallback,
   useEventEmitter,
 } from '../EventEmitter/EventEmitterContext';
-import { CommonComponentProps } from '../common';
 
 /**
  * Symbol props
@@ -139,7 +139,7 @@ export const Symbols = forwardRef<Group, SymbolProps>(
       onPointerMove,
     ]);
 
-    useEffect(() => {}, []);
+    useEffect(() => { }, []);
 
     return (
       <group

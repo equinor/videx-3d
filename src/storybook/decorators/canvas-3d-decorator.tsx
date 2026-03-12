@@ -51,7 +51,7 @@ export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
       gl={{
         logarithmicDepthBuffer: true,
         autoClear: !!parameters.autoClear,
-        antialias: false,
+        antialias: true,
         powerPreference: 'high-performance',
         toneMapping: NoToneMapping,
       }}
