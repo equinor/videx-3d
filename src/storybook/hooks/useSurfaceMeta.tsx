@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { SurfaceMeta } from '../../sdk/data/types/SurfaceMeta';
-import { loadSurfaceMeta } from '../dependencies/loaders';
+import { get } from '../dependencies/api';
 
 export const useSurfaceMetaDict = () => {
   const [surfaceMetaData, setSurfaceMetaData] = useState<
@@ -8,7 +8,7 @@ export const useSurfaceMetaDict = () => {
   >({});
 
   useEffect(() => {
-    loadSurfaceMeta().then(response => {
+    get('/data/surface-meta.json').then(response => {
       if (response) {
         setSurfaceMetaData(response);
       }

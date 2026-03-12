@@ -20,7 +20,7 @@ export type KeyType = string | number;
  */
 export interface Store {
   // get a single record by key from a data set
-  get: <T>(dataType: string, key: KeyType) => Promise<T | null>;
+  get: <T>(dataType: string, key: KeyType, args?: any) => Promise<T | null>;
   // add a single record to a data set with the specified key
   set: <T>(dataType: string, key: KeyType, value: T) => Promise<boolean>;
   // get all records from a data set
