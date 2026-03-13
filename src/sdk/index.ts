@@ -1,6 +1,7 @@
 /**
  * @module sdk
  */
+export * from './data/DataLoader';
 export * from './data/GeneratorRegistry';
 export * from './data/helpers/formations-helpers';
 export * from './data/helpers/well-helpers';
