@@ -1,5 +1,17 @@
 # Changelog
 
+## [5.1.0-beta](https://github.com/equinor/videx-3d/compare/v5.0.11-beta...v5.1.0-beta) (2026-03-16)
+
+
+### Features
+
+* **dataloader:** generic data loader class added and used in new mock store and added flexibility to store interface allowing additional args to be passed to the get function ([#159](https://github.com/equinor/videx-3d/issues/159)) ([1aae540](https://github.com/equinor/videx-3d/commit/1aae54066213ce18df96209258b5e47d3fbf9ae1))
+
+
+### Bug Fixes
+
+* **npm:** bump immutable from 5.1.4 to 5.1.5 ([#157](https://github.com/equinor/videx-3d/issues/157)) ([9e241ee](https://github.com/equinor/videx-3d/commit/9e241eeb8f28ad7f6f368162b1a94ecbacc82ea6))
+
 ## [5.0.11-beta](https://github.com/equinor/videx-3d/compare/v5.0.10-beta...v5.0.11-beta) (2026-03-03)
 
 
