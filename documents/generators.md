@@ -28,6 +28,7 @@ The generator functions can be imported from `videx-3d/generators` (default impl
 | **TubeTrajectory** | tubeTrajectory | generateTubeTrajectory | - position-logs |
 | **WellboreBounds** | wellboreBounds | calculateWellboreBounds | - position-logs |
 | **WellboreLabel** | wellboreLabel | generateWellboreLabel | - position-logs<br/>- wellbore-headers |
+| **WellboreSeismicSection** | wellboreSeismicSection | generateWellboreSeismicSection | - wellbore-seismic-section |
 
 ## Generator function
 A generator function is simply an async function that will have a all the read methods from the `store` interface available in its scope (accessed using the `this` keyword):
