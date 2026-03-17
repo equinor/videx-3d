@@ -38,7 +38,7 @@ import {
   EventEmitterCallbackEvent,
   Shoes,
   WellboreBounds,
-  WellboreFormationColumn,
+  WellboreFormationColumn
 } from '../../main';
 import { CRS } from '../../sdk/projection/crs';
 import { Vec2, Vec3 } from '../../sdk/types/common';
@@ -401,29 +401,29 @@ const Example = (args: ExampleProps) => {
                       {(args.showFormationColumns ||
                         args.showFormationMarkers ||
                         args.showPerforations) && (
-                        <Distance min={0} max={40000} onDemand>
-                          {args.showFormationColumns && (
-                            <WellboreFormationColumn
-                              stratColumnId={stratColumnId}
-                              startRadius={3}
-                            />
-                          )}
-                          {args.showFormationMarkers && (
-                            <FormationMarkers
-                              stratColumnId={stratColumnId}
-                              radialSegments={16}
-                              baseRadius={4}
-                              showAnnotations={isActiveWell}
-                            />
-                          )}
-                          {args.showPerforations && (
-                            <Perforations
-                              renderOrder={10}
-                              sizeMultiplier={args.sizeMultiplier}
-                            />
-                          )}
-                        </Distance>
-                      )}
+                          <Distance min={0} max={40000} onDemand>
+                            {args.showFormationColumns && (
+                              <WellboreFormationColumn
+                                stratColumnId={stratColumnId}
+                                startRadius={3}
+                              />
+                            )}
+                            {args.showFormationMarkers && (
+                              <FormationMarkers
+                                stratColumnId={stratColumnId}
+                                radialSegments={16}
+                                baseRadius={4}
+                                showAnnotations={isActiveWell}
+                              />
+                            )}
+                            {args.showPerforations && (
+                              <Perforations
+                                renderOrder={10}
+                                sizeMultiplier={args.sizeMultiplier}
+                              />
+                            )}
+                          </Distance>
+                        )}
                       {args.showCasingAndCompletion && (
                         <Distance min={0} max={10} onDemand>
                           <Casings

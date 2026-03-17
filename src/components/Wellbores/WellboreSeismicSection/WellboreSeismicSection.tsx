@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BufferGeometry,
   DataTexture,
   DoubleSide,
   FloatType,
+  Group,
   LinearFilter,
   RedFormat,
   Texture,
@@ -11,8 +12,12 @@ import {
 } from 'three';
 import {
   colorRampTexture,
+  CommonComponentProps,
   createLayers,
+  EventEmitterCallback,
   LAYERS,
+  PointerEvents,
+  useEventEmitter,
   useGenerator,
   useWellboreContext,
 } from '../../../main';
@@ -24,16 +29,17 @@ import {
   WellboreSeismicSectionGeneratorResponse,
 } from './wellbore-seismic-section-defs';
 
-export type WellboreSeismicSectionProps = {
-  opacity?: number;
-  stepSize?: number;
-  minSize?: number;
-  extension?: number;
-  rangeOffset?: number;
-  colorRampIndex?: number;
-  defaultExtensionAngle?: number;
-  priority?: number;
-};
+export type WellboreSeismicSectionProps = CommonComponentProps &
+  PointerEvents & {
+    opacity?: number;
+    stepSize?: number;
+    minSize?: number;
+    extension?: number;
+    rangeOffset?: number;
+    colorRampIndex?: number;
+    defaultExtensionAngle?: number;
+    priority?: number;
+  };
 
 const uniforms = {
   opacity: new Uniform<number>(1),
@@ -54,7 +60,21 @@ export const WellboreSeismicSection = ({
   colorRampIndex = 6,
   defaultExtensionAngle = 0,
   priority = 0,
+  name,
+  userData,
+  receiveShadow,
+  castShadow,
+  layers,
+  position,
+  renderOrder,
+  visible = true,
+  onPointerClick,
+  onPointerEnter,
+  onPointerLeave,
+  onPointerMove,
 }: WellboreSeismicSectionProps) => {
+  const ref = useRef<Group>(null);
+
   const { id } = useWellboreContext();
   const [geometry, setGeometry] = useState<BufferGeometry | null>(null);
   const [dataTexture, setDataTexture] = useState<DataTexture | null>(null);
@@ -104,7 +124,7 @@ export const WellboreSeismicSection = ({
     );
   }, [generator, id, stepSize, minSize, extension, defaultExtensionAngle]);
 
-  const layers = useMemo(() => createLayers(LAYERS.NOT_EMITTER), []);
+  const notEmitterLayers = useMemo(() => createLayers(LAYERS.NOT_EMITTER), []);
 
   useEffect(() => {
     uniforms.data.value = dataTexture;
@@ -119,10 +139,54 @@ export const WellboreSeismicSection = ({
     uniforms.colorRampIndex.value = colorRampIndex;
   }, [minMax, rangeOffset, colorRampIndex]);
 
+  const eventHandler = useEventEmitter();
+  // register event handlers
+  useEffect(() => {
+    let unregister: (() => void) | null = null;
+    if (eventHandler && ref.current) {
+      const handlers: Record<string, EventEmitterCallback> = {};
+
+      if (onPointerClick) handlers.click = onPointerClick;
+      if (onPointerEnter) handlers.enter = onPointerEnter;
+      if (onPointerLeave) handlers.leave = onPointerLeave;
+      if (onPointerMove) handlers.move = onPointerMove;
+
+      if (Object.keys(handlers).length) {
+        unregister = eventHandler.register({
+          object: ref.current,
+          handlers,
+          ref: id,
+        });
+      }
+    }
+
+    return () => {
+      if (unregister) unregister();
+    };
+  }, [
+    eventHandler,
+    onPointerClick,
+    onPointerEnter,
+    onPointerLeave,
+    onPointerMove,
+    id,
+  ]);
   return (
-    <>
+    <group
+      ref={ref}
+      name={name}
+      visible={visible}
+      renderOrder={renderOrder}
+      position={position}
+      userData={userData}
+    >
       {geometry && (
-        <mesh geometry={geometry} layers={layers}>
+        <mesh
+          castShadow={castShadow}
+          receiveShadow={receiveShadow}
+          geometry={geometry}
+          layers={layers || notEmitterLayers}
+        >
           <shaderMaterial
             vertexShader={vertexShader}
             fragmentShader={fragmentShader}
@@ -133,6 +197,6 @@ export const WellboreSeismicSection = ({
           />
         </mesh>
       )}
-    </>
+    </group>
   );
 };
