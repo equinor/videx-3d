@@ -15,7 +15,9 @@ const meta = {
   component: Wellbore,
 } satisfies Meta<typeof Wellbore>;
 
-type StoryArgs = React.ComponentProps<typeof WellboreSeismicSection> & { id: string };
+type StoryArgs = React.ComponentProps<typeof WellboreSeismicSection> & {
+  id: string;
+};
 
 export default meta;
 type Story = StoryObj<StoryArgs>;

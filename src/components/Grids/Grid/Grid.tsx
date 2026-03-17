@@ -568,21 +568,21 @@ export const Grid = ({
           args={
             side === 'back'
               ? [
-                size[0] / 2,
-                size[0] / -2,
-                size[1] / 2,
-                size[1] / -2,
-                1,
-                projectionDistance,
-              ]
+                  size[0] / 2,
+                  size[0] / -2,
+                  size[1] / 2,
+                  size[1] / -2,
+                  1,
+                  projectionDistance,
+                ]
               : [
-                size[0] / -2,
-                size[0] / 2,
-                size[1] / 2,
-                size[1] / -2,
-                1,
-                projectionDistance,
-              ]
+                  size[0] / -2,
+                  size[0] / 2,
+                  size[1] / 2,
+                  size[1] / -2,
+                  1,
+                  projectionDistance,
+                ]
           }
           rotation-y={side === 'back' ? 0 : Math.PI}
         />

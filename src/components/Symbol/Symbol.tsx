@@ -139,7 +139,7 @@ export const Symbols = forwardRef<Group, SymbolProps>(
       onPointerMove,
     ]);
 
-    useEffect(() => { }, []);
+    useEffect(() => {}, []);
 
     return (
       <group

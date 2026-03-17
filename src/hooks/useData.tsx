@@ -32,10 +32,10 @@ export const useData = () => {
   const store = useMemo<Store | null>(() => {
     if (dataContext) {
       const dataContextStore = dataContext.connect() as unknown as Store;
-      return dataContextStore
+      return dataContextStore;
     }
     return null;
-  }, [dataContext])
+  }, [dataContext]);
 
   return store;
 };

@@ -10,7 +10,10 @@ import { useGenerator } from '../../../hooks/useGenerator';
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing';
 
 import { extend } from '@react-three/fiber';
-import { CommonComponentProps, CustomMaterialProps } from '../../../common/types';
+import {
+  CommonComponentProps,
+  CustomMaterialProps,
+} from '../../../common/types';
 import { useWellboreContext } from '../../../hooks/useWellboreContext';
 import {
   basicTrajectory,
@@ -76,9 +79,9 @@ export const BasicTrajectory = ({
     return onMaterialPropertiesChange
       ? onMaterialPropertiesChange
       : (props: Record<string, any>, material: Material | Material[]) => {
-        const m = material as LineBasicMaterial;
-        m.color = new Color(props.color);
-      };
+          const m = material as LineBasicMaterial;
+          m.color = new Color(props.color);
+        };
   }, [onMaterialPropertiesChange]);
 
   const material = useMemo<Material | Material[]>(() => {
