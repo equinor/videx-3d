@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BufferGeometry, Color, Material } from 'three';
+import {
+  CommonComponentProps,
+  CustomMaterialProps,
+} from '../../../common/types';
 import { useGenerator } from '../../../hooks/useGenerator';
 import { useWellboreContext } from '../../../hooks/useWellboreContext';
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing';
 import { TubeMaterial } from '../../../sdk/materials/tube-material';
-import { CommonComponentProps, CustomMaterialProps } from '../../common';
 import {
   tubeTrajectory,
   tubeTrajectoryGeneratorResponse,

@@ -10,6 +10,7 @@ import {
   surfaceMetaLoader,
   surfaceValuesLoader,
   wellboreHeadersLoader,
+  wellboreSeismicSectionLoader,
 } from './loaders';
 
 export class MockStore implements Store {
@@ -25,6 +26,10 @@ export class MockStore implements Store {
     this._loaders.set('casings', casingLoader(this));
     this._loaders.set('completion-tools', completionLoader(this));
     this._loaders.set('perforations', perforationLoader(this));
+    this._loaders.set(
+      'wellbore-seismic-section',
+      wellboreSeismicSectionLoader(this),
+    );
 
     // For the mock store used in our storybooks, we only need to preload data once.
     // In a real scenario, you would typically re-initialize preloaded data based on

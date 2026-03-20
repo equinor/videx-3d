@@ -10,8 +10,11 @@ import { useGenerator } from '../../../hooks/useGenerator';
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing';
 
 import { extend } from '@react-three/fiber';
+import {
+  CommonComponentProps,
+  CustomMaterialProps,
+} from '../../../common/types';
 import { useWellboreContext } from '../../../hooks/useWellboreContext';
-import { CommonComponentProps, CustomMaterialProps } from '../../common';
 import {
   basicTrajectory,
   BasicTrajectoryGeneratorResponse,

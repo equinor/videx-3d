@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 import { Color, CylinderGeometry, Group, Matrix4, Vector3 } from 'three';
+import { CommonComponentProps } from '../../../common/types';
 import { useGenerator } from '../../../hooks/useGenerator';
 import { useWellboreContext } from '../../../hooks/useWellboreContext';
 import { createLayers, LAYERS } from '../../../layers/layers';
@@ -16,7 +17,6 @@ import { TubeMaterial } from '../../../sdk/materials/tube-material';
 import { Vec3 } from '../../../sdk/types/common';
 import { useAnnotations } from '../../Annotations/annotations-state';
 import { AnnotationProps } from '../../Annotations/types';
-import { CommonComponentProps } from '../../common';
 import { Symbols } from '../../Symbol/Symbol';
 import { formationMarkerSymbols } from './formation-markers-defs';
 

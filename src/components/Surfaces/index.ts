@@ -1,4 +1,4 @@
-export * from './color-ramps';
+export * from '../../common/color-ramps';
 export * from './Surface';
 export * from './SurfaceMaterial';
 //export * from './normal-texture'

@@ -24,6 +24,7 @@ import { Perforations } from '../../components/Wellbores/Perforations/Perforatio
 import { TubeTrajectory } from '../../components/Wellbores/TubeTrajectory/TubeTrajectory';
 import { Wellbore } from '../../components/Wellbores/Wellbore/Wellbore';
 import { WellboreLabel } from '../../components/Wellbores/WellboreLabel/WellboreLabel';
+import { WellboreSeismicSection } from '../../components/Wellbores/WellboreSeismicSection/WellboreSeismicSection.tsx';
 import { Wells } from '../../components/Wellbores/Wells/Wells';
 import {
   WellboreSelectedEvent,
@@ -37,7 +38,7 @@ import {
   EventEmitterCallbackEvent,
   Shoes,
   WellboreBounds,
-  WellboreFormationColumn,
+  WellboreFormationColumn
 } from '../../main';
 import { CRS } from '../../sdk/projection/crs';
 import { Vec2, Vec3 } from '../../sdk/types/common';
@@ -103,6 +104,7 @@ type ExampleProps = {
   showDepthMarkers: boolean;
   showCasingAndCompletion: boolean;
   showPerforations: boolean;
+  showSeismic: boolean;
   showCameraTarget: boolean;
   casingOpacity: number;
   sizeMultiplier: number;
@@ -399,29 +401,29 @@ const Example = (args: ExampleProps) => {
                       {(args.showFormationColumns ||
                         args.showFormationMarkers ||
                         args.showPerforations) && (
-                        <Distance min={0} max={40000} onDemand>
-                          {args.showFormationColumns && (
-                            <WellboreFormationColumn
-                              stratColumnId={stratColumnId}
-                              startRadius={3}
-                            />
-                          )}
-                          {args.showFormationMarkers && (
-                            <FormationMarkers
-                              stratColumnId={stratColumnId}
-                              radialSegments={16}
-                              baseRadius={4}
-                              showAnnotations={isActiveWell}
-                            />
-                          )}
-                          {args.showPerforations && (
-                            <Perforations
-                              renderOrder={10}
-                              sizeMultiplier={args.sizeMultiplier}
-                            />
-                          )}
-                        </Distance>
-                      )}
+                          <Distance min={0} max={40000} onDemand>
+                            {args.showFormationColumns && (
+                              <WellboreFormationColumn
+                                stratColumnId={stratColumnId}
+                                startRadius={3}
+                              />
+                            )}
+                            {args.showFormationMarkers && (
+                              <FormationMarkers
+                                stratColumnId={stratColumnId}
+                                radialSegments={16}
+                                baseRadius={4}
+                                showAnnotations={isActiveWell}
+                              />
+                            )}
+                            {args.showPerforations && (
+                              <Perforations
+                                renderOrder={10}
+                                sizeMultiplier={args.sizeMultiplier}
+                              />
+                            )}
+                          </Distance>
+                        )}
                       {args.showCasingAndCompletion && (
                         <Distance min={0} max={10} onDemand>
                           <Casings
@@ -457,6 +459,17 @@ const Example = (args: ExampleProps) => {
                     )}
                     <WellboreLabel color="cyan" size={16} />
                   </Wellbore>
+                  {
+                    (isSelected && args.showSeismic) && (
+                      <WellboreSeismicSection
+                        id={wellbore.id}
+                        stepSize={3}
+                        extension={1000}
+                        minSize={1000}
+                        opacity={args.opacity}
+                      />
+                    )
+                  }
                 </UtmPosition>
               );
             }}
@@ -606,6 +619,7 @@ const commonArgs = {
   showDepthMarkers: false,
   showCasingAndCompletion: false,
   showPerforations: true,
+  showSeismic: false,
   showCameraTarget: false,
   sizeMultiplier: 3,
   casingOpacity: 1,

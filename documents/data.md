@@ -15,6 +15,7 @@ Data type declarations can be found in `src/sdk/data/types/`
 | surface-meta | SurfaceMeta | Contains meta data about horizons/surface grids |
 | surface-values | Float32Array | Contains grid elevation data for surfaces |
 | strat-columns | StratColumn | Contains stratigraphy column meta and unit definitions |
+| wellbore-seismic-section | VerticalSlice | Seismic slice data along a wellbore path |
 
 ## Store
 The `Store` interface is an abstraction added to separate data dependencies from components and generators. You can see this as an adaptor between the implementations in this library and the data layer of your project.

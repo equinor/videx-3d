@@ -1,6 +1,14 @@
 import { transfer } from 'comlink';
-import { Store } from '../../sdk';
+import {
+  getProjectedTrajectory,
+  getTrajectory,
+  KeyType,
+  PositionLog,
+  Store,
+  WellboreHeader,
+} from '../../sdk';
 import { DataLoader } from '../../sdk/data/DataLoader';
+import { VerticalSlice } from '../../sdk/data/types/VerticalSlice';
 import { get } from './api';
 
 export const wellboreHeadersLoader = (store: Store) =>
@@ -44,7 +52,7 @@ export const surfaceMetaLoader = (store: Store) =>
 
 export const surfaceValuesLoader = (store: Store) =>
   new DataLoader(store, {
-    load: async (key: string) => {
+    load: async (key: KeyType) => {
       return get(`/data/surfaces/${key}.json`);
     },
     transform: (r: number[]) => {
@@ -105,5 +113,81 @@ export const picksLoader = (store: Store) =>
     init: async () => {
       const data = await get('/data/picks.json');
       return Object.keys(data).map(key => [key, data[key]]);
+    },
+  });
+
+/*
+  This function will generate dummy data based on an existing seismic slice.
+  This means that all wellbores will read from the same slice, but adapt the
+  number of samples to the calculated trajectory of the wellbore.
+
+  For an actual use-case, you would need an api serving true samples based
+  on input coordinates.
+*/
+export const wellboreSeismicSectionLoader = (store: Store) =>
+  new DataLoader(store, {
+    noCache: true,
+    load: async <T>(id: KeyType, args?: any): Promise<T | null> => {
+      const data = await get('/data/seismic.json');
+      if (!data) return null;
+      const poslog = await store.get<PositionLog>('position-logs', id);
+      const header = await store.get<WellboreHeader>('wellbore-headers', id);
+      if (!header || !poslog) return null;
+
+      const trajectory = getTrajectory(id as string, poslog);
+
+      if (!trajectory) return null;
+
+      const stepSize = args.stepSize || 3;
+      const extension = Number.isFinite(args.extension) ? args.extension : 0;
+      const minSize = Number.isFinite(args.minSize) ? args.minSize : 0;
+      const defaultAngle = Number.isFinite(args.defaultExtensionAngle)
+        ? args.defaultExtensionAngle
+        : 0;
+
+      const sampledPath = trajectory.curve.getPoints(
+        trajectory.measuredLength * 10,
+      );
+      const projectedTrajectory = getProjectedTrajectory(
+        sampledPath,
+        stepSize,
+        extension,
+        minSize,
+        defaultAngle,
+      );
+
+      if (!projectedTrajectory) return null;
+
+      const sourceWidth = data.xsamples;
+      const width = projectedTrajectory.positions.length;
+      const height = data.ysamples;
+
+      const values = new Float32Array(width * height);
+
+      for (let r = 0; r < height; r++) {
+        for (let c = 0; c < width; c++) {
+          const overScan = Math.floor(c / sourceWidth);
+          const reverse = overScan % 2 === 1;
+
+          const itrg = r * width + c;
+
+          // if we read beyond the number of columns we will
+          // repeat the data by shifting column read direction
+          const sourceCol = c % sourceWidth;
+          const readCol = reverse ? sourceWidth - 1 - sourceCol : sourceCol;
+          const isrc = r * sourceWidth + readCol;
+          values[itrg] = data.values[isrc] / data.scaleFactor;
+        }
+      }
+
+      const slice: VerticalSlice = {
+        depthRange: [data.top, data.bottom],
+        samples: [width, height],
+        trajectory: projectedTrajectory,
+        values,
+        valueRange: [data.min, data.max],
+      };
+
+      return slice as T;
     },
   });

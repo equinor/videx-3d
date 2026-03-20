@@ -16,11 +16,14 @@ import {
   ShaderMaterial,
   Uniform,
 } from 'three';
+import {
+  CommonComponentProps,
+  CustomMaterialProps,
+} from '../../../common/types';
 import { useGenerator } from '../../../hooks/useGenerator';
 import { useWellboreContext } from '../../../hooks/useWellboreContext';
 import { createLayers, LAYERS } from '../../../layers/layers';
 import { SymbolsType } from '../../../sdk/data/types/Symbol';
-import { CommonComponentProps, CustomMaterialProps } from '../../common';
 import { Symbols } from '../../Symbol/Symbol';
 import { perforationSymbols } from './perforations-defs';
 import fragmentShader from './shaders/fragment.glsl';
