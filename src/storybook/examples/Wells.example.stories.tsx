@@ -458,17 +458,18 @@ const Example = (args: ExampleProps) => {
                       />
                     )}
                     <WellboreLabel color="cyan" size={16} />
-                    {
-                      isSelected && args.showSeismic && (
-                        <WellboreSeismicSection
-                          stepSize={3}
-                          extension={1000}
-                          minSize={1000}
-                          opacity={args.opacity}
-                        />
-                      )
-                    }
                   </Wellbore>
+                  {
+                    (isSelected && args.showSeismic) && (
+                      <WellboreSeismicSection
+                        id={wellbore.id}
+                        stepSize={3}
+                        extension={1000}
+                        minSize={1000}
+                        opacity={args.opacity}
+                      />
+                    )
+                  }
                 </UtmPosition>
               );
             }}

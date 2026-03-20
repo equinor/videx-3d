@@ -18,8 +18,7 @@ import {
   LAYERS,
   PointerEvents,
   useEventEmitter,
-  useGenerator,
-  useWellboreContext,
+  useGenerator
 } from '../../../main';
 import { unpackBufferGeometry } from '../../../sdk';
 import fragmentShader from './shaders/frag.glsl';
@@ -29,8 +28,13 @@ import {
   WellboreSeismicSectionGeneratorResponse,
 } from './wellbore-seismic-section-defs';
 
+/**
+ * WellboreSeismicSection props
+ * @expand
+ */
 export type WellboreSeismicSectionProps = CommonComponentProps &
   PointerEvents & {
+    id: string;
     opacity?: number;
     stepSize?: number;
     minSize?: number;
@@ -41,17 +45,25 @@ export type WellboreSeismicSectionProps = CommonComponentProps &
     priority?: number;
   };
 
-const uniforms = {
-  opacity: new Uniform<number>(1),
-  data: new Uniform<Texture | null>(null),
-  colorRampTexture: new Uniform<Texture>(colorRampTexture),
-  colorRamps: new Uniform<number>(colorRampTexture.height),
-  colorRampMin: new Uniform<number>(-1),
-  colorRampMax: new Uniform<number>(1),
-  colorRampIndex: new Uniform<number>(6),
-};
-
+/**
+ * Renders a seismic fence along the trajectory of a wellbore.
+ *
+ * @example
+ * <WellboreSeismicSection
+ *   id={wellbore.id}
+ *   stepSize={3}
+ *   extension={1000}
+ *   minSize={1000}
+ *   opacity={0.9}
+ * />
+ *
+ * @see [Storybook](/videx-3d/?path=/docs/components-wellbores-seismicsection--docs)
+ * @see {@link Wellbore}
+ *
+ * @group Components
+ */
 export const WellboreSeismicSection = ({
+  id,
   opacity = 1,
   stepSize = 3,
   extension = 0,
@@ -75,7 +87,6 @@ export const WellboreSeismicSection = ({
 }: WellboreSeismicSectionProps) => {
   const ref = useRef<Group>(null);
 
-  const { id } = useWellboreContext();
   const [geometry, setGeometry] = useState<BufferGeometry | null>(null);
   const [dataTexture, setDataTexture] = useState<DataTexture | null>(null);
   const [minMax, setMinMax] = useState([-1, 1]);
@@ -84,6 +95,16 @@ export const WellboreSeismicSection = ({
     wellboreSeismicSection,
     priority,
   );
+
+  const uniforms = useMemo(() => ({
+    opacity: new Uniform<number>(1),
+    data: new Uniform<Texture | null>(null),
+    colorRampTexture: new Uniform<Texture>(colorRampTexture),
+    colorRamps: new Uniform<number>(colorRampTexture.height),
+    colorRampMin: new Uniform<number>(-1),
+    colorRampMax: new Uniform<number>(1),
+    colorRampIndex: new Uniform<number>(6),
+  }), []);
 
   useEffect(() => {
     generator(id, stepSize, minSize, extension, defaultExtensionAngle).then(
@@ -129,7 +150,7 @@ export const WellboreSeismicSection = ({
   useEffect(() => {
     uniforms.data.value = dataTexture;
     uniforms.opacity.value = opacity;
-  }, [opacity, dataTexture]);
+  }, [uniforms, opacity, dataTexture]);
 
   useEffect(() => {
     const range =
@@ -137,7 +158,7 @@ export const WellboreSeismicSection = ({
     uniforms.colorRampMin.value = -range;
     uniforms.colorRampMax.value = range;
     uniforms.colorRampIndex.value = colorRampIndex;
-  }, [minMax, rangeOffset, colorRampIndex]);
+  }, [uniforms, minMax, rangeOffset, colorRampIndex]);
 
   const eventHandler = useEventEmitter();
   // register event handlers
