@@ -459,7 +459,6 @@ const Example = (args: ExampleProps) => {
                     )}
                     <WellboreLabel color="cyan" size={16} />
                     {
-                      //wellbore.id === 'ad215042-fb52-2b7e-e053-c818a488c79a'
                       isSelected && args.showSeismic && (
                         <WellboreSeismicSection
                           stepSize={3}
