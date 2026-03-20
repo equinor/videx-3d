@@ -7,9 +7,8 @@ uniform float opacity;
 varying vec3 vNormal;
 #endif
 varying vec3 vViewPosition;
-varying vec4 vColor;
-
 #include <common>
+#include <color_pars_fragment>
 #include <uv_pars_fragment>
 #include <map_pars_fragment>
 #include <fog_pars_fragment>
