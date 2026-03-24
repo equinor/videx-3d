@@ -47,7 +47,7 @@ export const Default: Story = {
       control: { type: 'range', min: 0.1, max: 1, step: 0.1 },
     },
     rangeOffset: {
-      control: { type: 'range', min: -0.5, max: 0.5, step: 0.01 },
+      control: { type: 'range', min: -0.99, max: 2, step: 0.01 },
     },
     colorRampIndex: {
       options: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],

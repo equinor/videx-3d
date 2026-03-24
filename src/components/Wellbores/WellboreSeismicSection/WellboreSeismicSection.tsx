@@ -106,6 +106,8 @@ export const WellboreSeismicSection = ({
     colorRampIndex: new Uniform<number>(6),
   }), []);
 
+  const range = useMemo(() => Math.max(Math.abs(minMax[0]), Math.abs(minMax[1])), [minMax]);
+
   useEffect(() => {
     generator(id, stepSize, minSize, extension, defaultExtensionAngle).then(
       response => {
@@ -153,12 +155,11 @@ export const WellboreSeismicSection = ({
   }, [uniforms, opacity, dataTexture]);
 
   useEffect(() => {
-    const range =
-      Math.max(Math.abs(minMax[0]), Math.abs(minMax[1])) + rangeOffset;
-    uniforms.colorRampMin.value = -range;
-    uniforms.colorRampMax.value = range;
+    const offsetRange = range + range * rangeOffset;
+    uniforms.colorRampMin.value = -offsetRange;
+    uniforms.colorRampMax.value = offsetRange;
     uniforms.colorRampIndex.value = colorRampIndex;
-  }, [uniforms, minMax, rangeOffset, colorRampIndex]);
+  }, [uniforms, range, rangeOffset, colorRampIndex]);
 
   const eventHandler = useEventEmitter();
   // register event handlers
