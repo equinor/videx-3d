@@ -26,6 +26,7 @@ export default tseslint.config(
         'warn',
         { allowConstantExport: true },
       ],
+      'react-hooks/immutability': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
     },
   },

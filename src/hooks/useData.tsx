@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState } from 'react';
+import { useContext, useMemo } from 'react';
 import { DataContext } from '../contexts/DataContext';
 import { Store } from '../sdk/data/Store';
 
@@ -25,17 +25,16 @@ import { Store } from '../sdk/data/Store';
  *
  * @group Hooks
  */
+
 export const useData = () => {
   const dataContext = useContext(DataContext);
-  const [store, setStore] = useState<Store | null>(null);
 
-  useEffect(() => {
+  const store = useMemo<Store | null>(() => {
     if (dataContext) {
       const dataContextStore = dataContext.connect() as unknown as Store;
-
-      // in order to set a comlink proxy to state, it needs to be added as an arrow function (https://github.com/GoogleChromeLabs/comlink/issues/571)
-      setStore(() => dataContextStore);
+      return dataContextStore;
     }
+    return null;
   }, [dataContext]);
 
   return store;

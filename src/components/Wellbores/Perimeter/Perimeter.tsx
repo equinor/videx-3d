@@ -9,11 +9,14 @@ import {
   ShaderMaterial,
   Uniform,
 } from 'three';
+import {
+  CommonComponentProps,
+  CustomMaterialProps,
+} from '../../../common/types';
 import { useGenerator } from '../../../hooks/useGenerator';
 import { useWellboreContext } from '../../../hooks/useWellboreContext';
 import { createLayers, LAYERS } from '../../../layers/layers';
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing';
-import { CommonComponentProps, CustomMaterialProps } from '../../common';
 import {
   PerimeterGeneratorResponse,
   perimeterGeometry,

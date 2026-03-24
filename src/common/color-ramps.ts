@@ -1,4 +1,11 @@
 import { interpolateHcl, piecewise } from 'd3-interpolate';
+import {
+  CanvasTexture,
+  LinearFilter,
+  NearestFilter,
+  RGBAFormat,
+  SRGBColorSpace,
+} from 'three';
 
 export type RampFunction = (ctx: CanvasRenderingContext2D, y: number) => void;
 
@@ -312,4 +319,14 @@ export const colorRamps = [
   ramp(t => gray(1 - t)),
 ];
 
+const canvas = createColorRamps(colorRamps, 512);
+
+export const colorRampTexture = new CanvasTexture(canvas);
+colorRampTexture.magFilter = LinearFilter;
+colorRampTexture.minFilter = NearestFilter;
+colorRampTexture.flipY = false;
+colorRampTexture.generateMipmaps = false;
+colorRampTexture.colorSpace = SRGBColorSpace;
+colorRampTexture.format = RGBAFormat;
+colorRampTexture.anisotropy = 4;
 //ramp((t) => `hsl(${(1 - t) * 360},100%,50%)`),

@@ -32,8 +32,8 @@ export class GeneratorRegistry {
     if (store && this.config.concurrentStoreCalls) {
       const limit = pLimit(this.config.concurrentStoreCalls);
       const throttledStore = {
-        get: <T>(dataType: string, key: KeyType) =>
-          limit(() => store.get<T>(dataType, key)),
+        get: <T>(dataType: string, key: KeyType, args?: any) =>
+          limit(() => store.get<T>(dataType, key, args)),
         all: <T>(dataType: string) => limit(() => store.all<T>(dataType)),
         query: <T>(dataType: string, query: Partial<T>) =>
           limit(() => store.query(dataType, query)),

@@ -1,34 +1,19 @@
 import {
-  CanvasTexture,
   Color,
-  LinearFilter,
   Matrix3,
   MeshLambertMaterialParameters,
   MultiplyOperation,
-  NearestFilter,
-  RGBAFormat,
   ShaderLib,
   ShaderMaterial,
   ShaderMaterialParameters,
-  SRGBColorSpace,
   TangentSpaceNormalMap,
   Texture,
   UniformsUtils,
   Vector2,
 } from 'three';
-import { colorRamps, createColorRamps } from './color-ramps';
+import { colorRampTexture } from '../../common/color-ramps';
 import fragmentShader from './shaders/surface-frag.glsl';
 import vertexShader from './shaders/surface-vert.glsl';
-
-const canvas = createColorRamps(colorRamps, 512);
-const colorRampTexture = new CanvasTexture(canvas);
-colorRampTexture.magFilter = LinearFilter;
-colorRampTexture.minFilter = NearestFilter;
-colorRampTexture.flipY = false;
-colorRampTexture.generateMipmaps = false;
-colorRampTexture.colorSpace = SRGBColorSpace;
-colorRampTexture.format = RGBAFormat;
-colorRampTexture.anisotropy = 4;
 
 export enum ContourColorMode {
   darken = 0,
@@ -69,7 +54,7 @@ const shader = {
     UniformsUtils.clone(ShaderLib['lambert'].uniforms),
     {
       colorRampIndex: { value: 0 },
-      colorRamps: { value: colorRamps.length },
+      colorRamps: { value: colorRampTexture.height },
       colorRampReverse: { value: true },
       colorRampMin: { value: 800 },
       colorRampMax: { value: 1000 },

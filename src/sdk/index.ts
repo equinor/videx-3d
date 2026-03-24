@@ -11,6 +11,7 @@ export * from './data/types';
 export * from './geometries/curve/curve-3d';
 export * from './geometries/curve/tube-geometry';
 export * from './geometries/delatin';
+export * from './geometries/fence';
 export * from './geometries/packing';
 export * from './geometries/triangulate-grid';
 export * from './geometries/triangulate-grid-delaunay';

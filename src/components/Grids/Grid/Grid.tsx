@@ -18,9 +18,9 @@ import {
   Vector3,
   WebGLRenderTarget,
 } from 'three';
+import { CommonComponentProps } from '../../../common/types';
 import { clamp } from '../../../sdk';
 import { Vec2, Vec3 } from '../../../sdk/types/common';
-import { CommonComponentProps } from '../../common';
 import { getGridPositionFromUV } from './grid-helpers';
 import { GridAxesLabels } from './GridAxesLabels';
 import fragmentShader from './shaders/fragment.glsl';

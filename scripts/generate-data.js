@@ -131,4 +131,8 @@ if (output['surface-meta']) {
   transformSurfaceFiles(meta, inPath, outPath);
 }
 
+// seismic
+console.info('> copying seismic mock data');
+fs.copyFileSync(inPath + 'seismic.json', outPath + 'seismic.json');
+
 console.info('Generate data complete!');
