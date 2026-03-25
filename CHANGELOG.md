@@ -1,5 +1,13 @@
 # Changelog
 
+## [5.1.2-beta](https://github.com/equinor/videx-3d/compare/v5.1.1-beta...v5.1.2-beta) (2026-03-25)
+
+
+### Bug Fixes
+
+* **colorramps:** export color interpolators used for ramps ([#170](https://github.com/equinor/videx-3d/issues/170)) ([81be263](https://github.com/equinor/videx-3d/commit/81be26308304ddcf1f4f2860566bd63fff6856f3))
+* **docs:** updated docs to reference new scoped npm package name ([#173](https://github.com/equinor/videx-3d/issues/173)) ([d13275d](https://github.com/equinor/videx-3d/commit/d13275d2c7499c96e7ea8116e1f121183f339de0))
+
 ## [5.1.1-beta](https://github.com/equinor/videx-3d/compare/v5.1.0-beta...v5.1.1-beta) (2026-03-25)
 
 
