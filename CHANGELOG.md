@@ -1,5 +1,13 @@
 # Changelog
 
+## [5.1.1-beta](https://github.com/equinor/videx-3d/compare/v5.1.0-beta...v5.1.1-beta) (2026-03-25)
+
+
+### Bug Fixes
+
+* **npm:** bump flatted from 3.3.3 to 3.4.2 ([#165](https://github.com/equinor/videx-3d/issues/165)) ([cd8633f](https://github.com/equinor/videx-3d/commit/cd8633f7087b837985d837af7926c6006dee2586))
+* scoped name change ([#167](https://github.com/equinor/videx-3d/issues/167)) ([564fc2f](https://github.com/equinor/videx-3d/commit/564fc2f7acdd8d65074f526316e6a8cc1fffe8ff))
+
 ## [5.1.0-beta](https://github.com/equinor/videx-3d/compare/v5.0.11-beta...v5.1.0-beta) (2026-03-24)
 
 
