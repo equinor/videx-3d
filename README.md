@@ -1,5 +1,5 @@
-[![SCM Compliance](https://scm-compliance-api.radix.equinor.com/repos/equinor/videx-wellog/badge)](https://scm-compliance-api.radix.equinor.com/repos/equinor/videx-wellog/badge)
-![](https://img.shields.io/npm/v/videx-3d)
+[![SCM Compliance](https://scm-compliance-api.radix.equinor.com/repos/equinor/videx-3d/badge)](https://scm-compliance-api.radix.equinor.com/repos/equinor/videx-3d/badge)
+![](https://img.shields.io/npm/v/@equinor/videx-3d)
 # Introduction
 The purpose of this library is to help you add 3D visualizations of sub surface data to your web applications. It offers a paradigm for connecting data to React components, utilizing Three js and React Three Fiber.
 
@@ -15,9 +15,9 @@ The library includes a variety of components, both for visualizing and managing 
 
 ## Overview
 This library contains multiple exports:
-- `videx-3d` main export containing the components
-- `videx-3d/sdk` shared code and declarations
-- `videx-3d/generators` generator functions required by the included components
+- `@equinor/videx-3d` main export containing the components
+- `@equinor/videx-3d/sdk` shared code and declarations
+- `@equinor/videx-3d/generators` generator functions required by the included components
 
 ### Dependencies
 This library has dependencies to the following libs:
@@ -28,7 +28,7 @@ This library has dependencies to the following libs:
 
 ## Install
 ```
-npm i videx-3d
+npm i @equinor/videx-3d
 ```
 
 You also need to install the required peer-dependencies. 
