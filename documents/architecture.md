@@ -36,7 +36,7 @@ const header = await store.get(
 )
 ```
 
-Specify types are declared for common data types used throughout this library. These are defined in `/src/sdk/data/types` and can be imported from `videx-3d/sdk`.
+Specify types are declared for common data types used throughout this library. These are defined in `/src/sdk/data/types` and can be imported from `@equinor/videx-3d/sdk`.
 
 Some examples:
 - WellboreHeader
@@ -52,7 +52,7 @@ Some examples:
 
 Provides a factory for processing/generating data required in the render loop. This is typically geometry data which it builds based on simple arguments passed by a component depeneding on the generator (such as an id, radius, scale and other option values). The generator code will typically access the store itself to retrieve the data it needs from the data provider.
 
-The components available in this library already have generator functions created that expects certain data sets to be available from the store. These can be imported from `videx-3d/generators`.
+The components available in this library already have generator functions created that expects certain data sets to be available from the store. These can be imported from `@equinor/videx-3d/generators`.
 
 Generator functions are registered in the `GeneratorRegistry` by adding them to the instance along with a key:
 

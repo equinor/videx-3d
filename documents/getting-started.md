@@ -23,7 +23,7 @@ npm install three @react-three/fiber
 
 ## Make a simple 3d scene
 
-Before adding the `videx-3d` components library we should create a basic 3d scene to make sure everything is working. Feel free to skip this section if you are already familiar with Three.js and React Three Fiber.
+Before adding the `@equinor/videx-3d` components library we should create a basic 3d scene to make sure everything is working. Feel free to skip this section if you are already familiar with Three.js and React Three Fiber.
 
 In this example, we will be using typescript. We start by creating a new file for a component named "Test.tsx":
 
@@ -254,24 +254,24 @@ This was a really basic introduction to React Three Fiber and Three.js. There ar
 - https://threejs.org/docs
 
 ## Add the videx-3d library
-While Three.js and React Three Fiber provides all you need to create 3d content for the web with React, the `videx-3d` library adds ready to use components and features specifically targeting sub surface visualizations.
+While Three.js and React Three Fiber provides all you need to create 3d content for the web with React, the `@equinor/videx-3d` library adds ready to use components and features specifically targeting sub surface visualizations.
 
 Let's start by adding the package to our project:
 
 ```
-  npm i videx-3d
+  npm i @equinor/videx-3d
 ```
 
 ### Example using the tube geometry
 We will start simple, and experiment with the `createTubeGeometry` function from the SDK. This is a very flexible procedure for generating tube shapes. It is based on the implementation of the `TubeGeometry` from Thee.js, but heavily adapted to the needs of this library as you will see.
 
-A tube is basically a curve with dimensions, and to define a smooth curve from a set of points we need to interpolate. The SDK (Software Developement Kit: `videx-3d/sdk`) includes a function `getSplineCurve`, which takes a set of 3d coordinates and returns an interpolator as defined by the `Curve3D` interface. Our implementation is using the [curve-interpolator](https://github.com/kjerandp/curve-interpolator) library, which is set up to interpolate a chordal cubic Hermite spline curve. You can use your own interpolation implementation as long as it implements the `Curve3D` interface.
+A tube is basically a curve with dimensions, and to define a smooth curve from a set of points we need to interpolate. The SDK (Software Developement Kit: `@equinor/videx-3d/sdk`) includes a function `getSplineCurve`, which takes a set of 3d coordinates and returns an interpolator as defined by the `Curve3D` interface. Our implementation is using the [curve-interpolator](https://github.com/kjerandp/curve-interpolator) library, which is set up to interpolate a chordal cubic Hermite spline curve. You can use your own interpolation implementation as long as it implements the `Curve3D` interface.
 
 In this example we will create a new component, which will generate a tube geometry and render it using the standard material from Three.js. Let's create a new file and component `Tube.tsx`:
 
 ```tsx
 import { useMemo } from 'react'
-import { createTubeGeometry, getSplineCurve, Vec3 } from 'videx-3d/sdk'
+import { createTubeGeometry, getSplineCurve, Vec3 } from '@equinor/videx-3d/sdk'
 
 type Props = {
   points: Vec3[]
@@ -421,7 +421,7 @@ With `thickness` set to 0.3
 There are many more features available. You can play around in [this storybook](https://equinor.github.io/videx-3d/?path=/story/sdk-tube-geometry--default) and [reference the docs](https://equinor.github.io/videx-3d/docs/functions/sdk.createTubeGeometry.html).
 
 ### Adding a BoxGrid
-The grid components included in the `videx-3d` library are not data dependant, so they should be easy to add to our test project. We'll have a look at the `BoxGrid` component, which will add 5 grid planes in a box configuration (imagine an open box with the top removed). This component is using the `Grid` component internally for the grid planes.
+The grid components included in the `@equinor/videx-3d` library are not data dependant, so they should be easy to add to our test project. We'll have a look at the `BoxGrid` component, which will add 5 grid planes in a box configuration (imagine an open box with the top removed). This component is using the `Grid` component internally for the grid planes.
 
 The `BoxGrid` component will only render the back sides of the grid planes. If the front face of a grid plane is in the camera's line of sight, it will be hidden, and not obstructing the view of objects inside the grid box. 
 
@@ -429,7 +429,7 @@ First import the component in the `Test.tsx` file:
 
 ```ts
   // Test.tsx
-  import { BoxGrid } from 'videx-3d'
+  import { BoxGrid } from '@equinor/videx-3d'
 ```
 
 We can wrap our tube inside the box grid and set `autoSize` to true, which will dynamically adjust the grid to its content:
