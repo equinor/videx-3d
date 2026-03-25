@@ -306,18 +306,20 @@ const spectrum = interpolator([
 ]);
 const gray = interpolator(['#000', '#fff']);
 
-export const colorRamps = [
-  ramp(t => rainbow(1 - t)),
-  ramp(t => jet(1 - t)),
-  ramp(t => portland(1 - t)),
-  ramp(t => earth(1 - t)),
-  ramp(t => plasma(1 - t)),
-  ramp(t => salinity(1 - t)),
-  ramp(t => seismic(1 - t)),
-  ramp(t => seismic2(1 - t)),
-  ramp(t => spectrum(1 - t)),
-  ramp(t => gray(1 - t)),
+export const colorRampInterpolators = [
+  (t: number) => rainbow(1 - t),
+  (t: number) => jet(1 - t),
+  (t: number) => portland(1 - t),
+  (t: number) => earth(1 - t),
+  (t: number) => plasma(1 - t),
+  (t: number) => salinity(1 - t),
+  (t: number) => seismic(1 - t),
+  (t: number) => seismic2(1 - t),
+  (t: number) => spectrum(1 - t),
+  (t: number) => gray(1 - t),
 ];
+
+export const colorRamps = colorRampInterpolators.map(interp => ramp(interp));
 
 const canvas = createColorRamps(colorRamps, 512);
 
