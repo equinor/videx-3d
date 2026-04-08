@@ -1,5 +1,14 @@
 # Changelog
 
+## [5.1.3-beta](https://github.com/equinor/videx-3d/compare/v5.1.2-beta...v5.1.3-beta) (2026-04-08)
+
+
+### Bug Fixes
+
+* **npm:** bump lodash from 4.17.23 to 4.18.1 ([#181](https://github.com/equinor/videx-3d/issues/181)) ([a000a5f](https://github.com/equinor/videx-3d/commit/a000a5f7350662823c0489445d31aa6198fa144c))
+* **npm:** bump picomatch from 2.3.1 to 2.3.2 ([#174](https://github.com/equinor/videx-3d/issues/174)) ([6eb62e9](https://github.com/equinor/videx-3d/commit/6eb62e90f42f63ddf80c8554257f91dea2faf059))
+* **npm:** bump vite from 7.3.1 to 7.3.2 ([#180](https://github.com/equinor/videx-3d/issues/180)) ([786cfb8](https://github.com/equinor/videx-3d/commit/786cfb8257c71758bbe267d12dd45fc772ccc44d))
+
 ## [5.1.2-beta](https://github.com/equinor/videx-3d/compare/v5.1.1-beta...v5.1.2-beta) (2026-03-25)
 
 
