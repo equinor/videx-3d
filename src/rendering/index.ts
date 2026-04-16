@@ -1,2 +1,2 @@
-export * from './fullscreen-renderer'
-export * from './render-passes'
+export * from './fullscreen-renderer';
+export * from './render-passes';

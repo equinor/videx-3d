@@ -1,100 +1,76 @@
-import { transfer } from 'comlink'
-import _filter from 'lodash.filter'
-import { KeyType, Store } from '../../sdk'
-import { get } from './api'
+import { filter as _filter } from 'lodash';
+import { KeyType, Store } from '../../sdk';
+import { DataLoader } from '../../sdk/data/DataLoader';
 import {
-  loadCasings,
-  loadCompletion,
-  loadFormations,
-  loadPerforations,
-  //loadPicks,
-  loadPositionLogs,
-  //loadStratColumns,
-  loadSurfaceMeta,
-  loadWellboreHeaders,
-} from './loaders'
+  casingLoader,
+  completionLoader,
+  formationLoader,
+  perforationLoader,
+  positionLogsLoader,
+  surfaceMetaLoader,
+  surfaceValuesLoader,
+  wellboreHeadersLoader,
+  wellboreSeismicSectionLoader,
+} from './loaders';
 
 export class MockStore implements Store {
-  private loaders: Record<string, () => Promise<any>> = {
-    'position-logs': loadPositionLogs,
-    'wellbore-headers': loadWellboreHeaders,
-    casings: loadCasings,
-    'completion-tools': loadCompletion,
-    perforations: loadPerforations,
-    //picks: loadPicks,
-    'surface-meta': loadSurfaceMeta,
-    //'strat-columns': loadStratColumns,
-    formations: loadFormations,
-  }
-  private data: Record<string, Record<KeyType, any>> = {}
+  private _loaders: Map<string, DataLoader> = new Map();
+  private _initialized: Promise<boolean[]> | null = null;
 
-  private activeLoaders: Record<string, Promise<unknown>> = {}
+  constructor() {
+    this._loaders.set('wellbore-headers', wellboreHeadersLoader(this));
+    this._loaders.set('position-logs', positionLogsLoader(this));
+    this._loaders.set('surface-meta', surfaceMetaLoader(this));
+    this._loaders.set('surface-values', surfaceValuesLoader(this));
+    this._loaders.set('formations', formationLoader(this));
+    this._loaders.set('casings', casingLoader(this));
+    this._loaders.set('completion-tools', completionLoader(this));
+    this._loaders.set('perforations', perforationLoader(this));
+    this._loaders.set(
+      'wellbore-seismic-section',
+      wellboreSeismicSectionLoader(this),
+    );
 
-  private async getDataCollection(
-    dataType: string
-  ): Promise<Record<string, any> | null> {
-    if (this.data[dataType] === undefined) {
-      if (this.activeLoaders[dataType] !== undefined) {
-        await this.activeLoaders[dataType]
-      } else {
-        const loader = this.loaders[dataType]
-        if (!loader)
-          throw Error('No loader registered for data type: ' + dataType)
-        const promise = loader()
-          .then((loadedData) => {
-            this.data[dataType] = loadedData || {}
-          })
-          .finally(() => {
-            delete this.activeLoaders[dataType]
-          })
-        this.activeLoaders[dataType] = promise
-        await promise
+    // For the mock store used in our storybooks, we only need to preload data once.
+    // In a real scenario, you would typically re-initialize preloaded data based on
+    // some parameters within your application's workflow.
+    const dataInitializers: Promise<boolean>[] = [];
+
+    this._loaders.forEach(loader => {
+      if (loader.config.preloaded) {
+        dataInitializers.push(loader.init());
       }
-    }
-    return this.data[dataType]
+    });
+    this._initialized = Promise.all(dataInitializers);
   }
 
-  public async get<T>(dataType: string, key: KeyType): Promise<T | null> {
-    // read surface values from file due to size
-
-    if (dataType === 'surface-values') {
-      const values = await get(`/data/surfaces/${key}.json`)
-      const data = new Float32Array(values)
-      if (data) {
-        return transfer(data, [data.buffer]) as T
-      }
-
-      return null
+  loader(dataType: string): DataLoader {
+    if (this._loaders.has(dataType)) {
+      return this._loaders.get(dataType)!;
     }
-    const collection = await this.getDataCollection(dataType)
-    const data = collection && collection[key] ? (collection[key] as T) : null
-
-    if (data && data instanceof Float32Array && data.length > 0) {
-      const copy = new Float32Array(data)
-      return transfer(copy, [copy.buffer]) as T
-    }
-
-    return data
+    throw Error('No loader registered for data type: ' + dataType);
   }
 
-  public async set<T>(dataType: string, key: KeyType, value: T) {
-    if (this.data[dataType] === undefined) {
-      this.data[dataType] = {}
-    }
-    this.data[dataType][key] = value
-    return true
+  async all<T>(dataType: string): Promise<T[] | null> {
+    await this._initialized;
+    return this.loader(dataType).all<T>();
   }
 
-  public async all<T>(dataType: string): Promise<T[]> {
-    const collection = await this.getDataCollection(dataType)
-    return (collection ? Object.values(collection) : []) as T[]
+  async get<T>(dataType: string, key: KeyType, args?: any) {
+    await this._initialized;
+    return this.loader(dataType).get<T>(key, args);
   }
 
-  public async query<T>(dataType: string, query: Partial<T>): Promise<T[]> {
+  async query<T>(dataType: string, query: Partial<T>): Promise<T[]> {
     if (query) {
-      const data = await this.all<T>(dataType)
-      return data ? (_filter(data, query) as T[]) : []
+      const data = await this.all<T>(dataType);
+      return data ? _filter(data, query as any) : [];
     }
-    return this.all<T>(dataType)
+    return (await this.all<T>(dataType)) || [];
+  }
+
+  async set<T>(dataType: string, key: KeyType, value: T) {
+    this.loader(dataType).set(key, value);
+    return true;
   }
 }

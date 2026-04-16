@@ -1,2 +1,2 @@
-export * from './TubeTrajectory'
-export * from './tube-geometry-defs'
+export * from './TubeTrajectory';
+export * from './tube-geometry-defs';

@@ -1,5 +1,5 @@
-import { SymbolsType } from '../../../sdk'
+import { SymbolsType } from '../../../sdk';
 
-export const positionMarkers = 'positionMarkers'
+export const positionMarkers = 'positionMarkers';
 
-export type PositionMarkersGeneratorResponse = SymbolsType
+export type PositionMarkersGeneratorResponse = SymbolsType;

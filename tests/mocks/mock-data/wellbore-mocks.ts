@@ -1,4 +1,4 @@
-import { WellboreHeader } from '../../../src/sdk'
+import { WellboreHeader } from '../../../src/sdk';
 
 const wellboreHeaderMocks: WellboreHeader[] = [
   {
@@ -42,10 +42,13 @@ const wellboreHeaderMocks: WellboreHeader[] = [
     parent: 'NO 80/5 2 T2',
     status: 'operating',
     waterDepth: 100,
-  }
-]
+  },
+];
 
-export default wellboreHeaderMocks.reduce<Record<string, WellboreHeader>>((acc, d) => {
-  acc[d.id] = d
-  return acc
-}, {})
+export default wellboreHeaderMocks.reduce<Record<string, WellboreHeader>>(
+  (acc, d) => {
+    acc[d.id] = d;
+    return acc;
+  },
+  {},
+);

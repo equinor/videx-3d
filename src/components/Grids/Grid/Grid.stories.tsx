@@ -1,9 +1,9 @@
-import type { Meta, StoryObj } from '@storybook/react-vite'
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
-import { Float } from '@react-three/drei'
-import { TextureLoader } from 'three'
-import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
-import { Grid, GridProps } from './Grid'
+import { Float } from '@react-three/drei';
+import { TextureLoader } from 'three';
+import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator';
+import { Grid, GridProps } from './Grid';
 
 const GridObjects = ({ units = 1 }: { units?: number }) => (
   <>
@@ -17,14 +17,12 @@ const GridObjects = ({ units = 1 }: { units?: number }) => (
       <meshStandardMaterial />
     </mesh>
   </>
-)
+);
 
 const meta = {
   title: 'Components/Grids/Grid',
   component: Grid,
-  decorators: [
-    Canvas3dDecorator,
-  ],
+  decorators: [Canvas3dDecorator],
   parameters: {
     autoClear: true,
     scale: 100,
@@ -37,30 +35,29 @@ const meta = {
       options: [1, 10, 50, 100, 250, 1000],
     },
     subDivisions: {
-      control: { type: 'range', min: 0, max: 10, step: 1 }
+      control: { type: 'range', min: 0, max: 10, step: 1 },
     },
     rulerLineWidth: {
-      control: { type: 'range', min: 0, max: 5, step: 0.1 }
+      control: { type: 'range', min: 0, max: 5, step: 0.1 },
     },
     gridLineWidth: {
-      control: { type: 'range', min: 0, max: 0.5, step: 0.001 }
+      control: { type: 'range', min: 0, max: 0.5, step: 0.001 },
     },
     planeOffset: {
-      control: { type: 'range', min: -100, max: 100, step: 1 }
+      control: { type: 'range', min: -100, max: 100, step: 1 },
     },
     rulerOpacity: {
-      control: { type: 'range', min: 0, max: 1, step: 0.001 }
+      control: { type: 'range', min: 0, max: 1, step: 0.001 },
     },
     opacity: {
-      control: { type: 'range', min: 0, max: 1, step: 0.001 }
+      control: { type: 'range', min: 0, max: 1, step: 0.001 },
     },
   },
-  tags: ['autodocs']
-} satisfies Meta<typeof Grid>
+  tags: ['autodocs'],
+} satisfies Meta<typeof Grid>;
 
-
-export default meta
-type Story = StoryObj<typeof meta>
+export default meta;
+type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {
   args: {
@@ -77,8 +74,8 @@ export const Default: Story = {
       </group>
       <GridObjects units={args.cellSize} />
     </group>
-  )
-}
+  ),
+};
 
 export const OriginOffset: Story = {
   args: {
@@ -87,7 +84,7 @@ export const OriginOffset: Story = {
     size: [1000, 1000],
     cellSize: 50,
     subDivisions: 10,
-    gridLineWidth: 0.01
+    gridLineWidth: 0.01,
   },
   render: (args: GridProps) => (
     <group>
@@ -96,8 +93,8 @@ export const OriginOffset: Story = {
       </group>
       <GridObjects units={args.cellSize} />
     </group>
-  )
-}
+  ),
+};
 
 // export const AxesOffset: Story = {
 //   args: {
@@ -125,7 +122,7 @@ export const ScaledAxes: Story = {
     cellSize: 50,
     subDivisions: 10,
     gridLineWidth: 0.01,
-    gridScale: [20, -1]
+    gridScale: [20, -1],
   },
   render: (args: GridProps) => (
     <group>
@@ -134,8 +131,8 @@ export const ScaledAxes: Story = {
       </group>
       <GridObjects units={args.cellSize} />
     </group>
-  )
-}
+  ),
+};
 
 export const Dynamic: Story = {
   args: {
@@ -154,7 +151,7 @@ export const Dynamic: Story = {
       [50, 5],
       [100, 10],
       [250, 25],
-    ]
+    ],
   },
   render: (args: GridProps) => (
     <group>
@@ -163,8 +160,8 @@ export const Dynamic: Story = {
       </group>
       <GridObjects units={args.cellSize} />
     </group>
-  )
-}
+  ),
+};
 
 export const Rulers: Story = {
   args: {
@@ -173,7 +170,7 @@ export const Rulers: Story = {
     cellSize: 50,
     subDivisions: 10,
     gridLineWidth: 0.01,
-    showRulers: true
+    showRulers: true,
   },
   render: (args: GridProps) => (
     <group>
@@ -182,23 +179,23 @@ export const Rulers: Story = {
       </group>
       <GridObjects units={args.cellSize} />
     </group>
-  )
-}
+  ),
+};
 
 export const Radial: Story = {
   args: {
     plane: 'xz',
     size: [1000, 1000],
-    background: "#05080a",
+    background: '#05080a',
     cellSize: 50,
     dynamicCellSize: false,
     subDivisions: 5,
-    gridColorMajor: "#abc",
-    gridColorMinor: "#789",
+    gridColorMajor: '#abc',
+    gridColorMinor: '#789',
     gridLineWidth: 0.01,
     gridOrigin: [0, 0],
     showAxes: true,
-    axesColor: "#fff",
+    axesColor: '#fff',
     axesLineWidth: undefined,
     radial: true,
     dynamicSegments: false,
@@ -223,23 +220,23 @@ export const Radial: Story = {
         <meshStandardMaterial />
       </mesh>
     </group>
-  )
-}
+  ),
+};
 
 export const RadialOffset: Story = {
   args: {
     plane: 'xz',
     size: [1000, 1000],
-    background: "#05080a",
+    background: '#05080a',
     cellSize: 50,
     dynamicCellSize: false,
     subDivisions: 5,
-    gridColorMajor: "#abc",
-    gridColorMinor: "#789",
+    gridColorMajor: '#abc',
+    gridColorMinor: '#789',
     gridLineWidth: 0.01,
     gridOrigin: [350, -500],
     showAxes: true,
-    axesColor: "#fff",
+    axesColor: '#fff',
     axesLineWidth: undefined,
     radial: true,
     dynamicSegments: false,
@@ -264,23 +261,23 @@ export const RadialOffset: Story = {
         <meshStandardMaterial />
       </mesh>
     </group>
-  )
-}
+  ),
+};
 
 export const RadialDynamicSegments: Story = {
   args: {
     plane: 'xz',
     size: [1000, 1000],
-    background: "#05080a",
+    background: '#05080a',
     cellSize: 50,
     dynamicCellSize: false,
     subDivisions: 5,
-    gridColorMajor: "#abc",
-    gridColorMinor: "#789",
+    gridColorMajor: '#abc',
+    gridColorMinor: '#789',
     gridLineWidth: 0.01,
     gridOrigin: [0, 0],
     showAxes: true,
-    axesColor: "#fff",
+    axesColor: '#fff',
     axesLineWidth: undefined,
     radial: true,
     dynamicSegments: true,
@@ -305,10 +302,8 @@ export const RadialDynamicSegments: Story = {
         <meshStandardMaterial />
       </mesh>
     </group>
-  )
-}
-
-
+  ),
+};
 
 export const Customized: Story = {
   args: {
@@ -322,7 +317,7 @@ export const Customized: Story = {
     gridColorMinor: '#4d3008',
     axesColor: '#000000',
     axesTickSize: 0.2,
-    textureMix: 0.8
+    textureMix: 0.8,
   },
   render: (args: GridProps) => (
     <group>
@@ -331,8 +326,8 @@ export const Customized: Story = {
       </group>
       <GridObjects units={args.cellSize} />
     </group>
-  )
-}
+  ),
+};
 
 export const Projections: Story = {
   args: {
@@ -343,7 +338,7 @@ export const Projections: Story = {
     gridLineWidth: 0.01,
     enableProjection: true,
     projectionColor: '#789',
-    projectionRefreshRate: 100
+    projectionRefreshRate: 100,
   },
   render: (args: GridProps) => (
     <group>
@@ -362,5 +357,5 @@ export const Projections: Story = {
         </mesh>
       </Float>
     </group>
-  )
-}
+  ),
+};

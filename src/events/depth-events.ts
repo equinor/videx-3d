@@ -1,14 +1,14 @@
-import { DepthReferencePoint } from '../sdk'
+import { DepthReferencePoint } from '../sdk';
 
 /**
  * DepthChangedEvent name
  */
-export const depthChangedType = "depth-changed" as const
+export const depthChangedType = 'depth-changed' as const;
 
 export interface DepthChangedEventDetails {
-  depth: number,
-  referencePoint: DepthReferencePoint,
-  source: string,
+  depth: number;
+  referencePoint: DepthReferencePoint;
+  source: string;
 }
 
 /**
@@ -17,11 +17,11 @@ export interface DepthChangedEventDetails {
  */
 export class DepthChangedEvent extends CustomEvent<DepthChangedEventDetails> {
   constructor(detail: DepthChangedEventDetails) {
-    super(depthChangedType, { detail })
+    super(depthChangedType, { detail });
   }
 }
 declare global {
   interface WindowEventMap {
-    [depthChangedType]: DepthChangedEvent
+    [depthChangedType]: DepthChangedEvent;
   }
 }

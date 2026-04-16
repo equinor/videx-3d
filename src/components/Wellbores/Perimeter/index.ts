@@ -1,2 +1,2 @@
-export * from './Perimeter'
-export * from './perimeter-defs'
+export * from './Perimeter';
+export * from './perimeter-defs';

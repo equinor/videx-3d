@@ -1,1 +1,1 @@
-export type DepthReferencePoint = 'RT' | 'MSL'
+export type DepthReferencePoint = 'RT' | 'MSL';

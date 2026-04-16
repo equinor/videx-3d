@@ -1,4 +1,4 @@
-import { Pick } from '../../../src/sdk'
+import { Pick } from '../../../src/sdk';
 
 const aPicks: Pick[] = [
   {
@@ -78,7 +78,7 @@ const aPicks: Pick[] = [
     mdMsl: 100,
     tvdMsl: 100,
   },
-]
+];
 
 const bPicks: Pick[] = [
   {
@@ -165,7 +165,7 @@ const bPicks: Pick[] = [
     mdMsl: 3000,
     tvdMsl: 970,
   },
-]
+];
 
 const cPicks: Pick[] = [
   {
@@ -245,10 +245,10 @@ const cPicks: Pick[] = [
     mdMsl: 3800,
     tvdMsl: 990,
   },
-]
+];
 
 export default {
-  'a': aPicks,
-  'b': bPicks,
-  'c': cPicks,
-}
+  a: aPicks,
+  b: bPicks,
+  c: cPicks,
+};

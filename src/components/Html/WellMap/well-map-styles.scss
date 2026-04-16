@@ -5,11 +5,11 @@ svg.well-map {
     }
     g.track.interactive:hover {
       cursor: pointer;
-      filter: brightness(1.1)
+      filter: brightness(1.1);
     }
     g.track.interactive.selected:hover {
       cursor: pointer;
-      filter: none
+      filter: none;
     }
   }
 }

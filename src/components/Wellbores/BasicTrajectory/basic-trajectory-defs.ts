@@ -1,5 +1,5 @@
-import { PackedBufferGeometry } from '../../../sdk'
+import { PackedBufferGeometry } from '../../../sdk';
 
-export const basicTrajectory = 'basicTrajectory'
+export const basicTrajectory = 'basicTrajectory';
 
-export type BasicTrajectoryGeneratorResponse = PackedBufferGeometry
+export type BasicTrajectoryGeneratorResponse = PackedBufferGeometry;

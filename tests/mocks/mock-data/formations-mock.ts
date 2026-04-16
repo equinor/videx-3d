@@ -1,8 +1,8 @@
-import { Formation } from '../../../src/sdk'
+import { Formation } from '../../../src/sdk';
 
-const stratColumnId = 'x'
-const wellboreId = 'x'
-const color = 'black'
+const stratColumnId = 'x';
+const wellboreId = 'x';
+const color = 'black';
 
 const xxFormations: Formation[] = [
   {
@@ -12,10 +12,10 @@ const xxFormations: Formation[] = [
     name: 'A',
     level: 1,
     entry: {
-      mdMsl: 100
+      mdMsl: 100,
     },
     exit: {
-      mdMsl: 700
+      mdMsl: 700,
     },
   },
   {
@@ -25,10 +25,10 @@ const xxFormations: Formation[] = [
     name: 'B',
     level: 1,
     entry: {
-      mdMsl: 700
+      mdMsl: 700,
     },
     exit: {
-      mdMsl: 1000
+      mdMsl: 1000,
     },
   },
   {
@@ -38,10 +38,10 @@ const xxFormations: Formation[] = [
     name: 'C',
     level: 2,
     entry: {
-      mdMsl: 200
+      mdMsl: 200,
     },
     exit: {
-      mdMsl: 300
+      mdMsl: 300,
     },
   },
   {
@@ -51,10 +51,10 @@ const xxFormations: Formation[] = [
     name: 'D',
     level: 2,
     entry: {
-      mdMsl: 500
+      mdMsl: 500,
     },
     exit: {
-      mdMsl: 700
+      mdMsl: 700,
     },
   },
   {
@@ -64,10 +64,10 @@ const xxFormations: Formation[] = [
     name: 'E',
     level: 2,
     entry: {
-      mdMsl: 700
+      mdMsl: 700,
     },
     exit: {
-      mdMsl: 800
+      mdMsl: 800,
     },
   },
   {
@@ -77,10 +77,10 @@ const xxFormations: Formation[] = [
     name: 'F',
     level: 2,
     entry: {
-      mdMsl: 800
+      mdMsl: 800,
     },
     exit: {
-      mdMsl: 1000
+      mdMsl: 1000,
     },
   },
   {
@@ -90,10 +90,10 @@ const xxFormations: Formation[] = [
     name: 'G',
     level: 3,
     entry: {
-      mdMsl: 600
+      mdMsl: 600,
     },
     exit: {
-      mdMsl: 650
+      mdMsl: 650,
     },
   },
   {
@@ -103,10 +103,10 @@ const xxFormations: Formation[] = [
     name: 'H',
     level: 3,
     entry: {
-      mdMsl: 700
+      mdMsl: 700,
     },
     exit: {
-      mdMsl: 800
+      mdMsl: 800,
     },
   },
   {
@@ -116,15 +116,14 @@ const xxFormations: Formation[] = [
     name: 'I',
     level: 3,
     entry: {
-      mdMsl: 900
+      mdMsl: 900,
     },
     exit: {
-      mdMsl: 1000
+      mdMsl: 1000,
     },
   },
-]
-
+];
 
 export const formations = {
-  'x': xxFormations
-}
+  x: xxFormations,
+};

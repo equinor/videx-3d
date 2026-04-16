@@ -1,52 +1,52 @@
-import { createContext, useContext } from 'react'
-import { Camera, Object3D } from 'three'
-import { Vec2, Vec3 } from '../../sdk'
+import { createContext, useContext } from 'react';
+import { Camera, Object3D } from 'three';
+import { Vec2, Vec3 } from '../../sdk';
 
 export type KeysPressed = {
-  altKey: boolean
-  ctrlKey: boolean
-  shiftKey: boolean
-}
+  altKey: boolean;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+};
 
 export type EventEmitterCallbackEvent = {
-  target: Object3D
-  source: Object3D
-  instanceIndex?: number
-  position?: Vec3
-  pointer: Vec2
-  camera: Camera
-  domElement: HTMLElement
-  keys: KeysPressed
-  ref: any
-}
+  target: Object3D;
+  source: Object3D;
+  instanceIndex?: number;
+  position?: Vec3;
+  pointer: Vec2;
+  camera: Camera;
+  domElement: HTMLElement;
+  keys: KeysPressed;
+  ref: any;
+};
 
-export type EventEmitterCallback = (event: EventEmitterCallbackEvent) => void
+export type EventEmitterCallback = (event: EventEmitterCallbackEvent) => void;
 
 export type Listener = {
-  object: Object3D
-  ref?: any
-  threshold?: number
-  handlers: Record<string, EventEmitterCallback>
-}
+  object: Object3D;
+  ref?: any;
+  threshold?: number;
+  handlers: Record<string, EventEmitterCallback>;
+};
 
 export type Emitter = {
-  source: Object3D
-  depth: number
-  listener: number
-  instanced: boolean
-  instanceCount: number
-  threshold: number
-}
+  source: Object3D;
+  depth: number;
+  listener: number;
+  instanced: boolean;
+  instanceCount: number;
+  threshold: number;
+};
 
 export type ObjectMapEntry = {
-  emitter: number
-  index: number
-}
+  emitter: number;
+  index: number;
+};
 
 export type EventEmitterContextProps = {
-  register: (listener: Listener) => () => void
-  update: () => void
-}
+  register: (listener: Listener) => () => void;
+  update: () => void;
+};
 
 /**
  * Context for registering event handlers to the `EventEmitter`
@@ -56,8 +56,8 @@ export type EventEmitterContextProps = {
  * @group Contexts
  */
 export const EventEmitterContext = createContext<EventEmitterContextProps>(
-  null!
-)
+  null!,
+);
 
 /**
  * Used to register event handlers for renderable components.
@@ -99,4 +99,4 @@ export const EventEmitterContext = createContext<EventEmitterContextProps>(
  *
  * @group Hooks
  */
-export const useEventEmitter = () => useContext(EventEmitterContext)
+export const useEventEmitter = () => useContext(EventEmitterContext);

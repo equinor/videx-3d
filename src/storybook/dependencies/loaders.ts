@@ -1,77 +1,193 @@
+import { transfer } from 'comlink';
 import {
-  CasingItem,
-  CompletionTool,
-  Formation,
-  PerforationInterval,
-  Pick,
+  getProjectedTrajectory,
+  getTrajectory,
+  KeyType,
   PositionLog,
-  StratColumn,
-  SurfaceMeta,
+  Store,
   WellboreHeader,
-} from '../../sdk'
-import { get } from './api'
+} from '../../sdk';
+import { DataLoader } from '../../sdk/data/DataLoader';
+import { VerticalSlice } from '../../sdk/data/types/VerticalSlice';
+import { get } from './api';
 
-export async function loadWellboreHeaders(): Promise<
-  Record<string, WellboreHeader>
-> {
-  const data = await get('/data/wellbore-headers.json')
-  const output: Record<string, WellboreHeader> = {}
-  Object.keys(data).forEach((key) => {
-    const record = data[key]
-    const drilled = record.drilled ? new Date(record.drilled) : null
-    
-    output[key] = {
-      ...record,
-      drilled,
-    }
-  })
-  return output
-}
-
-export async function loadPositionLogs(): Promise<Record<string, PositionLog>> {
-  const positionLogsData = await get('/data/position-logs.json')
-
-  return Object.keys(positionLogsData).reduce<Record<string, PositionLog>>(
-    (dict, key) => {
-      const log = positionLogsData[key]
-
-      if (log) {
-        dict[key] = new Float32Array(log)
-      }
-      return dict
+export const wellboreHeadersLoader = (store: Store) =>
+  new DataLoader(store, {
+    preloaded: true,
+    init: async () => {
+      const data = await get('/data/wellbore-headers.json');
+      return Object.keys(data).map(key => {
+        const record = data[key];
+        const drilled = record.drilled ? new Date(record.drilled) : null;
+        return [key, { ...record, drilled }];
+      });
     },
-    {}
-  )
-}
+  });
 
-export async function loadCasings(): Promise<Record<string, CasingItem[]>> {
-  return get('/data/casings.json')
-}
+export const positionLogsLoader = (store: Store) =>
+  new DataLoader(store, {
+    preloaded: true,
+    init: async () => {
+      const positionLogsData = await get('/data/position-logs.json');
+      return Object.keys(positionLogsData).map(key => [
+        key,
+        positionLogsData[key],
+      ]);
+    },
+    transform: (r: number[]) => {
+      // create a typed array of source data so it can be transferred using comlink
+      const floatArray = new Float32Array(r);
+      return transfer(floatArray, [floatArray.buffer]);
+    },
+  });
 
-export async function loadCompletion(): Promise<
-  Record<string, CompletionTool[]>
-> {
-  return get('/data/completion.json')
-}
+export const surfaceMetaLoader = (store: Store) =>
+  new DataLoader(store, {
+    preloaded: true,
+    init: async () => {
+      const data = await get('/data/surface-meta.json');
+      return Object.keys(data).map(key => [key, data[key]]);
+    },
+  });
 
-export async function loadPerforations(): Promise<
-  Record<string, PerforationInterval[]>
-> {
-  return get('/data/perforations.json')
-}
+export const surfaceValuesLoader = (store: Store) =>
+  new DataLoader(store, {
+    load: async (key: KeyType) => {
+      return get(`/data/surfaces/${key}.json`);
+    },
+    transform: (r: number[]) => {
+      // create a typed array of source data so it can be transferred using comlink
+      const floatArray = new Float32Array(r);
+      return transfer(floatArray, [floatArray.buffer]);
+    },
+  });
 
-export async function loadSurfaceMeta(): Promise<Record<string, SurfaceMeta>> {
-  return get('/data/surface-meta.json')
-}
+export const casingLoader = (store: Store) =>
+  new DataLoader(store, {
+    preloaded: true,
+    init: async () => {
+      const data = await get('/data/casings.json');
+      return Object.keys(data).map(key => [key, data[key]]);
+    },
+  });
 
-export async function loadFormations(): Promise<Record<string, Formation[]>> {
-  return get('/data/formations.json')
-}
+export const completionLoader = (store: Store) =>
+  new DataLoader(store, {
+    preloaded: true,
+    init: async () => {
+      const data = await get('/data/completion.json');
+      return Object.keys(data).map(key => [key, data[key]]);
+    },
+  });
 
-export async function loadStratColumns(): Promise<Record<string, StratColumn>> {
-  return get('/data/strat-columns.json')
-}
+export const perforationLoader = (store: Store) =>
+  new DataLoader(store, {
+    preloaded: true,
+    init: async () => {
+      const data = await get('/data/perforations.json');
+      return Object.keys(data).map(key => [key, data[key]]);
+    },
+  });
 
-export async function loadPicks(): Promise<Record<string, Pick[]>> {
-  return get('/data/picks.json')
-}
+export const formationLoader = (store: Store) =>
+  new DataLoader(store, {
+    preloaded: true,
+    init: async () => {
+      const data = await get('/data/formations.json');
+      return Object.keys(data).map(key => [key, data[key]]);
+    },
+  });
+
+export const stratColumnLoader = (store: Store) =>
+  new DataLoader(store, {
+    preloaded: true,
+    init: async () => {
+      const data = await get('/data/strat-columns.json');
+      return Object.keys(data).map(key => [key, data[key]]);
+    },
+  });
+
+export const picksLoader = (store: Store) =>
+  new DataLoader(store, {
+    preloaded: true,
+    init: async () => {
+      const data = await get('/data/picks.json');
+      return Object.keys(data).map(key => [key, data[key]]);
+    },
+  });
+
+/*
+  This function will generate dummy data based on an existing seismic slice.
+  This means that all wellbores will read from the same slice, but adapt the
+  number of samples to the calculated trajectory of the wellbore.
+
+  For an actual use-case, you would need an api serving true samples based
+  on input coordinates.
+*/
+export const wellboreSeismicSectionLoader = (store: Store) =>
+  new DataLoader(store, {
+    noCache: true,
+    load: async <T>(id: KeyType, args?: any): Promise<T | null> => {
+      const data = await get('/data/seismic.json');
+      if (!data) return null;
+      const poslog = await store.get<PositionLog>('position-logs', id);
+      const header = await store.get<WellboreHeader>('wellbore-headers', id);
+      if (!header || !poslog) return null;
+
+      const trajectory = getTrajectory(id as string, poslog);
+
+      if (!trajectory) return null;
+
+      const stepSize = args.stepSize || 3;
+      const extension = Number.isFinite(args.extension) ? args.extension : 0;
+      const minSize = Number.isFinite(args.minSize) ? args.minSize : 0;
+      const defaultAngle = Number.isFinite(args.defaultExtensionAngle)
+        ? args.defaultExtensionAngle
+        : 0;
+
+      const sampledPath = trajectory.curve.getPoints(
+        trajectory.measuredLength * 10,
+      );
+      const projectedTrajectory = getProjectedTrajectory(
+        sampledPath,
+        stepSize,
+        extension,
+        minSize,
+        defaultAngle,
+      );
+
+      if (!projectedTrajectory) return null;
+
+      const sourceWidth = data.xsamples;
+      const width = projectedTrajectory.positions.length;
+      const height = data.ysamples;
+
+      const values = new Float32Array(width * height);
+
+      for (let r = 0; r < height; r++) {
+        for (let c = 0; c < width; c++) {
+          const overScan = Math.floor(c / sourceWidth);
+          const reverse = overScan % 2 === 1;
+
+          const itrg = r * width + c;
+
+          // if we read beyond the number of columns we will
+          // repeat the data by shifting column read direction
+          const sourceCol = c % sourceWidth;
+          const readCol = reverse ? sourceWidth - 1 - sourceCol : sourceCol;
+          const isrc = r * sourceWidth + readCol;
+          values[itrg] = data.values[isrc] / data.scaleFactor;
+        }
+      }
+
+      const slice: VerticalSlice = {
+        depthRange: [data.top, data.bottom],
+        samples: [width, height],
+        trajectory: projectedTrajectory,
+        values,
+        valueRange: [data.min, data.max],
+      };
+
+      return slice as T;
+    },
+  });

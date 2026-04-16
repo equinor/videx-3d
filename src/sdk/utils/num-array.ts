@@ -1,8 +1,7 @@
 export function negate(numArray: number[]) {
-  return numArray.map(v => -v)
+  return numArray.map(v => -v);
 }
 
 export function multiply(numArray: number[], factor: number) {
-  return numArray.map(v => v * factor)
+  return numArray.map(v => v * factor);
 }
-

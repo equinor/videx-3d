@@ -1,6 +1,6 @@
 export function transformWellboreHeaders(input, output) {
   output['wellbore-headers'] = input['wellbore-headers']
-    .map((w) => {
+    .map(w => {
       return {
         id: w.wellbore_uuid,
         name: w.unique_wellbore_identifier,
@@ -18,12 +18,12 @@ export function transformWellboreHeaders(input, output) {
           w.depth_reference_elevation,
         waterDepth: Number.isFinite(w.water_depth) ? w.water_depth : null,
         status: w.wellbore_status,
-      }
+      };
     })
     .reduce((acc, w) => {
       return {
         ...acc,
         [w.id]: w,
-      }
-    }, {})
+      };
+    }, {});
 }

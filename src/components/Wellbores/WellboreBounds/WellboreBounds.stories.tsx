@@ -1,67 +1,68 @@
-import { useFrame } from '@react-three/fiber'
-import type { Meta, StoryObj } from '@storybook/react-vite'
-import { useContext, useEffect } from 'react'
-import { WellboreSelectedEvent } from '../../../events/wellbore-events'
-import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
-import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator'
-import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator'
-import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator'
-import { OutputPanelDecorator } from '../../../storybook/decorators/output-panel-decorator'
-import storyArgs from '../../../storybook/story-args.json'
-import { DistanceContext } from '../../Distance/DistanceContext'
-import { useOutputPanel, useOutputPanelState } from '../../Html/OutputPanel/output-panel-state'
-import { BasicTrajectory } from '../BasicTrajectory/BasicTrajectory'
-import { Wellbore } from '../Wellbore/Wellbore'
-import { WellboreBounds } from './WellboreBounds'
+import { useFrame } from '@react-three/fiber';
+import type { Meta, StoryObj } from '@storybook/react-vite';
+import { useContext, useEffect } from 'react';
+import { WellboreSelectedEvent } from '../../../events/wellbore-events';
+import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator';
+import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator';
+import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator';
+import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator';
+import { OutputPanelDecorator } from '../../../storybook/decorators/output-panel-decorator';
+import storyArgs from '../../../storybook/story-args.json';
+import { DistanceContext } from '../../Distance/DistanceContext';
+import {
+  useOutputPanel,
+  useOutputPanelState,
+} from '../../Html/OutputPanel/output-panel-state';
+import { BasicTrajectory } from '../BasicTrajectory/BasicTrajectory';
+import { Wellbore } from '../Wellbore/Wellbore';
+import { WellboreBounds } from './WellboreBounds';
 
 const meta = {
   title: 'Components/Wellbores/WellboreBounds',
   component: Wellbore,
-  loaders: [
-    async () => useOutputPanelState.setState({ groups: {} })
-  ]
-} satisfies Meta<typeof Wellbore>
+  loaders: [async () => useOutputPanelState.setState({ groups: {} })],
+} satisfies Meta<typeof Wellbore>;
 
-type StoryArgs = React.ComponentProps<typeof WellboreBounds>
+type StoryArgs = React.ComponentProps<typeof WellboreBounds>;
 
-export default meta
+export default meta;
 
-const wellboreId = storyArgs.defaultWellbore
+const wellboreId = storyArgs.defaultWellbore;
 
-type Story = StoryObj<StoryArgs>
+type Story = StoryObj<StoryArgs>;
 
-const OutputLogger = (() => {
-  const distanceContext = useContext(DistanceContext)
-  const outputPanel = useOutputPanel()
+const OutputLogger = () => {
+  const distanceContext = useContext(DistanceContext);
+  const outputPanel = useOutputPanel();
 
   useEffect(() => {
     if (outputPanel) {
       outputPanel.add('distance', {
         label: 'Distance',
         value: '-',
-      })
+      });
     }
 
     return () => {
       if (outputPanel) {
-        outputPanel.remove('distance')
+        outputPanel.remove('distance');
       }
-    }
-  }, [outputPanel])
+    };
+  }, [outputPanel]);
 
   useFrame(() => {
     if (outputPanel && distanceContext) {
-      outputPanel.update('distance', distanceContext.current)
+      outputPanel.update('distance', distanceContext.current);
     }
-  })
+  });
 
-  return null
-})
+  return null;
+};
 
 export const Default: Story = {
   args: {
     id: wellboreId,
-    boundsSampleSize: 250
+    boundsSampleSize: 250,
   },
   argTypes: {
     id: {
@@ -76,7 +77,7 @@ export const Default: Story = {
         min: 10,
         step: 10,
       },
-    }
+    },
   },
   decorators: [
     Canvas3dDecorator,
@@ -87,8 +88,8 @@ export const Default: Story = {
   ],
   render: args => {
     useEffect(() => {
-      dispatchEvent(new WellboreSelectedEvent({ id: args.id }))
-    }, [args.id])
+      dispatchEvent(new WellboreSelectedEvent({ id: args.id }));
+    }, [args.id]);
 
     return (
       <>
@@ -99,11 +100,11 @@ export const Default: Story = {
           </WellboreBounds>
         </Wellbore>
       </>
-    )
+    );
   },
   parameters: {
     autoClear: true,
     scale: 1000,
     cameraPosition: [0, 2500, 2500],
-  }
-}
+  },
+};

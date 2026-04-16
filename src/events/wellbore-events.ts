@@ -1,24 +1,24 @@
-import { Object3D } from 'three'
-import { Vec3 } from '../sdk'
+import { Object3D } from 'three';
+import { Vec3 } from '../sdk';
 
-export const wellboreSelectedEventType = 'wellbore-selected' as const
-export const wellboreAddedEventType = 'wellbore-added' as const
-export const wellboreRemovedEventType = 'wellbore-removed' as const
+export const wellboreSelectedEventType = 'wellbore-selected' as const;
+export const wellboreAddedEventType = 'wellbore-added' as const;
+export const wellboreRemovedEventType = 'wellbore-removed' as const;
 
 export interface WellboreAddedEventDetails {
-  id: string
-  object: Object3D
+  id: string;
+  object: Object3D;
 }
 
 export interface WellboreRemovedEventDetails {
-  id: string
+  id: string;
 }
 
 export interface WellboreSelectedEventDetails {
-  id: string
-  position?: Vec3
-  depth?: number
-  flyTo?: boolean
+  id: string;
+  position?: Vec3;
+  depth?: number;
+  flyTo?: boolean;
 }
 
 /**
@@ -27,7 +27,7 @@ export interface WellboreSelectedEventDetails {
  */
 export class WellboreSelectedEvent extends CustomEvent<WellboreSelectedEventDetails> {
   constructor(detail: WellboreSelectedEventDetails) {
-    super(wellboreSelectedEventType, { detail })
+    super(wellboreSelectedEventType, { detail });
   }
 }
 
@@ -37,7 +37,7 @@ export class WellboreSelectedEvent extends CustomEvent<WellboreSelectedEventDeta
  */
 export class WellboreAddedEvent extends CustomEvent<WellboreAddedEventDetails> {
   constructor(detail: WellboreAddedEventDetails) {
-    super(wellboreAddedEventType, { detail })
+    super(wellboreAddedEventType, { detail });
   }
 }
 
@@ -47,14 +47,14 @@ export class WellboreAddedEvent extends CustomEvent<WellboreAddedEventDetails> {
  */
 export class WellboreRemovedEvent extends CustomEvent<WellboreRemovedEventDetails> {
   constructor(detail: WellboreRemovedEventDetails) {
-    super(wellboreRemovedEventType, { detail })
+    super(wellboreRemovedEventType, { detail });
   }
 }
 
 declare global {
   interface WindowEventMap {
-    [wellboreSelectedEventType]: WellboreSelectedEvent
-    [wellboreAddedEventType]: WellboreAddedEvent
-    [wellboreRemovedEventType]: WellboreRemovedEvent
+    [wellboreSelectedEventType]: WellboreSelectedEvent;
+    [wellboreAddedEventType]: WellboreAddedEvent;
+    [wellboreRemovedEventType]: WellboreRemovedEvent;
   }
 }

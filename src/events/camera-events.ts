@@ -1,22 +1,19 @@
-import { Vec3 } from '../sdk'
+import { Vec3 } from '../sdk';
 
 /**
  * CameraSetPositionEvent name
  */
-export const cameraSetPositionEventType = "camera-set-position" as const
+export const cameraSetPositionEventType = 'camera-set-position' as const;
 /**
  * CameraFocusAtPointEvent name
  */
-export const cameraFocusAtPointEventType = "camera-focus-point" as const
-
+export const cameraFocusAtPointEventType = 'camera-focus-point' as const;
 
 export interface CameraFocusAtPointEventDetails {
-  point: Vec3,
-  distance?: number,
-  callback?: () => void,
+  point: Vec3;
+  distance?: number;
+  callback?: () => void;
 }
-
-
 
 /**
  * Set the camera at the specified position
@@ -24,7 +21,7 @@ export interface CameraFocusAtPointEventDetails {
  */
 export class CameraSetPositionEvent extends CustomEvent<Vec3> {
   constructor(detail: Vec3) {
-    super(cameraSetPositionEventType, { detail })
+    super(cameraSetPositionEventType, { detail });
   }
 }
 
@@ -34,15 +31,13 @@ export class CameraSetPositionEvent extends CustomEvent<Vec3> {
  */
 export class CameraFocusAtPointEvent extends CustomEvent<CameraFocusAtPointEventDetails> {
   constructor(detail: CameraFocusAtPointEventDetails) {
-    super(cameraFocusAtPointEventType, { detail })
+    super(cameraFocusAtPointEventType, { detail });
   }
 }
 
-
 declare global {
   interface WindowEventMap {
-    [cameraSetPositionEventType]: CameraSetPositionEvent
-    [cameraFocusAtPointEventType]: CameraFocusAtPointEvent
-
+    [cameraSetPositionEventType]: CameraSetPositionEvent;
+    [cameraFocusAtPointEventType]: CameraFocusAtPointEvent;
   }
 }

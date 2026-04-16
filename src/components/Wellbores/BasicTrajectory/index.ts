@@ -1,2 +1,2 @@
-export * from './BasicTrajectory'
-export * from './basic-trajectory-defs'
+export * from './BasicTrajectory';
+export * from './basic-trajectory-defs';

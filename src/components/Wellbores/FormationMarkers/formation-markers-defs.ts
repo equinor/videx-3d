@@ -1,5 +1,5 @@
-import { SymbolsType } from '../../../sdk'
+import { SymbolsType } from '../../../sdk';
 
-export const formationMarkerSymbols = 'formationMarkerSymbols'
+export const formationMarkerSymbols = 'formationMarkerSymbols';
 
-export type FormationMarkersGeneratorResponse = SymbolsType
+export type FormationMarkersGeneratorResponse = SymbolsType;

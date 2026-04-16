@@ -1,39 +1,42 @@
-import type { Meta, StoryObj } from '@storybook/react-vite'
-import { useMemo } from 'react'
-import { SurfaceMeta, Vec2 } from '../../sdk'
-import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator'
-import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator'
-import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator'
-import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator'
-import { useSurfaceMeta } from '../../storybook/hooks/useSurfaceMeta'
-import storyArgs from '../../storybook/story-args.json'
-import { UtmArea, UtmPosition } from '../UtmArea'
-import { Surface, SurfaceProps } from './Surface'
-import { ContourColorMode } from './SurfaceMaterial'
+import type { Meta, StoryObj } from '@storybook/react-vite';
+import { useMemo } from 'react';
+import { SurfaceMeta, Vec2 } from '../../sdk';
+import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
+import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
+import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
+import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
+import { useSurfaceMeta } from '../../storybook/hooks/useSurfaceMeta';
+import storyArgs from '../../storybook/story-args.json';
+import { UtmArea, UtmPosition } from '../UtmArea';
+import { Surface, SurfaceProps } from './Surface';
+import { ContourColorMode } from './SurfaceMaterial';
 
 // const loader = new TextureLoader()
 // const normalMap = loader.load('normal_map.jpg')
 // normalMap.anisotropy = 4
 
-const utmZone = storyArgs.utmZone
-const origin = storyArgs.origin as Vec2
+const utmZone = storyArgs.utmZone;
+const origin = storyArgs.origin as Vec2;
 
 type SurfaceStoryProps = Omit<SurfaceProps, 'meta'> & {
-  surfaceId: string,
-}
+  surfaceId: string;
+};
 
 const SurfaceStory = (props: SurfaceStoryProps) => {
-  const surfaceHeaders = useSurfaceMeta()
+  const surfaceHeaders = useSurfaceMeta();
 
   const meta = useMemo<SurfaceMeta | null>(() => {
-    return (surfaceHeaders.find(d => d.id === props.surfaceId) || null)
-  }, [props.surfaceId, surfaceHeaders])
-
+    return surfaceHeaders.find(d => d.id === props.surfaceId) || null;
+  }, [props.surfaceId, surfaceHeaders]);
 
   return (
     <UtmArea origin={origin} utmZone={utmZone}>
-      {(props.surfaceId && meta) && (
-        <UtmPosition easting={meta.header.xori} northing={meta.header.yori} altitude={meta.max}>
+      {props.surfaceId && meta && (
+        <UtmPosition
+          easting={meta.header.xori}
+          northing={meta.header.yori}
+          altitude={meta.max}
+        >
           <Surface
             {...props}
             meta={meta}
@@ -43,19 +46,18 @@ const SurfaceStory = (props: SurfaceStoryProps) => {
         </UtmPosition>
       )}
     </UtmArea>
-
-  )
-}
+  );
+};
 
 const meta = {
   title: 'Components/Surfaces/Surface',
   component: SurfaceStory,
-} satisfies Meta<typeof SurfaceStory>
+} satisfies Meta<typeof SurfaceStory>;
 
-type StoryArgs = React.ComponentProps<typeof SurfaceStory>
+type StoryArgs = React.ComponentProps<typeof SurfaceStory>;
 
-export default meta
-type Story = StoryObj<StoryArgs>
+export default meta;
+type Story = StoryObj<StoryArgs>;
 
 export const Default: Story = {
   args: {
@@ -75,7 +77,7 @@ export const Default: Story = {
     contoursColor: '#000000',
     rampMin: 0,
     rampMax: 0,
-    debug: false
+    debug: false,
   },
   argTypes: {
     surfaceId: {
@@ -100,13 +102,13 @@ export const Default: Story = {
           '7': 'seismic2',
           '8': 'spectrum',
           '9': 'gray',
-        }
-      }
+        },
+      },
     },
     color: {
       control: {
         type: 'color',
-      }
+      },
     },
     opacity: {
       control: {
@@ -114,7 +116,7 @@ export const Default: Story = {
         min: 0,
         max: 1,
         step: 0.01,
-      }
+      },
     },
     maxError: {
       control: {
@@ -122,13 +124,13 @@ export const Default: Story = {
         min: 0.1,
         max: 10,
         step: 0.01,
-      }
+      },
     },
     contoursInterval: {
       options: [1, 2, 5, 10, 25, 50, 100, 250, 500],
       control: {
-        type: 'select'
-      }
+        type: 'select',
+      },
     },
     contoursColorMode: {
       options: [0, 1, 2],
@@ -143,17 +145,17 @@ export const Default: Story = {
         min: 0.5,
         max: 5,
         step: 0.1,
-      }
+      },
     },
     contoursColor: {
       control: {
         type: 'color',
-      }
+      },
     },
     normalMap: {
       control: {
-        disable: true
-      }
+        disable: true,
+      },
     },
     rampMin: {
       control: {
@@ -161,7 +163,7 @@ export const Default: Story = {
         min: -100,
         max: 100,
         step: 1,
-      }
+      },
     },
     rampMax: {
       control: {
@@ -169,11 +171,11 @@ export const Default: Story = {
         min: -100,
         max: 100,
         step: 1,
-      }
+      },
     },
     debug: {
-      control: { type: 'boolean' }
-    }
+      control: { type: 'boolean' },
+    },
   },
   decorators: [
     GlyphsDecorator,
@@ -184,9 +186,7 @@ export const Default: Story = {
   parameters: {
     autoClear: true,
     scale: 1000,
-    cameraPosition: [-10000, 10000, 5000]
+    cameraPosition: [-10000, 10000, 5000],
   },
-  render: (args) => (
-    <SurfaceStory {...args} />
-  )
-}
+  render: args => <SurfaceStory {...args} />,
+};

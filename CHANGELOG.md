@@ -1,5 +1,74 @@
 # Changelog
 
+## [5.1.3-beta](https://github.com/equinor/videx-3d/compare/v5.1.2-beta...v5.1.3-beta) (2026-04-08)
+
+
+### Bug Fixes
+
+* **npm:** bump lodash from 4.17.23 to 4.18.1 ([#181](https://github.com/equinor/videx-3d/issues/181)) ([a000a5f](https://github.com/equinor/videx-3d/commit/a000a5f7350662823c0489445d31aa6198fa144c))
+* **npm:** bump picomatch from 2.3.1 to 2.3.2 ([#174](https://github.com/equinor/videx-3d/issues/174)) ([6eb62e9](https://github.com/equinor/videx-3d/commit/6eb62e90f42f63ddf80c8554257f91dea2faf059))
+* **npm:** bump vite from 7.3.1 to 7.3.2 ([#180](https://github.com/equinor/videx-3d/issues/180)) ([786cfb8](https://github.com/equinor/videx-3d/commit/786cfb8257c71758bbe267d12dd45fc772ccc44d))
+
+## [5.1.2-beta](https://github.com/equinor/videx-3d/compare/v5.1.1-beta...v5.1.2-beta) (2026-03-25)
+
+
+### Bug Fixes
+
+* **colorramps:** export color interpolators used for ramps ([#170](https://github.com/equinor/videx-3d/issues/170)) ([81be263](https://github.com/equinor/videx-3d/commit/81be26308304ddcf1f4f2860566bd63fff6856f3))
+* **docs:** updated docs to reference new scoped npm package name ([#173](https://github.com/equinor/videx-3d/issues/173)) ([d13275d](https://github.com/equinor/videx-3d/commit/d13275d2c7499c96e7ea8116e1f121183f339de0))
+
+## [5.1.1-beta](https://github.com/equinor/videx-3d/compare/v5.1.0-beta...v5.1.1-beta) (2026-03-25)
+
+
+### Bug Fixes
+
+* **npm:** bump flatted from 3.3.3 to 3.4.2 ([#165](https://github.com/equinor/videx-3d/issues/165)) ([cd8633f](https://github.com/equinor/videx-3d/commit/cd8633f7087b837985d837af7926c6006dee2586))
+* scoped name change ([#167](https://github.com/equinor/videx-3d/issues/167)) ([564fc2f](https://github.com/equinor/videx-3d/commit/564fc2f7acdd8d65074f526316e6a8cc1fffe8ff))
+
+## [5.1.0-beta](https://github.com/equinor/videx-3d/compare/v5.0.11-beta...v5.1.0-beta) (2026-03-24)
+
+
+### Features
+
+* **dataloader:** generic data loader class added and used in new mock store and added flexibility to store interface allowing additional args to be passed to the get function ([#159](https://github.com/equinor/videx-3d/issues/159)) ([1aae540](https://github.com/equinor/videx-3d/commit/1aae54066213ce18df96209258b5e47d3fbf9ae1))
+* **seismicsection:** added component for rendering a seismic slice a… ([#163](https://github.com/equinor/videx-3d/issues/163)) ([3a8c775](https://github.com/equinor/videx-3d/commit/3a8c77566bb857565490353585fac652ea596b81))
+
+
+### Bug Fixes
+
+* **npm:** bump immutable from 5.1.4 to 5.1.5 ([#157](https://github.com/equinor/videx-3d/issues/157)) ([9e241ee](https://github.com/equinor/videx-3d/commit/9e241eeb8f28ad7f6f368162b1a94ecbacc82ea6))
+
+## [5.0.11-beta](https://github.com/equinor/videx-3d/compare/v5.0.10-beta...v5.0.11-beta) (2026-03-03)
+
+
+### Bug Fixes
+
+* **npm deps:** updated npm packages ([#151](https://github.com/equinor/videx-3d/issues/151)) ([1b4d320](https://github.com/equinor/videx-3d/commit/1b4d3207d5733a2e48f69e5862ff969492509e6e))
+* **npm:** bump minimatch from 3.1.2 to 3.1.5 ([#145](https://github.com/equinor/videx-3d/issues/145)) ([5e41a1d](https://github.com/equinor/videx-3d/commit/5e41a1d36e5c13ec4d13c2d2c1a9123c3845dbca))
+* **npm:** bump rollup from 4.53.3 to 4.59.0 ([#146](https://github.com/equinor/videx-3d/issues/146)) ([f584006](https://github.com/equinor/videx-3d/commit/f584006e8a101ea2f2405a4e5df46ea215429ff2))
+* **storybook:** upgrade to latest version ([#149](https://github.com/equinor/videx-3d/issues/149)) ([0c13a3a](https://github.com/equinor/videx-3d/commit/0c13a3aa3b4ebc5a4f4d42e3f8278d5b8da04e02))
+
+## [5.0.10-beta](https://github.com/equinor/videx-3d/compare/v5.0.9-beta...v5.0.10-beta) (2026-02-17)
+
+
+### Bug Fixes
+
+* **140:** call EventEmitter onResult callback ([#141](https://github.com/equinor/videx-3d/issues/141)) ([ad6760a](https://github.com/equinor/videx-3d/commit/ad6760a3ae14d9b3c1ad93d26765ae93eb84532f))
+
+## [5.0.9-beta](https://github.com/equinor/videx-3d/compare/v5.0.8-beta...v5.0.9-beta) (2026-02-06)
+
+
+### Bug Fixes
+
+* **surface depth:** set depth write to false when surface has an opacity below zero ([#134](https://github.com/equinor/videx-3d/issues/134)) ([aece06a](https://github.com/equinor/videx-3d/commit/aece06acd74efd02b77478ff588467fcfbb96530))
+
+## [5.0.8-beta](https://github.com/equinor/videx-3d/compare/v5.0.7-beta...v5.0.8-beta) (2026-01-28)
+
+
+### Bug Fixes
+
+* **labels:** annotations updated to calculate world position on the fly, allowing repositioning of the labels when the passed matrixWorld is updated + some minor bug fixes ([#129](https://github.com/equinor/videx-3d/issues/129)) ([a5b9c99](https://github.com/equinor/videx-3d/commit/a5b9c998e075954b292fb6ebe29cbc3bbb50c1f2))
+
 ## [5.0.7-beta](https://github.com/equinor/videx-3d/compare/v5.0.6-beta...v5.0.7-beta) (2026-01-23)
 
 

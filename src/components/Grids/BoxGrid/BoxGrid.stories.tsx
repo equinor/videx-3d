@@ -1,20 +1,20 @@
-import type { Meta, StoryObj } from '@storybook/react-vite'
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
-import { useEffect, useMemo } from 'react'
-import { WellboreSelectedEvent } from '../../../events/wellbore-events'
-import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
-import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator'
-import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator'
-import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator'
-import { useWellboreHeaders } from '../../../storybook/hooks/useWellboreHeaders'
-import storyArgs from '../../../storybook/story-args.json'
-import { BasicTrajectory } from '../../Wellbores/BasicTrajectory/BasicTrajectory'
-import { Casings } from '../../Wellbores/Casings/Casings'
-import { CompletionTools } from '../../Wellbores/CompletionTools/CompletionTools'
-import { Wellbore } from '../../Wellbores/Wellbore/Wellbore'
-import { BoxGrid } from './BoxGrid'
+import { useEffect, useMemo } from 'react';
+import { WellboreSelectedEvent } from '../../../events/wellbore-events';
+import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator';
+import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator';
+import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator';
+import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator';
+import { useWellboreHeaders } from '../../../storybook/hooks/useWellboreHeaders';
+import storyArgs from '../../../storybook/story-args.json';
+import { BasicTrajectory } from '../../Wellbores/BasicTrajectory/BasicTrajectory';
+import { Casings } from '../../Wellbores/Casings/Casings';
+import { CompletionTools } from '../../Wellbores/CompletionTools/CompletionTools';
+import { Wellbore } from '../../Wellbores/Wellbore/Wellbore';
+import { BoxGrid } from './BoxGrid';
 
-const wellboreId = storyArgs.defaultWellbore
+const wellboreId = storyArgs.defaultWellbore;
 
 const meta = {
   title: 'Components/Grids/BoxGrid',
@@ -30,27 +30,27 @@ const meta = {
     scale: 100,
     cameraPosition: [150, 2000, 1500],
     cameraTarget: [0, 0, 0],
-    autoClear: true
+    autoClear: true,
   },
-  render: (args) => {
-    const wellbores = useWellboreHeaders()
-    const wellbore = useMemo(() => wellbores.find(d => d.id === wellboreId), [wellbores])
+  render: args => {
+    const wellbores = useWellboreHeaders();
+    const wellbore = useMemo(
+      () => wellbores.find(d => d.id === wellboreId),
+      [wellbores],
+    );
 
     useEffect(() => {
       if (wellbore) {
-        dispatchEvent(new WellboreSelectedEvent({ id: wellbore.id }))
+        dispatchEvent(new WellboreSelectedEvent({ id: wellbore.id }));
       }
-    }, [wellbore])
+    }, [wellbore]);
 
-    if (!wellbore) return <>No wellbore found!</>
+    if (!wellbore) return <>No wellbore found!</>;
 
     return (
       <group>
         <group position={[50, 100, -50]}>
-          <BoxGrid
-            {...args}
-            projectionRefreshRate={1000}
-          >
+          <BoxGrid {...args} projectionRefreshRate={1000}>
             <Wellbore id={wellbore.id}>
               <BasicTrajectory />
               <Casings shoeFactor={1.5} opacity={0.5} sizeMultiplier={20} />
@@ -60,12 +60,12 @@ const meta = {
         </group>
         <axesHelper args={[100]} />
       </group>
-    )
-  }
-} satisfies Meta<typeof BoxGrid>
+    );
+  },
+} satisfies Meta<typeof BoxGrid>;
 
-export default meta
-type Story = StoryObj<typeof meta>
+export default meta;
+type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {
   args: {
@@ -87,19 +87,19 @@ export const Default: Story = {
     autoSizeUpdateRate: 100,
   },
   tags: ['autodocs'],
-}
+};
 
 export const Light: Story = {
   args: {
     size: [0, 0, 0],
     gridOrigin: [0, 0, 0],
     cellSize: 250,
-    gridColorMajor: "#ddd",
-    gridColorMinor: "#eee",
-    background: "#fff",
-    axesColor: "#555",
+    gridColorMajor: '#ddd',
+    gridColorMinor: '#eee',
+    background: '#fff',
+    axesColor: '#555',
     enableProjection: true,
-    projectionColor: "#ddd",
+    projectionColor: '#ddd',
     showRulers: false,
     autoSize: true,
     autoSizePadding: {
@@ -120,5 +120,4 @@ export const Light: Story = {
     background: '#eee',
   },
   tags: ['autodocs'],
-}
-
+};

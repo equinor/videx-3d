@@ -1,21 +1,21 @@
-import type { Meta, StoryObj } from '@storybook/react-vite'
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
-import { Vec2 } from '../../../sdk/types/common'
-import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator'
-import storyArgs from '../../../storybook/story-args.json'
-import { UtmArea } from '../../UtmArea'
-import { UtmGrid } from './UtmGrid'
+import { Vec2 } from '../../../sdk/types/common';
+import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator';
+import storyArgs from '../../../storybook/story-args.json';
+import { UtmArea } from '../../UtmArea';
+import { UtmGrid } from './UtmGrid';
 
-const utmZone = storyArgs.utmZone
-const origin = storyArgs.origin as Vec2
+const utmZone = storyArgs.utmZone;
+const origin = storyArgs.origin as Vec2;
 
 const meta = {
   title: 'Components/Grids/UtmGrid',
   component: UtmGrid,
-} satisfies Meta<typeof UtmGrid>
+} satisfies Meta<typeof UtmGrid>;
 
-export default meta
-type Story = StoryObj<typeof meta>
+export default meta;
+type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {
   args: {
@@ -27,23 +27,20 @@ export const Default: Story = {
   },
   argTypes: {
     relativeValues: {
-      type: 'boolean'
+      type: 'boolean',
     },
     dynamicCellSize: {
-      type: 'boolean'
-    }
+      type: 'boolean',
+    },
   },
-  decorators: [
-    Canvas3dDecorator,
-  ],
+  decorators: [Canvas3dDecorator],
   parameters: {
     autoClear: true,
     scale: 1000,
     cameraPosition: [0, 1000, 500],
     cameraTarget: [0, 0, 0],
   },
-  render: (args) => {
-
+  render: args => {
     return (
       <group>
         <UtmArea utmZone={utmZone} origin={origin}>
@@ -57,6 +54,6 @@ export const Default: Story = {
         </UtmArea>
         <axesHelper args={[args.cellSize]} />
       </group>
-    )
-  }
-}
+    );
+  },
+};

@@ -1,1 +1,1 @@
-export const completionToolAnnotations = 'completionToolAnnotations'
+export const completionToolAnnotations = 'completionToolAnnotations';

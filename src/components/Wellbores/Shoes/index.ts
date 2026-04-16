@@ -1,2 +1,2 @@
-export * from './Shoes'
-export * from './shoes-defs'
+export * from './Shoes';
+export * from './shoes-defs';

@@ -1,11 +1,4 @@
 {
-  "javascript.format.semicolons": "remove",
-  "typescript.format.semicolons": "remove",
-  "prettier.semi": false,
-  "prettier.singleQuote": true,
-  "javascript.preferences.quoteStyle": "single",
-  "typescript.preferences.quoteStyle": "single",
-  "prettier.jsxSingleQuote": true,
   "liveServer.settings.root": "/static",
   "editor.codeActionsOnSave": {
     "source.organizeImports": "always"

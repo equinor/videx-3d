@@ -2,20 +2,17 @@ export async function get(url: string): Promise<any> {
   //console.log(self)
   // use correct path when not running locally
   if (!self.location.origin.startsWith('http://')) {
-    url = '/videx-3d' + url
+    url = '/videx-3d' + url;
   }
 
-  const response = await fetch(
-    url,
-    {
-      method: 'GET',
-      credentials: 'omit',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      },
+  const response = await fetch(url, {
+    method: 'GET',
+    credentials: 'omit',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
     },
-  );
+  });
 
   const { status } = response;
 

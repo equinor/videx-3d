@@ -1,22 +1,31 @@
 function filterSurfaces(surfaces) {
-  const filtered = surfaces.filter(d => d.metadata 
-    ? (d.metadata.data_id?.aggregation && d.metadata.data.content === 'depth' && (d.metadata.data_id.aggregation.operation === 'mean' || d.metadata.data_id.aggregation.numreal === 1))
-    : (d.data.aggregation && d.data.content === 'depth' && (d.data.aggregation.operation === 'mean' || d.data.aggregation.numreal === 1))
-  )
+  const filtered = surfaces.filter(d =>
+    d.metadata
+      ? d.metadata.data_id?.aggregation &&
+        d.metadata.data.content === 'depth' &&
+        (d.metadata.data_id.aggregation.operation === 'mean' ||
+          d.metadata.data_id.aggregation.numreal === 1)
+      : d.data.aggregation &&
+        d.data.content === 'depth' &&
+        (d.data.aggregation.operation === 'mean' ||
+          d.data.aggregation.numreal === 1),
+  );
   return filtered;
 }
 
 function mapSurfaceMetaData(meta) {
   return filterSurfaces(meta).reduce((map, s) => {
-    const displayMin = s.metadata.visual_settings.colors.display_min !== null
-      ? s.metadata.visual_settings.colors.display_min
-      : s.header.extended_properties.set_min;
+    const displayMin =
+      s.metadata.visual_settings.colors.display_min !== null
+        ? s.metadata.visual_settings.colors.display_min
+        : s.header.extended_properties.set_min;
 
-    const displayMax = s.metadata.visual_settings.colors.display_max !== null
-      ? s.metadata.visual_settings.colors.display_max
-      : s.header.extended_properties.set_max;
+    const displayMax =
+      s.metadata.visual_settings.colors.display_max !== null
+        ? s.metadata.visual_settings.colors.display_max
+        : s.header.extended_properties.set_max;
 
-    return ({
+    return {
       ...map,
       [s.surface_id]: {
         id: s.surface_id,
@@ -40,18 +49,18 @@ function mapSurfaceMetaData(meta) {
         displayMax,
         color: s.metadata.visual_settings.colors.cross_section,
         visualization: s.metadata.visual_settings.cross_section.toLowerCase(),
-      }
-    })
-  }, {})
+      },
+    };
+  }, {});
 }
 
 export function transformSurfaceMeta(input, output) {
-  const surfaceMetaData = input['surface-meta']
-  
+  const surfaceMetaData = input['surface-meta'];
+
   if (!surfaceMetaData) {
-    output['surface-meta'] = {}
-    return  
+    output['surface-meta'] = {};
+    return;
   }
 
-  output['surface-meta'] = mapSurfaceMetaData(surfaceMetaData)
+  output['surface-meta'] = mapSurfaceMetaData(surfaceMetaData);
 }

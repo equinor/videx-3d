@@ -1,5 +1,5 @@
-import { PackedBufferGeometry } from '../../../sdk'
+import { PackedBufferGeometry } from '../../../sdk';
 
-export const tubeTrajectory = 'tubeTrajectory'
+export const tubeTrajectory = 'tubeTrajectory';
 
-export type tubeTrajectoryGeneratorResponse = PackedBufferGeometry
+export type tubeTrajectoryGeneratorResponse = PackedBufferGeometry;

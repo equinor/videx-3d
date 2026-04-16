@@ -1,17 +1,13 @@
-import type { Meta, StoryObj } from '@storybook/react-vite'
-import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator'
-import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator'
-import { PerformanceDecorator } from '../../storybook/decorators/performance-decorator'
-import { SDFTest } from './SDFTest'
+import type { Meta, StoryObj } from '@storybook/react-vite';
+import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
+import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
+import { PerformanceDecorator } from '../../storybook/decorators/performance-decorator';
+import { SDFTest } from './SDFTest';
 
 const meta = {
   title: 'Components/Misc/SDFTest',
   component: SDFTest,
-  decorators: [
-    GlyphsDecorator,
-    PerformanceDecorator,
-    Canvas3dDecorator,
-  ],
+  decorators: [GlyphsDecorator, PerformanceDecorator, Canvas3dDecorator],
   parameters: {
     autoClear: true,
     scale: 1000,
@@ -19,11 +15,11 @@ const meta = {
     cameraTarget: [0, 0, 0],
     //pixelRatio: 1
   },
-  tags: ['autodocs']
-} satisfies Meta<typeof SDFTest>
+  tags: ['autodocs'],
+} satisfies Meta<typeof SDFTest>;
 
-export default meta
-type Story = StoryObj<typeof meta>
+export default meta;
+type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {
   args: {
@@ -34,7 +30,7 @@ export const Default: Story = {
     rotation: 0,
     spacing: 0,
     verticalAlign: 0,
-    horizontalAlign: 0
+    horizontalAlign: 0,
   },
   argTypes: {
     inBias: {
@@ -43,7 +39,7 @@ export const Default: Story = {
         min: -0.5,
         max: 0.5,
         step: 0.01,
-      }
+      },
     },
     outBias: {
       control: {
@@ -51,7 +47,7 @@ export const Default: Story = {
         min: -0.5,
         max: 0.5,
         step: 0.01,
-      }
+      },
     },
     fontSize: {
       control: {
@@ -75,7 +71,7 @@ export const Default: Story = {
         min: 0,
         max: 100,
         step: 1,
-      }
+      },
     },
     verticalAlign: {
       control: {
@@ -83,7 +79,7 @@ export const Default: Story = {
         min: -1,
         max: 1,
         step: 0.01,
-      }
+      },
     },
     horizontalAlign: {
       control: {
@@ -91,7 +87,7 @@ export const Default: Story = {
         min: 0,
         max: 1,
         step: 0.5,
-      }
+      },
     },
-  }
-}
+  },
+};

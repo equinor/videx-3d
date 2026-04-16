@@ -1,15 +1,18 @@
-import { AnnotationComponentProps } from './types'
+import { AnnotationComponentProps } from './types';
 
 /**
  * The default component for rendering annotation labels. You can override this by
  * supplying a custom component in the `AnnotationsLayer` component.
- *  
+ *
  * @see [Storybook](/path=/docs/components-misc-annotations--docs)
  * @see {@link AnnotationsLayer}
- * 
+ *
  * @group Components
  */
-export const DefaultLabelComponent = ({ id, name }: AnnotationComponentProps) => {
+export const DefaultLabelComponent = ({
+  id,
+  name,
+}: AnnotationComponentProps) => {
   return (
     <div
       key={id}
@@ -28,5 +31,5 @@ export const DefaultLabelComponent = ({ id, name }: AnnotationComponentProps) =>
     >
       <div style={{ whiteSpace: 'nowrap' }}>{name}</div>
     </div>
-  )
-}
+  );
+};

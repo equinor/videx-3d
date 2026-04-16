@@ -4,9 +4,9 @@ Generators are special factory functions that can be used by components to exter
 
 The following table gives an overview of the generators required for each component. The generator function needs to be added to the `GeneratorRegistry` with the generator key listed here for the component to work!
 
-The generator keys are exported as variables, named according to the generator key column, and can be imported from `videx-3d`.
+The generator keys are exported as variables, named according to the generator key column, and can be imported from `@equinor/videx-3d`.
 
-The generator functions can be imported from `videx-3d/generators` (default implementations).
+The generator functions can be imported from `@equinor/videx-3d/generators` (default implementations).
 
 **Note:** The default generators have data dependencies. Please see [data docs](./data.md) for more information.
 
@@ -28,6 +28,7 @@ The generator functions can be imported from `videx-3d/generators` (default impl
 | **TubeTrajectory** | tubeTrajectory | generateTubeTrajectory | - position-logs |
 | **WellboreBounds** | wellboreBounds | calculateWellboreBounds | - position-logs |
 | **WellboreLabel** | wellboreLabel | generateWellboreLabel | - position-logs<br/>- wellbore-headers |
+| **WellboreSeismicSection** | wellboreSeismicSection | generateWellboreSeismicSection | - wellbore-seismic-section |
 
 ## Generator function
 A generator function is simply an async function that will have a all the read methods from the `store` interface available in its scope (accessed using the `this` keyword):

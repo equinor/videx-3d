@@ -1,25 +1,25 @@
-import { transfer } from 'comlink'
+import { transfer } from 'comlink';
 import {
   PositionLog,
   ReadonlyStore,
   TubeGeometryOptions,
   createTubeGeometry,
   getTrajectory,
-  packBufferGeometry
-} from '../sdk'
+  packBufferGeometry,
+} from '../sdk';
 
 export async function generatePerimeterGeometry(
   this: ReadonlyStore,
   id: string,
   radius: number,
   segmentsPerMeter: number = 0.1,
-  simplificationThreshold: number = 0
+  simplificationThreshold: number = 0,
 ) {
-  const poslogMsl = await this.get<PositionLog>('position-logs', id)
+  const poslogMsl = await this.get<PositionLog>('position-logs', id);
 
-  const trajectory = getTrajectory(id, poslogMsl)
+  const trajectory = getTrajectory(id, poslogMsl);
 
-  if (!trajectory) return null
+  if (!trajectory) return null;
 
   const tubeOptions: TubeGeometryOptions = {
     from: 0,
@@ -32,10 +32,10 @@ export async function generatePerimeterGeometry(
     segmentsPerMeter,
     simplificationThreshold,
     radius,
-  }
+  };
 
-  const geometry = createTubeGeometry(trajectory.curve, tubeOptions)
-  const [packed, buffers] = packBufferGeometry(geometry)
+  const geometry = createTubeGeometry(trajectory.curve, tubeOptions);
+  const [packed, buffers] = packBufferGeometry(geometry);
 
-  return transfer(packed, buffers)
+  return transfer(packed, buffers);
 }

@@ -1,5 +1,5 @@
-import { PackedBufferGeometry } from '../../../sdk'
+import { PackedBufferGeometry } from '../../../sdk';
 
-export const wellboreFormationColumn = 'wellboreFormationColumn'
+export const wellboreFormationColumn = 'wellboreFormationColumn';
 
-export type WellboreFormationColumnResponse = PackedBufferGeometry
+export type WellboreFormationColumnResponse = PackedBufferGeometry;

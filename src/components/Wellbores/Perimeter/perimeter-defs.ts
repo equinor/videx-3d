@@ -1,5 +1,5 @@
-import { PackedBufferGeometry } from '../../../sdk'
+import { PackedBufferGeometry } from '../../../sdk';
 
-export const perimeterGeometry = 'perimeterGeometry'
+export const perimeterGeometry = 'perimeterGeometry';
 
-export type PerimeterGeneratorResponse = PackedBufferGeometry
+export type PerimeterGeneratorResponse = PackedBufferGeometry;

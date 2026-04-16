@@ -1,20 +1,25 @@
-import { useFrame, useThree } from '@react-three/fiber'
-import { useEffect, useLayoutEffect, useMemo } from 'react'
-import { DepthTexture, HalfFloatType, RGBAFormat, WebGLRenderTarget } from 'three'
-import { OutputPass, RenderPass } from '../../rendering/render-passes'
-import { AnnotationsRenderer } from './annotations-renderer'
+import { useFrame, useThree } from '@react-three/fiber';
+import { useEffect, useLayoutEffect, useMemo } from 'react';
+import {
+  DepthTexture,
+  HalfFloatType,
+  RGBAFormat,
+  WebGLRenderTarget,
+} from 'three';
+import { OutputPass, RenderPass } from '../../rendering/render-passes';
+import { AnnotationsRenderer } from './annotations-renderer';
 
-const samples = 8
-const supersample = 1
+const samples = 8;
+const supersample = 1;
 
 export const AutoUpdate = ({ maxVisible }: { maxVisible: number }) => {
-  const { gl: renderer, scene, camera, pointer, clock } = useThree()
-  const size = useThree(state => state.size)
+  const { gl: renderer, scene, camera, pointer, clock } = useThree();
+  const size = useThree(state => state.size);
 
   const renderTarget = useMemo(() => {
-    const w = 1
-    const h = 1
-    const depthTexture = new DepthTexture(w, h)
+    const w = 1;
+    const h = 1;
+    const depthTexture = new DepthTexture(w, h);
 
     const pbo = new WebGLRenderTarget(w, h, {
       format: RGBAFormat,
@@ -22,55 +27,56 @@ export const AutoUpdate = ({ maxVisible }: { maxVisible: number }) => {
       depthBuffer: true,
       depthTexture,
       generateMipmaps: false,
-      samples
-    })
-    return pbo
-  }, [])
+      samples,
+    });
+    return pbo;
+  }, []);
 
-  const renderPass = useMemo(() => new RenderPass(scene, camera), [scene, camera])
-  const outputPass = useMemo(() => new OutputPass(), [])
-  const annotationsRenderer = useMemo(() => new AnnotationsRenderer(
-    camera,
-    clock,
-    pointer,
-    maxVisible),
-    [camera, clock, pointer, maxVisible]
-  )
+  const renderPass = useMemo(
+    () => new RenderPass(scene, camera),
+    [scene, camera],
+  );
+  const outputPass = useMemo(() => new OutputPass(), []);
+  const annotationsRenderer = useMemo(
+    () => new AnnotationsRenderer(camera, clock, pointer, maxVisible),
+    [camera, clock, pointer, maxVisible],
+  );
 
   useEffect(() => {
     return () => {
       if (annotationsRenderer) {
-        annotationsRenderer.dispose()
+        annotationsRenderer.dispose();
       }
-    }
-  }, [annotationsRenderer])
+    };
+  }, [annotationsRenderer]);
 
   useEffect(() => {
-    const prevAutoClear = renderer.autoClear
-    renderer.autoClear = false
+    const prevAutoClear = renderer.autoClear;
+    renderer.autoClear = false;
     return () => {
-      renderer.autoClear = prevAutoClear
-    }
-  }, [renderer])
+      renderer.autoClear = prevAutoClear;
+    };
+  }, [renderer]);
 
   useEffect(() => {
     return () => {
-      renderTarget.dispose()
-    }
-  }, [renderTarget])
+      renderTarget.dispose();
+    };
+  }, [renderTarget]);
 
   useLayoutEffect(() => {
-    const dpr = renderer.getPixelRatio()
-    renderTarget.setSize(size.width * dpr * supersample, size.height * dpr * supersample)
-  }, [renderTarget, renderer, size])
-
+    const dpr = renderer.getPixelRatio();
+    renderTarget.setSize(
+      size.width * dpr * supersample,
+      size.height * dpr * supersample,
+    );
+  }, [renderTarget, renderer, size]);
 
   useFrame(() => {
-    renderPass.render(renderer, renderTarget)
-    annotationsRenderer.render(renderer, renderTarget)
-    outputPass.render(renderer, renderTarget)
-  }, 1)
+    renderPass.render(renderer, renderTarget);
+    annotationsRenderer.render(renderer, renderTarget);
+    outputPass.render(renderer, renderTarget);
+  }, 1);
 
-
-  return null
-}
+  return null;
+};
