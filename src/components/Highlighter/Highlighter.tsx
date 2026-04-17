@@ -75,7 +75,9 @@ export const Highlighter = ({
         }
       } else if (item.object instanceof Mesh) {
         primitiveObject = new Mesh(geometry, material);
-        item.object.getWorldPosition(primitiveObject.position);
+        item.object.updateWorldMatrix(true, false);
+        primitiveObject.matrixAutoUpdate = false;
+        primitiveObject.matrix.copy(item.object.matrixWorld);
       } else {
         primitiveObject = new Line(geometry, material);
         item.object.getWorldPosition(primitiveObject.position);
