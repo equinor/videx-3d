@@ -55,7 +55,6 @@ const DemoComponent = ({
   to,
   from,
 }: Props) => {
-
   const geometry = useMemo(() => {
     const curve = getSplineCurve(points as Vec3[], closed);
     if (curve) {

@@ -12,15 +12,15 @@ import { CompletionTools } from '../CompletionTools';
 import { Wellbore, WellboreProps } from '../Wellbore';
 import { Casings } from './Casings';
 
-
 const meta = {
   title: 'Components/Wellbores/Casings',
   component: Casings,
 } satisfies Meta<typeof Casings>;
 
-type StoryArgs = React.ComponentProps<typeof Casings> & WellboreProps & {
-  showCompletion: boolean
-};
+type StoryArgs = React.ComponentProps<typeof Casings> &
+  WellboreProps & {
+    showCompletion: boolean;
+  };
 
 export default meta;
 type Story = StoryObj<StoryArgs>;
@@ -38,7 +38,7 @@ export const Default: Story = {
     sizeMultiplier: 1,
     shoeFactor: 1.5,
     showCompletion: false,
-    opacity: 1
+    opacity: 1,
   },
   argTypes: {
     id: {
@@ -46,21 +46,25 @@ export const Default: Story = {
       control: { type: 'select', labels: storyArgs.wellboreOptions },
     },
     sliceAngle: {
-      control: { type: 'range', min: 0, max: Math.ceil(Math.PI), step: 0.05 }
+      control: { type: 'range', min: 0, max: Math.ceil(Math.PI), step: 0.05 },
     },
     sliceOffset: {
-      control: { type: 'range', min: 0, max: Math.ceil(Math.PI * 2), step: 0.05 }
+      control: {
+        type: 'range',
+        min: 0,
+        max: Math.ceil(Math.PI * 2),
+        step: 0.05,
+      },
     },
     autoSlicePosition: {
-      control: { type: 'boolean' }
+      control: { type: 'boolean' },
     },
     showCompletion: {
-      control: { type: 'boolean' }
+      control: { type: 'boolean' },
     },
     opacity: {
-      control: { type: 'range', min: 0.1, max: 1, step: 0.1 }
-    }
-
+      control: { type: 'range', min: 0.1, max: 1, step: 0.1 },
+    },
   },
   decorators: [
     PerformanceDecorator,
@@ -78,7 +82,9 @@ export const Default: Story = {
       <>
         <Wellbore id={args.id} segmentsPerMeter={args.segmentsPerMeter}>
           <BasicTrajectory />
-          {args.showCompletion && <CompletionTools sizeMultiplier={args.sizeMultiplier} />}
+          {args.showCompletion && (
+            <CompletionTools sizeMultiplier={args.sizeMultiplier} />
+          )}
           <Casings
             sizeMultiplier={args.sizeMultiplier}
             radialSegments={args.radialSegments}

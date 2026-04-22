@@ -84,9 +84,7 @@ export const WellMapCasingShoes = ({
         if (data[id]) {
           data[id]
             .filter(
-              d =>
-                d.isShoe &&
-                (fromMsl === null || d.mdBottomMsl > fromMsl),
+              d => d.isShoe && (fromMsl === null || d.mdBottomMsl > fromMsl),
             )
             .forEach(d => {
               const y = depthScale(d.mdBottomMsl);

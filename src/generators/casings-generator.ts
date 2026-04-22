@@ -147,8 +147,6 @@ export async function generateCasings(
   const transferrables: ArrayBufferLike[] = [];
   const sections: CasingSectionType[] = [];
 
-  console.log(casingItems);
-
   casingItems.forEach(item => {
     const itemLength = clamp(
       item.mdBottomMsl - item.mdTopMsl,

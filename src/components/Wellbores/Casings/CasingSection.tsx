@@ -6,7 +6,7 @@ import { CasingSectionMaterialOptions } from './Casings';
 import { CasingSectionType } from './casings-defs';
 
 type CasingSectionProps = {
-  materialOptions: CasingSectionMaterialOptions
+  materialOptions: CasingSectionMaterialOptions;
   radialSegments?: number;
   sizeMultiplier?: number;
   section: CasingSectionType;
@@ -41,33 +41,38 @@ export const CasingSection = ({
 
     return [
       primaryMaterial,
-      materialOptions.inner ? new CasingMaterial(materialOptions.inner) : primaryMaterial,
-      materialOptions.slice ? new CasingMaterial(materialOptions.slice) : primaryMaterial,
+      materialOptions.inner
+        ? new CasingMaterial(materialOptions.inner)
+        : primaryMaterial,
+      materialOptions.slice
+        ? new CasingMaterial(materialOptions.slice)
+        : primaryMaterial,
     ];
-
   }, [materialOptions]);
 
   useEffect(() => {
     if (materials) {
       materials.forEach(m => {
-        console.log(materials, opacity)
         if (opacity !== m.opacity) {
-          m.opacity = opacity
+          m.opacity = opacity;
           if (opacity < 1 && !m.transparent) {
-            m.transparent = true
-            m.needsUpdate = true
+            m.transparent = true;
+            m.needsUpdate = true;
           } else if (opacity === 1 && m.transparent) {
             m.transparent = false;
-            m.needsUpdate = true
+            m.needsUpdate = true;
           }
         }
-      })
+      });
     }
-  }, [opacity, materials])
+  }, [opacity, materials]);
 
   useEffect(() => {
     if (tubeGeometry) {
-      tubeGeometry.setDrawRange(0, sliceAngle ? Infinity : radialSegments * 2 * 6)
+      tubeGeometry.setDrawRange(
+        0,
+        sliceAngle ? Infinity : radialSegments * 2 * 6,
+      );
     }
   }, [sliceAngle, tubeGeometry, radialSegments]);
 
@@ -78,12 +83,20 @@ export const CasingSection = ({
     material.sliceOffset = sliceOffset;
     material.sliceAngle = clamp(sliceAngle, 0, Math.PI);
     material.autoSlicePosition = !!autoSlicePosition;
-  })
+  });
 
   return (
     <>
-      <mesh renderOrder={renderOrder} geometry={tubeGeometry} material={materials} />
-      <mesh renderOrder={renderOrder} geometry={capsGeometry} material={materials[0]} />
+      <mesh
+        renderOrder={renderOrder}
+        geometry={tubeGeometry}
+        material={materials}
+      />
+      <mesh
+        renderOrder={renderOrder}
+        geometry={capsGeometry}
+        material={materials[0]}
+      />
     </>
   );
-}
+};

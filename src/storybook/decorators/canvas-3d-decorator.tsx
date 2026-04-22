@@ -70,10 +70,7 @@ export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
       }}
     >
       <ambientLight intensity={0.5} />
-      <directionalLight
-        position={[-1, 2, -3]}
-        intensity={1.2}
-      />
+      <directionalLight position={[-1, 2, -3]} intensity={1.2} />
       <Environment
         preset="studio"
         environmentIntensity={0.5}

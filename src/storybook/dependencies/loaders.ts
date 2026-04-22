@@ -118,7 +118,6 @@ export const casingLoader = (store: Store) =>
     init: async () => {
       // Overlapping casing items with the same size will be merged to a single casing section.
       const data = await get('/data/casings.json');
-      console.log(data);
       return Object.keys(data).map(key => [
         key,
         transformCasingData(data[key]) as any,

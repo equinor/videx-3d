@@ -1,7 +1,6 @@
 #define STANDARD
 
 uniform float sizeMultiplier;
-uniform float radius;
 uniform float innerRadius;
 uniform float sliceOffset;
 uniform float sliceAngle;
@@ -9,11 +8,8 @@ uniform bool autoSlicePosition;
 
 attribute vec3 vertex;
 attribute float id;
-attribute vec3 color;
 attribute vec3 positionA;
 attribute vec3 positionB;
-attribute vec3 normalA;
-attribute vec3 normalB;
 attribute vec3 tangentA;
 attribute vec3 tangentB;
 attribute vec2 curvePositionA;
@@ -31,14 +27,11 @@ varying vec3 vWorldPosition;
 #endif
 
 #include <common>
-//#include <batching_pars_vertex>
 #include <uv_pars_vertex>
 #include <displacementmap_pars_vertex>
 #include <color_pars_vertex>
 #include <fog_pars_vertex>
 #include <normal_pars_vertex>
-//#include <morphtarget_pars_vertex>
-//#include <skinning_pars_vertex>
 #include <shadowmap_pars_vertex>
 #include <logdepthbuf_pars_vertex>
 #include <clipping_planes_pars_vertex>
@@ -58,7 +51,6 @@ void main() {
   vec3 objectNormal = normal;
 
   vec3 segmentPosition = mix(positionA, positionB, vertex.y);
-  vec3 segmentNormal = mix(normalA, normalB, vertex.y);
   vec3 segmentTangent = mix(tangentA, tangentB, vertex.y);
   vec2 segementCurvePosition = mix(curvePositionA, curvePositionB, vertex.y);
   float segmentRadius = sizeMultiplier * mix(innerRadius, mix(outerRadiusA, outerRadiusB, vertex.y), vertex.z);
@@ -76,6 +68,7 @@ void main() {
     objectNormal = normalize((m * vec4(objectNormal, 0.0)).xyz);
   }
 
+  // correct uvs based on slice angle and curve position
   float uvOffset = sliceAngle / (4.0 * PI);
   vec2 transformedUv = uv.xy;
   if(id <= 3.0) {
@@ -100,7 +93,6 @@ void main() {
 
   vUv = vec3(uv, 1).xy;
 
-  // correct uvs based on slice angle and curve position
   #endif
   #ifdef USE_MAP
 
@@ -222,8 +214,8 @@ void main() {
 
   objectNormal = normalize(objectNormal * transformationMatrix);
 
-	#include <defaultnormal_vertex> //skip
-	#include <normal_vertex> //skip
+	#include <defaultnormal_vertex>
+	#include <normal_vertex>
 
   vec3 transformed = segmentPosition.xyz + k * segmentRadius;
 
@@ -233,8 +225,8 @@ void main() {
 
   #endif
 
-	#include <displacementmap_vertex> //skip
-	#include <project_vertex> // replace/skip
+	#include <displacementmap_vertex>
+	#include <project_vertex> 
 	#include <logdepthbuf_vertex>
 	#include <clipping_planes_vertex>
 

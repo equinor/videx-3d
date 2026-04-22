@@ -6,18 +6,15 @@ import {
   useMemo,
   useState,
 } from 'react';
-import {
-  Color,
-  Group,
-  MeshStandardMaterialParameters,
-  Object3D
-} from 'three';
-import {
-  CommonComponentProps,
-} from '../../../common/types';
+import { Color, Group, MeshStandardMaterialParameters, Object3D } from 'three';
+import { CommonComponentProps } from '../../../common/types';
 import { useGenerator } from '../../../hooks/useGenerator';
 import { useWellboreContext } from '../../../hooks/useWellboreContext';
-import { casings, CasingSectionType, CasingsGeneratorResponse } from './casings-defs';
+import {
+  casings,
+  CasingSectionType,
+  CasingsGeneratorResponse,
+} from './casings-defs';
 import { CasingSection } from './CasingSection';
 
 /**
@@ -25,16 +22,18 @@ import { CasingSection } from './CasingSection';
  * @expand
  */
 export type CasingSectionMaterialOptions = {
-  primary: MeshStandardMaterialParameters,
-  inner?: MeshStandardMaterialParameters,
-  slice?: MeshStandardMaterialParameters,
-}
+  primary: MeshStandardMaterialParameters;
+  inner?: MeshStandardMaterialParameters;
+  slice?: MeshStandardMaterialParameters;
+};
 
 /**
  * MaterialOptions
  * @expand
  */
-export type MaterialOptions = ((section: CasingSectionType) => CasingSectionMaterialOptions)
+export type MaterialOptions = (
+  section: CasingSectionType,
+) => CasingSectionMaterialOptions;
 
 /**
  * Casing props
@@ -63,28 +62,29 @@ const defaultMaterialOptions = (section: CasingSectionType) => {
   const defaultParams = { color: '#4c5160', roughness: 0.5, metalness: 0.7 };
   const shoeParams = { color: 'black', roughness: 1, metalness: 0 };
 
-  const primary = section.type.toLowerCase().includes('shoe') ? shoeParams : defaultParams;
+  const primary = section.type.toLowerCase().includes('shoe')
+    ? shoeParams
+    : defaultParams;
 
-  const sliceColor = new Color(primary.color).multiplyScalar(0.25)
-  const slice = { color: sliceColor, roughness: 0.9, metalness: 0.8 }
+  const sliceColor = new Color(primary.color).multiplyScalar(0.25);
+  const slice = { color: sliceColor, roughness: 0.9, metalness: 0.8 };
 
   return {
     primary,
     inner: { color: '#bed0e4', roughness: 0.3, metalness: 0.5 },
     slice,
-  }
-}
-
+  };
+};
 
 /**
  * Generic render of casings based on depths, diameters and type. Must be a child of the `Wellbore` component.
- * 
+ *
  * The casing may be "sliced" at an angle using the sliceAngle prop. The sliceOffset prop determines the offset
  * from the z axis to the center of the slice. Setting autoSlicePosition to true will always show the center of the
  * slice facing the camera. With this option set to true, the sliceOffset should be set to 0.
- * 
+ *
  * An alternative to using the slice feature is to set opacity < 1 if you want to see the internals.
- * 
+ *
  * @example
  * <Wellbore id={wellbore.id}>
  *  <Casings sizeMultiplier={5} />
@@ -173,7 +173,7 @@ export const Casings = forwardRef(
     ]);
 
     const sectionMaterialOptions = useMemo(() => {
-      return sections?.map(materialOptions) || null
+      return sections?.map(materialOptions) || null;
     }, [sections, materialOptions]);
 
     return (
@@ -186,20 +186,22 @@ export const Casings = forwardRef(
         renderOrder={renderOrder}
         layers={layers}
       >
-        {sections && sectionMaterialOptions && sections.map((section, i) =>
-        (<CasingSection
-          key={i}
-          materialOptions={sectionMaterialOptions[i]}
-          opacity={opacity}
-          sliceAngle={sliceAngle}
-          sliceOffset={sliceOffset}
-          autoSlicePosition={autoSlicePosition}
-          section={section}
-          radialSegments={radialSegments}
-          sizeMultiplier={sizeMultiplier}
-          renderOrder={i}
-        />)
-        )}
+        {sections &&
+          sectionMaterialOptions &&
+          sections.map((section, i) => (
+            <CasingSection
+              key={i}
+              materialOptions={sectionMaterialOptions[i]}
+              opacity={opacity}
+              sliceAngle={sliceAngle}
+              sliceOffset={sliceOffset}
+              autoSlicePosition={autoSlicePosition}
+              section={section}
+              radialSegments={radialSegments}
+              sizeMultiplier={sizeMultiplier}
+              renderOrder={i}
+            />
+          ))}
         {useFallback && fallback && fallback()}
       </group>
     );
