@@ -1,5 +1,7 @@
 import { transfer } from 'comlink';
+import { group } from 'd3-array';
 import {
+  CasingItem,
   getProjectedTrajectory,
   getTrajectory,
   KeyType,
@@ -62,12 +64,65 @@ export const surfaceValuesLoader = (store: Store) =>
     },
   });
 
+function transformCasingData(items: CasingItem[]) {
+  const grouped = group(items, d => d.properties.Diameter);
+
+  const merged: CasingItem[] = [];
+
+  grouped.forEach((groupItems: any[]) => {
+    let max = Infinity;
+
+    const shoe = groupItems.find(d => d.type.toLowerCase().includes('shoe'));
+    if (shoe) {
+      max = shoe.mdTopMsl;
+      merged.push({ ...shoe, isShoe: true });
+    }
+
+    const filtered = groupItems.filter(
+      d => !d.type.toLowerCase().includes('shoe') && d.mdTopMsl < max,
+    );
+
+    if (filtered.length) {
+      const section = filtered.reduce<CasingItem>(
+        (obj: CasingItem, itm: CasingItem) => {
+          if (itm.mdBottomMsl > obj.mdBottomMsl) {
+            obj.mdBottomMsl = Math.min(max, itm.mdBottomMsl);
+          }
+          if (itm.mdTopMsl < obj.mdTopMsl) {
+            obj.mdTopMsl = itm.mdTopMsl;
+          }
+          return obj;
+        },
+        {
+          innerDiameter: groupItems[0].innerDiameter,
+          outerDiameter: groupItems[0].outerDiameter,
+          mdTopMsl: groupItems[0].mdTopMsl,
+          mdBottomMsl: groupItems[0].mdBottomMsl,
+          type: 'Casing',
+          properties: {
+            Diameter: groupItems[0].properties.Diameter,
+            Type: 'Casing',
+          },
+        },
+      );
+      merged.push(section);
+    }
+  });
+
+  return merged;
+}
+
 export const casingLoader = (store: Store) =>
   new DataLoader(store, {
     preloaded: true,
     init: async () => {
+      // Overlapping casing items with the same size will be merged to a single casing section.
       const data = await get('/data/casings.json');
-      return Object.keys(data).map(key => [key, data[key]]);
+      console.log(data);
+      return Object.keys(data).map(key => [
+        key,
+        transformCasingData(data[key]) as any,
+      ]);
     },
   });
 

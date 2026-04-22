@@ -1,4 +1,3 @@
-import { BufferAttribute, BufferGeometry } from 'three';
 import { lerp } from 'three/src/math/MathUtils.js';
 import { Tuplet, Vec3 } from '../../types/common';
 import { clamp } from '../../utils/numbers';
@@ -9,6 +8,7 @@ import {
   normalizeVec3,
   rotateVec3,
 } from '../../utils/vector-operations';
+import { GeometryData, toBufferGeometry } from '../geometry';
 import {
   calculateFrenetFrames,
   Curve3D,
@@ -24,15 +24,12 @@ export type RadiusModifier = {
 export type AttributeOptions = {
   computeNormals?: boolean;
   computeUvs?: boolean;
-};
-
-type Geometry = {
-  vertexCount: number;
-  indexCount: number;
-  vertices: number[];
-  indices: number[];
-  normals: number[] | null;
-  uvs: number[] | null;
+  computeLengths?: boolean;
+  computeRelativeLengths?: boolean;
+  computeCenterPoints?: boolean;
+  computeCurveNormals?: boolean;
+  computeCurveTangents?: boolean;
+  computeCurveBinormals?: boolean;
 };
 
 export type TubeGeometryOptions = AttributeOptions & {
@@ -45,11 +42,6 @@ export type TubeGeometryOptions = AttributeOptions & {
   segmentsPerMeter?: number;
   radiusModifier?: RadiusModifier;
   simplificationThreshold?: number;
-  computeLengths?: boolean;
-  computeRelativeLengths?: boolean;
-  computeCurveNormals?: boolean;
-  computeCurveTangents?: boolean;
-  computeCurveBinormals?: boolean;
   innerRadius?: number;
   thickness?: number;
   addGroups?: boolean;
@@ -59,6 +51,75 @@ type TubeSegment = FrenetFrame & {
   radius: number;
   theta: number;
 };
+
+function createGeometry(options: AttributeOptions) {
+  const geometry: GeometryData = {
+    vertexCount: 0,
+    indexCount: 0,
+    positions: [],
+    indices: [],
+    attributes: {},
+  };
+
+  if (options.computeNormals) {
+    geometry.attributes.normal = {
+      array: [],
+      itemSize: 3,
+      type: 'Float32Array',
+    };
+  }
+  if (options.computeLengths) {
+    geometry.attributes.curveLength = {
+      array: [],
+      itemSize: 1,
+      type: 'Float32Array',
+    };
+  }
+  if (options.computeRelativeLengths) {
+    geometry.attributes.curveRelativeLength = {
+      array: [],
+      itemSize: 1,
+      type: 'Float32Array',
+    };
+  }
+  if (options.computeCurveNormals) {
+    geometry.attributes.curveNormal = {
+      array: [],
+      itemSize: 3,
+      type: 'Float32Array',
+    };
+  }
+  if (options.computeCurveTangents) {
+    geometry.attributes.curveTangent = {
+      array: [],
+      itemSize: 3,
+      type: 'Float32Array',
+    };
+  }
+  if (options.computeCurveBinormals) {
+    geometry.attributes.curveBinormal = {
+      array: [],
+      itemSize: 3,
+      type: 'Float32Array',
+    };
+  }
+  if (options.computeCenterPoints) {
+    geometry.attributes.centerPoint = {
+      array: [],
+      itemSize: 3,
+      type: 'Float32Array',
+    };
+  }
+  if (options.computeUvs) {
+    geometry.attributes.uv = {
+      array: [],
+      itemSize: 2,
+      type: 'Float32Array',
+    };
+  }
+
+  return geometry;
+}
 
 function interpolateRadius(
   position: number,
@@ -222,207 +283,16 @@ function calculateTubeSegments(
   }));
 }
 
-function generateCap(
-  segment: TubeSegment,
-  radialSegments: number,
-  clockwise = true,
-  options: AttributeOptions,
-  indexOffset = 0,
-): Geometry {
-  let vertexCount = 0,
-    indexCount = 0;
-  //if (!segment) debugger
-  const vertices: number[] = [];
-  const indices: number[] = [];
-
-  const normals: number[] | null = options.computeNormals ? [] : null;
-  const uvs: number[] | null = options.computeUvs ? [] : null;
-
-  const capNormal = clockwise
-    ? [-segment.tangent[0], -segment.tangent[1], -segment.tangent[2]]
-    : segment.tangent;
-
-  vertices.push(...segment.position);
-  vertexCount++;
-
-  if (normals) normals.push(...capNormal);
-  if (uvs) uvs.push(0.5, 0.5);
-
-  for (let j = 0; j <= radialSegments; j++) {
-    const v = (j / radialSegments) * PI * 2;
-
-    const sin = Math.sin(v);
-    const cos = -Math.cos(v);
-
-    const vector = normalizeVec3([
-      cos * segment.normal[0] + sin * segment.binormal[0],
-      cos * segment.normal[1] + sin * segment.binormal[1],
-      cos * segment.normal[2] + sin * segment.binormal[2],
-    ]);
-
-    // vertex
-    vertices.push(
-      segment.position[0] + segment.radius * vector[0],
-      segment.position[1] + segment.radius * vector[1],
-      segment.position[2] + segment.radius * vector[2],
-    );
-    vertexCount++;
-
-    // normal
-    if (normals) normals.push(...capNormal);
-
-    // uvs
-    if (uvs) {
-      const uv = [(cos + 1) / 2, (sin + 1) / 2];
-
-      if (clockwise) {
-        uv[0] = 1 - uv[0];
-      }
-
-      uvs.push(...uv);
-    }
-  }
-
-  // indices
-  for (let i = 1; i <= radialSegments; i++) {
-    const v3 = 0; // index of center vertex
-    let v1, v2;
-
-    if (clockwise) {
-      v1 = i + v3;
-      v2 = i + v3 + 1;
-    } else {
-      v1 = i + v3 + 1;
-      v2 = i + v3;
-    }
-    indices.push(v1 + indexOffset, v2 + indexOffset, v3 + indexOffset);
-    indexCount += 3;
-  }
-
-  return { vertices, indices, normals, uvs, vertexCount, indexCount };
-}
-
-function generateRingCap(
-  outerSegment: TubeSegment,
-  innerSegment: TubeSegment,
-  radialSegments: number,
-  clockwise = true,
-  options: AttributeOptions,
-  indexOffset = 0,
-): Geometry {
-  let vertexCount = 0,
-    indexCount = 0;
-
-  const vertices: number[] = [];
-  const indices: number[] = [];
-
-  const normals: number[] | null = options.computeNormals ? [] : null;
-  const uvs: number[] | null = options.computeUvs ? [] : null;
-
-  const capNormal = clockwise
-    ? [
-        -outerSegment.tangent[0],
-        -outerSegment.tangent[1],
-        -outerSegment.tangent[2],
-      ]
-    : outerSegment.tangent;
-
-  const innerRadiusRatio = innerSegment.radius / outerSegment.radius;
-
-  for (let j = 0; j <= radialSegments; j++) {
-    const v = (j / radialSegments) * PI * 2;
-
-    const sin = Math.sin(v);
-    const cos = -Math.cos(v);
-
-    const vector = normalizeVec3([
-      cos * outerSegment.normal[0] + sin * outerSegment.binormal[0],
-      cos * outerSegment.normal[1] + sin * outerSegment.binormal[1],
-      cos * outerSegment.normal[2] + sin * outerSegment.binormal[2],
-    ]);
-
-    // outer ring vertex
-    vertices.push(
-      outerSegment.position[0] + outerSegment.radius * vector[0],
-      outerSegment.position[1] + outerSegment.radius * vector[1],
-      outerSegment.position[2] + outerSegment.radius * vector[2],
-    );
-    vertexCount++;
-
-    // inner ring vertex
-    vertices.push(
-      innerSegment.position[0] + innerSegment.radius * vector[0],
-      innerSegment.position[1] + innerSegment.radius * vector[1],
-      innerSegment.position[2] + innerSegment.radius * vector[2],
-    );
-    vertexCount++;
-
-    // normal
-    if (normals) normals.push(...capNormal, ...capNormal);
-
-    // uvs
-    if (uvs) {
-      const uv1 = [(cos + 1) / 2, (sin + 1) / 2];
-      const uv2 = [
-        (cos * innerRadiusRatio + 1) / 2,
-        (sin * innerRadiusRatio + 1) / 2,
-      ];
-
-      if (clockwise) {
-        uv1[0] = 1 - uv1[0];
-        uv2[0] = 1 - uv2[0];
-      }
-      uvs.push(...uv1, ...uv2);
-    }
-  }
-
-  // indices
-  for (let i = 0; i < radialSegments; i++) {
-    const a = i * 2;
-    const b = a + 1;
-    const c = a + 2;
-    const d = a + 3;
-
-    if (!clockwise) {
-      indices.push(
-        c + indexOffset,
-        a + indexOffset,
-        b + indexOffset,
-        b + indexOffset,
-        d + indexOffset,
-        c + indexOffset,
-      );
-    } else {
-      indices.push(
-        a + indexOffset,
-        c + indexOffset,
-        b + indexOffset,
-        b + indexOffset,
-        c + indexOffset,
-        d + indexOffset,
-      );
-    }
-    indexCount += 6;
-  }
-
-  return { vertices, indices, normals, uvs, vertexCount, indexCount };
-}
-
-function generateTube(
+function generateTubeGeometry(
   segments: TubeSegment[],
   radialSegments: number,
   closed: boolean,
+  curveLength: number,
+  from: number,
   options: AttributeOptions,
-  indexOffset = 0,
-): Geometry {
-  let vertexCount = 0,
-    indexCount = 0;
-
-  const vertices: number[] = [];
-  const indices: number[] = [];
-
-  const normals: number[] | null = options.computeNormals ? [] : null;
-  const uvs: number[] | null = options.computeUvs ? [] : null;
+  clockwise: boolean = true,
+) {
+  const geometry = createGeometry(options);
 
   const generateTubeSegment = (segment: TubeSegment) => {
     for (let j = 0; j <= radialSegments; j++) {
@@ -445,20 +315,38 @@ function generateTube(
         segment.position[2] + segment.radius * vector[2]!,
       ];
 
-      if (normals) {
+      geometry.positions.push(...position);
+      geometry.vertexCount++;
+
+      // other attributes
+      if (geometry.attributes.normal) {
         let surfaceNormal = copyVec3(vector);
         // adjust normal if radius is modulated
-        if (segment.theta) {
+        if (Number.isFinite(segment.theta)) {
           const rotationAxis = normalizeVec3(
             crossVec3(segment.tangent, vector),
           );
           surfaceNormal = rotateVec3(vector, rotationAxis, segment.theta);
         }
-        normals.push(...surfaceNormal);
+        geometry.attributes.normal.array.push(...surfaceNormal);
       }
-      // vertex
-      vertices.push(...position);
-      vertexCount++;
+
+      if (geometry.attributes.curveLength)
+        geometry.attributes.curveLength.array.push(
+          segment.curvePosition * curveLength,
+        );
+      if (geometry.attributes.curveRelativeLength)
+        geometry.attributes.curveRelativeLength.array.push(
+          (segment.curvePosition - from) * curveLength,
+        );
+      if (geometry.attributes.curveNormal)
+        geometry.attributes.curveNormal.array.push(...segment.normal);
+      if (geometry.attributes.curveTangent)
+        geometry.attributes.curveTangent.array.push(...segment.tangent);
+      if (geometry.attributes.curveBinormal)
+        geometry.attributes.curveBinormal.array.push(...segment.binormal);
+      if (geometry.attributes.centerPoint)
+        geometry.attributes.centerPoint.array.push(...segment.position);
     }
   };
 
@@ -470,10 +358,13 @@ function generateTube(
   if (closed) generateTubeSegment(segments[0]);
 
   // 2. Generate uvs
-  if (uvs) {
+  if (geometry.attributes.uv) {
     for (let i = 0; i < segments.length; i++) {
       for (let j = 0; j <= radialSegments; j++) {
-        uvs.push(j / radialSegments, i / (segments.length - 1));
+        geometry.attributes.uv.array.push(
+          j / radialSegments,
+          i / (segments.length - 1),
+        );
       }
     }
   }
@@ -487,19 +378,223 @@ function generateTube(
       const d = (radialSegments + 1) * (j - 1) + i;
 
       // faces
-      indices.push(a + indexOffset, b + indexOffset, d + indexOffset);
-      indices.push(b + indexOffset, c + indexOffset, d + indexOffset);
-      indexCount += 6;
+      geometry.indices.push(a, b, d);
+      geometry.indices.push(b, c, d);
+      geometry.indexCount += 6;
     }
   }
 
-  return { vertices, indices, normals, uvs, vertexCount, indexCount };
+  if (!clockwise) {
+    geometry.indices.reverse();
+  }
+
+  return geometry;
+}
+
+function generateCapGeometry(
+  segment: TubeSegment,
+  radialSegments: number,
+  clockwise = true,
+  curveLength: number,
+  from: number,
+  options: AttributeOptions,
+) {
+  const geometry = createGeometry(options);
+
+  const capNormal = clockwise
+    ? [-segment.tangent[0], -segment.tangent[1], -segment.tangent[2]]
+    : segment.tangent;
+
+  geometry.positions.push(...segment.position);
+  geometry.vertexCount++;
+
+  if (geometry.attributes.normal)
+    geometry.attributes.normal.array.push(...capNormal);
+
+  if (geometry.attributes.uv) geometry.attributes.uv.array.push(0.5, 0.5);
+
+  for (let j = 0; j <= radialSegments; j++) {
+    const v = (j / radialSegments) * PI * 2;
+
+    const sin = Math.sin(v);
+    const cos = -Math.cos(v);
+
+    const vector = normalizeVec3([
+      cos * segment.normal[0] + sin * segment.binormal[0],
+      cos * segment.normal[1] + sin * segment.binormal[1],
+      cos * segment.normal[2] + sin * segment.binormal[2],
+    ]);
+
+    // vertex
+    geometry.positions.push(
+      segment.position[0] + segment.radius * vector[0],
+      segment.position[1] + segment.radius * vector[1],
+      segment.position[2] + segment.radius * vector[2],
+    );
+    geometry.vertexCount++;
+
+    // normal
+    if (geometry.attributes.normal)
+      geometry.attributes.normal.array.push(...capNormal);
+
+    // uvs
+    if (geometry.attributes.uv) {
+      const uv = [(cos + 1) / 2, (sin + 1) / 2];
+
+      if (clockwise) {
+        uv[0] = 1 - uv[0];
+      }
+
+      geometry.attributes.uv.array.push(...uv);
+    }
+  }
+
+  const length = segment.curvePosition * curveLength;
+  const relativeLength = (segment.curvePosition - from) * curveLength;
+
+  for (let i = 0; i < geometry.vertexCount; i++) {
+    if (geometry.attributes.curveLength)
+      geometry.attributes.curveLength.array.push(length);
+    if (geometry.attributes.curveRelativeLength)
+      geometry.attributes.curveRelativeLength.array.push(relativeLength);
+    if (geometry.attributes.curveNormal)
+      geometry.attributes.curveNormal.array.push(...segment.normal);
+    if (geometry.attributes.curveTangent)
+      geometry.attributes.curveTangent.array.push(...segment.tangent);
+    if (geometry.attributes.curveBinormal)
+      geometry.attributes.curveBinormal.array.push(...segment.binormal);
+    if (geometry.attributes.centerPoint)
+      geometry.attributes.centerPoint.array.push(...segment.position);
+  }
+
+  // indices
+  for (let i = 1; i <= radialSegments; i++) {
+    const v3 = 0; // index of center vertex
+    let v1, v2;
+
+    if (clockwise) {
+      v1 = i + v3;
+      v2 = i + v3 + 1;
+    } else {
+      v1 = i + v3 + 1;
+      v2 = i + v3;
+    }
+    geometry.indices.push(v1, v2, v3);
+    geometry.indexCount += 3;
+  }
+
+  return geometry;
+}
+
+function generateRingCapGeometry(
+  outerSegment: TubeSegment,
+  innerSegment: TubeSegment,
+  radialSegments: number,
+  clockwise = true,
+  curveLength: number,
+  from: number,
+  options: AttributeOptions,
+) {
+  const geometry = createGeometry(options);
+
+  const capNormal = clockwise
+    ? [
+        -outerSegment.tangent[0],
+        -outerSegment.tangent[1],
+        -outerSegment.tangent[2],
+      ]
+    : [...outerSegment.tangent];
+
+  const innerRadiusRatio = innerSegment.radius / outerSegment.radius;
+
+  for (let j = 0; j <= radialSegments; j++) {
+    const v = (j / radialSegments) * PI * 2;
+
+    const sin = Math.sin(v);
+    const cos = -Math.cos(v);
+
+    const vector = normalizeVec3([
+      cos * outerSegment.normal[0] + sin * outerSegment.binormal[0],
+      cos * outerSegment.normal[1] + sin * outerSegment.binormal[1],
+      cos * outerSegment.normal[2] + sin * outerSegment.binormal[2],
+    ]);
+
+    // outer ring vertex
+    geometry.positions.push(
+      outerSegment.position[0] + outerSegment.radius * vector[0],
+      outerSegment.position[1] + outerSegment.radius * vector[1],
+      outerSegment.position[2] + outerSegment.radius * vector[2],
+    );
+
+    // inner ring vertex
+    geometry.positions.push(
+      innerSegment.position[0] + innerSegment.radius * vector[0],
+      innerSegment.position[1] + innerSegment.radius * vector[1],
+      innerSegment.position[2] + innerSegment.radius * vector[2],
+    );
+    geometry.vertexCount += 2;
+
+    // normal
+    if (geometry.attributes.normal) {
+      geometry.attributes.normal.array.push(...capNormal);
+      geometry.attributes.normal.array.push(...capNormal);
+    }
+    // uvs
+    if (geometry.attributes.uv) {
+      const uv1 = [(cos + 1) / 2, (sin + 1) / 2];
+      const uv2 = [
+        (cos * innerRadiusRatio + 1) / 2,
+        (sin * innerRadiusRatio + 1) / 2,
+      ];
+
+      if (clockwise) {
+        uv1[0] = 1 - uv1[0];
+        uv2[0] = 1 - uv2[0];
+      }
+      geometry.attributes.uv.array.push(...uv1, ...uv2);
+    }
+  }
+
+  const length = outerSegment.curvePosition * curveLength;
+  const relativeLength = (outerSegment.curvePosition - from) * curveLength;
+
+  for (let i = 0; i < geometry.vertexCount; i++) {
+    if (geometry.attributes.curveLength)
+      geometry.attributes.curveLength.array.push(length);
+    if (geometry.attributes.curveRelativeLength)
+      geometry.attributes.curveRelativeLength.array.push(relativeLength);
+    if (geometry.attributes.curveNormal)
+      geometry.attributes.curveNormal.array.push(...outerSegment.normal);
+    if (geometry.attributes.curveTangent)
+      geometry.attributes.curveTangent.array.push(...outerSegment.tangent);
+    if (geometry.attributes.curveBinormal)
+      geometry.attributes.curveBinormal.array.push(...outerSegment.binormal);
+    if (geometry.attributes.centerPoint)
+      geometry.attributes.centerPoint.array.push(...outerSegment.position);
+  }
+
+  // indices
+  for (let i = 0; i < radialSegments; i++) {
+    const a = i * 2;
+    const b = a + 1;
+    const c = a + 2;
+    const d = a + 3;
+
+    if (!clockwise) {
+      geometry.indices.push(c, a, b, b, d, c);
+    } else {
+      geometry.indices.push(a, c, b, b, c, d);
+    }
+    geometry.indexCount += 6;
+  }
+
+  return geometry;
 }
 
 /**
  * Generates a fully customized tube geometry extruded from a curve.
  */
-export function createTubeGeometry(
+export function createTubeGeometries(
   curve: Curve3D,
   options: TubeGeometryOptions = {},
 ) {
@@ -509,7 +604,7 @@ export function createTubeGeometry(
   if (to < from)
     throw Error('Value of "from" must be less than the value of "to"!');
 
-  const geometry = new BufferGeometry();
+  const geometries: GeometryData[] = [];
 
   const radius = options.radius || 1;
   const radiSteps = options.radiusModifier?.steps || [];
@@ -517,6 +612,7 @@ export function createTubeGeometry(
   const includeStartCap = options.startCap || false;
   const includeEndCap = options.endCap || false;
   const closed = curve.closed;
+  const curveLength = curve.length;
 
   // sort radius modifier steps according to ascending curve positions
   radiSteps.sort((a, b) => a[0] - b[0]);
@@ -540,263 +636,121 @@ export function createTubeGeometry(
     simplificationThreshold,
   );
 
-  //console.log(segments)
-  const outerTube: Geometry = generateTube(
-    segments,
-    radialSegments,
-    closed,
-    options,
-  );
-
-  let innerTube: Geometry | null = null;
-  let startCap: Geometry | null = null;
-  let endCap: Geometry | null = null;
-
-  let indexOffset = outerTube.vertexCount;
-  let indexStart = 0;
-
-  if (options.addGroups) {
-    geometry.addGroup(indexStart, outerTube.indexCount, geometry.groups.length);
-    indexStart += outerTube.indexCount;
-  }
-  let innerSegments: TubeSegment[] | null = null;
-
-  if (options.innerRadius || options.thickness) {
-    innerSegments = segments.map(s => ({
-      ...s,
-      radius: options.innerRadius || s.radius - options.thickness!,
-      theta: s.theta - PI,
-    }));
-    innerTube = generateTube(
-      innerSegments,
+  geometries.push(
+    generateTubeGeometry(
+      segments,
       radialSegments,
       closed,
+      curveLength,
+      from,
       options,
-      indexOffset,
-    );
+      true,
+    ),
+  );
 
-    indexOffset += innerTube.vertexCount;
+  let innerSegments: TubeSegment[] | null = null;
 
-    if (options.addGroups) {
-      geometry.addGroup(
-        indexStart,
-        innerTube.indexCount,
-        geometry.groups.length,
-      );
-      indexStart += innerTube.indexCount;
+  const innerRadius = options.innerRadius || 0;
+  const thickness = options.thickness || 0;
+  if (innerRadius > 0 || thickness > 0) {
+    if (thickness) {
+      innerSegments = segments.map(s => ({
+        ...s,
+        radius: s.radius - thickness,
+        theta: s.theta - PI,
+      }));
+    } else {
+      innerSegments = calculateTubeSegments(
+        curve,
+        'none',
+        from,
+        to,
+        innerRadius,
+        [],
+        segmentsPerMeter,
+        simplificationThreshold,
+      ).map(s => ({
+        ...s,
+        theta: s.theta - PI,
+      }));
     }
+
+    geometries.push(
+      generateTubeGeometry(
+        innerSegments,
+        radialSegments,
+        closed,
+        curveLength,
+        from,
+        options,
+        false,
+      ),
+    );
   }
 
   if (includeStartCap && (!closed || from > 0 || to < 1)) {
     if (innerSegments) {
-      startCap = generateRingCap(
-        segments[0],
-        innerSegments[0],
-        radialSegments,
-        true,
-        options,
-        indexOffset,
+      geometries.push(
+        generateRingCapGeometry(
+          segments[0],
+          innerSegments[0],
+          radialSegments,
+          true,
+          curveLength,
+          from,
+          options,
+        ),
       );
     } else {
-      startCap = generateCap(
-        segments[0],
-        radialSegments,
-        true,
-        options,
-        indexOffset,
+      geometries.push(
+        generateCapGeometry(
+          segments[0],
+          radialSegments,
+          true,
+          curveLength,
+          from,
+          options,
+        ),
       );
-    }
-    indexOffset += startCap.vertexCount;
-    if (options.addGroups) {
-      geometry.addGroup(
-        indexStart,
-        startCap.indexCount,
-        geometry.groups.length,
-      );
-      indexStart += startCap.indexCount;
     }
   }
 
   if (includeEndCap && (!closed || from > 0 || to < 1)) {
     if (innerSegments) {
-      endCap = generateRingCap(
-        segments[segments.length - 1],
-        innerSegments[innerSegments.length - 1],
-        radialSegments,
-        false,
-        options,
-        indexOffset,
+      geometries.push(
+        generateRingCapGeometry(
+          segments[segments.length - 1],
+          innerSegments[innerSegments.length - 1],
+          radialSegments,
+          false,
+          curveLength,
+          from,
+          options,
+        ),
       );
     } else {
-      endCap = generateCap(
-        segments[segments.length - 1],
-        radialSegments,
-        false,
-        options,
-        indexOffset,
+      geometries.push(
+        generateCapGeometry(
+          segments[segments.length - 1],
+          radialSegments,
+          false,
+          curveLength,
+          from,
+          options,
+        ),
       );
     }
-    indexOffset += endCap.vertexCount;
-    if (options.addGroups) {
-      geometry.addGroup(indexStart, endCap.indexCount, geometry.groups.length);
-      indexStart += endCap.indexCount;
-    }
   }
 
-  let vertices = outerTube.vertices;
-  let indices = outerTube.indices;
+  return geometries;
+}
 
-  if (innerTube) {
-    vertices = vertices.concat(innerTube.vertices);
-    indices = indices.concat(innerTube.indices.reverse());
-  }
-
-  if (startCap) {
-    vertices = vertices.concat(startCap.vertices);
-    indices = indices.concat(startCap.indices);
-  }
-
-  if (endCap) {
-    vertices = vertices.concat(endCap.vertices);
-    indices = indices.concat(endCap.indices);
-  }
-
-  geometry.setAttribute(
-    'position',
-    new BufferAttribute(Float32Array.from(vertices), 3),
-  );
-
-  if (options.computeNormals) {
-    let normals = outerTube.normals!;
-    if (innerTube) {
-      normals = normals.concat(innerTube.normals!);
-    }
-    if (startCap) {
-      normals = normals.concat(startCap.normals!);
-    }
-    if (endCap) {
-      normals = normals.concat(endCap.normals!);
-    }
-    geometry.setAttribute(
-      'normal',
-      new BufferAttribute(Float32Array.from(normals), 3),
-    );
-  }
-
-  // add optional attributes
-  if (
-    options.computeLengths ||
-    options.computeCurveNormals ||
-    options.computeCurveTangents ||
-    options.computeCurveBinormals ||
-    options.computeRelativeLengths
-  ) {
-    const lengths: number[] | null = options.computeLengths ? [] : null;
-    const relativeLengths: number[] | null = options.computeRelativeLengths
-      ? []
-      : null;
-    const curveNormals: number[] | null = options.computeCurveNormals
-      ? []
-      : null;
-    const curveTangents: number[] | null = options.computeCurveTangents
-      ? []
-      : null;
-    const curveBinormals: number[] | null = options.computeCurveBinormals
-      ? []
-      : null;
-
-    const curveLength = curve.length;
-    for (let i = 0; i < segments.length; i++) {
-      for (let j = 0; j <= radialSegments; j++) {
-        if (lengths) lengths.push(segments[i].curvePosition * curveLength);
-        if (relativeLengths)
-          relativeLengths.push(
-            (segments[i].curvePosition - from) * curveLength,
-          );
-        if (curveNormals) curveNormals.push(...segments[i].normal);
-        if (curveTangents) curveTangents.push(...segments[i].tangent);
-        if (curveBinormals) curveBinormals.push(...segments[i].binormal);
-      }
-    }
-    if (innerTube && innerSegments) {
-      for (let i = 0; i < innerSegments.length; i++) {
-        for (let j = 0; j <= radialSegments; j++) {
-          if (lengths)
-            lengths.push(innerSegments[i].curvePosition * curveLength);
-          if (relativeLengths)
-            relativeLengths.push(
-              (segments[i].curvePosition - from) * curveLength,
-            );
-          if (curveNormals) curveNormals.push(...innerSegments[i].normal);
-          if (curveTangents) curveTangents.push(...innerSegments[i].tangent);
-          if (curveBinormals) curveBinormals.push(...innerSegments[i].binormal);
-        }
-      }
-    }
-    if (startCap) {
-      for (let i = 0; i < startCap.vertexCount; i++) {
-        if (lengths) lengths.push(from * curveLength);
-        if (relativeLengths) relativeLengths.push(0);
-        if (curveNormals) curveNormals.push(...segments[0].normal);
-        if (curveTangents) curveTangents.push(...segments[0].tangent);
-        if (curveBinormals) curveBinormals.push(...segments[0].binormal);
-      }
-    }
-    if (endCap) {
-      for (let i = 0; i < endCap.vertexCount; i++) {
-        if (lengths) lengths.push(to * curveLength);
-        if (relativeLengths) relativeLengths.push(curveLength);
-        if (curveNormals)
-          curveNormals.push(...segments[segments.length - 1].normal);
-        if (curveTangents)
-          curveTangents.push(...segments[segments.length - 1].tangent);
-        if (curveBinormals)
-          curveBinormals.push(...segments[segments.length - 1].binormal);
-      }
-    }
-
-    if (lengths)
-      geometry.setAttribute(
-        'curveLength',
-        new BufferAttribute(Float32Array.from(lengths), 1),
-      );
-    if (relativeLengths)
-      geometry.setAttribute(
-        'curveRelativeLength',
-        new BufferAttribute(Float32Array.from(relativeLengths), 1),
-      );
-    if (curveNormals)
-      geometry.setAttribute(
-        'curveNormal',
-        new BufferAttribute(Float32Array.from(curveNormals), 3),
-      );
-    if (curveTangents)
-      geometry.setAttribute(
-        'curveTangent',
-        new BufferAttribute(Float32Array.from(curveTangents), 3),
-      );
-    if (curveBinormals)
-      geometry.setAttribute(
-        'curveBinormal',
-        new BufferAttribute(Float32Array.from(curveBinormals), 3),
-      );
-  }
-
-  if (options.computeUvs) {
-    let uvs = outerTube.uvs!;
-    if (innerTube) {
-      uvs = uvs.concat(innerTube.uvs!);
-    }
-    if (startCap) {
-      uvs = uvs.concat(startCap.uvs!);
-    }
-    if (endCap) {
-      uvs = uvs.concat(endCap.uvs!);
-    }
-    geometry.setAttribute('uv', new BufferAttribute(Float32Array.from(uvs), 2));
-  }
-
-  geometry.setIndex(new BufferAttribute(Uint32Array.from(indices), 1));
-  //console.log(geometry)
-  return geometry;
+export function createTubeGeometry(
+  curve: Curve3D,
+  options: TubeGeometryOptions = {},
+) {
+  const geometries = createTubeGeometries(curve, options);
+  const merged = toBufferGeometry(geometries, options.addGroups);
+  //console.log(merged, geometries);
+  return merged;
 }

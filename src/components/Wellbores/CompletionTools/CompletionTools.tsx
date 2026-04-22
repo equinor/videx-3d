@@ -137,7 +137,7 @@ export const CompletionTools = ({
       }),
       // pbr
       new MeshStandardMaterial({
-        color: '#ccc',
+        color: '#ff0000',
         metalness: 0,
         roughness: 1,
         transparent: true,

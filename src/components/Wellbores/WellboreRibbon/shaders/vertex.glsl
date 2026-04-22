@@ -1,6 +1,5 @@
 #include <common>
 #include <logdepthbuf_pars_vertex>
-#include ../../../../sdk/materials/shaderLib/rotation.glsl
 
 uniform vec3 direction;
 uniform float width;
@@ -33,7 +32,7 @@ void main() {
   vUv = vec2(position2.y + 0.5, 1.0 - mix(point0.w, point1.w, position2.x));
   vNormal = normal;
   vTangent = tangent;
-  
+
   instanceID = gl_InstanceID;
 
   #include <logdepthbuf_vertex>

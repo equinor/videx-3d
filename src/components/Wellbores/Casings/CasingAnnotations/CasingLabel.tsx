@@ -10,7 +10,7 @@ import { AnnotationComponentProps } from '../../../Annotations/types';
  */
 export const CasingLabel = ({ id, name, data }: AnnotationComponentProps) => {
   const color = useMemo(() => {
-    if (data.type === 'Shoe') {
+    if (data.isShoe) {
       return '#00ffa2';
     }
     return '#00d0ff';

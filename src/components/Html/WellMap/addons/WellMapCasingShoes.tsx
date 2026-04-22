@@ -1,9 +1,9 @@
+import { path } from 'd3-path';
+import { scaleLinear } from 'd3-scale';
+import { nanoid } from 'nanoid';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useData } from '../../../../hooks/useData';
 import { CasingItem } from '../../../../sdk/data/types/Casing';
-import { path } from 'd3-path';
-import { nanoid } from 'nanoid';
-import { scaleLinear } from 'd3-scale';
 import { useWellMapState } from '../well-map-context';
 
 type Shoe = {
@@ -85,7 +85,7 @@ export const WellMapCasingShoes = ({
           data[id]
             .filter(
               d =>
-                d.type === 'Shoe' &&
+                d.isShoe &&
                 (fromMsl === null || d.mdBottomMsl > fromMsl),
             )
             .forEach(d => {

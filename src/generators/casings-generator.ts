@@ -1,124 +1,108 @@
 import { transfer } from 'comlink';
-import { group } from 'd3-array';
-import { BufferGeometry } from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-
+import { CasingSectionType } from '../components/Wellbores/Casings';
 import {
-  createTubeGeometry,
-  packBufferGeometry,
+  calculateFrenetFrames,
+  Curve3D,
+  getCurvePositions,
+  lerp,
   PositionLog,
   ReadonlyStore,
-  TubeGeometryOptions,
+  Tuplet,
 } from '../sdk';
 
-import { CasingItem, Tuplet } from '../sdk';
+import { Box3, Sphere, Vector3 } from 'three';
+import { CasingItem, clamp, getTrajectory } from '../sdk';
 
-import { casingsMaterialIndices } from '../components/Wellbores/Casings/casings-defs';
-import { clamp, getTrajectory, Trajectory } from '../sdk';
+const sphere = new Sphere();
 
-function createGenericShape(
-  trajectory: Trajectory,
-  item: CasingItem,
-  sizeMultiplier: number,
-  tubeOptions: TubeGeometryOptions,
-  min: number = 0,
+function interpolateRadius(
+  position: number,
+  fromStep: Tuplet<number>,
+  toStep: Tuplet<number>,
 ) {
-  const itemLength = clamp(
-    item.mdBottomMsl - item.mdTopMsl,
-    0.0001,
-    trajectory.measuredLength,
-  );
+  if (fromStep[0] === toStep[0]) return toStep[1];
+  const delta = toStep[0] - fromStep[0];
+  const t = clamp((position - fromStep[0]) / delta, 0, 1);
 
-  const curveLengthFactor = 1 / trajectory.measuredLength;
-  const steps: Tuplet<number>[] = [];
-
-  const top = clamp(
-    (item.mdTopMsl - trajectory.measuredTop) / trajectory.measuredLength,
-    0,
-    1,
-  );
-  const bottom = clamp(
-    (item.mdBottomMsl - trajectory.measuredTop) / trajectory.measuredLength,
-    0,
-    1,
-  );
-
-  const radius = sizeMultiplier * (item.outerDiameter / 2);
-  const radiusMin = Math.max(
-    ((item.innerDiameter + (item.outerDiameter - item.innerDiameter) / 4) / 2) *
-      sizeMultiplier,
-    radius * 0.95,
-  );
-
-  steps.push([top, radiusMin]);
-
-  const shiftDistance =
-    Math.min((radius - radiusMin) * 2, itemLength / 3) * curveLengthFactor;
-  steps.push([top + shiftDistance, radius]);
-  steps.push([bottom - shiftDistance, radius]);
-
-  steps.push([bottom, radiusMin]);
-
-  const geometry = createTubeGeometry(trajectory.curve, {
-    ...tubeOptions,
-    from: Math.max(top, min),
-    to: bottom,
-    innerRadius: (item.innerDiameter / 2) * sizeMultiplier,
-    radiusModifier: {
-      type: 'linear',
-      steps,
-    },
-  });
-
-  return geometry;
+  return lerp(fromStep[1], toStep[1], t);
 }
 
-function createShoe(
-  trajectory: Trajectory,
-  shoe: CasingItem,
-  sizeMultiplier: number,
-  tubeOptions: TubeGeometryOptions,
-  shoeFactor: number,
-  min: number = 0,
-) {
-  const shoeTop = clamp(
-    (shoe.mdTopMsl - trajectory.measuredTop) / trajectory.measuredLength,
-    0,
-    1,
-  );
-  const shoeBottom = clamp(
-    (shoe.mdBottomMsl - trajectory.measuredTop) / trajectory.measuredLength,
-    0,
-    1,
-  );
-  const shoeOuterRadiusTop = (shoe.outerDiameter / 2) * sizeMultiplier;
-  const shoeOuterRadiusBottom = shoeOuterRadiusTop * shoeFactor;
-  const shoeInnerRadius = (shoe.innerDiameter / 2) * sizeMultiplier;
+function calculateSegments(
+  curve: Curve3D,
+  from: number,
+  to: number,
+  radiSteps: Tuplet<number>[],
+  segmentsPerMeter: number,
+  simplificationThreshold: number,
+): Float32Array {
+  const attributesArray: number[] = [];
+  radiSteps.sort((a, b) => a[0] - b[0]);
 
-  const shoeGeometry = createTubeGeometry(trajectory.curve, {
-    ...tubeOptions,
-    from: Math.max(shoeTop, min),
-    to: shoeBottom,
-    radiusModifier: {
-      type: 'linear',
-      steps: [
-        [shoeTop, shoeOuterRadiusTop],
-        [shoeTop + (shoeBottom - shoeTop) / 4, shoeOuterRadiusTop],
-        [shoeBottom, shoeOuterRadiusBottom],
-      ],
-    },
-    innerRadius: shoeInnerRadius,
+  const positions: number[][] = [];
+  const curvePositions = getCurvePositions(
+    curve,
+    from,
+    to,
+    segmentsPerMeter,
+    simplificationThreshold,
+  );
+
+  let j = 0;
+  let p = curvePositions[j];
+
+  for (let i = 0; i < radiSteps.length - 1; i++) {
+    const n = i + 1;
+    const [startPos, startRadius] = radiSteps[i];
+    const [endPos, endRadius] = radiSteps[n];
+
+    // add first segment of step
+    positions.push([
+      startPos, // curve position 0-1
+      startRadius, // outer radius,
+    ]);
+
+    // skip to the next position after to the start position of the segment
+    while (p <= startPos && j < curvePositions.length - 1) {
+      p = curvePositions[++j];
+    }
+
+    // fill in positions between the start and end of step
+    while (p < endPos && j < curvePositions.length) {
+      const calculatedRadius = interpolateRadius(p, radiSteps[i], radiSteps[n]);
+      positions.push([p, calculatedRadius]);
+      p = curvePositions[j++];
+    }
+
+    if (n === radiSteps.length - 1) {
+      positions.push([endPos, endRadius]);
+    }
+  }
+
+  const frenetFrames = calculateFrenetFrames(
+    curve,
+    positions.map(p => p[0]),
+  );
+
+  const l = to - from;
+
+  frenetFrames.forEach((frame, i) => {
+    attributesArray.push(
+      ...frame.position,
+      ...frame.normal,
+      ...frame.tangent,
+      clamp((frame.curvePosition - from) / l, 0, 1), // segment length 0-1
+      frame.curvePosition, // position on curve 0-1
+      positions[i][1], // outer radius
+    );
   });
 
-  return shoeGeometry;
+  return Float32Array.from(attributesArray);
 }
 
 export async function generateCasings(
   this: ReadonlyStore,
   id: string,
   fromMsl?: number,
-  radialSegments: number = 16,
-  sizeMultiplier: number = 1,
   shoeFactor: number = 2,
   segmentsPerMeter: number = 0.1,
   simplificationThreshold: number = 0,
@@ -142,76 +126,109 @@ export async function generateCasings(
         )
       : 0;
 
-  const tubeOptions: TubeGeometryOptions = {
-    startCap: true,
-    endCap: true,
-    radialSegments,
-    addGroups: true,
-    computeNormals: true,
-    computeUvs: true,
-    simplificationThreshold,
-    segmentsPerMeter,
-  };
-
-  const assemblyList: BufferGeometry[] = [];
-  const assemblyMap: number[] = [];
-
   const casingItems = data
     .filter(
       d =>
         d.mdBottomMsl > trajectory.measuredTop &&
         (fromMsl === undefined || d.mdBottomMsl > fromMsl),
     )
-    .sort((a, b) => a.outerDiameter - b.outerDiameter);
+    .map(d => ({
+      ...d,
+      mdTopMsl: Math.max(d.mdTopMsl, trajectory.measuredTop),
+    }))
+    .sort(
+      (a, b) => a.outerDiameter - b.outerDiameter || a.mdTopMsl - b.mdTopMsl,
+    );
 
   if (casingItems.length === 0) return null;
 
-  const grouped = group(casingItems, d => ({
-    category: ['Shoe', 'Casing'].includes(d.type) ? d.type : 'Generic',
-    dimmension: d.outerDiameter,
-  }));
+  const curveLengthFactor = 1 / trajectory.measuredLength;
 
-  grouped.forEach((items, key) => {
-    const categoryGeometries = items.map(item => {
-      let geometry: BufferGeometry;
+  const transferrables: ArrayBufferLike[] = [];
+  const sections: CasingSectionType[] = [];
 
-      if (key.category === 'Shoe') {
-        geometry = createShoe(
-          trajectory,
-          item,
-          sizeMultiplier,
-          tubeOptions,
-          shoeFactor,
-          minFrom,
-        );
-      } else {
-        geometry = createGenericShape(
-          trajectory,
-          item,
-          sizeMultiplier,
-          tubeOptions,
-          minFrom,
-        );
-      }
-      return geometry;
+  console.log(casingItems);
+
+  casingItems.forEach(item => {
+    const itemLength = clamp(
+      item.mdBottomMsl - item.mdTopMsl,
+      0.0001,
+      trajectory.measuredLength,
+    );
+
+    const top = Math.max(
+      minFrom,
+      clamp(
+        (item.mdTopMsl - trajectory.measuredTop) / trajectory.measuredLength,
+        0,
+        1,
+      ),
+    );
+    const bottom = clamp(
+      (item.mdBottomMsl - trajectory.measuredTop) / trajectory.measuredLength,
+      0,
+      1,
+    );
+    const radius = item.outerDiameter / 2;
+
+    const innerRadius = item.innerDiameter
+      ? item.innerDiameter / 2
+      : radius * 0.95;
+
+    const steps: Tuplet<number>[] = [];
+
+    if (item.isShoe) {
+      const shoeOuterRadiusBottom = radius * shoeFactor;
+      steps.push(
+        [top, radius],
+        [top + (bottom - top) / 4, radius],
+        [bottom, shoeOuterRadiusBottom],
+      );
+    } else {
+      const radiusMin = radius - (radius - innerRadius) / 4;
+
+      steps.push([top, radiusMin]);
+
+      const shiftDistance =
+        Math.min((radius - radiusMin) * 2, itemLength / 3) * curveLengthFactor;
+
+      steps.push([top + shiftDistance, radius]);
+      steps.push([bottom - shiftDistance, radius]);
+
+      steps.push([bottom, radiusMin]);
+      //steps.push([top, radius], [bottom, radius]);
+    }
+    const attributesBuffer = calculateSegments(
+      trajectory.curve,
+      top,
+      bottom,
+      steps,
+      segmentsPerMeter,
+      simplificationThreshold,
+    );
+
+    const bbox = trajectory.curve.getBoundingBox(top, bottom);
+    const box3 = new Box3(new Vector3(...bbox.min), new Vector3(...bbox.max));
+
+    box3.getBoundingSphere(sphere);
+
+    sections.push({
+      type: item.type,
+      radius,
+      innerRadius,
+      length: itemLength,
+      top,
+      bottom,
+      attributesBuffer,
+      segments: attributesBuffer.length / 12,
+      boundingSphere: {
+        center: sphere.center.toArray(),
+        radius: sphere.radius,
+      },
     });
 
-    assemblyMap.push(casingsMaterialIndices[key.category]);
-    assemblyList.push(mergeGeometries(categoryGeometries, false));
+    transferrables.push(attributesBuffer.buffer);
   });
 
-  const merged = mergeGeometries(assemblyList, true);
-
-  merged.groups.forEach((g, i) => {
-    g.materialIndex = assemblyMap[i];
-  });
-
-  const [packed, buffers] = packBufferGeometry(merged);
-
-  const casingData = {
-    geometry: packed,
-  };
-
-  //console.log(casingData)
-  return transfer(casingData, buffers);
+  return transfer(sections, transferrables);
 }

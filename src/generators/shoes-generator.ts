@@ -37,7 +37,7 @@ export async function generateShoes(
   const shoes = data
     .filter(
       d =>
-        d.type === 'Shoe' &&
+        d.isShoe &&
         d.mdBottomMsl > trajectory.measuredTop &&
         (fromMsl === undefined || d.mdBottomMsl > fromMsl),
     )

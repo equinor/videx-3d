@@ -4,5 +4,6 @@ export type CasingItem = {
   outerDiameter: number;
   innerDiameter: number;
   type: string;
+  isShoe?: boolean;
   properties: Record<string, string>;
 };

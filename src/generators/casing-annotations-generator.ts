@@ -33,10 +33,10 @@ export async function generateCasingAnnotations(
       );
       return {
         name: `${d.properties['Diameter']} ${d.properties['Type']}`,
-        data: d.properties,
+        data: { ...d.properties, isShoe: d.isShoe },
         position: trajectory.curve.getPointAt(pos),
         direction: trajectory.curve.getTangentAt(pos),
-        priority: d.type === 'Shoe' ? 50 : d.innerDiameter,
+        priority: d.isShoe ? 50 : d.innerDiameter,
       };
     });
 

@@ -52,7 +52,6 @@ export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
         logarithmicDepthBuffer: true,
         autoClear: !!parameters.autoClear,
         antialias: true,
-        powerPreference: 'high-performance',
         toneMapping: NoToneMapping,
       }}
       style={{
@@ -71,10 +70,13 @@ export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
       }}
     >
       <ambientLight intensity={0.5} />
-      <directionalLight castShadow position={[-1, 2, -3]} intensity={3.2} />
+      <directionalLight
+        position={[-1, 2, -3]}
+        intensity={1.2}
+      />
       <Environment
         preset="studio"
-        environmentIntensity={1}
+        environmentIntensity={0.5}
         backgroundRotation={[0, PI2, 0]}
       />
 
