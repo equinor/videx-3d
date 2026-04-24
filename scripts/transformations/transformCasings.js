@@ -23,14 +23,12 @@ function getType(item) {
 function mapCasingData(data) {
   // DUCK-TAPE ALERT! Swapping inner/outer diameter if inner > outer + removing duplicates!
   data.forEach(d => {
-    if (d.interval_numeric < d.diameter_numeric) {
-      const tempNum = d.interval_numeric;
-      const tempStr = d.interval;
-
-      d.interval_numeric = d.diameter_numeric;
-      d.interval = d.diameter;
-      d.diameter_numeric = tempNum;
-      d.diameter = tempStr;
+    if (d.diameter_inner === null) {
+      d.diameter_inner = d.diameter_numeric * 0.9;
+    } else if (d.diameter_inner > d.diameter_numeric) {
+      const inner = d.diameter_numeric;
+      d.diameter_numeric = d.diameter_inner;
+      d.diameter_inner = inner;
     }
   });
   const unique = new Set();
@@ -43,8 +41,8 @@ function mapCasingData(data) {
     )
     .map(d => ({
       type: getType(d),
-      innerDiameter: d.diameter_numeric / metersToInches,
-      outerDiameter: d.interval_numeric / metersToInches,
+      innerDiameter: d.diameter_inner / metersToInches,
+      outerDiameter: d.diameter_numeric / metersToInches,
       mdTopMsl: d.depth_top_md,
       mdBottomMsl: d.depth_bottom_md,
       properties: {
@@ -57,6 +55,7 @@ function mapCasingData(data) {
         'Max Inc.': `${d.max_inc} ${d.max_inc_unit}`,
         Coupling: d.coupling,
         Remarks: d.remark,
+        Category: d.category,
         //...d
       },
     }))

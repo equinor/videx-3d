@@ -153,7 +153,9 @@ export function packBufferGeometry(
   return [packed, transferrables];
 }
 
-export function packBufferGeometries(bufferGeometries: BufferGeometry[]) {
+export function packBufferGeometries(
+  bufferGeometries: Record<string, BufferGeometry>,
+) {
   const data: PackedBufferGeometryCollection = {};
   const transferrables: ArrayBufferLike[] = [];
 

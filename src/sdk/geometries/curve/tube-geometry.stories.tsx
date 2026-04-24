@@ -1,10 +1,10 @@
 import { Helper, useTexture } from '@react-three/drei';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect, useState } from 'react';
-import { BufferGeometry } from 'three';
-import { VertexNormalsHelper } from 'three/examples/jsm/Addons.js';
+import { useMemo } from 'react';
+
 import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator';
 //import { PerformanceDecorator } from '../../../storybook/decorators/performance-decorator'
+import { VertexNormalsHelper } from 'three-stdlib';
 import { Vec3 } from '../../types/common';
 import { getSplineCurve } from './curve-3d';
 import { TubeGeometryOptions, createTubeGeometry } from './tube-geometry';
@@ -55,9 +55,7 @@ const DemoComponent = ({
   to,
   from,
 }: Props) => {
-  const [geometry, setGeometry] = useState<BufferGeometry | null>(null);
-
-  useEffect(() => {
+  const geometry = useMemo(() => {
     const curve = getSplineCurve(points as Vec3[], closed);
     if (curve) {
       const options: TubeGeometryOptions = {
@@ -98,14 +96,7 @@ const DemoComponent = ({
         };
       }
 
-      const geometry = createTubeGeometry(curve, options);
-
-      setGeometry(prev => {
-        if (prev) {
-          prev.dispose();
-        }
-        return geometry;
-      });
+      return createTubeGeometry(curve, options);
     }
   }, [
     radius,

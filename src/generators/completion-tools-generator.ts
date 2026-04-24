@@ -2,7 +2,7 @@ import { transfer } from 'comlink';
 import { group } from 'd3-array';
 
 import { BufferGeometry } from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeBufferGeometries } from 'three-stdlib';
 import { completionToolsMaterialIndices } from '../components/Wellbores/CompletionTools/completion-tools-defs';
 import {
   clamp,
@@ -126,24 +126,32 @@ export async function generateCompletionTools(
   const assemblyMap: number[] = [];
 
   grouped.forEach((tools, category) => {
-    const categoryGeometries = tools.map(tool => {
-      const geometry = createGenericShape(
-        trajectory,
-        tool,
-        sizeMultiplier,
-        minFrom,
-        tubeOptions,
-      );
-      return geometry;
-    });
+    const categoryGeometries = tools
+      .map(tool => {
+        const geometry = createGenericShape(
+          trajectory,
+          tool,
+          sizeMultiplier,
+          minFrom,
+          tubeOptions,
+        );
+        return geometry;
+      })
+      .filter(d => d) as BufferGeometry[];
 
     assemblyMap.push(completionToolsMaterialIndices[category]);
-    assemblyList.push(mergeGeometries(categoryGeometries, false));
+    const mergedCategoryGeometries = mergeBufferGeometries(
+      categoryGeometries,
+      false,
+    );
+    if (mergedCategoryGeometries) assemblyList.push(mergedCategoryGeometries);
   });
 
   if (!assemblyList.length) return null;
 
-  const merged = mergeGeometries(assemblyList, true);
+  const merged = mergeBufferGeometries(assemblyList, true);
+
+  if (!merged) return null;
 
   merged.groups.forEach((g, i) => {
     g.materialIndex = assemblyMap[i];

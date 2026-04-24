@@ -35,6 +35,9 @@ export async function generatePerimeterGeometry(
   };
 
   const geometry = createTubeGeometry(trajectory.curve, tubeOptions);
+
+  if (!geometry) return null;
+
   const [packed, buffers] = packBufferGeometry(geometry);
 
   return transfer(packed, buffers);

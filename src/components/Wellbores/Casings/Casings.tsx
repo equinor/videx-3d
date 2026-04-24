@@ -6,40 +6,84 @@ import {
   useMemo,
   useState,
 } from 'react';
-import {
-  BufferGeometry,
-  Group,
-  Material,
-  MeshStandardMaterial,
-  Object3D,
-} from 'three';
-import {
-  CommonComponentProps,
-  CustomMaterialProps,
-} from '../../../common/types';
+import { Color, Group, MeshStandardMaterialParameters, Object3D } from 'three';
+import { CommonComponentProps } from '../../../common/types';
 import { useGenerator } from '../../../hooks/useGenerator';
 import { useWellboreContext } from '../../../hooks/useWellboreContext';
-import { unpackBufferGeometry } from '../../../sdk/geometries/packing';
-import { casings, CasingsGeneratorResponse } from './casings-defs';
+import {
+  casings,
+  CasingSectionType,
+  CasingsGeneratorResponse,
+} from './casings-defs';
+import { CasingSection } from './CasingSection';
+
+/**
+ * CasingSectionMaterialOptions
+ * @expand
+ */
+export type CasingSectionMaterialOptions = {
+  primary: MeshStandardMaterialParameters;
+  inner?: MeshStandardMaterialParameters;
+  slice?: MeshStandardMaterialParameters;
+};
+
+/**
+ * MaterialOptions
+ * @expand
+ */
+export type MaterialOptions = (
+  section: CasingSectionType,
+) => CasingSectionMaterialOptions;
 
 /**
  * Casing props
  * @expand
  */
-export type CasingProps = CommonComponentProps &
-  CustomMaterialProps & {
-    fallback?: () => ReactElement<Object3D>;
-    radialSegments?: number;
-    sizeMultiplier?: number;
-    shoeFactor?: number;
-    overrideSegmentsPerMeter?: number;
-    overrideSimplificationThreshold?: number;
-    opacity?: number;
-    priority?: number;
+export type CasingProps = CommonComponentProps & {
+  fallback?: () => ReactElement<Object3D>;
+  radialSegments?: number;
+  sliceAngle?: number;
+  sliceOffset?: number;
+  autoSlicePosition?: boolean;
+  sizeMultiplier?: number;
+  shoeFactor?: number;
+  overrideSegmentsPerMeter?: number;
+  overrideSimplificationThreshold?: number;
+  materialOptions?: MaterialOptions;
+  opacity?: number;
+  priority?: number;
+};
+
+/**
+ * A custom function may be passed to the component, but this is not well documented at this time
+ * as this behavior is subject to change.
+ */
+const defaultMaterialOptions = (section: CasingSectionType) => {
+  const defaultParams = { color: '#4c5160', roughness: 0.5, metalness: 0.7 };
+  const shoeParams = { color: 'black', roughness: 1, metalness: 0 };
+
+  const primary = section.type.toLowerCase().includes('shoe')
+    ? shoeParams
+    : defaultParams;
+
+  const sliceColor = new Color(primary.color).multiplyScalar(0.25);
+  const slice = { color: sliceColor, roughness: 0.9, metalness: 0.8 };
+
+  return {
+    primary,
+    inner: { color: '#bed0e4', roughness: 0.3, metalness: 0.5 },
+    slice,
   };
+};
 
 /**
  * Generic render of casings based on depths, diameters and type. Must be a child of the `Wellbore` component.
+ *
+ * The casing may be "sliced" at an angle using the sliceAngle prop. The sliceOffset prop determines the offset
+ * from the z axis to the center of the slice. Setting autoSlicePosition to true will always show the center of the
+ * slice facing the camera. With this option set to true, the sliceOffset should be set to 0.
+ *
+ * An alternative to using the slice feature is to set opacity < 1 if you want to see the internals.
  *
  * @example
  * <Wellbore id={wellbore.id}>
@@ -62,19 +106,17 @@ export const Casings = forwardRef(
       layers,
       position,
       visible,
-      castShadow,
-      receiveShadow,
-      customMaterial,
-      customDepthMaterial,
-      customDistanceMaterial,
-      onMaterialPropertiesChange,
       radialSegments = 16,
       sizeMultiplier = 1,
       shoeFactor = 1,
+      sliceAngle = 0,
+      sliceOffset = 0,
+      autoSlicePosition = false,
       overrideSegmentsPerMeter,
       overrideSimplificationThreshold,
-      opacity = 1,
+      materialOptions = defaultMaterialOptions,
       fallback,
+      opacity = 1,
       priority = 0,
     }: CasingProps,
     ref: ForwardedRef<Group>,
@@ -86,7 +128,7 @@ export const Casings = forwardRef(
       simplificationThreshold: defaultSimplificationThreshold,
     } = useWellboreContext();
     const generator = useGenerator<CasingsGeneratorResponse>(casings, priority);
-    const [geometry, setGeometry] = useState<BufferGeometry | null>(null);
+    const [sections, setSections] = useState<CasingSectionType[] | null>(null);
     const [useFallback, setUseFallback] = useState(false);
 
     const { segmentsPerMeter, simplificationThreshold } = useMemo(() => {
@@ -107,72 +149,16 @@ export const Casings = forwardRef(
       overrideSimplificationThreshold,
     ]);
 
-    const material = useMemo<Material | Material[]>(() => {
-      if (customMaterial) {
-        return customMaterial;
-      }
-
-      const m = [
-        new MeshStandardMaterial({
-          color: 'black',
-          metalness: 0,
-          roughness: 1,
-        }),
-        new MeshStandardMaterial({
-          color: '#555',
-          metalness: 1,
-          roughness: 0.5,
-          transparent: true,
-          opacity: 1,
-        }),
-        new MeshStandardMaterial({
-          color: '#9a9a98',
-          metalness: 1,
-          roughness: 0.5,
-          transparent: true,
-          opacity: 1,
-        }),
-      ];
-
-      return m;
-    }, [customMaterial]);
-
-    const onPropsChange = useMemo(() => {
-      return onMaterialPropertiesChange
-        ? onMaterialPropertiesChange
-        : (props: Record<string, any>, material: Material | Material[]) => {
-            const m = material as Material[];
-            m[1].opacity = props.opacity;
-            m[2].opacity = props.opacity;
-          };
-    }, [onMaterialPropertiesChange]);
-
-    useEffect(() => {
-      onPropsChange({ opacity }, material);
-    }, [opacity, material, onPropsChange]);
-
     useEffect(() => {
       if (generator && id) {
         generator(
           id,
           fromMsl,
-          radialSegments,
-          sizeMultiplier,
           shoeFactor,
           segmentsPerMeter,
           simplificationThreshold,
         ).then(response => {
-          setGeometry(prev => {
-            if (prev) {
-              prev.dispose();
-            }
-            if (response?.geometry) {
-              const unpackedGeometry = unpackBufferGeometry(response.geometry);
-              return unpackedGeometry;
-            } else {
-              return null;
-            }
-          });
+          setSections(response);
           if (!response) setUseFallback(true);
         });
       }
@@ -181,11 +167,14 @@ export const Casings = forwardRef(
       id,
       fromMsl,
       radialSegments,
-      sizeMultiplier,
       shoeFactor,
       segmentsPerMeter,
       simplificationThreshold,
     ]);
+
+    const sectionMaterialOptions = useMemo(() => {
+      return sections?.map(materialOptions) || null;
+    }, [sections, materialOptions]);
 
     return (
       <group
@@ -195,19 +184,24 @@ export const Casings = forwardRef(
         visible={visible}
         position={position}
         renderOrder={renderOrder}
+        layers={layers}
       >
-        {geometry && (
-          <mesh
-            key={geometry.uuid}
-            geometry={geometry}
-            material={material}
-            layers={layers}
-            castShadow={castShadow}
-            receiveShadow={receiveShadow}
-            customDepthMaterial={customDepthMaterial}
-            customDistanceMaterial={customDistanceMaterial}
-          />
-        )}
+        {sections &&
+          sectionMaterialOptions &&
+          sections.map((section, i) => (
+            <CasingSection
+              key={i}
+              materialOptions={sectionMaterialOptions[i]}
+              opacity={opacity}
+              sliceAngle={sliceAngle}
+              sliceOffset={sliceOffset}
+              autoSlicePosition={autoSlicePosition}
+              section={section}
+              radialSegments={radialSegments}
+              sizeMultiplier={sizeMultiplier}
+              renderOrder={i}
+            />
+          ))}
         {useFallback && fallback && fallback()}
       </group>
     );

@@ -18,7 +18,7 @@ import {
   LAYERS,
   PointerEvents,
   useEventEmitter,
-  useGenerator
+  useGenerator,
 } from '../../../main';
 import { unpackBufferGeometry } from '../../../sdk';
 import fragmentShader from './shaders/frag.glsl';
@@ -96,17 +96,23 @@ export const WellboreSeismicSection = ({
     priority,
   );
 
-  const uniforms = useMemo(() => ({
-    opacity: new Uniform<number>(1),
-    data: new Uniform<Texture | null>(null),
-    colorRampTexture: new Uniform<Texture>(colorRampTexture),
-    colorRamps: new Uniform<number>(colorRampTexture.height),
-    colorRampMin: new Uniform<number>(-1),
-    colorRampMax: new Uniform<number>(1),
-    colorRampIndex: new Uniform<number>(6),
-  }), []);
+  const uniforms = useMemo(
+    () => ({
+      opacity: new Uniform<number>(1),
+      data: new Uniform<Texture | null>(null),
+      colorRampTexture: new Uniform<Texture>(colorRampTexture),
+      colorRamps: new Uniform<number>(colorRampTexture.height),
+      colorRampMin: new Uniform<number>(-1),
+      colorRampMax: new Uniform<number>(1),
+      colorRampIndex: new Uniform<number>(6),
+    }),
+    [],
+  );
 
-  const range = useMemo(() => Math.max(Math.abs(minMax[0]), Math.abs(minMax[1])), [minMax]);
+  const range = useMemo(
+    () => Math.max(Math.abs(minMax[0]), Math.abs(minMax[1])),
+    [minMax],
+  );
 
   useEffect(() => {
     generator(id, stepSize, minSize, extension, defaultExtensionAngle).then(

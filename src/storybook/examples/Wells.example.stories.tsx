@@ -18,6 +18,7 @@ import { ContourColorMode } from '../../components/Surfaces/SurfaceMaterial';
 import { UtmArea } from '../../components/UtmArea/UtmArea';
 import { UtmPosition } from '../../components/UtmArea/UtmPosition';
 import { BasicTrajectory } from '../../components/Wellbores/BasicTrajectory/BasicTrajectory';
+import { Casings } from '../../components/Wellbores/Casings/Casings.tsx';
 import { DepthMarkers } from '../../components/Wellbores/DepthMarkers/DepthMarkers';
 import { FormationMarkers } from '../../components/Wellbores/FormationMarkers/FormationMarkers';
 import { Perforations } from '../../components/Wellbores/Perforations/Perforations';
@@ -32,13 +33,12 @@ import {
 } from '../../events/wellbore-events';
 import {
   CameraFocusAtPointEvent,
-  Casings,
   CompletionTools,
   Distance,
   EventEmitterCallbackEvent,
   Shoes,
   WellboreBounds,
-  WellboreFormationColumn
+  WellboreFormationColumn,
 } from '../../main';
 import { CRS } from '../../sdk/projection/crs';
 import { Vec2, Vec3 } from '../../sdk/types/common';
@@ -401,41 +401,43 @@ const Example = (args: ExampleProps) => {
                       {(args.showFormationColumns ||
                         args.showFormationMarkers ||
                         args.showPerforations) && (
-                          <Distance min={0} max={40000} onDemand>
-                            {args.showFormationColumns && (
-                              <WellboreFormationColumn
-                                stratColumnId={stratColumnId}
-                                startRadius={3}
-                              />
-                            )}
-                            {args.showFormationMarkers && (
-                              <FormationMarkers
-                                stratColumnId={stratColumnId}
-                                radialSegments={16}
-                                baseRadius={4}
-                                showAnnotations={isActiveWell}
-                              />
-                            )}
-                            {args.showPerforations && (
-                              <Perforations
-                                renderOrder={10}
-                                sizeMultiplier={args.sizeMultiplier}
-                              />
-                            )}
-                          </Distance>
-                        )}
+                        <Distance min={0} max={40000} onDemand>
+                          {args.showFormationColumns && (
+                            <WellboreFormationColumn
+                              stratColumnId={stratColumnId}
+                              startRadius={3}
+                            />
+                          )}
+                          {args.showFormationMarkers && (
+                            <FormationMarkers
+                              stratColumnId={stratColumnId}
+                              radialSegments={16}
+                              baseRadius={4}
+                              showAnnotations={isActiveWell}
+                            />
+                          )}
+                          {args.showPerforations && (
+                            <Perforations
+                              renderOrder={10}
+                              sizeMultiplier={args.sizeMultiplier}
+                            />
+                          )}
+                        </Distance>
+                      )}
                       {args.showCasingAndCompletion && (
                         <Distance min={0} max={10} onDemand>
                           <Casings
                             name="Casings"
                             radialSegments={16}
+                            autoSlicePosition={true}
+                            sliceAngle={Math.PI}
                             sizeMultiplier={args.sizeMultiplier}
                             shoeFactor={1.3}
                             opacity={args.casingOpacity}
                           />
                           <CompletionTools
                             name="Completion"
-                            radialSegments={1}
+                            radialSegments={16}
                             sizeMultiplier={args.sizeMultiplier}
                             fallback={() => (
                               <TubeTrajectory
@@ -459,17 +461,15 @@ const Example = (args: ExampleProps) => {
                     )}
                     <WellboreLabel color="cyan" size={16} />
                   </Wellbore>
-                  {
-                    (isSelected && args.showSeismic) && (
-                      <WellboreSeismicSection
-                        id={wellbore.id}
-                        stepSize={3}
-                        extension={1000}
-                        minSize={1000}
-                        opacity={args.opacity}
-                      />
-                    )
-                  }
+                  {isSelected && args.showSeismic && (
+                    <WellboreSeismicSection
+                      id={wellbore.id}
+                      stepSize={3}
+                      extension={1000}
+                      minSize={1000}
+                      opacity={args.opacity}
+                    />
+                  )}
                 </UtmPosition>
               );
             }}

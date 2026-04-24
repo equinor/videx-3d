@@ -48,6 +48,8 @@ export async function generateTubeTrajectory(
   };
   const geometery = createTubeGeometry(trajectory.curve, options);
 
+  if (!geometery) return null;
+
   const [geometry, transferrables] = packBufferGeometry(geometery);
 
   return transfer(geometry, transferrables);

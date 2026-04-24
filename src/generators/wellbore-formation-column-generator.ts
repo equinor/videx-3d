@@ -1,6 +1,5 @@
 import { transfer } from 'comlink';
 import { BufferAttribute, BufferGeometry, Color } from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {
   createTubeGeometry,
   getTrajectory,
@@ -11,6 +10,7 @@ import {
   TubeGeometryOptions,
 } from '../sdk';
 
+import { mergeBufferGeometries } from 'three-stdlib';
 import {
   getWellboreFormations,
   mergeFormationIntervals,
@@ -86,7 +86,7 @@ export async function generateWellboreFormationColumnGeometries(
           to,
         });
 
-        if (geometery.attributes.position.count) {
+        if (geometery?.attributes.position.count) {
           const colors = new Float32Array(
             geometery.attributes.position.count * 3,
           );
@@ -104,7 +104,10 @@ export async function generateWellboreFormationColumnGeometries(
 
   if (!geometries.length) return null;
 
-  const geometry = mergeGeometries(geometries, false);
+  const geometry = mergeBufferGeometries(geometries, false);
+
+  if (!geometry) return null;
+
   const [packed, buffers] = packBufferGeometry(geometry);
 
   return transfer(packed, buffers);
