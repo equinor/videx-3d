@@ -1,5 +1,16 @@
 # Changelog
 
+## [6.0.0-beta](https://github.com/equinor/videx-3d/compare/v5.1.3-beta...v6.0.0-beta) (2026-04-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **169:** casing component replaced with new version allowing slice… ([#186](https://github.com/equinor/videx-3d/issues/186))
+
+### Features
+
+* **169:** casing component replaced with new version allowing slice… ([#186](https://github.com/equinor/videx-3d/issues/186)) ([95633eb](https://github.com/equinor/videx-3d/commit/95633ebbfe37f58839e5fab58ad756dfb02a974c))
+
 ## [5.1.3-beta](https://github.com/equinor/videx-3d/compare/v5.1.2-beta...v5.1.3-beta) (2026-04-08)
 
 
