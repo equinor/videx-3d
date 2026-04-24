@@ -43,4 +43,4 @@ jobs:
         run: npm test
       - name: Publish package
         if: ${{ steps.release.outputs.release_created }}
-        run: npm publish --access public
+        run: npm publish
