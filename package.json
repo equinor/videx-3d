@@ -1,6 +1,6 @@
 {
   "name": "@equinor/videx-3d",
-  "version": "6.0.0-beta",
+  "version": "1.0.0",
   "private": false,
   "type": "module",
   "license": "MIT",
