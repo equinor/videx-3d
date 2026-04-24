@@ -1,6 +1,6 @@
 # Changelog
 
-## [6.0.0-beta](https://github.com/equinor/videx-3d/compare/v5.1.3-beta...v6.0.0-beta) (2026-04-24)
+## [1.0.0](https://github.com/equinor/videx-3d/compare/v5.1.3-beta...1.0.0) (2026-04-24)
 
 
 ### ⚠ BREAKING CHANGES
