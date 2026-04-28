@@ -17,7 +17,7 @@ type HighlightState = {
 };
 
 const keyOf = (o: Object3D, idx?: number) => {
-  if (idx) return `${o.id}_${idx}`;
+  if (idx !== undefined) return `${o.id}_${idx}`;
   return `${o.id}`;
 };
 

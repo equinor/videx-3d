@@ -1,5 +1,5 @@
 import { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Mesh } from 'three';
 import { LAYERS } from '../../main';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
@@ -16,15 +16,19 @@ type StoryArgs = React.ComponentProps<typeof Highlighter>;
 export default meta;
 type Story = StoryObj<StoryArgs>;
 
-const boxRotation = Math.random();
+function rotateRandomly() {
+  return Math.random();
+}
 
 type Props = {
   position?: [number, number, number];
   color?: string;
 };
+
 const HighlightBox = ({ position = [0, 0, 0], color = '#4f7b95' }: Props) => {
   const meshRef = useRef<Mesh>(null);
   const highlighter = useHighlighter();
+  const boxRotation = useMemo(() => rotateRandomly(), []);
 
   useEffect(() => {
     meshRef.current?.layers.enable(LAYERS.EMITTER);

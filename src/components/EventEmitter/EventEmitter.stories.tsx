@@ -2,13 +2,12 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useCallback, useEffect, useRef } from 'react';
 import { Color, Mesh, MeshStandardMaterial } from 'three';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
-import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-decorator';
 import { EventEmitter } from './EventEmitter';
 import { useEventEmitter } from './EventEmitterContext';
 
 const meta = {
   title: 'Components/misc/EventEmitter',
-  decorators: [EventEmitterDecorator, Canvas3dDecorator],
+  decorators: [Canvas3dDecorator],
   component: EventEmitter,
 } satisfies Meta<typeof EventEmitter>;
 
@@ -176,7 +175,11 @@ function Scene() {
 }
 
 export const Default: Story = {
-  render: () => <Scene />,
+  render: () => (
+    <EventEmitter>
+      <Scene />
+    </EventEmitter>
+  ),
   parameters: {
     autoClear: true,
     scale: 10,
