@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.3](https://github.com/equinor/videx-3d/compare/v1.0.2...v1.0.3) (2026-04-29)
+
+
+### Bug Fixes
+
+* **6381:** add missing storybooks ([#192](https://github.com/equinor/videx-3d/issues/192)) ([cfd4087](https://github.com/equinor/videx-3d/commit/cfd4087d007aa87d2e7c7c74175a4e2828a9cfc1))
+
 ## [1.0.2](https://github.com/equinor/videx-3d/compare/v1.0.1...v1.0.2) (2026-04-29)
 
 
