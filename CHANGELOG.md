@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/equinor/videx-3d/compare/v1.0.1...v1.0.2) (2026-04-29)
+
+
+### Bug Fixes
+
+* audit vulnerabilities ([#195](https://github.com/equinor/videx-3d/issues/195)) ([6874b7f](https://github.com/equinor/videx-3d/commit/6874b7f6361d010a7a9afe588097db1d7d585c95))
+
 ## [1.0.1](https://github.com/equinor/videx-3d/compare/v1.0.0...v1.0.1) (2026-04-29)
 
 
