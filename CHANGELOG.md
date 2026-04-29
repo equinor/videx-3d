@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/equinor/videx-3d/compare/v1.0.0...v1.0.1) (2026-04-29)
+
+
+### Bug Fixes
+
+* **npm:** bump postcss from 8.5.6 to 8.5.12 ([#191](https://github.com/equinor/videx-3d/issues/191)) ([a929415](https://github.com/equinor/videx-3d/commit/a92941564435271b420c86a35c7633398762221b))
+
 ## [1.0.0](https://github.com/equinor/videx-3d/compare/v5.1.3-beta...1.0.0) (2026-04-24)
 
 
