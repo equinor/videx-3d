@@ -30,7 +30,7 @@ jobs:
         if: ${{ steps.release.outputs.release_created }}
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
-          node-version: 20.x
+          node-version: 24.x
           package-manager-cache: false
       - name: Install dependencies
         if: ${{ steps.release.outputs.release_created }}
