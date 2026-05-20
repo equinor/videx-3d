@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/equinor/videx-3d/compare/v1.0.3...v1.1.0) (2026-05-20)
+
+
+### Features
+
+* **geojson:** added some helper classes and functions for working wi… ([#202](https://github.com/equinor/videx-3d/issues/202)) ([85fa04e](https://github.com/equinor/videx-3d/commit/85fa04e98b31af86a2961b30643db2f0134c1932))
+
 ## [1.0.3](https://github.com/equinor/videx-3d/compare/v1.0.2...v1.0.3) (2026-04-29)
 
 
