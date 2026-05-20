@@ -4,7 +4,17 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { extend } from '@react-three/fiber';
 import { CurveInterpolator } from 'curve-interpolator';
 import { ComponentType, useEffect, useMemo, useState } from 'react';
-import { BufferGeometry, DoubleSide, ExtrudeGeometry, Line, Matrix4, MeshStandardMaterial, ShapeGeometry, TorusGeometry, Vector3 } from 'three';
+import {
+  BufferGeometry,
+  DoubleSide,
+  ExtrudeGeometry,
+  Line,
+  Matrix4,
+  MeshStandardMaterial,
+  ShapeGeometry,
+  TorusGeometry,
+  Vector3,
+} from 'three';
 import { Grid, Symbols, useData } from '../../main';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
@@ -14,23 +24,24 @@ import { PositionLog, SymbolsType, WellboreHeader } from '../data/types';
 import { CRS, getProjectionDefFromUtmZone } from '../projection/crs';
 import { Vec2 } from '../types/common';
 import { GeoJsonFeature, parseGeoJsonFeature } from '../utils/geojson';
-import { Coordinates2D, PlanarGeometry, PlanarLineGeometry, PlanarPolygonGeometry } from './planar-geometry';
+import {
+  Coordinates2D,
+  PlanarGeometry,
+  PlanarLineGeometry,
+  PlanarPolygonGeometry,
+} from './planar-geometry';
 
 extend({ ThreeLine: Line });
 
 const utmZone = storyArgs.utmZone;
 const origin = storyArgs.origin as Vec2;
-const crs = new CRS(
-  getProjectionDefFromUtmZone(utmZone),
-  origin,
-  'utm'
-);
+const crs = new CRS(getProjectionDefFromUtmZone(utmZone), origin, 'utm');
 
 /**
  * These functions are used to map from wgs84/utm to world space XY coordinates.
  * Note that we negating the Y-coordinates (utm north value)! We do this since shapes in
  * THREE.js are defined in the XY plane, and as the Z axis points south
- * rather than north, we flip it so that the geometry becomes correct after we rotate it along 
+ * rather than north, we flip it so that the geometry becomes correct after we rotate it along
  * the x-axis to align with the XZ plane.
  */
 const transformWgs84 = (pos: Vec2) => {
@@ -63,12 +74,12 @@ function scaleUvToBoundingBox(geometry: BufferGeometry) {
 }
 
 type ExampleProps = {
-  centralize: boolean
-}
+  centralize: boolean;
+};
 
 type DemoProps = ExampleProps & {
-  Example: ComponentType<ExampleProps>
-}
+  Example: ComponentType<ExampleProps>;
+};
 
 const DemoComponent = ({ Example, ...props }: DemoProps) => {
   return (
@@ -90,37 +101,27 @@ const DemoComponent = ({ Example, ...props }: DemoProps) => {
 
 /**
  * PlanarGeometry is a simple abstraction around coordinates describing 2D
- * point, line or polygon geometries. It was added as a simple internal structure 
- * for geojson data. 
- * 
+ * point, line or polygon geometries. It was added as a simple internal structure
+ * for geojson data.
+ *
  * Currently, it's main use is for mapping geojson polygons to Three.js Shape instances.
- * 
+ *
  * @see parseGeoJsonFeature
  */
 const meta = {
   title: 'SDK/planar-geometry',
   component: DemoComponent,
-  decorators: [
-    //PerformanceDecorator,
-    Canvas3dDecorator,
-    DataProviderDecorator,
-
-  ],
+  decorators: [Canvas3dDecorator, DataProviderDecorator],
   parameters: {
     scale: 1000,
     autoClear: true,
-    cameraPosition: [
-      0,
-      5000,
-      4000,
-    ]
+    cameraPosition: [0, 5000, 4000],
   },
 } satisfies Meta<typeof DemoComponent>;
 
 export default meta;
 
 type Story = StoryObj<typeof meta>;
-
 
 /** Polygon  */
 
@@ -136,7 +137,7 @@ const PolygonsDemo = ({ centralize }: ExampleProps) => {
       // an offset from the origin to the center of the geometry bounding box.
       if (centralize) feature.geometry.centralize();
       setFeature(feature);
-    })
+    });
   }, [centralize]);
 
   const geometries = useMemo(() => {
@@ -144,7 +145,9 @@ const PolygonsDemo = ({ centralize }: ExampleProps) => {
 
     const polygonGeometry = feature.geometry as PlanarPolygonGeometry;
 
-    const lineGeometry = new BufferGeometry().setFromPoints(polygonGeometry.getPointsFlattened());
+    const lineGeometry = new BufferGeometry().setFromPoints(
+      polygonGeometry.getPointsFlattened(),
+    );
 
     const shapes = polygonGeometry.toShapes();
 
@@ -171,7 +174,11 @@ const PolygonsDemo = ({ centralize }: ExampleProps) => {
     <>
       {geometries?.shapeGeometry && (
         <>
-          <mesh geometry={geometries.shapeGeometry} position={[0, 500, 0]} renderOrder={10}>
+          <mesh
+            geometry={geometries.shapeGeometry}
+            position={[0, 500, 0]}
+            renderOrder={10}
+          >
             <meshBasicMaterial
               color="magenta"
               side={DoubleSide}
@@ -179,37 +186,43 @@ const PolygonsDemo = ({ centralize }: ExampleProps) => {
               opacity={0.5}
               depthWrite={false}
             />
-
           </mesh>
           <mesh geometry={geometries.shapeGeometry} position={[0, 1000, 0]}>
-            <meshStandardMaterial
-              map={uvMap}
-              side={DoubleSide}
-            />
+            <meshStandardMaterial map={uvMap} side={DoubleSide} />
           </mesh>
-
         </>
       )}
       {geometries?.lineGeometry && (
         <threeLine geometry={geometries.lineGeometry} position={[0, 1, 0]}>
           <lineBasicMaterial color="red" />
         </threeLine>
-
       )}
       {geometries?.extrudedGeometry && (
         <mesh geometry={geometries.extrudedGeometry} position={[0, 1500, 0]}>
-          <meshStandardMaterial attach='material-0' color="orange" roughness={0.7} metalness={0.3} />
-          <meshStandardMaterial attach='material-1' color="brown" roughness={0.7} metalness={0.7} />
+          <meshStandardMaterial
+            attach="material-0"
+            color="orange"
+            roughness={0.7}
+            metalness={0.3}
+          />
+          <meshStandardMaterial
+            attach="material-1"
+            color="brown"
+            roughness={0.7}
+            metalness={0.7}
+          />
         </mesh>
       )}
     </>
-  )
-}
+  );
+};
 
 const LinesDemo = ({ centralize }: ExampleProps) => {
   const data = useData();
 
-  const [trajectories, setTrajectories] = useState<PlanarLineGeometry | null>(null);
+  const [trajectories, setTrajectories] = useState<PlanarLineGeometry | null>(
+    null,
+  );
   const [fieldOutline, setFieldOutline] = useState<BufferGeometry | null>(null);
 
   useEffect(() => {
@@ -220,10 +233,12 @@ const LinesDemo = ({ centralize }: ExampleProps) => {
       // an offset from the origin to the center of the geometry bounding box.
       if (centralize) feature.geometry.centralize();
 
-      const g = new BufferGeometry().setFromPoints(feature.geometry.getPointsFlattened());
+      const g = new BufferGeometry().setFromPoints(
+        feature.geometry.getPointsFlattened(),
+      );
       g.rotateX(-Math.PI / 2);
       setFieldOutline(g);
-    })
+    });
   }, [centralize]);
 
   useEffect(() => {
@@ -231,7 +246,9 @@ const LinesDemo = ({ centralize }: ExampleProps) => {
       data.all<WellboreHeader>('wellbore-headers').then(async headers => {
         if (headers) {
           const ids = headers.reduce<string[]>((acc, h) => [...acc, h.id], []);
-          const poslogPromises = ids.map(id => data.get<PositionLog>('position-logs', id));
+          const poslogPromises = ids.map(id =>
+            data.get<PositionLog>('position-logs', id),
+          );
           const positionLogs = await Promise.all(poslogPromises);
 
           // generate evently spaced points along wellbore trajectories along the easting and northing (2D) plane (utm coordinates)
@@ -245,18 +262,25 @@ const LinesDemo = ({ centralize }: ExampleProps) => {
                 poslogMsl[j + 2] + header.northing,
               ]);
             }
-            const curve = new CurveInterpolator(points, { alpha: 1, tension: 0, closed: false });
+            const curve = new CurveInterpolator(points, {
+              alpha: 1,
+              tension: 0,
+              closed: false,
+            });
             const segments = Math.max(2, Math.ceil(curve.length / 20));
             return curve.getPoints(segments);
           });
 
-          const planarGeometry = PlanarGeometry.fromLineCoordinates(utmLines, transformUtm);
-          if (centralize) planarGeometry.centralize()
+          const planarGeometry = PlanarGeometry.fromLineCoordinates(
+            utmLines,
+            transformUtm,
+          );
+          if (centralize) planarGeometry.centralize();
           setTrajectories(planarGeometry);
         }
-      })
+      });
     }
-  }, [data, centralize])
+  }, [data, centralize]);
 
   const lineGeometries = useMemo(() => {
     if (!trajectories) return null;
@@ -266,7 +290,7 @@ const LinesDemo = ({ centralize }: ExampleProps) => {
       g.setFromPoints(points);
       g.rotateX(-Math.PI / 2);
       return g;
-    })
+    });
 
     return geometries;
   }, [trajectories]);
@@ -282,13 +306,17 @@ const LinesDemo = ({ centralize }: ExampleProps) => {
       )}
 
       {lineGeometries.map(lineGeometry => (
-        <threeLine key={lineGeometry.uuid} position={[0, 1, 0]} geometry={lineGeometry}>
+        <threeLine
+          key={lineGeometry.uuid}
+          position={[0, 1, 0]}
+          geometry={lineGeometry}
+        >
           <lineBasicMaterial color={'magenta'} />
         </threeLine>
       ))}
     </>
-  )
-}
+  );
+};
 
 const PointsDemo = ({ centralize }: ExampleProps) => {
   const planarGeometry = useMemo(() => {
@@ -298,7 +326,7 @@ const PointsDemo = ({ centralize }: ExampleProps) => {
       [1.894, 58.427],
       [1.901, 58.423],
       [1.842, 58.445],
-      [1.897, 58.451]
+      [1.897, 58.451],
     ];
 
     const pg = PlanarGeometry.fromPointCoordinates(coords, transformWgs84);
@@ -319,11 +347,11 @@ const PointsDemo = ({ centralize }: ExampleProps) => {
       v.set(scale, scale, scale);
       mat.scale(v);
       mat.toArray(transformations, i * 16);
-    })
+    });
 
     const symbols: SymbolsType = {
       transformations,
-    }
+    };
 
     return symbols;
   }, [planarGeometry]);
@@ -335,7 +363,7 @@ const PointsDemo = ({ centralize }: ExampleProps) => {
     return {
       symbolGeometry: g,
       symbolMaterial: new MeshStandardMaterial(),
-    }
+    };
   }, []);
   return (
     <>
@@ -346,46 +374,50 @@ const PointsDemo = ({ centralize }: ExampleProps) => {
         </mesh>
       ))}
       {symbols && (
-        <Symbols data={symbols} geometry={symbolGeometry} material={symbolMaterial} />
+        <Symbols
+          data={symbols}
+          geometry={symbolGeometry}
+          material={symbolMaterial}
+        />
       )}
     </>
-  )
-}
+  );
+};
 
 /**
  * Describes a 2D polygon(s) corresponding to the geojson "Polygon" or "MultiPolygon" geometry types.
- * 
+ *
  * The coordinates are an array of polygons, where each polygon is defined by 1 or more _rings_. The first ring
  * outlines the base shape of the polygon and the following rings defines holes.
- * 
+ *
  * This example shows the outline of the Norwegian oil field "Volve", which is transformed from a geojson feature file.
  */
 export const Polygon: Story = {
   args: {
     centralize: false,
-    Example: PolygonsDemo
+    Example: PolygonsDemo,
   },
 };
 
 /**
  * Describes 2D line segment(s) corresponding to the geojson "LineString" or "MultiLineString" geometry types.
- * 
+ *
  * The coordinates are an array of lines, where each line element may contain multiple segments in 2D space.
- * 
- * This example shows how the geographic trajectory of wellbores may be derrived and stored as an PlanarLineGeometry instance. 
+ *
+ * This example shows how the geographic trajectory of wellbores may be derrived and stored as an PlanarLineGeometry instance.
  */
 export const Lines: Story = {
   args: {
     centralize: false,
-    Example: LinesDemo
+    Example: LinesDemo,
   },
 };
 
 /**
  * Describes 2D point(s) corresponding to the geojson "Point" or "MultiPoint" geometry types.
- * 
+ *
  * The coordinates are an array of points in 2D space.
- * 
+ *
  * This example shows how point data may be transformed by creating a PlanarPointGeometry instance. The transformed data is
  * then simply used to add and position Three.js Sphere geometries and also for instanced rendering using
  * the videx-3d Symbols compponent.
@@ -393,6 +425,6 @@ export const Lines: Story = {
 export const Point: Story = {
   args: {
     centralize: false,
-    Example: PointsDemo
+    Example: PointsDemo,
   },
 };

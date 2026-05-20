@@ -67,7 +67,9 @@ export const Highlighter = ({
           instanced.updateWorldMatrix(true, false);
           instanced.getMatrixAt(item.instanceIndex, instanceMatrix);
           primitiveObject.matrixAutoUpdate = false;
-          primitiveObject.matrix.copy(instanced.matrixWorld).multiply(instanceMatrix);
+          primitiveObject.matrix
+            .copy(instanced.matrixWorld)
+            .multiply(instanceMatrix);
         } else {
           const imesh = new InstancedMesh(geometry, material, instanced.count);
           instanced.updateWorldMatrix(true, false);
