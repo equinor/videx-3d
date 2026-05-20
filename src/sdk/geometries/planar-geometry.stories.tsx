@@ -130,7 +130,7 @@ const PolygonsDemo = ({ centralize }: ExampleProps) => {
   const [feature, setFeature] = useState<GeoJsonFeature | null>(null);
 
   useEffect(() => {
-    get('data/volve-polygon.json').then(json => {
+    get('/data/volve-polygon.json').then(json => {
       const feature = parseGeoJsonFeature(json, transformWgs84);
 
       // The centralize function will translate the geometry coordinates towards the origin by calculating
@@ -226,7 +226,7 @@ const LinesDemo = ({ centralize }: ExampleProps) => {
   const [fieldOutline, setFieldOutline] = useState<BufferGeometry | null>(null);
 
   useEffect(() => {
-    get('data/volve-polygon.json').then(json => {
+    get('/data/volve-polygon.json').then(json => {
       const feature = parseGeoJsonFeature(json, transformWgs84);
 
       // The centralize function will translate the geometry coordinates towards the origin by calculating
