@@ -1,6 +1,13 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { Object3D } from 'three';
+import {
+  EventEmitterCallback,
+  PointerEvents,
+  useEventEmitter,
+} from '../../../main';
 import { clamp } from '../../../sdk';
 import { createCasingSectionGeometries } from './casing-geometry';
+import { CasingEmitterMaterial } from './CasingEmitterMaterial';
 import { CasingMaterial } from './CasingMaterial';
 import { CasingSectionMaterialOptions } from './Casings';
 import { CasingSectionType } from './casings-defs';
@@ -15,7 +22,7 @@ type CasingSectionProps = {
   autoSlicePosition?: boolean;
   opacity?: number;
   renderOrder?: number;
-};
+} & PointerEvents;
 
 export const CasingSection = ({
   section,
@@ -27,10 +34,15 @@ export const CasingSection = ({
   autoSlicePosition = false,
   opacity = 1,
   renderOrder,
+  onPointerClick,
+  onPointerEnter,
+  onPointerLeave,
+  onPointerMove,
 }: CasingSectionProps) => {
   // const uvMap = useTexture('uv_grid.jpg');
   // const normalMap = useTexture('normal_map.jpg');
 
+  const sectionRef = useRef<Object3D>(null!);
   const { tubeGeometry, capsGeometry } = useMemo(
     () => createCasingSectionGeometries(section, radialSegments),
     [section, radialSegments],
@@ -49,6 +61,13 @@ export const CasingSection = ({
         : primaryMaterial,
     ];
   }, [materialOptions]);
+
+  const emitterMaterial = useMemo(() => {
+    if (onPointerClick || onPointerEnter || onPointerLeave || onPointerMove) {
+      return new CasingEmitterMaterial();
+    }
+    return null;
+  }, [onPointerClick, onPointerEnter, onPointerLeave, onPointerMove]);
 
   useEffect(() => {
     if (materials) {
@@ -85,18 +104,55 @@ export const CasingSection = ({
     material.autoSlicePosition = !!autoSlicePosition;
   });
 
+  if (emitterMaterial) {
+    emitterMaterial.sizeMultiplier = sizeMultiplier;
+    emitterMaterial.radius = section.radius;
+    emitterMaterial.innerRadius = section.innerRadius;
+    emitterMaterial.sliceOffset = sliceOffset;
+    emitterMaterial.sliceAngle = clamp(sliceAngle, 0, Math.PI);
+    emitterMaterial.autoSlicePosition = !!autoSlicePosition;
+  }
+
+  const eventHandler = useEventEmitter();
+
+  // register event handlers
+  useEffect(() => {
+    let unregister: (() => void) | null = null;
+    if (eventHandler) {
+      const handlers: Record<string, EventEmitterCallback> = {};
+
+      if (onPointerClick) handlers.click = onPointerClick;
+      if (onPointerEnter) handlers.enter = onPointerEnter;
+      if (onPointerLeave) handlers.leave = onPointerLeave;
+      if (onPointerMove) handlers.move = onPointerMove;
+
+      if (Object.keys(handlers).length && emitterMaterial) {
+        unregister = eventHandler.register({
+          object: sectionRef.current,
+          handlers,
+          ref: section,
+          customMaterial: emitterMaterial,
+        });
+      }
+    }
+
+    return () => {
+      if (unregister) unregister();
+    };
+  }, [
+    eventHandler,
+    onPointerClick,
+    onPointerEnter,
+    onPointerLeave,
+    onPointerMove,
+    section,
+    emitterMaterial,
+  ]);
+
   return (
-    <>
-      <mesh
-        renderOrder={renderOrder}
-        geometry={tubeGeometry}
-        material={materials}
-      />
-      <mesh
-        renderOrder={renderOrder}
-        geometry={capsGeometry}
-        material={materials[0]}
-      />
-    </>
+    <group ref={sectionRef} renderOrder={renderOrder}>
+      <mesh geometry={tubeGeometry} material={materials} />
+      <mesh geometry={capsGeometry} material={materials[0]} />
+    </group>
   );
 };

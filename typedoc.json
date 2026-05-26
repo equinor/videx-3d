@@ -10,5 +10,6 @@
   "exclude": ["node_modules"],
   "projectDocuments": ["documents/architecture.md", "documents/data.md", "documents/generators.md", "documents/index.md"],
   "out": "./static/docs",
-  "visibilityFilters": {}
+  "visibilityFilters": {},
+  "externalSymbolLinkMappings": { "@types/three": { "WebGLRenderer": "#" }}
 }

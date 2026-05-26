@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import { Camera, Object3D } from 'three';
+import { Camera, Material, Object3D } from 'three';
 import { Vec2, Vec3 } from '../../sdk';
 
 export type KeysPressed = {
@@ -27,6 +27,7 @@ export type Listener = {
   ref?: any;
   threshold?: number;
   handlers: Record<string, EventEmitterCallback>;
+  customMaterial?: Material;
 };
 
 export type Emitter = {

@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
+import { Color } from 'three';
 import { WellboreSelectedEvent } from '../../../events/wellbore-events';
 import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator';
@@ -7,27 +8,28 @@ import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-sele
 import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator';
 import { PerformanceDecorator } from '../../../storybook/decorators/performance-decorator';
 import storyArgs from '../../../storybook/story-args.json';
+import {
+  EventEmitter,
+  EventEmitterCallbackEvent,
+  RenderableObject,
+} from '../../EventEmitter';
 import { BasicTrajectory } from '../BasicTrajectory';
 import { CompletionTools } from '../CompletionTools';
 import { Wellbore, WellboreProps } from '../Wellbore';
 import { Casings } from './Casings';
-
-const meta = {
-  title: 'Components/Wellbores/Casings',
-  component: Casings,
-} satisfies Meta<typeof Casings>;
 
 type StoryArgs = React.ComponentProps<typeof Casings> &
   WellboreProps & {
     showCompletion: boolean;
   };
 
-export default meta;
 type Story = StoryObj<StoryArgs>;
 
 const wellboreId = storyArgs.defaultWellbore;
 
-export const Default: Story = {
+const meta = {
+  title: 'Components/Wellbores/Casings',
+  component: Casings,
   args: {
     id: wellboreId,
     sliceAngle: 0,
@@ -73,6 +75,15 @@ export const Default: Story = {
     DepthSelectorDecorator,
     DataProviderDecorator,
   ],
+  parameters: {
+    autoClear: true,
+    scale: 100,
+  },
+} satisfies Meta<StoryArgs>;
+
+export default meta;
+
+export const Default: Story = {
   render: args => {
     useEffect(() => {
       dispatchEvent(new WellboreSelectedEvent({ id: args.id }));
@@ -94,15 +105,68 @@ export const Default: Story = {
             autoSlicePosition={args.autoSlicePosition}
             opacity={args.opacity}
           />
-          {/* <WellboreRibbon>
-            <ClippingStripe width={1.5} offset={0} />
-          </WellboreRibbon> */}
         </Wellbore>
       </>
     );
   },
-  parameters: {
-    autoClear: true,
-    scale: 100,
+};
+
+export const WithPointerEvents: Story = {
+  render: args => {
+    useEffect(() => {
+      dispatchEvent(new WellboreSelectedEvent({ id: args.id }));
+    }, [args.id]);
+
+    const onEnter = useCallback((event: EventEmitterCallbackEvent) => {
+      event.target.children.forEach(obj => {
+        const robj = obj as RenderableObject;
+        if (robj.material) {
+          const materials = Array.isArray(robj.material)
+            ? robj.material
+            : [robj.material];
+          materials.forEach(material => {
+            material.emissive = new Color(0xff0000);
+          });
+        }
+      });
+    }, []);
+
+    const onLeave = useCallback((event: EventEmitterCallbackEvent) => {
+      event.target.children.forEach(obj => {
+        const robj = obj as RenderableObject;
+        if (robj.material) {
+          const materials = Array.isArray(robj.material)
+            ? robj.material
+            : [robj.material];
+          materials.forEach(material => {
+            material.emissive = new Color(0x000000);
+          });
+        }
+      });
+    }, []);
+
+    return (
+      <>
+        <EventEmitter>
+          <Wellbore id={args.id} segmentsPerMeter={args.segmentsPerMeter}>
+            <BasicTrajectory />
+            {args.showCompletion && (
+              <CompletionTools sizeMultiplier={args.sizeMultiplier} />
+            )}
+            <Casings
+              onPointerEnter={onEnter}
+              onPointerLeave={onLeave}
+              sizeMultiplier={args.sizeMultiplier}
+              radialSegments={args.radialSegments}
+              shoeFactor={args.shoeFactor}
+              sliceAngle={args.sliceAngle}
+              sliceOffset={args.sliceOffset}
+              autoSlicePosition={args.autoSlicePosition}
+              opacity={args.opacity}
+            />
+          </Wellbore>
+        </EventEmitter>
+      </>
+    );
   },
 };
