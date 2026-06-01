@@ -45,13 +45,16 @@ export class PickingMaterial extends ShaderMaterial {
   ): void {
     const renderableObject = object as RenderableObject;
     const emitterId = object.userData.__emitterID || 0;
+    const side = Array.isArray(renderableObject.material)
+      ? renderableObject.material[0].side
+      : renderableObject.material.side;
     const needsUpdate =
       this.uniforms.emitterId.value !== emitterId ||
-      this.uniforms.side.value !== renderableObject.material.side;
+      this.uniforms.side.value !== side;
 
     if (needsUpdate) {
       this.uniforms.emitterId.value = emitterId;
-      this.uniforms.side.value = renderableObject.material.side;
+      this.uniforms.side.value = side;
       this.uniformsNeedUpdate = true;
     }
   }
