@@ -24,7 +24,7 @@ export class PickingMaterial extends ShaderMaterial {
     super({
       vertexShader,
       fragmentShader,
-      uniforms: { ...pickingMaterialUniforms },
+      uniforms: UniformsUtils.clone(pickingMaterialUniforms),
       toneMapped: false,
       blending: NoBlending,
       side: DoubleSide,

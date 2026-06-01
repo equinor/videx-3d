@@ -70,6 +70,12 @@ export const CasingSection = ({
   }, [onPointerClick, onPointerEnter, onPointerLeave, onPointerMove]);
 
   useEffect(() => {
+    return () => {
+      emitterMaterial?.dispose();
+    };
+  }, [emitterMaterial]);
+
+  useEffect(() => {
     if (materials) {
       materials.forEach(m => {
         if (opacity !== m.opacity) {

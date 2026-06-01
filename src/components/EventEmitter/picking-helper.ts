@@ -321,7 +321,10 @@ export class PickingHelper {
     const listeners = Array.from(this._listeners.values());
     this._material.dispose();
     listeners.forEach(listener =>
-      listener.object.traverse(obj => obj.layers.disable(LAYERS.EMITTER)),
+      listener.object.traverse(obj => {
+        obj.layers.disable(LAYERS.EMITTER);
+        delete obj.userData.__emitterID;
+      }),
     );
 
     this._listeners.clear();
