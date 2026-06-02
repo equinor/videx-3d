@@ -10,6 +10,7 @@ import { Color, Group, MeshStandardMaterialParameters, Object3D } from 'three';
 import { CommonComponentProps } from '../../../common/types';
 import { useGenerator } from '../../../hooks/useGenerator';
 import { useWellboreContext } from '../../../hooks/useWellboreContext';
+import { PointerEvents } from '../../../main';
 import {
   casings,
   CasingSectionType,
@@ -39,20 +40,21 @@ export type MaterialOptions = (
  * Casing props
  * @expand
  */
-export type CasingProps = CommonComponentProps & {
-  fallback?: () => ReactElement<Object3D>;
-  radialSegments?: number;
-  sliceAngle?: number;
-  sliceOffset?: number;
-  autoSlicePosition?: boolean;
-  sizeMultiplier?: number;
-  shoeFactor?: number;
-  overrideSegmentsPerMeter?: number;
-  overrideSimplificationThreshold?: number;
-  materialOptions?: MaterialOptions;
-  opacity?: number;
-  priority?: number;
-};
+export type CasingProps = PointerEvents &
+  CommonComponentProps & {
+    fallback?: () => ReactElement<Object3D>;
+    radialSegments?: number;
+    sliceAngle?: number;
+    sliceOffset?: number;
+    autoSlicePosition?: boolean;
+    sizeMultiplier?: number;
+    shoeFactor?: number;
+    overrideSegmentsPerMeter?: number;
+    overrideSimplificationThreshold?: number;
+    materialOptions?: MaterialOptions;
+    opacity?: number;
+    priority?: number;
+  };
 
 /**
  * A custom function may be passed to the component, but this is not well documented at this time
@@ -118,6 +120,10 @@ export const Casings = forwardRef(
       fallback,
       opacity = 1,
       priority = 0,
+      onPointerClick,
+      onPointerEnter,
+      onPointerLeave,
+      onPointerMove,
     }: CasingProps,
     ref: ForwardedRef<Group>,
   ) => {
@@ -200,6 +206,10 @@ export const Casings = forwardRef(
               radialSegments={radialSegments}
               sizeMultiplier={sizeMultiplier}
               renderOrder={i}
+              onPointerClick={onPointerClick}
+              onPointerEnter={onPointerEnter}
+              onPointerLeave={onPointerLeave}
+              onPointerMove={onPointerMove}
             />
           ))}
         {useFallback && fallback && fallback()}

@@ -12,7 +12,9 @@ export * from './geometries/curve/curve-3d';
 export * from './geometries/curve/tube-geometry';
 export * from './geometries/delatin';
 export * from './geometries/fence';
+export * from './geometries/geometry';
 export * from './geometries/packing';
+export * from './geometries/planar-geometry';
 export * from './geometries/triangulate-grid';
 export * from './geometries/triangulate-grid-delaunay';
 

@@ -1,4 +1,4 @@
-#define STANDARD
+#define CASING_STANDARD
 
 uniform float sizeMultiplier;
 uniform float innerRadius;

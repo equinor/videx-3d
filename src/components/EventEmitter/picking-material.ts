@@ -6,27 +6,25 @@ import {
   Scene,
   ShaderMaterial,
   Uniform,
+  UniformsUtils,
   WebGLRenderer,
 } from 'three';
 import { BufferGeometry } from 'three/webgpu';
 import { RenderableObject } from './EventEmitter';
-import { Emitter, Listener } from './EventEmitterContext';
 import fragmentShader from './shaders/pick_frag.glsl';
 import vertexShader from './shaders/pick_vertex.glsl';
 
-export class PickingMaterial extends ShaderMaterial {
-  listeners = new Map<number, Listener>();
-  emitters = new Map<number, Emitter>();
-  currentObjectMap: Array<number> | null = null;
+export const pickingMaterialUniforms = {
+  emitterId: new Uniform(0),
+  side: new Uniform(2),
+};
 
+export class PickingMaterial extends ShaderMaterial {
   constructor() {
     super({
       vertexShader,
       fragmentShader,
-      uniforms: {
-        emitterId: new Uniform(0),
-        side: new Uniform(2),
-      },
+      uniforms: UniformsUtils.clone(pickingMaterialUniforms),
       toneMapped: false,
       blending: NoBlending,
       side: DoubleSide,
@@ -36,8 +34,6 @@ export class PickingMaterial extends ShaderMaterial {
 
   dispose(): void {
     super.dispose();
-    this.listeners.clear();
-    this.emitters.clear();
   }
 
   onBeforeRender(
@@ -47,21 +43,30 @@ export class PickingMaterial extends ShaderMaterial {
     _geometry: BufferGeometry,
     object: Object3D,
   ): void {
-    const emitter = this.emitters.get(object.id);
-    if (this.currentObjectMap && emitter) {
-      const emitterInstanceId = this.currentObjectMap.length / 2;
-
-      this.currentObjectMap.push(object.id, 0);
-      for (let i = 1; i < emitter.instanceCount; i++) {
-        this.currentObjectMap.push(object.id, i);
-      }
-      this.uniforms.emitterId.value = emitterInstanceId + 1;
-    } else {
-      this.uniforms.emitterId.value = 0;
-    }
     const renderableObject = object as RenderableObject;
-    this.uniforms.side.value = renderableObject.material.side;
+    const emitterId = object.userData.__emitterID || 0;
+    const side = Array.isArray(renderableObject.material)
+      ? renderableObject.material[0].side
+      : renderableObject.material.side;
+    const needsUpdate =
+      this.uniforms.emitterId.value !== emitterId ||
+      this.uniforms.side.value !== side;
 
-    this.uniformsNeedUpdate = true;
+    if (needsUpdate) {
+      this.uniforms.emitterId.value = emitterId;
+      this.uniforms.side.value = side;
+      this.uniformsNeedUpdate = true;
+    }
+  }
+}
+
+export class CustomPickingMaterial extends PickingMaterial {
+  constructor(vertexShader?: string, uniforms?: Record<string, Uniform>) {
+    super();
+    if (vertexShader) this.vertexShader = vertexShader;
+    if (uniforms) {
+      this.uniforms = UniformsUtils.merge([this.uniforms, uniforms]);
+    }
+    this.allowOverride = false;
   }
 }

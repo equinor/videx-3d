@@ -13,6 +13,7 @@ import {
 } from 'three';
 import { LAYERS } from '../../layers/layers';
 import { normalizedDeviceToScreen, Vec2, Vec3 } from '../../sdk';
+import { RenderableObject } from './EventEmitter';
 import { Emitter, Listener } from './EventEmitterContext';
 import { PickingMaterial } from './picking-material';
 
@@ -42,6 +43,10 @@ export class PickingHelper {
   private _buffer: Float32Array;
 
   private _material = new PickingMaterial();
+
+  private _listeners = new Map<number, Listener>();
+  private _emitters = new Map<number, Emitter>();
+  private _currentObjectMap: Array<number> = [];
 
   constructor(options = {}) {
     const { radius } = { ...defaults, ...options };
@@ -84,8 +89,7 @@ export class PickingHelper {
             : 3;
 
         if (instanceCount > 0) {
-          let emitter = this._material.emitters.get(object.id);
-
+          let emitter = this._emitters.get(object.id);
           if (!emitter) {
             emitter = {
               source: object,
@@ -95,7 +99,7 @@ export class PickingHelper {
               instanced,
               instanceCount,
             };
-            this._material.emitters.set(object.id, emitter);
+            this._emitters.set(object.id, emitter);
           } else {
             // The emitter may already be added in a previous update, but we should still
             // update its references, in case an object id is re-used by three js for another object
@@ -111,9 +115,17 @@ export class PickingHelper {
               emitter.listener = rootId;
             }
           }
+          const emitterInstanceId = this._currentObjectMap.length / 2;
+          this._currentObjectMap.push(object.id, 0);
+          for (let i = 1; i < emitter.instanceCount; i++) {
+            this._currentObjectMap.push(object.id, i);
+          }
+          // assign an emitter id to the object and activeate emitter layer
+          object.userData.__emitterID = emitterInstanceId + 1;
           object.layers.enable(LAYERS.EMITTER);
         } else {
           object.layers.disable(LAYERS.EMITTER);
+          delete object.userData.__emitterID;
         }
       }
 
@@ -124,7 +136,8 @@ export class PickingHelper {
   };
 
   updateListeners = () => {
-    this._material.listeners.forEach(listener => {
+    this._currentObjectMap = [];
+    this._listeners.forEach(listener => {
       this.traverseObject(
         listener.object,
         listener.object.id,
@@ -135,22 +148,23 @@ export class PickingHelper {
   };
 
   addListener = (listener: Listener) => {
-    this._material.listeners.set(listener.object.id, listener);
+    this._listeners.set(listener.object.id, listener);
   };
 
   getListener = (id: number) => {
-    return this._material.listeners.get(id);
+    return this._listeners.get(id);
   };
 
   removeListener = (id: number) => {
-    const listener = this._material.listeners.get(id);
+    const listener = this._listeners.get(id);
     if (listener) {
       const { object } = listener;
       // remove listener and associated emitters
-      this._material.listeners.delete(id);
+      this._listeners.delete(id);
       object.traverse(obj => {
         obj.layers.disable(LAYERS.EMITTER);
-        this._material.emitters.delete(obj.id);
+        delete obj.userData.__emitterID;
+        this._emitters.delete(obj.id);
       });
     }
   };
@@ -182,9 +196,27 @@ export class PickingHelper {
     camera.layers.disableAll();
     camera.layers.set(LAYERS.EMITTER);
 
-    // create a mapping array of emitter instance id => emitter for this render pass
-    const objectMap = new Array<number>();
-    this._material.currentObjectMap = objectMap;
+    const objectMap = this._currentObjectMap;
+
+    // handle listeners with custom emitter material
+    const postUpdates: (() => void)[] = [];
+    this._listeners.forEach(listener => {
+      if (listener.customMaterial) {
+        const customMaterial = listener.customMaterial;
+        listener.object.traverse((obj: Object3D) => {
+          if (obj.layers.isEnabled(LAYERS.EMITTER)) {
+            const robj = obj as RenderableObject;
+            if (robj.material) {
+              const originalMaterial = robj.material;
+              robj.material = customMaterial;
+              postUpdates.push(() => {
+                robj.material = originalMaterial;
+              });
+            }
+          }
+        });
+      }
+    });
 
     renderer.setRenderTarget(this._pbo);
     renderer.setClearColor(0x000000, 0);
@@ -197,9 +229,11 @@ export class PickingHelper {
 
     scene.background = prevSceneBackground;
 
-    this._material.currentObjectMap = null;
-
     scene.overrideMaterial = null;
+
+    // restore original material for emitter objects associated with listeners with custom material
+    postUpdates.forEach(callback => callback());
+
     renderer.clearColor = prevClearColor;
     renderer.setClearAlpha(prevClearAlpha);
     renderer.setRenderTarget(null);
@@ -250,7 +284,7 @@ export class PickingHelper {
           objectId = objectMap[mapIndex];
           instanceIndex = objectMap[mapIndex + 1];
 
-          emitter = this._material.emitters.get(objectId);
+          emitter = this._emitters.get(objectId);
           if (emitter) {
             ox = c - this._radius;
             oy = r - this._radius;
@@ -284,10 +318,16 @@ export class PickingHelper {
 
   dispose() {
     this._pbo.dispose();
-    const listeners = Array.from(this._material.listeners.values());
+    const listeners = Array.from(this._listeners.values());
     this._material.dispose();
     listeners.forEach(listener =>
-      listener.object.traverse(obj => obj.layers.disable(LAYERS.EMITTER)),
+      listener.object.traverse(obj => {
+        obj.layers.disable(LAYERS.EMITTER);
+        delete obj.userData.__emitterID;
+      }),
     );
+
+    this._listeners.clear();
+    this._emitters.clear();
   }
 }

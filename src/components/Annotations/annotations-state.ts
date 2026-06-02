@@ -242,8 +242,6 @@ useAnnotationsState.subscribe(
   },
 );
 
-// TODO: Compare performance of this branch with current main branch using troll data
-
 /**
  * This hook allow you to add annotations to an exisiting `AnnotationsLayer`.
  * A scope is a user defined string, which should uniquely tie the added anotations to your component.
