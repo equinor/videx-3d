@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.1](https://github.com/equinor/videx-3d/compare/v1.1.0...v1.1.1) (2026-06-08)
+
+
+### Bug Fixes
+
+* **203:** allow to pass a custom emitter material when registering wi… ([#209](https://github.com/equinor/videx-3d/issues/209)) ([a69e981](https://github.com/equinor/videx-3d/commit/a69e981135a7e4b0470b091dcd5d45e087ce3c19))
+* **geojson path:** fixed geojson file path not working on github pages ([#205](https://github.com/equinor/videx-3d/issues/205)) ([07f3e17](https://github.com/equinor/videx-3d/commit/07f3e170dcf1c8851ad7850adc69fed7757520b7))
+* **npm:** bump vitest, @vitest/coverage-v8 and @vitest/ui ([#212](https://github.com/equinor/videx-3d/issues/212)) ([eb4ac56](https://github.com/equinor/videx-3d/commit/eb4ac56859c032c672468a277f53e38e4858fca0))
+
 ## [1.1.0](https://github.com/equinor/videx-3d/compare/v1.0.3...v1.1.0) (2026-05-20)
 
 
