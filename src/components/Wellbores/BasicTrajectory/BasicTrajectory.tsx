@@ -80,17 +80,18 @@ export const BasicTrajectory = ({
     return onMaterialPropertiesChange
       ? onMaterialPropertiesChange
       : (props: Record<string, any>, material: Material | Material[]) => {
-          const m = material as LineBasicMaterial;
-          m.color = new Color(props.color);
-        };
+        const m = material as LineBasicMaterial;
+        m.color = new Color(props.color);
+      };
   }, [onMaterialPropertiesChange]);
 
   const material = useMemo<Material | Material[]>(() => {
     const m = customMaterial
       ? customMaterial
       : makeOitCompatible(
-          new LineBasicMaterial({ transparent: true, opacity: 0.95 }),
-        );
+        new LineBasicMaterial({ transparent: true, opacity: 0.95 }),
+        { syncProperties: ['color'] },
+      );
     return m;
   }, [customMaterial]);
 
