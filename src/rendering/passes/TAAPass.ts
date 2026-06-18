@@ -1,9 +1,9 @@
 import {
+  Camera,
   ClampToEdgeWrapping,
   HalfFloatType,
   LinearFilter,
   Matrix4,
-  OrthographicCamera,
   PerspectiveCamera,
   RawShaderMaterial,
   RGBAFormat,
@@ -17,9 +17,6 @@ import { Pass } from '../Pass';
 import copyFrag from '../shaders/copy-frag.glsl';
 import copyVert from '../shaders/copy-vert.glsl';
 import taaResolveFrag from '../shaders/taa-resolve-frag.glsl';
-
-/** Camera types this pass knows how to jitter. */
-type JitterableCamera = PerspectiveCamera | OrthographicCamera;
 
 /**
  * Low-discrepancy Halton sample (base `b`, index `i`, 1-based) in `[0, 1)`.
@@ -66,7 +63,7 @@ function halton(i: number, b: number): number {
  * @see {@link SMAAPass}
  */
 export class TAAPass extends Pass {
-  private camera: JitterableCamera;
+  private camera: Camera;
 
   /**
    * Number of unique jitter samples to cycle through before the average is
@@ -98,7 +95,7 @@ export class TAAPass extends Pass {
   private prevProjection = new Matrix4();
   private hasPrev = false;
 
-  constructor(camera: JitterableCamera, sampleCount = 16) {
+  constructor(camera: Camera, sampleCount = 16) {
     super();
     this.camera = camera;
     this.sampleCount = Math.max(1, sampleCount);

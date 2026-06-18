@@ -132,7 +132,6 @@ const Example = (args: ExampleProps) => {
   const highlighter = useHighlighter();
   const outputPanel = useOutputPanel();
 
-  const renderer = useThree(state => state.gl);
   const scene = useThree(state => state.scene);
   const camera = useThree(state => state.camera);
   const clock = useThree(state => state.clock);
@@ -144,21 +143,6 @@ const Example = (args: ExampleProps) => {
   const surfaceMeta = useSurfaceMetaDict();
 
   const included = useMemo(() => wellbores.map(d => d.id), [wellbores]);
-
-  // const surface = useMemo(() => {
-  //   return args.surfaceId ? surfaceMeta[args.surfaceId] : null;
-  // }, [args.surfaceId, surfaceMeta]);
-
-  // useEffect(() => {
-  //   if (surface) {
-  //     normalMap.repeat.set(
-  //       Math.ceil((surface.header.nx * surface.header.xinc) / 500),
-  //       Math.ceil((surface.header.ny * surface.header.yinc) / 500),
-  //     );
-  //     normalMap.wrapS = RepeatWrapping;
-  //     normalMap.wrapT = RepeatWrapping;
-  //   }
-  // }, [surface]);
 
   useEffect(() => {
     function onKeyPress(event: KeyboardEvent) {
@@ -340,8 +324,7 @@ const Example = (args: ExampleProps) => {
       d => d.visualization === 'interval',
     );
     list.sort((a, b) => a.max - b.max);
-    //return list.slice(0, 4);
-    //return list.length >= 2 ? [list[0], list[list.length - 1]] : [];
+
     return list;
   }, [surfaceMeta]);
 

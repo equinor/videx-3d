@@ -23,7 +23,7 @@ bool isInside(vec3 pos, float radius) {
 }
 
 float energyAtPosition(vec3 pos, float radius) {
-  return pow(1.0 - (length(pos.xz) / radius), 3.0) * smoothstep(1.0, 0.8, pos.y);
+  return pow(1.0 - (length(pos.xz) / radius), 2.0) * smoothstep(1.0, 0.8, pos.y);
 }
 
 void main() {
