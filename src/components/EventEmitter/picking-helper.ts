@@ -1,4 +1,5 @@
 import {
+  Color,
   FloatType,
   InstancedMesh,
   NearestFilter,
@@ -41,6 +42,7 @@ export class PickingHelper {
   private _radius: number;
   private _pbo: WebGLRenderTarget;
   private _buffer: Float32Array;
+  private _prevClearColor: Color = new Color();
 
   private _material = new PickingMaterial();
 
@@ -202,7 +204,8 @@ export class PickingHelper {
     const y = screen[1] - this._radius;
 
     const prevSceneBackground = scene.background;
-    const prevClearColor = renderer.clearColor;
+
+    renderer.getClearColor(this._prevClearColor);
     const prevClearAlpha = renderer.getClearAlpha();
     scene.background = null;
     scene.overrideMaterial = this._material;
@@ -255,8 +258,7 @@ export class PickingHelper {
     // restore original material for emitter objects associated with listeners with custom material
     postUpdates.forEach(callback => callback());
 
-    renderer.clearColor = prevClearColor;
-    renderer.setClearAlpha(prevClearAlpha);
+    renderer.setClearColor(this._prevClearColor, prevClearAlpha);
     renderer.setRenderTarget(null);
 
     return renderer
