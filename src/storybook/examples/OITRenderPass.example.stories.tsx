@@ -39,6 +39,7 @@ import {
   FxaaPass,
   OITRenderPass,
   Pass,
+  RenderPass,
   Shoes,
   SMAAPass,
   TAAPass,
@@ -102,6 +103,7 @@ type ExampleProps = {
   showCameraTarget: boolean;
   casingOpacity: number;
   sizeMultiplier: number;
+  oitEnabled: boolean;
   aaMode: 'none' | 'fxaa' | 'smaa' | 'ssaa' | 'ssaa15' | 'ssaa4' | 'taa';
   msaaSamples: 0 | 2 | 4 | 8;
   skipFrontPeeling: boolean;
@@ -130,6 +132,7 @@ const Example = (args: ExampleProps) => {
   const highlighter = useHighlighter();
   const outputPanel = useOutputPanel();
 
+  const renderer = useThree(state => state.gl);
   const scene = useThree(state => state.scene);
   const camera = useThree(state => state.camera);
   const clock = useThree(state => state.clock);
@@ -219,9 +222,11 @@ const Example = (args: ExampleProps) => {
           : 1;
 
   const passes = useMemo(() => {
-    const oit = new OITRenderPass(scene, camera);
+    const base = args.oitEnabled
+      ? new OITRenderPass(scene, camera)
+      : new RenderPass(scene, camera);
     const annotations = new AnnotationsPass(camera, clock, pointer, 1000);
-    const list: Pass[] = [oit];
+    const list: Pass[] = [base];
     switch (args.aaMode) {
       case 'none':
         // No anti-aliasing.
@@ -245,37 +250,41 @@ const Example = (args: ExampleProps) => {
     list.push(annotations, new OutputPass());
 
     return list;
-  }, [scene, camera, clock, pointer, args.aaMode]);
+  }, [scene, camera, clock, pointer, args.aaMode, args.oitEnabled]);
 
-  const oitPass = passes[0] as OITRenderPass;
+  const oitPass = passes[0] instanceof OITRenderPass ? passes[0] : null;
 
   // Keep the debug-target overlay toggle in sync with the control.
   useEffect(() => {
-    oitPass.debugTargets = args.showDebugTargets;
+    if (oitPass) oitPass.debugTargets = args.showDebugTargets;
   }, [oitPass, args.showDebugTargets]);
 
   // Keep the WBOIT-only (skip front peeling) debug toggle in sync.
   useEffect(() => {
-    oitPass.skipFront = args.skipFrontPeeling;
+    if (oitPass) oitPass.skipFront = args.skipFrontPeeling;
   }, [oitPass, args.skipFrontPeeling]);
 
   // Keep the GPU profiling toggle in sync.
   useEffect(() => {
-    oitPass.profile = args.profileTail;
+    if (oitPass) oitPass.profile = args.profileTail;
   }, [oitPass, args.profileTail]);
 
   // Keep the occlusion depth-stamp feature (transparent surfaces occluding labels)
   // in sync.
   useEffect(() => {
-    oitPass.occlusionDepthStamp = args.occlusionDepthStamp;
-    oitPass.occlusionDepthThreshold = args.occlusionDepthThreshold;
+    if (oitPass) {
+      oitPass.occlusionDepthStamp = args.occlusionDepthStamp;
+      oitPass.occlusionDepthThreshold = args.occlusionDepthThreshold;
+    }
   }, [oitPass, args.occlusionDepthStamp, args.occlusionDepthThreshold]);
 
   // Keep the emitter depth-stamp feature (dense emitter cores occluding surfaces
   // behind them) in sync.
   useEffect(() => {
-    oitPass.emitterDepthStamp = args.emitterDepthStamp;
-    oitPass.emitterDepthThreshold = args.emitterDepthThreshold;
+    if (oitPass) {
+      oitPass.emitterDepthStamp = args.emitterDepthStamp;
+      oitPass.emitterDepthThreshold = args.emitterDepthThreshold;
+    }
   }, [oitPass, args.emitterDepthStamp, args.emitterDepthThreshold]);
 
   // Register / tear down the OIT stats + GPU-timing readout in the output panel.
@@ -310,7 +319,7 @@ const Example = (args: ExampleProps) => {
     const t = clock.getElapsedTime();
     if (t - lastReadout.current < 0.25) return;
     lastReadout.current = t;
-    if (!outputPanel || !outputPanel.has('oit')) return;
+    if (!oitPass || !outputPanel || !outputPanel.has('oit')) return;
     const ms = (v: number) => (v < 0 ? '-' : `${v.toFixed(2)} ms`);
     const { stats, timings } = oitPass;
     outputPanel.update('oit', args.profileTail ? ms(timings.total) : 'stats', {
@@ -340,6 +349,8 @@ const Example = (args: ExampleProps) => {
     return undefined;
   }, []);
 
+  console.log(renderer);
+
   return (
     <>
       <RenderingPipeline
@@ -350,7 +361,7 @@ const Example = (args: ExampleProps) => {
       <Highlighter />
 
       <UtmArea ref={crsRef} origin={origin} utmZone={utmZone}>
-        {args.showCameraTarget && <CameraTargetMarker renderOrder={999} />}
+        {args.showCameraTarget && <CameraTargetMarker />}
 
         <BoxGrid
           size={gridSize}
@@ -364,8 +375,8 @@ const Example = (args: ExampleProps) => {
           background={args.colors.gridBackground}
           gridColorMajor={args.colors.gridColorMajor}
           gridColorMinor={args.colors.gridColorMinor}
-          renderOrder={10}
           layers={gridLayers}
+          renderOrder={0}
         />
 
         <ObservableGroup
@@ -472,29 +483,28 @@ const Example = (args: ExampleProps) => {
                       {(args.showFormationColumns ||
                         args.showFormationMarkers ||
                         args.showPerforations) && (
-                        <Distance min={0} max={40000} onDemand>
-                          {args.showFormationColumns && (
-                            <WellboreFormationColumn
-                              stratColumnId={stratColumnId}
-                              startRadius={3}
-                            />
-                          )}
-                          {args.showFormationMarkers && (
-                            <FormationMarkers
-                              stratColumnId={stratColumnId}
-                              radialSegments={16}
-                              baseRadius={4}
-                              showAnnotations={isActiveWell}
-                            />
-                          )}
-                          {args.showPerforations && (
-                            <Perforations
-                              renderOrder={10}
-                              sizeMultiplier={args.sizeMultiplier}
-                            />
-                          )}
-                        </Distance>
-                      )}
+                          <Distance min={0} max={40000} onDemand>
+                            {args.showFormationColumns && (
+                              <WellboreFormationColumn
+                                stratColumnId={stratColumnId}
+                                startRadius={3}
+                              />
+                            )}
+                            {args.showFormationMarkers && (
+                              <FormationMarkers
+                                stratColumnId={stratColumnId}
+                                radialSegments={16}
+                                baseRadius={4}
+                                showAnnotations={isActiveWell}
+                              />
+                            )}
+                            {args.showPerforations && (
+                              <Perforations
+                                sizeMultiplier={args.sizeMultiplier}
+                              />
+                            )}
+                          </Distance>
+                        )}
                       {args.showCasingAndCompletion && (
                         <Distance min={0} max={10} onDemand>
                           <Casings
@@ -563,10 +573,10 @@ const Example = (args: ExampleProps) => {
                   rampMax={surface.displayMax}
                   opacity={args.opacity}
                   priority={9}
-                  renderOrder={10}
                   wireframe={args.wireframe}
                   normalScale={[0.1, 0.1]}
                   doubleSide
+                  renderOrder={999 - index}
                   onPointerClick={(e: EventEmitterCallbackEvent) => {
                     if (e.position && e.keys.ctrlKey) {
                       dispatchEvent(
@@ -595,6 +605,9 @@ const meta = {
   ],
   component: Example,
   argTypes: {
+    oitEnabled: {
+      control: { type: 'boolean' },
+    },
     colorRamp: {
       options: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
       control: {
@@ -694,6 +707,7 @@ const meta = {
 type Story = StoryObj<typeof meta>;
 
 const commonArgs = {
+  oitEnabled: true,
   useColorRamp: false,
   reverseRamp: false,
   colorRamp: 0,
