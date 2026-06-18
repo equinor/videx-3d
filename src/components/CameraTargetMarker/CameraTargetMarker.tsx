@@ -1,8 +1,8 @@
 import { CameraControls } from '@react-three/drei';
 import { useThree } from '@react-three/fiber';
 import { PropsWithChildren, useEffect, useMemo, useRef } from 'react';
-import { Color, Group, Mesh, Vector3 } from 'three';
-import { LAYERS } from '../../layers/layers';
+import { Color, Group, Vector3 } from 'three';
+import { createLayers, LAYERS } from '../../layers/layers';
 
 /**
  * Props for CameraTargetMarker
@@ -56,14 +56,6 @@ export const CameraTargetMarker = ({
 }: PropsWithChildren<CameraTargetMarkerProps>) => {
   const controls = useThree(state => state.controls);
   const ref = useRef<Group>(null);
-  const markerRef = useRef<Mesh>(null);
-
-  // Tag the default marker so it renders in the OITRenderPass overlay pass (drawn
-  // last, on top of the resolved transparency) instead of being treated as an
-  // opaque occluder.
-  useEffect(() => {
-    markerRef.current?.layers.enable(LAYERS.OVERLAY);
-  }, []);
 
   useEffect(() => {
     function onUpdate() {
@@ -97,16 +89,14 @@ export const CameraTargetMarker = ({
   }, [controls, fixedX, fixedY, fixedZ]);
 
   const layers = useMemo(() => {
-    const l = new Group().layers;
-    l.enable(LAYERS.OVERLAY);
-    return l;
+    return createLayers(LAYERS.OVERLAY);
   }, []);
 
   return (
     <group ref={ref} visible={false} renderOrder={renderOrder}>
       {!!children && children}
       {!children && (
-        <mesh ref={markerRef} layers={layers}>
+        <mesh layers={layers}>
           <sphereGeometry args={[radius]} />
           <meshBasicMaterial
             color={color}
