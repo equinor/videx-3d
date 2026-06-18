@@ -15,6 +15,7 @@ import {
   CustomMaterialProps,
 } from '../../../common/types';
 import { useWellboreContext } from '../../../hooks/useWellboreContext';
+import { makeOitCompatible } from '../../../rendering';
 import {
   basicTrajectory,
   BasicTrajectoryGeneratorResponse,
@@ -87,7 +88,9 @@ export const BasicTrajectory = ({
   const material = useMemo<Material | Material[]>(() => {
     const m = customMaterial
       ? customMaterial
-      : new LineBasicMaterial({ transparent: true, opacity: 0.95 });
+      : makeOitCompatible(
+          new LineBasicMaterial({ transparent: true, opacity: 0.95 }),
+        );
     return m;
   }, [customMaterial]);
 

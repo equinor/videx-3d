@@ -49,6 +49,11 @@ export class FullscreenRenderer {
     this.copyMaterial = _copyMaterial;
   }
 
+  dispose() {
+    this.mesh.geometry.dispose();
+    this.copyMaterial.dispose();
+  }
+
   renderMaterial(
     renderer: WebGLRenderer,
     buffer: WebGLRenderTarget | null,

@@ -68,7 +68,7 @@ const defaultMaterialOptions = (section: CasingSectionType) => {
     ? shoeParams
     : defaultParams;
 
-  const sliceColor = new Color(primary.color).multiplyScalar(0.25);
+  const sliceColor = new Color(primary.color).multiplyScalar(0.5);
   const slice = { color: sliceColor, roughness: 0.9, metalness: 0.8 };
 
   return {

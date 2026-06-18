@@ -44,6 +44,19 @@ export class PickingHelper {
 
   private _material = new PickingMaterial();
 
+  /**
+   * Dedicated camera used for the picking render so the shared scene camera is
+   * never mutated. `setViewOffset` rebuilds a camera's projection (it remaps the
+   * frustum to the tiny patch under the cursor), and that mutation would clobber
+   * any external modification of the real camera's projection — e.g. the
+   * sub-pixel jitter a TAA pass bakes in. Each pick this camera is `copy()`d from
+   * the real camera (which faithfully mirrors `matrixWorld`,
+   * `matrixWorldInverse`, the projection and all intrinsics) and the view offset
+   * is applied here instead. `matrixWorldAutoUpdate` is disabled so the renderer
+   * uses the copied world matrix verbatim rather than recomputing it.
+   */
+  private _camera = new PerspectiveCamera();
+
   private _listeners = new Map<number, Listener>();
   private _emitters = new Map<number, Emitter>();
   private _currentObjectMap: Array<number> = [];
@@ -66,6 +79,11 @@ export class PickingHelper {
     });
 
     this._buffer = new Float32Array(this._size * this._size * 4);
+
+    // The picking camera's world matrix is copied from the real camera each pick;
+    // disabling auto-update stops the renderer recomputing it from
+    // position/quaternion/scale (which the copy does not set).
+    this._camera.matrixWorldAutoUpdate = false;
   }
 
   private traverseObject = (
@@ -183,18 +201,25 @@ export class PickingHelper {
     const x = screen[0] - this._radius;
     const y = screen[1] - this._radius;
 
-    const prevLayers = camera.layers.mask;
     const prevSceneBackground = scene.background;
     const prevClearColor = renderer.clearColor;
     const prevClearAlpha = renderer.getClearAlpha();
     scene.background = null;
     scene.overrideMaterial = this._material;
 
-    // set the view offset to represent just the patch we need to render under the mouse
-    camera.setViewOffset(width, height, x, y, this._size, this._size);
+    // Mirror the real camera onto the dedicated picking camera: copy() brings
+    // across matrixWorld, matrixWorldInverse, the projection and all intrinsics,
+    // so the picking render matches what is on screen (including near/far, which
+    // keeps logarithmic-depth precision consistent). The real camera is never
+    // touched. recursive=false: we don't need the camera's children.
+    const pickCamera = this._camera;
+    pickCamera.copy(camera, false);
+    pickCamera.matrixWorldAutoUpdate = false;
+    pickCamera.layers.set(LAYERS.EMITTER);
 
-    camera.layers.disableAll();
-    camera.layers.set(LAYERS.EMITTER);
+    // set the view offset to represent just the patch we need to render under the
+    // mouse (rebuilds the picking camera's projection only).
+    pickCamera.setViewOffset(width, height, x, y, this._size, this._size);
 
     const objectMap = this._currentObjectMap;
 
@@ -221,11 +246,7 @@ export class PickingHelper {
     renderer.setRenderTarget(this._pbo);
     renderer.setClearColor(0x000000, 0);
     renderer.clear();
-    renderer.render(scene, camera);
-
-    // clear the view offset so rendering returns to normal
-    camera.clearViewOffset();
-    camera.layers.mask = prevLayers;
+    renderer.render(scene, pickCamera);
 
     scene.background = prevSceneBackground;
 

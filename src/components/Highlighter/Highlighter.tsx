@@ -10,6 +10,7 @@ import {
   Mesh,
   MeshBasicMaterial,
 } from 'three';
+import { LAYERS } from '../../layers/layers';
 import { useHighlightState } from './highlight-state';
 
 const instanceMatrix = new Matrix4();
@@ -90,6 +91,9 @@ export const Highlighter = ({
         primitiveObject.matrix.copy(item.object.matrixWorld);
       }
       primitiveObject.visible = item.object.visible;
+      // Tag as an additive overlay so the OITRenderPass draws it in the emissive
+      // pass (between the opaque and transparent layers).
+      primitiveObject.layers.enable(LAYERS.EMISSIVE);
       return primitiveObject;
     });
   }, [highlighted, material]);

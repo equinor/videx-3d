@@ -24,6 +24,7 @@ dist-ssr
 *.sln
 *.sw?
 .cache
+AGENTS.md
 
 # private folder
 private/

@@ -5,6 +5,7 @@ import {
   WebGLProgramParametersWithUniforms,
 } from 'three';
 
+import { makeOitCompatible } from '../../../rendering/oit-material';
 import vertexShader from './shaders/vertex.glsl';
 
 export class CasingMaterial extends MeshStandardMaterial {
@@ -18,6 +19,10 @@ export class CasingMaterial extends MeshStandardMaterial {
   };
   constructor(params: MeshStandardMaterialParameters = {}) {
     super(params);
+    // Make casings participate in the OIT pipeline when used with an OITRenderPass
+    // (a no-op otherwise). The slice uniforms object is shared by reference with the
+    // per-pass variants so per-frame slicing updates keep working.
+    makeOitCompatible(this, { shareUniforms: ['uniforms'] });
   }
 
   get sizeMultiplier() {
@@ -77,7 +82,5 @@ export class CasingMaterial extends MeshStandardMaterial {
     parameters.uniforms.autoSlicePosition = this.uniforms.autoSlicePosition;
 
     parameters.vertexShader = vertexShader;
-
-    //console.log(parameters.vertexShader);
   }
 }

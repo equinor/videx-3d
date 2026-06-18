@@ -10,9 +10,9 @@ import { FormationMarkerLabel } from '../../components/Wellbores/FormationMarker
 import { WellboreAnnotationLabel } from '../../components/Wellbores/WellboreLabel/WellboreAnnotationLabel';
 import { CameraFocusAtPointEvent } from '../../events/camera-events';
 
-export const AnnotationsDecorator = (Story: any) => (
-  <>
-    <Annotations maxVisible={500}>
+const AnnotationLayers = () => {
+  return (
+    <>
       <AnnotationsLayer
         id="casings"
         name="Casings"
@@ -145,6 +145,23 @@ export const AnnotationsDecorator = (Story: any) => (
         maxDistance={100}
         anchorOcclusionRadius={999999}
       />
+    </>
+  );
+};
+
+export const AnnotationsDecoratorNoAutoUpdate = (Story: any) => (
+  <>
+    <Annotations maxVisible={500} autoUpdate={false}>
+      <AnnotationLayers />
+    </Annotations>
+    <Story />
+  </>
+);
+
+export const AnnotationsDecorator = (Story: any) => (
+  <>
+    <Annotations maxVisible={500}>
+      <AnnotationLayers />
     </Annotations>
     <Story />
   </>
