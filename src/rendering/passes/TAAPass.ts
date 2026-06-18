@@ -57,6 +57,17 @@ function halton(i: number, b: number): number {
  * not update once the image has converged and frozen, and ghosts before then.
  * Camera motion itself never ghosts because it triggers a reset.
  *
+ * @todo Improve TAA. Current trade-offs to address: (1) AA is only present once
+ * the camera settles — during motion the image is un-anti-aliased and it takes
+ * roughly a second of stillness to converge; (2) because the pass freezes on
+ * convergence, content that changes while the camera is static (a highlight
+ * toggled on, async geometry finishing loading) does not appear until the next
+ * camera move. A proper fix needs motion vectors + history reprojection +
+ * neighbourhood colour clamping so the history can be reused under motion and
+ * invalidated per-pixel on content change, rather than the all-or-nothing
+ * reset-on-camera-move + freeze-on-convergence heuristic used here. Likely
+ * revisited as part of the WebGPU/TSL renderer migration.
+ *
  * @group Rendering
  * @see {@link RenderingPipeline}
  * @see {@link FxaaPass}

@@ -34,9 +34,11 @@ import {
   BoxGrid,
   CameraFocusAtPointEvent,
   CompletionTools,
+  createLayers,
   Distance,
   EventEmitterCallbackEvent,
   FxaaPass,
+  LAYERS,
   OITRenderPass,
   Pass,
   RenderPass,
@@ -332,6 +334,15 @@ const Example = (args: ExampleProps) => {
     return undefined;
   }, []);
 
+  // Exclude the BasicTrajectory LOD from the OIT transparency passes. It is
+  // transparent (opacity 0.95) so it would otherwise be composited over the
+  // emissive highlight; drawing it in the opaque pass keeps the highlight visible
+  // when zoomed out (where trajectories drop to this line LOD).
+  const trajectoryLayers = useMemo(
+    () => createLayers(LAYERS.OIT_EXCLUDED),
+    [],
+  );
+
   return (
     <>
       <RenderingPipeline
@@ -441,6 +452,7 @@ const Example = (args: ExampleProps) => {
                         color={color}
                         priority={9}
                         name="BasicTrajectory"
+                        layers={trajectoryLayers}
                       />
                       <Distance
                         min={args.showCasingAndCompletion ? 10 : 0}
