@@ -349,8 +349,6 @@ const Example = (args: ExampleProps) => {
     return undefined;
   }, []);
 
-  console.log(renderer);
-
   return (
     <>
       <RenderingPipeline
