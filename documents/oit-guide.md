@@ -6,7 +6,9 @@ gotchas that bite most people.
 
 - For *why* OIT is needed and how the technique works, see
   [oit-report.md](./oit-report.md).
-- For the short non-technical pitch, see [oit-presentation.md](./oit-presentation.md).
+- For the short non-technical pitch, see the
+  [executive summary](./oit-report.md#executive-summary-the-what--how--why-in-plain-terms)
+  at the top of the technical report.
 - For which built-in components are already wired, see
   [oit-component-status.md](./oit-component-status.md).
 

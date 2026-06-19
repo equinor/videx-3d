@@ -2,8 +2,8 @@
 
 Quick-reference list of which components are wired for Order-Independent
 Transparency (OIT) and which remain. For the full technical background see
-[oit-report.md](oit-report.md); for the non-technical overview see
-[oit-presentation.md](oit-presentation.md).
+[oit-report.md](oit-report.md); for the non-technical overview see its
+[executive summary](oit-report.md#executive-summary-the-what--how--why-in-plain-terms).
 
 _Verified against source on 2026-06-17._
 
