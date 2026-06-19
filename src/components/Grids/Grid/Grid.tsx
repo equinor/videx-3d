@@ -19,6 +19,7 @@ import {
   WebGLRenderTarget,
 } from 'three';
 import { CommonComponentProps } from '../../../common/types';
+import { OitMaterial } from '../../../rendering/OitMaterial';
 import { clamp } from '../../../sdk';
 import { Vec2, Vec3 } from '../../../sdk/types/common';
 import { getGridPositionFromUV } from './grid-helpers';
@@ -347,6 +348,16 @@ export const Grid = ({
     uniforms.current.uOpacity.value = Number.isFinite(opacity)
       ? clamp(opacity, 0, 1)
       : 1;
+    // The grid drives its transparency through the uOpacity/uBackgroundOpacity
+    // uniforms, but the OIT pass routes objects by `material.opacity`. Keep it in
+    // sync (effective = the lower of the two) so the grid is recognized as
+    // transparent and routed through the OIT pipeline instead of the opaque pass.
+    if (materialRef.current) {
+      materialRef.current.opacity = Math.min(
+        uniforms.current.uOpacity.value,
+        backgroundOpacity,
+      );
+    }
     uniforms.current.uCellSize.value = cellSize * cellSizeFactor;
     uniforms.current.uSubDivisions.value = subDivisions;
     uniforms.current.uGridColorMajor.value.set(gridColorMajor);
@@ -541,7 +552,22 @@ export const Grid = ({
           forceSinglePass
           transparent
         />
-        {showAxes && showAxesLabels && (
+        {(backgroundOpacity < 1 || opacity < 1) && <OitMaterial />}
+      </mesh>
+      {/*
+        The axes labels are kept as a SIBLING of the grid mesh (not a child) on
+        purpose: when the grid is transparent it is routed through the OITRenderPass,
+        which hides the grid mesh during the opaque pass. Children of an invisible
+        object are skipped by Three.js, so nesting the (opaque) labels under the mesh
+        made them vanish whenever OIT was active. As a sibling they are collected and
+        rendered independently in the opaque pass.
+      */}
+      {showAxes && showAxesLabels && (
+        // Mirror the grid mesh's z-offset (position-z={-0.001 * cellSize}) on the
+        // labels. When the labels were a child of the mesh they inherited this
+        // offset; as a sibling they no longer do, which left the flipped-side
+        // labels coplanar with the grid plane and caused z-fighting/flicker.
+        <group position-z={-0.001 * cellSize}>
           <GridAxesLabels
             originOffset={offsets.originOffset}
             axesOffset={offsets.axesOffset}
@@ -560,29 +586,29 @@ export const Grid = ({
                 : undefined
             }
           />
-        )}
-      </mesh>
+        </group>
+      )}
       {enableProjection && (
         <orthographicCamera
           ref={projectionCameraRef}
           args={
             side === 'back'
               ? [
-                  size[0] / 2,
-                  size[0] / -2,
-                  size[1] / 2,
-                  size[1] / -2,
-                  1,
-                  projectionDistance,
-                ]
+                size[0] / 2,
+                size[0] / -2,
+                size[1] / 2,
+                size[1] / -2,
+                1,
+                projectionDistance,
+              ]
               : [
-                  size[0] / -2,
-                  size[0] / 2,
-                  size[1] / 2,
-                  size[1] / -2,
-                  1,
-                  projectionDistance,
-                ]
+                size[0] / -2,
+                size[0] / 2,
+                size[1] / 2,
+                size[1] / -2,
+                1,
+                projectionDistance,
+              ]
           }
           rotation-y={side === 'back' ? 0 : Math.PI}
         />

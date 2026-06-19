@@ -13,6 +13,7 @@ import {
   ConeGeometry,
   Group,
   Material,
+  NoBlending,
   ShaderMaterial,
   Uniform,
 } from 'three';
@@ -60,7 +61,7 @@ export const Perforations = forwardRef(
       name,
       userData,
       renderOrder,
-      layers = createLayers(LAYERS.NOT_EMITTER),
+      layers = createLayers(LAYERS.NOT_EMITTER, LAYERS.EMISSIVE),
       position,
       visible,
       castShadow,
@@ -98,24 +99,60 @@ export const Perforations = forwardRef(
     }, [baseRadius, length, radialSegments]);
 
     const material = useMemo(() => {
-      const material =
-        customMaterial ||
-        new ShaderMaterial({
-          uniforms: {
-            uTime: new Uniform(0),
-            uRadius: new Uniform(0),
-            uLength: new Uniform(0),
-          },
-          vertexShader: vertexShader,
-          fragmentShader: fragmentShader,
-          depthTest: true,
-          depthWrite: false,
-          blending: AdditiveBlending,
-          transparent: true,
-        });
+      if (customMaterial) return customMaterial;
+
+      // Shared animation uniforms, referenced by both the additive display material
+      // and the optional depth-stamp variant so a single update drives both.
+      const uniforms = {
+        uTime: new Uniform(0),
+        uRadius: new Uniform(0),
+        uLength: new Uniform(0),
+      };
+
+      const material = new ShaderMaterial({
+        uniforms,
+        vertexShader: vertexShader,
+        fragmentShader: fragmentShader,
+        depthTest: true,
+        depthWrite: false,
+        blending: AdditiveBlending,
+        transparent: true,
+      });
+
+      // Opt-in depth-only stamp consumed by `OITRenderPass.emitterDepthStamp`: writes
+      // depth where the jet is dense (strength >= uOcclusionThreshold) so transparent
+      // surfaces behind the core are depth-rejected and don't wash it out. The pass
+      // drives `uOcclusionThreshold`; the geometry/uniforms are shared with the
+      // display material.
+      const occlusionDepthMaterial = new ShaderMaterial({
+        uniforms: {
+          ...uniforms,
+          uOcclusionThreshold: new Uniform(0.75),
+        },
+        vertexShader: vertexShader,
+        fragmentShader: fragmentShader,
+        defines: { OCCLUSION_STAMP: '' },
+        depthTest: true,
+        depthWrite: true,
+        colorWrite: false,
+        blending: NoBlending,
+        transparent: false,
+      });
+      material.userData.occlusionDepthMaterial = occlusionDepthMaterial;
 
       return material;
     }, [customMaterial]);
+
+    // Dispose the paired depth-stamp material alongside the display material.
+    useEffect(() => {
+      const stamp = Array.isArray(material)
+        ? undefined
+        : (material.userData as { occlusionDepthMaterial?: Material })
+            .occlusionDepthMaterial;
+      return () => {
+        stamp?.dispose();
+      };
+    }, [material]);
 
     const onPropsChange = useMemo(() => {
       return onMaterialPropertiesChange

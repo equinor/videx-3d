@@ -20,25 +20,27 @@ import {
   WebGLRenderer,
   WebGLRenderTarget,
 } from 'three';
-import { FullscreenRenderer } from '../../rendering/fullscreen-renderer';
-import { mixVec2 } from '../../sdk';
-import { useAnnotationsState } from './annotations-state';
-import { AnnotationInstance } from './types';
+
+import { useAnnotationsState } from '../../components/Annotations/annotations-state';
+import { AnnotationInstance } from '../../components/Annotations/types';
 
 import { UnsignedByteType } from 'three';
-import fragmentShader from './shaders/annotations-frag.glsl';
-import vertexShader from './shaders/annotations-vert.glsl';
+import fragmentShader from '../../components/annotations/shaders/annotations-frag.glsl';
+import vertexShader from '../../components/annotations/shaders/annotations-vert.glsl';
 import {
   postProcessInstances,
   preprocessInstances,
   updateInstanceDOMElements,
-} from './update-annotations';
+} from '../../components/Annotations/update-annotations';
+import { mixVec2 } from '../../sdk';
+import { FullscreenRenderer } from '../fullscreen-renderer';
+import { Pass } from '../Pass';
 
 const size = new Vector2();
 const TAU = Math.PI * 2;
 let x1: number, y1: number, x2: number, y2: number;
 
-export class AnnotationsRenderer {
+export class AnnotationsPass extends Pass {
   maxVisible: number;
   camera: PerspectiveCamera;
   clock: Clock;
@@ -49,10 +51,10 @@ export class AnnotationsRenderer {
   annotationsRenderTarget: WebGLRenderTarget;
   annotationsBuffer: Uint8Array;
   annotationsMaterial: ShaderMaterial;
-  fullscreenRenderer: FullscreenRenderer = new FullscreenRenderer();
   annotationsData: AnnotationInstance[] = [];
   isBusy: boolean = false;
   dataTextureNeedsUpdate = false;
+  fullscreenRenderer = new FullscreenRenderer();
   unsubscribeListeners: () => void;
 
   constructor(
@@ -61,6 +63,7 @@ export class AnnotationsRenderer {
     pointer: Vector2,
     maxVisible: number = 100,
   ) {
+    super();
     this.camera = camera as PerspectiveCamera;
     this.clock = clock;
     this.pointer = pointer;
@@ -294,6 +297,8 @@ export class AnnotationsRenderer {
     }
     this.annotationsMaterial.dispose();
     this.annotationsRenderTarget.dispose();
+    this.fullscreenRenderer.dispose();
+    this.overlayTexture?.dispose();
   }
 
   render(renderer: WebGLRenderer, buffer: WebGLRenderTarget | null) {
@@ -302,7 +307,6 @@ export class AnnotationsRenderer {
     const {
       camera,
       maxVisible,
-      fullscreenRenderer,
       annotationsMaterial: occlusionMaterial,
       annotationsData: instances,
       isBusy,
@@ -348,7 +352,11 @@ export class AnnotationsRenderer {
     this.updateOverlayTexture(visibleInstances);
 
     if (this.overlayTexture !== null) {
-      fullscreenRenderer.renderTexture(renderer, buffer, this.overlayTexture);
+      this.fullscreenRenderer.renderTexture(
+        renderer,
+        buffer,
+        this.overlayTexture,
+      );
     }
   }
 }

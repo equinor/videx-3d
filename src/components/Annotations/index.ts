@@ -2,8 +2,8 @@ import { Vector3 } from 'three';
 import { Vec3 } from '../../sdk';
 import { AnnotationProps } from './types';
 
+export * from '../../rendering/passes/AnnotationsPass';
 export * from './Annotations';
-export * from './annotations-renderer';
 export * from './annotations-state';
 export * from './AnnotationsLayer';
 export * from './types';

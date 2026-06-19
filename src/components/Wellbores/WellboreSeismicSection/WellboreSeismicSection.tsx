@@ -7,6 +7,7 @@ import {
   Group,
   LinearFilter,
   RedFormat,
+  ShaderMaterial,
   Texture,
   Uniform,
 } from 'three';
@@ -20,6 +21,7 @@ import {
   useEventEmitter,
   useGenerator,
 } from '../../../main';
+import { attachOitVariants } from '../../../rendering/oit-material';
 import { unpackBufferGeometry } from '../../../sdk';
 import fragmentShader from './shaders/frag.glsl';
 import vertexShader from './shaders/vert.glsl';
@@ -109,6 +111,24 @@ export const WellboreSeismicSection = ({
     [],
   );
 
+  // Imperative material so it can be made OIT-capable. No-op outside an
+  // OITRenderPass; under OIT it is resolved as transparent geometry.
+  const material = useMemo(() => {
+    const m = new ShaderMaterial({
+      vertexShader,
+      fragmentShader,
+      uniforms,
+      side: DoubleSide,
+    });
+    return attachOitVariants(m, { side: DoubleSide });
+  }, [uniforms]);
+
+  useEffect(() => {
+    return () => {
+      material.dispose();
+    };
+  }, [material]);
+
   const range = useMemo(
     () => Math.max(Math.abs(minMax[0]), Math.abs(minMax[1])),
     [minMax],
@@ -158,7 +178,8 @@ export const WellboreSeismicSection = ({
   useEffect(() => {
     uniforms.data.value = dataTexture;
     uniforms.opacity.value = opacity;
-  }, [uniforms, opacity, dataTexture]);
+    material.transparent = opacity < 1;
+  }, [uniforms, material, opacity, dataTexture]);
 
   useEffect(() => {
     const offsetRange = range + range * rangeOffset;
@@ -213,17 +234,9 @@ export const WellboreSeismicSection = ({
           castShadow={castShadow}
           receiveShadow={receiveShadow}
           geometry={geometry}
+          material={material}
           layers={layers || notEmitterLayers}
-        >
-          <shaderMaterial
-            vertexShader={vertexShader}
-            fragmentShader={fragmentShader}
-            uniforms={uniforms}
-            side={DoubleSide}
-            transparent={opacity < 1}
-            opacity={opacity}
-          />
-        </mesh>
+        />
       )}
     </group>
   );

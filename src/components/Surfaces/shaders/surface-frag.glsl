@@ -71,6 +71,10 @@ varying vec3 vBitangent;
 // custom fragments
 #include ../../../sdk/materials/shaderLib/color-conversion.glsl
 
+#ifdef USE_OIT
+#include ../../../sdk/materials/shaderLib/oit.glsl
+#endif
+
 #ifdef USE_DEBUG
 #include ../../../sdk/materials/shaderLib/glyphs.glsl
 #include ../../../sdk/materials/shaderLib/render-number.glsl
@@ -289,6 +293,10 @@ void main() {
 	#include <fog_fragment>
 	#include <premultiplied_alpha_fragment>
 	#include <dithering_fragment>
+
+  #ifdef USE_OIT
+  gl_FragColor = oitProcess(gl_FragColor);
+  #endif
 
   //gl_FragColor = vec4(vNormal, 1.0);
 }

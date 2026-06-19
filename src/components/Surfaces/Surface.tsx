@@ -13,6 +13,7 @@ import { PointerEvents } from '../../events/interaction-events';
 import { useGenerator } from '../../hooks/useGenerator';
 import { createLayers, LAYERS } from '../../layers/layers';
 import { GlyphsContext } from '../../main';
+import { useRenderingState } from '../../rendering/rendering-state';
 import {
   createElevationTexture,
   SurfaceMeta,
@@ -124,6 +125,11 @@ export const Surface = ({
   );
 
   const notEmitterLayers = useMemo(() => createLayers(LAYERS.NOT_EMITTER), []);
+
+  // When an OITRenderPass is active it resolves surface self-transparency
+  // correctly, so the back-face depth mask is not needed (and would wrongly
+  // occlude the transparent surface).
+  const oitActive = useRenderingState(s => s.transparencyMode === 'oit');
 
   const glyphContext = useContext(GlyphsContext);
 
@@ -340,7 +346,7 @@ export const Surface = ({
       visible={visible}
       position={position}
     >
-      {geometry && opacity < 1 && (
+      {geometry && opacity < 1 && !oitActive && (
         <mesh
           geometry={geometry}
           material={maskMaterial}

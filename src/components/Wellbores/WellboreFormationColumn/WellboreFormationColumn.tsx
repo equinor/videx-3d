@@ -4,6 +4,7 @@ import {
   BufferGeometry,
   FrontSide,
   ShaderLib,
+  ShaderMaterial,
   Uniform,
   UniformsUtils,
 } from 'three';
@@ -14,6 +15,7 @@ import {
   useGenerator,
   useWellboreContext,
 } from '../../../main';
+import { makeOitCompatible } from '../../../rendering/oit-material';
 import { unpackBufferGeometry } from '../../../sdk';
 import fragmentShader from './shaders/fragment.glsl';
 import vertexShader from './shaders/vertex.glsl';
@@ -90,9 +92,34 @@ export const WellboreFormationColumn = ({
     [],
   );
 
+  // Imperative material so it can be made OIT-capable (the shader has no
+  // vViewPosition, so makeOitCompatible auto-injects it). No-op outside an
+  // OITRenderPass; under OIT it is resolved as transparent geometry instead of
+  // occluding trajectories behind it.
+  const side = inverted ? BackSide : FrontSide;
+  const material = useMemo(() => {
+    const m = new ShaderMaterial({
+      vertexColors: true,
+      side,
+      vertexShader,
+      fragmentShader,
+      uniforms,
+      depthTest: true,
+      depthWrite: true,
+    });
+    return makeOitCompatible(m, { side });
+  }, [uniforms, side]);
+
   useEffect(() => {
     uniforms.opacity.value = opacity;
-  }, [opacity, uniforms]);
+    material.transparent = opacity === undefined || opacity < 1;
+  }, [opacity, uniforms, material]);
+
+  useEffect(() => {
+    return () => {
+      material.dispose();
+    };
+  }, [material]);
 
   useEffect(() => {
     if (generator) {
@@ -147,19 +174,7 @@ export const WellboreFormationColumn = ({
       visible={visible}
       layers={layers}
       geometry={geometry}
-    >
-      {/* <meshBasicMaterial vertexColors side={BackSide} /> */}
-      <shaderMaterial
-        vertexColors
-        side={inverted ? BackSide : FrontSide}
-        vertexShader={vertexShader}
-        fragmentShader={fragmentShader}
-        uniforms={uniforms}
-        transparent={opacity === undefined || opacity < 1}
-        opacity={opacity}
-        depthTest={true}
-        depthWrite={true}
-      />
-    </mesh>
+      material={material}
+    />
   );
 };

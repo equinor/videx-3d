@@ -16,6 +16,7 @@ import {
 import { useGenerator } from '../../../hooks/useGenerator';
 import { useWellboreContext } from '../../../hooks/useWellboreContext';
 import { createLayers, LAYERS } from '../../../layers/layers';
+import { makeOitCompatible } from '../../../rendering/oit-material';
 import { unpackBufferGeometry } from '../../../sdk/geometries/packing';
 import {
   PerimeterGeneratorResponse,
@@ -124,19 +125,22 @@ export const Perimeter = ({
   const material = useMemo<Material | Material[]>(() => {
     const m = customMaterial
       ? customMaterial
-      : new ShaderMaterial({
-          transparent: true,
-          side: DoubleSide,
-          vertexShader,
-          fragmentShader,
-          uniforms: {
-            uTime: new Uniform(0),
-            uFrom: new Uniform(0),
-            uTo: new Uniform(0),
-            uOpacity: new Uniform(0),
-            uColor: new Uniform(new Color('#56af3b')),
-          },
-        });
+      : makeOitCompatible(
+          new ShaderMaterial({
+            transparent: true,
+            side: DoubleSide,
+            vertexShader,
+            fragmentShader,
+            uniforms: {
+              uTime: new Uniform(0),
+              uFrom: new Uniform(0),
+              uTo: new Uniform(0),
+              uOpacity: new Uniform(0),
+              uColor: new Uniform(new Color('#56af3b')),
+            },
+          }),
+          { side: DoubleSide },
+        );
     return m;
   }, [customMaterial]);
 
