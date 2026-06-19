@@ -81,6 +81,41 @@ export type OITRenderPassStats = {
 };
 
 /**
+ * Resource/accumulation counters for leak monitoring. Unlike {@link OITRenderPassStats}
+ * (per-frame object classification, which naturally varies with the camera), these
+ * track internal structures and global GPU resources that should stay *bounded* over
+ * time. Watch them while toggling the pipeline on/off (which recreates the passes): a
+ * steady climb indicates passes or GPU resources are not being disposed.
+ */
+export type OITRenderPassResources = {
+  /**
+   * Active OIT pipeline registrations on this canvas (the ref-counted
+   * {@link RenderingState} `_oitCount`). Should read 1 while a single OIT pipeline is
+   * mounted; a value that climbs each time the pipeline is recreated means a pass was
+   * acquired but never released in {@link OITRenderPass.dispose} (a real leak).
+   */
+  oitPipelines: number;
+  /**
+   * Total classification entries created since this pass instance was constructed
+   * (monotonic). Resets only when the pass itself is recreated, so it grows quickly
+   * during warm-up and should then plateau.
+   */
+  entriesTotal: number;
+  /**
+   * Classification entries created this frame (cache misses). ~0 in steady state; a
+   * persistently non-zero value means object material identities churn every frame,
+   * which also churns the cached per-pass OIT variants.
+   */
+  entriesThisFrame: number;
+  /** GPU textures currently tracked by the renderer (global; watch for unbounded growth). */
+  textures: number;
+  /** GPU geometries currently tracked by the renderer (global). */
+  geometries: number;
+  /** Compiled shader programs currently held by the renderer (global). `-1` if unavailable. */
+  programs: number;
+};
+
+/**
  * Per-segment GPU timings in milliseconds, populated when {@link OITRenderPass.profile}
  * is enabled and the platform supports timer queries. `-1` means "no result yet"
  * (or unsupported). `tail` is the single weighted-blended OIT pass cost.
@@ -248,6 +283,19 @@ export class OITRenderPass extends Pass {
     oitMixed: 0,
   };
 
+  /**
+   * Resource/accumulation counters for leak monitoring, updated every {@link render}.
+   * See {@link OITRenderPassResources}.
+   */
+  readonly resources: OITRenderPassResources = {
+    oitPipelines: -1,
+    entriesTotal: 0,
+    entriesThisFrame: 0,
+    textures: -1,
+    geometries: -1,
+    programs: -1,
+  };
+
   private fullscreenRenderer = new FullscreenRenderer();
 
   private minDepthTarget: WebGLRenderTarget;
@@ -262,6 +310,9 @@ export class OITRenderPass extends Pass {
 
   private releaseOit?: () => void;
   private entryCache = new WeakMap<Renderable, RenderableEntry>();
+
+  /** Monotonic count of classification entries created (cache misses). */
+  private entriesCreated = 0;
 
   /** Saved material state for OIT objects temporarily forced opaque this frame. */
   private forcedOpaque: {
@@ -390,6 +441,7 @@ export class OITRenderPass extends Pass {
     }
 
     this.entryCache.set(object, entry);
+    this.entriesCreated++;
     return entry;
   }
 
@@ -632,6 +684,7 @@ export class OITRenderPass extends Pass {
     const emissiveList: Renderable[] = [];
     const overlayList: Renderable[] = [];
     const oitOpaqueList: RenderableEntry[] = [];
+    const entriesBefore = this.entriesCreated;
     this.collect(oitList, opaqueList, emissiveList, overlayList, oitOpaqueList);
 
     // Update per-pass object counts for debugging/inspection.
@@ -646,6 +699,18 @@ export class OITRenderPass extends Pass {
     this.stats.overlay = overlayList.length;
     this.stats.oitHidden = oitHidden;
     this.stats.oitMixed = oitList.length - oitHidden;
+
+    // Resource/leak telemetry: internal entry-cache churn plus the renderer's global
+    // GPU resource counts and the canvas OIT registration count. These should stay
+    // bounded over time; a steady climb (e.g. while toggling the pipeline on/off)
+    // points at undisposed passes or resources rather than per-frame variation.
+    const info = renderer.info;
+    this.resources.entriesThisFrame = this.entriesCreated - entriesBefore;
+    this.resources.entriesTotal = this.entriesCreated;
+    this.resources.oitPipelines = getRenderingState(scene).getState()._oitCount;
+    this.resources.textures = info.memory.textures;
+    this.resources.geometries = info.memory.geometries;
+    this.resources.programs = info.programs?.length ?? -1;
 
     const hasOit = oitList.length > 0;
     const hasEmissive = emissiveList.length > 0;

@@ -563,24 +563,30 @@ export const Grid = ({
         rendered independently in the opaque pass.
       */}
       {showAxes && showAxesLabels && (
-        <GridAxesLabels
-          originOffset={offsets.originOffset}
-          axesOffset={offsets.axesOffset}
-          trimAxesLabels={trimAxesLabels}
-          scale={scale}
-          size={size}
-          start={originValue}
-          units={cellSize * cellSizeFactor}
-          axesTickSize={axesTickSize}
-          plane={plane}
-          color={axesColor}
-          side={side}
-          renderOrder={
-            renderOrder !== undefined && Number.isFinite(renderOrder)
-              ? renderOrder + 1
-              : undefined
-          }
-        />
+        // Mirror the grid mesh's z-offset (position-z={-0.001 * cellSize}) on the
+        // labels. When the labels were a child of the mesh they inherited this
+        // offset; as a sibling they no longer do, which left the flipped-side
+        // labels coplanar with the grid plane and caused z-fighting/flicker.
+        <group position-z={-0.001 * cellSize}>
+          <GridAxesLabels
+            originOffset={offsets.originOffset}
+            axesOffset={offsets.axesOffset}
+            trimAxesLabels={trimAxesLabels}
+            scale={scale}
+            size={size}
+            start={originValue}
+            units={cellSize * cellSizeFactor}
+            axesTickSize={axesTickSize}
+            plane={plane}
+            color={axesColor}
+            side={side}
+            renderOrder={
+              renderOrder !== undefined && Number.isFinite(renderOrder)
+                ? renderOrder + 1
+                : undefined
+            }
+          />
+        </group>
       )}
       {enableProjection && (
         <orthographicCamera
@@ -588,21 +594,21 @@ export const Grid = ({
           args={
             side === 'back'
               ? [
-                  size[0] / 2,
-                  size[0] / -2,
-                  size[1] / 2,
-                  size[1] / -2,
-                  1,
-                  projectionDistance,
-                ]
+                size[0] / 2,
+                size[0] / -2,
+                size[1] / 2,
+                size[1] / -2,
+                1,
+                projectionDistance,
+              ]
               : [
-                  size[0] / -2,
-                  size[0] / 2,
-                  size[1] / 2,
-                  size[1] / -2,
-                  1,
-                  projectionDistance,
-                ]
+                size[0] / -2,
+                size[0] / 2,
+                size[1] / 2,
+                size[1] / -2,
+                1,
+                projectionDistance,
+              ]
           }
           rotation-y={side === 'back' ? 0 : Math.PI}
         />

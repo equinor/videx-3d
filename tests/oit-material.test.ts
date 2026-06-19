@@ -132,7 +132,9 @@ describe('oit-material', () => {
         'gl_FragColor = oitProcess(gl_FragColor);',
       );
       // The single existing declaration is not duplicated.
-      const matches = shader.fragmentShader.match(/varying vec3 vViewPosition;/g);
+      const matches = shader.fragmentShader.match(
+        /varying vec3 vViewPosition;/g,
+      );
       expect(matches?.length).toBe(1);
     });
 
@@ -180,8 +182,9 @@ describe('oit-material', () => {
       const variants = material.getOitVariants();
 
       for (const pass of ALL_PASSES) {
-        const defines = (variants[pass] as { defines?: Record<string, unknown> })
-          .defines;
+        const defines = (
+          variants[pass] as { defines?: Record<string, unknown> }
+        ).defines;
         expect(defines?.USE_OIT).toBe('');
       }
       expect(

@@ -292,6 +292,12 @@ const Example = (args: ExampleProps) => {
           composite: { label: 'Composite', value: '-' },
           opaqueT: { label: 'Opaque', value: '-' },
           total: { label: 'OIT total', value: '-' },
+          pipelines: { label: 'OIT pipelines', value: '-' },
+          entriesTotal: { label: 'Cached entries', value: '-' },
+          entriesFrame: { label: 'New entries/frame', value: '-' },
+          texturesR: { label: 'GPU textures', value: '-' },
+          geometriesR: { label: 'GPU geometries', value: '-' },
+          programsR: { label: 'GPU programs', value: '-' },
         },
       });
     }
@@ -307,7 +313,7 @@ const Example = (args: ExampleProps) => {
     lastReadout.current = t;
     if (!oitPass || !outputPanel || !outputPanel.has('oit')) return;
     const ms = (v: number) => (v < 0 ? '-' : `${v.toFixed(2)} ms`);
-    const { stats, timings } = oitPass;
+    const { stats, timings, resources } = oitPass;
     outputPanel.update('oit', args.profileTail ? ms(timings.total) : 'stats', {
       oit: stats.oit,
       oitOpaque: stats.oitOpaque,
@@ -318,6 +324,12 @@ const Example = (args: ExampleProps) => {
       composite: args.profileTail ? ms(timings.composite) : '-',
       opaqueT: args.profileTail ? ms(timings.opaque) : '-',
       total: args.profileTail ? ms(timings.total) : '-',
+      pipelines: resources.oitPipelines,
+      entriesTotal: resources.entriesTotal,
+      entriesFrame: resources.entriesThisFrame,
+      texturesR: resources.textures,
+      geometriesR: resources.geometries,
+      programsR: resources.programs,
     });
   });
 
@@ -338,10 +350,7 @@ const Example = (args: ExampleProps) => {
   // transparent (opacity 0.95) so it would otherwise be composited over the
   // emissive highlight; drawing it in the opaque pass keeps the highlight visible
   // when zoomed out (where trajectories drop to this line LOD).
-  const trajectoryLayers = useMemo(
-    () => createLayers(LAYERS.OIT_EXCLUDED),
-    [],
-  );
+  const trajectoryLayers = useMemo(() => createLayers(LAYERS.OIT_EXCLUDED), []);
 
   return (
     <>
