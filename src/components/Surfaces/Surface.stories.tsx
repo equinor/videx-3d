@@ -78,6 +78,7 @@ export const Default: Story = {
     rampMin: 0,
     rampMax: 0,
     debug: false,
+    precomputeNormals: false,
   },
   argTypes: {
     surfaceId: {

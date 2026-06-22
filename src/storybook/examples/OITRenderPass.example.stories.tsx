@@ -115,6 +115,7 @@ type ExampleProps = {
   occlusionDepthThreshold: number;
   emitterDepthStamp: boolean;
   emitterDepthThreshold: number;
+  precomputeSurfaceNormals: boolean;
   colors: {
     wellbore: string;
     gridColorMajor?: string;
@@ -605,6 +606,7 @@ const Example = (args: ExampleProps) => {
                   normalScale={[0.1, 0.1]}
                   doubleSide
                   renderOrder={999 - index}
+                  precomputeNormals={args.precomputeSurfaceNormals}
                   onPointerClick={(e: EventEmitterCallbackEvent) => {
                     if (e.position && e.keys.ctrlKey) {
                       dispatchEvent(
@@ -761,6 +763,7 @@ const commonArgs = {
   occlusionDepthThreshold: 0.5,
   emitterDepthStamp: false,
   emitterDepthThreshold: 0.5,
+  precomputeSurfaceNormals: false
 };
 
 export const Default: Story = {

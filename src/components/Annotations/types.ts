@@ -73,6 +73,10 @@ export type AnnotationInstanceState = {
   _zIndex?: string;
   _transform?: string;
   _needsUpdate?: boolean;
+  // Previous-frame anchor screen position (pixels), used by the overlay pass
+  // to estimate per-frame screen motion for the connector length gate.
+  _connPrevX?: number;
+  _connPrevY?: number;
 };
 
 export type AnnotationInstance = {
