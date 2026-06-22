@@ -293,10 +293,7 @@ export const Surface = ({
             meta.header.ny,
           );
 
-          setElevationTexture(prev => {
-            if (prev) prev.dispose();
-            return elevationTexture;
-          });
+          setElevationTexture(elevationTexture);
         }
       });
     }
@@ -309,13 +306,24 @@ export const Surface = ({
         if (response) {
           bufferGeometry = unpackBufferGeometry(response);
         }
-        setGeometry(prev => {
-          if (prev) prev.dispose();
-          return bufferGeometry;
-        });
+        setGeometry(bufferGeometry);
       });
     }
   }, [geometryGenerator, meta.id, maxError]);
+
+  // Dispose the library-created geometry when it is replaced or on unmount.
+  useEffect(() => {
+    return () => {
+      geometry?.dispose();
+    };
+  }, [geometry]);
+
+  // Dispose the generated elevation texture when it is replaced or on unmount.
+  useEffect(() => {
+    return () => {
+      elevationTexture?.dispose();
+    };
+  }, [elevationTexture]);
 
   useEffect(() => {
     if (elevationTexture && material) {
@@ -335,6 +343,13 @@ export const Surface = ({
       material.dispose();
     };
   }, [material]);
+
+  // Dispose the library-created back-face mask material on unmount.
+  useEffect(() => {
+    return () => {
+      maskMaterial.dispose();
+    };
+  }, [maskMaterial]);
 
   if (debug && !glyphContext) return null;
 

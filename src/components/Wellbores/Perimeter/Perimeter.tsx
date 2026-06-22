@@ -99,10 +99,7 @@ export const Perimeter = ({
           if (response) {
             const bufferGeometry = unpackBufferGeometry(response);
             bufferGeometry.computeBoundingBox();
-            setGeometry(prev => {
-              if (prev) prev.dispose();
-              return bufferGeometry;
-            });
+            setGeometry(bufferGeometry);
           }
         },
       );
@@ -113,34 +110,34 @@ export const Perimeter = ({
     return onMaterialPropertiesChange
       ? onMaterialPropertiesChange
       : (props: Record<string, any>, material: Material | Material[]) => {
-          const m = material as ShaderMaterial;
-          m.uniforms.uColor.value = new Color(props.color);
-          m.uniforms.uFrom.value = props.from;
-          m.uniforms.uTo.value = props.to;
-          m.uniforms.uOpacity.value = props.opacity;
-          m.uniforms.uTime.value = props.time;
-        };
+        const m = material as ShaderMaterial;
+        m.uniforms.uColor.value = new Color(props.color);
+        m.uniforms.uFrom.value = props.from;
+        m.uniforms.uTo.value = props.to;
+        m.uniforms.uOpacity.value = props.opacity;
+        m.uniforms.uTime.value = props.time;
+      };
   }, [onMaterialPropertiesChange]);
 
   const material = useMemo<Material | Material[]>(() => {
     const m = customMaterial
       ? customMaterial
       : makeOitCompatible(
-          new ShaderMaterial({
-            transparent: true,
-            side: DoubleSide,
-            vertexShader,
-            fragmentShader,
-            uniforms: {
-              uTime: new Uniform(0),
-              uFrom: new Uniform(0),
-              uTo: new Uniform(0),
-              uOpacity: new Uniform(0),
-              uColor: new Uniform(new Color('#56af3b')),
-            },
-          }),
-          { side: DoubleSide },
-        );
+        new ShaderMaterial({
+          transparent: true,
+          side: DoubleSide,
+          vertexShader,
+          fragmentShader,
+          uniforms: {
+            uTime: new Uniform(0),
+            uFrom: new Uniform(0),
+            uTo: new Uniform(0),
+            uOpacity: new Uniform(0),
+            uColor: new Uniform(new Color('#56af3b')),
+          },
+        }),
+        { side: DoubleSide },
+      );
     return m;
   }, [customMaterial]);
 
@@ -156,6 +153,24 @@ export const Perimeter = ({
     matProps.current.time = clock.getElapsedTime();
     onPropsChange(matProps.current, material);
   });
+
+  // Dispose the library-created geometry when it is replaced or on unmount.
+  useEffect(() => {
+    return () => {
+      geometry?.dispose();
+    };
+  }, [geometry]);
+
+  // Dispose the library-created material on unmount (skip user-supplied material).
+  useEffect(() => {
+    return () => {
+      if (!customMaterial) {
+        const materials = Array.isArray(material) ? material : [material];
+        materials.forEach(m => m.dispose());
+      }
+    };
+  }, [material, customMaterial]);
+
   if (!geometry) return null;
 
   return (

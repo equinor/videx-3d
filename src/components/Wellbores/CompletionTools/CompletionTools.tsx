@@ -184,18 +184,12 @@ export const CompletionTools = ({
         segmentsPerMeter,
         simplificationThreshold,
       ).then(response => {
-        setGeometry(prev => {
-          if (prev) {
-            prev.dispose();
-          }
-          if (response) {
-            const unpackedGeometry = unpackBufferGeometry(response);
-            return unpackedGeometry;
-          } else {
-            return null;
-          }
-        });
-        if (!response) setUseFallback(true);
+        if (response) {
+          setGeometry(unpackBufferGeometry(response));
+        } else {
+          setGeometry(null);
+          setUseFallback(true);
+        }
       });
     }
   }, [
@@ -207,6 +201,23 @@ export const CompletionTools = ({
     simplificationThreshold,
     radialSegments,
   ]);
+
+  // Dispose the library-created geometry when it is replaced or on unmount.
+  useEffect(() => {
+    return () => {
+      geometry?.dispose();
+    };
+  }, [geometry]);
+
+  // Dispose the library-created materials on unmount (skip user-supplied material).
+  useEffect(() => {
+    return () => {
+      if (!customMaterial) {
+        const materials = Array.isArray(material) ? material : [material];
+        materials.forEach(m => m.dispose());
+      }
+    };
+  }, [material, customMaterial]);
 
   return (
     <group

@@ -148,21 +148,38 @@ export const Perforations = forwardRef(
       const stamp = Array.isArray(material)
         ? undefined
         : (material.userData as { occlusionDepthMaterial?: Material })
-            .occlusionDepthMaterial;
+          .occlusionDepthMaterial;
       return () => {
         stamp?.dispose();
       };
     }, [material]);
 
+    // Dispose the library-created geometry when it changes or on unmount.
+    useEffect(() => {
+      return () => {
+        geometry.dispose();
+      };
+    }, [geometry]);
+
+    // Dispose the library-created material on unmount (skip user-supplied material).
+    useEffect(() => {
+      return () => {
+        if (!customMaterial) {
+          const materials = Array.isArray(material) ? material : [material];
+          materials.forEach(m => m.dispose());
+        }
+      };
+    }, [material, customMaterial]);
+
     const onPropsChange = useMemo(() => {
       return onMaterialPropertiesChange
         ? onMaterialPropertiesChange
         : (props: Record<string, any>, material: Material | Material[]) => {
-            const m = material as ShaderMaterial;
-            m.uniforms.uTime.value = props.time;
-            m.uniforms.uRadius.value = props.baseRadius;
-            m.uniforms.uLength.value = props.length;
-          };
+          const m = material as ShaderMaterial;
+          m.uniforms.uTime.value = props.time;
+          m.uniforms.uRadius.value = props.baseRadius;
+          m.uniforms.uLength.value = props.length;
+        };
     }, [onMaterialPropertiesChange]);
 
     useEffect(() => {
