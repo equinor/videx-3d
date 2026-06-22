@@ -70,9 +70,9 @@ export const TubeTrajectory = ({
     return onMaterialPropertiesChange
       ? onMaterialPropertiesChange
       : (props: Record<string, any>, material: Material | Material[]) => {
-        const m = material as TubeMaterial;
-        m.color = new Color(props.color);
-      };
+          const m = material as TubeMaterial;
+          m.color = new Color(props.color);
+        };
   }, [onMaterialPropertiesChange]);
 
   const material = useMemo(() => {

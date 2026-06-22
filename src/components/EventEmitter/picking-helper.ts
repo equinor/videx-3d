@@ -285,7 +285,9 @@ export class PickingHelper {
         this._size, // height
         this._buffer,
       )
-      .then(buffer => this.pick(buffer as Float32Array, mapLength, mapTotal, point));
+      .then(buffer =>
+        this.pick(buffer as Float32Array, mapLength, mapTotal, point),
+      );
   }
 
   /**
