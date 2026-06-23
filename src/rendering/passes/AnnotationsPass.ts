@@ -25,8 +25,8 @@ import { useAnnotationsState } from '../../components/Annotations/annotations-st
 import { AnnotationInstance } from '../../components/Annotations/types';
 
 import { UnsignedByteType } from 'three';
-import fragmentShader from '../../components/annotations/shaders/annotations-frag.glsl';
-import vertexShader from '../../components/annotations/shaders/annotations-vert.glsl';
+import fragmentShader from '../../components/Annotations/shaders/annotations-frag.glsl';
+import vertexShader from '../../components/Annotations/shaders/annotations-vert.glsl';
 import {
   annotationsActivity,
   postProcessInstances,
