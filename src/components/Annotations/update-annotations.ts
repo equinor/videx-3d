@@ -50,7 +50,7 @@ function calculateLabelPosition(
 
   const angle = labelAngles[positionOptions[positionSlot || 0]];
 
-  const labelWidth = instance.state.labelWidht || 0;
+  const labelWidth = instance.state.labelWidth || 0;
   const labelHeight = instance.state.labelHeight || 0;
   const scaledWidth = labelWidth * scale;
   const scaledHeight = labelHeight * scale;
@@ -334,7 +334,7 @@ export function postProcessInstances(
       const slots = currentSlot === 0 ? [0, 1] : [1, 0];
 
       // calculate label size
-      const labelWidth = instance.state.labelWidht;
+      const labelWidth = instance.state.labelWidth;
       const labelHeight = instance.state.labelHeight;
 
       const scaledWidth = labelWidth * instance.state.scaleFactor!;

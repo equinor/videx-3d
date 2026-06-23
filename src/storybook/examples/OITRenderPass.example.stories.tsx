@@ -512,28 +512,28 @@ const Example = (args: ExampleProps) => {
                       {(args.showFormationColumns ||
                         args.showFormationMarkers ||
                         args.showPerforations) && (
-                        <Distance min={0} max={40000} onDemand>
-                          {args.showFormationColumns && (
-                            <WellboreFormationColumn
-                              stratColumnId={stratColumnId}
-                              startRadius={3}
-                            />
-                          )}
-                          {args.showFormationMarkers && (
-                            <FormationMarkers
-                              stratColumnId={stratColumnId}
-                              radialSegments={16}
-                              baseRadius={4}
-                              showAnnotations={isActiveWell}
-                            />
-                          )}
-                          {args.showPerforations && (
-                            <Perforations
-                              sizeMultiplier={args.sizeMultiplier}
-                            />
-                          )}
-                        </Distance>
-                      )}
+                          <Distance min={0} max={40000} onDemand>
+                            {args.showFormationColumns && (
+                              <WellboreFormationColumn
+                                stratColumnId={stratColumnId}
+                                startRadius={3}
+                              />
+                            )}
+                            {args.showFormationMarkers && (
+                              <FormationMarkers
+                                stratColumnId={stratColumnId}
+                                radialSegments={16}
+                                baseRadius={4}
+                                showAnnotations={isActiveWell}
+                              />
+                            )}
+                            {args.showPerforations && (
+                              <Perforations
+                                sizeMultiplier={args.sizeMultiplier}
+                              />
+                            )}
+                          </Distance>
+                        )}
                       {args.showCasingAndCompletion && (
                         <Distance min={0} max={10} onDemand>
                           <Casings
@@ -754,7 +754,7 @@ const commonArgs = {
   showCameraTarget: false,
   sizeMultiplier: 3,
   casingOpacity: 1,
-  aaMode: 'fxaa' as const,
+  aaMode: 'smaa' as const,
   msaaSamples: 0 as const,
   skipFrontPeeling: false,
   showDebugTargets: false,

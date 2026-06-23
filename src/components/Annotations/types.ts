@@ -60,7 +60,7 @@ export type AnnotationInstanceState = {
   kill?: boolean;
   cooldown?: number;
   opacity?: number;
-  labelWidht: number;
+  labelWidth: number;
   labelHeight: number;
   labelX?: number;
   labelY?: number;

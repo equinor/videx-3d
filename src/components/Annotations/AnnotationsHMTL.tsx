@@ -74,7 +74,7 @@ const InstanceHTML = forwardRef<HTMLDivElement, InstanceProps>(
       if (!node) return;
 
       const measure = () => {
-        state.labelWidht = node.clientWidth;
+        state.labelWidth = node.clientWidth;
         state.labelHeight = node.clientHeight;
       };
 
