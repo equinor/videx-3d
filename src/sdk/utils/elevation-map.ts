@@ -1,4 +1,11 @@
-import { DataTexture, FloatType, LinearFilter, RedFormat } from 'three';
+import {
+  DataTexture,
+  FloatType,
+  LinearFilter,
+  RedFormat,
+  RGFormat,
+  UnsignedByteType,
+} from 'three';
 import { crossVec3, normalizeVec3, rotateVec3, subVec3, Vec3 } from '../../sdk';
 
 export function triangleNormal(p0: Vec3, p1: Vec3, p2: Vec3) {
@@ -118,4 +125,117 @@ export function createElevationTexture(
   elevationTexture.flipY = true;
 
   return elevationTexture;
+}
+
+/**
+ * Compute geometric surface normals from an elevation grid, encoded as a compact
+ * RG8 buffer (2 bytes/texel) using a hemisphere encoding: only the grid-local
+ * `x` and `z` components are stored (mapped to [0, 1]); the consumer reconstructs
+ * `y = sqrt(1 - x^2 - z^2)`.
+ *
+ * This replicates the per-fragment normal that `SurfaceMaterial`'s shader derives
+ * from the elevation texture (same four diagonal neighbours, cross products and
+ * hole handling), but pays the cost once on the CPU instead of in every OIT pass.
+ * The result is laid out to match the elevation buffer (row-major, intended for a
+ * `flipY = true` texture), so it samples 1:1 with the same grid UVs.
+ *
+ * @param data elevation values (row-major, holes < 0)
+ * @param columns number of columns (nx)
+ * @param rows number of rows (ny)
+ * @param xScale column spacing (xinc)
+ * @param yScale row spacing (yinc)
+ */
+export function computeSurfaceNormalsRG(
+  data: Float32Array,
+  columns: number,
+  rows: number,
+  xScale: number,
+  yScale: number,
+) {
+  const buffer = new Uint8Array(columns * rows * 2);
+
+  const at = (r: number, c: number) => {
+    const rr = r < 0 ? 0 : r >= rows ? rows - 1 : r;
+    const cc = c < 0 ? 0 : c >= columns ? columns - 1 : c;
+    return data[rr * columns + cc];
+  };
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < columns; c++) {
+      const i = r * columns + c;
+      const e = data[i];
+
+      let nx = 0;
+      let ny = 0.0001;
+      let nz = 0;
+
+      if (e >= 0) {
+        // `flipY` texture => +v (north) maps to a decreasing buffer row.
+        const nw = at(r - 1, c - 1);
+        const ne = at(r - 1, c + 1);
+        const sw = at(r + 1, c - 1);
+        const se = at(r + 1, c + 1);
+
+        const p1: Vec3 = [-xScale, nw - e, -yScale];
+        const p2: Vec3 = [xScale, ne - e, -yScale];
+        const p3: Vec3 = [-xScale, sw - e, yScale];
+        const p4: Vec3 = [xScale, se - e, yScale];
+
+        if (nw >= 0 && ne >= 0) {
+          const x = crossVec3(p2, p1);
+          nx += x[0];
+          ny += x[1];
+          nz += x[2];
+        }
+        if (ne >= 0 && se >= 0) {
+          const x = crossVec3(p4, p2);
+          nx += x[0];
+          ny += x[1];
+          nz += x[2];
+        }
+        if (sw >= 0 && se >= 0) {
+          const x = crossVec3(p3, p4);
+          nx += x[0];
+          ny += x[1];
+          nz += x[2];
+        }
+        if (se >= 0 && nw >= 0) {
+          const x = crossVec3(p1, p3);
+          nx += x[0];
+          ny += x[1];
+          nz += x[2];
+        }
+      }
+
+      const n = normalizeVec3([nx, ny, nz]);
+      const bi = i * 2;
+      buffer[bi] = Math.round(((n[0] + 1) / 2) * 255);
+      buffer[bi + 1] = Math.round(((n[2] + 1) / 2) * 255);
+    }
+  }
+
+  return buffer;
+}
+
+/**
+ * Create an RG8 data texture from a buffer produced by {@link computeSurfaceNormalsRG}.
+ */
+export function createPackedNormalTexture(
+  buffer: Uint8Array,
+  width: number,
+  height: number,
+) {
+  const texture = new DataTexture(
+    buffer,
+    width,
+    height,
+    RGFormat,
+    UnsignedByteType,
+  );
+  texture.minFilter = LinearFilter;
+  texture.magFilter = LinearFilter;
+  texture.flipY = true;
+  texture.needsUpdate = true;
+
+  return texture;
 }

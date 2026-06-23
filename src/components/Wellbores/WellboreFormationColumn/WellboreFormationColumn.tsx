@@ -140,10 +140,7 @@ export const WellboreFormationColumn = ({
         if (response) {
           bufferGeometry = unpackBufferGeometry(response);
         }
-        setGeometry(prev => {
-          if (prev) prev.dispose();
-          return bufferGeometry;
-        });
+        setGeometry(bufferGeometry);
       });
     }
   }, [
@@ -160,6 +157,13 @@ export const WellboreFormationColumn = ({
     radialSegments,
     inverted,
   ]);
+
+  // Dispose the library-created geometry when it is replaced or on unmount.
+  useEffect(() => {
+    return () => {
+      geometry?.dispose();
+    };
+  }, [geometry]);
 
   if (!geometry) return null;
 

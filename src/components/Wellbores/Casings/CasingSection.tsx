@@ -75,6 +75,22 @@ export const CasingSection = ({
     };
   }, [emitterMaterial]);
 
+  // Dispose the library-created geometries when they change or on unmount.
+  useEffect(() => {
+    return () => {
+      tubeGeometry?.dispose();
+      capsGeometry?.dispose();
+    };
+  }, [tubeGeometry, capsGeometry]);
+
+  // Dispose the library-created materials when they change or on unmount.
+  // The materials array may reuse primaryMaterial, so dedupe before disposing.
+  useEffect(() => {
+    return () => {
+      new Set(materials).forEach(m => m.dispose());
+    };
+  }, [materials]);
+
   useEffect(() => {
     if (materials) {
       materials.forEach(m => {

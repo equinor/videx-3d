@@ -10,12 +10,19 @@ export * from './types';
 
 const position = new Vector3();
 
-export const getAnnotationPosition = (annotation: AnnotationProps): Vec3 => {
+export const getAnnotationPosition = (
+  annotation: AnnotationProps,
+  target?: Vec3,
+): Vec3 => {
   if (annotation.matrixWorld) {
-    return position
-      .set(...annotation.position)
-      .applyMatrix4(annotation.matrixWorld)
-      .toArray();
+    position.set(...annotation.position).applyMatrix4(annotation.matrixWorld);
+    if (target) {
+      target[0] = position.x;
+      target[1] = position.y;
+      target[2] = position.z;
+      return target;
+    }
+    return position.toArray();
   }
   return annotation.position;
 };

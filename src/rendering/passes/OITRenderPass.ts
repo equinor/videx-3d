@@ -308,6 +308,14 @@ export class OITRenderPass extends Pass {
   /** Lazily-created GPU timer, only when {@link profile} is first enabled. */
   private gpuTimer: GpuTimer | null = null;
 
+  /**
+   * OIT pipeline registration release handle. Acquired lazily on the first
+   * {@link render} rather than in the constructor: the host (e.g. a `useMemo`) may
+   * construct passes that React then discards without ever committing/rendering them,
+   * and a constructor-time acquire on such an orphan would never be released. Only
+   * committed passes are rendered, so acquiring here keeps the registration count
+   * symmetric with {@link dispose}.
+   */
   private releaseOit?: () => void;
   private entryCache = new WeakMap<Renderable, RenderableEntry>();
 
@@ -363,19 +371,27 @@ export class OITRenderPass extends Pass {
       blendSrcAlpha: OneFactor,
       blendDstAlpha: OneMinusSrcAlphaFactor,
     });
-
-    // Register as an active OIT pipeline for this canvas.
-    this.releaseOit = getRenderingState(scene).getState().acquireOit();
   }
 
   setSize(width: number, height: number) {
     this.width = Math.max(1, Math.floor(width));
     this.height = Math.max(1, Math.floor(height));
+    // The aux targets borrow the pipeline's shared depth texture every frame in
+    // render(). Release that borrowed reference before resizing so setSize does
+    // not mutate the dimensions of a texture this pass does not own.
+    this.minDepthTarget.depthTexture = null;
+    this.accumTarget.depthTexture = null;
     this.minDepthTarget.setSize(this.width, this.height);
     this.accumTarget.setSize(this.width, this.height);
   }
 
   dispose() {
+    // Release the borrowed shared depth texture first. Three's
+    // deallocateRenderTarget disposes a target's depthTexture, so disposing the
+    // aux targets while they still reference the pipeline's depth texture would
+    // delete the live, still-in-use depth buffer (and dispose it twice).
+    this.minDepthTarget.depthTexture = null;
+    this.accumTarget.depthTexture = null;
     this.minDepthTarget.dispose();
     this.accumTarget.dispose();
     this.compositeMaterial.dispose();
@@ -678,6 +694,13 @@ export class OITRenderPass extends Pass {
 
   render(renderer: WebGLRenderer, buffer: WebGLRenderTarget) {
     const { scene, camera } = this;
+
+    // Register as an active OIT pipeline on first render (see releaseOit). Doing this
+    // here rather than in the constructor avoids leaking a registration for passes
+    // that were constructed but discarded by React before ever being rendered.
+    if (!this.releaseOit) {
+      this.releaseOit = getRenderingState(scene).getState().acquireOit();
+    }
 
     const oitList: RenderableEntry[] = [];
     const opaqueList: Renderable[] = [];

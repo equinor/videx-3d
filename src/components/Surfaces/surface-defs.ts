@@ -6,4 +6,5 @@ export const surfaceTextures = 'surfaceTextures';
 export type SurfaceGeometryResponse = PackedBufferGeometry;
 export type SurfaceTexturesResponse = {
   elevationImageBuffer: Float32Array;
+  normalImageBuffer?: Uint8Array;
 };

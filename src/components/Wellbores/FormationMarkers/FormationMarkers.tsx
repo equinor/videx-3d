@@ -96,6 +96,20 @@ export const FormationMarkers = forwardRef(
       return m;
     }, []);
 
+    // Dispose the library-created geometry when it changes or on unmount.
+    useEffect(() => {
+      return () => {
+        geometry.dispose();
+      };
+    }, [geometry]);
+
+    // Dispose the library-created material on unmount.
+    useEffect(() => {
+      return () => {
+        material.dispose();
+      };
+    }, [material]);
+
     useEffect(() => {
       if (generator && id) {
         generator(id, stratColumnId, fromMsl, baseRadius).then(response => {

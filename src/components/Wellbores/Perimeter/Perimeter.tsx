@@ -99,10 +99,7 @@ export const Perimeter = ({
           if (response) {
             const bufferGeometry = unpackBufferGeometry(response);
             bufferGeometry.computeBoundingBox();
-            setGeometry(prev => {
-              if (prev) prev.dispose();
-              return bufferGeometry;
-            });
+            setGeometry(bufferGeometry);
           }
         },
       );
@@ -156,6 +153,24 @@ export const Perimeter = ({
     matProps.current.time = clock.getElapsedTime();
     onPropsChange(matProps.current, material);
   });
+
+  // Dispose the library-created geometry when it is replaced or on unmount.
+  useEffect(() => {
+    return () => {
+      geometry?.dispose();
+    };
+  }, [geometry]);
+
+  // Dispose the library-created material on unmount (skip user-supplied material).
+  useEffect(() => {
+    return () => {
+      if (!customMaterial) {
+        const materials = Array.isArray(material) ? material : [material];
+        materials.forEach(m => m.dispose());
+      }
+    };
+  }, [material, customMaterial]);
+
   if (!geometry) return null;
 
   return (

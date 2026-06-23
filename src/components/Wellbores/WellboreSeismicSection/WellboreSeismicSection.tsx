@@ -139,12 +139,7 @@ export const WellboreSeismicSection = ({
       response => {
         if (response) {
           const bufferGeometry = unpackBufferGeometry(response.geometry);
-          setGeometry(prev => {
-            if (prev) {
-              prev.dispose();
-            }
-            return bufferGeometry;
-          });
+          setGeometry(bufferGeometry);
 
           const dataTexture = new DataTexture(
             response.data.array,
@@ -162,16 +157,25 @@ export const WellboreSeismicSection = ({
 
           setMinMax([response.data.min, response.data.max]);
 
-          setDataTexture(prev => {
-            if (prev) {
-              prev.dispose();
-            }
-            return dataTexture;
-          });
+          setDataTexture(dataTexture);
         }
       },
     );
   }, [generator, id, stepSize, minSize, extension, defaultExtensionAngle]);
+
+  // Dispose the library-created geometry when it is replaced or on unmount.
+  useEffect(() => {
+    return () => {
+      geometry?.dispose();
+    };
+  }, [geometry]);
+
+  // Dispose the generated data texture when it is replaced or on unmount.
+  useEffect(() => {
+    return () => {
+      dataTexture?.dispose();
+    };
+  }, [dataTexture]);
 
   const notEmitterLayers = useMemo(() => createLayers(LAYERS.NOT_EMITTER), []);
 

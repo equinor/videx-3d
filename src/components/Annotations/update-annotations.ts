@@ -1,7 +1,7 @@
 import { Clock, PerspectiveCamera, Vector3 } from 'three';
 
 import RBush from 'rbush';
-import { PI, Vec2, clamp, edgeOfRectangle, mixVec2 } from '../../sdk';
+import { PI, Vec2, Vec3, clamp, edgeOfRectangle } from '../../sdk';
 import { getLabelQuadrant, labelAngles, labelAnglesMap } from './helpers';
 import { getAnnotationPosition } from './index';
 import { AnnotationInstance } from './types';
@@ -18,8 +18,26 @@ let prevTime = 0;
 let _transform: string, _opacity: string, _zIndex: string;
 let x: number, y: number;
 
+// Reusable scratch buffers to avoid per-frame heap allocations in the hot path.
+const _rect: Vec2 = [0, 0];
+const _labelEdge: Vec2 = [0, 0];
+const _posScratch: Vec3 = [0, 0, 0];
+const _prevLabel: Vec2 = [0, 0];
+const _prevAnchor: Vec2 = [0, 0];
+
 const nearTree = new RBush(); // used for near annotations
 const distantTree = new RBush(); // used for distant annotations
+
+/**
+ * Activity flags updated by preprocessInstances each frame. Used by
+ * AnnotationsPass to skip the expensive post-process/overlay work when the
+ * scene is settled (camera static and no animations in progress).
+ */
+export const annotationsActivity = {
+  animating: false,
+  positionChanged: false,
+  deltaTime: 0,
+};
 
 function calculateLabelPosition(
   instance: AnnotationInstance,
@@ -32,54 +50,59 @@ function calculateLabelPosition(
 
   const angle = labelAngles[positionOptions[positionSlot || 0]];
 
-  const labelWidth = instance.state.labelWidht || 0;
+  const labelWidth = instance.state.labelWidth || 0;
   const labelHeight = instance.state.labelHeight || 0;
   const scaledWidth = labelWidth * scale;
   const scaledHeight = labelHeight * scale;
 
-  const labelEdge = edgeOfRectangle([scaledWidth, scaledHeight], angle);
+  _rect[0] = scaledWidth;
+  _rect[1] = scaledHeight;
+  edgeOfRectangle(_rect, angle, _labelEdge);
 
-  const direction: Vec2 = [Math.cos(angle), -Math.sin(angle)];
+  const dirX = Math.cos(angle);
+  const dirY = -Math.sin(angle);
   const offset = instance.layer.labelOffset! * scale;
 
-  const anchorPosition: Vec2 = [
-    (instance.state.screenPosition![0] * 0.5 + 0.5) * size[0] +
-      direction[0] * offset,
-    (-instance.state.screenPosition![1] * 0.5 + 0.5) * size[1] +
-      direction[1] * offset,
-  ];
+  const anchorX =
+    (instance.state.screenPosition![0] * 0.5 + 0.5) * size[0] + dirX * offset;
+  const anchorY =
+    (-instance.state.screenPosition![1] * 0.5 + 0.5) * size[1] + dirY * offset;
 
-  instance.state.anchorPosition = anchorPosition;
+  const anchorPosition =
+    instance.state.anchorPosition ?? (instance.state.anchorPosition = [0, 0]);
+  anchorPosition[0] = anchorX;
+  anchorPosition[1] = anchorY;
 
-  instance.state.scaledOffset = [
-    (labelWidth - scaledWidth) / 2,
-    (labelHeight - scaledHeight) / 2,
-  ];
+  const scaledOffset =
+    instance.state.scaledOffset ?? (instance.state.scaledOffset = [0, 0]);
+  scaledOffset[0] = (labelWidth - scaledWidth) / 2;
+  scaledOffset[1] = (labelHeight - scaledHeight) / 2;
 
-  instance.state.labelPosition = [
-    anchorPosition[0] - scaledWidth / 2 + labelEdge[0],
-    anchorPosition[1] - scaledHeight / 2 + labelEdge[1],
-  ];
+  const labelPosition =
+    instance.state.labelPosition ?? (instance.state.labelPosition = [0, 0]);
+  labelPosition[0] = anchorX - scaledWidth / 2 + _labelEdge[0];
+  labelPosition[1] = anchorY - scaledHeight / 2 + _labelEdge[1];
 }
 
 function setTransition(
   instance: AnnotationInstance,
   assignedSlot: number,
-  prevLabelPosition: Vec2 | null,
-  prevAnchorPosition: Vec2 | null,
+  hasPrevLabel: boolean,
+  hasPrevAnchor: boolean,
 ) {
   if (
     instance.state.visible &&
     (instance.state.positionSlot !== assignedSlot ||
       (instance.state.prevQuadrant &&
         instance.state.prevQuadrant !== instance.state.quadrant)) &&
-    prevLabelPosition
+    hasPrevLabel
   ) {
     instance.state.inTransition = true;
     instance.state.transitionTime = 0;
-    instance.state.prevLabelPosition = prevLabelPosition;
-    if (prevAnchorPosition)
-      instance.state.prevAnchorPosition = prevAnchorPosition;
+    // Allocate stable snapshot arrays only when a transition actually starts.
+    instance.state.prevLabelPosition = [_prevLabel[0], _prevLabel[1]];
+    if (hasPrevAnchor)
+      instance.state.prevAnchorPosition = [_prevAnchor[0], _prevAnchor[1]];
   }
 }
 
@@ -98,16 +121,26 @@ export function preprocessInstances(
   let nInViewSpace = 0;
   const inViewspace: AnnotationInstance[] = [];
   let positionChanged = false;
+  let animating = false;
   instances.forEach(instance => {
     const prevPosition = instance.state.position;
-    const worldPosition = getAnnotationPosition(instance.annotation);
+    const worldPosition = getAnnotationPosition(
+      instance.annotation,
+      _posScratch,
+    );
     if (
       worldPosition[0] !== prevPosition[0] ||
       worldPosition[1] !== prevPosition[1] ||
       worldPosition[2] !== prevPosition[2]
     ) {
       positionChanged = true;
-      instance.state.position = worldPosition;
+      // When no matrixWorld is set, getAnnotationPosition returns the
+      // annotation.position array directly; otherwise it writes into the
+      // shared scratch buffer, so copy into a stable per-instance array.
+      instance.state.position =
+        worldPosition === instance.annotation.position
+          ? worldPosition
+          : [worldPosition[0], worldPosition[1], worldPosition[2]];
     }
 
     instance.state.capped = false;
@@ -235,11 +268,28 @@ export function preprocessInstances(
       instance.state._visibility = 'hidden';
       instance.state._needsUpdate = true;
     }
+
+    // Track whether any instance is mid-animation so the pass can keep
+    // updating until everything settles.
+    if (
+      instance.state.inTransition ||
+      instance.state.boost ||
+      instance.state.kill ||
+      instance.state._needsUpdate ||
+      (instance.state.cooldown ?? 0) > 0 ||
+      (instance.state.health > 0 && instance.state.health < 1)
+    ) {
+      animating = true;
+    }
   });
 
   prevTime = clock.elapsedTime;
 
   inViewspace.sort((a, b) => b.rank - a.rank);
+
+  annotationsActivity.animating = animating;
+  annotationsActivity.positionChanged = positionChanged;
+  annotationsActivity.deltaTime = deltaTime;
 
   if (positionChanged) {
     dispatchEvent(new CustomEvent('annotations-position-changed'));
@@ -258,36 +308,33 @@ export function postProcessInstances(
   distantTree.clear();
 
   instances.forEach(instance => {
-    const prevLabelPosition: Vec2 | null = instance.state.labelPosition
-      ? [...instance.state.labelPosition]
-      : null;
-    const prevAnchorPosition: Vec2 | null = instance.state.anchorPosition
-      ? [...instance.state.anchorPosition]
-      : null;
+    // Capture the previous label/anchor positions into scratch buffers before
+    // calculateLabelPosition overwrites them in-place. setTransition allocates
+    // stable snapshots from these only when a transition actually starts.
+    const hasPrevLabel = !!instance.state.labelPosition;
+    if (hasPrevLabel) {
+      _prevLabel[0] = instance.state.labelPosition![0];
+      _prevLabel[1] = instance.state.labelPosition![1];
+    }
+    const hasPrevAnchor = !!instance.state.anchorPosition;
+    if (hasPrevAnchor) {
+      _prevAnchor[0] = instance.state.anchorPosition![0];
+      _prevAnchor[1] = instance.state.anchorPosition![1];
+    }
 
     const currentSlot = instance.state.positionSlot || 0;
     const element = instance.ref?.current;
 
-    if (element) {
-      instance.state.labelWidht = element.clientWidth;
-      instance.state.labelHeight = element.clientHeight;
-    }
-
     if (instance.state.kill || instance.state.occluded) {
       calculateLabelPosition(instance, currentSlot, size);
-      setTransition(
-        instance,
-        currentSlot,
-        prevLabelPosition,
-        prevAnchorPosition,
-      );
+      setTransition(instance, currentSlot, hasPrevLabel, hasPrevAnchor);
     } else if (!instance.state.cooldown) {
       let positionFound = false;
 
       const slots = currentSlot === 0 ? [0, 1] : [1, 0];
 
       // calculate label size
-      const labelWidth = instance.state.labelWidht;
+      const labelWidth = instance.state.labelWidth;
       const labelHeight = instance.state.labelHeight;
 
       const scaledWidth = labelWidth * instance.state.scaleFactor!;
@@ -312,12 +359,7 @@ export function postProcessInstances(
         if (!collisionTree.collides(rect)) {
           collisionTree.insert(rect);
           positionFound = true;
-          setTransition(
-            instance,
-            slots[i],
-            prevLabelPosition,
-            prevAnchorPosition,
-          );
+          setTransition(instance, slots[i], hasPrevLabel, hasPrevAnchor);
           instance.state.positionSlot = slots[i];
           break;
         }
@@ -343,13 +385,15 @@ export function postProcessInstances(
         Math.max(0.75, instance.state.scaleFactor!) * instance.state.health;
 
       if (instance.state.inTransition && instance.state.prevLabelPosition) {
-        [x, y] = mixVec2(
-          instance.state.prevLabelPosition,
-          instance.state.labelPosition!,
-          instance.state.transitionTime,
-        );
+        const t = instance.state.transitionTime!;
+        const t2 = 1 - t;
+        const prev = instance.state.prevLabelPosition;
+        const curr = instance.state.labelPosition!;
+        x = prev[0] * t2 + curr[0] * t;
+        y = prev[1] * t2 + curr[1] * t;
       } else {
-        [x, y] = instance.state.labelPosition!;
+        x = instance.state.labelPosition![0];
+        y = instance.state.labelPosition![1];
       }
 
       instance.state.labelX = x - instance.state.scaledOffset![0];
@@ -386,19 +430,18 @@ export function postProcessInstances(
 }
 
 export function updateInstanceDOMElements(instances: AnnotationInstance[]) {
-  instances
-    .filter(d => d.state._needsUpdate)
-    .forEach(instance => {
-      const element = instance.ref?.current;
-      if (element) {
-        if (instance.state._transform)
-          element.style.transform = instance.state._transform;
-        if (instance.state._opacity)
-          element.style.opacity = instance.state._opacity;
-        if (instance.state._zIndex)
-          element.style.zIndex = instance.state._zIndex;
-        if (instance.state._visibility)
-          element.style.visibility = instance.state._visibility;
-      }
-    });
+  for (let i = 0; i < instances.length; i++) {
+    const instance = instances[i];
+    if (!instance.state._needsUpdate) continue;
+    const element = instance.ref?.current;
+    if (element) {
+      if (instance.state._transform)
+        element.style.transform = instance.state._transform;
+      if (instance.state._opacity)
+        element.style.opacity = instance.state._opacity;
+      if (instance.state._zIndex) element.style.zIndex = instance.state._zIndex;
+      if (instance.state._visibility)
+        element.style.visibility = instance.state._visibility;
+    }
+  }
 }

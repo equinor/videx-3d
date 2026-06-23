@@ -2,7 +2,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { scaleOrdinal } from 'd3-scale';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { PerspectiveCamera, Vector3 } from 'three';
+import { PerspectiveCamera, Vector2, Vector3 } from 'three';
 import { useAnnotationsState } from '../../components/Annotations/annotations-state.ts';
 import { CameraTargetMarker } from '../../components/CameraTargetMarker/CameraTargetMarker.tsx';
 import { useHighlighter } from '../../components/Highlighter/highlight-state.ts';
@@ -115,6 +115,7 @@ type ExampleProps = {
   occlusionDepthThreshold: number;
   emitterDepthStamp: boolean;
   emitterDepthThreshold: number;
+  precomputeSurfaceNormals: boolean;
   colors: {
     wellbore: string;
     gridColorMajor?: string;
@@ -287,13 +288,19 @@ const Example = (args: ExampleProps) => {
           oitOpaque: { label: 'OIT → opaque', value: '-' },
           emissive: { label: 'Emissive', value: '-' },
           overlay: { label: 'Overlay', value: '-' },
+          opaqueT: { label: 'Opaque (t)', value: '-' },
+          emissiveT: { label: 'Emissive (t)', value: '-' },
+          minDepthT: { label: 'Min-depth (t)', value: '-' },
           tail: { label: 'Tail (WBOIT)', value: '-' },
-          front: { label: 'Front', value: '-' },
           composite: { label: 'Composite', value: '-' },
-          opaqueT: { label: 'Opaque', value: '-' },
+          front: { label: 'Front', value: '-' },
+          occlusionT: { label: 'Occlusion stamp', value: '-' },
+          emitterStampT: { label: 'Emitter stamp', value: '-' },
+          overlayT: { label: 'Overlay (t)', value: '-' },
           total: { label: 'OIT total', value: '-' },
+          resolution: { label: 'Render resolution', value: '-' },
           pipelines: { label: 'OIT pipelines', value: '-' },
-          entriesTotal: { label: 'Cached entries', value: '-' },
+          entriesTotal: { label: 'Entries created (total)', value: '-' },
           entriesFrame: { label: 'New entries/frame', value: '-' },
           texturesR: { label: 'GPU textures', value: '-' },
           geometriesR: { label: 'GPU geometries', value: '-' },
@@ -307,24 +314,44 @@ const Example = (args: ExampleProps) => {
   // Publish the latest stats/timings ~4 Hz (the GPU timings already lag a few
   // frames and are smoothed, so a high update rate would only add churn).
   const lastReadout = useRef(0);
-  useFrame(({ clock }) => {
+  const drawingBufferSize = useMemo(() => new Vector2(), []);
+  useFrame(({ clock, gl }) => {
     const t = clock.getElapsedTime();
     if (t - lastReadout.current < 0.25) return;
     lastReadout.current = t;
     if (!oitPass || !outputPanel || !outputPanel.has('oit')) return;
     const ms = (v: number) => (v < 0 ? '-' : `${v.toFixed(2)} ms`);
     const { stats, timings, resources } = oitPass;
+    // Effective render resolution (same formula the pipeline applies). The
+    // drawing-buffer size already includes the device pixel ratio; the
+    // supersample factor is multiplied on top.
+    gl.getDrawingBufferSize(drawingBufferSize);
+    const rw = Math.max(1, Math.floor(drawingBufferSize.x * supersample));
+    const rh = Math.max(1, Math.floor(drawingBufferSize.y * supersample));
+    const resolutionLabel = `${rw}\u00d7${rh} (${supersample.toFixed(2)}\u00d7)`;
+    // Exactly one OIT pipeline should be registered while this story is mounted.
+    // Anything else means a pass was acquired but never released (a registration
+    // leak) — flag it loudly so it can't slip by unnoticed.
+    const pipelines = resources.oitPipelines;
+    const pipelinesValue =
+      pipelines === 1 ? pipelines : `\u26a0 ${pipelines} (expected 1 — leak!)`;
     outputPanel.update('oit', args.profileTail ? ms(timings.total) : 'stats', {
       oit: stats.oit,
       oitOpaque: stats.oitOpaque,
       emissive: stats.emissive,
       overlay: stats.overlay,
-      tail: args.profileTail ? ms(timings.tail) : '(enable profiling)',
-      front: args.profileTail ? ms(timings.front) : '-',
+      opaqueT: args.profileTail ? ms(timings.opaque) : '(enable profiling)',
+      emissiveT: args.profileTail ? ms(timings.emissive) : '-',
+      minDepthT: args.profileTail ? ms(timings.minDepth) : '-',
+      tail: args.profileTail ? ms(timings.tail) : '-',
       composite: args.profileTail ? ms(timings.composite) : '-',
-      opaqueT: args.profileTail ? ms(timings.opaque) : '-',
+      front: args.profileTail ? ms(timings.front) : '-',
+      occlusionT: args.profileTail ? ms(timings.occlusion) : '-',
+      emitterStampT: args.profileTail ? ms(timings.emitterStamp) : '-',
+      overlayT: args.profileTail ? ms(timings.overlay) : '-',
       total: args.profileTail ? ms(timings.total) : '-',
-      pipelines: resources.oitPipelines,
+      resolution: resolutionLabel,
+      pipelines: pipelinesValue,
       entriesTotal: resources.entriesTotal,
       entriesFrame: resources.entriesThisFrame,
       texturesR: resources.textures,
@@ -579,6 +606,7 @@ const Example = (args: ExampleProps) => {
                   normalScale={[0.1, 0.1]}
                   doubleSide
                   renderOrder={999 - index}
+                  precomputeNormals={args.precomputeSurfaceNormals}
                   onPointerClick={(e: EventEmitterCallbackEvent) => {
                     if (e.position && e.keys.ctrlKey) {
                       dispatchEvent(
@@ -726,7 +754,7 @@ const commonArgs = {
   showCameraTarget: false,
   sizeMultiplier: 3,
   casingOpacity: 1,
-  aaMode: 'fxaa' as const,
+  aaMode: 'smaa' as const,
   msaaSamples: 0 as const,
   skipFrontPeeling: false,
   showDebugTargets: false,
@@ -735,6 +763,7 @@ const commonArgs = {
   occlusionDepthThreshold: 0.5,
   emitterDepthStamp: false,
   emitterDepthThreshold: 0.5,
+  precomputeSurfaceNormals: false,
 };
 
 export const Default: Story = {

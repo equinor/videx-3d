@@ -40,6 +40,7 @@ export type SurfaceMaterialParameters = ShaderMaterialParameters &
     contoursColor?: string | number | Color;
     elevationTexture?: Texture;
     normalTexture?: Texture;
+    usePrecomputedNormals?: boolean;
     debug?: boolean;
   };
 
@@ -50,6 +51,7 @@ const shader = {
     USE_CONTOURS: false,
     USE_UV: true,
     USE_DEBUG: false,
+    USE_PRECOMPUTED_NORMALS: false,
     GLYPHS_LENGTH: 1,
   },
   uniforms: UniformsUtils.merge([
@@ -215,6 +217,15 @@ export class SurfaceMaterial extends ShaderMaterial {
 
   set debug(value) {
     this.defines.USE_DEBUG = !!value;
+    this.needsUpdate = true;
+  }
+
+  get usePrecomputedNormals() {
+    return this.defines.USE_PRECOMPUTED_NORMALS || false;
+  }
+
+  set usePrecomputedNormals(value) {
+    this.defines.USE_PRECOMPUTED_NORMALS = !!value;
     this.needsUpdate = true;
   }
 

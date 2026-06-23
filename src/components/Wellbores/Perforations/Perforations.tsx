@@ -154,6 +154,23 @@ export const Perforations = forwardRef(
       };
     }, [material]);
 
+    // Dispose the library-created geometry when it changes or on unmount.
+    useEffect(() => {
+      return () => {
+        geometry.dispose();
+      };
+    }, [geometry]);
+
+    // Dispose the library-created material on unmount (skip user-supplied material).
+    useEffect(() => {
+      return () => {
+        if (!customMaterial) {
+          const materials = Array.isArray(material) ? material : [material];
+          materials.forEach(m => m.dispose());
+        }
+      };
+    }, [material, customMaterial]);
+
     const onPropsChange = useMemo(() => {
       return onMaterialPropertiesChange
         ? onMaterialPropertiesChange

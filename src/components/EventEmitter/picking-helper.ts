@@ -61,7 +61,17 @@ export class PickingHelper {
 
   private _listeners = new Map<number, Listener>();
   private _emitters = new Map<number, Emitter>();
-  private _currentObjectMap: Array<number> = [];
+
+  // Range-based object map rebuilt every pick. Each emitter occupies a
+  // contiguous range of flat ids [start, start + count) so we store a single
+  // entry per emitter instead of one per instance. The shader emits
+  // `start + gl_InstanceID`, so the per-pixel instance index is recovered as
+  // `flatId - start`. The arrays are reused across picks (only the active
+  // length changes) to avoid per-frame allocation.
+  private _mapStarts: number[] = [];
+  private _mapObjectIds: number[] = [];
+  private _objectMapLength = 0;
+  private _objectMapCount = 0;
 
   constructor(options = {}) {
     const { radius } = { ...defaults, ...options };
@@ -135,13 +145,14 @@ export class PickingHelper {
               emitter.listener = rootId;
             }
           }
-          const emitterInstanceId = this._currentObjectMap.length / 2;
-          this._currentObjectMap.push(object.id, 0);
-          for (let i = 1; i < emitter.instanceCount; i++) {
-            this._currentObjectMap.push(object.id, i);
-          }
-          // assign an emitter id to the object and activeate emitter layer
-          object.userData.__emitterID = emitterInstanceId + 1;
+          const baseId = this._objectMapCount;
+          const index = this._objectMapLength;
+          this._mapStarts[index] = baseId;
+          this._mapObjectIds[index] = object.id;
+          this._objectMapLength = index + 1;
+          this._objectMapCount = baseId + emitter.instanceCount;
+          // assign an emitter id to the object and activate emitter layer
+          object.userData.__emitterID = baseId + 1;
           object.layers.enable(LAYERS.EMITTER);
         } else {
           object.layers.disable(LAYERS.EMITTER);
@@ -156,7 +167,8 @@ export class PickingHelper {
   };
 
   updateListeners = () => {
-    this._currentObjectMap = [];
+    this._objectMapLength = 0;
+    this._objectMapCount = 0;
     this._listeners.forEach(listener => {
       this.traverseObject(
         listener.object,
@@ -217,14 +229,17 @@ export class PickingHelper {
     // touched. recursive=false: we don't need the camera's children.
     const pickCamera = this._camera;
     pickCamera.copy(camera, false);
-    pickCamera.matrixWorldAutoUpdate = false;
     pickCamera.layers.set(LAYERS.EMITTER);
 
     // set the view offset to represent just the patch we need to render under the
     // mouse (rebuilds the picking camera's projection only).
     pickCamera.setViewOffset(width, height, x, y, this._size, this._size);
 
-    const objectMap = this._currentObjectMap;
+    // snapshot the active object map extent for the deferred readback (the
+    // arrays are not mutated again until this pick resolves and releases the
+    // EventEmitter's busy guard)
+    const mapLength = this._objectMapLength;
+    const mapTotal = this._objectMapCount;
 
     // handle listeners with custom emitter material
     const postUpdates: (() => void)[] = [];
@@ -270,12 +285,36 @@ export class PickingHelper {
         this._size, // height
         this._buffer,
       )
-      .then(buffer => this.pick(buffer as Float32Array, objectMap, point));
+      .then(buffer =>
+        this.pick(buffer as Float32Array, mapLength, mapTotal, point),
+      );
+  }
+
+  /**
+   * Locate the emitter owning a flat id via binary search. Emitter ranges are
+   * contiguous and sorted by start, so the owner is the rightmost entry whose
+   * start is `<= flatId`.
+   */
+  private findEmitterIndex(flatId: number, mapLength: number): number {
+    let lo = 0;
+    let hi = mapLength - 1;
+    let found = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (this._mapStarts[mid] <= flatId) {
+        found = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return found;
   }
 
   private pick(
     buffer: Float32Array,
-    objectMap: Array<number>,
+    mapLength: number,
+    mapTotal: number,
     point: Vec2,
   ): PickResult {
     const match: {
@@ -293,7 +332,7 @@ export class PickingHelper {
     let oy = 0;
     let lsqr = 0;
     let emitterId = 0;
-    let mapIndex = 0;
+    let emitterIndex = 0;
     let objectId = 0;
     let instanceIndex = 0;
     let emitter: Emitter | undefined = undefined;
@@ -302,24 +341,26 @@ export class PickingHelper {
     for (let r = this._size - 1; r >= 0; r--) {
       for (let c = 0; c < this._size; c++, i += 4) {
         emitterId = buffer[i] - 1;
-        if (emitterId >= 0 && emitterId < objectMap.length - 1) {
-          mapIndex = emitterId * 2;
-          objectId = objectMap[mapIndex];
-          instanceIndex = objectMap[mapIndex + 1];
+        if (emitterId >= 0 && emitterId < mapTotal) {
+          emitterIndex = this.findEmitterIndex(emitterId, mapLength);
+          if (emitterIndex >= 0) {
+            objectId = this._mapObjectIds[emitterIndex];
+            instanceIndex = emitterId - this._mapStarts[emitterIndex];
 
-          emitter = this._emitters.get(objectId);
-          if (emitter) {
-            ox = c - this._radius;
-            oy = r - this._radius;
-            lsqr = ox ** 2 + oy ** 2 - emitter.threshold ** 2;
+            emitter = this._emitters.get(objectId);
+            if (emitter) {
+              ox = c - this._radius;
+              oy = r - this._radius;
+              lsqr = ox ** 2 + oy ** 2 - emitter.threshold ** 2;
 
-            if (!match.object || match.lsqr > lsqr) {
-              match.object = {
-                emitter,
-                index: instanceIndex,
-              };
-              match.lsqr = lsqr;
-              match.bufferIndex = i;
+              if (!match.object || match.lsqr > lsqr) {
+                match.object = {
+                  emitter,
+                  index: instanceIndex,
+                };
+                match.lsqr = lsqr;
+                match.bufferIndex = i;
+              }
             }
           }
         }

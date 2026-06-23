@@ -16,6 +16,7 @@ import { GlyphsContext } from '../../main';
 import { useRenderingState } from '../../rendering/rendering-state';
 import {
   createElevationTexture,
+  createPackedNormalTexture,
   SurfaceMeta,
   unpackBufferGeometry,
   Vec2,
@@ -58,6 +59,13 @@ export type SurfaceProps = CommonComponentProps &
     wireframe?: boolean;
     normalMap?: Texture;
     normalScale?: Vec2;
+    /**
+     * Precompute the surface normals into a compact texture instead of deriving
+     * them per-fragment from the elevation map. This skips the normal recompute
+     * the shader otherwise repeats across the order-independent transparency
+     * passes, at the cost of a little extra texture memory. Defaults to `false`.
+     */
+    precomputeNormals?: boolean;
     debug?: boolean;
   };
 
@@ -95,6 +103,7 @@ export const Surface = ({
   wireframe = false,
   normalMap,
   normalScale,
+  precomputeNormals = false,
   name,
   userData,
   receiveShadow,
@@ -123,6 +132,7 @@ export const Surface = ({
   const [elevationTexture, setElevationTexture] = useState<DataTexture | null>(
     null,
   );
+  const [normalTexture, setNormalTexture] = useState<DataTexture | null>(null);
 
   const notEmitterLayers = useMemo(() => createLayers(LAYERS.NOT_EMITTER), []);
 
@@ -283,9 +293,9 @@ export const Surface = ({
 
   useEffect(() => {
     if (texturesGenerator) {
-      texturesGenerator(meta.id).then(response => {
+      texturesGenerator(meta.id, precomputeNormals).then(response => {
         if (response) {
-          const { elevationImageBuffer } = response;
+          const { elevationImageBuffer, normalImageBuffer } = response;
 
           const elevationTexture = createElevationTexture(
             elevationImageBuffer,
@@ -293,14 +303,26 @@ export const Surface = ({
             meta.header.ny,
           );
 
-          setElevationTexture(prev => {
-            if (prev) prev.dispose();
-            return elevationTexture;
-          });
+          setElevationTexture(elevationTexture);
+
+          // Only upload the precomputed normals as a texture when the feature is
+          // enabled, so the memory cost is opt-in (the buffer is generated either
+          // way, off the main thread).
+          if (precomputeNormals && normalImageBuffer) {
+            setNormalTexture(
+              createPackedNormalTexture(
+                normalImageBuffer,
+                meta.header.nx,
+                meta.header.ny,
+              ),
+            );
+          } else {
+            setNormalTexture(null);
+          }
         }
       });
     }
-  }, [texturesGenerator, meta]);
+  }, [texturesGenerator, meta, precomputeNormals]);
 
   useEffect(() => {
     if (geometryGenerator) {
@@ -309,13 +331,36 @@ export const Surface = ({
         if (response) {
           bufferGeometry = unpackBufferGeometry(response);
         }
-        setGeometry(prev => {
-          if (prev) prev.dispose();
-          return bufferGeometry;
-        });
+        setGeometry(bufferGeometry);
       });
     }
   }, [geometryGenerator, meta.id, maxError]);
+
+  // Dispose the library-created geometry when it is replaced or on unmount.
+  useEffect(() => {
+    return () => {
+      geometry?.dispose();
+    };
+  }, [geometry]);
+
+  // Dispose the generated elevation texture when it is replaced or on unmount.
+  useEffect(() => {
+    return () => {
+      elevationTexture?.dispose();
+    };
+  }, [elevationTexture]);
+
+  // Apply (and dispose) the optional precomputed normal texture.
+  useEffect(() => {
+    material.usePrecomputedNormals = precomputeNormals && !!normalTexture;
+    material.uniforms.normalTexture.value = normalTexture;
+  }, [material, precomputeNormals, normalTexture]);
+
+  useEffect(() => {
+    return () => {
+      normalTexture?.dispose();
+    };
+  }, [normalTexture]);
 
   useEffect(() => {
     if (elevationTexture && material) {
@@ -335,6 +380,13 @@ export const Surface = ({
       material.dispose();
     };
   }, [material]);
+
+  // Dispose the library-created back-face mask material on unmount.
+  useEffect(() => {
+    return () => {
+      maskMaterial.dispose();
+    };
+  }, [maskMaterial]);
 
   if (debug && !glyphContext) return null;
 
