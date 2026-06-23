@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.0.0](https://github.com/equinor/videx-3d/compare/v1.1.1...v2.0.0) (2026-06-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **oit:** added an opt-in render pipeline for order independent transparency (oit) ([#218](https://github.com/equinor/videx-3d/issues/218))
+
+### Features
+
+* **oit:** added an opt-in render pipeline for order independent transparency (oit) ([#218](https://github.com/equinor/videx-3d/issues/218)) ([bf5bf13](https://github.com/equinor/videx-3d/commit/bf5bf1359de2a933b5dd02b442bab978e8c448df))
+
+
+### Bug Fixes
+
+* **npm:** bump markdown-it from 14.1.1 to 14.2.0 ([#217](https://github.com/equinor/videx-3d/issues/217)) ([2ad301c](https://github.com/equinor/videx-3d/commit/2ad301c5ce5ea91c48ee9147860c8c63f43ac347))
+* **npm:** bump vite from 7.3.2 to 7.3.5 ([#220](https://github.com/equinor/videx-3d/issues/220)) ([3ede700](https://github.com/equinor/videx-3d/commit/3ede700718875e376893929f97e0f7add4575ba3))
+* **performance:** optimizations pass ([#222](https://github.com/equinor/videx-3d/issues/222)) ([f5c1331](https://github.com/equinor/videx-3d/commit/f5c1331b31a0cb7e10b9264ca617bbcba73af66e))
+
 ## [1.1.1](https://github.com/equinor/videx-3d/compare/v1.1.0...v1.1.1) (2026-06-08)
 
 
