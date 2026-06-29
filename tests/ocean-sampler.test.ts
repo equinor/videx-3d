@@ -54,7 +54,7 @@ describe('createOceanSampler', () => {
     expect(Number.isFinite(h)).toBe(true);
     // The sum of |amplitudes| is the hard ceiling; ~3x Hs is plenty of margin.
     expect(Math.abs(h)).toBeLessThan(m.significantHeight * 3);
-  });
+    m.dispose();
 
   it('produces a flat surface when amplitude is zero', () => {
     const m = new OceanMaterial();
