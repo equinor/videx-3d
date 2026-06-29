@@ -273,7 +273,7 @@ const Example = (args: ExampleProps) => {
   // Large plane lying in the world X/Z plane (normal +Y) at sea level. The
   // animation is world-space, so this could equally be a set of tiled patches
   // without any visible seams.
-  // Ocean box volume (100 km across): a tessellated surface at y = 0 plus a
+  // Ocean box volume (10 km across): a tessellated surface at y = 0 plus a
   // water body and an irregular sea bed varying between 100 m and 200 m depth.
   // The animation is world-space, so the surface could equally be tiled patches
   // without any visible seams.
