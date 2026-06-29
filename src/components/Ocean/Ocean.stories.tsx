@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect, useMemo, useState } from 'react';
-import { BufferGeometry } from 'three';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { BufferGeometry, CircleGeometry, Group } from 'three';
 import { Ocean, useData } from '../../main';
 import {
   createOceanBox,
@@ -20,6 +20,9 @@ import { DataProviderDecorator } from '../../storybook/decorators/data-provider-
 import { get } from '../../storybook/dependencies/api';
 import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import storyArgs from '../../storybook/story-args.json';
+import { useOceanContact } from './ocean-contact';
+import { OceanContact } from './ocean-material';
+import { BuoyancyPoint, useBuoyancy } from './ocean-sampler';
 
 const utmZone = storyArgs.utmZone;
 const origin = storyArgs.origin as Vec2;
@@ -45,7 +48,13 @@ const transformWgs84 = (pos: Vec2): Vec2 => {
   return [coord.x, -coord.z];
 };
 
-type OceanVariant = 'plane' | 'box' | 'ellipse' | 'polygon' | 'surface';
+type OceanVariant =
+  | 'plane'
+  | 'circle'
+  | 'box'
+  | 'ellipse'
+  | 'polygon'
+  | 'surface';
 
 type Geometries = {
   surface: BufferGeometry;
@@ -57,6 +66,86 @@ function disposeGeometries(g: Geometries) {
   g.surface.dispose();
   g.body?.dispose();
   g.bed?.dispose();
+}
+
+/**
+ * A single box mesh that floats on the ocean. Rendered as a child of `<Ocean>`,
+ * it reads the live wave field via `useBuoyancy` (sampling its four bottom
+ * corners) so it heaves/pitches/rolls with the waves. The heading is fixed; only
+ * the vertical motion and tilt follow the surface. When `contactFoam` is set it
+ * also spreads foam where it meets the water.
+ */
+function FloatingBox({
+  position,
+  size,
+  color,
+  contactFoam,
+}: {
+  position: [number, number, number];
+  size: number;
+  color: string;
+  contactFoam: boolean;
+}) {
+  const ref = useRef<Group>(null);
+  const half = size / 2;
+  const points = useMemo<BuoyancyPoint[]>(
+    () => [
+      [half, half],
+      [half, -half],
+      [-half, half],
+      [-half, -half],
+    ],
+    [half],
+  );
+  useBuoyancy(ref, { points, mass: 0.1 });
+  useOceanContact(
+    useCallback((): OceanContact | null => {
+      const g = ref.current;
+      if (!g) return null;
+      return {
+        x: g.position.x,
+        z: g.position.z,
+        heading: 0,
+        halfLength: half,
+        halfWidth: half,
+        foamWidth: half,
+      };
+    }, [half]),
+    contactFoam,
+  );
+  return (
+    <group ref={ref} position={position}>
+      <mesh position={[0, half * 0.4, 0]}>
+        <boxGeometry args={[size, size * 0.8, size]} />
+        <meshStandardMaterial color={color} />
+      </mesh>
+    </group>
+  );
+}
+
+// A handful of boxes scattered near the origin. Kept small relative to the wave
+// length so they bob and tilt visibly (a large box spans many waves and barely
+// reacts). Crank up the wind / amplitude for livelier motion.
+const FLOATERS: {
+  position: [number, number, number];
+  size: number;
+  color: string;
+}[] = [
+    { position: [-600, 0, -300], size: 60, color: '#c0392b' },
+    { position: [450, 0, -550], size: 50, color: '#e67e22' },
+    { position: [100, 0, 350], size: 80, color: '#f1c40f' },
+    { position: [750, 0, 400], size: 45, color: '#2980b9' },
+    { position: [-350, 0, 650], size: 65, color: '#27ae60' },
+  ];
+
+function FloatingBoxes({ contactFoam }: { contactFoam: boolean }) {
+  return (
+    <>
+      {FLOATERS.map((f, i) => (
+        <FloatingBox key={i} {...f} contactFoam={contactFoam} />
+      ))}
+    </>
+  );
 }
 
 type ExampleProps = {
@@ -116,6 +205,10 @@ type ExampleProps = {
   surfaceVisible: boolean;
   bodyVisible: boolean;
   bedVisible: boolean;
+
+  // Buoyancy demo
+  floaters: boolean;
+  contactFoam: boolean;
 };
 
 const OceanDemo = (props: ExampleProps) => {
@@ -156,6 +249,15 @@ const OceanDemo = (props: ExampleProps) => {
           rotation: props.rotation,
         }),
       });
+    } else if (props.variant === 'circle') {
+      // Built-in Three.js circle, authored in the XY plane, flipped onto the
+      // world XZ plane so its normals point straight up.
+      const circle = new CircleGeometry(
+        props.size / 2,
+        props.perimeterSegments,
+      );
+      circle.rotateX(-Math.PI / 2);
+      apply({ surface: circle });
     } else if (props.variant === 'box') {
       apply(
         createOceanBox({
@@ -330,7 +432,9 @@ const OceanDemo = (props: ExampleProps) => {
       bedVisible={props.bedVisible}
       sunDirection={[-1, 2, -3]}
       sunShininess={100}
-    />
+    >
+      {props.floaters && <FloatingBoxes contactFoam={props.contactFoam} />}
+    </Ocean>
   );
 };
 
@@ -344,6 +448,8 @@ const range = (min: number, max: number, step: number) => ({
  * way:
  *
  * - **Plane** — a flat `createOceanPlane` surface (no body / sea bed).
+ * - **Circle** — a built-in Three.js `CircleGeometry` flipped onto the X/Z
+ *   plane (normals up) used directly as the ocean surface.
  * - **Box** — `createOceanBox`: surface + water-body walls + a procedural sea
  *   bed.
  * - **Ellipse** — `createOceanEllipseBox`: a round box (circle when width and
@@ -363,7 +469,7 @@ const meta = {
   component: OceanDemo,
   argTypes: {
     variant: {
-      options: ['plane', 'box', 'ellipse', 'polygon', 'surface'],
+      options: ['plane', 'circle', 'box', 'ellipse', 'polygon', 'surface'],
       control: { type: 'radio' },
       table: { category: 'Geometry' },
     },
@@ -476,6 +582,15 @@ const meta = {
       control: { type: 'boolean' },
       table: { category: 'Visibility' },
     },
+
+    floaters: {
+      control: { type: 'boolean' },
+      table: { category: 'Buoyancy' },
+    },
+    contactFoam: {
+      control: { type: 'boolean' },
+      table: { category: 'Buoyancy' },
+    },
   },
   decorators: [Canvas3dDecorator, DataProviderDecorator],
   parameters: {
@@ -543,11 +658,19 @@ const commonArgs = {
   surfaceVisible: true,
   bodyVisible: true,
   bedVisible: true,
+
+  floaters: false,
+  contactFoam: false,
 };
 
 /** Flat ocean surface plane (`createOceanPlane`). */
 export const Plane: Story = {
   args: { ...commonArgs, variant: 'plane' },
+};
+
+/** Built-in Three.js `CircleGeometry`, flipped onto X/Z, as the ocean surface. */
+export const Circle: Story = {
+  args: { ...commonArgs, variant: 'circle' },
 };
 
 /** Full ocean box with procedural sea bed (`createOceanBox`). */
@@ -576,4 +699,20 @@ export const Polygon: Story = {
  */
 export const Surface: Story = {
   args: { ...commonArgs, variant: 'surface' },
+};
+
+/**
+ * A few box meshes floating on the waves, demonstrating `useBuoyancy`. Each box
+ * is a child of `<Ocean>` and samples the live wave field at its corners to
+ * heave/pitch/roll with the surface. Raise the wind speed for a livelier sea.
+ */
+export const Buoyancy: Story = {
+  args: {
+    ...commonArgs,
+    variant: 'plane',
+    floaters: true,
+    contactFoam: true,
+    windSpeed: 20,
+    amplitude: 2,
+  },
 };

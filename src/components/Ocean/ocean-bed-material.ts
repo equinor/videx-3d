@@ -86,7 +86,7 @@ export class OceanBedMaterial extends ShaderMaterial {
     return this.uniforms.uSunDirection.value;
   }
   set sunDirection(value: Vector3) {
-    this.uniforms.uSunDirection.value.copy(value);
+    this.uniforms.uSunDirection.value.copy(value).normalize();
   }
 
   get sunColor(): Color {
