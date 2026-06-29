@@ -123,6 +123,21 @@ export function distanceVec3(v1: Vec3, v2: Vec3): number {
 }
 
 // Vec2
+
+/**
+ * Resolve a `number | Vec2 | undefined` parameter into a concrete `Vec2`. A
+ * single number is expanded to `[n, n]`; `undefined` falls back to
+ * `[fallback, fallback]`. Useful for options that accept either a uniform value
+ * or independent X/Z (or width/height) components.
+ */
+export function asVec2(
+  value: number | Vec2 | undefined,
+  fallback: number,
+): Vec2 {
+  if (value === undefined) return [fallback, fallback];
+  return typeof value === 'number' ? [value, value] : value;
+}
+
 export function getVec2(buffer: number[], id: number): Vec2 {
   return [buffer[id], buffer[id + 1]];
 }

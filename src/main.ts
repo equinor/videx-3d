@@ -9,6 +9,7 @@ export * from './components/Grids';
 export * from './components/Highlighter';
 export * from './components/Html';
 export * from './components/ObservableGroup/ObservableGroup';
+export * from './components/Ocean';
 export * from './components/SDFTest/SDFTest';
 export * from './components/Surfaces';
 export * from './components/Symbol';

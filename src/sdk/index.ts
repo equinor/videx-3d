@@ -8,13 +8,18 @@ export * from './data/helpers/well-helpers';
 export * from './data/Store';
 export * from './data/types';
 
+export * from './geometries/boundary-loops';
 export * from './geometries/curve/curve-3d';
 export * from './geometries/curve/tube-geometry';
 export * from './geometries/delatin';
 export * from './geometries/fence';
 export * from './geometries/geometry';
+export * from './geometries/geometry-attributes';
+export * from './geometries/grid-sampling';
+export * from './geometries/ocean-geometry';
 export * from './geometries/packing';
 export * from './geometries/planar-geometry';
+export * from './geometries/tessellation';
 export * from './geometries/triangulate-grid';
 export * from './geometries/triangulate-grid-delaunay';
 
