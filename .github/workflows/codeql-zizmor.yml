@@ -11,7 +11,7 @@ permissions: {}
 jobs:
   zizmor:
     name: Run zizmor
-    uses: equinor/ops-actions/.github/workflows/zizmor-codeql.yml@792c28d178029e9d2b5ae027e3acbe18da89e9ed # v9.38.2
+    uses: equinor/ops-actions/.github/workflows/zizmor-codeql.yml@8c9c3b94821100c8101be18193ad8136c24c6167 # v9.38.3
     with:
       config_file: .github/zizmor.yml
     permissions:
