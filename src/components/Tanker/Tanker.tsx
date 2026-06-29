@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Group } from 'three';
 import { useOceanContact } from '../Ocean/ocean-contact';
 import { OceanContact } from '../Ocean/ocean-material';
@@ -82,16 +82,33 @@ export const Tanker = ({
   contactFoamIntensity = 1,
   contactFoamEndFalloff = 0.6,
 }: TankerProps) => {
-  const hullGeometry = createTankerHull({
-    length,
-    width,
-    height,
-    waterline,
-    lengthSegments,
-    profileSegments,
-    bowLength,
-    bowRoundness,
-  });
+  const hullGeometry = useMemo(
+    () =>
+      createTankerHull({
+        length,
+        width,
+        height,
+        waterline,
+        lengthSegments,
+        profileSegments,
+        bowLength,
+        bowRoundness,
+      }),
+    [
+      length,
+      width,
+      height,
+      waterline,
+      lengthSegments,
+      profileSegments,
+      bowLength,
+      bowRoundness,
+    ],
+  );
+
+  // R3F does not dispose geometry passed via `geometry={...}`, so free the GPU
+  // buffers when the geometry is replaced (deps change) or the component unmounts.
+  useEffect(() => () => hullGeometry.dispose(), [hullGeometry]);
 
   const groupRef = useRef<Group>(null);
 

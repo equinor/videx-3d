@@ -28,7 +28,7 @@ export function createIndexedGeometry(
   );
   geometry.setAttribute('uv', new BufferAttribute(Float32Array.from(uvs), 2));
   const index =
-    positions.length / 3 < 65535
+    positions.length / 3 <= 65536
       ? Uint16Array.from(indices)
       : Uint32Array.from(indices);
   geometry.setIndex(new BufferAttribute(index, 1));

@@ -57,7 +57,7 @@ function subdivideOnce(geometry: BufferGeometry): void {
     new BufferAttribute(Float32Array.from(positions), 3),
   );
   const newIdx =
-    count < 65535 ? Uint16Array.from(newIndices) : Uint32Array.from(newIndices);
+    count <= 65536 ? Uint16Array.from(newIndices) : Uint32Array.from(newIndices);
   geometry.setIndex(new BufferAttribute(newIdx, 1));
   geometry.deleteAttribute('normal');
   geometry.deleteAttribute('uv');
@@ -183,7 +183,7 @@ function refineInteriorOnce(geometry: BufferGeometry): void {
     new BufferAttribute(Float32Array.from(positions), 3),
   );
   const newIdx =
-    count < 65535 ? Uint16Array.from(newIndices) : Uint32Array.from(newIndices);
+    count <= 65536 ? Uint16Array.from(newIndices) : Uint32Array.from(newIndices);
   geometry.setIndex(new BufferAttribute(newIdx, 1));
   geometry.deleteAttribute('normal');
   geometry.deleteAttribute('uv');

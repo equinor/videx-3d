@@ -984,7 +984,7 @@ function mergeWeldFlat(geometries: BufferGeometry[]): BufferGeometry {
   const count = positions.length / 3;
   geometry.setIndex(
     new BufferAttribute(
-      count < 65535 ? Uint16Array.from(indices) : Uint32Array.from(indices),
+      count <= 65536 ? Uint16Array.from(indices) : Uint32Array.from(indices),
       1,
     ),
   );
