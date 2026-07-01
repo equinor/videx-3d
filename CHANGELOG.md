@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.1.0](https://github.com/equinor/videx-3d/compare/v2.0.0...v2.1.0) (2026-07-01)
+
+
+### Features
+
+* **ocean:** an ocean component with supporting geometry builders ([#228](https://github.com/equinor/videx-3d/issues/228)) ([879a1ee](https://github.com/equinor/videx-3d/commit/879a1ee94bc5f64268f3b3822b10c5de296c1b66))
+
+
+### Bug Fixes
+
+* **npm:** bump js-yaml from 4.1.1 to 4.2.0 ([#224](https://github.com/equinor/videx-3d/issues/224)) ([5344c59](https://github.com/equinor/videx-3d/commit/5344c590a781227d64887e83a7a994c162a9a179))
+
 ## [2.0.0](https://github.com/equinor/videx-3d/compare/v1.1.1...v2.0.0) (2026-06-23)
 
 
