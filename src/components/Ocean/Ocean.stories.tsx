@@ -131,12 +131,12 @@ const FLOATERS: {
   size: number;
   color: string;
 }[] = [
-    { position: [-600, 0, -300], size: 60, color: '#c0392b' },
-    { position: [450, 0, -550], size: 50, color: '#e67e22' },
-    { position: [100, 0, 350], size: 80, color: '#f1c40f' },
-    { position: [750, 0, 400], size: 45, color: '#2980b9' },
-    { position: [-350, 0, 650], size: 65, color: '#27ae60' },
-  ];
+  { position: [-600, 0, -300], size: 60, color: '#c0392b' },
+  { position: [450, 0, -550], size: 50, color: '#e67e22' },
+  { position: [100, 0, 350], size: 80, color: '#f1c40f' },
+  { position: [750, 0, 400], size: 45, color: '#2980b9' },
+  { position: [-350, 0, 650], size: 65, color: '#27ae60' },
+];
 
 function FloatingBoxes({ contactFoam }: { contactFoam: boolean }) {
   return (

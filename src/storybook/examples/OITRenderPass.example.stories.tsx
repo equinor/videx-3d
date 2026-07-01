@@ -2,7 +2,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { scaleOrdinal } from 'd3-scale';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { PerspectiveCamera, Vector2, Vector3 } from 'three';
+import { Vector2, Vector3 } from 'three';
 import { useAnnotationsState } from '../../components/Annotations/annotations-state.ts';
 import { CameraTargetMarker } from '../../components/CameraTargetMarker/CameraTargetMarker.tsx';
 import { useHighlighter } from '../../components/Highlighter/highlight-state.ts';
@@ -13,6 +13,7 @@ import {
 } from '../../components/Html/OutputPanel/output-panel-state.ts';
 import { ObservableGroup } from '../../components/ObservableGroup/ObservableGroup.tsx';
 import { Surface } from '../../components/Surfaces/Surface.tsx';
+import { Tanker } from '../../components/Tanker/Tanker.tsx';
 import { UtmArea } from '../../components/UtmArea/UtmArea.tsx';
 import { UtmPosition } from '../../components/UtmArea/UtmPosition.tsx';
 import { BasicTrajectory } from '../../components/Wellbores/BasicTrajectory/BasicTrajectory.tsx';
@@ -37,19 +38,19 @@ import {
   createLayers,
   Distance,
   EventEmitterCallbackEvent,
-  FxaaPass,
   LAYERS,
+  Ocean,
   OITRenderPass,
   Pass,
   RenderPass,
   Shoes,
-  SMAAPass,
-  TAAPass,
+  SMAAQuality,
   WellboreBounds,
   WellboreFormationColumn,
 } from '../../main.ts';
 import { OutputPass } from '../../rendering/passes/OutputPass.ts';
 import { RenderingPipeline } from '../../rendering/RenderingPipeline.tsx';
+import { createOceanBox } from '../../sdk/geometries/ocean-geometry.ts';
 import { CRS } from '../../sdk/projection/crs.ts';
 import { Vec2, Vec3 } from '../../sdk/types/common.ts';
 import { AnnotationsDecoratorNoAutoUpdate } from '../decorators/annotations-decorator.tsx';
@@ -87,6 +88,10 @@ const stratColumnId = storyArgs.defaultStratColumn;
 
 const v = new Vector3();
 
+// Fixed ocean wind (matches the previous Ocean example defaults: 30°, 10 m/s).
+const oceanWindRad = (30 * Math.PI) / 180;
+const oceanWind: Vec2 = [Math.cos(oceanWindRad), Math.sin(oceanWindRad)];
+
 type ExampleProps = {
   selected?: string;
   useColorRamp: boolean;
@@ -106,8 +111,10 @@ type ExampleProps = {
   casingOpacity: number;
   sizeMultiplier: number;
   oitEnabled: boolean;
-  aaMode: 'none' | 'fxaa' | 'smaa' | 'ssaa' | 'ssaa15' | 'ssaa4' | 'taa';
+  aaMode: 'none' | 'smaa' | 'temporal' | 'temporal-smaa' | 'taa' | 'fxaa';
+  supersample: 1 | 1.5 | 2 | 4;
   msaaSamples: 0 | 2 | 4 | 8;
+  smaaQuality: SMAAQuality;
   skipFrontPeeling: boolean;
   showDebugTargets: boolean;
   profileTail: boolean;
@@ -116,6 +123,8 @@ type ExampleProps = {
   emitterDepthStamp: boolean;
   emitterDepthThreshold: number;
   precomputeSurfaceNormals: boolean;
+  showOcean: boolean;
+  showTanker: boolean;
   colors: {
     wellbore: string;
     gridColorMajor?: string;
@@ -197,47 +206,22 @@ const Example = (args: ExampleProps) => {
     };
   }, [highlighter]);
 
-  // SSAA is resolution-based (handled by the pipeline's supersample factor), so
-  // it adds no post-pass; the others each contribute one anti-aliasing pass.
-  const supersample =
-    args.aaMode === 'ssaa4'
-      ? 4
-      : args.aaMode === 'ssaa'
-        ? 2
-        : args.aaMode === 'ssaa15'
-          ? 1.5
-          : 1;
+  // Supersampling is resolution-based (handled by the pipeline's supersample
+  // factor) and independent of the AA mode, so it can stack on top of any of them.
+  const supersample = args.supersample;
 
   const passes = useMemo(() => {
     const base = args.oitEnabled
       ? new OITRenderPass(scene, camera)
       : new RenderPass(scene, camera);
     const annotations = new AnnotationsPass(camera, clock, pointer, 1000);
-    const list: Pass[] = [base];
-    switch (args.aaMode) {
-      case 'none':
-        // No anti-aliasing.
-        break;
-      case 'fxaa':
-        list.push(new FxaaPass());
-        break;
-      case 'smaa':
-        list.push(new SMAAPass());
-        break;
-      case 'taa':
-        list.push(new TAAPass(camera as PerspectiveCamera));
-        break;
-      case 'ssaa':
-      case 'ssaa15':
-      case 'ssaa4':
-        // No post-pass; the higher-resolution buffer is box-downsampled by the
-        // OutputPass blit.
-        break;
-    }
-    list.push(annotations, new OutputPass());
+    // All anti-aliasing is now built into OITRenderPass (temporal / SMAA), driven
+    // by the antialias sync effect below; supersampling is a separate, resolution-
+    // based control on the pipeline. So no AA post-pass is added here.
+    const list: Pass[] = [base, annotations, new OutputPass()];
 
     return list;
-  }, [scene, camera, clock, pointer, args.aaMode, args.oitEnabled]);
+  }, [scene, camera, clock, pointer, args.oitEnabled]);
 
   const oitPass = passes[0] instanceof OITRenderPass ? passes[0] : null;
 
@@ -245,6 +229,11 @@ const Example = (args: ExampleProps) => {
   useEffect(() => {
     if (oitPass) oitPass.debugTargets = args.showDebugTargets;
   }, [oitPass, args.showDebugTargets]);
+
+  // Tuning: SMAA quality preset (edge threshold + orthogonal search distance).
+  useEffect(() => {
+    if (oitPass) oitPass.smaaQuality = args.smaaQuality;
+  }, [oitPass, args.smaaQuality]);
 
   // Keep the WBOIT-only (skip front peeling) debug toggle in sync.
   useEffect(() => {
@@ -255,6 +244,27 @@ const Example = (args: ExampleProps) => {
   useEffect(() => {
     if (oitPass) oitPass.profile = args.profileTail;
   }, [oitPass, args.profileTail]);
+
+  // Drive the opaque-only MSAA samples on the OIT pass (resolved once) instead of
+  // multisampling the whole pipeline buffer.
+  useEffect(() => {
+    if (oitPass) oitPass.opaqueSamples = args.msaaSamples;
+  }, [oitPass, args.msaaSamples]);
+
+  // Enable OITRenderPass' built-in temporal supersampling when that AA mode is
+  // selected. It only accumulates while the camera is still and never reprojects,
+  // so it anti-aliases transparent/additive content without ghosting.
+  useEffect(() => {
+    if (!oitPass) return;
+    oitPass.antialias =
+      args.aaMode === 'temporal' ||
+        args.aaMode === 'smaa' ||
+        args.aaMode === 'temporal-smaa' ||
+        args.aaMode === 'taa' ||
+        args.aaMode === 'fxaa'
+        ? args.aaMode
+        : 'none';
+  }, [oitPass, args.aaMode]);
 
   // Keep the occlusion depth-stamp feature (transparent surfaces occluding labels)
   // in sync.
@@ -379,11 +389,32 @@ const Example = (args: ExampleProps) => {
   // when zoomed out (where trajectories drop to this line LOD).
   const trajectoryLayers = useMemo(() => createLayers(LAYERS.OIT_EXCLUDED), []);
 
+  // Ocean box volume (10 km across): a tessellated surface at y = 0 plus a
+  // water body and an irregular sea bed varying between 100 m and 200 m depth.
+  const oceanBox = useMemo(
+    () =>
+      createOceanBox({
+        size: 10000,
+        waterDepth: 120,
+        depthVariation: 20,
+      }),
+    [],
+  );
+
+  useEffect(
+    () => () => {
+      oceanBox.surface.dispose();
+      oceanBox.body.dispose();
+      oceanBox.bed.dispose();
+    },
+    [oceanBox],
+  );
+
   return (
     <>
       <RenderingPipeline
         passes={passes}
-        samples={args.msaaSamples}
+        samples={0}
         supersample={supersample}
       />
       <Highlighter />
@@ -621,13 +652,52 @@ const Example = (args: ExampleProps) => {
               </UtmPosition>
             ))}
         </ObservableGroup>
+
+        {args.showOcean && (
+          <Ocean
+            name="Ocean"
+            geometry={oceanBox.surface}
+            bodyGeometry={oceanBox.body}
+            bedGeometry={oceanBox.bed}
+            position={[0, 0, 0]}
+            windDirection={oceanWind}
+            windSpeed={10}
+            amplitude={1}
+            directionalSpread={1.2}
+            steepness={0.7}
+            displacement={false}
+            waterOpacity={0.7}
+            tonalVariation={0.4}
+            tonalScale={4}
+            tonalColor="#cfe3f2"
+            reflectionIntensity={1}
+            foamAmount={0.5}
+            deepColor="#0a2540"
+            shallowColor="#1b6f8a"
+            seaBedOpacity={0.9}
+            wireframe={false}
+            renderOrder={1}
+            sunDirection={[-1, 2, -3]}
+            sunShininess={100}
+            bodyShimmer={0.75}
+          >
+            {args.showTanker && (
+              <Tanker
+                contactFoam
+                buoyancy={true}
+                weight={120000}
+                details="high"
+              />
+            )}
+          </Ocean>
+        )}
       </UtmArea>
     </>
   );
 };
 
 const meta = {
-  title: 'examples/OITRenderPass',
+  title: 'examples/OIT Rendering Pipeline',
   loaders: [
     async () => {
       useOutputPanelState.setState({ groups: {} });
@@ -635,8 +705,58 @@ const meta = {
   ],
   component: Example,
   argTypes: {
-    oitEnabled: {
-      control: { type: 'boolean' },
+    // --- Scene ---
+    selected: {
+      table: { category: 'Scene' },
+    },
+    showCameraTarget: {
+      table: { category: 'Scene' },
+    },
+    sizeMultiplier: {
+      table: { category: 'Scene' },
+    },
+
+    // --- Wellbores ---
+    showShoes: {
+      table: { category: 'Wellbores' },
+    },
+    showDepthMarkers: {
+      table: { category: 'Wellbores' },
+    },
+    depthMarkerInterval: {
+      table: { category: 'Wellbores' },
+    },
+    showCasingAndCompletion: {
+      table: { category: 'Wellbores' },
+    },
+    casingOpacity: {
+      control: {
+        type: 'range',
+        min: 0,
+        max: 1,
+        step: 0.01,
+      },
+      table: { category: 'Wellbores' },
+    },
+    showPerforations: {
+      table: { category: 'Wellbores' },
+    },
+    showFormationMarkers: {
+      table: { category: 'Wellbores' },
+    },
+    showFormationColumns: {
+      table: { category: 'Wellbores' },
+    },
+    showSeismic: {
+      table: { category: 'Wellbores' },
+    },
+
+    // --- Surfaces ---
+    useColorRamp: {
+      table: { category: 'Surfaces' },
+    },
+    reverseRamp: {
+      table: { category: 'Surfaces' },
     },
     colorRamp: {
       options: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
@@ -655,6 +775,7 @@ const meta = {
           '9': 'gray',
         },
       },
+      table: { category: 'Surfaces' },
     },
     opacity: {
       control: {
@@ -663,31 +784,55 @@ const meta = {
         max: 1,
         step: 0.01,
       },
+      table: { category: 'Surfaces' },
     },
-    casingOpacity: {
-      control: {
-        type: 'range',
-        min: 0,
-        max: 1,
-        step: 0.01,
-      },
+    wireframe: {
+      table: { category: 'Surfaces' },
     },
+    precomputeSurfaceNormals: {
+      table: { category: 'Surfaces' },
+    },
+
+    // --- Rendering (OIT) ---
+    oitEnabled: {
+      control: { type: 'boolean' },
+      table: { category: 'Rendering (OIT)' },
+    },
+
+    // --- Anti-aliasing ---
     aaMode: {
-      options: ['none', 'fxaa', 'smaa', 'ssaa15', 'ssaa', 'ssaa4', 'taa'],
+      options: ['none', 'temporal', 'smaa', 'temporal-smaa', 'taa', 'fxaa'],
       control: {
         type: 'select',
         labels: {
           none: 'None (no AA)',
-          fxaa: 'FXAA (post, fast)',
-          smaa: 'SMAA (post, sharper edges)',
-          ssaa15: 'SSAA (1.5× supersample)',
-          ssaa: 'SSAA (2× supersample)',
-          ssaa4: 'SSAA (4× supersample)',
-          taa: 'TAA (jittered accumulation)',
+          temporal: 'Temporal SS (still-frame)',
+          smaa: 'SMAA (spatial edges)',
+          'temporal-smaa': 'Temporal SS + SMAA',
+          taa: 'TAA (reprojected, motion)',
+          fxaa: 'FXAA (fast spatial)',
         },
       },
+      table: { category: 'Anti-aliasing' },
+    },
+    supersample: {
+      options: [0.25, 0.5, 1, 1.5, 2, 4],
+      control: {
+        type: 'select',
+        labels: {
+          0.25: 'SSAA 0.25×',
+          0.5: 'SSAA 0.5×',
+          1: 'Off',
+          1.5: 'SSAA 1.5×',
+          2: 'SSAA 2×',
+          4: 'SSAA 4×',
+        },
+      },
+      table: { category: 'Anti-aliasing' },
     },
     msaaSamples: {
+      description:
+        'MSAA on the OIT opaque target (opaqueSamples). Not recommended with the OIT pipeline: the auxiliary OIT buffers are single-sample, so opaque edges are matted against the background before the transparent surfaces composite, leaving a background-coloured fringe over surfaces. Prefer temporal / SMAA (aaMode) or supersampling. Kept for opaque-only close-ups.',
       options: [0, 2, 4, 8],
       control: {
         type: 'select',
@@ -698,28 +843,62 @@ const meta = {
           8: 'MSAA 8×',
         },
       },
+      table: { category: 'Anti-aliasing' },
     },
+    smaaQuality: {
+      options: ['low', 'medium', 'high', 'ultra'],
+      control: {
+        type: 'select',
+        labels: {
+          low: 'Low (threshold 0.15 / 4 steps)',
+          medium: 'Medium (0.10 / 8)',
+          high: 'High (0.10 / 16)',
+          ultra: 'Ultra (0.05 / 32)',
+        },
+      },
+      table: { category: 'Anti-aliasing' },
+    },
+
+    // --- Advanced (Diagnostics) ---
     skipFrontPeeling: {
       control: { type: 'boolean' },
+      table: { category: 'Advanced (Diagnostics)' },
     },
     showDebugTargets: {
       control: { type: 'boolean' },
+      table: { category: 'Advanced (Diagnostics)' },
     },
     profileTail: {
       control: { type: 'boolean' },
+      table: { category: 'Advanced (Diagnostics)' },
     },
     occlusionDepthStamp: {
       control: { type: 'boolean' },
+      table: { category: 'Advanced (Diagnostics)' },
     },
     occlusionDepthThreshold: {
       control: { type: 'range', min: 0, max: 1, step: 0.01 },
+      table: { category: 'Advanced (Diagnostics)' },
     },
     emitterDepthStamp: {
       control: { type: 'boolean' },
+      table: { category: 'Advanced (Diagnostics)' },
     },
     emitterDepthThreshold: {
       control: { type: 'range', min: 0, max: 1, step: 0.01 },
+      table: { category: 'Advanced (Diagnostics)' },
     },
+
+    // --- Ocean ---
+    showOcean: {
+      control: { type: 'boolean' },
+      table: { category: 'Ocean' },
+    },
+    showTanker: {
+      control: { type: 'boolean' },
+      table: { category: 'Ocean' },
+    },
+
     colors: { control: { disable: true } },
   },
   decorators: [
@@ -754,8 +933,10 @@ const commonArgs = {
   showCameraTarget: false,
   sizeMultiplier: 3,
   casingOpacity: 1,
-  aaMode: 'smaa' as const,
+  aaMode: 'taa' as const,
+  supersample: 1 as const,
   msaaSamples: 0 as const,
+  smaaQuality: 'high' as const,
   skipFrontPeeling: false,
   showDebugTargets: false,
   profileTail: false,
@@ -763,7 +944,9 @@ const commonArgs = {
   occlusionDepthThreshold: 0.5,
   emitterDepthStamp: false,
   emitterDepthThreshold: 0.5,
-  precomputeSurfaceNormals: false,
+  precomputeSurfaceNormals: true,
+  showOcean: false,
+  showTanker: false,
 };
 
 export const Default: Story = {
