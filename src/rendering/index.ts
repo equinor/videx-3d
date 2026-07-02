@@ -6,3 +6,4 @@ export * from './Pass';
 export * from './passes';
 export * from './rendering-state';
 export * from './RenderingPipeline';
+export type { SMAAQuality } from './smaa-resolver';

@@ -174,8 +174,8 @@ RenderingPipeline
   the auxiliary OIT targets can share the resolved depth texture.
 - **`OITRenderPass`** (`src/rendering/passes/OITRenderPass.ts`) — constructed with
   `(scene, camera)`. Resolves the 3D scene (opaque + transparent) into the buffer.
-- **AA pass** (optional) — `FxaaPass` / `SMAAPass` / `TAAPass`, or supersampling via the
-  pipeline's `supersample` prop (see §8).
+- **Anti-aliasing** — built into `OITRenderPass` via its `antialias` property
+  (`'none' | 'temporal' | 'smaa' | 'temporal-smaa' | 'taa' | 'fxaa'`), or supersampling via the pipeline's `supersample` prop (see §8).
 - **`AnnotationsPass`** — composites 2D labels using the buffer's depth texture for
   occlusion.
 - **`OutputPass`** — tone-maps and blits the FP16 buffer to the screen.
@@ -322,19 +322,21 @@ qualifying fragment.
 
 ## 8. Anti-aliasing
 
-AA runs as passes **after** `OITRenderPass`, before `OutputPass`:
+AA is built into `OITRenderPass` via its `antialias` property:
 
-- **FXAA** — cheap, but weak here: the pipeline buffer is linear FP16 (`NoToneMapping`
-  during dev), and FXAA's contrast thresholds expect gamma-encoded sRGB, so many edges
-  fall under threshold.
-- **SMAA** — good edge AA. Must clear its edge/weight targets every frame (both
-  sub-passes use `discard`), or stale results leak when the camera moves.
-- **TAA** — the only technique that AAs 1-pixel lines well; jittered Halton accumulation
-  with a freeze branch once converged. Sensitive to anything that calls
-  `camera.updateProjectionMatrix()` between frames (GPU picking did — fixed with a
-  dedicated picking camera).
-- **MSAA via `RenderingPipeline samples`** and **supersampling via `supersample`** are
-  also available; MSAA on the FP16 buffer costs several full-screen resolves/frame.
+- **`'temporal'`** — temporal supersampling: sub-pixel camera jitter accumulated into a
+  running average while the camera is still (the only mode that AAs 1-pixel lines well).
+  No reprojection, so nothing ghosts; the moving frame is shown as-is. Motion is detected
+  from the view-projection delta, which resets the accumulation.
+- **`'smaa'`** — subpixel morphological AA every frame (quality via `smaaQuality`).
+  Reuses the three-stdlib SMAA shaders/LUTs through an internal resolver; clears its
+  edge/weight targets every frame (both sub-passes use `discard`) and sRGB-encodes the
+  linear FP16 buffer for edge detection so its contrast thresholds behave correctly.
+- **`'temporal-smaa'`** — both, mutually exclusive per frame: temporal while still, SMAA
+  while moving.
+- **MSAA via `OITRenderPass.opaqueSamples`** (keep the pipeline `samples` at `0` when
+  using OIT) and **supersampling via `supersample`** are also available; the pipeline
+  `samples` prop applies MSAA only to a plain opaque `RenderPass` pipeline.
 
 Note: **shading aliasing** (thin view-dependent rim/specular terms on curved geometry,
 e.g. the tube trajectory's depth-shade rim) is sub-pixel and cannot be fixed by edge-AA

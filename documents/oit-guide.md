@@ -74,21 +74,20 @@ share the resolved depth texture. A typical canvas config:
 
 ### Adding annotations and anti-aliasing
 
-A fuller pipeline inserts an optional anti-aliasing pass after the OIT pass and an
-`AnnotationsPass` before the `OutputPass`:
+A fuller pipeline adds an `AnnotationsPass` before the `OutputPass`. Anti-aliasing is
+built into `OITRenderPass` via its `antialias` property (see §6), so no separate AA
+pass is needed:
 
 ```tsx
 const passes = useMemo<Pass[]>(() => {
-  const list: Pass[] = [new OITRenderPass(scene, camera)];
+  const oit = new OITRenderPass(scene, camera);
+  oit.antialias = 'taa'; // default; also 'temporal' | 'smaa' | 'temporal-smaa' | 'fxaa' — see §6
 
-  // optional anti-aliasing (pick one) — see §7
-  list.push(new FxaaPass());          // or new SMAAPass() / new TAAPass(camera)
-
-  list.push(
+  return [
+    oit,
     new AnnotationsPass(camera, clock, pointer, 1000),
     new OutputPass(),
-  );
-  return list;
+  ];
 }, [scene, camera, clock, pointer]);
 ```
 
@@ -321,19 +320,36 @@ by Three.js the first time a pass actually renders them.
 OIT renders into an FP16 (linear) buffer, which interacts with AA in a few
 non-obvious ways.
 
-### MSAA (`RenderingPipeline samples`)
+### MSAA is not recommended with OIT
 
-Set `samples` on the pipeline to multisample the main buffer:
+Leave **both** MSAA knobs off with OIT — the pipeline's `samples` prop **and** the
+`OITRenderPass.opaqueSamples` field. Use the built-in `antialias` modes below
+(temporal / SMAA) or `supersample` instead.
+
+Why MSAA cannot be made clean here: the OIT auxiliary buffers (min-depth, tail
+accumulation) must be single-sample, because WebGL2 cannot sample a multisample
+texture. So the transparent **tail** is composited as a single-sample fullscreen
+pass over the multisample opaque edges. During the opaque pass every opaque edge is
+matted against the cleared background *before* the transparent surfaces exist, and
+the single-sample composite then cannot reconstruct per-sample coverage — so a
+background-coloured fringe survives along opaque and thin-line edges over
+transparent surfaces. This is structural: the no-AA single-sample image is clean, so
+the fringe is introduced by MSAA. Deferring the background does not help (the
+background enters the edge with the same weight no matter when it is added); only
+supersampling the whole composite (temporal or SSAA) removes it.
 
 ```tsx
-<RenderingPipeline passes={passes} samples={4} />
+// Recommended: no MSAA. 'taa' is the default; 'temporal' / 'temporal-smaa' also work.
+const oitPass = new OITRenderPass(scene, camera);
+oitPass.antialias = 'taa';
+
+<RenderingPipeline passes={passes} samples={0} />;
 ```
 
-This anti-aliases the opaque geometry, the overlay, and the depth-peeled **front**
-transparent layer. The WBOIT **tail** and the auxiliary targets are structurally
-single-sample (WebGL2 cannot sample a multisample texture). MSAA on the FP16 buffer
-involves several full-screen resolves per frame, so it is noticeably more expensive
-than MSAA on a plain opaque pipeline — `samples={4}` is usually a good balance.
+`opaqueSamples` remains available for the narrow case of an **opaque-only** close-up
+(no transparent surfaces composited in front — e.g. a casing detail view), where the
+fringe cannot occur. The pipeline `samples` prop remains valid for a plain opaque
+`RenderPass` pipeline with no OIT.
 
 ### Supersampling (`RenderingPipeline supersample`)
 
@@ -345,20 +361,66 @@ Renders the whole pipeline at a higher resolution and box-downsamples on output.
 This is the most uniform AA (it also smooths shading aliasing) but costs ~`N²×`
 fill/memory.
 
-### Post-process AA passes
+### Built-in AA (`OITRenderPass.antialias`)
 
-Insert one after the `OITRenderPass`:
+`OITRenderPass` anti-aliases the composited result itself, so no separate AA pass is
+needed. Set `antialias` to one of (the default is **`'taa'`**):
 
-- **`FxaaPass`** — cheapest, but weak when fed linear color. FXAA's contrast
-  thresholds are tuned for gamma-encoded sRGB, so against the linear FP16 buffer many
-  edges fall below threshold. Acceptable but expect modest results.
-- **`SMAAPass`** — good general edge AA.
-- **`TAAPass`** — the only post-pass that anti-aliases thin 1px lines well; converges
-  over several still frames.
+- **`'taa'`** (default) — reprojected temporal anti-aliasing. Like `'temporal'` the
+  camera is sub-pixel jittered, but the history is **reprojected every frame** using
+  the depth of the nearest visible surface (opaque hardware depth refined by the OIT
+  front-layer depth), so anti-aliasing is retained *during* camera motion — it
+  anti-aliases both still and moving frames. The scene is effectively static (only the
+  camera moves), so no per-object velocity buffer is needed. Ghosting from content the
+  reprojection cannot follow (additive highlights, animated objects, disocclusions) is
+  bounded by clamping the history into the current frame's local colour range; the
+  anti-ghost knobs (`restClampStrength`, `restBoxGamma`, `restNeighbourhoodRadius`) are
+  exposed on `oitPass.taaResolver` for tuning. Prefer `'temporal'` instead only if you
+  need guaranteed ghost-free stills and don't mind losing motion AA.
+- **`'temporal'`** — temporal supersampling: the camera is sub-pixel jittered and the
+  frame is accumulated into a running average **while the camera is still**, converging
+  to a genuinely supersampled image (it is the only mode that anti-aliases thin 1px
+  lines well). No reprojection, so nothing ghosts; the moving frame is shown as-is.
+- **`'smaa'`** — subpixel morphological AA every frame (quality via `smaaQuality`:
+  `'low' | 'medium' | 'high' | 'ultra'`). Anti-aliases moving frames too, but (like all
+  morphological techniques) cannot recover sub-pixel 1px lines. It sRGB-encodes the
+  linear FP16 buffer for edge detection so its contrast thresholds behave correctly.
+- **`'temporal-smaa'`** — both, mutually exclusive per frame: temporal while still
+  (crisp, recovers 1px lines), SMAA while moving. SMAA never softens the converged
+  still image and only costs GPU time during motion.
+- **`'fxaa'`** — fast approximate AA: a single cheap spatial post pass every frame,
+  running in the pipeline's linear FP16 space. Cheaper and softer than `'smaa'`, with
+  no OIT or temporal coupling. Like all spatial techniques it cannot recover sub-pixel
+  features (thin 1px lines/tubes that fall between samples). Also available standalone
+  as `FXAAPass` for non-OIT pipelines (see below).
+
+Do **not** pair the temporal modes (`'temporal'` / `'temporal-smaa'` / `'taa'`) with
+MSAA (`opaqueSamples` or the pipeline `samples` prop) when transparent surfaces are
+present — MSAA leaves a background-coloured fringe over transparent surfaces (see
+“MSAA is not recommended with OIT” above), and it is wasteful to rasterise MSAA on
+top of temporal supersampling that already anti-aliases the same edges.
+
+### Standalone FXAA (non-OIT pipelines)
+
+FXAA is also exposed as a standalone `FXAAPass`. Unlike the OIT-internal `antialias`
+modes it does **not** require order-independent transparency, so it works after a
+plain `RenderPass` too. Insert it between the base pass and the `OutputPass`:
+
+```tsx
+import { FXAAPass, OutputPass, RenderPass } from '@equinor/videx-3d';
+
+const passes = useMemo<Pass[]>(
+  () => [new RenderPass(scene, camera), new FXAAPass(), new OutputPass()],
+  [scene, camera],
+);
+```
+
+Inside an OIT pipeline, prefer `OITRenderPass.antialias = 'fxaa'` over adding a
+separate `FXAAPass` — it's the same resolver wired into the pass.
 
 ### Shading aliasing is a separate problem
 
-Edge-AA passes (FXAA/SMAA/TAA) fundamentally **cannot** fix *shading* aliasing —
+Edge-AA modes (SMAA/temporal) fundamentally **cannot** fix *shading* aliasing —
 sub-pixel shimmer from sharp view/normal-dependent terms (specular highlights on
 curved low-roughness metal, rim/Fresnel ramps). Only supersampling mitigates it via
 brute force; the proper fix is analytic widening in the shader (clamp the ramp to
@@ -368,7 +430,47 @@ sharp view-dependent term, apply the same technique.
 
 ---
 
-## 7. Gotchas checklist
+## 7. Tone mapping and color
+
+The pipeline renders the scene into a **linear, high-dynamic-range (FP16) buffer**
+and applies tone mapping **once, at the very end**, in `OutputPass`. `OutputPass`
+blits that buffer to the screen with a `MeshBasicMaterial` that has
+`toneMapped: true`, so it applies `renderer.toneMapping` /
+`renderer.toneMappingExposure` and the sRGB output encoding in a single step.
+
+This is deliberate: OIT accumulation and additive/emissive glow must composite in
+**linear** light, and tone mapping is non-linear
+(`tonemap(a + b) ≠ tonemap(a) + tonemap(b)`), so it has to run **after** everything
+is composited — not per material.
+
+Two consequences follow.
+
+**1. Scene materials must render linear (`toneMapped: false`).** A material left at
+the Three.js default `toneMapped: true` would be tone-mapped in its own fragment
+shader *and* again by `OutputPass` — a double tone-map (dark, desaturated). The OIT
+variants set `toneMapped = false` automatically, but the **base** material (which
+still renders in the opaque pass for fully-opaque objects) and any plain, non-OIT
+material do not. If you author or add stock materials to an OIT pipeline, set
+`toneMapped = false` on them.
+
+**2. The per-material `toneMapped = false` opt-out is not honored as an opt-out.**
+In stock Three.js, `toneMapped = false` means "leave this material's color alone."
+Here it cannot: `OutputPass` tone-maps the whole buffer, so a material can neither
+exclude itself from tone mapping nor preserve an authored, display-referred color.
+This is the same limitation as Three.js's own post-processing `OutputPass` —
+deferring tone mapping to a pass trades per-material granularity for HDR-correct
+compositing. If you need content to bypass tone mapping (UI, gizmos, authored-sRGB
+markers), composite it **on top of** `OutputPass` yourself (a separate overlay drawn
+after the pipeline), rather than relying on `toneMapped = false`.
+
+> Under the default storybook/dev canvas (`renderer.toneMapping = NoToneMapping`)
+> none of this is visible: both the in-shader and the `OutputPass` tone-mapping steps
+> are inert, and only the sRGB output encoding runs (once). The double-tone-map and
+> the lost opt-out only appear once the host sets a real operator (ACES, AgX, …).
+
+---
+
+## 8. Gotchas checklist
 
 - **Unwired transparent material → treated as opaque.** Any transparent material
   that isn't OIT-capable is drawn in the opaque pass and will occlude OIT geometry
@@ -383,15 +485,22 @@ sharp view-dependent term, apply the same technique.
   textures/program changes use a uniform-driven `ShaderMaterial`.
 - **Don't nest opaque children under an OIT mesh** (§4) — they vanish in the opaque
   pass. Keep them as siblings.
-- **`samples={0}` on the pipeline for depth sharing.** The OIT auxiliary passes
-  share the buffer's resolved single-sample depth texture. (Setting `samples>0` is
-  supported for MSAA, but the buffer must still resolve depth each frame — the
-  library handles this; just don't try to multisample the aux targets.)
+- **`samples={0}` on the pipeline for OIT, and avoid `opaqueSamples` too.** The OIT
+  auxiliary passes share the buffer's resolved single-sample depth texture and the
+  result is composited single-sample, so MSAA (either the pipeline `samples` prop or
+  `opaqueSamples`) adds cost and leaves a background-coloured fringe over transparent
+  surfaces instead of anti-aliasing them (§6). Use `antialias` (temporal / SMAA) or
+  `supersample` instead. (The pipeline `samples` prop is for plain opaque
+  `RenderPass` pipelines with no OIT.)
 - **Shading aliasing needs analytic widening, not an AA pass** (§6).
+- **Tone mapping is applied once at `OutputPass`, for the whole buffer** (§7). Scene
+  materials must render linear (`toneMapped = false`) or they double-tone-map, and
+  the per-material `toneMapped = false` opt-out is **not** honored — composite
+  display-referred content on top of the pipeline instead.
 
 ---
 
-## 8. API reference
+## 9. API reference
 
 - `OITRenderPass` — [src/rendering/passes/OITRenderPass.ts](../src/rendering/passes/OITRenderPass.ts)
 - `RenderingPipeline` — [src/rendering/RenderingPipeline.tsx](../src/rendering/RenderingPipeline.tsx)
@@ -399,4 +508,5 @@ sharp view-dependent term, apply the same technique.
 - `OitMaterial` — [src/rendering/OitMaterial.tsx](../src/rendering/OitMaterial.tsx)
 - `LAYERS`, `createLayers` — [src/layers/layers.ts](../src/layers/layers.ts)
 - AA passes — [src/rendering/passes](../src/rendering/passes)
+- `FXAAPass` (standalone FXAA post pass) — [src/rendering/passes/FXAAPass.ts](../src/rendering/passes/FXAAPass.ts)
 - Live example — [src/storybook/examples/OITRenderPass.example.stories.tsx](../src/storybook/examples/OITRenderPass.example.stories.tsx)
