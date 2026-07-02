@@ -10,9 +10,9 @@ import {
   CineonToneMapping,
   Color,
   DoubleSide,
+  Group,
   LineBasicMaterial,
   LinearSRGBColorSpace,
-  Mesh,
   MeshStandardMaterial,
   NeutralToneMapping,
   NoToneMapping,
@@ -20,7 +20,7 @@ import {
   SRGBColorSpace,
   Line as ThreeLine,
   ToneMapping,
-  Vector2,
+  Vector2
 } from 'three';
 import { OITRenderPass, Pass, RenderPass } from '../../main.ts';
 import { makeOitCompatible } from '../oit-material.ts';
@@ -113,7 +113,7 @@ const WebGLLine = ({
   color: string;
   oitMaterials: boolean;
 }) => {
-  const group = useRef<Mesh>(null);
+  const group = useRef<Group>(null);
 
   useEffect(() => {
     if (!group.current) return;
@@ -252,7 +252,7 @@ const TestGeometry = ({
   animate: boolean;
   oitMaterials: boolean;
 }) => {
-  const spinRef = useRef<Mesh>(null);
+  const spinRef = useRef<Group>(null);
 
   useFrame((_, delta) => {
     if (animate && spinRef.current) spinRef.current.rotation.y += delta * 0.15;

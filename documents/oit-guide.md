@@ -81,7 +81,7 @@ pass is needed:
 ```tsx
 const passes = useMemo<Pass[]>(() => {
   const oit = new OITRenderPass(scene, camera);
-  oit.antialias = 'temporal'; // 'smaa' | 'temporal-smaa' — see §6
+  oit.antialias = 'taa'; // default; also 'temporal' | 'smaa' | 'temporal-smaa' | 'fxaa' — see §6
 
   return [
     oit,
@@ -339,9 +339,9 @@ background enters the edge with the same weight no matter when it is added); onl
 supersampling the whole composite (temporal or SSAA) removes it.
 
 ```tsx
-// Recommended: no MSAA; temporal (or temporal-smaa) instead.
+// Recommended: no MSAA. 'taa' is the default; 'temporal' / 'temporal-smaa' also work.
 const oitPass = new OITRenderPass(scene, camera);
-oitPass.antialias = 'temporal';
+oitPass.antialias = 'taa';
 
 <RenderingPipeline passes={passes} samples={0} />;
 ```
@@ -364,8 +364,19 @@ fill/memory.
 ### Built-in AA (`OITRenderPass.antialias`)
 
 `OITRenderPass` anti-aliases the composited result itself, so no separate AA pass is
-needed. Set `antialias` to one of:
+needed. Set `antialias` to one of (the default is **`'taa'`**):
 
+- **`'taa'`** (default) — reprojected temporal anti-aliasing. Like `'temporal'` the
+  camera is sub-pixel jittered, but the history is **reprojected every frame** using
+  the depth of the nearest visible surface (opaque hardware depth refined by the OIT
+  front-layer depth), so anti-aliasing is retained *during* camera motion — it
+  anti-aliases both still and moving frames. The scene is effectively static (only the
+  camera moves), so no per-object velocity buffer is needed. Ghosting from content the
+  reprojection cannot follow (additive highlights, animated objects, disocclusions) is
+  bounded by clamping the history into the current frame's local colour range; the
+  anti-ghost knobs (`restClampStrength`, `restBoxGamma`, `restNeighbourhoodRadius`) are
+  exposed on `oitPass.taaResolver` for tuning. Prefer `'temporal'` instead only if you
+  need guaranteed ghost-free stills and don't mind losing motion AA.
 - **`'temporal'`** — temporal supersampling: the camera is sub-pixel jittered and the
   frame is accumulated into a running average **while the camera is still**, converging
   to a genuinely supersampled image (it is the only mode that anti-aliases thin 1px
@@ -377,10 +388,35 @@ needed. Set `antialias` to one of:
 - **`'temporal-smaa'`** — both, mutually exclusive per frame: temporal while still
   (crisp, recovers 1px lines), SMAA while moving. SMAA never softens the converged
   still image and only costs GPU time during motion.
+- **`'fxaa'`** — fast approximate AA: a single cheap spatial post pass every frame,
+  running in the pipeline's linear FP16 space. Cheaper and softer than `'smaa'`, with
+  no OIT or temporal coupling. Like all spatial techniques it cannot recover sub-pixel
+  features (thin 1px lines/tubes that fall between samples). Also available standalone
+  as `FXAAPass` for non-OIT pipelines (see below).
 
-Do **not** pair these with MSAA (`opaqueSamples` or the pipeline `samples` prop)
-when transparent surfaces are present — MSAA leaves a background-coloured fringe over
-transparent surfaces (see “MSAA is not recommended with OIT” above).
+Do **not** pair the temporal modes (`'temporal'` / `'temporal-smaa'` / `'taa'`) with
+MSAA (`opaqueSamples` or the pipeline `samples` prop) when transparent surfaces are
+present — MSAA leaves a background-coloured fringe over transparent surfaces (see
+“MSAA is not recommended with OIT” above), and it is wasteful to rasterise MSAA on
+top of temporal supersampling that already anti-aliases the same edges.
+
+### Standalone FXAA (non-OIT pipelines)
+
+FXAA is also exposed as a standalone `FXAAPass`. Unlike the OIT-internal `antialias`
+modes it does **not** require order-independent transparency, so it works after a
+plain `RenderPass` too. Insert it between the base pass and the `OutputPass`:
+
+```tsx
+import { FXAAPass, OutputPass, RenderPass } from '@equinor/videx-3d';
+
+const passes = useMemo<Pass[]>(
+  () => [new RenderPass(scene, camera), new FXAAPass(), new OutputPass()],
+  [scene, camera],
+);
+```
+
+Inside an OIT pipeline, prefer `OITRenderPass.antialias = 'fxaa'` over adding a
+separate `FXAAPass` — it's the same resolver wired into the pass.
 
 ### Shading aliasing is a separate problem
 
@@ -472,4 +508,5 @@ after the pipeline), rather than relying on `toneMapped = false`.
 - `OitMaterial` — [src/rendering/OitMaterial.tsx](../src/rendering/OitMaterial.tsx)
 - `LAYERS`, `createLayers` — [src/layers/layers.ts](../src/layers/layers.ts)
 - AA passes — [src/rendering/passes](../src/rendering/passes)
+- `FXAAPass` (standalone FXAA post pass) — [src/rendering/passes/FXAAPass.ts](../src/rendering/passes/FXAAPass.ts)
 - Live example — [src/storybook/examples/OITRenderPass.example.stories.tsx](../src/storybook/examples/OITRenderPass.example.stories.tsx)

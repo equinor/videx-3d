@@ -112,7 +112,7 @@ type ExampleProps = {
   sizeMultiplier: number;
   oitEnabled: boolean;
   aaMode: 'none' | 'smaa' | 'temporal' | 'temporal-smaa' | 'taa' | 'fxaa';
-  supersample: 1 | 1.5 | 2 | 4;
+  supersample: 0.25 | 0.5 | 1 | 1.5 | 2 | 4;
   msaaSamples: 0 | 2 | 4 | 8;
   smaaQuality: SMAAQuality;
   skipFrontPeeling: boolean;

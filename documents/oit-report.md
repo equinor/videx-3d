@@ -175,8 +175,7 @@ RenderingPipeline
 - **`OITRenderPass`** (`src/rendering/passes/OITRenderPass.ts`) — constructed with
   `(scene, camera)`. Resolves the 3D scene (opaque + transparent) into the buffer.
 - **Anti-aliasing** — built into `OITRenderPass` via its `antialias` property
-  (`'temporal' | 'smaa' | 'temporal-smaa'`), or supersampling via the pipeline's
-  `supersample` prop (see §8).
+  (`'none' | 'temporal' | 'smaa' | 'temporal-smaa' | 'taa' | 'fxaa'`), or supersampling via the pipeline's `supersample` prop (see §8).
 - **`AnnotationsPass`** — composites 2D labels using the buffer's depth texture for
   occlusion.
 - **`OutputPass`** — tone-maps and blits the FP16 buffer to the screen.
