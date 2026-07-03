@@ -6,15 +6,18 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { Color, Group, MeshStandardMaterialParameters, Object3D } from 'three';
+import { Group, Object3D } from 'three';
 import { CommonComponentProps } from '../../../common/types';
 import { useGenerator } from '../../../hooks/useGenerator';
 import { useWellboreContext } from '../../../hooks/useWellboreContext';
 import { PointerEvents } from '../../../main';
+import { CasingEffects, CasingMaterialParameters } from './CasingMaterial';
 import {
   casings,
   CasingSectionType,
   CasingsGeneratorResponse,
+  defaultCasingEffects,
+  defaultMaterialOptions,
 } from './casings-defs';
 import { CasingSection } from './CasingSection';
 
@@ -23,9 +26,9 @@ import { CasingSection } from './CasingSection';
  * @expand
  */
 export type CasingSectionMaterialOptions = {
-  primary: MeshStandardMaterialParameters;
-  inner?: MeshStandardMaterialParameters;
-  slice?: MeshStandardMaterialParameters;
+  primary: CasingMaterialParameters;
+  inner?: CasingMaterialParameters;
+  slice?: CasingMaterialParameters;
 };
 
 /**
@@ -51,32 +54,30 @@ export type CasingProps = PointerEvents &
     shoeFactor?: number;
     overrideSegmentsPerMeter?: number;
     overrideSimplificationThreshold?: number;
+    /** Schematic (diagram) mode: an unlit, flat-shaded look for a clean "cutaway
+     * schematic" rather than realism. Locks the slice to a half-cut that always faces
+     * the camera (`sliceAngle = PI`, `autoSlicePosition = true`, `sliceOffset = 0` -
+     * those props are ignored), renders each face with only its flat `color` (all
+     * lighting/env, textures and realism detail are ignored) plus the `silhouette`
+     * outline for contrast. Dropping the specular lighting also removes the dominant
+     * source of casing aliasing; note that geometric silhouette-edge anti-aliasing still
+     * relies on the host render pipeline (MSAA/FXAA/SMAA). Default false. */
+    schematic?: boolean;
+    /** Maps each section to its material parameters. Keep this a STABLE reference
+     * (module-level function or `useCallback`) - a new function identity each render
+     * rebuilds every section's materials and forces a shader recompile per frame,
+     * which is the main cause of sluggish casing updates. Defaults to a stable
+     * module-level function. */
     materialOptions?: MaterialOptions;
     opacity?: number;
     priority?: number;
+    /** Grouped casing stylization effects (silhouette outline, section edge shading,
+     * procedural weathering, per-section variation and micro-normal surface detail).
+     * Applied as the global default for every section; a section's per-face
+     * `materialOptions.*.effects` override individual sub-effects on top of this.
+     * Defaults to {@link defaultCasingEffects}. */
+    effects?: CasingEffects;
   };
-
-/**
- * A custom function may be passed to the component, but this is not well documented at this time
- * as this behavior is subject to change.
- */
-const defaultMaterialOptions = (section: CasingSectionType) => {
-  const defaultParams = { color: '#4c5160', roughness: 0.5, metalness: 0.7 };
-  const shoeParams = { color: 'black', roughness: 1, metalness: 0 };
-
-  const primary = section.type.toLowerCase().includes('shoe')
-    ? shoeParams
-    : defaultParams;
-
-  const sliceColor = new Color(primary.color).multiplyScalar(0.5);
-  const slice = { color: sliceColor, roughness: 0.9, metalness: 0.8 };
-
-  return {
-    primary,
-    inner: { color: '#bed0e4', roughness: 0.3, metalness: 0.5 },
-    slice,
-  };
-};
 
 /**
  * Generic render of casings based on depths, diameters and type. Must be a child of the `Wellbore` component.
@@ -120,6 +121,8 @@ export const Casings = forwardRef(
       fallback,
       opacity = 1,
       priority = 0,
+      effects = defaultCasingEffects,
+      schematic = false,
       onPointerClick,
       onPointerEnter,
       onPointerLeave,
@@ -182,6 +185,21 @@ export const Casings = forwardRef(
       return sections?.map(materialOptions) || null;
     }, [sections, materialOptions]);
 
+    // Real-world length (metres) of the whole trajectory, recovered from each
+    // section's (real length / normalized span) ratio. Every unclamped section
+    // yields the exact same value (they share one well-spanning normalization);
+    // a section whose top was clamped by `fromMsl` keeps its full length over a
+    // shortened span, which only ever inflates the ratio - so the minimum across
+    // sections is the true trajectory length. Used to convert the 0-1 curve
+    // parameter into real metres for the contact-AO falloff and weathering scale.
+    const wellLength = useMemo(() => {
+      if (!sections || sections.length === 0) return 1;
+      return sections.reduce((min, s) => {
+        const len = s.length / Math.max(s.bottom - s.top, 1e-6);
+        return Math.min(min, len);
+      }, Infinity);
+    }, [sections]);
+
     return (
       <group
         ref={ref}
@@ -206,6 +224,10 @@ export const Casings = forwardRef(
               radialSegments={radialSegments}
               sizeMultiplier={sizeMultiplier}
               renderOrder={i}
+              effects={effects}
+              wellLength={wellLength}
+              sectionIndex={i}
+              schematic={schematic}
               onPointerClick={onPointerClick}
               onPointerEnter={onPointerEnter}
               onPointerLeave={onPointerLeave}
