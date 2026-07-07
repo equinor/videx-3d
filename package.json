@@ -44,7 +44,8 @@
     "lint": "eslint .",
     "storybook": "node scripts/generate-story-args.js && storybook dev -p 6006",
     "test": "vitest",
-    "coverage": "vitest --coverage"
+    "coverage": "vitest --coverage",
+    "lintox": "oxlint"
   },
   "dependencies": {
     "curve-interpolator": "^3.3.1",
@@ -58,6 +59,7 @@
     "d3-selection": "^3.0.0",
     "lodash.filter": "^4.6.0",
     "nanoid": "^5.1.2",
+    "oxlint": "^1.72.0",
     "p-limit": "^6.2.0",
     "p-queue": "^8.1.0",
     "proj4": "^2.20.3",
