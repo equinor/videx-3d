@@ -19,13 +19,13 @@
   },
   "rules": {
     "no-unused-expressions": ["error", {"allowTernary": true, "allowShortCircuit": true}],
-    "react/react-in-jsx-scope": "off", // can be turned off safely for react 17+ if using the appropriate ts settings
-    "no-underscore-dangle": "off" // opinionated rule
+    "react/react-in-jsx-scope": "off",
+    "no-underscore-dangle": "off"
   },
   "overrides": [
     {
         "files": ["tests/*"],
-        "plugins": ["vitest"],
+        "plugins": ["vitest"]
     },
     {
         "files": ["storybook/*", "**/*.stories.{ts,tsx}"],
