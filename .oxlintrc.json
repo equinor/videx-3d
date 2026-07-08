@@ -6,8 +6,11 @@
     "node_modules/*",
     "dist/*",
     "config/*",
-    "vite.config.js",
-    "**/.*"
+    "vite.config.static.js",
+    "**/.*",
+    "*.config.js",
+    "storybook/*",
+    "**/*.stories.{ts,tsx}"
     ],
   "categories": {
     "correctness": "error",
@@ -16,7 +19,8 @@
   },
   "rules": {
     "no-unused-expressions": ["error", {"allowTernary": true, "allowShortCircuit": true}],
-    "react/react-in-jsx-scope": "off"
+    "react/react-in-jsx-scope": "off", // can be turned off safely for react 17+ if using the appropriate ts settings
+    "no-underscore-dangle": "off", // opinionated rule that only gives warnings
   },
   "overrides": [
     {
@@ -24,7 +28,8 @@
         "plugins": ["vitest"],
     },
     {
-        "files": ["storybook/*"],
+        "files": ["storybook/*", "**/*.stories.{ts,tsx}"],
+        "plugins": ["import", "oxc", "eslint", "typescript"],
         "rules": {
             "storybook/default-exports": "error",
             "storybook/story-exports": "error",
