@@ -71,10 +71,18 @@ export class AnnotationsPass extends Pass {
   private occlusionChanged = false;
 
   // Connector-length gate: suppress connector lines that stretch far beyond
-  // what reasonable per-frame motion (at `connectorTargetFrameTime`) would
-  // produce. Avoids long, distracting lines during low fps / fast camera moves.
+  // what a resting connector plus reasonable per-frame motion (at
+  // `connectorTargetFrameTime`) would produce. Avoids long, distracting lines
+  // during low fps / fast camera moves.
   connectorTargetFrameTime = 0.016;
   connectorStretchSlack = 2;
+  // Motion-independent budget floor: the connector may always reach this
+  // multiple of its resting length. Without it the budget collapses to ~rest
+  // length when the camera is slow/static, dropping connectors during the
+  // normal collision-driven label re-slotting (a transitioning label's frozen
+  // previous anchor lags the moving anchor, so the line briefly exceeds rest
+  // length). Only genuinely runaway connectors are then suppressed.
+  connectorRestStretch = 2.5;
 
   constructor(
     camera: Camera,
@@ -123,6 +131,7 @@ export class AnnotationsPass extends Pass {
         depthTexture: new Uniform<Texture | null>(null),
         dataTexture: new Uniform<Texture | null>(null),
         logDepthBufFC: new Uniform<number>(depthConstant),
+        resolution: new Uniform<Vector2>(new Vector2()),
       },
       glslVersion: GLSL3,
     });
@@ -270,7 +279,8 @@ export class AnnotationsPass extends Pass {
           const restLength =
             instance.layer.labelOffset * instance.state.scaleFactor!;
           const maxLength =
-            restLength + normalizedMove * this.connectorStretchSlack;
+            restLength * this.connectorRestStretch +
+            normalizedMove * this.connectorStretchSlack;
 
           if (connectorLength > maxLength) {
             drawConnector = false;
@@ -390,6 +400,10 @@ export class AnnotationsPass extends Pass {
       occlusionMaterial.uniforms.depthTexture.value = buffer.depthTexture;
       occlusionMaterial.uniforms.pMatrix.value = camera.projectionMatrix;
       occlusionMaterial.uniforms.vMatrix.value = camera.matrixWorldInverse;
+      occlusionMaterial.uniforms.resolution.value.set(
+        buffer.width,
+        buffer.height,
+      );
       this.fullscreenRenderer.renderMaterial(
         renderer,
         this.annotationsRenderTarget,

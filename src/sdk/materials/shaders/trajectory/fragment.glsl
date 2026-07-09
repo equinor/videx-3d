@@ -39,7 +39,7 @@ void main() {
   // collapses to 0 within a sub-pixel band, so pow(ndv, 0.8) below produces a
   // razor-thin dark rim that the rasterizer undersamples. That sub-pixel shading
   // frequency is what reads as a jagged dark fringe and which edge-AA passes
-  // (FXAA/SMAA) cannot fix. Clamp ndv to its per-pixel screen-space footprint so
+  // (SMAA/TAA) cannot fix. Clamp ndv to its per-pixel screen-space footprint so
   // the steep part of the curve can never compress below ~1px; the bulk rounded
   // shading across the tube cross-section (where ndv changes slowly) is unaffected.
   float ndvAA = max(ndv, fwidth(ndv));

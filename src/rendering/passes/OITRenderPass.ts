@@ -3,6 +3,7 @@ import {
   Camera,
   Color,
   CustomBlending,
+  DepthTexture,
   FloatType,
   HalfFloatType,
   Material,
@@ -25,13 +26,18 @@ import {
 } from 'three';
 import { LAYERS } from '../../layers/layers';
 import { FullscreenRenderer } from '../fullscreen-renderer';
+import { FxaaResolver } from '../fxaa-resolver';
 import { GpuTimer } from '../gpu-timer';
 import { isOitCapable, OitCapableMaterial, OitPass } from '../oit-material';
 import { Pass } from '../Pass';
 import { getRenderingState } from '../rendering-state';
+import copyFragmentShader from '../shaders/copy-frag.glsl';
 import copyVertexShader from '../shaders/copy-vert.glsl';
 import compositeFragmentShader from '../shaders/oit-composite-frag.glsl';
 import debugFragmentShader from '../shaders/oit-debug-frag.glsl';
+import { SMAAQuality, SmaaResolver } from '../smaa-resolver';
+import { TaaResolver } from '../taa-resolver';
+import { TemporalResolver } from '../temporal-resolver';
 
 /** A scene object that can be drawn (mesh, line or points). */
 type Renderable = Mesh & {
@@ -157,6 +163,21 @@ type RenderableEntry = {
 };
 
 /**
+ * Built-in anti-aliasing mode for {@link OITRenderPass.antialias}. See that field for
+ * the per-mode description. Exported as the single source of truth so consumers
+ * (and Storybook arg types) can reference it instead of re-declaring the union.
+ *
+ * @group Rendering
+ */
+export type OITAntialiasMode =
+  | 'none'
+  | 'temporal'
+  | 'smaa'
+  | 'temporal-smaa'
+  | 'taa'
+  | 'fxaa';
+
+/**
  * Hybrid order-independent-transparency (OIT) render pass for use with the
  * {@link RenderingPipeline} (or any custom composer). Renders the nearest transparent
  * layer exactly (depth-peeled, alpha-over) and the remaining layers using
@@ -198,6 +219,115 @@ export class OITRenderPass extends Pass {
    * Useful for isolating tail behaviour and comparing against the hybrid result.
    */
   skipFront: boolean = false;
+
+  /**
+   * Number of MSAA samples (0 = off) for the hybrid multisample path. When > 0 the
+   * opaque geometry (including fully-opaque OIT occluders such as casings/completion
+   * tools), the emissive layer, the weighted-blended (WBOIT) tail composite, the exact
+   * front layer and the overlay are all rendered into ONE dedicated multisample target
+   * sharing the pipeline depth. The single-sample min-depth/accum aux targets read the
+   * opaque depth resolved on the first switch away from the multisample target; the
+   * final colour is resolved ONCE more and blitted into the single-sample pipeline
+   * buffer (~2 resolves total). This costs more than multisampling the opaque pass
+   * alone but far less than multisampling the whole half-float pipeline buffer
+   * (~4 resolves). Clamped to `renderer.capabilities.maxSamples`.
+   *
+   * **MSAA is not recommended with OIT.** The min-depth/accum aux buffers must be
+   * single-sample (WebGL2 cannot sample a multisample texture), so the transparent
+   * tail is composited single-sample over the multisample opaque edges. Opaque edges
+   * are matted against the cleared background before the transparent surfaces exist,
+   * and the single-sample composite cannot reconstruct per-sample coverage — so a
+   * background-coloured fringe survives along opaque and thin-line edges *over
+   * transparent surfaces*. This is structural and cannot be made clean here; only
+   * supersampling the whole composite (an {@link antialias} temporal mode, or the
+   * {@link RenderingPipeline} `supersample` prop) removes it.
+   *
+   * `opaqueSamples` is therefore intended only for the narrow **opaque-only** close-up
+   * (no transparent surfaces composited in front — e.g. a casing detail view), where
+   * the fringe cannot occur. For anything with transparent surfaces leave this at `0`
+   * and use {@link antialias} (temporal / SMAA / TAA / FXAA) or the
+   * {@link RenderingPipeline} `supersample` prop instead. (Pipeline-level `samples`
+   * does not anti-alias the OIT result either, and is only for a plain opaque
+   * `RenderPass` pipeline with no OIT.)
+   *
+   * Do not combine `opaqueSamples > 0` with an {@link antialias} temporal mode
+   * (`'temporal'`/`'temporal-smaa'`/`'taa'`): it is wasteful — the multisample colour
+   * is resolved first and the temporal resolver then runs on the already-resolved
+   * buffer, so you pay for MSAA rasterisation on top of temporal supersampling that
+   * already anti-aliases the same edges.
+   */
+  opaqueSamples: number = 0;
+
+  /**
+   * Built-in anti-aliasing mode for the composited result.
+   *
+   * - `'none'`: no built-in AA. Pair with {@link opaqueSamples} (MSAA) for
+   *   opaque-edge AA in an opaque-only close-up; transparent/additive edges stay
+   *   un-anti-aliased, and MSAA leaves a background-coloured fringe over transparent
+   *   surfaces (see {@link opaqueSamples}).
+   * - `'temporal'`: temporal supersampling (see {@link TemporalResolver}). The camera
+   *   is sub-pixel jittered each frame and the composited frame is accumulated into a
+   *   running average **while the camera is still**, converging to a genuinely
+   *   supersampled image (thin trajectory lines, transparent-surface edges, contour
+   *   lines and the additive highlight all anti-alias). There is no reprojection, so
+   *   nothing ghosts; while the camera moves the current frame is shown un-jittered
+   *   (the moving frame is not anti-aliased unless combined with SMAA or MSAA).
+   * - `'smaa'`: subpixel morphological AA (see {@link smaaQuality}) applied as a
+   *   spatial post pass every frame. Anti-aliases moving frames too, but (like all
+   *   morphological techniques) cannot recover sub-pixel features such as 1px lines
+   *   that fall between samples.
+   * - `'temporal-smaa'`: both, mutually exclusive per frame — temporal accumulation
+   *   while the camera is still (crisp, recovers sub-pixel detail) and SMAA while it
+   *   moves. SMAA never softens the converged still image and only costs GPU time
+   *   during motion.
+   * - `'taa'` (default): reprojected temporal anti-aliasing (see {@link TaaResolver}).
+   *   Like `'temporal'` the camera is sub-pixel jittered, but the history is
+   *   reprojected every frame using the nearest visible surface's depth (opaque
+   *   hardware depth refined by the OIT front-layer depth), so anti-aliasing is
+   *   retained *during* camera motion. Ghosting from additive/animated/disoccluded
+   *   content is bounded by neighbourhood colour clamping. This is the recommended
+   *   default for the OIT pipeline — it anti-aliases both still and moving frames.
+   *   Use `'temporal'` instead if you need guaranteed ghost-free stills and don't
+   *   mind losing motion AA.
+   * - `'fxaa'`: fast approximate AA (see {@link FxaaResolver}) applied as a single
+   *   cheap spatial post pass every frame. Cheaper and softer than `'smaa'`, with no
+   *   OIT or temporal coupling. Like all spatial techniques it cannot recover
+   *   sub-pixel features. Also available as the standalone {@link FXAAPass} for
+   *   non-OIT (plain `RenderPass`) setups.
+   *
+   * The jitter is applied to the shared camera only between this pass's own scene
+   * render and resolve, so it never leaks to later passes (annotations, picking).
+   * This is the OIT pipeline's high-quality AA. Non-OIT setups (plain `RenderPass`)
+   * should use MSAA instead.
+   */
+  antialias: OITAntialiasMode = 'taa';
+
+  /**
+   * SMAA quality preset used by the `'smaa'` and `'temporal-smaa'` {@link antialias}
+   * modes (default `'high'`). Ignored by the other modes.
+   */
+  smaaQuality: SMAAQuality = 'high';
+
+  /**
+   * The temporal-supersampling resolver, exposed for debug/tuning (e.g. its
+   * `clampStrength` anti-ghost knob). Non-null only while {@link antialias} is
+   * `'temporal'` / `'temporal-smaa'` and after at least one frame has rendered (it is
+   * created lazily and recreated on a mode switch, resetting to defaults).
+   */
+  get temporalResolver(): TemporalResolver | null {
+    return this.temporal;
+  }
+
+  /**
+   * The reprojected-TAA resolver, exposed for debug/tuning (e.g. its
+   * `restClampStrength` / `restBoxGamma` / `restNeighbourhoodRadius` anti-ghost knobs).
+   * Non-null only while {@link antialias} is `'taa'` and after at least one frame has
+   * rendered (it is created lazily and recreated on a mode switch, resetting to
+   * defaults).
+   */
+  get taaResolver(): TaaResolver | null {
+    return this.taa;
+  }
 
   /**
    * Optional feature (default off): after the transparent OIT passes, stamp depth
@@ -298,9 +428,32 @@ export class OITRenderPass extends Pass {
 
   private fullscreenRenderer = new FullscreenRenderer();
 
+  /** Lazily-created temporal-supersampling resolver, used when {@link antialias} is `'temporal'`. */
+  private temporal: TemporalResolver | null = null;
+
+  /**
+   * Lazily-created reprojected-TAA resolver, used when {@link antialias} is `'taa'`.
+   */
+  private taa: TaaResolver | null = null;
+
+  /**
+   * Lazily-created SMAA spatial resolver, used when {@link antialias} is `'smaa'` or
+   * `'temporal-smaa'`.
+   */
+  private smaa: SmaaResolver | null = null;
+
+  /** Lazily-created FXAA spatial resolver, used when {@link antialias} is `'fxaa'`. */
+  private fxaa: FxaaResolver | null = null;
+
   private minDepthTarget: WebGLRenderTarget;
   private accumTarget: WebGLRenderTarget;
   private compositeMaterial: RawShaderMaterial;
+  /** Shared multisample target for the hybrid MSAA path (see {@link opaqueSamples}). */
+  private opaqueTarget: WebGLRenderTarget | null = null;
+  /** Sample count the current opaqueTarget was built with (-1 = none yet). */
+  private opaqueTargetSamples = -1;
+  /** Blit material: copy the resolved multisample colour into the buffer (no blending). */
+  private opaqueBlitMaterial: RawShaderMaterial;
 
   /** Lazily-created material for the debug-target thumbnails. */
   private debugMaterial: RawShaderMaterial | null = null;
@@ -371,6 +524,65 @@ export class OITRenderPass extends Pass {
       blendSrcAlpha: OneFactor,
       blendDstAlpha: OneMinusSrcAlphaFactor,
     });
+
+    // MSAA resolve blit: overwrite the buffer colour with the resolved multisample
+    // colour (depth is shared and already resolved), no blending.
+    this.opaqueBlitMaterial = new RawShaderMaterial({
+      vertexShader: copyVertexShader,
+      fragmentShader: copyFragmentShader,
+      uniforms: {
+        opacity: new Uniform(1),
+        source: new Uniform<Texture | null>(null),
+      },
+      depthTest: false,
+      depthWrite: false,
+      blending: NoBlending,
+    });
+  }
+
+  /**
+   * Create or resize the shared multisample target, sharing the pipeline's depth
+   * texture so resolving writes the AA colour AND the resolved opaque depth the
+   * auxiliary OIT passes read. Recreated when sample count, size or shared depth
+   * texture changes.
+   */
+  private ensureOpaqueTarget(renderer: WebGLRenderer, depth: DepthTexture) {
+    const samples = Math.min(
+      this.opaqueSamples,
+      renderer.capabilities.maxSamples,
+    );
+    const t = this.opaqueTarget;
+    if (
+      t &&
+      this.opaqueTargetSamples === samples &&
+      t.width === this.width &&
+      t.height === this.height &&
+      t.depthTexture === depth
+    ) {
+      return t;
+    }
+    this.disposeOpaqueTarget();
+    const target = new WebGLRenderTarget(this.width, this.height, {
+      format: RGBAFormat,
+      type: HalfFloatType,
+      depthBuffer: true,
+      generateMipmaps: false,
+    });
+    target.samples = samples;
+    target.depthTexture = depth;
+    this.opaqueTarget = target;
+    this.opaqueTargetSamples = samples;
+    return target;
+  }
+
+  private disposeOpaqueTarget() {
+    if (!this.opaqueTarget) return;
+    // Detach the shared depth texture before dispose so three doesn't free the
+    // pipeline buffer's live depth texture.
+    this.opaqueTarget.depthTexture = null as unknown as DepthTexture;
+    this.opaqueTarget.dispose();
+    this.opaqueTarget = null;
+    this.opaqueTargetSamples = -1;
   }
 
   setSize(width: number, height: number) {
@@ -383,6 +595,10 @@ export class OITRenderPass extends Pass {
     this.accumTarget.depthTexture = null;
     this.minDepthTarget.setSize(this.width, this.height);
     this.accumTarget.setSize(this.width, this.height);
+    this.temporal?.setSize(this.width, this.height);
+    this.taa?.setSize(this.width, this.height);
+    this.smaa?.setSize(this.width, this.height);
+    this.fxaa?.setSize(this.width, this.height);
   }
 
   dispose() {
@@ -394,9 +610,19 @@ export class OITRenderPass extends Pass {
     this.accumTarget.depthTexture = null;
     this.minDepthTarget.dispose();
     this.accumTarget.dispose();
+    this.disposeOpaqueTarget();
     this.compositeMaterial.dispose();
+    this.opaqueBlitMaterial.dispose();
     this.debugMaterial?.dispose();
     this.fullscreenRenderer.dispose();
+    this.temporal?.dispose();
+    this.temporal = null;
+    this.taa?.dispose();
+    this.taa = null;
+    this.smaa?.dispose();
+    this.smaa = null;
+    this.fxaa?.dispose();
+    this.fxaa = null;
     this.gpuTimer?.dispose();
     this.gpuTimer = null;
     this.releaseOit?.();
@@ -462,6 +688,23 @@ export class OITRenderPass extends Pass {
   }
 
   /**
+   * Whether an OIT entry is currently fully invisible (every OIT-capable material
+   * has opacity ≤ 0). Such objects are hidden from all passes — they contribute
+   * nothing to any render target, so rasterising them (even through the cheap aux
+   * passes) is pure waste.
+   */
+  private isEntryInvisible(entry: RenderableEntry): boolean {
+    const mats = Array.isArray(entry.original)
+      ? entry.original
+      : [entry.original];
+    for (const m of mats) {
+      if (isOitCapable(m) && !OITRenderPass.isMaterialInvisible(m))
+        return false;
+    }
+    return true;
+  }
+
+  /**
    * Traverse the scene once, classifying renderables into transparent-OIT,
    * plain-opaque, emissive (additive/glow) and always-on-top overlay sets.
    * OIT-capable objects that are currently fully opaque, or explicitly tagged with
@@ -478,6 +721,7 @@ export class OITRenderPass extends Pass {
     emissiveList: Renderable[],
     overlayList: Renderable[],
     oitOpaqueList: RenderableEntry[],
+    invisibleOitList: Renderable[],
   ) {
     this.scene.traverse(obj => {
       const r = obj as Renderable;
@@ -511,6 +755,10 @@ export class OITRenderPass extends Pass {
         // pass (pushed to opaqueList for the visibility lifecycle) and skip OIT.
         oitOpaqueList.push(entry);
         opaqueList.push(r);
+      } else if (this.isEntryInvisible(entry)) {
+        // Fully invisible (opacity ≤ 0): skip all passes — the object writes nothing
+        // to any target. Hidden from the opaque pass and excluded from OIT passes.
+        invisibleOitList.push(r);
       } else {
         oitList.push(entry);
       }
@@ -605,6 +853,12 @@ export class OITRenderPass extends Pass {
   private static isMaterialOpaque(material: Material): boolean {
     if (!material.transparent) return true;
     return OITRenderPass.effectiveOpacity(material) >= 1;
+  }
+
+  /** Whether a material currently renders as fully invisible (opacity ≤ 0). */
+  private static isMaterialInvisible(material: Material): boolean {
+    if (!material.transparent) return false;
+    return OITRenderPass.effectiveOpacity(material) <= 0;
   }
 
   /**
@@ -707,8 +961,16 @@ export class OITRenderPass extends Pass {
     const emissiveList: Renderable[] = [];
     const overlayList: Renderable[] = [];
     const oitOpaqueList: RenderableEntry[] = [];
+    const invisibleOitList: Renderable[] = [];
     const entriesBefore = this.entriesCreated;
-    this.collect(oitList, opaqueList, emissiveList, overlayList, oitOpaqueList);
+    this.collect(
+      oitList,
+      opaqueList,
+      emissiveList,
+      overlayList,
+      oitOpaqueList,
+      invisibleOitList,
+    );
 
     // Update per-pass object counts for debugging/inspection.
     let oitHidden = 0;
@@ -769,6 +1031,64 @@ export class OITRenderPass extends Pass {
     const prevBackground = scene.background;
     const prevSortObjects = renderer.sortObjects;
 
+    // Temporal supersampling: jitter the camera projection before the scene render
+    // (every sub-pass below uses the same jittered camera, so the frame is
+    // internally consistent). It is restored before the resolve at the end of this
+    // method, so the jitter never escapes to later passes (annotations, picking).
+    const wantTemporal =
+      this.antialias === 'temporal' || this.antialias === 'temporal-smaa';
+    const wantSmaa =
+      this.antialias === 'smaa' || this.antialias === 'temporal-smaa';
+    const wantTaa = this.antialias === 'taa';
+    const wantFxaa = this.antialias === 'fxaa';
+
+    if (wantTemporal) {
+      if (!this.temporal) {
+        this.temporal = new TemporalResolver();
+        this.temporal.setSize(this.width, this.height);
+      }
+      this.temporal.applyJitter(camera);
+    } else if (this.temporal) {
+      // Mode switched off: drop the accumulation so it restarts cleanly if re-enabled.
+      this.temporal.restoreJitter();
+      this.temporal.dispose();
+      this.temporal = null;
+    }
+
+    if (wantTaa) {
+      if (!this.taa) {
+        this.taa = new TaaResolver();
+        this.taa.setSize(this.width, this.height);
+      }
+      this.taa.applyJitter(camera);
+    } else if (this.taa) {
+      this.taa.restoreJitter();
+      this.taa.dispose();
+      this.taa = null;
+    }
+
+    if (wantSmaa) {
+      if (!this.smaa) {
+        this.smaa = new SmaaResolver(this.smaaQuality);
+        this.smaa.setSize(this.width, this.height);
+      }
+      // Cheap when unchanged (the setter recompiles only on an actual change).
+      this.smaa.quality = this.smaaQuality;
+    } else if (this.smaa) {
+      this.smaa.dispose();
+      this.smaa = null;
+    }
+
+    if (wantFxaa) {
+      if (!this.fxaa) {
+        this.fxaa = new FxaaResolver();
+        this.fxaa.setSize(this.width, this.height);
+      }
+    } else if (this.fxaa) {
+      this.fxaa.dispose();
+      this.fxaa = null;
+    }
+
     // ---- step 1: opaque ----------------------------------------------------
     // Exclude emissive and overlay objects; pure-OIT objects are hidden, mixed
     // meshes render their opaque groups (OIT groups as no-op). Fully-opaque OIT
@@ -776,11 +1096,30 @@ export class OITRenderPass extends Pass {
     // them.
     this.setVisible(emissiveList, false);
     this.setVisible(overlayList, false);
+    this.setVisible(invisibleOitList, false);
     this.applyForcedOpaque(oitOpaqueList);
     const hiddenOit: Renderable[] = [];
     this.applyOpaqueSwap(oitList, hiddenOit);
-    renderer.setRenderTarget(buffer);
-    renderer.setClearColor(prevClearColor, prevClearAlpha);
+    // Hybrid MSAA: opaque, emissive, tail composite, front and overlay all draw into
+    // one multisample target (sharing the pipeline depth) and resolve once at the end.
+    // The min-depth/accum aux targets stay single-sample (they're sampled in shaders;
+    // WebGL2 can't sample MS textures) and read the opaque depth resolved on the first
+    // switch to an aux target. Drawing front into the SAME target as opaque anti-aliases
+    // the surviving front-layer edges against the geometry behind them; the tail
+    // composite is still single-sample, so opaque edges seen THROUGH transparent
+    // surfaces keep a background-coloured fringe (MSAA is only clean for opaque-only
+    // close-ups — see opaqueSamples). dst is the single-sample buffer when MSAA is off.
+    const msaaOpaque = this.opaqueSamples > 0 && sharedDepth != null;
+    const dst = msaaOpaque
+      ? this.ensureOpaqueTarget(renderer, sharedDepth!)
+      : buffer;
+    renderer.setRenderTarget(dst);
+    // Explicit background when set (single source of truth shared with RenderPass),
+    // otherwise the renderer's current clear state. Restored at the end of this pass.
+    renderer.setClearColor(
+      this.clearColor ?? prevClearColor,
+      this.clearColor ? this.clearAlpha : prevClearAlpha,
+    );
     renderer.clear(true, true, true);
     timer?.begin('opaque');
     renderer.render(scene, camera);
@@ -803,7 +1142,7 @@ export class OITRenderPass extends Pass {
       this.setVisible(emissiveList, true);
       camera.layers.disableAll();
       camera.layers.enable(LAYERS.EMISSIVE);
-      renderer.setRenderTarget(buffer);
+      renderer.setRenderTarget(dst);
       timer?.begin('emissive');
       renderer.render(scene, camera);
       timer?.end();
@@ -829,7 +1168,7 @@ export class OITRenderPass extends Pass {
           }
         }
         if (anyStamp) {
-          renderer.setRenderTarget(buffer);
+          renderer.setRenderTarget(dst);
           timer?.begin('emitterStamp');
           renderer.render(scene, camera);
           timer?.end();
@@ -892,16 +1231,18 @@ export class OITRenderPass extends Pass {
       timer?.begin('composite');
       this.fullscreenRenderer.renderMaterial(
         renderer,
-        buffer,
+        dst,
         this.compositeMaterial,
       );
       timer?.end();
 
       // ---- step 5: exact front layer --------------------------------------
       // Skipped in WBOIT-only debug mode (the tail already includes every fragment).
+      // Drawn back into the shared (MSAA) target so the surviving front fragments are
+      // anti-aliased against the opaque geometry already there.
       if (!this.skipFront) {
         this.applyPassSwap(oitList, 'front');
-        renderer.setRenderTarget(buffer);
+        renderer.setRenderTarget(dst);
         timer?.begin('front');
         renderer.render(scene, camera);
         timer?.end();
@@ -915,7 +1256,7 @@ export class OITRenderPass extends Pass {
       // undisturbed, writing into the shared buffer depth the AnnotationsPass reads.
       if (this.occlusionDepthStamp) {
         this.applyPassSwap(oitList, 'occlusion');
-        renderer.setRenderTarget(buffer);
+        renderer.setRenderTarget(dst);
         timer?.begin('occlusion');
         renderer.render(scene, camera);
         timer?.end();
@@ -938,18 +1279,76 @@ export class OITRenderPass extends Pass {
       this.setVisible(overlayList, true);
       camera.layers.disableAll();
       camera.layers.enable(LAYERS.OVERLAY);
-      renderer.setRenderTarget(buffer);
+      renderer.setRenderTarget(dst);
       timer?.begin('overlay');
       renderer.render(scene, camera);
       timer?.end();
       camera.layers.mask = prevCameraMask;
     }
 
+    // ---- resolve: MSAA target -> single-sample buffer ----------------------
+    // One overwrite blit copies the resolved (anti-aliased) colour into the buffer.
+    // The opaque depth was already resolved into the shared depth texture on the
+    // first switch to an auxiliary target, so downstream passes see correct depth.
+    if (msaaOpaque) {
+      this.opaqueBlitMaterial.uniforms.source.value = dst.texture;
+      this.fullscreenRenderer.renderMaterial(
+        renderer,
+        buffer,
+        this.opaqueBlitMaterial,
+      );
+    }
+
+    // ---- temporal supersampling resolve ------------------------------------
+    // Restore the un-jittered camera first (so motion detection reads the clean
+    // transform and later passes are not offset), then blend the freshly composited
+    // frame now in `buffer` into the running history average, writing the result
+    // back into `buffer`.
+    if (wantTemporal && this.temporal) {
+      this.temporal.restoreJitter();
+      this.temporal.resolve(renderer, buffer, camera);
+    }
+
+    // ---- reprojected TAA resolve -------------------------------------------
+    // Restore the un-jittered camera, then reproject the history to the current view
+    // and blend it into `buffer`. The OIT front-layer depth (min-depth pre-pass) is
+    // passed in so transparent front surfaces reproject at their true depth; it is
+    // only valid when the front peel actually ran this frame.
+    if (wantTaa && this.taa) {
+      this.taa.restoreJitter();
+      const frontDepth =
+        hasOit && !this.skipFront ? this.minDepthTarget.texture : null;
+      this.taa.resolve(renderer, buffer, camera, frontDepth);
+    }
+
+    // ---- spatial SMAA resolve ----------------------------------------------
+    // In `'smaa'` mode SMAA runs every frame. In the combined `'temporal-smaa'`
+    // mode it runs only while the camera is moving: temporal accumulation already
+    // anti-aliases (and recovers sub-pixel detail on) the still frames, and running
+    // SMAA on top would only soften the converged image. The two are therefore
+    // mutually exclusive per frame.
+    if (wantSmaa && this.smaa) {
+      const runSmaa =
+        this.antialias === 'smaa' || (this.temporal?.isMoving ?? true);
+      if (runSmaa) {
+        this.smaa.render(renderer, buffer);
+      }
+    }
+
+    // ---- spatial FXAA resolve ----------------------------------------------
+    // Purely spatial, runs every frame. Cheaper and softer than SMAA, with no OIT
+    // or temporal coupling (also exposed as the standalone FXAAPass for non-OIT
+    // setups). Composites in place into the shared buffer.
+    if (wantFxaa && this.fxaa) {
+      this.fxaa.render(renderer, buffer);
+    }
+
     // ---- restore -----------------------------------------------------------
-    // Re-show the emissive/overlay objects (hidden during the passes above) for the
-    // next frame and any other consumers traversing the scene.
+    // Re-show the emissive/overlay/invisible objects (hidden during the passes above)
+    // for the next frame and any other consumers traversing the scene.
     this.setVisible(emissiveList, true);
     this.setVisible(overlayList, true);
+    this.setVisible(invisibleOitList, true);
 
     camera.layers.mask = prevCameraMask;
     scene.background = prevBackground;
