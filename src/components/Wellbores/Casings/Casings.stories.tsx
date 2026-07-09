@@ -52,7 +52,6 @@ type StoryArgs = React.ComponentProps<typeof Casings> &
     brushedSharpness: number;
     scratchStrength: number;
     scratchFrequency: number;
-    scratchOctaves: number;
     scratchAngle: number;
     scratchDensity: number;
     brushedUniformity: number;
@@ -99,7 +98,6 @@ const meta = {
     brushedSharpness: 0.5,
     scratchStrength: 0,
     scratchFrequency: 10,
-    scratchOctaves: 3,
     scratchAngle: 0,
     scratchDensity: 0.4,
     brushedUniformity: 0,
@@ -247,10 +245,6 @@ const meta = {
       control: { type: 'range', min: 0.1, max: 100, step: 0.1 },
       table: { category: 'Scratches Effect' },
     },
-    scratchOctaves: {
-      control: { type: 'range', min: 1, max: 5, step: 1 },
-      table: { category: 'Scratches Effect' },
-    },
     scratchAngle: {
       control: { type: 'range', min: -1.57, max: 1.57, step: 0.02 },
       table: { category: 'Scratches Effect' },
@@ -358,7 +352,6 @@ const buildEffects = (args: StoryArgs): CasingEffects => ({
   scratches: {
     strength: args.scratchStrength,
     frequency: args.scratchFrequency,
-    octaves: args.scratchOctaves,
     angle: args.scratchAngle,
     density: args.scratchDensity,
     length: args.scratchLength,

@@ -7,14 +7,16 @@
 // Dependencies the consuming material must provide when calling perturbNormalHeight:
 //   - normal   : the shading normal to perturb, in VIEW space
 //   - viewPos  : the surface position in VIEW space (e.g. -vViewPosition)
-//   - height   : a scalar height field sampled at this fragment (see
-//                proceduralNormalHeight); the caller scales it to taste (its
-//                "strength"/bump amount) and may fade it by distance
+//   - height   : a scalar height field sampled at this fragment (produced by the
+//                pnGranular / pnGrain / pnScratches helpers below, summed); the caller
+//                scales it to taste (its "strength"/bump amount) and may fade it by
+//                distance
 // And when sampling a pattern height (pnGranular / pnGrain / pnScratches):
 //   - uv         : a 2D coordinate ALREADY scaled by the caller's frequency. The
 //                  caller owns the units (world distance, normalized, radius-based,
 //                  ...) and which axis maps to uv.y (the grain/stretch axis).
-//   - octaves    : fbm octaves (1..N)
+//   - octaves    : fbm octave count for pnGranular / pnGrain (1..N). pnScratches is
+//                  segment-based and takes NO octave count.
 //   - periodX    : if > 0, the noise tiles seamlessly every `periodX` cells in x (pass
 //                  the number of cells around a circumference to remove the wrap seam
 //                  on a closed cylinder; pass 0 to disable). Tiling is exact for

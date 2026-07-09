@@ -35,7 +35,6 @@ uniform float brushedSharpness;
 uniform float brushedUniformity;
 uniform float scratchStrength;
 uniform float scratchFrequency;
-uniform int scratchOctaves;
 uniform float scratchAngle;
 uniform float scratchDensity;
 uniform float scratchLength;
@@ -65,8 +64,8 @@ float casingHash(vec2 p) {
   return fract(p.x * p.y);
 }
 
-// Procedural micro-normal patterns + normal-perturbation helper (pnFbm2,
-// proceduralNormalHeight, perturbNormalHeight), shared from the shaderLib.
+// Procedural micro-normal patterns + normal-perturbation helper (pnGranular, pnGrain,
+// pnScratches, pnFootprintFade, perturbNormalHeight), shared from the shaderLib.
 #include ../../../../sdk/materials/shaderLib/procedural-normal.glsl
 
 // Cheap 3D value noise, sampled in WORLD space so the weathering is pinned to world

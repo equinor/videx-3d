@@ -14,12 +14,10 @@ fragment shader and wiring its own uniforms/controls.
 ## What it provides
 
 ```glsl
+// value noise + fbm (dynamic octaves), and x-tiling variants for a seamless wrap
 float pnValueNoise2(vec2 p);
 float pnFbm2(vec2 p, int octaves);
-
-// value noise + fbm (dynamic octaves), and x-tiling variants for seamless wrap
-float pnValueNoise2(vec2 p);
-float pnFbm2(vec2 p, int octaves);
+float pnValueNoise2Tiled(vec2 p, float periodX);
 float pnFbm2Tiled(vec2 p, float periodX, int octaves);
 
 // composable pattern heights - sum several to combine them
@@ -90,8 +88,11 @@ The lib imposes nothing on the CPU side; the calling material supplies:
   the units (world distance, normalized, radius-based, …), the anchoring, and
   which axis maps to `uv.y` (the grain/stretch axis). This is what makes the
   detail "auto-scale".
-- **`periodX`** — the U-tiling period, if seamless wrap is wanted (else 0).
-- pattern params (`anisotropy`/`angle`/`sharpness`/`density`, `octaves`) and a
+- **`periodX`** — the x-tiling period, if a seamless wrap is wanted (pass the number of
+  cells around a circumference; else `0`). Tiling is exact for `pnGranular` and for
+  `pnGrain`/`pnScratches` at `angle == 0`.
+- pattern params (`anisotropy`/`angle`/`sharpness`/`density`; plus `octaves` for the
+  fbm-based `pnGranular`/`pnGrain`) and a
   caller-owned **height/strength** scalar (the bump amount; fade by distance).
 
 So the feature's "width" is controlled by the frequency/anisotropy/angle the
@@ -109,19 +110,21 @@ faces can differ) as the `granular` / `brushed` / `scratches` layers of the grou
 effects: {
   granular:  { strength, frequency, octaves, anisotropy },
   brushed:   { strength, frequency, octaves, angle, sharpness, uniformity },
-  scratches: { strength, frequency, octaves, angle, density, length, wander, width },
+  scratches: { strength, frequency, angle, density, length, wander, width },
   // ...alongside the non-surface effects: silhouette, edgeShading, weathering, sectionVariation
 }
 ```
 
-Each layer owns its `strength` (0 = off, and its blend weight), `frequency` (cells
-per world unit) and `octaves`; the layers simply sum. The material feeds the lib a
-world-scaled UV (`vWorldUv` = object-distance arc length × trajectory distance) and
-a `periodX` snapped to a whole number of cells around the circumference — so the
-detail keeps a consistent size across sections of different radius, runs unbroken
-along the whole string, **and tiles seamlessly around a full (un-sliced) shell**.
-Each layer's height is divided by its own frequency so `strength` stays roughly
-frequency-independent. It also adds a subtle albedo groove and stacks on top of any
-user `normalMap`. This procedural system **replaces the old `brushStrength`/
+Each layer owns its `strength` (0 = off, and its blend weight) and `frequency` (cells
+per world unit) — plus `octaves` for the fbm-based `granular`/`brushed` layers; the
+layers simply sum. The material feeds the lib a world-scaled UV (`vWorldUv` =
+object-distance arc length × trajectory distance), so the detail keeps a consistent size
+across sections of different radius and runs unbroken along the whole string. (The noise
+wraps at the lib's internal `PN_WRAP` lattice, which also keeps `fract()` precise at
+oilfield scale; the casing shader passes `periodX = 0` because a per-fragment
+circumference period stepped with the varying radius and produced concentric banding on
+the caps/tapers.) Each layer's height is divided by its own frequency so `strength` stays
+roughly frequency-independent. It also adds a subtle albedo groove and stacks on top of
+any user `normalMap`. This procedural system **replaces the old `brushStrength`/
 `brushWidth` rails**.
 

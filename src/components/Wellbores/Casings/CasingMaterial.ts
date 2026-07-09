@@ -110,8 +110,6 @@ export type CasingEffects = {
     strength?: number;
     /** Cells per world (object-distance) unit. Default 10. */
     frequency?: number;
-    /** 1-5 fbm octaves. Default 3. */
-    octaves?: number;
     /** Scratch direction in radians (0 = along the trajectory axis). Default 0. */
     angle?: number;
     /** 0-1 how many scratches survive. Default 0.4. */
@@ -181,19 +179,21 @@ const CASING_ROUGHNESS = /* glsl */ `
 
 // After <normal_fragment_maps> (final normal available here): procedural micro-normal
 // surface detail - composable granular bumps + brushed grain + scratches, driven by a
-// U-tiling world coordinate so it aligns seamlessly around a full (un-sliced) shell.
-// Perturbs the shading normal (+ a subtle albedo groove), replacing the old brushed
+// world-scaled coordinate (vWorldUv) so the detail keeps a consistent size across
+// sections of different radius and length. Perturbs the shading normal (+ a subtle
+// albedo groove), replacing the old brushed
 // rails. Then geometric roughness AA (Toksvig-style) widens roughness where the shading
 // normal varies sub-pixel, taming the metallic sparkle on the casing's thin walls.
 const CASING_NORMAL_AA = /* glsl */ `
   // Fresh-scratch polish weight (accumulated below); used after the roughness AA to
   // locally sharpen the specular inside scratch grooves.
   float casingScratch = 0.0;
-  // detailFade > 0.0 short-circuits ALL of the high-frequency micro-normal work past the
-  // fade distance, where its (detailFade-scaled) result is already zero anyway - so this
-  // is appearance-neutral and just skips the noise on minified/far fragments. schematic
-  // mode skips it too (unlit flat shading ignores the shading normal entirely).
-  if (schematic < 0.5 && detailFade > 0.0 && (granularStrength + brushedStrength + scratchStrength) > 0.0) {
+  // Gated only by UNIFORM conditions (schematic + the per-layer strengths) so the block -
+  // which uses screen-space derivatives (pnFootprintFade, pnGrain/pnScratches fwidth,
+  // perturbNormalHeight) - stays under uniform control flow. The per-fragment distance
+  // fade is applied by MULTIPLYING the result by detailFade below (appearance-neutral,
+  // and derivative-safe); schematic mode is skipped (unlit shading ignores the normal).
+  if (schematic < 0.5 && (granularStrength + brushedStrength + scratchStrength) > 0.0) {
     // Each layer samples the procedural world UV directly, scaled by its frequency (cells
     // per world metre). vWorldUv is already object-distance units for every face (walls:
     // arc-length x along-trajectory; caps: cross-section Cartesian; edges: radial x along),
@@ -231,7 +231,7 @@ const CASING_NORMAL_AA = /* glsl */ `
       // repetition-prone AND doubles the scratch cost, so it is only summed in at high
       // detailQuality (>= 0.66) and otherwise skipped entirely.
       float scratchCoarse = step(0.66, clamp(detailQuality, 0.0, 1.0)) * 0.4;
-      float p = pnScratches(uv, scratchAngle, scratchDensity, scratchLength, scratchHalfW, scratchWander, 0.0, scratchCoarse) * pnFootprintFade(uv, scratchOctaves);
+      float p = pnScratches(uv, scratchAngle, scratchDensity, scratchLength, scratchHalfW, scratchWander, 0.0, scratchCoarse) * pnFootprintFade(uv, 1);
       // Very shallow surface scuffs: only a whisper of normal tilt (much LESS than the
       // granular/brushed layers) so they never read as carved gouges. Their visibility
       // comes almost entirely from the localized polish (roughness drop below), which
@@ -369,7 +369,6 @@ export class CasingMaterial extends MeshStandardMaterial {
     brushedUniformity: new Uniform(0),
     scratchStrength: new Uniform(0),
     scratchFrequency: new Uniform(10),
-    scratchOctaves: new Uniform(3),
     scratchAngle: new Uniform(0),
     scratchDensity: new Uniform(0.4),
     scratchLength: new Uniform(0.6),
@@ -559,9 +558,10 @@ export class CasingMaterial extends MeshStandardMaterial {
     this.uniforms.weatheringScale.value = v;
   }
 
-  /** Real-world total length (metres) of the whole wellbore trajectory. Retained for
-   * API compatibility with the component wiring; the weathering is now pinned in world
-   * space (via `vWorldPos`) so this no longer feeds the shader. */
+  /** Real-world total length (metres) of the whole wellbore trajectory. Uploaded as a
+   * uniform and used by the vertex shader to derive each section's physical length
+   * (`vSectionLength`) and the along-axis coordinate (`casingAxial`). The weathering is
+   * pinned in world space (via `vWorldPos`) and does not use it. */
   get wellLength() {
     return this._wellLength;
   }
@@ -626,7 +626,6 @@ export class CasingMaterial extends MeshStandardMaterial {
       scratches: {
         strength: u.scratchStrength.value,
         frequency: u.scratchFrequency.value,
-        octaves: u.scratchOctaves.value,
         angle: u.scratchAngle.value,
         density: u.scratchDensity.value,
         length: u.scratchLength.value,
@@ -666,10 +665,6 @@ export class CasingMaterial extends MeshStandardMaterial {
     u.brushedUniformity.value = v?.brushed?.uniformity ?? 0;
     u.scratchStrength.value = v?.scratches?.strength ?? 0;
     u.scratchFrequency.value = v?.scratches?.frequency ?? 10;
-    u.scratchOctaves.value = Math.max(
-      1,
-      Math.round(v?.scratches?.octaves ?? 3),
-    );
     u.scratchAngle.value = v?.scratches?.angle ?? 0;
     u.scratchDensity.value = v?.scratches?.density ?? 0.4;
     u.scratchLength.value = v?.scratches?.length ?? 0.6;
@@ -710,7 +705,6 @@ export class CasingMaterial extends MeshStandardMaterial {
     parameters.uniforms.brushedUniformity = u.brushedUniformity;
     parameters.uniforms.scratchStrength = u.scratchStrength;
     parameters.uniforms.scratchFrequency = u.scratchFrequency;
-    parameters.uniforms.scratchOctaves = u.scratchOctaves;
     parameters.uniforms.scratchAngle = u.scratchAngle;
     parameters.uniforms.scratchDensity = u.scratchDensity;
     parameters.uniforms.scratchLength = u.scratchLength;

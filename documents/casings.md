@@ -72,7 +72,7 @@ them.
 | `sectionVariation` | Per-section jitter of the wear so adjacent strings look differently worn rather than following a value ramp. | `0` |
 | `granular` | Isotropic value-noise bumps. | `strength` (0), `frequency` (2), `octaves` (3), `anisotropy` (0) |
 | `brushed` | Directional fine grain (many thin parallel ridges). | `strength` (0), `frequency` (2), `octaves` (3), `angle` (0), `sharpness` (0.5), `uniformity` (0) |
-| `scratches` | Sparse, hair-thin surface scuffs that glint under changing light (very shallow relief; visibility comes from a localized polish, not depth). | `strength` (0), `frequency` (10), `octaves` (3), `angle` (0), `density` (0.4), `length` (0.6), `wander` (1), `width` (0.15 — hair/needle-thin) |
+| `scratches` | Sparse, hair-thin surface scuffs that glint under changing light (very shallow relief; visibility comes from a localized polish, not depth). | `strength` (0), `frequency` (10), `angle` (0), `density` (0.4), `length` (0.6), `wander` (1), `width` (0.15 — hair/needle-thin) |
 | `detailQuality` | Fill-rate vs. quality knob — see [Performance](#performance). | `0.6` |
 
 The `granular` / `brushed` / `scratches` layers are built on the shared
