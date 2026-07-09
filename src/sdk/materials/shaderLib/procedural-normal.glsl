@@ -189,7 +189,12 @@ float pnScratchLayer(vec2 r, float angle, float density, float lengthScale, floa
       vec2 c = cell + vec2(float(i), float(j));
       vec2 h = mod(c, PN_WRAP); // keep hash coords small/precise + seamless at the axial wrap
       if(tile)
-        h.x = mod(c.x, periodX); // seamless wrap around the circumference
+        // max() keeps the divisor provably non-zero: callers that disable tiling pass
+        // periodX = 0.0, and some backends (ANGLE/D3D) constant-fold the mod() division
+        // inside this branch BEFORE dead-code elimination and warn "X4008: floating
+        // point division by zero". Only reached when tile (periodX > 0.5), so this is a
+        // no-op at runtime.
+        h.x = mod(c.x, max(periodX, 1.0)); // seamless wrap around the circumference
       h += seed;
       if(pnHash2(h + 3.1) > density)
         continue; // sparsity
