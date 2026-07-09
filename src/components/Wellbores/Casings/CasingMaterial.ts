@@ -23,7 +23,7 @@ export type CasingMaterialParameters = MeshStandardMaterialParameters & {
    * that stays consistent across sections of different radius and length. Default
    * `'normalized'`. */
   mapUvUnits?: 'normalized' | 'world';
-  /** UV units for `normalMap` / `bumpMap`, independent of {@link mapUvUnits}. Default
+  /** UV units for `normalMap` / `bumpMap`, independent of `mapUvUnits`. Default
    * `'normalized'`. */
   normalMapUvUnits?: 'normalized' | 'world';
   /** Grouped casing stylization effects (silhouette outline, section edge shading,
@@ -331,7 +331,7 @@ export class CasingMaterial extends MeshStandardMaterial {
   private _wearResistance = 1;
   private _wellLength = 1;
 
-  /** Custom uniforms bound into the patched program in {@link onBeforeCompile} and
+  /** Custom uniforms bound into the patched program in `onBeforeCompile` and
    * shared by reference with the OIT variants so per-frame updates propagate. */
   uniforms = {
     // slicing / vertex transform (unchanged geometry contract with the picking material)
