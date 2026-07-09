@@ -16,12 +16,11 @@ import { Surface } from '../../components/Surfaces/Surface.tsx';
 import { Tanker } from '../../components/Tanker/Tanker.tsx';
 import { UtmArea } from '../../components/UtmArea/UtmArea.tsx';
 import { UtmPosition } from '../../components/UtmArea/UtmPosition.tsx';
-import { BasicTrajectory } from '../../components/Wellbores/BasicTrajectory/BasicTrajectory.tsx';
 import { Casings } from '../../components/Wellbores/Casings/Casings.tsx';
 import { DepthMarkers } from '../../components/Wellbores/DepthMarkers/DepthMarkers.tsx';
 import { FormationMarkers } from '../../components/Wellbores/FormationMarkers/FormationMarkers.tsx';
 import { Perforations } from '../../components/Wellbores/Perforations/Perforations.tsx';
-import { TubeTrajectory } from '../../components/Wellbores/TubeTrajectory/TubeTrajectory.tsx';
+import { Trajectory } from '../../components/Wellbores/Trajectory/Trajectory.tsx';
 import { Wellbore } from '../../components/Wellbores/Wellbore/Wellbore.tsx';
 import { WellboreLabel } from '../../components/Wellbores/WellboreLabel/WellboreLabel.tsx';
 import { WellboreSeismicSection } from '../../components/Wellbores/WellboreSeismicSection/WellboreSeismicSection.tsx';
@@ -32,13 +31,12 @@ import {
 } from '../../events/wellbore-events.ts';
 import {
   AnnotationsPass,
+  BasicTrajectory,
   BoxGrid,
   CameraFocusAtPointEvent,
   CompletionTools,
-  createLayers,
   Distance,
   EventEmitterCallbackEvent,
-  LAYERS,
   Ocean,
   OITAntialiasMode,
   OITRenderPass,
@@ -47,7 +45,7 @@ import {
   Shoes,
   SMAAQuality,
   WellboreBounds,
-  WellboreFormationColumn,
+  WellboreFormationColumn
 } from '../../main.ts';
 import { OutputPass } from '../../rendering/passes/OutputPass.ts';
 import { RenderingPipeline } from '../../rendering/RenderingPipeline.tsx';
@@ -384,12 +382,6 @@ const Example = (args: ExampleProps) => {
     return undefined;
   }, []);
 
-  // Exclude the BasicTrajectory LOD from the OIT transparency passes. It is
-  // transparent (opacity 0.95) so it would otherwise be composited over the
-  // emissive highlight; drawing it in the opaque pass keeps the highlight visible
-  // when zoomed out (where trajectories drop to this line LOD).
-  const trajectoryLayers = useMemo(() => createLayers(LAYERS.OIT_EXCLUDED), []);
-
   // Ocean box volume (10 km across): a tessellated surface at y = 0 plus a
   // water body and an irregular sea bed varying between 100 m and 200 m depth.
   const oceanBox = useMemo(
@@ -516,31 +508,30 @@ const Example = (args: ExampleProps) => {
                     }}
                   >
                     <WellboreBounds id={wellbore.id} fromMsl={fromMsl}>
-                      <BasicTrajectory
-                        color={color}
-                        priority={9}
-                        name="BasicTrajectory"
-                        layers={trajectoryLayers}
-                      />
                       <Distance
                         min={args.showCasingAndCompletion ? 10 : 0}
-                        max={2000}
+                        max={Infinity}
                       >
-                        <TubeTrajectory
-                          name="TubeTrajectory"
-                          radius={0.1 * args.sizeMultiplier}
+                        <Trajectory
                           color={color}
-                          priority={8}
                           radialSegments={8}
+                          radius={1 * args.sizeMultiplier}
+                          priority={8}
                         />
-                        {args.showShoes && (
+                      </Distance>
+                      {args.showShoes && (
+                        <Distance
+                          min={args.showCasingAndCompletion ? 10 : 0}
+                          max={2000}
+                        >
                           <Shoes
                             radialSegments={32}
                             sizeMultiplier={args.sizeMultiplier * 1.3}
                             color={isSelected ? color : 'orange'}
                           />
-                        )}
-                      </Distance>
+                        </Distance>
+                      )}
+
                       {(args.showFormationColumns ||
                         args.showFormationMarkers ||
                         args.showPerforations) && (
@@ -568,6 +559,7 @@ const Example = (args: ExampleProps) => {
                         )}
                       {args.showCasingAndCompletion && (
                         <Distance min={0} max={10} onDemand>
+                          <BasicTrajectory color={color} priority={8} />
                           <Casings
                             name="Casings"
                             radialSegments={16}
@@ -581,14 +573,6 @@ const Example = (args: ExampleProps) => {
                             name="Completion"
                             radialSegments={16}
                             sizeMultiplier={args.sizeMultiplier}
-                            fallback={() => (
-                              <TubeTrajectory
-                                radius={0.1 * args.sizeMultiplier}
-                                color={color}
-                                priority={8}
-                                radialSegments={16}
-                              />
-                            )}
                           />
                         </Distance>
                       )}

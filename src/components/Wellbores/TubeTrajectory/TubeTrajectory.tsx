@@ -28,6 +28,12 @@ export type TubeTrajectoryProps = CommonComponentProps &
 /**
  * Renders a trajectory as a tube geometry.
  *
+ * @deprecated Use {@link Trajectory} instead. `TubeTrajectory` bakes `radius` and
+ * `radialSegments` into the generated geometry (so changing them rebuilds it) and has
+ * no screen-space line floor, GPU picking or OIT support. The unified {@link Trajectory}
+ * covers the same use case with radius as a shader uniform and a ~1 px field-scale
+ * floor. See the [migration guide](/videx-3d/docs/documents/trajectory-migration.html).
+ *
  * @example
  * <Wellbore id={wellboreId}>
  *  <TubeTrajectory radius={2} color="cyan" radialSegments={36} />

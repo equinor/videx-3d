@@ -6,6 +6,7 @@ import {
   DoubleSide,
   InstancedMesh,
   Line,
+  Material,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
@@ -61,10 +62,18 @@ export const Highlighter = ({
       let primitiveObject: Mesh | Line | InstancedMesh;
       const geometry = item.object.geometry;
 
+      // Objects whose geometry needs a custom shader (e.g. the instanced Trajectory
+      // tube, whose shape is reconstructed in its vertex shader) can supply a
+      // compatible ghost material via userData.highlightMaterial. Everything else
+      // falls back to the shared MeshBasicMaterial.
+      const ghostMaterial =
+        (item.object.userData.highlightMaterial as Material | undefined) ||
+        material;
+
       if (item.object instanceof InstancedMesh) {
         const instanced = item.object as InstancedMesh;
         if (item.instanceIndex !== undefined) {
-          primitiveObject = new Mesh(geometry, material);
+          primitiveObject = new Mesh(geometry, ghostMaterial);
           instanced.updateWorldMatrix(true, false);
           instanced.getMatrixAt(item.instanceIndex, instanceMatrix);
           primitiveObject.matrixAutoUpdate = false;
@@ -72,7 +81,11 @@ export const Highlighter = ({
             .copy(instanced.matrixWorld)
             .multiply(instanceMatrix);
         } else {
-          const imesh = new InstancedMesh(geometry, material, instanced.count);
+          const imesh = new InstancedMesh(
+            geometry,
+            ghostMaterial,
+            instanced.count,
+          );
           instanced.updateWorldMatrix(true, false);
           imesh.matrixAutoUpdate = false;
           imesh.matrix.copy(instanced.matrixWorld);
@@ -80,12 +93,12 @@ export const Highlighter = ({
           primitiveObject = imesh;
         }
       } else if (item.object instanceof Mesh) {
-        primitiveObject = new Mesh(geometry, material);
+        primitiveObject = new Mesh(geometry, ghostMaterial);
         item.object.updateWorldMatrix(true, false);
         primitiveObject.matrixAutoUpdate = false;
         primitiveObject.matrix.copy(item.object.matrixWorld);
       } else {
-        primitiveObject = new Line(geometry, material);
+        primitiveObject = new Line(geometry, ghostMaterial);
         item.object.updateWorldMatrix(true, false);
         primitiveObject.matrixAutoUpdate = false;
         primitiveObject.matrix.copy(item.object.matrixWorld);

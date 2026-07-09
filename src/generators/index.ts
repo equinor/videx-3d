@@ -13,6 +13,7 @@ export * from './perimieter-generator';
 export * from './position-markers-generator';
 export * from './shoes-generator';
 export * from './surface-generator';
+export * from './trajectory-generator';
 export * from './tube-trajectory-generator';
 export * from './wellbore-bounds-generator';
 export * from './wellbore-formation-column-generator';

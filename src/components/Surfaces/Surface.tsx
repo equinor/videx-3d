@@ -8,7 +8,7 @@ import {
   MeshBasicMaterial,
   Texture,
 } from 'three';
-import { CommonComponentProps } from '../../common/types';
+import { CommonComponentProps, ContourColorMode } from '../../common/types';
 import { PointerEvents } from '../../events/interaction-events';
 import { useGenerator } from '../../hooks/useGenerator';
 import { createLayers, LAYERS } from '../../layers/layers';
@@ -31,7 +31,7 @@ import {
   surfaceTextures,
   SurfaceTexturesResponse,
 } from './surface-defs';
-import { ContourColorMode, SurfaceMaterial } from './SurfaceMaterial';
+import { SurfaceMaterial } from './SurfaceMaterial';
 
 /**
  * Surface props

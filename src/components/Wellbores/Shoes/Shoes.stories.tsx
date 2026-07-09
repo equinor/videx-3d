@@ -6,8 +6,9 @@ import { DataProviderDecorator } from '../../../storybook/decorators/data-provid
 import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator';
 import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator';
 import storyArgs from '../../../storybook/story-args.json';
-import { TubeTrajectory } from '../TubeTrajectory';
+import { Trajectory } from '../Trajectory/Trajectory';
 import { Wellbore } from '../Wellbore/Wellbore';
+import { WellboreBounds } from '../WellboreBounds/WellboreBounds';
 import { Shoes } from './Shoes';
 
 const meta = {
@@ -53,7 +54,9 @@ export const Default: Story = {
 
     return (
       <Wellbore id={id}>
-        <TubeTrajectory radius={1} color="teal" />
+        <WellboreBounds id={id}>
+          <Trajectory radius={1} color="teal" />
+        </WellboreBounds>
         <Shoes {...rest} />
       </Wellbore>
     );

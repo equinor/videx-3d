@@ -3,6 +3,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { scaleOrdinal } from 'd3-scale';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { RepeatWrapping, TextureLoader, Vector3 } from 'three';
+import { ContourColorMode } from '../../common/types';
 import { useAnnotationsState } from '../../components/Annotations/annotations-state';
 import { CameraTargetMarker } from '../../components/CameraTargetMarker/CameraTargetMarker';
 import { BoxGrid } from '../../components/Grids/BoxGrid/BoxGrid';
@@ -14,7 +15,6 @@ import {
 } from '../../components/Html/OutputPanel/output-panel-state';
 import { ObservableGroup } from '../../components/ObservableGroup/ObservableGroup';
 import { Surface } from '../../components/Surfaces/Surface';
-import { ContourColorMode } from '../../components/Surfaces/SurfaceMaterial';
 import { UtmArea } from '../../components/UtmArea/UtmArea';
 import { UtmPosition } from '../../components/UtmArea/UtmPosition';
 import { BasicTrajectory } from '../../components/Wellbores/BasicTrajectory/BasicTrajectory';
@@ -22,7 +22,7 @@ import { Casings } from '../../components/Wellbores/Casings/Casings.tsx';
 import { DepthMarkers } from '../../components/Wellbores/DepthMarkers/DepthMarkers';
 import { FormationMarkers } from '../../components/Wellbores/FormationMarkers/FormationMarkers';
 import { Perforations } from '../../components/Wellbores/Perforations/Perforations';
-import { TubeTrajectory } from '../../components/Wellbores/TubeTrajectory/TubeTrajectory';
+import { Trajectory } from '../../components/Wellbores/Trajectory/Trajectory';
 import { Wellbore } from '../../components/Wellbores/Wellbore/Wellbore';
 import { WellboreLabel } from '../../components/Wellbores/WellboreLabel/WellboreLabel';
 import { WellboreSeismicSection } from '../../components/Wellbores/WellboreSeismicSection/WellboreSeismicSection.tsx';
@@ -374,30 +374,30 @@ const Example = (args: ExampleProps) => {
                     }}
                   >
                     <WellboreBounds id={wellbore.id} fromMsl={fromMsl}>
-                      <BasicTrajectory
-                        color={color}
-                        priority={9}
-                        name="BasicTrajectory"
-                      />
                       <Distance
                         min={args.showCasingAndCompletion ? 10 : 0}
-                        max={2000}
+                        max={Infinity}
                       >
-                        <TubeTrajectory
-                          name="TubeTrajectory"
+                        <Trajectory
+                          name="Trajectory"
                           radius={0.1 * args.sizeMultiplier}
                           color={color}
                           priority={8}
                           radialSegments={8}
                         />
-                        {args.showShoes && (
+                      </Distance>
+                      {args.showShoes && (
+                        <Distance
+                          min={args.showCasingAndCompletion ? 10 : 0}
+                          max={2000}
+                        >
                           <Shoes
                             radialSegments={32}
                             sizeMultiplier={args.sizeMultiplier * 1.3}
                             color={isSelected ? color : 'orange'}
                           />
-                        )}
-                      </Distance>
+                        </Distance>
+                      )}
                       {(args.showFormationColumns ||
                         args.showFormationMarkers ||
                         args.showPerforations) && (
@@ -426,6 +426,7 @@ const Example = (args: ExampleProps) => {
                       )}
                       {args.showCasingAndCompletion && (
                         <Distance min={0} max={10} onDemand>
+                          <BasicTrajectory color={color} priority={8} />
                           <Casings
                             name="Casings"
                             radialSegments={16}
@@ -439,14 +440,6 @@ const Example = (args: ExampleProps) => {
                             name="Completion"
                             radialSegments={16}
                             sizeMultiplier={args.sizeMultiplier}
-                            fallback={() => (
-                              <TubeTrajectory
-                                radius={0.1 * args.sizeMultiplier}
-                                color={color}
-                                priority={8}
-                                radialSegments={16}
-                              />
-                            )}
                           />
                         </Distance>
                       )}

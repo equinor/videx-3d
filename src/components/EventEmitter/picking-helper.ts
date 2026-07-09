@@ -2,6 +2,7 @@ import {
   Color,
   FloatType,
   InstancedMesh,
+  Material,
   NearestFilter,
   NoColorSpace,
   Object3D,
@@ -241,24 +242,32 @@ export class PickingHelper {
     const mapLength = this._objectMapLength;
     const mapTotal = this._objectMapCount;
 
-    // handle listeners with custom emitter material
+    // Swap in custom emitter materials so displaced / instanced geometry (e.g. the
+    // Trajectory tube, whose shape is reconstructed in its vertex shader) is picked
+    // with the same silhouette it is drawn with. A material may be provided per-mesh
+    // via `userData.emitterMaterial` (preferred — works under any ancestor listener,
+    // e.g. a Wellbore, with no dedicated registration) or per-listener via
+    // `customMaterial`. Guard against double-swapping a mesh reachable from multiple
+    // listeners so the original material is restored correctly.
     const postUpdates: (() => void)[] = [];
+    const swapped = new Set<RenderableObject>();
     this._listeners.forEach(listener => {
-      if (listener.customMaterial) {
-        const customMaterial = listener.customMaterial;
-        listener.object.traverse((obj: Object3D) => {
-          if (obj.layers.isEnabled(LAYERS.EMITTER)) {
-            const robj = obj as RenderableObject;
-            if (robj.material) {
-              const originalMaterial = robj.material;
-              robj.material = customMaterial;
-              postUpdates.push(() => {
-                robj.material = originalMaterial;
-              });
-            }
-          }
-        });
-      }
+      listener.object.traverse((obj: Object3D) => {
+        if (!obj.layers.isEnabled(LAYERS.EMITTER)) return;
+        const robj = obj as RenderableObject;
+        if (!robj.material || swapped.has(robj)) return;
+        const material =
+          (obj.userData.emitterMaterial as Material | undefined) ||
+          listener.customMaterial;
+        if (material) {
+          const originalMaterial = robj.material;
+          robj.material = material;
+          swapped.add(robj);
+          postUpdates.push(() => {
+            robj.material = originalMaterial;
+          });
+        }
+      });
     });
 
     renderer.setRenderTarget(this._pbo);

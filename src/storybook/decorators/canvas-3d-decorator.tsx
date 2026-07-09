@@ -49,7 +49,7 @@ export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
       }}
       dpr={Math.min(2, parameters.pixelRatio || devicePixelRatio)}
       gl={{
-        logarithmicDepthBuffer: true,
+        logarithmicDepthBuffer: parameters.logDepth ?? true,
         autoClear: !!parameters.autoClear,
         antialias: !parameters.msaaDisabled,
         toneMapping: NoToneMapping,

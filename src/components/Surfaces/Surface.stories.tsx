@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useMemo } from 'react';
+import { ContourColorMode } from '../../common/types';
 import { SurfaceMeta, Vec2 } from '../../sdk';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
@@ -9,7 +10,6 @@ import { useSurfaceMeta } from '../../storybook/hooks/useSurfaceMeta';
 import storyArgs from '../../storybook/story-args.json';
 import { UtmArea, UtmPosition } from '../UtmArea';
 import { Surface, SurfaceProps } from './Surface';
-import { ContourColorMode } from './SurfaceMaterial';
 
 // const loader = new TextureLoader()
 // const normalMap = loader.load('normal_map.jpg')
