@@ -163,6 +163,21 @@ type RenderableEntry = {
 };
 
 /**
+ * Built-in anti-aliasing mode for {@link OITRenderPass.antialias}. See that field for
+ * the per-mode description. Exported as the single source of truth so consumers
+ * (and Storybook arg types) can reference it instead of re-declaring the union.
+ *
+ * @group Rendering
+ */
+export type OITAntialiasMode =
+  | 'none'
+  | 'temporal'
+  | 'smaa'
+  | 'temporal-smaa'
+  | 'taa'
+  | 'fxaa';
+
+/**
  * Hybrid order-independent-transparency (OIT) render pass for use with the
  * {@link RenderingPipeline} (or any custom composer). Renders the nearest transparent
  * layer exactly (depth-peeled, alpha-over) and the remaining layers using
@@ -285,8 +300,7 @@ export class OITRenderPass extends Pass {
    * This is the OIT pipeline's high-quality AA. Non-OIT setups (plain `RenderPass`)
    * should use MSAA instead.
    */
-  antialias: 'none' | 'temporal' | 'smaa' | 'temporal-smaa' | 'taa' | 'fxaa' =
-    'taa';
+  antialias: OITAntialiasMode = 'taa';
 
   /**
    * SMAA quality preset used by the `'smaa'` and `'temporal-smaa'` {@link antialias}

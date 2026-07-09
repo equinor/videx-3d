@@ -20,9 +20,14 @@ import {
   SRGBColorSpace,
   Line as ThreeLine,
   ToneMapping,
-  Vector2
+  Vector2,
 } from 'three';
-import { OITRenderPass, Pass, RenderPass } from '../../main.ts';
+import {
+  OITAntialiasMode,
+  OITRenderPass,
+  Pass,
+  RenderPass,
+} from '../../main.ts';
 import { makeOitCompatible } from '../oit-material.ts';
 import { FXAAPass } from '../passes/FXAAPass.ts';
 import { OutputPass } from '../passes/OutputPass.ts';
@@ -64,7 +69,7 @@ type DebugArgs = {
   downsampleMode: 'mipmap' | 'box';
   oitEnabled: boolean;
   oitMaterials: boolean;
-  aaMode: 'none' | 'fxaa' | 'smaa' | 'temporal' | 'temporal-smaa' | 'taa';
+  aaMode: OITAntialiasMode;
   temporalClampStrength: number;
   taaRestClampStrength: number;
   taaRestBoxGamma: number;
