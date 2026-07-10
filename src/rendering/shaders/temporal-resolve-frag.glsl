@@ -55,7 +55,21 @@ vec3 tonemap(vec3 c) {
 }
 
 vec3 untonemap(vec3 c) {
-  return c / max(1.0 - luma(c), 1e-4);
+  // Clamp the expansion luma below 1: the per-channel YCoCg clip/blend can decode to an
+  // RGB whose luma is >= 1, which would drive (1 - luma) to zero (or negative) and blow
+  // the result past the half-float max into +Inf - the seed of a NaN feedback loop.
+  // Bounding luma keeps the expansion finite.
+  return c / (1.0 - min(luma(c), 0.999));
+}
+
+// Largest magnitude written back into the (half-float) history each frame. Well under
+// the half-float max (65504) so a composed frame can never round up to +Inf.
+const float HALF_MAX_SAFE = 60000.0;
+
+// True when every channel is finite (no NaN / Inf). GLSL ES gives no portable
+// isnan/isinf, so test NaN via self-inequality (NaN != NaN) and Inf via magnitude.
+bool isFiniteColor(vec4 c) {
+  return c == c && all(lessThan(abs(c), vec4(1e20)));
 }
 
 // RGB <-> YCoCg. Clipping in YCoCg bounds luma and chroma separately, so colour
@@ -93,6 +107,13 @@ void main() {
   }
 
   vec4 h = texture2D(history, vUv);
+  // Belt-and-suspenders: drop a non-finite (NaN/Inf) history texel back to the current
+  // frame so it cannot persist in the running average. (Unlike the TAA resolver this
+  // reads history point-aligned and reseeds on motion, so it cannot spread - but the
+  // shared untonemap arithmetic makes the guard cheap insurance.)
+  if(!isFiniteColor(h)) {
+    h = c;
+  }
   vec4 curY = vec4(rgb2ycocg(tonemap(c.rgb)), c.a);
   vec4 histY = vec4(rgb2ycocg(tonemap(h.rgb)), h.a);
 
@@ -122,5 +143,7 @@ void main() {
   // HDR. While still, blend == 1 - feedback and the jittered frames average into a
   // supersampled image that CONVERGES.
   vec4 outY = mix(clippedY, curY, blend);
-  gl_FragColor = vec4(untonemap(ycocg2rgb(outY.rgb)), outY.a);
+  // Clamp to a finite, non-negative range before writing back to history so a single
+  // pathological frame can never store an +Inf (and thus a NaN next frame).
+  gl_FragColor = vec4(clamp(untonemap(ycocg2rgb(outY.rgb)), 0.0, HALF_MAX_SAFE), outY.a);
 }
