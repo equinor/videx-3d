@@ -118,6 +118,51 @@ export function directionVec3(v1: Vec3, v2: Vec3): Vec3 {
   return normalizeVec3(subVec3(v2, v1));
 }
 
+/**
+ * A bounds shape for distance-based level of detail: a bounding `sphere`, an
+ * axis-aligned bounding `box` (as `[min, max]`) or a single `position`. Consumed by the
+ * `Bounds` component and {@link distanceToBounds}.
+ */
+export type BoundsShape = {
+  /** Bounding sphere. Highest precedence. */
+  sphere?: { center: Vec3; radius: number };
+  /** Axis-aligned bounding box as `[min, max]`. Used when `sphere` is unset. */
+  box?: [Vec3, Vec3];
+  /** A single point. Lowest precedence. */
+  position?: Vec3;
+};
+
+/**
+ * Non-negative distance from `point` to a {@link BoundsShape} — `0` when the point is
+ * inside or on the shape. Precedence when several are set: `sphere` > `box` >
+ * `position`; returns `Infinity` when none is provided. Pure math (no rendering
+ * dependencies), so it can drive level-of-detail decisions and be unit tested directly.
+ *
+ * Mirrors three.js' `Sphere`/`Box3.distanceToPoint` (clamped to `0` on the inside).
+ */
+export function distanceToBounds(point: Vec3, bounds: BoundsShape): number {
+  if (bounds.sphere) {
+    const d =
+      lengthVec3(subVec3(point, bounds.sphere.center)) - bounds.sphere.radius;
+    return d > 0 ? d : 0;
+  }
+  if (bounds.box) {
+    const [min, max] = bounds.box;
+    // Component-wise gap to the box (0 on the inside of each axis), then its length.
+    const dx =
+      point[0] < min[0] ? min[0] - point[0] : Math.max(0, point[0] - max[0]);
+    const dy =
+      point[1] < min[1] ? min[1] - point[1] : Math.max(0, point[1] - max[1]);
+    const dz =
+      point[2] < min[2] ? min[2] - point[2] : Math.max(0, point[2] - max[2]);
+    return lengthVec3([dx, dy, dz]);
+  }
+  if (bounds.position) {
+    return lengthVec3(subVec3(point, bounds.position));
+  }
+  return Infinity;
+}
+
 export function distanceVec3(v1: Vec3, v2: Vec3): number {
   return lengthVec3(subVec3(v2, v1));
 }

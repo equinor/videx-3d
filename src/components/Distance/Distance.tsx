@@ -25,23 +25,34 @@ export type DistanceProps = {
 };
 
 /**
- * The Distance component can be used to conditionally render other components.
+ * The Distance component can be used to conditionally render (or, with `onDemand`,
+ * mount/unmount) child components based on the camera's distance to a bounds — for
+ * example to swap geometry level-of-detail. It reads the {@link DistanceContext}, which a
+ * parent must provide: use the generic {@link Bounds} for any object, or
+ * {@link WellboreBounds} for a wellbore.
  *
  * @example
- * <Wellbore id={wellboreId}>
- *  { // DistanceContext provider }
- *   <WellboreBounds id={wellboreId}>
- *     <BasicTrajectory />
- *     <Distance min={0} max={2000}>
- *       <TubeTrajectory />
- *     </Distance>
- *   </WellboreBounds>
- * </Wellbore>
+ * <Bounds sphere={{ center: [0, 0, 0], radius: 5 }}>
+ *   <Distance min={0} max={50}>
+ *     <mesh>
+ *       <sphereGeometry />
+ *       <meshStandardMaterial color="red" />
+ *     </mesh>
+ *   </Distance>
+ *   <Distance min={50} max={Infinity}>
+ *     <mesh>
+ *       <boxGeometry />
+ *       <meshStandardMaterial color="blue" />
+ *     </mesh>
+ *   </Distance>
+ * </Bounds>
  *
  * @remarks
- * This component depends on a `DistanceContext` being provided by a parent component.
+ * This component depends on a `DistanceContext` being provided by a parent component
+ * (e.g. {@link Bounds} or {@link WellboreBounds}).
  *
  * @see [Storybook](/videx-3d/?path=/docs/components-misc-distance--docs)
+ * @see {@link Bounds}
  * @see {@link DistanceContext}
  * @see {@link WellboreBounds}
  *
