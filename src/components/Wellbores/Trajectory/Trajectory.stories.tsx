@@ -2,7 +2,14 @@ import { useTexture } from '@react-three/drei';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { scaleOrdinal } from 'd3-scale';
 import { ReactNode, Suspense, useCallback, useMemo } from 'react';
-import { RepeatWrapping, SRGBColorSpace, Texture } from 'three';
+import {
+  AdditiveBlending,
+  Blending,
+  NormalBlending,
+  RepeatWrapping,
+  SRGBColorSpace,
+  Texture,
+} from 'three';
 import { ContourColorMode } from '../../../common/types';
 import { WellboreSelectedEvent } from '../../../events/wellbore-events';
 import { Vec2 } from '../../../sdk/types/common';
@@ -111,6 +118,9 @@ type TrajectoryArgs = {
   fog: boolean;
   fogNear: number;
   fogFar: number;
+  highlightColor: string;
+  highlightOpacity: number;
+  highlightBlending: Blending;
   picking: boolean;
 };
 
@@ -142,6 +152,9 @@ const baseArgs: TrajectoryArgs = {
   fog: false,
   fogNear: 15000,
   fogFar: 40000,
+  highlightColor: '#ffffff',
+  highlightOpacity: 1,
+  highlightBlending: AdditiveBlending,
   picking: true,
 };
 
@@ -272,6 +285,25 @@ const meta = {
       control: { type: 'range', min: 0, max: 200000, step: 1000 },
       table: { category: 'Fog' },
     },
+    highlightColor: {
+      control: { type: 'color' },
+      table: { category: 'Highlight' },
+    },
+    highlightOpacity: {
+      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      table: { category: 'Highlight' },
+    },
+    highlightBlending: {
+      options: [NormalBlending, AdditiveBlending],
+      control: {
+        type: 'inline-radio',
+        labels: {
+          [NormalBlending]: 'normal',
+          [AdditiveBlending]: 'additive',
+        },
+      },
+      table: { category: 'Highlight' },
+    },
     picking: {
       control: { type: 'boolean' },
       table: { category: 'Debug' },
@@ -389,6 +421,9 @@ const meta = {
                               radialSegments={args.radialSegments}
                               lowRadialSegments={args.lowRadialSegments}
                               lodDistance={args.lodDistance}
+                              highlightColor={args.highlightColor}
+                              highlightOpacity={args.highlightOpacity}
+                              highlightBlending={args.highlightBlending}
                               priority={9}
                             />
                           </WellboreBounds>

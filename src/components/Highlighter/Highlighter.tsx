@@ -19,6 +19,12 @@ const instanceMatrix = new Matrix4();
 export type HighlighterProps = {
   color?: string | number | Color;
   blending?: Blending;
+  /**
+   * Opacity of the default ghost material (0..1, default `1`). Components that supply
+   * their own `userData.highlightMaterial` (e.g. `Trajectory`) manage their own opacity
+   * and are not affected by this.
+   */
+  opacity?: number;
   renderOrder?: number;
 };
 
@@ -41,6 +47,7 @@ export type HighlighterProps = {
 export const Highlighter = ({
   color,
   blending,
+  opacity,
   renderOrder,
 }: HighlighterProps) => {
   const { highlighted } = useHighlightState();
@@ -51,11 +58,11 @@ export const Highlighter = ({
       depthTest: true,
       depthWrite: false,
       transparent: true,
-      opacity: 1,
+      opacity: opacity ?? 1,
       blending: blending || AdditiveBlending,
       side: DoubleSide,
     });
-  }, [color, blending]);
+  }, [color, blending, opacity]);
 
   const highlightObjects = useMemo(() => {
     return highlighted.map(item => {

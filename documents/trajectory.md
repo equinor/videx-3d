@@ -141,12 +141,12 @@ reference rebuilds the textures.
 
 ## Picking and highlighting
 
-`Trajectory` supports GPU picking and the `Highlighter` out of the box — capabilities the
-legacy `BasicTrajectory` / `TubeTrajectory` did not have. It exposes per-mesh
-`userData.emitterMaterial` and `userData.highlightMaterial` (which the `PickingHelper`
-and `Highlighter` prefer over their defaults), so you register pointer handlers on the
-ancestor `Wellbore` (or another listener) as usual — no dedicated registration on the
-trajectory itself:
+`Trajectory` supports GPU picking and the `Highlighter` out of the box. Because the tube
+is reconstructed in the vertex shader, it exposes per-mesh `userData.emitterMaterial` and
+`userData.highlightMaterial` — dedicated picking / ghost materials that reproduce the
+displaced silhouette, which the `PickingHelper` and `Highlighter` prefer over their stock
+materials. Register pointer handlers on the ancestor `Wellbore` (or another listener) as
+usual — no dedicated registration on the trajectory itself:
 
 ```tsx
 <Wellbore
@@ -159,6 +159,17 @@ trajectory itself:
   </WellboreBounds>
 </Wellbore>
 ```
+
+### Highlight styling
+
+The hover / selection ghost is tunable so it reads on any background (the default
+additive glow washes out on light scenes):
+
+| Prop | Default | Meaning |
+|--|--|--|
+| `highlightColor` | `#ffffff` | Ghost colour. |
+| `highlightOpacity` | `1` | Ghost opacity (0..1). |
+| `highlightBlending` | `AdditiveBlending` | Blend mode. `AdditiveBlending` glows on dark scenes; use `NormalBlending` with `highlightOpacity` < 1 for a solid overlay on light backgrounds. |
 
 ## Custom material
 

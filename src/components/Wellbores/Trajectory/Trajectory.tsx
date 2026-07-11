@@ -7,7 +7,14 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Color, Material, Mesh, Texture } from 'three';
+import {
+  AdditiveBlending,
+  Blending,
+  Color,
+  Material,
+  Mesh,
+  Texture,
+} from 'three';
 import {
   CommonComponentProps,
   ContourColorMode,
@@ -43,6 +50,17 @@ export type TrajectoryProps = CommonComponentProps &
     minPixelRadius?: number;
     /** Highlight (ghost) colour used by the `Highlighter` on hover/selection. */
     highlightColor?: string;
+    /**
+     * Highlight (ghost) opacity (0..1). Together with `highlightBlending` this tunes how
+     * strongly the hover/selection effect reads against a given background. Default 1.
+     */
+    highlightOpacity?: number;
+    /**
+     * Blend mode for the highlight ghost. `AdditiveBlending` (the default) glows on dark
+     * scenes but washes out on light ones; use `NormalBlending` (with `highlightOpacity`
+     * < 1) for a solid overlay that reads on any background.
+     */
+    highlightBlending?: Blending;
     /** Opacity (1 = opaque, the default). Values < 1 render semi-transparent. */
     opacity?: number;
     /** Colour the silhouette darkens toward (default black = a darker same-hue diffuse). */
@@ -156,6 +174,8 @@ export const Trajectory = ({
   radius = 0.5,
   minPixelRadius = 1,
   highlightColor = '#ffffff',
+  highlightOpacity = 1,
+  highlightBlending = AdditiveBlending,
   opacity = 1,
   shadingColor = '#000000',
   shadingStrength = 0.6,
@@ -384,10 +404,19 @@ export const Trajectory = ({
   // Keep the highlight ghost matching the visible tube's shape.
   useEffect(() => {
     highlightMaterial.color = new Color(highlightColor);
+    highlightMaterial.uniforms.opacity.value = highlightOpacity;
+    highlightMaterial.blending = highlightBlending;
     highlightMaterial.radius = radius;
     highlightMaterial.minPixelRadius = minPixelRadius;
     highlightMaterial.sizeMultiplier = 1;
-  }, [highlightMaterial, highlightColor, radius, minPixelRadius]);
+  }, [
+    highlightMaterial,
+    highlightColor,
+    highlightOpacity,
+    highlightBlending,
+    radius,
+    minPixelRadius,
+  ]);
 
   // Opacity opt-in: opaque by default, semi-transparent when < 1 (OIT-aware hosts
   // resolve it order-independently via the attached variants).
