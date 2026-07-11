@@ -12,10 +12,11 @@ drawing a wellbore path. This guide covers upgrading existing code.
 | `Trajectory` | **New** | The recommended trajectory component. |
 
 `TubeTrajectory` bakes `radius` and `radialSegments` into the generated geometry (so
-changing them regenerates it), draws a second geometry on top of `BasicTrajectory`, and
-has no screen-space line floor, GPU picking or OIT support. `Trajectory` covers the same
-use case with radius as a shader uniform, a ~1 px field-scale floor, one geometry, and
-picking / highlighting / OIT built in.
+changing them regenerates it) and has no screen-space line floor, so the old approach
+paired it with an always-on `BasicTrajectory` line gated by `Distance`. `Trajectory`
+covers the same use case from a single geometry, with radius as a shader uniform and a
+~1 px field-scale floor. All of them support GPU picking and OIT; `Trajectory` adds a
+custom pick / highlight silhouette that matches its shader-displaced tube.
 
 ## The common pattern
 

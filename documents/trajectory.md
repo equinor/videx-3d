@@ -57,8 +57,10 @@ are dropped on the low LOD:
 | `lodDistance` | `2000` | Camera distance (metres) below which the high LOD is used. |
 
 The distance comes from the `DistanceContext` published by `WellboreBounds`. **Without a
-`WellboreBounds` ancestor the distance is treated as infinite, so the low LOD is always
-used** — always wrap `Trajectory` in a `WellboreBounds`.
+`WellboreBounds` ancestor there is no distance to drive the LOD, so the high LOD is
+used** (the field-scale low LOD only kicks in when a `WellboreBounds` reports a distance
+beyond `lodDistance`) — still, wrap `Trajectory` in a `WellboreBounds` so the low LOD can
+save geometry at field scale.
 
 ## Opacity and transparency
 

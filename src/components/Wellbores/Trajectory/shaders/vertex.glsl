@@ -18,8 +18,8 @@ attribute vec3 tangentA;
 attribute vec3 tangentB;
 attribute vec3 normalA;
 attribute vec3 normalB;
-attribute vec2 curvePositionA;
-attribute vec2 curvePositionB;
+attribute float curvePositionA;
+attribute float curvePositionB;
 
 varying vec3 vViewPosition;
 // Measured depth (MSL) in metres at this vertex. Always emitted (not gated on USE_MAP)
@@ -81,7 +81,7 @@ void main() {
   // Along-curve parameter (0..1 global) and the absolute measured depth (MSL) in metres,
   // computed unconditionally so both the world-UV V axis and the depth-marker pattern can
   // reuse them.
-  float uvAlong = mix(curvePositionA.y, curvePositionB.y, vertex.y);
+  float uvAlong = mix(curvePositionA, curvePositionB, vertex.y);
   vAxial = measuredTop + uvAlong * wellLength;
 
   #ifdef USE_MAP

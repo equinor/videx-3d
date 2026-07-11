@@ -11,6 +11,7 @@ import {
   Uniform,
   UniformsUtils,
   Vector2,
+  WebGLRenderer,
 } from 'three';
 import { attachOitVariants } from '../../../rendering/oit-material';
 import { TrajectoryColorInterval } from './trajectory-defs';
@@ -20,6 +21,9 @@ import { TrajectoryColorInterval } from './trajectory-defs';
 // no texture-map / vertex-colour paths. Keeps the legacy TubeMaterial untouched.
 import fragmentShader from './shaders/fragment.glsl';
 import vertexShader from './shaders/vertex.glsl';
+
+// Scratch reused by onBeforeRender to read the current render-target size.
+const _size = new Vector2();
 
 /**
  * Material for the unified instanced-tube trajectory. Radius is a uniform,
@@ -366,9 +370,6 @@ export class TrajectoryMaterial extends ShaderMaterial {
     this.uniforms.resolution.value.set(width, height);
   }
 
-  // Keep the map transform in sync with the texture's matrix each frame so runtime
-  // repeat/offset changes take effect (mirrors what Three does for built-in
-  // materials, which ShaderMaterial does not do automatically).
   // Dispose the internally-built interval-colour textures alongside the material (the
   // albedo `map` is user-supplied and intentionally left untouched).
   dispose() {
@@ -377,11 +378,27 @@ export class TrajectoryMaterial extends ShaderMaterial {
     super.dispose();
   }
 
-  onBeforeRender() {
+  // Called by the renderer before each draw of this material. Two jobs:
+  // 1. Keep the map transform in sync with the texture's matrix so runtime repeat/offset
+  //    changes take effect (mirrors what Three does for built-in materials, which
+  //    ShaderMaterial does not do automatically).
+  // 2. Refine the screen-space floor's `resolution` to the ACTUAL render-target size
+  //    (device pixels), so `minPixelRadius` stays exact even under a supersampled custom
+  //    pipeline whose buffer is larger than the R3F size*dpr baseline. When rendering to
+  //    screen the render target is null, so fall back to the drawing-buffer size.
+  onBeforeRender(renderer: WebGLRenderer) {
     const texture = this.uniforms.map.value as Texture | null;
     if (texture) {
       if (texture.matrixAutoUpdate) texture.updateMatrix();
       this.uniforms.mapTransform.value.copy(texture.matrix);
     }
+
+    const target = renderer.getRenderTarget();
+    if (target) {
+      _size.set(target.width, target.height);
+    } else {
+      renderer.getDrawingBufferSize(_size);
+    }
+    (this.uniforms.resolution.value as Vector2).copy(_size);
   }
 }

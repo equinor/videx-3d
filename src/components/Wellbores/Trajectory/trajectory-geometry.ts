@@ -7,8 +7,8 @@ import {
 } from 'three';
 import { TrajectorySegmentsType } from './trajectory-defs';
 
-// position(3) + tangent(3) + normal(3) + curvePosition(2)
-const STRIDE = 11;
+// position(3) + tangent(3) + normal(3) + curvePosition(1)
+const STRIDE = 10;
 
 /**
  * Builds an instanced single-wall tube geometry for a trajectory at the given radial
@@ -86,7 +86,7 @@ export function createTrajectoryGeometry(
   );
   geometry.setAttribute(
     'curvePositionA',
-    new InterleavedBufferAttribute(attributesBuffer, 2, 9),
+    new InterleavedBufferAttribute(attributesBuffer, 1, 9),
   );
 
   geometry.setAttribute(
@@ -103,7 +103,7 @@ export function createTrajectoryGeometry(
   );
   geometry.setAttribute(
     'curvePositionB',
-    new InterleavedBufferAttribute(attributesBuffer, 2, STRIDE + 9),
+    new InterleavedBufferAttribute(attributesBuffer, 1, STRIDE + 9),
   );
 
   const boundingSphere = new Sphere();
@@ -213,7 +213,7 @@ export function createTrajectoryCapsGeometry(
   );
   geometry.setAttribute(
     'curvePositionA',
-    new InterleavedBufferAttribute(attributesBuffer, 2, 9),
+    new InterleavedBufferAttribute(attributesBuffer, 1, 9),
   );
 
   geometry.setAttribute(
@@ -230,7 +230,7 @@ export function createTrajectoryCapsGeometry(
   );
   geometry.setAttribute(
     'curvePositionB',
-    new InterleavedBufferAttribute(attributesBuffer, 2, bOffset + 9),
+    new InterleavedBufferAttribute(attributesBuffer, 1, bOffset + 9),
   );
 
   const boundingSphere = new Sphere();

@@ -8,7 +8,6 @@ uniform float minPixelRadius;
 uniform vec2 resolution;
 
 attribute vec3 vertex;
-attribute float capSign;
 attribute vec3 positionA;
 attribute vec3 positionB;
 attribute vec3 tangentA;

@@ -53,7 +53,6 @@ export async function generateTrajectory(
 
   const frenetFrames = calculateFrenetFrames(trajectory.curve, curvePositions);
 
-  const drawnLength = 1 - from || 1;
   const attributesArray: number[] = [];
 
   frenetFrames.forEach(frame => {
@@ -61,7 +60,6 @@ export async function generateTrajectory(
       ...frame.position,
       ...frame.tangent,
       ...frame.normal, // stable (rotation-minimizing) frame normal = ring base dir
-      clamp((frame.curvePosition - from) / drawnLength, 0, 1), // along drawn range
       frame.curvePosition, // global curve position 0-1
     );
   });
@@ -74,7 +72,9 @@ export async function generateTrajectory(
 
   const response = {
     attributesBuffer,
-    segments: attributesBuffer.length / 11,
+    // stride is 10 floats per curve position (position 3, tangent 3, normal 3,
+    // curvePosition 1)
+    segments: attributesBuffer.length / 10,
     // Full measured length of the wellbore in metres (used for world-unit map UVs).
     measuredLength: trajectory.measuredLength,
     // Measured depth (MSL) at the top of the trajectory in metres (depth-marker datum).

@@ -15,7 +15,7 @@ _Verified against source on 2026-06-17._
 |-----------|----------|------------------|-------|
 | `Surface` | `SurfaceMaterial` (`ShaderMaterial`) | `attachOitVariants` | `DoubleSide`; shader includes `oit.glsl` |
 | `TubeTrajectory` | `tube-material` (SDK) | `attachOitVariants` | shader includes `oit.glsl` |
-| `Trajectory` (spike) | `TrajectoryMaterial` (`ShaderMaterial`) | `attachOitVariants` | unified instanced tube; shader includes `oit.glsl`; opaque default with `opacity<1` opt-in. Not yet exported (superseding `BasicTrajectory`/`TubeTrajectory`) |
+| `Trajectory` | `TrajectoryMaterial` (`ShaderMaterial`) | `attachOitVariants` | unified instanced tube; shader includes `oit.glsl`; opaque default with `opacity<1` opt-in. Exported; supersedes `TubeTrajectory` (and the `BasicTrajectory`+`TubeTrajectory` composition) |
 | `BasicTrajectory` | `LineBasicMaterial` | `makeOitCompatible` | line geometry; `vViewPosition` auto-injected |
 | `Casings` | `CasingMaterial` (`MeshStandardMaterial`) | `makeOitCompatible` | `shareUniforms:['uniforms']` keeps slicing live |
 | `CompletionTools / Screen` | `screen-material` (`ShaderMaterial`) | `attachOitVariants` | shader includes `oit.glsl` |

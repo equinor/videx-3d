@@ -7,11 +7,10 @@ export const trajectory = 'trajectory';
  * generator. Radius is intentionally NOT part of this payload — it is applied as a
  * shader uniform so thickness can change without regenerating the geometry.
  *
- * The `attributesBuffer` is an interleaved buffer with a stride of 11 floats per
- * curve position: `position(3), tangent(3), normal(3), curvePosition(2)` where
+ * The `attributesBuffer` is an interleaved buffer with a stride of 10 floats per
+ * curve position: `position(3), tangent(3), normal(3), curvePosition(1)` where
  * `normal` is the stable (rotation-minimizing) frame normal used as the ring base
- * direction, and the two curve-position components are
- * `[normalizedAlongDrawnRange, globalCurvePosition]`.
+ * direction, and `curvePosition` is the global curve position in the range 0..1.
  *
  * `measuredLength` is the full measured length of the wellbore in metres, used to
  * scale world-unit map UVs (metres) from the normalized global curve position.

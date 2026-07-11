@@ -27,6 +27,10 @@ export class TrajectoryHighlightMaterial extends ShaderMaterial {
   isTrajectoryHighlightMaterial = true;
 
   constructor() {
+    // Only the uniforms the ghost actually needs are provided. The reused trajectory
+    // vertex shader also references `wellLength`, `measuredTop` and `uvWorld` (for the
+    // map UVs / axial depth), but the highlight fragment ignores `vAxial` and the map,
+    // so those are intentionally omitted here and default to 0 — harmless for the ghost.
     super({
       vertexShader,
       fragmentShader,

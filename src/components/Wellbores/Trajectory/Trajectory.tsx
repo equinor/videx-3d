@@ -216,6 +216,17 @@ export const Trajectory = ({
         };
   }, [onMaterialPropertiesChange]);
 
+  // TODO: reconsider supporting an arbitrary `customMaterial` here. Unlike the other
+  // wellbore components, the tube shape is reconstructed in the vertex shader (radius
+  // uniform + screen-space floor + the instanced positionA/B, tangentA/B, normalA/B and
+  // capSign attributes), so a material that does not implement that exact vertex
+  // transform renders garbage. Safer options for a follow-up: (a) export a
+  // `createTrajectoryMaterial({ fragmentShader, uniforms })` factory that wires the
+  // required trajectory vertex shader + uniforms and lets callers customise only the
+  // fragment stage; or (b) refactor TrajectoryMaterial into an extensible base that
+  // accepts an injected fragment shader / extra uniforms (mirroring how the casing
+  // material could be extended). For now `customMaterial` is left as-is (advanced,
+  // caller-beware).
   const material = useMemo(() => {
     if (customMaterial) {
       return customMaterial;
@@ -391,10 +402,12 @@ export const Trajectory = ({
     }
   }, [opacity, material, customMaterial]);
 
-  // Sync the render-target height (device pixels) so the screen-space floor is exact.
-  // Runs before paint to avoid a one-frame flash from the (1,1) default resolution.
-  // NOTE: assumes the default R3F loop; a custom pipeline's supersample factor is not
-  // accounted for here.
+  // Baseline sync of the render-target size (device pixels) so the screen-space floor
+  // is set before first paint (avoids a one-frame flash from the (1,1) default) and so
+  // it reaches the OIT variants, which share this uniform but do not run the base
+  // material's onBeforeRender. The visible TrajectoryMaterial additionally refines this
+  // to the ACTUAL render-target size in onBeforeRender (covering supersampled custom
+  // pipelines); this size*dpr value is the fallback for the default R3F loop.
   useLayoutEffect(() => {
     const width = size.width * dpr;
     const height = size.height * dpr;
@@ -409,7 +422,12 @@ export const Trajectory = ({
   // re-render reasserts the initial `geometry` prop below.
   useFrame(() => {
     if (!geometries || !tubeMeshRef.current || !capsMeshRef.current) return;
-    const lod = distanceContext.current < lodDistance ? 'high' : 'low';
+    // No WellboreBounds ancestor => distance stays Infinity (the DistanceContext
+    // default); fall back to the high LOD so a stand-alone Trajectory still looks
+    // correct up close. With bounds present, swap on the reported camera distance.
+    const distance = distanceContext.current;
+    const lod =
+      !Number.isFinite(distance) || distance < lodDistance ? 'high' : 'low';
     const target = geometries[lod];
     if (tubeMeshRef.current.geometry !== target.tube) {
       tubeMeshRef.current.geometry = target.tube;
