@@ -7,6 +7,7 @@ import {
   NoBlending,
   OneFactor,
   OneMinusSrcAlphaFactor,
+  ShaderChunk,
   ShaderMaterial,
   Side,
   SrcAlphaFactor,
@@ -448,8 +449,27 @@ export function attachOitVariants<T extends ShaderMaterial>(
 
 const MAIN_SIGNATURE = /\bvoid\s+main\s*\(\s*\)\s*\{/;
 
+/** Three.js `#include <chunk>` directive pattern (matches its own resolver). */
+const INCLUDE_PATTERN = /^[ \t]*#include +<([\w\d./]+)>/gm;
+
+/**
+ * Resolve `#include <chunk>` directives (recursively) against `THREE.ShaderChunk`.
+ * Needed because lit built-ins declare `vViewPosition` in an included chunk (e.g. the
+ * fragment shader's `<lights_lambert_pars_fragment>`) rather than literally, so a
+ * plain text scan of the raw source would miss it and wrongly inject a duplicate.
+ * Unknown (user) includes are left untouched.
+ */
+function resolveIncludes(src: string, depth = 0): string {
+  if (depth > 8 || !src.includes('#include')) return src;
+  const chunks = ShaderChunk as Record<string, string | undefined>;
+  return src.replace(INCLUDE_PATTERN, (whole, name: string) => {
+    const chunk = chunks[name];
+    return chunk !== undefined ? resolveIncludes(chunk, depth + 1) : whole;
+  });
+}
+
 function hasViewPosition(src: string): boolean {
-  return /\bvViewPosition\b/.test(src);
+  return /\bvViewPosition\b/.test(resolveIncludes(src));
 }
 
 /**

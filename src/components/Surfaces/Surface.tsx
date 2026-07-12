@@ -55,6 +55,18 @@ export type SurfaceProps = CommonComponentProps &
     opacity?: number;
     priority?: number;
     maxError?: number;
+    /**
+     * Cut no-data holes and the outer data extent with a clean traced rim
+     * (constrained Delaunay) instead of filling them from valid neighbours.
+     * Defaults to `true`.
+     */
+    cutHoles?: boolean;
+    /**
+     * When cutting holes, smooth the traced data rim by this strength so it reads
+     * as a continuous curve instead of a grid staircase. `0` (default) keeps the
+     * exact cell-edge rim. Trades boundary fidelity for smoothness.
+     */
+    edgeSmoothing?: number;
     doubleSide?: boolean;
     wireframe?: boolean;
     normalMap?: Texture;
@@ -99,6 +111,8 @@ export const Surface = ({
   opacity = 1,
   priority = 0,
   maxError = 5,
+  cutHoles = true,
+  edgeSmoothing = 0,
   doubleSide = opacity === 1 || false,
   wireframe = false,
   normalMap,
@@ -326,15 +340,17 @@ export const Surface = ({
 
   useEffect(() => {
     if (geometryGenerator) {
-      geometryGenerator(meta.id, maxError).then(response => {
-        let bufferGeometry: BufferGeometry | null = null;
-        if (response) {
-          bufferGeometry = unpackBufferGeometry(response);
-        }
-        setGeometry(bufferGeometry);
-      });
+      geometryGenerator(meta.id, maxError, cutHoles, edgeSmoothing).then(
+        response => {
+          let bufferGeometry: BufferGeometry | null = null;
+          if (response) {
+            bufferGeometry = unpackBufferGeometry(response);
+          }
+          setGeometry(bufferGeometry);
+        },
+      );
     }
-  }, [geometryGenerator, meta.id, maxError]);
+  }, [geometryGenerator, meta.id, maxError, cutHoles, edgeSmoothing]);
 
   // Dispose the library-created geometry when it is replaced or on unmount.
   useEffect(() => {

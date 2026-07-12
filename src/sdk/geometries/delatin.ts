@@ -23,6 +23,21 @@ export class Delatin {
   private _pendingLen: number = 0;
   private _rmsSum: number = 0;
 
+  // --- Constrained Delaunay (CDT) state ---
+  // Once the greedy refinement is done (see run) we enter a "constraint phase":
+  // every existing triangle then lives in the error queue and the pending list is
+  // empty, so newly created triangles must NOT be pushed to the pending list (the
+  // error machinery is inactive from here on).
+  private _constraintPhase = false;
+  // explicit heights for inserted (non-grid) points, keyed by vertex index
+  private _explicitHeights = new Map<number, number>();
+  // locked (constraint) edges, keyed by _edgeKey(a, b); never flipped by _legalize
+  private _constrained = new Set<number>();
+  // scratch: vertex a constraint segment passes through (set by
+  // `_collectCrossingEdges`), so `constrainEdge` can split there instead of the
+  // brute fallback.
+  private _lastSplit = -1;
+
   constructor(data: Float32Array, width: number, nullValue = -1) {
     this.data = data;
     this.width = width;
@@ -182,15 +197,22 @@ export class Delatin {
         if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
           wasInside = true;
 
-          // compute z using barycentric coordinates
-          const z = z0 * w0 + z1 * w1 + z2 * w2;
-          const h = this.heightAt(x, y);
-          const dz = Math.abs(z - h);
-          rms += dz * dz;
-          if (dz > maxError) {
-            maxError = dz;
-            mx = x;
-            my = y;
+          // Skip no-data pixels: their sentinel height (nullHeight) would create a
+          // huge artificial error and force the greedy refinement to insert a vertex
+          // at essentially every hole node — a massive, slow mesh on holey grids.
+          // Holes are handled by the fill (positions) / constraint-cut phase instead,
+          // so the refinement should follow only valid data.
+          const raw = this.data[this.width * y + x];
+          if (raw !== this.nullValue) {
+            // compute z using barycentric coordinates
+            const z = z0 * w0 + z1 * w1 + z2 * w2;
+            const dz = Math.abs(z - raw);
+            rms += dz * dz;
+            if (dz > maxError) {
+              maxError = dz;
+              mx = x;
+              my = y;
+            }
           }
         } else if (wasInside) {
           break;
@@ -228,6 +250,17 @@ export class Delatin {
     // pop triangle with highest error from priority queue
     const t = this._queuePop();
 
+    const px = this._candidates[2 * t];
+    const py = this._candidates[2 * t + 1];
+
+    const pn = this._addPoint(px, py);
+
+    this._splitAt(pn, t);
+  }
+
+  // split triangle `t` at the already-added point `pn`, which must lie inside `t`
+  // or on one of its edges. Reused by the greedy step and by point insertion.
+  private _splitAt(pn: number, t: number) {
     const e0 = t * 3 + 0;
     const e1 = t * 3 + 1;
     const e2 = t * 3 + 2;
@@ -242,10 +275,8 @@ export class Delatin {
     const by = this.coords[2 * p1 + 1];
     const cx = this.coords[2 * p2];
     const cy = this.coords[2 * p2 + 1];
-    const px = this._candidates[2 * t];
-    const py = this._candidates[2 * t + 1];
-
-    const pn = this._addPoint(px, py);
+    const px = this.coords[2 * pn];
+    const py = this.coords[2 * pn + 1];
 
     if (orient(ax, ay, bx, by, px, py) === 0) {
       this._handleCollinear(pn, e0);
@@ -315,8 +346,11 @@ export class Delatin {
     this._queueIndices[t] = -1;
     this._rms[t] = 0;
 
-    // add triangle to pending queue for later rasterization
-    this._pending[this._pendingLen++] = t;
+    // add triangle to pending queue for later rasterization (skipped during the
+    // constraint phase, where the error machinery is inactive)
+    if (!this._constraintPhase) {
+      this._pending[this._pendingLen++] = t;
+    }
 
     // return first halfedge index
     return e;
@@ -376,6 +410,11 @@ export class Delatin {
     const pl = this.triangles[al];
     const p1 = this.triangles[bl];
     const coords = this.coords;
+
+    // never flip a locked constraint edge
+    if (this._isConstrained(pr, pl)) {
+      return;
+    }
 
     if (
       !inCircle(
@@ -447,6 +486,420 @@ export class Delatin {
     this._legalize(t3);
   }
 
+  // ---------------------------------------------------------------------------
+  // Constrained Delaunay (CDT) support
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Enter the constraint phase. Call after `run(maxError)` and before inserting
+   * arbitrary points / enforcing constraint edges.
+   */
+  beginConstraints() {
+    this._constraintPhase = true;
+  }
+
+  private _edgeKey(a: number, b: number) {
+    // vertex counts stay well below 2^25, so this stays within Number precision
+    return a < b ? a * 33554432 + b : b * 33554432 + a;
+  }
+
+  private _isConstrained(a: number, b: number) {
+    if (this._constrained.size === 0) return false;
+    return this._constrained.has(this._edgeKey(a, b));
+  }
+
+  private _lockEdge(a: number, b: number) {
+    this._constrained.add(this._edgeKey(a, b));
+  }
+
+  /** Whether vertex `i` has an explicit (inserted) height rather than a grid one. */
+  isExplicit(i: number) {
+    return this._explicitHeights.has(i);
+  }
+
+  /**
+   * Height of vertex `i`, honoring explicit heights set for inserted points and
+   * falling back to the grid sample otherwise.
+   */
+  vertexHeight(i: number) {
+    const h = this._explicitHeights.get(i);
+    if (h !== undefined) return h;
+    return this.heightAt(this.coords[2 * i], this.coords[2 * i + 1]);
+  }
+
+  private _addConstraintPoint(x: number, y: number, height: number) {
+    const i = this.coords.length >> 1;
+    this.coords.push(x, y);
+    this._explicitHeights.set(i, height);
+    return i;
+  }
+
+  // Locate the triangle containing (x, y) via linear scan. Triangles are CCW, so
+  // a point is inside when it is left-of (>= 0) all three directed edges. Returns
+  // the containing triangle index and, if the point coincides with a vertex, that
+  // vertex index (so the caller can skip insertion).
+  private _locate(x: number, y: number): { t: number; vertex: number } {
+    const tris = this.triangles;
+    const coords = this.coords;
+    for (let e = 0; e < tris.length; e += 3) {
+      const a = tris[e];
+      const b = tris[e + 1];
+      const c = tris[e + 2];
+      const ax = coords[2 * a];
+      const ay = coords[2 * a + 1];
+      const bx = coords[2 * b];
+      const by = coords[2 * b + 1];
+      const cx = coords[2 * c];
+      const cy = coords[2 * c + 1];
+      if (
+        orient(ax, ay, bx, by, x, y) >= 0 &&
+        orient(bx, by, cx, cy, x, y) >= 0 &&
+        orient(cx, cy, ax, ay, x, y) >= 0
+      ) {
+        if (Math.abs(x - ax) < 1e-9 && Math.abs(y - ay) < 1e-9)
+          return { t: e / 3, vertex: a };
+        if (Math.abs(x - bx) < 1e-9 && Math.abs(y - by) < 1e-9)
+          return { t: e / 3, vertex: b };
+        if (Math.abs(x - cx) < 1e-9 && Math.abs(y - cy) < 1e-9)
+          return { t: e / 3, vertex: c };
+        return { t: e / 3, vertex: -1 };
+      }
+    }
+    return { t: -1, vertex: -1 };
+  }
+
+  /**
+   * Insert an arbitrary point with an explicit height, returning its vertex index
+   * (or the index of a coincident existing vertex). Requires the constraint phase.
+   */
+  insertPoint(x: number, y: number, height: number) {
+    const loc = this._locate(x, y);
+    if (loc.vertex >= 0) return loc.vertex;
+    if (loc.t < 0) return -1;
+    const pn = this._addConstraintPoint(x, y, height);
+    this._splitAt(pn, loc.t);
+    return pn;
+  }
+
+  // Find a halfedge belonging to the undirected edge (u, v), or -1 if absent.
+  private _findEdge(u: number, v: number) {
+    const tris = this.triangles;
+    for (let e = 0; e < tris.length; e++) {
+      const a = tris[e];
+      const b = tris[nextEdge(e)];
+      if ((a === u && b === v) || (a === v && b === u)) return e;
+    }
+    return -1;
+  }
+
+  // Unconditional (non-Delaunay) flip of the edge at halfedge `a`.
+  private _flip(a: number) {
+    const b = this._halfedges[a];
+    if (b < 0) return;
+
+    const a0 = a - (a % 3);
+    const b0 = b - (b % 3);
+    const al = a0 + ((a + 1) % 3);
+    const ar = a0 + ((a + 2) % 3);
+    const bl = b0 + ((b + 2) % 3);
+    const br = b0 + ((b + 1) % 3);
+
+    const p0 = this.triangles[ar];
+    const pr = this.triangles[a];
+    const pl = this.triangles[al];
+    const p1 = this.triangles[bl];
+
+    const hal = this._halfedges[al];
+    const har = this._halfedges[ar];
+    const hbl = this._halfedges[bl];
+    const hbr = this._halfedges[br];
+
+    this._queueRemove(a0 / 3);
+    this._queueRemove(b0 / 3);
+
+    const t0 = this._addTriangle(p0, p1, pl, -1, hbl, hal, a0);
+    this._addTriangle(p1, p0, pr, t0, har, hbr, b0);
+  }
+
+  /**
+   * Enforce the constraint edge (u, v): flip the edges the segment crosses until
+   * (u, v) is itself an edge, then lock it so `_legalize` never flips it.
+   *
+   * Uses a walk (Lawson edge insertion): starting at `u` it gathers only the edges
+   * the segment actually crosses and flips a convex one each pass, so the cost is
+   * proportional to the number of crossings rather than the whole mesh. The rare
+   * degenerate case the walk can't resolve (segment through a vertex, a boundary,
+   * or no flippable crossing) falls back to the brute scan.
+   */
+  constrainEdge(u: number, v: number) {
+    if (u === v || u < 0 || v < 0) return;
+    this._constrainEdgeImpl(u, v, 0);
+  }
+
+  private _constrainEdgeImpl(u: number, v: number, depth: number) {
+    if (u === v || u < 0 || v < 0) return;
+    const coords = this.coords;
+
+    this._lastSplit = -1;
+    let crossings = this._collectCrossingEdges(u, v);
+    if (crossings === null) {
+      // The segment runs through an intermediate vertex — enforce the two halves.
+      if (this._lastSplit >= 0 && depth < 96) {
+        const w = this._lastSplit;
+        this._constrainEdgeImpl(u, w, depth + 1);
+        this._constrainEdgeImpl(w, v, depth + 1);
+        return;
+      }
+      this._constrainEdgeBrute(u, v);
+      return;
+    }
+
+    const ux = coords[2 * u];
+    const uy = coords[2 * u + 1];
+    const vx = coords[2 * v];
+    const vy = coords[2 * v + 1];
+    let flips = 0;
+    const maxFlips = crossings.length * crossings.length + 16;
+    while (crossings.length > 0) {
+      // Choose a convex crossing edge to flip, preferring one whose flip removes a
+      // crossing (its new diagonal no longer meets the segment). Preferring such a
+      // "reducing" flip shrinks the crossing set every step, so the loop converges
+      // instead of oscillating between equivalent configurations.
+      let chosen = -1;
+      for (const he of crossings) {
+        const o = this._halfedges[he];
+        if (o < 0) continue;
+        const pr = this.triangles[he];
+        const pl = this.triangles[nextEdge(he)];
+        if (this._isConstrained(pr, pl)) continue;
+        const p0 = this.triangles[prevEdge(he)];
+        const p1 = this.triangles[prevEdge(o)];
+        const p0x = coords[2 * p0];
+        const p0y = coords[2 * p0 + 1];
+        const p1x = coords[2 * p1];
+        const p1y = coords[2 * p1 + 1];
+        // convex quad iff the new diagonal (p0, p1) properly crosses (pr, pl)
+        if (
+          !segmentsIntersect(
+            p0x,
+            p0y,
+            p1x,
+            p1y,
+            coords[2 * pr],
+            coords[2 * pr + 1],
+            coords[2 * pl],
+            coords[2 * pl + 1],
+          )
+        )
+          continue;
+        if (!segmentsIntersect(ux, uy, vx, vy, p0x, p0y, p1x, p1y)) {
+          chosen = he; // reducing flip — take it immediately
+          break;
+        }
+        if (chosen < 0) chosen = he; // otherwise remember the first convex one
+      }
+      if (chosen < 0 || ++flips > maxFlips) {
+        // Nothing flippable this pass (degenerate) — fall back to the brute method.
+        this._constrainEdgeBrute(u, v);
+        return;
+      }
+      this._flip(chosen);
+      this._lastSplit = -1;
+      const next = this._collectCrossingEdges(u, v);
+      if (next === null) {
+        if (this._lastSplit >= 0 && depth < 96) {
+          const w = this._lastSplit;
+          this._constrainEdgeImpl(u, w, depth + 1);
+          this._constrainEdgeImpl(w, v, depth + 1);
+          return;
+        }
+        this._constrainEdgeBrute(u, v);
+        return;
+      }
+      crossings = next;
+    }
+    this._lockEdge(u, v);
+  }
+
+  // Whether vertex `w` lies (near-collinearly) strictly between `u` and `v`.
+  private _onSegment(u: number, v: number, w: number): boolean {
+    if (w === u || w === v) return false;
+    const c = this.coords;
+    const ax = c[2 * u];
+    const ay = c[2 * u + 1];
+    const bx = c[2 * v];
+    const by = c[2 * v + 1];
+    const wx = c[2 * w];
+    const wy = c[2 * w + 1];
+    const len2 = (bx - ax) * (bx - ax) + (by - ay) * (by - ay);
+    if (len2 === 0) return false;
+    // strictly between by projection onto (u, v)
+    const dot = (wx - ax) * (bx - ax) + (wy - ay) * (by - ay);
+    if (dot <= 1e-9 || dot >= len2 - 1e-9) return false;
+    // near-collinear: perpendicular distance small relative to the segment length
+    const cross = (bx - ax) * (wy - ay) - (by - ay) * (wx - ax);
+    return cross * cross <= 1e-4 * len2;
+  }
+
+  // Walk from `u` toward `v`, returning the halfedges of the edges the segment
+  // properly crosses (in order). Returns an empty array when (u, v) is already an
+  // edge, or null when the walk cannot resolve it. In the null case, when the
+  // segment passes through an intermediate vertex, `_lastSplit` is set to it so the
+  // caller can split the constraint there rather than fall back to the brute scan.
+  private _collectCrossingEdges(u: number, v: number): number[] | null {
+    const tris = this.triangles;
+    const hs = this._halfedges;
+    const coords = this.coords;
+    const ux = coords[2 * u];
+    const uy = coords[2 * u + 1];
+    const vx = coords[2 * v];
+    const vy = coords[2 * v + 1];
+    const crosses = (p: number, q: number) =>
+      segmentsIntersect(
+        ux,
+        uy,
+        vx,
+        vy,
+        coords[2 * p],
+        coords[2 * p + 1],
+        coords[2 * q],
+        coords[2 * q + 1],
+      );
+
+    // Starting triangle: the one incident to `u` that the segment leaves through.
+    let start = -1;
+    let startSplit = -1;
+    for (let e = 0; e < tris.length; e++) {
+      if (tris[e] !== u) continue;
+      const oe = nextEdge(e); // the edge opposite `u`
+      const b = tris[oe];
+      const c = tris[nextEdge(oe)];
+      if (b === v || c === v) return []; // (u, v) already an edge
+      if (crosses(b, c)) {
+        start = oe;
+        break;
+      }
+      // A neighbour of `u` sitting on the segment is a candidate split point.
+      if (startSplit < 0 && this._onSegment(u, v, b)) startSplit = b;
+      if (startSplit < 0 && this._onSegment(u, v, c)) startSplit = c;
+    }
+    if (start < 0) {
+      this._lastSplit = startSplit;
+      return null;
+    }
+
+    const crossings = [start];
+    let oe = start;
+    const maxSteps = tris.length;
+    for (let step = 0; step <= maxSteps; step++) {
+      const tw = hs[oe];
+      if (tw < 0) return null; // boundary before reaching `v`
+      const apex = tris[prevEdge(tw)];
+      if (apex === v) return crossings;
+      const b = tris[nextEdge(tw)]; // shared-edge endpoints on the far triangle
+      const c = tris[tw];
+      if (crosses(b, apex)) {
+        oe = nextEdge(tw);
+      } else if (crosses(apex, c)) {
+        oe = prevEdge(tw);
+      } else {
+        // Segment exits through the apex vertex — split the constraint there.
+        if (this._onSegment(u, v, apex)) this._lastSplit = apex;
+        return null;
+      }
+      crossings.push(oe);
+    }
+    return null;
+  }
+
+  // Brute constraint enforcement: scan-and-flip across the whole mesh (O(E) per
+  // flip). Kept as a robust fallback for the degenerate cases the walk declines.
+  private _constrainEdgeBrute(u: number, v: number) {
+    if (this._findEdge(u, v) >= 0) {
+      this._lockEdge(u, v);
+      return;
+    }
+    const coords = this.coords;
+    const ux = coords[2 * u];
+    const uy = coords[2 * u + 1];
+    const vx = coords[2 * v];
+    const vy = coords[2 * v + 1];
+
+    let guard = 0;
+    const maxIter = this.triangles.length * 3 + 16;
+    while (this._findEdge(u, v) < 0) {
+      if (++guard > maxIter) break;
+      let flipped = false;
+      const hs = this._halfedges;
+      for (let e = 0; e < hs.length; e++) {
+        const o = hs[e];
+        if (o < 0 || o < e) continue; // each undirected interior edge once
+        const pr = this.triangles[e];
+        const pl = this.triangles[nextEdge(e)];
+        if (pr === u || pr === v || pl === u || pl === v) continue;
+        if (this._isConstrained(pr, pl)) continue;
+        // does edge (pr, pl) properly cross the segment (u, v)?
+        if (
+          !segmentsIntersect(
+            ux,
+            uy,
+            vx,
+            vy,
+            coords[2 * pr],
+            coords[2 * pr + 1],
+            coords[2 * pl],
+            coords[2 * pl + 1],
+          )
+        )
+          continue;
+        // only flip convex quads (new diagonal (p0, p1) must cross the old one)
+        const a0 = e - (e % 3);
+        const b0 = o - (o % 3);
+        const p0 = this.triangles[a0 + ((e + 2) % 3)];
+        const p1 = this.triangles[b0 + ((o + 2) % 3)];
+        if (
+          !segmentsIntersect(
+            coords[2 * p0],
+            coords[2 * p0 + 1],
+            coords[2 * p1],
+            coords[2 * p1 + 1],
+            coords[2 * pr],
+            coords[2 * pr + 1],
+            coords[2 * pl],
+            coords[2 * pl + 1],
+          )
+        )
+          continue;
+        this._flip(e);
+        flipped = true;
+        break;
+      }
+      if (!flipped) break; // no convex crossing edge available
+    }
+    this._lockEdge(u, v);
+  }
+
+  /**
+   * Remove triangles whose centroid fails the `isInside` predicate (in grid
+   * coordinates). Used to trim the triangulation to the constraint polygon,
+   * including holes (predicate = inside outer ring minus holes).
+   */
+  removeExteriorTriangles(isInside: (x: number, y: number) => boolean) {
+    const tris = this.triangles;
+    const coords = this.coords;
+    const kept: number[] = [];
+    for (let e = 0; e < tris.length; e += 3) {
+      const a = tris[e];
+      const b = tris[e + 1];
+      const c = tris[e + 2];
+      const cx = (coords[2 * a] + coords[2 * b] + coords[2 * c]) / 3;
+      const cy =
+        (coords[2 * a + 1] + coords[2 * b + 1] + coords[2 * c + 1]) / 3;
+      if (isInside(cx, cy)) kept.push(a, b, c);
+    }
+    this.triangles = kept;
+  }
+
   // priority queue methods
   private _queuePush(t: number, error: number, rms: number) {
     const i = this._queue.length;
@@ -475,6 +928,11 @@ export class Delatin {
   private _queueRemove(t: number) {
     const i = this._queueIndices[t];
     if (i < 0) {
+      // During the constraint phase, triangles created after the greedy pass are
+      // neither queued nor pending, so there is nothing to remove.
+      if (this._constraintPhase) {
+        return;
+      }
       const it = this._pending.indexOf(t);
       if (it !== -1) {
         this._pending[it] = this._pending[--this._pendingLen];
@@ -552,6 +1010,38 @@ function orient(
   cy: number,
 ) {
   return (bx - cx) * (ay - cy) - (by - cy) * (ax - cx);
+}
+
+// next halfedge within a triangle (edges are stored in groups of three)
+function nextEdge(e: number) {
+  return e % 3 === 2 ? e - 2 : e + 1;
+}
+
+// previous halfedge within a triangle
+function prevEdge(e: number) {
+  return e % 3 === 0 ? e + 2 : e - 1;
+}
+
+// Proper segment intersection: true when segments (a, b) and (c, d) cross in their
+// interiors. Shared endpoints or collinear touching do not count as a crossing.
+function segmentsIntersect(
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  cx: number,
+  cy: number,
+  dx: number,
+  dy: number,
+) {
+  const d1 = orient(cx, cy, dx, dy, ax, ay);
+  const d2 = orient(cx, cy, dx, dy, bx, by);
+  const d3 = orient(ax, ay, bx, by, cx, cy);
+  const d4 = orient(ax, ay, bx, by, dx, dy);
+  return (
+    ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+    ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+  );
 }
 
 function inCircle(

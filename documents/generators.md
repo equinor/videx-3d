@@ -17,6 +17,7 @@ The generator functions can be imported from `@equinor/videx-3d/generators` (def
 | **Casings** | casings | generateCasings | - position-logs<br/>- casings |
 | **CompletionAnnotations** | completionToolAnnotations | generateCompletionToolAnnotations | - position-logs<br/>- completion-tools |
 | **CompletionTools** | completionTools | generateCompletionTools | - position-logs<br/>- completion-tools |
+| **Chunk** | surfaceChunk | generateSurfaceChunk | - surface-values |
 | **WellboreFormationColumn** | wellboreFormationColumn | generateWellboreFormationColumnGeometries | - position-logs<br/>- formations |
 | **DepthMarkers** | depthMarkers | generateDepthMarkers | - position-logs |
 | **Perforations** | perforationSymbols | generatePerforations | - position-logs<br/>- perforations |

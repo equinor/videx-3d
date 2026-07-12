@@ -138,6 +138,40 @@ describe('oit-material', () => {
       expect(matches?.length).toBe(1);
     });
 
+    test('does not double-declare vViewPosition when the fragment gets it from an #include', () => {
+      // Regression: lit built-ins (Lambert/Phong/Toon) declare vViewPosition in the
+      // fragment via `#include <lights_*_pars_fragment>`, not literally. A raw text
+      // scan misses it; the include must be resolved before deciding to inject, or
+      // the varying is redefined (GLSL "vViewPosition : redefinition").
+      const material = makeOitCompatible(new MeshStandardMaterial());
+      const fragWithInclude = `precision highp float;
+#include <lights_lambert_pars_fragment>
+void main() {
+  gl_FragColor = vec4(vViewPosition.z);
+}
+`;
+      const vertWithViewPos = `varying vec3 vViewPosition;
+void main() {
+  vViewPosition = vec3(0.0);
+  gl_Position = vec4(position, 1.0);
+}
+`;
+      const shader = runOnBeforeCompile(
+        material,
+        makeShader(fragWithInclude, vertWithViewPos),
+      );
+
+      // No injected declaration in either stage (the include / literal provide it).
+      expect(shader.fragmentShader).not.toContain(
+        'varying vec3 vViewPosition;',
+      );
+      expect(shader.vertexShader).toBe(vertWithViewPos);
+      // Still wired for OIT.
+      expect(shader.fragmentShader).toContain(
+        'gl_FragColor = oitProcess(gl_FragColor);',
+      );
+    });
+
     test('binds the OIT uniforms into the program', () => {
       const material = makeOitCompatible(new MeshStandardMaterial());
       const shader = runOnBeforeCompile(

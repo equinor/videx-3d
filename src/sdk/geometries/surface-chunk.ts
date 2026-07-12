@@ -1,0 +1,1056 @@
+import { BufferAttribute, BufferGeometry } from 'three';
+import { Vec2 } from '../types/common';
+import { computeUpwardNormals } from './geometry-attributes';
+import { sampleValidGrid } from './grid-sampling';
+import {
+  Coordinates2D,
+  PlanarPolygonCoordinates,
+  PlanarPolygonGeometry,
+} from './planar-geometry';
+import {
+  createClippedSurface,
+  SurfaceClipHeader,
+  surfaceWorldToGrid,
+} from './surface-clip';
+import {
+  GridPolygon,
+  triangulateGridConstrained,
+} from './triangulate-grid-delaunay';
+
+/**
+ * One layer of a {@link createSurfaceChunk} stack: the elevation grid plus how to
+ * place and colour it. Layers should be ordered top (shallowest) to bottom.
+ *
+ * @group Geometries
+ */
+export type SurfaceChunkLayer = {
+  /** row-major elevation grid of length `nx * ny` */
+  values: Float32Array;
+  /** grid geometry (see {@link SurfaceClipHeader}) */
+  header: SurfaceClipHeader;
+  /** depth-normalization reference (`SurfaceMeta.max`) */
+  referenceDepth: number;
+  /**
+   * Scene XZ of this surface's origin — `crs.utmToWorld(xori, yori, 0)` mapped to
+   * `[x, z]`. Used both to place the surface in the shared scene frame and to
+   * sample the shared rim against this layer's grid.
+   */
+  worldPosition: Vec2;
+  /** side-wall colour for the interval directly below this surface */
+  color: string;
+  /** value marking a missing/hole sample (default -1) */
+  nullValue?: number;
+};
+
+/**
+ * Options for {@link createSurfaceChunk}.
+ *
+ * @group Geometries
+ */
+export type SurfaceChunkOptions = {
+  /** mask polygon in scene XZ, shared by every layer */
+  polygon: PlanarPolygonGeometry;
+  /**
+   * Rim densification spacing in world units — the polygon edges are subdivided
+   * to at most this length so the shared rim (and the side walls) follow the
+   * relief. Smaller = more wall segments. Default 250.
+   */
+  rimSpacing?: number;
+  /** interior TIN simplification error, in grid height units. Default 5. */
+  maxError?: number;
+  /**
+   * Pinch-out clamp: keep each layer's rim from rising above the layer above it
+   * (cascading top -> down), so a wall collapses to zero height where surfaces
+   * cross instead of flipping. Default false. Note: only the wall rims are
+   * clamped, not the surface interiors.
+   */
+  clamp?: boolean;
+  /**
+   * Optional basement slot: a solid block with a flat base, either attached below
+   * the chunk's deepest layer or standalone with its own (surface / procedural)
+   * top. See {@link SurfaceChunkBasement}.
+   */
+  basement?: SurfaceChunkBasement;
+  /**
+   * Optional ocean-top slot: a flat water surface at the water level plus a water
+   * body down to the shallowest layer's rim (surface mode) or to a procedural sea
+   * bed (procedural mode). See {@link SurfaceChunkOceanTop}. The returned water
+   * geometries are meant to be rendered with the `Ocean` water shader.
+   */
+  oceanTop?: SurfaceChunkOceanTop;
+};
+
+/**
+ * Procedural rocky-top model for a standalone {@link SurfaceChunkBasement} — used
+ * when the basement is its own block (not attached to a chunk). Generates a jagged
+ * rock surface as the basement TOP; the flat base then sits `thickness` below it.
+ *
+ * @group Geometries
+ */
+export type SurfaceChunkBasementProcedural = {
+  /** mean depth of the procedural top below sea level, in meters (positive-down) */
+  depth: number;
+  /**
+   * Whether `depth` is the mean top depth or the minimum (shallowest point).
+   * Default `'mean'`.
+   */
+  depthMode?: 'mean' | 'min';
+  /** ± relief amplitude of the rocky top, in meters. Default 150. */
+  variation?: number;
+  /** procedural seed. Default 0. */
+  seed?: number;
+  /** top tessellation across the larger footprint extent. Default 96. */
+  segments?: number;
+};
+
+/**
+ * The basement slot of a {@link SurfaceChunk}: a solid block with a **flat base**
+ * sitting `thickness` below its top. The top is either the chunk's deepest surface
+ * (when `top` is omitted — the basement is *attached* to the chunk) or, for a
+ * *standalone* basement, an assigned surface or a procedurally generated rocky
+ * surface. Side walls run from the top rim down to the flat base rim, sharing the
+ * chunk's canonical rim.
+ *
+ * @group Geometries
+ */
+export type SurfaceChunkBasement = {
+  /** colour. Default dark gray. */
+  color?: string;
+  /**
+   * Distance from the top (its deepest point) down to the flat base, in meters.
+   * Default 500.
+   */
+  thickness?: number;
+  /**
+   * The basement top. Omit to **attach** to the chunk (top = the deepest layer's
+   * surface). Provide an assigned `surface` or a `procedural` rocky surface for a
+   * **standalone** basement (its own block).
+   */
+  top?:
+    | { surface: SurfaceChunkLayer }
+    | { procedural: SurfaceChunkBasementProcedural };
+};
+
+/**
+ * Procedural sea-bed model for a {@link SurfaceChunkOceanTop} when the ocean chunk
+ * has no geological layers of its own. Uses a SMOOTH dune-like noise (unlike the
+ * ridged basement).
+ *
+ * @group Geometries
+ */
+export type SurfaceChunkOceanTopProcedural = {
+  /** mean water depth below the water level, in meters (positive-down) */
+  depth: number;
+  /** whether `depth` is the mean or the minimum (shallowest) depth. Default 'mean'. */
+  depthMode?: 'mean' | 'min';
+  /** ± sea-bed relief amplitude, in meters. Default 60. */
+  variation?: number;
+  /** procedural seed. Default 0. */
+  seed?: number;
+  /** sea-bed tessellation across the larger footprint extent. Default 64. */
+  segments?: number;
+};
+
+/**
+ * The ocean-top slot: a flat water surface at `waterLevel` (default sea level,
+ * y = 0) and a water body running down to the sea bed. The bed is the chunk's
+ * SHALLOWEST layer (surface mode) or a procedural sea bed when there are no layers
+ * ({@link SurfaceChunkOceanTopProcedural}). The produced geometries are intended
+ * for the `Ocean` water shader (surface + body, and bed only when procedural).
+ *
+ * @group Geometries
+ */
+export type SurfaceChunkOceanTop = {
+  /** water surface level (scene Y). Default 0 (sea level). */
+  waterLevel?: number;
+  /** procedural sea bed, used when the chunk has no geological layers. */
+  procedural?: SurfaceChunkOceanTopProcedural;
+};
+
+/** A coloured side-wall mesh for one interval of a {@link SurfaceChunk}. */
+export type SurfaceChunkWall = {
+  geometry: BufferGeometry;
+  color: string;
+};
+
+/** A coloured clipped-surface mesh of a {@link SurfaceChunk}. */
+export type SurfaceChunkSurface = {
+  geometry: BufferGeometry;
+  color: string;
+};
+
+/** Per-phase build timings (ms) and counts for a {@link SurfaceChunk}. */
+export type SurfaceChunkMetrics = {
+  densifyMs: number;
+  /** total surface-clip time across all layers */
+  clipMs: number;
+  /** total rim-sampling time across all layers */
+  rimMs: number;
+  wallsMs: number;
+  /** basement build time (0 when no basement slot) */
+  basementMs: number;
+  /** ocean-top build time (0 when no ocean-top slot) */
+  oceanTopMs: number;
+  totalMs: number;
+  layers: number;
+  surfaces: number;
+  walls: number;
+  /** total triangles (surfaces + walls + basement) */
+  triangles: number;
+  /** shared rim vertex count (all rings) */
+  rimPoints: number;
+};
+
+/**
+ * One group of a {@link SurfaceChunk}: a self-contained solid block whose top is
+ * the group's first (shallowest) surface and whose base is its last (deepest).
+ * Its walls fill only the intervals **between consecutive surfaces of the group**;
+ * there is no wall to the next group, so adjacent groups are separated by an empty
+ * gap.
+ *
+ * @group Geometries
+ */
+export type SurfaceChunkGroup = {
+  surfaces: SurfaceChunkSurface[];
+  walls: SurfaceChunkWall[];
+};
+
+/**
+ * The result of {@link createSurfaceChunk}: one {@link SurfaceChunkGroup} per input
+ * group (mirroring the input shape), all in one common scene frame.
+ *
+ * @group Geometries
+ */
+export type SurfaceChunk = {
+  groups: SurfaceChunkGroup[];
+  /**
+   * The basement block, present only when the `basement` option is set. Its
+   * `surfaces` hold the flat base cap (and, for a standalone basement, the top cap
+   * as well); its `walls` hold the sides.
+   */
+  basement?: SurfaceChunkGroup;
+  /**
+   * The ocean-top water geometries, present only when the `oceanTop` option is
+   * set: a flat water `surface`, the water `body` (sides), and a procedural `bed`
+   * (procedural mode only — in surface mode the shallowest layer is the bed).
+   * Render these with the `Ocean` water shader.
+   */
+  oceanTop?: {
+    surface: BufferGeometry;
+    body: BufferGeometry;
+    bed?: BufferGeometry;
+  };
+  metrics: SurfaceChunkMetrics;
+};
+
+/**
+ * Densify a polygon's rings in world XZ so no edge is longer than `spacing`,
+ * returning a new polygon. Used to give a shared rim enough resolution to follow
+ * the relief. `spacing <= 0` returns the polygon unchanged.
+ *
+ * @group Geometries
+ */
+export function densifyPolygon(
+  polygon: PlanarPolygonGeometry,
+  spacing: number,
+): PlanarPolygonGeometry {
+  if (spacing <= 0) return polygon;
+  const comps = polygon.coordinates as PlanarPolygonCoordinates;
+  const out: PlanarPolygonCoordinates = comps.map(rings =>
+    rings.map(ring => densifyRing(ring, spacing)),
+  );
+  return new PlanarPolygonGeometry(out);
+}
+
+function densifyRing(ring: Coordinates2D, spacing: number): Coordinates2D {
+  const n = ring.length;
+  if (n < 2) return ring;
+  const closed = ring[0][0] === ring[n - 1][0] && ring[0][1] === ring[n - 1][1];
+  const m = closed ? n - 1 : n;
+  const out: Vec2[] = [];
+  for (let i = 0; i < m; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % m];
+    out.push([a[0], a[1]]);
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const len = Math.hypot(dx, dy);
+    const steps = Math.floor(len / spacing);
+    for (let s = 1; s < steps; s++) {
+      const t = (s * spacing) / len;
+      out.push([a[0] + dx * t, a[1] + dy * t]);
+    }
+  }
+  return out;
+}
+
+/**
+ * Build a "surface chunk": one or more solid layered blocks (groups) of depth
+ * surfaces clipped to a shared mask polygon and stitched together with coloured
+ * side walls. Each interval's wall takes the colour of the surface above it.
+ *
+ * Layers are supplied as a 2D array: each inner array is one **group** whose top
+ * is its first (shallowest) surface and whose base is its last (deepest). Walls
+ * are built only for the intervals **within** a group, so adjacent groups are
+ * separated by an empty gap (surfaces overlapping/crossing across a group boundary
+ * is a special case left for later). The library is intentionally unopinionated
+ * about how layers are grouped — that is the caller's decision.
+ *
+ * Because the layers generally come from **different grids** (resolution,
+ * rotation, origin), the walls need a single rim shared vertex-for-vertex by every
+ * layer. The mask polygon is densified in world XZ into that canonical rim; each
+ * surface is clipped to it **without draping** so its boundary lands on exactly
+ * those rim points (at the layer's own depth), and every layer is baked into one
+ * common scene frame. The walls then connect consecutive layers' rims directly.
+ *
+ * Holes are filled (each layer spans the full polygon) so the rims stay aligned.
+ * Where surfaces cross within a group, the corresponding wall segment flips; the
+ * caller should render walls double-sided (or enable the clamp/pinch-out option,
+ * which cascades within each group).
+ *
+ * @param groups groups of layers; within each group, top (shallowest) to bottom
+ * @param options see {@link SurfaceChunkOptions}
+ *
+ * @group Geometries
+ */
+export function createSurfaceChunk(
+  groups: SurfaceChunkLayer[][],
+  options: SurfaceChunkOptions,
+): SurfaceChunk {
+  const rimSpacing = options.rimSpacing ?? 250;
+  const maxError = options.maxError ?? 5;
+
+  const t0 = performance.now();
+  const { densified, rings } = densifyChunkRim(options.polygon, rimSpacing);
+  const tDensify = performance.now();
+
+  // Flatten the groups but remember which group each layer belongs to, so the
+  // shared rim / clip machinery runs once across every layer while the output and
+  // the walls stay grouped.
+  const flatLayers: SurfaceChunkLayer[] = [];
+  const layerGroup: number[] = [];
+  groups.forEach((group, gi) =>
+    group.forEach(layer => {
+      flatLayers.push(layer);
+      layerGroup.push(gi);
+    }),
+  );
+
+  // Per-layer clip + rim sampling — the expensive, independent part. Split out as
+  // {@link clipChunkLayer} so it can be parallelized (e.g. across workers); here it
+  // runs serially.
+  let clipMs = 0;
+  let rimMs = 0;
+  const layers: AssembleChunkLayer[] = flatLayers.map((layer, i) => {
+    const clip = clipChunkLayer(layer, densified, rings, maxError);
+    clipMs += clip.clipMs;
+    rimMs += clip.rimMs;
+    return {
+      geometry: clip.geometry,
+      rimY: clip.rimY,
+      color: layer.color,
+      groupIndex: layerGroup[i],
+    };
+  });
+
+  return assembleChunk(
+    groups.length,
+    layers,
+    rings,
+    densified,
+    {
+      clamp: options.clamp,
+      maxError,
+      basement: options.basement,
+      oceanTop: options.oceanTop,
+    },
+    { t0, densifyMs: tDensify - t0, clipMs, rimMs },
+  );
+}
+
+/**
+ * Densify a chunk's mask polygon into the shared rim used by every layer, returning
+ * both the densified polygon (for clipping) and its flattened rings (for rim
+ * sampling / wall building). See {@link createSurfaceChunk}.
+ *
+ * @group Geometries
+ */
+export function densifyChunkRim(
+  polygon: PlanarPolygonGeometry,
+  rimSpacing: number,
+): { densified: PlanarPolygonGeometry; rings: Coordinates2D[] } {
+  const densified = densifyPolygon(polygon, rimSpacing);
+  // All rings (across components) of the shared rim, in world XZ.
+  const rings = (densified.coordinates as PlanarPolygonCoordinates).flat();
+  return { densified, rings };
+}
+
+/** The per-layer result of {@link clipChunkLayer}: clipped geometry + rim depths. */
+export type ChunkLayerClip = {
+  /** clipped surface geometry (scene frame), or null when the mask covered nothing */
+  geometry: BufferGeometry | null;
+  /** this layer's depth at every shared-rim vertex: `rimY[ring][vertex]` */
+  rimY: number[][];
+  /** clip time (ms) */
+  clipMs: number;
+  /** rim-sampling time (ms) */
+  rimMs: number;
+};
+
+/**
+ * Clip ONE layer against the shared rim and sample its rim depths — the expensive,
+ * per-layer part of {@link createSurfaceChunk}, extracted so it can run
+ * independently (e.g. in parallel across workers). The result feeds
+ * {@link assembleChunk}.
+ *
+ * @group Geometries
+ */
+export function clipChunkLayer(
+  layer: SurfaceChunkLayer,
+  densified: PlanarPolygonGeometry,
+  rings: Coordinates2D[],
+  maxError: number,
+): ChunkLayerClip {
+  const nullValue = layer.nullValue ?? -1;
+  const isInvalid = (v: number) => v === nullValue || v < 0;
+
+  const c0 = performance.now();
+  const geo = createClippedSurface(layer.values, layer.header, {
+    polygon: densified,
+    referenceDepth: layer.referenceDepth,
+    worldPosition: layer.worldPosition,
+    // No draping: the boundary must land on exactly the shared rim points so
+    // every layer aligns. Fill holes so each layer spans the full polygon.
+    drape: false,
+    cutHoles: false,
+    maxError,
+    nullValue,
+  });
+  if (geo) {
+    // local grid frame -> common scene frame (bake the UtmPosition offset)
+    geo.translate(layer.worldPosition[0], 0, layer.worldPosition[1]);
+  }
+  const clipMs = performance.now() - c0;
+
+  // Sample this layer's rim depth at the shared rim vertices. Uses the same
+  // world->grid mapping and `value - referenceDepth` as the clipped surface, so
+  // the rim matches the surface boundary.
+  const r0 = performance.now();
+  const toGrid = surfaceWorldToGrid(layer.header, layer.worldPosition);
+  const { nx, ny } = layer.header;
+  let sum = 0;
+  let cnt = 0;
+  for (let i = 0; i < layer.values.length; i++) {
+    const v = layer.values[i];
+    if (!isInvalid(v)) {
+      sum += v;
+      cnt++;
+    }
+  }
+  const fill = cnt > 0 ? sum / cnt : layer.referenceDepth;
+  const rimY = rings.map(ring =>
+    ring.map(([sx, sz]) => {
+      const [col, row] = toGrid(sx, sz);
+      const v = sampleValidGrid(
+        layer.values,
+        nx,
+        ny,
+        col,
+        row,
+        isInvalid,
+        fill,
+      );
+      return v - layer.referenceDepth;
+    }),
+  );
+  const rimMs = performance.now() - r0;
+
+  return { geometry: geo, rimY, clipMs, rimMs };
+}
+
+/** A clipped layer as consumed by {@link assembleChunk}. */
+export type AssembleChunkLayer = {
+  geometry: BufferGeometry | null;
+  rimY: number[][];
+  /** side-wall colour for the interval below this surface */
+  color: string;
+  /** which input group this layer belongs to */
+  groupIndex: number;
+};
+
+/** Options for {@link assembleChunk} (the non-clip build parameters). */
+export type AssembleChunkOptions = {
+  clamp?: boolean;
+  maxError?: number;
+  basement?: SurfaceChunkBasement;
+  oceanTop?: SurfaceChunkOceanTop;
+};
+
+/** Timings threaded into {@link assembleChunk} for the returned metrics. */
+export type ChunkBuildTimings = {
+  /** `performance.now()` at the start of the whole build (for `totalMs`) */
+  t0: number;
+  densifyMs: number;
+  /** aggregate clip time across all layers */
+  clipMs: number;
+  /** aggregate rim-sampling time across all layers */
+  rimMs: number;
+};
+
+/**
+ * Assemble a {@link SurfaceChunk} from already-clipped layers (see
+ * {@link clipChunkLayer}): the pinch-out clamp, the coloured side walls, the
+ * optional basement and ocean-top slots, and the metrics. This is the cheap,
+ * serial counterpart to the parallelizable per-layer clip.
+ *
+ * @group Geometries
+ */
+export function assembleChunk(
+  groupCount: number,
+  layers: AssembleChunkLayer[],
+  rings: Coordinates2D[],
+  densified: PlanarPolygonGeometry,
+  options: AssembleChunkOptions,
+  timings: ChunkBuildTimings,
+): SurfaceChunk {
+  const clamp = options.clamp ?? false;
+  const maxError = options.maxError ?? 5;
+
+  const groupSurfaces: SurfaceChunkSurface[][] = Array.from(
+    { length: groupCount },
+    () => [],
+  );
+  // rimY[flatLayer][ring][vertex] — each layer's rim depth at the shared rim points.
+  const rimY: number[][][] = [];
+  const layerGroup: number[] = [];
+  // Deepest built surface geometry (last non-null layer), used to keep a
+  // procedural basement floor below the whole chunk.
+  let deepestGeo: BufferGeometry | null = null;
+  let surfaceTris = 0;
+
+  for (const layer of layers) {
+    layerGroup.push(layer.groupIndex);
+    rimY.push(layer.rimY);
+    if (layer.geometry) {
+      groupSurfaces[layer.groupIndex].push({
+        geometry: layer.geometry,
+        color: layer.color,
+      });
+      deepestGeo = layer.geometry;
+      const idx = layer.geometry.getIndex();
+      if (idx) surfaceTris += idx.count / 3;
+    }
+  }
+
+  // Pinch-out clamp: keep each layer's rim from rising above the one above it,
+  // cascading top -> down within each group, so the wall collapses to zero height
+  // where they cross. The cascade resets at a group boundary (groups are separated
+  // by a gap, so there is nothing to clamp against across it).
+  if (clamp) {
+    for (let i = 1; i < rimY.length; i++) {
+      if (layerGroup[i] !== layerGroup[i - 1]) continue;
+      for (let r = 0; r < rimY[i].length; r++) {
+        const cur = rimY[i][r];
+        const above = rimY[i - 1][r];
+        for (let k = 0; k < cur.length; k++) {
+          if (cur[k] > above[k]) cur[k] = above[k];
+        }
+      }
+    }
+  }
+
+  // Side walls: one mesh per interval, coloured by the surface above it. Only
+  // intervals within a group get a wall; the gap between groups is left open.
+  const w0 = performance.now();
+  const groupWalls: SurfaceChunkWall[][] = Array.from(
+    { length: groupCount },
+    () => [],
+  );
+  let wallTris = 0;
+  for (let i = 0; i + 1 < layers.length; i++) {
+    if (layerGroup[i] !== layerGroup[i + 1]) continue;
+    const geometry = buildIntervalWalls(rings, rimY[i], rimY[i + 1]);
+    if (geometry) {
+      groupWalls[layerGroup[i]].push({ geometry, color: layers[i].color });
+      const idx = geometry.getIndex();
+      if (idx) wallTris += idx.count / 3;
+    }
+  }
+  const wallsMs = performance.now() - w0;
+
+  // --- Basement slot: a solid block below the deepest layer ------------------
+  const b0 = performance.now();
+  let basement: SurfaceChunkGroup | undefined;
+  let basementTris = 0;
+  if (options.basement) {
+    const deepestRim = rimY.length > 0 ? rimY[rimY.length - 1] : null;
+    basement = buildBasement(
+      options.basement,
+      rings,
+      deepestRim, // deepest layer's rim = attached basement ceiling
+      deepestGeo,
+      densified,
+      maxError,
+    );
+    if (basement) {
+      for (const s of basement.surfaces) {
+        const idx = s.geometry.getIndex();
+        if (idx) basementTris += idx.count / 3;
+      }
+      for (const wl of basement.walls) {
+        const idx = wl.geometry.getIndex();
+        if (idx) basementTris += idx.count / 3;
+      }
+    }
+  }
+  const basementMs = performance.now() - b0;
+
+  // --- Ocean-top slot: water surface + body (+ procedural sea bed) ----------
+  const o0 = performance.now();
+  let oceanTop: SurfaceChunk['oceanTop'];
+  let oceanTopTris = 0;
+  if (options.oceanTop) {
+    const shallowestRim = rimY.length > 0 ? rimY[0] : null;
+    oceanTop = buildOceanTop(
+      options.oceanTop,
+      rings,
+      shallowestRim,
+      densified,
+      maxError,
+    );
+    if (oceanTop) {
+      for (const g of [oceanTop.surface, oceanTop.body, oceanTop.bed]) {
+        const idx = g?.getIndex();
+        if (idx) oceanTopTris += idx.count / 3;
+      }
+    }
+  }
+  const oceanTopMs = performance.now() - o0;
+
+  const groupsOut: SurfaceChunkGroup[] = Array.from(
+    { length: groupCount },
+    (_, gi) => ({
+      surfaces: groupSurfaces[gi],
+      walls: groupWalls[gi],
+    }),
+  );
+  const surfaceCount = groupSurfaces.reduce((a, g) => a + g.length, 0);
+  const wallCount = groupWalls.reduce((a, g) => a + g.length, 0);
+
+  const metrics: SurfaceChunkMetrics = {
+    densifyMs: timings.densifyMs,
+    clipMs: timings.clipMs,
+    rimMs: timings.rimMs,
+    wallsMs,
+    basementMs,
+    oceanTopMs,
+    totalMs: performance.now() - timings.t0,
+    layers: layers.length,
+    surfaces: surfaceCount,
+    walls: wallCount,
+    triangles: Math.round(surfaceTris + wallTris + basementTris + oceanTopTris),
+    rimPoints: rings.reduce((a, r) => a + r.length, 0),
+  };
+
+  return { groups: groupsOut, basement, oceanTop, metrics };
+}
+
+/** Default procedural-basement colour (dark gray rock). */
+const BASEMENT_COLOR = '#4a4a4a';
+/** Tessellation for the flat base cap (flat → needs almost no interior detail). */
+const BASE_SEGMENTS = 8;
+
+/**
+ * Build the {@link SurfaceChunkBasement} block: a **flat base** sitting `thickness`
+ * below the top, plus side walls from the top rim down to the base rim (sharing the
+ * chunk's canonical `rings`). The top is the chunk's deepest surface (attached,
+ * `basement.top` omitted) or a standalone assigned/procedural surface.
+ */
+function buildBasement(
+  basement: SurfaceChunkBasement,
+  rings: Coordinates2D[],
+  deepestRim: number[][] | null,
+  deepestGeo: BufferGeometry | null,
+  densified: PlanarPolygonGeometry,
+  maxError: number,
+): SurfaceChunkGroup | undefined {
+  const color = basement.color ?? BASEMENT_COLOR;
+  const thickness = basement.thickness ?? 500;
+
+  // Shared-rim bounding box in scene XZ (used by the procedural top and the base).
+  let minX = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxZ = -Infinity;
+  for (const ring of rings)
+    for (const [x, z] of ring) {
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (z < minZ) minZ = z;
+      if (z > maxZ) maxZ = z;
+    }
+  if (!Number.isFinite(minX)) return undefined;
+  const w = Math.max(maxX - minX, 1e-6);
+  const l = Math.max(maxZ - minZ, 1e-6);
+
+  // --- Determine the TOP: its rim and (for standalone) a cap mesh -------------
+  let topRim: number[][];
+  let topCap: BufferGeometry | null = null;
+
+  if (!basement.top) {
+    // Attached: the top is the chunk's deepest surface (already rendered).
+    if (!deepestRim) return undefined;
+    topRim = deepestRim;
+  } else if ('surface' in basement.top) {
+    // Standalone: an assigned surface top (clipped like a layer).
+    const layer = basement.top.surface;
+    const nullValue = layer.nullValue ?? -1;
+    const isInvalid = (v: number) => v === nullValue || v < 0;
+    const geo = createClippedSurface(layer.values, layer.header, {
+      polygon: densified,
+      referenceDepth: layer.referenceDepth,
+      worldPosition: layer.worldPosition,
+      drape: false,
+      cutHoles: false,
+      maxError,
+      nullValue,
+    });
+    if (geo) {
+      geo.translate(layer.worldPosition[0], 0, layer.worldPosition[1]);
+      topCap = geo;
+    }
+    const toGrid = surfaceWorldToGrid(layer.header, layer.worldPosition);
+    const { nx, ny } = layer.header;
+    let sum = 0;
+    let cnt = 0;
+    for (let i = 0; i < layer.values.length; i++) {
+      const v = layer.values[i];
+      if (!isInvalid(v)) {
+        sum += v;
+        cnt++;
+      }
+    }
+    const fill = cnt > 0 ? sum / cnt : layer.referenceDepth;
+    topRim = rings.map(ring =>
+      ring.map(([sx, sz]) => {
+        const [col, row] = toGrid(sx, sz);
+        return (
+          sampleValidGrid(layer.values, nx, ny, col, row, isInvalid, fill) -
+          layer.referenceDepth
+        );
+      }),
+    );
+  } else {
+    // Standalone: a procedurally generated rocky top.
+    const proc = basement.top.procedural;
+    const variation = proc.variation ?? 150;
+    const seed = proc.seed ?? 0;
+    const segments = Math.max(2, Math.floor(proc.segments ?? 96));
+    const mode = proc.depthMode ?? 'mean';
+    const topFn = (x: number, z: number) => {
+      const n = basementNoise((x - minX) / w, (z - minZ) / l, seed);
+      return mode === 'min'
+        ? -proc.depth - variation * n
+        : -proc.depth + variation * (2 * n - 1);
+    };
+    const built = buildCap(
+      rings,
+      densified,
+      topFn,
+      segments,
+      maxError,
+      minX,
+      minZ,
+    );
+    topCap = built.cap;
+    topRim = built.rim;
+  }
+
+  // --- Deepest point of the top (rim + cap / deepest surface interior) --------
+  let topMinY = Infinity;
+  for (const ring of topRim) for (const y of ring) if (y < topMinY) topMinY = y;
+  const interior = topCap ?? (basement.top ? null : deepestGeo);
+  if (interior) {
+    interior.computeBoundingBox();
+    const by = interior.boundingBox?.min.y;
+    if (by !== undefined && by < topMinY) topMinY = by;
+  }
+  if (!Number.isFinite(topMinY)) return undefined;
+
+  // --- Flat base: `thickness` below the top's deepest point -------------------
+  const baseY = topMinY - thickness;
+  const baseRim = rings.map(ring => ring.map(() => baseY));
+  const base = buildCap(
+    rings,
+    densified,
+    () => baseY,
+    BASE_SEGMENTS,
+    maxError,
+    minX,
+    minZ,
+  );
+  if (!base.cap) return undefined;
+
+  // --- Walls: top rim -> flat base rim ---------------------------------------
+  const wallGeo = buildIntervalWalls(rings, topRim, baseRim);
+
+  const surfaces: SurfaceChunkSurface[] = [];
+  if (topCap) surfaces.push({ geometry: topCap, color }); // standalone top
+  surfaces.push({ geometry: base.cap, color }); // flat base
+  const walls: SurfaceChunkWall[] = wallGeo
+    ? [{ geometry: wallGeo, color }]
+    : [];
+  return { surfaces, walls };
+}
+
+/**
+ * Build a cap surface over the shared rim's bounding box by sampling `heightFn`
+ * (scene Y) on a synthetic grid, clipped to the densified polygon so it shares the
+ * canonical rim, plus that rim sampled from the SAME grid (so a wall meeting it is
+ * watertight). Heights are stored positive-down for the triangulator (which treats
+ * `v < 0` as no-data) and flipped back to y-up afterwards.
+ */
+function buildCap(
+  rings: Coordinates2D[],
+  densified: PlanarPolygonGeometry,
+  heightFn: (x: number, z: number) => number,
+  segments: number,
+  maxError: number,
+  minX: number,
+  minZ: number,
+): { cap: BufferGeometry | null; rim: number[][] } {
+  let maxX = -Infinity;
+  let maxZ = -Infinity;
+  for (const ring of rings)
+    for (const [x, z] of ring) {
+      if (x > maxX) maxX = x;
+      if (z > maxZ) maxZ = z;
+    }
+  const w = Math.max(maxX - minX, 1e-6);
+  const l = Math.max(maxZ - minZ, 1e-6);
+  const nx = Math.max(2, Math.round((w / Math.max(w, l)) * segments) + 1);
+  const ny = Math.max(2, Math.round((l / Math.max(w, l)) * segments) + 1);
+  const cellX = w / (nx - 1);
+  const cellZ = l / (ny - 1);
+  const grid = new Float32Array(nx * ny);
+  for (let r = 0; r < ny; r++) {
+    for (let c = 0; c < nx; c++) {
+      grid[r * nx + c] = -heightFn(minX + c * cellX, minZ + r * cellZ);
+    }
+  }
+  const gridPolygons: GridPolygon[] = (
+    densified.coordinates as PlanarPolygonCoordinates
+  ).map(comp =>
+    comp.map(ring =>
+      ring.map(([sx, sz]) => [(sx - minX) / cellX, (sz - minZ) / cellZ]),
+    ),
+  );
+  const { positions, uvs, indices } = triangulateGridConstrained(
+    grid,
+    nx,
+    cellX,
+    cellZ,
+    -1,
+    maxError,
+    gridPolygons,
+    false,
+    false,
+    0,
+  );
+  let cap: BufferGeometry | null = null;
+  if (indices.length > 0) {
+    for (let i = 1; i < positions.length; i += 3) positions[i] = -positions[i];
+    const g = new BufferGeometry();
+    g.setAttribute('position', new BufferAttribute(positions, 3));
+    g.setAttribute('uv', new BufferAttribute(uvs, 2));
+    g.setIndex(new BufferAttribute(indices, 1));
+    g.translate(minX, 0, minZ);
+    computeUpwardNormals(g);
+    cap = g;
+  }
+  const capInvalid = (v: number) => v === -1 || v < 0;
+  const rim = rings.map(ring =>
+    ring.map(
+      ([sx, sz]) =>
+        -sampleValidGrid(
+          grid,
+          nx,
+          ny,
+          (sx - minX) / cellX,
+          (sz - minZ) / cellZ,
+          capInvalid,
+          0,
+        ),
+    ),
+  );
+  return { cap, rim };
+}
+
+/**
+ * Procedural [0, 1] relief noise for the basement floor. Unlike the smooth ocean
+ * sea-bed dunes, this is a **ridged, multi-octave** field (`1 - |sin|` creases per
+ * octave, slow amplitude falloff, sharpened) so it reads as a dramatic, jagged
+ * rocky surface rather than rolling sand.
+ */
+function basementNoise(fx: number, fz: number, seed: number): number {
+  const ridge = (a: number) => 1 - Math.abs(Math.sin(a));
+  const freqs = [3, 7, 15, 29];
+  let n = 0;
+  let amp = 1;
+  let norm = 0;
+  for (let o = 0; o < freqs.length; o++) {
+    const f = freqs[o];
+    n +=
+      amp *
+      ridge((fx * f + seed) * Math.PI) *
+      ridge((fz * f - seed * 0.7) * Math.PI + 0.9);
+    norm += amp;
+    amp *= 0.62; // slow falloff keeps strong high-frequency (rocky) detail
+  }
+  n /= norm;
+  return Math.min(Math.max(Math.pow(n, 1.4), 0), 1); // sharpen toward blocky rock
+}
+
+/**
+ * Smooth [0, 1] sea-bed relief noise (a small sum of sines — rolling dunes), the
+ * counterpart to the ridged {@link basementNoise}.
+ */
+function seabedNoise(fx: number, fz: number, seed: number): number {
+  let n = 0.5;
+  n +=
+    0.25 * Math.sin((fx * 6.0 + seed) * Math.PI) * Math.cos(fz * 5.0 * Math.PI);
+  n +=
+    0.15 *
+    Math.sin((fx * 13.0 - seed) * Math.PI + 1.7) *
+    Math.cos(fz * 11.0 * Math.PI - 0.6);
+  n +=
+    0.1 *
+    Math.sin(fx * 23.0 * Math.PI + 0.3) *
+    Math.cos(fz * 19.0 * Math.PI + 2.1);
+  return Math.min(Math.max(n, 0), 1);
+}
+
+/**
+ * Build the {@link SurfaceChunkOceanTop} water geometries: a flat water surface at
+ * `waterLevel` and a water body down to the sea bed. In surface mode the bed is the
+ * shallowest layer's rim (`shallowestRim`); with no layers a procedural sea bed is
+ * generated (and returned). Geometries are for the `Ocean` shader.
+ */
+function buildOceanTop(
+  oceanTop: SurfaceChunkOceanTop,
+  rings: Coordinates2D[],
+  shallowestRim: number[][] | null,
+  densified: PlanarPolygonGeometry,
+  maxError: number,
+): SurfaceChunk['oceanTop'] {
+  const waterLevel = oceanTop.waterLevel ?? 0;
+
+  let minX = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxZ = -Infinity;
+  for (const ring of rings)
+    for (const [x, z] of ring) {
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (z < minZ) minZ = z;
+      if (z > maxZ) maxZ = z;
+    }
+  if (!Number.isFinite(minX)) return undefined;
+  const w = Math.max(maxX - minX, 1e-6);
+  const l = Math.max(maxZ - minZ, 1e-6);
+
+  const water = buildCap(
+    rings,
+    densified,
+    () => waterLevel,
+    BASE_SEGMENTS,
+    maxError,
+    minX,
+    minZ,
+  );
+  if (!water.cap) return undefined;
+
+  let bedRim: number[][];
+  let bed: BufferGeometry | undefined;
+
+  if (shallowestRim) {
+    // Surface mode: the shallowest layer is the sea bed (already a chunk surface).
+    bedRim = shallowestRim;
+  } else if (oceanTop.procedural) {
+    // Procedural sea bed (smooth dunes) below the water level.
+    const proc = oceanTop.procedural;
+    const variation = proc.variation ?? 60;
+    const seed = proc.seed ?? 0;
+    const segments = Math.max(2, Math.floor(proc.segments ?? 64));
+    const mode = proc.depthMode ?? 'mean';
+    const bedFn = (x: number, z: number) => {
+      const n = seabedNoise((x - minX) / w, (z - minZ) / l, seed);
+      return mode === 'min'
+        ? waterLevel - proc.depth - variation * n
+        : waterLevel - proc.depth + variation * (2 * n - 1);
+    };
+    const built = buildCap(
+      rings,
+      densified,
+      bedFn,
+      segments,
+      maxError,
+      minX,
+      minZ,
+    );
+    if (!built.cap) return undefined;
+    bed = built.cap;
+    bedRim = built.rim;
+  } else {
+    return undefined;
+  }
+
+  const waterRim = rings.map(ring => ring.map(() => waterLevel));
+  const body = buildIntervalWalls(rings, waterRim, bedRim);
+  if (!body) return undefined;
+
+  return { surface: water.cap, body, bed };
+}
+
+// Build the side-wall mesh for one interval: a quad strip per rim ring connecting
+// the top depths to the bottom depths at the shared rim points.
+function buildIntervalWalls(
+  rings: Coordinates2D[],
+  topY: number[][],
+  bottomY: number[][],
+): BufferGeometry | null {
+  const positions: number[] = [];
+  const indices: number[] = [];
+  for (let r = 0; r < rings.length; r++) {
+    const ring = rings[r];
+    const tY = topY[r];
+    const bY = bottomY[r];
+    const m = ring.length;
+    if (m < 2) continue;
+    const base = positions.length / 3;
+    for (let k = 0; k < m; k++) {
+      positions.push(ring[k][0], tY[k], ring[k][1]); // top vertex (2k)
+      positions.push(ring[k][0], bY[k], ring[k][1]); // bottom vertex (2k + 1)
+    }
+    for (let k = 0; k < m; k++) {
+      const k1 = (k + 1) % m;
+      const t0 = base + 2 * k;
+      const b0 = base + 2 * k + 1;
+      const t1 = base + 2 * k1;
+      const b1 = base + 2 * k1 + 1;
+      indices.push(t0, t1, b0, t1, b1, b0);
+    }
+  }
+  if (indices.length === 0) return null;
+  const geometry = new BufferGeometry();
+  geometry.setAttribute(
+    'position',
+    new BufferAttribute(new Float32Array(positions), 3),
+  );
+  geometry.setIndex(new BufferAttribute(new Uint32Array(indices), 1));
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}

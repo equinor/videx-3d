@@ -68,6 +68,8 @@ export const Default: Story = {
     colorRamp: 0,
     opacity: 1,
     maxError: 2.5,
+    cutHoles: true,
+    edgeSmoothing: 0,
     wireframe: false,
     showContours: true,
     contoursColorMode: ContourColorMode.darken,
@@ -125,6 +127,17 @@ export const Default: Story = {
         min: 0.1,
         max: 10,
         step: 0.01,
+      },
+    },
+    cutHoles: {
+      control: { type: 'boolean' },
+    },
+    edgeSmoothing: {
+      control: {
+        type: 'range',
+        min: 0,
+        max: 5,
+        step: 1,
       },
     },
     contoursInterval: {

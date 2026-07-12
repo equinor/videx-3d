@@ -1,5 +1,10 @@
 import { expose } from 'comlink';
 
+import { surfaceChunk } from '../../../components/Chunks/chunk-defs';
+import {
+  generateSurfaceChunkDebug,
+  surfaceChunkDebug,
+} from '../../../components/Chunks/debug/surface-chunk-debug-generator';
 import {
   surfaceGeometry,
   surfaceTextures,
@@ -33,6 +38,7 @@ import {
   generatePerimeterGeometry,
   generatePositionMarkers,
   generateShoes,
+  generateSurfaceChunk,
   generateSurfaceGeometry,
   generateSurfaceTexturesData,
   generateTubeTrajectory,
@@ -60,6 +66,9 @@ registry.add(depthMarkers, generateDepthMarkers);
 registry.add(wellboreLabel, generateWellboreLabel);
 registry.add(surfaceGeometry, generateSurfaceGeometry);
 registry.add(surfaceTextures, generateSurfaceTexturesData);
+registry.add(surfaceChunk, generateSurfaceChunk);
+// TEMPORARY: bottleneck-test generator (remove with ChunkBottleneck.stories.tsx)
+registry.add(surfaceChunkDebug, generateSurfaceChunkDebug);
 registry.add(perforationSymbols, generatePerforations);
 registry.add(positionMarkers, generatePositionMarkers);
 registry.add(

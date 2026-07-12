@@ -84,64 +84,6 @@ export function extractBoundaryLoops(geometry: BufferGeometry): number[][] {
 }
 
 /**
- * Smooth the given vertex loops (e.g. from {@link extractBoundaryLoops}) in
- * place with an iterated windowed moving average, moving only the X/Z position
- * of the existing boundary vertices and leaving their Y untouched. Unlike a
- * local corner-cutting pass (which only rounds individual steps into small
- * arcs), the averaging window spans several vertices, so long grid-aligned
- * staircase runs collapse onto their straight centre line — the rim reads as one
- * continuous curve rather than a chain of little bumps. The window grows with
- * `strength`.
- *
- * @group Geometries
- */
-export function smoothBoundaryLoops(
-  geometry: BufferGeometry,
-  loops: number[][],
-  strength: number,
-): void {
-  const pos = geometry.getAttribute('position') as BufferAttribute;
-  if (!pos) return;
-  const passes = 2;
-  for (const loop of loops) {
-    const m = loop.length;
-    if (m < 4) continue;
-    // Half-window grows with strength; capped so small loops/holes stay intact.
-    const radius = Math.max(1, Math.min(strength * 2, Math.floor((m - 1) / 3)));
-    let xs = new Float64Array(m);
-    let zs = new Float64Array(m);
-    for (let k = 0; k < m; k++) {
-      xs[k] = pos.getX(loop[k]);
-      zs[k] = pos.getZ(loop[k]);
-    }
-    // Two box-filter passes approximate a Gaussian (a smooth, continuous curve).
-    for (let p = 0; p < passes; p++) {
-      const nx = new Float64Array(m);
-      const nz = new Float64Array(m);
-      for (let k = 0; k < m; k++) {
-        let sx = 0;
-        let sz = 0;
-        for (let d = -radius; d <= radius; d++) {
-          const j = (((k + d) % m) + m) % m;
-          sx += xs[j];
-          sz += zs[j];
-        }
-        const cnt = radius * 2 + 1;
-        nx[k] = sx / cnt;
-        nz[k] = sz / cnt;
-      }
-      xs = nx;
-      zs = nz;
-    }
-    for (let k = 0; k < m; k++) {
-      pos.setX(loop[k], xs[k]); // depth (Y) left untouched
-      pos.setZ(loop[k], zs[k]);
-    }
-  }
-  pos.needsUpdate = true;
-}
-
-/**
  * Snap the boundary (rim) vertices of an indexed mesh onto the nearest point of
  * a set of reference polylines (closed world-X/Z outlines). Used to pull a mesh
  * rim exactly onto a shared outline, so two meshes that meet at an edge (e.g. a

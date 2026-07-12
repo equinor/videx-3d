@@ -7,7 +7,7 @@ import {
   PackedBufferGeometry,
   ReadonlyStore,
   SurfaceMeta,
-  triangulateGridDelaunay,
+  triangulateGridConstrained,
 } from '../sdk';
 
 const nullValue = -1;
@@ -58,6 +58,8 @@ export async function generateSurfaceGeometry(
   this: ReadonlyStore,
   id: string,
   maxError: number = 5,
+  cutHoles: boolean = true,
+  edgeSmoothing: number = 0,
 ): Promise<PackedBufferGeometry | null> {
   const surface = await this.get<SurfaceMeta>('surface-meta', id);
 
@@ -72,26 +74,21 @@ export async function generateSurfaceGeometry(
 
   const geometry = new BufferGeometry();
 
-  // const triangulation = triangulateGrid(surfaceValues, header.nx, header.xinc, header.yinc, v => v === nullValue ? null : v);
-  // const positions = new Float32Array(triangulation.vertices.length * 3);
-  // for (let i = 0; i < triangulation.vertices.length; i++) {
-  //   const pi = i * 3;
-  //   positions[pi] = triangulation.vertices[i].x;
-  //   positions[pi + 1] = triangulation.vertices[i].y;
-  //   positions[pi + 2] = triangulation.vertices[i].z;
-  // }
-
-  // geometry.setAttribute('position', new BufferAttribute(positions, 3));
-  // geometry.setAttribute('uv', new BufferAttribute(new Float32Array(triangulation.uvs), 2));
-  // geometry.setIndex(new BufferAttribute(new Uint32Array(triangulation.indices), 1));
-
-  const { positions, uvs, indices } = triangulateGridDelaunay(
+  // Constrained Delaunay: no-data holes and the outer data extent are cut with a
+  // clean traced rim (cutHoles) instead of the ragged drop-invalid-triangles
+  // staircase; set cutHoles=false to fill holes from valid neighbours instead.
+  // edgeSmoothing (>0) relaxes the traced rim into a continuous curve.
+  const { positions, uvs, indices } = triangulateGridConstrained(
     surfaceValues,
     header.nx,
     header.xinc,
     header.yinc,
     nullValue,
     maxError,
+    [],
+    false,
+    cutHoles,
+    edgeSmoothing,
   );
   geometry.setAttribute('position', new BufferAttribute(positions, 3));
   geometry.setAttribute('uv', new BufferAttribute(uvs, 2));

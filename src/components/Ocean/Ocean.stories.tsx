@@ -161,7 +161,7 @@ type ExampleProps = {
   waterDepth: number;
   depthVariation: number;
   maxError: number;
-  rimSmoothing: number;
+  edgeSmoothing: number;
   surfaceId: string;
   polygonId: string;
 
@@ -318,7 +318,7 @@ const OceanDemo = (props: ExampleProps) => {
                 {
                   surfaceSegments: props.surfaceSegments,
                   maxError: props.maxError,
-                  rimSmoothing: props.rimSmoothing,
+                  edgeSmoothing: props.edgeSmoothing,
                   // These repo surfaces are depth-normalized (stored as
                   // surfaceMeta.max - trueDepth), so pass the reference depth to
                   // place the bed at its true depth below sea level, exactly as
@@ -345,7 +345,7 @@ const OceanDemo = (props: ExampleProps) => {
     props.waterDepth,
     props.depthVariation,
     props.maxError,
-    props.rimSmoothing,
+    props.edgeSmoothing,
     props.surfaceId,
     props.polygonId,
     data,
@@ -495,7 +495,7 @@ const meta = {
     waterDepth: { ...range(10, 500, 10), table: { category: 'Geometry' } },
     depthVariation: { ...range(0, 200, 5), table: { category: 'Geometry' } },
     maxError: { ...range(0.5, 20, 0.5), table: { category: 'Geometry' } },
-    rimSmoothing: { ...range(0, 1, 1), table: { category: 'Geometry' } },
+    edgeSmoothing: { ...range(0, 5, 1), table: { category: 'Geometry' } },
 
     oceanLevel: { ...range(-500, 500, 10), table: { category: 'Surface' } },
     waveCount: { ...range(1, 64, 1), table: { category: 'Surface' } },
@@ -617,7 +617,7 @@ const commonArgs = {
   waterDepth: 120,
   depthVariation: 20,
   maxError: 5,
-  rimSmoothing: 0,
+  edgeSmoothing: 0,
   surfaceId: Object.keys(surfaceOptions)[0],
   polygonId: Object.keys(polygonOptions)[0],
 
