@@ -9,6 +9,7 @@
     "vite.config.static.js",
     "**/.*",
     "*.config.js",
+    "scripts/*",
     "storybook/*",
     "**/*.stories.{ts,tsx}"
     ],
@@ -20,7 +21,8 @@
   "rules": {
     "no-unused-expressions": ["error", {"allowTernary": true, "allowShortCircuit": true}],
     "react/react-in-jsx-scope": "off",
-    "no-underscore-dangle": "off"
+    "no-underscore-dangle": "off",
+    "react-perf/jsx-no-new-array-as-prop": "off"
   },
   "overrides": [
     {
