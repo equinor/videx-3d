@@ -215,14 +215,14 @@ const Example = (args: ExampleProps) => {
     const base = args.oitEnabled
       ? new OITRenderPass(scene, camera)
       : new RenderPass(scene, camera);
-    const annotations = new AnnotationsPass(camera, clock, pointer, 1000);
+    const annotations = new AnnotationsPass(camera, pointer, 1000);
     // All anti-aliasing is now built into OITRenderPass (temporal / SMAA), driven
     // by the antialias sync effect below; supersampling is a separate, resolution-
     // based control on the pipeline. So no AA post-pass is added here.
     const list: Pass[] = [base, annotations, new OutputPass()];
 
     return list;
-  }, [scene, camera, clock, pointer, args.oitEnabled]);
+  }, [scene, camera, pointer, args.oitEnabled]);
 
   const oitPass = passes[0] instanceof OITRenderPass ? passes[0] : null;
 
