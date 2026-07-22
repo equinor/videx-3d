@@ -117,5 +117,9 @@
     "react": ">=18",
     "react-dom": ">=18",
     "three": ">=0.179"
+  },
+  "allowScripts": {
+    "@parcel/watcher@2.5.1": true,
+    "esbuild@0.28.1": true
   }
 }
