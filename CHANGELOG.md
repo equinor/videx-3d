@@ -1,5 +1,23 @@
 # Changelog
 
+## [3.1.0](https://github.com/equinor/videx-3d/compare/v3.0.0...v3.1.0) (2026-07-24)
+
+
+### Features
+
+* **casings:** added new features to casings ([#236](https://github.com/equinor/videx-3d/issues/236)) ([2d286da](https://github.com/equinor/videx-3d/commit/2d286dae49f618a08bed6b635dbd5f31f44b2c69))
+
+
+### Bug Fixes
+
+* **229:** replace eslint with oxlint ([#234](https://github.com/equinor/videx-3d/issues/234)) ([ce6685a](https://github.com/equinor/videx-3d/commit/ce6685afce7d73fd2dc0a9eed1dbd218597fd252))
+* **npm:** bump brace-expansion from 1.1.14 to 1.1.16 ([#248](https://github.com/equinor/videx-3d/issues/248)) ([b81cab1](https://github.com/equinor/videx-3d/commit/b81cab19977c8eee483f11146170652dff7b0b17))
+* **npm:** bump esbuild from 0.27.3 to 0.28.1 ([#235](https://github.com/equinor/videx-3d/issues/235)) ([1e059c0](https://github.com/equinor/videx-3d/commit/1e059c021b0422842bbdc3d8d2f33b37ad01fb41))
+* **npm:** bump js-yaml from 4.2.0 to 4.3.0 ([#249](https://github.com/equinor/videx-3d/issues/249)) ([8a0f81a](https://github.com/equinor/videx-3d/commit/8a0f81a090fc1fc117dddff8cc8936642d3df1a7))
+* **npm:** bump ws from 8.19.0 to 8.21.0 ([#238](https://github.com/equinor/videx-3d/issues/238)) ([d32d22a](https://github.com/equinor/videx-3d/commit/d32d22a2f1afab271ea3ee1b671a89e37de59cc1))
+* **taa:** fixed issue with the oit taa resolver, causing a black blob appearing and growing ([#240](https://github.com/equinor/videx-3d/issues/240)) ([dffb792](https://github.com/equinor/videx-3d/commit/dffb792f0d2069267a4bb69570a93cf9df440942))
+* **taskless:** babel-core dependabot July 26 ([#250](https://github.com/equinor/videx-3d/issues/250)) ([bbf3c3c](https://github.com/equinor/videx-3d/commit/bbf3c3c05751fb4be15aec12f7e552f02b403ed1))
+
 ## [3.0.0](https://github.com/equinor/videx-3d/compare/v2.0.0...v3.0.0) (2026-07-09)
 
 
