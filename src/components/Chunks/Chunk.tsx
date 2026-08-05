@@ -3,6 +3,7 @@ import { useData } from '../../hooks/useData';
 import { useGenerator } from '../../hooks/useGenerator';
 import {
   ChunkSurfaceLayer,
+  DepthOrderOptions,
   PlanarPolygonGeometry,
   SurfaceChunk,
   SurfaceChunkBasement,
@@ -60,6 +61,14 @@ export type ChunkProps = {
   wireframe?: boolean;
   /** pinch-out clamp for crossing surfaces (build param). Default false. */
   clamp?: boolean;
+  /**
+   * Enforce depth order across all of the chunk's layers before clipping, so
+   * crossing surfaces stop interpenetrating (build param). Pass `{ minGap }` to
+   * also keep a minimum separation, which removes z-fighting between co-planar
+   * surfaces. Omitted (default) = no pass, and the per-layer clips run fully in
+   * parallel. Memoize the object — a new identity rebuilds the geometry.
+   */
+  depthOrder?: DepthOrderOptions;
   /** rim densification spacing (world units). Inherits from the stack when unset. */
   rimSpacing?: number;
   /** interior simplification error (grid height units). Inherits when unset. */
@@ -131,6 +140,7 @@ export const Chunk = ({
   wallOpacity = 1,
   wireframe = false,
   clamp = false,
+  depthOrder,
   rimSpacing,
   maxError,
   basement,
@@ -227,6 +237,7 @@ export const Chunk = ({
         rimSpacing: resolvedRimSpacing,
         maxError: resolvedMaxError,
         clamp,
+        depthOrder,
         basement,
       },
     );
@@ -238,6 +249,7 @@ export const Chunk = ({
     resolvedRimSpacing,
     resolvedMaxError,
     clamp,
+    depthOrder,
     basement,
   ]);
 

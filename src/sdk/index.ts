@@ -24,6 +24,7 @@ export * from './geometries/polygon-outline';
 export * from './geometries/surface-chunk';
 export * from './geometries/surface-chunk-packing';
 export * from './geometries/surface-clip';
+export * from './geometries/surface-order';
 export * from './geometries/surface-outline';
 export * from './geometries/tessellation';
 export * from './geometries/triangulate-grid';

@@ -362,6 +362,51 @@ describe('triangulateGridConstrained', () => {
     expect(triCount).toBeLessThan(50);
     expect(triCount).toBeGreaterThan(0);
   });
+
+  it('constrains a rim crossing a dense cluster of slivers in linear time', () => {
+    // A tall step in the grid makes the greedy pass pack vertices along the cliff,
+    // and a constraint edge crossing that cluster meets very many crossings. When
+    // the crossing set was re-walked after every flip that cost O(crossings^2) or
+    // worse — one real surface took ~50s. Cross the cliff diagonally so the rim
+    // cannot align with it.
+    const width = 300;
+    const height = 300;
+    const grid = new Float32Array(width * height);
+    for (let r = 0; r < height; r++) {
+      for (let c = 0; c < width; c++) {
+        // cliff along a diagonal, 400 units tall
+        grid[r * width + c] = c + r < width ? 100 : 500;
+      }
+    }
+    const outer = [
+      [20, 150],
+      [280, 20],
+      [280, 280],
+      [20, 280],
+    ];
+    const polygons: GridPolygon[] = [[outer]];
+
+    const t0 = performance.now();
+    const { positions, indices } = triangulateGridConstrained(
+      grid,
+      width,
+      1,
+      1,
+      -1,
+      5,
+      polygons,
+      false, // no draping
+      false,
+      0,
+    );
+    const elapsed = performance.now() - t0;
+
+    expect(indices.length).toBeGreaterThan(0);
+    expect(positions.every(v => Number.isFinite(v))).toBe(true);
+    // Generous bound: this is ~0.2s with the incremental insertion and minutes
+    // without it, so it only fails on a genuine algorithmic regression.
+    expect(elapsed).toBeLessThan(10000);
+  });
 });
 
 describe('smoothRings', () => {

@@ -25,6 +25,8 @@ export type SurfaceChunkDebugTimings = {
   fetchMs: number;
   /** clip time (wall-clock; parallel across the clip worker pool) */
   buildMs: number;
+  /** time spent enforcing depth order (0 when disabled) */
+  depthOrderMs: number;
   /** time to pack all geometries for transfer */
   packMs: number;
   /** total worker time (fetch + clip + assemble + pack) */
@@ -54,7 +56,7 @@ export async function generateSurfaceChunkDebug(
   const densifyMs = performance.now() - t0;
   const maxError = spec.maxError ?? 5;
 
-  const { clipped, bytes, fetchMs, clipMs, poolSize, profile } =
+  const { clipped, bytes, fetchMs, clipMs, depthOrderMs, poolSize, profile } =
     await fetchAndClipSpecLayers(this, spec, densified, rings, maxError);
 
   if (clipped.length === 0 && !spec.basement) return null;
@@ -81,6 +83,7 @@ export async function generateSurfaceChunkDebug(
     debug: {
       fetchMs,
       buildMs: clipMs,
+      depthOrderMs,
       packMs: tPack - tAssemble,
       totalWorkerMs: tPack - t0,
       bytes,

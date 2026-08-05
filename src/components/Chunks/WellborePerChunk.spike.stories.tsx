@@ -14,6 +14,7 @@ import { OutputPass } from '../../rendering/passes/OutputPass';
 import { RenderingPipeline } from '../../rendering/RenderingPipeline';
 import {
   CRS,
+  darkenColor,
   getProjectionDefFromUtmZone,
   PositionLog,
   SurfaceMeta,
@@ -26,7 +27,10 @@ import { DataProviderDecorator } from '../../storybook/decorators/data-provider-
 import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
-import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
+import {
+  distinctByName,
+  useSurfaceMetaDict,
+} from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
 import { UtmArea } from '../UtmArea';
@@ -55,6 +59,11 @@ const CHUNK_COLORS = [
   '#76b7b2',
 ];
 
+// How much darker every second surface within a chunk is drawn. Real usage assigns
+// an explicit colour per surface (from the host's strat column); the colours here
+// are made up, so alternating shades are what makes the individual slabs readable.
+const BAND_DARKEN = 0.3;
+
 // Split a sorted meta list into contiguous chunks from a comma-separated string.
 function splitIntoChunks(metas: SurfaceMeta[], sizes: string): SurfaceMeta[][] {
   const counts = sizes
@@ -81,7 +90,7 @@ const ChunkPipeline = () => {
     return [base, new OutputPass()];
   }, [scene, camera]);
   void RenderPass;
-  useFrame(() => {}, 2);
+  useFrame(() => { }, 2);
   return <RenderingPipeline passes={passes} />;
 };
 
@@ -108,10 +117,12 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
 
   const metas = useMemo<SurfaceMeta[]>(
     () =>
-      Object.keys(surfaceOptions)
-        .map(id => surfaceMetaDict[id])
-        .filter((m): m is SurfaceMeta => !!m)
-        .sort((a, b) => a.max - b.max),
+      distinctByName(
+        Object.keys(surfaceOptions)
+          .map(id => surfaceMetaDict[id])
+          .filter((m): m is SurfaceMeta => !!m)
+          .sort((a, b) => a.max - b.max),
+      ),
     [surfaceMetaDict],
   );
 
@@ -220,16 +231,21 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
         <ambientLight intensity={0.6} />
         <directionalLight position={[0.5, 1, 0.3]} intensity={1.1} />
         <ChunkStack cutSource={cutSource}>
-          {chunks.map((surfaces, i) => (
-            <Chunk
-              key={i}
-              groups={[surfaces]}
-              colors={[CHUNK_COLORS[i % CHUNK_COLORS.length]]}
-              surfaceOpacity={props.surfaceOpacity}
-              wallOpacity={props.wallOpacity}
-              wireframe={props.wireframe}
-            />
-          ))}
+          {chunks.map((surfaces, i) => {
+            const base = CHUNK_COLORS[i % CHUNK_COLORS.length];
+            return (
+              <Chunk
+                key={i}
+                groups={[surfaces]}
+                // Colours are assigned by flat layer index (modulo the array), so
+                // two entries band every second surface within the chunk.
+                colors={[base, darkenColor(base, BAND_DARKEN)]}
+                surfaceOpacity={props.surfaceOpacity}
+                wallOpacity={props.wallOpacity}
+                wireframe={props.wireframe}
+              />
+            );
+          })}
         </ChunkStack>
         {wellLines.map((l, i) => (
           <primitive key={i} object={l} />

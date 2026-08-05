@@ -55,12 +55,18 @@ export const surfaceMetaLoader = (store: Store) =>
 export const surfaceValuesLoader = (store: Store) =>
   new DataLoader(store, {
     load: async (key: KeyType) => {
-      return get(`/data/surfaces/${key}.json`);
+      const values = await get(`/data/surfaces/${key}.json`);
+      // The source is a JSON number[] — parsing one field-scale grid costs ~260ms
+      // and the parsed array holds 8 bytes per sample. Convert once on load and
+      // cache the compact 4-byte-per-sample buffer instead, so repeat requests
+      // cost a memcpy rather than a reparse (and the cache is ~2x smaller).
+      return new Float32Array(values).buffer;
     },
-    transform: (r: number[]) => {
-      // create a typed array of source data so it can be transferred using comlink
-      const floatArray = new Float32Array(r);
-      return transfer(floatArray, [floatArray.buffer]);
+    transform: (buffer: ArrayBuffer) => {
+      // comlink transfer DETACHES the buffer it is given, so hand out a copy and
+      // keep the cached one intact for the next request.
+      const copy = buffer.slice(0);
+      return transfer(new Float32Array(copy), [copy]);
     },
   });
 

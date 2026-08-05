@@ -9,14 +9,14 @@ import {
   LineBasicMaterial,
   LineLoop,
 } from 'three';
+import { useData } from '../../hooks/useData';
 import { OITRenderPass, Pass, RenderPass } from '../../main';
 import { OutputPass } from '../../rendering/passes/OutputPass';
 import { RenderingPipeline } from '../../rendering/RenderingPipeline';
-import { useData } from '../../hooks/useData';
 import {
   ChunkSurfaceLayer,
-  CRS,
   createSurfaceOutline,
+  CRS,
   getProjectionDefFromUtmZone,
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
@@ -33,7 +33,10 @@ import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
 import { get } from '../../storybook/dependencies/api';
-import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
+import {
+  distinctByName,
+  useSurfaceMetaDict,
+} from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
 import { UtmArea } from '../UtmArea';
@@ -84,7 +87,7 @@ const ChunkPipeline = () => {
     return [base, new OutputPass()];
   }, [scene, camera]);
   void RenderPass;
-  useFrame(() => {}, 2);
+  useFrame(() => { }, 2);
   return <RenderingPipeline passes={passes} />;
 };
 
@@ -127,10 +130,12 @@ const OutlinesStory = (props: OutlinesStoryProps) => {
 
   const metas = useMemo<SurfaceMeta[]>(
     () =>
-      Object.keys(surfaceOptions)
-        .map(id => surfaceMetaDict[id])
-        .filter((m): m is SurfaceMeta => !!m)
-        .sort((a, b) => a.max - b.max),
+      distinctByName(
+        Object.keys(surfaceOptions)
+          .map(id => surfaceMetaDict[id])
+          .filter((m): m is SurfaceMeta => !!m)
+          .sort((a, b) => a.max - b.max),
+      ),
     [surfaceMetaDict],
   );
 

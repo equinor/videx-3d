@@ -134,6 +134,77 @@ export function surfaceGridToWorld(
 }
 
 /**
+ * An inclusive `(column, row)` window into a surface grid.
+ *
+ * @group Geometries
+ */
+export type SurfaceGridBounds = {
+  col0: number;
+  row0: number;
+  col1: number;
+  row1: number;
+};
+
+// Grid-space bounding box of already-mapped polygon rings, padded and clamped to
+// the grid. Returns null when the polygon misses the grid entirely.
+function boundsOfGridPolygons(
+  gridPolygons: GridPolygon[],
+  nx: number,
+  ny: number,
+  margin: number,
+): SurfaceGridBounds | null {
+  let bMinX = Infinity;
+  let bMinY = Infinity;
+  let bMaxX = -Infinity;
+  let bMaxY = -Infinity;
+  for (const rings of gridPolygons) {
+    for (const ring of rings) {
+      for (const [gx, gy] of ring) {
+        if (gx < bMinX) bMinX = gx;
+        if (gx > bMaxX) bMaxX = gx;
+        if (gy < bMinY) bMinY = gy;
+        if (gy > bMaxY) bMaxY = gy;
+      }
+    }
+  }
+  if (!Number.isFinite(bMinX)) return null;
+  return {
+    col0: Math.max(0, Math.floor(bMinX) - margin),
+    row0: Math.max(0, Math.floor(bMinY) - margin),
+    col1: Math.min(nx - 1, Math.ceil(bMaxX) + margin),
+    row1: Math.min(ny - 1, Math.ceil(bMaxY) + margin),
+  };
+}
+
+/**
+ * The window of a surface's grid a polygon mask covers — the same crop
+ * {@link clipSurfaceRaw} triangulates. Useful to restrict any per-node pre-pass
+ * (e.g. {@link clampSurfaceUnder}) to the part of the grid that can actually end
+ * up in the clipped geometry.
+ *
+ * @param header grid geometry
+ * @param polygon mask polygon in scene XZ
+ * @param worldPosition scene XZ of the grid origin (default `[0, 0]`)
+ * @param margin extra cells kept around the box (default 2, matching the clip)
+ * @returns the inclusive grid window, or null when the mask misses the grid
+ *
+ * @group Geometries
+ */
+export function surfaceGridBounds(
+  header: SurfaceClipHeader,
+  polygon: PlanarPolygonGeometry,
+  worldPosition?: Vec2,
+  margin = 2,
+): SurfaceGridBounds | null {
+  const toGrid = surfaceWorldToGrid(header, worldPosition);
+  const components = polygon.coordinates as PlanarPolygonCoordinates;
+  const gridPolygons: GridPolygon[] = components.map(rings =>
+    rings.map(ring => ring.map(([sx, sz]) => toGrid(sx, sz))),
+  );
+  return boundsOfGridPolygons(gridPolygons, header.nx, header.ny, margin);
+}
+
+/**
  * Build a surface geometry clipped to an arbitrary (possibly holed / multi-part)
  * polygon mask, honoring the **exact** polygon rim via constrained Delaunay
  * triangulation (no grid staircase). The interior keeps the data-adaptive Delatin
@@ -229,26 +300,10 @@ export function clipSurfaceRaw(
   // triangulation tiny. Positions and UVs are emitted back into the full-grid frame
   // below, so placement and grid-space UVs are unchanged.
   const MARGIN = 2;
-  let bMinX = Infinity;
-  let bMinY = Infinity;
-  let bMaxX = -Infinity;
-  let bMaxY = -Infinity;
-  for (const rings of gridPolygons) {
-    for (const ring of rings) {
-      for (const [gx, gy] of ring) {
-        if (gx < bMinX) bMinX = gx;
-        if (gx > bMaxX) bMaxX = gx;
-        if (gy < bMinY) bMinY = gy;
-        if (gy > bMaxY) bMaxY = gy;
-      }
-    }
-  }
-  if (!Number.isFinite(bMinX)) return null;
+  const bounds = boundsOfGridPolygons(gridPolygons, nx, ny, MARGIN);
+  if (!bounds) return null;
 
-  const col0 = Math.max(0, Math.floor(bMinX) - MARGIN);
-  const row0 = Math.max(0, Math.floor(bMinY) - MARGIN);
-  const col1 = Math.min(nx - 1, Math.ceil(bMaxX) + MARGIN);
-  const row1 = Math.min(ny - 1, Math.ceil(bMaxY) + MARGIN);
+  const { col0, row0, col1, row1 } = bounds;
   const cropW = col1 - col0 + 1;
   const cropH = row1 - row0 + 1;
   // Polygon fully outside the grid, or too thin a strip to triangulate.

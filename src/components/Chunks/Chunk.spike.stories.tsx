@@ -19,7 +19,10 @@ import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
 import { get } from '../../storybook/dependencies/api';
-import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
+import {
+  distinctByName,
+  useSurfaceMetaDict,
+} from '../../storybook/hooks/useSurfaceMeta';
 import storyArgs from '../../storybook/story-args.json';
 import { UtmArea } from '../UtmArea';
 import { Chunk } from './Chunk';
@@ -64,7 +67,7 @@ const ChunkPipeline = () => {
   }, [scene, camera]);
   // Touch RenderPass so the import is used even though OIT is the active base pass.
   void RenderPass;
-  useFrame(() => {}, 2);
+  useFrame(() => { }, 2);
   return <RenderingPipeline passes={passes} />;
 };
 
@@ -74,6 +77,8 @@ type ChunkStoryProps = {
   wallOpacity: number;
   wireframe: boolean;
   clamp: boolean;
+  depthOrder: boolean;
+  depthOrderGap: number;
   rimSpacing: number;
   maxError: number;
   showBasement: boolean;
@@ -108,10 +113,12 @@ const ChunkStory = (props: ChunkStoryProps) => {
 
   const metas = useMemo<SurfaceMeta[]>(
     () =>
-      Object.keys(surfaceOptions)
-        .map(id => surfaceMetaDict[id])
-        .filter((m): m is SurfaceMeta => !!m)
-        .sort((a, b) => a.max - b.max),
+      distinctByName(
+        Object.keys(surfaceOptions)
+          .map(id => surfaceMetaDict[id])
+          .filter((m): m is SurfaceMeta => !!m)
+          .sort((a, b) => a.max - b.max),
+      ),
     [surfaceMetaDict],
   );
 
@@ -139,11 +146,11 @@ const ChunkStory = (props: ChunkStoryProps) => {
       top:
         props.basementTopSource === 'procedural'
           ? {
-              procedural: {
-                depth: props.basementTopDepth,
-                variation: props.basementVariation,
-              },
-            }
+            procedural: {
+              depth: props.basementTopDepth,
+              variation: props.basementVariation,
+            },
+          }
           : undefined,
     };
   }, [
@@ -154,6 +161,15 @@ const ChunkStory = (props: ChunkStoryProps) => {
     props.basementTopDepth,
     props.basementVariation,
   ]);
+
+  // Memoized so a stable identity is passed to Chunk (a new object rebuilds).
+  const depthOrder = useMemo(
+    () =>
+      props.depthOrder
+        ? { minGap: props.depthOrderGap || undefined }
+        : undefined,
+    [props.depthOrder, props.depthOrderGap],
+  );
 
   return (
     <>
@@ -187,6 +203,7 @@ const ChunkStory = (props: ChunkStoryProps) => {
             wallOpacity={props.wallOpacity}
             wireframe={props.wireframe}
             clamp={props.clamp}
+            depthOrder={depthOrder}
             basement={basement}
           />
         </ChunkStack>
@@ -211,6 +228,8 @@ export const Default: Story = {
     rimSpacing: 250,
     maxError: 5,
     clamp: false,
+    depthOrder: false,
+    depthOrderGap: 0,
     // Appearance
     surfaceOpacity: 1,
     wallOpacity: 1,
@@ -241,6 +260,18 @@ export const Default: Story = {
       table: { category: 'Chunk' },
     },
     clamp: { control: 'boolean', table: { category: 'Chunk' } },
+    depthOrder: {
+      control: 'boolean',
+      description:
+        'Make the stack monotonic before clipping (fixes interiors, not just rims).',
+      table: { category: 'Chunk' },
+    },
+    depthOrderGap: {
+      control: { type: 'range', min: 0, max: 50, step: 1 },
+      description:
+        'Minimum separation kept between surfaces (removes z-fighting; >0 gives pinch-outs an artificial thickness).',
+      table: { category: 'Chunk' },
+    },
     surfaceOpacity: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
       table: { category: 'Appearance' },

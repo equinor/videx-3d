@@ -1,4 +1,5 @@
 import {
+  DepthOrderOptions,
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
   SurfaceChunkBasement,
@@ -16,6 +17,7 @@ export type BuildSurfaceChunkSpecOptions = {
   rimSpacing?: number;
   maxError?: number;
   clamp?: boolean;
+  depthOrder?: DepthOrderOptions;
   basement?: SurfaceChunkBasement;
 };
 
@@ -61,6 +63,7 @@ export function buildSurfaceChunkSpec(
     rimSpacing: options.rimSpacing,
     maxError: options.maxError,
     clamp: options.clamp,
+    depthOrder: options.depthOrder,
     basement: options.basement,
   };
 }

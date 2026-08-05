@@ -22,7 +22,10 @@ import { GeneratorsProviderDecorator } from '../../../storybook/decorators/gener
 import { GlyphsDecorator } from '../../../storybook/decorators/glyphs-decorator';
 import { OutputPanelDecorator } from '../../../storybook/decorators/output-panel-decorator';
 import { get } from '../../../storybook/dependencies/api';
-import { useSurfaceMetaDict } from '../../../storybook/hooks/useSurfaceMeta';
+import {
+  distinctByName,
+  useSurfaceMetaDict,
+} from '../../../storybook/hooks/useSurfaceMeta';
 import storyArgs from '../../../storybook/story-args.json';
 import {
   useOutputPanel,
@@ -108,6 +111,8 @@ type ProbeProps = {
   groupSizes: string;
   rimSpacing: number;
   maxError: number;
+  depthOrder: boolean;
+  depthOrderGap: number;
   runToken: number;
 };
 
@@ -119,6 +124,8 @@ const BottleneckProbe = ({
   groupSizes,
   rimSpacing,
   maxError,
+  depthOrder,
+  depthOrderGap,
   runToken,
 }: ProbeProps) => {
   const utm = useContext(UtmAreaContext);
@@ -144,8 +151,9 @@ const BottleneckProbe = ({
         triangles: { label: 'triangles', value: '-' },
         pool: { label: 'clip workers', value: '-' },
         mb: { label: 'grid MB fetched', value: '-' },
-        fetch: { label: 'fetch (worker)', value: '-' },
-        build: { label: 'clip (parallel)', value: '-' },
+        fetch: { label: 'fetch (worker, overlapped)', value: '-' },
+        depthOrder: { label: 'depth order', value: '-' },
+        build: { label: 'clip (parallel, overlapped)', value: '-' },
         densify: { label: '· densify', value: '-' },
         clip: { label: '· clip', value: '-' },
         rim: { label: '· rim', value: '-' },
@@ -172,6 +180,9 @@ const BottleneckProbe = ({
       {
         rimSpacing,
         maxError,
+        depthOrder: depthOrder
+          ? { minGap: depthOrderGap || undefined }
+          : undefined,
       },
     );
 
@@ -196,6 +207,7 @@ const BottleneckProbe = ({
           pool: debug.poolSize || 'serial',
           mb: (debug.bytes / 1e6).toFixed(1),
           fetch: ms(debug.fetchMs),
+          depthOrder: ms(debug.depthOrderMs),
           build: ms(debug.buildMs),
           densify: ms(metrics.densifyMs),
           clip: ms(metrics.clipMs),
@@ -246,6 +258,8 @@ const BottleneckProbe = ({
     groupSizes,
     rimSpacing,
     maxError,
+    depthOrder,
+    depthOrderGap,
     runToken,
     generator,
   ]);
@@ -266,6 +280,8 @@ type StoryProps = {
   groupSizes: string;
   rimSpacing: number;
   maxError: number;
+  depthOrder: boolean;
+  depthOrderGap: number;
 };
 
 const Story = (props: StoryProps) => {
@@ -286,10 +302,12 @@ const Story = (props: StoryProps) => {
 
   const metas = useMemo<SurfaceMeta[]>(
     () =>
-      Object.keys(surfaceOptions)
-        .map(id => surfaceMetaDict[id])
-        .filter((m): m is SurfaceMeta => !!m)
-        .sort((a, b) => a.max - b.max),
+      distinctByName(
+        Object.keys(surfaceOptions)
+          .map(id => surfaceMetaDict[id])
+          .filter((m): m is SurfaceMeta => !!m)
+          .sort((a, b) => a.max - b.max),
+      ),
     [surfaceMetaDict],
   );
 
@@ -305,6 +323,8 @@ const Story = (props: StoryProps) => {
           groupSizes={props.groupSizes}
           rimSpacing={props.rimSpacing}
           maxError={props.maxError}
+          depthOrder={props.depthOrder}
+          depthOrderGap={props.depthOrderGap}
           runToken={0}
         />
       </UtmArea>
@@ -328,6 +348,8 @@ export const Default: StoryObject = {
     groupSizes: '',
     rimSpacing: 250,
     maxError: 5,
+    depthOrder: false,
+    depthOrderGap: 0,
   },
   argTypes: {
     surfaceCount: {
@@ -341,6 +363,8 @@ export const Default: StoryObject = {
     },
     rimSpacing: { control: { type: 'range', min: 25, max: 1000, step: 25 } },
     maxError: { control: { type: 'range', min: 0, max: 50, step: 1 } },
+    depthOrder: { control: 'boolean' },
+    depthOrderGap: { control: { type: 'range', min: 0, max: 50, step: 1 } },
   },
   decorators: [
     EventEmitterDecorator,

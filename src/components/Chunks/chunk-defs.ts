@@ -1,4 +1,5 @@
 import {
+  DepthOrderOptions,
   PackedSurfaceChunk,
   PlanarPolygonCoordinates,
   SurfaceChunkBasement,
@@ -45,6 +46,12 @@ export type SurfaceChunkSpec = {
   maxError?: number;
   /** pinch-out clamp for crossing surfaces */
   clamp?: boolean;
+  /**
+   * Enforce depth order across ALL layers of the chunk before clipping (see
+   * {@link clampSurfaceUnder}). Omit to skip the pass — the per-layer clips then
+   * run fully in parallel.
+   */
+  depthOrder?: DepthOrderOptions;
   /** optional basement block */
   basement?: SurfaceChunkBasement;
 };

@@ -43,29 +43,93 @@ export type GridRing = number[][];
 /** A polygon in grid coordinates: `[outerRing, ...holeRings]`. */
 export type GridPolygon = GridRing[];
 
-// Even-odd point-in-ring test in grid coordinates.
-function pointInRingGrid(x: number, y: number, ring: GridRing): boolean {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const xi = ring[i][0];
-    const yi = ring[i][1];
-    const xj = ring[j][0];
-    const yj = ring[j][1];
-    const intersect =
-      yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
-    if (intersect) inside = !inside;
+// Row-bucketed even-odd crossing test for a set of rings in grid coordinates.
+// Ring edges are bucketed by the integer rows they span, so a query only tests
+// the few edges that can cross its scanline rather than every ring vertex — the
+// trim pass runs one query per triangle, so a linear scan over the (potentially
+// very long) traced data boundary would dominate.
+function buildCrossingIndex(
+  rings: GridRing[],
+): (x: number, y: number) => boolean {
+  const exi: number[] = [];
+  const eyi: number[] = [];
+  const exj: number[] = [];
+  const eyj: number[] = [];
+  let minRow = Infinity;
+  let maxRow = -Infinity;
+  for (const ring of rings) {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const yA = ring[i][1];
+      const yB = ring[j][1];
+      if (yA === yB) continue; // horizontal edges never produce a crossing
+      exi.push(ring[i][0]);
+      eyi.push(yA);
+      exj.push(ring[j][0]);
+      eyj.push(yB);
+      const r0 = Math.floor(Math.min(yA, yB));
+      const r1 = Math.floor(Math.max(yA, yB));
+      if (r0 < minRow) minRow = r0;
+      if (r1 > maxRow) maxRow = r1;
+    }
   }
-  return inside;
+  const n = exi.length;
+  if (n === 0) return () => false;
+
+  const xi = Float64Array.from(exi);
+  const yi = Float64Array.from(eyi);
+  const xj = Float64Array.from(exj);
+  const yj = Float64Array.from(eyj);
+
+  // CSR buckets: offsets[r] .. offsets[r + 1] index into items
+  const rowCount = maxRow - minRow + 1;
+  const offsets = new Uint32Array(rowCount + 1);
+  for (let e = 0; e < n; e++) {
+    const r0 = Math.floor(Math.min(yi[e], yj[e])) - minRow;
+    const r1 = Math.floor(Math.max(yi[e], yj[e])) - minRow;
+    for (let r = r0; r <= r1; r++) offsets[r + 1]++;
+  }
+  for (let r = 0; r < rowCount; r++) offsets[r + 1] += offsets[r];
+  const items = new Uint32Array(offsets[rowCount]);
+  const cursor = offsets.slice(0, rowCount);
+  for (let e = 0; e < n; e++) {
+    const r0 = Math.floor(Math.min(yi[e], yj[e])) - minRow;
+    const r1 = Math.floor(Math.max(yi[e], yj[e])) - minRow;
+    for (let r = r0; r <= r1; r++) items[cursor[r]++] = e;
+  }
+
+  return (x: number, y: number) => {
+    const r = Math.floor(y) - minRow;
+    if (r < 0 || r >= rowCount) return false;
+    let inside = false;
+    for (let k = offsets[r]; k < offsets[r + 1]; k++) {
+      const e = items[k];
+      const yA = yi[e];
+      const yB = yj[e];
+      if (
+        yA > y !== yB > y &&
+        x < ((xj[e] - xi[e]) * (y - yA)) / (yB - yA) + xi[e]
+      ) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  };
 }
 
 // Inside any component polygon (outer ring minus its holes).
 function makeGridInside(polygons: GridPolygon[]) {
+  const indexed = polygons
+    .filter(poly => poly.length > 0)
+    .map(poly => ({
+      outer: buildCrossingIndex([poly[0]]),
+      holes: poly.slice(1).map(hole => buildCrossingIndex([hole])),
+    }));
   return (x: number, y: number) => {
-    for (const poly of polygons) {
-      if (!poly.length || !pointInRingGrid(x, y, poly[0])) continue;
+    for (const poly of indexed) {
+      if (!poly.outer(x, y)) continue;
       let inHole = false;
-      for (let h = 1; h < poly.length; h++) {
-        if (pointInRingGrid(x, y, poly[h])) {
+      for (const hole of poly.holes) {
+        if (hole(x, y)) {
           inHole = true;
           break;
         }
@@ -80,13 +144,7 @@ function makeGridInside(polygons: GridPolygon[]) {
 // consistent winding this handles nested holes and multiple components without
 // needing to classify outer vs hole (inside a hole => 2 crossings => outside).
 function makeEvenOddInside(rings: GridRing[]) {
-  return (x: number, y: number) => {
-    let inside = false;
-    for (const ring of rings) {
-      if (pointInRingGrid(x, y, ring)) inside = !inside;
-    }
-    return inside;
-  };
+  return buildCrossingIndex(rings);
 }
 
 /**
@@ -114,21 +172,28 @@ export function traceValidBoundary(
   const ch = height - 1;
   if (cw <= 0 || ch <= 0) return [];
 
-  const valid = (i: number, j: number) =>
-    i >= 0 &&
-    i < width &&
-    j >= 0 &&
-    j < height &&
-    !isInvalid(grid[j * width + i]);
+  // Precompute cell presence (all four corners valid) once as a flat mask, so the
+  // edge scan below is a single array lookup per cell instead of four predicate
+  // calls — this pass touches every cell of grids with millions of nodes.
+  const validMask = new Uint8Array(grid.length);
+  for (let i = 0; i < grid.length; i++) {
+    if (!isInvalid(grid[i])) validMask[i] = 1;
+  }
+  const cells = new Uint8Array(cw * ch);
+  for (let r = 0; r < ch; r++) {
+    const row = r * width;
+    const next = row + width;
+    const out = r * cw;
+    for (let c = 0; c < cw; c++) {
+      cells[out + c] =
+        validMask[row + c] &
+        validMask[row + c + 1] &
+        validMask[next + c] &
+        validMask[next + c + 1];
+    }
+  }
   const present = (c: number, r: number) =>
-    c >= 0 &&
-    c < cw &&
-    r >= 0 &&
-    r < ch &&
-    valid(c, r) &&
-    valid(c + 1, r) &&
-    valid(c, r + 1) &&
-    valid(c + 1, r + 1);
+    c >= 0 && c < cw && r >= 0 && r < ch && cells[r * cw + c] === 1;
 
   // Directed boundary edges, present region kept on the left (CCW around it), so
   // they stitch into closed loops.
@@ -136,8 +201,8 @@ export function traceValidBoundary(
   const ey0: number[] = [];
   const ex1: number[] = [];
   const ey1: number[] = [];
-  const startMap = new Map<string, number[]>();
-  const key = (x: number, y: number) => x + ',' + y;
+  const startMap = new Map<number, number[]>();
+  const key = (x: number, y: number) => x * (height + 1) + y;
   const addEdge = (x0: number, y0: number, x1: number, y1: number) => {
     const e = ex0.length;
     ex0.push(x0);

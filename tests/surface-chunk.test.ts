@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { PlanarPolygonGeometry } from '../src/sdk/geometries/planar-geometry';
 import {
   createSurfaceChunk,
   densifyPolygon,
   SurfaceChunk,
   SurfaceChunkLayer,
 } from '../src/sdk/geometries/surface-chunk';
-import { PlanarPolygonGeometry } from '../src/sdk/geometries/planar-geometry';
 import { Vec2 } from '../src/sdk/types/common';
 
 function ringArea(ring: number[][]): number {
@@ -192,6 +192,106 @@ describe('createSurfaceChunk', () => {
     expect(chunk.metrics.walls).toBe(2);
     expect(chunk.groups[0].walls[0].color).toBe('#f00');
     expect(chunk.groups[1].walls[0].color).toBe('#00f');
+  });
+
+  it('gives wall vertices horizontal normals, shared top-to-bottom', () => {
+    const header = { nx: 10, ny: 10, xinc: 100, yinc: 100, rot: 0 };
+    const outer: Vec2[] = [
+      [100, -100],
+      [800, -100],
+      [800, -800],
+      [100, -800],
+    ];
+    const polygon = new PlanarPolygonGeometry([[outer]]);
+    const layers: SurfaceChunkLayer[] = [
+      {
+        values: flat(10, 10, 100),
+        header,
+        referenceDepth: 100,
+        worldPosition: [0, 0],
+        color: '#f00',
+      },
+      {
+        values: flat(10, 10, 100),
+        header,
+        referenceDepth: 600,
+        worldPosition: [0, 0],
+        color: '#0f0',
+      },
+    ];
+
+    const chunk = createSurfaceChunk([layers], { polygon, rimSpacing: 200 });
+    const normal = chunk.groups[0].walls[0].geometry.getAttribute('normal');
+    expect(normal).toBeTruthy();
+
+    for (let i = 0; i < normal.count; i++) {
+      // walls are vertical, so every normal is horizontal and unit length
+      expect(Math.abs(normal.getY(i))).toBeLessThan(1e-6);
+      expect(Math.hypot(normal.getX(i), normal.getZ(i))).toBeCloseTo(1, 5);
+    }
+    // A rim point's top (2k) and bottom (2k + 1) vertex must share a normal —
+    // a normal varying vertically breaks along each quad's diagonal.
+    for (let k = 0; k * 2 + 1 < normal.count; k++) {
+      expect(normal.getX(2 * k)).toBeCloseTo(normal.getX(2 * k + 1), 6);
+      expect(normal.getZ(2 * k)).toBeCloseTo(normal.getZ(2 * k + 1), 6);
+    }
+  });
+
+  it('depthOrder removes crossings ACROSS group boundaries', () => {
+    const header = { nx: 10, ny: 10, xinc: 100, yinc: 100, rot: 0 };
+    const outer: Vec2[] = [
+      [100, -100],
+      [800, -100],
+      [800, -800],
+      [100, -800],
+    ];
+    const polygon = new PlanarPolygonGeometry([[outer]]);
+    const mkLayer = (y: number, color: string): SurfaceChunkLayer => ({
+      values: flat(10, 10, 100),
+      header,
+      referenceDepth: 100 - y, // scene y = 100 - referenceDepth
+      worldPosition: [0, 0],
+      color,
+    });
+    // Group 0 ends at y = -200; group 1 STARTS at y = 0, i.e. above it — a
+    // cross-group crossing, which the (per-group) rim clamp cannot see.
+    const groups: SurfaceChunkLayer[][] = [
+      [mkLayer(0, '#f00'), mkLayer(-200, '#0f0')],
+      [mkLayer(0, '#00f'), mkLayer(-600, '#ff0')],
+    ];
+
+    const topOfGroup1 = (chunk: SurfaceChunk) => {
+      const [, max] = yRange(chunk.groups[1].surfaces[0].geometry);
+      return max;
+    };
+
+    // Without the pass (even with the rim clamp) group 1's top stays at y = 0...
+    expect(
+      topOfGroup1(
+        createSurfaceChunk(groups, { polygon, rimSpacing: 200, clamp: true }),
+      ),
+    ).toBeCloseTo(0, 3);
+
+    // ...with it, it is pushed down onto group 0's base (-200), and a minGap
+    // separates them further.
+    expect(
+      topOfGroup1(
+        createSurfaceChunk(groups, {
+          polygon,
+          rimSpacing: 200,
+          depthOrder: {},
+        }),
+      ),
+    ).toBeCloseTo(-200, 3);
+    expect(
+      topOfGroup1(
+        createSurfaceChunk(groups, {
+          polygon,
+          rimSpacing: 200,
+          depthOrder: { minGap: 10 },
+        }),
+      ),
+    ).toBeCloseTo(-210, 3);
   });
 
   it('attaches a basement with a flat base below the deepest surface', () => {
