@@ -10,14 +10,8 @@ import {
 import {
   createClippedSurface,
   SurfaceClipHeader,
-  surfaceGridBounds,
   surfaceWorldToGrid,
 } from './surface-clip';
-import {
-  clampSurfaceUnder,
-  depthOrderMargin,
-  DepthOrderOptions,
-} from './surface-order';
 import {
   GridPolygon,
   triangulateGridConstrained,
@@ -64,25 +58,6 @@ export type SurfaceChunkOptions = {
   rimSpacing?: number;
   /** interior TIN simplification error, in grid height units. Default 5. */
   maxError?: number;
-  /**
-   * Pinch-out clamp: keep each layer's rim from rising above the layer above it
-   * (cascading top -> down), so a wall collapses to zero height where surfaces
-   * cross instead of flipping. Default false. Note: only the wall rims are
-   * clamped, not the surface interiors.
-   */
-  clamp?: boolean;
-  /**
-   * Enforce depth order across ALL layers of the chunk (groups included) before
-   * clipping: every layer is pushed down where it rises above the one above it,
-   * see {@link clampSurfaceUnder}. Unlike {@link SurfaceChunkOptions.clamp} this
-   * fixes the surface interiors too, and it spans group boundaries; with a
-   * `minGap` it also separates co-planar surfaces so they stop z-fighting.
-   * Omit to skip the pass — it is inherently ordered, so skipping it lets the
-   * per-layer clips run fully in parallel.
-   *
-   * ⚠️ The pass rewrites the layers' grids IN PLACE.
-   */
-  depthOrder?: DepthOrderOptions;
   /**
    * Optional basement slot: a solid block with a flat base, either attached below
    * the chunk's deepest layer or standalone with its own (surface / procedural)
@@ -197,6 +172,68 @@ export type SurfaceChunkSurface = {
   color: string;
 };
 
+/**
+ * What the depth-order resolve found in a chunk's stack. Reported so a caller can
+ * SEE that it handed the layers over in the wrong order — the failure mode is
+ * otherwise invisible, because the resolve dutifully makes any order consistent.
+ *
+ * A pair inverted over a large share of the footprint is almost always an ordering
+ * problem, not geology: order by stratigraphic age, not by depth
+ * (`SurfaceMeta.min`/`.max` describe a surface's whole extent, not its position
+ * inside this chunk).
+ *
+ * @group Geometries
+ */
+export type SurfaceChunkDiagnostics = {
+  /**
+   * Vertices where a layer sat above the one over it, summed over adjacent pairs
+   * and measured BEFORE the order was enforced.
+   *
+   * ⚠️ On a shared column these are counted on the column's grid, over the whole
+   * column envelope rather than this chunk's footprint — the resolve happens once,
+   * for everyone, before any chunk exists. They still answer the question the
+   * diagnostic is for ("was the input in stratigraphic order?"), but they are not
+   * a per-chunk quantity and will read the same for every chunk of a column.
+   */
+  crossings: number;
+  /** the same, counted only where BOTH layers have data of their own */
+  crossingsCovered: number;
+  /** deepest interpenetration found, in world units */
+  maxOverlap: number;
+  /** largest share of a layer coincident with the one above it (~1 = duplicated horizon) */
+  maxDuplicate: number;
+  /** triangles dropped because the unit is not present (no data / truncated) */
+  trianglesAbsent: number;
+  /** triangles dropped because the unit has no thickness there */
+  trianglesCollapsed: number;
+  /**
+   * Vertices where the TOP layer was truncated away against the chunk ABOVE, but
+   * kept anyway because that chunk's outline does not reach them — nothing would
+   * have stood in for the dropped surface there.
+   */
+  topKept: number;
+  /** whether the column was built once and shared by every chunk cut from it */
+  sharedStack: boolean;
+  /** layers in the shared column (0 when the chunk built on its own) */
+  stackLayers: number;
+  /** nodes of the common reference grid */
+  referenceNodes: number;
+  /**
+   * Source grid cells per reference cell. `1` is full resolution; anything higher
+   * means the common grid was decimated to stay inside the node budget, which
+   * coarsens the coverage masks along with everything else.
+   */
+  referenceStep: number;
+  /** fetching every layer's grid (shared across the column) */
+  fetchMs: number;
+  /** resampling the column onto the common grid (shared) */
+  referenceMs: number;
+  /** making the column monotone on the grid (shared) */
+  stackResolveMs: number;
+  /** this chunk's own tessellation */
+  tessellateMs: number;
+};
+
 /** Per-phase build timings (ms) and counts for a {@link SurfaceChunk}. */
 export type SurfaceChunkMetrics = {
   densifyMs: number;
@@ -217,6 +254,11 @@ export type SurfaceChunkMetrics = {
   triangles: number;
   /** shared rim vertex count (all rings) */
   rimPoints: number;
+  /**
+   * What the depth-order resolve found, when the build ran one (the shared
+   * tessellation path). See {@link SurfaceChunkDiagnostics}.
+   */
+  diagnostics?: SurfaceChunkDiagnostics;
 };
 
 /**
@@ -354,37 +396,12 @@ export function createSurfaceChunk(
     }),
   );
 
-  // Optional depth-order pass: make the whole stack monotonic before clipping, so
-  // crossings are removed in the surface INTERIORS as well as at the rim. Ordered
-  // by nature (each layer clamps against the already-clamped one above it). NOTE
-  // this rewrites the layers' grids IN PLACE; the layer objects are copied so the
-  // rebased reference depth does not leak back to the caller.
-  let clipLayers = flatLayers;
-  if (options.depthOrder) {
-    clipLayers = flatLayers.map(layer => ({ ...layer }));
-    for (let i = 1; i < clipLayers.length; i++) {
-      const res = clampSurfaceUnder(clipLayers[i], clipLayers[i - 1], {
-        ...options.depthOrder,
-        // only the masked window can end up in the geometry, grown so the feather
-        // taper finishes outside the clip crop
-        region:
-          surfaceGridBounds(
-            clipLayers[i].header,
-            densified,
-            clipLayers[i].worldPosition,
-            depthOrderMargin(options.depthOrder),
-          ) ?? undefined,
-      });
-      clipLayers[i].referenceDepth = res.referenceDepth;
-    }
-  }
-
   // Per-layer clip + rim sampling — the expensive, independent part. Split out as
   // {@link clipChunkLayer} so it can be parallelized (e.g. across workers); here it
   // runs serially.
   let clipMs = 0;
   let rimMs = 0;
-  const layers: AssembleChunkLayer[] = clipLayers.map((layer, i) => {
+  const layers: AssembleChunkLayer[] = flatLayers.map((layer, i) => {
     const clip = clipChunkLayer(layer, densified, rings, maxError);
     clipMs += clip.clipMs;
     rimMs += clip.rimMs;
@@ -402,7 +419,6 @@ export function createSurfaceChunk(
     rings,
     densified,
     {
-      clamp: options.clamp,
       maxError,
       basement: options.basement,
       oceanTop: options.oceanTop,
@@ -523,10 +539,11 @@ export type AssembleChunkLayer = {
 
 /** Options for {@link assembleChunk} (the non-clip build parameters). */
 export type AssembleChunkOptions = {
-  clamp?: boolean;
   maxError?: number;
   basement?: SurfaceChunkBasement;
   oceanTop?: SurfaceChunkOceanTop;
+  /** carried into the metrics (see {@link SurfaceChunkDiagnostics}) */
+  diagnostics?: SurfaceChunkDiagnostics;
 };
 
 /** Timings threaded into {@link assembleChunk} for the returned metrics. */
@@ -556,7 +573,6 @@ export function assembleChunk(
   options: AssembleChunkOptions,
   timings: ChunkBuildTimings,
 ): SurfaceChunk {
-  const clamp = options.clamp ?? false;
   const maxError = options.maxError ?? 5;
 
   const groupSurfaces: SurfaceChunkSurface[][] = Array.from(
@@ -582,23 +598,6 @@ export function assembleChunk(
       deepestGeo = layer.geometry;
       const idx = layer.geometry.getIndex();
       if (idx) surfaceTris += idx.count / 3;
-    }
-  }
-
-  // Pinch-out clamp: keep each layer's rim from rising above the one above it,
-  // cascading top -> down within each group, so the wall collapses to zero height
-  // where they cross. The cascade resets at a group boundary (groups are separated
-  // by a gap, so there is nothing to clamp against across it).
-  if (clamp) {
-    for (let i = 1; i < rimY.length; i++) {
-      if (layerGroup[i] !== layerGroup[i - 1]) continue;
-      for (let r = 0; r < rimY[i].length; r++) {
-        const cur = rimY[i][r];
-        const above = rimY[i - 1][r];
-        for (let k = 0; k < cur.length; k++) {
-          if (cur[k] > above[k]) cur[k] = above[k];
-        }
-      }
     }
   }
 
@@ -693,6 +692,7 @@ export function assembleChunk(
     walls: wallCount,
     triangles: Math.round(surfaceTris + wallTris + basementTris + oceanTopTris),
     rimPoints: rings.reduce((a, r) => a + r.length, 0),
+    diagnostics: options.diagnostics,
   };
 
   return { groups: groupsOut, basement, oceanTop, metrics };

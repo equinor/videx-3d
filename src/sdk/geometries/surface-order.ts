@@ -1,5 +1,6 @@
 import type { Vec2 } from '../types/common';
 import type { SurfaceClipHeader, SurfaceGridBounds } from './surface-clip';
+import { gridToGridTransform } from './surface-clip';
 
 /**
  * A layer participating in the depth-order pass: its grid, the grid geometry and
@@ -121,51 +122,6 @@ function sampleStrict(
     wsum += w11;
   }
   return wsum > 0 ? sum / wsum : NaN;
-}
-
-// Map a layer's grid coordinate into the ceiling's grid coordinate. Both the
-// grid->scene placement (`surfaceGridToWorld`) and its inverse
-// (`surfaceWorldToGrid`) are affine, so their composition is too: evaluate it at
-// three points and solve for the 2x3 matrix, which removes all trigonometry from
-// the per-node loop.
-function gridToGridAffine(from: DepthOrderLayer, to: DepthOrderLayer) {
-  const map = (layer: DepthOrderLayer, col: number, row: number): Vec2 => {
-    const { ny, xinc, yinc, rot } = layer.header;
-    const theta = (rot * Math.PI) / 180;
-    const cos = Math.cos(theta);
-    const sin = Math.sin(theta);
-    const lx = col * xinc;
-    const lz = row * yinc - (ny - 1) * yinc;
-    const [wpx, wpz] = layer.worldPosition ?? [0, 0];
-    return [lx * cos + lz * sin + wpx, -lx * sin + lz * cos + wpz];
-  };
-  const unmap = (layer: DepthOrderLayer, sx: number, sz: number): Vec2 => {
-    const { ny, xinc, yinc, rot } = layer.header;
-    const theta = (rot * Math.PI) / 180;
-    const cos = Math.cos(theta);
-    const sin = Math.sin(theta);
-    const [wpx, wpz] = layer.worldPosition ?? [0, 0];
-    const dx = sx - wpx;
-    const dz = sz - wpz;
-    const lx = dx * cos - dz * sin;
-    const lz = dx * sin + dz * cos;
-    return [lx / xinc, (lz + (ny - 1) * yinc) / yinc];
-  };
-  const at = (col: number, row: number) => {
-    const [wx, wz] = map(from, col, row);
-    return unmap(to, wx, wz);
-  };
-  const o = at(0, 0);
-  const dCol = at(1, 0);
-  const dRow = at(0, 1);
-  return {
-    a: dCol[0] - o[0], // d(col') / d(col)
-    b: dRow[0] - o[0], // d(col') / d(row)
-    c: o[0],
-    d: dCol[1] - o[1], // d(row') / d(col)
-    e: dRow[1] - o[1], // d(row') / d(row)
-    f: o[1],
-  };
 }
 
 // Whether both layers sample the exact same grid nodes, so the ceiling can be
@@ -339,7 +295,12 @@ export function clampSurfaceUnder(
       }
     }
   } else {
-    const { a, b, c, d, e, f } = gridToGridAffine(layer, ceiling);
+    const { a, b, c, d, e, f } = gridToGridTransform(
+      layer.header,
+      layer.worldPosition,
+      ceiling.header,
+      ceiling.worldPosition,
+    );
     for (let row = row0; row <= row1; row++) {
       let cCol = a * col0 + b * row + c;
       let cRow = d * col0 + e * row + f;

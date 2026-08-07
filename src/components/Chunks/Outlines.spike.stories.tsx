@@ -33,10 +33,8 @@ import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
 import { get } from '../../storybook/dependencies/api';
-import {
-  distinctByName,
-  useSurfaceMetaDict,
-} from '../../storybook/hooks/useSurfaceMeta';
+import { sortByStratAge } from '../../storybook/data/strat-ages';
+import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
 import { UtmArea } from '../UtmArea';
@@ -87,7 +85,7 @@ const ChunkPipeline = () => {
     return [base, new OutputPass()];
   }, [scene, camera]);
   void RenderPass;
-  useFrame(() => { }, 2);
+  useFrame(() => {}, 2);
   return <RenderingPipeline passes={passes} />;
 };
 
@@ -130,11 +128,10 @@ const OutlinesStory = (props: OutlinesStoryProps) => {
 
   const metas = useMemo<SurfaceMeta[]>(
     () =>
-      distinctByName(
+      sortByStratAge(
         Object.keys(surfaceOptions)
           .map(id => surfaceMetaDict[id])
-          .filter((m): m is SurfaceMeta => !!m)
-          .sort((a, b) => a.max - b.max),
+          .filter((m): m is SurfaceMeta => !!m),
       ),
     [surfaceMetaDict],
   );

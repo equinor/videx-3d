@@ -1,9 +1,7 @@
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BufferGeometry,
-  DataTexture,
   DoubleSide,
-  FrontSide,
   Group,
   MeshBasicMaterial,
   Texture,
@@ -14,24 +12,14 @@ import { useGenerator } from '../../hooks/useGenerator';
 import { createLayers, LAYERS } from '../../layers/layers';
 import { GlyphsContext } from '../../main';
 import { useRenderingState } from '../../rendering/rendering-state';
-import {
-  createElevationTexture,
-  createPackedNormalTexture,
-  SurfaceMeta,
-  unpackBufferGeometry,
-  Vec2,
-} from '../../sdk';
+import { SurfaceMeta, unpackBufferGeometry, Vec2 } from '../../sdk';
 import {
   EventEmitterCallback,
   useEventEmitter,
 } from '../EventEmitter/EventEmitterContext';
-import {
-  surfaceGeometry,
-  SurfaceGeometryResponse,
-  surfaceTextures,
-  SurfaceTexturesResponse,
-} from './surface-defs';
-import { ContourColorMode, SurfaceMaterial } from './SurfaceMaterial';
+import { surfaceGeometry, SurfaceGeometryResponse } from './surface-defs';
+import { ContourColorMode } from './SurfaceMaterial';
+import { useSurfaceMaterial } from './useSurfaceMaterial';
 
 /**
  * Surface props
@@ -137,16 +125,8 @@ export const Surface = ({
     surfaceGeometry,
     priority,
   );
-  const texturesGenerator = useGenerator<SurfaceTexturesResponse>(
-    surfaceTextures,
-    priority,
-  );
 
   const [geometry, setGeometry] = useState<BufferGeometry | null>(null);
-  const [elevationTexture, setElevationTexture] = useState<DataTexture | null>(
-    null,
-  );
-  const [normalTexture, setNormalTexture] = useState<DataTexture | null>(null);
 
   const notEmitterLayers = useMemo(() => createLayers(LAYERS.NOT_EMITTER), []);
 
@@ -157,28 +137,27 @@ export const Surface = ({
 
   const glyphContext = useContext(GlyphsContext);
 
-  const material = useMemo(() => {
-    const m = new SurfaceMaterial({
-      useColorRamp: true,
-      forceSinglePass: true,
-      saturation: 1,
-      brightness: 0,
-      colorRampIndex: 0,
-      colorRampReverse: false,
-      colorRampMin: 0,
-      colorRampMax: 0,
-      referenceDepth: 0,
-      side: FrontSide,
-      wireframe: false,
-      flatShading: false,
-      transparent: true,
-      opacity: 1,
-      debug: false,
-      depthWrite: false,
-    });
-
-    return m;
-  }, []);
+  const material = useSurfaceMaterial(meta, {
+    color,
+    colorRamp,
+    rampMin,
+    rampMax,
+    reverseRamp,
+    useColorRamp,
+    showContours,
+    contoursInterval,
+    contoursColorMode,
+    contoursColorModeFactor,
+    contoursThickness,
+    contoursColor,
+    opacity,
+    doubleSide,
+    wireframe,
+    normalMap,
+    normalScale,
+    precomputeNormals,
+    priority,
+  });
 
   useEffect(() => {
     if (debug && glyphContext) {
@@ -245,100 +224,6 @@ export const Surface = ({
   ]);
 
   useEffect(() => {
-    material.uniforms.colorRampIndex.value = colorRamp;
-    material.uniforms.opacity.value = opacity;
-    material.uniforms.contoursColorMode.value = contoursColorMode;
-    material.uniforms.contoursColorModeFactor.value = contoursColorModeFactor;
-    material.uniforms.contoursInterval.value = contoursInterval;
-    material.uniforms.contoursThickness.value = contoursThickness;
-    material.uniforms.colorRampMin.value = rampMin;
-    material.uniforms.colorRampMax.value = rampMax;
-    material.uniforms.colorRampReverse.value = reverseRamp;
-    material.uniforms.referenceDepth.value = meta.max;
-    material.uniforms.size.value.set(meta.header.nx, meta.header.ny);
-    material.uniforms.scale.value.set(meta.header.xinc, meta.header.yinc);
-    material.uniforms.rotation.value = meta.header.rot * (Math.PI / 180);
-    material.uniformsNeedUpdate = true;
-    if (normalScale) {
-      material.uniforms.normalScale.value.set(...normalScale);
-    }
-  }, [
-    material,
-    meta,
-    colorRamp,
-    opacity,
-    showContours,
-    contoursColorMode,
-    contoursColorModeFactor,
-    contoursInterval,
-    contoursThickness,
-    rampMin,
-    rampMax,
-    reverseRamp,
-    normalScale,
-  ]);
-
-  useEffect(() => {
-    material.wireframe = wireframe;
-    material.showContours = showContours;
-    material.contoursColor = contoursColor;
-    material.useColorRamp = useColorRamp;
-    material.color = color || material.color;
-    material.side = doubleSide ? DoubleSide : FrontSide;
-    if (normalMap) {
-      material.normalMap = normalMap;
-    }
-    const depthWrite = opacity === 1;
-    if (depthWrite !== material.depthWrite) {
-      material.depthWrite = depthWrite;
-      material.needsUpdate = true;
-    }
-  }, [
-    material,
-    useColorRamp,
-    showContours,
-    wireframe,
-    contoursColor,
-    color,
-    doubleSide,
-    normalMap,
-    opacity,
-  ]);
-
-  useEffect(() => {
-    if (texturesGenerator) {
-      texturesGenerator(meta.id, precomputeNormals).then(response => {
-        if (response) {
-          const { elevationImageBuffer, normalImageBuffer } = response;
-
-          const elevationTexture = createElevationTexture(
-            elevationImageBuffer,
-            meta.header.nx,
-            meta.header.ny,
-          );
-
-          setElevationTexture(elevationTexture);
-
-          // Only upload the precomputed normals as a texture when the feature is
-          // enabled, so the memory cost is opt-in (the buffer is generated either
-          // way, off the main thread).
-          if (precomputeNormals && normalImageBuffer) {
-            setNormalTexture(
-              createPackedNormalTexture(
-                normalImageBuffer,
-                meta.header.nx,
-                meta.header.ny,
-              ),
-            );
-          } else {
-            setNormalTexture(null);
-          }
-        }
-      });
-    }
-  }, [texturesGenerator, meta, precomputeNormals]);
-
-  useEffect(() => {
     if (geometryGenerator) {
       geometryGenerator(meta.id, maxError, cutHoles, edgeSmoothing).then(
         response => {
@@ -358,44 +243,6 @@ export const Surface = ({
       geometry?.dispose();
     };
   }, [geometry]);
-
-  // Dispose the generated elevation texture when it is replaced or on unmount.
-  useEffect(() => {
-    return () => {
-      elevationTexture?.dispose();
-    };
-  }, [elevationTexture]);
-
-  // Apply (and dispose) the optional precomputed normal texture.
-  useEffect(() => {
-    material.usePrecomputedNormals = precomputeNormals && !!normalTexture;
-    material.uniforms.normalTexture.value = normalTexture;
-  }, [material, precomputeNormals, normalTexture]);
-
-  useEffect(() => {
-    return () => {
-      normalTexture?.dispose();
-    };
-  }, [normalTexture]);
-
-  useEffect(() => {
-    if (elevationTexture && material) {
-      const { width, height } = elevationTexture.image;
-      const sx = (width - 1) / width;
-      const sy = (height - 1) / height;
-      const tx = (1 - sx) / 2;
-      const ty = (1 - sy) / 2;
-      material.uniforms.elevationTexture.value = elevationTexture;
-      material.uniforms.gridUvMat.value.setUvTransform(tx, ty, sx, sy, 0, 0, 0);
-    }
-  }, [elevationTexture, material]);
-
-  useEffect(() => {
-    return () => {
-      material.normalMap?.dispose();
-      material.dispose();
-    };
-  }, [material]);
 
   // Dispose the library-created back-face mask material on unmount.
   useEffect(() => {

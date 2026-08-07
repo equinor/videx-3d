@@ -1,5 +1,4 @@
 import { transfer } from 'comlink';
-import { BufferAttribute, BufferGeometry } from 'three';
 import {
   SurfaceChunkLayerSpec,
   SurfaceChunkResponse,
@@ -8,329 +7,296 @@ import {
 import {
   assembleChunk,
   AssembleChunkLayer,
-  clampSurfaceUnder,
-  clipChunkLayer,
-  computeUpwardNormals,
+  buildStackReference,
+  buildSurfaceStack,
   densifyChunkRim,
-  DepthOrderLayer,
-  depthOrderMargin,
   packSurfaceChunk,
-  PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
   ReadonlyStore,
-  SurfaceChunkLayer,
-  surfaceGridBounds,
+  StackLayer,
+  StackPairStats,
+  SurfaceChunkDiagnostics,
+  SurfaceStackBuild,
 } from '../sdk';
-import { getClipPool } from './workers/clip-worker-pool';
-import type { ClipResponse } from './workers/clip-worker-types';
+import { getStackCandidates, getStackContext } from './surface-stack-context';
+import { refineStackChannels } from './workers/stack-worker-pool';
 
-/** The shared rim rings produced by {@link densifyChunkRim}. */
-type ChunkRings = ReturnType<typeof densifyChunkRim>['rings'];
-
-type FlatSpecLayer = { layer: SurfaceChunkLayerSpec; groupIndex: number };
-type FetchedLayer = FlatSpecLayer & { values: Float32Array };
-
-/** A per-layer clip result in flat (group-major) order. */
-export type ClippedLayer = {
-  geometry: BufferGeometry | null;
-  rimY: number[][];
+/** A fetched layer, kept with the group it belongs to. */
+export type LoadedStackLayer = {
+  layer: StackLayer;
   groupIndex: number;
-};
-
-/** Per-surface clip profiling (for the bottleneck harness). */
-export type ClipProfile = {
   id: string;
-  clipMs: number;
-  nodes: number;
-  holes: number;
-  tris: number;
 };
 
-/** Rebuild a three.js geometry from a clip worker response (adds normals). */
-export function rebuildClippedGeometry(
-  res: ClipResponse,
-): BufferGeometry | null {
-  if (!res.positions || !res.indices) return null;
-  const geometry = new BufferGeometry();
-  geometry.setAttribute('position', new BufferAttribute(res.positions, 3));
-  if (res.uvs) geometry.setAttribute('uv', new BufferAttribute(res.uvs, 2));
-  geometry.setIndex(new BufferAttribute(res.indices, 1));
-  // Translate-invariant, so computing normals here (after the worker baked the
-  // worldPosition offset) matches clipChunkLayer's pre-offset computation.
-  computeUpwardNormals(geometry);
-  return geometry;
-}
+/** What {@link buildSpecStack} returns on top of the stack itself. */
+export type SpecStackResult = {
+  build: SurfaceStackBuild;
+  loaded: LoadedStackLayer[];
+  /** total bytes of `surface-values` fetched */
+  bytes: number;
+  fetchMs: number;
+  referenceMs: number;
+  /** per-layer refinement (wall clock; parallel across the worker pool) */
+  refineMs: number;
+  /** refinement workers used (0 = serial fallback) */
+  poolSize: number;
+  /** nodes of the common reference grid */
+  referenceNodes: number;
+  /** source cells per reference cell (1 = full resolution) */
+  referenceStep: number;
+  /** whether the column was built once and shared by every chunk cut from it */
+  sharedStack?: boolean;
+  /** layers in the shared column */
+  stackLayers?: number;
+  /** time the column's grid-level resolve took (shared path only) */
+  stackResolveMs?: number;
+  /**
+   * The pairs as the COLUMN measured them, before it was made monotone (shared
+   * path only). The build's own pair statistics are all zero there — it samples
+   * grids that arrive ordered — so these are the ones worth reporting.
+   */
+  stackPairs?: StackPairStats[];
+  /** internal: refinement completion timestamp (shared path only) */
+  tRefine?: number;
+};
 
 /**
- * Fetch each spec layer's grid and clip it, pipelined: every layer is clipped as
- * soon as its own grid arrives, so the data worker keeps decoding the next grid
- * while the clip worker pool (when available, else the current thread) works on
- * the ones already in. Returns results in flat (group-major) order, dropping
- * layers whose grid was missing. Shared by the chunk generator and the bottleneck
- * debug generator.
+ * Fetch a spec's layers and build them onto ONE shared tessellation: every layer
+ * is resampled onto a common grid, refined in parallel across the worker pool,
+ * triangulated once, then resolved and collapsed together.
  *
- * Note the returned `fetchMs`/`clipMs` are OVERLAPPING wall-clock windows (last
- * grid arrival, and first dispatch to last completion) — they do not sum to the
- * total.
+ * The shared topology is what makes the result safe: monotone vertex heights stay
+ * monotone under linear interpolation, so no two surfaces of the stack can
+ * interpenetrate — a guarantee independently simplified per-layer TINs cannot give
+ * for any pair closer than twice the simplification error.
  *
- * When `spec.depthOrder` is set the layers are additionally made monotonic (see
- * {@link clampSurfaceUnder}) before clipping, which forces the layers to be
- * processed in depth order — the clips still run in parallel, one layer behind.
+ * Shared by the chunk generator and the debug harness.
  */
-export async function fetchAndClipSpecLayers(
+export async function buildSpecStack(
   store: ReadonlyStore,
   spec: SurfaceChunkSpec,
   densified: PlanarPolygonGeometry,
-  rings: ChunkRings,
   maxError: number,
-): Promise<{
-  clipped: ClippedLayer[];
-  bytes: number;
-  fetchMs: number;
-  clipMs: number;
-  /** time spent in the depth-order pass (0 when disabled) */
-  depthOrderMs: number;
-  poolSize: number;
-  profile: ClipProfile[];
-}> {
-  const flat: FlatSpecLayer[] = [];
-  spec.groups.forEach((g, gi) =>
-    g.forEach(layer => flat.push({ layer, groupIndex: gi })),
+): Promise<SpecStackResult | null> {
+  const flat: { layer: SurfaceChunkLayerSpec; groupIndex: number }[] = [];
+  spec.groups.forEach((group, gi) =>
+    group.forEach(layer => flat.push({ layer, groupIndex: gi })),
   );
+  if (flat.length === 0) return null;
 
-  const pool = getClipPool();
-  const densifiedCoords = densified.coordinates as PlanarPolygonCoordinates;
-  let taskId = 0;
+  // --- Column path: the fetch, the common grid and the depth-order resolve are
+  //     shared by every chunk cut from the same column, so chunks agree with each
+  //     other rather than each resolving its own layers in isolation. ----------
+  if (spec.stack) {
+    const context = await getStackContext(store, spec.stack, spec.resolve);
+    if (!context) return null;
+
+    const loaded: LoadedStackLayer[] = [];
+    const picks: number[] = [];
+    flat.forEach(f => {
+      const at = context.index.get(f.layer.id);
+      if (at === undefined) return;
+      picks.push(at);
+      loaded.push({
+        id: f.layer.id,
+        groupIndex: f.groupIndex,
+        layer: context.layers[at],
+      });
+    });
+    if (loaded.length === 0) return null;
+
+    // A view of the column holding only this chunk's layers. The channels are
+    // shared by reference, so this costs nothing.
+    const reference = {
+      ...context.reference,
+      channels: picks.map(i => context.reference.channels[i]),
+      masks: picks.map(i => context.reference.masks[i]),
+    };
+    const allCandidates = await getStackCandidates(context, maxError);
+    const tRefine = performance.now();
+
+    // Only the chunk's FIRST layer can be truncated against a surface it does not
+    // draw itself, and only then is a cover polygon meaningful.
+    const coverAbove =
+      spec.coverAbove && picks[0] > 0
+        ? new PlanarPolygonGeometry(
+            spec.coverAbove.coordinates,
+            spec.coverAbove.offset,
+          )
+        : undefined;
+
+    const build = buildSurfaceStack(
+      reference,
+      loaded.map(l => l.layer),
+      {
+        polygon: densified,
+        maxError,
+        candidates: picks.map(i => allCandidates[i]),
+        preResolved: spec.resolve
+          ? picks.map(i => context.absent[i])
+          : undefined,
+        collapseThreshold: spec.resolve?.collapseThreshold,
+        coverageAbsence: spec.resolve?.coverageAbsence,
+        refineTerminations: spec.resolve?.refineTerminations,
+        topCover: coverAbove,
+      },
+    );
+    if (!build) return null;
+
+    // Only the pairs whose BOTH layers this chunk draws: the pair spanning the cut
+    // to the chunk above belongs to that boundary, not to either chunk.
+    const picked = new Set(picks);
+    const stackPairs = context.pairs.filter(
+      p => picked.has(p.index) && picked.has(p.index - 1),
+    );
+
+    return {
+      build,
+      loaded,
+      bytes: context.bytes,
+      fetchMs: context.fetchMs,
+      referenceMs: context.referenceMs,
+      refineMs: 0,
+      poolSize: 0,
+      referenceNodes: context.reference.header.nx * context.reference.header.ny,
+      referenceStep: context.reference.step,
+      sharedStack: true,
+      stackLayers: context.layers.length,
+      stackResolveMs: context.resolveMs,
+      stackPairs,
+      tRefine,
+    };
+  }
 
   const t0 = performance.now();
+  const grids = await Promise.all(
+    flat.map(f => store.get<Float32Array>('surface-values', f.layer.id)),
+  );
+  const tFetch = performance.now();
+
+  const loaded: LoadedStackLayer[] = [];
   let bytes = 0;
-  let lastFetchEnd = t0;
-  let firstClipStart = Infinity;
-  let lastClipEnd = t0;
-
-  const clipLayer = async (
-    f: FetchedLayer,
-  ): Promise<{ clipped: ClippedLayer; profile: ClipProfile }> => {
-    if (pool) {
-      const res = await pool.run(
-        {
-          id: taskId++,
-          values: f.values,
-          header: f.layer.header,
-          referenceDepth: f.layer.referenceDepth,
-          worldPosition: f.layer.worldPosition,
-          polygonCoordinates: densifiedCoords,
-          rings,
-          maxError,
-          nullValue: -1,
-        },
-        [f.values.buffer],
-      );
-      const tris = res.indices ? res.indices.length / 3 : 0;
-      return {
-        clipped: {
-          geometry: rebuildClippedGeometry(res),
-          rimY: res.rimY,
-          groupIndex: f.groupIndex,
-        },
-        profile: {
-          id: f.layer.id,
-          clipMs: res.clipMs,
-          nodes: res.nodes,
-          holes: res.holes,
-          tris,
-        },
-      };
-    }
-    // Serial fallback (workers unavailable): clip on the current thread.
-    const layer: SurfaceChunkLayer = {
-      values: f.values,
-      header: f.layer.header,
-      referenceDepth: f.layer.referenceDepth,
-      worldPosition: f.layer.worldPosition,
-      color: '',
-    };
-    const clip = clipChunkLayer(layer, densified, rings, maxError);
-    const idx = clip.geometry?.getIndex();
-    const tris = idx ? idx.count / 3 : 0;
-    let holes = 0;
-    for (let i = 0; i < f.values.length; i++) {
-      const v = f.values[i];
-      if (v === -1 || v < 0) holes++;
-    }
-    return {
-      clipped: {
-        geometry: clip.geometry,
-        rimY: clip.rimY,
-        groupIndex: f.groupIndex,
-      },
-      profile: {
-        id: f.layer.id,
-        clipMs: clip.clipMs,
-        nodes: f.values.length,
-        holes,
-        tris,
-      },
-    };
-  };
-
-  let depthOrderMs = 0;
-  let settled: ({ clipped: ClippedLayer; profile: ClipProfile } | null)[];
-
-  if (spec.depthOrder) {
-    // Depth-ordered path: the clamp cascade is inherently sequential (each layer
-    // is clamped against the ALREADY-clamped one above it), so walk the layers in
-    // depth order. Fetches are still issued up front (concurrent), and a layer's
-    // clip is dispatched as soon as the NEXT layer has finished reading it as a
-    // ceiling — a one-layer lag that keeps the clip pool busy without copying any
-    // grid.
-    const fetches = flat.map(f =>
-      store.get<Float32Array>('surface-values', f.layer.id),
-    );
-    const pending: (Promise<{
-      clipped: ClippedLayer;
-      profile: ClipProfile;
-    }> | null)[] = new Array(flat.length).fill(null);
-    let ceiling: DepthOrderLayer | null = null;
-    let held: { index: number; layer: FetchedLayer } | null = null;
-
-    const release = () => {
-      if (!held) return;
-      if (firstClipStart === Infinity) firstClipStart = performance.now();
-      pending[held.index] = clipLayer(held.layer);
-      held = null;
-    };
-
-    for (let i = 0; i < flat.length; i++) {
-      const values = await fetches[i];
-      lastFetchEnd = performance.now();
-      if (!values) continue;
-      bytes += values.byteLength;
-      const f = flat[i];
-      const current: DepthOrderLayer = {
+  flat.forEach((f, i) => {
+    const values = grids[i];
+    if (!values) return;
+    bytes += values.byteLength;
+    loaded.push({
+      id: f.layer.id,
+      groupIndex: f.groupIndex,
+      layer: {
         values,
         header: f.layer.header,
         referenceDepth: f.layer.referenceDepth,
         worldPosition: f.layer.worldPosition,
-      };
-      if (ceiling) {
-        const d0 = performance.now();
-        const res = clampSurfaceUnder(current, ceiling, {
-          ...spec.depthOrder,
-          // only the masked window can end up in the geometry, grown so the
-          // feather taper finishes outside the clip crop
-          region:
-            surfaceGridBounds(
-              f.layer.header,
-              densified,
-              f.layer.worldPosition,
-              depthOrderMargin(spec.depthOrder),
-            ) ?? undefined,
-        });
-        current.referenceDepth = res.referenceDepth;
-        depthOrderMs += performance.now() - d0;
-      }
-      // `held` is no longer needed as a ceiling, so its buffer can be transferred
-      release();
-      held = {
-        index: i,
-        // the clamp may have rebased the layer's reference depth
-        layer: {
-          ...f,
-          layer: { ...f.layer, referenceDepth: current.referenceDepth },
-          values,
-        },
-      };
-      ceiling = current;
-    }
-    release();
+      },
+    });
+  });
+  if (loaded.length === 0) return null;
 
-    settled = await Promise.all(pending);
-    lastClipEnd = performance.now();
-  } else {
-    settled = await Promise.all(
-      flat.map(async f => {
-        const values = await store.get<Float32Array>(
-          'surface-values',
-          f.layer.id,
-        );
-        lastFetchEnd = performance.now();
-        if (!values) return null;
-        bytes += values.byteLength;
-        if (firstClipStart === Infinity) firstClipStart = lastFetchEnd;
-        const result = await clipLayer({ ...f, values });
-        lastClipEnd = performance.now();
-        return result;
-      }),
-    );
-  }
+  const layers = loaded.map(l => l.layer);
+  const reference = buildStackReference(layers, densified, {
+    maxNodes: spec.resolve?.maxNodes,
+  });
+  if (!reference) return null;
+  const tReference = performance.now();
 
-  const results = settled.filter((r): r is NonNullable<typeof r> => !!r);
-  const fetchMs = lastFetchEnd - t0;
-  const clipMs = firstClipStart === Infinity ? 0 : lastClipEnd - firstClipStart;
-  const clipped = results.map(r => r.clipped);
-  const profile = results.map(r => r.profile);
+  const { candidates, poolSize } = await refineStackChannels(
+    reference.channels,
+    reference.header.nx,
+    maxError,
+  );
+  const tRefine = performance.now();
+
+  const build = buildSurfaceStack(reference, layers, {
+    polygon: densified,
+    maxError,
+    candidates,
+    resolve: spec.resolve
+      ? { mode: spec.resolve.mode, minGap: spec.resolve.minGap }
+      : undefined,
+    collapseThreshold: spec.resolve?.collapseThreshold,
+    coverageAbsence: spec.resolve?.coverageAbsence,
+    refineTerminations: spec.resolve?.refineTerminations,
+  });
+  if (!build) return null;
 
   return {
-    clipped,
+    build,
+    loaded,
     bytes,
-    fetchMs,
-    clipMs,
-    depthOrderMs,
-    poolSize: pool ? pool.size : 0,
-    profile,
+    fetchMs: tFetch - t0,
+    referenceMs: tReference - tFetch,
+    refineMs: tRefine - tReference,
+    poolSize,
+    referenceNodes: reference.header.nx * reference.header.ny,
+    referenceStep: reference.step,
   };
 }
 
 /**
- * Assemble clipped layers into a {@link SurfaceChunk}: compact fully-empty groups,
- * assign per-layer colours by flat order (parity with the previous behaviour), and
- * run the cheap rim/wall/basement assembly. Shared by the chunk generator and the
- * debug generator.
+ * The diagnostics a built stack reports, in the shape the chunk metrics carry.
  */
-export function assembleClippedChunk(
-  clipped: ClippedLayer[],
-  spec: SurfaceChunkSpec,
-  densified: PlanarPolygonGeometry,
-  rings: ChunkRings,
-  maxError: number,
-  timings: { t0: number; densifyMs: number; clipMs: number },
-) {
-  const colors = spec.colors.length > 0 ? spec.colors : ['#4e79a7'];
-  // Compact away fully-empty groups (matches the previous filter) while keeping
-  // flat order for colour assignment and wall stitching.
-  const usedGroups = [...new Set(clipped.map(c => c.groupIndex))].sort(
-    (a, b) => a - b,
-  );
-  const remap = new Map(usedGroups.map((g, i) => [g, i]));
-  const layers: AssembleChunkLayer[] = clipped.map((c, i) => ({
-    geometry: c.geometry,
-    rimY: c.rimY,
-    color: colors[i % colors.length],
-    groupIndex: remap.get(c.groupIndex)!,
-  }));
+export function stackDiagnostics(
+  result: SpecStackResult,
+): SurfaceChunkDiagnostics {
+  const build = result.build;
+  const dropped = build.collapsed;
+  // A shared column arrives already ordered, so the build's own resolve pass finds
+  // nothing — the column's own numbers are the ones that say whether the input was
+  // in order, and reporting the build's zeros would hide exactly what this is for.
+  const pairs = result.stackPairs ?? build.resolved.pairs;
+  return {
+    crossings: pairs.reduce((a, p) => a + p.crossings, 0),
+    crossingsCovered: pairs.reduce((a, p) => a + p.crossingsCovered, 0),
+    maxOverlap: pairs.reduce((a, p) => Math.max(a, p.maxOverlap), 0),
+    maxDuplicate: build.duplicates.reduce((a, d) => Math.max(a, d), 0),
+    trianglesAbsent: dropped
+      ? dropped.droppedAbsent.reduce((a, d) => a + d, 0)
+      : 0,
+    trianglesCollapsed: dropped
+      ? dropped.droppedCollapsed.reduce((a, d) => a + d, 0)
+      : 0,
+    topKept: build.topKept,
+    sharedStack: !!result.sharedStack,
+    stackLayers: result.stackLayers ?? 0,
+    referenceNodes: result.referenceNodes,
+    referenceStep: result.referenceStep,
+    fetchMs: result.fetchMs,
+    referenceMs: result.referenceMs,
+    stackResolveMs: result.stackResolveMs ?? 0,
+    tessellateMs: build.timings.tessellateMs,
+  };
+}
 
-  return assembleChunk(
-    usedGroups.length,
-    layers,
-    rings,
-    densified,
-    { clamp: spec.clamp, maxError, basement: spec.basement },
-    {
-      t0: timings.t0,
-      densifyMs: timings.densifyMs,
-      clipMs: timings.clipMs,
-      rimMs: 0,
-    },
-  );
+/**
+ * Turn a built stack into the grouped {@link AssembleChunkLayer} list
+ * `assembleChunk` consumes: compact away fully-empty groups and assign the palette
+ * by flat layer order.
+ */
+export function toAssembleLayers(
+  result: SpecStackResult,
+  colors: string[],
+): { layers: AssembleChunkLayer[]; groupCount: number } {
+  const palette = colors.length > 0 ? colors : ['#4e79a7'];
+  const groupIndices = result.loaded.map(l => l.groupIndex);
+  const usedGroups = [...new Set(groupIndices)].sort((a, b) => a - b);
+  const remap = new Map(usedGroups.map((g, i) => [g, i]));
+  const layers: AssembleChunkLayer[] = result.build.layers.map((layer, i) => ({
+    geometry: layer.geometry,
+    rimY: layer.rimY,
+    color: palette[i % palette.length],
+    groupIndex: remap.get(groupIndices[i])!,
+  }));
+  return { layers, groupCount: usedGroups.length };
 }
 
 /**
  * Build a surface chunk inside a worker: fetch each layer's `surface-values` (the
- * heavy grids stay in the worker), clip them **in parallel** across an internal
- * clip worker pool, assemble the walls/basement, then pack + transfer the resulting
- * geometry back to the main thread. Only the (much smaller) triangulated geometry
- * crosses the boundary.
+ * heavy grids stay in the worker), build them onto ONE shared tessellation with
+ * the per-layer refinement spread across an internal worker pool, assemble the
+ * walls and the optional basement, then pack + transfer the resulting geometry
+ * back to the main thread. Only the (much smaller) triangulated geometry crosses
+ * the boundary.
  *
  * @group Generators
  */
@@ -343,33 +309,42 @@ export async function generateSurfaceChunk(
     spec.polygon.coordinates,
     spec.polygon.offset,
   );
-  const { densified, rings } = densifyChunkRim(polygon, spec.rimSpacing ?? 250);
+  const { densified } = densifyChunkRim(polygon, spec.rimSpacing ?? 250);
   const densifyMs = performance.now() - t0;
   const maxError = spec.maxError ?? 5;
 
-  const { clipped, clipMs } = await fetchAndClipSpecLayers(
-    this,
-    spec,
-    densified,
-    rings,
-    maxError,
-  );
+  const result = await buildSpecStack(this, spec, densified, maxError);
+  if (!result && !spec.basement) return null;
+  if (!result) return null;
 
-  if (clipped.length === 0 && !spec.basement) return null;
-
-  const chunk = assembleClippedChunk(
-    clipped,
-    spec,
+  const { layers, groupCount } = toAssembleLayers(result, spec.colors);
+  const chunk = assembleChunk(
+    groupCount,
+    layers,
+    result.build.rings,
     densified,
-    rings,
-    maxError,
+    {
+      maxError,
+      basement: spec.basement,
+      diagnostics: stackDiagnostics(result),
+    },
     {
       t0,
       densifyMs,
-      clipMs,
+      clipMs: result.build.timings.tessellateMs,
+      rimMs: result.build.timings.sampleMs,
     },
   );
 
   const [packed, transferables] = packSurfaceChunk(chunk);
-  return transfer(packed, transferables);
+  // Layers that kept the full triangle set share one index buffer, so the same
+  // ArrayBuffer is referenced many times — structured clone keeps that identity,
+  // but a transfer list must not repeat it.
+  const seen = new Set<ArrayBufferLike>();
+  const unique = transferables.filter(buffer => {
+    if (seen.has(buffer)) return false;
+    seen.add(buffer);
+    return true;
+  });
+  return transfer(packed, unique);
 }

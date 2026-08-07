@@ -1,6 +1,6 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   BufferGeometry,
   Color,
@@ -17,24 +17,25 @@ import {
   darkenColor,
   getProjectionDefFromUtmZone,
   PositionLog,
+  SurfaceChunkMetrics,
   SurfaceMeta,
   Vec2,
   Vec3,
   WellboreHeader,
 } from '../../sdk';
+import { sortByStratAge } from '../../storybook/data/strat-ages';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
-import {
-  distinctByName,
-  useSurfaceMetaDict,
-} from '../../storybook/hooks/useSurfaceMeta';
+import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
+import { useSurfaceMaterial } from '../Surfaces/useSurfaceMaterial';
 import { UtmArea } from '../UtmArea';
 import { Chunk } from './Chunk';
+import { ChunkResolveOptions } from './chunk-defs';
 import { ChunkStack } from './ChunkStack';
 import { CutoutSource } from './cutout';
 
@@ -95,7 +96,9 @@ const ChunkPipeline = () => {
 };
 
 type PerChunkStoryProps = {
+  surfaceFrom: number;
   chunkSizes: string;
+  maxError: number;
   wellCount: number;
   radius: number;
   cellSize: number;
@@ -103,9 +106,16 @@ type PerChunkStoryProps = {
   feather: number;
   wellSmoothing: number;
   sampleSpacing: number;
+  resolve: boolean;
+  resolveMode: 'clamp' | 'truncate';
+  minGap: number;
+  collapseThreshold: number;
+  refineTerminations: boolean;
   surfaceOpacity: number;
   wallOpacity: number;
   wireframe: boolean;
+  topSurfaceMaterial: boolean;
+  topShowContours: boolean;
   showWells: boolean;
   wellColor: string;
 };
@@ -117,19 +127,58 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
 
   const metas = useMemo<SurfaceMeta[]>(
     () =>
-      distinctByName(
+      sortByStratAge(
         Object.keys(surfaceOptions)
           .map(id => surfaceMetaDict[id])
-          .filter((m): m is SurfaceMeta => !!m)
-          .sort((a, b) => a.max - b.max),
+          .filter((m): m is SurfaceMeta => !!m),
       ),
     [surfaceMetaDict],
   );
 
-  // Each chunk = one contiguous group of surfaces at increasing depth.
+  // The column every chunk is cut from. Declaring it on the stack makes the
+  // fetch, the common grid and the depth-order resolve happen ONCE for all five
+  // chunks — and makes them agree with each other about depth order.
+  const column = useMemo(
+    () =>
+      metas.slice(Math.min(props.surfaceFrom, Math.max(0, metas.length - 1))),
+    [metas, props.surfaceFrom],
+  );
+
+  // Each chunk = one contiguous group of surfaces at increasing depth, starting
+  // at `surfaceFrom` so the stack can begin below the top of the column.
   const chunks = useMemo(
-    () => splitIntoChunks(metas, props.chunkSizes),
-    [metas, props.chunkSizes],
+    () => splitIntoChunks(column, props.chunkSizes),
+    [column, props.chunkSizes],
+  );
+
+  // Memoized so a stable identity reaches Chunk (a new object rebuilds geometry).
+  const resolve = useMemo<ChunkResolveOptions | undefined>(
+    () =>
+      props.resolve
+        ? {
+          mode: props.resolveMode,
+          minGap: props.minGap || undefined,
+          collapseThreshold: props.collapseThreshold,
+          refineTerminations: props.refineTerminations,
+        }
+        : undefined,
+    [
+      props.resolve,
+      props.resolveMode,
+      props.minGap,
+      props.collapseThreshold,
+      props.refineTerminations,
+    ],
+  );
+
+  // The uppermost surface of the whole stack may be drawn with the real
+  // `SurfaceMaterial` (elevation-driven colour ramp / contours) instead of the
+  // chunk's flat colour. It reads the grid through the geometry's UV attribute,
+  // which the shared tessellation writes per layer.
+  const topMeta = chunks[0]?.[0];
+  const topMaterial = useSurfaceMaterial(
+    props.topSurfaceMaterial ? topMeta : null,
+    { showContours: props.topShowContours, opacity: props.surfaceOpacity },
   );
 
   const wellboreIds = useMemo(
@@ -164,6 +213,34 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
       props.sampleSpacing,
     ],
   );
+
+  // Per-chunk build report. The library never logs by itself — `onBuild` hands the
+  // metrics over and the story decides what to do with them.
+  const report = useCallback((index: number, metrics: SurfaceChunkMetrics) => {
+    const d = metrics.diagnostics;
+    console.table([
+      {
+        chunk: index,
+        layers: metrics.layers,
+        triangles: metrics.triangles.toLocaleString(),
+        droppedAbsent: d?.trianglesAbsent ?? '-',
+        droppedThin: d?.trianglesCollapsed ?? '-',
+        topKept: d?.topKept ?? '-',
+        crossings: d?.crossings ?? '-',
+        'crossings(data)': d?.crossingsCovered ?? '-',
+        maxOverlap: d ? `${d.maxOverlap.toFixed(1)} m` : '-',
+        sharedStack: d?.sharedStack ?? false,
+        stackLayers: d?.stackLayers ?? 0,
+        refNodes: d ? d.referenceNodes.toLocaleString() : '-',
+        refStep: d?.referenceStep ?? '-',
+        fetchMs: d ? Math.round(d.fetchMs) : '-',
+        resampleMs: d ? Math.round(d.referenceMs) : '-',
+        resolveMs: d ? Math.round(d.stackResolveMs) : '-',
+        tessellateMs: d ? Math.round(d.tessellateMs) : '-',
+        totalMs: Math.round(metrics.totalMs),
+      },
+    ]);
+  }, []);
 
   // Selected wellbore trajectories (same scene mapping the outlines derive from).
   const [wellLines, setWellLines] = useState<Line[]>([]);
@@ -230,7 +307,11 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
       <UtmArea origin={origin} utmZone={utmZone}>
         <ambientLight intensity={0.6} />
         <directionalLight position={[0.5, 1, 0.3]} intensity={1.1} />
-        <ChunkStack cutSource={cutSource}>
+        <ChunkStack
+          cutSource={cutSource}
+          surfaces={column}
+          maxError={props.maxError}
+        >
           {chunks.map((surfaces, i) => {
             const base = CHUNK_COLORS[i % CHUNK_COLORS.length];
             return (
@@ -243,6 +324,9 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
                 surfaceOpacity={props.surfaceOpacity}
                 wallOpacity={props.wallOpacity}
                 wireframe={props.wireframe}
+                resolve={resolve}
+                topMaterial={i === 0 ? topMaterial : undefined}
+                onBuild={m => report(i, m)}
               />
             );
           })}
@@ -259,6 +343,17 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
 const meta = {
   title: 'Spikes/Chunks/WellborePerChunk',
   component: PerChunkStory,
+  parameters: {
+    docs: {
+      description: {
+        component:
+          'Per-chunk telescoping outlines: one shared wellbore cut source on the stack, each `Chunk` resolving it from its OWN depth window.\n\n' +
+          '⚠️ The surface order handed to `Chunk.groups` IS the stratigraphic order — here it comes from a strat-column age extract (`storybook/data/strat-ages.ts`), not from depth. ' +
+          'Sorting by `meta.max` inverts about half of every adjacent pair on this dataset.\n\n' +
+          '⚠️ The no-interpenetration guarantee is PER CHUNK: each of these five stacks is built on its own shared tessellation, so nothing prevents the base of one from crossing the top of the next where their footprints overlap.',
+      },
+    },
+  },
 } satisfies Meta<typeof PerChunkStory>;
 
 export default meta;
@@ -267,7 +362,9 @@ type Story = StoryObj<typeof PerChunkStory>;
 export const Default: Story = {
   args: {
     // Chunks
+    surfaceFrom: 0,
     chunkSizes: '4,4,4,4,3',
+    maxError: 5,
     // Wellbore outline (shared source; resolved per chunk)
     wellCount: 50,
     radius: 800,
@@ -276,19 +373,39 @@ export const Default: Story = {
     feather: 0,
     wellSmoothing: 1,
     sampleSpacing: 50,
+    // Resolve
+    resolve: true,
+    resolveMode: 'truncate',
+    minGap: 0,
+    collapseThreshold: 0.5,
+    refineTerminations: true,
     // Appearance
     surfaceOpacity: 1,
     wallOpacity: 1,
     wireframe: false,
+    topSurfaceMaterial: false,
+    topShowContours: false,
     // Wells
     showWells: true,
     wellColor: '#00e5ff',
   },
   argTypes: {
+    surfaceFrom: {
+      control: { type: 'range', min: 0, max: 31, step: 1 },
+      description:
+        'Index of the first surface (stratigraphic order), so the stack can start below the top of the column.',
+      table: { category: 'Chunks' },
+    },
     chunkSizes: {
       control: { type: 'text' },
       description:
         'Surfaces per stacked chunk (shallow→deep), comma-separated.',
+      table: { category: 'Chunks' },
+    },
+    maxError: {
+      control: { type: 'range', min: 0.5, max: 40, step: 0.5 },
+      description:
+        'Interior simplification error (world units of height) for the shared tessellation. Lower = more triangles, finer detail.',
       table: { category: 'Chunks' },
     },
     wellCount: {
@@ -324,6 +441,37 @@ export const Default: Story = {
       description: 'Trajectory densification spacing (scene units).',
       table: { category: 'Wellbore outline' },
     },
+    resolve: {
+      control: 'boolean',
+      description:
+        'Make each chunk’s stack monotone on its shared tessellation, so its surfaces cannot interpenetrate. NOTE the guarantee is PER CHUNK — these five stacks are not resolved against each other.',
+      table: { category: 'Resolve' },
+    },
+    resolveMode: {
+      control: { type: 'inline-radio' },
+      options: ['clamp', 'truncate'],
+      description:
+        'Both clamp the height (so the block stays sealed), but truncate also marks the unit absent where it was cut away, so the welded duplicate is dropped instead of drawn.',
+      table: { category: 'Resolve' },
+    },
+    minGap: {
+      control: { type: 'range', min: 0, max: 50, step: 1 },
+      description:
+        'Minimum separation kept between surfaces. 0 is safe on a shared tessellation; >0 gives every pinch-out an artificial thickness.',
+      table: { category: 'Resolve' },
+    },
+    collapseThreshold: {
+      control: { type: 'range', min: 0, max: 10, step: 0.1 },
+      description:
+        'Thickness below which a unit counts as absent and its triangles are dropped.',
+      table: { category: 'Resolve' },
+    },
+    refineTerminations: {
+      control: 'boolean',
+      description:
+        'Refine the tessellation along the lines where a unit wedges out. Off, the pinch-out can only terminate on edges the height refinement happened to leave there — coarse sawtooth in flat areas.',
+      table: { category: 'Resolve' },
+    },
     surfaceOpacity: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
       table: { category: 'Appearance' },
@@ -333,6 +481,18 @@ export const Default: Story = {
       table: { category: 'Appearance' },
     },
     wireframe: { control: 'boolean', table: { category: 'Appearance' } },
+    topSurfaceMaterial: {
+      control: 'boolean',
+      description:
+        'Draw the uppermost surface with the real `SurfaceMaterial` (elevation colour ramp) instead of the chunk’s flat colour, configured from its `SurfaceMeta`.',
+      table: { category: 'Appearance' },
+    },
+    topShowContours: {
+      control: 'boolean',
+      description:
+        'Contour lines on the top surface (needs the material above).',
+      table: { category: 'Appearance' },
+    },
     showWells: {
       control: 'boolean',
       description: 'Draw the selected wellbore trajectories.',

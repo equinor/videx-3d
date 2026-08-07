@@ -13,16 +13,14 @@ import {
   Vec2,
 } from '../../sdk';
 import { parseGeoJsonFeature } from '../../sdk/utils/geojson';
+import { sortByStratAge } from '../../storybook/data/strat-ages';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
 import { get } from '../../storybook/dependencies/api';
-import {
-  distinctByName,
-  useSurfaceMetaDict,
-} from '../../storybook/hooks/useSurfaceMeta';
+import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import storyArgs from '../../storybook/story-args.json';
 import { UtmArea } from '../UtmArea';
 import { Chunk } from './Chunk';
@@ -76,9 +74,10 @@ type ChunkStoryProps = {
   surfaceOpacity: number;
   wallOpacity: number;
   wireframe: boolean;
-  clamp: boolean;
-  depthOrder: boolean;
-  depthOrderGap: number;
+  resolve: boolean;
+  resolveMode: 'clamp' | 'truncate';
+  minGap: number;
+  collapseThreshold: number;
   rimSpacing: number;
   maxError: number;
   showBasement: boolean;
@@ -113,11 +112,10 @@ const ChunkStory = (props: ChunkStoryProps) => {
 
   const metas = useMemo<SurfaceMeta[]>(
     () =>
-      distinctByName(
+      sortByStratAge(
         Object.keys(surfaceOptions)
           .map(id => surfaceMetaDict[id])
-          .filter((m): m is SurfaceMeta => !!m)
-          .sort((a, b) => a.max - b.max),
+          .filter((m): m is SurfaceMeta => !!m),
       ),
     [surfaceMetaDict],
   );
@@ -163,12 +161,16 @@ const ChunkStory = (props: ChunkStoryProps) => {
   ]);
 
   // Memoized so a stable identity is passed to Chunk (a new object rebuilds).
-  const depthOrder = useMemo(
+  const resolve = useMemo(
     () =>
-      props.depthOrder
-        ? { minGap: props.depthOrderGap || undefined }
+      props.resolve
+        ? {
+          mode: props.resolveMode,
+          minGap: props.minGap || undefined,
+          collapseThreshold: props.collapseThreshold,
+        }
         : undefined,
-    [props.depthOrder, props.depthOrderGap],
+    [props.resolve, props.resolveMode, props.minGap, props.collapseThreshold],
   );
 
   return (
@@ -178,6 +180,7 @@ const ChunkStory = (props: ChunkStoryProps) => {
         <directionalLight position={[0.5, 1, 0.3]} intensity={1.1} />
         <ChunkStack
           outline={polygon}
+          surfaces={metas}
           rimSpacing={props.rimSpacing}
           maxError={props.maxError}
         >
@@ -202,8 +205,7 @@ const ChunkStory = (props: ChunkStoryProps) => {
             surfaceOpacity={props.surfaceOpacity}
             wallOpacity={props.wallOpacity}
             wireframe={props.wireframe}
-            clamp={props.clamp}
-            depthOrder={depthOrder}
+            resolve={resolve}
             basement={basement}
           />
         </ChunkStack>
@@ -227,9 +229,10 @@ export const Default: Story = {
     groupSizes: '2,2',
     rimSpacing: 250,
     maxError: 5,
-    clamp: false,
-    depthOrder: false,
-    depthOrderGap: 0,
+    resolve: true,
+    resolveMode: 'truncate',
+    minGap: 0,
+    collapseThreshold: 0.5,
     // Appearance
     surfaceOpacity: 1,
     wallOpacity: 1,
@@ -259,17 +262,29 @@ export const Default: Story = {
       control: { type: 'range', min: 0, max: 50, step: 1 },
       table: { category: 'Chunk' },
     },
-    clamp: { control: 'boolean', table: { category: 'Chunk' } },
-    depthOrder: {
+    resolve: {
       control: 'boolean',
       description:
-        'Make the stack monotonic before clipping (fixes interiors, not just rims).',
+        'Make the stack monotone on the shared tessellation, so surfaces cannot interpenetrate. Off = the surfaces are drawn exactly as the data has them, crossings included.',
       table: { category: 'Chunk' },
     },
-    depthOrderGap: {
+    resolveMode: {
+      control: { type: 'inline-radio' },
+      options: ['clamp', 'truncate'],
+      description:
+        'Both clamp the height (so the block stays sealed), but truncate also marks the unit absent where it was cut away, so the welded duplicate is dropped instead of drawn.',
+      table: { category: 'Chunk' },
+    },
+    minGap: {
       control: { type: 'range', min: 0, max: 50, step: 1 },
       description:
-        'Minimum separation kept between surfaces (removes z-fighting; >0 gives pinch-outs an artificial thickness).',
+        'Minimum separation kept between surfaces. 0 is safe on a shared tessellation; >0 gives every pinch-out an artificial thickness.',
+      table: { category: 'Chunk' },
+    },
+    collapseThreshold: {
+      control: { type: 'range', min: 0, max: 10, step: 0.1 },
+      description:
+        'Thickness below which a unit counts as absent and its triangles are dropped.',
       table: { category: 'Chunk' },
     },
     surfaceOpacity: {

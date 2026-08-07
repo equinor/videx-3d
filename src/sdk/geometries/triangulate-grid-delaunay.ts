@@ -116,8 +116,14 @@ function buildCrossingIndex(
   };
 }
 
-// Inside any component polygon (outer ring minus its holes).
-function makeGridInside(polygons: GridPolygon[]) {
+/**
+ * Build an "inside any component polygon (outer ring minus its holes)" test for
+ * polygons given in grid coordinates. Row-bucketed, so a query only tests the ring
+ * edges on its own scanline.
+ *
+ * @group Geometries
+ */
+export function makeGridInside(polygons: GridPolygon[]) {
   const indexed = polygons
     .filter(poly => poly.length > 0)
     .map(poly => ({

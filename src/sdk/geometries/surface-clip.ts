@@ -134,6 +134,55 @@ export function surfaceGridToWorld(
 }
 
 /**
+ * A 2x3 affine map between two surface grids' `(column, row)` spaces:
+ * `col' = a * col + b * row + c`, `row' = d * col + e * row + f`.
+ *
+ * @group Geometries
+ */
+export type GridAffine = {
+  a: number;
+  b: number;
+  c: number;
+  d: number;
+  e: number;
+  f: number;
+};
+
+/**
+ * Build the affine map from one surface grid's `(column, row)` space into
+ * another's — the composition of {@link surfaceGridToWorld} with
+ * {@link surfaceWorldToGrid}. Both are affine, so their composition is too:
+ * evaluating it at three points recovers the matrix and removes all trigonometry
+ * (and both function calls) from per-node loops.
+ *
+ * @group Geometries
+ */
+export function gridToGridTransform(
+  from: SurfaceClipHeader,
+  fromWorldPosition: Vec2 | undefined,
+  to: SurfaceClipHeader,
+  toWorldPosition: Vec2 | undefined,
+): GridAffine {
+  const toWorld = surfaceGridToWorld(from, fromWorldPosition);
+  const toGrid = surfaceWorldToGrid(to, toWorldPosition);
+  const at = (col: number, row: number) => {
+    const [wx, wz] = toWorld(col, row);
+    return toGrid(wx, wz);
+  };
+  const o = at(0, 0);
+  const dCol = at(1, 0);
+  const dRow = at(0, 1);
+  return {
+    a: dCol[0] - o[0],
+    b: dRow[0] - o[0],
+    c: o[0],
+    d: dCol[1] - o[1],
+    e: dRow[1] - o[1],
+    f: o[1],
+  };
+}
+
+/**
  * An inclusive `(column, row)` window into a surface grid.
  *
  * @group Geometries

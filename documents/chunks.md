@@ -236,7 +236,162 @@ The component wraps and reuses the current SDK:
 > `marching-squares.ts`, and `polygon-outline.ts` (`ringsToPolygonCoordinates`).
 > Still anticipated: the **chunk worker generator**.
 
-## 9. Open decisions
+## 9. Shared tessellation (settled — 2026-08-06)
+
+A chunk is built on **one triangulation shared by every layer**, not one TIN per
+surface. This is the load-bearing geometric decision, so it is worth stating why.
+
+### 9.1 Why
+
+Independently simplified TINs are each within `maxError` of their own grid, but with
+different vertex sets. Two surfaces closer than `2 × maxError` can therefore
+interpenetrate even where the underlying grids never cross — which is what the
+z-fighting in the deep, thin units was. It is a *simplification* artefact, not a
+depth-buffer one, and no amount of grid-level correction fixes it because the error
+is introduced after that pass.
+
+With one vertex set and one topology the guarantee is exact:
+
+> if `y_above(v) ≥ y_below(v)` at every vertex, then it holds everywhere, because
+> linear interpolation over the same triangle preserves the inequality.
+
+This also survives vertical exaggeration (a monotone per-vertex scale) and makes
+painter's-algorithm ordering exact for the stack, which is what transparency needs.
+
+### 9.2 Pipeline
+
+1. `buildStackReference` — the finest layer's grid, cropped to the outline (and
+   decimated to a node budget), becomes a **common domain**. Every layer is
+   bilinearly resampled onto it, converted to **scene Y**, and its holes filled from
+   the nearest valid sample so the triangulator has no cliff to chase. A per-layer
+   `mask` records where the data is real.
+2. Per-layer refinement — independent and CPU-bound, so it runs across an internal
+   worker pool (`refineStackChannels`). The **union** of the candidate nodes is what
+   the shared TIN must carry.
+3. `buildSurfaceStack` — tessellate once (rim as constraint edges), sample every
+   layer's heights and coverage, resolve, collapse, and emit one geometry per layer.
+   Use this entry point: resolving without collapsing leaves welded duplicate
+   surfaces, which is the one thing a shared tessellation still z-fights on.
+
+### 9.3 Ordering is the caller's contract
+
+**The array order of `Chunk.groups` IS the stratigraphic order.** Nothing in the
+library infers it, and it must not: depth is a *consequence* of the geology, not a
+definition of it. In practice the host sorts by stratigraphic age from its own
+column (surface name → unit `top`/`base` → age); that mapping is company-specific
+and stays in the host app, like colour.
+
+Measured on the demo field, ordering by `meta.max` (a surface's deepest sample over
+its *whole* extent, not inside the chunk) put ~52 % of every pair inverted; ordering
+by age reduced that to ~5 %, and agreed exactly with the order measured from the
+data. If a surface has no age, **exclude it** — placing it by depth reintroduces
+precisely the key that misorders the stack.
+
+### 9.4 Resolve modes (`ChunkResolveOptions`)
+
+- `mode: 'truncate'` (default) — clamp the height (so the block stays sealed) **and**
+  mark the unit absent where it was cut away, so the redundant welded surface is
+  dropped rather than drawn. `'clamp'` keeps it, for comparison only.
+- `minGap` — default `0`. A shared tessellation does not need a gap, and a positive
+  one gives every pinch-out an artificial thickness that exaggeration multiplies.
+- `collapseThreshold` — thickness below which a unit counts as absent (default
+  0.5 m). This is what removes coplanar duplicates.
+- `coverageAbsence` — a surface mapped over a smaller area than the chunk is
+  **absent** out there, not flat. Saying so explicitly (from the coverage mask)
+  replaced an earlier feathered grid-level clamp, which only smoothed over the same
+  question.
+- `refineTerminations` — default on. See §9.6.
+
+### 9.5.1 Which surface wins (shallow, deliberately)
+
+Both resolvers cascade shallow → deep and clamp the **deeper** surface down to the
+shallower one. The shallow surface never moves; the deeper one is truncated and
+marked absent where it was cut.
+
+That is **erosional truncation**: the younger surface cuts down into the older
+units, which are genuinely absent above it. It is the dominant pattern here — the
+Base Cretaceous Unconformity is exactly this, and it is why `VIKING GP. Base` and
+`Eiriksson Fm. 2 JS Top` measure coincident over 90.8 % of their shared area.
+
+The opposite case is real too: **onlap** onto a paleo-high, where the deeper
+surface is topography that stood proud and the younger unit should thin against it
+instead of flattening it. Commercial geomodelling carries this per horizon
+(*erosional* vs *baselap*), and a real column mixes both; `SurfaceMeta` has no such
+flag today.
+
+Shallow-wins is kept as the conservative default because deep surfaces are the less
+trustworthy ones (poorer imaging, fewer penetrations), so a deep surface poking
+through a shallow one is more often an error than a paleo-high — and because the
+alternative does not merely flip a comparison: a feature *poking through* the chunk
+above needs a hole cut in that chunk and its walls closed around it, which ends the
+sealed-block property. Expect a per-surface option eventually; the cascade
+direction itself is a one-line change, the rendering is not.
+
+### 9.6 Terminations follow the contour, not the triangles
+
+A unit's triangles are dropped where it is thinner than `collapseThreshold` at all
+three corners. That test is *exact*, not eager — thickness is the difference of two
+linear interpolants over shared topology, so if all three corners are within the
+threshold the whole triangle is. Nothing is over-dropped.
+
+But the height refinement only ever looks at one surface at a time, so it puts no
+vertices where two of them converge — and in flat areas its triangles are hundreds
+of metres wide. The pinch-out could then only terminate on whatever edges happened
+to be there, which came out as a coarse sawtooth.
+
+`collectThicknessCrossings` closes that: the grid nodes where a pair's thickness
+crosses the threshold are fed back in as refinement candidates, so the mesh is fine
+along the termination and nowhere else. The raw test speckles wherever two surfaces
+run nearly parallel a hair apart, so the thin/thick classification is majority-voted
+over the 4-neighbourhood first — a patch a node or two across cannot control a
+triangle anyway.
+
+**It is not cheap.** Measured on the demo field (4 layers, `maxError` 5): triangles
+roughly **doubled** (17.9k → 37.5k on the top chunk), tessellation time with them.
+The de-speckling accounts for only ~2 % of that, so the cost is genuinely long
+contours, not noise. `refineTerminations: false` turns it off for comparison.
+
+### 9.7 A chunk's top layer and the chunk above
+
+Dropping a zero-thickness fragment is safe *within* a chunk: layer *i* is only
+dropped where it is coincident with layer *i−1*, which the same chunk draws with
+the same outline, so something is always there to see.
+
+The **top** layer is the exception. On a shared column its `absent` mask comes from
+the column, so it is truncated against a surface belonging to the chunk *above* —
+one this chunk does not draw. The drop is still needed where that chunk covers the
+spot (two coincident surfaces from two independent tessellations z-fight), but
+where it does not, the drop opens a hole into the block with the wall still standing
+around it.
+
+So the top layer's absence applies only inside `SurfaceChunkSpec.coverAbove`, the
+outline of whichever chunk draws the surface above. Chunks are independent siblings
+and cannot ask each other, so `ChunkStack` brokers it: each chunk registers the
+surfaces it draws **on mount**, before any outline resolves, and publishes its
+outline once resolved. A chunk can then tell *nobody draws that surface* (build now)
+from *somebody does, their outline is coming* (wait one render) — and never builds
+twice. A chunk that resolves to **no** footprint publishes `null` explicitly;
+without that distinction every chunk beneath it would wait forever.
+
+Coverage-driven absence is **not** gated: that fragment would be pure hole-fill, and
+inventing geology to plug a gap is worse than the gap.
+
+Known limitation: the test uses the neighbour's *outline*, not whether it actually
+drew that spot — if the covering surface is itself dropped there, this still
+suppresses. Chasing it needs cross-chunk drop state, and with it a build ordering
+between chunks.
+
+Diagnostic: `topKept` counts the vertices whose absence was overridden. On the demo
+field it is ~0 — the chunk outlines nest closely enough that the case is rare — so
+this is insurance, not a visible fix.
+
+### 9.5 Out of scope
+
+Faults with heave, reverse or overturned geometry **cannot** be represented by a
+stack of height fields. Detect and report them; do not mangle them. Anything needing
+true 3D volumes belongs to a different component.
+
+## 10. Open decisions
 
 1. **Outline strategies** — expect several (polygon, wellbore distance-field, convex
    / concave hull, corridor buffer). Pluggable interface, not a fixed algorithm.
@@ -244,10 +399,67 @@ The component wraps and reuses the current SDK:
    shared footprint.
 3. **Component pattern** — context + declarative children (preferred) vs render-prop
    (Wells precedent); possibly both.
-4. **SurfaceRegistry** — whether a surface built once can be reused as the base of one
-   chunk and the top of the next (dedupe + guaranteed seams).
+4. **Truncation edges** — terminations are refined along the thickness contour
+   (§9.6), which removed the sawtooth but roughly doubled the triangle count.
+   Inserting the contour as a *constraint edge* rather than as extra candidates
+   would make the cut exact and might cost less; worth judging on a structurally
+   complex dataset rather than a flat one.
+5. **Per-surface truncation rule** — erosional vs onlap, per §9.5.1. Needs a flag on
+   `SurfaceMeta` (or alongside it) and, for onlap, a way to cut a hole in the chunk
+   above.
+6. **Group unification** — ocean and basement are still separate slots rather than
+   special group types, and `OceanChunk` still uses the per-layer builder.
 
-## 10. Build order
+## 11. Stack-level build
+
+Each `Chunk` owns its tessellation, so its no-interpenetration guarantee is its
+own. Two chunks whose footprints overlap could still cross where one's base meets
+the next one's top. Different clipping shapes are *not* the obstacle — the clip
+does not have to be part of the tessellation.
+
+**Built (2026-08-06)** — declare the column on the stack:
+
+```tsx
+<ChunkStack outline={polygon} surfaces={column}>
+  <Chunk groups={[column.slice(0, 4)]} />
+  <Chunk groups={[column.slice(4, 8)]} />
+</ChunkStack>
+```
+
+`ChunkStack.surfaces` is the whole column, shallowest first. When it is present,
+the generator builds a **shared column context**, cached and keyed by the ordered
+surface ids:
+
+1. fetch every layer once,
+2. resample onto one common grid over the stack's **envelope** footprint,
+3. make the column monotone on that grid (`resolveStackGrid` — an elementwise `min`
+   down the channels, since every layer shares the nodes),
+4. refine the channels once.
+
+Each chunk then tessellates **its own outline** against that shared, already
+ordered reference and takes a view of the channels for its own layers. The first
+chunk pays; the rest await the same promise.
+
+Why this is enough: bilinear sampling is a convex combination, so an ordering that
+holds at every grid node holds at every sample point, and each chunk's triangles
+preserve it. A chunk is exactly as correct as one built with `resolveStackOrder`,
+and now *agrees with its neighbours* because they all sampled grids ordered
+together.
+
+What it does not give: two chunks tessellate independently, so their meshes stay
+within `2 × maxError` of each other — bounded, and only where footprints overlap.
+The envelope for a wellbore cut source is resolved over the **full** depth window,
+which by construction contains every chunk's narrower window.
+
+**If that residual ever matters**, the remaining step is to hoist the tessellation
+too: one triangulation with every chunk's outline as constraint edges, each chunk
+taking the triangle subset inside its own outline (the same mechanism
+`collapseStackTriangles` uses). That would make the guarantee exact across chunks —
+at the cost of every chunk carrying the union of the whole column's detail
+(measured ~11× a single layer's vertex count). Nothing built above needs to change
+for it; the tessellation simply moves up a level.
+
+## 12. Build order
 
 1. **Component skeleton** (settled): `ChunkStack` provider + `Chunk` /
    `OceanChunk` / `BasementChunk` wrapping the existing SDK builder (still main-thread
@@ -257,6 +469,9 @@ The component wraps and reuses the current SDK:
    `createSurfaceOutline` (surface rim) and the `createWellboreOutline` pipeline
    (`collectTrajectoryPoints` → `clusterPoints2D` → distance field →
    `marchingSquares`), wired through the `CutoutSource` on `ChunkStack`/`Chunk`.
-3. **Worker generator** for chunk geometry (async).
-4. **Interactions**: focus-well (outline cut + peel), picking, annotations, buoyancy
+3. **Worker generator** for chunk geometry (async). **— done**, and rebuilt on the
+   shared tessellation (§9) in 2026-08-06.
+4. **Vertical exaggeration** — a `scale={[1, k, 1]}` group on `ChunkStack`; safe
+   because of §9.1, and needing no shader or material work. *Deferred.*
+5. **Interactions**: focus-well (outline cut + peel), picking, annotations, buoyancy
    children on `OceanChunk`.

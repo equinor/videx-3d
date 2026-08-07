@@ -3,7 +3,6 @@ import { PlanarPolygonGeometry } from '../src/sdk/geometries/planar-geometry';
 import {
   createSurfaceChunk,
   densifyPolygon,
-  SurfaceChunk,
   SurfaceChunkLayer,
 } from '../src/sdk/geometries/surface-chunk';
 import { Vec2 } from '../src/sdk/types/common';
@@ -112,52 +111,6 @@ describe('createSurfaceChunk', () => {
     }
   });
 
-  it('clamp pinches out walls where a lower surface rises above the upper one', () => {
-    const header = { nx: 10, ny: 10, xinc: 100, yinc: 100, rot: 0 };
-    const outer: Vec2[] = [
-      [100, -100],
-      [800, -100],
-      [800, -800],
-      [100, -800],
-    ];
-    const polygon = new PlanarPolygonGeometry([[outer]]);
-    // layer 0 at y = 0; layer 1 at y = +200 (above layer 0 everywhere).
-    const layers: SurfaceChunkLayer[] = [
-      {
-        values: flat(10, 10, 100),
-        header,
-        referenceDepth: 100,
-        worldPosition: [0, 0],
-        color: '#f00',
-      },
-      {
-        values: flat(10, 10, 1200),
-        header,
-        referenceDepth: 1000,
-        worldPosition: [0, 0],
-        color: '#0f0',
-      },
-    ];
-
-    const topWallY = (chunk: SurfaceChunk) => {
-      const p = chunk.groups[0].walls[0].geometry.getAttribute('position');
-      let m = -Infinity;
-      for (let i = 0; i < p.count; i++) m = Math.max(m, p.getY(i));
-      return m;
-    };
-
-    // Without clamp the bottom rim sits above the top (200); with clamp it is
-    // pulled down to the top (0) -> a zero-height wall.
-    expect(
-      topWallY(createSurfaceChunk([layers], { polygon, rimSpacing: 200 })),
-    ).toBeCloseTo(200, 3);
-    expect(
-      topWallY(
-        createSurfaceChunk([layers], { polygon, rimSpacing: 200, clamp: true }),
-      ),
-    ).toBeCloseTo(0, 3);
-  });
-
   it('leaves a gap between groups (no wall across the boundary)', () => {
     const header = { nx: 10, ny: 10, xinc: 100, yinc: 100, rot: 0 };
     const outer: Vec2[] = [
@@ -235,63 +188,6 @@ describe('createSurfaceChunk', () => {
       expect(normal.getX(2 * k)).toBeCloseTo(normal.getX(2 * k + 1), 6);
       expect(normal.getZ(2 * k)).toBeCloseTo(normal.getZ(2 * k + 1), 6);
     }
-  });
-
-  it('depthOrder removes crossings ACROSS group boundaries', () => {
-    const header = { nx: 10, ny: 10, xinc: 100, yinc: 100, rot: 0 };
-    const outer: Vec2[] = [
-      [100, -100],
-      [800, -100],
-      [800, -800],
-      [100, -800],
-    ];
-    const polygon = new PlanarPolygonGeometry([[outer]]);
-    const mkLayer = (y: number, color: string): SurfaceChunkLayer => ({
-      values: flat(10, 10, 100),
-      header,
-      referenceDepth: 100 - y, // scene y = 100 - referenceDepth
-      worldPosition: [0, 0],
-      color,
-    });
-    // Group 0 ends at y = -200; group 1 STARTS at y = 0, i.e. above it — a
-    // cross-group crossing, which the (per-group) rim clamp cannot see.
-    const groups: SurfaceChunkLayer[][] = [
-      [mkLayer(0, '#f00'), mkLayer(-200, '#0f0')],
-      [mkLayer(0, '#00f'), mkLayer(-600, '#ff0')],
-    ];
-
-    const topOfGroup1 = (chunk: SurfaceChunk) => {
-      const [, max] = yRange(chunk.groups[1].surfaces[0].geometry);
-      return max;
-    };
-
-    // Without the pass (even with the rim clamp) group 1's top stays at y = 0...
-    expect(
-      topOfGroup1(
-        createSurfaceChunk(groups, { polygon, rimSpacing: 200, clamp: true }),
-      ),
-    ).toBeCloseTo(0, 3);
-
-    // ...with it, it is pushed down onto group 0's base (-200), and a minGap
-    // separates them further.
-    expect(
-      topOfGroup1(
-        createSurfaceChunk(groups, {
-          polygon,
-          rimSpacing: 200,
-          depthOrder: {},
-        }),
-      ),
-    ).toBeCloseTo(-200, 3);
-    expect(
-      topOfGroup1(
-        createSurfaceChunk(groups, {
-          polygon,
-          rimSpacing: 200,
-          depthOrder: { minGap: 10 },
-        }),
-      ),
-    ).toBeCloseTo(-210, 3);
   });
 
   it('attaches a basement with a flat base below the deepest surface', () => {

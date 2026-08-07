@@ -25,6 +25,7 @@ import {
   Vec2,
 } from '../../sdk';
 import { parseGeoJsonFeature } from '../../sdk/utils/geojson';
+import { sortByStratAge } from '../../storybook/data/strat-ages';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-decorator';
@@ -98,7 +99,6 @@ type SurfaceChunkStoryProps = {
   groupSizes: string;
   rimSpacing: number;
   maxError: number;
-  clamp: boolean;
   surfaceOpacity: number;
   wallOpacity: number;
   wireframe: boolean;
@@ -145,15 +145,15 @@ const MetricsOverlay = ({
     if (!el) return;
     el.textContent = metrics
       ? [
-          'SurfaceChunk build',
-          `  densify : ${metrics.densifyMs.toFixed(1)} ms`,
-          `  clip    : ${metrics.clipMs.toFixed(1)} ms (${metrics.surfaces} surfaces)`,
-          `  rim     : ${metrics.rimMs.toFixed(1)} ms (${metrics.rimPoints} pts)`,
-          `  walls   : ${metrics.wallsMs.toFixed(1)} ms (${metrics.walls})`,
-          `  basement: ${metrics.basementMs.toFixed(1)} ms`,
-          `  total   : ${metrics.totalMs.toFixed(1)} ms`,
-          `  tris    : ${metrics.triangles.toLocaleString()}`,
-        ].join('\n')
+        'SurfaceChunk build',
+        `  densify : ${metrics.densifyMs.toFixed(1)} ms`,
+        `  clip    : ${metrics.clipMs.toFixed(1)} ms (${metrics.surfaces} surfaces)`,
+        `  rim     : ${metrics.rimMs.toFixed(1)} ms (${metrics.rimPoints} pts)`,
+        `  walls   : ${metrics.wallsMs.toFixed(1)} ms (${metrics.walls})`,
+        `  basement: ${metrics.basementMs.toFixed(1)} ms`,
+        `  total   : ${metrics.totalMs.toFixed(1)} ms`,
+        `  tris    : ${metrics.triangles.toLocaleString()}`,
+      ].join('\n')
       : 'SurfaceChunk: building…';
   }, [metrics]);
   return null;
@@ -232,12 +232,13 @@ const SurfaceChunkStory = (props: SurfaceChunkStoryProps) => {
     };
   }, [props.polygonId]);
 
-  // Layers, sorted shallow -> deep.
+  // Layers, in stratigraphic order (shallow -> deep).
   const metas = useMemo<SurfaceMeta[]>(() => {
-    return Object.keys(surfaceOptions)
-      .map(id => surfaceMetaDict[id])
-      .filter((m): m is SurfaceMeta => !!m)
-      .sort((a, b) => a.max - b.max);
+    return sortByStratAge(
+      Object.keys(surfaceOptions)
+        .map(id => surfaceMetaDict[id])
+        .filter((m): m is SurfaceMeta => !!m),
+    );
   }, [surfaceMetaDict]);
 
   const [chunk, setChunk] = useState<SurfaceChunk | null>(null);
@@ -252,21 +253,21 @@ const SurfaceChunkStory = (props: SurfaceChunkStoryProps) => {
     Promise.all(
       build
         ? usedMetas.map(async (meta, i) => {
-            const values = await data!.get<Float32Array>(
-              'surface-values',
-              meta.id,
-            );
-            if (!values) return null;
-            const wp = crs.utmToWorld(meta.header.xori, meta.header.yori, 0);
-            const layer: SurfaceChunkLayer = {
-              values,
-              header: meta.header,
-              referenceDepth: meta.max,
-              worldPosition: [wp.x, wp.z],
-              color: palette[i % palette.length],
-            };
-            return layer;
-          })
+          const values = await data!.get<Float32Array>(
+            'surface-values',
+            meta.id,
+          );
+          if (!values) return null;
+          const wp = crs.utmToWorld(meta.header.xori, meta.header.yori, 0);
+          const layer: SurfaceChunkLayer = {
+            values,
+            header: meta.header,
+            referenceDepth: meta.max,
+            worldPosition: [wp.x, wp.z],
+            color: palette[i % palette.length],
+          };
+          return layer;
+        })
         : [],
     ).then(results => {
       const layers = results.filter((l): l is SurfaceChunkLayer => !!l);
@@ -275,30 +276,29 @@ const SurfaceChunkStory = (props: SurfaceChunkStoryProps) => {
       setChunk(
         groups.length > 0 && polygon
           ? createSurfaceChunk(groups, {
-              polygon,
-              rimSpacing: props.rimSpacing,
-              maxError: props.maxError,
-              clamp: props.clamp,
-              basement: props.showBasement
-                ? {
-                    color: props.basementColor,
-                    thickness: props.basementThickness,
-                    // 'chunk' -> attached (top = deepest surface); 'procedural' ->
-                    // standalone block with its own rocky top.
-                    top:
-                      props.basementTopSource === 'procedural'
-                        ? {
-                            procedural: {
-                              depth: props.basementTopDepth,
-                              depthMode: props.basementDepthMode,
-                              variation: props.basementVariation,
-                              segments: props.basementSegments,
-                            },
-                          }
-                        : undefined,
-                  }
-                : undefined,
-            })
+            polygon,
+            rimSpacing: props.rimSpacing,
+            maxError: props.maxError,
+            basement: props.showBasement
+              ? {
+                color: props.basementColor,
+                thickness: props.basementThickness,
+                // 'chunk' -> attached (top = deepest surface); 'procedural' ->
+                // standalone block with its own rocky top.
+                top:
+                  props.basementTopSource === 'procedural'
+                    ? {
+                      procedural: {
+                        depth: props.basementTopDepth,
+                        depthMode: props.basementDepthMode,
+                        variation: props.basementVariation,
+                        segments: props.basementSegments,
+                      },
+                    }
+                    : undefined,
+              }
+              : undefined,
+          })
           : null,
       );
     });
@@ -312,7 +312,6 @@ const SurfaceChunkStory = (props: SurfaceChunkStoryProps) => {
     props.groupSizes,
     props.rimSpacing,
     props.maxError,
-    props.clamp,
     props.showBasement,
     props.basementTopSource,
     props.basementThickness,
@@ -369,9 +368,9 @@ const SurfaceChunkStory = (props: SurfaceChunkStoryProps) => {
     }));
     const basement = chunk.basement
       ? {
-          surfaces: chunk.basement.surfaces.map(s => make(s.color, 1)),
-          walls: chunk.basement.walls.map(w => make(w.color, 1)),
-        }
+        surfaces: chunk.basement.surfaces.map(s => make(s.color, 1)),
+        walls: chunk.basement.walls.map(w => make(w.color, 1)),
+      }
       : null;
     return { groups: groupMats, basement };
   }, [chunk, props.surfaceOpacity, props.wallOpacity, props.wireframe]);
@@ -489,7 +488,6 @@ export const Default: Story = {
     groupSizes: '2,2',
     rimSpacing: 250,
     maxError: 5,
-    clamp: false,
     showSurfaces: true,
     showWalls: true,
     // Appearance
@@ -534,7 +532,6 @@ export const Default: Story = {
       control: { type: 'range', min: 0, max: 50, step: 1 },
       table: { category: 'Chunk' },
     },
-    clamp: { control: 'boolean', table: { category: 'Chunk' } },
     showSurfaces: { control: 'boolean', table: { category: 'Chunk' } },
     showWalls: { control: 'boolean', table: { category: 'Chunk' } },
     surfaceOpacity: {
