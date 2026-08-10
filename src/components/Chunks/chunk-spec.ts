@@ -6,7 +6,12 @@ import {
   Vec2,
   Vec3,
 } from '../../sdk';
-import { ChunkResolveOptions, SurfaceChunkSpec } from './chunk-defs';
+import {
+  ChunkLayer,
+  ChunkResolveOptions,
+  hasFill,
+  SurfaceChunkSpec,
+} from './chunk-defs';
 
 /** UTM -> scene-frame mapping (matches `UtmArea`'s `utmToArea`). */
 type UtmToArea = (easting: number, northing: number, altitude?: number) => Vec3;
@@ -48,20 +53,35 @@ function toLayerSpec(meta: SurfaceMeta, utmToArea: UtmToArea) {
 
 /**
  * Build the serializable {@link SurfaceChunkSpec} for the `surfaceChunk` generator
- * from the main-thread inputs: the grouped surface `meta`, the UTM->scene mapping
- * (for each surface's world placement), the colour palette, the resolved outline
- * polygon, and the build options. The grid values are intentionally left out — the
- * worker fetches them by surface id.
+ * from the main-thread inputs: the ordered `layers` (each a surface plus whether
+ * the interval below it is filled), the UTM->scene mapping (for each surface's
+ * world placement), the resolved outline polygon, and the build options.
+ *
+ * Materials are NOT part of the spec — they are appearance, and including them
+ * would make recolouring rebuild the geometry.
  */
 export function buildSurfaceChunkSpec(
-  groups: SurfaceMeta[][],
+  layers: ChunkLayer[],
   utmToArea: UtmToArea,
-  colors: string[],
   outlinePolygon: PlanarPolygonGeometry,
   options: BuildSurfaceChunkSpecOptions = {},
 ): SurfaceChunkSpec {
-  const specGroups = groups.map(group =>
-    group.map(meta => toLayerSpec(meta, utmToArea)),
+  const specLayers = layers.map(layer =>
+    layer.surface
+      ? {
+          ...toLayerSpec(layer.surface, utmToArea),
+          fill: hasFill(layer.fill),
+          cap: layer.cap !== false,
+          optional: layer.optional === true,
+        }
+      : {
+          depth: layer.depth,
+          offset: layer.offset,
+          relief: layer.relief,
+          fill: hasFill(layer.fill),
+          cap: layer.cap !== false,
+          optional: layer.optional === true,
+        },
   );
 
   const stack = options.stack
@@ -81,8 +101,7 @@ export function buildSurfaceChunkSpec(
     : undefined;
 
   return {
-    groups: specGroups,
-    colors,
+    layers: specLayers,
     polygon: {
       coordinates: outlinePolygon.coordinates as PlanarPolygonCoordinates,
       offset: outlinePolygon.offset,

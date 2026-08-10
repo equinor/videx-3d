@@ -252,7 +252,7 @@ const SurfaceChunkStory = (props: SurfaceChunkStoryProps) => {
     const build = data && polygon && usedMetas.length > 0;
     Promise.all(
       build
-        ? usedMetas.map(async (meta, i) => {
+        ? usedMetas.map(async meta => {
           const values = await data!.get<Float32Array>(
             'surface-values',
             meta.id,
@@ -264,7 +264,6 @@ const SurfaceChunkStory = (props: SurfaceChunkStoryProps) => {
             header: meta.header,
             referenceDepth: meta.max,
             worldPosition: [wp.x, wp.z],
-            color: palette[i % palette.length],
           };
           return layer;
         })
@@ -325,10 +324,8 @@ const SurfaceChunkStory = (props: SurfaceChunkStoryProps) => {
   // Dispose chunk geometries on replace / unmount.
   useEffect(() => {
     return () => {
-      chunk?.groups.forEach(g => {
-        g.surfaces.forEach(s => s.geometry.dispose());
-        g.walls.forEach(w => w.geometry.dispose());
-      });
+      chunk?.surfaces.forEach(s => s.geometry.dispose());
+      chunk?.walls.forEach(w => w.geometry.dispose());
       chunk?.basement?.surfaces.forEach(s => s.geometry.dispose());
       chunk?.basement?.walls.forEach(w => w.geometry.dispose());
     };
@@ -360,27 +357,27 @@ const SurfaceChunkStory = (props: SurfaceChunkStoryProps) => {
       });
       return makeOitCompatible(m);
     };
-    // Materials mirror the chunk's group structure so per-group visibility /
-    // opacity stays straightforward. The basement renders opaque (solid rock).
-    const groupMats = chunk.groups.map(group => ({
-      surfaces: group.surfaces.map(s => make(s.color, props.surfaceOpacity)),
-      walls: group.walls.map(w => make(w.color, props.wallOpacity)),
-    }));
+    // The chunk's geometry no longer carries colour — each mesh names its layer,
+    // and the palette is applied here, in the appearance layer.
+    const surfaces = chunk.surfaces.map(s =>
+      make(palette[s.layer % palette.length], props.surfaceOpacity),
+    );
+    const walls = chunk.walls.map(w =>
+      make(palette[w.layer % palette.length], props.wallOpacity),
+    );
     const basement = chunk.basement
       ? {
         surfaces: chunk.basement.surfaces.map(s => make(s.color, 1)),
         walls: chunk.basement.walls.map(w => make(w.color, 1)),
       }
       : null;
-    return { groups: groupMats, basement };
+    return { surfaces, walls, basement };
   }, [chunk, props.surfaceOpacity, props.wallOpacity, props.wireframe]);
 
   useEffect(() => {
     return () => {
-      materials?.groups.forEach(group => {
-        group.surfaces.forEach(m => m.dispose());
-        group.walls.forEach(m => m.dispose());
-      });
+      materials?.surfaces.forEach(m => m.dispose());
+      materials?.walls.forEach(m => m.dispose());
       materials?.basement?.surfaces.forEach(m => m.dispose());
       materials?.basement?.walls.forEach(m => m.dispose());
     };
@@ -394,31 +391,27 @@ const SurfaceChunkStory = (props: SurfaceChunkStoryProps) => {
 
         {props.showWalls &&
           materials &&
-          chunk?.groups.map((group, gi) =>
-            group.walls.map((wall, i) => (
-              <mesh key={`wall-${gi}-${i}`} geometry={wall.geometry}>
-                <primitive
-                  key={materials.groups[gi].walls[i].uuid}
-                  object={materials.groups[gi].walls[i]}
-                  attach="material"
-                />
-              </mesh>
-            )),
-          )}
+          chunk?.walls.map((wall, i) => (
+            <mesh key={`wall-${i}`} geometry={wall.geometry}>
+              <primitive
+                key={materials.walls[i].uuid}
+                object={materials.walls[i]}
+                attach="material"
+              />
+            </mesh>
+          ))}
 
         {props.showSurfaces &&
           materials &&
-          chunk?.groups.map((group, gi) =>
-            group.surfaces.map((surface, i) => (
-              <mesh key={`surface-${gi}-${i}`} geometry={surface.geometry}>
-                <primitive
-                  key={materials.groups[gi].surfaces[i].uuid}
-                  object={materials.groups[gi].surfaces[i]}
-                  attach="material"
-                />
-              </mesh>
-            )),
-          )}
+          chunk?.surfaces.map((surface, i) => (
+            <mesh key={`surface-${i}`} geometry={surface.geometry}>
+              <primitive
+                key={materials.surfaces[i].uuid}
+                object={materials.surfaces[i]}
+                attach="material"
+              />
+            </mesh>
+          ))}
 
         {materials?.basement && chunk?.basement && (
           <group>

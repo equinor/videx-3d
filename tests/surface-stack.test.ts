@@ -3,6 +3,7 @@ import { PlanarPolygonGeometry } from '../src/sdk/geometries/planar-geometry';
 import { SurfaceClipHeader } from '../src/sdk/geometries/surface-clip';
 import {
   buildStackReference,
+  collapseOptionalChannels,
   collapseStackTriangles,
   resolveStackGrid,
   resolveStackOrder,
@@ -14,6 +15,7 @@ import {
   stackLayerUvs,
   stackVertexPositions,
   tessellateStack,
+  trimPolygonToCoverage,
 } from '../src/sdk/geometries/surface-stack';
 import { collectStackCandidates } from '../src/sdk/geometries/surface-stack-candidates';
 
@@ -119,6 +121,158 @@ describe('buildStackReference', () => {
       ],
     ]);
     expect(buildStackReference([flat], away)).toBeNull();
+  });
+});
+
+describe('trimPolygonToCoverage', () => {
+  // The right half of the grid is unmapped.
+  const halfMapped = () => layerFrom((col: number) => (col > 16 ? null : 1000));
+  const fullyMapped = () => layerFrom(() => 1200);
+
+  it('hands back the SAME polygon when the outline is fully covered', () => {
+    const polygon = maskPolygon(4, 12);
+    const reference = buildStackReference([fullyMapped()], polygon)!;
+
+    const trim = trimPolygonToCoverage(reference, polygon, reference.masks);
+
+    expect(trim.trimmed).toBe(false);
+    expect(trim.coverage).toBe(1);
+    // identity, not just an equal shape — an untouched chunk must be untouched
+    expect(trim.polygon).toBe(polygon);
+  });
+
+  it('cuts the outline back to the mapped area', () => {
+    const polygon = maskPolygon(4, 28);
+    const reference = buildStackReference([halfMapped()], polygon)!;
+
+    const trim = trimPolygonToCoverage(reference, polygon, reference.masks);
+
+    expect(trim.trimmed).toBe(true);
+    expect(trim.coverage).toBeGreaterThan(0.3);
+    expect(trim.coverage).toBeLessThan(0.7);
+    // the survivors all sit on the mapped (left) side
+    const xs = (trim.polygon!.coordinates as number[][][][])
+      .flat(2)
+      .map(([x]) => x);
+    expect(Math.max(...xs)).toBeLessThan(sceneX(20));
+  });
+
+  it('returns no polygon at all when nothing is mapped', () => {
+    const polygon = maskPolygon(20, 28);
+    const reference = buildStackReference([halfMapped()], polygon)!;
+
+    const trim = trimPolygonToCoverage(reference, polygon, reference.masks);
+
+    expect(trim.polygon).toBeNull();
+    expect(trim.coverage).toBe(0);
+  });
+
+  it("'any' keeps what one layer covers, 'all' does not", () => {
+    const polygon = maskPolygon(4, 28);
+    const reference = buildStackReference(
+      [halfMapped(), fullyMapped()],
+      polygon,
+    )!;
+
+    const all = trimPolygonToCoverage(reference, polygon, reference.masks, {
+      rule: 'all',
+    });
+    const any = trimPolygonToCoverage(reference, polygon, reference.masks, {
+      rule: 'any',
+    });
+
+    expect(all.trimmed).toBe(true);
+    expect(any.trimmed).toBe(false);
+    expect(any.coverage).toBeGreaterThan(all.coverage);
+  });
+
+  it('an OPTIONAL layer does not cut the outline, but is still reported', () => {
+    const polygon = maskPolygon(4, 28);
+    // The fully mapped layer is the chunk's own subject; the half mapped one is a
+    // boundary borrowed from the chunk below.
+    const reference = buildStackReference(
+      [fullyMapped(), halfMapped()],
+      polygon,
+    )!;
+
+    const required = trimPolygonToCoverage(
+      reference,
+      polygon,
+      reference.masks,
+      {},
+    );
+    const optional = trimPolygonToCoverage(
+      reference,
+      polygon,
+      reference.masks,
+      {
+        optional: [false, true],
+      },
+    );
+
+    // Borrowed, it no longer drags the footprint down to someone else's survey.
+    expect(required.trimmed).toBe(true);
+    expect(optional.trimmed).toBe(false);
+    expect(optional.polygon).toBe(polygon);
+    // ...but the trade stays visible: both report the same per-layer coverage.
+    expect(optional.layerCoverage[0]).toBe(1);
+    expect(optional.layerCoverage[1]).toBeLessThan(0.7);
+    expect(optional.layerCoverage).toEqual(required.layerCoverage);
+  });
+
+  it('keeps the whole outline when EVERY layer is optional', () => {
+    const polygon = maskPolygon(4, 28);
+    const reference = buildStackReference([halfMapped()], polygon)!;
+
+    for (const rule of ['all', 'any'] as const) {
+      const trim = trimPolygonToCoverage(reference, polygon, reference.masks, {
+        rule,
+        optional: [true],
+      });
+      expect(trim.trimmed).toBe(false);
+      expect(trim.polygon).toBe(polygon);
+    }
+  });
+});
+
+describe('collapseOptionalChannels', () => {
+  const halfMapped = () => layerFrom((col: number) => (col > 16 ? null : 1000));
+
+  it('pinches the optional interval out where the layer has no data', () => {
+    const polygon = maskPolygon(4, 28);
+    const reference = buildStackReference(
+      [layerFrom(() => 800), halfMapped()],
+      polygon,
+    )!;
+    const [above, borrowed] = reference.channels;
+    // buildStackReference fills the unmapped half from the nearest sample, so
+    // without this the interval would stand on a flat extrapolation.
+    const filled = borrowed.findIndex((_, n) => reference.masks[1][n] === 0);
+    expect(filled).toBeGreaterThanOrEqual(0);
+    expect(borrowed[filled]).not.toBe(above[filled]);
+
+    const collapsed = collapseOptionalChannels(
+      reference.channels,
+      reference.masks,
+      [false, true],
+    );
+
+    // zero thickness where it is absent, untouched where it is mapped
+    expect(collapsed[1][filled]).toBe(above[filled]);
+    const mapped = reference.masks[1].findIndex(v => v === 1);
+    expect(collapsed[1][mapped]).toBe(borrowed[mapped]);
+    // the layers it did not touch are shared, not copied
+    expect(collapsed[0]).toBe(reference.channels[0]);
+    expect(collapsed[1]).not.toBe(reference.channels[1]);
+  });
+
+  it('is a no-op when nothing is optional', () => {
+    const polygon = maskPolygon(4, 28);
+    const reference = buildStackReference([halfMapped()], polygon)!;
+
+    expect(
+      collapseOptionalChannels(reference.channels, reference.masks, [false]),
+    ).toBe(reference.channels);
   });
 });
 

@@ -1,5 +1,6 @@
 import {
   ReactNode,
+  useCallback,
   useContext,
   useEffect,
   useId,
@@ -7,7 +8,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Material } from 'three';
 import { useData } from '../../hooks/useData';
 import { useGenerator } from '../../hooks/useGenerator';
 import {
@@ -21,7 +21,10 @@ import {
 } from '../../sdk';
 import { UtmAreaContext } from '../UtmArea';
 import {
+  ChunkBuildState,
+  ChunkLayer,
   ChunkResolveOptions,
+  hasFill,
   surfaceChunk,
   SurfaceChunkResponse,
 } from './chunk-defs';
@@ -34,18 +37,6 @@ import { resolveWellboreOutline } from './resolveWellboreOutline';
 /** Stable identity for the default resolve options (a new object rebuilds). */
 const DEFAULT_RESOLVE: ChunkResolveOptions = {};
 
-/** Fallback per-layer palette (wall/surface colours are assigned by layer order). */
-const DEFAULT_PALETTE = [
-  '#4e79a7',
-  '#f28e2c',
-  '#59a14f',
-  '#e15759',
-  '#af7aa1',
-  '#76b7b2',
-  '#edc949',
-  '#9c755f',
-];
-
 /**
  * {@link Chunk} props.
  * @expand
@@ -53,12 +44,13 @@ const DEFAULT_PALETTE = [
  */
 export type ChunkProps = {
   /**
-   * Surfaces grouped into zones: each inner array is one group, ordered top
-   * (shallowest) to base (deepest). Walls fill only the intervals within a group,
-   * so adjacent groups are separated by a gap. Callers provide the `SurfaceMeta`
-   * (as with `Surface`); the values are fetched from the data store.
+   * The chunk's boundaries in stratigraphic order (shallowest first), each
+   * saying whether the interval below it is filled. See {@link ChunkLayer}, and
+   * {@link layersFromGroups} for the grouped-zones shorthand.
+   *
+   * ⚠️ The array order IS the stratigraphic order — nothing here infers it.
    */
-  groups: SurfaceMeta[][];
+  layers: ChunkLayer[];
   /**
    * Outline for the clip. `'inherit'` (default) uses the {@link ChunkStack}
    * outline / cut source; pass a polygon (scene XZ) to override, or a
@@ -67,24 +59,12 @@ export type ChunkProps = {
    * the stack's wellbore set and merges its `options` over the stack's.
    */
   outline?: ChunkOutline;
-  /** per-layer colours, cycled by layer order. Defaults to a built-in palette. */
-  colors?: string[];
   /** surface (top) opacity. Reactive — does not rebuild geometry. Default 1. */
   surfaceOpacity?: number;
   /** wall opacity. Reactive — does not rebuild geometry. Default 1. */
   wallOpacity?: number;
   /** wireframe. Reactive — does not rebuild geometry. Default false. */
   wireframe?: boolean;
-  /**
-   * Material for the chunk's UPPERMOST surface — e.g. a `SurfaceMaterial`. Every
-   * other surface, the side walls and the basement keep the standard chunk
-   * material built from the layer colours. Reactive.
-   *
-   * The material is owned by the caller and is never disposed here. Note that
-   * where the top layer is absent (not mapped, or truncated away) the layer below
-   * shows through with the standard material.
-   */
-  topMaterial?: Material;
   /**
    * How the stack is made monotone before it is built, and what is dropped where
    * a unit is not present (build param). Omit to skip the pass entirely — the
@@ -108,35 +88,26 @@ export type ChunkProps = {
   /**
    * Called with the build metrics each time the geometry is (re)built. Use it to
    * inspect `metrics.diagnostics` — in particular the crossing counts, which are
-   * how a mis-ordered `groups` array makes itself visible (the resolve otherwise
+   * how a mis-ordered `layers` array makes itself visible (the resolve otherwise
    * dutifully makes ANY order consistent).
    */
   onBuild?: (metrics: SurfaceChunkMetrics) => void;
+  /**
+   * Called as the chunk moves through its build — for a busy indicator. See
+   * {@link ChunkBuildState}; note `'empty'` is an outcome, not a failure.
+   *
+   * `ChunkStack.onProgress` aggregates the same signal across a whole stack, which
+   * is usually the more useful one for a progress bar.
+   */
+  onBuildStateChange?: (state: ChunkBuildState) => void;
   children?: ReactNode;
 };
-
-/** Shallowest surface meta across all groups (the chunk's top). */
-function firstMeta(groups: SurfaceMeta[][]): SurfaceMeta | null {
-  for (const g of groups) if (g.length) return g[0];
-  return null;
-}
-
-/** Deepest surface meta across all groups (the chunk's base). */
-function lastMeta(groups: SurfaceMeta[][]): SurfaceMeta | null {
-  for (let i = groups.length - 1; i >= 0; i--) {
-    const g = groups[i];
-    if (g.length) return g[g.length - 1];
-  }
-  return null;
-}
 
 /** Dispose every geometry a built {@link SurfaceChunk} owns. */
 function disposeChunk(chunk: SurfaceChunk | null) {
   if (!chunk) return;
-  chunk.groups.forEach(g => {
-    g.surfaces.forEach(s => s.geometry.dispose());
-    g.walls.forEach(w => w.geometry.dispose());
-  });
+  chunk.surfaces.forEach(s => s.geometry.dispose());
+  chunk.walls.forEach(w => w.geometry.dispose());
   chunk.basement?.surfaces.forEach(s => s.geometry.dispose());
   chunk.basement?.walls.forEach(w => w.geometry.dispose());
   chunk.oceanTop?.surface.dispose();
@@ -160,19 +131,26 @@ function disposeChunk(chunk: SurfaceChunk | null) {
  *
  * @example
  * <ChunkStack outline={polygon}>
- *   <Chunk groups={[[topMeta, midMeta], [reservoirMeta]]} basement={{ thickness: 800 }} />
+ *   <Chunk
+ *     layers={[
+ *       { surface: topMeta, fill: true },
+ *       { surface: midMeta },
+ *       { surface: reservoirMeta },
+ *     ]}
+ *     basement={{ thickness: 800 }}
+ *   />
  * </ChunkStack>
  *
  * @group Components
  */
 export const Chunk = ({
-  groups,
+  layers,
   outline = 'inherit',
-  colors = DEFAULT_PALETTE,
+
   surfaceOpacity = 1,
   wallOpacity = 1,
   wireframe = false,
-  topMaterial,
+
   resolve = DEFAULT_RESOLVE,
   rimSpacing,
   maxError,
@@ -180,11 +158,31 @@ export const Chunk = ({
   showSurfaces = true,
   showWalls = true,
   onBuild,
+  onBuildStateChange,
   children,
 }: ChunkProps) => {
   const store = useData();
   const utm = useContext(UtmAreaContext);
   const stack = useContext(ChunkStackContext);
+
+  // --- Stable inputs: `layers={[...]}` is the natural way to write this in JSX,
+  //     and it makes a NEW array on every render of the parent. Keying the BUILD on
+  //     the content that actually affects geometry — the surfaces and which
+  //     intervals are filled — is what stops an opacity or material change from
+  //     rebuilding it. Materials are appearance and never reach the spec. ---------
+  const layersKey = layers
+    .map(l => {
+      const base = l.surface
+        ? l.surface.id
+        : `@${l.depth ?? ''}/${l.offset ?? ''}/${l.relief
+          ? `${l.relief.kind ?? 'dunes'}:${l.relief.amplitude}:${l.relief.seed ?? 0}:${l.relief.featureSize ?? ''}:${l.relief.mode ?? ''}`
+          : ''
+        }`;
+      return `${base}:${hasFill(l.fill) ? 1 : 0}:${l.cap === false ? 0 : 1}:${l.optional ? 1 : 0}`;
+    })
+    .join(',');
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
+  const stableLayers = useMemo(() => layers, [layersKey]);
 
   // Held in a ref so a caller passing an inline callback does not re-trigger the
   // (expensive) build on every render.
@@ -192,6 +190,24 @@ export const Chunk = ({
   useEffect(() => {
     onBuildRef.current = onBuild;
   }, [onBuild]);
+
+  const onStateRef = useRef(onBuildStateChange);
+  useEffect(() => {
+    onStateRef.current = onBuildStateChange;
+  }, [onBuildStateChange]);
+
+  const registryKey = useId();
+  const { registerChunk, publishOutline, reportBuildState } = stack;
+
+  // Both the caller's callback and the stack's progress counter hear the same
+  // thing, so a host can use either without wiring both.
+  const reportState = useCallback(
+    (state: ChunkBuildState) => {
+      onStateRef.current?.(state);
+      reportBuildState?.(registryKey, state);
+    },
+    [reportBuildState, registryKey],
+  );
 
   const resolvedRimSpacing = rimSpacing ?? stack.rimSpacing;
   const resolvedMaxError = maxError ?? stack.maxError;
@@ -227,11 +243,21 @@ export const Chunk = ({
   } | null>(null);
   useEffect(() => {
     if (!source || source.kind !== 'wellbores') return;
-    if (!store || !utm || groups.length === 0) return;
-    const topMeta = firstMeta(groups);
-    const baseMeta = lastMeta(groups);
-    // No surfaces means no claim was registered either, so nothing waits on this.
-    if (!topMeta || !baseMeta) return;
+    if (!store || !utm || stableLayers.length === 0) return;
+    // The depth window comes from the chunk's REAL surfaces — a synthetic plane
+    // has no grid to sample trajectories against, and a chunk may well start with
+    // one (water above a seabed).
+    const real = stableLayers
+      .map(l => l.surface)
+      .filter((m): m is SurfaceMeta => !!m);
+    const topMeta = real[0];
+    const baseMeta = real[real.length - 1];
+    // Nothing to resolve against. Settle explicitly rather than returning: an
+    // unsettled outline blocks this chunk (and any waiting on it) forever.
+    if (!topMeta || !baseMeta) {
+      setWellboreOutline({ polygon: null });
+      return;
+    }
     const toLayer = (
       meta: SurfaceMeta,
       values: Float32Array,
@@ -268,7 +294,7 @@ export const Chunk = ({
     return () => {
       cancelled = true;
     };
-  }, [source, store, utm, groups]);
+  }, [source, store, utm, stableLayers]);
 
   const isWellboreSource = source?.kind === 'wellbores';
   const outlinePolygon = isWellboreSource
@@ -280,9 +306,15 @@ export const Chunk = ({
   //     surface above it in the COLUMN, which a neighbouring chunk draws with its
   //     own (different) outline. Announce what this chunk draws, publish its
   //     outline, and read back the neighbour's. -------------------------------
-  const surfaceIds = useMemo(() => groups.flat().map(m => m.id), [groups]);
-  const registryKey = useId();
-  const { registerChunk, publishOutline } = stack;
+  // Only real surfaces take part in the column / cover bookkeeping — a synthetic
+  // plane belongs to no column and nothing can be truncated against it there.
+  const surfaceIds = useMemo(
+    () =>
+      stableLayers
+        .map(l => l.surface?.id)
+        .filter((id): id is string => id !== undefined),
+    [stableLayers],
+  );
 
   useEffect(() => {
     if (!registerChunk) return;
@@ -318,31 +350,24 @@ export const Chunk = ({
   const generator = useGenerator<SurfaceChunkResponse>(surfaceChunk);
 
   const spec = useMemo(() => {
-    if (!outlinePolygon || !utm || groups.length === 0) return null;
+    if (!outlinePolygon || !utm || stableLayers.length === 0) return null;
     if (coverAbove.pending) return null;
-    return buildSurfaceChunkSpec(
-      groups,
-      utm.utmToArea,
-      colors,
-      outlinePolygon,
-      {
-        rimSpacing: resolvedRimSpacing,
-        maxError: resolvedMaxError,
-        resolve,
-        basement,
-        coverAbove: coverAbove.polygon,
-        // Only a declared column with an envelope can be shared; otherwise this
-        // chunk builds (and resolves) on its own.
-        stack:
-          stack.surfaces && stack.surfaces.length > 0 && stack.envelope
-            ? { surfaces: stack.surfaces, envelope: stack.envelope }
-            : undefined,
-      },
-    );
+    return buildSurfaceChunkSpec(stableLayers, utm.utmToArea, outlinePolygon, {
+      rimSpacing: resolvedRimSpacing,
+      maxError: resolvedMaxError,
+      resolve,
+      basement,
+      coverAbove: coverAbove.polygon,
+      // Only a declared column with an envelope can be shared; otherwise this
+      // chunk builds (and resolves) on its own.
+      stack:
+        stack.surfaces && stack.surfaces.length > 0 && stack.envelope
+          ? { surfaces: stack.surfaces, envelope: stack.envelope }
+          : undefined,
+    });
   }, [
-    groups,
+    stableLayers,
     utm,
-    colors,
     outlinePolygon,
     resolvedRimSpacing,
     resolvedMaxError,
@@ -355,18 +380,43 @@ export const Chunk = ({
 
   const [chunk, setChunk] = useState<SurfaceChunk | null>(null);
   useEffect(() => {
+    if (!spec) {
+      // No spec yet: either an input is still resolving (busy), or there is
+      // genuinely nothing to draw here.
+      reportState(
+        outlineSettled && !outlinePolygon && !coverAbove.pending
+          ? 'empty'
+          : 'building',
+      );
+      return;
+    }
     let cancelled = false;
+    reportState('building');
     (async () => {
-      const response = spec ? await generator(spec) : null;
-      if (cancelled) return;
-      const built = response ? unpackSurfaceChunk(response) : null;
-      setChunk(built);
-      if (built) onBuildRef.current?.(built.metrics);
+      try {
+        const response = await generator(spec);
+        if (cancelled) return;
+        const built = response ? unpackSurfaceChunk(response) : null;
+        setChunk(built);
+        if (built) onBuildRef.current?.(built.metrics);
+        reportState(built ? 'ready' : 'empty');
+      } catch (e) {
+        if (cancelled) return;
+        reportState('failed');
+        throw e;
+      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [generator, spec]);
+  }, [
+    generator,
+    spec,
+    reportState,
+    outlineSettled,
+    outlinePolygon,
+    coverAbove.pending,
+  ]);
 
   // Dispose the previous chunk's geometries when it is replaced or unmounted.
   useEffect(() => {
@@ -380,10 +430,10 @@ export const Chunk = ({
     <>
       <ChunkMeshes
         chunk={chunk}
+        layers={stableLayers}
         surfaceOpacity={surfaceOpacity}
         wallOpacity={wallOpacity}
         wireframe={wireframe}
-        topMaterial={topMaterial}
         showSurfaces={showSurfaces}
         showWalls={showWalls}
       />

@@ -10,8 +10,9 @@ import {
 } from '../../sdk';
 import { Ocean, OceanProps } from '../Ocean/Ocean';
 import { UtmAreaContext } from '../UtmArea';
-import { ChunkMeshes } from './ChunkMeshes';
 import { ChunkStackContext } from './ChunkContext';
+import { ChunkMeshes } from './ChunkMeshes';
+import { ChunkLayer } from './chunk-defs';
 
 /** Fallback per-layer palette for the ocean chunk's geological surfaces. */
 const DEFAULT_PALETTE = [
@@ -163,19 +164,15 @@ export const OceanChunk = (props: OceanChunkProps) => {
       });
     }
     if (!loaded || !utm) return null;
-    let flat = 0;
     const layerGroups: SurfaceChunkLayer[][] = loaded
       .map(group =>
         group.map(({ values, meta }) => {
           const p = utm.utmToArea(meta.header.xori, meta.header.yori, 0);
-          const color = colors[flat % colors.length];
-          flat++;
           return {
             values,
             header: meta.header,
             referenceDepth: meta.max,
             worldPosition: [p[0], p[2]] as Vec2,
-            color,
           };
         }),
       )
@@ -196,15 +193,30 @@ export const OceanChunk = (props: OceanChunkProps) => {
     waterLevel,
     loaded,
     utm,
-    colors,
   ]);
+
+  // Materials are appearance now, so the palette is applied here rather than baked
+  // into the build. Mirrors the group→fill mapping `createSurfaceChunk` uses.
+  const meshLayers = useMemo<ChunkLayer[]>(() => {
+    if (!loaded) return [];
+    let flat = 0;
+    return loaded.flatMap(group =>
+      group.map(({ meta }, i) => {
+        const color = colors[flat % colors.length];
+        flat++;
+        return {
+          surface: meta,
+          material: color,
+          fill: i + 1 < group.length ? color : undefined,
+        };
+      }),
+    );
+  }, [loaded, colors]);
 
   useEffect(() => {
     return () => {
-      chunk?.groups.forEach(g => {
-        g.surfaces.forEach(s => s.geometry.dispose());
-        g.walls.forEach(w => w.geometry.dispose());
-      });
+      chunk?.surfaces.forEach(s => s.geometry.dispose());
+      chunk?.walls.forEach(w => w.geometry.dispose());
       if (chunk?.oceanTop) {
         chunk.oceanTop.surface.dispose();
         chunk.oceanTop.body.dispose();
@@ -220,6 +232,7 @@ export const OceanChunk = (props: OceanChunkProps) => {
       {!isProcedural && (
         <ChunkMeshes
           chunk={chunk}
+          layers={meshLayers}
           surfaceOpacity={surfaceOpacity}
           wallOpacity={wallOpacity}
         />

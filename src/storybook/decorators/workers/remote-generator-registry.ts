@@ -2,14 +2,6 @@ import { expose } from 'comlink';
 
 import { surfaceChunk } from '../../../components/Chunks/chunk-defs';
 import {
-  generateSurfaceSection,
-  surfaceSection,
-} from '../../../components/Chunks/debug/surface-section-generator';
-import {
-  generateSurfaceStackDebug,
-  surfaceStackDebug,
-} from '../../../components/Chunks/debug/surface-stack-debug-generator';
-import {
   surfaceGeometry,
   surfaceTextures,
 } from '../../../components/Surfaces/surface-defs';
@@ -71,10 +63,6 @@ registry.add(wellboreLabel, generateWellboreLabel);
 registry.add(surfaceGeometry, generateSurfaceGeometry);
 registry.add(surfaceTextures, generateSurfaceTexturesData);
 registry.add(surfaceChunk, generateSurfaceChunk);
-// TEMPORARY: cross-section probe (remove with ChunkDepthOrder.stories.tsx)
-registry.add(surfaceSection, generateSurfaceSection);
-// TEMPORARY: shared-tessellation A/B (remove with ChunkDepthOrder.stories.tsx)
-registry.add(surfaceStackDebug, generateSurfaceStackDebug);
 registry.add(perforationSymbols, generatePerforations);
 registry.add(positionMarkers, generatePositionMarkers);
 registry.add(

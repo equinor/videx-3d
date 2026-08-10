@@ -1,5 +1,6 @@
 import { createContext } from 'react';
 import { PlanarPolygonGeometry, SurfaceMeta } from '../../sdk';
+import { ChunkBuildState } from './chunk-defs';
 import { CutoutSource } from './cutout';
 
 /**
@@ -64,6 +65,12 @@ export type ChunkStackContextValue = {
     key: string,
     polygon: PlanarPolygonGeometry | null | undefined,
   ) => void;
+  /**
+   * Report a chunk's build state, so the stack can aggregate it into
+   * {@link ChunkStackProgress}. Registered chunks that have not reported yet count
+   * as building.
+   */
+  reportBuildState?: (key: string, state: ChunkBuildState) => void;
 };
 
 /**

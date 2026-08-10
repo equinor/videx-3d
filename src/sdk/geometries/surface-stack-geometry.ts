@@ -30,8 +30,8 @@ import {
 
 /** One layer of a shared-tessellation stack, ready to render. */
 export type StackGeometryLayer = {
-  /** the layer's surface, in the common scene frame */
-  geometry: BufferGeometry;
+  /** the layer's surface, in the common scene frame — `null` when not capped */
+  geometry: BufferGeometry | null;
   /** the layer's depth at the shared rim vertices (`rimY[ring][vertex]`) */
   rimY: number[][];
 };
@@ -64,11 +64,19 @@ export function buildStackGeometries(
   heights: Float32Array[],
   layers: StackLayer[],
   layerIndices?: (Uint32Array | null)[],
+  caps?: boolean[],
 ): StackGeometryLayer[] {
   const positionsXZ = stackVertexPositions(reference, tessellation.coords);
   const shared = new BufferAttribute(tessellation.indices, 1);
 
   return heights.map((y, i) => {
+    const rimY = stackRimHeights(y, tessellation.rimVertices);
+    // A layer can take part WITHOUT being drawn — when the chunk above or below
+    // already draws that surface. Its rim still matters (the walls hang from it),
+    // but building positions, UVs and normals for a mesh nobody renders would be
+    // pure waste, and an unowned geometry is a leak waiting to happen.
+    if (caps && caps[i] === false) return { geometry: null, rimY };
+
     const count = y.length;
     const positions = new Float32Array(count * 3);
     for (let v = 0; v < count; v++) {
@@ -88,7 +96,7 @@ export function buildStackGeometries(
     );
     geometry.setIndex(own ? new BufferAttribute(own, 1) : shared);
     computeUpwardNormals(geometry);
-    return { geometry, rimY: stackRimHeights(y, tessellation.rimVertices) };
+    return { geometry, rimY };
   });
 }
 
@@ -144,6 +152,13 @@ export type SurfaceStackOptions = {
    * drawn by this same stack with this same outline, so it is always covered.
    */
   topCover?: PlanarPolygonGeometry;
+  /**
+   * Per layer: draw its cap. `false` leaves the layer in the stack (its rim still
+   * carries the walls, and it still takes part in the resolve) but produces no
+   * surface — for a boundary a NEIGHBOURING chunk already draws, so the two do not
+   * z-fight over the same horizon.
+   */
+  caps?: boolean[];
   /**
    * Also refine along each pair's thickness termination (see
    * `collectThicknessCrossings`), so a unit wedging out follows the contour
@@ -324,6 +339,7 @@ export function buildSurfaceStack(
     heights,
     layers,
     collapsed?.indices,
+    options.caps,
   );
   const rings = stackRimRings(
     stackVertexPositions(reference, tessellation.coords),

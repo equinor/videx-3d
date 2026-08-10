@@ -31,7 +31,8 @@ export type PackedSurfaceChunkGroup = {
  * @group Geometries
  */
 export type PackedSurfaceChunk = {
-  groups: PackedSurfaceChunkGroup[];
+  surfaces: { geometry: PackedBufferGeometry; layer: number }[];
+  walls: { geometry: PackedBufferGeometry; layer: number }[];
   basement?: PackedSurfaceChunkGroup;
   oceanTop?: {
     surface: PackedBufferGeometry;
@@ -72,7 +73,14 @@ export function packSurfaceChunk(
   });
 
   const packed: PackedSurfaceChunk = {
-    groups: chunk.groups.map(packGroup),
+    surfaces: chunk.surfaces.map(s => ({
+      geometry: packGeo(s.geometry),
+      layer: s.layer,
+    })),
+    walls: chunk.walls.map(w => ({
+      geometry: packGeo(w.geometry),
+      layer: w.layer,
+    })),
     basement: chunk.basement ? packGroup(chunk.basement) : undefined,
     oceanTop: chunk.oceanTop
       ? {
@@ -107,7 +115,14 @@ export function unpackSurfaceChunk(packed: PackedSurfaceChunk): SurfaceChunk {
   });
 
   return {
-    groups: packed.groups.map(unpackGroup),
+    surfaces: packed.surfaces.map(s => ({
+      geometry: unpackBufferGeometry(s.geometry),
+      layer: s.layer,
+    })),
+    walls: packed.walls.map(w => ({
+      geometry: unpackBufferGeometry(w.geometry),
+      layer: w.layer,
+    })),
     basement: packed.basement ? unpackGroup(packed.basement) : undefined,
     oceanTop: packed.oceanTop
       ? {

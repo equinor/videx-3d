@@ -24,6 +24,7 @@ import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import storyArgs from '../../storybook/story-args.json';
 import { UtmArea } from '../UtmArea';
 import { Chunk } from './Chunk';
+import { layersFromGroups } from './chunk-defs';
 import { ChunkStack } from './ChunkStack';
 import { OceanChunk } from './OceanChunk';
 
@@ -201,7 +202,7 @@ const ChunkStory = (props: ChunkStoryProps) => {
               )
             ))}
           <Chunk
-            groups={groups}
+            layers={layersFromGroups(groups)}
             surfaceOpacity={props.surfaceOpacity}
             wallOpacity={props.wallOpacity}
             wireframe={props.wireframe}

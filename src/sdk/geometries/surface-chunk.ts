@@ -8,6 +8,11 @@ import {
   PlanarPolygonGeometry,
 } from './planar-geometry';
 import {
+  duneRelief,
+  RELIEF_FEATURE_SIZE,
+  ridgeRelief,
+} from './procedural-relief';
+import {
   createClippedSurface,
   SurfaceClipHeader,
   surfaceWorldToGrid,
@@ -36,8 +41,6 @@ export type SurfaceChunkLayer = {
    * sample the shared rim against this layer's grid.
    */
   worldPosition: Vec2;
-  /** side-wall colour for the interval directly below this surface */
-  color: string;
   /** value marking a missing/hole sample (default -1) */
   nullValue?: number;
 };
@@ -92,6 +95,15 @@ export type SurfaceChunkBasementProcedural = {
   variation?: number;
   /** procedural seed. Default 0. */
   seed?: number;
+  /**
+   * Wavelength of the coarsest relief feature, in WORLD units. Default 8000.
+   *
+   * The field is evaluated in world space, so two chunks covering the same ground
+   * generate the same rock — which is the whole point: it used to be evaluated in
+   * rim-relative coordinates, so changing a chunk's outline changed its geology,
+   * and neighbours never matched.
+   */
+  featureSize?: number;
   /** top tessellation across the larger footprint extent. Default 96. */
   segments?: number;
 };
@@ -140,6 +152,12 @@ export type SurfaceChunkOceanTopProcedural = {
   variation?: number;
   /** procedural seed. Default 0. */
   seed?: number;
+  /**
+   * Wavelength of the coarsest dune, in WORLD units. Default 8000. Evaluated in
+   * world space so neighbouring chunks share one continuous sea bed (see
+   * {@link SurfaceChunkBasementProcedural.featureSize}).
+   */
+  featureSize?: number;
   /** sea-bed tessellation across the larger footprint extent. Default 64. */
   segments?: number;
 };
@@ -160,16 +178,66 @@ export type SurfaceChunkOceanTop = {
   procedural?: SurfaceChunkOceanTopProcedural;
 };
 
-/** A coloured side-wall mesh for one interval of a {@link SurfaceChunk}. */
+/** A coloured side-wall mesh (basement slot). */
 export type SurfaceChunkWall = {
   geometry: BufferGeometry;
   color: string;
 };
 
-/** A coloured clipped-surface mesh of a {@link SurfaceChunk}. */
+/** A coloured clipped-surface mesh (basement slot). */
 export type SurfaceChunkSurface = {
   geometry: BufferGeometry;
   color: string;
+};
+
+/**
+ * One mesh of a chunk, tagged with the layer it came from.
+ *
+ * The index matters because the lists are SPARSE: a layer whose geometry was
+ * dropped contributes no surface, and a wall exists only for a filled interval. So
+ * position in the list says nothing about which layer a mesh belongs to — which is
+ * exactly what a caller needs to know to give it the right material.
+ *
+ * @group Geometries
+ */
+export type SurfaceChunkMesh = {
+  geometry: BufferGeometry;
+  /** index into the caller's layer list (for a wall: the layer ABOVE the interval) */
+  layer: number;
+};
+
+/**
+ * One layer's share of {@link SurfaceChunkDiagnostics}. The chunk-level totals are
+ * sums, which hide WHICH layer lost its geometry — and that is usually the only
+ * question worth asking when a chunk comes out with holes in it.
+ *
+ * @group Geometries
+ */
+export type SurfaceChunkLayerDiagnostics = {
+  /** position in the chunk's flat layer order (0 = the chunk's own top) */
+  index: number;
+  /** the surface id, so a row can be tied back to a name (null when synthetic) */
+  id: string | null;
+  /**
+   * Share of the REQUESTED footprint where this layer has data of its own (0..1).
+   *
+   * Measured before the outline is cut back to the data (see
+   * `trimPolygonToCoverage`), so that a chunk which shrank can be traced to the
+   * layer that shrank it. Measuring it after the cut would report 1 for every
+   * layer of every chunk, by construction.
+   */
+  coverage: number;
+  /** triangles actually drawn for this layer */
+  triangles: number;
+  /** triangles dropped because the unit is not present (no data / truncated) */
+  droppedAbsent: number;
+  /** triangles dropped because the unit has no thickness there */
+  droppedCollapsed: number;
+  /**
+   * Share of its jointly-covered vertices coincident with the layer above,
+   * measured BEFORE the resolve (~1 = a duplicated horizon).
+   */
+  duplicate: number;
 };
 
 /**
@@ -198,6 +266,21 @@ export type SurfaceChunkDiagnostics = {
   crossings: number;
   /** the same, counted only where BOTH layers have data of their own */
   crossingsCovered: number;
+  /** per-layer breakdown, in the chunk's flat layer order */
+  layers: SurfaceChunkLayerDiagnostics[];
+  /**
+   * Whether the requested outline had to be cut back to where the layers have
+   * data. A chunk quietly shrinking is exactly the kind of thing that should not
+   * be quiet.
+   */
+  outlineTrimmed: boolean;
+  /** share of the requested footprint that survived (1 = untouched) */
+  outlineCoverage: number;
+  /**
+   * Rim vertices the tessellation dropped (see `StackTessellation.rimDropped`).
+   * Non-zero means the wall and the surface disagree about where the chunk ends.
+   */
+  rimDropped: number;
   /** deepest interpenetration found, in world units */
   maxOverlap: number;
   /** largest share of a layer coincident with the one above it (~1 = duplicated horizon) */
@@ -270,19 +353,34 @@ export type SurfaceChunkMetrics = {
  *
  * @group Geometries
  */
+/**
+ * A bundle of surfaces and the walls between them. Still the shape of the
+ * basement slot; the chunk's own layers are a flat ordered list (see
+ * {@link SurfaceChunk}).
+ *
+ * @group Geometries
+ */
 export type SurfaceChunkGroup = {
   surfaces: SurfaceChunkSurface[];
   walls: SurfaceChunkWall[];
 };
 
 /**
- * The result of {@link createSurfaceChunk}: one {@link SurfaceChunkGroup} per input
- * group (mirroring the input shape), all in one common scene frame.
+ * The result of {@link createSurfaceChunk}: the chunk's layers in stratigraphic
+ * order, all in one common scene frame.
+ *
+ * Surfaces and walls are FLAT lists rather than groups. A chunk is a run of
+ * boundaries, and the wall between two of them exists or does not — whether a
+ * given interval is filled is a property of that interval
+ * ({@link AssembleChunkLayer.fill}), not of a grouping imposed on the layers.
  *
  * @group Geometries
  */
 export type SurfaceChunk = {
-  groups: SurfaceChunkGroup[];
+  /** one per DRAWN layer, tagged with its layer index */
+  surfaces: SurfaceChunkMesh[];
+  /** one per FILLED interval, tagged with the layer above it */
+  walls: SurfaceChunkMesh[];
   /**
    * The basement block, present only when the `basement` option is set. Its
    * `surfaces` hold the flat base cap (and, for a standalone basement, the top cap
@@ -385,14 +483,15 @@ export function createSurfaceChunk(
   const tDensify = performance.now();
 
   // Flatten the groups but remember which group each layer belongs to, so the
-  // shared rim / clip machinery runs once across every layer while the output and
-  // the walls stay grouped.
+  // shared rim / clip machinery runs once across every layer. A group becomes a
+  // run of FILLED intervals: every layer fills down to the next one except the
+  // last of its group, which leaves the gap to the next group open.
   const flatLayers: SurfaceChunkLayer[] = [];
-  const layerGroup: number[] = [];
-  groups.forEach((group, gi) =>
-    group.forEach(layer => {
+  const fills: boolean[] = [];
+  groups.forEach(group =>
+    group.forEach((layer, i) => {
       flatLayers.push(layer);
-      layerGroup.push(gi);
+      fills.push(i + 1 < group.length);
     }),
   );
 
@@ -408,13 +507,11 @@ export function createSurfaceChunk(
     return {
       geometry: clip.geometry,
       rimY: clip.rimY,
-      color: layer.color,
-      groupIndex: layerGroup[i],
+      fill: fills[i],
     };
   });
 
   return assembleChunk(
-    groups.length,
     layers,
     rings,
     densified,
@@ -531,10 +628,12 @@ export function clipChunkLayer(
 export type AssembleChunkLayer = {
   geometry: BufferGeometry | null;
   rimY: number[][];
-  /** side-wall colour for the interval below this surface */
-  color: string;
-  /** which input group this layer belongs to */
-  groupIndex: number;
+  /**
+   * Draw the interval BELOW this layer (a wall down to the next one). `false` (the
+   * default) leaves it open — which is how a gap between zones, and a surface with
+   * no volume at all, are both expressed.
+   */
+  fill?: boolean;
 };
 
 /** Options for {@link assembleChunk} (the non-clip build parameters). */
@@ -566,7 +665,6 @@ export type ChunkBuildTimings = {
  * @group Geometries
  */
 export function assembleChunk(
-  groupCount: number,
   layers: AssembleChunkLayer[],
   rings: Coordinates2D[],
   densified: PlanarPolygonGeometry,
@@ -575,45 +673,35 @@ export function assembleChunk(
 ): SurfaceChunk {
   const maxError = options.maxError ?? 5;
 
-  const groupSurfaces: SurfaceChunkSurface[][] = Array.from(
-    { length: groupCount },
-    () => [],
-  );
-  // rimY[flatLayer][ring][vertex] — each layer's rim depth at the shared rim points.
+  const surfaces: SurfaceChunkMesh[] = [];
+  // rimY[layer][ring][vertex] — each layer's rim depth at the shared rim points.
   const rimY: number[][][] = [];
-  const layerGroup: number[] = [];
   // Deepest built surface geometry (last non-null layer), used to keep a
   // procedural basement floor below the whole chunk.
   let deepestGeo: BufferGeometry | null = null;
   let surfaceTris = 0;
 
-  for (const layer of layers) {
-    layerGroup.push(layer.groupIndex);
+  layers.forEach((layer, i) => {
     rimY.push(layer.rimY);
     if (layer.geometry) {
-      groupSurfaces[layer.groupIndex].push({
-        geometry: layer.geometry,
-        color: layer.color,
-      });
+      surfaces.push({ geometry: layer.geometry, layer: i });
       deepestGeo = layer.geometry;
       const idx = layer.geometry.getIndex();
       if (idx) surfaceTris += idx.count / 3;
     }
-  }
+  });
 
-  // Side walls: one mesh per interval, coloured by the surface above it. Only
-  // intervals within a group get a wall; the gap between groups is left open.
+  // Side walls: one mesh per FILLED interval, tagged with the layer above it. An
+  // interval the caller did not fill is simply left open — that is how both a gap
+  // between zones and a surface with no volume are expressed.
   const w0 = performance.now();
-  const groupWalls: SurfaceChunkWall[][] = Array.from(
-    { length: groupCount },
-    () => [],
-  );
+  const walls: SurfaceChunkMesh[] = [];
   let wallTris = 0;
   for (let i = 0; i + 1 < layers.length; i++) {
-    if (layerGroup[i] !== layerGroup[i + 1]) continue;
+    if (!layers[i].fill) continue;
     const geometry = buildIntervalWalls(rings, rimY[i], rimY[i + 1]);
     if (geometry) {
-      groupWalls[layerGroup[i]].push({ geometry, color: layers[i].color });
+      walls.push({ geometry, layer: i });
       const idx = geometry.getIndex();
       if (idx) wallTris += idx.count / 3;
     }
@@ -669,16 +757,6 @@ export function assembleChunk(
   }
   const oceanTopMs = performance.now() - o0;
 
-  const groupsOut: SurfaceChunkGroup[] = Array.from(
-    { length: groupCount },
-    (_, gi) => ({
-      surfaces: groupSurfaces[gi],
-      walls: groupWalls[gi],
-    }),
-  );
-  const surfaceCount = groupSurfaces.reduce((a, g) => a + g.length, 0);
-  const wallCount = groupWalls.reduce((a, g) => a + g.length, 0);
-
   const metrics: SurfaceChunkMetrics = {
     densifyMs: timings.densifyMs,
     clipMs: timings.clipMs,
@@ -688,14 +766,14 @@ export function assembleChunk(
     oceanTopMs,
     totalMs: performance.now() - timings.t0,
     layers: layers.length,
-    surfaces: surfaceCount,
-    walls: wallCount,
+    surfaces: surfaces.length,
+    walls: walls.length,
     triangles: Math.round(surfaceTris + wallTris + basementTris + oceanTopTris),
     rimPoints: rings.reduce((a, r) => a + r.length, 0),
     diagnostics: options.diagnostics,
   };
 
-  return { groups: groupsOut, basement, oceanTop, metrics };
+  return { surfaces, walls, basement, oceanTop, metrics };
 }
 
 /** Default procedural-basement colour (dark gray rock). */
@@ -720,21 +798,17 @@ function buildBasement(
   const color = basement.color ?? BASEMENT_COLOR;
   const thickness = basement.thickness ?? 500;
 
-  // Shared-rim bounding box in scene XZ (used by the procedural top and the base).
+  // Shared-rim origin in scene XZ (where the cap's sampling grid starts). The
+  // procedural fields are anchored in WORLD space, so the rim EXTENT no longer
+  // takes part in them.
   let minX = Infinity;
   let minZ = Infinity;
-  let maxX = -Infinity;
-  let maxZ = -Infinity;
   for (const ring of rings)
     for (const [x, z] of ring) {
       if (x < minX) minX = x;
-      if (x > maxX) maxX = x;
       if (z < minZ) minZ = z;
-      if (z > maxZ) maxZ = z;
     }
   if (!Number.isFinite(minX)) return undefined;
-  const w = Math.max(maxX - minX, 1e-6);
-  const l = Math.max(maxZ - minZ, 1e-6);
 
   // --- Determine the TOP: its rim and (for standalone) a cap mesh -------------
   let topRim: number[][];
@@ -790,8 +864,9 @@ function buildBasement(
     const seed = proc.seed ?? 0;
     const segments = Math.max(2, Math.floor(proc.segments ?? 96));
     const mode = proc.depthMode ?? 'mean';
+    const featureSize = Math.max(proc.featureSize ?? RELIEF_FEATURE_SIZE, 1);
     const topFn = (x: number, z: number) => {
-      const n = basementNoise((x - minX) / w, (z - minZ) / l, seed);
+      const n = ridgeRelief(x / featureSize, z / featureSize, seed);
       return mode === 'min'
         ? -proc.depth - variation * n
         : -proc.depth + variation * (2 * n - 1);
@@ -930,50 +1005,6 @@ function buildCap(
 }
 
 /**
- * Procedural [0, 1] relief noise for the basement floor. Unlike the smooth ocean
- * sea-bed dunes, this is a **ridged, multi-octave** field (`1 - |sin|` creases per
- * octave, slow amplitude falloff, sharpened) so it reads as a dramatic, jagged
- * rocky surface rather than rolling sand.
- */
-function basementNoise(fx: number, fz: number, seed: number): number {
-  const ridge = (a: number) => 1 - Math.abs(Math.sin(a));
-  const freqs = [3, 7, 15, 29];
-  let n = 0;
-  let amp = 1;
-  let norm = 0;
-  for (let o = 0; o < freqs.length; o++) {
-    const f = freqs[o];
-    n +=
-      amp *
-      ridge((fx * f + seed) * Math.PI) *
-      ridge((fz * f - seed * 0.7) * Math.PI + 0.9);
-    norm += amp;
-    amp *= 0.62; // slow falloff keeps strong high-frequency (rocky) detail
-  }
-  n /= norm;
-  return Math.min(Math.max(Math.pow(n, 1.4), 0), 1); // sharpen toward blocky rock
-}
-
-/**
- * Smooth [0, 1] sea-bed relief noise (a small sum of sines — rolling dunes), the
- * counterpart to the ridged {@link basementNoise}.
- */
-function seabedNoise(fx: number, fz: number, seed: number): number {
-  let n = 0.5;
-  n +=
-    0.25 * Math.sin((fx * 6.0 + seed) * Math.PI) * Math.cos(fz * 5.0 * Math.PI);
-  n +=
-    0.15 *
-    Math.sin((fx * 13.0 - seed) * Math.PI + 1.7) *
-    Math.cos(fz * 11.0 * Math.PI - 0.6);
-  n +=
-    0.1 *
-    Math.sin(fx * 23.0 * Math.PI + 0.3) *
-    Math.cos(fz * 19.0 * Math.PI + 2.1);
-  return Math.min(Math.max(n, 0), 1);
-}
-
-/**
  * Build the {@link SurfaceChunkOceanTop} water geometries: a flat water surface at
  * `waterLevel` and a water body down to the sea bed. In surface mode the bed is the
  * shallowest layer's rim (`shallowestRim`); with no layers a procedural sea bed is
@@ -988,20 +1019,16 @@ function buildOceanTop(
 ): SurfaceChunk['oceanTop'] {
   const waterLevel = oceanTop.waterLevel ?? 0;
 
+  // Rim origin only — the procedural bed is anchored in WORLD space, so the rim
+  // extent no longer takes part in it.
   let minX = Infinity;
   let minZ = Infinity;
-  let maxX = -Infinity;
-  let maxZ = -Infinity;
   for (const ring of rings)
     for (const [x, z] of ring) {
       if (x < minX) minX = x;
-      if (x > maxX) maxX = x;
       if (z < minZ) minZ = z;
-      if (z > maxZ) maxZ = z;
     }
   if (!Number.isFinite(minX)) return undefined;
-  const w = Math.max(maxX - minX, 1e-6);
-  const l = Math.max(maxZ - minZ, 1e-6);
 
   const water = buildCap(
     rings,
@@ -1027,8 +1054,9 @@ function buildOceanTop(
     const seed = proc.seed ?? 0;
     const segments = Math.max(2, Math.floor(proc.segments ?? 64));
     const mode = proc.depthMode ?? 'mean';
+    const featureSize = Math.max(proc.featureSize ?? RELIEF_FEATURE_SIZE, 1);
     const bedFn = (x: number, z: number) => {
-      const n = seabedNoise((x - minX) / w, (z - minZ) / l, seed);
+      const n = duneRelief(x / featureSize, z / featureSize, seed);
       return mode === 'min'
         ? waterLevel - proc.depth - variation * n
         : waterLevel - proc.depth + variation * (2 * n - 1);

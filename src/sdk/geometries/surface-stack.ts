@@ -6,6 +6,8 @@ import {
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
 } from './planar-geometry';
+import { ringsToPolygonCoordinates, simplifyRing } from './polygon-outline';
+import { evaluateRelief, StackRelief } from './procedural-relief';
 import {
   gridToGridTransform,
   SurfaceClipHeader,
@@ -17,15 +19,20 @@ import {
   collectStackCandidates,
   STACK_NO_DATA,
 } from './surface-stack-candidates';
-import { GridPolygon, makeGridInside } from './triangulate-grid-delaunay';
+import {
+  GridPolygon,
+  makeGridInside,
+  smoothRings,
+  traceValidBoundary,
+} from './triangulate-grid-delaunay';
 
 /**
- * A layer entering a shared-tessellation stack: the elevation grid plus how to
- * place it. Same shape as a chunk layer, minus the appearance.
+ * A layer entering a shared-tessellation stack from an elevation GRID: the
+ * samples plus how to place them.
  *
  * @group Geometries
  */
-export type StackLayer = {
+export type StackGridLayer = {
   /** row-major elevation grid of length `header.nx * header.ny` */
   values: Float32Array;
   /** grid geometry */
@@ -40,6 +47,91 @@ export type StackLayer = {
   /** value marking a missing sample (default -1) */
   nullValue?: number;
 };
+
+/**
+ * A layer with no data behind it — a plane, optionally perturbed by a procedural
+ * relief field.
+ *
+ * This is what makes water, a procedural sea bed and a basement floor ordinary
+ * members of the stack rather than special cases bolted on beside it: each gets
+ * the same shared tessellation, the same monotone guarantee, the same walls and
+ * the same collapse.
+ *
+ * The base is either ABSOLUTE (`depth` below sea level, positive-down, matching
+ * how surfaces are given) or RELATIVE (`offset` below the layer above it).
+ *
+ * @group Geometries
+ */
+export type StackSyntheticLayer = {
+  /** metres below sea level (positive-down). `0` is sea level. */
+  depth?: number;
+  /**
+   * Metres below the layer ABOVE this one — a floor that follows whatever it
+   * hangs from. Ignored when `depth` is given, and meaningless on the first layer
+   * (there is nothing above it to hang from).
+   */
+  offset?: number;
+  /** optional procedural perturbation of the base plane */
+  relief?: StackRelief;
+};
+
+/**
+ * A layer entering a shared-tessellation stack: an elevation grid, or a synthetic
+ * plane.
+ *
+ * @group Geometries
+ */
+export type StackLayer = StackGridLayer | StackSyntheticLayer;
+
+/** Whether a stack layer is synthetic (has no grid behind it). */
+export function isSyntheticLayer(
+  layer: StackLayer,
+): layer is StackSyntheticLayer {
+  return (layer as StackGridLayer).values === undefined;
+}
+
+/**
+ * Fill a channel for a synthetic layer over the common grid, in scene Y.
+ *
+ * Shared by `buildStackReference` and the chunk generator's shared-column path so
+ * the two cannot drift — `offset` in particular depends on the layer above, so the
+ * evaluation order is part of the contract.
+ *
+ * @param previous the channel of the layer above, for `offset`. Without it an
+ *   `offset` layer has nothing to hang from and `null` is returned.
+ *
+ * @group Geometries
+ */
+export function buildSyntheticChannel(
+  header: SurfaceClipHeader,
+  worldPosition: Vec2,
+  layer: StackSyntheticLayer,
+  previous: Float32Array | null,
+): Float32Array | null {
+  const { nx, ny } = header;
+  const count = nx * ny;
+  const out = new Float32Array(count);
+
+  if (layer.depth !== undefined) {
+    out.fill(-layer.depth);
+  } else if (layer.offset !== undefined) {
+    if (!previous) return null;
+    for (let n = 0; n < count; n++) out[n] = previous[n] - layer.offset;
+  } else {
+    return null;
+  }
+
+  if (layer.relief) {
+    const toWorld = surfaceGridToWorld(header, worldPosition);
+    for (let row = 0; row < ny; row++) {
+      for (let col = 0; col < nx; col++) {
+        const [x, z] = toWorld(col, row);
+        out[row * nx + col] += evaluateRelief(layer.relief, x, z);
+      }
+    }
+  }
+  return out;
+}
 
 /**
  * Every layer of a stack resampled onto ONE common grid, in **scene Y** (metres,
@@ -88,6 +180,18 @@ export type StackTessellation = {
   indices: Uint32Array;
   /** vertex indices along each rim ring, in ring order */
   rimVertices: number[][];
+  /**
+   * Rim vertices that ended up in NO kept triangle and are therefore missing from
+   * `rimVertices`.
+   *
+   * ⚠️ Should be 0. The walls are built from the rim rings, so a dropped vertex
+   * makes the wall cut a straight chord across the gap while the SURFACE boundary
+   * still follows the real triangle edges — the surface then juts out past the
+   * wall. For a simple polygon it cannot happen (every rim vertex has interior
+   * triangles), so a non-zero count means the outline has a zero-area spike or
+   * crosses itself.
+   */
+  rimDropped: number;
 };
 
 /** Options for {@link resolveStackOrder}. */
@@ -322,16 +426,19 @@ export function buildStackReference(
   const maxNodes = options.maxNodes ?? 4_000_000;
 
   // The finest layer defines the common domain, so no layer is resampled up.
+  // Synthetic layers have no grid to offer, so at least one real one is needed.
   let best = -1;
   let bestArea = Infinity;
   layers.forEach((layer, i) => {
+    if (isSyntheticLayer(layer)) return;
     const area = layer.header.xinc * layer.header.yinc;
     if (area < bestArea) {
       bestArea = area;
       best = i;
     }
   });
-  const source = layers[best];
+  if (best < 0) return null;
+  const source = layers[best] as StackGridLayer;
   const bounds = surfaceGridBounds(
     source.header,
     polygon,
@@ -377,6 +484,23 @@ export function buildStackReference(
   const count = nx * ny;
 
   for (const layer of layers) {
+    // A synthetic layer has nothing to resample and data everywhere. `offset`
+    // hangs from the layer above, so this must stay in order.
+    if (isSyntheticLayer(layer)) {
+      const channel = buildSyntheticChannel(
+        header,
+        worldPosition,
+        layer,
+        channels.length > 0 ? channels[channels.length - 1] : null,
+      );
+      // Nothing to hang from (an `offset` with no layer above, or nothing
+      // declared): fall back to sea level. ⚠️ It must still emit a channel —
+      // everything downstream indexes `layers` BY CHANNEL, so dropping one here
+      // would silently pair every later layer with the wrong geometry.
+      channels.push(channel ?? new Float32Array(count));
+      masks.push(new Uint8Array(count).fill(1));
+      continue;
+    }
     const nullValue = layer.nullValue ?? -1;
     const channel = new Float32Array(count);
     const mask = new Uint8Array(count);
@@ -411,6 +535,232 @@ export function buildStackReference(
   }
 
   return { header, worldPosition, channels, masks, step };
+}
+
+/** Options for {@link trimPolygonToCoverage}. */
+export type StackTrimOptions = {
+  /**
+   * `'all'` (default) keeps only where EVERY layer is mapped, `'any'` where at
+   * least one is.
+   *
+   * `'all'` is the self-consistent rule: inside the result no layer is ever
+   * dropped for want of data, nothing is drawn on the hole fill, and every wall
+   * runs between two surfaces that are actually known. `'any'` keeps more of the
+   * requested footprint but preserves the opposite of that — layers vanishing
+   * inside the chunk, and walls whose lower edge stands on fill.
+   */
+  rule?: 'all' | 'any';
+  /**
+   * Per layer, aligned with `masks`: `true` marks a layer whose data extent must
+   * NOT cut the outline back.
+   *
+   * For a boundary a chunk merely BORROWS from its neighbour, the chunk's own
+   * footprint has nothing to do with where that survey stopped — without this a
+   * chunk whose own layers are mapped everywhere still shrinks to the extent of
+   * the surface it was handed. Optional layers are still tallied into
+   * {@link StackTrimResult.layerCoverage}, so the trade stays visible; pair this
+   * with {@link collapseOptionalChannels} so the interval such a layer bounds
+   * pinches out where it is absent instead of resting on the hole fill.
+   */
+  optional?: boolean[];
+  /** ring smoothing strength for the traced boundary (default 1) */
+  smoothing?: number;
+  /**
+   * Simplification tolerance for the traced boundary, in reference GRID CELLS
+   * (default 1). A traced ring carries one vertex per cell, and every one of them
+   * becomes an inserted vertex and a constraint edge in the tessellation — on a
+   * real footprint that is thousands of vertices saying nothing. `0` keeps them.
+   */
+  simplify?: number;
+};
+
+/** The result of {@link trimPolygonToCoverage}. */
+export type StackTrimResult = {
+  /** the footprint to build on, or `null` when nothing is covered at all */
+  polygon: PlanarPolygonGeometry | null;
+  /** whether the outline was actually cut (false = `polygon` IS the input) */
+  trimmed: boolean;
+  /** share of the requested footprint that survived (0..1) */
+  coverage: number;
+  /**
+   * Per-layer share of the REQUESTED footprint that layer has data of its own
+   * for, in `masks` order. Measured before the cut, which is the whole point: the
+   * layer that dragged a chunk down is the one to name, and after the cut every
+   * layer looks fully covered by construction.
+   */
+  layerCoverage: number[];
+};
+
+/**
+ * Cut an outline back to where the stack actually has data.
+ *
+ * A surface's data extent is where the SURVEY stopped, not where the geology did.
+ * Three things could be done about the difference, and only this one avoids
+ * asserting something false:
+ *
+ * - drawing the hole fill claims the unit is flat out there;
+ * - dropping the triangles leaves a hole through a solid block, with the wall
+ *   still standing around it — which reads as a rendering artefact;
+ * - putting a WALL at the data edge claims the unit terminates there, which is the
+ *   most confident lie of the three.
+ *
+ * Trimming instead turns a data edge into an OUTLINE edge, and an outline is
+ * already an admitted arbitrary cut — so the wall drawn there keeps the only
+ * meaning a wall ever has: "this is where we chose to stop".
+ *
+ * The boundary is traced on the reference grid, so it is cell-quantised (which is
+ * honest — data extents ARE cell-quantised) and then smoothed. When the outline is
+ * fully covered the ORIGINAL polygon is returned untouched, so a chunk that needs
+ * no trimming is completely unaffected.
+ *
+ * @param reference the common domain from {@link buildStackReference}
+ * @param polygon the requested outline (scene XZ)
+ * @param masks the layers' coverage masks, in the reference's grid space (a subset
+ *   of `reference.masks` when the chunk draws part of a column)
+ * @param options see {@link StackTrimOptions}
+ *
+ * @group Geometries
+ */
+export function trimPolygonToCoverage(
+  reference: StackReference,
+  polygon: PlanarPolygonGeometry,
+  masks: Uint8Array[],
+  options: StackTrimOptions = {},
+): StackTrimResult {
+  const { nx, ny } = reference.header;
+  if (masks.length === 0)
+    return { polygon, trimmed: false, coverage: 1, layerCoverage: [] };
+  const requireAll = (options.rule ?? 'all') === 'all';
+  // Layers that are allowed to cut the outline. A borrowed boundary is excluded:
+  // it still gets a coverage figure, it just does not get a vote.
+  const voting: number[] = [];
+  for (let m = 0; m < masks.length; m++) {
+    if (!options.optional?.[m]) voting.push(m);
+  }
+
+  const toGrid = surfaceWorldToGrid(reference.header, reference.worldPosition);
+  const components = polygon.coordinates as PlanarPolygonCoordinates;
+  const gridPolygons: GridPolygon[] = components.map(rings =>
+    rings.map(ring => ring.map(([sx, sz]) => toGrid(sx, sz))),
+  );
+  const insidePolygon = makeGridInside(gridPolygons);
+
+  // 1 = inside the outline AND covered. traceValidBoundary wants a grid + an
+  // "invalid" predicate, so this doubles as its input.
+  const kept = new Float32Array(nx * ny);
+  let inside = 0;
+  let covered = 0;
+  // Per-layer tally over the SAME nodes, so a shrunken chunk can name the layer
+  // responsible rather than just reporting that it shrank.
+  const perLayer = new Array<number>(masks.length).fill(0);
+  for (let row = 0; row < ny; row++) {
+    for (let col = 0; col < nx; col++) {
+      const n = row * nx + col;
+      if (!insidePolygon(col, row)) continue;
+      inside++;
+      for (let m = 0; m < masks.length; m++) if (masks[m][n]) perLayer[m]++;
+      // No layer has a vote (every one is borrowed): nothing may trim, so keep
+      // the requested footprint whole — under `any` the empty loop would
+      // otherwise reject every node and throw the chunk away.
+      let hasData = requireAll || voting.length === 0;
+      for (const m of voting) {
+        const mask = masks[m];
+        if (requireAll) {
+          if (!mask[n]) {
+            hasData = false;
+            break;
+          }
+        } else if (mask[n]) {
+          hasData = true;
+          break;
+        }
+      }
+      if (!hasData) continue;
+      covered++;
+      kept[n] = 1;
+    }
+  }
+  const layerCoverage = perLayer.map(c => (inside > 0 ? c / inside : 0));
+
+  if (inside === 0 || covered === 0) {
+    return { polygon: null, trimmed: true, coverage: 0, layerCoverage };
+  }
+  const coverage = covered / inside;
+  // Fully covered: hand back the caller's own polygon, curve and all.
+  if (covered === inside)
+    return { polygon, trimmed: false, coverage: 1, layerCoverage };
+
+  const rings = traceValidBoundary(kept, nx, v => v === 0);
+  if (rings.length === 0)
+    return { polygon: null, trimmed: true, coverage: 0, layerCoverage };
+  const toWorld = surfaceGridToWorld(reference.header, reference.worldPosition);
+  const tolerance = options.simplify ?? 1;
+  // Smooth the staircase first, then drop the vertices that no longer carry any
+  // shape — in GRID units, where the tolerance is a cell count.
+  const scene = smoothRings(rings, options.smoothing ?? 1)
+    .map(ring => simplifyRing(ring as Vec2[], tolerance))
+    .map(ring => ring.map(([col, row]) => toWorld(col, row)));
+  const coordinates = ringsToPolygonCoordinates(scene);
+  if (coordinates.length === 0) {
+    return { polygon: null, trimmed: true, coverage: 0, layerCoverage };
+  }
+  return {
+    polygon: new PlanarPolygonGeometry(coordinates, polygon.offset),
+    trimmed: true,
+    coverage,
+    layerCoverage,
+  };
+}
+
+/**
+ * Pinch out the intervals bounded by OPTIONAL layers where those layers have no
+ * data of their own.
+ *
+ * {@link buildStackReference} fills a layer's holes from the nearest valid sample,
+ * which is the right thing for a layer the chunk is trimmed to — inside the
+ * trimmed footprint the fill is never reached. An optional layer is deliberately
+ * NOT trimmed to (see {@link StackTrimOptions.optional}), so its fill IS reached,
+ * and a flat extrapolation of a survey edge is the most confident lie the geometry
+ * can tell: it draws a surface, and a solid volume down to it, out of nothing.
+ *
+ * Clamping the absent nodes onto the neighbour that defines the layer's interval
+ * gives that interval zero thickness instead, so the collapse pass drops it and
+ * the chunk simply stops where its knowledge does. The neighbour is the layer
+ * ABOVE, or the one BELOW when the optional layer is the chunk's first.
+ *
+ * Channels are copied, never mutated — on a shared column they belong to every
+ * chunk cut from it. Only optional layers allocate.
+ *
+ * @param channels per-layer scene Y at every node (see {@link StackReference})
+ * @param masks per-layer data masks, aligned with `channels`
+ * @param optional per-layer flags, aligned with `channels`
+ * @returns a channels array, sharing the untouched layers by reference
+ *
+ * @group Geometries
+ */
+export function collapseOptionalChannels(
+  channels: Float32Array[],
+  masks: Uint8Array[],
+  optional: boolean[],
+): Float32Array[] {
+  if (!optional.some(Boolean)) return channels;
+  const out = channels.slice();
+  for (let i = 0; i < channels.length; i++) {
+    if (!optional[i]) continue;
+    const mask = masks[i];
+    if (!mask) continue;
+    // The interval this layer bounds lies above it, except at the top of the
+    // chunk where it bounds the one below. Read the layer above from `out`, so
+    // adjacent optional layers chain onto an already-clamped neighbour.
+    const neighbour = i > 0 ? out[i - 1] : channels[i + 1];
+    if (!neighbour) continue;
+    const copy = Float32Array.from(channels[i]);
+    for (let n = 0; n < copy.length; n++) {
+      if (!mask[n]) copy[n] = neighbour[n];
+    }
+    out[i] = copy;
+  }
+  return out;
 }
 
 /**
@@ -513,12 +863,21 @@ export function tessellateStack(
     indices[i] = mapped;
   }
 
+  let rimDropped = 0;
+  const keptRims = rimVertices.map(ring => {
+    const mapped: number[] = [];
+    for (const v of ring) {
+      if (remap[v] >= 0) mapped.push(remap[v]);
+      else rimDropped++;
+    }
+    return mapped;
+  });
+
   return {
     coords: Float32Array.from(coordList),
     indices,
-    rimVertices: rimVertices.map(ring =>
-      ring.map(v => remap[v]).filter(v => v >= 0),
-    ),
+    rimVertices: keptRims,
+    rimDropped,
   };
 }
 
@@ -1009,6 +1368,9 @@ export function stackVertexPositions(
  * layer of a shared tessellation can still be textured (or shaded by
  * `SurfaceMaterial`) exactly as a standalone surface would be.
  *
+ * A synthetic layer has no grid of its own, so it gets the shared tessellation's
+ * own `[0, 1]` span instead — enough for a material that only needs *some* UVs.
+ *
  * @returns `[u0, v0, u1, v1, ...]`
  *
  * @group Geometries
@@ -1018,14 +1380,17 @@ export function stackLayerUvs(
   coords: Float32Array,
   layer: StackLayer,
 ): Float32Array {
-  const { a, b, c, d, e, f } = gridToGridTransform(
-    reference.header,
-    reference.worldPosition,
-    layer.header,
-    layer.worldPosition,
-  );
-  const uDen = layer.header.nx - 1;
-  const vDen = layer.header.ny - 1;
+  const target = isSyntheticLayer(layer) ? reference : layer;
+  const { a, b, c, d, e, f } = isSyntheticLayer(layer)
+    ? { a: 1, b: 0, c: 0, d: 0, e: 1, f: 0 }
+    : gridToGridTransform(
+        reference.header,
+        reference.worldPosition,
+        layer.header,
+        layer.worldPosition,
+      );
+  const uDen = target.header.nx - 1;
+  const vDen = target.header.ny - 1;
   const vertices = coords.length >> 1;
   const out = new Float32Array(vertices * 2);
   for (let v = 0; v < vertices; v++) {

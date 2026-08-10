@@ -27,6 +27,100 @@ export function pointInRing(x: number, y: number, ring: Vec2[]): boolean {
   return inside;
 }
 
+/** Ramer–Douglas–Peucker over an OPEN polyline, iterative (no recursion depth). */
+function simplifyPolyline(points: Vec2[], tolerance: number): Vec2[] {
+  const n = points.length;
+  if (n < 3) return points.slice();
+  const keep = new Uint8Array(n);
+  keep[0] = 1;
+  keep[n - 1] = 1;
+  const stack: [number, number][] = [[0, n - 1]];
+  const sq = tolerance * tolerance;
+
+  while (stack.length > 0) {
+    const [first, last] = stack.pop()!;
+    if (last <= first + 1) continue;
+    const [ax, ay] = points[first];
+    const [bx, by] = points[last];
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len = dx * dx + dy * dy;
+    let worst = -1;
+    let worstAt = -1;
+    for (let i = first + 1; i < last; i++) {
+      const [px, py] = points[i];
+      // squared perpendicular distance to the segment (to its endpoint when the
+      // segment is degenerate, which happens on a closed ring's split points)
+      let d: number;
+      if (len === 0) {
+        d = (px - ax) * (px - ax) + (py - ay) * (py - ay);
+      } else {
+        const t = Math.max(
+          0,
+          Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len),
+        );
+        const qx = ax + t * dx;
+        const qy = ay + t * dy;
+        d = (px - qx) * (px - qx) + (py - qy) * (py - qy);
+      }
+      if (d > worst) {
+        worst = d;
+        worstAt = i;
+      }
+    }
+    if (worst > sq && worstAt > 0) {
+      keep[worstAt] = 1;
+      stack.push([first, worstAt], [worstAt, last]);
+    }
+  }
+
+  const out: Vec2[] = [];
+  for (let i = 0; i < n; i++) if (keep[i]) out.push(points[i]);
+  return out;
+}
+
+/**
+ * Drop the vertices of a closed ring that carry no shape, keeping every point of
+ * the result within `tolerance` of the original (Ramer–Douglas–Peucker).
+ *
+ * A ring traced off a grid carries one vertex per cell, so a long straight or
+ * gently curving run costs hundreds of vertices that say nothing. That matters
+ * beyond memory when the ring becomes a triangulation CONSTRAINT: every vertex is
+ * inserted and every segment is an edge to enforce, so the cost lands in the mesh.
+ *
+ * The ring is split at its two most distant points before simplifying, so the
+ * result does not depend on where the loop happens to start.
+ *
+ * @param ring the closed ring (the last point must NOT repeat the first)
+ * @param tolerance maximum deviation, in the ring's own units
+ *
+ * @group Geometries
+ */
+export function simplifyRing(ring: Vec2[], tolerance: number): Vec2[] {
+  const n = ring.length;
+  if (n < 4 || tolerance <= 0) return ring;
+
+  // Anchor on the point furthest from the first, so the two halves are both
+  // meaningful arcs rather than one arc and one stub.
+  let far = 0;
+  let farD = -1;
+  const [x0, y0] = ring[0];
+  for (let i = 1; i < n; i++) {
+    const d = (ring[i][0] - x0) ** 2 + (ring[i][1] - y0) ** 2;
+    if (d > farD) {
+      farD = d;
+      far = i;
+    }
+  }
+
+  const head = simplifyPolyline(ring.slice(0, far + 1), tolerance);
+  const tail = simplifyPolyline(ring.slice(far), tolerance);
+  // `head` ends on `far` and `tail` starts on it; `tail` ends on ring[n-1], which
+  // is the neighbour of ring[0] around the loop, so neither is repeated.
+  const out = head.concat(tail.slice(1));
+  return out.length >= 3 ? out : ring;
+}
+
 /**
  * Group a flat list of closed, non-crossing rings (scene XZ) into the
  * `[outer, ...holes]` component structure a {@link PlanarPolygonGeometry}

@@ -14,6 +14,7 @@ import {
   SurfaceMeta,
 } from '../../sdk';
 import { UtmAreaContext } from '../UtmArea';
+import { ChunkBuildState, ChunkStackProgress } from './chunk-defs';
 import {
   ChunkOutlineRegistry,
   ChunkStackContext,
@@ -59,6 +60,12 @@ export type ChunkStackProps = {
   rimSpacing?: number;
   /** default interior simplification error (grid height units) for child chunks */
   maxError?: number;
+  /**
+   * Called whenever a child chunk starts or finishes building — for a busy
+   * indicator or a progress bar. See {@link ChunkStackProgress} for why the count
+   * is in chunks rather than in work.
+   */
+  onProgress?: (progress: ChunkStackProgress) => void;
 };
 
 /**
@@ -86,6 +93,7 @@ export const ChunkStack = ({
   surfaces,
   rimSpacing,
   maxError,
+  onProgress,
   children,
 }: PropsWithChildren<ChunkStackProps>) => {
   const store = useData();
@@ -167,10 +175,39 @@ export const ChunkStack = ({
       return () => {
         claims.current.delete(key);
         polygons.current.delete(key);
+        buildStates.current.delete(key);
         rebuildRegistry();
       };
     },
     [rebuildRegistry],
+  );
+
+  // --- Build progress: chunks report their own state, the stack counts them. A
+  //     registered chunk that has not reported yet is still building. ----------
+  const buildStates = useRef(new Map<string, ChunkBuildState>());
+  const onProgressRef = useRef(onProgress);
+  useEffect(() => {
+    onProgressRef.current = onProgress;
+  }, [onProgress]);
+
+  const reportBuildState = useCallback(
+    (key: string, state: ChunkBuildState) => {
+      if (buildStates.current.get(key) === state) return;
+      buildStates.current.set(key, state);
+      const total = claims.current.size;
+      let completed = 0;
+      claims.current.forEach((_, k) => {
+        const s = buildStates.current.get(k);
+        if (s && s !== 'building') completed++;
+      });
+      onProgressRef.current?.({
+        total,
+        building: total - completed,
+        completed,
+        fraction: total === 0 ? 1 : completed / total,
+      });
+    },
+    [],
   );
 
   const publishOutline = useCallback(
@@ -209,6 +246,7 @@ export const ChunkStack = ({
       outlines: registry,
       registerChunk,
       publishOutline,
+      reportBuildState,
     };
   }, [
     outline,
@@ -220,6 +258,7 @@ export const ChunkStack = ({
     registry,
     registerChunk,
     publishOutline,
+    reportBuildState,
   ]);
 
   return (

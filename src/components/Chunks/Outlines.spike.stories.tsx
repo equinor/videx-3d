@@ -27,18 +27,19 @@ import {
   WellboreHeader,
 } from '../../sdk';
 import { parseGeoJsonFeature } from '../../sdk/utils/geojson';
+import { sortByStratAge } from '../../storybook/data/strat-ages';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
 import { get } from '../../storybook/dependencies/api';
-import { sortByStratAge } from '../../storybook/data/strat-ages';
 import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
 import { UtmArea } from '../UtmArea';
 import { Chunk } from './Chunk';
+import { layersFromGroups } from './chunk-defs';
 import { ChunkStack } from './ChunkStack';
 import { CutoutSource } from './cutout';
 import { resolveWellboreOutline } from './resolveWellboreOutline';
@@ -85,7 +86,7 @@ const ChunkPipeline = () => {
     return [base, new OutputPass()];
   }, [scene, camera]);
   void RenderPass;
-  useFrame(() => {}, 2);
+  useFrame(() => { }, 2);
   return <RenderingPipeline passes={passes} />;
 };
 
@@ -351,7 +352,7 @@ const OutlinesStory = (props: OutlinesStoryProps) => {
         <directionalLight position={[0.5, 1, 0.3]} intensity={1.1} />
         <ChunkStack rimSpacing={props.rimSpacing} maxError={props.maxError}>
           <Chunk
-            groups={groups}
+            layers={layersFromGroups(groups)}
             outline={chunkOutline}
             surfaceOpacity={props.surfaceOpacity}
             wallOpacity={props.wallOpacity}

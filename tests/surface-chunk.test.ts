@@ -74,14 +74,12 @@ describe('createSurfaceChunk', () => {
         header,
         referenceDepth: 100, // y = 100 - 100 = 0
         worldPosition: [0, 0],
-        color: '#ff0000',
       },
       {
         values: flat(10, 10, 500),
         header,
         referenceDepth: 1000, // y = 500 - 1000 = -500
         worldPosition: [0, 0],
-        color: '#00ff00',
       },
     ];
     const outer: Vec2[] = [
@@ -94,14 +92,14 @@ describe('createSurfaceChunk', () => {
 
     const chunk = createSurfaceChunk([layers], { polygon, rimSpacing: 200 });
 
-    expect(chunk.groups.length).toBe(1);
-    expect(chunk.groups[0].surfaces.length).toBe(2);
-    expect(chunk.groups[0].walls.length).toBe(1);
+    expect(chunk.surfaces.length).toBe(2);
+    expect(chunk.walls.length).toBe(1);
     // The interval wall takes the colour of the surface above it.
-    expect(chunk.groups[0].walls[0].color).toBe('#ff0000');
+    // The wall is tagged with the layer ABOVE the interval it fills.
+    expect(chunk.walls[0].layer).toBe(0);
 
     // Every wall vertex sits on the top depth (0) or the bottom depth (-500).
-    const pos = chunk.groups[0].walls[0].geometry.getAttribute('position');
+    const pos = chunk.walls[0].geometry.getAttribute('position');
     expect(pos.count).toBeGreaterThan(0);
     for (let i = 0; i < pos.count; i++) {
       const y = pos.getY(i);
@@ -121,30 +119,28 @@ describe('createSurfaceChunk', () => {
     ];
     const polygon = new PlanarPolygonGeometry([[outer]]);
     // Four layers descending in depth, split into two groups of two.
-    const mkLayer = (depth: number, color: string): SurfaceChunkLayer => ({
+    const mkLayer = (depth: number): SurfaceChunkLayer => ({
       values: flat(10, 10, 100),
       header,
       referenceDepth: 100 + depth, // y = 100 - (100 + depth) = -depth
       worldPosition: [0, 0],
-      color,
     });
     const groups: SurfaceChunkLayer[][] = [
-      [mkLayer(0, '#f00'), mkLayer(200, '#0f0')],
-      [mkLayer(600, '#00f'), mkLayer(800, '#ff0')],
+      [mkLayer(0), mkLayer(200)],
+      [mkLayer(600), mkLayer(800)],
     ];
 
     const chunk = createSurfaceChunk(groups, { polygon, rimSpacing: 200 });
 
-    expect(chunk.groups.length).toBe(2);
-    // Each group keeps its own two surfaces and exactly one interior wall...
-    for (const g of chunk.groups) {
-      expect(g.surfaces.length).toBe(2);
-      expect(g.walls.length).toBe(1);
-    }
-    // ...so there are 2 walls total, not 3 (no wall bridges the group gap).
+    expect(chunk.surfaces.length).toBe(4);
+    // Each group's interior interval is filled, but the one bridging the two
+    // groups is not — 2 walls, not 3.
+    expect(chunk.walls.length).toBe(2);
     expect(chunk.metrics.walls).toBe(2);
-    expect(chunk.groups[0].walls[0].color).toBe('#f00');
-    expect(chunk.groups[1].walls[0].color).toBe('#00f');
+    // ...and each wall names the layer above it: 0 (inside group 1) and 2
+    // (inside group 2) — never 1, which would bridge the gap.
+    expect(chunk.walls[0].layer).toBe(0);
+    expect(chunk.walls[1].layer).toBe(2);
   });
 
   it('gives wall vertices horizontal normals, shared top-to-bottom', () => {
@@ -162,19 +158,17 @@ describe('createSurfaceChunk', () => {
         header,
         referenceDepth: 100,
         worldPosition: [0, 0],
-        color: '#f00',
       },
       {
         values: flat(10, 10, 100),
         header,
         referenceDepth: 600,
         worldPosition: [0, 0],
-        color: '#0f0',
       },
     ];
 
     const chunk = createSurfaceChunk([layers], { polygon, rimSpacing: 200 });
-    const normal = chunk.groups[0].walls[0].geometry.getAttribute('normal');
+    const normal = chunk.walls[0].geometry.getAttribute('normal');
     expect(normal).toBeTruthy();
 
     for (let i = 0; i < normal.count; i++) {
@@ -207,14 +201,12 @@ describe('createSurfaceChunk', () => {
           header,
           referenceDepth: 100,
           worldPosition: [0, 0],
-          color: '#f00',
         },
         {
           values: flat(10, 10, 500),
           header,
           referenceDepth: 1000, // y = -500
           worldPosition: [0, 0],
-          color: '#0f0',
         },
       ],
     ];
@@ -260,7 +252,6 @@ describe('createSurfaceChunk', () => {
           header,
           referenceDepth: 100, // y = 0
           worldPosition: [0, 0],
-          color: '#f00',
         },
       ],
     ];
@@ -312,7 +303,6 @@ describe('createSurfaceChunk', () => {
           header,
           referenceDepth: 100, // y = 0
           worldPosition: [0, 0],
-          color: '#f00',
         },
       ],
     ];
@@ -329,7 +319,6 @@ describe('createSurfaceChunk', () => {
             header,
             referenceDepth: 1300, // y = -1000
             worldPosition: [0, 0],
-            color: '#000000',
           },
         },
       },
@@ -364,7 +353,6 @@ describe('createSurfaceChunk', () => {
           header,
           referenceDepth: 1000, // shallowest surface at y = -500
           worldPosition: [0, 0],
-          color: '#0f0',
         },
       ],
     ];
@@ -405,7 +393,7 @@ describe('createSurfaceChunk', () => {
       },
     });
 
-    expect(chunk.groups.length).toBe(0);
+    expect(chunk.surfaces.length).toBe(0);
     expect(chunk.oceanTop).toBeDefined();
     const ocean = chunk.oceanTop!;
     expect(ocean.bed).toBeDefined();

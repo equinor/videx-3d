@@ -2,6 +2,19 @@ import { useEffect, useMemo } from 'react';
 import { DoubleSide, Material, MeshStandardMaterial } from 'three';
 import { makeOitCompatible } from '../../rendering/oit-material';
 import { SurfaceChunk } from '../../sdk';
+import { ChunkLayer } from './chunk-defs';
+
+/** Fallback per-layer palette, cycled by layer order. */
+const DEFAULT_PALETTE = [
+  '#4e79a7',
+  '#f28e2c',
+  '#59a14f',
+  '#e15759',
+  '#af7aa1',
+  '#76b7b2',
+  '#edc949',
+  '#9c755f',
+];
 
 /**
  * {@link ChunkMeshes} props.
@@ -9,24 +22,20 @@ import { SurfaceChunk } from '../../sdk';
  * @group Components
  */
 export type ChunkMeshesProps = {
-  /** a built chunk (from `createSurfaceChunk`) */
+  /** a built chunk (from `createSurfaceChunk` or the `surfaceChunk` generator) */
   chunk: SurfaceChunk;
+  /**
+   * The layers the chunk was built from, in the same order — the source of each
+   * mesh's material. Every chunk mesh carries its layer index, so a dropped layer
+   * or an unfilled interval cannot shift the mapping.
+   */
+  layers: ChunkLayer[];
   /** surface (top) opacity. Reactive. Default 1. */
   surfaceOpacity?: number;
   /** wall opacity. Reactive. Default 1. */
   wallOpacity?: number;
   /** wireframe. Reactive. Default false. */
   wireframe?: boolean;
-  /**
-   * Material for the chunk's UPPERMOST surface (the first surface of the first
-   * group) — e.g. a `SurfaceMaterial`. Everything else keeps the standard material
-   * built from the layer colours.
-   *
-   * ⚠️ Owned by the caller: it is never disposed here, and it is used as given, so
-   * it must already be OIT-compatible (see `makeOitCompatible`) when the chunk is
-   * rendered through an `OITRenderPass`.
-   */
-  topMaterial?: Material;
   /** render the surface tops. Default true. */
   showSurfaces?: boolean;
   /** render the side walls. Default true. */
@@ -35,29 +44,36 @@ export type ChunkMeshesProps = {
 
 /**
  * Presentational renderer for a built {@link SurfaceChunk}'s geological meshes
- * (grouped surfaces + walls + basement). This is the reactive **appearance** layer:
- * it builds OIT-compatible materials from the chunk's baked colours and the given
- * opacity/wireframe, rebuilding them on appearance change (a fresh identity so the
- * OIT pass re-classifies) but never touching geometry.
+ * (surfaces + walls + basement). This is the reactive **appearance** layer: it
+ * resolves each layer's material — a caller-supplied `Material`, a colour, or the
+ * built-in palette — and rebuilds them on appearance change (a fresh identity so
+ * the OIT pass re-classifies) but never touches geometry.
+ *
+ * ⚠️ A caller-supplied `Material` is used AS GIVEN and never disposed here, so it
+ * must already be OIT-compatible (see `makeOitCompatible`) when the chunk is
+ * rendered through an `OITRenderPass`. Materials built from a colour are owned and
+ * disposed by this component.
  *
  * Geometry ownership (build + disposal) stays with the parent (`Chunk` /
- * `OceanChunk`); this component only owns its materials. The ocean-top water is
- * rendered separately (by `OceanChunk`, via the `Ocean` shader).
+ * `OceanChunk`); this component only owns the materials it created.
  *
  * @group Components
  */
 export const ChunkMeshes = ({
   chunk,
+  layers,
   surfaceOpacity = 1,
   wallOpacity = 1,
   wireframe = false,
-  topMaterial,
   showSurfaces = true,
   showWalls = true,
 }: ChunkMeshesProps) => {
   const materials = useMemo(() => {
-    const make = (color: string, opacity: number) =>
-      makeOitCompatible(
+    // Materials built here are owned here; a caller's Material is passed through
+    // untouched, so the two are tracked separately for disposal.
+    const owned: Material[] = [];
+    const make = (color: string, opacity: number) => {
+      const material = makeOitCompatible(
         new MeshStandardMaterial({
           color,
           side: DoubleSide,
@@ -70,65 +86,73 @@ export const ChunkMeshes = ({
           toneMapped: false,
         }),
       );
-    return {
-      groups: chunk.groups.map(group => ({
-        surfaces: group.surfaces.map(s => make(s.color, surfaceOpacity)),
-        walls: group.walls.map(w => make(w.color, wallOpacity)),
-      })),
-      basement: chunk.basement
-        ? {
-          surfaces: chunk.basement.surfaces.map(s => make(s.color, 1)),
-          walls: chunk.basement.walls.map(w => make(w.color, 1)),
-        }
-        : null,
+      owned.push(material);
+      return material;
     };
-  }, [chunk, surfaceOpacity, wallOpacity, wireframe]);
+
+    const paletteAt = (i: number) =>
+      DEFAULT_PALETTE[i % DEFAULT_PALETTE.length];
+
+    const surfaces = layers.map((layer, i) =>
+      layer.material instanceof Material
+        ? layer.material
+        : make(layer.material ?? paletteAt(i), surfaceOpacity),
+    );
+
+    // `fill: true` means "the same as my own cap" — the common case for a zone
+    // whose wall should read as the unit hanging below its top surface.
+    const walls = layers.map((layer, i) => {
+      const fill =
+        layer.fill === true ? (layer.material ?? paletteAt(i)) : layer.fill;
+      if (fill === undefined || fill === null || fill === false) return null;
+      return fill instanceof Material ? fill : make(fill, wallOpacity);
+    });
+
+    const basement = chunk.basement
+      ? {
+        surfaces: chunk.basement.surfaces.map(s => make(s.color, 1)),
+        walls: chunk.basement.walls.map(w => make(w.color, 1)),
+      }
+      : null;
+
+    return { surfaces, walls, basement, owned };
+  }, [chunk, layers, surfaceOpacity, wallOpacity, wireframe]);
 
   useEffect(() => {
-    return () => {
-      materials.groups.forEach(g => {
-        g.surfaces.forEach(m => m.dispose());
-        g.walls.forEach(m => m.dispose());
-      });
-      materials.basement?.surfaces.forEach(m => m.dispose());
-      materials.basement?.walls.forEach(m => m.dispose());
-    };
+    return () => materials.owned.forEach(m => m.dispose());
   }, [materials]);
 
   return (
     <group>
       {showWalls &&
-        chunk.groups.map((group, gi) =>
-          group.walls.map((wall, i) => (
-            <mesh key={`wall-${gi}-${i}`} geometry={wall.geometry}>
+        chunk.walls.map((wall, i) => {
+          const material = materials.walls[wall.layer];
+          if (!material) return null;
+          return (
+            <mesh key={`wall-${i}`} geometry={wall.geometry}>
               <primitive
-                key={materials.groups[gi].walls[i].uuid}
-                object={materials.groups[gi].walls[i]}
+                key={material.uuid}
+                object={material}
                 attach="material"
               />
             </mesh>
-          )),
-        )}
+          );
+        })}
 
       {showSurfaces &&
-        chunk.groups.map((group, gi) =>
-          group.surfaces.map((surface, i) => {
-            // The chunk's uppermost surface may be handed a caller-owned material.
-            const material =
-              topMaterial && gi === 0 && i === 0
-                ? topMaterial
-                : materials.groups[gi].surfaces[i];
-            return (
-              <mesh key={`surface-${gi}-${i}`} geometry={surface.geometry}>
-                <primitive
-                  key={material.uuid}
-                  object={material}
-                  attach="material"
-                />
-              </mesh>
-            );
-          }),
-        )}
+        chunk.surfaces.map((surface, i) => {
+          const material = materials.surfaces[surface.layer];
+          if (!material) return null;
+          return (
+            <mesh key={`surface-${i}`} geometry={surface.geometry}>
+              <primitive
+                key={material.uuid}
+                object={material}
+                attach="material"
+              />
+            </mesh>
+          );
+        })}
 
       {materials.basement && chunk.basement && (
         <group>
@@ -142,7 +166,7 @@ export const ChunkMeshes = ({
             </mesh>
           ))}
           {chunk.basement.surfaces.map((surface, i) => (
-            <mesh key={`basement-cap-${i}`} geometry={surface.geometry}>
+            <mesh key={`basement-surface-${i}`} geometry={surface.geometry}>
               <primitive
                 key={materials.basement!.surfaces[i].uuid}
                 object={materials.basement!.surfaces[i]}

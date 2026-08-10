@@ -29,13 +29,15 @@ import { DataProviderDecorator } from '../../storybook/decorators/data-provider-
 import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
+import { createOutputPanelDecorator } from '../../storybook/decorators/output-panel-decorator';
 import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
+import { useOutputPanelState } from '../Html/OutputPanel/output-panel-state';
 import { useSurfaceMaterial } from '../Surfaces/useSurfaceMaterial';
 import { UtmArea } from '../UtmArea';
 import { Chunk } from './Chunk';
-import { ChunkResolveOptions } from './chunk-defs';
+import { ChunkResolveOptions, ChunkStackProgress } from './chunk-defs';
 import { ChunkStack } from './ChunkStack';
 import { CutoutSource } from './cutout';
 
@@ -98,6 +100,7 @@ const ChunkPipeline = () => {
 type PerChunkStoryProps = {
   surfaceFrom: number;
   chunkSizes: string;
+  connectChunks: boolean;
   maxError: number;
   wellCount: number;
   radius: number;
@@ -111,6 +114,13 @@ type PerChunkStoryProps = {
   minGap: number;
   collapseThreshold: number;
   refineTerminations: boolean;
+  coverageAbsence: boolean;
+  coverageRule: 'all' | 'any';
+  showWater: boolean;
+  waterDepth: number;
+  seabed: 'none' | 'procedural';
+  seabedDepth: number;
+  seabedRelief: number;
   surfaceOpacity: number;
   wallOpacity: number;
   wireframe: boolean;
@@ -160,6 +170,8 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
           minGap: props.minGap || undefined,
           collapseThreshold: props.collapseThreshold,
           refineTerminations: props.refineTerminations,
+          coverageAbsence: props.coverageAbsence,
+          coverageRule: props.coverageRule,
         }
         : undefined,
     [
@@ -168,6 +180,8 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
       props.minGap,
       props.collapseThreshold,
       props.refineTerminations,
+      props.coverageAbsence,
+      props.coverageRule,
     ],
   );
 
@@ -216,7 +230,11 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
 
   // Per-chunk build report. The library never logs by itself — `onBuild` hands the
   // metrics over and the story decides what to do with them.
-  const report = useCallback((index: number, metrics: SurfaceChunkMetrics) => {
+  const nameOf = useCallback(
+    (id: string) => surfaceMetaDict[id]?.name ?? id,
+    [surfaceMetaDict],
+  );
+  const report = (index: number, metrics: SurfaceChunkMetrics) => {
     const d = metrics.diagnostics;
     console.table([
       {
@@ -226,6 +244,9 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
         droppedAbsent: d?.trianglesAbsent ?? '-',
         droppedThin: d?.trianglesCollapsed ?? '-',
         topKept: d?.topKept ?? '-',
+        trimmed: d?.outlineTrimmed ?? '-',
+        'outline%': d ? (100 * d.outlineCoverage).toFixed(1) : '-',
+        rimDropped: d?.rimDropped ?? '-',
         crossings: d?.crossings ?? '-',
         'crossings(data)': d?.crossingsCovered ?? '-',
         maxOverlap: d ? `${d.maxOverlap.toFixed(1)} m` : '-',
@@ -240,6 +261,72 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
         totalMs: Math.round(metrics.totalMs),
       },
     ]);
+    // Which LAYER lost its geometry, and to what. The chunk totals are sums, so
+    // they cannot answer that — and it is the only question worth asking when a
+    // chunk comes out with holes in it.
+    if (d?.layers?.length) {
+      console.table(
+        d.layers.map(l => ({
+          chunk: index,
+          layer: l.index,
+          name: l.id ? nameOf(l.id) : '(synthetic)',
+          'coverage%': (100 * l.coverage).toFixed(1),
+          'duplicate%': (100 * l.duplicate).toFixed(1),
+          triangles: l.triangles.toLocaleString(),
+          droppedAbsent: l.droppedAbsent,
+          droppedThin: l.droppedCollapsed,
+        })),
+      );
+    }
+  };
+
+  // Memoized per chunk: `Chunk` keys its BUILD on the surfaces and which intervals
+  // are filled, so materials can change without rebuilding geometry.
+  const chunkProps = useMemo(
+    () =>
+      chunks.map((surfaces, i) => {
+        const base = CHUNK_COLORS[i % CHUNK_COLORS.length];
+        const shade = (j: number) =>
+          j % 2 === 0 ? base : darkenColor(base, BAND_DARKEN);
+        const own = surfaces.map((surface, j) => ({
+          surface,
+          material: shade(j),
+          fill: j + 1 < surfaces.length,
+        }));
+        if (!props.connectChunks || i === 0) return own;
+        // Connect to the chunk above by SHARING its last surface: this chunk uses
+        // it as the top of its first interval but does NOT cap it, because the
+        // chunk above already draws that horizon. Drawing it twice would put two
+        // independent tessellations of the same surface in the same place.
+        const above = chunks[i - 1];
+        const shared = above[above.length - 1];
+        return [
+          { surface: shared, cap: false, fill: shade(0) },
+          ...own.map((l, j) => ({ ...l, material: shade(j + 1) })),
+        ];
+      }),
+    [chunks, props.connectChunks],
+  );
+
+  // Stack-level progress — what a host would drive a busy indicator / bar from.
+  // The story runs INSIDE the R3F canvas, so it cannot render DOM itself; it writes
+  // to the OutputPanel's global store and the panel (added as the outermost
+  // decorator) renders outside the canvas.
+  const onProgress = useCallback((p: ChunkStackProgress) => {
+    const done = p.building === 0;
+    useOutputPanelState.getState().set(state => ({
+      groups: {
+        ...state.groups,
+        build: {
+          label: done ? 'Chunks built' : 'Building chunks',
+          value: done
+            ? `${p.total}`
+            : `${p.completed}/${p.total}  ${Math.round(100 * p.fraction)}%`,
+          color: done ? '#59a14f' : '#f28e2c',
+          order: 0,
+        },
+      },
+    }));
   }, []);
 
   // Selected wellbore trajectories (same scene mapping the outlines derive from).
@@ -311,25 +398,56 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
           cutSource={cutSource}
           surfaces={column}
           maxError={props.maxError}
+          onProgress={onProgress}
         >
-          {chunks.map((surfaces, i) => {
-            const base = CHUNK_COLORS[i % CHUNK_COLORS.length];
-            return (
-              <Chunk
-                key={i}
-                groups={[surfaces]}
-                // Colours are assigned by flat layer index (modulo the array), so
-                // two entries band every second surface within the chunk.
-                colors={[base, darkenColor(base, BAND_DARKEN)]}
-                surfaceOpacity={props.surfaceOpacity}
-                wallOpacity={props.wallOpacity}
-                wireframe={props.wireframe}
-                resolve={resolve}
-                topMaterial={i === 0 ? topMaterial : undefined}
-                onBuild={m => report(i, m)}
-              />
-            );
-          })}
+          {chunkProps.map((layers, i) => (
+            <Chunk
+              key={i}
+              // The uppermost surface of the whole stack may use the real
+              // SurfaceMaterial — now just a material on that layer. Water is a
+              // SYNTHETIC layer sitting above it with the interval filled: no
+              // ocean component, no special case.
+              layers={
+                i === 0
+                  ? [
+                    ...(props.showWater
+                      ? [
+                        {
+                          depth: props.waterDepth,
+                          material: '#3fa9d8',
+                          fill: '#2f7fa8',
+                        },
+                      ]
+                      : []),
+                    ...(props.seabed === 'procedural'
+                      ? [
+                        {
+                          depth: props.seabedDepth,
+                          relief: {
+                            kind: 'dunes' as const,
+                            amplitude: props.seabedRelief,
+                          },
+                          material: '#c2b280',
+                          fill: '#8d7f5a',
+                        },
+                      ]
+                      : []),
+                    ...(topMaterial
+                      ? [
+                        { ...layers[0], material: topMaterial },
+                        ...layers.slice(1),
+                      ]
+                      : layers),
+                  ]
+                  : layers
+              }
+              surfaceOpacity={props.surfaceOpacity}
+              wallOpacity={props.wallOpacity}
+              wireframe={props.wireframe}
+              resolve={resolve}
+              onBuild={m => report(i, m)}
+            />
+          ))}
         </ChunkStack>
         {wellLines.map((l, i) => (
           <primitive key={i} object={l} />
@@ -364,6 +482,7 @@ export const Default: Story = {
     // Chunks
     surfaceFrom: 0,
     chunkSizes: '4,4,4,4,3',
+    connectChunks: false,
     maxError: 5,
     // Wellbore outline (shared source; resolved per chunk)
     wellCount: 50,
@@ -379,6 +498,13 @@ export const Default: Story = {
     minGap: 0,
     collapseThreshold: 0.5,
     refineTerminations: true,
+    coverageAbsence: true,
+    coverageRule: 'all',
+    showWater: false,
+    waterDepth: 0,
+    seabed: 'none',
+    seabedDepth: 320,
+    seabedRelief: 120,
     // Appearance
     surfaceOpacity: 1,
     wallOpacity: 1,
@@ -400,6 +526,12 @@ export const Default: Story = {
       control: { type: 'text' },
       description:
         'Surfaces per stacked chunk (shallow→deep), comma-separated.',
+      table: { category: 'Chunks' },
+    },
+    connectChunks: {
+      control: 'boolean',
+      description:
+        'Make each chunk SHARE its upper neighbour’s last surface — it becomes the top of this chunk’s first interval, uncapped (`cap: false`) because the chunk above already draws that horizon. Off, the tiers leave the unit between them undrawn.',
       table: { category: 'Chunks' },
     },
     maxError: {
@@ -472,6 +604,48 @@ export const Default: Story = {
         'Refine the tessellation along the lines where a unit wedges out. Off, the pinch-out can only terminate on edges the height refinement happened to leave there — coarse sawtooth in flat areas.',
       table: { category: 'Resolve' },
     },
+    coverageAbsence: {
+      control: 'boolean',
+      description:
+        'Drop triangles where a layer has no data of its OWN (a surface mapped over a smaller area than the chunk is absent out there, not flat). Off, the nearest-fill stands in for it.',
+      table: { category: 'Resolve' },
+    },
+    coverageRule: {
+      control: { type: 'inline-radio' },
+      options: ['all', 'any'],
+      description:
+        'What “covered” means when the outline is cut back to the mapped area. `all` = every layer (nothing is ever drawn on hole fill, every wall runs between two known surfaces); `any` = at least one layer (keeps more footprint, but layers still vanish inside it).',
+      table: { category: 'Resolve' },
+    },
+    showWater: {
+      control: 'boolean',
+      description:
+        'Add a SYNTHETIC water layer above the first chunk — an ordinary layer with a `level` instead of a surface, filled down to the surface below it.',
+      table: { category: 'Water' },
+    },
+    waterDepth: {
+      control: { type: 'range', min: 0, max: 3000, step: 10 },
+      description:
+        'Metres below sea level for the water plane (POSITIVE-DOWN, same convention as surfaces). ⚠️ Push it past the top surface and shallow-wins truncation flattens that surface to the water plane and drops it — the water does NOT recede. See chunks.md §9.5.1.',
+      table: { category: 'Water' },
+    },
+    seabed: {
+      control: { type: 'inline-radio' },
+      options: ['none', 'procedural'],
+      description:
+        'Insert a PROCEDURAL sea bed between the water and the geology — a synthetic layer with a relief field instead of a grid.',
+      table: { category: 'Water' },
+    },
+    seabedDepth: {
+      control: { type: 'range', min: 0, max: 3000, step: 10 },
+      description: 'Mean depth of the procedural sea bed, positive-down.',
+      table: { category: 'Water' },
+    },
+    seabedRelief: {
+      control: { type: 'range', min: 0, max: 600, step: 10 },
+      description: 'Peak-to-trough relief of the procedural sea bed.',
+      table: { category: 'Water' },
+    },
     surfaceOpacity: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
       table: { category: 'Appearance' },
@@ -506,6 +680,21 @@ export const Default: Story = {
     Canvas3dDecorator,
     GeneratorsProviderDecorator,
     DataProviderDecorator,
+    // LAST = outermost, so the panel is DOM outside the canvas.
+    createOutputPanelDecorator({
+      origin: 'top-left',
+      offset: [10, 10],
+      width: 190,
+      height: 62,
+      opacity: 0.75,
+    }),
+  ],
+  // The panel store is global; clear it so a reload does not show a stale count.
+  loaders: [
+    async () => {
+      useOutputPanelState.setState({ groups: {} });
+      return {};
+    },
   ],
   parameters: {
     // autoClear stays false (RenderingPipeline owns clearing; true wipes OIT targets).

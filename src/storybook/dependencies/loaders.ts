@@ -11,6 +11,11 @@ import {
 } from '../../sdk';
 import { DataLoader } from '../../sdk/data/DataLoader';
 import { VerticalSlice } from '../../sdk/data/types/VerticalSlice';
+import {
+  getSyntheticSurface,
+  isSyntheticSurfaceId,
+  syntheticSurfaceIds,
+} from '../data/synthetic-surfaces';
 import { get } from './api';
 
 export const wellboreHeadersLoader = (store: Store) =>
@@ -48,13 +53,26 @@ export const surfaceMetaLoader = (store: Store) =>
     preloaded: true,
     init: async () => {
       const data = await get('/data/surface-meta.json');
-      return Object.keys(data).map(key => [key, data[key]]);
+      const real = Object.keys(data).map(key => [key, data[key]]);
+      // Generated surfaces are listed alongside the real ones so anything that
+      // enumerates the catalogue (story pickers, the strat sort) sees them too.
+      const synthetic = syntheticSurfaceIds
+        .map(id => getSyntheticSurface(id))
+        .filter(s => s !== null)
+        .map(s => [s.meta.id, s.meta]);
+      return [...real, ...synthetic] as [KeyType, any][];
     },
   });
 
 export const surfaceValuesLoader = (store: Store) =>
   new DataLoader(store, {
     load: async (key: KeyType) => {
+      if (isSyntheticSurfaceId(key)) {
+        // Generated on demand and memoized by the registry; the buffer is copied
+        // per request below, exactly as for a fetched grid.
+        const surface = getSyntheticSurface(key);
+        return surface ? surface.values.buffer : new Float32Array(0).buffer;
+      }
       const values = await get(`/data/surfaces/${key}.json`);
       // The source is a JSON number[] — parsing one field-scale grid costs ~260ms
       // and the parsed array holds 8 bytes per sample. Convert once on load and
