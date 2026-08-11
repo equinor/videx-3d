@@ -512,6 +512,13 @@ export class Delatin {
     this._constraintPhase = true;
   }
 
+  /**
+   * Constraint edges that could not be enforced. Non-zero means two constraint
+   * edges crossed without a vertex at the crossing, so a boundary does NOT follow
+   * mesh edges — node the input (see `nodeGridRings`) rather than ignoring it.
+   */
+  constraintFailures = 0;
+
   private _edgeKey(a: number, b: number) {
     // vertex counts stay well below 2^25, so this stays within Number precision
     return a < b ? a * 33554432 + b : b * 33554432 + a;
@@ -843,9 +850,16 @@ export class Delatin {
       const he = this._findEdge(a, b);
       if (he < 0) continue; // already flipped away
       const o = this._halfedges[he];
-      if (o < 0 || this._isConstrained(a, b)) {
-        // boundary edge or a crossing constraint — not ours to flip
-        this._constrainEdgeBrute(u, v);
+      if (o < 0) {
+        this._constrainEdgeBrute(u, v); // boundary edge — not ours to flip
+        return;
+      }
+      // ⚠️ A CROSSING CONSTRAINT cannot be flipped away, and no sequence of flips
+      // can create (u, v) while it stands: the two segments genuinely cross, so
+      // both can only exist with a vertex at the crossing. Scanning for one is
+      // wasted work (O(edges) per flip on a large mesh), so give up here.
+      if (this._isConstrained(a, b)) {
+        this.constraintFailures++;
         return;
       }
 
@@ -1040,7 +1054,10 @@ export class Delatin {
       }
       if (!flipped) break; // no convex crossing edge available
     }
-    this._lockEdge(u, v);
+    // Locking an edge that was never created would claim a boundary follows mesh
+    // edges when it does not.
+    if (this._findEdge(u, v) >= 0) this._lockEdge(u, v);
+    else this.constraintFailures++;
   }
 
   /**

@@ -997,3 +997,123 @@ describe('refining the edge of a layer’s data', () => {
     ).toBeGreaterThan(nearestVertexTo(with_.tessellation.coords, 19, 16));
   });
 });
+
+describe('cut outlines', () => {
+  // Rippled so the refinement produces a real mesh rather than two triangles.
+  const rippled = () =>
+    layerFrom((col, row) => 1000 + 30 * Math.sin(col / 3) * Math.cos(row / 3));
+  const floor = () => layerFrom(() => 1600);
+  const polygon = maskPolygon(4, 28);
+  // Overlaps the domain's far corner without containing it or being contained.
+  const cut = maskPolygon(16, 32);
+
+  const triangleArea = (
+    tess: { coords: Float32Array },
+    indices: Uint32Array,
+  ) => {
+    let sum = 0;
+    for (let i = 0; i < indices.length; i += 3) {
+      const a = indices[i];
+      const b = indices[i + 1];
+      const c = indices[i + 2];
+      sum +=
+        Math.abs(
+          (tess.coords[2 * b] - tess.coords[2 * a]) *
+            (tess.coords[2 * c + 1] - tess.coords[2 * a + 1]) -
+            (tess.coords[2 * c] - tess.coords[2 * a]) *
+              (tess.coords[2 * b + 1] - tess.coords[2 * a + 1]),
+        ) / 2;
+    }
+    return sum;
+  };
+
+  it('flags exactly the triangles the cut covers, on real mesh edges', () => {
+    const reference = buildStackReference([rippled(), floor()], polygon)!;
+    const tess = tessellateStack(reference, polygon, 5, undefined, [cut])!;
+
+    expect(tess.cuts).toHaveLength(1);
+    const flags = tess.cuts![0];
+    const inside: number[] = [];
+    const outside: number[] = [];
+    for (let t = 0; t < flags.length; t++) {
+      const tri = tess.indices.subarray(3 * t, 3 * t + 3);
+      (flags[t] ? inside : outside).push(...tri);
+    }
+    expect(inside.length).toBeGreaterThan(0);
+    expect(outside.length).toBeGreaterThan(0);
+
+    // The cut is CONSTRAINED, so no triangle straddles it: the flagged area is
+    // the overlap exactly, not to within a triangle. (Coords are grid nodes, and
+    // the reference is cropped to the mask, so both squares shift by the margin.)
+    const overlap = (28 - 16) * (28 - 16);
+    expect(triangleArea(tess, Uint32Array.from(inside))).toBeCloseTo(
+      overlap,
+      6,
+    );
+  });
+
+  it('removes only the capped layer, leaving its wall and its neighbours', () => {
+    const layers = () => [rippled(), floor()];
+    const reference = buildStackReference(layers(), polygon)!;
+    // Same tessellation in both, so only the exclusion differs — constraining a
+    // cut adds vertices, which moves every layer's triangle count on its own.
+    const options = {
+      polygon,
+      maxError: 5,
+      fills: [true, false],
+      cuts: [cut],
+    };
+    const plain = buildSurfaceStack(reference, layers(), options)!;
+    const clipped = buildSurfaceStack(reference, layers(), {
+      ...options,
+      capCuts: [[0], null],
+    })!;
+
+    const tris = (build: typeof plain, layer: number) =>
+      (build.collapsed?.indices[layer] ?? build.tessellation.indices).length /
+      3;
+
+    expect(clipped.collapsed!.droppedExcluded[0]).toBeGreaterThan(0);
+    expect(clipped.collapsed!.droppedExcluded[1]).toBe(0);
+    expect(tris(clipped, 0)).toBeLessThan(tris(plain, 0));
+    expect(tris(clipped, 1)).toBe(tris(plain, 1));
+
+    // ⭐ The interval below is still this chunk's, so its wall is untouched.
+    expect(clipped.walls[0]!.getAttribute('position').count).toBe(
+      plain.walls[0]!.getAttribute('position').count,
+    );
+  });
+
+  // The lid owner can be the NARROWER chunk (see `resolveSeam`), so a cut can fall
+  // wholly inside the outline instead of crossing it — a hole in the cap.
+  it('constrains a cut that falls wholly inside the outline', () => {
+    const inner = maskPolygon(10, 20);
+    const layers = () => [rippled(), floor()];
+    const reference = buildStackReference(layers(), polygon)!;
+    const tess = tessellateStack(reference, polygon, 5, undefined, [inner])!;
+
+    expect(tess.constraintFailures).toBe(0);
+    const flags = tess.cuts![0];
+    const inside: number[] = [];
+    let outside = 0;
+    for (let t = 0; t < flags.length; t++) {
+      if (flags[t]) inside.push(...tess.indices.subarray(3 * t, 3 * t + 3));
+      else outside++;
+    }
+    expect(outside).toBeGreaterThan(0);
+    expect(triangleArea(tess, Uint32Array.from(inside))).toBeCloseTo(
+      (20 - 10) * (20 - 10),
+      6,
+    );
+
+    const holed = buildSurfaceStack(reference, layers(), {
+      polygon,
+      maxError: 5,
+      fills: [true, false],
+      cuts: [inner],
+      capCuts: [[0], null],
+    })!;
+    expect(holed.collapsed!.droppedExcluded[0]).toBe(inside.length / 3);
+    expect(holed.collapsed!.droppedExcluded[1]).toBe(0);
+  });
+});

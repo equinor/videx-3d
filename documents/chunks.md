@@ -6,8 +6,8 @@
 > genuinely unresolved — see §10.
 >
 > §10 is the agreed direction. Coverage is now a per-layer concern, the chunk
-> outline is a pure user crop, and `optional` has been removed; `cap` is still
-> scheduled for removal. Superseded sections are marked in place.
+> outline is a pure user crop, and `optional` has been removed; `cap` has been
+> removed too (§10.8). Superseded sections are marked in place.
 
 ## 1. Motivation
 
@@ -66,8 +66,8 @@ ChunkLayer[]`, shallowest first. Each layer is a boundary, and it declares the
 This replaced an earlier model in which layers were supplied as a **2D array** of
 groups (zones), with walls filling only within a group and adjacent groups implicitly
 separated by a gap. The flat form says the same things but locally, per layer,
-instead of through nesting — which matters once layers also carry `cap` and
-synthetic definitions. `layersFromGroups(groups)` converts the old shape and is
+instead of through nesting — which matters once layers also carry synthetic
+definitions. `layersFromGroups(groups)` converts the old shape and is
 kept for migration.
 
 ### 2.4 Synthetic layers
@@ -579,12 +579,13 @@ field exists for: *which layer is standing on nothing?* A layer at 0 is voided
 > partly mapped (§10.7), and by **voiding** where it is not mapped at all (below).
 
 The reasoning it was built on still holds and is worth keeping. Two chunks that
-meet share a horizon: the wider one caps it, the narrower one carries it with
-`cap: false`. `cap` only suppresses drawing — the layer is still a full member of
-the stack — so under the old trim it still voted, and a detail chunk whose own
-surfaces were mapped everywhere shrank to the extent of whatever survey happened to
-define its floor. On the demo field the wellbore-cut chunk lost a fifth of itself to
-`Basement Base`, a surface it does not even draw.
+meet share a horizon: the wider one caps it, the narrower one carries it without
+drawing it (declared by hand as `cap: false` then, inferred now — §10.8). Not
+drawing a layer never took it out of the stack, so under the old trim it still
+voted, and a detail chunk whose own surfaces were mapped everywhere shrank to the
+extent of whatever survey happened to define its floor. On the demo field the
+wellbore-cut chunk lost a fifth of itself to `Basement Base`, a surface it does not
+even draw.
 
 #### 9.9.1 A layer with no data in the chunk is VOIDED
 
@@ -630,7 +631,7 @@ true 3D volumes belongs to a different component.
 Coverage handling grew one fix at a time — trim the outline (§9.7), then exempt
 borrowed boundaries (§9.9) — and each fix bought area by asserting something. The
 agreed replacement is a single model, described here as the target. `optional` and
-the trim are **gone** (§10.2 step 5); `cap` is **scheduled for removal** — do not
+the trim are **gone** (§10.2 step 5); `cap` is **gone** too (§10.8) — do not
 build on it.
 
 ### 10.1 The model
@@ -701,6 +702,20 @@ build on it.
    bounds how far a wall can stretch. ⚠️ A carrier makes it easy to draw large
    invented volumes — it needs the same distance bound and the §10.1.5 appearance.
 
+   ⭐ **OPEN: is a carrier declared per chunk, or on the `ChunkStack` (per column)?**
+   The wording above says per group, i.e. chunk-private — but the column-level
+   variant settles two things that are open today, and both point the same way:
+   - `sealMode: 'void'` cannot move to the column while the deepest column surface
+     has nothing below it: `splitVoidChannels` needs BOTH neighbours, so it would
+     degrade to a one-sided taper exactly where a chunk hangs its own floor (§10.7).
+   - The column seal falls back to its one-neighbour rule for that same surface. The
+     justification — two chunks may hang DIFFERENT floors under one horizon, so a
+     chunk-private boundary must not set a shared height — is really an argument for
+     declaring the floor on the column, where there is exactly one of it.
+   Every scene so far declares an effectively column-wide floor (`SeabedConnection`'s
+   `{offset: basementThickness}` is chunk-private only because there is nowhere else
+   to put it). Decide this WITH the carrier work, not after.
+
 8. **The chunk outline becomes a pure user crop.** Once extents are per-layer,
    coverage stops being a cropping concern: the outline means "where the user wants
    to look", nothing more. **Built** — `trimPolygonToCoverage`, `coverageRule` and
@@ -709,28 +724,7 @@ build on it.
    rather than sealed across it (§9.9.1).
 
 9. **Sealing is inferred.** Where one chunk's footprint contains another's, the wider
-   one caps the shared horizon. `cap` goes. Partial overlap is the hard case and is
-   why this comes last.
-
-   ⭐ **Two decisions are tangled in one flag**, and separating them is most of the
-   work: WHO DRAWS the shared horizon (a geometry question — drawing it twice means
-   two independent tessellations fighting for the same pixels) and WHAT IT LOOKS
-   LIKE (an appearance question — it is the base of one chunk and the top of the
-   other, and those need not agree). Today the first answer silently supplies the
-   second: whoever keeps the cap also decides its material and its opacity. §10.3.6
-   records the symptom.
-
-   ⇒ Which suggests the horizon at a seam belongs to neither chunk. Drawn once, as
-   its own object owned by the stack, with its own material, both questions are
-   answered separately and partial overlap stops being a special case for appearance
-   — it stays one only for geometry.
-
-   ⚠️ Per-region precedence (each part of the horizon drawn by exactly one chunk)
-   needs a cap clipped to "my outline minus yours". Hoisting the tessellation would
-   have made that triangle assignment rather than geometry — but it was built and
-   rejected (§11.2), so this has to be solved on its own terms: either clip the cap
-   to the difference of the two outlines, or draw the horizon once as an object the
-   stack owns, per the ⇒ above.
+   one caps the shared horizon. `cap` goes. **Built — see §10.8.**
 
 ### 10.2 Sequence
 
@@ -748,7 +742,7 @@ Numbered by dependency, not importance.
 5. **Outline as user crop** — needs 1–4; deletes `optional`. **— done (§9.7, §9.9).**
 6. **Carrier surfaces** — largely independent; retires the `basement` slot.
 7. **Inferred sealing** — deletes `cap`; last, because partial overlap interacts with
-   per-layer extents.
+   per-layer extents. **— done (§10.8).**
 
 ⚠️ Step 2 is where triangle count compounds with termination refinement, which
 already roughly doubled it (§10.3.2). Measure before and after; do not assume.
@@ -785,7 +779,8 @@ termination, not its area (§10.5).
    The criteria today: **one stack wherever surfaces can interact** — if depth ranges
    overlap anywhere they can cross, and two independent resolves can disagree.
    **Two stacks only when the depth regions are genuinely disjoint** *and* the grids
-   differ; connect them with `cap: false` as usual. The trap is that "disjoint depth
+   differ; connect them by declaring the shared boundary in both, as usual. The trap
+   is that "disjoint depth
    regions" must hold everywhere in plan, not on average — comparing `min`/`max` is
    not sufficient evidence (§9.3).
 
@@ -830,27 +825,23 @@ termination, not its area (§10.5).
    field — but it is drawn at the OCEAN chunk's opacity, so the detail block, which
    is opaque, is covered by a see-through cap.
 
-   ⚠️ Read carefully, that is not a transparency bug: `cap` decides who draws the
-   geometry, and the APPEARANCE rides along with it. A shared horizon is two things
-   at once — the base of the chunk above and the top of the chunk below — and one
-   flag forces a single answer to a question with two. See §10.1.9.
+   ⇒ **Fixed by §10.8.** A shared horizon is now drawn with the material and
+   opacity of the chunk it is the TOP of, so the caller no longer has to correct
+   for a decision another chunk made. `ChunkLayer.opacity` stays, for what it was
+   really for: opacity is a property of the UNIT, and water at 0.45 over an opaque
+   sea bed is one chunk, not two.
+
+   ⇒ **Built: `ChunkLayer.opacity`**, overriding the chunk's `surfaceOpacity` /
+   `wallOpacity` for that layer's cap and the volume below it. An OVERRIDE rather
+   than a multiplier, because a multiplier cannot express "opaque inside a
+   translucent chunk", which is the whole case. ⚠️ So an explicit value also takes
+   that layer out of a global transparency slider's reach — leave it unset on the
+   layers such a control should sweep along.
 
    ⇒ It also settles "draw both when not opaque", which looks tempting here and is
    not: the second copy would carry its own chunk's opacity too, so a transparent cap
    would composite over an opaque one at the same depth. Worse than either alone, and
    the same alpha-compounding argument as peeling.
-
-   ⇒ **Built: `ChunkLayer.opacity`**, overriding the chunk's `surfaceOpacity` /
-   `wallOpacity` for that layer's cap and the volume below it. Water at 0.45 and
-   sand at 1 in one chunk is an ordinary thing to want and could not be said. An
-   OVERRIDE rather than a multiplier, because a multiplier cannot express "opaque
-   inside a translucent chunk", which is the whole case. ⚠️ So an explicit value
-   also takes that layer out of a global transparency slider's reach — leave it
-   unset on the layers such a control should sweep along.
-
-   ⚠️ It expresses the fix, it does not remove the cause: the seam still hands one
-   chunk's appearance to another, and the caller has to know to correct it. §10.1.9
-   is where that stops being the caller's problem.
 
    ⚠️ `side` is not synchronised onto the OIT variants, which for stock materials are
    cloned on first use — so making sidedness reactive requires a fresh material
@@ -1158,12 +1149,39 @@ side keeps more than the minimum by construction, so the two settings stop being
 independent. Measure a case where both bind before adding a second knob.
 
 **Order matters.** Sealing runs on the reference grid *before* the monotone
-resolve, and **per chunk, not per column** — a chunk's layers are not the column's
-(it adds synthetic floors and takes a slice), so the neighbours a surface is sealed
-against differ per chunk. Sealing the column made the deepest surface look
-unbounded below even where a chunk put a floor under it. Two adjacent layers
-tapering toward each other can also pass each other at full weight; the resolve is
-what puts that right, so sealing after it would leave the crossing in.
+resolve — two adjacent layers tapering toward each other can pass each other at
+full weight, and the resolve is what puts that right, so sealing after it would
+leave the crossing in.
+
+⭐ **It runs on the COLUMN, not per chunk** (`getStackContext`). A horizon two
+chunks share must have ONE height: sealed per chunk it took the neighbours of
+whichever chunk was asking — the deepest layer of one chunk tapered against the
+layer above it while another chunk tapered the same surface onto its own synthetic
+floor — and the two then met each other's walls at different depths, leaving the
+lower chunk's block open (§10.3.6). Sealing the column costs the case that first
+moved it to the chunk: the column's deepest surface has no neighbour below even
+where a chunk puts a floor under it, so it falls back to the one-neighbour rule.
+That is the right trade — two chunks may hang DIFFERENT floors under one horizon,
+so a chunk-private boundary must not set a shared surface's height.
+
+⚠️ Consequences, both inherent rather than incidental:
+- The reach is measured inside the **envelope**, not inside one chunk's footprint.
+  A single height and a per-chunk taper shape cannot both hold.
+- **`void` still runs per chunk** and can still differ across a seam. It turns one
+  layer into two, which the column's `surface id -> index` map cannot express;
+  moving it up means the context carries expanded channels and every chunk's picks
+  expand with them. That is plumbing (⭐ `fills` is only carried through
+  `splitVoidChannels`, never read by it, so the column need not know a chunk's fill
+  state) — but it is SEQUENCED AFTER CARRIERS (§10.1.7): at column level the deepest
+  surface has no neighbour below, and `splitVoidChannels` needs both, so today the
+  move would buy agreement at the cost of turning a void into a one-sided taper in
+  the very place it is asked for. A column-level carrier removes that.
+- Synthetic layers need no seal of their own: their masks are all ones, so they
+  have no unmapped region. That is why nothing was lost by taking it off the chunk.
+- `preResolved` is usable again (the column seals BEFORE it resolves, so its
+  `absent` masks describe the tapered heights) — except with a synthetic layer or
+  under `void`, which the column's masks were not built for.
+- The seal settings join the column CACHE KEY, so toggling `seal` rebuilds it.
 
 **What it overrides:** `coverageAbsence`, which would otherwise drop the wedge for
 having no data. (It also used to override the coverage trim, which would have cut
@@ -1201,6 +1219,129 @@ The inferred region is reported per layer (`SurfaceChunkLayerDiagnostics.inferre
 **and drawn** as the inference it is — see §10.6, which carries the taper's own
 weight through to the geometry so the marking fades with the confidence.
 
+### 10.8 Inferred sealing (§10.2 step 7) — built
+
+`ChunkLayer.cap` is **gone**. A chunk declares the horizon it shares with its
+neighbour like any other layer, and `ChunkStack` works out which of them draws it.
+
+**Two decisions were tangled in that one flag**, and separating them is most of
+what this is: WHO DRAWS the shared horizon (geometry — drawing it twice puts two
+independent tessellations in the same place) and WHAT IT LOOKS LIKE (appearance —
+it is the base of one chunk and the top of the other, and those need not agree).
+The flag answered the first and let the second ride along, which is the defect
+§10.3.6 records. ⭐ They turn out to have the SAME answer, which is what §10.8.3
+is about.
+
+#### 10.8.1 Who draws it
+
+⭐ **A horizon belongs to the chunk it is the TOP layer of.** A cap is the lid of
+the block underneath it, so that block draws it — with its own material and
+opacity. The alternative (widest draws it) was tried first and is what forced the
+appearance to travel across the seam; see §10.8.3.
+
+`resolveSeam` orders the claimants **lid owner first, then by area descending, then
+by key**, and each one draws its footprint minus everything already taken.
+`polygonRelation` (SDK: a segment-crossing test, then vertex containment) gives the
+four cases:
+
+- **contained** in something already drawn — nothing is left, so it draws none of
+  the horizon. The ordinary case, and byte-for-byte what `cap: false` used to do by
+  hand.
+- **disjoint** — two chunks side by side. Both draw; there is nothing to share.
+  ⭐ The manual flag could not express this at all.
+- **overlap** — the part an earlier claimant draws is cut away.
+- **contains** something already drawn — the same cut, except it falls wholly
+  inside, so this cap keeps a **hole** for the owner's own cap to fill. ⭐ Only
+  reachable because the lid owner can be the NARROWER chunk; under the old area
+  order the earlier claimant was always the larger.
+
+A horizon that is nobody's top layer has no lid owner, which leaves the area order:
+the widest draws it and the others cut around it. Two identical outlines read as
+containment, so ties stay deterministic and the answer is independent of mount
+order.
+
+⚠️ A shared horizon is claimed twice by construction, so the outline registry is
+now `Map<surfaceId, entry[]>`. It used to hold ONE entry per surface, with the last
+claimant silently overwriting the others; it could not have represented a seam.
+
+#### 10.8.2 How a cut is made
+
+The chunk's cap is clipped by inserting the owner's **densified rim** into its own
+tessellation as constraint edges, then dropping the triangles the owner contains
+(`StackTessellation.cuts` → `StackCollapseOptions.capExcluded`). Only the CAP goes:
+the rim, the walls and the interval below are this chunk's either way. The cut ring
+may cross this chunk's rim (a partial overlap) or fall wholly inside it (a hole);
+the machinery is the same.
+
+⭐ **The seam is watertight, not merely close.** Both chunks sample the same
+reference channels, so bit-identical boundary vertices in XZ give bit-identical
+heights. Which is why the rim has to be densified with the OWNER's `rimSpacing`
+(carried in `SurfaceChunkSpec.cuts`): densification inserts points ALONG a segment,
+each sampling the grid on its own, so the same polygon at two spacings describes
+two different height profiles. ⚠️ It also means exactness needs a **shared column** —
+without `ChunkStack.surfaces` the two chunks resample onto different reference
+grids and the seam is only as good as any other inter-chunk boundary.
+
+⚠️ **This required the crossing-rim fix from the rejected hoisting work** (§11.2),
+which is now landed on its own: `nodeGridRings` splits every ring segment at its
+crossings with another ring, computing each crossing once so both rings insert
+identical coordinates and resolve to one vertex. Without it two crossing constraint
+edges cannot both follow mesh edges, and `Delatin` silently dropped one of them.
+`Delatin.constraintFailures` now counts what it could not enforce (⭐ it also stops
+`_constrainEdgeBrute` locking an edge it never created, which claimed a boundary
+that was not there — a latent bug in `main`, unreachable while only one outline was
+constrained). Reported as `SurfaceChunkDiagnostics.constraintFailures`.
+
+⭐ **This is not hoisting.** Only OUTLINES are shared between chunks, never vertex
+sets, so every chunk still builds and paints on its own — the incremental-paint
+objection that killed §11.2 does not apply. The cost is paid only where footprints
+genuinely cross.
+
+#### 10.8.3 What it looks like
+
+Nothing is borrowed across a seam: every chunk draws the parts it owns with its
+OWN material and opacity. That falls straight out of §10.8.1 — the lid owner is
+both the chunk the horizon looks like and the chunk that draws it.
+
+⭐ **This is why the ownership rule is worth the interior cut.** The first version
+gave the horizon to the WIDEST chunk, so drawing and appearance disagreed about the
+owner, and the appearance had to be published across the component boundary in a
+registry of its own (`ChunkSeamAppearance`, held apart from the outlines because it
+changes on every colour swap). That channel produced its own defect — what was
+published was the DECLARED appearance, and a layer that names no opacity means "my
+chunk's", so the *drawer's* fallback came back in and put a see-through lid on an
+opaque block (§10.3.6, twice). Making drawing follow the lid owner made the whole
+channel unnecessary; it is deleted.
+
+It also makes the mixed case expressible, which the all-or-nothing channel could
+not do: a translucent water tier keeps a translucent seabed of its own, while the
+lid over the opaque detail block below it is opaque. `Spikes/Chunks/SeabedConnection`
+is that scene.
+
+⚠️ Two chunks that both hold a surface as their top layer are ordered by area, so
+the wider one keeps any overlap. A horizon that is nobody's top layer falls back to
+the area order and is drawn with the drawer's own appearance.
+
+#### 10.8.4 Consequences and limits
+
+- A chunk defers its build until every claimant of any of its surfaces has settled
+  an outline — the same one-render wait `coverAbove` already used. A chunk mounted
+  AFTER a sibling has built invalidates that sibling's decision and rebuilds it;
+  static children all register in one commit, so this only bites dynamic ones.
+- `coverAbove` now asks who *draws* the surface above rather than who claims it, and
+  takes the widest drawing footprint. ⚠️ Several chunks can draw parts of it and only
+  one polygon fits in the spec — but `topKept` measures ~0 on real data, so this is
+  insurance, not a visible fix.
+- Diagnostics: `SurfaceChunkLayerDiagnostics.capped` and `.droppedExcluded`. ⭐
+  Inference makes "why is my surface missing" a non-local question; these are what
+  answer it.
+- ⚠⚠ **The two caps of one horizon now meet in plain view**, along the lid owner's
+  rim, where before the wider chunk drew it as one mesh. They are watertight only
+  as far as §10.8.2 holds — which is why sealing moved to the column (§10.7): a
+  shared horizon now has ONE height, so the two chunks' caps and walls meet.
+  ⚠️ Still open under `sealMode: 'void'`, which is split per chunk.
+- Still open: **carriers** (§10.1.7) are the remaining §10.2 step.
+
 ## 11. Stack-level build
 
 Each `Chunk` owns its tessellation, so its no-interpenetration guarantee is its
@@ -1227,6 +1368,37 @@ surface ids:
    down the channels, since every layer shares the nodes),
 4. refine the channels once.
 
+⭐ **The column is built from the surfaces the chunks CLAIM, not from everything
+`surfaces` lists.** `ChunkStack` already knows the claims (they are registered on
+mount, before any outline resolves), so it publishes `surfaces` filtered to those —
+`ChunkStackContextValue.column`. `surfaces` supplies membership and ORDER; the
+filter decides what is paid for. A caller naturally hands over the whole column and
+draws a slice of it, and loading, resampling and cascading ~25 surfaces nobody
+draws is pure cost.
+
+- ⚠️ Undrawn surfaces are also dropped as CEILINGS in the cascade, so a drawn layer
+  is no longer pushed down by a surface nobody can see. That is a deliberate change
+  of meaning, not just an optimisation: invisible data silently moving visible
+  geometry is the kind of non-local surprise this design removes elsewhere.
+- ⚠️ Claims arrive in an EFFECT, so the column is empty on the first render.
+  `Chunk` waits until the column contains its own claims (`columnPending`) — one
+  render, versus a whole build against a column missing its own layers. A chunk
+  mounted after its siblings re-keys the column and rebuilds them, the same rule
+  the seam registry has.
+- ⚠️ `coverAbove` and the wellbore envelope deliberately still read the FULL
+  `surfaces`: switching them would change the envelope's depth window and make
+  `coverAbove` find a claimed surface above where it previously found none.
+
+⚠️ **The cache is single-entry and keyed on the whole ordered list**, so any change
+to the membership rebuilds all of it: a copy of every grid, a full resample, a full
+resolve, a full refinement. Per-surface caching of the resampled CHANNELS is the
+obvious next step, and the reason it is not trivial is that **the common grid is
+derived from the membership** — `buildStackReference` picks the finest member's
+grid, so adding a coarser surface leaves every channel valid while adding a finer
+one invalidates all of them. It would need the grid identity keyed separately from
+the layer set, plus a byte budget and eviction. Fetches themselves are already
+cached per surface by the store's loader (repeats cost a memcpy, not a reparse).
+
 Each chunk then tessellates **its own outline** against that shared, already
 ordered reference and takes a view of the channels for its own layers. The first
 chunk pays; the rest await the same promise.
@@ -1245,11 +1417,9 @@ which by construction contains every chunk's narrower window.
 **If that residual ever matters**, the obvious step is to hoist the tessellation
 too: one triangulation with every chunk's outline as constraint edges, each chunk
 taking the triangle subset inside its own outline (the same mechanism
-`collapseStackTriangles` uses). That would make the guarantee exact across chunks,
-and it is what §10.1.9 wants in order to stop `cap` from being declared by hand:
-with shared vertices, two chunks drawing the same horizon no longer z-fight, so
-who draws it becomes triangle assignment rather than geometry. Nothing built above
-needs to change for it; the tessellation simply moves up a level.
+`collapseStackTriangles` uses). That would make the guarantee exact across chunks.
+Nothing built above needs to change for it; the tessellation simply moves up a
+level.
 
 ⚠️ **This was built and rejected — see §11.2.** It is recorded here because the
 reasoning above is sound and still tempting; what defeats it is not the geometry
@@ -1315,8 +1485,9 @@ measurement does not carry.
 cross-chunk agreement, and it is what turns §10.1.9 (removing `cap`) from a
 geometry problem into triangle assignment.
 
-⚠️ **Superseded — hoisting was built on this recommendation and then rejected.
-See §11.2. The measurement above did not test the case that decided it.**
+⚠️⚠️ **Superseded twice over — hoisting was built on this recommendation and then
+rejected (§11.2), and `cap` was removed without it (§10.8). The measurement above
+did not test the case that decided either.**
 
 ### 11.2 Hoisting — BUILT AND REJECTED (2026-08-11)
 
@@ -1357,9 +1528,12 @@ it spent 91–465 ms *per edge* in `_constrainEdgeBrute` discovering it could no
 edge it had never created — silently claiming a boundary that was not there. The
 fix is to **node** the outlines first: split every rim segment at its crossings with
 other rims, computing each crossing once so both rings insert bit-identical
-coordinates and resolve to one vertex. That fix lives only in the patch. The
-phantom-lock in `_constrainEdgeBrute` is still present in `main`; it is unreachable
-while only one outline is constrained.
+coordinates and resolve to one vertex.
+
+⇒ **That fix has since been landed on its own** (`nodeGridRings`, plus
+`Delatin.constraintFailures` and the phantom-lock guard) because §10.8 needs exactly
+the same thing to constrain a neighbour's rim into one chunk's mesh. The rest of the
+patch stays rejected.
 
 ## 12. Build order
 

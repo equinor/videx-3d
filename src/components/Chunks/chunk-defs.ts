@@ -42,9 +42,17 @@ export type SurfaceChunkSpecLayer = (
   fill?: boolean;
   /**
    * Draw this layer's cap. Default true; `false` keeps the layer in the stack but
-   * draws no surface (a neighbouring chunk draws that horizon).
+   * draws no surface, because a neighbouring chunk covers this whole footprint and
+   * draws that horizon instead. INFERRED by `ChunkStack` from the chunks'
+   * footprints — not something the caller declares.
    */
   cap?: boolean;
+  /**
+   * Indices into {@link SurfaceChunkSpec.cuts} of the neighbours that draw this
+   * layer's cap where they reach. The partial-overlap case of the same decision:
+   * this chunk draws its own footprint minus theirs.
+   */
+  capCuts?: number[];
 };
 
 /** A synthetic (data-free) boundary in a {@link SurfaceChunkSpec}. */
@@ -147,34 +155,36 @@ export type ChunkLayer = {
    * `surfaceOpacity` / `wallOpacity`.
    *
    * ⭐ Opacity is a property of the UNIT, not of the chunk that happens to contain
-   * it: water at 0.45 over an opaque sea bed is one chunk, not two. It matters most
-   * at a seam — a horizon drawn by a translucent chunk on behalf of an opaque
-   * neighbour (`cap: false`) is a see-through lid over a solid block, and you look
-   * straight into it (`documents/chunks.md` §10.3.6).
+   * it: water at 0.45 over an opaque sea bed is one chunk, not two.
    *
    * ⚠️ An override, not a multiplier, so an explicit value WINS — which also means
    * the chunk-level sliders no longer reach this layer. Leave it unset on the layers
    * a global transparency control should sweep along.
    */
   opacity?: number;
-  /**
-   * Draw this layer's cap. Default `true`.
-   *
-   * Set `false` where a NEIGHBOURING chunk already draws this horizon — two chunks
-   * that meet share their boundary surface, and drawing it twice means two
-   * independent tessellations of the same horizon fighting for the same pixels.
-   * The layer still takes part fully: its rim carries the walls and it is still
-   * resolved against its neighbours.
-   *
-   * The chunk with the LARGER footprint should be the one that keeps its cap.
-   */
-  cap?: boolean;
 };
 
 /** Whether a {@link ChunkLayer.fill} asks for a volume at all. */
 export function hasFill(fill: ChunkLayer['fill']): boolean {
   return fill !== undefined && fill !== null && fill !== false;
 }
+
+/**
+ * Fallback per-layer colour, cycled by layer order.
+ *
+ * ⚠️ Lives here rather than in `ChunkMeshes` because a chunk drawing a horizon on
+ * a NEIGHBOUR's behalf has to resolve that neighbour's colour the same way.
+ */
+export const DEFAULT_PALETTE = [
+  '#4e79a7',
+  '#f28e2c',
+  '#59a14f',
+  '#e15759',
+  '#af7aa1',
+  '#76b7b2',
+  '#edc949',
+  '#9c755f',
+];
 
 /**
  * Turn the grouped form (each inner array a zone, walls only within a zone) into
@@ -345,6 +355,14 @@ export type SurfaceChunkSpec = {
    * open a hole into the block. Only meaningful together with `stack`.
    */
   coverAbove?: { coordinates: PlanarPolygonCoordinates; offset: Vec2 };
+  /**
+   * Footprints of neighbouring chunks this one only PARTLY overlaps, referenced
+   * per layer by {@link SurfaceChunkSpecLayer.capCuts}. Each carries the rim
+   * spacing its owner densified it with — ⚠️ densifying it differently would put
+   * the two boundaries on different points of the reference grid, and the seam
+   * would open a hairline crack.
+   */
+  cuts?: SurfaceChunkCut[];
   /** the column this chunk is cut from (see {@link SurfaceChunkStackSpec}) */
   stack?: SurfaceChunkStackSpec;
   /** rim densification spacing (world units) */
@@ -355,6 +373,17 @@ export type SurfaceChunkSpec = {
   resolve?: ChunkResolveOptions;
   /** optional basement block */
   basement?: SurfaceChunkBasement;
+};
+
+/**
+ * A neighbouring chunk's footprint, carried into the build so this chunk's cap can
+ * stop exactly where that chunk's begins.
+ */
+export type SurfaceChunkCut = {
+  coordinates: PlanarPolygonCoordinates;
+  offset: Vec2;
+  /** the spacing its OWNER densified it with */
+  rimSpacing?: number;
 };
 
 /** Response from the {@link surfaceChunk} generator (packed for transfer). */

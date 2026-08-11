@@ -44,6 +44,7 @@ const tessellation = {
   indices,
   rimVertices: [rimRing],
   rimDropped: 0,
+  constraintFailures: 0,
 };
 
 /** Scene XZ, 100 m to the grid cell. */

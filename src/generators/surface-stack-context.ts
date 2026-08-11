@@ -7,8 +7,10 @@ import {
 import {
   buildStackReference,
   PlanarPolygonGeometry,
+  rasterizeStackOutline,
   ReadonlyStore,
   resolveStackGrid,
+  sealStackChannels,
   StackLayer,
   StackPairStats,
   StackReference,
@@ -28,10 +30,18 @@ export type StackContext = {
   index: Map<string, number>;
   /** per-layer, per-node: 1 where the unit was truncated away */
   absent: Uint8Array[];
+  /**
+   * Per layer, per node: how far the height is INFERRED rather than measured, or
+   * `null` when the column was not sealed.
+   */
+  inferred: Float32Array[] | null;
+  /** per layer: nodes the seal moved */
+  tapered: number[];
   pairs: StackPairStats[];
   bytes: number;
   fetchMs: number;
   referenceMs: number;
+  sealMs: number;
   resolveMs: number;
 };
 
@@ -56,7 +66,7 @@ export function getStackContext(
   stack: SurfaceChunkStackSpec,
   resolve: ChunkResolveOptions | undefined,
 ): Promise<StackContext | null> {
-  const key = `${stack.key}|${resolve?.mode ?? 'truncate'}|${resolve?.minGap ?? 0}|${resolve?.maxNodes ?? ''}|${resolve?.maxFill ?? DEFAULT_CHUNK_MAX_FILL}|${resolve ? 1 : 0}`;
+  const key = `${stack.key}|${resolve?.mode ?? 'truncate'}|${resolve?.minGap ?? 0}|${resolve?.maxNodes ?? ''}|${resolve?.maxFill ?? DEFAULT_CHUNK_MAX_FILL}|${resolve ? 1 : 0}|${resolve?.seal === false ? 0 : 1}|${resolve?.sealMode ?? 'proportional'}|${resolve?.minThickness ?? ''}`;
   if (cached && cached.key === key) return cached.promise;
   const promise = buildStackContext(store, stack, resolve, key);
   cached = { key, promise };
@@ -108,23 +118,43 @@ async function buildStackContext(
   if (!reference) return null;
   const tReference = performance.now();
 
-  // ⚠️ The SEAL does NOT run here. A chunk's layer list is not the column's — it
-  // adds synthetic layers (a water top, a floor) and takes a slice — so the
-  // neighbours a surface is sealed against differ per chunk. Sealing the column
-  // would use the wrong ones: the deepest column surface would appear to have no
-  // neighbour below even in a chunk that puts a floor under it. See
-  // `buildSpecStack`.
+  // ⭐ SEALED HERE, on the column, so a horizon two chunks share has ONE height.
+  // Sealing per chunk gave a surface the neighbours of whichever chunk was asking —
+  // the deepest layer of one chunk tapered against the layer above it while another
+  // chunk tapered the same surface onto its own floor — and the two then met each
+  // other's walls at different depths.
+  // ⚠️ The reach is therefore measured inside the ENVELOPE rather than inside one
+  // chunk's footprint: a single height and a per-chunk taper shape cannot both hold.
+  // ⚠️ `void` is NOT done here — it splits a layer in two, which the id -> index map
+  // below cannot express. It stays per chunk (see `buildSpecStack`).
+  const sealing = resolve?.seal !== false && resolve?.sealMode !== 'void';
+  const sealed = sealing
+    ? sealStackChannels(
+        reference.channels,
+        reference.masks,
+        reference.header.nx,
+        {
+          mode: resolve?.sealMode,
+          minThickness: resolve?.minThickness,
+          inside: rasterizeStackOutline(reference, envelope),
+        },
+      )
+    : null;
+  const sealedReference = sealed
+    ? { ...reference, channels: sealed.channels }
+    : reference;
+  const tSeal = performance.now();
 
   // The whole column is made monotone here, on the common grid, so every chunk
   // that samples it inherits an ordering the others agree with. The masks come
   // along so the statistics can separate real crossings from the hole fill.
   const resolved = resolve
-    ? resolveStackGrid(reference.channels, {
+    ? resolveStackGrid(sealedReference.channels, {
         mode: resolve.mode,
         minGap: resolve.minGap,
         coverage: reference.masks,
       })
-    : resolveStackGrid(reference.channels, {
+    : resolveStackGrid(sealedReference.channels, {
         apply: false,
         coverage: reference.masks,
       });
@@ -132,15 +162,18 @@ async function buildStackContext(
 
   return {
     key,
-    reference,
+    reference: sealedReference,
     layers,
     index,
     absent: resolved.absent,
+    inferred: sealed?.inferred ?? null,
+    tapered: sealed?.tapered ?? [],
     pairs: resolved.pairs,
     bytes,
     fetchMs: tFetch - t0,
     referenceMs: tReference - tFetch,
-    resolveMs: tResolve - tReference,
+    sealMs: tSeal - tReference,
+    resolveMs: tResolve - tSeal,
   };
 }
 

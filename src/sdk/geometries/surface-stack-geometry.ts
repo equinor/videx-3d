@@ -323,6 +323,21 @@ export type SurfaceStackOptions = {
    */
   caps?: boolean[];
   /**
+   * Outlines of NEIGHBOURING chunks whose footprint this one only PARTLY overlaps
+   * (scene XZ, already densified). Constrained into the tessellation so the area
+   * they also cover is bounded by real mesh edges rather than cut at triangle
+   * resolution — with both chunks sampling the same reference grid, the seam is
+   * then watertight rather than merely close.
+   */
+  cuts?: PlanarPolygonGeometry[];
+  /**
+   * Per layer, the indices into {@link SurfaceStackOptions.cuts} of the neighbours
+   * that draw that layer's cap where they reach. `caps` is the containment case of
+   * the same decision — the neighbour covers this chunk entirely, so nothing is
+   * left to draw.
+   */
+  capCuts?: (number[] | null)[];
+  /**
    * Per layer: this one is a void's CEILING, which inverts which of a coincident
    * pair is dropped. See `StackCollapseOptions.ceiling`.
    */
@@ -499,6 +514,7 @@ export function buildSurfaceStack(
     options.polygon,
     maxError,
     candidates,
+    options.cuts,
   );
   if (!tessellation) return null;
   const tTessellate = performance.now();
@@ -563,13 +579,32 @@ export function buildSurfaceStack(
     }
   }
 
+  const capExcluded = options.capCuts
+    ? options.capCuts.map(list => {
+        const flags = tessellation.cuts;
+        if (!list || list.length === 0 || !flags) return null;
+        if (list.length === 1) return (flags[list[0]] ?? null) as Uint8Array;
+        const merged = new Uint8Array(tessellation.indices.length / 3);
+        for (const k of list) {
+          const f = flags[k];
+          if (!f) continue;
+          for (let t = 0; t < merged.length; t++) if (f[t]) merged[t] = 1;
+        }
+        return merged;
+      })
+    : undefined;
+  // A chunk that shares nothing still gets an entry per layer, and an array of
+  // nulls must not make the collapse run where it otherwise would not.
+  const excludes = capExcluded?.some(mask => mask) ? capExcluded : undefined;
+
   const collapsed =
-    collapseThreshold > 0 || coverageAbsence
+    collapseThreshold > 0 || coverageAbsence || excludes
       ? collapseStackTriangles(heights, tessellation.indices, {
           threshold: collapseThreshold,
           coverage: coverageAbsence ? coverage : undefined,
           absent,
           ceiling: options.ceiling,
+          capExcluded: excludes,
         })
       : null;
   const tCollapse = performance.now();

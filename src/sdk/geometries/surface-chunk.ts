@@ -263,6 +263,18 @@ export type SurfaceChunkLayerDiagnostics = {
   /** triangles dropped because the unit has no thickness there */
   droppedCollapsed: number;
   /**
+   * Triangles this layer's cap gave up to a NEIGHBOURING chunk that draws the
+   * same horizon where their footprints overlap (see `resolveSeam`).
+   */
+  droppedExcluded: number;
+  /**
+   * Whether this layer's cap is drawn at all. `false` means a neighbouring chunk
+   * contains this whole footprint and draws that horizon instead — which is the
+   * one thing that makes a layer vanish for a reason outside this chunk, so it is
+   * reported rather than left to be guessed.
+   */
+  capped: boolean;
+  /**
    * Share of its jointly-covered vertices coincident with the layer above,
    * measured BEFORE the resolve (~1 = a duplicated horizon).
    */
@@ -302,6 +314,13 @@ export type SurfaceChunkDiagnostics = {
    * Non-zero means the wall and the surface disagree about where the chunk ends.
    */
   rimDropped: number;
+  /**
+   * Constraint edges the triangulator could not enforce (see
+   * `StackTessellation.constraintFailures`). ⚠️ Should be 0 — non-zero means a rim
+   * or a neighbour's cut does not follow mesh edges, so a boundary drawn from it
+   * is a claim the mesh does not support.
+   */
+  constraintFailures: number;
   /**
    * Boundary walks the wall tracer discarded as degenerate, and walks that failed
    * to close. Both should be 0: a discarded walk leaves a (small) piece of an

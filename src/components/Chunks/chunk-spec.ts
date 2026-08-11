@@ -10,8 +10,10 @@ import {
   ChunkLayer,
   ChunkResolveOptions,
   hasFill,
+  SurfaceChunkCut,
   SurfaceChunkSpec,
 } from './chunk-defs';
+import { SeamDecision } from './seams';
 
 /** UTM -> scene-frame mapping (matches `UtmArea`'s `utmToArea`). */
 type UtmToArea = (easting: number, northing: number, altitude?: number) => Vec3;
@@ -32,6 +34,11 @@ export type BuildSurfaceChunkSpecOptions = {
    * `SurfaceChunkSpec.coverAbove`).
    */
   coverAbove?: PlanarPolygonGeometry | null;
+  /**
+   * Per layer, what this chunk draws of a horizon it shares with a neighbour (see
+   * `resolveSeam`). Omit for a chunk that shares nothing.
+   */
+  seams?: (SeamDecision | null)[];
 };
 
 /** Map one surface's meta into the serializable layer spec. */
@@ -66,21 +73,41 @@ export function buildSurfaceChunkSpec(
   outlinePolygon: PlanarPolygonGeometry,
   options: BuildSurfaceChunkSpecOptions = {},
 ): SurfaceChunkSpec {
-  const specLayers = layers.map(layer =>
-    layer.surface
-      ? {
-          ...toLayerSpec(layer.surface, utmToArea),
-          fill: hasFill(layer.fill),
-          cap: layer.cap !== false,
-        }
+  // A chunk that partly overlaps several neighbours references each of their
+  // footprints once, by index.
+  const cuts: SurfaceChunkCut[] = [];
+  const cutIndex = new Map<PlanarPolygonGeometry, number>();
+  const indexOfCut = (polygon: PlanarPolygonGeometry, rimSpacing?: number) => {
+    const seen = cutIndex.get(polygon);
+    if (seen !== undefined) return seen;
+    const at = cuts.length;
+    cuts.push({
+      coordinates: polygon.coordinates as PlanarPolygonCoordinates,
+      offset: polygon.offset,
+      rimSpacing,
+    });
+    cutIndex.set(polygon, at);
+    return at;
+  };
+
+  const specLayers = layers.map((layer, i) => {
+    const seam = options.seams?.[i] ?? null;
+    const shared = {
+      fill: hasFill(layer.fill),
+      cap: seam ? seam.draw : true,
+      capCuts: seam?.cuts.length
+        ? seam.cuts.map(cut => indexOfCut(cut.polygon, cut.rimSpacing))
+        : undefined,
+    };
+    return layer.surface
+      ? { ...toLayerSpec(layer.surface, utmToArea), ...shared }
       : {
           depth: layer.depth,
           offset: layer.offset,
           relief: layer.relief,
-          fill: hasFill(layer.fill),
-          cap: layer.cap !== false,
-        },
-  );
+          ...shared,
+        };
+  });
 
   const stack = options.stack
     ? {
@@ -105,6 +132,7 @@ export function buildSurfaceChunkSpec(
       offset: outlinePolygon.offset,
     },
     stack,
+    cuts: cuts.length > 0 ? cuts : undefined,
     coverAbove: options.coverAbove
       ? {
           coordinates: options.coverAbove

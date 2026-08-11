@@ -14,6 +14,7 @@ import { useGenerator } from '../../hooks/useGenerator';
 import {
   ChunkSurfaceLayer,
   PlanarPolygonGeometry,
+  polygonArea,
   SurfaceChunk,
   SurfaceChunkBasement,
   SurfaceChunkMetrics,
@@ -30,7 +31,7 @@ import {
   SurfaceChunkResponse,
 } from './chunk-defs';
 import { buildSurfaceChunkSpec } from './chunk-spec';
-import { ChunkStackContext } from './ChunkContext';
+import { ChunkStackContext, ChunkSurfaceClaim } from './ChunkContext';
 import { ChunkMeshes } from './ChunkMeshes';
 import { ChunkOutline, CutoutSource, resolveCutoutSource } from './cutout';
 import { ChunkInferenceStyle } from './inference-material';
@@ -188,11 +189,12 @@ export const Chunk = ({
     .map(l => {
       const base = l.surface
         ? l.surface.id
-        : `@${l.depth ?? ''}/${l.offset ?? ''}/${l.relief
-          ? `${l.relief.kind ?? 'dunes'}:${l.relief.amplitude}:${l.relief.seed ?? 0}:${l.relief.featureSize ?? ''}:${l.relief.mode ?? ''}`
-          : ''
-        }`;
-      return `${base}:${hasFill(l.fill) ? 1 : 0}:${l.cap === false ? 0 : 1}`;
+        : `@${l.depth ?? ''}/${l.offset ?? ''}/${
+            l.relief
+              ? `${l.relief.kind ?? 'dunes'}:${l.relief.amplitude}:${l.relief.seed ?? 0}:${l.relief.featureSize ?? ''}:${l.relief.mode ?? ''}`
+              : ''
+          }`;
+      return `${base}:${hasFill(l.fill) ? 1 : 0}`;
     })
     .join(',');
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
@@ -334,8 +336,9 @@ export const Chunk = ({
   //     surface above it in the COLUMN, which a neighbouring chunk draws with its
   //     own (different) outline. Announce what this chunk draws, publish its
   //     outline, and read back the neighbour's. -------------------------------
-  // Only real surfaces take part in the column / cover bookkeeping — a synthetic
-  // plane belongs to no column and nothing can be truncated against it there.
+  // Only real surfaces take part in the column / seam bookkeeping — a synthetic
+  // plane belongs to no column, nothing can be truncated against it there, and no
+  // neighbouring chunk can be drawing the same one.
   const surfaceIds = useMemo(
     () =>
       stableLayers
@@ -344,14 +347,83 @@ export const Chunk = ({
     [stableLayers],
   );
 
-  useEffect(() => {
-    if (!registerChunk) return;
-    return registerChunk(registryKey, surfaceIds);
-  }, [registerChunk, registryKey, surfaceIds]);
+  const surfaceClaims = useMemo<ChunkSurfaceClaim[]>(
+    () =>
+      stableLayers.flatMap((l, i) =>
+        l.surface ? [{ id: l.surface.id, top: i === 0 }] : [],
+      ),
+    [stableLayers],
+  );
 
   useEffect(() => {
-    publishOutline?.(registryKey, outlineSettled ? outlinePolygon : undefined);
-  }, [publishOutline, registryKey, outlineSettled, outlinePolygon]);
+    if (!registerChunk) return;
+    return registerChunk(registryKey, surfaceClaims);
+  }, [registerChunk, registryKey, surfaceClaims]);
+
+  useEffect(() => {
+    publishOutline?.(
+      registryKey,
+      outlineSettled ? outlinePolygon : undefined,
+      resolvedRimSpacing,
+    );
+  }, [
+    publishOutline,
+    registryKey,
+    outlineSettled,
+    outlinePolygon,
+    resolvedRimSpacing,
+  ]);
+
+  // --- Seams (layer 1c): a horizon two chunks share is drawn by exactly one of
+  //     them, decided by the stack from their footprints. -------------------
+  // ⚠️ The registry is rebuilt whole on every publish, so keying on its identity
+  // would give every chunk a new spec whenever any sibling settled an outline.
+  const seamsKey = surfaceIds
+    .map(id => {
+      const decision = stack.seams?.get(id)?.get(registryKey);
+      if (!decision) return '';
+      const cuts = decision.cuts.map(c => `${c.key}@${c.version}`).join('+');
+      return `${decision.draw ? 1 : 0}/${cuts}`;
+    })
+    .join(',');
+  const layerSeams = useMemo(
+    () =>
+      stableLayers.map(l =>
+        l.surface
+          ? (stack.seams?.get(l.surface.id)?.get(registryKey) ?? null)
+          : null,
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
+    [stableLayers, registryKey, seamsKey],
+  );
+
+  // A chunk claiming a surface another one has not placed yet cannot know whether
+  // it draws that horizon. Waiting costs one render; building now costs a second
+  // full build once the answer arrives.
+  const seamsPending = useMemo(
+    () =>
+      surfaceIds.some(id => {
+        const entries = stack.outlines?.get(id);
+        return (
+          entries !== undefined &&
+          entries.length > 1 &&
+          entries.some(e => !e.resolved)
+        );
+      }),
+    [surfaceIds, stack.outlines],
+  );
+
+  // The stack builds its column from the surfaces its chunks CLAIM, and claims are
+  // registered in an effect — so on the first render the column is empty for
+  // everyone. Without this wait every chunk would build once against a column
+  // missing its own layers, then rebuild.
+  const columnPending = useMemo(
+    () =>
+      surfaceIds.length > 0 &&
+      !!stack.surfaces &&
+      !surfaceIds.every(id => stack.column?.some(m => m.id === id)),
+    [surfaceIds, stack.surfaces, stack.column],
+  );
 
   // The surface directly above this chunk's top, in the column. Whoever draws it
   // is what stands in for the fragments this chunk truncates away.
@@ -362,14 +434,32 @@ export const Chunk = ({
     if (!topId || !column || !stack.outlines) return none;
     const at = column.findIndex(m => m.id === topId);
     if (at <= 0) return none;
-    // Nobody draws the surface above, so there is nothing to hide behind.
-    const entry = stack.outlines.get(column[at - 1].id);
-    if (!entry) return none;
+    // Nobody claims the surface above, so there is nothing to hide behind.
+    const entries = stack.outlines.get(column[at - 1].id);
+    if (!entries || entries.length === 0) return none;
     // Registered but not resolved yet: waiting costs one render, whereas building
     // now would cost a second full build once it arrives.
-    if (!entry.resolved) return { polygon: null, pending: true };
-    return { polygon: entry.polygon, pending: false };
-  }, [surfaceIds, stack.surfaces, stack.outlines]);
+    if (entries.some(e => !e.resolved)) return { polygon: null, pending: true };
+    // ⚠️ Several chunks can draw parts of that horizon, and only ONE polygon fits
+    // in the spec, so the widest is used. Only the fragments outside it are kept
+    // that should have been dropped, and `topKept` measures ~0 on real data — this
+    // is insurance, not a visible fix.
+    const drawn = entries.filter(
+      e =>
+        e.polygon &&
+        (stack.seams?.get(column[at - 1].id)?.get(e.key)?.draw ?? true),
+    );
+    let widest: PlanarPolygonGeometry | null = null;
+    let best = -Infinity;
+    for (const entry of drawn) {
+      const area = polygonArea(entry.polygon!);
+      if (area > best) {
+        best = area;
+        widest = entry.polygon;
+      }
+    }
+    return { polygon: widest, pending: false };
+  }, [surfaceIds, stack.surfaces, stack.outlines, stack.seams]);
 
   // --- Geometry (layer 2): the heavy build (loading every surface's grid +
   //     clipping/triangulating) runs in a worker generator so it never blocks the
@@ -379,18 +469,19 @@ export const Chunk = ({
 
   const spec = useMemo(() => {
     if (!outlinePolygon || !utm || stableLayers.length === 0) return null;
-    if (coverAbove.pending) return null;
+    if (coverAbove.pending || seamsPending || columnPending) return null;
     return buildSurfaceChunkSpec(stableLayers, utm.utmToArea, outlinePolygon, {
       rimSpacing: resolvedRimSpacing,
       maxError: resolvedMaxError,
       resolve,
       basement,
       coverAbove: coverAbove.polygon,
+      seams: layerSeams,
       // Only a declared column with an envelope can be shared; otherwise this
       // chunk builds (and resolves) on its own.
       stack:
-        stack.surfaces && stack.surfaces.length > 0 && stack.envelope
-          ? { surfaces: stack.surfaces, envelope: stack.envelope }
+        stack.column && stack.column.length > 0 && stack.envelope
+          ? { surfaces: stack.column, envelope: stack.envelope }
           : undefined,
     });
   }, [
@@ -402,7 +493,10 @@ export const Chunk = ({
     resolve,
     basement,
     coverAbove,
-    stack.surfaces,
+    layerSeams,
+    seamsPending,
+    columnPending,
+    stack.column,
     stack.envelope,
   ]);
 
@@ -412,7 +506,11 @@ export const Chunk = ({
       // No spec yet: either an input is still resolving (busy), or there is
       // genuinely nothing to draw here.
       reportState(
-        outlineSettled && !outlinePolygon && !coverAbove.pending
+        outlineSettled &&
+          !outlinePolygon &&
+          !coverAbove.pending &&
+          !seamsPending &&
+          !columnPending
           ? 'empty'
           : 'building',
       );
@@ -444,6 +542,8 @@ export const Chunk = ({
     outlineSettled,
     outlinePolygon,
     coverAbove.pending,
+    seamsPending,
+    columnPending,
   ]);
 
   // Dispose the previous chunk's geometries when it is replaced or unmounted.
@@ -452,6 +552,8 @@ export const Chunk = ({
   }, [chunk]);
 
   // --- Appearance / rendering is delegated to ChunkMeshes (reactive layer). ---
+  // ⭐ Nothing is borrowed across a seam: a horizon is drawn by the chunk it is the
+  // lid of (see `resolveSeam`), so every chunk draws with its OWN appearance.
   if (!chunk) return <>{children}</>;
 
   return (

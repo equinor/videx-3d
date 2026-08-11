@@ -16,12 +16,16 @@ import {
 import { UtmAreaContext } from '../UtmArea';
 import { ChunkBuildState, ChunkStackProgress } from './chunk-defs';
 import {
+  ChunkOutlineEntry,
   ChunkOutlineRegistry,
+  ChunkSeamRegistry,
   ChunkStackContext,
   ChunkStackContextValue,
+  ChunkSurfaceClaim,
 } from './ChunkContext';
 import { CutoutSource } from './cutout';
 import { resolveWellboreOutline } from './resolveWellboreOutline';
+import { resolveSeam, SeamDecision } from './seams';
 
 /**
  * {@link ChunkStack} props.
@@ -145,32 +149,72 @@ export const ChunkStack = ({
     };
   }, [cutSource, store, utm, surfaces]);
 
-  // --- Outline registry: which chunk draws which surface, and (once resolved)
-  //     with what footprint. A chunk's top layer is truncated against a surface
-  //     the chunk ABOVE draws, so it has to know that chunk's outline before it can
-  //     tell a safe drop from a hole. See `registerChunk`. -----------------------
-  const claims = useRef(new Map<string, string[]>());
+  // --- Outline registry: which chunks claim which surface, and (once resolved)
+  //     with what footprint. Two things read it: a chunk's top layer is truncated
+  //     against a surface the chunk ABOVE draws, and a horizon two chunks share
+  //     must be drawn by exactly one of them. See `registerChunk`. -------------
+  const claims = useRef(new Map<string, ChunkSurfaceClaim[]>());
   // Settled outlines only: presence in this map IS the "resolved" flag.
-  const polygons = useRef(new Map<string, PlanarPolygonGeometry | null>());
+  const polygons = useRef(
+    new Map<
+      string,
+      {
+        polygon: PlanarPolygonGeometry | null;
+        rimSpacing?: number;
+        version: number;
+      }
+    >(),
+  );
   const [registry, setRegistry] = useState<ChunkOutlineRegistry>(
     () => new Map(),
   );
+  const [seams, setSeams] = useState<ChunkSeamRegistry>(() => new Map());
+  const [claimed, setClaimed] = useState<Set<string>>(() => new Set());
 
   const rebuildRegistry = useCallback(() => {
     const next: ChunkOutlineRegistry = new Map();
-    claims.current.forEach((surfaceIds, key) => {
-      const entry = {
-        resolved: polygons.current.has(key),
-        polygon: polygons.current.get(key) ?? null,
-      };
-      surfaceIds.forEach(id => next.set(id, entry));
+    claims.current.forEach((surfaces, key) => {
+      const settled = polygons.current.get(key);
+      surfaces.forEach(({ id, top }) => {
+        const entry: ChunkOutlineEntry = {
+          key,
+          version: settled?.version ?? 0,
+          resolved: polygons.current.has(key),
+          polygon: settled?.polygon ?? null,
+          rimSpacing: settled?.rimSpacing,
+          top,
+        };
+        const list = next.get(id);
+        if (list) list.push(entry);
+        else next.set(id, [entry]);
+      });
     });
+
+    // ⭐ Who draws a shared horizon is decided here, from the footprints, rather
+    // than declared per layer by the caller. A surface still resolving is left out
+    // — the chunks claiming it wait rather than build against a guess.
+    const decisions: ChunkSeamRegistry = new Map();
+    next.forEach((entries, id) => {
+      if (entries.length < 2 || entries.some(e => !e.resolved)) return;
+      const resolved = resolveSeam(entries);
+      const perChunk = new Map<string, SeamDecision>();
+      entries.forEach((entry, i) => perChunk.set(entry.key, resolved[i]));
+      decisions.set(id, perChunk);
+    });
+
     setRegistry(next);
+    setSeams(decisions);
+    setClaimed(previous =>
+      previous.size === next.size &&
+      [...next.keys()].every(id => previous.has(id))
+        ? previous
+        : new Set(next.keys()),
+    );
   }, []);
 
   const registerChunk = useCallback(
-    (key: string, surfaceIds: string[]) => {
-      claims.current.set(key, surfaceIds);
+    (key: string, surfaces: ChunkSurfaceClaim[]) => {
+      claims.current.set(key, surfaces);
       rebuildRegistry();
       return () => {
         claims.current.delete(key);
@@ -211,22 +255,44 @@ export const ChunkStack = ({
   );
 
   const publishOutline = useCallback(
-    (key: string, polygon: PlanarPolygonGeometry | null | undefined) => {
+    (
+      key: string,
+      polygon: PlanarPolygonGeometry | null | undefined,
+      rimSpacing?: number,
+    ) => {
       if (polygon === undefined) {
         if (!polygons.current.has(key)) return;
         polygons.current.delete(key);
       } else {
+        const settled = polygons.current.get(key);
         if (
-          polygons.current.has(key) &&
-          polygons.current.get(key) === polygon
+          settled &&
+          settled.polygon === polygon &&
+          settled.rimSpacing === rimSpacing
         ) {
           return;
         }
-        polygons.current.set(key, polygon);
+        polygons.current.set(key, {
+          polygon,
+          rimSpacing,
+          // A version rather than the polygon's identity, so a chunk consuming this
+          // as a CUT has a content key it can memoize on — the registry itself is
+          // rebuilt whole on every publish.
+          version: (settled?.version ?? 0) + 1,
+        });
       }
       rebuildRegistry();
     },
     [rebuildRegistry],
+  );
+
+  // What the shared build LOADS: a surface no chunk claims would be fetched,
+  // resampled onto the common grid and cascaded through the resolve for nothing.
+  // Appearance needs no equivalent — a horizon is drawn by the chunk it is the lid
+  // of, so nothing has to be borrowed across a seam.
+  const column = useMemo(
+    () => surfaces?.filter(m => claimed.has(m.id)),
+    [surfaces, claimed],
   );
 
   const value = useMemo<ChunkStackContextValue>(() => {
@@ -240,10 +306,12 @@ export const ChunkStack = ({
       outline,
       cutSource,
       surfaces,
+      column,
       envelope,
       rimSpacing,
       maxError,
       outlines: registry,
+      seams,
       registerChunk,
       publishOutline,
       reportBuildState,
@@ -252,10 +320,12 @@ export const ChunkStack = ({
     outline,
     cutSource,
     surfaces,
+    column,
     wellboreEnvelope,
     rimSpacing,
     maxError,
     registry,
+    seams,
     registerChunk,
     publishOutline,
     reportBuildState,

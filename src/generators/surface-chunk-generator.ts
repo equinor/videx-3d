@@ -36,6 +36,8 @@ export type LoadedStackLayer = {
   fill: boolean;
   /** draw this layer's cap (false = a neighbouring chunk draws this horizon) */
   cap: boolean;
+  /** indices into the spec's cuts of the neighbours that draw part of this cap */
+  capCuts?: number[];
   /** surface id, or `null` for a synthetic layer */
   id: string | null;
 };
@@ -144,6 +146,19 @@ function voidUnmappedLayers(
   return voided;
 }
 
+// A cut must be densified with the spacing its OWNER used: densification adds
+// points ALONG a segment, and each one samples the reference grid on its own, so
+// two boundaries built from the same polygon at different spacings do not agree.
+function densifyChunkCuts(spec: SurfaceChunkSpec): PlanarPolygonGeometry[] {
+  return (spec.cuts ?? []).map(
+    cut =>
+      densifyChunkRim(
+        new PlanarPolygonGeometry(cut.coordinates, cut.offset),
+        cut.rimSpacing ?? 250,
+      ).densified,
+  );
+}
+
 /**
  * Fetch a spec's layers and build them onto ONE shared tessellation: every layer
  * is resampled onto a common grid, refined in parallel across the worker pool,
@@ -182,6 +197,7 @@ export async function buildSpecStack(
           id: null,
           fill: !!f.fill,
           cap: f.cap !== false,
+          capCuts: f.capCuts,
           layer: { depth: f.depth, offset: f.offset, relief: f.relief },
         });
         return;
@@ -193,6 +209,7 @@ export async function buildSpecStack(
         id: f.id,
         fill: !!f.fill,
         cap: f.cap !== false,
+        capCuts: f.capCuts,
         layer: context.layers[at],
       });
     });
@@ -230,44 +247,40 @@ export async function buildSpecStack(
     if (voided.every(Boolean)) return null;
 
     const sealing = spec.resolve?.seal !== false;
-    // ⭐ A seal reaches over the gap it closes MEASURED INSIDE THIS FOOTPRINT — the
-    // reference grid is the bounding box of a rotated outline, so its corners are
-    // never drawn and would otherwise set the length of every taper.
-    const inside = sealing
-      ? rasterizeStackOutline(context.reference, densified)
+    const voiding = sealing && spec.resolve?.sealMode === 'void';
+    // ⭐ Real surfaces are sealed on the COLUMN (`getStackContext`), so a horizon
+    // two chunks share has ONE height and their walls and caps meet. Nothing is
+    // left for this chunk to seal: a synthetic layer's mask is all ones, so it has
+    // no unmapped region to close.
+    // ⚠️ `void` is the exception — it turns one layer into two, which the column's
+    // id -> index map cannot carry — so it still runs here, and two chunks sharing
+    // a horizon can still split it differently.
+    const split = voiding
+      ? splitVoidChannels(
+          channels,
+          masks,
+          context.reference.header.nx,
+          loaded.map(l => l.fill),
+          {
+            minThickness: spec.resolve?.minThickness,
+            // A void is measured over the gap you can SEE, so inside THIS chunk.
+            inside: rasterizeStackOutline(context.reference, densified),
+          },
+        )
       : null;
-    // ⭐ Sealed HERE rather than on the column: a surface's neighbours are the ones
-    // THIS chunk draws, including its synthetic layers. On the column the deepest
-    // surface looks like it has nothing below it even when the chunk puts a floor
-    // under it — which silently disables the proportional rule.
-    const sealed = sealing
-      ? sealStackChannels(channels, masks, context.reference.header.nx, {
-          mode: spec.resolve?.sealMode,
-          minThickness: spec.resolve?.minThickness,
-          inside,
-        })
-      : null;
-    // `void` closes the block by REMOVING what cannot be accounted for, which
-    // turns one layer into two with an empty interval between them. Everything
-    // below works on the expanded list; `source` maps each entry back to the
-    // caller's layer so materials and diagnostics still line up.
-    const split =
-      sealing && spec.resolve?.sealMode === 'void'
-        ? splitVoidChannels(
-            channels,
-            masks,
-            context.reference.header.nx,
-            loaded.map(l => l.fill),
-            {
-              minThickness: spec.resolve?.minThickness,
-              inside,
-            },
-          )
-        : null;
+    // Per BUILD layer: the column's, or a synthetic layer's (nothing is inferred
+    // about a boundary that was never measured). One shared zero array — it is only
+    // ever read.
+    const columnInferred = context.inferred;
+    const noneInferred = columnInferred ? new Float32Array(nodes) : null;
+    const inferred =
+      columnInferred && noneInferred
+        ? picks.map(i => (i >= 0 ? columnInferred[i] : noneInferred))
+        : undefined;
     const source = split ? split.source : loaded.map((_, i) => i);
     const reference = {
       ...context.reference,
-      channels: split?.channels ?? sealed?.channels ?? channels,
+      channels: split?.channels ?? channels,
       masks: split?.masks ?? masks,
     };
     const allCandidates = await getStackCandidates(context, maxError);
@@ -275,6 +288,8 @@ export async function buildSpecStack(
 
     // A voided layer draws no cap, and neither interval it bounds is filled.
     const caps = source.map(i => loaded[i].cap && !voided[i]);
+    const cuts = densifyChunkCuts(spec);
+    const capCuts = source.map(i => loaded[i].capCuts ?? null);
     const fills = (split ? split.fill : loaded.map(l => l.fill)).map((f, k) => {
       const below = source[k + 1];
       return f && !voided[source[k]] && !(below !== undefined && voided[below]);
@@ -316,14 +331,15 @@ export async function buildSpecStack(
         // cover this stack — fall back to the per-vertex resolve, which is cheap
         // here because the column layers already arrive ordered (it only measures
         // them). ⚠️ Ordering against a synthetic layer is therefore enforced PER
-        // CHUNK, not column-wide. The same applies once SEALING has moved the
-        // heights: the column's masks describe the surfaces before the taper.
+        // CHUNK, not column-wide. Same for `void`, which splits the layer list the
+        // masks were built for. Sealing does NOT disqualify them: the column seals
+        // BEFORE it resolves, so its masks already describe the tapered heights.
         preResolved:
-          spec.resolve && !synthetic && !sealing
+          spec.resolve && !synthetic && !voiding
             ? picks.map(i => context.absent[i])
             : undefined,
         resolve:
-          spec.resolve && (synthetic || sealing)
+          spec.resolve && (synthetic || voiding)
             ? { mode: spec.resolve.mode, minGap: spec.resolve.minGap }
             : undefined,
         collapseThreshold: spec.resolve?.collapseThreshold,
@@ -333,9 +349,11 @@ export async function buildSpecStack(
         coverageAbsence: sealing ? false : spec.resolve?.coverageAbsence,
         refineTerminations: spec.resolve?.refineTerminations,
         caps,
+        cuts,
+        capCuts,
         fills,
         ceiling: split ? split.ceiling : undefined,
-        inferred: split?.inferred ?? sealed?.inferred,
+        inferred: split?.inferred ?? inferred,
         topCover: coverAbove,
       },
     );
@@ -365,7 +383,9 @@ export async function buildSpecStack(
       layerCoverage: measured.layerCoverage,
       layerFilled: measured.layerFilled,
       layerVoided: voided,
-      layerTapered: sealed?.tapered ?? split?.moved ?? [],
+      layerTapered:
+        split?.moved ??
+        picks.map(i => (i >= 0 ? (context.tapered[i] ?? 0) : 0)),
       sharedStack: true,
       stackLayers: context.layers.length,
       stackResolveMs: context.resolveMs,
@@ -392,6 +412,7 @@ export async function buildSpecStack(
         id: null,
         fill: !!f.fill,
         cap: f.cap !== false,
+        capCuts: f.capCuts,
         layer: { depth: f.depth, offset: f.offset, relief: f.relief },
       });
       return;
@@ -403,6 +424,7 @@ export async function buildSpecStack(
       id: f.id,
       fill: !!f.fill,
       cap: f.cap !== false,
+      capCuts: f.capCuts,
       layer: {
         values,
         header: f.header,
@@ -474,6 +496,8 @@ export async function buildSpecStack(
 
   // A voided layer draws no cap, and neither interval it bounds is filled.
   const caps = source.map(i => loaded[i].cap && !voided[i]);
+  const cuts = densifyChunkCuts(spec);
+  const capCuts = source.map(i => loaded[i].capCuts ?? null);
   const fills = (split ? split.fill : loaded.map(l => l.fill)).map((f, k) => {
     const below = source[k + 1];
     return f && !voided[source[k]] && !(below !== undefined && voided[below]);
@@ -493,6 +517,8 @@ export async function buildSpecStack(
       coverageAbsence: sealing ? false : spec.resolve?.coverageAbsence,
       refineTerminations: spec.resolve?.refineTerminations,
       caps,
+      cuts,
+      capCuts,
       fills,
       ceiling: split ? split.ceiling : undefined,
       inferred: split?.inferred ?? sealed?.inferred,
@@ -538,6 +564,7 @@ export function stackDiagnostics(
     crossings: pairs.reduce((a, p) => a + p.crossings, 0),
     crossingsCovered: pairs.reduce((a, p) => a + p.crossingsCovered, 0),
     rimDropped: build.tessellation.rimDropped,
+    constraintFailures: build.tessellation.constraintFailures,
     wallRingsDropped: build.ringsDropped,
     wallRingsOpen: build.ringsOpen,
     layers: result.loaded.map((entry, i) => {
@@ -555,6 +582,10 @@ export function stackDiagnostics(
         (a, k) => a + (dropped?.droppedCollapsed[k] ?? 0),
         0,
       );
+      const excluded = built.reduce(
+        (a, k) => a + (dropped?.droppedExcluded[k] ?? 0),
+        0,
+      );
       // Triangles actually drawn, summed over the layer's build copies.
       const triangles = entry.cap
         ? built.reduce(
@@ -562,7 +593,8 @@ export function stackDiagnostics(
               a +
               totalTriangles -
               (dropped?.droppedAbsent[k] ?? 0) -
-              (dropped?.droppedCollapsed[k] ?? 0),
+              (dropped?.droppedCollapsed[k] ?? 0) -
+              (dropped?.droppedExcluded[k] ?? 0),
             0,
           )
         : 0;
@@ -583,6 +615,8 @@ export function stackDiagnostics(
         triangles,
         droppedAbsent: absent,
         droppedCollapsed: collapsed,
+        droppedExcluded: excluded,
+        capped: entry.cap,
         duplicate: build.duplicates[built[0] ?? i] ?? 0,
       };
     }),

@@ -2,23 +2,11 @@ import { useEffect, useMemo } from 'react';
 import { DoubleSide, Material, MeshStandardMaterial } from 'three';
 import { makeOitCompatible } from '../../rendering/oit-material';
 import { SurfaceChunk } from '../../sdk';
-import { ChunkLayer } from './chunk-defs';
+import { ChunkLayer, DEFAULT_PALETTE } from './chunk-defs';
 import {
   ChunkInferenceStyle,
   createInferenceMaterial,
 } from './inference-material';
-
-/** Fallback per-layer palette, cycled by layer order. */
-const DEFAULT_PALETTE = [
-  '#4e79a7',
-  '#f28e2c',
-  '#59a14f',
-  '#e15759',
-  '#af7aa1',
-  '#76b7b2',
-  '#edc949',
-  '#9c755f',
-];
 
 /**
  * {@link ChunkMeshes} props.
@@ -124,9 +112,9 @@ export const ChunkMeshes = ({
 
     const basement = chunk.basement
       ? {
-        surfaces: chunk.basement.surfaces.map(s => make(s.color, 1)),
-        walls: chunk.basement.walls.map(w => make(w.color, 1)),
-      }
+          surfaces: chunk.basement.surfaces.map(s => make(s.color, 1)),
+          walls: chunk.basement.walls.map(w => make(w.color, 1)),
+        }
       : null;
 
     return { surfaces, walls, basement, owned };

@@ -49,13 +49,16 @@ const ChunkPipeline = () => {
     return [base, new OutputPass()];
   }, [scene, camera]);
   void RenderPass;
-  useFrame(() => { }, 2);
+  useFrame(() => {}, 2);
   return <RenderingPipeline passes={passes} />;
 };
 
 type SeabedConnectionProps = {
-  connect: boolean;
   detailCount: number;
+  basementCrop: number;
+  seal: boolean;
+  sealMode: 'proportional' | 'void';
+  minThickness: number;
   waterDepth: number;
   basementThickness: number;
   wellCount: number;
@@ -110,6 +113,29 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
     return new PlanarPolygonGeometry([[[...ring, ring[0]]]], [0, 0]);
   }, [seabed]);
 
+  // The basement tier's own footprint: the field cropped from one side, so the
+  // seam it shares with the wellbore-cut tier can be swept from containment
+  // through a partial overlap to disjoint. Built in the field's OWN (rotated)
+  // frame so it always stays inside the stack envelope.
+  const basementOutline = useMemo<PlanarPolygonGeometry | null>(() => {
+    if (!seabed) return null;
+    if (props.basementCrop <= 0) return field;
+    const { nx, ny, xinc, yinc, rot, xori, yori } = seabed.header;
+    const p = crs.utmToWorld(xori, yori, 0);
+    const toWorld = surfaceGridToWorld({ nx, ny, xinc, yinc, rot }, [p.x, p.z]);
+    const from = Math.min(
+      nx - 2,
+      Math.round((props.basementCrop * 1000) / xinc),
+    );
+    const ring = [
+      toWorld(from, 0),
+      toWorld(nx - 1, 0),
+      toWorld(nx - 1, ny - 1),
+      toWorld(from, ny - 1),
+    ];
+    return new PlanarPolygonGeometry([[[...ring, ring[0]]]], [0, 0]);
+  }, [seabed, field, props.basementCrop]);
+
   const wellboreIds = useMemo(
     () => wellbores.slice(0, props.wellCount).map(w => w.id),
     [wellbores, props.wellCount],
@@ -122,11 +148,19 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
     [wellbores, props.wellCount],
   );
 
-  const resolve = useMemo<ChunkResolveOptions>(() => ({}), []);
+  const resolve = useMemo<ChunkResolveOptions>(
+    () => ({
+      seal: props.seal,
+      sealMode: props.sealMode,
+      minThickness: props.minThickness,
+    }),
+    [props.seal, props.sealMode, props.minThickness],
+  );
 
   // Per-chunk build report. `coverage` says whether a layer has data of its own
   // here; a layer at 0 was VOIDED — it has none anywhere this chunk is drawn, so
-  // it draws no cap and leaves both the intervals it bounds open.
+  // it draws no cap and leaves both the intervals it bounds open. `capped` says
+  // whether a neighbouring chunk took the horizon over.
   const report = useMemo(
     () => (label: string) => (metrics: SurfaceChunkMetrics) => {
       const d = metrics.diagnostics;
@@ -135,14 +169,26 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
         name: l.id ? (surfaceMetaDict[l.id]?.name ?? l.id) : '(synthetic)',
         coverage: +l.coverage.toFixed(3),
         voided: l.voided,
+        capped: l.capped,
         triangles: l.triangles,
         droppedAbsent: l.droppedAbsent,
         droppedCollapsed: l.droppedCollapsed,
+        droppedExcluded: l.droppedExcluded,
       }));
       console.log(
         `CHUNKREPORT ${JSON.stringify({
           label,
           triangles: metrics.triangles,
+          constraintFailures: d?.constraintFailures ?? null,
+          // The column is shared, so these are the SAME work reported by every
+          // chunk — only the first one actually pays for it.
+          stackLayers: d?.stackLayers ?? null,
+          referenceNodes: d?.referenceNodes ?? null,
+          referenceStep: d?.referenceStep ?? null,
+          fetchMs: Math.round(d?.fetchMs ?? 0),
+          referenceMs: Math.round(d?.referenceMs ?? 0),
+          stackResolveMs: Math.round(d?.stackResolveMs ?? 0),
+          tessellateMs: Math.round(d?.tessellateMs ?? 0),
           layers: rows,
         })}`,
       );
@@ -152,23 +198,23 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
   );
 
   // --- The three tiers -------------------------------------------------------
-  // A: water down to the seabed, over the FIELD outline. The seabed is capped
-  //    here because this is the widest chunk — it owns that horizon.
+  // A: water down to the seabed, over the FIELD outline. The seabed is the detail
+  //    chunk's lid, so this one draws the field MINUS that footprint — the part of
+  //    the seabed no block below it claims.
   const oceanLayers = useMemo<ChunkLayer[]>(() => {
     if (!seabed) return [];
     return [
       { depth: props.waterDepth, material: '#3fa9d8', fill: '#2f7fa8' },
-      // ⭐ Opaque even though the chunk is drawn translucent: this horizon is also
-      // the TOP of the opaque detail chunk below, which does not draw it
-      // (`cap: false`). Left at the chunk's opacity it is a see-through lid over a
-      // solid block, and you look straight into the detail chunk's walls.
-      { surface: seabed, material: '#c2b280', opacity: 1 },
+      // Drawn at THIS chunk's opacity, which is the point of the split: the open
+      // seabed stays translucent while the lid over the opaque detail block does
+      // not, so you never look straight through it into that block's walls.
+      { surface: seabed, material: '#c2b280' },
     ];
   }, [seabed, props.waterDepth]);
 
-  // B: the detail, cut by wellbores. It starts ON the seabed and ends ON the
-  //    basement surface, drawing NEITHER — both are owned by the wider chunks
-  //    above and below, so the tiers meet without drawing a horizon twice.
+  // B: the detail, cut by wellbores. It starts ON the seabed — which it DRAWS, as
+  //    the block that horizon is the lid of — and ends ON the basement surface,
+  //    which it does not: that one is the basement chunk's lid.
   const detailLayers = useMemo<ChunkLayer[]>(() => {
     if (!seabed || !basement) return [];
     const middle = column
@@ -178,7 +224,6 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
     return [
       {
         surface: seabed,
-        cap: !props.connect,
         material: '#c2b280',
         fill: '#a08f66',
       },
@@ -187,9 +232,9 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
         material: palette[i % palette.length],
         fill: palette[i % palette.length],
       })),
-      { surface: basement, cap: !props.connect },
+      { surface: basement },
     ];
-  }, [column, seabed, basement, props.detailCount, props.connect]);
+  }, [column, seabed, basement, props.detailCount]);
 
   // C: the basement block, back on the FIELD outline — the basement surface it
   //    owns, filled down to a flat floor `basementThickness` below it (`offset`).
@@ -232,6 +277,7 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
           />
           <Chunk
             layers={basementLayers}
+            outline={basementOutline ?? 'inherit'}
             surfaceOpacity={props.surfaceOpacity}
             wallOpacity={props.wallOpacity}
             wireframe={props.wireframe}
@@ -268,8 +314,8 @@ const meta = {
       description: {
         component:
           'Three tiers that MEET: water + seabed over the field outline, wellbore-cut detail beneath it, and the basement block back on the field outline.\n\n' +
-          'The tiers connect by SHARING a boundary surface rather than by filling a gap between them. `NORDLAND GP. Top` belongs to both the ocean chunk and the detail chunk; `Basement Base` belongs to both the detail chunk and the basement chunk. In each pair the WIDER chunk draws the cap and the narrower one sets `cap: false`, so the horizon is drawn exactly once and two independent tessellations never fight over it.\n\n' +
-          'Turn `connect` off to see the alternative: every chunk caps its own boundary, and the shared horizons are drawn twice.',
+          'The tiers connect by SHARING a boundary surface rather than by filling a gap between them. `NORDLAND GP. Top` belongs to both the ocean chunk and the detail chunk; `Basement Base` belongs to both the detail chunk and the basement chunk. Every chunk simply declares the layer — the stack works out who draws it, so it is drawn exactly once and two independent tessellations never fight over it.\n\n' +
+          'A horizon is drawn by the chunk it is the TOP layer of, because a cap is the lid of the block underneath it. The others draw their footprint MINUS that, which is why the translucent water tier keeps a translucent seabed of its own while the lid over the opaque detail block is opaque.',
       },
     },
   },
@@ -280,10 +326,13 @@ type Story = StoryObj<typeof SeabedConnectionStory>;
 
 export const Default: Story = {
   args: {
-    connect: true,
     detailCount: 6,
+    basementCrop: 0,
     waterDepth: 0,
     basementThickness: 800,
+    seal: true,
+    sealMode: 'proportional',
+    minThickness: 1,
     wellCount: 20,
     radius: 800,
     showTrajectories: true,
@@ -293,15 +342,15 @@ export const Default: Story = {
     wireframe: false,
   },
   argTypes: {
-    connect: {
-      control: 'boolean',
-      description:
-        'Share the boundary surfaces between tiers: the narrower chunk keeps the layer but sets `cap: false`, so the wider one draws that horizon alone. Off, both draw it.',
-      table: { category: 'Connection' },
-    },
     detailCount: {
       control: { type: 'range', min: 1, max: 20, step: 1 },
       description: 'Surfaces the wellbore-cut middle tier spans.',
+      table: { category: 'Connection' },
+    },
+    basementCrop: {
+      control: { type: 'range', min: 0, max: 16, step: 0.5 },
+      description:
+        'Crop the basement tier this many km off one side of the field, sweeping the `Basement Base` seam through all three cases: it CONTAINS the detail tier (0), then only PARTLY overlaps it (the basement cap is cut back to the detail tier’s edge), then misses it entirely and both draw their own.',
       table: { category: 'Connection' },
     },
     waterDepth: {
@@ -314,6 +363,25 @@ export const Default: Story = {
       description:
         'Flat basement floor this far below the basement surface (an `offset` layer).',
       table: { category: 'Connection' },
+    },
+    seal: {
+      control: 'boolean',
+      description:
+        'Close a surface’s unmapped region by tapering it onto its neighbours. ⚠️ Sealing runs PER CHUNK, so two chunks sharing a horizon can taper it differently — turn it off to tell that apart from a genuine gap at a seam.',
+      table: { category: 'Resolve' },
+    },
+    sealMode: {
+      control: 'inline-radio',
+      options: ['proportional', 'void'],
+      description:
+        'How the space an unmapped surface cannot account for is closed. `proportional` keeps the relative depth it had where it was last mapped, so both units survive — “this horizon is here somewhere”. `void` splits it in two and draws NOTHING between — “the units are not defined here”, the only one that cannot be mistaken for data. ⚠️ `proportional` is resolved once for the whole column, `void` per chunk — so under `void` two chunks sharing a horizon can still split it differently and leave a gap at the seam.',
+      table: { category: 'Resolve' },
+    },
+    minThickness: {
+      control: { type: 'range', min: 0, max: 50, step: 0.5 },
+      description:
+        'How much of a neighbouring unit a seal must leave standing, in metres — the only setting the shape of a seal has (how far it reaches is derived from the gap it closes, measured inside this chunk). ⚠️ Below `collapseThreshold` the sliver it leaves is dropped for having no thickness and the hole comes back.',
+      table: { category: 'Resolve' },
     },
     wellCount: {
       control: { type: 'range', min: 1, max: 50, step: 1 },
@@ -339,6 +407,8 @@ export const Default: Story = {
     },
     waterOpacity: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      description:
+        'Opacity of the water tier — including the part of the seabed it draws. The lid over the detail chunk is that chunk’s, so it keeps `surfaceOpacity`.',
       table: { category: 'Appearance' },
     },
     wireframe: { control: 'boolean', table: { category: 'Appearance' } },

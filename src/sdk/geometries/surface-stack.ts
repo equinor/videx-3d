@@ -19,7 +19,12 @@ import {
   collectStackCandidates,
   STACK_NO_DATA,
 } from './surface-stack-candidates';
-import { GridPolygon, makeGridInside } from './triangulate-grid-delaunay';
+import {
+  GridPolygon,
+  GridRing,
+  makeGridInside,
+  nodeGridRings,
+} from './triangulate-grid-delaunay';
 
 /**
  * A layer entering a shared-tessellation stack from an elevation GRID: the
@@ -211,6 +216,17 @@ export type StackTessellation = {
   /** vertex indices along each rim ring, in ring order */
   rimVertices: number[][];
   /**
+   * Per CUT outline (see the `cuts` argument of {@link tessellateStack}), one flag
+   * per triangle: 1 where that outline contains the triangle.
+   *
+   * ⚠️ Containment, NOT a partition — two chunks whose footprints overlap both
+   * contain the triangles in the overlap, which is the truth. Which of them draws
+   * there is decided before the build (`documents/chunks.md` §10.1.9); this only
+   * reports where the other one reaches. Exact rather than approximate because a
+   * cut is CONSTRAINED, so no triangle straddles it.
+   */
+  cuts?: Uint8Array[];
+  /**
    * Rim vertices that ended up in NO kept triangle and are therefore missing from
    * `rimVertices`.
    *
@@ -222,6 +238,13 @@ export type StackTessellation = {
    * crosses itself.
    */
   rimDropped: number;
+  /**
+   * Constraint edges the triangulator could not enforce (see
+   * `Delatin.constraintFailures`). ⚠️ Should be 0 — non-zero means a rim or a cut
+   * does NOT follow mesh edges, so a boundary drawn from it is a claim the mesh
+   * does not support.
+   */
+  constraintFailures: number;
 };
 
 /** Options for {@link resolveStackOrder}. */
@@ -339,6 +362,15 @@ export type StackCollapseOptions = {
    * place — wearing the colour of the unit above it.
    */
   ceiling?: boolean[];
+  /**
+   * Per layer, one flag per TRIANGLE: 1 where a NEIGHBOURING chunk draws this
+   * layer's cap. Two chunks that meet share a horizon, and drawing it twice means
+   * two independent tessellations fighting for the same pixels.
+   *
+   * ⭐ It removes the CAP only. The layer keeps its rim, its walls and its place
+   * in the resolve — the volume below it is this chunk's either way.
+   */
+  capExcluded?: (Uint8Array | null)[];
 };
 
 /** The result of {@link collapseStackTriangles}. */
@@ -351,6 +383,8 @@ export type StackCollapseResult = {
   droppedAbsent: number[];
   /** per layer: dropped because the unit has no thickness there */
   droppedCollapsed: number[];
+  /** per layer: dropped because a neighbouring chunk draws the cap there */
+  droppedExcluded: number[];
 };
 
 /** Sentinel for a node with no data — outside the range of any real depth. */
@@ -698,6 +732,10 @@ export function measureStackCoverage(
  * @param maxError greedy simplification error, in world units of height
  * @param candidates optional precomputed per-layer candidate node indices (see
  *   {@link collectStackCandidates})
+ * @param cuts outlines of NEIGHBOURING chunks this one partially overlaps. They do
+ *   NOT extend the kept domain — they are constrained so that the part of this
+ *   chunk another one also draws is bounded by real mesh edges, and reported per
+ *   triangle in {@link StackTessellation.cuts}.
  * @returns the shared tessellation, or `null` when nothing survives the mask
  *
  * @group Geometries
@@ -707,13 +745,38 @@ export function tessellateStack(
   polygon: PlanarPolygonGeometry,
   maxError: number,
   candidates?: Uint32Array[],
+  cuts?: PlanarPolygonGeometry[],
 ): StackTessellation | null {
   const { nx, ny } = reference.header;
   const toGrid = surfaceWorldToGrid(reference.header, reference.worldPosition);
-  const components = polygon.coordinates as PlanarPolygonCoordinates;
-  const gridPolygons: GridPolygon[] = components.map(rings =>
-    rings.map(ring => ring.map(([sx, sz]) => toGrid(sx, sz))),
-  );
+  const toGridPolygons = (p: PlanarPolygonGeometry): GridPolygon[] =>
+    (p.coordinates as PlanarPolygonCoordinates).map(rings =>
+      rings.map(ring => ring.map(([sx, sz]) => toGrid(sx, sz))),
+    );
+  const gridPolygons = toGridPolygons(polygon);
+  const cutPolygons = (cuts ?? []).map(toGridPolygons);
+
+  // ⚠️ A cut rim CROSSES this chunk's rim — that is what makes it a partial
+  // overlap. Two crossing constraint edges can only both follow mesh edges if the
+  // crossing is itself a vertex, so they are noded first (`nodeGridRings`);
+  // without it the triangulator silently drops one of the two boundaries.
+  if (cutPolygons.length > 0) {
+    const flat: GridRing[] = [];
+    const visit = (polys: GridPolygon[]) =>
+      polys.forEach(rings => rings.forEach(ring => flat.push(ring)));
+    visit(gridPolygons);
+    cutPolygons.forEach(visit);
+    const noded = nodeGridRings(flat);
+    if (noded !== flat) {
+      let at = 0;
+      const replace = (polys: GridPolygon[]) =>
+        polys.forEach((rings, ci) => {
+          polys[ci] = rings.map(() => noded[at++]);
+        });
+      replace(gridPolygons);
+      cutPolygons.forEach(replace);
+    }
+  }
 
   // Union of every layer's refinement vertices, as reference grid node indices.
   const union = new Set<number>();
@@ -764,6 +827,31 @@ export function tessellateStack(
     }
   }
 
+  // A cut is constrained but never closed: it only has to bound the part of THIS
+  // chunk that a neighbour also draws, so where it leaves the reference grid the
+  // chain simply restarts.
+  for (const cut of cutPolygons) {
+    for (const poly of cut) {
+      for (const ring of poly) {
+        let prev = -1;
+        for (let i = 0; i <= ring.length; i++) {
+          const [gx, gy] = ring[i % ring.length];
+          if (gx < 0 || gx > nx - 1 || gy < 0 || gy > ny - 1) {
+            prev = -1;
+            continue;
+          }
+          const vi = master.insertPoint(gx, gy, 0);
+          if (vi < 0) {
+            prev = -1;
+            continue;
+          }
+          if (prev >= 0 && vi !== prev) master.constrainEdge(prev, vi);
+          prev = vi;
+        }
+      }
+    }
+  }
+
   master.removeExteriorTriangles(makeGridInside(gridPolygons));
   if (master.triangles.length === 0) return null;
 
@@ -793,11 +881,34 @@ export function tessellateStack(
     return mapped;
   });
 
+  const coords = Float32Array.from(coordList);
+
+  let cutFlags: Uint8Array[] | undefined;
+  if (cutPolygons.length > 0) {
+    const triangles = indices.length / 3;
+    cutFlags = cutPolygons.map(poly => {
+      const test = makeGridInside(poly);
+      const flags = new Uint8Array(triangles);
+      for (let t = 0; t < triangles; t++) {
+        const a = indices[3 * t];
+        const b = indices[3 * t + 1];
+        const c = indices[3 * t + 2];
+        const cx = (coords[2 * a] + coords[2 * b] + coords[2 * c]) / 3;
+        const cy =
+          (coords[2 * a + 1] + coords[2 * b + 1] + coords[2 * c + 1]) / 3;
+        if (test(cx, cy)) flags[t] = 1;
+      }
+      return flags;
+    });
+  }
+
   return {
-    coords: Float32Array.from(coordList),
+    coords,
     indices,
     rimVertices: keptRims,
+    cuts: cutFlags,
     rimDropped,
+    constraintFailures: master.constraintFailures,
   };
 }
 
@@ -1274,6 +1385,7 @@ export function collapseStackTriangles(
   const dropped: number[] = [];
   const droppedAbsent: number[] = [];
   const droppedCollapsed: number[] = [];
+  const droppedExcluded: number[] = [];
 
   heights.forEach((current, layer) => {
     const coverage = options.coverage?.[layer];
@@ -1286,11 +1398,13 @@ export function collapseStackTriangles(
     // still be absent.
     const above = layer > 0 && !aboveIsCeiling ? heights[layer - 1] : null;
     const below = isCeiling ? (heights[layer + 1] ?? null) : null;
-    if (!coverage && !cut && !above && !below) {
+    const excluded = options.capExcluded?.[layer] ?? null;
+    if (!coverage && !cut && !above && !below && !excluded) {
       out.push(null);
       dropped.push(0);
       droppedAbsent.push(0);
       droppedCollapsed.push(0);
+      droppedExcluded.push(0);
       return;
     }
 
@@ -1300,10 +1414,15 @@ export function collapseStackTriangles(
     let n = 0;
     let absentDrops = 0;
     let collapsedDrops = 0;
+    let excludedDrops = 0;
     for (let i = 0; i < indices.length; i += 3) {
       const a = indices[i];
       const b = indices[i + 1];
       const c = indices[i + 2];
+      if (excluded && excluded[i / 3] === 1) {
+        excludedDrops++;
+        continue;
+      }
       if (missing(a, b, c)) {
         absentDrops++;
         continue;
@@ -1332,14 +1451,21 @@ export function collapseStackTriangles(
       kept[n++] = b;
       kept[n++] = c;
     }
-    const drops = absentDrops + collapsedDrops;
+    const drops = absentDrops + collapsedDrops + excludedDrops;
     out.push(drops > 0 ? kept.slice(0, n) : null);
     dropped.push(drops);
     droppedAbsent.push(absentDrops);
     droppedCollapsed.push(collapsedDrops);
+    droppedExcluded.push(excludedDrops);
   });
 
-  return { indices: out, dropped, droppedAbsent, droppedCollapsed };
+  return {
+    indices: out,
+    dropped,
+    droppedAbsent,
+    droppedCollapsed,
+    droppedExcluded,
+  };
 }
 
 /**

@@ -98,7 +98,7 @@ const ChunkPipeline = () => {
     return [base, new OutputPass()];
   }, [scene, camera]);
   void RenderPass;
-  useFrame(() => { }, 2);
+  useFrame(() => {}, 2);
   return <RenderingPipeline passes={passes} />;
 };
 
@@ -175,16 +175,16 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
     () =>
       props.resolve
         ? {
-          mode: props.resolveMode,
-          minGap: props.minGap || undefined,
-          collapseThreshold: props.collapseThreshold,
-          refineTerminations: props.refineTerminations,
-          coverageAbsence: props.coverageAbsence,
-          maxFill: props.maxFill,
-          seal: props.seal,
-          sealMode: props.sealMode,
-          minThickness: props.minThickness,
-        }
+            mode: props.resolveMode,
+            minGap: props.minGap || undefined,
+            collapseThreshold: props.collapseThreshold,
+            refineTerminations: props.refineTerminations,
+            coverageAbsence: props.coverageAbsence,
+            maxFill: props.maxFill,
+            seal: props.seal,
+            sealMode: props.sealMode,
+            minThickness: props.minThickness,
+          }
         : undefined,
     [
       props.resolve,
@@ -266,8 +266,11 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
         droppedAbsent: d?.trianglesAbsent ?? null,
         droppedThin: d?.trianglesCollapsed ?? null,
         rimDropped: d?.rimDropped ?? null,
+        constraintFailures: d?.constraintFailures ?? null,
         wallRingsDropped: d?.wallRingsDropped ?? null,
         wallRingsOpen: d?.wallRingsOpen ?? null,
+        caps: (d?.layers ?? []).map(l => (l.capped ? 1 : 0)).join(''),
+        excluded: (d?.layers ?? []).reduce((a, l) => a + l.droppedExcluded, 0),
         totalMs: Math.round(metrics.totalMs),
       })}`,
     );
@@ -309,8 +312,10 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
           'inferred%': (100 * l.inferred).toFixed(1),
           'duplicate%': (100 * l.duplicate).toFixed(1),
           triangles: l.triangles.toLocaleString(),
+          capped: l.capped,
           droppedAbsent: l.droppedAbsent,
           droppedThin: l.droppedCollapsed,
+          droppedToNeighbour: l.droppedExcluded,
         })),
       );
     }
@@ -331,13 +336,13 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
         }));
         if (!props.connectChunks || i === 0) return own;
         // Connect to the chunk above by SHARING its last surface: this chunk uses
-        // it as the top of its first interval but does NOT cap it, because the
-        // chunk above already draws that horizon. Drawing it twice would put two
-        // independent tessellations of the same surface in the same place.
+        // it as the top of its first interval. Which of the two draws the horizon
+        // is settled by the stack from their footprints — declaring it twice is
+        // the point, not a mistake.
         const above = chunks[i - 1];
         const shared = above[above.length - 1];
         return [
-          { surface: shared, cap: false, fill: shade(0) },
+          { surface: shared, fill: shade(0) },
           ...own.map((l, j) => ({ ...l, material: shade(j + 1) })),
         ];
       }),
@@ -446,35 +451,35 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
               layers={
                 i === 0
                   ? [
-                    ...(props.showWater
-                      ? [
-                        {
-                          depth: props.waterDepth,
-                          material: '#3fa9d8',
-                          fill: '#2f7fa8',
-                        },
-                      ]
-                      : []),
-                    ...(props.seabed === 'procedural'
-                      ? [
-                        {
-                          depth: props.seabedDepth,
-                          relief: {
-                            kind: 'dunes' as const,
-                            amplitude: props.seabedRelief,
-                          },
-                          material: '#c2b280',
-                          fill: '#8d7f5a',
-                        },
-                      ]
-                      : []),
-                    ...(topMaterial
-                      ? [
-                        { ...layers[0], material: topMaterial },
-                        ...layers.slice(1),
-                      ]
-                      : layers),
-                  ]
+                      ...(props.showWater
+                        ? [
+                            {
+                              depth: props.waterDepth,
+                              material: '#3fa9d8',
+                              fill: '#2f7fa8',
+                            },
+                          ]
+                        : []),
+                      ...(props.seabed === 'procedural'
+                        ? [
+                            {
+                              depth: props.seabedDepth,
+                              relief: {
+                                kind: 'dunes' as const,
+                                amplitude: props.seabedRelief,
+                              },
+                              material: '#c2b280',
+                              fill: '#8d7f5a',
+                            },
+                          ]
+                        : []),
+                      ...(topMaterial
+                        ? [
+                            { ...layers[0], material: topMaterial },
+                            ...layers.slice(1),
+                          ]
+                        : layers),
+                    ]
                   : layers
               }
               surfaceOpacity={props.surfaceOpacity}
@@ -572,7 +577,7 @@ export const Default: Story = {
     connectChunks: {
       control: 'boolean',
       description:
-        'Make each chunk SHARE its upper neighbour’s last surface — it becomes the top of this chunk’s first interval, uncapped (`cap: false`) because the chunk above already draws that horizon. Off, the tiers leave the unit between them undrawn.',
+        'Make each chunk SHARE its upper neighbour’s last surface — it becomes the top of this chunk’s first interval, and the stack decides from the footprints which of the two draws that horizon. Off, the tiers leave the unit between them undrawn.',
       table: { category: 'Chunks' },
     },
     maxError: {

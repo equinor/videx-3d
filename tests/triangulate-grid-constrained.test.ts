@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { Delatin } from '../src/sdk/geometries/delatin';
 import {
   GridPolygon,
+  nodeGridRings,
   smoothRings,
   triangulateGridConstrained,
 } from '../src/sdk/geometries/triangulate-grid-delaunay';
@@ -447,5 +449,67 @@ describe('smoothRings', () => {
     // A moving average collapses the staircase toward its centre line, so the
     // perimeter shrinks.
     expect(perimeter(smoothed)).toBeLessThan(perimeter(staircase));
+  });
+});
+
+describe('nodeGridRings', () => {
+  const square = (x0: number, y0: number, x1: number, y1: number) => [
+    [x0, y0],
+    [x1, y0],
+    [x1, y1],
+    [x0, y1],
+  ];
+
+  it('returns the input by identity when nothing crosses', () => {
+    const rings = [square(0, 0, 4, 4), square(10, 10, 14, 14)];
+    expect(nodeGridRings(rings)).toBe(rings);
+  });
+
+  it('leaves a ring nested inside another untouched', () => {
+    const rings = [square(0, 0, 10, 10), square(2, 2, 8, 8)];
+    expect(nodeGridRings(rings)).toBe(rings);
+  });
+
+  it('splits both partners at a crossing, with identical coordinates', () => {
+    const a = square(0, 0, 10, 10);
+    const b = square(5, 5, 15, 15);
+    const [na, nb] = nodeGridRings([a, b]);
+
+    // Two edges of each square cross two edges of the other.
+    expect(na.length).toBe(a.length + 2);
+    expect(nb.length).toBe(b.length + 2);
+
+    const key = (p: number[]) => `${p[0]}:${p[1]}`;
+    const shared = new Set(na.map(key));
+    const crossings = nb.filter(p => shared.has(key(p)));
+    // The two crossings are bit-identical points in BOTH rings, which is what
+    // makes them resolve to one vertex.
+    expect(crossings.map(key).sort()).toEqual(['10:5', '5:10']);
+  });
+
+  it('lets a triangulator enforce two crossing rims once they are noded', () => {
+    const size = 33;
+    const grid = new Float32Array(size * size);
+    const a = square(4, 4, 24, 24);
+    const b = square(14, 14, 30, 30);
+
+    const constrain = (rings: number[][][]) => {
+      const d = new Delatin(grid, size);
+      d.run(5);
+      d.beginConstraints();
+      for (const ring of rings) {
+        const verts = ring.map(([x, y]) => d.insertPoint(x, y, 0));
+        for (let i = 0; i < verts.length; i++) {
+          d.constrainEdge(verts[i], verts[(i + 1) % verts.length]);
+        }
+      }
+      return d.constraintFailures;
+    };
+
+    // Crossing constraint edges can only both follow mesh edges if the crossing
+    // is itself a vertex, so the raw rims are unenforceable and the noded ones
+    // are not.
+    expect(constrain([a, b])).toBeGreaterThan(0);
+    expect(constrain(nodeGridRings([a, b]))).toBe(0);
   });
 });

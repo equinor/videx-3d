@@ -1,5 +1,8 @@
 import { Vec2 } from '../types/common';
-import { PlanarPolygonCoordinates } from './planar-geometry';
+import {
+  PlanarPolygonCoordinates,
+  PlanarPolygonGeometry,
+} from './planar-geometry';
 
 /** Signed area of a closed ring (positive = CCW in a right-handed XZ frame). */
 export function ringSignedArea(ring: Vec2[]): number {
@@ -25,6 +28,172 @@ export function pointInRing(x: number, y: number, ring: Vec2[]): boolean {
     if (intersect) inside = !inside;
   }
   return inside;
+}
+
+/**
+ * Whether a point is inside a polygon: inside some component's outer ring and
+ * outside that component's holes.
+ *
+ * @group Geometries
+ */
+export function pointInPolygon(
+  x: number,
+  y: number,
+  polygon: PlanarPolygonCoordinates,
+): boolean {
+  for (const rings of polygon) {
+    if (rings.length === 0 || !pointInRing(x, y, rings[0])) continue;
+    let inHole = false;
+    for (let i = 1; i < rings.length; i++) {
+      if (pointInRing(x, y, rings[i])) {
+        inHole = true;
+        break;
+      }
+    }
+    if (!inHole) return true;
+  }
+  return false;
+}
+
+/**
+ * Total area of a polygon: its outer rings less their holes.
+ *
+ * @group Geometries
+ */
+export function polygonArea(polygon: PlanarPolygonGeometry): number {
+  let area = 0;
+  for (const rings of polygon.coordinates as PlanarPolygonCoordinates) {
+    rings.forEach((ring, i) => {
+      const a = Math.abs(ringSignedArea(ring));
+      area += i === 0 ? a : -a;
+    });
+  }
+  return area;
+}
+
+// Whether two closed segments properly cross (endpoints touching does not count —
+// two outlines that merely share a boundary point do not overlap).
+function segmentsCross(
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  cx: number,
+  cy: number,
+  dx: number,
+  dy: number,
+): boolean {
+  const d1 = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+  const d2 = (bx - ax) * (dy - ay) - (by - ay) * (dx - ax);
+  const d3 = (dx - cx) * (ay - cy) - (dy - cy) * (ax - cx);
+  const d4 = (dx - cx) * (by - cy) - (dy - cy) * (bx - cx);
+  return d1 * d2 < 0 && d3 * d4 < 0;
+}
+
+const ON_BOUNDARY_EPS = 1e-6;
+
+// Distance from a point to a ring's nearest edge, squared.
+function distanceToRingSq(x: number, y: number, ring: Vec2[]): number {
+  let best = Infinity;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const ax = ring[j][0];
+    const ay = ring[j][1];
+    const bx = ring[i][0];
+    const by = ring[i][1];
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len = dx * dx + dy * dy;
+    const t =
+      len === 0
+        ? 0
+        : Math.min(1, Math.max(0, ((x - ax) * dx + (y - ay) * dy) / len));
+    const px = ax + t * dx - x;
+    const py = ay + t * dy - y;
+    const d = px * px + py * py;
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+// Inside, or on the boundary. Two chunks can legitimately share an outline (both
+// inheriting the stack's), and a point exactly on a ring is neither reliably in
+// nor reliably out of an even-odd test.
+function pointInOrOnPolygon(
+  x: number,
+  y: number,
+  polygon: PlanarPolygonCoordinates,
+): boolean {
+  if (pointInPolygon(x, y, polygon)) return true;
+  const eps = ON_BOUNDARY_EPS * ON_BOUNDARY_EPS;
+  for (const rings of polygon) {
+    for (const ring of rings) {
+      if (distanceToRingSq(x, y, ring) <= eps) return true;
+    }
+  }
+  return false;
+}
+
+/** How two polygons sit relative to one another, from {@link polygonRelation}. */
+export type PolygonRelation =
+  /** `a` contains `b` (including two identical outlines) */
+  | 'contains'
+  /** `b` contains `a` */
+  | 'contained'
+  /** they share no area */
+  | 'disjoint'
+  /** their boundaries cross, so each has area the other does not */
+  | 'overlap';
+
+/**
+ * How two polygons sit relative to one another, in their own coordinate space.
+ *
+ * ⚠️ Assumes non-self-intersecting rings, which is what the outline pipeline
+ * produces. Boundaries that only TOUCH are not an overlap — a proper crossing is
+ * what makes each side hold area the other does not — and two identical outlines
+ * read as `'contains'`, so a caller ordering its inputs gets a stable answer.
+ *
+ * @group Geometries
+ */
+export function polygonRelation(
+  polygonA: PlanarPolygonGeometry,
+  polygonB: PlanarPolygonGeometry,
+): PolygonRelation {
+  const a = polygonA.coordinates as PlanarPolygonCoordinates;
+  const b = polygonB.coordinates as PlanarPolygonCoordinates;
+  for (const ringsA of a) {
+    for (const ringA of ringsA) {
+      for (const ringsB of b) {
+        for (const ringB of ringsB) {
+          for (let i = 0; i < ringA.length; i++) {
+            const p = ringA[i];
+            const q = ringA[(i + 1) % ringA.length];
+            for (let j = 0; j < ringB.length; j++) {
+              const r = ringB[j];
+              const s = ringB[(j + 1) % ringB.length];
+              if (
+                segmentsCross(p[0], p[1], q[0], q[1], r[0], r[1], s[0], s[1])
+              ) {
+                return 'overlap';
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // No crossing, so one is wholly inside the other or they are apart.
+  const within = (
+    inner: PlanarPolygonCoordinates,
+    outer: PlanarPolygonCoordinates,
+  ) =>
+    inner.every(rings =>
+      (rings[0] ?? []).every(([x, y]) => pointInOrOnPolygon(x, y, outer)),
+    );
+
+  if (within(b, a)) return 'contains';
+  if (within(a, b)) return 'contained';
+  return 'disjoint';
 }
 
 /** Ramer–Douglas–Peucker over an OPEN polyline, iterative (no recursion depth). */

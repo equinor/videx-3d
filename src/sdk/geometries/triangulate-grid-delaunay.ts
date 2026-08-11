@@ -153,6 +153,125 @@ function makeEvenOddInside(rings: GridRing[]) {
   return buildCrossingIndex(rings);
 }
 
+const NODE_EPS = 1e-9;
+
+/**
+ * Split every ring segment where it crosses a segment of ANOTHER ring, so that
+ * the crossing becomes a shared point of both.
+ *
+ * ⚠️ Two constraint edges that cross cannot both survive a triangulation — only a
+ * vertex AT the crossing lets both follow mesh edges. A chunk constrains its own
+ * rim plus the rim of any neighbour it partially overlaps, which produces exactly
+ * that, so they have to be noded first. Without it the triangulator silently
+ * drops one of the two boundaries.
+ *
+ * Rings are returned in the input order, with their points unchanged apart from
+ * the inserted crossings, and BY IDENTITY when nothing crosses. Segments that are
+ * collinear rather than crossing are left alone: they share an edge already.
+ *
+ * @group Geometries
+ */
+export function nodeGridRings(rings: GridRing[]): GridRing[] {
+  type Seg = {
+    ring: number;
+    at: number;
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  };
+
+  const segments: Seg[] = [];
+  rings.forEach((ring, r) => {
+    for (let i = 0; i < ring.length; i++) {
+      const [x1, y1] = ring[i];
+      const [x2, y2] = ring[(i + 1) % ring.length];
+      segments.push({
+        ring: r,
+        at: i,
+        x1,
+        y1,
+        x2,
+        y2,
+        minX: Math.min(x1, x2),
+        maxX: Math.max(x1, x2),
+        minY: Math.min(y1, y2),
+        maxY: Math.max(y1, y2),
+      });
+    }
+  });
+
+  // ring -> segment -> crossings along it, as (position, point)
+  const splits = new Map<string, { t: number; p: number[] }[]>();
+  const addSplit = (s: Seg, t: number, p: number[]) => {
+    const key = `${s.ring}:${s.at}`;
+    const list = splits.get(key);
+    if (!list) {
+      splits.set(key, [{ t, p }]);
+      return;
+    }
+    // Two different partners can cross at the same place.
+    if (list.some(e => Math.abs(e.t - t) < NODE_EPS)) return;
+    list.push({ t, p });
+  };
+
+  // Sweep on x: segments are compared only while their x spans overlap.
+  const order = segments
+    .map((_, i) => i)
+    .sort((a, b) => segments[a].minX - segments[b].minX);
+  const active: number[] = [];
+  for (const si of order) {
+    const s = segments[si];
+    for (let k = active.length - 1; k >= 0; k--) {
+      if (segments[active[k]].maxX < s.minX) active.splice(k, 1);
+    }
+    for (const ai of active) {
+      const o = segments[ai];
+      if (o.ring === s.ring) continue;
+      if (o.minY > s.maxY || o.maxY < s.minY) continue;
+
+      const rx = s.x2 - s.x1;
+      const ry = s.y2 - s.y1;
+      const ox = o.x2 - o.x1;
+      const oy = o.y2 - o.y1;
+      const denom = rx * oy - ry * ox;
+      if (denom === 0) continue; // parallel or collinear
+      const dx = o.x1 - s.x1;
+      const dy = o.y1 - s.y1;
+      const t = (dx * oy - dy * ox) / denom;
+      const u = (dx * ry - dy * rx) / denom;
+      if (t < -NODE_EPS || t > 1 + NODE_EPS) continue;
+      if (u < -NODE_EPS || u > 1 + NODE_EPS) continue;
+
+      // ⭐ Computed ONCE and shared, so both rings insert bit-identical
+      // coordinates and land on the same vertex.
+      const p = [s.x1 + t * rx, s.y1 + t * ry];
+      // An endpoint is already a vertex; only interior crossings need splitting.
+      if (t > NODE_EPS && t < 1 - NODE_EPS) addSplit(s, t, p);
+      if (u > NODE_EPS && u < 1 - NODE_EPS) addSplit(o, u, p);
+    }
+    active.push(si);
+  }
+
+  if (splits.size === 0) return rings;
+
+  return rings.map((ring, r) => {
+    const out: GridRing = [];
+    for (let i = 0; i < ring.length; i++) {
+      out.push(ring[i]);
+      const list = splits.get(`${r}:${i}`);
+      if (!list) continue;
+      list.sort((a, b) => a.t - b.t);
+      for (const e of list) out.push(e.p);
+    }
+    return out;
+  });
+}
+
 /**
  * Trace the boundary of the valid-data region of a grid — cells whose four
  * corners are all valid — into closed rings of integer grid coordinates. The
