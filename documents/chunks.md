@@ -726,9 +726,11 @@ build on it.
    — it stays one only for geometry.
 
    ⚠️ Per-region precedence (each part of the horizon drawn by exactly one chunk)
-   needs a cap clipped to "my outline minus yours". With the tessellation hoisted to
-   the stack (§11) both chunks share vertices and that becomes triangle assignment
-   rather than geometry — which is why the §11 question should be settled first.
+   needs a cap clipped to "my outline minus yours". Hoisting the tessellation would
+   have made that triangle assignment rather than geometry — but it was built and
+   rejected (§11.2), so this has to be solved on its own terms: either clip the cap
+   to the difference of the two outlines, or draw the horizon once as an object the
+   stack owns, per the ⇒ above.
 
 ### 10.2 Sequence
 
@@ -1240,7 +1242,7 @@ within `2 × maxError` of each other — bounded, and only where footprints over
 The envelope for a wellbore cut source is resolved over the **full** depth window,
 which by construction contains every chunk's narrower window.
 
-**If that residual ever matters**, the remaining step is to hoist the tessellation
+**If that residual ever matters**, the obvious step is to hoist the tessellation
 too: one triangulation with every chunk's outline as constraint edges, each chunk
 taking the triangle subset inside its own outline (the same mechanism
 `collapseStackTriangles` uses). That would make the guarantee exact across chunks,
@@ -1248,6 +1250,10 @@ and it is what §10.1.9 wants in order to stop `cap` from being declared by hand
 with shared vertices, two chunks drawing the same horizon no longer z-fight, so
 who draws it becomes triangle assignment rather than geometry. Nothing built above
 needs to change for it; the tessellation simply moves up a level.
+
+⚠️ **This was built and rejected — see §11.2.** It is recorded here because the
+reasoning above is sound and still tempting; what defeats it is not the geometry
+but the rebuild latency.
 
 ### 11.1 What hoisting would cost — MEASURED 2026-08-11
 
