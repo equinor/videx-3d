@@ -66,8 +66,8 @@ ChunkLayer[]`, shallowest first. Each layer is a boundary, and it declares the
 This replaced an earlier model in which layers were supplied as a **2D array** of
 groups (zones), with walls filling only within a group and adjacent groups implicitly
 separated by a gap. The flat form says the same things but locally, per layer,
-instead of through nesting — which matters once layers also carry `cap` and
-synthetic definitions. `layersFromGroups(groups)` converts the old shape and is
+instead of through nesting — which matters once layers also carry `cap`, `optional`
+and synthetic definitions. `layersFromGroups(groups)` converts the old shape and is
 kept for migration.
 
 ### 2.4 Synthetic layers
@@ -255,10 +255,9 @@ Geometry building is asynchronous and can take seconds, so a host needs to know:
   'failed'`;
 - `ChunkStackProgress` — `{ total, building, completed, fraction }` from the stack.
 
-`'empty'` is not a failure: a chunk whose outline resolves to nothing, or whose
-layers have no data anywhere inside it (§9.9.1), has nothing to draw. Without the
-state callback that is indistinguishable from a hang — which is exactly how it
-presents.
+`'empty'` is not a failure: a chunk whose outline is trimmed away entirely resolves
+to nothing, and `onBuild` never fires for it. Without the state callback that is
+indistinguishable from a hang — which is exactly how it presents.
 
 ## 6. Ocean & Basement specifics
 
@@ -486,11 +485,7 @@ Four things could be done about it, and three of them assert something false:
   and an outline is an admitted arbitrary cut, so the wall drawn there keeps the
   only meaning a wall ever has: "this is where we chose to stop".
 
-⚠️ **This whole section describes removed code.** `coverageRule` is gone with the
-trim; what follows is kept for the measurement it records, which is why the trim's
-replacement reports the same figures per layer.
-
-`trimPolygonToCoverage` combined the chunk's coverage masks, rasterised the outline
+`trimPolygonToCoverage` combines the chunk's coverage masks, rasterises the outline
 over them, traces the surviving region, smooths and simplifies it. When the outline
 is fully covered the **original polygon is returned by identity**, so a chunk that
 needs no trimming is bit-for-bit unaffected. Nothing covered at all ⇒ `null` ⇒ the
@@ -559,15 +554,17 @@ Diagnostic: `topKept` counts the vertices whose absence was overridden. On the d
 field it is ~0 — the chunk outlines nest closely enough that the case is rare — so
 this is insurance, not a visible fix.
 
-Coverage-driven absence is now the ordinary case rather than a backstop: nothing
-cuts the outline back, so wherever a layer is not covered it is either sealed
-(§10.7), dropped (`coverageAbsence`), or drawn on fill and marked as inferred
-(§10.6).
+With `coverageRule: 'all'`, coverage-driven absence should never fire at all: the
+outline has already been cut back to where every layer is mapped. It stays on as a
+backstop, and matters under `'any'` and for optional layers (§9.9).
 
-`SurfaceChunkLayerDiagnostics.coverage` is measured over the footprint the caller
-asked for, which is now the only footprint there is. It answers the question the
-field exists for: *which layer is standing on nothing?* A layer at 0 is voided
-(§9.9.1) and says so.
+`SurfaceChunkLayerDiagnostics.coverage` is measured over the **requested** footprint,
+before the trim. Measuring it after — at the surviving vertices — made it read 1 for
+every layer of every chunk by construction, which looked like a clean bill of health
+and was in fact no measurement at all. Read before the cut it answers the question
+the field exists for: *which layer shrank my chunk?* On a trimmed chunk
+`outlineCoverage` equals the smallest `coverage` among the layers that were allowed
+to trim it.
 
 ### 9.9 Borrowed boundaries (`optional`) — REMOVED
 
@@ -664,7 +661,7 @@ build on it.
    **Superseded by §10.7**: the taper is kept, but it applies at every scale rather
    than only to small mismatches, and it leans on the NEAREST neighbour instead of
    the midpoint — which pinches out the unit we have no data for rather than
-   halving both. The one-cell clamp it replaced is gone with `optional` (§9.9).
+   halving both.
 
 4. **Large `D` → terminate, and say so.** The interval stops. Its boundary is traced
    to a ring and closed with a face.
@@ -711,24 +708,6 @@ build on it.
 9. **Sealing is inferred.** Where one chunk's footprint contains another's, the wider
    one caps the shared horizon. `cap` goes. Partial overlap is the hard case and is
    why this comes last.
-
-   ⭐ **Two decisions are tangled in one flag**, and separating them is most of the
-   work: WHO DRAWS the shared horizon (a geometry question — drawing it twice means
-   two independent tessellations fighting for the same pixels) and WHAT IT LOOKS
-   LIKE (an appearance question — it is the base of one chunk and the top of the
-   other, and those need not agree). Today the first answer silently supplies the
-   second: whoever keeps the cap also decides its material and its opacity. §10.3.6
-   records the symptom.
-
-   ⇒ Which suggests the horizon at a seam belongs to neither chunk. Drawn once, as
-   its own object owned by the stack, with its own material, both questions are
-   answered separately and partial overlap stops being a special case for appearance
-   — it stays one only for geometry.
-
-   ⚠️ Per-region precedence (each part of the horizon drawn by exactly one chunk)
-   needs a cap clipped to "my outline minus yours". With the tessellation hoisted to
-   the stack (§11) both chunks share vertices and that becomes triangle assignment
-   rather than geometry — which is why the §11 question should be settled first.
 
 ### 10.2 Sequence
 
@@ -821,35 +800,6 @@ termination, not its area (§10.5).
    - **Transparency then keeps the case peeling cannot serve**: seeing a wellbore, or
      another object, through overburden that must stay present.
 
-   ⭐ **Opacity is a CHUNK property and should be a LAYER one** — observed
-   2026-08-11 on `SeabedConnection`, and the sharpest evidence for it. Looking down
-   through the translucent water, you see the inside of the detail chunk's walls
-   with no lid. The lid IS drawn — the ocean chunk caps the seabed over the whole
-   field — but it is drawn at the OCEAN chunk's opacity, so the detail block, which
-   is opaque, is covered by a see-through cap.
-
-   ⚠️ Read carefully, that is not a transparency bug: `cap` decides who draws the
-   geometry, and the APPEARANCE rides along with it. A shared horizon is two things
-   at once — the base of the chunk above and the top of the chunk below — and one
-   flag forces a single answer to a question with two. See §10.1.9.
-
-   ⇒ It also settles "draw both when not opaque", which looks tempting here and is
-   not: the second copy would carry its own chunk's opacity too, so a transparent cap
-   would composite over an opaque one at the same depth. Worse than either alone, and
-   the same alpha-compounding argument as peeling.
-
-   ⇒ **Built: `ChunkLayer.opacity`**, overriding the chunk's `surfaceOpacity` /
-   `wallOpacity` for that layer's cap and the volume below it. Water at 0.45 and
-   sand at 1 in one chunk is an ordinary thing to want and could not be said. An
-   OVERRIDE rather than a multiplier, because a multiplier cannot express "opaque
-   inside a translucent chunk", which is the whole case. ⚠️ So an explicit value
-   also takes that layer out of a global transparency slider's reach — leave it
-   unset on the layers such a control should sweep along.
-
-   ⚠️ It expresses the fix, it does not remove the cause: the seam still hands one
-   chunk's appearance to another, and the caller has to know to correct it. §10.1.9
-   is where that stops being the caller's problem.
-
    ⚠️ `side` is not synchronised onto the OIT variants, which for stock materials are
    cloned on first use — so making sidedness reactive requires a fresh material
    identity, exactly as re-classification already does.
@@ -917,11 +867,11 @@ termination, not its area. Measured on the demo field (`WellborePerChunk`,
 
 Chunk 1 drops 5,743 triangles to pinch-outs yet spends only 1,272 on walls. Walls are
 11–14% of each chunk. On the generated scenarios the increment is smaller still (+90
-triangles to wall every hole in `holes`).
+triangles to wall every hole in `holes` under `coverageRule: 'any'`).
 
-⭐ Coverage-driven terminations are now the ordinary case: the outline is never cut
-back to the data, so a wall standing at a survey edge is what a partly-mapped layer
-looks like.
+⚠️ Under `coverageRule: 'all'` the outline is trimmed to the covered area first, so
+coverage-driven terminations mostly become *crop* rather than termination. They will
+become the common case at step 5, when the outline stops being a coverage instrument.
 
 ### 10.6 Marking the inference (§10.2 step 4) — built
 
@@ -1098,8 +1048,8 @@ grid is the grid-space bounding box of a rotated outline, and everything beyond 
 survey edge is one region running out to that box, so measuring over the grid put
 the run in the hands of corners nobody sees: resizing an outline silently changed
 the shape of every seal inside it, and two holes in one layer got two different
-curves. `rasterizeStackOutline` is the footprint raster (shared with `measureStackCoverage`)
-and `StackSealOptions.inside` carries it. A region with no node inside falls
+curves. `rasterizeStackOutline` is the footprint raster (shared with the coverage
+trim) and `StackSealOptions.inside` carries it. A region with no node inside falls
 back to its own extent, having nothing visible to measure.
 
 **The curve is fixed** — $w(t)=\sqrt{1-(1-t)^2}$, a quarter arc: vertical where
@@ -1127,34 +1077,6 @@ and a `spread`/`slope`/`taperDistance` knob. Each was a way to compensate for th
 run being measured over the wrong thing; none of them is a decision a caller has
 information to make.
 
-#### 10.7.1 Open: the travel should be slope-limited
-
-*Raised 2026-08-11, not built.* Every gap travels the full `|room| − minThickness`
-however narrow it is, so a 200 m ditch between surfaces 800 m apart dives the whole
-800 m and back — an implied gradient of 8:1 that no horizon does. Wide gaps look
-right; small holes and long narrow ditches are visibly over-driven.
-
-⭐ The fix is a **slope limit**, not a size test:
-
-```
-travel = sign(room) · min(|room| − minThickness,  s · reach)
-```
-
-`reach` is the region's own INWARD extent, which is already computed and already
-shape-aware: a long narrow ditch has a small reach however large its area. That is
-exactly why area is the wrong measure — it would call that ditch large and drive it
-hardest. `s` is a dimensionless maximum gradient; a wide gap is unaffected because
-`s · reach` exceeds the room available, so the behaviour degrades continuously
-rather than switching at a threshold.
-
-⚠️ `reach` and `chamferDistance` are in **cells**. The existing `dist/reach` ratio is
-dimensionless so it works today, but a slope limit compares against metres — so
-`sealStackChannels` needs the cell size, which it is not currently given.
-
-⚠️ It interacts with `minThickness`: once the travel is capped, the unit on the far
-side keeps more than the minimum by construction, so the two settings stop being
-independent. Measure a case where both bind before adding a second knob.
-
 **Order matters.** Sealing runs on the reference grid *before* the monotone
 resolve, and **per chunk, not per column** — a chunk's layers are not the column's
 (it adds synthetic floors and takes a slice), so the neighbours a surface is sealed
@@ -1163,13 +1085,16 @@ unbounded below even where a chunk put a floor under it. Two adjacent layers
 tapering toward each other can also pass each other at full weight; the resolve is
 what puts that right, so sealing after it would leave the crossing in.
 
-**What it overrides:** `coverageAbsence`, which would otherwise drop the wedge for
-having no data. (It also used to override the coverage trim, which would have cut
-the outline back to exactly the area the wedge covers — that trim is gone with
-§10.1.8, so a chunk keeps the footprint the user asked for either way.)
+**What it overrides** — both would otherwise undo it:
 
-**Measured** through the story (`SyntheticCoverage`, `holesStacked`) — the holed
-surface with a mapped surface above and a floor below:
+- `coverageAbsence`, which would drop the wedge for having no data;
+- the coverage trim, which would cut the outline back to exactly the area the wedge
+  covers. So a sealed chunk keeps the footprint the user asked for, which is where
+  §10.1.8 is heading anyway.
+
+**Measured** through the story (`SyntheticCoverage`, `holesStacked`,
+`coverageRule: 'any'`) — the holed surface with a mapped surface above and a floor
+below:
 
 | | triangles | dropped |
 | --- | ---: | ---: |
@@ -1240,74 +1165,52 @@ within `2 × maxError` of each other — bounded, and only where footprints over
 The envelope for a wellbore cut source is resolved over the **full** depth window,
 which by construction contains every chunk's narrower window.
 
-**If that residual ever matters**, the remaining step is to hoist the tessellation
-too: one triangulation with every chunk's outline as constraint edges, each chunk
-taking the triangle subset inside its own outline (the same mechanism
-`collapseStackTriangles` uses). That would make the guarantee exact across chunks,
-and it is what §10.1.9 wants in order to stop `cap` from being declared by hand:
-with shared vertices, two chunks drawing the same horizon no longer z-fight, so
-who draws it becomes triangle assignment rather than geometry. Nothing built above
-needs to change for it; the tessellation simply moves up a level.
+### 11.1 Hoisting the tessellation — built, measured, REJECTED (2026-08-11)
 
-### 11.1 What hoisting would cost — MEASURED 2026-08-11
+The remaining step was to hoist the tessellation too: one triangulation carrying
+every chunk's outline as constraint edges, each chunk taking the triangle subset
+inside its own outline. It was built end to end (multi-outline `tessellateStack`,
+a `shared` option on `buildSurfaceStack`, a `surfaceChunkStack` generator building
+all chunks in one call, and a request registry on `ChunkStack` collecting the
+chunks' outlines) and then **rejected**. It is preserved on the tag
+`stack-hoisting-rejected`; `src/` and `tests/` were restored to `before hoisting`.
 
-An earlier note here put the cost at "~11× a single layer's vertex count". That
-figure is **wrong**, and it was also the wrong comparison: it measured what one
-chunk would carry, when the point of hoisting is that there is only ONE buffer for
-the whole stack instead of one per chunk.
+**Why it was rejected.** The shared tessellation is a function of *every* outline
+at once, so nothing can be triangulated until every chunk has resolved its outline,
+and any change to any outline invalidates all of it. In practice:
 
-Measured with `tests/perf/stack-hoist-profile.test.ts` on a generated column
-(§14.4) and on the demo field, 3 telescoping chunks (6 / 4.5 / 3 km squares)
-against a 6 km envelope, `maxError` 5:
+- No chunk paints until all of them are ready — the stack goes from chunks
+  appearing progressively to one long stall.
+- Changing a prop that moves an outline (the spike's `radius`) rebuilds the whole
+  stack before *anything* updates. This is what made it untenable.
 
-```
-PROFILE_HOIST=1      npx vitest run tests/perf/stack-hoist-profile.test.ts
-PROFILE_HOIST_REAL=1 npx vitest run tests/perf/stack-hoist-profile.test.ts
-```
+Against that it buys only the removal of the `2 × maxError` residual above — which
+has never been observed as a visible artefact. The trade is not worth it, and no
+mitigation changes it: incremental paint and one shared vertex set are mutually
+exclusive by construction. Building each chunk standalone for first paint and
+swapping in hoisted geometry afterwards would double the work for a visible pop.
 
-| column | layers | verts today | verts shared | factor | ms today | ms shared |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| generated, correlated | 5 | 2,607 | 4,649 | ×1.78 | 200 | 241 |
-| generated, correlated | 17 | 2,627 | 6,781 | ×2.58 | 112 | 83 |
-| generated, independent | 5 | 27,307 | 21,047 | ×0.77 | 482 | 284 |
-| generated, independent | 17 | 26,905 | 20,720 | ×0.77 | 627 | 336 |
-| **demo field** | **5** | 1,831 | 3,760 | **×2.05** | 44 | 51 |
-| **demo field** | **9** | 4,962 | 12,707 | **×2.56** | 98 | 118 |
-| **demo field** | **18** | 10,419 | 21,978 | **×2.11** | 175 | 188 |
-| **demo field** | **27** | 13,349 | 22,760 | **×1.70** | 165 | 185 |
+**⚠️ The estimate that motivated it was wrong, twice over.** The "~11×" figure
+once quoted here compared against a single layer rather than against what a chunk
+already carries. The later profile (`tests/perf/stack-hoist-profile.test.ts`,
+`PROFILE_HOIST_REAL=1`) put it at ×1.7–2.6 vertices and +14% time — but it passed a
+**single square outline** to the shared call and used a column with no synthetic
+relief, so it never exercised the two properties that actually matter: outlines
+that **overlap**, and outlines that are **multi-component**. Neither number was a
+test of the real case. If this is ever revisited, measure time-to-first-chunk and
+per-chunk triangle counts on a real stack before writing any code.
 
-⇒ **Worst case measured anywhere is ×2.6 on vertices and +14% on time.** Not ×11.
+**One real bug it exposed**, worth knowing if multi-outline constraints are ever
+attempted again: chunk outlines overlap (telescoping tiers share their XZ), so
+their rims **cross**. Two crossing constraint edges cannot both follow mesh edges
+unless the crossing is itself a vertex — so `Delatin` could not enforce them. It
+spent 91–465 ms per edge in `_constrainEdgeBrute` discovering it could not win
+(O(edges) per flip, on a mesh 50× larger than any single chunk's), and then locked
+an edge it had never created, silently claiming a boundary that was not there. The
+fix is to **node** the outlines first — split every rim segment at its crossings
+with other rims, computing each crossing once so both rings insert bit-identical
+coordinates and land on one vertex. That work is on the tag, not in `main`.
 
-⭐⭐ **The factor does not grow with column length** — on the demo field it peaks
-around 9 layers and *falls* to ×1.70 at 27. The union of candidates cannot exceed
-the reference grid's node count (here 118,336, of which the shared buffer reaches
-19%), so hoisting is bounded by `maxNodes` rather than by how many surfaces the
-column has. That is the structural reason it is safe, and it is what the "×11"
-intuition missed.
-
-⭐ **Time is almost unaffected**: +8% to +14% on real data at 18–27 layers, and
-*faster* on the generated independent column, because today's design re-triangulates
-the same domain once per chunk. The cost is vertex memory, and in absolute terms it
-is small — ~9k extra vertices for a 27-layer column.
-
-⚠️ The generated column brackets the answer rather than predicting it. Layers that
-drape each other (correlated) refine onto the same nodes, so a chunk is cheap today
-and pays ×1.8–2.6; layers with structure of their own are so expensive per chunk
-that sharing wins outright (×0.77). Real surfaces sit between: individually smooth
-(few candidates each) but largely disjoint, so the union of nine is ~2.5× any three
-of them. The real run also confirms the caveat that motivated it — coverage and
-thickness crossings, absent from the generated column, are substantial on real data
-(10k and 26k candidates) — and the union still saturates.
-
-⚠️ Remaining unknowns: only ONE envelope size and telescoping ratio was tried
-(6 / 4.5 / 3 km). The harder chunks telescope, the better today's design looks. And
-the true hoisted design puts every chunk's outline in as interior constraint edges,
-which this approximates with a single envelope rim — that adds edges the
-measurement does not carry.
-
-⇒ **Recommendation: hoist.** ×2 vertex memory at ~10% tessellation cost buys exact
-cross-chunk agreement, and it is what turns §10.1.9 (removing `cap`) from a
-geometry problem into triangle assignment.
 
 ## 12. Build order
 
