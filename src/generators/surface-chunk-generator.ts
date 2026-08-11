@@ -1,5 +1,6 @@
 import { transfer } from 'comlink';
 import {
+  DEFAULT_CHUNK_MAX_FILL,
   isSyntheticSpecLayer,
   SurfaceChunkResponse,
   SurfaceChunkSpec,
@@ -10,18 +11,20 @@ import {
   buildStackReference,
   buildSurfaceStack,
   buildSyntheticChannel,
-  collapseOptionalChannels,
   collectStackCandidates,
   densifyChunkRim,
+  measureStackCoverage,
   packSurfaceChunk,
   PlanarPolygonGeometry,
+  rasterizeStackOutline,
   ReadonlyStore,
+  sealStackChannels,
+  splitVoidChannels,
   StackLayer,
   StackPairStats,
   StackSyntheticLayer,
   SurfaceChunkDiagnostics,
   SurfaceStackBuild,
-  trimPolygonToCoverage,
 } from '../sdk';
 import { getStackCandidates, getStackContext } from './surface-stack-context';
 import { refineStackChannels } from './workers/stack-worker-pool';
@@ -33,8 +36,6 @@ export type LoadedStackLayer = {
   fill: boolean;
   /** draw this layer's cap (false = a neighbouring chunk draws this horizon) */
   cap: boolean;
-  /** this layer's data extent must not cut the chunk's outline back */
-  optional: boolean;
   /** surface id, or `null` for a synthetic layer */
   id: string | null;
 };
@@ -43,6 +44,18 @@ export type LoadedStackLayer = {
 export type SpecStackResult = {
   build: SurfaceStackBuild;
   loaded: LoadedStackLayer[];
+  /**
+   * For each layer of the BUILD, its index in `loaded`. Usually one-to-one, but a
+   * surface sealed with a void becomes two build layers with one source.
+   */
+  source: number[];
+  /** for each layer of the BUILD, whether the interval below it holds a volume */
+  fills: boolean[];
+  /**
+   * For each layer of the BUILD, whether it is the ceiling of a void — the upper
+   * copy of a split surface, which shows the base of the interval above it.
+   */
+  ceilings: boolean[];
   /** total bytes of `surface-values` fetched */
   bytes: number;
   fetchMs: number;
@@ -56,17 +69,24 @@ export type SpecStackResult = {
   /** source cells per reference cell (1 = full resolution) */
   referenceStep: number;
   /**
-   * The footprint the stack was actually built on — the requested outline, or a
-   * copy of it cut back to where the layers have data. Walls and the basement MUST
-   * use this one, or they would stand around geometry that is no longer there.
+   * The footprint the stack was built on — the requested outline, densified. The
+   * walls and the basement use this one.
    */
   densified: PlanarPolygonGeometry;
-  /** whether the outline had to be cut back */
-  outlineTrimmed: boolean;
-  /** share of the requested footprint that survived (1 = untouched) */
-  outlineCoverage: number;
-  /** per-layer share of the REQUESTED footprint each layer has data for */
+  /** per-layer share of the footprint each layer has data for */
   layerCoverage: number[];
+  /** per-layer share of the footprint covered only by bounded fill */
+  layerFilled: number[];
+  /**
+   * Per layer: it has no data ANYWHERE the chunk is drawn, so it was voided — no
+   * cap, and neither interval it bounds is filled. See `documents/chunks.md` §9.9.
+   */
+  layerVoided: boolean[];
+  /**
+   * Per layer, the NODE COUNT the seal moved. Counts rather than shares, because
+   * the stack's grid is not the chunk's footprint. Empty when sealing is off.
+   */
+  layerTapered: number[];
   /** whether the column was built once and shared by every chunk cut from it */
   sharedStack?: boolean;
   /** layers in the shared column */
@@ -82,6 +102,47 @@ export type SpecStackResult = {
   /** internal: refinement completion timestamp (shared path only) */
   tRefine?: number;
 };
+
+/**
+ * Void every layer that has no data ANYWHERE the chunk is drawn.
+ *
+ * ⭐ Coverage already counts bounded fill, so a layer measuring 0 is not merely
+ * partly mapped — it is not within `maxFill` of any data of its own. Sealing it
+ * would extend a survey that exists only outside the crop across the whole chunk
+ * and draw a smooth, plausible horizon with no local evidence behind it. The
+ * caller instead leaves it uncapped with BOTH the intervals it bounds open: its
+ * top and bottom are equally undefined, so open space is the only statement the
+ * data supports, and (like `sealMode: 'void'`) the hole IS the message.
+ *
+ * Here the channel is laid onto its nearest surviving neighbour — as
+ * `buildStackReference` already does for a layer empty over the whole grid — so a
+ * surface nobody draws cannot clamp the one below it in the monotone resolve. Its
+ * mask is marked complete so the seal passes it over; the honest figure is already
+ * in `layerCoverage`.
+ *
+ * ⚠️ Replaces array ENTRIES, never their contents: on a shared column the channels
+ * and masks belong to every chunk cut from it.
+ */
+function voidUnmappedLayers(
+  channels: Float32Array[],
+  masks: Uint8Array[],
+  layerCoverage: number[],
+): boolean[] {
+  const voided = layerCoverage.map(c => c === 0);
+  if (!voided.some(Boolean)) return voided;
+  for (let i = 0; i < channels.length; i++) {
+    if (!voided[i]) continue;
+    let donor = -1;
+    for (let j = i - 1; j >= 0 && donor < 0; j--) if (!voided[j]) donor = j;
+    for (let j = i + 1; j < channels.length && donor < 0; j++) {
+      if (!voided[j]) donor = j;
+    }
+    if (donor < 0) continue;
+    channels[i] = Float32Array.from(channels[donor]);
+    masks[i] = new Uint8Array(masks[i].length).fill(1);
+  }
+  return voided;
+}
 
 /**
  * Fetch a spec's layers and build them onto ONE shared tessellation: every layer
@@ -121,7 +182,6 @@ export async function buildSpecStack(
           id: null,
           fill: !!f.fill,
           cap: f.cap !== false,
-          optional: !!f.optional,
           layer: { depth: f.depth, offset: f.offset, relief: f.relief },
         });
         return;
@@ -133,7 +193,6 @@ export async function buildSpecStack(
         id: f.id,
         fill: !!f.fill,
         cap: f.cap !== false,
-        optional: !!f.optional,
         layer: context.layers[at],
       });
     });
@@ -163,29 +222,63 @@ export async function buildSpecStack(
       channels.push(channel ?? new Float32Array(nodes));
       masks.push(new Uint8Array(nodes).fill(1));
     });
-    // A borrowed boundary must not drag this chunk's footprint down to the extent
-    // of someone else's survey, so it is excluded from the trim — and its interval
-    // is pinched out where it has no data, rather than built on the hole fill.
-    const optional = loaded.map(l => l.optional);
+    // Measured on the CALLER's masks, before anything is sealed or split, and over
+    // the outline the caller asked for — the outline is a pure crop, so a layer's
+    // extent never reshapes it (§10.1.8).
+    const measured = measureStackCoverage(context.reference, densified, masks);
+    const voided = voidUnmappedLayers(channels, masks, measured.layerCoverage);
+    if (voided.every(Boolean)) return null;
+
+    const sealing = spec.resolve?.seal !== false;
+    // ⭐ A seal reaches over the gap it closes MEASURED INSIDE THIS FOOTPRINT — the
+    // reference grid is the bounding box of a rotated outline, so its corners are
+    // never drawn and would otherwise set the length of every taper.
+    const inside = sealing
+      ? rasterizeStackOutline(context.reference, densified)
+      : null;
+    // ⭐ Sealed HERE rather than on the column: a surface's neighbours are the ones
+    // THIS chunk draws, including its synthetic layers. On the column the deepest
+    // surface looks like it has nothing below it even when the chunk puts a floor
+    // under it — which silently disables the proportional rule.
+    const sealed = sealing
+      ? sealStackChannels(channels, masks, context.reference.header.nx, {
+          mode: spec.resolve?.sealMode,
+          minThickness: spec.resolve?.minThickness,
+          inside,
+        })
+      : null;
+    // `void` closes the block by REMOVING what cannot be accounted for, which
+    // turns one layer into two with an empty interval between them. Everything
+    // below works on the expanded list; `source` maps each entry back to the
+    // caller's layer so materials and diagnostics still line up.
+    const split =
+      sealing && spec.resolve?.sealMode === 'void'
+        ? splitVoidChannels(
+            channels,
+            masks,
+            context.reference.header.nx,
+            loaded.map(l => l.fill),
+            {
+              minThickness: spec.resolve?.minThickness,
+              inside,
+            },
+          )
+        : null;
+    const source = split ? split.source : loaded.map((_, i) => i);
     const reference = {
       ...context.reference,
-      channels: collapseOptionalChannels(channels, masks, optional),
-      masks,
+      channels: split?.channels ?? sealed?.channels ?? channels,
+      masks: split?.masks ?? masks,
     };
     const allCandidates = await getStackCandidates(context, maxError);
     const tRefine = performance.now();
 
-    // A surface's data extent is where the survey stopped, not the geology — see
-    // `trimPolygonToCoverage`. Done here, before the rim is densified, so the walls
-    // and the basement follow the same (possibly cut back) footprint.
-    const trim = trimPolygonToCoverage(reference, densified, reference.masks, {
-      rule: spec.resolve?.coverageRule,
-      optional,
+    // A voided layer draws no cap, and neither interval it bounds is filled.
+    const caps = source.map(i => loaded[i].cap && !voided[i]);
+    const fills = (split ? split.fill : loaded.map(l => l.fill)).map((f, k) => {
+      const below = source[k + 1];
+      return f && !voided[source[k]] && !(below !== undefined && voided[below]);
     });
-    if (!trim.polygon) return null;
-    const footprint = trim.trimmed
-      ? densifyChunkRim(trim.polygon, spec.rimSpacing ?? 250).densified
-      : densified;
 
     // Only the chunk's FIRST layer can be truncated against a surface it does not
     // draw itself, and only then is a cover polygon meaningful.
@@ -199,19 +292,19 @@ export async function buildSpecStack(
 
     const build = buildSurfaceStack(
       reference,
-      loaded.map(l => l.layer),
+      source.map(i => loaded[i].layer),
       {
-        polygon: footprint,
+        polygon: densified,
         maxError,
-        candidates: picks.map((i, j) =>
-          i >= 0
-            ? allCandidates[i]
+        candidates: source.map((i, j) =>
+          picks[i] >= 0
+            ? allCandidates[picks[i]]
             : // A synthetic layer contributes refinement vertices only if it has
               // RELIEF of its own. A plane is exact everywhere, so it rides the
               // union the others produce; a dune field is not, and without this
               // its shape would only be sampled where other layers happened to
               // need detail.
-              (loaded[j].layer as StackSyntheticLayer).relief
+              (loaded[i].layer as StackSyntheticLayer).relief
               ? collectStackCandidates(
                   reference.channels[j],
                   reference.header.nx,
@@ -223,19 +316,26 @@ export async function buildSpecStack(
         // cover this stack — fall back to the per-vertex resolve, which is cheap
         // here because the column layers already arrive ordered (it only measures
         // them). ⚠️ Ordering against a synthetic layer is therefore enforced PER
-        // CHUNK, not column-wide.
+        // CHUNK, not column-wide. The same applies once SEALING has moved the
+        // heights: the column's masks describe the surfaces before the taper.
         preResolved:
-          spec.resolve && !synthetic
+          spec.resolve && !synthetic && !sealing
             ? picks.map(i => context.absent[i])
             : undefined,
         resolve:
-          spec.resolve && synthetic
+          spec.resolve && (synthetic || sealing)
             ? { mode: spec.resolve.mode, minGap: spec.resolve.minGap }
             : undefined,
         collapseThreshold: spec.resolve?.collapseThreshold,
-        coverageAbsence: spec.resolve?.coverageAbsence,
+        // Sealing gives the unmapped region a shape, so dropping it for want of
+        // data would delete the wedge the seal just built. The welded part still
+        // goes, by thickness.
+        coverageAbsence: sealing ? false : spec.resolve?.coverageAbsence,
         refineTerminations: spec.resolve?.refineTerminations,
-        caps: loaded.map(l => l.cap),
+        caps,
+        fills,
+        ceiling: split ? split.ceiling : undefined,
+        inferred: split?.inferred ?? sealed?.inferred,
         topCover: coverAbove,
       },
     );
@@ -251,6 +351,9 @@ export async function buildSpecStack(
     return {
       build,
       loaded,
+      source,
+      fills,
+      ceilings: split ? split.ceiling : loaded.map(() => false),
       bytes: context.bytes,
       fetchMs: context.fetchMs,
       referenceMs: context.referenceMs,
@@ -258,10 +361,11 @@ export async function buildSpecStack(
       poolSize: 0,
       referenceNodes: context.reference.header.nx * context.reference.header.ny,
       referenceStep: context.reference.step,
-      densified: footprint,
-      outlineTrimmed: trim.trimmed,
-      outlineCoverage: trim.coverage,
-      layerCoverage: trim.layerCoverage,
+      densified,
+      layerCoverage: measured.layerCoverage,
+      layerFilled: measured.layerFilled,
+      layerVoided: voided,
+      layerTapered: sealed?.tapered ?? split?.moved ?? [],
       sharedStack: true,
       stackLayers: context.layers.length,
       stackResolveMs: context.resolveMs,
@@ -288,7 +392,6 @@ export async function buildSpecStack(
         id: null,
         fill: !!f.fill,
         cap: f.cap !== false,
-        optional: !!f.optional,
         layer: { depth: f.depth, offset: f.offset, relief: f.relief },
       });
       return;
@@ -300,7 +403,6 @@ export async function buildSpecStack(
       id: f.id,
       fill: !!f.fill,
       cap: f.cap !== false,
-      optional: !!f.optional,
       layer: {
         values,
         header: f.header,
@@ -312,16 +414,54 @@ export async function buildSpecStack(
   if (loaded.length === 0) return null;
 
   const layers = loaded.map(l => l.layer);
-  const optional = loaded.map(l => l.optional);
   const built = buildStackReference(layers, densified, {
     maxNodes: spec.resolve?.maxNodes,
+    maxFill: spec.resolve?.maxFill ?? DEFAULT_CHUNK_MAX_FILL,
   });
   if (!built) return null;
-  // See the shared path: a borrowed boundary neither trims this chunk nor gets
-  // built on where it has no data of its own.
+  // See the shared path: a layer with no data anywhere the chunk is drawn is
+  // voided rather than sealed across it.
+  const measured = measureStackCoverage(built, densified, built.masks);
+  const voided = voidUnmappedLayers(
+    built.channels,
+    built.masks,
+    measured.layerCoverage,
+  );
+  if (voided.every(Boolean)) return null;
+  // Close the block where a surface is not mapped. `buildSurfaceStack` runs the
+  // monotone resolve after this, which is what makes two layers tapering toward
+  // each other safe.
+  const sealing = spec.resolve?.seal !== false;
+  const voiding = sealing && spec.resolve?.sealMode === 'void';
+  // See the shared path: the run of a taper is measured over the drawn footprint.
+  const inside = sealing ? rasterizeStackOutline(built, densified) : null;
+  const sealed =
+    sealing && !voiding
+      ? sealStackChannels(built.channels, built.masks, built.header.nx, {
+          mode: spec.resolve?.sealMode,
+          minThickness: spec.resolve?.minThickness,
+          inside,
+        })
+      : null;
+  // See the shared path: `void` expands the layer list, so everything below works
+  // on `source` rather than assuming one build layer per caller layer.
+  const split = voiding
+    ? splitVoidChannels(
+        built.channels,
+        built.masks,
+        built.header.nx,
+        loaded.map(l => l.fill),
+        {
+          minThickness: spec.resolve?.minThickness,
+          inside,
+        },
+      )
+    : null;
+  const source = split ? split.source : loaded.map((_, i) => i);
   const reference = {
     ...built,
-    channels: collapseOptionalChannels(built.channels, built.masks, optional),
+    channels: split?.channels ?? sealed?.channels ?? built.channels,
+    masks: split?.masks ?? built.masks,
   };
   const tReference = performance.now();
 
@@ -332,34 +472,40 @@ export async function buildSpecStack(
   );
   const tRefine = performance.now();
 
-  // See the shared path: the outline is cut back to where the layers have data
-  // before the rim is densified, so the walls follow the same footprint.
-  const trim = trimPolygonToCoverage(reference, densified, reference.masks, {
-    rule: spec.resolve?.coverageRule,
-    optional,
+  // A voided layer draws no cap, and neither interval it bounds is filled.
+  const caps = source.map(i => loaded[i].cap && !voided[i]);
+  const fills = (split ? split.fill : loaded.map(l => l.fill)).map((f, k) => {
+    const below = source[k + 1];
+    return f && !voided[source[k]] && !(below !== undefined && voided[below]);
   });
-  if (!trim.polygon) return null;
-  const footprint = trim.trimmed
-    ? densifyChunkRim(trim.polygon, spec.rimSpacing ?? 250).densified
-    : densified;
 
-  const build = buildSurfaceStack(reference, layers, {
-    polygon: footprint,
-    maxError,
-    candidates,
-    resolve: spec.resolve
-      ? { mode: spec.resolve.mode, minGap: spec.resolve.minGap }
-      : undefined,
-    collapseThreshold: spec.resolve?.collapseThreshold,
-    coverageAbsence: spec.resolve?.coverageAbsence,
-    refineTerminations: spec.resolve?.refineTerminations,
-    caps: loaded.map(l => l.cap),
-  });
+  const build = buildSurfaceStack(
+    reference,
+    source.map(i => layers[i]),
+    {
+      polygon: densified,
+      maxError,
+      candidates,
+      resolve: spec.resolve
+        ? { mode: spec.resolve.mode, minGap: spec.resolve.minGap }
+        : undefined,
+      collapseThreshold: spec.resolve?.collapseThreshold,
+      coverageAbsence: sealing ? false : spec.resolve?.coverageAbsence,
+      refineTerminations: spec.resolve?.refineTerminations,
+      caps,
+      fills,
+      ceiling: split ? split.ceiling : undefined,
+      inferred: split?.inferred ?? sealed?.inferred,
+    },
+  );
   if (!build) return null;
 
   return {
     build,
     loaded,
+    source,
+    fills,
+    ceilings: split ? split.ceiling : loaded.map(() => false),
     bytes,
     fetchMs: tFetch - t0,
     referenceMs: tReference - tFetch,
@@ -367,10 +513,11 @@ export async function buildSpecStack(
     poolSize,
     referenceNodes: reference.header.nx * reference.header.ny,
     referenceStep: reference.step,
-    densified: footprint,
-    outlineTrimmed: trim.trimmed,
-    outlineCoverage: trim.coverage,
-    layerCoverage: trim.layerCoverage,
+    densified,
+    layerCoverage: measured.layerCoverage,
+    layerFilled: measured.layerFilled,
+    layerVoided: voided,
+    layerTapered: sealed?.tapered ?? split?.moved ?? [],
   };
 }
 
@@ -390,22 +537,53 @@ export function stackDiagnostics(
   return {
     crossings: pairs.reduce((a, p) => a + p.crossings, 0),
     crossingsCovered: pairs.reduce((a, p) => a + p.crossingsCovered, 0),
-    outlineTrimmed: result.outlineTrimmed,
-    outlineCoverage: result.outlineCoverage,
     rimDropped: build.tessellation.rimDropped,
+    wallRingsDropped: build.ringsDropped,
+    wallRingsOpen: build.ringsOpen,
     layers: result.loaded.map((entry, i) => {
-      const absent = dropped?.droppedAbsent[i] ?? 0;
-      const collapsed = dropped?.droppedCollapsed[i] ?? 0;
+      // A layer can have been expanded into several build layers (a void split),
+      // so the build's per-layer numbers are gathered by SOURCE rather than read
+      // off at the same index.
+      const built = result.source
+        .map((s, k) => (s === i ? k : -1))
+        .filter(k => k >= 0);
+      const absent = built.reduce(
+        (a, k) => a + (dropped?.droppedAbsent[k] ?? 0),
+        0,
+      );
+      const collapsed = built.reduce(
+        (a, k) => a + (dropped?.droppedCollapsed[k] ?? 0),
+        0,
+      );
+      // Triangles actually drawn, summed over the layer's build copies.
+      const triangles = entry.cap
+        ? built.reduce(
+            (a, k) =>
+              a +
+              totalTriangles -
+              (dropped?.droppedAbsent[k] ?? 0) -
+              (dropped?.droppedCollapsed[k] ?? 0),
+            0,
+          )
+        : 0;
       return {
         index: i,
         id: entry.id,
         coverage: result.layerCoverage[i] ?? 0,
+        filled: result.layerFilled[i] ?? 0,
+        voided: result.layerVoided[i] ?? false,
+        // Every node the layer has no data for is inferred once the block is
+        // sealed; measured against the FOOTPRINT, which is the only denominator
+        // this table uses.
+        inferred: result.layerTapered.length
+          ? 1 - (result.layerCoverage[i] ?? 0)
+          : 0,
         // An uncapped layer draws no surface at all, however many triangles
         // survived the drops.
-        triangles: entry.cap ? totalTriangles - absent - collapsed : 0,
+        triangles,
         droppedAbsent: absent,
         droppedCollapsed: collapsed,
-        duplicate: build.duplicates[i] ?? 0,
+        duplicate: build.duplicates[built[0] ?? i] ?? 0,
       };
     }),
     maxOverlap: pairs.reduce((a, p) => Math.max(a, p.maxOverlap), 0),
@@ -442,7 +620,10 @@ export function toAssembleLayers(
     geometry: layer.geometry,
     rimY: layer.rimY,
     // The last layer has nothing below it inside this chunk.
-    fill: i + 1 < result.build.layers.length && result.loaded[i].fill,
+    fill: i + 1 < result.build.layers.length && result.fills[i],
+    wall: result.build.walls[i],
+    source: result.source[i] ?? i,
+    ceiling: result.ceilings[i] ?? false,
   }));
 }
 

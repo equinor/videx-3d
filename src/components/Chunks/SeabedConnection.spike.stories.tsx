@@ -55,7 +55,6 @@ const ChunkPipeline = () => {
 
 type SeabedConnectionProps = {
   connect: boolean;
-  borrowFloor: boolean;
   detailCount: number;
   waterDepth: number;
   basementThickness: number;
@@ -125,10 +124,9 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
 
   const resolve = useMemo<ChunkResolveOptions>(() => ({}), []);
 
-  // Per-chunk build report. The interesting columns are `coverage` (does this
-  // layer have data of its own here?) against `outlineCoverage` (how much of the
-  // requested footprint survived) — together they say whether a chunk shrank
-  // because of its OWN subject matter or because of a layer it merely borrowed.
+  // Per-chunk build report. `coverage` says whether a layer has data of its own
+  // here; a layer at 0 was VOIDED — it has none anywhere this chunk is drawn, so
+  // it draws no cap and leaves both the intervals it bounds open.
   const report = useMemo(
     () => (label: string) => (metrics: SurfaceChunkMetrics) => {
       const d = metrics.diagnostics;
@@ -136,6 +134,7 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
         index: l.index,
         name: l.id ? (surfaceMetaDict[l.id]?.name ?? l.id) : '(synthetic)',
         coverage: +l.coverage.toFixed(3),
+        voided: l.voided,
         triangles: l.triangles,
         droppedAbsent: l.droppedAbsent,
         droppedCollapsed: l.droppedCollapsed,
@@ -144,11 +143,6 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
         `CHUNKREPORT ${JSON.stringify({
           label,
           triangles: metrics.triangles,
-          outlineTrimmed: d?.outlineTrimmed ?? null,
-          outlineCoverage:
-            d?.outlineCoverage === undefined
-              ? null
-              : +d.outlineCoverage.toFixed(3),
           layers: rows,
         })}`,
       );
@@ -164,7 +158,11 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
     if (!seabed) return [];
     return [
       { depth: props.waterDepth, material: '#3fa9d8', fill: '#2f7fa8' },
-      { surface: seabed, material: '#c2b280' },
+      // ⭐ Opaque even though the chunk is drawn translucent: this horizon is also
+      // the TOP of the opaque detail chunk below, which does not draw it
+      // (`cap: false`). Left at the chunk's opacity it is a see-through lid over a
+      // solid block, and you look straight into the detail chunk's walls.
+      { surface: seabed, material: '#c2b280', opacity: 1 },
     ];
   }, [seabed, props.waterDepth]);
 
@@ -181,7 +179,6 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
       {
         surface: seabed,
         cap: !props.connect,
-        optional: props.borrowFloor,
         material: '#c2b280',
         fill: '#a08f66',
       },
@@ -190,16 +187,9 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
         material: palette[i % palette.length],
         fill: palette[i % palette.length],
       })),
-      { surface: basement, cap: !props.connect, optional: props.borrowFloor },
+      { surface: basement, cap: !props.connect },
     ];
-  }, [
-    column,
-    seabed,
-    basement,
-    props.detailCount,
-    props.connect,
-    props.borrowFloor,
-  ]);
+  }, [column, seabed, basement, props.detailCount, props.connect]);
 
   // C: the basement block, back on the FIELD outline — the basement surface it
   //    owns, filled down to a flat floor `basementThickness` below it (`offset`).
@@ -291,7 +281,6 @@ type Story = StoryObj<typeof SeabedConnectionStory>;
 export const Default: Story = {
   args: {
     connect: true,
-    borrowFloor: false,
     detailCount: 6,
     waterDepth: 0,
     basementThickness: 800,
@@ -308,12 +297,6 @@ export const Default: Story = {
       control: 'boolean',
       description:
         'Share the boundary surfaces between tiers: the narrower chunk keeps the layer but sets `cap: false`, so the wider one draws that horizon alone. Off, both draw it.',
-      table: { category: 'Connection' },
-    },
-    borrowFloor: {
-      control: 'boolean',
-      description:
-        'Mark the borrowed boundary surfaces `optional`, so their data extent does not cut this chunk back. Where they have no data the interval they bound is pinched out instead.',
       table: { category: 'Connection' },
     },
     detailCount: {

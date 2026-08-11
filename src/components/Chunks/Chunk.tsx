@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { Material } from 'three';
 import { useData } from '../../hooks/useData';
 import { useGenerator } from '../../hooks/useGenerator';
 import {
@@ -32,10 +33,15 @@ import { buildSurfaceChunkSpec } from './chunk-spec';
 import { ChunkStackContext } from './ChunkContext';
 import { ChunkMeshes } from './ChunkMeshes';
 import { ChunkOutline, CutoutSource, resolveCutoutSource } from './cutout';
+import { ChunkInferenceStyle } from './inference-material';
 import { resolveWellboreOutline } from './resolveWellboreOutline';
 
 /** Stable identity for the default resolve options (a new object rebuilds). */
 const DEFAULT_RESOLVE: ChunkResolveOptions = {};
+
+/** Identity of one appearance value, so swapping a colour for a Material shows. */
+const appearanceId = (value: ChunkLayer['material'] | ChunkLayer['fill']) =>
+  value instanceof Material ? value.uuid : String(value);
 
 /**
  * {@link Chunk} props.
@@ -65,6 +71,13 @@ export type ChunkProps = {
   wallOpacity?: number;
   /** wireframe. Reactive — does not rebuild geometry. Default false. */
   wireframe?: boolean;
+  /**
+   * How the INVENTED part of the chunk is marked — the geometry a seal built where
+   * no surface was mapped (see `ChunkResolveOptions.seal`), and the faces where a
+   * unit ends because we stopped knowing rather than because the geology did.
+   * Reactive. Default `'hatched'`.
+   */
+  inferredStyle?: ChunkInferenceStyle;
   /**
    * How the stack is made monotone before it is built, and what is dropped where
    * a unit is not present (build param). Omit to skip the pass entirely — the
@@ -150,6 +163,7 @@ export const Chunk = ({
   surfaceOpacity = 1,
   wallOpacity = 1,
   wireframe = false,
+  inferredStyle = 'hatched',
 
   resolve = DEFAULT_RESOLVE,
   rimSpacing,
@@ -178,11 +192,25 @@ export const Chunk = ({
           ? `${l.relief.kind ?? 'dunes'}:${l.relief.amplitude}:${l.relief.seed ?? 0}:${l.relief.featureSize ?? ''}:${l.relief.mode ?? ''}`
           : ''
         }`;
-      return `${base}:${hasFill(l.fill) ? 1 : 0}:${l.cap === false ? 0 : 1}:${l.optional ? 1 : 0}`;
+      return `${base}:${hasFill(l.fill) ? 1 : 0}:${l.cap === false ? 0 : 1}`;
     })
     .join(',');
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
   const stableLayers = useMemo(() => layers, [layersKey]);
+
+  // The same array for the APPEARANCE layer, keyed on the materials as well.
+  // `layersKey` cannot see them by design, so reusing it there froze the materials
+  // at whatever they were when the geometry last changed — a caller swapping a
+  // colour for a `SurfaceMaterial` (or a hook returning one a render later) never
+  // reached `ChunkMeshes`.
+  const appearanceKey = layers
+    .map(
+      l =>
+        `${appearanceId(l.material)}|${appearanceId(l.fill)}|${l.opacity ?? ''}`,
+    )
+    .join(',');
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
+  const appearanceLayers = useMemo(() => layers, [layersKey, appearanceKey]);
 
   // Held in a ref so a caller passing an inline callback does not re-trigger the
   // (expensive) build on every render.
@@ -430,10 +458,11 @@ export const Chunk = ({
     <>
       <ChunkMeshes
         chunk={chunk}
-        layers={stableLayers}
+        layers={appearanceLayers}
         surfaceOpacity={surfaceOpacity}
         wallOpacity={wallOpacity}
         wireframe={wireframe}
+        inferredStyle={inferredStyle}
         showSurfaces={showSurfaces}
         showWalls={showWalls}
       />

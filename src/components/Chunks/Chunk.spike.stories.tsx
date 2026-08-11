@@ -66,7 +66,7 @@ const ChunkPipeline = () => {
   }, [scene, camera]);
   // Touch RenderPass so the import is used even though OIT is the active base pass.
   void RenderPass;
-  useFrame(() => { }, 2);
+  useFrame(() => {}, 2);
   return <RenderingPipeline passes={passes} />;
 };
 
@@ -145,11 +145,11 @@ const ChunkStory = (props: ChunkStoryProps) => {
       top:
         props.basementTopSource === 'procedural'
           ? {
-            procedural: {
-              depth: props.basementTopDepth,
-              variation: props.basementVariation,
-            },
-          }
+              procedural: {
+                depth: props.basementTopDepth,
+                variation: props.basementVariation,
+              },
+            }
           : undefined,
     };
   }, [
@@ -166,10 +166,10 @@ const ChunkStory = (props: ChunkStoryProps) => {
     () =>
       props.resolve
         ? {
-          mode: props.resolveMode,
-          minGap: props.minGap || undefined,
-          collapseThreshold: props.collapseThreshold,
-        }
+            mode: props.resolveMode,
+            minGap: props.minGap || undefined,
+            collapseThreshold: props.collapseThreshold,
+          }
         : undefined,
     [props.resolve, props.resolveMode, props.minGap, props.collapseThreshold],
   );

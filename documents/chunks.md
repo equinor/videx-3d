@@ -5,9 +5,9 @@
 > design record and a description of what is there. Sections marked **open** are
 > genuinely unresolved — see §10.
 >
-> **§10 is the agreed direction** and supersedes parts of §9: coverage becomes a
-> per-layer concern, the chunk outline becomes a pure user crop, and both `cap` and
-> `optional` are scheduled for removal. Superseded sections are marked in place.
+> §10 is the agreed direction. Coverage is now a per-layer concern, the chunk
+> outline is a pure user crop, and `optional` has been removed; `cap` is still
+> scheduled for removal. Superseded sections are marked in place.
 
 ## 1. Motivation
 
@@ -66,8 +66,8 @@ ChunkLayer[]`, shallowest first. Each layer is a boundary, and it declares the
 This replaced an earlier model in which layers were supplied as a **2D array** of
 groups (zones), with walls filling only within a group and adjacent groups implicitly
 separated by a gap. The flat form says the same things but locally, per layer,
-instead of through nesting — which matters once layers also carry `cap`, `optional`
-and synthetic definitions. `layersFromGroups(groups)` converts the old shape and is
+instead of through nesting — which matters once layers also carry `cap` and
+synthetic definitions. `layersFromGroups(groups)` converts the old shape and is
 kept for migration.
 
 ### 2.4 Synthetic layers
@@ -255,9 +255,10 @@ Geometry building is asynchronous and can take seconds, so a host needs to know:
   'failed'`;
 - `ChunkStackProgress` — `{ total, building, completed, fraction }` from the stack.
 
-`'empty'` is not a failure: a chunk whose outline is trimmed away entirely resolves
-to nothing, and `onBuild` never fires for it. Without the state callback that is
-indistinguishable from a hang — which is exactly how it presents.
+`'empty'` is not a failure: a chunk whose outline resolves to nothing, or whose
+layers have no data anywhere inside it (§9.9.1), has nothing to draw. Without the
+state callback that is indistinguishable from a hang — which is exactly how it
+presents.
 
 ## 6. Ocean & Basement specifics
 
@@ -412,13 +413,57 @@ roughly **doubled** (17.9k → 37.5k on the top chunk), tessellation time with t
 The de-speckling accounts for only ~2 % of that, so the cost is genuinely long
 contours, not noise. `refineTerminations: false` turns it off for comparison.
 
-### 9.7 A chunk is cut back to where it has data
+#### 9.6.1 Coverage is read per corner, thickness per triangle
 
-> ⚠️ **Superseded by §10.1.8.** Trimming the chunk to its data is a whole-footprint
-> answer to a per-layer question; once extents are per-layer the outline becomes a
-> pure user crop and `trimPolygonToCoverage` goes. Kept here because it is what the
-> code does today, and because the reasoning below — on why a wall at a data edge is
-> the most confident of the available lies — is what §10.1.5 answers properly.
+The same all-three-corners rule applied to a layer's **coverage** mask is not exact
+— coverage is *binary* and interpolates nothing, so "all three corners uncovered"
+means "draw wherever any corner has data", and a layer is then drawn up to a whole
+triangle past the edge of its survey. Out in an unmapped flat there is nothing for
+the refinement to chase, so that triangle can be enormous: the symptom was long
+teeth hanging off an otherwise finely refined data edge.
+
+⇒ A triangle is dropped as soon as **one** corner is uncovered, which keeps what is
+drawn inside what is mapped. Truncation (`absent`) keeps the all-three rule: it is
+derived from the heights, so it is exact in the same way the thickness test is.
+Both live in `makeAbsentTriangleTest`, shared with `stackIntervalTriangles` so the
+walls stop exactly where the surfaces do.
+
+The cost is the mirror error: a triangle with one corner off the survey is dropped
+whole, so the unit is bitten *inward* instead of spilling outward, worst as a
+chamfer at a convex corner. Inward is the honest direction — never draw where there
+is no data — and the bevel was judged acceptable.
+
+⚠️ **Do not assume the bite is bounded by `maxError`.** The obvious model (finer
+mesh ⇒ smaller edge triangles ⇒ smaller bite) predicts the opposite of what was
+measured: a HIGHER `maxError` made the bevel SMALLER. Coverage crossings are
+*forced* insertions, so the edge chain is at 1-cell spacing whatever `maxError` is,
+and how that dense chain meets a sparse interior is evidently what governs the
+bite. Unexplained; measure before theorising (a per-layer m² of "dropped triangles
+that had a corner on data" would settle it).
+
+⇒ The exact fix, if the bevel ever matters: trace each layer's mask boundary and
+insert it as **constraint edges** in `tessellateStack`, exactly as the outline rim
+already is. Then no triangle straddles a data edge, both rules agree, and the
+question disappears rather than being tuned. It is also where §10.1 is heading
+anyway (terminations as walls on interior rings).
+
+⚠️ All of this only shows with `seal: false` — sealing invents a surface across the
+gap and switches coverage-driven absence off.
+
+### 9.7 A chunk is cut back to where it has data — REMOVED
+
+> ⚠️ **Removed (§10.2 step 5).** `trimPolygonToCoverage` and `coverageRule` are
+> gone; the outline is a pure user crop (§10.1.8) and coverage is measured, not
+> acted on (`measureStackCoverage`). The reasoning below is kept because the
+> question it answers is real and the answer moved rather than disappeared: the
+> seal now closes a data edge (§10.7) instead of the outline retreating from it,
+> and what is drawn there is marked as invention (§10.6).
+>
+> ⭐ What made trimming wrong was not the reasoning but the SCOPE: it is a
+> whole-footprint answer to a per-layer question. One layer's survey edge reshaped
+> the entire chunk, including the layers that were mapped perfectly well — and
+> because the trim ran before the rim was densified, a chunk could silently come
+> back a different shape than the one asked for.
 
 A surface's data extent is where the **survey** stopped, not where the geology did.
 The difference caused the worst-looking defect on this branch: the outline included
@@ -441,7 +486,11 @@ Four things could be done about it, and three of them assert something false:
   and an outline is an admitted arbitrary cut, so the wall drawn there keeps the
   only meaning a wall ever has: "this is where we chose to stop".
 
-`trimPolygonToCoverage` combines the chunk's coverage masks, rasterises the outline
+⚠️ **This whole section describes removed code.** `coverageRule` is gone with the
+trim; what follows is kept for the measurement it records, which is why the trim's
+replacement reports the same figures per layer.
+
+`trimPolygonToCoverage` combined the chunk's coverage masks, rasterised the outline
 over them, traces the surviving region, smooths and simplifies it. When the outline
 is fully covered the **original polygon is returned by identity**, so a chunk that
 needs no trimming is bit-for-bit unaffected. Nothing covered at all ⇒ `null` ⇒ the
@@ -510,55 +559,65 @@ Diagnostic: `topKept` counts the vertices whose absence was overridden. On the d
 field it is ~0 — the chunk outlines nest closely enough that the case is rare — so
 this is insurance, not a visible fix.
 
-With `coverageRule: 'all'`, coverage-driven absence should never fire at all: the
-outline has already been cut back to where every layer is mapped. It stays on as a
-backstop, and matters under `'any'` and for optional layers (§9.9).
+Coverage-driven absence is now the ordinary case rather than a backstop: nothing
+cuts the outline back, so wherever a layer is not covered it is either sealed
+(§10.7), dropped (`coverageAbsence`), or drawn on fill and marked as inferred
+(§10.6).
 
-`SurfaceChunkLayerDiagnostics.coverage` is measured over the **requested** footprint,
-before the trim. Measuring it after — at the surviving vertices — made it read 1 for
-every layer of every chunk by construction, which looked like a clean bill of health
-and was in fact no measurement at all. Read before the cut it answers the question
-the field exists for: *which layer shrank my chunk?* On a trimmed chunk
-`outlineCoverage` equals the smallest `coverage` among the layers that were allowed
-to trim it.
+`SurfaceChunkLayerDiagnostics.coverage` is measured over the footprint the caller
+asked for, which is now the only footprint there is. It answers the question the
+field exists for: *which layer is standing on nothing?* A layer at 0 is voided
+(§9.9.1) and says so.
 
-### 9.9 Borrowed boundaries (`optional`)
+### 9.9 Borrowed boundaries (`optional`) — REMOVED
 
-> ⚠️ **Superseded by §10.1.** `optional` and `collapseOptionalChannels` are scheduled
-> for removal: the clamp described below is what produces the near-vertical curtains
-> at data edges, and the midpoint taper (§10.1.3) replaces it. Kept here because it is
-> what the code does today.
+> ⚠️ **Removed (§10.2 step 5)**, along with `collapseOptionalChannels`. `optional`
+> existed only to take a layer's vote away in the trim, and there is no trim
+> (§9.7). A borrowed boundary now shrinks nothing, because nothing shrinks.
+>
+> The clamp it carried is replaced twice over: by the taper where a layer is
+> partly mapped (§10.7), and by **voiding** where it is not mapped at all (below).
 
-A chunk is trimmed to where **all** of its layers are mapped (§9.8), which is the
-right rule for the layers a chunk is *about* and the wrong one for a boundary it
-merely **borrows** from the chunk next to it.
+The reasoning it was built on still holds and is worth keeping. Two chunks that
+meet share a horizon: the wider one caps it, the narrower one carries it with
+`cap: false`. `cap` only suppresses drawing — the layer is still a full member of
+the stack — so under the old trim it still voted, and a detail chunk whose own
+surfaces were mapped everywhere shrank to the extent of whatever survey happened to
+define its floor. On the demo field the wellbore-cut chunk lost a fifth of itself to
+`Basement Base`, a surface it does not even draw.
 
-Two chunks that meet share a horizon: the wider one caps it, the narrower one carries
-it with `cap: false` (§9.7). But `cap` only suppresses drawing — the layer is still a
-full member of the stack, so it still votes in the trim. A detail chunk whose own
-surfaces are mapped everywhere therefore shrinks to the extent of whatever survey
-happens to define its floor. On the demo field the wellbore-cut chunk lost a fifth of
-itself to `Basement Base`, a surface it does not even draw.
+#### 9.9.1 A layer with no data in the chunk is VOIDED
 
-`optional: true` takes that vote away. The layer no longer cuts the outline, and
-where it has no data of its own the interval it bounds is clamped to zero thickness
-(`collapseOptionalChannels`) and dropped, so the chunk stops where its knowledge
-stops.
+The genuinely hard case the flag was hiding: a layer mapped **nowhere the chunk is
+drawn**. Sealing it would extend a survey that exists only outside the crop across
+the whole chunk and draw a smooth, plausible horizon with no local evidence behind
+it at all — exactly the large invented volume §10.1.7 warns about, and the taper's
+own justification ("keep the relative depth it had where it was last mapped")
+evaporates, because inside this chunk there is no such place.
 
-The clamp is the load-bearing half. `buildStackReference` fills a layer's holes from
-the nearest valid sample, which is invisible for a layer the chunk is trimmed to —
-inside the trimmed footprint the fill is never reached. An optional layer is
-deliberately not trimmed to, so its fill *is* reached, and a flat extrapolation of a
-survey edge is the most confident lie the geometry can tell: a surface, and a solid
-volume down to it, conjured out of nothing. Pinching the interval out instead asserts
-only what is known.
+So it is **voided**: no cap, and **both** intervals it bounds are left unfilled. Its
+top and bottom are equally undefined, so open space from the layer above to the layer
+below is the only statement the data supports — and, like `sealMode: 'void'`, the
+hole IS the message and needs no legend.
 
-The layer's coverage is still reported, so the trade stays visible rather than
-silently buying area.
+coverage is 0. `maxFill` again draws the line: coverage counts bounded fill, so a
+surface mapped just beyond the crop still has evidence reaching in and is sealed
+normally. Only a layer with nothing within `maxFill` of the footprint is voided.
+Same threshold as everywhere else, no new knob.
 
-`optional` is expected to be **temporary**. Once sealing between chunks is inferred
-rather than declared (§10.1.9), a borrowed boundary will be recognisable as such and
-the flag can go.
+⚠️ It overrides `sealMode`, and is reported as
+`SurfaceChunkLayerDiagnostics.voided` rather than left to be inferred from
+`coverage: 0`.
+
+⚠️ Implementation detail with teeth: a voided layer's channel is laid onto its
+nearest surviving neighbour (as `buildStackReference` already does for a layer empty
+over the whole grid) and its mask marked complete, so a surface nobody draws cannot
+clamp the one below it in the monotone resolve or attract a taper. The honest figure
+is the one already measured.
+
+When **every** layer is voided the chunk has nothing to draw and resolves to
+`'empty'` — which is a better trigger for that state than the trim returning no
+polygon.
 
 ### 9.10 Out of scope
 
@@ -570,8 +629,9 @@ true 3D volumes belongs to a different component.
 
 Coverage handling grew one fix at a time — trim the outline (§9.7), then exempt
 borrowed boundaries (§9.9) — and each fix bought area by asserting something. The
-agreed replacement is a single model, described here as the target. `cap` and
-`optional` are both **scheduled for removal**; do not build on them.
+agreed replacement is a single model, described here as the target. `optional` and
+the trim are **gone** (§10.2 step 5); `cap` is **scheduled for removal** — do not
+build on it.
 
 ### 10.1 The model
 
@@ -580,6 +640,8 @@ agreed replacement is a single model, described here as the target. `cap` and
    extent: holes within `maxFill` metres of real data are filled as now, everything
    beyond stays absent. One threshold, in metres, covering interior holes and the
    space past a grid's edge alike — they are the same operation seen from two sides.
+   **Built**, and it behaves as an erosion radius rather than a size test, so a
+   single value stays sane across the three orders of magnitude §13 measures.
 
 2. **Intervals are classified per region, not per surface pair.** For an interval
    bounded by A and B, take the **symmetric difference** of their effective masks —
@@ -599,21 +661,39 @@ agreed replacement is a single model, described here as the target. `cap` and
    `collapseOptionalChannels`, whose abrupt one-cell clamp is what produces the
    near-vertical curtains and spikes at data edges today.
 
+   **Superseded by §10.7**: the taper is kept, but it applies at every scale rather
+   than only to small mismatches, and it leans on the NEAREST neighbour instead of
+   the midpoint — which pinches out the unit we have no data for rather than
+   halving both. The one-cell clamp it replaced is gone with `optional` (§9.9).
+
 4. **Large `D` → terminate, and say so.** The interval stops. Its boundary is traced
    to a ring and closed with a face.
+
+   **Superseded by §10.7.** Leaving it open was tried on paper and rejected: a
+   surface with no data still has mapped neighbours, so every interval it bounds
+   disappears while they are drawn, and the chunk becomes a cap floating over a
+   floor. `D` survives as `taperDistance`, but it now decides how far the inference
+   is *drawn out*, not whether the block closes.
 
 5. **A data edge looks artificial, because it is.** Three different things end a
    surface and they must not look alike: a **user crop** (the chunk outline), a
    **geological pinch-out** (the unit genuinely thins to nothing), and a **data
    edge** (we stopped knowing). The third is drawn as a clean, obviously artificial
-   cut.
+   cut. **Superseded by §10.6** — it needs no appearance at ALL, let alone three.
+   A pinch-out face has no height, so it cannot be seen; a data edge is closed by
+   the seal rather than left standing; and a crop is the user's own cut. What is
+   marked instead is the *invention* the seal put there, which is the thing a
+   reader cannot otherwise tell from geology.
 
 6. **Terminations are walls on interior rings.** Per-layer extents do **not** require
    per-layer triangulations. The tessellation stays shared (§9.1); what varies per
    layer is which subset of the shared triangles is drawn — which is what
    `droppedAbsent` already does. The work is generalising wall generation from "the
    chunk rim ring" to *any* set of rings, fed by traced coverage boundaries. Same
-   machinery, more rings.
+   machinery, more rings. **Built** — and it went further than "more rings": an
+   interval's wall is now traced around the area that interval occupies, so the rim
+   is not a special case but simply the part of that boundary which happens to lie
+   on the outline (§10.5).
 
 7. **A carrier guarantees closure.** A group may declare a termination surface
    guaranteed complete over the area, against which its members terminate; a
@@ -623,29 +703,55 @@ agreed replacement is a single model, described here as the target. `cap` and
 
 8. **The chunk outline becomes a pure user crop.** Once extents are per-layer,
    coverage stops being a cropping concern: the outline means "where the user wants
-   to look", nothing more. `trimPolygonToCoverage` and `optional` go.
+   to look", nothing more. **Built** — `trimPolygonToCoverage`, `coverageRule` and
+   `optional` are gone, replaced by `measureStackCoverage`, which reports and
+   changes nothing. A layer with no data anywhere inside the outline is voided
+   rather than sealed across it (§9.9.1).
 
 9. **Sealing is inferred.** Where one chunk's footprint contains another's, the wider
    one caps the shared horizon. `cap` goes. Partial overlap is the hard case and is
    why this comes last.
+
+   ⭐ **Two decisions are tangled in one flag**, and separating them is most of the
+   work: WHO DRAWS the shared horizon (a geometry question — drawing it twice means
+   two independent tessellations fighting for the same pixels) and WHAT IT LOOKS
+   LIKE (an appearance question — it is the base of one chunk and the top of the
+   other, and those need not agree). Today the first answer silently supplies the
+   second: whoever keeps the cap also decides its material and its opacity. §10.3.6
+   records the symptom.
+
+   ⇒ Which suggests the horizon at a seam belongs to neither chunk. Drawn once, as
+   its own object owned by the stack, with its own material, both questions are
+   answered separately and partial overlap stops being a special case for appearance
+   — it stays one only for geometry.
+
+   ⚠️ Per-region precedence (each part of the horizon drawn by exactly one chunk)
+   needs a cap clipped to "my outline minus yours". With the tessellation hoisted to
+   the stack (§11) both chunks share vertices and that becomes triangle assignment
+   rather than geometry — which is why the §11 question should be settled first.
 
 ### 10.2 Sequence
 
 Numbered by dependency, not importance.
 
 0. **Synthetic surfaces** (§14) — nothing below can be calibrated against a single
-   field without over-fitting to it.
+   field without over-fitting to it. **— done.**
 1. **Bounded fill** — small, self-contained, improves current behaviour alone.
+   **— done (§13.1).**
 2. **Multi-ring walls** — the enabling geometry; testable with a hand-made mask.
-3. **Taper vs terminate** — needs 1 and 2.
-4. **Cut-face appearance** — needs 2.
-5. **Outline as user crop** — needs 1–4; deletes `optional`.
+   **— done (§10.5).**
+3. **Taper vs terminate** — needs 1 and 2. **— done** (geometry §10.7; the marking
+   that makes it honest §10.6).
+4. **Marking the inference** — needs 2 and 3. **— done (§10.6).**
+5. **Outline as user crop** — needs 1–4; deletes `optional`. **— done (§9.7, §9.9).**
 6. **Carrier surfaces** — largely independent; retires the `basement` slot.
 7. **Inferred sealing** — deletes `cap`; last, because partial overlap interacts with
    per-layer extents.
 
 ⚠️ Step 2 is where triangle count compounds with termination refinement, which
 already roughly doubled it (§10.3.2). Measure before and after; do not assume.
+**Measured** — it does not compound: wall cost follows the PERIMETER of a
+termination, not its area (§10.5).
 
 ### 10.3 Still open
 
@@ -690,6 +796,64 @@ already roughly doubled it (§10.3.2). Measure before and after; do not assume.
    Likely an edge case in practice, and a pure capability addition when it comes: a
    single stack is the safe default and stays correct.
 
+6. **Sidedness, opacity and seeing inside** — *recorded 2026-08-10, deferred.* Chunk
+   materials are `DoubleSide` unconditionally, which is right for a sealed block seen
+   at `opacity < 1` (the ray crosses an entry *and* an exit interface) and wasted work
+   when opaque (back faces cannot be seen, yet they are rasterised in every OIT pass).
+   `Surface` does the opposite — double-sided when opaque, front-only when transparent
+   — which is a self-transparency mitigation for the **non-OIT** path. Under OIT it
+   does not apply: `SurfaceMaterial` forces `DoubleSide` on its pass variants, so back
+   faces do render there. The result is a path disagreement rather than a missing
+   feature: the same scene is double-sided under `OITRenderPass` and front-only under a
+   plain `RenderPass`, where a transparent surface is invisible from below.
+
+   Three things to settle together, since they interact:
+
+   - **Derive sidedness from sealedness**, not from opacity: opaque *and* sealed →
+     front faces only; transparent, or a block left open (an unfilled base, `cap:
+     false`) → both. A chunk is sealed exactly when every interval between drawn layers
+     is filled and it is terminated below, so this is computable rather than assumed.
+   - **Peeling before transparency.** Alpha compounds — a 20-layer stack at 0.5 is
+     effectively opaque — so a uniform opacity slider cannot answer "what is
+     underneath". The layer index is a strict depth order, so simply not drawing layers
+     `0..k` is exact and free. Per-layer `side` (drawing only the *back* of a cap) gives
+     a cutaway into a sealed block by the same reasoning.
+   - **Transparency then keeps the case peeling cannot serve**: seeing a wellbore, or
+     another object, through overburden that must stay present.
+
+   ⭐ **Opacity is a CHUNK property and should be a LAYER one** — observed
+   2026-08-11 on `SeabedConnection`, and the sharpest evidence for it. Looking down
+   through the translucent water, you see the inside of the detail chunk's walls
+   with no lid. The lid IS drawn — the ocean chunk caps the seabed over the whole
+   field — but it is drawn at the OCEAN chunk's opacity, so the detail block, which
+   is opaque, is covered by a see-through cap.
+
+   ⚠️ Read carefully, that is not a transparency bug: `cap` decides who draws the
+   geometry, and the APPEARANCE rides along with it. A shared horizon is two things
+   at once — the base of the chunk above and the top of the chunk below — and one
+   flag forces a single answer to a question with two. See §10.1.9.
+
+   ⇒ It also settles "draw both when not opaque", which looks tempting here and is
+   not: the second copy would carry its own chunk's opacity too, so a transparent cap
+   would composite over an opaque one at the same depth. Worse than either alone, and
+   the same alpha-compounding argument as peeling.
+
+   ⇒ **Built: `ChunkLayer.opacity`**, overriding the chunk's `surfaceOpacity` /
+   `wallOpacity` for that layer's cap and the volume below it. Water at 0.45 and
+   sand at 1 in one chunk is an ordinary thing to want and could not be said. An
+   OVERRIDE rather than a multiplier, because a multiplier cannot express "opaque
+   inside a translucent chunk", which is the whole case. ⚠️ So an explicit value
+   also takes that layer out of a global transparency slider's reach — leave it
+   unset on the layers such a control should sweep along.
+
+   ⚠️ It expresses the fix, it does not remove the cause: the seam still hands one
+   chunk's appearance to another, and the caller has to know to correct it. §10.1.9
+   is where that stops being the caller's problem.
+
+   ⚠️ `side` is not synchronised onto the OIT variants, which for stock materials are
+   cloned on first use — so making sidedness reactive requires a fresh material
+   identity, exactly as re-classification already does.
+
 ### 10.4 Resolved
 
 - **Inherit vs own vs shared outline** — settled: `outline` takes `'inherit'`, a
@@ -697,6 +861,343 @@ already roughly doubled it (§10.3.2). Measure before and after; do not assume.
   envelope.
 - **Component pattern** — settled: context + declarative children.
 - **Basement as a slot** — superseded. It becomes the degenerate carrier (§10.1.7).
+
+### 10.5 Interval walls (§10.2 step 2) — built
+
+A filled interval used to draw its wall around the **whole chunk rim**, whether or
+not the unit still existed there, and nothing at all where a unit ended inside the
+chunk. Both are now the same question, asked once:
+
+> an interval's wall is the boundary of the area that interval occupies.
+
+The parts of that boundary lying on the outline are the user's crop; the rest is the
+unit terminating.
+
+⚠️ **The two were tagged (`CUT_CROP` / `CUT_TERMINATION`) and the tag has been
+removed.** It existed to give a data edge its own appearance (§10.1.5), and that is
+no longer wanted: a cut face is legible without help, and it is not meant to be
+visible in the first place — under sealing there is no visible termination at all,
+since a pinch-out face is at most `collapseThreshold` tall (measured; see below).
+The tag survived only long enough to be folded into the `inferred` attribute, which
+made a plain data edge look exactly like invented geometry while the diagnostics
+reported nothing inferred. §10.6 now means invention and nothing else. Re-deriving
+the tag is ~10 lines against the rim ring if it is ever wanted.
+
+The rings are made of shared vertices, so a wall stays one strip with continuous
+normals — which is also what lets the marking be one interpolated attribute rather
+than two geometry groups drawn with two materials.
+
+**Traced on the tessellation, not on the mask.** A wall's top and bottom edges are
+the *same points* as the surfaces above and below it: the block is sealed by
+construction rather than by two samplings agreeing. Tracing the coverage mask in
+grid space instead would put the wall on a cell-quantised line while the surface
+follows triangle edges, leaving a crack at every segment.
+
+**An interval is not the intersection of two kept layers.** It exists where it has
+thickness and where each of its bounding surfaces is present. A layer dropped for
+being coincident with the one above it — the interval *above* it is empty — still
+bounds a perfectly real volume below, so intersecting the layers' kept sets would
+delete those volumes.
+
+`buildEdgeOpposites` / `traceBoundaryRings` (`mesh-boundary.ts`) are plain index
+topology and know nothing about surfaces; the half-edge pairing is built **once** per
+tessellation, so each interval only reads two flags per edge instead of re-hashing.
+Ring orientation is taken from the rim the chunk's walls have always used rather than
+derived, since a sign error there silently inverts every wall normal.
+
+**Cost — it does not compound.** Wall triangles follow the *perimeter* of a
+termination, not its area. Measured on the demo field (`WellborePerChunk`,
+`surfaceFrom: 16`), against the same build with rim-only walls:
+
+| chunk | triangles before | after | of which wall |
+| ----: | ---------------: | ----: | ------------: |
+|     0 |           37,481 | 40,955 |         5,562 |
+|     1 |           10,513 | 10,831 |         1,272 |
+|     2 |            7,257 |  7,739 |           878 |
+
+Chunk 1 drops 5,743 triangles to pinch-outs yet spends only 1,272 on walls. Walls are
+11–14% of each chunk. On the generated scenarios the increment is smaller still (+90
+triangles to wall every hole in `holes`).
+
+⭐ Coverage-driven terminations are now the ordinary case: the outline is never cut
+back to the data, so a wall standing at a survey edge is what a partly-mapped layer
+looks like.
+
+### 10.6 Marking the inference (§10.2 step 4) — built
+
+Sealing invents geometry (§10.7), and a block that does not admit which part is
+invented is exactly the plausible-looking picture this design keeps trying to
+avoid. `ChunkInferenceStyle` marks it: `none`, `hatched` (the drafting convention),
+`checker` and `zigzag`.
+
+⭐ **Every style is a PATTERN, never a colour.** A recoloured region says that
+*something* is different without saying what — and worse, it cannot be told apart
+from a unit that simply has a different colour, which is the one reading that must
+not be possible. An earlier version offered `matte` and `muted`, and both failed on
+exactly that; they are gone.
+
+⭐ **It is an OVERLAY, not a property of the unit's material.** A second mesh sharing
+the same geometry, drawn with one chunk-wide material that darkens multiplicatively.
+Three reasons, in order:
+
+- it works over a **caller-supplied** `Material` — which the chunk cannot patch, may
+  be textured, and is exactly the case `Chunk` is meant to support;
+- the unit keeps its own colour and shading **by construction**, rather than by the
+  chunk reconstructing a colour it can only guess at (the old cut material could not
+  read a colour out of a `Material` at all, and fell back to the palette);
+- it needs no cooperation from what it is drawn over.
+
+The cost is one extra draw per mesh that has anything to mark — and only those
+meshes carry the attribute, so the common case pays nothing.
+
+**What drives it is one interpolated per-vertex attribute, `inferred`**, on the caps
+and on the walls alike. One rule decides it:
+
+> `inferred` marks geometry drawn **beyond a layer's effective extent**, however its
+> height was arrived at.
+
+There are two ways that happens, and `maxFill` is the line between them:
+
+- **sealed** — the taper's own weight, 0 where the data stops and rising to 1 at the
+  far side of the gap (`sealStackChannels`, sampled bilinearly by
+  `sampleStackWeights`). ⭐ That weight doubles as a CONFIDENCE — every seal rule
+  leans on the nearest real data, so all of them are least trustworthy furthest from
+  it — which is why the marking FADES instead of switching on. The proportional rule
+  reports it too even though it does not blend with it.
+- **not sealed, and not dropped either** — with `coverageAbsence: false` the layer is
+  drawn out there on the reference's nearest-valid hole fill, which is a flat
+  extrapolation and every bit as invented (with less to say for itself: it has no
+  shape derived from its neighbours and no gradient). Marked at 1, derived from the
+  coverage mask. ⚠️ Only when a seal did NOT run — taking the larger of the two would
+  flatten the taper's gradient to a hard 1 and destroy the fade.
+
+With `coverageAbsence: true` and no seal there is nothing to mark: the geometry is
+dropped rather than invented.
+
+⚠️ **The one deliberate exception is fill within `maxFill`.** It counts as covered,
+so it is not marked — which is the whole point of the threshold (§13.1): inside it we
+interpolated across a gap we are surrounded by and stand behind the result; outside
+it we extrapolated and say so. It is still reported separately as `filled`.
+
+⚠️ **A cut termination is NOT marked.** An earlier version folded `CUT_TERMINATION`
+(§10.5) in as well, on the argument that a data edge and an invention are both "not
+geology". In practice that made a plain, honestly-cropped block read as invented
+while `SurfaceChunkLayerDiagnostics.inferred` reported 0 — the picture and the
+numbers disagreeing, which is precisely the failure this feature exists to prevent.
+The tag is gone (§10.5).
+
+⭐ **The attribute's PRESENCE is the signal.** It is only added when something is
+actually marked, so the appearance layer can skip the overlay entirely rather than
+draw an empty one — and a chunk with nothing invented is bit-for-bit as before.
+
+⭐ **One mesh, one material, no groups.** The previous design split a wall's indices
+into two geometry groups drawn with a material array. A per-vertex attribute does
+the same job on one draw call, interpolates (which groups cannot), and removes the
+R3F hazard that came with it: switching between an array and a single material on
+one fiber removes the prop, and R3F then resets it to a fresh `Mesh`'s default white
+`MeshBasicMaterial`.
+
+**The pattern is anchored in WORLD space**, projected onto whichever plane the face
+most nearly lies in. A wall is vertical, so an XZ projection alone would smear down
+it; picking the plane per fragment means a cap and the wall below it carry the same
+pattern at the same scale. (Wall UVs remain metric — §10.5 — but the marking no
+longer uses them, and caps need their own grid UVs for `SurfaceMaterial`.)
+
+⭐ **A cut face needs no appearance at all.** §10.1.5 asks for three, and the answer
+turned out to be one. A pinch-out face cannot be seen: a triangle is dropped only
+when its thickness is below the threshold at all three corners, so both ends of a
+thickness-driven boundary edge have (almost) no thickness, and the wall there is at
+most `collapseThreshold` tall. Truncation is a subset of the same test. So the only
+*visible* termination is a data edge — and with sealing on there is no such face,
+because the block is closed there instead. Left is the crop, which is the user's own
+cut and needs no telling. ⚠️ This retired a measured result (a pinch-out face ≤ 0.5 m,
+a data edge the full interval height) along with the tests for it; the measurement
+stands, it just no longer decides anything.
+
+⚠️ **Coverage edges are not refined — except for the seal.** `refineTerminations`
+inserts candidates along each pair's *thickness* contour (§9.6), which does nothing
+for a data edge; `refineCoverage` (default on) puts vertices on the edge of each
+layer's own data, which is where a taper starts. Without it the gradient would begin
+wherever the height refinement happened to leave a vertex — in a flat area, hundreds
+of metres inside the data.
+
+⭐ **A grid-driven material needs telling which artefact is authoritative.** For a
+`Surface`, the GRID is: the mesh was built from it, so a nodata sample means there
+is nothing there and `SurfaceMaterial` discards the fragment. For a chunk cap it is
+the other way round — the heights have been resampled onto a common grid,
+hole-filled, sealed, resolved and collapsed, so the MESH is authoritative and the
+grid is only one of its inputs. Left alone, the discard cuts a hole clean through
+the sealed block, in exactly the region the seal closed and the overlay marked.
+
+`SurfaceMaterial.geometryFallback` (default **off**, so `Surface` is untouched)
+switches the rule: no discard, and where the grid has no data the depth and the
+normal come from the mesh's own vertex instead of from the elevation and normal
+textures. Where the grid DOES have data nothing changes — full grid-resolution
+shading is the whole reason those textures exist — and the two are mixed rather
+than branched, so a triangle straddling the data edge does not flip.
+
+It reads a per-vertex `nodata` attribute, written by `buildStackGeometries`
+alongside `inferred`. ⚠️ **Inverted deliberately**: an attribute a geometry does not
+carry reads as 0 in WebGL, so 0 has to mean "the grid is complete". A `covered`
+attribute would have made every fully-mapped layer fall back everywhere.
+
+⚠️ Still open: a genuinely third-party material has no way to opt into this — there
+is no general protocol, only this flag on the one material that needed it. Worth
+building when there is a second consumer, not before.
+
+### 10.7 Sealing (§10.2 step 3) — built
+
+A surface's grid stops where the survey stopped. Left alone, every interval bounded
+by it disappears there while its mapped neighbours are still drawn, and the chunk
+becomes a cap floating over a floor. Both alternatives to that are assertions, so
+the question is only which assertion to make.
+
+**Two ways to close it**, differing in what KIND of claim they make:
+
+- **`proportional`** (default) keeps the surface at the RELATIVE depth it had where
+  it was last mapped: the ratio `(A − B)/(A − C)` is carried into the gap from the
+  nearest mapped node and the surface rebuilt from it, so it follows the *shape* of
+  its neighbours and both units continue at scaled thickness. It says "this horizon
+  is here somewhere". ⚠️ Being strictly between its neighbours, it cannot make the
+  stack non-monotone.
+- **`void`** splits the surface in two — one copy closing the interval above, one
+  the interval below — and draws nothing between: a lens-shaped cavity, zero at the
+  data edge and opening where knowledge runs out. It says "the units are not defined
+  here", and is **self-documenting**: the hole in the block is the statement, so it
+  needs no legend and cannot be mistaken for geology. The trade is that it removes
+  material we know exists, since the neighbours bound it.
+
+  ⭐ Implemented as two ordinary layers with an *unfilled interval* between them —
+  §2.3's gap between zones — so caps, walls, the collapse and the wall tracing all
+  work unchanged.
+
+⚠️ An earlier `nearest` rule (collapse onto the closer neighbour) was **removed**:
+its direction depended only on which neighbour happened to be nearer, so the same
+gap bulged upward or cratered downward for no geological reason. It survives only
+where a layer has ONE neighbour — the top or bottom of a stack — since there is then
+no ratio to preserve.
+
+**How far a taper reaches is derived, not configured.** Each one is drawn out over
+the GAP it is closing, not over the distance it has to fall:
+
+```
+run  = reach                 (the region's own inward extent...)
+w(d) = shape(d / run)        (...measured INSIDE the chunk's footprint)
+```
+
+⭐ **That the run is the gap is the whole point.** Making it proportional to
+`travel` cancels the travel out of the mean gradient — every taper then descends
+identically however far it has to go, so a thin unit and a thick one leave their
+shared edge in parallel, which is not what either of them does. With a shared
+reach the gradient is `travel / run`: two flanks closing the same gap **land
+together at its far side and differ in steepness**, in proportion to how far each
+has to move.
+
+⚠️⚠️ **The reach must be measured over the nodes the chunk DRAWS.** The reference
+grid is the grid-space bounding box of a rotated outline, and everything beyond a
+survey edge is one region running out to that box, so measuring over the grid put
+the run in the hands of corners nobody sees: resizing an outline silently changed
+the shape of every seal inside it, and two holes in one layer got two different
+curves. `rasterizeStackOutline` is the footprint raster (shared with `measureStackCoverage`)
+and `StackSealOptions.inside` carries it. A region with no node inside falls
+back to its own extent, having nothing visible to measure.
+
+**The curve is fixed** — $w(t)=\sqrt{1-(1-t)^2}$, a quarter arc: vertical where
+the data stops, horizontal where it lands. The seal opens at once at the edge of
+knowledge, then flattens into the surface it closes against, which is what a gap
+in knowledge looks like as opposed to a geological wedge.
+
+⚠️ Where a horizon DIPS into its data edge, a vertical departure leaves a V-shaped
+trough there: the surface descends with the data, then reverses. The taper blends
+from the nearest-neighbour fill, which is flat, rather than from the horizon's own
+trend.
+
+**`minThickness` is the only setting** (metres, default 1): how much of each
+neighbouring unit the taper has to leave standing. A unit is thinned, never closed
+to nothing — otherwise the collapse drops it and re-opens the hole the seal just
+closed. It is ABSOLUTE rather than a share of the room available, so it means the
+same thing in a 20 m interval and an 800 m one, and it is applied identically at
+both ends of a void. Where there is less room than that, nothing moves.
+
+⚠️ Keep it above `collapseThreshold` (default 0.5 m), or the sliver it leaves is
+dropped for having no thickness.
+
+⚠️ Removed as options, deliberately: a taper CURVE (`linear`/`smooth`/`open`/`arc`)
+and a `spread`/`slope`/`taperDistance` knob. Each was a way to compensate for the
+run being measured over the wrong thing; none of them is a decision a caller has
+information to make.
+
+#### 10.7.1 Open: the travel should be slope-limited
+
+*Raised 2026-08-11, not built.* Every gap travels the full `|room| − minThickness`
+however narrow it is, so a 200 m ditch between surfaces 800 m apart dives the whole
+800 m and back — an implied gradient of 8:1 that no horizon does. Wide gaps look
+right; small holes and long narrow ditches are visibly over-driven.
+
+⭐ The fix is a **slope limit**, not a size test:
+
+```
+travel = sign(room) · min(|room| − minThickness,  s · reach)
+```
+
+`reach` is the region's own INWARD extent, which is already computed and already
+shape-aware: a long narrow ditch has a small reach however large its area. That is
+exactly why area is the wrong measure — it would call that ditch large and drive it
+hardest. `s` is a dimensionless maximum gradient; a wide gap is unaffected because
+`s · reach` exceeds the room available, so the behaviour degrades continuously
+rather than switching at a threshold.
+
+⚠️ `reach` and `chamferDistance` are in **cells**. The existing `dist/reach` ratio is
+dimensionless so it works today, but a slope limit compares against metres — so
+`sealStackChannels` needs the cell size, which it is not currently given.
+
+⚠️ It interacts with `minThickness`: once the travel is capped, the unit on the far
+side keeps more than the minimum by construction, so the two settings stop being
+independent. Measure a case where both bind before adding a second knob.
+
+**Order matters.** Sealing runs on the reference grid *before* the monotone
+resolve, and **per chunk, not per column** — a chunk's layers are not the column's
+(it adds synthetic floors and takes a slice), so the neighbours a surface is sealed
+against differ per chunk. Sealing the column made the deepest surface look
+unbounded below even where a chunk put a floor under it. Two adjacent layers
+tapering toward each other can also pass each other at full weight; the resolve is
+what puts that right, so sealing after it would leave the crossing in.
+
+**What it overrides:** `coverageAbsence`, which would otherwise drop the wedge for
+having no data. (It also used to override the coverage trim, which would have cut
+the outline back to exactly the area the wedge covers — that trim is gone with
+§10.1.8, so a chunk keeps the footprint the user asked for either way.)
+
+**Measured** through the story (`SyntheticCoverage`, `holesStacked`) — the holed
+surface with a mapped surface above and a floor below:
+
+| | triangles | dropped |
+| --- | ---: | ---: |
+| proportional | 10,594 | none |
+| void | 16,879 | 2,537 thin |
+
+`proportional` drops nothing — both units continue across the gap. `void` costs the
+extra layer and drops the void interval wherever the two copies coincide, which is
+everywhere the surface has data.
+
+⚠️ **Measure through the path production uses.** Two earlier comparisons in this
+section were wrong because of this: one ran through a hand-built three-layer stack
+that bypassed the shared column, and one ran through a scenario whose holed surface
+was the column's last layer — in both, `proportional` silently fell back to the
+one-neighbour rule and produced numbers identical to it.
+
+⚠️ **A test scene can hide all of this.** The story's floor was originally an
+`offset` layer, i.e. defined *relative to the surface above it* — so sealing that
+surface dragged the floor with it and the block's base visibly rose. Nothing was
+wrong with the seal; the third surface simply was not an independent neighbour. It
+is now an absolute `depth`. Any scene used to judge sealing needs three genuinely
+independent surfaces.
+
+⚠️ **Sealing invents geometry**, and a sealed block that does not admit which part is
+invented is exactly the plausible-looking picture this design keeps trying to avoid.
+The inferred region is reported per layer (`SurfaceChunkLayerDiagnostics.inferred`)
+**and drawn** as the inference it is — see §10.6, which carries the taper's own
+weight through to the geometry so the marking fades with the confidence.
 
 ## 11. Stack-level build
 
@@ -742,10 +1243,71 @@ which by construction contains every chunk's narrower window.
 **If that residual ever matters**, the remaining step is to hoist the tessellation
 too: one triangulation with every chunk's outline as constraint edges, each chunk
 taking the triangle subset inside its own outline (the same mechanism
-`collapseStackTriangles` uses). That would make the guarantee exact across chunks —
-at the cost of every chunk carrying the union of the whole column's detail
-(measured ~11× a single layer's vertex count). Nothing built above needs to change
-for it; the tessellation simply moves up a level.
+`collapseStackTriangles` uses). That would make the guarantee exact across chunks,
+and it is what §10.1.9 wants in order to stop `cap` from being declared by hand:
+with shared vertices, two chunks drawing the same horizon no longer z-fight, so
+who draws it becomes triangle assignment rather than geometry. Nothing built above
+needs to change for it; the tessellation simply moves up a level.
+
+### 11.1 What hoisting would cost — MEASURED 2026-08-11
+
+An earlier note here put the cost at "~11× a single layer's vertex count". That
+figure is **wrong**, and it was also the wrong comparison: it measured what one
+chunk would carry, when the point of hoisting is that there is only ONE buffer for
+the whole stack instead of one per chunk.
+
+Measured with `tests/perf/stack-hoist-profile.test.ts` on a generated column
+(§14.4) and on the demo field, 3 telescoping chunks (6 / 4.5 / 3 km squares)
+against a 6 km envelope, `maxError` 5:
+
+```
+PROFILE_HOIST=1      npx vitest run tests/perf/stack-hoist-profile.test.ts
+PROFILE_HOIST_REAL=1 npx vitest run tests/perf/stack-hoist-profile.test.ts
+```
+
+| column | layers | verts today | verts shared | factor | ms today | ms shared |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| generated, correlated | 5 | 2,607 | 4,649 | ×1.78 | 200 | 241 |
+| generated, correlated | 17 | 2,627 | 6,781 | ×2.58 | 112 | 83 |
+| generated, independent | 5 | 27,307 | 21,047 | ×0.77 | 482 | 284 |
+| generated, independent | 17 | 26,905 | 20,720 | ×0.77 | 627 | 336 |
+| **demo field** | **5** | 1,831 | 3,760 | **×2.05** | 44 | 51 |
+| **demo field** | **9** | 4,962 | 12,707 | **×2.56** | 98 | 118 |
+| **demo field** | **18** | 10,419 | 21,978 | **×2.11** | 175 | 188 |
+| **demo field** | **27** | 13,349 | 22,760 | **×1.70** | 165 | 185 |
+
+⇒ **Worst case measured anywhere is ×2.6 on vertices and +14% on time.** Not ×11.
+
+⭐⭐ **The factor does not grow with column length** — on the demo field it peaks
+around 9 layers and *falls* to ×1.70 at 27. The union of candidates cannot exceed
+the reference grid's node count (here 118,336, of which the shared buffer reaches
+19%), so hoisting is bounded by `maxNodes` rather than by how many surfaces the
+column has. That is the structural reason it is safe, and it is what the "×11"
+intuition missed.
+
+⭐ **Time is almost unaffected**: +8% to +14% on real data at 18–27 layers, and
+*faster* on the generated independent column, because today's design re-triangulates
+the same domain once per chunk. The cost is vertex memory, and in absolute terms it
+is small — ~9k extra vertices for a 27-layer column.
+
+⚠️ The generated column brackets the answer rather than predicting it. Layers that
+drape each other (correlated) refine onto the same nodes, so a chunk is cheap today
+and pays ×1.8–2.6; layers with structure of their own are so expensive per chunk
+that sharing wins outright (×0.77). Real surfaces sit between: individually smooth
+(few candidates each) but largely disjoint, so the union of nine is ~2.5× any three
+of them. The real run also confirms the caveat that motivated it — coverage and
+thickness crossings, absent from the generated column, are substantial on real data
+(10k and 26k candidates) — and the union still saturates.
+
+⚠️ Remaining unknowns: only ONE envelope size and telescoping ratio was tried
+(6 / 4.5 / 3 km). The harder chunks telescope, the better today's design looks. And
+the true hoisted design puts every chunk's outline in as interior constraint edges,
+which this approximates with a single envelope rim — that adds edges the
+measurement does not carry.
+
+⇒ **Recommendation: hoist.** ×2 vertex memory at ~10% tessellation cost buys exact
+cross-chunk agreement, and it is what turns §10.1.9 (removing `cap`) from a
+geometry problem into triangle assignment.
 
 ## 12. Build order
 
@@ -798,22 +1360,56 @@ That spread is the important part, and it is what makes hole filling a *policy*
 rather than a yes/no. Filling 0.06 km² is obviously right; filling 44.8 km² flat is
 obviously wrong; nothing distinguishes them today.
 
-### 13.1 Bounded fill (§10.1.1)
+### 13.1 Bounded fill (§10.1.1) — built
 
 `buildStackReference` fills every invalid node from the nearest valid one via a
 two-sweep chamfer transform, so **the distance to real data is already computed and
-then discarded**. Thresholding it costs almost nothing:
+then discarded**. `maxFill` (metres, on `ChunkResolveOptions`) thresholds it:
 
-- within `maxFill` metres of real data → fill, and count the node as covered;
-- beyond it → leave it absent, and let the existing absence/trim machinery deal with
-  it.
+- within `maxFill` metres of real data → filled, and the node counts as covered;
+- beyond it → still filled, but left absent for the existing absence and trim
+  machinery to deal with.
 
-One rule, in metres so it is independent of grid resolution, covering both cases
-above: an interior hole and the space past a grid's edge are the same operation seen
-from different sides. It also makes a surface's extent a matter of degree rather than
-all-or-nothing, which is what §9.9's `optional` is crudely approximating.
+The *values* are filled either way. What the threshold bounds is the **mask**, i.e.
+how far the fill is treated as knowledge — leaving a real cliff in the heights
+would cost a dense cluster of slivers for geometry that is about to be dropped
+anyway. `StackReference.masks` is therefore tri-state (`STACK_MASK_NONE` /
+`_DATA` / `_FILLED`); every consumer that only asks "is this covered?" keeps
+testing for truth, and the extra state costs no memory.
 
-Not built. The value needs judging against data, not argument.
+**It is an erosion radius, not a size test.** A hole of radius `r` disappears
+exactly at `maxFill = r`, and below that it survives having lost a rim of
+`maxFill`. Measured on the generated `holes` scenario (§14) — radii 100 / 500 /
+1500 m, i.e. 0.03 / 0.8 / 7 km², in a 9 km square crop:
+
+| `maxFill` | coverage | of which fill |
+| --------: | -------: | ------------: |
+|         0 |    0.894 |             0 |
+|       100 |    0.911 |         0.017 |
+|       300 |    0.937 |         0.044 |
+|       500 |    0.958 |         0.064 |
+|      1000 |    0.989 |         0.096 |
+|      1600 |    1.000 |         0.106 |
+
+That continuity is what makes one threshold usable across three orders of
+magnitude: a 7 km² hole **cannot** be swallowed by a 300 m threshold, it can only
+lose a 300 m rim. The same measurement on an extent rather than a hole (`inset`,
+where the mapped polygon is smaller than the grid) runs 0.708 → 1.000 as `maxFill`
+goes 0 → 2000 m, and on the `mismatch` pair the shorter surface goes 0.859 → 1.000
+by 1500 m, which is the offset it was generated with.
+
+⚠️ At the top of those ranges coverage reads 1.0 while a quarter of the chunk is
+extrapolation (`inset` at 2000 m: 29% fill). Coverage alone would hide that, so
+the share is reported per layer as `SurfaceChunkLayerDiagnostics.filled`.
+
+**Default: 250 m** (`DEFAULT_CHUNK_MAX_FILL`). Volve's interior holes are 0.06–0.23
+km² (radius 140–270 m) except for three at 2.8 / 10.4 / 44.8 km², so 250 m bridges
+the everyday ones and leaves the large ones alone. It is one dataset: treat the value
+as a starting point. `0` counts only real data.
+
+⚠️ It applies even when `resolve` is omitted — the common grid is built either way,
+and how far its fill is trusted is a property of that grid rather than of the
+depth-order pass.
 
 ## 14. Synthetic surfaces
 
@@ -873,9 +1469,132 @@ Shared with `tests/`, which currently hand-rolls small grids.
 ⚠️ A terrain generator can absorb unlimited effort. Grow it on demand rather than
 designing a general toolkit up front.
 
-### 14.4 Consequence for the demo data
+### 14.4 Columns, not just surfaces (Phase B) — built
 
-`public/data` was modified during development. Once synthetic surfaces exist, that is
-no longer necessary: the **original open dataset is restored**, and any scenario it
-cannot show is generated instead. Demo data should stay unmodified open data, so that
-what a reader sees is reproducible from the published source.
+`surface-field.ts` generates surfaces that are independent of one another, which is
+enough for coverage but not for anything structural. `surface-column.ts` generates a
+whole column the way one is deposited:
+
+```
+thickness(x, z) = drape + fill * max(0, dPrev − datum)
+dNext           = dPrev − thickness
+```
+
+`drape` blankets the topography and carries the structure upward; `fill` levels it
+toward `datum`. ⭐ Where the surface below is already shallower than the datum the
+fill term is zero, so **the unit pinches out over a high** — a genuine zero-thickness
+termination, which is what `collapseThreshold` and `refineTerminations` exist for and
+what a single generated surface cannot produce. Stack several and the structure
+flattens upward, as a real column does.
+
+⭐ Everything is **analytic in `(x, z)`**: a unit's depth is a function of the
+previous unit's depth at the same point, never of its grid. So each surface can be
+rasterized onto its **own** grid — different `nx` / `xinc` / `rot` / origin — and the
+surfaces still relate exactly. That is the §10.3.5 case, and a grid-chained generator
+could not give it.
+
+⭐⭐ Because the relationships are exact, a crossing or a mis-ordering seen
+downstream is unambiguously a pipeline bug and never data noise. That is the main
+reason to generate a column at all.
+
+**Steps interrupt deposition**, oldest first:
+
+- **erosion** — everything shallower than the unconformity is gone, and deposition
+  resumes on it, which is what makes a section *angular*. How a removed horizon is
+  RECORDED is the interesting part, and it is a real choice:
+  - `mask` (**default**) — it has no data above the unconformity. This is what an
+    interpreter delivers, and ⚠️ it is then indistinguishable from a survey edge —
+    precisely the case §10.1.5 wants told apart, and precisely what a seal would
+    taper back across, inventing rock that was removed 200 Ma ago.
+  - `clip` — it is pushed onto the unconformity: zero thickness, still present,
+    read downstream as a pinch-out.
+
+  ⚠️ The default is chosen on the reasoning that honest test data should contain
+  the hard case, **not** on domain review. `DEFAULT_EROSION_ENCODING` is one word.
+- **fault** — ⭐ as GRID DATA holds one. A height field cannot carry a
+  discontinuity, so whoever mapped the surfaces carried them *across* the plane and
+  the throw arrives as a steep flexure `ramp` metres wide;
+  `offset = throw · smoothstep((x−at)/ramp)`, dying out along strike over
+  `halfLength`. **`ramp` is a property of the gridding, not of the geology**: narrow
+  it and the surface approaches vertical, which is what stresses the tessellation.
+  Juxtaposition survives — an old unit ends up beside a younger one — while the
+  structural gap does not, because it is not in the data either. A fault applies to
+  everything deposited so far; interleave several for a growth fault, and the `fill`
+  term thickens each unit on the downthrown side by itself.
+
+  ⚠️ Reverse and overturned geometry cannot be expressed at all — two depths at one
+  position is not a height field. A limit of the representation, not of the
+  generator (§10.3: detect and report, never smooth).
+
+Units carry a `SedimentClass`. ⭐ The library still never assigns a colour: the
+class → colour mapping lives in the story, because name → unit → colour is
+company-specific.
+
+⚠️ **Extent is an emission property.** A unit's `boundary`/`holes` say where someone
+RECORDED it, and never change what was deposited — so a partly-mapped unit still
+supports the ones above it. There is a test for exactly that.
+
+**Variation.** `ColumnSpec.seed` shifts every relief in the column at once, so one
+spec yields different realizations of the *same architecture* — same units, same
+fault, same unconformity, different structure. (Re-rolling one relief's own seed
+would only change that surface.) `ColumnSpec.erosionEncoding` sets the default for
+erosion steps that do not name one.
+
+⭐ The demo column is built from a `COLUMN` constants block in
+`src/storybook/data/synthetic-surfaces.ts` — grid nodes, cell size, rotation, number
+of units, depth range, structure amplitude, seed, erosion encoding, and where the
+fault and the unconformity fall. Edit and reload. It is deliberately constants
+rather than story controls: a column is DATA, and swapping it at runtime would mean
+registering every variant in the store up front.
+
+⚠️ Generation is eager, because the meta loader needs each surface's realized depth
+range at store init, and costs about `nodes² × surfaces`: ~235 ms at 400 × 400 with
+ten surfaces, ~135 ms at 300 × 300. It is paid once per page load by every story.
+
+**The model, in cross-section:** [column-sketch.svg](column-sketch.svg) — drape,
+fill and the pinch-out, a column flattening upward, the two erosion encodings, and
+the fault both as geology (a dipping plane with heave, and the reverse case that
+provably cannot be a height field) and as grid data (the flexure). Regenerate with
+`node documents/column-sketch.cjs`.
+
+Storybook: `Spikes/Chunks/SyntheticColumn`. The column enters the store as ordinary
+`surface-meta` + `surface-values`, ids `synthetic:col:<key>:<index>`.
+
+### 14.5 Consequence for the demo data — restoring the open dataset
+
+`public/data` was replaced during development with a second field (`_johs`) because
+the open Volve set could not show a deep, many-surface stack. Once synthetic
+surfaces exist that is no longer necessary: the **original open dataset is
+restored**, and any scenario it cannot show is generated instead. Demo data should
+stay unmodified open data, so that what a reader sees is reproducible from the
+published source.
+
+⚠️ **It is not just a file swap.** The substitution grew hard dependencies that will
+not survive it, because ids, names and the field origin all changed:
+
+| dependency | where | what breaks |
+| --- | --- | --- |
+| `origin`, `utmZone`, `surfaceOptions`, wellbore ids | `src/storybook/story-args.json` (generated) | every chunk and surface story enumerates `surfaceOptions`; the ids no longer exist |
+| name → age table, 32 entries | `src/storybook/data/strat-ages.ts` | `sortByStratAge` **excludes** surfaces it has no age for, so with Volve names it returns an empty stack and five stories render nothing |
+| `'NORDLAND GP. Top'`, `'Basement Base'` | `SeabedConnection.spike.stories.tsx` | the two shared horizons are found by `_johs` NAME |
+| `volve-polygon.json` | six stories | edited in place to fit `_johs`, despite the name |
+| the dataset | `public/data/**` | 19 surfaces removed, 36 added, plus headers, logs and config |
+
+**The ordering dependency is the only real design question.** The library contract
+is that array order IS stratigraphic order and the *host* sorts (§9.3) — and the
+stories are a host, so they need a name → age table for whichever field ships. Three
+ways to satisfy it, in increasing order of how much they remove:
+
+1. ship a Volve name → age table, the direct equivalent of what exists now;
+2. sort by measured median depth inside the footprint (`stackDepthStats`), which on
+   `_johs` agreed with the age order exactly — no table, but it infers the contract
+   rather than being told it, and §10.1 is explicit that guessing an order is worse
+   than dropping a surface;
+3. ⭐ move the chunk spikes onto the **generated column** (§14.4), which is ordered
+   correctly *by construction*, and leave the real-data stories to demonstrate a
+   single surface and a wellbore. This deletes the strat-age dependency outright and
+   is the case §14 was written for.
+
+⚠️ Whichever is chosen, `sortByStratAge`'s current behaviour — silently excluding
+un-aged surfaces — is what turns a dataset swap into an empty screen rather than an
+error. It should say so loudly if it keeps that policy.

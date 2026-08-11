@@ -17,6 +17,7 @@ import {
   SurfaceClipHeader,
   surfaceWorldToGrid,
 } from './surface-clip';
+import { buildIntervalWalls } from './surface-walls';
 import {
   GridPolygon,
   triangulateGridConstrained,
@@ -204,6 +205,12 @@ export type SurfaceChunkMesh = {
   geometry: BufferGeometry;
   /** index into the caller's layer list (for a wall: the layer ABOVE the interval) */
   layer: number;
+  /**
+   * This surface is the ceiling of a void: it faces UP, so it shows the BASE of
+   * the interval above rather than the cap of `layer`, and should take that
+   * interval's colour. Only ever set on a surface.
+   */
+  ceiling?: boolean;
 };
 
 /**
@@ -227,6 +234,28 @@ export type SurfaceChunkLayerDiagnostics = {
    * layer of every chunk, by construction.
    */
   coverage: number;
+  /**
+   * The part of `coverage` that is bounded FILL rather than data (0..1) — see
+   * `ChunkResolveOptions.maxFill`. Coverage bought by bridging a hole is a
+   * plausible extrapolation, and a layer whose coverage is mostly this is
+   * standing on very little.
+   */
+  filled: number;
+  /**
+   * Share of the REQUESTED footprint where this layer has no data at all, and its
+   * height was therefore INFERRED by the seal (`1 - coverage`).
+   *
+   * ⚠️ This is invented geometry. A layer with a large share here is mostly a
+   * construction and should be read as one.
+   */
+  inferred: number;
+  /**
+   * This layer has no data ANYWHERE the chunk is drawn (not even within
+   * `maxFill` of any), so it was VOIDED: no cap, and neither interval it bounds
+   * is filled. Extending it from a survey that exists only outside the crop would
+   * draw a horizon with no local evidence at all.
+   */
+  voided: boolean;
   /** triangles actually drawn for this layer */
   triangles: number;
   /** triangles dropped because the unit is not present (no data / truncated) */
@@ -269,18 +298,19 @@ export type SurfaceChunkDiagnostics = {
   /** per-layer breakdown, in the chunk's flat layer order */
   layers: SurfaceChunkLayerDiagnostics[];
   /**
-   * Whether the requested outline had to be cut back to where the layers have
-   * data. A chunk quietly shrinking is exactly the kind of thing that should not
-   * be quiet.
-   */
-  outlineTrimmed: boolean;
-  /** share of the requested footprint that survived (1 = untouched) */
-  outlineCoverage: number;
-  /**
    * Rim vertices the tessellation dropped (see `StackTessellation.rimDropped`).
    * Non-zero means the wall and the surface disagree about where the chunk ends.
    */
   rimDropped: number;
+  /**
+   * Boundary walks the wall tracer discarded as degenerate, and walks that failed
+   * to close. Both should be 0: a discarded walk leaves a (small) piece of an
+   * interval unwalled, and an unclosed one is sealed with an edge that does not
+   * exist — either way, a gap or a phantom face in a wall.
+   */
+  wallRingsDropped: number;
+  /** see {@link SurfaceChunkDiagnostics.wallRingsDropped} */
+  wallRingsOpen: number;
   /** deepest interpenetration found, in world units */
   maxOverlap: number;
   /** largest share of a layer coincident with the one above it (~1 = duplicated horizon) */
@@ -335,6 +365,12 @@ export type SurfaceChunkMetrics = {
   walls: number;
   /** total triangles (surfaces + walls + basement) */
   triangles: number;
+  /**
+   * Of which, the side walls'. Traced per interval on the shared tessellation,
+   * so a unit that terminates inside the chunk adds rings here — worth watching
+   * against the surface count.
+   */
+  wallTriangles: number;
   /** shared rim vertex count (all rings) */
   rimPoints: number;
   /**
@@ -634,6 +670,29 @@ export type AssembleChunkLayer = {
    * no volume at all, are both expressed.
    */
   fill?: boolean;
+  /**
+   * The interval's wall, already built (see `buildStackWalls`) — traced around the
+   * area the interval actually occupies rather than round the whole rim, so it
+   * also stops where the unit does.
+   *
+   * Present at all (including `null`, meaning "there is no wall there") = use it.
+   * ABSENT = fall back to a wall around the full rim, which is all the per-layer
+   * clip path can offer, having no shared topology to trace.
+   */
+  wall?: BufferGeometry | null;
+  /**
+   * Index of the layer this one came FROM, when the build expanded the caller's
+   * list (a surface split around a void becomes two layers). Meshes are tagged
+   * with this, so materials keep resolving against the caller's own layers.
+   * Defaults to the position in the array.
+   */
+  source?: number;
+  /**
+   * This surface faces UP into a void: it is the BASE of the interval above it,
+   * not the cap of its own layer, so it should be coloured as the unit above.
+   * Set on the upper copy of a surface split around a void.
+   */
+  ceiling?: boolean;
 };
 
 /** Options for {@link assembleChunk} (the non-clip build parameters). */
@@ -684,7 +743,11 @@ export function assembleChunk(
   layers.forEach((layer, i) => {
     rimY.push(layer.rimY);
     if (layer.geometry) {
-      surfaces.push({ geometry: layer.geometry, layer: i });
+      surfaces.push({
+        geometry: layer.geometry,
+        layer: layer.source ?? i,
+        ceiling: layer.ceiling,
+      });
       deepestGeo = layer.geometry;
       const idx = layer.geometry.getIndex();
       if (idx) surfaceTris += idx.count / 3;
@@ -699,9 +762,12 @@ export function assembleChunk(
   let wallTris = 0;
   for (let i = 0; i + 1 < layers.length; i++) {
     if (!layers[i].fill) continue;
-    const geometry = buildIntervalWalls(rings, rimY[i], rimY[i + 1]);
+    const geometry =
+      'wall' in layers[i]
+        ? layers[i].wall
+        : buildIntervalWalls(rings, rimY[i], rimY[i + 1]);
     if (geometry) {
-      walls.push({ geometry, layer: i });
+      walls.push({ geometry, layer: layers[i].source ?? i });
       const idx = geometry.getIndex();
       if (idx) wallTris += idx.count / 3;
     }
@@ -769,6 +835,7 @@ export function assembleChunk(
     surfaces: surfaces.length,
     walls: walls.length,
     triangles: Math.round(surfaceTris + wallTris + basementTris + oceanTopTris),
+    wallTriangles: Math.round(wallTris),
     rimPoints: rings.reduce((a, r) => a + r.length, 0),
     diagnostics: options.diagnostics,
   };
@@ -1082,91 +1149,4 @@ function buildOceanTop(
   if (!body) return undefined;
 
   return { surface: water.cap, body, bed };
-}
-
-// Build the side-wall mesh for one interval: a quad strip per rim ring connecting
-// the top depths to the bottom depths at the shared rim points.
-//
-// ⭐ Normals are assigned explicitly rather than via computeVertexNormals(), which
-// is area-weighted and gives a rim point's TOP and BOTTOM vertex different normals
-// (they belong to different triangle sets: t_k to {A_{k-1}, B_{k-1}, A_k} but b_k
-// to {B_{k-1}, A_k, B_k}). A normal that varies vertically as well as horizontally
-// interpolates differently in each of a quad's two triangles, which shows up as a
-// seam along every quad diagonal. Giving both vertices of a rim point the same
-// normal — the average of its two adjacent segment normals — keeps the shading
-// smooth around the ring while making it constant along each vertical edge, so
-// both triangles interpolate the same linear function and the diagonals vanish.
-function buildIntervalWalls(
-  rings: Coordinates2D[],
-  topY: number[][],
-  bottomY: number[][],
-): BufferGeometry | null {
-  const positions: number[] = [];
-  const normals: number[] = [];
-  const indices: number[] = [];
-  for (let r = 0; r < rings.length; r++) {
-    const ring = rings[r];
-    const tY = topY[r];
-    const bY = bottomY[r];
-    const m = ring.length;
-    if (m < 2) continue;
-    const base = positions.length / 3;
-
-    // Outward normal of segment k (rim point k -> k + 1). Each wall quad is exactly
-    // planar (its top and bottom vertices share the same XZ), so this is the true
-    // face normal: normalize(cross(t_{k+1} - t_k, b_k - t_k)) = normalize(dz, 0, -dx).
-    const segX = new Float64Array(m);
-    const segZ = new Float64Array(m);
-    for (let k = 0; k < m; k++) {
-      const k1 = (k + 1) % m;
-      const dx = ring[k1][0] - ring[k][0];
-      const dz = ring[k1][1] - ring[k][1];
-      const len = Math.hypot(dx, dz);
-      if (len > 0) {
-        segX[k] = dz / len;
-        segZ[k] = -dx / len;
-      }
-    }
-
-    for (let k = 0; k < m; k++) {
-      const prev = (k - 1 + m) % m;
-      let nx = segX[prev] + segX[k];
-      let nz = segZ[prev] + segZ[k];
-      const len = Math.hypot(nx, nz);
-      if (len > 0) {
-        nx /= len;
-        nz /= len;
-      } else {
-        // a 180° turn back on itself — fall back to this segment's own normal
-        nx = segX[k];
-        nz = segZ[k];
-      }
-      positions.push(ring[k][0], tY[k], ring[k][1]); // top vertex (2k)
-      normals.push(nx, 0, nz);
-      positions.push(ring[k][0], bY[k], ring[k][1]); // bottom vertex (2k + 1)
-      normals.push(nx, 0, nz);
-    }
-    for (let k = 0; k < m; k++) {
-      const k1 = (k + 1) % m;
-      const t0 = base + 2 * k;
-      const b0 = base + 2 * k + 1;
-      const t1 = base + 2 * k1;
-      const b1 = base + 2 * k1 + 1;
-      indices.push(t0, t1, b0, t1, b1, b0);
-    }
-  }
-  if (indices.length === 0) return null;
-  const geometry = new BufferGeometry();
-  geometry.setAttribute(
-    'position',
-    new BufferAttribute(new Float32Array(positions), 3),
-  );
-  geometry.setAttribute(
-    'normal',
-    new BufferAttribute(new Float32Array(normals), 3),
-  );
-  geometry.setIndex(new BufferAttribute(new Uint32Array(indices), 1));
-  geometry.computeBoundingBox();
-  geometry.computeBoundingSphere();
-  return geometry;
 }

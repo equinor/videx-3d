@@ -7,8 +7,21 @@ import {
 import {
   SurfaceChunk,
   SurfaceChunkGroup,
+  SurfaceChunkMesh,
   SurfaceChunkMetrics,
 } from './surface-chunk';
+
+/**
+ * A {@link SurfaceChunkMesh} packed for transfer across a worker boundary.
+ *
+ * ⭐ Derived from the mesh type rather than restated, and packed by SPREAD, so a
+ * field added to a mesh survives the trip without anyone remembering to add it
+ * here. Restating the fields compiles perfectly well and silently drops the rest —
+ * extra properties on the source object are legal, so nothing warns.
+ */
+export type PackedSurfaceChunkMesh = Omit<SurfaceChunkMesh, 'geometry'> & {
+  geometry: PackedBufferGeometry;
+};
 
 /**
  * A {@link SurfaceChunkGroup} whose meshes have been packed for transfer across a
@@ -31,8 +44,8 @@ export type PackedSurfaceChunkGroup = {
  * @group Geometries
  */
 export type PackedSurfaceChunk = {
-  surfaces: { geometry: PackedBufferGeometry; layer: number }[];
-  walls: { geometry: PackedBufferGeometry; layer: number }[];
+  surfaces: PackedSurfaceChunkMesh[];
+  walls: PackedSurfaceChunkMesh[];
   basement?: PackedSurfaceChunkGroup;
   oceanTop?: {
     surface: PackedBufferGeometry;
@@ -74,13 +87,10 @@ export function packSurfaceChunk(
 
   const packed: PackedSurfaceChunk = {
     surfaces: chunk.surfaces.map(s => ({
+      ...s,
       geometry: packGeo(s.geometry),
-      layer: s.layer,
     })),
-    walls: chunk.walls.map(w => ({
-      geometry: packGeo(w.geometry),
-      layer: w.layer,
-    })),
+    walls: chunk.walls.map(w => ({ ...w, geometry: packGeo(w.geometry) })),
     basement: chunk.basement ? packGroup(chunk.basement) : undefined,
     oceanTop: chunk.oceanTop
       ? {
@@ -116,12 +126,12 @@ export function unpackSurfaceChunk(packed: PackedSurfaceChunk): SurfaceChunk {
 
   return {
     surfaces: packed.surfaces.map(s => ({
+      ...s,
       geometry: unpackBufferGeometry(s.geometry),
-      layer: s.layer,
     })),
     walls: packed.walls.map(w => ({
+      ...w,
       geometry: unpackBufferGeometry(w.geometry),
-      layer: w.layer,
     })),
     basement: packed.basement ? unpackGroup(packed.basement) : undefined,
     oceanTop: packed.oceanTop

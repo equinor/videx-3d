@@ -72,7 +72,6 @@ export function buildSurfaceChunkSpec(
           ...toLayerSpec(layer.surface, utmToArea),
           fill: hasFill(layer.fill),
           cap: layer.cap !== false,
-          optional: layer.optional === true,
         }
       : {
           depth: layer.depth,
@@ -80,7 +79,6 @@ export function buildSurfaceChunkSpec(
           relief: layer.relief,
           fill: hasFill(layer.fill),
           cap: layer.cap !== false,
-          optional: layer.optional === true,
         },
   );
 

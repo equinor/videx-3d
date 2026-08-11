@@ -36,6 +36,14 @@ export type SurfaceMaterialOptions = {
    * them per-fragment from the elevation map. Defaults to `false`.
    */
   precomputeNormals?: boolean;
+  /**
+   * Trust the GEOMETRY where the grid has no data, instead of discarding there.
+   * Defaults to `false` — set it when drawing on a **chunk** layer, whose mesh is
+   * authoritative (see {@link SurfaceMaterial.geometryFallback}). On a `Surface`,
+   * whose mesh is built from the grid, the discard is correct and this must stay
+   * off.
+   */
+  geometryFallback?: boolean;
   /** generator priority for the texture fetch */
   priority?: number;
 };
@@ -90,6 +98,7 @@ export function useSurfaceMaterial(
     normalMap,
     normalScale,
     precomputeNormals = false,
+    geometryFallback = false,
     priority = 0,
   } = options;
 
@@ -164,6 +173,7 @@ export function useSurfaceMaterial(
     material.showContours = showContours;
     material.contoursColor = contoursColor;
     material.useColorRamp = useColorRamp;
+    material.geometryFallback = geometryFallback;
     material.color = color || material.color;
     material.side = doubleSide ? DoubleSide : FrontSide;
     if (normalMap) {
@@ -182,6 +192,7 @@ export function useSurfaceMaterial(
     contoursColor,
     color,
     doubleSide,
+    geometryFallback,
     normalMap,
     opacity,
   ]);

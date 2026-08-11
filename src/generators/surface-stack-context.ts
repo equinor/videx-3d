@@ -1,5 +1,6 @@
 import {
   ChunkResolveOptions,
+  DEFAULT_CHUNK_MAX_FILL,
   SurfaceChunkLayerSpec,
   SurfaceChunkStackSpec,
 } from '../components/Chunks/chunk-defs';
@@ -55,7 +56,7 @@ export function getStackContext(
   stack: SurfaceChunkStackSpec,
   resolve: ChunkResolveOptions | undefined,
 ): Promise<StackContext | null> {
-  const key = `${stack.key}|${resolve?.mode ?? 'truncate'}|${resolve?.minGap ?? 0}|${resolve?.maxNodes ?? ''}|${resolve ? 1 : 0}`;
+  const key = `${stack.key}|${resolve?.mode ?? 'truncate'}|${resolve?.minGap ?? 0}|${resolve?.maxNodes ?? ''}|${resolve?.maxFill ?? DEFAULT_CHUNK_MAX_FILL}|${resolve ? 1 : 0}`;
   if (cached && cached.key === key) return cached.promise;
   const promise = buildStackContext(store, stack, resolve, key);
   cached = { key, promise };
@@ -102,9 +103,17 @@ async function buildStackContext(
   );
   const reference = buildStackReference(layers, envelope, {
     maxNodes: resolve?.maxNodes,
+    maxFill: resolve?.maxFill ?? DEFAULT_CHUNK_MAX_FILL,
   });
   if (!reference) return null;
   const tReference = performance.now();
+
+  // ⚠️ The SEAL does NOT run here. A chunk's layer list is not the column's — it
+  // adds synthetic layers (a water top, a floor) and takes a slice — so the
+  // neighbours a surface is sealed against differ per chunk. Sealing the column
+  // would use the wrong ones: the deepest column surface would appear to have no
+  // neighbour below even in a chunk that puts a floor under it. See
+  // `buildSpecStack`.
 
   // The whole column is made monotone here, on the common grid, so every chunk
   // that samples it inherits an ordering the others agree with. The masks come

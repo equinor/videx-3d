@@ -86,7 +86,7 @@ const ChunkPipeline = () => {
     return [base, new OutputPass()];
   }, [scene, camera]);
   void RenderPass;
-  useFrame(() => { }, 2);
+  useFrame(() => {}, 2);
   return <RenderingPipeline passes={passes} />;
 };
 

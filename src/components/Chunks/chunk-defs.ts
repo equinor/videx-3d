@@ -2,6 +2,7 @@ import { Material } from 'three';
 import {
   PackedSurfaceChunk,
   PlanarPolygonCoordinates,
+  SealMode,
   StackRelief,
   SurfaceChunkBasement,
   SurfaceClipHeader,
@@ -44,11 +45,6 @@ export type SurfaceChunkSpecLayer = (
    * draws no surface (a neighbouring chunk draws that horizon).
    */
   cap?: boolean;
-  /**
-   * Do not cut this chunk's outline back to this layer's data extent. Default
-   * false. Where the layer has no data the interval it bounds pinches out.
-   */
-  optional?: boolean;
 };
 
 /** A synthetic (data-free) boundary in a {@link SurfaceChunkSpec}. */
@@ -147,6 +143,21 @@ export type ChunkLayer = {
    */
   fill?: string | Material | boolean | null;
   /**
+   * Opacity for this layer's cap AND the volume below it, OVERRIDING the chunk's
+   * `surfaceOpacity` / `wallOpacity`.
+   *
+   * ⭐ Opacity is a property of the UNIT, not of the chunk that happens to contain
+   * it: water at 0.45 over an opaque sea bed is one chunk, not two. It matters most
+   * at a seam — a horizon drawn by a translucent chunk on behalf of an opaque
+   * neighbour (`cap: false`) is a see-through lid over a solid block, and you look
+   * straight into it (`documents/chunks.md` §10.3.6).
+   *
+   * ⚠️ An override, not a multiplier, so an explicit value WINS — which also means
+   * the chunk-level sliders no longer reach this layer. Leave it unset on the layers
+   * a global transparency control should sweep along.
+   */
+  opacity?: number;
+  /**
    * Draw this layer's cap. Default `true`.
    *
    * Set `false` where a NEIGHBOURING chunk already draws this horizon — two chunks
@@ -158,26 +169,6 @@ export type ChunkLayer = {
    * The chunk with the LARGER footprint should be the one that keeps its cap.
    */
   cap?: boolean;
-  /**
-   * Keep this layer's data extent from cutting the chunk's outline back. Default
-   * `false`.
-   *
-   * A chunk is trimmed to where ALL of its layers are mapped, because inside that
-   * footprint nothing is ever drawn on a fabricated height. That is the right rule
-   * for the layers a chunk is ABOUT, and the wrong one for a boundary it merely
-   * BORROWS from the chunk next to it: a detail chunk whose own surfaces are mapped
-   * everywhere should not shrink to the extent of the survey that happens to define
-   * its floor.
-   *
-   * Marked optional, the layer no longer trims the outline, and where it has no
-   * data of its own the interval it bounds is given zero thickness and dropped —
-   * so the chunk stops where its knowledge stops instead of resting on a flat
-   * extrapolation of a survey edge.
-   *
-   * Its coverage is still reported in the build diagnostics, so the trade stays
-   * visible.
-   */
-  optional?: boolean;
 };
 
 /** Whether a {@link ChunkLayer.fill} asks for a volume at all. */
@@ -228,14 +219,6 @@ export type ChunkResolveOptions = {
    */
   coverageAbsence?: boolean;
   /**
-   * How much of a chunk's outline survives where the layers are not all mapped.
-   * The outline is cut back to the covered area (see `trimPolygonToCoverage`), and
-   * this decides what "covered" means: `'all'` (default) every layer, `'any'` at
-   * least one. `'all'` is self-consistent — inside the result nothing is drawn on
-   * hole fill and every wall runs between two known surfaces.
-   */
-  coverageRule?: 'all' | 'any';
-  /**
    * Refine the tessellation along the lines where a unit wedges out, so the
    * dropped area follows the pinch-out instead of the nearest edges the height
    * refinement happened to leave there. Default true; costs vertices along those
@@ -247,7 +230,75 @@ export type ChunkResolveOptions = {
    * Caps both memory and tessellation cost. Default 4,000,000.
    */
   maxNodes?: number;
+  /**
+   * How far a layer counts as covered past its own data, in METRES. Default
+   * {@link DEFAULT_CHUNK_MAX_FILL}; `0` counts only real data.
+   *
+   * A grid is incomplete in two ways: it has interior holes, and the area it was
+   * actually mapped over is smaller than its rectangle. Both are filled from the
+   * nearest real sample so the surface stays continuous, and this decides how far
+   * that fill is trusted. Below the threshold a hole is bridged and the chunk
+   * carries on across it; beyond it the layer stays absent there, so its
+   * triangles are dropped or the outline is cut back, as before.
+   *
+   * It behaves as an EROSION RADIUS rather than a size test — a hole of radius `r`
+   * disappears at `maxFill = r`, and a larger one merely loses a rim of that width
+   * — which is what lets one value cope with holes spanning orders of magnitude.
+   *
+   * ⚠️ Coverage bought this way IS fill — a plausible extrapolation, not
+   * knowledge. It is reported per layer in the build diagnostics so the trade
+   * stays visible.
+   */
+  maxFill?: number;
+  /**
+   * Close the block where a surface is not mapped, by tapering it toward its
+   * neighbours. Default `true`.
+   *
+   * Without it, every interval bounded by an unmapped surface simply disappears
+   * while the surfaces above and below it are still drawn — a cap left floating
+   * over a floor with open space between. Sealing asserts something about that
+   * space, which is unavoidable: the alternative is a block with holes in it.
+   *
+   * ⚠️ Sealing invents geometry, so it overrides `coverageAbsence` (which would
+   * drop the wedge again) and the coverage trim (which would cut the outline back
+   * to the very area the wedge covers). The inferred share is reported per layer.
+   */
+  seal?: boolean;
+  /**
+   * How the space an unmapped surface cannot account for is closed —
+   * `'proportional'` (default) keeps its relative depth between its neighbours,
+   * `'void'` splits it in two and leaves the space between EMPTY. See `SealMode`.
+   */
+  sealMode?: SealMode;
+  /**
+   * How much of a neighbouring unit a seal must leave standing, in metres.
+   * Default `TAPER_MIN_THICKNESS`.
+   *
+   * This is the only setting the shape of a seal has: how far it reaches is
+   * derived from the size of the gap it is closing, inside the chunk's own
+   * footprint. Raise it to hold the taper further off its neighbours.
+   *
+   * ⚠️ Keep it above `collapseThreshold`, or the sliver the seal leaves is
+   * dropped for having no thickness and the hole it closed comes back.
+   */
+  minThickness?: number;
 };
+
+/**
+ * Default {@link ChunkResolveOptions.maxFill}, in metres.
+ *
+ * Chosen against the demo field, whose interior holes are 0.06–0.23 km² (a radius
+ * of 140–270 m) apart from three far larger ones: small enough to leave those
+ * alone, large enough to bridge the everyday ones. It is one dataset, so treat it
+ * as a starting point rather than a constant of nature.
+ *
+ * ⚠️ Applies even when `resolve` is omitted — the common grid is built either
+ * way, and how far its fill is trusted is a property of that grid rather than of
+ * the depth-order pass.
+ *
+ * @group Components
+ */
+export const DEFAULT_CHUNK_MAX_FILL = 250;
 
 /**
  * The COLUMN a chunk belongs to. When given, the generator builds the common grid,

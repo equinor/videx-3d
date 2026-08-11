@@ -37,9 +37,14 @@ import { useOutputPanelState } from '../Html/OutputPanel/output-panel-state';
 import { useSurfaceMaterial } from '../Surfaces/useSurfaceMaterial';
 import { UtmArea } from '../UtmArea';
 import { Chunk } from './Chunk';
-import { ChunkResolveOptions, ChunkStackProgress } from './chunk-defs';
+import {
+  ChunkResolveOptions,
+  ChunkStackProgress,
+  DEFAULT_CHUNK_MAX_FILL,
+} from './chunk-defs';
 import { ChunkStack } from './ChunkStack';
 import { CutoutSource } from './cutout';
+import { ChunkInferenceStyle } from './inference-material';
 
 const utmZone = storyArgs.utmZone;
 const origin = storyArgs.origin as Vec2;
@@ -115,7 +120,10 @@ type PerChunkStoryProps = {
   collapseThreshold: number;
   refineTerminations: boolean;
   coverageAbsence: boolean;
-  coverageRule: 'all' | 'any';
+  maxFill: number;
+  seal: boolean;
+  sealMode: 'proportional' | 'void';
+  minThickness: number;
   showWater: boolean;
   waterDepth: number;
   seabed: 'none' | 'procedural';
@@ -124,6 +132,7 @@ type PerChunkStoryProps = {
   surfaceOpacity: number;
   wallOpacity: number;
   wireframe: boolean;
+  inferredStyle: ChunkInferenceStyle;
   topSurfaceMaterial: boolean;
   topShowContours: boolean;
   showWells: boolean;
@@ -171,7 +180,10 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
           collapseThreshold: props.collapseThreshold,
           refineTerminations: props.refineTerminations,
           coverageAbsence: props.coverageAbsence,
-          coverageRule: props.coverageRule,
+          maxFill: props.maxFill,
+          seal: props.seal,
+          sealMode: props.sealMode,
+          minThickness: props.minThickness,
         }
         : undefined,
     [
@@ -181,7 +193,10 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
       props.collapseThreshold,
       props.refineTerminations,
       props.coverageAbsence,
-      props.coverageRule,
+      props.maxFill,
+      props.seal,
+      props.sealMode,
+      props.minThickness,
     ],
   );
 
@@ -192,7 +207,13 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
   const topMeta = chunks[0]?.[0];
   const topMaterial = useSurfaceMaterial(
     props.topSurfaceMaterial ? topMeta : null,
-    { showContours: props.topShowContours, opacity: props.surfaceOpacity },
+    {
+      showContours: props.topShowContours,
+      opacity: props.surfaceOpacity,
+      // Drawn on a chunk cap, whose mesh is sealed and hole-filled — without this
+      // the material discards wherever the grid has no data and holes the block.
+      geometryFallback: true,
+    },
   );
 
   const wellboreIds = useMemo(
@@ -236,16 +257,29 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
   );
   const report = (index: number, metrics: SurfaceChunkMetrics) => {
     const d = metrics.diagnostics;
+    console.log(
+      `CHUNKREPORT ${JSON.stringify({
+        chunk: index,
+        layers: metrics.layers,
+        triangles: metrics.triangles,
+        wallTriangles: metrics.wallTriangles,
+        droppedAbsent: d?.trianglesAbsent ?? null,
+        droppedThin: d?.trianglesCollapsed ?? null,
+        rimDropped: d?.rimDropped ?? null,
+        wallRingsDropped: d?.wallRingsDropped ?? null,
+        wallRingsOpen: d?.wallRingsOpen ?? null,
+        totalMs: Math.round(metrics.totalMs),
+      })}`,
+    );
     console.table([
       {
         chunk: index,
         layers: metrics.layers,
         triangles: metrics.triangles.toLocaleString(),
+        wallTriangles: metrics.wallTriangles.toLocaleString(),
         droppedAbsent: d?.trianglesAbsent ?? '-',
         droppedThin: d?.trianglesCollapsed ?? '-',
         topKept: d?.topKept ?? '-',
-        trimmed: d?.outlineTrimmed ?? '-',
-        'outline%': d ? (100 * d.outlineCoverage).toFixed(1) : '-',
         rimDropped: d?.rimDropped ?? '-',
         crossings: d?.crossings ?? '-',
         'crossings(data)': d?.crossingsCovered ?? '-',
@@ -271,6 +305,8 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
           layer: l.index,
           name: l.id ? nameOf(l.id) : '(synthetic)',
           'coverage%': (100 * l.coverage).toFixed(1),
+          'ofWhichFill%': (100 * l.filled).toFixed(1),
+          'inferred%': (100 * l.inferred).toFixed(1),
           'duplicate%': (100 * l.duplicate).toFixed(1),
           triangles: l.triangles.toLocaleString(),
           droppedAbsent: l.droppedAbsent,
@@ -444,6 +480,7 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
               surfaceOpacity={props.surfaceOpacity}
               wallOpacity={props.wallOpacity}
               wireframe={props.wireframe}
+              inferredStyle={props.inferredStyle}
               resolve={resolve}
               onBuild={m => report(i, m)}
             />
@@ -499,7 +536,10 @@ export const Default: Story = {
     collapseThreshold: 0.5,
     refineTerminations: true,
     coverageAbsence: true,
-    coverageRule: 'all',
+    maxFill: DEFAULT_CHUNK_MAX_FILL,
+    seal: true,
+    sealMode: 'proportional',
+    minThickness: 1,
     showWater: false,
     waterDepth: 0,
     seabed: 'none',
@@ -509,6 +549,7 @@ export const Default: Story = {
     surfaceOpacity: 1,
     wallOpacity: 1,
     wireframe: false,
+    inferredStyle: 'hatched',
     topSurfaceMaterial: false,
     topShowContours: false,
     // Wells
@@ -607,14 +648,32 @@ export const Default: Story = {
     coverageAbsence: {
       control: 'boolean',
       description:
-        'Drop triangles where a layer has no data of its OWN (a surface mapped over a smaller area than the chunk is absent out there, not flat). Off, the nearest-fill stands in for it.',
+        'Drop triangles where a layer has no data of its OWN (a surface mapped over a smaller area than the chunk is absent out there, not flat). Off, the nearest-fill stands in for it — and is marked as inferred, since that is what it is.',
       table: { category: 'Resolve' },
     },
-    coverageRule: {
-      control: { type: 'inline-radio' },
-      options: ['all', 'any'],
+    maxFill: {
+      control: { type: 'range', min: 0, max: 2000, step: 25 },
       description:
-        'What “covered” means when the outline is cut back to the mapped area. `all` = every layer (nothing is ever drawn on hole fill, every wall runs between two known surfaces); `any` = at least one layer (keeps more footprint, but layers still vanish inside it).',
+        'How far a layer counts as covered past its own data, in metres — an erosion radius on the unmapped area, so a hole of radius r vanishes at maxFill = r and a bigger one just loses a rim. 0 = only real data counts.',
+      table: { category: 'Resolve' },
+    },
+    seal: {
+      control: 'boolean',
+      description:
+        'Close the block where a surface is not mapped, by tapering it onto its nearest mapped neighbour. Off, every interval bounded by an unmapped surface vanishes and the block is left open (and the outline is trimmed to the data instead).',
+      table: { category: 'Resolve' },
+    },
+    sealMode: {
+      control: 'inline-radio',
+      options: ['proportional', 'void'],
+      description:
+        'How the space an unmapped surface cannot account for is closed: keep its relative depth between its neighbours, or split it in two and leave the space between EMPTY.',
+      table: { category: 'Resolve' },
+    },
+    minThickness: {
+      control: { type: 'range', min: 0, max: 50, step: 0.5 },
+      description:
+        'How much of a neighbouring unit a seal must leave standing, in metres — the only setting the shape of a seal has (how far it reaches is derived from the gap it closes, measured inside the chunk). ⚠️ Keep it above `collapseThreshold`, or the sliver it leaves is dropped for having no thickness and the hole comes back.',
       table: { category: 'Resolve' },
     },
     showWater: {
@@ -655,6 +714,13 @@ export const Default: Story = {
       table: { category: 'Appearance' },
     },
     wireframe: { control: 'boolean', table: { category: 'Appearance' } },
+    inferredStyle: {
+      control: 'select',
+      options: ['none', 'hatched', 'checker', 'zigzag'],
+      description:
+        'How the INVENTED part of the block is marked — the geometry the seal built where no surface was mapped. It is drawn as a pattern OVER the unit’s material, so it survives `topSurfaceMaterial` too.',
+      table: { category: 'Appearance' },
+    },
     topSurfaceMaterial: {
       control: 'boolean',
       description:

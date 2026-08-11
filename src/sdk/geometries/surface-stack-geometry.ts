@@ -1,6 +1,9 @@
 import { BufferAttribute, BufferGeometry } from 'three';
+import { Vec2 } from '../types/common';
 import { computeUpwardNormals } from './geometry-attributes';
+import { buildEdgeOpposites, traceBoundaryRings } from './mesh-boundary';
 import { Coordinates2D, PlanarPolygonGeometry } from './planar-geometry';
+import { ringSignedArea } from './polygon-outline';
 import {
   collapseStackTriangles,
   makeStackInsideTest,
@@ -8,9 +11,11 @@ import {
   sampleStackGridMasks,
   sampleStackHeights,
   sampleStackMasks,
+  sampleStackWeights,
   StackCollapseResult,
   stackDepthStats,
   stackDuplicateFractions,
+  stackIntervalTriangles,
   StackLayer,
   StackLayerDepth,
   stackLayerUvs,
@@ -24,9 +29,11 @@ import {
   tessellateStack,
 } from './surface-stack';
 import {
+  collectCoverageCrossings,
   collectStackCandidates,
   collectThicknessCrossings,
 } from './surface-stack-candidates';
+import { buildRingWalls } from './surface-walls';
 
 /** One layer of a shared-tessellation stack, ready to render. */
 export type StackGeometryLayer = {
@@ -55,6 +62,15 @@ export type StackGeometryLayer = {
  * @param layers the source layers, for their grid-space UVs
  * @param layerIndices optional per-layer index subsets (see
  *   {@link collapseStackTriangles}); `null`/omitted entries use the shared set
+ * @param caps per layer: whether to build a geometry at all
+ * @param inferred per-layer vertex weights (see `sampleStackWeights`); a layer
+ *   with any weight above zero gets an `inferred` attribute, whose PRESENCE is
+ *   what tells the appearance layer the layer is partly invented
+ * @param coverage per-layer vertex coverage (see `sampleStackMasks`); a layer that
+ *   is not covered everywhere gets a `nodata` attribute (1 where the grid has none),
+ *   which is what lets a grid-driven material (`SurfaceMaterial`) know where the
+ *   grid stops describing the geometry it is drawn on. ⚠️ Inverted deliberately: a
+ *   missing attribute reads as 0 in WebGL, which must mean "the grid is complete".
  *
  * @group Geometries
  */
@@ -65,6 +81,8 @@ export function buildStackGeometries(
   layers: StackLayer[],
   layerIndices?: (Uint32Array | null)[],
   caps?: boolean[],
+  inferred?: Float32Array[],
+  coverage?: Uint8Array[],
 ): StackGeometryLayer[] {
   const positionsXZ = stackVertexPositions(reference, tessellation.coords);
   const shared = new BufferAttribute(tessellation.indices, 1);
@@ -94,10 +112,155 @@ export function buildStackGeometries(
         2,
       ),
     );
+    const marks = inferred?.[i];
+    if (marks && marks.some(v => v > 0)) {
+      geometry.setAttribute('inferred', new BufferAttribute(marks, 1));
+    }
+    const covered = coverage?.[i];
+    if (covered && covered.some(v => v === 0)) {
+      const nodata = new Float32Array(covered.length);
+      for (let v = 0; v < covered.length; v++) nodata[v] = covered[v] ? 0 : 1;
+      geometry.setAttribute('nodata', new BufferAttribute(nodata, 1));
+    }
     geometry.setIndex(own ? new BufferAttribute(own, 1) : shared);
     computeUpwardNormals(geometry);
     return { geometry, rimY };
   });
+}
+
+/** Options for {@link buildStackWalls}. */
+export type StackWallOptions = {
+  /** per layer: build the wall of the interval BELOW it */
+  fills: boolean[];
+  /** thickness below which the interval counts as absent (see the collapse) */
+  threshold?: number;
+  /** per-layer coverage at the shared vertices */
+  coverage?: Uint8Array[];
+  /** per-layer truncation masks at the shared vertices */
+  absent?: Uint8Array[];
+  /**
+   * Per-layer inferred weights at the shared vertices (see `sampleStackWeights`).
+   * A wall takes the LARGER of its two bounding layers': a volume is invented as
+   * soon as either surface that closes it was.
+   */
+  inferred?: Float32Array[];
+  /** the turn past which a rim point is a crease; see `RingWallOptions` */
+  smoothAngle?: number;
+};
+
+/** What {@link buildStackWalls} produced. */
+export type StackWalls = {
+  /** per layer, the wall of the interval BELOW it; `null` where there is none */
+  walls: (BufferGeometry | null)[];
+  /** boundary walks discarded as degenerate (see `BoundaryRings.dropped`) */
+  ringsDropped: number;
+  /** boundary walks that did not close (see `BoundaryRings.open`) — should be 0 */
+  ringsOpen: number;
+};
+
+/**
+ * Build each filled interval's side wall from the SHARED TESSELLATION, around the
+ * area that interval actually occupies.
+ *
+ * The alternative — a wall around the whole chunk rim — draws a face along the
+ * outline whether or not the unit still exists there, and says nothing at all
+ * where a unit ends inside the chunk. Tracing the interval's own triangles gives
+ * both, so the rim is not a special case: it is simply the part of that boundary
+ * which happens to lie on the outline.
+ *
+ * ⚠️ The two are no longer told apart. They were, and the tag drove a separate
+ * appearance for a data edge — but a cut face is legible without help, and under
+ * sealing there is no visible one to mark (a pinch-out face is at most
+ * `collapseThreshold` tall). The wall's `inferred` attribute now means invention
+ * and nothing else.
+ *
+ * Because the rings are made of shared vertices, the wall's top and bottom edges
+ * are the same points as the surfaces above and below it — the block stays sealed
+ * by construction rather than by agreement between two samplings.
+ *
+ * @param tessellation the shared tessellation
+ * @param positionsXZ scene XZ of every shared vertex ({@link stackVertexPositions})
+ * @param heights per-layer vertex heights, after the resolve
+ * @param options see {@link StackWallOptions}
+ * @returns the walls, plus the counts that say whether the boundary traced cleanly
+ *
+ * @group Geometries
+ */
+export function buildStackWalls(
+  tessellation: StackTessellation,
+  positionsXZ: Float32Array,
+  heights: Float32Array[],
+  options: StackWallOptions,
+): StackWalls {
+  const walls: (BufferGeometry | null)[] = heights.map(() => null);
+  if (!options.fills.some(Boolean))
+    return { walls, ringsDropped: 0, ringsOpen: 0 };
+
+  const { indices, rimVertices } = tessellation;
+  const vertexCount = tessellation.coords.length >> 1;
+  const opposite = buildEdgeOpposites(indices, vertexCount);
+  const members = stackIntervalTriangles(heights, indices, {
+    threshold: options.threshold,
+    coverage: options.coverage,
+    absent: options.absent,
+  });
+
+  const point = (v: number): Vec2 => [
+    positionsXZ[2 * v],
+    positionsXZ[2 * v + 1],
+  ];
+  let ringsDropped = 0;
+  let ringsOpen = 0;
+
+  // Which way round a ring has to run for `buildRingWalls` to face its quads away
+  // from the material. Rather than reason about it, take the convention from the
+  // rim the chunk's walls have always used: the largest rim ring is the outer one,
+  // and a traced region's rings sum to its (signed) area, so matching the two signs
+  // matches the convention.
+  let rimSign = 0;
+  let widest = 0;
+  for (const ring of rimVertices) {
+    const area = ringSignedArea(ring.map(point));
+    if (Math.abs(area) > widest) {
+      widest = Math.abs(area);
+      rimSign = Math.sign(area);
+    }
+  }
+
+  for (let i = 0; i + 1 < heights.length; i++) {
+    if (!options.fills[i]) continue;
+    const traced = traceBoundaryRings(indices, opposite, members[i]);
+    ringsDropped += traced.dropped;
+    ringsOpen += traced.open;
+    const rings = traced.rings;
+    if (rings.length === 0) continue;
+
+    const total = rings.reduce((a, r) => a + ringSignedArea(r.map(point)), 0);
+    const flip = rimSign !== 0 && total !== 0 && Math.sign(total) !== rimSign;
+
+    const top = heights[i];
+    const bottom = heights[i + 1];
+    const markTop = options.inferred?.[i];
+    const markBottom = options.inferred?.[i + 1];
+    const geometry = buildRingWalls(
+      rings.map(ring => {
+        const loop = flip ? ring.slice().reverse() : ring;
+        return {
+          points: loop.map(point),
+          topY: loop.map(v => top[v]),
+          bottomY: loop.map(v => bottom[v]),
+          inferred:
+            markTop || markBottom
+              ? loop.map(v => Math.max(markTop?.[v] ?? 0, markBottom?.[v] ?? 0))
+              : undefined,
+        };
+      }),
+      { smoothAngle: options.smoothAngle },
+    );
+    walls[i] = geometry;
+  }
+
+  return { walls, ringsDropped, ringsOpen };
 }
 
 /** Options for {@link buildSurfaceStack}. */
@@ -160,12 +323,46 @@ export type SurfaceStackOptions = {
    */
   caps?: boolean[];
   /**
+   * Per layer: this one is a void's CEILING, which inverts which of a coincident
+   * pair is dropped. See `StackCollapseOptions.ceiling`.
+   */
+  ceiling?: boolean[];
+  /**
    * Also refine along each pair's thickness termination (see
    * `collectThicknessCrossings`), so a unit wedging out follows the contour
    * instead of the nearest edges the height refinement left behind. Default true;
    * ignored when `collapseThreshold` is 0.
    */
   refineTerminations?: boolean;
+  /**
+   * Also refine along the edge of each layer's own DATA (see
+   * `collectCoverageCrossings`). Default true.
+   *
+   * ⭐ A different line from `refineTerminations`, and the one a SEALED stack
+   * needs: a sealed surface keeps full thickness either side of the edge of its
+   * data, so that edge is not a thickness crossing and nothing else puts vertices
+   * on it — the taper then starts wherever the height refinement left a vertex,
+   * which in a flat area is hundreds of metres inside the data.
+   */
+  refineCoverage?: boolean;
+  /**
+   * Per layer: build the side wall of the interval BELOW it. Omit to build no
+   * walls at all (the caller then has `rings` and each layer's `rimY` and can
+   * build its own).
+   */
+  fills?: boolean[];
+  /**
+   * Per layer, per NODE of the reference grid: how far the height there was
+   * inferred rather than measured — the seal's taper weight (see
+   * `sealStackChannels`). Sampled at the shared vertices and attached to both the
+   * caps and the walls, so the appearance layer can draw the invented part of a
+   * block as the inference it is.
+   *
+   * Omit it and the weights are derived from `coverage` instead, but only when
+   * `coverageAbsence` is off — that is the other way a layer ends up drawn past
+   * its own extent, standing on the reference's hole fill.
+   */
+  inferred?: Float32Array[];
 };
 
 /** Per-phase timings (ms) from {@link buildSurfaceStack}. */
@@ -175,6 +372,7 @@ export type SurfaceStackTimings = {
   resolveMs: number;
   collapseMs: number;
   geometryMs: number;
+  wallMs: number;
 };
 
 /** The result of {@link buildSurfaceStack}. */
@@ -184,8 +382,23 @@ export type SurfaceStackBuild = {
   heights: Float32Array[];
   /** per-layer data coverage at the shared vertices */
   coverage: Uint8Array[];
+  /**
+   * Per-layer inferred weight at the shared vertices, or `undefined` when none
+   * was given (see {@link SurfaceStackOptions.inferred}).
+   */
+  inferred?: Float32Array[];
   /** one renderable geometry (+ rim depths) per layer */
   layers: StackGeometryLayer[];
+  /**
+   * Per layer, the side wall of the interval BELOW it, traced around the area that
+   * interval occupies (see {@link buildStackWalls}). `null` where the interval is
+   * unfilled or empty; all `null` when `fills` was not given.
+   */
+  walls: (BufferGeometry | null)[];
+  /** boundary walks discarded as degenerate while building the walls */
+  ringsDropped: number;
+  /** boundary walks that did not close — should be 0 (see {@link StackWalls}) */
+  ringsOpen: number;
   /** the shared rim rings in scene XZ, matching each layer's `rimY` */
   rings: Coordinates2D[];
   resolved: StackResolveResult;
@@ -239,28 +452,44 @@ export function buildSurfaceStack(
   // cuts along, so refine them too — the candidates are a union, and the crossings
   // are a thin line, so this costs vertices only where a unit wedges out.
   let candidates = options.candidates;
-  if (
+  const refineTerminations =
     collapseThreshold > 0 &&
     (options.refineTerminations ?? true) &&
-    reference.channels.length > 1
-  ) {
+    reference.channels.length > 1;
+  const refineCoverage = options.refineCoverage ?? true;
+  if (refineTerminations || refineCoverage) {
     const lists =
       candidates ??
       reference.channels.map(channel =>
         collectStackCandidates(channel, reference.header.nx, maxError),
       );
     candidates = lists.map((list, i) => {
-      if (i === 0) return list;
-      const contour = collectThicknessCrossings(
-        reference.channels[i - 1],
-        reference.channels[i],
-        reference.header.nx,
-        collapseThreshold,
-      );
-      if (contour.length === 0) return list;
-      const merged = new Uint32Array(list.length + contour.length);
+      const extra: Uint32Array[] = [];
+      if (refineTerminations && i > 0) {
+        extra.push(
+          collectThicknessCrossings(
+            reference.channels[i - 1],
+            reference.channels[i],
+            reference.header.nx,
+            collapseThreshold,
+          ),
+        );
+      }
+      // The edge of this layer's own data, which is where a seal's taper starts.
+      if (refineCoverage && reference.masks[i]) {
+        extra.push(
+          collectCoverageCrossings(reference.masks[i], reference.header.nx),
+        );
+      }
+      const total = extra.reduce((a, e) => a + e.length, 0);
+      if (total === 0) return list;
+      const merged = new Uint32Array(list.length + total);
       merged.set(list);
-      merged.set(contour, list.length);
+      let at = list.length;
+      for (const e of extra) {
+        merged.set(e, at);
+        at += e.length;
+      }
       return merged;
     });
   }
@@ -276,6 +505,17 @@ export function buildSurfaceStack(
 
   const heights = sampleStackHeights(reference, tessellation.coords);
   const coverage = sampleStackMasks(reference, tessellation.coords);
+  // What is drawn beyond a layer's extent is invented however its height was
+  // arrived at. A seal says how far, and its gradient must not be flattened; with
+  // no seal the same region is drawn on the reference's hole fill, which is a flat
+  // extrapolation and just as invented — but only when it is drawn at all.
+  const inferred = options.inferred
+    ? sampleStackWeights(reference, tessellation.coords, options.inferred)
+    : coverageAbsence
+      ? undefined
+      : coverage.map(mask =>
+          Float32Array.from(mask, covered => (covered ? 0 : 1)),
+        );
   const tSample = performance.now();
 
   const depths = stackDepthStats(heights);
@@ -329,6 +569,7 @@ export function buildSurfaceStack(
           threshold: collapseThreshold,
           coverage: coverageAbsence ? coverage : undefined,
           absent,
+          ceiling: options.ceiling,
         })
       : null;
   const tCollapse = performance.now();
@@ -340,18 +581,33 @@ export function buildSurfaceStack(
     layers,
     collapsed?.indices,
     options.caps,
+    inferred,
+    coverage,
   );
-  const rings = stackRimRings(
-    stackVertexPositions(reference, tessellation.coords),
-    tessellation.rimVertices,
-  );
+  const positionsXZ = stackVertexPositions(reference, tessellation.coords);
+  const rings = stackRimRings(positionsXZ, tessellation.rimVertices);
   const tGeometry = performance.now();
+
+  const walls = options.fills
+    ? buildStackWalls(tessellation, positionsXZ, heights, {
+        fills: options.fills,
+        threshold: collapseThreshold,
+        coverage: coverageAbsence ? coverage : undefined,
+        absent,
+        inferred,
+      })
+    : { walls: heights.map(() => null), ringsDropped: 0, ringsOpen: 0 };
+  const tWalls = performance.now();
 
   return {
     tessellation,
     heights,
     coverage,
+    inferred,
     layers: built,
+    walls: walls.walls,
+    ringsDropped: walls.ringsDropped,
+    ringsOpen: walls.ringsOpen,
     rings,
     resolved,
     collapsed,
@@ -364,6 +620,7 @@ export function buildSurfaceStack(
       resolveMs: tResolve - tSample,
       collapseMs: tCollapse - tResolve,
       geometryMs: tGeometry - tCollapse,
+      wallMs: tWalls - tGeometry,
     },
   };
 }

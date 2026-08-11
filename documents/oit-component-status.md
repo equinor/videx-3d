@@ -41,7 +41,7 @@ _Verified against source on 2026-06-17._
 |-----------|----------|-----------------------|
 | `WellboreRibbon / FormationsStripe` | inline `<shaderMaterial transparent>` | uses a glyph UBO (`uniformsGroups`); needs verified UBO sharing before wiring (via `<OitMaterial mode="attach">` or `makeOitCompatible`) |
 | `WellboreRibbon / MeasuredDepthStripe` | inline `<shaderMaterial transparent>` | same glyph-UBO concern as above |
-| `PositionMarkers` | inline `ShaderMaterial transparent` | drives alpha via custom `uOpacity`/`uBackgroundOpacity`; not wired (router needs `material.opacity` or `uniforms.opacity` synced) |
+| `PositionMarkers` | inline `ShaderMaterial transparent` | drives alpha via custom `uOpacity`/`uBackgroundOpacity`; not wired (router needs `material.opacity` or `uniforms.opacity` synced). ⚠️ Its alpha is also PER FRAGMENT, so no scalar summarises it — see the `shaderAlpha` follow-up in `oit-guide.md` §8 |
 | `SDFTest` | inline `<shaderMaterial>` | debug/test component, low priority |
 | `Annotations` (+ `WellboreLabel`) | 2D canvas / HTML overlay | **by design separate** — occluded via the depth texture, not part of the 3D OIT pipeline. By default only *opaque* geometry occludes labels; the opt-in surface depth-stamp (`OITRenderPass.occlusionDepthStamp`) lets sufficiently-opaque transparent surfaces occlude them too |
 

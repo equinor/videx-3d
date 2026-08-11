@@ -140,3 +140,60 @@ export function collectThicknessCrossings(
   for (let n = 0, j = 0; n < count; n++) if (hit[n]) out[j++] = n;
   return out;
 }
+
+/**
+ * Find the grid nodes bracketing the edge of a layer's DATA — the line its
+ * coverage mask flips along.
+ *
+ * ⭐ Needed for the same reason as {@link collectThicknessCrossings} and for a
+ * different line. Where a stack is sealed, a surface keeps full thickness on both
+ * sides of the edge of its data, so the taper's start is not a thickness crossing
+ * and nothing else refines it: the descent then begins at whatever vertex the
+ * height refinement happened to leave nearby, which in a flat area is hundreds of
+ * metres inside the data. Pinning vertices to the mask boundary puts the taper's
+ * onset where the knowledge actually ends.
+ *
+ * ⚠️ Deliberately WITHOUT the small-patch vote the thickness pass uses. A node or
+ * two flipping across a thickness threshold is noise; a node or two of missing
+ * coverage is data, and smoothing it away would move the very edge this is for.
+ *
+ * @param mask the layer's coverage over the common grid; 0 = no data (any
+ *   non-zero counts as covered, so bounded fill counts as data)
+ * @param nx the common grid's column count
+ * @returns node indices (`row * nx + col`), ascending
+ *
+ * @group Geometries
+ */
+export function collectCoverageCrossings(
+  mask: Uint8Array,
+  nx: number,
+): Uint32Array {
+  const count = mask.length;
+  const ny = count / nx;
+  const hit = new Uint8Array(count);
+  let total = 0;
+
+  const mark = (a: number, b: number) => {
+    if (!mask[a] === !mask[b]) return;
+    if (!hit[a]) {
+      hit[a] = 1;
+      total++;
+    }
+    if (!hit[b]) {
+      hit[b] = 1;
+      total++;
+    }
+  };
+  for (let row = 0; row < ny; row++) {
+    const base = row * nx;
+    for (let col = 0; col < nx; col++) {
+      const n = base + col;
+      if (col + 1 < nx) mark(n, n + 1);
+      if (row + 1 < ny) mark(n, n + nx);
+    }
+  }
+
+  const out = new Uint32Array(total);
+  for (let n = 0, j = 0; n < count; n++) if (hit[n]) out[j++] = n;
+  return out;
+}

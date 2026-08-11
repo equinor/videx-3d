@@ -480,6 +480,25 @@ after the pipeline), rather than relying on `toneMapped = false`.
   `uOpacity`) is classified *opaque* and never routed through OIT. Mirror the value:
   set `material.opacity = yourAlpha` (or expose an `opacity` uniform) so the router
   sees it.
+- **⚠️ A material with NO scalar alpha cannot be routed correctly — follow-up.**
+  Where alpha is computed PER FRAGMENT (from a vertex attribute, a pattern or a
+  texture), no single scalar summarises it: the router asks "is this opaque over its
+  whole footprint", and for such a material the answer is never yes. Set
+  `material.opacity` to 1 and it is drawn in the opaque pass as a real occluder —
+  with the shader's alpha never applied, so the mesh comes out solid.
+
+  Today the only remedy is to keep `opacity` strictly below 1 as a stand-in for the
+  PEAK alpha, which works but states something false about the material and is
+  enforced by nothing. Two components need it: `Chunk`'s inference overlay
+  (`createInferenceMaterial`, which clamps to `0.999`) and `PositionMarkers`, which
+  is parked for the same reason (see `oit-component-status.md`).
+
+  ⇒ Proposed: a `shaderAlpha?: boolean` option on `OitMaterialOptions`, recorded on
+  the material, making `OITRenderPass.isMaterialOpaque` return false for it whatever
+  `opacity` says. `isMaterialInvisible` would stay as it is — `opacity: 0` still
+  honestly means "draw nothing". Default off, so nothing that does not opt in
+  changes. **Not** for Ocean or Grid: they mirror a genuine scalar alpha, which is
+  the bullet above and is correct as it stands.
 - **Cloned built-in variants snapshot appearance** (§3). To keep value properties
   live (e.g. `color`), pass `syncProperties` to `makeOitCompatible`; for live
   textures/program changes use a uniform-driven `ShaderMaterial`.

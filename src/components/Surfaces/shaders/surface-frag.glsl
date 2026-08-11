@@ -39,6 +39,12 @@ uniform sampler2D normalTexture;
 
 varying vec2 vGridUv;
 
+#ifdef USE_GEOMETRY_FALLBACK
+varying float vNodata;
+varying float vGeoDepth;
+varying vec3 vGeoNormal;
+#endif
+
 #include <common>
 #include <packing>
 #include <dithering_pars_fragment>
@@ -159,9 +165,11 @@ void main() {
 
   float elevation = getElevation(vGridUv);
 
+  #ifndef USE_GEOMETRY_FALLBACK
   if(elevation < 0.0) {
     discard;
   }
+  #endif
 
   #include <logdepthbuf_fragment>
 
@@ -182,6 +190,13 @@ void main() {
   vec2 gridSegments = size - 1.0;
 
   float depth = referenceDepth - elevation;
+
+  #ifdef USE_GEOMETRY_FALLBACK
+  // Off the grid's data the sentinel would drive the ramp and the contours, so
+  // clamp it and lean on the mesh's own depth instead. Blended rather than
+  // branched, so a triangle straddling the data edge does not flip.
+  depth = mix(referenceDepth - max(elevation, 0.0), vGeoDepth, saturate(vNodata));
+  #endif
 
   // normal
 
@@ -228,6 +243,11 @@ void main() {
 
   n0 = rotateVec3(n0, vec3(0.0, 1.0, 0.0), rotation);
   vec3 vNormal = normalize(normalMatrix * n0);
+
+  #ifdef USE_GEOMETRY_FALLBACK
+  // Both branches above read the grid — the taps at a nodata texel say nothing.
+  vNormal = normalize(mix(vNormal, vGeoNormal, saturate(vNodata)));
+  #endif
 
   // color
   vec4 diffuseColor = vec4(diffuse, opacity);

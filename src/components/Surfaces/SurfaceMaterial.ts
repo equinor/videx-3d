@@ -41,6 +41,7 @@ export type SurfaceMaterialParameters = ShaderMaterialParameters &
     elevationTexture?: Texture;
     normalTexture?: Texture;
     usePrecomputedNormals?: boolean;
+    geometryFallback?: boolean;
     debug?: boolean;
   };
 
@@ -52,6 +53,7 @@ const shader = {
     USE_UV: true,
     USE_DEBUG: false,
     USE_PRECOMPUTED_NORMALS: false,
+    USE_GEOMETRY_FALLBACK: false,
     GLYPHS_LENGTH: 1,
   },
   uniforms: UniformsUtils.merge([
@@ -226,6 +228,26 @@ export class SurfaceMaterial extends ShaderMaterial {
 
   set usePrecomputedNormals(value) {
     this.defines.USE_PRECOMPUTED_NORMALS = !!value;
+    this.needsUpdate = true;
+  }
+
+  /**
+   * Trust the GEOMETRY where the grid does not describe it. Default false.
+   *
+   * A `Surface`'s mesh is built from the grid, so a nodata sample means there is
+   * nothing there and the fragment is discarded. A chunk cap is the other way
+   * round: its heights have been resampled onto a common grid, hole-filled, sealed
+   * and resolved, so the mesh is authoritative and discarding would cut a hole
+   * through a solid block. Set this when drawing on such a mesh; it needs the
+   * per-vertex `nodata` attribute the chunk builder writes, and falls back to the
+   * mesh's own depth and normal wherever that attribute says the grid stops.
+   */
+  get geometryFallback() {
+    return this.defines.USE_GEOMETRY_FALLBACK || false;
+  }
+
+  set geometryFallback(value) {
+    this.defines.USE_GEOMETRY_FALLBACK = !!value;
     this.needsUpdate = true;
   }
 

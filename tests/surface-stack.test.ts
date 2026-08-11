@@ -3,21 +3,25 @@ import { PlanarPolygonGeometry } from '../src/sdk/geometries/planar-geometry';
 import { SurfaceClipHeader } from '../src/sdk/geometries/surface-clip';
 import {
   buildStackReference,
-  collapseOptionalChannels,
   collapseStackTriangles,
+  measureStackCoverage,
   resolveStackGrid,
   resolveStackOrder,
   sampleStackHeights,
   sampleStackMasks,
+  STACK_MASK_FILLED,
   stackDepthStats,
   stackDuplicateFractions,
   StackLayer,
   stackLayerUvs,
   stackVertexPositions,
   tessellateStack,
-  trimPolygonToCoverage,
 } from '../src/sdk/geometries/surface-stack';
-import { collectStackCandidates } from '../src/sdk/geometries/surface-stack-candidates';
+import {
+  collectCoverageCrossings,
+  collectStackCandidates,
+} from '../src/sdk/geometries/surface-stack-candidates';
+import { buildSurfaceStack } from '../src/sdk/geometries/surface-stack-geometry';
 
 const NX = 33;
 const NY = 33;
@@ -90,6 +94,27 @@ describe('buildStackReference', () => {
     expect(fineChannel[0]).toBeCloseTo(-1000, 3);
   });
 
+  it('⚠️ lays a layer with NO data anywhere onto its neighbour, not at -1e30', () => {
+    // A horizon eroded away across the whole area has nothing to fill from. Left
+    // alone its channel keeps the NO_DATA sentinel and draws as a surface
+    // reaching to infinity — an endless pillar in the viewport.
+    const above = layerFrom(() => 1000);
+    const gone = layerFrom(() => null);
+    const below = layerFrom(() => 1500);
+
+    const reference = buildStackReference(
+      [above, gone, below],
+      maskPolygon(4, 28),
+    )!;
+
+    const [, empty] = reference.channels;
+    for (let i = 0; i < empty.length; i++) {
+      expect(empty[i]).toBeCloseTo(-1000, 3);
+    }
+    // ...and it is still reported as having no data of its own
+    expect([...reference.masks[1]].every(v => v === 0)).toBe(true);
+  });
+
   it('fills holes from the nearest valid sample and flags them in the mask', () => {
     const holed = layerFrom((col, row) =>
       col >= 10 && col <= 12 && row >= 10 && row <= 12 ? null : 1000,
@@ -124,155 +149,184 @@ describe('buildStackReference', () => {
   });
 });
 
-describe('trimPolygonToCoverage', () => {
+describe('measureStackCoverage', () => {
   // The right half of the grid is unmapped.
   const halfMapped = () => layerFrom((col: number) => (col > 16 ? null : 1000));
   const fullyMapped = () => layerFrom(() => 1200);
 
-  it('hands back the SAME polygon when the outline is fully covered', () => {
+  it('reports 1 for a layer mapped over the whole outline', () => {
     const polygon = maskPolygon(4, 12);
     const reference = buildStackReference([fullyMapped()], polygon)!;
 
-    const trim = trimPolygonToCoverage(reference, polygon, reference.masks);
+    const measured = measureStackCoverage(reference, polygon, reference.masks);
 
-    expect(trim.trimmed).toBe(false);
-    expect(trim.coverage).toBe(1);
-    // identity, not just an equal shape — an untouched chunk must be untouched
-    expect(trim.polygon).toBe(polygon);
+    expect(measured.layerCoverage[0]).toBe(1);
+    expect(measured.layerFilled[0]).toBe(0);
   });
 
-  it('cuts the outline back to the mapped area', () => {
+  it('reports each layer separately, so the sparse one can be named', () => {
     const polygon = maskPolygon(4, 28);
-    const reference = buildStackReference([halfMapped()], polygon)!;
-
-    const trim = trimPolygonToCoverage(reference, polygon, reference.masks);
-
-    expect(trim.trimmed).toBe(true);
-    expect(trim.coverage).toBeGreaterThan(0.3);
-    expect(trim.coverage).toBeLessThan(0.7);
-    // the survivors all sit on the mapped (left) side
-    const xs = (trim.polygon!.coordinates as number[][][][])
-      .flat(2)
-      .map(([x]) => x);
-    expect(Math.max(...xs)).toBeLessThan(sceneX(20));
-  });
-
-  it('returns no polygon at all when nothing is mapped', () => {
-    const polygon = maskPolygon(20, 28);
-    const reference = buildStackReference([halfMapped()], polygon)!;
-
-    const trim = trimPolygonToCoverage(reference, polygon, reference.masks);
-
-    expect(trim.polygon).toBeNull();
-    expect(trim.coverage).toBe(0);
-  });
-
-  it("'any' keeps what one layer covers, 'all' does not", () => {
-    const polygon = maskPolygon(4, 28);
-    const reference = buildStackReference(
-      [halfMapped(), fullyMapped()],
-      polygon,
-    )!;
-
-    const all = trimPolygonToCoverage(reference, polygon, reference.masks, {
-      rule: 'all',
-    });
-    const any = trimPolygonToCoverage(reference, polygon, reference.masks, {
-      rule: 'any',
-    });
-
-    expect(all.trimmed).toBe(true);
-    expect(any.trimmed).toBe(false);
-    expect(any.coverage).toBeGreaterThan(all.coverage);
-  });
-
-  it('an OPTIONAL layer does not cut the outline, but is still reported', () => {
-    const polygon = maskPolygon(4, 28);
-    // The fully mapped layer is the chunk's own subject; the half mapped one is a
-    // boundary borrowed from the chunk below.
     const reference = buildStackReference(
       [fullyMapped(), halfMapped()],
       polygon,
     )!;
 
-    const required = trimPolygonToCoverage(
-      reference,
-      polygon,
-      reference.masks,
-      {},
-    );
-    const optional = trimPolygonToCoverage(
-      reference,
-      polygon,
-      reference.masks,
-      {
-        optional: [false, true],
-      },
-    );
+    const measured = measureStackCoverage(reference, polygon, reference.masks);
 
-    // Borrowed, it no longer drags the footprint down to someone else's survey.
-    expect(required.trimmed).toBe(true);
-    expect(optional.trimmed).toBe(false);
-    expect(optional.polygon).toBe(polygon);
-    // ...but the trade stays visible: both report the same per-layer coverage.
-    expect(optional.layerCoverage[0]).toBe(1);
-    expect(optional.layerCoverage[1]).toBeLessThan(0.7);
-    expect(optional.layerCoverage).toEqual(required.layerCoverage);
+    // ⭐ A chunk-level average would hide WHICH layer is standing on nothing,
+    // which is the only useful question here.
+    expect(measured.layerCoverage[0]).toBe(1);
+    expect(measured.layerCoverage[1]).toBeGreaterThan(0.3);
+    expect(measured.layerCoverage[1]).toBeLessThan(0.7);
   });
 
-  it('keeps the whole outline when EVERY layer is optional', () => {
-    const polygon = maskPolygon(4, 28);
+  it('reports 0 for a layer with no data anywhere in the outline', () => {
+    // The outline sits entirely on the unmapped side.
+    const polygon = maskPolygon(20, 28);
     const reference = buildStackReference([halfMapped()], polygon)!;
 
-    for (const rule of ['all', 'any'] as const) {
-      const trim = trimPolygonToCoverage(reference, polygon, reference.masks, {
-        rule,
-        optional: [true],
-      });
-      expect(trim.trimmed).toBe(false);
-      expect(trim.polygon).toBe(polygon);
-    }
+    const measured = measureStackCoverage(reference, polygon, reference.masks);
+
+    expect(measured.layerCoverage[0]).toBe(0);
+  });
+
+  it('measures over the OUTLINE, not the reference grid', () => {
+    // The grid spans both halves; the outline only the mapped one.
+    const wide = maskPolygon(4, 28);
+    const reference = buildStackReference([halfMapped()], wide)!;
+
+    const whole = measureStackCoverage(reference, wide, reference.masks);
+    const left = measureStackCoverage(
+      reference,
+      maskPolygon(4, 12),
+      reference.masks,
+    );
+
+    expect(left.layerCoverage[0]).toBe(1);
+    expect(whole.layerCoverage[0]).toBeLessThan(1);
+  });
+
+  it('⭐ credits data just outside the crop, through bounded fill', () => {
+    // The outline sits entirely on the unmapped side, but its near edge is one
+    // cell (100 m) from the data — so `maxFill` reaches in and the layer is NOT
+    // without local evidence. This is the line between sealing and voiding.
+    const outline = maskPolygon(17, 24);
+    const layer = () => layerFrom((col: number) => (col > 16 ? null : 1000));
+
+    const strict = buildStackReference([layer()], outline, { maxFill: 0 })!;
+    const bridged = buildStackReference([layer()], outline, { maxFill: 250 })!;
+
+    expect(
+      measureStackCoverage(strict, outline, strict.masks).layerCoverage[0],
+    ).toBe(0);
+    expect(
+      measureStackCoverage(bridged, outline, bridged.masks).layerCoverage[0],
+    ).toBeGreaterThan(0);
   });
 });
 
-describe('collapseOptionalChannels', () => {
-  const halfMapped = () => layerFrom((col: number) => (col > 16 ? null : 1000));
+describe('bounded fill', () => {
+  const polygon = maskPolygon(4, 28);
 
-  it('pinches the optional interval out where the layer has no data', () => {
-    const polygon = maskPolygon(4, 28);
-    const reference = buildStackReference(
-      [layerFrom(() => 800), halfMapped()],
-      polygon,
-    )!;
-    const [above, borrowed] = reference.channels;
-    // buildStackReference fills the unmapped half from the nearest sample, so
-    // without this the interval would stand on a flat extrapolation.
-    const filled = borrowed.findIndex((_, n) => reference.masks[1][n] === 0);
-    expect(filled).toBeGreaterThanOrEqual(0);
-    expect(borrowed[filled]).not.toBe(above[filled]);
+  const count = (mask: Uint8Array, value: number) =>
+    mask.reduce((a, v) => a + (v === value ? 1 : 0), 0);
 
-    const collapsed = collapseOptionalChannels(
-      reference.channels,
-      reference.masks,
-      [false, true],
+  /** A layer with one rectangular hole, in grid columns/rows. */
+  const holed = (
+    c0: number,
+    c1: number,
+    r0: number,
+    r1: number,
+    h: SurfaceClipHeader = header(),
+  ) =>
+    layerFrom(
+      (col, row) =>
+        col >= c0 && col <= c1 && row >= r0 && row <= r1 ? null : 1000,
+      2000,
+      h,
     );
 
-    // zero thickness where it is absent, untouched where it is mapped
-    expect(collapsed[1][filled]).toBe(above[filled]);
-    const mapped = reference.masks[1].findIndex(v => v === 1);
-    expect(collapsed[1][mapped]).toBe(borrowed[mapped]);
-    // the layers it did not touch are shared, not copied
-    expect(collapsed[0]).toBe(reference.channels[0]);
-    expect(collapsed[1]).not.toBe(reference.channels[1]);
+  const boxPolygon = (lo: number, hi: number, h: SurfaceClipHeader) =>
+    new PlanarPolygonGeometry([
+      [
+        [
+          [sceneX(lo, h), sceneZ(lo, h)],
+          [sceneX(hi, h), sceneZ(lo, h)],
+          [sceneX(hi, h), sceneZ(hi, h)],
+          [sceneX(lo, h), sceneZ(hi, h)],
+        ],
+      ],
+    ]);
+
+  it('leaves every filled node absent when no limit is given', () => {
+    const reference = buildStackReference([holed(10, 12, 10, 12)], polygon)!;
+
+    expect(count(reference.masks[0], STACK_MASK_FILLED)).toBe(0);
+    expect(count(reference.masks[0], 0)).toBeGreaterThan(0);
   });
 
-  it('is a no-op when nothing is optional', () => {
-    const polygon = maskPolygon(4, 28);
-    const reference = buildStackReference([halfMapped()], polygon)!;
+  it('bridges a hole inside the limit, turning absence into fill', () => {
+    // 3 cells across at 100 m: no node is more than 200 m from real data.
+    const layer = () => holed(10, 12, 10, 12);
+    const absent = count(buildStackReference([layer()], polygon)!.masks[0], 0);
 
-    expect(
-      collapseOptionalChannels(reference.channels, reference.masks, [false]),
-    ).toBe(reference.channels);
+    const reference = buildStackReference([layer()], polygon, {
+      maxFill: 250,
+    })!;
+
+    // Nothing is absent any more, and exactly the nodes that were absent are the
+    // ones now counted as fill — the bound converts absence, it does not invent
+    // coverage anywhere else.
+    expect(count(reference.masks[0], 0)).toBe(0);
+    expect(count(reference.masks[0], STACK_MASK_FILLED)).toBe(absent);
+  });
+
+  it('refuses a hole larger than the limit, bridging only its edge', () => {
+    const reference = buildStackReference([holed(8, 24, 8, 24)], polygon, {
+      maxFill: 250,
+    })!;
+
+    // the middle is still absent...
+    expect(count(reference.masks[0], 0)).toBeGreaterThan(0);
+    // ...while a rim of it, within 250 m of the mapped area, is bridged
+    expect(count(reference.masks[0], STACK_MASK_FILLED)).toBeGreaterThan(0);
+  });
+
+  it('measures the limit in metres, not cells', () => {
+    // The SAME hole in cells, on a grid of twice the increment: its centre is
+    // 400 m from real data instead of 200 m, so the same threshold decides
+    // differently.
+    const coarse = header(NX, NY, INC * 2, INC * 2);
+    const coarsePolygon = boxPolygon(4, 28, coarse);
+
+    const at = (maxFill: number) =>
+      count(
+        buildStackReference([holed(10, 12, 10, 12, coarse)], coarsePolygon, {
+          maxFill,
+        })!.masks[0],
+        0,
+      );
+
+    expect(at(250)).toBeGreaterThan(0);
+    expect(at(500)).toBe(0);
+  });
+
+  it('counts a bridged hole as coverage, and says how much of it is fill', () => {
+    const layer = () => holed(10, 12, 10, 12);
+
+    // Unbounded: the hole is absent, so the layer is not covered over all of it.
+    const raw = buildStackReference([layer()], polygon)!;
+    const cut = measureStackCoverage(raw, polygon, raw.masks);
+    expect(cut.layerCoverage[0]).toBeLessThan(1);
+    expect(cut.layerFilled[0]).toBe(0);
+
+    const bounded = buildStackReference([layer()], polygon, { maxFill: 250 })!;
+    const kept = measureStackCoverage(bounded, polygon, bounded.masks);
+
+    expect(kept.layerCoverage[0]).toBe(1);
+    // ...but the coverage is not free: the share standing on fill is reported.
+    expect(kept.layerFilled[0]).toBeGreaterThan(0);
+    expect(kept.layerFilled[0]).toBeLessThan(0.05);
   });
 });
 
@@ -673,6 +727,37 @@ describe('collapseStackTriangles', () => {
     expect(result.indices[0]).toBeNull();
   });
 
+  it('⭐ reads coverage per corner but truncation per triangle', () => {
+    // The two masks answer different kinds of question, so they are read with
+    // different rules — this is what keeps a layer from being drawn past its own
+    // survey while a truncation still terminates exactly on the contour.
+    const heights = [
+      Float32Array.from([0, 0, 0, 0]),
+      Float32Array.from([-100, -100, -100, -100]),
+    ];
+    const indices = new Uint32Array([0, 1, 2, 1, 2, 3]);
+    const oneCorner = (v: number, value: number) => {
+      const m = new Uint8Array(4).fill(value === 0 ? 1 : 0);
+      m[v] = value;
+      return m;
+    };
+
+    // one UNCOVERED corner takes the triangles that touch it: coverage is binary,
+    // so a triangle with a corner off the survey is partly invented
+    const uncovered = collapseStackTriangles(heights, indices, {
+      coverage: [new Uint8Array(4).fill(1), oneCorner(0, 0)],
+    });
+    expect(uncovered.droppedAbsent[1]).toBe(1);
+
+    // one TRUNCATED corner takes nothing: the heights vary linearly over the
+    // shared topology, so the rest of that triangle is genuinely still there
+    const truncated = collapseStackTriangles(heights, indices, {
+      threshold: 0,
+      absent: [new Uint8Array(4), oneCorner(0, 1)],
+    });
+    expect(truncated.droppedAbsent[1]).toBe(0);
+  });
+
   it('drops triangles marked absent by a truncating resolve', () => {
     const reference = buildStackReference(
       [layerFrom(() => 1000), rippledBase()],
@@ -726,5 +811,189 @@ describe('stackLayerUvs', () => {
       expect(uvs[2 * v]).toBeGreaterThanOrEqual(-1e-6);
       expect(uvs[2 * v]).toBeLessThanOrEqual(1 + 1e-6);
     }
+  });
+});
+
+/**
+ * Sealing invents geometry, so the block has to be able to say which part. The
+ * weights ride through the build as an `inferred` attribute on both the cap and
+ * the wall, and its PRESENCE is what tells the appearance layer there is anything
+ * to mark at all.
+ */
+describe('carrying the inference through to the geometry', () => {
+  const polygon = maskPolygon(4, 28);
+
+  it('marks the invented part of a cap and of the wall below it', () => {
+    const top = layerFrom(() => 1000);
+    // Relief, so the tessellation carries interior vertices for the weight to be
+    // sampled at — a flat pair is refined only at its rim.
+    const base = layerFrom(
+      (col, row) => 1400 + 40 * Math.sin(col / 3) * Math.cos(row / 3),
+    );
+    const reference = buildStackReference([top, base], polygon)!;
+    // The base is a reconstruction over the right-hand half and measured over the
+    // left, with the seal's own weight rising away from the data edge.
+    const nodes = reference.header.nx * reference.header.ny;
+    const weights = new Float32Array(nodes);
+    for (let n = 0; n < nodes; n++) {
+      const col = n % reference.header.nx;
+      weights[n] = col <= 16 ? 0 : Math.min(1, (col - 16) / 8);
+    }
+
+    const build = buildSurfaceStack(reference, [top, base], {
+      polygon,
+      maxError: 5,
+      fills: [true, false],
+      inferred: [new Float32Array(nodes), weights],
+    })!;
+
+    const cap = build.layers[1].geometry!.getAttribute('inferred');
+    const wall = build.walls[0]!.getAttribute('inferred');
+    expect(cap).toBeDefined();
+    expect(wall).toBeDefined();
+
+    // ⭐ A gradient, not a flag: what is drawn fades from measured into invented.
+    const values = Array.from(cap.array as Float32Array);
+    expect(Math.min(...values)).toBe(0);
+    expect(Math.max(...values)).toBeCloseTo(1, 5);
+    expect(new Set(values).size).toBeGreaterThan(2);
+
+    // The fully measured layer has nothing to say, so it carries no attribute —
+    // which is what lets the overlay be skipped rather than drawn empty.
+    expect(build.layers[0].geometry!.hasAttribute('inferred')).toBe(false);
+  });
+
+  it('leaves an unsealed stack unmarked', () => {
+    const top = layerFrom(() => 1000);
+    const base = layerFrom(() => 1400);
+    const reference = buildStackReference([top, base], polygon)!;
+
+    const build = buildSurfaceStack(reference, [top, base], {
+      polygon,
+      maxError: 5,
+      fills: [true, false],
+    })!;
+
+    expect(build.inferred).toBeUndefined();
+    expect(build.layers[1].geometry!.hasAttribute('inferred')).toBe(false);
+    expect(build.walls[0]!.hasAttribute('inferred')).toBe(false);
+  });
+
+  it('marks what is drawn on hole fill when nothing sealed it', () => {
+    const top = layerFrom(() => 1000);
+    const base = layerFrom((col, row) => (col > 16 ? null : 1400 + row));
+    const reference = buildStackReference([top, base], polygon, {
+      maxFill: 0,
+    })!;
+
+    // Nothing dropped and nothing sealed: the unmapped half is drawn on the
+    // reference's nearest-valid fill, which is as invented as a taper.
+    const drawn = buildSurfaceStack(reference, [top, base], {
+      polygon,
+      maxError: 5,
+      fills: [true, false],
+      coverageAbsence: false,
+    })!;
+    const values = Array.from(
+      drawn.layers[1].geometry!.getAttribute('inferred').array as Float32Array,
+    );
+    expect(values.some(v => v === 1)).toBe(true);
+    expect(values.some(v => v === 0)).toBe(true);
+    expect(drawn.walls[0]!.hasAttribute('inferred')).toBe(true);
+
+    // With the drops on, nothing is drawn out there and there is nothing to mark.
+    const dropped = buildSurfaceStack(reference, [top, base], {
+      polygon,
+      maxError: 5,
+      fills: [true, false],
+      coverageAbsence: true,
+    })!;
+    expect(dropped.inferred).toBeUndefined();
+    expect(dropped.layers[1].geometry!.hasAttribute('inferred')).toBe(false);
+  });
+
+  it('tells a grid-driven material where the grid stops describing the mesh', () => {
+    const top = layerFrom(() => 1000);
+    // Mapped over the left half only, but sealed, so the mesh continues.
+    const base = layerFrom((col, row) => (col > 16 ? null : 1400 + row));
+    const reference = buildStackReference([top, base], polygon, {
+      maxFill: 0,
+    })!;
+
+    const build = buildSurfaceStack(reference, [top, base], {
+      polygon,
+      maxError: 5,
+      coverageAbsence: false,
+    })!;
+
+    const nodata = build.layers[1].geometry!.getAttribute('nodata');
+    const values = Array.from(nodata.array as Float32Array);
+    expect(values.some(v => v === 1)).toBe(true);
+    expect(values.some(v => v === 0)).toBe(true);
+
+    // ⚠️ Inverted on purpose: an attribute the geometry does not carry reads as 0
+    // in WebGL, so a fully mapped layer must NOT be reported as fully uncovered.
+    expect(build.layers[0].geometry!.hasAttribute('nodata')).toBe(false);
+  });
+});
+
+/**
+ * A sealed surface keeps full thickness either side of the edge of its data, so
+ * that edge is not a thickness crossing and nothing else refines it — the taper
+ * then starts wherever the height refinement happened to leave a vertex.
+ */
+describe('refining the edge of a layer’s data', () => {
+  const holed = () => layerFrom(col => (col >= 20 ? null : 1000 + col * 2));
+  const solid = () => layerFrom(() => 1500);
+  const polygon = maskPolygon(4, 28);
+
+  const nearestVertexTo = (coords: Float32Array, col: number, row: number) => {
+    let best = Infinity;
+    for (let v = 0; v < coords.length / 2; v++) {
+      const d = Math.hypot(coords[2 * v] - col, coords[2 * v + 1] - row);
+      if (d < best) best = d;
+    }
+    return best;
+  };
+
+  it('finds the nodes bracketing the boundary, and no others', () => {
+    const mask = new Uint8Array(6 * 3).fill(1);
+    for (let row = 0; row < 3; row++)
+      for (let col = 4; col < 6; col++) mask[row * 6 + col] = 0;
+    // columns 3 and 4 bracket the flip, in all three rows
+    expect(
+      Array.from(collectCoverageCrossings(mask, 6)).map(n => n % 6),
+    ).toEqual([3, 4, 3, 4, 3, 4]);
+  });
+
+  it('keeps every node when the layer covers everything', () => {
+    expect(
+      collectCoverageCrossings(new Uint8Array(24).fill(1), 6),
+    ).toHaveLength(0);
+  });
+
+  it('puts vertices ON the data edge, which the height pass does not', () => {
+    const layers = [solid(), holed()];
+    const reference = buildStackReference(layers, polygon)!;
+
+    const without = buildSurfaceStack(reference, layers, {
+      polygon,
+      maxError: 5,
+      refineCoverage: false,
+    })!;
+    const with_ = buildSurfaceStack(reference, layers, {
+      polygon,
+      maxError: 5,
+      refineCoverage: true,
+    })!;
+
+    // The reference fills a layer's hole from its nearest sample so the grid has
+    // no cliffs — which is exactly why the height refinement cannot see the edge.
+    expect(
+      nearestVertexTo(with_.tessellation.coords, 19, 16),
+    ).toBeLessThanOrEqual(1);
+    expect(
+      nearestVertexTo(without.tessellation.coords, 19, 16),
+    ).toBeGreaterThan(nearestVertexTo(with_.tessellation.coords, 19, 16));
   });
 });

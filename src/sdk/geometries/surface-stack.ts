@@ -1,4 +1,5 @@
 import { Vec2 } from '../types/common';
+import { chamferFill } from './chamfer';
 import { Delatin } from './delatin';
 import { sampleValidGrid } from './grid-sampling';
 import {
@@ -6,7 +7,6 @@ import {
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
 } from './planar-geometry';
-import { ringsToPolygonCoordinates, simplifyRing } from './polygon-outline';
 import { evaluateRelief, StackRelief } from './procedural-relief';
 import {
   gridToGridTransform,
@@ -19,12 +19,7 @@ import {
   collectStackCandidates,
   STACK_NO_DATA,
 } from './surface-stack-candidates';
-import {
-  GridPolygon,
-  makeGridInside,
-  smoothRings,
-  traceValidBoundary,
-} from './triangulate-grid-delaunay';
+import { GridPolygon, makeGridInside } from './triangulate-grid-delaunay';
 
 /**
  * A layer entering a shared-tessellation stack from an elevation GRID: the
@@ -154,11 +149,29 @@ export type StackReference = {
    * {@link StackReference.masks} to tell real data from fill.
    */
   channels: Float32Array[];
-  /** per layer: 1 where the layer has real data at that node, 0 where filled */
+  /**
+   * Per layer, the layer's EFFECTIVE extent at every node:
+   * {@link STACK_MASK_NONE}, {@link STACK_MASK_DATA} or {@link STACK_MASK_FILLED}.
+   *
+   * Every consumer that only asks "is this covered?" can keep testing the value
+   * for truth; the distinction exists so that coverage bought by
+   * {@link StackReferenceOptions.maxFill} can be reported rather than silently
+   * counted as data.
+   */
   masks: Uint8Array[];
   /** how many source grid cells one reference cell spans (1 = full resolution) */
   step: number;
 };
+
+/** {@link StackReference.masks}: the layer has no extent at this node. */
+export const STACK_MASK_NONE = 0;
+/** {@link StackReference.masks}: the layer has data of its own at this node. */
+export const STACK_MASK_DATA = 1;
+/**
+ * {@link StackReference.masks}: no data of the layer's own, but close enough to
+ * some that {@link StackReferenceOptions.maxFill} counts the node as covered.
+ */
+export const STACK_MASK_FILLED = 2;
 
 /** Options for {@link buildStackReference}. */
 export type StackReferenceOptions = {
@@ -170,6 +183,23 @@ export type StackReferenceOptions = {
    * (`nodes * layers * 4` bytes) and tessellation cost. Default 4,000,000.
    */
   maxNodes?: number;
+  /**
+   * How far a layer's coverage may extend past its own data, in METRES. Default
+   * unbounded — the mask is then real data only, and every filled node stays
+   * absent.
+   *
+   * Values are filled everywhere regardless (the triangulator chases
+   * discontinuities, so a cliff at a data edge is expensive); what this bounds is
+   * the MASK, i.e. how far out the fill is treated as knowledge. That makes a
+   * surface's extent a matter of degree: an interior hole a few cells across is
+   * bridged, while the space past the edge of a survey — or a hole kilometres
+   * wide — stays absent and is dropped or trimmed as before.
+   *
+   * One threshold covers both, because they are the same measurement seen from
+   * two sides. In metres rather than cells so it is independent of grid
+   * resolution and of the decimation `maxNodes` may apply.
+   */
+  maxFill?: number;
 };
 
 /** The shared tessellation produced by {@link tessellateStack}. */
@@ -296,6 +326,19 @@ export type StackCollapseOptions = {
    * mode: 1 marks a vertex where the unit was cut away.
    */
   absent?: Uint8Array[];
+  /**
+   * Per layer: this one is the CEILING of a void — the upper copy of a surface
+   * split around the space it cannot account for (see `splitVoidChannels`).
+   *
+   * ⭐ It inverts which of a coincident pair is dropped. Normally the deeper of
+   * two welded surfaces goes, because the resolve made it by pushing a crossing
+   * surface UP onto the one above, so the duplicate below is the artefact. For a
+   * void pair the opposite is true: the shallower copy is the invention and the
+   * deeper one is the real horizon. Outside the void the two are identical, so
+   * without this the horizon is dropped and the ceiling is left standing in its
+   * place — wearing the colour of the unit above it.
+   */
+  ceiling?: boolean[];
 };
 
 /** The result of {@link collapseStackTriangles}. */
@@ -313,56 +356,25 @@ export type StackCollapseResult = {
 /** Sentinel for a node with no data — outside the range of any real depth. */
 const NO_DATA = STACK_NO_DATA;
 
-// Fill every invalid node from the nearest valid one, via a two-sweep chamfer
-// transform that carries the source value along with the distance. A continuous
-// extension (rather than a mean or a hard edge) matters because the triangulator
+// Fill every invalid node from the nearest valid one (see `chamferFill`). A
+// continuous extension rather than a hard edge matters because the triangulator
 // chases discontinuities: a cliff at a data boundary costs a dense cluster of
 // slivers for geometry that is either outside the mask or about to be truncated.
+//
+// `limit` (in CELLS) bounds how far the fill counts as coverage: nodes within it
+// are marked STACK_MASK_FILLED, everything beyond keeps its filled value but stays
+// absent. The distance is already computed by the fill, so bounding it is free.
 function fillNearest(
   values: Float32Array,
   mask: Uint8Array,
   w: number,
   h: number,
+  limit: number,
 ) {
-  const D = 1;
-  const D2 = Math.SQRT2;
-  const dist = new Float32Array(w * h);
-  for (let i = 0; i < dist.length; i++) dist[i] = mask[i] ? 0 : Infinity;
-
-  const relax = (i: number, j: number, d: number) => {
-    const nd = dist[j] + d;
-    if (nd < dist[i]) {
-      dist[i] = nd;
-      values[i] = values[j];
-    }
-  };
-
-  for (let y = 0; y < h; y++) {
-    const row = y * w;
-    const up = row - w;
-    for (let x = 0; x < w; x++) {
-      const i = row + x;
-      if (dist[i] === 0) continue;
-      if (x > 0) relax(i, i - 1, D);
-      if (y > 0) {
-        relax(i, up + x, D);
-        if (x > 0) relax(i, up + x - 1, D2);
-        if (x < w - 1) relax(i, up + x + 1, D2);
-      }
-    }
-  }
-  for (let y = h - 1; y >= 0; y--) {
-    const row = y * w;
-    const down = row + w;
-    for (let x = w - 1; x >= 0; x--) {
-      const i = row + x;
-      if (dist[i] === 0) continue;
-      if (x < w - 1) relax(i, i + 1, D);
-      if (y < h - 1) {
-        relax(i, down + x, D);
-        if (x < w - 1) relax(i, down + x + 1, D2);
-        if (x > 0) relax(i, down + x - 1, D2);
-      }
+  const dist = chamferFill(values, mask, w, h);
+  if (limit < Infinity) {
+    for (let i = 0; i < mask.length; i++) {
+      if (!mask[i] && dist[i] <= limit) mask[i] = STACK_MASK_FILLED;
     }
   }
 }
@@ -469,6 +481,14 @@ export function buildStackReference(
     rot: source.header.rot,
   };
 
+  // `maxFill` is given in metres so it survives decimation and means the same
+  // thing on any survey; the chamfer transform counts in cells of THIS grid.
+  const cell = (header.xinc + header.yinc) / 2;
+  const fillLimit =
+    options.maxFill !== undefined && options.maxFill >= 0
+      ? options.maxFill / cell
+      : Infinity;
+
   // Place the cropped/decimated grid so its node (0, 0) lands exactly on the
   // source grid's node (col0, row0): both grids share the rotation and axis
   // directions, so the difference is a pure translation.
@@ -481,6 +501,7 @@ export function buildStackReference(
 
   const channels: Float32Array[] = [];
   const masks: Uint8Array[] = [];
+  const empty: boolean[] = [];
   const count = nx * ny;
 
   for (const layer of layers) {
@@ -498,7 +519,7 @@ export function buildStackReference(
       // everything downstream indexes `layers` BY CHANNEL, so dropping one here
       // would silently pair every later layer with the wrong geometry.
       channels.push(channel ?? new Float32Array(count));
-      masks.push(new Uint8Array(count).fill(1));
+      masks.push(new Uint8Array(count).fill(STACK_MASK_DATA));
       continue;
     }
     const nullValue = layer.nullValue ?? -1;
@@ -524,243 +545,142 @@ export function buildStackReference(
         } else {
           // scene Y (upwards-positive, sea level at 0)
           channel[out + col] = v - layer.referenceDepth;
-          mask[out + col] = 1;
+          mask[out + col] = STACK_MASK_DATA;
           any = true;
         }
       }
     }
-    if (any) fillNearest(channel, mask, nx, ny);
+    if (any) fillNearest(channel, mask, nx, ny, fillLimit);
     channels.push(channel);
     masks.push(mask);
+    empty.push(!any);
+  }
+
+  // ⚠️ A layer with NO data ANYWHERE — a horizon eroded away across the whole
+  // area, or a survey that misses this footprint entirely — has nothing to fill
+  // from, so its channel would stay at the NO_DATA sentinel (-1e30) and be drawn
+  // as a surface reaching to infinity. Lay it on its nearest mapped neighbour
+  // instead: zero thickness, so it claims no volume and the collapse drops it.
+  // The mask stays empty, so absence and the diagnostics remain truthful.
+  for (let i = 0; i < channels.length; i++) {
+    if (!empty[i]) continue;
+    let donor = -1;
+    for (let j = i - 1; j >= 0 && donor < 0; j--) if (!empty[j]) donor = j;
+    for (let j = i + 1; j < channels.length && donor < 0; j++) {
+      if (!empty[j]) donor = j;
+    }
+    if (donor >= 0) channels[i].set(channels[donor]);
   }
 
   return { header, worldPosition, channels, masks, step };
 }
 
-/** Options for {@link trimPolygonToCoverage}. */
-export type StackTrimOptions = {
+/** The result of {@link measureStackCoverage}. */
+export type StackCoverageResult = {
   /**
-   * `'all'` (default) keeps only where EVERY layer is mapped, `'any'` where at
-   * least one is.
-   *
-   * `'all'` is the self-consistent rule: inside the result no layer is ever
-   * dropped for want of data, nothing is drawn on the hole fill, and every wall
-   * runs between two surfaces that are actually known. `'any'` keeps more of the
-   * requested footprint but preserves the opposite of that — layers vanishing
-   * inside the chunk, and walls whose lower edge stands on fill.
-   */
-  rule?: 'all' | 'any';
-  /**
-   * Per layer, aligned with `masks`: `true` marks a layer whose data extent must
-   * NOT cut the outline back.
-   *
-   * For a boundary a chunk merely BORROWS from its neighbour, the chunk's own
-   * footprint has nothing to do with where that survey stopped — without this a
-   * chunk whose own layers are mapped everywhere still shrinks to the extent of
-   * the surface it was handed. Optional layers are still tallied into
-   * {@link StackTrimResult.layerCoverage}, so the trade stays visible; pair this
-   * with {@link collapseOptionalChannels} so the interval such a layer bounds
-   * pinches out where it is absent instead of resting on the hole fill.
-   */
-  optional?: boolean[];
-  /** ring smoothing strength for the traced boundary (default 1) */
-  smoothing?: number;
-  /**
-   * Simplification tolerance for the traced boundary, in reference GRID CELLS
-   * (default 1). A traced ring carries one vertex per cell, and every one of them
-   * becomes an inserted vertex and a constraint edge in the tessellation — on a
-   * real footprint that is thousands of vertices saying nothing. `0` keeps them.
-   */
-  simplify?: number;
-};
-
-/** The result of {@link trimPolygonToCoverage}. */
-export type StackTrimResult = {
-  /** the footprint to build on, or `null` when nothing is covered at all */
-  polygon: PlanarPolygonGeometry | null;
-  /** whether the outline was actually cut (false = `polygon` IS the input) */
-  trimmed: boolean;
-  /** share of the requested footprint that survived (0..1) */
-  coverage: number;
-  /**
-   * Per-layer share of the REQUESTED footprint that layer has data of its own
-   * for, in `masks` order. Measured before the cut, which is the whole point: the
-   * layer that dragged a chunk down is the one to name, and after the cut every
-   * layer looks fully covered by construction.
+   * Per-layer share of the footprint that layer has data of its own for, in
+   * `masks` order. A layer at 0 has no local evidence anywhere the chunk is
+   * drawn — not even within `maxFill` of any — which is a different thing from
+   * being thin or partly mapped, and the caller is expected to treat it as such.
    */
   layerCoverage: number[];
+  /**
+   * Per-layer share of the footprint covered ONLY through bounded fill (see
+   * {@link StackReferenceOptions.maxFill}) — included in
+   * {@link StackCoverageResult.layerCoverage}, and reported separately so a layer
+   * that is standing on extrapolation can be told from one that is mapped.
+   */
+  layerFilled: number[];
 };
 
 /**
- * Cut an outline back to where the stack actually has data.
+ * Rasterise a chunk's footprint onto the reference grid: 1 where a node is inside
+ * the outline.
  *
- * A surface's data extent is where the SURVEY stopped, not where the geology did.
- * Three things could be done about the difference, and only this one avoids
- * asserting something false:
- *
- * - drawing the hole fill claims the unit is flat out there;
- * - dropping the triangles leaves a hole through a solid block, with the wall
- *   still standing around it — which reads as a rendering artefact;
- * - putting a WALL at the data edge claims the unit terminates there, which is the
- *   most confident lie of the three.
- *
- * Trimming instead turns a data edge into an OUTLINE edge, and an outline is
- * already an admitted arbitrary cut — so the wall drawn there keeps the only
- * meaning a wall ever has: "this is where we chose to stop".
- *
- * The boundary is traced on the reference grid, so it is cell-quantised (which is
- * honest — data extents ARE cell-quantised) and then smoothed. When the outline is
- * fully covered the ORIGINAL polygon is returned untouched, so a chunk that needs
- * no trimming is completely unaffected.
+ * ⚠️ The reference grid is the grid-space BOUNDING BOX of a (usually rotated)
+ * outline, so a good part of it is never drawn. Anything that measures a property
+ * of the chunk — coverage, or how far a seal has to reach — has to say which nodes
+ * it means, or the answer is set by corners nobody sees.
  *
  * @param reference the common domain from {@link buildStackReference}
- * @param polygon the requested outline (scene XZ)
- * @param masks the layers' coverage masks, in the reference's grid space (a subset
- *   of `reference.masks` when the chunk draws part of a column)
- * @param options see {@link StackTrimOptions}
+ * @param polygon the outline, in scene XZ
  *
  * @group Geometries
  */
-export function trimPolygonToCoverage(
+export function rasterizeStackOutline(
   reference: StackReference,
   polygon: PlanarPolygonGeometry,
-  masks: Uint8Array[],
-  options: StackTrimOptions = {},
-): StackTrimResult {
+): Uint8Array {
   const { nx, ny } = reference.header;
-  if (masks.length === 0)
-    return { polygon, trimmed: false, coverage: 1, layerCoverage: [] };
-  const requireAll = (options.rule ?? 'all') === 'all';
-  // Layers that are allowed to cut the outline. A borrowed boundary is excluded:
-  // it still gets a coverage figure, it just does not get a vote.
-  const voting: number[] = [];
-  for (let m = 0; m < masks.length; m++) {
-    if (!options.optional?.[m]) voting.push(m);
-  }
-
   const toGrid = surfaceWorldToGrid(reference.header, reference.worldPosition);
   const components = polygon.coordinates as PlanarPolygonCoordinates;
   const gridPolygons: GridPolygon[] = components.map(rings =>
     rings.map(ring => ring.map(([sx, sz]) => toGrid(sx, sz))),
   );
   const insidePolygon = makeGridInside(gridPolygons);
-
-  // 1 = inside the outline AND covered. traceValidBoundary wants a grid + an
-  // "invalid" predicate, so this doubles as its input.
-  const kept = new Float32Array(nx * ny);
-  let inside = 0;
-  let covered = 0;
-  // Per-layer tally over the SAME nodes, so a shrunken chunk can name the layer
-  // responsible rather than just reporting that it shrank.
-  const perLayer = new Array<number>(masks.length).fill(0);
+  const inside = new Uint8Array(nx * ny);
   for (let row = 0; row < ny; row++) {
     for (let col = 0; col < nx; col++) {
-      const n = row * nx + col;
-      if (!insidePolygon(col, row)) continue;
-      inside++;
-      for (let m = 0; m < masks.length; m++) if (masks[m][n]) perLayer[m]++;
-      // No layer has a vote (every one is borrowed): nothing may trim, so keep
-      // the requested footprint whole — under `any` the empty loop would
-      // otherwise reject every node and throw the chunk away.
-      let hasData = requireAll || voting.length === 0;
-      for (const m of voting) {
-        const mask = masks[m];
-        if (requireAll) {
-          if (!mask[n]) {
-            hasData = false;
-            break;
-          }
-        } else if (mask[n]) {
-          hasData = true;
-          break;
-        }
-      }
-      if (!hasData) continue;
-      covered++;
-      kept[n] = 1;
+      if (insidePolygon(col, row)) inside[row * nx + col] = 1;
     }
   }
-  const layerCoverage = perLayer.map(c => (inside > 0 ? c / inside : 0));
-
-  if (inside === 0 || covered === 0) {
-    return { polygon: null, trimmed: true, coverage: 0, layerCoverage };
-  }
-  const coverage = covered / inside;
-  // Fully covered: hand back the caller's own polygon, curve and all.
-  if (covered === inside)
-    return { polygon, trimmed: false, coverage: 1, layerCoverage };
-
-  const rings = traceValidBoundary(kept, nx, v => v === 0);
-  if (rings.length === 0)
-    return { polygon: null, trimmed: true, coverage: 0, layerCoverage };
-  const toWorld = surfaceGridToWorld(reference.header, reference.worldPosition);
-  const tolerance = options.simplify ?? 1;
-  // Smooth the staircase first, then drop the vertices that no longer carry any
-  // shape — in GRID units, where the tolerance is a cell count.
-  const scene = smoothRings(rings, options.smoothing ?? 1)
-    .map(ring => simplifyRing(ring as Vec2[], tolerance))
-    .map(ring => ring.map(([col, row]) => toWorld(col, row)));
-  const coordinates = ringsToPolygonCoordinates(scene);
-  if (coordinates.length === 0) {
-    return { polygon: null, trimmed: true, coverage: 0, layerCoverage };
-  }
-  return {
-    polygon: new PlanarPolygonGeometry(coordinates, polygon.offset),
-    trimmed: true,
-    coverage,
-    layerCoverage,
-  };
+  return inside;
 }
 
 /**
- * Pinch out the intervals bounded by OPTIONAL layers where those layers have no
- * data of their own.
+ * Measure how much of a chunk's footprint each layer actually has data for.
  *
- * {@link buildStackReference} fills a layer's holes from the nearest valid sample,
- * which is the right thing for a layer the chunk is trimmed to — inside the
- * trimmed footprint the fill is never reached. An optional layer is deliberately
- * NOT trimmed to (see {@link StackTrimOptions.optional}), so its fill IS reached,
- * and a flat extrapolation of a survey edge is the most confident lie the geometry
- * can tell: it draws a surface, and a solid volume down to it, out of nothing.
+ * ⚠️ Measured over the REQUESTED outline, and reported per layer rather than as a
+ * single number, because the only useful question here is *which* layer is
+ * standing on nothing. A chunk-level average hides exactly that.
  *
- * Clamping the absent nodes onto the neighbour that defines the layer's interval
- * gives that interval zero thickness instead, so the collapse pass drops it and
- * the chunk simply stops where its knowledge does. The neighbour is the layer
- * ABOVE, or the one BELOW when the optional layer is the chunk's first.
+ * ⭐ Coverage includes bounded fill (see {@link StackReferenceOptions.maxFill}),
+ * so a layer mapped just outside the crop still counts as covered — the same
+ * threshold that decides everywhere else whether a gap is interpolated across or
+ * admitted as invention. A layer measuring 0 therefore has no evidence anywhere
+ * the chunk is drawn, not merely none inside it.
  *
- * Channels are copied, never mutated — on a shared column they belong to every
- * chunk cut from it. Only optional layers allocate.
+ * This replaced `trimPolygonToCoverage`, which used the same tally to cut the
+ * outline back to the data. Coverage is a per-LAYER property and the outline is
+ * the user's crop; conflating them made one layer's survey edge silently reshape
+ * the whole chunk (`documents/chunks.md` §10.1.8).
  *
- * @param channels per-layer scene Y at every node (see {@link StackReference})
- * @param masks per-layer data masks, aligned with `channels`
- * @param optional per-layer flags, aligned with `channels`
- * @returns a channels array, sharing the untouched layers by reference
+ * @param reference the common domain from {@link buildStackReference}
+ * @param polygon the requested outline (scene XZ)
+ * @param masks the layers' coverage masks, in the reference's grid space (a subset
+ *   of `reference.masks` when the chunk draws part of a column)
  *
  * @group Geometries
  */
-export function collapseOptionalChannels(
-  channels: Float32Array[],
+export function measureStackCoverage(
+  reference: StackReference,
+  polygon: PlanarPolygonGeometry,
   masks: Uint8Array[],
-  optional: boolean[],
-): Float32Array[] {
-  if (!optional.some(Boolean)) return channels;
-  const out = channels.slice();
-  for (let i = 0; i < channels.length; i++) {
-    if (!optional[i]) continue;
-    const mask = masks[i];
-    if (!mask) continue;
-    // The interval this layer bounds lies above it, except at the top of the
-    // chunk where it bounds the one below. Read the layer above from `out`, so
-    // adjacent optional layers chain onto an already-clamped neighbour.
-    const neighbour = i > 0 ? out[i - 1] : channels[i + 1];
-    if (!neighbour) continue;
-    const copy = Float32Array.from(channels[i]);
-    for (let n = 0; n < copy.length; n++) {
-      if (!mask[n]) copy[n] = neighbour[n];
+): StackCoverageResult {
+  const { nx, ny } = reference.header;
+  if (masks.length === 0) return { layerCoverage: [], layerFilled: [] };
+
+  const insideGrid = rasterizeStackOutline(reference, polygon);
+  let inside = 0;
+  const perLayer = new Array<number>(masks.length).fill(0);
+  const perFilled = new Array<number>(masks.length).fill(0);
+  for (let row = 0; row < ny; row++) {
+    for (let col = 0; col < nx; col++) {
+      const n = row * nx + col;
+      if (!insideGrid[n]) continue;
+      inside++;
+      for (let m = 0; m < masks.length; m++) {
+        const v = masks[m][n];
+        if (!v) continue;
+        perLayer[m]++;
+        if (v === STACK_MASK_FILLED) perFilled[m]++;
+      }
     }
-    out[i] = copy;
   }
-  return out;
+  return {
+    layerCoverage: perLayer.map(c => (inside > 0 ? c / inside : 0)),
+    layerFilled: perFilled.map(c => (inside > 0 ? c / inside : 0)),
+  };
 }
 
 /**
@@ -1102,8 +1022,9 @@ export function makeStackInsideTest(
 }
 
 /**
- * Sample each layer's data coverage at the shared vertices: 1 where the layer has
- * real data, 0 where {@link buildStackReference} filled it in.
+ * Sample each layer's coverage at the shared vertices: 1 within the layer's
+ * effective extent, 0 where {@link buildStackReference} filled it in from too far
+ * away to count (see {@link StackReferenceOptions.maxFill}).
  *
  * A layer whose survey covers less than the chunk is not "flat" out there — it is
  * ABSENT, and saying so explicitly is both more honest and cheaper than inferring
@@ -1178,6 +1099,44 @@ export function sampleStackGridMasks(
         mask[z1 * nx + x1]
           ? 1
           : 0;
+    }
+    return out;
+  });
+}
+
+/**
+ * Sample per-node WEIGHTS produced in grid space (e.g. the seal's `inferred`
+ * weights) at the shared vertices.
+ *
+ * ⚠️ Bilinear, unlike the two mask samplers, which round to a conservative side.
+ * A weight is already continuous, so interpolating it is the honest reading — and
+ * it is what lets a marking derived from one fade rather than step.
+ *
+ * @group Geometries
+ */
+export function sampleStackWeights(
+  reference: StackReference,
+  coords: Float32Array,
+  weights: Float32Array[],
+): Float32Array[] {
+  const { nx, ny } = reference.header;
+  const vertices = coords.length >> 1;
+  return weights.map(weight => {
+    const out = new Float32Array(vertices);
+    for (let v = 0; v < vertices; v++) {
+      const col = Math.min(Math.max(coords[2 * v], 0), nx - 1);
+      const row = Math.min(Math.max(coords[2 * v + 1], 0), ny - 1);
+      const x0 = Math.floor(col);
+      const z0 = Math.floor(row);
+      const x1 = Math.min(x0 + 1, nx - 1);
+      const z1 = Math.min(z0 + 1, ny - 1);
+      const fx = col - x0;
+      const fz = row - z0;
+      const a = weight[z0 * nx + x0];
+      const b = weight[z0 * nx + x1];
+      const c = weight[z1 * nx + x0];
+      const d = weight[z1 * nx + x1];
+      out[v] = (a + (b - a) * fx) * (1 - fz) + (c + (d - c) * fx) * fz;
     }
     return out;
   });
@@ -1265,12 +1224,15 @@ export function stackDepthStats(heights: Float32Array[]): StackLayerDepth[] {
  *   crossing is resolved by pushing the deeper surface onto the shallower one,
  *   which on a shared tessellation leaves two geometrically IDENTICAL triangles at
  *   the same depth — the worst case for the depth buffer, and the last remaining
- *   source of z-fighting.
+ *   source of z-fighting. ⚠️ Which of the pair goes is inverted for a void's
+ *   ceiling; see {@link StackCollapseOptions.ceiling}.
  *
  * Heights and rims are untouched, so the walls still close and the block stays
- * sealed. A triangle is only dropped when ALL THREE of its vertices qualify;
- * partly-absent triangles are kept, so terminations follow triangle edges (the
- * exact zero-thickness contour is not a mesh edge yet).
+ * sealed. A triangle whose thickness has collapsed is dropped only when ALL THREE
+ * of its vertices are thin (exact — see {@link makeAbsentTriangleTest}), so a
+ * termination follows triangle edges; a triangle reaching past the edge of a
+ * layer's DATA is dropped as soon as one vertex is uncovered, so what is drawn
+ * stays inside what is mapped.
  *
  * @param heights per-layer vertex heights, already resolved
  * @param indices the shared triangle indices
@@ -1278,6 +1240,30 @@ export function stackDepthStats(heights: Float32Array[]): StackLayerDepth[] {
  *
  * @group Geometries
  */
+// Whether a layer is absent across a whole TRIANGLE, from whichever of the two
+// masks were given. Shared by the collapse and the interval test so they cannot
+// drift — the walls have to stop exactly where the surfaces do.
+//
+// ⭐ The two masks are read with DIFFERENT rules, deliberately:
+// - `absent` (a truncation) is derived from the HEIGHTS, which vary linearly over
+//   the shared topology, so all three corners cut means the whole triangle is cut.
+// - `coverage` is BINARY and interpolates nothing. Requiring all three would mean
+//   "draw wherever any corner has data", extending a layer up to a whole triangle
+//   past its survey — and in an unmapped flat there is nothing for the refinement
+//   to chase, so that triangle can be very large.
+function makeAbsentTriangleTest(
+  options: StackCollapseOptions,
+  layer: number,
+): (a: number, b: number, c: number) => boolean {
+  const coverage = options.coverage?.[layer];
+  const cut = options.absent?.[layer];
+  if (!coverage && !cut) return () => false;
+  return (a, b, c) =>
+    (coverage
+      ? coverage[a] === 0 || coverage[b] === 0 || coverage[c] === 0
+      : false) || (cut ? cut[a] === 1 && cut[b] === 1 && cut[c] === 1 : false);
+}
+
 export function collapseStackTriangles(
   heights: Float32Array[],
   indices: Uint32Array,
@@ -1292,10 +1278,15 @@ export function collapseStackTriangles(
   heights.forEach((current, layer) => {
     const coverage = options.coverage?.[layer];
     const cut = options.absent?.[layer];
+    // A void's ceiling is the invention of the pair, so it yields to the horizon
+    // BELOW it instead of the horizon below yielding to it.
+    const isCeiling = options.ceiling?.[layer] === true;
+    const aboveIsCeiling = layer > 0 && options.ceiling?.[layer - 1] === true;
     // The shallowest layer has nothing above it to collapse onto, but it can
     // still be absent.
-    const above = layer > 0 ? heights[layer - 1] : null;
-    if (!coverage && !cut && !above) {
+    const above = layer > 0 && !aboveIsCeiling ? heights[layer - 1] : null;
+    const below = isCeiling ? (heights[layer + 1] ?? null) : null;
+    if (!coverage && !cut && !above && !below) {
       out.push(null);
       dropped.push(0);
       droppedAbsent.push(0);
@@ -1303,8 +1294,7 @@ export function collapseStackTriangles(
       return;
     }
 
-    const missing = (v: number) =>
-      (coverage ? coverage[v] === 0 : false) || (cut ? cut[v] === 1 : false);
+    const missing = makeAbsentTriangleTest(options, layer);
 
     const kept = new Uint32Array(indices.length);
     let n = 0;
@@ -1314,7 +1304,7 @@ export function collapseStackTriangles(
       const a = indices[i];
       const b = indices[i + 1];
       const c = indices[i + 2];
-      if (missing(a) && missing(b) && missing(c)) {
+      if (missing(a, b, c)) {
         absentDrops++;
         continue;
       }
@@ -1323,6 +1313,17 @@ export function collapseStackTriangles(
         above[a] - current[a] <= threshold &&
         above[b] - current[b] <= threshold &&
         above[c] - current[c] <= threshold
+      ) {
+        collapsedDrops++;
+        continue;
+      }
+      // A ceiling that has closed onto the horizon below it is a duplicate of it,
+      // and the horizon is the one worth keeping.
+      if (
+        below &&
+        current[a] - below[a] <= threshold &&
+        current[b] - below[b] <= threshold &&
+        current[c] - below[c] <= threshold
       ) {
         collapsedDrops++;
         continue;
@@ -1339,6 +1340,64 @@ export function collapseStackTriangles(
   });
 
   return { indices: out, dropped, droppedAbsent, droppedCollapsed };
+}
+
+/**
+ * Which of the shared triangles each INTERVAL occupies — the volume between two
+ * adjacent layers, as opposed to {@link collapseStackTriangles}, which answers the
+ * same question for the surfaces.
+ *
+ * The interval exists where it has thickness and where each of its two bounding
+ * surfaces is present — by the same test the collapse uses
+ * ({@link makeAbsentTriangleTest}), so an interval's triangles are a subset of the
+ * ones its lower surface draws and the wall traced around them meets that
+ * surface's edge. ⚠️ Note this is NOT the intersection of the two layers' KEPT
+ * sets: a layer dropped for being coincident with the one above it (the interval
+ * ABOVE it is empty) still bounds a perfectly real volume below. Using the kept
+ * sets would delete those volumes.
+ *
+ * @param heights per-layer vertex heights, after the resolve
+ * @param indices the shared triangle indices
+ * @param options the same masks and threshold the collapse was given
+ * @returns one mask per interval (`length - 1` of them): 1 where the volume
+ *   between layer `i` and layer `i + 1` is present
+ *
+ * @group Geometries
+ */
+export function stackIntervalTriangles(
+  heights: Float32Array[],
+  indices: Uint32Array,
+  options: StackCollapseOptions = {},
+): Uint8Array[] {
+  const threshold = options.threshold ?? 0.5;
+  const triangles = indices.length / 3;
+  const out: Uint8Array[] = [];
+
+  for (let i = 0; i + 1 < heights.length; i++) {
+    const top = heights[i];
+    const bottom = heights[i + 1];
+    const topMissing = makeAbsentTriangleTest(options, i);
+    const bottomMissing = makeAbsentTriangleTest(options, i + 1);
+    const member = new Uint8Array(triangles);
+    for (let t = 0; t < triangles; t++) {
+      const a = indices[3 * t];
+      const b = indices[3 * t + 1];
+      const c = indices[3 * t + 2];
+      if (topMissing(a, b, c)) continue;
+      if (bottomMissing(a, b, c)) continue;
+      if (
+        top[a] - bottom[a] <= threshold &&
+        top[b] - bottom[b] <= threshold &&
+        top[c] - bottom[c] <= threshold
+      ) {
+        continue;
+      }
+      member[t] = 1;
+    }
+    out.push(member);
+  }
+
+  return out;
 }
 
 /**
