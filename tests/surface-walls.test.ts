@@ -300,4 +300,20 @@ describe('buildStackWalls', () => {
     expect(uv.getY(0)).toBe(0);
     expect(uv.getY(1)).toBe(-100);
   });
+
+  it('gives the wall a unit-relative wallV alongside the metric UVs', () => {
+    const wall = buildStackWalls(
+      tessellation,
+      positionsXZ,
+      [flat(0), flat(-100)],
+      { fills: [true, false], threshold: 0.5 },
+    ).walls[0]!;
+
+    const wallV = wall.getAttribute('wallV');
+    expect(wallV.count).toBe(wall.getAttribute('position').count);
+    // Exact by construction: each ring point emits one top vertex and one bottom.
+    for (let i = 0; i < wallV.count; i++) {
+      expect(wallV.getX(i)).toBe(i % 2 === 0 ? 1 : 0);
+    }
+  });
 });

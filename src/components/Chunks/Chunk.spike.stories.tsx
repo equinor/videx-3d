@@ -24,6 +24,7 @@ import storyArgs from '../../storybook/story-args.json';
 import { UtmArea } from '../UtmArea';
 import { Chunk } from './Chunk';
 import { ChunkLayer, layersFromGroups } from './chunk-defs';
+import { CHUNK_DETAIL_PRESET_NAMES, ChunkDetailPreset } from './chunk-detail';
 import { ChunkStack } from './ChunkStack';
 
 const utmZone = storyArgs.utmZone;
@@ -73,6 +74,8 @@ type ChunkStoryProps = {
   surfaceOpacity: number;
   wallOpacity: number;
   wireframe: boolean;
+  detail: ChunkDetailPreset | 'none';
+  detailStrength: number;
   resolve: boolean;
   resolveMode: 'clamp' | 'truncate';
   minGap: number;
@@ -118,14 +121,24 @@ const ChunkStory = (props: ChunkStoryProps) => {
   // The block's floor is the COLUMN's carrier: one flat plane declared on the
   // stack, drawn by the chunk that closes the block.
   const layers = useMemo<ChunkLayer[]>(() => {
-    const own = layersFromGroups(groups);
+    const detail =
+      props.detail === 'none'
+        ? undefined
+        : { preset: props.detail, strength: props.detailStrength };
+    const own = layersFromGroups(groups).map(layer => ({ ...layer, detail }));
     if (!props.showFloor || own.length === 0) return own;
     return [
       ...own.slice(0, -1),
       { ...own[own.length - 1], fill: props.floorColor },
-      { carrier: true, material: props.floorColor },
+      { carrier: true, material: props.floorColor, detail },
     ];
-  }, [groups, props.showFloor, props.floorColor]);
+  }, [
+    groups,
+    props.showFloor,
+    props.floorColor,
+    props.detail,
+    props.detailStrength,
+  ]);
 
   // Memoized so a stable identity is passed to Chunk (a new object rebuilds).
   const resolve = useMemo(
@@ -190,6 +203,8 @@ export const Default: Story = {
     surfaceOpacity: 1,
     wallOpacity: 1,
     wireframe: false,
+    detail: 'none',
+    detailStrength: 1,
     // Floor
     showFloor: true,
     floorClearance: 800,
@@ -239,6 +254,18 @@ export const Default: Story = {
       table: { category: 'Appearance' },
     },
     wireframe: { control: 'boolean', table: { category: 'Appearance' } },
+    detail: {
+      control: 'select',
+      options: ['none', ...CHUNK_DETAIL_PRESET_NAMES],
+      description:
+        'Procedural surface relief, applied to every layer’s cap and wall. Anchored in WORLD space, so it needs no per-surface repeat/scale and is continuous across a cap and the wall below it. Only resolves as the camera comes in — the footprint fade takes it out long before it could alias.',
+      table: { category: 'Appearance' },
+    },
+    detailStrength: {
+      control: { type: 'range', min: 0, max: 3, step: 0.1 },
+      description: 'Scales the detail preset. 1 = as designed.',
+      table: { category: 'Appearance' },
+    },
     showFloor: {
       control: 'boolean',
       description:

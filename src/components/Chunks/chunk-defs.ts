@@ -9,6 +9,7 @@ import {
   SurfaceMeta,
   Vec2,
 } from '../../sdk';
+import { ChunkDetail } from './chunk-detail';
 
 /** Generator key for the {@link Chunk} geometry generator. */
 export const surfaceChunk = 'surfaceChunk';
@@ -175,6 +176,15 @@ export type ChunkLayer = {
    * and a bare surface with no thickness are both expressed.
    */
   fill?: string | Material | boolean | null;
+  /**
+   * Procedural surface relief for this layer's cap AND the volume below it — a
+   * {@link ChunkDetail} preset such as `'sand'` or `'shale'`, adding subtle
+   * texture-free detail once the camera is close. OFF when omitted.
+   *
+   * ⚠️ Ignored where {@link ChunkLayer.material} / {@link ChunkLayer.fill} supply a
+   * `Material`: that one is the caller's and is used exactly as given.
+   */
+  detail?: ChunkDetail;
   /**
    * Opacity for this layer's cap AND the volume below it, OVERRIDING the chunk's
    * `surfaceOpacity` / `wallOpacity`.

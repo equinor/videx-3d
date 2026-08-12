@@ -68,6 +68,13 @@ export type RingWallOptions = {
  * procedural relief. ⚠️ `u` wraps back to 0 on the closing segment, so a repeating
  * pattern has one seam per ring.
  *
+ * **`wallV`**: a second, UNIT-RELATIVE vertical coordinate — 1 on the wall's top edge,
+ * 0 on its bottom — for anything that should follow the interval rather than absolute
+ * depth (a fade toward either edge, bedding that spans the unit, the ocean volume
+ * shader's displacement taper). It is exact by construction, since each ring point
+ * emits exactly one top and one bottom vertex. ⚠️ Kept SEPARATE from `uv`, which stays
+ * metric on purpose.
+ *
  * **`inferred`**: an optional per-vertex attribute, present only when a ring
  * supplied one. It is interpolated across the strip, so a marking drawn from it
  * FADES rather than steps — which is why this is one attribute on one mesh rather
@@ -87,6 +94,7 @@ export function buildRingWalls(
   const positions: number[] = [];
   const normals: number[] = [];
   const uvs: number[] = [];
+  const wallV: number[] = [];
   const marks: number[] = [];
   const indices: number[] = [];
   let tagged = false;
@@ -127,10 +135,12 @@ export function buildRingWalls(
       positions.push(points[k][0], topY[k], points[k][1]); // top vertex
       normals.push(nx, 0, nz);
       uvs.push(arc, topY[k]);
+      wallV.push(1);
       marks.push(mark);
       positions.push(points[k][0], bottomY[k], points[k][1]); // bottom vertex
       normals.push(nx, 0, nz);
       uvs.push(arc, bottomY[k]);
+      wallV.push(0);
       marks.push(mark);
       return index;
     };
@@ -188,6 +198,10 @@ export function buildRingWalls(
     new BufferAttribute(new Float32Array(normals), 3),
   );
   geometry.setAttribute('uv', new BufferAttribute(new Float32Array(uvs), 2));
+  geometry.setAttribute(
+    'wallV',
+    new BufferAttribute(new Float32Array(wallV), 1),
+  );
   // Only when something is actually marked — its presence is what tells the
   // appearance layer there is anything to draw an overlay for.
   if (tagged && marks.some(v => v > 0)) {

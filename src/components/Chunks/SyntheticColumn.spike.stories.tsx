@@ -76,6 +76,8 @@ type SyntheticColumnProps = {
   surfaceOpacity: number;
   wallOpacity: number;
   wireframe: boolean;
+  detail: boolean;
+  detailStrength: number;
   inferredStyle: ChunkInferenceStyle;
 };
 
@@ -126,10 +128,16 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
   const layers = useMemo<ChunkLayer[]>(() => {
     if (column.length === 0) return [];
     return column.map((surface, i) => {
-      const colour = CLASS_COLOUR[selected[i]?.class ?? 'shale'];
-      return { surface, material: colour, fill: colour };
+      const sediment = selected[i]?.class ?? 'shale';
+      const colour = CLASS_COLOUR[sediment];
+      // ⭐ The class → detail mapping is the story's, exactly like the colour one:
+      // the library ships the presets but never decides which unit is sand.
+      const detail = props.detail
+        ? { preset: sediment, strength: props.detailStrength }
+        : undefined;
+      return { surface, material: colour, fill: colour, detail };
     });
-  }, [column, selected]);
+  }, [column, selected, props.detail, props.detailStrength]);
 
   const resolve = useMemo<ChunkResolveOptions>(
     () => ({
@@ -247,6 +255,8 @@ export const Default: Story = {
     surfaceOpacity: 1,
     wallOpacity: 1,
     wireframe: false,
+    detail: false,
+    detailStrength: 1,
     inferredStyle: 'hatched',
   },
   argTypes: {
@@ -317,6 +327,17 @@ export const Default: Story = {
       table: { category: 'Appearance' },
     },
     wireframe: { control: 'boolean', table: { category: 'Appearance' } },
+    detail: {
+      control: 'boolean',
+      description:
+        'Procedural surface relief, with each unit taking the preset named after its SEDIMENT CLASS. ⭐ That mapping is the story’s, not the library’s — the presets exist, but which unit is sand is host knowledge, exactly like colour. Anchored in world space, so it needs no per-surface repeat/scale and only resolves as the camera comes in.',
+      table: { category: 'Appearance' },
+    },
+    detailStrength: {
+      control: { type: 'range', min: 0, max: 3, step: 0.1 },
+      description: 'Scales every detail preset. 1 = as designed.',
+      table: { category: 'Appearance' },
+    },
     inferredStyle: {
       control: 'select',
       options: ['none', 'hatched', 'checker', 'zigzag'],

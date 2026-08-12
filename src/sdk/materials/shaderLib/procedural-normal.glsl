@@ -50,11 +50,17 @@ float pnHash2(vec2 p) {
   return fract((p3.x + p3.y) * p3.z);
 }
 
-// 2D value noise (smoothstep-interpolated).
-float pnValueNoise2(vec2 p) {
+// 2D value noise (smoothstep-interpolated) WITH its analytic gradient:
+// vec3(value, d/dp.x, d/dp.y). The gradient is exact for the same lattice + interpolant
+// pnValueNoise2 uses, and costs no extra hashes - only a few multiplies - so a caller
+// that needs a slope should always prefer it over screen-space derivatives, which make a
+// bump pattern SWIM as the camera moves (the estimate is taken over the pixel footprint,
+// which changes with distance and grazing angle).
+vec3 pnValueNoise2Grad(vec2 p) {
   vec2 i = floor(p);
   vec2 f = fract(p);
-  f = f * f * (3.0 - 2.0 * f);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  vec2 du = 6.0 * f * (1.0 - f); // d(smoothstep)/df
   // Wrap the integer lattice at PN_WRAP so the noise tiles seamlessly when a caller reduces
   // a huge coordinate into [0, PN_WRAP) (identity for the small coords normal use produces).
   vec2 i0 = mod(i, PN_WRAP);
@@ -63,7 +69,18 @@ float pnValueNoise2(vec2 p) {
   float b = pnHash2(vec2(i1.x, i0.y));
   float c = pnHash2(vec2(i0.x, i1.y));
   float d = pnHash2(i1);
-  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  // Bilinear form: a + (b-a)u.x + (c-a)u.y + (a-b-c+d)u.x*u.y
+  float k1 = b - a;
+  float k2 = c - a;
+  float k3 = a - b - c + d;
+  float value = a + k1 * u.x + k2 * u.y + k3 * u.x * u.y;
+  vec2 grad = vec2(du.x * (k1 + k3 * u.y), du.y * (k2 + k3 * u.x));
+  return vec3(value, grad);
+}
+
+// 2D value noise (smoothstep-interpolated).
+float pnValueNoise2(vec2 p) {
+  return pnValueNoise2Grad(p).x; // the gradient is dead code here and compiles away
 }
 
 // Fractional Brownian motion with a dynamic (uniform-driven) octave count. The loop
@@ -124,6 +141,73 @@ float pnFbm2Auto(vec2 p, int octaves, float periodX) {
   return periodX > 0.5 ? pnFbm2Tiled(p, periodX, octaves) : pnFbm2(p, octaves);
 }
 
+// SIGNED fbm (-0.5 .. 0.5) with PER-OCTAVE footprint AA: each octave fades out as ITS OWN
+// cells approach a pixel, so the field degrades gracefully toward its coarse structure
+// instead of vanishing all at once - and flattens to ZERO (not to a constant offset), so
+// a caller can drive both a normal and an albedo term from it without a DC shift
+// appearing at distance.
+//
+// ⭐ Prefer this over `pnFbm2 * pnFootprintFade` wherever the pattern is drawn on
+// something LARGE: pnFootprintFade kills the WHOLE layer as soon as its FINEST octave is
+// under-sampled, which is right for a close-up object and far too eager for a landscape,
+// where the coarse octaves are still perfectly well sampled. Because an fbm octave's
+// slope (amplitude x frequency) is roughly constant, dropping the fine octaves smooths
+// the relief without flattening it.
+//
+// Must be called under uniform control flow (screen-space derivatives).
+float pnFbmSigned2Filtered(vec2 p, int octaves) {
+  vec2 d = fwidth(p);
+  float cells = max(d.x, d.y);
+  float sum = 0.0;
+  float amp = 0.5;
+  float norm = 0.0;
+  for(int o = 0; o < 8; o++) {
+    if(o >= octaves)
+      break;
+    float aa = 1.0 - smoothstep(0.4, 1.0, cells);
+    // An under-sampled octave still counts toward the normalisation - it just
+    // contributes nothing, which is what makes the field SMOOTH with distance rather
+    // than gain contrast as its fine detail drops out.
+    if(aa > 0.0)
+      sum += amp * aa * (pnValueNoise2(p) - 0.5);
+    norm += amp;
+    p *= 2.02;
+    cells *= 2.02;
+    amp *= 0.5;
+  }
+  return norm > 0.0 ? sum / norm : 0.0;
+}
+
+// As pnFbmSigned2Filtered, but also accumulating the ANALYTIC gradient:
+// vec3(value, d/dp.x, d/dp.y). Only the fade still comes from the pixel footprint, and a
+// fade is an amplitude, so the pattern SMOOTHS with distance rather than sliding around
+// as a screen-space gradient would make it.
+vec3 pnFbmSigned2FilteredGrad(vec2 p, int octaves) {
+  vec2 d = fwidth(p);
+  float cells = max(d.x, d.y);
+  float sum = 0.0;
+  vec2 grad = vec2(0.0);
+  float amp = 0.5;
+  float norm = 0.0;
+  float freq = 1.0; // chain rule: octave o is sampled at p * freq
+  for(int o = 0; o < 8; o++) {
+    if(o >= octaves)
+      break;
+    float aa = 1.0 - smoothstep(0.4, 1.0, cells);
+    if(aa > 0.0) {
+      vec3 n = pnValueNoise2Grad(p);
+      sum += amp * aa * (n.x - 0.5);
+      grad += amp * aa * freq * n.yz;
+    }
+    norm += amp;
+    p *= 2.02;
+    cells *= 2.02;
+    freq *= 2.02;
+    amp *= 0.5;
+  }
+  return norm > 0.0 ? vec3(sum, grad) / norm : vec3(0.0);
+}
+
 // GRANULAR: isotropic value-noise bumps; `anisotropy` (0..1) stretches the cells along
 // uv.y. Signed height. periodX > 0 tiles x (e.g. a circumference).
 float pnGranular(vec2 uv, float anisotropy, int octaves, float periodX) {
@@ -131,15 +215,34 @@ float pnGranular(vec2 uv, float anisotropy, int octaves, float periodX) {
   return pnFbm2Auto(p, octaves, periodX) - 0.5;
 }
 
+// GRANULAR for LARGE surfaces: same pattern, but built on pnFbmSigned2Filtered so it
+// smooths with distance instead of being switched off by a whole-layer pnFootprintFade
+// (do NOT apply one on top). No x-tiling. Signed height, and exactly zero once even the
+// coarsest octave is under-sampled, so it can safely drive an albedo term too.
+float pnGranularFiltered(vec2 uv, float anisotropy, int octaves) {
+  vec2 p = vec2(uv.x, uv.y * mix(1.0, 0.04, anisotropy));
+  return pnFbmSigned2Filtered(p, octaves);
+}
+
+// As pnGranularFiltered, but returning vec3(height, d/duv.x, d/duv.y) so the caller can
+// tilt a normal from the EXACT slope instead of a screen-space estimate - the difference
+// between detail that sits on the surface and detail that slides across it as the camera
+// moves. Tilt a plane-aligned normal with `N - (g.y * U + g.z * V)` for the plane's unit
+// axes U, V (the same construction pnDunes is used with).
+vec3 pnGranularFilteredGrad(vec2 uv, float anisotropy, int octaves) {
+  float squash = mix(1.0, 0.04, anisotropy);
+  vec3 n = pnFbmSigned2FilteredGrad(vec2(uv.x, uv.y * squash), octaves);
+  return vec3(n.x, n.y, n.z * squash); // chain rule for the squashed y axis
+}
+
 // BRUSHED: a directional fine grain - thin parallel ridges running at `angle` (radians;
 // 0 = along uv.y). `sharpness` (0..1) thins the ridges (their "width"); `uniformity`
 // (0..1) blends from an irregular grain to perfectly regular flutes. Positive height.
 // Tiling is exact only for angle == 0; other angles degrade gracefully (a faint seam).
-float pnGrain(vec2 uv, float angle, float sharpness, float uniformity, int octaves, float periodX) {
-  float ca = cos(angle), sa = sin(angle);
-  vec2 r = vec2(uv.x * ca - uv.y * sa, uv.x * sa + uv.y * ca);
-  float tile = abs(angle) < 1e-3 ? periodX : 0.0;
-  float n = pnFbm2Auto(vec2(r.x, r.y * 0.06), octaves, tile);
+
+// The shape both grain variants share: `r` is the rotated sample coordinate and `n` the
+// fbm value (0..1) they differ in how they obtained.
+float pnGrainShape(vec2 r, float n, float sharpness, float uniformity) {
   // Irregular grain (fbm-smooth, so it has no cusp to alias); `sharpness` thins the ridges.
   float irregular = pow(1.0 - abs(2.0 * n - 1.0), mix(2.0, 8.0, clamp(sharpness, 0.0, 1.0)));
   // Regular flutes: footprint-anti-aliased evenly-spaced ridges (period 1 in r.x). A
@@ -158,6 +261,24 @@ float pnGrain(vec2 uv, float angle, float sharpness, float uniformity, int octav
   // sine there and still shimmers even though the edges are footprint-AA'd.
   regular = mix(regular, 2.0 * hw, smoothstep(0.3, 0.5, aaw));
   return mix(irregular, regular, clamp(uniformity, 0.0, 1.0));
+}
+
+float pnGrain(vec2 uv, float angle, float sharpness, float uniformity, int octaves, float periodX) {
+  float ca = cos(angle), sa = sin(angle);
+  vec2 r = vec2(uv.x * ca - uv.y * sa, uv.x * sa + uv.y * ca);
+  float tile = abs(angle) < 1e-3 ? periodX : 0.0;
+  float n = pnFbm2Auto(vec2(r.x, r.y * 0.06), octaves, tile);
+  return pnGrainShape(r, n, sharpness, uniformity);
+}
+
+// BRUSHED for LARGE surfaces: the irregular component is built on the per-octave-filtered
+// fbm, so the grain smooths with distance rather than shimmering (the flute component was
+// already band-limited). No x-tiling.
+float pnGrainFiltered(vec2 uv, float angle, float sharpness, float uniformity, int octaves) {
+  float ca = cos(angle), sa = sin(angle);
+  vec2 r = vec2(uv.x * ca - uv.y * sa, uv.x * sa + uv.y * ca);
+  float n = pnFbmSigned2Filtered(vec2(r.x, r.y * 0.06), octaves) + 0.5;
+  return pnGrainShape(r, n, sharpness, uniformity);
 }
 
 // SCRATCHES: sparse, thin grooves crossing at varied angles/lengths - a cell/segment
@@ -241,6 +362,69 @@ float pnScratches(vec2 uv, float angle, float density, float lengthScale, float 
   }
 
   return -max(fine, coarse);
+}
+
+// DUNES: large meandering directional ridges (a wind-blown sand bed, a ripple field).
+// Unlike the patterns above this returns the ANALYTIC slope of the height field in the
+// sample plane, not a height, so the caller tilts a plane-aligned normal directly:
+//   N = normalize(N + vec3(-g.x, 0.0, -g.y) * strength);   // for a world-XZ sample
+// The exact gradient is what makes it usable at this scale: perturbNormalHeight estimates
+// the gradient from SCREEN-SPACE derivatives, which degrades at grazing angles - precisely
+// how a sea bed or a wide cap is seen once the ridges are big enough to read.
+//
+//   p          : the sample position in WORLD units (NOT pre-scaled by a frequency;
+//                `wavelength` sets the size of the coarsest ridge)
+//   direction  : ridge propagation direction in the sample plane
+//   texel      : world units per pixel, `length(fwidth(p))` - each octave fades out as its
+//                wavelength approaches a pixel, so the field flattens smoothly with distance
+//                instead of shimmering
+//   height     : out, the normalised crest height (-1..1), for a faint albedo banding
+// The returned slope is normalised (divided by k and the amplitude sum), so it is ~unit
+// order and independent of `wavelength`: the caller's strength reads as a direct tilt.
+vec2 pnDunes(vec2 p, float wavelength, vec2 direction, float texel, out float height) {
+  height = 0.0;
+  vec2 slope = vec2(0.0);
+  float lambda = max(wavelength, 1.0);
+
+  // Low-frequency domain warp so the ridges meander and never read as one straight 1D
+  // ripple (or an obviously tiled pattern far out). It is far below the ridge frequency,
+  // so the local wavelength is essentially unchanged and the unwarped `texel` stays a
+  // valid footprint estimate.
+  vec2 wq = p / lambda * 0.7;
+  vec2 warp = vec2(pnValueNoise2(wq), pnValueNoise2(wq + 19.3)) - 0.5;
+  vec2 q = p + warp * lambda * 0.9;
+
+  vec2 dir = normalize(direction + vec2(1e-4, 0.0));
+  float k = 6.2831853 / lambda;
+  float amp = 1.0;
+  float ampSum = 0.0;
+  float ca = cos(0.7);
+  float sa = sin(0.7);
+
+  for(int i = 0; i < 4; i++) {
+    ampSum += amp;
+    float aa = 1.0 - smoothstep(1.5, 3.0, k * texel);
+    if(aa > 0.001) {
+      vec2 perp = vec2(-dir.y, dir.x);
+      float along = dot(q, dir);
+      float across = dot(q, perp);
+      // Meander the crest lines along the perpendicular axis so the ridges wave.
+      float meander = sin(across * k * 0.35) * 1.3;
+      float phase = along * k + meander;
+      height += amp * sin(phase) * aa;
+      // d(phase)/dq divided by k: the dir term is the ridge slope, the perp term the tilt
+      // the meander adds.
+      vec2 dphaseN = dir + perp * (1.3 * cos(across * k * 0.35) * 0.35);
+      slope += amp * cos(phase) * dphaseN * aa;
+    }
+    k *= 1.9;
+    amp *= 0.5;
+    // Rotate the ridge direction each octave to decorrelate the layers.
+    dir = vec2(dir.x * ca - dir.y * sa, dir.x * sa + dir.y * ca);
+  }
+
+  height /= max(ampSum, 1e-3);
+  return slope / max(ampSum, 1e-3);
 }
 
 // Footprint anti-aliasing factor (1 near .. 0 sub-pixel). Fades a pattern out as its

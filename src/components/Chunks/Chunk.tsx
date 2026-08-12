@@ -30,6 +30,7 @@ import {
   SurfaceChunkResponse,
 } from './chunk-defs';
 import { buildSurfaceChunkSpec } from './chunk-spec';
+import { chunkDetailKey } from './chunk-detail';
 import { ChunkStackContext, ChunkSurfaceClaim } from './ChunkContext';
 import { ChunkMeshes } from './ChunkMeshes';
 import { ChunkOutline, CutoutSource, resolveCutoutSource } from './cutout';
@@ -201,7 +202,7 @@ export const Chunk = ({
   const appearanceKey = layers
     .map(
       l =>
-        `${appearanceId(l.material)}|${appearanceId(l.fill)}|${l.opacity ?? ''}`,
+        `${appearanceId(l.material)}|${appearanceId(l.fill)}|${l.opacity ?? ''}|${chunkDetailKey(l.detail)}`,
     )
     .join(',');
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above

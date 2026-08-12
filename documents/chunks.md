@@ -112,6 +112,39 @@ collapses. The component boundaries must enforce layer 2 ≠ layer 3.
 > some appearance changes, but that is a *material* concern — it must not cascade
 > into a *geometry* rebuild.
 
+### 3.1 The chunk material (built 2026-08-12)
+
+Caps and walls are drawn with `ChunkMaterial` — a library `ShaderMaterial` (Blinn-Phong
++ `attachOitVariants`), replacing the stock `MeshStandardMaterial` that `ChunkMeshes`
+used to patch through `makeOitCompatible`. Three reasons it is worth owning:
+
+- **Procedural detail.** `ChunkLayer.detail` selects a `ChunkDetailPreset` (`sand`,
+  `silt`, `shale`, `carbonate`, `salt`, `coal`, `basement`, `seabed`) which adds
+  texture-free relief from `shaderLib/procedural-normal.glsl`, applied to the layer's cap
+  AND the wall of the interval below it. OFF by default; the only caller dial is one
+  overall `strength`. ⭐ The library ships the presets but never assigns one — which unit
+  is sand is host knowledge, exactly like colour (§ "colour is config"). The names match
+  `SedimentClass` so a generated column maps straight through.
+- **World anchoring instead of a UV.** The pattern coordinate is the WORLD position
+  projected onto the plane the face most nearly lies in. A cap carries a per-layer grid
+  uv and a wall a metric one, so there is no shared UV space; and a texture would need a
+  repeat/scale picked per surface, which is the problem this removes. A cap and the wall
+  below it therefore meet with the pattern continuous, and a vertical exaggeration does
+  not stretch it. On a wall the grain's vertical axis can follow `wallV` (0 at the
+  interval's base, 1 at its top — a new attribute from `buildRingWalls`, also what the
+  ocean volume shader needs) so bedding belongs to the UNIT rather than to a depth.
+- **⭐ It can opt out of the OIT passes that do not shade.** A fragment shader runs in
+  FOUR OIT passes and `oitProcess` is called at the END of main, so the min-depth and
+  occlusion passes would otherwise shade a fragment and throw the colour away.
+  `chunk-frag.glsl` returns straight after `diffuseColor` under `OIT_DEPTH_PASS` /
+  `OIT_OCCLUSION_PASS`, so the detail is paid for twice rather than four times.
+
+`detail` and `wall` are read at CONSTRUCTION (they set shader defines), which is
+consistent with layer 3 as it already works: `ChunkMeshes` rebuilds its materials on any
+appearance change, and a fresh identity is what makes the OIT pass re-classify. ⚠️ A
+caller-supplied `Material` is used as given, so detail (like the inference marking) does
+not apply to it.
+
 ## 4. Outline system (in flux — pluggable strategies)
 
 An outline is a first-class, derived object. A chunk consumes an outline; it does not

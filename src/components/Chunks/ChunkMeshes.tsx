@@ -1,7 +1,8 @@
 import { useEffect, useMemo } from 'react';
-import { DoubleSide, Material, MeshStandardMaterial } from 'three';
-import { makeOitCompatible } from '../../rendering/oit-material';
+import { Material } from 'three';
 import { SurfaceChunk } from '../../sdk';
+import { ChunkDetail } from './chunk-detail';
+import { ChunkMaterial } from './chunk-material';
 import { ChunkLayer, DEFAULT_PALETTE } from './chunk-defs';
 import {
   ChunkInferenceStyle,
@@ -72,20 +73,21 @@ export const ChunkMeshes = ({
     // Materials built here are owned here; a caller's Material is passed through
     // untouched, so the two are tracked separately for disposal.
     const owned: Material[] = [];
-    const make = (color: string, opacity: number) => {
-      const material = makeOitCompatible(
-        new MeshStandardMaterial({
-          color,
-          side: DoubleSide,
-          metalness: 0,
-          roughness: 1,
-          opacity,
-          transparent: opacity < 1,
-          depthWrite: opacity >= 1,
-          wireframe,
-          toneMapped: false,
-        }),
-      );
+    const make = (
+      color: string,
+      opacity: number,
+      detail?: ChunkDetail,
+      wall = false,
+    ) => {
+      const material = new ChunkMaterial({
+        color,
+        opacity,
+        transparent: opacity < 1,
+        depthWrite: opacity >= 1,
+        wireframe,
+        detail,
+        wall,
+      });
       owned.push(material);
       return material;
     };
@@ -96,22 +98,51 @@ export const ChunkMeshes = ({
     const surfaces = layers.map((layer, i) =>
       layer.material instanceof Material
         ? layer.material
-        : make(layer.material ?? paletteAt(i), layer.opacity ?? surfaceOpacity),
+        : make(
+            layer.material ?? paletteAt(i),
+            layer.opacity ?? surfaceOpacity,
+            layer.detail,
+          ),
     );
+
+    // A void's upper copy is drawn with the material of the interval ABOVE it, but
+    // it is a CAP: it has no `wallV` attribute, so it needs its own instance rather
+    // than the wall's (which anchors bedding to that axis). Only built where the
+    // chunk actually has such a copy.
+    const ceilingOf = new Set<number>();
+    for (const surface of chunk.surfaces) {
+      if (surface.ceiling) ceilingOf.add(surface.layer - 1);
+    }
 
     // `fill: true` means "the same as my own cap" — the common case for a zone
     // whose wall should read as the unit hanging below its top surface.
-    const walls = layers.map((layer, i) => {
+    const fillOf = (layer: ChunkLayer, i: number) => {
       const fill =
         layer.fill === true ? (layer.material ?? paletteAt(i)) : layer.fill;
-      if (fill === undefined || fill === null || fill === false) return null;
+      return fill === undefined || fill === null || fill === false
+        ? null
+        : fill;
+    };
+
+    const walls = layers.map((layer, i) => {
+      const fill = fillOf(layer, i);
+      if (fill === null) return null;
       return fill instanceof Material
         ? fill
-        : make(fill, layer.opacity ?? wallOpacity);
+        : make(fill, layer.opacity ?? wallOpacity, layer.detail, true);
     });
 
-    return { surfaces, walls, owned };
-  }, [layers, surfaceOpacity, wallOpacity, wireframe]);
+    const ceilings = layers.map((layer, i) => {
+      if (!ceilingOf.has(i)) return null;
+      const fill = fillOf(layer, i);
+      if (fill === null) return null;
+      return fill instanceof Material
+        ? fill
+        : make(fill, layer.opacity ?? wallOpacity, layer.detail);
+    });
+
+    return { surfaces, walls, ceilings, owned };
+  }, [chunk.surfaces, layers, surfaceOpacity, wallOpacity, wireframe]);
 
   useEffect(() => {
     return () => materials.owned.forEach(m => m.dispose());
@@ -176,7 +207,8 @@ export const ChunkMeshes = ({
           const fromAbove =
             surface.ceiling && !(declared?.carrier && declared.material);
           const material = fromAbove
-            ? (materials.walls[surface.layer - 1] ??
+            ? (materials.ceilings[surface.layer - 1] ??
+              materials.walls[surface.layer - 1] ??
               materials.surfaces[surface.layer])
             : materials.surfaces[surface.layer];
           if (!material) return null;
