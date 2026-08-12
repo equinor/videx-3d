@@ -25,7 +25,8 @@ The generator functions can be imported from `@equinor/videx-3d/generators` (def
 | **Shoes** | shoeSymbols | generateShoes | - position-logs<br/>- casings |
 | **Surface** | surfaceGeometry | generateSurfaceGeometry | - surface-meta<br/>- surface-values |
 | **Surface** | surfaceTextures | generateSurfaceTextureData | - surface-meta<br/>- surface-values |
-| **TubeTrajectory** | tubeTrajectory | generateTubeTrajectory | - position-logs |
+| **Trajectory** | trajectory | generateTrajectory | - position-logs |
+| **TubeTrajectory** _(deprecated — use Trajectory)_ | tubeTrajectory | generateTubeTrajectory | - position-logs |
 | **WellboreBounds** | wellboreBounds | calculateWellboreBounds | - position-logs |
 | **WellboreLabel** | wellboreLabel | generateWellboreLabel | - position-logs<br/>- wellbore-headers |
 | **WellboreSeismicSection** | wellboreSeismicSection | generateWellboreSeismicSection | - wellbore-seismic-section |

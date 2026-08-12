@@ -6,10 +6,9 @@ import { DataProviderDecorator } from '../../storybook/decorators/data-provider-
 import { DepthSelectorDecorator } from '../../storybook/decorators/depth-selector-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import storyArgs from '../../storybook/story-args.json';
-import { BasicTrajectory } from '../Wellbores/BasicTrajectory/BasicTrajectory';
 import { Casings } from '../Wellbores/Casings/Casings';
 import { FormationMarkers } from '../Wellbores/FormationMarkers';
-import { TubeTrajectory } from '../Wellbores/TubeTrajectory';
+import { Trajectory } from '../Wellbores/Trajectory/Trajectory';
 import { Wellbore } from '../Wellbores/Wellbore/Wellbore';
 import { WellboreBounds } from '../Wellbores/WellboreBounds/WellboreBounds';
 import { Distance } from './Distance';
@@ -52,7 +51,7 @@ export const Default: Story = {
       <>
         <Wellbore id={wellboreId}>
           <WellboreBounds id={wellboreId}>
-            <TubeTrajectory color="white" radius={2} />
+            <Trajectory color="white" radius={2} />
             <Distance {...args}>
               <FormationMarkers stratColumnId={stratColumnId} />
             </Distance>
@@ -77,10 +76,7 @@ export const OnDemand: Story = {
       <>
         <Wellbore id={wellboreId}>
           <WellboreBounds id={wellboreId}>
-            <BasicTrajectory />
-            <Distance min={0} max={3000}>
-              <TubeTrajectory radius={0.5} />
-            </Distance>
+            <Trajectory radius={0.5} />
             <Distance {...args} onDemand>
               <Casings sizeMultiplier={5} shoeFactor={1.3} />
             </Distance>
