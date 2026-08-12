@@ -1,4 +1,5 @@
 import { collectStackCandidates } from '../../sdk/geometries/surface-stack-candidates';
+// oxlint-disable-next-line import/default -- Vite virtual module; the `?worker&inline` query is resolved by the bundler, not by the linter's resolver.
 import RefineWorker from './stack-refine.worker?worker&inline';
 import type { RefineRequest, RefineResponse } from './stack-worker-types';
 

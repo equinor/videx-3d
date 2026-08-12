@@ -1099,11 +1099,11 @@ describe('constraining a layer’s data boundary', () => {
 
   // Drawn area of one layer, in grid cells.
   const drawnArea = (
-    build: ReturnType<typeof buildSurfaceStack>,
+    result: ReturnType<typeof buildSurfaceStack>,
     layer: number,
   ) => {
-    const t = build!.tessellation;
-    const indices = build!.collapsed?.indices[layer] ?? t.indices;
+    const t = result!.tessellation;
+    const indices = result!.collapsed?.indices[layer] ?? t.indices;
     let area = 0;
     for (let i = 0; i < indices.length; i += 3) {
       const a = indices[i];

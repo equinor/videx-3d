@@ -196,9 +196,9 @@ export const ChunkStack = ({
 
   const rebuildRegistry = useCallback(() => {
     const next: ChunkOutlineRegistry = new Map();
-    claims.current.forEach((surfaces, key) => {
+    claims.current.forEach((claimedSurfaces, key) => {
       const settled = polygons.current.get(key);
-      surfaces.forEach(({ id, top }) => {
+      claimedSurfaces.forEach(({ id, top }) => {
         const entry: ChunkOutlineEntry = {
           key,
           version: settled?.version ?? 0,
@@ -236,8 +236,8 @@ export const ChunkStack = ({
   }, []);
 
   const registerChunk = useCallback(
-    (key: string, surfaces: ChunkSurfaceClaim[]) => {
-      claims.current.set(key, surfaces);
+    (key: string, claimedSurfaces: ChunkSurfaceClaim[]) => {
+      claims.current.set(key, claimedSurfaces);
       rebuildRegistry();
       return () => {
         claims.current.delete(key);
@@ -281,7 +281,7 @@ export const ChunkStack = ({
     (
       key: string,
       polygon: PlanarPolygonGeometry | null | undefined,
-      rimSpacing?: number,
+      spacing?: number,
     ) => {
       if (polygon === undefined) {
         if (!polygons.current.has(key)) return;
@@ -291,13 +291,13 @@ export const ChunkStack = ({
         if (
           settled &&
           settled.polygon === polygon &&
-          settled.rimSpacing === rimSpacing
+          settled.rimSpacing === spacing
         ) {
           return;
         }
         polygons.current.set(key, {
           polygon,
-          rimSpacing,
+          rimSpacing: spacing,
           // A version rather than the polygon's identity, so a chunk consuming this
           // as a CUT has a content key it can memoize on — the registry itself is
           // rebuilt whole on every publish.

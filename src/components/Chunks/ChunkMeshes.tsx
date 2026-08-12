@@ -156,6 +156,7 @@ export const ChunkMeshes = ({
           // white MeshBasicMaterial. R3F does not dispose materials passed as
           // props; the ones built here are disposed by the effect above.
           return (
+            // oxlint-disable-next-line react/no-array-index-key -- `layer` is NOT unique: a void split gives two meshes the same layer index.
             <group key={`wall-${i}`}>
               <mesh geometry={wall.geometry} material={material} />
               {overlay && <mesh geometry={wall.geometry} material={overlay} />}
@@ -183,6 +184,7 @@ export const ChunkMeshes = ({
             ? overlays.surface(surface.layer)
             : null;
           return (
+            // oxlint-disable-next-line react/no-array-index-key -- `layer` is NOT unique: a void split gives two meshes the same layer index.
             <group key={`surface-${i}`}>
               <mesh geometry={surface.geometry}>
                 <primitive

@@ -291,7 +291,9 @@ describe('variation', () => {
       ...flat,
       erosionEncoding: 'mask',
       steps: flat.steps.map(step =>
-        step.kind === 'erosion' ? { ...step, encoding: 'clip' as const } : step,
+        step.kind === 'erosion'
+          ? Object.assign({}, step, { encoding: 'clip' as const })
+          : step,
       ),
     };
     expect(evaluateColumn(override, 0, 0)[a]).toBeCloseTo(2350, 6);

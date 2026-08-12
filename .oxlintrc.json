@@ -10,6 +10,7 @@
     "**/.*",
     "*.config.js",
     "scripts/*",
+    "documents/*",
     "storybook/*",
     "**/*.stories.{ts,tsx}"
     ],
@@ -22,12 +23,22 @@
     "no-unused-expressions": ["error", {"allowTernary": true, "allowShortCircuit": true}],
     "react/react-in-jsx-scope": "off",
     "no-underscore-dangle": "off",
-    "react-perf/jsx-no-new-array-as-prop": "off"
+    "react-perf/jsx-no-new-array-as-prop": "off",
+    "react-perf/jsx-no-new-object-as-prop": "off"
   },
   "overrides": [
     {
         "files": ["tests/*"],
-        "plugins": ["vitest"]
+        "plugins": ["vitest"],
+        "rules": {
+            "vitest/valid-expect": "off"
+        }
+    },
+    {
+        "files": ["src/generators/*"],
+        "rules": {
+            "oxc/no-this-in-exported-function": "off"
+        }
     },
     {
         "files": ["storybook/*", "**/*.stories.{ts,tsx}"],

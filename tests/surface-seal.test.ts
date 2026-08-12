@@ -345,13 +345,17 @@ describe('splitVoidChannels', () => {
 describe('which copy of a void pair survives', () => {
   // Three vertices of one triangle, in a stack of A / U / L / floor.
   const tri = new Uint32Array([0, 1, 2]);
-  const at = (y: number) => Float32Array.from([y, y, y]);
+  const plane = (y: number) => Float32Array.from([y, y, y]);
 
   const collapse = (uY: number, lY: number) =>
-    collapseStackTriangles([at(-1000), at(uY), at(lY), at(-2000)], tri, {
-      threshold: 0.5,
-      ceiling: [false, true, false, false],
-    });
+    collapseStackTriangles(
+      [plane(-1000), plane(uY), plane(lY), plane(-2000)],
+      tri,
+      {
+        threshold: 0.5,
+        ceiling: [false, true, false, false],
+      },
+    );
 
   it('drops the CEILING where it has closed onto the horizon below it', () => {
     // outside the void the copies are identical
@@ -364,7 +368,7 @@ describe('which copy of a void pair survives', () => {
 
   it('would drop the horizon instead without the flag — the bug this fixes', () => {
     const out = collapseStackTriangles(
-      [at(-1000), at(-1200), at(-1200), at(-2000)],
+      [plane(-1000), plane(-1200), plane(-1200), plane(-2000)],
       tri,
       { threshold: 0.5 },
     );
@@ -382,7 +386,7 @@ describe('which copy of a void pair survives', () => {
     // The unit above the split surface exists over mapped ground, which is why
     // the ceiling cannot simply be marked absent there.
     const member = stackIntervalTriangles(
-      [at(-1000), at(-1200), at(-1200), at(-2000)],
+      [plane(-1000), plane(-1200), plane(-1200), plane(-2000)],
       tri,
       { threshold: 0.5, ceiling: [false, true, false, false] },
     );
