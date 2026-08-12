@@ -29,13 +29,16 @@ building, GPU picking, and annotations from the start.
 A scene is a **vertical stack of chunks**, all built by the same component:
 
 - **`Chunk`** — an ordered run of boundaries (§2.3). Everything is one of these.
-- **`OceanChunk`** — water at sea level down to a seabed, using the animated water
-  shader; hosts buoyant children. Still built on the older per-layer builder.
-- **Basement** — *not* a component. A `Chunk` takes a `basement` prop
-  (`basement={{ thickness: 800 }}`) which closes the block off with a flat base and
-  a dark rock material. A synthetic `offset` layer (§2.4) expresses the same thing
-  in the layer list, and is the more consistent spelling; the `basement` slot
-  predates it and is kept as sugar.
+- **Water** — not a component: a synthetic layer (§2.4) at `depth`, whose interval
+  below it is the water body. It shares the tessellation with the sea bed under it.
+- **A floor** — not a component either: the column's **carrier** (§10.9), one flat
+  plane declared on the `ChunkStack` and drawn by the chunk that closes the block.
+
+⚠️ There were once an `OceanChunk` component and a `basement` slot on `Chunk`,
+both built on a separate per-layer builder. Both are **removed**: a tier of water
+and a block of basement rock are ordinary chunks, and saying so in one vocabulary
+is the whole point of the interval model. The animated water shader is a separate
+question — see §10.3.4.
 
 They all reuse the same **outline → clip → shared-rim → walls** machinery.
 
@@ -45,8 +48,8 @@ Interfaces between stacked surfaces are implicit in the chunking concept: **the 
 surface added is the top, the last is the base, and every surface in between is
 simultaneously the base of the interval above it and the top of the interval below.**
 
-- `OceanChunk` with a single surface → that surface is the **seabed**.
-- `OceanChunk` with more surfaces → they naturally become each other's tops/bases.
+- A water layer over a single surface → that surface is the **seabed**.
+- More surfaces below it → they naturally become each other's tops/bases.
 
 Where a watertight seam is wanted (e.g. water → seabed → geology), surfaces are
 shared vertex-for-vertex on a common rim. Where a **gap** is wanted (between
@@ -260,17 +263,15 @@ layers have no data anywhere inside it (§9.9.1), has nothing to draw. Without t
 state callback that is indistinguishable from a hang — which is exactly how it
 presents.
 
-## 6. Ocean & Basement specifics
+## 6. Water specifics
 
 - **Buoyancy is global and decoupled.** Floating objects use `useBuoyancy`, which
-  samples a single global wave field published by the ocean. Therefore an
-  `OceanChunk` can **clip the visible water** to a chunk outline **without**
-  constraining where buoyant objects live. Keep one global ocean wave field for
-  buoyancy/context; `OceanChunk` is just a clipped water surface + body view.
-- **Basement** has a **flat base** `thickness` below its top; the top is the chunk's
-  deepest surface (attached) or a standalone assigned/procedural (rocky) surface.
-  Deferred: expand the base outward (a "bottom of the void" feel) and a vertical
-  colour **gradient** (darker toward the base).
+  samples a single global wave field published by the ocean. So the visible water
+  can be clipped to a chunk outline **without** constraining where buoyant objects
+  live — keep one global wave field for buoyancy and context, and let the drawn
+  water be an ordinary chunk layer.
+- ⚠️ The water layer is currently drawn with the standard chunk material. Putting
+  the animated `Ocean` shader on it is open — §10.3.4.
 
 ## 7. Cross-cutting: LOD, workers, picking
 
@@ -284,9 +285,12 @@ presents.
 
 The component wraps and reuses the current SDK:
 
-- `createSurfaceChunk` (groups, walls, basement), `createClippedSurface`,
-  `densifyPolygon`, `buildIntervalWalls`, the constrained-Delaunay triangulator, and
-  the ocean-box builders.
+- `assembleChunk` (walls + metrics), `createClippedSurface`, `densifyPolygon`,
+  `buildIntervalWalls`, the constrained-Delaunay triangulator, and the ocean-box
+  builders. ⚠️ `createSurfaceChunk` / `clipChunkLayer` — the per-layer builder the
+  component originally wrapped — are **removed**: the shared tessellation replaced
+  them, and once the ocean and basement slots went, nothing but their own story and
+  tests still called them.
 - New SDK building blocks anticipated: **trajectory-vs-surface crossings**, the
   **outline generators** (distance-field / clustering / contour), and a **chunk
   worker generator**.
@@ -441,11 +445,41 @@ and how that dense chain meets a sparse interior is evidently what governs the
 bite. Unexplained; measure before theorising (a per-layer m² of "dropped triangles
 that had a corner on data" would settle it).
 
-⇒ The exact fix, if the bevel ever matters: trace each layer's mask boundary and
-insert it as **constraint edges** in `tessellateStack`, exactly as the outline rim
-already is. Then no triangle straddles a data edge, both rules agree, and the
-question disappears rather than being tuned. It is also where §10.1 is heading
-anyway (terminations as walls on interior rings).
+#### 9.6.2 `constrainCoverage` — the exact version
+
+`ChunkResolveOptions.constrainCoverage` traces each layer's mask boundary and
+inserts it as **constraint edges** in `tessellateStack`, exactly as the outline rim
+already is. No triangle then straddles a data edge, so the drop rule reads a
+per-triangle flag (`StackTessellation.coverage`, a centroid test that is exact
+*because* the ring is constrained) instead of the corners, and the bite and the
+comb of slivers both disappear — the drawn area IS the mapped area. Default off.
+
+It **replaces** `refineCoverage`, which defaults off when it is on: that pass exists
+only to put vertices *near* an unconstrained data edge, and a constraint puts them
+*on* it. That is also why it is not the cost it looks like — measured, the triangle
+count went DOWN:
+
+| | triangles, off | on | boundary vertices |
+| --- | ---: | ---: | ---: |
+| SeabedConnection, detail | 139,656 | 136,590 | 8,118 |
+| SeabedConnection, basement | 241,088 | 221,532 | 8,102 |
+| SyntheticColumn (`maxFill` 250) | 323,564 | 321,134 | 2,560 |
+| SyntheticColumn (`maxFill` 0) | 320,507 | 316,671 | 15,216 |
+
+`constraintFailures` is 0 in all of them, which is the check that matters: a
+boundary that is not enforced is a claim the mesh does not support.
+
+⚠️⚠️ The traced rings are deliberately **not simplified**, even though they carry
+one vertex per cell. Ramer-Douglas-Peucker makes a rectilinear ring cross *itself*
+where two arms of a staircase pass within the tolerance, and `nodeGridRings` does
+not node a ring against itself — measured, a one-cell tolerance produced 36
+constraint failures where the raw trace produces none. The raw trace follows cell
+edges and cannot cross itself. (Simplification would need self-noding first; the
+saving is an order of magnitude in boundary vertices, so it is worth revisiting if
+a survey boundary ever dominates a build.)
+
+Rings are deduped by mask **identity**, so a set of surfaces sharing one interpreted
+polygon — 11 of the demo set do — is traced once, not once per layer.
 
 ⚠️ All of this only shows with `seal: false` — sealing invents a surface across the
 gap and switches coverage-driven absence off.
@@ -698,9 +732,10 @@ build on it.
 
 7. **A carrier guarantees closure.** A group may declare a termination surface
    guaranteed complete over the area, against which its members terminate; a
-   constant-depth plane is the degenerate case. This replaces the `basement` slot and
-   bounds how far a wall can stretch. ⚠️ A carrier makes it easy to draw large
-   invented volumes — it needs the same distance bound and the §10.1.5 appearance.
+   constant-depth plane is the degenerate case. This replaced the `basement` slot
+   (now **removed**) and bounds how far a wall can stretch. ⚠️ A carrier makes it
+   easy to draw large invented volumes — it needs the same distance bound and the
+   §10.1.5 appearance.
 
    ⭐ **ANSWERED: the carrier belongs to the COLUMN.** Built — see §10.9. Both open
    questions pointed the same way: `sealMode: 'void'` cannot move to the column
@@ -737,7 +772,7 @@ Numbered by dependency, not importance.
 4. **Marking the inference** — needs 2 and 3. **— done (§10.6).**
 5. **Outline as user crop** — needs 1–4; deletes `optional`. **— done (§9.7, §9.9).**
 6. **Carrier surfaces** — largely independent; retires the `basement` slot.
-   **— done, at COLUMN level (§10.9).**
+   **— done, at COLUMN level (§10.9); the slot is deleted.**
 7. **Inferred sealing** — deletes `cap`; last, because partial overlap interacts with
    per-layer extents. **— done (§10.8).**
 
@@ -758,11 +793,16 @@ termination, not its area (§10.5).
 3. **Per-surface truncation rule** — erosional vs onlap, per §9.5. Needs a flag on
    `SurfaceMeta` (or alongside it) and, for onlap, a way to cut a hole in the chunk
    above.
-4. **Ocean unification** — `OceanChunk` still uses the older per-layer builder rather
-   than the shared tessellation. The open question is whether `Ocean` decomposes into
-   a *material* plus a per-frame updater, in which case a water layer is just
-   `{ depth: 0, material: oceanMaterial }` and `OceanChunk` retires; if `Ocean` must
-   own its meshes it is a restructure.
+4. **The water shader** — `OceanChunk` and the builder's `oceanTop` slot are gone,
+   so water is now an ordinary layer drawn with the standard chunk material. The
+   open question is whether `Ocean` decomposes into a *material* plus a per-frame
+   updater, in which case a water layer is just
+   `{ depth: 0, material: oceanMaterial }` and the standalone `Ocean` component
+   retires too; if `Ocean` must own its meshes it is a restructure. ⚠️ Two known
+   snags: `volume-vertex.glsl` reads `uv.y` as a normalised 0..1 down the wall while
+   chunk walls write METRIC uvs (so the wall needs its own normalised attribute),
+   and a flat synthetic layer contributes no refinement candidates, so the water lid
+   inherits the sea bed's TIN and is too coarse for vertex displacement.
 5. **One stack or several, when grids differ** — *recorded, not urgent.* A stack welds
    together two separable things: a **resolve domain** (one depth-order pass, one
    shared rim, so chunks agree about cross-over) and a **sampling domain** (one
@@ -1177,21 +1217,61 @@ so a chunk-private boundary must not set a shared surface's height.
 ⚠️ Consequences, both inherent rather than incidental:
 - The reach is measured inside the **envelope**, not inside one chunk's footprint.
   A single height and a per-chunk taper shape cannot both hold.
-- **`void` still runs per chunk** and can still differ across a seam. It turns one
-  layer into two, which the column's `surface id -> index` map cannot express;
-  moving it up means the context carries expanded channels and every chunk's picks
-  expand with them. That is plumbing (⭐ `fills` is only carried through
-  `splitVoidChannels`, never read by it, so the column need not know a chunk's fill
-  state) — and it is now UNBLOCKED: it was sequenced after carriers (§10.1.7)
-  because at column level the deepest surface had nothing below it, and
-  `splitVoidChannels` needs both neighbours, so the move would have turned a void
-  into a one-sided taper in the very place it is asked for. The column carrier
-  (§10.9) supplies that neighbour.
+- **`void` runs on the column too** (since the carrier gave the deepest surface a
+  neighbour below). It turns one layer into TWO, which a `surface id -> index` map
+  cannot express, so the context publishes an **expansion** — per column layer, the
+  one or two indices it occupies in the expanded arrays — and every chunk picks its
+  copies out of it. Two chunks sharing a horizon therefore open the SAME void, where
+  before each split it against its own neighbours and its own footprint and the two
+  met each other's walls somewhere else.
+  ⭐ The split needs no fill state to do this, which is what let it move: `ceiling`
+  already says which copy holds a volume (a ceiling never does), so the caller reads
+  its own layer's fill for every other copy. `StackVoidResult.fill` and the `fills`
+  argument are gone.
+  ⚠️ A chunk does NOT expand a layer it has voided (§9.9.1): both intervals it
+  bounds are open already, so splitting would make the same statement twice.
+  ⚠️ Two index spaces now exist — COLUMN and EXPANDED — and they coincide until
+  something splits, which is why both slips found here survived `proportional` and
+  only showed up under `void`. `StackContext.index` and `.carrier` are COLUMN;
+  `.reference.channels`, `.masks`, `.absent`, `.inferred` and `.ceiling` are
+  EXPANDED; `.expansion` is the bridge.
+  ⭐ **Which copies a chunk takes** (`chunkCopies`): the ceiling closes the interval
+  ABOVE the surface and the floor the one below, so a chunk holding only the interval
+  below takes the FLOOR alone — handed the ceiling it would draw the underside of a
+  unit it does not contain, tapering up to a horizon nothing there draws. A chunk
+  holding neither (a lone boundary) also takes the floor, which is the horizon proper.
+  ⚠️ A ceiling, however, always travels WITH its floor, even when the chunk holds no
+  interval below it: the collapse drops a ceiling by comparing it with its own floor
+  copy, so without one it is never dropped and is drawn over the whole footprint,
+  fighting the horizon its seam owner draws. The floor itself draws nothing unless the
+  seam gives this chunk the horizon too, and an uncapped layer builds no geometry.
+  ⚠️ **Reading the diagnostics under `void`:** a layer whose `triangles` equals its
+  `droppedCollapsed` is NOT a defect — it is a layer the column split because it is
+  unmapped SOMEWHERE IN THE ENVELOPE, seen from a chunk whose own footprint it covers
+  entirely. The two copies are identical there, so the collapse drops one of them
+  whole. `SurfaceChunkLayerDiagnostics.coverage` is measured over the CHUNK's outline
+  and the split is decided over the COLUMN's, so the two can disagree without either
+  being wrong. The cost is one redundant copy tessellated and discarded; pruning it
+  per chunk is the kind of local copy decision that produced the double-draw above.
 - Synthetic layers need no seal of their own: their masks are all ones, so they
   have no unmapped region. That is why nothing was lost by taking it off the chunk.
-- `preResolved` is usable again (the column seals BEFORE it resolves, so its
-  `absent` masks describe the tapered heights) — except with a synthetic layer or
-  under `void`, which the column's masks were not built for.
+- ⚠️⚠️ **A sealed column does NOT give the chunk `preResolved`** — and not for the
+  reason it looks like. The column's `absent` masks are perfectly valid; they are
+  just decided per **grid node**, while a triangle is dropped only when all THREE of
+  its own corners are marked. That difference is not cosmetic: an island of marked
+  VERTICES can never remove anything, because no triangle has all three of its
+  corners inside it, whereas an island of marked NODES spans cells and can enclose a
+  whole triangle. A sealed stack leaves surfaces running a metre apart over wide
+  bands, so those node islands are exactly what it produces — around twenty of them,
+  1–79 nodes each, on the generated column — and each one punches a walled notch into
+  the cap. Sealed stacks therefore keep the per-vertex resolve, which carries the
+  truncation through the exact per-triangle thickness collapse instead.
+  ⭐ The general rule: **a decision taken at grid nodes and a decision taken at shared
+  vertices are not interchangeable.** The vertex form is self-limiting; the node form
+  is not.
+  `preResolved` still applies where nothing is sealed, including under `void` (which
+  the column resolves in its expanded form). A chunk-private synthetic layer
+  disqualifies it too, since the column never saw one.
 - The seal settings join the column CACHE KEY, so toggling `seal` rebuilds it.
 
 **What it overrides:** `coverageAbsence`, which would otherwise drop the wedge for
@@ -1351,6 +1431,7 @@ the area order and is drawn with the drawer's own appearance.
   as far as §10.8.2 holds — which is why sealing moved to the column (§10.7): a
   shared horizon now has ONE height, so the two chunks' caps and walls meet.
   ⚠️ Still open under `sealMode: 'void'`, which is split per chunk.
+  **Closed** — the split runs on the column too (§10.7).
 - Still open: **carriers** — built at column level, see §10.9.
 
 ### 10.9 The column carrier (§10.2 step 6) — built
@@ -1430,8 +1511,7 @@ surface spanning 1869–2200 m): `Basement Base` draws 58,179 triangles and drop
   declares the floor as the stack's carrier. ⭐ If a block looks unsealed, check
   whether its floor is on the stack or on the chunk before looking anywhere else.
 - `sealMode: 'void'` can move from the chunk to the column, which is what makes two
-  chunks sharing a horizon split it the same way. **Not done** — see §10.7's note;
-  the carrier was its prerequisite.
+  chunks sharing a horizon split it the same way. **Done** — see §10.7.
 
 ## 11. Stack-level build
 
@@ -1628,9 +1708,10 @@ patch stays rejected.
 
 ## 12. Build order
 
-1. **Component skeleton** (settled): `ChunkStack` provider + `Chunk` (with the
-   `basement` slot) and `OceanChunk`, wrapping the existing SDK builder (still
-   main-thread at first), with the three-layer separation in place.
+1. **Component skeleton** (settled): `ChunkStack` provider + `Chunk`, wrapping the
+   existing SDK builder (still main-thread at first), with the three-layer
+   separation in place. ⚠️ It first shipped with a `basement` slot and an
+   `OceanChunk` sibling; both are gone (§2.1).
 2. **Outline SDK helpers** (in flux): trajectory-vs-surface crossings → clustering →
    distance field → contour, with per-chunk options. **— done (2026-07-12):**
    `createSurfaceOutline` (surface rim) and the `createWellboreOutline` pipeline
@@ -1640,8 +1721,8 @@ patch stays rejected.
    shared tessellation (§9) in 2026-08-06.
 4. **Vertical exaggeration** — a `scale={[1, k, 1]}` group on `ChunkStack`; safe
    because of §9.1, and needing no shader or material work. *Deferred.*
-5. **Interactions**: focus-well (outline cut + peel), picking, annotations, buoyancy
-   children on `OceanChunk`.
+5. **Interactions**: focus-well (outline cut + peel), picking, annotations, buoyant
+   children over a water layer.
 
 ## 13. What surface data actually looks like
 

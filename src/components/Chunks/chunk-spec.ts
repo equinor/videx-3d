@@ -2,7 +2,6 @@ import {
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
   StackCarrier,
-  SurfaceChunkBasement,
   SurfaceMeta,
   Vec2,
   Vec3,
@@ -25,7 +24,6 @@ export type BuildSurfaceChunkSpecOptions = {
   rimSpacing?: number;
   maxError?: number;
   resolve?: ChunkResolveOptions;
-  basement?: SurfaceChunkBasement;
   /**
    * The column this chunk is cut from (see `ChunkStack.surfaces`) plus the
    * envelope footprint it is resolved over. Both are needed for the shared build.
@@ -163,6 +161,5 @@ export function buildSurfaceChunkSpec(
     rimSpacing: options.rimSpacing,
     maxError: options.maxError,
     resolve: options.resolve,
-    basement: options.basement,
   };
 }

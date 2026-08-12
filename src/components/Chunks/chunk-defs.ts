@@ -5,7 +5,6 @@ import {
   SealMode,
   StackCarrier,
   StackRelief,
-  SurfaceChunkBasement,
   SurfaceClipHeader,
   SurfaceMeta,
   Vec2,
@@ -262,6 +261,20 @@ export type ChunkResolveOptions = {
    */
   refineTerminations?: boolean;
   /**
+   * Constrain each layer's DATA boundary into the shared tessellation, so a
+   * triangle is either wholly inside a layer's survey or wholly outside it.
+   * Default false.
+   *
+   * ⭐ Without it the boundary is only a per-vertex mask, so a triangle spanning
+   * it has to be resolved one way or the other: the rule keeps the drawn area
+   * inside the mapped one, which leaves a bite up to a triangle deep, and a comb
+   * of slivers where the edge runs at an angle to the mesh.
+   *
+   * ⚠️ Costs vertices along every partly-mapped layer's boundary, and the
+   * tessellation is shared by the whole stack.
+   */
+  constrainCoverage?: boolean;
+  /**
    * Node budget for the stack's common grid; beyond it the grid is decimated.
    * Caps both memory and tessellation cost. Default 4,000,000.
    */
@@ -413,8 +426,6 @@ export type SurfaceChunkSpec = {
   maxError?: number;
   /** see {@link ChunkResolveOptions} — omit to skip the depth-order pass */
   resolve?: ChunkResolveOptions;
-  /** optional basement block */
-  basement?: SurfaceChunkBasement;
 };
 
 /**

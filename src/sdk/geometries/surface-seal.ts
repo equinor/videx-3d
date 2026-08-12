@@ -87,17 +87,20 @@ export type StackVoidResult = {
   masks: Uint8Array[];
   /** for each expanded layer, its index in the CALLER's list */
   source: number[];
-  /** for each expanded layer, whether the interval BELOW it holds a volume */
-  fill: boolean[];
   /**
    * For each expanded layer, whether it is the UPPER copy of a split — the
    * ceiling of a void, seen from below. It is the base of the interval above it
    * rather than the cap of its own layer, which is what it should be coloured as.
+   *
+   * ⭐ It also says which copy holds a VOLUME: a ceiling never does (the void
+   * below it is the whole point), so the caller reads its own layer's fill for
+   * every other copy. That is why the split needs no fill state of its own — and
+   * why it can run on a COLUMN, which has none to give.
    */
   ceiling: boolean[];
   /** per expanded layer, per node: how far the height is inferred (see {@link taperWeights}) */
   inferred: Float32Array[];
-  /** per SOURCE layer: nodes the split moved */
+  /** per expanded layer: nodes the split moved */
   moved: number[];
 };
 
@@ -125,8 +128,7 @@ export type StackVoidResult = {
  * @param channels per-layer heights over the common grid (shallowest first)
  * @param masks per-layer coverage, 0 where the layer has no extent
  * @param nx the grid's row length
- * @param fills per layer: whether the interval below it holds a volume
- * @param options see {@link StackSealOptions}; `target` is ignored
+ * @param options see {@link StackSealOptions}; `mode` is ignored
  *
  * @group Geometries
  */
@@ -134,7 +136,6 @@ export function splitVoidChannels(
   channels: Float32Array[],
   masks: Uint8Array[],
   nx: number,
-  fills: boolean[],
   options: StackSealOptions,
 ): StackVoidResult {
   const minThickness = options.minThickness ?? TAPER_MIN_THICKNESS;
@@ -146,7 +147,6 @@ export function splitVoidChannels(
     channels: [],
     masks: [],
     source: [],
-    fill: [],
     ceiling: [],
     inferred: [],
     moved: [],
@@ -170,7 +170,6 @@ export function splitVoidChannels(
       out.channels.push(channels[i]);
       out.masks.push(mask);
       out.source.push(i);
-      out.fill.push(fills[i] ?? false);
       out.ceiling.push(false);
       out.inferred.push(new Float32Array(count));
       out.moved.push(0);
@@ -192,20 +191,17 @@ export function splitVoidChannels(
       out.channels.push(toward(above ?? below!));
       out.masks.push(mask);
       out.source.push(i);
-      out.fill.push(fills[i] ?? false);
       out.ceiling.push(false);
       out.inferred.push(flags);
       out.moved.push(moved);
       continue;
     }
 
-    // The upper copy closes the interval ABOVE it, and keeps that interval's fill
-    // state; the void below it is explicitly EMPTY; the lower copy carries the
-    // interval this layer originally filled.
+    // The upper copy closes the interval ABOVE it and holds no volume of its own;
+    // the lower copy carries whatever interval this layer was given.
     out.channels.push(toward(above));
     out.masks.push(mask);
     out.source.push(i);
-    out.fill.push(false);
     out.ceiling.push(true);
     out.inferred.push(flags);
     out.moved.push(moved);
@@ -213,7 +209,6 @@ export function splitVoidChannels(
     out.channels.push(toward(below));
     out.masks.push(mask);
     out.source.push(i);
-    out.fill.push(fills[i] ?? false);
     out.ceiling.push(false);
     out.inferred.push(Float32Array.from(flags));
     out.moved.push(0);

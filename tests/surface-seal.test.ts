@@ -255,25 +255,25 @@ describe('splitVoidChannels', () => {
   const setup = () => ({
     channels: [flat(0), flat(-100), flat(-300)],
     masks: [covered(), mappedTo(3), covered()],
-    fills: [true, true, false],
   });
 
   it('splits an unmapped surface in two, with an EMPTY interval between', () => {
-    const { channels, masks, fills } = setup();
+    const { channels, masks } = setup();
 
-    const out = splitVoidChannels(channels, masks, NX, fills, {});
+    const out = splitVoidChannels(channels, masks, NX, {});
 
     // 3 layers in, 4 out — the middle one became two
     expect(out.source).toEqual([0, 1, 1, 2]);
-    // the interval BETWEEN the two copies holds nothing; the lower copy keeps the
-    // interval the original layer filled
-    expect(out.fill).toEqual([true, false, true, false]);
+    // ⭐ The upper copy is the CEILING of the void, which is also what says it
+    // holds no volume: the caller fills every other copy from its own layer, so
+    // the split needs no fill state of its own.
+    expect(out.ceiling).toEqual([false, true, false, false]);
   });
 
   it('opens the void between the neighbours, and closes it where there is data', () => {
-    const { channels, masks, fills } = setup();
+    const { channels, masks } = setup();
 
-    const out = splitVoidChannels(channels, masks, NX, fills, {});
+    const out = splitVoidChannels(channels, masks, NX, {});
     const upper = out.channels[1];
     const lower = out.channels[2];
 
@@ -289,9 +289,9 @@ describe('splitVoidChannels', () => {
   });
 
   it('⭐ leaves the SAME thickness of both neighbouring units standing', () => {
-    const { channels, masks, fills } = setup();
+    const { channels, masks } = setup();
 
-    const out = splitVoidChannels(channels, masks, NX, fills, {
+    const out = splitVoidChannels(channels, masks, NX, {
       minThickness: 10,
     });
 
@@ -306,7 +306,6 @@ describe('splitVoidChannels', () => {
       [flat(0), flat(-100)],
       [mappedTo(3), covered()],
       NX,
-      [true, false],
       {},
     );
 
@@ -314,8 +313,8 @@ describe('splitVoidChannels', () => {
   });
 
   it('shares fully mapped layers by reference', () => {
-    const { channels, masks, fills } = setup();
-    const out = splitVoidChannels(channels, masks, NX, fills, {});
+    const { channels, masks } = setup();
+    const out = splitVoidChannels(channels, masks, NX, {});
 
     expect(out.channels[0]).toBe(channels[0]);
     expect(out.channels[3]).toBe(channels[2]);
@@ -327,7 +326,7 @@ describe('splitVoidChannels', () => {
     const masks = [covered(), mappedTo(3), covered()];
     const cap = TAPER_MAX_SLOPE * 5 * CELL;
 
-    const out = splitVoidChannels(channels, masks, NX, [true, true, false], {
+    const out = splitVoidChannels(channels, masks, NX, {
       cellSize: CELL,
     });
 

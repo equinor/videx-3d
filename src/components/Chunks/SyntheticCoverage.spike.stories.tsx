@@ -71,6 +71,7 @@ type SyntheticCoverageProps = {
   floorDepth: number;
   maxError: number;
   maxFill: number;
+  constrainCoverage: boolean;
   seal: boolean;
   sealMode: 'proportional' | 'void';
   minThickness: number;
@@ -153,6 +154,7 @@ const SyntheticCoverageStory = (props: SyntheticCoverageProps) => {
       seal: props.seal,
       sealMode: props.sealMode,
       minThickness: props.minThickness,
+      constrainCoverage: props.constrainCoverage,
       coverageAbsence: props.coverageAbsence,
       collapseThreshold: props.collapseThreshold,
     }),
@@ -161,6 +163,7 @@ const SyntheticCoverageStory = (props: SyntheticCoverageProps) => {
       props.seal,
       props.sealMode,
       props.minThickness,
+      props.constrainCoverage,
       props.coverageAbsence,
       props.collapseThreshold,
     ],
@@ -262,6 +265,7 @@ export const Default: Story = {
     floorDepth: 2000,
     maxError: 5,
     maxFill: 250,
+    constrainCoverage: false,
     seal: true,
     sealMode: 'proportional',
     minThickness: 1,
@@ -327,6 +331,12 @@ export const Default: Story = {
       control: 'boolean',
       description:
         'Drop triangles where a layer has no coverage of its own. Off, the hole fill is drawn as if it were geology — and is marked as inferred, since that is exactly what it is.',
+      table: { category: 'Coverage' },
+    },
+    constrainCoverage: {
+      control: 'boolean',
+      description:
+        'Constrain each layer’s data boundary into the shared tessellation, so a triangle is either wholly inside a survey or wholly outside it. Off, the boundary is only a per-vertex mask, so a triangle spanning it has to go one way or the other — a bite up to a triangle deep, and a comb of slivers where the edge runs at an angle to the mesh.',
       table: { category: 'Coverage' },
     },
     collapseThreshold: {

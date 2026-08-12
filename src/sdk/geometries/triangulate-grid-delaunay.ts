@@ -291,19 +291,37 @@ export function traceValidBoundary(
   columns: number,
   isInvalid: (v: number) => boolean,
 ): GridRing[] {
+  // Resolved once as a flat mask, so the cell scan is a single array lookup per
+  // corner instead of four predicate calls — this pass touches every node of
+  // grids with millions of them.
+  const valid = new Uint8Array(grid.length);
+  for (let i = 0; i < grid.length; i++) {
+    if (!isInvalid(grid[i])) valid[i] = 1;
+  }
+  return traceMaskBoundary(valid, columns);
+}
+
+/**
+ * {@link traceValidBoundary} driven by a presence mask rather than by samples and
+ * a predicate — for callers that already hold one, such as a stack's per-layer
+ * coverage.
+ *
+ * @param valid row-major node mask; any NON-ZERO value counts as present, so a
+ *   multi-state mask (data vs fill) can be passed straight in
+ * @param columns number of columns (nx)
+ *
+ * @group Geometries
+ */
+export function traceMaskBoundary(
+  valid: Uint8Array,
+  columns: number,
+): GridRing[] {
   const width = columns;
-  const height = grid.length / width;
+  const height = valid.length / width;
   const cw = width - 1;
   const ch = height - 1;
   if (cw <= 0 || ch <= 0) return [];
 
-  // Precompute cell presence (all four corners valid) once as a flat mask, so the
-  // edge scan below is a single array lookup per cell instead of four predicate
-  // calls — this pass touches every cell of grids with millions of nodes.
-  const validMask = new Uint8Array(grid.length);
-  for (let i = 0; i < grid.length; i++) {
-    if (!isInvalid(grid[i])) validMask[i] = 1;
-  }
   const cells = new Uint8Array(cw * ch);
   for (let r = 0; r < ch; r++) {
     const row = r * width;
@@ -311,10 +329,12 @@ export function traceValidBoundary(
     const out = r * cw;
     for (let c = 0; c < cw; c++) {
       cells[out + c] =
-        validMask[row + c] &
-        validMask[row + c + 1] &
-        validMask[next + c] &
-        validMask[next + c + 1];
+        valid[row + c] &&
+        valid[row + c + 1] &&
+        valid[next + c] &&
+        valid[next + c + 1]
+          ? 1
+          : 0;
     }
   }
   const present = (c: number, r: number) =>

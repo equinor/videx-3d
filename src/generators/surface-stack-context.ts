@@ -12,6 +12,7 @@ import {
   ReadonlyStore,
   resolveStackGrid,
   sealStackChannels,
+  splitVoidChannels,
   STACK_MASK_DATA,
   stackCarrierLevel,
   StackLayer,
@@ -26,25 +27,42 @@ import { refineStackChannels } from './workers/stack-worker-pool';
  */
 export type StackContext = {
   key: string;
+  /**
+   * The common grid, holding one channel per EXPANDED layer — which is one per
+   * column layer unless `sealMode: 'void'` split one in two (see
+   * {@link StackContext.expansion}).
+   */
   reference: StackReference;
   /** the layers, in the order they were resolved (shallowest first) */
   layers: StackLayer[];
-  /** surface id -> index into `layers` / `reference.channels` */
+  /** surface id -> index into `layers` */
   index: Map<string, number>;
   /**
+   * Per COLUMN layer, the index (or two) it occupies in the expanded arrays. A
+   * void splits a surface into a ceiling and a floor, and both belong to every
+   * chunk that draws that horizon — splitting it here rather than per chunk is
+   * what stops two chunks opening the same void differently.
+   */
+  expansion: number[][];
+  /** per EXPANDED layer: it is the upper copy of a void (see `StackVoidResult`) */
+  ceiling: boolean[];
+  /**
    * Index of the carrier plane appended below the column, or `null` when none was
-   * declared. It closes the block, so the resolve leaves it alone and the collapse
-   * never drops it (see `StackCollapseOptions.carrier`).
+   * declared. In COLUMN space, like {@link StackContext.index} — the expanded one
+   * a chunk needs it finds through {@link StackContext.expansion}.
+   *
+   * It closes the block, so the resolve leaves it alone and the collapse never
+   * drops it (see `StackCollapseOptions.carrier`).
    */
   carrier: number | null;
-  /** per-layer, per-node: 1 where the unit was truncated away */
+  /** per EXPANDED layer, per node: 1 where the unit was truncated away */
   absent: Uint8Array[];
   /**
-   * Per layer, per node: how far the height is INFERRED rather than measured, or
-   * `null` when the column was not sealed.
+   * Per EXPANDED layer, per node: how far the height is INFERRED rather than
+   * measured, or `null` when the column was neither sealed nor split.
    */
   inferred: Float32Array[] | null;
-  /** per layer: nodes the seal moved */
+  /** per COLUMN layer: nodes the seal or the split moved */
   tapered: number[];
   pairs: StackPairStats[];
   bytes: number;
@@ -154,32 +172,59 @@ async function buildStackContext(
   // other's walls at different depths.
   // ⚠️ The reach is therefore measured inside the ENVELOPE rather than inside one
   // chunk's footprint: a single height and a per-chunk taper shape cannot both hold.
-  // ⚠️ `void` is NOT done here — it splits a layer in two, which the id -> index map
-  // below cannot express. It stays per chunk (see `buildSpecStack`).
-  const sealing = resolve?.seal !== false && resolve?.sealMode !== 'void';
+  const voiding = resolve?.seal !== false && resolve?.sealMode === 'void';
+  const sealing = resolve?.seal !== false && !voiding;
+  const sealOptions = {
+    minThickness: resolve?.minThickness,
+    inside: rasterizeStackOutline(reference, envelope),
+    cellSize: (reference.header.xinc + reference.header.yinc) / 2,
+  };
   const sealed = sealing
     ? sealStackChannels(
         reference.channels,
         reference.masks,
         reference.header.nx,
-        {
-          mode: resolve?.sealMode,
-          minThickness: resolve?.minThickness,
-          inside: rasterizeStackOutline(reference, envelope),
-          cellSize: (reference.header.xinc + reference.header.yinc) / 2,
-        },
+        { mode: resolve?.sealMode, ...sealOptions },
       )
     : null;
-  const sealedReference = sealed
-    ? { ...reference, channels: sealed.channels }
-    : reference;
+  // ⭐ `void` turns one layer into TWO, so the column publishes the expansion and
+  // every chunk picks its copies out of it — rather than each chunk splitting the
+  // same horizon against its own neighbours and meeting the next chunk's walls
+  // somewhere else. The split needs no fill state, which is what lets it run here.
+  const split = voiding
+    ? splitVoidChannels(
+        reference.channels,
+        reference.masks,
+        reference.header.nx,
+        sealOptions,
+      )
+    : null;
+  // Per COLUMN layer, the index (or two) it occupies in the expanded list.
+  const expansion: number[][] = layers.map(() => []);
+  (split?.source ?? layers.map((_, i) => i)).forEach((column, expanded) =>
+    expansion[column].push(expanded),
+  );
+  const sealedReference = {
+    ...reference,
+    channels: split?.channels ?? sealed?.channels ?? reference.channels,
+    masks: split?.masks ?? reference.masks,
+  };
+  // ⚠️ `carrier` stays a COLUMN index, because that is what a chunk's picks are.
+  // The clamp and the resolve work on the expanded arrays, so they need the other
+  // one — the carrier is complete and so never split, but layers above it may be,
+  // which moves it.
+  const carrierExpanded = carrier === null ? null : expansion[carrier][0];
   const tSeal = performance.now();
 
   // Nothing pierces the carrier. Elementwise, so it cannot introduce a crossing
   // for the resolve below to find; whatever it flattens ends up with no thickness
   // and is dropped by the collapse.
-  if (carrier !== null) {
-    clampStackToCarrier(sealedReference.channels, carrier, carrierLevel);
+  if (carrierExpanded !== null) {
+    clampStackToCarrier(
+      sealedReference.channels,
+      carrierExpanded,
+      carrierLevel,
+    );
   }
 
   // The whole column is made monotone here, on the common grid, so every chunk
@@ -189,20 +234,24 @@ async function buildStackContext(
     ? resolveStackGrid(sealedReference.channels, {
         mode: resolve.mode,
         minGap: resolve.minGap,
-        coverage: reference.masks,
+        coverage: sealedReference.masks,
       })
     : resolveStackGrid(sealedReference.channels, {
         apply: false,
-        coverage: reference.masks,
+        coverage: sealedReference.masks,
       });
   const tResolve = performance.now();
 
   // Re-imposed, because a positive `minGap` would have pushed the floor below the
   // very horizons it just truncated. Clamping again cannot break the ordering the
   // resolve established — a max against a constant preserves it.
-  if (carrier !== null) {
-    clampStackToCarrier(sealedReference.channels, carrier, carrierLevel);
-    resolved.absent[carrier]?.fill(0);
+  if (carrierExpanded !== null) {
+    clampStackToCarrier(
+      sealedReference.channels,
+      carrierExpanded,
+      carrierLevel,
+    );
+    resolved.absent[carrierExpanded]?.fill(0);
   }
 
   return {
@@ -210,10 +259,17 @@ async function buildStackContext(
     reference: sealedReference,
     layers,
     index,
+    expansion,
+    ceiling: split?.ceiling ?? layers.map(() => false),
     carrier,
     absent: resolved.absent,
-    inferred: sealed?.inferred ?? null,
-    tapered: sealed?.tapered ?? [],
+    inferred: split?.inferred ?? sealed?.inferred ?? null,
+    // The split counts per COPY; the caller reads this per declared layer.
+    tapered: split
+      ? expansion.map(copies =>
+          copies.reduce((a, k) => a + (split.moved[k] ?? 0), 0),
+        )
+      : (sealed?.tapered ?? []),
     pairs: resolved.pairs,
     bytes,
     fetchMs: tFetch - t0,

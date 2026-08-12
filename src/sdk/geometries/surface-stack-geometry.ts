@@ -136,6 +136,8 @@ export type StackWallOptions = {
   threshold?: number;
   /** per-layer coverage at the shared vertices */
   coverage?: Uint8Array[];
+  /** per-layer, per-triangle coverage (see {@link StackCollapseOptions}) */
+  coverageTriangles?: Uint8Array[];
   /** per-layer truncation masks at the shared vertices */
   absent?: Uint8Array[];
   /**
@@ -202,6 +204,7 @@ export function buildStackWalls(
   const members = stackIntervalTriangles(heights, indices, {
     threshold: options.threshold,
     coverage: options.coverage,
+    coverageTriangles: options.coverageTriangles,
     absent: options.absent,
   });
 
@@ -371,6 +374,19 @@ export type SurfaceStackOptions = {
    */
   refineCoverage?: boolean;
   /**
+   * Constrain each layer's DATA boundary into the shared tessellation, so no
+   * triangle straddles a survey edge and the drop rule can be exact per triangle
+   * (see {@link StackTessellation.coverage}).
+   *
+   * ⭐ Supersedes `refineCoverage`, which defaults to OFF when this is on: that
+   * pass exists only to put vertices NEAR an unconstrained data edge, and a
+   * constraint puts them ON it.
+   *
+   * ⚠️ Costs vertices along every partly-mapped layer's boundary, in a
+   * tessellation every layer of the stack shares.
+   */
+  constrainCoverage?: boolean;
+  /**
    * Per layer: build the side wall of the interval BELOW it. Omit to build no
    * walls at all (the caller then has `rings` and each layer's `rimY` and can
    * build its own).
@@ -481,7 +497,7 @@ export function buildSurfaceStack(
     collapseThreshold > 0 &&
     (options.refineTerminations ?? true) &&
     reference.channels.length > 1;
-  const refineCoverage = options.refineCoverage ?? true;
+  const refineCoverage = options.refineCoverage ?? !options.constrainCoverage;
   if (refineTerminations || refineCoverage) {
     const lists =
       candidates ??
@@ -525,6 +541,7 @@ export function buildSurfaceStack(
     maxError,
     candidates,
     options.cuts,
+    options.constrainCoverage,
   );
   if (!tessellation) return null;
   const tTessellate = performance.now();
@@ -638,6 +655,9 @@ export function buildSurfaceStack(
       ? collapseStackTriangles(heights, tessellation.indices, {
           threshold: collapseThreshold,
           coverage: coverageAbsence ? coverage : undefined,
+          coverageTriangles: coverageAbsence
+            ? tessellation.coverage
+            : undefined,
           absent,
           ceiling: options.ceiling,
           capExcluded: excludes,
@@ -665,6 +685,7 @@ export function buildSurfaceStack(
         fills: options.fills,
         threshold: collapseThreshold,
         coverage: coverageAbsence ? coverage : undefined,
+        coverageTriangles: coverageAbsence ? tessellation.coverage : undefined,
         absent,
         inferred,
       })

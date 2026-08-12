@@ -70,6 +70,7 @@ type SyntheticColumnProps = {
   sealMode: 'proportional' | 'void';
   minThickness: number;
   maxFill: number;
+  constrainCoverage: boolean;
   coverageAbsence: boolean;
   collapseThreshold: number;
   surfaceOpacity: number;
@@ -136,6 +137,7 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
       seal: props.seal,
       sealMode: props.sealMode,
       minThickness: props.minThickness,
+      constrainCoverage: props.constrainCoverage,
       coverageAbsence: props.coverageAbsence,
       collapseThreshold: props.collapseThreshold,
     }),
@@ -144,6 +146,7 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
       props.seal,
       props.sealMode,
       props.minThickness,
+      props.constrainCoverage,
       props.coverageAbsence,
       props.collapseThreshold,
     ],
@@ -170,6 +173,9 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
           wallTriangles: metrics.wallTriangles,
           crossings: d?.crossings ?? null,
           maxOverlap: d?.maxOverlap ?? null,
+          coverageRingPoints: d?.coverageRingPoints ?? null,
+          constraintFailures: d?.constraintFailures ?? null,
+          tessellateMs: Math.round(d?.tessellateMs ?? 0),
           layers: rows,
         })}`,
       );
@@ -235,6 +241,7 @@ export const Default: Story = {
     sealMode: 'proportional',
     minThickness: 1,
     maxFill: 250,
+    constrainCoverage: false,
     coverageAbsence: true,
     collapseThreshold: 0.5,
     surfaceOpacity: 1,
@@ -286,6 +293,12 @@ export const Default: Story = {
     },
     maxFill: {
       control: { type: 'range', min: 0, max: 3000, step: 25 },
+      table: { category: 'Resolve' },
+    },
+    constrainCoverage: {
+      control: 'boolean',
+      description:
+        'Constrain each layer’s DATA boundary into the shared tessellation, so a triangle is either wholly inside a survey or wholly outside it. ⭐ Off, the boundary is only a per-vertex mask and a triangle spanning it has to go one way or the other — which leaves a bite up to a triangle deep, and a comb of slivers where the edge runs at an angle to the mesh. Costs vertices along every partly-mapped layer’s boundary.',
       table: { category: 'Resolve' },
     },
     coverageAbsence: { control: 'boolean', table: { category: 'Resolve' } },

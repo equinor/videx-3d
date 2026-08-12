@@ -60,6 +60,12 @@ export type SpecStackResult = {
   /** for each layer of the BUILD, whether the interval below it holds a volume */
   fills: boolean[];
   /**
+   * For each layer of the BUILD, whether its cap is drawn. ⚠️ NOT the same as the
+   * caller's `cap`: a void ceiling is capped by the chunk holding the interval
+   * above it whatever the seam decided, and a voided layer is capped by nobody.
+   */
+  caps: boolean[];
+  /**
    * For each layer of the BUILD, whether it is the ceiling of a void — the upper
    * copy of a split surface, which shows the base of the interval above it.
    */
@@ -180,6 +186,33 @@ function taperedBySource(
 }
 
 /**
+ * Which copies of a column layer THIS chunk carries.
+ *
+ * ⭐ A void's two copies belong to different blocks: the ceiling closes the
+ * interval ABOVE the surface and the floor the one below. A chunk holding only the
+ * interval BELOW takes the floor alone — handing it the ceiling makes it draw the
+ * underside of a unit it does not contain, tapering up to meet a horizon nothing
+ * else there draws. A chunk holding neither (a lone boundary) takes the floor too,
+ * which is the horizon proper.
+ *
+ * ⭐⭐ A ceiling, however, always comes WITH its floor, even when this chunk holds
+ * no interval below it: the floor is what tells the collapse where the void has
+ * closed and the ceiling has become a duplicate of the horizon. Without it the
+ * ceiling has no partner to be measured against and is drawn everywhere, so wherever
+ * the surface has data it fights the horizon its owner draws. The floor itself
+ * draws nothing unless the seam gives this chunk the horizon as well.
+ */
+function chunkCopies(
+  expansion: number[][],
+  column: number,
+  hasAbove: boolean,
+): number[] {
+  const copies = expansion[column];
+  if (copies.length < 2) return copies;
+  return hasAbove ? copies : [copies[1]];
+}
+
+/**
  * Fetch a spec's layers and build them onto ONE shared tessellation: every layer
  * is resampled onto a common grid, refined in parallel across the worker pool,
  * triangulated once, then resolved and collapsed together.
@@ -259,8 +292,12 @@ export async function buildSpecStack(
     const masks: Uint8Array[] = [];
     picks.forEach((at, j) => {
       if (at >= 0) {
-        channels.push(context.reference.channels[at]);
-        masks.push(context.reference.masks[at]);
+        // ⚠️ Through the expansion: a void splits a layer in two, so a COLUMN index
+        // stops being an index into the channels the moment anything above it is
+        // split. Both copies carry the same mask, so either serves here.
+        const first = context.expansion[at][0];
+        channels.push(context.reference.channels[first]);
+        masks.push(context.reference.masks[first]);
         return;
       }
       const channel = buildSyntheticChannel(
@@ -282,58 +319,106 @@ export async function buildSpecStack(
     if (voided.every(Boolean)) return null;
 
     const sealing = spec.resolve?.seal !== false;
-    const voiding = sealing && spec.resolve?.sealMode === 'void';
-    // ⭐ Real surfaces are sealed on the COLUMN (`getStackContext`), so a horizon
-    // two chunks share has ONE height and their walls and caps meet. Nothing is
-    // left for this chunk to seal: a synthetic layer's mask is all ones, so it has
-    // no unmapped region to close.
-    // ⚠️ `void` is the exception — it turns one layer into two, which the column's
-    // id -> index map cannot carry — so it still runs here, and two chunks sharing
-    // a horizon can still split it differently.
-    const split = voiding
-      ? splitVoidChannels(
-          channels,
-          masks,
-          context.reference.header.nx,
-          loaded.map(l => l.fill),
-          {
-            minThickness: spec.resolve?.minThickness,
-            // A void is measured over the gap you can SEE, so inside THIS chunk.
-            inside: rasterizeStackOutline(context.reference, densified),
-          },
-        )
-      : null;
-    // Per BUILD layer: the column's, or a synthetic layer's (nothing is inferred
-    // about a boundary that was never measured). One shared zero array — it is only
-    // ever read.
-    const columnInferred = context.inferred;
-    const noneInferred = columnInferred ? new Float32Array(nodes) : null;
-    const inferred =
-      columnInferred && noneInferred
-        ? picks.map(i => (i >= 0 ? columnInferred[i] : noneInferred))
-        : undefined;
-    const source = split ? split.source : loaded.map((_, i) => i);
-    const reference = {
-      ...context.reference,
-      channels: split?.channels ?? channels,
-      masks: split?.masks ?? masks,
-    };
+    // ⭐ Real surfaces are sealed — and, under `void`, SPLIT — on the COLUMN
+    // (`getStackContext`), so a horizon two chunks share has one height and one
+    // void, and their walls and caps meet. Nothing is left for this chunk to do:
+    // a synthetic layer's mask is all ones, so it has no unmapped region.
     const allCandidates = await getStackCandidates(context, maxError);
     const tRefine = performance.now();
 
+    // ⭐ EXPAND: a column layer the void split holds TWO of this chunk's layers.
+    // Everything the build indexes by layer is pushed in ONE loop, because these
+    // arrays are aligned by position and a drift between them pairs geometry with
+    // the wrong material — silently.
+    const zeros = new Float32Array(nodes);
+    const unresolved = new Uint8Array(nodes);
+    const eChannels: Float32Array[] = [];
+    const eMasks: Uint8Array[] = [];
+    const source: number[] = [];
+    const ceilings: boolean[] = [];
+    const inferredList: Float32Array[] = [];
+    const candidates: Uint32Array[] = [];
+    const preResolved: Uint8Array[] = [];
+    picks.forEach((at, j) => {
+      // ⭐ A layer with no data anywhere in this chunk is NOT expanded: both
+      // intervals it bounds are open already, so splitting it would make the same
+      // statement twice.
+      const copies =
+        at >= 0 && !voided[j]
+          ? chunkCopies(context.expansion, at, j > 0)
+          : null;
+      if (!copies) {
+        eChannels.push(channels[j]);
+        eMasks.push(masks[j]);
+        source.push(j);
+        ceilings.push(!!loaded[j].carrier);
+        inferredList.push(zeros);
+        candidates.push(
+          at >= 0
+            ? allCandidates[context.expansion[at][0]]
+            : // A synthetic layer contributes refinement vertices only if it has
+              // RELIEF of its own. A plane is exact everywhere, so it rides the
+              // union the others produce; a dune field is not, and without this
+              // its shape would only be sampled where other layers happened to
+              // need detail.
+              (loaded[j].layer as StackSyntheticLayer).relief
+              ? collectStackCandidates(
+                  channels[j],
+                  context.reference.header.nx,
+                  maxError,
+                )
+              : new Uint32Array(0),
+        );
+        preResolved.push(
+          at >= 0 ? context.absent[context.expansion[at][0]] : unresolved,
+        );
+        return;
+      }
+      copies.forEach(k => {
+        eChannels.push(context.reference.channels[k]);
+        eMasks.push(context.reference.masks[k]);
+        source.push(j);
+        ceilings.push(context.ceiling[k] || !!loaded[j].carrier);
+        inferredList.push(context.inferred?.[k] ?? zeros);
+        candidates.push(allCandidates[k]);
+        preResolved.push(context.absent[k]);
+      });
+    });
+    const reference = {
+      ...context.reference,
+      channels: eChannels,
+      masks: eMasks,
+    };
+
     // A voided layer draws no cap, and neither interval it bounds is filled.
-    const caps = source.map(i => loaded[i].cap && !voided[i]);
+    // ⭐ A void's CEILING is capped by the chunk holding the interval above it,
+    // whatever the seam decided: the seam assigns the shared HORIZON, which is the
+    // floor copy, while the ceiling only exists inside the void and is the base of
+    // this chunk's own unit. It is not a double-draw because the collapse drops it
+    // where it has closed onto its own floor copy — which is why `chunkCopies`
+    // never hands out a ceiling without one.
+    const caps = ceilings.map((ceiling, k) => {
+      const i = source[k];
+      if (voided[i]) return false;
+      return ceiling && !loaded[i].carrier ? true : loaded[i].cap;
+    });
     const cuts = densifyChunkCuts(spec);
-    const capCuts = source.map(i => loaded[i].capCuts ?? null);
-    const carrierLayer = source.findIndex(i => loaded[i].carrier);
-    // Seen only from below, so it shows the base of the unit above it rather than
-    // a cap of its own — the same thing a void's ceiling is.
-    const ceilings = source.map(
-      (i, k) => (split ? split.ceiling[k] : false) || !!loaded[i].carrier,
+    const capCuts = ceilings.map((ceiling, k) =>
+      ceiling && !loaded[source[k]].carrier
+        ? null
+        : (loaded[source[k]].capCuts ?? null),
     );
-    const fills = (split ? split.fill : loaded.map(l => l.fill)).map((f, k) => {
+    const carrierLayer = source.findIndex(i => loaded[i].carrier);
+    // ⭐ A ceiling holds no volume: that is what makes the void below it a void,
+    // and what makes the carrier a terminator rather than a unit.
+    const fills = ceilings.map((ceiling, k) => {
       const below = source[k + 1];
-      return f && !voided[source[k]] && !(below !== undefined && voided[below]);
+      return (
+        !ceiling &&
+        loaded[source[k]].fill &&
+        !voided[source[k]] &&
+        !(below !== undefined && voided[below])
+      );
     });
 
     // Only the chunk's FIRST layer can be truncated against a surface it does not
@@ -352,35 +437,24 @@ export async function buildSpecStack(
       {
         polygon: densified,
         maxError,
-        candidates: source.map((i, j) =>
-          picks[i] >= 0
-            ? allCandidates[picks[i]]
-            : // A synthetic layer contributes refinement vertices only if it has
-              // RELIEF of its own. A plane is exact everywhere, so it rides the
-              // union the others produce; a dune field is not, and without this
-              // its shape would only be sampled where other layers happened to
-              // need detail.
-              (loaded[i].layer as StackSyntheticLayer).relief
-              ? collectStackCandidates(
-                  reference.channels[j],
-                  reference.header.nx,
-                  maxError,
-                )
-              : new Uint32Array(0),
-        ),
+        candidates,
         // The column never saw a synthetic layer, so its `absent` masks do not
         // cover this stack — fall back to the per-vertex resolve, which is cheap
         // here because the column layers already arrive ordered (it only measures
         // them). ⚠️ Ordering against a synthetic layer is therefore enforced PER
-        // CHUNK, not column-wide. Same for `void`, which splits the layer list the
-        // masks were built for. Sealing does NOT disqualify them: the column seals
-        // BEFORE it resolves, so its masks already describe the tapered heights.
+        // CHUNK, not column-wide.
+        // ⚠️⚠️ A SEALED column is disqualified too, and not for the reason it
+        // looks like: its masks are perfectly valid, they are just decided per
+        // GRID NODE while a triangle is dropped only when all THREE of its own
+        // corners are marked. An island of marked vertices can never remove
+        // anything; an island of marked nodes spans cells and takes whole
+        // triangles with it, which draws a walled notch into the cap. The seal
+        // leaves surfaces running a metre apart over wide bands, so those islands
+        // are exactly what it produces.
         preResolved:
-          spec.resolve && !synthetic && !voiding
-            ? picks.map(i => context.absent[i])
-            : undefined,
+          spec.resolve && !synthetic && !sealing ? preResolved : undefined,
         resolve:
-          spec.resolve && (synthetic || voiding)
+          spec.resolve && (synthetic || sealing)
             ? { mode: spec.resolve.mode, minGap: spec.resolve.minGap }
             : undefined,
         collapseThreshold: spec.resolve?.collapseThreshold,
@@ -389,21 +463,26 @@ export async function buildSpecStack(
         // goes, by thickness.
         coverageAbsence: sealing ? false : spec.resolve?.coverageAbsence,
         refineTerminations: spec.resolve?.refineTerminations,
+        constrainCoverage: spec.resolve?.constrainCoverage,
         caps,
         cuts,
         capCuts,
         fills,
         carrier: carrierLayer >= 0 ? carrierLayer : undefined,
         ceiling: ceilings,
-        inferred: split?.inferred ?? inferred,
+        inferred: context.inferred ? inferredList : undefined,
         topCover: coverAbove,
       },
     );
     if (!build) return null;
 
     // Only the pairs whose BOTH layers this chunk draws: the pair spanning the cut
-    // to the chunk above belongs to that boundary, not to either chunk.
-    const picked = new Set(picks.filter(i => i >= 0));
+    // to the chunk above belongs to that boundary, not to either chunk. Counted in
+    // EXPANDED indices, which is what the column resolved.
+    const picked = new Set<number>();
+    picks.forEach(at => {
+      if (at >= 0) context.expansion[at].forEach(k => picked.add(k));
+    });
     const stackPairs = context.pairs.filter(
       p => picked.has(p.index) && picked.has(p.index - 1),
     );
@@ -413,6 +492,7 @@ export async function buildSpecStack(
       loaded,
       source,
       fills,
+      caps,
       ceilings,
       bytes: context.bytes,
       fetchMs: context.fetchMs,
@@ -425,11 +505,7 @@ export async function buildSpecStack(
       layerCoverage: measured.layerCoverage,
       layerFilled: measured.layerFilled,
       layerVoided: voided,
-      layerTapered:
-        (split
-          ? taperedBySource(loaded.length, split.source, split.moved)
-          : undefined) ??
-        picks.map(i => (i >= 0 ? (context.tapered[i] ?? 0) : 0)),
+      layerTapered: picks.map(i => (i >= 0 ? (context.tapered[i] ?? 0) : 0)),
       sharedStack: true,
       stackLayers: context.layers.length,
       stackResolveMs: context.resolveMs,
@@ -551,17 +627,11 @@ export async function buildSpecStack(
   // See the shared path: `void` expands the layer list, so everything below works
   // on `source` rather than assuming one build layer per caller layer.
   const split = voiding
-    ? splitVoidChannels(
-        built.channels,
-        built.masks,
-        built.header.nx,
-        loaded.map(l => l.fill),
-        {
-          minThickness: spec.resolve?.minThickness,
-          inside,
-          cellSize: (built.header.xinc + built.header.yinc) / 2,
-        },
-      )
+    ? splitVoidChannels(built.channels, built.masks, built.header.nx, {
+        minThickness: spec.resolve?.minThickness,
+        inside,
+        cellSize: (built.header.xinc + built.header.yinc) / 2,
+      })
     : null;
   const source = split ? split.source : loaded.map((_, i) => i);
   const reference = {
@@ -587,13 +657,19 @@ export async function buildSpecStack(
   const caps = source.map(i => loaded[i].cap && !voided[i]);
   const cuts = densifyChunkCuts(spec);
   const capCuts = source.map(i => loaded[i].capCuts ?? null);
-  // See the shared path: the floor is only ever seen from below.
+  // See the shared path: the floor is only ever seen from below, and a ceiling
+  // holds no volume of its own.
   const ceilings = source.map(
     (i, k) => (split ? split.ceiling[k] : false) || !!loaded[i].carrier,
   );
-  const fills = (split ? split.fill : loaded.map(l => l.fill)).map((f, k) => {
+  const fills = ceilings.map((ceiling, k) => {
     const below = source[k + 1];
-    return f && !voided[source[k]] && !(below !== undefined && voided[below]);
+    return (
+      !ceiling &&
+      loaded[source[k]].fill &&
+      !voided[source[k]] &&
+      !(below !== undefined && voided[below])
+    );
   });
 
   const build = buildSurfaceStack(
@@ -609,6 +685,7 @@ export async function buildSpecStack(
       collapseThreshold: spec.resolve?.collapseThreshold,
       coverageAbsence: sealing ? false : spec.resolve?.coverageAbsence,
       refineTerminations: spec.resolve?.refineTerminations,
+      constrainCoverage: spec.resolve?.constrainCoverage,
       caps,
       cuts,
       capCuts,
@@ -625,6 +702,7 @@ export async function buildSpecStack(
     loaded,
     source,
     fills,
+    caps,
     ceilings,
     bytes,
     fetchMs: tFetch - t0,
@@ -661,6 +739,7 @@ export function stackDiagnostics(
     crossingsCovered: pairs.reduce((a, p) => a + p.crossingsCovered, 0),
     rimDropped: build.tessellation.rimDropped,
     constraintFailures: build.tessellation.constraintFailures,
+    coverageRingPoints: build.tessellation.coverageRingPoints ?? 0,
     wallRingsDropped: build.ringsDropped,
     wallRingsOpen: build.ringsOpen,
     layers: result.loaded.map((entry, i) => {
@@ -682,18 +761,22 @@ export function stackDiagnostics(
         (a, k) => a + (dropped?.droppedExcluded[k] ?? 0),
         0,
       );
-      // Triangles actually drawn, summed over the layer's build copies.
-      const triangles = entry.cap
-        ? built.reduce(
-            (a, k) =>
-              a +
+      // Triangles actually drawn, summed over the layer's build copies. ⚠️ Read
+      // off the EFFECTIVE cap, not the caller's: a void ceiling is drawn even
+      // where the seam handed the horizon to a neighbour, and reporting zero for
+      // it is what hid it being drawn twice.
+      const capped = built.some(k => result.caps[k]);
+      const triangles = built.reduce(
+        (a, k) =>
+          result.caps[k]
+            ? a +
               totalTriangles -
               (dropped?.droppedAbsent[k] ?? 0) -
               (dropped?.droppedCollapsed[k] ?? 0) -
-              (dropped?.droppedExcluded[k] ?? 0),
-            0,
-          )
-        : 0;
+              (dropped?.droppedExcluded[k] ?? 0)
+            : a,
+        0,
+      );
       return {
         index: i,
         id: entry.id,
@@ -715,7 +798,7 @@ export function stackDiagnostics(
         droppedAbsent: absent,
         droppedCollapsed: collapsed,
         droppedExcluded: excluded,
-        capped: entry.cap,
+        capped,
         duplicate: build.duplicates[built[0] ?? i] ?? 0,
       };
     }),
@@ -784,17 +867,13 @@ export async function generateSurfaceChunk(
   const maxError = spec.maxError ?? 5;
 
   const result = await buildSpecStack(this, spec, densified, maxError);
-  if (!result && !spec.basement) return null;
   if (!result) return null;
 
   const layers = toAssembleLayers(result);
   const chunk = assembleChunk(
     layers,
     result.build.rings,
-    result.densified,
     {
-      maxError,
-      basement: spec.basement,
       diagnostics: stackDiagnostics(result),
     },
     {

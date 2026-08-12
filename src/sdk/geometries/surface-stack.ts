@@ -24,6 +24,7 @@ import {
   GridRing,
   makeGridInside,
   nodeGridRings,
+  traceMaskBoundary,
 } from './triangulate-grid-delaunay';
 
 /**
@@ -227,6 +228,17 @@ export type StackTessellation = {
    */
   cuts?: Uint8Array[];
   /**
+   * Per LAYER, one flag per triangle: 1 where the triangle lies inside that
+   * layer's own data extent. Present only when the boundaries were constrained
+   * (see the `constrainCoverage` argument of {@link tessellateStack}), which is
+   * what makes the test EXACT — no triangle straddles a data edge, so a whole
+   * triangle is either mapped or not, and the drop rule no longer has to choose
+   * between spilling past the survey and biting into it.
+   */
+  coverage?: Uint8Array[];
+  /** vertices the constrained coverage boundaries added */
+  coverageRingPoints?: number;
+  /**
    * Rim vertices that ended up in NO kept triangle and are therefore missing from
    * `rimVertices`.
    *
@@ -344,6 +356,17 @@ export type StackCollapseOptions = {
    * to be inferred from a fill value.
    */
   coverage?: Uint8Array[];
+  /**
+   * Per layer, one flag per TRIANGLE from {@link StackTessellation.coverage}: 1
+   * where the triangle lies inside the layer's data extent.
+   *
+   * ⭐ Supersedes `coverage` for the layers it is given for, and is EXACT: it is
+   * only produced when the data boundary was constrained into the tessellation,
+   * so a triangle is wholly mapped or wholly not. Without it a binary mask has to
+   * be read at the corners, which either spills a layer up to a whole triangle
+   * past its survey or bites the same distance out of it.
+   */
+  coverageTriangles?: Uint8Array[];
   /**
    * Per-layer truncation masks from {@link resolveStackOrder} in `'truncate'`
    * mode: 1 marks a vertex where the unit was cut away.
@@ -735,6 +758,42 @@ export function measureStackCoverage(
 }
 
 /**
+ * Each layer's data boundary as grid rings, or `null` where the layer has nothing
+ * to bound (fully mapped, or mapped nowhere).
+ *
+ * ⭐ Deduped by mask IDENTITY: surveys routinely share one interpreted polygon
+ * (11 of the demo set's surfaces do), and untouched masks are shared by reference
+ * down the whole column, so the trace runs once per distinct extent rather than
+ * once per layer.
+ *
+ * ⚠️⚠️ NOT simplified, though a trace carries one vertex per cell and
+ * Ramer-Douglas-Peucker would cut that by an order of magnitude. Simplifying a
+ * rectilinear ring can make it cross ITSELF where two arms of a staircase pass
+ * within the tolerance, and `nodeGridRings` does not node a ring against itself,
+ * so the triangulator quietly fails to enforce the edge (measured on the
+ * generated column: 36 constraint failures at a one-cell tolerance, 0 without).
+ * The raw trace follows cell edges and cannot cross itself — and it costs no more
+ * than the refinement pass it replaces.
+ */
+function coverageRings(masks: Uint8Array[], nx: number): (GridRing[] | null)[] {
+  const traced = new Map<Uint8Array, GridRing[] | null>();
+  return masks.map(mask => {
+    const known = traced.get(mask);
+    if (known !== undefined) return known;
+    let missing = false;
+    let present = false;
+    for (let i = 0; i < mask.length; i++) {
+      if (mask[i]) present = true;
+      else missing = true;
+      if (present && missing) break;
+    }
+    const rings = present && missing ? traceMaskBoundary(mask, nx) : [];
+    traced.set(mask, rings.length > 0 ? rings : null);
+    return traced.get(mask)!;
+  });
+}
+
+/**
  * Build ONE triangulation for the whole stack, conforming to the mask polygon.
  *
  * Every layer is refined independently against the common grid (the cheap,
@@ -753,6 +812,11 @@ export function measureStackCoverage(
  *   NOT extend the kept domain — they are constrained so that the part of this
  *   chunk another one also draws is bounded by real mesh edges, and reported per
  *   triangle in {@link StackTessellation.cuts}.
+ * @param constrainCoverage constrain each layer's own DATA boundary as well, so no
+ *   triangle straddles a survey edge, and report membership per triangle in
+ *   {@link StackTessellation.coverage}. Costs vertices along every data edge; buys
+ *   an exact drop rule instead of one that must either spill past the survey or
+ *   bite into it.
  * @returns the shared tessellation, or `null` when nothing survives the mask
  *
  * @group Geometries
@@ -763,6 +827,7 @@ export function tessellateStack(
   maxError: number,
   candidates?: Uint32Array[],
   cuts?: PlanarPolygonGeometry[],
+  constrainCoverage?: boolean,
 ): StackTessellation | null {
   const { nx, ny } = reference.header;
   const toGrid = surfaceWorldToGrid(reference.header, reference.worldPosition);
@@ -772,17 +837,28 @@ export function tessellateStack(
     );
   const gridPolygons = toGridPolygons(polygon);
   const cutPolygons = (cuts ?? []).map(toGridPolygons);
+  // Per layer, which traced set bounds it — the sets themselves are what get
+  // constrained, and several layers usually share one.
+  const layerRings = constrainCoverage
+    ? coverageRings(reference.masks, nx)
+    : null;
+  const coverageSets: GridPolygon[] = [];
+  layerRings?.forEach(rings => {
+    if (rings && !coverageSets.includes(rings)) coverageSets.push(rings);
+  });
 
   // ⚠️ A cut rim CROSSES this chunk's rim — that is what makes it a partial
   // overlap. Two crossing constraint edges can only both follow mesh edges if the
   // crossing is itself a vertex, so they are noded first (`nodeGridRings`);
-  // without it the triangulator silently drops one of the two boundaries.
-  if (cutPolygons.length > 0) {
+  // without it the triangulator silently drops one of the two boundaries. A data
+  // boundary crosses the rim and the other layers' boundaries the same way.
+  if (cutPolygons.length > 0 || coverageSets.length > 0) {
     const flat: GridRing[] = [];
     const visit = (polys: GridPolygon[]) =>
       polys.forEach(rings => rings.forEach(ring => flat.push(ring)));
     visit(gridPolygons);
     cutPolygons.forEach(visit);
+    visit(coverageSets);
     const noded = nodeGridRings(flat);
     if (noded !== flat) {
       let at = 0;
@@ -792,6 +868,7 @@ export function tessellateStack(
         });
       replace(gridPolygons);
       cutPolygons.forEach(replace);
+      replace(coverageSets);
     }
   }
 
@@ -846,26 +923,34 @@ export function tessellateStack(
 
   // A cut is constrained but never closed: it only has to bound the part of THIS
   // chunk that a neighbour also draws, so where it leaves the reference grid the
-  // chain simply restarts.
+  // chain simply restarts. A data boundary is enforced the same way.
+  let coverageRingPoints = 0;
+  const constrainRing = (ring: GridRing) => {
+    let prev = -1;
+    for (let i = 0; i <= ring.length; i++) {
+      const [gx, gy] = ring[i % ring.length];
+      if (gx < 0 || gx > nx - 1 || gy < 0 || gy > ny - 1) {
+        prev = -1;
+        continue;
+      }
+      const vi = master.insertPoint(gx, gy, 0);
+      if (vi < 0) {
+        prev = -1;
+        continue;
+      }
+      if (prev >= 0 && vi !== prev) master.constrainEdge(prev, vi);
+      prev = vi;
+    }
+  };
   for (const cut of cutPolygons) {
     for (const poly of cut) {
-      for (const ring of poly) {
-        let prev = -1;
-        for (let i = 0; i <= ring.length; i++) {
-          const [gx, gy] = ring[i % ring.length];
-          if (gx < 0 || gx > nx - 1 || gy < 0 || gy > ny - 1) {
-            prev = -1;
-            continue;
-          }
-          const vi = master.insertPoint(gx, gy, 0);
-          if (vi < 0) {
-            prev = -1;
-            continue;
-          }
-          if (prev >= 0 && vi !== prev) master.constrainEdge(prev, vi);
-          prev = vi;
-        }
-      }
+      for (const ring of poly) constrainRing(ring);
+    }
+  }
+  for (const set of coverageSets) {
+    for (const ring of set) {
+      coverageRingPoints += ring.length;
+      constrainRing(ring);
     }
   }
 
@@ -900,20 +985,37 @@ export function tessellateStack(
 
   const coords = Float32Array.from(coordList);
 
-  let cutFlags: Uint8Array[] | undefined;
-  if (cutPolygons.length > 0) {
-    const triangles = indices.length / 3;
-    cutFlags = cutPolygons.map(poly => {
-      const test = makeGridInside(poly);
-      const flags = new Uint8Array(triangles);
-      for (let t = 0; t < triangles; t++) {
-        const a = indices[3 * t];
-        const b = indices[3 * t + 1];
-        const c = indices[3 * t + 2];
-        const cx = (coords[2 * a] + coords[2 * b] + coords[2 * c]) / 3;
-        const cy =
-          (coords[2 * a + 1] + coords[2 * b + 1] + coords[2 * c + 1]) / 3;
-        if (test(cx, cy)) flags[t] = 1;
+  const triangles = indices.length / 3;
+  // Membership by CENTROID, which is exact because the ring bounding it was
+  // constrained: no triangle straddles it, so any interior point decides.
+  const flagTriangles = (polys: GridPolygon[]) => {
+    const test = makeGridInside(polys);
+    const flags = new Uint8Array(triangles);
+    for (let t = 0; t < triangles; t++) {
+      const a = indices[3 * t];
+      const b = indices[3 * t + 1];
+      const c = indices[3 * t + 2];
+      const cx = (coords[2 * a] + coords[2 * b] + coords[2 * c]) / 3;
+      const cy =
+        (coords[2 * a + 1] + coords[2 * b + 1] + coords[2 * c + 1]) / 3;
+      if (test(cx, cy)) flags[t] = 1;
+    }
+    return flags;
+  };
+
+  const cutFlags =
+    cutPolygons.length > 0 ? cutPolygons.map(flagTriangles) : undefined;
+
+  let coverageFlags: Uint8Array[] | undefined;
+  if (layerRings) {
+    const everywhere = new Uint8Array(triangles).fill(1);
+    const bySet = new Map<GridRing[], Uint8Array>();
+    coverageFlags = layerRings.map(rings => {
+      if (!rings) return everywhere;
+      let flags = bySet.get(rings);
+      if (!flags) {
+        flags = flagTriangles([rings]);
+        bySet.set(rings, flags);
       }
       return flags;
     });
@@ -924,6 +1026,8 @@ export function tessellateStack(
     indices,
     rimVertices: keptRims,
     cuts: cutFlags,
+    coverage: coverageFlags,
+    coverageRingPoints,
     rimDropped,
     constraintFailures: master.constraintFailures,
   };
@@ -1482,17 +1586,24 @@ export function stackDepthStats(heights: Float32Array[]): StackLayerDepth[] {
 //   "draw wherever any corner has data", extending a layer up to a whole triangle
 //   past its survey — and in an unmapped flat there is nothing for the refinement
 //   to chase, so that triangle can be very large.
+// ⭐⭐ Unless the boundary was CONSTRAINED, in which case no triangle straddles it
+// and `coverageTriangles` answers exactly, per triangle — neither spilling past
+// the survey nor biting into it.
 function makeAbsentTriangleTest(
   options: StackCollapseOptions,
   layer: number,
-): (a: number, b: number, c: number) => boolean {
-  const coverage = options.coverage?.[layer];
+): (t: number, a: number, b: number, c: number) => boolean {
+  const exact = options.coverageTriangles?.[layer];
+  const coverage = exact ? undefined : options.coverage?.[layer];
   const cut = options.absent?.[layer];
-  if (!coverage && !cut) return () => false;
-  return (a, b, c) =>
-    (coverage
-      ? coverage[a] === 0 || coverage[b] === 0 || coverage[c] === 0
-      : false) || (cut ? cut[a] === 1 && cut[b] === 1 && cut[c] === 1 : false);
+  if (!exact && !coverage && !cut) return () => false;
+  return (t, a, b, c) =>
+    (exact
+      ? exact[t] === 0
+      : coverage
+        ? coverage[a] === 0 || coverage[b] === 0 || coverage[c] === 0
+        : false) ||
+    (cut ? cut[a] === 1 && cut[b] === 1 && cut[c] === 1 : false);
 }
 
 export function collapseStackTriangles(
@@ -1508,7 +1619,8 @@ export function collapseStackTriangles(
   const droppedExcluded: number[] = [];
 
   heights.forEach((current, layer) => {
-    const coverage = options.coverage?.[layer];
+    const coverage =
+      options.coverageTriangles?.[layer] ?? options.coverage?.[layer];
     const cut = options.absent?.[layer];
     // A void's ceiling is the invention of the pair, so it yields to the horizon
     // BELOW it instead of the horizon below yielding to it.
@@ -1551,7 +1663,7 @@ export function collapseStackTriangles(
         excludedDrops++;
         continue;
       }
-      if (missing(a, b, c)) {
+      if (missing(i / 3, a, b, c)) {
         absentDrops++;
         continue;
       }
@@ -1646,8 +1758,8 @@ export function stackIntervalTriangles(
       const a = indices[3 * t];
       const b = indices[3 * t + 1];
       const c = indices[3 * t + 2];
-      if (topMissing(a, b, c)) continue;
-      if (bottomMissing(a, b, c)) continue;
+      if (topMissing(t, a, b, c)) continue;
+      if (bottomMissing(t, a, b, c)) continue;
       if (
         top[a] - bottom[a] <= threshold &&
         top[b] - bottom[b] <= threshold &&

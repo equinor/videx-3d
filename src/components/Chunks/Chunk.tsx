@@ -16,7 +16,6 @@ import {
   PlanarPolygonGeometry,
   polygonArea,
   SurfaceChunk,
-  SurfaceChunkBasement,
   SurfaceChunkMetrics,
   SurfaceMeta,
   unpackSurfaceChunk,
@@ -93,8 +92,6 @@ export type ChunkProps = {
   rimSpacing?: number;
   /** interior simplification error (grid height units). Inherits when unset. */
   maxError?: number;
-  /** optional basement block (see {@link SurfaceChunkBasement}). */
-  basement?: SurfaceChunkBasement;
   /** render the surface tops. Default true. */
   showSurfaces?: boolean;
   /** render the side walls. Default true. */
@@ -122,20 +119,15 @@ function disposeChunk(chunk: SurfaceChunk | null) {
   if (!chunk) return;
   chunk.surfaces.forEach(s => s.geometry.dispose());
   chunk.walls.forEach(w => w.geometry.dispose());
-  chunk.basement?.surfaces.forEach(s => s.geometry.dispose());
-  chunk.basement?.walls.forEach(w => w.geometry.dispose());
-  chunk.oceanTop?.surface.dispose();
-  chunk.oceanTop?.body.dispose();
-  chunk.oceanTop?.bed?.dispose();
 }
 
 /**
  * Builds a solid, layered subsurface **chunk** from a stack of depth surfaces
- * clipped to a shared outline, with coloured side walls and an optional basement.
+ * clipped to a shared outline, with coloured side walls.
  *
  * The component keeps three concerns separate so cheap changes stay cheap:
  * - **outline** (which footprint to clip to),
- * - **geometry** (the clipped surfaces + walls + basement) — rebuilt only when the
+ * - **geometry** (the clipped surfaces + walls) — rebuilt only when the
  *   data, outline, or build parameters change,
  * - **appearance** (opacity / wireframe) — reactive, never rebuilds geometry.
  *
@@ -144,14 +136,14 @@ function disposeChunk(chunk: SurfaceChunk | null) {
  * `OITRenderPass`. Values are fetched from the `DataProvider` store.
  *
  * @example
- * <ChunkStack outline={polygon}>
+ * <ChunkStack outline={polygon} carrier={{ below: 800 }}>
  *   <Chunk
  *     layers={[
  *       { surface: topMeta, fill: true },
  *       { surface: midMeta },
- *       { surface: reservoirMeta },
+ *       { surface: reservoirMeta, fill: true },
+ *       { carrier: true },
  *     ]}
- *     basement={{ thickness: 800 }}
  *   />
  * </ChunkStack>
  *
@@ -169,7 +161,6 @@ export const Chunk = ({
   resolve = DEFAULT_RESOLVE,
   rimSpacing,
   maxError,
-  basement,
   showSurfaces = true,
   showWalls = true,
   onBuild,
@@ -476,7 +467,6 @@ export const Chunk = ({
       rimSpacing: resolvedRimSpacing,
       maxError: resolvedMaxError,
       resolve,
-      basement,
       coverAbove: coverAbove.polygon,
       seams: layerSeams,
       carrier: stack.carrier,
@@ -494,7 +484,6 @@ export const Chunk = ({
     resolvedRimSpacing,
     resolvedMaxError,
     resolve,
-    basement,
     coverAbove,
     layerSeams,
     seamsPending,

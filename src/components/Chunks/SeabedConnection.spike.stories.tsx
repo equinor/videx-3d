@@ -59,6 +59,7 @@ type SeabedConnectionProps = {
   seal: boolean;
   sealMode: 'proportional' | 'void';
   minThickness: number;
+  constrainCoverage: boolean;
   waterDepth: number;
   carrierMode: 'below' | 'depth';
   basementThickness: number;
@@ -155,8 +156,9 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
       seal: props.seal,
       sealMode: props.sealMode,
       minThickness: props.minThickness,
+      constrainCoverage: props.constrainCoverage,
     }),
-    [props.seal, props.sealMode, props.minThickness],
+    [props.seal, props.sealMode, props.minThickness, props.constrainCoverage],
   );
 
   // Per-chunk build report. `coverage` says whether a layer has data of its own
@@ -182,6 +184,7 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
           label,
           triangles: metrics.triangles,
           constraintFailures: d?.constraintFailures ?? null,
+          coverageRingPoints: d?.coverageRingPoints ?? null,
           // The column is shared, so these are the SAME work reported by every
           // chunk — only the first one actually pays for it.
           stackLayers: d?.stackLayers ?? null,
@@ -346,6 +349,7 @@ export const Default: Story = {
     seal: true,
     sealMode: 'proportional',
     minThickness: 1,
+    constrainCoverage: false,
     wellCount: 20,
     radius: 800,
     showTrajectories: true,
@@ -407,6 +411,12 @@ export const Default: Story = {
       control: { type: 'range', min: 0, max: 50, step: 0.5 },
       description:
         'How much of a neighbouring unit a seal must leave standing, in metres — the only setting the shape of a seal has (how far it reaches is derived from the gap it closes, measured inside this chunk). ⚠️ Below `collapseThreshold` the sliver it leaves is dropped for having no thickness and the hole comes back.',
+      table: { category: 'Resolve' },
+    },
+    constrainCoverage: {
+      control: 'boolean',
+      description:
+        'Constrain each layer’s data boundary into the shared tessellation, so a triangle is either wholly inside a survey or wholly outside it. `Basement Base` is mapped over 40% of the field here, so this is where the cost shows: watch `coverageRingPoints` and `constraintFailures` in the report.',
       table: { category: 'Resolve' },
     },
     wellCount: {

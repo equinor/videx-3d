@@ -1056,6 +1056,132 @@ describe('refining the edge of a layer’s data', () => {
   });
 });
 
+describe('constraining a layer’s data boundary', () => {
+  // Relief on the FULLY MAPPED layer, so the shared TIN is coarse in the interior
+  // and fine only where the height needs it — which is the situation a data edge
+  // has to survive. A plane refines to two triangles and straddles nothing.
+  const rippled = () =>
+    layerFrom((col, row) => 1000 + 40 * Math.sin(col / 3) * Math.cos(row / 4));
+  // ⚠️ DIAGONAL to the grid. A data edge running along a grid line is the one
+  // case the per-corner rule gets right; the comb and the bite are what happens
+  // when it runs at an angle to the mesh.
+  const holed = () => layerFrom((col, row) => (col + row >= 30 ? null : 1500));
+  const polygon = maskPolygon(4, 28);
+
+  // Cells inside the crop whose four corners are all mapped — what the layer may
+  // honestly be drawn over.
+  const mappedCells = () => {
+    const ok = (col: number, row: number) => col + row < 30;
+    let cells = 0;
+    for (let r = 4; r < 28; r++) {
+      for (let c = 4; c < 28; c++) {
+        if (ok(c, r) && ok(c + 1, r) && ok(c, r + 1) && ok(c + 1, r + 1)) {
+          cells++;
+        }
+      }
+    }
+    return cells;
+  };
+
+  const build = (constrainCoverage: boolean) => {
+    const layers = [rippled(), holed()];
+    const reference = buildStackReference(layers, polygon)!;
+    return buildSurfaceStack(reference, layers, {
+      polygon,
+      maxError: 5,
+      constrainCoverage,
+      // Both sides are measured on a mesh that was NOT densified along the data
+      // edge — that pass is what the constraint replaces, and a coarse edge is
+      // what a large flat interior gives you anyway.
+      refineCoverage: false,
+    })!;
+  };
+
+  // Drawn area of one layer, in grid cells.
+  const drawnArea = (
+    build: ReturnType<typeof buildSurfaceStack>,
+    layer: number,
+  ) => {
+    const t = build!.tessellation;
+    const indices = build!.collapsed?.indices[layer] ?? t.indices;
+    let area = 0;
+    for (let i = 0; i < indices.length; i += 3) {
+      const a = indices[i];
+      const b = indices[i + 1];
+      const c = indices[i + 2];
+      area +=
+        Math.abs(
+          (t.coords[2 * b] - t.coords[2 * a]) *
+            (t.coords[2 * c + 1] - t.coords[2 * a + 1]) -
+            (t.coords[2 * c] - t.coords[2 * a]) *
+              (t.coords[2 * b + 1] - t.coords[2 * a + 1]),
+        ) / 2;
+    }
+    return area;
+  };
+
+  it('⭐ draws the mapped area exactly, instead of biting into it', () => {
+    const mapped = mappedCells();
+    const with_ = build(true);
+    const without = build(false);
+
+    expect(with_.tessellation.constraintFailures).toBe(0);
+    // Exactly, not approximately: the trace follows cell edges, so the drawn
+    // region IS the mapped cell region.
+    expect(drawnArea(with_, 1)).toBeCloseTo(mapped, 6);
+    // The per-corner rule can only drop whole triangles, so it gives up area it
+    // has data for — that is the bite.
+    expect(drawnArea(without, 1)).toBeLessThan(0.95 * drawnArea(with_, 1));
+  });
+
+  it('leaves a fully mapped layer alone', () => {
+    const with_ = build(true);
+    expect(with_.tessellation.coverage![0].every(f => f === 1)).toBe(true);
+    expect(with_.collapsed?.droppedAbsent[0] ?? 0).toBe(0);
+  });
+
+  it('costs nothing when nothing is partly mapped', () => {
+    const layers = [rippled(), layerFrom(() => 1500)];
+    const reference = buildStackReference(layers, polygon)!;
+    const t = tessellateStack(
+      reference,
+      polygon,
+      5,
+      undefined,
+      undefined,
+      true,
+    )!;
+    expect(t.coverageRingPoints).toBe(0);
+    expect(t.coverage!.every(flags => flags.every(f => f === 1))).toBe(true);
+  });
+
+  it('traces one boundary per distinct extent, not per layer', () => {
+    const layers = [rippled(), holed()];
+    const reference = buildStackReference(layers, polygon)!;
+    const mask = reference.masks[1];
+    const shared = tessellateStack(
+      { ...reference, masks: [mask, mask] },
+      polygon,
+      5,
+      undefined,
+      undefined,
+      true,
+    )!;
+    const copied = tessellateStack(
+      { ...reference, masks: [mask, Uint8Array.from(mask)] },
+      polygon,
+      5,
+      undefined,
+      undefined,
+      true,
+    )!;
+
+    // Same extent ⇒ one trace, one set of flags, shared by both layers.
+    expect(shared.coverage![0]).toBe(shared.coverage![1]);
+    expect(copied.coverageRingPoints).toBe(2 * shared.coverageRingPoints!);
+  });
+});
+
 describe('cut outlines', () => {
   // Rippled so the refinement produces a real mesh rather than two triangles.
   const rippled = () =>

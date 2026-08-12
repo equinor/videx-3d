@@ -8,7 +8,6 @@ import {
   CRS,
   getProjectionDefFromUtmZone,
   PlanarPolygonGeometry,
-  SurfaceChunkBasement,
   SurfaceMeta,
   Vec2,
 } from '../../sdk';
@@ -24,9 +23,8 @@ import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import storyArgs from '../../storybook/story-args.json';
 import { UtmArea } from '../UtmArea';
 import { Chunk } from './Chunk';
-import { layersFromGroups } from './chunk-defs';
+import { ChunkLayer, layersFromGroups } from './chunk-defs';
 import { ChunkStack } from './ChunkStack';
-import { OceanChunk } from './OceanChunk';
 
 const utmZone = storyArgs.utmZone;
 const origin = storyArgs.origin as Vec2;
@@ -81,18 +79,9 @@ type ChunkStoryProps = {
   collapseThreshold: number;
   rimSpacing: number;
   maxError: number;
-  showBasement: boolean;
-  basementTopSource: 'chunk' | 'procedural';
-  basementThickness: number;
-  basementTopDepth: number;
-  basementVariation: number;
-  basementColor: string;
-  showOcean: boolean;
-  oceanMode: 'surface' | 'procedural';
-  oceanSurfaceCount: number;
-  waterDepth: number;
-  windSpeed: number;
-  waterOpacity: number;
+  showFloor: boolean;
+  floorClearance: number;
+  floorColor: string;
 };
 
 const ChunkStory = (props: ChunkStoryProps) => {
@@ -121,45 +110,22 @@ const ChunkStory = (props: ChunkStoryProps) => {
     [surfaceMetaDict],
   );
 
-  // Sequential allocation: the ocean chunk (surface mode) consumes the first
-  // `oceanSurfaceCount` surfaces (shallowest = seabed); the geological chunk uses
-  // the rest — so no surface is used as both the seabed and the next chunk's top.
-  const oceanCount =
-    props.showOcean && props.oceanMode === 'surface'
-      ? props.oceanSurfaceCount
-      : 0;
-  const oceanGroups = useMemo(
-    () => (oceanCount > 0 ? [metas.slice(0, oceanCount)] : undefined),
-    [metas, oceanCount],
-  );
   const groups = useMemo(
-    () => splitIntoGroups(metas.slice(oceanCount), props.groupSizes),
-    [metas, oceanCount, props.groupSizes],
+    () => splitIntoGroups(metas, props.groupSizes),
+    [metas, props.groupSizes],
   );
 
-  const basement = useMemo<SurfaceChunkBasement | undefined>(() => {
-    if (!props.showBasement) return undefined;
-    return {
-      color: props.basementColor,
-      thickness: props.basementThickness,
-      top:
-        props.basementTopSource === 'procedural'
-          ? {
-              procedural: {
-                depth: props.basementTopDepth,
-                variation: props.basementVariation,
-              },
-            }
-          : undefined,
-    };
-  }, [
-    props.showBasement,
-    props.basementColor,
-    props.basementThickness,
-    props.basementTopSource,
-    props.basementTopDepth,
-    props.basementVariation,
-  ]);
+  // The block's floor is the COLUMN's carrier: one flat plane declared on the
+  // stack, drawn by the chunk that closes the block.
+  const layers = useMemo<ChunkLayer[]>(() => {
+    const own = layersFromGroups(groups);
+    if (!props.showFloor || own.length === 0) return own;
+    return [
+      ...own.slice(0, -1),
+      { ...own[own.length - 1], fill: props.floorColor },
+      { carrier: true, material: props.floorColor },
+    ];
+  }, [groups, props.showFloor, props.floorColor]);
 
   // Memoized so a stable identity is passed to Chunk (a new object rebuilds).
   const resolve = useMemo(
@@ -182,32 +148,18 @@ const ChunkStory = (props: ChunkStoryProps) => {
         <ChunkStack
           outline={polygon}
           surfaces={metas}
+          carrier={
+            props.showFloor ? { below: props.floorClearance } : undefined
+          }
           rimSpacing={props.rimSpacing}
           maxError={props.maxError}
         >
-          {props.showOcean &&
-            (props.oceanMode === 'procedural' ? (
-              <OceanChunk
-                procedural={{ waterDepth: props.waterDepth }}
-                windSpeed={props.windSpeed}
-                waterOpacity={props.waterOpacity}
-              />
-            ) : (
-              oceanGroups && (
-                <OceanChunk
-                  groups={oceanGroups}
-                  windSpeed={props.windSpeed}
-                  waterOpacity={props.waterOpacity}
-                />
-              )
-            ))}
           <Chunk
-            layers={layersFromGroups(groups)}
+            layers={layers}
             surfaceOpacity={props.surfaceOpacity}
             wallOpacity={props.wallOpacity}
             wireframe={props.wireframe}
             resolve={resolve}
-            basement={basement}
           />
         </ChunkStack>
       </UtmArea>
@@ -238,20 +190,10 @@ export const Default: Story = {
     surfaceOpacity: 1,
     wallOpacity: 1,
     wireframe: false,
-    // Basement
-    showBasement: false,
-    basementTopSource: 'chunk',
-    basementThickness: 800,
-    basementTopDepth: 4000,
-    basementVariation: 400,
-    basementColor: '#4a4a4a',
-    // Ocean
-    showOcean: false,
-    oceanMode: 'surface',
-    oceanSurfaceCount: 1,
-    waterDepth: 800,
-    windSpeed: 10,
-    waterOpacity: 0.5,
+    // Floor
+    showFloor: true,
+    floorClearance: 800,
+    floorColor: '#4a4a4a',
   },
   argTypes: {
     groupSizes: { control: { type: 'text' }, table: { category: 'Chunk' } },
@@ -297,49 +239,19 @@ export const Default: Story = {
       table: { category: 'Appearance' },
     },
     wireframe: { control: 'boolean', table: { category: 'Appearance' } },
-    showBasement: { control: 'boolean', table: { category: 'Basement' } },
-    basementTopSource: {
-      control: { type: 'inline-radio' },
-      options: ['chunk', 'procedural'],
-      table: { category: 'Basement' },
+    showFloor: {
+      control: 'boolean',
+      description:
+        'Close the block with the column CARRIER: one flat plane declared on the `ChunkStack` and drawn by the chunk as a `{ carrier: true }` layer.',
+      table: { category: 'Floor' },
     },
-    basementThickness: {
+    floorClearance: {
       control: { type: 'range', min: 0, max: 3000, step: 50 },
-      table: { category: 'Basement' },
+      description:
+        'How far the carrier clears the column’s deepest mapped sample, in metres.',
+      table: { category: 'Floor' },
     },
-    basementTopDepth: {
-      control: { type: 'range', min: 0, max: 6000, step: 50 },
-      table: { category: 'Basement' },
-    },
-    basementVariation: {
-      control: { type: 'range', min: 0, max: 1500, step: 25 },
-      table: { category: 'Basement' },
-    },
-    basementColor: { control: 'color', table: { category: 'Basement' } },
-    showOcean: { control: 'boolean', table: { category: 'Ocean' } },
-    oceanMode: {
-      control: { type: 'inline-radio' },
-      options: ['surface', 'procedural'],
-      table: { category: 'Ocean' },
-    },
-    oceanSurfaceCount: {
-      control: { type: 'range', min: 1, max: 6, step: 1 },
-      description: 'Surfaces the ocean chunk consumes (surface mode).',
-      table: { category: 'Ocean' },
-    },
-    waterDepth: {
-      control: { type: 'range', min: 50, max: 4000, step: 50 },
-      description: 'Mean sea-bed depth (procedural mode).',
-      table: { category: 'Ocean' },
-    },
-    windSpeed: {
-      control: { type: 'range', min: 0, max: 25, step: 1 },
-      table: { category: 'Ocean' },
-    },
-    waterOpacity: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      table: { category: 'Ocean' },
-    },
+    floorColor: { control: 'color', table: { category: 'Floor' } },
   },
   decorators: [
     EventEmitterDecorator,

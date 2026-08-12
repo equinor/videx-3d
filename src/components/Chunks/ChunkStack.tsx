@@ -99,7 +99,7 @@ export type ChunkStackProps = {
  * <UtmArea origin={origin} utmZone={utmZone}>
  *   <ChunkStack outline={polygon} surfaces={column}>
  *     <Chunk groups={[column.slice(0, 4)]} />
- *     <Chunk groups={[column.slice(4)]} basement={{ thickness: 800 }} />
+ *     <Chunk layers={column.slice(4).map(surface => ({ surface, fill: true }))} />
  *   </ChunkStack>
  * </UtmArea>
  *
