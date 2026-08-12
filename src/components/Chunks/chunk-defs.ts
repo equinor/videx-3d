@@ -3,6 +3,7 @@ import {
   PackedSurfaceChunk,
   PlanarPolygonCoordinates,
   SealMode,
+  StackCarrier,
   StackRelief,
   SurfaceChunkBasement,
   SurfaceClipHeader,
@@ -41,6 +42,12 @@ export type SurfaceChunkSpecLayer = (
    */
   fill?: boolean;
   /**
+   * This layer is the COLUMN's carrier (see `SurfaceChunkStackSpec.carrier`) —
+   * the flat floor the whole stack terminates against, rather than a boundary of
+   * this chunk's own.
+   */
+  carrier?: boolean;
+  /**
    * Draw this layer's cap. Default true; `false` keeps the layer in the stack but
    * draws no surface, because a neighbouring chunk covers this whole footprint and
    * draws that horizon instead. INFERRED by `ChunkStack` from the chunks'
@@ -70,6 +77,11 @@ export function isSyntheticSpecLayer(
   layer: SurfaceChunkSpecLayer,
 ): layer is SurfaceChunkSyntheticLayer & { fill?: boolean } {
   return (layer as SurfaceChunkLayerSpec).id === undefined;
+}
+
+/** Whether a spec layer draws the column's carrier. */
+export function isCarrierSpecLayer(layer: SurfaceChunkSpecLayer): boolean {
+  return layer.carrier === true;
 }
 
 /**
@@ -136,6 +148,20 @@ export type ChunkLayer = {
   offset?: number;
   /** optional procedural perturbation of a synthetic boundary */
   relief?: StackRelief;
+  /**
+   * This layer is the column's CARRIER — the flat floor declared once on the
+   * `ChunkStack` (see `ChunkStackProps.carrier`), drawn by whichever chunk closes
+   * the block. `surface`, `depth`, `offset` and `relief` are all ignored: the
+   * plane is the column's, so every chunk that draws it draws the same one.
+   *
+   * ⭐ It is a terminator, not a unit — there is no interval below it, so `fill`
+   * has no meaning here and the cap defaults to the fill of the unit ABOVE it,
+   * which is the only side of it that is ever seen.
+   *
+   * ⚠️ Must be the chunk's LAST layer, and is dropped entirely when the stack
+   * declares no carrier.
+   */
+  carrier?: boolean;
   /**
    * The cap's material — a colour, or a `Material` (e.g. a `SurfaceMaterial`) the
    * CALLER owns and this component never disposes. Omit for the built-in palette,
@@ -329,6 +355,16 @@ export type SurfaceChunkStackSpec = {
    * it defines the common grid they all sample. Plain coordinates + offset.
    */
   polygon: { coordinates: PlanarPolygonCoordinates; offset: Vec2 };
+  /**
+   * A flat floor closing the whole column, appended below its deepest surface.
+   * Nothing pierces it: anything that would is truncated at it.
+   *
+   * ⭐ Declared on the COLUMN rather than per chunk so that a horizon and the
+   * floor beneath it are resolved against each other ONCE — which is also what
+   * gives the column's deepest surface a neighbour below it, so sealing it no
+   * longer falls back to the one-neighbour rule.
+   */
+  carrier?: StackCarrier;
   /** identity of the stack, so chunks of the same column hit the same cache entry */
   key: string;
 };
@@ -365,6 +401,12 @@ export type SurfaceChunkSpec = {
   cuts?: SurfaceChunkCut[];
   /** the column this chunk is cut from (see {@link SurfaceChunkStackSpec}) */
   stack?: SurfaceChunkStackSpec;
+  /**
+   * The column's carrier plane, repeated here so a chunk built WITHOUT a shared
+   * column can still terminate against it. Same declaration as
+   * {@link SurfaceChunkStackSpec.carrier}.
+   */
+  carrier?: StackCarrier;
   /** rim densification spacing (world units) */
   rimSpacing?: number;
   /** interior simplification error (grid height units) */

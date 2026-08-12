@@ -187,13 +187,15 @@ export const Chunk = ({
   //     rebuilding it. Materials are appearance and never reach the spec. ---------
   const layersKey = layers
     .map(l => {
-      const base = l.surface
-        ? l.surface.id
-        : `@${l.depth ?? ''}/${l.offset ?? ''}/${
-            l.relief
-              ? `${l.relief.kind ?? 'dunes'}:${l.relief.amplitude}:${l.relief.seed ?? 0}:${l.relief.featureSize ?? ''}:${l.relief.mode ?? ''}`
-              : ''
-          }`;
+      const base = l.carrier
+        ? '@carrier'
+        : l.surface
+          ? l.surface.id
+          : `@${l.depth ?? ''}/${l.offset ?? ''}/${
+              l.relief
+                ? `${l.relief.kind ?? 'dunes'}:${l.relief.amplitude}:${l.relief.seed ?? 0}:${l.relief.featureSize ?? ''}:${l.relief.mode ?? ''}`
+                : ''
+            }`;
       return `${base}:${hasFill(l.fill) ? 1 : 0}`;
     })
     .join(',');
@@ -477,6 +479,7 @@ export const Chunk = ({
       basement,
       coverAbove: coverAbove.polygon,
       seams: layerSeams,
+      carrier: stack.carrier,
       // Only a declared column with an envelope can be shared; otherwise this
       // chunk builds (and resolves) on its own.
       stack:
@@ -496,6 +499,7 @@ export const Chunk = ({
     layerSeams,
     seamsPending,
     columnPending,
+    stack.carrier,
     stack.column,
     stack.envelope,
   ]);

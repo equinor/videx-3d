@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   sealStackChannels,
   splitVoidChannels,
+  TAPER_MAX_SLOPE,
   TAPER_MIN_THICKNESS,
 } from '../src/sdk/geometries/surface-seal';
 import {
@@ -196,6 +197,43 @@ describe('sealStackChannels', () => {
     expect(at(cropped, 8)).toBeCloseTo(at(cropped, 6), 6);
   });
 
+  it('⭐ bounds the travel by the gap’s own reach, so a small gap only dimples', () => {
+    // 5 unmapped columns = a reach of 5 cells, so at most 5 * CELL * slope of
+    // travel however far the neighbour is.
+    const cap = TAPER_MAX_SLOPE * 5 * CELL;
+    const sealed = sealStackChannels(
+      [flat(0), flat(-5000)],
+      [mappedTo(3), covered()],
+      NX,
+      { cellSize: CELL },
+    ).channels[0];
+
+    expect(at(sealed, 8)).toBeCloseTo(-cap, 3);
+    // ...where the same gap dives the whole way without a cell size to compare
+    // the reach against
+    const unbounded = sealStackChannels(
+      [flat(0), flat(-5000)],
+      [mappedTo(3), covered()],
+      NX,
+      {},
+    ).channels[0];
+    expect(at(unbounded, 8)).toBeCloseTo(-5000 + TAPER_MIN_THICKNESS, 3);
+  });
+
+  it('leaves a gap with room to spare alone — the bound is a slope, not a size', () => {
+    // 8 unmapped columns against a neighbour only 300 m below: the room runs out
+    // long before the slope does, so this lands exactly where it always did.
+    const sealed = sealStackChannels(
+      [flat(0), flat(-300)],
+      [mappedTo(0), covered()],
+      NX,
+      { cellSize: CELL },
+    ).channels[0];
+
+    expect(TAPER_MAX_SLOPE * 8 * CELL).toBeGreaterThan(300);
+    expect(at(sealed, 8)).toBeCloseTo(-300 + TAPER_MIN_THICKNESS, 3);
+  });
+
   it('stays monotone after the resolve when layers taper into each other', () => {
     const channels = [flat(0), flat(-100), flat(-200), flat(-300)];
     const masks = [covered(), mappedTo(3), mappedTo(3), covered()];
@@ -281,6 +319,22 @@ describe('splitVoidChannels', () => {
 
     expect(out.channels[0]).toBe(channels[0]);
     expect(out.channels[3]).toBe(channels[2]);
+  });
+
+  it('⭐ opens a narrow void only as far as its reach allows', () => {
+    // Neighbours far enough away that the reach, not the room, is what binds.
+    const channels = [flat(0), flat(-1000), flat(-3000)];
+    const masks = [covered(), mappedTo(3), covered()];
+    const cap = TAPER_MAX_SLOPE * 5 * CELL;
+
+    const out = splitVoidChannels(channels, masks, NX, [true, true, false], {
+      cellSize: CELL,
+    });
+
+    // The bound applies to both copies, so the void opens symmetrically about the
+    // surface rather than reaching each neighbour.
+    expect(at(out.channels[1], 8)).toBeCloseTo(-1000 + cap, 3);
+    expect(at(out.channels[2], 8)).toBeCloseTo(-1000 - cap, 3);
   });
 });
 

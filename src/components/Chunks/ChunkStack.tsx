@@ -11,6 +11,7 @@ import { useData } from '../../hooks/useData';
 import {
   ChunkSurfaceLayer,
   PlanarPolygonGeometry,
+  StackCarrier,
   SurfaceMeta,
 } from '../../sdk';
 import { UtmAreaContext } from '../UtmArea';
@@ -60,6 +61,19 @@ export type ChunkStackProps = {
    * overlap).
    */
   surfaces?: SurfaceMeta[];
+  /**
+   * A flat floor closing the whole column, at an absolute `depth` or a margin
+   * `below` its deepest mapped sample. Nothing pierces it — a surface that would
+   * is truncated at it — so the block is closed from beneath whatever the data
+   * does. A chunk draws it by declaring a `{ carrier: true }` layer.
+   *
+   * ⭐ It belongs to the COLUMN, not to a chunk: two chunks may otherwise hang
+   * different floors under one horizon, and the surface between them then has two
+   * heights. It also gives the deepest surface a neighbour below, which is what
+   * the seal needs to keep it in proportion rather than pinning it to the one
+   * layer above.
+   */
+  carrier?: StackCarrier;
   /** default rim densification spacing (world units) for child chunks */
   rimSpacing?: number;
   /** default interior simplification error (grid height units) for child chunks */
@@ -95,6 +109,7 @@ export const ChunkStack = ({
   outline = null,
   cutSource,
   surfaces,
+  carrier,
   rimSpacing,
   maxError,
   onProgress,
@@ -102,6 +117,14 @@ export const ChunkStack = ({
 }: PropsWithChildren<ChunkStackProps>) => {
   const store = useData();
   const utm = useContext(UtmAreaContext);
+
+  // `carrier={{ below: 800 }}` is the natural way to write this and makes a new
+  // object every render, which would rebuild every chunk that draws it.
+  const carrierKey = carrier
+    ? `${carrier.depth ?? ''}/${carrier.below ?? ''}`
+    : '';
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
+  const stableCarrier = useMemo(() => carrier, [carrierKey]);
 
   // --- Envelope: the footprint the shared column grid is built over. It must
   //     contain every chunk's outline, so a wellbore cut source is resolved over
@@ -307,6 +330,7 @@ export const ChunkStack = ({
       cutSource,
       surfaces,
       column,
+      carrier: stableCarrier,
       envelope,
       rimSpacing,
       maxError,
@@ -321,6 +345,7 @@ export const ChunkStack = ({
     cutSource,
     surfaces,
     column,
+    stableCarrier,
     wellboreEnvelope,
     rimSpacing,
     maxError,

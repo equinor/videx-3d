@@ -60,7 +60,9 @@ type SeabedConnectionProps = {
   sealMode: 'proportional' | 'void';
   minThickness: number;
   waterDepth: number;
+  carrierMode: 'below' | 'depth';
   basementThickness: number;
+  carrierDepth: number;
   wellCount: number;
   radius: number;
   showTrajectories: boolean;
@@ -237,14 +239,15 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
   }, [column, seabed, basement, props.detailCount]);
 
   // C: the basement block, back on the FIELD outline — the basement surface it
-  //    owns, filled down to a flat floor `basementThickness` below it (`offset`).
+  //    owns, filled down to the COLUMN's carrier: one flat floor, declared on the
+  //    stack, that every chunk terminating against it shares.
   const basementLayers = useMemo<ChunkLayer[]>(() => {
     if (!basement) return [];
     return [
       { surface: basement, material: '#6b6b6b', fill: '#4a4a4a' },
-      { offset: props.basementThickness, material: '#4a4a4a' },
+      { carrier: true },
     ];
-  }, [basement, props.basementThickness]);
+  }, [basement]);
 
   if (!field || !seabed || !basement) return null;
 
@@ -253,7 +256,15 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
       <UtmArea origin={origin} utmZone={utmZone}>
         <ambientLight intensity={0.6} />
         <directionalLight position={[0.5, 1, 0.3]} intensity={1.1} />
-        <ChunkStack outline={field} surfaces={column}>
+        <ChunkStack
+          outline={field}
+          surfaces={column}
+          carrier={
+            props.carrierMode === 'depth'
+              ? { depth: props.carrierDepth }
+              : { below: props.basementThickness }
+          }
+        >
           <Chunk
             layers={oceanLayers}
             surfaceOpacity={props.waterOpacity}
@@ -329,7 +340,9 @@ export const Default: Story = {
     detailCount: 6,
     basementCrop: 0,
     waterDepth: 0,
+    carrierMode: 'below',
     basementThickness: 800,
+    carrierDepth: 2500,
     seal: true,
     sealMode: 'proportional',
     minThickness: 1,
@@ -361,13 +374,26 @@ export const Default: Story = {
     basementThickness: {
       control: { type: 'range', min: 100, max: 2000, step: 50 },
       description:
-        'Flat basement floor this far below the basement surface (an `offset` layer).',
+        'The column CARRIER: one flat floor this far below the deepest mapped sample of the whole column, declared on the `ChunkStack` and drawn by the basement tier (`{ carrier: true }`). Nothing pierces it — a surface that would is truncated at it.',
+      table: { category: 'Connection' },
+    },
+    carrierMode: {
+      control: 'inline-radio',
+      options: ['below', 'depth'],
+      description:
+        'How the carrier is placed: `below` clears the column’s deepest mapped sample by `basementThickness`, so it never cuts anything; `depth` puts it at an absolute depth, which TRUNCATES every surface that would otherwise pierce it.',
+      table: { category: 'Connection' },
+    },
+    carrierDepth: {
+      control: { type: 'range', min: 500, max: 4000, step: 50 },
+      description:
+        'Absolute carrier depth (metres, positive-down), used by `carrierMode: depth`. Below ~2200 m nothing is cut; raise it through the basement to watch the block end flat.',
       table: { category: 'Connection' },
     },
     seal: {
       control: 'boolean',
       description:
-        'Close a surface’s unmapped region by tapering it onto its neighbours. ⚠️ Sealing runs PER CHUNK, so two chunks sharing a horizon can taper it differently — turn it off to tell that apart from a genuine gap at a seam.',
+        'Close a surface’s unmapped region by tapering it onto its neighbours. Runs on the COLUMN, so a horizon two chunks share has one height — except under `void`, which is still split per chunk.',
       table: { category: 'Resolve' },
     },
     sealMode: {

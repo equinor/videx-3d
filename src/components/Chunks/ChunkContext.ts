@@ -1,5 +1,5 @@
 import { createContext } from 'react';
-import { PlanarPolygonGeometry, SurfaceMeta } from '../../sdk';
+import { PlanarPolygonGeometry, StackCarrier, SurfaceMeta } from '../../sdk';
 import { ChunkBuildState } from './chunk-defs';
 import { CutoutSource } from './cutout';
 import { SeamDecision } from './seams';
@@ -42,6 +42,12 @@ export type ChunkStackContextValue = {
    * resolve — a drawn layer is no longer pushed down by a surface nobody can see.
    */
   column?: SurfaceMeta[];
+  /**
+   * The flat floor the whole column terminates against, when the caller declared
+   * one (see `ChunkStackProps.carrier`). A chunk draws it with a
+   * `{ carrier: true }` layer; every chunk that does draws the SAME plane.
+   */
+  carrier?: StackCarrier;
   /**
    * Envelope footprint of the column (scene XZ) — must contain every chunk's
    * outline. Defaults to the stack `outline`; with a wellbore cut source the

@@ -172,11 +172,16 @@ export const ChunkMeshes = ({
 
       {showSurfaces &&
         chunk.surfaces.map((surface, i) => {
-          // The ceiling of a void faces UP, so what it shows is the base of the
-          // unit ABOVE it, not the cap of its own layer — take that interval's
-          // fill. A layer with nothing above it is never split, so `layer - 1`
-          // exists; the fallback only covers an interval left unfilled.
-          const material = surface.ceiling
+          const declared = layers[surface.layer];
+          // The ceiling of a void, and the carrier that closes the block, both
+          // face UP, so what they show is the base of the unit ABOVE them rather
+          // than a cap of their own — take that interval's fill. A layer with
+          // nothing above it is never split, so `layer - 1` exists; the fallback
+          // covers an interval left unfilled, and a carrier given a material of
+          // its own, which is the one case where the floor reads as its own thing.
+          const fromAbove =
+            surface.ceiling && !(declared?.carrier && declared.material);
+          const material = fromAbove
             ? (materials.walls[surface.layer - 1] ??
               materials.surfaces[surface.layer])
             : materials.surfaces[surface.layer];

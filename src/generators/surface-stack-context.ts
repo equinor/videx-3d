@@ -6,11 +6,14 @@ import {
 } from '../components/Chunks/chunk-defs';
 import {
   buildStackReference,
+  clampStackToCarrier,
   PlanarPolygonGeometry,
   rasterizeStackOutline,
   ReadonlyStore,
   resolveStackGrid,
   sealStackChannels,
+  STACK_MASK_DATA,
+  stackCarrierLevel,
   StackLayer,
   StackPairStats,
   StackReference,
@@ -28,6 +31,12 @@ export type StackContext = {
   layers: StackLayer[];
   /** surface id -> index into `layers` / `reference.channels` */
   index: Map<string, number>;
+  /**
+   * Index of the carrier plane appended below the column, or `null` when none was
+   * declared. It closes the block, so the resolve leaves it alone and the collapse
+   * never drops it (see `StackCollapseOptions.carrier`).
+   */
+  carrier: number | null;
   /** per-layer, per-node: 1 where the unit was truncated away */
   absent: Uint8Array[];
   /**
@@ -118,6 +127,26 @@ async function buildStackContext(
   if (!reference) return null;
   const tReference = performance.now();
 
+  // ⭐ The carrier is appended AFTER the resample, not passed through it: a `below`
+  // plane is measured against the column's own depths, which only exist once every
+  // layer is on the common grid. It is complete and constant, so it needs no
+  // resampling of its own — and it gives the deepest surface a neighbour below,
+  // which is what keeps the seal proportional down there.
+  let carrier: number | null = null;
+  let carrierLevel = 0;
+  if (stack.carrier) {
+    carrierLevel = stackCarrierLevel(
+      reference.channels,
+      reference.masks,
+      stack.carrier,
+    );
+    const nodes = reference.header.nx * reference.header.ny;
+    carrier = reference.channels.length;
+    reference.channels.push(new Float32Array(nodes).fill(carrierLevel));
+    reference.masks.push(new Uint8Array(nodes).fill(STACK_MASK_DATA));
+    layers.push({ depth: -carrierLevel });
+  }
+
   // ⭐ SEALED HERE, on the column, so a horizon two chunks share has ONE height.
   // Sealing per chunk gave a surface the neighbours of whichever chunk was asking —
   // the deepest layer of one chunk tapered against the layer above it while another
@@ -137,6 +166,7 @@ async function buildStackContext(
           mode: resolve?.sealMode,
           minThickness: resolve?.minThickness,
           inside: rasterizeStackOutline(reference, envelope),
+          cellSize: (reference.header.xinc + reference.header.yinc) / 2,
         },
       )
     : null;
@@ -144,6 +174,13 @@ async function buildStackContext(
     ? { ...reference, channels: sealed.channels }
     : reference;
   const tSeal = performance.now();
+
+  // Nothing pierces the carrier. Elementwise, so it cannot introduce a crossing
+  // for the resolve below to find; whatever it flattens ends up with no thickness
+  // and is dropped by the collapse.
+  if (carrier !== null) {
+    clampStackToCarrier(sealedReference.channels, carrier, carrierLevel);
+  }
 
   // The whole column is made monotone here, on the common grid, so every chunk
   // that samples it inherits an ordering the others agree with. The masks come
@@ -160,11 +197,20 @@ async function buildStackContext(
       });
   const tResolve = performance.now();
 
+  // Re-imposed, because a positive `minGap` would have pushed the floor below the
+  // very horizons it just truncated. Clamping again cannot break the ordering the
+  // resolve established — a max against a constant preserves it.
+  if (carrier !== null) {
+    clampStackToCarrier(sealedReference.channels, carrier, carrierLevel);
+    resolved.absent[carrier]?.fill(0);
+  }
+
   return {
     key,
     reference: sealedReference,
     layers,
     index,
+    carrier,
     absent: resolved.absent,
     inferred: sealed?.inferred ?? null,
     tapered: sealed?.tapered ?? [],

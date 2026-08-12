@@ -702,19 +702,15 @@ build on it.
    bounds how far a wall can stretch. ⚠️ A carrier makes it easy to draw large
    invented volumes — it needs the same distance bound and the §10.1.5 appearance.
 
-   ⭐ **OPEN: is a carrier declared per chunk, or on the `ChunkStack` (per column)?**
-   The wording above says per group, i.e. chunk-private — but the column-level
-   variant settles two things that are open today, and both point the same way:
-   - `sealMode: 'void'` cannot move to the column while the deepest column surface
-     has nothing below it: `splitVoidChannels` needs BOTH neighbours, so it would
-     degrade to a one-sided taper exactly where a chunk hangs its own floor (§10.7).
-   - The column seal falls back to its one-neighbour rule for that same surface. The
-     justification — two chunks may hang DIFFERENT floors under one horizon, so a
-     chunk-private boundary must not set a shared height — is really an argument for
-     declaring the floor on the column, where there is exactly one of it.
-   Every scene so far declares an effectively column-wide floor (`SeabedConnection`'s
-   `{offset: basementThickness}` is chunk-private only because there is nowhere else
-   to put it). Decide this WITH the carrier work, not after.
+   ⭐ **ANSWERED: the carrier belongs to the COLUMN.** Built — see §10.9. Both open
+   questions pointed the same way: `sealMode: 'void'` cannot move to the column
+   while the deepest column surface has nothing below it, and the column seal fell
+   back to its one-neighbour rule for that same surface. The justification for that
+   fallback — two chunks may hang DIFFERENT floors under one horizon, so a
+   chunk-private boundary must not set a shared height — is really an argument for
+   declaring the floor where there is exactly one of it. A per-CHUNK carrier may
+   still be worth having later (a chunk terminating against something of its own,
+   shaped rather than flat); it is a different feature and is not built.
 
 8. **The chunk outline becomes a pure user crop.** Once extents are per-layer,
    coverage stops being a cropping concern: the outline means "where the user wants
@@ -741,6 +737,7 @@ Numbered by dependency, not importance.
 4. **Marking the inference** — needs 2 and 3. **— done (§10.6).**
 5. **Outline as user crop** — needs 1–4; deletes `optional`. **— done (§9.7, §9.9).**
 6. **Carrier surfaces** — largely independent; retires the `basement` slot.
+   **— done, at COLUMN level (§10.9).**
 7. **Inferred sealing** — deletes `cap`; last, because partial overlap interacts with
    per-layer extents. **— done (§10.8).**
 
@@ -964,6 +961,20 @@ There are two ways that happens, and `maxFill` is the line between them:
   coverage mask. ⚠️ Only when a seal did NOT run — taking the larger of the two would
   flatten the taper's gradient to a hard 1 and destroy the fade.
 
+⚠️⚠️ **"A seal did not run" is decided PER LAYER, and it has to be.** The seal skips
+a layer with no neighbour above *and* none below — the end of a column, or a column
+with a single surface — and hands back all-zero weights for it. Reading "weights were
+given" as "this was sealed" then leaves that layer drawn on plain fill and *unmarked*,
+which made `seal: true` mark strictly LESS than `seal: false`: the one case where
+invention was certain was the one case that said nothing. The per-layer test is exact
+rather than a heuristic, because a layer the seal did process carries a positive
+weight at **every** unmapped node.
+
+⭐ The same blind spot ran through the diagnostics: `SurfaceChunkLayerDiagnostics
+.inferred` reported `1 − coverage` whenever *any* layer had been tapered, so a layer
+the seal never reached still claimed its unmapped part was inferred. It is now keyed
+on that layer's own tapered count.
+
 With `coverageAbsence: true` and no seal there is nothing to mark: the geometry is
 dropped rather than invented.
 
@@ -1105,6 +1116,33 @@ trough there: the surface descends with the data, then reverses. The taper blend
 from the nearest-neighbour fill, which is flat, rather than from the horizon's own
 trend.
 
+**How far it TRAVELS is bounded by that same reach**, which is the other half of
+the same idea:
+
+```
+travel = sign(room) * min(|room| - minThickness,  TAPER_MAX_SLOPE * reach)
+```
+
+Without it every gap falls the whole way to its neighbour however narrow it is, so
+a 200 m ditch between surfaces 800 m apart dives the full 800 m and back — a
+gradient of 8:1 that no horizon does. Wide gaps are unaffected, because there the
+room runs out before the slope does, so the behaviour degrades continuously
+instead of switching at a threshold.
+
+⭐ **Reach, not area.** A long narrow ditch covers a lot of ground but is shallow
+in reach, and it is exactly the case that must not be driven hard — which is why
+the measure has to be shape-aware. The reach is already computed for the run, so
+this costs nothing.
+
+⚠️ `reach` and `chamferDistance` count in CELLS while the bound is a gradient, so
+`StackSealOptions.cellSize` carries the reference grid's cell size. Without it the
+travel is simply unbounded (which is what the unit tests of the run itself use).
+
+⚠️ It interacts with `minThickness`: once the travel is capped the far unit keeps
+more than the minimum by construction, so the two stop being independent. Capping
+only ever moves a surface LESS, so it cannot open a hole — it leaves both
+neighbouring units thicker.
+
 **`minThickness` is the only setting** (metres, default 1): how much of each
 neighbouring unit the taper has to leave standing. A unit is thinned, never closed
 to nothing — otherwise the collapse drops it and re-opens the hole the seal just
@@ -1119,34 +1157,6 @@ dropped for having no thickness.
 and a `spread`/`slope`/`taperDistance` knob. Each was a way to compensate for the
 run being measured over the wrong thing; none of them is a decision a caller has
 information to make.
-
-#### 10.7.1 Open: the travel should be slope-limited
-
-*Raised 2026-08-11, not built.* Every gap travels the full `|room| − minThickness`
-however narrow it is, so a 200 m ditch between surfaces 800 m apart dives the whole
-800 m and back — an implied gradient of 8:1 that no horizon does. Wide gaps look
-right; small holes and long narrow ditches are visibly over-driven.
-
-⭐ The fix is a **slope limit**, not a size test:
-
-```
-travel = sign(room) · min(|room| − minThickness,  s · reach)
-```
-
-`reach` is the region's own INWARD extent, which is already computed and already
-shape-aware: a long narrow ditch has a small reach however large its area. That is
-exactly why area is the wrong measure — it would call that ditch large and drive it
-hardest. `s` is a dimensionless maximum gradient; a wide gap is unaffected because
-`s · reach` exceeds the room available, so the behaviour degrades continuously
-rather than switching at a threshold.
-
-⚠️ `reach` and `chamferDistance` are in **cells**. The existing `dist/reach` ratio is
-dimensionless so it works today, but a slope limit compares against metres — so
-`sealStackChannels` needs the cell size, which it is not currently given.
-
-⚠️ It interacts with `minThickness`: once the travel is capped, the unit on the far
-side keeps more than the minimum by construction, so the two settings stop being
-independent. Measure a case where both bind before adding a second knob.
 
 **Order matters.** Sealing runs on the reference grid *before* the monotone
 resolve — two adjacent layers tapering toward each other can pass each other at
@@ -1172,10 +1182,11 @@ so a chunk-private boundary must not set a shared surface's height.
   moving it up means the context carries expanded channels and every chunk's picks
   expand with them. That is plumbing (⭐ `fills` is only carried through
   `splitVoidChannels`, never read by it, so the column need not know a chunk's fill
-  state) — but it is SEQUENCED AFTER CARRIERS (§10.1.7): at column level the deepest
-  surface has no neighbour below, and `splitVoidChannels` needs both, so today the
-  move would buy agreement at the cost of turning a void into a one-sided taper in
-  the very place it is asked for. A column-level carrier removes that.
+  state) — and it is now UNBLOCKED: it was sequenced after carriers (§10.1.7)
+  because at column level the deepest surface had nothing below it, and
+  `splitVoidChannels` needs both neighbours, so the move would have turned a void
+  into a one-sided taper in the very place it is asked for. The column carrier
+  (§10.9) supplies that neighbour.
 - Synthetic layers need no seal of their own: their masks are all ones, so they
   have no unmapped region. That is why nothing was lost by taking it off the chunk.
 - `preResolved` is usable again (the column seals BEFORE it resolves, so its
@@ -1340,7 +1351,87 @@ the area order and is drawn with the drawer's own appearance.
   as far as §10.8.2 holds — which is why sealing moved to the column (§10.7): a
   shared horizon now has ONE height, so the two chunks' caps and walls meet.
   ⚠️ Still open under `sealMode: 'void'`, which is split per chunk.
-- Still open: **carriers** (§10.1.7) are the remaining §10.2 step.
+- Still open: **carriers** — built at column level, see §10.9.
+
+### 10.9 The column carrier (§10.2 step 6) — built
+
+A `ChunkStack` may declare one flat floor for the whole column:
+
+```tsx
+<ChunkStack outline={field} surfaces={column} carrier={{ below: 800 }}>
+  ...
+  <Chunk layers={[{ surface: basement, fill: '#4a4a4a' }, { carrier: true }]} />
+</ChunkStack>
+```
+
+`{ depth }` places it absolutely; `{ below }` clears the column's deepest **mapped**
+sample by a margin (hole fill is excluded, or a survey edge extrapolated downward
+would drag the floor with it). It is complete over the whole grid and constant in
+Y, which is what makes it a guarantee rather than another surface: whatever the
+data does, the block has a floor.
+
+#### 10.9.1 It is a terminator, not a unit
+
+There is no interval *below* a carrier, so it has a cap and no `fill`, and it is
+the only side of the block seen from underneath — which is why its cap defaults to
+the fill of the unit ABOVE it, exactly as a void's ceiling does. Giving the layer a
+`material` of its own overrides that, for a floor that should read as its own
+thing.
+
+⭐ It is emphatically **not** a layer with an infinite unit beneath it. A sentinel
+thickness would flow into the duplicate fractions, the overlap statistics and the
+collapse threshold and lie in all three; what it actually needs is authority, in
+two places.
+
+#### 10.9.2 Nothing pierces it
+
+`clampStackToCarrier` raises every other channel to the plane, on the column's own
+grid, after the seal and before the resolve.
+
+⭐ Because the carrier is CONSTANT, that is an elementwise `max`, which is
+order-preserving — so it cannot introduce a crossing and needs no cascade, even
+though it reverses the stack's usual authority (the resolve clamps the DEEPER
+surface down; here the deeper one is pulled up). This is the first place a deeper
+boundary wins, and it is safe *only* because the carrier is flat and complete; it
+does not reopen the per-surface erosional/onlap flag (§10.3.3).
+
+It is re-imposed after the resolve as well, since a positive `minGap` would
+otherwise push the floor below the very horizons it just truncated.
+
+#### 10.9.3 What truncation leaves behind
+
+Everything the clamp moves lands exactly ON the plane, so:
+
+- the units *below* the carrier have no thickness and the ordinary collapse drops
+  them — no new masks, no new marking;
+- the horizons flattened onto it would be drawn coincident with the floor, so
+  `StackCollapseOptions.carrier` drops **those** caps and never the carrier's. That
+  is the same inversion the void ceiling needs, in the other direction: without it
+  the deeper of the pair goes, which is a hole in the floor;
+- ⭐ the unit *above* a truncated horizon **survives**. Its interval is bounded by
+  heights rather than by masks, so it fills the space down to the carrier. A block
+  cut off flat, not a block with the bottom missing.
+
+Measured (`SeabedConnection`, `carrierMode: depth`, 2000 m, against a basement
+surface spanning 1869–2200 m): `Basement Base` draws 58,179 triangles and drops
+9,678 to the floor, while the carrier keeps all 67,857 — the two reconcile exactly.
+
+#### 10.9.4 What it unblocks
+
+- The column seal no longer falls back to its one-neighbour rule at the bottom: the
+  deepest real surface now has a neighbour below it, so `proportional` keeps it in
+  proportion instead of pinning it to the layer above (§10.7).
+- ⚠️⚠️ **A floor declared on a CHUNK does not seal anything**, and this is the case
+  to watch for: sealing runs on the column, so a chunk-private synthetic layer is
+  invisible to it. A column whose deepest surface is its ONLY surface then has no
+  neighbour in either direction and is not sealed at all — not a degraded taper, a
+  no-op. `SyntheticCoverage` had exactly that shape (a `{ depth }` floor as a chunk
+  layer) and its one-surface scenarios were silently drawn on hole fill; it now
+  declares the floor as the stack's carrier. ⭐ If a block looks unsealed, check
+  whether its floor is on the stack or on the chunk before looking anywhere else.
+- `sealMode: 'void'` can move from the chunk to the column, which is what makes two
+  chunks sharing a horizon split it the same way. **Not done** — see §10.7's note;
+  the carrier was its prerequisite.
 
 ## 11. Stack-level build
 

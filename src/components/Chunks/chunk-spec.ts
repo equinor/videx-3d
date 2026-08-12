@@ -1,6 +1,7 @@
 import {
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
+  StackCarrier,
   SurfaceChunkBasement,
   SurfaceMeta,
   Vec2,
@@ -12,6 +13,7 @@ import {
   hasFill,
   SurfaceChunkCut,
   SurfaceChunkSpec,
+  SurfaceChunkSpecLayer,
 } from './chunk-defs';
 import { SeamDecision } from './seams';
 
@@ -29,6 +31,11 @@ export type BuildSurfaceChunkSpecOptions = {
    * envelope footprint it is resolved over. Both are needed for the shared build.
    */
   stack?: { surfaces: SurfaceMeta[]; envelope: PlanarPolygonGeometry };
+  /**
+   * The flat floor the column terminates against (see `ChunkStackProps.carrier`).
+   * Without it, a `{ carrier: true }` layer has nothing to draw and is dropped.
+   */
+  carrier?: StackCarrier;
   /**
    * Outline of the chunk drawn directly above this one (see
    * `SurfaceChunkSpec.coverAbove`).
@@ -90,7 +97,7 @@ export function buildSurfaceChunkSpec(
     return at;
   };
 
-  const specLayers = layers.map((layer, i) => {
+  const specLayers: SurfaceChunkSpecLayer[] = layers.map((layer, i) => {
     const seam = options.seams?.[i] ?? null;
     const shared = {
       fill: hasFill(layer.fill),
@@ -99,6 +106,11 @@ export function buildSurfaceChunkSpec(
         ? seam.cuts.map(cut => indexOfCut(cut.polygon, cut.rimSpacing))
         : undefined,
     };
+    if (layer.carrier) {
+      // The plane itself comes from the column, so the layer carries no geometry
+      // of its own — only that it is the one drawing the floor.
+      return { carrier: true, ...shared, fill: false };
+    }
     return layer.surface
       ? { ...toLayerSpec(layer.surface, utmToArea), ...shared }
       : {
@@ -119,19 +131,27 @@ export function buildSurfaceChunkSpec(
             .coordinates as PlanarPolygonCoordinates,
           offset: options.stack.envelope.offset,
         },
+        carrier: options.carrier,
         // Identity of the column: the ordered surface ids are what decide both the
         // common grid and the resolve, so chunks of the same column share a key.
-        key: options.stack.surfaces.map(m => m.id).join(','),
+        // The carrier joins them — it terminates the column, so moving it changes
+        // every chunk cut from it.
+        key: `${options.stack.surfaces.map(m => m.id).join(',')}|${
+          options.carrier
+            ? `${options.carrier.depth ?? ''}/${options.carrier.below ?? ''}`
+            : ''
+        }`,
       }
     : undefined;
 
   return {
-    layers: specLayers,
+    layers: specLayers.filter(layer => !layer.carrier || options.carrier),
     polygon: {
       coordinates: outlinePolygon.coordinates as PlanarPolygonCoordinates,
       offset: outlinePolygon.offset,
     },
     stack,
+    carrier: options.carrier,
     cuts: cuts.length > 0 ? cuts : undefined,
     coverAbove: options.coverAbove
       ? {

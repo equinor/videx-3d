@@ -1,6 +1,7 @@
 import { transfer } from 'comlink';
 import {
   DEFAULT_CHUNK_MAX_FILL,
+  isCarrierSpecLayer,
   isSyntheticSpecLayer,
   SurfaceChunkResponse,
   SurfaceChunkSpec,
@@ -11,6 +12,7 @@ import {
   buildStackReference,
   buildSurfaceStack,
   buildSyntheticChannel,
+  clampStackToCarrier,
   collectStackCandidates,
   densifyChunkRim,
   measureStackCoverage,
@@ -20,6 +22,8 @@ import {
   ReadonlyStore,
   sealStackChannels,
   splitVoidChannels,
+  STACK_MASK_DATA,
+  stackCarrierLevel,
   StackLayer,
   StackPairStats,
   StackSyntheticLayer,
@@ -38,6 +42,8 @@ export type LoadedStackLayer = {
   cap: boolean;
   /** indices into the spec's cuts of the neighbours that draw part of this cap */
   capCuts?: number[];
+  /** this layer is the column's carrier — the floor the block terminates against */
+  carrier?: boolean;
   /** surface id, or `null` for a synthetic layer */
   id: string | null;
 };
@@ -159,6 +165,20 @@ function densifyChunkCuts(spec: SurfaceChunkSpec): PlanarPolygonGeometry[] {
   );
 }
 
+// `splitVoidChannels` counts per EXPANDED layer, so a split layer's two copies are
+// folded back onto the one the caller declared.
+function taperedBySource(
+  count: number,
+  source: number[],
+  moved: number[],
+): number[] {
+  const out = new Array<number>(count).fill(0);
+  source.forEach((s, k) => {
+    out[s] += moved[k] ?? 0;
+  });
+  return out;
+}
+
 /**
  * Fetch a spec's layers and build them onto ONE shared tessellation: every layer
  * is resampled onto a common grid, refined in parallel across the worker pool,
@@ -191,6 +211,21 @@ export async function buildSpecStack(
     // Column index per layer, or -1 for a synthetic one (not part of the column).
     const picks: number[] = [];
     flat.forEach(f => {
+      if (isCarrierSpecLayer(f)) {
+        // The floor belongs to the column, so this chunk borrows the very same
+        // channel rather than building a plane of its own.
+        if (context.carrier === null) return;
+        picks.push(context.carrier);
+        loaded.push({
+          id: null,
+          carrier: true,
+          fill: false,
+          cap: f.cap !== false,
+          capCuts: f.capCuts,
+          layer: context.layers[context.carrier],
+        });
+        return;
+      }
       if (isSyntheticSpecLayer(f)) {
         picks.push(-1);
         loaded.push({
@@ -290,6 +325,12 @@ export async function buildSpecStack(
     const caps = source.map(i => loaded[i].cap && !voided[i]);
     const cuts = densifyChunkCuts(spec);
     const capCuts = source.map(i => loaded[i].capCuts ?? null);
+    const carrierLayer = source.findIndex(i => loaded[i].carrier);
+    // Seen only from below, so it shows the base of the unit above it rather than
+    // a cap of its own — the same thing a void's ceiling is.
+    const ceilings = source.map(
+      (i, k) => (split ? split.ceiling[k] : false) || !!loaded[i].carrier,
+    );
     const fills = (split ? split.fill : loaded.map(l => l.fill)).map((f, k) => {
       const below = source[k + 1];
       return f && !voided[source[k]] && !(below !== undefined && voided[below]);
@@ -352,7 +393,8 @@ export async function buildSpecStack(
         cuts,
         capCuts,
         fills,
-        ceiling: split ? split.ceiling : undefined,
+        carrier: carrierLayer >= 0 ? carrierLayer : undefined,
+        ceiling: ceilings,
         inferred: split?.inferred ?? inferred,
         topCover: coverAbove,
       },
@@ -371,7 +413,7 @@ export async function buildSpecStack(
       loaded,
       source,
       fills,
-      ceilings: split ? split.ceiling : loaded.map(() => false),
+      ceilings,
       bytes: context.bytes,
       fetchMs: context.fetchMs,
       referenceMs: context.referenceMs,
@@ -384,7 +426,9 @@ export async function buildSpecStack(
       layerFilled: measured.layerFilled,
       layerVoided: voided,
       layerTapered:
-        split?.moved ??
+        (split
+          ? taperedBySource(loaded.length, split.source, split.moved)
+          : undefined) ??
         picks.map(i => (i >= 0 ? (context.tapered[i] ?? 0) : 0)),
       sharedStack: true,
       stackLayers: context.layers.length,
@@ -407,6 +451,20 @@ export async function buildSpecStack(
   const loaded: LoadedStackLayer[] = [];
   let bytes = 0;
   flat.forEach((f, i) => {
+    if (isCarrierSpecLayer(f)) {
+      if (!spec.carrier) return;
+      loaded.push({
+        id: null,
+        carrier: true,
+        fill: false,
+        cap: f.cap !== false,
+        capCuts: f.capCuts,
+        // A placeholder until the reference exists: a `below` plane is measured
+        // against the depths the other layers land at.
+        layer: { depth: 0 },
+      });
+      return;
+    }
     if (isSyntheticSpecLayer(f)) {
       loaded.push({
         id: null,
@@ -436,11 +494,35 @@ export async function buildSpecStack(
   if (loaded.length === 0) return null;
 
   const layers = loaded.map(l => l.layer);
-  const built = buildStackReference(layers, densified, {
-    maxNodes: spec.resolve?.maxNodes,
-    maxFill: spec.resolve?.maxFill ?? DEFAULT_CHUNK_MAX_FILL,
-  });
+  const carrierAt = loaded.findIndex(l => l.carrier);
+  const built = buildStackReference(
+    carrierAt >= 0 ? layers.filter((_, i) => i !== carrierAt) : layers,
+    densified,
+    {
+      maxNodes: spec.resolve?.maxNodes,
+      maxFill: spec.resolve?.maxFill ?? DEFAULT_CHUNK_MAX_FILL,
+    },
+  );
   if (!built) return null;
+  // See the shared path: the carrier is appended after the resample, so a `below`
+  // plane can be measured against the depths the column actually reaches.
+  let carrierLevel = 0;
+  if (carrierAt >= 0 && spec.carrier) {
+    carrierLevel = stackCarrierLevel(built.channels, built.masks, spec.carrier);
+    const nodes = built.header.nx * built.header.ny;
+    built.channels.splice(
+      carrierAt,
+      0,
+      new Float32Array(nodes).fill(carrierLevel),
+    );
+    built.masks.splice(
+      carrierAt,
+      0,
+      new Uint8Array(nodes).fill(STACK_MASK_DATA),
+    );
+    layers[carrierAt] = { depth: -carrierLevel };
+    loaded[carrierAt].layer = layers[carrierAt];
+  }
   // See the shared path: a layer with no data anywhere the chunk is drawn is
   // voided rather than sealed across it.
   const measured = measureStackCoverage(built, densified, built.masks);
@@ -463,6 +545,7 @@ export async function buildSpecStack(
           mode: spec.resolve?.sealMode,
           minThickness: spec.resolve?.minThickness,
           inside,
+          cellSize: (built.header.xinc + built.header.yinc) / 2,
         })
       : null;
   // See the shared path: `void` expands the layer list, so everything below works
@@ -476,6 +559,7 @@ export async function buildSpecStack(
         {
           minThickness: spec.resolve?.minThickness,
           inside,
+          cellSize: (built.header.xinc + built.header.yinc) / 2,
         },
       )
     : null;
@@ -485,6 +569,11 @@ export async function buildSpecStack(
     channels: split?.channels ?? sealed?.channels ?? built.channels,
     masks: split?.masks ?? built.masks,
   };
+  // See the shared path: nothing pierces the carrier.
+  const carrierLayer = source.findIndex(i => loaded[i].carrier);
+  if (carrierLayer >= 0) {
+    clampStackToCarrier(reference.channels, carrierLayer, carrierLevel);
+  }
   const tReference = performance.now();
 
   const { candidates, poolSize } = await refineStackChannels(
@@ -498,6 +587,10 @@ export async function buildSpecStack(
   const caps = source.map(i => loaded[i].cap && !voided[i]);
   const cuts = densifyChunkCuts(spec);
   const capCuts = source.map(i => loaded[i].capCuts ?? null);
+  // See the shared path: the floor is only ever seen from below.
+  const ceilings = source.map(
+    (i, k) => (split ? split.ceiling[k] : false) || !!loaded[i].carrier,
+  );
   const fills = (split ? split.fill : loaded.map(l => l.fill)).map((f, k) => {
     const below = source[k + 1];
     return f && !voided[source[k]] && !(below !== undefined && voided[below]);
@@ -520,7 +613,8 @@ export async function buildSpecStack(
       cuts,
       capCuts,
       fills,
-      ceiling: split ? split.ceiling : undefined,
+      carrier: carrierLayer >= 0 ? carrierLayer : undefined,
+      ceiling: ceilings,
       inferred: split?.inferred ?? sealed?.inferred,
     },
   );
@@ -531,7 +625,7 @@ export async function buildSpecStack(
     loaded,
     source,
     fills,
-    ceilings: split ? split.ceiling : loaded.map(() => false),
+    ceilings,
     bytes,
     fetchMs: tFetch - t0,
     referenceMs: tReference - tFetch,
@@ -543,7 +637,9 @@ export async function buildSpecStack(
     layerCoverage: measured.layerCoverage,
     layerFilled: measured.layerFilled,
     layerVoided: voided,
-    layerTapered: sealed?.tapered ?? split?.moved ?? [],
+    layerTapered:
+      sealed?.tapered ??
+      (split ? taperedBySource(loaded.length, split.source, split.moved) : []),
   };
 }
 
@@ -606,10 +702,13 @@ export function stackDiagnostics(
         voided: result.layerVoided[i] ?? false,
         // Every node the layer has no data for is inferred once the block is
         // sealed; measured against the FOOTPRINT, which is the only denominator
-        // this table uses.
-        inferred: result.layerTapered.length
-          ? 1 - (result.layerCoverage[i] ?? 0)
-          : 0,
+        // this table uses. ⚠️ Per layer, not per stack: a layer the seal could not
+        // reach is drawn on plain hole fill, and reporting it as inferred anyway
+        // is what hid exactly that case.
+        inferred:
+          (result.layerTapered[i] ?? 0) > 0
+            ? 1 - (result.layerCoverage[i] ?? 0)
+            : 0,
         // An uncapped layer draws no surface at all, however many triangles
         // survived the drops.
         triangles,

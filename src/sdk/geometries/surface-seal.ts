@@ -15,10 +15,12 @@
  *
  * How far a taper reaches is DERIVED, not configured: it is drawn out over the
  * unmapped region's own inward extent, so every flank closing one gap lands at its
- * far side and they differ only in gradient. The single setting is
- * {@link StackSealOptions.minThickness} — how much of each neighbouring unit the
- * taper must leave standing, so nothing is ever closed to nothing and the collapse
- * cannot drop a unit and re-open the hole.
+ * far side and they differ only in gradient. That same extent also bounds how far
+ * it TRAVELS ({@link TAPER_MAX_SLOPE}), so a gap that is small relative to the
+ * separation of its neighbours dimples rather than diving the whole way. The
+ * single setting is {@link StackSealOptions.minThickness} — how much of each
+ * neighbouring unit the taper must leave standing, so nothing is ever closed to
+ * nothing and the collapse cannot drop a unit and re-open the hole.
  *
  * ⚠️ This invents geometry. Every node it touches is reported in
  * {@link StackSealResult.inferred} so it can be drawn as the inference it is.
@@ -60,6 +62,22 @@ export type SealMode = 'proportional' | 'void';
  * the hole comes back.
  */
 export const TAPER_MIN_THICKNESS = 1;
+
+/**
+ * The steepest an invented surface is allowed to descend, as a gradient (metres
+ * of travel per metre of reach).
+ *
+ * Without it a gap travels the whole distance to its neighbour however narrow it
+ * is, so a 200 m ditch between surfaces 800 m apart dives the full 800 m and back
+ * — 8:1, which no horizon does. Bounding the GRADIENT rather than testing the
+ * size makes a wide gap unaffected (there the room runs out first) and lets the
+ * behaviour degrade continuously instead of switching at a threshold.
+ *
+ * ⭐ The gap's own INWARD reach is what it is measured against, not its area: a
+ * long narrow ditch is shallow in reach however much ground it covers, and that
+ * is exactly the case that should not be driven hard.
+ */
+export const TAPER_MAX_SLOPE = 0.5;
 
 /** The expansion {@link splitVoidChannels} produces. */
 export type StackVoidResult = {
@@ -120,6 +138,7 @@ export function splitVoidChannels(
   options: StackSealOptions,
 ): StackVoidResult {
   const minThickness = options.minThickness ?? TAPER_MIN_THICKNESS;
+  const slope = travelPerCell(options);
   const count = channels[0]?.length ?? 0;
   const ny = nx > 0 ? Math.floor(count / nx) : 0;
 
@@ -166,7 +185,7 @@ export function splitVoidChannels(
     for (let n = 0; n < count; n++) if (!mask[n]) moved++;
 
     const toward = (neighbour: Float32Array) =>
-      taperToward(source, neighbour, mask, dist, reach, minThickness);
+      taperToward(source, neighbour, mask, dist, reach, minThickness, slope);
 
     // Only one neighbour: there is one interval to close, so no void to open.
     if (!above || !below) {
@@ -222,6 +241,12 @@ export function splitVoidChannels(
  * is steeper and the one with less to cover arcs more gently, and both land at the
  * same distance from the edge.
  *
+ * ⭐ How far it travels is bounded by that same reach ({@link TAPER_MAX_SLOPE}), so
+ * a gap that is small RELATIVE to the separation of its neighbours dimples rather
+ * than diving the whole way. A gap wide enough to earn the full travel is
+ * unaffected. ⚠️ Capping only ever moves a surface LESS, so it cannot open a hole
+ * — it leaves the units on either side thicker than they would otherwise be.
+ *
  * The taper stops `minThickness` short of the neighbour, and does not move at all
  * where there is less room than that.
  */
@@ -232,17 +257,33 @@ function taperToward(
   dist: Float32Array,
   reach: Float32Array,
   minThickness: number,
+  slope: number,
 ): Float32Array {
   const copy = Float32Array.from(source);
   for (let n = 0; n < source.length; n++) {
     if (mask[n]) continue;
     const run = reach[n];
-    const t = run > 0 && Number.isFinite(run) ? dist[n] / run : 1;
+    const usable = run > 0 && Number.isFinite(run) ? run : 0;
+    const t = usable > 0 ? dist[n] / usable : 1;
     const room = neighbour[n] - source[n];
-    const travel = Math.sign(room) * Math.max(0, Math.abs(room) - minThickness);
+    const travel =
+      Math.sign(room) *
+      Math.min(
+        Math.max(0, Math.abs(room) - minThickness),
+        usable > 0 ? slope * usable : Infinity,
+      );
     copy[n] = source[n] + travel * shape(t);
   }
   return copy;
+}
+
+// The slope bound in metres of travel per CELL of reach, which is what the chamfer
+// distance counts in. Without a cell size there is no way to compare the two, so
+// the bound is simply not applied.
+function travelPerCell(options: StackSealOptions): number {
+  return options.cellSize !== undefined && options.cellSize > 0
+    ? TAPER_MAX_SLOPE * options.cellSize
+    : Infinity;
 }
 
 /** Options for {@link sealStackChannels}. */
@@ -265,6 +306,12 @@ export type StackSealOptions = {
    * shape of every seal in it.
    */
   inside?: Uint8Array | null;
+  /**
+   * Size of one grid cell, in metres. Only used to bound how far a taper travels
+   * ({@link TAPER_MAX_SLOPE}) — the reach it is compared against is counted in
+   * cells. Omit it and the travel is unbounded.
+   */
+  cellSize?: number;
 };
 
 /** The result of {@link sealStackChannels}. */
@@ -416,6 +463,7 @@ export function sealStackChannels(
 ): StackSealResult {
   const mode = options.mode ?? 'proportional';
   const minThickness = options.minThickness ?? TAPER_MIN_THICKNESS;
+  const slope = travelPerCell(options);
   const count = channels[0]?.length ?? 0;
   const ny = nx > 0 ? Math.floor(count / nx) : 0;
   void mode;
@@ -494,6 +542,7 @@ export function sealStackChannels(
       dist,
       reach,
       minThickness,
+      slope,
     );
     inferred.push(flags);
     tapered.push(taperedCount);

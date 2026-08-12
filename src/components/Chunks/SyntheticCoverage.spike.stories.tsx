@@ -130,9 +130,11 @@ const SyntheticCoverageStory = (props: SyntheticCoverageProps) => {
 
   // A flat floor at an ABSOLUTE depth, so every scenario has a volume (and
   // therefore walls) without a second survey having to agree about where it is.
-  // ⚠️ Absolute, NOT an `offset`: an offset floor hangs from the layer above, so
-  // sealing that layer would drag the floor with it — and then the third surface is
-  // not an independent neighbour at all, which makes the taper impossible to judge.
+  //
+  // ⭐ Declared on the STACK as the column's carrier rather than as a layer of this
+  // chunk: sealing runs on the column, so a floor the column cannot see leaves the
+  // deepest surface with no neighbour below it — and in a one-surface scenario
+  // (`holes`, `inset`) with no neighbour at all, which seals nothing.
   const layers = useMemo<ChunkLayer[]>(() => {
     if (column.length === 0) return [];
     return [
@@ -141,9 +143,9 @@ const SyntheticCoverageStory = (props: SyntheticCoverageProps) => {
         material: PALETTE[i % PALETTE.length],
         fill: PALETTE[i % PALETTE.length],
       })),
-      { depth: props.floorDepth, material: '#6b6b6b' },
+      { carrier: true, material: '#6b6b6b' },
     ];
-  }, [column, props.floorDepth]);
+  }, [column]);
 
   const resolve = useMemo<ChunkResolveOptions>(
     () => ({
@@ -206,7 +208,11 @@ const SyntheticCoverageStory = (props: SyntheticCoverageProps) => {
       <UtmArea origin={origin} utmZone={utmZone}>
         <ambientLight intensity={0.6} />
         <directionalLight position={[0.5, 1, 0.3]} intensity={1.1} />
-        <ChunkStack outline={outline} surfaces={column}>
+        <ChunkStack
+          outline={outline}
+          surfaces={column}
+          carrier={{ depth: props.floorDepth }}
+        >
           <Chunk
             layers={layers}
             resolve={resolve}
@@ -283,7 +289,7 @@ export const Default: Story = {
     floorDepth: {
       control: { type: 'range', min: 1600, max: 3000, step: 50 },
       description:
-        'A flat floor at this absolute depth (metres, positive down), so the block has a volume and walls. Absolute rather than an offset, so it stays an INDEPENDENT neighbour when the surfaces above it are sealed.',
+        'The column CARRIER: a flat floor at this absolute depth (metres, positive down), declared on the `ChunkStack` and drawn by the chunk. It gives the deepest surface a neighbour BELOW it — without which the seal has only the layer above to lean on, and in a one-surface scenario nothing at all.',
       table: { category: 'Scenario' },
     },
     maxError: {

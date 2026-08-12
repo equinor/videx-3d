@@ -343,6 +343,16 @@ export type SurfaceStackOptions = {
    */
   ceiling?: boolean[];
   /**
+   * Index of the layer that is the stack's carrier (see `StackCarrier`) — the flat
+   * floor the block terminates against.
+   *
+   * The resolve may not move it and the collapse may not drop it, while anything
+   * flattened onto it loses its cap. Both are re-imposed here rather than assumed
+   * of the channels, so a positive `minGap` cannot push the floor below the very
+   * horizons it just truncated.
+   */
+  carrier?: number;
+  /**
    * Also refine along each pair's thickness termination (see
    * `collectThicknessCrossings`), so a unit wedging out follows the contour
    * instead of the nearest edges the height refinement left behind. Default true;
@@ -521,17 +531,28 @@ export function buildSurfaceStack(
 
   const heights = sampleStackHeights(reference, tessellation.coords);
   const coverage = sampleStackMasks(reference, tessellation.coords);
+  // Constant over the whole grid, so any vertex of it is the plane.
+  const carrierLevel =
+    options.carrier !== undefined ? heights[options.carrier]?.[0] : undefined;
   // What is drawn beyond a layer's extent is invented however its height was
   // arrived at. A seal says how far, and its gradient must not be flattened; with
   // no seal the same region is drawn on the reference's hole fill, which is a flat
   // extrapolation and just as invented — but only when it is drawn at all.
-  const inferred = options.inferred
+  const sampled = options.inferred
     ? sampleStackWeights(reference, tessellation.coords, options.inferred)
-    : coverageAbsence
-      ? undefined
-      : coverage.map(mask =>
-          Float32Array.from(mask, covered => (covered ? 0 : 1)),
-        );
+    : undefined;
+  const uncovered = (mask: Uint8Array) =>
+    Float32Array.from(mask, covered => (covered ? 0 : 1));
+  // ⚠️ A layer the seal could not process — nothing above it or below it to lean
+  // on, which is what the end of a column looks like — comes back with all-zero
+  // weights and is still drawn on the fill, so it would be the one invented thing
+  // left unmarked. Per LAYER is exact rather than a heuristic: a layer the seal did
+  // process carries a positive weight at every unmapped node.
+  const inferred = coverageAbsence
+    ? sampled
+    : (sampled ?? coverage.map(uncovered)).map((weights, i) =>
+        weights.some(w => w > 0) ? weights : uncovered(coverage[i]),
+      );
   const tSample = performance.now();
 
   const depths = stackDepthStats(heights);
@@ -560,6 +581,21 @@ export function buildSurfaceStack(
     : resolved.applied
       ? resolved.absent
       : undefined;
+
+  // The floor is a guarantee, so it survives the resolve unchanged and is never
+  // reported absent — the resolve would otherwise push it below anything it had
+  // truncated whenever `minGap` is positive, and a truncated floor is a hole.
+  if (carrierLevel !== undefined && options.carrier !== undefined) {
+    const floor = heights[options.carrier];
+    floor.fill(carrierLevel);
+    heights.forEach((y, i) => {
+      if (i === options.carrier) return;
+      for (let v = 0; v < y.length; v++) {
+        if (y[v] < carrierLevel) y[v] = carrierLevel;
+      }
+    });
+    absent?.[options.carrier]?.fill(0);
+  }
 
   // The top layer was truncated against a surface this stack does not draw, so its
   // absence is only safe where something else will stand in for it.
@@ -605,6 +641,7 @@ export function buildSurfaceStack(
           absent,
           ceiling: options.ceiling,
           capExcluded: excludes,
+          carrier: options.carrier,
         })
       : null;
   const tCollapse = performance.now();

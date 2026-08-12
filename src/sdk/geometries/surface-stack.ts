@@ -371,6 +371,23 @@ export type StackCollapseOptions = {
    * in the resolve — the volume below it is this chunk's either way.
    */
   capExcluded?: (Uint8Array | null)[];
+  /**
+   * Index of the layer that is the stack's {@link StackCarrier} — the flat floor
+   * the block terminates against.
+   *
+   * It reverses the usual authority for that one layer, in both directions: the
+   * carrier is never dropped for having welded onto the surface above it (it is
+   * what closes the block, so a hole there is a hole in the floor), and every
+   * other layer IS dropped where it has been flattened onto the carrier, since
+   * that is a horizon the carrier truncated away and drawing it would leave two
+   * coincident surfaces.
+   *
+   * ⚠️ Only the surfaces go. The unit ABOVE a truncated horizon still occupies
+   * the space down to the carrier, and its interval is bounded by heights, so it
+   * survives — which is the difference between a block cut off flat and a block
+   * with the bottom missing.
+   */
+  carrier?: number;
 };
 
 /** The result of {@link collapseStackTriangles}. */
@@ -1105,6 +1122,109 @@ export function resolveStackGrid(
 }
 
 /**
+ * A flat surface closing a whole column from below — the datum a stack terminates
+ * against, rather than a unit of its own.
+ *
+ * It is complete over the entire grid and constant in Y, which is what makes it a
+ * guarantee: whatever the surfaces above it do, the block has a floor. Nothing may
+ * pierce it, so anything that would is truncated at it
+ * ({@link clampStackToCarrier}).
+ *
+ * ⭐ Not a layer with an infinite unit beneath it: there is no interval below a
+ * carrier at all, so it has a cap and no fill.
+ *
+ * @group Geometries
+ */
+export type StackCarrier = {
+  /** absolute, metres below sea level (positive-down, as surfaces are given) */
+  depth?: number;
+  /**
+   * Metres beneath the column's deepest mapped sample — a floor that clears the
+   * geology by a fixed margin. Ignored when `depth` is given.
+   *
+   * ⚠️ Measured over everything the column covers, so it follows the deepest
+   * point anywhere in the envelope rather than inside any one chunk.
+   */
+  below?: number;
+};
+
+/**
+ * Scene Y of a carrier plane, resolved against the column it closes.
+ *
+ * @param channels the column's channels, WITHOUT the carrier
+ * @param masks the matching coverage masks — the depth is taken from mapped nodes
+ *   only, so hole fill past the edge of a survey cannot drag the floor down
+ * @param carrier see {@link StackCarrier}
+ *
+ * @group Geometries
+ */
+export function stackCarrierLevel(
+  channels: Float32Array[],
+  masks: Uint8Array[],
+  carrier: StackCarrier,
+): number {
+  if (carrier.depth !== undefined) return -carrier.depth;
+  let mapped = Infinity;
+  let any = Infinity;
+  for (let i = 0; i < channels.length; i++) {
+    const channel = channels[i];
+    const mask = masks[i];
+    for (let n = 0; n < channel.length; n++) {
+      const y = channel[n];
+      if (y < any) any = y;
+      if ((!mask || mask[n]) && y < mapped) mapped = y;
+    }
+  }
+  const deepest = Number.isFinite(mapped)
+    ? mapped
+    : Number.isFinite(any)
+      ? any
+      : 0;
+  return deepest - (carrier.below ?? 0);
+}
+
+/**
+ * Truncate everything that would pierce the carrier, in place.
+ *
+ * ⭐ Because a carrier is a CONSTANT plane, "nothing goes below it" is an
+ * elementwise `max`, which is order-preserving — so it can never introduce a
+ * crossing and needs no cascade of its own, unlike the reversed authority it would
+ * otherwise imply (the stack's own resolve clamps the DEEPER surface down).
+ *
+ * Everything it moves lands exactly ON the plane, so the units below it end up
+ * with no thickness and the ordinary collapse drops them; the surfaces themselves
+ * are removed by {@link StackCollapseOptions.carrier}, which is what stops a
+ * truncated horizon z-fighting with the floor it was flattened onto.
+ *
+ * @param channels every layer of the column, the carrier included
+ * @param carrier index of the carrier's own channel (left untouched)
+ * @param level scene Y of the plane
+ * @returns per layer, the number of nodes truncated
+ *
+ * @group Geometries
+ */
+export function clampStackToCarrier(
+  channels: Float32Array[],
+  carrier: number,
+  level: number,
+): number[] {
+  return channels.map((channel, i) => {
+    if (i === carrier) {
+      channel.fill(level);
+      return 0;
+    }
+    let moved = 0;
+    for (let n = 0; n < channel.length; n++) {
+      if (channel[n] < level) {
+        channel[n] = level;
+        moved++;
+      }
+    }
+    return moved;
+  });
+}
+
+/**
  * Build an "inside this polygon" test over the shared vertices.
  *
  * The tessellation's coordinates are in the reference grid's frame, so the polygon
@@ -1394,12 +1514,20 @@ export function collapseStackTriangles(
     // BELOW it instead of the horizon below yielding to it.
     const isCeiling = options.ceiling?.[layer] === true;
     const aboveIsCeiling = layer > 0 && options.ceiling?.[layer - 1] === true;
+    const isCarrier = options.carrier === layer;
     // The shallowest layer has nothing above it to collapse onto, but it can
-    // still be absent.
-    const above = layer > 0 && !aboveIsCeiling ? heights[layer - 1] : null;
+    // still be absent. The carrier has something above it and yields to none of
+    // it — it is the floor.
+    const above =
+      layer > 0 && !aboveIsCeiling && !isCarrier ? heights[layer - 1] : null;
     const below = isCeiling ? (heights[layer + 1] ?? null) : null;
+    // Whatever the carrier truncated is sitting exactly on it.
+    const floor =
+      options.carrier !== undefined && !isCarrier
+        ? (heights[options.carrier] ?? null)
+        : null;
     const excluded = options.capExcluded?.[layer] ?? null;
-    if (!coverage && !cut && !above && !below && !excluded) {
+    if (!coverage && !cut && !above && !below && !floor && !excluded) {
       out.push(null);
       dropped.push(0);
       droppedAbsent.push(0);
@@ -1443,6 +1571,15 @@ export function collapseStackTriangles(
         current[a] - below[a] <= threshold &&
         current[b] - below[b] <= threshold &&
         current[c] - below[c] <= threshold
+      ) {
+        collapsedDrops++;
+        continue;
+      }
+      if (
+        floor &&
+        current[a] - floor[a] <= threshold &&
+        current[b] - floor[b] <= threshold &&
+        current[c] - floor[c] <= threshold
       ) {
         collapsedDrops++;
         continue;

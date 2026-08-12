@@ -3,6 +3,7 @@ import { PlanarPolygonGeometry } from '../src/sdk/geometries/planar-geometry';
 import { SurfaceClipHeader } from '../src/sdk/geometries/surface-clip';
 import {
   buildStackReference,
+  clampStackToCarrier,
   collapseStackTriangles,
   measureStackCoverage,
   resolveStackGrid,
@@ -10,8 +11,10 @@ import {
   sampleStackHeights,
   sampleStackMasks,
   STACK_MASK_FILLED,
+  stackCarrierLevel,
   stackDepthStats,
   stackDuplicateFractions,
+  stackIntervalTriangles,
   StackLayer,
   stackLayerUvs,
   stackVertexPositions,
@@ -912,6 +915,61 @@ describe('carrying the inference through to the geometry', () => {
     expect(dropped.layers[1].geometry!.hasAttribute('inferred')).toBe(false);
   });
 
+  it('marks a layer the seal could not reach, weights or no weights', () => {
+    // ⚠️ The relief goes on the FULLY MAPPED layer: it is what makes the shared
+    // tessellation carry interior vertices, without which there is nothing in the
+    // gradient band to sample and every weight lands on 0 or 1.
+    const top = layerFrom(
+      (col, row) => 1000 + 40 * Math.sin(col / 3) * Math.cos(row / 3),
+    );
+    const base = layerFrom((col, row) => (col > 16 ? null : 1400 + row));
+    const reference = buildStackReference([top, base], polygon, {
+      maxFill: 0,
+    })!;
+    const nodes = reference.header.nx * reference.header.ny;
+
+    // What the seal hands back for a layer it SKIPPED — nothing above or below it
+    // to lean on, i.e. the end of a column. The region is drawn on the fill all
+    // the same, so weights of zero must not be read as "measured".
+    const skipped = buildSurfaceStack(reference, [top, base], {
+      polygon,
+      maxError: 5,
+      fills: [true, false],
+      coverageAbsence: false,
+      inferred: [new Float32Array(nodes), new Float32Array(nodes)],
+    })!;
+    const values = Array.from(
+      skipped.layers[1].geometry!.getAttribute('inferred')
+        .array as Float32Array,
+    );
+    expect(values.some(v => v === 1)).toBe(true);
+    expect(values.some(v => v === 0)).toBe(true);
+    // ...while a layer with nothing to say still says nothing
+    expect(skipped.layers[0].geometry!.hasAttribute('inferred')).toBe(false);
+
+    // ⚠️ And a real seal's gradient is NOT replaced by the flat coverage answer:
+    // the marking has to keep fading with the confidence.
+    const weights = new Float32Array(nodes);
+    for (let n = 0; n < nodes; n++) {
+      const col = n % reference.header.nx;
+      weights[n] = col <= 16 ? 0 : Math.min(1, (col - 16) / 8);
+    }
+    const sealed = buildSurfaceStack(reference, [top, base], {
+      polygon,
+      maxError: 5,
+      fills: [true, false],
+      coverageAbsence: false,
+      inferred: [new Float32Array(nodes), weights],
+    })!;
+    const graded = new Set(
+      Array.from(
+        sealed.layers[1].geometry!.getAttribute('inferred')
+          .array as Float32Array,
+      ),
+    );
+    expect(graded.size).toBeGreaterThan(2);
+  });
+
   it('tells a grid-driven material where the grid stops describing the mesh', () => {
     const top = layerFrom(() => 1000);
     // Mapped over the left half only, but sealed, so the mesh continues.
@@ -1115,5 +1173,104 @@ describe('cut outlines', () => {
     })!;
     expect(holed.collapsed!.droppedExcluded[0]).toBe(inside.length / 3);
     expect(holed.collapsed!.droppedExcluded[1]).toBe(0);
+  });
+});
+
+/**
+ * A carrier is a flat floor declared for a whole column, and it is a datum rather
+ * than a unit: nothing pierces it, and it is the one layer that never yields.
+ */
+describe('the column carrier', () => {
+  const NODES = 8;
+  const plane = (y: number) => new Float32Array(NODES).fill(y);
+  const all = () => new Uint8Array(NODES).fill(1);
+
+  it('takes an absolute depth as given', () => {
+    expect(stackCarrierLevel([plane(-100)], [all()], { depth: 2500 })).toBe(
+      -2500,
+    );
+  });
+
+  it('clears the column’s deepest MAPPED sample, ignoring hole fill', () => {
+    const channel = plane(-1000);
+    // A node the layer has no data for, filled from far below: it must not drag
+    // the floor down with it.
+    channel[3] = -9000;
+    const mask = all();
+    mask[3] = 0;
+
+    expect(stackCarrierLevel([channel], [mask], { below: 500 })).toBe(-1500);
+  });
+
+  it('truncates whatever would pierce it, and holds itself flat', () => {
+    const shallow = plane(-100);
+    const deep = Float32Array.from(plane(-1000));
+    deep[0] = -3000;
+    const floor = plane(0);
+    const moved = clampStackToCarrier([shallow, deep, floor], 2, -2000);
+
+    expect(moved).toEqual([0, 1, 0]);
+    expect(deep[0]).toBe(-2000);
+    expect(deep[1]).toBe(-1000);
+    // untouched above, and the plane itself is restored whatever it held
+    expect(shallow[0]).toBe(-100);
+    expect(floor[0]).toBe(-2000);
+  });
+
+  it('⭐ cannot introduce a crossing — a max against a constant keeps the order', () => {
+    const a = Float32Array.from([-100, -2500, -300]);
+    const b = Float32Array.from([-200, -2600, -2900]);
+    clampStackToCarrier([a, b, plane(0)], 2, -2400);
+
+    for (let n = 0; n < a.length; n++) {
+      expect(a[n]).toBeGreaterThanOrEqual(b[n]);
+    }
+  });
+
+  describe('which of a coincident pair survives', () => {
+    // One triangle, in a stack of top / horizon / carrier.
+    const tri = new Uint32Array([0, 1, 2]);
+    const y = (value: number) => Float32Array.from([value, value, value]);
+    const stack = (horizon: number) => [y(-500), y(horizon), y(-2000)];
+
+    it('keeps the floor and drops the horizon flattened onto it', () => {
+      const collapsed = collapseStackTriangles(stack(-2000), tri, {
+        threshold: 0.5,
+        carrier: 2,
+      });
+
+      // the truncated horizon goes...
+      expect(collapsed.dropped[1]).toBe(1);
+      // ...and the floor stays, which is the reverse of the usual rule: without
+      // the flag the DEEPER of the two would be the one dropped, leaving a hole
+      // in the very surface that closes the block
+      expect(collapsed.dropped[2]).toBe(0);
+      expect(
+        collapseStackTriangles(stack(-2000), tri, { threshold: 0.5 })
+          .dropped[2],
+      ).toBe(1);
+    });
+
+    it('leaves a horizon standing clear of the floor alone', () => {
+      const collapsed = collapseStackTriangles(stack(-1000), tri, {
+        threshold: 0.5,
+        carrier: 2,
+      });
+
+      expect(collapsed.dropped).toEqual([0, 0, 0]);
+    });
+
+    it('⭐ keeps the unit above a truncated horizon — it is cut off, not removed', () => {
+      const heights = stack(-2000);
+      const intervals = stackIntervalTriangles(heights, tri, {
+        threshold: 0.5,
+      });
+
+      // the unit between the top and the truncated horizon still fills the space
+      // down to the floor...
+      expect(intervals[0][0]).toBe(1);
+      // ...while the one below it has nothing left
+      expect(intervals[1][0]).toBe(0);
+    });
   });
 });
