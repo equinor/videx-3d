@@ -23,9 +23,10 @@ import {
 import { UtmAreaContext } from '../UtmArea';
 import {
   ChunkBuildState,
+  chunkFluidKey,
   ChunkLayer,
+  chunkLayerFill,
   ChunkResolveOptions,
-  hasFill,
   surfaceChunk,
   SurfaceChunkResponse,
 } from './chunk-defs';
@@ -183,12 +184,10 @@ export const Chunk = ({
         ? '@carrier'
         : l.surface
           ? l.surface.id
-          : `@${l.depth ?? ''}/${l.offset ?? ''}/${
-              l.relief
-                ? `${l.relief.kind ?? 'dunes'}:${l.relief.amplitude}:${l.relief.seed ?? 0}:${l.relief.featureSize ?? ''}:${l.relief.mode ?? ''}`
-                : ''
-            }`;
-      return `${base}:${hasFill(l.fill) ? 1 : 0}`;
+          : // Serialised whole: a relief is a union of shapes with fields of their
+            // own, and a hand-written list of them goes stale silently.
+            `@${l.depth ?? ''}/${l.offset ?? ''}/${l.relief ? JSON.stringify(l.relief) : ''}`;
+      return `${base}:${chunkLayerFill(l) ? 1 : 0}${chunkFluidKey(l)}`;
     })
     .join(',');
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
@@ -202,7 +201,7 @@ export const Chunk = ({
   const appearanceKey = layers
     .map(
       l =>
-        `${appearanceId(l.material)}|${appearanceId(l.fill)}|${l.opacity ?? ''}|${chunkDetailKey(l.detail)}`,
+        `${appearanceId(l.material)}|${appearanceId(l.fill)}|${l.opacity ?? ''}|${chunkDetailKey(l.detail)}|${l.water ? JSON.stringify(l.water) : ''}`,
     )
     .join(',');
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above

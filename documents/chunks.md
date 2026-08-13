@@ -87,6 +87,10 @@ These are how water surfaces, flat basement floors and stand-in horizons are
 expressed without inventing a data grid for them. They take part in the stack fully:
 they are resolved, they carry walls, and they collapse.
 
+⚠️ Water is the exception, and it is a separate flag rather than a property of
+being synthetic: a FLUID layer (§6) is a level, not a horizon, so it is exempt
+from the resolve and the collapse and its lid is tessellated on its own.
+
 **Depth convention: positive-down.** `depth: 0` is sea level, `depth: 105` is 105 m
 below it. Distances (`offset`, relief `amplitude`, basement `thickness`) are positive
 magnitudes. This matches how surfaces are given (`SurfaceMeta.min`/`.max` are positive
@@ -298,13 +302,88 @@ presents.
 
 ## 6. Water specifics
 
+Water is an ordinary layer — but it is a **fluid** one, and that is a real case in
+the model rather than a colour choice.
+
+### 6.1 A fluid is outside the depth order
+
+`ChunkLayer.fluid` (implied by `.water`) exempts a boundary from the resolve and
+from the collapse:
+
+- it is neither clamped nor used to clamp, and the cascade looks *through* it to
+  the nearest solid layer above, so the chain between the solid layers is
+  unbroken;
+- its lid is drawn over the whole footprint, whatever stands in the way;
+- the layer below it is not measured against it.
+
+⭐ **Because a level is not a horizon.** Shallow-wins truncation (§9.5) says the
+younger surface cut the older one away — true of an unconformity, false of the
+sea. Under the ordinary rule a sea bed standing above the plane was clamped down
+to it and then dropped as a duplicate, so the land was erased and the water
+covered everything; the earlier claim that a shoreline "falls out free" was
+measured and found to be exactly backwards. Exempting the fluid inverts both
+halves of that, and the shoreline then does come free — but from the INTERVAL,
+not from the resolve: the water body exists where it has thickness, so it ends
+where the ground comes through, and the wall traced around it is zero-height
+along that contour.
+
+⚠️ The lid is drawn over land, hidden per pixel by whatever is in front of it. It
+is visible through transparent geology and from below. That is the deliberate
+simplification: cutting the lid would mean resolving it against the ground, and
+the cut would not match once the surface is displaced.
+
+⚠️⚠️ **A wall spanning a fluid may not INVERT.** The interval keeps a triangle
+that has thickness at any one corner, so a rim quad can straddle the shoreline:
+its top edge flat on the plane, its bottom edge crossing over it. Left alone that
+half-quad does not vanish, it turns inside out — painting the water body UP the
+flank of the island with its normal flipped, in exactly the band where the unit
+rising through the plane draws its own wall, which is what the two z-fight over.
+`buildStackWalls` therefore clamps the bottom edge to the top for any pair
+involving a fluid, so the wall simply ends at the shoreline. It is clamped only
+there: everywhere else the resolve guarantees the order, and clamping silently
+would hide a crossing instead of reporting it.
+
+### 6.2 The lid is tessellated on its own terms
+
+A fluid layer's cap does **not** come from the shared tessellation. A flat lid in
+a shared TIN is wrong in both directions at once: it carries every vertex the
+surfaces below it needed, and still has none of its own where they needed none —
+which is exactly where a water surface is most likely to be displaced. Refining
+the shared TIN for it is not an option either, since every other layer pays.
+
+Nothing is compared against a fluid per vertex, so its lid is free to be built
+separately: `createPolygonCap` triangulates the outline (ear clipping, so any
+topology of components and holes comes out exactly) and refines only the
+INTERIOR. The boundary is therefore the shared rim, vertex for vertex, at any
+density — which is what keeps it sealed to the wall of the volume below.
+
+`ChunkFluid.resolution` is a target triangle edge in metres: omit it for the
+fewest triangles that fill the outline (all a per-pixel water surface needs), set
+it when `displacement` is on. ⚠️ It applies over the whole footprint, so the cost
+grows with the square of the field size, and the RIM stays at `rimSpacing` — the
+lid's middle subdivides, its edge does not.
+
+### 6.3 The shaders
+
+`ChunkLayer.water` carries the sea state (`OceanWaterProps` / `OceanBodyProps`,
+shared with the `Ocean` component through `ocean-material-sync.ts`) and supplies
+both materials: an `OceanMaterial` for the cap and an `OceanVolumeMaterial` for
+the volume below it — which is why water also implies `fill`. They are created
+once per water layer and then have their uniforms updated, unlike the rest of a
+chunk's appearance, which is rebuilt on change: a sea state is swept
+continuously and rebuilding a `ShaderMaterial` recompiles its program.
+
+⚠️ The water body reads its unit-relative height from the `wallV` attribute
+(`OceanVolumeMaterial({ wallAttribute: true })`), because a chunk's interval wall
+measures `uv` in metres — arc length and world height — which is what anchors
+patterns in world space and must not be renormalised.
+
 - **Buoyancy is global and decoupled.** Floating objects use `useBuoyancy`, which
   samples a single global wave field published by the ocean. So the visible water
   can be clipped to a chunk outline **without** constraining where buoyant objects
   live — keep one global wave field for buoyancy and context, and let the drawn
-  water be an ordinary chunk layer.
-- ⚠️ The water layer is currently drawn with the standard chunk material. Putting
-  the animated `Ocean` shader on it is open — §10.3.4.
+  water be an ordinary chunk layer. ⚠️ Still open on the chunk path: the sampler
+  is provided by `<Ocean>`, and a water LAYER has no such provider.
 
 ## 7. Cross-cutting: LOD, workers, picking
 
@@ -425,6 +504,12 @@ alternative does not merely flip a comparison: a feature *poking through* the ch
 above needs a hole cut in that chunk and its walls closed around it, which ends the
 sealed-block property. Expect a per-surface option eventually; the cascade
 direction itself is a one-line change, the rendering is not.
+
+⭐ None of this applies across a FLUID boundary (§6): the sea did not erode the
+sea bed. A fluid is outside the cascade entirely, which is what lets ground stand
+above it — and it is affordable there precisely because the case §9.5 warns about
+does not arise: the lid needs no hole cutting, since it is transparent and its
+volume simply ends at the shoreline.
 
 ### 9.6 Terminations follow the contour, not the triangles
 
@@ -826,16 +911,17 @@ termination, not its area (§10.5).
 3. **Per-surface truncation rule** — erosional vs onlap, per §9.5. Needs a flag on
    `SurfaceMeta` (or alongside it) and, for onlap, a way to cut a hole in the chunk
    above.
-4. **The water shader** — `OceanChunk` and the builder's `oceanTop` slot are gone,
-   so water is now an ordinary layer drawn with the standard chunk material. The
-   open question is whether `Ocean` decomposes into a *material* plus a per-frame
-   updater, in which case a water layer is just
-   `{ depth: 0, material: oceanMaterial }` and the standalone `Ocean` component
-   retires too; if `Ocean` must own its meshes it is a restructure. ⚠️ Two known
-   snags: `volume-vertex.glsl` reads `uv.y` as a normalised 0..1 down the wall while
-   chunk walls write METRIC uvs (so the wall needs its own normalised attribute),
-   and a flat synthetic layer contributes no refinement candidates, so the water lid
-   inherits the sea bed's TIN and is too coarse for vertex displacement.
+4. **The water shader** — **BUILT, see §6.** A water layer declares
+   `ChunkLayer.water`, which makes it a fluid and supplies both ocean materials;
+   `ChunkMeshes` creates them per water layer and drives their uniforms, and the
+   prop→uniform sync is shared with `Ocean` rather than copied. Both snags recorded
+   here were real and are closed: the wall reads a normalised `wallV` attribute
+   under a define instead of the metric `uv.y`, and the lid is built on its own
+   triangulation of the outline rather than inheriting the sea bed's TIN.
+   ⚠️ Still open: `Ocean` did NOT decompose — it still owns its own meshes, so the
+   standalone component stays, and with it the `useOceanSampler` provider that
+   buoyancy needs. Floating objects over a chunk's water layer therefore have no
+   sampler yet.
 5. **One stack or several, when grids differ** — *recorded, not urgent.* A stack welds
    together two separable things: a **resolve domain** (one depth-order pass, one
    shared rim, so chunks agree about cross-over) and a **sampling domain** (one
@@ -916,6 +1002,11 @@ termination, not its area (§10.5).
    ⚠️ `side` is not synchronised onto the OIT variants, which for stock materials are
    cloned on first use — so making sidedness reactive requires a fresh material
    identity, exactly as re-classification already does.
+
+   ⇒ **Sectioning (§15) changes the premise of the first bullet.** `DoubleSide` is
+   what currently keeps a clipped block from reading as a transparent shell; once a
+   cut face is drawn there is nothing to see through, so "opaque and sealed ⇒ front
+   faces only" stops costing anything and becomes worth doing.
 
 ### 10.4 Resolved
 
@@ -1756,6 +1847,10 @@ patch stays rejected.
    because of §9.1, and needing no shader or material work. *Deferred.*
 5. **Interactions**: focus-well (outline cut + peel), picking, annotations, buoyant
    children over a water layer.
+6. **Sectioning** (§15): a clip plane in any orientation, with the cut face filled
+   per interval. Independent of 4 and 5, and cheap because of §9.1 — but it reads
+   the tessellation and the channels, so it comes after the geometry layer is
+   settled. *Not started.*
 
 ## 13. What surface data actually looks like
 
@@ -1991,6 +2086,36 @@ provably cannot be a height field) and as grid data (the flexure). Regenerate wi
 Storybook: `Spikes/Chunks/SyntheticColumn`. The column enters the store as ordinary
 `surface-meta` + `surface-values`, ids `synthetic:col:<key>:<index>`.
 
+#### 14.4.1 Landforms, not noise
+
+`ReliefSpec` is a union of SHAPES, not just noise fields, and the components
+compose in one array:
+
+- `dunes` / `ridges` — the noise fields, unchanged;
+- **`ramp`** — an eased rise along an azimuth: flat, slope, flat. ⭐ The easing is
+  what makes it a landform rather than a tilt; a bare gradient is what `dip`
+  already gives, and what it draws is a basin, a continental slope and a shelf;
+- **`dome`** — a radial high with a rim of `falloff` measured inward from
+  `radius`, so a narrow rim is a flat-topped island and `falloff = radius` a
+  smooth hill.
+
+⭐ `mode` decides what the base MEANS: `'center'` (default) puts it at the mean,
+which is right for noise and wrong for a landform — it would dig a moat round the
+island. `'above'` makes the base the low point, so the field is zero everywhere
+outside the shape.
+
+⚠️ Relief is added to **depth** by the surface generators and to **scene Y** by
+the chunk stack. `reliefDepth` is the depth-space form, and the single place that
+sign is stated; before it there were three inline copies, all of the `'center'`
+formula, and a relief peak in a column was silently a low.
+
+The demo column's sea bed is built from these: a basin, a coast rising out of it,
+an island standing off it and a hill on the island, with a little dune texture
+over the top. ⚠️ For a stated height to mean anything, the unit carrying it must
+land exactly on its datum (`drape: 0, fill: 1`) — otherwise the drape and the
+surface below put it wherever they like, and every figure is quietly out by that
+much. It measured 43 m out before that was fixed.
+
 ### 14.5 Consequence for the demo data — restoring the open dataset
 
 `public/data` was replaced during development with a second field (`_johs`) because
@@ -2029,3 +2154,195 @@ ways to satisfy it, in increasing order of how much they remove:
 ⚠️ Whichever is chosen, `sortByStratAge`'s current behaviour — silently excluding
 un-aged surfaces — is what turns a dataset swap into an empty screen rather than an
 error. It should say so loudly if it keeps that policy.
+
+## 15. Sectioning — the cut face through a clipped stack
+
+> **Status: DESIGN, not built** (recorded 2026-08-13). Every cost below is
+> reasoned, not measured; §11.1 is the standing reminder of what that is worth.
+
+A clip plane through a stack should not reveal a hollow shell. The cut should read
+as a **geological section**: each interval filled across the cut with the material
+it is drawn with everywhere else. The plane must be usable at **any orientation**,
+including animated.
+
+### 15.1 The clip already works; the cut FACE is the whole problem
+
+`ChunkMaterial` sets `clipping = true` and both chunk shaders include the clipping
+chunks, so a plane cuts a stack today. Because chunk materials are `DoubleSide`
+(§10.3.6), what is revealed is the inside of the walls and caps — a shell, which is
+an honest picture of the geometry and a useless one of the geology.
+
+So the feature is not the clip. It is generating, per frame, the surface that
+closes each interval where the plane passes through it.
+
+### 15.2 ⭐ The cut face is assembled per PRISM CELL, not per ring
+
+The obvious approach — cut each layer's mesh into polylines, chain them into rings,
+triangulate the rings — is the one to avoid. Chaining is where this kind of code
+fails: it needs a closed manifold, and §15.4 lists four reasons a chunk's drawn
+meshes are not one.
+
+Instead, take the unit of work to be a **cell**: the solid of one filled interval
+over ONE triangle of the shared tessellation — exactly what `stackIntervalTriangles`
+already enumerates.
+
+⭐ **A cell is convex.** Its top and bottom are planar triangles (each layer is
+linear over the triangle), and each of its three sides is planar too — over an XZ
+edge both bounding heights are linear in the edge parameter, so the side lies in the
+vertical plane through that edge. The cell is therefore the intersection of five
+half-spaces. A plane cuts a convex solid in a convex polygon, here of at most five
+vertices, obtained by intersecting the plane with the cell's nine edges and fanning
+the result.
+
+What that buys, in order:
+
+- **Any orientation, same code.** The vertical-plane case — where every layer crosses
+  the same XZ edges at the same points, so all layers share one parametrisation and
+  the fill degenerates into a triangle strip — is a *simplification*, not a
+  requirement. Nothing above assumes the plane is vertical.
+- **No ring chaining, no polygon boolean, no CSG**, and so no robustness cliff. An
+  interval that is open contributes the cells it has and nothing more.
+- ⭐ **Watertight by construction.** Two adjacent cells share a face, and their cut
+  polygons take that face's crossing from the same pair of vertex heights, so they
+  meet on an identical edge. The same holds *between* intervals: the cut faces of
+  interval `i` and `i+1` meet exactly along the section of the layer between them.
+  There is no tolerance to tune.
+- **It is small.** Only cells the plane passes through do any work — order the square
+  root of the triangle count — each producing at most three triangles. ⚠️ Unmeasured;
+  measure crossed-cell count on a real stack before committing to per-frame rebuild.
+
+### 15.3 ⭐ Section the CHANNELS, not the drawn meshes
+
+An interval's bounding heights exist for every layer over the whole footprint
+regardless of **who draws the cap**. Reading the tessellation and the channels rather
+than the emitted geometry therefore makes three hard-won complications irrelevant to
+sectioning at a stroke: seam ownership (§10.8) decides who draws a horizon, not who
+knows it; a void splits a layer into a ceiling and a floor (§10.7) that bound the
+same cells; and a cap dropped by the collapse still bounds the volume below it.
+
+What must still apply is the per-triangle drop rules — `makeAbsentTriangleTest`,
+coverage, collapse, carrier — because a cell that is not drawn has no volume to show.
+Applying them per cell is what makes the section agree with the block *by
+construction*, terminations and sealed wedges included.
+
+⭐ `inferred` (§10.6) interpolates onto the cut face for free, being a per-vertex
+attribute on the same vertices. That matters more here than anywhere: a section is
+the most convincing picture this library draws, and a cut through an invented wedge
+must not read as data.
+
+### 15.4 ⚠️ Why not stencil capping — and when it would win
+
+Correcting the record: **stencil is available**. Three.js supports it; this pipeline
+simply does not allocate it — `OITRenderPass` and `RenderingPipeline` build their
+targets with `depthBuffer` only. Adding a stencil attachment is a legitimate opt-in
+for the OIT pipeline.
+
+It still loses for chunks, for reasons that are about the model rather than the
+buffer:
+
+1. **OIT is opt-in**, so sectioning must work under a plain `RenderPass` too. That is
+   the stencil path built twice — and in the OIT case, inside all four passes.
+2. Roughly three extra draws per interval per frame, before OIT multiplies them.
+3. ⚠️ It needs a **closed manifold per volume**, and the drawn meshes are not one: a
+   lid may belong to a sibling chunk (§10.8), a cap may be dropped by the collapse, a
+   void deliberately leaves an interval open (§10.7), and an unfilled interval is an
+   open gap by design (§2.3). Stencil parity fails exactly at those four places —
+   silently, as a flood fill.
+
+Rendering each interval's *bounds* instead of its drawn meshes fixes 3, but that is
+extra geometry — which is what §15.2 already produces, more cheaply and exactly.
+
+⇒ Keep stencil in mind for **geometry the library does not own** (host meshes,
+third-party layers), where there is nothing to section from. It is not the chunk
+answer.
+
+The third option, a **layer-cake shader on a plane quad** (per fragment, binary-search
+the resolved channels for the interval containing `y`), is rejected for four reasons:
+it samples the grid rather than the TIN, so it disagrees with the block by up to
+`maxError` at the silhouette; it would have to re-implement per-vertex and
+per-triangle drop rules as per-node ones, which §10.7 records as *not
+interchangeable*; one quad carrying many layers' opacities sorts wrongly under OIT;
+and it cannot represent a fluid at all.
+
+### 15.5 ⚠️ A fluid is not a prism cell (§6)
+
+A water body breaks the one assumption §15.2 rests on. Its lid does not come from the
+shared tessellation — `createPolygonCap` triangulates the outline on its own terms
+(§6.2) — so the cells of the water interval are bounded above and below by **two
+different triangulations**, and they are not prisms.
+
+Two ways out, neither expensive: overlay the two triangulations along the plane, or —
+since the lid is a height field over the same outline — sample the lid at the sea
+bed's crossing points and keep the sea bed's cells. The second is exact to within the
+lid's own linear interpolation and needs no new machinery.
+
+⚠️⚠️ **The bigger problem is displacement.** The sea surface is displaced in the
+VERTEX shader (§6.3), so a CPU section cuts the *still* lid and the drawn water
+surface will not meet it. Three responses, in increasing cost: fill the water body to
+the still-water level and accept that a section does not show the waves (which is
+what a section conventionally draws anyway, and the recommended default); displace
+the cut face's top edge in its own vertex shader with the same wave function; or
+evaluate the field on the CPU — ⚠️ note the chunk path has no sampler, which is the
+open item at the end of §6.
+
+### 15.6 The clip is a UNIFORM, not `material.clippingPlanes`
+
+⚠️ **Three.js clipping planes do not survive the OIT variants.** `buildVariant` does
+`v.copy(base)`, and `Material.copy` **deep-clones** every `Plane` — so the four
+per-pass variants snapshot the plane at build time. A rotating plane would animate
+under a plain `RenderPass` and **freeze** under `OITRenderPass`: a path disagreement
+that only shows when the plane moves.
+
+A plane carried as a **uniform** has none of that. `ShaderMaterial` variants share the
+base `uniforms` object by reference — the same mechanism that already keeps opacity
+live — so the value propagates to every pass for free. It also feeds the section
+builder from the same source, and it generalises to a slab, a box or several planes
+without inheriting `clipIntersection`'s all-or-nothing semantics.
+
+Three.js clipping keeps one advantage worth using alongside it: `renderer
+.clippingPlanes` is applied globally by the renderer, so wellbores, annotations
+anchors and host meshes are clipped without touching their shaders. The likely answer
+is **both** — global renderer clipping for the scene, a uniform on chunk materials for
+what must stay live and drive the section.
+
+⚠️ The cut face lies *in* the plane, so it clips itself. Exclude it from the clip, or
+offset it along the normal by an epsilon — at field scale, and with the log depth
+buffer, an epsilon that survives depth precision is still well under a metre.
+
+⚠️ GPU picking has its own shader (`pick_vertex.glsl` includes the clipping chunks)
+and needs the same plane, or the pointer hits geometry that is not drawn. Global
+renderer clipping covers this; a uniform does not.
+
+### 15.7 Where it sits
+
+**Sectioning is layer 3** (§3), and this is the load-bearing constraint: moving the
+plane must never reach the worker. It reads the tessellation and channels the build
+already produced, and rebuilds only its own small geometry.
+
+⚠️ At 60 fps that geometry is rebuilt every frame, so preallocate the buffers and move
+`drawRange` rather than allocating a `BufferGeometry` per frame — otherwise a rotating
+plane is a GC generator.
+
+Other consequences:
+
+- Cut faces are ordinary meshes drawn with the same `ChunkMaterial` instances, so they
+  work identically **with and without OIT** — which stencil would not.
+- Per-layer `opacity` (§10.3.6) carries onto the cut face unchanged.
+- **Vertical exaggeration** (§12.4): define the plane in the stack's local space and
+  transform it by `matrixWorld`, or the cut drifts as `k` changes.
+- A section is the natural anchor for unit **labels** — the annotation system already
+  does the positioning.
+
+### 15.8 Open
+
+1. **Fence sections.** The same cells cut by a *swept* surface rather than a plane
+   gives a section along a polyline — or along a wellbore path, which is the more
+   valuable subsurface product. A cell is convex; a swept quad is not a half-space, so
+   this needs per-segment planes rather than one.
+2. **Clip volumes.** Several planes, a slab, a box; and whether the cut faces of
+   different planes need to meet each other (they do at a box corner).
+3. **Component shape.** A `Chunk` child, or a stack-level component that sections
+   every chunk with one plane? The latter matches how a user thinks about it; the
+   former matches where the data is.
+4. **Which side is kept**, and whether the discarded side should remain pickable.
+5. Whether a fluid should be sectioned at all (§15.5).

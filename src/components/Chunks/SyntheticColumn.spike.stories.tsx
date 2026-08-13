@@ -66,6 +66,15 @@ type SyntheticColumnProps = {
   count: number;
   outlineSize: number;
   maxError: number;
+  water: boolean;
+  waterDepth: number;
+  waterOpacity: number;
+  waterLayerOpacity: number;
+  windSpeed: number;
+  windDirection: number;
+  foamAmount: number;
+  displacement: boolean;
+  waterResolution: number;
   seal: boolean;
   sealMode: 'proportional' | 'void';
   minThickness: number;
@@ -127,7 +136,7 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
 
   const layers = useMemo<ChunkLayer[]>(() => {
     if (column.length === 0) return [];
-    return column.map((surface, i) => {
+    const units = column.map((surface, i) => {
       const sediment = selected[i]?.class ?? 'shale';
       const colour = CLASS_COLOUR[sediment];
       // ⭐ The class → detail mapping is the story's, exactly like the colour one:
@@ -137,7 +146,42 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
         : undefined;
       return { surface, material: colour, fill: colour, detail };
     });
-  }, [column, selected, props.detail, props.detailStrength]);
+    if (!props.water) return units;
+    // Declaring `water` is what makes this a FLUID layer: it is left out of the
+    // depth order, so the unit below it comes through the plane where it stands
+    // above it, and it brings its own surface and body materials.
+    const angle = (props.windDirection * Math.PI) / 180;
+    return [
+      {
+        depth: props.waterDepth,
+        opacity: props.waterLayerOpacity,
+        water: {
+          windSpeed: props.windSpeed,
+          windDirection: [Math.cos(angle), Math.sin(angle)] as Vec2,
+          waterOpacity: props.waterOpacity,
+          foamAmount: props.foamAmount,
+          displacement: props.displacement,
+          resolution:
+            props.waterResolution > 0 ? props.waterResolution : undefined,
+        },
+      },
+      ...units,
+    ];
+  }, [
+    column,
+    selected,
+    props.detail,
+    props.detailStrength,
+    props.water,
+    props.waterDepth,
+    props.waterOpacity,
+    props.waterLayerOpacity,
+    props.windSpeed,
+    props.windDirection,
+    props.foamAmount,
+    props.displacement,
+    props.waterResolution,
+  ]);
 
   const resolve = useMemo<ChunkResolveOptions>(
     () => ({
@@ -163,9 +207,13 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
   const report = useMemo(
     () => (metrics: SurfaceChunkMetrics) => {
       const d = metrics.diagnostics;
+      // The water layer is prepended, so the unit behind a row sits one earlier.
+      const unitAt = (index: number) => selected[index - (props.water ? 1 : 0)];
       const rows = (d?.layers ?? []).map(l => ({
-        unit: selected[l.index]?.name ?? l.index,
-        class: selected[l.index]?.class ?? '',
+        unit:
+          unitAt(l.index)?.name ??
+          (l.index === 0 && props.water ? 'water' : l.index),
+        class: unitAt(l.index)?.class ?? '',
         coverage: +l.coverage.toFixed(4),
         filled: +l.filled.toFixed(4),
         inferred: +l.inferred.toFixed(4),
@@ -189,7 +237,7 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
       );
       console.table(rows);
     },
-    [props.column, selected],
+    [props.column, props.water, selected],
   );
 
   if (layers.length < 2) return null;
@@ -221,13 +269,14 @@ const meta = {
   parameters: {
     scale: 5000,
     cameraPosition: [7000, 3500, 7000],
-    cameraTarget: [0, -1800, 0],
+    cameraTarget: [0, -1400, 0],
     docs: {
       description: {
         component:
           'A chunk cut from a GENERATED stratigraphic column — a set of surfaces that are exact functions of one another, rather than the independent surfaces of `SyntheticCoverage`.\n\n' +
           'Each unit is deposited as `thickness = drape + fill · max(0, dPrev − datum)`: `drape` blankets the topography, `fill` levels it toward `datum`. Where the surface below is already shallower than the datum the unit has NO thickness, so it **pinches out over the highs** — a real zero-thickness termination, which the demo field only shows by accident.\n\n' +
           'The column also contains a **fault** (gridded into a ramp and dying out along strike — a height field cannot hold the break, so the surfaces are carried across it exactly as an interpreter would), a **partly-mapped unit** (a survey extent, not geology), and an **angular unconformity** whose truncated horizons are recorded as NO DATA by default, which is what an interpreter delivers and what makes them indistinguishable from a survey edge.\n\n' +
+          '⭐ The SHALLOWEST surface is the SEA BED, and it is shaped rather than noised: a basin ~210 m deep, a coast rising out of it to ~45 m above sea level on one side, and an island standing off it with a hill on top (~99 m). Those are composable landform primitives (`ramp`, `dome`) with a little dune texture over them — noise alone reads as static, not as terrain. The water is a FLUID layer, so the ground rises through the plane instead of being truncated by it, and the water body ends at the shoreline.\n\n' +
           '⭐ Everything about the column — grid size and resolution, number of units, structure, seed, erosion encoding, where the fault and the unconformity fall — comes from the `COLUMN` constants in `src/storybook/data/synthetic-surfaces.ts`. Change one and reload to get a different field.\n\n' +
           '⭐⭐ Because every relationship is known, a crossing or a mis-ordering reported here is unambiguously a pipeline bug. Watch `crossings` and `maxOverlap` in the console table: they should stay at zero.',
       },
@@ -245,6 +294,15 @@ export const Default: Story = {
     count: 20,
     outlineSize: 7,
     maxError: 5,
+    water: true,
+    waterDepth: 0,
+    waterOpacity: 0.7,
+    waterLayerOpacity: 1,
+    windSpeed: 10,
+    windDirection: 30,
+    foamAmount: 0.5,
+    displacement: false,
+    waterResolution: 0,
     seal: true,
     sealMode: 'proportional',
     minThickness: 1,
@@ -288,6 +346,57 @@ export const Default: Story = {
       description:
         'Simplification error of the shared tessellation, in metres of height.',
       table: { category: 'Column' },
+    },
+    water: {
+      control: 'boolean',
+      description:
+        'Add a water layer above the column. ⭐ Declaring `water` on a layer is what makes it a FLUID: it is left out of the depth order, so the unit below it rises THROUGH the plane where it stands above it instead of being flattened onto it, and it brings the animated ocean surface and body materials with it.',
+      table: { category: 'Water' },
+    },
+    waterDepth: {
+      control: { type: 'range', min: 0, max: 2600, step: 25 },
+      description:
+        'Sea level, in metres below datum (positive-down, as surfaces are given). 0 is where the sea bed was designed for — it spans roughly 210 m deep to 99 m above sea level, so the coast, the island and its hill all stand clear. Raise it to drown them: the ground is not truncated by the water, it simply goes under.',
+      table: { category: 'Water' },
+    },
+    waterOpacity: {
+      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      description:
+        'The WATER’s own opacity, looking straight down. ⭐ It is a base, not the final alpha: the shader mixes it toward 1 with the Fresnel term, so the surface is see-through from above and mirror-like at grazing angles whatever this says. 1 = opaque from every angle.',
+      table: { category: 'Water' },
+    },
+    waterLayerOpacity: {
+      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      description:
+        'Opacity of the LAYER, multiplying everything above — the chunk-level control every other layer has, which the water layer overrides for itself. Leave it at 1 unless the whole water tier should fade.',
+      table: { category: 'Water' },
+    },
+    windSpeed: {
+      control: { type: 'range', min: 0, max: 25, step: 0.5 },
+      description:
+        'Wind speed in m/s (U10) — the single physical input to the sea state.',
+      table: { category: 'Water' },
+    },
+    windDirection: {
+      control: { type: 'range', min: 0, max: 360, step: 5 },
+      description: 'Wind direction, in degrees.',
+      table: { category: 'Water' },
+    },
+    foamAmount: {
+      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      table: { category: 'Water' },
+    },
+    displacement: {
+      control: 'boolean',
+      description:
+        'Displace the water surface vertices. ⚠️ Needs a lid fine enough to displace — see `waterResolution`; the waves are shaded per pixel either way.',
+      table: { category: 'Water' },
+    },
+    waterResolution: {
+      control: { type: 'range', min: 0, max: 500, step: 25 },
+      description:
+        'Target triangle edge for the water lid, in metres. 0 = leave it to the library: the fewest triangles that fill the outline when displacement is off, a default resolution when it is on. ⚠️ A cost knob over the whole footprint — halving it roughly quadruples the lid.',
+      table: { category: 'Water' },
     },
     seal: { control: 'boolean', table: { category: 'Resolve' } },
     sealMode: {

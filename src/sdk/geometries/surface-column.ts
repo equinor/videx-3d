@@ -33,7 +33,7 @@
  */
 
 import { Vec2 } from '../types/common';
-import { ReliefSpec, sampleRelief } from './procedural-relief';
+import { ReliefSpec, reliefDepth } from './procedural-relief';
 import { SurfaceClipHeader, surfaceGridToWorld } from './surface-clip';
 import {
   evaluateSurfaceField,
@@ -294,18 +294,13 @@ function structuralDepth(spec: SurfaceFieldSpec, x: number, z: number): number {
     const a = spec.dip.azimuth * DEG;
     depth += spec.dip.gradient * (x * Math.sin(a) + z * Math.cos(a));
   }
-  if (spec.relief) {
-    for (const relief of spec.relief) {
-      depth += relief.amplitude * (sampleRelief(relief, x, z) - 0.5);
-    }
-  }
-  return depth;
+  return depth + reliefOffset(spec.relief, x, z);
 }
 
 function reliefOffset(relief: ReliefSpec[] | undefined, x: number, z: number) {
   if (!relief) return 0;
   let sum = 0;
-  for (const r of relief) sum += r.amplitude * (sampleRelief(r, x, z) - 0.5);
+  for (const r of relief) sum += reliefDepth(r, x, z);
   return sum;
 }
 

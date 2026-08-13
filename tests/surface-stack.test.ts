@@ -1303,6 +1303,84 @@ describe('cut outlines', () => {
 });
 
 /**
+ * A fluid is a level rather than a horizon: it is outside the depth order, so
+ * ground rises through it instead of being flattened onto it.
+ */
+describe('a fluid boundary', () => {
+  const tri = new Uint32Array([0, 1, 2]);
+  // Sea level, then a sea bed that stands ABOVE it at the first vertex.
+  const water = () => Float32Array.from([0, 0, 0]);
+  const seabed = () => Float32Array.from([50, -100, -100]);
+  const floor = () => Float32Array.from([-500, -500, -500]);
+
+  it('does not truncate what is below it', () => {
+    const heights = [water(), seabed(), floor()];
+    resolveStackOrder(heights, { fluid: [true, false, false] });
+
+    expect(heights[1][0]).toBe(50);
+    expect(heights[0][0]).toBe(0);
+  });
+
+  it('⚠️ without the flag, the ground is flattened onto the plane and dropped', () => {
+    const heights = [water(), seabed(), floor()];
+    const resolved = resolveStackOrder(heights);
+
+    expect(heights[1][0]).toBe(0);
+    expect(resolved.absent[1][0]).toBe(1);
+  });
+
+  it('keeps the chain between the solid layers unbroken', () => {
+    // The layer below the fluid is the authority for the one below that.
+    const heights = [water(), seabed(), Float32Array.from([100, -50, -600])];
+    resolveStackOrder(heights, { fluid: [false, true, false] });
+
+    // seabed is fluid here, so the floor is measured against the WATER above it
+    expect(heights[2][0]).toBe(0);
+    expect(heights[2][1]).toBe(-50);
+  });
+
+  it('draws its lid whole, and keeps ground that stands above it', () => {
+    const emerged = () => Float32Array.from([50, 50, 50]);
+
+    const heights = [water(), emerged()];
+    resolveStackOrder(heights, { fluid: [true, false] });
+    const collapsed = collapseStackTriangles(heights, tri, {
+      threshold: 0.5,
+      fluid: [true, false],
+    });
+    expect(collapsed.dropped).toEqual([0, 0]);
+    expect(heights[1][0]).toBe(50);
+
+    // Without it the ground is clamped onto the plane, and then dropped as a
+    // duplicate of it — the lid covers everything and the island is gone.
+    const flattened = [water(), emerged()];
+    const resolved = resolveStackOrder(flattened);
+    expect(
+      collapseStackTriangles(flattened, tri, {
+        threshold: 0.5,
+        absent: resolved.absent,
+      }).dropped[1],
+    ).toBe(1);
+  });
+
+  it('⭐ ends its volume where the ground comes through — the shoreline', () => {
+    const above = stackIntervalTriangles([water(), seabed()], tri, {
+      threshold: 0.5,
+      fluid: [true, false],
+    });
+    // the sea bed is above the plane at one corner, but not at all three
+    expect(above[0][0]).toBe(1);
+
+    const emerged = stackIntervalTriangles(
+      [water(), Float32Array.from([50, 50, 50])],
+      tri,
+      { threshold: 0.5, fluid: [true, false] },
+    );
+    expect(emerged[0][0]).toBe(0);
+  });
+});
+
+/**
  * A carrier is a flat floor declared for a whole column, and it is a datum rather
  * than a unit: nothing pierces it, and it is the one layer that never yields.
  */

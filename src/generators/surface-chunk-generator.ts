@@ -24,6 +24,7 @@ import {
   splitVoidChannels,
   STACK_MASK_DATA,
   stackCarrierLevel,
+  StackFluid,
   StackLayer,
   StackPairStats,
   StackSyntheticLayer,
@@ -44,6 +45,8 @@ export type LoadedStackLayer = {
   capCuts?: number[];
   /** this layer is the column's carrier — the floor the block terminates against */
   carrier?: boolean;
+  /** this layer is a fluid: exempt from the depth order, lid tessellated its own way */
+  fluid?: StackFluid;
   /** surface id, or `null` for a synthetic layer */
   id: string | null;
 };
@@ -266,6 +269,7 @@ export async function buildSpecStack(
           fill: !!f.fill,
           cap: f.cap !== false,
           capCuts: f.capCuts,
+          fluid: f.fluid,
           layer: { depth: f.depth, offset: f.offset, relief: f.relief },
         });
         return;
@@ -278,6 +282,7 @@ export async function buildSpecStack(
         fill: !!f.fill,
         cap: f.cap !== false,
         capCuts: f.capCuts,
+        fluid: f.fluid,
         layer: context.layers[at],
       });
     });
@@ -409,6 +414,11 @@ export async function buildSpecStack(
         : (loaded[source[k]].capCuts ?? null),
     );
     const carrierLayer = source.findIndex(i => loaded[i].carrier);
+    // A fluid is not part of the depth order the COLUMN resolved either, so its
+    // masks cannot stand in for a pass that knows about one.
+    const fluidLayers = source.some(i => loaded[i].fluid)
+      ? source.map(i => loaded[i].fluid ?? null)
+      : undefined;
     // ⭐ A ceiling holds no volume: that is what makes the void below it a void,
     // and what makes the carrier a terminator rather than a unit.
     const fills = ceilings.map((ceiling, k) => {
@@ -452,9 +462,11 @@ export async function buildSpecStack(
         // leaves surfaces running a metre apart over wide bands, so those islands
         // are exactly what it produces.
         preResolved:
-          spec.resolve && !synthetic && !sealing ? preResolved : undefined,
+          spec.resolve && !synthetic && !sealing && !fluidLayers
+            ? preResolved
+            : undefined,
         resolve:
-          spec.resolve && (synthetic || sealing)
+          spec.resolve && (synthetic || sealing || fluidLayers)
             ? { mode: spec.resolve.mode, minGap: spec.resolve.minGap }
             : undefined,
         collapseThreshold: spec.resolve?.collapseThreshold,
@@ -470,6 +482,7 @@ export async function buildSpecStack(
         fills,
         carrier: carrierLayer >= 0 ? carrierLayer : undefined,
         ceiling: ceilings,
+        fluid: fluidLayers,
         inferred: context.inferred ? inferredList : undefined,
         topCover: coverAbove,
       },
@@ -547,6 +560,7 @@ export async function buildSpecStack(
         fill: !!f.fill,
         cap: f.cap !== false,
         capCuts: f.capCuts,
+        fluid: f.fluid,
         layer: { depth: f.depth, offset: f.offset, relief: f.relief },
       });
       return;
@@ -559,6 +573,7 @@ export async function buildSpecStack(
       fill: !!f.fill,
       cap: f.cap !== false,
       capCuts: f.capCuts,
+      fluid: f.fluid,
       layer: {
         values,
         header: f.header,
@@ -692,6 +707,9 @@ export async function buildSpecStack(
       fills,
       carrier: carrierLayer >= 0 ? carrierLayer : undefined,
       ceiling: ceilings,
+      fluid: source.some(i => loaded[i].fluid)
+        ? source.map(i => loaded[i].fluid ?? null)
+        : undefined,
       inferred: split?.inferred ?? sealed?.inferred,
     },
   );
@@ -733,7 +751,6 @@ export function stackDiagnostics(
   // nothing — the column's own numbers are the ones that say whether the input was
   // in order, and reporting the build's zeros would hide exactly what this is for.
   const pairs = result.stackPairs ?? build.resolved.pairs;
-  const totalTriangles = build.tessellation.indices.length / 3;
   return {
     crossings: pairs.reduce((a, p) => a + p.crossings, 0),
     crossingsCovered: pairs.reduce((a, p) => a + p.crossingsCovered, 0),
@@ -762,21 +779,14 @@ export function stackDiagnostics(
         0,
       );
       // Triangles actually drawn, summed over the layer's build copies. ⚠️ Read
-      // off the EFFECTIVE cap, not the caller's: a void ceiling is drawn even
-      // where the seam handed the horizon to a neighbour, and reporting zero for
-      // it is what hid it being drawn twice.
+      // off the GEOMETRY rather than derived from the drops: an uncapped layer
+      // builds none (which is what hid a void ceiling being drawn twice), and a
+      // fluid's lid is not a subset of the shared tessellation at all.
       const capped = built.some(k => result.caps[k]);
-      const triangles = built.reduce(
-        (a, k) =>
-          result.caps[k]
-            ? a +
-              totalTriangles -
-              (dropped?.droppedAbsent[k] ?? 0) -
-              (dropped?.droppedCollapsed[k] ?? 0) -
-              (dropped?.droppedExcluded[k] ?? 0)
-            : a,
-        0,
-      );
+      const triangles = built.reduce((a, k) => {
+        const geometry = build.layers[k]?.geometry;
+        return a + (geometry ? (geometry.getIndex()?.count ?? 0) / 3 : 0);
+      }, 0);
       return {
         index: i,
         id: entry.id,

@@ -24,6 +24,8 @@ import {
   generateColumn,
   generateSurfaceValues,
   getProjectionDefFromUtmZone,
+  ReliefSpec,
+  reliefDepth,
   SedimentClass,
   SurfaceFieldSpec,
   SurfaceMeta,
@@ -192,6 +194,88 @@ type ColumnScenario = {
 };
 
 /**
+ * ⭐ THE SEA BED, as landforms rather than noise.
+ *
+ * Deposition flattens a column upward, so the shallowest surface would otherwise
+ * be nearly level — and a noise field over it reads as static, not as terrain.
+ * These are shaped primitives instead (see `ReliefSpec`): a coast that rises out
+ * of a basin, an island standing off it, and a hill on the island. Noise is left
+ * as TEXTURE over the top, which is all it is good for.
+ *
+ * Depths are metres below sea level; heights are metres above it.
+ */
+const SEABED = {
+  /** deepest point of the basin */
+  basin: 200,
+  /** how far above sea level the coast climbs at the far end of its run */
+  coastHeight: 45,
+  /** compass direction the land rises toward, and over what distance */
+  coastAzimuth: 300,
+  coastRun: 9 * KM,
+  /** the island: a broad, nearly flat platform standing off the coast */
+  island: {
+    center: [1400, -900] as Vec2,
+    radius: 1700,
+    /** narrow rim = a platform with a shore, rather than a dome */
+    falloff: 800,
+    /** how far its top clears sea level */
+    freeboard: 15,
+  },
+  /** a hill on the island, off to one side of it */
+  hill: {
+    center: [1850, -1350] as Vec2,
+    radius: 550,
+    falloff: 520,
+    /** above the island's own platform */
+    height: 95,
+  },
+  /** dune-scale roughness over the whole sea bed. 0 = bare landforms */
+  texture: 16,
+} as const;
+
+/** The coast alone, which is what sets the shallowest surface's mean depth. */
+const COAST_RELIEF: ReliefSpec = {
+  kind: 'ramp',
+  amplitude: SEABED.basin + SEABED.coastHeight,
+  azimuth: SEABED.coastAzimuth,
+  run: SEABED.coastRun,
+};
+
+/**
+ * Build the sea bed's relief. ⭐ The island's height is DERIVED — sampled from the
+ * coast at the island's own position — so it keeps its stated freeboard if the
+ * coast is retuned, instead of being a number that silently stops meaning what it
+ * says.
+ */
+function seabedRelief(meanDepth: number): ReliefSpec[] {
+  const [ix, iz] = SEABED.island.center;
+  const seabedAt =
+    meanDepth + reliefDepth(COAST_RELIEF, ix, iz) + SEABED.texture / 2;
+  return [
+    COAST_RELIEF,
+    {
+      kind: 'dome',
+      mode: 'above',
+      amplitude: seabedAt + SEABED.island.freeboard,
+      center: SEABED.island.center,
+      radius: SEABED.island.radius,
+      falloff: SEABED.island.falloff,
+    },
+    {
+      kind: 'dome',
+      mode: 'above',
+      amplitude: SEABED.hill.height,
+      center: SEABED.hill.center,
+      radius: SEABED.hill.radius,
+      falloff: SEABED.hill.falloff,
+    },
+    ...(SEABED.texture > 0
+      ? [{ amplitude: SEABED.texture, seed: 23, featureSize: 2.5 * KM }]
+      : []),
+  ];
+}
+
+/**
  * ⭐⭐ THE KNOBS. Edit and reload — the column is rebuilt from these, so a
  * different structure, a longer column or a coarser grid is a one-line change
  * rather than a rewritten spec.
@@ -210,9 +294,14 @@ const COLUMN = {
   rot: ROT,
   /** depositional units above the basement */
   units: 8,
-  /** depth of the basement and of the shallowest surface, metres positive-down */
+  /** depth of the basement, metres positive-down */
   baseDepth: 2600,
-  topDepth: 700,
+  /**
+   * Mean depth of the shallowest surface — the datum the sea bed's landforms are
+   * built around, so it is the MIDPOINT of the basin and the coast rather than a
+   * number of its own.
+   */
+  topDepth: (SEABED.basin - SEABED.coastHeight) / 2,
   /** relief on the basement — the structure everything else is deposited over */
   structure: 320,
   /**
@@ -272,14 +361,21 @@ function fieldColumn(): Omit<ColumnSpec, 'grid'> {
     const unit = UNITS[i % UNITS.length];
     // 0.9 floods (and pinches out), 0.15 mostly drapes (and carries structure)
     const fill = [0.9, 0.5, 0.15][i % 3];
+    const seabed = i === COLUMN.units - 1;
     steps.push({
       name: COLUMN.units > UNITS.length ? `${unit.name} ${i}` : unit.name,
       class: unit.class,
-      drape: per * (1 - fill) * 0.8,
-      fill,
+      // ⭐ The sea bed levels COMPLETELY onto its datum (no drape, full fill), so
+      // its mean depth is exactly `topDepth` and the landforms below can be
+      // measured from it. Anything less and the unit lands wherever the drape and
+      // the surface underneath happen to put it, and every stated height — the
+      // island's freeboard, the coast's 45 m — is quietly wrong by that much.
+      drape: seabed ? 0 : per * (1 - fill) * 0.8,
+      fill: seabed ? 1 : fill,
       datum,
-      relief:
-        i % 3 === 2
+      relief: seabed
+        ? seabedRelief(datum)
+        : i % 3 === 2
           ? [{ amplitude: per * 0.25, seed: 11 + i, featureSize: 3 * KM }]
           : undefined,
       boundary:

@@ -316,4 +316,28 @@ describe('buildStackWalls', () => {
       expect(wallV.getX(i)).toBe(i % 2 === 0 ? 1 : 0);
     }
   });
+
+  it('⭐ never inverts the wall of a fluid, however far the ground rises through it', () => {
+    // Sea level, and a sea bed that stands 50 m ABOVE it on the right-hand side.
+    const water = flat(-600);
+    const seabed = new Float32Array(VERTICES);
+    for (let v = 0; v < VERTICES; v++) seabed[v] = v % N >= 2 ? -550 : -700;
+
+    const wall = buildStackWalls(
+      tessellation,
+      positionsXZ,
+      [water, seabed],
+      { fills: [true, false], threshold: 0.5, fluid: [true, false] },
+    ).walls[0]!;
+
+    const position = wall.getAttribute('position');
+    for (let i = 0; i < position.count; i++) {
+      // Nothing above the water line: an inverted quad would paint the water
+      // body up the flank of the island, over the wall that island draws itself.
+      expect(position.getY(i)).toBeLessThanOrEqual(-600);
+    }
+
+    // ...and the part that IS submerged still has its wall.
+    expect(triangleCount(wall)).toBeGreaterThan(0);
+  });
 });

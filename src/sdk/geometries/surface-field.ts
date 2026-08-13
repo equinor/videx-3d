@@ -25,7 +25,7 @@
  */
 
 import { Vec2 } from '../types/common';
-import { ReliefSpec, sampleRelief } from './procedural-relief';
+import { ReliefSpec, reliefDepth } from './procedural-relief';
 import { SurfaceClipHeader, surfaceGridToWorld } from './surface-clip';
 
 /**
@@ -134,7 +134,7 @@ export function evaluateSurfaceField(
 
   if (spec.relief) {
     for (const relief of spec.relief) {
-      depth += relief.amplitude * (sampleRelief(relief, x, z) - 0.5);
+      depth += reliefDepth(relief, x, z);
     }
   }
 

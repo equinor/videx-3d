@@ -21,7 +21,7 @@ import {
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
 } from './planar-geometry';
-import { refineInteriorEdges } from './tessellation';
+import { createPolygonCap } from './polygon-cap';
 import { triangulateGridConstrained } from './triangulate-grid-delaunay';
 
 /** Options shared by the ocean geometry builders. */
@@ -878,19 +878,11 @@ function refinementPasses(segments: number): number {
 }
 
 /**
- * Triangulate a polygon footprint straight from its outline (flat, y = 0).
- * Earcut reproduces the exact outline and holes for any topology without
- * dropping triangles; `passes` then refines the INTERIOR only (see
- * {@link refineInteriorEdges}), so the boundary — and its shared rim with the
- * walls and sea bed — is preserved exactly.
+ * Triangulate a polygon footprint straight from its outline (flat, y = 0), in
+ * the ocean builders' northing-negating frame.
  */
 function flatShapeSurface(shapes: Shape[], passes = 0): BufferGeometry {
-  const surface = new ShapeGeometry(shapes);
-  surface.rotateX(-Math.PI / 2); // XY -> XZ, normals -> +Y, (x, y) -> (x, -y)
-  if (passes > 0) refineInteriorEdges(surface, passes);
-  computePlanarXZUv(surface);
-  computeUpwardNormals(surface);
-  return surface;
+  return createPolygonCap(shapes, { passes, flipZ: true });
 }
 
 /** Even-odd ray cast: is point (x, y) inside the 2D ring? */

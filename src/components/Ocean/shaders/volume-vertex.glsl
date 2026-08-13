@@ -6,15 +6,25 @@
 //
 // When vertex displacement is enabled, the wall's TOP ring follows the same
 // spectral wave displacement as the ocean surface (see waves.glsl), tapered to
-// zero at the sea bed via uv.y (1 at the top edge, 0 at the bottom), so the rim
-// stays sealed against the displaced surface. Evaluated in WORLD space so it is
-// seamless with the surface.
+// zero at the sea bed via the unit-relative vertical coordinate (1 at the top
+// edge, 0 at the bottom), so the rim stays sealed against the displaced surface.
+// Evaluated in WORLD space so it is seamless with the surface.
+//
+// That coordinate is `uv.y` on the ocean builders' geometry, whose uv spans the
+// wall. A chunk's interval wall carries a METRIC uv instead (arc length and world
+// height, which is what anchors patterns in world space), so it supplies the same
+// quantity as its own `wallV` attribute: OCEAN_WALL_ATTRIBUTE switches to that
+// rather than renormalising a uv that has another job.
 
 #ifndef OCEAN_WAVE_COUNT
 #define OCEAN_WAVE_COUNT 16
 #endif
 #ifndef OCEAN_DISPLACE_COUNT
 #define OCEAN_DISPLACE_COUNT 3
+#endif
+
+#ifdef OCEAN_WALL_ATTRIBUTE
+attribute float wallV;
 #endif
 
 uniform float uTime;
@@ -32,15 +42,21 @@ varying float vWallV; // 1 at the top (surface) edge, 0 at the sea bed
 void main() {
   vec4 worldPos = modelMatrix * vec4(position, 1.0);
 
-  vWallV = uv.y;
+  #ifdef OCEAN_WALL_ATTRIBUTE
+  float wallHeight = wallV;
+  #else
+  float wallHeight = uv.y;
+  #endif
 
-  // Displace the top ring (uv.y = 1) to follow the surface swells, tapering to
-  // the anchored sea bed (uv.y = 0). Uses the SAME shared helper as the surface
+  vWallV = wallHeight;
+
+  // Displace the top ring (wallHeight = 1) to follow the surface swells, tapering
+  // to the anchored sea bed (0). Uses the SAME shared helper as the surface
   // shader (see oceanDisplacement in waves.glsl) so the wall top resolves to the
   // identical world position as the surface edge — keeping the rim sealed.
-  if(uDisplacement > 0.0 && uv.y > 0.0) {
+  if(uDisplacement > 0.0 && wallHeight > 0.0) {
     vec3 disp = oceanDisplacement(worldPos.xz, uTime, uSteepness, uDisplacement, OCEAN_DISPLACE_COUNT);
-    worldPos.xyz += disp * uv.y;
+    worldPos.xyz += disp * wallHeight;
   }
 
   vWorldPosition = worldPos.xyz;

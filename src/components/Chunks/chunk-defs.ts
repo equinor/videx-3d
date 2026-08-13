@@ -4,11 +4,13 @@ import {
   PlanarPolygonCoordinates,
   SealMode,
   StackCarrier,
+  StackFluid,
   StackRelief,
   SurfaceClipHeader,
   SurfaceMeta,
   Vec2,
 } from '../../sdk';
+import { OceanBodyProps, OceanWaterProps } from '../Ocean/ocean-material-sync';
 import { ChunkDetail } from './chunk-detail';
 
 /** Generator key for the {@link Chunk} geometry generator. */
@@ -59,7 +61,12 @@ export type SurfaceChunkSpecLayer = (
    * layer's cap where they reach. The partial-overlap case of the same decision:
    * this chunk draws its own footprint minus theirs.
    */
-  capCuts?: number[];
+  capCuts?: number[]; /**
+   * This boundary is a FLUID — a level rather than a horizon. Exempt from the
+   * depth order, and its lid is tessellated on its own terms. See
+   * `SurfaceStackOptions.fluid`.
+   */
+  fluid?: StackFluid;
 };
 
 /** A synthetic (data-free) boundary in a {@link SurfaceChunkSpec}. */
@@ -197,11 +204,116 @@ export type ChunkLayer = {
    * a global transparency control should sweep along.
    */
   opacity?: number;
+  /**
+   * This boundary is a FLUID: a level, not a horizon.
+   *
+   * It takes no part in the depth order — it neither truncates the ground beneath
+   * it nor is truncated by it, so a sea bed that rises above the plane comes
+   * THROUGH it instead of being flattened onto it. Its lid is drawn over the
+   * whole footprint whether or not something stands in the way, and the volume
+   * below it simply ends where the two meet, which is the shoreline.
+   *
+   * ⭐ Implied by {@link ChunkLayer.water}. Declare it directly for a fluid
+   * boundary that is not the sea: a plain-coloured water plane, or a contact
+   * inside a reservoir.
+   */
+  fluid?: boolean | ChunkFluid;
+  /**
+   * Draw this boundary as WATER, with the animated ocean shaders: the layer's cap
+   * becomes the sea surface and the volume below it the water body.
+   *
+   * Declaring it is what makes the layer a fluid ({@link ChunkLayer.fluid}), and
+   * supplies both materials — so `material` and `fill` are only needed here to
+   * override one of them with something of your own.
+   *
+   * ⚠️ `displacement` moves vertices, so it also decides how finely the lid is
+   * tessellated (see {@link ChunkFluid.resolution}) — a cost that a flat, per-pixel
+   * water surface does not pay.
+   *
+   * ⚠️ TWO opacities meet here, and they are not the same thing.
+   * `water.waterOpacity` is the water's own, and only a BASE: the shader mixes it
+   * toward 1 with the Fresnel term, so the surface is see-through from above and
+   * mirror-like at a grazing angle whatever it says. {@link ChunkLayer.opacity}
+   * (or the chunk's `surfaceOpacity`) then multiplies the result, as it does for
+   * every other layer. Water that looks too transparent at `opacity: 1` is
+   * usually carrying the material's own default of 0.7.
+   */
+  water?: ChunkWater;
 };
+
+/**
+ * How a {@link ChunkLayer.fluid} layer's lid is built.
+ *
+ * @group Components
+ */
+export type ChunkFluid = {
+  /**
+   * Target triangle edge length for the lid, in metres. Omit for the fewest
+   * triangles that fill the outline — all a flat surface needs, since its waves
+   * are shaded per pixel.
+   *
+   * ⚠️ Only worth setting when vertex displacement is on, and then no finer than
+   * the swells being displaced need: it applies over the whole footprint, so the
+   * triangle count grows with the square of the field size.
+   */
+  resolution?: number;
+};
+
+/**
+ * Water on a {@link ChunkLayer}: the sea state and its appearance, plus how
+ * finely the surface is tessellated.
+ *
+ * @group Components
+ */
+export type ChunkWater = OceanWaterProps & OceanBodyProps & ChunkFluid;
+
+/**
+ * Target lid resolution (metres) used when a water layer displaces its vertices
+ * and names no {@link ChunkFluid.resolution} of its own. Coarse enough that a
+ * field-sized footprint stays affordable, fine enough for the long swells that
+ * are the only ones displaced.
+ *
+ * @group Components
+ */
+export const DEFAULT_WATER_RESOLUTION = 100;
 
 /** Whether a {@link ChunkLayer.fill} asks for a volume at all. */
 export function hasFill(fill: ChunkLayer['fill']): boolean {
   return fill !== undefined && fill !== null && fill !== false;
+}
+
+/**
+ * Whether a layer holds a volume below it. Water asks for its body by BEING
+ * water — a sea surface with nothing under it is a sheet, not a sea — so only an
+ * explicit `fill: false` takes it away again.
+ */
+export function chunkLayerFill(layer: ChunkLayer): boolean {
+  if (layer.fill === false || layer.fill === null) return false;
+  return hasFill(layer.fill) || !!layer.water;
+}
+
+/**
+ * What a layer's {@link ChunkLayer.fluid} / {@link ChunkLayer.water} amount to for
+ * the build: whether it is a fluid at all, and how finely to tessellate its lid.
+ *
+ * Water that displaces its vertices needs a lid to displace; water that does not
+ * is shaded per pixel and needs nothing but the outline.
+ */
+export function chunkLayerFluid(layer: ChunkLayer): StackFluid | undefined {
+  const declared = layer.water ?? layer.fluid;
+  if (!declared) return undefined;
+  if (declared === true) return {};
+  const displaced = 'displacement' in declared && declared.displacement;
+  return {
+    resolution:
+      declared.resolution ?? (displaced ? DEFAULT_WATER_RESOLUTION : 0),
+  };
+}
+
+/** Content key for {@link chunkLayerFluid}, for the build's layer key. */
+export function chunkFluidKey(layer: ChunkLayer): string {
+  const fluid = chunkLayerFluid(layer);
+  return fluid ? `~${fluid.resolution ?? 0}` : '';
 }
 
 /**

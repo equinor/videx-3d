@@ -292,6 +292,19 @@ export type StackResolveOptions = {
    * the fill, so a "crossing" there says nothing about the geology.
    */
   coverage?: Uint8Array[];
+  /**
+   * Per layer: this boundary is a FLUID, and therefore not part of the depth
+   * order at all. It is neither clamped nor used to clamp anything; the cascade
+   * looks through it to the nearest solid layer above, so the chain between the
+   * solid layers is unbroken.
+   *
+   * ⭐ Water is a level, not a horizon: it does not truncate the rock beneath it,
+   * so ground that stands above the plane rises THROUGH it instead of being
+   * flattened onto it and dropped as a duplicate. The volume between the two is
+   * still bounded by their heights, so the water body simply ends at the
+   * shoreline.
+   */
+  fluid?: boolean[];
 };
 
 /** Per-pair statistics from {@link resolveStackOrder}. */
@@ -411,6 +424,15 @@ export type StackCollapseOptions = {
    * with the bottom missing.
    */
   carrier?: number;
+  /**
+   * Per layer: this boundary is a FLUID (see {@link StackResolveOptions.fluid}).
+   *
+   * Its own cap is kept whole — the lid of a water body is drawn whether or not
+   * something rises through it — and the layer below it is not measured against
+   * it, so a sea bed above the plane is not read as a duplicate of it and
+   * dropped.
+   */
+  fluid?: boolean[];
 };
 
 /** The result of {@link collapseStackTriangles}. */
@@ -1087,9 +1109,32 @@ export function resolveStackOrder(
   const absent = heights.map(y => new Uint8Array(y.length));
   let total = 0;
 
-  for (let i = 1; i < heights.length; i++) {
-    const above = heights[i - 1];
+  // The authority is the nearest layer above that is part of the depth order, so
+  // a fluid boundary in the middle of a stack does not break the chain.
+  let authority = -1;
+  for (let i = 0; i < heights.length; i++) {
+    const fluid = !!options.fluid?.[i];
+    // One entry per layer below the first, whether or not it was resolved.
+    if (i > 0 && (fluid || authority < 0)) {
+      pairs.push({
+        index: i,
+        crossings: 0,
+        crossingsCovered: 0,
+        compared: 0,
+        maxOverlap: 0,
+        maxOverlapCovered: 0,
+        moved: 0,
+      });
+    }
+    if (fluid) continue;
+    if (authority < 0) {
+      authority = i;
+      continue;
+    }
+    const from = authority;
+    const above = heights[from];
     const current = heights[i];
+    authority = i;
     const cut = absent[i];
     const covered = options.coverage;
     let crossings = 0;
@@ -1100,7 +1145,7 @@ export function resolveStackOrder(
     let moved = 0;
     for (let v = 0; v < current.length; v++) {
       const inData = covered
-        ? covered[i][v] === 1 && covered[i - 1][v] === 1
+        ? covered[i][v] === 1 && covered[from][v] === 1
         : true;
       if (inData) compared++;
       const separation = above[v] - current[v];
@@ -1593,6 +1638,9 @@ function makeAbsentTriangleTest(
   options: StackCollapseOptions,
   layer: number,
 ): (t: number, a: number, b: number, c: number) => boolean {
+  // A fluid is a level rather than a mapped surface: it is present everywhere the
+  // chunk is, so nothing about it is ever missing.
+  if (options.fluid?.[layer]) return () => false;
   const exact = options.coverageTriangles?.[layer];
   const coverage = exact ? undefined : options.coverage?.[layer];
   const cut = options.absent?.[layer];
@@ -1625,21 +1673,28 @@ export function collapseStackTriangles(
     // A void's ceiling is the invention of the pair, so it yields to the horizon
     // BELOW it instead of the horizon below yielding to it.
     const isCeiling = options.ceiling?.[layer] === true;
-    const aboveIsCeiling = layer > 0 && options.ceiling?.[layer - 1] === true;
     const isCarrier = options.carrier === layer;
+    const isFluid = options.fluid?.[layer] === true;
+    // The nearest layer above that this one can be a duplicate of. A fluid is not
+    // one: ground standing above the water plane is not a copy of it.
+    let up = layer - 1;
+    while (up >= 0 && options.fluid?.[up]) up--;
+    const aboveIsCeiling = up >= 0 && options.ceiling?.[up] === true;
     // The shallowest layer has nothing above it to collapse onto, but it can
     // still be absent. The carrier has something above it and yields to none of
-    // it — it is the floor.
+    // it — it is the floor. A fluid's own lid is always drawn.
     const above =
-      layer > 0 && !aboveIsCeiling && !isCarrier ? heights[layer - 1] : null;
+      up >= 0 && !aboveIsCeiling && !isCarrier && !isFluid ? heights[up] : null;
     const below = isCeiling ? (heights[layer + 1] ?? null) : null;
     // Whatever the carrier truncated is sitting exactly on it.
     const floor =
-      options.carrier !== undefined && !isCarrier
+      options.carrier !== undefined && !isCarrier && !isFluid
         ? (heights[options.carrier] ?? null)
         : null;
     const excluded = options.capExcluded?.[layer] ?? null;
-    if (!coverage && !cut && !above && !below && !floor && !excluded) {
+    const nothingToDrop =
+      isFluid || (!coverage && !cut && !above && !below && !floor);
+    if (nothingToDrop && !excluded) {
       out.push(null);
       dropped.push(0);
       droppedAbsent.push(0);

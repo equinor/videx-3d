@@ -68,5 +68,38 @@ function Buoy() {
 Use `useOceanContact` to spread foam where an object meets the water (see the
 `Tanker` component for a full example). Both are no-ops outside an `<Ocean>`.
 
+## Water inside a chunk
+
+A subsurface block can carry its own water instead of an `<Ocean>` of its own:
+declare `water` on the layer that is sea level.
+
+```tsx
+<Chunk layers={[
+  { depth: 0, opacity: 0.6, water: { windSpeed: 10, foamAmount: 0.5 } },
+  { surface: seabed, material: '#c2b280' },
+  // ...
+]} />
+```
+
+The sea state props are the same ones the component takes (`OceanWaterProps` /
+`OceanBodyProps`), and the layer gets both materials: the animated surface for
+its cap and the water body for the volume below it, which is why `water` also
+implies a fill.
+
+Declaring it makes the layer a **fluid**, which is what stops the sea truncating
+the ground beneath it: a sea bed above the plane comes through it rather than
+being flattened onto it, and the water body ends at the shoreline. See
+`documents/chunks.md` §6.
+
+⚠️ `displacement` needs a surface fine enough to displace. The lid is
+triangulated from the chunk's outline, so give it a target edge length —
+`water: { displacement: true, resolution: 100 }` — and remember it applies over
+the whole footprint. Without displacement the waves are shaded per pixel and the
+lid can stay at its minimum.
+
+⚠️ Buoyancy is not available on this path yet: `useBuoyancy` reads a sampler
+provided by `<Ocean>`, and a water layer has no such provider.
+
 See the **Components / Misc / Ocean** stories for an interactive demo of every
-variant plus the buoyancy boxes.
+variant plus the buoyancy boxes, and **Spikes / Chunks / SyntheticColumn** for
+water on a chunk.

@@ -12,6 +12,11 @@ import vertexShader from './shaders/volume-vertex.glsl';
 
 export type OceanVolumeMaterialParameters = ShaderMaterialParameters & {
   waveCount?: number;
+  /**
+   * Read the wall's unit-relative height from a `wallV` attribute rather than
+   * from `uv.y` — for a chunk's interval wall, whose uv is metric.
+   */
+  wallAttribute?: boolean;
 };
 
 /**
@@ -34,7 +39,7 @@ export class OceanVolumeMaterial extends ShaderMaterial {
   isOceanVolumeMaterial = true;
 
   constructor(parameters: OceanVolumeMaterialParameters = {}) {
-    const { waveCount = 16, ...rest } = parameters;
+    const { waveCount = 16, wallAttribute = false, ...rest } = parameters;
 
     // Preallocated wave-component tables. Normally replaced by the surface's
     // tables (shared by reference) via setWaveTables(); the placeholders keep
@@ -55,6 +60,7 @@ export class OceanVolumeMaterial extends ShaderMaterial {
       defines: {
         OCEAN_WAVE_COUNT: waveCount,
         OCEAN_DISPLACE_COUNT: 3,
+        ...(wallAttribute ? { OCEAN_WALL_ATTRIBUTE: '' } : {}),
       },
       uniforms: {
         uTime: new Uniform(0),

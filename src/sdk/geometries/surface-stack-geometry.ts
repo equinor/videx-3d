@@ -3,7 +3,8 @@ import { Vec2 } from '../types/common';
 import { computeUpwardNormals } from './geometry-attributes';
 import { buildEdgeOpposites, traceBoundaryRings } from './mesh-boundary';
 import { Coordinates2D, PlanarPolygonGeometry } from './planar-geometry';
-import { ringSignedArea } from './polygon-outline';
+import { createPolygonCap } from './polygon-cap';
+import { ringSignedArea, ringsToPolygonCoordinates } from './polygon-outline';
 import {
   collapseStackTriangles,
   makeStackInsideTest,
@@ -146,6 +147,8 @@ export type StackWallOptions = {
    * soon as either surface that closes it was.
    */
   inferred?: Float32Array[];
+  /** per layer: this boundary is a fluid (see {@link StackCollapseOptions.fluid}) */
+  fluid?: boolean[];
   /** the turn past which a rim point is a crease; see `RingWallOptions` */
   smoothAngle?: number;
 };
@@ -206,6 +209,7 @@ export function buildStackWalls(
     coverage: options.coverage,
     coverageTriangles: options.coverageTriangles,
     absent: options.absent,
+    fluid: options.fluid,
   });
 
   const point = (v: number): Vec2 => [
@@ -243,6 +247,15 @@ export function buildStackWalls(
 
     const top = heights[i];
     const bottom = heights[i + 1];
+    // ⭐ A fluid is outside the depth order, so the surface below it may stand
+    // ABOVE it — and a quad whose bottom edge is over its top edge does not
+    // vanish, it INVERTS: it paints the volume above the fluid, with its normal
+    // flipped, in the very place the unit that rises through it draws its own
+    // wall. Clamping collapses that part of the quad onto the fluid instead, so
+    // the wall simply ends at the shoreline. Only for a pair involving a fluid:
+    // everywhere else the resolve guarantees the order, and quietly clamping
+    // would hide a crossing rather than report it.
+    const clamped = !!(options.fluid?.[i] || options.fluid?.[i + 1]);
     const markTop = options.inferred?.[i];
     const markBottom = options.inferred?.[i + 1];
     const geometry = buildRingWalls(
@@ -251,7 +264,9 @@ export function buildStackWalls(
         return {
           points: loop.map(point),
           topY: loop.map(v => top[v]),
-          bottomY: loop.map(v => bottom[v]),
+          bottomY: loop.map(v =>
+            clamped ? Math.min(bottom[v], top[v]) : bottom[v],
+          ),
           inferred:
             markTop || markBottom
               ? loop.map(v => Math.max(markTop?.[v] ?? 0, markBottom?.[v] ?? 0))
@@ -404,6 +419,41 @@ export type SurfaceStackOptions = {
    * its own extent, standing on the reference's hole fill.
    */
   inferred?: Float32Array[];
+  /**
+   * Per layer: this boundary is a FLUID — a level rather than a horizon. Exempt
+   * from the depth order and from the collapse (see
+   * {@link StackResolveOptions.fluid}), and its lid is built on its OWN
+   * triangulation of the outline rather than on the shared tessellation.
+   *
+   * ⭐ That last part is the reason it is worth being a case at all. A flat lid in
+   * the shared TIN is wrong in both directions at once: it carries every vertex
+   * the surfaces below it needed, and still has no detail of its own where they
+   * did not — which is exactly where a water surface is most likely to be
+   * displaced by waves. Refining the shared TIN for it is not an option either,
+   * since every other layer would pay for it. Nothing is compared against a fluid
+   * per vertex, so its lid is free to be tessellated on its own terms; the only
+   * thing it must agree with is the wall of the volume below it, and that follows
+   * from the outline, which both share.
+   */
+  fluid?: (StackFluid | null)[];
+};
+
+/**
+ * How a fluid layer's lid is tessellated (see {@link SurfaceStackOptions.fluid}).
+ *
+ * @group Geometries
+ */
+export type StackFluid = {
+  /**
+   * Target triangle edge length for the lid, in world units. Omit (or 0) for the
+   * fewest triangles that fill the outline — which is all a flat, undisplaced
+   * surface needs, since its shading is per pixel.
+   *
+   * ⚠️ A cost knob, and a quadratic one: it applies over the whole footprint.
+   * Only worth setting when vertex displacement is on, and then only as coarse as
+   * the swells being displaced allow.
+   */
+  resolution?: number;
 };
 
 /** Per-phase timings (ms) from {@link buildSurfaceStack}. */
@@ -485,6 +535,7 @@ export function buildSurfaceStack(
   const maxError = options.maxError ?? 5;
   const collapseThreshold = options.collapseThreshold ?? 0.5;
   const coverageAbsence = options.coverageAbsence ?? true;
+  const fluid = options.fluid?.map(f => !!f);
 
   const t0 = performance.now();
 
@@ -583,6 +634,7 @@ export function buildSurfaceStack(
   const resolved = resolveStackOrder(heights, {
     ...options.resolve,
     coverage,
+    fluid,
     // A stack resolved on the common grid arrives ordered, so the pass only
     // measures — re-clamping identical values would be busywork.
     apply: options.preResolved
@@ -662,6 +714,7 @@ export function buildSurfaceStack(
           ceiling: options.ceiling,
           capExcluded: excludes,
           carrier: options.carrier,
+          fluid,
         })
       : null;
   const tCollapse = performance.now();
@@ -672,12 +725,43 @@ export function buildSurfaceStack(
     heights,
     layers,
     collapsed?.indices,
-    options.caps,
+    // A fluid's lid is built below, on its own triangulation of the outline.
+    fluid
+      ? fluid.map((f, i) => !f && options.caps?.[i] !== false)
+      : options.caps,
     inferred,
     coverage,
   );
   const positionsXZ = stackVertexPositions(reference, tessellation.coords);
   const rings = stackRimRings(positionsXZ, tessellation.rimVertices);
+
+  if (options.fluid) {
+    // Ear clipping puts no vertices on the boundary and the refinement never
+    // splits it, so the lid's rim IS the shared rim — the same points the wall of
+    // the volume below hangs from, at any resolution. Constant in Y, like the
+    // carrier, so any vertex of it is the plane.
+    let shapes: ReturnType<PlanarPolygonGeometry['toShapes']> | null = null;
+    options.fluid.forEach((spec, i) => {
+      if (!spec || options.caps?.[i] === false) return;
+      shapes ??= new PlanarPolygonGeometry(
+        // The rim rings close implicitly; a ring that also repeats its first
+        // point would ear-clip a degenerate sliver.
+        ringsToPolygonCoordinates(
+          rings.map(ring =>
+            ring.length > 1 &&
+            ring[0][0] === ring[ring.length - 1][0] &&
+            ring[0][1] === ring[ring.length - 1][1]
+              ? ring.slice(0, -1)
+              : ring,
+          ),
+        ),
+      ).toShapes();
+      built[i].geometry = createPolygonCap(shapes, {
+        y: heights[i][0],
+        resolution: spec.resolution,
+      });
+    });
+  }
   const tGeometry = performance.now();
 
   const walls = options.fills
@@ -688,6 +772,7 @@ export function buildSurfaceStack(
         coverageTriangles: coverageAbsence ? tessellation.coverage : undefined,
         absent,
         inferred,
+        fluid,
       })
     : { walls: heights.map(() => null), ringsDropped: 0, ringsOpen: 0 };
   const tWalls = performance.now();

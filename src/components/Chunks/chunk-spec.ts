@@ -8,8 +8,9 @@ import {
 } from '../../sdk';
 import {
   ChunkLayer,
+  chunkLayerFill,
+  chunkLayerFluid,
   ChunkResolveOptions,
-  hasFill,
   SurfaceChunkCut,
   SurfaceChunkSpec,
   SurfaceChunkSpecLayer,
@@ -98,11 +99,12 @@ export function buildSurfaceChunkSpec(
   const specLayers: SurfaceChunkSpecLayer[] = layers.map((layer, i) => {
     const seam = options.seams?.[i] ?? null;
     const shared = {
-      fill: hasFill(layer.fill),
+      fill: chunkLayerFill(layer),
       cap: seam ? seam.draw : true,
       capCuts: seam?.cuts.length
         ? seam.cuts.map(cut => indexOfCut(cut.polygon, cut.rimSpacing))
         : undefined,
+      fluid: chunkLayerFluid(layer),
     };
     if (layer.carrier) {
       // The plane itself comes from the column, so the layer carries no geometry

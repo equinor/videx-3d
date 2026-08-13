@@ -8,10 +8,17 @@ import {
   useMemo,
   useRef,
 } from 'react';
-import { BufferGeometry, Group, Vector2, Vector3 } from 'three';
+import { BufferGeometry, Group } from 'three';
 import { CommonComponentProps, CustomMaterialProps } from '../../common/types';
-import { Vec2, Vec3 } from '../../sdk/types/common';
 import { OceanBedMaterial } from './ocean-bed-material';
+import {
+  applyOceanBedProps,
+  applyOceanBodyProps,
+  applyOceanWaterProps,
+  OceanBedProps,
+  OceanBodyProps,
+  OceanWaterProps,
+} from './ocean-material-sync';
 import {
   OceanContactContext,
   OceanContactRegistry,
@@ -26,7 +33,10 @@ import { OceanVolumeMaterial } from './ocean-volume-material';
  * @expand
  */
 export type OceanProps = CommonComponentProps &
-  CustomMaterialProps & {
+  CustomMaterialProps &
+  OceanWaterProps &
+  OceanBodyProps &
+  OceanBedProps & {
     /**
      * Geometry to render as the ocean surface. Typically a large plane lying in
      * the world X/Z plane at sea level (e.g. `createOceanBox(...).surface`). All
@@ -45,117 +55,10 @@ export type OceanProps = CommonComponentProps &
      * it is rendered as a separate sun-shaded mesh below the surface.
      */
     bedGeometry?: BufferGeometry;
-    /** Wind direction in world X/Z (drives wave + foam direction). */
-    windDirection?: Vec2;
-    /**
-     * Wind speed in m/s (U10). Primary driver of the sea state: wave height,
-     * wavelength and foam all follow North-Sea JONSWAP/Pierson-Moskowitz
-     * relations (e.g. ~10 m/s ⇒ Hs ~ 2.1 m, peak wavelength ~ 88 m).
-     */
-    windSpeed?: number;
-    /** Wave height multiplier on top of the spectrum's physical Hs. */
-    amplitude?: number;
-    /** Angular spread (radians) of the wave directions around the wind. */
-    directionalSpread?: number;
-    /** Apparent surface choppiness (normal exaggeration / Gerstner sharpness). */
-    steepness?: number;
-    /**
-     * Enables vertex displacement (`false` = off / flat, per-pixel normals
-     * only). Off by default; at oilfield scale real displacement is
-     * imperceptible except very close to the surface, where only the longest
-     * swells displace. Mainly useful to let floating objects follow the surface
-     * height.
-     */
-    displacement?: boolean;
     /** Number of summed spectral wave components (compile-time). */
     waveCount?: number;
     /** Number of FBM micro-ripple octaves (compile-time). */
     detailOctaves?: number;
-    /** Deep water colour (seen looking straight down). */
-    deepColor?: string;
-    /** Shallow/scatter water colour (seen at grazing angles). */
-    shallowColor?: string;
-    /** Base body opacity looking straight down (0 = clear, 1 = opaque). */
-    waterOpacity?: number;
-    /** Strength of the large-scale tonal variation (currents / slicks), 0 = off. */
-    tonalVariation?: number;
-    /** Approximate size of the tonal variation patches, in kilometers. */
-    tonalScale?: number;
-    /** Crispness of the tonal variation patch edges (0 = soft, 1 = hard). */
-    tonalSharpness?: number;
-    /** Colour the water drifts toward in the tonal variation (current / algae / pollution tint). */
-    tonalColor?: string;
-    /** Zenith sky colour used for the procedural reflection. */
-    skyColor?: string;
-    /** Horizon sky colour used for the procedural reflection. */
-    horizonColor?: string;
-    /** Reflection intensity multiplier. */
-    reflectionIntensity?: number;
-    /** Sun direction in world space (specular highlight + reflected glow). */
-    sunDirection?: Vec3;
-    /** Sun colour. */
-    sunColor?: string;
-    /** Sun specular shininess exponent. */
-    sunShininess?: number;
-    /** Foam colour. */
-    foamColor?: string;
-    /** Foam amount, 0 = none. */
-    foamAmount?: number;
-    /** Fresnel exponent (higher = reflections concentrated near the horizon). */
-    fresnelPower?: number;
-    /** Micro-ripple frequency (waves per world unit) for close-up detail. */
-    detailScale?: number;
-    /** Micro-ripple normal strength. */
-    detailStrength?: number;
-    /**
-     * Sea-bed base (sandy/yellowish) colour. Only used when `bedGeometry` is
-     * provided. Default `#b8a06a`.
-     */
-    seaBedColor?: string;
-    /**
-     * Strength of the water-colour tint applied to the water-facing (top) side
-     * of the sea bed (0..1). Only used when `bedGeometry` is provided.
-     */
-    seaBedWaterTint?: number;
-    /**
-     * Sea-bed opacity (0..1). Only used when `bedGeometry` is provided. The sea
-     * bed is OIT-routed, so values below 1 let the subsurface geometry below it
-     * show through; 1 (default) makes it a solid occluder.
-     */
-    seaBedOpacity?: number;
-    /**
-     * Sea-bed sand-dune relief strength (0 = off). Only used when `bedGeometry`
-     * is provided. Perturbs the bed's shading normal by a procedural,
-     * footprint-anti-aliased dune height field, adding a subtle sense of depth
-     * and scale that resolves up close and fades to flat far out. Default 0.15.
-     */
-    seaBedDuneStrength?: number;
-    /**
-     * Base sand-dune crest spacing in meters. Only used when `bedGeometry` is
-     * provided. Default 180.
-     */
-    seaBedDuneWavelength?: number;
-    /**
-     * Sand-dune ridge direction in world X/Z. Only used when `bedGeometry` is
-     * provided. Default `[1, 0.6]`.
-     */
-    seaBedDuneDirection?: Vec2;
-    /**
-     * Extra sand-dune crest/trough albedo banding (0 = off). Only used when
-     * `bedGeometry` is provided. Lightens the dune crests and darkens the
-     * troughs on top of the relief shading for a stronger depth cue; fades out
-     * far away like the rest of the dune detail. Default 0.
-     */
-    seaBedDuneSharpness?: number;
-    /**
-     * Per-meter tint build-up of the water body. Only used when `bodyGeometry`
-     * is provided.
-     */
-    bodyFogDensity?: number;
-    /** Densest water-body tint reached far through the water (0..1). */
-    bodyMaxOpacity?: number;
-    /** Animated shimmer amount of the water body, 0 = off. */
-    bodyShimmer?: number;
     /** Master opacity multiplier (also drives OIT routing). */
     opacity?: number;
     /** Toggles visibility of the water-surface mesh. Default `true`. */
@@ -347,56 +250,33 @@ export const Ocean = forwardRef(
         return;
       }
 
-      if (windDirection)
-        material.windDirection = new Vector2(
-          windDirection[0],
-          windDirection[1],
-        );
-      if (windSpeed !== undefined) material.windSpeed = windSpeed;
-      if (amplitude !== undefined) material.amplitude = amplitude;
-      if (directionalSpread !== undefined)
-        material.directionalSpread = directionalSpread;
-      if (steepness !== undefined) material.steepness = steepness;
-      if (displacement !== undefined)
-        material.displacement = displacement ? 1 : 0;
-      if (deepColor) material.deepColor = deepColor;
-      if (shallowColor) material.shallowColor = shallowColor;
-      if (waterOpacity !== undefined) material.waterOpacity = waterOpacity;
-      if (tonalVariation !== undefined)
-        material.tonalVariation = tonalVariation;
-      if (tonalScale !== undefined) material.tonalScale = tonalScale;
-      if (tonalSharpness !== undefined)
-        material.tonalSharpness = tonalSharpness;
-      if (tonalColor) material.tonalColor = tonalColor;
-      if (skyColor) material.skyColor = skyColor;
-      if (horizonColor) material.horizonColor = horizonColor;
-      if (reflectionIntensity !== undefined)
-        material.reflectionIntensity = reflectionIntensity;
-      if (sunDirection)
-        material.sunDirection = new Vector3(
-          sunDirection[0],
-          sunDirection[1],
-          sunDirection[2],
-        );
-      if (sunColor) material.sunColor = sunColor;
-      if (sunShininess !== undefined) material.sunShininess = sunShininess;
-      if (foamColor) material.foamColor = foamColor;
-      if (foamAmount !== undefined) material.foamAmount = foamAmount;
-      if (fresnelPower !== undefined) material.fresnelPower = fresnelPower;
-      if (detailScale !== undefined) material.detailScale = detailScale;
-      if (detailStrength !== undefined)
-        material.detailStrength = detailStrength;
-
-      material.uniforms.uMasterOpacity.value = opacity;
-      // Drive OIT opacity-aware routing via material.opacity (the pass reads the
-      // ShaderMaterial's `uniforms.opacity` first, then falls back to this). The
-      // ocean has no `opacity` uniform, so this value is what classifies it as
-      // transparent and keeps it in the OIT passes (so subsurface geometry shows
-      // through it instead of being depth-rejected by an opaque-pass draw).
-      material.opacity = Math.min(
-        opacity * (waterOpacity ?? material.waterOpacity),
-        0.999,
-      );
+      applyOceanWaterProps(material, {
+        windDirection,
+        windSpeed,
+        amplitude,
+        directionalSpread,
+        steepness,
+        displacement,
+        deepColor,
+        shallowColor,
+        waterOpacity,
+        tonalVariation,
+        tonalScale,
+        tonalSharpness,
+        tonalColor,
+        skyColor,
+        horizonColor,
+        reflectionIntensity,
+        sunDirection,
+        sunColor,
+        sunShininess,
+        foamColor,
+        foamAmount,
+        fresnelPower,
+        detailScale,
+        detailStrength,
+        opacity,
+      });
     }, [
       material,
       windDirection,
@@ -430,68 +310,35 @@ export const Ocean = forwardRef(
     // Sync prop-driven uniforms onto the grouped (water-body + sea-bed) materials.
     useEffect(() => {
       if (volumeMaterial) {
-        if (deepColor) volumeMaterial.deepColor = deepColor;
-        if (shallowColor) volumeMaterial.shallowColor = shallowColor;
-        if (bodyFogDensity !== undefined)
-          volumeMaterial.fogDensity = bodyFogDensity;
-        // Densest tint the water body reaches: follows the surface water
-        // opacity so the body reads "denser" blue as the water gets more
-        // opaque. An explicit bodyMaxOpacity overrides this coupling.
-        volumeMaterial.maxOpacity =
-          bodyMaxOpacity ?? waterOpacity ?? volumeMaterial.maxOpacity;
-        if (bodyShimmer !== undefined) volumeMaterial.shimmer = bodyShimmer;
-        volumeMaterial.masterOpacity = opacity;
-        volumeMaterial.opacity = Math.min(opacity, 0.999);
-
-        // Make the wall top ring follow the same wave displacement as the
-        // surface so the rim stays sealed. Share the surface's wave tables by
-        // reference (the surface mutates them in place on sea-state changes) and
-        // mirror the displacement/steepness inputs.
-        if (material instanceof OceanMaterial) {
-          volumeMaterial.setWaveTables(
-            material.uniforms.uWaveA.value,
-            material.uniforms.uWaveB.value,
-          );
-          volumeMaterial.steepness = material.steepness;
-          volumeMaterial.displacement = material.displacement;
-        }
+        applyOceanBodyProps(
+          volumeMaterial,
+          {
+            deepColor,
+            shallowColor,
+            waterOpacity,
+            bodyFogDensity,
+            bodyMaxOpacity,
+            bodyShimmer,
+            opacity,
+          },
+          material instanceof OceanMaterial ? material : null,
+        );
       }
       if (seaBedMaterial) {
-        if (seaBedColor) seaBedMaterial.color = seaBedColor;
-        // Match the bed's water tint to the surface's deep colour.
-        if (deepColor) seaBedMaterial.waterColor = deepColor;
-        // Strength of the blue water tint over the bed: follows the surface
-        // water opacity so the bed reads "denser" blue as the water gets more
-        // opaque. An explicit seaBedWaterTint overrides this coupling.
-        seaBedMaterial.waterTint =
-          seaBedWaterTint ?? waterOpacity ?? seaBedMaterial.waterTint;
-        if (sunDirection)
-          seaBedMaterial.sunDirection = new Vector3(
-            sunDirection[0],
-            sunDirection[1],
-            sunDirection[2],
-          );
-        if (sunColor) seaBedMaterial.sunColor = sunColor;
-
-        if (seaBedDuneStrength !== undefined)
-          seaBedMaterial.duneStrength = seaBedDuneStrength;
-        if (seaBedDuneWavelength !== undefined)
-          seaBedMaterial.duneWavelength = seaBedDuneWavelength;
-        if (seaBedDuneDirection)
-          seaBedMaterial.duneDirection = new Vector2(
-            seaBedDuneDirection[0],
-            seaBedDuneDirection[1],
-          );
-        if (seaBedDuneSharpness !== undefined)
-          seaBedMaterial.duneSharpness = seaBedDuneSharpness;
-
-        const bedAlpha = seaBedOpacity ?? 1;
-        seaBedMaterial.bedOpacity = bedAlpha;
-        seaBedMaterial.masterOpacity = opacity;
-        // Drive OIT opacity-aware routing via material.opacity (>= 1 makes the
-        // bed an opaque occluder; < 1 keeps it in the transparency passes so the
-        // subsurface geometry below it still shows through).
-        seaBedMaterial.opacity = Math.min(bedAlpha * opacity, 1);
+        applyOceanBedProps(seaBedMaterial, {
+          deepColor,
+          waterOpacity,
+          sunDirection,
+          sunColor,
+          seaBedColor,
+          seaBedWaterTint,
+          seaBedOpacity,
+          seaBedDuneStrength,
+          seaBedDuneWavelength,
+          seaBedDuneDirection,
+          seaBedDuneSharpness,
+          opacity,
+        });
       }
     }, [
       volumeMaterial,

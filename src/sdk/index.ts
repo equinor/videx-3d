@@ -22,6 +22,7 @@ export * from './geometries/mesh-boundary';
 export * from './geometries/ocean-geometry';
 export * from './geometries/packing';
 export * from './geometries/planar-geometry';
+export * from './geometries/polygon-cap';
 export * from './geometries/polygon-outline';
 export * from './geometries/procedural-relief';
 export * from './geometries/surface-chunk';

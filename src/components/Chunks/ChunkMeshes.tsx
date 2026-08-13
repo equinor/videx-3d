@@ -8,6 +8,7 @@ import {
   ChunkInferenceStyle,
   createInferenceMaterial,
 } from './inference-material';
+import { useChunkWater } from './useChunkWater';
 
 /**
  * {@link ChunkMeshes} props.
@@ -69,6 +70,10 @@ export const ChunkMeshes = ({
   showSurfaces = true,
   showWalls = true,
 }: ChunkMeshesProps) => {
+  // Water is drawn with the ocean shaders rather than the chunk material, and
+  // those are animated: they are created per water layer and kept, not rebuilt.
+  const water = useChunkWater(layers, surfaceOpacity, wallOpacity, wireframe);
+
   const materials = useMemo(() => {
     // Materials built here are owned here; a caller's Material is passed through
     // untouched, so the two are tracked separately for disposal.
@@ -98,11 +103,12 @@ export const ChunkMeshes = ({
     const surfaces = layers.map((layer, i) =>
       layer.material instanceof Material
         ? layer.material
-        : make(
+        : (water.get(i)?.surface ??
+          make(
             layer.material ?? paletteAt(i),
             layer.opacity ?? surfaceOpacity,
             layer.detail,
-          ),
+          )),
     );
 
     // A void's upper copy is drawn with the material of the interval ABOVE it, but
@@ -126,7 +132,10 @@ export const ChunkMeshes = ({
 
     const walls = layers.map((layer, i) => {
       const fill = fillOf(layer, i);
-      if (fill === null) return null;
+      // Water asks for its body by being water; only an explicit fill overrides
+      // the volume material that comes with it.
+      if (fill === null)
+        return layer.water ? (water.get(i)?.volume ?? null) : null;
       return fill instanceof Material
         ? fill
         : make(fill, layer.opacity ?? wallOpacity, layer.detail, true);
@@ -142,7 +151,7 @@ export const ChunkMeshes = ({
     });
 
     return { surfaces, walls, ceilings, owned };
-  }, [chunk.surfaces, layers, surfaceOpacity, wallOpacity, wireframe]);
+  }, [chunk.surfaces, layers, surfaceOpacity, wallOpacity, wireframe, water]);
 
   useEffect(() => {
     return () => materials.owned.forEach(m => m.dispose());
