@@ -495,7 +495,11 @@ export class OceanMaterial extends ShaderMaterial {
     const n = Math.min(contacts.length, this._contactCount);
     for (let i = 0; i < n; i++) {
       const k = contacts[i];
-      a[i].set(k.x, k.z, Math.cos(k.heading), Math.sin(k.heading));
+      // ⚠️ The FORWARD DIRECTION in world XZ, not (cos, sin) of the heading: a
+      // rotation about +Y takes the body's +X to (cos, -sin) in XZ. Uploading the
+      // direction itself is also what makes the shader's projection onto it and
+      // its perpendicular correct without either end naming an angle convention.
+      a[i].set(k.x, k.z, Math.cos(k.heading), -Math.sin(k.heading));
       b[i].set(k.halfLength, k.halfWidth, k.foamWidth, k.intensity ?? 1);
       c[i].set(k.endFalloff ?? 0, 0, 0, 0);
     }

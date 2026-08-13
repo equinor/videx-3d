@@ -7,12 +7,17 @@ import {
   Vec3,
 } from '../../sdk';
 import {
+  ChunkCarrier,
   ChunkLayer,
   chunkLayerFill,
   ChunkResolveOptions,
+  DEFAULT_WATER_RESOLUTION,
+  StackWater,
+  StackWaterSpec,
   SurfaceChunkCut,
   SurfaceChunkSpec,
   SurfaceChunkSpecLayer,
+  SurfaceChunkStackSpec,
 } from './chunk-defs';
 import { SeamDecision } from './seams';
 
@@ -31,9 +36,10 @@ export type BuildSurfaceChunkSpecOptions = {
   stack?: { surfaces: SurfaceMeta[]; envelope: PlanarPolygonGeometry };
   /**
    * The flat floor the column terminates against (see `ChunkStackProps.carrier`).
-   * Without it, a `{ carrier: true }` layer has nothing to draw and is dropped.
+   * Without it, a fill on the chunk's last layer has nothing to close it and is
+   * ignored, exactly as it was before there was a carrier at all.
    */
-  carrier?: StackCarrier;
+  carrier?: ChunkCarrier;
   /**
    * Outline of the chunk drawn directly above this one (see
    * `SurfaceChunkSpec.coverAbove`).
@@ -44,6 +50,11 @@ export type BuildSurfaceChunkSpecOptions = {
    * `resolveSeam`). Omit for a chunk that shares nothing.
    */
   seams?: (SeamDecision | null)[];
+  /**
+   * The same, for the column's floor — separate because the carrier layer is
+   * INFERRED here rather than declared, so it has no index in `seams`.
+   */
+  carrierSeam?: SeamDecision | null;
 };
 
 /** Map one surface's meta into the serializable layer spec. */
@@ -60,6 +71,89 @@ function toLayerSpec(meta: SurfaceMeta, utmToArea: UtmToArea) {
     },
     referenceDepth: meta.max,
     worldPosition: [p[0], p[2]] as Vec2,
+  };
+}
+
+/**
+ * The carrier as the WORKER sees it — where the plane is, and nothing else.
+ *
+ * ⚠️ The caller's `material` must not travel: a `Material` cannot be structured-
+ * cloned across the worker boundary, and appearance in a build spec would make
+ * recolouring rebuild the geometry.
+ */
+function carrierSpec(carrier?: ChunkCarrier): StackCarrier | undefined {
+  return carrier ? { depth: carrier.depth, below: carrier.below } : undefined;
+}
+
+/**
+ * The column, as the generator's shared-build spec.
+ *
+ * ⚠⚠ The `key` is the identity of the CACHED column, and the cache holds exactly
+ * one. Everything built from the same column — every chunk, and the sea — must
+ * derive it HERE, or two of them ask for the same column under different names and
+ * evict each other, paying for the fetch, the resample and the resolve twice.
+ *
+ * The ordered surface ids decide both the common grid and the resolve; the carrier
+ * joins them because it terminates the column.
+ */
+export function stackColumnSpec(
+  surfaces: SurfaceMeta[],
+  envelope: PlanarPolygonGeometry,
+  utmToArea: UtmToArea,
+  carrier?: ChunkCarrier,
+): SurfaceChunkStackSpec {
+  return {
+    layers: surfaces.map(meta => toLayerSpec(meta, utmToArea)),
+    polygon: {
+      coordinates: envelope.coordinates as PlanarPolygonCoordinates,
+      offset: envelope.offset,
+    },
+    carrier: carrierSpec(carrier),
+    key: `${surfaces.map(m => m.id).join(',')}|${
+      carrier ? `${carrier.depth ?? ''}/${carrier.below ?? ''}` : ''
+    }`,
+  };
+}
+
+/**
+ * Build the serializable {@link StackWaterSpec} for the `stackWater` generator.
+ *
+ * The sea is the COLUMN's, so it is built from the same column spec the chunks
+ * use: its bed is that column's shallowest surface, on the same channels.
+ */
+export function buildStackWaterSpec(
+  water: StackWater,
+  utmToArea: UtmToArea,
+  outlinePolygon: PlanarPolygonGeometry,
+  options: {
+    surfaces: SurfaceMeta[];
+    envelope: PlanarPolygonGeometry;
+    carrier?: ChunkCarrier;
+    rimSpacing?: number;
+    maxError?: number;
+    resolve?: ChunkResolveOptions;
+  },
+): StackWaterSpec {
+  return {
+    polygon: {
+      coordinates: outlinePolygon.coordinates as PlanarPolygonCoordinates,
+      offset: outlinePolygon.offset,
+    },
+    depth: water.depth ?? 0,
+    // A flat lid is shaded per pixel and needs nothing but the outline; only
+    // displaced vertices need something to displace.
+    resolution:
+      water.resolution ??
+      (water.displacement ? DEFAULT_WATER_RESOLUTION : undefined),
+    rimSpacing: options.rimSpacing,
+    maxError: options.maxError,
+    stack: stackColumnSpec(
+      options.surfaces,
+      options.envelope,
+      utmToArea,
+      options.carrier,
+    ),
+    resolve: options.resolve,
   };
 }
 
@@ -105,11 +199,6 @@ export function buildSurfaceChunkSpec(
         : undefined,
       fluid: !!layer.fluid,
     };
-    if (layer.carrier) {
-      // The plane itself comes from the column, so the layer carries no geometry
-      // of its own — only that it is the one drawing the floor.
-      return { carrier: true, ...shared, fill: false };
-    }
     return layer.surface
       ? { ...toLayerSpec(layer.surface, utmToArea), ...shared }
       : {
@@ -120,37 +209,40 @@ export function buildSurfaceChunkSpec(
         };
   });
 
+  // ⭐ A fill on the LAST layer says the block is open at the bottom, and the only
+  // thing that can close it is the column's floor — so the carrier is INFERRED
+  // here rather than declared as a layer. Nothing else could mean anything: there
+  // is no next boundary in this chunk for that volume to end on.
+  const last = layers[layers.length - 1];
+  if (options.carrier && last && chunkLayerFill(last)) {
+    const seam = options.carrierSeam ?? null;
+    specLayers.push({
+      carrier: true,
+      fill: false,
+      cap: seam ? seam.draw : true,
+      capCuts: seam?.cuts.length
+        ? seam.cuts.map(cut => indexOfCut(cut.polygon, cut.rimSpacing))
+        : undefined,
+    });
+  }
+
   const stack = options.stack
-    ? {
-        layers: options.stack.surfaces.map(meta =>
-          toLayerSpec(meta, utmToArea),
-        ),
-        polygon: {
-          coordinates: options.stack.envelope
-            .coordinates as PlanarPolygonCoordinates,
-          offset: options.stack.envelope.offset,
-        },
-        carrier: options.carrier,
-        // Identity of the column: the ordered surface ids are what decide both the
-        // common grid and the resolve, so chunks of the same column share a key.
-        // The carrier joins them — it terminates the column, so moving it changes
-        // every chunk cut from it.
-        key: `${options.stack.surfaces.map(m => m.id).join(',')}|${
-          options.carrier
-            ? `${options.carrier.depth ?? ''}/${options.carrier.below ?? ''}`
-            : ''
-        }`,
-      }
+    ? stackColumnSpec(
+        options.stack.surfaces,
+        options.stack.envelope,
+        utmToArea,
+        options.carrier,
+      )
     : undefined;
 
   return {
-    layers: specLayers.filter(layer => !layer.carrier || options.carrier),
+    layers: specLayers,
     polygon: {
       coordinates: outlinePolygon.coordinates as PlanarPolygonCoordinates,
       offset: outlinePolygon.offset,
     },
     stack,
-    carrier: options.carrier,
+    carrier: carrierSpec(options.carrier),
     cuts: cuts.length > 0 ? cuts : undefined,
     coverAbove: options.coverAbove
       ? {

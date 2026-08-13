@@ -23,6 +23,7 @@ import {
 import { UtmAreaContext } from '../UtmArea';
 import {
   ChunkBuildState,
+  CARRIER_SEAM_ID,
   chunkFluidKey,
   ChunkLayer,
   chunkLayerFill,
@@ -82,9 +83,10 @@ export type ChunkProps = {
   inferredStyle?: ChunkInferenceStyle;
   /**
    * How the stack is made monotone before it is built, and what is dropped where
-   * a unit is not present (build param). Omit to skip the pass entirely — the
-   * surfaces are then drawn exactly as the data has them, crossings included.
-   * Memoize the object: a new identity rebuilds the geometry.
+   * a unit is not present (build param). Inherits from the `ChunkStack` when
+   * unset, which is where it usually belongs — most of it describes the COLUMN,
+   * and two chunks of one column that disagree build that column twice. Memoize
+   * the object: a new identity rebuilds the geometry.
    *
    * See {@link ChunkResolveOptions}. The default (`{}`) truncates crossings and
    * drops units that are absent or have no thickness.
@@ -143,8 +145,9 @@ function disposeChunk(chunk: SurfaceChunk | null) {
  *     layers={[
  *       { surface: topMeta, fill: true },
  *       { surface: midMeta },
+ *       // A fill on the LAST layer leaves the block open at the bottom, so the
+ *       // stack's carrier closes it.
  *       { surface: reservoirMeta, fill: true },
- *       { carrier: true },
  *     ]}
  *   />
  * </ChunkStack>
@@ -160,7 +163,7 @@ export const Chunk = ({
   wireframe = false,
   inferredStyle = 'hatched',
 
-  resolve = DEFAULT_RESOLVE,
+  resolve,
   rimSpacing,
   maxError,
   showSurfaces = true,
@@ -180,13 +183,11 @@ export const Chunk = ({
   //     rebuilding it. Materials are appearance and never reach the spec. ---------
   const layersKey = layers
     .map(l => {
-      const base = l.carrier
-        ? '@carrier'
-        : l.surface
-          ? l.surface.id
-          : // Serialised whole: a relief is a union of shapes with fields of their
-            // own, and a hand-written list of them goes stale silently.
-            `@${l.depth ?? ''}/${l.offset ?? ''}/${l.relief ? JSON.stringify(l.relief) : ''}`;
+      const base = l.surface
+        ? l.surface.id
+        : // Serialised whole: a relief is a union of shapes with fields of their
+          // own, and a hand-written list of them goes stale silently.
+          `@${l.depth ?? ''}/${l.offset ?? ''}/${l.relief ? JSON.stringify(l.relief) : ''}`;
       return `${base}:${chunkLayerFill(l) ? 1 : 0}${chunkFluidKey(l)}`;
     })
     .join(',');
@@ -234,6 +235,7 @@ export const Chunk = ({
 
   const resolvedRimSpacing = rimSpacing ?? stack.rimSpacing;
   const resolvedMaxError = maxError ?? stack.maxError;
+  const resolvedResolve = resolve ?? stack.resolve ?? DEFAULT_RESOLVE;
 
   // --- Outline (layer 1): resolve the cut source (explicit prop, else the stack
   //     default). A polygon source resolves synchronously; a wellbore source is
@@ -343,15 +345,33 @@ export const Chunk = ({
   const surfaceClaims = useMemo<ChunkSurfaceClaim[]>(
     () =>
       stableLayers.flatMap((l, i) =>
-        l.surface ? [{ id: l.surface.id, top: i === 0 }] : [],
+        l.surface
+          ? [{ id: l.surface.id, top: i === 0 && chunkLayerFill(l) }]
+          : [],
       ),
     [stableLayers],
   );
 
+  // A fill on the last layer leaves the block open at the bottom, so the column's
+  // floor closes it (see `buildSurfaceChunkSpec`). It is one plane shared with
+  // every other chunk that does the same, so it is claimed like a horizon.
+  const drawsCarrier =
+    !!stack.carrier &&
+    stableLayers.length > 0 &&
+    chunkLayerFill(stableLayers[stableLayers.length - 1]);
+
+  const claims = useMemo<ChunkSurfaceClaim[]>(
+    () =>
+      drawsCarrier
+        ? [...surfaceClaims, { id: CARRIER_SEAM_ID, top: false }]
+        : surfaceClaims,
+    [surfaceClaims, drawsCarrier],
+  );
+
   useEffect(() => {
     if (!registerChunk) return;
-    return registerChunk(registryKey, surfaceClaims);
-  }, [registerChunk, registryKey, surfaceClaims]);
+    return registerChunk(registryKey, claims);
+  }, [registerChunk, registryKey, claims]);
 
   useEffect(() => {
     publishOutline?.(
@@ -371,7 +391,9 @@ export const Chunk = ({
   //     them, decided by the stack from their footprints. -------------------
   // ⚠️ The registry is rebuilt whole on every publish, so keying on its identity
   // would give every chunk a new spec whenever any sibling settled an outline.
-  const seamsKey = surfaceIds
+  // The floor is in here too, under its own id: it is shared just as a horizon is.
+  const seamIds = drawsCarrier ? [...surfaceIds, CARRIER_SEAM_ID] : surfaceIds;
+  const seamsKey = seamIds
     .map(id => {
       const decision = stack.seams?.get(id)?.get(registryKey);
       if (!decision) return '';
@@ -390,12 +412,21 @@ export const Chunk = ({
     [stableLayers, registryKey, seamsKey],
   );
 
+  const carrierSeam = useMemo(
+    () =>
+      drawsCarrier
+        ? (stack.seams?.get(CARRIER_SEAM_ID)?.get(registryKey) ?? null)
+        : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
+    [drawsCarrier, registryKey, seamsKey],
+  );
+
   // A chunk claiming a surface another one has not placed yet cannot know whether
   // it draws that horizon. Waiting costs one render; building now costs a second
   // full build once the answer arrives.
   const seamsPending = useMemo(
     () =>
-      surfaceIds.some(id => {
+      seamIds.some(id => {
         const entries = stack.outlines?.get(id);
         return (
           entries !== undefined &&
@@ -403,7 +434,8 @@ export const Chunk = ({
           entries.some(e => !e.resolved)
         );
       }),
-    [surfaceIds, stack.outlines],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `seamIds` is derived per render
+    [surfaceIds, drawsCarrier, stack.outlines],
   );
 
   // The stack builds its column from the surfaces its chunks CLAIM, and claims are
@@ -466,9 +498,10 @@ export const Chunk = ({
     return buildSurfaceChunkSpec(stableLayers, utm.utmToArea, outlinePolygon, {
       rimSpacing: resolvedRimSpacing,
       maxError: resolvedMaxError,
-      resolve,
+      resolve: resolvedResolve,
       coverAbove: coverAbove.polygon,
       seams: layerSeams,
+      carrierSeam,
       carrier: stack.carrier,
       // Only a declared column with an envelope can be shared; otherwise this
       // chunk builds (and resolves) on its own.
@@ -483,9 +516,10 @@ export const Chunk = ({
     outlinePolygon,
     resolvedRimSpacing,
     resolvedMaxError,
-    resolve,
+    resolvedResolve,
     coverAbove,
     layerSeams,
+    carrierSeam,
     seamsPending,
     columnPending,
     stack.carrier,
@@ -560,6 +594,8 @@ export const Chunk = ({
         inferredStyle={inferredStyle}
         showSurfaces={showSurfaces}
         showWalls={showWalls}
+        water={stack.water}
+        carrierMaterial={stack.carrierMaterial}
       />
       {children}
     </>

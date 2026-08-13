@@ -54,6 +54,13 @@ export type ChunkMeshesProps = {
    * here: the sea's own geometry belongs to the stack.
    */
   water?: StackWater | null;
+  /**
+   * Cap material for the column's floor, when this chunk closes the block (see
+   * `ChunkStackProps.carrier`). The floor is INFERRED from a fill on the last
+   * layer, so it has no `ChunkLayer` of its own to carry one. Omit it and the
+   * floor is drawn with the fill of the unit resting on it.
+   */
+  carrierMaterial?: string | Material;
 };
 
 /**
@@ -83,6 +90,7 @@ export const ChunkMeshes = ({
   showSurfaces = true,
   showWalls = true,
   water = null,
+  carrierMaterial,
 }: ChunkMeshesProps) => {
   const materials = useMemo(() => {
     // Materials built here are owned here; a caller's Material is passed through
@@ -176,8 +184,22 @@ export const ChunkMeshes = ({
         : make(fill, layer.opacity ?? wallOpacity, layer.detail);
     });
 
-    return { surfaces, walls, ceilings, owned };
-  }, [chunk.surfaces, layers, surfaceOpacity, wallOpacity, wireframe, water]);
+    const carrier = !carrierMaterial
+      ? null
+      : carrierMaterial instanceof Material
+        ? carrierMaterial
+        : make(carrierMaterial, surfaceOpacity);
+
+    return { surfaces, walls, ceilings, carrier, owned };
+  }, [
+    chunk.surfaces,
+    layers,
+    surfaceOpacity,
+    wallOpacity,
+    wireframe,
+    water,
+    carrierMaterial,
+  ]);
 
   useEffect(() => {
     return () => materials.owned.forEach(m => m.dispose());
@@ -233,19 +255,24 @@ export const ChunkMeshes = ({
       {showSurfaces &&
         chunk.surfaces.map((surface, i) => {
           const declared = layers[surface.layer];
+          // The floor is appended past the caller's layers (it is inferred from a
+          // fill on the last one), so it is the one cap with nothing declaring it.
+          const isCarrier = !declared;
           // The ceiling of a void, and the carrier that closes the block, both
           // face UP, so what they show is the base of the unit ABOVE them rather
           // than a cap of their own — take that interval's fill. A layer with
           // nothing above it is never split, so `layer - 1` exists; the fallback
-          // covers an interval left unfilled, and a carrier given a material of
-          // its own, which is the one case where the floor reads as its own thing.
+          // covers an interval left unfilled, and a floor given a material of its
+          // own, which is the one case where it reads as its own thing.
           const fromAbove =
-            surface.ceiling && !(declared?.carrier && declared.material);
+            surface.ceiling && !(isCarrier && materials.carrier);
           const material = fromAbove
             ? (materials.ceilings[surface.layer - 1] ??
               materials.walls[surface.layer - 1] ??
               materials.surfaces[surface.layer])
-            : materials.surfaces[surface.layer];
+            : isCarrier
+              ? materials.carrier
+              : materials.surfaces[surface.layer];
           if (!material) return null;
           const overlay = surface.geometry.hasAttribute('inferred')
             ? overlays.surface(surface.layer)

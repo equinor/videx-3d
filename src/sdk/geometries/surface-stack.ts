@@ -293,16 +293,21 @@ export type StackResolveOptions = {
    */
   coverage?: Uint8Array[];
   /**
-   * Per layer: this boundary is a FLUID, and therefore not part of the depth
-   * order at all. It is neither clamped nor used to clamp anything; the cascade
-   * looks through it to the nearest solid layer above, so the chain between the
-   * solid layers is unbroken.
+   * Per layer: this boundary is a FLUID — a level inside the column rather than a
+   * horizon: an oil/water contact, a gas cap, the sea.
    *
-   * ⭐ Water is a level, not a horizon: it does not truncate the rock beneath it,
-   * so ground that stands above the plane rises THROUGH it instead of being
-   * flattened onto it and dropped as a duplicate. The volume between the two is
-   * still bounded by their heights, so the water body simply ends at the
-   * shoreline.
+   * It is clamped by what lies above it like any other boundary, but it is never
+   * the AUTHORITY: the cascade looks THROUGH it to the nearest solid layer above,
+   * and orders everything below it against that one instead.
+   *
+   * ⭐ That asymmetry is the whole point. A contact sitting deeper than the base of
+   * the unit it divides would otherwise drag the base down with it — an oil column
+   * with no water leg — deforming real geology to make room for a level. Where a
+   * fluid has no room, its interval simply pinches out as any unit's does.
+   *
+   * ⚠️ A fluid is still ORDERED. What is exempt from being truncated by the
+   * surface above is {@link StackCollapseOptions.unbounded}, which is the sea and
+   * nothing else.
    */
   fluid?: boolean[];
 };
@@ -425,14 +430,20 @@ export type StackCollapseOptions = {
    */
   carrier?: number;
   /**
-   * Per layer: this boundary is a FLUID (see {@link StackResolveOptions.fluid}).
+   * Per layer: this boundary is UNBOUNDED — it covers the whole footprint whatever
+   * stands in its way. The sea, and nothing else.
    *
-   * Its own cap is kept whole — the lid of a water body is drawn whether or not
-   * something rises through it — and the layer below it is not measured against
-   * it, so a sea bed above the plane is not read as a duplicate of it and
-   * dropped.
+   * Its own cap is never dropped (the lid of a water body is drawn whether or not
+   * an island rises through it), and the layer below it is not measured against
+   * it, so ground standing above the plane is not read as a duplicate of it and
+   * removed. The volume between the two is still bounded by their heights, so the
+   * water body ends at the shoreline on its own.
+   *
+   * ⚠️ Distinct from {@link StackResolveOptions.fluid}, which every level shares:
+   * a CONTACT is an ordinary boundary here — it pinches out where it has no room,
+   * exactly as a unit does.
    */
-  fluid?: boolean[];
+  unbounded?: boolean[];
 };
 
 /** The result of {@link collapseStackTriangles}. */
@@ -1115,7 +1126,7 @@ export function resolveStackOrder(
   for (let i = 0; i < heights.length; i++) {
     const fluid = !!options.fluid?.[i];
     // One entry per layer below the first, whether or not it was resolved.
-    if (i > 0 && (fluid || authority < 0)) {
+    if (i > 0 && authority < 0) {
       pairs.push({
         index: i,
         crossings: 0,
@@ -1126,15 +1137,16 @@ export function resolveStackOrder(
         moved: 0,
       });
     }
-    if (fluid) continue;
     if (authority < 0) {
-      authority = i;
+      // Nothing above to be clamped by — but a fluid never becomes the authority
+      // either, so a sea at the top of a stack leaves the bed below it untouched.
+      if (!fluid) authority = i;
       continue;
     }
     const from = authority;
     const above = heights[from];
     const current = heights[i];
-    authority = i;
+    if (!fluid) authority = i;
     const cut = absent[i];
     const covered = options.coverage;
     let crossings = 0;
@@ -1638,9 +1650,9 @@ function makeAbsentTriangleTest(
   options: StackCollapseOptions,
   layer: number,
 ): (t: number, a: number, b: number, c: number) => boolean {
-  // A fluid is a level rather than a mapped surface: it is present everywhere the
-  // chunk is, so nothing about it is ever missing.
-  if (options.fluid?.[layer]) return () => false;
+  // An unbounded boundary is a level rather than a mapped surface: it is present
+  // everywhere the chunk is, so nothing about it is ever missing.
+  if (options.unbounded?.[layer]) return () => false;
   const exact = options.coverageTriangles?.[layer];
   const coverage = exact ? undefined : options.coverage?.[layer];
   const cut = options.absent?.[layer];
@@ -1674,26 +1686,28 @@ export function collapseStackTriangles(
     // BELOW it instead of the horizon below yielding to it.
     const isCeiling = options.ceiling?.[layer] === true;
     const isCarrier = options.carrier === layer;
-    const isFluid = options.fluid?.[layer] === true;
-    // The nearest layer above that this one can be a duplicate of. A fluid is not
+    const isUnbounded = options.unbounded?.[layer] === true;
+    // The nearest layer above that this one can be a duplicate of. The sea is not
     // one: ground standing above the water plane is not a copy of it.
     let up = layer - 1;
-    while (up >= 0 && options.fluid?.[up]) up--;
+    while (up >= 0 && options.unbounded?.[up]) up--;
     const aboveIsCeiling = up >= 0 && options.ceiling?.[up] === true;
     // The shallowest layer has nothing above it to collapse onto, but it can
     // still be absent. The carrier has something above it and yields to none of
-    // it — it is the floor. A fluid's own lid is always drawn.
+    // it — it is the floor. The sea's own lid is always drawn.
     const above =
-      up >= 0 && !aboveIsCeiling && !isCarrier && !isFluid ? heights[up] : null;
+      up >= 0 && !aboveIsCeiling && !isCarrier && !isUnbounded
+        ? heights[up]
+        : null;
     const below = isCeiling ? (heights[layer + 1] ?? null) : null;
     // Whatever the carrier truncated is sitting exactly on it.
     const floor =
-      options.carrier !== undefined && !isCarrier && !isFluid
+      options.carrier !== undefined && !isCarrier && !isUnbounded
         ? (heights[options.carrier] ?? null)
         : null;
     const excluded = options.capExcluded?.[layer] ?? null;
     const nothingToDrop =
-      isFluid || (!coverage && !cut && !above && !below && !floor);
+      isUnbounded || (!coverage && !cut && !above && !below && !floor);
     if (nothingToDrop && !excluded) {
       out.push(null);
       dropped.push(0);

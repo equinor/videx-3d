@@ -26,7 +26,7 @@ import { UtmArea, UtmPosition } from '../UtmArea';
 import { BasicTrajectory } from '../Wellbores/BasicTrajectory/BasicTrajectory';
 import { Wellbore } from '../Wellbores/Wellbore/Wellbore';
 import { Chunk } from './Chunk';
-import { ChunkLayer, ChunkResolveOptions } from './chunk-defs';
+import { ChunkLayer, ChunkResolveOptions, StackWater } from './chunk-defs';
 import { ChunkStack } from './ChunkStack';
 
 const utmZone = storyArgs.utmZone;
@@ -205,34 +205,37 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
   );
 
   // --- The three tiers -------------------------------------------------------
-  // A: water down to the seabed, over the FIELD outline. The seabed is the detail
-  //    chunk's lid, so this one draws the field MINUS that footprint — the part of
-  //    the seabed no block below it claims.
-  const oceanLayers = useMemo<ChunkLayer[]>(() => {
-    if (!seabed) return [];
-    return [
-      // ⭐ `water` makes this a FLUID layer: it takes no part in the depth order,
-      // so the seabed is not truncated by it, and it brings the animated ocean
-      // surface and body materials with it.
-      {
-        depth: props.waterDepth,
-        water: {
-          waterOpacity: props.waterOpacity,
-          bedTint: props.bedTint,
-        },
-      },
-      // Drawn at THIS LAYER's opacity, which is the point of the split: the open
-      // seabed stays translucent while the lid over the opaque detail block does
-      // not, so you never look straight through it into that block's walls.
-      { surface: seabed, material: '#c2b280', opacity: props.seabedOpacity },
-    ];
-  }, [
-    seabed,
-    props.waterDepth,
-    props.waterOpacity,
-    props.bedTint,
-    props.seabedOpacity,
-  ]);
+  // A: the open seabed, over the FIELD outline. That horizon is the detail chunk's
+  //    lid as well, so this one draws the field MINUS that footprint — the part of
+  //    the seabed no block below it claims. The sea itself belongs to the stack.
+  const oceanLayers = useMemo<ChunkLayer[]>(
+    () =>
+      seabed
+        ? [
+            // Drawn at THIS LAYER's opacity, which is the point of the split: the
+            // open seabed stays translucent while the lid over the opaque detail
+            // block does not, so you never look straight through it into that
+            // block's walls.
+            {
+              surface: seabed,
+              material: '#c2b280',
+              opacity: props.seabedOpacity,
+            },
+          ]
+        : [],
+    [seabed, props.seabedOpacity],
+  );
+
+  // One sea for the whole column, declared on the stack rather than on whichever
+  // tier happens to sit under it.
+  const water = useMemo<StackWater>(
+    () => ({
+      depth: props.waterDepth,
+      waterOpacity: props.waterOpacity,
+      bedTint: props.bedTint,
+    }),
+    [props.waterDepth, props.waterOpacity, props.bedTint],
+  );
 
   // B: the detail, cut by wellbores. It starts ON the seabed — which it DRAWS, as
   //    the block that horizon is the lid of — and ends ON the basement surface,
@@ -259,14 +262,12 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
   }, [column, seabed, basement, props.detailCount]);
 
   // C: the basement block, back on the FIELD outline — the basement surface it
-  //    owns, filled down to the COLUMN's carrier: one flat floor, declared on the
-  //    stack, that every chunk terminating against it shares.
+  //    owns, filled down to the COLUMN's carrier. The fill on its LAST layer is
+  //    what asks for that floor; the plane itself is declared on the stack, so
+  //    every chunk terminating against it shares one.
   const basementLayers = useMemo<ChunkLayer[]>(() => {
     if (!basement) return [];
-    return [
-      { surface: basement, material: '#6b6b6b', fill: '#4a4a4a' },
-      { carrier: true },
-    ];
+    return [{ surface: basement, material: '#6b6b6b', fill: '#4a4a4a' }];
   }, [basement]);
 
   if (!field || !seabed || !basement) return null;
@@ -279,6 +280,8 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
         <ChunkStack
           outline={field}
           surfaces={column}
+          water={water}
+          resolve={resolve}
           carrier={
             props.carrierMode === 'depth'
               ? { depth: props.carrierDepth }
@@ -290,8 +293,7 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
             surfaceOpacity={props.surfaceOpacity}
             wallOpacity={props.wallOpacity}
             wireframe={props.wireframe}
-            resolve={resolve}
-            onBuild={report('water')}
+            onBuild={report('seabed')}
           />
           <Chunk
             layers={detailLayers}
@@ -303,7 +305,6 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
             surfaceOpacity={props.surfaceOpacity}
             wallOpacity={props.wallOpacity}
             wireframe={props.wireframe}
-            resolve={resolve}
             onBuild={report('detail')}
           />
           <Chunk
@@ -312,7 +313,6 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
             surfaceOpacity={props.surfaceOpacity}
             wallOpacity={props.wallOpacity}
             wireframe={props.wireframe}
-            resolve={resolve}
             onBuild={report('basement')}
           />
         </ChunkStack>
@@ -344,7 +344,7 @@ const meta = {
     docs: {
       description: {
         component:
-          'Three tiers that MEET: water + seabed over the field outline, wellbore-cut detail beneath it, and the basement block back on the field outline.\n\n' +
+          'Three tiers that MEET: the open seabed over the field outline, wellbore-cut detail beneath it, and the basement block back on the field outline. The sea spans all three and is declared once on the `ChunkStack`, because it is a property of the COLUMN — a tier drawing part of it would draw its lid twice wherever two footprints overlap.\n\n' +
           'The tiers connect by SHARING a boundary surface rather than by filling a gap between them. `NORDLAND GP. Top` belongs to both the ocean chunk and the detail chunk; `Basement Base` belongs to both the detail chunk and the basement chunk. Every chunk simply declares the layer — the stack works out who draws it, so it is drawn exactly once and two independent tessellations never fight over it.\n\n' +
           'A horizon is drawn by the chunk it is the TOP layer of, because a cap is the lid of the block underneath it. The others draw their footprint MINUS that, which is why the translucent water tier keeps a translucent seabed of its own while the lid over the opaque detail block is opaque.',
       },
@@ -392,7 +392,7 @@ export const Default: Story = {
     basementThickness: {
       control: { type: 'range', min: 100, max: 2000, step: 50 },
       description:
-        'The column CARRIER: one flat floor this far below the deepest mapped sample of the whole column, declared on the `ChunkStack` and drawn by the basement tier (`{ carrier: true }`). Nothing pierces it — a surface that would is truncated at it.',
+        'The column CARRIER: one flat floor this far below the deepest mapped sample of the whole column, declared on the `ChunkStack` and drawn by the basement tier — which asks for it simply by putting a `fill` on its last layer. Nothing pierces it — a surface that would is truncated at it.',
       table: { category: 'Connection' },
     },
     carrierMode: {
@@ -411,7 +411,7 @@ export const Default: Story = {
     waterDepth: {
       control: { type: 'range', min: 0, max: 200, step: 5 },
       description:
-        'Water plane, metres below sea level (positive-down). ⭐ The water is a FLUID layer, so it takes no part in the depth order — raising it does not truncate the seabed.',
+        'Sea level, metres below datum (positive-down). ⭐ The sea is declared on the `ChunkStack` rather than on a tier, and takes no part in the depth order — raising it does not truncate the seabed.',
       table: { category: 'Water' },
     },
     waterOpacity: {
@@ -423,7 +423,7 @@ export const Default: Story = {
     seabedOpacity: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
       description:
-        'Opacity of the OPEN seabed — the part of the horizon the water tier draws, set on that layer rather than on the chunk. The lid over the detail chunk is that chunk’s, so it keeps `surfaceOpacity`.',
+        'Opacity of the OPEN seabed — the part of the horizon the seabed tier draws, set on that layer rather than on the chunk. The lid over the detail chunk is that chunk’s, so it keeps `surfaceOpacity`.',
       table: { category: 'Water' },
     },
     bedTint: {

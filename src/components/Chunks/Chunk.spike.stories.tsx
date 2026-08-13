@@ -127,10 +127,11 @@ const ChunkStory = (props: ChunkStoryProps) => {
         : { preset: props.detail, strength: props.detailStrength };
     const own = layersFromGroups(groups).map(layer => ({ ...layer, detail }));
     if (!props.showFloor || own.length === 0) return own;
+    // A fill on the LAST layer is what asks for the floor — the block is then open
+    // at the bottom, and only the column can say where it ends.
     return [
       ...own.slice(0, -1),
       { ...own[own.length - 1], fill: props.floorColor },
-      { carrier: true, material: props.floorColor, detail },
     ];
   }, [
     groups,
@@ -162,7 +163,9 @@ const ChunkStory = (props: ChunkStoryProps) => {
           outline={polygon}
           surfaces={metas}
           carrier={
-            props.showFloor ? { below: props.floorClearance } : undefined
+            props.showFloor
+              ? { below: props.floorClearance, material: props.floorColor }
+              : undefined
           }
           rimSpacing={props.rimSpacing}
           maxError={props.maxError}
@@ -269,7 +272,7 @@ export const Default: Story = {
     showFloor: {
       control: 'boolean',
       description:
-        'Close the block with the column CARRIER: one flat plane declared on the `ChunkStack` and drawn by the chunk as a `{ carrier: true }` layer.',
+        'Close the block with the column CARRIER: one flat plane declared on the `ChunkStack`, drawn by the chunk because its last layer declares a `fill` — which is what says the block is open at the bottom.',
       table: { category: 'Floor' },
     },
     floorClearance: {

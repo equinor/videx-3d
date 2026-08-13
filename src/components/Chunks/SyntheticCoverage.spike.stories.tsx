@@ -138,14 +138,12 @@ const SyntheticCoverageStory = (props: SyntheticCoverageProps) => {
   // (`holes`, `inset`) with no neighbour at all, which seals nothing.
   const layers = useMemo<ChunkLayer[]>(() => {
     if (column.length === 0) return [];
-    return [
-      ...column.map((surface, i) => ({
-        surface,
-        material: PALETTE[i % PALETTE.length],
-        fill: PALETTE[i % PALETTE.length],
-      })),
-      { carrier: true, material: '#6b6b6b' },
-    ];
+    // The fill on the last layer is what asks for the floor.
+    return column.map((surface, i) => ({
+      surface,
+      material: PALETTE[i % PALETTE.length],
+      fill: PALETTE[i % PALETTE.length],
+    }));
   }, [column]);
 
   const resolve = useMemo<ChunkResolveOptions>(
@@ -214,11 +212,11 @@ const SyntheticCoverageStory = (props: SyntheticCoverageProps) => {
         <ChunkStack
           outline={outline}
           surfaces={column}
-          carrier={{ depth: props.floorDepth }}
+          resolve={resolve}
+          carrier={{ depth: props.floorDepth, material: '#6b6b6b' }}
         >
           <Chunk
             layers={layers}
-            resolve={resolve}
             maxError={props.maxError}
             surfaceOpacity={props.surfaceOpacity}
             wallOpacity={props.wallOpacity}

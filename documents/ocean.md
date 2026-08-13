@@ -68,44 +68,55 @@ function Buoy() {
 Use `useOceanContact` to spread foam where an object meets the water (see the
 `Tanker` component for a full example). Both are no-ops outside an `<Ocean>`.
 
-## Water inside a chunk
+## Water over a chunk stack
 
-A subsurface block can carry its own water instead of an `<Ocean>` of its own:
-declare `water` on the layer that is sea level.
+A subsurface block can carry its own sea instead of an `<Ocean>` of its own:
+declare `water` on the `ChunkStack`.
 
 ```tsx
-<Chunk layers={[
-  { depth: 0, opacity: 0.6, water: { windSpeed: 10, foamAmount: 0.5 } },
-  { surface: seabed, material: '#c2b280' },
-  // ...
-]} />
+<ChunkStack outline={field} surfaces={column} water={{ depth: 0, windSpeed: 10 }}>
+  <Chunk layers={[{ surface: seabed, material: '#c2b280' }, /* ... */]} />
+  <Tanker position={[x, 0, z]} heading={heading} />
+</ChunkStack>
 ```
 
+⭐ It belongs to the STACK, not to a layer of a chunk. The sea is a property of
+the column — every chunk cut from it stands under the same water — and a lid
+covers its whole footprint by design, so two chunks each drawing part of it would
+leave two coplanar lids wherever their footprints overlap. The stack draws it
+once, as a two-boundary stack of its own: the level, and the column's shallowest
+surface as its bed.
+
 The sea state props are the same ones the component takes (`OceanWaterProps` /
-`OceanBodyProps`), and the layer gets both materials: the animated surface for
-its cap and the water body for the volume below it, which is why `water` also
-implies a fill.
+`OceanBodyProps`), and the stack supplies both materials: the animated surface for
+the lid and the water body for the volume down to the bed.
 
-`seaBedWaterTint` is the one thing that does NOT carry over: it belongs to the
-bed material the component draws, and a chunk's sea bed is ordinary geology. The
-equivalent is `bedTint`, set on the water layer and applied to the cap directly
-below it. It is depth-dependent rather than flat, because that bed can rise
-through the water — see `documents/chunks.md` §6.3.1.
-
-Declaring it makes the layer a **fluid**, which is what stops the sea truncating
-the ground beneath it: a sea bed above the plane comes through it rather than
-being flattened onto it, and the water body ends at the shoreline. See
+The sea takes no part in the depth order, which is what stops it truncating the
+ground beneath it: a sea bed above the plane comes THROUGH it rather than being
+flattened onto it, and the water body ends at the shoreline. See
 `documents/chunks.md` §6.
 
+`seaBedWaterTint` is the one thing that does NOT carry over: it belongs to the bed
+material the component draws, and a chunk's sea bed is ordinary geology. The
+equivalent is `bedTint`, set on the stack's water and applied to the shallowest
+cap. It is depth-dependent rather than flat, because that bed can rise through the
+water — see `documents/chunks.md` §6.4.1.
+
+**Floating objects work here.** The stack provides the same wave sampler and
+contact-foam registry an `<Ocean>` does, so a vessel heaves and spreads foam with
+nothing extra wired. ⭐ The sampler is bound to the sea's LEVEL, so heights come
+back absolute in the stack's frame: place the object at the water plane rather
+than inside a group at sea level.
+
+⚠️ The sea needs an `outline` on the stack — a `cutSource` alone gives nothing to
+draw it over.
+
 ⚠️ `displacement` needs a surface fine enough to displace. The lid is
-triangulated from the chunk's outline, so give it a target edge length —
+triangulated from the stack's outline, so give it a target edge length —
 `water: { displacement: true, resolution: 100 }` — and remember it applies over
 the whole footprint. Without displacement the waves are shaded per pixel and the
 lid can stay at its minimum.
 
-⚠️ Buoyancy is not available on this path yet: `useBuoyancy` reads a sampler
-provided by `<Ocean>`, and a water layer has no such provider.
-
 See the **Components / Misc / Ocean** stories for an interactive demo of every
 variant plus the buoyancy boxes, and **Spikes / Chunks / SyntheticColumn** for
-water on a chunk.
+water over a chunk stack.

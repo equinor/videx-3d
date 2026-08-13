@@ -26,7 +26,7 @@ import storyArgs from '../../storybook/story-args.json';
 import { Tanker } from '../Tanker/Tanker';
 import { UtmArea } from '../UtmArea';
 import { Chunk } from './Chunk';
-import { ChunkLayer, ChunkResolveOptions } from './chunk-defs';
+import { ChunkLayer, ChunkResolveOptions, StackWater } from './chunk-defs';
 import { ChunkStack } from './ChunkStack';
 import { ChunkInferenceStyle } from './inference-material';
 
@@ -67,6 +67,9 @@ type SyntheticColumnProps = {
   count: number;
   outlineSize: number;
   maxError: number;
+  floor: boolean;
+  floorClearance: number;
+  floorColor: string;
   water: boolean;
   waterDepth: number;
   waterOpacity: number;
@@ -145,8 +148,7 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
   }, [props.outlineSize]);
 
   const layers = useMemo<ChunkLayer[]>(() => {
-    if (column.length === 0) return [];
-    const units = column.map((surface, i) => {
+    const units: ChunkLayer[] = column.map((surface, i) => {
       const sediment = selected[i]?.class ?? 'shale';
       const colour = CLASS_COLOUR[sediment];
       // ⭐ The class → detail mapping is the story's, exactly like the colour one:
@@ -156,37 +158,38 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
         : undefined;
       return { surface, material: colour, fill: colour, detail };
     });
-    if (!props.water) return units;
-    // Declaring `water` is what makes this a FLUID layer: it is left out of the
-    // depth order, so the unit below it comes through the plane where it stands
-    // above it, and it brings its own surface and body materials.
+    // ⭐ The floor is asked for by the FILL on the last layer, and by nothing else:
+    // a volume there has no next boundary to end on, so the column's carrier ends
+    // it. Take the fill away and the block simply stops at its deepest surface,
+    // even though the carrier is still declared on the stack.
+    const last = units.length - 1;
+    if (!props.floor && last >= 0) {
+      units[last] = { ...units[last], fill: undefined };
+    }
+    return units;
+  }, [column, selected, props.detail, props.detailStrength, props.floor]);
+
+  // The sea is the COLUMN's, not a chunk layer: one lid over the whole stack,
+  // drawn once however many chunks are cut from it.
+  const water = useMemo<StackWater | undefined>(() => {
+    if (!props.water) return undefined;
     const angle = (props.windDirection * Math.PI) / 180;
-    return [
-      {
-        depth: props.waterDepth,
-        opacity: props.waterLayerOpacity,
-        water: {
-          windSpeed: props.windSpeed,
-          windDirection: [Math.cos(angle), Math.sin(angle)] as Vec2,
-          waterOpacity: props.waterOpacity,
-          foamAmount: props.foamAmount,
-          displacement: props.displacement,
-          resolution:
-            props.waterResolution > 0 ? props.waterResolution : undefined,
-          bodyFogDensity: props.bodyFogDensity,
-          bodyMaxOpacity: props.bodyMaxOpacity,
-          bodyShimmer: props.bodyShimmer,
-          bedTint: props.bedTint,
-          bedTintDepth: props.bedTintDepth,
-        },
-      },
-      ...units,
-    ];
+    return {
+      depth: props.waterDepth,
+      opacity: props.waterLayerOpacity,
+      windSpeed: props.windSpeed,
+      windDirection: [Math.cos(angle), Math.sin(angle)] as Vec2,
+      waterOpacity: props.waterOpacity,
+      foamAmount: props.foamAmount,
+      displacement: props.displacement,
+      resolution: props.waterResolution > 0 ? props.waterResolution : undefined,
+      bodyFogDensity: props.bodyFogDensity,
+      bodyMaxOpacity: props.bodyMaxOpacity,
+      bodyShimmer: props.bodyShimmer,
+      bedTint: props.bedTint,
+      bedTintDepth: props.bedTintDepth,
+    };
   }, [
-    column,
-    selected,
-    props.detail,
-    props.detailStrength,
     props.water,
     props.waterDepth,
     props.waterOpacity,
@@ -227,13 +230,11 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
   const report = useMemo(
     () => (metrics: SurfaceChunkMetrics) => {
       const d = metrics.diagnostics;
-      // The water layer is prepended, so the unit behind a row sits one earlier.
-      const unitAt = (index: number) => selected[index - (props.water ? 1 : 0)];
       const rows = (d?.layers ?? []).map(l => ({
         unit:
-          unitAt(l.index)?.name ??
-          (l.index === 0 && props.water ? 'water' : l.index),
-        class: unitAt(l.index)?.class ?? '',
+          selected[l.index]?.name ??
+          (l.index >= selected.length ? 'floor' : l.index),
+        class: selected[l.index]?.class ?? '',
         coverage: +l.coverage.toFixed(4),
         filled: +l.filled.toFixed(4),
         inferred: +l.inferred.toFixed(4),
@@ -257,7 +258,7 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
       );
       console.table(rows);
     },
-    [props.column, props.water, selected],
+    [props.column, selected],
   );
 
   if (layers.length < 2) return null;
@@ -265,10 +266,18 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
   return (
     <>
       <UtmArea origin={origin} utmZone={utmZone}>
-        <ChunkStack outline={outline} surfaces={column}>
+        <ChunkStack
+          outline={outline}
+          surfaces={column}
+          water={water}
+          resolve={resolve}
+          carrier={{
+            below: props.floorClearance,
+            material: props.floorColor,
+          }}
+        >
           <Chunk
             layers={layers}
-            resolve={resolve}
             maxError={props.maxError}
             surfaceOpacity={props.surfaceOpacity}
             wallOpacity={props.wallOpacity}
@@ -276,18 +285,15 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
             inferredStyle={props.inferredStyle}
             onBuild={report}
           />
+          {/* Inside the stack: the wave sampler and the contact-foam registry
+              reach the hull through context. Its origin IS its waterline. */}
+          {props.ship && (
+            <Tanker
+              position={[props.shipX, -props.waterDepth, props.shipZ]}
+              heading={(props.shipHeading * Math.PI) / 180}
+            />
+          )}
         </ChunkStack>
-        {props.ship && (
-          // The hull's origin IS its waterline, so a group at the water plane sets
-          // it in the water. ⚠️ STATIC: buoyancy and contact foam read a sampler
-          // provided by `<Ocean>`, and a water LAYER has no such provider yet.
-          <group
-            position={[props.shipX, -props.waterDepth, props.shipZ]}
-            rotation-y={(props.shipHeading * Math.PI) / 180}
-          >
-            <Tanker />
-          </group>
-        )}
       </UtmArea>
       <ChunkPipeline />
     </>
@@ -307,9 +313,9 @@ const meta = {
           'A chunk cut from a GENERATED stratigraphic column — a set of surfaces that are exact functions of one another, rather than the independent surfaces of `SyntheticCoverage`.\n\n' +
           'Each unit is deposited as `thickness = drape + fill · max(0, dPrev − datum)`: `drape` blankets the topography, `fill` levels it toward `datum`. Where the surface below is already shallower than the datum the unit has NO thickness, so it **pinches out over the highs** — a real zero-thickness termination, which the demo field only shows by accident.\n\n' +
           'The column also contains a **fault** (gridded into a ramp and dying out along strike — a height field cannot hold the break, so the surfaces are carried across it exactly as an interpreter would), a **partly-mapped unit** (a survey extent, not geology), and an **angular unconformity** whose truncated horizons are recorded as NO DATA by default, which is what an interpreter delivers and what makes them indistinguishable from a survey edge.\n\n' +
-          '⭐ The SHALLOWEST surface is the SEA BED, and it is shaped rather than noised: a basin ~210 m deep, a coast rising out of it to ~45 m above sea level on one side, and an island standing off it with a hill on top (~99 m). Those are composable landform primitives (`ramp`, `dome`) with a little dune texture over them — noise alone reads as static, not as terrain. The water is a FLUID layer, so the ground rises through the plane instead of being truncated by it, and the water body ends at the shoreline. `bedTint` then tints the bed toward the water colour BY DEPTH, so the shoreline appears on its own.\n\n' +
+          '⭐ The SHALLOWEST surface is the SEA BED, and it is shaped rather than noised: a basin ~210 m deep, a coast rising out of it to ~45 m above sea level on one side, and an island standing off it with a hill on top (~99 m). Those are composable landform primitives (`ramp`, `dome`) with a little dune texture over them — noise alone reads as static, not as terrain. The sea is declared on the `ChunkStack` rather than as a chunk layer, and takes no part in the depth order, so the ground rises THROUGH the plane instead of being flattened onto it and the water body ends at the shoreline. `bedTint` then tints the bed toward the water colour BY DEPTH, so the shoreline appears on its own.\n\n' +
           '⭐ Everything about the column — grid size and resolution, number of units, structure, seed, erosion encoding, where the fault and the unconformity fall — comes from the `COLUMN` constants in `src/storybook/data/synthetic-surfaces.ts`. Change one and reload to get a different field.\n\n' +
-          'A **tanker** sits in the water for scale — 253 m against a 7 km field. ⚠️ It is STATIC: `useBuoyancy` and the contact foam read a wave sampler that the `<Ocean>` COMPONENT provides to its children, and a water LAYER provides nothing, so the ship has nothing to float on yet.\n\n' +
+          'A **tanker** floats in the sea for scale — 253 m against a 7 km field. It reads the wave sampler and the contact-foam registry the `ChunkStack` provides, exactly as it would inside an `<Ocean>`, so it heaves with the swell and spreads foam where it meets the water.\n\n' +
           '⭐⭐ Because every relationship is known, a crossing or a mis-ordering reported here is unambiguously a pipeline bug. Watch `crossings` and `maxOverlap` in the console table: they should stay at zero.',
       },
     },
@@ -326,6 +332,9 @@ export const Default: Story = {
     count: 20,
     outlineSize: 7,
     maxError: 5,
+    floor: true,
+    floorClearance: 400,
+    floorColor: '#6b6b6b',
     water: true,
     waterDepth: 0,
     waterOpacity: 0.7,
@@ -388,10 +397,28 @@ export const Default: Story = {
         'Simplification error of the shared tessellation, in metres of height.',
       table: { category: 'Column' },
     },
+    floor: {
+      control: 'boolean',
+      description:
+        'Close the block from below with the column’s CARRIER — one flat plane declared on the `ChunkStack`. ⭐ The control does not add or remove the carrier: it adds or removes the `fill` on the LAST layer, which is the only thing that asks for it. A volume there has no next boundary to end on, so the floor ends it; without the fill the block simply stops at its deepest surface.',
+      table: { category: 'Floor' },
+    },
+    floorClearance: {
+      control: { type: 'range', min: 50, max: 2000, step: 50 },
+      description:
+        'Metres below the column’s deepest MAPPED sample. Measured over the whole envelope, and by construction it never truncates anything — use an absolute `depth` instead to cut the block off flat.',
+      table: { category: 'Floor' },
+    },
+    floorColor: {
+      control: 'color',
+      description:
+        'The floor’s own cap material. Declared on the carrier rather than on a layer — the floor is inferred, so it has none. Leave it unset and the floor is drawn with the fill of the unit resting on it.',
+      table: { category: 'Floor' },
+    },
     water: {
       control: 'boolean',
       description:
-        'Add a water layer above the column. ⭐ Declaring `water` on a layer is what makes it a FLUID: it is left out of the depth order, so the unit below it rises THROUGH the plane where it stands above it instead of being flattened onto it, and it brings the animated ocean surface and body materials with it.',
+        'Put a sea over the column. ⭐ It is declared on the `ChunkStack`, not as a chunk layer: there is ONE sea per column, drawn once however many chunks are cut from it. It takes no part in the depth order, so the unit below it rises THROUGH the plane where it stands above it instead of being flattened onto it.',
       table: { category: 'Water' },
     },
     waterDepth: {
@@ -409,7 +436,7 @@ export const Default: Story = {
     waterLayerOpacity: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
       description:
-        'Opacity of the LAYER, multiplying everything above — the chunk-level control every other layer has, which the water layer overrides for itself. Leave it at 1 unless the whole water tier should fade.',
+        'Master opacity of the SEA, multiplying whatever the shader arrives at. Leave it at 1 unless the whole sea should fade.',
       table: { category: 'Water' },
     },
     windSpeed: {
@@ -442,13 +469,13 @@ export const Default: Story = {
     bodyFogDensity: {
       control: { type: 'range', min: 0, max: 0.02, step: 0.0005 },
       description:
-        'Per-metre tint build-up of the water BODY — the volume seen through the walls of the water layer, which in a chunk stand at the outline rim and at the shoreline.',
+        'Per-metre tint build-up of the water BODY — the volume seen through the walls of the sea, which stand at the outline rim and at the shoreline.',
       table: { category: 'Water body' },
     },
     bodyMaxOpacity: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
       description:
-        'Densest tint the body reaches far through the water. Follows `waterOpacity` when the layer leaves it unset.',
+        'Densest tint the body reaches far through the water. Follows `waterOpacity` when the sea leaves it unset.',
       table: { category: 'Water body' },
     },
     bodyShimmer: {
@@ -472,7 +499,7 @@ export const Default: Story = {
     ship: {
       control: 'boolean',
       description:
-        'Put an Aframax tanker (253 m) in the water. Its origin is its own WATERLINE, so it is simply placed at the water plane and follows `waterDepth`. ⚠️ It sits STILL: buoyancy and contact foam read a wave sampler provided by the `<Ocean>` component, and a water LAYER has no such provider yet.',
+        'Put an Aframax tanker (253 m) in the sea. Its origin is its own WATERLINE, so it is simply placed at the water plane and follows `waterDepth`. It heaves with the swell and spreads contact foam: the `ChunkStack` provides the same wave sampler and contact registry an `<Ocean>` does.',
       table: { category: 'Ship' },
     },
     shipX: {
@@ -488,7 +515,7 @@ export const Default: Story = {
     shipHeading: {
       control: { type: 'range', min: -180, max: 180, step: 5 },
       description:
-        'Heading, in degrees about the scene’s Y axis (0 = bow toward +X). The default lines the hull up with the default wind, so the swell will run bow-on once it floats.',
+        'Heading, in degrees about the scene’s Y axis (0 = bow toward +X). The default lines the hull up with the default wind, so the swell runs bow-on.',
       table: { category: 'Ship' },
     },
     seal: { control: 'boolean', table: { category: 'Resolve' } },

@@ -1303,8 +1303,10 @@ describe('cut outlines', () => {
 });
 
 /**
- * A fluid is a level rather than a horizon: it is outside the depth order, so
- * ground rises through it instead of being flattened onto it.
+ * A fluid is a level rather than a horizon: it is ordered like any other boundary
+ * but is never the AUTHORITY, so what lies below it is measured against the
+ * nearest solid layer above. The sea adds `unbounded` on top of that, which is
+ * what lets ground rise through it instead of being flattened onto it.
  */
 describe('a fluid boundary', () => {
   const tri = new Uint32Array([0, 1, 2]);
@@ -1339,6 +1341,37 @@ describe('a fluid boundary', () => {
     expect(heights[2][1]).toBe(-50);
   });
 
+  it('is itself held under the horizon above it', () => {
+    // A contact that would sit ABOVE the top of the unit it divides.
+    const top = () => Float32Array.from([-1000, -1000, -1000]);
+    const contact = () => Float32Array.from([-900, -1200, -1200]);
+
+    const heights = [top(), contact()];
+    resolveStackOrder(heights, { fluid: [false, true] });
+
+    expect(heights[1][0]).toBe(-1000);
+  });
+
+  it('⭐ never drags the base of its own unit down — the no-water-leg case', () => {
+    const top = () => Float32Array.from([-1000, -1000, -1000]);
+    const contact = () => Float32Array.from([-1200, -1200, -1200]);
+    // The reservoir base is SHALLOWER than the contact at the first vertex: there
+    // is simply no water leg there.
+    const base = () => Float32Array.from([-1100, -1300, -1400]);
+
+    const heights = [top(), contact(), base()];
+    resolveStackOrder(heights, { fluid: [false, true, false] });
+
+    expect(Array.from(heights[2])).toEqual([-1100, -1300, -1400]);
+
+    // Without the flag the contact becomes the authority and pulls the base down
+    // onto itself — an oil column with no water leg under it, and a horizon moved
+    // to make room for a level.
+    const ordinary = [top(), contact(), base()];
+    resolveStackOrder(ordinary);
+    expect(ordinary[2][0]).toBe(-1200);
+  });
+
   it('draws its lid whole, and keeps ground that stands above it', () => {
     const emerged = () => Float32Array.from([50, 50, 50]);
 
@@ -1346,7 +1379,7 @@ describe('a fluid boundary', () => {
     resolveStackOrder(heights, { fluid: [true, false] });
     const collapsed = collapseStackTriangles(heights, tri, {
       threshold: 0.5,
-      fluid: [true, false],
+      unbounded: [true, false],
     });
     expect(collapsed.dropped).toEqual([0, 0]);
     expect(heights[1][0]).toBe(50);
@@ -1366,7 +1399,7 @@ describe('a fluid boundary', () => {
   it('⭐ ends its volume where the ground comes through — the shoreline', () => {
     const above = stackIntervalTriangles([water(), seabed()], tri, {
       threshold: 0.5,
-      fluid: [true, false],
+      unbounded: [true, false],
     });
     // the sea bed is above the plane at one corner, but not at all three
     expect(above[0][0]).toBe(1);
@@ -1374,7 +1407,7 @@ describe('a fluid boundary', () => {
     const emerged = stackIntervalTriangles(
       [water(), Float32Array.from([50, 50, 50])],
       tri,
-      { threshold: 0.5, fluid: [true, false] },
+      { threshold: 0.5, unbounded: [true, false] },
     );
     expect(emerged[0][0]).toBe(0);
   });

@@ -12,6 +12,7 @@ export * from './perforations-generator';
 export * from './perimieter-generator';
 export * from './position-markers-generator';
 export * from './shoes-generator';
+export * from './stack-water-generator';
 export * from './surface-chunk-generator';
 export * from './surface-generator';
 export * from './tube-trajectory-generator';

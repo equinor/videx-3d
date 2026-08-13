@@ -1,6 +1,12 @@
 import { createContext } from 'react';
-import { PlanarPolygonGeometry, StackCarrier, SurfaceMeta } from '../../sdk';
-import { ChunkBuildState } from './chunk-defs';
+import { Material } from 'three';
+import { PlanarPolygonGeometry, SurfaceMeta } from '../../sdk';
+import {
+  ChunkBuildState,
+  ChunkCarrier,
+  ChunkResolveOptions,
+  StackWater,
+} from './chunk-defs';
 import { CutoutSource } from './cutout';
 import { SeamDecision } from './seams';
 
@@ -23,6 +29,11 @@ export type ChunkStackContextValue = {
   /** default interior simplification error (grid height units) */
   maxError?: number;
   /**
+   * Default build options for the column (see `ChunkStackProps.resolve`), used by
+   * chunks that declare none of their own.
+   */
+  resolve?: ChunkResolveOptions;
+  /**
    * The whole column, shallowest first, when the caller declared it on the stack.
    * Chunks pass it to the generator so the fetch, the common grid and the
    * depth-order resolve happen ONCE for every chunk cut from it — which is also
@@ -44,10 +55,22 @@ export type ChunkStackContextValue = {
   column?: SurfaceMeta[];
   /**
    * The flat floor the whole column terminates against, when the caller declared
-   * one (see `ChunkStackProps.carrier`). A chunk draws it with a
-   * `{ carrier: true }` layer; every chunk that does draws the SAME plane.
+   * one (see `ChunkStackProps.carrier`). A chunk draws it when its own last layer
+   * declares a fill; every chunk that does draws the SAME plane.
    */
-  carrier?: StackCarrier;
+  carrier?: ChunkCarrier;
+  /**
+   * The carrier's cap material, published separately from `carrier` because it is
+   * APPEARANCE: it must reach `ChunkMeshes` without joining the build spec, where
+   * it would make recolouring the floor rebuild the geometry.
+   */
+  carrierMaterial?: string | Material;
+  /**
+   * The sea over the whole column, when the caller declared one (see
+   * `ChunkStackProps.water`). Chunks read it for APPEARANCE only — the bed tint on
+   * their shallowest cap; the sea's own geometry belongs to the stack.
+   */
+  water?: StackWater | null;
   /**
    * Envelope footprint of the column (scene XZ) — must contain every chunk's
    * outline. Defaults to the stack `outline`; with a wellbore cut source the
@@ -120,14 +143,21 @@ export type ChunkOutlineEntry = {
   polygon: PlanarPolygonGeometry | null;
   /** rim spacing that footprint is densified with */
   rimSpacing?: number;
-  /** the surface is that chunk's TOP layer */
+  /** the surface is that chunk's LID (see {@link ChunkSurfaceClaim.top}) */
   top: boolean;
 };
 
-/** One surface a chunk declares, and where it sits in that chunk's layer list. */
+/** One surface a chunk declares, and whether that chunk's block hangs from it. */
 export type ChunkSurfaceClaim = {
   id: string;
-  /** the chunk's first layer, i.e. this surface is its lid */
+  /**
+   * The surface is this chunk's LID: its first layer, AND one holding a volume.
+   *
+   * ⚠️ Both halves matter. A cap is the lid of the block underneath it, so a
+   * chunk whose first layer is a bare sheet has no block for it to be the lid of
+   * — claiming it anyway would let a translucent sheet take the horizon away from
+   * the solid block below, which is the exact failure the rule exists to prevent.
+   */
   top: boolean;
 };
 

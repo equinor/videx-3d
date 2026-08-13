@@ -302,76 +302,114 @@ presents.
 
 ## 6. Water specifics
 
-Water is an ordinary layer — but it is a **fluid** one, and that is a real case in
-the model rather than a colour choice.
+Water is a **level**, not a horizon — a real case in the model rather than a
+colour choice. Two of them, in fact, and they are worth keeping apart:
 
-### 6.1 A fluid is outside the depth order
+- a **fluid**: a contact INSIDE a unit — an oil/water contact, a gas cap, a water
+  table. An ordinary boundary of the chunk that declares it (`ChunkLayer.fluid`).
+- the **sea**: open water over the whole column, declared once on the
+  `ChunkStack` (`ChunkStackProps.water`) and drawn by the stack itself.
 
-`ChunkLayer.fluid` (implied by `.water`) exempts a boundary from the resolve and
-from the collapse:
+⭐ The sea is not a chunk layer, for two reasons. It is a property of the COLUMN,
+exactly like the carrier (§10.9) — every chunk cut from that column stands under
+the same water. And a lid covers its whole footprint by design, so two chunks each
+drawing part of the sea would leave two coplanar lids wherever their footprints
+overlap.
 
-- it is neither clamped nor used to clamp, and the cascade looks *through* it to
-  the nearest solid layer above, so the chain between the solid layers is
-  unbroken;
-- its lid is drawn over the whole footprint, whatever stands in the way;
-- the layer below it is not measured against it.
+### 6.1 A fluid is never the AUTHORITY
 
-⭐ **Because a level is not a horizon.** Shallow-wins truncation (§9.5) says the
-younger surface cut the older one away — true of an unconformity, false of the
-sea. Under the ordinary rule a sea bed standing above the plane was clamped down
-to it and then dropped as a duplicate, so the land was erased and the water
-covered everything; the earlier claim that a shoreline "falls out free" was
-measured and found to be exactly backwards. Exempting the fluid inverts both
-halves of that, and the shoreline then does come free — but from the INTERVAL,
-not from the resolve: the water body exists where it has thickness, so it ends
-where the ground comes through, and the wall traced around it is zero-height
-along that contour.
+`StackResolveOptions.fluid` marks a boundary that is clamped by what lies above it
+like any other, but never becomes the authority for what lies below: the cascade
+looks THROUGH it to the nearest solid layer.
 
-⚠️ The lid is drawn over land, hidden per pixel by whatever is in front of it. It
-is visible through transparent geology and from below. That is the deliberate
-simplification: cutting the lid would mean resolving it against the ground, and
-the cut would not match once the surface is displaced.
+⭐ **The asymmetry is the whole point.** Shallow-wins truncation (§9.5) says the
+younger surface cut the older one away — true of an unconformity, false of a
+level. An ordinary contact sitting deeper than the base of the unit it divides
+would drag that base down with it: an oil column with no water leg, real geology
+deformed to make room for a fluid. Where a fluid has no room, its interval simply
+pinches out as any unit's does.
+
+`StackCollapseOptions.unbounded` is the stronger claim, and the SEA is the only
+thing that makes it: its lid is drawn over the whole footprint whatever stands in
+the way, it is never absent, and the layer below is not measured against it.
+Without that, a sea bed standing above the plane is clamped down onto it and then
+dropped as a duplicate — the land erased and the water covering everything.
+
+⭐ With the exemption the shoreline does come free, but from the INTERVAL, not
+from the resolve: the water body exists where it has thickness, so it ends where
+the ground comes through, and the wall traced around it is zero-height along that
+contour. (An earlier claim that the shoreline "falls out free" from the resolve
+was measured and found to be exactly backwards.)
+
+⚠️ The lid is drawn over land, hidden per pixel by whatever is in front of it — so
+it is visible through transparent geology and from below. Deliberate: cutting the
+lid would mean resolving it against the ground, and the cut would not match once
+the surface is displaced.
 
 ⚠️⚠️ **A wall spanning a fluid may not INVERT.** The interval keeps a triangle
-that has thickness at any one corner, so a rim quad can straddle the shoreline:
-its top edge flat on the plane, its bottom edge crossing over it. Left alone that
-half-quad does not vanish, it turns inside out — painting the water body UP the
-flank of the island with its normal flipped, in exactly the band where the unit
+that has thickness at any one corner, so a rim quad can straddle the contour where
+the two cross: its top edge flat on the plane, its bottom edge crossing over it.
+Left alone that half-quad does not vanish, it turns inside out — painting the
+volume UP the flank with its normal flipped, in exactly the band where the unit
 rising through the plane draws its own wall, which is what the two z-fight over.
 `buildStackWalls` therefore clamps the bottom edge to the top for any pair
-involving a fluid, so the wall simply ends at the shoreline. It is clamped only
-there: everywhere else the resolve guarantees the order, and clamping silently
+involving a fluid. ⭐ For a CONTACT as much as for the sea: a fluid is no longer
+the authority, so the resolve does not order that pair either, and the pinch-out
+against the base of its own unit is the same geometry as a shoreline. Clamped only
+there — everywhere else the resolve guarantees the order, and clamping silently
 would hide a crossing instead of reporting it.
 
 ### 6.2 The lid is tessellated on its own terms
 
-A fluid layer's cap does **not** come from the shared tessellation. A flat lid in
-a shared TIN is wrong in both directions at once: it carries every vertex the
-surfaces below it needed, and still has none of its own where they needed none —
-which is exactly where a water surface is most likely to be displaced. Refining
+An unbounded layer's cap does **not** come from the shared tessellation. A flat
+lid in a shared TIN is wrong in both directions at once: it carries every vertex
+the surfaces below it needed, and still has none of its own where they needed none
+— which is exactly where a water surface is most likely to be displaced. Refining
 the shared TIN for it is not an option either, since every other layer pays.
 
-Nothing is compared against a fluid per vertex, so its lid is free to be built
+Nothing is compared against it per vertex, so its lid is free to be built
 separately: `createPolygonCap` triangulates the outline (ear clipping, so any
 topology of components and holes comes out exactly) and refines only the
 INTERIOR. The boundary is therefore the shared rim, vertex for vertex, at any
 density — which is what keeps it sealed to the wall of the volume below.
 
-`ChunkFluid.resolution` is a target triangle edge in metres: omit it for the
+`StackUnbounded.resolution` is a target triangle edge in metres: omit it for the
 fewest triangles that fill the outline (all a per-pixel water surface needs), set
 it when `displacement` is on. ⚠️ It applies over the whole footprint, so the cost
 grows with the square of the field size, and the RIM stays at `rimSpacing` — the
 lid's middle subdivides, its edge does not.
 
-### 6.3 The shaders
+### 6.3 How the sea is built
 
-`ChunkLayer.water` carries the sea state (`OceanWaterProps` / `OceanBodyProps`,
-shared with the `Ocean` component through `ocean-material-sync.ts`) and supplies
-both materials: an `OceanMaterial` for the cap and an `OceanVolumeMaterial` for
-the volume below it — which is why water also implies `fill`. They are created
-once per water layer and then have their uniforms updated, unlike the rest of a
-chunk's appearance, which is rebuilt on change: a sea state is swept
-continuously and rebuilding a `ShaderMaterial` recompiles its program.
+The `stackWater` generator builds it as a stack in its own right, of exactly two
+boundaries: **the level and the bed**. That is what makes it both cheap and
+correct — the level is a fluid, so it is never the authority for what lies under
+it, and being the FIRST layer there is then nothing left in the stack to order at
+all. The bed keeps its own shape; an island rises through the plane; the body runs
+out of thickness where it does.
+
+⭐⭐ The bed is **the column's shallowest surface**, taken from the very channels
+every chunk is built on (`getStackContext`, a cache hit) — sealed and ordered
+exactly as they draw it. A second opinion about where the sea bed is would show up
+as a gap along the whole shoreline. It is not capped here: that horizon is drawn
+by whichever chunk it is the lid of (§10.8.1).
+
+⚠️ The two still meet on DIFFERENT tessellations — this one refined for the water,
+the chunk's for its own stack — so they agree only within `maxError`, the same
+residual already accepted where two chunks meet.
+
+⚠️ The sea needs an `outline` on the stack. A `cutSource` alone gives nothing to
+draw it over.
+
+### 6.4 The shaders
+
+`StackWater` carries the sea state (`OceanWaterProps` / `OceanBodyProps`, shared
+with the `Ocean` component through `ocean-material-sync.ts`) and `useStackWater`
+supplies both materials: an `OceanMaterial` for the lid and an
+`OceanVolumeMaterial` for the body. They are created once and then have their
+uniforms updated, unlike the rest of a chunk's appearance, which is rebuilt on
+change: a sea state is swept continuously and rebuilding a `ShaderMaterial`
+recompiles its program.
 
 ⚠️ The water body reads its unit-relative height from the `wallV` attribute
 (`OceanVolumeMaterial({ wallAttribute: true })`), because a chunk's interval wall
@@ -382,7 +420,7 @@ mean the same here as on the component, the caustic light play included — it i
 keyed to the top of the wall, which for a chunk is the shoreline-clipped rim of
 the water rather than the side of a box.
 
-#### 6.3.1 The bed tint
+#### 6.4.1 The bed tint
 
 The `Ocean` component tints the top of its own sea bed toward the water colour
 (`seaBedWaterTint`), because the surface's alpha stands for REFLECTION, not for
@@ -397,8 +435,8 @@ below it — so a coast or an island stays dry-looking without anything having t
 know where the shoreline runs, and it stays right as the level is swept.
 
 - It is compiled in per material (`CHUNK_WATER_TINT`), like `detail`, and applies
-  to the cap of the layer DIRECTLY below the water — not to the whole column,
-  which a translucent stack would otherwise turn blue all the way down.
+  to the cap of the SHALLOWEST layer of a chunk — not to the whole column, which a
+  translucent stack would otherwise turn blue all the way down.
 - The depth comes from the OBJECT position, not the world one: the stack can
   carry a vertical exaggeration, which would rescale a world-space depth away
   from metres.
@@ -408,12 +446,49 @@ know where the shoreline runs, and it stays right as the level is swept.
   seen from outside shows an untinted flank below the waterline — the `Ocean`
   component has the same gap.
 
-- **Buoyancy is global and decoupled.** Floating objects use `useBuoyancy`, which
-  samples a single global wave field published by the ocean. So the visible water
-  can be clipped to a chunk outline **without** constraining where buoyant objects
-  live — keep one global wave field for buoyancy and context, and let the drawn
-  water be an ordinary chunk layer. ⚠️ Still open on the chunk path: the sampler
-  is provided by `<Ocean>`, and a water LAYER has no such provider.
+### 6.5 Floating objects
+
+The stack provides the same two contexts an `<Ocean>` does, so a floating child
+needs nothing else:
+
+- `OceanSamplerContext` — the wave field. ⭐ `createOceanSampler` takes the sea's
+  LEVEL, so heights come back absolute in the stack's frame and a floater needs no
+  sea-level parent group of its own; it is simply placed at the water plane.
+- `OceanContactContext` — where floating children register contact-foam
+  footprints. Collected in the same `useFrame` that advances the wave clock, and
+  skipped entirely when nothing is registered.
+
+Both are `null` when no sea is declared, which is the documented fallback: the
+object keeps its static pose.
+
+⚠️ A contact footprint carries the object's FORWARD DIRECTION in world XZ, not the
+sine and cosine of a heading. A rotation about +Y takes the body's +X to
+`(cos, -sin)` in XZ, and the pair notation named no convention that either end
+could check — which is precisely how the footprint spent its life mirrored about
+the forward axis without anyone noticing (every caller passed heading 0).
+
+### 6.6 Not built: shoreline foam
+
+Surf where the bed comes through the water is a natural next step, with two
+constraints worth recording before anyone starts.
+
+⚠️ It must key on water DEPTH (`level - bed`), never on the water body's wall
+boundary. Most of that boundary is the outline CROP, not a shore, and surf along
+an arbitrary crop edge is the same kind of confident lie as a wall at a data edge
+(§10.1.5).
+
+⚠️ Per-vertex on the lid is a dead end: with displacement off the lid is the
+fewest triangles that fill the outline, so a depth attribute would interpolate
+linearly over kilometres, and making it usable forces a fine lid over the whole
+footprint — the quadratic cost §6.2 exists to avoid.
+
+⭐ The right shape is a coarse BATHYMETRY TEXTURE: the generator already holds the
+bed channel on the reference grid, so a downsampled data texture plus the
+grid→world affine gives the fragment shader `depth = level - bed(worldXZ)` per
+pixel. The same texture would let the bed tint (§6.4.1) become per-pixel and close
+the untinted-wall gap. ⚠️ The water surface shader has no depth input of any kind
+today — it is analytic in world XZ — so this would be the first.
+
 
 ## 7. Cross-cutting: LOD, workers, picking
 
@@ -941,17 +1016,16 @@ termination, not its area (§10.5).
 3. **Per-surface truncation rule** — erosional vs onlap, per §9.5. Needs a flag on
    `SurfaceMeta` (or alongside it) and, for onlap, a way to cut a hole in the chunk
    above.
-4. **The water shader** — **BUILT, see §6.** A water layer declares
-   `ChunkLayer.water`, which makes it a fluid and supplies both ocean materials;
-   `ChunkMeshes` creates them per water layer and drives their uniforms, and the
-   prop→uniform sync is shared with `Ocean` rather than copied. Both snags recorded
-   here were real and are closed: the wall reads a normalised `wallV` attribute
-   under a define instead of the metric `uv.y`, and the lid is built on its own
-   triangulation of the outline rather than inheriting the sea bed's TIN.
-   ⚠️ Still open: `Ocean` did NOT decompose — it still owns its own meshes, so the
-   standalone component stays, and with it the `useOceanSampler` provider that
-   buoyancy needs. Floating objects over a chunk's water layer therefore have no
-   sampler yet.
+4. **The water shader** — **BUILT, see §6.** The sea is declared on the
+   `ChunkStack` (`water`), which supplies both ocean materials and draws it as a
+   two-boundary stack of its own; the prop→uniform sync is shared with `Ocean`
+   rather than copied. Both snags recorded here were real and are closed: the wall
+   reads a normalised `wallV` attribute under a define instead of the metric
+   `uv.y`, and the lid is built on its own triangulation of the outline rather
+   than inheriting the sea bed's TIN. ⭐ Floating objects are closed too — the
+   stack provides the wave sampler AND the contact-foam registry, so a vessel
+   floats and foams with nothing extra wired (§6.5). ⚠️ `Ocean` did NOT decompose:
+   it still owns its own meshes, so the standalone component stays.
 5. **One stack or several, when grids differ** — *recorded, not urgent.* A stack welds
    together two separable things: a **resolve domain** (one depth-order pass, one
    shared rim, so chunks agree about cross-over) and a **sampling domain** (one
@@ -1479,10 +1553,17 @@ is about.
 
 #### 10.8.1 Who draws it
 
-⭐ **A horizon belongs to the chunk it is the TOP layer of.** A cap is the lid of
-the block underneath it, so that block draws it — with its own material and
-opacity. The alternative (widest draws it) was tried first and is what forced the
-appearance to travel across the seam; see §10.8.3.
+⭐ **A horizon belongs to the chunk it is the LID of.** A cap is the lid of the
+block underneath it, so that block draws it — with its own material and opacity.
+The alternative (widest draws it) was tried first and is what forced the appearance
+to travel across the seam; see §10.8.3.
+
+⚠️ **Lid** means the chunk's first layer AND one that holds a volume. Both halves
+matter: a chunk whose first layer is a bare sheet has no block for that cap to be
+the lid of, and letting it claim the horizon anyway hands a translucent sheet the
+cap of the solid block below — the exact failure this rule exists to prevent. (Seen
+for real: a water tier reduced to a bare sea-bed sheet took the lid away from the
+opaque detail block under it, and the block's inner walls showed through.)
 
 `resolveSeam` orders the claimants **lid owner first, then by area descending, then
 by key**, and each one draws its footprint minus everything already taken.
@@ -1500,7 +1581,7 @@ four cases:
   reachable because the lid owner can be the NARROWER chunk; under the old area
   order the earlier claimant was always the larger.
 
-A horizon that is nobody's top layer has no lid owner, which leaves the area order:
+A horizon that is nobody's lid has no owner, which leaves the area order:
 the widest draws it and the others cut around it. Two identical outlines read as
 containment, so ties stay deterministic and the answer is independent of mount
 order.
@@ -1595,7 +1676,8 @@ A `ChunkStack` may declare one flat floor for the whole column:
 ```tsx
 <ChunkStack outline={field} surfaces={column} carrier={{ below: 800 }}>
   ...
-  <Chunk layers={[{ surface: basement, fill: '#4a4a4a' }, { carrier: true }]} />
+  {/* the fill on the LAST layer is what asks for the floor */}
+  <Chunk layers={[{ surface: basement, fill: '#4a4a4a' }]} />
 </ChunkStack>
 ```
 
@@ -1605,13 +1687,39 @@ would drag the floor with it). It is complete over the whole grid and constant i
 Y, which is what makes it a guarantee rather than another surface: whatever the
 data does, the block has a floor.
 
+#### 10.9.0 Which chunk draws it is INFERRED
+
+A `fill` on a chunk's **last** layer says the block is open at the bottom — there
+is no next boundary in that chunk for the volume to end on — and the only thing
+that can close it is the column's floor. So the carrier layer is appended by
+`buildSurfaceChunkSpec` rather than declared; there is no `{ carrier: true }`.
+
+⭐ Nothing was taken away by this: a fill on the last layer used to be silently
+ignored, so the flag had no meaning to steal, and with no carrier on the stack it
+is ignored still.
+
+⭐⭐ Several chunks may close their blocks, and the floor is ONE plane, so it
+claims the seam registry under a synthetic id (`CARRIER_SEAM_ID`) exactly as a
+shared horizon does (§10.8.1). No new rule was needed: a floor is nobody's TOP
+layer, so the lid-owner tier does not apply and the ranking falls through to AREA
+order — the widest draws it, the others are contained or cut around it. Which is
+the right answer for a floor, and not by luck: a cap belongs to the block under
+it, and a floor has none.
+
 #### 10.9.1 It is a terminator, not a unit
 
 There is no interval *below* a carrier, so it has a cap and no `fill`, and it is
 the only side of the block seen from underneath — which is why its cap defaults to
-the fill of the unit ABOVE it, exactly as a void's ceiling does. Giving the layer a
-`material` of its own overrides that, for a floor that should read as its own
-thing.
+the fill of the unit ABOVE it, exactly as a void's ceiling does. `carrier.material`
+overrides that, for a floor that should read as its own thing.
+
+⚠️ The material lives on the STACK's carrier because the layer is inferred and has
+nowhere else to carry one. It is published to `ChunkMeshes` separately from the
+carrier itself: the carrier's identity is keyed on WHERE the plane is, so that
+recolouring the floor cannot rebuild geometry, which also makes that copy
+deliberately stale for appearance. It is stripped before the spec crosses into the
+worker — a `Material` cannot be structured-cloned, and appearance in a build spec
+is what makes recolouring expensive in the first place.
 
 ⭐ It is emphatically **not** a layer with an infinite unit beneath it. A sentinel
 thickness would flow into the duplicate fractions, the overlap statistics and the

@@ -24,7 +24,6 @@ import {
   splitVoidChannels,
   STACK_MASK_DATA,
   stackCarrierLevel,
-  StackFluid,
   StackLayer,
   StackPairStats,
   StackSyntheticLayer,
@@ -45,8 +44,8 @@ export type LoadedStackLayer = {
   capCuts?: number[];
   /** this layer is the column's carrier — the floor the block terminates against */
   carrier?: boolean;
-  /** this layer is a fluid: exempt from the depth order, lid tessellated its own way */
-  fluid?: StackFluid;
+  /** this layer is a fluid: a level rather than a horizon, never the authority */
+  fluid?: boolean;
   /** surface id, or `null` for a synthetic layer */
   id: string | null;
 };
@@ -269,7 +268,7 @@ export async function buildSpecStack(
           fill: !!f.fill,
           cap: f.cap !== false,
           capCuts: f.capCuts,
-          fluid: f.fluid ? {} : undefined,
+          fluid: f.fluid,
           layer: { depth: f.depth, offset: f.offset, relief: f.relief },
         });
         return;
@@ -282,7 +281,7 @@ export async function buildSpecStack(
         fill: !!f.fill,
         cap: f.cap !== false,
         capCuts: f.capCuts,
-        fluid: f.fluid ? {} : undefined,
+        fluid: f.fluid,
         layer: context.layers[at],
       });
     });
@@ -414,10 +413,10 @@ export async function buildSpecStack(
         : (loaded[source[k]].capCuts ?? null),
     );
     const carrierLayer = source.findIndex(i => loaded[i].carrier);
-    // A fluid is not part of the depth order the COLUMN resolved either, so its
+    // A fluid takes no part in the depth order the COLUMN resolved either, so its
     // masks cannot stand in for a pass that knows about one.
     const fluidLayers = source.some(i => loaded[i].fluid)
-      ? source.map(i => loaded[i].fluid ?? null)
+      ? source.map(i => !!loaded[i].fluid)
       : undefined;
     // ⭐ A ceiling holds no volume: that is what makes the void below it a void,
     // and what makes the carrier a terminator rather than a unit.
@@ -560,7 +559,7 @@ export async function buildSpecStack(
         fill: !!f.fill,
         cap: f.cap !== false,
         capCuts: f.capCuts,
-        fluid: f.fluid ? {} : undefined,
+        fluid: f.fluid,
         layer: { depth: f.depth, offset: f.offset, relief: f.relief },
       });
       return;
@@ -573,7 +572,7 @@ export async function buildSpecStack(
       fill: !!f.fill,
       cap: f.cap !== false,
       capCuts: f.capCuts,
-      fluid: f.fluid ? {} : undefined,
+      fluid: f.fluid,
       layer: {
         values,
         header: f.header,
@@ -708,7 +707,7 @@ export async function buildSpecStack(
       carrier: carrierLayer >= 0 ? carrierLayer : undefined,
       ceiling: ceilings,
       fluid: source.some(i => loaded[i].fluid)
-        ? source.map(i => loaded[i].fluid ?? null)
+        ? source.map(i => !!loaded[i].fluid)
         : undefined,
       inferred: split?.inferred ?? sealed?.inferred,
     },

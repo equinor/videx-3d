@@ -1,23 +1,38 @@
 import { useFrame } from '@react-three/fiber';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import {
+  OceanContactRegistry,
+  OceanContactSource,
+} from '../Ocean/ocean-contact';
 import {
   applyOceanBodyProps,
   applyOceanWaterProps,
 } from '../Ocean/ocean-material-sync';
-import { OceanMaterial } from '../Ocean/ocean-material';
+import { OceanContact, OceanMaterial } from '../Ocean/ocean-material';
+import { createOceanSampler, OceanSampler } from '../Ocean/ocean-sampler';
 import { OceanVolumeMaterial } from '../Ocean/ocean-volume-material';
 import { StackWater } from './chunk-defs';
 
-/** The pair of materials a {@link ChunkStackProps.water} sea is drawn with. */
+/** What a {@link ChunkStackProps.water} sea is drawn and sampled with. */
 export type StackWaterMaterials = {
   /** the animated sea surface, for the lid */
   surface: OceanMaterial;
   /** the water body, for the walls at the rim and the shoreline */
   volume: OceanVolumeMaterial;
+  /**
+   * The wave field, for floating objects. Heights come back ABSOLUTE in the
+   * stack's frame (sea level included), so a floater needs no sea-level parent
+   * group of its own.
+   */
+  sampler: OceanSampler;
+  /** where floating children register their contact-foam footprints */
+  contacts: OceanContactRegistry;
 };
 
 /**
- * Create, drive and dispose the ocean materials for a `ChunkStack`'s sea.
+ * Create, drive and dispose the ocean materials for a `ChunkStack`'s sea, and
+ * with them the two things its floating children need: the wave sampler and the
+ * contact-foam registry.
  *
  * ⚠️ The materials are created ONCE and then have their UNIFORMS updated — unlike
  * the rest of a chunk's appearance, which is rebuilt on every change so the OIT
@@ -31,6 +46,21 @@ export function useStackWater(
   wireframe = false,
 ): StackWaterMaterials | null {
   const enabled = !!water;
+  const level = -(water?.depth ?? 0);
+
+  const contactSources = useRef<Set<OceanContactSource>>(new Set());
+  const contactScratch = useRef<OceanContact[]>([]);
+  const contacts = useMemo<OceanContactRegistry>(
+    () => ({
+      register(source) {
+        contactSources.current.add(source);
+        return () => {
+          contactSources.current.delete(source);
+        };
+      },
+    }),
+    [],
+  );
 
   const materials = useMemo(() => {
     if (!enabled) return null;
@@ -69,7 +99,33 @@ export function useStackWater(
     if (!materials) return;
     materials.surface.time += delta;
     materials.volume.time += delta;
+
+    // Collect the registered floating-object footprints and upload them as
+    // contact foam. Skipped entirely when nothing is registered, so a sea with no
+    // floating children costs nothing per frame.
+    const sources = contactSources.current;
+    if (sources.size > 0) {
+      const scratch = contactScratch.current;
+      scratch.length = 0;
+      for (const source of sources) {
+        const contact = source();
+        if (contact) scratch.push(contact);
+      }
+      materials.surface.setContacts(scratch);
+    } else if ((materials.surface.uniforms.uContactCount.value as number) > 0) {
+      materials.surface.clearContacts();
+    }
   });
 
-  return materials;
+  return useMemo(
+    () =>
+      materials
+        ? {
+            ...materials,
+            sampler: createOceanSampler(materials.surface, level),
+            contacts,
+          }
+        : null,
+    [materials, level, contacts],
+  );
 }

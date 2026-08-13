@@ -439,15 +439,16 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
           cutSource={cutSource}
           surfaces={column}
           maxError={props.maxError}
+          resolve={resolve}
           onProgress={onProgress}
         >
           {chunkProps.map((layers, i) => (
             <Chunk
               key={i}
               // The uppermost surface of the whole stack may use the real
-              // SurfaceMaterial — now just a material on that layer. Water is a
-              // synthetic FLUID layer sitting above it: no ocean component, and
-              // no truncation of the ground it stands over.
+              // SurfaceMaterial — now just a material on that layer. The water is a
+              // plain-coloured FLUID layer sitting above it, NOT the sea: it draws
+              // with ordinary chunk materials and nothing is truncated by it.
               layers={
                 i === 0
                   ? [
@@ -487,7 +488,6 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
               wallOpacity={props.wallOpacity}
               wireframe={props.wireframe}
               inferredStyle={props.inferredStyle}
-              resolve={resolve}
               onBuild={m => report(i, m)}
             />
           ))}
@@ -685,13 +685,13 @@ export const Default: Story = {
     showWater: {
       control: 'boolean',
       description:
-        'Add a water layer above the first chunk — a synthetic layer with a `level` instead of a surface, marked as `water`, which brings the animated ocean surface and body materials with it and tints the bed below it.',
+        'Add a plain-coloured water plane above the first chunk — a synthetic layer with a `depth` instead of a surface, marked `fluid`. ⚠️ NOT the sea: open water is declared once on the `ChunkStack` (`water`), which brings the animated ocean shaders with it. See `Spikes/Chunks/SyntheticColumn` for that.',
       table: { category: 'Water' },
     },
     waterDepth: {
       control: { type: 'range', min: 0, max: 3000, step: 10 },
       description:
-        'Metres below sea level for the water plane (POSITIVE-DOWN, same convention as surfaces). ⭐ A water layer is a FLUID, so it takes no part in the depth order: push it past the surface below and that surface is NOT flattened onto it — the ground simply goes under. See chunks.md §6.1.',
+        'Metres below sea level for the water plane (POSITIVE-DOWN, same convention as surfaces). ⭐ A FLUID is never the AUTHORITY for what lies below it, so pushing it past the surface underneath does not flatten that surface onto it — the ground simply goes under. Being the chunk’s first layer, nothing clamps it either. See chunks.md §6.1.',
       table: { category: 'Water' },
     },
     seabed: {

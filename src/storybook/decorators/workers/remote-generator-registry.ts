@@ -1,6 +1,9 @@
 import { expose } from 'comlink';
 
-import { surfaceChunk } from '../../../components/Chunks/chunk-defs';
+import {
+  stackWater,
+  surfaceChunk,
+} from '../../../components/Chunks/chunk-defs';
 import {
   surfaceGeometry,
   surfaceTextures,
@@ -34,6 +37,7 @@ import {
   generatePerimeterGeometry,
   generatePositionMarkers,
   generateShoes,
+  generateStackWater,
   generateSurfaceChunk,
   generateSurfaceGeometry,
   generateSurfaceTexturesData,
@@ -63,6 +67,7 @@ registry.add(wellboreLabel, generateWellboreLabel);
 registry.add(surfaceGeometry, generateSurfaceGeometry);
 registry.add(surfaceTextures, generateSurfaceTexturesData);
 registry.add(surfaceChunk, generateSurfaceChunk);
+registry.add(stackWater, generateStackWater);
 registry.add(perforationSymbols, generatePerforations);
 registry.add(positionMarkers, generatePositionMarkers);
 registry.add(

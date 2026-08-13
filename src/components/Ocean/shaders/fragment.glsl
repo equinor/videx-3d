@@ -60,11 +60,12 @@ uniform vec3 uFoamColor;
 uniform float uFoamAmount;
 
 // Contact foam from floating objects (e.g. a vessel hull). Each active contact
-// is an oriented ellipse footprint: uContactA = vec4(centerX, centerZ,
-// cosHeading, sinHeading), uContactB = vec4(halfLength, halfWidth, foamWidth,
-// intensity), uContactC = vec4(endFalloff, unused...). uContactCount active
-// entries; 0 = no objects, so the loop exits immediately (no cost when nothing
-// floats on the ocean).
+// is an oriented ellipse footprint: uContactA = vec4(centerX, centerZ, forwardX,
+// forwardZ) with forward the UNIT DIRECTION the object points in (not the sine
+// and cosine of its heading — see OceanMaterial.setContacts), uContactB =
+// vec4(halfLength, halfWidth, foamWidth, intensity), uContactC =
+// vec4(endFalloff, unused...). uContactCount active entries; 0 = no objects, so
+// the loop exits immediately (no cost when nothing floats on the ocean).
 uniform int uContactCount;
 uniform vec4 uContactA[OCEAN_CONTACT_COUNT];
 uniform vec4 uContactB[OCEAN_CONTACT_COUNT];

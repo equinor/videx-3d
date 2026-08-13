@@ -1,5 +1,6 @@
 import { Material } from 'three';
 import {
+  PackedBufferGeometry,
   PackedSurfaceChunk,
   PlanarPolygonCoordinates,
   SealMode,
@@ -14,6 +15,57 @@ import { ChunkDetail } from './chunk-detail';
 
 /** Generator key for the {@link Chunk} geometry generator. */
 export const surfaceChunk = 'surfaceChunk';
+
+/** Generator key for the `ChunkStack` sea geometry generator. */
+export const stackWater = 'stackWater';
+
+/**
+ * The id the column's floor claims in the seam registry.
+ *
+ * ⭐ The floor is ONE plane, so two chunks whose footprints overlap must not both
+ * draw it — the same problem as a shared horizon, and answered the same way. It is
+ * nobody's top layer, so `resolveSeam` falls back to area order: the widest draws
+ * it and the others cut around it.
+ *
+ * ⚠️ Not a surface id, and deliberately not shaped like one.
+ */
+export const CARRIER_SEAM_ID = '@carrier';
+
+/**
+ * What the `stackWater` generator needs to build the sea: the footprint it covers,
+ * its level, and the column its BED comes from.
+ */
+export type StackWaterSpec = {
+  /** the stack outline (scene XZ) the sea is drawn over */
+  polygon: {
+    coordinates: PlanarPolygonCoordinates;
+    offset: Vec2;
+  };
+  /** sea level, metres below datum (POSITIVE-DOWN, as surfaces are given) */
+  depth: number;
+  /**
+   * Target triangle edge length for the lid, in world units. Omit (or 0) for the
+   * fewest triangles that fill the outline.
+   */
+  resolution?: number;
+  rimSpacing?: number;
+  maxError?: number;
+  /**
+   * The column the sea's bed comes from — its shallowest surface, taken from the
+   * very channels the chunks are built on, so the water body meets the bed they
+   * draw rather than a second opinion about where it is.
+   */
+  stack: SurfaceChunkStackSpec;
+  resolve?: ChunkResolveOptions;
+};
+
+/** What the `stackWater` generator returns: the sea's lid and the body under it. */
+export type StackWaterResponse = {
+  /** the sea surface over the whole outline */
+  lid: PackedBufferGeometry | null;
+  /** the water body's walls — the outline rim and the shoreline */
+  body: PackedBufferGeometry | null;
+};
 
 /**
  * One layer of a {@link SurfaceChunkSpec} backed by a surface: a reference plus how
@@ -155,20 +207,6 @@ export type ChunkLayer = {
   /** optional procedural perturbation of a synthetic boundary */
   relief?: StackRelief;
   /**
-   * This layer is the column's CARRIER — the flat floor declared once on the
-   * `ChunkStack` (see `ChunkStackProps.carrier`), drawn by whichever chunk closes
-   * the block. `surface`, `depth`, `offset` and `relief` are all ignored: the
-   * plane is the column's, so every chunk that draws it draws the same one.
-   *
-   * ⭐ It is a terminator, not a unit — there is no interval below it, so `fill`
-   * has no meaning here and the cap defaults to the fill of the unit ABOVE it,
-   * which is the only side of it that is ever seen.
-   *
-   * ⚠️ Must be the chunk's LAST layer, and is dropped entirely when the stack
-   * declares no carrier.
-   */
-  carrier?: boolean;
-  /**
    * The cap's material — a colour, or a `Material` (e.g. a `SurfaceMaterial`) the
    * CALLER owns and this component never disposes. Omit for the built-in palette,
    * cycled by layer order.
@@ -180,6 +218,10 @@ export type ChunkLayer = {
    *
    * Omitted / `null` / `false` means NO volume — which is how a gap between zones
    * and a bare surface with no thickness are both expressed.
+   *
+   * ⭐ On the LAST layer it means the block is open at the bottom, and the column's
+   * carrier closes it (see `ChunkStackProps.carrier`) — a volume has to end
+   * somewhere, and the only thing that can say where is the column.
    */
   fill?: string | Material | boolean | null;
   /**
@@ -289,6 +331,24 @@ export type StackWater = OceanWaterProps &
      */
     resolution?: number;
   };
+
+/**
+ * The flat floor a whole column terminates against, as a `ChunkStack` declares it:
+ * a {@link StackCarrier} plus how it is drawn.
+ *
+ * @group Components
+ */
+export type ChunkCarrier = StackCarrier & {
+  /**
+   * The floor's own cap material — a colour, or a `Material` the CALLER owns and
+   * this component never disposes.
+   *
+   * Omit it and the floor is drawn with the fill of the unit resting ON it, which
+   * is the only side of it ever seen; give it one to let the floor read as its own
+   * thing (a datum rather than the underside of the deepest unit).
+   */
+  material?: string | Material;
+};
 
 /**
  * Depth over which a {@link ChunkWaterTint.bedTint} builds up when the water names

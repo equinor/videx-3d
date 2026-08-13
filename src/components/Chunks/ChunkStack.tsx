@@ -7,15 +7,27 @@ import {
   useRef,
   useState,
 } from 'react';
+import { BufferGeometry } from 'three';
 import { useData } from '../../hooks/useData';
+import { useGenerator } from '../../hooks/useGenerator';
 import {
   ChunkSurfaceLayer,
   PlanarPolygonGeometry,
-  StackCarrier,
   SurfaceMeta,
+  unpackBufferGeometry,
 } from '../../sdk';
 import { UtmAreaContext } from '../UtmArea';
-import { ChunkBuildState, ChunkStackProgress } from './chunk-defs';
+import { OceanContactContext } from '../Ocean/ocean-contact';
+import { OceanSamplerContext } from '../Ocean/ocean-sampler';
+import {
+  ChunkBuildState,
+  ChunkCarrier,
+  ChunkResolveOptions,
+  ChunkStackProgress,
+  stackWater,
+  StackWater,
+  StackWaterResponse,
+} from './chunk-defs';
 import {
   ChunkOutlineEntry,
   ChunkOutlineRegistry,
@@ -25,8 +37,10 @@ import {
   ChunkSurfaceClaim,
 } from './ChunkContext';
 import { CutoutSource } from './cutout';
+import { buildStackWaterSpec } from './chunk-spec';
 import { resolveWellboreOutline } from './resolveWellboreOutline';
 import { resolveSeam, SeamDecision } from './seams';
+import { useStackWater } from './useStackWater';
 
 /**
  * {@link ChunkStack} props.
@@ -65,7 +79,8 @@ export type ChunkStackProps = {
    * A flat floor closing the whole column, at an absolute `depth` or a margin
    * `below` its deepest mapped sample. Nothing pierces it — a surface that would
    * is truncated at it — so the block is closed from beneath whatever the data
-   * does. A chunk draws it by declaring a `{ carrier: true }` layer.
+   * does. A chunk draws it when its own LAST layer declares a `fill`: that says
+   * the block is open at the bottom, and this is the only thing that can close it.
    *
    * ⭐ It belongs to the COLUMN, not to a chunk: two chunks may otherwise hang
    * different floors under one horizon, and the surface between them then has two
@@ -73,7 +88,34 @@ export type ChunkStackProps = {
    * the seal needs to keep it in proportion rather than pinning it to the one
    * layer above.
    */
-  carrier?: StackCarrier;
+  carrier?: ChunkCarrier;
+  /**
+   * Open water over the whole column: the sea state, its appearance, and how it
+   * tints the bed beneath it. See {@link StackWater}.
+   *
+   * ⭐ Declared HERE rather than on a chunk, for the same reason as `carrier`, and
+   * for one more: a sea covers its whole footprint by design, so two chunks each
+   * drawing part of it would leave two coplanar lids wherever their footprints
+   * overlap. The stack draws it once.
+   *
+   * It also provides the wave sampler and the contact-foam registry to everything
+   * inside it, so a floating child (a vessel, a buoy) heaves with the swell and
+   * spreads foam exactly as it would inside an `<Ocean>`. Needs an `outline` — a
+   * `cutSource` alone gives nothing to draw the sea over.
+   */
+  water?: StackWater;
+  /**
+   * How the column is made monotone before it is built, and what is dropped where
+   * a unit is not present. Chunks inherit this unless they declare their own.
+   *
+   * ⭐ Most of it describes the COLUMN rather than a chunk — `seal`, `sealMode`,
+   * `minThickness`, `maxFill`, `maxNodes`, `mode` and `minGap` all feed the shared
+   * build — so declaring it here is what lets every chunk (and the sea) share one
+   * resolved column instead of building it once per set of options.
+   *
+   * ⚠️ Memoize it: a new identity rebuilds every chunk.
+   */
+  resolve?: ChunkResolveOptions;
   /** default rim densification spacing (world units) for child chunks */
   rimSpacing?: number;
   /** default interior simplification error (grid height units) for child chunks */
@@ -110,6 +152,8 @@ export const ChunkStack = ({
   cutSource,
   surfaces,
   carrier,
+  water,
+  resolve,
   rimSpacing,
   maxError,
   onProgress,
@@ -120,12 +164,27 @@ export const ChunkStack = ({
 
   // `carrier={{ below: 800 }}` is the natural way to write this and makes a new
   // object every render, which would rebuild every chunk that draws it.
+  // ⚠️ Keyed on WHERE the plane is and not on how it looks: the material is
+  // published separately, so recolouring the floor cannot rebuild geometry.
   const carrierKey = carrier
     ? `${carrier.depth ?? ''}/${carrier.below ?? ''}`
     : '';
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
   const stableCarrier = useMemo(() => carrier, [carrierKey]);
 
+  // Same again for the sea, which every chunk's MATERIALS depend on (the bed
+  // tint) — a fresh object each render would rebuild all of them.
+  const waterKey = water ? JSON.stringify(water) : '';
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
+  const stableWater = useMemo(() => water, [waterKey]);
+
+  // And again for the build options, which decide the identity of the CACHED
+  // column: everything cut from it has to ask for it with the same ones.
+  const resolveKey = resolve ? JSON.stringify(resolve) : '';
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
+  const stableResolve = useMemo(() => resolve, [resolveKey]);
+
+  const sea = useStackWater(stableWater);
   // --- Envelope: the footprint the shared column grid is built over. It must
   //     contain every chunk's outline, so a wellbore cut source is resolved over
   //     the FULL depth window — more trajectory points can only grow the outline,
@@ -331,6 +390,11 @@ export const ChunkStack = ({
       surfaces,
       column,
       carrier: stableCarrier,
+      // Read off the LIVE prop, not the geometry-keyed copy, which is deliberately
+      // stale whenever only the appearance changed.
+      carrierMaterial: carrier?.material,
+      water: stableWater ?? null,
+      resolve: stableResolve,
       envelope,
       rimSpacing,
       maxError,
@@ -346,6 +410,9 @@ export const ChunkStack = ({
     surfaces,
     column,
     stableCarrier,
+    carrier?.material,
+    stableWater,
+    stableResolve,
     wellboreEnvelope,
     rimSpacing,
     maxError,
@@ -356,9 +423,82 @@ export const ChunkStack = ({
     reportBuildState,
   ]);
 
+  // --- The sea (rendered here, not by a chunk): a lid covers its whole footprint
+  //     by design, so two chunks each drawing part of it would leave two coplanar
+  //     lids wherever their footprints overlap. -------------------------------
+  const waterGenerator = useGenerator<StackWaterResponse>(stackWater);
+
+  const waterSpec = useMemo(() => {
+    // Needs a footprint to be drawn over, and a column to end against.
+    if (!stableWater || !outline || !utm) return null;
+    if (!column || column.length === 0) return null;
+    const envelope = value.envelope;
+    if (!envelope) return null;
+    return buildStackWaterSpec(stableWater, utm.utmToArea, outline, {
+      surfaces: column,
+      envelope,
+      carrier: stableCarrier,
+      rimSpacing,
+      maxError,
+      resolve: stableResolve,
+    });
+  }, [
+    stableWater,
+    outline,
+    utm,
+    column,
+    value.envelope,
+    stableCarrier,
+    rimSpacing,
+    maxError,
+    stableResolve,
+  ]);
+
+  const [seaGeometry, setSeaGeometry] = useState<{
+    lid: BufferGeometry | null;
+    body: BufferGeometry | null;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!waterSpec) return;
+    let cancelled = false;
+    (async () => {
+      const response = await waterGenerator(waterSpec);
+      if (cancelled) return;
+      setSeaGeometry(
+        response
+          ? {
+              lid: response.lid ? unpackBufferGeometry(response.lid) : null,
+              body: response.body ? unpackBufferGeometry(response.body) : null,
+            }
+          : null,
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [waterGenerator, waterSpec]);
+
+  useEffect(() => {
+    return () => {
+      seaGeometry?.lid?.dispose();
+      seaGeometry?.body?.dispose();
+    };
+  }, [seaGeometry]);
+
   return (
     <ChunkStackContext.Provider value={value}>
-      {children}
+      <OceanSamplerContext.Provider value={sea?.sampler ?? null}>
+        <OceanContactContext.Provider value={sea?.contacts ?? null}>
+          {sea && seaGeometry?.lid && (
+            <mesh geometry={seaGeometry.lid} material={sea.surface} />
+          )}
+          {sea && seaGeometry?.body && (
+            <mesh geometry={seaGeometry.body} material={sea.volume} />
+          )}
+          {children}
+        </OceanContactContext.Provider>
+      </OceanSamplerContext.Provider>
     </ChunkStackContext.Provider>
   );
 };
