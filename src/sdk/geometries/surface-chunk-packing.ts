@@ -68,6 +68,11 @@ export function packSurfaceChunk(
     metrics: chunk.metrics,
   };
 
+  // Carried by SPREAD above; only the transfer needs saying.
+  for (const s of chunk.surfaces) {
+    if (s.peelIndex) transferables.push(s.peelIndex.buffer);
+  }
+
   // The section shares buffers with the geometries above — the shared triangle
   // index, and any layer's `inferred` attribute — so the caller's transfer list has
   // to be deduped either way (a repeated buffer is a DataCloneError).

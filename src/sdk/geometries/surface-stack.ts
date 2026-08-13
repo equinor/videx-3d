@@ -444,12 +444,33 @@ export type StackCollapseOptions = {
    * exactly as a unit does.
    */
   unbounded?: boolean[];
+  /**
+   * Also emit {@link StackCollapseResult.peelIndices} — each layer's cap as it
+   * would be if nothing ABOVE it were drawn.
+   *
+   * ⭐ Two of the four drop reasons reference the layer above: a weld onto it, and
+   * a truncation by it. Both exist only because that layer covers the fragment
+   * (see the `topCover` argument), so both become invalid the moment it is hidden
+   * — by a peel, or by a section that cuts it while this cap stays whole. Coverage,
+   * seam exclusion and the floor/ceiling collapses reference no layer above and
+   * are kept.
+   *
+   * OFF by default: it materialises a second index array for every layer that has
+   * such drops.
+   */
+  peelable?: boolean;
 };
 
 /** The result of {@link collapseStackTriangles}. */
 export type StackCollapseResult = {
   /** per layer: a reduced index array, or `null` when nothing was dropped */
   indices: (Uint32Array | null)[];
+  /**
+   * Per layer, when {@link StackCollapseOptions.peelable} asked for it: the cap
+   * as it would be if nothing ABOVE this layer were drawn — `null` where that is
+   * the same set as `indices`, which is the common case.
+   */
+  peelIndices?: (Uint32Array | null)[];
   /** per layer: triangles dropped, in total */
   dropped: number[];
   /** per layer: dropped because the unit is not present (no data / truncated) */
@@ -1673,6 +1694,7 @@ export function collapseStackTriangles(
 ): StackCollapseResult {
   const threshold = options.threshold ?? 0.5;
   const out: (Uint32Array | null)[] = [];
+  const peelOut: (Uint32Array | null)[] = [];
   const dropped: number[] = [];
   const droppedAbsent: number[] = [];
   const droppedCollapsed: number[] = [];
@@ -1710,6 +1732,7 @@ export function collapseStackTriangles(
       isUnbounded || (!coverage && !cut && !above && !below && !floor);
     if (nothingToDrop && !excluded) {
       out.push(null);
+      peelOut.push(null);
       dropped.push(0);
       droppedAbsent.push(0);
       droppedCollapsed.push(0);
@@ -1718,9 +1741,17 @@ export function collapseStackTriangles(
     }
 
     const missing = makeAbsentTriangleTest(options, layer);
+    // The same test WITHOUT the truncation mask: a truncation is a clamp onto a
+    // shallower layer, so it says nothing about whether the surface exists — only
+    // that something above is covering it.
+    const uncovered = options.peelable
+      ? makeAbsentTriangleTest({ ...options, absent: undefined }, layer)
+      : null;
 
     const kept = new Uint32Array(indices.length);
+    const peelKept = uncovered ? new Uint32Array(indices.length) : null;
     let n = 0;
+    let peelN = 0;
     let absentDrops = 0;
     let collapsedDrops = 0;
     let excludedDrops = 0;
@@ -1728,11 +1759,33 @@ export function collapseStackTriangles(
       const a = indices[i];
       const b = indices[i + 1];
       const c = indices[i + 2];
-      if (excluded && excluded[i / 3] === 1) {
+      const t = i / 3;
+      if (excluded && excluded[t] === 1) {
         excludedDrops++;
         continue;
       }
-      if (missing(i / 3, a, b, c)) {
+      // Neither of these references a layer above, so they hold for the peel set
+      // too: a void's ceiling yields to the horizon below it, and everything
+      // flattened onto the floor is the floor.
+      const belowDrop = !!(
+        below &&
+        current[a] - below[a] <= threshold &&
+        current[b] - below[b] <= threshold &&
+        current[c] - below[c] <= threshold
+      );
+      const floorDrop = !!(
+        floor &&
+        current[a] - floor[a] <= threshold &&
+        current[b] - floor[b] <= threshold &&
+        current[c] - floor[c] <= threshold
+      );
+      if (peelKept && !belowDrop && !floorDrop && !uncovered!(t, a, b, c)) {
+        peelKept[peelN++] = a;
+        peelKept[peelN++] = b;
+        peelKept[peelN++] = c;
+      }
+
+      if (missing(t, a, b, c)) {
         absentDrops++;
         continue;
       }
@@ -1745,23 +1798,7 @@ export function collapseStackTriangles(
         collapsedDrops++;
         continue;
       }
-      // A ceiling that has closed onto the horizon below it is a duplicate of it,
-      // and the horizon is the one worth keeping.
-      if (
-        below &&
-        current[a] - below[a] <= threshold &&
-        current[b] - below[b] <= threshold &&
-        current[c] - below[c] <= threshold
-      ) {
-        collapsedDrops++;
-        continue;
-      }
-      if (
-        floor &&
-        current[a] - floor[a] <= threshold &&
-        current[b] - floor[b] <= threshold &&
-        current[c] - floor[c] <= threshold
-      ) {
+      if (belowDrop || floorDrop) {
         collapsedDrops++;
         continue;
       }
@@ -1771,6 +1808,8 @@ export function collapseStackTriangles(
     }
     const drops = absentDrops + collapsedDrops + excludedDrops;
     out.push(drops > 0 ? kept.slice(0, n) : null);
+    // Only worth carrying when it actually restores something.
+    peelOut.push(peelKept && peelN > n ? peelKept.slice(0, peelN) : null);
     dropped.push(drops);
     droppedAbsent.push(absentDrops);
     droppedCollapsed.push(collapsedDrops);
@@ -1779,6 +1818,7 @@ export function collapseStackTriangles(
 
   return {
     indices: out,
+    peelIndices: options.peelable ? peelOut : undefined,
     dropped,
     droppedAbsent,
     droppedCollapsed,

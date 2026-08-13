@@ -230,6 +230,16 @@ export const ChunkStack = ({
     () => ({ value: new Vector4(0, 0, 0, -1) }),
     [],
   );
+  // ⭐ The exact COMPLEMENT of the above, for geometry that must appear only where
+  // the section took something away — the fragments a cap's collapse dropped
+  // because a layer above covered them. Negating the plane makes the patch and the
+  // covering layer mutually exclusive by construction, with no tolerance to tune;
+  // and negating the DISABLED value (0,0,0,-1) yields (0,0,0,1), which draws
+  // nothing, which is exactly right when nothing has been cut away.
+  const sectionUniformInverse = useMemo(
+    () => ({ value: new Vector4(0, 0, 0, 1) }),
+    [],
+  );
   // The frame the section is expressed in — needed to bring a camera-locked plane
   // out of world space, which is the one case where the two differ.
   const sectionRoot = useRef<Group>(null);
@@ -258,6 +268,7 @@ export const ChunkStack = ({
   useFrame(({ camera }) => {
     if (!section || !sectionState) {
       sectionUniform.value.set(0, 0, 0, -1);
+      sectionUniformInverse.value.set(0, 0, 0, 1);
       return;
     }
     sectionState.enabled = section.enabled !== false;
@@ -301,6 +312,7 @@ export const ChunkStack = ({
     if (sectionState.enabled)
       sectionUniform.value.set(normal.x, normal.y, normal.z, constant);
     else sectionUniform.value.set(0, 0, 0, -1);
+    sectionUniformInverse.value.copy(sectionUniform.value).negate();
   });
 
   // --- Envelope: the footprint the shared column grid is built over. It must
@@ -592,6 +604,7 @@ export const ChunkStack = ({
       water: stableWater ?? null,
       section: sectionState,
       sectionUniform,
+      sectionUniformInverse,
       sectionCarrier: section?.carrier !== false,
       resolve: stableResolve,
       envelope,
@@ -615,6 +628,7 @@ export const ChunkStack = ({
     stableWater,
     sectionState,
     sectionUniform,
+    sectionUniformInverse,
     section?.carrier,
     stableResolve,
     wellboreEnvelope,

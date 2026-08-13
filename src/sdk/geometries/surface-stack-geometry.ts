@@ -43,6 +43,12 @@ export type StackGeometryLayer = {
   geometry: BufferGeometry | null;
   /** the layer's depth at the shared rim vertices (`rimY[ring][vertex]`) */
   rimY: number[][];
+  /**
+   * The cap's index as it would be if nothing ABOVE this layer were drawn (see
+   * {@link StackCollapseOptions.peelable}). Shares the geometry's attributes, so
+   * it is an index and nothing more.
+   */
+  peelIndex?: Uint32Array | null;
 };
 
 /**
@@ -85,12 +91,14 @@ export function buildStackGeometries(
   caps?: boolean[],
   inferred?: Float32Array[],
   coverage?: Uint8Array[],
+  peelIndices?: (Uint32Array | null)[],
 ): StackGeometryLayer[] {
   const positionsXZ = stackVertexPositions(reference, tessellation.coords);
   const shared = new BufferAttribute(tessellation.indices, 1);
 
   return heights.map((y, i) => {
     const rimY = stackRimHeights(y, tessellation.rimVertices);
+    const peelIndex = peelIndices?.[i] ?? null;
     // A layer can take part WITHOUT being drawn — when the chunk above or below
     // already draws that surface. Its rim still matters (the walls hang from it),
     // but building positions, UVs and normals for a mesh nobody renders would be
@@ -124,9 +132,29 @@ export function buildStackGeometries(
       for (let v = 0; v < covered.length; v++) nodata[v] = covered[v] ? 0 : 1;
       geometry.setAttribute('nodata', new BufferAttribute(nodata, 1));
     }
-    geometry.setIndex(own ? new BufferAttribute(own, 1) : shared);
+    // ⚠️⚠️ Normals are accumulated over the WIDEST index available, not the cap's
+    // own: `computeVertexNormals` only touches vertices its index references, so a
+    // vertex used ONLY by triangles the collapse dropped keeps a zero normal — and
+    // shades BLACK the moment the patch restores it (see `peelIndex`). The cap's
+    // shading is unchanged except for a smoother normal along that boundary, which
+    // is where the two meet.
+    const widest = peelIndex ?? own;
+    geometry.setIndex(widest ? new BufferAttribute(widest, 1) : shared);
+    const wound = widest ? widest[1] : tessellation.indices[1];
     computeUpwardNormals(geometry);
-    return { geometry, rimY };
+    if (peelIndex) {
+      // ⚠️ `computeUpwardNormals` reverses the winding IN PLACE when the normals
+      // come out facing down, and it only holds one of the two arrays.
+      if (own && peelIndex[1] !== wound) {
+        for (let t = 0; t + 2 < own.length; t += 3) {
+          const swap = own[t + 1];
+          own[t + 1] = own[t + 2];
+          own[t + 2] = swap;
+        }
+      }
+      geometry.setIndex(own ? new BufferAttribute(own, 1) : shared);
+    }
+    return { geometry, rimY, peelIndex };
   });
 }
 
@@ -464,6 +492,12 @@ export type SurfaceStackOptions = {
    * unfilled gap has nothing to draw.
    */
   section?: boolean;
+  /**
+   * Also emit each layer's cap as it would be if nothing ABOVE it were drawn (see
+   * {@link StackCollapseOptions.peelable}) — what a peel or a section needs in
+   * order not to open a hole where the collapse relied on a covering layer.
+   */
+  peelable?: boolean;
 };
 
 /**
@@ -750,6 +784,7 @@ export function buildSurfaceStack(
           capExcluded: excludes,
           carrier: options.carrier,
           unbounded,
+          peelable: options.peelable,
         })
       : null;
   const tCollapse = performance.now();
@@ -766,6 +801,7 @@ export function buildSurfaceStack(
       : options.caps,
     inferred,
     coverage,
+    collapsed?.peelIndices,
   );
   const positionsXZ = stackVertexPositions(reference, tessellation.coords);
   const rings = stackRimRings(positionsXZ, tessellation.rimVertices);

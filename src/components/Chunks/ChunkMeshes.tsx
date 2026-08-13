@@ -1,5 +1,11 @@
 import { useEffect, useMemo } from 'react';
-import { IUniform, Material, Vector4 } from 'three';
+import {
+  BufferAttribute,
+  BufferGeometry,
+  IUniform,
+  Material,
+  Vector4,
+} from 'three';
 import { SurfaceChunk } from '../../sdk';
 import {
   DEFAULT_OCEAN_DEEP_COLOR,
@@ -75,11 +81,31 @@ export type ChunkMeshesProps = {
    */
   sectionUniform?: IUniform<Vector4>;
   /**
+   * The negated plane (see `ChunkStackContextValue.sectionUniformInverse`), which
+   * is what lets a cap's dropped fragments be restored only in the half the layer
+   * that covered them was cut away from.
+   */
+  sectionUniformInverse?: IUniform<Vector4>;
+  /**
    * Cut the column's floor with the rest of the block (see
    * `ChunkSection.carrier`). Default true; false leaves the block standing on an
    * intact base plate.
    */
   sectionCarrier?: boolean;
+  /**
+   * Hide the first `peel` UNITS of the chunk, exposing what is under them.
+   *
+   * ⭐ Exact and free, unlike lowering the opacity: alpha compounds, so a deep
+   * stack at 0.5 is effectively opaque and a transparency slider cannot answer
+   * "what is underneath". The layer array IS the depth order, so simply not
+   * drawing a PREFIX of it is exact — which is also why this is a count rather
+   * than a per-layer flag: an arbitrary set can open the block, a prefix cannot.
+   *
+   * ⚠️ It removes each unit's cap AND its volume, but keeps the cap of the first
+   * surviving unit, which is that unit's own top — so the block stays closed by
+   * construction and the floor was never yours to drop.
+   */
+  peel?: number;
 };
 
 /**
@@ -112,7 +138,9 @@ export const ChunkMeshes = ({
   carrierMaterial,
   section = null,
   sectionUniform,
+  sectionUniformInverse,
   sectionCarrier = true,
+  peel = 0,
 }: ChunkMeshesProps) => {
   const materials = useMemo(() => {
     // Materials built here are owned here; a caller's Material is passed through
@@ -124,7 +152,7 @@ export const ChunkMeshes = ({
       detail?: ChunkDetail,
       wall = false,
       waterTint?: ChunkWaterTintParameters,
-      options?: { section?: boolean },
+      options?: { section?: boolean; uniform?: IUniform<Vector4> },
     ) => {
       const material = new ChunkMaterial({
         color,
@@ -135,7 +163,9 @@ export const ChunkMeshes = ({
         detail,
         wall,
         waterTint,
-        sectionPlane: options?.section === false ? undefined : sectionUniform,
+        sectionPlane:
+          options?.uniform ??
+          (options?.section === false ? undefined : sectionUniform),
       });
       owned.push(material);
       return material;
@@ -143,6 +173,15 @@ export const ChunkMeshes = ({
 
     const paletteAt = (i: number) =>
       DEFAULT_PALETTE[i % DEFAULT_PALETTE.length];
+
+    // ⭐ A unit is bounded by TWO caps, so keeping one whole has to keep the cap
+    // that FLOORS it as well — a lid over open space is the hollow shell the
+    // section exists to avoid. Hence the `i - 1` term: a cap survives the cut when
+    // the unit above it or the unit below it does. Keeping adjacent units shares
+    // the cap between them, once.
+    const keptUnit = (i: number) => layers[i]?.section === false;
+    const cutWall = (i: number) => !keptUnit(i);
+    const cutCap = (i: number) => !keptUnit(i) && !keptUnit(i - 1);
 
     // The sea tints the SHALLOWEST cap toward the water colour, as if seen through
     // the water column — the body itself only stands at the rim and the shoreline,
@@ -169,6 +208,7 @@ export const ChunkMeshes = ({
             layer.detail,
             false,
             i === 0 ? waterTint : undefined,
+            { section: cutCap(i) },
           ),
     );
 
@@ -196,7 +236,16 @@ export const ChunkMeshes = ({
       if (fill === null) return null;
       return fill instanceof Material
         ? fill
-        : make(fill, layer.opacity ?? wallOpacity, layer.detail, true);
+        : make(
+            fill,
+            layer.opacity ?? wallOpacity,
+            layer.detail,
+            true,
+            undefined,
+            {
+              section: cutWall(i),
+            },
+          );
     });
 
     const ceilings = layers.map((layer, i) => {
@@ -205,7 +254,16 @@ export const ChunkMeshes = ({
       if (fill === null) return null;
       return fill instanceof Material
         ? fill
-        : make(fill, layer.opacity ?? wallOpacity, layer.detail);
+        : // A ceiling is the BASE of the interval above it, so it follows that
+          // unit rather than its own layer index.
+          make(
+            fill,
+            layer.opacity ?? wallOpacity,
+            layer.detail,
+            false,
+            undefined,
+            { section: !keptUnit(i) },
+          );
     });
 
     const carrier = !carrierMaterial
@@ -213,10 +271,45 @@ export const ChunkMeshes = ({
       : carrierMaterial instanceof Material
         ? carrierMaterial
         : make(carrierMaterial, surfaceOpacity, undefined, false, undefined, {
-            section: sectionCarrier,
+            // The floor is the base of the deepest unit, so keeping that unit keeps
+            // it — OR'd with the explicit toggle rather than overriding it, so a
+            // caller can still keep the base plate whole on its own.
+            section: sectionCarrier && !keptUnit(layers.length - 1),
           });
 
-    return { surfaces, walls, ceilings, carrier, owned };
+    // ⭐ The fragments a cap gave up because a layer ABOVE covered them, restored
+    // where that cover has gone. Two ways it can go, so two materials: peeled away
+    // entirely (draw everywhere) or cut away by the section (draw only in the half
+    // it vacated, which is what the negated plane gives). A caller's own Material
+    // cannot be given either, so such a layer keeps its holes.
+    const patches = new Map<number, { open: Material; cut: Material | null }>();
+    for (const surface of chunk.surfaces) {
+      if (!surface.peelIndex || surface.ceiling) continue;
+      const declared = layers[surface.layer];
+      if (!declared || declared.material instanceof Material) continue;
+      patches.set(surface.layer, {
+        open: make(
+          declared.material ?? paletteAt(surface.layer),
+          declared.opacity ?? surfaceOpacity,
+          declared.detail,
+          false,
+          surface.layer === 0 ? waterTint : undefined,
+          { section: false },
+        ),
+        cut: sectionUniformInverse
+          ? make(
+              declared.material ?? paletteAt(surface.layer),
+              declared.opacity ?? surfaceOpacity,
+              declared.detail,
+              false,
+              surface.layer === 0 ? waterTint : undefined,
+              { uniform: sectionUniformInverse },
+            )
+          : null,
+      });
+    }
+
+    return { surfaces, walls, ceilings, carrier, patches, owned };
   }, [
     chunk.surfaces,
     layers,
@@ -226,6 +319,7 @@ export const ChunkMeshes = ({
     water,
     carrierMaterial,
     sectionUniform,
+    sectionUniformInverse,
     sectionCarrier,
   ]);
 
@@ -237,24 +331,34 @@ export const ChunkMeshes = ({
   // it, so it works over a caller-supplied (possibly textured) Material as well as
   // over ours. One per distinct opacity, since a translucent unit should not be
   // marked opaquely. ⚠️ Suppressed in wireframe, where an overlay is only noise.
+  // ⚠️⚠️ Keyed on whether it is CUT as well: the overlay is a second mesh with its
+  // own material, so a kept unit whose marking was still cut would lose its
+  // hatching at the plane while the rock stayed.
   const overlays = useMemo(() => {
-    const built = new Map<number, Material | null>();
-    const at = (opacity: number) => {
+    const built = new Map<string, Material | null>();
+    const at = (opacity: number, cut: boolean) => {
       if (wireframe) return null;
-      if (!built.has(opacity)) {
+      const key = `${opacity}/${cut}`;
+      if (!built.has(key)) {
         built.set(
-          opacity,
+          key,
           createInferenceMaterial(inferredStyle, {
             opacity,
-            sectionPlane: sectionUniform,
+            sectionPlane: cut ? sectionUniform : undefined,
           }),
         );
       }
-      return built.get(opacity) ?? null;
+      return built.get(key) ?? null;
     };
+    const keptUnit = (i: number) => layers[i]?.section === false;
     return {
-      surface: (layer: number) => at(layers[layer]?.opacity ?? surfaceOpacity),
-      wall: (layer: number) => at(layers[layer]?.opacity ?? wallOpacity),
+      surface: (layer: number) =>
+        at(
+          layers[layer]?.opacity ?? surfaceOpacity,
+          !keptUnit(layer) && !keptUnit(layer - 1),
+        ),
+      wall: (layer: number) =>
+        at(layers[layer]?.opacity ?? wallOpacity, !keptUnit(layer)),
       built,
     };
   }, [
@@ -274,11 +378,54 @@ export const ChunkMeshes = ({
   // The cut face of each filled interval, rebuilt every frame from the chunk's own
   // channels. It is drawn with the interval's own fill material, so per-layer
   // opacity, detail and a caller's own `Material` all carry onto the section.
-  const faces = useChunkSection(chunk.section, section);
+  const faces = useChunkSection(chunk.section, section, layers);
+
+  // Shares the cap's attributes and swaps in the alternative index, so the patch
+  // costs one small object rather than a second copy of the surface.
+  // ⚠️ Disposed with the chunk: three releases the shared attribute buffers with
+  // it, which for a surviving sibling degrades to a re-upload — the same trade
+  // `buildStackGeometries` already documents for the shared index.
+  const patchGeometries = useMemo(() => {
+    const built = new Map<number, BufferGeometry>();
+    for (const surface of chunk.surfaces) {
+      if (!surface.peelIndex || surface.ceiling) continue;
+      const geometry = new BufferGeometry();
+      for (const name in surface.geometry.attributes) {
+        geometry.setAttribute(name, surface.geometry.attributes[name]);
+      }
+      geometry.setIndex(new BufferAttribute(surface.peelIndex, 1));
+      built.set(surface.layer, geometry);
+    }
+    return built;
+  }, [chunk.surfaces]);
+
+  useEffect(() => {
+    return () => patchGeometries.forEach(g => g.dispose());
+  }, [patchGeometries]);
+
+  // Peeling drops whole UNITS: a unit's cap and its volume go together, and the
+  // cap of the first survivor stays, because it is that unit's own top rather than
+  // the peeled unit's base.
+  const peeled = Math.max(0, Math.min(peel, layers.length));
+
+  // ⭐ A weld or truncation drop is justified only where the layer above is ACTUALLY
+  // DRAWN, and both a peel and a section can shrink that region. `'open'` = it is
+  // gone everywhere, `'cut'` = gone only in the half the section removed.
+  const patchMode = (layer: number): 'open' | 'cut' | null => {
+    if (!patchGeometries.has(layer)) return null;
+    if (layer === peeled && peeled > 0) return 'open';
+    const kept = (i: number) => layers[i]?.section === false;
+    const capCut = (i: number) => !kept(i) && !kept(i - 1);
+    // This cap survives the section but the one above it does not.
+    if (section?.enabled !== false && !capCut(layer) && capCut(layer - 1))
+      return 'cut';
+    return null;
+  };
 
   return (
     <group>
       {faces?.map(face => {
+        if (face.layer < peeled) return null;
         const material = materials.walls[face.layer];
         if (!material) return null;
         const overlay = face.geometry.hasAttribute('inferred')
@@ -308,6 +455,7 @@ export const ChunkMeshes = ({
 
       {showWalls &&
         chunk.walls.map((wall, i) => {
+          if (wall.layer < peeled) return null;
           const material = materials.walls[wall.layer];
           if (!material) return null;
           const overlay = wall.geometry.hasAttribute('inferred')
@@ -338,6 +486,10 @@ export const ChunkMeshes = ({
 
       {showSurfaces &&
         chunk.surfaces.map((surface, i) => {
+          // A cap belongs to the unit BELOW it, so the first survivor's cap stays
+          // — that is what keeps the block closed. A void ceiling faces up into the
+          // unit above, so it goes with that one instead.
+          if (surface.layer < peeled + (surface.ceiling ? 1 : 0)) return null;
           const declared = layers[surface.layer];
           // The floor is appended past the caller's layers (it is inferred from a
           // fill on the last one), so it is the one cap with nothing declaring it.
@@ -361,6 +513,16 @@ export const ChunkMeshes = ({
           const overlay = surface.geometry.hasAttribute('inferred')
             ? overlays.surface(surface.layer)
             : null;
+          // The fragments this cap gave up to a layer that is no longer covering
+          // them. Same colour and shading as the cap; only the plane differs.
+          const mode = patchMode(surface.layer);
+          const patch = mode ? materials.patches.get(surface.layer) : null;
+          const patchMaterial = !patch
+            ? null
+            : mode === 'open'
+              ? patch.open
+              : patch.cut;
+          const patchGeometry = patchGeometries.get(surface.layer);
           return (
             // oxlint-disable-next-line react/no-array-index-key -- `layer` is NOT unique: a void split gives two meshes the same layer index.
             <group key={`surface-${i}`}>
@@ -377,6 +539,18 @@ export const ChunkMeshes = ({
                   attach="material"
                 />
               </mesh>
+              {patchMaterial && patchGeometry && (
+                <mesh
+                  geometry={patchGeometry}
+                  userData={{ layer: surface.layer, kind: 'surface' }}
+                >
+                  <primitive
+                    key={patchMaterial.uuid}
+                    object={patchMaterial}
+                    attach="material"
+                  />
+                </mesh>
+              )}
               {overlay && (
                 <mesh
                   geometry={surface.geometry}

@@ -246,6 +246,25 @@ export type ChunkLayer = {
    */
   opacity?: number;
   /**
+   * Let the stack's section cut this unit. Default true; `false` keeps it WHOLE
+   * while everything around it is cut away — a slab standing proud of the section,
+   * which is how you single out a reservoir, a seal or the sea bed.
+   *
+   * ⭐ It keeps the whole UNIT, not one surface: this layer's cap, the volume below
+   * it, AND the cap of the layer that floors that volume. The floor is INFERRED —
+   * a cap is left uncut whenever the unit above OR below it is kept — because a
+   * unit whose top survives the cut but whose base does not is not a slab, it is a
+   * lid over open space, which is the hollow shell the section exists to avoid.
+   *
+   * ⚠️ So keeping two adjacent units keeps the cap between them, once. And keeping
+   * the LAST unit keeps the column's floor with it, exactly as
+   * {@link ChunkSection.carrier} would.
+   *
+   * ⚠️ No cut face is drawn for a kept unit — there is nothing to close, and a face
+   * there would sit inside solid material.
+   */
+  section?: boolean;
+  /**
    * This boundary is a FLUID CONTACT — a level inside a unit, not a horizon: an
    * oil/water contact, a gas cap, a water table.
    *
@@ -737,6 +756,13 @@ export type SurfaceChunkSpec = {
    * every time the section is switched on or off.
    */
   section?: boolean;
+  /**
+   * Also return each cap as it would be if nothing ABOVE it were drawn (see
+   * `SurfaceChunkMesh.peelIndex`). Requested when the chunk can PEEL or the stack
+   * has a section — both hide a covering layer, and the collapse dropped
+   * fragments on the strength of that cover.
+   */
+  peelable?: boolean;
 };
 
 /**

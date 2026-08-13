@@ -204,7 +204,9 @@ type SyntheticColumnProps = {
   sectionAnimateSpeed: number;
   sectionWater: boolean;
   sectionCarrier: boolean;
+  sectionKeep: number;
   sectionDebug: boolean;
+  peel: number;
   seal: boolean;
   sealMode: 'proportional' | 'void';
   minThickness: number;
@@ -272,6 +274,7 @@ const StackContents = ({
         wallOpacity={props.wallOpacity}
         wireframe={props.wireframe}
         inferredStyle={props.inferredStyle}
+        peel={props.peel}
         onBuild={onBuild}
         {...(props.cursor ? cursor.events : null)}
       />
@@ -384,6 +387,14 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
         : undefined;
       return { surface, material: colour, fill: colour, detail };
     });
+    // One unit kept WHOLE while the rest is cut — the cap that floors it comes
+    // along on its own, which is the point of the flag being per unit.
+    if (props.sectionKeep >= 0 && props.sectionKeep < units.length) {
+      units[props.sectionKeep] = {
+        ...units[props.sectionKeep],
+        section: false,
+      };
+    }
     // ⭐ The floor is asked for by the FILL on the last layer, and by nothing else:
     // a volume there has no next boundary to end on, so the column's carrier ends
     // it. Take the fill away and the block simply stops at its deepest surface,
@@ -393,7 +404,14 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
       units[last] = { ...units[last], fill: undefined };
     }
     return units;
-  }, [column, selected, props.detail, props.detailStrength, props.floor]);
+  }, [
+    column,
+    selected,
+    props.detail,
+    props.detailStrength,
+    props.floor,
+    props.sectionKeep,
+  ]);
 
   // The sea is the COLUMN's, not a chunk layer: one lid over the whole stack,
   // drawn once however many chunks are cut from it.
@@ -691,7 +709,9 @@ export const Default: Story = {
     sectionAnimateSpeed: 1,
     sectionWater: true,
     sectionCarrier: true,
+    sectionKeep: -1,
     sectionDebug: false,
+    peel: 0,
     seal: true,
     sealMode: 'proportional',
     minThickness: 1,
@@ -1020,6 +1040,12 @@ export const Default: Story = {
         'Cut the column’s floor too. Off leaves the block standing on an intact base plate.',
       table: { category: 'Section' },
     },
+    sectionKeep: {
+      control: { type: 'range', min: -1, max: 19, step: 1 },
+      description:
+        '⭐ Keep ONE unit whole while the rest is cut away — a slab standing proud of the section. −1 for none.\n\nThe flag is per UNIT, not per surface: setting it keeps the cap, the volume below it AND the cap that FLOORS that volume, the last of which is INFERRED. A unit whose top survives the cut but whose base does not is not a slab, it is a lid over open space — the hollow shell the section exists to avoid.\n\n⚠️ Keep the LAST unit and the column’s floor comes with it, exactly as `sectionCarrier` would.',
+      table: { category: 'Section' },
+    },
     sectionDebug: {
       control: 'boolean',
       description:
@@ -1057,6 +1083,12 @@ export const Default: Story = {
     },
     surfaceOpacity: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      table: { category: 'Appearance' },
+    },
+    peel: {
+      control: { type: 'range', min: 0, max: 19, step: 1 },
+      description:
+        '⭐ Hide the first N UNITS, exposing what is under them. Exact and free, unlike lowering the opacity: alpha compounds, so a 20-layer stack at 0.5 is effectively opaque and a transparency slider cannot answer “what is underneath”. The layer array IS the depth order, so not drawing a PREFIX of it is exact — which is why this is a count and not a per-layer flag: an arbitrary set can open the block, a prefix cannot.\n\n⚠️ It removes each unit’s cap AND its volume, but keeps the cap of the first survivor, which is that unit’s own top — so the floor was never yours to drop and the block stays closed.',
       table: { category: 'Appearance' },
     },
     wallOpacity: {

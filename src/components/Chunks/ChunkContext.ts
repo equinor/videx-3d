@@ -89,6 +89,14 @@ export type ChunkStackContextValue = {
    */
   sectionUniform?: IUniform<Vector4>;
   /**
+   * The exact COMPLEMENT of {@link ChunkStackContextValue.sectionUniform} — for
+   * geometry that must appear only where the section took something away. A cap
+   * kept whole over a layer the section cut needs its dropped fragments back, but
+   * only in the half that layer vacated; the negated plane makes the two mutually
+   * exclusive with no tolerance to tune.
+   */
+  sectionUniformInverse?: IUniform<Vector4>;
+  /**
    * Whether the column's floor is cut with the rest of the block (see
    * `ChunkSection.carrier`). A PRIMITIVE, deliberately: it decides how a material
    * is built, so it has to be visible to React — and a primitive cannot churn this

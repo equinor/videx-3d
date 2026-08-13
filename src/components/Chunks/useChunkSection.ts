@@ -9,7 +9,7 @@ import {
   StackSectionSource,
   StackSectionTarget,
 } from '../../sdk';
-import { ChunkSectionState } from './chunk-defs';
+import { ChunkLayer, ChunkSectionState } from './chunk-defs';
 
 /** One interval's cut face, ready to be drawn with that interval's own material. */
 export type ChunkSectionFace = {
@@ -50,6 +50,9 @@ function attach(geometry: BufferGeometry, target: StackSectionTarget) {
  *
  * @param source the chunk's section channels, from its build
  * @param section the stack's live section state, or `null` for none
+ * @param layers the caller's layers, read for `ChunkLayer.section`: a unit kept
+ *   whole gets no cut face — there is nothing to close, and a face there would sit
+ *   inside solid material
  * @returns one face per filled interval, or `null` when there is nothing to cut
  *
  * @group Components
@@ -57,12 +60,15 @@ function attach(geometry: BufferGeometry, target: StackSectionTarget) {
 export function useChunkSection(
   source: StackSectionSource | undefined,
   section: ChunkSectionState | null | undefined,
+  layers?: ChunkLayer[],
 ): ChunkSectionFace[] | null {
   const faces = useMemo<Face[] | null>(() => {
     if (!source || !section) return null;
     const built: Face[] = [];
     source.intervals.forEach((members, interval) => {
       if (!members) return;
+      const layer = source.layers?.[interval] ?? interval;
+      if (layers?.[layer]?.section === false) return;
       const target = createStackSectionTarget(
         INITIAL_CAPACITY,
         !!source.inferred,
@@ -70,15 +76,10 @@ export function useChunkSection(
       const geometry = new BufferGeometry();
       attach(geometry, target);
       geometry.setDrawRange(0, 0);
-      built.push({
-        interval,
-        layer: source.layers?.[interval] ?? interval,
-        geometry,
-        target,
-      });
+      built.push({ interval, layer, geometry, target });
     });
     return built.length > 0 ? built : null;
-  }, [source, section]);
+  }, [source, section, layers]);
 
   useEffect(() => {
     return () => faces?.forEach(face => face.geometry.dispose());

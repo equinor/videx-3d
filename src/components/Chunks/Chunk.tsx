@@ -107,6 +107,20 @@ export type ChunkProps = {
   /** render the side walls. Default true. */
   showWalls?: boolean;
   /**
+   * Hide the first `peel` UNITS, exposing what is under them. Default 0.
+   *
+   * ⭐ Exact and free, unlike a transparency slider: alpha compounds, so a deep
+   * stack at 0.5 is effectively opaque and cannot answer "what is underneath". The
+   * `layers` array IS the depth order, so not drawing a PREFIX of it is exact —
+   * which is why this is a count and not a per-layer flag: an arbitrary set can
+   * open the block, a prefix cannot.
+   *
+   * ⚠️ Pure appearance: no rebuild, so it is free to sweep or animate. But its
+   * PRESENCE (even `peel={0}`) asks the build for the extra indices a peel needs,
+   * so adding or removing the prop does rebuild.
+   */
+  peel?: number;
+  /**
    * Called with the build metrics each time the geometry is (re)built. Use it to
    * inspect `metrics.diagnostics` — in particular the crossing counts, which are
    * how a mis-ordered `layers` array makes itself visible (the resolve otherwise
@@ -174,6 +188,7 @@ export const Chunk = ({
   maxError,
   showSurfaces = true,
   showWalls = true,
+  peel,
   onBuild,
   onBuildStateChange,
   onPointerClick,
@@ -212,7 +227,7 @@ export const Chunk = ({
   const appearanceKey = layers
     .map(
       l =>
-        `${appearanceId(l.material)}|${appearanceId(l.fill)}|${l.opacity ?? ''}|${chunkDetailKey(l.detail)}`,
+        `${appearanceId(l.material)}|${appearanceId(l.fill)}|${l.opacity ?? ''}|${chunkDetailKey(l.detail)}|${l.section === false ? 0 : 1}`,
     )
     .join(',');
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
@@ -603,6 +618,11 @@ export const Chunk = ({
   //     the returned geometry. Rebuilds ONLY on data / outline / build params. ----
   const generator = useGenerator<SurfaceChunkResponse>(surfaceChunk);
 
+  // Both a peel and a section can hide the layer a cap's collapse relied on
+  // covering it, so the build has to keep what it dropped on that strength.
+  // Keyed on the PRESENCE of a peel, so changing its value never rebuilds.
+  const peelable = peel !== undefined || !!stack.section;
+
   const spec = useMemo(() => {
     if (!outlinePolygon || !utm || stableLayers.length === 0) return null;
     if (coverAbove.pending || seamsPending || columnPending) return null;
@@ -618,6 +638,7 @@ export const Chunk = ({
       // currently enabled: it is part of the build, so following the toggle would
       // rebuild the geometry every time the section is switched on or off.
       section: !!stack.section,
+      peelable,
       // Only a declared column with an envelope can be shared; otherwise this
       // chunk builds (and resolves) on its own.
       stack:
@@ -641,6 +662,7 @@ export const Chunk = ({
     stack.column,
     stack.envelope,
     stack.section,
+    peelable,
   ]);
 
   const [chunk, setChunk] = useState<SurfaceChunk | null>(null);
@@ -736,6 +758,21 @@ export const Chunk = ({
     chunk,
   ]);
 
+  // ⚠️ Peeling exposes the cap of the first surviving unit, which normally closes
+  // the block — but a horizon this chunk shares with a sibling is drawn by only one
+  // of them (see `resolveSeam`). Peel down to one this chunk does not draw and the
+  // block is open, which presents as a rendering artefact rather than as a
+  // consequence of the peel. Say so instead.
+  useEffect(() => {
+    if (!peel || peel >= stableLayers.length) return;
+    if (layerSeams[peel]?.draw === false) {
+      console.warn(
+        `Chunk: peel=${peel} exposes '${stableLayers[peel]?.surface?.id ?? peel}', ` +
+          'a horizon a neighbouring chunk draws — this block will be open at the top.',
+      );
+    }
+  }, [peel, stableLayers, layerSeams]);
+
   // --- Appearance / rendering is delegated to ChunkMeshes (reactive layer). ---
   // ⭐ Nothing is borrowed across a seam: a horizon is drawn by the chunk it is the
   // lid of (see `resolveSeam`), so every chunk draws with its OWN appearance.
@@ -753,10 +790,12 @@ export const Chunk = ({
           inferredStyle={inferredStyle}
           showSurfaces={showSurfaces}
           showWalls={showWalls}
+          peel={peel}
           water={stack.water}
           carrierMaterial={stack.carrierMaterial}
           section={stack.section}
           sectionUniform={stack.sectionUniform}
+          sectionUniformInverse={stack.sectionUniformInverse}
           sectionCarrier={stack.sectionCarrier}
         />
       </group>

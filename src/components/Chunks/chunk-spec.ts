@@ -57,6 +57,8 @@ export type BuildSurfaceChunkSpecOptions = {
   carrierSeam?: SeamDecision | null;
   /** ask the build for the section channels (see `SurfaceChunkSpec.section`) */
   section?: boolean;
+  /** ask the build for the peel indices (see `SurfaceChunkSpec.peelable`) */
+  peelable?: boolean;
 };
 
 /** Map one surface's meta into the serializable layer spec. */
@@ -257,5 +259,6 @@ export function buildSurfaceChunkSpec(
     maxError: options.maxError,
     resolve: options.resolve,
     section: options.section,
+    peelable: options.peelable,
   };
 }

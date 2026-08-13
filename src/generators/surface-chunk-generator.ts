@@ -485,6 +485,7 @@ export async function buildSpecStack(
         inferred: context.inferred ? inferredList : undefined,
         topCover: coverAbove,
         section: spec.section,
+        peelable: spec.peelable,
       },
     );
     if (!build) return null;
@@ -712,6 +713,7 @@ export async function buildSpecStack(
         : undefined,
       inferred: split?.inferred ?? sealed?.inferred,
       section: spec.section,
+      peelable: spec.peelable,
     },
   );
   if (!build) return null;
@@ -846,6 +848,7 @@ export function toAssembleLayers(
   return result.build.layers.map((layer, i) => ({
     geometry: layer.geometry,
     rimY: layer.rimY,
+    peelIndex: layer.peelIndex,
     // The last layer has nothing below it inside this chunk.
     fill: i + 1 < result.build.layers.length && result.fills[i],
     wall: result.build.walls[i],

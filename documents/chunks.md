@@ -1069,6 +1069,12 @@ Dropping a zero-thickness fragment is safe *within* a chunk: layer *i* is only
 dropped where it is coincident with layer *i−1*, which the same chunk draws with
 the same outline, so something is always there to see.
 
+⚠️ **The accurate statement is "which is DRAWN over at least the same region"**,
+and that turns out to have three exceptions rather than one. The chunk above is
+the first (below); PEELING and SECTIONING are the other two, since both shrink the
+region the covering layer occupies — see §15.12, which restores the fragments for
+exactly the same reason this section keeps them.
+
 The **top** layer is the exception. On a shared column its `absent` mask comes from
 the column, so it is truncated against a surface belonging to the chunk *above* —
 one this chunk does not draw. The drop is still needed where that chunk covers the
@@ -1356,6 +1362,9 @@ termination, not its area (§10.5).
      underneath". The layer index is a strict depth order, so simply not drawing layers
      `0..k` is exact and free. Per-layer `side` (drawing only the *back* of a cap) gives
      a cutaway into a sealed block by the same reasoning.
+     **— built (§15.11)** as `ChunkProps.peel`, a count of UNITS. ⚠️ It drops each
+     unit's cap AND its volume but keeps the cap of the first survivor, or the
+     block comes apart; `side` is still not built.
    - **Transparency then keeps the case peeling cannot serve**: seeing a wellbore, or
      another object, through overburden that must stay present.
 
@@ -3060,3 +3069,128 @@ worth. The crossed-cell count and the per-frame cost on a real stack should be
 measured through `Spikes/Chunks/SyntheticColumn` (the `Section` control group, with
 `sectionAnimate` driving a continuously tumbling plane — the worst case, since
 nothing can be cached between frames).
+
+### 15.10 Keeping a unit whole (2026-08-14)
+
+`ChunkLayer.section: false` exempts one unit from the cut, so it stands proud of
+the section as a slab — how you single out a reservoir, a seal or the sea bed. The
+mechanism was already there: `ChunkSection.carrier` is the same thing with a
+hard-coded scope, and a material simply built without the shared uniform is not cut.
+
+⭐⭐ **The flag is per UNIT, and it has to be.** A unit is bounded by TWO caps, so
+exempting one *surface* leaves a lid over open space where its base was cut away —
+the hollow shell §15.1 says the whole feature exists to avoid. The floor is
+therefore **inferred**:
+
+> a cap is left uncut when the unit ABOVE it or the unit BELOW it is kept.
+
+One rule, and everything falls out of it: keeping two adjacent units keeps the cap
+between them exactly once; keeping the deepest unit keeps the column's floor with
+it (OR'd with the explicit `ChunkSection.carrier` rather than overriding it, so the
+two cannot fight); and a void's ceiling, which is the base of the interval above,
+follows that unit rather than its own layer index.
+
+⚠️ **No cut face is built for a kept unit** (`useChunkSection` skips it). There is
+nothing to close, and a face there would sit *inside* solid material.
+
+⚠️ **The inference overlay is keyed on cut-ness too.** It is a second mesh with its
+own material, so a kept unit whose marking was still cut would lose its hatching at
+the plane while the rock stayed — the same class of bug as §15.9.3, in a new place.
+Its cache is now keyed on `(opacity, cut)`.
+
+### 15.11 Peeling (§10.3.6) — built
+
+`ChunkProps.peel` hides the first *N* units. It is the same structural fact as
+§15.10 read in the other direction: a unit's cap and its volume go together, and
+the cap of the first SURVIVOR stays, because that cap is its own top rather than
+the peeled unit's base. So the block cannot be opened by peeling — the floor was
+never yours to drop.
+
+⭐ **Exact and free, which transparency is not.** Alpha compounds: a 20-layer stack
+at 0.5 is effectively opaque, so an opacity slider cannot answer "what is
+underneath". The layer array IS the depth order (§9.3), so not drawing a PREFIX of
+it is exact. That is also why it is a COUNT and not a per-layer visibility flag —
+an arbitrary set can open the block, a prefix cannot.
+
+Pure appearance: no spec change, no rebuild, so it is free to sweep or animate.
+
+⚠️ **One case does open the block, and it is not local.** A horizon shared with a
+sibling chunk is drawn by only one of them (§10.8), so peeling down to a cap this
+chunk does not draw exposes a top that is simply not there. It presents as a
+rendering artefact rather than as a consequence of the peel, so `Chunk` warns
+instead of leaving it to be discovered.
+
+⭐ It composes with §15.10 and with the section: peel to a unit, keep it whole, and
+cut everything else — which is the "one unit in context" view, without a single
+opacity anywhere.
+
+### 15.12 Restoring what the collapse dropped (2026-08-14)
+
+⚠️⚠️ **Both §15.10 and §15.11 punch holes in the exposed cap**, and §9.8 says why
+one step removed:
+
+> Dropping a zero-thickness fragment is safe *within* a chunk: layer *i* is only
+> dropped where it is coincident with layer *i−1*, **which the same chunk draws**,
+> so something is always there to see.
+
+Peeling deletes that layer. Sectioning deletes half of it. Either way the cover the
+drop was justified by is gone, and the fragment becomes a hole — along a
+termination line, so it reads as a clean band and looks like a bug rather than like
+a consequence.
+
+⭐ **The rule generalises exactly.** Of the four reasons a cap triangle is dropped,
+two name a layer ABOVE and two do not:
+
+| drop | names a layer above? | survives the cover being removed? |
+| --- | --- | --- |
+| welded onto the layer above | yes | ❌ |
+| truncated (clamped onto a shallower layer) | yes | ❌ |
+| coverage — no data | no | ✅ |
+| seam exclusion, void ceiling, carrier floor | no | ✅ |
+
+So `StackCollapseOptions.peelable` emits a second index set per layer with the
+first two tests skipped — the cap *as it would be if nothing above it were drawn*.
+`null` where that is the same set, which is most layers; measured on the generated
+column only two carry one (Draupne, 1555 triangles, and the unconformity's 23).
+
+It travels as `SurfaceChunkMesh.peelIndex` — **an index and nothing more**, since
+the patch shares the cap's positions, uv, normals and `inferred`.
+
+⭐ The restored fragments are already in the right place: a truncated layer's
+heights were clamped ONTO the layer above, and a welded one is coincident with it,
+so the patch fills the hole at exactly the right elevation. What it draws is the
+unit's subcrop, which is what a peeled-back view should show.
+
+#### 15.12.1 ⭐⭐ The section case needs the INVERSE plane
+
+Peeling removes the cover everywhere, so the patch is simply drawn with no plane.
+A section removes it only on one side — the cap may be kept whole (§15.10) while
+the layer above it is cut — so the patch must appear *exactly* where that layer
+vacated and nowhere else.
+
+That is the **negated plane**, and it is exact rather than approximate: the patch
+and the covering layer test the same value with opposite signs, so they are
+mutually exclusive by construction with no tolerance to tune. `ChunkStack`
+publishes it as a second shared uniform alongside the first.
+
+⭐ Negating the DISABLED value falls out correctly too: `(0,0,0,-1)` removes
+nothing, and its negation `(0,0,0,1)` draws nothing — which is exactly right when
+nothing has been cut away.
+
+⚠️ Both are drawn at exactly `d == 0`, so there is a one-fragment seam where they
+meet. Invisible in practice; recorded rather than papered over.
+
+⚠️⚠️ **The patch shaded BLACK on the first attempt**, and the cause is worth
+knowing because the symptom points nowhere near it: `computeVertexNormals` only
+touches vertices its INDEX references, so a vertex used only by triangles the
+collapse dropped keeps a zero normal — which Blinn-Phong renders black. Normals are
+therefore accumulated over the WIDEST index (`peelIndex ?? own`) and the cap's own
+index swapped in afterwards. ⚠️ And because `computeUpwardNormals` reverses the
+winding IN PLACE when the normals face down, and only holds one of the two arrays,
+the cap's index is flipped to match when that happens.
+
+⚠️ The patch is not counted in `triangles` / `droppedCollapsed`. Those describe the
+normal set and are left meaning what they say.
+
+⚠️ A caller-supplied `Material` gets no patch, since the chunk cannot build a
+variant of it — the same limitation as the cut itself.
