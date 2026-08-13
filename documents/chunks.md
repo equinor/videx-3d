@@ -636,6 +636,41 @@ against the base of its own unit is the same geometry as a shoreline. Clamped on
 there — everywhere else the resolve guarantees the order, and clamping silently
 would hide a crossing instead of reporting it.
 
+#### 6.1.1 The interior contact, demonstrated (2026-08-14)
+
+Until now `fluid` was exercised only as a water plane on TOP of a stack
+(`WellborePerChunk`) and by unit tests of the resolve and the wall clamp. The
+CONTACT case — a level inside a unit, which is what the flag is documented for —
+is now drawn in `Spikes/Chunks/SyntheticColumn`: a gas cap and an oil/water
+contact in the deep Rotliegend sand, as chunk-private synthetic layers
+(`{ depth, fluid: true }`) spliced between the reservoir's top and base. It needed
+no library change, which was the point of running it.
+
+⭐ **Two fluids in one unit are not ordered against EACH OTHER.** The cascade
+looks through a fluid to the nearest solid layer, so a GOC and an OWC below it are
+both measured against the reservoir's top and never against one another — put the
+gas cap below the oil/water contact and the crossing simply stays. Sound (a fluid
+must not be an authority, and that includes over another fluid) but worth stating,
+because "everything is ordered" is the reasonable assumption. The story clamps its
+own gas cap to its OWC rather than leaving it to the library.
+
+⚠️ **A contact costs a full-footprint cap.** Both contacts drew 36,378 triangles
+each against a 475k-triangle block — a level really does span the whole block, so
+it is as expensive as a real horizon, not as cheap as the thin unit it sits in.
+
+⚠️ **Pick the host unit by its RELIEF, not by its lithology.** Measured on the
+generated column, the Jurassic sand's top spans only 31 m (1327–1358) because its
+`fill: 0.9` levels it, so a gas cap there is a sliver whatever depth it is given;
+the Rotliegend's spans 253 m and lies below the fault. A contact only pinches out
+where the surface it is measured against has structure — which is the whole
+behaviour worth looking at.
+
+⚠️ `SurfaceChunkDiagnostics.crossings` says nothing about a contact: it is
+summed from the COLUMN's pairs (`stackPairs`), and a chunk-private synthetic layer
+is not one of them. It is also non-zero whenever anything is SEALED, since the
+tapers cross before the resolve puts them right (§10.7) — so it is not the
+zero-means-healthy signal `SyntheticColumn` used to claim it was.
+
 ### 6.2 The lid is tessellated on its own terms
 
 An unbounded layer's cap does **not** come from the shared tessellation. A flat
