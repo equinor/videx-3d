@@ -282,9 +282,19 @@ Responsibilities:
   the outline (a cutaway around it) *and* peeling (transparent overburden above the
   target). Optionally view-dependent (which side is opened depends on camera).
 - **Peeling / opacity** — per-chunk / per-surface, reactive (layer 3).
-- **Picking + annotations** — chunk surfaces participate in the GPU-picking
-  `EventEmitter` (click-to-focus, hover) and can carry labels via the annotation
-  system.
+- **Picking (built 2026-08-13)** — `Chunk` takes the standard `PointerEvents`
+  props (`onPointerClick/Enter/Leave/Move`) and registers its own meshes with the
+  GPU-picking `EventEmitter`, the same way `Surface` does. Two conventions worth
+  knowing:
+  - ⭐ Each mesh carries `userData = { layer, kind }`, so a handler reads
+    `event.source.userData.layer` to learn WHICH unit was hit and `kind` to tell a
+    cap from a wall. Without it a hit says only "this chunk", which is rarely the
+    question.
+  - Only the chunk's OWN meshes are registered — `children` stay outside the
+    group, so anything placed inside a chunk keeps its own hit behaviour (or none).
+  - `event.position` is the world position of the hit, read back from the pick
+    buffer; see §5.3.4 for what to do with it.
+- **Annotations** — chunk surfaces can carry labels via the annotation system.
 
 ### 5.2 Build progress
 
@@ -299,6 +309,172 @@ Geometry building is asynchronous and can take seconds, so a host needs to know:
 layers have no data anywhere inside it (§9.9.1), has nothing to draw. Without the
 state callback that is indistinguishable from a hang — which is exactly how it
 presents.
+
+### 5.3 Sampling what is drawn (built 2026-08-13)
+
+Putting something ON a surface — a template, a pipeline, a marker — needs the
+height of that surface at a given X/Z. A `ChunkStack` publishes a
+`SurfaceSampler` through `SurfaceSamplerContext` for exactly that, the way it
+already publishes the wave field through `OceanSamplerContext`. Both are `null`
+when there is nothing to sample, so a consumer keeps its static pose rather than
+jumping to the origin.
+
+⭐ **It samples the TRIANGLES, not the grid.** The two are not the same surface:
+the shared tessellation is simplified to within `maxError`, which at field scale is
+metres. Heights taken from the source grid put an object visibly off the sea bed it
+is supposed to be resting on, and no amount of care elsewhere fixes that — the
+discrepancy is the tessellation's, by design. Sampling the drawn mesh is exact by
+construction.
+
+⭐ It also needs no round-trip. The chunk's geometry is already on the main thread
+(that is what is being rendered), so `createTinSampler` buckets its triangles into
+a uniform XZ grid — CSR, typed arrays, built on FIRST USE and cached against the
+geometry — and a query touches only the handful of triangles over the point. That
+is cheap enough to sample a whole footprint per pointer move, which is what the
+third use case needs; the earlier plan for an async, batched sampler was solving a
+problem that turned out not to exist.
+
+How it is wired:
+
+- `Chunk` registers the caps it drew (`SurfaceSamplerRegistryContext`), tagged with
+  their surface ids. ⚠️ Its registry is SEPARATE from `ChunkStackContext`, whose
+  identity is what every chunk's build spec derives from — a sibling finishing its
+  geometry must not disturb that.
+- The sampler's identity changes whenever a chunk's geometry does, which is the
+  signal to sample again.
+- `getHeightAt(x, z)` answers with the HIGHEST surface over the point — the ground
+  as it is seen from above. Naming a surface id samples that horizon alone, which
+  is what to do when a specific unit is the target rather than the top of the
+  block.
+- ⚠️ VOID CEILINGS AND THE FLOOR ARE NOT SAMPLEABLE. A void's upper copy faces up
+  but is the underside of the unit above (§10.7), and something placed on it would
+  sit inside the block; the column's carrier is tagged the same way (§10.9) and is
+  excluded with it.
+
+#### 5.3.1 One point is not a placement
+
+`sampleSurfaceFootprint` samples a ring across the object's own extent and fits a
+plane to it. ⭐ A single sample gives a height and nothing else, so a wide object on
+sloping ground floats at one corner and digs in at the other; and a triangle's own
+normal is the facet's, not the ground's, so it jitters as the object moves. The
+same reasoning makes a ship follow the swell rather than one wave — and the fit is
+the same least-squares plane `useBuoyancy` uses.
+
+It reports `coverage`, the share of sample points that found a surface. ⭐ That is
+the honest answer to "does this fit here": below 1 the object overhangs the edge of
+what is drawn, which a centre sample cannot tell you.
+
+`useSurfacePlacement` is the hook form — the static counterpart of `useBuoyancy`.
+It settles once per change rather than every frame, because a horizon only moves
+when its chunk is rebuilt, and that gives the sampler a new identity.
+
+#### 5.3.2 Constructing on the sampled surface
+
+`createLevelledBase` is the first thing built on top of the sampler, and the
+example worth following: a structure that cannot stand on a slope is given a base
+built FROM the ground under its footprint — a flat top at a level chosen from what
+the terrain does there (`'max'` = pure fill, nothing excavated), a skirt cut into
+the ground, and a draped underside. It reuses `createPolygonCap` for the caps and
+`buildIntervalWalls` for the skirt, so the base is sealed for the same reason a
+chunk is.
+
+- The underside doubles as the sampling grid, so the level accounts for a rise in
+  the MIDDLE of the footprint and not just around its rim.
+- `embedment` sinks the skirt's foot into the ground. Two separate tessellations
+  agree only to within their own errors, so without it a hairline of daylight can
+  show under the base.
+- ⚠️ `minThickness` stops a forced `level` below the ground from INVERTING the
+  skirt — its bottom edge crossing its top, which turns the wall inside out rather
+  than simply hiding it. The same failure as the shoreline wall in §6.2.
+- `metrics` reports fill, cut, volume and coverage. A site is chosen from a map;
+  how much of a berm it needs, and whether it even lies on mapped ground, is the
+  answer.
+
+Demonstrated in `Spikes/Chunks/SyntheticColumn` (`facilities`), where four sites
+given as UTM easting/northing are put down on the generated sea bed. `facilityBase`
+off drops the same structures straight onto the slope instead, which is the
+comparison: they lean.
+
+#### 5.3.3 Along a route, not at a point
+
+`drapePolyline` is the line form: densify a route in scene XZ, sample every node,
+and return the centreline — a pipeline, a cable, a survey line. `clearance` is the
+caller's own radius, so the object RESTS on the ground rather than being centred
+in it.
+
+⭐ **`span` is the one modelling decision worth arguing about.** A stiff line rests
+on the high points and bridges the hollows between them, so draping it over every
+dip exactly is the shape it definitely does NOT take. `span` (metres) takes a
+rolling MAXIMUM over that window, which is that behaviour and nothing more — no
+mechanics are claimed. Being a maximum it can only ever move the line UP, so unlike
+any smoothing filter it cannot push it into the ground; `smoothing` then rounds the
+corners it leaves and is clamped back to the ground for the same reason.
+
+⚠️ Real span analysis is a mechanics problem (stiffness, weight, current, allowable
+stress) and this is not it. The option exists so the shape is honest at a glance;
+anything load-bearing belongs in the host.
+
+Nodes that find no surface are interpolated from the neighbours that did — a line
+with a hole in it is worse than a line carried across one — and `gaps` reports how
+many, so the guess is visible. The reported 3D `length` against the route's own map
+length is the extra distance the ground costs.
+
+⚠️ The mesh follows a SPLINE through the sampled nodes, so between them it can
+deviate from the sampled drape; `clearance` absorbs that, which is another reason
+to pass the object's radius rather than 0.
+
+Demonstrated by the same story's `pipelines`: three flowlines and an export line,
+whose end nodes are the site coordinates themselves so a tie-in cannot drift from
+the structure it ties into. ⚠️ Diameters are the real thing (12¾", 16", 30") and are
+therefore invisible at 7 km across — `pipeExaggeration` is there to look at them,
+for the same reason the procedural detail presets are exaggerated (§3.1).
+
+#### 5.3.4 Following the pointer
+
+The dynamic case, and the one that needs BOTH mechanisms:
+
+- **GPU picking says WHERE.** `EventEmitterCallbackEvent.position` carries the
+  world position of the hit, read back from the pick buffer (the pick shader
+  writes `vWorldPosition` alongside the emitter id). A height sampler cannot
+  answer this — it has no idea where the ray went.
+- **The footprint fit says HOW IT SITS.** A pick is one point, and one point
+  cannot orient an object metres across. `sampleSurfaceFootprint` around the hit
+  gives the height, the plane, and `coverage` — so a placeholder that would
+  overhang the drawn surface can say so instead of hovering.
+
+Cheap enough to run per pointer move: the sampler's index is already built, so a
+ring of samples is a handful of bucket lookups. Drive the object imperatively from
+the handler — a pointer move should cost no React render.
+
+⚠️ **Four traps, all of which produce something that looks almost right:**
+
+1. The hit is in WORLD space; chunk geometry is in the `UtmArea` group's frame.
+   Run it through `worldToLocal` before sampling, and back through `localToWorld`
+   before handing a point to the camera. Skipping this works only while the
+   group's offset happens to be zero.
+2. A cursor rendered INSIDE the picked group becomes an emitter and the pointer
+   picks the cursor instead of the ground. Keep it outside (or tag it
+   `LAYERS.NOT_EMITTER`).
+3. ⭐ A marker drawn in the normal passes is painted over by the transparent
+   layers — the sea, or the block itself. That is what `LAYERS.OVERLAY` is for:
+   `OITRenderPass` draws that set LAST, after the transparent layers, leaving
+   depth testing to the material. So a marker standing clear of the ground can
+   keep depth testing (hidden behind land, seen through water, which writes no
+   depth), while a gizmo lying ON the surface disables it to avoid z-fighting.
+4. ⚠⚠ Anything reading the sampler must live BELOW the `ChunkStack` that provides
+   it. A hook called in the component that RENDERS the stack sits above its own
+   provider and gets `null` — with no error, and with the pointer handlers still
+   firing perfectly, which sends you looking at the picking instead of at the
+   tree. Put the stack's contents in their own component.
+
+`Spikes/Chunks/SyntheticColumn` (`cursor`) shows it: the placeholder follows the
+pointer and tilts to the local slope, left click leaves a marker, right click
+clears them, and **ctrl+click flies the camera to the point**, the gesture the
+wellbore examples already use.
+
+⚠️ Telling the buttons apart needs `EventEmitterCallbackEvent.button`, which is
+set on `click` only. Before it existed a right-click fired `click` exactly like a
+left one and no consumer could tell.
 
 ## 6. Water specifics
 
@@ -460,6 +636,10 @@ needs nothing else:
 
 Both are `null` when no sea is declared, which is the documented fallback: the
 object keeps its static pose.
+
+The same shape, for surfaces rather than water, is §5.3 — with the difference that
+a surface sampler reads GEOMETRY where this one is analytic, because a horizon is a
+function of data and a sea is a function of time.
 
 ⚠️ A contact footprint carries the object's FORWARD DIRECTION in world XZ, not the
 sine and cosine of a heading. A rotation about +Y takes the body's +X to
@@ -2118,6 +2298,9 @@ data to drift out of step with the specs that describe it. Exporting to
 `public/data/synthetic/` is a small script on top of the same generator if a static
 fixture is ever wanted.
 
+⭐ One store also means a story can WRITE to it, which is how story-specific data is
+meant to arrive — see §14.6.
+
 ### 14.3 Scope
 
 What the §10 sequence needs to be validated, and no more:
@@ -2209,11 +2392,12 @@ erosion steps that do not name one.
 of units, depth range, structure amplitude, seed, erosion encoding, and where the
 fault and the unconformity fall. Edit and reload. It is deliberately constants
 rather than story controls: a column is DATA, and swapping it at runtime would mean
-registering every variant in the store up front.
+registering every variant in the store up front — the constraint §14.6 lifts.
 
 ⚠️ Generation is eager, because the meta loader needs each surface's realized depth
 range at store init, and costs about `nodes² × surfaces`: ~235 ms at 400 × 400 with
 ten surfaces, ~135 ms at 300 × 300. It is paid once per page load by every story.
+§14.6 is how that cost goes away.
 
 **The model, in cross-section:** [column-sketch.svg](column-sketch.svg) — drape,
 fill and the pinch-out, a column flattening upward, the two erosion encodings, and
@@ -2292,6 +2476,81 @@ ways to satisfy it, in increasing order of how much they remove:
 ⚠️ Whichever is chosen, `sortByStratAge`'s current behaviour — silently excluding
 un-aged surfaces — is what turns a dataset swap into an empty screen rather than an
 error. It should say so loudly if it keeps that policy.
+
+### 14.6 Story-scoped data — the story writes to the store
+
+**PROPOSED, not implemented.** This is the preferred way for a story to obtain data
+nobody else needs; it supersedes the per-story store considered alongside it.
+
+Two limitations above are the same limitation: generation is eager because
+`surfaceMetaLoader` enumerates the synthetic ids at store init, and the demo column
+is constants rather than controls because a variant would have to be registered up
+front. Both dissolve if a story can put data into the store as it mounts.
+
+`Store` already has `set`, and `MockStore` implements it — `ReadonlyStore`, which is
+what generators receive, deliberately does not. `DataLoader.set` writes into the same
+`cached` map that `all`/`query` read, so an injected record is indistinguishable from
+a preloaded one. Nothing new is needed to READ it.
+
+#### Why not a store per story
+
+The alternative was for each story to supply its own lightweight `Store`. It fails on
+decorator order: the array is `[Canvas3d, GeneratorsProvider, DepthSelector,
+DataProvider]` and the **last entry is outermost**, so `GeneratorsProvider` sits
+INSIDE `DataProvider`. A story wrapping its own `<DataProvider>` around its content
+is inside the generators provider, and the generators go on reading the decorator's
+`MockStore`. The store would have to be supplied at or above the decorator — through
+story `parameters` — meaning decorator plumbing, a `DataProvider` swap and a re-point
+of the generator registry. Writing into the store that is already there needs none of
+it, and keeps §14.2 true: one store, one memoization, one transfer path.
+
+Keep it in reserve for a story needing genuine ISOLATION — a second realization under
+a colliding id, or a store that must not see the real data.
+
+#### ⭐ Ids must be content-addressed
+
+The load-bearing part. Removing a record on unmount does **not** evict what was
+derived from it: the `GeneratorRegistry` cache, the generator worker's own caches
+(`getStackContext`, `refinedByKey`), or the module-level memo in
+`synthetic-surfaces.ts`. If one id ever means two realizations, stale geometry is
+served silently — the failure §10 is written to avoid, arriving through the fixture
+instead.
+
+Hash the spec into the id. A changed arg is then a NEW id, every cache misses
+correctly, cross-story collision cannot happen, and removal on unmount drops from a
+correctness requirement to memory hygiene. ⚠️ `Store` has no `delete`: a
+storybook-only `MockStore.delete` is fine, widening the public interface for a
+fixture is not.
+
+#### ⭐ Inject the spec, not the values
+
+Generation belongs in the store worker, where it already is. A story that generates
+on the main thread and `set`s the result pays the full `nodes² × surfaces` block
+(~235 ms) *and* a structured clone into the worker. Injecting a small spec record and
+letting the loader generate from it on demand keeps both properties — lazy, and off
+the main thread — for one data type and one loader.
+
+#### ⚠️ Two things that will bite
+
+- **The tree fetches before the data lands.** Effects run children-first, so
+  everything under the story mounts and requests its data before the story's own
+  populate effect resolves — and the null gets cached. The story must gate its
+  children on the write having completed. This is the one thing a pre-populated
+  per-story store got for free.
+- **`MockStore.set` drops writes that race the preload.** `get`/`all`/`query` each
+  `await this._initialized`; `set` does not — and `DataLoader.init` assigns
+  `this.cached = new Map(result)`, REPLACING the map. A set landing before the
+  preloads settle is discarded without a word. Add the `await` first.
+
+Also: `MockStore.set` throws for a data type with no registered loader, so a new
+synthetic data type is still one line in the `MockStore` constructor.
+
+#### What it unblocks
+
+`surfaceMetaLoader` stops enumerating synthetic ids, so no story pays for generated
+data it does not use; the `COLUMN` constants can become story controls; and the chunk
+spikes can move onto the generated column (§14.5, option 3) without the real dataset
+having to carry them.
 
 ## 15. Sectioning — the cut face through a clipped stack
 

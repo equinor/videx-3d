@@ -1,6 +1,6 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useData } from '../../hooks/useData';
 import { OITRenderPass, Pass } from '../../main';
 import { OutputPass } from '../../rendering/passes/OutputPass';
@@ -17,6 +17,20 @@ import {
   syntheticColumnKeys,
   SyntheticColumnUnit,
 } from '../../storybook/data/synthetic-surfaces';
+import {
+  SUBSEA_ROUTES,
+  SUBSEA_SITES,
+  siteByName,
+} from '../../storybook/data/subsea-facilities';
+import {
+  SeabedFacility,
+  SeabedFacilityReport,
+} from '../../storybook/components/SeabedFacility';
+import { Pipeline, PipelineReport } from '../Pipeline';
+import {
+  SurfacePlacement,
+  useSurfaceCursor,
+} from '../../storybook/components/useSurfaceCursor';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-decorator';
@@ -57,7 +71,7 @@ const ChunkPipeline = () => {
     base.antialias = 'smaa';
     return [base, new OutputPass()];
   }, [scene, camera]);
-  useFrame(() => { }, 2);
+  useFrame(() => {}, 2);
   return <RenderingPipeline passes={passes} />;
 };
 
@@ -88,6 +102,21 @@ type SyntheticColumnProps = {
   shipX: number;
   shipZ: number;
   shipHeading: number;
+  facilities: boolean;
+  facilityBase: boolean;
+  facilitySize: number;
+  baseLevel: 'max' | 'mean' | 'min';
+  baseStandoff: number;
+  baseEmbedment: number;
+  pipelines: boolean;
+  pipeExaggeration: number;
+  pipeSpacing: number;
+  pipeSpan: number;
+  pipeSmoothing: number;
+  cursor: boolean;
+  cursorRadius: number;
+  cursorSamples: number;
+  cursorFocus: boolean;
   seal: boolean;
   sealMode: 'proportional' | 'void';
   minThickness: number;
@@ -101,6 +130,102 @@ type SyntheticColumnProps = {
   detail: boolean;
   detailStrength: number;
   inferredStyle: ChunkInferenceStyle;
+};
+
+/**
+ * Everything drawn INSIDE the stack.
+ *
+ * ⚠️ Its own component on purpose: `useSurfaceCursor` reads the sampler the
+ * `ChunkStack` provides, so it has to be called BELOW that provider. Calling it in
+ * the story component — which renders the stack — gets `null` and the pointer does
+ * nothing, with no error to say why.
+ */
+const StackContents = ({
+  props,
+  layers,
+  onBuild,
+  onSite,
+  onLine,
+  onPlace,
+}: {
+  props: SyntheticColumnProps;
+  layers: ChunkLayer[];
+  onBuild: (metrics: SurfaceChunkMetrics) => void;
+  onSite: (report: SeabedFacilityReport) => void;
+  onLine: (name: string, report: PipelineReport) => void;
+  onPlace: (placement: SurfacePlacement) => void;
+}) => {
+  const cursor = useSurfaceCursor({
+    radius: props.cursorRadius,
+    samples: props.cursorSamples,
+    focus: props.cursorFocus,
+    onPlace,
+  });
+
+  return (
+    <>
+      <Chunk
+        layers={layers}
+        maxError={props.maxError}
+        surfaceOpacity={props.surfaceOpacity}
+        wallOpacity={props.wallOpacity}
+        wireframe={props.wireframe}
+        inferredStyle={props.inferredStyle}
+        onBuild={onBuild}
+        {...(props.cursor ? cursor.events : null)}
+      />
+      {/* The gizmo stays OUTSIDE the chunk, or the pointer picks it instead of
+          the ground. */}
+      {props.cursor && cursor.node}
+      {/* The wave sampler and the contact-foam registry reach the hull through
+          context. Its origin IS its waterline. */}
+      {props.ship && (
+        <Tanker
+          position={[props.shipX, -props.waterDepth, props.shipZ]}
+          heading={(props.shipHeading * Math.PI) / 180}
+        />
+      )}
+      {/* Sites given as UTM coordinates, put down by sampling the sea bed the
+          chunk actually drew. */}
+      {props.facilities &&
+        SUBSEA_SITES.map(site => (
+          <SeabedFacility
+            key={site.name}
+            site={site}
+            size={props.facilitySize}
+            base={props.facilityBase}
+            level={props.baseLevel}
+            standoff={props.baseStandoff}
+            embedment={props.baseEmbedment}
+            onReport={onSite}
+          />
+        ))}
+      {/* The same data, laid along a route instead of at a point. Site names are
+          resolved to coordinates here — the component takes plain UTM. */}
+      {props.pipelines &&
+        SUBSEA_ROUTES.map(route => (
+          <Pipeline
+            key={route.name}
+            route={route.nodes.map(node =>
+              typeof node === 'string'
+                ? ((): Vec2 => {
+                    const site = siteByName(node);
+                    return site ? [site.easting, site.northing] : [0, 0];
+                  })()
+                : node,
+            )}
+            diameter={route.diameter}
+            material={route.color}
+            exaggeration={props.pipeExaggeration}
+            spacing={props.pipeSpacing}
+            span={props.pipeSpan}
+            smoothing={props.pipeSmoothing}
+            trim={props.facilityBase ? props.facilitySize * 0.55 : 0}
+            onBuild={report => onLine(route.name, report)}
+          />
+        ))}
+    </>
+  );
 };
 
 const SyntheticColumnStory = (props: SyntheticColumnProps) => {
@@ -261,10 +386,71 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
     [props.column, selected],
   );
 
+  // Every site reports what the sea bed under it turned out to be — the numbers
+  // that say whether a base was needed and how much of one.
+  const sites = useRef(new Map<string, SeabedFacilityReport>());
+  const reportSite = useMemo(
+    () => (site: SeabedFacilityReport) => {
+      sites.current.set(site.name, site);
+      const rows = [...sites.current.values()].map(s => ({
+        site: s.name,
+        level: +s.level.toFixed(1),
+        bedMin: +s.min.toFixed(1),
+        bedMax: +s.max.toFixed(1),
+        relief: +(s.max - s.min).toFixed(1),
+        fill: +s.fill.toFixed(1),
+        cut: +s.cut.toFixed(1),
+        volume: Math.round(s.volume),
+        coverage: +s.coverage.toFixed(3),
+      }));
+      console.log(`SITEREPORT ${JSON.stringify(rows)}`);
+      if (sites.current.size === SUBSEA_SITES.length) console.table(rows);
+    },
+    [],
+  );
+
+  const lines = useRef(new Map<string, PipelineReport & { name: string }>());
+  const reportLine = useMemo(
+    () => (name: string, line: PipelineReport) => {
+      lines.current.set(name, { ...line, name });
+      const rows = [...lines.current.values()].map(l => ({
+        line: l.name,
+        nodes: l.nodes,
+        mapLength: Math.round(l.mapLength),
+        // The ground it follows is always longer than the route on the map.
+        length: Math.round(l.length),
+        climb: +(l.length - l.mapLength).toFixed(1),
+        lifted: +l.lifted.toFixed(1),
+        gaps: l.gaps,
+      }));
+      console.log(`PIPEREPORT ${JSON.stringify(rows)}`);
+      if (lines.current.size === SUBSEA_ROUTES.length) console.table(rows);
+    },
+    [],
+  );
+
+  // One log per CLICK. A move must stay free of anything but the sample itself.
+  const reportPlacement = useMemo(
+    () => (placement: SurfacePlacement) => {
+      console.log(
+        `CURSORREPORT ${JSON.stringify({
+          x: Math.round(placement.position[0]),
+          y: +placement.position[1].toFixed(1),
+          z: Math.round(placement.position[2]),
+          tilt: +placement.tilt.toFixed(2),
+          relief: +placement.relief.toFixed(2),
+          coverage: placement.coverage,
+        })}`,
+      );
+    },
+    [],
+  );
+
+  // The gizmo and the handlers to hand to the chunk (see `useSurfaceCursor`).
+
   // Only waiting for the store fetch — the block's bottom is the stack's carrier,
   // not a second layer.
   if (layers.length === 0) return null;
-
   return (
     <>
       <UtmArea origin={origin} utmZone={utmZone}>
@@ -278,23 +464,14 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
             material: props.floorColor,
           }}
         >
-          <Chunk
+          <StackContents
+            props={props}
             layers={layers}
-            maxError={props.maxError}
-            surfaceOpacity={props.surfaceOpacity}
-            wallOpacity={props.wallOpacity}
-            wireframe={props.wireframe}
-            inferredStyle={props.inferredStyle}
             onBuild={report}
+            onSite={reportSite}
+            onLine={reportLine}
+            onPlace={reportPlacement}
           />
-          {/* Inside the stack: the wave sampler and the contact-foam registry
-              reach the hull through context. Its origin IS its waterline. */}
-          {props.ship && (
-            <Tanker
-              position={[props.shipX, -props.waterDepth, props.shipZ]}
-              heading={(props.shipHeading * Math.PI) / 180}
-            />
-          )}
         </ChunkStack>
       </UtmArea>
       <ChunkPipeline />
@@ -355,6 +532,21 @@ export const Default: Story = {
     shipX: 2200,
     shipZ: 1800,
     shipHeading: -30,
+    facilities: true,
+    facilityBase: true,
+    facilitySize: 80,
+    baseLevel: 'max',
+    baseStandoff: 0,
+    baseEmbedment: 2,
+    pipelines: true,
+    pipeExaggeration: 1,
+    pipeSpacing: 25,
+    pipeSpan: 0,
+    pipeSmoothing: 0,
+    cursor: true,
+    cursorRadius: 120,
+    cursorSamples: 12,
+    cursorFocus: true,
     seal: true,
     sealMode: 'proportional',
     minThickness: 1,
@@ -519,6 +711,97 @@ export const Default: Story = {
       description:
         'Heading, in degrees about the scene’s Y axis (0 = bow toward +X). The default lines the hull up with the default wind, so the swell runs bow-on.',
       table: { category: 'Ship' },
+    },
+    facilities: {
+      control: 'boolean',
+      description:
+        'Put four subsea templates on the sea bed. ⭐ Their sites are given the way real ones are — as UTM easting/northing on a map, with nothing said about depth (`src/storybook/data/subsea-facilities.ts`). Where they end up vertically comes from SAMPLING the sea bed the chunk actually drew, not the grid it was built from: the two differ by up to `maxError`, which is metres.',
+      table: { category: 'Facilities' },
+    },
+    facilityBase: {
+      control: 'boolean',
+      description:
+        '⭐ The comparison this scene exists for. ON, each structure gets a LEVELLED BASE built from the ground under its own footprint — a flat top to stand on, a skirt cut into the bed, and a report of the fill it needed. OFF, the same structure is simply dropped on the slope (`useSurfacePlacement`) and LEANS, which is why the base exists. Watch the console table: `relief` is what the base has to make up.',
+      table: { category: 'Facilities' },
+    },
+    facilitySize: {
+      control: { type: 'range', min: 40, max: 300, step: 10 },
+      description:
+        'Side of the base’s square footprint, in metres. A wider base spans more ground, so it needs more fill — the numbers move with it.',
+      table: { category: 'Facilities' },
+    },
+    baseLevel: {
+      control: 'inline-radio',
+      options: ['max', 'mean', 'min'],
+      description:
+        'Which of the ground’s own heights the top is levelled at. `max` is pure FILL — nothing is excavated and the base is a berm thickest on the low side. `min` and `mean` cut into the ground instead, and the report’s `cut` says how much.',
+      table: { category: 'Facilities' },
+    },
+    baseStandoff: {
+      control: { type: 'range', min: 0, max: 30, step: 1 },
+      description:
+        'Raise the levelled top this far above the ground it was derived from, in metres.',
+      table: { category: 'Facilities' },
+    },
+    baseEmbedment: {
+      control: { type: 'range', min: 0, max: 20, step: 0.5 },
+      description:
+        'How far the skirt cuts below the sea bed, in metres. ⚠️ It is what stops a hairline of daylight showing under the base: the base and the sea bed are separate tessellations and agree only to within their own errors.',
+      table: { category: 'Facilities' },
+    },
+    pipelines: {
+      control: 'boolean',
+      description:
+        'Lay flowlines between the sites, and an export line out of the field. ⭐ Same data as the facilities — UTM positions on a map — but sampled ALONG a route: the line is densified, each node dropped onto the drawn sea bed, and the result run through a tube. The console table reports `climb`, the length the ground adds over the route measured on the map.',
+      table: { category: 'Pipelines' },
+    },
+    pipeExaggeration: {
+      control: { type: 'range', min: 1, max: 40, step: 1 },
+      description:
+        'Multiplier on the AS-BUILT diameter — the routes carry the real thing (12¾", 16", 30"). ⚠️ At 1 they are correct and essentially invisible at field scale: a 324 mm line is well under a pixel across 7 km. Raise it to look at them.',
+      table: { category: 'Pipelines' },
+    },
+    pipeSpacing: {
+      control: { type: 'range', min: 5, max: 200, step: 5 },
+      description:
+        'Distance between sampled nodes along the route, in metres. The cost knob: it decides how many times the sea bed is sampled and how finely the line follows it.',
+      table: { category: 'Pipelines' },
+    },
+    pipeSpan: {
+      control: { type: 'range', min: 0, max: 400, step: 10 },
+      description:
+        '⭐ Longest hollow the line bridges, in metres. 0 drapes it over every dip exactly — which is the one shape a stiff pipeline definitely does NOT take. Implemented as a rolling maximum, so it can only ever lift the line: it cannot push it into the ground. `lifted` in the table is how far it did.',
+      table: { category: 'Pipelines' },
+    },
+    pipeSmoothing: {
+      control: { type: 'range', min: 0, max: 400, step: 10 },
+      description:
+        'Rounds off the corners `pipeSpan` leaves, over a window in metres. ⚠️ A shape filter and nothing more — it is clamped back to the ground afterwards, so it cannot sink the line either.',
+      table: { category: 'Pipelines' },
+    },
+    cursor: {
+      control: 'boolean',
+      description:
+        'Follow the pointer across the block with a placeholder. ⭐ Two mechanisms, each answering what the other cannot: GPU picking says WHERE the pointer is (it reads what is actually rendered — a height sampler has no idea where the ray went), and the footprint fit says HOW the object sits there. Turns red where part of it would overhang the drawn surface.\n\n**Left click** leaves a marker, **ctrl+left** flies the camera there, **right click** clears the markers.',
+      table: { category: 'Cursor' },
+    },
+    cursorRadius: {
+      control: { type: 'range', min: 20, max: 600, step: 20 },
+      description:
+        '⭐ Radius of the placeholder, in metres — and of the ring it samples. This is the whole reason a pick is not enough: one point has no orientation, so a disc this wide would have to guess which way to lie. Widen it on the slope below the island and watch it tilt.',
+      table: { category: 'Cursor' },
+    },
+    cursorSamples: {
+      control: { type: 'range', min: 3, max: 32, step: 1 },
+      description:
+        'Points around the ring the plane is fitted to. More follows the ground more faithfully; fewer lets a single bump tip it.',
+      table: { category: 'Cursor' },
+    },
+    cursorFocus: {
+      control: 'boolean',
+      description:
+        '**Ctrl+click** flies the camera to the point under the cursor, as the wellbore examples do. Plain click keeps placing a marker, so the two gestures do not fight. ⚠️ The point is converted back to WORLD space first — the camera knows nothing about the stack’s frame.',
+      table: { category: 'Cursor' },
     },
     seal: { control: 'boolean', table: { category: 'Resolve' } },
     sealMode: {

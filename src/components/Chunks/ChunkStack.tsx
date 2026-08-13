@@ -40,6 +40,13 @@ import { CutoutSource } from './cutout';
 import { buildStackWaterSpec } from './chunk-spec';
 import { resolveWellboreOutline } from './resolveWellboreOutline';
 import { resolveSeam, SeamDecision } from './seams';
+import {
+  createSurfaceSampler,
+  SurfaceSamplerContext,
+  SurfaceSamplerEntry,
+  SurfaceSamplerRegistry,
+  SurfaceSamplerRegistryContext,
+} from './surface-sampler';
 import { useStackWater } from './useStackWater';
 
 /**
@@ -368,6 +375,31 @@ export const ChunkStack = ({
     [rebuildRegistry],
   );
 
+  // --- Sampling: what the chunks have DRAWN, offered to anything placed on it.
+  //     Kept out of the context value above, which is what every chunk's build
+  //     spec is derived from — a sibling finishing its geometry must not disturb
+  //     it. The version is the signal to sample again. -------------------------
+  const drawn = useRef(new Map<string, SurfaceSamplerEntry[]>());
+  const [drawnVersion, setDrawnVersion] = useState(0);
+  const samplerRegistry = useMemo<SurfaceSamplerRegistry>(
+    () => ({
+      register(key, entries) {
+        drawn.current.set(key, entries);
+        setDrawnVersion(v => v + 1);
+        return () => {
+          drawn.current.delete(key);
+          setDrawnVersion(v => v + 1);
+        };
+      },
+    }),
+    [],
+  );
+  const sampler = useMemo(
+    () => createSurfaceSampler([...drawn.current.values()].flat()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a new identity per change is the point
+    [drawnVersion],
+  );
+
   // What the shared build LOADS: a surface no chunk claims would be fetched,
   // resampled onto the common grid and cascaded through the resolve for nothing.
   // Appearance needs no equivalent — a horizon is drawn by the chunk it is the lid
@@ -488,17 +520,21 @@ export const ChunkStack = ({
 
   return (
     <ChunkStackContext.Provider value={value}>
-      <OceanSamplerContext.Provider value={sea?.sampler ?? null}>
-        <OceanContactContext.Provider value={sea?.contacts ?? null}>
-          {sea && seaGeometry?.lid && (
-            <mesh geometry={seaGeometry.lid} material={sea.surface} />
-          )}
-          {sea && seaGeometry?.body && (
-            <mesh geometry={seaGeometry.body} material={sea.volume} />
-          )}
-          {children}
-        </OceanContactContext.Provider>
-      </OceanSamplerContext.Provider>
+      <SurfaceSamplerRegistryContext.Provider value={samplerRegistry}>
+        <SurfaceSamplerContext.Provider value={sampler}>
+          <OceanSamplerContext.Provider value={sea?.sampler ?? null}>
+            <OceanContactContext.Provider value={sea?.contacts ?? null}>
+              {sea && seaGeometry?.lid && (
+                <mesh geometry={seaGeometry.lid} material={sea.surface} />
+              )}
+              {sea && seaGeometry?.body && (
+                <mesh geometry={seaGeometry.body} material={sea.volume} />
+              )}
+              {children}
+            </OceanContactContext.Provider>
+          </OceanSamplerContext.Provider>
+        </SurfaceSamplerContext.Provider>
+      </SurfaceSamplerRegistryContext.Provider>
     </ChunkStackContext.Provider>
   );
 };

@@ -40,6 +40,7 @@ type EventState = {
   deltaTime: number;
   posX: number;
   posY: number;
+  button: number;
   pickingHelper: PickingHelper;
 };
 
@@ -68,6 +69,7 @@ export const EventEmitter = ({
       },
       posX: -1,
       posY: -1,
+      button: -1,
       deltaTime: 0,
       pickingHelper: Number.isFinite(threshold)
         ? new PickingHelper({ radius: threshold })
@@ -183,6 +185,7 @@ export const EventEmitter = ({
           pointer: eventState.currentResult.point,
           position: eventState.currentResult.position,
           keys: eventState.keys,
+          button: eventState.button,
           camera,
           domElement: gl.domElement,
         });
@@ -231,6 +234,7 @@ export const EventEmitter = ({
         eventState.buttonDown = true;
         eventState.posX = event.pageX;
         eventState.posY = event.pageY;
+        eventState.button = event.button;
         eventState.deltaTime = performance.now();
       }
     }

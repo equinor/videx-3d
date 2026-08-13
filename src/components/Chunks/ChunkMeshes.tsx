@@ -246,8 +246,18 @@ export const ChunkMeshes = ({
           return (
             // oxlint-disable-next-line react/no-array-index-key -- `layer` is NOT unique: a void split gives two meshes the same layer index.
             <group key={`wall-${i}`}>
-              <mesh geometry={wall.geometry} material={material} />
-              {overlay && <mesh geometry={wall.geometry} material={overlay} />}
+              <mesh
+                geometry={wall.geometry}
+                material={material}
+                userData={{ layer: wall.layer, kind: 'wall' }}
+              />
+              {overlay && (
+                <mesh
+                  geometry={wall.geometry}
+                  material={overlay}
+                  userData={{ layer: wall.layer, kind: 'wall' }}
+                />
+              )}
             </group>
           );
         })}
@@ -280,7 +290,13 @@ export const ChunkMeshes = ({
           return (
             // oxlint-disable-next-line react/no-array-index-key -- `layer` is NOT unique: a void split gives two meshes the same layer index.
             <group key={`surface-${i}`}>
-              <mesh geometry={surface.geometry}>
+              {/* A pointer hit reports the Object3D it landed on, so the layer
+                  index rides along with it — otherwise a handler knows a chunk
+                  was hit but not which unit. */}
+              <mesh
+                geometry={surface.geometry}
+                userData={{ layer: surface.layer, kind: 'surface' }}
+              >
                 <primitive
                   key={material.uuid}
                   object={material}
@@ -288,7 +304,10 @@ export const ChunkMeshes = ({
                 />
               </mesh>
               {overlay && (
-                <mesh geometry={surface.geometry}>
+                <mesh
+                  geometry={surface.geometry}
+                  userData={{ layer: surface.layer, kind: 'surface' }}
+                >
                   <primitive
                     key={overlay.uuid}
                     object={overlay}

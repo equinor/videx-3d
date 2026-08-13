@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Material } from 'three';
+import { Group, Material } from 'three';
 import { useData } from '../../hooks/useData';
 import { useGenerator } from '../../hooks/useGenerator';
 import {
@@ -21,6 +21,11 @@ import {
   unpackSurfaceChunk,
 } from '../../sdk';
 import { UtmAreaContext } from '../UtmArea';
+import {
+  EventEmitterCallback,
+  useEventEmitter,
+} from '../EventEmitter/EventEmitterContext';
+import { PointerEvents } from '../../events/interaction-events';
 import {
   ChunkBuildState,
   CARRIER_SEAM_ID,
@@ -38,6 +43,7 @@ import { ChunkMeshes } from './ChunkMeshes';
 import { ChunkOutline, CutoutSource, resolveCutoutSource } from './cutout';
 import { ChunkInferenceStyle } from './inference-material';
 import { resolveWellboreOutline } from './resolveWellboreOutline';
+import { SurfaceSamplerRegistryContext } from './surface-sampler';
 
 /** Stable identity for the default resolve options (a new object rebuilds). */
 const DEFAULT_RESOLVE: ChunkResolveOptions = {};
@@ -116,7 +122,7 @@ export type ChunkProps = {
    */
   onBuildStateChange?: (state: ChunkBuildState) => void;
   children?: ReactNode;
-};
+} & PointerEvents;
 
 /** Dispose every geometry a built {@link SurfaceChunk} owns. */
 function disposeChunk(chunk: SurfaceChunk | null) {
@@ -170,6 +176,10 @@ export const Chunk = ({
   showWalls = true,
   onBuild,
   onBuildStateChange,
+  onPointerClick,
+  onPointerEnter,
+  onPointerLeave,
+  onPointerMove,
   children,
 }: ChunkProps) => {
   const store = useData();
@@ -578,6 +588,48 @@ export const Chunk = ({
     return () => disposeChunk(chunk);
   }, [chunk]);
 
+  // --- Offer what was drawn for sampling. Ceiling copies are left out: one faces
+  //     UP but is the underside of the unit above, and something placed on it
+  //     would sit inside the block. ------------------------------------------
+  const samplerRegistry = useContext(SurfaceSamplerRegistryContext);
+  useEffect(() => {
+    if (!samplerRegistry || !chunk) return;
+    return samplerRegistry.register(
+      registryKey,
+      chunk.surfaces
+        .filter(mesh => !mesh.ceiling)
+        .map(mesh => ({
+          id: stableLayers[mesh.layer]?.surface?.id ?? null,
+          layer: mesh.layer,
+          geometry: mesh.geometry,
+        })),
+    );
+  }, [samplerRegistry, chunk, stableLayers, registryKey]);
+
+  // --- Pointer events: the chunk's OWN meshes are the hit surface, so `children`
+  //     stay outside the group. Each mesh carries its layer index in `userData`,
+  //     which is what turns "the chunk was hit" into "this unit was hit". -------
+  const meshes = useRef<Group>(null);
+  const eventHandler = useEventEmitter();
+  useEffect(() => {
+    if (!eventHandler || !meshes.current) return;
+    const handlers: Record<string, EventEmitterCallback> = {};
+    if (onPointerClick) handlers.click = onPointerClick;
+    if (onPointerEnter) handlers.enter = onPointerEnter;
+    if (onPointerLeave) handlers.leave = onPointerLeave;
+    if (onPointerMove) handlers.move = onPointerMove;
+    if (Object.keys(handlers).length === 0) return;
+
+    return eventHandler.register({ object: meshes.current, handlers });
+  }, [
+    eventHandler,
+    onPointerClick,
+    onPointerEnter,
+    onPointerLeave,
+    onPointerMove,
+    chunk,
+  ]);
+
   // --- Appearance / rendering is delegated to ChunkMeshes (reactive layer). ---
   // ⭐ Nothing is borrowed across a seam: a horizon is drawn by the chunk it is the
   // lid of (see `resolveSeam`), so every chunk draws with its OWN appearance.
@@ -585,18 +637,20 @@ export const Chunk = ({
 
   return (
     <>
-      <ChunkMeshes
-        chunk={chunk}
-        layers={appearanceLayers}
-        surfaceOpacity={surfaceOpacity}
-        wallOpacity={wallOpacity}
-        wireframe={wireframe}
-        inferredStyle={inferredStyle}
-        showSurfaces={showSurfaces}
-        showWalls={showWalls}
-        water={stack.water}
-        carrierMaterial={stack.carrierMaterial}
-      />
+      <group ref={meshes}>
+        <ChunkMeshes
+          chunk={chunk}
+          layers={appearanceLayers}
+          surfaceOpacity={surfaceOpacity}
+          wallOpacity={wallOpacity}
+          wireframe={wireframe}
+          inferredStyle={inferredStyle}
+          showSurfaces={showSurfaces}
+          showWalls={showWalls}
+          water={stack.water}
+          carrierMaterial={stack.carrierMaterial}
+        />
+      </group>
       {children}
     </>
   );
