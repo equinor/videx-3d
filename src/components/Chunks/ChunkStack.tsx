@@ -29,6 +29,7 @@ import {
   StackWaterResponse,
 } from './chunk-defs';
 import {
+  ChunkMarginEntry,
   ChunkOutlineEntry,
   ChunkOutlineRegistry,
   ChunkSeamRegistry,
@@ -199,6 +200,11 @@ export const ChunkStack = ({
   const [wellboreEnvelope, setWellboreEnvelope] =
     useState<PlanarPolygonGeometry | null>(null);
 
+  // Every chunk's depth window and buffer margin, so a chunk accumulating
+  // trajectory from outside its own window can buffer each interval with the
+  // margin of the chunk that owns it. Read by the envelope effect below too.
+  const marginEntries = useRef(new Map<string, ChunkMarginEntry>());
+
   useEffect(() => {
     if (!cutSource || cutSource.kind !== 'wellbores') return;
     if (!store || !utm || !surfaces || surfaces.length === 0) return;
@@ -222,11 +228,24 @@ export const ChunkStack = ({
       store.get<Float32Array>('surface-values', baseMeta.id),
     ]).then(([topValues, baseValues]) => {
       if (cancelled || !topValues || !baseValues) return;
+      const mode = cutSource.options?.mode ?? 'window';
+      // The envelope must CONTAIN every chunk's outline, so it takes the widest
+      // margin any chunk may use and the full depth range: a chunk's own window
+      // is always a sub-range of the column's, and its margin is one of these.
+      const widest = Math.max(
+        cutSource.options?.radius ?? 500,
+        ...[...marginEntries.current.values()].map(m => m.radius),
+      );
       return resolveWellboreOutline(
         cutSource.wellbores,
         cutSource.options,
-        toLayer(topMeta, topValues),
-        toLayer(baseMeta, baseValues),
+        [
+          {
+            top: mode === 'above' ? null : toLayer(topMeta, topValues),
+            base: mode === 'below' ? null : toLayer(baseMeta, baseValues),
+            radius: widest,
+          },
+        ],
         store,
         utm.utmToArea,
       ).then(poly => {
@@ -409,6 +428,41 @@ export const ChunkStack = ({
     [surfaces, claimed],
   );
 
+  // --- Margin ramp: ordered shallow→deep by the COLUMN, not by child order — a
+  //     caller may declare chunks in any order and the ramp is a property of
+  //     depth. -------------------------------------------------------------
+  const [margins, setMargins] = useState<ChunkMarginEntry[]>([]);
+
+  const rebuildMargins = useCallback(() => {
+    const list = [...marginEntries.current.values()];
+    const at = (id?: string) => {
+      const i = id ? (surfaces?.findIndex(m => m.id === id) ?? -1) : -1;
+      return i < 0 ? Number.MAX_SAFE_INTEGER : i;
+    };
+    list.sort((a, b) => at(a.topSurfaceId) - at(b.topSurfaceId));
+    setMargins(previous =>
+      previous.length === list.length &&
+      previous.every(
+        (p, i) =>
+          p.key === list[i].key &&
+          p.radius === list[i].radius &&
+          p.topSurfaceId === list[i].topSurfaceId &&
+          p.baseSurfaceId === list[i].baseSurfaceId,
+      )
+        ? previous
+        : list,
+    );
+  }, [surfaces]);
+
+  const publishMargin = useCallback(
+    (key: string, entry: ChunkMarginEntry | null) => {
+      if (entry) marginEntries.current.set(key, entry);
+      else marginEntries.current.delete(key);
+      rebuildMargins();
+    },
+    [rebuildMargins],
+  );
+
   const value = useMemo<ChunkStackContextValue>(() => {
     const envelope =
       cutSource?.kind === 'wellbores'
@@ -432,8 +486,10 @@ export const ChunkStack = ({
       maxError,
       outlines: registry,
       seams,
+      margins,
       registerChunk,
       publishOutline,
+      publishMargin,
       reportBuildState,
     };
   }, [
@@ -450,8 +506,10 @@ export const ChunkStack = ({
     maxError,
     registry,
     seams,
+    margins,
     registerChunk,
     publishOutline,
+    publishMargin,
     reportBuildState,
   ]);
 

@@ -255,12 +255,49 @@ survives accumulation).
 > `marchingSquares` / `ringsToPolygonCoordinates` / `simplifyPolyline`). The
 > `CutoutSource` (§4.1) is wired into `ChunkStack`/`Chunk`. Full pipeline still
 > main-thread (no worker yet).
->
-> **Not built:** per-interval margins composed as a prefix-min of *signed* fields,
-> `min_k(d_k − r_k)` — the model that lets each depth interval carry its own margin
-> while the accumulated outline stays nested regardless of whether the radius is
-> monotone. `'above'`/`'below'` today re-buffer the whole accumulated run set with
-> one radius.
+
+#### 4.2.3 Per-interval margins (the ramp)
+
+A margin is authored **per chunk**, but a chunk in `'above'`/`'below'` mode
+accumulates trajectory from outside its own window — so it needs its neighbours'
+margins too. `ChunkStack` collects every chunk's depth window and margin and
+publishes them ordered by the **column** (`ChunkStackContextValue.margins`); a
+chunk takes the prefix or suffix it accumulates and buffers each interval with the
+margin of the chunk that owns it.
+
+⭐ The model is a prefix-min of SIGNED fields, `min_k (d_k − r_k)` — but that
+collapses to something far simpler:
+
+$$\min_{k \le i}\ \min_{p \in k}(\mathrm{dist}_p - r_k) \;=\; \min_{p\ \in\ 0..i}\bigl(\mathrm{dist}_p - r_{\text{interval}(p)}\bigr)$$
+
+so it is just **one field where each path carries its own margin**. No shared
+raster, no cross-chunk field composition. `createWellboreOutline` therefore takes
+`WellborePath[]` (`{ points, radius }`), and the margin is subtracted per SEGMENT
+rather than once per call.
+
+Two properties fall out:
+
+- **Nesting is structural.** A deeper chunk's path set contains the shallower
+  one's with the *same* per-path margins, so its field is pointwise smaller and
+  its outline contains it — whether or not the margin grows with depth. A
+  non-monotone ramp can no longer tear the stack apart.
+- **A narrow neck stays narrow.** Buffering the whole accumulated set with the
+  deep chunk's radius would bloat the shallow top-hole to the deep block's width.
+
+⚠️ Nesting is exact in the FIELD but approximate in the CONTOUR: each chunk still
+rasterizes on its own per-group grid with its own origin, so two nested outlines
+can disagree by about a cell along the boundary. Same class of residual already
+accepted between chunks (`2 × maxError`).
+
+⚠️ A chunk in an accumulating mode must wait for its OWN entry to appear in the
+ramp before resolving — the entries register in an effect, so the ramp is empty on
+the first render. Same rule as `column` (§11).
+
+⚠️ Cost: a chunk loads the bounding surface of every interval it accumulates, so
+the stack does O(N²) `surface-values` requests. They are all cache hits after the
+first (a `slice(0)` memcpy — see §14.5.1), but a stack-level resolution that
+computed every chunk's outline in one pass would make it O(N) and is the obvious
+next step if it ever shows.
 
 ### 4.3 Per-chunk variation (a feature, with options)
 

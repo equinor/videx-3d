@@ -122,6 +122,38 @@ export type ChunkStackContextValue = {
    * as building.
    */
   reportBuildState?: (key: string, state: ChunkBuildState) => void;
+  /**
+   * Every chunk's depth window and wellbore margin, ordered shallow→deep by the
+   * column. A chunk accumulating trajectory from outside its own window (see
+   * `WellboreOutlineMode`) buffers each depth interval with the margin of the
+   * chunk that owns it, so it needs its NEIGHBOURS' margins, not just its own.
+   *
+   * ⚠️ Empty until the children have registered (they do so in an effect), so a
+   * chunk must wait for its own entry to appear rather than build against a
+   * partial ramp — exactly like {@link ChunkStackContextValue.column}.
+   */
+  margins?: ChunkMarginEntry[];
+  /**
+   * Publish a chunk's depth window and margin (see
+   * {@link ChunkStackContextValue.margins}). Pass `null` to withdraw it.
+   */
+  publishMargin?: (key: string, entry: ChunkMarginEntry | null) => void;
+};
+
+/**
+ * One chunk's depth window and the margin its wellbore cut source buffers with.
+ *
+ * @group Contexts
+ */
+export type ChunkMarginEntry = {
+  /** the publishing chunk's registry key */
+  key: string;
+  /** its shallowest REAL surface (a synthetic layer bounds nothing) */
+  topSurfaceId?: string;
+  /** its deepest REAL surface */
+  baseSurfaceId?: string;
+  /** the buffer margin, scene units */
+  radius: number;
 };
 
 /**

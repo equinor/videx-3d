@@ -316,11 +316,14 @@ export type WellboreOutlineMetrics = {
  * @group Geometries
  */
 export type WellboreOutlineOptions = {
-  /** buffer radius around the trajectory paths, scene units (default 500). */
+  /** default buffer margin, scene units (default 500). A path may override it. */
   radius?: number;
-  /** lower clamp for the (shape-modulated) radius. Defaults to `radius`. */
+  /**
+   * Lower clamp for the {@link WellboreOutlineOptions.shapeFn}-modulated margin,
+   * scene units. Unset means no clamp.
+   */
   minRadius?: number;
-  /** upper clamp for the (shape-modulated) radius. Defaults to `radius`. */
+  /** upper clamp for the modulated margin, scene units. Unset means no clamp. */
   maxRadius?: number;
   /**
    * Upper bound for the raster cell size, scene units (default
@@ -357,19 +360,38 @@ export type WellboreOutlineOptions = {
 };
 
 /**
+ * A trajectory path with its OWN buffer margin, for building an outline whose
+ * margin varies with depth (see {@link createWellboreOutline}).
+ *
+ * @group Geometries
+ */
+export type WellborePath = {
+  /** ordered scene-XZ polyline */
+  points: Vec2[];
+  /** margin for THIS path, scene units. Defaults to the shared `radius`. */
+  radius?: number;
+};
+
+/**
  * Turn trajectory paths (ordered scene-XZ polylines, e.g. from
  * {@link collectTrajectoryRuns}) into a chunk cut outline.
  *
  * The paths are split into spatially separated GROUPS, and each group is
- * rasterized over its own bounding box as a signed distance field
- * `distanceToNearestSegment - radius` (negative inside the buffer), with the
- * radius clamped and optionally modulated per angle about the group centroid
- * ({@link WellboreOutlineOptions.shapeFn}). Each field is contoured at zero with
- * {@link marchingSquares} and smoothed; the rings from every group are then
- * grouped into outer/hole components ({@link ringsToPolygonCoordinates}).
+ * rasterized over its own bounding box as a signed distance field, the minimum
+ * over its segments of `distanceToSegment - margin`, negative inside the buffer.
+ * Each field is contoured at zero with {@link marchingSquares} and smoothed; the
+ * rings from every group are then grouped into outer/hole components
+ * ({@link ringsToPolygonCoordinates}).
+ *
+ * ⭐ The margin is PER PATH, not per call. That is what makes an accumulated
+ * outline nest: buffering each path with the margin of the depth interval it came
+ * from means a deeper chunk's field is the shallower one's `min` with more terms,
+ * so its outline CONTAINS the shallower one whether or not the margin grows with
+ * depth. Buffering the whole accumulated set with one radius instead would let a
+ * wide deep margin bloat the shallow neck, and a narrow one break the nesting.
  *
  * Rasterizing per group rather than over one bounding box is what keeps a small
- * radius affordable: the node count follows the corridors, not the extent of the
+ * margin affordable: the node count follows the corridors, not the extent of the
  * field. The result is the same, because groups are separated by more than any
  * buffer can reach.
  *
@@ -377,46 +399,68 @@ export type WellboreOutlineOptions = {
  * component of the buffered set, so paths yield separate outlines exactly while
  * their buffers stay apart, and merge into one as they grow into each other.
  *
- * @param paths ordered polylines; a single-point path is a disc
+ * @param paths ordered polylines, optionally each with its own margin; a
+ *   single-point path is a disc
  * @param options see {@link WellboreOutlineOptions}
  * @returns the outline polygon, or `null` when there is nothing to buffer
  *
  * @group Geometries
  */
 export function createWellboreOutline(
-  paths: Vec2[][],
+  paths: Vec2[][] | WellborePath[],
   options: WellboreOutlineOptions = {},
 ): PlanarPolygonGeometry | null {
   const radius = options.radius ?? 500;
-  const minRadius = options.minRadius ?? radius;
-  const maxRadius = options.maxRadius ?? radius;
+  const minRadius = options.minRadius;
+  const maxRadius = options.maxRadius;
   const shapeFn = options.shapeFn;
   const feather = options.feather ?? 0;
   const smoothing = options.smoothing ?? 1;
   const maxCells = options.maxCells ?? 1000000;
 
-  const requestedCellSize = Math.min(
-    options.cellSize ?? DEFAULT_OUTLINE_CELL_SIZE,
-    Math.max(minRadius, 1) / OUTLINE_CELLS_PER_RADIUS,
-  );
-  const simplify = options.simplify ?? Math.max(minRadius, 1) / 8;
-
-  const kept: Vec2[][] = [];
-  for (const path of paths) {
-    if (path.length === 0) continue;
-    kept.push(
-      simplify > 0 && path.length > 2 ? simplifyPolyline(path, simplify) : path,
+  // Normalise to paths carrying their OWN margin. Buffering each path with the
+  // margin of the depth interval it came from is what lets an accumulated outline
+  // stay nested without the radius having to grow with depth: a later interval
+  // only ever ADDS a term to the field's `min`, so it cannot pull the boundary in.
+  const kept: { points: Vec2[]; radius: number }[] = [];
+  let narrowest = Infinity;
+  let widest = 0;
+  for (const entry of paths) {
+    const points = Array.isArray(entry) ? entry : entry.points;
+    if (points.length === 0) continue;
+    const r = Math.max(
+      (Array.isArray(entry) ? undefined : entry.radius) ?? radius,
+      0,
     );
+    if (r < narrowest) narrowest = r;
+    if (r > widest) widest = r;
+    kept.push({ points, radius: r });
   }
   if (kept.length === 0) return null;
 
+  // The clamps bound what `shapeFn` may do, so they widen the range the raster has
+  // to resolve and pad for. Erring wide costs a finer raster and more padding,
+  // never correctness.
+  if (minRadius !== undefined) narrowest = Math.min(narrowest, minRadius);
+  if (maxRadius !== undefined) widest = Math.max(widest, maxRadius);
+
+  const requestedCellSize = Math.min(
+    options.cellSize ?? DEFAULT_OUTLINE_CELL_SIZE,
+    Math.max(narrowest, 1) / OUTLINE_CELLS_PER_RADIUS,
+  );
+  const simplify = options.simplify ?? Math.max(narrowest, 1) / 8;
+  if (simplify > 0)
+    for (const path of kept)
+      if (path.points.length > 2)
+        path.points = simplifyPolyline(path.points, simplify);
+
   // Two groups this far apart cannot affect each other's contour: a distance
   // field is 1-Lipschitz, so a node more than one cell from the buffer can never
-  // sit on a zero crossing, and 3 * maxRadius leaves every foreign contribution
-  // far above that even after the raster padding.
+  // sit on a zero crossing, and 3 * widest leaves every foreign contribution far
+  // above that even after the raster padding.
   const groups = groupByOccupiedCells(
-    kept,
-    3 * maxRadius + 3 * requestedCellSize,
+    kept.map(p => p.points),
+    3 * widest + 3 * requestedCellSize,
   );
 
   const rings: Vec2[][] = [];
@@ -428,8 +472,9 @@ export function createWellboreOutline(
   let coarsened = false;
 
   for (const group of groups) {
-    // Flatten the group's paths to a segment soup. A single-point path becomes a
-    // degenerate segment, which the point-to-segment formula handles as a disc.
+    // Flatten the group's paths to a segment soup, each segment carrying its
+    // path's margin (stride 5). A single-point path becomes a degenerate segment,
+    // which the point-to-segment formula handles as a disc.
     const flat: number[] = [];
     let gMinX = Infinity;
     let gMinZ = Infinity;
@@ -439,11 +484,11 @@ export function createWellboreOutline(
     let sumZ = 0;
     let count = 0;
     for (const index of group) {
-      const path = kept[index];
+      const { points: path, radius: r } = kept[index];
       if (path.length === 1)
-        flat.push(path[0][0], path[0][1], path[0][0], path[0][1]);
+        flat.push(path[0][0], path[0][1], path[0][0], path[0][1], r);
       for (let i = 1; i < path.length; i++)
-        flat.push(path[i - 1][0], path[i - 1][1], path[i][0], path[i][1]);
+        flat.push(path[i - 1][0], path[i - 1][1], path[i][0], path[i][1], r);
       for (const [x, z] of path) {
         if (x < gMinX) gMinX = x;
         if (x > gMaxX) gMaxX = x;
@@ -455,20 +500,20 @@ export function createWellboreOutline(
       }
     }
     const segs = new Float32Array(flat);
-    const segCount = segs.length / 4;
+    const segCount = segs.length / 5;
     segments += segCount;
     const centroidX = sumX / count;
     const centroidZ = sumZ / count;
 
     // Pad by the largest possible radius so the whole buffer fits, plus a cell.
     let cellSize = requestedCellSize;
-    let pad = maxRadius + cellSize;
+    let pad = widest + cellSize;
     let width = gMaxX - gMinX + 2 * pad;
     let height = gMaxZ - gMinZ + 2 * pad;
     if ((width / cellSize + 1) * (height / cellSize + 1) > maxCells) {
       cellSize = Math.sqrt((width * height) / maxCells);
       coarsened = true;
-      pad = maxRadius + cellSize;
+      pad = widest + cellSize;
       width = gMaxX - gMinX + 2 * pad;
       height = gMaxZ - gMinZ + 2 * pad;
     }
@@ -476,13 +521,18 @@ export function createWellboreOutline(
 
     const originX = gMinX - pad;
     const originZ = gMinZ - pad;
-    const cols = Math.max(2, Math.floor(width / cellSize) + 1);
-    const rows = Math.max(2, Math.floor(height / cellSize) + 1);
+    // ⚠️ CEIL, not floor: the padding leaves a cell of slack beyond the widest
+    // buffer so the contour never reaches the raster border (marching squares
+    // emits an OPEN contour there, which downstream code closes into a bogus
+    // ring). Truncating the node count gives that whole cell back, and a buffer
+    // that lands within it gets torn into fragments.
+    const cols = Math.max(2, Math.ceil(width / cellSize) + 1);
+    const rows = Math.max(2, Math.ceil(height / cellSize) + 1);
     nodes += cols * rows;
 
     // A node further than this from every segment is provably outside the buffer
     // by more than a cell, so the fallback below cannot sit on a zero crossing.
-    const pruneMargin = maxRadius + 2 * cellSize;
+    const pruneMargin = widest + 2 * cellSize;
     const index = buildSegmentIndex(
       segs,
       originX,
@@ -501,6 +551,11 @@ export function createWellboreOutline(
       for (let c = 0; c < cols; c++) {
         const nx = originX + c * cellSize;
         const gx = Math.floor((nx - originX) / index.cell);
+        // The margin is per SEGMENT, so the min is taken over the signed value
+        // rather than over the distance — that is the whole per-interval model.
+        const modulate = shapeFn
+          ? shapeFn(Math.atan2(nz - centroidZ, nx - centroidX))
+          : 1;
         let best = Infinity;
         for (let dz = -1; dz <= 1; dz++) {
           const bz = gz + dz;
@@ -514,26 +569,25 @@ export function createWellboreOutline(
               k < index.start[bucket + 1];
               k++
             ) {
-              const s = index.items[k] * 4;
-              const d = distanceToSegment(
-                nx,
-                nz,
-                segs[s],
-                segs[s + 1],
-                segs[s + 2],
-                segs[s + 3],
-              );
-              if (d < best) best = d;
+              const s = index.items[k] * 5;
+              let rad = segs[s + 4] * modulate;
+              if (minRadius !== undefined && rad < minRadius) rad = minRadius;
+              if (maxRadius !== undefined && rad > maxRadius) rad = maxRadius;
+              const signed =
+                distanceToSegment(
+                  nx,
+                  nz,
+                  segs[s],
+                  segs[s + 1],
+                  segs[s + 2],
+                  segs[s + 3],
+                ) - rad;
+              if (signed < best) best = signed;
             }
           }
         }
-        const dmin = best === Infinity ? pruneMargin : best;
-        let rad = radius;
-        if (shapeFn)
-          rad = radius * shapeFn(Math.atan2(nz - centroidZ, nx - centroidX));
-        if (rad < minRadius) rad = minRadius;
-        if (rad > maxRadius) rad = maxRadius;
-        field[r * cols + c] = dmin - rad;
+        // Nothing near: provably more than a cell outside (see `pruneMargin`).
+        field[r * cols + c] = best === Infinity ? pruneMargin - widest : best;
       }
     }
 
@@ -635,13 +689,13 @@ function buildSegmentIndex(
 ): SegmentIndex {
   const cols = Math.max(1, Math.ceil(width / cell) + 1);
   const rows = Math.max(1, Math.ceil(height / cell) + 1);
-  const count = segments.length / 4;
+  const count = segments.length / 5;
   const start = new Int32Array(cols * rows + 1);
 
   // Same traversal twice: count per bucket, then fill.
   const walk = (visit: (bucket: number, segment: number) => void) => {
     for (let i = 0; i < count; i++) {
-      const s = i * 4;
+      const s = i * 5;
       const ax = segments[s];
       const az = segments[s + 1];
       const dx = segments[s + 2] - ax;

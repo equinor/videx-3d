@@ -111,6 +111,7 @@ type PerChunkStoryProps = {
   mode: WellboreOutlineMode;
   unmapped: 'exclude' | 'ignore';
   radius: number;
+  radiusBase: number;
   cellSize: number;
   feather: number;
   wellSmoothing: number;
@@ -250,6 +251,19 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
       props.wellSmoothing,
       props.sampleSpacing,
     ],
+  );
+
+  // Per-chunk MARGIN, interpolated shallow→deep. Each chunk overrides only
+  // `radius`, inheriting the rest of the stack's source — and under `above` every
+  // chunk buffers each depth interval with the margin of the chunk that owns it,
+  // so this is a genuine ramp rather than the deepest chunk's radius winning.
+  const marginAt = useCallback(
+    (index: number, count: number) =>
+      count < 2
+        ? props.radius
+        : props.radius +
+          ((props.radiusBase - props.radius) * index) / (count - 1),
+    [props.radius, props.radiusBase],
   );
 
   // Per-chunk build report. The library never logs by itself — `onBuild` hands the
@@ -448,6 +462,10 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
           {chunkProps.map((layers, i) => (
             <Chunk
               key={i}
+              outline={{
+                kind: 'wellbores',
+                options: { radius: marginAt(i, chunkProps.length) },
+              }}
               // The uppermost surface of the whole stack may use the real
               // SurfaceMaterial — now just a material on that layer. The water is a
               // plain-coloured FLUID layer sitting above it, NOT the sea: it draws
@@ -535,6 +553,7 @@ export const Default: Story = {
     mode: 'window',
     unmapped: 'exclude',
     radius: 800,
+    radiusBase: 800,
     cellSize: 200,
     feather: 0,
     wellSmoothing: 1,
@@ -604,6 +623,14 @@ export const Default: Story = {
     },
     radius: {
       control: { type: 'range', min: 100, max: 3000, step: 50 },
+      description:
+        'Margin for the SHALLOWEST chunk. Each chunk gets its own, interpolated toward `radiusBase`.',
+      table: { category: 'Wellbore outline' },
+    },
+    radiusBase: {
+      control: { type: 'range', min: 100, max: 3000, step: 50 },
+      description:
+        'Margin for the DEEPEST chunk. ⭐ Under `above`, each depth interval keeps the margin of the chunk that owns it, so a narrow shallow neck stays narrow inside a wide deep block — and setting this BELOW `radius` cannot break the nesting.',
       table: { category: 'Wellbore outline' },
     },
     unmapped: {

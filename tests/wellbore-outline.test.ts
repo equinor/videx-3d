@@ -6,6 +6,7 @@ import {
   createSurfaceDepthSampler,
   createWellboreOutline,
   WellboreOutlineMetrics,
+  WellborePath,
 } from '../src/sdk/geometries/wellbore-outline';
 import { pointInRing } from '../src/sdk/geometries/polygon-outline';
 import { PlanarPolygonCoordinates } from '../src/sdk/geometries/planar-geometry';
@@ -358,5 +359,83 @@ describe('createWellboreOutline', () => {
       }
     }
     expect(probed).toBeGreaterThan(2000);
+  });
+
+  it('buffers each path with its OWN margin', () => {
+    // Also guards the raster border: mixed margins size the raster from the
+    // NARROWEST while the widest buffer decides how far it must reach, which is
+    // how a buffer once ended up touching the edge and being torn in two.
+    const narrow: Vec2[] = [
+      [0, 0],
+      [0, 2000],
+    ];
+    const wide: Vec2[] = [
+      [4000, 0],
+      [4000, 2000],
+    ];
+    const poly = createWellboreOutline(
+      [
+        { points: narrow, radius: 200 },
+        { points: wide, radius: 900 },
+      ],
+      { smoothing: 0 },
+    );
+    const coords = poly!.coordinates as PlanarPolygonCoordinates;
+    expect(coords.length).toBe(2);
+    const ringAt = (x: number) =>
+      coords.find(c => c[0].some(([px]) => Math.abs(px - x) < 1500))![0];
+    // 400 m out is inside the wide path's buffer and outside the narrow one's.
+    expect(pointInRing(400, 1000, ringAt(0))).toBe(false);
+    expect(pointInRing(4400, 1000, ringAt(4000))).toBe(true);
+    // ...and the wide buffer is whole down to its cap, not clipped at the border.
+    expect(pointInRing(4000, -600, ringAt(4000))).toBe(true);
+  });
+
+  it('nests: a deeper interval can only GROW the outline, whatever its margin', () => {
+    // A shallow "neck" plus a deeper interval with a SMALLER margin. Buffering the
+    // union with one radius could not keep both promises; per-path margins can.
+    const shallow: WellborePath = {
+      points: [
+        [0, 0],
+        [0, 1000],
+      ],
+      radius: 600,
+    };
+    const deep: WellborePath = {
+      points: [
+        [0, 1000],
+        [0, 4000],
+      ],
+      radius: 150,
+    };
+    const cellSize = 40;
+    const opts = { smoothing: 0, cellSize };
+    const only = createWellboreOutline([shallow], opts)!;
+    const both = createWellboreOutline([shallow, deep], opts)!;
+    const inside = (p: typeof only, x: number, z: number) =>
+      (p.coordinates as PlanarPolygonCoordinates).some(c =>
+        pointInRing(x, z, c[0]),
+      );
+
+    // Containment, probed away from the boundary.
+    let probed = 0;
+    for (let x = -1200; x <= 1200; x += 37) {
+      for (let z = -1200; z <= 5200; z += 37) {
+        if (!inside(only, x, z)) continue;
+        // Strictly inside the shallow buffer by more than two cells (the two
+        // outlines COINCIDE along the neck, so probing the boundary itself would
+        // be a coin flip rather than a containment check).
+        const d = Math.hypot(x, z < 0 ? z : z > 1000 ? z - 1000 : 0);
+        if (600 - d < 2 * cellSize) continue;
+        probed++;
+        expect(inside(both, x, z)).toBe(true);
+      }
+    }
+    expect(probed).toBeGreaterThan(200);
+
+    // The neck keeps its own wide margin...
+    expect(inside(both, 400, 500)).toBe(true);
+    // ...and the deep tail keeps its own narrow one.
+    expect(inside(both, 400, 3000)).toBe(false);
   });
 });

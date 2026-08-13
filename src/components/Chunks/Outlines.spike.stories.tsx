@@ -220,11 +220,19 @@ const OutlinesStory = (props: OutlinesStoryProps) => {
           referenceDepth: meta.max,
         };
       };
+      const options =
+        cutoutSource.kind === 'wellbores' ? cutoutSource.options : undefined;
+      const mode = options?.mode ?? 'window';
       return resolveWellboreOutline(
         wellboreIds,
-        cutoutSource.kind === 'wellbores' ? cutoutSource.options : undefined,
-        toLayer(top, topValues),
-        toLayer(base, baseValues),
+        options,
+        [
+          {
+            top: mode === 'above' ? null : toLayer(top, topValues),
+            base: mode === 'below' ? null : toLayer(base, baseValues),
+            radius: options?.radius ?? 500,
+          },
+        ],
         data,
         utmToArea,
       );

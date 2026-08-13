@@ -262,9 +262,30 @@ export const Chunk = ({
     [source],
   );
 
+  // --- Margin ramp: this chunk's own depth window and margin, published so the
+  //     chunks BELOW can buffer this interval with this chunk's margin rather than
+  //     their own (see `ChunkStackContextValue.margins`). ---------------------
+  const realSurfaces = useMemo(
+    () => stableLayers.map(l => l.surface).filter((m): m is SurfaceMeta => !!m),
+    [stableLayers],
+  );
+  const wellboreRadius =
+    source?.kind === 'wellbores' ? (source.options?.radius ?? 500) : null;
+  const { publishMargin } = stack;
+  useEffect(() => {
+    if (!publishMargin || wellboreRadius === null) return;
+    publishMargin(registryKey, {
+      key: registryKey,
+      topSurfaceId: realSurfaces[0]?.id,
+      baseSurfaceId: realSurfaces[realSurfaces.length - 1]?.id,
+      radius: wellboreRadius,
+    });
+    return () => publishMargin(registryKey, null);
+  }, [publishMargin, registryKey, realSurfaces, wellboreRadius]);
+
   // --- Wellbore-derived outline (layer 1, async): built from the chunk's own top
   //     & base surfaces, so the footprint follows the wells through this chunk's
-  //     depth window. Only the two bounding surfaces' values are loaded on the main
+  //     depth window. Only the bounding surfaces' values are loaded on the main
   //     thread here (the full stack is loaded in the worker). setState only inside
   //     the resolved promise. --------------------------------------------------
   // Wrapped so that "still resolving" (null) is distinguishable from "resolved to
@@ -276,23 +297,78 @@ export const Chunk = ({
   const [wellboreOutline, setWellboreOutline] = useState<{
     polygon: PlanarPolygonGeometry | null;
   } | null>(null);
+  const marginRamp = stack.margins;
+  // Content key: the ramp is rebuilt whole on every publish, so the array identity
+  // churns whenever any sibling settles.
+  const marginKey = (marginRamp ?? [])
+    .map(
+      m =>
+        `${m.key}:${m.topSurfaceId ?? ''}:${m.baseSurfaceId ?? ''}:${m.radius}`,
+    )
+    .join('|');
   useEffect(() => {
     if (!source || source.kind !== 'wellbores') return;
     if (!store || !utm || stableLayers.length === 0) return;
     // The depth window comes from the chunk's REAL surfaces — a synthetic plane
     // has no grid to sample trajectories against, and a chunk may well start with
     // one (water above a seabed).
-    const real = stableLayers
-      .map(l => l.surface)
-      .filter((m): m is SurfaceMeta => !!m);
-    const topMeta = real[0];
-    const baseMeta = real[real.length - 1];
+    const topMeta = realSurfaces[0];
+    const baseMeta = realSurfaces[realSurfaces.length - 1];
     // Nothing to resolve against. Settle explicitly rather than returning: an
     // unsettled outline blocks this chunk (and any waiting on it) forever.
     if (!topMeta || !baseMeta) {
       setWellboreOutline({ polygon: null });
       return;
     }
+    const mode = source.options?.mode ?? 'window';
+    const radius = source.options?.radius ?? 500;
+
+    // Which depth intervals this chunk accumulates, and with whose margin. Under
+    // `'window'` it is just this chunk. Under `'above'`/`'below'` every interval
+    // on that side counts, each buffered by the margin of the chunk that owns it
+    // — which is what keeps the accumulated outlines nested (see
+    // `createWellboreOutline`). Waiting for our OWN entry to appear is what stops
+    // a chunk building against a half-registered ramp.
+    const ramp = marginRamp ?? [];
+    const self = ramp.findIndex(m => m.key === registryKey);
+    if (mode !== 'window' && self < 0) return;
+    const slice =
+      mode === 'above'
+        ? ramp.slice(0, self + 1)
+        : mode === 'below'
+          ? ramp.slice(self)
+          : [];
+
+    type Bound = { topId?: string; baseId?: string; radius: number };
+    const wanted: Bound[] =
+      mode === 'window'
+        ? [{ topId: topMeta.id, baseId: baseMeta.id, radius }]
+        : slice.map((entry, i) => ({
+            // Unbounded on the accumulating side at the far end of the ramp.
+            topId:
+              mode === 'above'
+                ? i === 0
+                  ? undefined
+                  : slice[i - 1].baseSurfaceId
+                : entry.topSurfaceId,
+            baseId:
+              mode === 'above' ? entry.baseSurfaceId : entry.baseSurfaceId,
+            radius: entry.radius,
+          }));
+    if (mode === 'below' && wanted.length > 0)
+      wanted[wanted.length - 1].baseId = undefined;
+
+    const byId = new Map<string, SurfaceMeta>();
+    for (const m of stack.surfaces ?? []) byId.set(m.id, m);
+    for (const m of realSurfaces) byId.set(m.id, m);
+    const needed = [
+      ...new Set(
+        wanted
+          .flatMap(w => [w.topId, w.baseId])
+          .filter((id): id is string => !!id),
+      ),
+    ];
+
     const toLayer = (
       meta: SurfaceMeta,
       values: Float32Array,
@@ -309,18 +385,33 @@ export const Chunk = ({
     const settle = (polygon: PlanarPolygonGeometry | null) => {
       if (!cancelled) setWellboreOutline({ polygon });
     };
-    Promise.all([
-      store.get<Float32Array>('surface-values', topMeta.id),
-      store.get<Float32Array>('surface-values', baseMeta.id),
-    ])
-      .then(([topValues, baseValues]) => {
+    Promise.all(needed.map(id => store.get<Float32Array>('surface-values', id)))
+      .then(loaded => {
         if (cancelled) return;
-        if (!topValues || !baseValues) return settle(null);
+        const bounds = new Map<string, ChunkSurfaceLayer>();
+        needed.forEach((id, i) => {
+          const meta = byId.get(id);
+          const values = loaded[i];
+          if (meta && values) bounds.set(id, toLayer(meta, values));
+        });
+        const intervals = wanted
+          .map(w => ({
+            top: w.topId ? (bounds.get(w.topId) ?? null) : null,
+            base: w.baseId ? (bounds.get(w.baseId) ?? null) : null,
+            radius: w.radius,
+          }))
+          // An interval whose bound failed to load would be silently unbounded,
+          // which grows the outline rather than shrinking it — drop it instead.
+          .filter(
+            (interval, i) =>
+              (!wanted[i].topId || interval.top) &&
+              (!wanted[i].baseId || interval.base),
+          );
+        if (intervals.length === 0) return settle(null);
         return resolveWellboreOutline(
           source.wellbores,
           source.options,
-          toLayer(topMeta, topValues),
-          toLayer(baseMeta, baseValues),
+          intervals,
           store,
           utm.utmToArea,
         ).then(settle);
@@ -329,7 +420,17 @@ export const Chunk = ({
     return () => {
       cancelled = true;
     };
-  }, [source, store, utm, stableLayers]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ramp keyed by content
+  }, [
+    source,
+    store,
+    utm,
+    stableLayers,
+    realSurfaces,
+    registryKey,
+    stack.surfaces,
+    marginKey,
+  ]);
 
   const isWellboreSource = source?.kind === 'wellbores';
   const outlinePolygon = isWellboreSource

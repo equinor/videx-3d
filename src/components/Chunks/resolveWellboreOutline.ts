@@ -6,9 +6,9 @@ import {
   PlanarPolygonGeometry,
   PositionLog,
   Store,
-  Vec2,
   Vec3,
   WellboreHeader,
+  WellborePath,
 } from '../../sdk';
 import { WellboreCutoutOptions } from './cutout';
 
@@ -36,44 +36,56 @@ function densifyPolyline(points: Vec3[], spacing: number): Vec3[] {
 }
 
 /**
+ * One depth interval of the outline, and the margin the trajectory inside it is
+ * buffered with. Either bound may be `null`, which makes that side unbounded (the
+ * wellhead above, TD below).
+ *
+ * @internal
+ */
+export type WellboreOutlineInterval = {
+  top: ChunkSurfaceLayer | null;
+  base: ChunkSurfaceLayer | null;
+  radius: number;
+};
+
+/**
  * Resolve a wellbore-derived {@link CutoutSource} into a scene-XZ outline polygon.
  *
  * For each wellbore, the MSL-normalized position log (head-relative deltas) is
  * placed into the scene frame via `utmToArea(head.easting + dE, head.northing +
- * dN, -tvdMsl)` — the exact frame the surfaces use — then densified, cut to the
- * depth window the {@link WellboreOutlineMode} asks for, and buffered into an
- * outline by the SDK `createWellboreOutline` pipeline.
+ * dN, -tvdMsl)` — the exact frame the surfaces use — then densified once and cut
+ * against EVERY interval, so each stretch of trajectory is buffered with the
+ * margin of the depth interval it falls in.
  *
- * `top` and `base` are the chunk's bounding surfaces; `'above'` uses only `base`
- * and `'below'` only `top`, so the unused one is simply ignored.
- *
- * ⭐ The stack's ENVELOPE stays correct under every mode without special casing:
- * resolving it against the column's shallowest and deepest surfaces gives exactly
- * the widest window any chunk can ask for, since a chunk's own bounds are always
- * a sub-range of the column's.
+ * ⭐ That per-interval margin is what makes an accumulated outline nest: a deeper
+ * chunk's path set contains the shallower one's with the same margins, so its
+ * outline contains it whether or not the margin grows with depth. One interval is
+ * the ordinary `'window'` case.
  *
  * @internal
  */
 export async function resolveWellboreOutline(
   wellbores: string[],
   options: WellboreCutoutOptions | undefined,
-  top: ChunkSurfaceLayer,
-  base: ChunkSurfaceLayer,
+  intervals: WellboreOutlineInterval[],
   store: Store,
   utmToArea: UtmToArea,
 ): Promise<PlanarPolygonGeometry | null> {
+  if (intervals.length === 0) return null;
   const radius = options?.radius ?? 500;
   const sampleSpacing = options?.sampleSpacing ?? 50;
-  const mode = options?.mode ?? 'window';
   const window = {
     tolerance: options?.tolerance ?? 0,
     unmapped: options?.unmapped,
   };
 
-  const topSampler = mode === 'above' ? null : createSurfaceDepthSampler(top);
-  const baseSampler = mode === 'below' ? null : createSurfaceDepthSampler(base);
+  const bounds = intervals.map(interval => ({
+    top: interval.top ? createSurfaceDepthSampler(interval.top) : null,
+    base: interval.base ? createSurfaceDepthSampler(interval.base) : null,
+    radius: interval.radius,
+  }));
 
-  const paths: Vec2[][] = [];
+  const paths: WellborePath[] = [];
   await Promise.all(
     wellbores.map(async id => {
       const [header, poslog] = await Promise.all([
@@ -91,13 +103,14 @@ export async function resolveWellboreOutline(
         scenePts.push(utmToArea(east, north, -tvd));
       }
       const dense = densifyPolyline(scenePts, sampleSpacing);
-      for (const run of collectTrajectoryRuns(
-        dense,
-        topSampler,
-        baseSampler,
-        window,
-      ))
-        paths.push(run);
+      for (const bound of bounds)
+        for (const run of collectTrajectoryRuns(
+          dense,
+          bound.top,
+          bound.base,
+          window,
+        ))
+          paths.push({ points: run, radius: bound.radius });
     }),
   );
 
