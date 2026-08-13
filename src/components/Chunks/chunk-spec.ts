@@ -9,7 +9,6 @@ import {
 import {
   ChunkLayer,
   chunkLayerFill,
-  chunkLayerFluid,
   ChunkResolveOptions,
   SurfaceChunkCut,
   SurfaceChunkSpec,
@@ -104,7 +103,7 @@ export function buildSurfaceChunkSpec(
       capCuts: seam?.cuts.length
         ? seam.cuts.map(cut => indexOfCut(cut.polygon, cut.rimSpacing))
         : undefined,
-      fluid: chunkLayerFluid(layer),
+      fluid: !!layer.fluid,
     };
     if (layer.carrier) {
       // The plane itself comes from the column, so the layer carries no geometry

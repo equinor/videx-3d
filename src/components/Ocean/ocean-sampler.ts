@@ -29,14 +29,22 @@ export interface OceanSampler {
  * Create an {@link OceanSampler} bound to an {@link OceanMaterial}. The sampler
  * reads the material's wave uniforms by reference, so it reflects sea-state and
  * time changes without any extra wiring.
+ *
+ * @param level scene Y of the still water surface. The `Ocean` component leaves
+ *   this at 0 because its own group IS sea level; a `ChunkStack` passes the sea's
+ *   level so the heights come back ABSOLUTE in the stack's frame and a floating
+ *   object needs no sea-level parent group of its own.
  */
-export function createOceanSampler(material: OceanMaterial): OceanSampler {
+export function createOceanSampler(
+  material: OceanMaterial,
+  level = 0,
+): OceanSampler {
   return {
     getHeightAt(x: number, z: number): number {
       const waveA = material.uniforms.uWaveA.value as Vector4[];
       const waveB = material.uniforms.uWaveB.value as Vector4[];
       const t = material.uniforms.uTime.value as number;
-      let height = 0;
+      let height = level;
       for (let i = 0; i < waveA.length; i++) {
         const a = waveA[i];
         const dirX = a.x;

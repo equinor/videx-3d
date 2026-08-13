@@ -3,6 +3,7 @@ import { Group } from 'three';
 import { useOceanContact } from '../Ocean/ocean-contact';
 import { OceanContact } from '../Ocean/ocean-material';
 import { BuoyancyPoint, useBuoyancy } from '../Ocean/ocean-sampler';
+import { Vec3 } from '../../sdk/types/common';
 import { createTankerHull } from './tanker-geometry-builder';
 import {
   TankerSuperstructure,
@@ -15,6 +16,18 @@ import {
 const REFERENCE_DISPLACEMENT = 120000;
 
 export type TankerProps = {
+  /**
+   * Where the vessel sits, in its parent's frame. `y` is its REST height and
+   * should be the still water level; buoyancy overrides it while there is a wave
+   * field to follow.
+   *
+   * ⭐ Set here rather than on a wrapping group: the wave field is sampled at the
+   * hull's OWN position, and the contact foam footprint is reported from it, so a
+   * parent group would leave both at the origin.
+   */
+  position?: Vec3;
+  /** Heading in radians (rotation about +Y). 0 points the bow along +X. */
+  heading?: number;
   length?: number; // meters
   width?: number; // meters (beam)
   height?: number; // meters (draft + freeboard)
@@ -61,6 +74,8 @@ export type TankerProps = {
 };
 
 export const Tanker = ({
+  position,
+  heading = 0,
   length = 253,
   width = 44.2,
   height = 20,
@@ -157,7 +172,7 @@ export const Tanker = ({
         (Math.abs(g.position.y - prev.y) +
           (Math.abs(g.rotation.x - prev.rx) +
             Math.abs(g.rotation.z - prev.rz)) *
-          span) /
+            span) /
         dt;
       prev.y = g.position.y;
       prev.rx = g.rotation.x;
@@ -184,7 +199,7 @@ export const Tanker = ({
   );
 
   return (
-    <group ref={groupRef}>
+    <group ref={groupRef} position={position} rotation-y={heading}>
       {/* Hull: one mesh, four material groups (lower / stripe / upper / deck). */}
       <mesh geometry={hullGeometry}>
         <meshStandardMaterial

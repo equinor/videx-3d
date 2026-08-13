@@ -11,12 +11,12 @@ import {
   ChunkLayer,
   DEFAULT_BED_TINT_DEPTH,
   DEFAULT_PALETTE,
+  StackWater,
 } from './chunk-defs';
 import {
   ChunkInferenceStyle,
   createInferenceMaterial,
 } from './inference-material';
-import { useChunkWater } from './useChunkWater';
 
 /**
  * {@link ChunkMeshes} props.
@@ -49,6 +49,11 @@ export type ChunkMeshesProps = {
   showSurfaces?: boolean;
   /** render the side walls. Default true. */
   showWalls?: boolean;
+  /**
+   * The sea the enclosing `ChunkStack` declares, if any. Only its TINT is used
+   * here: the sea's own geometry belongs to the stack.
+   */
+  water?: StackWater | null;
 };
 
 /**
@@ -77,11 +82,8 @@ export const ChunkMeshes = ({
   inferredStyle = 'hatched',
   showSurfaces = true,
   showWalls = true,
+  water = null,
 }: ChunkMeshesProps) => {
-  // Water is drawn with the ocean shaders rather than the chunk material, and
-  // those are animated: they are created per water layer and kept, not rebuilt.
-  const water = useChunkWater(layers, surfaceOpacity, wallOpacity, wireframe);
-
   const materials = useMemo(() => {
     // Materials built here are owned here; a caller's Material is passed through
     // untouched, so the two are tracked separately for disposal.
@@ -110,37 +112,32 @@ export const ChunkMeshes = ({
     const paletteAt = (i: number) =>
       DEFAULT_PALETTE[i % DEFAULT_PALETTE.length];
 
-    // A water layer tints the cap DIRECTLY below it toward the water colour, as if
-    // seen through the water column — the water body itself only exists at the rim,
-    // and the surface's own alpha stands for reflection, not absorption.
-    const waterTintBelow = (
-      i: number,
-    ): ChunkWaterTintParameters | undefined => {
-      const above = layers[i - 1];
-      const props = above?.water;
-      if (!props || above.depth === undefined) return undefined;
+    // The sea tints the SHALLOWEST cap toward the water colour, as if seen through
+    // the water column — the body itself only stands at the rim and the shoreline,
+    // and the surface's own alpha is reflection, not absorption.
+    const waterTint = ((): ChunkWaterTintParameters | undefined => {
+      if (!water) return undefined;
       const strength =
-        props.bedTint ?? props.waterOpacity ?? DEFAULT_OCEAN_WATER_OPACITY;
+        water.bedTint ?? water.waterOpacity ?? DEFAULT_OCEAN_WATER_OPACITY;
       if (strength <= 0) return undefined;
       return {
-        color: props.deepColor ?? DEFAULT_OCEAN_DEEP_COLOR,
-        level: -above.depth,
+        color: water.deepColor ?? DEFAULT_OCEAN_DEEP_COLOR,
+        level: -(water.depth ?? 0),
         strength,
-        depth: props.bedTintDepth ?? DEFAULT_BED_TINT_DEPTH,
+        depth: water.bedTintDepth ?? DEFAULT_BED_TINT_DEPTH,
       };
-    };
+    })();
 
     const surfaces = layers.map((layer, i) =>
       layer.material instanceof Material
         ? layer.material
-        : (water.get(i)?.surface ??
-          make(
+        : make(
             layer.material ?? paletteAt(i),
             layer.opacity ?? surfaceOpacity,
             layer.detail,
             false,
-            waterTintBelow(i),
-          )),
+            i === 0 ? waterTint : undefined,
+          ),
     );
 
     // A void's upper copy is drawn with the material of the interval ABOVE it, but
@@ -164,10 +161,7 @@ export const ChunkMeshes = ({
 
     const walls = layers.map((layer, i) => {
       const fill = fillOf(layer, i);
-      // Water asks for its body by being water; only an explicit fill overrides
-      // the volume material that comes with it.
-      if (fill === null)
-        return layer.water ? (water.get(i)?.volume ?? null) : null;
+      if (fill === null) return null;
       return fill instanceof Material
         ? fill
         : make(fill, layer.opacity ?? wallOpacity, layer.detail, true);

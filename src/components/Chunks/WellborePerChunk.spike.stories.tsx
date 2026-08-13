@@ -455,7 +455,9 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
                         ? [
                             {
                               depth: props.waterDepth,
-                              water: {},
+                              fluid: true,
+                              material: '#3fa9d8',
+                              fill: '#2f7fa8',
                             },
                           ]
                         : []),

@@ -269,7 +269,7 @@ export async function buildSpecStack(
           fill: !!f.fill,
           cap: f.cap !== false,
           capCuts: f.capCuts,
-          fluid: f.fluid,
+          fluid: f.fluid ? {} : undefined,
           layer: { depth: f.depth, offset: f.offset, relief: f.relief },
         });
         return;
@@ -282,7 +282,7 @@ export async function buildSpecStack(
         fill: !!f.fill,
         cap: f.cap !== false,
         capCuts: f.capCuts,
-        fluid: f.fluid,
+        fluid: f.fluid ? {} : undefined,
         layer: context.layers[at],
       });
     });
@@ -560,7 +560,7 @@ export async function buildSpecStack(
         fill: !!f.fill,
         cap: f.cap !== false,
         capCuts: f.capCuts,
-        fluid: f.fluid,
+        fluid: f.fluid ? {} : undefined,
         layer: { depth: f.depth, offset: f.offset, relief: f.relief },
       });
       return;
@@ -573,7 +573,7 @@ export async function buildSpecStack(
       fill: !!f.fill,
       cap: f.cap !== false,
       capCuts: f.capCuts,
-      fluid: f.fluid,
+      fluid: f.fluid ? {} : undefined,
       layer: {
         values,
         header: f.header,
