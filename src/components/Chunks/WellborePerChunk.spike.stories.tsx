@@ -43,7 +43,7 @@ import {
   DEFAULT_CHUNK_MAX_FILL,
 } from './chunk-defs';
 import { ChunkStack } from './ChunkStack';
-import { CutoutSource } from './cutout';
+import { CutoutSource, WellboreOutlineMode } from './cutout';
 import { ChunkInferenceStyle } from './inference-material';
 
 const utmZone = storyArgs.utmZone;
@@ -108,9 +108,10 @@ type PerChunkStoryProps = {
   connectChunks: boolean;
   maxError: number;
   wellCount: number;
+  mode: WellboreOutlineMode;
+  unmapped: 'exclude' | 'ignore';
   radius: number;
   cellSize: number;
-  clusterDistance: number;
   feather: number;
   wellSmoothing: number;
   sampleSpacing: number;
@@ -222,17 +223,18 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
   );
 
   // A single shared wellbore cut source on the stack. Each Chunk INHERITS it and
-  // resolves the outline from its OWN top/base surfaces, so the footprint follows
-  // the wells through that chunk's depth window — shallow chunks stay tight near
-  // the platform, deeper chunks widen / split as the wells fan out (telescoping).
+  // resolves the outline from its OWN bounding surfaces, so the footprint follows
+  // the wells through the depth range `mode` asks for — `window` gives each chunk
+  // an independent footprint, `above` telescopes out with depth, `below` in.
   const cutSource = useMemo<CutoutSource>(
     () => ({
       kind: 'wellbores',
       wellbores: wellboreIds,
       options: {
+        mode: props.mode,
+        unmapped: props.unmapped,
         radius: props.radius,
         cellSize: props.cellSize,
-        clusterDistance: props.clusterDistance,
         feather: props.feather,
         smoothing: props.wellSmoothing,
         sampleSpacing: props.sampleSpacing,
@@ -240,9 +242,10 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
     }),
     [
       wellboreIds,
+      props.mode,
+      props.unmapped,
       props.radius,
       props.cellSize,
-      props.clusterDistance,
       props.feather,
       props.wellSmoothing,
       props.sampleSpacing,
@@ -529,9 +532,10 @@ export const Default: Story = {
     maxError: 5,
     // Wellbore outline (shared source; resolved per chunk)
     wellCount: 50,
+    mode: 'window',
+    unmapped: 'exclude',
     radius: 800,
     cellSize: 200,
-    clusterDistance: 2000,
     feather: 0,
     wellSmoothing: 1,
     sampleSpacing: 50,
@@ -591,18 +595,28 @@ export const Default: Story = {
       control: { type: 'range', min: 1, max: 50, step: 1 },
       table: { category: 'Wellbore outline' },
     },
+    mode: {
+      control: { type: 'inline-radio' },
+      options: ['window', 'above', 'below'],
+      description:
+        'Which part of each well cuts a chunk. `window` = only inside the chunk (footprints unrelated). `above` = from the WELLHEAD down to the chunk’s base, so the outlines nest and the stack telescopes OUT with depth. `below` = down to TD, the mirror image.',
+      table: { category: 'Wellbore outline' },
+    },
     radius: {
       control: { type: 'range', min: 100, max: 3000, step: 50 },
       table: { category: 'Wellbore outline' },
     },
-    cellSize: {
-      control: { type: 'range', min: 25, max: 500, step: 25 },
-      description: 'Distance-field raster cell size (smaller = finer edge).',
+    unmapped: {
+      control: { type: 'inline-radio' },
+      options: ['exclude', 'ignore'],
+      description:
+        'What to do where a chunk’s BOUNDING surface has no data. `exclude` drops the trajectory there, so a hole in a deep base surface removes that area from the outline even though everything above it is mapped. `ignore` keeps whatever the other bound allows. ⚠️ `ignore` cannot tell an interior hole from being off the grid entirely.',
       table: { category: 'Wellbore outline' },
     },
-    clusterDistance: {
-      control: { type: 'range', min: 200, max: 8000, step: 100 },
-      description: 'Points closer than this join one outline component.',
+    cellSize: {
+      control: { type: 'range', min: 25, max: 500, step: 25 },
+      description:
+        'Upper bound for the raster cell size; the effective cell is also clamped to radius/3 so a small radius still resolves.',
       table: { category: 'Wellbore outline' },
     },
     feather: {
@@ -617,7 +631,8 @@ export const Default: Story = {
     },
     sampleSpacing: {
       control: { type: 'range', min: 10, max: 250, step: 10 },
-      description: 'Trajectory densification spacing (scene units).',
+      description:
+        'Trajectory densification spacing. Affects only how finely the depth window is tested — the buffer is built from segments and the window crossings are interpolated.',
       table: { category: 'Wellbore outline' },
     },
     resolve: {

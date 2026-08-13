@@ -1,7 +1,6 @@
 import {
   ChunkSurfaceLayer,
-  clusterPoints2D,
-  collectTrajectoryPoints,
+  collectTrajectoryRuns,
   createSurfaceDepthSampler,
   createWellboreOutline,
   PlanarPolygonGeometry,
@@ -40,11 +39,18 @@ function densifyPolyline(points: Vec3[], spacing: number): Vec3[] {
  * Resolve a wellbore-derived {@link CutoutSource} into a scene-XZ outline polygon.
  *
  * For each wellbore, the MSL-normalized position log (head-relative deltas) is
- * placed into the scene frame via `utmToArea(head.easting + dE, -tvdMsl,
- * head.northing + dN)` — the exact frame the surfaces use — then densified,
- * clipped to the chunk's vertical window (between its `top` and `base` surfaces),
- * clustered, and turned into an outline by the SDK `createWellboreOutline`
- * pipeline.
+ * placed into the scene frame via `utmToArea(head.easting + dE, head.northing +
+ * dN, -tvdMsl)` — the exact frame the surfaces use — then densified, cut to the
+ * depth window the {@link WellboreOutlineMode} asks for, and buffered into an
+ * outline by the SDK `createWellboreOutline` pipeline.
+ *
+ * `top` and `base` are the chunk's bounding surfaces; `'above'` uses only `base`
+ * and `'below'` only `top`, so the unused one is simply ignored.
+ *
+ * ⭐ The stack's ENVELOPE stays correct under every mode without special casing:
+ * resolving it against the column's shallowest and deepest surfaces gives exactly
+ * the widest window any chunk can ask for, since a chunk's own bounds are always
+ * a sub-range of the column's.
  *
  * @internal
  */
@@ -58,13 +64,16 @@ export async function resolveWellboreOutline(
 ): Promise<PlanarPolygonGeometry | null> {
   const radius = options?.radius ?? 500;
   const sampleSpacing = options?.sampleSpacing ?? 50;
-  const clusterDistance = options?.clusterDistance ?? radius * 2;
-  const tolerance = options?.tolerance ?? 0;
+  const mode = options?.mode ?? 'window';
+  const window = {
+    tolerance: options?.tolerance ?? 0,
+    unmapped: options?.unmapped,
+  };
 
-  const topSampler = createSurfaceDepthSampler(top);
-  const baseSampler = createSurfaceDepthSampler(base);
+  const topSampler = mode === 'above' ? null : createSurfaceDepthSampler(top);
+  const baseSampler = mode === 'below' ? null : createSurfaceDepthSampler(base);
 
-  const all: Vec2[] = [];
+  const paths: Vec2[][] = [];
   await Promise.all(
     wellbores.map(async id => {
       const [header, poslog] = await Promise.all([
@@ -82,17 +91,16 @@ export async function resolveWellboreOutline(
         scenePts.push(utmToArea(east, north, -tvd));
       }
       const dense = densifyPolyline(scenePts, sampleSpacing);
-      const kept = collectTrajectoryPoints(
+      for (const run of collectTrajectoryRuns(
         dense,
         topSampler,
         baseSampler,
-        tolerance,
-      );
-      for (const p of kept) all.push(p);
+        window,
+      ))
+        paths.push(run);
     }),
   );
 
-  if (all.length === 0) return null;
-  const clusters = clusterPoints2D(all, clusterDistance);
-  return createWellboreOutline(clusters, { ...options, radius });
+  if (paths.length === 0) return null;
+  return createWellboreOutline(paths, { ...options, radius });
 }

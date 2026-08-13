@@ -41,7 +41,7 @@ import { UtmArea } from '../UtmArea';
 import { Chunk } from './Chunk';
 import { layersFromGroups } from './chunk-defs';
 import { ChunkStack } from './ChunkStack';
-import { CutoutSource } from './cutout';
+import { CutoutSource, WellboreOutlineMode } from './cutout';
 import { resolveWellboreOutline } from './resolveWellboreOutline';
 
 const utmZone = storyArgs.utmZone;
@@ -96,9 +96,9 @@ type OutlinesStoryProps = {
   source: OutlineSource;
   // Wellbore outline
   wellCount: number;
+  mode: WellboreOutlineMode;
   radius: number;
   cellSize: number;
-  clusterDistance: number;
   feather: number;
   wellSmoothing: number;
   sampleSpacing: number;
@@ -153,9 +153,9 @@ const OutlinesStory = (props: OutlinesStoryProps) => {
       kind: 'wellbores',
       wellbores: wellboreIds,
       options: {
+        mode: props.mode,
         radius: props.radius,
         cellSize: props.cellSize,
-        clusterDistance: props.clusterDistance,
         feather: props.feather,
         smoothing: props.wellSmoothing,
         sampleSpacing: props.sampleSpacing,
@@ -163,9 +163,9 @@ const OutlinesStory = (props: OutlinesStoryProps) => {
     }),
     [
       wellboreIds,
+      props.mode,
       props.radius,
       props.cellSize,
-      props.clusterDistance,
       props.feather,
       props.wellSmoothing,
       props.sampleSpacing,
@@ -384,9 +384,9 @@ export const Default: Story = {
     source: 'wellbores',
     // Wellbore outline
     wellCount: 10,
+    mode: 'window',
     radius: 800,
     cellSize: 200,
-    clusterDistance: 2000,
     feather: 0,
     wellSmoothing: 1,
     sampleSpacing: 50,
@@ -419,18 +419,24 @@ export const Default: Story = {
       control: { type: 'range', min: 1, max: 50, step: 1 },
       table: { category: 'Wellbore outline' },
     },
+    mode: {
+      control: { type: 'inline-radio' },
+      options: ['window', 'above', 'below'],
+      description:
+        'Which part of each well counts: only inside the chunk (window), ' +
+        'everything down from the wellhead (above, telescopes out), or ' +
+        'everything down to TD (below, narrows with depth).',
+      table: { category: 'Wellbore outline' },
+    },
     radius: {
       control: { type: 'range', min: 100, max: 3000, step: 50 },
       table: { category: 'Wellbore outline' },
     },
     cellSize: {
       control: { type: 'range', min: 25, max: 500, step: 25 },
-      description: 'Distance-field raster cell size (smaller = finer edge).',
-      table: { category: 'Wellbore outline' },
-    },
-    clusterDistance: {
-      control: { type: 'range', min: 200, max: 8000, step: 100 },
-      description: 'Points closer than this join one outline component.',
+      description:
+        'Upper bound for the raster cell size; the effective cell is also ' +
+        'clamped to radius/3 so a small radius still resolves.',
       table: { category: 'Wellbore outline' },
     },
     feather: {
@@ -445,7 +451,9 @@ export const Default: Story = {
     },
     sampleSpacing: {
       control: { type: 'range', min: 10, max: 250, step: 10 },
-      description: 'Trajectory densification spacing (scene units).',
+      description:
+        'Trajectory densification spacing. Affects only how finely the depth ' +
+        'window is tested — the buffer is built from segments.',
       table: { category: 'Wellbore outline' },
     },
     rimSurfaceIndex: {

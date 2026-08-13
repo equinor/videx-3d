@@ -1,6 +1,6 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { OITRenderPass, Pass, RenderPass } from '../../main';
 import { OutputPass } from '../../rendering/passes/OutputPass';
 import { RenderingPipeline } from '../../rendering/RenderingPipeline';
@@ -19,6 +19,7 @@ import { DataProviderDecorator } from '../../storybook/decorators/data-provider-
 import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
+import { createOutputPanelDecorator } from '../../storybook/decorators/output-panel-decorator';
 import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
@@ -26,8 +27,15 @@ import { UtmArea, UtmPosition } from '../UtmArea';
 import { BasicTrajectory } from '../Wellbores/BasicTrajectory/BasicTrajectory';
 import { Wellbore } from '../Wellbores/Wellbore/Wellbore';
 import { Chunk } from './Chunk';
-import { ChunkLayer, ChunkResolveOptions, StackWater } from './chunk-defs';
+import {
+  ChunkLayer,
+  ChunkResolveOptions,
+  ChunkStackProgress,
+  StackWater,
+} from './chunk-defs';
 import { ChunkStack } from './ChunkStack';
+import { WellboreOutlineMode } from './cutout';
+import { useOutputPanelState } from '../Html/OutputPanel/output-panel-state';
 
 const utmZone = storyArgs.utmZone;
 const origin = storyArgs.origin as Vec2;
@@ -55,6 +63,7 @@ const ChunkPipeline = () => {
 
 type SeabedConnectionProps = {
   detailCount: number;
+  detailTiers: number;
   basementCrop: number;
   seal: boolean;
   sealMode: 'proportional' | 'void';
@@ -66,6 +75,8 @@ type SeabedConnectionProps = {
   carrierDepth: number;
   wellCount: number;
   radius: number;
+  mode: WellboreOutlineMode;
+  unmapped: 'exclude' | 'ignore';
   showTrajectories: boolean;
   surfaceOpacity: number;
   wallOpacity: number;
@@ -237,29 +248,63 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
     [props.waterDepth, props.waterOpacity, props.bedTint],
   );
 
-  // B: the detail, cut by wellbores. It starts ON the seabed — which it DRAWS, as
-  //    the block that horizon is the lid of — and ends ON the basement surface,
-  //    which it does not: that one is the basement chunk's lid.
-  const detailLayers = useMemo<ChunkLayer[]>(() => {
+  // B: the detail, cut by wellbores, split into TIERS that share their boundary
+  //    surfaces — tier k's floor is tier k+1's lid, so the tiers meet by
+  //    construction and the stack decides which of the two draws each shared
+  //    horizon. The top boundary is the seabed (which tier 0 draws, being the
+  //    block it is the lid of) and the bottom is the basement surface, which the
+  //    last tier does NOT draw: that one is the basement chunk's lid.
+  //
+  // ⭐ Splitting also changes what BOUNDS each tier's outline. A chunk's depth
+  //    window comes from its own first/last real surface, and a sample is dropped
+  //    where a bounding surface has no data — so with one tier spanning the whole
+  //    column, the partly-mapped `Basement Base` gated the WHOLE footprint. Each
+  //    tier now gets its own base, and only the deepest one carries that gap
+  //    (unless `unmapped` is set to ignore it).
+  const detailTiers = useMemo<ChunkLayer[][]>(() => {
     if (!seabed || !basement) return [];
     const middle = column
       .slice(1, 1 + props.detailCount)
       .filter(m => m.name !== BASEMENT_NAME);
+    const boundaries = [seabed, ...middle, basement];
+    const last = boundaries.length - 1;
     const palette = ['#59a14f', '#8cbf6a', '#edc949', '#e1a34f'];
-    return [
-      {
-        surface: seabed,
-        material: '#c2b280',
-        fill: '#a08f66',
+    // Global indices, so the stratigraphy reads as one column across the tiers.
+    const materialAt = (i: number) =>
+      i === 0 ? '#c2b280' : i === last ? undefined : palette[(i - 1) % 4];
+    const fillAt = (i: number) => (i === 0 ? '#a08f66' : palette[(i - 1) % 4]);
+
+    const tiers = Math.max(1, Math.min(props.detailTiers, last));
+    const out: ChunkLayer[][] = [];
+    for (let t = 0; t < tiers; t++) {
+      const from = Math.round((t * last) / tiers);
+      const to = Math.round(((t + 1) * last) / tiers);
+      out.push(
+        boundaries.slice(from, to + 1).map((surface, k) => {
+          const i = from + k;
+          // A tier's own floor is filled by the tier BELOW it, so it carries no
+          // fill here — that is what makes the tiers meet instead of overlap.
+          return i < to
+            ? { surface, material: materialAt(i), fill: fillAt(i) }
+            : { surface, material: materialAt(i) };
+        }),
+      );
+    }
+    return out;
+  }, [column, seabed, basement, props.detailCount, props.detailTiers]);
+
+  const detailOutline = useMemo(
+    () => ({
+      kind: 'wellbores' as const,
+      wellbores: wellboreIds,
+      options: {
+        radius: props.radius,
+        mode: props.mode,
+        unmapped: props.unmapped,
       },
-      ...middle.map((surface, i) => ({
-        surface,
-        material: palette[i % palette.length],
-        fill: palette[i % palette.length],
-      })),
-      { surface: basement },
-    ];
-  }, [column, seabed, basement, props.detailCount]);
+    }),
+    [wellboreIds, props.radius, props.mode, props.unmapped],
+  );
 
   // C: the basement block, back on the FIELD outline — the basement surface it
   //    owns, filled down to the COLUMN's carrier. The fill on its LAST layer is
@@ -269,6 +314,43 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
     if (!basement) return [];
     return [{ surface: basement, material: '#6b6b6b', fill: '#4a4a4a' }];
   }, [basement]);
+
+  // Stack progress, written to the OutputPanel's global store (the story runs
+  // INSIDE the canvas, so it cannot render DOM itself). Cold loads here are
+  // dominated by fetching one JSON grid per surface, which reads as a hang
+  // without this.
+  //
+  // ⭐ The REBUILD COUNT is the part worth having: a rebuild that finishes
+  // quickly flashes past the 'building' state, so the counter is what answers
+  // "did changing that control actually rebuild anything?".
+  const builds = useRef(0);
+  const busy = useRef(false);
+  const onProgress = useCallback((p: ChunkStackProgress) => {
+    const done = p.building === 0 && p.total > 0;
+    if (!done) busy.current = true;
+    else if (busy.current) {
+      busy.current = false;
+      builds.current += 1;
+    }
+    useOutputPanelState.getState().set(state => ({
+      groups: {
+        ...state.groups,
+        build: {
+          label: done ? 'Chunks built' : 'Building chunks',
+          value: done
+            ? `${p.total}`
+            : `${p.completed}/${p.total}  ${Math.round(100 * p.fraction)}%`,
+          color: done ? '#59a14f' : '#f28e2c',
+          order: 0,
+        },
+        rebuilds: {
+          label: 'Rebuilds',
+          value: `${builds.current}`,
+          order: 1,
+        },
+      },
+    }));
+  }, []);
 
   if (!field || !seabed || !basement) return null;
 
@@ -282,6 +364,7 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
           surfaces={column}
           water={water}
           resolve={resolve}
+          onProgress={onProgress}
           carrier={
             props.carrierMode === 'depth'
               ? { depth: props.carrierDepth }
@@ -295,18 +378,17 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
             wireframe={props.wireframe}
             onBuild={report('seabed')}
           />
-          <Chunk
-            layers={detailLayers}
-            outline={{
-              kind: 'wellbores',
-              wellbores: wellboreIds,
-              options: { radius: props.radius },
-            }}
-            surfaceOpacity={props.surfaceOpacity}
-            wallOpacity={props.wallOpacity}
-            wireframe={props.wireframe}
-            onBuild={report('detail')}
-          />
+          {detailTiers.map((layers, i) => (
+            <Chunk
+              key={i}
+              layers={layers}
+              outline={detailOutline}
+              surfaceOpacity={props.surfaceOpacity}
+              wallOpacity={props.wallOpacity}
+              wireframe={props.wireframe}
+              onBuild={report(`detail-${i}`)}
+            />
+          ))}
           <Chunk
             layers={basementLayers}
             outline={basementOutline ?? 'inherit'}
@@ -358,6 +440,7 @@ type Story = StoryObj<typeof SeabedConnectionStory>;
 export const Default: Story = {
   args: {
     detailCount: 6,
+    detailTiers: 3,
     basementCrop: 0,
     carrierMode: 'below',
     basementThickness: 800,
@@ -372,6 +455,8 @@ export const Default: Story = {
     constrainCoverage: false,
     wellCount: 20,
     radius: 800,
+    mode: 'above',
+    unmapped: 'exclude',
     showTrajectories: true,
     surfaceOpacity: 1,
     wallOpacity: 1,
@@ -381,6 +466,12 @@ export const Default: Story = {
     detailCount: {
       control: { type: 'range', min: 1, max: 20, step: 1 },
       description: 'Surfaces the wellbore-cut middle tier spans.',
+      table: { category: 'Connection' },
+    },
+    detailTiers: {
+      control: { type: 'range', min: 1, max: 6, step: 1 },
+      description:
+        'Split the wellbore-cut detail into this many stacked tiers, sharing a boundary surface at each junction. Each tier resolves its OWN outline, so with `mode: above` they telescope; it also gives every tier its own base surface, instead of the whole column being gated by the partly-mapped `Basement Base`.',
       table: { category: 'Connection' },
     },
     basementCrop: {
@@ -465,6 +556,20 @@ export const Default: Story = {
       control: { type: 'range', min: 100, max: 3000, step: 50 },
       table: { category: 'Wellbore outline' },
     },
+    mode: {
+      control: { type: 'inline-radio' },
+      options: ['window', 'above', 'below'],
+      description:
+        'Which part of each well cuts a tier. `window` = only inside that tier. `above` = from the WELLHEAD down to the tier’s base, so the tiers nest and the block telescopes OUT with depth. `below` = down to TD, the mirror image.',
+      table: { category: 'Wellbore outline' },
+    },
+    unmapped: {
+      control: { type: 'inline-radio' },
+      options: ['exclude', 'ignore'],
+      description:
+        'What to do where a tier’s BOUNDING surface has no data. `exclude` drops the trajectory there, so a hole in a deep base surface removes that area from the outline even though everything above it is mapped. `ignore` keeps whatever the other bound allows — closer to what is actually drawn, since the seal gives the unmapped surface a height anyway. ⚠️ `ignore` cannot tell an interior hole from being off the grid entirely.',
+      table: { category: 'Wellbore outline' },
+    },
     showTrajectories: {
       control: 'boolean',
       description:
@@ -487,5 +592,20 @@ export const Default: Story = {
     Canvas3dDecorator,
     GeneratorsProviderDecorator,
     DataProviderDecorator,
+    // LAST = outermost, so the panel is DOM outside the canvas.
+    createOutputPanelDecorator({
+      origin: 'top-left',
+      offset: [10, 10],
+      width: 190,
+      height: 80,
+      opacity: 0.75,
+    }),
+  ],
+  // The panel store is global; clear it so a reload does not show a stale count.
+  loaders: [
+    async () => {
+      useOutputPanelState.setState({ groups: {} });
+      return {};
+    },
   ],
 };

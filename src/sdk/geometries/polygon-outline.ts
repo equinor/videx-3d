@@ -196,8 +196,16 @@ export function polygonRelation(
   return 'disjoint';
 }
 
-/** Ramer–Douglas–Peucker over an OPEN polyline, iterative (no recursion depth). */
-function simplifyPolyline(points: Vec2[], tolerance: number): Vec2[] {
+/**
+ * Drop the vertices of an OPEN polyline that carry no shape, keeping every point
+ * of the result within `tolerance` of the original (Ramer–Douglas–Peucker,
+ * iterative so a long line cannot blow the stack).
+ *
+ * See {@link simplifyRing} for the closed-ring form.
+ *
+ * @group Geometries
+ */
+export function simplifyPolyline(points: Vec2[], tolerance: number): Vec2[] {
   const n = points.length;
   if (n < 3) return points.slice();
   const keep = new Uint8Array(n);

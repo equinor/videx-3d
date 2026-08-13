@@ -159,44 +159,108 @@ own the raw cut inputs.
 ```
 CutoutSource =
   | { kind: 'polygon'; polygon: PlanarPolygonGeometry }
-  | { kind: 'wellbores'; wellbores: string[]; options: OutlineOptions }
+  | { kind: 'wellbores'; wellbores: string[]; options: WellboreCutoutOptions }
 ```
 
-`OutlineOptions` (per chunk): `minRadius` / `maxRadius`, `feather` (soft edge width),
-`shapeFn` (cos/sin-based radius modifier for organic edges), clustering thresholds,
-and a **tighten ↔ loosen** knob (less noise per wellbore vs. more surrounding
-context). We expect **more than one generation strategy** and treat this as a
+`WellboreCutoutOptions` (per chunk, shallow-merged over the stack's): `mode`
+(§4.2.1), `radius` / `minRadius` / `maxRadius`, `cellSize`, `simplify`, `feather`
+(soft edge width), `shapeFn` (angular radius modifier for organic edges),
+`smoothing`, `minRingArea`, plus the orchestration knobs `sampleSpacing` and
+`tolerance`. We expect **more than one generation strategy** and treat this as a
 pluggable interface rather than a fixed algorithm.
 
 ### 4.2 Wellbore-derived outline pipeline
 
-For the surfaces **in a given chunk**:
+1. **Sample** — place each wellbore's position log into the scene frame and
+   densify it to `sampleSpacing`.
+2. **Cut to the depth window** — `collectTrajectoryRuns` keeps the parts of the
+   polyline inside the window `mode` asks for, tested at each sample's own XZ
+   against the real (non-flat) surfaces. Output is a set of **ordered runs**: a
+   well that leaves and re-enters yields several, and the window crossings are
+   **interpolated**, so a run's ends do not move with `sampleSpacing`.
+3. **Field + threshold** — `createWellboreOutline` buffers the runs: a signed
+   distance field `distanceToNearestSegment − radius`, with the radius clamped to
+   `min/max` and optionally modulated by `shapeFn`, then `feather`.
+4. **Contour** — marching squares → smoothed rings → outer/hole components
+   (`ringsToPolygonCoordinates`), which `PlanarPolygonGeometry` supports.
 
-1. **Crossings** — for each wellbore trajectory, compute where it enters/exits each
-   surface in the chunk (sample the curve; compare its depth to the surface depth at
-   that XZ via the existing world→grid + `sampleValidGrid`). Collect the min/max
-   entry/exit XZ points → a rough point cloud. *(New SDK helper:
-   trajectory-vs-surface crossings.)*
-2. **Cluster** — cluster the point cloud in XZ. A shallow chunk whose wells share a
-   template collapses to a **single** cluster; a deep chunk whose wells have deviated
-   in different directions yields **multiple** clusters.
-3. **Field + threshold** — build a distance field (min distance to the union of the
-   buffered points/segments), threshold at the radius (clamped to min/max), apply
-   `feather` (smoothstep) and `shapeFn`.
-4. **Contour** — marching squares → one or more outline polygons (multi-component +
-   holes, which `PlanarPolygonGeometry` already supports).
+⭐ **Component count is emergent.** Marching squares emits one ring per connected
+component of the buffered set, so wells yield separate outlines exactly while
+their buffers stay apart and merge into one as they grow into each other. There is
+no clustering threshold deciding this. `clusterPoints2D` still exists as a generic
+SDK helper, and `createWellboreOutline` uses the same machinery internally — but
+only to **partition the raster**, not the shape (see §4.2.2).
 
-This is the "auto-mask from trajectories" idea, now **per chunk**.
+#### 4.2.1 Depth-window modes
 
-> **Implemented (2026-07-12):** the SDK pipeline now exists as pure helpers —
-> `createSurfaceDepthSampler` + `collectTrajectoryPoints` (footprint of a
-> trajectory polyline within a chunk's depth window), `clusterPoints2D`, and
-> `createWellboreOutline` (distance-field → threshold `radius` clamped to
-> `min/max`, `feather`, `shapeFn`, `marchingSquares` → smoothed, grouped
-> outer/hole components). `marchingSquares` and `ringsToPolygonCoordinates` are
-> reusable building blocks. The `CutoutSource` (§4.1) is wired into
-> `ChunkStack`/`Chunk`, which resolve a `{ kind: 'wellbores' }` source from the
-> chunk's own top/base surfaces. Full pipeline still main-thread (no worker yet).
+`mode` decides which part of a well counts towards a chunk's outline:
+
+| mode | window | result |
+|---|---|---|
+| `'window'` (default) | between the chunk's top and base | per-chunk footprints, unrelated to each other |
+| `'above'` | wellhead → the chunk's base | the point set grows with depth ⇒ outlines nest ⇒ the stack **telescopes out** |
+| `'below'` | the chunk's top → TD | the mirror image: widest at the top, narrowing with depth |
+
+`'above'` and `'below'` are evaluated **continuously in depth** against the chunk's
+own bounding surface, not against the chunk list, so a chunk is never limited by
+what its neighbour happens to cover.
+
+The stack ENVELOPE needs no special casing: resolving it against the column's
+shallowest and deepest surfaces is exactly the widest window any chunk can ask for,
+since a chunk's bounds are always a sub-range of the column's.
+
+#### 4.2.2 Resolution follows the radius
+
+The contour is a threshold of a field sampled at raster nodes, so a buffer thinner
+than a cell breaks into blobs or vanishes — the historical "it fails at a small
+radius" failure. Two rules remove it:
+
+- the effective cell is clamped to `minRadius / OUTLINE_CELLS_PER_RADIUS` (3), and
+- paths are rasterized **per spatially separated group**, each over its own
+  bounding box, so the node count follows the corridors rather than the extent of
+  the field. Groups are separated by more than any buffer can reach, so the result
+  is identical to one big raster. Two platforms 20 km apart at `radius: 20` cost
+  ~720k nodes instead of ~9M.
+
+`maxCells` is a per-group backstop; when it forces a coarser cell than the radius
+wanted, `WellboreOutlineMetrics.coarsened` says so via the `onMetrics` callback
+rather than the outline silently degrading.
+
+Within a group, segments are bucketed into a **uniform CSR grid** (cell
+`2 × pruneMargin`), so a raster node tests only the handful of segments near it
+instead of every segment in the group — a bounding-box prune is nearly useless for
+a long diagonal well. Measured on 50 curved wells of 3 km each (min of 6, warm):
+
+| radius | cell | nodes | no index | with index |
+|---|---|---|---|---|
+| 800 | 200 | 1.6k | 5 ms | 7 ms |
+| 200 | 66.7 | 9.6k | 40 ms | 12 ms |
+| 100 | 33.3 | 35k | 225 ms | 25 ms |
+| 40 | 13.3 | 210k | 1973 ms | 142 ms |
+
+⚠️ Past ~35k nodes the cost moves to `marchingSquares` and ring smoothing (31.5k
+ring points at `radius: 40`), not the field. `indexCells` / `indexEntries` on the
+metrics show bucket occupancy if the grid ever needs retuning.
+
+`smoothing` and `feather` need no radius scaling of their own: both are expressed
+in cells, and the cell now follows the radius.
+
+⚠️ `shapeFn` measures its angle about the **group centroid**, which moves as groups
+merge. It is the odd one out in this design and is expected to be replaced by an
+additive, position-based perturbation (which commutes with the field's `min` and so
+survives accumulation).
+
+> **Status:** SDK helpers are pure and tested (`createSurfaceDepthSampler`,
+> `collectTrajectoryRuns`, `createWellboreOutline`, plus the reusable
+> `marchingSquares` / `ringsToPolygonCoordinates` / `simplifyPolyline`). The
+> `CutoutSource` (§4.1) is wired into `ChunkStack`/`Chunk`. Full pipeline still
+> main-thread (no worker yet).
+>
+> **Not built:** per-interval margins composed as a prefix-min of *signed* fields,
+> `min_k(d_k − r_k)` — the model that lets each depth interval carry its own margin
+> while the accumulated outline stays nested regardless of whether the radius is
+> monotone. `'above'`/`'below'` today re-buffer the whole accumulated run set with
+> one radius.
 
 ### 4.3 Per-chunk variation (a feature, with options)
 
@@ -2154,11 +2218,12 @@ patch stays rejected.
    existing SDK builder (still main-thread at first), with the three-layer
    separation in place. ⚠️ It first shipped with a `basement` slot and an
    `OceanChunk` sibling; both are gone (§2.1).
-2. **Outline SDK helpers** (in flux): trajectory-vs-surface crossings → clustering →
-   distance field → contour, with per-chunk options. **— done (2026-07-12):**
+2. **Outline SDK helpers** (in flux): trajectory → depth-window runs → segment
+   distance field → contour, with per-chunk options. **— done:**
    `createSurfaceOutline` (surface rim) and the `createWellboreOutline` pipeline
-   (`collectTrajectoryPoints` → `clusterPoints2D` → distance field →
+   (`collectTrajectoryRuns` → per-group segment distance field →
    `marchingSquares`), wired through the `CutoutSource` on `ChunkStack`/`Chunk`.
+   Depth-window `mode` (§4.2.1) added 2026-08-13.
 3. **Worker generator** for chunk geometry (async). **— done**, and rebuilt on the
    shared tessellation (§9) in 2026-08-06.
 4. **Vertical exaggeration** — a `scale={[1, k, 1]}` group on `ChunkStack`; safe
@@ -2476,6 +2541,30 @@ ways to satisfy it, in increasing order of how much they remove:
 ⚠️ Whichever is chosen, `sortByStratAge`'s current behaviour — silently excluding
 un-aged surfaces — is what turns a dataset swap into an empty screen rather than an
 error. It should say so loudly if it keeps that policy.
+
+#### 14.5.1 ⭐ Do the binary `surface-values` switch at the same time
+
+**PROPOSED.** `surface-values` ship as JSON `number[]` and are parsed lazily, one
+grid per surface, **serially in the single data worker**. `surfaceValuesLoader`
+already documents the cost: **~260 ms per field-scale grid**, plus a transient
+parsed array at 8 bytes per sample before it is converted to `Float32Array`. It is
+linear in the number of surfaces a scene claims, so a many-surface stack pays it in
+full on a cold load — measured at ~12 s on this branch, against **18 ms warm**,
+where the loader cache turns a repeat request into a `slice(0)` memcpy.
+
+Emitting a raw `Float32Array` `.bin` per surface instead removes the parse entirely
+(`fetch` → `arrayBuffer()` → done), halves the bytes on the wire, and drops the
+transient parsed array. It touches `scripts/generate-data.js` and a few lines of
+`surfaceValuesLoader`.
+
+⭐ **Pair it with the revert above.** The generator script and every file under
+`public/data/surfaces/` are being regenerated anyway; doing the format change in the
+same pass avoids migrating the data twice. Doing it separately means regenerating
+~200 MB of grids a second time for no other reason.
+
+⚠️ A binary payload has no self-describing shape, so the grid dimensions must come
+from `surface-meta` (they already do, via `SurfaceMeta.header`) — the loader must
+not try to infer them from the buffer length.
 
 ### 14.6 Story-scoped data — the story writes to the store
 
