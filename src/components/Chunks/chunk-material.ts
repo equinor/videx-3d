@@ -7,6 +7,7 @@ import {
   Side,
   UniformsUtils,
   Vector2,
+  Vector3,
   Vector4,
 } from 'three';
 import { attachOitVariants } from '../../rendering/oit-material';
@@ -17,6 +18,21 @@ import vertexShader from './shaders/chunk-vert.glsl';
 
 /** Ambient multipliers facing up / facing down. See {@link ChunkMaterialParameters.ambient}. */
 export const DEFAULT_CHUNK_AMBIENT: Vec2 = [1.35, 0.5];
+
+/**
+ * Tinting of whatever lies under a water level. See
+ * {@link ChunkMaterialParameters.waterTint}.
+ */
+export type ChunkWaterTintParameters = {
+  /** the water colour to tint toward */
+  color: ColorRepresentation;
+  /** the water level, in the stack's own metres (Y up, so a level below datum is negative) */
+  level: number;
+  /** tint strength deep down (0..1) */
+  strength: number;
+  /** depth below the level at which the tint reaches ~86% of `strength`, in metres */
+  depth: number;
+};
 
 /** {@link ChunkMaterial} parameters. */
 export type ChunkMaterialParameters = {
@@ -53,6 +69,17 @@ export type ChunkMaterialParameters = {
    * detail anchor bedding to the unit rather than to absolute depth.
    */
   wall?: boolean;
+  /**
+   * Tint this layer toward a water colour where it lies BELOW a water level, as
+   * if seen through the water column. Omit for none, which compiles the branch
+   * out.
+   *
+   * ⭐ Depth-dependent, unlike the flat tint the `Ocean` component's own sea bed
+   * uses: a chunk's sea bed can rise THROUGH the water (a coast, an island), and
+   * absorption that fades to nothing at the waterline gets that right without
+   * anything having to know where the shoreline runs.
+   */
+  waterTint?: ChunkWaterTintParameters;
 };
 
 const shader = {
@@ -66,6 +93,9 @@ const shader = {
       detailGrainB: { value: new Vector4() },
       detailDunes: { value: new Vector4() },
       chunkAmbient: { value: new Vector2(1.35, 0.5) },
+      waterTintColor: { value: new Color() },
+      // x: water level, y: strength, z: 1 / depth scale
+      waterTintParams: { value: new Vector3() },
     },
   ]),
   vertexShader,
@@ -91,7 +121,8 @@ const shader = {
  * ⚠️ `detail` and `wall` are read at CONSTRUCTION: they set shader defines, so
  * changing them means a new material. That is how the appearance layer already
  * works (`ChunkMeshes` rebuilds its materials on any appearance change, and a fresh
- * identity is what makes the OIT pass re-classify).
+ * identity is what makes the OIT pass re-classify). {@link
+ * ChunkMaterialParameters.waterTint} is read there too, for the same reason.
  *
  * @group Components
  */
@@ -143,6 +174,7 @@ export class ChunkMaterial extends ShaderMaterial {
     });
 
     this.applyDetail(parameters.detail, parameters.wall === true);
+    this.applyWaterTint(parameters.waterTint);
 
     attachOitVariants(this);
   }
@@ -197,5 +229,21 @@ export class ChunkMaterial extends ShaderMaterial {
       const [dx, dz] = d.direction ?? [1, 0];
       (u.detailDunes.value as Vector4).set(d.strength, d.wavelength, dx, dz);
     }
+  }
+
+  /** Write the water tint into the uniforms and enable the shader's branch for it. */
+  private applyWaterTint(tint: ChunkWaterTintParameters | undefined) {
+    const defines = this.defines as Record<string, unknown>;
+    delete defines.CHUNK_WATER_TINT;
+    if (!tint || tint.strength <= 0) return;
+
+    const u = this.uniforms;
+    defines.CHUNK_WATER_TINT = '';
+    (u.waterTintColor.value as Color).set(tint.color);
+    (u.waterTintParams.value as Vector3).set(
+      tint.level,
+      tint.strength,
+      1 / Math.max(tint.depth, 1e-3),
+    );
   }
 }

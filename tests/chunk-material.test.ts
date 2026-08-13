@@ -57,4 +57,26 @@ describe('ChunkMaterial', () => {
     material.opacity = 0.8;
     expect(material.uniforms.opacity.value).toBe(0.8);
   });
+
+  describe('water tint', () => {
+    it('compiles the branch out when none is asked for, or it is off', () => {
+      expect('CHUNK_WATER_TINT' in defines(new ChunkMaterial())).toBe(false);
+      const off = new ChunkMaterial({
+        waterTint: { color: '#0a2540', level: 0, strength: 0, depth: 80 },
+      });
+      expect('CHUNK_WATER_TINT' in defines(off)).toBe(false);
+    });
+
+    it('packs the level, strength and depth scale for the shader', () => {
+      const material = new ChunkMaterial({
+        waterTint: { color: '#0a2540', level: -25, strength: 0.6, depth: 50 },
+      });
+      expect('CHUNK_WATER_TINT' in defines(material)).toBe(true);
+      const params = material.uniforms.waterTintParams.value;
+      expect(params.x).toBe(-25);
+      expect(params.y).toBe(0.6);
+      // The shader multiplies by this, so it is the RECIPROCAL of the depth.
+      expect(params.z).toBeCloseTo(1 / 50);
+    });
+  });
 });

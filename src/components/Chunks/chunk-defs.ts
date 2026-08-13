@@ -61,7 +61,8 @@ export type SurfaceChunkSpecLayer = (
    * layer's cap where they reach. The partial-overlap case of the same decision:
    * this chunk draws its own footprint minus theirs.
    */
-  capCuts?: number[]; /**
+  capCuts?: number[];
+  /**
    * This boundary is a FLUID — a level rather than a horizon. Exempt from the
    * depth order, and its lid is tessellated on its own terms. See
    * `SurfaceStackOptions.fluid`.
@@ -260,12 +261,54 @@ export type ChunkFluid = {
 };
 
 /**
+ * How a water layer tints whatever lies UNDER it, as if seen through the water
+ * column — the chunk's answer to the `Ocean` component's `seaBedWaterTint`.
+ *
+ * ⭐ Depth-dependent where the `Ocean` sea bed's is flat, because a chunk's sea
+ * bed is ordinary geology and can rise THROUGH the water. Absorption that fades
+ * to nothing at the waterline leaves a coast or an island untinted without
+ * anything having to know where the shoreline runs.
+ *
+ * ⚠️ Applies to the cap of the layer DIRECTLY below the water, and to that one
+ * only: it stands for looking down through the water at the bed, not for making
+ * the whole column blue.
+ *
+ * @expand
+ * @group Components
+ */
+export type ChunkWaterTint = {
+  /**
+   * Strength of the tint deep down (0..1, 0 = off). Follows
+   * {@link OceanWaterProps.waterOpacity} when omitted, so the bed reads denser as
+   * the water does — the same coupling the `Ocean` component uses.
+   */
+  bedTint?: number;
+  /**
+   * Depth below the water level at which the tint reaches ~86% of `bedTint`, in
+   * metres. Default {@link DEFAULT_BED_TINT_DEPTH}.
+   */
+  bedTintDepth?: number;
+};
+
+/**
  * Water on a {@link ChunkLayer}: the sea state and its appearance, plus how
  * finely the surface is tessellated.
  *
  * @group Components
  */
-export type ChunkWater = OceanWaterProps & OceanBodyProps & ChunkFluid;
+export type ChunkWater = OceanWaterProps &
+  OceanBodyProps &
+  ChunkWaterTint &
+  ChunkFluid;
+
+/**
+ * Depth over which a {@link ChunkWaterTint.bedTint} builds up when the water names
+ * no {@link ChunkWaterTint.bedTintDepth} of its own. Shallow enough that a shoreline
+ * reads as one.
+ *
+ * @group Components
+ */
+export const DEFAULT_BED_TINT_DEPTH = 80;
 
 /**
  * Target lid resolution (metres) used when a water layer displaces its vertices

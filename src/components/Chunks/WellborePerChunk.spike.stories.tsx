@@ -446,8 +446,8 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
               key={i}
               // The uppermost surface of the whole stack may use the real
               // SurfaceMaterial — now just a material on that layer. Water is a
-              // SYNTHETIC layer sitting above it with the interval filled: no
-              // ocean component, no special case.
+              // synthetic FLUID layer sitting above it: no ocean component, and
+              // no truncation of the ground it stands over.
               layers={
                 i === 0
                   ? [
@@ -455,8 +455,7 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
                         ? [
                             {
                               depth: props.waterDepth,
-                              material: '#3fa9d8',
-                              fill: '#2f7fa8',
+                              water: {},
                             },
                           ]
                         : []),
@@ -684,13 +683,13 @@ export const Default: Story = {
     showWater: {
       control: 'boolean',
       description:
-        'Add a SYNTHETIC water layer above the first chunk — an ordinary layer with a `level` instead of a surface, filled down to the surface below it.',
+        'Add a water layer above the first chunk — a synthetic layer with a `level` instead of a surface, marked as `water`, which brings the animated ocean surface and body materials with it and tints the bed below it.',
       table: { category: 'Water' },
     },
     waterDepth: {
       control: { type: 'range', min: 0, max: 3000, step: 10 },
       description:
-        'Metres below sea level for the water plane (POSITIVE-DOWN, same convention as surfaces). ⚠️ Push it past the top surface and shallow-wins truncation flattens that surface to the water plane and drops it — the water does NOT recede. See chunks.md §9.5.1.',
+        'Metres below sea level for the water plane (POSITIVE-DOWN, same convention as surfaces). ⭐ A water layer is a FLUID, so it takes no part in the depth order: push it past the surface below and that surface is NOT flattened onto it — the ground simply goes under. See chunks.md §6.1.',
       table: { category: 'Water' },
     },
     seabed: {

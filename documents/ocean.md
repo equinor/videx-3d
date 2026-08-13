@@ -86,6 +86,12 @@ The sea state props are the same ones the component takes (`OceanWaterProps` /
 its cap and the water body for the volume below it, which is why `water` also
 implies a fill.
 
+`seaBedWaterTint` is the one thing that does NOT carry over: it belongs to the
+bed material the component draws, and a chunk's sea bed is ordinary geology. The
+equivalent is `bedTint`, set on the water layer and applied to the cap directly
+below it. It is depth-dependent rather than flat, because that bed can rise
+through the water — see `documents/chunks.md` §6.3.1.
+
 Declaring it makes the layer a **fluid**, which is what stops the sea truncating
 the ground beneath it: a sea bed above the plane comes through it rather than
 being flattened onto it, and the water body ends at the shoreline. See

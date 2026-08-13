@@ -23,6 +23,7 @@ import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
 import storyArgs from '../../storybook/story-args.json';
+import { Tanker } from '../Tanker/Tanker';
 import { UtmArea } from '../UtmArea';
 import { Chunk } from './Chunk';
 import { ChunkLayer, ChunkResolveOptions } from './chunk-defs';
@@ -75,6 +76,15 @@ type SyntheticColumnProps = {
   foamAmount: number;
   displacement: boolean;
   waterResolution: number;
+  bodyFogDensity: number;
+  bodyMaxOpacity: number;
+  bodyShimmer: number;
+  bedTint: number;
+  bedTintDepth: number;
+  ship: boolean;
+  shipX: number;
+  shipZ: number;
+  shipHeading: number;
   seal: boolean;
   sealMode: 'proportional' | 'void';
   minThickness: number;
@@ -163,6 +173,11 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
           displacement: props.displacement,
           resolution:
             props.waterResolution > 0 ? props.waterResolution : undefined,
+          bodyFogDensity: props.bodyFogDensity,
+          bodyMaxOpacity: props.bodyMaxOpacity,
+          bodyShimmer: props.bodyShimmer,
+          bedTint: props.bedTint,
+          bedTintDepth: props.bedTintDepth,
         },
       },
       ...units,
@@ -181,6 +196,11 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
     props.foamAmount,
     props.displacement,
     props.waterResolution,
+    props.bodyFogDensity,
+    props.bodyMaxOpacity,
+    props.bodyShimmer,
+    props.bedTint,
+    props.bedTintDepth,
   ]);
 
   const resolve = useMemo<ChunkResolveOptions>(
@@ -257,6 +277,17 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
             onBuild={report}
           />
         </ChunkStack>
+        {props.ship && (
+          // The hull's origin IS its waterline, so a group at the water plane sets
+          // it in the water. ⚠️ STATIC: buoyancy and contact foam read a sampler
+          // provided by `<Ocean>`, and a water LAYER has no such provider yet.
+          <group
+            position={[props.shipX, -props.waterDepth, props.shipZ]}
+            rotation-y={(props.shipHeading * Math.PI) / 180}
+          >
+            <Tanker />
+          </group>
+        )}
       </UtmArea>
       <ChunkPipeline />
     </>
@@ -276,8 +307,9 @@ const meta = {
           'A chunk cut from a GENERATED stratigraphic column — a set of surfaces that are exact functions of one another, rather than the independent surfaces of `SyntheticCoverage`.\n\n' +
           'Each unit is deposited as `thickness = drape + fill · max(0, dPrev − datum)`: `drape` blankets the topography, `fill` levels it toward `datum`. Where the surface below is already shallower than the datum the unit has NO thickness, so it **pinches out over the highs** — a real zero-thickness termination, which the demo field only shows by accident.\n\n' +
           'The column also contains a **fault** (gridded into a ramp and dying out along strike — a height field cannot hold the break, so the surfaces are carried across it exactly as an interpreter would), a **partly-mapped unit** (a survey extent, not geology), and an **angular unconformity** whose truncated horizons are recorded as NO DATA by default, which is what an interpreter delivers and what makes them indistinguishable from a survey edge.\n\n' +
-          '⭐ The SHALLOWEST surface is the SEA BED, and it is shaped rather than noised: a basin ~210 m deep, a coast rising out of it to ~45 m above sea level on one side, and an island standing off it with a hill on top (~99 m). Those are composable landform primitives (`ramp`, `dome`) with a little dune texture over them — noise alone reads as static, not as terrain. The water is a FLUID layer, so the ground rises through the plane instead of being truncated by it, and the water body ends at the shoreline.\n\n' +
+          '⭐ The SHALLOWEST surface is the SEA BED, and it is shaped rather than noised: a basin ~210 m deep, a coast rising out of it to ~45 m above sea level on one side, and an island standing off it with a hill on top (~99 m). Those are composable landform primitives (`ramp`, `dome`) with a little dune texture over them — noise alone reads as static, not as terrain. The water is a FLUID layer, so the ground rises through the plane instead of being truncated by it, and the water body ends at the shoreline. `bedTint` then tints the bed toward the water colour BY DEPTH, so the shoreline appears on its own.\n\n' +
           '⭐ Everything about the column — grid size and resolution, number of units, structure, seed, erosion encoding, where the fault and the unconformity fall — comes from the `COLUMN` constants in `src/storybook/data/synthetic-surfaces.ts`. Change one and reload to get a different field.\n\n' +
+          'A **tanker** sits in the water for scale — 253 m against a 7 km field. ⚠️ It is STATIC: `useBuoyancy` and the contact foam read a wave sampler that the `<Ocean>` COMPONENT provides to its children, and a water LAYER provides nothing, so the ship has nothing to float on yet.\n\n' +
           '⭐⭐ Because every relationship is known, a crossing or a mis-ordering reported here is unambiguously a pipeline bug. Watch `crossings` and `maxOverlap` in the console table: they should stay at zero.',
       },
     },
@@ -303,6 +335,15 @@ export const Default: Story = {
     foamAmount: 0.5,
     displacement: false,
     waterResolution: 0,
+    bodyFogDensity: 0.004,
+    bodyMaxOpacity: 0.9,
+    bodyShimmer: 0.5,
+    bedTint: 0.6,
+    bedTintDepth: 80,
+    ship: true,
+    shipX: 2200,
+    shipZ: 1800,
+    shipHeading: -30,
     seal: true,
     sealMode: 'proportional',
     minThickness: 1,
@@ -375,28 +416,80 @@ export const Default: Story = {
       control: { type: 'range', min: 0, max: 25, step: 0.5 },
       description:
         'Wind speed in m/s (U10) — the single physical input to the sea state.',
-      table: { category: 'Water' },
+      table: { category: 'Sea state' },
     },
     windDirection: {
       control: { type: 'range', min: 0, max: 360, step: 5 },
       description: 'Wind direction, in degrees.',
-      table: { category: 'Water' },
+      table: { category: 'Sea state' },
     },
     foamAmount: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      table: { category: 'Water' },
+      table: { category: 'Sea state' },
     },
     displacement: {
       control: 'boolean',
       description:
         'Displace the water surface vertices. ⚠️ Needs a lid fine enough to displace — see `waterResolution`; the waves are shaded per pixel either way.',
-      table: { category: 'Water' },
+      table: { category: 'Sea state' },
     },
     waterResolution: {
       control: { type: 'range', min: 0, max: 500, step: 25 },
       description:
         'Target triangle edge for the water lid, in metres. 0 = leave it to the library: the fewest triangles that fill the outline when displacement is off, a default resolution when it is on. ⚠️ A cost knob over the whole footprint — halving it roughly quadruples the lid.',
-      table: { category: 'Water' },
+      table: { category: 'Sea state' },
+    },
+    bodyFogDensity: {
+      control: { type: 'range', min: 0, max: 0.02, step: 0.0005 },
+      description:
+        'Per-metre tint build-up of the water BODY — the volume seen through the walls of the water layer, which in a chunk stand at the outline rim and at the shoreline.',
+      table: { category: 'Water body' },
+    },
+    bodyMaxOpacity: {
+      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      description:
+        'Densest tint the body reaches far through the water. Follows `waterOpacity` when the layer leaves it unset.',
+      table: { category: 'Water body' },
+    },
+    bodyShimmer: {
+      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      description:
+        'Animated caustic light play in the body, concentrated just under the surface. Footprint-anti-aliased, so it fades out as you zoom to field scale rather than shimmering.',
+      table: { category: 'Water body' },
+    },
+    bedTint: {
+      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      description:
+        'Tint the SEA BED toward the water colour, as if seen through the water column — the chunk’s answer to the `Ocean` component’s `seaBedWaterTint`. ⭐ Depth-dependent where that one is flat, because this sea bed is real geology and rises through the water: the tint fades to nothing at the waterline, so the coast and the island stay dry-looking without anything having to know where the shoreline runs.',
+      table: { category: 'Water body' },
+    },
+    bedTintDepth: {
+      control: { type: 'range', min: 5, max: 400, step: 5 },
+      description:
+        'Depth below sea level at which `bedTint` reaches ~86% of its strength, in metres — how tight the gradient at the shoreline is.',
+      table: { category: 'Water body' },
+    },
+    ship: {
+      control: 'boolean',
+      description:
+        'Put an Aframax tanker (253 m) in the water. Its origin is its own WATERLINE, so it is simply placed at the water plane and follows `waterDepth`. ⚠️ It sits STILL: buoyancy and contact foam read a wave sampler provided by the `<Ocean>` component, and a water LAYER has no such provider yet.',
+      table: { category: 'Ship' },
+    },
+    shipX: {
+      control: { type: 'range', min: -3500, max: 3500, step: 50 },
+      description:
+        'Position across the field, in metres. ⭐ The default puts it in ~120 m of water: the coast rises toward azimuth 300, so deep water is toward +X/−Z, and this is 2.8 km off the island’s centre. Move it onto the island to see it run aground — nothing stops it.',
+      table: { category: 'Ship' },
+    },
+    shipZ: {
+      control: { type: 'range', min: -3500, max: 3500, step: 50 },
+      table: { category: 'Ship' },
+    },
+    shipHeading: {
+      control: { type: 'range', min: -180, max: 180, step: 5 },
+      description:
+        'Heading, in degrees about the scene’s Y axis (0 = bow toward +X). The default lines the hull up with the default wind, so the swell will run bow-on once it floats.',
+      table: { category: 'Ship' },
     },
     seal: { control: 'boolean', table: { category: 'Resolve' } },
     sealMode: {

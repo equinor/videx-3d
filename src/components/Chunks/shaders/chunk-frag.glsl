@@ -27,6 +27,12 @@ varying float vWallV;
 #endif
 #endif
 
+#ifdef CHUNK_WATER_TINT
+uniform vec3 waterTintColor;  // the water colour, in the working colour space
+uniform vec3 waterTintParams; // x: water level (vertex stage), y: strength, z: 1 / depth scale
+varying float vWaterDepth;
+#endif
+
 #include <common>
 #include <dithering_pars_fragment>
 #include <color_pars_fragment>
@@ -186,6 +192,20 @@ void main() {
   #include <lights_fragment_end>
 
   vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + reflectedLight.directSpecular + reflectedLight.indirectSpecular + totalEmissiveRadiance;
+
+  #ifdef CHUNK_WATER_TINT
+  {
+    // Absorption through the water column standing over this fragment: nothing at
+    // the waterline, saturating with depth. Being depth-dependent is what lets a
+    // sea bed rise THROUGH the water - a coast, an island - without anything here
+    // having to know where the shoreline runs.
+    float absorb = 1.0 - exp(-max(vWaterDepth, 0.0) * waterTintParams.z);
+    // Water-facing side only: the underside of a cap is inside the ground.
+    vec3 tintNormal = normalize(normal * mat3(viewMatrix));
+    float facing = smoothstep(-0.15, 0.15, tintNormal.y);
+    outgoingLight = mix(outgoingLight, waterTintColor, clamp(absorb * waterTintParams.y * facing, 0.0, 1.0));
+  }
+  #endif
 
   #include <opaque_fragment>
   #include <tonemapping_fragment>

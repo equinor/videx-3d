@@ -70,6 +70,8 @@ type SeabedConnectionProps = {
   surfaceOpacity: number;
   wallOpacity: number;
   waterOpacity: number;
+  seabedOpacity: number;
+  bedTint: number;
   wireframe: boolean;
 };
 
@@ -209,13 +211,28 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
   const oceanLayers = useMemo<ChunkLayer[]>(() => {
     if (!seabed) return [];
     return [
-      { depth: props.waterDepth, material: '#3fa9d8', fill: '#2f7fa8' },
-      // Drawn at THIS chunk's opacity, which is the point of the split: the open
+      // ⭐ `water` makes this a FLUID layer: it takes no part in the depth order,
+      // so the seabed is not truncated by it, and it brings the animated ocean
+      // surface and body materials with it.
+      {
+        depth: props.waterDepth,
+        water: {
+          waterOpacity: props.waterOpacity,
+          bedTint: props.bedTint,
+        },
+      },
+      // Drawn at THIS LAYER's opacity, which is the point of the split: the open
       // seabed stays translucent while the lid over the opaque detail block does
       // not, so you never look straight through it into that block's walls.
-      { surface: seabed, material: '#c2b280' },
+      { surface: seabed, material: '#c2b280', opacity: props.seabedOpacity },
     ];
-  }, [seabed, props.waterDepth]);
+  }, [
+    seabed,
+    props.waterDepth,
+    props.waterOpacity,
+    props.bedTint,
+    props.seabedOpacity,
+  ]);
 
   // B: the detail, cut by wellbores. It starts ON the seabed — which it DRAWS, as
   //    the block that horizon is the lid of — and ends ON the basement surface,
@@ -270,8 +287,8 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
         >
           <Chunk
             layers={oceanLayers}
-            surfaceOpacity={props.waterOpacity}
-            wallOpacity={props.waterOpacity}
+            surfaceOpacity={props.surfaceOpacity}
+            wallOpacity={props.wallOpacity}
             wireframe={props.wireframe}
             resolve={resolve}
             onBuild={report('water')}
@@ -342,10 +359,13 @@ export const Default: Story = {
   args: {
     detailCount: 6,
     basementCrop: 0,
-    waterDepth: 0,
     carrierMode: 'below',
     basementThickness: 800,
     carrierDepth: 2500,
+    waterDepth: 0,
+    waterOpacity: 0.7,
+    seabedOpacity: 0.45,
+    bedTint: 0.35,
     seal: true,
     sealMode: 'proportional',
     minThickness: 1,
@@ -355,7 +375,6 @@ export const Default: Story = {
     showTrajectories: true,
     surfaceOpacity: 1,
     wallOpacity: 1,
-    waterOpacity: 0.45,
     wireframe: false,
   },
   argTypes: {
@@ -368,11 +387,6 @@ export const Default: Story = {
       control: { type: 'range', min: 0, max: 16, step: 0.5 },
       description:
         'Crop the basement tier this many km off one side of the field, sweeping the `Basement Base` seam through all three cases: it CONTAINS the detail tier (0), then only PARTLY overlaps it (the basement cap is cut back to the detail tier’s edge), then misses it entirely and both draw their own.',
-      table: { category: 'Connection' },
-    },
-    waterDepth: {
-      control: { type: 'range', min: 0, max: 200, step: 5 },
-      description: 'Water plane, metres below sea level (positive-down).',
       table: { category: 'Connection' },
     },
     basementThickness: {
@@ -393,6 +407,30 @@ export const Default: Story = {
       description:
         'Absolute carrier depth (metres, positive-down), used by `carrierMode: depth`. Below ~2200 m nothing is cut; raise it through the basement to watch the block end flat.',
       table: { category: 'Connection' },
+    },
+    waterDepth: {
+      control: { type: 'range', min: 0, max: 200, step: 5 },
+      description:
+        'Water plane, metres below sea level (positive-down). ⭐ The water is a FLUID layer, so it takes no part in the depth order — raising it does not truncate the seabed.',
+      table: { category: 'Water' },
+    },
+    waterOpacity: {
+      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      description:
+        'The WATER’s own opacity, looking straight down — a base the shader mixes toward 1 with the Fresnel term, not the final alpha.',
+      table: { category: 'Water' },
+    },
+    seabedOpacity: {
+      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      description:
+        'Opacity of the OPEN seabed — the part of the horizon the water tier draws, set on that layer rather than on the chunk. The lid over the detail chunk is that chunk’s, so it keeps `surfaceOpacity`.',
+      table: { category: 'Water' },
+    },
+    bedTint: {
+      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      description:
+        'Tint the seabed toward the water colour, as if seen through the water column. Depth-dependent, so it builds up over the first ~80 m below the plane — this seabed is far below that, so it sits at full strength.',
+      table: { category: 'Water' },
     },
     seal: {
       control: 'boolean',
@@ -439,12 +477,6 @@ export const Default: Story = {
     },
     wallOpacity: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      table: { category: 'Appearance' },
-    },
-    waterOpacity: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      description:
-        'Opacity of the water tier — including the part of the seabed it draws. The lid over the detail chunk is that chunk’s, so it keeps `surfaceOpacity`.',
       table: { category: 'Appearance' },
     },
     wireframe: { control: 'boolean', table: { category: 'Appearance' } },

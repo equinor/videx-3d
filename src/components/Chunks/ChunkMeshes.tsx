@@ -1,9 +1,17 @@
 import { useEffect, useMemo } from 'react';
 import { Material } from 'three';
 import { SurfaceChunk } from '../../sdk';
+import {
+  DEFAULT_OCEAN_DEEP_COLOR,
+  DEFAULT_OCEAN_WATER_OPACITY,
+} from '../Ocean/ocean-material';
 import { ChunkDetail } from './chunk-detail';
-import { ChunkMaterial } from './chunk-material';
-import { ChunkLayer, DEFAULT_PALETTE } from './chunk-defs';
+import { ChunkMaterial, ChunkWaterTintParameters } from './chunk-material';
+import {
+  ChunkLayer,
+  DEFAULT_BED_TINT_DEPTH,
+  DEFAULT_PALETTE,
+} from './chunk-defs';
 import {
   ChunkInferenceStyle,
   createInferenceMaterial,
@@ -83,6 +91,7 @@ export const ChunkMeshes = ({
       opacity: number,
       detail?: ChunkDetail,
       wall = false,
+      waterTint?: ChunkWaterTintParameters,
     ) => {
       const material = new ChunkMaterial({
         color,
@@ -92,6 +101,7 @@ export const ChunkMeshes = ({
         wireframe,
         detail,
         wall,
+        waterTint,
       });
       owned.push(material);
       return material;
@@ -99,6 +109,26 @@ export const ChunkMeshes = ({
 
     const paletteAt = (i: number) =>
       DEFAULT_PALETTE[i % DEFAULT_PALETTE.length];
+
+    // A water layer tints the cap DIRECTLY below it toward the water colour, as if
+    // seen through the water column — the water body itself only exists at the rim,
+    // and the surface's own alpha stands for reflection, not absorption.
+    const waterTintBelow = (
+      i: number,
+    ): ChunkWaterTintParameters | undefined => {
+      const above = layers[i - 1];
+      const props = above?.water;
+      if (!props || above.depth === undefined) return undefined;
+      const strength =
+        props.bedTint ?? props.waterOpacity ?? DEFAULT_OCEAN_WATER_OPACITY;
+      if (strength <= 0) return undefined;
+      return {
+        color: props.deepColor ?? DEFAULT_OCEAN_DEEP_COLOR,
+        level: -above.depth,
+        strength,
+        depth: props.bedTintDepth ?? DEFAULT_BED_TINT_DEPTH,
+      };
+    };
 
     const surfaces = layers.map((layer, i) =>
       layer.material instanceof Material
@@ -108,6 +138,8 @@ export const ChunkMeshes = ({
             layer.material ?? paletteAt(i),
             layer.opacity ?? surfaceOpacity,
             layer.detail,
+            false,
+            waterTintBelow(i),
           )),
     );
 

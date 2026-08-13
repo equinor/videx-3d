@@ -376,7 +376,37 @@ continuously and rebuilding a `ShaderMaterial` recompiles its program.
 ⚠️ The water body reads its unit-relative height from the `wallV` attribute
 (`OceanVolumeMaterial({ wallAttribute: true })`), because a chunk's interval wall
 measures `uv` in metres — arc length and world height — which is what anchors
-patterns in world space and must not be renormalised.
+patterns in world space and must not be renormalised. With that in place the body
+knobs carry over unchanged: `bodyFogDensity`, `bodyMaxOpacity` and `bodyShimmer`
+mean the same here as on the component, the caustic light play included — it is
+keyed to the top of the wall, which for a chunk is the shoreline-clipped rim of
+the water rather than the side of a box.
+
+#### 6.3.1 The bed tint
+
+The `Ocean` component tints the top of its own sea bed toward the water colour
+(`seaBedWaterTint`), because the surface's alpha stands for REFLECTION, not for
+absorption through the water column — looking straight down, the Fresnel term
+makes the surface nearly clear and an untinted bed reads as if it were dry.
+
+A chunk's sea bed is ordinary geology drawn with `ChunkMaterial`, so it needs its
+own version, and a flat one would be wrong: this bed can rise THROUGH the water.
+`ChunkWaterTint.bedTint` is therefore depth-dependent,
+`1 - exp(-depth / bedTintDepth)`, which is zero at the waterline and saturates
+below it — so a coast or an island stays dry-looking without anything having to
+know where the shoreline runs, and it stays right as the level is swept.
+
+- It is compiled in per material (`CHUNK_WATER_TINT`), like `detail`, and applies
+  to the cap of the layer DIRECTLY below the water — not to the whole column,
+  which a translucent stack would otherwise turn blue all the way down.
+- The depth comes from the OBJECT position, not the world one: the stack can
+  carry a vertical exaggeration, which would rescale a world-space depth away
+  from metres.
+- Strength follows `waterOpacity` when unset, the same coupling the component
+  uses, so a denser sea gives a denser bed for free.
+- ⚠️ Only the cap. The rim WALL of the sea-bed unit is not tinted, so a chunk
+  seen from outside shows an untinted flank below the waterline — the `Ocean`
+  component has the same gap.
 
 - **Buoyancy is global and decoupled.** Floating objects use `useBuoyancy`, which
   samples a single global wave field published by the ocean. So the visible water

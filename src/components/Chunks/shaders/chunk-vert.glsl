@@ -20,6 +20,14 @@ varying float vWallV;
 #endif
 #endif
 
+#ifdef CHUNK_WATER_TINT
+uniform vec3 waterTintParams; // x: water level, y: strength, z: 1 / depth scale
+// How far this vertex lies below the water level, in metres. Taken from the
+// OBJECT position, not the world one: the stack can carry a vertical
+// exaggeration, which would rescale a world-space depth away from metres.
+varying float vWaterDepth;
+#endif
+
 #include <common>
 #include <fog_pars_vertex>
 #include <normal_pars_vertex>
@@ -44,6 +52,10 @@ void main() {
   #ifdef CHUNK_WALL
   vWallV = wallV;
   #endif
+  #endif
+
+  #ifdef CHUNK_WATER_TINT
+  vWaterDepth = waterTintParams.x - transformed.y;
   #endif
 
   #include <worldpos_vertex>

@@ -50,6 +50,21 @@ export type OceanContact = {
   endFalloff?: number;
 };
 
+/**
+ * Default deep-water colour, seen looking straight down.
+ *
+ * @group Components
+ */
+export const DEFAULT_OCEAN_DEEP_COLOR = '#0a2540';
+
+/**
+ * Default base water opacity looking straight down (see
+ * `OceanWaterProps.waterOpacity`).
+ *
+ * @group Components
+ */
+export const DEFAULT_OCEAN_WATER_OPACITY = 0.7;
+
 // Deterministic pseudo-random in [0,1] used to decorrelate wave phases and
 // directions. Stable per index so the sea state is reproducible.
 function oceanHash01(n: number): number {
@@ -133,9 +148,9 @@ export class OceanMaterial extends ShaderMaterial {
         uWaveB: new Uniform(waveB),
         uSignificantHeight: new Uniform(1),
 
-        uDeepColor: new Uniform(new Color('#0a2540')),
+        uDeepColor: new Uniform(new Color(DEFAULT_OCEAN_DEEP_COLOR)),
         uShallowColor: new Uniform(new Color('#1b6f8a')),
-        uOpacity: new Uniform(0.7),
+        uOpacity: new Uniform(DEFAULT_OCEAN_WATER_OPACITY),
 
         uTonalVariation: new Uniform(0.4),
         // Stored as cycles per meter; the public `tonalScale` property exposes
