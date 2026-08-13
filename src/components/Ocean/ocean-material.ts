@@ -1,6 +1,7 @@
 import {
   Color,
   DoubleSide,
+  IUniform,
   ShaderMaterial,
   ShaderMaterialParameters,
   Uniform,
@@ -16,6 +17,17 @@ export type OceanMaterialParameters = ShaderMaterialParameters & {
   waveCount?: number;
   detailOctaves?: number;
   contactCount?: number;
+  /**
+   * Cut this material with a plane in OBJECT space (`dot(xyz, position) + w > 0`
+   * is discarded) — a `ChunkStack`'s section, so the sea is cut with the block
+   * under it. Omit for none, which compiles the branch out.
+   *
+   * ⭐ A SHARED uniform object: pass the stack's own and one write per frame
+   * reaches this material, the volume material and every chunk material, in all
+   * four OIT passes. ⚠️ Read at CONSTRUCTION (it sets a define), so turning the
+   * cut on or off means a new material; moving the plane does not.
+   */
+  sectionPlane?: IUniform<Vector4>;
 };
 
 /**
@@ -103,6 +115,7 @@ export class OceanMaterial extends ShaderMaterial {
       waveCount = 16,
       detailOctaves = 4,
       contactCount = 8,
+      sectionPlane,
       ...rest
     } = parameters;
 
@@ -135,6 +148,7 @@ export class OceanMaterial extends ShaderMaterial {
         OCEAN_WAVE_COUNT: waveCount,
         OCEAN_DETAIL_OCTAVES: detailOctaves,
         OCEAN_CONTACT_COUNT: contactCount,
+        ...(sectionPlane ? { OCEAN_SECTION: '' } : {}),
       },
       uniforms: {
         uTime: new Uniform(0),
@@ -190,6 +204,8 @@ export class OceanMaterial extends ShaderMaterial {
     this._contactCount = contactCount;
 
     if (Object.keys(rest).length) this.setValues(rest);
+
+    if (sectionPlane) this.uniforms.sectionPlane = sectionPlane;
 
     this.updateWaves();
 

@@ -484,6 +484,7 @@ export async function buildSpecStack(
         fluid: fluidLayers,
         inferred: context.inferred ? inferredList : undefined,
         topCover: coverAbove,
+        section: spec.section,
       },
     );
     if (!build) return null;
@@ -710,6 +711,7 @@ export async function buildSpecStack(
         ? source.map(i => !!loaded[i].fluid)
         : undefined,
       inferred: split?.inferred ?? sealed?.inferred,
+      section: spec.section,
     },
   );
   if (!build) return null;
@@ -884,6 +886,7 @@ export async function generateSurfaceChunk(
     result.build.rings,
     {
       diagnostics: stackDiagnostics(result),
+      section: result.build.section,
     },
     {
       t0,

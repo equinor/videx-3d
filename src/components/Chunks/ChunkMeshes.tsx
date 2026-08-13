@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { Material } from 'three';
+import { IUniform, Material, Vector4 } from 'three';
 import { SurfaceChunk } from '../../sdk';
 import {
   DEFAULT_OCEAN_DEEP_COLOR,
@@ -9,6 +9,7 @@ import { ChunkDetail } from './chunk-detail';
 import { ChunkMaterial, ChunkWaterTintParameters } from './chunk-material';
 import {
   ChunkLayer,
+  ChunkSectionState,
   DEFAULT_BED_TINT_DEPTH,
   DEFAULT_PALETTE,
   StackWater,
@@ -17,6 +18,7 @@ import {
   ChunkInferenceStyle,
   createInferenceMaterial,
 } from './inference-material';
+import { useChunkSection } from './useChunkSection';
 
 /**
  * {@link ChunkMeshes} props.
@@ -61,6 +63,23 @@ export type ChunkMeshesProps = {
    * floor is drawn with the fill of the unit resting on it.
    */
   carrierMaterial?: string | Material;
+  /**
+   * The stack's live clip plane, if any (see `ChunkStackProps.section`). Drives
+   * both the shader's cut and the cut FACE built from the chunk's own channels.
+   */
+  section?: ChunkSectionState | null;
+  /**
+   * The same plane as a shared uniform, handed to every material built here so a
+   * moving plane never rebuilds one. ⚠️ A caller-supplied `Material` cannot be
+   * given it, so such a layer is not cut.
+   */
+  sectionUniform?: IUniform<Vector4>;
+  /**
+   * Cut the column's floor with the rest of the block (see
+   * `ChunkSection.carrier`). Default true; false leaves the block standing on an
+   * intact base plate.
+   */
+  sectionCarrier?: boolean;
 };
 
 /**
@@ -91,6 +110,9 @@ export const ChunkMeshes = ({
   showWalls = true,
   water = null,
   carrierMaterial,
+  section = null,
+  sectionUniform,
+  sectionCarrier = true,
 }: ChunkMeshesProps) => {
   const materials = useMemo(() => {
     // Materials built here are owned here; a caller's Material is passed through
@@ -102,6 +124,7 @@ export const ChunkMeshes = ({
       detail?: ChunkDetail,
       wall = false,
       waterTint?: ChunkWaterTintParameters,
+      options?: { section?: boolean },
     ) => {
       const material = new ChunkMaterial({
         color,
@@ -112,6 +135,7 @@ export const ChunkMeshes = ({
         detail,
         wall,
         waterTint,
+        sectionPlane: options?.section === false ? undefined : sectionUniform,
       });
       owned.push(material);
       return material;
@@ -188,7 +212,9 @@ export const ChunkMeshes = ({
       ? null
       : carrierMaterial instanceof Material
         ? carrierMaterial
-        : make(carrierMaterial, surfaceOpacity);
+        : make(carrierMaterial, surfaceOpacity, undefined, false, undefined, {
+            section: sectionCarrier,
+          });
 
     return { surfaces, walls, ceilings, carrier, owned };
   }, [
@@ -199,6 +225,8 @@ export const ChunkMeshes = ({
     wireframe,
     water,
     carrierMaterial,
+    sectionUniform,
+    sectionCarrier,
   ]);
 
   useEffect(() => {
@@ -214,7 +242,13 @@ export const ChunkMeshes = ({
     const at = (opacity: number) => {
       if (wireframe) return null;
       if (!built.has(opacity)) {
-        built.set(opacity, createInferenceMaterial(inferredStyle, { opacity }));
+        built.set(
+          opacity,
+          createInferenceMaterial(inferredStyle, {
+            opacity,
+            sectionPlane: sectionUniform,
+          }),
+        );
       }
       return built.get(opacity) ?? null;
     };
@@ -223,15 +257,55 @@ export const ChunkMeshes = ({
       wall: (layer: number) => at(layers[layer]?.opacity ?? wallOpacity),
       built,
     };
-  }, [inferredStyle, layers, surfaceOpacity, wallOpacity, wireframe]);
+  }, [
+    inferredStyle,
+    layers,
+    surfaceOpacity,
+    wallOpacity,
+    wireframe,
+    sectionUniform,
+  ]);
 
   useEffect(() => {
     const { built } = overlays;
     return () => built.forEach(m => m?.dispose());
   }, [overlays]);
 
+  // The cut face of each filled interval, rebuilt every frame from the chunk's own
+  // channels. It is drawn with the interval's own fill material, so per-layer
+  // opacity, detail and a caller's own `Material` all carry onto the section.
+  const faces = useChunkSection(chunk.section, section);
+
   return (
     <group>
+      {faces?.map(face => {
+        const material = materials.walls[face.layer];
+        if (!material) return null;
+        const overlay = face.geometry.hasAttribute('inferred')
+          ? overlays.wall(face.layer)
+          : null;
+        return (
+          <group key={`section-${face.interval}`}>
+            {/* ⚠️ Never culled: the buffers are preallocated and only the draw
+                range moves, so a bounding volume computed from them is meaningless. */}
+            <mesh
+              geometry={face.geometry}
+              material={material}
+              frustumCulled={false}
+              userData={{ layer: face.layer, kind: 'section' }}
+            />
+            {overlay && (
+              <mesh
+                geometry={face.geometry}
+                material={overlay}
+                frustumCulled={false}
+                userData={{ layer: face.layer, kind: 'section' }}
+              />
+            )}
+          </group>
+        );
+      })}
+
       {showWalls &&
         chunk.walls.map((wall, i) => {
           const material = materials.walls[wall.layer];

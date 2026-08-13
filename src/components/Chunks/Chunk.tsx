@@ -614,6 +614,10 @@ export const Chunk = ({
       seams: layerSeams,
       carrierSeam,
       carrier: stack.carrier,
+      // Asked for by the PRESENCE of a section on the stack, not by whether one is
+      // currently enabled: it is part of the build, so following the toggle would
+      // rebuild the geometry every time the section is switched on or off.
+      section: !!stack.section,
       // Only a declared column with an envelope can be shared; otherwise this
       // chunk builds (and resolves) on its own.
       stack:
@@ -636,6 +640,7 @@ export const Chunk = ({
     stack.carrier,
     stack.column,
     stack.envelope,
+    stack.section,
   ]);
 
   const [chunk, setChunk] = useState<SurfaceChunk | null>(null);
@@ -750,6 +755,9 @@ export const Chunk = ({
           showWalls={showWalls}
           water={stack.water}
           carrierMaterial={stack.carrierMaterial}
+          section={stack.section}
+          sectionUniform={stack.sectionUniform}
+          sectionCarrier={stack.sectionCarrier}
         />
       </group>
       {children}

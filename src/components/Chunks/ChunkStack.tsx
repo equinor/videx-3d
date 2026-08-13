@@ -7,7 +7,8 @@ import {
   useRef,
   useState,
 } from 'react';
-import { BufferGeometry } from 'three';
+import { BufferGeometry, Group, Matrix4, Plane, Vector3, Vector4 } from 'three';
+import { useFrame } from '@react-three/fiber';
 import { useData } from '../../hooks/useData';
 import { useGenerator } from '../../hooks/useGenerator';
 import {
@@ -15,6 +16,7 @@ import {
   PlanarPolygonGeometry,
   SurfaceMeta,
   unpackBufferGeometry,
+  Vec3,
 } from '../../sdk';
 import { UtmAreaContext } from '../UtmArea';
 import { OceanContactContext } from '../Ocean/ocean-contact';
@@ -23,7 +25,10 @@ import {
   ChunkBuildState,
   ChunkCarrier,
   ChunkResolveOptions,
+  ChunkSection,
+  ChunkSectionState,
   ChunkStackProgress,
+  DEFAULT_SECTION_OFFSET,
   stackWater,
   StackWater,
   StackWaterResponse,
@@ -37,6 +42,7 @@ import {
   ChunkStackContextValue,
   ChunkSurfaceClaim,
 } from './ChunkContext';
+import { ChunkSectionDebug } from './ChunkSectionDebug';
 import { CutoutSource } from './cutout';
 import { buildStackWaterSpec } from './chunk-spec';
 import { resolveWellboreOutline } from './resolveWellboreOutline';
@@ -49,6 +55,13 @@ import {
   SurfaceSamplerRegistryContext,
 } from './surface-sampler';
 import { useStackWater } from './useStackWater';
+
+// Scratch for the camera-locked plane, which is rebuilt every frame.
+const sectionForward = new Vector3();
+const sectionEye = new Vector3();
+const sectionUp = new Vector3();
+const sectionNormal = new Vector3();
+const sectionMatrix = new Matrix4();
 
 /**
  * {@link ChunkStack} props.
@@ -113,6 +126,20 @@ export type ChunkStackProps = {
    */
   water?: StackWater;
   /**
+   * Cut the whole stack with a plane and FILL the cut face per interval, so the
+   * block reads as a geological section. See {@link ChunkSection}.
+   *
+   * ⚠️⚠️ It cuts the chunks and nothing else — not wellbores, vessels, facilities
+   * or the sea this stack draws. That is deliberate (the cut lives in
+   * `ChunkMaterial`'s shader, not in the renderer), but it means an object resting
+   * on the sea bed keeps its geometry while the ground under it is cut away.
+   *
+   * ⚠️ Its PRESENCE asks each chunk's build for the extra channels a cut face
+   * needs, so adding or removing the prop rebuilds them. `enabled` is the free
+   * toggle.
+   */
+  section?: ChunkSection;
+  /**
    * How the column is made monotone before it is built, and what is dropped where
    * a unit is not present. Chunks inherit this unless they declare their own.
    *
@@ -161,6 +188,7 @@ export const ChunkStack = ({
   surfaces,
   carrier,
   water,
+  section,
   resolve,
   rimSpacing,
   maxError,
@@ -192,7 +220,89 @@ export const ChunkStack = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
   const stableResolve = useMemo(() => resolve, [resolveKey]);
 
-  const sea = useStackWater(stableWater);
+  // ⭐ ONE uniform object for the whole stack, handed to every material it draws
+  // with — the chunks', the sea's, and the inference overlay's. A `ShaderMaterial`'s
+  // OIT variants share their `uniforms` by reference, so this single write per
+  // frame reaches all of them in all four passes, which is what lets the plane move
+  // without a React render or a material rebuild.
+  // A zero normal removes nothing, which is the disabled state.
+  const sectionUniform = useMemo(
+    () => ({ value: new Vector4(0, 0, 0, -1) }),
+    [],
+  );
+  // The frame the section is expressed in — needed to bring a camera-locked plane
+  // out of world space, which is the one case where the two differ.
+  const sectionRoot = useRef<Group>(null);
+
+  const sea = useStackWater(
+    stableWater,
+    false,
+    section && section.water !== false ? sectionUniform : undefined,
+  );
+
+  const hasSection = !!section;
+  // ⚠️ Deliberately NOT keyed on the prop: `section={{ plane, enabled }}` is a new
+  // object every render, and this context's identity is what every chunk's build
+  // spec derives from. Only its presence may change identity.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
+  const sectionState = useMemo<ChunkSectionState | null>(
+    () =>
+      hasSection
+        ? { plane: new Plane(), enabled: true, offset: DEFAULT_SECTION_OFFSET }
+        : null,
+    [hasSection],
+  );
+  // ⚠️ Registered here, so it runs AFTER any child's own `useFrame` (child effects
+  // subscribe first) — a caller animating the plane from inside the stack is
+  // therefore read in the same frame it wrote, not the next one.
+  useFrame(({ camera }) => {
+    if (!section || !sectionState) {
+      sectionUniform.value.set(0, 0, 0, -1);
+      return;
+    }
+    sectionState.enabled = section.enabled !== false;
+    sectionState.offset = section.offset ?? DEFAULT_SECTION_OFFSET;
+
+    if (section.cameraDistance !== undefined) {
+      // The plane sits `distance` in front of the camera FACING it, so everything
+      // nearer is cut away and dollying in drives the cut through the block.
+      camera.getWorldDirection(sectionForward);
+      camera.getWorldPosition(sectionEye);
+      if (section.vertical !== false) {
+        sectionForward.y = 0;
+        // Looking straight down leaves no heading in the view direction. What is
+        // "up" on screen is horizontal there, so the plane holds its bearing
+        // instead of snapping as the view passes through vertical.
+        if (sectionForward.lengthSq() < 1e-8) {
+          sectionUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+          sectionForward.set(sectionUp.x, 0, sectionUp.z);
+          if (sectionForward.lengthSq() < 1e-8) sectionForward.set(0, 0, 1);
+        }
+        sectionForward.normalize();
+      }
+      sectionState.plane.set(
+        sectionNormal.copy(sectionForward).negate(),
+        sectionForward.dot(sectionEye) + section.cameraDistance,
+      );
+      // Built in world space; the stack's own frame is where it has to be tested,
+      // and the two differ as soon as the stack carries a vertical exaggeration.
+      const root = sectionRoot.current;
+      if (root) {
+        root.updateWorldMatrix(true, false);
+        sectionState.plane.applyMatrix4(
+          sectionMatrix.copy(root.matrixWorld).invert(),
+        );
+      }
+    } else if (section.plane) {
+      sectionState.plane.copy(section.plane);
+    }
+
+    const { normal, constant } = sectionState.plane;
+    if (sectionState.enabled)
+      sectionUniform.value.set(normal.x, normal.y, normal.z, constant);
+    else sectionUniform.value.set(0, 0, 0, -1);
+  });
+
   // --- Envelope: the footprint the shared column grid is built over. It must
   //     contain every chunk's outline, so a wellbore cut source is resolved over
   //     the FULL depth window — more trajectory points can only grow the outline,
@@ -480,6 +590,9 @@ export const ChunkStack = ({
       // stale whenever only the appearance changed.
       carrierMaterial: carrier?.material,
       water: stableWater ?? null,
+      section: sectionState,
+      sectionUniform,
+      sectionCarrier: section?.carrier !== false,
       resolve: stableResolve,
       envelope,
       rimSpacing,
@@ -500,6 +613,9 @@ export const ChunkStack = ({
     stableCarrier,
     carrier?.material,
     stableWater,
+    sectionState,
+    sectionUniform,
+    section?.carrier,
     stableResolve,
     wellboreEnvelope,
     rimSpacing,
@@ -576,19 +692,64 @@ export const ChunkStack = ({
     };
   }, [seaGeometry]);
 
+  // The stack's extent in its OWN frame, for the section debug view: XZ from the
+  // footprint everything is cut from, Y from the column's depth range and the
+  // floor under it.
+  const sectionBounds = useMemo(() => {
+    if (!section?.debug) return null;
+    const polygon = value.envelope ?? outline;
+    if (!polygon) return null;
+    const { min, max } = polygon.getBounds();
+    if (!Number.isFinite(min[0])) return null;
+    // Scene Y is up and a surface's meta is a positive DEPTH, so they invert.
+    let top = 0;
+    let bottom = 0;
+    for (const meta of column ?? []) {
+      top = Math.max(top, -meta.min);
+      bottom = Math.min(bottom, -meta.max);
+    }
+    if (stableCarrier?.depth !== undefined)
+      bottom = Math.min(bottom, -stableCarrier.depth);
+    else if (stableCarrier?.below !== undefined) bottom -= stableCarrier.below;
+    if (stableWater) top = Math.max(top, -(stableWater.depth ?? 0));
+    if (bottom >= top) bottom = top - 1;
+    return {
+      min: [min[0], bottom, min[1]] as Vec3,
+      max: [max[0], top, max[1]] as Vec3,
+    };
+  }, [
+    section?.debug,
+    value.envelope,
+    outline,
+    column,
+    stableCarrier,
+    stableWater,
+  ]);
+
   return (
     <ChunkStackContext.Provider value={value}>
       <SurfaceSamplerRegistryContext.Provider value={samplerRegistry}>
         <SurfaceSamplerContext.Provider value={sampler}>
           <OceanSamplerContext.Provider value={sea?.sampler ?? null}>
             <OceanContactContext.Provider value={sea?.contacts ?? null}>
-              {sea && seaGeometry?.lid && (
-                <mesh geometry={seaGeometry.lid} material={sea.surface} />
-              )}
-              {sea && seaGeometry?.body && (
-                <mesh geometry={seaGeometry.body} material={sea.volume} />
-              )}
-              {children}
+              {/* Identity transform, present so a camera-locked section has a
+                  frame to be brought into (see the `useFrame` above). */}
+              <group ref={sectionRoot}>
+                {sea && seaGeometry?.lid && (
+                  <mesh geometry={seaGeometry.lid} material={sea.surface} />
+                )}
+                {sea && seaGeometry?.body && (
+                  <mesh geometry={seaGeometry.body} material={sea.volume} />
+                )}
+                {sectionBounds && (
+                  <ChunkSectionDebug
+                    section={sectionState}
+                    min={sectionBounds.min}
+                    max={sectionBounds.max}
+                  />
+                )}
+                {children}
+              </group>
             </OceanContactContext.Provider>
           </OceanSamplerContext.Provider>
         </SurfaceSamplerContext.Provider>

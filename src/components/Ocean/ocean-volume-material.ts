@@ -1,6 +1,7 @@
 import {
   Color,
   DoubleSide,
+  IUniform,
   ShaderMaterial,
   ShaderMaterialParameters,
   Uniform,
@@ -17,6 +18,8 @@ export type OceanVolumeMaterialParameters = ShaderMaterialParameters & {
    * from `uv.y` — for a chunk's interval wall, whose uv is metric.
    */
   wallAttribute?: boolean;
+  /** see {@link OceanMaterialParameters.sectionPlane} */
+  sectionPlane?: IUniform<Vector4>;
 };
 
 /**
@@ -39,7 +42,12 @@ export class OceanVolumeMaterial extends ShaderMaterial {
   isOceanVolumeMaterial = true;
 
   constructor(parameters: OceanVolumeMaterialParameters = {}) {
-    const { waveCount = 16, wallAttribute = false, ...rest } = parameters;
+    const {
+      waveCount = 16,
+      wallAttribute = false,
+      sectionPlane,
+      ...rest
+    } = parameters;
 
     // Preallocated wave-component tables. Normally replaced by the surface's
     // tables (shared by reference) via setWaveTables(); the placeholders keep
@@ -61,6 +69,7 @@ export class OceanVolumeMaterial extends ShaderMaterial {
         OCEAN_WAVE_COUNT: waveCount,
         OCEAN_DISPLACE_COUNT: 3,
         ...(wallAttribute ? { OCEAN_WALL_ATTRIBUTE: '' } : {}),
+        ...(sectionPlane ? { OCEAN_SECTION: '' } : {}),
       },
       uniforms: {
         uTime: new Uniform(0),
@@ -78,6 +87,8 @@ export class OceanVolumeMaterial extends ShaderMaterial {
     });
 
     if (Object.keys(rest).length) this.setValues(rest);
+
+    if (sectionPlane) this.uniforms.sectionPlane = sectionPlane;
 
     attachOitVariants(this);
   }

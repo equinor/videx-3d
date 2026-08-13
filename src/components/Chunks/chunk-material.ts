@@ -2,6 +2,7 @@ import {
   Color,
   ColorRepresentation,
   DoubleSide,
+  IUniform,
   ShaderLib,
   ShaderMaterial,
   Side,
@@ -80,6 +81,22 @@ export type ChunkMaterialParameters = {
    * anything having to know where the shoreline runs.
    */
   waterTint?: ChunkWaterTintParameters;
+  /**
+   * Cut this material with a plane: fragments where `dot(xyz, position) + w > 0`
+   * are discarded, in the mesh's OWN object space.
+   *
+   * ⭐ A SHARED uniform object, deliberately — pass the same one to every material
+   * of a stack and moving the plane is a single write per frame that reaches all of
+   * them, and (because a `ShaderMaterial`'s OIT variants share their `uniforms` by
+   * reference) all four OIT passes with them. `material.clippingPlanes` cannot do
+   * this: `Material.copy` deep-clones a `Plane`, so each variant would snapshot the
+   * plane at build time and a moving one would freeze under `OITRenderPass` while
+   * animating under a plain `RenderPass`.
+   *
+   * ⚠️ Read at CONSTRUCTION, like `detail`: it sets a define, so turning
+   * sectioning on or off means a new material. Moving the plane does not.
+   */
+  sectionPlane?: IUniform<Vector4>;
 };
 
 const shader = {
@@ -175,6 +192,11 @@ export class ChunkMaterial extends ShaderMaterial {
 
     this.applyDetail(parameters.detail, parameters.wall === true);
     this.applyWaterTint(parameters.waterTint);
+
+    if (parameters.sectionPlane) {
+      (this.defines as Record<string, unknown>).CHUNK_SECTION = '';
+      this.uniforms.sectionPlane = parameters.sectionPlane;
+    }
 
     attachOitVariants(this);
   }

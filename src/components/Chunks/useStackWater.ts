@@ -1,5 +1,6 @@
 import { useFrame } from '@react-three/fiber';
 import { useEffect, useMemo, useRef } from 'react';
+import { IUniform, Vector4 } from 'three';
 import {
   OceanContactRegistry,
   OceanContactSource,
@@ -44,6 +45,7 @@ export type StackWaterMaterials = {
 export function useStackWater(
   water: StackWater | undefined,
   wireframe = false,
+  sectionPlane?: IUniform<Vector4>,
 ): StackWaterMaterials | null {
   const enabled = !!water;
   const level = -(water?.depth ?? 0);
@@ -62,15 +64,17 @@ export function useStackWater(
     [],
   );
 
+  // ⚠️ The section is a DEFINE, so cutting the sea or leaving it whole means new
+  // materials. That is a discrete choice, unlike the sea state, which is swept.
   const materials = useMemo(() => {
     if (!enabled) return null;
     return {
-      surface: new OceanMaterial(),
+      surface: new OceanMaterial({ sectionPlane }),
       // A chunk's interval wall measures its vertical coordinate in metres, so
       // the walls read their unit-relative height from `wallV` instead.
-      volume: new OceanVolumeMaterial({ wallAttribute: true }),
+      volume: new OceanVolumeMaterial({ wallAttribute: true, sectionPlane }),
     };
-  }, [enabled]);
+  }, [enabled, sectionPlane]);
 
   useEffect(() => {
     if (!materials) return;

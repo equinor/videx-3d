@@ -9,6 +9,7 @@ import {
   SurfaceChunkMesh,
   SurfaceChunkMetrics,
 } from './surface-chunk';
+import { StackSectionSource } from './surface-section';
 
 /**
  * A {@link SurfaceChunkMesh} packed for transfer across a worker boundary.
@@ -34,6 +35,7 @@ export type PackedSurfaceChunkMesh = Omit<SurfaceChunkMesh, 'geometry'> & {
 export type PackedSurfaceChunk = {
   surfaces: PackedSurfaceChunkMesh[];
   walls: PackedSurfaceChunkMesh[];
+  section?: StackSectionSource;
   metrics: SurfaceChunkMetrics;
 };
 
@@ -62,8 +64,23 @@ export function packSurfaceChunk(
       geometry: packGeo(s.geometry),
     })),
     walls: chunk.walls.map(w => ({ ...w, geometry: packGeo(w.geometry) })),
+    section: chunk.section,
     metrics: chunk.metrics,
   };
+
+  // The section shares buffers with the geometries above — the shared triangle
+  // index, and any layer's `inferred` attribute — so the caller's transfer list has
+  // to be deduped either way (a repeated buffer is a DataCloneError).
+  if (chunk.section) {
+    const { positionsXZ, indices, heights, intervals, inferred } =
+      chunk.section;
+    transferables.push(positionsXZ.buffer, indices.buffer);
+    for (const y of heights) transferables.push(y.buffer);
+    for (const members of intervals)
+      if (members) transferables.push(members.buffer);
+    if (inferred)
+      for (const marks of inferred) transferables.push(marks.buffer);
+  }
 
   return [packed, transferables];
 }
@@ -85,6 +102,7 @@ export function unpackSurfaceChunk(packed: PackedSurfaceChunk): SurfaceChunk {
       ...w,
       geometry: unpackBufferGeometry(w.geometry),
     })),
+    section: packed.section,
     metrics: packed.metrics,
   };
 }

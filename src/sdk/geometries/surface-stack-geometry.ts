@@ -34,6 +34,7 @@ import {
   collectStackCandidates,
   collectThicknessCrossings,
 } from './surface-stack-candidates';
+import { StackSectionSource } from './surface-section';
 import { buildRingWalls } from './surface-walls';
 
 /** One layer of a shared-tessellation stack, ready to render. */
@@ -159,6 +160,13 @@ export type StackWallOptions = {
 export type StackWalls = {
   /** per layer, the wall of the interval BELOW it; `null` where there is none */
   walls: (BufferGeometry | null)[];
+  /**
+   * Per interval, one flag per triangle: where that interval holds a volume
+   * ({@link stackIntervalTriangles}). Returned rather than discarded because a
+   * section needs exactly the same set, and computing it twice is the cost of a
+   * second pass over every triangle. `null` when nothing is filled.
+   */
+  intervals: Uint8Array[] | null;
   /** boundary walks discarded as degenerate (see `BoundaryRings.dropped`) */
   ringsDropped: number;
   /** boundary walks that did not close (see `BoundaryRings.open`) — should be 0 */
@@ -201,7 +209,7 @@ export function buildStackWalls(
 ): StackWalls {
   const walls: (BufferGeometry | null)[] = heights.map(() => null);
   if (!options.fills.some(Boolean))
-    return { walls, ringsDropped: 0, ringsOpen: 0 };
+    return { walls, intervals: null, ringsDropped: 0, ringsOpen: 0 };
 
   const { indices, rimVertices } = tessellation;
   const vertexCount = tessellation.coords.length >> 1;
@@ -281,7 +289,7 @@ export function buildStackWalls(
     walls[i] = geometry;
   }
 
-  return { walls, ringsDropped, ringsOpen };
+  return { walls, intervals: members, ringsDropped, ringsOpen };
 }
 
 /** Options for {@link buildSurfaceStack}. */
@@ -446,6 +454,16 @@ export type SurfaceStackOptions = {
    * the outline, which both share.
    */
   unbounded?: (StackUnbounded | null)[];
+  /**
+   * Also emit a {@link StackSectionSource} — the channels a clip plane's cut face
+   * is built from. OFF by default: it hands out the shared tessellation and every
+   * layer's heights, which for a worker build means transferring them, and nobody
+   * who is not sectioning should pay for that.
+   *
+   * ⚠️ Needs `fills`: a cut face shows the MATERIAL an interval holds, so an
+   * unfilled gap has nothing to draw.
+   */
+  section?: boolean;
 };
 
 /**
@@ -517,6 +535,11 @@ export type SurfaceStackBuild = {
    * covers them (see {@link SurfaceStackOptions.topCover}). 0 without a cover.
    */
   topKept: number;
+  /**
+   * The channels a clip plane's cut face is built from, when
+   * {@link SurfaceStackOptions.section} asked for them.
+   */
+  section?: StackSectionSource;
   timings: SurfaceStackTimings;
 };
 
@@ -787,8 +810,28 @@ export function buildSurfaceStack(
         fluid,
         unbounded,
       })
-    : { walls: heights.map(() => null), ringsDropped: 0, ringsOpen: 0 };
+    : {
+        walls: heights.map(() => null),
+        intervals: null,
+        ringsDropped: 0,
+        ringsOpen: 0,
+      };
   const tWalls = performance.now();
+
+  // An interval with no volume has no material to show on the cut, so it is left
+  // out here rather than being filtered by every consumer.
+  const section =
+    options.section && walls.intervals
+      ? {
+          positionsXZ,
+          indices: tessellation.indices,
+          heights,
+          intervals: walls.intervals.map((members, i) =>
+            options.fills?.[i] ? members : null,
+          ),
+          inferred,
+        }
+      : undefined;
 
   return {
     tessellation,
@@ -805,6 +848,7 @@ export function buildSurfaceStack(
     depths,
     duplicates,
     topKept,
+    section,
     timings: {
       tessellateMs: tTessellate - t0,
       sampleMs: tSample - tTessellate,

@@ -34,6 +34,7 @@ export * from './geometries/surface-drape';
 export * from './geometries/surface-field';
 export * from './geometries/surface-outline';
 export * from './geometries/surface-seal';
+export * from './geometries/surface-section';
 export * from './geometries/surface-stack';
 export * from './geometries/surface-stack-candidates';
 export * from './geometries/surface-stack-geometry';

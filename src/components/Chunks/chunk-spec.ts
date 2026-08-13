@@ -55,6 +55,8 @@ export type BuildSurfaceChunkSpecOptions = {
    * INFERRED here rather than declared, so it has no index in `seams`.
    */
   carrierSeam?: SeamDecision | null;
+  /** ask the build for the section channels (see `SurfaceChunkSpec.section`) */
+  section?: boolean;
 };
 
 /** Map one surface's meta into the serializable layer spec. */
@@ -254,5 +256,6 @@ export function buildSurfaceChunkSpec(
     rimSpacing: options.rimSpacing,
     maxError: options.maxError,
     resolve: options.resolve,
+    section: options.section,
   };
 }

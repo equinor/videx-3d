@@ -33,6 +33,10 @@ uniform vec3 waterTintParams; // x: water level (vertex stage), y: strength, z: 
 varying float vWaterDepth;
 #endif
 
+#ifdef CHUNK_SECTION
+varying float vSectionDist;
+#endif
+
 #include <common>
 #include <dithering_pars_fragment>
 #include <color_pars_fragment>
@@ -55,6 +59,13 @@ varying float vWaterDepth;
 #endif
 
 void main() {
+  // Before anything else, and before the OIT passes take their early exits: a
+  // fragment that is cut away must be gone in the min-depth and occlusion passes
+  // too, or the block goes on occluding through the cut it is not drawn in.
+  #ifdef CHUNK_SECTION
+  if (vSectionDist > 0.0) discard;
+  #endif
+
   vec4 diffuseColor = vec4(diffuse, opacity);
   #include <clipping_planes_fragment>
 

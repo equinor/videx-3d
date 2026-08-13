@@ -5,6 +5,7 @@ import {
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
 } from './planar-geometry';
+import { StackSectionSource } from './surface-section';
 import { buildIntervalWalls } from './surface-walls';
 
 /**
@@ -234,6 +235,12 @@ export type SurfaceChunk = {
   surfaces: SurfaceChunkMesh[];
   /** one per FILLED interval, tagged with the layer above it */
   walls: SurfaceChunkMesh[];
+  /**
+   * The channels a clip plane's cut face is built from, when the build was asked
+   * for them (see `SurfaceStackOptions.section`). Present only then — it is the
+   * one part of a chunk that is data rather than geometry.
+   */
+  section?: StackSectionSource;
   metrics: SurfaceChunkMetrics;
 };
 
@@ -363,6 +370,8 @@ export type AssembleChunkLayer = {
 export type AssembleChunkOptions = {
   /** carried into the metrics (see {@link SurfaceChunkDiagnostics}) */
   diagnostics?: SurfaceChunkDiagnostics;
+  /** carried through to the chunk (see {@link SurfaceChunk.section}) */
+  section?: StackSectionSource;
 };
 
 /** Timings threaded into {@link assembleChunk} for the returned metrics. */
@@ -441,5 +450,15 @@ export function assembleChunk(
     diagnostics: options.diagnostics,
   };
 
-  return { surfaces, walls, metrics };
+  return {
+    surfaces,
+    walls,
+    section: options.section
+      ? {
+          ...options.section,
+          layers: layers.map((layer, i) => layer.source ?? i),
+        }
+      : undefined,
+    metrics,
+  };
 }

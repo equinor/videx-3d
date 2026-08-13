@@ -1,4 +1,4 @@
-import { Material } from 'three';
+import { Material, Plane } from 'three';
 import {
   PackedBufferGeometry,
   PackedSurfaceChunk,
@@ -351,6 +351,119 @@ export type ChunkCarrier = StackCarrier & {
 };
 
 /**
+ * A clip plane through a whole `ChunkStack`, whose cut face is FILLED per interval
+ * so the block reads as a geological section rather than a hollow shell.
+ *
+ * ⭐ Declared on the stack, but each chunk builds its own cut faces from its own
+ * channels — the plane is one decision, the geometry is per chunk.
+ *
+ * ⚠️⚠️ It cuts what the STACK draws and nothing else: the chunks, and the sea if
+ * `water` allows. Wellbores, vessels, facilities, pipelines, annotations and host
+ * meshes all keep drawing whole, because the cut is a branch in the stack's own
+ * shaders rather than a renderer-wide clip. So an object resting on the sea bed
+ * stays put while the ground under it is cut away.
+ *
+ * @group Components
+ */
+export type ChunkSection = {
+  /**
+   * The cutting plane, in the STACK's own object space. Points where
+   * `plane.distanceToPoint(p) > 0` are cut away, so the normal points at what is
+   * removed — which is also the cut face's outward normal. Flipping the section is
+   * `plane.negate()`.
+   *
+   * ⭐ Read every frame and never through React, so MUTATING it animates the
+   * section at no render cost. ⚠️ Object space, not world: the stack may carry a
+   * vertical exaggeration, and the shader tests the raw vertex position for
+   * exactly this reason.
+   *
+   * Ignored when {@link ChunkSection.cameraDistance} is set.
+   */
+  plane?: Plane;
+  /**
+   * Lock the plane to the CAMERA, this many metres in front of it and facing it,
+   * so everything NEARER than that is cut away.
+   *
+   * ⭐ Moving the camera is then the interaction: orbit to choose the angle, dolly
+   * in to drive the cut through the block. It needs no gizmo, no pointer handling
+   * and no widget to hit, which is what makes it better than a draggable plane.
+   *
+   * The plane is built in world space and transformed into the stack's frame, so
+   * it is exact under a vertical exaggeration. `plane` is ignored while this is
+   * set, but the stack still publishes the resulting plane, so the debug view (and
+   * anything else) sees the same one.
+   */
+  cameraDistance?: number;
+  /**
+   * Keep a camera-locked plane VERTICAL: it takes the camera's heading and
+   * position but never its dip. Default true, and only meaningful together with
+   * {@link ChunkSection.cameraDistance}.
+   *
+   * ⭐ A section is conventionally drawn on a vertical plane, and a cut that tilts
+   * with the camera makes the block appear to shear as you orbit — the geology
+   * stops being readable, which is the whole point of the view. Off gives the
+   * literal view-aligned cut, which is worth having but is an effect rather than a
+   * tool.
+   *
+   * ⚠️ `cameraDistance` is then a HORIZONTAL distance, measured in plan.
+   */
+  vertical?: boolean;
+  /**
+   * Draw the section. Default true. Toggling it is free — the build payload the
+   * cut face needs is requested by the section's PRESENCE, so switching it off
+   * does not throw the geometry away.
+   */
+  enabled?: boolean;
+  /**
+   * Metres to move the cut face toward the KEPT side, so the same test that cuts
+   * the block does not cut the face closing it. Default 0.05.
+   */
+  offset?: number;
+  /**
+   * Cut the sea too (see `ChunkStackProps.water`). Default true.
+   *
+   * ⚠️ The water gets no cut FACE — it simply ends at the plane, so you look into
+   * an open water body. Turn it off to keep the sea whole over a sliced block,
+   * which is what you want when the cut is only meant to expose the geology.
+   *
+   * ⚠️ Changing it rebuilds the two ocean materials (the cut is a define).
+   */
+  water?: boolean;
+  /**
+   * Cut the column's floor too (see `ChunkStackProps.carrier`). Default true.
+   * Off leaves the block standing on an intact base plate.
+   */
+  carrier?: boolean;
+  /**
+   * Draw where the plane is: its outline through the stack's bounds, and its
+   * centre. Always on top, and never an event emitter.
+   */
+  debug?: boolean;
+};
+
+/** Default {@link ChunkSection.offset}. @group Components */
+export const DEFAULT_SECTION_OFFSET = 0.05;
+
+/**
+ * The live section, as a `ChunkStack` publishes it to its chunks: a STABLE object
+ * the stack refreshes from the props once per frame.
+ *
+ * ⭐ Stable identity is the point. The caller naturally writes
+ * `section={{ plane, enabled }}`, which is a new object every render, and the
+ * stack context's identity is what every chunk's build spec derives from — so
+ * publishing the prop itself would rebuild every chunk on any parent render.
+ * Nothing here is read during React rendering; it is all read from `useFrame`.
+ *
+ * @group Components
+ */
+export type ChunkSectionState = {
+  /** the stack's own copy of {@link ChunkSection.plane} */
+  plane: Plane;
+  enabled: boolean;
+  offset: number;
+};
+
+/**
  * Depth over which a {@link ChunkWaterTint.bedTint} builds up when the water names
  * no {@link ChunkWaterTint.bedTintDepth} of its own. Shallow enough that a shoreline
  * reads as one.
@@ -616,6 +729,14 @@ export type SurfaceChunkSpec = {
   maxError?: number;
   /** see {@link ChunkResolveOptions} — omit to skip the depth-order pass */
   resolve?: ChunkResolveOptions;
+  /**
+   * Also return the channels a clip plane's cut face is built from (see
+   * `SurfaceChunk.section`). Requested by the presence of a section on the
+   * enclosing `ChunkStack`, NOT by whether one is currently enabled — the payload
+   * is part of the build, so making it follow a toggle would rebuild the geometry
+   * every time the section is switched on or off.
+   */
+  section?: boolean;
 };
 
 /**

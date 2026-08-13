@@ -1,4 +1,10 @@
-import { DoubleSide, Material, MeshBasicMaterial } from 'three';
+import {
+  DoubleSide,
+  IUniform,
+  Material,
+  MeshBasicMaterial,
+  Vector4,
+} from 'three';
 import { makeOitCompatible } from '../../rendering/oit-material';
 
 /**
@@ -36,6 +42,16 @@ export type InferenceMaterialOptions = {
   strength?: number;
   /** the opacity of what is being marked, so a translucent unit is marked as faintly. Default 1. */
   opacity?: number;
+  /**
+   * The stack's section plane (see `ChunkSection`), so the marking is cut with the
+   * geometry it marks.
+   *
+   * ⚠️ Not optional in practice once a stack is sectioned: this is a SEPARATE mesh
+   * from the one it marks, and only `ChunkMaterial` knows about the plane — so
+   * without it the hatching goes on drawing in the half that was cut away, hanging
+   * in the air where the block used to be.
+   */
+  sectionPlane?: IUniform<Vector4>;
 };
 
 /** GLSL float literal (an integer-looking value would be an int in GLSL). */
@@ -86,7 +102,13 @@ export function createInferenceMaterial(
   options: InferenceMaterialOptions = {},
 ): Material | null {
   if (style === 'none') return null;
-  const { spacing = 40, width = 0.35, strength = 0.5, opacity = 1 } = options;
+  const {
+    spacing = 40,
+    width = 0.35,
+    strength = 0.5,
+    opacity = 1,
+    sectionPlane,
+  } = options;
 
   const material = new MeshBasicMaterial({
     color: '#000000',
@@ -109,6 +131,11 @@ export function createInferenceMaterial(
   });
 
   material.onBeforeCompile = shader => {
+    // ⭐ Bound HERE rather than on the material: `makeOitCompatible` CLONES a
+    // non-`ShaderMaterial` for its per-pass variants and re-links `onBeforeCompile`
+    // onto each clone, so binding the same uniform object from inside the closure
+    // is what makes one write per frame reach every variant.
+    if (sectionPlane) shader.uniforms.sectionPlane = sectionPlane;
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -116,14 +143,25 @@ export function createInferenceMaterial(
 attribute float inferred;
 varying float vInferred;
 varying vec3 vInferPos;
-varying vec3 vInferNormal;`,
+varying vec3 vInferNormal;${
+          sectionPlane
+            ? `
+uniform vec4 sectionPlane;
+varying float vSectionDist;`
+            : ''
+        }`,
       )
       .replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
   vInferred = inferred;
   vInferPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
-  vInferNormal = normalize(mat3(modelMatrix) * normal);`,
+  vInferNormal = normalize(mat3(modelMatrix) * normal);${
+    sectionPlane
+      ? `
+  vSectionDist = dot(sectionPlane.xyz, transformed) + sectionPlane.w;`
+      : ''
+  }`,
       );
     shader.fragmentShader = shader.fragmentShader
       .replace(
@@ -131,7 +169,12 @@ varying vec3 vInferNormal;`,
         `#include <common>
 varying float vInferred;
 varying vec3 vInferPos;
-varying vec3 vInferNormal;
+varying vec3 vInferNormal;${
+          sectionPlane
+            ? `
+varying float vSectionDist;`
+            : ''
+        }
 
 float chunkStripe(float h, float w) {
   float fr = fract(h);
@@ -139,6 +182,15 @@ float chunkStripe(float h, float w) {
   float aa = max(fwidth(h), 1e-5);
   return 1.0 - smoothstep(w * 0.5 - aa, w * 0.5 + aa, d);
 }`,
+      )
+      .replace(
+        '#include <clipping_planes_fragment>',
+        `${
+          sectionPlane
+            ? `if (vSectionDist > 0.0) discard;
+  `
+            : ''
+        }#include <clipping_planes_fragment>`,
       )
       .replace(
         '#include <color_fragment>',
@@ -158,6 +210,6 @@ ${pattern(style, spacing, width)}
   // different spacing would silently share one compiled program. `strength` is not
   // in the shader, so it is not in the key.
   material.customProgramCacheKey = () =>
-    `chunk-inferred-${style}-${spacing}-${width}`;
+    `chunk-inferred-${style}-${spacing}-${width}-${sectionPlane ? 'cut' : 'whole'}`;
   return makeOitCompatible(material);
 }

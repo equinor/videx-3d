@@ -2270,7 +2270,8 @@ patch stays rejected.
 6. **Sectioning** (§15): a clip plane in any orientation, with the cut face filled
    per interval. Independent of 4 and 5, and cheap because of §9.1 — but it reads
    the tessellation and the channels, so it comes after the geometry layer is
-   settled. *Not started.*
+   settled. **— done (§15.9)**, for one plane. ⚠️ It cuts the CHUNKS only: the sea,
+   and everything standing on the block, keep drawing whole.
 
 ## 13. What surface data actually looks like
 
@@ -2680,8 +2681,11 @@ having to carry them.
 
 ## 15. Sectioning — the cut face through a clipped stack
 
-> **Status: DESIGN, not built** (recorded 2026-08-13). Every cost below is
-> reasoned, not measured; §11.1 is the standing reminder of what that is worth.
+> **Status: BUILT** (2026-08-13), as one plane, any orientation, animatable, with a
+> flip. The design below held up — §15.2's per-cell assembly and §15.3's "section the
+> channels" are what shipped — so it is left as written, with what changed marked in
+> place. §15.9 records the parts that are new. Fence sections, slabs and boxes
+> (§15.8) are not built.
 
 A clip plane through a stack should not reveal a hollow shell. The cut should read
 as a **geological section**: each interval filled across the cut with the material
@@ -2694,6 +2698,11 @@ including animated.
 chunks, so a plane cuts a stack today. Because chunk materials are `DoubleSide`
 (§10.3.6), what is revealed is the inside of the walls and caps — a shell, which is
 an honest picture of the geometry and a useless one of the geology.
+
+⚠️ Superseded in practice: the built cut does NOT go through three's clipping
+planes at all, for the reason §15.6 gives — they do not survive the OIT variants.
+The stock `clipping = true` and the `clipping_planes_*` includes remain, unused by
+this feature.
 
 So the feature is not the clip. It is generating, per frame, the surface that
 closes each interval where the plane passes through it.
@@ -2733,6 +2742,10 @@ What that buys, in order:
 - **It is small.** Only cells the plane passes through do any work — order the square
   root of the triangle count — each producing at most three triangles. ⚠️ Unmeasured;
   measure crossed-cell count on a real stack before committing to per-frame rebuild.
+
+⚠️ **Two things the design did not say, and both are load-bearing.** See §15.9.1:
+watertightness needs a CANONICAL edge orientation, and a cell the plane merely
+GRAZES must be skipped rather than closed.
 
 ### 15.3 ⭐ Section the CHANNELS, not the drawn meshes
 
@@ -2864,8 +2877,186 @@ Other consequences:
    this needs per-segment planes rather than one.
 2. **Clip volumes.** Several planes, a slab, a box; and whether the cut faces of
    different planes need to meet each other (they do at a box corner).
-3. **Component shape.** A `Chunk` child, or a stack-level component that sections
-   every chunk with one plane? The latter matches how a user thinks about it; the
-   former matches where the data is.
-4. **Which side is kept**, and whether the discarded side should remain pickable.
+3. ~~**Component shape.**~~ **Settled:** the plane is declared on the
+   `ChunkStack` and each chunk builds its own cut faces — the plane is one
+   decision, the geometry is per chunk.
+4. **Which side is kept** — built (`plane.negate()`). Whether the discarded side
+   should remain **pickable** is still open, and today it does: see §15.9.4.
 5. Whether a fluid should be sectioned at all (§15.5).
+
+### 15.9 What was built (2026-08-13)
+
+`ChunkStackProps.section` takes a `ChunkSection`: a `Plane`, `enabled`, and an
+`offset`. Everything else follows from two decisions.
+
+**⭐ The plane is a UNIFORM and the cut face is CPU geometry, driven from the same
+object.** `ChunkMaterial` gains a `CHUNK_SECTION` define and one `vec4` uniform;
+`chunk-frag.glsl` discards at the very TOP of `main`, before the OIT passes take
+their early exits, so a cut fragment is gone in the min-depth and occlusion passes
+too — otherwise the block would go on occluding through a cut it is not drawn in.
+
+**⭐ Object space, not world** (§15.7's warning, answered the other way round): the
+shader tests the raw `position` attribute rather than the world position, so the
+CPU — which builds the face from the same vertex data — and the GPU cannot disagree
+under a vertical exaggeration. No `matrixWorld` is involved anywhere.
+
+#### 15.9.1 Two things §15.2 did not say
+
+Both are the difference between "watertight by construction" as a claim and as a
+fact:
+
+- ⭐⭐ **The crossing on an edge must be computed in a CANONICAL direction.** Two
+  triangles sharing an XZ edge list its endpoints in opposite corner order, and
+  `p0 + s·(p1 − p0)` is not the same float read the other way round — so the two
+  cells' faces part by an ulp along every shared edge. Edges are therefore ordered
+  by `(layer, vertex index)`, which both cells agree on. The same ordering is what
+  makes interval *i*'s base and interval *i+1*'s top land on identical points,
+  since that boundary is one layer's heights read twice.
+- ⚠️ **A cell the plane merely GRAZES must be skipped.** Treating `d == 0` as "cut
+  away" (which is what removes the doubled vertex when a plane passes exactly
+  through a corner) also means a plane *touching* a cell classifies corners as
+  removed while removing no volume. Closing that emits a zero-area polygon whose
+  vertices are all coincident. A cell is cut only when some corner is *strictly*
+  removed.
+
+#### 15.9.2 The channels have to be asked for
+
+§15.3 is right that the section must read the channels — and the channels do not
+leave the worker. `SurfaceStackOptions.section` makes the build emit a
+`StackSectionSource` (shared XZ, the shared index, per-layer heights, per-interval
+triangle masks, the `inferred` weights), which `packSurfaceChunk` transfers.
+
+- **Opt-in**, requested by the PRESENCE of a section on the stack rather than by
+  `enabled`: it is part of the build, so following the toggle would rebuild the
+  geometry every time the section was switched on or off. Nobody who is not
+  sectioning pays anything.
+- ⭐ Most of it is **already being transferred**. The shared triangle index is the
+  same `ArrayBuffer` the layer geometries use, and so is each layer's `inferred`
+  attribute — the transfer list is deduped either way (a repeated buffer is a
+  `DataCloneError`), so the real addition is the heights and the masks.
+- ⚠️ The intervals are numbered in **BUILD** indices and everything the caller
+  declared is numbered in **theirs** — a void split makes two layers of one, and the
+  carrier is appended past the caller's last. `StackSectionSource.layers` carries
+  the mapping, filled in by `assembleChunk`, which is where the two index spaces
+  meet. Without it a cut face silently takes the wrong unit's colour.
+
+#### 15.9.3 Nothing here may re-render
+
+`useChunkSection` preallocates one `BufferGeometry` per filled interval and rebuilds
+into it from a `useFrame`, moving `drawRange` and growing by doubling only when a
+cell count demands it. `sectionStackInterval` returns what it NEEDS rather than
+throwing away work: over capacity it writes nothing, reports the requirement, and
+the caller grows and re-runs.
+
+⭐ The plane travels as a **shared uniform object**, one per stack, handed to every
+material the stack draws with — the chunks', the inference overlay's and the sea's.
+A `ShaderMaterial`'s OIT variants share their `uniforms` by reference, so moving the
+plane is a single write per frame that reaches every material in all four passes —
+no React render, no material rebuild. `Material.copy` deep-clones a `Plane`, which
+is exactly why `material.clippingPlanes` could not do this (§15.6).
+
+⚠️⚠️ **Every mesh the stack draws needs telling separately**, and forgetting one is
+not subtle. The inference overlay (§10.6) is a SECOND mesh over the same geometry,
+drawn with its own material — so before it was given the uniform, the hatching went
+on drawing in the half that had been cut away, hanging in the air where the block
+used to be. It is a `MeshBasicMaterial` rather than a `ShaderMaterial`, so its
+variants are CLONED; the uniform is therefore bound inside `onBeforeCompile` (which
+`makeOitCompatible` re-links onto each clone) rather than on the material, and
+`customProgramCacheKey` has to say whether the branch is compiled in or two overlays
+would silently share one program.
+
+⚠️ **What the stack publishes is not the prop.** `section={{ plane, enabled }}` is a
+new object every render, and `ChunkStackContext`'s identity is what every chunk's
+build spec derives from — so publishing it directly would rebuild every chunk on any
+parent render. The stack publishes a **stable** `ChunkSectionState` it refreshes from
+the props once per frame; nothing in it is read during React rendering. The one
+exception is `carrier`, which decides how a material is BUILT and so has to be
+visible to React — it is published as a primitive, which cannot churn an identity.
+
+⚠️ The `offset` moves the face toward the **kept** side (`−normal`), not along the
+normal. The face lies exactly in the plane, so along the normal it moves into the
+half-space that is discarded.
+
+#### 15.9.4 What it cuts, and what it does not
+
+**What the STACK draws** — the chunks, and the sea unless told otherwise. Both are
+opt-out:
+
+- `ChunkSection.water` (default on) puts the same shared uniform into
+  `OceanMaterial` and `OceanVolumeMaterial`. ⚠️ The water gets no cut FACE — it
+  simply ends at the plane, so you look into an open water body. Off is what to use
+  when the cut is only meant to expose the geology. Sectioning the water body
+  properly is still §15.5, and still out of scope.
+- `ChunkSection.carrier` (default on) cuts the column's floor with the rest. Off
+  leaves the block standing on an intact base plate.
+
+⚠️ Both are DEFINES, so toggling either rebuilds the materials concerned. That is
+the right trade: a plane MOVES continuously and must never rebuild anything, but
+whether the sea is cut at all is a discrete choice.
+
+⚠️⚠️ **Nothing else is cut**, and that is the deliberate scope (2026-08-13):
+wellbores, vessels, facilities, pipelines, annotations and host meshes all keep
+drawing whole, because the cut is a branch in the stack's own shaders rather than
+`renderer.clippingPlanes`. So an object resting on the sea bed stays put while the
+ground under it is cut away.
+
+Two gaps remain, recorded rather than worked around:
+
+- **GPU picking is not cut.** The pick material is a separate shader, so the pointer
+  still hits chunk geometry that has been clipped away. One uniform away from being
+  fixed, and the reason to hold off is that "should the discarded side stay
+  pickable?" is a real question (§15.8.4), not an oversight.
+- **A caller-supplied `Material` is not cut**, since the chunk cannot patch one.
+  The same class of limitation as procedural detail and the inference marking.
+
+#### 15.9.5 The camera as the handle
+
+`ChunkSection.cameraDistance` locks the plane that many metres in front of the
+camera, facing it, so everything nearer is cut away.
+
+⭐ **This replaced a drag gizmo, and is better than one.** Orbiting chooses the
+angle and dollying drives the cut through the block, so there is no widget to hit,
+no pointer handling to reconcile with the GPU picking, and no third interaction
+model to learn. It also cannot get lost off-screen, which a plane handle in a 7 km
+scene readily does.
+
+⭐ **`vertical` defaults to ON**, so the plane takes the camera's heading and
+position but never its dip. A section is conventionally drawn on a vertical plane,
+and a cut that tilts with the camera makes the block appear to SHEAR as you orbit —
+which is precisely when the geology stops being readable, so the literal
+view-aligned cut is an effect rather than a tool. ⚠️ With it on, `cameraDistance` is
+a HORIZONTAL distance, measured in plan. ⚠️ Looking straight down leaves no heading
+in the view direction; what is "up" on screen is horizontal there, and taking the
+bearing from it is what stops the plane snapping as the view passes through
+vertical.
+
+The plane is built in WORLD space (from the camera) and transformed into the stack's
+frame with the inverse of a root `<group>`'s `matrixWorld` — which is why the stack
+now renders one. That group is the answer to §15.7's vertical-exaggeration warning:
+the two frames are identical until a stack is scaled, and then they are not.
+
+⚠️ `plane` is ignored while this is set, but the resulting plane is still published
+on `ChunkSectionState`, so the cut face, the shader and the debug view all read the
+same one.
+
+#### 15.9.6 Seeing where the plane is
+
+`ChunkSection.debug` draws the plane's outline through the stack's bounds plus a
+cross at its centre, on `LAYERS.OVERLAY` (so it survives a translucent stack) and
+`LAYERS.NOT_EMITTER` (so a debug aid can never take a pointer hit off the geology).
+
+⭐ The outline is traced against the BOX rather than drawn as an arbitrary quad, so
+it shows exactly where the cut meets the block — which is the question being asked.
+`sectionPlaneOutline` is the same convex-polygon-from-edges trick as the cut face,
+against twelve edges instead of nine, and it is at most a hexagon. ⚠️ Only for a
+CUBIC box: a 200×100×400 box cut on its body diagonal gives a quad, which is correct
+and caught a wrong test expectation.
+
+#### 15.9.7 Not yet measured
+
+⚠️ §15.2's cost argument ("order the square root of the triangle count") is still
+reasoned rather than measured, and §11.1 is the standing reminder of what that is
+worth. The crossed-cell count and the per-frame cost on a real stack should be
+measured through `Spikes/Chunks/SyntheticColumn` (the `Section` control group, with
+`sectionAnimate` driving a continuously tumbling plane — the worst case, since
+nothing can be cached between frames).

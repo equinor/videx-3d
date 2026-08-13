@@ -1,6 +1,7 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Plane, Vector3 } from 'three';
 import { useData } from '../../hooks/useData';
 import { OITRenderPass, Pass } from '../../main';
 import { OutputPass } from '../../rendering/passes/OutputPass';
@@ -46,6 +47,80 @@ import { ChunkInferenceStyle } from './inference-material';
 
 const utmZone = storyArgs.utmZone;
 const origin = storyArgs.origin as Vec2;
+
+/**
+ * Point the section plane, in the stack's own frame. `azimuth` swings the normal
+ * in XZ and `dip` tilts it up out of horizontal, so dip 0 is a vertical cut — the
+ * one a geological section is normally drawn on.
+ *
+ * `distance` is measured along the UNFLIPPED normal, so flipping which half is
+ * kept leaves the plane where it is.
+ */
+function setSectionPlane(
+  plane: Plane,
+  azimuth: number,
+  dip: number,
+  distance: number,
+  flip: boolean,
+) {
+  const a = (azimuth * Math.PI) / 180;
+  const d = (dip * Math.PI) / 180;
+  plane.normal.set(
+    Math.sin(a) * Math.cos(d),
+    Math.sin(d),
+    Math.cos(a) * Math.cos(d),
+  );
+  plane.constant = -distance;
+  if (flip) plane.negate();
+}
+
+/**
+ * Drives the section plane every frame.
+ *
+ * ⚠️ Rendered INSIDE the `ChunkStack`, deliberately: child `useFrame`s subscribe
+ * before their parent's, so the stack reads the plane in the same frame this wrote
+ * it. Driving it from the story component (which renders the stack) would put the
+ * cut one frame behind the control while animating.
+ */
+const SectionDriver = ({
+  plane,
+  azimuth,
+  dip,
+  distance,
+  flip,
+  animate,
+  speed,
+}: {
+  plane: Plane;
+  azimuth: number;
+  dip: number;
+  distance: number;
+  flip: boolean;
+  animate: boolean;
+  speed: number;
+}) => {
+  const clock = useRef(0);
+  useFrame((_, delta) => {
+    if (!animate) {
+      setSectionPlane(plane, azimuth, dip, distance, flip);
+      return;
+    }
+    // Advancing the CLOCK rather than scaling the terms keeps the tumble's shape
+    // fixed at any speed.
+    clock.current += delta * speed;
+    const t = clock.current;
+    // Three incommensurate periods, so it never repeats and there is nothing to
+    // tune. A demo effect, not a feature.
+    setSectionPlane(
+      plane,
+      t * 23,
+      45 * Math.sin(t * 0.21),
+      2600 * Math.sin(t * 0.13),
+      flip,
+    );
+  });
+  return null;
+};
 
 /**
  * Sediment class → colour. ⭐ This mapping lives in the STORY on purpose: the
@@ -117,6 +192,19 @@ type SyntheticColumnProps = {
   cursorRadius: number;
   cursorSamples: number;
   cursorFocus: boolean;
+  section: boolean;
+  sectionMode: 'fixed' | 'camera';
+  sectionCameraDistance: number;
+  sectionVertical: boolean;
+  sectionAzimuth: number;
+  sectionDip: number;
+  sectionDistance: number;
+  sectionFlip: boolean;
+  sectionAnimate: boolean;
+  sectionAnimateSpeed: number;
+  sectionWater: boolean;
+  sectionCarrier: boolean;
+  sectionDebug: boolean;
   seal: boolean;
   sealMode: 'proportional' | 'void';
   minThickness: number;
@@ -143,6 +231,7 @@ type SyntheticColumnProps = {
 const StackContents = ({
   props,
   layers,
+  sectionPlane,
   onBuild,
   onSite,
   onLine,
@@ -150,6 +239,7 @@ const StackContents = ({
 }: {
   props: SyntheticColumnProps;
   layers: ChunkLayer[];
+  sectionPlane: Plane;
   onBuild: (metrics: SurfaceChunkMetrics) => void;
   onSite: (report: SeabedFacilityReport) => void;
   onLine: (name: string, report: PipelineReport) => void;
@@ -164,6 +254,17 @@ const StackContents = ({
 
   return (
     <>
+      {props.sectionMode === 'fixed' && (
+        <SectionDriver
+          plane={sectionPlane}
+          azimuth={props.sectionAzimuth}
+          dip={props.sectionDip}
+          distance={props.sectionDistance}
+          flip={props.sectionFlip}
+          animate={props.sectionAnimate}
+          speed={props.sectionAnimateSpeed}
+        />
+      )}
       <Chunk
         layers={layers}
         maxError={props.maxError}
@@ -448,6 +549,35 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
 
   // The gizmo and the handlers to hand to the chunk (see `useSurfaceCursor`).
 
+  // ⭐ Created once and MUTATED — that is the supported way to animate a section:
+  // the stack reads it every frame, so it costs no React render.
+  const sectionPlane = useMemo(() => new Plane(new Vector3(0, 0, 1), 0), []);
+  const section = useMemo(
+    () => ({
+      plane: sectionPlane,
+      enabled: props.section,
+      // In camera mode the stack computes the plane itself and `plane` is ignored.
+      cameraDistance:
+        props.sectionMode === 'camera'
+          ? props.sectionCameraDistance
+          : undefined,
+      vertical: props.sectionVertical,
+      water: props.sectionWater,
+      carrier: props.sectionCarrier,
+      debug: props.sectionDebug,
+    }),
+    [
+      sectionPlane,
+      props.section,
+      props.sectionMode,
+      props.sectionCameraDistance,
+      props.sectionVertical,
+      props.sectionWater,
+      props.sectionCarrier,
+      props.sectionDebug,
+    ],
+  );
+
   // Only waiting for the store fetch — the block's bottom is the stack's carrier,
   // not a second layer.
   if (layers.length === 0) return null;
@@ -459,6 +589,7 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
           surfaces={column}
           water={water}
           resolve={resolve}
+          section={section}
           carrier={{
             below: props.floorClearance,
             material: props.floorColor,
@@ -467,6 +598,7 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
           <StackContents
             props={props}
             layers={layers}
+            sectionPlane={sectionPlane}
             onBuild={report}
             onSite={reportSite}
             onLine={reportLine}
@@ -543,10 +675,23 @@ export const Default: Story = {
     pipeSpacing: 25,
     pipeSpan: 0,
     pipeSmoothing: 0,
-    cursor: true,
+    cursor: false,
     cursorRadius: 120,
     cursorSamples: 12,
     cursorFocus: true,
+    section: false,
+    sectionMode: 'camera',
+    sectionCameraDistance: 6000,
+    sectionVertical: true,
+    sectionAzimuth: 0,
+    sectionDip: 0,
+    sectionDistance: 0,
+    sectionFlip: false,
+    sectionAnimate: false,
+    sectionAnimateSpeed: 1,
+    sectionWater: true,
+    sectionCarrier: true,
+    sectionDebug: false,
     seal: true,
     sealMode: 'proportional',
     minThickness: 1,
@@ -802,6 +947,84 @@ export const Default: Story = {
       description:
         '**Ctrl+click** flies the camera to the point under the cursor, as the wellbore examples do. Plain click keeps placing a marker, so the two gestures do not fight. ⚠️ The point is converted back to WORLD space first — the camera knows nothing about the stack’s frame.',
       table: { category: 'Cursor' },
+    },
+    section: {
+      control: 'boolean',
+      description:
+        'Cut the whole stack with a plane and FILL the cut face per interval, so the block reads as a geological section rather than a hollow shell. ⭐ The face is assembled per PRISM CELL — one filled interval over one triangle of the shared tessellation — which is convex, so a plane cuts it in at most a pentagon. No ring chaining, and watertight by construction.\n\n⚠️ It cuts what the STACK draws — the chunk and, unless `sectionWater` says otherwise, the sea. The tanker, the facilities and the pipelines keep their whole geometry, so expect them to stand over the cut.',
+      table: { category: 'Section' },
+    },
+    sectionMode: {
+      control: 'inline-radio',
+      options: ['camera', 'fixed'],
+      description:
+        '⭐ **camera** locks the plane in front of the camera, so ORBITING and DOLLYING are the interaction — no gizmo to grab, and the cut is always square to the view. **fixed** uses the azimuth/dip/distance below instead.',
+      table: { category: 'Section' },
+    },
+    sectionCameraDistance: {
+      control: { type: 'range', min: 0, max: 15000, step: 100 },
+      description:
+        'How far in front of the camera the plane sits, in metres. Everything NEARER than this is cut away, so reducing it drives the cut deeper into the block. `camera` mode only.',
+      table: { category: 'Section' },
+    },
+    sectionVertical: {
+      control: 'boolean',
+      description:
+        '⭐ Keep the camera-locked plane VERTICAL — it takes the camera’s heading and position but never its dip. On by default because a section is conventionally drawn on a vertical plane, and a cut that tilts with the camera makes the block appear to SHEAR as you orbit, which is exactly when the geology stops being readable. Off gives the literal view-aligned cut. ⚠️ `sectionCameraDistance` is then measured horizontally, in plan. `camera` mode only.',
+      table: { category: 'Section' },
+    },
+    sectionAzimuth: {
+      control: { type: 'range', min: -180, max: 180, step: 5 },
+      description:
+        'Swings the plane normal in XZ. The normal points at the half that is REMOVED. `fixed` mode only.',
+      table: { category: 'Section' },
+    },
+    sectionDip: {
+      control: { type: 'range', min: -80, max: 80, step: 5 },
+      description:
+        'Tilts the normal out of horizontal — 0 is a vertical cut, which is what a section is normally drawn on. ⭐ Nothing in the builder prefers vertical; that case is a simplification, not a requirement. `fixed` mode only.',
+      table: { category: 'Section' },
+    },
+    sectionDistance: {
+      control: { type: 'range', min: -4000, max: 4000, step: 50 },
+      description:
+        'How far the plane sits from the origin along the unflipped normal, in metres. `fixed` mode only.',
+      table: { category: 'Section' },
+    },
+    sectionFlip: {
+      control: 'boolean',
+      description: 'Keep the other half.',
+      table: { category: 'Section' },
+    },
+    sectionAnimate: {
+      control: 'boolean',
+      description:
+        'A fixed tumble on three incommensurate periods (azimuth, dip and distance), so it never repeats and there is nothing to tune — it overrides the three controls above. ⭐ It MUTATES one `Plane` object the stack reads every frame, so it costs no React render and no geometry rebuild; the cut face is rebuilt into preallocated buffers with only the draw range moving. `fixed` mode only.',
+      table: { category: 'Section' },
+    },
+    sectionAnimateSpeed: {
+      control: { type: 'range', min: 0, max: 4, step: 0.05 },
+      description:
+        'Scales the tumble’s clock, so its SHAPE is unchanged at any speed. `fixed` mode only.',
+      table: { category: 'Section' },
+    },
+    sectionWater: {
+      control: 'boolean',
+      description:
+        'Cut the sea too. ⚠️ The water gets no cut FACE — it simply ends at the plane, so you look into an open water body. Turn it off to keep the sea whole over a sliced block, which is usually what you want when the cut is only meant to expose the geology. ⚠️ Changing it rebuilds the two ocean materials (the cut is a shader define).',
+      table: { category: 'Section' },
+    },
+    sectionCarrier: {
+      control: 'boolean',
+      description:
+        'Cut the column’s floor too. Off leaves the block standing on an intact base plate.',
+      table: { category: 'Section' },
+    },
+    sectionDebug: {
+      control: 'boolean',
+      description:
+        'Draw where the plane is: its outline through the stack’s bounds — traced against the box, so it shows exactly where the cut meets the block — and a cross at its centre. Always on top, and never an event emitter.',
+      table: { category: 'Section' },
     },
     seal: { control: 'boolean', table: { category: 'Resolve' } },
     sealMode: {

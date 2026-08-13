@@ -35,12 +35,21 @@ varying vec3 vWorldPosition;
 varying vec3 vViewPosition;
 varying float vWallV; // 1 at the top (surface) edge, 0 at the sea bed
 
+#ifdef OCEAN_SECTION
+uniform vec4 sectionPlane;
+varying float vSectionDist;
+#endif
+
 #include <common>
 #include <logdepthbuf_pars_vertex>
 #include ./waves.glsl
 
 void main() {
   vec4 worldPos = modelMatrix * vec4(position, 1.0);
+
+  #ifdef OCEAN_SECTION
+  vSectionDist = dot(sectionPlane.xyz, position) + sectionPlane.w;
+  #endif
 
   #ifdef OCEAN_WALL_ATTRIBUTE
   float wallHeight = wallV;

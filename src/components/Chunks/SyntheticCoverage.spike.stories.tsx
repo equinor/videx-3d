@@ -61,7 +61,7 @@ const ChunkPipeline = () => {
     base.antialias = 'smaa';
     return [base, new OutputPass()];
   }, [scene, camera]);
-  useFrame(() => { }, 2);
+  useFrame(() => {}, 2);
   return <RenderingPipeline passes={passes} />;
 };
 

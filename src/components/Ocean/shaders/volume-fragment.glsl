@@ -23,6 +23,10 @@ varying vec3 vWorldPosition;
 varying vec3 vViewPosition;
 varying float vWallV; // 1 at the top (surface) edge, 0 at the sea bed
 
+#ifdef OCEAN_SECTION
+varying float vSectionDist;
+#endif
+
 #include <common>
 #include <logdepthbuf_pars_fragment>
 
@@ -31,6 +35,11 @@ varying float vWallV; // 1 at the top (surface) edge, 0 at the sea bed
 #endif
 
 void main() {
+  #ifdef OCEAN_SECTION
+  if(vSectionDist > 0.0)
+    discard;
+  #endif
+
   #include <logdepthbuf_fragment>
 
   float dist = length(vViewPosition);

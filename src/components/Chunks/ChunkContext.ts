@@ -1,10 +1,11 @@
 import { createContext } from 'react';
-import { Material } from 'three';
+import { IUniform, Material, Vector4 } from 'three';
 import { PlanarPolygonGeometry, SurfaceMeta } from '../../sdk';
 import {
   ChunkBuildState,
   ChunkCarrier,
   ChunkResolveOptions,
+  ChunkSectionState,
   StackWater,
 } from './chunk-defs';
 import { CutoutSource } from './cutout';
@@ -71,6 +72,29 @@ export type ChunkStackContextValue = {
    * their shallowest cap; the sea's own geometry belongs to the stack.
    */
   water?: StackWater | null;
+  /**
+   * The live clip plane through the whole stack, when the caller declared one (see
+   * `ChunkStackProps.section`). A chunk reads it every frame to build its own cut
+   * faces. Stable identity — see {@link ChunkSectionState}.
+   */
+  section?: ChunkSectionState | null;
+  /**
+   * The section plane as a SHARED uniform (xyz normal, w constant), written once
+   * per frame by the stack.
+   *
+   * ⭐ Shared identity is the whole mechanism: every `ChunkMaterial` of every chunk
+   * is handed this same object, and a `ShaderMaterial`'s OIT variants share their
+   * `uniforms` by reference — so moving the plane is one write that reaches every
+   * material in every pass, with no React render and no material rebuild.
+   */
+  sectionUniform?: IUniform<Vector4>;
+  /**
+   * Whether the column's floor is cut with the rest of the block (see
+   * `ChunkSection.carrier`). A PRIMITIVE, deliberately: it decides how a material
+   * is built, so it has to be visible to React — and a primitive cannot churn this
+   * context's identity, which is what every chunk's build spec derives from.
+   */
+  sectionCarrier?: boolean;
   /**
    * Envelope footprint of the column (scene XZ) — must contain every chunk's
    * outline. Defaults to the stack `outline`; with a wellbore cut source the

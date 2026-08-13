@@ -28,6 +28,17 @@ uniform vec3 waterTintParams; // x: water level, y: strength, z: 1 / depth scale
 varying float vWaterDepth;
 #endif
 
+#ifdef CHUNK_SECTION
+// xyz: plane normal, pointing at the half-space that is cut away; w: constant.
+// ⚠️ OBJECT space, not world: the CPU builds the cut face from the chunk's own
+// vertex data, so testing anywhere else would let the two disagree under a
+// vertical exaggeration. Three.js' own clipping planes are unusable here for a
+// different reason — `Material.copy` deep-clones a `Plane`, so the four OIT pass
+// variants would each snapshot it and a moving plane would freeze.
+uniform vec4 sectionPlane;
+varying float vSectionDist;
+#endif
+
 #include <common>
 #include <fog_pars_vertex>
 #include <normal_pars_vertex>
@@ -56,6 +67,10 @@ void main() {
 
   #ifdef CHUNK_WATER_TINT
   vWaterDepth = waterTintParams.x - transformed.y;
+  #endif
+
+  #ifdef CHUNK_SECTION
+  vSectionDist = dot(sectionPlane.xyz, transformed) + sectionPlane.w;
   #endif
 
   #include <worldpos_vertex>

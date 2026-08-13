@@ -1,6 +1,7 @@
 export * from './Chunk';
 export * from './ChunkContext';
 export * from './ChunkMeshes';
+export * from './ChunkSectionDebug';
 export * from './ChunkStack';
 export * from './chunk-defs';
 export * from './chunk-detail';
@@ -9,3 +10,4 @@ export * from './cutout';
 export * from './inference-material';
 export * from './LevelledBase';
 export * from './surface-sampler';
+export * from './useChunkSection';

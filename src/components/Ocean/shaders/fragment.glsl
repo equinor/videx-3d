@@ -84,6 +84,10 @@ varying vec2 vUv;
 // vertex displacement doesn't alias the sampling grid into a lens/dot pattern.
 varying vec2 vSurfaceXZ;
 
+#ifdef OCEAN_SECTION
+varying float vSectionDist;
+#endif
+
 #include <common>
 #include <logdepthbuf_pars_fragment>
 #include ./waves.glsl
@@ -182,6 +186,11 @@ float oceanContactFoam(vec2 p, float t) {
 }
 
 void main() {
+  #ifdef OCEAN_SECTION
+  if(vSectionDist > 0.0)
+    discard;
+  #endif
+
   #include <logdepthbuf_fragment>
 
   vec2 worldXZ = vSurfaceXZ;
