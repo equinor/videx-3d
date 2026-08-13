@@ -61,7 +61,7 @@ const ChunkPipeline = () => {
     base.antialias = 'smaa';
     return [base, new OutputPass()];
   }, [scene, camera]);
-  useFrame(() => {}, 2);
+  useFrame(() => { }, 2);
   return <RenderingPipeline passes={passes} />;
 };
 
@@ -202,7 +202,9 @@ const SyntheticCoverageStory = (props: SyntheticCoverageProps) => {
     [props.scenario, props.maxFill],
   );
 
-  if (layers.length < 2) return null;
+  // Only waiting for the store fetch — the block's bottom is the stack's carrier,
+  // not a second layer.
+  if (layers.length === 0) return null;
 
   return (
     <>
