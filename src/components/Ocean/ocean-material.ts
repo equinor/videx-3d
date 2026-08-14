@@ -2,8 +2,10 @@ import {
   Color,
   DoubleSide,
   IUniform,
+  Matrix3,
   ShaderMaterial,
   ShaderMaterialParameters,
+  Texture,
   Uniform,
   Vector2,
   Vector3,
@@ -12,6 +14,37 @@ import {
 import { attachOitVariants } from '../../rendering/oit-material';
 import fragmentShader from './shaders/fragment.glsl';
 import vertexShader from './shaders/vertex.glsl';
+
+/**
+ * A sea bed's depth grid, packed by `buildSurfaceDepthMap`: R the scene Y, G the
+ * validity, sampled from OBJECT XZ through `toUv`.
+ *
+ * ⚠️ Structural on purpose — `ChunkDepthMap` satisfies it, without this material
+ * having to depend on the chunk components.
+ */
+export type OceanBathymetry = {
+  texture: Texture;
+  /** object XZ -> texture uv, as `uv = m * vec3(x, z, 1)` */
+  toUv: Matrix3;
+  /** grid spacing in metres, used to take the bed's gradient */
+  cellSize: number;
+};
+
+/** Default depth over which water shoals from clear to its full body colour. */
+export const DEFAULT_OCEAN_SHOAL_DEPTH = 25;
+
+/**
+ * Default depth at which waves break, as a multiple of the significant wave
+ * height. Waves break at roughly 1.3x their own height.
+ */
+export const DEFAULT_OCEAN_SHORE_BREAK_DEPTH = 1.3;
+
+/** Default feature size of the shore foam's ragged edge, in metres. */
+export const DEFAULT_OCEAN_SHORE_NOISE_SCALE = 200;
+
+/** Default strength of the shore foam, and the fraction of it lost at distance. */
+export const DEFAULT_OCEAN_SHORE_FOAM_STRENGTH = 0.65;
+export const DEFAULT_OCEAN_SHORE_FOAM_FADE = 0.3;
 
 export type OceanMaterialParameters = ShaderMaterialParameters & {
   waveCount?: number;
@@ -28,6 +61,16 @@ export type OceanMaterialParameters = ShaderMaterialParameters & {
    * cut on or off means a new material; moving the plane does not.
    */
   sectionPlane?: IUniform<Vector4>;
+  /**
+   * The sea bed's depth grid, which makes the water shoal: clearer and paler
+   * where the bed is close to the surface, its full body colour where it is not.
+   *
+   * ⭐ Without it the shader has NO depth input and falls back to the view angle
+   * as a stand-in — which cannot tell a metre of water over a bank from the open
+   * sea. ⚠️ Read at CONSTRUCTION (it sets a define); the level and the shoal
+   * scale are live uniforms.
+   */
+  bathymetry?: OceanBathymetry;
 };
 
 /**
@@ -116,6 +159,7 @@ export class OceanMaterial extends ShaderMaterial {
       detailOctaves = 4,
       contactCount = 8,
       sectionPlane,
+      bathymetry,
       ...rest
     } = parameters;
 
@@ -149,6 +193,7 @@ export class OceanMaterial extends ShaderMaterial {
         OCEAN_DETAIL_OCTAVES: detailOctaves,
         OCEAN_CONTACT_COUNT: contactCount,
         ...(sectionPlane ? { OCEAN_SECTION: '' } : {}),
+        ...(bathymetry ? { OCEAN_BATHYMETRY: '' } : {}),
       },
       uniforms: {
         uTime: new Uniform(0),
@@ -206,6 +251,43 @@ export class OceanMaterial extends ShaderMaterial {
     if (Object.keys(rest).length) this.setValues(rest);
 
     if (sectionPlane) this.uniforms.sectionPlane = sectionPlane;
+
+    if (bathymetry) {
+      const image = bathymetry.texture.image as {
+        width: number;
+        height: number;
+      };
+      this.uniforms.uBathyMap = new Uniform(bathymetry.texture);
+      this.uniforms.uBathyToUv = new Uniform(bathymetry.toUv);
+      this.uniforms.uBathySize = new Uniform(
+        new Vector2(image.width, image.height),
+      );
+      // x: water level (object Y), y: 1 / shoal depth, z: opacity factor at zero depth
+      this.uniforms.uShoal = new Uniform(
+        new Vector3(0, 1 / DEFAULT_OCEAN_SHOAL_DEPTH, 0),
+      );
+      // x: shore foam amount, y: break depth (x wave height), z: swash, w: gradient step (m)
+      this.uniforms.uShore = new Uniform(
+        new Vector4(
+          0,
+          DEFAULT_OCEAN_SHORE_BREAK_DEPTH,
+          1,
+          2 * bathymetry.cellSize,
+        ),
+      );
+      this.uniforms.uSurfScale = new Uniform(1);
+      // x: edge raggedness (m), y: its frequency (1 / m)
+      this.uniforms.uShoreNoise = new Uniform(
+        new Vector2(0, 1 / DEFAULT_OCEAN_SHORE_NOISE_SCALE),
+      );
+      // x: foam strength (1 = full white surf), y: fraction lost at distance
+      this.uniforms.uShoreFade = new Uniform(
+        new Vector2(
+          DEFAULT_OCEAN_SHORE_FOAM_STRENGTH,
+          DEFAULT_OCEAN_SHORE_FOAM_FADE,
+        ),
+      );
+    }
 
     this.updateWaves();
 
@@ -374,6 +456,153 @@ export class OceanMaterial extends ShaderMaterial {
   }
   set waterOpacity(value: number) {
     this.uniforms.uOpacity.value = value;
+  }
+
+  /**
+   * Sea level in the material's OBJECT frame (Y up), against which the
+   * bathymetry is measured. No effect without a bathymetry grid.
+   */
+  get waterLevel(): number {
+    return this.uniforms.uShoal?.value.x ?? 0;
+  }
+  set waterLevel(value: number) {
+    if (this.uniforms.uShoal) this.uniforms.uShoal.value.x = value;
+  }
+
+  /**
+   * Water depth at which the sea reaches ~86% of its full body colour and
+   * opacity, in metres. Small values keep the shoaling to a narrow band along a
+   * shore; large ones spread it over the whole shelf.
+   */
+  get shoalDepth(): number {
+    const inverse = this.uniforms.uShoal?.value.y ?? 0;
+    return inverse > 0 ? 1 / inverse : 0;
+  }
+  set shoalDepth(value: number) {
+    if (this.uniforms.uShoal)
+      this.uniforms.uShoal.value.y = 1 / Math.max(value, 1e-3);
+  }
+
+  /**
+   * What is left of the water's own opacity where the bed reaches the surface,
+   * 0..1. Default 0 — water with no depth is fully clear, and only the Fresnel
+   * reflection remains.
+   */
+  get shoalOpacity(): number {
+    return this.uniforms.uShoal?.value.z ?? 0;
+  }
+  set shoalOpacity(value: number) {
+    if (this.uniforms.uShoal) this.uniforms.uShoal.value.z = value;
+  }
+
+  /**
+   * Surf where the bed comes up to the surface, 0..1. Default 0 (off).
+   *
+   * ⚠️ Independent of the wind, unlike whitecaps: a shore breaks in a calm. It
+   * is folded into the same foam coverage, so it picks up the same noise, froth
+   * and distance fade. No effect without a bathymetry grid.
+   */
+  get shoreFoam(): number {
+    return this.uniforms.uShore?.value.x ?? 0;
+  }
+  set shoreFoam(value: number) {
+    if (this.uniforms.uShore) this.uniforms.uShore.value.x = value;
+  }
+
+  /**
+   * Depth at which waves break, as a multiple of the significant wave height.
+   * Default 1.3 — the measured breaking criterion, so the surf zone widens and
+   * narrows with the sea state instead of sitting at a fixed depth.
+   *
+   * ⚠️ The wave height is floored internally to stand in for background swell, so
+   * an open coast still breaks in a dead calm.
+   */
+  get shoreBreakDepth(): number {
+    return this.uniforms.uShore?.value.y ?? 0;
+  }
+  set shoreBreakDepth(value: number) {
+    if (this.uniforms.uShore) this.uniforms.uShore.value.y = value;
+  }
+
+  /**
+   * Exaggeration of the surf zone's width. Default 1 — as measured.
+   *
+   * ⚠️ A realistic surf zone is only a handful of pixels across at field scale, so
+   * this exists for the same reason a pipeline's diameter exaggeration does. Raising
+   * it makes the shore visible from further out at the cost of the scale cue a
+   * correctly-sized one gives.
+   */
+  get surfScale(): number {
+    return this.uniforms.uSurfScale?.value ?? 1;
+  }
+  set surfScale(value: number) {
+    if (this.uniforms.uSurfScale) this.uniforms.uSurfScale.value = value;
+  }
+
+  /**
+   * How far the swell carries the waterline up and down the shore, as a multiple
+   * of the local wave height. Default 1; 0 pins the shore to the still level.
+   */
+  get swash(): number {
+    return this.uniforms.uShore?.value.z ?? 0;
+  }
+  set swash(value: number) {
+    if (this.uniforms.uShore) this.uniforms.uShore.value.z = value;
+  }
+
+  /**
+   * How ragged the shore foam's landward edge is, in metres of water depth.
+   * Default 0 (the edge follows the bathymetry contour exactly, which reads as
+   * unnaturally crisp).
+   *
+   * ⚠️ It perturbs the FOAM band only, not the water's depth — perturbing that
+   * would make the transparency and colour ripple with it.
+   */
+  get shoreNoise(): number {
+    return this.uniforms.uShoreNoise?.value.x ?? 0;
+  }
+  set shoreNoise(value: number) {
+    if (this.uniforms.uShoreNoise) this.uniforms.uShoreNoise.value.x = value;
+  }
+
+  /** Feature size of that raggedness, in metres. Default 200. */
+  get shoreNoiseScale(): number {
+    const inverse = this.uniforms.uShoreNoise?.value.y ?? 0;
+    return inverse > 0 ? 1 / inverse : 0;
+  }
+  set shoreNoiseScale(value: number) {
+    if (this.uniforms.uShoreNoise)
+      this.uniforms.uShoreNoise.value.y = 1 / Math.max(value, 1e-3);
+  }
+
+  /**
+   * How white the shore foam is drawn, 0..1. Default 0.65 — pure white surf reads
+   * as a painted line at field scale. 0 removes it entirely, colour AND opacity.
+   *
+   * ⚠️ Distinct from {@link OceanMaterial.shoreFoam}, which decides how much of the
+   * band is COVERED and so breaks it up against the foam noise; this one dims the
+   * whole band evenly.
+   */
+  get shoreFoamStrength(): number {
+    return this.uniforms.uShoreFade?.value.x ?? 0;
+  }
+  set shoreFoamStrength(value: number) {
+    if (this.uniforms.uShoreFade) this.uniforms.uShoreFade.value.x = value;
+  }
+
+  /**
+   * Fraction of {@link OceanMaterial.shoreFoamStrength} lost once the foam detail
+   * goes sub-pixel. Default 0.3.
+   *
+   * ⚠️ This is what softens the band with distance, NOT the analytic AA: that only
+   * engages once the band itself is sub-pixel, and a band measured in metres of
+   * DEPTH stays hundreds of metres across on a gentle shelf.
+   */
+  get shoreFoamFade(): number {
+    return this.uniforms.uShoreFade?.value.y ?? 0;
+  }
+  set shoreFoamFade(value: number) {
+    if (this.uniforms.uShoreFade) this.uniforms.uShoreFade.value.y = value;
   }
 
   /** Strength of the large-scale tonal variation (currents / slicks). */

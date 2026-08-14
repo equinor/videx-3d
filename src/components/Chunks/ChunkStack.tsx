@@ -57,6 +57,7 @@ import {
 import { useStackWater } from './useStackWater';
 import { ChunkContact } from './chunk-contacts';
 import { useChunkContacts } from './useChunkContacts';
+import { useStackBathymetry } from './useStackBathymetry';
 
 // Scratch for the camera-locked plane, which is rebuilt every frame.
 const sectionForward = new Vector3();
@@ -266,12 +267,6 @@ export const ChunkStack = ({
   // The frame the section is expressed in — needed to bring a camera-locked plane
   // out of world space, which is the one case where the two differ.
   const sectionRoot = useRef<Group>(null);
-
-  const sea = useStackWater(
-    stableWater,
-    false,
-    section && section.water !== false ? sectionUniform : undefined,
-  );
 
   const hasSection = !!section;
   // ⚠️ Deliberately NOT keyed on the prop: `section={{ plane, enabled }}` is a new
@@ -573,6 +568,22 @@ export const ChunkStack = ({
     [surfaces, claimed],
   );
 
+  // The bed the sea stands on is the column's shallowest surface — the same one
+  // `stackWater` ends against. Its grid drives the bed tint per fragment, and it
+  // is the sea surface's only depth input: without it the water shader uses the
+  // view angle as a stand-in and cannot tell a shoal from open sea.
+  const bathymetry = useStackBathymetry(
+    stableWater && column?.length ? column[0] : undefined,
+    utm?.utmToArea,
+  );
+
+  const sea = useStackWater(
+    stableWater,
+    false,
+    section && section.water !== false ? sectionUniform : undefined,
+    bathymetry,
+  );
+
   // --- Margin ramp: ordered shallow→deep by the COLUMN, not by child order — a
   //     caller may declare chunks in any order and the ramp is a property of
   //     depth. -------------------------------------------------------------
@@ -626,6 +637,7 @@ export const ChunkStack = ({
       carrierMaterial: carrier?.material,
       contacts: contactTextures,
       water: stableWater ?? null,
+      bathymetry,
       section: sectionState,
       sectionUniform,
       sectionUniformInverse,
@@ -651,6 +663,7 @@ export const ChunkStack = ({
     carrier?.material,
     contactTextures,
     stableWater,
+    bathymetry,
     sectionState,
     sectionUniform,
     sectionUniformInverse,

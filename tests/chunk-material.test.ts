@@ -1,8 +1,33 @@
 import { describe, expect, it } from 'vitest';
 import { ChunkMaterial } from '../src/components/Chunks/chunk-material';
+import { buildSurfaceDepthMap } from '../src/components/Chunks/chunk-depth-map';
+import { SurfaceMeta } from '../src/sdk';
 
 const defines = (material: ChunkMaterial) =>
   material.defines as Record<string, unknown>;
+
+const bedSurface: SurfaceMeta = {
+  id: 'bed',
+  name: 'Sea bed',
+  projection: '31N',
+  min: 0,
+  max: 100,
+  displayMin: 0,
+  displayMax: 100,
+  color: 'black',
+  visualization: 'depth',
+  header: {
+    nx: 8,
+    ny: 5,
+    xinc: 25,
+    yinc: 25,
+    rot: 0,
+    xori: 0,
+    yori: 0,
+    xmax: 200,
+    ymax: 125,
+  },
+};
 
 describe('ChunkMaterial', () => {
   it('compiles no detail branch at all when none is asked for', () => {
@@ -77,6 +102,34 @@ describe('ChunkMaterial', () => {
       expect(params.y).toBe(0.6);
       // The shader multiplies by this, so it is the RECIPROCAL of the depth.
       expect(params.z).toBeCloseTo(1 / 50);
+    });
+
+    it('takes its depth from the bed grid only when one is given', () => {
+      const plain = new ChunkMaterial({
+        waterTint: { color: '#0a2540', level: 0, strength: 0.6, depth: 50 },
+      });
+      expect('CHUNK_BATHYMETRY' in defines(plain)).toBe(false);
+
+      const map = buildSurfaceDepthMap(
+        bedSurface,
+        new Float32Array(8 * 5),
+        (e, n) => [e, 0, n],
+      );
+      const mapped = new ChunkMaterial({
+        waterTint: {
+          color: '#0a2540',
+          level: 0,
+          strength: 0.6,
+          depth: 50,
+          map,
+        },
+      });
+      expect('CHUNK_BATHYMETRY' in defines(mapped)).toBe(true);
+      expect(mapped.uniforms.bathyMap.value).toBe(map.texture);
+      // The shader indexes texels itself (the texture is NEAREST-filtered), so it
+      // needs the grid size alongside the affine.
+      expect(mapped.uniforms.bathySize.value.x).toBe(8);
+      expect(mapped.uniforms.bathySize.value.y).toBe(5);
     });
   });
 });

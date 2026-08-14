@@ -14,6 +14,7 @@ import {
 import { attachOitVariants } from '../../rendering/oit-material';
 import { Vec2 } from '../../sdk';
 import { ChunkContactTexture } from './chunk-contacts';
+import { ChunkDepthMap } from './chunk-depth-map';
 import { ChunkDetail, resolveChunkDetail } from './chunk-detail';
 import fragmentShader from './shaders/chunk-frag.glsl';
 import vertexShader from './shaders/chunk-vert.glsl';
@@ -34,6 +35,20 @@ export type ChunkWaterTintParameters = {
   strength: number;
   /** depth below the level at which the tint reaches ~86% of `strength`, in metres */
   depth: number;
+  /**
+   * The sea bed's own depth grid. With it the tint is driven by the water column
+   * standing over the fragment's MAP location rather than by an interpolated
+   * vertex depth, so the gradient follows the bathymetry rather than the
+   * tessellation, which at field scale is metres coarse.
+   *
+   * ⚠️ Where the grid is unmapped the fragment's own depth is used, so omitting it
+   * is the same as a grid with no coverage.
+   */
+  map?: ChunkDepthMap;
+  /** depth of the wet band below the waterline, in metres. 0 = off */
+  wetBand?: number;
+  /** how much that band darkens the ground, 0..1 */
+  wetStrength?: number;
 };
 
 /** {@link ChunkMaterial} parameters. */
@@ -126,6 +141,8 @@ const shader = {
       waterTintColor: { value: new Color() },
       // x: water level, y: strength, z: 1 / depth scale
       waterTintParams: { value: new Vector3() },
+      // x: 1 / wet band depth, y: darkening amount
+      waterTintShore: { value: new Vector2() },
     },
   ]),
   vertexShader,
@@ -272,6 +289,7 @@ export class ChunkMaterial extends ShaderMaterial {
   private applyWaterTint(tint: ChunkWaterTintParameters | undefined) {
     const defines = this.defines as Record<string, unknown>;
     delete defines.CHUNK_WATER_TINT;
+    delete defines.CHUNK_BATHYMETRY;
     if (!tint || tint.strength <= 0) return;
 
     const u = this.uniforms;
@@ -282,6 +300,24 @@ export class ChunkMaterial extends ShaderMaterial {
       tint.strength,
       1 / Math.max(tint.depth, 1e-3),
     );
+    (u.waterTintShore.value as Vector2).set(
+      1 / Math.max(tint.wetBand ?? 0, 1e-3),
+      tint.wetBand ? (tint.wetStrength ?? 0.4) : 0,
+    );
+
+    if (tint.map) {
+      defines.CHUNK_BATHYMETRY = '';
+      // Added rather than cloned from the base: a sampler the shared template does
+      // not declare would be uploaded by every material that has no map.
+      this.uniforms.bathyMap = { value: tint.map.texture };
+      this.uniforms.bathyToUv = { value: tint.map.toUv };
+      this.uniforms.bathySize = {
+        value: new Vector2(
+          tint.map.texture.image.width,
+          tint.map.texture.image.height,
+        ),
+      };
+    }
   }
 
   /** Bind the contact textures and enable the shader's loop over them. */

@@ -686,8 +686,10 @@ the block's outer walls. Cut faces are drawn with the same `ChunkMaterial`
 instances (§15.9.3), so they are covered with no extra work.
 
 **Encoding.** One `RG` float texture per contact: R the contact's scene Y, G its
-validity. ⚠️ Two channels because the grid's nodata sentinel is a legal float that
-would otherwise draw a contact at an absurd depth. ⚠️ NEAREST filtering with the
+validity. ⭐ Shared with the bed tint as `buildSurfaceDepthMap` / `ChunkDepthMap`
+(§6.4.1) — the two want the same thing, a depth grid sampled from object XZ.
+⚠️ Two channels because the grid's nodata sentinel is a legal float that would
+otherwise draw a contact at an absurd depth. ⚠️ NEAREST filtering with the
 bilinear done in the shader, because linear filtering of a 32-bit float texture
 needs an extension and half float cannot hold a few thousand metres to better than
 a couple of metres — doing it in the shader also lets an unmapped neighbour REJECT
@@ -794,9 +796,55 @@ know where the shoreline runs, and it stays right as the level is swept.
   from metres.
 - Strength follows `waterOpacity` when unset, the same coupling the component
   uses, so a denser sea gives a denser bed for free.
-- ⚠️ Only the cap. The rim WALL of the sea-bed unit is not tinted, so a chunk
-  seen from outside shows an untinted flank below the waterline — the `Ocean`
-  component has the same gap.
+- ⚠️ Beer-Lambert saturates: at the default `bedTintDepth` of 80 m anything below
+  ~250 m is already past 95 %, so on a bed that deep the whole cap reads uniform
+  and the gradient is spent entirely around a coast or an island. To see depth
+  across the WHOLE bed, `bedTintDepth` has to be a sizeable fraction of the bed's
+  own range. Not a defect — but it is what "the tint ignores depth" looks like.
+- ⚠️ Only the cap. The rim WALL of the sea-bed unit is not tinted: the water body
+  exists only over the footprint, and the rim stands at that boundary, so there is
+  no water between the eye and the flank. The same goes for a section cut face,
+  which is drawn with the interval's own fill material. ⚠️⚠️ Tinting the wall WAS
+  tried (2026-08-14) on the argument that the `Ocean` component has "the same gap",
+  and reverted: the gap is not one, and §6.4.1 said so as a defect for a while.
+
+##### The depth comes from the BED's grid, not from the vertex (2026-08-14)
+
+The tint takes `level − bed(x, z)` from the bed's own grid, uploaded as a texture
+and sampled per fragment from object XZ — exactly the encoding the fluid contacts
+use (§6.1.1), and now shared with them as `buildSurfaceDepthMap` / `ChunkDepthMap`:
+R the scene Y, G the validity, NEAREST with the bilinear done in the shader, and
+the object-XZ → uv affine recovered by evaluating `surfaceWorldToGrid` at three
+points.
+
+⚠️ **Be honest about what this buys.** On the cap the fragment's own height IS the
+bed, so the two agree by construction; all it removes is the TIN's interpolation of
+that depth, which at field scale spans triangles hundreds of metres wide and shows
+as faceting only where the tint is still on the steep part of its curve. It does
+NOT license tinting anything below the bed (above).
+
+⭐ Its real purpose is as an INPUT nothing else could supply: §6.6's shoreline foam,
+and depth-driven water transparency, both need `level − bed(worldXZ)` per pixel and
+the water shaders have no depth input of any kind.
+
+- ⭐ **Where the grid is unmapped, the fragment's own depth is used again.** The
+  coverage channel blends the two, so no bathymetry is exactly the old behaviour
+  rather than a hole — and `CHUNK_BATHYMETRY` compiles the branch out entirely
+  when no sea is declared.
+- ⚠️ The surface is the COLUMN's shallowest (`column[0]`), the same one the sea's
+  own geometry ends against — a second opinion about where the bed is would show
+  along the whole shoreline. It is loaded in the appearance layer
+  (`useStackBathymetry`) and published on `ChunkStackContextValue.bathymetry`, so
+  it costs one texture upload and never a geometry rebuild.
+- ⚠️ It is the RAW grid, not the sealed and resolved channel the geometry is built
+  from, so the two differ by whatever the seal invented (§10.7). Acceptable for a
+  tint; it would not be for anything that has to meet the mesh.
+- ⚠️ A chunk whose layer 0 is NOT the sea bed — a deep tier in a stack — is still
+  tinted, and now by the water over it rather than by its own depth, so it goes
+  from saturated to faint. Less wrong, but the scope is still "layer 0 of every
+  chunk" and that remains the caller's to arrange.
+- ⚠️ The grid is uploaded at full resolution (a field grid is ~1001×1681 RG float),
+  which a tint does not need. Decimating it is an obvious saving and is not done.
 
 ### 6.5 Floating objects
 
@@ -823,27 +871,242 @@ sine and cosine of a heading. A rotation about +Y takes the body's +X to
 could check — which is precisely how the footprint spent its life mirrored about
 the forward axis without anyone noticing (every caller passed heading 0).
 
-### 6.6 Not built: shoreline foam
+### 6.6 The shore (2026-08-14)
 
-Surf where the bed comes through the water is a natural next step, with two
-constraints worth recording before anyone starts.
+The bathymetry map (§6.4.1) gave the water shaders their first depth input, and
+three effects fall out of that one quantity, `waterDepth = level − bed(x, z)`.
+They are listed in the order they matter, and the ⚠️ that opens this section
+governs all of them.
 
-⚠️ It must key on water DEPTH (`level - bed`), never on the water body's wall
-boundary. Most of that boundary is the outline CROP, not a shore, and surf along
-an arbitrary crop edge is the same kind of confident lie as a wall at a data edge
-(§10.1.5).
+⚠️⚠️ Everything here keys on water DEPTH, never on the water body's wall boundary.
+Most of that boundary is the outline CROP, not a shore, and surf along an
+arbitrary crop edge is the same kind of confident lie as a wall at a data edge
+(§10.1.5). A depth test cannot make that mistake, which is why it is the only
+input any of this reads.
 
-⚠️ Per-vertex on the lid is a dead end: with displacement off the lid is the
-fewest triangles that fill the outline, so a depth attribute would interpolate
-linearly over kilometres, and making it usable forces a fine lid over the whole
-footprint — the quadratic cost §6.2 exists to avoid.
+#### 6.6.1 Shoaling — the view angle was standing in for depth
 
-⭐ The right shape is a coarse BATHYMETRY TEXTURE: the generator already holds the
-bed channel on the reference grid, so a downsampled data texture plus the
-grid→world affine gives the fragment shader `depth = level - bed(worldXZ)` per
-pixel. The same texture would let the bed tint (§6.4.1) become per-pixel and close
-the untinted-wall gap. ⚠️ The water surface shader has no depth input of any kind
-today — it is analytic in world XZ — so this would be the first.
+⭐⭐ The find worth recording: `fragment.glsl` already mixed
+`uShallowColor → uDeepColor` by **`ndvAA`, the view angle**, and set
+`alpha = mix(uOpacity, 1.0, fresnel)`. The angle was a PROXY for depth, adopted
+because there was no depth input — so open sea and a metre of water over a
+sandbank were identical from the same viewpoint, and no amount of colour tuning
+could separate them.
+
+`shoalDepth` replaces the proxy: `shoal = 1 − exp(−waterDepth / shoalDepth)`
+drives both the body colour and the body's share of the alpha, with
+`shoalOpacity` saying what is left of that opacity where the bed reaches the
+surface (default 0 — clear, leaving only the reflection).
+
+- ⚠️ **The Fresnel term is deliberately untouched.** A reflection at a grazing
+  angle does not care how deep the water is, so shallow water still goes bright
+  and mirror-like edge-on. That is correct, not a leak.
+- ⭐ Everything blends by the map's COVERAGE channel, so an unmapped area is
+  bit-for-bit the original angle-driven look rather than a hole — and
+  `OCEAN_BATHYMETRY` compiles the whole branch out when no bed is supplied.
+
+#### 6.6.2 Shore foam, and where the swash comes from
+
+`shoreFoam` is `1 − smoothstep(0, shoreFoamDepth, waterDepth)`, folded into the
+shader's EXISTING `foamCoverage` with a `max`.
+
+⭐ Reusing that variable rather than compositing a second band is the whole trick:
+the noise texture, the froth modulation, the pixel-footprint anti-aliasing and the
+distance fade are all built around it, so shore foam inherits them and cannot read
+as a different kind of foam from the whitecaps beside it.
+
+⭐⭐ **The swash needs no clock.** Offsetting the LEVEL by the fragment's own wave
+height — `waterDepth = (level + height × swash) − bed` — makes the waterline
+advance and retreat with the real swell, varied along the coast, phase-locked to
+the surface it belongs to. A separately animated threshold would have to be tuned
+against the sea state to avoid drifting out of step with it; this cannot.
+
+⭐⭐ **The band peaks at the BREAK LINE, not at the water's edge**, and getting
+this wrong is what made the first version read as a keyline drawn round the land.
+Foam is generated where the waves break and then washes shoreward while decaying,
+so the bright line stands OFFSHORE and the water's edge is the dim end — a profile
+that maxes at depth 0 traces the coastline exactly, which is precisely what an
+outline is. The shape is a peak at the break, an exponential decay inshore to
+`OCEAN_SURF_RESIDUAL`, and a Gaussian cutoff seaward.
+
+⭐⭐ **The surf zone moves with the sea state.** Waves break where the depth falls
+to about 1.3× their own height, so `breakDepth = shoreBreakDepth × Hs` — a thin
+line in a calm, a wide belt in a storm. A FIXED band in metres was the single most
+unphysical thing here: the whole sea offshore responded to the wind and the shore
+did not, which is visible without being nameable. ⚠️ `Hs` is floored at
+`OCEAN_SWELL_FLOOR` to stand in for background swell, or the shore would go glassy
+at wind 0 — this model has no swell separate from the local wind.
+
+⭐ **Exposure is free.** `|dot(windDir, ∇bed)|` is already computed for the swash,
+and a windward coast breaks while a lee shore mostly does not — so the same term
+modulates how much surf a stretch of coast gets at all, floored at
+`OCEAN_LEE_EXPOSURE` for the energy that refracts round a headland.
+
+⚠️ Slow low-frequency sets pulse the band, because surf arrives in groups. Along
+the coast as well as in time, so a straight shore does not flash uniformly.
+
+⚠⚠ **A realistic surf zone is a handful of pixels at field scale**, which is the
+same problem `pipeExaggeration` has (§5.3.3) — and the earlier version had it
+WITHOUT admitting it, which is worse than either extreme. `surfScale` is the
+escape hatch and defaults to **1, as measured**: a correctly-sized shore is one of
+the cues that tells a viewer how far away they are, and exaggerating it takes that
+away. The exaggeration is available, opt-in, and named for what it is.
+
+⚠️ Independent of the wind's FOAM amount, unlike whitecaps — it carries its own
+`shoreFoam` rather than riding `foamAmount`, since a shore breaks under a swell
+that raises no whitecaps offshore.
+
+⚠️⚠️ **There is no refraction, and its absence is visible.** Real waves turn to
+face the shore as they shoal, so run-up on a beach is near-uniform along it. This
+shader carries the deep-water direction right up to the sand, so a wind running
+PARALLEL to the coast made the waterline scallop into stripes sliding along it.
+The swash is therefore weighted by `|dot(windDir, ∇bed)|` — waves running along a
+coast stop moving its waterline. ⚠️ That suppresses the artefact rather than
+modelling its cause; under real refraction the weight would be ~1 everywhere. The
+honest version re-evaluates the wave field on a shore-projected coordinate, which
+is a second 16-component sum per fragment — measure before paying for it. The
+gradient costs two extra samples of the map, using the grid's own cell size
+(`ChunkDepthMap.cellSize`).
+
+⚠️⚠️ **A WORLD-space band needs analytic anti-aliasing, not a fade.** The band is
+some metres of DEPTH wide, so on a STEEP shore it eventually becomes narrower than
+a pixel and would be drawn as a hard aliased line. Dropping its amplitude by
+however much it is over-wide preserves the integral, so it goes soft and dim rather
+than thin and hard.
+
+⚠️⚠️ **It is not what softens the band at distance, though — measure before
+assuming it is.** The band's width ON SCREEN is the break depth over the bed's
+gradient, and a
+few metres of depth on a gentle shelf is hundreds of metres across, so it stays
+resolvable at any sane zoom and the compensation never engages. What softens it is
+a colour blend (below). The AA earns its keep only on a steep coast.
+
+⭐⭐ **A faded colour and an unfaded alpha is the failure, and the symptom points
+at the wrong one.** Foam ended with `alpha = max(alpha, foam)` — "foam reads as
+opaque" — taken from the raw coverage, so foam faded all the way out still forced
+the water to full opacity. What then showed was the water's colour AT OPACITY 1,
+where the real pixel over a shoal is mostly sea bed seen through clear water: a
+saturated teal band exactly where the foam had been asked to disappear. Turning
+`shoreFoamStrength` down made it *worse*, which is what sent two rounds of fixes
+at the colour.
+
+⭐ The cure is to notice there is only ONE quantity. Fading a colour toward the
+water is identical to reducing coverage,
+
+$$\mathrm{mix}(c,\ \mathrm{mix}(f, c, k),\ b) \;=\; \mathrm{mix}(c,\ f,\ b(1-k))$$
+
+so the shader computes `foamOpacity = foamBlend × (1 − fade)` once and uses it for
+the colour **and** the alpha. In that form the two cannot drift apart, and
+"strength 0" means no foam in every channel.
+
+⚠️ Before that it was also faded toward `waterColor` — the body term alone, with no
+reflection, specular or tonal variation — which is not what the water looks like:
+darker than the lit sea, and over a shoal the SHALLOW colour. The opacity form
+removes the question entirely, since there is no longer a colour to fade toward.
+
+⚠️ The shore band keeps its own factor (`shoreFoamStrength` / `shoreFoamFade`)
+rather than riding the whitecaps' `foamFar`. ⭐ The general lesson: **when a
+feature is folded into existing machinery, its level-of-detail behaviour does not
+come along for free.** A whitecap is sub-pixel at distance; a shore band's width on
+screen is `shoreFoamDepth / |∇bed|`, hundreds of metres on a gentle shelf, so it
+never is.
+
+⚠️ `fwidth` straddles two surfaces at a silhouette and comes back far too large,
+the same trap the contact lines hit (§6.1.1). Here it can only make the band
+DIMMER, so it degrades safely and needs no cap. It is taken from the unperturbed
+depth: the AA width should follow the field, not the raggedness applied to it.
+
+⚠️ `shoreNoise` makes the landward edge ragged instead of following the
+bathymetry contour exactly, which reads as unnaturally crisp. It perturbs the FOAM
+band only — perturbing `waterDepth` itself would make the transparency and colour
+ripple with it — and it drifts slowly on its own rather than with the wind that
+carries the whitecap noise, because a coastline's raggedness belongs to the shore
+and must not stream downwind. Footprint-faded, so it flattens rather than
+speckling.
+
+⚠️ The band is in metres of DEPTH, not of distance. Right for a beach (a flat
+gradient genuinely surfs further up) but it becomes very wide on a flat shelf.
+Dividing by the bathymetry's gradient would fix that and costs a second sample;
+not done, because it should be driven by seeing the problem.
+
+#### 6.6.3 The wet band, on the land side
+
+`wetBand` darkens the bed just below the waterline, because wet ground is darker.
+Small, and it does the most for the shore of the three: without it the coast is a
+hard colour boundary between dry ground and tinted bed.
+
+⚠️ It fades out a little ABOVE the waterline as well — the splash zone — rather
+than ending on a step there. A hard edge exactly at depth 0 aliases along the
+whole coast, which is the one line the eye is already following.
+
+⭐ **It does NOT swash, and should not.** The wet band is the swash ZONE — a time
+average, which is why sand stays dark between waves — while the foam is the
+instantaneous edge moving inside it. The two are meant to disagree; syncing them
+would be modelling one thing as the other.
+
+⚠️ On the bed's CAP only, the same scope as the tint and for the same reason
+(§6.4.1).
+
+#### 6.6.4 Open items
+
+⭐⭐ **Depth-driven transparency decoupled two things that used to share one knob,
+and that is the most useful result of the whole section.** `waterOpacity` used to
+trade "deep water reads as water" against "you can still see the shore", so it had
+to be a compromise. With the shoal term keeping the shallows clear on their own,
+the deep end is free to be as opaque as it should be.
+
+⭐ Which incidentally sinks seabed objects into the water: at a high `waterOpacity`
+a template or a pipeline is attenuated simply by being GEOMETRY BEHIND A MORE
+OPAQUE LID — no material involvement, which is exactly what a material-level tint
+could never do for it. Try that before reaching for the fog pass below.
+
+⚠️⚠️ **Absorption otherwise reaches only the chunk's own bed, so anything STANDING
+on the bed is not attenuated.** `bedTint` is a material-level fake: the bed gets the
+lid's alpha AND the tint, while a template, a base or a pipeline resting on it gets
+the lid alone — so it reads as sitting above the water rather than under it. The
+scope is the same one §15.9.4 records for the section: the sea's effects live in
+the stack's own shaders, so host geometry is untouched.
+
+⭐ The general answer is a RENDERING PASS, not more materials: absorption is a
+function of a fragment's depth, so fogging everything below the level from the
+depth buffer covers host geometry for free, works at any opacity and from under the
+surface, and retires `bedTint` with it. ⚠️ It has to work under a plain `RenderPass`
+and under `OITRenderPass`, which is the "built twice" problem that ruled out
+stencil capping (§15.4). Not scoped — and the `waterOpacity` finding above drops it
+from needed to nice.
+
+⚠️⚠️ **REGRESSION, reported 2026-08-14 and not diagnosed:** with the camera INSIDE
+the water body, fog no longer builds up as it used to. Candidates, cheapest first:
+the lid's `alpha` now ends at `max(alpha, foamOpacity)` where it was
+`max(alpha, foam)`, so an underside fragment gets less; `bodyOpacity` is now scaled
+by `shoal`, and a camera close to the surface sits where that term is weakest; or
+nothing here at all and it is `bodyMaxOpacity` following a changed `waterOpacity`.
+⚠️ The water BODY shader was not touched, so bisect against the pre-bathymetry
+commit before reading any of these as the cause.
+
+- Per-vertex anything on the lid remains a dead end: with displacement off the lid
+  is the fewest triangles that fill the outline, so a depth attribute would
+  interpolate linearly over kilometres, and making it usable forces a fine lid over
+  the whole footprint — the quadratic cost §6.2 exists to avoid. All of the above
+  is per fragment for that reason.
+- Refraction (§6.6.2), which the swash weighting only papers over.
+- Refraction of the SURFACE itself, and foam that persists as a receding sheet
+  rather than following the instantaneous surface.
+- The bathymetry is uploaded at full grid resolution; a foam band would be happy
+  with far less (§6.4.1).
+
+#### 6.6.5 ⚠️ A bilinear artefact the shore made visible
+
+The hand-rolled bilinear in `depth-map.glsl` is C0 but not C1 — its gradient jumps
+at every texel boundary — and the shoal's steep response curve turned those jumps
+into a visible cross-hatch lattice aligned with the (rotated) grid, right in the
+shallow band. Hermite-smoothing the fractional weights (`f = f²(3 − 2f)`) makes
+the interpolant C1 and removes it for two instructions.
+
+⭐ Worth generalising: **a smooth response over a bilinear field shows the field's
+seams.** Anything that takes a derivative of one, or applies a steep curve to it,
+wants the smoothed weights — which includes the contact lines (§6.1.1), whose
+`fwidth` reads the same field directly.
 
 
 ## 7. Cross-cutting: LOD, workers, picking

@@ -791,6 +791,7 @@ export const Chunk = ({
           showWalls={showWalls}
           peel={peel}
           water={stack.water}
+          bathymetry={stack.bathymetry}
           carrierMaterial={stack.carrierMaterial}
           contacts={stack.contacts}
           section={stack.section}

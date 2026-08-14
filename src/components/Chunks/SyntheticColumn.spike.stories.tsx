@@ -181,6 +181,18 @@ type SyntheticColumnProps = {
   foamAmount: number;
   displacement: boolean;
   waterResolution: number;
+  shoalDepth: number;
+  shoalOpacity: number;
+  shoreFoam: number;
+  shoreBreakDepth: number;
+  surfScale: number;
+  shoreFoamStrength: number;
+  shoreFoamFade: number;
+  shoreNoise: number;
+  shoreNoiseScale: number;
+  swash: number;
+  wetBand: number;
+  wetStrength: number;
   bodyFogDensity: number;
   bodyMaxOpacity: number;
   bodyShimmer: number;
@@ -512,8 +524,20 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
       bodyFogDensity: props.bodyFogDensity,
       bodyMaxOpacity: props.bodyMaxOpacity,
       bodyShimmer: props.bodyShimmer,
+      shoalDepth: props.shoalDepth,
+      shoalOpacity: props.shoalOpacity,
+      shoreFoam: props.shoreFoam,
+      shoreBreakDepth: props.shoreBreakDepth,
+      surfScale: props.surfScale,
+      shoreFoamStrength: props.shoreFoamStrength,
+      shoreFoamFade: props.shoreFoamFade,
+      shoreNoise: props.shoreNoise,
+      shoreNoiseScale: props.shoreNoiseScale,
+      swash: props.swash,
       bedTint: props.bedTint,
       bedTintDepth: props.bedTintDepth,
+      wetBand: props.wetBand,
+      wetStrength: props.wetStrength,
     };
   }, [
     props.water,
@@ -528,8 +552,20 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
     props.bodyFogDensity,
     props.bodyMaxOpacity,
     props.bodyShimmer,
+    props.shoalDepth,
+    props.shoalOpacity,
+    props.shoreFoam,
+    props.shoreBreakDepth,
+    props.surfScale,
+    props.shoreFoamStrength,
+    props.shoreFoamFade,
+    props.shoreNoise,
+    props.shoreNoiseScale,
+    props.swash,
     props.bedTint,
     props.bedTintDepth,
+    props.wetBand,
+    props.wetStrength,
   ]);
 
   const resolve = useMemo<ChunkResolveOptions>(
@@ -761,6 +797,18 @@ export const Default: Story = {
     foamAmount: 0.5,
     displacement: false,
     waterResolution: 0,
+    shoalDepth: 25,
+    shoalOpacity: 0,
+    shoreFoam: 0.8,
+    shoreBreakDepth: 1.3,
+    surfScale: 1,
+    shoreFoamStrength: 0.65,
+    shoreFoamFade: 0.3,
+    shoreNoise: 1.5,
+    shoreNoiseScale: 200,
+    swash: 1,
+    wetBand: 3,
+    wetStrength: 0.4,
     bodyFogDensity: 0.004,
     bodyMaxOpacity: 0.9,
     bodyShimmer: 0.5,
@@ -772,7 +820,7 @@ export const Default: Story = {
     shipHeading: -30,
     facilities: true,
     facilityBase: true,
-    facilitySize: 80,
+    facilitySize: 40,
     baseLevel: 'max',
     baseStandoff: 0,
     baseEmbedment: 2,
@@ -949,6 +997,77 @@ export const Default: Story = {
         'Target triangle edge for the water lid, in metres. 0 = leave it to the library: the fewest triangles that fill the outline when displacement is off, a default resolution when it is on. ⚠️ A cost knob over the whole footprint — halving it roughly quadruples the lid.',
       table: { category: 'Sea state' },
     },
+    shoalDepth: {
+      control: { type: 'range', min: 1, max: 200, step: 1 },
+      description:
+        'Water depth at which the sea reaches ~86% of its full colour and opacity, in metres. ⭐ The shader had NO depth input before the bathymetry texture and used the VIEW ANGLE as a stand-in — which cannot tell a metre of water over a bank from the open sea. This replaces the proxy with the real thing, so a shoal reads as a shoal from any angle.',
+      table: { category: 'Shore' },
+    },
+    shoalOpacity: {
+      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      description:
+        'What is left of `waterOpacity` where the bed reaches the surface. 0 = water with no depth is fully clear and only the Fresnel reflection remains.',
+      table: { category: 'Shore' },
+    },
+    shoreFoam: {
+      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      description:
+        'Surf where the waves break on the shore. ⭐ Folded into the SAME foam coverage as the whitecaps, so it picks up their noise, froth and distance fade rather than reading as a different kind of foam. ⭐ The profile peaks AT THE BREAK LINE and decays inshore — foam is generated where waves break and washes shoreward while dying — so the bright line stands offshore and the water’s edge is the dim end. Also modulated by exposure (a lee shore barely breaks) and by slow sets. ⚠️⚠️ Keyed on water DEPTH, never on the water body’s boundary: most of that boundary is the outline CROP, and surf along an arbitrary crop edge would be a confident lie.',
+      table: { category: 'Shore' },
+    },
+    shoreBreakDepth: {
+      control: { type: 'range', min: 0.5, max: 4, step: 0.1 },
+      description:
+        'Depth at which waves break, as a MULTIPLE OF THE WAVE HEIGHT — 1.3 is the measured breaking criterion. ⭐ So the surf zone widens and narrows with the sea state: a thin line in a calm, a wide belt in a storm. A fixed band was the most unphysical thing here, with the whole sea offshore responding to the wind and the shore not. ⚠️ The height is floored internally to stand in for background swell, so an open coast still breaks at wind 0.',
+      table: { category: 'Shore' },
+    },
+    surfScale: {
+      control: { type: 'range', min: 1, max: 20, step: 0.5 },
+      description:
+        'Exaggeration of the surf zone’s WIDTH. ⚠️ Default 1 = as measured. A realistic surf zone is a handful of pixels at field scale, so this is the same escape hatch as `pipeExaggeration` — and it costs the same thing: a correctly-sized shore is one of the cues that tells you how far away you are, and exaggerating it takes that away.',
+      table: { category: 'Shore' },
+    },
+    shoreFoamStrength: {
+      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      description:
+        'How white the shore foam is drawn. 0 removes it entirely — colour AND opacity, so the water reads exactly as it would with no foam at all. ⚠️ Distinct from `shoreFoam`, which decides how much of the band is COVERED and so breaks it up against the foam noise; this one dims the whole band evenly.',
+      table: { category: 'Shore' },
+    },
+    shoreFoamFade: {
+      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      description:
+        'Fraction of `shoreFoamStrength` lost once the foam detail goes sub-pixel — what softens the band as you zoom out. ⚠️ The band’s own analytic anti-aliasing does NOT do this: it only engages once the band is sub-pixel, and a band measured in metres of DEPTH is still hundreds of metres across on a gentle shelf.',
+      table: { category: 'Shore' },
+    },
+    shoreNoise: {
+      control: { type: 'range', min: 0, max: 6, step: 0.1 },
+      description:
+        'How ragged the foam’s landward edge is, in metres of water depth. 0 makes it follow the bathymetry contour exactly, which reads as unnaturally crisp. ⚠️ It perturbs the FOAM band only, not the water’s depth — perturbing that would make the transparency and colour ripple with it. ⚠️ Drifts slowly on its own rather than with the wind: a coastline’s raggedness belongs to the shore, so it must not stream downwind.',
+      table: { category: 'Shore' },
+    },
+    shoreNoiseScale: {
+      control: { type: 'range', min: 25, max: 1000, step: 25 },
+      description:
+        'Feature size of that raggedness, in metres. ⚠️ Footprint-faded, so it flattens out once it goes sub-pixel instead of speckling.',
+      table: { category: 'Shore' },
+    },
+    swash: {
+      control: { type: 'range', min: 0, max: 4, step: 0.1 },
+      description:
+        'How far the swell carries the waterline up and down the shore, as a multiple of the local wave height. ⭐ It offsets the LEVEL by this fragment’s own wave height, so the shore advances and retreats — varied along the coast, and with no clock of its own. 0 pins it to the still level.',
+      table: { category: 'Shore' },
+    },
+    wetBand: {
+      control: { type: 'range', min: 0, max: 30, step: 0.5 },
+      description:
+        'Depth of the WET band just below the waterline, in metres. 0 = off. Wet ground is darker, which is what stops the shore reading as a hard colour boundary between dry land and tinted bed. ⚠️ On the bed’s CAP only, the same scope as `bedTint`.',
+      table: { category: 'Shore' },
+    },
+    wetStrength: {
+      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      description: 'How much `wetBand` darkens the ground.',
+      table: { category: 'Shore' },
+    },
     bodyFogDensity: {
       control: { type: 'range', min: 0, max: 0.02, step: 0.0005 },
       description:
@@ -971,13 +1090,13 @@ export const Default: Story = {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
       description:
         'Tint the SEA BED toward the water colour, as if seen through the water column — the chunk’s answer to the `Ocean` component’s `seaBedWaterTint`. ⭐ Depth-dependent where that one is flat, because this sea bed is real geology and rises through the water: the tint fades to nothing at the waterline, so the coast and the island stay dry-looking without anything having to know where the shoreline runs.',
-      table: { category: 'Water body' },
+      table: { category: 'Sea bed' },
     },
     bedTintDepth: {
       control: { type: 'range', min: 5, max: 400, step: 5 },
       description:
-        'Depth below sea level at which `bedTint` reaches ~86% of its strength, in metres — how tight the gradient at the shoreline is.',
-      table: { category: 'Water body' },
+        'Depth below sea level at which `bedTint` reaches ~86% of its strength, in metres — how tight the gradient at the shoreline is. ⚠️ Beer-Lambert saturates: at 80 anything below ~250 m is already past 95%, so on a deep bed the whole cap reads uniform and the gradient is spent around the coast. Raise it to see depth across the whole bed.',
+      table: { category: 'Sea bed' },
     },
     ship: {
       control: 'boolean',
@@ -1014,9 +1133,9 @@ export const Default: Story = {
       table: { category: 'Facilities' },
     },
     facilitySize: {
-      control: { type: 'range', min: 40, max: 300, step: 10 },
+      control: { type: 'range', min: 20, max: 300, step: 10 },
       description:
-        'Side of the base’s square footprint, in metres. A wider base spans more ground, so it needs more fill — the numbers move with it.',
+        'Side of the base’s square footprint, in metres. A wider base spans more ground, so it needs more fill — the numbers move with it. ⚠️ The default 40 m is roughly a real four-slot subsea template, so it is comparable with the pipelines only at `pipeExaggeration` 1, where those carry their as-built diameters — which is why they are all but invisible beside it.',
       table: { category: 'Facilities' },
     },
     baseLevel: {

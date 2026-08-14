@@ -33,6 +33,12 @@ varying vec2 vUv;
 // equals vWorldPosition.xz, so the default look is unchanged.
 varying vec2 vSurfaceXZ;
 
+#ifdef OCEAN_BATHYMETRY
+// OBJECT XZ, undisplaced. The bathymetry's affine is in the stack's own frame,
+// and a vertical exaggeration or a group offset would move a world-space one.
+varying vec2 vObjectXZ;
+#endif
+
 #ifdef OCEAN_SECTION
 // A `ChunkStack`'s section plane, in OBJECT space — the same uniform object the
 // chunk materials read, so the sea is cut on exactly the same plane as the block.
@@ -47,6 +53,10 @@ varying float vSectionDist;
 
 void main() {
   vUv = uv;
+
+  #ifdef OCEAN_BATHYMETRY
+  vObjectXZ = position.xz;
+  #endif
 
   #ifdef OCEAN_SECTION
   vSectionDist = dot(sectionPlane.xyz, position) + sectionPlane.w;

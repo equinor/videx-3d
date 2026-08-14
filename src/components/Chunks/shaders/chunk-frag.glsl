@@ -30,11 +30,25 @@ varying float vWallV;
 #ifdef CHUNK_WATER_TINT
 uniform vec3 waterTintColor;  // the water colour, in the working colour space
 uniform vec3 waterTintParams; // x: water level (vertex stage), y: strength, z: 1 / depth scale
+uniform vec2 waterTintShore;  // x: 1 / wet band depth, y: darkening amount
 varying float vWaterDepth;
+#ifdef CHUNK_BATHYMETRY
+// The sea bed's own grid. Sampling it gives the water column standing over this
+// MAP location rather than over this fragment, which is the difference between a
+// cap (where the two agree) and a flank hanging metres below the bed.
+uniform sampler2D bathyMap;
+uniform mat3 bathyToUv; // object XZ -> uv
+uniform vec2 bathySize; // grid size in texels
+#endif
 #endif
 
 #ifdef CHUNK_SECTION
 varying float vSectionDist;
+#endif
+
+#if defined(CHUNK_CONTACTS) || defined(CHUNK_BATHYMETRY)
+varying vec3 vObjectPos;
+#include ../../../sdk/materials/shaderLib/depth-map.glsl
 #endif
 
 #ifdef CHUNK_CONTACTS
@@ -43,38 +57,6 @@ uniform mat3 contactToUv[CHUNK_CONTACTS];   // object XZ -> uv
 uniform vec3 contactColor[CHUNK_CONTACTS];
 uniform vec4 contactStyle[CHUNK_CONTACTS];  // x: half width, y: 1 world / 0 screen, z: dash, w: gap
 uniform vec4 contactSize[CHUNK_CONTACTS];   // xy: grid size in texels, z: opacity, w: max world half width
-varying vec3 vObjectPos;
-
-// ⚠️ Bilinear by hand. The texture is NEAREST-filtered (linear filtering of a
-// 32-bit float texture needs an extension, and half float cannot hold a depth of
-// a few thousand metres to better than a couple of metres).
-//
-// ⚠⚠ Returns COVERAGE (0..1) rather than a bool, and always writes a `contactY`.
-// An early return here would put the caller's `fwidth` in NON-UNIFORM control
-// flow at the edge of the mapped area — undefined, and it painted a vertical tick
-// off the end of every line. R is filled on the CPU so it stays continuous across
-// that edge; G alone decides what is visible.
-float sampleContact(sampler2D map, mat3 toUv, vec2 size, out float contactY) {
-  vec2 texel = (toUv * vec3(vObjectPos.x, vObjectPos.z, 1.0)).xy * size - 0.5;
-  vec2 base = floor(texel);
-  vec2 f = texel - base;
-  float sum = 0.0;
-  float weight = 0.0;
-  float coverage = 0.0;
-  for (int j = 0; j < 2; j++) {
-    for (int i = 0; i < 2; i++) {
-      vec2 at = base + vec2(float(i), float(j));
-      float w = (i == 0 ? 1.0 - f.x : f.x) * (j == 0 ? 1.0 - f.y : f.y);
-      if (at.x < 0.0 || at.y < 0.0 || at.x > size.x - 1.0 || at.y > size.y - 1.0) continue;
-      vec2 s = texture2D(map, (at + 0.5) / size).rg;
-      sum += s.r * w;
-      weight += w;
-      coverage += s.g * w;
-    }
-  }
-  contactY = weight > 0.0 ? sum / weight : 0.0;
-  return coverage;
-}
 
 // Blend one contact's line over the shaded colour.
 vec3 contactLine(float contactY, vec4 style, vec3 lineColor, float lineOpacity, float maxHalf, vec3 base) {
@@ -116,7 +98,7 @@ vec3 contactLine(float contactY, vec4 style, vec3 lineColor, float lineOpacity, 
 // loop variable, only with a constant expression.
 // ⚠️ Called unconditionally, and coverage folded into the opacity — branching on
 // "has a contact here" is what broke the derivatives at the pocket edge.
-#define CHUNK_CONTACT(I) { float cy; float cov = sampleContact(contactMap[I], contactToUv[I], contactSize[I].xy, cy); outgoingLight = contactLine(cy, contactStyle[I], contactColor[I], contactSize[I].z * cov, contactSize[I].w, outgoingLight); }
+#define CHUNK_CONTACT(I) { float cy; float cov = sampleDepthMap(contactMap[I], contactToUv[I], contactSize[I].xy, vObjectPos.xz, cy); outgoingLight = contactLine(cy, contactStyle[I], contactColor[I], contactSize[I].z * cov, contactSize[I].w, outgoingLight); }
 #endif
 
 #include <common>
@@ -288,14 +270,40 @@ void main() {
 
   #ifdef CHUNK_WATER_TINT
   {
-    // Absorption through the water column standing over this fragment: nothing at
-    // the waterline, saturating with depth. Being depth-dependent is what lets a
-    // sea bed rise THROUGH the water - a coast, an island - without anything here
-    // having to know where the shoreline runs.
-    float absorb = 1.0 - exp(-max(vWaterDepth, 0.0) * waterTintParams.z);
+    // How much water stands over this fragment. The vertex stage's own depth is
+    // only right on the bed itself; anything hanging below it - the rim wall of
+    // the sea-bed unit, a section face - is not under that much water.
+    float depth = vWaterDepth;
     // Water-facing side only: the underside of a cap is inside the ground.
     vec3 tintNormal = normalize(normal * mat3(viewMatrix));
     float facing = smoothstep(-0.15, 0.15, tintNormal.y);
+
+    #ifdef CHUNK_BATHYMETRY
+    {
+      float bedY;
+      float covered = sampleDepthMap(bathyMap, bathyToUv, bathySize, vObjectPos.xz, bedY);
+      // The column standing over this MAP location. On the cap the two agree by
+      // construction; the map is the finer of the two where the TIN is coarse.
+      depth = mix(depth, waterTintParams.x - bedY, covered);
+    }
+    #endif
+
+    // Ground just below the waterline is WET, and wet ground is darker. Applied
+    // before the absorption so the two stack the way they physically do, and it
+    // is what stops the shore reading as a hard colour boundary between dry land
+    // and tinted bed.
+    // ⚠️ It fades out a little ABOVE the waterline too (the splash zone), rather
+    // than ending on a step there — a hard edge exactly at depth 0 aliases along
+    // the whole coast, which is the one place the eye is already looking.
+    float wetT = depth * waterTintShore.x;
+    float wet = smoothstep(-0.25, 0.0, wetT) * (1.0 - smoothstep(0.0, 1.0, wetT));
+    outgoingLight *= 1.0 - wet * waterTintShore.y * facing;
+
+    // Absorption through that column: nothing at the waterline, saturating with
+    // depth. Being depth-dependent is what lets a sea bed rise THROUGH the water
+    // - a coast, an island - without anything here having to know where the
+    // shoreline runs.
+    float absorb = 1.0 - exp(-max(depth, 0.0) * waterTintParams.z);
     outgoingLight = mix(outgoingLight, waterTintColor, clamp(absorb * waterTintParams.y * facing, 0.0, 1.0));
   }
   #endif

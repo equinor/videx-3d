@@ -10,6 +10,7 @@ import {
 } from './chunk-defs';
 import { CutoutSource } from './cutout';
 import { ChunkContactTexture } from './chunk-contacts';
+import { ChunkDepthMap } from './chunk-depth-map';
 import { SeamDecision } from './seams';
 
 /**
@@ -79,6 +80,12 @@ export type ChunkStackContextValue = {
    * their shallowest cap; the sea's own geometry belongs to the stack.
    */
   water?: StackWater | null;
+  /**
+   * The sea bed's depth grid as a texture, when a sea is declared. APPEARANCE
+   * only: it drives the bed tint per fragment, so a face hanging below the bed is
+   * tinted by the water standing over it rather than by its own depth.
+   */
+  bathymetry?: ChunkDepthMap | null;
   /**
    * The live clip plane through the whole stack, when the caller declared one (see
    * `ChunkStackProps.section`). A chunk reads it every frame to build its own cut

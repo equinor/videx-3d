@@ -12,6 +12,7 @@ import {
   DEFAULT_OCEAN_WATER_OPACITY,
 } from '../Ocean/ocean-material';
 import { ChunkContactTexture, resolveLayerContacts } from './chunk-contacts';
+import { ChunkDepthMap } from './chunk-depth-map';
 import { ChunkDetail } from './chunk-detail';
 import { ChunkMaterial, ChunkWaterTintParameters } from './chunk-material';
 import {
@@ -63,6 +64,12 @@ export type ChunkMeshesProps = {
    * here: the sea's own geometry belongs to the stack.
    */
   water?: StackWater | null;
+  /**
+   * The sea bed's depth grid, from the stack. Drives the bed tint by the water
+   * standing over each fragment's MAP location instead of by its own depth — which
+   * is what lets the sea-bed unit's rim WALL be tinted at all.
+   */
+  bathymetry?: ChunkDepthMap | null;
   /**
    * Cap material for the column's floor, when this chunk closes the block (see
    * `ChunkStackProps.carrier`). The floor is INFERRED from a fill on the last
@@ -138,6 +145,7 @@ export const ChunkMeshes = ({
   showSurfaces = true,
   showWalls = true,
   water = null,
+  bathymetry = null,
   carrierMaterial,
   contacts = null,
   section = null,
@@ -201,8 +209,8 @@ export const ChunkMeshes = ({
     const cutCap = (i: number) => !keptUnit(i) && !keptUnit(i - 1);
 
     // The sea tints the SHALLOWEST cap toward the water colour, as if seen through
-    // the water column — the body itself only stands at the rim and the shoreline,
-    // and the surface's own alpha is reflection, not absorption.
+    // the water column standing over it — the body itself only stands at the rim and
+    // the shoreline, and the surface's own alpha is reflection, not absorption.
     const waterTint = ((): ChunkWaterTintParameters | undefined => {
       if (!water) return undefined;
       const strength =
@@ -213,6 +221,9 @@ export const ChunkMeshes = ({
         level: -(water.depth ?? 0),
         strength,
         depth: water.bedTintDepth ?? DEFAULT_BED_TINT_DEPTH,
+        map: bathymetry ?? undefined,
+        wetBand: water.wetBand,
+        wetStrength: water.wetStrength,
       };
     })();
 
@@ -338,6 +349,7 @@ export const ChunkMeshes = ({
     wallOpacity,
     wireframe,
     water,
+    bathymetry,
     carrierMaterial,
     contacts,
     sectionUniform,

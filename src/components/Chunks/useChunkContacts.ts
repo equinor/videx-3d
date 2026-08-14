@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useData } from '../../hooks/useData';
 import {
   ChunkContact,
-  ChunkContactMap,
   ChunkContactTexture,
-  UtmToScene,
-  buildContactMap,
   styleContact,
 } from './chunk-contacts';
+import {
+  ChunkDepthMap,
+  UtmToScene,
+  buildSurfaceDepthMap,
+} from './chunk-depth-map';
 
 /**
  * Load each contact's grid and prepare it for the chunk shaders.
@@ -24,7 +26,7 @@ export function useChunkContacts(
   utmToScene: UtmToScene | undefined,
 ): ChunkContactTexture[] | null {
   const store = useData();
-  const maps = useRef(new Map<string, ChunkContactMap>());
+  const maps = useRef(new Map<string, ChunkDepthMap>());
   const [ready, setReady] = useState(0);
 
   const ids = contacts?.map(c => c.surface.id).join('|') ?? '';
@@ -40,7 +42,7 @@ export function useChunkContacts(
         const values = await store.get<Float32Array>('surface-values', id);
         if (cancelled) return;
         if (!values) continue;
-        maps.current.set(id, buildContactMap(surface, values, utmToScene));
+        maps.current.set(id, buildSurfaceDepthMap(surface, values, utmToScene));
         added = true;
       }
       // A contact no longer declared keeps its texture alive until unmount

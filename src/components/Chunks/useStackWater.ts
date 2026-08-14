@@ -12,6 +12,7 @@ import {
 import { OceanContact, OceanMaterial } from '../Ocean/ocean-material';
 import { createOceanSampler, OceanSampler } from '../Ocean/ocean-sampler';
 import { OceanVolumeMaterial } from '../Ocean/ocean-volume-material';
+import { ChunkDepthMap } from './chunk-depth-map';
 import { StackWater } from './chunk-defs';
 
 /** What a {@link ChunkStackProps.water} sea is drawn and sampled with. */
@@ -46,6 +47,7 @@ export function useStackWater(
   water: StackWater | undefined,
   wireframe = false,
   sectionPlane?: IUniform<Vector4>,
+  bathymetry?: ChunkDepthMap | null,
 ): StackWaterMaterials | null {
   const enabled = !!water;
   const level = -(water?.depth ?? 0);
@@ -66,15 +68,19 @@ export function useStackWater(
 
   // ⚠️ The section is a DEFINE, so cutting the sea or leaving it whole means new
   // materials. That is a discrete choice, unlike the sea state, which is swept.
+  // ⚠️ So is the bathymetry, which arrives asynchronously — one rebuild, once.
   const materials = useMemo(() => {
     if (!enabled) return null;
     return {
-      surface: new OceanMaterial({ sectionPlane }),
+      surface: new OceanMaterial({
+        sectionPlane,
+        bathymetry: bathymetry ?? undefined,
+      }),
       // A chunk's interval wall measures its vertical coordinate in metres, so
       // the walls read their unit-relative height from `wallV` instead.
       volume: new OceanVolumeMaterial({ wallAttribute: true, sectionPlane }),
     };
-  }, [enabled, sectionPlane]);
+  }, [enabled, sectionPlane, bathymetry]);
 
   useEffect(() => {
     if (!materials) return;
@@ -88,6 +94,9 @@ export function useStackWater(
     if (!materials || !water) return;
     const opacity = water.opacity ?? 1;
     applyOceanWaterProps(materials.surface, { ...water, opacity });
+    // The bed grid is in the stack's frame, so the level it is measured against
+    // has to be too.
+    materials.surface.waterLevel = level;
     // The body shares the surface's wave tables by reference, so its top edge
     // follows the same swells.
     applyOceanBodyProps(
@@ -97,7 +106,7 @@ export function useStackWater(
     );
     materials.surface.wireframe = wireframe;
     materials.volume.wireframe = wireframe;
-  }, [materials, water, wireframe]);
+  }, [materials, water, wireframe, level]);
 
   useFrame((_, delta) => {
     if (!materials) return;

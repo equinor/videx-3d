@@ -24,7 +24,7 @@ export type SeabedFacilityReport = LevelledBaseMetrics & {
 
 export type SeabedFacilityProps = {
   site: SubseaSite;
-  /** side of the base's square footprint, in metres */
+  /** side of the base's square footprint, in metres. Default 40, about a real four-slot template */
   size?: number;
   /** build a levelled base; without one the structure sits on the slope itself */
   base?: boolean;
@@ -59,7 +59,7 @@ function squareFootprint(x: number, z: number, size: number, yaw: number) {
  */
 export const SeabedFacility = ({
   site,
-  size = 80,
+  size = 40,
   base = true,
   level = 'max',
   standoff = 0,

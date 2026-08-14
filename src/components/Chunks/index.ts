@@ -4,6 +4,8 @@ export * from './ChunkMeshes';
 export * from './ChunkSectionDebug';
 export * from './ChunkStack';
 export * from './chunk-defs';
+export * from './chunk-contacts';
+export * from './chunk-depth-map';
 export * from './chunk-detail';
 export * from './chunk-material';
 export * from './cutout';

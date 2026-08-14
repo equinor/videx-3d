@@ -279,9 +279,14 @@ export type ChunkLayer = {
  * to nothing at the waterline leaves a coast or an island untinted without
  * anything having to know where the shoreline runs.
  *
+ * ⭐ The depth is read from the BED's own grid rather than from each fragment's
+ * height, so the gradient follows the bathymetry instead of the tessellation.
+ * ⚠️ Where that grid is unmapped it falls back to the fragment's own depth.
+ *
  * ⚠️ Applies to the cap of the SHALLOWEST solid layer, and to that one only: it
  * stands for looking down through the water at the bed, not for making the whole
- * column blue.
+ * column blue. The rim WALL is not tinted either — the water body ends at the
+ * footprint, so there is none between the eye and the flank.
  *
  * @expand
  * @group Components
@@ -298,6 +303,17 @@ export type ChunkWaterTint = {
    * metres. Default {@link DEFAULT_BED_TINT_DEPTH}.
    */
   bedTintDepth?: number;
+  /**
+   * Depth of the WET band just below the waterline, in metres. 0 (the default)
+   * is off.
+   *
+   * ⭐ Wet ground is darker, and this is what stops a shore reading as a hard
+   * colour boundary between dry land and tinted bed. It fades out a little above
+   * the waterline as well — the splash zone — rather than ending on a step there.
+   */
+  wetBand?: number;
+  /** How much `wetBand` darkens the ground, 0..1. Default 0.4. */
+  wetStrength?: number;
 };
 
 /**

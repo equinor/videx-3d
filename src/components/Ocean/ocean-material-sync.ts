@@ -44,6 +44,74 @@ export type OceanWaterProps = {
   shallowColor?: string;
   /** Base body opacity looking straight down (0 = clear, 1 = opaque). */
   waterOpacity?: number;
+  /**
+   * Water depth at which the sea reaches ~86% of its full colour and opacity, in
+   * metres. Shallower water is clearer and paler, so a shoal or a beach reads as
+   * one.
+   *
+   * ⚠️ Needs a bathymetry grid to have any effect — a `ChunkStack` supplies the
+   * column's shallowest surface. Without one the shader has no depth input and
+   * falls back to the view angle, which cannot tell shallow from deep.
+   */
+  shoalDepth?: number;
+  /**
+   * What is left of `waterOpacity` where the bed reaches the surface, 0..1.
+   * Default 0 (fully clear, leaving only the reflection).
+   */
+  shoalOpacity?: number;
+  /**
+   * Surf where the bed comes up to the surface, 0..1. Default 0 (off).
+   *
+   * ⚠️ Needs a bathymetry grid, like `shoalDepth`. ⚠️ Independent of the wind,
+   * unlike whitecaps — a shore breaks in a calm.
+   */
+  shoreFoam?: number;
+  /**
+   * Depth at which waves break, as a multiple of the significant wave height.
+   * Default 1.3 — the measured breaking criterion, so the surf zone widens and
+   * narrows with the sea state rather than sitting at a fixed depth.
+   *
+   * ⚠️ The wave height is floored internally to stand in for background swell, so
+   * an open coast still breaks in a dead calm.
+   */
+  shoreBreakDepth?: number;
+  /**
+   * Exaggeration of the surf zone's width. Default 1 — as measured.
+   *
+   * ⚠️ A realistic surf zone is a handful of pixels across at field scale, so this
+   * exists for the same reason a pipeline's diameter exaggeration does. Raising it
+   * costs the scale cue a correctly-sized shore gives.
+   */
+  surfScale?: number;
+  /**
+   * How far the swell carries the waterline up and down the shore, as a multiple
+   * of the local wave height. Default 1; 0 pins it to the still level.
+   */
+  swash?: number;
+  /**
+   * How ragged the shore foam's landward edge is, in metres of water depth.
+   * Default 0 — the edge then follows the bathymetry contour exactly, which reads
+   * as unnaturally crisp.
+   *
+   * ⚠️ It perturbs the FOAM band only, not the water's depth: perturbing that
+   * would make the transparency and colour ripple with it.
+   */
+  shoreNoise?: number;
+  /** Feature size of that raggedness, in metres. Default 200. */
+  shoreNoiseScale?: number;
+  /**
+   * How white the shore foam is drawn, 0..1. Default 0.65 — pure white surf reads
+   * as a painted line at field scale. 0 removes it entirely, colour AND opacity.
+   *
+   * ⚠️ Distinct from `shoreFoam`, which decides how much of the band is COVERED
+   * and so breaks it up against the foam noise; this one dims it evenly.
+   */
+  shoreFoamStrength?: number;
+  /**
+   * Fraction of `shoreFoamStrength` lost once the foam detail goes sub-pixel.
+   * Default 0.3 — this is what softens the band as you zoom out.
+   */
+  shoreFoamFade?: number;
   /** Strength of the large-scale tonal variation (currents / slicks), 0 = off. */
   tonalVariation?: number;
   /** Approximate size of the tonal variation patches, in kilometers. */
@@ -162,6 +230,21 @@ export function applyOceanWaterProps(
   if (props.shallowColor) material.shallowColor = props.shallowColor;
   if (props.waterOpacity !== undefined)
     material.waterOpacity = props.waterOpacity;
+  if (props.shoalDepth !== undefined) material.shoalDepth = props.shoalDepth;
+  if (props.shoalOpacity !== undefined)
+    material.shoalOpacity = props.shoalOpacity;
+  if (props.shoreFoam !== undefined) material.shoreFoam = props.shoreFoam;
+  if (props.shoreBreakDepth !== undefined)
+    material.shoreBreakDepth = props.shoreBreakDepth;
+  if (props.surfScale !== undefined) material.surfScale = props.surfScale;
+  if (props.swash !== undefined) material.swash = props.swash;
+  if (props.shoreNoise !== undefined) material.shoreNoise = props.shoreNoise;
+  if (props.shoreNoiseScale !== undefined)
+    material.shoreNoiseScale = props.shoreNoiseScale;
+  if (props.shoreFoamStrength !== undefined)
+    material.shoreFoamStrength = props.shoreFoamStrength;
+  if (props.shoreFoamFade !== undefined)
+    material.shoreFoamFade = props.shoreFoamFade;
   if (props.tonalVariation !== undefined)
     material.tonalVariation = props.tonalVariation;
   if (props.tonalScale !== undefined) material.tonalScale = props.tonalScale;
