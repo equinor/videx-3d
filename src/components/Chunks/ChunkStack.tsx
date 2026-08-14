@@ -55,6 +55,8 @@ import {
   SurfaceSamplerRegistryContext,
 } from './surface-sampler';
 import { useStackWater } from './useStackWater';
+import { ChunkContact } from './chunk-contacts';
+import { useChunkContacts } from './useChunkContacts';
 
 // Scratch for the camera-locked plane, which is rebuilt every frame.
 const sectionForward = new Vector3();
@@ -126,6 +128,16 @@ export type ChunkStackProps = {
    */
   water?: StackWater;
   /**
+   * Fluid contacts to draw as LINES through the whole column — an oil/water
+   * contact, a gas cap, or any other border-like level given as a depth grid.
+   *
+   * ⭐ Declared HERE rather than on a chunk, and deliberately NOT part of
+   * `surfaces`: a contact takes no part in the depth order, so it can neither
+   * truncate a horizon nor be truncated by one, and changing one rebuilds no
+   * geometry at all. See {@link ChunkContact}.
+   */
+  contacts?: ChunkContact[];
+  /**
    * Cut the whole stack with a plane and FILL the cut face per interval, so the
    * block reads as a geological section. See {@link ChunkSection}.
    *
@@ -188,6 +200,7 @@ export const ChunkStack = ({
   surfaces,
   carrier,
   water,
+  contacts,
   section,
   resolve,
   rimSpacing,
@@ -219,6 +232,16 @@ export const ChunkStack = ({
   const resolveKey = resolve ? JSON.stringify(resolve) : '';
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
   const stableResolve = useMemo(() => resolve, [resolveKey]);
+
+  // Same again: every chunk's MATERIALS depend on these, so a fresh array each
+  // render would rebuild all of them. ⚠️ The surface META is keyed by id only —
+  // its grid is what matters and that cannot change under a stable id.
+  const contactsKey = contacts
+    ? JSON.stringify(contacts.map(c => ({ ...c, surface: c.surface.id })))
+    : '';
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
+  const stableContacts = useMemo(() => contacts, [contactsKey]);
+  const contactTextures = useChunkContacts(stableContacts, utm?.utmToArea);
 
   // ⭐ ONE uniform object for the whole stack, handed to every material it draws
   // with — the chunks', the sea's, and the inference overlay's. A `ShaderMaterial`'s
@@ -601,6 +624,7 @@ export const ChunkStack = ({
       // Read off the LIVE prop, not the geometry-keyed copy, which is deliberately
       // stale whenever only the appearance changed.
       carrierMaterial: carrier?.material,
+      contacts: contactTextures,
       water: stableWater ?? null,
       section: sectionState,
       sectionUniform,
@@ -625,6 +649,7 @@ export const ChunkStack = ({
     column,
     stableCarrier,
     carrier?.material,
+    contactTextures,
     stableWater,
     sectionState,
     sectionUniform,

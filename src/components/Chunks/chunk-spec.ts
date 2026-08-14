@@ -201,7 +201,6 @@ export function buildSurfaceChunkSpec(
       capCuts: seam?.cuts.length
         ? seam.cuts.map(cut => indexOfCut(cut.polygon, cut.rimSpacing))
         : undefined,
-      fluid: !!layer.fluid,
     };
     return layer.surface
       ? { ...toLayerSpec(layer.surface, utmToArea), ...shared }

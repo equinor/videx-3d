@@ -112,12 +112,7 @@ export type SurfaceChunkSpecLayer = (
    * layer's cap where they reach. The partial-overlap case of the same decision:
    * this chunk draws its own footprint minus theirs.
    */
-  capCuts?: number[]; /**
-   * This boundary is a FLUID — a level rather than a horizon. Exempt from the
-   * depth order, and its lid is tessellated on its own terms. See
-   * `SurfaceStackOptions.fluid`.
-   */
-  fluid?: boolean;
+  capCuts?: number[];
 };
 
 /** A synthetic (data-free) boundary in a {@link SurfaceChunkSpec}. */
@@ -265,22 +260,14 @@ export type ChunkLayer = {
    */
   section?: boolean;
   /**
-   * This boundary is a FLUID CONTACT — a level inside a unit, not a horizon: an
-   * oil/water contact, a gas cap, a water table.
+   * Which of the stack's contacts draw on this unit, by id. Omit for ALL of them
+   * (the default), `false` for none.
    *
-   * It is CLAMPED into place by the horizons around it, like any boundary, but it
-   * never truncates what lies BELOW it. That asymmetry is the whole point: an
-   * ordinary layer here would drag the reservoir's base down wherever the contact
-   * sits deeper than it — an oil column with no water leg — and silently deform
-   * real geology. Where it has no room the interval simply pinches out, as any
-   * unit does.
-   *
-   * ⚠️ NOT the sea. Open water is declared once on the `ChunkStack`
-   * ({@link ChunkStackProps.water}), because it is a property of the column and
-   * because a chunk drawing part of it would draw its lid twice where two
-   * footprints overlap.
+   * ⚠️ Purely optional masking. A contact is drawn wherever its grid says it is,
+   * so an unrestricted one will also cross units that hold no fluid — restricting
+   * it is the HOST's interpretation, and the library will not infer it.
    */
-  fluid?: boolean;
+  contacts?: string[] | false;
 };
 
 /**
@@ -509,11 +496,6 @@ export function hasFill(fill: ChunkLayer['fill']): boolean {
 /** Whether a layer holds a volume below it. */
 export function chunkLayerFill(layer: ChunkLayer): boolean {
   return hasFill(layer.fill);
-}
-
-/** Content key for {@link ChunkLayer.fluid}, for the build's layer key. */
-export function chunkFluidKey(layer: ChunkLayer): string {
-  return layer.fluid ? '~' : '';
 }
 
 /**

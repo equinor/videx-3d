@@ -42,6 +42,7 @@ import { Tanker } from '../Tanker/Tanker';
 import { UtmArea } from '../UtmArea';
 import { Chunk } from './Chunk';
 import { ChunkLayer, ChunkResolveOptions, StackWater } from './chunk-defs';
+import { ChunkContact } from './chunk-contacts';
 import { ChunkStack } from './ChunkStack';
 import { ChunkInferenceStyle } from './inference-material';
 
@@ -137,33 +138,11 @@ const CLASS_COLOUR: Record<SedimentClass, string> = {
   basement: '#8a6f63',
 };
 
-/** The industry's fluid colours, and the basis of the tinted palette. */
-const FLUID_COLOUR = {
-  gas: '#c8452f',
-  oil: '#3f7a3f',
-  water: '#3f6fa8',
-} as const;
-
-/** The contact plane itself — a level between two legs, not a unit of its own. */
-const CONTACT_COLOUR = '#2b2b30';
-
-/** Mix two `#rrggbb` colours; `t` is the share of `b`. */
-function mixHex(a: string, b: string, t: number): string {
-  const channels = (hex: string) =>
-    [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
-  const from = channels(a);
-  const to = channels(b);
-  return `#${from
-    .map((c, i) =>
-      Math.round(c + (to[i] - c) * t)
-        .toString(16)
-        .padStart(2, '0'),
-    )
-    .join('')}`;
-}
-
-/** Unit names of the demo column, for the contact's host-unit control. */
-const UNIT_NAMES = getSyntheticColumn(syntheticColumnKeys[0]).map(u => u.name);
+/** The industry's fluid colours — the default the library also ships. */
+const CONTACT_DEFS = [
+  { id: 'goc', type: 'goc' as const, surfaceId: 'synthetic:contact-goc' },
+  { id: 'owc', type: 'owc' as const, surfaceId: 'synthetic:contact-owc' },
+];
 
 // Always-on OIT pipeline (SMAA), matching the sibling chunk stories.
 const ChunkPipeline = () => {
@@ -185,12 +164,11 @@ type SyntheticColumnProps = {
   outlineSize: number;
   maxError: number;
   contact: boolean;
-  contactUnit: string;
   gasContact: boolean;
-  gocDepth: number;
-  owcDepth: number;
-  contactRelief: number;
-  contactColours: 'tinted' | 'convention';
+  contactWidth: number;
+  contactWidthSpace: 'screen' | 'world';
+  contactDash: number;
+  contactGap: number;
   floor: boolean;
   floorClearance: number;
   floorColor: string;
@@ -400,6 +378,69 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
     };
   }, [store, selected]);
 
+  // Contacts are ordinary depth grids, fetched like any other surface — they are
+  // NOT part of `surfaces`, so they take no part in the depth order.
+  const [contactMetas, setContactMetas] = useState<Record<string, SurfaceMeta>>(
+    {},
+  );
+  useEffect(() => {
+    if (!store) return;
+    let cancelled = false;
+    (async () => {
+      const found = await Promise.all(
+        CONTACT_DEFS.map(async d => {
+          const meta = await store.get<SurfaceMeta>(
+            'surface-meta',
+            d.surfaceId,
+          );
+          return [d.id, meta] as const;
+        }),
+      );
+      if (cancelled) return;
+      setContactMetas(
+        Object.fromEntries(found.filter(([, m]) => !!m)) as Record<
+          string,
+          SurfaceMeta
+        >,
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [store]);
+
+  const contacts = useMemo<ChunkContact[] | undefined>(() => {
+    if (!props.contact) return undefined;
+    const built = CONTACT_DEFS.filter(
+      d => d.id !== 'goc' || props.gasContact,
+    ).flatMap(d => {
+      const surface = contactMetas[d.id];
+      if (!surface) return [];
+      return [
+        {
+          id: d.id,
+          surface,
+          type: d.type,
+          width: props.contactWidth,
+          widthSpace: props.contactWidthSpace,
+          dash:
+            props.contactDash > 0
+              ? ([props.contactDash, props.contactGap] as Vec2)
+              : undefined,
+        },
+      ];
+    });
+    return built.length ? built : undefined;
+  }, [
+    props.contact,
+    props.gasContact,
+    props.contactWidth,
+    props.contactWidthSpace,
+    props.contactDash,
+    props.contactGap,
+    contactMetas,
+  ]);
+
   const outline = useMemo<PlanarPolygonGeometry>(() => {
     const h = (props.outlineSize * 1000) / 2;
     const ring: Vec2[] = [
@@ -436,67 +477,6 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
         section: false,
       };
     }
-    // ⭐ Fluid contacts INSIDE a unit — an oil/water contact and a gas cap. A
-    // contact is a LEVEL, not a horizon, so `fluid` keeps it from ever becoming
-    // the authority for what lies below: the reservoir's base is not dragged down
-    // to make room for it, and where a leg has no room it simply pinches out.
-    const host = props.contact
-      ? info.findIndex(u => u.name === props.contactUnit)
-      : -1;
-    if (host >= 0 && host < units.length - 1) {
-      const rock = CLASS_COLOUR[selected[host]?.class ?? 'shale'];
-      const leg = (fluid: keyof typeof FLUID_COLOUR) =>
-        props.contactColours === 'tinted'
-          ? // Mostly the fluid: an even mix leaves the water leg indistinguishable
-            // from the sand it sits in.
-            mixHex(rock, FLUID_COLOUR[fluid], 0.7)
-          : FLUID_COLOUR[fluid];
-      // ⚠️ Clamped by the STORY: a gas cap cannot lie below the oil/water contact,
-      // and nothing in the library would put it right — two fluids in one unit are
-      // each measured against the nearest SOLID boundary above, never against each
-      // other, so crossing them would simply stay crossed.
-      const goc = Math.min(props.gocDepth, props.owcDepth);
-      const common = {
-        fluid: true,
-        material: CONTACT_COLOUR,
-        detail: units[host].detail,
-        // A kept unit is now two or three legs, and a slab missing its water leg
-        // is the hollow shell the flag exists to avoid.
-        section: units[host].section,
-        // Gravity makes a contact flat; anything else is a test of the relief path.
-        relief:
-          props.contactRelief > 0
-            ? {
-                kind: 'dunes' as const,
-                amplitude: props.contactRelief,
-                featureSize: 3000,
-                seed: 5,
-              }
-            : undefined,
-      };
-      const contacts: { name: string; layer: ChunkLayer }[] = [];
-      if (props.gasContact) {
-        contacts.push({
-          name: 'GOC',
-          layer: { ...common, depth: goc, fill: leg('oil') },
-        });
-      }
-      contacts.push({
-        name: 'OWC',
-        layer: { ...common, depth: props.owcDepth, fill: leg('water') },
-      });
-      // The host unit's own fill becomes the TOPMOST leg.
-      units[host] = {
-        ...units[host],
-        fill: props.gasContact ? leg('gas') : leg('oil'),
-      };
-      units.splice(host + 1, 0, ...contacts.map(c => c.layer));
-      info.splice(
-        host + 1,
-        0,
-        ...contacts.map(c => ({ name: c.name, class: 'fluid' })),
-      );
-    }
     // ⭐ The floor is asked for by the FILL on the last layer, and by nothing else:
     // a volume there has no next boundary to end on, so the column's carrier ends
     // it. Take the fill away and the block simply stops at its deepest surface,
@@ -513,13 +493,6 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
     props.detailStrength,
     props.floor,
     props.sectionKeep,
-    props.contact,
-    props.contactUnit,
-    props.gasContact,
-    props.gocDepth,
-    props.owcDepth,
-    props.contactRelief,
-    props.contactColours,
   ]);
 
   // The sea is the COLUMN's, not a chunk layer: one lid over the whole stack,
@@ -713,6 +686,7 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
           outline={outline}
           surfaces={column}
           water={water}
+          contacts={contacts}
           resolve={resolve}
           section={section}
           carrier={{
@@ -750,7 +724,7 @@ const meta = {
           'Each unit is deposited as `thickness = drape + fill · max(0, dPrev − datum)`: `drape` blankets the topography, `fill` levels it toward `datum`. Where the surface below is already shallower than the datum the unit has NO thickness, so it **pinches out over the highs** — a real zero-thickness termination, which the demo field only shows by accident.\n\n' +
           'The column also contains a **fault** (gridded into a ramp and dying out along strike — a height field cannot hold the break, so the surfaces are carried across it exactly as an interpreter would), a **partly-mapped unit** (a survey extent, not geology), and an **angular unconformity** whose truncated horizons are recorded as NO DATA by default, which is what an interpreter delivers and what makes them indistinguishable from a survey edge.\n\n' +
           '⭐ The SHALLOWEST surface is the SEA BED, and it is shaped rather than noised: a basin ~210 m deep, a coast rising out of it to ~45 m above sea level on one side, and an island standing off it with a hill on top (~99 m). Those are composable landform primitives (`ramp`, `dome`) with a little dune texture over them — noise alone reads as static, not as terrain. The sea is declared on the `ChunkStack` rather than as a chunk layer, and takes no part in the depth order, so the ground rises THROUGH the plane instead of being flattened onto it and the water body ends at the shoreline. `bedTint` then tints the bed toward the water colour BY DEPTH, so the shoreline appears on its own.\n\n' +
-          '⭐ The deep Rotliegend sand carries **fluid contacts** — a gas cap and an oil/water contact, as synthetic `fluid` layers. A contact is a LEVEL, not a horizon: it is clamped into place by the reservoir’s top like any boundary, but it is never the AUTHORITY for what lies below, so the base is never dragged down to make room for it. Both defaults are picked to STRADDLE their surface — the gas leg stands over ~43% of the block and pinches out over the highs, the water leg has no room over ~29% of it — so the pinch-out is the thing you see, not a deformed base. Peel to the reservoir or cut a section through it to see the legs. See the Contacts group.\n\n' +
+          '⭐ The column carries **fluid contacts** — a GOC at ~2200 m and an OWC at ~2600 m — drawn as LINES rather than as coloured volumes. A contact is an ordinary depth grid (mostly flat, same conventions as a horizon) but it is deliberately NOT a stack layer: it takes no part in the depth order, so it can neither truncate a horizon nor be truncated by one, and it carves the rock into nothing. It is drawn per FRAGMENT wherever the geometry’s own height crosses the contact’s grid, so ONE test gives both the accumulation outline on a cap and the horizontal line on a section face or a wall — note how the lines run dead flat across the dipping strata. ⭐ Being pure shading, swapping a contact rebuilds no geometry at all. See the Contacts group.\n\n' +
           '⭐ Everything about the column — grid size and resolution, number of units, structure, seed, erosion encoding, where the fault and the unconformity fall — comes from the `COLUMN` constants in `src/storybook/data/synthetic-surfaces.ts`. Change one and reload to get a different field.\n\n' +
           'A **tanker** floats in the sea for scale — 253 m against a 7 km field. It reads the wave sampler and the contact-foam registry the `ChunkStack` provides, exactly as it would inside an `<Ocean>`, so it heaves with the swell and spreads foam where it meets the water.\n\n' +
           '⭐⭐ Because every relationship is known, a crossing or a mis-ordering reported here is unambiguously a pipeline bug — with ONE caveat. `crossings` and `maxOverlap` are measured on the column BEFORE the order is enforced, and the seal’s tapers legitimately pass through each other there (see chunks.md §10.7), so they read non-zero whenever a layer is sealed: turn `seal` off, or draw a range with no partly-mapped unit, to see them fall to zero. ⚠️ The fluid contacts cannot contribute to either figure — both count COLUMN pairs, and a contact is a chunk-private synthetic layer.',
@@ -770,12 +744,11 @@ export const Default: Story = {
     outlineSize: 7,
     maxError: 5,
     contact: true,
-    contactUnit: 'Rotliegend',
     gasContact: true,
-    gocDepth: 2200,
-    owcDepth: 2600,
-    contactRelief: 0,
-    contactColours: 'convention',
+    contactWidth: 2,
+    contactWidthSpace: 'screen',
+    contactDash: 0,
+    contactGap: 6,
     floor: true,
     floorClearance: 400,
     floorColor: '#6b6b6b',
@@ -874,45 +847,37 @@ export const Default: Story = {
     contact: {
       control: 'boolean',
       description:
-        'Put FLUID CONTACTS inside one unit — an oil/water contact, and optionally a gas cap above it. ⭐ A contact is a LEVEL, not a horizon: `fluid: true` keeps it out of the depth order’s authority chain, so it is clamped into place by the reservoir’s top but never truncates the base below it. Without that flag an ordinary layer here would drag the reservoir’s base down wherever the contact sits deeper than it — an oil column with no water leg — and silently deform real geology.\n\n⚠️ NOT the sea, which is declared once on the `ChunkStack` (see the Water group).',
-      table: { category: 'Contacts' },
-    },
-    contactUnit: {
-      control: 'select',
-      options: UNIT_NAMES,
-      description:
-        'The unit the contacts sit in, named by its TOP surface. `Rotliegend` is the deep sand: it lies BELOW the fault, so its top is offset by the throw, and both its boundaries carry real structure (top 2059–2312 m, base 2317–2808 m) — which is what lets both legs pinch out. ⚠️ `Jurassic` is the other sand and is the instructive contrast: its `fill` levels it almost flat (1327–1358 m), so a gas cap there can only ever be a ~30 m sliver. ⚠️ Ignored when the chosen unit is outside the drawn range (see `from` / `count`).',
+        'Draw FLUID CONTACTS as lines. ⭐ A contact is an ordinary depth grid — mostly flat, same conventions as a horizon — but it is deliberately NOT a stack layer: it takes no part in the depth order, so it can neither truncate a horizon nor be truncated by one, and it carves the rock into nothing. It is drawn per FRAGMENT, wherever the geometry’s own height crosses the contact’s grid.\n\n⭐⭐ One test covers every view: on the reservoir cap the line is the ACCUMULATION OUTLINE (the closed contour where the flat contact meets the domed top), and on a section face or a wall it is the familiar horizontal contact line. Turn `section` on to see the second.\n\n⭐ Because it is pure shading, changing a contact rebuilds NO geometry — which is what makes sweeping many realisations affordable.\n\n⚠️ Drawn on every unit unless the host says otherwise (`ChunkLayer.contacts`), so it will also cross rock that holds no fluid. Restricting it to a unit is interpretation, and the library will not invent it.',
       table: { category: 'Contacts' },
     },
     gasContact: {
       control: 'boolean',
       description:
-        'Add a gas/oil contact above the oil/water one, so the unit holds three legs. ⚠️ The two contacts are NOT ordered against each other — each fluid is measured against the nearest SOLID boundary above it — so the story clamps the gas cap to the OWC itself rather than leaving a crossing the library would not fix.',
+        'Also draw the gas/oil contact at ~2200 m, above the oil/water contact at ~2600 m.',
       table: { category: 'Contacts' },
     },
-    gocDepth: {
-      control: { type: 'range', min: 1250, max: 2800, step: 25 },
+    contactWidth: {
+      control: { type: 'range', min: 0.5, max: 20, step: 0.5 },
       description:
-        'Gas/oil contact, metres below sea level (POSITIVE-DOWN, as surfaces are given). ⭐ Raise it through the reservoir’s top and the gas leg pinches out over the highs: the contact is clamped onto the top like any boundary, and the leg above it collapses for having no thickness. At the default it stands above ~43% of the Rotliegend.',
+        'Line width, in PIXELS or in METRES depending on `contactWidthSpace`.',
       table: { category: 'Contacts' },
     },
-    owcDepth: {
-      control: { type: 'range', min: 1250, max: 2800, step: 25 },
-      description:
-        'Oil/water contact, metres below sea level. ⭐ Push it BELOW the reservoir’s base and nothing is deformed: the base stays where the geology put it and the water leg simply pinches out over the crests, which is the whole reason a contact is a fluid. At the default it has no room over ~29% of the Rotliegend — watch `droppedCollapsed` on the OWC row in the console table.',
-      table: { category: 'Contacts' },
-    },
-    contactRelief: {
-      control: { type: 'range', min: 0, max: 100, step: 5 },
-      description:
-        'Amplitude of a dune field on the contacts, in metres. ⚠️ Deliberately unphysical — gravity makes a contact flat — and here only to exercise the relief path on a synthetic layer that is also a fluid.',
-      table: { category: 'Contacts' },
-    },
-    contactColours: {
+    contactWidthSpace: {
       control: 'inline-radio',
-      options: ['tinted', 'convention'],
+      options: ['screen', 'world'],
       description:
-        'How the legs are coloured. `convention` is the industry’s (gas red, oil green, water blue) and is the default because it is the more legible — the three legs separate at a glance. `tinted` mixes those into the host unit’s own colour, so they still read as ONE rock holding several fluids, which is what they are; it is the better statement and the worse demo.',
+        '`screen` keeps the line a constant width on screen at any zoom — the right default for an annotation, and what makes it legible across a 7 km field. `world` measures it in metres, so it thins out as you zoom away and reads as a physical band.',
+      table: { category: 'Contacts' },
+    },
+    contactDash: {
+      control: { type: 'range', min: 0, max: 40, step: 1 },
+      description:
+        'Dash length in pixels; 0 for a solid line. ⚠️ Best-effort: the line is an implicit contour with no arc length, so the dash is stepped along the line in SCREEN space (from the gradient direction). It degrades where the line turns within a pixel or runs nearly edge-on.',
+      table: { category: 'Contacts' },
+    },
+    contactGap: {
+      control: { type: 'range', min: 1, max: 40, step: 1 },
+      description: 'Gap between dashes, in pixels.',
       table: { category: 'Contacts' },
     },
     floor: {

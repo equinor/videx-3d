@@ -126,8 +126,6 @@ type PerChunkStoryProps = {
   seal: boolean;
   sealMode: 'proportional' | 'void';
   minThickness: number;
-  showWater: boolean;
-  waterDepth: number;
   seabed: 'none' | 'procedural';
   seabedDepth: number;
   seabedRelief: number;
@@ -467,22 +465,10 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
                 options: { radius: marginAt(i, chunkProps.length) },
               }}
               // The uppermost surface of the whole stack may use the real
-              // SurfaceMaterial — now just a material on that layer. The water is a
-              // plain-coloured FLUID layer sitting above it, NOT the sea: it draws
-              // with ordinary chunk materials and nothing is truncated by it.
+              // SurfaceMaterial — now just a material on that layer.
               layers={
                 i === 0
                   ? [
-                      ...(props.showWater
-                        ? [
-                            {
-                              depth: props.waterDepth,
-                              fluid: true,
-                              material: '#3fa9d8',
-                              fill: '#2f7fa8',
-                            },
-                          ]
-                        : []),
                       ...(props.seabed === 'procedural'
                         ? [
                             {
@@ -569,8 +555,6 @@ export const Default: Story = {
     seal: true,
     sealMode: 'proportional',
     minThickness: 1,
-    showWater: false,
-    waterDepth: 0,
     seabed: 'none',
     seabedDepth: 320,
     seabedRelief: 120,
@@ -723,18 +707,6 @@ export const Default: Story = {
       description:
         'How much of a neighbouring unit a seal must leave standing, in metres — the only setting the shape of a seal has (how far it reaches is derived from the gap it closes, measured inside the chunk). ⚠️ Keep it above `collapseThreshold`, or the sliver it leaves is dropped for having no thickness and the hole comes back.',
       table: { category: 'Resolve' },
-    },
-    showWater: {
-      control: 'boolean',
-      description:
-        'Add a plain-coloured water plane above the first chunk — a synthetic layer with a `depth` instead of a surface, marked `fluid`. ⚠️ NOT the sea: open water is declared once on the `ChunkStack` (`water`), which brings the animated ocean shaders with it. See `Spikes/Chunks/SyntheticColumn` for that.',
-      table: { category: 'Water' },
-    },
-    waterDepth: {
-      control: { type: 'range', min: 0, max: 3000, step: 10 },
-      description:
-        'Metres below sea level for the water plane (POSITIVE-DOWN, same convention as surfaces). ⭐ A FLUID is never the AUTHORITY for what lies below it, so pushing it past the surface underneath does not flatten that surface onto it — the ground simply goes under. Being the chunk’s first layer, nothing clamps it either. See chunks.md §6.1.',
-      table: { category: 'Water' },
     },
     seabed: {
       control: { type: 'inline-radio' },

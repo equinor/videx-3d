@@ -9,6 +9,7 @@ import {
   StackWater,
 } from './chunk-defs';
 import { CutoutSource } from './cutout';
+import { ChunkContactTexture } from './chunk-contacts';
 import { SeamDecision } from './seams';
 
 /**
@@ -66,6 +67,12 @@ export type ChunkStackContextValue = {
    * it would make recolouring the floor rebuild the geometry.
    */
   carrierMaterial?: string | Material;
+  /**
+   * Fluid contacts drawn as LINES across whatever face crosses them, prepared as
+   * textures. APPEARANCE only, like `carrierMaterial`: a contact takes no part in
+   * the depth order and never joins a build spec.
+   */
+  contacts?: ChunkContactTexture[] | null;
   /**
    * The sea over the whole column, when the caller declared one (see
    * `ChunkStackProps.water`). Chunks read it for APPEARANCE only — the bed tint on

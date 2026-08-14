@@ -11,6 +11,7 @@ import {
   DEFAULT_OCEAN_DEEP_COLOR,
   DEFAULT_OCEAN_WATER_OPACITY,
 } from '../Ocean/ocean-material';
+import { ChunkContactTexture, resolveLayerContacts } from './chunk-contacts';
 import { ChunkDetail } from './chunk-detail';
 import { ChunkMaterial, ChunkWaterTintParameters } from './chunk-material';
 import {
@@ -69,6 +70,8 @@ export type ChunkMeshesProps = {
    * floor is drawn with the fill of the unit resting on it.
    */
   carrierMaterial?: string | Material;
+  /** contacts drawn as lines on every layer that does not opt out */
+  contacts?: ChunkContactTexture[] | null;
   /**
    * The stack's live clip plane, if any (see `ChunkStackProps.section`). Drives
    * both the shader's cut and the cut FACE built from the chunk's own channels.
@@ -136,6 +139,7 @@ export const ChunkMeshes = ({
   showWalls = true,
   water = null,
   carrierMaterial,
+  contacts = null,
   section = null,
   sectionUniform,
   sectionUniformInverse,
@@ -152,7 +156,11 @@ export const ChunkMeshes = ({
       detail?: ChunkDetail,
       wall = false,
       waterTint?: ChunkWaterTintParameters,
-      options?: { section?: boolean; uniform?: IUniform<Vector4> },
+      options?: {
+        section?: boolean;
+        uniform?: IUniform<Vector4>;
+        contacts?: ChunkContactTexture[];
+      },
     ) => {
       const material = new ChunkMaterial({
         color,
@@ -163,6 +171,7 @@ export const ChunkMeshes = ({
         detail,
         wall,
         waterTint,
+        contacts: options?.contacts,
         sectionPlane:
           options?.uniform ??
           (options?.section === false ? undefined : sectionUniform),
@@ -170,6 +179,14 @@ export const ChunkMeshes = ({
       owned.push(material);
       return material;
     };
+
+    // ⚠️ Every contact on every layer unless the caller says otherwise: a contact
+    // is interpreted data drawn as given, and masking it to a unit is the host's
+    // interpretation to add.
+    const layerContacts = (i: number) =>
+      contacts
+        ? resolveLayerContacts(contacts, layers[i]?.contacts)
+        : undefined;
 
     const paletteAt = (i: number) =>
       DEFAULT_PALETTE[i % DEFAULT_PALETTE.length];
@@ -208,7 +225,7 @@ export const ChunkMeshes = ({
             layer.detail,
             false,
             i === 0 ? waterTint : undefined,
-            { section: cutCap(i) },
+            { section: cutCap(i), contacts: layerContacts(i) },
           ),
     );
 
@@ -244,6 +261,7 @@ export const ChunkMeshes = ({
             undefined,
             {
               section: cutWall(i),
+              contacts: layerContacts(i),
             },
           );
     });
@@ -262,7 +280,7 @@ export const ChunkMeshes = ({
             layer.detail,
             false,
             undefined,
-            { section: !keptUnit(i) },
+            { section: !keptUnit(i), contacts: layerContacts(i) },
           );
     });
 
@@ -294,7 +312,7 @@ export const ChunkMeshes = ({
           declared.detail,
           false,
           surface.layer === 0 ? waterTint : undefined,
-          { section: false },
+          { section: false, contacts: layerContacts(surface.layer) },
         ),
         cut: sectionUniformInverse
           ? make(
@@ -303,7 +321,10 @@ export const ChunkMeshes = ({
               declared.detail,
               false,
               surface.layer === 0 ? waterTint : undefined,
-              { uniform: sectionUniformInverse },
+              {
+                uniform: sectionUniformInverse,
+                contacts: layerContacts(surface.layer),
+              },
             )
           : null,
       });
@@ -318,6 +339,7 @@ export const ChunkMeshes = ({
     wireframe,
     water,
     carrierMaterial,
+    contacts,
     sectionUniform,
     sectionUniformInverse,
     sectionCarrier,

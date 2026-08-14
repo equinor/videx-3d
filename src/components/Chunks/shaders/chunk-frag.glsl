@@ -37,6 +37,88 @@ varying float vWaterDepth;
 varying float vSectionDist;
 #endif
 
+#ifdef CHUNK_CONTACTS
+uniform sampler2D contactMap[CHUNK_CONTACTS];
+uniform mat3 contactToUv[CHUNK_CONTACTS];   // object XZ -> uv
+uniform vec3 contactColor[CHUNK_CONTACTS];
+uniform vec4 contactStyle[CHUNK_CONTACTS];  // x: half width, y: 1 world / 0 screen, z: dash, w: gap
+uniform vec4 contactSize[CHUNK_CONTACTS];   // xy: grid size in texels, z: opacity, w: max world half width
+varying vec3 vObjectPos;
+
+// ⚠️ Bilinear by hand. The texture is NEAREST-filtered (linear filtering of a
+// 32-bit float texture needs an extension, and half float cannot hold a depth of
+// a few thousand metres to better than a couple of metres).
+//
+// ⚠⚠ Returns COVERAGE (0..1) rather than a bool, and always writes a `contactY`.
+// An early return here would put the caller's `fwidth` in NON-UNIFORM control
+// flow at the edge of the mapped area — undefined, and it painted a vertical tick
+// off the end of every line. R is filled on the CPU so it stays continuous across
+// that edge; G alone decides what is visible.
+float sampleContact(sampler2D map, mat3 toUv, vec2 size, out float contactY) {
+  vec2 texel = (toUv * vec3(vObjectPos.x, vObjectPos.z, 1.0)).xy * size - 0.5;
+  vec2 base = floor(texel);
+  vec2 f = texel - base;
+  float sum = 0.0;
+  float weight = 0.0;
+  float coverage = 0.0;
+  for (int j = 0; j < 2; j++) {
+    for (int i = 0; i < 2; i++) {
+      vec2 at = base + vec2(float(i), float(j));
+      float w = (i == 0 ? 1.0 - f.x : f.x) * (j == 0 ? 1.0 - f.y : f.y);
+      if (at.x < 0.0 || at.y < 0.0 || at.x > size.x - 1.0 || at.y > size.y - 1.0) continue;
+      vec2 s = texture2D(map, (at + 0.5) / size).rg;
+      sum += s.r * w;
+      weight += w;
+      coverage += s.g * w;
+    }
+  }
+  contactY = weight > 0.0 ? sum / weight : 0.0;
+  return coverage;
+}
+
+// Blend one contact's line over the shaded colour.
+vec3 contactLine(float contactY, vec4 style, vec3 lineColor, float lineOpacity, float maxHalf, vec3 base) {
+  // Signed height of this fragment above the contact. Its zero contour IS the
+  // line, so a cap gives the accumulation outline and a cut face gives the
+  // horizontal section line, from one test.
+  float d = vObjectPos.y - contactY;
+  float aa = max(fwidth(d), 1e-6);
+
+  // ⚠⚠ Both modes threshold in WORLD units, and the screen width is CAPPED there.
+  // `fwidth` is taken over the 2x2 fragment quad, so at a silhouette or a block
+  // corner the quad straddles two faces and the derivative comes back far larger
+  // than the true per-pixel gradient — which, in a plain `abs(d) / aa` test, lets
+  // fragments hundreds of metres from the contact pass and paints the line up and
+  // down the corner. The cap cannot repair the derivative; it bounds the damage.
+  // ⚠️ The trade is real: at a genuinely grazing angle a screen-constant line wants
+  // to be wide in world units, so it thins there instead of holding its pixels.
+  float halfWidth = style.y > 0.5 ? style.x : min(style.x * aa, maxHalf);
+  float feather = style.y > 0.5 ? aa : 0.5 * aa;
+  float line = 1.0 - smoothstep(halfWidth - feather, halfWidth + feather, abs(d));
+
+  // ⚠️ Best-effort dashes. An implicit contour has no arc length, but its
+  // direction in SCREEN space is perpendicular to the gradient of `d`, so the
+  // pattern can at least run along the line rather than across it.
+  if (style.z > 0.0) {
+    vec2 g = vec2(dFdx(d), dFdy(d));
+    float gl = length(g);
+    if (gl > 1e-9) {
+      float along = dot(gl_FragCoord.xy, vec2(-g.y, g.x) / gl);
+      float t = mod(along, style.z + style.w);
+      line *= 1.0 - smoothstep(style.z - 0.5, style.z + 0.5, t);
+    }
+  }
+
+  return mix(base, lineColor, clamp(line * lineOpacity, 0.0, 1.0));
+}
+
+// ⚠️ Unrolled, not looped: GLSL ES 1.00 will not index a SAMPLER array with a
+// loop variable, only with a constant expression.
+// ⚠️ Called unconditionally, and coverage folded into the opacity — branching on
+// "has a contact here" is what broke the derivatives at the pocket edge.
+#define CHUNK_CONTACT(I) { float cy; float cov = sampleContact(contactMap[I], contactToUv[I], contactSize[I].xy, cy); outgoingLight = contactLine(cy, contactStyle[I], contactColor[I], contactSize[I].z * cov, contactSize[I].w, outgoingLight); }
+#endif
+
 #include <common>
 #include <dithering_pars_fragment>
 #include <color_pars_fragment>
@@ -216,6 +298,33 @@ void main() {
     float facing = smoothstep(-0.15, 0.15, tintNormal.y);
     outgoingLight = mix(outgoingLight, waterTintColor, clamp(absorb * waterTintParams.y * facing, 0.0, 1.0));
   }
+  #endif
+
+  #ifdef CHUNK_CONTACTS
+  #if CHUNK_CONTACTS > 0
+  CHUNK_CONTACT(0)
+  #endif
+  #if CHUNK_CONTACTS > 1
+  CHUNK_CONTACT(1)
+  #endif
+  #if CHUNK_CONTACTS > 2
+  CHUNK_CONTACT(2)
+  #endif
+  #if CHUNK_CONTACTS > 3
+  CHUNK_CONTACT(3)
+  #endif
+  #if CHUNK_CONTACTS > 4
+  CHUNK_CONTACT(4)
+  #endif
+  #if CHUNK_CONTACTS > 5
+  CHUNK_CONTACT(5)
+  #endif
+  #if CHUNK_CONTACTS > 6
+  CHUNK_CONTACT(6)
+  #endif
+  #if CHUNK_CONTACTS > 7
+  CHUNK_CONTACT(7)
+  #endif
   #endif
 
   #include <opaque_fragment>

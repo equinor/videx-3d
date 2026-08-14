@@ -636,40 +636,80 @@ against the base of its own unit is the same geometry as a shoreline. Clamped on
 there — everywhere else the resolve guarantees the order, and clamping silently
 would hide a crossing instead of reporting it.
 
-#### 6.1.1 The interior contact, demonstrated (2026-08-14)
+#### 6.1.1 Contacts are LINES, not legs (rewritten 2026-08-14)
 
-Until now `fluid` was exercised only as a water plane on TOP of a stack
-(`WellborePerChunk`) and by unit tests of the resolve and the wall clamp. The
-CONTACT case — a level inside a unit, which is what the flag is documented for —
-is now drawn in `Spikes/Chunks/SyntheticColumn`: a gas cap and an oil/water
-contact in the deep Rotliegend sand, as chunk-private synthetic layers
-(`{ depth, fluid: true }`) spliced between the reservoir's top and base. It needed
-no library change, which was the point of running it.
+An earlier version of this section described contacts as `fluid` LAYERS spliced
+into a unit, carving it into gas, oil and water legs. ⚠️ **That model is removed**,
+along with `ChunkLayer.fluid`. It was wrong in a way worth recording, because the
+failure was invisible from every angle available at the time.
 
-⭐ **Two fluids in one unit are not ordered against EACH OTHER.** The cascade
-looks through a fluid to the nearest solid layer, so a GOC and an OWC below it are
-both measured against the reservoir's top and never against one another — put the
-gas cap below the oil/water contact and the crossing simply stays. Sound (a fluid
-must not be an authority, and that includes over another fluid) but worth stating,
-because "everything is ordered" is the reasonable assumption. The story clamps its
-own gas cap to its OWC rather than leaving it to the library.
+⭐⭐ **An interval whose FLOOR is a fluid has no solid bound.** A fluid is clamped
+by the solid above it and, correctly, never becomes the authority for what lies
+below — but nothing clamped it UP to the base of its own unit. So where the
+reservoir base was shallower than the OWC, the oil leg (bounded below by that
+contact) continued straight through the base into the units underneath; and the
+water leg below it, having negative thickness, was not pinched out but drawn
+INVERTED, because the per-triangle rule keeps a triangle with thickness at any one
+corner. Three volumes over the same rock.
 
-⚠️ **A contact costs a full-footprint cap.** Both contacts drew 36,378 triangles
-each against a 475k-triangle block — a level really does span the whole block, so
-it is as expensive as a real horizon, not as cheap as the thin unit it sits in.
+⚠️ Why it survived a day of being looked at — the transferable part:
 
-⚠️ **Pick the host unit by its RELIEF, not by its lithology.** Measured on the
-generated column, the Jurassic sand's top spans only 31 m (1327–1358) because its
-`fill: 0.9` levels it, so a gas cap there is a sliver whatever depth it is given;
-the Rotliegend's spans 253 m and lies below the fault. A contact only pinches out
-where the surface it is measured against has structure — which is the whole
-behaviour worth looking at.
+- the spill is entirely INSIDE an opaque sealed block, and peeling exposes a unit
+  from ABOVE, so the one surface that would show it is the one peeling cannot;
+- `SurfaceChunkDiagnostics.crossings` is summed from the COLUMN's pairs, and a
+  chunk-private layer is not one of them — the counter built to catch exactly this
+  is structurally blind to it;
+- the per-layer table read healthy: `droppedCollapsed` on the OWC row is the water
+  leg pinching out, which is documented, expected behaviour;
+- ⚠️ `buildStackWalls` already patched the symptom locally (clamping a wall's
+  bottom edge to its top for any pair involving a fluid), which fixed the one place
+  it was visible and left the heights — and so the caps, the volumes and the
+  section cut face — untouched.
 
-⚠️ `SurfaceChunkDiagnostics.crossings` says nothing about a contact: it is
-summed from the COLUMN's pairs (`stackPairs`), and a chunk-private synthetic layer
-is not one of them. It is also non-zero whenever anything is SEALED, since the
-tapers cross before the resolve puts them right (§10.7) — so it is not the
-zero-means-healthy signal `SyntheticColumn` used to claim it was.
+**What replaced it.** A contact is an ordinary depth surface grid — mostly flat,
+same conventions as a horizon — declared on `ChunkStackProps.contacts` and drawn as
+a LINE by `ChunkMaterial`, per fragment, where the geometry's own height crosses
+the contact's. It is emphatically NOT a stack layer:
+
+- it takes no part in the depth order, so it can neither truncate a horizon nor be
+  truncated by one, and the spill above is unrepresentable;
+- it never enters `ChunkStack.surfaces`, so it never reaches `resolveStackGrid`
+  (which has no fluid concept at all), the column seal, or the column cache key;
+- ⭐ it is pure APPEARANCE — swapping a realisation is a texture upload, not a
+  geometry rebuild, which is what makes sweeping many realisations affordable.
+
+⭐⭐ **One per-fragment test covers every view.** Shading where
+`objectY ≈ contact(x, z)` puts the line on whatever face is exposed: the
+accumulation outline on a reservoir cap (the closed contour where a flat contact
+meets a domed top), the horizontal line on a section cut face, and the same line on
+the block's outer walls. Cut faces are drawn with the same `ChunkMaterial`
+instances (§15.9.3), so they are covered with no extra work.
+
+**Encoding.** One `RG` float texture per contact: R the contact's scene Y, G its
+validity. ⚠️ Two channels because the grid's nodata sentinel is a legal float that
+would otherwise draw a contact at an absurd depth. ⚠️ NEAREST filtering with the
+bilinear done in the shader, because linear filtering of a 32-bit float texture
+needs an extension and half float cannot hold a few thousand metres to better than
+a couple of metres — doing it in the shader also lets an unmapped neighbour REJECT
+the sample rather than bleed into it. The object-XZ → uv affine is recovered by
+evaluating `surfaceWorldToGrid` at three points, so it cannot drift from the
+placement the geometry is built with.
+
+⚠️ **Scope belongs to the host.** A contact draws on every layer unless
+`ChunkLayer.contacts` says otherwise, so an unrestricted one will cross units that
+hold no fluid. Deliberate: this visualises interpreted data as given, and masking a
+contact to a unit is interpretation to be added, never inferred.
+
+⚠️ Limits: no line across a GAP between layers (nothing there to shade) and none on
+a caller-supplied `Material` — the same limitation `detail`, the inference marking
+and the section cut all carry. Dashes run along the line in SCREEN space, derived
+from the gradient direction, since an implicit contour has no arc-length
+parameterisation; they degrade where the line turns within a pixel.
+
+⚠️⚠️ The SDK's `fluid` machinery stays exactly as it is: the SEA depends on it
+(`stack-water-generator` passes `fluid: [true, false]`), and the sea never had this
+bug because its floor is the sea bed — a solid. Only the component-level layer flag
+is gone.
 
 ### 6.2 The lid is tessellated on its own terms
 

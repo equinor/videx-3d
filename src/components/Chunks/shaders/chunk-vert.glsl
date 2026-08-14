@@ -39,6 +39,13 @@ uniform vec4 sectionPlane;
 varying float vSectionDist;
 #endif
 
+#ifdef CHUNK_CONTACTS
+// OBJECT space for the same reason the water tint's depth is: a contact grid is in
+// metres, and a vertical exaggeration would rescale a world-space height away from
+// them. XZ locates the contact texture, Y is what the line is drawn against.
+varying vec3 vObjectPos;
+#endif
+
 #include <common>
 #include <fog_pars_vertex>
 #include <normal_pars_vertex>
@@ -71,6 +78,10 @@ void main() {
 
   #ifdef CHUNK_SECTION
   vSectionDist = dot(sectionPlane.xyz, transformed) + sectionPlane.w;
+  #endif
+
+  #ifdef CHUNK_CONTACTS
+  vObjectPos = transformed;
   #endif
 
   #include <worldpos_vertex>

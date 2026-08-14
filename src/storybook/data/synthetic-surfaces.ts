@@ -54,6 +54,19 @@ type Scenario = {
   /** grid rotation in degrees. Defaults to the demo surveys' 220. */
   rot?: number;
   spec: SurfaceFieldSpec;
+  /**
+   * Map this surface only inside a structural CLOSURE — where the named unit's
+   * top is shallower than this surface, which is where a fluid could accumulate.
+   *
+   * ⚠️ `margin` metres past the crossing, because the crossing IS the
+   * accumulation outline: the contact shader rejects a sample whose neighbouring
+   * texels are unmapped, so an outline sitting exactly on the data edge would be
+   * clipped away.
+   *
+   * ⚠️ Assumes the same grid as the column, which is true by construction here
+   * (both are `COLUMN.nodes` at `CELL`/`ROT`) and checked before it is used.
+   */
+  closure?: { column: string; unit: string; margin: number };
 };
 
 /**
@@ -114,6 +127,30 @@ const SCENARIOS: Record<string, Scenario> = {
           [-3.5 * KM, 2.5 * KM],
         ],
       },
+    },
+  },
+
+  // ⭐ Fluid contacts. Near-flat by nature — a level, with only the slight
+  // variation a density difference produces. The GAS CAP is mapped only inside
+  // the structural closure it could collect in; the OWC spans the whole
+  // accumulation, as a real one does.
+  'contact-goc': {
+    name: 'Synthetic GOC',
+    nx: 400,
+    ny: 400,
+    spec: {
+      base: 2200,
+      relief: [{ amplitude: 6, featureSize: 5000, seed: 11 }],
+    },
+    closure: { column: 'field', unit: 'Rotliegend', margin: 40 },
+  },
+  'contact-owc': {
+    name: 'Synthetic OWC',
+    nx: 400,
+    ny: 400,
+    spec: {
+      base: 2600,
+      relief: [{ amplitude: 4, featureSize: 5000, seed: 12 }],
     },
   },
 
@@ -532,6 +569,59 @@ export function isSyntheticSurfaceId(id: unknown): id is string {
 }
 
 /**
+ * Cut a contact back to the structural closure of the unit it sits in — a
+ * hydrocarbon accumulates only where the reservoir top rises ABOVE the contact.
+ *
+ * ⭐ Derived rather than drawn: the pocket follows the column's own structure, so
+ * it stays correct if the seed or the fault changes, and it needs no polygon.
+ *
+ * ⚠️ `min`/`max` describe the MAPPED field, so masking has to rebase the values:
+ * they are stored as `max - depth`, so a `max` left over from the unmasked field
+ * would decode every sample against a reference depth no longer present.
+ */
+function applyClosure(
+  generated: {
+    values: Float32Array;
+    min: number;
+    max: number;
+    nullValue: number;
+  },
+  closure: { column: string; unit: string; margin: number },
+) {
+  const units = getSyntheticColumn(closure.column);
+  const top = units.find(u => u.name === closure.unit);
+  const reservoir = top ? cache.get(top.id) : null;
+  if (!reservoir || reservoir.values.length !== generated.values.length) return;
+
+  const { values, max, nullValue } = generated;
+  const topMax = reservoir.meta.max;
+  let min = Infinity;
+  let deepest = -Infinity;
+  for (let i = 0; i < values.length; i++) {
+    if (values[i] === nullValue) continue;
+    const depth = max - values[i];
+    const tv = reservoir.values[i];
+    // Unmapped reservoir means no trap to speak of, not a shallow one.
+    const topDepth = tv === nullValue ? Infinity : topMax - tv;
+    if (topDepth >= depth + closure.margin) {
+      values[i] = nullValue;
+      continue;
+    }
+    if (depth < min) min = depth;
+    if (depth > deepest) deepest = depth;
+  }
+  if (!Number.isFinite(min)) return;
+
+  generated.min = min;
+  generated.max = deepest;
+  const shift = deepest - max;
+  if (shift === 0) return;
+  for (let i = 0; i < values.length; i++) {
+    if (values[i] !== nullValue) values[i] += shift;
+  }
+}
+
+/**
  * Generate (once) and return a scenario. Memoized so the meta and the values are
  * guaranteed to describe the same realization — `min`/`max` are outputs of
  * generation, not inputs, so generating twice would risk two different answers.
@@ -560,6 +650,7 @@ export function getSyntheticSurface(id: string): SyntheticSurface | null {
   const header = { nx, ny, xinc: CELL, yinc: CELL, rot };
 
   const generated = generateSurfaceValues(scenario.spec, header, worldPosition);
+  if (scenario.closure) applyClosure(generated, scenario.closure);
 
   const meta: SurfaceMeta = {
     id,

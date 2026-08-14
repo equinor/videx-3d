@@ -29,7 +29,6 @@ import { PointerEvents } from '../../events/interaction-events';
 import {
   ChunkBuildState,
   CARRIER_SEAM_ID,
-  chunkFluidKey,
   ChunkLayer,
   chunkLayerFill,
   ChunkResolveOptions,
@@ -213,7 +212,7 @@ export const Chunk = ({
         : // Serialised whole: a relief is a union of shapes with fields of their
           // own, and a hand-written list of them goes stale silently.
           `@${l.depth ?? ''}/${l.offset ?? ''}/${l.relief ? JSON.stringify(l.relief) : ''}`;
-      return `${base}:${chunkLayerFill(l) ? 1 : 0}${chunkFluidKey(l)}`;
+      return `${base}:${chunkLayerFill(l) ? 1 : 0}`;
     })
     .join(',');
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
@@ -793,6 +792,7 @@ export const Chunk = ({
           peel={peel}
           water={stack.water}
           carrierMaterial={stack.carrierMaterial}
+          contacts={stack.contacts}
           section={stack.section}
           sectionUniform={stack.sectionUniform}
           sectionUniformInverse={stack.sectionUniformInverse}

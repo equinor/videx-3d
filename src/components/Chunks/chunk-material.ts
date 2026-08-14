@@ -13,6 +13,7 @@ import {
 } from 'three';
 import { attachOitVariants } from '../../rendering/oit-material';
 import { Vec2 } from '../../sdk';
+import { ChunkContactTexture } from './chunk-contacts';
 import { ChunkDetail, resolveChunkDetail } from './chunk-detail';
 import fragmentShader from './shaders/chunk-frag.glsl';
 import vertexShader from './shaders/chunk-vert.glsl';
@@ -97,6 +98,18 @@ export type ChunkMaterialParameters = {
    * sectioning on or off means a new material. Moving the plane does not.
    */
   sectionPlane?: IUniform<Vector4>;
+  /**
+   * Fluid contacts to draw as LINES on this layer, where the geometry's own height
+   * crosses the contact's grid.
+   *
+   * ⭐ One per-fragment test covers every view: on a cap it draws the accumulation
+   * outline, on a section face or a wall the horizontal contact line. Nothing is
+   * built for it, so a contact can be swapped or swept without rebuilding anything.
+   *
+   * ⚠️ Read at CONSTRUCTION, like `detail`: the COUNT sets a define. Moving a
+   * contact's data means a new texture, but not a new material.
+   */
+  contacts?: ChunkContactTexture[];
 };
 
 const shader = {
@@ -198,6 +211,8 @@ export class ChunkMaterial extends ShaderMaterial {
       this.uniforms.sectionPlane = parameters.sectionPlane;
     }
 
+    this.applyContacts(parameters.contacts);
+
     attachOitVariants(this);
   }
 
@@ -267,5 +282,31 @@ export class ChunkMaterial extends ShaderMaterial {
       tint.strength,
       1 / Math.max(tint.depth, 1e-3),
     );
+  }
+
+  /** Bind the contact textures and enable the shader's loop over them. */
+  private applyContacts(contacts: ChunkContactTexture[] | undefined) {
+    const defines = this.defines as Record<string, unknown>;
+    delete defines.CHUNK_CONTACTS;
+    if (!contacts || contacts.length === 0) return;
+
+    defines.CHUNK_CONTACTS = contacts.length;
+    // Added rather than cloned from the base: the arrays are sized by this
+    // material's own contact count, which the shared template cannot know.
+    this.uniforms.contactMap = { value: contacts.map(c => c.texture) };
+    this.uniforms.contactToUv = { value: contacts.map(c => c.toUv) };
+    this.uniforms.contactColor = { value: contacts.map(c => c.color) };
+    this.uniforms.contactStyle = { value: contacts.map(c => c.style) };
+    this.uniforms.contactSize = {
+      value: contacts.map(
+        c =>
+          new Vector4(
+            c.texture.image.width,
+            c.texture.image.height,
+            c.opacity,
+            c.maxHalfWidth,
+          ),
+      ),
+    };
   }
 }
