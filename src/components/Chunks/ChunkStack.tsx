@@ -21,6 +21,7 @@ import {
 import { UtmAreaContext } from '../UtmArea';
 import { OceanContactContext } from '../Ocean/ocean-contact';
 import { OceanSamplerContext } from '../Ocean/ocean-sampler';
+import { StackImmersionFog } from './StackImmersionFog';
 import {
   ChunkBuildState,
   ChunkCarrier,
@@ -29,6 +30,7 @@ import {
   ChunkSectionState,
   ChunkStackProgress,
   DEFAULT_SECTION_OFFSET,
+  StackImmersion,
   stackWater,
   StackWater,
   StackWaterResponse,
@@ -129,6 +131,16 @@ export type ChunkStackProps = {
    */
   water?: StackWater;
   /**
+   * Fog the view while the camera is INSIDE the sea or the block. See
+   * {@link StackImmersion}.
+   *
+   * ⚠️ Absent by default, and the absence is what makes it free: installing
+   * `scene.fog` at all changes every material's program cache key, so there is no
+   * zero-cost "disabled" state. Declared, it also fogs HOST geometry — vessels,
+   * facilities, pipelines — which no material of this library could reach.
+   */
+  immersion?: StackImmersion;
+  /**
    * Fluid contacts to draw as LINES through the whole column — an oil/water
    * contact, a gas cap, or any other border-like level given as a depth grid.
    *
@@ -201,6 +213,7 @@ export const ChunkStack = ({
   surfaces,
   carrier,
   water,
+  immersion,
   contacts,
   section,
   resolve,
@@ -584,6 +597,22 @@ export const ChunkStack = ({
     bathymetry,
   );
 
+  // ⭐ The sea and the block are made of SURFACES, so from inside either one
+  // nothing stands between the camera and what it sees and the view is impossibly
+  // clear. See `StackImmersionFog` — rendered only when asked for, because
+  // installing `scene.fog` at all changes every material's program cache key.
+  // ⚠️ The block's base is derived rather than sampled: a carrier floor is
+  // deliberately not sampleable (§5.3).
+  const blockBase = useMemo(() => {
+    if (!immersion) return null;
+    let bottom = 0;
+    for (const meta of column ?? []) bottom = Math.min(bottom, -meta.max);
+    if (stableCarrier?.depth !== undefined)
+      bottom = Math.min(bottom, -stableCarrier.depth);
+    else if (stableCarrier?.below !== undefined) bottom -= stableCarrier.below;
+    return bottom;
+  }, [immersion, column, stableCarrier]);
+
   // --- Margin ramp: ordered shallow→deep by the COLUMN, not by child order — a
   //     caller may declare chunks in any order and the ramp is a property of
   //     depth. -------------------------------------------------------------
@@ -787,6 +816,16 @@ export const ChunkStack = ({
               {/* Identity transform, present so a camera-locked section has a
                   frame to be brought into (see the `useFrame` above). */}
               <group ref={sectionRoot}>
+                {immersion && (
+                  <StackImmersionFog
+                    immersion={immersion}
+                    water={stableWater ?? null}
+                    sampler={sampler}
+                    base={blockBase}
+                    section={sectionState}
+                    frame={sectionRoot}
+                  />
+                )}
                 {sea && seaGeometry?.lid && (
                   <mesh geometry={seaGeometry.lid} material={sea.surface} />
                 )}

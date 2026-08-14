@@ -7,6 +7,8 @@ import {
   ShaderMaterialParameters,
   Texture,
   Uniform,
+  UniformsLib,
+  UniformsUtils,
   Vector2,
   Vector3,
   Vector4,
@@ -196,6 +198,11 @@ export class OceanMaterial extends ShaderMaterial {
         ...(bathymetry ? { OCEAN_BATHYMETRY: '' } : {}),
       },
       uniforms: {
+        // ⚠⚠ `fog = true` makes three refresh fogColor/fogDensity/fogNear/fogFar on
+        // THIS material, and a hand-built uniform block has none of them — which
+        // throws inside the renderer rather than just failing to fog. A material
+        // merging a `ShaderLib` entry gets these for free; this one does not.
+        ...UniformsUtils.clone(UniformsLib.fog),
         uTime: new Uniform(0),
         uWindDirection: new Uniform(new Vector2(1, 0).normalize()),
         uWindSpeed: new Uniform(10),
@@ -290,6 +297,11 @@ export class OceanMaterial extends ShaderMaterial {
     }
 
     this.updateWaves();
+
+    // Looking up at the surface from inside the water body, there IS water in the
+    // way. ⚠️ A ShaderMaterial's `fog` defaults to false, so the shader's fog
+    // chunks would compile to nothing without this.
+    this.fog = true;
 
     attachOitVariants(this);
   }

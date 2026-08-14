@@ -48,6 +48,7 @@ varying float vSectionDist;
 #endif
 
 #include <common>
+#include <fog_pars_vertex>
 #include <logdepthbuf_pars_vertex>
 #include ./waves.glsl
 
@@ -82,5 +83,6 @@ void main() {
 
   gl_Position = projectionMatrix * mvPosition;
 
+  #include <fog_vertex>
   #include <logdepthbuf_vertex>
 }

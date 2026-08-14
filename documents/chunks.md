@@ -1047,42 +1047,135 @@ would be modelling one thing as the other.
 ⚠️ On the bed's CAP only, the same scope as the tint and for the same reason
 (§6.4.1).
 
-#### 6.6.4 Open items
+#### 6.6.4 Underwater: the sea is surfaces, not a medium (2026-08-14)
 
-⭐⭐ **Depth-driven transparency decoupled two things that used to share one knob,
-and that is the most useful result of the whole section.** `waterOpacity` used to
-trade "deep water reads as water" against "you can still see the shore", so it had
-to be a compromise. With the shoal term keeping the shallows clear on their own,
-the deep end is free to be as opaque as it should be.
+⭐⭐ **From inside the water body nothing attenuates anything.** The sea is a lid
+and a set of walls. From OUTSIDE, every sightline into the water crosses one of
+them and picks up its alpha or its `bodyFogDensity`, which is why looking in
+through the surface or through a wall both read correctly. From INSIDE there is no
+surface in the path at all, so the bed is drawn at full clarity however far away it
+is — impossibly clear water.
 
-⭐ Which incidentally sinks seabed objects into the water: at a high `waterOpacity`
-a template or a pipeline is attenuated simply by being GEOMETRY BEHIND A MORE
-OPAQUE LID — no material involvement, which is exactly what a material-level tint
-could never do for it. Try that before reaching for the fog pass below.
+⚠️ `bedTint` cannot stand in for it, and the reason is the same one §6.4.1 records:
+it is a function of the bed's own depth BELOW SEA LEVEL, which is the right
+quantity for looking down through the water column and the wrong one for looking
+sideways through 300 m of it. Tuning it to look right from inside makes it wrong
+from outside.
 
-⚠️⚠️ **Absorption otherwise reaches only the chunk's own bed, so anything STANDING
-on the bed is not attenuated.** `bedTint` is a material-level fake: the bed gets the
-lid's alpha AND the tint, while a template, a base or a pipeline resting on it gets
-the lid alone — so it reads as sitting above the water rather than under it. The
-scope is the same one §15.9.4 records for the section: the sea's effects live in
-the stack's own shaders, so host geometry is untouched.
+⭐ **Scene fog is the cheap answer**, because it attenuates by DISTANCE FROM THE
+CAMERA — the quantity that matters underwater and the one nothing else here
+measures. `useUnderwaterFog` installs a `FogExp2` while the camera is inside the
+water, at the water body's own `bodyFogDensity` so the two agree by construction.
 
-⭐ The general answer is a RENDERING PASS, not more materials: absorption is a
-function of a fragment's depth, so fogging everything below the level from the
-depth buffer covers host geometry for free, works at any opacity and from under the
-surface, and retires `bedTint` with it. ⚠️ It has to work under a plain `RenderPass`
-and under `OITRenderPass`, which is the "built twice" problem that ruled out
-stencil capping (§15.4). Not scoped — and the `waterOpacity` finding above drops it
-from needed to nice.
+⚠️⚠️ **"Below sea level" is NOT the test, and using it is a show-stopper.** Water
+occupies the volume between the surface and the bed, over the footprint the bed is
+mapped on — so a camera under the bed is inside ROCK, and one outside the footprint
+is nowhere near the field. The first version fogged both: looking at formations
+from kilometres away, everything blue.
 
-⚠️⚠️ **REGRESSION, reported 2026-08-14 and not diagnosed:** with the camera INSIDE
-the water body, fog no longer builds up as it used to. Candidates, cheapest first:
-the lid's `alpha` now ends at `max(alpha, foamOpacity)` where it was
-`max(alpha, foam)`, so an underside fragment gets less; `bodyOpacity` is now scaled
-by `shoal`, and a camera close to the surface sits where that term is weakest; or
-nothing here at all and it is `bodyMaxOpacity` following a changed `waterOpacity`.
-⚠️ The water BODY shader was not touched, so bisect against the pre-bathymetry
-commit before reading any of these as the cause.
+⭐ The stack's own `SurfaceSampler` (§5.3) answers all three conditions at once. It
+returns the height of the highest drawn surface, which is the bed, and `null` where
+nothing is drawn — so `null` means both "outside the footprint" and "no water
+here", and the test is one sample per frame against an index that already exists.
+
+- ⭐ The whole test runs in the stack's OBJECT frame: the camera is brought in
+  through the root group's inverse matrix, so a vertical exaggeration cannot put
+  the water plane and the camera in different spaces.
+- ⚠️ The fog ramps over `transition` metres below the surface AND above the bed, so
+  both boundaries fade. The FOOTPRINT edge has no distance to ramp over, so the
+  amount is additionally damped over ~0.25 s — otherwise crossing it pops.
+
+⭐⭐ It also **reaches host geometry**. A vessel, a facility, a pipeline or a
+wellbore is fogged for free, because stock three materials support fog — which is
+what no material of ours could ever do, and it retires most of the rendering pass
+this section used to call for.
+
+- ⚠️ **A `ShaderMaterial`'s `fog` defaults to false.** Every library shader has
+  carried `<fog_pars_fragment>` and `<fog_fragment>` all along, but three only
+  defines `USE_FOG` when the material asks for it, so all of it compiled to
+  nothing. `ChunkMaterial` and `OceanMaterial` now set `fog = true`; the other
+  library materials still do not, and turning them on is one line each.
+- ⭐ **The lid is fogged too**, since looking up from inside the water there is
+  water in the way. ⚠️ The water BODY is deliberately NOT: its walls already fog
+  themselves by view distance (`bodyFogDensity`), and scene fog on top would count
+  the same water twice.
+- ⭐ **The fog is installed once and its DENSITY ramped to zero out of water**,
+  rather than being attached and detached. Adding or removing `scene.fog` changes
+  every material's program cache key, so toggling would recompile the scene's
+  shaders each time the camera left the water.
+- ⚠️ `scene.fog` and `scene.background` are HOST state. Both are saved and handed
+  back on unmount.
+- ⚠⚠ **There is no free "disabled" state, which is why `immersion` is absent by
+  default.** Installing `scene.fog` at all changes every material's program cache
+  key, so a hook that stayed mounted and returned early would still cost a
+  different shader. The medium test therefore lives in a CHILD COMPONENT
+  (`StackImmersionFog`) that is only rendered when the prop is declared: nothing
+  subscribes to the frame loop, nothing is installed, and every program compiles
+  exactly as it did before. ⚠️ The one thing that cannot be gated: if a HOST sets
+  `scene.fog` for its own reasons, chunks and surfaces are now fogged where before
+  they silently were not.
+- ⭐ **The background is INTERPOLATED, not swapped**, from the host's own colour (or
+  the renderer's clear colour when it had none) toward the medium's. An earlier
+  version stepped it once the density crossed zero, which read as the background
+  holding blue and then snapping to black a second later. ⚠️ A texture or cube map
+  cannot be interpolated, so that case is still a swap.
+- ⚠⚠ **The fog colour and the background have to agree**, and `background: false`
+  breaks that unless the host sets its own. It is worse on a BRIGHT background than
+  a dark one: fog toward deep blue against a white sky reads as a haze hanging in a
+  room rather than as a medium.
+- ⚠️ Three's `FogExp2` is `exp(−(density·d)²)` while the water body is
+  `1 − exp(−d·k)`, so the same density does not give the same curve on both sides
+  of a wall. They agree in magnitude, not in shape.
+
+#### 6.6.5 Sediment is the same mechanism
+
+⭐ Once the medium test exists, a chunk is another volume: below the drawn ground
+and above the block's base is INSIDE THE ROCK, and fogging it toward a dark colour
+is the volumetric feel that a shell of surfaces otherwise cannot give.
+
+⭐⭐ **It is a positional CUE, not occlusion, and that decides the tuning.**
+Navigating a 3D scene is confusing for people who do not do it often, and the
+value here is telling someone who has flown the camera into the ground that they
+have. Physical realism says you should see nothing inside rock — but a blackout
+adds to the disorientation rather than resolving it, and it hides the wellbores
+that are the reason to be down there. Dimming is the useful reading.
+
+⚠️ Which is why the knob is `visibility` IN METRES rather than a density. Three's
+`FogExp2` is `exp(−(d / visibility)²)` — it saturates QUADRATICALLY, ~63% at that
+distance and ~98% at twice it — and there is no way to bound fog short of patching
+the fog chunk in every shader. So the amount you can see is chosen entirely by this
+one number, and a useful density at field scale is something like 0.0025, which
+nobody can reason about. ⚠️ The sea keeps `bodyFogDensity`, because that one also
+feeds the water body's wall shader and the two must agree.
+
+⭐ **Wellbores need nothing.** `tube-material` and the trajectory and ribbon
+materials have carried `fog: true` all along, so they are fogged automatically and
+their legibility follows the same knob.
+
+- ⚠️ **One colour for the whole block, not per unit.** The fills live in the
+  appearance layer (`ChunkLayer.fill`), and the stack does not know them — per-unit
+  colour would mean every chunk publishing its palette upward through a registry.
+  Deferred deliberately; the caller supplies one colour instead.
+- ⚠️ **The base is derived, not sampled.** A carrier floor is deliberately not
+  sampleable (§5.3), so the block's bottom comes from the column's depth range and
+  the carrier's own declaration. Approximate wherever that base is not flat.
+- ⚠️ **The section suppresses it.** A camera standing where the plane took the
+  block away is in open air whatever the heights say, so the medium test rejects
+  the discarded half-space first.
+- ⚠⚠ **PEELING does not, and cannot here:** peel is a per-chunk property and the
+  stack does not see it, so peeling a unit away leaves the camera "inside" it. The
+  workaround is the feature's own switch — a host that peels should drop
+  `immersion` while it does. Acceptable because this is an opt-in visual effect,
+  not a correctness feature.
+- ⚠️ The medium is chosen by one `getHeightAt` per frame, which is a CSR bucket
+  lookup — but it is per frame, and only paid when the feature is on.
+
+⭐ **`waterOpacity` is the other half of this.** Depth-driven transparency decoupled
+two things that used to share one knob: it used to trade "deep water reads as water"
+against "you can still see the shore", so it had to be a compromise. With the shoal
+term keeping the shallows clear, the deep end is free to be as opaque as it should
+be — which incidentally sinks seabed objects into the water simply by putting a more
+opaque lid in front of them.
 
 - Per-vertex anything on the lid remains a dead end: with displacement off the lid
   is the fewest triangles that fill the outline, so a depth attribute would

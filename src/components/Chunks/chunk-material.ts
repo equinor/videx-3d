@@ -184,7 +184,6 @@ export class ChunkMaterial extends ShaderMaterial {
     this.fragmentShader = shader.fragmentShader;
     this.lights = true;
     this.clipping = true;
-    this.fog = true;
     this.side = parameters.side ?? DoubleSide;
     this.wireframe = parameters.wireframe ?? false;
     this.transparent = parameters.transparent ?? false;
@@ -222,6 +221,12 @@ export class ChunkMaterial extends ShaderMaterial {
 
     this.applyDetail(parameters.detail, parameters.wall === true);
     this.applyWaterTint(parameters.waterTint);
+
+    // The shader has always carried the fog chunks, but a ShaderMaterial's `fog`
+    // defaults to false, so three never defined USE_FOG and they compiled to
+    // nothing. On, they let `scene.fog` attenuate a chunk by distance from the
+    // camera — which is what makes an underwater view read as underwater.
+    this.fog = true;
 
     if (parameters.sectionPlane) {
       (this.defines as Record<string, unknown>).CHUNK_SECTION = '';

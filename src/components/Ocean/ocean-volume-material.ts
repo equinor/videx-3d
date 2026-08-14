@@ -23,6 +23,15 @@ export type OceanVolumeMaterialParameters = ShaderMaterialParameters & {
 };
 
 /**
+ * Default per-metre tint build-up through the water body.
+ *
+ * ⭐ Also the default density for the sea as an immersion medium, so the water seen
+ * THROUGH a wall and the water the camera is standing in build up at the same rate
+ * rather than through two knobs tuned to match.
+ */
+export const DEFAULT_OCEAN_BODY_FOG_DENSITY = 0.004;
+
+/**
  * OIT-compatible water-body (volume) material for the side walls of an ocean
  * box. Shades the walls as a transparent, depth-tinted blue body (a fog-like
  * tint that builds up with view distance), so the interior reads as water both
@@ -79,7 +88,7 @@ export class OceanVolumeMaterial extends ShaderMaterial {
         uDisplacement: new Uniform(0),
         uDeepColor: new Uniform(new Color('#0a2540')),
         uShallowColor: new Uniform(new Color('#1b6f8a')),
-        uFogDensity: new Uniform(0.004),
+        uFogDensity: new Uniform(DEFAULT_OCEAN_BODY_FOG_DENSITY),
         uMaxOpacity: new Uniform(0.9),
         uShimmer: new Uniform(0.04),
         uMasterOpacity: new Uniform(1),

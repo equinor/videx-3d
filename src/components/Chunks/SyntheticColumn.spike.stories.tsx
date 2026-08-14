@@ -41,7 +41,12 @@ import storyArgs from '../../storybook/story-args.json';
 import { Tanker } from '../Tanker/Tanker';
 import { UtmArea } from '../UtmArea';
 import { Chunk } from './Chunk';
-import { ChunkLayer, ChunkResolveOptions, StackWater } from './chunk-defs';
+import {
+  ChunkLayer,
+  ChunkResolveOptions,
+  StackImmersion,
+  StackWater,
+} from './chunk-defs';
 import { ChunkContact } from './chunk-contacts';
 import { ChunkStack } from './ChunkStack';
 import { ChunkInferenceStyle } from './inference-material';
@@ -196,6 +201,12 @@ type SyntheticColumnProps = {
   bodyFogDensity: number;
   bodyMaxOpacity: number;
   bodyShimmer: number;
+  immersion: boolean;
+  immersionColor: string;
+  immersionVisibility: number;
+  immersionTransition: number;
+  immersionSettle: number;
+  immersionBackground: boolean;
   bedTint: number;
   bedTintDepth: number;
   ship: boolean;
@@ -568,6 +579,29 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
     props.wetStrength,
   ]);
 
+  // Absent unless asked for — its presence is what installs `scene.fog`, and that
+  // is not free even when it would fog nothing.
+  const immersion = useMemo<StackImmersion | undefined>(
+    () =>
+      props.immersion
+        ? {
+            color: props.immersionColor,
+            visibility: props.immersionVisibility,
+            transition: props.immersionTransition,
+            settle: props.immersionSettle,
+            background: props.immersionBackground,
+          }
+        : undefined,
+    [
+      props.immersion,
+      props.immersionColor,
+      props.immersionVisibility,
+      props.immersionTransition,
+      props.immersionSettle,
+      props.immersionBackground,
+    ],
+  );
+
   const resolve = useMemo<ChunkResolveOptions>(
     () => ({
       maxFill: props.maxFill,
@@ -722,6 +756,7 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
           outline={outline}
           surfaces={column}
           water={water}
+          immersion={immersion}
           contacts={contacts}
           resolve={resolve}
           section={section}
@@ -812,6 +847,12 @@ export const Default: Story = {
     bodyFogDensity: 0.004,
     bodyMaxOpacity: 0.9,
     bodyShimmer: 0.5,
+    immersion: false,
+    immersionColor: '#0b0a08',
+    immersionVisibility: 400,
+    immersionTransition: 5,
+    immersionSettle: 0.12,
+    immersionBackground: true,
     bedTint: 0.6,
     bedTintDepth: 80,
     ship: true,
@@ -1085,6 +1126,42 @@ export const Default: Story = {
       description:
         'Animated caustic light play in the body, concentrated just under the surface. Footprint-anti-aliased, so it fades out as you zoom to field scale rather than shimmering.',
       table: { category: 'Water body' },
+    },
+    immersion: {
+      control: 'boolean',
+      description:
+        'Fog the scene while the camera is INSIDE the sea or the block. ⭐ Both are made of SURFACES, not of a medium: from outside every sightline crosses one and picks up its attenuation, and from inside there is nothing in the path at all, so the view is impossibly clear. Fog attenuates by distance from the CAMERA — the quantity that matters there — and reaches the ship, the facilities and the pipelines, which no material of ours could. ⚠️ OFF by default and it has to be: installing `scene.fog` at all changes every material’s program cache key, so there is no free "disabled" state. Absent, nothing subscribes to the frame loop and no shader differs. ⚠️ Sets `scene.fog` and `scene.background`, restoring both on unmount.',
+      table: { category: 'Immersion' },
+    },
+    immersionColor: {
+      control: 'color',
+      description:
+        'Colour inside the BLOCK (the sea uses its own `deepColor`). ⚠️ One colour for the whole block, not per unit: the fills live in the appearance layer and the stack does not know them.',
+      table: { category: 'Immersion' },
+    },
+    immersionVisibility: {
+      control: { type: 'range', min: 25, max: 2000, step: 25 },
+      description:
+        'Roughly how far you can see inside the block, in metres. ⭐ The point of the effect is a positional CUE — telling you that you have flown the camera into the ground — not occlusion, so dimming that still leaves wellbores readable beats the blackout realism would ask for. ⚠️ `FogExp2` saturates QUADRATICALLY (`exp(-(d / visibility)²)`): ~63% fogged at this distance, ~98% at twice it. Three offers no way to bound fog short of patching every shader, so this is the only control over how much you can see. ⚠️ The sea uses `bodyFogDensity` instead, because that one has to agree with the water body’s wall shader.',
+      table: { category: 'Immersion' },
+    },
+    immersionTransition: {
+      control: { type: 'range', min: 0, max: 50, step: 1 },
+      description:
+        'Metres over which the fog fades in at a medium’s boundary — the water surface, the sea bed, the top of the block.',
+      table: { category: 'Immersion' },
+    },
+    immersionSettle: {
+      control: { type: 'range', min: 0, max: 1, step: 0.02 },
+      description:
+        'Seconds for the fog to catch up with a step change. ⚠️ Needed because a medium’s own boundaries ramp smoothly but leaving one SIDEWAYS — past the edge of the drawn footprint, or through a section plane — has no distance to ramp over. Keep it short: this is a cue, and a slow one reads as a bug.',
+      table: { category: 'Immersion' },
+    },
+    immersionBackground: {
+      control: 'boolean',
+      description:
+        'Take the scene background to the medium’s colour too. ⚠️ Fogged geometry against an unfogged background is the classic mismatch, and it is worse on a BRIGHT background than a dark one: the fog reads as a haze hanging in the room rather than as a medium. Off means setting your background yourself. ⚠️ Interpolated where the host’s background is a colour, swapped where it is a texture or cube map — those cannot be blended.',
+      table: { category: 'Immersion' },
     },
     bedTint: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },

@@ -1,4 +1,4 @@
-import { Material, Plane } from 'three';
+import { ColorRepresentation, Material, Plane } from 'three';
 import {
   PackedBufferGeometry,
   PackedSurfaceChunk,
@@ -353,6 +353,73 @@ export type StackWater = OceanWaterProps &
      */
     resolution?: number;
   };
+
+/**
+ * Fog the view while the camera is INSIDE something the stack draws — the sea, or
+ * the block itself.
+ *
+ * ⭐ Both are made of SURFACES rather than of a medium, so from outside every
+ * sightline crosses one and picks up its attenuation, and from inside there is
+ * nothing in the path at all. Scene fog supplies what is missing: attenuation by
+ * distance from the CAMERA, which also reaches host geometry (vessels, facilities,
+ * pipelines) that no material of this library could.
+ *
+ * ⚠️ OFF unless declared, and it has to be: installing `scene.fog` at all changes
+ * every material's program cache key, so there is no free "disabled" state. Absent,
+ * nothing subscribes to the frame loop and no shader differs.
+ *
+ * @expand
+ * @group Components
+ */
+export type StackImmersion = {
+  /** fog inside the sea. Default true (when the stack declares water) */
+  water?: boolean;
+  /** fog inside the block. Default true */
+  sediment?: boolean;
+  /**
+   * Colour inside the block. Default a near-black brown.
+   *
+   * ⚠️ One colour for the whole block, not per unit: the fills live in the
+   * appearance layer and the stack does not know them. Per-unit colour would mean
+   * every chunk publishing its palette upward.
+   */
+  color?: ColorRepresentation;
+  /**
+   * Roughly how far you can see inside the block, in metres. Default 400.
+   *
+   * ⭐ The point of this effect is a positional CUE — telling a user who has flown
+   * the camera into the ground that they have — not occlusion. Dimming that still
+   * leaves wellbores and other geometry readable is more useful than the blackout
+   * physical realism would ask for.
+   *
+   * ⚠️ Three's `FogExp2` is `exp(−(d / visibility)²)`, so it saturates
+   * QUADRATICALLY: ~63% fogged at this distance and ~98% at twice it. There is no
+   * way to bound it short of patching the fog chunk in every shader, so the only
+   * control over how much you can see is this number.
+   */
+  visibility?: number;
+  /**
+   * Take the scene's background to the medium's colour too. Default true.
+   *
+   * ⚠️ Fogged geometry against an unfogged background is the classic mismatch, and
+   * it is worse on a BRIGHT background than a dark one: fog reads as a haze hanging
+   * in the room rather than as a medium. Off means setting your background
+   * yourself. ⚠️ Interpolated where the host's background is a colour, swapped
+   * where it is a texture or a cube map — those cannot be blended.
+   */
+  background?: boolean;
+  /** metres over which a medium fades in at its boundaries. Default 5 */
+  transition?: number;
+  /**
+   * Seconds for the fog to catch up with a step change. Default 0.12.
+   *
+   * ⚠️ Needed at all because a medium's own boundaries ramp smoothly but leaving
+   * one SIDEWAYS — past the edge of the drawn footprint, or through a section plane
+   * — has no distance to ramp over. Keep it short: this is a cue, and a slow one
+   * reads as a bug.
+   */
+  settle?: number;
+};
 
 /**
  * The flat floor a whole column terminates against, as a `ChunkStack` declares it:

@@ -122,6 +122,7 @@ varying float vSectionDist;
 #endif
 
 #include <common>
+#include <fog_pars_fragment>
 #include <logdepthbuf_pars_fragment>
 #include ./waves.glsl
 
@@ -562,6 +563,10 @@ void main() {
   gl_FragColor = vec4(color, clamp(alpha, 0.0, 1.0));
 
   #include <colorspace_fragment>
+  // Looking up at the surface from inside the water body, there IS water in the
+  // way, so the lid is fogged with everything else. ⚠️ After the colour space
+  // conversion, matching three's own material ordering.
+  #include <fog_fragment>
 
   #ifdef USE_OIT
   gl_FragColor = oitProcess(gl_FragColor);
