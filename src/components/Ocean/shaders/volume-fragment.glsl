@@ -59,7 +59,11 @@ void main() {
   // Footprint anti-aliased: each layer fades out as its world wavelength
   // approaches the on-screen pixel size, so the body never shimmers/moirés when
   // zoomed far out at field scale (only resolving as the camera nears it).
-  if(uShimmer > 0.0) {
+  // ⚠️ Outward-facing side only. Caustics are light LANDING on a surface, and the
+  // inner face of a wall is not one — it stands in for the body of water, so light
+  // play painted on it reads as a texture on a pane of glass. Doing this properly
+  // means marching the volume, which is a long way past what this material is.
+  if(uShimmer > 0.0 && gl_FrontFacing) {
     float texel = max(length(fwidth(vWorldPosition.xz)), 1e-3);
 
     // Light concentrates near the surface and fades toward the bed (depth-cue).

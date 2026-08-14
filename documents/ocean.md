@@ -91,6 +91,13 @@ The sea state props are the same ones the component takes (`OceanWaterProps` /
 `OceanBodyProps`), and the stack supplies both materials: the animated surface for
 the lid and the water body for the volume down to the bed.
 
+⚠️ `bodyShimmer` is drawn on the OUTWARD side of the body's walls only. Caustics
+are light landing on a surface, and the inner face of a wall is not one — it
+stands in for the water itself, so light play painted on it reads as a texture on
+a pane of glass. Shimmer seen from INSIDE the water would have to be volumetric,
+i.e. marched through the body, which is a long way past what a wall material is;
+deliberately not attempted.
+
 The sea takes no part in the depth order, which is what stops it truncating the
 ground beneath it: a sea bed above the plane comes THROUGH it rather than being
 flattened onto it, and the water body ends at the shoreline. See

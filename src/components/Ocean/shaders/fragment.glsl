@@ -524,8 +524,17 @@ void main() {
   // sub-pixel (its width on screen is the break depth over the bed's gradient,
   // hundreds of metres), so the whitecaps' footprint fade would leave it at full
   // strength.
-  float shoreFade = 1.0 - uShoreFade.x * (1.0 - foamFar * uShoreFade.y);
-  float foamFade = clamp(mix(foamFar * 0.85, shoreFade, shoreWeight), 0.0, 1.0);
+  // ⚠️⚠️ Guarded, not just multiplied by `shoreWeight`: without a bathymetry grid
+  // there IS no shore band and `uShoreFade` is not declared, so referring to it
+  // here compiles only in the variant that happens to have the define.
+  float foamFade = foamFar * 0.85;
+  #ifdef OCEAN_BATHYMETRY
+  {
+    float shoreFade = 1.0 - uShoreFade.x * (1.0 - foamFar * uShoreFade.y);
+    foamFade = mix(foamFade, shoreFade, shoreWeight);
+  }
+  #endif
+  foamFade = clamp(foamFade, 0.0, 1.0);
 
   // ⭐⭐ ONE effective foam opacity, used by the colour AND by the alpha below.
   // Fading a colour toward the water is identical to reducing coverage —
