@@ -23,6 +23,7 @@ import {
   SUBSEA_SITES,
   siteByName,
 } from '../../storybook/data/subsea-facilities';
+import { chunkTimings } from '../../storybook/data/chunk-timings';
 import {
   SeabedFacility,
   SeabedFacilityReport,
@@ -646,7 +647,7 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
           maxOverlap: d?.maxOverlap ?? null,
           coverageRingPoints: d?.coverageRingPoints ?? null,
           constraintFailures: d?.constraintFailures ?? null,
-          tessellateMs: Math.round(d?.tessellateMs ?? 0),
+          ...chunkTimings(metrics),
           layers: rows,
         })}`,
       );

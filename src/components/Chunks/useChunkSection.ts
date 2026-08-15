@@ -1,7 +1,8 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { BufferAttribute, BufferGeometry, DynamicDrawUsage } from 'three';
 import {
+  buildStackSectionIndex,
   createStackSectionTarget,
   growStackSectionTarget,
   sectionStackInterval,
@@ -90,20 +91,66 @@ export function useChunkSection(
     [],
   );
 
+  // ⭐ The plane is the only thing that changes: the geometry is fixed for the
+  // life of the build, so the index is built once and every frame reuses it.
+  const index = useMemo(
+    () => (source && section ? buildStackSectionIndex(source) : null),
+    [source, section],
+  );
+
+  // What the faces were last cut with. A section that is not moving — a fixed
+  // plane, or a camera-locked one with the camera at rest — would otherwise
+  // recompute an identical face every frame, which on a field-sized stack is the
+  // difference between a still view being free and costing tens of millions of
+  // prism tests per second.
+  const last = useRef<{
+    faces: Face[] | null;
+    x: number;
+    y: number;
+    z: number;
+    c: number;
+    on: boolean;
+    off: number;
+  }>({ faces: null, x: NaN, y: NaN, z: NaN, c: NaN, on: false, off: NaN });
+
   useFrame(() => {
     if (!faces || !source || !section) return;
     if (!section.enabled) {
-      for (const face of faces) face.geometry.setDrawRange(0, 0);
+      if (last.current.on) {
+        for (const face of faces) face.geometry.setDrawRange(0, 0);
+      }
+      last.current.on = false;
       return;
     }
     const { normal, constant } = section.plane;
+    const offset = section.offset;
+    const state = last.current;
+    if (
+      state.on &&
+      state.faces === faces &&
+      state.x === normal.x &&
+      state.y === normal.y &&
+      state.z === normal.z &&
+      state.c === constant &&
+      state.off === offset
+    ) {
+      return;
+    }
+    state.on = true;
+    state.faces = faces;
+    state.x = normal.x;
+    state.y = normal.y;
+    state.z = normal.z;
+    state.c = constant;
+    state.off = offset;
+
     plane.normal[0] = normal.x;
     plane.normal[1] = normal.y;
     plane.normal[2] = normal.z;
     plane.constant = constant;
 
     for (const face of faces) {
-      const options = { offset: section.offset };
+      const options = { offset, index: index ?? undefined };
       let needed = sectionStackInterval(
         source,
         face.interval,

@@ -64,23 +64,57 @@ export function createStoryArgs() {
   // top are the same horizon and agree on the age.
   const column = stratColumns[config.stratColumn];
   const horizonAges = new Map();
+  // Horizon name -> the unit it is the TOP of. That unit is the interval BELOW the
+  // horizon, which is what a chunk layer's cap and fill both show, so this is the
+  // map a colour comes from. ⭐ Deepest level wins: a formation says more about
+  // what you are looking at than the group containing it.
+  const unitByTop = new Map();
+  // ...and the unit each horizon is the BASE of, for the last layer of a stack,
+  // which has no interval below it to take a colour from.
+  const unitByBase = new Map();
+  // Unit name -> its colour, so an interval BETWEEN two named units can fall back
+  // to the one containing them (the rock under a formation's base is still its
+  // group's until the next formation starts).
+  const unitColors = {};
   if (column) {
     column.units.forEach(unit => {
       if (unit.top && Number.isFinite(unit.topAge))
         horizonAges.set(unit.top, unit.topAge);
       if (unit.base && Number.isFinite(unit.baseAge))
         horizonAges.set(unit.base, unit.baseAge);
+      if (unit.color) unitColors[unit.name] = unit.color;
+      const record = {
+        unit: unit.name,
+        unitType: unit.unitType,
+        level: unit.level || 1,
+        color: unit.color,
+        parent: unit.parent || null,
+      };
+      const deeper = (map, key) => {
+        if (!key || !unit.color) return;
+        const known = map.get(key);
+        if (!known || record.level > known.level) map.set(key, record);
+      };
+      deeper(unitByTop, unit.top);
+      deeper(unitByBase, unit.base);
     });
   }
 
   // A surface's name is the horizon name unless the field aliases it.
   const aliases = mapping.surfaceAliases || {};
   const stratAges = {};
+  const stratUnits = {};
   const unaged = [];
   Object.values(surfaceOptions).forEach(name => {
-    const age = horizonAges.get(aliases[name] || name);
+    const horizon = aliases[name] || name;
+    const age = horizonAges.get(horizon);
     if (age === undefined) unaged.push(name);
     else stratAges[name] = age;
+    const below = unitByTop.get(horizon);
+    const above = unitByBase.get(horizon);
+    if (below || above) {
+      stratUnits[name] = { below: below || null, above: above || null };
+    }
   });
 
   if (!column) {
@@ -159,6 +193,8 @@ export function createStoryArgs() {
     wellboreOptions,
     surfaceOptions,
     stratAges,
+    stratUnits,
+    stratUnitColors: unitColors,
     waterDepth,
     fieldExtent: extent,
     seabedSurface: surfaceIdByName(mapping.seabedSurface),

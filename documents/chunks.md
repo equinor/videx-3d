@@ -3019,6 +3019,26 @@ worse than dropping a surface.
 dataset change into an empty screen rather than a wrong one. It now reports that as
 an error naming the surfaces, so the empty screen explains itself.
 
+#### 14.5.2 ⭐ Colour comes from the strat column too (2026-08-16)
+
+`Spikes/Chunks/FieldColumn` is the generated column's counterpart on REAL data: the
+whole dataset's surfaces in one chunk, and the same generation step that derives the
+ages now also emits `stratUnits` (horizon → the unit it is the top/base of, with
+that unit's own colour) and `stratUnitColors`. Both are baked into `story-args.json`
+at build time, so neither the strat column nor any colour becomes a runtime data
+dependency — the library still never assigns a colour (§9.3).
+
+⭐ **A colour belongs to the INTERVAL, not to the horizon.** What you see looking at
+a layer is the top of the unit BELOW it, and that unit also fills the wall below —
+which is why one colour serves as both `material` and `fill`. So the lookup is: the
+unit this surface is the TOP of → failing that, the unit the NEXT surface down is
+the BASE of (the same interval, named from its other end) → failing that, the PARENT
+of the unit this surface is the base of, since the rock under a formation's base
+still belongs to its group until the next formation starts → then a neutral grey.
+
+⚠️ The column carries `unitType` and `level` but **no lithology**, so the procedural
+`detail` presets cannot be derived from it. That mapping would be the host's too.
+
 #### 14.5.1 ⭐ Binary `surface-values`
 
 **IMPLEMENTED.** `surface-values` used to ship as JSON `number[]` and were parsed
@@ -3626,3 +3646,157 @@ normal set and are left meaning what they say.
 
 ⚠️ A caller-supplied `Material` gets no patch, since the chunk cannot build a
 variant of it — the same limitation as the cut itself.
+
+### 15.13 Making a moving section affordable (2026-08-16)
+
+The cut is rebuilt every frame from the live plane, and the first version walked
+**every triangle of the shared tessellation, for every filled interval**. On the
+demo field's full column that is 33 × 1,078,569 ≈ **35.6 M prism expansions per
+frame**, on the main thread.
+
+⚠️⚠️ Worth stating plainly, because the symptom invites the wrong diagnosis: this
+is **not** a GPU cost. The 30 M-triangle block genuinely is heavy to raster, but
+the section stall is a JavaScript loop, and no graphics card touches it.
+
+Two fixes, both output-preserving:
+
+**1. Do nothing when nothing moved.** `useChunkSection` caches the last
+normal/constant/`enabled`/`offset` and skips the rebuild. A fixed plane, or a
+camera-locked one with the camera at rest, then costs nothing at all.
+⚠️ The cache also compares the FACES' identity — without that a chunk that
+rebuilds keeps the stale entry and never draws its new face.
+
+**2. `buildStackSectionIndex` — skip what the plane cannot reach.** A uniform XZ
+grid over the shared triangles (CSR buckets, ~64 triangles per cell) plus, per
+interval, each cell's prism Y range. A cell is rejected with the standard box/plane
+test, `|n·c + k| ≤ |n_x|e_x + |n_y|e_y + |n_z|e_z`.
+
+- ⭐ That test is **orientation-independent**, so a tilted cut prunes as well as an
+  upright one. No second structure is needed for oblique planes.
+- ⭐ The per-cell **Y range** is what makes a near-HORIZONTAL cut cheap. An XZ grid
+  alone prunes nothing for one, since a horizontal plane covers everything in plan;
+  with the Y range only the cells whose interval spans the cut depth survive. Where
+  a flat-lying unit really does straddle the cut everywhere the whole layer is
+  visited — but then the face IS the whole layer, so the cost equals the output,
+  which is the best any structure can manage.
+- ⭐ **ONE index serves every interval.** They share the tessellation's topology and
+  XZ positions and differ only in height, so the heavy triangle buckets are built
+  once and each interval adds two floats per cell. Per-interval triangle lists would
+  cost tens of megabytes on a field-sized stack.
+- ⚠️ A triangle is bucketed by its **centroid**, into exactly one cell, and the
+  cell's box is grown to contain it. Bucketing by overlap would emit a triangle once
+  per cell it touches.
+- ⚠️ The face comes out in a different ORDER (cell by cell rather than by index).
+  That is irrelevant to a triangle soup, and watertightness is unaffected: it comes
+  from evaluating each edge in a canonical direction *within* a cell (§15.2), which
+  is a property of the triangle, not of the visit order.
+
+MEASURED (`FieldColumn`, 7 km crop, all 34 layers, animated plane): **250.3 ms** per
+frame without the index → **31.1 ms** with it (~8×); a still section **16.7 ms**,
+which is exactly what the same block costs with the section switched off.
+
+⚠️ A test plane must be kept OFF the vertex lattice. A plane landing exactly on a
+column of grid vertices only GRAZES, which the cut deliberately reports as no face
+(§15.2) — an equivalence test written on a round coordinate compares two empty
+faces and proves nothing.
+
+## 16. Build cost: what scales with what (measured 2026-08-15/16)
+
+### 16.1 The phases, and the two things they scale with
+
+Every phase is now timed and reported on `SurfaceChunkDiagnostics` (`fetchMs`,
+`referenceMs`, `sealMs`, `stackResolveMs`, `refineMs`, `prepMs`, `tessellateMs`,
+`sampleMs`, `vertexResolveMs`, `collapseMs`, `geometryMs`, `wallMs`), which is what
+makes the following legible at all. Most of them were already computed and thrown
+away.
+
+They divide cleanly in two:
+
+| scales with | phases |
+|---|---|
+| the reference grid's NODES × layers | fetch, resample, seal, grid resolve, refinement |
+| the shared tessellation's VERTICES × layers | sample, vertex resolve, collapse, geometry, walls |
+
+MEASURED on the demo field's full column (34 layers, survey-rectangle outline,
+1,682,681 nodes, 112.5 s): ~22 s in the first group, ~78 s in the second, 13 s
+tessellating and 19 s packing and committing. ⇒ **the vertex count is the lever**,
+and `vertices` / `sharedTriangles` are reported for exactly that reason.
+
+### 16.2 Size, not layer count
+
+Compared like for like against the generated column (§14.4):
+
+| | generated | demo field, full |
+|---|---|---|
+| layers | 11 | 34 |
+| triangles per layer | 36,184 | 1,078,569 |
+| total | 399,766 | 30,058,596 |
+| build | 5.5 s | 112.5 s |
+
+75× = 3.1 (layers) × 29.8 (tessellation). ⭐ **The tessellation dominates by an
+order of magnitude**, and most of that is plain AREA — 49 km² against ~1050 km² at
+the same 25 m cell, i.e. 21× the nodes. The remaining ~1.4× is detail density: real
+relief, data edges, and 33 INDEPENDENT surveys whose refinement sets do not overlap
+the way generated surfaces do (those are exact functions of one another, so they
+want the same vertices).
+
+⇒ A field-scale footprint (20-80 km²) is nowhere near this. The number to watch is
+`referenceNodes`, not the surface count.
+
+### 16.3 `maxNodes` is the quality/speed dial
+
+`ChunkResolveOptions.maxNodes` (default 4,000,000) caps the common grid; beyond it
+the grid is decimated by an integer step. Since essentially everything is linear in
+the node count, halving the budget quarters the work.
+
+⚠️ What it costs is resolution of the **coverage masks** — data edges, interior
+holes, pinch-out contours — rather than of the heights, which stay bounded by
+`maxError` either way. `referenceStep` above 1 says the trade is active.
+
+⚠️ It is part of the shared column's cache key, so changing it rebuilds every chunk.
+
+### 16.4 What was optimised (2026-08-15/16)
+
+1. **The candidate union is filtered to the chunk's own footprint** before
+   insertion. Candidates are collected over the whole COLUMN, so a chunk with a
+   small outline was being handed the entire field's detail. ⭐ Sound because the
+   rim is a CONSTRAINT edge and a flip never crosses one: a point outside it takes
+   part in no triangle that survives `removeExteriorTriangles`.
+   ⚠️ The test is **dilated by one cell**. Un-dilated it drops nodes lying exactly
+   ON the rim — which are vertices of kept triangles, and which the even-odd test is
+   free to call outside — and the triangle count moves (241,088 → 240,936).
+   MEASURED: per-chunk tessellation −30 to −63 % on wellbore-cut chunks, and it
+   removed an inversion where a 31 k-triangle chunk cost more than a 241 k one.
+2. **`rasterizeStackOutline` only tests the polygon's own grid window.** It was
+   running point-in-polygon over all 1.68 M nodes for a chunk occupying a corner.
+3. **Fetch and resample are pipelined.** ⭐ The common grid is derivable from the
+   layers' HEADERS alone (`planStackReference`), which the spec already carries — so
+   each layer is resampled the moment its own grid lands instead of after the
+   slowest one. ⚠️ `fetchMs` and `referenceMs` are therefore OVERLAPPING windows and
+   do not sum.
+4. **The resample runs on the worker pool** (`resampleStackLayer`, a new `resample`
+   task beside `refine`). Samples are transferred IN and never come back — nothing
+   downstream asks a layer for its grid, only for its placement.
+   ⚠️ This forced the pure grid maths out of `surface-clip.ts` (which imports three)
+   into `surface-grid.ts`, and the resample into `surface-stack-resample.ts`. **Both
+   must stay three-free**: the pool worker ships base64-inlined in the library
+   bundle, so a three import there would embed a second copy of it.
+   MEASURED: `referenceMs` 1107 → **94 ms** on a 9-layer column.
+
+Together, 1-4 took a representative three-chunk scene from 11.6 s to 9.1 s wall,
+with byte-identical triangle counts and `constraintFailures` 0.
+
+### 16.5 Still open
+
+- `vertexResolveMs` is the single biggest phase on a sealed column (28 s of 112 s),
+  and it runs ONLY because sealing disqualifies the column's grid-level
+  `preResolved` masks. That disqualification is correct (§10.7: a decision taken at
+  grid NODES and one taken at shared VERTICES are not interchangeable), but the work
+  is duplicated in spirit and a cheaper reconciliation may exist.
+- A layer is sampled, resolved and collapsed at the FULL shared size and only then
+  dropped, so a unit keeping 13 % of its triangles cost the same as one keeping all
+  of them. The per-layer `kept` share is reported so the waste is visible.
+- 30 M triangles is ~580 MB of vertex data across 34 geometries. Even with an
+  instant build, that scene is past interactive; some form of LOD (§7) is the
+  answer, not more micro-optimisation.
+

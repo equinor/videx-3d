@@ -5,8 +5,9 @@ import {
   SurfaceChunkStackSpec,
 } from '../components/Chunks/chunk-defs';
 import {
-  buildStackReference,
   clampStackToCarrier,
+  layEmptyStackLayers,
+  planStackReference,
   PlanarPolygonGeometry,
   rasterizeStackOutline,
   ReadonlyStore,
@@ -19,7 +20,10 @@ import {
   StackPairStats,
   StackReference,
 } from '../sdk';
-import { refineStackChannels } from './workers/stack-worker-pool';
+import {
+  refineStackChannels,
+  resampleStackChannel,
+} from './workers/stack-worker-pool';
 
 /**
  * A whole column, resampled onto one common grid and made monotone — the work
@@ -66,6 +70,11 @@ export type StackContext = {
   tapered: number[];
   pairs: StackPairStats[];
   bytes: number;
+  /**
+   * ⚠️ `fetchMs` and `referenceMs` are OVERLAPPING windows, not consecutive
+   * phases: a layer is resampled as soon as its own grid lands. `fetchMs` runs to
+   * the last grid's arrival, `referenceMs` from there to the last resample.
+   */
   fetchMs: number;
   referenceMs: number;
   sealMs: number;
@@ -112,37 +121,70 @@ async function buildStackContext(
   key: string,
 ): Promise<StackContext | null> {
   const t0 = performance.now();
-  const grids = await Promise.all(
-    stack.layers.map(l => store.get<Float32Array>('surface-values', l.id)),
-  );
-  const tFetch = performance.now();
-
-  const layers: StackLayer[] = [];
-  const index = new Map<string, number>();
-  let bytes = 0;
-  stack.layers.forEach((spec: SurfaceChunkLayerSpec, i) => {
-    const values = grids[i];
-    if (!values) return;
-    bytes += values.byteLength;
-    index.set(spec.id, layers.length);
-    layers.push({
-      values,
-      header: spec.header,
-      referenceDepth: spec.referenceDepth,
-      worldPosition: spec.worldPosition,
-    });
-  });
-  if (layers.length === 0) return null;
-
   const envelope = new PlanarPolygonGeometry(
     stack.polygon.coordinates,
     stack.polygon.offset,
   );
-  const reference = buildStackReference(layers, envelope, {
+  // ⭐ The common grid comes from the layers' HEADERS, which the spec already
+  // carries — so it is known before a single grid has been fetched, and each layer
+  // can be resampled (on the pool) the moment its own samples land instead of
+  // after the slowest one. `fetchMs` and `referenceMs` are therefore OVERLAPPING
+  // windows, not consecutive phases.
+  const plan = planStackReference(stack.layers, envelope, {
     maxNodes: resolve?.maxNodes,
     maxFill: resolve?.maxFill ?? DEFAULT_CHUNK_MAX_FILL,
   });
-  if (!reference) return null;
+  if (!plan) return null;
+
+  let tFetch = t0;
+  let bytes = 0;
+  const resampled = await Promise.all(
+    stack.layers.map(async (spec: SurfaceChunkLayerSpec) => {
+      const values = await store.get<Float32Array>('surface-values', spec.id);
+      tFetch = performance.now();
+      if (!values) return null;
+      bytes += values.byteLength;
+      // ⚠️ `values` is TRANSFERRED into the worker and detached here. Safe because
+      // nothing downstream reads a layer's samples — `isSyntheticLayer` only tests
+      // whether the field is undefined, and the geometry needs the placement.
+      const result = await resampleStackChannel(
+        plan,
+        { header: spec.header, worldPosition: spec.worldPosition },
+        values,
+        spec.referenceDepth,
+      );
+      return { spec, values, result };
+    }),
+  );
+
+  const layers: StackLayer[] = [];
+  const index = new Map<string, number>();
+  const channels: Float32Array[] = [];
+  const masks: Uint8Array[] = [];
+  const empty: boolean[] = [];
+  resampled.forEach(entry => {
+    if (!entry) return;
+    index.set(entry.spec.id, layers.length);
+    layers.push({
+      values: entry.values,
+      header: entry.spec.header,
+      referenceDepth: entry.spec.referenceDepth,
+      worldPosition: entry.spec.worldPosition,
+    });
+    channels.push(entry.result.channel);
+    masks.push(entry.result.mask);
+    empty.push(entry.result.empty);
+  });
+  if (layers.length === 0) return null;
+  layEmptyStackLayers(channels, empty);
+
+  const reference: StackReference = {
+    header: plan.header,
+    worldPosition: plan.worldPosition,
+    channels,
+    masks,
+    step: plan.step,
+  };
   const tReference = performance.now();
 
   // ⭐ The carrier is appended AFTER the resample, not passed through it: a `below`
@@ -283,12 +325,15 @@ async function buildStackContext(
  * Refine the column's channels once and cache the candidates alongside it, so the
  * per-layer refinement is also shared by every chunk of the column.
  */
-const refinedByKey = new Map<string, Promise<Uint32Array[]>>();
+const refinedByKey = new Map<
+  string,
+  Promise<{ candidates: Uint32Array[]; poolSize: number }>
+>();
 
 export function getStackCandidates(
   context: StackContext,
   maxError: number,
-): Promise<Uint32Array[]> {
+): Promise<{ candidates: Uint32Array[]; poolSize: number }> {
   const key = `${context.key}|${maxError}`;
   let pending = refinedByKey.get(key);
   if (!pending) {
@@ -298,7 +343,7 @@ export function getStackCandidates(
       context.reference.channels,
       context.reference.header.nx,
       maxError,
-    ).then(r => r.candidates);
+    );
     refinedByKey.set(key, pending);
   }
   return pending;

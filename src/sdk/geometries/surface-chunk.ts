@@ -185,19 +185,63 @@ export type SurfaceChunkDiagnostics = {
   /** nodes of the common reference grid */
   referenceNodes: number;
   /**
+   * Vertices of the SHARED tessellation — ⭐ the number every phase after it
+   * scales with, since each layer carries a full copy of it. Driven by
+   * `maxError` and by the reference grid's own resolution.
+   */
+  vertices: number;
+  /**
+   * Triangles of the shared tessellation, before any layer's drops. A layer's own
+   * `triangles` against this is what it KEPT.
+   *
+   * ⚠️ A layer is sampled, resolved and collapsed at this full size and only then
+   * dropped, so a layer keeping little still cost the same as one keeping all of
+   * it. ⚠️ A fluid's lid is tessellated on its own terms and is NOT a subset of
+   * this.
+   */
+  sharedTriangles: number;
+  /**
    * Source grid cells per reference cell. `1` is full resolution; anything higher
    * means the common grid was decimated to stay inside the node budget, which
    * coarsens the coverage masks along with everything else.
    */
   referenceStep: number;
-  /** fetching every layer's grid (shared across the column) */
+  /**
+   * Fetching every layer's grid (shared across the column).
+   *
+   * ⚠️ OVERLAPS {@link SurfaceChunkDiagnostics.referenceMs}: a layer is resampled
+   * as soon as its own grid lands, so this runs to the last grid's arrival and
+   * `referenceMs` covers only what is left afterwards. They do not sum.
+   */
   fetchMs: number;
-  /** resampling the column onto the common grid (shared) */
+  /** resampling the column onto the common grid (shared, overlaps the fetch) */
   referenceMs: number;
+  /** sealing (or splitting) the column's unmapped regions (shared) */
+  sealMs: number;
   /** making the column monotone on the grid (shared) */
   stackResolveMs: number;
+  /** per-layer refinement, wall clock across the worker pool (shared) */
+  refineMs: number;
+  /** workers the refinement ran on (0 = serial fallback, so `refineMs` is CPU time) */
+  refinePool: number;
+  /**
+   * This chunk's own preparation of the shared grid: its channel view, the
+   * per-layer coverage tally and the void expansion. Paid per chunk even though
+   * the grid is shared, so it is worth watching against the shared phases.
+   */
+  prepMs: number;
   /** this chunk's own tessellation */
   tessellateMs: number;
+  /** sampling every layer's height at the shared vertices */
+  sampleMs: number;
+  /** the per-vertex monotone resolve (0 when the column's grid resolve stands in) */
+  vertexResolveMs: number;
+  /** classifying the triangles each layer keeps */
+  collapseMs: number;
+  /** building the per-layer surface geometries */
+  geometryMs: number;
+  /** tracing and building the interval walls */
+  wallMs: number;
 };
 
 /** Per-phase build timings (ms) and counts for a {@link SurfaceChunk}. */

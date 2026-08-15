@@ -70,7 +70,10 @@ export async function generateStackWater(
     ],
   };
 
-  const columnCandidates = await getStackCandidates(context, maxError);
+  const { candidates: columnCandidates } = await getStackCandidates(
+    context,
+    maxError,
+  );
   const sealing = spec.resolve?.seal !== false;
 
   const build = buildSurfaceStack(

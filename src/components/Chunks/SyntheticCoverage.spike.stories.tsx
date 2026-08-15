@@ -12,6 +12,7 @@ import {
   Vec2,
 } from '../../sdk';
 import { SYNTHETIC_PREFIX } from '../../storybook/data/synthetic-surfaces';
+import { chunkTimings } from '../../storybook/data/chunk-timings';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-decorator';
@@ -194,6 +195,7 @@ const SyntheticCoverageStory = (props: SyntheticCoverageProps) => {
           rimDropped: d?.rimDropped ?? null,
           wallRingsDropped: d?.wallRingsDropped ?? null,
           wallRingsOpen: d?.wallRingsOpen ?? null,
+          ...chunkTimings(metrics),
           layers: rows,
         })}`,
       );

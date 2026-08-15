@@ -24,6 +24,7 @@ import {
   WellboreHeader,
 } from '../../sdk';
 import { sortByStratAge } from '../../storybook/data/strat-ages';
+import { chunkTimings } from '../../storybook/data/chunk-timings';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-decorator';
@@ -286,7 +287,7 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
         wallRingsOpen: d?.wallRingsOpen ?? null,
         caps: (d?.layers ?? []).map(l => (l.capped ? 1 : 0)).join(''),
         excluded: (d?.layers ?? []).reduce((a, l) => a + l.droppedExcluded, 0),
-        totalMs: Math.round(metrics.totalMs),
+        ...chunkTimings(metrics),
       })}`,
     );
     console.table([

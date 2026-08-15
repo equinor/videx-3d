@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { Vec3 } from '../src/sdk/types/common';
 import {
   createStackSectionTarget,
   growStackSectionTarget,
+  buildStackSectionIndex,
   sectionPlaneOutline,
   sectionStackInterval,
   StackSectionPlane,
   StackSectionSource,
 } from '../src/sdk/geometries/surface-section';
+import { Vec3 } from '../src/sdk/types/common';
 
 /**
  * A quad of two triangles in XZ, with a flat top and bottom — two prism cells
@@ -333,5 +334,117 @@ describe('sectionPlaneOutline', () => {
   it('is empty for a plane lying on a face', () => {
     // The whole box is on one side, touching only — nothing is removed.
     expect(sectionPlaneOutline(min, max, plane([-1, 0, 0], -100), out)).toBe(0);
+  });
+});
+
+describe('the section spatial index', () => {
+  // A field of cells with relief, so the plane crosses a band rather than
+  // everything: 20x20 quads over 2 km, dipping and folded.
+  function field(): StackSectionSource {
+    const n = 21;
+    const positionsXZ = new Float32Array(n * n * 2);
+    const top = new Float32Array(n * n);
+    const bottom = new Float32Array(n * n);
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        const i = r * n + c;
+        positionsXZ[2 * i] = c * 100;
+        positionsXZ[2 * i + 1] = r * 100;
+        const y = -200 - 4 * c + 60 * Math.sin(c / 3) * Math.cos(r / 4);
+        top[i] = y;
+        bottom[i] = y - 80 - 20 * Math.sin(r / 5);
+      }
+    }
+    const tris: number[] = [];
+    for (let r = 0; r + 1 < n; r++) {
+      for (let c = 0; c + 1 < n; c++) {
+        const a = r * n + c;
+        tris.push(a, a + 1, a + n, a + 1, a + n + 1, a + n);
+      }
+    }
+    return {
+      positionsXZ,
+      indices: Uint32Array.from(tris),
+      heights: [top, bottom],
+      intervals: [new Uint8Array(tris.length / 3).fill(1)],
+    };
+  }
+
+  // ⚠️ As a SET: the index visits triangles cell by cell, so the same face comes
+  // out in a different order. Order is irrelevant to a triangle soup, and
+  // watertightness comes from the canonical edge direction inside a cell, not
+  // from the order cells are visited in.
+  const key = (t: ReturnType<typeof run>['target']) =>
+    vertices(t)
+      .map(v => v.map(n => n.toFixed(6)).join(','))
+      .sort()
+      .join('|');
+
+  // ⚠️ Kept OFF the vertex lattice: a plane landing exactly on a column of grid
+  // vertices only GRAZES, which the cut deliberately reports as no face at all.
+  const cases: [string, StackSectionPlane][] = [
+    ['vertical', plane([1, 0, 0], -1050)],
+    ['vertical, oblique to the grid', plane([1, 0, 0.6], -1230)],
+    ['tilted', plane([0.6, 0.5, 0.3], -700)],
+    ['horizontal', plane([0, 1, 0], 260)],
+    ['steeply tilted', plane([0.2, 0.95, 0], 120)],
+  ];
+
+  it.each(cases)('gives the same face for a %s plane', (_name, p) => {
+    const source = field();
+    const index = buildStackSectionIndex(source);
+
+    const plain = createStackSectionTarget(4096, false);
+    const needed = sectionStackInterval(source, 0, p, plain, { offset: 0 });
+    const indexed = createStackSectionTarget(4096, false);
+    const neededIndexed = sectionStackInterval(source, 0, p, indexed, {
+      offset: 0,
+      index,
+    });
+
+    expect(needed).toBeGreaterThan(0);
+    expect(neededIndexed).toBe(needed);
+    expect(key(indexed)).toBe(key(plain));
+  });
+
+  it('rejects most cells for a plane crossing a narrow band', () => {
+    const source = field();
+    const index = buildStackSectionIndex(source);
+    // Every triangle lands in exactly one cell, and the cells tile the footprint.
+    expect(index.items.length).toBe(source.indices.length / 3);
+    expect(index.starts[index.columns * index.rows]).toBe(index.items.length);
+
+    const target = createStackSectionTarget(4096, false);
+    sectionStackInterval(source, 0, plane([1, 0, 0], -1050), target, {
+      offset: 0,
+      index,
+    });
+    // A vertical cut is a line in plan, so it can only reach a column of cells.
+    let crossed = 0;
+    const heights = index.boxY[0]!;
+    for (let at = 0; at < index.columns * index.rows; at++) {
+      const loX = index.boxX[2 * at];
+      const hiX = index.boxX[2 * at + 1];
+      if (
+        heights[2 * at] <= heights[2 * at + 1] &&
+        loX <= 1050 &&
+        hiX >= 1050
+      ) {
+        crossed++;
+      }
+    }
+    expect(crossed).toBeLessThanOrEqual(index.rows * 2);
+  });
+
+  it('finds nothing when the plane misses the block entirely', () => {
+    const source = field();
+    const index = buildStackSectionIndex(source);
+    const target = createStackSectionTarget(256, false);
+    expect(
+      sectionStackInterval(source, 0, plane([0, 1, 0], 5000), target, {
+        offset: 0,
+        index,
+      }),
+    ).toBe(0);
   });
 });

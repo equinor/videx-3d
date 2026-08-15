@@ -1,5 +1,4 @@
 import { Vec2 } from '../types/common';
-import { chamferFill } from './chamfer';
 import { Delatin } from './delatin';
 import { sampleValidGrid } from './grid-sampling';
 import {
@@ -11,14 +10,22 @@ import { evaluateRelief, StackRelief } from './procedural-relief';
 import {
   gridToGridTransform,
   SurfaceClipHeader,
-  surfaceGridBounds,
   surfaceGridToWorld,
   surfaceWorldToGrid,
-} from './surface-clip';
+} from './surface-grid';
+import { surfaceGridBounds } from './surface-clip';
 import {
   collectStackCandidates,
   STACK_NO_DATA,
 } from './surface-stack-candidates';
+import {
+  layEmptyStackLayers,
+  resampleStackLayer,
+  STACK_MASK_DATA,
+  STACK_MASK_FILLED,
+  StackGridPlacement,
+  StackReferencePlan,
+} from './surface-stack-resample';
 import {
   GridPolygon,
   GridRing,
@@ -170,14 +177,25 @@ export type StackReference = {
 };
 
 /** {@link StackReference.masks}: the layer has no extent at this node. */
-export const STACK_MASK_NONE = 0;
-/** {@link StackReference.masks}: the layer has data of its own at this node. */
-export const STACK_MASK_DATA = 1;
+export {
+  layEmptyStackLayers,
+  resampleStackLayer,
+  STACK_MASK_DATA,
+  STACK_MASK_FILLED,
+  STACK_MASK_NONE,
+} from './surface-stack-resample';
+export type {
+  StackGridPlacement,
+  StackLayerResample,
+  StackReferencePlan,
+} from './surface-stack-resample';
+
 /**
- * {@link StackReference.masks}: no data of the layer's own, but close enough to
- * some that {@link StackReferenceOptions.maxFill} counts the node as covered.
+ * Default node budget for the common grid — see
+ * {@link StackReferenceOptions.maxNodes}. At 25 m cells this is a 50 x 50 km
+ * window at full resolution.
  */
-export const STACK_MASK_FILLED = 2;
+export const DEFAULT_STACK_MAX_NODES = 4_000_000;
 
 /** Options for {@link buildStackReference}. */
 export type StackReferenceOptions = {
@@ -484,101 +502,44 @@ export type StackCollapseResult = {
 /** Sentinel for a node with no data — outside the range of any real depth. */
 const NO_DATA = STACK_NO_DATA;
 
-// Fill every invalid node from the nearest valid one (see `chamferFill`). A
-// continuous extension rather than a hard edge matters because the triangulator
-// chases discontinuities: a cliff at a data boundary costs a dense cluster of
-// slivers for geometry that is either outside the mask or about to be truncated.
-//
-// `limit` (in CELLS) bounds how far the fill counts as coverage: nodes within it
-// are marked STACK_MASK_FILLED, everything beyond keeps its filled value but stays
-// absent. The distance is already computed by the fill, so bounding it is free.
-function fillNearest(
-  values: Float32Array,
-  mask: Uint8Array,
-  w: number,
-  h: number,
-  limit: number,
-) {
-  const dist = chamferFill(values, mask, w, h);
-  if (limit < Infinity) {
-    for (let i = 0; i < mask.length; i++) {
-      if (!mask[i] && dist[i] <= limit) mask[i] = STACK_MASK_FILLED;
-    }
-  }
-}
-
-// Bilinear sample over the VALID corners only, without clamping into the grid:
-// returns NaN outside the grid or where all four corners are missing.
-function sampleStrict(
-  values: Float32Array,
-  nx: number,
-  ny: number,
-  fx: number,
-  fz: number,
-  nullValue: number,
-): number {
-  if (!(fx >= 0 && fx <= nx - 1 && fz >= 0 && fz <= ny - 1)) return NaN;
-  const x0 = Math.floor(fx);
-  const z0 = Math.floor(fz);
-  const x1 = Math.min(x0 + 1, nx - 1);
-  const z1 = Math.min(z0 + 1, ny - 1);
-  const tx = fx - x0;
-  const tz = fz - z0;
-  let sum = 0;
-  let wsum = 0;
-  const add = (col: number, row: number, w: number) => {
-    const v = values[row * nx + col];
-    if (v !== nullValue && v >= 0) {
-      sum += v * w;
-      wsum += w;
-    }
-  };
-  add(x0, z0, (1 - tx) * (1 - tz));
-  add(x1, z0, tx * (1 - tz));
-  add(x0, z1, (1 - tx) * tz);
-  add(x1, z1, tx * tz);
-  return wsum > 0 ? sum / wsum : NaN;
-}
-
 /**
- * Resample a stack of surfaces onto one common grid — the first half of the
- * shared-tessellation build.
+ * Plan the common grid a stack will be resampled onto — the finest layer's grid,
+ * cropped to the mask and decimated to the node budget.
  *
- * The finest-resolution layer's grid, cropped to the mask, defines the common
- * domain; every layer is bilinearly resampled onto it and converted to **scene Y**
- * so all downstream work (tessellation, ordering, geometry) speaks one coordinate
- * system. Layers keep their own grids untouched.
+ * ⭐ Reads the layers' HEADERS only. That is what lets a caller resample each
+ * layer as its samples arrive (or on a worker) instead of holding the whole
+ * column first; {@link buildStackReference} is simply this plus a loop.
  *
- * @param layers the stack, shallowest first
+ * @param layers the stack, shallowest first; `null` for a synthetic layer, which
+ *   has no grid of its own to offer
  * @param polygon the mask polygon (scene XZ) the chunk is clipped to
  * @param options see {@link StackReferenceOptions}
- * @returns the common domain, or `null` when the mask misses every layer's grid
+ * @returns the common grid, or `null` when the mask misses every layer's grid
  *
  * @group Geometries
  */
-export function buildStackReference(
-  layers: StackLayer[],
+export function planStackReference(
+  layers: readonly (StackGridPlacement | null)[],
   polygon: PlanarPolygonGeometry,
   options: StackReferenceOptions = {},
-): StackReference | null {
+): StackReferencePlan | null {
   if (layers.length === 0) return null;
   const margin = options.margin ?? 2;
-  const maxNodes = options.maxNodes ?? 4_000_000;
+  const maxNodes = options.maxNodes ?? DEFAULT_STACK_MAX_NODES;
 
   // The finest layer defines the common domain, so no layer is resampled up.
   // Synthetic layers have no grid to offer, so at least one real one is needed.
-  let best = -1;
+  let source: StackGridPlacement | null = null;
   let bestArea = Infinity;
-  layers.forEach((layer, i) => {
-    if (isSyntheticLayer(layer)) return;
+  for (const layer of layers) {
+    if (!layer) continue;
     const area = layer.header.xinc * layer.header.yinc;
     if (area < bestArea) {
       bestArea = area;
-      best = i;
+      source = layer;
     }
-  });
-  if (best < 0) return null;
-  const source = layers[best] as StackGridLayer;
+  }
+  if (!source) return null;
   const bounds = surfaceGridBounds(
     source.header,
     polygon,
@@ -627,10 +588,42 @@ export function buildStackReference(
   const origin = surfaceGridToWorld(header, [0, 0])(0, 0);
   const worldPosition: Vec2 = [anchor[0] - origin[0], anchor[1] - origin[1]];
 
+  return { header, worldPosition, step, fillLimit };
+}
+
+/**
+ * Resample a stack of surfaces onto one common grid — the first half of the
+ * shared-tessellation build.
+ *
+ * The finest-resolution layer's grid, cropped to the mask, defines the common
+ * domain; every layer is bilinearly resampled onto it and converted to **scene Y**
+ * so all downstream work (tessellation, ordering, geometry) speaks one coordinate
+ * system. Layers keep their own grids untouched.
+ *
+ * @param layers the stack, shallowest first
+ * @param polygon the mask polygon (scene XZ) the chunk is clipped to
+ * @param options see {@link StackReferenceOptions}
+ * @returns the common domain, or `null` when the mask misses every layer's grid
+ *
+ * @group Geometries
+ */
+export function buildStackReference(
+  layers: StackLayer[],
+  polygon: PlanarPolygonGeometry,
+  options: StackReferenceOptions = {},
+): StackReference | null {
+  const plan = planStackReference(
+    layers.map(l => (isSyntheticLayer(l) ? null : l)),
+    polygon,
+    options,
+  );
+  if (!plan) return null;
+
+  const { header, worldPosition } = plan;
+  const count = header.nx * header.ny;
   const channels: Float32Array[] = [];
   const masks: Uint8Array[] = [];
   const empty: boolean[] = [];
-  const count = nx * ny;
 
   for (const layer of layers) {
     // A synthetic layer has nothing to resample and data everywhere. `offset`
@@ -648,59 +641,23 @@ export function buildStackReference(
       // would silently pair every later layer with the wrong geometry.
       channels.push(channel ?? new Float32Array(count));
       masks.push(new Uint8Array(count).fill(STACK_MASK_DATA));
+      empty.push(false);
       continue;
     }
-    const nullValue = layer.nullValue ?? -1;
-    const channel = new Float32Array(count);
-    const mask = new Uint8Array(count);
-    const { a, b, c, d, e, f } = gridToGridTransform(
-      header,
-      worldPosition,
-      layer.header,
-      layer.worldPosition,
+    const resampled = resampleStackLayer(
+      plan,
+      layer,
+      layer.referenceDepth,
+      layer.nullValue ?? -1,
     );
-    const lnx = layer.header.nx;
-    const lny = layer.header.ny;
-    let any = false;
-    for (let row = 0; row < ny; row++) {
-      let col2 = b * row + c;
-      let row2 = e * row + f;
-      const out = row * nx;
-      for (let col = 0; col < nx; col++, col2 += a, row2 += d) {
-        const v = sampleStrict(layer.values, lnx, lny, col2, row2, nullValue);
-        if (Number.isNaN(v)) {
-          channel[out + col] = NO_DATA;
-        } else {
-          // scene Y (upwards-positive, sea level at 0)
-          channel[out + col] = v - layer.referenceDepth;
-          mask[out + col] = STACK_MASK_DATA;
-          any = true;
-        }
-      }
-    }
-    if (any) fillNearest(channel, mask, nx, ny, fillLimit);
-    channels.push(channel);
-    masks.push(mask);
-    empty.push(!any);
+    channels.push(resampled.channel);
+    masks.push(resampled.mask);
+    empty.push(resampled.empty);
   }
 
-  // ⚠️ A layer with NO data ANYWHERE — a horizon eroded away across the whole
-  // area, or a survey that misses this footprint entirely — has nothing to fill
-  // from, so its channel would stay at the NO_DATA sentinel (-1e30) and be drawn
-  // as a surface reaching to infinity. Lay it on its nearest mapped neighbour
-  // instead: zero thickness, so it claims no volume and the collapse drops it.
-  // The mask stays empty, so absence and the diagnostics remain truthful.
-  for (let i = 0; i < channels.length; i++) {
-    if (!empty[i]) continue;
-    let donor = -1;
-    for (let j = i - 1; j >= 0 && donor < 0; j--) if (!empty[j]) donor = j;
-    for (let j = i + 1; j < channels.length && donor < 0; j++) {
-      if (!empty[j]) donor = j;
-    }
-    if (donor >= 0) channels[i].set(channels[donor]);
-  }
+  layEmptyStackLayers(channels, empty);
 
-  return { header, worldPosition, channels, masks, step };
+  return { header, worldPosition, channels, masks, step: plan.step };
 }
 
 /** The result of {@link measureStackCoverage}. */
@@ -747,8 +704,29 @@ export function rasterizeStackOutline(
   );
   const insidePolygon = makeGridInside(gridPolygons);
   const inside = new Uint8Array(nx * ny);
-  for (let row = 0; row < ny; row++) {
-    for (let col = 0; col < nx; col++) {
+  // Only the polygon's own grid-space window is tested: on a shared column the
+  // grid spans the whole survey while a chunk may occupy a corner of it, and a
+  // node outside the bounding box is outside the polygon by definition.
+  let minCol = Infinity;
+  let maxCol = -Infinity;
+  let minRow = Infinity;
+  let maxRow = -Infinity;
+  for (const rings of gridPolygons) {
+    for (const ring of rings) {
+      for (const [gx, gy] of ring) {
+        if (gx < minCol) minCol = gx;
+        if (gx > maxCol) maxCol = gx;
+        if (gy < minRow) minRow = gy;
+        if (gy > maxRow) maxRow = gy;
+      }
+    }
+  }
+  const col0 = Math.max(0, Math.floor(minCol));
+  const col1 = Math.min(nx - 1, Math.ceil(maxCol));
+  const row0 = Math.max(0, Math.floor(minRow));
+  const row1 = Math.min(ny - 1, Math.ceil(maxRow));
+  for (let row = row0; row <= row1; row++) {
+    for (let col = col0; col <= col1; col++) {
       if (insidePolygon(col, row)) inside[row * nx + col] = 1;
     }
   }
@@ -937,9 +915,45 @@ export function tessellateStack(
     for (let i = 0; i < list.length; i++) union.add(list[i]);
   }
 
-  // Corners come with the bootstrap triangulation.
+  // ⭐ Only the nodes this chunk draws. The candidates are collected over the
+  // whole COLUMN — one grid, shared by every chunk cut from it — so a chunk with a
+  // small footprint is otherwise handed the entire field's detail. Dropping the
+  // rest cannot change the result: the rim is a CONSTRAINT edge and a flip never
+  // crosses one, so a point outside it takes part in no triangle that survives
+  // `removeExteriorTriangles`.
+  // ⚠️ DILATED BY ONE CELL (the neighbour test), because a node lying exactly ON
+  // the rim IS a vertex of kept triangles and the even-odd test is free to call it
+  // outside. The extra band costs a few exterior points; without it the chunk
+  // quietly loses rim detail.
+  const insidePolygon = makeGridInside(gridPolygons);
+  const nearPolygon = (col: number, row: number) =>
+    insidePolygon(col, row) ||
+    insidePolygon(col - 1, row) ||
+    insidePolygon(col + 1, row) ||
+    insidePolygon(col, row - 1) ||
+    insidePolygon(col, row + 1);
+  let minCol = Infinity;
+  let maxCol = -Infinity;
+  let minRow = Infinity;
+  let maxRow = -Infinity;
+  for (const poly of gridPolygons) {
+    for (const ring of poly) {
+      for (const [gx, gy] of ring) {
+        if (gx < minCol) minCol = gx;
+        if (gx > maxCol) maxCol = gx;
+        if (gy < minRow) minRow = gy;
+        if (gy > maxRow) maxRow = gy;
+      }
+    }
+  }
+  minCol -= 1;
+  maxCol += 1;
+  minRow -= 1;
+  maxRow += 1;
+
   const master = new Delatin(reference.channels[0], nx, NO_DATA);
   master.beginConstraints();
+  // Corners come with the bootstrap triangulation.
   union.delete(0);
   union.delete(nx - 1);
   union.delete((ny - 1) * nx);
@@ -951,6 +965,8 @@ export function tessellateStack(
   for (const node of nodes) {
     const col = node % nx;
     const row = (node - col) / nx;
+    if (col < minCol || col > maxCol || row < minRow || row > maxRow) continue;
+    if (!nearPolygon(col, row)) continue;
     master.insertPoint(col, row, 0);
   }
 
@@ -1008,7 +1024,7 @@ export function tessellateStack(
     }
   }
 
-  master.removeExteriorTriangles(makeGridInside(gridPolygons));
+  master.removeExteriorTriangles(insidePolygon);
   if (master.triangles.length === 0) return null;
 
   // Compact: the trimmed triangulation keeps every vertex ever inserted, and the

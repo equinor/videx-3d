@@ -1,27 +1,53 @@
 import { collectStackCandidates } from '../../sdk/geometries/surface-stack-candidates';
-import type { RefineRequest, RefineResponse } from './stack-worker-types';
+import { resampleStackLayer } from '../../sdk/geometries/surface-stack-resample';
+import type {
+  StackWorkerRequest,
+  StackWorkerResponse,
+} from './stack-worker-types';
 
 /**
- * Internal stack refinement worker: runs the greedy TIN refinement for ONE layer
- * of a shared tessellation's common grid, entirely off the data store and free of
- * three.js. Created and pooled by `StackWorkerPool` inside the chunk generator, so
- * the per-layer refinement — the expensive part of the build, and fully
- * independent between layers — runs in parallel. Ships inlined in the library
+ * Internal stack worker: does the two per-layer jobs of a shared tessellation —
+ * putting a layer's grid onto the common grid, and running the greedy TIN
+ * refinement on it — entirely off the data store and free of three.js. Both are
+ * fully independent between layers, which is what makes them poolable. Created by
+ * `StackWorkerPool` inside the chunk generator and shipped inlined in the library
  * bundle (`?worker&inline`), so host apps need no worker configuration.
  */
 const workerSelf: {
-  onmessage: ((e: MessageEvent<RefineRequest>) => void) | null;
-  postMessage: (message: RefineResponse, transfer: Transferable[]) => void;
+  onmessage: ((e: MessageEvent<StackWorkerRequest>) => void) | null;
+  postMessage: (message: StackWorkerResponse, transfer: Transferable[]) => void;
 } = self as unknown as {
-  onmessage: ((e: MessageEvent<RefineRequest>) => void) | null;
-  postMessage: (message: RefineResponse, transfer: Transferable[]) => void;
+  onmessage: ((e: MessageEvent<StackWorkerRequest>) => void) | null;
+  postMessage: (message: StackWorkerResponse, transfer: Transferable[]) => void;
 };
 
 workerSelf.onmessage = e => {
-  const { id, channel, nx, maxError } = e.data;
   const start = performance.now();
+  if (e.data.kind === 'resample') {
+    const { id, plan, placement, values, referenceDepth, nullValue } = e.data;
+    const { channel, mask, empty } = resampleStackLayer(
+      plan,
+      { ...placement, values },
+      referenceDepth,
+      nullValue,
+    );
+    workerSelf.postMessage(
+      {
+        kind: 'resample',
+        id,
+        channel,
+        mask,
+        empty,
+        resampleMs: performance.now() - start,
+      },
+      [channel.buffer, mask.buffer],
+    );
+    return;
+  }
+  const { id, channel, nx, maxError } = e.data;
   const nodes = collectStackCandidates(channel, nx, maxError);
-  workerSelf.postMessage({ id, nodes, refineMs: performance.now() - start }, [
-    nodes.buffer,
-  ]);
+  workerSelf.postMessage(
+    { kind: 'refine', id, nodes, refineMs: performance.now() - start },
+    [nodes.buffer],
+  );
 };

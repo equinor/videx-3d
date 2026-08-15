@@ -5,7 +5,10 @@ import {
   buildStackReference,
   clampStackToCarrier,
   collapseStackTriangles,
+  layEmptyStackLayers,
   measureStackCoverage,
+  planStackReference,
+  resampleStackLayer,
   resolveStackGrid,
   resolveStackOrder,
   sampleStackHeights,
@@ -15,7 +18,7 @@ import {
   stackDepthStats,
   stackDuplicateFractions,
   stackIntervalTriangles,
-  StackLayer,
+  StackGridLayer,
   stackLayerUvs,
   stackVertexPositions,
   tessellateStack,
@@ -47,7 +50,7 @@ const layerFrom = (
   depth: (col: number, row: number) => number | null,
   referenceDepth = 2000,
   h: SurfaceClipHeader = header(),
-): StackLayer => {
+): StackGridLayer => {
   const values = new Float32Array(h.nx * h.ny);
   for (let row = 0; row < h.ny; row++) {
     for (let col = 0; col < h.nx; col++) {
@@ -149,6 +152,35 @@ describe('buildStackReference', () => {
       ],
     ]);
     expect(buildStackReference([flat], away)).toBeNull();
+  });
+
+  // The generator plans the grid from the spec's HEADERS and resamples each layer
+  // as its own grid lands (on a worker), so the two halves have to add up to
+  // exactly what the one-shot function produces.
+  it('is the plan plus one resample per layer, exactly', () => {
+    const top = layerFrom((col, row) => 1000 + 3 * col - 2 * row);
+    const base = layerFrom((col: number) => (col > 20 ? null : 1400));
+    const polygon = maskPolygon(4, 28);
+
+    const oneShot = buildStackReference([top, base], polygon, {
+      maxFill: 100,
+    })!;
+    const plan = planStackReference([top, base], polygon, { maxFill: 100 })!;
+    const parts = [top, base].map(l =>
+      resampleStackLayer(plan, l, l.referenceDepth, l.nullValue ?? -1),
+    );
+    layEmptyStackLayers(
+      parts.map(p => p.channel),
+      parts.map(p => p.empty),
+    );
+
+    expect(plan.header).toEqual(oneShot.header);
+    expect(plan.worldPosition).toEqual(oneShot.worldPosition);
+    expect(plan.step).toBe(oneShot.step);
+    parts.forEach((part, i) => {
+      expect([...part.channel]).toEqual([...oneShot.channels[i]]);
+      expect([...part.mask]).toEqual([...oneShot.masks[i]]);
+    });
   });
 });
 
@@ -378,6 +410,42 @@ describe('tessellateStack', () => {
 
     expect(candidates[0].length).toBeGreaterThan(4);
     expect(b.indices.length).toBe(a.indices.length);
+  });
+
+  // The column collects candidates over the WHOLE envelope, and every chunk cut
+  // from it used to insert all of them. Dropping the ones outside the chunk is
+  // only sound if it changes nothing — which it is, because the rim is a
+  // constraint edge and no triangle inside it can use a vertex outside it.
+  it('ignores candidates outside its own outline, exactly', () => {
+    const bumpy = layerFrom(
+      (col, row) => 1000 + 60 * Math.sin(col / 3) * Math.cos(row / 4),
+    );
+    const envelope = maskPolygon(0, NX - 1);
+    const reference = buildStackReference([bumpy], envelope)!;
+    const nx = reference.header.nx;
+    const all = collectStackCandidates(reference.channels[0], nx, 5);
+
+    // the chunk is a small corner of the column
+    const chunk = maskPolygon(4, 12);
+    const inside = all.filter(node => {
+      const col = node % nx;
+      const row = (node - col) / nx;
+      return col >= 4 && col <= 12 && row >= 4 && row <= 12;
+    });
+    expect(inside.length).toBeLessThan(all.length / 4);
+
+    const withAll = tessellateStack(reference, chunk, 5, [all])!;
+    const withInside = tessellateStack(reference, chunk, 5, [
+      Uint32Array.from(inside),
+    ])!;
+
+    // The VERTEX SET is what has to match: those are the points every layer's
+    // height is sampled at, so an identical set means an identical surface.
+    // ⚠️ The diagonals need not match. A regular grid of equal heights is
+    // cocircular everywhere, so several Delaunay triangulations of the same points
+    // are equally valid and the insertion history picks one.
+    expect([...withInside.coords]).toEqual([...withAll.coords]);
+    expect(withInside.indices.length).toBe(withAll.indices.length);
   });
 });
 

@@ -97,7 +97,193 @@ export type StackSectionOptions = {
    * visible.
    */
   offset?: number;
+  /**
+   * Spatial index over the shared triangles ({@link buildStackSectionIndex}). With
+   * it the cut visits only the cells the plane can cross; without it every
+   * triangle of the tessellation is expanded into a prism and rejected.
+   *
+   * Output is identical either way, though the triangles are written in a
+   * different ORDER (by cell rather than by index).
+   */
+  index?: StackSectionIndex;
 };
+
+/**
+ * A uniform XZ grid over a stack's shared triangles, plus each interval's height
+ * range per cell — what lets a moving section skip the parts of the block its
+ * plane cannot reach.
+ *
+ * ⭐ ONE index serves every interval: they share the tessellation's topology and
+ * XZ positions, and only their heights differ. So the (heavy) triangle buckets are
+ * built once and each interval adds two floats per cell. Building per-interval
+ * triangle lists instead would cost tens of megabytes on a field-sized stack.
+ *
+ * ⚠️ The Y range is what makes a near-HORIZONTAL cut cheap; the XZ grid alone
+ * prunes nothing for one. Between them the cost follows the band the plane
+ * actually crosses, at any orientation.
+ *
+ * @group Geometries
+ */
+export type StackSectionIndex = {
+  columns: number;
+  rows: number;
+  cell: number;
+  minX: number;
+  minZ: number;
+  /** CSR row starts, `columns * rows + 1` long */
+  starts: Uint32Array;
+  /** triangle indices, bucketed by the cell their centroid falls in */
+  items: Uint32Array;
+  /** per cell, the XZ box its triangles actually cover (they overhang the cell) */
+  boxX: Float32Array;
+  boxZ: Float32Array;
+  /** per interval, per cell: the prism's Y range, or `null` until first cut */
+  boxY: (Float32Array | null)[];
+};
+
+/** triangles per cell to aim for: fine enough to prune, coarse enough to build fast */
+const CELL_TRIANGLES = 64;
+
+/**
+ * Build the spatial index a section uses to skip whole regions of a stack.
+ *
+ * Costs one pass over the triangles and is worth keeping for the life of the
+ * build — the geometry never moves, only the plane does.
+ *
+ * @group Geometries
+ */
+export function buildStackSectionIndex(
+  source: StackSectionSource,
+): StackSectionIndex {
+  const { positionsXZ, indices } = source;
+  const triangles = indices.length / 3;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (let i = 0; i < positionsXZ.length; i += 2) {
+    const x = positionsXZ[i];
+    const z = positionsXZ[i + 1];
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (z < minZ) minZ = z;
+    if (z > maxZ) maxZ = z;
+  }
+  const width = Math.max(maxX - minX, 1e-6);
+  const depth = Math.max(maxZ - minZ, 1e-6);
+  const cell = Math.max(
+    Math.sqrt((width * depth * CELL_TRIANGLES) / Math.max(1, triangles)),
+    1e-6,
+  );
+  const columns = Math.max(1, Math.ceil(width / cell));
+  const rows = Math.max(1, Math.ceil(depth / cell));
+  const cells = columns * rows;
+
+  // Bucket by CENTROID, so a triangle lands in exactly one cell; the cell's box is
+  // then grown to contain it. Bucketing by overlap would emit a triangle once per
+  // cell it touches.
+  const cellOf = (t: number) => {
+    const a = indices[3 * t];
+    const b = indices[3 * t + 1];
+    const c = indices[3 * t + 2];
+    const cx =
+      (positionsXZ[2 * a] + positionsXZ[2 * b] + positionsXZ[2 * c]) / 3;
+    const cz =
+      (positionsXZ[2 * a + 1] +
+        positionsXZ[2 * b + 1] +
+        positionsXZ[2 * c + 1]) /
+      3;
+    const col = Math.min(columns - 1, Math.max(0, ((cx - minX) / cell) | 0));
+    const row = Math.min(rows - 1, Math.max(0, ((cz - minZ) / cell) | 0));
+    return row * columns + col;
+  };
+
+  const starts = new Uint32Array(cells + 1);
+  for (let t = 0; t < triangles; t++) starts[cellOf(t) + 1]++;
+  for (let i = 0; i < cells; i++) starts[i + 1] += starts[i];
+
+  const items = new Uint32Array(triangles);
+  const cursor = starts.slice(0, cells);
+  const boxX = new Float32Array(cells * 2);
+  const boxZ = new Float32Array(cells * 2);
+  for (let i = 0; i < cells; i++) {
+    boxX[2 * i] = Infinity;
+    boxX[2 * i + 1] = -Infinity;
+    boxZ[2 * i] = Infinity;
+    boxZ[2 * i + 1] = -Infinity;
+  }
+  for (let t = 0; t < triangles; t++) {
+    const at = cellOf(t);
+    items[cursor[at]++] = t;
+    for (let k = 0; k < 3; k++) {
+      const v = indices[3 * t + k];
+      const x = positionsXZ[2 * v];
+      const z = positionsXZ[2 * v + 1];
+      if (x < boxX[2 * at]) boxX[2 * at] = x;
+      if (x > boxX[2 * at + 1]) boxX[2 * at + 1] = x;
+      if (z < boxZ[2 * at]) boxZ[2 * at] = z;
+      if (z > boxZ[2 * at + 1]) boxZ[2 * at + 1] = z;
+    }
+  }
+
+  return {
+    columns,
+    rows,
+    cell,
+    minX,
+    minZ,
+    starts,
+    items,
+    boxX,
+    boxZ,
+    boxY: source.intervals.map(() => null),
+  };
+}
+
+// Each cell's Y range for one interval: the prism spans the bottom layer's minimum
+// to the top layer's maximum over the cell's member triangles. Empty cells keep an
+// inverted range, which the plane test rejects.
+function intervalHeights(
+  source: StackSectionSource,
+  index: StackSectionIndex,
+  interval: number,
+): Float32Array {
+  const known = index.boxY[interval];
+  if (known) return known;
+  const cells = index.columns * index.rows;
+  const range = new Float32Array(cells * 2);
+  for (let i = 0; i < cells; i++) {
+    range[2 * i] = Infinity;
+    range[2 * i + 1] = -Infinity;
+  }
+  const members = source.intervals[interval];
+  const top = source.heights[interval];
+  const bottom = source.heights[interval + 1];
+  if (members && top && bottom) {
+    const { indices } = source;
+    for (let at = 0; at < cells; at++) {
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (let i = index.starts[at]; i < index.starts[at + 1]; i++) {
+        const t = index.items[i];
+        if (!members[t]) continue;
+        for (let k = 0; k < 3; k++) {
+          const v = indices[3 * t + k];
+          const b = bottom[v];
+          const a = top[v];
+          if (b < lo) lo = b;
+          if (a < lo) lo = a;
+          if (b > hi) hi = b;
+          if (a > hi) hi = a;
+        }
+      }
+      range[2 * at] = lo;
+      range[2 * at + 1] = hi;
+    }
+  }
+  index.boxY[interval] = range;
+  return range;
+}
 
 /**
  * Allocate section buffers for `capacity` vertices.
@@ -258,154 +444,189 @@ export function sectionStackInterval(
   let needed = 0;
   const triangles = members.length;
 
-  for (let t = 0; t < triangles; t++) {
-    if (!members[t]) continue;
-    const a = indices[3 * t];
-    const b = indices[3 * t + 1];
-    const c = indices[3 * t + 2];
-
-    // Slots 0-2 are the top triangle and 3-5 the bottom one, in the SAME vertex
-    // order, so slot k and slot k+3 are the ends of one vertical edge.
-    pv[0] = a;
-    pv[1] = b;
-    pv[2] = c;
-    pv[3] = a;
-    pv[4] = b;
-    pv[5] = c;
-    px[0] = positionsXZ[2 * a];
-    pz[0] = positionsXZ[2 * a + 1];
-    px[1] = positionsXZ[2 * b];
-    pz[1] = positionsXZ[2 * b + 1];
-    px[2] = positionsXZ[2 * c];
-    pz[2] = positionsXZ[2 * c + 1];
-    px[3] = px[0];
-    pz[3] = pz[0];
-    px[4] = px[1];
-    pz[4] = pz[1];
-    px[5] = px[2];
-    pz[5] = pz[2];
-    py[0] = top[a];
-    py[1] = top[b];
-    py[2] = top[c];
-    py[3] = bottom[a];
-    py[4] = bottom[b];
-    py[5] = bottom[c];
-    pw[0] = 1;
-    pw[1] = 1;
-    pw[2] = 1;
-    pw[3] = 0;
-    pw[4] = 0;
-    pw[5] = 0;
-    if (marks) {
-      // A volume is invented as soon as either surface that closes it was, which
-      // is the rule the walls already use.
-      pm[0] = Math.max(markTop?.[a] ?? 0, markBottom?.[a] ?? 0);
-      pm[1] = Math.max(markTop?.[b] ?? 0, markBottom?.[b] ?? 0);
-      pm[2] = Math.max(markTop?.[c] ?? 0, markBottom?.[c] ?? 0);
-      pm[3] = pm[0];
-      pm[4] = pm[1];
-      pm[5] = pm[2];
+  // ⭐ With an index the unit of iteration is a CELL: reject the whole cell when
+  // its box lies clear of the plane (|d| <= r is the standard box/plane test, and
+  // is orientation-independent, so a tilted cut prunes as well as an upright one),
+  // and only then expand its triangles into prisms.
+  const index = options.index;
+  const heights = index ? intervalHeights(source, index, interval) : null;
+  const cells = index ? index.columns * index.rows : 1;
+  for (let cellAt = 0; cellAt < cells; cellAt++) {
+    let from = 0;
+    let to = triangles;
+    if (index && heights) {
+      from = index.starts[cellAt];
+      to = index.starts[cellAt + 1];
+      if (from === to) continue;
+      const loY = heights[2 * cellAt];
+      const hiY = heights[2 * cellAt + 1];
+      if (!(loY <= hiY)) continue;
+      const loX = index.boxX[2 * cellAt];
+      const hiX = index.boxX[2 * cellAt + 1];
+      const loZ = index.boxZ[2 * cellAt];
+      const hiZ = index.boxZ[2 * cellAt + 1];
+      const d =
+        nx * ((loX + hiX) / 2) +
+        ny * ((loY + hiY) / 2) +
+        nz * ((loZ + hiZ) / 2) +
+        constant;
+      const r =
+        Math.abs(nx) * ((hiX - loX) / 2) +
+        Math.abs(ny) * ((hiY - loY) / 2) +
+        Math.abs(nz) * ((hiZ - loZ) / 2);
+      if (d > r || d < -r) continue;
     }
 
-    let above = 0;
-    let strict = 0;
-    for (let k = 0; k < 6; k++) {
-      pd[k] = nx * px[k] + ny * py[k] + nz * pz[k] + constant;
-      if (!(pd[k] < 0)) above++;
-      if (pd[k] > 0) strict++;
-    }
-    // Wholly on one side: no face, and the common case by a wide margin. `strict`
-    // is what separates a cut from a GRAZE — a plane touching a corner or an edge
-    // removes nothing, and closing it would emit a zero-area polygon whose
-    // vertices are all coincident.
-    if (strict === 0 || above === 6) continue;
+    for (let i = from; i < to; i++) {
+      const t = index ? index.items[i] : i;
+      if (!members[t]) continue;
+      const a = indices[3 * t];
+      const b = indices[3 * t + 1];
+      const c = indices[3 * t + 2];
 
-    let m = 0;
-    for (let e = 0; e < 9; e++) {
-      let i0 = EDGES[e][0];
-      let i1 = EDGES[e][1];
-      // ⭐⭐ THE watertightness step. Two triangles sharing an XZ edge list its
-      // endpoints in opposite slot order, and `p0 + s*(p1 - p0)` is not the same
-      // float read the other way round. Ordering by (layer, vertex index) — which
-      // both cells agree on — is what makes the two faces meet exactly.
-      const swap = i0 < 3 === i1 < 3 ? pv[i0] > pv[i1] : i0 >= 3;
-      if (swap) {
-        const t0 = i0;
-        i0 = i1;
-        i1 = t0;
+      // Slots 0-2 are the top triangle and 3-5 the bottom one, in the SAME vertex
+      // order, so slot k and slot k+3 are the ends of one vertical edge.
+      pv[0] = a;
+      pv[1] = b;
+      pv[2] = c;
+      pv[3] = a;
+      pv[4] = b;
+      pv[5] = c;
+      px[0] = positionsXZ[2 * a];
+      pz[0] = positionsXZ[2 * a + 1];
+      px[1] = positionsXZ[2 * b];
+      pz[1] = positionsXZ[2 * b + 1];
+      px[2] = positionsXZ[2 * c];
+      pz[2] = positionsXZ[2 * c + 1];
+      px[3] = px[0];
+      pz[3] = pz[0];
+      px[4] = px[1];
+      pz[4] = pz[1];
+      px[5] = px[2];
+      pz[5] = pz[2];
+      py[0] = top[a];
+      py[1] = top[b];
+      py[2] = top[c];
+      py[3] = bottom[a];
+      py[4] = bottom[b];
+      py[5] = bottom[c];
+      pw[0] = 1;
+      pw[1] = 1;
+      pw[2] = 1;
+      pw[3] = 0;
+      pw[4] = 0;
+      pw[5] = 0;
+      if (marks) {
+        // A volume is invented as soon as either surface that closes it was, which
+        // is the rule the walls already use.
+        pm[0] = Math.max(markTop?.[a] ?? 0, markBottom?.[a] ?? 0);
+        pm[1] = Math.max(markTop?.[b] ?? 0, markBottom?.[b] ?? 0);
+        pm[2] = Math.max(markTop?.[c] ?? 0, markBottom?.[c] ?? 0);
+        pm[3] = pm[0];
+        pm[4] = pm[1];
+        pm[5] = pm[2];
       }
-      const d0 = pd[i0];
-      const d1 = pd[i1];
-      // `d === 0` counts as ABOVE on both sides of the comparison, so a plane
-      // through a corner yields that corner exactly once instead of twice.
-      if (d0 < 0 === d1 < 0) continue;
-      if (m === MAX_POLY) break;
-      const s = d0 / (d0 - d1);
-      cutX[m] = px[i0] + (px[i1] - px[i0]) * s;
-      cutY[m] = py[i0] + (py[i1] - py[i0]) * s;
-      cutZ[m] = pz[i0] + (pz[i1] - pz[i0]) * s;
-      cutV[m] = pw[i0] + (pw[i1] - pw[i0]) * s;
-      if (marks) cutM[m] = pm[i0] + (pm[i1] - pm[i0]) * s;
-      m++;
-    }
-    if (m < 3) continue;
 
-    // Sort the crossings CCW about their centroid in the plane's own basis. The
-    // polygon is convex, so an angular sort is its boundary order exactly.
-    let cx = 0;
-    let cy = 0;
-    let cz = 0;
-    for (let k = 0; k < m; k++) {
-      cx += cutX[k];
-      cy += cutY[k];
-      cz += cutZ[k];
-    }
-    cx /= m;
-    cy /= m;
-    cz /= m;
-    for (let k = 0; k < m; k++) {
-      const dx = cutX[k] - cx;
-      const dy = cutY[k] - cy;
-      const dz = cutZ[k] - cz;
-      cutA[k] = Math.atan2(
-        dx * vx + dy * vy + dz * vz,
-        dx * ux + dy * uy + dz * uz,
-      );
-      order[k] = k;
-    }
-    for (let k = 1; k < m; k++) {
-      const key = order[k];
-      const angle = cutA[key];
-      let j = k - 1;
-      while (j >= 0 && cutA[order[j]] > angle) {
-        order[j + 1] = order[j];
-        j--;
+      let above = 0;
+      let strict = 0;
+      for (let k = 0; k < 6; k++) {
+        pd[k] = nx * px[k] + ny * py[k] + nz * pz[k] + constant;
+        if (!(pd[k] < 0)) above++;
+        if (pd[k] > 0) strict++;
       }
-      order[j + 1] = key;
-    }
+      // Wholly on one side: no face, and the common case by a wide margin. `strict`
+      // is what separates a cut from a GRAZE — a plane touching a corner or an edge
+      // removes nothing, and closing it would emit a zero-area polygon whose
+      // vertices are all coincident.
+      if (strict === 0 || above === 6) continue;
 
-    const fan = (m - 2) * 3;
-    if (needed + fan > capacity) {
-      needed += fan;
-      continue;
-    }
-    for (let k = 1; k + 1 < m; k++) {
-      const tri = [order[0], order[k], order[k + 1]];
-      for (let s = 0; s < 3; s++) {
-        const p = tri[s];
-        const at = needed + s;
-        target.positions[3 * at] = cutX[p] + ox;
-        target.positions[3 * at + 1] = cutY[p] + oy;
-        target.positions[3 * at + 2] = cutZ[p] + oz;
-        target.normals[3 * at] = nx;
-        target.normals[3 * at + 1] = ny;
-        target.normals[3 * at + 2] = nz;
-        target.uvs[2 * at] = cutX[p] * ux + cutY[p] * uy + cutZ[p] * uz;
-        target.uvs[2 * at + 1] = cutX[p] * vx + cutY[p] * vy + cutZ[p] * vz;
-        target.wallV[at] = cutV[p];
-        if (marks) marks[at] = cutM[p];
+      let m = 0;
+      for (let e = 0; e < 9; e++) {
+        let i0 = EDGES[e][0];
+        let i1 = EDGES[e][1];
+        // ⭐⭐ THE watertightness step. Two triangles sharing an XZ edge list its
+        // endpoints in opposite slot order, and `p0 + s*(p1 - p0)` is not the same
+        // float read the other way round. Ordering by (layer, vertex index) — which
+        // both cells agree on — is what makes the two faces meet exactly.
+        const swap = i0 < 3 === i1 < 3 ? pv[i0] > pv[i1] : i0 >= 3;
+        if (swap) {
+          const t0 = i0;
+          i0 = i1;
+          i1 = t0;
+        }
+        const d0 = pd[i0];
+        const d1 = pd[i1];
+        // `d === 0` counts as ABOVE on both sides of the comparison, so a plane
+        // through a corner yields that corner exactly once instead of twice.
+        if (d0 < 0 === d1 < 0) continue;
+        if (m === MAX_POLY) break;
+        const s = d0 / (d0 - d1);
+        cutX[m] = px[i0] + (px[i1] - px[i0]) * s;
+        cutY[m] = py[i0] + (py[i1] - py[i0]) * s;
+        cutZ[m] = pz[i0] + (pz[i1] - pz[i0]) * s;
+        cutV[m] = pw[i0] + (pw[i1] - pw[i0]) * s;
+        if (marks) cutM[m] = pm[i0] + (pm[i1] - pm[i0]) * s;
+        m++;
       }
-      needed += 3;
+      if (m < 3) continue;
+
+      // Sort the crossings CCW about their centroid in the plane's own basis. The
+      // polygon is convex, so an angular sort is its boundary order exactly.
+      let cx = 0;
+      let cy = 0;
+      let cz = 0;
+      for (let k = 0; k < m; k++) {
+        cx += cutX[k];
+        cy += cutY[k];
+        cz += cutZ[k];
+      }
+      cx /= m;
+      cy /= m;
+      cz /= m;
+      for (let k = 0; k < m; k++) {
+        const dx = cutX[k] - cx;
+        const dy = cutY[k] - cy;
+        const dz = cutZ[k] - cz;
+        cutA[k] = Math.atan2(
+          dx * vx + dy * vy + dz * vz,
+          dx * ux + dy * uy + dz * uz,
+        );
+        order[k] = k;
+      }
+      for (let k = 1; k < m; k++) {
+        const key = order[k];
+        const angle = cutA[key];
+        let j = k - 1;
+        while (j >= 0 && cutA[order[j]] > angle) {
+          order[j + 1] = order[j];
+          j--;
+        }
+        order[j + 1] = key;
+      }
+
+      const fan = (m - 2) * 3;
+      if (needed + fan > capacity) {
+        needed += fan;
+        continue;
+      }
+      for (let k = 1; k + 1 < m; k++) {
+        const tri = [order[0], order[k], order[k + 1]];
+        for (let s = 0; s < 3; s++) {
+          const p = tri[s];
+          const at = needed + s;
+          target.positions[3 * at] = cutX[p] + ox;
+          target.positions[3 * at + 1] = cutY[p] + oy;
+          target.positions[3 * at + 2] = cutZ[p] + oz;
+          target.normals[3 * at] = nx;
+          target.normals[3 * at + 1] = ny;
+          target.normals[3 * at + 2] = nz;
+          target.uvs[2 * at] = cutX[p] * ux + cutY[p] * uy + cutZ[p] * uz;
+          target.uvs[2 * at + 1] = cutX[p] * vx + cutY[p] * vy + cutZ[p] * vz;
+          target.wallV[at] = cutV[p];
+          if (marks) marks[at] = cutM[p];
+        }
+        needed += 3;
+      }
     }
   }
 

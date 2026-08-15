@@ -73,9 +73,17 @@ export type SpecStackResult = {
   /** total bytes of `surface-values` fetched */
   bytes: number;
   fetchMs: number;
+  /** resampling the layers onto the common grid */
   referenceMs: number;
+  /** sealing (or splitting) the unmapped regions */
+  sealMs: number;
   /** per-layer refinement (wall clock; parallel across the worker pool) */
   refineMs: number;
+  /**
+   * This chunk's own preparation of the grid: its channel view, the coverage
+   * tally and the void expansion. Paid per chunk even on a shared column.
+   */
+  prepMs: number;
   /** refinement workers used (0 = serial fallback) */
   poolSize: number;
   /** nodes of the common reference grid */
@@ -113,8 +121,6 @@ export type SpecStackResult = {
    * grids that arrive ordered — so these are the ones worth reporting.
    */
   stackPairs?: StackPairStats[];
-  /** internal: refinement completion timestamp (shared path only) */
-  tRefine?: number;
 };
 
 /**
@@ -239,6 +245,7 @@ export async function buildSpecStack(
   if (spec.stack) {
     const context = await getStackContext(store, spec.stack, spec.resolve);
     if (!context) return null;
+    const tContext = performance.now();
 
     const loaded: LoadedStackLayer[] = [];
     // Column index per layer, or -1 for a synthetic one (not part of the column).
@@ -323,7 +330,11 @@ export async function buildSpecStack(
     // (`getStackContext`), so a horizon two chunks share has one height and one
     // void, and their walls and caps meet. Nothing is left for this chunk to do:
     // a synthetic layer's mask is all ones, so it has no unmapped region.
-    const allCandidates = await getStackCandidates(context, maxError);
+    const tPrep = performance.now();
+    const { candidates: allCandidates, poolSize } = await getStackCandidates(
+      context,
+      maxError,
+    );
     const tRefine = performance.now();
 
     // ⭐ EXPAND: a column layer the void split holds TWO of this chunk's layers.
@@ -389,6 +400,7 @@ export async function buildSpecStack(
       channels: eChannels,
       masks: eMasks,
     };
+    const prepMs = tPrep - tContext + (performance.now() - tRefine);
 
     // A voided layer draws no cap, and neither interval it bounds is filled.
     // ⭐ A void's CEILING is capped by the chunk holding the interval above it,
@@ -499,8 +511,10 @@ export async function buildSpecStack(
       bytes: context.bytes,
       fetchMs: context.fetchMs,
       referenceMs: context.referenceMs,
-      refineMs: 0,
-      poolSize: 0,
+      sealMs: context.sealMs,
+      refineMs: tRefine - tPrep,
+      prepMs,
+      poolSize,
       referenceNodes: context.reference.header.nx * context.reference.header.ny,
       referenceStep: context.reference.step,
       densified,
@@ -512,7 +526,6 @@ export async function buildSpecStack(
       stackLayers: context.layers.length,
       stackResolveMs: context.resolveMs,
       stackPairs,
-      tRefine,
     };
   }
 
@@ -601,6 +614,7 @@ export async function buildSpecStack(
     layers[carrierAt] = { depth: -carrierLevel };
     loaded[carrierAt].layer = layers[carrierAt];
   }
+  const tReference = performance.now();
   // See the shared path: a layer with no data anywhere the chunk is drawn is
   // voided rather than sealed across it.
   const measured = measureStackCoverage(built, densified, built.masks);
@@ -610,6 +624,7 @@ export async function buildSpecStack(
     measured.layerCoverage,
   );
   if (voided.every(Boolean)) return null;
+  const tPrep = performance.now();
   // Close the block where a surface is not mapped. `buildSurfaceStack` runs the
   // monotone resolve after this, which is what makes two layers tapering toward
   // each other safe.
@@ -646,7 +661,7 @@ export async function buildSpecStack(
   if (carrierLayer >= 0) {
     clampStackToCarrier(reference.channels, carrierLayer, carrierLevel);
   }
-  const tReference = performance.now();
+  const tSeal = performance.now();
 
   const { candidates, poolSize } = await refineStackChannels(
     reference.channels,
@@ -711,7 +726,9 @@ export async function buildSpecStack(
     bytes,
     fetchMs: tFetch - t0,
     referenceMs: tReference - tFetch,
-    refineMs: tRefine - tReference,
+    sealMs: tSeal - tPrep,
+    refineMs: tRefine - tSeal,
+    prepMs: tPrep - tReference,
     poolSize,
     referenceNodes: reference.header.nx * reference.header.ny,
     referenceStep: reference.step,
@@ -811,10 +828,21 @@ export function stackDiagnostics(
     stackLayers: result.stackLayers ?? 0,
     referenceNodes: result.referenceNodes,
     referenceStep: result.referenceStep,
+    vertices: build.tessellation.coords.length / 2,
+    sharedTriangles: build.tessellation.indices.length / 3,
     fetchMs: result.fetchMs,
     referenceMs: result.referenceMs,
+    sealMs: result.sealMs,
     stackResolveMs: result.stackResolveMs ?? 0,
+    refineMs: result.refineMs,
+    refinePool: result.poolSize,
+    prepMs: result.prepMs,
     tessellateMs: build.timings.tessellateMs,
+    sampleMs: build.timings.sampleMs,
+    vertexResolveMs: build.timings.resolveMs,
+    collapseMs: build.timings.collapseMs,
+    geometryMs: build.timings.geometryMs,
+    wallMs: build.timings.wallMs,
   };
 }
 

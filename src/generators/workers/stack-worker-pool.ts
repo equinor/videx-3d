@@ -1,20 +1,32 @@
 import { collectStackCandidates } from '../../sdk/geometries/surface-stack-candidates';
+import {
+  resampleStackLayer,
+  StackGridPlacement,
+  StackLayerResample,
+  StackReferencePlan,
+} from '../../sdk/geometries/surface-stack-resample';
 // oxlint-disable-next-line import/default -- Vite virtual module; the `?worker&inline` query is resolved by the bundler, not by the linter's resolver.
 import RefineWorker from './stack-refine.worker?worker&inline';
-import type { RefineRequest, RefineResponse } from './stack-worker-types';
+import type {
+  RefineResponse,
+  ResampleResponse,
+  StackWorkerRequest,
+  StackWorkerResponse,
+} from './stack-worker-types';
 
 type PendingTask = {
-  req: RefineRequest;
+  req: StackWorkerRequest;
   transfer: Transferable[];
-  resolve: (r: RefineResponse) => void;
+  resolve: (r: StackWorkerResponse) => void;
   reject: (e: unknown) => void;
 };
 
 /**
  * A small fixed-size pool of inlined stack workers with a task queue. Each worker
- * refines one layer of a shared tessellation's common grid at a time; queued tasks
- * dispatch to the next free worker (round-robin via an idle list). Used internally
- * by the chunk generator to run the independent per-layer refinements in parallel.
+ * handles one per-layer job of a shared tessellation at a time — resampling a
+ * layer onto the common grid, or refining it — and queued tasks dispatch to the
+ * next free worker (round-robin via an idle list). Used internally by the chunk
+ * generator to run those independent per-layer jobs in parallel.
  */
 export class StackWorkerPool {
   private workers: Worker[] = [];
@@ -25,7 +37,7 @@ export class StackWorkerPool {
   constructor(size: number) {
     for (let i = 0; i < Math.max(1, size); i++) {
       const w = new RefineWorker();
-      w.onmessage = (e: MessageEvent<RefineResponse>) => {
+      w.onmessage = (e: MessageEvent<StackWorkerResponse>) => {
         const task = this.active.get(w);
         this.active.delete(w);
         this.idle.push(w);
@@ -48,12 +60,12 @@ export class StackWorkerPool {
     return this.workers.length;
   }
 
-  /** Refine one layer of a shared tessellation's common grid. */
-  refine(
-    req: RefineRequest,
+  /** Run one per-layer task on the next free worker. */
+  run(
+    req: StackWorkerRequest,
     transfer: Transferable[],
-  ): Promise<RefineResponse> {
-    return new Promise<RefineResponse>((resolve, reject) => {
+  ): Promise<StackWorkerResponse> {
+    return new Promise<StackWorkerResponse>((resolve, reject) => {
       this.queue.push({ req, transfer, resolve, reject });
       this.pump();
     });
@@ -83,7 +95,7 @@ let poolTried = false;
 /**
  * Lazily create (once) the shared stack worker pool, sized from
  * `navigator.hardwareConcurrency` (capped). Returns `null` when workers are
- * unavailable (e.g. nested workers unsupported), so callers fall back to refining
+ * unavailable (e.g. nested workers unsupported), so callers fall back to working
  * on the current thread.
  */
 export function getStackPool(): StackWorkerPool | null {
@@ -99,6 +111,49 @@ export function getStackPool(): StackWorkerPool | null {
     poolInstance = null;
   }
   return poolInstance;
+}
+
+let taskId = 0;
+
+/**
+ * Put ONE layer onto the stack's common grid — on the pool when available, on the
+ * current thread otherwise.
+ *
+ * ⚠️⚠️ `values` is TRANSFERRED, so the caller's array is detached and must not be
+ * read again. That is deliberate: nothing downstream of the resample asks a layer
+ * for its samples, only for its placement.
+ *
+ * @group Generators
+ */
+export async function resampleStackChannel(
+  plan: StackReferencePlan,
+  placement: StackGridPlacement,
+  values: Float32Array,
+  referenceDepth: number,
+  nullValue = -1,
+): Promise<StackLayerResample> {
+  const pool = getStackPool();
+  if (!pool) {
+    return resampleStackLayer(
+      plan,
+      { ...placement, values },
+      referenceDepth,
+      nullValue,
+    );
+  }
+  const res = (await pool.run(
+    {
+      kind: 'resample',
+      id: taskId++,
+      plan,
+      placement,
+      values,
+      referenceDepth,
+      nullValue,
+    },
+    [values.buffer],
+  )) as ResampleResponse;
+  return { channel: res.channel, mask: res.mask, empty: res.empty };
 }
 
 /**
@@ -124,14 +179,13 @@ export async function refineStackChannels(
       poolSize: 0,
     };
   }
-  let taskId = 0;
   const candidates = await Promise.all(
     channels.map(async channel => {
       const copy = channel.slice();
-      const res = await pool.refine(
-        { id: taskId++, channel: copy, nx, maxError },
+      const res = (await pool.run(
+        { kind: 'refine', id: taskId++, channel: copy, nx, maxError },
         [copy.buffer],
-      );
+      )) as RefineResponse;
       return res.nodes;
     }),
   );

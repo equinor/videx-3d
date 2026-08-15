@@ -662,8 +662,24 @@ export type ChunkResolveOptions = {
    */
   constrainCoverage?: boolean;
   /**
-   * Node budget for the stack's common grid; beyond it the grid is decimated.
-   * Caps both memory and tessellation cost. Default 4,000,000.
+   * Node budget for the stack's common grid — the ⭐ **quality/speed dial** for
+   * the whole build. Default `DEFAULT_STACK_MAX_NODES` (4,000,000).
+   *
+   * Every layer is resampled onto one grid derived from the finest layer's,
+   * cropped to the outline; when that window exceeds this budget it is decimated
+   * by an integer step. Fetching aside, essentially all of the build's cost —
+   * resample, seal, depth-order resolve and the per-layer refinement — is linear
+   * in the node count, so halving the budget quarters it.
+   *
+   * ⚠️ What it costs is RESOLUTION, and unevenly. Heights barely suffer (the TIN
+   * is error-bounded by `maxError` either way, and a horizon is smooth at field
+   * scale), but the coverage MASKS coarsen with it, so data edges, interior holes
+   * and pinch-out contours are resolved to the coarser cell. Reported as
+   * `referenceNodes` / `referenceStep` in the build diagnostics — a step above 1
+   * means the trade is active.
+   *
+   * ⚠️ It is part of the shared column's cache key, so changing it rebuilds every
+   * chunk of the stack.
    */
   maxNodes?: number;
   /**

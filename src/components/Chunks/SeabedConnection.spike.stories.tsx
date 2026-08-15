@@ -14,6 +14,7 @@ import {
   Vec2,
 } from '../../sdk';
 import { sortByStratAge } from '../../storybook/data/strat-ages';
+import { chunkTimings } from '../../storybook/data/chunk-timings';
 import {
   getSyntheticSurface,
   isSyntheticSurfaceId,
@@ -243,10 +244,7 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
           stackLayers: d?.stackLayers ?? null,
           referenceNodes: d?.referenceNodes ?? null,
           referenceStep: d?.referenceStep ?? null,
-          fetchMs: Math.round(d?.fetchMs ?? 0),
-          referenceMs: Math.round(d?.referenceMs ?? 0),
-          stackResolveMs: Math.round(d?.stackResolveMs ?? 0),
-          tessellateMs: Math.round(d?.tessellateMs ?? 0),
+          ...chunkTimings(metrics),
           layers: rows,
         })}`,
       );
