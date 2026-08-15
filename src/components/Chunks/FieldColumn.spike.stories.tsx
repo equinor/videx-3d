@@ -27,6 +27,10 @@ import { GeneratorsProviderDecorator } from '../../storybook/decorators/generato
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
 import { useFieldOutline } from '../../storybook/hooks/useFieldOutline';
 import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
+import {
+  getSyntheticSurface,
+  SYNTHETIC_SEABED_ID,
+} from '../../storybook/data/synthetic-surfaces';
 import storyArgs from '../../storybook/story-args.json';
 import { UtmArea } from '../UtmArea';
 import { Chunk } from './Chunk';
@@ -46,6 +50,19 @@ const origin = storyArgs.origin as Vec2;
 const surfaceOptions = storyArgs.surfaceOptions as Record<string, string>;
 
 const crs = new CRS(getProjectionDefFromUtmZone(utmZone), origin, 'utm');
+
+/**
+ * The dataset's own sea bed, if it maps one — most fields do not, since a sea bed
+ * is bathymetry rather than stratigraphy. Volve's shallowest horizon is `Utsira
+ * Fm. Top` at ~820 m, so without a bed the sea would stand on THAT, and the whole
+ * overburden above it would be drawn as water.
+ */
+const SEABED_ID = (storyArgs.seabedSurface as string | null) ?? null;
+
+// Cached by the generator, and generated anyway at store init, so this is a lookup.
+const GENERATED_SEABED = SEABED_ID
+  ? null
+  : (getSyntheticSurface(SYNTHETIC_SEABED_ID)?.meta ?? null);
 
 // Always-on OIT pipeline (SMAA), matching the other chunk spikes.
 const ChunkPipeline = () => {
@@ -129,6 +146,7 @@ const SectionDriver = ({
 type FieldColumnStoryProps = {
   outline: 'grid' | 'field' | 'crop';
   cropSize: number;
+  seabed: boolean;
   surfaceFrom: number;
   surfaceCount: number;
   rimSpacing: number;
@@ -186,15 +204,23 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
   // Every mapped surface the dataset carries, in stratigraphic order. Age is the
   // only key that is right by construction — see `sortByStratAge`, which excludes
   // (loudly) any surface the strat column has no horizon for.
-  const column = useMemo<SurfaceMeta[]>(
-    () =>
-      sortByStratAge(
-        Object.keys(surfaceOptions)
-          .map(id => surfaceMetaDict[id])
-          .filter((m): m is SurfaceMeta => !!m),
-      ),
-    [surfaceMetaDict],
-  );
+  //
+  // ⭐ The sea BED comes first, and is generated when the field maps none: the sea
+  // is built as [level, the column's shallowest surface], so without one it would
+  // stand on the shallowest HORIZON and turn the entire overburden into water.
+  const column = useMemo<SurfaceMeta[]>(() => {
+    const all = sortByStratAge(
+      Object.keys(surfaceOptions)
+        .map(id => surfaceMetaDict[id])
+        .filter((m): m is SurfaceMeta => !!m),
+    );
+    if (!props.seabed) return all;
+    if (SEABED_ID) {
+      const from = all.findIndex(m => m.id === SEABED_ID);
+      return from >= 0 ? all.slice(from) : all;
+    }
+    return GENERATED_SEABED ? [GENERATED_SEABED, ...all] : all;
+  }, [surfaceMetaDict, props.seabed]);
 
   // The whole survey rectangle of the widest surface in the column.
   // ⚠️ Built through `surfaceGridToWorld` over the grid CORNERS, not from the
@@ -475,11 +501,11 @@ const meta = {
   title: 'Spikes/Chunks/FieldColumn',
   component: FieldColumnStory,
   parameters: {
-    // Framed for the DEFAULT outline, which is the whole survey rectangle
-    // (~25 x 42 km here) — an order of magnitude wider than the wellbore-derived
-    // field footprint the other chunk stories are framed for.
-    scale: 20000,
-    cameraPosition: [26000, 14000, 26000],
+    // Framed for the DEFAULT `field` outline — the footprint buffered from the
+    // wells. ⚠️ `grid` is an order of magnitude wider (~25 x 42 km here), so it
+    // needs dollying out.
+    scale: 5000,
+    cameraPosition: [9000, 4000, 9000],
     cameraTarget: [0, -1500, 0],
     docs: {
       description: {
@@ -502,8 +528,9 @@ type Story = StoryObj<typeof FieldColumnStory>;
 export const Default: Story = {
   args: {
     // Surfaces
-    outline: 'grid',
+    outline: 'field',
     cropSize: 7,
+    seabed: true,
     surfaceFrom: 0,
     surfaceCount: 12,
     rimSpacing: 250,
@@ -564,13 +591,18 @@ export const Default: Story = {
       control: { type: 'inline-radio' },
       options: ['grid', 'field', 'crop'],
       description:
-        '`grid` crops nothing — the whole survey rectangle of the widest surface (~1050 km² here). `field` uses the footprint buffered from the WELLS, which is where the field actually is (~10× smaller). `crop` is a square about the scene origin, sized to match the generated column so the two can be compared like for like. ⭐ This is the control that makes `maxNodes` matter: watch `referenceNodes` in the report.',
+        '`grid` crops nothing — the whole survey rectangle of the widest surface (~1050 km² here). `field` uses the footprint buffered from the WELLS, which is where the field actually is (~10× smaller) and is the default. `crop` is a square about the scene origin, sized to match the generated column so the two can be compared like for like. ⚠️ A footprint reaching past a survey buys INFERENCE — watch `coverage` per layer. ⭐ It is also the control that makes `maxNodes` matter: watch `referenceNodes`.',
       table: { category: 'Surfaces' },
     },
     cropSize: {
       control: { type: 'range', min: 1, max: 25, step: 0.5 },
       description:
         'Side of the `crop` outline, in km. 7 is the generated column’s own size.',
+      table: { category: 'Surfaces' },
+    },
+    seabed: {
+      description:
+        'Put a sea BED under the sea. Most fields map none — bathymetry is not stratigraphy — so one is GENERATED when the dataset has no `seabedSurface`. ⚠️ Off, the sea stands on the shallowest HORIZON instead (Volve: `Utsira Fm. Top` at ~820 m), which draws the whole overburden as water.',
       table: { category: 'Surfaces' },
     },
     surfaceFrom: {

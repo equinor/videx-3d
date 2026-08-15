@@ -339,15 +339,27 @@ void main() {
     // fragment's own wave height makes the shore advance and retreat, varied
     // along the coast, with no clock of its own and no second field to tune.
     waterDepth = uShoal.x + height * uShore.z * shoreAlign - bedY;
-    shoal = 1.0 - exp(-max(waterDepth, 0.0) * uShoal.y);
+    // ⭐ Where the map has no bed, the honest reading is DEEP water — not the
+    // angle stand-in. Blending back to that made a partly mapped bed disagree
+    // with itself across its own survey edge, printing the grid's outline onto
+    // the sea surface: inside it the water is fully body-coloured (`shoal`
+    // saturates by a few hundred metres), outside it the colour follows the view
+    // angle instead. The stand-in still stands where there is NO map at all,
+    // which is what it was for.
+    shoal = mix(1.0, 1.0 - exp(-max(waterDepth, 0.0) * uShoal.y), bathy);
   }
   #endif
 
   // --- Water body colour ----------------------------------------------------
   // ⭐ The angle term is a STAND-IN for depth, from before there was a depth
   // input: without it, open sea and a metre of water over a bank look identical
-  // from the same viewpoint. Where the bed is known, use the real thing.
-  float bodyMix = mix(clamp(ndvAA, 0.0, 1.0), shoal, bathy);
+  // from the same viewpoint. With a bed it is not needed at all — `shoal` already
+  // reads deep wherever the bed is unknown.
+  #ifdef OCEAN_BATHYMETRY
+  float bodyMix = shoal;
+  #else
+  float bodyMix = clamp(ndvAA, 0.0, 1.0);
+  #endif
   vec3 waterColor = mix(uShallowColor, uDeepColor, bodyMix);
 
   // --- Large-scale tonal variation (currents / slicks) ----------------------
@@ -561,7 +573,9 @@ void main() {
   // untouched — a reflection at a grazing angle does not care how deep it is.
   float bodyOpacity = uOpacity;
   #ifdef OCEAN_BATHYMETRY
-  bodyOpacity *= mix(1.0, mix(uShoal.z, 1.0, shoal), bathy);
+  // `shoal` is already 1 where the bed is unmapped, so this leaves those
+  // fragments at the body's own opacity without a second coverage blend.
+  bodyOpacity *= mix(uShoal.z, 1.0, shoal);
   #endif
   float alpha = mix(bodyOpacity, 1.0, fresnel);
   // Foam reads as opaque — but only as much of it as was actually drawn. Using the

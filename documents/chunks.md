@@ -831,6 +831,15 @@ the water shaders have no depth input of any kind.
   coverage channel blends the two, so no bathymetry is exactly the old behaviour
   rather than a hole — and `CHUNK_BATHYMETRY` compiles the branch out entirely
   when no sea is declared.
+- ⚠️⚠️ **The WATER surface does not blend the same way, and used to** (fixed
+  2026-08-16). Its shoaling term fell back to the view-angle stand-in wherever the
+  bed was unmapped, which is fine for a scene with no bed at all but makes a
+  PARTLY mapped bed disagree with itself across its own survey edge: inside, the
+  water is fully body-coloured (`shoal` saturates within a few hundred metres);
+  outside, the colour follows the camera. On Volve that printed `Utsira Fm. Top`'s
+  grid rectangle onto the sea as a crisp, view-dependent imprint. An unmapped bed
+  now reads as DEEP water (`shoal = mix(1.0, …, bathy)`), and the stand-in is used
+  only in the variant compiled without a map at all — which is what it was for.
 - ⚠️ The surface is the COLUMN's shallowest (`column[0]`), the same one the sea's
   own geometry ends against — a second opinion about where the bed is would show
   along the whole shoreline. It is loaded in the appearance layer
