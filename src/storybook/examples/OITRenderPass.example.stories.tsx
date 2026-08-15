@@ -259,10 +259,10 @@ const Example = (args: ExampleProps) => {
     if (!oitPass) return;
     oitPass.antialias =
       args.aaMode === 'temporal' ||
-        args.aaMode === 'smaa' ||
-        args.aaMode === 'temporal-smaa' ||
-        args.aaMode === 'taa' ||
-        args.aaMode === 'fxaa'
+      args.aaMode === 'smaa' ||
+      args.aaMode === 'temporal-smaa' ||
+      args.aaMode === 'taa' ||
+      args.aaMode === 'fxaa'
         ? args.aaMode
         : 'none';
   }, [oitPass, args.aaMode]);
@@ -544,28 +544,28 @@ const Example = (args: ExampleProps) => {
                       {(args.showFormationColumns ||
                         args.showFormationMarkers ||
                         args.showPerforations) && (
-                          <Distance min={0} max={40000} onDemand>
-                            {args.showFormationColumns && (
-                              <WellboreFormationColumn
-                                stratColumnId={stratColumnId}
-                                startRadius={3}
-                              />
-                            )}
-                            {args.showFormationMarkers && (
-                              <FormationMarkers
-                                stratColumnId={stratColumnId}
-                                radialSegments={16}
-                                baseRadius={4}
-                                showAnnotations={isActiveWell}
-                              />
-                            )}
-                            {args.showPerforations && (
-                              <Perforations
-                                sizeMultiplier={args.sizeMultiplier}
-                              />
-                            )}
-                          </Distance>
-                        )}
+                        <Distance min={0} max={40000} onDemand>
+                          {args.showFormationColumns && (
+                            <WellboreFormationColumn
+                              stratColumnId={stratColumnId}
+                              startRadius={3}
+                            />
+                          )}
+                          {args.showFormationMarkers && (
+                            <FormationMarkers
+                              stratColumnId={stratColumnId}
+                              radialSegments={16}
+                              baseRadius={4}
+                              showAnnotations={isActiveWell}
+                            />
+                          )}
+                          {args.showPerforations && (
+                            <Perforations
+                              sizeMultiplier={args.sizeMultiplier}
+                            />
+                          )}
+                        </Distance>
+                      )}
                       {args.showCasingAndCompletion && (
                         <Distance min={0} max={10} onDemand>
                           <Casings

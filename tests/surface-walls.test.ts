@@ -323,12 +323,11 @@ describe('buildStackWalls', () => {
     const seabed = new Float32Array(VERTICES);
     for (let v = 0; v < VERTICES; v++) seabed[v] = v % N >= 2 ? -550 : -700;
 
-    const wall = buildStackWalls(
-      tessellation,
-      positionsXZ,
-      [water, seabed],
-      { fills: [true, false], threshold: 0.5, fluid: [true, false] },
-    ).walls[0]!;
+    const wall = buildStackWalls(tessellation, positionsXZ, [water, seabed], {
+      fills: [true, false],
+      threshold: 0.5,
+      fluid: [true, false],
+    }).walls[0]!;
 
     const position = wall.getAttribute('position');
     for (let i = 0; i < position.count; i++) {
