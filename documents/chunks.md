@@ -3019,29 +3019,31 @@ worse than dropping a surface.
 dataset change into an empty screen rather than a wrong one. It now reports that as
 an error naming the surfaces, so the empty screen explains itself.
 
-#### 14.5.1 ⭐ Do the binary `surface-values` switch at the same time
+#### 14.5.1 ⭐ Binary `surface-values`
 
-**PROPOSED.** `surface-values` ship as JSON `number[]` and are parsed lazily, one
-grid per surface, **serially in the single data worker**. `surfaceValuesLoader`
-already documents the cost: **~260 ms per field-scale grid**, plus a transient
-parsed array at 8 bytes per sample before it is converted to `Float32Array`. It is
-linear in the number of surfaces a scene claims, so a many-surface stack pays it in
-full on a cold load — measured at ~12 s on this branch, against **18 ms warm**,
-where the loader cache turns a repeat request into a `slice(0)` memcpy.
+**IMPLEMENTED.** `surface-values` used to ship as JSON `number[]` and were parsed
+lazily, one grid per surface, **serially in the single data worker** — ~260 ms per
+field-scale grid, plus a transient parsed array at 8 bytes per sample before it was
+converted to `Float32Array`. It is linear in the number of surfaces a scene claims,
+so a many-surface stack paid it in full on a cold load (measured at ~12 s on a
+36-surface field, against **18 ms warm**, where the loader cache turns a repeat
+request into a `slice(0)` memcpy).
 
-Emitting a raw `Float32Array` `.bin` per surface instead removes the parse entirely
-(`fetch` → `arrayBuffer()` → done), halves the bytes on the wire, and drops the
-transient parsed array. It touches `scripts/generate-data.js` and a few lines of
-`surfaceValuesLoader`.
+`scripts/transformations/transformSurfaceFiles.js` now emits `<surfaceId>.bin` —
+raw little-endian float32, row-major, `-1` for nodata — and `surfaceValuesLoader`
+fetches it with `getBinary` and caches the `ArrayBuffer` as-is. The parse is gone
+entirely (`fetch` → `arrayBuffer()` → done), the transient array with it, and the
+payload shrinks (Volve: 34 MB → 25 MB across 19 grids).
 
-⭐ **Pair it with the revert above.** The generator script and every file under
-`public/data/surfaces/` are being regenerated anyway; doing the format change in the
-same pass avoids migrating the data twice. Doing it separately means regenerating
-~200 MB of grids a second time for no other reason.
+⚠️ A binary payload has no self-describing shape, so the grid dimensions come from
+`surface-meta` (`SurfaceMeta.header`) and are never inferred from the buffer length.
+The loader **checks** the two agree and fails loudly if they do not: a truncated or
+stale file would otherwise render as plausible-looking garbage.
 
-⚠️ A binary payload has no self-describing shape, so the grid dimensions must come
-from `surface-meta` (they already do, via `SurfaceMeta.header`) — the loader must
-not try to infer them from the buffer length.
+⭐ Position logs were considered and left as JSON: the whole set is 140 KB, fetched
+once at store init, and parses in 3.4 ms. Their loader now caches an `ArrayBuffer`
+rather than the parsed `number[]`, which is the same win at a thousandth of the
+scale — half the memory, and a repeat `get` is a memcpy instead of a rebuild.
 
 ### 14.6 Story-scoped data — the story writes to the store
 

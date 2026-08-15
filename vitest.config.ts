@@ -8,6 +8,9 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    // The `forks` default spawns a process per file and re-imports each file's
+    // whole module graph in it: ~18s wall clock for ~3s of actual test work.
+    pool: 'threads',
     coverage: {
       reporter: ['text', 'json', 'html'],
       include: ['src'],

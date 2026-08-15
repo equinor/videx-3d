@@ -1,8 +1,14 @@
 import fs from 'node:fs';
 import { rimrafSync } from 'rimraf';
 
-function parseIrapbin(buffer, nullValue = -1, refDepth = null) {
-  const view = new DataView(buffer);
+function parseIrapbin(
+  buffer,
+  byteOffset,
+  byteLength,
+  nullValue = -1,
+  refDepth = null,
+) {
+  const view = new DataView(buffer, byteOffset, byteLength);
 
   const header = {
     ny: view.getInt32(8, false),
@@ -19,7 +25,7 @@ function parseIrapbin(buffer, nullValue = -1, refDepth = null) {
   const maxValue = 1e30; // largest positive number
   const eplison = 1e-30; // smallest number
 
-  const data = new Array(header.nx * header.ny);
+  const data = new Float32Array(header.nx * header.ny);
 
   let val, batchSize, col, row, idx;
   let n = 0;
@@ -51,6 +57,10 @@ function parseIrapbin(buffer, nullValue = -1, refDepth = null) {
 /**
  * Surface values are transformed from irapbin files located in
  * [source path]/surfaces/[surfaceId].irapbin
+ *
+ * Written as [dest path]/surfaces/[surfaceId].bin: raw little-endian float32,
+ * row-major, nx * ny samples, -1 for nodata. The file does not describe its own
+ * shape — that comes from surface-meta's header (nx/ny).
  */
 export function transformSurfaceFiles(meta, inPath, outPath) {
   const destPath = outPath + 'surfaces';
@@ -68,10 +78,16 @@ export function transformSurfaceFiles(meta, inPath, outPath) {
     try {
       console.info(`> reading source: ${sourceFile}`);
       const irapbin = fs.readFileSync(sourceFile);
-      const values = parseIrapbin(irapbin.buffer, -1, refDepth);
-      const target = destPath + `/${surfaceId}.json`;
+      const values = parseIrapbin(
+        irapbin.buffer,
+        irapbin.byteOffset,
+        irapbin.byteLength,
+        -1,
+        refDepth,
+      );
+      const target = destPath + `/${surfaceId}.bin`;
       console.info(`> writing target: ${target}`);
-      fs.writeFileSync(target, JSON.stringify(values));
+      fs.writeFileSync(target, Buffer.from(values.buffer));
       n++;
     } catch (err) {
       console.warn(err);

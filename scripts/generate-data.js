@@ -32,6 +32,7 @@
  *  > FMU: /download/fmu/{modelid}/{surfaceid}
  *
  * !!!IMPORTANT: surface irapbin files must be put in the /public/data/surfaces folder, named by surface id!
+ * They are emitted as raw little-endian float32 grids ([surfaceId].bin), not JSON.
  *
  * node scripts/generate-data --input import/_volve && node scripts/generate-story-args
  */
