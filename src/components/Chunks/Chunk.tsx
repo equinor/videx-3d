@@ -47,6 +47,12 @@ import { SurfaceSamplerRegistryContext } from './surface-sampler';
 /** Stable identity for the default resolve options (a new object rebuilds). */
 const DEFAULT_RESOLVE: ChunkResolveOptions = {};
 
+/**
+ * How long a chunk waits on the stack's sibling bookkeeping before calling it a
+ * deadlock and failing. Generous, because it only has to outlast a few frames.
+ */
+const STALL_TIMEOUT_MS = 15000;
+
 /** Identity of one appearance value, so swapping a colour for a Material shows. */
 const appearanceId = (value: ChunkLayer['material'] | ChunkLayer['fill']) =>
   value instanceof Material ? value.uuid : String(value);
@@ -245,7 +251,15 @@ export const Chunk = ({
   }, [onBuildStateChange]);
 
   const registryKey = useId();
-  const { registerChunk, publishOutline, reportBuildState } = stack;
+  const { registerChunk, releaseChunk, publishOutline, reportBuildState } =
+    stack;
+
+  // Released on UNMOUNT only, through a ref so the effect never re-runs: the
+  // registration cleanup fires on every claims change too, and clearing the
+  // outline there would leave it unresolved for good.
+  const releaseRef = useRef(releaseChunk);
+  releaseRef.current = releaseChunk;
+  useEffect(() => () => releaseRef.current?.(registryKey), [registryKey]);
 
   // Both the caller's callback and the stack's progress counter hear the same
   // thing, so a host can use either without wiring both.
@@ -575,6 +589,17 @@ export const Chunk = ({
     [surfaceIds, stack.surfaces, stack.column],
   );
 
+  // ⚠️ A layer the stack's own `surfaces` never contained can never enter the
+  // column, so `columnPending` above would wait for it forever. That is a caller
+  // error, not a slow load, and it is knowable straight away.
+  const unlisted = useMemo(
+    () =>
+      stack.surfaces
+        ? surfaceIds.filter(id => !stack.surfaces!.some(m => m.id === id))
+        : [],
+    [surfaceIds, stack.surfaces],
+  );
+
   // The surface directly above this chunk's top, in the column. Whoever draws it
   // is what stands in for the fragments this chunk truncates away.
   const coverAbove = useMemo(() => {
@@ -666,19 +691,42 @@ export const Chunk = ({
 
   const [chunk, setChunk] = useState<SurfaceChunk | null>(null);
   useEffect(() => {
+    if (unlisted.length > 0) {
+      console.error(
+        `[Chunk] layers name ${unlisted.length} surface(s) the ChunkStack's own \`surfaces\` does not contain, so this chunk can never be built. Add them to the stack's column, or drop the layers:`,
+        unlisted,
+      );
+      reportState('failed');
+      return;
+    }
     if (!spec) {
       // No spec yet: either an input is still resolving (busy), or there is
       // genuinely nothing to draw here.
+      const gated = coverAbove.pending || seamsPending || columnPending;
       reportState(
-        outlineSettled &&
-          !outlinePolygon &&
-          !coverAbove.pending &&
-          !seamsPending &&
-          !columnPending
-          ? 'empty'
-          : 'building',
+        outlineSettled && !outlinePolygon && !gated ? 'empty' : 'building',
       );
-      return;
+
+      // ⚠️ Those three gates are pure BOOKKEEPING between siblings and settle
+      // within a few frames — none of the slow work (fetching grids, resolving a
+      // wellbore outline, the worker build) happens behind them. So a gate still
+      // closed after this long is a deadlock, not a slow load, and a deadlock has
+      // to be reported rather than waited on.
+      if (!gated) return;
+      const timer = setTimeout(() => {
+        console.error(
+          '[Chunk] gave up waiting on the ChunkStack after ' +
+            `${STALL_TIMEOUT_MS} ms. Still pending:`,
+          {
+            coverAbove: coverAbove.pending,
+            seams: seamsPending,
+            column: columnPending,
+            surfaces: surfaceIds,
+          },
+        );
+        reportState('failed');
+      }, STALL_TIMEOUT_MS);
+      return () => clearTimeout(timer);
     }
     let cancelled = false;
     reportState('building');
@@ -708,6 +756,8 @@ export const Chunk = ({
     coverAbove.pending,
     seamsPending,
     columnPending,
+    unlisted,
+    surfaceIds,
   ]);
 
   // Dispose the previous chunk's geometries when it is replaced or unmounted.

@@ -18,13 +18,13 @@ import {
   SurfaceMeta,
   Vec2,
 } from '../../sdk';
-import { parseGeoJsonFeature } from '../../sdk/utils/geojson';
+import { createDemoMultiPolygon } from '../../storybook/data/demo-polygons';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
-import { get } from '../../storybook/dependencies/api';
+import { useFieldOutline } from '../../storybook/hooks/useFieldOutline';
 import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
@@ -43,17 +43,14 @@ const surfaceOptions = storyArgs.surfaceOptions as Record<string, string>;
 // the mask polygon share one scene frame.
 const crs = new CRS(getProjectionDefFromUtmZone(utmZone), origin, 'utm');
 
-// Map a WGS84 lng/lat straight to SCENE XZ (x = easting - originE, z = originN -
-// northing). NOTE: no Z negation here — the clip builder maps grid vertices to the
-// same world XZ, so the polygon is authored directly in that frame.
-const toSceneXZ = (pos: Vec2): Vec2 => {
-  const c = crs.wgs84ToWorld(pos[0], pos[1]);
-  return [c.x, c.z];
-};
+// Metres east/north of the field origin -> SCENE XZ (x = easting - originE, z =
+// originN - northing). NOTE: no Z negation on top of that — the clip builder maps
+// grid vertices to the same world XZ, so the mask is authored directly in it.
+const offsetToSceneXZ = (pos: Vec2): Vec2 => [pos[0], -pos[1]];
 
 const polygonOptions: Record<string, string> = {
-  '/data/volve-polygon.json': 'Volve (single polygon)',
-  '/data/multi-polygon.json': 'Multi-polygon (with holes)',
+  field: 'Field outline (derived from the wells)',
+  demo: 'Multi-polygon (with holes)',
 };
 
 // Fallback palette when a surface has no color in its meta, so stacked layers stay
@@ -96,20 +93,16 @@ const SurfaceClipStory = (props: SurfaceClipStoryProps) => {
   const data = useData();
   const surfaceMetaDict = useSurfaceMetaDict();
   const wellbores = useWellboreHeaders();
+  const fieldOutline = useFieldOutline();
 
-  // Load + parse the mask polygon into scene XZ.
-  const [polygon, setPolygon] = useState<PlanarPolygonGeometry | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    get(props.polygonId).then(json => {
-      if (cancelled || !json) return;
-      const feature = parseGeoJsonFeature(json, toSceneXZ);
-      setPolygon(feature.geometry as PlanarPolygonGeometry);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [props.polygonId]);
+  // The mask polygon, in scene XZ.
+  const polygon = useMemo<PlanarPolygonGeometry | null>(
+    () =>
+      props.polygonId === 'demo'
+        ? createDemoMultiPolygon(offsetToSceneXZ)
+        : fieldOutline,
+    [props.polygonId, fieldOutline],
+  );
 
   // The surfaces to stack, sorted shallow -> deep.
   const surfaces = useMemo<SurfaceMeta[]>(() => {
@@ -296,7 +289,7 @@ export const Default: Story = {
     opacity: 1,
     doubleSide: true,
     // Mask
-    polygonId: '/data/volve-polygon.json',
+    polygonId: 'field',
     showOutline: true,
     outlineAltitude: 0,
     showReference: false,
@@ -329,6 +322,7 @@ export const Default: Story = {
     polygonId: {
       control: { type: 'select' },
       options: Object.keys(polygonOptions),
+      labels: polygonOptions,
       table: { category: 'Mask' },
     },
     showOutline: { control: 'boolean', table: { category: 'Mask' } },

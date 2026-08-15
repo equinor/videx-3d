@@ -153,6 +153,16 @@ export type ChunkStackContextValue = {
    */
   registerChunk?: (key: string, claims: ChunkSurfaceClaim[]) => () => void;
   /**
+   * Drop everything the stack holds for a chunk that has UNMOUNTED — its outline
+   * and its build state.
+   *
+   * ⚠️ Deliberately separate from the deregistration callback: claims change
+   * whenever a chunk's layers do, so that cleanup also runs on a re-registration,
+   * and clearing the outline there would leave it unresolved for good (publishing
+   * is a different effect and would not re-run).
+   */
+  releaseChunk?: (key: string) => void;
+  /**
    * Publish a registered chunk's resolved outline: a polygon, or `null` when it
    * resolved to no footprint at all (e.g. a wellbore cut source no well reaches).
    * Passing `undefined` returns it to unresolved.

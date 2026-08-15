@@ -51,8 +51,12 @@ type Scenario = {
   /** grid nodes; 400 x 400 at 25 m is 10 x 10 km */
   nx: number;
   ny: number;
+  /** grid resolution in metres. Defaults to the demo surveys' 25. */
+  cell?: number;
   /** grid rotation in degrees. Defaults to the demo surveys' 220. */
   rot?: number;
+  /** scene XZ the grid is centred on. Defaults to the origin. */
+  centre?: Vec2;
   spec: SurfaceFieldSpec;
   /**
    * Map this surface only inside a structural CLOSURE — where the named unit's
@@ -70,11 +74,17 @@ type Scenario = {
 };
 
 /**
- * Place a grid so its CENTRE sits on the scene origin, and report both the scene
- * position the generator needs and the UTM origin the meta needs — derived from
- * each other rather than chosen twice.
+ * Place a grid so its CENTRE sits on `centre` (scene XZ, default the origin), and
+ * report both the scene position the generator needs and the UTM origin the meta
+ * needs — derived from each other rather than chosen twice.
  */
-function placeCentred(nx: number, ny: number, rot: number, cell = CELL) {
+function placeCentred(
+  nx: number,
+  ny: number,
+  rot: number,
+  cell = CELL,
+  centre: Vec2 = [0, 0],
+) {
   const theta = (rot * Math.PI) / 180;
   const cos = Math.cos(theta);
   const sin = Math.sin(theta);
@@ -84,7 +94,7 @@ function placeCentred(nx: number, ny: number, rot: number, cell = CELL) {
   const lz = -((ny - 1) * cell) / 2;
   const dx = lx * cos + lz * sin;
   const dz = -lx * sin + lz * cos;
-  const worldPosition: Vec2 = [-dx, -dz];
+  const worldPosition: Vec2 = [centre[0] - dx, centre[1] - dz];
   const utm = crs.worldToUtm(worldPosition[0], 0, worldPosition[1]);
   return { worldPosition, xori: utm.easting, yori: utm.northing };
 }
@@ -92,10 +102,183 @@ function placeCentred(nx: number, ny: number, rot: number, cell = CELL) {
 const KM = 1000;
 
 /**
+ * The demo field's sea bed depth, as its wellbores measured it (generated into
+ * `story-args.json`). The fallback is only for a dataset whose headers carry no
+ * water depth at all.
+ */
+const FIELD_WATER_DEPTH = storyArgs.waterDepth ?? 100;
+
+/**
+ * The grid for a stand-in sea bed: the SURVEYS' own extent plus a margin, not a
+ * square on the scene origin.
+ *
+ * ⚠️ A field's surveys need not straddle its origin — the demo field's run from
+ * 3.5 km west to 9.8 km east of it and 11.6 km south to 6.6 km north — so a grid
+ * centred on the origin misses most of them, and every chunk cut against it comes
+ * out truncated to wherever the two happened to overlap.
+ */
+const CAP_GRID = (() => {
+  const cell = 50;
+  const margin = 2 * KM;
+  const extent = storyArgs.fieldExtent as
+    | [number, number, number, number]
+    | null;
+  if (!extent) return { nx: 400, ny: 400, cell, centre: [0, 0] as Vec2 };
+  const [minE, minN, maxE, maxN] = extent;
+  const middle = crs.utmToWorld((minE + maxE) / 2, (minN + maxN) / 2, 0);
+  return {
+    nx: Math.ceil((maxE - minE + 2 * margin) / cell) + 1,
+    ny: Math.ceil((maxN - minN + 2 * margin) / cell) + 1,
+    cell,
+    centre: [middle.x, middle.z] as Vec2,
+  };
+})();
+
+/**
+ * ⭐ THE SEA BED, as landforms rather than noise.
+ *
+ * Deposition flattens a column upward, so the shallowest surface would otherwise
+ * be nearly level — and a noise field over it reads as static, not as terrain.
+ * These are shaped primitives instead (see `ReliefSpec`): a coast that rises out
+ * of a basin, an island standing off it, and a hill on the island. Noise is left
+ * as TEXTURE over the top, which is all it is good for.
+ *
+ * Depths are metres below sea level; heights are metres above it.
+ */
+const SEABED = {
+  /** deepest point of the basin */
+  basin: 200,
+  /** how far above sea level the coast climbs at the far end of its run */
+  coastHeight: 45,
+  /**
+   * Shallowest water over an OFFSHORE bed. ⭐ A bed away from any coast does not
+   * approach the surface — it shoals to a shelf depth and stops — so this is a
+   * depth in its own right, not the coast's climb turned negative.
+   */
+  offshoreMin: 90,
+  /** compass direction the land rises toward, and over what distance */
+  coastAzimuth: 300,
+  coastRun: 9 * KM,
+  /** the island: a broad, nearly flat platform standing off the coast */
+  island: {
+    center: [1400, -900] as Vec2,
+    radius: 1700,
+    /** narrow rim = a platform with a shore, rather than a dome */
+    falloff: 800,
+    /** how far its top clears sea level */
+    freeboard: 15,
+  },
+  /** a hill on the island, off to one side of it */
+  hill: {
+    center: [1850, -1350] as Vec2,
+    radius: 550,
+    falloff: 520,
+    /** above the island's own platform */
+    height: 95,
+  },
+  /** dune-scale roughness over the whole sea bed. 0 = bare landforms */
+  texture: 16,
+} as const;
+
+/**
+ * How a generated sea bed's shallow end is finished.
+ *
+ * - `shoreline` — the coast climbs out of the water, with an island standing off
+ *   it and a hill on the island;
+ * - `offshore` — no land at all, and the bed shoals only to `SEABED.offshoreMin`
+ *   metres of water, as one away from any coast does.
+ */
+export type SeabedStyle = 'shoreline' | 'offshore';
+
+/** Where the bed's shallow end sits relative to sea level: + above, − below. */
+const shallowEnd = (style: SeabedStyle) =>
+  style === 'shoreline' ? SEABED.coastHeight : -SEABED.offshoreMin;
+
+/**
+ * Mean depth of a generated sea bed — the MIDPOINT of the basin and the shallow
+ * end, rather than a number of its own.
+ */
+const seabedDatum = (style: SeabedStyle) =>
+  (SEABED.basin - shallowEnd(style)) / 2;
+
+/**
+ * Build the sea bed's relief. ⭐ The island's height is DERIVED — sampled from the
+ * coast at the island's own position — so it keeps its stated freeboard if the
+ * coast is retuned, instead of being a number that silently stops meaning what it
+ * says.
+ */
+function seabedRelief(
+  meanDepth: number,
+  style: SeabedStyle = 'shoreline',
+): ReliefSpec[] {
+  const slope: ReliefSpec = {
+    kind: 'ramp',
+    amplitude: SEABED.basin + shallowEnd(style),
+    azimuth: SEABED.coastAzimuth,
+    run: SEABED.coastRun,
+  };
+  const texture: ReliefSpec[] =
+    SEABED.texture > 0
+      ? [{ amplitude: SEABED.texture, seed: 23, featureSize: 2.5 * KM }]
+      : [];
+
+  // Offshore is the slope alone: no island and no hill, because there is no coast
+  // for them to stand off.
+  if (style === 'offshore') return [slope, ...texture];
+
+  const [ix, iz] = SEABED.island.center;
+  const seabedAt = meanDepth + reliefDepth(slope, ix, iz) + SEABED.texture / 2;
+  return [
+    slope,
+    {
+      kind: 'dome',
+      mode: 'above',
+      amplitude: seabedAt + SEABED.island.freeboard,
+      center: SEABED.island.center,
+      radius: SEABED.island.radius,
+      falloff: SEABED.island.falloff,
+    },
+    {
+      kind: 'dome',
+      mode: 'above',
+      amplitude: SEABED.hill.height,
+      center: SEABED.hill.center,
+      radius: SEABED.hill.radius,
+      falloff: SEABED.hill.falloff,
+    },
+    ...texture,
+  ];
+}
+
+/**
  * The scenarios. Deliberately few: each exists to make one thing measurable that
  * the demo field cannot show.
  */
 const SCENARIOS: Record<string, Scenario> = {
+  // ⭐ A stand-in SEA BED for a dataset that maps none — most do not, since a sea
+  // bed is bathymetry rather than stratigraphy. Its depth is the FIELD's own, as
+  // the wellbores measured it, and its grid covers the FIELD's own surveys (see
+  // {@link CAP_GRID}), so it lands where the sea bed actually is. The relief is
+  // plain bathymetry, wholly submerged, and deliberately not the landforms the
+  // generated column uses.
+  'cap-seabed': {
+    name: 'Generated Sea Bed',
+    nx: CAP_GRID.nx,
+    ny: CAP_GRID.ny,
+    cell: CAP_GRID.cell,
+    centre: CAP_GRID.centre,
+    // Axis-aligned: a rotation buys a synthetic bathymetry nothing, and squares it
+    // with the box the extent was measured as.
+    rot: 0,
+    spec: {
+      base: FIELD_WATER_DEPTH,
+      relief: [
+        { amplitude: 18, seed: 31, featureSize: 6 * KM },
+        { amplitude: 6, seed: 32, featureSize: 1.5 * KM },
+      ],
+    },
+  },
+
   // Control: mapped everywhere, gently dipping with mild relief.
   flat: {
     name: 'Synthetic Flat',
@@ -142,7 +325,7 @@ const SCENARIOS: Record<string, Scenario> = {
       base: 2200,
       relief: [{ amplitude: 6, featureSize: 5000, seed: 11 }],
     },
-    closure: { column: 'field', unit: 'Rotliegend', margin: 40 },
+    closure: { column: 'shoreline', unit: 'Rotliegend', margin: 40 },
   },
   'contact-owc': {
     name: 'Synthetic OWC',
@@ -231,88 +414,6 @@ type ColumnScenario = {
 };
 
 /**
- * ⭐ THE SEA BED, as landforms rather than noise.
- *
- * Deposition flattens a column upward, so the shallowest surface would otherwise
- * be nearly level — and a noise field over it reads as static, not as terrain.
- * These are shaped primitives instead (see `ReliefSpec`): a coast that rises out
- * of a basin, an island standing off it, and a hill on the island. Noise is left
- * as TEXTURE over the top, which is all it is good for.
- *
- * Depths are metres below sea level; heights are metres above it.
- */
-const SEABED = {
-  /** deepest point of the basin */
-  basin: 200,
-  /** how far above sea level the coast climbs at the far end of its run */
-  coastHeight: 45,
-  /** compass direction the land rises toward, and over what distance */
-  coastAzimuth: 300,
-  coastRun: 9 * KM,
-  /** the island: a broad, nearly flat platform standing off the coast */
-  island: {
-    center: [1400, -900] as Vec2,
-    radius: 1700,
-    /** narrow rim = a platform with a shore, rather than a dome */
-    falloff: 800,
-    /** how far its top clears sea level */
-    freeboard: 15,
-  },
-  /** a hill on the island, off to one side of it */
-  hill: {
-    center: [1850, -1350] as Vec2,
-    radius: 550,
-    falloff: 520,
-    /** above the island's own platform */
-    height: 95,
-  },
-  /** dune-scale roughness over the whole sea bed. 0 = bare landforms */
-  texture: 16,
-} as const;
-
-/** The coast alone, which is what sets the shallowest surface's mean depth. */
-const COAST_RELIEF: ReliefSpec = {
-  kind: 'ramp',
-  amplitude: SEABED.basin + SEABED.coastHeight,
-  azimuth: SEABED.coastAzimuth,
-  run: SEABED.coastRun,
-};
-
-/**
- * Build the sea bed's relief. ⭐ The island's height is DERIVED — sampled from the
- * coast at the island's own position — so it keeps its stated freeboard if the
- * coast is retuned, instead of being a number that silently stops meaning what it
- * says.
- */
-function seabedRelief(meanDepth: number): ReliefSpec[] {
-  const [ix, iz] = SEABED.island.center;
-  const seabedAt =
-    meanDepth + reliefDepth(COAST_RELIEF, ix, iz) + SEABED.texture / 2;
-  return [
-    COAST_RELIEF,
-    {
-      kind: 'dome',
-      mode: 'above',
-      amplitude: seabedAt + SEABED.island.freeboard,
-      center: SEABED.island.center,
-      radius: SEABED.island.radius,
-      falloff: SEABED.island.falloff,
-    },
-    {
-      kind: 'dome',
-      mode: 'above',
-      amplitude: SEABED.hill.height,
-      center: SEABED.hill.center,
-      radius: SEABED.hill.radius,
-      falloff: SEABED.hill.falloff,
-    },
-    ...(SEABED.texture > 0
-      ? [{ amplitude: SEABED.texture, seed: 23, featureSize: 2.5 * KM }]
-      : []),
-  ];
-}
-
-/**
  * ⭐⭐ THE KNOBS. Edit and reload — the column is rebuilt from these, so a
  * different structure, a longer column or a coarser grid is a one-line change
  * rather than a rewritten spec.
@@ -333,12 +434,6 @@ const COLUMN = {
   units: 8,
   /** depth of the basement, metres positive-down */
   baseDepth: 2600,
-  /**
-   * Mean depth of the shallowest surface — the datum the sea bed's landforms are
-   * built around, so it is the MIDPOINT of the basin and the coast rather than a
-   * number of its own.
-   */
-  topDepth: (SEABED.basin - SEABED.coastHeight) / 2,
   /** relief on the basement — the structure everything else is deposited over */
   structure: 320,
   /**
@@ -386,9 +481,14 @@ const UNITS: { name: string; class: SedimentClass }[] = [
  * Units alternate in character — some flood the lows and pinch out over the highs,
  * some drape and carry the structure upward — so a column of any length contains
  * both terminations and preserved relief.
+ *
+ * @param style how the sea bed's shallow end is finished. See {@link SeabedStyle}.
  */
-function fieldColumn(): Omit<ColumnSpec, 'grid'> {
-  const span = COLUMN.baseDepth - COLUMN.topDepth;
+function fieldColumn(
+  style: SeabedStyle = 'shoreline',
+): Omit<ColumnSpec, 'grid'> {
+  const topDepth = seabedDatum(style);
+  const span = COLUMN.baseDepth - topDepth;
   const per = span / Math.max(1, COLUMN.units);
   const steps: ColumnStep[] = [];
 
@@ -411,7 +511,7 @@ function fieldColumn(): Omit<ColumnSpec, 'grid'> {
       fill: seabed ? 1 : fill,
       datum,
       relief: seabed
-        ? seabedRelief(datum)
+        ? seabedRelief(datum, style)
         : i % 3 === 2
           ? [{ amplitude: per * 0.25, seed: 11 + i, featureSize: 3 * KM }]
           : undefined,
@@ -471,14 +571,26 @@ function fieldColumn(): Omit<ColumnSpec, 'grid'> {
 
 const COLUMNS: Record<string, ColumnScenario> = {
   // A field-scale section: deposition over a rough basement, a fault part-way
-  // through, a partly-mapped unit, and an angular unconformity.
-  field: {
-    name: 'Synthetic Field',
+  // through, a partly-mapped unit, and an angular unconformity — under a sea bed
+  // that climbs out of the water into a coast, an island and a hill.
+  shoreline: {
+    name: 'Synthetic Shoreline',
     nx: COLUMN.nodes,
     ny: COLUMN.nodes,
     cell: COLUMN.cell,
     rot: COLUMN.rot,
-    spec: fieldColumn(),
+    spec: fieldColumn('shoreline'),
+  },
+
+  // The same section under an OFFSHORE sea bed: no land anywhere, and the bed
+  // shoals only to shelf depth rather than reaching for the surface.
+  offshore: {
+    name: 'Synthetic Offshore',
+    nx: COLUMN.nodes,
+    ny: COLUMN.nodes,
+    cell: COLUMN.cell,
+    rot: COLUMN.rot,
+    spec: fieldColumn('offshore'),
   },
 };
 
@@ -556,6 +668,9 @@ export function getSyntheticColumn(key: string): SyntheticColumnUnit[] {
 
 /** Every generated column key, in declaration order. */
 export const syntheticColumnKeys = Object.keys(COLUMNS);
+
+/** The stand-in sea bed, for a dataset whose own surfaces start below one. */
+export const SYNTHETIC_SEABED_ID = `${SYNTHETIC_PREFIX}cap-seabed`;
 
 /** Every generated surface id, in declaration order. */
 export const syntheticSurfaceIds = [
@@ -646,8 +761,15 @@ export function getSyntheticSurface(id: string): SyntheticSurface | null {
 
   const { nx, ny } = scenario;
   const rot = scenario.rot ?? ROT;
-  const { worldPosition, xori, yori } = placeCentred(nx, ny, rot);
-  const header = { nx, ny, xinc: CELL, yinc: CELL, rot };
+  const cell = scenario.cell ?? CELL;
+  const { worldPosition, xori, yori } = placeCentred(
+    nx,
+    ny,
+    rot,
+    cell,
+    scenario.centre,
+  );
+  const header = { nx, ny, xinc: cell, yinc: cell, rot };
 
   const generated = generateSurfaceValues(scenario.spec, header, worldPosition);
   if (scenario.closure) applyClosure(generated, scenario.closure);
@@ -665,13 +787,13 @@ export function getSyntheticSurface(id: string): SyntheticSurface | null {
     header: {
       nx,
       ny,
-      xinc: CELL,
-      yinc: CELL,
+      xinc: cell,
+      yinc: cell,
       rot,
       xori,
       yori,
-      xmax: xori + nx * CELL,
-      ymax: yori + ny * CELL,
+      xmax: xori + nx * cell,
+      ymax: yori + ny * cell,
     },
   };
 

@@ -1,51 +1,13 @@
 import { BufferAttribute } from 'three';
 import { describe, expect, it } from 'vitest';
 import { createOceanBoxFromPolygon } from '../src/sdk/geometries/ocean-geometry';
-import type {
-  Coordinates2D,
-  PlanarPolygonCoordinates,
-} from '../src/sdk/geometries/planar-geometry';
+import type { Coordinates2D } from '../src/sdk/geometries/planar-geometry';
 import { PlanarPolygonGeometry } from '../src/sdk/geometries/planar-geometry';
+import { DEMO_MULTI_POLYGON } from '../src/storybook/data/demo-polygons';
 
-// Replicate the generator behind public/data/multi-polygon.json in the local
-// metric frame (proportions match the world-transformed story data): three
-// separated footprints, the middle one with TWO holes close together.
-function ring(
-  cx: number,
-  cy: number,
-  rx: number,
-  ry: number,
-  n: number,
-  ccw: boolean,
-  rot = 0,
-  jitter = 0,
-): Coordinates2D {
-  const pts: Coordinates2D = [];
-  for (let i = 0; i < n; i++) {
-    const k = ccw ? i : n - i;
-    const t = (k / n) * Math.PI * 2 + rot;
-    const rr = 1 + jitter * Math.sin(i * 3.7 + rot * 2);
-    pts.push([cx + Math.cos(t) * rx * rr, cy + Math.sin(t) * ry * rr]);
-  }
-  pts.push(pts[0]);
-  return pts;
-}
-
-const coords: PlanarPolygonCoordinates = [
-  [
-    ring(-1300, 200, 950, 820, 22, true, 0.2, 0.06),
-    ring(-1350, 150, 330, 300, 14, false, 0.4),
-  ],
-  [
-    ring(1200, -150, 830, 560, 26, true, 0.1, 0.05),
-    ring(950, -150, 200, 190, 12, false, 0),
-    ring(1480, -120, 230, 210, 12, false, 0.3),
-  ],
-  [
-    ring(-100, 1500, 560, 540, 9, true, 0.3, 0.04),
-    ring(-100, 1500, 210, 200, 10, false, 0),
-  ],
-];
+// The story's own footprint: three separated components, the middle one with TWO
+// holes close together.
+const coords = DEMO_MULTI_POLYGON;
 
 function ringContains(x: number, y: number, r: Coordinates2D): boolean {
   let inside = false;

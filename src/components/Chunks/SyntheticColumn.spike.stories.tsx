@@ -178,7 +178,7 @@ type SyntheticColumnProps = {
   floorClearance: number;
   floorColor: string;
   water: boolean;
-  waterDepth: number;
+  seaLevel: number;
   waterOpacity: number;
   waterLayerOpacity: number;
   windSpeed: number;
@@ -321,7 +321,7 @@ const StackContents = ({
           context. Its origin IS its waterline. */}
       {props.ship && (
         <Tanker
-          position={[props.shipX, -props.waterDepth, props.shipZ]}
+          position={[props.shipX, -props.seaLevel, props.shipZ]}
           heading={(props.shipHeading * Math.PI) / 180}
         />
       )}
@@ -524,7 +524,7 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
     if (!props.water) return undefined;
     const angle = (props.windDirection * Math.PI) / 180;
     return {
-      depth: props.waterDepth,
+      depth: props.seaLevel,
       opacity: props.waterLayerOpacity,
       windSpeed: props.windSpeed,
       windDirection: [Math.cos(angle), Math.sin(angle)] as Vec2,
@@ -552,7 +552,7 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
     };
   }, [
     props.water,
-    props.waterDepth,
+    props.seaLevel,
     props.waterOpacity,
     props.waterLayerOpacity,
     props.windSpeed,
@@ -824,7 +824,7 @@ export const Default: Story = {
     floorClearance: 400,
     floorColor: '#6b6b6b',
     water: true,
-    waterDepth: 0,
+    seaLevel: 0,
     waterOpacity: 0.7,
     waterLayerOpacity: 1,
     windSpeed: 10,
@@ -907,6 +907,8 @@ export const Default: Story = {
     column: {
       control: 'select',
       options: syntheticColumnKeys,
+      description:
+        'Which generated column to draw. Both are the same section; they differ in the sea bed over it — `shoreline` climbs out of the water into a coast, an island and a hill, `offshore` has no land at all and shoals only to shelf depth.',
       table: { category: 'Column' },
     },
     from: {
@@ -993,10 +995,10 @@ export const Default: Story = {
         'Put a sea over the column. ⭐ It is declared on the `ChunkStack`, not as a chunk layer: there is ONE sea per column, drawn once however many chunks are cut from it. It takes no part in the depth order, so the unit below it rises THROUGH the plane where it stands above it instead of being flattened onto it.',
       table: { category: 'Water' },
     },
-    waterDepth: {
+    seaLevel: {
       control: { type: 'range', min: 0, max: 2600, step: 25 },
       description:
-        'Sea level, in metres below datum (positive-down, as surfaces are given). 0 is where the sea bed was designed for — it spans roughly 210 m deep to 99 m above sea level, so the coast, the island and its hill all stand clear. Raise it to drown them: the ground is not truncated by the water, it simply goes under.',
+        'Sea level, in metres below datum (positive-down, as surfaces are given). 0 is where the sea bed was designed for — it spans roughly 210 m deep to 99 m above sea level, so the coast, the island and its hill all stand clear. Raise it to drown them: the ground is not truncated by the water, it simply goes under. ⚠️ This is the sea SURFACE, not a water depth.',
       table: { category: 'Water' },
     },
     waterOpacity: {
@@ -1178,7 +1180,7 @@ export const Default: Story = {
     ship: {
       control: 'boolean',
       description:
-        'Put an Aframax tanker (253 m) in the sea. Its origin is its own WATERLINE, so it is simply placed at the water plane and follows `waterDepth`. It heaves with the swell and spreads contact foam: the `ChunkStack` provides the same wave sampler and contact registry an `<Ocean>` does.',
+        'Put an Aframax tanker (253 m) in the sea. Its origin is its own WATERLINE, so it is simply placed at the water plane and follows `seaLevel`. It heaves with the swell and spreads contact foam: the `ChunkStack` provides the same wave sampler and contact registry an `<Ocean>` does.',
       table: { category: 'Ship' },
     },
     shipX: {

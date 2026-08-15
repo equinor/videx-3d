@@ -14,6 +14,11 @@ import {
   Vec2,
 } from '../../sdk';
 import { sortByStratAge } from '../../storybook/data/strat-ages';
+import {
+  getSyntheticSurface,
+  isSyntheticSurfaceId,
+  SYNTHETIC_SEABED_ID,
+} from '../../storybook/data/synthetic-surfaces';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-decorator';
@@ -43,9 +48,21 @@ const surfaceOptions = storyArgs.surfaceOptions as Record<string, string>;
 
 const crs = new CRS(getProjectionDefFromUtmZone(utmZone), origin, 'utm');
 
-/** The seabed horizon of the demo field, and the deepest mapped surface. */
-const SEABED_NAME = 'NORDLAND GP. Top';
-const BASEMENT_NAME = 'Basement Base';
+/**
+ * The horizons that frame the stack, by id. Both are OPTIONAL in the data: a sea
+ * bed is bathymetry rather than stratigraphy and most fields map none, and
+ * "basement" is only ever a name for the deepest thing mapped.
+ *
+ * Unmapped, the sea bed is {@link SYNTHETIC_SEABED_ID} — generated, so the story
+ * has one to connect to — and the basement is simply the deepest surface.
+ */
+const SEABED_ID = (storyArgs.seabedSurface as string | null) ?? null;
+const BASEMENT_ID = (storyArgs.basementSurface as string | null) ?? null;
+
+// Cached by the generator, and generated anyway at store init, so this is a lookup.
+const GENERATED_SEABED = SEABED_ID
+  ? null
+  : (getSyntheticSurface(SYNTHETIC_SEABED_ID)?.meta ?? null);
 
 // Always-on OIT pipeline (SMAA), matching the sibling chunk stories.
 const ChunkPipeline = () => {
@@ -69,7 +86,7 @@ type SeabedConnectionProps = {
   sealMode: 'proportional' | 'void';
   minThickness: number;
   constrainCoverage: boolean;
-  waterDepth: number;
+  seaLevel: number;
   carrierMode: 'below' | 'depth';
   basementThickness: number;
   carrierDepth: number;
@@ -97,27 +114,50 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
         .map(id => surfaceMetaDict[id])
         .filter((m): m is SurfaceMeta => !!m),
     );
-    const from = all.findIndex(m => m.name === SEABED_NAME);
-    return from >= 0 ? all.slice(from) : all;
+    if (SEABED_ID) {
+      const from = all.findIndex(m => m.id === SEABED_ID);
+      return from >= 0 ? all.slice(from) : all;
+    }
+    return GENERATED_SEABED ? [GENERATED_SEABED, ...all] : all;
   }, [surfaceMetaDict]);
 
   const seabed = column[0];
   const basement = useMemo(
-    () => column.find(m => m.name === BASEMENT_NAME),
+    () =>
+      (BASEMENT_ID ? column.find(m => m.id === BASEMENT_ID) : undefined) ??
+      column[column.length - 1],
     [column],
   );
 
-  // The footprint the framing chunks use: the SEABED's own data extent. It is
-  // mapped over the whole area, so every other chunk fits inside it — which is
-  // what a chunk that owns a shared horizon has to guarantee.
+  // The footprint the framing chunks use. It has to CONTAIN every other chunk, so
+  // it is the widest surface in the column — but only among those that come from
+  // the data: a generated sea bed is mapped everywhere and would stretch the field
+  // far past any real survey.
   //
   // Built through `surfaceGridToWorld` rather than from the meta's xmax/ymax:
-  // those are the origin plus the span in the GRID's own frame, and this survey
-  // is rotated (rot = 220°), so treating them as UTM-axis-aligned puts the
-  // rectangle somewhere else entirely.
+  // those are the origin plus the span in the GRID's own frame, and a rotated
+  // survey would then land somewhere else entirely.
+  const footprint = useMemo(
+    () =>
+      column
+        .filter(m => !isSyntheticSurfaceId(m.id))
+        .reduce<SurfaceMeta | null>(
+          (widest, m) =>
+            !widest ||
+            m.header.nx * m.header.xinc * (m.header.ny * m.header.yinc) >
+              widest.header.nx *
+                widest.header.xinc *
+                (widest.header.ny * widest.header.yinc)
+              ? m
+              : widest,
+          null,
+        ) ?? seabed,
+    [column, seabed],
+  );
+
   const field = useMemo<PlanarPolygonGeometry | null>(() => {
-    if (!seabed) return null;
-    const { nx, ny, xinc, yinc, rot, xori, yori } = seabed.header;
+    if (!footprint) return null;
+    const { nx, ny, xinc, yinc, rot, xori, yori } = footprint.header;
     const p = crs.utmToWorld(xori, yori, 0);
     const toWorld = surfaceGridToWorld({ nx, ny, xinc, yinc, rot }, [p.x, p.z]);
     const ring = [
@@ -127,16 +167,16 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
       toWorld(0, ny - 1),
     ];
     return new PlanarPolygonGeometry([[[...ring, ring[0]]]], [0, 0]);
-  }, [seabed]);
+  }, [footprint]);
 
   // The basement tier's own footprint: the field cropped from one side, so the
   // seam it shares with the wellbore-cut tier can be swept from containment
   // through a partial overlap to disjoint. Built in the field's OWN (rotated)
   // frame so it always stays inside the stack envelope.
   const basementOutline = useMemo<PlanarPolygonGeometry | null>(() => {
-    if (!seabed) return null;
+    if (!footprint) return null;
     if (props.basementCrop <= 0) return field;
-    const { nx, ny, xinc, yinc, rot, xori, yori } = seabed.header;
+    const { nx, ny, xinc, yinc, rot, xori, yori } = footprint.header;
     const p = crs.utmToWorld(xori, yori, 0);
     const toWorld = surfaceGridToWorld({ nx, ny, xinc, yinc, rot }, [p.x, p.z]);
     const from = Math.min(
@@ -150,7 +190,7 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
       toWorld(from, ny - 1),
     ];
     return new PlanarPolygonGeometry([[[...ring, ring[0]]]], [0, 0]);
-  }, [seabed, field, props.basementCrop]);
+  }, [footprint, field, props.basementCrop]);
 
   const wellboreIds = useMemo(
     () => wellbores.slice(0, props.wellCount).map(w => w.id),
@@ -241,11 +281,11 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
   // tier happens to sit under it.
   const water = useMemo<StackWater>(
     () => ({
-      depth: props.waterDepth,
+      depth: props.seaLevel,
       waterOpacity: props.waterOpacity,
       bedTint: props.bedTint,
     }),
-    [props.waterDepth, props.waterOpacity, props.bedTint],
+    [props.seaLevel, props.waterOpacity, props.bedTint],
   );
 
   // B: the detail, cut by wellbores, split into TIERS that share their boundary
@@ -265,7 +305,7 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
     if (!seabed || !basement) return [];
     const middle = column
       .slice(1, 1 + props.detailCount)
-      .filter(m => m.name !== BASEMENT_NAME);
+      .filter(m => m.id !== basement.id);
     const boundaries = [seabed, ...middle, basement];
     const last = boundaries.length - 1;
     const palette = ['#59a14f', '#8cbf6a', '#edc949', '#e1a34f'];
@@ -445,9 +485,9 @@ export const Default: Story = {
     carrierMode: 'below',
     basementThickness: 800,
     carrierDepth: 2500,
-    waterDepth: 0,
+    seaLevel: 0,
     waterOpacity: 0.7,
-    seabedOpacity: 0.45,
+    seabedOpacity: 0.95,
     bedTint: 0.35,
     seal: true,
     sealMode: 'proportional',
@@ -499,10 +539,10 @@ export const Default: Story = {
         'Absolute carrier depth (metres, positive-down), used by `carrierMode: depth`. Below ~2200 m nothing is cut; raise it through the basement to watch the block end flat.',
       table: { category: 'Connection' },
     },
-    waterDepth: {
+    seaLevel: {
       control: { type: 'range', min: 0, max: 200, step: 5 },
       description:
-        'Sea level, metres below datum (positive-down). ⭐ The sea is declared on the `ChunkStack` rather than on a tier, and takes no part in the depth order — raising it does not truncate the seabed.',
+        'Sea level, metres below datum (positive-down) — 0 puts the sea surface at MSL. ⭐ The sea is declared on the `ChunkStack` rather than on a tier, and takes no part in the depth order — raising it does not truncate the seabed.',
       table: { category: 'Water' },
     },
     waterOpacity: {

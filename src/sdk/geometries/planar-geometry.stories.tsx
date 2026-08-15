@@ -19,6 +19,7 @@ import { Grid, Symbols, useData } from '../../main';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { get } from '../../storybook/dependencies/api';
+import { useFieldOutline } from '../../storybook/hooks/useFieldOutline';
 import storyArgs from '../../storybook/story-args.json';
 import { PositionLog, SymbolsType, WellboreHeader } from '../data/types';
 import { CRS, getProjectionDefFromUtmZone } from '../projection/crs';
@@ -53,6 +54,16 @@ const transformUtm = (pos: Vec2) => {
   const coord = crs.utmToWorld(pos[0], pos[1], 0);
   return [coord.x, -coord.z] as Vec2;
 };
+
+/**
+ * A fixed synthetic GeoJSON feature, used only to show `parseGeoJsonFeature` at
+ * work — it is not the demo field, and `centralize` is what makes its placement
+ * irrelevant.
+ */
+const SAMPLE_POLYGON_URL = '/geojson/sample-polygon.json';
+
+/** Scene XZ to the XY plane shapes are authored in — see {@link transformWgs84}. */
+const flipNorthing = (pos: Vec2): Vec2 => [pos[0], -pos[1]];
 
 function scaleUvToBoundingBox(geometry: BufferGeometry) {
   const size = new Vector3();
@@ -130,7 +141,7 @@ const PolygonsDemo = ({ centralize }: ExampleProps) => {
   const [feature, setFeature] = useState<GeoJsonFeature | null>(null);
 
   useEffect(() => {
-    get('/data/volve-polygon.json').then(json => {
+    get(SAMPLE_POLYGON_URL).then(json => {
       const feature = parseGeoJsonFeature(json, transformWgs84);
 
       // The centralize function will translate the geometry coordinates towards the origin by calculating
@@ -219,27 +230,19 @@ const PolygonsDemo = ({ centralize }: ExampleProps) => {
 
 const LinesDemo = ({ centralize }: ExampleProps) => {
   const data = useData();
+  const outline = useFieldOutline({ transform: flipNorthing });
 
   const [trajectories, setTrajectories] = useState<PlanarLineGeometry | null>(
     null,
   );
-  const [fieldOutline, setFieldOutline] = useState<BufferGeometry | null>(null);
 
-  useEffect(() => {
-    get('/data/volve-polygon.json').then(json => {
-      const feature = parseGeoJsonFeature(json, transformWgs84);
-
-      // The centralize function will translate the geometry coordinates towards the origin by calculating
-      // an offset from the origin to the center of the geometry bounding box.
-      if (centralize) feature.geometry.centralize();
-
-      const g = new BufferGeometry().setFromPoints(
-        feature.geometry.getPointsFlattened(),
-      );
-      g.rotateX(-Math.PI / 2);
-      setFieldOutline(g);
-    });
-  }, [centralize]);
+  // The field outline the trajectories produce, drawn as a dashed reference ring.
+  const fieldOutline = useMemo<BufferGeometry | null>(() => {
+    if (!outline || centralize) return null;
+    const g = new BufferGeometry().setFromPoints(outline.getPointsFlattened());
+    g.rotateX(-Math.PI / 2);
+    return g;
+  }, [outline, centralize]);
 
   useEffect(() => {
     if (data) {

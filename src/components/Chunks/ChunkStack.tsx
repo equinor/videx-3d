@@ -37,7 +37,6 @@ import {
 } from './chunk-defs';
 import {
   ChunkMarginEntry,
-  ChunkOutlineEntry,
   ChunkOutlineRegistry,
   ChunkSeamRegistry,
   ChunkStackContext,
@@ -45,10 +44,17 @@ import {
   ChunkSurfaceClaim,
 } from './ChunkContext';
 import { ChunkSectionDebug } from './ChunkSectionDebug';
+import {
+  buildOutlineRegistry,
+  clearClaims,
+  createChunkClaimStore,
+  publishOutline as publishToStore,
+  releaseChunk as releaseFromStore,
+  setClaims,
+} from './chunk-outline-registry';
 import { CutoutSource } from './cutout';
 import { buildStackWaterSpec } from './chunk-spec';
 import { resolveWellboreOutline } from './resolveWellboreOutline';
-import { resolveSeam, SeamDecision } from './seams';
 import {
   createSurfaceSampler,
   SurfaceSamplerContext,
@@ -414,18 +420,7 @@ export const ChunkStack = ({
   //     with what footprint. Two things read it: a chunk's top layer is truncated
   //     against a surface the chunk ABOVE draws, and a horizon two chunks share
   //     must be drawn by exactly one of them. See `registerChunk`. -------------
-  const claims = useRef(new Map<string, ChunkSurfaceClaim[]>());
-  // Settled outlines only: presence in this map IS the "resolved" flag.
-  const polygons = useRef(
-    new Map<
-      string,
-      {
-        polygon: PlanarPolygonGeometry | null;
-        rimSpacing?: number;
-        version: number;
-      }
-    >(),
-  );
+  const claims = useRef(createChunkClaimStore());
   const [registry, setRegistry] = useState<ChunkOutlineRegistry>(
     () => new Map(),
   );
@@ -433,54 +428,29 @@ export const ChunkStack = ({
   const [claimed, setClaimed] = useState<Set<string>>(() => new Set());
 
   const rebuildRegistry = useCallback(() => {
-    const next: ChunkOutlineRegistry = new Map();
-    claims.current.forEach((claimedSurfaces, key) => {
-      const settled = polygons.current.get(key);
-      claimedSurfaces.forEach(({ id, top }) => {
-        const entry: ChunkOutlineEntry = {
-          key,
-          version: settled?.version ?? 0,
-          resolved: polygons.current.has(key),
-          polygon: settled?.polygon ?? null,
-          rimSpacing: settled?.rimSpacing,
-          top,
-        };
-        const list = next.get(id);
-        if (list) list.push(entry);
-        else next.set(id, [entry]);
-      });
-    });
-
-    // ⭐ Who draws a shared horizon is decided here, from the footprints, rather
-    // than declared per layer by the caller. A surface still resolving is left out
-    // — the chunks claiming it wait rather than build against a guess.
-    const decisions: ChunkSeamRegistry = new Map();
-    next.forEach((entries, id) => {
-      if (entries.length < 2 || entries.some(e => !e.resolved)) return;
-      const resolved = resolveSeam(entries);
-      const perChunk = new Map<string, SeamDecision>();
-      entries.forEach((entry, i) => perChunk.set(entry.key, resolved[i]));
-      decisions.set(id, perChunk);
-    });
-
-    setRegistry(next);
-    setSeams(decisions);
+    const next = buildOutlineRegistry(claims.current);
+    setRegistry(next.registry);
+    setSeams(next.seams);
     setClaimed(previous =>
-      previous.size === next.size &&
-      [...next.keys()].every(id => previous.has(id))
+      previous.size === next.registry.size &&
+      [...next.registry.keys()].every(id => previous.has(id))
         ? previous
-        : new Set(next.keys()),
+        : new Set(next.registry.keys()),
     );
   }, []);
 
+  // ⚠️ Claims change whenever a chunk's layers do, so this cleanup runs on a
+  // RE-registration as often as on an unmount, and it must not take the chunk's
+  // published outline with it: publishing is a separate effect keyed on the
+  // outline, so it would not re-run and the outline would stay unresolved
+  // forever — leaving every chunk sharing that horizon waiting on it. Releasing
+  // those is the chunk's own job, on unmount (see `releaseChunk`).
   const registerChunk = useCallback(
     (key: string, claimedSurfaces: ChunkSurfaceClaim[]) => {
-      claims.current.set(key, claimedSurfaces);
+      setClaims(claims.current, key, claimedSurfaces);
       rebuildRegistry();
       return () => {
-        claims.current.delete(key);
-        polygons.current.delete(key);
-        buildStates.current.delete(key);
+        clearClaims(claims.current, key);
         rebuildRegistry();
       };
     },
@@ -499,9 +469,9 @@ export const ChunkStack = ({
     (key: string, state: ChunkBuildState) => {
       if (buildStates.current.get(key) === state) return;
       buildStates.current.set(key, state);
-      const total = claims.current.size;
+      const total = claims.current.claims.size;
       let completed = 0;
-      claims.current.forEach((_, k) => {
+      claims.current.claims.forEach((_, k) => {
         const s = buildStates.current.get(k);
         if (s && s !== 'building') completed++;
       });
@@ -515,34 +485,24 @@ export const ChunkStack = ({
     [],
   );
 
+  /** Drop everything held for a chunk that is going away for good. */
+  const releaseChunk = useCallback(
+    (key: string) => {
+      releaseFromStore(claims.current, key);
+      buildStates.current.delete(key);
+      rebuildRegistry();
+    },
+    [rebuildRegistry],
+  );
+
   const publishOutline = useCallback(
     (
       key: string,
       polygon: PlanarPolygonGeometry | null | undefined,
       spacing?: number,
     ) => {
-      if (polygon === undefined) {
-        if (!polygons.current.has(key)) return;
-        polygons.current.delete(key);
-      } else {
-        const settled = polygons.current.get(key);
-        if (
-          settled &&
-          settled.polygon === polygon &&
-          settled.rimSpacing === spacing
-        ) {
-          return;
-        }
-        polygons.current.set(key, {
-          polygon,
-          rimSpacing: spacing,
-          // A version rather than the polygon's identity, so a chunk consuming this
-          // as a CUT has a content key it can memoize on — the registry itself is
-          // rebuilt whole on every publish.
-          version: (settled?.version ?? 0) + 1,
-        });
-      }
-      rebuildRegistry();
+      if (publishToStore(claims.current, key, polygon, spacing))
+        rebuildRegistry();
     },
     [rebuildRegistry],
   );
@@ -679,6 +639,7 @@ export const ChunkStack = ({
       seams,
       margins,
       registerChunk,
+      releaseChunk,
       publishOutline,
       publishMargin,
       reportBuildState,
@@ -705,6 +666,7 @@ export const ChunkStack = ({
     seams,
     margins,
     registerChunk,
+    releaseChunk,
     publishOutline,
     publishMargin,
     reportBuildState,

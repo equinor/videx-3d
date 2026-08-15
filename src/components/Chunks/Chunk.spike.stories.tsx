@@ -1,24 +1,17 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { OITRenderPass, Pass, RenderPass } from '../../main';
 import { OutputPass } from '../../rendering/passes/OutputPass';
 import { RenderingPipeline } from '../../rendering/RenderingPipeline';
-import {
-  CRS,
-  getProjectionDefFromUtmZone,
-  PlanarPolygonGeometry,
-  SurfaceMeta,
-  Vec2,
-} from '../../sdk';
-import { parseGeoJsonFeature } from '../../sdk/utils/geojson';
+import { SurfaceMeta, Vec2 } from '../../sdk';
 import { sortByStratAge } from '../../storybook/data/strat-ages';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
-import { get } from '../../storybook/dependencies/api';
+import { useFieldOutline } from '../../storybook/hooks/useFieldOutline';
 import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import storyArgs from '../../storybook/story-args.json';
 import { UtmArea } from '../UtmArea';
@@ -30,12 +23,6 @@ import { ChunkStack } from './ChunkStack';
 const utmZone = storyArgs.utmZone;
 const origin = storyArgs.origin as Vec2;
 const surfaceOptions = storyArgs.surfaceOptions as Record<string, string>;
-
-const crs = new CRS(getProjectionDefFromUtmZone(utmZone), origin, 'utm');
-const toSceneXZ = (pos: Vec2): Vec2 => {
-  const c = crs.wgs84ToWorld(pos[0], pos[1]);
-  return [c.x, c.z];
-};
 
 // Split a sorted meta list into contiguous groups from a comma-separated string.
 function splitIntoGroups(metas: SurfaceMeta[], sizes: string): SurfaceMeta[][] {
@@ -90,18 +77,7 @@ type ChunkStoryProps = {
 const ChunkStory = (props: ChunkStoryProps) => {
   const surfaceMetaDict = useSurfaceMetaDict();
 
-  const [polygon, setPolygon] = useState<PlanarPolygonGeometry | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    get('/data/volve-polygon.json').then(json => {
-      if (cancelled || !json) return;
-      const feature = parseGeoJsonFeature(json, toSceneXZ);
-      setPolygon(feature.geometry as PlanarPolygonGeometry);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const polygon = useFieldOutline();
 
   const metas = useMemo<SurfaceMeta[]>(
     () =>

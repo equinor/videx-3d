@@ -2981,44 +2981,43 @@ land exactly on its datum (`drape: 0, fill: 1`) — otherwise the drape and the
 surface below put it wherever they like, and every figure is quietly out by that
 much. It measured 43 m out before that was fixed.
 
-### 14.5 Consequence for the demo data — restoring the open dataset
+### 14.5 Consequence for the demo data — nothing may be pinned to one field
 
-`public/data` was replaced during development with a second field (`_johs`) because
-the open Volve set could not show a deep, many-surface stack. Once synthetic
-surfaces exist that is no longer necessary: the **original open dataset is
-restored**, and any scenario it cannot show is generated instead. Demo data should
-stay unmodified open data, so that what a reader sees is reproducible from the
-published source.
+**DONE.** `public/data` is the open Volve dataset, and any scenario it cannot show
+is generated instead (§14.4). Demo data stays unmodified open data, so what a
+reader sees is reproducible from the published source.
 
-⚠️ **It is not just a file swap.** The substitution grew hard dependencies that will
-not survive it, because ids, names and the field origin all changed:
+Getting there was not a file swap. Working against a second, deeper field had grown
+four dependencies on *that* field's ids, names and origin, and every one of them
+would have failed silently rather than loudly. All four are now derived instead of
+written down:
 
-| dependency | where | what breaks |
-| --- | --- | --- |
-| `origin`, `utmZone`, `surfaceOptions`, wellbore ids | `src/storybook/story-args.json` (generated) | every chunk and surface story enumerates `surfaceOptions`; the ids no longer exist |
-| name → age table, 32 entries | `src/storybook/data/strat-ages.ts` | `sortByStratAge` **excludes** surfaces it has no age for, so with Volve names it returns an empty stack and five stories render nothing |
-| `'NORDLAND GP. Top'`, `'Basement Base'` | `SeabedConnection.spike.stories.tsx` | the two shared horizons are found by `_johs` NAME |
-| `volve-polygon.json` | six stories | edited in place to fit `_johs`, despite the name |
-| the dataset | `public/data/**` | 19 surfaces removed, 36 added, plus headers, logs and config |
+| was | is |
+| --- | --- |
+| a 32-entry surface name → age table, hand-extracted | `STRAT_AGES` is generated into `story-args.json` by matching each surface name against the `top`/`base` horizons of the dataset's own strat column |
+| the sea bed and the basement found by NAME in `SeabedConnection.spike` | both come from the dataset config by id; a field that maps no sea bed gets a **generated** one (`SYNTHETIC_SEABED_ID`), and "basement" falls back to the deepest surface in the stack |
+| a checked-in field-outline polygon in WGS84 | `useFieldOutline` buffers the wellbore trajectories with `createWellboreOutline` (§11) — concave, multi-component, and correct for whichever field is loaded |
+| a checked-in multi-component demo polygon in WGS84 | `demo-polygons.ts`, authored in metres about the field origin |
 
-**The ordering dependency is the only real design question.** The library contract
-is that array order IS stratigraphic order and the *host* sorts (§9.3) — and the
-stories are a host, so they need a name → age table for whichever field ships. Three
-ways to satisfy it, in increasing order of how much they remove:
+⭐ **The pattern is the point.** A coordinate written into the repository only means
+anything against one CRS, and a name written into the repository only means anything
+against one field's nomenclature. Both put the story in the wrong place — or empty —
+the moment the dataset changes, and neither says so. Anything a story needs about
+*this* field is either derived from the data at runtime or generated into
+`story-args.json` at build time.
 
-1. ship a Volve name → age table, the direct equivalent of what exists now;
-2. sort by measured median depth inside the footprint (`stackDepthStats`), which on
-   `_johs` agreed with the age order exactly — no table, but it infers the contract
-   rather than being told it, and §10.1 is explicit that guessing an order is worse
-   than dropping a surface;
-3. ⭐ move the chunk spikes onto the **generated column** (§14.4), which is ordered
-   correctly *by construction*, and leave the real-data stories to demonstrate a
-   single surface and a wellbore. This deletes the strat-age dependency outright and
-   is the case §14 was written for.
+**The ordering dependency was the real design question.** The library contract is
+that array order IS stratigraphic order and the *host* sorts (§9.3) — the stories
+are a host, so they need ages for whichever field ships. Deriving them from the
+strat column keeps the contract intact: the stories are still *told* the order,
+they are just told it by the data rather than by a constant. The alternative of
+sorting by measured median depth (`stackDepthStats`) was rejected on §10.1's
+grounds — it infers the contract rather than being told it, and guessing an order is
+worse than dropping a surface.
 
-⚠️ Whichever is chosen, `sortByStratAge`'s current behaviour — silently excluding
-un-aged surfaces — is what turns a dataset swap into an empty screen rather than an
-error. It should say so loudly if it keeps that policy.
+⚠️ `sortByStratAge` still **excludes** un-aged surfaces, which is what turns a
+dataset change into an empty screen rather than a wrong one. It now reports that as
+an error naming the surfaces, so the empty screen explains itself.
 
 #### 14.5.1 ⭐ Do the binary `surface-values` switch at the same time
 

@@ -26,14 +26,13 @@ import {
   Vec3,
   WellboreHeader,
 } from '../../sdk';
-import { parseGeoJsonFeature } from '../../sdk/utils/geojson';
 import { sortByStratAge } from '../../storybook/data/strat-ages';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
-import { get } from '../../storybook/dependencies/api';
+import { useFieldOutline } from '../../storybook/hooks/useFieldOutline';
 import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
@@ -49,10 +48,6 @@ const origin = storyArgs.origin as Vec2;
 const surfaceOptions = storyArgs.surfaceOptions as Record<string, string>;
 
 const crs = new CRS(getProjectionDefFromUtmZone(utmZone), origin, 'utm');
-const toSceneXZ = (pos: Vec2): Vec2 => {
-  const c = crs.wgs84ToWorld(pos[0], pos[1]);
-  return [c.x, c.z];
-};
 // Same mapping UtmArea publishes as utmToArea, built from the module-scope CRS so
 // the story's overlay resolves in the exact frame the Chunk uses internally.
 const utmToArea = (easting: number, northing: number, altitude = 0): Vec3 => {
@@ -126,6 +121,7 @@ const OutlinesStory = (props: OutlinesStoryProps) => {
   const data = useData();
   const surfaceMetaDict = useSurfaceMetaDict();
   const wellbores = useWellboreHeaders();
+  const fieldOutline = useFieldOutline();
 
   const metas = useMemo<SurfaceMeta[]>(
     () =>
@@ -181,10 +177,7 @@ const OutlinesStory = (props: OutlinesStoryProps) => {
     const build = async (): Promise<PlanarPolygonGeometry | null> => {
       if (!data) return null;
       if (props.source === 'polygon') {
-        const json = await get('/data/volve-polygon.json');
-        if (!json) return null;
-        return parseGeoJsonFeature(json, toSceneXZ)
-          .geometry as PlanarPolygonGeometry;
+        return fieldOutline;
       }
       if (props.source === 'surface-rim') {
         const meta = metas[Math.min(props.rimSurfaceIndex, metas.length - 1)];
@@ -248,6 +241,7 @@ const OutlinesStory = (props: OutlinesStoryProps) => {
     props.source,
     props.rimSurfaceIndex,
     props.rimSmoothing,
+    fieldOutline,
     metas,
     groups,
     wellboreIds,
