@@ -487,7 +487,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
             wallOpacity={props.wallOpacity}
             wireframe={props.wireframe}
             inferredStyle={props.inferredStyle}
-            peel={props.peel}
+            peel={Math.min(Math.max(0, Math.round(props.peel)), layers.length)}
             onBuild={report}
           />
         </ChunkStack>
@@ -563,15 +563,18 @@ export const Default: Story = {
     seaLevel: 0,
     waterOpacity: 0.7,
     waterLayerOpacity: 1,
-    windSpeed: 8,
+    windSpeed: 10,
     foamAmount: 0.5,
     bedTint: 0.6,
     // Immersion
-    immersion: true,
-    immersionColor: '#0a2540',
+    immersion: false,
+    // ⚠️ This fogs INSIDE THE BLOCK, so it is a near-black brown, not a water
+    // colour; and `transition` is METRES of boundary fade while `settle` is
+    // SECONDS of catch-up. Both match the documented defaults.
+    immersionColor: '#0b0a08',
     immersionVisibility: 400,
-    immersionTransition: 0.12,
-    immersionSettle: 0.3,
+    immersionTransition: 5,
+    immersionSettle: 0.12,
     immersionBackground: true,
     // Floor
     floor: true,
@@ -595,7 +598,8 @@ export const Default: Story = {
       table: { category: 'Surfaces' },
     },
     cropSize: {
-      control: { type: 'range', min: 1, max: 25, step: 0.5 },
+      control: { type: 'select' },
+      options: [3, 5, 7, 9, 12, 15, 20, 25],
       description:
         'Side of the `crop` outline, in km. 7 is the generated column’s own size.',
       table: { category: 'Surfaces' },
@@ -606,22 +610,26 @@ export const Default: Story = {
       table: { category: 'Surfaces' },
     },
     surfaceFrom: {
-      control: { type: 'range', min: 0, max: 35, step: 1 },
+      control: { type: 'select' },
+      options: [0, 2, 4, 6, 8, 10, 12, 15, 18],
       description: 'First surface of the column to draw (shallowest = 0).',
       table: { category: 'Surfaces' },
     },
     surfaceCount: {
-      control: { type: 'range', min: 1, max: 40, step: 1 },
+      control: { type: 'select' },
+      options: [1, 2, 4, 6, 8, 12, 16, 20, 30, 40],
       description:
-        'How many surfaces to draw. ⚠️ The whole column over the whole field is a LOT of geometry — one shared tessellation, copied per layer — so the default draws the shallowest 12. Raising it is exactly where `maxNodes` earns its keep.',
+        'How many surfaces to draw, CLAMPED to what the dataset has (19 on Volve). ⚠️ The whole column over the whole field is a LOT of geometry — one shared tessellation, copied per layer — so the default draws the shallowest 12. Raising it is exactly where `maxNodes` earns its keep.',
       table: { category: 'Surfaces' },
     },
     rimSpacing: {
-      control: { type: 'range', min: 25, max: 1000, step: 25 },
+      control: { type: 'select' },
+      options: [50, 100, 250, 500, 1000],
       table: { category: 'Surfaces' },
     },
     maxError: {
-      control: { type: 'range', min: 0, max: 50, step: 1 },
+      control: { type: 'select' },
+      options: [1, 2, 5, 10, 25, 50],
       description:
         'Greedy TIN simplification error, in metres of height. Bounds how far the drawn surface may sit from the grid.',
       table: { category: 'Surfaces' },
@@ -646,19 +654,22 @@ export const Default: Story = {
       table: { category: 'Resolve' },
     },
     minThickness: {
-      control: { type: 'range', min: 0.5, max: 20, step: 0.5 },
+      control: { type: 'select' },
+      options: [0.5, 1, 2, 5, 10, 20],
       description:
         'How much of each neighbouring unit a taper leaves standing, in metres. ⚠️ Must stay above `collapseThreshold` or the sliver is dropped and the hole comes back.',
       table: { category: 'Resolve' },
     },
     maxFill: {
-      control: { type: 'range', min: 0, max: 2000, step: 25 },
+      control: { type: 'select' },
+      options: [0, 100, 250, 500, 1000, 2000],
       description:
         'How far a layer counts as covered past its own data, in metres. Behaves as an EROSION RADIUS: a hole of radius r vanishes at maxFill = r, and a larger one merely loses a rim of that width.',
       table: { category: 'Resolve' },
     },
     collapseThreshold: {
-      control: { type: 'range', min: 0, max: 10, step: 0.25 },
+      control: { type: 'select' },
+      options: [0, 0.25, 0.5, 1, 2, 5],
       description:
         'Thickness below which a unit is treated as pinched out and its triangles dropped, in metres.',
       table: { category: 'Resolve' },
@@ -727,9 +738,9 @@ export const Default: Story = {
       table: { category: 'Section' },
     },
     sectionKeep: {
-      control: { type: 'range', min: -1, max: 20, step: 1 },
+      control: { type: 'number', min: -1, max: 40, step: 1 },
       description:
-        'Index of one layer to leave UNCUT, so it stands whole over the section (-1 = cut everything).',
+        'Index into the DRAWN layers of one to leave uncut, so it stands whole over the section (-1 = cut everything). Clamped to what is drawn.',
       table: { category: 'Section' },
     },
     sectionDebug: {
@@ -737,7 +748,8 @@ export const Default: Story = {
       table: { category: 'Section' },
     },
     seaLevel: {
-      control: { type: 'range', min: -200, max: 200, step: 10 },
+      control: { type: 'select' },
+      options: [-200, -100, -50, 0, 50, 100, 200],
       description: 'Depth of the sea surface, positive DOWN.',
       table: { category: 'Water' },
     },
@@ -767,25 +779,31 @@ export const Default: Story = {
     },
     immersion: {
       description:
-        'Fog the view when the camera goes UNDER the sea surface, so being inside the water reads as being inside it. ⚠️ Absent unless enabled: its presence is what installs `scene.fog`.',
+        'Fog the view when the camera goes inside a medium — the sea, or the block itself — so being inside it reads as being inside it. ⚠️ Absent unless enabled: its presence is what installs `scene.fog`.',
       table: { category: 'Immersion' },
     },
     immersionColor: {
       control: { type: 'color' },
+      description:
+        'Colour INSIDE THE BLOCK (the sea has its own). A near-black brown, not a water colour.',
       table: { category: 'Immersion' },
     },
     immersionVisibility: {
       control: { type: 'range', min: 10, max: 3000, step: 10 },
-      description: 'How far you can see underwater, in metres.',
+      description:
+        'Roughly how far you can see inside the medium, in metres. ⚠️ `FogExp2` saturates quadratically: ~63% fogged at this distance, ~98% at twice it.',
       table: { category: 'Immersion' },
     },
     immersionTransition: {
-      control: { type: 'range', min: 0, max: 2, step: 0.02 },
-      description: 'Seconds for the fog to catch up with a step change.',
+      control: { type: 'range', min: 0, max: 50, step: 1 },
+      description:
+        'Metres over which a medium fades in at its boundaries — what stops the edge of the sea, or of the block, reading as a hard line.',
       table: { category: 'Immersion' },
     },
     immersionSettle: {
-      control: { type: 'range', min: 0, max: 2, step: 0.05 },
+      control: { type: 'range', min: 0, max: 1, step: 0.02 },
+      description:
+        'Seconds for the fog to catch up with a step change. ⚠️ Keep it short — leaving a medium SIDEWAYS has no distance to ramp over, and a slow settle reads as a bug.',
       table: { category: 'Immersion' },
     },
     immersionBackground: {
@@ -798,7 +816,8 @@ export const Default: Story = {
       table: { category: 'Floor' },
     },
     floorClearance: {
-      control: { type: 'range', min: 0, max: 2000, step: 50 },
+      control: { type: 'select' },
+      options: [0, 100, 200, 400, 800, 1500, 2000],
       description:
         'Metres below the column’s deepest MAPPED sample to put the floor.',
       table: { category: 'Floor' },
@@ -814,9 +833,9 @@ export const Default: Story = {
     },
     wireframe: { table: { category: 'Appearance' } },
     peel: {
-      control: { type: 'range', min: 0, max: 20, step: 0.05 },
+      control: { type: 'number', min: 0, max: 40, step: 1 },
       description:
-        'Lift the layers apart, shallowest furthest, to see inside the stack without cutting it. Fractional values peel part way.',
+        'Hide the first N UNITS, exposing what is under them — a COUNT, so whole units only. Pure appearance: no rebuild, free to sweep. Clamped to what is drawn.',
       table: { category: 'Appearance' },
     },
     inferredStyle: {

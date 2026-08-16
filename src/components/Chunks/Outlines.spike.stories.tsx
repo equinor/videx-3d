@@ -418,7 +418,8 @@ export const Default: Story = {
       table: { category: 'Source' },
     },
     wellCount: {
-      control: { type: 'range', min: 1, max: 50, step: 1 },
+      control: { type: 'select' },
+      options: [1, 2, 5, 10, 20, 50],
       table: { category: 'Wellbore outline' },
     },
     mode: {
@@ -431,49 +432,64 @@ export const Default: Story = {
       table: { category: 'Wellbore outline' },
     },
     radius: {
-      control: { type: 'range', min: 100, max: 3000, step: 50 },
+      control: { type: 'select' },
+      options: [250, 500, 800, 1000, 1500, 2000, 3000],
       table: { category: 'Wellbore outline' },
     },
     cellSize: {
-      control: { type: 'range', min: 25, max: 500, step: 25 },
+      control: { type: 'select' },
+      options: [50, 100, 150, 200, 400],
       description:
         'Upper bound for the raster cell size; the effective cell is also ' +
         'clamped to radius/3 so a small radius still resolves.',
       table: { category: 'Wellbore outline' },
     },
     feather: {
-      control: { type: 'range', min: 0, max: 8, step: 1 },
+      control: { type: 'select' },
+      options: [0, 1, 2, 3, 5, 8],
       description: 'Box-blur passes on the distance field (rounds corners).',
       table: { category: 'Wellbore outline' },
     },
     wellSmoothing: {
-      control: { type: 'range', min: 0, max: 6, step: 0.5 },
+      control: { type: 'select' },
+      options: [0, 1, 2, 3, 5],
       description: 'Output ring smoothing strength.',
       table: { category: 'Wellbore outline' },
     },
     sampleSpacing: {
-      control: { type: 'range', min: 10, max: 250, step: 10 },
+      control: { type: 'select' },
+      options: [25, 50, 100, 200, 400],
       description:
         'Trajectory densification spacing. Affects only how finely the depth ' +
         'window is tested — the buffer is built from segments.',
       table: { category: 'Wellbore outline' },
     },
     rimSurfaceIndex: {
-      control: { type: 'range', min: 0, max: 10, step: 1 },
+      control: { type: 'select' },
+      options: [0, 1, 2, 3, 4, 5],
       description: 'Which surface (shallow→deep) to trace the rim from.',
       table: { category: 'Surface rim' },
     },
     rimSmoothing: {
-      control: { type: 'range', min: 0, max: 8, step: 0.5 },
+      control: { type: 'select' },
+      options: [0, 1, 2, 3, 5],
       table: { category: 'Surface rim' },
     },
-    groupSizes: { control: { type: 'text' }, table: { category: 'Chunk' } },
+    groupSizes: {
+      control: { type: 'select' },
+      options: ['', '2,2', '3,3', '2,2,2', '3,3,3', '4,4', '5,5'],
+      description:
+        'Surfaces per chunk, comma separated (empty = one chunk of everything). A PRESET list rather than free text: this decides layer identity, so every keystroke would rebuild.',
+      table: { category: 'Chunk' },
+    },
     rimSpacing: {
-      control: { type: 'range', min: 25, max: 1000, step: 25 },
+      control: { type: 'select' },
+      options: [50, 100, 250, 500, 1000],
       table: { category: 'Chunk' },
     },
     maxError: {
-      control: { type: 'range', min: 0, max: 50, step: 1 },
+      control: { type: 'select' },
+      options: [1, 2, 5, 10, 25, 50],
       table: { category: 'Chunk' },
     },
     surfaceOpacity: {

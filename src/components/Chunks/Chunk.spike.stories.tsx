@@ -190,13 +190,21 @@ export const Default: Story = {
     floorColor: '#4a4a4a',
   },
   argTypes: {
-    groupSizes: { control: { type: 'text' }, table: { category: 'Chunk' } },
+    groupSizes: {
+      control: { type: 'select' },
+      options: ['', '2,2', '3,3', '2,2,2', '3,3,3', '4,4', '5,5'],
+      description:
+        'Surfaces per chunk, comma separated (empty = one chunk of everything). A PRESET list rather than free text: this decides layer identity, so every keystroke would rebuild.',
+      table: { category: 'Chunk' },
+    },
     rimSpacing: {
-      control: { type: 'range', min: 25, max: 1000, step: 25 },
+      control: { type: 'select' },
+      options: [50, 100, 250, 500, 1000],
       table: { category: 'Chunk' },
     },
     maxError: {
-      control: { type: 'range', min: 0, max: 50, step: 1 },
+      control: { type: 'select' },
+      options: [1, 2, 5, 10, 25, 50],
       table: { category: 'Chunk' },
     },
     resolve: {
@@ -213,13 +221,15 @@ export const Default: Story = {
       table: { category: 'Chunk' },
     },
     minGap: {
-      control: { type: 'range', min: 0, max: 50, step: 1 },
+      control: { type: 'select' },
+      options: [0, 1, 2, 5, 10, 25],
       description:
         'Minimum separation kept between surfaces. 0 is safe on a shared tessellation; >0 gives every pinch-out an artificial thickness.',
       table: { category: 'Chunk' },
     },
     collapseThreshold: {
-      control: { type: 'range', min: 0, max: 10, step: 0.1 },
+      control: { type: 'select' },
+      options: [0, 0.25, 0.5, 1, 2, 5],
       description:
         'Thickness below which a unit counts as absent and its triangles are dropped.',
       table: { category: 'Chunk' },
@@ -252,7 +262,8 @@ export const Default: Story = {
       table: { category: 'Floor' },
     },
     floorClearance: {
-      control: { type: 'range', min: 0, max: 3000, step: 50 },
+      control: { type: 'select' },
+      options: [0, 100, 200, 400, 800, 1500, 3000],
       description:
         'How far the carrier clears the column’s deepest mapped sample, in metres.',
       table: { category: 'Floor' },

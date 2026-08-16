@@ -287,25 +287,29 @@ export const Default: Story = {
       table: { category: 'Scenario' },
     },
     outlineSize: {
-      control: { type: 'range', min: 1, max: 10, step: 0.5 },
+      control: { type: 'select' },
+      options: [1, 3, 5, 7, 9, 10],
       description:
         'Side of the square crop, in km. The grids are 10 km across and rotated 220°, so a square much above 7 km has corners outside them — which the `flat` control will report as missing coverage.',
       table: { category: 'Scenario' },
     },
     floorDepth: {
-      control: { type: 'range', min: 1600, max: 3000, step: 50 },
+      control: { type: 'select' },
+      options: [1600, 1800, 2000, 2200, 2500, 3000],
       description:
         'The column CARRIER: a flat floor at this absolute depth (metres, positive down), declared on the `ChunkStack` and drawn by the chunk. It gives the deepest surface a neighbour BELOW it — without which the seal has only the layer above to lean on, and in a one-surface scenario nothing at all.',
       table: { category: 'Scenario' },
     },
     maxError: {
-      control: { type: 'range', min: 0.5, max: 20, step: 0.5 },
+      control: { type: 'select' },
+      options: [1, 2, 5, 10, 25, 50],
       description:
         'Simplification error of the shared tessellation, in metres of height. It also sets how coarse the mesh is in FLAT areas, which is what bounds the staircase along a data edge — lower it to see the bevel at a coverage boundary shrink (at a cost in triangles).',
       table: { category: 'Scenario' },
     },
     maxFill: {
-      control: { type: 'range', min: 0, max: 3000, step: 25 },
+      control: { type: 'select' },
+      options: [0, 100, 250, 500, 1000, 2000],
       description:
         'How far a layer counts as covered past its own data, in metres. 0 = only real data counts. It works as an erosion radius: a hole of radius r vanishes at maxFill = r, and a bigger one just loses a rim that wide.',
       table: { category: 'Coverage' },
@@ -324,7 +328,8 @@ export const Default: Story = {
       table: { category: 'Coverage' },
     },
     minThickness: {
-      control: { type: 'range', min: 0, max: 50, step: 0.5 },
+      control: { type: 'select' },
+      options: [0.5, 1, 2, 5, 10, 20],
       description:
         'How much of a neighbouring unit a seal must leave standing, in metres — the only setting the shape of a seal has (how far it reaches is derived from the gap it closes, measured inside this chunk). ⚠️ Below `collapseThreshold` the sliver it leaves is dropped for having no thickness and the hole comes back.',
       table: { category: 'Coverage' },
@@ -342,7 +347,8 @@ export const Default: Story = {
       table: { category: 'Coverage' },
     },
     collapseThreshold: {
-      control: { type: 'range', min: 0, max: 5, step: 0.5 },
+      control: { type: 'select' },
+      options: [0, 0.25, 0.5, 1, 2, 5],
       description: 'Thickness below which a unit counts as absent, in metres.',
       table: { category: 'Coverage' },
     },

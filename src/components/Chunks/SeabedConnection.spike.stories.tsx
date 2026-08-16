@@ -502,24 +502,28 @@ export const Default: Story = {
   },
   argTypes: {
     detailCount: {
-      control: { type: 'range', min: 1, max: 20, step: 1 },
+      control: { type: 'select' },
+      options: [1, 2, 3, 4, 6, 8, 12],
       description: 'Surfaces the wellbore-cut middle tier spans.',
       table: { category: 'Connection' },
     },
     detailTiers: {
-      control: { type: 'range', min: 1, max: 6, step: 1 },
+      control: { type: 'select' },
+      options: [1, 2, 3, 4, 5],
       description:
         'Split the wellbore-cut detail into this many stacked tiers, sharing a boundary surface at each junction. Each tier resolves its OWN outline, so with `mode: above` they telescope; it also gives every tier its own base surface, instead of the whole column being gated by the partly-mapped `Basement Base`.',
       table: { category: 'Connection' },
     },
     basementCrop: {
-      control: { type: 'range', min: 0, max: 16, step: 0.5 },
+      control: { type: 'select' },
+      options: [0, 3, 6, 9, 12, 15],
       description:
         'Crop the basement tier this many km off one side of the field, sweeping the `Basement Base` seam through all three cases: it CONTAINS the detail tier (0), then only PARTLY overlaps it (the basement cap is cut back to the detail tier’s edge), then misses it entirely and both draw their own.',
       table: { category: 'Connection' },
     },
     basementThickness: {
-      control: { type: 'range', min: 100, max: 2000, step: 50 },
+      control: { type: 'select' },
+      options: [100, 250, 500, 800, 1500],
       description:
         'The column CARRIER: one flat floor this far below the deepest mapped sample of the whole column, declared on the `ChunkStack` and drawn by the basement tier — which asks for it simply by putting a `fill` on its last layer. Nothing pierces it — a surface that would is truncated at it.',
       table: { category: 'Connection' },
@@ -532,13 +536,15 @@ export const Default: Story = {
       table: { category: 'Connection' },
     },
     carrierDepth: {
-      control: { type: 'range', min: 500, max: 4000, step: 50 },
+      control: { type: 'select' },
+      options: [1000, 1500, 2000, 2500, 3000],
       description:
         'Absolute carrier depth (metres, positive-down), used by `carrierMode: depth`. Below ~2200 m nothing is cut; raise it through the basement to watch the block end flat.',
       table: { category: 'Connection' },
     },
     seaLevel: {
-      control: { type: 'range', min: 0, max: 200, step: 5 },
+      control: { type: 'select' },
+      options: [-200, -100, -50, 0, 50, 100, 200],
       description:
         'Sea level, metres below datum (positive-down) — 0 puts the sea surface at MSL. ⭐ The sea is declared on the `ChunkStack` rather than on a tier, and takes no part in the depth order — raising it does not truncate the seabed.',
       table: { category: 'Water' },
@@ -575,7 +581,8 @@ export const Default: Story = {
       table: { category: 'Resolve' },
     },
     minThickness: {
-      control: { type: 'range', min: 0, max: 50, step: 0.5 },
+      control: { type: 'select' },
+      options: [0.5, 1, 2, 5, 10, 20],
       description:
         'How much of a neighbouring unit a seal must leave standing, in metres — the only setting the shape of a seal has (how far it reaches is derived from the gap it closes, measured inside this chunk). ⚠️ Below `collapseThreshold` the sliver it leaves is dropped for having no thickness and the hole comes back.',
       table: { category: 'Resolve' },
@@ -587,11 +594,13 @@ export const Default: Story = {
       table: { category: 'Resolve' },
     },
     wellCount: {
-      control: { type: 'range', min: 1, max: 50, step: 1 },
+      control: { type: 'select' },
+      options: [1, 2, 5, 10, 20, 50],
       table: { category: 'Wellbore outline' },
     },
     radius: {
-      control: { type: 'range', min: 100, max: 3000, step: 50 },
+      control: { type: 'select' },
+      options: [250, 500, 800, 1000, 1500, 2000, 3000],
       table: { category: 'Wellbore outline' },
     },
     mode: {

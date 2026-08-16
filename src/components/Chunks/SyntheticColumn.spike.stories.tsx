@@ -913,25 +913,29 @@ export const Default: Story = {
       table: { category: 'Column' },
     },
     from: {
-      control: { type: 'range', min: 0, max: 12, step: 1 },
+      control: { type: 'select' },
+      options: [0, 2, 4, 6, 8, 10, 12, 15, 18],
       description:
         'First unit to draw, counting from the SHALLOWEST. Raise it to start below the unconformity.',
       table: { category: 'Column' },
     },
     count: {
-      control: { type: 'range', min: 2, max: 20, step: 1 },
+      control: { type: 'select' },
+      options: [1, 2, 4, 6, 8, 12, 16, 20, 30],
       description:
         'How many units to draw from `from` downward. ⭐ The column itself — its length, grid, structure, seed and erosion encoding — is built from the `COLUMN` constants in `src/storybook/data/synthetic-surfaces.ts`; edit those and reload.',
       table: { category: 'Column' },
     },
     outlineSize: {
-      control: { type: 'range', min: 1, max: 10, step: 0.5 },
+      control: { type: 'select' },
+      options: [1, 3, 5, 7, 9, 10],
       description:
         'Side of the square crop, in km. The grids are 10 km across and rotated 220°, so much above 7 km puts the corners outside them.',
       table: { category: 'Column' },
     },
     maxError: {
-      control: { type: 'range', min: 0.5, max: 20, step: 0.5 },
+      control: { type: 'select' },
+      options: [1, 2, 5, 10, 25, 50],
       description:
         'Simplification error of the shared tessellation, in metres of height.',
       table: { category: 'Column' },
@@ -979,7 +983,8 @@ export const Default: Story = {
       table: { category: 'Floor' },
     },
     floorClearance: {
-      control: { type: 'range', min: 50, max: 2000, step: 50 },
+      control: { type: 'select' },
+      options: [0, 100, 200, 400, 800, 1500, 3000],
       description:
         'Metres below the column’s deepest MAPPED sample. Measured over the whole envelope, and by construction it never truncates anything — use an absolute `depth` instead to cut the block off flat.',
       table: { category: 'Floor' },
@@ -997,7 +1002,8 @@ export const Default: Story = {
       table: { category: 'Water' },
     },
     seaLevel: {
-      control: { type: 'range', min: 0, max: 2600, step: 25 },
+      control: { type: 'select' },
+      options: [-200, -100, -50, 0, 50, 100, 200],
       description:
         'Sea level, in metres below datum (positive-down, as surfaces are given). 0 is where the sea bed was designed for — it spans roughly 210 m deep to 99 m above sea level, so the coast, the island and its hill all stand clear. Raise it to drown them: the ground is not truncated by the water, it simply goes under. ⚠️ This is the sea SURFACE, not a water depth.',
       table: { category: 'Water' },
@@ -1036,7 +1042,8 @@ export const Default: Story = {
       table: { category: 'Sea state' },
     },
     waterResolution: {
-      control: { type: 'range', min: 0, max: 500, step: 25 },
+      control: { type: 'select' },
+      options: [0, 50, 100, 200, 400],
       description:
         'Target triangle edge for the water lid, in metres. 0 = leave it to the library: the fewest triangles that fill the outline when displacement is off, a default resolution when it is on. ⚠️ A cost knob over the whole footprint — halving it roughly quadruples the lid.',
       table: { category: 'Sea state' },
@@ -1382,13 +1389,15 @@ export const Default: Story = {
       table: { category: 'Resolve' },
     },
     minThickness: {
-      control: { type: 'range', min: 0, max: 50, step: 0.5 },
+      control: { type: 'select' },
+      options: [0.5, 1, 2, 5, 10, 20],
       description:
         'How much of a neighbouring unit a seal must leave standing, in metres. ⚠️ Keep it above `collapseThreshold`.',
       table: { category: 'Resolve' },
     },
     maxFill: {
-      control: { type: 'range', min: 0, max: 3000, step: 25 },
+      control: { type: 'select' },
+      options: [0, 100, 250, 500, 1000, 2000],
       table: { category: 'Resolve' },
     },
     constrainCoverage: {
@@ -1399,7 +1408,8 @@ export const Default: Story = {
     },
     coverageAbsence: { control: 'boolean', table: { category: 'Resolve' } },
     collapseThreshold: {
-      control: { type: 'range', min: 0, max: 5, step: 0.5 },
+      control: { type: 'select' },
+      options: [0, 0.25, 0.5, 1, 2, 5],
       description:
         'Thickness below which a unit counts as absent — what turns the generated pinch-outs into terminations.',
       table: { category: 'Resolve' },

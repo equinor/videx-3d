@@ -572,15 +572,17 @@ export const Default: Story = {
   },
   argTypes: {
     surfaceFrom: {
-      control: { type: 'range', min: 0, max: 31, step: 1 },
+      control: { type: 'select' },
+      options: [0, 2, 4, 6, 8, 10, 12, 15, 18],
       description:
         'Index of the first surface (stratigraphic order), so the stack can start below the top of the column.',
       table: { category: 'Chunks' },
     },
     chunkSizes: {
-      control: { type: 'text' },
+      control: { type: 'select' },
+      options: ['4,4,4,4,3', '4,4,4', '5,5,5', '6,6', '8,8', '3,3,3,3'],
       description:
-        'Surfaces per stacked chunk (shallow→deep), comma-separated.',
+        'Surfaces per stacked chunk (shallow→deep), comma-separated. A PRESET list rather than free text: this decides layer identity, so every keystroke would rebuild every chunk.',
       table: { category: 'Chunks' },
     },
     connectChunks: {
@@ -590,13 +592,15 @@ export const Default: Story = {
       table: { category: 'Chunks' },
     },
     maxError: {
-      control: { type: 'range', min: 0.5, max: 40, step: 0.5 },
+      control: { type: 'select' },
+      options: [1, 2, 5, 10, 25, 50],
       description:
         'Interior simplification error (world units of height) for the shared tessellation. Lower = more triangles, finer detail.',
       table: { category: 'Chunks' },
     },
     wellCount: {
-      control: { type: 'range', min: 1, max: 50, step: 1 },
+      control: { type: 'select' },
+      options: [1, 2, 5, 10, 20, 50],
       table: { category: 'Wellbore outline' },
     },
     mode: {
@@ -607,13 +611,15 @@ export const Default: Story = {
       table: { category: 'Wellbore outline' },
     },
     radius: {
-      control: { type: 'range', min: 100, max: 3000, step: 50 },
+      control: { type: 'select' },
+      options: [250, 500, 800, 1000, 1500, 2000, 3000],
       description:
         'Margin for the SHALLOWEST chunk. Each chunk gets its own, interpolated toward `radiusBase`.',
       table: { category: 'Wellbore outline' },
     },
     radiusBase: {
-      control: { type: 'range', min: 100, max: 3000, step: 50 },
+      control: { type: 'select' },
+      options: [250, 500, 800, 1000, 1500, 2000, 3000],
       description:
         'Margin for the DEEPEST chunk. ⭐ Under `above`, each depth interval keeps the margin of the chunk that owns it, so a narrow shallow neck stays narrow inside a wide deep block — and setting this BELOW `radius` cannot break the nesting.',
       table: { category: 'Wellbore outline' },
@@ -626,23 +632,27 @@ export const Default: Story = {
       table: { category: 'Wellbore outline' },
     },
     cellSize: {
-      control: { type: 'range', min: 25, max: 500, step: 25 },
+      control: { type: 'select' },
+      options: [50, 100, 150, 200, 400],
       description:
         'Upper bound for the raster cell size; the effective cell is also clamped to radius/3 so a small radius still resolves.',
       table: { category: 'Wellbore outline' },
     },
     feather: {
-      control: { type: 'range', min: 0, max: 8, step: 1 },
+      control: { type: 'select' },
+      options: [0, 1, 2, 3, 5, 8],
       description: 'Box-blur passes on the distance field (rounds corners).',
       table: { category: 'Wellbore outline' },
     },
     wellSmoothing: {
-      control: { type: 'range', min: 0, max: 6, step: 0.5 },
+      control: { type: 'select' },
+      options: [0, 1, 2, 3, 5],
       description: 'Output ring smoothing strength.',
       table: { category: 'Wellbore outline' },
     },
     sampleSpacing: {
-      control: { type: 'range', min: 10, max: 250, step: 10 },
+      control: { type: 'select' },
+      options: [25, 50, 100, 200, 400],
       description:
         'Trajectory densification spacing. Affects only how finely the depth window is tested — the buffer is built from segments and the window crossings are interpolated.',
       table: { category: 'Wellbore outline' },
@@ -661,13 +671,15 @@ export const Default: Story = {
       table: { category: 'Resolve' },
     },
     minGap: {
-      control: { type: 'range', min: 0, max: 50, step: 1 },
+      control: { type: 'select' },
+      options: [0, 1, 2, 5, 10, 25],
       description:
         'Minimum separation kept between surfaces. 0 is safe on a shared tessellation; >0 gives every pinch-out an artificial thickness.',
       table: { category: 'Resolve' },
     },
     collapseThreshold: {
-      control: { type: 'range', min: 0, max: 10, step: 0.1 },
+      control: { type: 'select' },
+      options: [0, 0.25, 0.5, 1, 2, 5],
       description:
         'Thickness below which a unit counts as absent and its triangles are dropped.',
       table: { category: 'Resolve' },
@@ -685,7 +697,8 @@ export const Default: Story = {
       table: { category: 'Resolve' },
     },
     maxFill: {
-      control: { type: 'range', min: 0, max: 2000, step: 25 },
+      control: { type: 'select' },
+      options: [0, 100, DEFAULT_CHUNK_MAX_FILL, 500, 1000, 2000],
       description:
         'How far a layer counts as covered past its own data, in metres — an erosion radius on the unmapped area, so a hole of radius r vanishes at maxFill = r and a bigger one just loses a rim. 0 = only real data counts.',
       table: { category: 'Resolve' },
@@ -704,7 +717,8 @@ export const Default: Story = {
       table: { category: 'Resolve' },
     },
     minThickness: {
-      control: { type: 'range', min: 0, max: 50, step: 0.5 },
+      control: { type: 'select' },
+      options: [0.5, 1, 2, 5, 10, 20],
       description:
         'How much of a neighbouring unit a seal must leave standing, in metres — the only setting the shape of a seal has (how far it reaches is derived from the gap it closes, measured inside the chunk). ⚠️ Keep it above `collapseThreshold`, or the sliver it leaves is dropped for having no thickness and the hole comes back.',
       table: { category: 'Resolve' },
@@ -717,12 +731,14 @@ export const Default: Story = {
       table: { category: 'Water' },
     },
     seabedDepth: {
-      control: { type: 'range', min: 0, max: 3000, step: 10 },
+      control: { type: 'select' },
+      options: [0, 100, 200, 320, 500, 800],
       description: 'Mean depth of the procedural sea bed, positive-down.',
       table: { category: 'Water' },
     },
     seabedRelief: {
-      control: { type: 'range', min: 0, max: 600, step: 10 },
+      control: { type: 'select' },
+      options: [0, 25, 60, 120, 200],
       description: 'Peak-to-trough relief of the procedural sea bed.',
       table: { category: 'Water' },
     },
