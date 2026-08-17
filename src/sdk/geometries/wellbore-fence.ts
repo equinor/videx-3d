@@ -527,7 +527,28 @@ function runOutCandidates(
 }
 
 /**
- * Run the trace out of the chunk, at both ends.
+ * The extended curve for each side, from ONE run-out search.
+ *
+ * ⭐⭐ Both sides are resolved together because the search already scores every
+ * candidate pair for BOTH — running it twice would cost two rasterised flood
+ * fills per pair to learn the same thing. It also lets the caller tell agreement
+ * from divergence: when {@link FenceCurves.shared} is true, `plus` and `minus`
+ * are the SAME ARRAY, so one field and one texture serve both sides and flipping
+ * costs nothing.
+ *
+ * @group Geometries
+ */
+export type FenceCurves = {
+  /** the curve to build the field from when side +1 is removed */
+  plus: Vec2[];
+  /** the curve to build the field from when side −1 is removed */
+  minus: Vec2[];
+  /** whether both sides settled on the same run-out pair */
+  shared: boolean;
+};
+
+/**
+ * Run the trace out of the chunk, at both ends, for BOTH sides.
  *
  * ⭐ This is what turns a curve lying INSIDE the footprint into one that SEPARATES
  * it — without it there is no "side" to remove, only a slit. It is also the "cut
@@ -536,8 +557,9 @@ function runOutCandidates(
  * the one it was heading in.
  *
  * ⭐ The reach is DERIVED (ray-cast against the outline plus `margin`) rather than
- * configured, so it is right for any footprint. The DIRECTION is chosen for
- * clearance rather than taken from the end tangent — see {@link clearDirection}.
+ * configured, so it is right for any footprint. The DIRECTION is chosen by how
+ * much block the cut leaves — see {@link splitShares} — subject to a clearance
+ * CONSTRAINT on the candidates, see {@link runOutCandidates}.
  *
  * ⚠️ Rotating a run-out leaves a CORNER where it meets the trace — up to 161
  * degrees between consecutive vertices on the Volve data. Nothing here rounds it:
@@ -546,21 +568,20 @@ function runOutCandidates(
  *
  * @group Geometries
  */
-export function extendFencePolyline(
+export function fenceCurves(
   positions: Vec2[],
   options: FenceExtendOptions,
-): Vec2[] {
-  if (positions.length === 0) return [];
+): FenceCurves {
+  if (positions.length === 0) return { plus: [], minus: [], shared: true };
   const margin = options.margin ?? DEFAULT_MARGIN;
   const azimuth = options.azimuth ?? 0;
   const near = options.clearanceNear ?? FENCE_CLEARANCE_NEAR;
   const clearance = options.clearance ?? FENCE_CLEARANCE;
-  const side = options.side ?? 1;
   const reveal = options.reveal ?? FENCE_REVEAL;
   const fallback: Vec2 = [Math.cos(azimuth), Math.sin(azimuth)];
 
-  let end = endDirection(positions, false) ?? fallback;
-  let start = endDirection(positions, true) ?? [-fallback[0], -fallback[1]];
+  const end = endDirection(positions, false) ?? fallback;
+  const start = endDirection(positions, true) ?? [-fallback[0], -fallback[1]];
 
   // A trace with too little deviation to carry two independent directions would
   // otherwise send both extensions the same way, leaving the block uncut on one
@@ -572,89 +593,6 @@ export function extendFencePolyline(
   const first = positions[0];
   const last = positions[positions.length - 1];
 
-  if (plan < FENCE_MIN_DEVIATION) {
-    start = [-end[0], -end[1]];
-  } else {
-    // ⭐⭐ Chosen by what the cut actually LEAVES, not by the angle it makes with
-    // the trace. See {@link splitShares}.
-    let minX = Infinity;
-    let minZ = Infinity;
-    let maxX = -Infinity;
-    let maxZ = -Infinity;
-    for (const ring of options.rings) {
-      for (const p of ring) {
-        if (p[0] < minX) minX = p[0];
-        if (p[0] > maxX) maxX = p[0];
-        if (p[1] < minZ) minZ = p[1];
-        if (p[1] > maxZ) maxZ = p[1];
-      }
-    }
-    if (maxX > minX && maxZ > minZ) {
-      const bounds: [number, number, number, number] = [minX, minZ, maxX, maxZ];
-      const starts = runOutCandidates(positions, first, start, near, clearance);
-      const ends = runOutCandidates(positions, last, end, near, clearance);
-      // ⭐ Capped at `reveal`: once the removed side is a usable piece of block,
-      // more of it is not better, and chasing it would swing the cut away from the
-      // well. Above the cap the score goes flat and the tie-break below decides.
-      const cap = (v: number) => Math.min(v, reveal);
-
-      let bestShared = -1;
-      let bestSharedOwn = -1;
-      let bestSharedPair: [Vec2, Vec2] | null = null;
-      let bestOwn = -1;
-      let bestOwnPair: [Vec2, Vec2] | null = null;
-      for (const s of starts) {
-        const sReach = escapeDistance(first, s, options.rings) + margin;
-        const sTip: Vec2 = [first[0] + s[0] * sReach, first[1] + s[1] * sReach];
-        for (const e of ends) {
-          if (dotVec2(s, e) > FENCE_COLLINEAR) continue;
-          const eReach = escapeDistance(last, e, options.rings) + margin;
-          const curve: Vec2[] = [
-            sTip,
-            ...positions,
-            [last[0] + e[0] * eReach, last[1] + e[1] * eReach] as Vec2,
-          ];
-          const [seedShare, otherShare] = splitShares(curve, bounds);
-          // The shader discards the NON-seed component for side +1.
-          const removedPlus = otherShare;
-          const removedMinus = seedShare;
-          const own = cap(side > 0 ? removedPlus : removedMinus);
-          const shared = Math.min(cap(removedPlus), cap(removedMinus));
-          if (shared > bestShared) {
-            bestShared = shared;
-            bestSharedOwn = own;
-            bestSharedPair = [s, e];
-          }
-          if (own > bestOwn) {
-            bestOwn = own;
-            bestOwnPair = [s, e];
-          }
-        }
-      }
-
-      // ⭐⭐ The pair that serves BOTH sides wins unless it would leave THIS side
-      // unusable. Preferring whichever pair is marginally better for the current
-      // side instead makes the two views disagree on most wells (13 of 24 measured)
-      // for a few points of share, and then they are no longer two views of one
-      // section — which is the whole reason to have two.
-      const pick =
-        bestSharedPair && bestSharedOwn >= FENCE_SHARE_FLOOR
-          ? bestSharedPair
-          : (bestOwnPair ?? bestSharedPair);
-      if (pick) {
-        start = pick[0];
-        end = pick[1];
-      }
-    }
-
-    if (dotVec2(end, start) > FENCE_COLLINEAR) {
-      start = [-end[0], -end[1]];
-    }
-  }
-
-  const startReach = escapeDistance(first, start, options.rings) + margin;
-  const endReach = escapeDistance(last, end, options.rings) + margin;
-
   // ⚠️⚠️ De-looped HERE, before the field is built from it, not merely on the face
   // afterwards. A curve that crosses itself encloses a pocket, and the flood fill
   // that signs the field hands that pocket the far side's sign — so the block gets
@@ -662,14 +600,134 @@ export function extendFencePolyline(
   // contour leaves the face saying one thing and the discard another, and which
   // way that mismatch reads flips with `side`, which is what makes width 0 look
   // like a plain inversion rather than a fit.
-  return removeChainLoops([
-    [
-      first[0] + start[0] * startReach,
-      first[1] + start[1] * startReach,
-    ] as Vec2,
-    ...positions,
-    [last[0] + end[0] * endReach, last[1] + end[1] * endReach] as Vec2,
-  ]);
+  const build = (s: Vec2, e: Vec2): Vec2[] => {
+    const startReach = escapeDistance(first, s, options.rings) + margin;
+    const endReach = escapeDistance(last, e, options.rings) + margin;
+    return removeChainLoops([
+      [first[0] + s[0] * startReach, first[1] + s[1] * startReach] as Vec2,
+      ...positions,
+      [last[0] + e[0] * endReach, last[1] + e[1] * endReach] as Vec2,
+    ]);
+  };
+
+  if (plan < FENCE_MIN_DEVIATION) {
+    const curve = build([-end[0], -end[1]], end);
+    return { plus: curve, minus: curve, shared: true };
+  }
+
+  // ⭐⭐ Chosen by what the cut actually LEAVES, not by the angle it makes with
+  // the trace. See {@link splitShares}.
+  let minX = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxZ = -Infinity;
+  for (const ring of options.rings) {
+    for (const p of ring) {
+      if (p[0] < minX) minX = p[0];
+      if (p[0] > maxX) maxX = p[0];
+      if (p[1] < minZ) minZ = p[1];
+      if (p[1] > maxZ) maxZ = p[1];
+    }
+  }
+
+  let plusPair: [Vec2, Vec2] | null = null;
+  let minusPair: [Vec2, Vec2] | null = null;
+  if (maxX > minX && maxZ > minZ) {
+    const bounds: [number, number, number, number] = [minX, minZ, maxX, maxZ];
+    const starts = runOutCandidates(positions, first, start, near, clearance);
+    const ends = runOutCandidates(positions, last, end, near, clearance);
+    // ⭐ Capped at `reveal`: once the removed side is a usable piece of block,
+    // more of it is not better, and chasing it would swing the cut away from the
+    // well. Above the cap the score goes flat and the tie-break below decides.
+    const cap = (v: number) => Math.min(v, reveal);
+
+    let bestShared = -1;
+    let bestSharedOwnPlus = -1;
+    let bestSharedOwnMinus = -1;
+    let bestSharedPair: [Vec2, Vec2] | null = null;
+    let bestOwnPlus = -1;
+    let bestOwnPlusPair: [Vec2, Vec2] | null = null;
+    let bestOwnMinus = -1;
+    let bestOwnMinusPair: [Vec2, Vec2] | null = null;
+    for (const s of starts) {
+      const sReach = escapeDistance(first, s, options.rings) + margin;
+      const sTip: Vec2 = [first[0] + s[0] * sReach, first[1] + s[1] * sReach];
+      for (const e of ends) {
+        if (dotVec2(s, e) > FENCE_COLLINEAR) continue;
+        const eReach = escapeDistance(last, e, options.rings) + margin;
+        const curve: Vec2[] = [
+          sTip,
+          ...positions,
+          [last[0] + e[0] * eReach, last[1] + e[1] * eReach] as Vec2,
+        ];
+        const [seedShare, otherShare] = splitShares(curve, bounds);
+        // The shader discards the NON-seed component for side +1.
+        const ownPlus = cap(otherShare);
+        const ownMinus = cap(seedShare);
+        const shared = Math.min(ownPlus, ownMinus);
+        if (shared > bestShared) {
+          bestShared = shared;
+          bestSharedOwnPlus = ownPlus;
+          bestSharedOwnMinus = ownMinus;
+          bestSharedPair = [s, e];
+        }
+        if (ownPlus > bestOwnPlus) {
+          bestOwnPlus = ownPlus;
+          bestOwnPlusPair = [s, e];
+        }
+        if (ownMinus > bestOwnMinus) {
+          bestOwnMinus = ownMinus;
+          bestOwnMinusPair = [s, e];
+        }
+      }
+    }
+
+    // ⭐⭐ The pair that serves BOTH sides wins unless it would leave THIS side
+    // unusable. Preferring whichever pair is marginally better for the current
+    // side instead makes the two views disagree on most wells (13 of 24 measured)
+    // for a few points of share, and then they are no longer two views of one
+    // section — which is the whole reason to have two.
+    plusPair =
+      bestSharedPair && bestSharedOwnPlus >= FENCE_SHARE_FLOOR
+        ? bestSharedPair
+        : (bestOwnPlusPair ?? bestSharedPair);
+    minusPair =
+      bestSharedPair && bestSharedOwnMinus >= FENCE_SHARE_FLOOR
+        ? bestSharedPair
+        : (bestOwnMinusPair ?? bestSharedPair);
+  }
+
+  const resolve = (pair: [Vec2, Vec2] | null): [Vec2, Vec2] => {
+    const e = pair ? pair[1] : end;
+    let s = pair ? pair[0] : start;
+    if (dotVec2(e, s) > FENCE_COLLINEAR) s = [-e[0], -e[1]];
+    return [s, e];
+  };
+
+  const shared = plusPair === minusPair;
+  const [plusStart, plusEnd] = resolve(plusPair);
+  const plus = build(plusStart, plusEnd);
+  // ⭐ The same ARRAY when the two sides agree, so a caller can compare by
+  // identity and build one field instead of two — 25/25 on the demo data.
+  if (shared) return { plus, minus: plus, shared };
+  const [minusStart, minusEnd] = resolve(minusPair);
+  return { plus, minus: build(minusStart, minusEnd), shared };
+}
+
+/**
+ * Run the trace out of the chunk, at both ends, for one side.
+ *
+ * A thin wrapper over {@link fenceCurves} — see there for what the run-outs are
+ * chosen by.
+ *
+ * @group Geometries
+ */
+export function extendFencePolyline(
+  positions: Vec2[],
+  options: FenceExtendOptions,
+): Vec2[] {
+  const curves = fenceCurves(positions, options);
+  return (options.side ?? 1) > 0 ? curves.plus : curves.minus;
 }
 
 /** A rasterised signed distance to a fence curve. */

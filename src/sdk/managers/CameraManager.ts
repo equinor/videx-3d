@@ -1,7 +1,8 @@
 import { CameraControls } from '@react-three/drei';
-import { Vector3 } from 'three';
+import { PerspectiveCamera, Vector3 } from 'three';
 import {
   cameraFocusAtPointEventType,
+  cameraLookAtEventType,
   cameraSetPositionEventType,
 } from '../../events/camera-events';
 import { Vec3 } from '../types/common';
@@ -114,13 +115,181 @@ export class CameraManager {
       }
     };
 
+    const onLookAt = (event: any) => {
+      const detail = event.detail;
+      this.lookAt(detail).then(() => {
+        if (detail.callback) detail.callback();
+      });
+    };
+
     addEventListener(cameraSetPositionEventType, onSetPosition);
     addEventListener(cameraFocusAtPointEventType, onFocusPoint);
+    addEventListener(cameraLookAtEventType, onLookAt);
 
     this.removeEventlisteners = () => {
       removeEventListener(cameraSetPositionEventType, onSetPosition);
       removeEventListener(cameraFocusAtPointEventType, onFocusPoint);
+      removeEventListener(cameraLookAtEventType, onLookAt);
     };
+  }
+
+  /**
+   * Put the camera at `position` looking at `target`.
+   *
+   * @returns a promise that resolves when the move is done — immediately when
+   *   `transition` is false
+   */
+  async lookAt(options: {
+    position: Vec3;
+    target: Vec3;
+    transition?: boolean;
+  }): Promise<void> {
+    const controls = this.controls;
+    if (!controls) return;
+    const [px, py, pz] = options.position;
+    const [tx, ty, tz] = options.target;
+    const transition = controls.setLookAt(
+      px,
+      py,
+      pz,
+      tx,
+      ty,
+      tz,
+      options.transition !== false,
+    );
+    normalizeRotations(controls);
+    await transition;
+  }
+
+  /**
+   * Place the camera in SPHERICAL terms around a target.
+   *
+   * ⭐ Degrees and metres, because that is the form a pose can be written down in
+   * and reproduced — a position vector cannot be reasoned about at a glance, which
+   * is what makes framing a view by hand a matter of trial and error.
+   *
+   * `azimuth` is measured from +X toward +Z, `polar` from straight down (0) to the
+   * horizon (90) and on to straight up (180).
+   */
+  async orbit(options: {
+    azimuth: number;
+    polar: number;
+    distance: number;
+    target?: Vec3;
+    transition?: boolean;
+  }): Promise<void> {
+    const controls = this.controls;
+    if (!controls) return;
+    if (options.target) cameraTarget.set(...options.target);
+    else controls.getTarget(cameraTarget);
+
+    const azimuth = (options.azimuth * Math.PI) / 180;
+    const polar = (options.polar * Math.PI) / 180;
+    const sinPolar = Math.sin(polar);
+    const position: Vec3 = [
+      cameraTarget.x + options.distance * sinPolar * Math.cos(azimuth),
+      cameraTarget.y + options.distance * Math.cos(polar),
+      cameraTarget.z + options.distance * sinPolar * Math.sin(azimuth),
+    ];
+    return this.lookAt({
+      position,
+      target: [cameraTarget.x, cameraTarget.y, cameraTarget.z],
+      transition: options.transition,
+    });
+  }
+
+  /**
+   * Fit an axis-aligned box to the view.
+   *
+   * The distance is derived from the box's bounding sphere against the camera's
+   * own vertical fov and aspect, so the whole box is inside the frustum whichever
+   * way it is being looked at.
+   */
+  async frame(
+    box: { min: Vec3; max: Vec3 },
+    options: {
+      azimuth?: number;
+      polar?: number;
+      padding?: number;
+      transition?: boolean;
+    } = {},
+  ): Promise<void> {
+    const controls = this.controls;
+    if (!controls) return;
+    const target: Vec3 = [
+      (box.min[0] + box.max[0]) * 0.5,
+      (box.min[1] + box.max[1]) * 0.5,
+      (box.min[2] + box.max[2]) * 0.5,
+    ];
+    const radius =
+      0.5 *
+      Math.hypot(
+        box.max[0] - box.min[0],
+        box.max[1] - box.min[1],
+        box.max[2] - box.min[2],
+      );
+    const camera = controls.camera as PerspectiveCamera;
+    const fov = ((camera.fov ?? 60) * Math.PI) / 180;
+    // The horizontal half-angle is the binding one on a narrow window.
+    const halfAngle = Math.min(
+      fov * 0.5,
+      Math.atan(Math.tan(fov * 0.5) * (camera.aspect ?? 1)),
+    );
+    const distance = (radius / Math.sin(halfAngle)) * (options.padding ?? 1.1);
+
+    const current = this.pose();
+    return this.orbit({
+      azimuth: options.azimuth ?? current?.azimuth ?? 225,
+      polar: options.polar ?? current?.polar ?? 60,
+      distance,
+      target,
+      transition: options.transition,
+    });
+  }
+
+  /**
+   * Where the camera is now, in the form {@link CameraManager.orbit} takes.
+   *
+   * ⭐ Degrees, so a view worth keeping can be read off and pasted straight back
+   * into a story's `parameters` or into another `orbit` call.
+   */
+  pose(): {
+    position: Vec3;
+    target: Vec3;
+    azimuth: number;
+    polar: number;
+    distance: number;
+  } | null {
+    const controls = this.controls;
+    if (!controls) return null;
+    controls.getPosition(cameraPosition);
+    controls.getTarget(cameraTarget);
+    direction.subVectors(cameraPosition, cameraTarget);
+    const distance = direction.length();
+    return {
+      position: [cameraPosition.x, cameraPosition.y, cameraPosition.z],
+      target: [cameraTarget.x, cameraTarget.y, cameraTarget.z],
+      azimuth: (Math.atan2(direction.z, direction.x) * 180) / Math.PI,
+      polar:
+        distance > 0 ? (Math.acos(direction.y / distance) * 180) / Math.PI : 0,
+      distance,
+    };
+  }
+
+  /** Resolves once the controls have come to rest. */
+  settled(): Promise<void> {
+    const controls = this.controls;
+    if (!controls) return Promise.resolve();
+    return new Promise(resolve => {
+      const check = () => {
+        if (!controls.active) {
+          resolve();
+          return;
+        }
+        requestAnimationFrame(check);
+      };
+      check();
+    });
   }
 
   async setTarget(target: Vec3) {

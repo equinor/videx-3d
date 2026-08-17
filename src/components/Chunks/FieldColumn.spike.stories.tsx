@@ -32,6 +32,7 @@ import { GeneratorsProviderDecorator } from '../../storybook/decorators/generato
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
 import { WellMapDecorator } from '../../storybook/decorators/well-map-decorator';
 import { useFieldOutline } from '../../storybook/hooks/useFieldOutline';
+import { useVidex3dLocate } from '../../storybook/debug/useVidex3dLocate';
 import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import {
@@ -312,6 +313,7 @@ type FieldColumnStoryProps = {
   fence: boolean;
   fenceSide: 1 | -1;
   fenceWidth: number;
+  fenceOffset: number;
   fenceResolution: number;
   fenceCellSize: number;
   fenceAzimuth: number;
@@ -320,6 +322,12 @@ type FieldColumnStoryProps = {
   fenceShallowDepth: number;
   fenceDeepDepth: number;
   fenceDebug: boolean;
+};
+
+/** Publishes `window.videx3d.locate('wellbore', id)`; must sit inside `UtmArea`. */
+const Videx3dLocate = () => {
+  useVidex3dLocate();
+  return null;
 };
 
 const FieldColumnStory = (props: FieldColumnStoryProps) => {
@@ -561,6 +569,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
             wellbore: selectedWellbore,
             side: props.fenceSide,
             width: props.fenceWidth,
+            offset: props.fenceOffset,
             resolution: props.fenceResolution,
             cellSize: props.fenceCellSize,
             azimuth: (props.fenceAzimuth * Math.PI) / 180,
@@ -576,6 +585,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       selectedWellbore,
       props.fenceSide,
       props.fenceWidth,
+      props.fenceOffset,
       props.fenceResolution,
       props.fenceCellSize,
       props.fenceAzimuth,
@@ -633,6 +643,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
   return (
     <>
       <UtmArea origin={origin} utmZone={utmZone}>
+        <Videx3dLocate />
         <ambientLight intensity={0.6} />
         <directionalLight position={[0.5, 1, 0.3]} intensity={1.1} />
         <ChunkStack
@@ -741,6 +752,7 @@ export const Default: Story = {
     fence: false,
     fenceSide: 1,
     fenceWidth: 0,
+    fenceOffset: 0,
     fenceResolution: 10,
     fenceCellSize: 25,
     fenceAzimuth: 0,
@@ -911,6 +923,12 @@ export const Default: Story = {
       control: { type: 'range', min: 0, max: 2000, step: 25 },
       description:
         'Metres of clearance between the well and the face. 0 puts the face through the well itself — the classic section, with the trajectory lying in the cut. ⭐ Free to sweep: no rebuild behind it.',
+      table: { category: 'Fence' },
+    },
+    fenceOffset: {
+      control: { type: 'range', min: -20, max: 20, step: 0.5 },
+      description:
+        'Metres to move the cut face toward the KEPT side. ⚠️ Normally 0 — the face is drawn with a material that is not itself cut, so it needs no nudge to escape its own test, and an inset leaves the unit’s cap overhanging it as a thin bright lip. A small NEGATIVE value pushes the face slightly proud instead, which is how to tell a SEAM apart from a geometry fault: if a seam closes at −2 it was never a geometry problem.',
       table: { category: 'Fence' },
     },
     fenceCellSize: {

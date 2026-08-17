@@ -3,6 +3,7 @@ import {
   createFenceField,
   createFencePolyline,
   extendFencePolyline,
+  fenceCurves,
   fenceTaperRange,
   fenceWidthAt,
   removeChainLoops,
@@ -216,6 +217,51 @@ describe('extendFencePolyline', () => {
     expect(minus[0][0]).toBeCloseTo(plus[0][0], 6);
     expect(minus[0][1]).toBeCloseTo(plus[0][1], 6);
     expect(minus[minus.length - 1][0]).toBeCloseTo(plus[plus.length - 1][0], 6);
+  });
+});
+
+describe('fenceCurves', () => {
+  const hook: Vec2[] = [];
+  for (let i = 0; i <= 20; i++) {
+    const t = i / 20;
+    hook.push([-600 + 1200 * t, 400 * Math.sin(Math.PI * t) - 300 * t]);
+  }
+
+  it('agrees bit for bit with extendFencePolyline on both sides', () => {
+    // ⚠️ The wrapper is the whole point: one search now resolves both sides, so
+    // any drift here is a silent change to every existing caller's cut.
+    for (const reveal of [0.1, 0.25, 0.5, 0.75]) {
+      const options = { rings: [square(2000)], margin: 200, reveal };
+      const curves = fenceCurves(hook, options);
+      expect(curves.plus).toEqual(
+        extendFencePolyline(hook, { ...options, side: 1 }),
+      );
+      expect(curves.minus).toEqual(
+        extendFencePolyline(hook, { ...options, side: -1 }),
+      );
+    }
+  });
+
+  it('hands back one array, not two equal ones, when the sides agree', () => {
+    // ⭐ Identity is the signal `useStackFence` keys on to build a single field
+    // and texture for both sides — equality would force it to build two.
+    const clean: Vec2[] = [];
+    for (let x = -800; x <= 800; x += 100) clean.push([x, x * 0.3]);
+    const curves = fenceCurves(clean, { rings: [square(2000)], margin: 200 });
+    expect(curves.shared).toBe(true);
+    expect(curves.minus).toBe(curves.plus);
+  });
+
+  it('shares the curve for a well with no plan deviation', () => {
+    const curves = fenceCurves(
+      [
+        [0, 0],
+        [10, 0],
+      ],
+      { rings: [square(2000)], margin: 200, azimuth: 0 },
+    );
+    expect(curves.shared).toBe(true);
+    expect(curves.minus).toBe(curves.plus);
   });
 });
 

@@ -1,4 +1,5 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useFrame } from '@react-three/fiber';
 import {
   BufferAttribute,
   BufferGeometry,
@@ -174,6 +175,16 @@ export const ChunkMeshes = ({
   fenceCarrier = true,
   peel = 0,
 }: ChunkMeshesProps) => {
+  // ⚠️ `fence` is a STABLE object mutated from the frame loop, so a change to
+  // `fence.debug` is invisible to React and the materials below would keep the
+  // ones they were first built with. Mirroring it into state is what makes the
+  // toggle work without a remount.
+  const [fenceDebug, setFenceDebug] = useState(fence?.debug === true);
+  useFrame(() => {
+    const wanted = fence?.debug === true;
+    if (wanted !== fenceDebug) setFenceDebug(wanted);
+  });
+
   const materials = useMemo(() => {
     // Materials built here are owned here; a caller's Material is passed through
     // untouched, so the two are tracked separately for disposal.
@@ -334,7 +345,7 @@ export const ChunkMeshes = ({
     const faces = !fence
       ? []
       : layers.map((layer, i) => {
-          if (fence.debug) {
+          if (fenceDebug) {
             const material = new MeshBasicMaterial({
               color: '#ff00ff',
               wireframe: true,
@@ -417,6 +428,7 @@ export const ChunkMeshes = ({
     sectionUniformInverse,
     sectionCarrier,
     fence,
+    fenceDebug,
     fenceUniforms,
     fenceUniformsInverse,
     fenceCarrier,
