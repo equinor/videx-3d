@@ -3,9 +3,11 @@ import {
   ColorRepresentation,
   DoubleSide,
   IUniform,
+  Matrix3,
   ShaderLib,
   ShaderMaterial,
   Side,
+  Texture,
   UniformsUtils,
   Vector2,
   Vector3,
@@ -21,6 +23,25 @@ import vertexShader from './shaders/chunk-vert.glsl';
 
 /** Ambient multipliers facing up / facing down. See {@link ChunkMaterialParameters.ambient}. */
 export const DEFAULT_CHUNK_AMBIENT: Vec2 = [1.35, 0.5];
+
+/**
+ * The shared uniforms a fence cut reads. One set per stack, handed to every
+ * material it draws with, so a new wellbore is four writes rather than a rebuild.
+ *
+ * @group Components
+ */
+export type ChunkFenceUniforms = {
+  /** x: half width, y: which side goes, z: unused, w: +1, or -1 to invert */
+  params: IUniform<Vector4>;
+  /** x: extra half width at the shallow end, yz: the arc lengths it tapers between */
+  taper: IUniform<Vector3>;
+  /** signed distance to the curve in R, distance ALONG it in G, both in metres */
+  map: IUniform<Texture | null>;
+  /** object XZ -> uv */
+  toUv: IUniform<Matrix3>;
+  /** grid size in texels */
+  size: IUniform<Vector2>;
+};
 
 /**
  * Tinting of whatever lies under a water level. See
@@ -113,6 +134,22 @@ export type ChunkMaterialParameters = {
    * sectioning on or off means a new material. Moving the plane does not.
    */
   sectionPlane?: IUniform<Vector4>;
+  /**
+   * Cut this material with a vertical **fence** — a surface swept along a curve in
+   * plan, typically a wellbore's trajectory. Shares its uniforms for the same
+   * reason {@link ChunkMaterialParameters.sectionPlane} does.
+   *
+   * `params` is (half width in metres, which side goes, unused, +1 or -1 to invert
+   * the test); the rest place the signed-distance field in the mesh's OWN object
+   * XZ.
+   *
+   * ⭐ Read PER FRAGMENT, so the cut follows the field rather than this mesh's
+   * triangles — which is what lets a face built independently of the tessellation
+   * line up with the opening it sits in.
+   *
+   * ⚠️ Read at CONSTRUCTION, like `sectionPlane`.
+   */
+  fence?: ChunkFenceUniforms;
   /**
    * Fluid contacts to draw as LINES on this layer, where the geometry's own height
    * crosses the contact's grid.
@@ -231,6 +268,15 @@ export class ChunkMaterial extends ShaderMaterial {
     if (parameters.sectionPlane) {
       (this.defines as Record<string, unknown>).CHUNK_SECTION = '';
       this.uniforms.sectionPlane = parameters.sectionPlane;
+    }
+
+    if (parameters.fence) {
+      (this.defines as Record<string, unknown>).CHUNK_FENCE = '';
+      this.uniforms.fenceParams = parameters.fence.params;
+      this.uniforms.fenceTaper = parameters.fence.taper;
+      this.uniforms.fenceMap = parameters.fence.map;
+      this.uniforms.fenceToUv = parameters.fence.toUv;
+      this.uniforms.fenceSize = parameters.fence.size;
     }
 
     this.applyContacts(parameters.contacts);

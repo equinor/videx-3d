@@ -25,6 +25,7 @@ import { StackImmersionFog } from './StackImmersionFog';
 import {
   ChunkBuildState,
   ChunkCarrier,
+  ChunkFence,
   ChunkResolveOptions,
   ChunkSection,
   ChunkSectionState,
@@ -63,6 +64,7 @@ import {
   SurfaceSamplerRegistryContext,
 } from './surface-sampler';
 import { useStackWater } from './useStackWater';
+import { useStackFence } from './useStackFence';
 import { ChunkContact } from './chunk-contacts';
 import { useChunkContacts } from './useChunkContacts';
 import { useStackBathymetry } from './useStackBathymetry';
@@ -171,6 +173,19 @@ export type ChunkStackProps = {
    */
   section?: ChunkSection;
   /**
+   * Open the stack along a **fence** swept down a wellbore's path, instead of with
+   * a plane. See {@link ChunkFence}.
+   *
+   * ⚠️ Mutually exclusive with {@link ChunkStackProps.section} — both cut, and two
+   * cuts at once say less than one. The fence wins if both are enabled.
+   *
+   * ⭐ Unlike the section it needs no rebuild to CHANGE: the field it cuts by is
+   * one number per vertex, so switching wellbores is a resample and an upload, not
+   * a build. It does share the section's requirement that the chunk carry the cut
+   * channels, so its PRESENCE is still a build input.
+   */
+  fence?: ChunkFence;
+  /**
    * How the column is made monotone before it is built, and what is dropped where
    * a unit is not present. Chunks inherit this unless they declare their own.
    *
@@ -222,6 +237,7 @@ export const ChunkStack = ({
   immersion,
   contacts,
   section,
+  fence,
   resolve,
   rimSpacing,
   maxError,
@@ -286,6 +302,23 @@ export const ChunkStack = ({
   // The frame the section is expressed in — needed to bring a camera-locked plane
   // out of world space, which is the one case where the two differ.
   const sectionRoot = useRef<Group>(null);
+
+  const {
+    state: fenceState,
+    uniforms: fenceUniforms,
+    uniformsInverse: fenceUniformsInverse,
+  } = useStackFence(fence, outline, store, utm?.utmToArea);
+
+  if (
+    fence &&
+    section &&
+    fence.enabled !== false &&
+    section.enabled !== false
+  ) {
+    console.warn(
+      'ChunkStack: `section` and `fence` are both enabled. They both cut the block, so only the fence is applied.',
+    );
+  }
 
   const hasSection = !!section;
   // ⚠️ Deliberately NOT keyed on the prop: `section={{ plane, enabled }}` is a new
@@ -631,6 +664,10 @@ export const ChunkStack = ({
       sectionUniform,
       sectionUniformInverse,
       sectionCarrier: section?.carrier !== false,
+      fence: fenceState,
+      fenceUniforms,
+      fenceUniformsInverse,
+      fenceCarrier: fence?.carrier !== false,
       resolve: stableResolve,
       envelope,
       rimSpacing,
@@ -658,6 +695,10 @@ export const ChunkStack = ({
     sectionUniform,
     sectionUniformInverse,
     section?.carrier,
+    fenceState,
+    fenceUniforms,
+    fenceUniformsInverse,
+    fence?.carrier,
     stableResolve,
     wellboreEnvelope,
     rimSpacing,

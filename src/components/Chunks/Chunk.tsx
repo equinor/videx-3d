@@ -645,7 +645,7 @@ export const Chunk = ({
   // Both a peel and a section can hide the layer a cap's collapse relied on
   // covering it, so the build has to keep what it dropped on that strength.
   // Keyed on the PRESENCE of a peel, so changing its value never rebuilds.
-  const peelable = peel !== undefined || !!stack.section;
+  const peelable = peel !== undefined || !!stack.section || !!stack.fence;
 
   const spec = useMemo(() => {
     if (!outlinePolygon || !utm || stableLayers.length === 0) return null;
@@ -660,8 +660,9 @@ export const Chunk = ({
       carrier: stack.carrier,
       // Asked for by the PRESENCE of a section on the stack, not by whether one is
       // currently enabled: it is part of the build, so following the toggle would
-      // rebuild the geometry every time the section is switched on or off.
-      section: !!stack.section,
+      // rebuild the geometry every time the section is switched on or off. A fence
+      // cuts the same cells and needs the same channels.
+      section: !!stack.section || !!stack.fence,
       peelable,
       // Only a declared column with an envelope can be shared; otherwise this
       // chunk builds (and resolves) on its own.
@@ -686,6 +687,7 @@ export const Chunk = ({
     stack.column,
     stack.envelope,
     stack.section,
+    stack.fence,
     peelable,
   ]);
 
@@ -848,6 +850,10 @@ export const Chunk = ({
           sectionUniform={stack.sectionUniform}
           sectionUniformInverse={stack.sectionUniformInverse}
           sectionCarrier={stack.sectionCarrier}
+          fence={stack.fence}
+          fenceUniforms={stack.fenceUniforms}
+          fenceUniformsInverse={stack.fenceUniformsInverse}
+          fenceCarrier={stack.fenceCarrier}
         />
       </group>
       {children}

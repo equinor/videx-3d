@@ -1,6 +1,7 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useMemo, useRef } from 'react';
+import { scaleOrdinal } from 'd3-scale';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Plane, Vector3 } from 'three';
 import { OITRenderPass, Pass } from '../../main';
 import { OutputPass } from '../../rendering/passes/OutputPass';
@@ -14,6 +15,10 @@ import {
   surfaceGridToWorld,
   Vec2,
 } from '../../sdk';
+import {
+  WellboreSelectedEvent,
+  wellboreSelectedEventType,
+} from '../../events/wellbore-events';
 import { chunkTimings } from '../../storybook/data/chunk-timings';
 import { sortByStratAge } from '../../storybook/data/strat-ages';
 import {
@@ -25,16 +30,29 @@ import { DataProviderDecorator } from '../../storybook/decorators/data-provider-
 import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
+import { WellMapDecorator } from '../../storybook/decorators/well-map-decorator';
 import { useFieldOutline } from '../../storybook/hooks/useFieldOutline';
 import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
+import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import {
   getSyntheticSurface,
   SYNTHETIC_SEABED_ID,
 } from '../../storybook/data/synthetic-surfaces';
 import storyArgs from '../../storybook/story-args.json';
+import { Distance } from '../Distance/Distance';
+import { EventEmitterCallbackEvent } from '../EventEmitter';
+import { useHighlighter } from '../Highlighter/highlight-state';
+import { Highlighter } from '../Highlighter/Highlighter';
 import { UtmArea } from '../UtmArea';
+import { UtmPosition } from '../UtmArea/UtmPosition';
+import { BasicTrajectory } from '../Wellbores/BasicTrajectory/BasicTrajectory';
+import { TubeTrajectory } from '../Wellbores/TubeTrajectory/TubeTrajectory';
+import { Wellbore } from '../Wellbores/Wellbore/Wellbore';
+import { WellboreBounds } from '../Wellbores/WellboreBounds/WellboreBounds';
+import { Wells } from '../Wellbores/Wells/Wells';
 import { Chunk } from './Chunk';
 import {
+  ChunkFence,
   ChunkLayer,
   ChunkResolveOptions,
   ChunkSection,
@@ -50,6 +68,23 @@ const origin = storyArgs.origin as Vec2;
 const surfaceOptions = storyArgs.surfaceOptions as Record<string, string>;
 
 const crs = new CRS(getProjectionDefFromUtmZone(utmZone), origin, 'utm');
+
+/** Branch colours, shared with the well map through `parameters.colorScale`. */
+const colorScale = scaleOrdinal([
+  'tomato',
+  '#4e79a7',
+  '#f28e2c',
+  '#76b7b2',
+  '#59a14f',
+  '#edc949',
+  '#af7aa1',
+  '#ff9da7',
+  '#9c755f',
+  '#bab0ab',
+  'darkgreen',
+  'purple',
+  '#24ca85',
+]);
 
 /**
  * The dataset's own sea bed, if it maps one — most fields do not, since a sea bed
@@ -143,6 +178,79 @@ const SectionDriver = ({
   return null;
 };
 
+/**
+ * Every wellbore the dataset carries, drawn through the block and selectable.
+ *
+ * Kept out of `FieldColumnStory` so hovering and selecting never re-renders the
+ * chunk's build memos.
+ */
+const FieldWells = ({
+  selected,
+  color,
+  selectedColor,
+  radius,
+  tubeDistance,
+}: {
+  selected?: string;
+  color: string;
+  selectedColor: string;
+  radius: number;
+  tubeDistance: number;
+}) => {
+  const wellbores = useWellboreHeaders();
+  const highlighter = useHighlighter();
+
+  useEffect(() => () => highlighter.removeAll(), [highlighter]);
+
+  return (
+    <Wells
+      wellbores={wellbores}
+      selected={selected}
+      renderWellbore={(wellbore, fromMsl, isSelected) => (
+        <UtmPosition easting={wellbore.easting} northing={wellbore.northing}>
+          <Wellbore
+            id={wellbore.id}
+            fromMsl={fromMsl}
+            onPointerClick={(event: EventEmitterCallbackEvent) => {
+              dispatchEvent(
+                new WellboreSelectedEvent({
+                  id: event.ref,
+                  position: event.position,
+                  flyTo: !event.keys.ctrlKey,
+                }),
+              );
+            }}
+            onPointerEnter={(event: EventEmitterCallbackEvent) => {
+              if (!isSelected) highlighter.highlight(event.target);
+              event.domElement.style.cursor = 'pointer';
+            }}
+            onPointerLeave={(event: EventEmitterCallbackEvent) => {
+              event.domElement.style.cursor = '';
+              highlighter.removeAll();
+            }}
+          >
+            <WellboreBounds id={wellbore.id} fromMsl={fromMsl}>
+              {/* Always drawn: the 1px line is what survives at field scale. */}
+              <BasicTrajectory
+                color={isSelected ? selectedColor : color}
+                priority={9}
+              />
+              <Distance min={0} max={tubeDistance}>
+                <TubeTrajectory
+                  radius={radius}
+                  color={isSelected ? selectedColor : color}
+                  priority={8}
+                  radialSegments={12}
+                />
+              </Distance>
+            </WellboreBounds>
+          </Wellbore>
+        </UtmPosition>
+      )}
+    />
+  );
+};
+
 type FieldColumnStoryProps = {
   outline: 'grid' | 'field' | 'crop';
   cropSize: number;
@@ -195,11 +303,44 @@ type FieldColumnStoryProps = {
   inferredStyle: ChunkInferenceStyle;
   detail: ChunkDetailPreset | 'none';
   detailStrength: number;
+  wellbores: boolean;
+  wellboreColor: string;
+  wellboreSelectedColor: string;
+  wellboreRadius: number;
+  wellboreTubeDistance: number;
+  wellbore: string;
+  fence: boolean;
+  fenceSide: 1 | -1;
+  fenceWidth: number;
+  fenceResolution: number;
+  fenceCellSize: number;
+  fenceAzimuth: number;
+  fenceReveal: number;
+  fenceHeadWidth: number;
+  fenceShallowDepth: number;
+  fenceDeepDepth: number;
+  fenceDebug: boolean;
 };
 
 const FieldColumnStory = (props: FieldColumnStoryProps) => {
   const surfaceMetaDict = useSurfaceMetaDict();
   const fieldOutline = useFieldOutline();
+
+  // Held HERE rather than in `FieldWells` because the wellbore fence reads it at
+  // this level, alongside the stack. ⭐ Two channels, not one: the 3D view and the
+  // well map both select by EVENT, and the `wellbore` control selects directly —
+  // which is what makes a specific well reachable for an A/B without hunting for
+  // it in the scene.
+  const [selectedWellbore, setSelectedWellbore] = useState<string | undefined>(
+    props.wellbore,
+  );
+  useEffect(() => setSelectedWellbore(props.wellbore), [props.wellbore]);
+  useEffect(() => {
+    const onSelect = (event: WellboreSelectedEvent) =>
+      setSelectedWellbore(event.detail.id);
+    addEventListener(wellboreSelectedEventType, onSelect);
+    return () => removeEventListener(wellboreSelectedEventType, onSelect);
+  }, []);
 
   // Every mapped surface the dataset carries, in stratigraphic order. Age is the
   // only key that is right by construction — see `sortByStratAge`, which excludes
@@ -384,7 +525,10 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
   const section = useMemo<ChunkSection>(
     () => ({
       plane: sectionPlane,
-      enabled: props.section,
+      // ⚠️ The two cuts are mutually exclusive, and the section's PRESENCE is a
+      // build input — so the fence disables it rather than removing the prop,
+      // which would rebuild the geometry.
+      enabled: props.section && !props.fence,
       // In camera mode the stack computes the plane itself and `plane` is ignored.
       cameraDistance:
         props.sectionMode === 'camera'
@@ -398,12 +542,48 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     [
       sectionPlane,
       props.section,
+      props.fence,
       props.sectionMode,
       props.sectionCameraDistance,
       props.sectionVertical,
       props.sectionWater,
       props.sectionCarrier,
       props.sectionDebug,
+    ],
+  );
+
+  // The fence follows whichever wellbore is selected — pick another in the 3D view
+  // or the well map and the cut moves with it, with no rebuild.
+  const fence = useMemo<ChunkFence | undefined>(
+    () =>
+      props.fence
+        ? {
+            wellbore: selectedWellbore,
+            side: props.fenceSide,
+            width: props.fenceWidth,
+            resolution: props.fenceResolution,
+            cellSize: props.fenceCellSize,
+            azimuth: (props.fenceAzimuth * Math.PI) / 180,
+            reveal: props.fenceReveal,
+            headWidth: props.fenceHeadWidth,
+            shallowDepth: props.fenceShallowDepth,
+            deepDepth: props.fenceDeepDepth,
+            debug: props.fenceDebug,
+          }
+        : undefined,
+    [
+      props.fence,
+      selectedWellbore,
+      props.fenceSide,
+      props.fenceWidth,
+      props.fenceResolution,
+      props.fenceCellSize,
+      props.fenceAzimuth,
+      props.fenceReveal,
+      props.fenceHeadWidth,
+      props.fenceShallowDepth,
+      props.fenceDeepDepth,
+      props.fenceDebug,
     ],
   );
 
@@ -461,6 +641,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
           water={water}
           immersion={immersion}
           section={section}
+          fence={fence}
           resolve={resolve}
           rimSpacing={props.rimSpacing}
           maxError={props.maxError}
@@ -491,7 +672,17 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
             onBuild={report}
           />
         </ChunkStack>
+        {props.wellbores && (
+          <FieldWells
+            selected={selectedWellbore}
+            color={props.wellboreColor}
+            selectedColor={props.wellboreSelectedColor}
+            radius={props.wellboreRadius}
+            tubeDistance={props.wellboreTubeDistance}
+          />
+        )}
       </UtmArea>
+      {props.wellbores && <Highlighter />}
       <ChunkPipeline />
     </>
   );
@@ -507,6 +698,7 @@ const meta = {
     scale: 5000,
     cameraPosition: [9000, 4000, 9000],
     cameraTarget: [0, -1500, 0],
+    colorScale,
     docs: {
       description: {
         component:
@@ -516,6 +708,8 @@ const meta = {
           '⚠️ Surfaces the column has no horizon for are EXCLUDED, not guessed at, and the exclusion is reported as an error: placing them by depth is exactly the mistake the age ordering exists to avoid. On this dataset two surfaces (an intra-formation top and an unconformity) drop out that way.\n\n' +
           '⭐ **`maxNodes` is the quality/speed dial.** Every layer is resampled onto one common grid; almost all of the build cost is linear in that grid’s node count, so halving the budget quarters the work. What it costs is resolution of the coverage MASKS — data edges, holes and pinch-out contours — rather than of the heights, which stay bounded by `maxError`. Watch `referenceNodes` and `referenceStep` in the report: a step above 1 means the trade is active. The `outline` control is the other end of the same lever — the survey rectangle is roughly ten times the area the wells occupy.\n\n' +
           '⭐ The **section** cuts the block with a plane and closes it with a real face, and in `camera` mode the plane rides in front of the camera — so orbiting picks the angle and dollying drives the cut through the field, with nothing to grab. **Peel** is the non-destructive alternative: it lifts the layers apart instead of removing anything. **Immersion** fogs the view when the camera goes under the sea surface.\n\n' +
+          '⭐ **Wellbores** (off by default) draws every wellbore the dataset carries, straight through the block. Click one to select it — plain click flies the camera to the hit point, ctrl+click selects without moving. Once a well is selected the **well map** on the left comes alive: dragging its depth handle drives the camera along the trajectory.\n\n' +
+          '⭐⭐ The **fence** opens the block along that selected well, instead of with a plane. It is the wellbore counterpart of the section: `split` halves the block so the well lies in the cut face, `slot` opens a corridor with the well in the gap, and the cut runs out past the wellhead and past TD so it reaches clear of the block at both ends. ⭐ A fence is VERTICAL, so what it removes depends on the map position alone — one number per vertex, which the shader reads as a varying and the CPU contours to build the cut face. That is why switching wells costs a resample rather than a build, and why the width is free to sweep.\n\n' +
           'No ships and no facilities here: the import sets carry no such data, and inventing it would say something about the field that is not in it.',
       },
     },
@@ -536,6 +730,25 @@ export const Default: Story = {
     rimSpacing: 250,
     maxError: 5,
     maxNodes: 4000000,
+    // Wellbores
+    wellbores: false,
+    wellboreColor: '#9aa0a6',
+    wellboreSelectedColor: 'tomato',
+    wellboreRadius: 4,
+    wellboreTubeDistance: 12000,
+    wellbore: storyArgs.defaultWellbore,
+    // Fence
+    fence: false,
+    fenceSide: 1,
+    fenceWidth: 0,
+    fenceResolution: 10,
+    fenceCellSize: 25,
+    fenceAzimuth: 0,
+    fenceReveal: 0.5,
+    fenceHeadWidth: 0,
+    fenceShallowDepth: 1000,
+    fenceDeepDepth: 2500,
+    fenceDebug: false,
     // Resolve
     seal: true,
     sealMode: 'proportional',
@@ -640,6 +853,107 @@ export const Default: Story = {
       description:
         '⭐ QUALITY vs SPEED. Node budget for the stack’s common grid; beyond it the grid is decimated by an integer step. Resample, seal, depth-order resolve and refinement are all linear in it, so halving the budget quarters the work — at the cost of resolving every layer’s data edges and holes on a coarser cell. Check `referenceStep` in the report.',
       table: { category: 'Surfaces' },
+    },
+    wellbores: {
+      description:
+        'Draw every wellbore the dataset carries (all 35 here — no count filter), straight through the block. Click one to select it and fly the camera to the hit point; ctrl+click selects without moving. The selected well drives the WELL MAP on the left, and is the input for the planned wellbore fence section.',
+      table: { category: 'Wellbores' },
+    },
+    wellboreColor: {
+      control: { type: 'color' },
+      table: { category: 'Wellbores' },
+    },
+    wellboreSelectedColor: {
+      control: { type: 'color' },
+      table: { category: 'Wellbores' },
+    },
+    wellboreRadius: {
+      control: { type: 'select' },
+      options: [1, 2, 4, 8, 16],
+      description:
+        'Tube radius in metres. ⚠️ A real 12¾" casing is well under a pixel across a 20 km field, so this is deliberately exaggerated.',
+      table: { category: 'Wellbores' },
+    },
+    wellboreTubeDistance: {
+      control: { type: 'select' },
+      options: [2000, 5000, 12000, 30000, 100000],
+      description:
+        'Distance at which the tube gives way to the 1px line. The line is always drawn underneath it.',
+      table: { category: 'Wellbores' },
+    },
+    wellbore: {
+      options: Object.keys(storyArgs.wellboreOptions),
+      control: { type: 'select', labels: storyArgs.wellboreOptions },
+      description:
+        'Which wellbore the fence follows. ⭐ The 3D view and the well map still select by event and will override this; picking here is for reaching a NAMED well directly, which is what an A/B needs. Ones worth trying: `NO 15/9-F-12`, `NO 15/9-F-11 A/B`, `NO 15/9-F-15 D` all misbehave, `NO 15/9-19 S` is clean.',
+      table: { category: 'Wellbores' },
+    },
+    fence: {
+      description:
+        'Open the block along the SELECTED wellbore, instead of with a plane. ⚠️ Needs a wellbore selected (turn `wellbores` on and click one) — nothing is cut until then. ⭐ Changing which well is cut costs a resample and an upload, not a build, which is why it can happen inside a fly-to. Turning this on disables the plane section.',
+      table: { category: 'Fence' },
+    },
+    fenceResolution: {
+      control: { type: 'select' },
+      options: [2, 5, 10, 25, 50],
+      description:
+        'Spacing the cut face is built at, in metres. ⭐ The face is a ribbon along the trajectory, INDEPENDENT of the tessellation, so this alone sets how smooth it is — it is not floored by the triangle size the way a cut through the cells was.',
+      table: { category: 'Fence' },
+    },
+    fenceSide: {
+      control: { type: 'inline-radio' },
+      options: [1, -1],
+      description:
+        'Which half goes, in `split`. ⚠️ Explicit for now — deriving it from the camera so the cut always faces you is the obvious next step, but it would re-orient mid fly-to, which is a judgement to make with the animation rather than before it.',
+      table: { category: 'Fence' },
+    },
+    fenceWidth: {
+      control: { type: 'range', min: 0, max: 2000, step: 25 },
+      description:
+        'Metres of clearance between the well and the face. 0 puts the face through the well itself — the classic section, with the trajectory lying in the cut. ⭐ Free to sweep: no rebuild behind it.',
+      table: { category: 'Fence' },
+    },
+    fenceCellSize: {
+      control: { type: 'select' },
+      options: [12.5, 25, 50, 100],
+      description:
+        'Metres per cell of the distance field the CLIP reads. ⭐ Coarse is fine: a SIGNED distance is continuous across the curve, and the shader smooths its own sampling — the error is in where the boundary sits, not in how ragged it is.',
+      table: { category: 'Fence' },
+    },
+    fenceAzimuth: {
+      control: { type: 'range', min: 0, max: 360, step: 5 },
+      description:
+        'Degrees. Only used for a well with too little PLAN deviation to give the fence a direction — a vertical well’s plan trace is a point, so every direction through it is equally arbitrary and this is a knob rather than a rule. Drag it to swing the cut around the wellhead.',
+      table: { category: 'Fence' },
+    },
+    fenceReveal: {
+      control: { type: 'range', min: 0.05, max: 0.8, step: 0.05 },
+      description:
+        'Share of the block the cut aims to take away on the side being removed. ⭐⭐ What the run-outs are chosen by: a fence exists to take away whatever stands between you and the well, so what matters is that the removed side is a usable piece of block. Measured on the Volve data the healthy wells split 43-58% while the broken ones left one side 0-17%, which is a cut that either shows nothing or removes everything. ⚠️ A target, not a guarantee — a well near the edge of the footprint cannot leave half of it on both sides, and the two sides will differ markedly. ⚠️ Rebuilds, unlike `fenceWidth`.',
+      table: { category: 'Fence' },
+    },
+    fenceHeadWidth: {
+      control: { type: 'range', min: 0, max: 1500, step: 25 },
+      description:
+        'Extra metres of clearance at the SHALLOW end, closing to nothing by `fenceDeepDepth`. 0 is a cut of uniform width. ⭐⭐ The shallow section of a well is near-vertical, so its plan trace is a few tens of metres of survey noise standing in for kilometres of hole — following it hugs something that is not there and pinches the cut to a blade. Opening the corridor out gives that wiggle somewhere to live, and costs nothing down in the reservoir where the cut should follow the well closely.',
+      table: { category: 'Fence taper' },
+    },
+    fenceShallowDepth: {
+      control: { type: 'range', min: 0, max: 3000, step: 50 },
+      description:
+        'Metres below MSL down to which `fenceHeadWidth` applies in full.',
+      table: { category: 'Fence taper' },
+    },
+    fenceDeepDepth: {
+      control: { type: 'range', min: 0, max: 4000, step: 50 },
+      description:
+        'Metres below MSL by which the widening has closed to nothing. ⚠️ Must be deeper than `fenceShallowDepth`, or the taper is ignored.',
+      table: { category: 'Fence taper' },
+    },
+    fenceDebug: {
+      description:
+        'Draw the cut face as a magenta wireframe instead of as rock — the ribbon the fence actually generated, on its own. ⭐ The face is built independently of the block, so this is the only way to tell a geometry fault from a clipping one.',
+      table: { category: 'Fence' },
     },
     seal: {
       description:
@@ -862,6 +1176,7 @@ export const Default: Story = {
     GlyphsDecorator,
     Canvas3dDecorator,
     GeneratorsProviderDecorator,
+    WellMapDecorator,
     DataProviderDecorator,
   ],
 };

@@ -14,6 +14,7 @@ export * from './geometries/curve/curve-3d';
 export * from './geometries/curve/tube-geometry';
 export * from './geometries/delatin';
 export * from './geometries/fence';
+export * from './geometries/fence-ribbon';
 export * from './geometries/geometry';
 export * from './geometries/geometry-attributes';
 export * from './geometries/grid-sampling';
@@ -43,6 +44,7 @@ export * from './geometries/tessellation';
 export * from './geometries/tin-sampler';
 export * from './geometries/triangulate-grid';
 export * from './geometries/triangulate-grid-delaunay';
+export * from './geometries/wellbore-fence';
 export * from './geometries/wellbore-outline';
 
 export * from './managers/CameraManager';

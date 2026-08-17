@@ -6,6 +6,10 @@ import {
   Vector4,
 } from 'three';
 import { makeOitCompatible } from '../../rendering/oit-material';
+// ⚠️ Imported as a STRING, not `#include`d: this shader is assembled at runtime in
+// `onBeforeCompile`, where the glsl plugin's include resolution has long finished.
+import depthMapShader from '../../sdk/materials/shaderLib/depth-map.glsl';
+import { ChunkFenceUniforms } from './chunk-material';
 
 /**
  * How the INVENTED part of a chunk is marked — the geometry a seal built where no
@@ -52,6 +56,10 @@ export type InferenceMaterialOptions = {
    * in the air where the block used to be.
    */
   sectionPlane?: IUniform<Vector4>;
+  /**
+   * Cut the overlay with a fence, matching {@link ChunkMaterialParameters.fence}.
+   */
+  fence?: ChunkFenceUniforms;
 };
 
 /** GLSL float literal (an integer-looking value would be an int in GLSL). */
@@ -108,6 +116,7 @@ export function createInferenceMaterial(
     strength = 0.5,
     opacity = 1,
     sectionPlane,
+    fence,
   } = options;
 
   const material = new MeshBasicMaterial({
@@ -136,6 +145,13 @@ export function createInferenceMaterial(
     // onto each clone, so binding the same uniform object from inside the closure
     // is what makes one write per frame reach every variant.
     if (sectionPlane) shader.uniforms.sectionPlane = sectionPlane;
+    if (fence) {
+      shader.uniforms.fenceParams = fence.params;
+      shader.uniforms.fenceTaper = fence.taper;
+      shader.uniforms.fenceMap = fence.map;
+      shader.uniforms.fenceToUv = fence.toUv;
+      shader.uniforms.fenceSize = fence.size;
+    }
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -149,6 +165,11 @@ varying vec3 vInferNormal;${
 uniform vec4 sectionPlane;
 varying float vSectionDist;`
             : ''
+        }${
+          fence
+            ? `
+varying vec3 vFencePos;`
+            : ''
         }`,
       )
       .replace(
@@ -160,6 +181,11 @@ varying float vSectionDist;`
     sectionPlane
       ? `
   vSectionDist = dot(sectionPlane.xyz, transformed) + sectionPlane.w;`
+      : ''
+  }${
+    fence
+      ? `
+  vFencePos = transformed;`
       : ''
   }`,
       );
@@ -173,6 +199,17 @@ varying vec3 vInferNormal;${
           sectionPlane
             ? `
 varying float vSectionDist;`
+            : ''
+        }${
+          fence
+            ? `
+uniform vec4 fenceParams;
+uniform vec3 fenceTaper;
+uniform sampler2D fenceMap;
+uniform mat3 fenceToUv;
+uniform vec2 fenceSize;
+varying vec3 vFencePos;
+${depthMapShader}`
             : ''
         }
 
@@ -188,6 +225,12 @@ float chunkStripe(float h, float w) {
         `${
           sectionPlane
             ? `if (vSectionDist > 0.0) discard;
+  `
+            : ''
+        }${
+          fence
+            ? `vec2 fenceField = sampleFieldMap2(fenceMap, fenceToUv, fenceSize, vFencePos.xz);
+if (fenceParams.w * (fenceParams.y * fenceField.r - fenceParams.x - fenceTaperWidth(fenceTaper, fenceField.g)) < 0.0) discard;
   `
             : ''
         }#include <clipping_planes_fragment>`,
@@ -210,6 +253,6 @@ ${pattern(style, spacing, width)}
   // different spacing would silently share one compiled program. `strength` is not
   // in the shader, so it is not in the key.
   material.customProgramCacheKey = () =>
-    `chunk-inferred-${style}-${spacing}-${width}-${sectionPlane ? 'cut' : 'whole'}`;
+    `chunk-inferred-${style}-${spacing}-${width}-${sectionPlane ? 'cut' : 'whole'}-${fence ? 'fence' : 'nofence'}`;
   return makeOitCompatible(material);
 }

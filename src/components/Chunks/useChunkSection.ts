@@ -18,6 +18,14 @@ export type ChunkSectionFace = {
   interval: number;
   /** the CALLER's layer index for that interval — which material it takes */
   layer: number;
+  /**
+   * Which contour this face is: always `0` for a plane or a one-sided fence, `0`
+   * and `1` for the two walls of a corridor.
+   *
+   * ⚠️ Part of a face's IDENTITY, not decoration: a corridor gives one interval
+   * two faces, so keying only on the interval collides and React drops one.
+   */
+  wall: number;
   geometry: BufferGeometry;
 };
 
@@ -77,7 +85,7 @@ export function useChunkSection(
       const geometry = new BufferGeometry();
       attach(geometry, target);
       geometry.setDrawRange(0, 0);
-      built.push({ interval, layer, geometry, target });
+      built.push({ interval, layer, geometry, target, wall: 0 });
     });
     return built.length > 0 ? built : null;
   }, [source, section, layers]);
@@ -97,7 +105,6 @@ export function useChunkSection(
     () => (source && section ? buildStackSectionIndex(source) : null),
     [source, section],
   );
-
   // What the faces were last cut with. A section that is not moving — a fixed
   // plane, or a camera-locked one with the camera at rest — would otherwise
   // recompute an identical face every frame, which on a field-sized stack is the
@@ -115,16 +122,16 @@ export function useChunkSection(
 
   useFrame(() => {
     if (!faces || !source || !section) return;
+    const state = last.current;
     if (!section.enabled) {
-      if (last.current.on) {
+      if (state.on) {
         for (const face of faces) face.geometry.setDrawRange(0, 0);
       }
-      last.current.on = false;
+      state.on = false;
       return;
     }
     const { normal, constant } = section.plane;
     const offset = section.offset;
-    const state = last.current;
     if (
       state.on &&
       state.faces === faces &&

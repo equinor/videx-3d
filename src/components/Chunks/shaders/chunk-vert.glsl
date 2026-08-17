@@ -39,7 +39,7 @@ uniform vec4 sectionPlane;
 varying float vSectionDist;
 #endif
 
-#if defined(CHUNK_CONTACTS) || defined(CHUNK_BATHYMETRY)
+#if defined(CHUNK_CONTACTS) || defined(CHUNK_BATHYMETRY) || defined(CHUNK_FENCE)
 // OBJECT space for the same reason the water tint's depth is: a depth grid is in
 // metres, and a vertical exaggeration would rescale a world-space height away from
 // them. XZ locates the texture, Y is what a contact line is drawn against.
@@ -80,7 +80,7 @@ void main() {
   vSectionDist = dot(sectionPlane.xyz, transformed) + sectionPlane.w;
   #endif
 
-  #if defined(CHUNK_CONTACTS) || defined(CHUNK_BATHYMETRY)
+  #if defined(CHUNK_CONTACTS) || defined(CHUNK_BATHYMETRY) || defined(CHUNK_FENCE)
   vObjectPos = transformed;
   #endif
 

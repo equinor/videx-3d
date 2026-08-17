@@ -46,7 +46,19 @@ uniform vec2 bathySize; // grid size in texels
 varying float vSectionDist;
 #endif
 
-#if defined(CHUNK_CONTACTS) || defined(CHUNK_BATHYMETRY)
+#ifdef CHUNK_FENCE
+// x: half width in metres — how far the face stands off the well; y: which side of
+// the curve goes (+1 or -1); z: unused; w: +1 normally, -1 to draw ONLY what the
+// fence removed (the peel patch).
+uniform vec4 fenceParams;
+// x: extra half width at the shallow end; y, z: arc lengths it tapers between.
+uniform vec3 fenceTaper;
+uniform sampler2D fenceMap;
+uniform mat3 fenceToUv;   // object XZ -> uv
+uniform vec2 fenceSize;   // grid size in texels
+#endif
+
+#if defined(CHUNK_CONTACTS) || defined(CHUNK_BATHYMETRY) || defined(CHUNK_FENCE)
 varying vec3 vObjectPos;
 #include ../../../sdk/materials/shaderLib/depth-map.glsl
 #endif
@@ -128,6 +140,19 @@ void main() {
   // too, or the block goes on occluding through the cut it is not drawn in.
   #ifdef CHUNK_SECTION
   if (vSectionDist > 0.0) discard;
+  #endif
+
+  #ifdef CHUNK_FENCE
+  // ⭐ PER FRAGMENT, not interpolated from the vertices. The cut face is built
+  // independently of this mesh's triangles, so reading the field here — at the
+  // resolution of the field rather than of the tessellation — is what lets the two
+  // agree along a curve the tessellation knows nothing about.
+  // ⚠️ R is the signed distance, G the distance ALONG the curve. The taper needs
+  // both: how wide the cut opens depends on where down the well it is.
+  vec2 fenceField = sampleFieldMap2(fenceMap, fenceToUv, fenceSize, vObjectPos.xz);
+  float fenceAt = fenceParams.y * fenceField.r;
+  float fenceWidth = fenceParams.x + fenceTaperWidth(fenceTaper, fenceField.g);
+  if (fenceParams.w * (fenceAt - fenceWidth) < 0.0) discard;
   #endif
 
   vec4 diffuseColor = vec4(diffuse, opacity);

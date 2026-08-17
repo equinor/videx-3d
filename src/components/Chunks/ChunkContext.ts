@@ -4,12 +4,14 @@ import { PlanarPolygonGeometry, SurfaceMeta } from '../../sdk';
 import {
   ChunkBuildState,
   ChunkCarrier,
+  ChunkFenceState,
   ChunkResolveOptions,
   ChunkSectionState,
   StackWater,
 } from './chunk-defs';
 import { CutoutSource } from './cutout';
 import { ChunkContactTexture } from './chunk-contacts';
+import { ChunkFenceUniforms } from './chunk-material';
 import { ChunkDepthMap } from './chunk-depth-map';
 import { SeamDecision } from './seams';
 
@@ -117,6 +119,25 @@ export type ChunkStackContextValue = {
    * context's identity, which is what every chunk's build spec derives from.
    */
   sectionCarrier?: boolean;
+  /**
+   * The live fence through the whole stack, when the caller declared one (see
+   * `ChunkStackProps.fence`). Stable identity — see {@link ChunkFenceState}.
+   */
+  fence?: ChunkFenceState | null;
+  /**
+   * The fence's SHARED uniforms: the cut parameters plus the signed-distance field
+   * and its placement. Same mechanism as
+   * {@link ChunkStackContextValue.sectionUniform} — swapping the texture in here
+   * reaches every material in every OIT pass without a rebuild.
+   */
+  fenceUniforms?: ChunkFenceUniforms;
+  /**
+   * The COMPLEMENT of {@link ChunkStackContextValue.fenceUniforms}, for the same
+   * peel patch {@link ChunkStackContextValue.sectionUniformInverse} serves.
+   */
+  fenceUniformsInverse?: ChunkFenceUniforms;
+  /** Whether the column's floor is cut by the fence (see `ChunkFence.carrier`). */
+  fenceCarrier?: boolean;
   /**
    * Envelope footprint of the column (scene XZ) — must contain every chunk's
    * outline. Defaults to the stack `outline`; with a wellbore cut source the

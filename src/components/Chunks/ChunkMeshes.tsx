@@ -2,8 +2,10 @@ import { useEffect, useMemo } from 'react';
 import {
   BufferAttribute,
   BufferGeometry,
+  DoubleSide,
   IUniform,
   Material,
+  MeshBasicMaterial,
   Vector4,
 } from 'three';
 import { SurfaceChunk } from '../../sdk';
@@ -14,8 +16,13 @@ import {
 import { ChunkContactTexture, resolveLayerContacts } from './chunk-contacts';
 import { ChunkDepthMap } from './chunk-depth-map';
 import { ChunkDetail } from './chunk-detail';
-import { ChunkMaterial, ChunkWaterTintParameters } from './chunk-material';
 import {
+  ChunkMaterial,
+  ChunkFenceUniforms,
+  ChunkWaterTintParameters,
+} from './chunk-material';
+import {
+  ChunkFenceState,
   ChunkLayer,
   ChunkSectionState,
   DEFAULT_BED_TINT_DEPTH,
@@ -26,6 +33,7 @@ import {
   ChunkInferenceStyle,
   createInferenceMaterial,
 } from './inference-material';
+import { useChunkFenceFace } from './useChunkFenceFace';
 import { useChunkSection } from './useChunkSection';
 
 /**
@@ -102,6 +110,14 @@ export type ChunkMeshesProps = {
    * intact base plate.
    */
   sectionCarrier?: boolean;
+  /** the stack's live fence, or `null` for none */
+  fence?: ChunkFenceState | null;
+  /** the fence's shared uniforms (see `ChunkStackContextValue.fenceUniforms`) */
+  fenceUniforms?: ChunkFenceUniforms;
+  /** their complement, for the peel patch */
+  fenceUniformsInverse?: ChunkFenceUniforms;
+  /** whether the column's floor is cut by the fence */
+  fenceCarrier?: boolean;
   /**
    * Hide the first `peel` UNITS of the chunk, exposing what is under them.
    *
@@ -152,6 +168,10 @@ export const ChunkMeshes = ({
   sectionUniform,
   sectionUniformInverse,
   sectionCarrier = true,
+  fence = null,
+  fenceUniforms,
+  fenceUniformsInverse,
+  fenceCarrier = true,
   peel = 0,
 }: ChunkMeshesProps) => {
   const materials = useMemo(() => {
@@ -166,10 +186,13 @@ export const ChunkMeshes = ({
       waterTint?: ChunkWaterTintParameters,
       options?: {
         section?: boolean;
-        uniform?: IUniform<Vector4>;
+        inverse?: boolean;
         contacts?: ChunkContactTexture[];
       },
     ) => {
+      // A fence and a plane are mutually exclusive (the stack warns), and a unit
+      // kept whole opts out of both.
+      const cut = options?.section !== false;
       const material = new ChunkMaterial({
         color,
         opacity,
@@ -180,9 +203,16 @@ export const ChunkMeshes = ({
         wall,
         waterTint,
         contacts: options?.contacts,
-        sectionPlane:
-          options?.uniform ??
-          (options?.section === false ? undefined : sectionUniform),
+        sectionPlane: !cut
+          ? undefined
+          : options?.inverse
+            ? sectionUniformInverse
+            : sectionUniform,
+        fence: !cut
+          ? undefined
+          : options?.inverse
+            ? fenceUniformsInverse
+            : fenceUniforms,
       });
       owned.push(material);
       return material;
@@ -295,6 +325,36 @@ export const ChunkMeshes = ({
           );
     });
 
+    // ⚠️⚠️ A fence's cut FACE must not carry the fence cut. The face lies exactly
+    // on the curve, while the shader tests the field's INTERPOLATED zero crossing
+    // — which differs from the true curve by a fraction of a cell, i.e. metres
+    // against an offset of centimetres. Testing the face against the very cut it
+    // exists to close therefore punches holes along its whole length. (A plane
+    // section gets away with it because its test is exact either side.)
+    const faces = !fence
+      ? []
+      : layers.map((layer, i) => {
+          if (fence.debug) {
+            const material = new MeshBasicMaterial({
+              color: '#ff00ff',
+              wireframe: true,
+              side: DoubleSide,
+              toneMapped: false,
+            });
+            owned.push(material);
+            return material;
+          }
+          const fill = fillOf(layer, i);
+          return make(
+            fill instanceof Material || fill === null ? paletteAt(i) : fill,
+            layer.opacity ?? wallOpacity,
+            layer.detail,
+            true,
+            undefined,
+            { section: false, contacts: layerContacts(i) },
+          );
+        });
+
     const carrier = !carrierMaterial
       ? null
       : carrierMaterial instanceof Material
@@ -303,7 +363,8 @@ export const ChunkMeshes = ({
             // The floor is the base of the deepest unit, so keeping that unit keeps
             // it — OR'd with the explicit toggle rather than overriding it, so a
             // caller can still keep the base plate whole on its own.
-            section: sectionCarrier && !keptUnit(layers.length - 1),
+            section:
+              sectionCarrier && fenceCarrier && !keptUnit(layers.length - 1),
           });
 
     // ⭐ The fragments a cap gave up because a layer ABOVE covered them, restored
@@ -333,7 +394,7 @@ export const ChunkMeshes = ({
               false,
               surface.layer === 0 ? waterTint : undefined,
               {
-                uniform: sectionUniformInverse,
+                inverse: true,
                 contacts: layerContacts(surface.layer),
               },
             )
@@ -341,7 +402,7 @@ export const ChunkMeshes = ({
       });
     }
 
-    return { surfaces, walls, ceilings, carrier, patches, owned };
+    return { surfaces, walls, ceilings, carrier, patches, owned, faces };
   }, [
     chunk.surfaces,
     layers,
@@ -355,6 +416,10 @@ export const ChunkMeshes = ({
     sectionUniform,
     sectionUniformInverse,
     sectionCarrier,
+    fence,
+    fenceUniforms,
+    fenceUniformsInverse,
+    fenceCarrier,
   ]);
 
   useEffect(() => {
@@ -379,6 +444,7 @@ export const ChunkMeshes = ({
           createInferenceMaterial(inferredStyle, {
             opacity,
             sectionPlane: cut ? sectionUniform : undefined,
+            fence: cut ? fenceUniforms : undefined,
           }),
         );
       }
@@ -402,6 +468,7 @@ export const ChunkMeshes = ({
     wallOpacity,
     wireframe,
     sectionUniform,
+    fenceUniforms,
   ]);
 
   useEffect(() => {
@@ -412,7 +479,9 @@ export const ChunkMeshes = ({
   // The cut face of each filled interval, rebuilt every frame from the chunk's own
   // channels. It is drawn with the interval's own fill material, so per-layer
   // opacity, detail and a caller's own `Material` all carry onto the section.
-  const faces = useChunkSection(chunk.section, section, layers);
+  const planeFaces = useChunkSection(chunk.section, section, layers);
+  const fenceFaces = useChunkFenceFace(chunk.section, fence, layers);
+  const faces = fence?.enabled ? fenceFaces : planeFaces;
 
   // Shares the cap's attributes and swaps in the alternative index, so the patch
   // costs one small object rather than a second copy of the surface.
@@ -460,13 +529,15 @@ export const ChunkMeshes = ({
     <group>
       {faces?.map(face => {
         if (face.layer < peeled) return null;
-        const material = materials.walls[face.layer];
+        const material = fence?.enabled
+          ? materials.faces[face.layer]
+          : materials.walls[face.layer];
         if (!material) return null;
         const overlay = face.geometry.hasAttribute('inferred')
           ? overlays.wall(face.layer)
           : null;
         return (
-          <group key={`section-${face.interval}`}>
+          <group key={`section-${face.interval}-${face.wall}`}>
             {/* ⚠️ Never culled: the buffers are preallocated and only the draw
                 range moves, so a bounding volume computed from them is meaningless. */}
             <mesh
