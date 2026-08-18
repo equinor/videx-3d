@@ -347,12 +347,37 @@ export function countPolylineLoops(points: Vec2[]): number {
 }
 
 /**
+ * Whether a closed sub-path `from`..`to` winds counter-clockwise, and so encloses
+ * its pocket on the LEFT of the walk.
+ */
+function enclosesOnLeft(points: Vec2[], from: number, to: number): boolean {
+  let area = 0;
+  for (let k = from; k <= to; k++) {
+    const a = points[k];
+    const b = points[k === to ? from : k + 1];
+    area += a[0] * b[1] - b[0] * a[1];
+  }
+  return area > 0;
+}
+
+/**
  * Cut the loops out of an open polyline, replacing each excursion by the point it
  * crosses itself at.
  *
  * ⚠️ Re-found after each splice rather than swept once: excising a loop joins two
  * pieces that were apart, which can put a NEW crossing behind the point a single
  * forward pass has already gone by.
+ *
+ * ⚠️⚠️ **A splice is a CHORD**, and a chord shrinks whatever the excursion was
+ * opened to make room for — the trap {@link repairPolylineWaists} exists to avoid.
+ * Making this side-aware, so that a pocket on the removed half is pushed out
+ * instead of chorded, was TRIED and REVERTED: the push does not converge, and on
+ * a hooked well it replaced a 50 m burial with a 1.5 km excursion that abandoned
+ * the trajectory altogether. A self-crossing curve is not a valid cut at any
+ * price, so the chord stays; keep the well clear of the cut BEFORE the loop
+ * appears, not after.
+ *
+ * @param points an open polyline
  *
  * @group Utils
  */
@@ -701,6 +726,113 @@ export function polylineRadiusProfile(
 }
 
 /**
+ * Unwrapped heading of every segment, so turns accumulate instead of wrapping.
+ *
+ * @group Utils
+ */
+export function polylineHeadings2D(points: Vec2[]): Float64Array {
+  const out = new Float64Array(Math.max(0, points.length - 1));
+  for (let i = 0; i + 1 < points.length; i++) {
+    const a = Math.atan2(
+      points[i + 1][1] - points[i][1],
+      points[i + 1][0] - points[i][0],
+    );
+    if (i === 0) {
+      out[0] = a;
+      continue;
+    }
+    let step = a - out[i - 1];
+    while (step > Math.PI) step -= 2 * Math.PI;
+    while (step <= -Math.PI) step += 2 * Math.PI;
+    out[i] = out[i - 1] + step;
+  }
+  return out;
+}
+
+/**
+ * The largest turn a polyline makes within any `window` metres of arc, in radians.
+ *
+ * @group Utils
+ */
+export function polylineMaxTurn(points: Vec2[], window: number): number {
+  if (points.length < 3) return 0;
+  const arc = polylineArcLengths(points);
+  const heading = polylineHeadings2D(points);
+  let worst = 0;
+  for (let i = 0; i + 1 < heading.length; i++) {
+    for (let j = i + 1; j < heading.length; j++) {
+      if (arc[j] - arc[i] > window) break;
+      const turn = Math.abs(heading[j] - heading[i]);
+      if (turn > worst) worst = turn;
+    }
+  }
+  return worst;
+}
+
+/**
+ * Cut straight through every stretch that turns more than `maxTurn` within
+ * `window` metres of arc.
+ *
+ * ⭐⭐ Measured over a WINDOW, not between adjacent segments. A per-vertex limit
+ * passes a curve that turns a few degrees per step for twenty steps, which is a near
+ * loop — the shape that has no business being a cut, and whose ideal repair is a
+ * straight line through it. The window is what sees the trend.
+ *
+ * ⭐ The widest offender first, so one chord takes the whole excursion instead of
+ * nibbling at its ends.
+ *
+ * ⭐ `maxTurn` may be a function of position, because the budget is not uniform along
+ * a wellbore: near TD the cut has to hug a trajectory that genuinely bends, while at
+ * the head it is following survey scatter and should be straightened instead.
+ *
+ * ⚠️ A chord MOVES the boundary, so anything that has to stay clear of the curve has
+ * to be re-checked afterwards — see {@link pushPolyline2DClearOf}.
+ *
+ * @param points an open polyline
+ * @param maxTurn accumulated turn allowed within the window, in radians, or a
+ *   function giving it at a point
+ * @param window arc length the turn is accumulated over, in metres
+ *
+ * @group Utils
+ */
+export function limitPolylineTurn(
+  points: Vec2[],
+  maxTurn: number | ((at: Vec2) => number),
+  window: number,
+): { points: Vec2[]; chorded: number } {
+  const budget = typeof maxTurn === 'function' ? maxTurn : () => maxTurn;
+  if (points.length < 3 || !(window > 0)) {
+    return { points, chorded: 0 };
+  }
+  let current = points;
+  let chorded = 0;
+  for (let guard = 0; guard < 256; guard++) {
+    const arc = polylineArcLengths(current);
+    const heading = polylineHeadings2D(current);
+    let found: { i: number; j: number } | null = null;
+    for (let i = 0; i + 1 < heading.length && !found; i++) {
+      const allowed = budget(current[i]);
+      if (!(allowed > 0)) continue;
+      let last = -1;
+      for (let j = i + 1; j < heading.length; j++) {
+        if (arc[j] - arc[i] > window) break;
+        if (Math.abs(heading[j] - heading[i]) > allowed) last = j;
+      }
+      if (last > 0) found = { i, j: last };
+    }
+    if (!found) break;
+    const next = [
+      ...current.slice(0, found.i + 1),
+      ...current.slice(found.j + 1),
+    ];
+    if (next.length < 2 || next.length >= current.length) break;
+    current = next;
+    chorded++;
+  }
+  return { points: current, chorded };
+}
+
+/**
  * Spread a per-vertex quantity along the curve: a moving MAX, then a blur.
  *
  * ⭐ The max is what makes an opening cover the whole feature that caused it rather
@@ -772,15 +904,6 @@ export function repairPolylineWaists(
   if (points.length < 4 || !(clearance > 0)) return { points, repaired: 0 };
   // Far enough apart that a merely curving path is never treated as doubling back.
   const minArc = clearance * 3;
-  const left = (from: number, to: number, of: Vec2[]) => {
-    let area = 0;
-    for (let k = from; k <= to; k++) {
-      const a = of[k];
-      const b = of[k === to ? from : k + 1];
-      area += a[0] * b[1] - b[0] * a[1];
-    }
-    return area > 0;
-  };
 
   let current = points;
   let repaired = 0;
@@ -800,7 +923,7 @@ export function repairPolylineWaists(
     }
     if (!found) break;
 
-    const enclosedOnLeft = left(found.i, found.j, current);
+    const enclosedOnLeft = enclosesOnLeft(current, found.i, found.j);
     if (enclosedOnLeft === side > 0) {
       // Already open on the side being removed — leave the well its room.
       skip.add(`${found.i}:${found.j}`);
@@ -819,6 +942,66 @@ export function repairPolylineWaists(
     skip.clear();
   }
   return { points: current, repaired };
+}
+
+/**
+ * Push a polyline out until every vertex is `clearance` clear of another, on the
+ * side that keeps the other one in the removed half.
+ *
+ * ⭐ The guarantee half of {@link relaxPolyline2DClearOf}, on its own — for use
+ * after any step that may have moved the curve back over what it has to clear.
+ * Vertices already clear are untouched, so it can only ever move the curve away.
+ *
+ * @param points the curve to push, modified in place
+ * @param obstacle the curve to stay clear of, typically the well's own trace
+ * @param clearance metres to keep, per `points` vertex or one value for all
+ * @param side which half is removed; the curve is kept on the other one
+ *
+ * @group Utils
+ */
+export function pushPolyline2DClearOf(
+  points: Vec2[],
+  obstacle: Vec2[],
+  clearance: ArrayLike<number> | number,
+  side: 1 | -1,
+): Vec2[] {
+  if (points.length === 0 || obstacle.length < 2) return points;
+  const need = (i: number) =>
+    typeof clearance === 'number'
+      ? clearance
+      : clearance[Math.min(i, clearance.length - 1)];
+  const obstacleArc = polylineArcLengths(obstacle);
+  const obstacleNormals = polylineNormals2D(obstacle);
+  const hit: PolylineHit = { point: [0, 0], distance: 0, along: 0 };
+  const normalAt = (along: number): Vec2 => {
+    let lo = 0;
+    let hi = obstacle.length - 1;
+    while (lo < hi - 1) {
+      const mid = (lo + hi) >> 1;
+      if (obstacleArc[mid] <= along) lo = mid;
+      else hi = mid;
+    }
+    return obstacleNormals[lo];
+  };
+
+  for (let i = 0; i < points.length; i++) {
+    const wanted = need(i);
+    if (wanted <= 0) continue;
+    const near = nearestOnPolyline(obstacle, points[i][0], points[i][1], hit);
+    if (!near) continue;
+    const normal = normalAt(near.along);
+    // Positive means the curve is on the half being KEPT, which is where it has to
+    // be for the obstacle to end up in the half being removed.
+    const outward: Vec2 = [-side * normal[0], -side * normal[1]];
+    const have =
+      (points[i][0] - near.point[0]) * outward[0] +
+      (points[i][1] - near.point[1]) * outward[1];
+    if (have >= wanted) continue;
+    const by = wanted - have;
+    points[i][0] += outward[0] * by;
+    points[i][1] += outward[1] * by;
+  }
+  return points;
 }
 
 /**
@@ -850,46 +1033,10 @@ export function relaxPolyline2DClearOf(
 ): Vec2[] {
   const n = points.length;
   if (n < 3 || obstacle.length < 2) return points;
-  const need = (i: number) =>
-    typeof clearance === 'number'
-      ? clearance
-      : clearance[Math.min(i, clearance.length - 1)];
-
-  const obstacleArc = polylineArcLengths(obstacle);
-  const obstacleNormals = polylineNormals2D(obstacle);
-  const hit: PolylineHit = { point: [0, 0], distance: 0, along: 0 };
-  const normalAt = (along: number): Vec2 => {
-    let lo = 0;
-    let hi = obstacle.length - 1;
-    while (lo < hi - 1) {
-      const mid = (lo + hi) >> 1;
-      if (obstacleArc[mid] <= along) lo = mid;
-      else hi = mid;
-    }
-    return obstacleNormals[lo];
-  };
+  const push = (of: Vec2[]) =>
+    pushPolyline2DClearOf(of, obstacle, clearance, side);
 
   let current = points.map(p => [p[0], p[1]] as Vec2);
-  const push = (of: Vec2[]) => {
-    for (let i = 0; i < n; i++) {
-      const wanted = need(i);
-      if (wanted <= 0) continue;
-      const near = nearestOnPolyline(obstacle, of[i][0], of[i][1], hit);
-      if (!near) continue;
-      const normal = normalAt(near.along);
-      // Positive means the curve is on the half being KEPT, which is where it has to
-      // be for the obstacle to end up in the half being removed.
-      const outward: Vec2 = [-side * normal[0], -side * normal[1]];
-      const have =
-        (of[i][0] - near.point[0]) * outward[0] +
-        (of[i][1] - near.point[1]) * outward[1];
-      if (have >= wanted) continue;
-      const by = wanted - have;
-      of[i][0] += outward[0] * by;
-      of[i][1] += outward[1] * by;
-    }
-  };
-
   push(current);
   const next = current.map(p => [p[0], p[1]] as Vec2);
   for (let pass = 0; pass < iterations; pass++) {

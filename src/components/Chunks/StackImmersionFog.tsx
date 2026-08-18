@@ -96,15 +96,19 @@ export const StackImmersionFog = ({
         };
       }
 
-      // ⚠️ Bounded below by the stack's own Y range rather than by the block's
-      // base: a carrier floor is deliberately not sampleable (§5.3), so there is
-      // nothing to ask. Approximate wherever the base is not flat.
-      if (wantsRock && base !== null && y < ground && y > base) {
-        return {
-          color: rockColor,
-          density: rockDensity,
-          amount: Math.min((ground - y) / span, (y - base) / span, 1),
-        };
+      // ⭐ Asked per CHUNK, not against one global top and base: chunks with
+      // different footprints leave open air between them, and a stack-wide extent
+      // reads that as rock. `base` covers the carrier fill, which is deliberately
+      // not sampleable (§5.3).
+      if (wantsRock) {
+        const depth = sampler.solidAt(x, y, z, base ?? undefined);
+        if (depth !== null) {
+          return {
+            color: rockColor,
+            density: rockDensity,
+            amount: Math.min(depth / span, 1),
+          };
+        }
       }
       return null;
     };

@@ -66,10 +66,21 @@ export type FenceViewOptions = {
    * both ends, so framing all of it means framing the field and losing the well.
    */
   reach?: number;
+  /**
+   * Degrees of heading to keep between the camera and the nearest heading the cut
+   * closes at. Default 25.
+   *
+   * ⚠️ Those headings are where `fenceAutoSide` flips, so a camera parked on one
+   * swaps the half that was removed as soon as it orbits a little.
+   */
+  guard?: number;
 };
 
 /** Default {@link FenceViewOptions.polar}, in degrees. */
 const DEFAULT_POLAR = 78;
+
+/** Default {@link FenceViewOptions.guard}, in degrees. */
+const DEFAULT_GUARD = 25;
 
 /** Heading step the search tries either side of square-on, in degrees. */
 const SCAN_STEP = 10;
@@ -103,13 +114,19 @@ function probe(
 }
 
 /**
- * The heading nearest square-on that actually looks INTO the cut.
+ * The heading nearest square-on that looks INTO the cut, with room around it.
  *
  * ⭐⭐ Asked of the fence rather than derived. Square to the section is where a
  * camera wants to be, but a well that bends enough puts the point square-on to its
  * own AVERAGE back inside the block — measured 300 m inside on one of the demo
  * wells, which is a cut face with rock in front of it. The exact side lookup is
  * right there, so the heading is searched with it rather than assumed.
+ *
+ * ⭐⭐ It takes the middle of the open WINDOW, not the first heading that opens.
+ * The window's ends are where the camera crosses the cut — over a run-out, for a
+ * well angled across the field — and those are exactly the headings `fenceAutoSide`
+ * flips at. Stopping at the first opening parks the camera on one, so the fly-to
+ * lands a nudge away from swapping the half it just removed.
  */
 function bestAzimuth(
   fence: WellboreFence,
@@ -117,16 +134,51 @@ function bestAzimuth(
   preferred: number,
   centre: Vec2,
   radius: number,
+  guard: number,
 ): { azimuth: number; open: boolean } {
-  if (probe(fence, side, centre, radius, preferred) < 0)
-    return { azimuth: preferred, open: true };
-  for (let off = SCAN_STEP; off <= SCAN_LIMIT; off += SCAN_STEP) {
-    for (const azimuth of [preferred + off, preferred - off]) {
-      if (probe(fence, side, centre, radius, azimuth) < 0)
-        return { azimuth, open: true };
+  const isOpen = (offset: number) =>
+    probe(fence, side, centre, radius, preferred + offset) < 0;
+
+  // The open headings, as contiguous runs of offset from square-on. More than one
+  // is possible: a curve that wanders can leave the framing circle twice.
+  const runs: [number, number][] = [];
+  let from: number | null = null;
+  for (let off = -SCAN_LIMIT; off <= SCAN_LIMIT; off += SCAN_STEP) {
+    if (isOpen(off)) {
+      if (from === null) from = off;
+    } else if (from !== null) {
+      runs.push([from, off - SCAN_STEP]);
+      from = null;
     }
   }
-  return { azimuth: preferred, open: false };
+  if (from !== null) runs.push([from, SCAN_LIMIT]);
+  if (runs.length === 0) return { azimuth: preferred, open: false };
+
+  const away = ([lo, hi]: [number, number]) => (lo > 0 ? lo : hi < 0 ? -hi : 0);
+  let best = runs[0];
+  for (const run of runs) if (away(run) < away(best)) best = run;
+
+  // Bisect each end against its closed neighbour. A run reaching the scan limit
+  // ends there instead: past it the camera looks along the cut, not at it.
+  const edge = (inside: number, outside: number) => {
+    for (let i = 0; i < 8; i++) {
+      const mid = (inside + outside) * 0.5;
+      if (isOpen(mid)) inside = mid;
+      else outside = mid;
+    }
+    return inside;
+  };
+  const lo =
+    best[0] <= -SCAN_LIMIT ? -SCAN_LIMIT : edge(best[0], best[0] - SCAN_STEP);
+  const hi =
+    best[1] >= SCAN_LIMIT ? SCAN_LIMIT : edge(best[1], best[1] + SCAN_STEP);
+
+  // ⭐ Square-on while there is room for it, the middle of the window when there is
+  // not — so a comfortably open fence is framed exactly as before and only a tight
+  // one gives up being square.
+  const margin = Math.min(guard, (hi - lo) * 0.5);
+  const offset = Math.min(Math.max(0, lo + margin), hi - margin);
+  return { azimuth: preferred + offset, open: true };
 }
 
 /**
@@ -139,7 +191,8 @@ function bestAzimuth(
  *
  * ⭐ The heading starts at the trace's principal axis turned a quarter turn, so
  * the view is across the section rather than down it, and is then corrected
- * against the fence itself until it is one the cut can actually be seen from.
+ * against the fence itself until it is one the cut can actually be seen from —
+ * with `guard` degrees of clearance from where it stops being one.
  *
  * @param fence a finished fence, as `ChunkStackProps.onFence` reports it
  *
@@ -199,7 +252,8 @@ export function fenceViewPose(
     const [fx, fz] = options.from;
     side = normal[0] * fx + normal[1] * fz >= 0 ? 1 : -1;
   }
-  let found = bestAzimuth(fence, side, facing(side), centre, radius);
+  const guard = Math.max(options.guard ?? DEFAULT_GUARD, 0);
+  let found = bestAzimuth(fence, side, facing(side), centre, radius, guard);
   // Free to choose, and this half cannot be seen into: the other one is a whole
   // second chance, and a longer trip round still beats a blocked view.
   if (!found.open && options.side === undefined) {
@@ -210,6 +264,7 @@ export function fenceViewPose(
       facing(other),
       centre,
       radius,
+      guard,
     );
     if (alternative.open) {
       side = other;

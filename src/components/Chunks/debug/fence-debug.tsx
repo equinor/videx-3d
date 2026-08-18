@@ -42,17 +42,37 @@ export function debugOutlineRings(
   return rings;
 }
 
+/** The angle budget the cut is built under, in DEGREES. */
+export type FenceTurnBudget = {
+  /** at TD, where the cut has to hug a trajectory that genuinely bends */
+  maxTurn: number;
+  /** at the wellhead, where there is nothing but survey scatter to follow */
+  headTurn: number;
+  /** arc length the budget is accumulated over, in metres */
+  turnWindow: number;
+};
+
 /** Build the model, or `null` while the trajectory has not resolved. */
 export function useFenceDebugModel(
   trajectory: Vec3[] | null,
   rings: Vec2[][],
   margin: number,
+  turn?: FenceTurnBudget,
 ): FenceDebugModel | null {
+  const { maxTurn, headTurn, turnWindow } = turn ?? {};
   return useMemo(() => {
     if (!trajectory || trajectory.length < 3 || rings.length === 0) return null;
     const curve = getSplineCurve(trajectory);
     if (!curve) return null;
-    const fence = buildWellboreFence(curve, { rings, margin });
+    const radians = (d?: number) =>
+      d === undefined ? undefined : (d * Math.PI) / 180;
+    const fence = buildWellboreFence(curve, {
+      rings,
+      margin,
+      maxTurn: radians(maxTurn),
+      headTurn: radians(headTurn),
+      turnWindow,
+    });
     if (!fence) return null;
     return {
       fence,
@@ -60,7 +80,7 @@ export function useFenceDebugModel(
       problems: assertFenceInvariants(fence.report),
       trace: trajectory.map(p => [p[0], p[2]] as Vec2),
     };
-  }, [trajectory, rings, margin]);
+  }, [trajectory, rings, margin, maxTurn, headTurn, turnWindow]);
 }
 
 const COLOURS = {
@@ -75,12 +95,19 @@ const COLOURS = {
   grid: '#1a1f26',
 };
 
+/** What the plan view frames. @see FencePlanView */
+export type FenceFocus = 'fit' | 'head' | 'td';
+
 /**
  * Draw the whole fence in PLAN.
  *
  * ⭐⭐ The single most legible view of this feature. A fold, a hairpin, a run-out
  * that leaves without crossing the block, or two sides that have diverged are all
  * obvious here and very nearly invisible in the 3D view.
+ *
+ * ⭐ `focus` frames the head or TD instead of the whole fence. Whole-fence views and
+ * aggregate numbers both hide what happens over the last few hundred metres, which
+ * is where the run-out joins and where a viewer always looks.
  */
 export function FencePlanView({
   model,
@@ -89,6 +116,8 @@ export function FencePlanView({
   showTrace = true,
   showBase = true,
   showSides = true,
+  focus = 'fit',
+  focusRadius = 600,
 }: {
   model: FenceDebugModel | null;
   rings: Vec2[][];
@@ -96,6 +125,8 @@ export function FencePlanView({
   showTrace?: boolean;
   showBase?: boolean;
   showSides?: boolean;
+  focus?: FenceFocus;
+  focusRadius?: number;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
 
@@ -118,9 +149,19 @@ export function FencePlanView({
       if (p[1] < minZ) minZ = p[1];
       if (p[1] > maxZ) maxZ = p[1];
     };
-    for (const ring of rings) for (const p of ring) take(p);
-    for (const p of model.fence.plus.curve.points) take(p);
-    for (const p of model.fence.minus.curve.points) take(p);
+    if (focus === 'fit') {
+      for (const ring of rings) for (const p of ring) take(p);
+      for (const p of model.fence.plus.curve.points) take(p);
+      for (const p of model.fence.minus.curve.points) take(p);
+    } else {
+      const at =
+        focus === 'head' ? model.trace[0] : model.trace[model.trace.length - 1];
+      const r = Math.max(focusRadius, 1);
+      minX = at[0] - r;
+      maxX = at[0] + r;
+      minZ = at[1] - r;
+      maxZ = at[1] + r;
+    }
     const span = Math.max(maxX - minX, maxZ - minZ) || 1;
     const pad = 12;
     const scale = (width - pad * 2) / span;
@@ -197,7 +238,29 @@ export function FencePlanView({
     context.stroke();
     context.fillStyle = COLOURS.td;
     context.fillRect(toX(td[0]) - 4, toY(td[1]) - 4, 8, 8);
-  }, [model, rings, size, showTrace, showBase, showSides]);
+
+    // ⭐ A metre reference. Zoomed in on a head, "the cut is close to the well" is
+    // not a judgement anyone can make without one.
+    const rough = span / 4;
+    const power = Math.pow(10, Math.floor(Math.log10(rough)));
+    const bar =
+      [1, 2, 5, 10].map(m => m * power).find(v => v >= rough) ?? rough;
+    const barPixels = bar * scale;
+    const y = height - pad;
+    context.strokeStyle = COLOURS.outline;
+    context.fillStyle = COLOURS.outline;
+    context.lineWidth = 2;
+    context.beginPath();
+    context.moveTo(pad, y);
+    context.lineTo(pad + barPixels, y);
+    context.moveTo(pad, y - 4);
+    context.lineTo(pad, y + 4);
+    context.moveTo(pad + barPixels, y - 4);
+    context.lineTo(pad + barPixels, y + 4);
+    context.stroke();
+    context.font = '10px ui-monospace, monospace';
+    context.fillText(`${bar} m`, pad + barPixels + 6, y + 3);
+  }, [model, rings, size, showTrace, showBase, showSides, focus, focusRadius]);
 
   return (
     <canvas
@@ -304,6 +367,18 @@ export function FenceHud({ model }: { model: FenceDebugModel | null }) {
         label="loops"
         value={`${report.sides.plus.loops} / ${report.sides.minus.loops}`}
         bad={report.sides.plus.loops + report.sides.minus.loops > 0}
+      />
+      <Row
+        label="max turn +/-"
+        value={`${n(report.sides.plus.maxTurn)}\u00b0 / ${n(report.sides.minus.maxTurn)}\u00b0`}
+      />
+      <Row
+        label="chorded +/-"
+        value={`${report.sides.plus.chorded} / ${report.sides.minus.chorded}`}
+      />
+      <Row
+        label="waists +/-"
+        value={`${report.sides.plus.waistRemoved} / ${report.sides.minus.waistRemoved}`}
       />
       <Row
         label="sides"

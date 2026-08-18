@@ -447,6 +447,14 @@ How it is wired:
   as it is seen from above. Naming a surface id samples that horizon alone, which
   is what to do when a specific unit is the target rather than the top of the
   block.
+- `solidAt(x, y, z, floor?)` answers a different question: how far INSIDE the block
+  a point is, in metres to the nearest face, or `null` in open air. ⭐ It groups the
+  caps by the chunk that published them and tests each volume on its own, because
+  "below the highest surface and above the block's base" only describes the block
+  while it is one solid extrusion — chunks with different footprints leave open air
+  between them wherever the narrower one is absent. ⚠️ A chunk whose caps meet at a
+  point, because a neighbour draws that horizon under the seam rule or a unit has
+  pinched out, spans zero there and that sliver reads as air.
 - ⚠️ VOID CEILINGS AND THE FLOOR ARE NOT SAMPLEABLE. A void's upper copy faces up
   but is the underside of the unit above (§10.7), and something placed on it would
   sit inside the block; the column's carrier is tagged the same way (§10.9) and is
@@ -1167,7 +1175,8 @@ their legibility follows the same knob.
   Deferred deliberately; the caller supplies one colour instead.
 - ⚠️ **The base is derived, not sampled.** A carrier floor is deliberately not
   sampleable (§5.3), so the block's bottom comes from the column's depth range and
-  the carrier's own declaration. Approximate wherever that base is not flat.
+  the carrier's own declaration. Approximate wherever that base is not flat. It is
+  handed to `solidAt` as the floor the DEEPEST chunk continues down to.
 - ⚠️ **The section suppresses it.** A camera standing where the plane took the
   block away is in open air whatever the heights say, so the medium test rejects
   the discarded half-space first.
@@ -1176,8 +1185,9 @@ their legibility follows the same knob.
   workaround is the feature's own switch — a host that peels should drop
   `immersion` while it does. Acceptable because this is an opt-in visual effect,
   not a correctness feature.
-- ⚠️ The medium is chosen by one `getHeightAt` per frame, which is a CSR bucket
-  lookup — but it is per frame, and only paid when the feature is on.
+- ⚠️ The medium is chosen by one `getHeightAt` and one `solidAt` per frame, both
+  CSR bucket lookups — but they are per frame, and only paid when the feature is
+  on.
 
 ⭐ **`waterOpacity` is the other half of this.** Depth-driven transparency decoupled
 two things that used to share one knob: it used to trade "deep water reads as water"

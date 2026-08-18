@@ -23,6 +23,7 @@
  * `--disable-console-intercept`.
  */
 import { describe, it } from 'vitest';
+import { fenceSideAt } from '../src/sdk/geometries/fence-segments';
 import {
   assertFenceInvariants,
   buildWellboreFence,
@@ -30,13 +31,12 @@ import {
   sampleFenceField,
   sampleTrajectoryPlan,
 } from '../src/sdk/geometries/wellbore-fence';
-import { fenceSideAt } from '../src/sdk/geometries/fence-segments';
+import { Vec2 } from '../src/sdk/types/common';
 import {
   nearestOnPolyline,
   polylineArcLengths,
   resamplePolyline2D,
 } from '../src/sdk/utils/polyline-2d';
-import { Vec2 } from '../src/sdk/types/common';
 import {
   bounds,
   rings,
@@ -72,7 +72,18 @@ function row(report: FenceReport, margin: number): string {
     pad(sides.plus.removedShare * 100, 5),
     pad(sides.minus.removedShare * 100, 5),
     pad(Math.min(...sides.plus.opening, ...sides.minus.opening), 5),
+    // How hard the sharpest junction bends, which is what tears the swept face.
+    // The opening is 180 - turn, so a straight junction reads 0 here either way.
+    pad(
+      Math.max(
+        ...[...sides.plus.opening, ...sides.minus.opening].map(o =>
+          Math.abs(180 - o),
+        ),
+      ),
+      5,
+    ),
     pad(sides.plus.loops + sides.minus.loops, 4),
+    pad(sides.plus.loopsRemoved + sides.minus.loopsRemoved, 4),
     problems.length === 0 ? '   -' : ` ${problems.length}`,
   ].join(' ');
 }
@@ -93,7 +104,9 @@ const HEADINGS = [
   pad('rem+', 5),
   pad('rem-', 5),
   pad('open', 5),
+  pad('bend', 5),
   pad('loop', 4),
+  pad('cut', 4),
   ' bad',
 ].join(' ');
 

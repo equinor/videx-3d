@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { fenceAutoSide, fenceSideAt, fenceViewPose, Vec2 } from '../src/sdk';
+import {
+  fenceAutoSide,
+  fenceSideAt,
+  fenceViewPose,
+  FenceViewPose,
+  Vec2,
+  WellboreFence,
+} from '../src/sdk';
 import { fenceFor, wellboreIds, wellboreName } from './fence-fixtures';
 
 /**
@@ -54,6 +61,40 @@ function eyeAt(pose: ReturnType<typeof fenceViewPose>): Vec2 {
   ];
 }
 
+/**
+ * Degrees the camera can orbit each way from a pose before the cut closes.
+ *
+ * ⭐ Measured straight off the field at the pose's own radius, so it is
+ * independent of how the pose picked its heading.
+ */
+function clearance(
+  fence: WellboreFence,
+  pose: FenceViewPose,
+): [number, number] {
+  const at = pose.side > 0 ? fence.plus : fence.minus;
+  const [ex, ez] = eyeAt(pose);
+  const cx = pose.target[0];
+  const cz = pose.target[2];
+  const radius = Math.hypot(ex - cx, ez - cz);
+  const open = (offset: number) => {
+    const a = ((pose.azimuth + offset) * Math.PI) / 180;
+    return (
+      fenceSideAt(
+        at.index,
+        at.field,
+        cx + radius * Math.cos(a),
+        cz + radius * Math.sin(a),
+      ) < 0
+    );
+  };
+  const walk = (sign: 1 | -1) => {
+    let off = 0;
+    while (off < 90 && open(sign * (off + 1))) off++;
+    return off;
+  };
+  return [walk(-1), walk(1)];
+}
+
 describe('fenceViewPose', () => {
   it(
     'stands the camera in the half that was removed',
@@ -104,6 +145,30 @@ describe('fenceViewPose', () => {
       expect(x).toBeLessThanOrEqual(pose.box.max[0]);
       expect(z).toBeGreaterThanOrEqual(pose.box.min[2]);
       expect(z).toBeLessThanOrEqual(pose.box.max[2]);
+    }
+  });
+
+  /**
+   * ⚠️⚠️ A well angled across the field opens only near its run-outs, and taking
+   * the FIRST heading that opens parks the camera on the edge of that opening —
+   * which is precisely where `fenceAutoSide` flips, so the fly-to landed a nudge
+   * away from swapping the half it had just removed.
+   */
+  it('leaves room either side of the heading it picks', () => {
+    const guard = 25;
+    for (const id of wells) {
+      const fence = fenceFor(id);
+      if (!fence) continue;
+      for (const side of [1, -1] as const) {
+        const pose = fenceViewPose(fence, { ...RANGE, side, guard });
+        const [left, right] = clearance(fence, pose);
+        // The full guard, or half the window when the window cannot give it.
+        const wanted = Math.min(guard, Math.floor((left + right) / 2)) - 1;
+        expect(
+          Math.min(left, right),
+          `${wellboreName(id)} side ${side}`,
+        ).toBeGreaterThanOrEqual(wanted);
+      }
     }
   });
 });

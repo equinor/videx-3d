@@ -1,10 +1,11 @@
 import { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useMemo, useState } from 'react';
-import { CRS, getProjectionDefFromUtmZone } from '../../../sdk/projection/crs';
 import { createWellboreOutline, Vec2, Vec3 } from '../../../sdk';
+import { CRS, getProjectionDefFromUtmZone } from '../../../sdk/projection/crs';
 import storyArgs from '../../../storybook/story-args.json';
 import {
   debugOutlineRings,
+  FenceFocus,
   FenceHud,
   FencePlanView,
   useFenceDebugHandle,
@@ -28,6 +29,11 @@ import {
 
 type Header = { id: string; name: string; easting: number; northing: number };
 
+/** Every wellbore the demo data carries, so the control can be a dropdown. */
+const WELLBORES = Object.values(
+  storyArgs.wellboreOptions as Record<string, string>,
+).sort((a, b) => a.localeCompare(b));
+
 function useVolve() {
   const [data, setData] = useState<{
     headers: Record<string, Header>;
@@ -47,6 +53,11 @@ function useVolve() {
 type Props = {
   wellbore: string;
   margin: number;
+  maxTurn: number;
+  headTurn: number;
+  turnWindow: number;
+  focus: FenceFocus;
+  focusRadius: number;
   showTrace: boolean;
   showBase: boolean;
   showSides: boolean;
@@ -105,7 +116,11 @@ const FenceDebug = (props: Props) => {
     return trajectories.get(byName ?? props.wellbore) ?? null;
   }, [data, trajectories, props.wellbore]);
 
-  const model = useFenceDebugModel(selected, rings, props.margin);
+  const model = useFenceDebugModel(selected, rings, props.margin, {
+    maxTurn: props.maxTurn,
+    headTurn: props.headTurn,
+    turnWindow: props.turnWindow,
+  });
   useFenceDebugHandle(model);
 
   return (
@@ -127,6 +142,8 @@ const FenceDebug = (props: Props) => {
         showTrace={props.showTrace}
         showBase={props.showBase}
         showSides={props.showSides}
+        focus={props.focus}
+        focusRadius={props.focusRadius}
       />
       <div>
         <div style={{ marginBottom: 8, opacity: 0.6 }}>
@@ -165,6 +182,11 @@ export default {
   args: {
     wellbore: 'NO 15/9-F-12',
     margin: 0,
+    maxTurn: 60,
+    headTurn: 25,
+    turnWindow: 300,
+    focus: 'fit',
+    focusRadius: 600,
     showTrace: true,
     showBase: true,
     showSides: true,
@@ -172,22 +194,65 @@ export default {
   },
   argTypes: {
     wellbore: {
-      control: { type: 'text' },
-      description: 'Wellbore NAME, as it appears in the headers.',
+      control: { type: 'select' },
+      options: WELLBORES,
+      description:
+        'Wellbore NAME, as it appears in the headers. ⭐ Cycle through these — a rule that looks right on one well is routinely wrong on the next, and the ends are where they differ.',
+      table: { category: 'Fence' },
     },
     margin: {
       control: { type: 'range', min: 0, max: 300, step: 5 },
       description:
         'Metres of clearance baked into each side. ⭐ Watch the two side curves separate by twice this — the corridor between them is what both views remove, and it is where casings get room to be drawn.',
+      table: { category: 'Fence' },
+    },
+    maxTurn: {
+      control: { type: 'range', min: 10, max: 85, step: 5 },
+      description:
+        'Degrees the cut may turn within the window at TD. ⭐⭐ Measured over a WINDOW, not between neighbouring segments — a curve turning a few degrees per step for twenty steps passes every per-vertex test and is a near loop, which is what tears the swept face. Anything over budget is cut straight through. ⚠️ Never take this to 90: at a right angle the two faces of the turn are looking at each other.',
+      table: { category: 'Angles' },
+    },
+    headTurn: {
+      control: { type: 'range', min: 5, max: 85, step: 5 },
+      description:
+        'The same budget at the WELLHEAD. ⭐⭐ Deliberately tighter than at TD: near TD the trajectory genuinely bends and the cut has to hug it, while at the head there is nothing to follow but survey scatter and every degree spent there buys a fold. The budget is interpolated between the two by position along the well.',
+      table: { category: 'Angles' },
+    },
+    turnWindow: {
+      control: { type: 'range', min: 50, max: 1000, step: 25 },
+      description:
+        'Metres of arc the turn budget is accumulated over. ⭐ This is the “how far ahead does it look” dial: short sees only local kinks, long treats a wide sweeping bend as one turn.',
+      table: { category: 'Angles' },
+    },
+    focus: {
+      control: { type: 'inline-radio' },
+      options: ['fit', 'head', 'td'],
+      description:
+        'What to frame. ⭐⭐ The ENDS are where the run-out joins, and a whole-fence view flattens the junction into a couple of pixels — burial at the head is the failure a viewer notices and it is invisible in an aggregate. The scale bar is the reference for judging it.',
+      table: { category: 'View' },
+    },
+    focusRadius: {
+      control: { type: 'range', min: 100, max: 3000, step: 50 },
+      description:
+        'Half the width of the framed window, in metres. Ignored when focus is `fit`.',
+      table: { category: 'View' },
     },
     showTrace: {
       description: 'The raw projected trajectory, before straightening.',
+      table: { category: 'View' },
     },
     showBase: {
       description: 'The straightened curve both sides are built from.',
+      table: { category: 'View' },
     },
-    showSides: { description: 'Each side’s finished cut curve.' },
-    size: { control: { type: 'range', min: 320, max: 900, step: 20 } },
+    showSides: {
+      description: 'Each side’s finished cut curve.',
+      table: { category: 'View' },
+    },
+    size: {
+      control: { type: 'range', min: 320, max: 900, step: 20 },
+      table: { category: 'View' },
+    },
   },
 } satisfies Meta<typeof FenceDebug>;
 

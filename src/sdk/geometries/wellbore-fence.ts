@@ -4,18 +4,19 @@ import {
   dedupePolyline2D,
   endTangent2D,
   junctionOpening,
-  nearestOnPolyline,
   leftNormal2D,
+  nearestOnPolyline,
   polylineArcLengths,
   polylineBounds2D,
   polylineLength,
+  polylineMaxTurn,
   polylineMinRadius,
   polylineNormals2D,
   polylineRadiusProfile,
   principalDirection2D,
-  RelaxResult,
-  relaxPolyline2DWithin,
   relaxPolyline2DClearOf,
+  relaxPolyline2DWithin,
+  RelaxResult,
   removePolylineLoops,
   repairPolylineWaists,
   resamplePolyline2D,
@@ -25,8 +26,8 @@ import { distanceVec2 } from '../utils/vector-operations';
 import { Curve3D } from './curve/curve-3d';
 import {
   buildFenceSegmentIndex,
-  fenceSideAt,
   FenceSegmentIndex,
+  fenceSideAt,
 } from './fence-segments';
 
 /**
@@ -90,6 +91,20 @@ const MIN_PLAN_EXTENT = 100;
 /** Opening a run-out must keep from the trace it leaves, in radians. */
 const RUN_OUT_CLEARANCE = Math.PI / 4;
 
+/**
+ * How far a run-out may TURN from the trace's own heading, in radians.
+ *
+ * ⭐⭐ Past a quarter turn the arm is heading back toward the side it came from, and
+ * the well is on that side — so a smooth junction has to sweep ACROSS the trajectory
+ * and bury the head. Measured on 15/9-F-1, where both run-outs left the head heading
+ * south while the well headed north-east and the cut visibly crossed it. No amount of
+ * arm shaping fixes that; the direction has to be admissible in the first place.
+ *
+ * ⚠️ A preference, not a hard rule: a well that occupies every bearing around its own
+ * head may leave nothing admissible, and a cut that turns too far still beats no cut.
+ */
+const MAX_RUN_OUT_TURN = Math.PI / 2;
+
 /** Radius around a run-out's apex that does not constrain it, in metres. */
 const RUN_OUT_NEAR = 50;
 
@@ -131,8 +146,35 @@ const MAX_LOCAL_CLEARANCE = 250;
  */
 const DEVIATION_SAFETY = 1.25;
 
-/** Arc length a run-out takes to converge onto the shared ray, in metres. */
+/** Distance a run-out takes to converge onto the ray both sides share, in metres. */
 const RUN_OUT_BLEND = 500;
+
+/** Cap on the steps a run-out's turn may take, so it always terminates. */
+const RUN_OUT_MAX_STEPS = 256;
+
+/**
+ * How far the cut may turn within {@link DEFAULT_TURN_WINDOW}, in radians, at TD.
+ *
+ * ⭐⭐ A WINDOW, not an angle between neighbours. A curve turning a few degrees per
+ * 25 m step for twenty steps passes every per-vertex test and is a near loop — which
+ * is the shape that tears the swept face, and whose right repair is a straight line
+ * through it. ⚠️ Must stay well under a right angle: at 90° the two faces of the turn
+ * are looking at each other.
+ */
+const DEFAULT_MAX_TURN = (60 * Math.PI) / 180;
+
+/**
+ * The same budget at the WELLHEAD, in radians.
+ *
+ * ⭐⭐ Deliberately tighter than at TD, which is the same asymmetry `fenceTolerance`
+ * gives the corridor. Near TD the trajectory genuinely bends and the cut has to hug
+ * it, so it must be allowed to turn; at the head there is nothing to follow but
+ * survey scatter, and every degree spent there buys a fold.
+ */
+const DEFAULT_HEAD_TURN = (25 * Math.PI) / 180;
+
+/** Arc length the turn budget is accumulated over, in metres. */
+const DEFAULT_TURN_WINDOW = 300;
 
 /** Arc length a local clearance is spread over, in metres. */
 const CLEARANCE_SPREAD = 150;
@@ -679,17 +721,27 @@ function runOutCandidates(
   tangent: Vec2,
   trend: Vec2,
   clearance: number,
+  maxTurn: number,
 ): Vec2[] {
   const bearings = bearingsFrom(trace, apex, RUN_OUT_NEAR);
   if (bearings.length === 0) return [tangent];
 
   const out: Vec2[] = [];
+  // Directions that clear the trace but turn too far to leave the head unburied.
+  // Kept, because a well that fills every bearing around its own head would
+  // otherwise be left with no run-out at all.
+  const turned: Vec2[] = [];
+  const turnLimit = Math.cos(maxTurn);
   const offer = (direction: Vec2) => {
     if (clearanceOf(direction, bearings) < clearance) return;
-    for (const had of out) {
+    const list =
+      direction[0] * tangent[0] + direction[1] * tangent[1] >= turnLimit
+        ? out
+        : turned;
+    for (const had of list) {
       if (had[0] * direction[0] + had[1] * direction[1] > 0.999) return;
     }
-    out.push(direction);
+    list.push(direction);
   };
   offer(tangent);
   // ⭐⭐ The overall TREND, not just the local tangent. A well that is small next to
@@ -707,12 +759,15 @@ function runOutCandidates(
     offer([Math.cos(gap.mid), Math.sin(gap.mid)]);
   }
 
+  if (out.length > 0) return out;
+  if (turned.length > 0) return turned;
+
   // A well enclosed by its own trace clears nothing; take the roomiest direction
   // there is rather than leaving the caller with no cut at all.
-  if (out.length === 0 && gaps.length > 0) {
-    out.push([Math.cos(gaps[0].mid), Math.sin(gaps[0].mid)]);
+  if (gaps.length > 0) {
+    return [[Math.cos(gaps[0].mid), Math.sin(gaps[0].mid)]];
   }
-  return out.length > 0 ? out : [tangent];
+  return [tangent];
 }
 
 /** A rasterised footprint, so a split can be scored against the BLOCK. */
@@ -1094,6 +1149,16 @@ export type FenceExtensions = {
   startClearance: number;
   /** opening the end run-out keeps from the trace, in radians */
   endClearance: number;
+  /**
+   * How far each run-out turns from the trace's own heading, in radians.
+   *
+   * ⭐ The measure that predicts a buried head: past a quarter turn the arm curves
+   * back over the well. ⚠️ NOT `FenceSideReport.opening`, which compares the trace
+   * with the run-out as if the junction were a corner — the arm is a spline, so the
+   * corner it describes does not exist.
+   */
+  startTurn: number;
+  endTurn: number;
   /** share of the footprint the SMALLER half keeps, 0..0.5 */
   evenness: number;
   /** direction pairs scored */
@@ -1117,6 +1182,8 @@ export type FenceExtensionOptions = {
   runOutMargin?: number;
   /** opening a run-out must keep from the trace, in radians. Default 45°. */
   clearance?: number;
+  /** how far a run-out may turn from the trace's heading, in radians. Default 90°. */
+  maxTurn?: number;
   mode?: FenceExtensionMode;
 };
 
@@ -1144,6 +1211,7 @@ export function fenceExtensions(
   options: FenceExtensionOptions,
 ): FenceExtensions {
   const clearance = options.clearance ?? RUN_OUT_CLEARANCE;
+  const maxTurn = options.maxTurn ?? MAX_RUN_OUT_TURN;
   const margin = options.runOutMargin ?? DEFAULT_RUN_OUT_MARGIN;
   // ⚠️⚠️ The curve has to leave the RASTER, not merely the outline: one that
   // escapes a concave footprint can still stop inside its bounding box, and the
@@ -1168,10 +1236,25 @@ export function fenceExtensions(
     startTangent,
     [-trend[0], -trend[1]],
     clearance,
+    maxTurn,
   );
-  const ends = runOutCandidates(base, last, endTangent, trend, clearance);
+  const ends = runOutCandidates(
+    base,
+    last,
+    endTangent,
+    trend,
+    clearance,
+    maxTurn,
+  );
   const startBearings = bearingsFrom(base, first, RUN_OUT_NEAR);
   const endBearings = bearingsFrom(base, last, RUN_OUT_NEAR);
+  const turnFrom = (direction: Vec2, heading: Vec2) =>
+    Math.acos(
+      Math.max(
+        -1,
+        Math.min(1, direction[0] * heading[0] + direction[1] * heading[1]),
+      ),
+    );
   const reach = (origin: Vec2, direction: Vec2) =>
     escapeDistance(origin, direction, rings) + margin;
 
@@ -1203,6 +1286,8 @@ export function fenceExtensions(
         end: e,
         startClearance,
         endClearance,
+        startTurn: turnFrom(s, startTangent),
+        endTurn: turnFrom(e, endTangent),
         evenness: smaller,
         scored: 0,
         candidates: [],
@@ -1223,6 +1308,8 @@ export function fenceExtensions(
     end: endTangent,
     startClearance: clearanceOf(startTangent, startBearings),
     endClearance: clearanceOf(endTangent, endBearings),
+    startTurn: 0,
+    endTurn: 0,
     evenness: 0,
     scored: 0,
     candidates: [],
@@ -1245,6 +1332,10 @@ export type FenceSideCurve = {
   blended: boolean;
   /** loops the repair had to remove */
   loopsRemoved: number;
+  /** near loops the turn budget had to cut straight through */
+  chorded: number;
+  /** largest turn within the budget window, in radians */
+  maxTurn: number;
   /** waists this side had to route around */
   waistRemoved: number;
 };
@@ -1261,6 +1352,12 @@ export type FenceSideOptions = {
   minOpening?: number;
   /** how close the curve may come back to itself, in metres. */
   waist?: number;
+  /** how far the cut may turn within `turnWindow` at TD, in radians. Default 60°. */
+  maxTurn?: number;
+  /** the same budget at the wellhead, in radians. Default 25°. */
+  headTurn?: number;
+  /** arc length the turn budget is accumulated over, in metres. Default 300. */
+  turnWindow?: number;
   /** signed offset of the well from the curve per vertex — {@link FenceBase.deviation} */
   deviation?: ArrayLike<number>;
   /** signed corner rounding per vertex — {@link FenceBase.roundness} */
@@ -1346,6 +1443,9 @@ export function buildFenceSideCurve(
   const margin = options.margin ?? 0;
   const runOutMargin = options.runOutMargin ?? DEFAULT_RUN_OUT_MARGIN;
   const minOpening = options.minOpening ?? MIN_OPENING;
+  const maxTurn = options.maxTurn ?? DEFAULT_MAX_TURN;
+  const headTurn = options.headTurn ?? DEFAULT_HEAD_TURN;
+  const turnWindow = options.turnWindow ?? DEFAULT_TURN_WINDOW;
   const rings = [...options.rings, boundsRing(options.bounds)];
 
   // The face must sit clear of the well on the half being KEPT, so that the well and
@@ -1396,30 +1496,51 @@ export function buildFenceSideCurve(
     }
   }
 
-  // ⭐⭐ A run-out leaves this side's own endpoint but CONVERGES onto the ray both
-  // sides share, over `RUN_OUT_BLEND`. Beyond that the two arms are the same line —
-  // they are one section seen from two sides, so only the junction itself may differ.
+  // ⭐⭐ A run-out leaves this side's own endpoint heading the way the TRACE heads,
+  // and turns onto the ray both sides share. Linear segments, with the turn spread
+  // over as many of them as the angle budget needs — the output has to be a polyline
+  // either way, and building it as one is what keeps every angle under control.
+  //
+  // ⚠️⚠️ It steers at the KNEE, not at the far tip. Aiming both sides at the same tip
+  // is not enough: they start from different points and reach it along different
+  // paths, so the wedge between them is removed by NEITHER half — measured as the two
+  // removed shares summing to 0.92 instead of 1. Converging onto the ray at a fixed
+  // distance makes the two arms one line from there out, which is the majority of a
+  // run-out that is kilometres long.
   const arm = (
-    apex: Vec2,
     from: Vec2,
+    tangent: Vec2,
     direction: Vec2,
+    apex: Vec2,
     reach: number,
+    stepTurn: number,
   ): Vec2[] => {
-    const normal = leftNormal2D(direction[0], direction[1]);
-    const lateral =
-      (from[0] - apex[0]) * normal[0] + (from[1] - apex[1]) * normal[1];
-    const blend = Math.min(RUN_OUT_BLEND, reach);
-    const steps = 6;
-    const out: Vec2[] = [];
-    for (let k = 0; k <= steps; k++) {
-      const e = k / steps;
-      const fade = 1 - e * e * (3 - 2 * e);
-      out.push([
-        apex[0] + direction[0] * (e * blend) + normal[0] * lateral * fade,
-        apex[1] + direction[1] * (e * blend) + normal[1] * lateral * fade,
-      ]);
+    const converge = Math.min(RUN_OUT_BLEND, reach);
+    const knee: Vec2 = [
+      apex[0] + direction[0] * converge,
+      apex[1] + direction[1] * converge,
+    ];
+    const out: Vec2[] = [[from[0], from[1]]];
+    let heading = Math.atan2(tangent[1], tangent[0]);
+    let x = from[0];
+    let z = from[1];
+    for (let k = 0; k < RUN_OUT_MAX_STEPS; k++) {
+      const remaining = Math.hypot(knee[0] - x, knee[1] - z);
+      if (remaining <= BASE_SPACING) break;
+      let delta = Math.atan2(knee[1] - z, knee[0] - x) - heading;
+      while (delta > Math.PI) delta -= 2 * Math.PI;
+      while (delta <= -Math.PI) delta += 2 * Math.PI;
+      // Pointing at the knee and free to turn no further: the rest is a straight run.
+      if (Math.abs(delta) <= 1e-9) break;
+      heading += Math.max(-stepTurn, Math.min(stepTurn, delta));
+      x += Math.cos(heading) * BASE_SPACING;
+      z += Math.sin(heading) * BASE_SPACING;
+      out.push([x, z]);
     }
-    out.push([apex[0] + direction[0] * reach, apex[1] + direction[1] * reach]);
+    out.push(knee);
+    if (reach > converge) {
+      out.push([apex[0] + direction[0] * reach, apex[1] + direction[1] * reach]);
+    }
     return out;
   };
 
@@ -1427,16 +1548,48 @@ export function buildFenceSideCurve(
     escapeDistance(base[0], extensions.start, rings) + runOutMargin;
   const endReach =
     escapeDistance(base[base.length - 1], extensions.end, rings) + runOutMargin;
+  // The direction the trace LEAVES each junction in. `endTangent2D` points from the
+  // end into the curve, so the outward heading is its reverse.
+  const leaving = (fromStart: boolean): Vec2 => {
+    const into = endTangent2D(trace, fromStart, JUNCTION_ARC);
+    if (into) return [-into[0], -into[1]];
+    return fromStart ? extensions.start : extensions.end;
+  };
+  // Derived, not a second knob: an arm stepping at `BASE_SPACING` must not be able
+  // to use up the whole windowed budget on its own.
+  // ⭐ Tighter at the head than at TD. Near TD the trajectory genuinely bends and the
+  // run-out has to leave along it; at the head there is nothing but survey scatter,
+  // and every degree of turn spent there buys a fold.
+  const stepTurnFor = (budget: number) => (budget * BASE_SPACING) / turnWindow;
+  const startArm = arm(
+    trace[0],
+    leaving(true),
+    extensions.start,
+    base[0],
+    startReach,
+    stepTurnFor(headTurn),
+  );
+  const endArm = arm(
+    trace[trace.length - 1],
+    leaving(false),
+    extensions.end,
+    base[base.length - 1],
+    endReach,
+    stepTurnFor(maxTurn),
+  );
   const raw: Vec2[] = [
-    ...arm(base[0], trace[0], extensions.start, startReach).reverse(),
+    // ⚠️ The junction point belongs to the trace, and both arms start there.
+    ...startArm.reverse().slice(0, -1),
     ...trace,
-    ...arm(
-      base[base.length - 1],
-      trace[trace.length - 1],
-      extensions.end,
-      endReach,
-    ),
+    ...endArm.slice(1),
   ];
+  // ⚠️⚠️ The turn budget is MEASURED here, not enforced. Chording every stretch that
+  // turned more than the budget was tried and reverted: accumulated angle cannot tell
+  // a near loop from a real bend — a 180° turn at 400 m radius is a reservoir dogleg
+  // the cut has to follow, and cutting through one abandoned the well (F-12 +1 went
+  // from 0 to 310 m buried). The shape that needs a chord is one that comes back near
+  // ITSELF, which is a distance test — `repairPolylineWaists`, below.
+  const chorded = 0;
   const loopsRemoved = countPolylineLoops(raw);
   // ⭐⭐ Loops, then waists PER SIDE. A hairpin's pocket lies wholly on one side: the
   // side that removes it has nothing thin to fix, and repairing there would only
@@ -1454,6 +1607,8 @@ export function buildFenceSideCurve(
     // cluster of them in one index cell overflows its list.
     points: dedupePolyline2D(waist.points, 2),
     waistRemoved: waist.repaired,
+    chorded,
+    maxTurn: polylineMaxTurn(dedupePolyline2D(waist.points, 2), turnWindow),
     opening: [
       junctionOpeningOf(trace, extensions.start, true, side),
       junctionOpeningOf(trace, extensions.end, false, side),
@@ -1852,6 +2007,12 @@ export type FenceSideReport = {
   opening: [number, number];
   blended: boolean;
   loopsRemoved: number;
+  /** excursions the waist repair had to route around on this side */
+  waistRemoved: number;
+  /** near loops the turn budget had to cut straight through */
+  chorded: number;
+  /** largest turn within the budget window, in DEGREES */
+  maxTurn: number;
   /** loops LEFT after the repair — must be 0 */
   loops: number;
   removedShare: number;
@@ -1917,6 +2078,10 @@ export type FenceReport = {
     startClearance: number;
     /** DEGREES */
     endClearance: number;
+    /** DEGREES the run-out turns from the trace's heading — see {@link FenceExtensions.startTurn} */
+    startTurn: number;
+    /** DEGREES */
+    endTurn: number;
     evenness: number;
     scored: number;
   };
@@ -1952,6 +2117,12 @@ export type WellboreFenceOptions = {
   runOutMargin?: number;
   /** how the run-outs continue. Default 'straight'. */
   extension?: FenceExtensionMode;
+  /** how far the cut may turn within `turnWindow` at TD, in radians. Default 60°. */
+  maxTurn?: number;
+  /** the same budget at the wellhead, in radians. Default 25°. */
+  headTurn?: number;
+  /** arc length the turn budget is accumulated over, in metres. Default 300. */
+  turnWindow?: number;
   /** identifier carried into the report */
   wellbore?: string;
 };
@@ -2040,6 +2211,9 @@ export function buildWellboreFence(
     bounds,
     margin,
     runOutMargin: options.runOutMargin,
+    maxTurn: options.maxTurn,
+    headTurn: options.headTurn,
+    turnWindow: options.turnWindow,
     deviation: base.deviation,
     // The cut is kept clear of the WELL, not of the smoothed curve standing in for it.
     well: samples.plan.slice(base.from),
@@ -2094,6 +2268,9 @@ export function buildWellboreFence(
     opening: [degrees(s.curve.opening[0]), degrees(s.curve.opening[1])],
     blended: s.curve.blended,
     loopsRemoved: s.curve.loopsRemoved,
+    waistRemoved: s.curve.waistRemoved,
+    chorded: s.curve.chorded,
+    maxTurn: degrees(s.curve.maxTurn),
     loops: countPolylineLoops(s.curve.points),
     removedShare: s.removedShare,
     minRadius: polylineMinRadius(s.curve.points, headRadius),
@@ -2154,6 +2331,8 @@ export function buildWellboreFence(
       end: extensions.end,
       startClearance: degrees(extensions.startClearance),
       endClearance: degrees(extensions.endClearance),
+      startTurn: degrees(extensions.startTurn),
+      endTurn: degrees(extensions.endTurn),
       evenness: extensions.evenness,
       scored: extensions.scored,
     },

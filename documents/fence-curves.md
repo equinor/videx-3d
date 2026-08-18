@@ -227,8 +227,8 @@ Two thresholds keep that from becoming a flicker, and both are needed:
 - `autoSettle` (seconds) — the deadband alone is crossed in a frame or two at speed,
   so a fly-through would flip the block twice on its way past.
 
-`fenceViewPose(fence, { top, bottom, from?, side? })` answers the other half of the
-question: a camera pose that looks square-on at the cut.
+`fenceViewPose(fence, { top, bottom, from?, side?, guard? })` answers the other half
+of the question: a camera pose that looks square-on at the cut.
 
 - It is built from the **trace** (`FenceBase.points`), not from a finished side
   curve. The side curves carry run-outs that leave the footprint, so their spread is
@@ -239,10 +239,17 @@ question: a camera pose that looks square-on at the cut.
 - ⭐⭐ **That heading is then checked against the fence, not trusted.** A well that
   bends enough puts the point square-on to its own average *back inside the block* —
   measured 300 m inside on one of the demo wells, which is a cut face with rock in
-  front of it. `fenceSideAt` is right there, so the heading is searched outward from
-  square-on in 10° steps until it is one the cut can be seen from, and the pose
-  reports whether it found one (`open`). Verified over every demo well, both sides,
-  in `tests/fence-view.test.ts` (`FENCE_VIEW=all` for the sweep).
+  front of it. `fenceSideAt` is right there, so the headings the cut can be seen from
+  are scanned in 10° steps across ±90°, and the pose reports whether it found any
+  (`open`). Verified over every demo well, both sides, in `tests/fence-view.test.ts`
+  (`FENCE_VIEW=all` for the sweep).
+- ⭐⭐ **It takes the middle of that opening, not the first heading in it.** A well
+  angled across the field is open only near its run-outs, and an opening ENDS exactly
+  where `fenceAutoSide` flips — so stopping at the first heading that works parks the
+  camera a nudge away from swapping the half it has just removed. The ends are
+  bisected to a degree and `guard` (default 25°) of clearance is kept from them. ⚠️
+  Spent only when it must be: square-on is kept wherever the opening has room for
+  `guard` either side of it, so a straight fence is framed exactly as before.
 - With `side` left free, `from` breaks the tie on **travel**: both sides are equally
   readable, so taking the one the view is already coming from turns a fly-to into a
   short swing instead of a trip round the back.

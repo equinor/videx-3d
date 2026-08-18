@@ -1,3 +1,4 @@
+import { useFrame } from '@react-three/fiber';
 import {
   PropsWithChildren,
   useCallback,
@@ -8,7 +9,6 @@ import {
   useState,
 } from 'react';
 import { BufferGeometry, Group, Matrix4, Plane, Vector3, Vector4 } from 'three';
-import { useFrame } from '@react-three/fiber';
 import { useData } from '../../hooks/useData';
 import { useGenerator } from '../../hooks/useGenerator';
 import {
@@ -20,10 +20,20 @@ import {
   Vec3,
   WellboreFence,
 } from '../../sdk';
-import { UtmAreaContext } from '../UtmArea';
 import { OceanContactContext } from '../Ocean/ocean-contact';
 import { OceanSamplerContext } from '../Ocean/ocean-sampler';
+import { UtmAreaContext } from '../UtmArea';
+import {
+  ChunkMarginEntry,
+  ChunkOutlineRegistry,
+  ChunkSeamRegistry,
+  ChunkStackContext,
+  ChunkStackContextValue,
+  ChunkSurfaceClaim,
+} from './ChunkContext';
+import { ChunkSectionDebug } from './ChunkSectionDebug';
 import { StackImmersionFog } from './StackImmersionFog';
+import { ChunkContact } from './chunk-contacts';
 import {
   ChunkBuildState,
   ChunkCarrier,
@@ -39,15 +49,6 @@ import {
   StackWaterResponse,
 } from './chunk-defs';
 import {
-  ChunkMarginEntry,
-  ChunkOutlineRegistry,
-  ChunkSeamRegistry,
-  ChunkStackContext,
-  ChunkStackContextValue,
-  ChunkSurfaceClaim,
-} from './ChunkContext';
-import { ChunkSectionDebug } from './ChunkSectionDebug';
-import {
   buildOutlineRegistry,
   clearClaims,
   createChunkClaimStore,
@@ -55,8 +56,8 @@ import {
   releaseChunk as releaseFromStore,
   setClaims,
 } from './chunk-outline-registry';
-import { CutoutSource } from './cutout';
 import { buildStackWaterSpec } from './chunk-spec';
+import { CutoutSource } from './cutout';
 import { resolveWellboreOutline } from './resolveWellboreOutline';
 import {
   createSurfaceSampler,
@@ -65,11 +66,10 @@ import {
   SurfaceSamplerRegistry,
   SurfaceSamplerRegistryContext,
 } from './surface-sampler';
-import { useStackWater } from './useStackWater';
-import { useStackFence } from './useStackFence';
-import { ChunkContact } from './chunk-contacts';
 import { useChunkContacts } from './useChunkContacts';
 import { useStackBathymetry } from './useStackBathymetry';
+import { useStackFence } from './useStackFence';
+import { useStackWater } from './useStackWater';
 
 // Scratch for the camera-locked plane, which is rebuilt every frame.
 const sectionForward = new Vector3();
@@ -388,7 +388,7 @@ export const ChunkStack = ({
       sectionState.plane.set(
         sectionNormal.copy(sectionForward).negate(),
         sectionForward.dot(sectionAnchor) +
-          (onTarget ? 0 : (section.cameraDistance ?? 0)),
+        (onTarget ? 0 : (section.cameraDistance ?? 0)),
       );
       // Built in world space; the stack's own frame is where it has to be tested,
       // and the two differ as soon as the stack carries a vertical exaggeration.
@@ -491,7 +491,7 @@ export const ChunkStack = ({
     setSeams(next.seams);
     setClaimed(previous =>
       previous.size === next.registry.size &&
-      [...next.registry.keys()].every(id => previous.has(id))
+        [...next.registry.keys()].every(id => previous.has(id))
         ? previous
         : new Set(next.registry.keys()),
     );
@@ -574,7 +574,12 @@ export const ChunkStack = ({
   const samplerRegistry = useMemo<SurfaceSamplerRegistry>(
     () => ({
       register(key, entries) {
-        drawn.current.set(key, entries);
+        // Tagged here rather than by the chunk: the key is what makes a set of caps
+        // ONE volume, and only the registry knows it.
+        drawn.current.set(
+          key,
+          entries.map(entry => ({ ...entry, group: key })),
+        );
         setDrawnVersion(v => v + 1);
         return () => {
           drawn.current.delete(key);
@@ -645,13 +650,13 @@ export const ChunkStack = ({
     list.sort((a, b) => at(a.topSurfaceId) - at(b.topSurfaceId));
     setMargins(previous =>
       previous.length === list.length &&
-      previous.every(
-        (p, i) =>
-          p.key === list[i].key &&
-          p.radius === list[i].radius &&
-          p.topSurfaceId === list[i].topSurfaceId &&
-          p.baseSurfaceId === list[i].baseSurfaceId,
-      )
+        previous.every(
+          (p, i) =>
+            p.key === list[i].key &&
+            p.radius === list[i].radius &&
+            p.topSurfaceId === list[i].topSurfaceId &&
+            p.baseSurfaceId === list[i].baseSurfaceId,
+        )
         ? previous
         : list,
     );
@@ -783,9 +788,9 @@ export const ChunkStack = ({
       setSeaGeometry(
         response
           ? {
-              lid: response.lid ? unpackBufferGeometry(response.lid) : null,
-              body: response.body ? unpackBufferGeometry(response.body) : null,
-            }
+            lid: response.lid ? unpackBufferGeometry(response.lid) : null,
+            body: response.body ? unpackBufferGeometry(response.body) : null,
+          }
           : null,
       );
     })();

@@ -10,6 +10,14 @@ import {
   useState,
 } from 'react';
 import { Plane, Vector3 } from 'three';
+import {
+  CameraFlyToEvent,
+  CameraFocusAtPointEvent,
+} from '../../events/camera-events';
+import {
+  WellboreSelectedEvent,
+  wellboreSelectedEventType,
+} from '../../events/wellbore-events';
 import { OITRenderPass, Pass } from '../../main';
 import { OutputPass } from '../../rendering/passes/OutputPass';
 import { RenderingPipeline } from '../../rendering/RenderingPipeline';
@@ -20,26 +28,24 @@ import {
   PlanarPolygonGeometry,
   readCameraTarget,
   SurfaceChunkMetrics,
-  SurfaceMeta,
   surfaceGridToWorld,
+  SurfaceMeta,
   Vec2,
   Vec3,
   WellboreFence,
 } from '../../sdk';
-import {
-  CameraFlyToEvent,
-  CameraFocusAtPointEvent,
-} from '../../events/camera-events';
-import {
-  WellboreSelectedEvent,
-  wellboreSelectedEventType,
-} from '../../events/wellbore-events';
 import { chunkTimings } from '../../storybook/data/chunk-timings';
 import { sortByStratAge } from '../../storybook/data/strat-ages';
 import {
   stratLayerColors,
+  stratLayerGroup,
   stratLayerUnitName,
 } from '../../storybook/data/strat-units';
+import {
+  getSyntheticSurface,
+  SYNTHETIC_SEABED_ID,
+} from '../../storybook/data/synthetic-surfaces';
+import { useVidex3dLocate } from '../../storybook/debug/useVidex3dLocate';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-decorator';
@@ -47,13 +53,8 @@ import { GeneratorsProviderDecorator } from '../../storybook/decorators/generato
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
 import { WellMapDecorator } from '../../storybook/decorators/well-map-decorator';
 import { useFieldOutline } from '../../storybook/hooks/useFieldOutline';
-import { useVidex3dLocate } from '../../storybook/debug/useVidex3dLocate';
 import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
-import {
-  getSyntheticSurface,
-  SYNTHETIC_SEABED_ID,
-} from '../../storybook/data/synthetic-surfaces';
 import storyArgs from '../../storybook/story-args.json';
 import { Distance } from '../Distance/Distance';
 import { EventEmitterCallbackEvent } from '../EventEmitter';
@@ -77,6 +78,7 @@ import {
 } from './chunk-defs';
 import { CHUNK_DETAIL_PRESET_NAMES, ChunkDetailPreset } from './chunk-detail';
 import { ChunkStack } from './ChunkStack';
+import { ChunkOutline } from './cutout';
 import { ChunkInferenceStyle } from './inference-material';
 
 const utmZone = storyArgs.utmZone;
@@ -124,7 +126,7 @@ const ChunkPipeline = () => {
     base.antialias = 'smaa';
     return [base, new OutputPass()];
   }, [scene, camera]);
-  useFrame(() => {}, 2);
+  useFrame(() => { }, 2);
   return <RenderingPipeline passes={passes} />;
 };
 
@@ -268,8 +270,9 @@ const FieldWells = ({
 };
 
 type FieldColumnStoryProps = {
-  outline: 'grid' | 'field' | 'crop';
+  outline: 'grid' | 'field' | 'crop' | 'chunked';
   cropSize: number;
+  chunkedRadius: number;
   seabed: boolean;
   surfaceFrom: number;
   surfaceCount: number;
@@ -337,6 +340,7 @@ type FieldColumnStoryProps = {
   fenceFlyTo: boolean;
   fenceFlyPadding: number;
   fenceFlyPolar: number;
+  fenceFlyGuard: number;
   fenceFlyRetreat: number;
   fenceFlyDuration: number;
 };
@@ -371,6 +375,7 @@ const FENCE_WAIT = 20000;
 const FieldColumnStory = (props: FieldColumnStoryProps) => {
   const surfaceMetaDict = useSurfaceMetaDict();
   const fieldOutline = useFieldOutline();
+  const wellboreHeaders = useWellboreHeaders();
 
   // Held HERE rather than in `FieldWells` because the wellbore fence reads it at
   // this level, alongside the stack. ⭐ Two channels, not one: the 3D view and the
@@ -463,10 +468,10 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     const widest = column.reduce<SurfaceMeta | null>(
       (best, m) =>
         !best ||
-        m.header.nx * m.header.xinc * (m.header.ny * m.header.yinc) >
+          m.header.nx * m.header.xinc * (m.header.ny * m.header.yinc) >
           best.header.nx *
-            best.header.xinc *
-            (best.header.ny * best.header.yinc)
+          best.header.xinc *
+          (best.header.ny * best.header.yinc)
           ? m
           : best,
       null,
@@ -499,8 +504,11 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     return new PlanarPolygonGeometry([[[...ring, ring[0]]]], [0, 0]);
   }, [props.cropSize]);
 
+  // ⚠️ `chunked` takes the GRID. The stack's outline is what the shared column is
+  // built over and what the fence is built from, and both have to contain every
+  // chunk's own footprint — the wellbore outlines below are nested inside it.
   const outline =
-    props.outline === 'grid'
+    props.outline === 'grid' || props.outline === 'chunked'
       ? gridOutline
       : props.outline === 'crop'
         ? cropOutline
@@ -542,6 +550,55 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     props.sectionKeep,
   ]);
 
+  // --- `chunked`: one chunk per stratigraphic GROUP, so the stack is drawn from
+  //     several footprints instead of one. The fence is a stack-level cut, so this
+  //     is what tells us whether it still agrees with a block it did not shape.
+  const chunkedLayers = useMemo(() => {
+    if (props.outline !== 'chunked' || layers.length < 3) return null;
+    const starts = [0];
+    for (let i = 1; i < layers.length; i++) {
+      if (stratLayerGroup(names, i) !== stratLayerGroup(names, i - 1)) {
+        starts.push(i);
+      }
+    }
+    return starts.map((start, k) => {
+      const next = k + 1 < starts.length ? starts[k + 1] : layers.length;
+      // Consecutive chunks SHARE the horizon between them — it is the base of one
+      // and the top of the next, and declaring it twice is what closes the column.
+      // The stack settles which of the two actually draws it.
+      const slice = layers.slice(start, Math.min(next + 1, layers.length));
+      return slice.map((layer, j) =>
+        j === slice.length - 1 && next < layers.length
+          ? { ...layer, fill: undefined }
+          : layer,
+      );
+    });
+  }, [props.outline, layers, names]);
+
+  const wellboreIds = useMemo(
+    () => wellboreHeaders.map(w => w.id),
+    [wellboreHeaders],
+  );
+
+  // ⚠️ Declared per CHUNK rather than as the stack's `cutSource`: a stack-level
+  // wellbore source makes the wellbore envelope the footprint the shared column is
+  // built over, and the full-grid chunks below would then reach past it.
+  const chunkedOutlines = useMemo<ChunkOutline[] | null>(() => {
+    if (!chunkedLayers || !gridOutline) return null;
+    const last = chunkedLayers.length - 1;
+    return chunkedLayers.map((_, i) =>
+      i === 0 || i === last || wellboreIds.length === 0
+        ? gridOutline
+        : {
+          kind: 'wellbores' as const,
+          wellbores: wellboreIds,
+          // `above` accumulates trajectory with depth, so each chunk's footprint
+          // contains the one above it and the whole set stays nested.
+          options: { mode: 'above' as const, radius: props.chunkedRadius },
+        },
+    );
+  }, [chunkedLayers, gridOutline, wellboreIds, props.chunkedRadius]);
+
   const resolve = useMemo<ChunkResolveOptions>(
     () => ({
       seal: props.seal,
@@ -568,13 +625,13 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     () =>
       props.water
         ? {
-            depth: props.seaLevel,
-            opacity: props.waterLayerOpacity,
-            waterOpacity: props.waterOpacity,
-            windSpeed: props.windSpeed,
-            foamAmount: props.foamAmount,
-            bedTint: props.bedTint,
-          }
+          depth: props.seaLevel,
+          opacity: props.waterLayerOpacity,
+          waterOpacity: props.waterOpacity,
+          windSpeed: props.windSpeed,
+          foamAmount: props.foamAmount,
+          bedTint: props.bedTint,
+        }
         : undefined,
     [
       props.water,
@@ -593,12 +650,12 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     () =>
       props.immersion
         ? {
-            color: props.immersionColor,
-            visibility: props.immersionVisibility,
-            transition: props.immersionTransition,
-            settle: props.immersionSettle,
-            background: props.immersionBackground,
-          }
+          color: props.immersionColor,
+          visibility: props.immersionVisibility,
+          transition: props.immersionTransition,
+          settle: props.immersionSettle,
+          background: props.immersionBackground,
+        }
         : undefined,
     [
       props.immersion,
@@ -650,19 +707,19 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     () =>
       props.fence
         ? {
-            wellbore: fenceWellbore,
-            side:
-              props.fenceSide === 'auto'
-                ? (flightSide ?? 'auto')
-                : props.fenceSide,
-            autoDeadband: props.fenceAutoDeadband,
-            autoSettle: props.fenceAutoSettle,
-            margin: props.fenceMargin,
-            extension: props.fenceExtension,
-            offset: props.fenceOffset,
-            resolution: props.fenceResolution,
-            debug: props.fenceDebug,
-          }
+          wellbore: fenceWellbore,
+          side:
+            props.fenceSide === 'auto'
+              ? (flightSide ?? 'auto')
+              : props.fenceSide,
+          autoDeadband: props.fenceAutoDeadband,
+          autoSettle: props.fenceAutoSettle,
+          margin: props.fenceMargin,
+          extension: props.fenceExtension,
+          offset: props.fenceOffset,
+          resolution: props.fenceResolution,
+          debug: props.fenceDebug,
+        }
         : undefined,
     [
       props.fence,
@@ -719,6 +776,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     side: 'auto' as 1 | -1 | 'auto',
     padding: 1.6,
     polar: 78,
+    guard: 25,
     retreat: 3,
     duration: 1.6,
     range: blockRange,
@@ -729,6 +787,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     side: props.fenceSide,
     padding: props.fenceFlyPadding,
     polar: props.fenceFlyPolar,
+    guard: props.fenceFlyGuard,
     retreat: props.fenceFlyRetreat,
     duration: props.fenceFlyDuration,
     range: blockRange,
@@ -777,6 +836,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
               from: viewOffset.current ?? undefined,
               side: plan.side === 'auto' ? undefined : plan.side,
               polar: plan.polar,
+              guard: plan.guard,
             });
             setFlightSide(pose.side);
             return {
@@ -801,39 +861,46 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
   // its share of the SHARED tessellation, which every layer pays for in full
   // whatever it ends up drawing.
   const report = useMemo(
-    () => (metrics: SurfaceChunkMetrics) => {
-      const d = metrics.diagnostics;
-      const shared = d?.sharedTriangles ?? 0;
-      const rows = (d?.layers ?? []).map(l => ({
-        index: l.index,
-        surface: names[l.index] ?? '(synthetic)',
-        unit: stratLayerUnitName(names, l.index) ?? '-',
-        coverage: +l.coverage.toFixed(3),
-        inferred: +l.inferred.toFixed(3),
-        triangles: l.triangles,
-        kept: shared > 0 ? +(l.triangles / shared).toFixed(3) : null,
-        droppedAbsent: l.droppedAbsent,
-        droppedCollapsed: l.droppedCollapsed,
-      }));
-      console.log(
-        `CHUNKREPORT ${JSON.stringify({
-          surfaces: metrics.layers,
-          triangles: metrics.triangles,
-          wallTriangles: metrics.wallTriangles,
-          // ⭐ The size every phase after the tessellation scales with: each layer
-          // carries a full copy of the shared TIN.
-          vertices: d?.vertices ?? null,
-          sharedTriangles: shared,
-          crossings: d?.crossings ?? null,
-          constraintFailures: d?.constraintFailures ?? null,
-          referenceNodes: d?.referenceNodes ?? null,
-          referenceStep: d?.referenceStep ?? null,
-          ...chunkTimings(metrics),
-          layers: rows,
-        })}`,
-      );
-      console.table(rows);
-    },
+    () =>
+      (
+        metrics: SurfaceChunkMetrics,
+        // A chunk reports its OWN layer indices, so it has to be named with its own
+        // surfaces or every chunk but the first is labelled with the wrong rock.
+        chunkNames: (string | undefined)[] = names,
+      ) => {
+        const d = metrics.diagnostics;
+        const shared = d?.sharedTriangles ?? 0;
+        const rows = (d?.layers ?? []).map(l => ({
+          index: l.index,
+          surface: chunkNames[l.index] ?? '(synthetic)',
+          unit: stratLayerUnitName(chunkNames, l.index) ?? '-',
+          coverage: +l.coverage.toFixed(3),
+          inferred: +l.inferred.toFixed(3),
+          triangles: l.triangles,
+          kept: shared > 0 ? +(l.triangles / shared).toFixed(3) : null,
+          droppedAbsent: l.droppedAbsent,
+          droppedCollapsed: l.droppedCollapsed,
+        }));
+        console.log(
+          `CHUNKREPORT ${JSON.stringify({
+            top: chunkNames[0] ?? null,
+            surfaces: metrics.layers,
+            triangles: metrics.triangles,
+            wallTriangles: metrics.wallTriangles,
+            // ⭐ The size every phase after the tessellation scales with: each layer
+            // carries a full copy of the shared TIN.
+            vertices: d?.vertices ?? null,
+            sharedTriangles: shared,
+            crossings: d?.crossings ?? null,
+            constraintFailures: d?.constraintFailures ?? null,
+            referenceNodes: d?.referenceNodes ?? null,
+            referenceStep: d?.referenceStep ?? null,
+            ...chunkTimings(metrics),
+            layers: rows,
+          })}`,
+        );
+        console.table(rows);
+      },
     [names],
   );
 
@@ -874,15 +941,42 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
               speed={props.sectionAnimateSpeed}
             />
           )}
-          <Chunk
-            layers={layers}
-            surfaceOpacity={props.surfaceOpacity}
-            wallOpacity={props.wallOpacity}
-            wireframe={props.wireframe}
-            inferredStyle={props.inferredStyle}
-            peel={Math.min(Math.max(0, Math.round(props.peel)), layers.length)}
-            onBuild={report}
-          />
+          {chunkedLayers && chunkedOutlines ? (
+            chunkedLayers.map((chunkLayers, i) => (
+              <Chunk
+                key={i}
+                outline={chunkedOutlines[i]}
+                layers={chunkLayers}
+                surfaceOpacity={props.surfaceOpacity}
+                wallOpacity={props.wallOpacity}
+                wireframe={props.wireframe}
+                inferredStyle={props.inferredStyle}
+                peel={Math.min(
+                  Math.max(0, Math.round(props.peel)),
+                  chunkLayers.length,
+                )}
+                onBuild={m =>
+                  report(
+                    m,
+                    chunkLayers.map(l => l.surface?.name),
+                  )
+                }
+              />
+            ))
+          ) : (
+            <Chunk
+              layers={layers}
+              surfaceOpacity={props.surfaceOpacity}
+              wallOpacity={props.wallOpacity}
+              wireframe={props.wireframe}
+              inferredStyle={props.inferredStyle}
+              peel={Math.min(
+                Math.max(0, Math.round(props.peel)),
+                layers.length,
+              )}
+              onBuild={report}
+            />
+          )}
         </ChunkStack>
         {props.wellbores && (
           <FieldWells
@@ -939,6 +1033,7 @@ export const Default: Story = {
     // Surfaces
     outline: 'field',
     cropSize: 7,
+    chunkedRadius: 600,
     seabed: true,
     surfaceFrom: 0,
     surfaceCount: 12,
@@ -965,6 +1060,7 @@ export const Default: Story = {
     fenceFlyTo: true,
     fenceFlyPadding: 1.6,
     fenceFlyPolar: 78,
+    fenceFlyGuard: 25,
     fenceFlyRetreat: 2,
     fenceFlyDuration: 1.6,
     // Resolve
@@ -1023,9 +1119,10 @@ export const Default: Story = {
   argTypes: {
     outline: {
       control: { type: 'inline-radio' },
-      options: ['grid', 'field', 'crop'],
+      options: ['grid', 'field', 'crop', 'chunked'],
       description:
-        '`grid` crops nothing — the whole survey rectangle of the widest surface (~1050 km² here). `field` uses the footprint buffered from the WELLS, which is where the field actually is (~10× smaller) and is the default. `crop` is a square about the scene origin, sized to match the generated column so the two can be compared like for like. ⚠️ A footprint reaching past a survey buys INFERENCE — watch `coverage` per layer. ⭐ It is also the control that makes `maxNodes` matter: watch `referenceNodes`.',
+        '`grid` crops nothing — the whole survey rectangle of the widest surface (~1050 km² here). `field` uses the footprint buffered from the WELLS, which is where the field actually is (~10× smaller) and is the default. `crop` is a square about the scene origin, sized to match the generated column so the two can be compared like for like. ⚠️ A footprint reaching past a survey buys INFERENCE — watch `coverage` per layer. ⭐ It is also the control that makes `maxNodes` matter: watch `referenceNodes`.\n\n' +
+        '⭐⭐ `chunked` draws the column as **one chunk per stratigraphic group**, each buffered around the wells, with the sea bed and the basement left on the full `grid`. Everything else here draws one chunk from one footprint; this is the case where the block is made of several. ⚠️ Built on `grid`, so it is the slow one — the survey rectangle is what the shared column has to cover.',
       table: { category: 'Surfaces' },
     },
     cropSize: {
@@ -1033,6 +1130,13 @@ export const Default: Story = {
       options: [3, 5, 7, 9, 12, 15, 20, 25],
       description:
         'Side of the `crop` outline, in km. 7 is the generated column’s own size.',
+      table: { category: 'Surfaces' },
+    },
+    chunkedRadius: {
+      control: { type: 'range', min: 200, max: 3000, step: 100 },
+      if: { arg: 'outline', eq: 'chunked' },
+      description:
+        'Metres buffered around the wells for a `chunked` group’s footprint. ⭐ Resolved in `above` mode, so each chunk accumulates the trajectory down to its own base and the footprints stay NESTED — which is what keeps them all inside the stack outline the fence is built from.',
       table: { category: 'Surfaces' },
     },
     seabed: {
@@ -1176,6 +1280,12 @@ export const Default: Story = {
       control: { type: 'range', min: 0, max: 90, step: 1 },
       description:
         'Degrees from straight down to arrive at. 90 is dead level with the cut face; a little under looks slightly down on it, which keeps the block’s top surface in the frame for context.',
+      table: { category: 'Fly to' },
+    },
+    fenceFlyGuard: {
+      control: { type: 'range', min: 0, max: 60, step: 1 },
+      description:
+        'Degrees of heading to keep between the camera and the nearest one the cut closes at. ⭐⭐ A well angled across the field is only open near its RUN-OUTS, and those openings end exactly where `auto` flips the side — so arriving at the first heading that works parks the camera a nudge away from swapping the half it just removed. ⚠️ Spent only when it has to be: square-on is kept whenever the opening is wide enough for this much room either side of it.',
       table: { category: 'Fly to' },
     },
     fenceFlyRetreat: {

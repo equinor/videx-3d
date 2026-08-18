@@ -97,3 +97,33 @@ export function stratLayerUnitName(
     stratLayerUnit(names, i)?.unit ?? stratUnitAbove(names[i])?.parent ?? null
   );
 }
+
+/** Every unit the column defines, by name, so the parent chain can be climbed. */
+const UNITS_BY_NAME: Record<string, StratUnit> = {};
+for (const entry of Object.values(STRAT_UNITS)) {
+  for (const unit of [entry.below, entry.above]) {
+    if (unit) UNITS_BY_NAME[unit.unit] = unit;
+  }
+}
+
+/**
+ * The level-1 GROUP a layer belongs to, found by climbing its unit's parents.
+ *
+ * `null` for a layer the column names no unit for — a generated sea bed, or a
+ * surface the strat column has no horizon for.
+ *
+ * @param names the surface names, shallowest first
+ * @param i the layer to name the group of
+ */
+export function stratLayerGroup(
+  names: (string | undefined)[],
+  i: number,
+): string | null {
+  let name = stratLayerUnitName(names, i);
+  for (let guard = 0; name && guard < 8; guard++) {
+    const unit = UNITS_BY_NAME[name];
+    if (!unit || unit.level <= 1 || !unit.parent) break;
+    name = unit.parent;
+  }
+  return name;
+}

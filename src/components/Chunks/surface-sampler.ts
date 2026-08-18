@@ -27,6 +27,13 @@ export type SurfaceSamplerEntry = {
   layer: number;
   /** the geometry as drawn */
   geometry: BufferGeometry;
+  /**
+   * Which chunk published it. Entries sharing one are the caps of ONE volume, so
+   * {@link SurfaceSampler.solidAt} can tell rock from the air between two chunks
+   * that do not share a footprint. Set by the registry; omitted, every entry is
+   * treated as belonging to the same volume.
+   */
+  group?: string;
 };
 
 /**
@@ -62,6 +69,23 @@ export type SurfaceSampler = {
   ): TinSample | null;
   /** Just the height, or `null` where nothing is drawn. */
   getHeightAt(x: number, z: number, surface?: string): number | null;
+  /**
+   * How far inside the drawn block a point is, in metres to the nearest face, or
+   * `null` when it is in open air.
+   *
+   * ⭐ Asked per CHUNK. "Below the highest surface and above the block's base" is
+   * only the same question while the stack is one solid extrusion; give two chunks
+   * different footprints and there is open air between them wherever the narrower
+   * one is absent, which that test reads as rock.
+   *
+   * ⚠️ A chunk whose caps meet — a horizon its neighbour draws under the seam rule,
+   * or a unit pinched out to nothing — spans zero here, so a sliver at such a seam
+   * reads as air. The union over chunks covers most of it.
+   *
+   * @param floor the block's base below the deepest horizon, for a carrier fill
+   *   that is deliberately not sampleable
+   */
+  solidAt(x: number, y: number, z: number, floor?: number): number | null;
   /** Ids of the surfaces currently drawn, and so sampleable. */
   readonly surfaces: string[];
 };
@@ -143,9 +167,52 @@ export function createSurfaceSampler(
     return found ? result : null;
   };
 
+  const volumes = new Map<string, SurfaceSamplerEntry[]>();
+  for (const entry of entries) {
+    const key = entry.group ?? '';
+    const list = volumes.get(key);
+    if (list) list.push(entry);
+    else volumes.set(key, [entry]);
+  }
+
+  const solidAt = (x: number, y: number, z: number, floor?: number) => {
+    let inside: number | null = null;
+    // The lowest cap drawn here, and the volume it belongs to: only that one
+    // continues into the carrier fill.
+    let deepest = Infinity;
+    let deepestTop = 0;
+
+    for (const volume of volumes.values()) {
+      let top = -Infinity;
+      let bottom = Infinity;
+      for (const entry of volume) {
+        const hit = samplerFor(entry.geometry)?.sampleAt(x, z, probe);
+        if (!hit) continue;
+        if (hit.y > top) top = hit.y;
+        if (hit.y < bottom) bottom = hit.y;
+      }
+      if (top === -Infinity) continue;
+      if (bottom < deepest) {
+        deepest = bottom;
+        deepestTop = top;
+      }
+      if (y < top && y > bottom) {
+        const depth = Math.min(top - y, y - bottom);
+        if (inside === null || depth > inside) inside = depth;
+      }
+    }
+
+    if (floor !== undefined && floor < deepest && y < deepestTop && y > floor) {
+      const depth = Math.min(deepestTop - y, y - floor);
+      if (inside === null || depth > inside) inside = depth;
+    }
+    return inside;
+  };
+
   return {
     sampleAt,
     getHeightAt: (x, z, surface) => sampleAt(x, z, surface, scratch)?.y ?? null,
+    solidAt,
     get surfaces() {
       return entries
         .map(e => e.id)
