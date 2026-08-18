@@ -14,9 +14,11 @@ import { useGenerator } from '../../hooks/useGenerator';
 import {
   ChunkSurfaceLayer,
   PlanarPolygonGeometry,
+  readCameraTarget,
   SurfaceMeta,
   unpackBufferGeometry,
   Vec3,
+  WellboreFence,
 } from '../../sdk';
 import { UtmAreaContext } from '../UtmArea';
 import { OceanContactContext } from '../Ocean/ocean-contact';
@@ -76,28 +78,6 @@ const sectionUp = new Vector3();
 const sectionNormal = new Vector3();
 const sectionAnchor = new Vector3();
 const sectionMatrix = new Matrix4();
-
-/**
- * The camera target, from whatever controls are installed as the default —
- * `CameraControls` hands it out through `getTarget`, `OrbitControls` holds it as a
- * plain `target`. `false` when there is no target to read.
- */
-function readCameraTarget(controls: unknown, out: Vector3) {
-  const source = controls as {
-    getTarget?: (out: Vector3) => Vector3;
-    target?: Vector3;
-  } | null;
-  if (!source) return false;
-  if (typeof source.getTarget === 'function') {
-    source.getTarget(out);
-    return true;
-  }
-  if (source.target?.isVector3) {
-    out.copy(source.target);
-    return true;
-  }
-  return false;
-}
 
 /**
  * {@link ChunkStack} props.
@@ -209,6 +189,16 @@ export type ChunkStackProps = {
    */
   fence?: ChunkFence;
   /**
+   * Called with each finished {@link ChunkStackProps.fence}, and with `null` when
+   * there is none.
+   *
+   * ⭐ What a host needs to FRAME the cut — the curve, its extent and which half
+   * each side removes are all here, so a camera move can be built from the fence
+   * that was actually generated rather than from a re-derived guess. See
+   * `fenceViewPose`.
+   */
+  onFence?: (fence: WellboreFence | null) => void;
+  /**
    * How the column is made monotone before it is built, and what is dropped where
    * a unit is not present. Chunks inherit this unless they declare their own.
    *
@@ -261,6 +251,7 @@ export const ChunkStack = ({
   contacts,
   section,
   fence,
+  onFence,
   resolve,
   rimSpacing,
   maxError,
@@ -322,15 +313,16 @@ export const ChunkStack = ({
     () => ({ value: new Vector4(0, 0, 0, 1) }),
     [],
   );
-  // The frame the section is expressed in — needed to bring a camera-locked plane
-  // out of world space, which is the one case where the two differ.
-  const sectionRoot = useRef<Group>(null);
+  // The stack's own frame. Everything driven from the CAMERA — the locked section
+  // plane, the immersion test, the fence's auto side — has to be brought out of
+  // world space into this, and it is the one case where the two differ.
+  const stackFrame = useRef<Group>(null);
 
   const {
     state: fenceState,
     uniforms: fenceUniforms,
     uniformsInverse: fenceUniformsInverse,
-  } = useStackFence(fence, outline, store, utm?.utmToArea);
+  } = useStackFence(fence, outline, store, utm?.utmToArea, stackFrame, onFence);
 
   if (
     fence &&
@@ -400,7 +392,7 @@ export const ChunkStack = ({
       );
       // Built in world space; the stack's own frame is where it has to be tested,
       // and the two differ as soon as the stack carries a vertical exaggeration.
-      const root = sectionRoot.current;
+      const root = stackFrame.current;
       if (root) {
         root.updateWorldMatrix(true, false);
         sectionState.plane.applyMatrix4(
@@ -851,7 +843,7 @@ export const ChunkStack = ({
             <OceanContactContext.Provider value={sea?.contacts ?? null}>
               {/* Identity transform, present so a camera-locked section has a
                   frame to be brought into (see the `useFrame` above). */}
-              <group ref={sectionRoot}>
+              <group ref={stackFrame}>
                 {immersion && (
                   <StackImmersionFog
                     immersion={immersion}
@@ -860,7 +852,7 @@ export const ChunkStack = ({
                     base={blockBase}
                     section={sectionState}
                     fence={fenceState}
-                    frame={sectionRoot}
+                    frame={stackFrame}
                   />
                 )}
                 {sea && seaGeometry?.lid && (

@@ -1,4 +1,7 @@
 import { Vec3 } from '../sdk';
+// Type only: the manager imports the event NAMES from here, so a value import
+// would close the cycle.
+import type { CameraFlyPlan } from '../sdk/managers/CameraManager';
 
 /**
  * CameraSetPositionEvent name
@@ -12,6 +15,10 @@ export const cameraFocusAtPointEventType = 'camera-focus-point' as const;
  * CameraLookAtEvent name
  */
 export const cameraLookAtEventType = 'camera-look-at' as const;
+/**
+ * CameraFlyToEvent name
+ */
+export const cameraFlyToEventType = 'camera-fly-to' as const;
 
 export interface CameraFocusAtPointEventDetails {
   point: Vec3;
@@ -26,6 +33,10 @@ export interface CameraLookAtEventDetails {
   target: Vec3;
   /** animate there. Default true; false lands exactly, in one frame. */
   transition?: boolean;
+  callback?: () => void;
+}
+
+export interface CameraFlyToEventDetails extends CameraFlyPlan {
   callback?: () => void;
 }
 
@@ -63,10 +74,26 @@ export class CameraLookAtEvent extends CustomEvent<CameraLookAtEventDetails> {
   }
 }
 
+/**
+ * Travel to a new view the long way round — pull back, swing across, come in.
+ *
+ * ⭐⭐ The leg structure is the point: `destination` may be a FUNCTION, which is
+ * asked only once the camera has retreated. That is the window in which whatever
+ * is being flown to can be torn down and rebuilt, out at arm's length, instead of
+ * in front of the lens. See {@link CameraFlyPlan}.
+ * @event
+ */
+export class CameraFlyToEvent extends CustomEvent<CameraFlyToEventDetails> {
+  constructor(detail: CameraFlyToEventDetails) {
+    super(cameraFlyToEventType, { detail });
+  }
+}
+
 declare global {
   interface WindowEventMap {
     [cameraSetPositionEventType]: CameraSetPositionEvent;
     [cameraFocusAtPointEventType]: CameraFocusAtPointEvent;
     [cameraLookAtEventType]: CameraLookAtEvent;
+    [cameraFlyToEventType]: CameraFlyToEvent;
   }
 }

@@ -59,11 +59,11 @@ type DebugArgs = {
   debugPattern: 'off' | DebugPattern;
   patternScale: number;
   geometry:
-  | 'torusKnot'
-  | 'thinBars'
-  | 'lines'
-  | 'thinBars-transparent'
-  | 'lines-transparent';
+    | 'torusKnot'
+    | 'thinBars'
+    | 'lines'
+    | 'thinBars-transparent'
+    | 'lines-transparent';
   animate: boolean;
   supersample: 0.5 | 1 | 1.5 | 2 | 4;
   downsampleMode: 'mipmap' | 'box';
@@ -870,7 +870,7 @@ function buildInfoRows(
 
   const resolution = res
     ? `${res.cssW}×${res.cssH} css · ${res.bufW}×${res.bufH} buffer` +
-    (args.supersample !== 1 ? ` · ${res.renderW}×${res.renderH} render` : '')
+      (args.supersample !== 1 ? ` · ${res.renderW}×${res.renderH} render` : '')
     : '…';
 
   return [

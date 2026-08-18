@@ -563,6 +563,12 @@ export const DEFAULT_FENCE_CELL_SIZE = 50;
 /** Default {@link ChunkFence.resolution}, in metres. @group Components */
 export const DEFAULT_FENCE_RESOLUTION = 10;
 
+/** Floor for {@link ChunkFence.autoDeadband}, in metres. @group Components */
+export const DEFAULT_FENCE_AUTO_DEADBAND = 50;
+
+/** Default {@link ChunkFence.autoSettle}, in seconds. @group Components */
+export const DEFAULT_FENCE_AUTO_SETTLE = 0.2;
+
 /**
  * Open a stack along a **fence** — a vertical surface swept along a curve in plan,
  * normally a wellbore's trajectory, run out past both ends of the well so it
@@ -587,8 +593,26 @@ export type ChunkFence = {
    *
    * ⭐ Free to flip. Both halves are built up front, so this swaps a texture and a
    * curve rather than rebuilding anything.
+   *
+   * ⭐⭐ `'auto'` keeps the CAMERA in the open half, which is the only half the cut
+   * face can be seen from — orbit past the fence and the block changes sides so the
+   * section stays readable. See {@link ChunkFence.autoDeadband}.
    */
-  side?: 1 | -1;
+  side?: 1 | -1 | 'auto';
+  /**
+   * Metres the camera must clear the cut by before `side: 'auto'` flips, in the
+   * stack's own frame. Default `max(margin, 50)`.
+   *
+   * ⚠️ Anti-flicker only. An orbit crosses the fence exactly where the two halves
+   * are equally good, and a plan view looks straight down it, so without a little
+   * slack a jitter there would toggle the whole block.
+   */
+  autoDeadband?: number;
+  /**
+   * Seconds the camera must stay clear before `side: 'auto'` acts on it. Default
+   * 0.2 — long enough to ignore a fly-through, short enough to feel immediate.
+   */
+  autoSettle?: number;
   /**
    * Metres of clearance kept between the trajectory and the cut. Default 0, which
    * puts the face through the well itself.

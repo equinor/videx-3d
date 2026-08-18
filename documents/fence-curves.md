@@ -205,6 +205,52 @@ fragment shader, so neither the fence nor `ChunkSection` is applied during a pic
 you can pick block that was visually cut away. Closing it needs a fragment-shader hook
 on `CustomPickingMaterial` and should cover the section case at the same time.
 
+## Which half to remove, and where to stand
+
+A cut face can only be read from the half that was **removed** — from the other one
+the block itself is in the way. So the side is not a preference to be set: it is a
+function of where the camera is, and the two have to be decided together.
+
+`ChunkFence.side: 'auto'` makes the stack decide it every frame. The camera's world
+position is brought into the stack's own frame and handed to `fenceAutoSide`, which
+is one `fenceSideAt` query against the **plus** side — that field partitions the whole
+plan, so there is no third answer to ask the minus side for. Orbit past the fence and
+the block changes sides, and the section stays readable.
+
+Two thresholds keep that from becoming a flicker, and both are needed:
+
+- `autoDeadband` (metres) — an orbit crosses the fence exactly where the two halves
+  are equally good, and a plan view looks straight down it. At zero the side would
+  toggle every frame in both cases. It is never allowed below `margin`: with a
+  clearance baked in, the corridor between the two sides' curves belongs to *neither*
+  removed half.
+- `autoSettle` (seconds) — the deadband alone is crossed in a frame or two at speed,
+  so a fly-through would flip the block twice on its way past.
+
+`fenceViewPose(fence, { top, bottom, from?, side? })` answers the other half of the
+question: a camera pose that looks square-on at the cut.
+
+- It is built from the **trace** (`FenceBase.points`), not from a finished side
+  curve. The side curves carry run-outs that leave the footprint, so their spread is
+  the field's rather than the well's — take their principal axis and a short well in
+  a wide field gets framed by its run-outs.
+- The heading starts at the trace's principal axis turned a quarter turn, so the view
+  is across the section rather than down it.
+- ⭐⭐ **That heading is then checked against the fence, not trusted.** A well that
+  bends enough puts the point square-on to its own average *back inside the block* —
+  measured 300 m inside on one of the demo wells, which is a cut face with rock in
+  front of it. `fenceSideAt` is right there, so the heading is searched outward from
+  square-on in 10° steps until it is one the cut can be seen from, and the pose
+  reports whether it found one (`open`). Verified over every demo well, both sides,
+  in `tests/fence-view.test.ts` (`FENCE_VIEW=all` for the sweep).
+- With `side` left free, `from` breaks the tie on **travel**: both sides are equally
+  readable, so taking the one the view is already coming from turns a fly-to into a
+  short swing instead of a trip round the back.
+
+The box it returns is the trace's plan extent through the block's depth range, which
+`CameraManager.frame`/`flyTo` turn into a distance from the camera's own fov. See
+[camera.md](./camera.md) for the flight that uses it.
+
 ## Known limits
 
 - ⚠️ **Wellhead burial on one side.** Measured worst case: 34 m at the head, 88 m

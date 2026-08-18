@@ -1,4 +1,5 @@
 import { Vec2 } from '../types/common';
+import { nearestOnPolyline, PolylineHit } from '../utils/polyline-2d';
 // Type only: the runtime dependency runs the other way, and a value import here
 // would close the cycle.
 import type { FenceField } from './wellbore-fence';
@@ -285,4 +286,51 @@ export function fenceSideAt(
   // other — which is why the local rule is safe here and reading the fill a couple
   // of cells away is not: that step can land past the opposite arm.
   return bestCross >= 0 === field.removedCross > 0 ? -distance : distance;
+}
+
+/** Reused per query — this runs every frame while a fence is on `auto`. */
+const autoHit: PolylineHit = { point: [0, 0], distance: 0, along: 0 };
+
+/**
+ * Which half a fence should take away so that a point — normally the camera —
+ * stands in the OPEN half.
+ *
+ * ⭐ The cut face is only visible from the half that was removed; from the other
+ * one the block itself is in the way. So "which side" is not a preference, it is a
+ * function of where you are looking from, and this is that function.
+ *
+ * ⭐⭐ ONE query answers both sides. The plus side's field partitions the whole
+ * plan, so a point is either in the half it removes or in the half it keeps — there
+ * is no third answer to ask the minus side for.
+ *
+ * ⚠️⚠️ THE SIGN COMES FROM THE FIELD, THE DISTANCE FROM THE CURVE. It is tempting
+ * to deadband `fenceSideAt`'s own return value, but that magnitude SATURATES a few
+ * cells out at a constant (`12 * field.cell`) — and the cell size is chosen per
+ * build to fit a node budget, so the constant differs per well. A deadband compared
+ * against it is therefore either always or never satisfied: measured 212.9 m on the
+ * demo data, so a 250 m deadband silently froze the side forever.
+ *
+ * @param current the side in force, held while the point is inside the deadband
+ * @param index the PLUS side's segment index
+ * @param field the PLUS side's field
+ * @param curve the PLUS side's curve, which the deadband is measured from
+ * @param deadband metres the point must clear the cut by before the side changes.
+ *   Anti-flicker only — it just stops a jitter across the cut toggling the block.
+ *
+ * @group Geometries
+ */
+export function fenceAutoSide(
+  current: 1 | -1,
+  index: FenceSegmentIndex,
+  field: FenceField,
+  curve: Vec2[],
+  x: number,
+  z: number,
+  deadband = 0,
+): 1 | -1 {
+  const wants: 1 | -1 = fenceSideAt(index, field, x, z) < 0 ? 1 : -1;
+  // Agreeing costs one field lookup; only a disagreement pays for the curve.
+  if (wants === current || deadband <= 0) return wants;
+  const near = nearestOnPolyline(curve, x, z, autoHit);
+  return !near || near.distance > deadband ? wants : current;
 }

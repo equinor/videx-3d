@@ -1,20 +1,35 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { scaleOrdinal } from 'd3-scale';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  RefObject,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Plane, Vector3 } from 'three';
 import { OITRenderPass, Pass } from '../../main';
 import { OutputPass } from '../../rendering/passes/OutputPass';
 import { RenderingPipeline } from '../../rendering/RenderingPipeline';
 import {
   CRS,
+  fenceViewPose,
   getProjectionDefFromUtmZone,
   PlanarPolygonGeometry,
+  readCameraTarget,
   SurfaceChunkMetrics,
   SurfaceMeta,
   surfaceGridToWorld,
   Vec2,
+  Vec3,
+  WellboreFence,
 } from '../../sdk';
+import {
+  CameraFlyToEvent,
+  CameraFocusAtPointEvent,
+} from '../../events/camera-events';
 import {
   WellboreSelectedEvent,
   wellboreSelectedEventType,
@@ -311,12 +326,19 @@ type FieldColumnStoryProps = {
   wellboreTubeDistance: number;
   wellbore: string;
   fence: boolean;
-  fenceSide: 1 | -1;
+  fenceSide: 1 | -1 | 'auto';
+  fenceAutoDeadband: number;
+  fenceAutoSettle: number;
   fenceMargin: number;
   fenceExtension: 'straight';
   fenceOffset: number;
   fenceResolution: number;
   fenceDebug: boolean;
+  fenceFlyTo: boolean;
+  fenceFlyPadding: number;
+  fenceFlyPolar: number;
+  fenceFlyRetreat: number;
+  fenceFlyDuration: number;
 };
 
 /** Publishes `window.videx3d.locate('wellbore', id)`; must sit inside `UtmArea`. */
@@ -324,6 +346,27 @@ const Videx3dLocate = () => {
   useVidex3dLocate();
   return null;
 };
+
+/**
+ * Keeps the camera's horizontal offset from its pivot in a ref.
+ *
+ * ⭐ Which way the view is coming FROM is what breaks the tie between a fence's two
+ * equally readable sides — taking the nearer one turns a fly-to into a short swing
+ * rather than a trip round the back.
+ */
+const ViewOffset = ({ into }: { into: RefObject<Vec2 | null> }) => {
+  const eye = useMemo(() => new Vector3(), []);
+  const pivot = useMemo(() => new Vector3(), []);
+  useFrame(({ camera, controls }) => {
+    camera.getWorldPosition(eye);
+    if (!readCameraTarget(controls, pivot)) pivot.set(0, 0, 0);
+    into.current = [eye.x - pivot.x, eye.z - pivot.z];
+  });
+  return null;
+};
+
+/** How long a fly-to waits for the fence it is flying to, in ms. */
+const FENCE_WAIT = 20000;
 
 const FieldColumnStory = (props: FieldColumnStoryProps) => {
   const surfaceMetaDict = useSurfaceMetaDict();
@@ -337,13 +380,58 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
   const [selectedWellbore, setSelectedWellbore] = useState<string | undefined>(
     props.wellbore,
   );
-  useEffect(() => setSelectedWellbore(props.wellbore), [props.wellbore]);
+  // ⭐⭐ The FENCE's well lags the selection. A fly-to drops it as the camera pulls
+  // back and picks the new one up out there, so the block is never rebuilt in front
+  // of the lens.
+  const [fenceWellbore, setFenceWellbore] = useState<string | undefined>(
+    props.wellbore,
+  );
+  // The side the flight decided on, pinned for its duration: `auto` would otherwise
+  // flip every time the swing crossed the cut.
+  const [flightSide, setFlightSide] = useState<1 | -1 | null>(null);
+
   useEffect(() => {
-    const onSelect = (event: WellboreSelectedEvent) =>
-      setSelectedWellbore(event.detail.id);
-    addEventListener(wellboreSelectedEventType, onSelect);
-    return () => removeEventListener(wellboreSelectedEventType, onSelect);
+    setSelectedWellbore(props.wellbore);
+    setFenceWellbore(props.wellbore);
+  }, [props.wellbore]);
+
+  const viewOffset = useRef<Vec2 | null>(null);
+  const builtFence = useRef<WellboreFence | null>(null);
+  const awaiting = useRef<{
+    id: string;
+    resolve: (fence: WellboreFence | null) => void;
+  } | null>(null);
+
+  const onFence = useCallback((fence: WellboreFence | null) => {
+    builtFence.current = fence;
+    const waiting = awaiting.current;
+    if (waiting && fence && fence.report.wellbore === waiting.id) {
+      awaiting.current = null;
+      waiting.resolve(fence);
+    }
   }, []);
+
+  const awaitFence = useCallback(
+    (id: string) =>
+      new Promise<WellboreFence | null>(resolve => {
+        if (builtFence.current?.report.wellbore === id)
+          return resolve(builtFence.current);
+        const timer = setTimeout(() => {
+          if (awaiting.current?.id === id) {
+            awaiting.current = null;
+            resolve(null);
+          }
+        }, FENCE_WAIT);
+        awaiting.current = {
+          id,
+          resolve: fence => {
+            clearTimeout(timer);
+            resolve(fence);
+          },
+        };
+      }),
+    [],
+  );
 
   // Every mapped surface the dataset carries, in stratigraphic order. Age is the
   // only key that is right by construction — see `sortByStratAge`, which excludes
@@ -562,8 +650,13 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     () =>
       props.fence
         ? {
-            wellbore: selectedWellbore,
-            side: props.fenceSide,
+            wellbore: fenceWellbore,
+            side:
+              props.fenceSide === 'auto'
+                ? (flightSide ?? 'auto')
+                : props.fenceSide,
+            autoDeadband: props.fenceAutoDeadband,
+            autoSettle: props.fenceAutoSettle,
             margin: props.fenceMargin,
             extension: props.fenceExtension,
             offset: props.fenceOffset,
@@ -573,8 +666,11 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
         : undefined,
     [
       props.fence,
-      selectedWellbore,
+      fenceWellbore,
       props.fenceSide,
+      flightSide,
+      props.fenceAutoDeadband,
+      props.fenceAutoSettle,
       props.fenceMargin,
       props.fenceExtension,
       props.fenceOffset,
@@ -582,6 +678,123 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       props.fenceDebug,
     ],
   );
+
+  // What a fly-to has to frame: the drawn column's own depth range, in scene Y.
+  // ⚠️ A surface's meta is a positive DEPTH and scene Y is up, so they invert.
+  const blockRange = useMemo(() => {
+    let top = props.water ? -props.seaLevel : 0;
+    let bottom = 0;
+    for (const meta of selected) {
+      top = Math.max(top, -meta.min);
+      bottom = Math.min(bottom, -meta.max);
+    }
+    if (props.floor) bottom -= props.floorClearance;
+    return { top, bottom: Math.min(bottom, top - 1) };
+  }, [
+    selected,
+    props.water,
+    props.seaLevel,
+    props.floor,
+    props.floorClearance,
+  ]);
+
+  // ⭐ The ceiling on the pull-back: "far enough to see the whole block". Without a
+  // bound tied to the SCENE, a retreat factor compounds — every click zooms out
+  // from wherever the last one left off and the field recedes for good.
+  const blockBox = useMemo(() => {
+    if (!outline) return undefined;
+    const [ox, oz] = outline.offset;
+    const min = outline.min;
+    const max = outline.max;
+    return {
+      min: [min[0] + ox, blockRange.bottom, min[1] + oz] as Vec3,
+      max: [max[0] + ox, blockRange.top, max[1] + oz] as Vec3,
+    };
+  }, [outline, blockRange]);
+
+  // Read by the selection listener below, which stays registered once — re-binding
+  // it per render would drop a flight already in progress.
+  const flight = useRef({
+    enabled: false,
+    side: 'auto' as 1 | -1 | 'auto',
+    padding: 1.6,
+    polar: 78,
+    retreat: 3,
+    duration: 1.6,
+    range: blockRange,
+    box: blockBox,
+  });
+  flight.current = {
+    enabled: props.fence && props.fenceFlyTo,
+    side: props.fenceSide,
+    padding: props.fenceFlyPadding,
+    polar: props.fenceFlyPolar,
+    retreat: props.fenceFlyRetreat,
+    duration: props.fenceFlyDuration,
+    range: blockRange,
+    box: blockBox,
+  };
+  const showing = useRef<string | undefined>(fenceWellbore);
+  showing.current = fenceWellbore;
+
+  useEffect(() => {
+    const onSelect = (event: WellboreSelectedEvent) => {
+      const next = event.detail.id;
+      setSelectedWellbore(next);
+      const plan = flight.current;
+
+      // ctrl+click, or no fence to fly to: swap in place and leave the camera be.
+      if (!plan.enabled || event.detail.flyTo === false) {
+        setFenceWellbore(next);
+        if (plan.enabled || !event.detail.flyTo || !event.detail.position)
+          return;
+        // Without the fence this story still flies the old way — to the point that
+        // was clicked — because the well map decorator no longer does it for us.
+        dispatchEvent(
+          new CameraFocusAtPointEvent({ point: event.detail.position }),
+        );
+        return;
+      }
+
+      // ⭐ The old cut goes NOW, so it has gone by the time the camera is out.
+      const departing = showing.current;
+      setFenceWellbore(undefined);
+      setFlightSide(null);
+      dispatchEvent(
+        new CameraFlyToEvent({
+          // Nothing to back away from on the first selection.
+          retreat: departing
+            ? { factor: plan.retreat, box: plan.box }
+            : undefined,
+          duration: plan.duration,
+          destination: async () => {
+            setFenceWellbore(next);
+            const built = await awaitFence(next);
+            if (!built) return null;
+            const pose = fenceViewPose(built, {
+              top: plan.range.top,
+              bottom: plan.range.bottom,
+              from: viewOffset.current ?? undefined,
+              side: plan.side === 'auto' ? undefined : plan.side,
+              polar: plan.polar,
+            });
+            setFlightSide(pose.side);
+            return {
+              box: pose.box,
+              azimuth: pose.azimuth,
+              polar: pose.polar,
+              padding: plan.padding,
+            };
+          },
+          // Hand the side back to `auto`, which now agrees: the camera is standing
+          // in the half the flight chose to remove.
+          callback: () => setFlightSide(null),
+        }),
+      );
+    };
+    addEventListener(wellboreSelectedEventType, onSelect);
+    return () => removeEventListener(wellboreSelectedEventType, onSelect);
+  }, [awaitFence]);
 
   // Per-layer build report. `coverage` is what the surface has data of its own
   // for inside the footprint; `unit` is what the strat column called it; `kept` is
@@ -630,6 +843,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     <>
       <UtmArea origin={origin} utmZone={utmZone}>
         <Videx3dLocate />
+        <ViewOffset into={viewOffset} />
         <ambientLight intensity={0.6} />
         <directionalLight position={[0.5, 1, 0.3]} intensity={1.1} />
         <ChunkStack
@@ -639,6 +853,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
           immersion={immersion}
           section={section}
           fence={fence}
+          onFence={onFence}
           resolve={resolve}
           rimSpacing={props.rimSpacing}
           maxError={props.maxError}
@@ -696,6 +911,9 @@ const meta = {
     cameraPosition: [9000, 4000, 9000],
     cameraTarget: [0, -1500, 0],
     colorScale,
+    // ⚠️ This story flies its OWN way when the fence is on (retreat, swing, come
+    // in), and a second mover reaching for the camera partway through hijacks it.
+    wellMapCamera: false,
     docs: {
       description: {
         component:
@@ -736,12 +954,19 @@ export const Default: Story = {
     wellbore: storyArgs.defaultWellbore,
     // Fence
     fence: false,
-    fenceSide: 1,
+    fenceSide: 'auto',
+    fenceAutoDeadband: 50,
+    fenceAutoSettle: 0.2,
     fenceMargin: 0,
     fenceExtension: 'straight',
     fenceOffset: 0,
     fenceResolution: 10,
     fenceDebug: false,
+    fenceFlyTo: true,
+    fenceFlyPadding: 1.6,
+    fenceFlyPolar: 78,
+    fenceFlyRetreat: 2,
+    fenceFlyDuration: 1.6,
     // Resolve
     seal: true,
     sealMode: 'proportional',
@@ -888,9 +1113,21 @@ export const Default: Story = {
     },
     fenceSide: {
       control: { type: 'inline-radio' },
-      options: [1, -1],
+      options: [1, -1, 'auto'],
       description:
-        'Which half is taken AWAY, relative to the fence curve walking the well from head to TD. ⭐ Free to flip: both halves are built up front, so this swaps a texture and a curve rather than rebuilding. The two are flip sides of ONE cut — the run-outs are agreed between them, and only the repairs a particular side needs differ.',
+        'Which half is taken AWAY, relative to the fence curve walking the well from head to TD. ⭐ Free to flip: both halves are built up front, so this swaps a texture and a curve rather than rebuilding. The two are flip sides of ONE cut — the run-outs are agreed between them, and only the repairs a particular side needs differ. ⭐⭐ `auto` keeps the CAMERA in the open half, which is the only half the cut face can be seen from: orbit past the fence and the block changes sides so the section stays readable.',
+      table: { category: 'Fence' },
+    },
+    fenceAutoDeadband: {
+      control: { type: 'range', min: 0, max: 500, step: 10 },
+      description:
+        'Metres the camera must clear the cut by before `auto` flips. ⭐ Anti-flicker only — an orbit crosses the fence exactly where the two halves are equally good, and a plan view looks straight down it, so a little slack stops a jitter there toggling the whole block. ⚠️ Measured against the CURVE, not the sign field: the field’s magnitude saturates a few cells out at a constant, so a deadband compared against that is either always or never satisfied. Never less than `fenceMargin`.',
+      table: { category: 'Fence' },
+    },
+    fenceAutoSettle: {
+      control: { type: 'range', min: 0, max: 2, step: 0.05 },
+      description:
+        'Seconds the camera must stay clear before `auto` acts on it. ⭐ Time as well as distance, because the deadband alone is crossed in a frame or two at speed — this is what keeps a fly-through from flipping the block twice on its way past.',
       table: { category: 'Fence' },
     },
     fenceMargin: {
@@ -923,6 +1160,35 @@ export const Default: Story = {
       description:
         'Draw the cut face as a magenta wireframe instead of as rock — the ribbon the fence actually generated, on its own. ⭐ The face is built independently of the block, so this is the only way to tell a geometry fault from a clipping one.',
       table: { category: 'Fence' },
+    },
+    fenceFlyTo: {
+      description:
+        'Fly to a newly selected well the long way: pull back as the old cut is removed, swing across at that distance, then come in on the new one. ⭐⭐ The straight line between two close-up views runs THROUGH the block, and the fence would be rebuilt right in front of the lens on the way. Off flies straight to the point that was clicked. ⚠️ ctrl+click always swaps the cut without moving the camera.',
+      table: { category: 'Fly to' },
+    },
+    fenceFlyPadding: {
+      control: { type: 'range', min: 1, max: 4, step: 0.1 },
+      description:
+        'Slack around the framed cut, as a multiple of the distance that just fits it. ⭐ This is the “how much of the fence do I want to see” dial: 1 fills the view with the well’s own trace, higher takes in its surroundings.',
+      table: { category: 'Fly to' },
+    },
+    fenceFlyPolar: {
+      control: { type: 'range', min: 0, max: 90, step: 1 },
+      description:
+        'Degrees from straight down to arrive at. 90 is dead level with the cut face; a little under looks slightly down on it, which keeps the block’s top surface in the frame for context.',
+      table: { category: 'Fly to' },
+    },
+    fenceFlyRetreat: {
+      control: { type: 'range', min: 1, max: 6, step: 0.5 },
+      description:
+        'How far to pull back before travelling, as a multiple of the distance the camera is at. ⚠️ 1 does not retreat at all, so the swing happens at close range — through the block. ⭐ Bounded by “far enough to see the whole block”, so an already-distant view does not pull back at all and repeated selections cannot compound the zoom-out.',
+      table: { category: 'Fly to' },
+    },
+    fenceFlyDuration: {
+      control: { type: 'range', min: 0.4, max: 4, step: 0.1 },
+      description:
+        'Seconds for the WHOLE flight, split 30/40/30 across pulling back, swinging across and coming in. ⭐⭐ A budget, not a hint: `CameraControls` eases exponentially and never quite arrives, so each leg also hands over on time — the next one simply eases on from wherever it got to.',
+      table: { category: 'Fly to' },
     },
     seal: {
       description:

@@ -7,10 +7,12 @@ import {
   nearestOnPolyline,
   leftNormal2D,
   polylineArcLengths,
+  polylineBounds2D,
   polylineLength,
   polylineMinRadius,
   polylineNormals2D,
   polylineRadiusProfile,
+  principalDirection2D,
   RelaxResult,
   relaxPolyline2DWithin,
   relaxPolyline2DClearOf,
@@ -432,42 +434,9 @@ export type FenceBase = {
   degenerate: boolean;
 };
 
-/** Principal direction of a plan point cloud, for a well that barely deviates. */
-function principalDirection(points: Vec2[]): Vec2 {
-  let cx = 0;
-  let cz = 0;
-  for (const p of points) {
-    cx += p[0];
-    cz += p[1];
-  }
-  cx /= points.length;
-  cz /= points.length;
-  let sxx = 0;
-  let sxz = 0;
-  let szz = 0;
-  for (const p of points) {
-    const dx = p[0] - cx;
-    const dz = p[1] - cz;
-    sxx += dx * dx;
-    sxz += dx * dz;
-    szz += dz * dz;
-  }
-  const theta = 0.5 * Math.atan2(2 * sxz, sxx - szz);
-  return [Math.cos(theta), Math.sin(theta)];
-}
-
 /** Diagonal of a plan curve's bounding box. */
 function planExtent(points: Vec2[]): number {
-  let minX = Infinity;
-  let minZ = Infinity;
-  let maxX = -Infinity;
-  let maxZ = -Infinity;
-  for (const p of points) {
-    if (p[0] < minX) minX = p[0];
-    if (p[0] > maxX) maxX = p[0];
-    if (p[1] < minZ) minZ = p[1];
-    if (p[1] > maxZ) maxZ = p[1];
-  }
+  const [minX, minZ, maxX, maxZ] = polylineBounds2D(points);
   return Math.hypot(maxX - minX, maxZ - minZ);
 }
 
@@ -544,7 +513,7 @@ export function fenceBaseCurve(
   if (planExtent(points) < MIN_PLAN_EXTENT) {
     // No plan direction of its own. The spread's principal axis is the only
     // non-arbitrary answer, and the run-outs carry the rest of the cut.
-    const direction = principalDirection(points);
+    const direction = principalDirection2D(points);
     let cx = 0;
     let cz = 0;
     for (const p of points) {

@@ -1,18 +1,22 @@
-import { useEffect, useMemo, useState } from 'react';
+import { RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   DataTexture,
   FloatType,
+  Group,
   Matrix3,
+  Matrix4,
   NearestFilter,
   RedFormat,
   RGBAFormat,
   Vector2,
+  Vector3,
   Vector4,
 } from 'three';
 import {
   assertFenceInvariants,
   buildWellboreFence,
+  fenceAutoSide,
   fenceFieldPlacement,
   FenceReport,
   getSplineCurve,
@@ -29,9 +33,14 @@ import {
 import {
   ChunkFence,
   ChunkFenceState,
+  DEFAULT_FENCE_AUTO_DEADBAND,
+  DEFAULT_FENCE_AUTO_SETTLE,
   DEFAULT_FENCE_RESOLUTION,
 } from './chunk-defs';
 import { ChunkFenceUniforms } from './chunk-material';
+
+const eye = new Vector3();
+const toStack = new Matrix4();
 
 type UtmToArea = (easting: number, northing: number, altitude?: number) => Vec3;
 
@@ -86,6 +95,8 @@ function outlineRings(outline: PlanarPolygonGeometry | null): Vec2[][] {
  * @param outline the stack's footprint — the fence is run out past it at both ends
  * @param store where the position log comes from
  * @param utmToArea the stack's UTM→scene mapping
+ * @param frame the stack's own frame, for bringing the camera out of world space
+ * @param onFence called with each finished fence, or `null` when there is none
  *
  * @group Components
  */
@@ -94,6 +105,8 @@ export function useStackFence(
   outline: PlanarPolygonGeometry | null,
   store: Store | null,
   utmToArea: UtmToArea | undefined,
+  frame?: RefObject<Group | null>,
+  onFence?: (fence: WellboreFence | null) => void,
 ) {
   const hasFence = !!fence;
   // ⚠️ Keyed only on PRESENCE, as `sectionState` is: this object reaches every
@@ -279,13 +292,46 @@ export function useStackFence(
   // Read from the LIVE prop every frame, so `side` is free to sweep: nothing here
   // touches React and nothing rebuilds.
   const [side, setSide] = useState<1 | -1>(1);
-  useFrame(() => {
+  // How long the camera has been decisively across the cut, in seconds.
+  const crossed = useRef(0);
+  useFrame(({ camera }, delta) => {
     if (!fence || !state) {
       uniform.value.set(0, 1);
       uniformInverse.value.set(0, -1);
       return;
     }
-    const wanted = fence.side ?? 1;
+    let wanted: 1 | -1 = fence.side === 'auto' ? side : (fence.side ?? 1);
+    if (fence.side === 'auto' && resolved) {
+      // ⭐ The camera has to be in the half that was REMOVED — from the other one
+      // the block is in the way and there is no cut face to read.
+      camera.getWorldPosition(eye);
+      const root = frame?.current;
+      if (root) {
+        root.updateWorldMatrix(true, false);
+        eye.applyMatrix4(toStack.copy(root.matrixWorld).invert());
+      }
+      const wants = fenceAutoSide(
+        side,
+        resolved.fence.plus.index,
+        resolved.fence.plus.field,
+        resolved.plus.curve,
+        eye.x,
+        eye.z,
+        Math.max(fence.autoDeadband ?? DEFAULT_FENCE_AUTO_DEADBAND, margin),
+      );
+      // ⚠️ Time, not distance, is what keeps a fly-through from flipping the block
+      // twice on its way past: the deadband alone is crossed at speed.
+      if (wants === side) crossed.current = 0;
+      else {
+        crossed.current += delta;
+        if (
+          crossed.current >= (fence.autoSettle ?? DEFAULT_FENCE_AUTO_SETTLE)
+        ) {
+          crossed.current = 0;
+          wanted = wants;
+        }
+      }
+    }
     if (wanted !== side) setSide(wanted);
     const current = resolved
       ? wanted > 0
@@ -335,6 +381,15 @@ export function useStackFence(
         at?.segments.dispose();
       }
     };
+  }, [resolved]);
+
+  // ⚠️ Held in a ref so an inline callback does not re-announce the same fence on
+  // every parent render — a host waiting on this to move the camera would then fly
+  // again for nothing.
+  const announce = useRef(onFence);
+  announce.current = onFence;
+  useEffect(() => {
+    announce.current?.(resolved?.fence ?? null);
   }, [resolved]);
 
   return { state, uniforms, uniformsInverse, report: resolved?.report ?? null };

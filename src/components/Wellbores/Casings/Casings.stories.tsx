@@ -386,9 +386,9 @@ const DemoCasings = ({ args }: { args: StoryArgs }) => {
       ...(args.showUvGrid ? { map: uvGrid, metalness: 0 } : {}),
       ...(args.applyNormalMap
         ? {
-          normalMap,
-          normalScale: new Vector2(args.normalScale, args.normalScale),
-        }
+            normalMap,
+            normalScale: new Vector2(args.normalScale, args.normalScale),
+          }
         : {}),
     };
     return {

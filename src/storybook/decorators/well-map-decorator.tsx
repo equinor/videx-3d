@@ -31,11 +31,20 @@ const style: any = {
 
 type Props = {
   colorScale?: ScaleOrdinal<string, string>;
+  /**
+   * Move the camera when a wellbore is SELECTED. Default true.
+   *
+   * ⭐ Off for a story that flies its own way — the fence's fly-to has to retreat
+   * before it travels, and a second mover reaching for the camera halfway through
+   * hijacks it. The depth handle still drives the camera either way; that is the
+   * well map's own UI.
+   */
+  camera?: boolean;
 };
 
 const wellboreManager = new WellboreManager();
 
-const WellMapSelector = ({ colorScale }: Props) => {
+const WellMapSelector = ({ colorScale, camera = true }: Props) => {
   const offsetPosition = useRef<Vec3>([0, 0, 0]);
 
   const [depth, setDepth] = useState<number | undefined>();
@@ -116,20 +125,27 @@ const WellMapSelector = ({ colorScale }: Props) => {
                 nearestPosition.position * wellboreState.current.measuredLength,
             );
 
-            if (event.detail.flyTo) {
-              dispatchEvent(
-                new CameraFocusAtPointEvent({
-                  point: destination,
-                }),
-              );
-            } else {
-              dispatchEvent(new CameraSetPositionEvent(event.detail.position));
+            if (camera) {
+              if (event.detail.flyTo) {
+                dispatchEvent(
+                  new CameraFocusAtPointEvent({
+                    point: destination,
+                  }),
+                );
+              } else {
+                dispatchEvent(
+                  new CameraSetPositionEvent(event.detail.position),
+                );
+              }
             }
           }
         } else if (event.detail.depth) {
-          onDepthChange(event.detail.depth, event.detail.flyTo);
-        } else {
+          if (camera) onDepthChange(event.detail.depth, event.detail.flyTo);
+          else setDepth(event.detail.depth);
+        } else if (camera) {
           onDepthChange(wellboreState.current.measuredTop);
+        } else {
+          setDepth(wellboreState.current.measuredTop);
         }
       }
     }
@@ -139,7 +155,7 @@ const WellMapSelector = ({ colorScale }: Props) => {
     return () => {
       removeEventListener(wellboreSelectedEventType, onWellboreSelect);
     };
-  }, [store, selected, wellIdentifier, onDepthChange]);
+  }, [store, selected, wellIdentifier, onDepthChange, camera]);
 
   const onSelect = useCallback((id: string, depth: number) => {
     if (wellboreState.current) {
@@ -189,7 +205,10 @@ const WellMapSelector = ({ colorScale }: Props) => {
 export const WellMapDecorator = (Story: any, { parameters }: any) => {
   return (
     <div style={style}>
-      <WellMapSelector colorScale={parameters.colorScale} />
+      <WellMapSelector
+        colorScale={parameters.colorScale}
+        camera={parameters.wellMapCamera !== false}
+      />
       <Story />
     </div>
   );

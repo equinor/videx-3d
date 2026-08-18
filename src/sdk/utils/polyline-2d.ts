@@ -20,6 +20,61 @@ export function leftNormal2D(tx: number, tz: number): Vec2 {
 }
 
 /**
+ * Axis-aligned bounds of a point set, as `[minX, minZ, maxX, maxZ]`.
+ *
+ * @group Utils
+ */
+export function polylineBounds2D(
+  points: Vec2[],
+): [number, number, number, number] {
+  let minX = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxZ = -Infinity;
+  for (const p of points) {
+    if (p[0] < minX) minX = p[0];
+    if (p[0] > maxX) maxX = p[0];
+    if (p[1] < minZ) minZ = p[1];
+    if (p[1] > maxZ) maxZ = p[1];
+  }
+  return [minX, minZ, maxX, maxZ];
+}
+
+/**
+ * The direction a point cloud is most spread along, as a unit vector.
+ *
+ * ⭐ The major axis of the covariance, so it is the SPREAD's direction and not the
+ * end-to-end chord — a curve that comes back on itself still reports the axis it
+ * runs along, which is the one worth looking at it across.
+ *
+ * ⚠️ An axis has no sign: the result may point either way along it.
+ *
+ * @group Utils
+ */
+export function principalDirection2D(points: Vec2[]): Vec2 {
+  let cx = 0;
+  let cz = 0;
+  for (const p of points) {
+    cx += p[0];
+    cz += p[1];
+  }
+  cx /= points.length;
+  cz /= points.length;
+  let sxx = 0;
+  let sxz = 0;
+  let szz = 0;
+  for (const p of points) {
+    const dx = p[0] - cx;
+    const dz = p[1] - cz;
+    sxx += dx * dx;
+    sxz += dx * dz;
+    szz += dz * dz;
+  }
+  const theta = 0.5 * Math.atan2(2 * sxz, sxx - szz);
+  return [Math.cos(theta), Math.sin(theta)];
+}
+
+/**
  * Cumulative length at each vertex, in the polyline's own units.
  *
  * @group Utils
