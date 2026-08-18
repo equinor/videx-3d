@@ -268,7 +268,7 @@ type FieldColumnStoryProps = {
   collapseThreshold: number;
   constrainCoverage: boolean;
   section: boolean;
-  sectionMode: 'fixed' | 'camera';
+  sectionMode: 'fixed' | 'camera' | 'target';
   sectionCameraDistance: number;
   sectionVertical: boolean;
   sectionAzimuth: number;
@@ -542,6 +542,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
         props.sectionMode === 'camera'
           ? props.sectionCameraDistance
           : undefined,
+      lockToTarget: props.sectionMode === 'target',
       vertical: props.sectionVertical,
       water: props.sectionWater,
       carrier: props.sectionCarrier,
@@ -1019,20 +1020,20 @@ export const Default: Story = {
     },
     sectionMode: {
       control: { type: 'inline-radio' },
-      options: ['fixed', 'camera'],
+      options: ['fixed', 'camera', 'target'],
       description:
-        '`camera` locks the plane in front of the camera, so orbiting chooses the angle and dollying drives the cut through the block — no gizmo to hit. `fixed` drives it from the azimuth/dip/distance controls below.',
+        '`camera` locks the plane in front of the camera, so orbiting chooses the angle and dollying drives the cut through the block — no gizmo to hit. `target` anchors it on the camera TARGET instead: orbiting still swings the cut, but zooming leaves it where it is, so you can come right up to the cut face to read it. `fixed` drives it from the azimuth/dip/distance controls below.',
       table: { category: 'Section' },
     },
     sectionCameraDistance: {
       control: { type: 'range', min: 0, max: 20000, step: 100 },
       description:
-        'Metres in front of the camera to put the plane (`camera` mode). With `sectionVertical` on this is measured in PLAN.',
+        'Metres in front of the camera to put the plane (`camera` mode only — `target` has no distance to set). With `sectionVertical` on this is measured in PLAN.',
       table: { category: 'Section' },
     },
     sectionVertical: {
       description:
-        'Keep a camera-locked plane VERTICAL — it takes the camera’s heading but never its dip. A cut that tilts as you orbit makes the block appear to shear, which is exactly what stops the geology being readable.',
+        'Keep a camera-locked plane VERTICAL — it takes the camera’s heading but never its dip. A cut that tilts as you orbit makes the block appear to shear, which is exactly what stops the geology being readable. Applies to `target` mode too, where the plane then stands vertically ON the pivot.',
       table: { category: 'Section' },
     },
     sectionAzimuth: {

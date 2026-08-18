@@ -230,7 +230,7 @@ type SyntheticColumnProps = {
   cursorSamples: number;
   cursorFocus: boolean;
   section: boolean;
-  sectionMode: 'fixed' | 'camera';
+  sectionMode: 'fixed' | 'camera' | 'target';
   sectionCameraDistance: number;
   sectionVertical: boolean;
   sectionAzimuth: number;
@@ -730,6 +730,7 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
         props.sectionMode === 'camera'
           ? props.sectionCameraDistance
           : undefined,
+      lockToTarget: props.sectionMode === 'target',
       vertical: props.sectionVertical,
       water: props.sectionWater,
       carrier: props.sectionCarrier,
@@ -1306,21 +1307,21 @@ export const Default: Story = {
     },
     sectionMode: {
       control: 'inline-radio',
-      options: ['camera', 'fixed'],
+      options: ['camera', 'target', 'fixed'],
       description:
-        '⭐ **camera** locks the plane in front of the camera, so ORBITING and DOLLYING are the interaction — no gizmo to grab, and the cut is always square to the view. **fixed** uses the azimuth/dip/distance below instead.',
+        '⭐ **camera** locks the plane in front of the camera, so ORBITING and DOLLYING are the interaction — no gizmo to grab, and the cut is always square to the view. **target** anchors the same plane on the camera TARGET, so orbiting still swings the cut but zooming no longer drives it through the block — fly to a point and the cut lands on it, then come in close to read the face. **fixed** uses the azimuth/dip/distance below instead.',
       table: { category: 'Section' },
     },
     sectionCameraDistance: {
       control: { type: 'range', min: 0, max: 15000, step: 100 },
       description:
-        'How far in front of the camera the plane sits, in metres. Everything NEARER than this is cut away, so reducing it drives the cut deeper into the block. `camera` mode only.',
+        'How far in front of the camera the plane sits, in metres. Everything NEARER than this is cut away, so reducing it drives the cut deeper into the block. `camera` mode only — `target` takes its position from the pivot and has no distance to set.',
       table: { category: 'Section' },
     },
     sectionVertical: {
       control: 'boolean',
       description:
-        '⭐ Keep the camera-locked plane VERTICAL — it takes the camera’s heading and position but never its dip. On by default because a section is conventionally drawn on a vertical plane, and a cut that tilts with the camera makes the block appear to SHEAR as you orbit, which is exactly when the geology stops being readable. Off gives the literal view-aligned cut. ⚠️ `sectionCameraDistance` is then measured horizontally, in plan. `camera` mode only.',
+        '⭐ Keep the camera-locked plane VERTICAL — it takes the camera’s heading but never its dip. On by default because a section is conventionally drawn on a vertical plane, and a cut that tilts with the camera makes the block appear to SHEAR as you orbit, which is exactly when the geology stops being readable. Off gives the literal view-aligned cut. ⚠️ `sectionCameraDistance` is then measured horizontally, in plan; in `target` mode the plane stands vertically ON the pivot. `camera` and `target` modes only.',
       table: { category: 'Section' },
     },
     sectionAzimuth: {

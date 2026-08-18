@@ -468,7 +468,8 @@ export type ChunkSection = {
    * vertical exaggeration, and the shader tests the raw vertex position for
    * exactly this reason.
    *
-   * Ignored when {@link ChunkSection.cameraDistance} is set.
+   * Ignored when {@link ChunkSection.cameraDistance} or
+   * {@link ChunkSection.lockToTarget} is set.
    */
   plane?: Plane;
   /**
@@ -483,12 +484,30 @@ export type ChunkSection = {
    * it is exact under a vertical exaggeration. `plane` is ignored while this is
    * set, but the stack still publishes the resulting plane, so the debug view (and
    * anything else) sees the same one.
+   *
+   * ⚠️ Ignored while {@link ChunkSection.lockToTarget} is on, which anchors the
+   * plane on the camera TARGET instead of at a distance from the eye.
    */
   cameraDistance?: number;
   /**
-   * Keep a camera-locked plane VERTICAL: it takes the camera's heading and
-   * position but never its dip. Default true, and only meaningful together with
-   * {@link ChunkSection.cameraDistance}.
+   * Anchor the camera-locked plane on the camera TARGET — the orbit pivot — so it
+   * passes through that point, still facing the camera. Default false.
+   *
+   * ⭐ Orbiting then swings the cut about the pivot and dollying does NOT move it:
+   * you can zoom right into the cut face to read it without the cut running away
+   * through the block, which is what makes {@link ChunkSection.cameraDistance}
+   * hard to inspect closely. Flying to a point puts the cut on that point.
+   *
+   * ⚠️ The target comes from the default camera controls (`state.controls`), so
+   * this needs controls with `makeDefault` that expose a target (`CameraControls`,
+   * `OrbitControls`). Without them it falls back to `cameraDistance` in front of
+   * the eye, silently.
+   */
+  lockToTarget?: boolean;
+  /**
+   * Keep a camera-locked plane VERTICAL: it takes the camera's heading but never
+   * its dip. Default true, and only meaningful together with
+   * {@link ChunkSection.cameraDistance} or {@link ChunkSection.lockToTarget}.
    *
    * ⭐ A section is conventionally drawn on a vertical plane, and a cut that tilts
    * with the camera makes the block appear to shear as you orbit — the geology
@@ -496,7 +515,9 @@ export type ChunkSection = {
    * literal view-aligned cut, which is worth having but is an effect rather than a
    * tool.
    *
-   * ⚠️ `cameraDistance` is then a HORIZONTAL distance, measured in plan.
+   * ⚠️ `cameraDistance` is then a HORIZONTAL distance, measured in plan. Under
+   * {@link ChunkSection.lockToTarget} the plane still passes through the target,
+   * standing vertically on it.
    */
   vertical?: boolean;
   /**

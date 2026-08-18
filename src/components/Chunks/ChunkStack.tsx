@@ -74,7 +74,30 @@ const sectionForward = new Vector3();
 const sectionEye = new Vector3();
 const sectionUp = new Vector3();
 const sectionNormal = new Vector3();
+const sectionAnchor = new Vector3();
 const sectionMatrix = new Matrix4();
+
+/**
+ * The camera target, from whatever controls are installed as the default —
+ * `CameraControls` hands it out through `getTarget`, `OrbitControls` holds it as a
+ * plain `target`. `false` when there is no target to read.
+ */
+function readCameraTarget(controls: unknown, out: Vector3) {
+  const source = controls as {
+    getTarget?: (out: Vector3) => Vector3;
+    target?: Vector3;
+  } | null;
+  if (!source) return false;
+  if (typeof source.getTarget === 'function') {
+    source.getTarget(out);
+    return true;
+  }
+  if (source.target?.isVector3) {
+    out.copy(source.target);
+    return true;
+  }
+  return false;
+}
 
 /**
  * {@link ChunkStack} props.
@@ -335,7 +358,7 @@ export const ChunkStack = ({
   // ⚠️ Registered here, so it runs AFTER any child's own `useFrame` (child effects
   // subscribe first) — a caller animating the plane from inside the stack is
   // therefore read in the same frame it wrote, not the next one.
-  useFrame(({ camera }) => {
+  useFrame(({ camera, controls }) => {
     if (!section || !sectionState) {
       sectionUniform.value.set(0, 0, 0, -1);
       sectionUniformInverse.value.set(0, 0, 0, 1);
@@ -344,9 +367,11 @@ export const ChunkStack = ({
     sectionState.enabled = section.enabled !== false;
     sectionState.offset = section.offset ?? DEFAULT_SECTION_OFFSET;
 
-    if (section.cameraDistance !== undefined) {
+    if (section.cameraDistance !== undefined || section.lockToTarget) {
       // The plane sits `distance` in front of the camera FACING it, so everything
-      // nearer is cut away and dollying in drives the cut through the block.
+      // nearer is cut away and dollying in drives the cut through the block —
+      // unless it is locked to the target, where it passes through the pivot and
+      // only orbiting moves it.
       camera.getWorldDirection(sectionForward);
       camera.getWorldPosition(sectionEye);
       if (section.vertical !== false) {
@@ -361,9 +386,17 @@ export const ChunkStack = ({
         }
         sectionForward.normalize();
       }
+      // Anchor on the pivot when asked and there is one to read; otherwise stay in
+      // front of the eye, which is also the fallback when no controls expose a
+      // target. The vertical flattening above is what makes a target-locked plane
+      // stand vertically ON the pivot rather than tilt through it.
+      const onTarget =
+        !!section.lockToTarget && readCameraTarget(controls, sectionAnchor);
+      if (!onTarget) sectionAnchor.copy(sectionEye);
       sectionState.plane.set(
         sectionNormal.copy(sectionForward).negate(),
-        sectionForward.dot(sectionEye) + section.cameraDistance,
+        sectionForward.dot(sectionAnchor) +
+          (onTarget ? 0 : (section.cameraDistance ?? 0)),
       );
       // Built in world space; the stack's own frame is where it has to be tested,
       // and the two differ as soon as the stack carries a vertical exaggeration.

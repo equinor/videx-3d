@@ -3482,7 +3482,8 @@ Two gaps remain, recorded rather than worked around:
 #### 15.9.5 The camera as the handle
 
 `ChunkSection.cameraDistance` locks the plane that many metres in front of the
-camera, facing it, so everything nearer is cut away.
+camera, facing it, so everything nearer is cut away. `ChunkSection.lockToTarget`
+locks it to the camera TARGET instead (below).
 
 ⭐ **This replaced a drag gizmo, and is better than one.** Orbiting chooses the
 angle and dollying drives the cut through the block, so there is no widget to hit,
@@ -3504,6 +3505,20 @@ The plane is built in WORLD space (from the camera) and transformed into the sta
 frame with the inverse of a root `<group>`'s `matrixWorld` — which is why the stack
 now renders one. That group is the answer to §15.7's vertical-exaggeration warning:
 the two frames are identical until a stack is scaled, and then they are not.
+
+⭐ **`lockToTarget` anchors the same plane on the camera TARGET** instead of a
+distance in front of the eye. The orientation still comes from the camera, so
+orbiting swings the cut exactly as before, but dollying no longer moves it — which
+is what `cameraDistance` cannot do: there, coming in for a close look at the cut
+face pushes the cut ahead of you and through the block. It also makes a fly-to land
+the cut ON the point flown to, since that point is what the controls are targeting.
+`vertical` behaves identically — the heading is flattened before it is dotted with
+the anchor, so the plane stands vertically on the pivot — and `cameraDistance` is
+ignored, the pivot being the position. ⚠️ The target is read from the default camera
+controls (`state.controls`, via `getTarget` or `target`), so it needs controls with
+`makeDefault`; without a readable target it falls back to `cameraDistance` in front
+of the eye, silently, because a section that vanishes is a worse answer than one
+that behaves like the mode next door.
 
 ⚠️ `plane` is ignored while this is set, but the resulting plane is still published
 on `ChunkSectionState`, so the cut face, the shader and the debug view all read the
