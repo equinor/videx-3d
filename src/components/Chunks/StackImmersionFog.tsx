@@ -1,8 +1,14 @@
 import { RefObject, useMemo } from 'react';
 import { Group, Plane } from 'three';
+import { fenceSideAt } from '../../sdk';
 import { DEFAULT_OCEAN_DEEP_COLOR } from '../Ocean/ocean-material';
 import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../Ocean/ocean-volume-material';
-import { ChunkSectionState, StackImmersion, StackWater } from './chunk-defs';
+import {
+  ChunkFenceState,
+  ChunkSectionState,
+  StackImmersion,
+  StackWater,
+} from './chunk-defs';
 import { SurfaceSampler } from './surface-sampler';
 import { ImmersionMedium, useImmersionFog } from './useImmersionFog';
 
@@ -15,6 +21,8 @@ export type StackImmersionFogProps = {
   /** the block's base in the stack's own frame — the carrier is not sampleable */
   base: number | null;
   section: ChunkSectionState | null;
+  /** the stack's live fence, which removes a whole half of the block */
+  fence: ChunkFenceState | null;
   frame: RefObject<Group | null>;
 };
 
@@ -37,6 +45,7 @@ export const StackImmersionFog = ({
   sampler,
   base,
   section,
+  fence,
   frame,
 }: StackImmersionFogProps) => {
   const level = -(water?.depth ?? 0);
@@ -67,6 +76,13 @@ export const StackImmersionFog = ({
           return null;
       }
 
+      // The same for a fence, which removes a whole half of the block.
+      // ⭐ Asked EXACTLY, off the same segments the shader discards by, so the fog
+      // switches at the cut rather than a few metres before or after it.
+      if (fence?.enabled && fence.index && fence.field) {
+        if (fenceSideAt(fence.index, fence.field, x, z) < 0) return null;
+      }
+
       // The highest thing drawn over this point: the sea bed under the water, the
       // top of the block over land. `null` = nothing drawn here at all.
       const ground = sampler.getHeightAt(x, z);
@@ -95,6 +111,7 @@ export const StackImmersionFog = ({
   }, [
     sampler,
     section,
+    fence,
     base,
     level,
     span,

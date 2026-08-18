@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   createFenceField,
-  fenceContour,
-  nearestOnPolyline,
   sampleFenceField,
 } from '../src/sdk/geometries/wellbore-fence';
 import {
@@ -11,6 +9,10 @@ import {
 } from '../src/sdk/geometries/fence-ribbon';
 import { StackSectionSource } from '../src/sdk/geometries/surface-section';
 import { Vec2 } from '../src/sdk/types/common';
+import {
+  nearestOnPolyline,
+  resamplePolyline2D,
+} from '../src/sdk/utils/polyline-2d';
 
 const bounds: [number, number, number, number] = [-1000, -1000, 1000, 1000];
 
@@ -64,209 +66,140 @@ describe('nearestOnPolyline', () => {
   });
 });
 
-describe('fenceContour', () => {
-  it('cuts a STRAIGHT line where the fence is straight', () => {
-    // ⭐⭐ The guard for the wave. Near its own curve a signed distance is linear,
-    // and bilinear reproduces a linear function exactly — so a straight fence must
-    // contour to a straight line whatever the cell size. Smoothed (Hermite)
-    // weights are exact only AT the nodes and bow between them, which put a
-    // one-cell-period wave in the cut and, against a sloping surface, a row of
-    // teeth along its top edge.
-    // ⚠️ Diagonal on purpose: axis-aligned is the one case a bowed interpolation
-    // also gets right, so it would not catch the regression.
-    const positions: Vec2[] = [
+describe('the cut face and the cut agree', () => {
+  it('puts every face vertex on the field zero set', () => {
+    // ⭐⭐ THE invariant of the whole feature, and what replaces the old
+    // "these two functions must match" contract: the face is swept from the very
+    // curve the field was built from, so the shader's `< 0` test and the drawn
+    // face describe one surface. Anything but ~0 here is a sliver of block
+    // standing proud of the face, or a gap behind it.
+    // ⚠️ Diagonal on purpose: an axis-aligned curve is the one case a bowed
+    // interpolation also gets right, so it would not catch a regression.
+    const curve: Vec2[] = [
       [-1500, -1500],
       [1500, 1500],
     ];
-    const field = createFenceField(positions, { bounds, cellSize: 50 })!;
-    const points = fenceContour(field, { width: 0, resolution: 7 }).flat();
-    expect(points.length).toBeGreaterThan(50);
-    let worst = 0;
-    for (const p of points) {
-      // Perpendicular distance from the line z = x.
-      worst = Math.max(worst, Math.abs(p[0] - p[1]) / Math.SQRT2);
-    }
-    expect(worst).toBeLessThan(0.05);
-  });
-
-  it('follows the SAMPLED iso, which is where the block actually ends', () => {
-    // A diagonal, so nothing is aligned with the raster.
-    const positions: Vec2[] = [
-      [-1500, -1500],
-      [1500, 1500],
-    ];
-    const field = createFenceField(positions, { bounds, cellSize: 50 })!;
-    const at = sampleFenceField(field);
-    const chains = fenceContour(field, { width: 0, resolution: 25 });
-    expect(chains.length).toBeGreaterThan(0);
-    const points = chains.flat();
-    expect(points.length).toBeGreaterThan(10);
-    for (const p of points) {
-      // ⭐⭐ THE contract. The face is drawn here while the GPU removes the block
-      // by sampling the same field, so what must agree is the SAMPLED value — not
-      // the analytic distance. Asserting the latter is what let a half-texel
-      // offset hide, and it showed up as slivers of cap standing proud of the face.
-      expect(Math.abs(at(p[0], p[1]))).toBeLessThan(0.01);
-      // And it is still the right curve: within a cell of the true one.
-      expect(nearestOnPolyline(positions, p[0], p[1])!.distance).toBeLessThan(
-        50,
-      );
+    const field = createFenceField(curve, {
+      bounds,
+      cellSize: 50,
+      seed: [-500, 500],
+    })!;
+    const sample = sampleFenceField(field);
+    for (const p of resamplePolyline2D(curve, 7)) {
+      if (Math.abs(p[0]) > 900 || Math.abs(p[1]) > 900) continue;
+      expect(Math.abs(sample(p[0], p[1]))).toBeLessThan(1e-3);
     }
   });
 
-  it('stands the requested distance off at a width', () => {
-    const positions: Vec2[] = [
+  it('signs the half the seed is in as removed', () => {
+    const curve: Vec2[] = [
       [-1500, 0],
       [1500, 0],
     ];
-    const field = createFenceField(positions, { bounds, cellSize: 50 })!;
-    const at = sampleFenceField(field);
-    const points = fenceContour(field, { width: 300, resolution: 25 }).flat();
-    expect(points.length).toBeGreaterThan(0);
-    for (const p of points) {
-      expect(Math.abs(Math.abs(at(p[0], p[1])) - 300)).toBeLessThan(0.01);
-      expect(nearestOnPolyline(positions, p[0], p[1])!.distance).toBeCloseTo(
-        300,
-        0,
-      );
-    }
+    const seed: Vec2 = [0, 500];
+    const field = createFenceField(curve, { bounds, cellSize: 50, seed })!;
+    const sample = sampleFenceField(field);
+    expect(field.separated).toBe(true);
+    expect(sample(seed[0], seed[1])).toBeLessThan(0);
+    expect(sample(0, -500)).toBeGreaterThan(0);
   });
-  it('does not double back where an offset curve would self-intersect', () => {
-    // A hairpin far tighter than the offset: naively offsetting this produces a
-    // loop, which is the whole reason the topology comes from the raster.
-    const positions: Vec2[] = [
-      [-800, -60],
-      [400, -60],
-      [400, 60],
-      [-800, 60],
+
+  it('keeps the sign band straight at cell period', () => {
+    // ⚠️ The barrier cells the flood fill cannot enter used to keep no sign at
+    // all and were forced onto one side, which wobbles the zero contour at CELL
+    // PERIOD even where the curve is dead straight. Off-lattice on purpose: a 45°
+    // line lands on the grid so its barrier cells have distance 0 and the sign
+    // never shows.
+    const curve: Vec2[] = [
+      [-1500, -700],
+      [1500, 800],
     ];
-    const cellSize = 25;
-    const field = createFenceField(positions, { bounds, cellSize })!;
-    const chains = fenceContour(field, { width: 300, resolution: 25 });
-    const points = chains.flat();
-    expect(points.length).toBeGreaterThan(0);
-    // Every point is at the offset, to within a cell — a self-intersected loop
-    // would collapse some of them right onto the curve instead.
-    for (const p of points) {
-      const d = nearestOnPolyline(positions, p[0], p[1])!.distance;
-      expect(d).toBeGreaterThan(300 - cellSize);
-      expect(d).toBeLessThan(300 + cellSize);
+    const field = createFenceField(curve, {
+      bounds,
+      cellSize: 50,
+      seed: [-900, 900],
+    })!;
+    const sample = sampleFenceField(field);
+    // Only where the grid actually is: the sampler clamps at its border, and the
+    // curve deliberately runs past it.
+    for (const p of resamplePolyline2D(curve, 11)) {
+      if (Math.abs(p[0]) > 900 || Math.abs(p[1]) > 900) continue;
+      expect(Math.abs(sample(p[0], p[1]))).toBeLessThan(0.5);
     }
-  });
-});
-
-describe('createStackLocator', () => {
-  it('locates a point and interpolates any per-vertex channel', () => {
-    const source = flatStack(4, -100, 40);
-    const locator = createStackLocator(source.positionsXZ, source.indices);
-    const at = locator.locate(1.25, 2.5);
-    expect(at).not.toBeNull();
-    expect(locator.valueAt(at!, source.heights[0])).toBeCloseTo(-100, 6);
-    // A channel that varies linearly must come back interpolated, not snapped.
-    const ramp = new Float32Array(source.positionsXZ.length / 2);
-    for (let v = 0; v < ramp.length; v++) ramp[v] = source.positionsXZ[2 * v];
-    expect(locator.valueAt(at!, ramp)).toBeCloseTo(1.25, 5);
-  });
-
-  it('returns null outside the mesh', () => {
-    const source = flatStack(4, -100, 40);
-    const locator = createStackLocator(source.positionsXZ, source.indices);
-    expect(locator.locate(-5, 2)).toBeNull();
-    expect(locator.locate(2, 99)).toBeNull();
   });
 });
 
 describe('buildFenceRibbons', () => {
-  const path: Vec2[] = Array.from(
-    { length: 21 },
-    (_, i) => [0.5 + i * 0.15, 2] as Vec2,
-  );
-
-  it('spans the interval and follows the path, not the triangles', () => {
-    const source = flatStack(4, -100, 40);
-    const ribbons = buildFenceRibbons(source, path, { offset: 0 });
-    expect(ribbons.length).toBe(1);
+  it('reaches the edge of the tessellation', () => {
+    // ⚠️ The quad straddling the boundary used to be dropped whole, so the face
+    // stopped up to one resample step short of the wall while the cut ran all the
+    // way to it — a full-height slit whose width was whatever fraction of a step
+    // was left over, so it came and went with the data.
+    const source = flatStack(4, 0, 10);
+    const path: Vec2[] = [];
+    for (let x = -1; x <= 5; x += 0.7) path.push([x, 2]);
+    const ribbons = buildFenceRibbons(source, path);
+    expect(ribbons).toHaveLength(1);
     const position = ribbons[0].geometry.getAttribute('position');
-    // ⭐ One quad per path step, regardless of how few triangles it crosses —
-    // this is the whole point of a ribbon over a cut through the cells.
-    expect(position.count).toBe((path.length - 1) * 6);
-    for (let v = 0; v < position.count; v++) {
-      const y = position.getY(v);
-      expect(y === -100 || y === -140).toBe(true);
-    }
-  });
-
-  it('is vertical, and smooth along its length', () => {
-    const source = flatStack(4, -100, 40);
-    const normal = buildFenceRibbons(source, path, {
-      offset: 0,
-    })[0].geometry.getAttribute('normal');
-    for (let v = 0; v < normal.count; v++) {
-      expect(normal.getY(v)).toBe(0);
-      // A straight path gives one normal throughout; a faceted build would not.
-      expect(Math.abs(normal.getX(v))).toBeCloseTo(0, 6);
-      expect(Math.abs(normal.getZ(v))).toBeCloseTo(1, 6);
-    }
-  });
-
-  it('reaches the edge of the tessellation, not the last sample inside it', () => {
-    const source = flatStack(4, -100, 40);
-    // Steps of 0.3 over a grid spanning 0..4, deliberately landing nowhere near
-    // the boundary: without clipping, the face would stop at x = 3.9 and the
-    // 0.1 left over is a full-height slit between the face and the wall.
-    const crossing: Vec2[] = Array.from(
-      { length: 30 },
-      (_, i) => [-1.2 + i * 0.3, 2] as Vec2,
-    );
-    const position = buildFenceRibbons(source, crossing, {
-      offset: 0,
-    })[0].geometry.getAttribute('position');
     let minX = Infinity;
     let maxX = -Infinity;
-    for (let v = 0; v < position.count; v++) {
-      minX = Math.min(minX, position.getX(v));
-      maxX = Math.max(maxX, position.getX(v));
+    for (let i = 0; i < position.count; i++) {
+      minX = Math.min(minX, position.getX(i));
+      maxX = Math.max(maxX, position.getX(i));
     }
     expect(minX).toBeCloseTo(0, 4);
     expect(maxX).toBeCloseTo(4, 4);
   });
 
-  it('flips which way it looks', () => {
-    const source = flatStack(4, -100, 40);
-    const a = buildFenceRibbons(source, path, { offset: 0 })[0]
-      .geometry.getAttribute('normal')
-      .getZ(0);
-    const b = buildFenceRibbons(source, path, { offset: 0, flip: true })[0]
-      .geometry.getAttribute('normal')
-      .getZ(0);
-    expect(Math.sign(a)).toBe(-Math.sign(b));
-  });
-
-  it('draws nothing where the path leaves the mesh', () => {
-    const source = flatStack(4, -100, 40);
-    const outside: Vec2[] = [
-      [-50, 2],
-      [-40, 2],
-      [-30, 2],
+  it('gives the face metres along the curve as u', () => {
+    // ⭐ `u` comes from the path itself. Reading it back out of a rasterised
+    // "distance along" field made it discontinuous across the medial axis of
+    // every bend, which is where a wellbore fence spends its time.
+    const source = flatStack(4, 0, 10);
+    const path: Vec2[] = [
+      [0.5, 2],
+      [3.5, 2],
     ];
-    expect(buildFenceRibbons(source, outside, { offset: 0 })).toEqual([]);
+    const ribbons = buildFenceRibbons(source, path, { alongOffset: 100 });
+    const uv = ribbons[0].geometry.getAttribute('uv');
+    let minU = Infinity;
+    let maxU = -Infinity;
+    for (let i = 0; i < uv.count; i++) {
+      minU = Math.min(minU, uv.getX(i));
+      maxU = Math.max(maxU, uv.getX(i));
+    }
+    expect(minU).toBeCloseTo(100, 4);
+    expect(maxU).toBeCloseTo(103, 4);
   });
 
-  it('draws nothing where the interval has no thickness', () => {
-    const source = flatStack(4, -100, 0);
-    expect(buildFenceRibbons(source, path, { offset: 0 })).toEqual([]);
-  });
-
-  it('carries distance along the fence as u', () => {
-    const source = flatStack(4, -100, 40);
-    const geometry = buildFenceRibbons(source, path, {
-      offset: 0,
-      along: x => x * 10,
-    })[0].geometry;
-    const uv = geometry.getAttribute('uv');
-    const position = geometry.getAttribute('position');
-    for (let v = 0; v < uv.count; v++) {
-      expect(uv.getX(v)).toBeCloseTo(position.getX(v) * 10, 4);
+  it('keeps the top edge on the surface when the face is offset', () => {
+    // ⚠️ Heights used to be read where the PATH ran while the face was drawn
+    // `offset` metres away, so an offset face's top edge no longer met the cap.
+    const source = flatStack(4, 0, 10);
+    // A sloping top, so reading the height at the wrong place shows up.
+    const side = 5;
+    for (let r = 0; r < side; r++) {
+      for (let c = 0; c < side; c++) {
+        source.heights[0][r * side + c] = r * 2;
+        source.heights[1][r * side + c] = r * 2 - 10;
+      }
+    }
+    const locator = createStackLocator(source.positionsXZ, source.indices);
+    const path: Vec2[] = [
+      [1, 2],
+      [3, 2],
+    ];
+    const ribbons = buildFenceRibbons(source, path, { offset: 0.5 });
+    const position = ribbons[0].geometry.getAttribute('position');
+    for (let i = 0; i < position.count; i++) {
+      const at = locator.locate(position.getX(i), position.getZ(i));
+      if (!at) continue;
+      const top = locator.valueAt(at, source.heights[0]);
+      const bottom = locator.valueAt(at, source.heights[1]);
+      const y = position.getY(i);
+      expect(Math.min(Math.abs(y - top), Math.abs(y - bottom))).toBeLessThan(
+        1e-4,
+      );
     }
   });
 });

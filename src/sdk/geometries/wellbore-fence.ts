@@ -1,315 +1,627 @@
-import { Vec2, Vec3 } from '../types/common';
-import { getProjectedTrajectory } from '../utils/trajectory';
+import { Vec2 } from '../types/common';
 import {
-  directionVec2,
-  distanceVec2,
-  dotVec2,
-} from '../utils/vector-operations';
-import { marchingSquares } from './marching-squares';
+  countPolylineLoops,
+  dedupePolyline2D,
+  endTangent2D,
+  junctionOpening,
+  nearestOnPolyline,
+  leftNormal2D,
+  polylineArcLengths,
+  polylineLength,
+  polylineMinRadius,
+  polylineNormals2D,
+  polylineRadiusProfile,
+  RelaxResult,
+  relaxPolyline2DWithin,
+  relaxPolyline2DClearOf,
+  removePolylineLoops,
+  repairPolylineWaists,
+  resamplePolyline2D,
+  spreadAlongPolyline,
+} from '../utils/polyline-2d';
+import { distanceVec2 } from '../utils/vector-operations';
+import { Curve3D } from './curve/curve-3d';
+import {
+  buildFenceSegmentIndex,
+  fenceSideAt,
+  FenceSegmentIndex,
+} from './fence-segments';
 
 /**
- * A **fence** is a vertical surface swept along a wellbore's plan trace, used to
- * cut a chunk stack open along the well.
+ * A **fence** is a vertical surface swept along a curve in plan, used to slice a
+ * chunk stack in two along a wellbore so the well can be viewed from either half.
  *
  * ⭐ The defining property, and the reason this is cheap: a fence is VERTICAL, so
- * whether a point is cut away depends on its XZ only. The whole cut therefore
- * reduces to one scalar per XZ position — a signed distance to the fence curve —
- * which a shader can read as a varying and the CPU can contour to build the cut
- * face, with both reading the same numbers.
+ * whether a point is removed depends on its XZ alone. The whole cut reduces to one
+ * scalar per XZ position, which a shader reads per fragment while the CPU sweeps
+ * the same curve into the cut face.
  *
- * The field is held on a raster rather than evaluated from the polyline directly.
- * ⚠️ That is not only for speed: a distance field is a SET, so a trajectory that
- * turns back on itself merges instead of producing the self-intersecting offset
- * curve an exact construction would have to repair. The price is that the SIGN is
- * discontinuous across such a crossing — see {@link createFenceField}.
+ * ⭐⭐ The curve is built in three parts — the well's own plan trace and a run-out
+ * at each end — and the clearance a caller asks for is baked INTO it rather than
+ * applied as a threshold afterwards. The field is then a plain signed distance to
+ * the finished curve and the shader's test is `< 0`, so the drawn face and the
+ * removed block are the SAME OBJECT rather than two evaluations of one surface
+ * that have to be reconciled.
+ *
+ * ⚠️ A wellbore's shallow section is near-vertical, so its plan trace is metres of
+ * survey scatter standing in for kilometres of hole. Following it produces folds,
+ * hairpins and a cut that pinches to a blade. Nothing here follows it: the trace is
+ * straightened inside a tolerance corridor that is wide exactly where the well is
+ * vertical, and the head is given up outright where even that is not enough.
+ *
+ * @module
  */
+
+/** MD spacing the trajectory is sampled at, in metres. */
+const DEFAULT_SAMPLE_SPACING = 10;
+
+/** Cap on trajectory samples, including adaptive refinement. */
+const MAX_SAMPLES = 4000;
+
+/** Plan turn between consecutive samples that triggers refinement, in radians. */
+const REFINE_TURN = (10 * Math.PI) / 180;
+
+/** Plan step below which a turn is scatter rather than shape, in metres. */
+const REFINE_MIN_STEP = 0.5;
+
+/** `sin(inclination)` above which a well counts as deviating. */
+const KICKOFF_SPEED = 0.15;
+
+/** MD window the kickoff test is averaged over, in metres. */
+const KICKOFF_WINDOW = 200;
+
+/** Corridor half width where the well is vertical, in metres. */
+const TOLERANCE_VERTICAL = 150;
+
+/** Corridor half width where the well is deviated, in metres. */
+const TOLERANCE_DEVIATED = 5;
+
+/** Turning radius the SHALLOW section is straightened to, in metres. */
+const MIN_HEAD_RADIUS = 250;
+
+/** Plan spacing the base curve is resampled to before offsetting, in metres. */
+const BASE_SPACING = 25;
+
+/** Below this plan extent a well has no direction of its own, in metres. */
+const MIN_PLAN_EXTENT = 100;
+
+/** Opening a run-out must keep from the trace it leaves, in radians. */
+const RUN_OUT_CLEARANCE = Math.PI / 4;
+
+/** Radius around a run-out's apex that does not constrain it, in metres. */
+const RUN_OUT_NEAR = 50;
+
+/** Run-out directions tried per end. */
+const RUN_OUT_CANDIDATES = 5;
+
+/** Metres a run-out clears the footprint by. */
+const DEFAULT_RUN_OUT_MARGIN = 500;
+
+/** Divisions the even-split score is measured on, before the size clamp. */
+const SHARE_RESOLUTION = 96;
+
+/** Metres per cell the even-split score aims for. */
+const SHARE_CELL = 150;
+
+/** Cap on the even-split raster, since it is rebuilt per candidate pair. */
+const SHARE_RESOLUTION_MAX = 256;
+
+/** Opening a junction must keep on each side, in radians. */
+const MIN_OPENING = (60 * Math.PI) / 180;
+
+/** Arc length a junction angle and an end tangent are measured over, in metres. */
+const JUNCTION_ARC = 150;
+
+/** Arc length a junction blend is spread over, in metres. */
+const BLEND_LENGTH = 600;
+
+/** Below this turning radius the cut is opened out to round the corner, in metres. */
+const HAIRPIN_RADIUS = 200;
+
+/** Cap on the clearance the curve opens for itself, in metres. */
+const MAX_LOCAL_CLEARANCE = 250;
 
 /**
- * How short a plan trace may be before it is treated as having no direction.
+ * Slack on the opening the well's own displacement asks for.
  *
- * ⚠️ A TOTAL, so it says nothing about the shape of either end.
+ * ⚠️ Opening by EXACTLY the displacement leaves the well on the boundary, where a
+ * cell of raster either way decides whether it shows.
  */
-export const FENCE_MIN_DEVIATION = 100;
+const DEVIATION_SAFETY = 1.25;
 
-/** Above this, two extension directions count as the same one. */
-const FENCE_COLLINEAR = 0.95;
+/** Arc length a run-out takes to converge onto the shared ray, in metres. */
+const RUN_OUT_BLEND = 500;
 
-/** Default radius around an extension's apex that does not count, in metres. */
-export const FENCE_CLEARANCE_NEAR = 50;
+/** Arc length a local clearance is spread over, in metres. */
+const CLEARANCE_SPREAD = 150;
 
 /**
- * Default opening, in radians, a run-out must keep between itself and the trace.
+ * How close the cut may come back to itself before the excursion is repaired.
  *
- * ⭐ 45° is the value measured to work on the Volve wells. It is a CONSTRAINT the
- * share objective is maximised under, not a competing objective — removing it (as
- * the share rewrite briefly did) leaves wells like F-15 D with a 2° head opening
- * and perfectly healthy shares.
+ * ⚠️ Below this the block between the two passes is a blade thinner than the raster
+ * that removes it can resolve, so it tears rather than reading as rock.
  */
-export const FENCE_CLEARANCE = Math.PI / 4;
+const WAIST_CLEARANCE = 120;
+
+/** Share of the block below which a side is treated as unusable. */
+const SHARE_FLOOR = 0.1;
 
 /**
- * Default share of the block a fence tries to take away on the side being cut.
- * Above this the cut is judged good enough and stops being pushed wider.
- */
-export const FENCE_REVEAL = 0.5;
-
-/**
- * Share of the block below which a side is treated as unusable, and allowed its
- * own run-outs rather than the pair that suits both.
+ * Metres the cut face may stand off the cut.
  *
- * ⭐ A FLOOR, not a preference. The two sides should be flip-sides of one cut
- * wherever that works at all — a viewer comparing them is comparing one section —
- * so a side gives up a good deal of removed share before it goes its own way.
+ * ⭐ A real bound now, not a fraction of a cell: the face is swept from the curve
+ * and the cut reads that same curve back, so the only difference left is float
+ * precision. Measured at 2e-5 m across the demo wells.
  */
-const FENCE_SHARE_FLOOR = 0.15;
+const RESIDUAL_LIMIT = 0.01;
 
-const DEFAULT_CELL_SIZE = 50;
 const DEFAULT_MAX_CELLS = 1 << 20;
-const DEFAULT_MARGIN = 500;
 
-/** A wellbore's plan trace, with the depth range it spans. */
-export type FencePolyline = {
-  /** scene XZ, resampled at `stepSize` */
-  positions: Vec2[];
+/** Trajectory samples, in scene coordinates, with the shape of the hole. */
+export type FenceSamples = {
+  /** scene XZ per sample */
+  plan: Vec2[];
+  /** scene Y per sample */
+  y: Float64Array;
+  /** distance along the trajectory per sample, in metres */
+  md: Float64Array;
   /**
-   * Scene Y at each position, so a taper can be expressed in DEPTH while the
-   * field only ever knows arc length. ⚠️ Recovered by matching plan arc length
-   * against the input path, because the projection resamples in plan and a
-   * near-vertical section covers hundreds of metres of hole in one plan step.
+   * `sin(inclination)` per sample — how far the hole moves in PLAN per metre
+   * drilled.
+   *
+   * ⭐ The one number that says whether the plan trace here is shape or scatter,
+   * and it comes off the 3D tangent rather than being inferred from the
+   * projection, which is what makes it reliable in the vertical section where the
+   * projection has nothing to say.
    */
-  depths: number[];
-  /** shallowest scene Y on the path */
-  top: number;
-  /** deepest scene Y on the path */
-  bottom: number;
-  /** plan length, in metres */
-  length: number;
+  planSpeed: Float64Array;
+  /** samples added by the refinement pass */
+  inserted: number;
+  /** largest plan turn left between consecutive samples, in radians */
+  maxTurn: number;
 };
 
-/** Scene Y at each resampled plan position, matched by plan arc length. */
-function traceDepths(path: Vec3[], positions: Vec2[]): number[] {
-  const arc: number[] = [0];
-  for (let i = 1; i < path.length; i++) {
-    arc.push(
-      arc[i - 1] +
-        Math.hypot(path[i][0] - path[i - 1][0], path[i][2] - path[i - 1][2]),
-    );
+/**
+ * Sample a trajectory for a fence.
+ *
+ * ⭐⭐ Sampled by MD off the SPLINE, not off the survey stations. Stations are a
+ * polyline, so a curved section is a run of facets with a corner at every one, and
+ * a fence built on them inherits each corner as a kink in the cut.
+ *
+ * ⚠️ The refinement pass exists so a plan EXTREME is never stepped over: a uniform
+ * MD sample can pass straight by the outermost point of a tight dogleg, and the
+ * fence then runs inside the well and buries it. Refinement is suppressed where the
+ * plan step is tiny, because a large turn over half a metre of plan is scatter in
+ * the vertical section and would otherwise eat the whole sample budget.
+ *
+ * @group Geometries
+ */
+export function sampleTrajectoryPlan(
+  curve: Curve3D,
+  spacing: number = DEFAULT_SAMPLE_SPACING,
+): FenceSamples | null {
+  const length = curve.length;
+  if (!(length > 0)) return null;
+
+  const count = Math.min(
+    MAX_SAMPLES,
+    Math.max(8, Math.ceil(length / Math.max(spacing, 1)) + 1),
+  );
+  let positions: number[] = [];
+  for (let i = 0; i < count; i++) positions.push(i / (count - 1));
+
+  const planOf = (u: number): Vec2 => {
+    const p = curve.getPointAt(u);
+    return [p[0], p[2]];
+  };
+  const turnAt = (a: Vec2, b: Vec2, c: Vec2): number => {
+    const ax = b[0] - a[0];
+    const az = b[1] - a[1];
+    const bx = c[0] - b[0];
+    const bz = c[1] - b[1];
+    const la = Math.hypot(ax, az);
+    const lb = Math.hypot(bx, bz);
+    if (la < REFINE_MIN_STEP || lb < REFINE_MIN_STEP) return 0;
+    const cos = (ax * bx + az * bz) / (la * lb);
+    return Math.acos(Math.min(1, Math.max(-1, cos)));
+  };
+
+  let inserted = 0;
+  for (let round = 0; round < 4; round++) {
+    if (positions.length >= MAX_SAMPLES) break;
+    const plan = positions.map(planOf);
+    const flagged = new Set<number>();
+    for (let i = 1; i + 1 < plan.length; i++) {
+      if (turnAt(plan[i - 1], plan[i], plan[i + 1]) <= REFINE_TURN) continue;
+      flagged.add(i - 1);
+      flagged.add(i);
+    }
+    if (flagged.size === 0) break;
+    const next: number[] = [];
+    for (let i = 0; i < positions.length; i++) {
+      next.push(positions[i]);
+      if (flagged.has(i) && i + 1 < positions.length) {
+        next.push((positions[i] + positions[i + 1]) * 0.5);
+        inserted++;
+      }
+    }
+    positions = next;
   }
-  const out: number[] = [];
-  let at = 0;
-  let k = 0;
-  for (let i = 0; i < positions.length; i++) {
-    if (i > 0) at += distanceVec2(positions[i - 1], positions[i]);
-    while (k + 1 < path.length && arc[k + 1] < at) k++;
-    const next = Math.min(k + 1, path.length - 1);
-    const span = arc[next] - arc[k];
-    const t = span > 1e-9 ? (at - arc[k]) / span : 0;
-    out.push(
-      path[k][1] + (path[next][1] - path[k][1]) * Math.min(Math.max(t, 0), 1),
-    );
+  if (positions.length > MAX_SAMPLES) {
+    const step = positions.length / MAX_SAMPLES;
+    const trimmed: number[] = [];
+    for (let i = 0; i < MAX_SAMPLES; i++) {
+      trimmed.push(positions[Math.floor(i * step)]);
+    }
+    trimmed[trimmed.length - 1] = 1;
+    positions = trimmed;
+  }
+
+  const n = positions.length;
+  const plan: Vec2[] = new Array(n);
+  const y = new Float64Array(n);
+  const md = new Float64Array(n);
+  const planSpeed = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const u = positions[i];
+    const p = curve.getPointAt(u);
+    plan[i] = [p[0], p[2]];
+    y[i] = p[1];
+    md[i] = u * length;
+    const t = curve.getTangentAt(u);
+    planSpeed[i] = Math.min(1, Math.hypot(t[0], t[2]));
+  }
+
+  let maxTurn = 0;
+  for (let i = 1; i + 1 < n; i++) {
+    const turn = turnAt(plan[i - 1], plan[i], plan[i + 1]);
+    if (turn > maxTurn) maxTurn = turn;
+  }
+
+  return { plan, y, md, planSpeed, inserted, maxTurn };
+}
+
+/** Where a well stops being vertical. */
+export type FenceKickoff = {
+  /** sample index, or 0 when the well deviates from the start */
+  index: number;
+  md: number;
+  y: number;
+  /** whether a kickoff was actually found */
+  found: boolean;
+};
+
+/** `planSpeed` averaged over an MD window, so one noisy station cannot trip it. */
+function smoothPlanSpeed(samples: FenceSamples, window: number): Float64Array {
+  const { planSpeed, md } = samples;
+  const n = planSpeed.length;
+  const out = new Float64Array(n);
+  let lo = 0;
+  let hi = 0;
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    const from = md[i] - window * 0.5;
+    const to = md[i] + window * 0.5;
+    while (hi < n && md[hi] <= to) sum += planSpeed[hi++];
+    while (lo < n && md[lo] < from) sum -= planSpeed[lo++];
+    out[i] = hi > lo ? sum / (hi - lo) : planSpeed[i];
   }
   return out;
 }
 
 /**
- * Project a trajectory onto the XZ plane, resampled at `stepSize`.
+ * The deepest point above which the well has not started deviating.
  *
- * ⚠️ Deliberately UNEXTENDED — {@link extendFencePolyline} is a separate step
- * because a fence has to escape the chunk's own outline, which a metre count
- * cannot express. (The seismic section extends by `extension`/`minSize` instead,
- * which is about making an image big enough to read.)
- *
- * @param path the trajectory in scene coordinates
- * @param stepSize resampling distance in metres
+ * ⭐ Everything shallower is a candidate for being dropped from the fence outright,
+ * and is in any case given a wide tolerance corridor: there is no plan shape up
+ * there to follow, only survey scatter.
  *
  * @group Geometries
  */
-export function createFencePolyline(
-  path: Vec3[],
-  stepSize: number = 50,
-): FencePolyline | null {
-  const projected = getProjectedTrajectory(path, stepSize, 0, 0);
-  if (!projected || projected.positions.length === 0) return null;
-  return { ...projected, depths: traceDepths(path, projected.positions) };
+export function fenceKickoff(samples: FenceSamples): FenceKickoff {
+  const speed = smoothPlanSpeed(samples, KICKOFF_WINDOW);
+  const n = speed.length;
+  for (let i = 0; i < n; i++) {
+    if (speed[i] < KICKOFF_SPEED) continue;
+    // Confirm it STAYS deviated, or a single kink in the vertical section reads as
+    // the kickoff and nothing above it is ever considered for trimming.
+    let confirmed = true;
+    for (
+      let j = i;
+      j < n && samples.md[j] - samples.md[i] < KICKOFF_WINDOW;
+      j++
+    ) {
+      if (speed[j] < KICKOFF_SPEED * 0.75) {
+        confirmed = false;
+        break;
+      }
+    }
+    if (!confirmed) continue;
+    return { index: i, md: samples.md[i], y: samples.y[i], found: i > 0 };
+  }
+  return {
+    index: 0,
+    md: samples.md[0] ?? 0,
+    y: samples.y[0] ?? 0,
+    found: false,
+  };
 }
 
 /**
- * A cutout that is WIDE where the well is shallow and closes to nothing where it
- * matters.
+ * How far the fence may leave the trajectory at each sample, in metres.
  *
- * ⭐⭐ The shallow section of a well is near-vertical, so its plan trace is a few
- * tens of metres of survey noise standing in for kilometres of hole — there is
- * nothing there worth following, and following it is what produces a cut that
- * pinches to a blade. Opening the corridor out instead gives the wiggle room to
- * live in, and costs nothing in the reservoir where the cut should hug the well.
- *
- * ⭐ Held in ARC LENGTH rather than depth, though it is authored in depth: the
- * conversion happens once on the CPU, which keeps this three numbers a shader can
- * hold in one uniform instead of a depth table it would have to look up.
+ * ⭐⭐ Derived from how VERTICAL the well is, not configured. Where the hole barely
+ * moves in plan per metre drilled there is nothing to follow, and the corridor
+ * opens to tens of metres; through a deviated section it closes to a few, so the
+ * fence hugs the part worth seeing. This is the whole of the "more head room
+ * between the wellhead and the kickoff" rule, expressed once.
  *
  * @group Geometries
  */
-export type FenceTaper = {
-  /** extra half width at the shallow end, in metres */
-  headWidth: number;
-  /** arc length up to which the full `headWidth` applies, in metres */
+export function fenceTolerance(samples: FenceSamples): Float64Array {
+  const speed = smoothPlanSpeed(samples, KICKOFF_WINDOW);
+  const out = new Float64Array(speed.length);
+  const lo = KICKOFF_SPEED * 0.7;
+  const hi = KICKOFF_SPEED * 2.5;
+  for (let i = 0; i < speed.length; i++) {
+    const t = Math.min(1, Math.max(0, (speed[i] - lo) / (hi - lo)));
+    const eased = t * t * (3 - 2 * t);
+    out[i] =
+      TOLERANCE_VERTICAL + (TOLERANCE_DEVIATED - TOLERANCE_VERTICAL) * eased;
+  }
+  return out;
+}
+
+/** The straightened plan curve a fence is built around. */
+export type FenceBase = {
+  /** scene XZ, resampled at a uniform plan spacing */
+  points: Vec2[];
+  /** first sample kept — everything shallower was dropped */
   from: number;
-  /** arc length by which it has closed to nothing, in metres */
-  to: number;
+  /** metres of MD dropped off the head */
+  trimmedLength: number;
+  kickoff: FenceKickoff;
+  relax: RelaxResult;
+  /** corridor the relaxation ran inside, per sample */
+  tolerance: Float64Array;
+  /** turning radius reached over the whole curve, in metres */
+  minRadius: number;
+  /**
+   * Where the WELL sits relative to the curve at each vertex, signed along the left
+   * normal: positive means the well is to the left of the fence.
+   *
+   * ⭐⭐ SIGNED, because the problem is. The smoothing leaves the well on ONE side at
+   * any given point, so only the side whose KEPT half contains it has to open up —
+   * the other side already has it in the open and opening there just pushes the cut
+   * away from the well for nothing. Treating this as a magnitude over-compensates
+   * one side and under-compensates the other.
+   */
+  deviation: Float64Array;
+  /**
+   * Signed curvature per vertex, in 1/metres: positive where the curve turns left.
+   *
+   * ⚠️⚠️ What bounds an opening. Offsetting into the CONCAVE side by more than the
+   * local radius turns the curve inside out — on a short, tightly curved head that
+   * folds it into a hook, which reads as a razor apex at the wellhead.
+   */
+  curvature: Float64Array;
+  /**
+   * Metres to open by to round a corner too tight to follow, SIGNED: positive means
+   * the sharp wedge is on the left.
+   *
+   * ⭐⭐ Signed for the same reason {@link FenceBase.deviation} is. A corner turning
+   * left leaves a sharp wedge on the left and a reflex one on the right, so only the
+   * side that KEEPS the sharp wedge has a blade to carve away — the side that removes
+   * it is already smooth. Opening both is what makes the two curves differ everywhere
+   * instead of only where there is a problem.
+   */
+  roundness: Float64Array;
+  /**
+   * Turning radius reached over the part ABOVE the kickoff, in metres.
+   *
+   * ⭐⭐ THE number that decides whether the head is usable. A tight bend down in the
+   * reservoir is the well and must be followed; a tight bend up in the vertical
+   * section is survey scatter and must not be. Judging the whole curve by one radius
+   * conflates them, and then either the reservoir gets smoothed away or every well
+   * reads as broken.
+   */
+  headRadius: number;
+  /** what `headRadius` had to reach */
+  requiredHeadRadius: number;
+  /** a well with no plan direction of its own; the curve came from its spread */
+  degenerate: boolean;
+};
+
+/** Principal direction of a plan point cloud, for a well that barely deviates. */
+function principalDirection(points: Vec2[]): Vec2 {
+  let cx = 0;
+  let cz = 0;
+  for (const p of points) {
+    cx += p[0];
+    cz += p[1];
+  }
+  cx /= points.length;
+  cz /= points.length;
+  let sxx = 0;
+  let sxz = 0;
+  let szz = 0;
+  for (const p of points) {
+    const dx = p[0] - cx;
+    const dz = p[1] - cz;
+    sxx += dx * dx;
+    sxz += dx * dz;
+    szz += dz * dz;
+  }
+  const theta = 0.5 * Math.atan2(2 * sxz, sxx - szz);
+  return [Math.cos(theta), Math.sin(theta)];
+}
+
+/** Diagonal of a plan curve's bounding box. */
+function planExtent(points: Vec2[]): number {
+  let minX = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxZ = -Infinity;
+  for (const p of points) {
+    if (p[0] < minX) minX = p[0];
+    if (p[0] > maxX) maxX = p[0];
+    if (p[1] < minZ) minZ = p[1];
+    if (p[1] > maxZ) maxZ = p[1];
+  }
+  return Math.hypot(maxX - minX, maxZ - minZ);
+}
+
+/** {@link fenceBaseCurve} options. */
+export type FenceBaseOptions = {
+  /** turning radius the shallow section must reach, in metres. Default 250. */
+  headRadius?: number;
+  /** plan spacing of the result, in metres. Default 25. */
+  spacing?: number;
 };
 
 /**
- * The taper's extra half width at a point on the curve.
+ * The fence's own curve through the well: the plan trace, straightened as much as
+ * its tolerance corridor allows, with the head given up where that is not enough.
  *
- * ⚠️⚠️ Must match `fenceTaperWidth` in `depth-map.glsl` EXACTLY. The cut face is
- * placed with this one and the block is removed by the GPU evaluating that one,
- * so any difference between them is a sliver of block standing proud of the face,
- * or a gap behind it.
+ * ⭐⭐ Smoothing FIRST, trimming only on failure. A wide corridor usually turns the
+ * shallow scatter into a clean arc, and keeping it means the fence still follows
+ * the well right up to the wellhead. Only where the scatter is too violent for the
+ * corridor to absorb is the head handed to the run-out — which is a smooth
+ * continuation by construction, so nothing is lost but a section nobody looks at.
+ *
+ * ⚠️ `minRadius` is not a style choice. Offsetting a curve by `m` folds wherever it
+ * turns tighter than `m`, so the clearance a caller asks for sets its own
+ * smoothness requirement — see {@link buildFenceSideCurve}.
  *
  * @group Geometries
  */
-export function fenceWidthAt(
-  taper: FenceTaper | null | undefined,
-  along: number,
-): number {
-  if (!taper || !(taper.headWidth > 0) || !(taper.to > taper.from)) return 0;
-  if (along <= taper.from) return taper.headWidth;
-  if (along >= taper.to) return 0;
-  const t = (along - taper.from) / (taper.to - taper.from);
-  return taper.headWidth * (1 - t * t * (3 - 2 * t));
-}
+export function fenceBaseCurve(
+  samples: FenceSamples,
+  options: FenceBaseOptions = {},
+): FenceBase {
+  const headRadius = options.headRadius ?? MIN_HEAD_RADIUS;
+  const spacing = options.spacing ?? BASE_SPACING;
+  const tolerance = fenceTolerance(samples);
+  const kickoff = fenceKickoff(samples);
 
-/**
- * Depth at every point of a curve, read off the trace it was derived from.
- *
- * ⚠️⚠️ NOT index alignment. The extension adds a point at each end and the
- * de-looping removes however many the loop spanned, so the curve the field is
- * built from does not match the trace vertex for vertex — and a silently shifted
- * depth series puts the taper somewhere else down the well.
- *
- * ⭐ The run-out tips resolve to the trace's own endpoints, which is what the
- * taper wants anyway: the run-out into the wellhead is as open as the wellhead,
- * the one out of the terminal depth as closed as the terminal depth.
- *
- * @param curve the curve to resolve depths for, in scene XZ
- * @param trace the plan trace the depths belong to
- * @param depths scene Y at each `trace` vertex
- *
- * @group Geometries
- */
-export function fenceDepthsFor(
-  curve: Vec2[],
-  trace: Vec2[],
-  depths: number[],
-): number[] {
-  if (trace.length === 0 || depths.length === 0) return curve.map(() => 0);
-  const cum = new Float64Array(trace.length);
-  for (let i = 1; i < trace.length; i++) {
-    cum[i] = cum[i - 1] + distanceVec2(trace[i - 1], trace[i]);
-  }
-  const hit: PolylineHit = { point: [0, 0], distance: 0, along: 0 };
-  const depthAt = (i: number) => depths[Math.min(i, depths.length - 1)];
-  return curve.map(p => {
-    const near = nearestOnPolyline(trace, p[0], p[1], hit);
-    if (near === null) return depthAt(0);
-    let lo = 0;
-    let hi = trace.length - 1;
-    while (lo < hi - 1) {
-      const mid = (lo + hi) >> 1;
-      if (cum[mid] <= near.along) lo = mid;
-      else hi = mid;
-    }
-    const span = cum[hi] - cum[lo];
-    const t = span > 1e-9 ? (near.along - cum[lo]) / span : 0;
-    const a = depthAt(lo);
-    return a + (depthAt(hi) - a) * Math.min(Math.max(t, 0), 1);
-  });
-}
+  const attempt = (from: number) => {
+    const relax = relaxPolyline2DWithin(
+      samples.plan.slice(from),
+      tolerance.slice(from),
+      { minRadius: headRadius, window: headRadius },
+    );
+    // Only the part above the kickoff is judged: below it a tight bend is the well.
+    const arc = polylineArcLengths(relax.points);
+    const shallow = kickoff.index - from;
+    const until = shallow > 1 ? arc[Math.min(shallow, arc.length - 1)] : 0;
+    return {
+      relax,
+      head:
+        until > 0
+          ? polylineMinRadius(relax.points, headRadius, 0, until)
+          : Infinity,
+    };
+  };
 
-/**
- * Convert a taper authored in DEPTH into the arc lengths a {@link FenceTaper}
- * holds.
- * @param positions the curve, extended
- * @param depths scene Y at each position — see {@link fenceDepthsFor}
- * @param shallowY scene Y down to which the cutout stays fully open
- * @param deepY scene Y by which it has closed
- *
- * @group Geometries
- */
-export function fenceTaperRange(
-  positions: Vec2[],
-  depths: number[],
-  shallowY: number,
-  deepY: number,
-): [number, number] {
-  let arc = 0;
-  let from = -1;
-  let to = -1;
-  for (let i = 0; i < positions.length; i++) {
-    if (i > 0) arc += distanceVec2(positions[i - 1], positions[i]);
-    const y = depths[Math.min(i, depths.length - 1)];
-    if (from < 0 && y <= shallowY) from = arc;
-    if (y <= deepY) {
-      to = arc;
-      break;
+  let from = 0;
+  let tried = attempt(0);
+  if (tried.head < headRadius && kickoff.index > 0) {
+    // Give the head up in steps rather than all at once, so a well that only needs
+    // its top few hundred metres dropped keeps the rest of it.
+    const steps = 6;
+    for (let s = 1; s <= steps; s++) {
+      const candidate = Math.round((kickoff.index * s) / steps);
+      if (candidate <= from) continue;
+      from = candidate;
+      tried = attempt(candidate);
+      if (tried.head >= headRadius) break;
     }
   }
-  if (from < 0) from = 0;
-  if (to < 0) to = arc;
-  return [from, to > from ? to : from + 1];
-}
+  const relax = tried.relax;
 
-/** {@link extendFencePolyline} options. */
-export type FenceExtendOptions = {
-  /**
-   * Rings to escape, in scene XZ. Every ring of the chunk outline; holes do no
-   * harm, since only the FURTHEST crossing is taken.
-   */
-  rings: Vec2[][];
-  /** metres to clear the outline by once outside. Default 500. */
-  margin?: number;
-  /**
-   * Azimuth in radians, used when the trace has no plan direction of its own — a
-   * vertical well. ⚠️ There is no way to derive one: a vertical well's plan trace
-   * is a point, and every direction through it is equally arbitrary. Make it a
-   * control rather than a constant.
-   */
-  azimuth?: number;
-  /**
-   * How far from an extension's apex the trace starts to count, in metres.
-   * Default {@link FENCE_CLEARANCE_NEAR}. Points nearer than this are the tangent
-   * itself and have no stable direction of their own.
-   */
-  clearanceNear?: number;
-  /**
-   * How wide an opening, in RADIANS, a run-out must keep between itself and the
-   * rest of the trace. Default {@link FENCE_CLEARANCE}. 0 accepts any direction.
-   *
-   * ⚠⚠ A CONSTRAINT on the candidates, not the objective — which stays
-   * {@link FenceExtendOptions.reveal}. The two are independent: a run-out folded
-   * back alongside the well can still split the block evenly, so share alone will
-   * happily choose a cut that pinches to nothing at the wellhead.
-   */
-  clearance?: number;
-  /**
-   * Which side is being taken away. ⚠️ A BUILD input, not a display one: the
-   * run-outs are chosen by how much block each side is left with, so the two sides
-   * do not generally share a curve and flipping means rebuilding.
-   */
-  side?: 1 | -1;
-  /**
-   * Share of the block, 0..1, the cut aims to take away on the side being removed.
-   * Default {@link FENCE_REVEAL}. Reaching it is enough — the search stops
-   * preferring wider cuts above it rather than swinging away from the well.
-   *
-   * ⚠️ A TARGET, not a guarantee. A well near the edge of the block cannot leave
-   * half of it on both sides, and forcing that would contort the cut.
-   */
-  reveal?: number;
-};
+  let points = dedupePolyline2D(relax.points, 1);
+  let degenerate = false;
+  if (planExtent(points) < MIN_PLAN_EXTENT) {
+    // No plan direction of its own. The spread's principal axis is the only
+    // non-arbitrary answer, and the run-outs carry the rest of the cut.
+    const direction = principalDirection(points);
+    let cx = 0;
+    let cz = 0;
+    for (const p of points) {
+      cx += p[0];
+      cz += p[1];
+    }
+    cx /= points.length;
+    cz /= points.length;
+    const half = Math.max(planExtent(points), MIN_PLAN_EXTENT) * 0.5;
+    points = [
+      [cx - direction[0] * half, cz - direction[1] * half],
+      [cx + direction[0] * half, cz + direction[1] * half],
+    ];
+    degenerate = true;
+  }
+  points = resamplePolyline2D(points, spacing);
+
+  // ⭐ Where the well actually ended up relative to the smoothed curve. Signed, so
+  // each side can open by exactly what IT needs — see FenceBase.deviation.
+  const trace = samples.plan.slice(from);
+  const hit: { point: Vec2; distance: number; along: number } = {
+    point: [0, 0],
+    distance: 0,
+    along: 0,
+  };
+  const normals = polylineNormals2D(points);
+  const deviation = new Float64Array(points.length);
+  for (let i = 0; i < points.length; i++) {
+    const near = nearestOnPolyline(trace, points[i][0], points[i][1], hit);
+    if (!near) continue;
+    deviation[i] =
+      (near.point[0] - points[i][0]) * normals[i][0] +
+      (near.point[1] - points[i][1]) * normals[i][1];
+  }
+
+  const radius = polylineRadiusProfile(points, HAIRPIN_RADIUS);
+  const curvature = new Float64Array(points.length);
+  const wanted = new Float64Array(points.length);
+  for (let i = 1; i + 1 < points.length; i++) {
+    if (!Number.isFinite(radius[i]) || radius[i] <= 0) continue;
+    // Which way the corner turns decides which side is left holding the blade.
+    const ax = points[i][0] - points[i - 1][0];
+    const az = points[i][1] - points[i - 1][1];
+    const bx = points[i + 1][0] - points[i][0];
+    const bz = points[i + 1][1] - points[i][1];
+    const left = ax * bz - az * bx >= 0;
+    curvature[i] = (left ? 1 : -1) / radius[i];
+    const magnitude = Math.min(
+      MAX_LOCAL_CLEARANCE,
+      Math.max(0, HAIRPIN_RADIUS - radius[i]),
+    );
+    if (magnitude > 0) wanted[i] = left ? magnitude : -magnitude;
+  }
+
+  return {
+    points,
+    from,
+    trimmedLength: from > 0 ? samples.md[from] - samples.md[0] : 0,
+    kickoff,
+    relax,
+    tolerance,
+    minRadius: polylineMinRadius(points, headRadius),
+    deviation,
+    curvature,
+    roundness: wanted,
+    headRadius: tried.head,
+    requiredHeadRadius: headRadius,
+    degenerate,
+  };
+}
 
 /** Furthest positive ray/ring crossing, or 0 when the ray never meets one. */
-function escapeDistance(origin: Vec2, dir: Vec2, rings: Vec2[][]): number {
+function escapeDistance(
+  origin: Vec2,
+  direction: Vec2,
+  rings: Vec2[][],
+): number {
   let furthest = 0;
   for (const ring of rings) {
     for (let i = 0; i < ring.length; i++) {
@@ -317,40 +629,39 @@ function escapeDistance(origin: Vec2, dir: Vec2, rings: Vec2[][]): number {
       const b = ring[(i + 1) % ring.length];
       const ex = b[0] - a[0];
       const ez = b[1] - a[1];
-      const denom = dir[0] * ez - dir[1] * ex;
-      if (denom === 0) continue;
+      const denominator = direction[0] * ez - direction[1] * ex;
+      if (denominator === 0) continue;
       const dx = a[0] - origin[0];
       const dz = a[1] - origin[1];
-      const t = (dx * ez - dz * ex) / denom;
-      const u = (dir[0] * dz - dx * dir[1]) / -denom;
+      const t = (dx * ez - dz * ex) / denominator;
+      const u = (direction[0] * dz - dx * direction[1]) / -denominator;
       if (t > furthest && u >= 0 && u <= 1) furthest = t;
     }
   }
   return furthest;
 }
 
-/** Direction of the last non-degenerate step at either end of the trace. */
-function endDirection(positions: Vec2[], fromStart: boolean): Vec2 | null {
-  const n = positions.length;
-  if (n < 2) return null;
-  if (fromStart) {
-    for (let i = 1; i < n; i++) {
-      if (distanceVec2(positions[i], positions[0]) > 1e-6)
-        return directionVec2(positions[i], positions[0]);
-    }
-  } else {
-    for (let i = n - 2; i >= 0; i--) {
-      if (distanceVec2(positions[i], positions[n - 1]) > 1e-6)
-        return directionVec2(positions[i], positions[n - 1]);
-    }
-  }
-  return null;
+/** The bounds as a ring, so a ray is guaranteed to leave the raster. */
+function boundsRing(bounds: [number, number, number, number]): Vec2[] {
+  const [minX, minZ, maxX, maxZ] = bounds;
+  return [
+    [minX, minZ],
+    [maxX, minZ],
+    [maxX, maxZ],
+    [minX, maxZ],
+  ];
 }
 
-/** Bearings from `apex` to every trace point further off than `near`, sorted. */
-function traceBearings(positions: Vec2[], apex: Vec2, near: number): number[] {
+/** Direction of the last non-degenerate step at either end of a polyline. */
+function endDirection(points: Vec2[], fromStart: boolean): Vec2 | null {
+  const inward = endTangent2D(points, fromStart, JUNCTION_ARC);
+  return inward ? [-inward[0], -inward[1]] : null;
+}
+
+/** Bearings from `apex` to every point further off than `near`, sorted. */
+function bearingsFrom(points: Vec2[], apex: Vec2, near: number): number[] {
   const bearings: number[] = [];
-  for (const p of positions) {
+  for (const p of points) {
     const vx = p[0] - apex[0];
     const vz = p[1] - apex[1];
     if (vx * vx + vz * vz < near * near) continue;
@@ -358,489 +669,164 @@ function traceBearings(positions: Vec2[], apex: Vec2, near: number): number[] {
   }
   return bearings.sort((a, b) => a - b);
 }
+
+/** Smallest angle between a direction and any occupied bearing. */
+function clearanceOf(direction: Vec2, bearings: number[]): number {
+  if (bearings.length === 0) return Math.PI;
+  const at = Math.atan2(direction[1], direction[0]);
+  let closest = Math.PI;
+  for (const b of bearings) {
+    let d = Math.abs(b - at);
+    if (d > Math.PI) d = 2 * Math.PI - d;
+    if (d < closest) closest = d;
+  }
+  return closest;
+}
+
+/** Every angular gap between the bearings a trace occupies, widest first. */
+function bearingGaps(bearings: number[]): { mid: number; span: number }[] {
+  const gaps: { mid: number; span: number }[] = [];
+  for (let i = 0; i < bearings.length; i++) {
+    const from = bearings[i];
+    const to = bearings[(i + 1) % bearings.length];
+    const span = i + 1 < bearings.length ? to - from : to + 2 * Math.PI - from;
+    gaps.push({ mid: from + span * 0.5, span });
+  }
+  return gaps.sort((a, b) => b.span - a.span);
+}
+
 /**
- * What fraction of a footprint each side of a curve holds.
+ * Directions worth trying for a run-out: the end tangent when it clears the trace,
+ * plus the middle of every gap wide enough to hold one.
  *
- * ⭐⭐ THE quantity a fence is actually judged by, and the one every earlier proxy
- * failed to capture. A fence exists to take away what stands between the viewer
- * and the well, so what matters is that the side being removed is a usable piece
- * of the block — not how far the run-out sits from the trace in angle. Measured on
- * the Volve data the healthy wells split 43-58% while the broken ones leave one
- * side 0-17%, and a 0% side is a fence that either removes nothing or everything.
- *
- * ⚠️ Rasterised and flood filled EXACTLY as {@link createFenceField} does, seed
- * corner included, or the shares would describe a different partition from the one
- * the shader ends up reading.
- *
- * @returns `[seedShare, otherShare]` — the seed corner's component first
+ * ⚠️⚠️ The raw end tangent is NOT seeded unconditionally. On a well that folds back
+ * the head tangent points straight down the arm the well returns along, so the
+ * run-out ends up beside the trace and the "cut" is a wedge closing to nothing at
+ * the wellhead. It earns its place like any other candidate.
  */
-function splitShares(
-  curve: Vec2[],
+function runOutCandidates(
+  trace: Vec2[],
+  apex: Vec2,
+  tangent: Vec2,
+  trend: Vec2,
+  clearance: number,
+): Vec2[] {
+  const bearings = bearingsFrom(trace, apex, RUN_OUT_NEAR);
+  if (bearings.length === 0) return [tangent];
+
+  const out: Vec2[] = [];
+  const offer = (direction: Vec2) => {
+    if (clearanceOf(direction, bearings) < clearance) return;
+    for (const had of out) {
+      if (had[0] * direction[0] + had[1] * direction[1] > 0.999) return;
+    }
+    out.push(direction);
+  };
+  offer(tangent);
+  // ⭐⭐ The overall TREND, not just the local tangent. A well that is small next to
+  // its field has an end tangent that says nothing about which way the fence has to
+  // run to reach across the block, and a run-out aimed by it can leave the footprint
+  // without ever crossing it — which splits the plane but not the block.
+  offer(trend);
+
+  const gaps = bearingGaps(bearings);
+  for (const gap of gaps) {
+    // Both flanks have to clear, so the gap must be twice the clearance wide —
+    // the midpoint of a 0.2 rad gap clears less than 6 degrees.
+    if (gap.span < 2 * clearance) continue;
+    if (out.length >= RUN_OUT_CANDIDATES) break;
+    offer([Math.cos(gap.mid), Math.sin(gap.mid)]);
+  }
+
+  // A well enclosed by its own trace clears nothing; take the roomiest direction
+  // there is rather than leaving the caller with no cut at all.
+  if (out.length === 0 && gaps.length > 0) {
+    out.push([Math.cos(gaps[0].mid), Math.sin(gaps[0].mid)]);
+  }
+  return out.length > 0 ? out : [tangent];
+}
+
+/** A rasterised footprint, so a split can be scored against the BLOCK. */
+export type OutlineMask = {
+  mask: Uint8Array;
+  nx: number;
+  ny: number;
+  cell: number;
+  origin: Vec2;
+  /** cells inside the footprint */
+  area: number;
+};
+
+/**
+ * Rasterise a footprint's rings, even-odd so holes stay holes.
+ *
+ * ⚠️⚠️ Scoring a split against the outline's BOUNDING BOX instead measures a
+ * rectangle the block only partly fills, and a field footprint is concave enough to
+ * fill it badly — an "even" split of the box can leave one half of the actual block
+ * nearly empty.
+ *
+ * @group Geometries
+ */
+export function rasterizeOutline(
+  rings: Vec2[][],
   bounds: [number, number, number, number],
-  resolution: number = 96,
-): [number, number] {
+  resolution?: number,
+): OutlineMask {
   const [minX, minZ, maxX, maxZ] = bounds;
+  // ⚠️ A fixed division count means a metre-sized cell that grows with the field, and
+  // the score then cannot resolve a share it is supposed to be maximising.
+  const divisions =
+    resolution ??
+    Math.min(
+      SHARE_RESOLUTION_MAX,
+      Math.max(
+        SHARE_RESOLUTION,
+        Math.round(Math.max(maxX - minX, maxZ - minZ) / SHARE_CELL),
+      ),
+    );
   const cell = Math.max(
-    (maxX - minX) / resolution,
-    (maxZ - minZ) / resolution,
+    (maxX - minX) / divisions,
+    (maxZ - minZ) / divisions,
     1e-6,
   );
   const nx = Math.ceil((maxX - minX) / cell) + 5;
   const ny = Math.ceil((maxZ - minZ) / cell) + 5;
   const origin: Vec2 = [minX - 2 * cell, minZ - 2 * cell];
   const mask = new Uint8Array(nx * ny);
-  const toC = (p: Vec2) => (p[0] - origin[0]) / cell;
-  const toR = (p: Vec2) => (p[1] - origin[1]) / cell;
-  for (let i = 1; i < curve.length; i++) {
-    rasterizeSegment(
-      mask,
-      nx,
-      ny,
-      toC(curve[i - 1]),
-      toR(curve[i - 1]),
-      toC(curve[i]),
-      toR(curve[i]),
-    );
-  }
-
-  const seen = new Uint8Array(nx * ny);
-  let seed = -1;
-  for (let i = 0; i < mask.length; i++) {
-    if (!mask[i]) {
-      seed = i;
-      break;
-    }
-  }
-  if (seed < 0) return [0, 0];
-  const stack = [seed];
-  seen[seed] = 1;
-  while (stack.length > 0) {
-    const at = stack.pop()!;
-    const c = at % nx;
-    const r = (at - c) / nx;
-    if (c > 0 && !mask[at - 1] && !seen[at - 1]) {
-      seen[at - 1] = 1;
-      stack.push(at - 1);
-    }
-    if (c < nx - 1 && !mask[at + 1] && !seen[at + 1]) {
-      seen[at + 1] = 1;
-      stack.push(at + 1);
-    }
-    if (r > 0 && !mask[at - nx] && !seen[at - nx]) {
-      seen[at - nx] = 1;
-      stack.push(at - nx);
-    }
-    if (r < ny - 1 && !mask[at + nx] && !seen[at + nx]) {
-      seen[at + nx] = 1;
-      stack.push(at + nx);
-    }
-  }
-
-  let inSeed = 0;
-  let other = 0;
+  let area = 0;
+  const crossings: number[] = [];
   for (let r = 0; r < ny; r++) {
     const z = origin[1] + r * cell;
-    if (z < minZ || z > maxZ) continue;
-    for (let c = 0; c < nx; c++) {
-      const x = origin[0] + c * cell;
-      if (x < minX || x > maxX) continue;
-      const at = r * nx + c;
-      if (mask[at]) continue;
-      if (seen[at]) inSeed++;
-      else other++;
+    crossings.length = 0;
+    for (const ring of rings) {
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i];
+        const b = ring[(i + 1) % ring.length];
+        if (a[1] === b[1]) continue;
+        if (z < Math.min(a[1], b[1]) || z >= Math.max(a[1], b[1])) continue;
+        crossings.push(a[0] + ((z - a[1]) / (b[1] - a[1])) * (b[0] - a[0]));
+      }
     }
-  }
-  const total = inSeed + other;
-  if (total === 0) return [0, 0];
-  return [inSeed / total, other / total];
-}
-
-/**
- * Directions worth trying for a run-out: the end tangent, plus the middle of each
- * roomy gap between the bearings the trace occupies.
- *
- * ⚠️ Capped, and widest gaps first. The pairing below is quadratic in this list,
- * and a narrow gap cannot hold a run-out that clears anything anyway.
- *
- * ⚠️⚠️ `clearance` is a CONSTRAINT, not an objective. Share alone cannot see this:
- * a run-out that leaves the wellhead almost parallel to the trace can still split
- * the block in half, so it scores well while the "cut" it opens is a razor wedge
- * closing to nothing at the head. Measured on Volve, dropping the test put F-15 D
- * back to a 2° head opening while its shares stayed a healthy 25/75.
- */
-function runOutCandidates(
-  positions: Vec2[],
-  apex: Vec2,
-  natural: Vec2,
-  near: number,
-  clearance: number = FENCE_CLEARANCE,
-  limit: number = 5,
-): Vec2[] {
-  const bearings = traceBearings(positions, apex, near);
-  if (bearings.length === 0) return [natural];
-
-  const clearanceOf = (dir: Vec2) => {
-    const at = Math.atan2(dir[1], dir[0]);
-    let closest = Math.PI;
-    for (const b of bearings) {
-      let d = Math.abs(b - at);
-      if (d > Math.PI) d = 2 * Math.PI - d;
-      if (d < closest) closest = d;
-    }
-    return closest;
-  };
-
-  const out: Vec2[] = [];
-  // ⚠️ The raw end tangent is exactly the direction that fails on a fold-back well,
-  // so it earns its place like any other candidate rather than being seeded.
-  if (clearanceOf(natural) >= clearance) out.push(natural);
-
-  const gaps: { mid: number; span: number }[] = [];
-  for (let i = 0; i < bearings.length; i++) {
-    const from = bearings[i];
-    const to = bearings[(i + 1) % bearings.length];
-    const span = i + 1 < bearings.length ? to - from : to + 2 * Math.PI - from;
-    // A gap only holds a clearing run-out if BOTH flanks clear, so it must be
-    // twice the clearance wide — the midpoint of a 0.2 rad gap clears 5.7°.
-    if (span < 2 * clearance) continue;
-    gaps.push({ mid: from + span * 0.5, span });
-  }
-  gaps.sort((a, b) => b.span - a.span);
-  for (const gap of gaps.slice(0, limit)) {
-    out.push([Math.cos(gap.mid), Math.sin(gap.mid)]);
-  }
-
-  // A well enclosed by its own trace clears nothing; take the roomiest direction
-  // there is rather than leaving the caller with no cut at all.
-  if (out.length === 0) {
-    let best = { mid: Math.atan2(natural[1], natural[0]), span: -1 };
-    for (let i = 0; i < bearings.length; i++) {
-      const from = bearings[i];
-      const to = bearings[(i + 1) % bearings.length];
-      const span =
-        i + 1 < bearings.length ? to - from : to + 2 * Math.PI - from;
-      if (span > best.span) best = { mid: from + span * 0.5, span };
-    }
-    out.push([Math.cos(best.mid), Math.sin(best.mid)]);
-  }
-  return out;
-}
-
-/**
- * The extended curve for each side, from ONE run-out search.
- *
- * ⭐⭐ Both sides are resolved together because the search already scores every
- * candidate pair for BOTH — running it twice would cost two rasterised flood
- * fills per pair to learn the same thing. It also lets the caller tell agreement
- * from divergence: when {@link FenceCurves.shared} is true, `plus` and `minus`
- * are the SAME ARRAY, so one field and one texture serve both sides and flipping
- * costs nothing.
- *
- * @group Geometries
- */
-export type FenceCurves = {
-  /** the curve to build the field from when side +1 is removed */
-  plus: Vec2[];
-  /** the curve to build the field from when side −1 is removed */
-  minus: Vec2[];
-  /** whether both sides settled on the same run-out pair */
-  shared: boolean;
-};
-
-/**
- * Run the trace out of the chunk, at both ends, for BOTH sides.
- *
- * ⭐ This is what turns a curve lying INSIDE the footprint into one that SEPARATES
- * it — without it there is no "side" to remove, only a slit. It is also the "cut
- * leading into the well head" and the one "out of the termination": the block is
- * opened along the well and then along the direction the well arrived from and
- * the one it was heading in.
- *
- * ⭐ The reach is DERIVED (ray-cast against the outline plus `margin`) rather than
- * configured, so it is right for any footprint. The DIRECTION is chosen by how
- * much block the cut leaves — see {@link splitShares} — subject to a clearance
- * CONSTRAINT on the candidates, see {@link runOutCandidates}.
- *
- * ⚠️ Rotating a run-out leaves a CORNER where it meets the trace — up to 161
- * degrees between consecutive vertices on the Volve data. Nothing here rounds it:
- * both a general curvature relaxation and a tangent-arc fillet were tried and
- * measured worse than leaving it. See `/memories/repo/chunk-fence.md`.
- *
- * @group Geometries
- */
-export function fenceCurves(
-  positions: Vec2[],
-  options: FenceExtendOptions,
-): FenceCurves {
-  if (positions.length === 0) return { plus: [], minus: [], shared: true };
-  const margin = options.margin ?? DEFAULT_MARGIN;
-  const azimuth = options.azimuth ?? 0;
-  const near = options.clearanceNear ?? FENCE_CLEARANCE_NEAR;
-  const clearance = options.clearance ?? FENCE_CLEARANCE;
-  const reveal = options.reveal ?? FENCE_REVEAL;
-  const fallback: Vec2 = [Math.cos(azimuth), Math.sin(azimuth)];
-
-  const end = endDirection(positions, false) ?? fallback;
-  const start = endDirection(positions, true) ?? [-fallback[0], -fallback[1]];
-
-  // A trace with too little deviation to carry two independent directions would
-  // otherwise send both extensions the same way, leaving the block uncut on one
-  // side and doubly cut on the other.
-  const plan = positions.reduce(
-    (sum, p, i) => (i === 0 ? 0 : sum + distanceVec2(positions[i - 1], p)),
-    0,
-  );
-  const first = positions[0];
-  const last = positions[positions.length - 1];
-
-  // ⚠️⚠️ De-looped HERE, before the field is built from it, not merely on the face
-  // afterwards. A curve that crosses itself encloses a pocket, and the flood fill
-  // that signs the field hands that pocket the far side's sign — so the block gets
-  // a closed island removed (or kept) that no face describes. Repairing only the
-  // contour leaves the face saying one thing and the discard another, and which
-  // way that mismatch reads flips with `side`, which is what makes width 0 look
-  // like a plain inversion rather than a fit.
-  const build = (s: Vec2, e: Vec2): Vec2[] => {
-    const startReach = escapeDistance(first, s, options.rings) + margin;
-    const endReach = escapeDistance(last, e, options.rings) + margin;
-    return removeChainLoops([
-      [first[0] + s[0] * startReach, first[1] + s[1] * startReach] as Vec2,
-      ...positions,
-      [last[0] + e[0] * endReach, last[1] + e[1] * endReach] as Vec2,
-    ]);
-  };
-
-  if (plan < FENCE_MIN_DEVIATION) {
-    const curve = build([-end[0], -end[1]], end);
-    return { plus: curve, minus: curve, shared: true };
-  }
-
-  // ⭐⭐ Chosen by what the cut actually LEAVES, not by the angle it makes with
-  // the trace. See {@link splitShares}.
-  let minX = Infinity;
-  let minZ = Infinity;
-  let maxX = -Infinity;
-  let maxZ = -Infinity;
-  for (const ring of options.rings) {
-    for (const p of ring) {
-      if (p[0] < minX) minX = p[0];
-      if (p[0] > maxX) maxX = p[0];
-      if (p[1] < minZ) minZ = p[1];
-      if (p[1] > maxZ) maxZ = p[1];
-    }
-  }
-
-  let plusPair: [Vec2, Vec2] | null = null;
-  let minusPair: [Vec2, Vec2] | null = null;
-  if (maxX > minX && maxZ > minZ) {
-    const bounds: [number, number, number, number] = [minX, minZ, maxX, maxZ];
-    const starts = runOutCandidates(positions, first, start, near, clearance);
-    const ends = runOutCandidates(positions, last, end, near, clearance);
-    // ⭐ Capped at `reveal`: once the removed side is a usable piece of block,
-    // more of it is not better, and chasing it would swing the cut away from the
-    // well. Above the cap the score goes flat and the tie-break below decides.
-    const cap = (v: number) => Math.min(v, reveal);
-
-    let bestShared = -1;
-    let bestSharedOwnPlus = -1;
-    let bestSharedOwnMinus = -1;
-    let bestSharedPair: [Vec2, Vec2] | null = null;
-    let bestOwnPlus = -1;
-    let bestOwnPlusPair: [Vec2, Vec2] | null = null;
-    let bestOwnMinus = -1;
-    let bestOwnMinusPair: [Vec2, Vec2] | null = null;
-    for (const s of starts) {
-      const sReach = escapeDistance(first, s, options.rings) + margin;
-      const sTip: Vec2 = [first[0] + s[0] * sReach, first[1] + s[1] * sReach];
-      for (const e of ends) {
-        if (dotVec2(s, e) > FENCE_COLLINEAR) continue;
-        const eReach = escapeDistance(last, e, options.rings) + margin;
-        const curve: Vec2[] = [
-          sTip,
-          ...positions,
-          [last[0] + e[0] * eReach, last[1] + e[1] * eReach] as Vec2,
-        ];
-        const [seedShare, otherShare] = splitShares(curve, bounds);
-        // The shader discards the NON-seed component for side +1.
-        const ownPlus = cap(otherShare);
-        const ownMinus = cap(seedShare);
-        const shared = Math.min(ownPlus, ownMinus);
-        if (shared > bestShared) {
-          bestShared = shared;
-          bestSharedOwnPlus = ownPlus;
-          bestSharedOwnMinus = ownMinus;
-          bestSharedPair = [s, e];
-        }
-        if (ownPlus > bestOwnPlus) {
-          bestOwnPlus = ownPlus;
-          bestOwnPlusPair = [s, e];
-        }
-        if (ownMinus > bestOwnMinus) {
-          bestOwnMinus = ownMinus;
-          bestOwnMinusPair = [s, e];
+    if (crossings.length < 2) continue;
+    crossings.sort((p, q) => p - q);
+    for (let k = 0; k + 1 < crossings.length; k += 2) {
+      const c0 = Math.max(0, Math.ceil((crossings[k] - origin[0]) / cell));
+      const c1 = Math.min(
+        nx - 1,
+        Math.floor((crossings[k + 1] - origin[0]) / cell),
+      );
+      for (let c = c0; c <= c1; c++) {
+        if (!mask[r * nx + c]) {
+          mask[r * nx + c] = 1;
+          area++;
         }
       }
     }
-
-    // ⭐⭐ The pair that serves BOTH sides wins unless it would leave THIS side
-    // unusable. Preferring whichever pair is marginally better for the current
-    // side instead makes the two views disagree on most wells (13 of 24 measured)
-    // for a few points of share, and then they are no longer two views of one
-    // section — which is the whole reason to have two.
-    plusPair =
-      bestSharedPair && bestSharedOwnPlus >= FENCE_SHARE_FLOOR
-        ? bestSharedPair
-        : (bestOwnPlusPair ?? bestSharedPair);
-    minusPair =
-      bestSharedPair && bestSharedOwnMinus >= FENCE_SHARE_FLOOR
-        ? bestSharedPair
-        : (bestOwnMinusPair ?? bestSharedPair);
   }
-
-  const resolve = (pair: [Vec2, Vec2] | null): [Vec2, Vec2] => {
-    const e = pair ? pair[1] : end;
-    let s = pair ? pair[0] : start;
-    if (dotVec2(e, s) > FENCE_COLLINEAR) s = [-e[0], -e[1]];
-    return [s, e];
-  };
-
-  const shared = plusPair === minusPair;
-  const [plusStart, plusEnd] = resolve(plusPair);
-  const plus = build(plusStart, plusEnd);
-  // ⭐ The same ARRAY when the two sides agree, so a caller can compare by
-  // identity and build one field instead of two — 25/25 on the demo data.
-  if (shared) return { plus, minus: plus, shared };
-  const [minusStart, minusEnd] = resolve(minusPair);
-  return { plus, minus: build(minusStart, minusEnd), shared };
+  return { mask, nx, ny, cell, origin, area };
 }
 
-/**
- * Run the trace out of the chunk, at both ends, for one side.
- *
- * A thin wrapper over {@link fenceCurves} — see there for what the run-outs are
- * chosen by.
- *
- * @group Geometries
- */
-export function extendFencePolyline(
-  positions: Vec2[],
-  options: FenceExtendOptions,
-): Vec2[] {
-  const curves = fenceCurves(positions, options);
-  return (options.side ?? 1) > 0 ? curves.plus : curves.minus;
-}
-
-/** A rasterised signed distance to a fence curve. */
-export type FenceField = {
-  /**
-   * Signed distance to the curve in METRES. Negative on the side to be removed;
-   * ⚠️ zero on the curve itself, so it is continuous across the boundary and
-   * bilinear sampling of a coarse grid still gives a smooth cut.
-   */
-  values: Float32Array;
-  /**
-   * Distance ALONG the curve, in metres, carried out from the nearest point on
-   * it — the natural `u` for anything drawn on the cut face, and what a seismic
-   * image would have to be sampled by. ⚠️ Discontinuous where the nearest point
-   * jumps, i.e. across the middle of a hairpin.
-   */
-  along: Float32Array;
-  /**
-   * The curve itself, extended. ⭐ Kept so a contour can be placed ANALYTICALLY
-   * rather than read off the raster: the grid supplies only which points connect
-   * to which (which is what makes it self-intersection-proof), and this supplies
-   * where each one actually goes.
-   */
-  positions: Vec2[];
-  nx: number;
-  ny: number;
-  /** scene XZ of node (0, 0) */
-  origin: Vec2;
-  /** metres per cell */
-  cell: number;
-  /** field range, for mapping an aperture onto "fully closed" / "fully open" */
-  min: number;
-  max: number;
-};
-
-/** The nearest point on a polyline to (x, z). */
-export type PolylineHit = {
-  /** scene XZ of the closest point on the curve */
-  point: Vec2;
-  /** distance to it, in metres */
-  distance: number;
-  /** how far along the curve it lies, in metres */
-  along: number;
-};
-
-/**
- * Exact nearest point on a polyline.
- *
- * ⭐ The one primitive both halves of a fence rest on: the field's magnitude is
- * this distance, and a contour vertex is placed by pushing it out to the wanted
- * distance from this point. Using one function for both is what stops the drawn
- * face and the region it opens from drifting apart.
- *
- * @group Geometries
- */
-export function nearestOnPolyline(
-  positions: Vec2[],
-  x: number,
-  z: number,
-  out?: PolylineHit,
-): PolylineHit | null {
-  if (positions.length === 0) return null;
-  const result = out ?? { point: [0, 0] as Vec2, distance: 0, along: 0 };
-  if (positions.length === 1) {
-    result.point[0] = positions[0][0];
-    result.point[1] = positions[0][1];
-    result.distance = Math.hypot(x - positions[0][0], z - positions[0][1]);
-    result.along = 0;
-    return result;
-  }
-  let best = Infinity;
-  let arc = 0;
-  for (let i = 1; i < positions.length; i++) {
-    const a = positions[i - 1];
-    const b = positions[i];
-    const ex = b[0] - a[0];
-    const ez = b[1] - a[1];
-    const len2 = ex * ex + ez * ez;
-    const len = Math.sqrt(len2);
-    let t = 0;
-    if (len2 > 0) {
-      t = ((x - a[0]) * ex + (z - a[1]) * ez) / len2;
-      t = t < 0 ? 0 : t > 1 ? 1 : t;
-    }
-    const qx = a[0] + ex * t;
-    const qz = a[1] + ez * t;
-    const d2 = (x - qx) * (x - qx) + (z - qz) * (z - qz);
-    if (d2 < best) {
-      best = d2;
-      result.point[0] = qx;
-      result.point[1] = qz;
-      result.along = arc + t * len;
-    }
-    arc += len;
-  }
-  result.distance = Math.sqrt(best);
-  return result;
-}
-
-/** {@link createFenceField} options. */
-export type FenceFieldOptions = {
-  /** minX, minZ, maxX, maxZ in scene XZ — the area the field must cover */
-  bounds: [number, number, number, number];
-  /** target metres per cell. Default 50. */
-  cellSize?: number;
-  /** node budget; the cell is coarsened to stay inside it. Default 2^20. */
-  maxCells?: number;
-  /** swap which side of the curve is negative */
-  flip?: boolean;
-};
-
-/** Mark every cell a segment passes through (8-connected, so a 4-connected flood
- * fill cannot leak across it diagonally). */
+/** Mark every cell a segment passes through, 8-connected. */
 function rasterizeSegment(
   mask: Uint8Array,
   nx: number,
@@ -874,27 +860,719 @@ function rasterizeSegment(
   }
 }
 
+/** Field cells per bucket of the segment lookup. */
+const SEGMENT_BUCKET = 4;
+
+/** Buckets searched around a node before it is treated as far from the curve. */
+const SEGMENT_RINGS = 3;
+
+/**
+ * Segments bucketed for nearest-point queries.
+ *
+ * ⚠️⚠️ Without this the distance pass is nodes x segments, which on a field-sized
+ * footprint is tens of millions of tests and takes about a second — a visible stall
+ * every time a well is selected. Bucketing makes it nodes x a handful.
+ *
+ * ⚠️ Segments are RASTERISED into bucket space rather than filling their bounding
+ * box: a run-out crossing the whole grid diagonally has a bounding box covering
+ * everything, and inserting it everywhere would defeat the point.
+ */
+function bucketSegments(
+  positions: Vec2[],
+  nx: number,
+  ny: number,
+  origin: Vec2,
+  cell: number,
+) {
+  const size = SEGMENT_BUCKET * cell;
+  const bx = Math.max(1, Math.ceil(nx / SEGMENT_BUCKET));
+  const by = Math.max(1, Math.ceil(ny / SEGMENT_BUCKET));
+  const counts = new Uint32Array(bx * by + 1);
+  const pairs: number[] = [];
+  const emit = (c: number, r: number, segment: number) => {
+    // Dilated by one bucket, so a segment that only clips a bucket corner is still
+    // found by a query from inside it.
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        const cc = c + dc;
+        const rr = r + dr;
+        if (cc < 0 || cc >= bx || rr < 0 || rr >= by) continue;
+        const key = rr * bx + cc;
+        const at = pairs.length - 2;
+        if (at >= 0 && pairs[at] === key && pairs[at + 1] === segment) continue;
+        pairs.push(key, segment);
+        counts[key + 1]++;
+      }
+    }
+  };
+  for (let i = 0; i + 1 < positions.length; i++) {
+    const a = positions[i];
+    const b = positions[i + 1];
+    let c = Math.round((a[0] - origin[0]) / size);
+    let r = Math.round((a[1] - origin[1]) / size);
+    const tc = Math.round((b[0] - origin[0]) / size);
+    const tr = Math.round((b[1] - origin[1]) / size);
+    const dc = Math.abs(tc - c);
+    const dr = -Math.abs(tr - r);
+    const sc = c < tc ? 1 : -1;
+    const sr = r < tr ? 1 : -1;
+    let err = dc + dr;
+    for (;;) {
+      emit(c, r, i);
+      if (c === tc && r === tr) break;
+      const e2 = 2 * err;
+      if (e2 >= dr) {
+        err += dr;
+        c += sc;
+      }
+      if (e2 <= dc) {
+        err += dc;
+        r += sr;
+      }
+    }
+  }
+
+  // ⚠️ Flat CSR rather than a Map. Nearly every node of a field-sized grid is far
+  // from the curve and probes a few dozen EMPTY buckets, so the lookup itself is
+  // the cost of the whole pass — hashing them turned a 20 ms job into a 500 ms one.
+  for (let i = 1; i < counts.length; i++) counts[i] += counts[i - 1];
+  const cursor = counts.slice();
+  const items = new Uint32Array(pairs.length / 2);
+  for (let p = 0; p < pairs.length; p += 2) {
+    items[cursor[pairs[p]]++] = pairs[p + 1];
+  }
+  // ⭐⭐ Which buckets could find ANYTHING within the search rings. Nearly every node
+  // of a field-sized grid is far from the curve, and without this each one still
+  // walks all 49 bucket lookups only to conclude there was nothing there — which is
+  // the whole cost of the pass.
+  const near = new Uint8Array(bx * by);
+  for (let r = 0; r < by; r++) {
+    for (let c = 0; c < bx; c++) {
+      const key = r * bx + c;
+      if (counts[key + 1] === counts[key]) continue;
+      for (let dr = -SEGMENT_RINGS; dr <= SEGMENT_RINGS; dr++) {
+        for (let dc = -SEGMENT_RINGS; dc <= SEGMENT_RINGS; dc++) {
+          const rr = r + dr;
+          const cc = c + dc;
+          if (cc < 0 || cc >= bx || rr < 0 || rr >= by) continue;
+          near[rr * bx + cc] = 1;
+        }
+      }
+    }
+  }
+
+  return { starts: counts, items, bx, by, size, near };
+}
+
+/**
+ * Rasterise a curve into a barrier a flood fill cannot cross.
+ *
+ * ⚠️⚠️ The two END SEGMENTS are extended past the grid before rasterising. A fence
+ * is only a partition if its curve leaves the raster at both ends, and "the run-out
+ * is longer than the padding" is not something the curve can know: the padding is
+ * two cells, the cell depends on the resolution, and a coarse raster over a large
+ * field pads further than the run-out reaches. The fill then walks around the end
+ * and calls the whole grid one side — measured as a 0/100 split on fields where the
+ * geometry was perfectly good. Extending here makes the guarantee structural rather
+ * than a constant the caller has to keep ahead of.
+ */
+function rasterizeCurve(
+  curve: Vec2[],
+  nx: number,
+  ny: number,
+  origin: Vec2,
+  cell: number,
+): Uint8Array {
+  const barrier = new Uint8Array(nx * ny);
+  const toC = (p: Vec2) => (p[0] - origin[0]) / cell;
+  const toR = (p: Vec2) => (p[1] - origin[1]) / cell;
+  if (curve.length === 1) {
+    rasterizeSegment(
+      barrier,
+      nx,
+      ny,
+      toC(curve[0]),
+      toR(curve[0]),
+      toC(curve[0]),
+      toR(curve[0]),
+    );
+    return barrier;
+  }
+  const beyond = (nx + ny) * cell;
+  const pushedOut = (from: Vec2, apex: Vec2): Vec2 => {
+    const dx = apex[0] - from[0];
+    const dz = apex[1] - from[1];
+    const length = Math.hypot(dx, dz);
+    if (length <= 1e-9) return apex;
+    return [apex[0] + (dx / length) * beyond, apex[1] + (dz / length) * beyond];
+  };
+  const points = curve.slice();
+  points[0] = pushedOut(curve[1], curve[0]);
+  points[points.length - 1] = pushedOut(
+    curve[curve.length - 2],
+    curve[curve.length - 1],
+  );
+  for (let i = 1; i < points.length; i++) {
+    rasterizeSegment(
+      barrier,
+      nx,
+      ny,
+      toC(points[i - 1]),
+      toR(points[i - 1]),
+      toC(points[i]),
+      toR(points[i]),
+    );
+  }
+  return barrier;
+}
+
+/** 4-connected flood from `seed` over cells the barrier does not occupy. */
+function floodFrom(
+  barrier: Uint8Array,
+  nx: number,
+  ny: number,
+  seed: number,
+): Uint8Array {
+  const seen = new Uint8Array(nx * ny);
+  if (seed < 0 || seed >= barrier.length || barrier[seed]) return seen;
+  const stack = [seed];
+  seen[seed] = 1;
+  while (stack.length > 0) {
+    const at = stack.pop()!;
+    const c = at % nx;
+    const r = (at - c) / nx;
+    if (c > 0 && !barrier[at - 1] && !seen[at - 1]) {
+      seen[at - 1] = 1;
+      stack.push(at - 1);
+    }
+    if (c < nx - 1 && !barrier[at + 1] && !seen[at + 1]) {
+      seen[at + 1] = 1;
+      stack.push(at + 1);
+    }
+    if (r > 0 && !barrier[at - nx] && !seen[at - nx]) {
+      seen[at - nx] = 1;
+      stack.push(at - nx);
+    }
+    if (r < ny - 1 && !barrier[at + nx] && !seen[at + nx]) {
+      seen[at + nx] = 1;
+      stack.push(at + nx);
+    }
+  }
+  return seen;
+}
+
+/**
+ * What fraction of the FOOTPRINT each half of a curve holds.
+ *
+ * ⭐ The quantity a run-out pair is judged by. A fence exists to take away what
+ * stands between the viewer and the well, so what matters is that each half is a
+ * usable piece of the block — a curve that carves a thin lens leaves one side
+ * showing nothing and the other showing everything.
+ *
+ * @returns `[smaller, larger]`, summing to 1
+ *
+ * @group Geometries
+ */
+export function splitShares(
+  curve: Vec2[],
+  outline: OutlineMask,
+): [number, number] {
+  const { mask, nx, ny, cell, origin, area } = outline;
+  if (area === 0) return [0, 1];
+  const barrier = rasterizeCurve(curve, nx, ny, origin, cell);
+  let seed = -1;
+  for (let i = 0; i < barrier.length; i++) {
+    if (!barrier[i]) {
+      seed = i;
+      break;
+    }
+  }
+  if (seed < 0) return [0, 1];
+  const seen = floodFrom(barrier, nx, ny, seed);
+  let inSeed = 0;
+  let other = 0;
+  for (let i = 0; i < mask.length; i++) {
+    if (!mask[i] || barrier[i]) continue;
+    if (seen[i]) inSeed++;
+    else other++;
+  }
+  const total = inSeed + other;
+  if (total === 0) return [0, 1];
+  const a = inSeed / total;
+  return a <= 0.5 ? [a, 1 - a] : [1 - a, a];
+}
+
+/** How a fence's run-outs continue past the ends of the well. */
+export type FenceExtensionMode = 'straight';
+
+/** One scored run-out pair. @group Geometries */
+export type FenceCandidate = {
+  start: Vec2;
+  end: Vec2;
+  /** share of the footprint the smaller half keeps, 0..0.5 */
+  evenness: number;
+  /** smaller of the two clearances, in radians */
+  clearance: number;
+};
+
+/** The run-out pair, shared by both sides of a fence. */
+export type FenceExtensions = {
+  /** unit direction leaving the curve's first vertex */
+  start: Vec2;
+  /** unit direction leaving its last vertex */
+  end: Vec2;
+  /** opening the start run-out keeps from the trace, in radians */
+  startClearance: number;
+  /** opening the end run-out keeps from the trace, in radians */
+  endClearance: number;
+  /** share of the footprint the SMALLER half keeps, 0..0.5 */
+  evenness: number;
+  /** direction pairs scored */
+  scored: number;
+  /**
+   * Every pair that was scored, best first.
+   *
+   * ⭐ Kept so a failure can be read as "the search picked badly" or "nothing on
+   * offer was any good", which need completely different fixes.
+   */
+  candidates: FenceCandidate[];
+  mode: FenceExtensionMode;
+};
+
+/** {@link fenceExtensions} options. */
+export type FenceExtensionOptions = {
+  rings: Vec2[][];
+  bounds: [number, number, number, number];
+  outline: OutlineMask;
+  /** metres to clear the footprint by. Default 500. */
+  runOutMargin?: number;
+  /** opening a run-out must keep from the trace, in radians. Default 45°. */
+  clearance?: number;
+  mode?: FenceExtensionMode;
+};
+
+/**
+ * Choose the run-out direction at each end — ONE pair, used by both sides.
+ *
+ * ⭐⭐ Shared deliberately. The two halves should be flip sides of one section, so
+ * that a viewer comparing them is comparing one cut; only the repairs a particular
+ * side needs are allowed to differ, and those are local to a junction.
+ *
+ * ⚠️⚠️ Clearance is a CONSTRAINT and evenness is the OBJECTIVE, and neither
+ * subsumes the other. A run-out folded back alongside the well still splits the
+ * block evenly, so it scores well while the cut it opens closes to nothing at the
+ * wellhead — which is why candidates are filtered by clearance before anything is
+ * scored, rather than the two being traded off.
+ *
+ * ⚠️ Every pair is scored on the curve that would ACTUALLY be built, run-outs
+ * attached and de-looped. Scoring an idealised curve and building a different one
+ * is how an optimiser ends up optimising something nobody sees.
+ *
+ * @group Geometries
+ */
+export function fenceExtensions(
+  base: Vec2[],
+  options: FenceExtensionOptions,
+): FenceExtensions {
+  const clearance = options.clearance ?? RUN_OUT_CLEARANCE;
+  const margin = options.runOutMargin ?? DEFAULT_RUN_OUT_MARGIN;
+  // ⚠️⚠️ The curve has to leave the RASTER, not merely the outline: one that
+  // escapes a concave footprint can still stop inside its bounding box, and the
+  // flood fill that signs the field then walks around the end of it and calls the
+  // whole grid one side.
+  const rings = [...options.rings, boundsRing(options.bounds)];
+
+  const first = base[0];
+  const last = base[base.length - 1];
+  const endTangent = endDirection(base, false) ?? [1, 0];
+  const startTangent = endDirection(base, true) ?? [-1, 0];
+  // The chord, which for a small well in a large field is far steadier than either
+  // end tangent and is the direction that actually reaches across the block.
+  const chordX = last[0] - first[0];
+  const chordZ = last[1] - first[1];
+  const chordLength = Math.hypot(chordX, chordZ) || 1;
+  const trend: Vec2 = [chordX / chordLength, chordZ / chordLength];
+
+  const starts = runOutCandidates(
+    base,
+    first,
+    startTangent,
+    [-trend[0], -trend[1]],
+    clearance,
+  );
+  const ends = runOutCandidates(base, last, endTangent, trend, clearance);
+  const startBearings = bearingsFrom(base, first, RUN_OUT_NEAR);
+  const endBearings = bearingsFrom(base, last, RUN_OUT_NEAR);
+  const reach = (origin: Vec2, direction: Vec2) =>
+    escapeDistance(origin, direction, rings) + margin;
+
+  const candidates: FenceCandidate[] = [];
+  let best: FenceExtensions | null = null;
+  let scored = 0;
+  for (const s of starts) {
+    const sReach = reach(first, s);
+    const sTip: Vec2 = [first[0] + s[0] * sReach, first[1] + s[1] * sReach];
+    for (const e of ends) {
+      const eReach = reach(last, e);
+      const curve = removePolylineLoops([
+        sTip,
+        ...base,
+        [last[0] + e[0] * eReach, last[1] + e[1] * eReach] as Vec2,
+      ]);
+      scored++;
+      const [smaller] = splitShares(curve, options.outline);
+      const startClearance = clearanceOf(s, startBearings);
+      const endClearance = clearanceOf(e, endBearings);
+      candidates.push({
+        start: s,
+        end: e,
+        evenness: smaller,
+        clearance: Math.min(startClearance, endClearance),
+      });
+      const candidate: FenceExtensions = {
+        start: s,
+        end: e,
+        startClearance,
+        endClearance,
+        evenness: smaller,
+        scored: 0,
+        candidates: [],
+        mode: options.mode ?? 'straight',
+      };
+      const better =
+        !best ||
+        candidate.evenness > best.evenness + 1e-4 ||
+        (Math.abs(candidate.evenness - best.evenness) <= 1e-4 &&
+          candidate.startClearance + candidate.endClearance >
+            best.startClearance + best.endClearance);
+      if (better) best = candidate;
+    }
+  }
+
+  const result: FenceExtensions = best ?? {
+    start: startTangent,
+    end: endTangent,
+    startClearance: clearanceOf(startTangent, startBearings),
+    endClearance: clearanceOf(endTangent, endBearings),
+    evenness: 0,
+    scored: 0,
+    candidates: [],
+    mode: options.mode ?? 'straight',
+  };
+  result.scored = scored;
+  result.candidates = candidates.sort((a, b) => b.evenness - a.evenness);
+  return result;
+}
+
+/** One side's finished curve, ready to be rasterised and swept. */
+export type FenceSideCurve = {
+  /** 1 removes the half the left normal points into, -1 the other */
+  side: 1 | -1;
+  /** scene XZ: run-out, the offset trace, run-out */
+  points: Vec2[];
+  /** opening at the start and end junction ON THIS SIDE, in radians */
+  opening: [number, number];
+  /** whether a junction had to be blended open for this side */
+  blended: boolean;
+  /** loops the repair had to remove */
+  loopsRemoved: number;
+  /** waists this side had to route around */
+  waistRemoved: number;
+};
+
+/** {@link buildFenceSideCurve} options. */
+export type FenceSideOptions = {
+  rings: Vec2[][];
+  bounds: [number, number, number, number];
+  /** metres of clearance kept between the trajectory and the cut. Default 0. */
+  margin?: number;
+  /** metres to clear the footprint by. Default 500. */
+  runOutMargin?: number;
+  /** opening each junction must keep on this side, in radians. Default 60°. */
+  minOpening?: number;
+  /** how close the curve may come back to itself, in metres. */
+  waist?: number;
+  /** signed offset of the well from the curve per vertex — {@link FenceBase.deviation} */
+  deviation?: ArrayLike<number>;
+  /** signed corner rounding per vertex — {@link FenceBase.roundness} */
+  roundness?: ArrayLike<number>;
+  /** the well's own plan trace, which the cut is kept clear of */
+  well?: Vec2[];
+};
+
+/** The opening a junction leaves on one side of a curve. */
+function junctionOpeningOf(
+  points: Vec2[],
+  arm: Vec2,
+  fromStart: boolean,
+  side: 1 | -1,
+): number {
+  const leave = endTangent2D(points, fromStart, JUNCTION_ARC);
+  if (!leave) return Math.PI;
+  // Arriving along the run-out means arriving along its reverse.
+  return junctionOpening([-arm[0], -arm[1]], leave, side);
+}
+
+/**
+ * Pull the end of a curve toward a straight continuation of its run-out, so the
+ * junction opens up on the side that needs it.
+ *
+ * ⚠️ Weighted to nothing at `length`, so the deviation is bounded and the deep part
+ * of the curve — the part worth following — is untouched.
+ */
+function blendJunction(
+  points: Vec2[],
+  arm: Vec2,
+  fromStart: boolean,
+  length: number,
+): Vec2[] {
+  const n = points.length;
+  const out = points.map(p => [p[0], p[1]] as Vec2);
+  if (n < 3 || !(length > 0)) return out;
+  const apex = points[fromStart ? 0 : n - 1];
+  // Widest opening comes from leaving straight back along the run-out.
+  const target: Vec2 = [-arm[0], -arm[1]];
+  let arc = 0;
+  for (let k = 1; k < n; k++) {
+    const i = fromStart ? k : n - 1 - k;
+    const previous = fromStart ? points[i - 1] : points[i + 1];
+    arc += distanceVec2(previous, points[i]);
+    if (arc >= length) break;
+    const t = arc / length;
+    const weight = (1 - t) * (1 - t);
+    const wantX = apex[0] + target[0] * arc;
+    const wantZ = apex[1] + target[1] * arc;
+    out[i] = [
+      points[i][0] + (wantX - points[i][0]) * weight,
+      points[i][1] + (wantZ - points[i][1]) * weight,
+    ];
+  }
+  return out;
+}
+
+/**
+ * One side's curve: the base trace moved clear of the well, with a run-out at each
+ * end, repaired for THIS side.
+ *
+ * ⭐⭐ The clearance is baked in HERE rather than applied as a threshold later. The
+ * field is then a plain signed distance to this curve and the cut is its zero set,
+ * so the face that gets drawn and the block that gets removed are the same object.
+ * That is what removes the need for a contour, a root-find, and a pair of sampling
+ * functions pinned together by a test.
+ *
+ * ⭐ The two sides offset in OPPOSITE directions, which is why they need separate
+ * curves at all: whichever bend is convex for one is concave for the other, and it
+ * is the concave one that folds. The repairs are therefore per side by nature, not
+ * by choice — but they are the only thing that differs, so the two remain flip
+ * sides of one cut.
+ *
+ * @group Geometries
+ */
+export function buildFenceSideCurve(
+  base: Vec2[],
+  extensions: FenceExtensions,
+  side: 1 | -1,
+  options: FenceSideOptions,
+): FenceSideCurve {
+  const margin = options.margin ?? 0;
+  const runOutMargin = options.runOutMargin ?? DEFAULT_RUN_OUT_MARGIN;
+  const minOpening = options.minOpening ?? MIN_OPENING;
+  const rings = [...options.rings, boundsRing(options.bounds)];
+
+  // The face must sit clear of the well on the half being KEPT, so that the well and
+  // the room around it both end up in the half being removed.
+  // ⭐ Only what THIS side needs: where the well already lies in the half this side
+  // removes, the deviation is the wrong sign and asks for nothing.
+  const need = new Float64Array(base.length);
+  for (let i = 0; i < base.length; i++) {
+    const at = (a: ArrayLike<number> | undefined) =>
+      a ? a[Math.min(i, a.length - 1)] : 0;
+    const buried =
+      Math.max(0, -side * at(options.deviation)) * DEVIATION_SAFETY;
+    // Only the side left HOLDING the sharp wedge has anything to carve away.
+    const blade = Math.max(0, -side * at(options.roundness));
+    need[i] = Math.max(margin, buried, blade);
+  }
+  // ⚠️ Spread to soften the opening, but never BELOW what a vertex asked for — a blur
+  // that dips at the peak is exactly where the well would still be buried.
+  const spread = spreadAlongPolyline(base, need, CLEARANCE_SPREAD);
+  const opening = new Float64Array(base.length);
+  let widest = 0;
+  for (let i = 0; i < base.length; i++) {
+    opening[i] = Math.max(need[i], spread[i]);
+    widest = Math.max(widest, opening[i]);
+  }
+  // ⭐⭐ RELAXED against the well, not offset from the curve. An offset at a tight bend
+  // either folds — leaving a corner where the fold is spliced out — or has to be
+  // clamped short of the clearance the well needs. Smoothing with a push back out
+  // gives both: smooth, and provably clear.
+  let trace =
+    widest > 0
+      ? relaxPolyline2DClearOf(base, options.well ?? base, opening, side)
+      : base.map(p => [p[0], p[1]] as Vec2);
+
+  let blended = false;
+  for (let pass = 0; pass < 2; pass++) {
+    const openStart = junctionOpeningOf(trace, extensions.start, true, side);
+    const openEnd = junctionOpeningOf(trace, extensions.end, false, side);
+    if (openStart >= minOpening && openEnd >= minOpening) break;
+    const length = BLEND_LENGTH * (pass + 1);
+    if (openStart < minOpening) {
+      trace = blendJunction(trace, extensions.start, true, length);
+      blended = true;
+    }
+    if (openEnd < minOpening) {
+      trace = blendJunction(trace, extensions.end, false, length);
+      blended = true;
+    }
+  }
+
+  // ⭐⭐ A run-out leaves this side's own endpoint but CONVERGES onto the ray both
+  // sides share, over `RUN_OUT_BLEND`. Beyond that the two arms are the same line —
+  // they are one section seen from two sides, so only the junction itself may differ.
+  const arm = (
+    apex: Vec2,
+    from: Vec2,
+    direction: Vec2,
+    reach: number,
+  ): Vec2[] => {
+    const normal = leftNormal2D(direction[0], direction[1]);
+    const lateral =
+      (from[0] - apex[0]) * normal[0] + (from[1] - apex[1]) * normal[1];
+    const blend = Math.min(RUN_OUT_BLEND, reach);
+    const steps = 6;
+    const out: Vec2[] = [];
+    for (let k = 0; k <= steps; k++) {
+      const e = k / steps;
+      const fade = 1 - e * e * (3 - 2 * e);
+      out.push([
+        apex[0] + direction[0] * (e * blend) + normal[0] * lateral * fade,
+        apex[1] + direction[1] * (e * blend) + normal[1] * lateral * fade,
+      ]);
+    }
+    out.push([apex[0] + direction[0] * reach, apex[1] + direction[1] * reach]);
+    return out;
+  };
+
+  const startReach =
+    escapeDistance(base[0], extensions.start, rings) + runOutMargin;
+  const endReach =
+    escapeDistance(base[base.length - 1], extensions.end, rings) + runOutMargin;
+  const raw: Vec2[] = [
+    ...arm(base[0], trace[0], extensions.start, startReach).reverse(),
+    ...trace,
+    ...arm(
+      base[base.length - 1],
+      trace[trace.length - 1],
+      extensions.end,
+      endReach,
+    ),
+  ];
+  const loopsRemoved = countPolylineLoops(raw);
+  // ⭐⭐ Loops, then waists PER SIDE. A hairpin's pocket lies wholly on one side: the
+  // side that removes it has nothing thin to fix, and repairing there would only
+  // bury the well running through it.
+  const deLooped = removePolylineLoops(raw);
+  const waist = repairPolylineWaists(
+    deLooped,
+    options.waist ?? WAIST_CLEARANCE,
+    side,
+  );
+
+  return {
+    side,
+    // ⚠️ Deduped: relaxation and waist repair can leave vertices bunched, and a
+    // cluster of them in one index cell overflows its list.
+    points: dedupePolyline2D(waist.points, 2),
+    waistRemoved: waist.repaired,
+    opening: [
+      junctionOpeningOf(trace, extensions.start, true, side),
+      junctionOpeningOf(trace, extensions.end, false, side),
+    ],
+    blended,
+    loopsRemoved,
+  };
+}
+
+/** A rasterised signed distance to a fence curve. */
+export type FenceField = {
+  /**
+   * Signed distance in METRES, NEGATIVE on the half being REMOVED.
+   *
+   * ⚠️⚠️ The SIGN is exact everywhere; the MAGNITUDE only near the curve. Beyond the
+   * search band it saturates, because nothing reads it there — the boundary itself
+   * is evaluated from the segments (see `fence-segments.ts`) rather than from this
+   * raster, which cannot reproduce a polyline however finely it is sampled.
+   */
+  values: Float32Array;
+  /** the curve it was built from */
+  positions: Vec2[];
+  nx: number;
+  ny: number;
+  /** scene XZ of node (0, 0) */
+  origin: Vec2;
+  /** metres per cell */
+  cell: number;
+  min: number;
+  max: number;
+  /**
+   * Cross-product sign, against the nearest segment, that means REMOVED.
+   *
+   * ⭐ Derived here by majority vote against the flood fill, and exported so an
+   * exact per-point lookup can orient itself the same way rather than re-deriving
+   * an orientation that might disagree.
+   */
+  removedCross: 1 | -1;
+  /**
+   * Whether the curve actually cut the grid in two.
+   *
+   * ⚠️ False means the flood fill walked around an end of the curve and the whole
+   * field took one sign — the cut would then remove everything or nothing.
+   */
+  separated: boolean;
+};
+
+/** {@link createFenceField} options. */
+export type FenceFieldOptions = {
+  /** minX, minZ, maxX, maxZ in scene XZ — the area the field must cover */
+  bounds: [number, number, number, number];
+  /** target metres per cell. Default {@link fenceCellSize}. */
+  cellSize?: number;
+  /** node budget; the cell is coarsened to stay inside it. Default 2^20. */
+  maxCells?: number;
+  /**
+   * A point known to lie on the half being REMOVED.
+   *
+   * ⚠️⚠️ This is what gives `side` a meaning. Signing the field by which half holds
+   * an arbitrary grid corner makes the label depend on where the run-outs happen to
+   * exit, so it silently swaps when an unrelated parameter moves — and then the
+   * same `side` value shows opposite halves of two different wells.
+   */
+  seed: Vec2;
+};
+
+/** Metres per cell for a footprint, when the caller has no opinion. */
+export function fenceCellSize(
+  bounds: [number, number, number, number],
+): number {
+  const span = Math.max(bounds[2] - bounds[0], bounds[3] - bounds[1]);
+  return Math.min(50, Math.max(10, span / 400));
+}
+
 /**
  * Rasterise the signed distance to a fence curve.
  *
- * The magnitude is the EXACT distance from each node to the polyline; the sign is
- * a 4-connected flood fill from the grid's min corner, so the component that
- * corner belongs to is one side and everything else is the other.
+ * The magnitude is the EXACT distance from each node to the polyline; the sign is a
+ * 4-connected flood fill from a node on the half being removed, so that half is
+ * negative and everything else positive.
  *
- * ⚠️⚠️ The curve must LEAVE the grid at both ends, or the fill walks around it
- * and calls the whole field one side. {@link extendFencePolyline} against the
- * bounds is what guarantees that — escaping the outline is not enough when the
- * outline is concave.
+ * ⭐⭐ Exact distance node by node, NOT a chamfer transform. A chamfer is off by a
+ * few percent and ANISOTROPICALLY so — the error depends on direction — and the cut
+ * is an isocontour of this field, so that error would be the feature's precision.
+ * Cost is nodes x segments with a bounding-box reject, paid once per fence.
  *
- * ⚠️ **Self-intersection.** The magnitude is unaffected — a distance field is a
- * set, so a trajectory that doubles back merges rather than needing repair. The
- * SIGN, however, is not defined across a self-crossing: the far branch flips it,
- * and bilinear sampling smears that step over about one cell. This is the same
- * case the seismic fence accepts, and it is why the sign comes from a fill rather
- * than from the side of the nearest segment (which would speckle).
- *
- * ⚠️ Pockets a self-crossing closes off do not contain the min corner, so they
- * take the far side's sign. That is a choice, not a derivation.
+ * ⚠️ The curve must LEAVE the grid at both ends or the fill walks around it; see
+ * {@link FenceField.separated}.
  *
  * @group Geometries
  */
@@ -908,9 +1586,9 @@ export function createFenceField(
   const depth = maxZ - minZ;
   if (!(width > 0) || !(depth > 0)) return null;
 
-  let cell = options.cellSize ?? DEFAULT_CELL_SIZE;
+  let cell = options.cellSize ?? fenceCellSize(options.bounds);
   const budget = options.maxCells ?? DEFAULT_MAX_CELLS;
-  // A margin of two cells keeps the chamfer's diagonal steps off the border.
+  // Two cells of margin keeps the rasterised curve off the border.
   let nx = Math.ceil(width / cell) + 5;
   let ny = Math.ceil(depth / cell) + 5;
   if (nx * ny > budget) {
@@ -920,231 +1598,160 @@ export function createFenceField(
     ny = Math.ceil(depth / cell) + 5;
   }
   const origin: Vec2 = [minX - 2 * cell, minZ - 2 * cell];
-
-  const mask = new Uint8Array(nx * ny);
-  const toC = (p: Vec2) => (p[0] - origin[0]) / cell;
-  const toR = (p: Vec2) => (p[1] - origin[1]) / cell;
-  if (positions.length === 1) {
-    rasterizeSegment(
-      mask,
-      nx,
-      ny,
-      toC(positions[0]),
-      toR(positions[0]),
-      toC(positions[0]),
-      toR(positions[0]),
-    );
-  }
-  for (let i = 1; i < positions.length; i++) {
-    rasterizeSegment(
-      mask,
-      nx,
-      ny,
-      toC(positions[i - 1]),
-      toR(positions[i - 1]),
-      toC(positions[i]),
-      toR(positions[i]),
-    );
-  }
-
-  // ⭐⭐ EXACT distance to the polyline, node by node — NOT a chamfer transform.
-  // A chamfer is off by a few percent and, worse, ANISOTROPICALLY so: the error
-  // depends on direction, which at a kilometre-wide corridor makes it visibly
-  // wider on the diagonals than on the axes. The corridor's whole shape is an
-  // isocontour of this field, so that error is the feature's precision.
-  // Cost is nodes x segments with a bounding-box reject, which at the grid sizes
-  // a fence needs (tens of thousands of nodes, a couple of hundred segments) is a
-  // few milliseconds — paid once per fence, never per frame.
-  const count = Math.max(positions.length - 1, 1);
-  const cum = new Float64Array(count + 1);
-  for (let i = 1; i < positions.length; i++) {
-    cum[i] = cum[i - 1] + distanceVec2(positions[i - 1], positions[i]);
-  }
-  const segMinX = new Float64Array(count);
-  const segMaxX = new Float64Array(count);
-  const segMinZ = new Float64Array(count);
-  const segMaxZ = new Float64Array(count);
-  for (let i = 0; i < count; i++) {
-    const a = positions[i];
-    const b = positions[Math.min(i + 1, positions.length - 1)];
-    segMinX[i] = Math.min(a[0], b[0]);
-    segMaxX[i] = Math.max(a[0], b[0]);
-    segMinZ[i] = Math.min(a[1], b[1]);
-    segMaxZ[i] = Math.max(a[1], b[1]);
-  }
+  const barrier = rasterizeCurve(positions, nx, ny, origin, cell);
 
   const dist = new Float32Array(nx * ny);
-  const along = new Float32Array(nx * ny);
-  // Which side of the nearest segment the node falls on. ⚠️ Speckles across a
-  // self-crossing, which is why it does NOT decide the sign on its own — but it is
-  // the only thing that can sign the band the flood fill cannot enter.
+  // Which side of the NEAREST SEGMENT a node falls on, and 0 where that was not
+  // resolved exactly. ⚠️ Speckles wherever the curve doubles back, so it does not
+  // decide the sign on its own — but it is the only thing that can sign the band
+  // the flood fill cannot enter.
   const geo = new Int8Array(nx * ny);
+  const grid = bucketSegments(positions, nx, ny, origin, cell);
+  // ⭐ Beyond the search rings nothing reads the MAGNITUDE any more — the boundary
+  // is evaluated exactly from the segments themselves, and out here only the sign
+  // matters. Scanning the curve for a distance nobody uses was the single most
+  // expensive thing this function did.
+  const far = SEGMENT_RINGS * grid.size;
+
+  const distanceTo = (i: number, px: number, pz: number) => {
+    const a = positions[i];
+    const b = positions[Math.min(i + 1, positions.length - 1)];
+    const ex = b[0] - a[0];
+    const ez = b[1] - a[1];
+    const len2 = ex * ex + ez * ez;
+    let t = 0;
+    if (len2 > 0) {
+      t = ((px - a[0]) * ex + (pz - a[1]) * ez) / len2;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+    }
+    const qx = a[0] + ex * t;
+    const qz = a[1] + ez * t;
+    return {
+      d2: (px - qx) * (px - qx) + (pz - qz) * (pz - qz),
+      cross: ex * (pz - a[1]) - ez * (px - a[0]),
+    };
+  };
+
   for (let r = 0; r < ny; r++) {
     const pz = origin[1] + r * cell;
+    const br = Math.floor((pz - origin[1]) / grid.size);
     for (let c = 0; c < nx; c++) {
       const px = origin[0] + c * cell;
+      const bc = Math.floor((px - origin[0]) / grid.size);
+      const at = r * nx + c;
+      if (!grid.near[br * grid.bx + bc]) {
+        dist[at] = far;
+        geo[at] = 0;
+        continue;
+      }
       let best = Infinity;
-      let bestAlong = 0;
       let bestCross = 0;
-      for (let i = 0; i < count; i++) {
-        const bx =
-          px < segMinX[i]
-            ? segMinX[i] - px
-            : px > segMaxX[i]
-              ? px - segMaxX[i]
-              : 0;
-        const bz =
-          pz < segMinZ[i]
-            ? segMinZ[i] - pz
-            : pz > segMaxZ[i]
-              ? pz - segMaxZ[i]
-              : 0;
-        if (bx * bx + bz * bz >= best) continue;
-        const a = positions[i];
-        const b = positions[Math.min(i + 1, positions.length - 1)];
-        const ex = b[0] - a[0];
-        const ez = b[1] - a[1];
-        const len2 = ex * ex + ez * ez;
-        let t = 0;
-        if (len2 > 0) {
-          t = ((px - a[0]) * ex + (pz - a[1]) * ez) / len2;
-          t = t < 0 ? 0 : t > 1 ? 1 : t;
-        }
-        const qx = a[0] + ex * t;
-        const qz = a[1] + ez * t;
-        const d2 = (px - qx) * (px - qx) + (pz - qz) * (pz - qz);
-        if (d2 < best) {
-          best = d2;
-          bestAlong = cum[i] + t * (cum[Math.min(i + 1, count)] - cum[i]);
-          bestCross = ex * (pz - a[1]) - ez * (px - a[0]);
+      for (let ring = 0; ring <= SEGMENT_RINGS; ring++) {
+        // Nothing in this ring can be nearer than the gap the previous ring left.
+        const lower = (ring - 1) * grid.size;
+        if (best < Infinity && lower * lower > best) break;
+        for (let rr = br - ring; rr <= br + ring; rr++) {
+          if (rr < 0 || rr >= grid.by) continue;
+          const edge = rr === br - ring || rr === br + ring;
+          for (let cc = bc - ring; cc <= bc + ring; cc++) {
+            if (cc < 0 || cc >= grid.bx) continue;
+            if (!edge && cc !== bc - ring && cc !== bc + ring) continue;
+            const key = rr * grid.bx + cc;
+            for (let k = grid.starts[key]; k < grid.starts[key + 1]; k++) {
+              const hit = distanceTo(grid.items[k], px, pz);
+              if (hit.d2 < best) {
+                best = hit.d2;
+                bestCross = hit.cross;
+              }
+            }
+          }
         }
       }
-      const at = r * nx + c;
-      dist[at] = Math.sqrt(best);
-      along[at] = bestAlong;
-      geo[at] = bestCross >= 0 ? 1 : -1;
+      if (best === Infinity) {
+        dist[at] = far;
+        geo[at] = 0;
+      } else {
+        dist[at] = Math.sqrt(best);
+        geo[at] = bestCross >= 0 ? 1 : -1;
+      }
     }
   }
 
-  // 4-connected flood from the first free node, which the 8-connected barrier
-  // above cannot be crossed diagonally by.
-  const side = new Uint8Array(nx * ny);
+  const seedC = Math.round((options.seed[0] - origin[0]) / cell);
+  const seedR = Math.round((options.seed[1] - origin[1]) / cell);
   let seed = -1;
-  for (let i = 0; i < mask.length; i++) {
-    if (!mask[i]) {
-      seed = i;
-      break;
+  if (seedC >= 0 && seedC < nx && seedR >= 0 && seedR < ny) {
+    const at = seedR * nx + seedC;
+    if (!barrier[at]) seed = at;
+  }
+  if (seed < 0) {
+    // The seed landed on the barrier or off the grid; take the nearest free node,
+    // which is still on the removed half for any sane probe distance.
+    let bestD = Infinity;
+    for (let i = 0; i < barrier.length; i++) {
+      if (barrier[i]) continue;
+      const c = i % nx;
+      const r = (i - c) / nx;
+      const d = (c - seedC) * (c - seedC) + (r - seedR) * (r - seedR);
+      if (d < bestD) {
+        bestD = d;
+        seed = i;
+      }
     }
   }
-  if (seed >= 0) {
-    const stack = [seed];
-    side[seed] = 1;
-    while (stack.length > 0) {
-      const at = stack.pop()!;
-      const c = at % nx;
-      const r = (at - c) / nx;
-      if (c > 0 && !mask[at - 1] && !side[at - 1]) {
-        side[at - 1] = 1;
-        stack.push(at - 1);
-      }
-      if (c < nx - 1 && !mask[at + 1] && !side[at + 1]) {
-        side[at + 1] = 1;
-        stack.push(at + 1);
-      }
-      if (r > 0 && !mask[at - nx] && !side[at - nx]) {
-        side[at - nx] = 1;
-        stack.push(at - nx);
-      }
-      if (r < ny - 1 && !mask[at + nx] && !side[at + nx]) {
-        side[at + nx] = 1;
-        stack.push(at + nx);
-      }
-    }
+  const removed = floodFrom(barrier, nx, ny, seed);
+
+  let free = 0;
+  let inRemoved = 0;
+  for (let i = 0; i < barrier.length; i++) {
+    if (barrier[i]) continue;
+    free++;
+    if (removed[i]) inRemoved++;
   }
 
   // ⚠️⚠️ The fill CANNOT enter the barrier, so every cell the curve passes through
-  // would keep `side = 0` and be forced onto the negative side whichever side of
-  // the curve it actually lies on. That is a one-cell band of wrong-signed values
-  // straddling the curve, each wrong by its own distance — so the ZERO contour
-  // wiggles at cell period even though the curve is straight. It is invisible at a
-  // large width (the iso is well clear of the band) and ruins width 0.
-  // ⇒ Sign the band geometrically, oriented to agree with the fill.
+  // would keep no sign at all and be forced onto one side whichever side it really
+  // lies on. That is a one-cell band of wrong-signed values straddling the curve,
+  // each wrong by its own distance, so the ZERO contour wiggles at cell period even
+  // where the curve is dead straight — invisible at a large offset, ruinous at
+  // zero. ⇒ Sign the band geometrically, with the polarity that agrees with the
+  // fill.
   let agree = 0;
   let disagree = 0;
-  for (let i = 0; i < mask.length; i++) {
-    if (mask[i]) continue;
-    if (geo[i] > 0 === (side[i] === 1)) agree++;
+  for (let i = 0; i < barrier.length; i++) {
+    // ⚠️⚠️ Only nodes that actually RESOLVED a nearest segment may vote. A far node
+    // carries `geo = 0`, which reads as "right side" and turns the tally into "is
+    // the kept half bigger than the removed half" — a question with nothing to do
+    // with orientation, decided by whichever half happens to be larger.
+    if (barrier[i] || geo[i] === 0) continue;
+    if (geo[i] > 0 === !!removed[i]) agree++;
     else disagree++;
   }
-  const geoPositive = agree >= disagree;
-  for (let i = 0; i < mask.length; i++) {
-    if (!mask[i]) continue;
-    side[i] = geo[i] > 0 === geoPositive ? 1 : 0;
-  }
+  const geoRemoved: 1 | -1 = agree >= disagree ? 1 : -1;
 
-  const sign = options.flip ? -1 : 1;
   const values = new Float32Array(nx * ny);
   let min = Infinity;
   let max = -Infinity;
   for (let i = 0; i < values.length; i++) {
-    // The kept side is the one the seed corner is in, unless flipped.
-    const v = (side[i] ? sign : -sign) * dist[i];
+    const isRemoved = barrier[i] ? geo[i] === geoRemoved : !!removed[i];
+    const v = isRemoved ? -dist[i] : dist[i];
     values[i] = v;
     if (v < min) min = v;
     if (v > max) max = v;
   }
 
-  return { values, along, positions, nx, ny, origin, cell, min, max };
-}
-
-/**
- * Read one channel the way the SHADER reads it.
- *
- * ⚠️⚠️ Must match `sampleFieldMap` in `depth-map.glsl` EXACTLY — plain bilinear,
- * same clamping, same half-texel convention. The cut face is placed by root-finding
- * on this function while the block is removed by the GPU evaluating that one, so
- * any difference between them is a sliver of block standing proud of the face, or
- * a gap behind it.
- */
-function makeSampler(field: FenceField, values: Float32Array) {
-  const { nx, ny, origin, cell } = field;
-  return (x: number, z: number) => {
-    const cf = (x - origin[0]) / cell;
-    const rf = (z - origin[1]) / cell;
-    const c0 = Math.floor(cf);
-    const r0 = Math.floor(rf);
-    const fc = cf - c0;
-    const fr = rf - r0;
-    const clampC = (c: number) => (c < 0 ? 0 : c > nx - 1 ? nx - 1 : c);
-    const clampR = (r: number) => (r < 0 ? 0 : r > ny - 1 ? ny - 1 : r);
-    const a = values[clampR(r0) * nx + clampC(c0)];
-    const b = values[clampR(r0) * nx + clampC(c0 + 1)];
-    const d = values[clampR(r0 + 1) * nx + clampC(c0)];
-    const e = values[clampR(r0 + 1) * nx + clampC(c0 + 1)];
-    return (a + (b - a) * fc) * (1 - fr) + (d + (e - d) * fc) * fr;
+  return {
+    values,
+    positions,
+    nx,
+    ny,
+    origin,
+    cell,
+    min,
+    max,
+    removedCross: geoRemoved,
+    separated: inRemoved > 0 && inRemoved < free,
   };
-}
-
-/**
- * Bilinear sampler over a {@link FenceField}'s signed distance.
- *
- * @group Geometries
- */
-export function sampleFenceField(
-  field: FenceField,
-): (x: number, z: number) => number {
-  return makeSampler(field, field.values);
-}
-
-/**
- * Bilinear sampler over a {@link FenceField}'s arc length.
- *
- * @group Geometries
- */
-export function sampleFenceAlong(
-  field: FenceField,
-): (x: number, z: number) => number {
-  return makeSampler(field, field.along);
 }
 
 /** Where a field sits, in the form the shader reads it. */
@@ -1158,12 +1765,9 @@ export type FencePlacement = {
 /**
  * Place a field for the shader.
  *
- * ⚠️⚠️ The `+0.5 / size` is load-bearing: `sampleFieldMap` recovers the node index
- * as `uv * size - 0.5`, so without it the GPU reads HALF A CELL away from the CPU.
- * At a 25 m field that is a 12.5 m disagreement between where the cut face is
- * drawn and where the block is actually removed, which shows as slivers of one
- * unit's cap standing along the cut. Kept here, as one definition, because it was
- * written out by hand at the call site and got this wrong.
+ * ⚠️⚠️ The `+0.5 / size` is load-bearing: the shader recovers the node index as
+ * `uv * size - 0.5`, so without it the GPU reads HALF A CELL away from the CPU.
+ * ONE definition, used by the uniform and by {@link sampleFenceField} alike.
  *
  * @group Geometries
  */
@@ -1186,22 +1790,22 @@ export function fenceFieldPlacement(field: FenceField): FencePlacement {
 }
 
 /**
- * Read a field the way the GPU does — through the placement matrix and the same
- * weights as `sampleFieldMap`.
+ * Read a field the way the GPU does.
  *
- * ⭐ Exists to be COMPARED with {@link sampleFenceField}. The cut face is placed
- * with one and the block is removed with the other, so any difference between
- * them is an artefact along the cut; a test that pins them together is the only
- * cheap way to keep that true.
+ * ⚠️⚠️ Must match `sampleFieldMap` in `depth-map.glsl` — same placement, same
+ * weights, same clamping. There is exactly ONE CPU implementation and it goes
+ * through {@link fenceFieldPlacement} rather than repeating the convention.
  *
  * @group Geometries
  */
-export function sampleFenceFieldAsShader(
+export function sampleFenceField(
   field: FenceField,
 ): (x: number, z: number) => number {
   const { toUv, size } = fenceFieldPlacement(field);
   const { values } = field;
   const [nx, ny] = size;
+  const clampC = (c: number) => (c < 0 ? 0 : c > nx - 1 ? nx - 1 : c);
+  const clampR = (r: number) => (r < 0 ? 0 : r > ny - 1 ? ny - 1 : r);
   return (x: number, z: number) => {
     const u = toUv[0] * x + toUv[1] * z + toUv[2];
     const v = toUv[3] * x + toUv[4] * z + toUv[5];
@@ -1211,8 +1815,6 @@ export function sampleFenceFieldAsShader(
     const bz = Math.floor(tz);
     const fx = tx - bx;
     const fz = tz - bz;
-    const clampC = (c: number) => (c < 0 ? 0 : c > nx - 1 ? nx - 1 : c);
-    const clampR = (r: number) => (r < 0 ? 0 : r > ny - 1 ? ny - 1 : r);
     let sum = 0;
     for (let j = 0; j < 2; j++) {
       for (let i = 0; i < 2; i++) {
@@ -1224,329 +1826,475 @@ export function sampleFenceFieldAsShader(
   };
 }
 
-/** Where a chain crosses itself, and the point it crosses at. */
-type ChainLoop = { i: number; j: number; at: Vec2 };
+/**
+ * Share of the footprint a field takes AWAY, read off the field's own signs.
+ *
+ * ⚠️⚠️ Not "which of the two components is the seed in" — the field is SEEDED on the
+ * removed side, so asking it that returns yes by construction, and both sides then
+ * report the same half. Counting signed cells is the only answer that cannot be
+ * circular.
+ *
+ * @group Geometries
+ */
+export function fieldRemovedShare(
+  field: FenceField,
+  outline: OutlineMask,
+): number {
+  const { mask, nx, ny, cell, origin } = outline;
+  let removed = 0;
+  let total = 0;
+  for (let r = 0; r < ny; r++) {
+    const z = origin[1] + r * cell;
+    for (let c = 0; c < nx; c++) {
+      if (!mask[r * nx + c]) continue;
+      const x = origin[0] + c * cell;
+      const fc = Math.round((x - field.origin[0]) / field.cell);
+      const fr = Math.round((z - field.origin[1]) / field.cell);
+      if (fc < 0 || fc >= field.nx || fr < 0 || fr >= field.ny) continue;
+      total++;
+      if (field.values[fr * field.nx + fc] < 0) removed++;
+    }
+  }
+  return total > 0 ? removed / total : 0;
+}
+
+/** One side of a finished fence. */
+export type FenceSide = {
+  side: 1 | -1;
+  curve: FenceSideCurve;
+  field: FenceField;
+  /**
+   * The exact boundary lookup, which is what the shader and the immersion fog read.
+   *
+   * ⭐ The field beside it supplies the far-field SIGN only. Reconstructing the
+   * boundary from a raster cannot reproduce a polyline, so it is carried instead of
+   * interpolated — see `fence-segments.ts`.
+   */
+  index: FenceSegmentIndex;
+  /** share of the footprint this side takes away, 0..1 */
+  removedShare: number;
+};
+
+/** What one side of a fence ended up as. @group Geometries */
+export type FenceSideReport = {
+  side: 1 | -1;
+  vertices: number;
+  /** junction openings in DEGREES */
+  opening: [number, number];
+  blended: boolean;
+  loopsRemoved: number;
+  /** loops LEFT after the repair — must be 0 */
+  loops: number;
+  removedShare: number;
+  minRadius: number;
+  field: { nx: number; ny: number; cell: number; separated: boolean };
+  /**
+   * The exact boundary lookup's shape.
+   *
+   * ⚠️ `truncated` must be 0. A cell whose list overflowed cannot see every segment
+   * that could be nearest, so the cut silently reverts to the coarse sign there — a
+   * notch, in the one place the exactness was the point.
+   */
+  index: {
+    cells: number;
+    entries: number;
+    maxCount: number;
+    truncated: number;
+    reach: number;
+  };
+  /**
+   * Largest and RMS `|field|` at the cut face's own vertices, filled in by the face
+   * builder.
+   *
+   * ⭐ The invariant that replaces every "these two functions must match" contract.
+   * The face IS the curve and the curve is the field's zero set, so this must be
+   * zero; anything else is a sliver of block standing proud of the face or a gap
+   * behind it.
+   */
+  residual?: { max: number; rms: number };
+};
+
+/** Everything a fence build learned about itself. @group Geometries */
+export type FenceReport = {
+  wellbore?: string;
+  sampling: {
+    count: number;
+    inserted: number;
+    /** largest plan turn left between consecutive samples, in DEGREES */
+    maxTurn: number;
+    mdLength: number;
+    planLength: number;
+  };
+  kickoff: { index: number; md: number; y: number; found: boolean };
+  relax: {
+    toleranceMin: number;
+    toleranceMax: number;
+    iterations: number;
+    /** reached a fixed point of smooth-then-clamp */
+    settled: boolean;
+    /** turning radius over the WHOLE curve, in metres — a diagnostic, not a target */
+    minRadius: number;
+    /** turning radius over the shallow section, in metres */
+    headRadius: number;
+    /** what `headRadius` had to reach */
+    requiredHeadRadius: number;
+    maxDeviation: number;
+  };
+  head: { trimmedLength: number; from: number; degenerate: boolean };
+  extensions: {
+    start: Vec2;
+    end: Vec2;
+    /** DEGREES */
+    startClearance: number;
+    /** DEGREES */
+    endClearance: number;
+    evenness: number;
+    scored: number;
+  };
+  sides: { plus: FenceSideReport; minus: FenceSideReport };
+  shared: boolean;
+  /** milliseconds per stage */
+  timings: Record<string, number>;
+};
+
+/** A finished fence: one curve per side, each with its own field. */
+export type WellboreFence = {
+  /** the straightened trace both sides are built from, without run-outs */
+  base: FenceBase;
+  extensions: FenceExtensions;
+  plus: FenceSide;
+  minus: FenceSide;
+  /** whether the two sides ended up with the same curve */
+  shared: boolean;
+  report: FenceReport;
+};
+
+/** {@link buildWellboreFence} options. */
+export type WellboreFenceOptions = {
+  /** every ring of the footprint, in scene XZ */
+  rings: Vec2[][];
+  /** metres of clearance kept between the trajectory and the cut. Default 0. */
+  margin?: number;
+  /** MD spacing the trajectory is sampled at, in metres. Default 10. */
+  sampleSpacing?: number;
+  /** metres per cell of the field. Default {@link fenceCellSize}. */
+  cellSize?: number;
+  /** metres the run-outs clear the footprint by. Default 500. */
+  runOutMargin?: number;
+  /** how the run-outs continue. Default 'straight'. */
+  extension?: FenceExtensionMode;
+  /** identifier carried into the report */
+  wellbore?: string;
+};
+
+/** A point clear of the curve, on the half being removed. */
+function removedSideSeed(base: Vec2[], side: 1 | -1, clearance: number): Vec2 {
+  const at = base.length >> 1;
+  const mid = base[at];
+  const previous = base[Math.max(0, at - 1)];
+  const next = base[Math.min(base.length - 1, at + 1)];
+  const n = leftNormal2D(next[0] - previous[0], next[1] - previous[1]);
+  return [mid[0] + n[0] * side * clearance, mid[1] + n[1] * side * clearance];
+}
 
 /**
- * First self-crossing on a chain, taking the LARGEST loop at the earliest vertex.
+ * Build a fence through a wellbore: one curve per side, each with the field the
+ * shader cuts by.
  *
- * ⚠️ Bucketed by a uniform grid rather than compared pairwise. Pairwise is
- * quadratic in the vertex count and is paid in full on a CLEAN chain, which is
- * almost all of them — at a 2 m contour resolution that is a 4500 vertex chain and
- * tens of milliseconds per rebuild, on a path that runs while a width slider is
- * being dragged.
+ * ⭐⭐ Both sides are built up front. Flipping which half is removed is then a
+ * texture swap rather than a rebuild, which is what lets it be driven from a
+ * selection or a camera move without a stall — and removes the window in which the
+ * shader would be cutting the old field with the new side.
+ *
+ * @param curve the trajectory in scene coordinates
+ * @param options see {@link WellboreFenceOptions}
+ *
+ * @group Geometries
  */
-function findChainLoop(points: Vec2[]): ChainLoop | null {
-  const n = points.length;
-  if (n < 4) return null;
+export function buildWellboreFence(
+  curve: Curve3D,
+  options: WellboreFenceOptions,
+): WellboreFence | null {
+  const now = () =>
+    typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const timings: Record<string, number> = {};
+
+  let mark = now();
+  const samples = sampleTrajectoryPlan(curve, options.sampleSpacing);
+  if (!samples) return null;
+  timings.sample = now() - mark;
+
+  const margin = options.margin ?? 0;
+  // Offsetting by `margin` folds wherever the curve turns tighter than it, so the
+  // clearance a caller asks for sets its own smoothness requirement.
+  const headRadius = Math.max(MIN_HEAD_RADIUS, margin * 2);
+
+  mark = now();
+  const base = fenceBaseCurve(samples, { headRadius });
+  timings.base = now() - mark;
+
   let minX = Infinity;
   let minZ = Infinity;
   let maxX = -Infinity;
   let maxZ = -Infinity;
-  for (const p of points) {
+  const take = (p: Vec2) => {
     if (p[0] < minX) minX = p[0];
     if (p[0] > maxX) maxX = p[0];
     if (p[1] < minZ) minZ = p[1];
     if (p[1] > maxZ) maxZ = p[1];
-  }
-  const cell = Math.max((maxX - minX) / 128, (maxZ - minZ) / 128, 1e-3);
-  const columns = Math.floor((maxX - minX) / cell) + 1;
-  const buckets = new Map<number, number[]>();
-  const put = (cx: number, cz: number, i: number) => {
-    const k = cz * columns + cx;
-    const list = buckets.get(k);
-    if (list) list.push(i);
-    else buckets.set(k, [i]);
   };
-  for (let i = 0; i + 1 < n; i++) {
-    const a = points[i];
-    const b = points[i + 1];
-    const c0 = Math.floor((Math.min(a[0], b[0]) - minX) / cell);
-    const c1 = Math.floor((Math.max(a[0], b[0]) - minX) / cell);
-    const r0 = Math.floor((Math.min(a[1], b[1]) - minZ) / cell);
-    const r1 = Math.floor((Math.max(a[1], b[1]) - minZ) / cell);
-    for (let cx = c0; cx <= c1; cx++)
-      for (let cz = r0; cz <= r1; cz++) put(cx, cz, i);
-  }
+  for (const ring of options.rings) for (const p of ring) take(p);
+  for (const p of base.points) take(p);
+  if (!(maxX > minX) || !(maxZ > minZ)) return null;
+  const bounds: [number, number, number, number] = [minX, minZ, maxX, maxZ];
 
-  for (let i = 0; i + 1 < n; i++) {
-    const a = points[i];
-    const b = points[i + 1];
-    const rx = b[0] - a[0];
-    const rz = b[1] - a[1];
-    const c0 = Math.floor((Math.min(a[0], b[0]) - minX) / cell);
-    const c1 = Math.floor((Math.max(a[0], b[0]) - minX) / cell);
-    const r0 = Math.floor((Math.min(a[1], b[1]) - minZ) / cell);
-    const r1 = Math.floor((Math.max(a[1], b[1]) - minZ) / cell);
-    let best: ChainLoop | null = null;
-    for (let cx = c0; cx <= c1; cx++) {
-      for (let cz = r0; cz <= r1; cz++) {
-        const list = buckets.get(cz * columns + cx);
-        if (!list) continue;
-        for (const j of list) {
-          // ⚠️ The largest loop at this vertex first — excising an inner one would
-          // leave the outer one still wrapped around it.
-          if (j <= i + 1 || (best && j <= best.j)) continue;
-          const c = points[j];
-          const d = points[j + 1];
-          const sx = d[0] - c[0];
-          const sz = d[1] - c[1];
-          const den = rx * sz - rz * sx;
-          if (den === 0) continue;
-          const t = ((c[0] - a[0]) * sz - (c[1] - a[1]) * sx) / den;
-          const u = ((c[0] - a[0]) * rz - (c[1] - a[1]) * rx) / den;
-          if (t <= 1e-9 || t >= 1 - 1e-9 || u <= 1e-9 || u >= 1 - 1e-9)
-            continue;
-          best = { i, j, at: [a[0] + rx * t, a[1] + rz * t] };
-        }
-      }
-    }
-    if (best) return best;
-  }
-  return null;
-}
+  mark = now();
+  const footprint =
+    options.rings.length > 0 ? options.rings : [boundsRing(bounds)];
+  const outline = rasterizeOutline(footprint, bounds);
+  // ⭐ The candidate search only has to RANK, and it rebuilds this raster once per
+  // pair, so it gets a coarse one; the share that is reported comes off the
+  // accurate one above.
+  const searchOutline = rasterizeOutline(footprint, bounds, SHARE_RESOLUTION);
+  const extensions = fenceExtensions(base.points, {
+    rings: options.rings,
+    bounds,
+    outline: searchOutline,
+    runOutMargin: options.runOutMargin,
+    mode: options.extension,
+  });
+  timings.extensions = now() - mark;
 
-/**
- * Cut the loops out of an open chain.
- *
- * ⭐⭐ The last line of defence, and the only one placed where it can see the
- * actual defect. A fence's cut face is a vertical ribbon swept along this chain,
- * so a chain that crosses itself sweeps a sheet that passes through itself — which
- * renders as a fan of triangles splayed from the crossing and a face that is
- * inside-out beyond it.
- *
- * ⚠️⚠️ Every earlier attempt at this worked on the POLYLINE the field is built
- * from, where the crossing DOES NOT YET EXIST: measured on the Volve data the
- * extended polylines self-cross zero times while their contours cross up to 965.
- * Measuring the wrong object is why two reasonable-looking fixes were rejected.
- *
- * ⭐ Acting on the finished chain also makes it indifferent to what produced the
- * loop — a rotated run-out, a trace that doubles back, or an offset taken round
- * the inside of a bend tighter than the offset — and to which side is being cut,
- * so both sides of a fence get the same treatment from one code path.
- *
- * The loop between a crossing pair is replaced by the crossing point itself, which
- * is exactly the curve with the excursion taken out.
- *
- * @param chain an open chain in scene XZ
- * @returns the chain with every self-crossing removed
- *
- * @group Geometries
- */
-export function removeChainLoops(chain: Vec2[]): Vec2[] {
-  if (chain.length < 4) return chain;
-  const points = chain.slice();
-  // ⚠️ Re-found rather than swept once: excising a loop joins two pieces that were
-  // apart, which can put a NEW crossing behind the point a single forward pass has
-  // already gone by. The bound is a guard against a pathological chain, not a
-  // budget — a clean chain costs one search.
-  for (let guard = 0; guard < 4096; guard++) {
-    const loop = findChainLoop(points);
-    if (!loop) break;
-    points.splice(loop.i + 1, loop.j - loop.i, loop.at);
-  }
-  return points;
-}
-
-/** {@link fenceContour} options. */
-export type FenceContourOptions = {
-  /** distance from the curve to place the contour at, in metres */
-  width?: number;
-  /** which side the contour lies on: 1 or -1 */
-  side?: 1 | -1;
-  /** spacing to resample the result at, in metres. Default 10. */
-  resolution?: number;
-  /** extra width near the shallow end, on top of `width`. See {@link FenceTaper}. */
-  taper?: FenceTaper | null;
-};
-
-/** Resample an open chain at a fixed spacing, keeping both ends. */
-function resampleChain(chain: Vec2[], spacing: number): Vec2[] {
-  if (chain.length < 2 || !(spacing > 0)) return chain;
-  const out: Vec2[] = [chain[0]];
-  let carry = 0;
-  for (let i = 1; i < chain.length; i++) {
-    const a = chain[i - 1];
-    const b = chain[i];
-    const len = distanceVec2(a, b);
-    if (len === 0) continue;
-    let at = spacing - carry;
-    while (at < len) {
-      const t = at / len;
-      out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
-      at += spacing;
-    }
-    carry = (carry + len) % spacing;
-  }
-  out.push(chain[chain.length - 1]);
-  return out;
-}
-
-/**
- * The curve the cut face follows: everything at `width` from the fence, on the
- * kept side.
- *
- * ⭐⭐ The raster decides only the TOPOLOGY — which points join to which, and
- * therefore where the curve doubles back on itself — while every vertex's
- * POSITION comes from {@link nearestOnPolyline}, exactly. That split is what makes
- * one code path right at any width: offsetting a polyline directly self-intersects
- * on the inside of any bend tighter than the offset, and reading the contour off
- * the raster alone would quantise it to the cell size. At `width` 0 the projection
- * lands every vertex exactly on the trajectory.
- *
- * @returns open chains in scene XZ, resampled; normally one
- *
- * @group Geometries
- */
-export function fenceContour(
-  field: FenceField,
-  options: FenceContourOptions = {},
-): Vec2[][] {
-  const width = options.width ?? 0;
-  const side = options.side ?? 1;
-  const resolution = options.resolution ?? 10;
-  const taper = options.taper ?? null;
-  const tapered = fenceWidthAt(taper, 0) > 0;
-  const { nx, ny, origin, cell, values, positions } = field;
-
-  // ⭐⭐ The face has to lie where the BLOCK ACTUALLY ENDS, and that is decided by
-  // the shader sampling this field — not by the analytic curve the field was built
-  // from. The two differ by a fraction of a cell, which is metres, and shows as a
-  // sliver of cap standing proud of the face or a gap behind it. So every vertex
-  // is finally pulled onto the SAMPLED iso by Newton steps on the same smoothed
-  // read the shader performs.
-  const sample = sampleFenceField(field);
-  const alongAt = tapered ? sampleFenceAlong(field) : null;
-  // ⚠️ The target is a FUNCTION of position once a taper is on, so it is read at
-  // the point being snapped rather than fixed up front.
-  const targetAt = (x: number, z: number) =>
-    side * (width + (alongAt ? fenceWidthAt(taper, alongAt(x, z)) : 0));
-  const snap = (p: Vec2): Vec2 => {
-    const h = cell * 0.5;
-    // ⚠️⚠️ Every step is CLAMPED, and a vertex that has not converged is left
-    // where it was. A Newton step on a scalar field is `error * grad/|grad|²`,
-    // which is unbounded as the gradient vanishes — and it does vanish, at the
-    // ends of the curve and wherever the plan trace doubles back on itself. One
-    // vertex then gets thrown across the field while its neighbours stay put, and
-    // the quad between them spans the whole sheet.
-    const limit = cell;
-    const start: Vec2 = [p[0], p[1]];
-    for (let step = 0; step < 4; step++) {
-      const error = targetAt(p[0], p[1]) - sample(p[0], p[1]);
-      if (Math.abs(error) < 1e-3) break;
-      const gx = (sample(p[0] + h, p[1]) - sample(p[0] - h, p[1])) / (2 * h);
-      const gz = (sample(p[0], p[1] + h) - sample(p[0], p[1] - h)) / (2 * h);
-      const g2 = gx * gx + gz * gz;
-      if (g2 < 1e-6) break;
-      let dx = (gx * error) / g2;
-      let dz = (gz * error) / g2;
-      const len = Math.hypot(dx, dz);
-      if (len > limit) {
-        dx = (dx / len) * limit;
-        dz = (dz / len) * limit;
-      }
-      p = [p[0] + dx, p[1] + dz];
-    }
-    // Total travel is bounded too: the snap is a correction of a fraction of a
-    // cell, so anything larger means it was chasing a gradient it should not have.
-    return Math.hypot(p[0] - start[0], p[1] - start[1]) > limit ? start : p;
+  const cellSize = options.cellSize ?? fenceCellSize(bounds);
+  const sideOptions: FenceSideOptions = {
+    rings: options.rings,
+    bounds,
+    margin,
+    runOutMargin: options.runOutMargin,
+    deviation: base.deviation,
+    // The cut is kept clear of the WELL, not of the smoothed curve standing in for it.
+    well: samples.plan.slice(base.from),
+    roundness: base.roundness,
   };
 
-  // ⭐ At zero width the contour IS the curve, in the order the curve already
-  // has. Going through the raster would be strictly worse: it quantises the path,
-  // and — since every vertex is then projected back onto the curve — any vertex
-  // the marching picked up that is NOT on the fence would land at an arbitrary
-  // point on it and fold the ribbon back on itself.
-  // ⚠️ A taper makes the width non-zero over part of the curve, so the shortcut is
-  // only available when there is no taper either.
-  if (width === 0 && !tapered)
-    return [removeChainLoops(resampleChain(positions, resolution).map(snap))];
+  mark = now();
+  const plusCurve = buildFenceSideCurve(
+    base.points,
+    extensions,
+    1,
+    sideOptions,
+  );
+  const minusCurve = buildFenceSideCurve(
+    base.points,
+    extensions,
+    -1,
+    sideOptions,
+  );
+  timings.curves = now() - mark;
 
-  // ⚠️ Padded with a value far on one side, because `marchingSquares` closes its
-  // rings and a fence necessarily runs off the edge of the grid. The padding is
-  // stripped again below, leaving the open chain the fence actually is.
-  const pw = nx + 2;
-  const ph = ny + 2;
-  const padded = new Float32Array(pw * ph);
-  const far = Math.max(Math.abs(field.min), Math.abs(field.max)) * 4 + 1;
-  padded.fill(far);
-  for (let r = 0; r < ny; r++) {
-    if (tapered) {
-      // ⭐ The taper is folded into a DERIVED raster rather than into the field
-      // itself. The field has to stay a plain signed distance: the shader reads
-      // it with `side` as a live uniform, so a side-dependent bake would freeze
-      // which half goes, and every vertex below is placed analytically from a
-      // distance the field would no longer hold.
-      for (let c = 0; c < nx; c++) {
-        const at = r * nx + c;
-        padded[(r + 1) * pw + 1 + c] =
-          values[at] - side * fenceWidthAt(taper, field.along[at]);
-      }
-    } else {
-      padded.set(values.subarray(r * nx, r * nx + nx), (r + 1) * pw + 1);
-    }
-  }
-
-  const rings = marchingSquares(padded, pw, ph, side * width);
-  const hit: PolylineHit = { point: [0, 0], distance: 0, along: 0 };
-  const tolerance = cell * 1.5;
-  const chains: Vec2[][] = [];
-
-  for (const ring of rings) {
-    // A vertex in the padding, or one the raster placed nowhere near the wanted
-    // distance, closes the ring rather than tracing the fence. Both must go
-    // BEFORE the projection below, or they land at an arbitrary point on the
-    // curve and scramble the order.
-    const world: (Vec2 | null)[] = ring.map(p => {
-      const c = p[0] - 1;
-      const r = p[1] - 1;
-      if (c < 0 || r < 0 || c > nx - 1 || r > ny - 1) return null;
-      const x = origin[0] + c * cell;
-      const z = origin[1] + r * cell;
-      const near = nearestOnPolyline(positions, x, z, hit);
-      if (
-        near === null ||
-        Math.abs(near.distance - (width + fenceWidthAt(taper, near.along))) >
-          tolerance
-      )
-        return null;
-      return [x, z] as Vec2;
+  mark = now();
+  const probeAt = margin + cellSize * 4;
+  const buildSide = (sideCurve: FenceSideCurve): FenceSide | null => {
+    const seed = removedSideSeed(base.points, sideCurve.side, probeAt);
+    const field = createFenceField(sideCurve.points, {
+      bounds,
+      cellSize,
+      seed,
     });
-    const n = world.length;
-    let start = world.findIndex(p => p === null);
-    if (start < 0) start = 0;
-    let run: Vec2[] = [];
-    for (let k = 0; k <= n; k++) {
-      const p = world[(start + k) % n];
-      if (p) run.push(p);
-      else {
-        if (run.length > 1) chains.push(run);
-        run = [];
-      }
-    }
-    if (run.length > 1) chains.push(run);
+    if (!field) return null;
+    const indexMark = now();
+    const index = buildFenceSegmentIndex(sideCurve.points, field);
+    timings.index = (timings.index ?? 0) + (now() - indexMark);
+    return {
+      side: sideCurve.side,
+      curve: sideCurve,
+      field,
+      index,
+      removedShare: fieldRemovedShare(field, outline),
+    };
+  };
+  const plus = buildSide(plusCurve);
+  const minus = buildSide(minusCurve);
+  timings.field = now() - mark;
+  if (!plus || !minus) return null;
+
+  const degrees = (r: number) => (r * 180) / Math.PI;
+  const sideReport = (s: FenceSide): FenceSideReport => ({
+    side: s.side,
+    vertices: s.curve.points.length,
+    opening: [degrees(s.curve.opening[0]), degrees(s.curve.opening[1])],
+    blended: s.curve.blended,
+    loopsRemoved: s.curve.loopsRemoved,
+    loops: countPolylineLoops(s.curve.points),
+    removedShare: s.removedShare,
+    minRadius: polylineMinRadius(s.curve.points, headRadius),
+    field: {
+      nx: s.field.nx,
+      ny: s.field.ny,
+      cell: s.field.cell,
+      separated: s.field.separated,
+    },
+    index: {
+      cells: s.index.nx * s.index.ny,
+      entries: s.index.width * s.index.height,
+      maxCount: s.index.maxCount,
+      truncated: s.index.truncated,
+      reach: s.index.reach,
+    },
+  });
+
+  let toleranceMin = Infinity;
+  let toleranceMax = -Infinity;
+  for (const t of base.tolerance) {
+    if (t < toleranceMin) toleranceMin = t;
+    if (t > toleranceMax) toleranceMax = t;
   }
 
-  return chains
-    .map(chain => {
-      const exact: Vec2[] = [];
-      for (const p of resampleChain(chain, resolution)) {
-        const near = nearestOnPolyline(positions, p[0], p[1], hit);
-        if (near === null) continue;
-        const dx = p[0] - near.point[0];
-        const dz = p[1] - near.point[1];
-        const len = Math.hypot(dx, dz);
-        if (len < 1e-9) continue;
-        const at = width + fenceWidthAt(taper, near.along);
-        exact.push(
-          snap([
-            near.point[0] + (dx / len) * at,
-            near.point[1] + (dz / len) * at,
-          ]),
-        );
-      }
-      return exact;
-    })
-    .map(removeChainLoops)
-    .filter(chain => chain.length > 1);
+  const report: FenceReport = {
+    wellbore: options.wellbore,
+    sampling: {
+      count: samples.plan.length,
+      inserted: samples.inserted,
+      maxTurn: degrees(samples.maxTurn),
+      mdLength: samples.md[samples.md.length - 1] ?? 0,
+      planLength: polylineLength(samples.plan),
+    },
+    kickoff: {
+      index: base.kickoff.index,
+      md: base.kickoff.md,
+      y: base.kickoff.y,
+      found: base.kickoff.found,
+    },
+    relax: {
+      toleranceMin,
+      toleranceMax,
+      iterations: base.relax.iterations,
+      settled: base.relax.settled,
+      minRadius: base.minRadius,
+      headRadius: base.headRadius,
+      requiredHeadRadius: base.requiredHeadRadius,
+      maxDeviation: base.relax.maxDeviation,
+    },
+    head: {
+      trimmedLength: base.trimmedLength,
+      from: base.from,
+      degenerate: base.degenerate,
+    },
+    extensions: {
+      start: extensions.start,
+      end: extensions.end,
+      startClearance: degrees(extensions.startClearance),
+      endClearance: degrees(extensions.endClearance),
+      evenness: extensions.evenness,
+      scored: extensions.scored,
+    },
+    sides: { plus: sideReport(plus), minus: sideReport(minus) },
+    // ⚠️ Compared rather than inferred: the per-vertex clearance means the sides can
+    // diverge without any of the discrete repairs having fired, so a flag assembled
+    // from those alone claims they agree when the debug view plainly shows they do
+    // not.
+    shared:
+      plusCurve.points.length === minusCurve.points.length &&
+      plusCurve.points.every(
+        (p, i) =>
+          Math.abs(p[0] - minusCurve.points[i][0]) < 1e-6 &&
+          Math.abs(p[1] - minusCurve.points[i][1]) < 1e-6,
+      ),
+    timings,
+  };
+
+  return {
+    base,
+    extensions,
+    plus,
+    minus,
+    shared: report.shared,
+    report,
+  };
+}
+
+/**
+ * Everything a fence build got wrong, as a list of readable strings.
+ *
+ * ⭐ ONE definition, read by the tests, by the debug overlay and by the development
+ * warning alike, so they cannot drift into disagreeing about what "broken" means.
+ *
+ * @returns an empty array when the fence is sound
+ *
+ * @group Geometries
+ */
+export function assertFenceInvariants(report: FenceReport): string[] {
+  const problems: string[] = [];
+  if (report.relax.headRadius < report.relax.requiredHeadRadius) {
+    problems.push(
+      `shallow section still turns at ${report.relax.headRadius.toFixed(0)} m, wanted ${report.relax.requiredHeadRadius.toFixed(0)} m`,
+    );
+  }
+  if (report.extensions.evenness < SHARE_FLOOR) {
+    problems.push(
+      `run-outs split the block ${(report.extensions.evenness * 100).toFixed(0)}/${((1 - report.extensions.evenness) * 100).toFixed(0)}`,
+    );
+  }
+  for (const side of [report.sides.plus, report.sides.minus]) {
+    const name = side.side > 0 ? 'plus' : 'minus';
+    if (side.loops > 0) {
+      problems.push(`${name}: ${side.loops} loops left in the curve`);
+    }
+    if (!side.field.separated) {
+      problems.push(`${name}: the curve does not separate the field`);
+    }
+    if (side.index.truncated > 0) {
+      problems.push(
+        `${name}: ${side.index.truncated} index cells overflowed at ${side.index.maxCount} segments`,
+      );
+    }
+    if (side.removedShare < SHARE_FLOOR) {
+      problems.push(
+        `${name}: removes only ${(side.removedShare * 100).toFixed(0)}% of the block`,
+      );
+    }
+    const opening = Math.min(side.opening[0], side.opening[1]);
+    if (opening < 30) {
+      problems.push(`${name}: junction opens only ${opening.toFixed(0)}°`);
+    }
+    if (side.residual && side.residual.max > RESIDUAL_LIMIT) {
+      problems.push(
+        `${name}: face stands ${side.residual.max.toFixed(1)} m off the cut`,
+      );
+    }
+  }
+  return problems;
+}
+
+/**
+ * Largest and RMS `|side|` over a set of positions.
+ *
+ * ⭐ Run over the cut face's own vertices this is THE correctness check for the
+ * whole feature: the face is swept from the curve and the block is removed by the
+ * shader reading that same curve back, so anything but zero is a sliver of block
+ * standing proud of the face, or a gap behind it.
+ *
+ * @param side the fence side to measure against
+ * @param points interleaved positions
+ * @param stride elements per position; x is at `i`, z at `i + stride - 1`
+ *
+ * @group Geometries
+ */
+export function fenceResidual(
+  side: FenceSide,
+  points: ArrayLike<number>,
+  stride: number = 3,
+): { max: number; rms: number } {
+  let max = 0;
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i + stride - 1 < points.length; i += stride) {
+    const value = Math.abs(
+      fenceSideAt(side.index, side.field, points[i], points[i + stride - 1]),
+    );
+    if (value > max) max = value;
+    sum += value * value;
+    count++;
+  }
+  return { max, rms: count > 0 ? Math.sqrt(sum / count) : 0 };
 }

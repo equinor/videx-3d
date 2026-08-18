@@ -859,6 +859,7 @@ export const ChunkStack = ({
                     sampler={sampler}
                     base={blockBase}
                     section={sectionState}
+                    fence={fenceState}
                     frame={sectionRoot}
                   />
                 )}

@@ -67,31 +67,3 @@ float sampleFieldMap(sampler2D map, mat3 toUv, vec2 size, vec2 xz) {
   }
   return sum;
 }
-
-// The same read, but returning R and G together: a fence packs its signed distance
-// in R and the distance ALONG the curve in G, and a tapered cut needs both at once.
-vec2 sampleFieldMap2(sampler2D map, mat3 toUv, vec2 size, vec2 xz) {
-  vec2 texel = (toUv * vec3(xz, 1.0)).xy * size - 0.5;
-  vec2 base = floor(texel);
-  vec2 f = texel - base;
-  vec2 sum = vec2(0.0);
-  for (int j = 0; j < 2; j++) {
-    for (int i = 0; i < 2; i++) {
-      vec2 at = clamp(base + vec2(float(i), float(j)), vec2(0.0), size - 1.0);
-      float w = (i == 0 ? 1.0 - f.x : f.x) * (j == 0 ? 1.0 - f.y : f.y);
-      sum += texture2D(map, (at + 0.5) / size).rg * w;
-    }
-  }
-  return sum;
-}
-
-// Extra half width a fence's cut carries at `along` metres down the curve: the full
-// `taper.x` up to `taper.y`, closed by `taper.z`.
-//
-// ⚠⚠ Must match `fenceWidthAt` in `wellbore-fence.ts` EXACTLY. The cut face is
-// placed by root-finding on that one while the block is removed by this one, so any
-// difference is a sliver of block standing proud of the face, or a gap behind it.
-float fenceTaperWidth(vec3 taper, float along) {
-  if (taper.x <= 0.0 || taper.z <= taper.y) return 0.0;
-  return taper.x * (1.0 - smoothstep(taper.y, taper.z, along));
-}

@@ -312,15 +312,10 @@ type FieldColumnStoryProps = {
   wellbore: string;
   fence: boolean;
   fenceSide: 1 | -1;
-  fenceWidth: number;
+  fenceMargin: number;
+  fenceExtension: 'straight';
   fenceOffset: number;
   fenceResolution: number;
-  fenceCellSize: number;
-  fenceAzimuth: number;
-  fenceReveal: number;
-  fenceHeadWidth: number;
-  fenceShallowDepth: number;
-  fenceDeepDepth: number;
   fenceDebug: boolean;
 };
 
@@ -569,15 +564,10 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
         ? {
             wellbore: selectedWellbore,
             side: props.fenceSide,
-            width: props.fenceWidth,
+            margin: props.fenceMargin,
+            extension: props.fenceExtension,
             offset: props.fenceOffset,
             resolution: props.fenceResolution,
-            cellSize: props.fenceCellSize,
-            azimuth: (props.fenceAzimuth * Math.PI) / 180,
-            reveal: props.fenceReveal,
-            headWidth: props.fenceHeadWidth,
-            shallowDepth: props.fenceShallowDepth,
-            deepDepth: props.fenceDeepDepth,
             debug: props.fenceDebug,
           }
         : undefined,
@@ -585,15 +575,10 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       props.fence,
       selectedWellbore,
       props.fenceSide,
-      props.fenceWidth,
+      props.fenceMargin,
+      props.fenceExtension,
       props.fenceOffset,
       props.fenceResolution,
-      props.fenceCellSize,
-      props.fenceAzimuth,
-      props.fenceReveal,
-      props.fenceHeadWidth,
-      props.fenceShallowDepth,
-      props.fenceDeepDepth,
       props.fenceDebug,
     ],
   );
@@ -752,15 +737,10 @@ export const Default: Story = {
     // Fence
     fence: false,
     fenceSide: 1,
-    fenceWidth: 0,
+    fenceMargin: 0,
+    fenceExtension: 'straight',
     fenceOffset: 0,
     fenceResolution: 10,
-    fenceCellSize: 25,
-    fenceAzimuth: 0,
-    fenceReveal: 0.5,
-    fenceHeadWidth: 0,
-    fenceShallowDepth: 1000,
-    fenceDeepDepth: 2500,
     fenceDebug: false,
     // Resolve
     seal: true,
@@ -906,68 +886,38 @@ export const Default: Story = {
         'Open the block along the SELECTED wellbore, instead of with a plane. ⚠️ Needs a wellbore selected (turn `wellbores` on and click one) — nothing is cut until then. ⭐ Changing which well is cut costs a resample and an upload, not a build, which is why it can happen inside a fly-to. Turning this on disables the plane section.',
       table: { category: 'Fence' },
     },
-    fenceResolution: {
-      control: { type: 'select' },
-      options: [2, 5, 10, 25, 50],
-      description:
-        'Spacing the cut face is built at, in metres. ⭐ The face is a ribbon along the trajectory, INDEPENDENT of the tessellation, so this alone sets how smooth it is — it is not floored by the triangle size the way a cut through the cells was.',
-      table: { category: 'Fence' },
-    },
     fenceSide: {
       control: { type: 'inline-radio' },
       options: [1, -1],
       description:
-        'Which half goes, in `split`. ⚠️ Explicit for now — deriving it from the camera so the cut always faces you is the obvious next step, but it would re-orient mid fly-to, which is a judgement to make with the animation rather than before it.',
+        'Which half is taken AWAY, relative to the fence curve walking the well from head to TD. ⭐ Free to flip: both halves are built up front, so this swaps a texture and a curve rather than rebuilding. The two are flip sides of ONE cut — the run-outs are agreed between them, and only the repairs a particular side needs differ.',
       table: { category: 'Fence' },
     },
-    fenceWidth: {
-      control: { type: 'range', min: 0, max: 2000, step: 25 },
+    fenceMargin: {
+      control: { type: 'range', min: 0, max: 300, step: 5 },
       description:
-        'Metres of clearance between the well and the face. 0 puts the face through the well itself — the classic section, with the trajectory lying in the cut. ⭐ Free to sweep: no rebuild behind it.',
+        'Metres of clearance kept between the trajectory and the cut. 0 puts the face through the well itself — the classic section. ⭐ Raise it to leave room for what is drawn IN the hole (casings, completion, logs), which a cut through the trajectory would slice in half. ⚠️ Baked into the curve, so this REBUILDS the fence — not the chunks. It also sets how smooth the curve has to be, since an offset folds wherever the curve turns tighter than the offset itself.',
+      table: { category: 'Fence' },
+    },
+    fenceExtension: {
+      control: { type: 'inline-radio' },
+      options: ['straight'],
+      description:
+        'How the run-outs continue past the ends of the well. ⭐ The direction PAIR is chosen automatically and shared by both sides: candidates that keep a clear opening from the trace are scored on how evenly they split the footprint, and the best pair wins.',
+      table: { category: 'Fence' },
+    },
+    fenceResolution: {
+      control: { type: 'select' },
+      options: [2, 5, 10, 25, 50],
+      description:
+        'Spacing the cut face is built at, in metres. ⭐ The face is a ribbon along the curve, INDEPENDENT of the tessellation, so this alone sets how smooth it is — it is not floored by the triangle size the way a cut through the cells was.',
       table: { category: 'Fence' },
     },
     fenceOffset: {
       control: { type: 'range', min: -20, max: 20, step: 0.5 },
       description:
-        'Metres to move the cut face toward the KEPT side. ⚠️ Normally 0 — the face is drawn with a material that is not itself cut, so it needs no nudge to escape its own test, and an inset leaves the unit’s cap overhanging it as a thin bright lip. A small NEGATIVE value pushes the face slightly proud instead, which is how to tell a SEAM apart from a geometry fault: if a seam closes at −2 it was never a geometry problem.',
+        'Metres to move the cut face toward the KEPT side. ⚠️ Normally 0 — the face is drawn with a material that is not itself cut, so it needs no nudge to escape its own test. A small NEGATIVE value pushes the face slightly proud instead, which is how to tell a SEAM apart from a geometry fault: if a seam closes at −2 it was never a geometry problem.',
       table: { category: 'Fence' },
-    },
-    fenceCellSize: {
-      control: { type: 'select' },
-      options: [12.5, 25, 50, 100],
-      description:
-        'Metres per cell of the distance field the CLIP reads. ⭐ Coarse is fine: a SIGNED distance is continuous across the curve, and the shader smooths its own sampling — the error is in where the boundary sits, not in how ragged it is.',
-      table: { category: 'Fence' },
-    },
-    fenceAzimuth: {
-      control: { type: 'range', min: 0, max: 360, step: 5 },
-      description:
-        'Degrees. Only used for a well with too little PLAN deviation to give the fence a direction — a vertical well’s plan trace is a point, so every direction through it is equally arbitrary and this is a knob rather than a rule. Drag it to swing the cut around the wellhead.',
-      table: { category: 'Fence' },
-    },
-    fenceReveal: {
-      control: { type: 'range', min: 0.05, max: 0.8, step: 0.05 },
-      description:
-        'Share of the block the cut aims to take away on the side being removed. ⭐⭐ What the run-outs are chosen by: a fence exists to take away whatever stands between you and the well, so what matters is that the removed side is a usable piece of block. Measured on the Volve data the healthy wells split 43-58% while the broken ones left one side 0-17%, which is a cut that either shows nothing or removes everything. ⚠️ A target, not a guarantee — a well near the edge of the footprint cannot leave half of it on both sides, and the two sides will differ markedly. ⚠️ Rebuilds, unlike `fenceWidth`.',
-      table: { category: 'Fence' },
-    },
-    fenceHeadWidth: {
-      control: { type: 'range', min: 0, max: 1500, step: 25 },
-      description:
-        'Extra metres of clearance at the SHALLOW end, closing to nothing by `fenceDeepDepth`. 0 is a cut of uniform width. ⭐⭐ The shallow section of a well is near-vertical, so its plan trace is a few tens of metres of survey noise standing in for kilometres of hole — following it hugs something that is not there and pinches the cut to a blade. Opening the corridor out gives that wiggle somewhere to live, and costs nothing down in the reservoir where the cut should follow the well closely.',
-      table: { category: 'Fence taper' },
-    },
-    fenceShallowDepth: {
-      control: { type: 'range', min: 0, max: 3000, step: 50 },
-      description:
-        'Metres below MSL down to which `fenceHeadWidth` applies in full.',
-      table: { category: 'Fence taper' },
-    },
-    fenceDeepDepth: {
-      control: { type: 'range', min: 0, max: 4000, step: 50 },
-      description:
-        'Metres below MSL by which the widening has closed to nothing. ⚠️ Must be deeper than `fenceShallowDepth`, or the taper is ignored.',
-      table: { category: 'Fence taper' },
     },
     fenceDebug: {
       description:

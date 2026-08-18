@@ -1,29 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
-import {
-  buildFenceRibbons,
-  fenceContour,
-  FenceRibbon,
-  StackSectionSource,
-  Vec2,
-} from '../../sdk';
+import { buildFenceRibbons, FenceRibbon, StackSectionSource } from '../../sdk';
 import { ChunkFenceState, ChunkLayer } from './chunk-defs';
 import { ChunkSectionFace } from './useChunkSection';
 
 /**
  * Build a chunk's cut faces along a **fence**, as ribbons following the curve.
  *
- * ⭐⭐ The face is built from the CURVE, not from the tessellation's cells. Cutting
- * cells makes the face inherit the TIN's resolution — tens of metres on a
- * field-sized stack — and worse, it systematically pulls the face toward the well
- * wherever the trajectory bends, because a distance field is convex there and
- * interpolating it linearly across a triangle overestimates it. A ribbon is
- * sampled at whatever spacing is asked for and takes only its HEIGHTS from the
- * tessellation, so it meets the caps exactly while following the well smoothly.
+ * ⭐⭐ The face IS the fence curve, swept vertically. The curve was already offset
+ * by the caller's clearance and is the zero set of the field the shader cuts by, so
+ * the drawn face and the removed block agree by construction — there is nothing to
+ * contour, root-find or reconcile here.
+ *
+ * ⭐ The curve comes from the STACK, not from this chunk. It is identical for every
+ * chunk, and only the heights differ; all this does is drape it over the chunk's own
+ * tessellation.
  *
  * ⚠️ Rebuilt from the FRAME loop, because the fence state is a stable object whose
- * sampler is swapped in place (so that changing wellbore does not re-render every
- * chunk). The rebuild publishes through state, which costs one render per fence —
+ * contents are swapped in place (so that changing wellbore does not re-render every
+ * chunk). The rebuild publishes through state, which costs one render per change —
  * not per frame.
  *
  * @param source the chunk's section channels, from its build
@@ -41,32 +36,26 @@ export function useChunkFenceFace(
 
   const last = useRef<{
     source: unknown;
-    sample: unknown;
-    width: number;
+    curve: unknown;
     side: number;
-    resolution: number;
     offset: number;
-    taper: unknown;
     on: boolean;
   }>({
     source: null,
-    sample: null,
-    width: NaN,
+    curve: null,
     side: NaN,
-    resolution: NaN,
     offset: NaN,
-    taper: undefined,
     on: false,
   });
 
   useFrame(() => {
     const state = last.current;
-    const off = !source || !fence || !fence.enabled || !fence.field;
+    const off = !source || !fence || !fence.enabled || !fence.curve;
     if (off) {
       if (state.on || state.source !== source) {
         state.on = false;
         state.source = source;
-        state.sample = null;
+        state.curve = null;
         setFaces(null);
       }
       return;
@@ -74,67 +63,39 @@ export function useChunkFenceFace(
     if (
       state.on &&
       state.source === source &&
-      state.sample === fence.sample &&
-      state.width === fence.width &&
+      state.curve === fence.curve &&
       state.side === fence.side &&
-      state.resolution === fence.resolution &&
-      state.offset === fence.offset &&
-      state.taper === fence.taper
+      state.offset === fence.offset
     ) {
       return;
     }
     state.on = true;
     state.source = source;
-    state.sample = fence.sample;
-    state.width = fence.width;
+    state.curve = fence.curve;
     state.side = fence.side;
-    state.resolution = fence.resolution;
     state.offset = fence.offset;
-    state.taper = fence.taper;
 
-    const chains = fenceContour(fence.field!, {
-      width: fence.width,
-      side: fence.side,
-      resolution: fence.resolution,
-      taper: fence.taper,
+    // The face looks INTO the half being removed. `side` names that half relative
+    // to the curve's left normal, which is the same normal the ribbon builds from.
+    const ribbons: FenceRibbon[] = buildFenceRibbons(source!, fence.curve!, {
+      alongOffset: fence.alongOffset,
+      offset: fence.offset,
+      flip: fence.side < 0,
     });
 
     const built: ChunkSectionFace[] = [];
-    for (const chain of chains) {
-      if (chain.length < 2) continue;
-      // Which way the face looks, decided ONCE per chain from the field itself:
-      // stepping off the curve must lower `side * s` to be heading into what the
-      // fence removed. Per vertex it could flip on noise; per chain it cannot.
-      const mid = chain[chain.length >> 1] as Vec2;
-      const prev = chain[Math.max(0, (chain.length >> 1) - 1)];
-      const tx = mid[0] - prev[0];
-      const tz = mid[1] - prev[1];
-      const len = Math.hypot(tx, tz) || 1;
-      const probe = Math.max(fence.resolution, 1);
-      const nx = (-tz / len) * probe;
-      const nz = (tx / len) * probe;
-      const outward: boolean =
-        fence.side * fence.sample(mid[0] + nx, mid[1] + nz) <
-        fence.side * fence.sample(mid[0] - nx, mid[1] - nz);
-
-      const ribbons: FenceRibbon[] = buildFenceRibbons(source!, chain, {
-        along: fence.sampleAlong,
-        offset: fence.offset,
-        flip: !outward,
-      });
-      for (const ribbon of ribbons) {
-        const layer = source!.layers?.[ribbon.interval] ?? ribbon.interval;
-        if (layers?.[layer]?.section === false) {
-          ribbon.geometry.dispose();
-          continue;
-        }
-        built.push({
-          interval: ribbon.interval,
-          layer,
-          wall: built.length,
-          geometry: ribbon.geometry,
-        });
+    for (const ribbon of ribbons) {
+      const layer = source!.layers?.[ribbon.interval] ?? ribbon.interval;
+      if (layers?.[layer]?.section === false) {
+        ribbon.geometry.dispose();
+        continue;
       }
+      built.push({
+        interval: ribbon.interval,
+        layer,
+        wall: built.length,
+        geometry: ribbon.geometry,
+      });
     }
     setFaces(built.length > 0 ? built : null);
   });

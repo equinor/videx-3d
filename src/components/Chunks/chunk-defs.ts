@@ -1,7 +1,8 @@
 import { ColorRepresentation, Material, Plane } from 'three';
 import {
+  FenceExtensionMode,
   FenceField,
-  FenceTaper,
+  FenceSegmentIndex,
   PackedBufferGeometry,
   PackedSurfaceChunk,
   PlanarPolygonCoordinates,
@@ -578,109 +579,47 @@ export const DEFAULT_FENCE_RESOLUTION = 10;
  * @group Components
  */
 export type ChunkFence = {
-  /** Wellbore to follow. Ignored when {@link ChunkFence.path} is given. */
+  /** Wellbore to follow. */
   wellbore?: string;
-  /** An explicit plan curve in the stack's XZ, instead of a wellbore. */
-  path?: Vec2[];
   /**
-   * Which side of the curve is taken away. Default 1.
+   * Which half is taken AWAY: 1 removes the half the fence curve's left normal
+   * points into, walking the well from head to terminal depth.
    *
-   * ⚠️⚠️ A BUILD input, not a display one. The run-outs are chosen by how much
-   * block is left on the side being removed, so the two sides do not generally
-   * share a curve — flipping this REBUILDS the field rather than just inverting
-   * the test. They agree wherever agreeing costs nothing, and diverge only where
-   * one side would otherwise be left a sliver.
+   * ⭐ Free to flip. Both halves are built up front, so this swaps a texture and a
+   * curve rather than rebuilding anything.
    */
   side?: 1 | -1;
   /**
-   * Metres of clearance between the well and the face. Default 0, which puts the
-   * face through the well itself — the classic section, with the trajectory lying
-   * in the cut.
+   * Metres of clearance kept between the trajectory and the cut. Default 0, which
+   * puts the face through the well itself.
+   *
+   * ⭐ Raise it to leave room for what is drawn IN the hole — casings, completion,
+   * logs — which a cut through the trajectory would slice in half.
+   *
+   * ⚠️ Baked into the curve, so changing it rebuilds the fence (not the chunks).
+   * It also sets how smooth the curve has to be: an offset folds wherever the curve
+   * turns tighter than the offset itself.
    */
-  width?: number;
+  margin?: number;
+  /** How the run-outs continue past the ends of the well. Default 'straight'. */
+  extension?: FenceExtensionMode;
   /** Draw the cut. Default true. */
   enabled?: boolean;
   /**
    * Metres to move the cut face toward the KEPT side. Default 0.
    *
-   * ⚠️ Unlike {@link ChunkSection.offset} this should normally stay 0: a fence's
-   * face is drawn with a material that is NOT cut, so it needs no nudge to escape
-   * its own test — and any inset leaves the unit's cap overhanging it as a thin
-   * bright lip. A small NEGATIVE value pushes the face slightly proud instead,
-   * which is the way to hide a seam if one shows.
+   * ⚠️ Normally leave at 0: a fence's face is drawn with a material that is NOT
+   * cut, so it needs no nudge to escape its own test. A small NEGATIVE value pushes
+   * it slightly proud, which is the way to hide a seam if one shows.
    */
   offset?: number;
   /**
    * Spacing the cut face is built at, in metres. Default 10.
    *
    * ⭐ The face is a ribbon along the curve, INDEPENDENT of the tessellation, so
-   * this alone sets its smoothness — it is not bounded below by the triangle size
-   * the way a cut through the cells would be.
+   * this alone sets its smoothness.
    */
   resolution?: number;
-  /**
-   * Metres per cell of the distance field. Default 50.
-   *
-   * ⭐ Coarse is fine: a SIGNED distance is continuous across the curve, so the
-   * shader's own smoothed sampling still gives a smooth cut — the error is in
-   * where the boundary sits, not in how ragged it is.
-   */
-  cellSize?: number;
-  /**
-   * Azimuth in radians for a well with no plan deviation. ⚠️ A vertical well's
-   * plan trace is a POINT, so there is nothing to derive a direction from and
-   * every choice is arbitrary — which is why this is a control and not a rule.
-   */
-  azimuth?: number;
-  /**
-   * How wide an opening, in RADIANS, the run-out at each end must keep between
-   * itself and the rest of the trace. Default 45°. 0 restores the raw end tangent.
-   *
-   * ⭐ The dial that decides whether a well with an arcing shallow section opens
-   * the block or merely slits it: aimed by its tangent, the run-out of such a well
-   * ends up alongside the trace instead of away from it, and the "cut" is a wedge
-   * that closes to nothing at the wellhead. Raising this forces the run-out into
-   * clear air, by the least rotation that gets it there.
-   */
-  /**
-   * Share of the block, 0..1, the cut aims to take away on the side being removed.
-   * Default 0.5.
-   *
-   * ⭐⭐ What the run-outs are chosen by. A fence exists to take away whatever
-   * stands between the viewer and the well, so the thing that matters is that the
-   * removed side is a usable piece of block — a well whose run-outs pinch it to a
-   * few percent has a cut that either shows nothing or removes everything.
-   *
-   * ⚠️ A TARGET, not a guarantee: a well near the edge of the footprint cannot
-   * leave half of it on both sides, and the two sides will differ markedly. That
-   * is expected — there are still two sides to view it from.
-   */
-  reveal?: number;
-  /**
-   * Extra metres of clearance at the SHALLOW end of the well, closing to nothing
-   * with depth. Default 0, which is a cut of uniform width.
-   *
-   * ⭐⭐ The shallow section of a well is near-vertical, so its plan trace is a few
-   * tens of metres of survey noise standing in for kilometres of hole. Following
-   * it hugs something that is not there and pinches the cut to a blade; opening
-   * the corridor out instead gives that wiggle somewhere to live, and costs
-   * nothing down in the reservoir where the cut should follow the well closely.
-   */
-  headWidth?: number;
-  /**
-   * Depth in metres below MSL down to which {@link ChunkFence.headWidth} applies
-   * in full. Default 1000.
-   */
-  shallowDepth?: number;
-  /**
-   * Depth in metres below MSL by which the widening has closed to nothing.
-   * Default 2500.
-   */
-  deepDepth?: number;
-  /** Trajectory resampling step, in metres. Default 50. */
-  stepSize?: number;
-  /** Metres to clear the outline by, past both ends. Default 500. */
-  margin?: number;
   /**
    * Cut the sea too. Default true — the cut is read per fragment, so the sea lid's
    * handful of triangles are no obstacle.
@@ -700,18 +639,27 @@ export type ChunkFence = {
  *
  * ⭐ Stable identity for the same reason {@link ChunkSectionState} has one: the
  * context's identity is what every chunk's build spec derives from.
+ *
+ * ⭐⭐ The CURVE lives here, not in each chunk. It is the same for every chunk of
+ * the stack, and deriving it per chunk meant repeating the most expensive step of
+ * the whole feature once per chunk with identical inputs.
  */
 export type ChunkFenceState = {
-  /** signed distance to the curve, in the stack's XZ */
-  sample: (x: number, z: number) => number;
-  /** distance ALONG the curve — the cut face's `u`, and what seismic would need */
-  sampleAlong: (x: number, z: number) => number;
-  /** the raster it reads, or `null` until the trajectory has resolved */
+  /** the cut curve for the current side, resampled at `resolution` */
+  curve: Vec2[] | null;
+  /** arc length at the curve's first vertex, for the face's `u` */
+  alongOffset: number;
+  /** the field the shader cuts by, or `null` until the trajectory has resolved */
   field: FenceField | null;
-  /** the shallow-end widening, resolved to arc lengths, or `null` for none */
-  taper: FenceTaper | null;
+  /**
+   * The EXACT boundary lookup, paired with `field`.
+   *
+   * ⭐ What the immersion fog asks whether the camera is standing in the half that
+   * was taken away. The field alone would answer a fraction of a cell out, which is
+   * metres — enough for the fog to switch on before the cut visually reaches you.
+   */
+  index: FenceSegmentIndex | null;
   side: 1 | -1;
-  width: number;
   offset: number;
   resolution: number;
   enabled: boolean;

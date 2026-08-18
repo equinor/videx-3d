@@ -1,5 +1,6 @@
 import { BufferAttribute, BufferGeometry } from 'three';
 import { Vec2 } from '../types/common';
+import { distanceVec2 } from '../utils/vector-operations';
 import { StackSectionSource } from './surface-section';
 
 /**
@@ -168,8 +169,16 @@ export type FenceRibbon = {
 
 /** {@link buildFenceRibbons} options. */
 export type FenceRibbonOptions = {
-  /** distance along the fence at a point, for the face's `u` */
-  along?: (x: number, z: number) => number;
+  /**
+   * Arc length at the path's first vertex, in metres, so the face's `u` is
+   * continuous with whatever the curve was cut from.
+   *
+   * ⭐ `u` is METRES along the curve, computed from the path itself. Reading it back
+   * out of a rasterised "distance along" field instead makes it discontinuous across
+   * the medial axis of every bend — which is exactly where a wellbore fence spends
+   * its time.
+   */
+  alongOffset?: number;
   /** metres to move the face toward the kept side, along -normal. Default 0. */
   offset?: number;
   /** flip which way the face looks */
@@ -177,38 +186,52 @@ export type FenceRibbonOptions = {
 };
 
 /**
- * Add the point where the path crosses the edge of the tessellation.
+ * Add the point where the path crosses a boundary the face has to stop at.
  *
  * ⚠️ Without this the quad straddling the boundary is dropped whole, so the face
  * stops at the last sample that happened to land inside — up to one resample step
  * short of the wall, while the cut it closes runs all the way to it. That leftover
- * is a full-height slit at the end of the fence, and its width is whatever
- * fraction of a step remains, so it comes and goes with the data.
+ * is a full-height slit, and its width is whatever fraction of a step remains, so it
+ * comes and goes with the data.
+ *
+ * ⚠️⚠️ Applied to the UNIT MEMBERSHIP boundary as well as the edge of the
+ * tessellation. They drop a quad by the same mechanism, and internal pinch-outs are
+ * far more common than the outer wall.
  */
-function refineAtBoundary(path: Vec2[], locator: StackLocator): Vec2[] {
-  const inside = path.map(p => !!locator.locate(p[0], p[1]));
+function refineAtBoundary(
+  path: Vec2[],
+  locator: StackLocator,
+  sameClass: (a: StackLocation | null, b: StackLocation | null) => boolean,
+): Vec2[] {
+  const located = path.map(p => locator.locate(p[0], p[1]));
   const refined: Vec2[] = [];
   for (let k = 0; k < path.length; k++) {
     refined.push(path[k]);
-    if (k + 1 >= path.length || inside[k] === inside[k + 1]) continue;
-    // Bisect toward the outside end, keeping the last point that still locates.
-    const from = inside[k] ? path[k] : path[k + 1];
-    const to = inside[k] ? path[k + 1] : path[k];
+    if (k + 1 >= path.length || sameClass(located[k], located[k + 1])) continue;
+    // Bisect for the last point that still belongs with path[k].
+    const from = path[k];
+    const to = path[k + 1];
     let lo = 0;
     let hi = 1;
     for (let i = 0; i < 24; i++) {
       const mid = (lo + hi) * 0.5;
       const x = from[0] + (to[0] - from[0]) * mid;
       const z = from[1] + (to[1] - from[1]) * mid;
-      if (locator.locate(x, z)) lo = mid;
+      if (sameClass(located[k], locator.locate(x, z))) lo = mid;
       else hi = mid;
     }
-    // Either way round the crossing belongs between path[k] and path[k + 1].
-    if (lo > 0)
+    if (lo > 0) {
       refined.push([
         from[0] + (to[0] - from[0]) * lo,
         from[1] + (to[1] - from[1]) * lo,
       ] as Vec2);
+    }
+    if (hi < 1) {
+      refined.push([
+        from[0] + (to[0] - from[0]) * hi,
+        from[1] + (to[1] - from[1]) * hi,
+      ] as Vec2);
+    }
   }
   return refined;
 }
@@ -244,11 +267,47 @@ export function buildFenceRibbons(
   const offset = options.offset ?? 0;
   const layers = heights.length;
 
-  path = refineAtBoundary(path, locator);
+  const sameClass = (a: StackLocation | null, b: StackLocation | null) => {
+    if (!a || !b) return !a === !b;
+    if (a.triangle === b.triangle) return true;
+    for (let interval = 0; interval + 1 < layers; interval++) {
+      const members = intervals[interval];
+      if (!members) continue;
+      if (!members[a.triangle] !== !members[b.triangle]) return false;
+    }
+    return true;
+  };
+  path = refineAtBoundary(path, locator, sameClass);
+
+  // ⭐ Metres along the path, from the path itself.
+  const along = new Float64Array(path.length);
+  along[0] = options.alongOffset ?? 0;
+  for (let k = 1; k < path.length; k++) {
+    along[k] = along[k - 1] + distanceVec2(path[k - 1], path[k]);
+  }
+
+  // A central difference gives each sample the tangent of the curve rather than
+  // of one segment, so adjacent quads share a normal and the face reads smooth.
+  const sign = options.flip ? -1 : 1;
+  const normals: Vec2[] = path.map((_, k) => {
+    const a = path[Math.max(0, k - 1)];
+    const b = path[Math.min(path.length - 1, k + 1)];
+    const tx = b[0] - a[0];
+    const tz = b[1] - a[1];
+    const len = Math.hypot(tx, tz) || 1;
+    return [(-tz / len) * sign, (tx / len) * sign];
+  });
+
+  // ⚠️ Heights are read where the face actually STANDS, not where the path runs, or
+  // an offset face's top edge no longer meets the cap it has to join.
+  const drawn: Vec2[] = path.map((p, k) => [
+    p[0] - normals[k][0] * offset,
+    p[1] - normals[k][1] * offset,
+  ]);
 
   // Locate every sample once; each layer's height is then the same weighted sum
   // over a different height array.
-  const located: (StackLocation | null)[] = path.map(p =>
+  const located: (StackLocation | null)[] = drawn.map(p =>
     locator.locate(p[0], p[1], { triangle: 0, wa: 0, wb: 0, wc: 0 }),
   );
   const y: Float64Array[] = [];
@@ -277,16 +336,6 @@ export function buildFenceRibbons(
 
   // A central difference gives each sample the tangent of the curve rather than
   // of one segment, so adjacent quads share a normal and the face reads smooth.
-  const sign = options.flip ? -1 : 1;
-  const normals: Vec2[] = path.map((_, k) => {
-    const a = path[Math.max(0, k - 1)];
-    const b = path[Math.min(path.length - 1, k + 1)];
-    const tx = b[0] - a[0];
-    const tz = b[1] - a[1];
-    const len = Math.hypot(tx, tz) || 1;
-    return [(-tz / len) * sign, (tx / len) * sign];
-  });
-
   const ribbons: FenceRibbon[] = [];
   for (let interval = 0; interval + 1 < layers; interval++) {
     const members = intervals[interval];
@@ -315,16 +364,16 @@ export function buildFenceRibbons(
       const b1 = bottom[k + 1];
       if (t0 - b0 <= 0 && t1 - b1 <= 0) continue;
 
-      const p0 = path[k];
-      const p1 = path[k + 1];
+      const p0 = drawn[k];
+      const p1 = drawn[k + 1];
       const n0 = normals[k];
       const n1 = normals[k + 1];
-      const x0 = p0[0] - n0[0] * offset;
-      const z0 = p0[1] - n0[1] * offset;
-      const x1 = p1[0] - n1[0] * offset;
-      const z1 = p1[1] - n1[1] * offset;
-      const u0 = options.along ? options.along(p0[0], p0[1]) : 0;
-      const u1 = options.along ? options.along(p1[0], p1[1]) : 0;
+      const x0 = p0[0];
+      const z0 = p0[1];
+      const x1 = p1[0];
+      const z1 = p1[1];
+      const u0 = along[k];
+      const u1 = along[k + 1];
       const m0 = Math.max(markTop?.[k] ?? 0, markBottom?.[k] ?? 0);
       const m1 = Math.max(markTop?.[k + 1] ?? 0, markBottom?.[k + 1] ?? 0);
 

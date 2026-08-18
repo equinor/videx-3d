@@ -47,15 +47,13 @@ varying float vSectionDist;
 #endif
 
 #ifdef CHUNK_FENCE
-// x: half width in metres — how far the face stands off the well; y: which side of
-// the curve goes (+1 or -1); z: unused; w: +1 normally, -1 to draw ONLY what the
-// fence removed (the peel patch).
-uniform vec4 fenceParams;
-// x: extra half width at the shallow end; y, z: arc lengths it tapers between.
-uniform vec3 fenceTaper;
+// x: 1 while the cut is live, 0 to pass everything; y: +1 normally, -1 to draw ONLY
+// what the fence removed (the peel patch).
+uniform vec2 fenceParams;
 uniform sampler2D fenceMap;
 uniform mat3 fenceToUv;   // object XZ -> uv
 uniform vec2 fenceSize;   // grid size in texels
+#include ../../../sdk/materials/shaderLib/fence-field.glsl
 #endif
 
 #if defined(CHUNK_CONTACTS) || defined(CHUNK_BATHYMETRY) || defined(CHUNK_FENCE)
@@ -144,15 +142,17 @@ void main() {
 
   #ifdef CHUNK_FENCE
   // ⭐ PER FRAGMENT, not interpolated from the vertices. The cut face is built
-  // independently of this mesh's triangles, so reading the field here — at the
-  // resolution of the field rather than of the tessellation — is what lets the two
-  // agree along a curve the tessellation knows nothing about.
-  // ⚠️ R is the signed distance, G the distance ALONG the curve. The taper needs
-  // both: how wide the cut opens depends on where down the well it is.
-  vec2 fenceField = sampleFieldMap2(fenceMap, fenceToUv, fenceSize, vObjectPos.xz);
-  float fenceAt = fenceParams.y * fenceField.r;
-  float fenceWidth = fenceParams.x + fenceTaperWidth(fenceTaper, fenceField.g);
-  if (fenceParams.w * (fenceAt - fenceWidth) < 0.0) discard;
+  // independently of this mesh's triangles, so reading the fence here — at the
+  // resolution of the curve rather than of the tessellation — is what lets the two
+  // agree along something the tessellation knows nothing about.
+  // ⭐⭐ The threshold is 0 because the caller's clearance is baked into the curve,
+  // and the read is EXACT because the curve is carried rather than reconstructed.
+  // The face is that same curve, so face and cut are one object.
+  // x: whether the cut is live, y: +1 for the block, -1 for the peel patch.
+  if (fenceParams.x > 0.5) {
+    float fenceAt = fenceSide(fenceMap, fenceToUv, fenceSize, vObjectPos.xz);
+    if (fenceParams.y * fenceAt < 0.0) discard;
+  }
   #endif
 
   vec4 diffuseColor = vec4(diffuse, opacity);

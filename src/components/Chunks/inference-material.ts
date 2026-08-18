@@ -8,7 +8,7 @@ import {
 import { makeOitCompatible } from '../../rendering/oit-material';
 // ⚠️ Imported as a STRING, not `#include`d: this shader is assembled at runtime in
 // `onBeforeCompile`, where the glsl plugin's include resolution has long finished.
-import depthMapShader from '../../sdk/materials/shaderLib/depth-map.glsl';
+import fenceFieldShader from '../../sdk/materials/shaderLib/fence-field.glsl';
 import { ChunkFenceUniforms } from './chunk-material';
 
 /**
@@ -147,10 +147,14 @@ export function createInferenceMaterial(
     if (sectionPlane) shader.uniforms.sectionPlane = sectionPlane;
     if (fence) {
       shader.uniforms.fenceParams = fence.params;
-      shader.uniforms.fenceTaper = fence.taper;
       shader.uniforms.fenceMap = fence.map;
       shader.uniforms.fenceToUv = fence.toUv;
       shader.uniforms.fenceSize = fence.size;
+      shader.uniforms.fenceCells = fence.cells;
+      shader.uniforms.fenceSegments = fence.segments;
+      shader.uniforms.fenceIndex = fence.index;
+      shader.uniforms.fenceIndexSize = fence.indexSize;
+      shader.uniforms.fenceSegmentsSize = fence.segmentsSize;
     }
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -203,13 +207,12 @@ varying float vSectionDist;`
         }${
           fence
             ? `
-uniform vec4 fenceParams;
-uniform vec3 fenceTaper;
+uniform vec2 fenceParams;
 uniform sampler2D fenceMap;
 uniform mat3 fenceToUv;
 uniform vec2 fenceSize;
 varying vec3 vFencePos;
-${depthMapShader}`
+${fenceFieldShader}`
             : ''
         }
 
@@ -229,8 +232,7 @@ float chunkStripe(float h, float w) {
             : ''
         }${
           fence
-            ? `vec2 fenceField = sampleFieldMap2(fenceMap, fenceToUv, fenceSize, vFencePos.xz);
-if (fenceParams.w * (fenceParams.y * fenceField.r - fenceParams.x - fenceTaperWidth(fenceTaper, fenceField.g)) < 0.0) discard;
+            ? `if (fenceParams.x > 0.5 && fenceParams.y * fenceSide(fenceMap, fenceToUv, fenceSize, vFencePos.xz) < 0.0) discard;
   `
             : ''
         }#include <clipping_planes_fragment>`,

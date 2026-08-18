@@ -5,86 +5,55 @@ import {
   FloatType,
   Matrix3,
   NearestFilter,
-  RGFormat,
+  RedFormat,
+  RGBAFormat,
   Vector2,
-  Vector3,
   Vector4,
 } from 'three';
 import {
-  createFenceField,
-  createFencePolyline,
-  extendFencePolyline,
-  FENCE_REVEAL,
-  FenceField,
-  fenceDepthsFor,
-  FenceTaper,
-  fenceTaperRange,
+  assertFenceInvariants,
+  buildWellboreFence,
+  fenceFieldPlacement,
+  FenceReport,
   getSplineCurve,
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
   PositionLog,
-  sampleFenceAlong,
-  sampleFenceField,
+  resamplePolyline2D,
   Store,
   Vec2,
   Vec3,
   WellboreHeader,
+  WellboreFence,
 } from '../../sdk';
 import {
   ChunkFence,
   ChunkFenceState,
-  DEFAULT_FENCE_CELL_SIZE,
   DEFAULT_FENCE_RESOLUTION,
 } from './chunk-defs';
 import { ChunkFenceUniforms } from './chunk-material';
 
 type UtmToArea = (easting: number, northing: number, altitude?: number) => Vec3;
 
-const ZERO = () => 0;
-
-/** A half width below anything the field can hold, so nothing is cut away. */
-const FENCE_OFF = -1e30;
-
-// Chord error against the smooth curve is ~L²/8R, so 20 m stays well under a
-// metre even round a 200 m bend — the field and the face are built from this same
-// polyline, so any facet here becomes a visible periodic wave along the cut.
-const DEFAULT_STEP_SIZE = 20;
-const DEFAULT_MARGIN = 500;
-
-/** Depth, in metres below MSL, down to which a taper stays fully open. */
-const DEFAULT_SHALLOW_DEPTH = 1000;
-
-/** Depth, in metres below MSL, by which a taper has closed. */
-const DEFAULT_DEEP_DEPTH = 2500;
-
-type ResolvedFence = {
-  field: FenceField;
-  sample: (x: number, z: number) => number;
-  sampleAlong: (x: number, z: number) => number;
-  taper: FenceTaper | null;
+/** One side, resolved into what the shader and the face builder each need. */
+type ResolvedSide = {
+  curve: Vec2[];
   texture: DataTexture;
   toUv: Matrix3;
   size: Vector2;
+  cells: DataTexture;
+  segments: DataTexture;
+  index: Vector4;
+  indexSize: Vector2;
+  segmentsSize: Vector2;
 };
 
-/**
- * Round the survey stations off with a spline before the trace is used.
- *
- * ⭐ A position log is a POLYLINE, so a curved section is a run of facets with a
- * corner at every station. The field the shader reads rounds those corners; a face
- * built on the raw polyline does not — and the two then disagree once per station,
- * which reads as a periodic wave along exactly the curved parts of the fence.
- */
-function smooth(points: Vec3[], spacing: number): Vec3[] {
-  if (points.length < 3) return points;
-  const curve = getSplineCurve(points);
-  if (!curve) return points;
-  const samples = Math.min(
-    4000,
-    Math.max(points.length, Math.ceil(curve.length / Math.max(spacing / 4, 1))),
-  );
-  return curve.getPoints(samples);
-}
+type Resolved = {
+  plus: ResolvedSide;
+  minus: ResolvedSide;
+  fence: WellboreFence;
+  report: FenceReport;
+};
 
 /** Every ring of an outline in absolute scene XZ. */
 function outlineRings(outline: PlanarPolygonGeometry | null): Vec2[][] {
@@ -100,34 +69,18 @@ function outlineRings(outline: PlanarPolygonGeometry | null): Vec2[][] {
   return rings;
 }
 
-function boundsOf(
-  rings: Vec2[][],
-  polyline: Vec2[],
-): [number, number, number, number] | null {
-  let minX = Infinity;
-  let minZ = Infinity;
-  let maxX = -Infinity;
-  let maxZ = -Infinity;
-  const take = (p: Vec2) => {
-    if (p[0] < minX) minX = p[0];
-    if (p[0] > maxX) maxX = p[0];
-    if (p[1] < minZ) minZ = p[1];
-    if (p[1] > maxZ) maxZ = p[1];
-  };
-  for (const ring of rings) for (const p of ring) take(p);
-  for (const p of polyline) take(p);
-  if (!(maxX > minX) || !(maxZ > minZ)) return null;
-  return [minX, minZ, maxX, maxZ];
-}
-
 /**
  * Resolve a {@link ChunkFence} into the live state a stack publishes: a signed
- * distance field over the footprint, plus the uniform its materials read.
+ * distance field per side, the curve its cut face follows, and the uniforms its
+ * materials read.
  *
- * ⭐ The expensive half runs ONCE per fence — load the trajectory, project it,
- * run it out of the outline, rasterise the field. Everything after that is a
- * sampler, so changing which well is cut costs a resample and an upload rather
- * than a build, which is what lets it happen inside a fly-to.
+ * ⭐⭐ BOTH sides are built up front. Flipping which half is removed is then a
+ * texture swap and a curve swap — no rebuild, no refetch, and no window in which
+ * the shader is cutting last side's field with this side's test.
+ *
+ * ⭐ The curve is published HERE rather than derived per chunk. Every chunk of the
+ * stack would otherwise repeat the most expensive step of the feature with
+ * identical inputs.
  *
  * @param fence the caller's declaration, or `undefined` for none
  * @param outline the stack's footprint — the fence is run out past it at both ends
@@ -142,17 +95,6 @@ export function useStackFence(
   store: Store | null,
   utmToArea: UtmToArea | undefined,
 ) {
-  // Shared by every material of every chunk, like the section's — see
-  // `ChunkStackContextValue.sectionUniform` for why that matters.
-  const uniform = useMemo(
-    () => ({ value: new Vector4(FENCE_OFF, 1, 0, 1) }),
-    [],
-  );
-  const uniformInverse = useMemo(
-    () => ({ value: new Vector4(FENCE_OFF, 1, 0, -1) }),
-    [],
-  );
-
   const hasFence = !!fence;
   // ⚠️ Keyed only on PRESENCE, as `sectionState` is: this object reaches every
   // chunk through the context, whose identity is what their build specs derive
@@ -161,12 +103,11 @@ export function useStackFence(
     () =>
       hasFence
         ? {
-            sample: ZERO,
-            sampleAlong: ZERO,
+            curve: null,
+            alongOffset: 0,
             field: null,
-            taper: null,
+            index: null,
             side: 1,
-            width: 0,
             offset: 0,
             resolution: DEFAULT_FENCE_RESOLUTION,
             enabled: false,
@@ -177,136 +118,20 @@ export function useStackFence(
   );
 
   const wellbore = fence?.wellbore;
-  const cellSize = fence?.cellSize ?? DEFAULT_FENCE_CELL_SIZE;
-  const azimuth = fence?.azimuth ?? 0;
-  const reveal = fence?.reveal ?? FENCE_REVEAL;
-  // ⚠️ Read HERE, not in the frame loop like `width` and `offset`: the run-outs are
-  // chosen by how much block the removed side is left with, so the curve itself
-  // depends on it and flipping has to rebuild.
-  const side = fence?.side ?? 1;
-  const headWidth = fence?.headWidth ?? 0;
-  const shallowDepth = fence?.shallowDepth ?? DEFAULT_SHALLOW_DEPTH;
-  const deepDepth = fence?.deepDepth ?? DEFAULT_DEEP_DEPTH;
-  const stepSize = fence?.stepSize ?? DEFAULT_STEP_SIZE;
-  const margin = fence?.margin ?? DEFAULT_MARGIN;
-  const pathKey = fence?.path
-    ? fence.path.map(p => `${p[0]},${p[1]}`).join('|')
-    : '';
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
-  const path = useMemo(() => fence?.path, [pathKey]);
-
+  const margin = fence?.margin ?? 0;
+  const extension = fence?.extension ?? 'straight';
+  const resolution = fence?.resolution ?? DEFAULT_FENCE_RESOLUTION;
   const rings = useMemo(() => outlineRings(outline), [outline]);
 
-  const [resolved, setResolved] = useState<ResolvedFence | null>(null);
+  const [resolved, setResolved] = useState<Resolved | null>(null);
 
   useEffect(() => {
-    if (!hasFence) return;
-
-    const build = (plan: Vec2[], depths?: number[]) => {
-      const bounds = boundsOf(rings, rings.length > 0 ? [] : plan);
-      if (!bounds) return null;
-      const [minX, minZ, maxX, maxZ] = bounds;
-      // ⚠️⚠️ The fence must leave the FIELD, not merely the outline. The raster is
-      // the outline's bounding box plus a little, so a curve that exits a concave
-      // footprint can still stop inside the box — and then the flood fill that
-      // gives the field its SIGN simply walks around the end of the barrier and
-      // calls the whole grid one side. Escaping the box as well is what makes the
-      // curve actually separate the plane.
-      const box: Vec2[] = [
-        [minX, minZ],
-        [maxX, minZ],
-        [maxX, maxZ],
-        [minX, maxZ],
-      ];
-      const extended = extendFencePolyline(plan, {
-        rings: [...rings, box],
-        // Comfortably past the raster's own padding, or the same leak reappears
-        // a cell or two out.
-        margin: Math.max(margin, cellSize * 4),
-        azimuth,
-        side,
-        reveal,
-      });
-      const field = createFenceField(extended, { bounds, cellSize });
-      if (!field) return null;
-
-      // ⚠️ `extendFencePolyline` adds exactly ONE point at each end, so the depth
-      // series extends by repeating the wellhead's and the terminal depth — which
-      // is also what the taper wants: the run-out into the head is as open as the
-      // head, the one out of TD as closed as TD.
-      const taper: FenceTaper | null =
-        headWidth > 0 && depths && depths.length > 0
-          ? (() => {
-              const [from, to] = fenceTaperRange(
-                extended,
-                fenceDepthsFor(extended, plan, depths),
-                -shallowDepth,
-                -deepDepth,
-              );
-              return { headWidth, from, to };
-            })()
-          : null;
-
-      // ⚠️ NEAREST + FloatType: linear filtering of a 32-bit float texture needs
-      // `OES_texture_float_linear`, so the shader does its own interpolation — the
-      // same trade `sampleDepthMap` already makes.
-      // ⚠️⚠️ TWO channels: R the signed distance, G the distance ALONG the curve.
-      // The taper cannot be baked into R instead, tempting as that is — `side` is a
-      // LIVE uniform swept without a rebuild, and which way a widened cut opens
-      // depends on it, so baking would freeze the side into the texture.
-      const packed = new Float32Array(field.nx * field.ny * 2);
-      for (let i = 0; i < field.values.length; i++) {
-        packed[i * 2] = field.values[i];
-        packed[i * 2 + 1] = field.along[i];
-      }
-      const texture = new DataTexture(
-        packed,
-        field.nx,
-        field.ny,
-        RGFormat,
-        FloatType,
-      );
-      texture.minFilter = NearestFilter;
-      texture.magFilter = NearestFilter;
-      texture.needsUpdate = true;
-      // Object XZ -> uv. The chunk meshes carry no translation, so their object
-      // frame IS the stack's metre frame.
-      // ⚠⚠ The half texel is not cosmetic: the shader recovers the node index as
-      // `uv * size - 0.5`, so without it the GPU reads half a cell away from the
-      // CPU — which at a 25 m field is a 12.5 m disagreement between where the cut
-      // face is drawn and where the block is actually removed.
-      const toUv = new Matrix3().set(
-        1 / (field.nx * field.cell),
-        0,
-        -field.origin[0] / (field.nx * field.cell) + 0.5 / field.nx,
-        0,
-        1 / (field.ny * field.cell),
-        -field.origin[1] / (field.ny * field.cell) + 0.5 / field.ny,
-        0,
-        0,
-        1,
-      );
-      return {
-        field,
-        sample: sampleFenceField(field),
-        sampleAlong: sampleFenceAlong(field),
-        taper,
-        texture,
-        toUv,
-        size: new Vector2(field.nx, field.ny),
-      };
-    };
-
-    if (path && path.length > 0) {
-      setResolved(build(path));
-      return;
-    }
-    if (!wellbore || !store || !utmToArea) {
+    if (!hasFence || !wellbore || !store || !utmToArea) {
       setResolved(null);
       return;
     }
-
     let cancelled = false;
+
     Promise.all([
       store.get<WellboreHeader>('wellbore-headers', wellbore),
       store.get<PositionLog>('position-logs', wellbore),
@@ -327,13 +152,78 @@ export function useStackFence(
             ),
           );
         }
-        const projected = createFencePolyline(
-          smooth(scene, stepSize),
-          stepSize,
-        );
-        setResolved(
-          projected ? build(projected.positions, projected.depths) : null,
-        );
+        const curve = getSplineCurve(scene);
+        if (!curve) return setResolved(null);
+
+        const built = buildWellboreFence(curve, {
+          rings,
+          margin,
+          extension,
+          wellbore,
+        });
+        if (!built) return setResolved(null);
+
+        if (process.env.NODE_ENV !== 'production') {
+          const problems = assertFenceInvariants(built.report);
+          for (const problem of problems) {
+            console.warn(`fence ${wellbore}: ${problem}`);
+          }
+        }
+
+        // ⚠️ NEAREST + FloatType everywhere. The sign field is a SIGN, and the
+        // index and segment textures are data — interpolating any of them is
+        // exactly the mistake the segment lookup exists to correct.
+        const asSide = (from: WellboreFence['plus']): ResolvedSide => {
+          const { field, index } = from;
+          const raw = (
+            data: Float32Array,
+            width: number,
+            height: number,
+            format: typeof RedFormat | typeof RGBAFormat,
+          ) => {
+            const texture = new DataTexture(
+              data,
+              width,
+              height,
+              format,
+              FloatType,
+            );
+            texture.minFilter = NearestFilter;
+            texture.magFilter = NearestFilter;
+            texture.needsUpdate = true;
+            return texture;
+          };
+          // ONE definition of the placement, shared with the CPU sampler.
+          const placement = fenceFieldPlacement(field);
+          return {
+            curve: resamplePolyline2D(from.curve.points, resolution),
+            texture: raw(field.values, field.nx, field.ny, RedFormat),
+            toUv: new Matrix3().fromArray(placement.toUv).transpose(),
+            size: new Vector2(placement.size[0], placement.size[1]),
+            cells: raw(index.cells, index.nx, index.ny, RGBAFormat),
+            segments: raw(
+              index.segments,
+              index.width,
+              index.height,
+              RGBAFormat,
+            ),
+            index: new Vector4(
+              index.origin[0],
+              index.origin[1],
+              index.reach,
+              field.removedCross,
+            ),
+            indexSize: new Vector2(index.nx, index.ny),
+            segmentsSize: new Vector2(index.width, index.height),
+          };
+        };
+
+        setResolved({
+          plus: asSide(built.plus),
+          minus: asSide(built.minus),
+          fence: built,
+          report: built.report,
+        });
       })
       .catch(() => {
         if (!cancelled) setResolved(null);
@@ -343,85 +233,109 @@ export function useStackFence(
     };
   }, [
     hasFence,
-    path,
     wellbore,
     store,
     utmToArea,
     rings,
     margin,
-    azimuth,
-    side,
-    reveal,
-    headWidth,
-    shallowDepth,
-    deepDepth,
-    cellSize,
-    stepSize,
+    extension,
+    resolution,
   ]);
 
-  // Read from the LIVE prop every frame, so width and side are free to sweep:
-  // none of them touches React, and nothing here rebuilds anything.
-  useFrame(() => {
-    if (!fence || !state) {
-      uniform.value.set(FENCE_OFF, 1, 0, 1);
-      uniformInverse.value.set(FENCE_OFF, 1, 0, -1);
-      return;
-    }
-    state.side = fence.side ?? 1;
-    state.width = fence.width ?? 0;
-    state.offset = fence.offset ?? 0;
-    state.resolution = fence.resolution ?? DEFAULT_FENCE_RESOLUTION;
-    state.sample = resolved?.sample ?? ZERO;
-    state.sampleAlong = resolved?.sampleAlong ?? ZERO;
-    state.field = resolved?.field ?? null;
-    state.taper = resolved?.taper ?? null;
-    state.enabled = fence.enabled !== false && !!resolved;
-    state.debug = fence.debug === true;
-
-    const halfWidth = state.enabled ? state.width : FENCE_OFF;
-    uniform.value.set(halfWidth, state.side, 0, 1);
-    uniformInverse.value.set(halfWidth, state.side, 0, -1);
-  });
+  // Shared by every material of every chunk, like the section's.
+  // x: 1 when the cut is live, y: +1 for the block, -1 for the peel patch.
+  const uniform = useMemo(() => ({ value: new Vector2(0, 1) }), []);
+  const uniformInverse = useMemo(() => ({ value: new Vector2(0, -1) }), []);
 
   const uniforms = useMemo<ChunkFenceUniforms>(
     () => ({
       params: uniform,
-      taper: { value: new Vector3(0, 0, 1) },
       map: { value: null },
       toUv: { value: new Matrix3() },
       size: { value: new Vector2(1, 1) },
+      cells: { value: null },
+      segments: { value: null },
+      index: { value: new Vector4(0, 0, 1, 1) },
+      indexSize: { value: new Vector2(1, 1) },
+      segmentsSize: { value: new Vector2(1, 1) },
     }),
     [uniform],
   );
   const uniformsInverse = useMemo<ChunkFenceUniforms>(
     () => ({
       params: uniformInverse,
-      taper: uniforms.taper,
       map: uniforms.map,
       toUv: uniforms.toUv,
       size: uniforms.size,
+      cells: uniforms.cells,
+      segments: uniforms.segments,
+      index: uniforms.index,
+      indexSize: uniforms.indexSize,
+      segmentsSize: uniforms.segmentsSize,
     }),
     [uniformInverse, uniforms],
   );
 
-  // The texture is swapped into the SHARED uniform rather than rebuilt into new
-  // materials, so a new wellbore costs an upload and nothing else.
-  useEffect(() => {
-    uniforms.map.value = resolved?.texture ?? null;
-    if (resolved) {
-      uniforms.toUv.value.copy(resolved.toUv);
-      uniforms.size.value.copy(resolved.size);
-      const taper = resolved.taper;
-      uniforms.taper.value.set(
-        taper?.headWidth ?? 0,
-        taper?.from ?? 0,
-        taper?.to ?? 1,
-      );
+  // Read from the LIVE prop every frame, so `side` is free to sweep: nothing here
+  // touches React and nothing rebuilds.
+  const [side, setSide] = useState<1 | -1>(1);
+  useFrame(() => {
+    if (!fence || !state) {
+      uniform.value.set(0, 1);
+      uniformInverse.value.set(0, -1);
+      return;
     }
-    return () => {
-      resolved?.texture.dispose();
-    };
-  }, [resolved, uniforms]);
+    const wanted = fence.side ?? 1;
+    if (wanted !== side) setSide(wanted);
+    const current = resolved
+      ? wanted > 0
+        ? resolved.plus
+        : resolved.minus
+      : null;
+    const live = wanted > 0 ? resolved?.fence.plus : resolved?.fence.minus;
 
-  return { state, uniforms, uniformsInverse };
+    state.side = wanted;
+    state.offset = fence.offset ?? 0;
+    state.resolution = fence.resolution ?? DEFAULT_FENCE_RESOLUTION;
+    state.curve = current?.curve ?? null;
+    state.field = live?.field ?? null;
+    state.index = live?.index ?? null;
+    state.enabled = fence.enabled !== false && !!current;
+    state.debug = fence.debug === true;
+
+    const on = state.enabled ? 1 : 0;
+    uniform.value.set(on, 1);
+    uniformInverse.value.set(on, -1);
+  });
+
+  // Swapping the textures into the SHARED uniforms is the whole cost of a side flip.
+  useEffect(() => {
+    const current = resolved
+      ? side > 0
+        ? resolved.plus
+        : resolved.minus
+      : null;
+    uniforms.map.value = current?.texture ?? null;
+    uniforms.cells.value = current?.cells ?? null;
+    uniforms.segments.value = current?.segments ?? null;
+    if (current) {
+      uniforms.toUv.value.copy(current.toUv);
+      uniforms.size.value.copy(current.size);
+      uniforms.index.value.copy(current.index);
+      uniforms.indexSize.value.copy(current.indexSize);
+      uniforms.segmentsSize.value.copy(current.segmentsSize);
+    }
+  }, [resolved, side, uniforms]);
+
+  useEffect(() => {
+    return () => {
+      for (const at of [resolved?.plus, resolved?.minus]) {
+        at?.texture.dispose();
+        at?.cells.dispose();
+        at?.segments.dispose();
+      }
+    };
+  }, [resolved]);
+
+  return { state, uniforms, uniformsInverse, report: resolved?.report ?? null };
 }

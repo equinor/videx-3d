@@ -31,16 +31,35 @@ export const DEFAULT_CHUNK_AMBIENT: Vec2 = [1.35, 0.5];
  * @group Components
  */
 export type ChunkFenceUniforms = {
-  /** x: half width, y: which side goes, z: unused, w: +1, or -1 to invert */
-  params: IUniform<Vector4>;
-  /** x: extra half width at the shallow end, yz: the arc lengths it tapers between */
-  taper: IUniform<Vector3>;
-  /** signed distance to the curve in R, distance ALONG it in G, both in metres */
+  /** x: 1 while the cut is live, y: +1, or -1 to draw only what was removed */
+  params: IUniform<Vector2>;
+  /**
+   * Flood-fill sign of the fence over the footprint, read NEAREST.
+   *
+   * ⚠️ A SIGN, not a distance to interpolate. It settles the global topology; the
+   * boundary itself comes from {@link ChunkFenceUniforms.segments}.
+   */
   map: IUniform<Texture | null>;
   /** object XZ -> uv */
   toUv: IUniform<Matrix3>;
   /** grid size in texels */
   size: IUniform<Vector2>;
+  /** per index cell: r = offset into `segments`, g = count */
+  cells: IUniform<Texture | null>;
+  /**
+   * The curve itself, bucketed: xy = segment start, zw = segment end.
+   *
+   * ⭐⭐ Carrying the segments is what makes the cut EXACT. Reconstructing them from
+   * a raster cannot reproduce a polyline, and the error shows as gaps and a wavy
+   * edge where the block meets the cut face.
+   */
+  segments: IUniform<Texture | null>;
+  /** xy: index origin, z: metres per index cell, w: cross sign meaning removed */
+  index: IUniform<Vector4>;
+  /** index grid size in cells */
+  indexSize: IUniform<Vector2>;
+  /** segment texture size in texels */
+  segmentsSize: IUniform<Vector2>;
 };
 
 /**
@@ -273,10 +292,14 @@ export class ChunkMaterial extends ShaderMaterial {
     if (parameters.fence) {
       (this.defines as Record<string, unknown>).CHUNK_FENCE = '';
       this.uniforms.fenceParams = parameters.fence.params;
-      this.uniforms.fenceTaper = parameters.fence.taper;
       this.uniforms.fenceMap = parameters.fence.map;
       this.uniforms.fenceToUv = parameters.fence.toUv;
       this.uniforms.fenceSize = parameters.fence.size;
+      this.uniforms.fenceCells = parameters.fence.cells;
+      this.uniforms.fenceSegments = parameters.fence.segments;
+      this.uniforms.fenceIndex = parameters.fence.index;
+      this.uniforms.fenceIndexSize = parameters.fence.indexSize;
+      this.uniforms.fenceSegmentsSize = parameters.fence.segmentsSize;
     }
 
     this.applyContacts(parameters.contacts);
