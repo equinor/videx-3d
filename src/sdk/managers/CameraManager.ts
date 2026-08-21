@@ -660,12 +660,22 @@ export class CameraManager {
     return null;
   }
 
-  setControls(controls: CameraControls) {
+  /**
+   * Attach the controls, or DETACH with `null`.
+   *
+   * ⚠️ The null case is not defensive: React calls a callback ref with `null` when
+   * it detaches, so this runs during unmount — and a throw there aborts the commit,
+   * leaving the tree half-torn-down and the next story unable to mount.
+   */
+  setControls(controls: CameraControls | null) {
     this.controls = controls;
+    this.stopWatchingInput?.();
+    this.stopWatchingInput = null;
     if (this.removeEventlisteners) {
       this.removeEventlisteners();
+      this.removeEventlisteners = null;
     }
-    this.stopWatchingInput?.();
+    if (!controls) return;
     this.addEventListeners();
     this.watchInput(controls);
   }
@@ -677,6 +687,7 @@ export class CameraManager {
     this.stopWatchingInput = null;
     if (this.removeEventlisteners) {
       this.removeEventlisteners();
+      this.removeEventlisteners = null;
     }
   }
 }

@@ -40,10 +40,10 @@ export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
   const cameraManager = useRef(new CameraManager());
 
   const initControls = useCallback(
-    (controls: CameraControls) => {
+    (controls: CameraControls | null) => {
       if (cameraManager.current) {
         cameraManager.current.setControls(controls);
-        if (parameters.cameraTarget)
+        if (controls && parameters.cameraTarget)
           cameraManager.current.setTarget(parameters.cameraTarget);
       }
     },

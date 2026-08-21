@@ -51,6 +51,7 @@ import { DataProviderDecorator } from '../../storybook/decorators/data-provider-
 import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
+import { createOutputPanelDecorator } from '../../storybook/decorators/output-panel-decorator';
 import { WellMapDecorator } from '../../storybook/decorators/well-map-decorator';
 import { useFieldOutline } from '../../storybook/hooks/useFieldOutline';
 import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
@@ -58,6 +59,7 @@ import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
 import { Distance } from '../Distance/Distance';
 import { EventEmitterCallbackEvent } from '../EventEmitter';
+import { useOutputPanelState } from '../Html/OutputPanel/output-panel-state';
 import { useHighlighter } from '../Highlighter/highlight-state';
 import { Highlighter } from '../Highlighter/Highlighter';
 import { UtmArea } from '../UtmArea';
@@ -73,6 +75,7 @@ import {
   ChunkLayer,
   ChunkResolveOptions,
   ChunkSection,
+  ChunkStackProgress,
   StackImmersion,
   StackWater,
 } from './chunk-defs';
@@ -910,6 +913,42 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     [names],
   );
 
+  // Stack progress, written to the OutputPanel's global store (the story runs
+  // INSIDE the canvas, so it cannot render DOM itself). Cold loads here are
+  // dominated by fetching one grid per surface, which reads as a hang without it.
+  //
+  // ⭐ The REBUILD COUNT is the part worth having: a rebuild that finishes
+  // quickly flashes past the 'building' state, so the counter is what answers
+  // "did changing that control actually rebuild anything?".
+  const builds = useRef(0);
+  const busy = useRef(false);
+  const onProgress = useCallback((p: ChunkStackProgress) => {
+    const done = p.building === 0 && p.total > 0;
+    if (!done) busy.current = true;
+    else if (busy.current) {
+      busy.current = false;
+      builds.current += 1;
+    }
+    useOutputPanelState.getState().set(state => ({
+      groups: {
+        ...state.groups,
+        build: {
+          label: done ? 'Chunks built' : 'Building chunks',
+          value: done
+            ? `${p.total}`
+            : `${p.completed}/${p.total}  ${Math.round(100 * p.fraction)}%`,
+          color: done ? '#59a14f' : '#f28e2c',
+          order: 0,
+        },
+        rebuilds: {
+          label: 'Rebuilds',
+          value: `${builds.current}`,
+          order: 1,
+        },
+      },
+    }));
+  }, []);
+
   if (!outline || layers.length === 0) return null;
 
   return (
@@ -927,6 +966,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
           section={section}
           fence={fence}
           onFence={onFence}
+          onProgress={onProgress}
           resolve={resolve}
           rimSpacing={props.rimSpacing}
           maxError={props.maxError}
@@ -1529,5 +1569,21 @@ export const Default: Story = {
     GeneratorsProviderDecorator,
     WellMapDecorator,
     DataProviderDecorator,
+    // LAST = outermost, so the panel is DOM outside the canvas. Right-hand side:
+    // the well map owns the left edge in this story.
+    createOutputPanelDecorator({
+      origin: 'top-right',
+      offset: [10, 10],
+      width: 190,
+      height: 80,
+      opacity: 0.75,
+    }),
+  ],
+  // The panel store is global; clear it so a reload does not show a stale count.
+  loaders: [
+    async () => {
+      useOutputPanelState.setState({ groups: {} });
+      return {};
+    },
   ],
 };
