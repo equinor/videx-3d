@@ -9,6 +9,7 @@ import {
   SealMode,
   StackCarrier,
   StackRelief,
+  StackSectionSource,
   SurfaceClipHeader,
   SurfaceMeta,
   Vec2,
@@ -60,6 +61,12 @@ export type StackWaterSpec = {
    */
   stack: SurfaceChunkStackSpec;
   resolve?: ChunkResolveOptions;
+  /**
+   * Also return the channels a cut FACE is built from, so a section or a fence can
+   * close the water body instead of leaving it open. Requested by the PRESENCE of a
+   * cut on the stack, so switching one on or off does not rebuild the sea.
+   */
+  section?: boolean;
 };
 
 /** What the `stackWater` generator returns: the sea's lid and the body under it. */
@@ -68,6 +75,12 @@ export type StackWaterResponse = {
   lid: PackedBufferGeometry | null;
   /** the water body's walls — the outline rim and the shoreline */
   body: PackedBufferGeometry | null;
+  /**
+   * The level and the bed as channels, when {@link StackWaterSpec.section} asked
+   * for them — what a cut face is swept over. Flat typed arrays, so it crosses the
+   * worker boundary as it is.
+   */
+  section?: StackSectionSource;
 };
 
 /**
@@ -533,18 +546,20 @@ export type ChunkSection = {
    */
   offset?: number;
   /**
-   * Cut the sea too (see `ChunkStackProps.water`). Default true.
+   * Cut the sea too (see `ChunkStackProps.water`). Default FALSE.
    *
-   * ⚠️ The water gets no cut FACE — it simply ends at the plane, so you look into
-   * an open water body. Turn it off to keep the sea whole over a sliced block,
-   * which is what you want when the cut is only meant to expose the geology.
+   * ⭐ Off by default because the sea FRAMES the block: an intact water surface
+   * over an opened column reads immediately as a field seen in section, while a
+   * sea cut in half alongside it mostly reads as missing. Turn it on when the
+   * water column itself is the subject.
    *
    * ⚠️ Changing it rebuilds the two ocean materials (the cut is a define).
    */
   water?: boolean;
   /**
-   * Cut the column's floor too (see `ChunkStackProps.carrier`). Default true.
-   * Off leaves the block standing on an intact base plate.
+   * Cut the column's floor too (see `ChunkStackProps.carrier`). Default FALSE, so
+   * the block stands on an intact base plate — which is the other half of the
+   * frame, and what stops the cut reading as a hole.
    */
   carrier?: boolean;
   /**
@@ -645,11 +660,11 @@ export type ChunkFence = {
    */
   resolution?: number;
   /**
-   * Cut the sea too. Default true — the cut is read per fragment, so the sea lid's
-   * handful of triangles are no obstacle.
+   * Cut the sea too. Default FALSE — see {@link ChunkSection.water}, which this
+   * mirrors: the intact sea is what makes an opened column read as a section.
    */
   water?: boolean;
-  /** Cut the column's floor too. Default true. */
+  /** Cut the column's floor too. Default FALSE — see {@link ChunkSection.carrier}. */
   carrier?: boolean;
   /**
    * Draw the cut face as a bright wireframe instead of as rock, so the ribbon the

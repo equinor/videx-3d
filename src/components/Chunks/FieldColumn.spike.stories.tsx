@@ -126,7 +126,7 @@ const ChunkPipeline = () => {
     base.antialias = 'smaa';
     return [base, new OutputPass()];
   }, [scene, camera]);
-  useFrame(() => { }, 2);
+  useFrame(() => {}, 2);
   return <RenderingPipeline passes={passes} />;
 };
 
@@ -468,10 +468,10 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     const widest = column.reduce<SurfaceMeta | null>(
       (best, m) =>
         !best ||
-          m.header.nx * m.header.xinc * (m.header.ny * m.header.yinc) >
+        m.header.nx * m.header.xinc * (m.header.ny * m.header.yinc) >
           best.header.nx *
-          best.header.xinc *
-          (best.header.ny * best.header.yinc)
+            best.header.xinc *
+            (best.header.ny * best.header.yinc)
           ? m
           : best,
       null,
@@ -590,12 +590,12 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       i === 0 || i === last || wellboreIds.length === 0
         ? gridOutline
         : {
-          kind: 'wellbores' as const,
-          wellbores: wellboreIds,
-          // `above` accumulates trajectory with depth, so each chunk's footprint
-          // contains the one above it and the whole set stays nested.
-          options: { mode: 'above' as const, radius: props.chunkedRadius },
-        },
+            kind: 'wellbores' as const,
+            wellbores: wellboreIds,
+            // `above` accumulates trajectory with depth, so each chunk's footprint
+            // contains the one above it and the whole set stays nested.
+            options: { mode: 'above' as const, radius: props.chunkedRadius },
+          },
     );
   }, [chunkedLayers, gridOutline, wellboreIds, props.chunkedRadius]);
 
@@ -625,13 +625,13 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     () =>
       props.water
         ? {
-          depth: props.seaLevel,
-          opacity: props.waterLayerOpacity,
-          waterOpacity: props.waterOpacity,
-          windSpeed: props.windSpeed,
-          foamAmount: props.foamAmount,
-          bedTint: props.bedTint,
-        }
+            depth: props.seaLevel,
+            opacity: props.waterLayerOpacity,
+            waterOpacity: props.waterOpacity,
+            windSpeed: props.windSpeed,
+            foamAmount: props.foamAmount,
+            bedTint: props.bedTint,
+          }
         : undefined,
     [
       props.water,
@@ -650,12 +650,12 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     () =>
       props.immersion
         ? {
-          color: props.immersionColor,
-          visibility: props.immersionVisibility,
-          transition: props.immersionTransition,
-          settle: props.immersionSettle,
-          background: props.immersionBackground,
-        }
+            color: props.immersionColor,
+            visibility: props.immersionVisibility,
+            transition: props.immersionTransition,
+            settle: props.immersionSettle,
+            background: props.immersionBackground,
+          }
         : undefined,
     [
       props.immersion,
@@ -707,19 +707,23 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     () =>
       props.fence
         ? {
-          wellbore: fenceWellbore,
-          side:
-            props.fenceSide === 'auto'
-              ? (flightSide ?? 'auto')
-              : props.fenceSide,
-          autoDeadband: props.fenceAutoDeadband,
-          autoSettle: props.fenceAutoSettle,
-          margin: props.fenceMargin,
-          extension: props.fenceExtension,
-          offset: props.fenceOffset,
-          resolution: props.fenceResolution,
-          debug: props.fenceDebug,
-        }
+            wellbore: fenceWellbore,
+            side:
+              props.fenceSide === 'auto'
+                ? (flightSide ?? 'auto')
+                : props.fenceSide,
+            autoDeadband: props.fenceAutoDeadband,
+            autoSettle: props.fenceAutoSettle,
+            margin: props.fenceMargin,
+            extension: props.fenceExtension,
+            offset: props.fenceOffset,
+            resolution: props.fenceResolution,
+            // The two cuts are mutually exclusive, so one pair of toggles drives
+            // whichever is live.
+            water: props.sectionWater,
+            carrier: props.sectionCarrier,
+            debug: props.fenceDebug,
+          }
         : undefined,
     [
       props.fence,
@@ -732,6 +736,8 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       props.fenceExtension,
       props.fenceOffset,
       props.fenceResolution,
+      props.sectionWater,
+      props.sectionCarrier,
       props.fenceDebug,
     ],
   );
@@ -1081,8 +1087,8 @@ export const Default: Story = {
     sectionFlip: false,
     sectionAnimate: false,
     sectionAnimateSpeed: 1,
-    sectionWater: true,
-    sectionCarrier: true,
+    sectionWater: false,
+    sectionCarrier: false,
     sectionKeep: -1,
     sectionDebug: false,
     // Water
@@ -1388,12 +1394,12 @@ export const Default: Story = {
     },
     sectionWater: {
       description:
-        'Cut the sea too. ⚠️ The water gets no cut FACE — it simply ends at the plane, so you look into an open water body. Off keeps the sea whole over a sliced block.',
+        'Cut the sea too — with the plane or the fence, whichever is live. ⭐ The water body is CLOSED by a face of its own, built over the sea’s level and bed the same way the block’s face is built over its layers, so the two meet on the same curve. Off (the default) keeps the sea whole over a sliced block, which frames it; the immersion fog then still reports water where the block has been opened.',
       table: { category: 'Section' },
     },
     sectionCarrier: {
       description:
-        'Cut the floor too. Off leaves the block standing on an intact base plate.',
+        'Cut the floor too — with the plane or the fence, whichever is live. Off (the default) leaves the block standing on an intact base plate, which reads as a frame rather than as a hole.',
       table: { category: 'Section' },
     },
     sectionKeep: {

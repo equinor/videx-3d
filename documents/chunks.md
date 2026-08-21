@@ -3459,20 +3459,31 @@ half-space that is discarded.
 
 #### 15.9.4 What it cuts, and what it does not
 
-**What the STACK draws** — the chunks, and the sea unless told otherwise. Both are
-opt-out:
+**What the STACK draws** — the chunks, and, when asked, the sea and the floor. Both of
+those default to being left WHOLE (changed 2026-08-21):
 
-- `ChunkSection.water` (default on) puts the same shared uniform into
-  `OceanMaterial` and `OceanVolumeMaterial`. ⚠️ The water gets no cut FACE — it
-  simply ends at the plane, so you look into an open water body. Off is what to use
-  when the cut is only meant to expose the geology. Sectioning the water body
-  properly is still §15.5, and still out of scope.
-- `ChunkSection.carrier` (default on) cuts the column's floor with the rest. Off
-  leaves the block standing on an intact base plate.
+- `ChunkSection.water` (default **off**) puts the same shared uniform into
+  `OceanMaterial` and `OceanVolumeMaterial`, and the water body is then closed by a
+  cut FACE of its own — built over the sea's level and bed by the same
+  `sectionStackInterval` the chunks use, since the sea is itself a two-boundary stack
+  and can emit a `StackSectionSource` (`StackWaterSpec.section`). Drawn with an
+  uncut `OceanVolumeMaterial`, for the reason a fence's face is.
+- `ChunkSection.carrier` (default **off**) cuts the column's floor with the rest. On,
+  the base plate is cut away with the block.
+
+⭐ Why off: the sea and the base plate FRAME the block. An intact water surface over
+an opened column reads immediately as a field seen in section; cutting everything at
+once mostly reads as geometry gone missing. Turn them on when the water column or the
+floor is itself the subject.
+
+⚠️ `ChunkFence` carries the same two flags, with the same defaults, and each cut gates
+the carrier SEPARATELY — the two are mutually exclusive, so a single combined flag
+would let a stack with no `section` prop lose its fence's floor cut.
 
 ⚠️ Both are DEFINES, so toggling either rebuilds the materials concerned. That is
 the right trade: a plane MOVES continuously and must never rebuild anything, but
-whether the sea is cut at all is a discrete choice.
+whether the sea is cut at all is a discrete choice. The sea's cut CHANNELS are asked
+for by the presence of a cut, not by `enabled`, so toggling does not rebuild the sea.
 
 ⚠️⚠️ **Nothing else is cut**, and that is the deliberate scope (2026-08-13):
 wellbores, vessels, facilities, pipelines, annotations and host meshes all keep

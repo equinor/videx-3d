@@ -15,6 +15,7 @@ import {
   ChunkSurfaceLayer,
   PlanarPolygonGeometry,
   readCameraTarget,
+  StackSectionSource,
   SurfaceMeta,
   unpackBufferGeometry,
   Vec3,
@@ -67,6 +68,8 @@ import {
   SurfaceSamplerRegistryContext,
 } from './surface-sampler';
 import { useChunkContacts } from './useChunkContacts';
+import { useChunkFenceFace } from './useChunkFenceFace';
+import { useChunkSection } from './useChunkSection';
 import { useStackBathymetry } from './useStackBathymetry';
 import { useStackFence } from './useStackFence';
 import { useStackWater } from './useStackWater';
@@ -388,7 +391,7 @@ export const ChunkStack = ({
       sectionState.plane.set(
         sectionNormal.copy(sectionForward).negate(),
         sectionForward.dot(sectionAnchor) +
-        (onTarget ? 0 : (section.cameraDistance ?? 0)),
+          (onTarget ? 0 : (section.cameraDistance ?? 0)),
       );
       // Built in world space; the stack's own frame is where it has to be tested,
       // and the two differ as soon as the stack carries a vertical exaggeration.
@@ -491,7 +494,7 @@ export const ChunkStack = ({
     setSeams(next.seams);
     setClaimed(previous =>
       previous.size === next.registry.size &&
-        [...next.registry.keys()].every(id => previous.has(id))
+      [...next.registry.keys()].every(id => previous.has(id))
         ? previous
         : new Set(next.registry.keys()),
     );
@@ -613,11 +616,18 @@ export const ChunkStack = ({
     utm?.utmToArea,
   );
 
+  // ⚠️ PRESENCE, not `enabled`: the sea's cut channels are a build output, so
+  // keying them on the toggle would rebuild the sea every time a cut is switched
+  // on or off.
+  const hasCut = !!section || !!fence;
+
   const sea = useStackWater(
     stableWater,
     false,
-    section && section.water !== false ? sectionUniform : undefined,
+    section && section.water === true ? sectionUniform : undefined,
     bathymetry,
+    fence && fence.water === true ? fenceUniforms : undefined,
+    hasCut,
   );
 
   // ⭐ The sea and the block are made of SURFACES, so from inside either one
@@ -650,13 +660,13 @@ export const ChunkStack = ({
     list.sort((a, b) => at(a.topSurfaceId) - at(b.topSurfaceId));
     setMargins(previous =>
       previous.length === list.length &&
-        previous.every(
-          (p, i) =>
-            p.key === list[i].key &&
-            p.radius === list[i].radius &&
-            p.topSurfaceId === list[i].topSurfaceId &&
-            p.baseSurfaceId === list[i].baseSurfaceId,
-        )
+      previous.every(
+        (p, i) =>
+          p.key === list[i].key &&
+          p.radius === list[i].radius &&
+          p.topSurfaceId === list[i].topSurfaceId &&
+          p.baseSurfaceId === list[i].baseSurfaceId,
+      )
         ? previous
         : list,
     );
@@ -693,11 +703,11 @@ export const ChunkStack = ({
       section: sectionState,
       sectionUniform,
       sectionUniformInverse,
-      sectionCarrier: section?.carrier !== false,
+      sectionCarrier: section?.carrier === true,
       fence: fenceState,
       fenceUniforms,
       fenceUniformsInverse,
-      fenceCarrier: fence?.carrier !== false,
+      fenceCarrier: fence?.carrier === true,
       resolve: stableResolve,
       envelope,
       rimSpacing,
@@ -761,6 +771,7 @@ export const ChunkStack = ({
       rimSpacing,
       maxError,
       resolve: stableResolve,
+      section: hasCut,
     });
   }, [
     stableWater,
@@ -772,11 +783,13 @@ export const ChunkStack = ({
     rimSpacing,
     maxError,
     stableResolve,
+    hasCut,
   ]);
 
   const [seaGeometry, setSeaGeometry] = useState<{
     lid: BufferGeometry | null;
     body: BufferGeometry | null;
+    section?: StackSectionSource;
   } | null>(null);
 
   useEffect(() => {
@@ -788,9 +801,10 @@ export const ChunkStack = ({
       setSeaGeometry(
         response
           ? {
-            lid: response.lid ? unpackBufferGeometry(response.lid) : null,
-            body: response.body ? unpackBufferGeometry(response.body) : null,
-          }
+              lid: response.lid ? unpackBufferGeometry(response.lid) : null,
+              body: response.body ? unpackBufferGeometry(response.body) : null,
+              section: response.section,
+            }
           : null,
       );
     })();
@@ -805,6 +819,14 @@ export const ChunkStack = ({
       seaGeometry?.body?.dispose();
     };
   }, [seaGeometry]);
+
+  // ⭐ The face that CLOSES the water body at a cut, off the sea's own channels —
+  // so it meets the block's face on the same curve, over the same bed, rather than
+  // leaving an open body to look into. Same two builders the chunks use; the sea is
+  // a stack of two boundaries, so each yields at most one face.
+  const waterPlaneFace = useChunkSection(seaGeometry?.section, sectionState);
+  const waterFenceFace = useChunkFenceFace(seaGeometry?.section, fenceState);
+  const waterFace = fenceState?.enabled ? waterFenceFace : waterPlaneFace;
 
   // The stack's extent in its OWN frame, for the section debug view: XZ from the
   // footprint everything is cut from, Y from the column's depth range and the
@@ -856,7 +878,9 @@ export const ChunkStack = ({
                     sampler={sampler}
                     base={blockBase}
                     section={sectionState}
+                    sectionWater={section?.water === true}
                     fence={fenceState}
+                    fenceWater={fence?.water === true}
                     frame={stackFrame}
                   />
                 )}
@@ -866,6 +890,14 @@ export const ChunkStack = ({
                 {sea && seaGeometry?.body && (
                   <mesh geometry={seaGeometry.body} material={sea.volume} />
                 )}
+                {sea?.face &&
+                  waterFace?.map(face => (
+                    <mesh
+                      key={`${face.interval}-${face.wall}`}
+                      geometry={face.geometry}
+                      material={sea.face!}
+                    />
+                  ))}
                 {sectionBounds && (
                   <ChunkSectionDebug
                     section={sectionState}

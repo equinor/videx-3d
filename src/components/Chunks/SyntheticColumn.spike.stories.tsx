@@ -1362,13 +1362,13 @@ export const Default: Story = {
     sectionWater: {
       control: 'boolean',
       description:
-        'Cut the sea too. ⚠️ The water gets no cut FACE — it simply ends at the plane, so you look into an open water body. Turn it off to keep the sea whole over a sliced block, which is usually what you want when the cut is only meant to expose the geology. ⚠️ Changing it rebuilds the two ocean materials (the cut is a shader define).',
+        'Cut the sea too. ⭐ The water body is CLOSED by a face of its own, built over the sea’s level and bed the way the block’s face is built over its layers. Off (the library default) keeps the sea whole over a sliced block, which frames it — usually what you want when the cut is only meant to expose the geology. ⚠️ Changing it rebuilds the two ocean materials (the cut is a shader define).',
       table: { category: 'Section' },
     },
     sectionCarrier: {
       control: 'boolean',
       description:
-        'Cut the column’s floor too. Off leaves the block standing on an intact base plate.',
+        'Cut the column’s floor too. Off (the library default) leaves the block standing on an intact base plate.',
       table: { category: 'Section' },
     },
     sectionKeep: {

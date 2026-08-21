@@ -21,8 +21,12 @@ export type StackImmersionFogProps = {
   /** the block's base in the stack's own frame — the carrier is not sampleable */
   base: number | null;
   section: ChunkSectionState | null;
+  /** whether the section takes the sea with it (see `ChunkSection.water`) */
+  sectionWater: boolean;
   /** the stack's live fence, which removes a whole half of the block */
   fence: ChunkFenceState | null;
+  /** whether the fence takes the sea with it (see `ChunkFence.water`) */
+  fenceWater: boolean;
   frame: RefObject<Group | null>;
 };
 
@@ -45,7 +49,9 @@ export const StackImmersionFog = ({
   sampler,
   base,
   section,
+  sectionWater,
   fence,
+  fenceWater,
   frame,
 }: StackImmersionFogProps) => {
   const level = -(water?.depth ?? 0);
@@ -65,22 +71,30 @@ export const StackImmersionFog = ({
     return (x: number, y: number, z: number): ImmersionMedium | null => {
       if (!sampler) return null;
 
-      // ⚠️ The camera standing where the section took the block away is standing in
-      // open air, whatever the heights say.
+      // Whether the cut took the BLOCK away here. A cut that leaves the sea whole
+      // opens the geology without draining the water above it, so the camera is
+      // still inside the sea even where there is no longer any rock.
+      let opened = false;
+
       if (section?.enabled) {
         plane.copy(section.plane);
         if (
           plane.normal.x * x + plane.normal.y * y + plane.normal.z * z >
           -plane.constant
-        )
-          return null;
+        ) {
+          if (sectionWater) return null;
+          opened = true;
+        }
       }
 
       // The same for a fence, which removes a whole half of the block.
       // ⭐ Asked EXACTLY, off the same segments the shader discards by, so the fog
       // switches at the cut rather than a few metres before or after it.
       if (fence?.enabled && fence.index && fence.field) {
-        if (fenceSideAt(fence.index, fence.field, x, z) < 0) return null;
+        if (fenceSideAt(fence.index, fence.field, x, z) < 0) {
+          if (fenceWater) return null;
+          opened = true;
+        }
       }
 
       // The highest thing drawn over this point: the sea bed under the water, the
@@ -100,7 +114,7 @@ export const StackImmersionFog = ({
       // different footprints leave open air between them, and a stack-wide extent
       // reads that as rock. `base` covers the carrier fill, which is deliberately
       // not sampleable (§5.3).
-      if (wantsRock) {
+      if (wantsRock && !opened) {
         const depth = sampler.solidAt(x, y, z, base ?? undefined);
         if (depth !== null) {
           return {
@@ -115,7 +129,9 @@ export const StackImmersionFog = ({
   }, [
     sampler,
     section,
+    sectionWater,
     fence,
+    fenceWater,
     base,
     level,
     span,

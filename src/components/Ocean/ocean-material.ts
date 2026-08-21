@@ -32,6 +32,52 @@ export type OceanBathymetry = {
   cellSize: number;
 };
 
+/**
+ * The shared uniforms a **fence** cut reads — a vertical surface swept along a
+ * curve in plan, normally a wellbore's trajectory. Everything is in OBJECT XZ, so
+ * the sea is cut on exactly the same curve as the block under it.
+ *
+ * ⚠️ Structural on purpose — `ChunkFenceUniforms` satisfies it, without this
+ * material having to depend on the chunk components.
+ */
+export type OceanFence = {
+  /** x: 1 while the cut is live, y: +1, or -1 to draw only what was removed */
+  params: IUniform<Vector2>;
+  /** flood-fill sign of the fence over the footprint, read NEAREST */
+  map: IUniform<Texture | null>;
+  /** object XZ -> uv */
+  toUv: IUniform<Matrix3>;
+  /** grid size in texels */
+  size: IUniform<Vector2>;
+  /** per index cell: r = offset into `segments`, g = count */
+  cells: IUniform<Texture | null>;
+  /** the curve itself, bucketed: xy = segment start, zw = segment end */
+  segments: IUniform<Texture | null>;
+  /** xy: index origin, z: metres per index cell, w: cross sign meaning removed */
+  index: IUniform<Vector4>;
+  /** index grid size in cells */
+  indexSize: IUniform<Vector2>;
+  /** segment texture size in texels */
+  segmentsSize: IUniform<Vector2>;
+};
+
+/**
+ * Bind a fence's shared uniforms onto a material whose shader was compiled with
+ * `OCEAN_FENCE`. The names are the ones `shaderLib/fence-field.glsl` declares.
+ */
+export function applyOceanFence(material: ShaderMaterial, fence: OceanFence) {
+  const u = material.uniforms;
+  u.fenceParams = fence.params;
+  u.fenceMap = fence.map;
+  u.fenceToUv = fence.toUv;
+  u.fenceSize = fence.size;
+  u.fenceCells = fence.cells;
+  u.fenceSegments = fence.segments;
+  u.fenceIndex = fence.index;
+  u.fenceIndexSize = fence.indexSize;
+  u.fenceSegmentsSize = fence.segmentsSize;
+}
+
 /** Default depth over which water shoals from clear to its full body colour. */
 export const DEFAULT_OCEAN_SHOAL_DEPTH = 25;
 
@@ -63,6 +109,17 @@ export type OceanMaterialParameters = ShaderMaterialParameters & {
    * cut on or off means a new material; moving the plane does not.
    */
   sectionPlane?: IUniform<Vector4>;
+  /**
+   * Cut this material with a **fence** instead — the same shared uniforms the
+   * chunk materials read, so the sea is cut on exactly the curve the block is.
+   * Omit for none, which compiles the branch out.
+   *
+   * ⭐ Read PER FRAGMENT, so a lid of a handful of triangles is cut at the
+   * resolution of the curve rather than of its own tessellation.
+   *
+   * ⚠️ Read at CONSTRUCTION, like {@link OceanMaterialParameters.sectionPlane}.
+   */
+  fence?: OceanFence;
   /**
    * The sea bed's depth grid, which makes the water shoal: clearer and paler
    * where the bed is close to the surface, its full body colour where it is not.
@@ -161,6 +218,7 @@ export class OceanMaterial extends ShaderMaterial {
       detailOctaves = 4,
       contactCount = 8,
       sectionPlane,
+      fence,
       bathymetry,
       ...rest
     } = parameters;
@@ -195,6 +253,7 @@ export class OceanMaterial extends ShaderMaterial {
         OCEAN_DETAIL_OCTAVES: detailOctaves,
         OCEAN_CONTACT_COUNT: contactCount,
         ...(sectionPlane ? { OCEAN_SECTION: '' } : {}),
+        ...(fence ? { OCEAN_FENCE: '' } : {}),
         ...(bathymetry ? { OCEAN_BATHYMETRY: '' } : {}),
       },
       uniforms: {
@@ -258,6 +317,8 @@ export class OceanMaterial extends ShaderMaterial {
     if (Object.keys(rest).length) this.setValues(rest);
 
     if (sectionPlane) this.uniforms.sectionPlane = sectionPlane;
+
+    if (fence) applyOceanFence(this, fence);
 
     if (bathymetry) {
       const image = bathymetry.texture.image as {

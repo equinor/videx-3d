@@ -118,8 +118,7 @@ export type ChunkStackContextValue = {
    * is built, so it has to be visible to React — and a primitive cannot churn this
    * context's identity, which is what every chunk's build spec derives from.
    */
-  sectionCarrier?: boolean;
-  /**
+  sectionCarrier?: boolean; /**
    * The live fence through the whole stack, when the caller declared one (see
    * `ChunkStackProps.fence`). Stable identity — see {@link ChunkFenceState}.
    */

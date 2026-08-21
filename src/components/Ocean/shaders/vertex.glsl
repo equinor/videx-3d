@@ -33,9 +33,10 @@ varying vec2 vUv;
 // equals vWorldPosition.xz, so the default look is unchanged.
 varying vec2 vSurfaceXZ;
 
-#ifdef OCEAN_BATHYMETRY
-// OBJECT XZ, undisplaced. The bathymetry's affine is in the stack's own frame,
-// and a vertical exaggeration or a group offset would move a world-space one.
+#if defined(OCEAN_BATHYMETRY) || defined(OCEAN_FENCE)
+// OBJECT XZ, undisplaced. The bathymetry's affine and the fence's field are both
+// in the stack's own frame, and a vertical exaggeration or a group offset would
+// move a world-space one.
 varying vec2 vObjectXZ;
 #endif
 
@@ -55,7 +56,7 @@ varying float vSectionDist;
 void main() {
   vUv = uv;
 
-  #ifdef OCEAN_BATHYMETRY
+  #if defined(OCEAN_BATHYMETRY) || defined(OCEAN_FENCE)
   vObjectXZ = position.xz;
   #endif
 

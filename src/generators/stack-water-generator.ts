@@ -97,6 +97,7 @@ export async function generateStackWater(
       coverageAbsence: sealing ? false : spec.resolve?.coverageAbsence,
       refineTerminations: spec.resolve?.refineTerminations,
       constrainCoverage: spec.resolve?.constrainCoverage,
+      section: spec.section,
     },
   );
   if (!build) return null;
@@ -111,5 +112,18 @@ export async function generateStackWater(
     return packed;
   };
 
-  return transfer({ lid: pack(lid), body: pack(body) }, transferables);
+  const packed = { lid: pack(lid), body: pack(body), section: build.section };
+
+  if (build.section) {
+    const { positionsXZ, indices, heights, intervals, inferred } =
+      build.section;
+    transferables.push(positionsXZ.buffer, indices.buffer);
+    for (const at of heights) transferables.push(at.buffer);
+    for (const at of intervals) if (at) transferables.push(at.buffer);
+    for (const at of inferred ?? []) transferables.push(at.buffer);
+  }
+
+  // ⚠️ The section shares buffers with the packed geometries above — the shared
+  // triangle index at least — and a repeated buffer is a DataCloneError.
+  return transfer(packed, [...new Set(transferables)]);
 }

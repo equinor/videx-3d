@@ -195,10 +195,53 @@ warning all read it.
 Anything that has to agree with the cut reads the same lookup:
 
 - the **fragment discard**, through `fenceSide` in `sdk/materials/shaderLib/fence-field.glsl`;
+- the **sea**, whose two materials read that same chunk through `OCEAN_FENCE`, so the
+  water ends on the curve rather than a fraction of a cell either side of it;
 - the **immersion fog**, which asks whether the camera is standing in the half that
   was taken away — exactly, so the fog switches at the cut rather than metres before
   it;
 - the **cut face**, which is the curve itself.
+
+What the fence removes is opt-out per medium, the same way `ChunkSection`'s is, and
+both default **off** — the sea and the base plate FRAME the block. An intact water
+surface over an opened column reads immediately as a field seen in section, while a
+sea cut in half alongside it mostly reads as missing.
+
+- `ChunkFence.water` hands the fence's shared uniforms to `OceanMaterial` and
+  `OceanVolumeMaterial`, and the water body is then CLOSED by a face of its own
+  (below).
+- `ChunkFence.carrier` cuts the column's floor with the rest.
+
+⚠️ Both are DEFINES, so toggling either rebuilds the materials concerned. The curve
+itself moves through the uniforms, and rebuilds nothing.
+
+⚠️ Turning the water on does not just remove the sea — it changes what the camera is
+standing IN. A cut that opens the geology without draining the water above it leaves
+the camera inside the sea where there is no longer any rock, so the fog reports water
+there and suppresses only the sediment medium.
+
+### The sea's cut face
+
+The sea is built by `buildSurfaceStack` as a stack of exactly two boundaries — the
+level and the bed — so it can emit a `StackSectionSource` like any other stack.
+`StackWaterSpec.section` asks for it, and with it in hand the water's cut face is the
+same two builders the chunks use: `buildFenceRibbons` for a fence, `sectionStackInterval`
+for a plane. One filled interval, so at most one face.
+
+⭐ Why it lines up: the face is swept over the sea's own channels, whose bed IS the
+column's shallowest surface, along the same curve the block's face follows. There is
+no second opinion about where the sea bed is to leave a gap along the seam.
+
+⭐ It is drawn with a THIRD `OceanVolumeMaterial` carrying no cut of its own. The face
+lies exactly on the curve, so testing it against the thing it exists to close punches
+holes along its length — the same reason `ChunkMeshes` builds the block's faces with
+both cut gates off. The builders write `wallV`, which is what `wallAttribute: true`
+already reads, so the depth-fog tint and the swell-displaced top edge come out right
+with no shader change.
+
+⚠️ The channels are requested by the PRESENCE of a cut on the stack, never by
+`enabled` — they are a build output, so keying them on the toggle would rebuild the
+sea every time the cut is switched on or off.
 
 ⚠️ **Picking does not yet.** `PickingMaterial` is an override material with its own
 fragment shader, so neither the fence nor `ChunkSection` is applied during a pick —

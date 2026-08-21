@@ -107,6 +107,9 @@ uniform vec4 uShore;      // x: shore foam amount, y: break depth (x wave height
 uniform vec2 uShoreNoise; // x: edge raggedness (m), y: its frequency (1 / m)
 uniform vec2 uShoreFade;  // x: foam strength (1 = full white surf), y: fraction lost at distance
 uniform float uSurfScale; // exaggeration of the surf zone's width, 1 = as measured
+#endif
+
+#if defined(OCEAN_BATHYMETRY) || defined(OCEAN_FENCE)
 varying vec2 vObjectXZ;
 #endif
 
@@ -119,6 +122,16 @@ varying vec2 vSurfaceXZ;
 
 #ifdef OCEAN_SECTION
 varying float vSectionDist;
+#endif
+
+#ifdef OCEAN_FENCE
+// x: 1 while the cut is live, 0 to pass everything; y: +1 normally, -1 to keep only
+// what the fence removed. The rest place the field in the stack's own object XZ.
+uniform vec2 fenceParams;
+uniform sampler2D fenceMap;
+uniform mat3 fenceToUv;   // object XZ -> uv
+uniform vec2 fenceSize;   // grid size in texels
+#include ../../../sdk/materials/shaderLib/fence-field.glsl
 #endif
 
 #include <common>
@@ -226,6 +239,13 @@ float oceanContactFoam(vec2 p, float t) {
 void main() {
   #ifdef OCEAN_SECTION
   if(vSectionDist > 0.0)
+    discard;
+  #endif
+
+  #ifdef OCEAN_FENCE
+  // ⭐ The same exact lookup the block is cut by, off the same segments — so the
+  // sea ends on the curve rather than a fraction of a cell either side of it.
+  if(fenceParams.x > 0.5 && fenceParams.y * fenceSide(fenceMap, fenceToUv, fenceSize, vObjectXZ) < 0.0)
     discard;
   #endif
 

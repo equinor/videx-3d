@@ -136,6 +136,8 @@ export function buildStackWaterSpec(
     rimSpacing?: number;
     maxError?: number;
     resolve?: ChunkResolveOptions;
+    /** the stack declares a cut, so the sea needs the channels to close it with */
+    section?: boolean;
   },
 ): StackWaterSpec {
   return {
@@ -158,6 +160,7 @@ export function buildStackWaterSpec(
       options.carrier,
     ),
     resolve: options.resolve,
+    section: options.section,
   };
 }
 

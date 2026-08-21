@@ -14,6 +14,7 @@ import { createOceanSampler, OceanSampler } from '../Ocean/ocean-sampler';
 import { OceanVolumeMaterial } from '../Ocean/ocean-volume-material';
 import { ChunkDepthMap } from './chunk-depth-map';
 import { StackWater } from './chunk-defs';
+import { ChunkFenceUniforms } from './chunk-material';
 
 /** What a {@link ChunkStackProps.water} sea is drawn and sampled with. */
 export type StackWaterMaterials = {
@@ -21,6 +22,15 @@ export type StackWaterMaterials = {
   surface: OceanMaterial;
   /** the water body, for the walls at the rim and the shoreline */
   volume: OceanVolumeMaterial;
+  /**
+   * The water body again, UNCUT, for the face that closes it at a section or a
+   * fence. `null` when the stack declares no cut.
+   *
+   * ⚠️ A separate material because the face lies exactly ON the cut: testing it
+   * against the very thing it exists to close punches holes along its length. The
+   * block's own faces are built the same way.
+   */
+  face: OceanVolumeMaterial | null;
   /**
    * The wave field, for floating objects. Heights come back ABSOLUTE in the
    * stack's frame (sea level included), so a floater needs no sea-level parent
@@ -48,6 +58,8 @@ export function useStackWater(
   wireframe = false,
   sectionPlane?: IUniform<Vector4>,
   bathymetry?: ChunkDepthMap | null,
+  fence?: ChunkFenceUniforms,
+  cut = false,
 ): StackWaterMaterials | null {
   const enabled = !!water;
   const level = -(water?.depth ?? 0);
@@ -68,25 +80,34 @@ export function useStackWater(
 
   // ⚠️ The section is a DEFINE, so cutting the sea or leaving it whole means new
   // materials. That is a discrete choice, unlike the sea state, which is swept.
+  // ⚠️ The fence is one too; its uniforms carry the live curve, so only turning the
+  // cut on or off reaches here.
   // ⚠️ So is the bathymetry, which arrives asynchronously — one rebuild, once.
   const materials = useMemo(() => {
     if (!enabled) return null;
     return {
       surface: new OceanMaterial({
         sectionPlane,
+        fence,
         bathymetry: bathymetry ?? undefined,
       }),
       // A chunk's interval wall measures its vertical coordinate in metres, so
       // the walls read their unit-relative height from `wallV` instead.
-      volume: new OceanVolumeMaterial({ wallAttribute: true, sectionPlane }),
+      volume: new OceanVolumeMaterial({
+        wallAttribute: true,
+        sectionPlane,
+        fence,
+      }),
+      face: cut ? new OceanVolumeMaterial({ wallAttribute: true }) : null,
     };
-  }, [enabled, sectionPlane, bathymetry]);
+  }, [enabled, sectionPlane, fence, bathymetry, cut]);
 
   useEffect(() => {
     if (!materials) return;
     return () => {
       materials.surface.dispose();
       materials.volume.dispose();
+      materials.face?.dispose();
     };
   }, [materials]);
 
@@ -104,14 +125,22 @@ export function useStackWater(
       { ...water, opacity },
       materials.surface,
     );
+    if (materials.face)
+      applyOceanBodyProps(
+        materials.face,
+        { ...water, opacity },
+        materials.surface,
+      );
     materials.surface.wireframe = wireframe;
     materials.volume.wireframe = wireframe;
+    if (materials.face) materials.face.wireframe = wireframe;
   }, [materials, water, wireframe, level]);
 
   useFrame((_, delta) => {
     if (!materials) return;
     materials.surface.time += delta;
     materials.volume.time += delta;
+    if (materials.face) materials.face.time += delta;
 
     // Collect the registered floating-object footprints and upload them as
     // contact foam. Skipped entirely when nothing is registered, so a sea with no

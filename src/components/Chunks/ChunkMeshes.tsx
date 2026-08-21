@@ -107,7 +107,7 @@ export type ChunkMeshesProps = {
   sectionUniformInverse?: IUniform<Vector4>;
   /**
    * Cut the column's floor with the rest of the block (see
-   * `ChunkSection.carrier`). Default true; false leaves the block standing on an
+   * `ChunkSection.carrier`). Default false, which leaves the block standing on an
    * intact base plate.
    */
   sectionCarrier?: boolean;
@@ -168,11 +168,11 @@ export const ChunkMeshes = ({
   section = null,
   sectionUniform,
   sectionUniformInverse,
-  sectionCarrier = true,
+  sectionCarrier = false,
   fence = null,
   fenceUniforms,
   fenceUniformsInverse,
-  fenceCarrier = true,
+  fenceCarrier = false,
   peel = 0,
 }: ChunkMeshesProps) => {
   // ⚠️ `fence` is a STABLE object mutated from the frame loop, so a change to
@@ -197,13 +197,15 @@ export const ChunkMeshes = ({
       waterTint?: ChunkWaterTintParameters,
       options?: {
         section?: boolean;
+        fence?: boolean;
         inverse?: boolean;
         contacts?: ChunkContactTexture[];
       },
     ) => {
-      // A fence and a plane are mutually exclusive (the stack warns), and a unit
-      // kept whole opts out of both.
-      const cut = options?.section !== false;
+      // A unit kept whole opts out of both cuts; the floor opts out of each
+      // separately, since only one of the two is ever live.
+      const cutSection = options?.section !== false;
+      const cutFence = options?.fence !== false;
       const material = new ChunkMaterial({
         color,
         opacity,
@@ -214,12 +216,12 @@ export const ChunkMeshes = ({
         wall,
         waterTint,
         contacts: options?.contacts,
-        sectionPlane: !cut
+        sectionPlane: !cutSection
           ? undefined
           : options?.inverse
             ? sectionUniformInverse
             : sectionUniform,
-        fence: !cut
+        fence: !cutFence
           ? undefined
           : options?.inverse
             ? fenceUniformsInverse
@@ -277,7 +279,11 @@ export const ChunkMeshes = ({
             layer.detail,
             false,
             i === 0 ? waterTint : undefined,
-            { section: cutCap(i), contacts: layerContacts(i) },
+            {
+              section: cutCap(i),
+              fence: cutCap(i),
+              contacts: layerContacts(i),
+            },
           ),
     );
 
@@ -313,6 +319,7 @@ export const ChunkMeshes = ({
             undefined,
             {
               section: cutWall(i),
+              fence: cutWall(i),
               contacts: layerContacts(i),
             },
           );
@@ -332,7 +339,11 @@ export const ChunkMeshes = ({
             layer.detail,
             false,
             undefined,
-            { section: !keptUnit(i), contacts: layerContacts(i) },
+            {
+              section: !keptUnit(i),
+              fence: !keptUnit(i),
+              contacts: layerContacts(i),
+            },
           );
     });
 
@@ -362,7 +373,7 @@ export const ChunkMeshes = ({
             layer.detail,
             true,
             undefined,
-            { section: false, contacts: layerContacts(i) },
+            { section: false, fence: false, contacts: layerContacts(i) },
           );
         });
 
@@ -372,10 +383,10 @@ export const ChunkMeshes = ({
         ? carrierMaterial
         : make(carrierMaterial, surfaceOpacity, undefined, false, undefined, {
             // The floor is the base of the deepest unit, so keeping that unit keeps
-            // it — OR'd with the explicit toggle rather than overriding it, so a
+            // it — AND'd with the explicit toggle rather than overriding it, so a
             // caller can still keep the base plate whole on its own.
-            section:
-              sectionCarrier && fenceCarrier && !keptUnit(layers.length - 1),
+            section: sectionCarrier && !keptUnit(layers.length - 1),
+            fence: fenceCarrier && !keptUnit(layers.length - 1),
           });
 
     // ⭐ The fragments a cap gave up because a layer ABOVE covered them, restored
@@ -395,7 +406,11 @@ export const ChunkMeshes = ({
           declared.detail,
           false,
           surface.layer === 0 ? waterTint : undefined,
-          { section: false, contacts: layerContacts(surface.layer) },
+          {
+            section: false,
+            fence: false,
+            contacts: layerContacts(surface.layer),
+          },
         ),
         cut: sectionUniformInverse
           ? make(

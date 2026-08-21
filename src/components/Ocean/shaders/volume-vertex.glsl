@@ -40,6 +40,11 @@ uniform vec4 sectionPlane;
 varying float vSectionDist;
 #endif
 
+#ifdef OCEAN_FENCE
+// OBJECT XZ, undisplaced — the fence's field is in the stack's own frame.
+varying vec2 vObjectXZ;
+#endif
+
 #include <common>
 #include <logdepthbuf_pars_vertex>
 #include ./waves.glsl
@@ -49,6 +54,10 @@ void main() {
 
   #ifdef OCEAN_SECTION
   vSectionDist = dot(sectionPlane.xyz, position) + sectionPlane.w;
+  #endif
+
+  #ifdef OCEAN_FENCE
+  vObjectXZ = position.xz;
   #endif
 
   #ifdef OCEAN_WALL_ATTRIBUTE
