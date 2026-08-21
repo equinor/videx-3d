@@ -2,6 +2,7 @@ import { transfer } from 'comlink';
 import { BufferAttribute, BufferGeometry } from 'three';
 import { SurfaceTexturesResponse } from '../main';
 import {
+  computeSurfaceNormalsRG,
   packBufferGeometry,
   PackedBufferGeometry,
   ReadonlyStore,
@@ -14,6 +15,7 @@ const nullValue = -1;
 export async function generateSurfaceTexturesData(
   this: ReadonlyStore,
   id: string,
+  computeNormals: boolean = false,
 ) {
   const surface = await this.get<SurfaceMeta>('surface-meta', id);
 
@@ -25,11 +27,31 @@ export async function generateSurfaceTexturesData(
 
   const elevationImageBuffer = surfaceValues;
 
+  const { header } = surface;
+
   const response: SurfaceTexturesResponse = {
     elevationImageBuffer,
   };
 
-  return transfer(response, [elevationImageBuffer.buffer]);
+  const transferables: Transferable[] = [elevationImageBuffer.buffer];
+
+  // Geometric normals (RG8) are only computed and transferred when the consumer
+  // opts in (Surface `precomputeNormals`). They let the surface shader skip the
+  // per-fragment normal recompute that the OITRenderPass would otherwise pay
+  // multiple times per frame, at the cost of a little texture memory.
+  if (computeNormals) {
+    const normalImageBuffer = computeSurfaceNormalsRG(
+      surfaceValues,
+      header.nx,
+      header.ny,
+      header.xinc,
+      header.yinc,
+    );
+    response.normalImageBuffer = normalImageBuffer;
+    transferables.push(normalImageBuffer.buffer);
+  }
+
+  return transfer(response, transferables);
 }
 
 export async function generateSurfaceGeometry(

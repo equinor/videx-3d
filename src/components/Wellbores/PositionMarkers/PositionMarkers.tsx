@@ -89,6 +89,20 @@ export const PositionMarkers = ({
 
   const layers = useMemo(() => createLayers(LAYERS.NOT_EMITTER), []);
 
+  // Dispose the library-created geometry on unmount.
+  useEffect(() => {
+    return () => {
+      geometry.dispose();
+    };
+  }, [geometry]);
+
+  // Dispose the library-created material on unmount.
+  useEffect(() => {
+    return () => {
+      material.dispose();
+    };
+  }, [material]);
+
   useEffect(() => {
     if (generator && id) {
       generator(id, radius, interval, fromMsl).then(response => {

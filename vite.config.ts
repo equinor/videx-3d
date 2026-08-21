@@ -3,14 +3,18 @@ import { resolve } from 'path';
 import dts from 'unplugin-dts/vite';
 import { defineConfig } from 'vite';
 import cssInjectedByJsPlugin from 'vite-plugin-css-injected-by-js';
-import { externalizeDeps } from 'vite-plugin-externalize-deps';
 import glsl from 'vite-plugin-glsl';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
+import pkg from './package.json' with { type: 'json' };
+
+const externalPackages = [
+  ...Object.keys(pkg.dependencies ?? {}),
+  ...Object.keys(pkg.peerDependencies ?? {}),
+];
 
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
-    externalizeDeps(),
     react(),
     glsl(),
     cssInjectedByJsPlugin({
@@ -44,11 +48,14 @@ export default defineConfig({
     },
     emptyOutDir: true,
     copyPublicDir: false,
-    rollupOptions: {
+    rolldownOptions: {
+      external: (id: string) =>
+        externalPackages.some(p => id === p || id.startsWith(`${p}/`)) ||
+        /^node:/.test(id),
       output: {
         chunkFileNames: 'chunk-[hash].js',
       },
-      treeshake: 'recommended',
+      treeshake: true,
     },
   },
 });

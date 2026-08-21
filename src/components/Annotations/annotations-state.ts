@@ -187,7 +187,7 @@ const updateInstances = () => {
                 position: annotation.position,
                 distance: Infinity,
                 health: 0,
-                labelWidht: 0,
+                labelWidth: 0,
                 labelHeight: 0,
                 screenPosition: [0, 0],
                 zIndex: 0,
@@ -241,8 +241,6 @@ useAnnotationsState.subscribe(
     }
   },
 );
-
-// TODO: Compare performance of this branch with current main branch using troll data
 
 /**
  * This hook allow you to add annotations to an exisiting `AnnotationsLayer`.

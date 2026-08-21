@@ -89,6 +89,20 @@ export const Shoes = forwardRef(
       return m;
     }, [color]);
 
+    // Dispose the library-created geometry when it changes or on unmount.
+    useEffect(() => {
+      return () => {
+        geometry.dispose();
+      };
+    }, [geometry]);
+
+    // Dispose the library-created material when it changes or on unmount.
+    useEffect(() => {
+      return () => {
+        material.dispose();
+      };
+    }, [material]);
+
     useEffect(() => {
       if (generator && id) {
         generator(id, fromMsl, sizeMultiplier).then(response => {

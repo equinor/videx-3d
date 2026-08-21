@@ -16,6 +16,10 @@ varying vec2 vUv;
 #include <logdepthbuf_pars_fragment>
 #include <clipping_planes_pars_fragment>
 
+#ifdef USE_OIT
+#include ../../../../sdk/materials/shaderLib/oit.glsl
+#endif
+
 const bool colorRampReverse = true;
 
 vec3 getColor(float v) {
@@ -47,4 +51,8 @@ void main() {
 	#include <tonemapping_fragment>
 	#include <colorspace_fragment>
 	#include <fog_fragment>
+
+  #ifdef USE_OIT
+  gl_FragColor = oitProcess(gl_FragColor);
+  #endif
 }

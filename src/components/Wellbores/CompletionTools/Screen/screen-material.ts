@@ -5,8 +5,9 @@ import {
   Uniform,
   UniformsUtils,
 } from 'three';
-import vertexShader from './shaders/vertex.glsl';
+import { attachOitVariants } from '../../../../rendering/oit-material';
 import fragmentShader from './shaders/fragment.glsl';
+import vertexShader from './shaders/vertex.glsl';
 
 export class ScreenMaterial extends ShaderMaterial {
   constructor(params: any = {}) {
@@ -25,6 +26,8 @@ export class ScreenMaterial extends ShaderMaterial {
     this.setValues(params);
 
     this.lights = true;
+
+    attachOitVariants(this);
   }
 
   get color1() {

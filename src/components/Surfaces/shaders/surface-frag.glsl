@@ -33,6 +33,10 @@ uniform vec3 diffuse;
 uniform vec3 emissive;
 uniform float opacity;
 
+#ifdef USE_PRECOMPUTED_NORMALS
+uniform sampler2D normalTexture;
+#endif
+
 varying vec2 vGridUv;
 
 #include <common>
@@ -70,6 +74,10 @@ varying vec3 vBitangent;
 
 // custom fragments
 #include ../../../sdk/materials/shaderLib/color-conversion.glsl
+
+#ifdef USE_OIT
+#include ../../../sdk/materials/shaderLib/oit.glsl
+#endif
 
 #ifdef USE_DEBUG
 #include ../../../sdk/materials/shaderLib/glyphs.glsl
@@ -155,11 +163,41 @@ void main() {
     discard;
   }
 
+  #include <logdepthbuf_fragment>
+
+  // OIT auxiliary passes do not shade: the min-depth pre-pass only needs the
+  // view-space depth (written by oitProcess) and the occlusion stamp only needs
+  // the fragment alpha. Skip all the normal / lighting / colour / contour work
+  // below in those passes - the surface is rasterised up to three times per
+  // frame under the OITRenderPass, so this avoids two thirds of that cost.
+  #if defined(USE_OIT) && defined(OIT_DEPTH_PASS)
+  gl_FragColor = oitProcess(vec4(0.0));
+  return;
+  #endif
+  #if defined(USE_OIT) && defined(OIT_OCCLUSION_PASS)
+  gl_FragColor = oitProcess(vec4(diffuse, opacity));
+  return;
+  #endif
+
   vec2 gridSegments = size - 1.0;
 
   float depth = referenceDepth - elevation;
 
   // normal
+
+  vec3 n0;
+
+  #ifdef USE_PRECOMPUTED_NORMALS
+
+  // Geometric normal baked at full elevation-grid resolution (RG8, hemisphere
+  // encoded: y is reconstructed from x and z). A single texture tap replaces the
+  // four elevation taps + cross products, and there is no per-fragment recompute
+  // across the OIT passes. Stored in grid-local space before the grid rotation,
+  // so the same rotate + normalMatrix path applies as the computed branch.
+  vec2 nxz = texture2D(normalTexture, vGridUv).rg * 2.0 - 1.0;
+  n0 = vec3(nxz.x, sqrt(max(0.0, 1.0 - dot(nxz, nxz))), nxz.y);
+
+  #else
 
   float distanceFactor = 1.;
   vec2 offset = distanceFactor / gridSegments;
@@ -175,7 +213,7 @@ void main() {
   vec3 p3 = vec3(-dist.x, sw - elevation, dist.y);
   vec3 p4 = vec3(dist.x, se - elevation, dist.y);
 
-  vec3 n0 = vec3(0.0, 0.0001, 0.0);
+  n0 = vec3(0.0, 0.0001, 0.0);
 
   if(nw >= 0.0 && ne >= 0.0)
     n0 += cross(p2, p1);
@@ -185,6 +223,8 @@ void main() {
     n0 += cross(p3, p4);
   if(se >= 0.0 && nw >= 0.0)
     n0 += cross(p1, p3);
+
+  #endif
 
   n0 = rotateVec3(n0, vec3(0.0, 1.0, 0.0), rotation);
   vec3 vNormal = normalize(normalMatrix * n0);
@@ -252,7 +292,6 @@ void main() {
 	  // TODO: Something is not correct with this
   diffuseColor = vec4(adjustColor(diffuseColor.rgb, saturation, brightness), diffuseColor.w);
 
-  #include <logdepthbuf_fragment>
 	#include <map_fragment>
 	#include <color_fragment>
 	#include <alphamap_fragment>
@@ -289,6 +328,10 @@ void main() {
 	#include <fog_fragment>
 	#include <premultiplied_alpha_fragment>
 	#include <dithering_fragment>
+
+  #ifdef USE_OIT
+  gl_FragColor = oitProcess(gl_FragColor);
+  #endif
 
   //gl_FragColor = vec4(vNormal, 1.0);
 }

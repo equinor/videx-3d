@@ -1,5 +1,6 @@
 import {
   Color,
+  DoubleSide,
   Matrix3,
   MeshLambertMaterialParameters,
   MultiplyOperation,
@@ -12,6 +13,7 @@ import {
   Vector2,
 } from 'three';
 import { colorRampTexture } from '../../common/color-ramps';
+import { attachOitVariants } from '../../rendering/oit-material';
 import fragmentShader from './shaders/surface-frag.glsl';
 import vertexShader from './shaders/surface-vert.glsl';
 
@@ -38,6 +40,7 @@ export type SurfaceMaterialParameters = ShaderMaterialParameters &
     contoursColor?: string | number | Color;
     elevationTexture?: Texture;
     normalTexture?: Texture;
+    usePrecomputedNormals?: boolean;
     debug?: boolean;
   };
 
@@ -48,6 +51,7 @@ const shader = {
     USE_CONTOURS: false,
     USE_UV: true,
     USE_DEBUG: false,
+    USE_PRECOMPUTED_NORMALS: false,
     GLYPHS_LENGTH: 1,
   },
   uniforms: UniformsUtils.merge([
@@ -164,6 +168,10 @@ export class SurfaceMaterial extends ShaderMaterial {
     this.normalScale = new Vector2(0.25, 0.25);
     this.color = 'white';
     this.setValues(parameters);
+
+    // Enable order-independent transparency. Surfaces use DoubleSide so back faces
+    // contribute to the weighted-blended tail. No-op outside the OITRenderPass.
+    attachOitVariants(this, { side: DoubleSide });
   }
 
   get color() {
@@ -209,6 +217,15 @@ export class SurfaceMaterial extends ShaderMaterial {
 
   set debug(value) {
     this.defines.USE_DEBUG = !!value;
+    this.needsUpdate = true;
+  }
+
+  get usePrecomputedNormals() {
+    return this.defines.USE_PRECOMPUTED_NORMALS || false;
+  }
+
+  set usePrecomputedNormals(value) {
+    this.defines.USE_PRECOMPUTED_NORMALS = !!value;
     this.needsUpdate = true;
   }
 

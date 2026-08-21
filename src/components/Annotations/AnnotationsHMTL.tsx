@@ -1,11 +1,17 @@
-import { CSSProperties, forwardRef, useCallback } from 'react';
+import {
+  CSSProperties,
+  forwardRef,
+  useCallback,
+  useEffect,
+  useRef,
+} from 'react';
+import { useStore } from 'zustand';
 import { useAnnotationsState } from './annotations-state';
 import {
   AnnotationInstanceState,
   AnnotationLayer,
   AnnotationProps,
 } from './types';
-import { useStore } from 'zustand';
 
 const rootStyle: CSSProperties = {
   pointerEvents: 'none',
@@ -32,6 +38,8 @@ type InstanceProps = {
 
 const InstanceHTML = forwardRef<HTMLDivElement, InstanceProps>(
   ({ id, state, layer, annotation }, ref) => {
+    const elementRef = useRef<HTMLDivElement | null>(null);
+
     const onClick = useCallback(() => {
       if (layer.onClick) {
         layer.onClick({ instanceId: id, ...annotation });
@@ -46,9 +54,43 @@ const InstanceHTML = forwardRef<HTMLDivElement, InstanceProps>(
       state.labelHovered = false;
     }, [state]);
 
+    // Measure the label size via ResizeObserver instead of reading
+    // clientWidth/clientHeight every frame in the render loop, which would
+    // force a synchronous layout/reflow on each frame.
+    const setRef = useCallback(
+      (node: HTMLDivElement | null) => {
+        elementRef.current = node;
+        if (typeof ref === 'function') {
+          ref(node);
+        } else if (ref) {
+          ref.current = node;
+        }
+      },
+      [ref],
+    );
+
+    useEffect(() => {
+      const node = elementRef.current;
+      if (!node) return;
+
+      const measure = () => {
+        state.labelWidth = node.clientWidth;
+        state.labelHeight = node.clientHeight;
+      };
+
+      measure();
+
+      const observer = new ResizeObserver(measure);
+      observer.observe(node);
+
+      return () => {
+        observer.disconnect();
+      };
+    }, [state]);
+
     return (
       <div
-        ref={ref}
+        ref={setRef}
         style={annotationStyle}
         onClick={onClick}
         onPointerEnter={onPointerEnter}

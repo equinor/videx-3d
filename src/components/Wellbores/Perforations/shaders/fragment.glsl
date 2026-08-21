@@ -6,11 +6,15 @@ uniform float uTime;
 uniform float uRadius;
 uniform float uLength;
 
+#ifdef OCCLUSION_STAMP
+uniform float uOcclusionThreshold;
+#endif
+
 varying vec3 vPosition;
 varying vec3 vCamera;
 
-vec3 outer = vec3(1.0, 0.2, 0.0);
-vec3 inner = vec3(1.0, 1.0, .8);
+vec3 outer = vec3(0.8, 0.2, 0.0);
+vec3 inner = vec3(1.8, 1.0, .8);
 
 bool isInside(vec3 pos, float radius) {
   if(pos.y < 0.0 || pos.y > uLength)
@@ -57,6 +61,13 @@ void main() {
     vec3 col = mix(outer, inner, strength);
     gl_FragColor = vec4(col, strength);
   }
+
+  #ifdef OCCLUSION_STAMP
+  // Depth-only stamp: keep (write depth) only where the emitter is dense enough.
+  // Colour writes are disabled on this variant, so only gl_FragDepth matters.
+  if(gl_FragColor.a < uOcclusionThreshold)
+    discard;
+  #endif
   // #include <tonemapping_fragment>
   // #include <colorspace_fragment>
 }

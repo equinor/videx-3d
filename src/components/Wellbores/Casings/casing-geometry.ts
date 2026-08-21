@@ -154,7 +154,9 @@ function createTubeGeometry(
     normals[j + 1] = 0;
     normals[j + 2] = -1;
 
-    uvs[k] = x1;
+    // U uses x2 (not x1) so the inner wall's texture azimuth matches the outer
+    // wall at the same physical angle (the inner ring is wound in reverse).
+    uvs[k] = x2;
     uvs[k + 1] = 1;
 
     ids[u + vertexOffsets.innerTube + 1] = 1; // lower inner ring
@@ -167,7 +169,7 @@ function createTubeGeometry(
     normals[j + 4] = 0;
     normals[j + 5] = -1;
 
-    uvs[k + 2] = x1;
+    uvs[k + 2] = x2;
     uvs[k + 3] = 0;
   }
 
@@ -238,7 +240,8 @@ function createTubeGeometry(
   normals[j + 13] = 0;
   normals[j + 14] = 0;
 
-  uvs[k + 8] = 0;
+  // U aligned to z (inner->outer = 0->1), matching edge1 (was mirrored).
+  uvs[k + 8] = 1;
   uvs[k + 9] = 1;
 
   ids[vertexOffsets.edge2 + 1] = 5;
@@ -251,7 +254,7 @@ function createTubeGeometry(
   normals[j + 16] = 0;
   normals[j + 17] = 0;
 
-  uvs[k + 10] = 0;
+  uvs[k + 10] = 1;
   uvs[k + 11] = 0;
 
   ids[vertexOffsets.edge2 + 2] = 5;
@@ -264,7 +267,7 @@ function createTubeGeometry(
   normals[j + 19] = 0;
   normals[j + 20] = 0;
 
-  uvs[k + 12] = 1;
+  uvs[k + 12] = 0;
   uvs[k + 13] = 1;
 
   ids[vertexOffsets.edge2 + 3] = 5;
@@ -277,7 +280,7 @@ function createTubeGeometry(
   normals[j + 22] = 0;
   normals[j + 23] = 0;
 
-  uvs[k + 14] = 1;
+  uvs[k + 14] = 0;
   uvs[k + 15] = 0;
 
   const indices = new Uint32Array((radialSegments * 4 + 2) * 6);
@@ -419,8 +422,9 @@ function createCapsGeometry(
     normals[j + 1] = -1;
     normals[j + 2] = 0;
 
+    // V runs inner->outer = 0->1 to match the top cap (was reversed here).
     uvs[k] = x2;
-    uvs[k + 1] = 1;
+    uvs[k + 1] = 0;
 
     ids[u + vertexOffsets.bottom + 1] = 3; // bottom inner ring
 
@@ -433,7 +437,7 @@ function createCapsGeometry(
     normals[j + 5] = 0;
 
     uvs[k + 2] = x2;
-    uvs[k + 3] = 0;
+    uvs[k + 3] = 1;
   }
 
   const indices = new Uint32Array(radialSegments * 4 * 6);

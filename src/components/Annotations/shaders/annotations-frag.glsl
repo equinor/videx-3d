@@ -3,6 +3,7 @@ uniform sampler2D depthTexture;
 uniform sampler2D dataTexture;
 uniform mat4 pMatrix;
 uniform mat4 vMatrix;
+uniform vec2 resolution;
 
 varying vec2 vUv;
 
@@ -45,7 +46,20 @@ void main() {
 
   vec2 uvDepth = offsetNdc.xy * 0.5 + 0.5;
 
-  float sceneDepth = texture2D(depthTexture, uvDepth).r;
+  // The depth buffer is rendered with a sub-pixel TAA jitter, so a point near a
+  // silhouette edge can flip between the foreground occluder and the background
+  // from frame to frame. Sample a small neighbourhood and keep the farthest
+  // depth, i.e. treat the point as occluded only if every tap occludes it. This
+  // makes the test tolerant to the (<= 1 texel) jitter and biases borderline
+  // labels towards staying visible instead of flickering.
+  vec2 texel = 1.0 / resolution;
+  float sceneDepth = 0.0;
+  for(int y = -1; y <= 1; y++) {
+    for(int x = -1; x <= 1; x++) {
+      float d = texture2D(depthTexture, uvDepth + vec2(float(x), float(y)) * texel).r;
+      sceneDepth = max(sceneDepth, d);
+    }
+  }
 
   value = 0.0;
   if((sceneDepth + epsilon) < pointDepth)

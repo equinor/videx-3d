@@ -6,8 +6,8 @@ export default defineConfig({
   plugins: [react(), glsl()],
   worker: {
     format: 'es',
-    rollupOptions: {
-      treeshake: 'smallest',
+    rolldownOptions: {
+      treeshake: true,
     },
     plugins: () => [glsl()],
   },

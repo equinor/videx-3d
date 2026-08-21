@@ -5,6 +5,7 @@ import {
   ShaderMaterial,
   UniformsUtils,
 } from 'three';
+import { attachOitVariants } from '../../rendering/oit-material';
 import fragmentShader from './shaders/trajectory/fragment.glsl';
 import vertexShader from './shaders/trajectory/vertex.glsl';
 
@@ -22,6 +23,7 @@ export class TubeMaterial extends ShaderMaterial {
       fog: true,
     });
     if (parameters) this.setValues(parameters);
+    attachOitVariants(this);
   }
 
   get color(): Color {

@@ -1,7 +1,8 @@
 import { CameraControls } from '@react-three/drei';
 import { useThree } from '@react-three/fiber';
-import { PropsWithChildren, useEffect, useRef } from 'react';
+import { PropsWithChildren, useEffect, useMemo, useRef } from 'react';
 import { Color, Group, Vector3 } from 'three';
+import { createLayers, LAYERS } from '../../layers/layers';
 
 /**
  * Props for CameraTargetMarker
@@ -87,11 +88,15 @@ export const CameraTargetMarker = ({
     };
   }, [controls, fixedX, fixedY, fixedZ]);
 
+  const layers = useMemo(() => {
+    return createLayers(LAYERS.OVERLAY);
+  }, []);
+
   return (
     <group ref={ref} visible={false} renderOrder={renderOrder}>
       {!!children && children}
       {!children && (
-        <mesh>
+        <mesh layers={layers}>
           <sphereGeometry args={[radius]} />
           <meshBasicMaterial
             color={color}

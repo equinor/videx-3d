@@ -106,7 +106,7 @@ export const EventEmitter = ({
             camera,
             domElement: gl.domElement,
           };
-          setTimeout(() => listener.handlers.leave(leaveEvent));
+          listener.handlers.leave(leaveEvent);
         }
       }
 
@@ -120,7 +120,6 @@ export const EventEmitter = ({
             current.emitter.instanced &&
             current.index !== previous.index)
         ) {
-          const listener = pickingHelper.getListener(current.emitter.listener);
           if (listener && listener.handlers.enter) {
             const enterEvent = {
               target: listener.object,
@@ -133,7 +132,7 @@ export const EventEmitter = ({
               camera,
               domElement: gl.domElement,
             };
-            setTimeout(() => listener.handlers.enter(enterEvent));
+            listener.handlers.enter(enterEvent);
           }
         }
 
@@ -154,13 +153,13 @@ export const EventEmitter = ({
             camera,
             domElement: gl.domElement,
           };
-          setTimeout(() => listener.handlers.move(moveEvent));
+          listener.handlers.move(moveEvent);
         }
       }
 
       // result event
       if (onResult && (current !== null || previous !== null)) {
-        setTimeout(() => onResult(result));
+        onResult(result);
       }
 
       eventState.currentResult = result;
@@ -225,7 +224,7 @@ export const EventEmitter = ({
     };
   }, [eventState, update]);
 
-  // dispose
+  // wire up pointer and keyboard listeners (and dispose the picking helper on unmount)
   useEffect(() => {
     function onPointerDown(event: PointerEvent) {
       if (event.isPrimary) {

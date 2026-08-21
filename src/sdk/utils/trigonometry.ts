@@ -10,8 +10,15 @@ export const PI8 = Math.PI / 8; // eight PI
  * Given a 2D rectangle and an angle off the center, find the point
  * of the closest corner. Used for anchoring connector lines
  * to annotation labels.
+ *
+ * Pass an optional `target` array to write the result into, avoiding
+ * an allocation in hot paths.
  */
-export function edgeOfRectangle(rect: Vec2, theta: number): Vec2 {
+export function edgeOfRectangle(
+  rect: Vec2,
+  theta: number,
+  target?: Vec2,
+): Vec2 {
   while (theta < -Math.PI) {
     theta += TAU;
   }
@@ -34,7 +41,9 @@ export function edgeOfRectangle(rect: Vec2, theta: number): Vec2 {
     region = 4;
   }
 
-  const edgePoint: Vec2 = [0, 0];
+  const edgePoint: Vec2 = target || [0, 0];
+  edgePoint[0] = 0;
+  edgePoint[1] = 0;
   let xFactor = 1;
   let yFactor = 1;
 

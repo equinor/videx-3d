@@ -1,5 +1,92 @@
 # Changelog
 
+## [3.1.0](https://github.com/equinor/videx-3d/compare/v3.0.0...v3.1.0) (2026-08-10)
+
+
+### Features
+
+* **casings:** added new features to casings ([#236](https://github.com/equinor/videx-3d/issues/236)) ([2d286da](https://github.com/equinor/videx-3d/commit/2d286dae49f618a08bed6b635dbd5f31f44b2c69))
+
+
+### Bug Fixes
+
+* **229:** replace eslint with oxlint ([#234](https://github.com/equinor/videx-3d/issues/234)) ([ce6685a](https://github.com/equinor/videx-3d/commit/ce6685afce7d73fd2dc0a9eed1dbd218597fd252))
+* **npm:** bump brace-expansion from 1.1.14 to 1.1.16 ([#248](https://github.com/equinor/videx-3d/issues/248)) ([b81cab1](https://github.com/equinor/videx-3d/commit/b81cab19977c8eee483f11146170652dff7b0b17))
+* **npm:** bump esbuild from 0.27.3 to 0.28.1 ([#235](https://github.com/equinor/videx-3d/issues/235)) ([1e059c0](https://github.com/equinor/videx-3d/commit/1e059c021b0422842bbdc3d8d2f33b37ad01fb41))
+* **npm:** bump immutable from 5.1.5 to 5.1.9 ([#251](https://github.com/equinor/videx-3d/issues/251)) ([aece603](https://github.com/equinor/videx-3d/commit/aece603be7bad2990f0b76a430696a156cae5f45))
+* **npm:** bump js-yaml from 4.2.0 to 4.3.0 ([#249](https://github.com/equinor/videx-3d/issues/249)) ([8a0f81a](https://github.com/equinor/videx-3d/commit/8a0f81a090fc1fc117dddff8cc8936642d3df1a7))
+* **npm:** bump linkify-it from 5.0.1 to 5.0.2 ([#255](https://github.com/equinor/videx-3d/issues/255)) ([a4b91ee](https://github.com/equinor/videx-3d/commit/a4b91ee8d780cdff8731c2355e35e16ead7094ff))
+* **npm:** bump nanoid from 5.1.6 to 5.1.16 ([#261](https://github.com/equinor/videx-3d/issues/261)) ([0bbb8e4](https://github.com/equinor/videx-3d/commit/0bbb8e41b62a505d9c1fa6631be91df30fe4a2df))
+* **npm:** bump postcss from 8.5.16 to 8.5.23 ([#256](https://github.com/equinor/videx-3d/issues/256)) ([81032ad](https://github.com/equinor/videx-3d/commit/81032ad58601335a35eb7d22807b1102b5e3ea65))
+* **npm:** bump ws from 8.19.0 to 8.21.0 ([#238](https://github.com/equinor/videx-3d/issues/238)) ([d32d22a](https://github.com/equinor/videx-3d/commit/d32d22a2f1afab271ea3ee1b671a89e37de59cc1))
+* **taa:** fixed issue with the oit taa resolver, causing a black blob appearing and growing ([#240](https://github.com/equinor/videx-3d/issues/240)) ([dffb792](https://github.com/equinor/videx-3d/commit/dffb792f0d2069267a4bb69570a93cf9df440942))
+* **taskless:** babel-core dependabot July 26 ([#250](https://github.com/equinor/videx-3d/issues/250)) ([bbf3c3c](https://github.com/equinor/videx-3d/commit/bbf3c3c05751fb4be15aec12f7e552f02b403ed1))
+
+## [3.0.0](https://github.com/equinor/videx-3d/compare/v2.0.0...v3.0.0) (2026-07-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* **oit aa:** substantial refactor and improvement of the oit renderi… ([#230](https://github.com/equinor/videx-3d/issues/230))
+
+### Features
+
+* **ocean:** an ocean component with supporting geometry builders ([#228](https://github.com/equinor/videx-3d/issues/228)) ([879a1ee](https://github.com/equinor/videx-3d/commit/879a1ee94bc5f64268f3b3822b10c5de296c1b66))
+
+
+### Bug Fixes
+
+* **npm:** bump js-yaml from 4.1.1 to 4.2.0 ([#224](https://github.com/equinor/videx-3d/issues/224)) ([5344c59](https://github.com/equinor/videx-3d/commit/5344c590a781227d64887e83a7a994c162a9a179))
+* **oit aa:** substantial refactor and improvement of the oit renderi… ([#230](https://github.com/equinor/videx-3d/issues/230)) ([8758c8f](https://github.com/equinor/videx-3d/commit/8758c8f850490e2cb0a5e6ae0119317d9908a44d))
+
+## [2.0.0](https://github.com/equinor/videx-3d/compare/v1.1.1...v2.0.0) (2026-06-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **oit:** added an opt-in render pipeline for order independent transparency (oit) ([#218](https://github.com/equinor/videx-3d/issues/218))
+
+### Features
+
+* **oit:** added an opt-in render pipeline for order independent transparency (oit) ([#218](https://github.com/equinor/videx-3d/issues/218)) ([bf5bf13](https://github.com/equinor/videx-3d/commit/bf5bf1359de2a933b5dd02b442bab978e8c448df))
+
+
+### Bug Fixes
+
+* **npm:** bump markdown-it from 14.1.1 to 14.2.0 ([#217](https://github.com/equinor/videx-3d/issues/217)) ([2ad301c](https://github.com/equinor/videx-3d/commit/2ad301c5ce5ea91c48ee9147860c8c63f43ac347))
+* **npm:** bump vite from 7.3.2 to 7.3.5 ([#220](https://github.com/equinor/videx-3d/issues/220)) ([3ede700](https://github.com/equinor/videx-3d/commit/3ede700718875e376893929f97e0f7add4575ba3))
+* **performance:** optimizations pass ([#222](https://github.com/equinor/videx-3d/issues/222)) ([f5c1331](https://github.com/equinor/videx-3d/commit/f5c1331b31a0cb7e10b9264ca617bbcba73af66e))
+
+## [1.1.1](https://github.com/equinor/videx-3d/compare/v1.1.0...v1.1.1) (2026-06-08)
+
+
+### Bug Fixes
+
+* **203:** allow to pass a custom emitter material when registering wi… ([#209](https://github.com/equinor/videx-3d/issues/209)) ([a69e981](https://github.com/equinor/videx-3d/commit/a69e981135a7e4b0470b091dcd5d45e087ce3c19))
+* **geojson path:** fixed geojson file path not working on github pages ([#205](https://github.com/equinor/videx-3d/issues/205)) ([07f3e17](https://github.com/equinor/videx-3d/commit/07f3e170dcf1c8851ad7850adc69fed7757520b7))
+* **npm:** bump vitest, @vitest/coverage-v8 and @vitest/ui ([#212](https://github.com/equinor/videx-3d/issues/212)) ([eb4ac56](https://github.com/equinor/videx-3d/commit/eb4ac56859c032c672468a277f53e38e4858fca0))
+
+## [1.1.0](https://github.com/equinor/videx-3d/compare/v1.0.3...v1.1.0) (2026-05-20)
+
+
+### Features
+
+* **geojson:** added some helper classes and functions for working wi… ([#202](https://github.com/equinor/videx-3d/issues/202)) ([85fa04e](https://github.com/equinor/videx-3d/commit/85fa04e98b31af86a2961b30643db2f0134c1932))
+
+## [1.0.3](https://github.com/equinor/videx-3d/compare/v1.0.2...v1.0.3) (2026-04-29)
+
+
+### Bug Fixes
+
+* **6381:** add missing storybooks ([#192](https://github.com/equinor/videx-3d/issues/192)) ([cfd4087](https://github.com/equinor/videx-3d/commit/cfd4087d007aa87d2e7c7c74175a4e2828a9cfc1))
+
+## [1.0.2](https://github.com/equinor/videx-3d/compare/v1.0.1...v1.0.2) (2026-04-29)
+
+
+### Bug Fixes
+
+* audit vulnerabilities ([#195](https://github.com/equinor/videx-3d/issues/195)) ([6874b7f](https://github.com/equinor/videx-3d/commit/6874b7f6361d010a7a9afe588097db1d7d585c95))
+
 ## [1.0.1](https://github.com/equinor/videx-3d/compare/v1.0.0...v1.0.1) (2026-04-29)
 
 

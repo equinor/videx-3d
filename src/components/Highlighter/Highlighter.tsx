@@ -10,6 +10,7 @@ import {
   Mesh,
   MeshBasicMaterial,
 } from 'three';
+import { LAYERS } from '../../layers/layers';
 import { useHighlightState } from './highlight-state';
 
 const instanceMatrix = new Matrix4();
@@ -62,25 +63,37 @@ export const Highlighter = ({
 
       if (item.object instanceof InstancedMesh) {
         const instanced = item.object as InstancedMesh;
-        if (item.instanceIndex) {
+        if (item.instanceIndex !== undefined) {
           primitiveObject = new Mesh(geometry, material);
-          item.object.getWorldPosition(primitiveObject.position);
+          instanced.updateWorldMatrix(true, false);
           instanced.getMatrixAt(item.instanceIndex, instanceMatrix);
-          primitiveObject.applyMatrix4(instanceMatrix);
+          primitiveObject.matrixAutoUpdate = false;
+          primitiveObject.matrix
+            .copy(instanced.matrixWorld)
+            .multiply(instanceMatrix);
         } else {
           const imesh = new InstancedMesh(geometry, material, instanced.count);
-          item.object.getWorldPosition(imesh.position);
+          instanced.updateWorldMatrix(true, false);
+          imesh.matrixAutoUpdate = false;
+          imesh.matrix.copy(instanced.matrixWorld);
           imesh.instanceMatrix = instanced.instanceMatrix;
           primitiveObject = imesh;
         }
       } else if (item.object instanceof Mesh) {
         primitiveObject = new Mesh(geometry, material);
-        item.object.getWorldPosition(primitiveObject.position);
+        item.object.updateWorldMatrix(true, false);
+        primitiveObject.matrixAutoUpdate = false;
+        primitiveObject.matrix.copy(item.object.matrixWorld);
       } else {
         primitiveObject = new Line(geometry, material);
-        item.object.getWorldPosition(primitiveObject.position);
+        item.object.updateWorldMatrix(true, false);
+        primitiveObject.matrixAutoUpdate = false;
+        primitiveObject.matrix.copy(item.object.matrixWorld);
       }
       primitiveObject.visible = item.object.visible;
+      // Tag as an additive overlay so the OITRenderPass draws it in the emissive
+      // pass (between the opaque and transparent layers).
+      primitiveObject.layers.enable(LAYERS.EMISSIVE);
       return primitiveObject;
     });
   }, [highlighted, material]);

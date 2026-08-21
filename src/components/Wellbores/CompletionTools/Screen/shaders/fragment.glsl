@@ -34,17 +34,21 @@ varying float vCurveLength;
 #include <logdepthbuf_pars_fragment>
 #include <clipping_planes_pars_fragment>
 
+#ifdef USE_OIT
+#include ../../../../../sdk/materials/shaderLib/oit.glsl
+#endif
+
 void main() {
 
   float strength = mod(vCurveLength + vUv.x * 2.0, 2.0);
   strength = step(1.5, strength);
 
-  vec4 diffuseColor = vec4( uColor1 * strength + uColor2 * (1.0 - strength), opacity );
-  
+  vec4 diffuseColor = vec4(uColor1 * strength + uColor2 * (1.0 - strength), opacity);
+
 	#include <clipping_planes_fragment>
 
-	ReflectedLight reflectedLight = ReflectedLight( vec3( 0.0 ), vec3( 0.0 ), vec3( 0.0 ), vec3( 0.0 ) );
-	vec3 totalEmissiveRadiance = emissive;
+  ReflectedLight reflectedLight = ReflectedLight(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0));
+  vec3 totalEmissiveRadiance = emissive;
 
 	#include <logdepthbuf_fragment>
 	#include <map_fragment>
@@ -66,7 +70,7 @@ void main() {
 	// modulation
 	#include <aomap_fragment>
 
-	vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + totalEmissiveRadiance;
+  vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + totalEmissiveRadiance;
 
 	#include <envmap_fragment>
 	#include <opaque_fragment>
@@ -76,5 +80,8 @@ void main() {
 	#include <premultiplied_alpha_fragment>
 	#include <dithering_fragment>
 
+  #ifdef USE_OIT
+  gl_FragColor = oitProcess(gl_FragColor);
+  #endif
+
 }
-  

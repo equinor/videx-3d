@@ -1,92 +1,163 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect } from 'react';
-import { WellboreSelectedEvent } from '../../events/wellbore-events';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
-import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
-import { DepthSelectorDecorator } from '../../storybook/decorators/depth-selector-decorator';
-import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
-import storyArgs from '../../storybook/story-args.json';
-import { BasicTrajectory } from '../Wellbores/BasicTrajectory/BasicTrajectory';
-import { Casings } from '../Wellbores/Casings/Casings';
-import { FormationMarkers } from '../Wellbores/FormationMarkers';
-import { TubeTrajectory } from '../Wellbores/TubeTrajectory';
-import { Wellbore } from '../Wellbores/Wellbore/Wellbore';
-import { WellboreBounds } from '../Wellbores/WellboreBounds/WellboreBounds';
+import { Tanker } from '../Tanker/Tanker';
+import { Bounds } from './Bounds';
 import { Distance } from './Distance';
 
+type StoryArgs = {
+  /** Default: single swap threshold (m). */
+  distance: number;
+  /** MultipleBands: near threshold (m). */
+  near: number;
+  /** MultipleBands: far threshold (m). */
+  far: number;
+  /** TankerLOD: high/low detail swap distance (m). */
+  lodDistance: number;
+  /** Mount/unmount instead of toggling visibility. */
+  onDemand: boolean;
+};
+
+/**
+ * `Distance` conditionally renders (or, with `onDemand`, mounts/unmounts) its children
+ * based on the camera's distance to a bounds published by a parent — the generic
+ * `Bounds` (used in these stories) or `WellboreBounds`. It is the building block for
+ * distance-based level-of-detail. Drag to orbit and scroll to zoom, and watch the
+ * geometry swap.
+ */
 const meta = {
   title: 'Components/Misc/Distance',
-  decorators: [
-    //PerformanceDecorator,
-    Canvas3dDecorator,
-    GeneratorsProviderDecorator,
-    DepthSelectorDecorator,
-    DataProviderDecorator,
-  ],
+  decorators: [Canvas3dDecorator],
   parameters: {
     autoClear: true,
-    scale: 1000,
+    controls: { expanded: true },
+    cameraTarget: [0, 0, 0],
   },
-  component: Distance,
-} satisfies Meta<typeof Distance>;
-
-type StoryArgs = React.ComponentProps<typeof Distance>;
+} satisfies Meta<StoryArgs>;
 
 export default meta;
 type Story = StoryObj<StoryArgs>;
 
-const wellboreId = storyArgs.defaultWellbore;
-const stratColumnId = storyArgs.defaultStratColumn;
-
+/**
+ * The simplest case: one `Bounds` sphere and two `Distance` bands that swap a torus knot
+ * (within `distance`) for a box (beyond it). Toggle `onDemand` to mount/unmount the near
+ * geometry instead of just hiding it.
+ */
 export const Default: Story = {
-  args: {
-    min: 0,
-    max: 1000,
+  args: { distance: 20, onDemand: false },
+  argTypes: {
+    distance: {
+      control: { type: 'range', min: 1, max: 100, step: 1 },
+      description: 'Camera distance (m) at which the geometry swaps.',
+      table: { category: 'Distance' },
+    },
+    onDemand: {
+      control: 'boolean',
+      description:
+        'Mount/unmount the near child on entering/leaving range (vs. toggling visibility).',
+      table: { category: 'Distance' },
+    },
   },
-  render: args => {
-    useEffect(() => {
-      dispatchEvent(new WellboreSelectedEvent({ id: wellboreId }));
-    }, []);
-
-    return (
-      <>
-        <Wellbore id={wellboreId}>
-          <WellboreBounds id={wellboreId}>
-            <TubeTrajectory color="white" radius={2} />
-            <Distance {...args}>
-              <FormationMarkers stratColumnId={stratColumnId} />
-            </Distance>
-          </WellboreBounds>
-        </Wellbore>
-      </>
-    );
-  },
+  parameters: { scale: 10, cameraPosition: [12, 12, 12] },
+  render: ({ distance, onDemand }) => (
+    <Bounds sphere={{ center: [0, 0, 0], radius: 2 }}>
+      <Distance min={0} max={distance} onDemand={onDemand}>
+        <mesh>
+          <torusKnotGeometry args={[1.2, 0.4, 128, 16]} />
+          <meshStandardMaterial color="tomato" />
+        </mesh>
+      </Distance>
+      <Distance min={distance} max={Infinity}>
+        <mesh>
+          <boxGeometry args={[3.2, 3.2, 3.2]} />
+          <meshStandardMaterial color="#4e79a7" flatShading />
+        </mesh>
+      </Distance>
+    </Bounds>
+  ),
 };
 
-export const OnDemand: Story = {
-  args: {
-    min: 0,
-    max: 1,
+/**
+ * A composition of three `Distance` bands sharing one `Bounds`, giving multiple swaps as
+ * the camera moves: torus knot (near) → icosahedron (mid) → wireframe box (far). The
+ * bands are contiguous (`[0, near) [near, far) [far, ∞)`) so exactly one shows at a time.
+ */
+export const MultipleBands: Story = {
+  args: { near: 12, far: 32 },
+  argTypes: {
+    near: {
+      control: { type: 'range', min: 1, max: 100, step: 1 },
+      description: 'Below this distance (m): torus knot; above: icosahedron.',
+      table: { category: 'Thresholds' },
+    },
+    far: {
+      control: { type: 'range', min: 1, max: 200, step: 1 },
+      description: 'Above this distance (m): wireframe box.',
+      table: { category: 'Thresholds' },
+    },
   },
-  render: args => {
-    useEffect(() => {
-      dispatchEvent(new WellboreSelectedEvent({ id: wellboreId }));
-    }, []);
+  parameters: { scale: 10, cameraPosition: [16, 16, 16] },
+  render: ({ near, far }) => (
+    <Bounds sphere={{ center: [0, 0, 0], radius: 2 }}>
+      <Distance min={0} max={near}>
+        <mesh>
+          <torusKnotGeometry args={[1.2, 0.4, 128, 16]} />
+          <meshStandardMaterial color="tomato" />
+        </mesh>
+      </Distance>
+      <Distance min={near} max={far}>
+        <mesh>
+          <icosahedronGeometry args={[2, 0]} />
+          <meshStandardMaterial color="#59a14f" flatShading />
+        </mesh>
+      </Distance>
+      <Distance min={far} max={Infinity}>
+        <mesh>
+          <boxGeometry args={[3.2, 3.2, 3.2]} />
+          <meshStandardMaterial color="#4e79a7" wireframe />
+        </mesh>
+      </Distance>
+    </Bounds>
+  ),
+};
 
-    return (
-      <>
-        <Wellbore id={wellboreId}>
-          <WellboreBounds id={wellboreId}>
-            <BasicTrajectory />
-            <Distance min={0} max={3000}>
-              <TubeTrajectory radius={0.5} />
-            </Distance>
-            <Distance {...args} onDemand>
-              <Casings sizeMultiplier={5} shoeFactor={1.3} />
-            </Distance>
-          </WellboreBounds>
-        </Wellbore>
-      </>
-    );
+/**
+ * A real-world use case: swap a full-detail `Tanker` for a low-poly version by camera
+ * distance. Both share one `Bounds` sized to the hull; the high-detail hull +
+ * superstructure shows within `lodDistance`, the cheap low-poly hull beyond it. Zoom out
+ * to see the swap (rendered without an `<Ocean>`, so the vessel is static).
+ */
+export const TankerLOD: Story = {
+  name: 'Tanker LOD (real-world)',
+  args: { lodDistance: 200 },
+  argTypes: {
+    lodDistance: {
+      control: { type: 'range', min: 50, max: 800, step: 10 },
+      description:
+        'Camera distance (m) at which the tanker swaps between high- and low-detail geometry.',
+      table: { category: 'LOD' },
+    },
   },
+  parameters: { scale: 10, cameraPosition: [120, 120, 220] },
+  render: ({ lodDistance }) => (
+    <Bounds sphere={{ center: [0, 0, 0], radius: 130 }}>
+      <Distance min={0} max={lodDistance}>
+        <Tanker
+          lengthSegments={128}
+          profileSegments={16}
+          details="high"
+          buoyancy={false}
+          contactFoam={false}
+        />
+      </Distance>
+      <Distance min={lodDistance} max={Infinity}>
+        <Tanker
+          lengthSegments={12}
+          profileSegments={4}
+          details="low"
+          buoyancy={false}
+          contactFoam={false}
+        />
+      </Distance>
+    </Bounds>
+  ),
 };

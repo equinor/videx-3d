@@ -1,4 +1,5 @@
 import {
+  Color,
   FloatType,
   InstancedMesh,
   NearestFilter,
@@ -13,6 +14,7 @@ import {
 } from 'three';
 import { LAYERS } from '../../layers/layers';
 import { normalizedDeviceToScreen, Vec2, Vec3 } from '../../sdk';
+import { RenderableObject } from './EventEmitter';
 import { Emitter, Listener } from './EventEmitterContext';
 import { PickingMaterial } from './picking-material';
 
@@ -40,8 +42,36 @@ export class PickingHelper {
   private _radius: number;
   private _pbo: WebGLRenderTarget;
   private _buffer: Float32Array;
+  private _prevClearColor: Color = new Color();
 
   private _material = new PickingMaterial();
+
+  /**
+   * Dedicated camera used for the picking render so the shared scene camera is
+   * never mutated. `setViewOffset` rebuilds a camera's projection (it remaps the
+   * frustum to the tiny patch under the cursor), and that mutation would clobber
+   * any external modification of the real camera's projection — e.g. the
+   * sub-pixel jitter a TAA pass bakes in. Each pick this camera is `copy()`d from
+   * the real camera (which faithfully mirrors `matrixWorld`,
+   * `matrixWorldInverse`, the projection and all intrinsics) and the view offset
+   * is applied here instead. `matrixWorldAutoUpdate` is disabled so the renderer
+   * uses the copied world matrix verbatim rather than recomputing it.
+   */
+  private _camera = new PerspectiveCamera();
+
+  private _listeners = new Map<number, Listener>();
+  private _emitters = new Map<number, Emitter>();
+
+  // Range-based object map rebuilt every pick. Each emitter occupies a
+  // contiguous range of flat ids [start, start + count) so we store a single
+  // entry per emitter instead of one per instance. The shader emits
+  // `start + gl_InstanceID`, so the per-pixel instance index is recovered as
+  // `flatId - start`. The arrays are reused across picks (only the active
+  // length changes) to avoid per-frame allocation.
+  private _mapStarts: number[] = [];
+  private _mapObjectIds: number[] = [];
+  private _objectMapLength = 0;
+  private _objectMapCount = 0;
 
   constructor(options = {}) {
     const { radius } = { ...defaults, ...options };
@@ -61,6 +91,11 @@ export class PickingHelper {
     });
 
     this._buffer = new Float32Array(this._size * this._size * 4);
+
+    // The picking camera's world matrix is copied from the real camera each pick;
+    // disabling auto-update stops the renderer recomputing it from
+    // position/quaternion/scale (which the copy does not set).
+    this._camera.matrixWorldAutoUpdate = false;
   }
 
   private traverseObject = (
@@ -84,8 +119,7 @@ export class PickingHelper {
             : 3;
 
         if (instanceCount > 0) {
-          let emitter = this._material.emitters.get(object.id);
-
+          let emitter = this._emitters.get(object.id);
           if (!emitter) {
             emitter = {
               source: object,
@@ -95,7 +129,7 @@ export class PickingHelper {
               instanced,
               instanceCount,
             };
-            this._material.emitters.set(object.id, emitter);
+            this._emitters.set(object.id, emitter);
           } else {
             // The emitter may already be added in a previous update, but we should still
             // update its references, in case an object id is re-used by three js for another object
@@ -111,9 +145,18 @@ export class PickingHelper {
               emitter.listener = rootId;
             }
           }
+          const baseId = this._objectMapCount;
+          const index = this._objectMapLength;
+          this._mapStarts[index] = baseId;
+          this._mapObjectIds[index] = object.id;
+          this._objectMapLength = index + 1;
+          this._objectMapCount = baseId + emitter.instanceCount;
+          // assign an emitter id to the object and activate emitter layer
+          object.userData.__emitterID = baseId + 1;
           object.layers.enable(LAYERS.EMITTER);
         } else {
           object.layers.disable(LAYERS.EMITTER);
+          delete object.userData.__emitterID;
         }
       }
 
@@ -124,7 +167,9 @@ export class PickingHelper {
   };
 
   updateListeners = () => {
-    this._material.listeners.forEach(listener => {
+    this._objectMapLength = 0;
+    this._objectMapCount = 0;
+    this._listeners.forEach(listener => {
       this.traverseObject(
         listener.object,
         listener.object.id,
@@ -135,22 +180,23 @@ export class PickingHelper {
   };
 
   addListener = (listener: Listener) => {
-    this._material.listeners.set(listener.object.id, listener);
+    this._listeners.set(listener.object.id, listener);
   };
 
   getListener = (id: number) => {
-    return this._material.listeners.get(id);
+    return this._listeners.get(id);
   };
 
   removeListener = (id: number) => {
-    const listener = this._material.listeners.get(id);
+    const listener = this._listeners.get(id);
     if (listener) {
       const { object } = listener;
       // remove listener and associated emitters
-      this._material.listeners.delete(id);
+      this._listeners.delete(id);
       object.traverse(obj => {
         obj.layers.disable(LAYERS.EMITTER);
-        this._material.emitters.delete(obj.id);
+        delete obj.userData.__emitterID;
+        this._emitters.delete(obj.id);
       });
     }
   };
@@ -169,39 +215,65 @@ export class PickingHelper {
     const x = screen[0] - this._radius;
     const y = screen[1] - this._radius;
 
-    const prevLayers = camera.layers.mask;
     const prevSceneBackground = scene.background;
-    const prevClearColor = renderer.clearColor;
+
+    renderer.getClearColor(this._prevClearColor);
     const prevClearAlpha = renderer.getClearAlpha();
     scene.background = null;
     scene.overrideMaterial = this._material;
 
-    // set the view offset to represent just the patch we need to render under the mouse
-    camera.setViewOffset(width, height, x, y, this._size, this._size);
+    // Mirror the real camera onto the dedicated picking camera: copy() brings
+    // across matrixWorld, matrixWorldInverse, the projection and all intrinsics,
+    // so the picking render matches what is on screen (including near/far, which
+    // keeps logarithmic-depth precision consistent). The real camera is never
+    // touched. recursive=false: we don't need the camera's children.
+    const pickCamera = this._camera;
+    pickCamera.copy(camera, false);
+    pickCamera.layers.set(LAYERS.EMITTER);
 
-    camera.layers.disableAll();
-    camera.layers.set(LAYERS.EMITTER);
+    // set the view offset to represent just the patch we need to render under the
+    // mouse (rebuilds the picking camera's projection only).
+    pickCamera.setViewOffset(width, height, x, y, this._size, this._size);
 
-    // create a mapping array of emitter instance id => emitter for this render pass
-    const objectMap = new Array<number>();
-    this._material.currentObjectMap = objectMap;
+    // snapshot the active object map extent for the deferred readback (the
+    // arrays are not mutated again until this pick resolves and releases the
+    // EventEmitter's busy guard)
+    const mapLength = this._objectMapLength;
+    const mapTotal = this._objectMapCount;
+
+    // handle listeners with custom emitter material
+    const postUpdates: (() => void)[] = [];
+    this._listeners.forEach(listener => {
+      if (listener.customMaterial) {
+        const customMaterial = listener.customMaterial;
+        listener.object.traverse((obj: Object3D) => {
+          if (obj.layers.isEnabled(LAYERS.EMITTER)) {
+            const robj = obj as RenderableObject;
+            if (robj.material) {
+              const originalMaterial = robj.material;
+              robj.material = customMaterial;
+              postUpdates.push(() => {
+                robj.material = originalMaterial;
+              });
+            }
+          }
+        });
+      }
+    });
 
     renderer.setRenderTarget(this._pbo);
     renderer.setClearColor(0x000000, 0);
     renderer.clear();
-    renderer.render(scene, camera);
-
-    // clear the view offset so rendering returns to normal
-    camera.clearViewOffset();
-    camera.layers.mask = prevLayers;
+    renderer.render(scene, pickCamera);
 
     scene.background = prevSceneBackground;
 
-    this._material.currentObjectMap = null;
-
     scene.overrideMaterial = null;
-    renderer.clearColor = prevClearColor;
-    renderer.setClearAlpha(prevClearAlpha);
+
+    // restore original material for emitter objects associated with listeners with custom material
+    postUpdates.forEach(callback => callback());
+
+    renderer.setClearColor(this._prevClearColor, prevClearAlpha);
     renderer.setRenderTarget(null);
 
     return renderer
@@ -213,12 +285,36 @@ export class PickingHelper {
         this._size, // height
         this._buffer,
       )
-      .then(buffer => this.pick(buffer as Float32Array, objectMap, point));
+      .then(buffer =>
+        this.pick(buffer as Float32Array, mapLength, mapTotal, point),
+      );
+  }
+
+  /**
+   * Locate the emitter owning a flat id via binary search. Emitter ranges are
+   * contiguous and sorted by start, so the owner is the rightmost entry whose
+   * start is `<= flatId`.
+   */
+  private findEmitterIndex(flatId: number, mapLength: number): number {
+    let lo = 0;
+    let hi = mapLength - 1;
+    let found = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (this._mapStarts[mid] <= flatId) {
+        found = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return found;
   }
 
   private pick(
     buffer: Float32Array,
-    objectMap: Array<number>,
+    mapLength: number,
+    mapTotal: number,
     point: Vec2,
   ): PickResult {
     const match: {
@@ -236,7 +332,7 @@ export class PickingHelper {
     let oy = 0;
     let lsqr = 0;
     let emitterId = 0;
-    let mapIndex = 0;
+    let emitterIndex = 0;
     let objectId = 0;
     let instanceIndex = 0;
     let emitter: Emitter | undefined = undefined;
@@ -245,24 +341,26 @@ export class PickingHelper {
     for (let r = this._size - 1; r >= 0; r--) {
       for (let c = 0; c < this._size; c++, i += 4) {
         emitterId = buffer[i] - 1;
-        if (emitterId >= 0 && emitterId < objectMap.length - 1) {
-          mapIndex = emitterId * 2;
-          objectId = objectMap[mapIndex];
-          instanceIndex = objectMap[mapIndex + 1];
+        if (emitterId >= 0 && emitterId < mapTotal) {
+          emitterIndex = this.findEmitterIndex(emitterId, mapLength);
+          if (emitterIndex >= 0) {
+            objectId = this._mapObjectIds[emitterIndex];
+            instanceIndex = emitterId - this._mapStarts[emitterIndex];
 
-          emitter = this._material.emitters.get(objectId);
-          if (emitter) {
-            ox = c - this._radius;
-            oy = r - this._radius;
-            lsqr = ox ** 2 + oy ** 2 - emitter.threshold ** 2;
+            emitter = this._emitters.get(objectId);
+            if (emitter) {
+              ox = c - this._radius;
+              oy = r - this._radius;
+              lsqr = ox ** 2 + oy ** 2 - emitter.threshold ** 2;
 
-            if (!match.object || match.lsqr > lsqr) {
-              match.object = {
-                emitter,
-                index: instanceIndex,
-              };
-              match.lsqr = lsqr;
-              match.bufferIndex = i;
+              if (!match.object || match.lsqr > lsqr) {
+                match.object = {
+                  emitter,
+                  index: instanceIndex,
+                };
+                match.lsqr = lsqr;
+                match.bufferIndex = i;
+              }
             }
           }
         }
@@ -284,10 +382,16 @@ export class PickingHelper {
 
   dispose() {
     this._pbo.dispose();
-    const listeners = Array.from(this._material.listeners.values());
+    const listeners = Array.from(this._listeners.values());
     this._material.dispose();
     listeners.forEach(listener =>
-      listener.object.traverse(obj => obj.layers.disable(LAYERS.EMITTER)),
+      listener.object.traverse(obj => {
+        obj.layers.disable(LAYERS.EMITTER);
+        delete obj.userData.__emitterID;
+      }),
     );
+
+    this._listeners.clear();
+    this._emitters.clear();
   }
 }
