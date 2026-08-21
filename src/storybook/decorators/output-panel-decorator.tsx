@@ -19,4 +19,5 @@ export const OutputPanelDecorator = createOutputPanelDecorator({
   offset: [10, 10],
   width: 300,
   height: 400,
+  fontSize: 12,
 });

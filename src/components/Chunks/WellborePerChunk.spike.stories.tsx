@@ -31,6 +31,7 @@ import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
 import { createOutputPanelDecorator } from '../../storybook/decorators/output-panel-decorator';
+import { useChunkProgressPanel } from '../../storybook/hooks/useChunkProgressPanel';
 import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
@@ -38,11 +39,7 @@ import { useOutputPanelState } from '../Html/OutputPanel/output-panel-state';
 import { useSurfaceMaterial } from '../Surfaces/useSurfaceMaterial';
 import { UtmArea } from '../UtmArea';
 import { Chunk } from './Chunk';
-import {
-  ChunkResolveOptions,
-  ChunkStackProgress,
-  DEFAULT_CHUNK_MAX_FILL,
-} from './chunk-defs';
+import { ChunkResolveOptions, DEFAULT_CHUNK_MAX_FILL } from './chunk-defs';
 import { ChunkStack } from './ChunkStack';
 import { CutoutSource, WellboreOutlineMode } from './cutout';
 import { ChunkInferenceStyle } from './inference-material';
@@ -366,25 +363,7 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
   );
 
   // Stack-level progress — what a host would drive a busy indicator / bar from.
-  // The story runs INSIDE the R3F canvas, so it cannot render DOM itself; it writes
-  // to the OutputPanel's global store and the panel (added as the outermost
-  // decorator) renders outside the canvas.
-  const onProgress = useCallback((p: ChunkStackProgress) => {
-    const done = p.building === 0;
-    useOutputPanelState.getState().set(state => ({
-      groups: {
-        ...state.groups,
-        build: {
-          label: done ? 'Chunks built' : 'Building chunks',
-          value: done
-            ? `${p.total}`
-            : `${p.completed}/${p.total}  ${Math.round(100 * p.fraction)}%`,
-          color: done ? '#59a14f' : '#f28e2c',
-          order: 0,
-        },
-      },
-    }));
-  }, []);
+  const onProgress = useChunkProgressPanel();
 
   // Selected wellbore trajectories (same scene mapping the outlines derive from).
   const [wellLines, setWellLines] = useState<Line[]>([]);
@@ -787,8 +766,8 @@ export const Default: Story = {
     createOutputPanelDecorator({
       origin: 'top-left',
       offset: [10, 10],
-      width: 190,
-      height: 62,
+      width: 160,
+      fontSize: 11,
       opacity: 0.75,
     }),
   ],

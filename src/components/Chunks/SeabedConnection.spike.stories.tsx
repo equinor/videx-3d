@@ -1,6 +1,6 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useCallback, useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 import { OITRenderPass, Pass, RenderPass } from '../../main';
 import { OutputPass } from '../../rendering/passes/OutputPass';
 import { RenderingPipeline } from '../../rendering/RenderingPipeline';
@@ -26,6 +26,7 @@ import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
 import { createOutputPanelDecorator } from '../../storybook/decorators/output-panel-decorator';
+import { useChunkProgressPanel } from '../../storybook/hooks/useChunkProgressPanel';
 import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
@@ -33,12 +34,7 @@ import { UtmArea, UtmPosition } from '../UtmArea';
 import { BasicTrajectory } from '../Wellbores/BasicTrajectory/BasicTrajectory';
 import { Wellbore } from '../Wellbores/Wellbore/Wellbore';
 import { Chunk } from './Chunk';
-import {
-  ChunkLayer,
-  ChunkResolveOptions,
-  ChunkStackProgress,
-  StackWater,
-} from './chunk-defs';
+import { ChunkLayer, ChunkResolveOptions, StackWater } from './chunk-defs';
 import { ChunkStack } from './ChunkStack';
 import { WellboreOutlineMode } from './cutout';
 import { useOutputPanelState } from '../Html/OutputPanel/output-panel-state';
@@ -353,42 +349,8 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
     return [{ surface: basement, material: '#6b6b6b', fill: '#4a4a4a' }];
   }, [basement]);
 
-  // Stack progress, written to the OutputPanel's global store (the story runs
-  // INSIDE the canvas, so it cannot render DOM itself). Cold loads here are
-  // dominated by fetching one JSON grid per surface, which reads as a hang
-  // without this.
-  //
-  // ⭐ The REBUILD COUNT is the part worth having: a rebuild that finishes
-  // quickly flashes past the 'building' state, so the counter is what answers
-  // "did changing that control actually rebuild anything?".
-  const builds = useRef(0);
-  const busy = useRef(false);
-  const onProgress = useCallback((p: ChunkStackProgress) => {
-    const done = p.building === 0 && p.total > 0;
-    if (!done) busy.current = true;
-    else if (busy.current) {
-      busy.current = false;
-      builds.current += 1;
-    }
-    useOutputPanelState.getState().set(state => ({
-      groups: {
-        ...state.groups,
-        build: {
-          label: done ? 'Chunks built' : 'Building chunks',
-          value: done
-            ? `${p.total}`
-            : `${p.completed}/${p.total}  ${Math.round(100 * p.fraction)}%`,
-          color: done ? '#59a14f' : '#f28e2c',
-          order: 0,
-        },
-        rebuilds: {
-          label: 'Rebuilds',
-          value: `${builds.current}`,
-          order: 1,
-        },
-      },
-    }));
-  }, []);
+  // Stack progress, written to the OutputPanel's global store.
+  const onProgress = useChunkProgressPanel();
 
   if (!field || !seabed || !basement) return null;
 
@@ -643,8 +605,8 @@ export const Default: Story = {
     createOutputPanelDecorator({
       origin: 'top-left',
       offset: [10, 10],
-      width: 190,
-      height: 80,
+      width: 160,
+      fontSize: 11,
       opacity: 0.75,
     }),
   ],

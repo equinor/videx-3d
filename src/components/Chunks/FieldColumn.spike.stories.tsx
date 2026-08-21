@@ -53,6 +53,7 @@ import { GeneratorsProviderDecorator } from '../../storybook/decorators/generato
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
 import { createOutputPanelDecorator } from '../../storybook/decorators/output-panel-decorator';
 import { WellMapDecorator } from '../../storybook/decorators/well-map-decorator';
+import { useChunkProgressPanel } from '../../storybook/hooks/useChunkProgressPanel';
 import { useFieldOutline } from '../../storybook/hooks/useFieldOutline';
 import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
@@ -75,7 +76,6 @@ import {
   ChunkLayer,
   ChunkResolveOptions,
   ChunkSection,
-  ChunkStackProgress,
   StackImmersion,
   StackWater,
 } from './chunk-defs';
@@ -913,41 +913,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     [names],
   );
 
-  // Stack progress, written to the OutputPanel's global store (the story runs
-  // INSIDE the canvas, so it cannot render DOM itself). Cold loads here are
-  // dominated by fetching one grid per surface, which reads as a hang without it.
-  //
-  // ⭐ The REBUILD COUNT is the part worth having: a rebuild that finishes
-  // quickly flashes past the 'building' state, so the counter is what answers
-  // "did changing that control actually rebuild anything?".
-  const builds = useRef(0);
-  const busy = useRef(false);
-  const onProgress = useCallback((p: ChunkStackProgress) => {
-    const done = p.building === 0 && p.total > 0;
-    if (!done) busy.current = true;
-    else if (busy.current) {
-      busy.current = false;
-      builds.current += 1;
-    }
-    useOutputPanelState.getState().set(state => ({
-      groups: {
-        ...state.groups,
-        build: {
-          label: done ? 'Chunks built' : 'Building chunks',
-          value: done
-            ? `${p.total}`
-            : `${p.completed}/${p.total}  ${Math.round(100 * p.fraction)}%`,
-          color: done ? '#59a14f' : '#f28e2c',
-          order: 0,
-        },
-        rebuilds: {
-          label: 'Rebuilds',
-          value: `${builds.current}`,
-          order: 1,
-        },
-      },
-    }));
-  }, []);
+  const onProgress = useChunkProgressPanel();
 
   if (!outline || layers.length === 0) return null;
 
@@ -1574,8 +1540,8 @@ export const Default: Story = {
     createOutputPanelDecorator({
       origin: 'top-right',
       offset: [10, 10],
-      width: 190,
-      height: 80,
+      width: 160,
+      fontSize: 11,
       opacity: 0.75,
     }),
   ],
