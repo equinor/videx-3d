@@ -351,6 +351,38 @@ the two cannot drift.
 > ⭐ The interval rule is `kept(i+1) ∩ present(i)`, **not** `kept(i) ∩ kept(i+1)`.
 > A layer dropped for coinciding with `i−1` still bounds a real volume below.
 
+### Caps: the split vertex layout
+
+Every layer's cap is the SAME tessellation at a different set of heights, so
+`buildStackGeometries` factors the two apart instead of storing a full position per
+cap:
+
+| Attribute | Meaning | Shared across layers? |
+|-----------|---------|-----------------------|
+| `xz` | node plan position (`vec2`) | **yes — one `BufferAttribute` for the whole stack** |
+| `y` | this layer's height at each node (`float`) | no — and it IS the height array, shared by reference with the section source so neither duplicates it |
+| `normal` | packed, assigned explicitly (a zero normal marks a collapsed vertex) | no |
+| `inferred` | the seal's taper weight, when present | no |
+| index | the triangle list | shared by the layers that keep the full set |
+
+The material reconstructs the position in the shader as `position + vec3(xz.x, y,
+xz.y)` — `position` defaults to 0 on a cap and `xz` / `y` to 0 on a wall, so one
+shader serves both with no variant. A cap stores **no `position`**: it is assembled
+into a reused scratch array only to compute the normals and the bounding volumes,
+then deleted. And **no `uv`**: procedural detail is anchored in world space and
+contacts / bathymetry index by object XZ, so nothing reads one.
+
+> ⭐ **The saving is the SHARING, not the split.** At field scale the vertex budget
+> (~19 M on a 35-layer column) is almost entirely caps, so collapsing 35 copies of
+> `xz` to one — and dropping per-cap `position` and `uv` — is where the memory goes
+> (~35 %). The shared `xz` and the shared index must be **disposed together** and
+> **deduped in the worker transfer list**, exactly as the index alone was before.
+>
+> ⚠️ **Walls are deliberately left out.** An interval's wall is the boundary ring of
+> its OWN triangle set — unique per interval, nothing to share — and `xz + y` is the
+> same three floats as `position`, so the split would save nothing there. Walls are
+> rim rings anyway, a rounding error next to the caps.
+
 ### Walls
 
 `buildStackWalls` traces the boundary of each interval's own triangle set

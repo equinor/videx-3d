@@ -213,13 +213,12 @@ const shader = {
  * `shaderLib/procedural-normal.glsl`, selected by a {@link ChunkDetail} preset and
  * OFF by default.
  *
- * ⭐ The detail is anchored in WORLD space, not in the geometry's UVs. A chunk cap
- * carries a per-layer GRID uv (that is what lets `SurfaceMaterial` be used as a cap
- * material) and a wall carries a metric one, so neither is a frame a pattern could
- * be shared across — and a texture would need a repeat/scale chosen per surface,
- * which is the thing this replaces. World anchoring also means a cap and the wall
- * below it meet with the pattern continuous, and that a vertical exaggeration does
- * not stretch it.
+ * ⭐ The detail is anchored in WORLD space, not in the geometry's UVs. A cap has no
+ * uv of its own (its position is a shared `xz` plus a per-layer `y`) and a wall's is
+ * metric, so neither is a frame a pattern could be shared across — and a texture
+ * would need a repeat/scale chosen per surface, which is the thing this replaces.
+ * World anchoring also means a cap and the wall below it meet with the pattern
+ * continuous, and that a vertical exaggeration does not stretch it.
  *
  * ⚠️ `detail` and `wall` are read at CONSTRUCTION: they set shader defines, so
  * changing them means a new material. That is how the appearance layer already

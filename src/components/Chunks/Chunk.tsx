@@ -65,6 +65,52 @@ const STALL_TIMEOUT_MS = 15000;
 const appearanceId = (value: ChunkLayer['material'] | ChunkLayer['fill']) =>
   String(value);
 
+type ChunkLayerKeyRole = {
+  /** keys the GEOMETRY: a change here rebuilds the chunk */
+  build?: (layer: ChunkLayer) => string;
+  /** keys the MATERIALS: a change here only re-runs `ChunkMeshes` */
+  appearance?: (layer: ChunkLayer) => string;
+};
+
+// ⭐ SINGLE SOURCE OF TRUTH for the two content keys built below. The `satisfies`
+// makes TypeScript error the moment a `ChunkLayer` field is added without deciding
+// what it affects — the "forgot to key it" bug this pair has shipped more than once
+// (a field missing from the build key silently does nothing; from the appearance
+// key it freezes at its last-built value).
+const CHUNK_LAYER_KEY = {
+  surface: { build: l => l.surface?.id ?? '' },
+  depth: { build: l => `${l.depth ?? ''}` },
+  offset: { build: l => `${l.offset ?? ''}` },
+  // A relief is a union of shapes with fields of their own; serialise it whole.
+  relief: { build: l => (l.relief ? JSON.stringify(l.relief) : '') },
+  // Presence is geometry (the wall exists or not); the colour is appearance.
+  fill: {
+    build: l => (chunkLayerFill(l) ? '1' : '0'),
+    appearance: l => appearanceId(l.fill),
+  },
+  material: { appearance: l => appearanceId(l.material) },
+  detail: { appearance: l => chunkDetailKey(l.detail) },
+  opacity: { appearance: l => `${l.opacity ?? ''}` },
+  section: { appearance: l => (l.section === false ? '0' : '1') },
+  contacts: {
+    appearance: l =>
+      l.contacts === false ? 'none' : (l.contacts?.join('+') ?? ''),
+  },
+} satisfies Record<keyof ChunkLayer, ChunkLayerKeyRole>;
+
+const CHUNK_LAYER_KEY_ROLES: ChunkLayerKeyRole[] =
+  Object.values(CHUNK_LAYER_KEY);
+
+const chunkLayersBuildKey = (layers: ChunkLayer[]) =>
+  layers
+    .map(l => CHUNK_LAYER_KEY_ROLES.map(r => r.build?.(l) ?? '').join('/'))
+    .join(',');
+
+const chunkLayersAppearanceKey = (layers: ChunkLayer[]) =>
+  layers
+    .map(l => CHUNK_LAYER_KEY_ROLES.map(r => r.appearance?.(l) ?? '').join('/'))
+    .join(',');
+
 /**
  * {@link Chunk} props.
  * @expand
@@ -233,30 +279,14 @@ export const Chunk = ({
   //     the content that actually affects geometry — the surfaces and which
   //     intervals are filled — is what stops an opacity or material change from
   //     rebuilding it. Materials are appearance and never reach the spec. ---------
-  const layersKey = layers
-    .map(l => {
-      const base = l.surface
-        ? l.surface.id
-        : // Serialised whole: a relief is a union of shapes with fields of their
-          // own, and a hand-written list of them goes stale silently.
-          `@${l.depth ?? ''}/${l.offset ?? ''}/${l.relief ? JSON.stringify(l.relief) : ''}`;
-      return `${base}:${chunkLayerFill(l) ? 1 : 0}`;
-    })
-    .join(',');
+  const layersKey = chunkLayersBuildKey(layers);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
   const stableLayers = useMemo(() => layers, [layersKey]);
 
-  // The same array for the APPEARANCE layer, keyed on the materials as well.
-  // `layersKey` cannot see them by design, so reusing it there froze the materials
-  // at whatever they were when the geometry last changed — a caller swapping a
-  // colour for a `SurfaceMaterial` (or a hook returning one a render later) never
-  // reached `ChunkMeshes`.
-  const appearanceKey = layers
-    .map(
-      l =>
-        `${appearanceId(l.material)}|${appearanceId(l.fill)}|${l.opacity ?? ''}|${chunkDetailKey(l.detail)}|${l.section === false ? 0 : 1}`,
-    )
-    .join(',');
+  // The same array for the APPEARANCE layer. `layersKey` cannot see the materials
+  // by design, so reusing it there froze them at whatever they were when the
+  // geometry last changed.
+  const appearanceKey = chunkLayersAppearanceKey(layers);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
   const appearanceLayers = useMemo(() => layers, [layersKey, appearanceKey]);
 

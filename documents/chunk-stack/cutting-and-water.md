@@ -199,9 +199,8 @@ thread. Two fixes:
 Measured: an animated section went from 250.3 ms/frame to 31.1 ms, and a still
 section costs the same as no section at all.
 
-The face is drawn with the **interval's own fill material**, so per-layer opacity,
-detail and a caller's own `Material` all carry onto the section — with the cut
-switched off in that material (see
+The face is drawn with the **interval's own fill material**, so per-layer opacity
+and detail carry onto the section — with the cut switched off in that material (see
 [appearance.md](./appearance.md#which-mesh-gets-which-material)).
 
 ---
@@ -254,9 +253,6 @@ Two ways the cover can go, so two materials:
 > patch and the covering layer are mutually exclusive **by construction**, with no
 > tolerance to tune. And negating the disabled value `(0,0,0,-1)` gives `(0,0,0,1)`,
 > which draws nothing — exactly right when nothing has been cut away.
-
-⚠️ A caller-supplied `Material` cannot be given the inverse uniform, so such a
-layer keeps its holes.
 
 ---
 

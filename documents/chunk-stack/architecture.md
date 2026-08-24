@@ -169,33 +169,37 @@ The build must not key on that identity. Every such input is therefore reduced t
 
 ```ts
 // Chunk.tsx — the BUILD key: surfaces and which intervals are filled
-const layersKey = layers
-  .map(l => {
-    const base = l.surface
-      ? l.surface.id
-      : `@${l.depth ?? ''}/${l.offset ?? ''}/${l.relief ? JSON.stringify(l.relief) : ''}`;
-    return `${base}:${chunkLayerFill(l) ? 1 : 0}`;
-  })
-  .join(',');
-// eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
-const stableLayers = useMemo(() => layers, [layersKey]);
+type ChunkLayerKeyRole = {
+  build?: (l: ChunkLayer) => string;       // keys the GEOMETRY (rebuilds the chunk)
+  appearance?: (l: ChunkLayer) => string;  // keys the MATERIALS (re-runs ChunkMeshes)
+};
 
-// …and the APPEARANCE key, which layersKey cannot see by design
-const appearanceKey = layers
-  .map(l => `${appearanceId(l.material)}|${appearanceId(l.fill)}|${l.opacity ?? ''}|${chunkDetailKey(l.detail)}|${l.section === false ? 0 : 1}`)
-  .join(',');
-const appearanceLayers = useMemo(() => layers, [layersKey, appearanceKey]);
+// One role per ChunkLayer field, in ONE place. `fill` has both: its presence is
+// geometry, its colour is appearance. `relief` is serialised whole (a union of
+// shapes; a field-by-field list goes stale the moment the union grows).
+const CHUNK_LAYER_KEY = {
+  surface: { build: l => l.surface?.id ?? '' },
+  depth: { build: l => `${l.depth ?? ''}` },
+  offset: { build: l => `${l.offset ?? ''}` },
+  relief: { build: l => (l.relief ? JSON.stringify(l.relief) : '') },
+  fill: { build: l => (chunkLayerFill(l) ? '1' : '0'), appearance: l => appearanceId(l.fill) },
+  material: { appearance: l => appearanceId(l.material) },
+  detail: { appearance: l => chunkDetailKey(l.detail) },
+  opacity: { appearance: l => `${l.opacity ?? ''}` },
+  section: { appearance: l => (l.section === false ? '0' : '1') },
+  contacts: { appearance: l => (l.contacts === false ? 'none' : (l.contacts?.join('+') ?? '')) },
+} satisfies Record<keyof ChunkLayer, ChunkLayerKeyRole>;
+
+const layersKey = chunkLayersBuildKey(layers);          // → stableLayers
+const appearanceKey = chunkLayersAppearanceKey(layers); // → appearanceLayers
 ```
 
-> ⚠️⚠️ **Neither key is derived. Both are hand-written.**
->
-> Any new **build** field on `ChunkLayer` must be added to `layersKey`, and any new
-> **appearance** field to `appearanceKey`. Forget the first and toggling the field
-> silently does nothing; forget the second and the value freezes at whatever it was
-> when the geometry last changed. Both have shipped as bugs.
->
-> Note `relief` is serialised **whole** rather than field-by-field: it is a union of
-> shapes, and a hand-written field list goes stale the moment the union grows.
+> ⭐ **The keys are DERIVED from one classification.** `satisfies Record<keyof
+> ChunkLayer, …>` makes TypeScript error the moment a field is added without a
+> `build` / `appearance` role — so "forget to key it" becomes a **compile** error
+> rather than the silent runtime bug it shipped as twice (most recently `contacts`,
+> which was in neither key). Forget a build role and toggling the field does
+> nothing; forget an appearance role and its value freezes at the last build.
 
 The same idiom appears on `ChunkStack` for `carrier`, `water`, `resolve` and
 `contacts`. Two of them are worth calling out:
@@ -266,8 +270,7 @@ a different identity rebuilds the whole column. Declare `resolve` on the
 | chunk geometries (caps, walls) | the generator, unpacked in `Chunk` | `Chunk`, in a `[chunk]` cleanup effect |
 | patch geometries (peel/section) | `ChunkMeshes` | `ChunkMeshes` — ⚠️ they share the cap's attribute buffers |
 | cut-face geometries | `useChunkSection` / `useChunkFenceFace` | the same hooks |
-| materials built from a **colour** | `ChunkMeshes` | `ChunkMeshes` (`materials.owned`) |
-| a caller-supplied **`Material`** | the caller | **the caller** — passed through untouched, never disposed here |
+| chunk materials (caps, walls, faces) | `ChunkMeshes` | `ChunkMeshes` (`materials.owned`) |
 | inference overlays | `ChunkMeshes` | `ChunkMeshes` (`overlays.built`) |
 | sea lid / body geometry | `ChunkStack` | `ChunkStack` |
 | ocean materials | `useStackWater` | `useStackWater` |
@@ -276,11 +279,11 @@ a different identity rebuilds the whole column. Declare `resolve` on the
 
 Two traps worth remembering:
 
-> ⚠️ **The shared index buffer.** `buildStackGeometries` shares one index
-> `BufferAttribute` across the layers that keep the full triangle set — duplicating
-> it would cost more than all the vertex data. So a stack's layers must be disposed
-> **together**, and the worker transfer list must be deduped (`packSurfaceChunk`
-> returns the same `ArrayBuffer` several times).
+> ⚠️ **The shared buffers.** `buildStackGeometries` shares one `xz`
+> `BufferAttribute` (the plan positions) AND one index `BufferAttribute` across the
+> layers — duplicating either would cost more than all the per-layer height data.
+> So a stack's layers must be disposed **together**, and the worker transfer list
+> must be deduped (`packSurfaceChunk` returns the same `ArrayBuffer` several times).
 
 > ⚠️ **Never attach the same property by two mechanisms.** Walls always use the
 > `material` **prop** (single or array), never a `<primitive attach="material">`

@@ -187,8 +187,9 @@ stays consistent between layers and between fields.
 > plane the face most nearly lies in — XZ for a cap, ZY or XY for a wall — **not**
 > the geometry `uv`.
 
-Two reasons. A cap carries the per-layer *grid* UV that `SurfaceMaterial` needs, and
-a wall carries a *metric* one (arc length / world Y); neither is a pattern space.
+Two reasons. A cap has no `uv` of its own (its position is a shared `xz` plus a
+per-layer `y`), and a wall's is *metric* (arc length / world Y); neither is a pattern
+space.
 And world anchoring means a feature keeps its size wherever it is drawn, so a cap
 and its wall are continuous across the edge and the per-surface repeat/scale problem
 disappears. On walls, `grain.bedding` mixes unit-relative `wallV` with world Y so
