@@ -11,6 +11,7 @@ import {
   StackSectionTarget,
 } from '../../sdk';
 import { ChunkLayer, ChunkSectionState } from './chunk-defs';
+import { registerSectionTargets } from './chunk-resources';
 
 /** One interval's cut face, ready to be drawn with that interval's own material. */
 export type ChunkSectionFace = {
@@ -91,7 +92,12 @@ export function useChunkSection(
   }, [source, section, layers]);
 
   useEffect(() => {
-    return () => faces?.forEach(face => face.geometry.dispose());
+    if (!faces) return;
+    const release = registerSectionTargets(faces);
+    return () => {
+      release();
+      faces.forEach(face => face.geometry.dispose());
+    };
   }, [faces]);
 
   const plane = useMemo<StackSectionPlane>(

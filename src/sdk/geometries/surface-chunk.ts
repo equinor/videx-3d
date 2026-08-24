@@ -23,15 +23,15 @@ export type SurfaceChunkMesh = {
   /** index into the caller's layer list (for a wall: the layer ABOVE the interval) */
   layer: number;
   /**
-   * A cap's index as it would be if nothing ABOVE this layer were drawn (see
+   * The triangles this cap gave up because a layer ABOVE covered them (see
    * `StackCollapseOptions.peelable`). Present only where it restores something.
    *
-   * ⭐ Shares `geometry`'s attributes — it is an index and nothing more. Draw it
-   * INSTEAD OF nothing wherever the layer above has been hidden (peeled) or cut
+   * ⭐ Shares `geometry`'s attributes — it is an index and nothing more. Draw it IN
+   * ADDITION to the cap wherever the layer above has been hidden (peeled) or cut
    * away (sectioned), or the fragments the collapse dropped on the strength of
    * that layer's cover become holes.
    */
-  peelIndex?: Uint32Array;
+  patchIndex?: Uint32Array;
   /**
    * This surface is the ceiling of a void: it faces UP, so it shows the BASE of
    * the interval above rather than the cap of `layer`, and should take that
@@ -184,6 +184,16 @@ export type SurfaceChunkDiagnostics = {
   stackLayers: number;
   /** nodes of the common reference grid */
   referenceNodes: number;
+  /**
+   * Bytes the shared column KEEPS resident between builds — one channel per layer
+   * over the whole reference grid, plus the masks, the truncation masks and the
+   * seal's inferred weights. 0 when the chunk built on its own.
+   *
+   * ⭐ By far the largest allocation the library makes, and it is keyed to the
+   * column rather than to a component, so nothing collects it until
+   * `releaseStackResources` is invoked (`ChunkStack` does that on unmount).
+   */
+  columnBytes: number;
   /**
    * Vertices of the SHARED tessellation — ⭐ the number every phase after it
    * scales with, since each layer carries a full copy of it. Driven by
@@ -405,8 +415,8 @@ export type AssembleChunkLayer = {
    * clip path can offer, having no shared topology to trace.
    */
   wall?: BufferGeometry | null;
-  /** see {@link SurfaceChunkMesh.peelIndex} */
-  peelIndex?: Uint32Array | null;
+  /** see {@link SurfaceChunkMesh.patchIndex} */
+  patchIndex?: Uint32Array | null;
   /**
    * Index of the layer this one came FROM, when the build expanded the caller's
    * list (a surface split around a void becomes two layers). Meshes are tagged
@@ -465,7 +475,7 @@ export function assembleChunk(
         geometry: layer.geometry,
         layer: layer.source ?? i,
         ceiling: layer.ceiling,
-        peelIndex: layer.peelIndex ?? undefined,
+        patchIndex: layer.patchIndex ?? undefined,
       });
       const idx = layer.geometry.getIndex();
       if (idx) surfaceTris += idx.count / 3;

@@ -142,16 +142,69 @@ export type ChunkMeshesProps = {
  * built-in palette — and rebuilds them on appearance change (a fresh identity so
  * the OIT pass re-classifies) but never touches geometry.
  *
- * ⚠️ A caller-supplied `Material` is used AS GIVEN and never disposed here, so it
- * must already be OIT-compatible (see `makeOitCompatible`) when the chunk is
- * rendered through an `OITRenderPass`. Materials built from a colour are owned and
- * disposed by this component.
+ * ⚠️ A caller-supplied `Material` is used AS GIVEN and never disposed here. The
+ * materials this component creates support the OIT pipeline; a caller's does not
+ * have to, but one that does not will be drawn by `OITRenderPass` as an ordinary
+ * opaque material (`makeOitCompatible` is offered for that, not required).
+ * Materials built from a colour are owned and disposed by this component.
  *
  * Geometry ownership (build + disposal) stays with the parent (`Chunk`); this
  * component only owns the materials it created.
  *
  * @group Components
  */
+/**
+ * The inference-marking overlays: one material per distinct (opacity, cut) pair,
+ * built lazily, plus the lookups that pick the right one per layer.
+ *
+ * ⚠️⚠️ MODULE SCOPE, DELIBERATELY. These closures outlive a geometry rebuild —
+ * they are memoized on APPEARANCE only — and V8 gives a function scope ONE
+ * `Context` holding every variable captured by any closure inside it. Defined in
+ * the component body they therefore pinned that render's `chunk`, i.e. a whole
+ * stack of geometry, until the appearance happened to change. Passing the inputs
+ * as arguments keeps the captured scope to exactly these parameters.
+ */
+function buildInferenceOverlays(
+  inferredStyle: ChunkInferenceStyle,
+  layers: ChunkLayer[],
+  surfaceOpacity: number,
+  wallOpacity: number,
+  wireframe: boolean,
+  sectionUniform?: IUniform<Vector4>,
+  fenceUniforms?: ChunkFenceUniforms,
+) {
+  const built = new Map<string, Material | null>();
+  const at = (opacity: number, cut: boolean) => {
+    if (wireframe) return null;
+    const key = `${opacity}/${cut}`;
+    if (!built.has(key)) {
+      built.set(
+        key,
+        createInferenceMaterial(inferredStyle, {
+          opacity,
+          sectionPlane: cut ? sectionUniform : undefined,
+          fence: cut ? fenceUniforms : undefined,
+        }),
+      );
+    }
+    return built.get(key) ?? null;
+  };
+  const keptUnit = (i: number) => layers[i]?.section === false;
+  return {
+    surface: (layer: number) =>
+      at(
+        layers[layer]?.opacity ?? surfaceOpacity,
+        !keptUnit(layer) && !keptUnit(layer - 1),
+      ),
+    wall: (layer: number) =>
+      at(layers[layer]?.opacity ?? wallOpacity, !keptUnit(layer)),
+    // Never cut, for the reason the face's own material is not: it lies on the
+    // cut, so testing it against it would hatch nothing at all.
+    face: (layer: number) => at(layers[layer]?.opacity ?? wallOpacity, false),
+    built,
+  };
+}
+
 export const ChunkMeshes = ({
   chunk,
   layers,
@@ -347,35 +400,40 @@ export const ChunkMeshes = ({
           );
     });
 
-    // ⚠️⚠️ A fence's cut FACE must not carry the fence cut. The face lies exactly
-    // on the curve, while the shader tests the field's INTERPOLATED zero crossing
-    // — which differs from the true curve by a fraction of a cell, i.e. metres
-    // against an offset of centimetres. Testing the face against the very cut it
-    // exists to close therefore punches holes along its whole length. (A plane
-    // section gets away with it because its test is exact either side.)
-    const faces = !fence
-      ? []
-      : layers.map((layer, i) => {
-          if (fenceDebug) {
-            const material = new MeshBasicMaterial({
-              color: '#ff00ff',
-              wireframe: true,
-              side: DoubleSide,
-              toneMapped: false,
-            });
-            owned.push(material);
-            return material;
-          }
-          const fill = fillOf(layer, i);
-          return make(
-            fill instanceof Material || fill === null ? paletteAt(i) : fill,
-            layer.opacity ?? wallOpacity,
-            layer.detail,
-            true,
-            undefined,
-            { section: false, fence: false, contacts: layerContacts(i) },
-          );
-        });
+    // ⚠️⚠️ A cut FACE must not carry the cut it exists to close, whichever cut it
+    // is. A fence's face lies exactly on the curve while the shader tests the
+    // field's INTERPOLATED zero crossing — metres out against an offset of
+    // centimetres — so testing it punches holes along its whole length. A plane's
+    // test IS exact either side, but the face still has to sit PROUD of the block
+    // (which survives right up to the plane), and proud means on the removed side
+    // of its own test.
+    const faces =
+      !fence && !sectionUniform
+        ? []
+        : layers.map((layer, i) => {
+            if (fence && fenceDebug) {
+              const material = new MeshBasicMaterial({
+                color: '#ff00ff',
+                wireframe: true,
+                side: DoubleSide,
+                toneMapped: false,
+              });
+              owned.push(material);
+              return material;
+            }
+            const fill = fillOf(layer, i);
+            // A caller's own Material carries no cut of ours, so it already is
+            // what a face needs.
+            if (fill instanceof Material) return fill;
+            return make(
+              fill === null ? paletteAt(i) : fill,
+              layer.opacity ?? wallOpacity,
+              layer.detail,
+              true,
+              undefined,
+              { section: false, fence: false, contacts: layerContacts(i) },
+            );
+          });
 
     const carrier = !carrierMaterial
       ? null
@@ -396,7 +454,7 @@ export const ChunkMeshes = ({
     // cannot be given either, so such a layer keeps its holes.
     const patches = new Map<number, { open: Material; cut: Material | null }>();
     for (const surface of chunk.surfaces) {
-      if (!surface.peelIndex || surface.ceiling) continue;
+      if (!surface.patchIndex || surface.ceiling) continue;
       const declared = layers[surface.layer];
       if (!declared || declared.material instanceof Material) continue;
       patches.set(surface.layer, {
@@ -460,43 +518,27 @@ export const ChunkMeshes = ({
   // ⚠️⚠️ Keyed on whether it is CUT as well: the overlay is a second mesh with its
   // own material, so a kept unit whose marking was still cut would lose its
   // hatching at the plane while the rock stayed.
-  const overlays = useMemo(() => {
-    const built = new Map<string, Material | null>();
-    const at = (opacity: number, cut: boolean) => {
-      if (wireframe) return null;
-      const key = `${opacity}/${cut}`;
-      if (!built.has(key)) {
-        built.set(
-          key,
-          createInferenceMaterial(inferredStyle, {
-            opacity,
-            sectionPlane: cut ? sectionUniform : undefined,
-            fence: cut ? fenceUniforms : undefined,
-          }),
-        );
-      }
-      return built.get(key) ?? null;
-    };
-    const keptUnit = (i: number) => layers[i]?.section === false;
-    return {
-      surface: (layer: number) =>
-        at(
-          layers[layer]?.opacity ?? surfaceOpacity,
-          !keptUnit(layer) && !keptUnit(layer - 1),
-        ),
-      wall: (layer: number) =>
-        at(layers[layer]?.opacity ?? wallOpacity, !keptUnit(layer)),
-      built,
-    };
-  }, [
-    inferredStyle,
-    layers,
-    surfaceOpacity,
-    wallOpacity,
-    wireframe,
-    sectionUniform,
-    fenceUniforms,
-  ]);
+  const overlays = useMemo(
+    () =>
+      buildInferenceOverlays(
+        inferredStyle,
+        layers,
+        surfaceOpacity,
+        wallOpacity,
+        wireframe,
+        sectionUniform,
+        fenceUniforms,
+      ),
+    [
+      inferredStyle,
+      layers,
+      surfaceOpacity,
+      wallOpacity,
+      wireframe,
+      sectionUniform,
+      fenceUniforms,
+    ],
+  );
 
   useEffect(() => {
     const { built } = overlays;
@@ -510,20 +552,21 @@ export const ChunkMeshes = ({
   const fenceFaces = useChunkFenceFace(chunk.section, fence, layers);
   const faces = fence?.enabled ? fenceFaces : planeFaces;
 
-  // Shares the cap's attributes and swaps in the alternative index, so the patch
-  // costs one small object rather than a second copy of the surface.
+  // Shares the cap's attributes and carries only the fragments the cap gave up, so
+  // the patch costs one small object and adds no overdraw where the cap already
+  // draws.
   // ⚠️ Disposed with the chunk: three releases the shared attribute buffers with
   // it, which for a surviving sibling degrades to a re-upload — the same trade
   // `buildStackGeometries` already documents for the shared index.
   const patchGeometries = useMemo(() => {
     const built = new Map<number, BufferGeometry>();
     for (const surface of chunk.surfaces) {
-      if (!surface.peelIndex || surface.ceiling) continue;
+      if (!surface.patchIndex || surface.ceiling) continue;
       const geometry = new BufferGeometry();
       for (const name in surface.geometry.attributes) {
         geometry.setAttribute(name, surface.geometry.attributes[name]);
       }
-      geometry.setIndex(new BufferAttribute(surface.peelIndex, 1));
+      geometry.setIndex(new BufferAttribute(surface.patchIndex, 1));
       built.set(surface.layer, geometry);
     }
     return built;
@@ -556,12 +599,11 @@ export const ChunkMeshes = ({
     <group>
       {faces?.map(face => {
         if (face.layer < peeled) return null;
-        const material = fence?.enabled
-          ? materials.faces[face.layer]
-          : materials.walls[face.layer];
+        const material =
+          materials.faces[face.layer] ?? materials.walls[face.layer];
         if (!material) return null;
         const overlay = face.geometry.hasAttribute('inferred')
-          ? overlays.wall(face.layer)
+          ? overlays.face(face.layer)
           : null;
         return (
           <group key={`section-${face.interval}-${face.wall}`}>

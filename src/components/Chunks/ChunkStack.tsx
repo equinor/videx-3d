@@ -45,6 +45,7 @@ import {
   ChunkStackProgress,
   DEFAULT_SECTION_OFFSET,
   StackImmersion,
+  stackRelease,
   stackWater,
   StackWater,
   StackWaterResponse,
@@ -279,6 +280,15 @@ export const ChunkStack = ({
   const waterKey = water ? JSON.stringify(water) : '';
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
   const stableWater = useMemo(() => water, [waterKey]);
+
+  // ⚠️ And a NARROWER key for the sea's GEOMETRY: only these three reach the
+  // build. Everything else on `water` is sea state, and keying the spec on the
+  // whole object made every wind/foam/opacity tick rebuild the lid in the worker.
+  const waterBuildKey = water
+    ? `${water.depth ?? 0}/${water.resolution ?? ''}/${water.displacement ? 1 : 0}`
+    : '';
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
+  const stableWaterBuild = useMemo(() => water, [waterBuildKey]);
 
   // And again for the build options, which decide the identity of the CACHED
   // column: everything cut from it has to ask for it with the same ones.
@@ -758,13 +768,26 @@ export const ChunkStack = ({
   //     lids wherever their footprints overlap. -------------------------------
   const waterGenerator = useGenerator<StackWaterResponse>(stackWater);
 
+  // The resolved column is cached in the generator keyed on the column itself, so
+  // nothing collects it when the last chunk goes away. It is the heaviest thing
+  // held anywhere in the library — hundreds of MB at field scale.
+  const releaseGenerator = useGenerator<null>(stackRelease);
+  // ⚠️ Through a ref, so this fires on UNMOUNT only: re-running it because the
+  // callback's identity changed would throw the column away mid-session and make
+  // the next chunk refetch and resample everything.
+  const releaseStackRef = useRef(releaseGenerator);
+  useEffect(() => {
+    releaseStackRef.current = releaseGenerator;
+  }, [releaseGenerator]);
+  useEffect(() => () => void releaseStackRef.current(), []);
+
   const waterSpec = useMemo(() => {
     // Needs a footprint to be drawn over, and a column to end against.
-    if (!stableWater || !outline || !utm) return null;
+    if (!stableWaterBuild || !outline || !utm) return null;
     if (!column || column.length === 0) return null;
     const envelope = value.envelope;
     if (!envelope) return null;
-    return buildStackWaterSpec(stableWater, utm.utmToArea, outline, {
+    return buildStackWaterSpec(stableWaterBuild, utm.utmToArea, outline, {
       surfaces: column,
       envelope,
       carrier: stableCarrier,
@@ -774,7 +797,7 @@ export const ChunkStack = ({
       section: hasCut,
     });
   }, [
-    stableWater,
+    stableWaterBuild,
     outline,
     utm,
     column,

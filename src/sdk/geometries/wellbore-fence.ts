@@ -1539,7 +1539,10 @@ export function buildFenceSideCurve(
     }
     out.push(knee);
     if (reach > converge) {
-      out.push([apex[0] + direction[0] * reach, apex[1] + direction[1] * reach]);
+      out.push([
+        apex[0] + direction[0] * reach,
+        apex[1] + direction[1] * reach,
+      ]);
     }
     return out;
   };

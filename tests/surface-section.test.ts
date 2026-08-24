@@ -3,6 +3,7 @@ import {
   createStackSectionTarget,
   growStackSectionTarget,
   buildStackSectionIndex,
+  packTriangleMask,
   sectionPlaneOutline,
   sectionStackInterval,
   StackSectionPlane,
@@ -23,7 +24,7 @@ function twoCells(top: number[], bottom: number[]): StackSectionSource {
     positionsXZ: Float32Array.from([0, 0, 100, 0, 0, 100, 100, 100]),
     indices: Uint32Array.from([0, 1, 2, 1, 3, 2]),
     heights: [Float32Array.from(top), Float32Array.from(bottom)],
-    intervals: [Uint8Array.from([1, 1])],
+    intervals: [packTriangleMask(Uint8Array.from([1, 1]))],
   };
 }
 
@@ -33,7 +34,7 @@ function oneCell(t: number, b: number): StackSectionSource {
     positionsXZ: Float32Array.from([0, 0, 100, 0, 0, 100]),
     indices: Uint32Array.from([0, 1, 2]),
     heights: [Float32Array.from([t, t, t]), Float32Array.from([b, b, b])],
-    intervals: [Uint8Array.from([1])],
+    intervals: [packTriangleMask(Uint8Array.from([1]))],
   };
 }
 
@@ -168,7 +169,10 @@ describe('sectionStackInterval', () => {
         Float32Array.from(mid),
         Float32Array.from([-90, -97, -111, -132]),
       ],
-      intervals: [Uint8Array.from([1, 1]), Uint8Array.from([1, 1])],
+      intervals: [
+        packTriangleMask(Uint8Array.from([1, 1])),
+        packTriangleMask(Uint8Array.from([1, 1])),
+      ],
     };
     const p = plane([1, 0.2, -1], 3);
     const upper = run(source, p, 0);
@@ -234,7 +238,7 @@ describe('sectionStackInterval', () => {
   it('skips the cells the interval does not occupy', () => {
     const source = twoCells([0, 0, 0, 0], [-50, -50, -50, -50]);
     const both = run(source, plane([0, 0, 1], -50));
-    source.intervals = [Uint8Array.from([1, 0])];
+    source.intervals = [packTriangleMask(Uint8Array.from([1, 0]))];
     const one = run(source, plane([0, 0, 1], -50));
     expect(one.needed).toBeGreaterThan(0);
     expect(one.needed).toBeLessThan(both.needed);
@@ -262,8 +266,14 @@ describe('sectionStackInterval', () => {
     sectionStackInterval(source, 0, plane([1, 0, 0], -50), target, {
       offset: 0.25,
     });
-    // Toward the KEPT side (x < 50), or the block's own clip would eat the face.
+    // Positive is toward the KEPT side (x < 50) ...
     for (const [x] of vertices(target)) expect(x).toBeCloseTo(50 - 0.25, 6);
+    // ... so negative is proud of the cut, which is what a renderer asks for: the
+    // block survives right up to the plane.
+    sectionStackInterval(source, 0, plane([1, 0, 0], -50), target, {
+      offset: -0.25,
+    });
+    for (const [x] of vertices(target)) expect(x).toBeCloseTo(50 + 0.25, 6);
   });
 
   it('draws nothing where the plane only grazes a cell', () => {
@@ -366,7 +376,7 @@ describe('the section spatial index', () => {
       positionsXZ,
       indices: Uint32Array.from(tris),
       heights: [top, bottom],
-      intervals: [new Uint8Array(tris.length / 3).fill(1)],
+      intervals: [packTriangleMask(new Uint8Array(tris.length / 3).fill(1))],
     };
   }
 

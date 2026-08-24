@@ -44,6 +44,10 @@ type Props = {
 
 const wellboreManager = new WellboreManager();
 
+// Its constructor registers window listeners, so a hot update would otherwise
+// leave a manager per edit, each holding on to the scene objects it recorded.
+import.meta.hot?.dispose(() => wellboreManager.dispose());
+
 const WellMapSelector = ({ colorScale, camera = true }: Props) => {
   const offsetPosition = useRef<Vec3>([0, 0, 0]);
 

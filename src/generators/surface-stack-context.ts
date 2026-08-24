@@ -1,3 +1,4 @@
+import pLimit from 'p-limit';
 import {
   ChunkResolveOptions,
   DEFAULT_CHUNK_MAX_FILL,
@@ -7,8 +8,8 @@ import {
 import {
   clampStackToCarrier,
   layEmptyStackLayers,
-  planStackReference,
   PlanarPolygonGeometry,
+  planStackReference,
   rasterizeStackOutline,
   ReadonlyStore,
   resolveStackGrid,
@@ -21,6 +22,7 @@ import {
   StackReference,
 } from '../sdk';
 import {
+  getStackPool,
   refineStackChannels,
   resampleStackChannel,
 } from './workers/stack-worker-pool';
@@ -71,6 +73,12 @@ export type StackContext = {
   pairs: StackPairStats[];
   bytes: number;
   /**
+   * Bytes this context KEEPS ALIVE while it is cached — the channels, the masks,
+   * the truncation masks and the seal's inferred weights. Reported so the largest
+   * allocation in the library is visible rather than inferred.
+   */
+  retainedBytes: number;
+  /**
    * ⚠️ `fetchMs` and `referenceMs` are OVERLAPPING windows, not consecutive
    * phases: a layer is resampled as soon as its own grid lands. `fetchMs` runs to
    * the last grid's arrival, `referenceMs` from there to the last resample.
@@ -88,6 +96,42 @@ export type StackContext = {
 let cached: { key: string; promise: Promise<StackContext | null> } | null =
   null;
 
+// ⭐ Column builds are SERIALIZED on this chain. Eviction does not stop a build
+// that has already started, and each one holds its own full set of channels, so
+// letting a control sweep start a column per tick multiplies the largest
+// allocation in the library by the number of stale requests.
+let chain: Promise<unknown> = Promise.resolve();
+
+/** What the current column keeps resident, for {@link stackContextStats}. */
+let retained: { key: string; bytes: number } | null = null;
+let columnsBuilt = 0;
+let columnsInFlight = 0;
+
+/** Accounting for the resources the stack generators hold. */
+export type StackContextStats = {
+  /** the cached column, or `null` when none is held */
+  columnKey: string | null;
+  /** bytes the cached column keeps resident (channels, masks, absent, inferred) */
+  columnBytes: number;
+  /** bytes held by the cached per-layer refinement candidates */
+  candidateBytes: number;
+  /** columns built since this worker started */
+  columnsBuilt: number;
+  /** column builds currently running */
+  columnsInFlight: number;
+};
+
+/** What the stack generators currently hold (see `generatorStats`). */
+export function stackContextStats(): StackContextStats {
+  return {
+    columnKey: retained?.key ?? null,
+    columnBytes: retained?.bytes ?? 0,
+    candidateBytes,
+    columnsBuilt,
+    columnsInFlight,
+  };
+}
+
 /**
  * Build (or reuse) the resolved column a chunk belongs to.
  *
@@ -104,14 +148,36 @@ export function getStackContext(
 ): Promise<StackContext | null> {
   const key = `${stack.key}|${resolve?.mode ?? 'truncate'}|${resolve?.minGap ?? 0}|${resolve?.maxNodes ?? ''}|${resolve?.maxFill ?? DEFAULT_CHUNK_MAX_FILL}|${resolve ? 1 : 0}|${resolve?.seal === false ? 0 : 1}|${resolve?.sealMode ?? 'proportional'}|${resolve?.minThickness ?? ''}`;
   if (cached && cached.key === key) return cached.promise;
-  const promise = buildStackContext(store, stack, resolve, key);
+  const promise = chain.then(() => {
+    // ⚠️ Superseded while queued: the caller that asked for this column has been
+    // rebuilt with different options, so building it now would cost a full column
+    // nobody will draw. (Two ChunkStacks with DIFFERENT columns in one scene would
+    // starve each other here — they already thrash the single-entry cache today.)
+    if (!cached || cached.key !== key) return null;
+    columnsInFlight++;
+    return buildStackContext(store, stack, resolve, key).finally(() => {
+      columnsInFlight--;
+    });
+  });
   cached = { key, promise };
+  chain = promise.catch(() => undefined);
   return promise;
 }
 
-/** Drop the cached column (tests / explicit teardown). */
+/**
+ * Drop the cached column and its refinement (tests / explicit teardown).
+ *
+ * ⚠️ This is the heaviest thing the generators hold — one channel per layer over
+ * the whole reference grid, plus masks and the seal's inferred weights. At the
+ * default node budget that is hundreds of MB, retained until something calls
+ * this. An in-flight build is unaffected: it holds its own reference and only
+ * loses the chance to be shared.
+ */
 export function clearStackContext(): void {
   cached = null;
+  retained = null;
+  refinedByKey.clear();
+  candidateBytes = 0;
 }
 
 async function buildStackContext(
@@ -138,23 +204,33 @@ async function buildStackContext(
 
   let tFetch = t0;
   let bytes = 0;
+  // ⚠️⚠️ BOUNDED, not `Promise.all` over every layer: the store hands out a COPY
+  // of each grid (comlink's transfer detaches, so it cannot hand out the cached
+  // one), and that copy is only released when the pool takes it. Fetching the
+  // whole column at once therefore holds a second copy of the entire dataset —
+  // hundreds of MB — for as long as the slowest resample takes. One in flight per
+  // pool worker keeps the pool saturated, so the pipelining is unaffected.
+  const inFlight = pLimit(Math.max(2, getStackPool()?.size ?? 4));
   const resampled = await Promise.all(
-    stack.layers.map(async (spec: SurfaceChunkLayerSpec) => {
-      const values = await store.get<Float32Array>('surface-values', spec.id);
-      tFetch = performance.now();
-      if (!values) return null;
-      bytes += values.byteLength;
-      // ⚠️ `values` is TRANSFERRED into the worker and detached here. Safe because
-      // nothing downstream reads a layer's samples — `isSyntheticLayer` only tests
-      // whether the field is undefined, and the geometry needs the placement.
-      const result = await resampleStackChannel(
-        plan,
-        { header: spec.header, worldPosition: spec.worldPosition },
-        values,
-        spec.referenceDepth,
-      );
-      return { spec, values, result };
-    }),
+    stack.layers.map((spec: SurfaceChunkLayerSpec) =>
+      inFlight(async () => {
+        const values = await store.get<Float32Array>('surface-values', spec.id);
+        tFetch = performance.now();
+        if (!values) return null;
+        bytes += values.byteLength;
+        // ⚠️ `values` is TRANSFERRED into the worker and detached here. Safe
+        // because nothing downstream reads a layer's samples — `isSyntheticLayer`
+        // only tests whether the field is undefined, and the geometry needs the
+        // placement.
+        const result = await resampleStackChannel(
+          plan,
+          { header: spec.header, worldPosition: spec.worldPosition },
+          values,
+          spec.referenceDepth,
+        );
+        return { spec, values, result };
+      }),
+    ),
   );
 
   const layers: StackLayer[] = [];
@@ -296,6 +372,17 @@ async function buildStackContext(
     resolved.absent[carrierExpanded]?.fill(0);
   }
 
+  const inferred = split?.inferred ?? sealed?.inferred ?? null;
+  const sum = (arrays: ArrayBufferView[] | null) =>
+    arrays ? arrays.reduce((a, v) => a + v.byteLength, 0) : 0;
+  const retainedBytes =
+    sum(sealedReference.channels) +
+    sum(sealedReference.masks) +
+    sum(resolved.absent) +
+    sum(inferred);
+  retained = { key, bytes: retainedBytes };
+  columnsBuilt++;
+
   return {
     key,
     reference: sealedReference,
@@ -305,7 +392,7 @@ async function buildStackContext(
     ceiling: split?.ceiling ?? layers.map(() => false),
     carrier,
     absent: resolved.absent,
-    inferred: split?.inferred ?? sealed?.inferred ?? null,
+    inferred,
     // The split counts per COPY; the caller reads this per declared layer.
     tapered: split
       ? expansion.map(copies =>
@@ -314,6 +401,7 @@ async function buildStackContext(
       : (sealed?.tapered ?? []),
     pairs: resolved.pairs,
     bytes,
+    retainedBytes,
     fetchMs: tFetch - t0,
     referenceMs: tReference - tFetch,
     sealMs: tSeal - tReference,
@@ -330,6 +418,8 @@ const refinedByKey = new Map<
   Promise<{ candidates: Uint32Array[]; poolSize: number }>
 >();
 
+let candidateBytes = 0;
+
 export function getStackCandidates(
   context: StackContext,
   maxError: number,
@@ -339,11 +429,15 @@ export function getStackCandidates(
   if (!pending) {
     // only the current column is worth keeping
     refinedByKey.clear();
+    candidateBytes = 0;
     pending = refineStackChannels(
       context.reference.channels,
       context.reference.header.nx,
       maxError,
-    );
+    ).then(result => {
+      candidateBytes = result.candidates.reduce((a, c) => a + c.byteLength, 0);
+      return result;
+    });
     refinedByKey.set(key, pending);
   }
   return pending;

@@ -284,12 +284,21 @@ export const EventEmitter = ({
     });
 
     return () => {
-      removeEventListener('keydown', onKeyDown);
-      removeEventListener('keyup', onKeyDown);
+      // ⚠️ `capture` is part of a listener's identity: removing without it does
+      // nothing, and these keep the whole picking state (and every object it has
+      // registered) alive for the life of the page.
+      removeEventListener('keydown', onKeyDown, { capture: true });
+      removeEventListener('keyup', onKeyDown, { capture: true });
 
-      gl.domElement.removeEventListener('pointerdown', onPointerDown);
-      gl.domElement.removeEventListener('pointerup', onPointerUp);
-      gl.domElement.removeEventListener('pointerleave', onPointerLeave);
+      gl.domElement.removeEventListener('pointerdown', onPointerDown, {
+        capture: true,
+      });
+      gl.domElement.removeEventListener('pointerup', onPointerUp, {
+        capture: true,
+      });
+      gl.domElement.removeEventListener('pointerleave', onPointerLeave, {
+        capture: true,
+      });
 
       eventState.pickingHelper.dispose();
     };

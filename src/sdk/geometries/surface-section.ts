@@ -21,9 +21,13 @@ export type StackSectionSource = {
   /** per layer, vertex heights in scene Y (after the resolve) */
   heights: Float32Array[];
   /**
-   * Per INTERVAL (`heights.length - 1` entries), one flag per triangle: 1 where
-   * that interval holds a volume. `null` where the interval is unfilled — there is
-   * no material to show, so the cut face has nothing to draw there.
+   * Per INTERVAL (`heights.length - 1` entries), one BIT per triangle (see
+   * {@link triangleInMask}): set where that interval holds a volume. `null` where
+   * the interval is unfilled — there is no material to show, so the cut face has
+   * nothing to draw there.
+   *
+   * ⭐ A bit rather than a byte because this is what SHIPS and what stays resident
+   * for the life of the build: on a field-scale column it is 4.5 MB instead of 36.
    */
   intervals: (Uint8Array | null)[];
   /**
@@ -90,11 +94,14 @@ export type StackSectionTarget = {
 /** Options for {@link sectionStackInterval}. */
 export type StackSectionOptions = {
   /**
-   * Metres to move the cut face toward the KEPT side, along `-normal`. The face
-   * lies exactly IN the plane, so without it the same test that cuts the block is
-   * one rounding step away from cutting the face closing it. Default 0.05 — at
-   * field scale, and with the logarithmic depth buffer, far below anything
-   * visible.
+   * Metres to move the cut face toward the KEPT side, along `-normal`. Default 0,
+   * which leaves the face exactly in the plane.
+   *
+   * ⚠️ A NEGATIVE value pushes it PROUD of the cut, which is what a renderer
+   * wants: the block survives right up to the plane, so a face nudged the other way
+   * has slivers of it standing in front. ⚠️⚠️ Either way the face is then on the
+   * removed side of its own test by a hair, so draw it with a material that is NOT
+   * cut.
    */
   offset?: number;
   /**
@@ -143,6 +150,29 @@ export type StackSectionIndex = {
 
 /** triangles per cell to aim for: fine enough to prune, coarse enough to build fast */
 const CELL_TRIANGLES = 64;
+
+/**
+ * Pack one flag per triangle into one BIT per triangle, for
+ * {@link StackSectionSource.intervals}.
+ *
+ * @group Geometries
+ */
+export function packTriangleMask(flags: Uint8Array): Uint8Array {
+  const mask = new Uint8Array((flags.length + 7) >> 3);
+  for (let t = 0; t < flags.length; t++) {
+    if (flags[t]) mask[t >> 3] |= 1 << (t & 7);
+  }
+  return mask;
+}
+
+/**
+ * Read a bit written by {@link packTriangleMask}.
+ *
+ * @group Geometries
+ */
+export function triangleInMask(mask: Uint8Array, triangle: number): boolean {
+  return (mask[triangle >> 3] & (1 << (triangle & 7))) !== 0;
+}
 
 /**
  * Build the spatial index a section uses to skip whole regions of a stack.
@@ -266,7 +296,7 @@ function intervalHeights(
       let hi = -Infinity;
       for (let i = index.starts[at]; i < index.starts[at + 1]; i++) {
         const t = index.items[i];
-        if (!members[t]) continue;
+        if (!triangleInMask(members, t)) continue;
         for (let k = 0; k < 3; k++) {
           const v = indices[3 * t + k];
           const b = bottom[v];
@@ -404,7 +434,7 @@ export function sectionStackInterval(
   const { positionsXZ, indices } = source;
   const [nx, ny, nz] = plane.normal;
   const constant = plane.constant;
-  const offset = options.offset ?? 0.05;
+  const offset = options.offset ?? 0;
   const ox = -nx * offset;
   const oy = -ny * offset;
   const oz = -nz * offset;
@@ -442,7 +472,9 @@ export function sectionStackInterval(
 
   const capacity = target.capacity;
   let needed = 0;
-  const triangles = members.length;
+  // ⚠️ From the INDICES: `members` is one bit per triangle, so its length is a
+  // byte count.
+  const triangles = indices.length / 3;
 
   // ⭐ With an index the unit of iteration is a CELL: reject the whole cell when
   // its box lies clear of the plane (|d| <= r is the standard box/plane test, and
@@ -479,7 +511,7 @@ export function sectionStackInterval(
 
     for (let i = from; i < to; i++) {
       const t = index ? index.items[i] : i;
-      if (!members[t]) continue;
+      if (!triangleInMask(members, t)) continue;
       const a = indices[3 * t];
       const b = indices[3 * t + 1];
       const c = indices[3 * t + 2];

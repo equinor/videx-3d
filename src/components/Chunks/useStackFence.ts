@@ -176,7 +176,9 @@ export function useStackFence(
         });
         if (!built) return setResolved(null);
 
-        if (process.env.NODE_ENV !== 'production') {
+        // ⚠️ `import.meta.env.DEV`, not `process.env.NODE_ENV`: this is browser
+        // code, and Vite is what strips the block from a production build.
+        if (import.meta.env.DEV) {
           const problems = assertFenceInvariants(built.report);
           for (const problem of problems) {
             console.warn(`fence ${wellbore}: ${problem}`);

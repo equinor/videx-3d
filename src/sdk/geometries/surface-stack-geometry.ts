@@ -34,7 +34,7 @@ import {
   collectStackCandidates,
   collectThicknessCrossings,
 } from './surface-stack-candidates';
-import { StackSectionSource } from './surface-section';
+import { packTriangleMask, StackSectionSource } from './surface-section';
 import { buildRingWalls } from './surface-walls';
 
 /** One layer of a shared-tessellation stack, ready to render. */
@@ -44,11 +44,16 @@ export type StackGeometryLayer = {
   /** the layer's depth at the shared rim vertices (`rimY[ring][vertex]`) */
   rimY: number[][];
   /**
-   * The cap's index as it would be if nothing ABOVE this layer were drawn (see
-   * {@link StackCollapseOptions.peelable}). Shares the geometry's attributes, so
-   * it is an index and nothing more.
+   * The triangles this cap gave up because a layer ABOVE covered them, to be drawn
+   * IN ADDITION to the cap once that cover is gone (see
+   * {@link StackCollapseOptions.peelable}). Shares the geometry's attributes, so it
+   * is an index and nothing more.
+   *
+   * ⭐ The DIFFERENCE, not the union: a union would carry a second full copy of
+   * every cap's index — hundreds of MB on a field-scale column — and would redraw
+   * the whole cap on top of itself, which under OIT blends the covered area twice.
    */
-  peelIndex?: Uint32Array | null;
+  patchIndex?: Uint32Array | null;
 };
 
 /**
@@ -82,6 +87,59 @@ export type StackGeometryLayer = {
  *
  * @group Geometries
  */
+/**
+ * Re-store a computed normal attribute as snorm16.
+ *
+ * ⭐ A stack layer carries one normal per shared vertex, which at field scale is
+ * the second-largest thing a chunk holds after its positions — and a unit vector
+ * needs nothing like float32 (snorm16 resolves ~3e-5, far below what shading can
+ * show). Halves it, and three feeds normalized integer attributes to the shader
+ * unchanged.
+ */
+function quantizeNormals(geometry: BufferGeometry) {
+  const attribute = geometry.getAttribute('normal');
+  if (!attribute || !(attribute.array instanceof Float32Array)) return;
+  const source = attribute.array;
+  const packed = new Int16Array(source.length);
+  for (let i = 0; i < source.length; i++) {
+    packed[i] = Math.max(
+      -32767,
+      Math.min(32767, Math.round(source[i] * 32767)),
+    );
+  }
+  geometry.setAttribute('normal', new BufferAttribute(packed, 3, true));
+}
+
+/**
+ * The triangles `widest` has and `own` does not.
+ *
+ * Both are emitted by the same pass over the triangles in the same order, and
+ * `own` is a subset, so one walk finds the difference exactly.
+ */
+function indexDifference(
+  widest: Uint32Array,
+  own: Uint32Array,
+): Uint32Array | null {
+  const patch = new Uint32Array(widest.length - own.length);
+  let j = 0;
+  let k = 0;
+  for (let i = 0; i < widest.length; i += 3) {
+    if (
+      j < own.length &&
+      widest[i] === own[j] &&
+      widest[i + 1] === own[j + 1] &&
+      widest[i + 2] === own[j + 2]
+    ) {
+      j += 3;
+      continue;
+    }
+    patch[k++] = widest[i];
+    patch[k++] = widest[i + 1];
+    patch[k++] = widest[i + 2];
+  }
+  return k > 0 ? patch : null;
+}
+
 export function buildStackGeometries(
   reference: StackReference,
   tessellation: StackTessellation,
@@ -135,13 +193,14 @@ export function buildStackGeometries(
     // ⚠️⚠️ Normals are accumulated over the WIDEST index available, not the cap's
     // own: `computeVertexNormals` only touches vertices its index references, so a
     // vertex used ONLY by triangles the collapse dropped keeps a zero normal — and
-    // shades BLACK the moment the patch restores it (see `peelIndex`). The cap's
+    // shades BLACK the moment the patch restores it (see `patchIndex`). The cap's
     // shading is unchanged except for a smoother normal along that boundary, which
     // is where the two meet.
     const widest = peelIndex ?? own;
     geometry.setIndex(widest ? new BufferAttribute(widest, 1) : shared);
     const wound = widest ? widest[1] : tessellation.indices[1];
     computeUpwardNormals(geometry);
+    let patchIndex: Uint32Array | null = null;
     if (peelIndex) {
       // ⚠️ `computeUpwardNormals` reverses the winding IN PLACE when the normals
       // come out facing down, and it only holds one of the two arrays.
@@ -152,9 +211,13 @@ export function buildStackGeometries(
           own[t + 2] = swap;
         }
       }
+      // After the fix-up both are wound the same way, so the triples still match.
+      // The union is dropped here; only the difference travels.
+      patchIndex = own ? indexDifference(peelIndex, own) : null;
       geometry.setIndex(own ? new BufferAttribute(own, 1) : shared);
     }
-    return { geometry, rimY, peelIndex };
+    quantizeNormals(geometry);
+    return { geometry, rimY, patchIndex };
   });
 }
 
@@ -856,6 +919,9 @@ export function buildSurfaceStack(
 
   // An interval with no volume has no material to show on the cut, so it is left
   // out here rather than being filtered by every consumer.
+  // ⭐ Packed to one bit per triangle here: the wall builder wants a byte it can
+  // index, but this copy is the one that crosses to the main thread and stays for
+  // the life of the build.
   const section =
     options.section && walls.intervals
       ? {
@@ -863,7 +929,7 @@ export function buildSurfaceStack(
           indices: tessellation.indices,
           heights,
           intervals: walls.intervals.map((members, i) =>
-            options.fills?.[i] ? members : null,
+            options.fills?.[i] ? packTriangleMask(members) : null,
           ),
           inferred,
         }

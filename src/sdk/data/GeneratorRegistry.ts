@@ -1,4 +1,4 @@
-import { wrap } from 'comlink';
+import { releaseProxy, Remote, wrap } from 'comlink';
 import pLimit from 'p-limit';
 import { KeyType, ReadonlyStore } from '../data/Store';
 
@@ -13,6 +13,7 @@ export type GeneratorFunction = (
 
 export class GeneratorRegistry {
   protected store: ReadonlyStore | null = null;
+  protected storeProxy: Remote<ReadonlyStore> | null = null;
   protected config: RegistryConfig;
   protected generators: Map<string, GeneratorFunction> = new Map();
 
@@ -45,7 +46,12 @@ export class GeneratorRegistry {
   }
 
   async connectRemoteStore(port: MessagePort) {
-    const proxy = wrap(port);
+    // Every provider mount opens a NEW channel. Releasing the previous proxy is
+    // what closes both ends of the old one — otherwise the store keeps answering
+    // on a port nothing reads, and the listener holding it is never removed.
+    this.storeProxy?.[releaseProxy]();
+    const proxy = wrap<ReadonlyStore>(port);
+    this.storeProxy = proxy;
     this.setStore(proxy as unknown as ReadonlyStore);
   }
 

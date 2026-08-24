@@ -30,6 +30,7 @@ import {
   SurfaceChunkDiagnostics,
   SurfaceStackBuild,
 } from '../sdk';
+import { claimGeneratorRun } from './generator-supersede';
 import { getStackCandidates, getStackContext } from './surface-stack-context';
 import { refineStackChannels } from './workers/stack-worker-pool';
 
@@ -113,6 +114,8 @@ export type SpecStackResult = {
   sharedStack?: boolean;
   /** layers in the shared column */
   stackLayers?: number;
+  /** bytes the shared column keeps resident between builds */
+  columnBytes?: number;
   /** time the column's grid-level resolve took (shared path only) */
   stackResolveMs?: number;
   /**
@@ -235,6 +238,7 @@ export async function buildSpecStack(
   spec: SurfaceChunkSpec,
   densified: PlanarPolygonGeometry,
   maxError: number,
+  isStale: () => boolean = () => false,
 ): Promise<SpecStackResult | null> {
   const flat = spec.layers;
   if (flat.length === 0) return null;
@@ -245,6 +249,8 @@ export async function buildSpecStack(
   if (spec.stack) {
     const context = await getStackContext(store, spec.stack, spec.resolve);
     if (!context) return null;
+    // The column is the long wait, and a superseded chunk has no use for it.
+    if (isStale()) return null;
     const tContext = performance.now();
 
     const loaded: LoadedStackLayer[] = [];
@@ -335,6 +341,7 @@ export async function buildSpecStack(
       context,
       maxError,
     );
+    if (isStale()) return null;
     const tRefine = performance.now();
 
     // ⭐ EXPAND: a column layer the void split holds TWO of this chunk's layers.
@@ -524,6 +531,7 @@ export async function buildSpecStack(
       layerTapered: picks.map(i => (i >= 0 ? (context.tapered[i] ?? 0) : 0)),
       sharedStack: true,
       stackLayers: context.layers.length,
+      columnBytes: context.retainedBytes,
       stackResolveMs: context.resolveMs,
       stackPairs,
     };
@@ -827,6 +835,7 @@ export function stackDiagnostics(
     sharedStack: !!result.sharedStack,
     stackLayers: result.stackLayers ?? 0,
     referenceNodes: result.referenceNodes,
+    columnBytes: result.columnBytes ?? 0,
     referenceStep: result.referenceStep,
     vertices: build.tessellation.coords.length / 2,
     sharedTriangles: build.tessellation.indices.length / 3,
@@ -859,7 +868,7 @@ export function toAssembleLayers(
   return result.build.layers.map((layer, i) => ({
     geometry: layer.geometry,
     rimY: layer.rimY,
-    peelIndex: layer.peelIndex,
+    patchIndex: layer.patchIndex,
     // The last layer has nothing below it inside this chunk.
     fill: i + 1 < result.build.layers.length && result.fills[i],
     wall: result.build.walls[i],
@@ -882,6 +891,9 @@ export async function generateSurfaceChunk(
   this: ReadonlyStore,
   spec: SurfaceChunkSpec,
 ): Promise<SurfaceChunkResponse | null> {
+  const isStale = claimGeneratorRun(spec.build);
+  if (isStale()) return null;
+
   const t0 = performance.now();
   const polygon = new PlanarPolygonGeometry(
     spec.polygon.coordinates,
@@ -891,7 +903,7 @@ export async function generateSurfaceChunk(
   const densifyMs = performance.now() - t0;
   const maxError = spec.maxError ?? 5;
 
-  const result = await buildSpecStack(this, spec, densified, maxError);
+  const result = await buildSpecStack(this, spec, densified, maxError, isStale);
   if (!result) return null;
 
   const layers = toAssembleLayers(result);

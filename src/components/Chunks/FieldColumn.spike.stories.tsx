@@ -41,6 +41,7 @@ import {
   stratLayerGroup,
   stratLayerUnitName,
 } from '../../storybook/data/strat-units';
+import { ResourceMonitor } from '../../storybook/components/ResourceMonitor';
 import {
   getSyntheticSurface,
   SYNTHETIC_SEABED_ID,
@@ -119,6 +120,15 @@ const SEABED_ID = (storyArgs.seabedSurface as string | null) ?? null;
 const GENERATED_SEABED = SEABED_ID
   ? null
   : (getSyntheticSurface(SYNTHETIC_SEABED_ID)?.meta ?? null);
+
+/**
+ * ⚠️ `undefined` rather than 0 when nothing is peeled: the PRESENCE of `peel` is a
+ * build input (it makes every layer carry a second index — hundreds of MB at field
+ * scale), so passing 0 would pay for peeling that never happens. Going from 0 to 1
+ * rebuilds once; every step after that is free.
+ */
+const peelOf = (peel: number, layers: number) =>
+  peel > 0 ? Math.min(Math.round(peel), layers) : undefined;
 
 // Always-on OIT pipeline (SMAA), matching the other chunk spikes.
 const ChunkPipeline = () => {
@@ -325,6 +335,8 @@ type FieldColumnStoryProps = {
   inferredStyle: ChunkInferenceStyle;
   detail: ChunkDetailPreset | 'none';
   detailStrength: number;
+  resources: boolean;
+  resourceInterval: number;
   wellbores: boolean;
   wellboreColor: string;
   wellboreSelectedColor: string;
@@ -678,7 +690,9 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       plane: sectionPlane,
       // ⚠️ The two cuts are mutually exclusive, and the section's PRESENCE is a
       // build input — so the fence disables it rather than removing the prop,
-      // which would rebuild the geometry.
+      // which would rebuild the geometry. What that presence costs is the section
+      // channels plus a patch index per layer; both were cut by roughly an order
+      // of magnitude, which is what makes carrying them unconditionally sane.
       enabled: props.section && !props.fence,
       // In camera mode the stack computes the plane itself and `plane` is ignored.
       cameraDistance:
@@ -963,10 +977,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
                 wallOpacity={props.wallOpacity}
                 wireframe={props.wireframe}
                 inferredStyle={props.inferredStyle}
-                peel={Math.min(
-                  Math.max(0, Math.round(props.peel)),
-                  chunkLayers.length,
-                )}
+                peel={peelOf(props.peel, chunkLayers.length)}
                 onBuild={m =>
                   report(
                     m,
@@ -982,10 +993,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
               wallOpacity={props.wallOpacity}
               wireframe={props.wireframe}
               inferredStyle={props.inferredStyle}
-              peel={Math.min(
-                Math.max(0, Math.round(props.peel)),
-                layers.length,
-              )}
+              peel={peelOf(props.peel, layers.length)}
               onBuild={report}
             />
           )}
@@ -1001,6 +1009,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
         )}
       </UtmArea>
       {props.wellbores && <Highlighter />}
+      {props.resources && <ResourceMonitor interval={props.resourceInterval} />}
       <ChunkPipeline />
     </>
   );
@@ -1127,6 +1136,9 @@ export const Default: Story = {
     inferredStyle: 'none',
     detail: 'none',
     detailStrength: 1,
+    // Diagnostics
+    resources: true,
+    resourceInterval: 1000,
   },
   argTypes: {
     outline: {
@@ -1527,6 +1539,18 @@ export const Default: Story = {
       control: { type: 'range', min: 0, max: 2, step: 0.05 },
       table: { category: 'Appearance' },
     },
+    resources: {
+      description:
+        'Report memory and GPU resources in the output panel. ⭐ Watch the DELTAS across rebuilds: `geo` and the heap should return to about the same level each time, and `column` is what the generator keeps between builds. A `scope` id that changes means the generator worker was recreated (the old one was orphaned).',
+      table: { category: 'Diagnostics' },
+    },
+    resourceInterval: {
+      control: { type: 'range', min: 250, max: 5000, step: 250 },
+      if: { arg: 'resources' },
+      description:
+        'Sampling period in ms. ⚠️ The generator row is answered by the worker, so it stops updating while the worker is inside a long synchronous build phase.',
+      table: { category: 'Diagnostics' },
+    },
   },
   decorators: [
     EventEmitterDecorator,
@@ -1540,7 +1564,7 @@ export const Default: Story = {
     createOutputPanelDecorator({
       origin: 'top-right',
       offset: [10, 10],
-      width: 160,
+      width: 190,
       fontSize: 11,
       opacity: 0.75,
     }),

@@ -12,6 +12,7 @@ export type BufferAttributeGroups = (BufferAttributeDrawRange & {
 export type BufferAttributeLike = {
   array: TypedArray;
   itemSize: number;
+  normalized?: boolean;
 };
 
 export type BufferGeometryLike = {
@@ -27,6 +28,8 @@ export type PackedBufferAttribute = {
   buffer: ArrayBufferLike;
   attributeType: string;
   itemSize: number;
+  /** integer components that read back as [-1,1] / [0,1] (see `BufferAttribute.normalized`) */
+  normalized?: boolean;
 };
 
 export type PackedAttributes = Record<string, PackedBufferAttribute>;
@@ -83,11 +86,13 @@ export function getTypedArrayFromBuffer(buffer: ArrayBufferLike, type: string) {
 export function packAttribute(
   typedArray: TypedArray,
   itemSize: number = 1,
+  normalized = false,
 ): PackedBufferAttribute {
   const packed = {
     buffer: typedArray.buffer,
     attributeType: getTypedArrayType(typedArray),
     itemSize: itemSize,
+    normalized,
   };
   return packed;
 }
@@ -111,6 +116,7 @@ export function packBufferGeometryLike(
     packed.attributes[name] = packAttribute(
       geometry.attributes[name].array,
       geometry.attributes[name].itemSize,
+      geometry.attributes[name].normalized,
     );
     transferrables.push(packed.attributes[name].buffer);
   }
@@ -142,6 +148,7 @@ export function packBufferGeometry(
       buffer: attr.array.buffer,
       attributeType: getTypedArrayType(attr.array),
       itemSize: attr.itemSize,
+      normalized: attr.normalized,
     };
     transferrables.push(packed.attributes[name].buffer);
   }
@@ -189,6 +196,7 @@ export function unpackBufferGeometry(packed: PackedBufferGeometry) {
         packed.attributes[name].attributeType,
       ),
       packed.attributes[name].itemSize,
+      packed.attributes[name].normalized,
     );
     bufferGeometry.setAttribute(name, attr);
   }

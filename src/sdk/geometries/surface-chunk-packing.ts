@@ -70,7 +70,7 @@ export function packSurfaceChunk(
 
   // Carried by SPREAD above; only the transfer needs saying.
   for (const s of chunk.surfaces) {
-    if (s.peelIndex) transferables.push(s.peelIndex.buffer);
+    if (s.patchIndex) transferables.push(s.patchIndex.buffer);
   }
 
   // The section shares buffers with the geometries above — the shared triangle

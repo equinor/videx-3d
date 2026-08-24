@@ -1,3 +1,4 @@
+import pLimit from 'p-limit';
 import { collectStackCandidates } from '../../sdk/geometries/surface-stack-candidates';
 import {
   resampleStackLayer,
@@ -113,6 +114,24 @@ export function getStackPool(): StackWorkerPool | null {
   return poolInstance;
 }
 
+/**
+ * Terminate the shared pool. The next caller gets a fresh one, so this is a
+ * release rather than a shutdown — use it when the generators are expected to be
+ * idle for a while (the last chunk stack unmounted, a test finished).
+ *
+ * @group Generators
+ */
+export function disposeStackPool(): void {
+  poolInstance?.dispose();
+  poolInstance = null;
+  poolTried = false;
+}
+
+/** Workers in the shared pool, WITHOUT creating it (0 = not created). */
+export function stackPoolSize(): number {
+  return poolInstance?.size ?? 0;
+}
+
 let taskId = 0;
 
 /**
@@ -179,15 +198,21 @@ export async function refineStackChannels(
       poolSize: 0,
     };
   }
+  // ⚠️ The copy is made INSIDE the limited task, not while mapping: a whole
+  // column's worth of copies allocated up front is hundreds of MB sitting in the
+  // pool's queue until a worker takes each one.
+  const limit = pLimit(pool.size);
   const candidates = await Promise.all(
-    channels.map(async channel => {
-      const copy = channel.slice();
-      const res = (await pool.run(
-        { kind: 'refine', id: taskId++, channel: copy, nx, maxError },
-        [copy.buffer],
-      )) as RefineResponse;
-      return res.nodes;
-    }),
+    channels.map(channel =>
+      limit(async () => {
+        const copy = channel.slice();
+        const res = (await pool.run(
+          { kind: 'refine', id: taskId++, channel: copy, nx, maxError },
+          [copy.buffer],
+        )) as RefineResponse;
+        return res.nodes;
+      }),
+    ),
   );
   return { candidates, poolSize: pool.size };
 }

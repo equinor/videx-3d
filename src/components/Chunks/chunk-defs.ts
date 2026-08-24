@@ -23,6 +23,12 @@ export const surfaceChunk = 'surfaceChunk';
 /** Generator key for the `ChunkStack` sea geometry generator. */
 export const stackWater = 'stackWater';
 
+/** Generator key for releasing the cached column (see `releaseStackResources`). */
+export const stackRelease = 'stackRelease';
+
+/** Generator key for the generator-side resource report (see `generatorStats`). */
+export const generatorStatsKey = 'generatorStats';
+
 /**
  * The id the column's floor claims in the seam registry.
  *
@@ -541,8 +547,14 @@ export type ChunkSection = {
    */
   enabled?: boolean;
   /**
-   * Metres to move the cut face toward the KEPT side, so the same test that cuts
-   * the block does not cut the face closing it. Default 0.05.
+   * Metres to move the cut face toward the KEPT side. Default -0.05, i.e. it sits
+   * slightly PROUD of the cut.
+   *
+   * ⚠️⚠️ The sign matters, and the obvious one is wrong. The block survives right
+   * up to the plane, so a face nudged into the kept half leaves a slab of block —
+   * slivers of near-horizontal caps, brightest of all — standing in FRONT of the
+   * face that is meant to close it. Proud of it, the faces tile the whole
+   * cross-section nearer than anything they close, and nothing can show through.
    */
   offset?: number;
   /**
@@ -569,8 +581,8 @@ export type ChunkSection = {
   debug?: boolean;
 };
 
-/** Default {@link ChunkSection.offset}. @group Components */
-export const DEFAULT_SECTION_OFFSET = 0.05;
+/** Default {@link ChunkSection.offset} — negative, so the face sits proud. @group Components */
+export const DEFAULT_SECTION_OFFSET = -0.05;
 
 /** Default {@link ChunkFence.cellSize}, in metres. @group Components */
 export const DEFAULT_FENCE_CELL_SIZE = 50;
@@ -1010,12 +1022,19 @@ export type SurfaceChunkSpec = {
    */
   section?: boolean;
   /**
-   * Also return each cap as it would be if nothing ABOVE it were drawn (see
-   * `SurfaceChunkMesh.peelIndex`). Requested when the chunk can PEEL or the stack
+   * Also return the fragments each cap gave up to the layer above it (see
+   * `SurfaceChunkMesh.patchIndex`). Requested when the chunk can PEEL or the stack
    * has a section — both hide a covering layer, and the collapse dropped
    * fragments on the strength of that cover.
    */
   peelable?: boolean;
+  /**
+   * Identifies the requesting chunk and the ordinal of this request, so a build
+   * the caller has already superseded can give up instead of running to
+   * completion. Set by `Chunk`; a request whose `token` is not the newest for its
+   * `key` returns `null` at the first opportunity.
+   */
+  build?: { key: string; token: number };
 };
 
 /**

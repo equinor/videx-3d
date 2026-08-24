@@ -61,6 +61,8 @@ export class PickingHelper {
 
   private _listeners = new Map<number, Listener>();
   private _emitters = new Map<number, Emitter>();
+  /** Stamped on every emitter each traversal, so stale ones can be swept. */
+  private _generation = 0;
 
   // Range-based object map rebuilt every pick. Each emitter occupies a
   // contiguous range of flat ids [start, start + count) so we store a single
@@ -128,6 +130,7 @@ export class PickingHelper {
               threshold: emitterThreshold,
               instanced,
               instanceCount,
+              generation: this._generation,
             };
             this._emitters.set(object.id, emitter);
           } else {
@@ -137,6 +140,7 @@ export class PickingHelper {
             emitter.threshold = emitterThreshold;
             emitter.instanced = instanced;
             emitter.instanceCount = instanceCount;
+            emitter.generation = this._generation;
 
             // if this object is reachable from more than one listener, we need to set the
             // listener to the one closest to the object, i.e. the one with the lesser depth value
@@ -169,6 +173,7 @@ export class PickingHelper {
   updateListeners = () => {
     this._objectMapLength = 0;
     this._objectMapCount = 0;
+    const generation = ++this._generation;
     this._listeners.forEach(listener => {
       this.traverseObject(
         listener.object,
@@ -177,6 +182,16 @@ export class PickingHelper {
         listener.threshold,
       );
     });
+    // ⚠⚠ `traverseObject` only ever ADDS, and `removeListener` can only reach the
+    // descendants a listener has AT THAT MOMENT. A component that rebuilds its
+    // geometry hands over entirely new meshes, so without this sweep every mesh it
+    // has ever produced stays referenced here — and with it the geometry's CPU
+    // arrays and materials, which `dispose()` does not release.
+    if (this._emitters.size > this._objectMapLength) {
+      this._emitters.forEach((emitter, id) => {
+        if (emitter.generation !== generation) this._emitters.delete(id);
+      });
+    }
   };
 
   addListener = (listener: Listener) => {

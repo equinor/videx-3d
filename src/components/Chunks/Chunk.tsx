@@ -37,6 +37,7 @@ import {
 } from './chunk-defs';
 import { buildSurfaceChunkSpec } from './chunk-spec';
 import { chunkDetailKey } from './chunk-detail';
+import { trackChunk, untrackChunk } from './chunk-resources';
 import { ChunkStackContext, ChunkSurfaceClaim } from './ChunkContext';
 import { ChunkMeshes } from './ChunkMeshes';
 import { ChunkOutline, CutoutSource, resolveCutoutSource } from './cutout';
@@ -160,9 +161,11 @@ function disposeChunk(chunk: SurfaceChunk | null) {
  *   data, outline, or build parameters change,
  * - **appearance** (opacity / wireframe) — reactive, never rebuilds geometry.
  *
- * Place inside a `UtmArea` (world placement is resolved from the UTM context) and,
- * for correct transparency, inside a rendering pipeline whose base pass is an
- * `OITRenderPass`. Values are fetched from the `DataProvider` store.
+ * Place inside a `UtmArea` (world placement is resolved from the UTM context).
+ * Semi-transparent layers need a rendering pipeline whose base pass is an
+ * `OITRenderPass` to be ordered correctly — the materials shipped here support
+ * one; an opaque stack needs no such pipeline. Values are fetched from the
+ * `DataProvider` store.
  *
  * @example
  * <ChunkStack outline={polygon} carrier={{ below: 800 }}>
@@ -642,6 +645,10 @@ export const Chunk = ({
   //     the returned geometry. Rebuilds ONLY on data / outline / build params. ----
   const generator = useGenerator<SurfaceChunkResponse>(surfaceChunk);
 
+  // Ordinal of this chunk's build requests, so the generator can tell a
+  // superseded one from the current one.
+  const buildToken = useRef(0);
+
   // Both a peel and a section can hide the layer a cap's collapse relied on
   // covering it, so the build has to keep what it dropped on that strength.
   // Keyed on the PRESENCE of a peel, so changing its value never rebuilds.
@@ -734,9 +741,21 @@ export const Chunk = ({
     reportState('building');
     (async () => {
       try {
-        const response = await generator(spec);
+        // ⚠️ The token rides OUTSIDE the memoized spec on purpose: it changes on
+        // every request, and putting it in the spec would make the memo churn and
+        // trigger the very rebuilds it exists to bound. It tells the generator to
+        // abandon a build this chunk has already superseded — `cancelled` alone
+        // only discards the result, after the worker has paid for it.
+        const response = await generator({
+          ...spec,
+          build: { key: registryKey, token: ++buildToken.current },
+        });
         if (cancelled) return;
         const built = response ? unpackSurfaceChunk(response) : null;
+        // Counted from HERE rather than from the effect below, so the window where
+        // the new chunk exists and the old one has not been released yet — the
+        // rebuild's peak — is visible.
+        if (built) trackChunk(built);
         setChunk(built);
         if (built) onBuildRef.current?.(built.metrics);
         reportState(built ? 'ready' : 'empty');
@@ -752,6 +771,7 @@ export const Chunk = ({
   }, [
     generator,
     spec,
+    registryKey,
     reportState,
     outlineSettled,
     outlinePolygon,
@@ -764,7 +784,21 @@ export const Chunk = ({
 
   // Dispose the previous chunk's geometries when it is replaced or unmounted.
   useEffect(() => {
-    return () => disposeChunk(chunk);
+    return () => {
+      if (chunk) untrackChunk(chunk);
+      disposeChunk(chunk);
+    };
+  }, [chunk]);
+
+  // ⚠️⚠️ React double-buffers its fibers: the `alternate` retains the PREVIOUS
+  // render's props and hook state, which here is an entire replaced chunk —
+  // hundreds of MB, disposed, unreachable from the scene, and pinned for as long
+  // as the component lives. One extra render after a build lands makes that
+  // alternate hold the CURRENT chunk instead. Cheap: geometry and materials are
+  // memoized, so nothing is rebuilt.
+  const [, releaseAlternateFiber] = useState(0);
+  useEffect(() => {
+    if (chunk) releaseAlternateFiber(n => n + 1);
   }, [chunk]);
 
   // --- Offer what was drawn for sampling. Ceiling copies are left out: one faces

@@ -7,7 +7,10 @@ import {
   buildFenceRibbons,
   createStackLocator,
 } from '../src/sdk/geometries/fence-ribbon';
-import { StackSectionSource } from '../src/sdk/geometries/surface-section';
+import {
+  packTriangleMask,
+  StackSectionSource,
+} from '../src/sdk/geometries/surface-section';
 import { Vec2 } from '../src/sdk/types/common';
 import {
   nearestOnPolyline,
@@ -42,7 +45,7 @@ function flatStack(n: number, topY: number, thickness: number) {
       new Float32Array(count).fill(topY),
       new Float32Array(count).fill(topY - thickness),
     ],
-    intervals: [new Uint8Array(indices.length / 3).fill(1)],
+    intervals: [packTriangleMask(new Uint8Array(indices.length / 3).fill(1))],
   };
   return source;
 }

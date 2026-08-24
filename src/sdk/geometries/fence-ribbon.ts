@@ -1,7 +1,7 @@
 import { BufferAttribute, BufferGeometry } from 'three';
 import { Vec2 } from '../types/common';
 import { distanceVec2 } from '../utils/vector-operations';
-import { StackSectionSource } from './surface-section';
+import { StackSectionSource, triangleInMask } from './surface-section';
 
 /**
  * A point located in a stack's shared tessellation: which triangle, and the
@@ -273,7 +273,11 @@ export function buildFenceRibbons(
     for (let interval = 0; interval + 1 < layers; interval++) {
       const members = intervals[interval];
       if (!members) continue;
-      if (!members[a.triangle] !== !members[b.triangle]) return false;
+      if (
+        triangleInMask(members, a.triangle) !==
+        triangleInMask(members, b.triangle)
+      )
+        return false;
     }
     return true;
   };
@@ -357,7 +361,13 @@ export function buildFenceRibbons(
       // Outside the tessellation, or where this interval holds no volume — the
       // membership flags are per triangle, so a hole in the unit opens a gap in
       // the face rather than a wall standing over nothing.
-      if (!a || !b || !members[a.triangle] || !members[b.triangle]) continue;
+      if (
+        !a ||
+        !b ||
+        !triangleInMask(members, a.triangle) ||
+        !triangleInMask(members, b.triangle)
+      )
+        continue;
       const t0 = top[k];
       const b0 = bottom[k];
       const t1 = top[k + 1];

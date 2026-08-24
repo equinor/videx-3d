@@ -1,6 +1,6 @@
 import { CameraControls, Environment } from '@react-three/drei';
 import { Canvas, useThree } from '@react-three/fiber';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Color, NoToneMapping } from 'three';
 import { PI2 } from '../../sdk';
 import { CameraManager } from '../../sdk/managers/CameraManager';
@@ -37,33 +37,26 @@ const Videx3dBridge = ({ manager }: { manager: CameraManager }) => {
 
 export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
   const scale = parameters.scale || 100;
-  const cameraManager = useRef(new CameraManager());
+  // Lazy initialiser, NOT `useRef(new CameraManager())` — that argument is
+  // evaluated on every render and only the first result is ever kept.
+  const [cameraManager] = useState(() => new CameraManager());
 
   const initControls = useCallback(
     (controls: CameraControls | null) => {
-      if (cameraManager.current) {
-        cameraManager.current.setControls(controls);
-        if (controls && parameters.cameraTarget)
-          cameraManager.current.setTarget(parameters.cameraTarget);
-      }
+      cameraManager.setControls(controls);
+      if (controls && parameters.cameraTarget)
+        cameraManager.setTarget(parameters.cameraTarget);
     },
-    [parameters.cameraTarget],
+    [cameraManager, parameters.cameraTarget],
   );
 
   useEffect(() => {
-    if (cameraManager.current.controls && parameters.cameraTarget) {
-      cameraManager.current.setTarget(parameters.cameraTarget);
+    if (cameraManager.controls && parameters.cameraTarget) {
+      cameraManager.setTarget(parameters.cameraTarget);
     }
-  }, [parameters.cameraTarget]);
+  }, [cameraManager, parameters.cameraTarget]);
 
-  useEffect(
-    () => () => {
-      if (cameraManager.current) {
-        cameraManager.current.dispose();
-      }
-    },
-    [],
-  );
+  useEffect(() => () => cameraManager.dispose(), [cameraManager]);
 
   return (
     <Canvas
@@ -113,7 +106,7 @@ export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
 
       <Story />
       {/* <axesHelper args={[1000]} /> */}
-      <Videx3dBridge manager={cameraManager.current} />
+      <Videx3dBridge manager={cameraManager} />
       <CameraControls ref={initControls} makeDefault />
     </Canvas>
   );

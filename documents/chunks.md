@@ -3321,9 +3321,8 @@ anchors and host meshes are clipped without touching their shaders. The likely a
 is **both** — global renderer clipping for the scene, a uniform on chunk materials for
 what must stay live and drive the section.
 
-⚠️ The cut face lies *in* the plane, so it clips itself. Exclude it from the clip, or
-offset it along the normal by an epsilon — at field scale, and with the log depth
-buffer, an epsilon that survives depth precision is still well under a metre.
+⚠️ The cut face lies *in* the plane, so it clips itself — and it has to be excluded
+from the clip rather than nudged out of the way, for the reason §15.9.8 gives.
 
 ⚠️ GPU picking has its own shader (`pick_vertex.glsl` includes the clipping chunks)
 and needs the same plane, or the pointer hits geometry that is not drawn. Global
@@ -3453,9 +3452,8 @@ the props once per frame; nothing in it is read during React rendering. The one
 exception is `carrier`, which decides how a material is BUILT and so has to be
 visible to React — it is published as a primitive, which cannot churn an identity.
 
-⚠️ The `offset` moves the face toward the **kept** side (`−normal`), not along the
-normal. The face lies exactly in the plane, so along the normal it moves into the
-half-space that is discarded.
+⚠️ The `offset` moves the face toward the **kept** side (`−normal`) when positive,
+and the default is NEGATIVE — see §15.9.8.
 
 #### 15.9.4 What it cuts, and what it does not
 
@@ -3567,6 +3565,36 @@ measured through `Spikes/Chunks/SyntheticColumn` (the `Section` control group, w
 `sectionAnimate` driving a continuously tumbling plane — the worst case, since
 nothing can be cached between frames).
 
+#### 15.9.8 ⭐⭐ The face has to sit PROUD, and therefore cannot be cut (2026-08-21)
+
+USER-REPORTED: bright specks along the top of every band, growing as the view tilts
+down onto the horizons and as the camera closes in.
+
+The face was nudged toward the KEPT side, so that the block's own test — which it was
+drawn with — would not eat it. That is exactly the wrong direction. The block survives
+right up to `d = 0`, so a face at `d = −offset` leaves a slab of block standing in
+FRONT of the thing meant to close it: slivers of near-horizontal caps, seen edge-on,
+lit brightest of all, and — since a horizon's trace on the plane IS the band boundary
+— concentrated along the top of every band. Foreshortening explains the rest of the
+report: looking down on a surface that has no thickness projects that slab wider, and
+zooming in buys it more pixels.
+
+⇒ The face is nudged the OTHER way (`DEFAULT_SECTION_OFFSET` is negative), which puts
+it on the removed side of its own test, so it is drawn with a material built WITHOUT
+the cut — which is what the fence's face already did (§15.9.4's aside that a plane
+"gets away with it" was wrong). The faces of adjacent intervals meet exactly
+(§15.9.1), so their union tiles the whole cross-section nearer than anything they
+close: no fragment can show through, at any angle.
+
+⚠️ `polygonOffset` is not the tool here even where the log depth buffer allowed it.
+This is a knife edge — two surfaces meeting along a line — not two coplanar ones.
+
+⚠️ The inference overlay over a face is a second mesh with its own material and needs
+the same exemption, or the hatching is discarded along with the face it sits on.
+
+⚠️ Under transparency none of this decides anything: the caps behind the face blend
+through it whatever the depth order. That is inherent to a translucent stack.
+
 ### 15.10 Keeping a unit whole (2026-08-14)
 
 `ChunkLayer.section: false` exempts one unit from the cut, so it stands proud of
@@ -3650,8 +3678,13 @@ first two tests skipped — the cap *as it would be if nothing above it were dra
 `null` where that is the same set, which is most layers; measured on the generated
 column only two carry one (Draupne, 1555 triangles, and the unconformity's 23).
 
-It travels as `SurfaceChunkMesh.peelIndex` — **an index and nothing more**, since
+It travels as `SurfaceChunkMesh.patchIndex` — **an index and nothing more**, since
 the patch shares the cap's positions, uv, normals and `inferred`.
+
+⭐⭐ It carries the DIFFERENCE (the fragments the cap gave up), not the union, and
+is drawn IN ADDITION to the cap. The union would be a second full copy of every
+cap's index — hundreds of MB on a field-scale column — and would redraw the whole
+cap on top of itself, which under OIT blends the covered area twice.
 
 ⭐ The restored fragments are already in the right place: a truncated layer's
 heights were clamped ONTO the layer above, and a welded one is coincident with it,
@@ -3681,10 +3714,12 @@ meet. Invisible in practice; recorded rather than papered over.
 knowing because the symptom points nowhere near it: `computeVertexNormals` only
 touches vertices its INDEX references, so a vertex used only by triangles the
 collapse dropped keeps a zero normal — which Blinn-Phong renders black. Normals are
-therefore accumulated over the WIDEST index (`peelIndex ?? own`) and the cap's own
-index swapped in afterwards. ⚠️ And because `computeUpwardNormals` reverses the
-winding IN PLACE when the normals face down, and only holds one of the two arrays,
-the cap's index is flipped to match when that happens.
+therefore accumulated over the WIDEST index (`peelIndices` from the collapse) and
+the cap's own index swapped in afterwards — the union is then dropped, and only the
+difference ships. ⚠️ And because `computeUpwardNormals` reverses the winding IN
+PLACE when the normals face down, and only holds one of the two arrays, the cap's
+index is flipped to match when that happens (which is also why the difference is
+taken AFTER that fix-up, when both are wound the same way).
 
 ⚠️ The patch is not counted in `triangles` / `droppedCollapsed`. Those describe the
 normal set and are left meaning what they say.

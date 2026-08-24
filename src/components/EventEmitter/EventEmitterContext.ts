@@ -43,6 +43,8 @@ export type Emitter = {
   instanced: boolean;
   instanceCount: number;
   threshold: number;
+  /** the traversal that last saw this object (see `PickingHelper.updateListeners`) */
+  generation?: number;
 };
 
 export type ObjectMapEntry = {

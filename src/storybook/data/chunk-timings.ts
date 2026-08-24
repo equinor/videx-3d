@@ -29,6 +29,8 @@ export function chunkTimings(metrics: SurfaceChunkMetrics) {
     totalMs: Math.round(metrics.totalMs),
     ownMs: Math.round(own),
     unaccountedMs: Math.round(metrics.totalMs - own - metrics.densifyMs),
+    // What the shared column keeps resident in the worker between builds.
+    columnMB: Math.round(d.columnBytes / 1e5) / 10,
     fetchMs: Math.round(d.fetchMs),
     referenceMs: Math.round(d.referenceMs),
     sealMs: Math.round(d.sealMs),
