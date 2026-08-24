@@ -1,4 +1,4 @@
-import { ColorRepresentation, Material, Plane } from 'three';
+import { ColorRepresentation, Plane } from 'three';
 import {
   FenceExtensionMode,
   FenceField,
@@ -224,14 +224,12 @@ export type ChunkLayer = {
   /** optional procedural perturbation of a synthetic boundary */
   relief?: StackRelief;
   /**
-   * The cap's material — a colour, or a `Material` (e.g. a `SurfaceMaterial`) the
-   * CALLER owns and this component never disposes. Omit for the built-in palette,
-   * cycled by layer order.
+   * The cap's colour. Omit for the built-in palette, cycled by layer order.
    */
-  material?: string | Material;
+  material?: string;
   /**
-   * The volume between this surface and the next one down: a colour, a `Material`,
-   * or `true` to reuse this layer's own {@link ChunkLayer.material}.
+   * The volume between this surface and the next one down: a colour, or `true` to
+   * reuse this layer's own {@link ChunkLayer.material}.
    *
    * Omitted / `null` / `false` means NO volume — which is how a gap between zones
    * and a bare surface with no thickness are both expressed.
@@ -240,14 +238,11 @@ export type ChunkLayer = {
    * carrier closes it (see `ChunkStackProps.carrier`) — a volume has to end
    * somewhere, and the only thing that can say where is the column.
    */
-  fill?: string | Material | boolean | null;
+  fill?: string | boolean | null;
   /**
    * Procedural surface relief for this layer's cap AND the volume below it — a
    * {@link ChunkDetail} preset such as `'sand'` or `'shale'`, adding subtle
    * texture-free detail once the camera is close. OFF when omitted.
-   *
-   * ⚠️ Ignored where {@link ChunkLayer.material} / {@link ChunkLayer.fill} supply a
-   * `Material`: that one is the caller's and is used exactly as given.
    */
   detail?: ChunkDetail;
   /**
@@ -451,14 +446,13 @@ export type StackImmersion = {
  */
 export type ChunkCarrier = StackCarrier & {
   /**
-   * The floor's own cap material — a colour, or a `Material` the CALLER owns and
-   * this component never disposes.
+   * The floor's own cap colour.
    *
    * Omit it and the floor is drawn with the fill of the unit resting ON it, which
    * is the only side of it ever seen; give it one to let the floor read as its own
    * thing (a datum rather than the underside of the deepest unit).
    */
-  material?: string | Material;
+  material?: string;
 };
 
 /**

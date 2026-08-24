@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Group, Material } from 'three';
+import { Group } from 'three';
 import { useData } from '../../hooks/useData';
 import { useGenerator } from '../../hooks/useGenerator';
 import {
@@ -61,9 +61,9 @@ const nextBuildToken = () => ++buildTokens;
  */
 const STALL_TIMEOUT_MS = 15000;
 
-/** Identity of one appearance value, so swapping a colour for a Material shows. */
+/** Identity of one appearance value, so a colour or fill-flag change shows. */
 const appearanceId = (value: ChunkLayer['material'] | ChunkLayer['fill']) =>
-  value instanceof Material ? value.uuid : String(value);
+  String(value);
 
 /**
  * {@link Chunk} props.

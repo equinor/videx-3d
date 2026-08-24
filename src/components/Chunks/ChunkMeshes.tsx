@@ -81,12 +81,12 @@ export type ChunkMeshesProps = {
    */
   bathymetry?: ChunkDepthMap | null;
   /**
-   * Cap material for the column's floor, when this chunk closes the block (see
+   * Cap colour for the column's floor, when this chunk closes the block (see
    * `ChunkStackProps.carrier`). The floor is INFERRED from a fill on the last
    * layer, so it has no `ChunkLayer` of its own to carry one. Omit it and the
    * floor is drawn with the fill of the unit resting on it.
    */
-  carrierMaterial?: string | Material;
+  carrierMaterial?: string;
   /** contacts drawn as lines on every layer that does not opt out */
   contacts?: ChunkContactTexture[] | null;
   /**
@@ -243,8 +243,7 @@ export const ChunkMeshes = ({
   });
 
   const materials = useMemo(() => {
-    // Materials built here are owned here; a caller's Material is passed through
-    // untouched, so the two are tracked separately for disposal.
+    // Every material built here is owned here and disposed on cleanup.
     const owned: Material[] = [];
     const make = (
       color: string,
@@ -328,20 +327,18 @@ export const ChunkMeshes = ({
     })();
 
     const surfaces = layers.map((layer, i) =>
-      layer.material instanceof Material
-        ? layer.material
-        : make(
-            layer.material ?? paletteAt(i),
-            layer.opacity ?? surfaceOpacity,
-            layer.detail,
-            false,
-            i === 0 ? waterTint : undefined,
-            {
-              section: cutCap(i),
-              fence: cutCap(i),
-              contacts: layerContacts(i),
-            },
-          ),
+      make(
+        layer.material ?? paletteAt(i),
+        layer.opacity ?? surfaceOpacity,
+        layer.detail,
+        false,
+        i === 0 ? waterTint : undefined,
+        {
+          section: cutCap(i),
+          fence: cutCap(i),
+          contacts: layerContacts(i),
+        },
+      ),
     );
 
     // A void's upper copy is drawn with the material of the interval ABOVE it, but
@@ -366,42 +363,38 @@ export const ChunkMeshes = ({
     const walls = layers.map((layer, i) => {
       const fill = fillOf(layer, i);
       if (fill === null) return null;
-      return fill instanceof Material
-        ? fill
-        : make(
-            fill,
-            layer.opacity ?? wallOpacity,
-            layer.detail,
-            true,
-            undefined,
-            {
-              section: cutWall(i),
-              fence: cutWall(i),
-              contacts: layerContacts(i),
-            },
-          );
+      return make(
+        fill,
+        layer.opacity ?? wallOpacity,
+        layer.detail,
+        true,
+        undefined,
+        {
+          section: cutWall(i),
+          fence: cutWall(i),
+          contacts: layerContacts(i),
+        },
+      );
     });
 
     const ceilings = layers.map((layer, i) => {
       if (!ceilingOf.has(i)) return null;
       const fill = fillOf(layer, i);
       if (fill === null) return null;
-      return fill instanceof Material
-        ? fill
-        : // A ceiling is the BASE of the interval above it, so it follows that
-          // unit rather than its own layer index.
-          make(
-            fill,
-            layer.opacity ?? wallOpacity,
-            layer.detail,
-            false,
-            undefined,
-            {
-              section: !keptUnit(i),
-              fence: !keptUnit(i),
-              contacts: layerContacts(i),
-            },
-          );
+      // A ceiling is the BASE of the interval above it, so it follows that unit
+      // rather than its own layer index.
+      return make(
+        fill,
+        layer.opacity ?? wallOpacity,
+        layer.detail,
+        false,
+        undefined,
+        {
+          section: !keptUnit(i),
+          fence: !keptUnit(i),
+          contacts: layerContacts(i),
+        },
+      );
     });
 
     // ⚠️⚠️ A cut FACE must not carry the cut it exists to close, whichever cut it
@@ -426,9 +419,6 @@ export const ChunkMeshes = ({
               return material;
             }
             const fill = fillOf(layer, i);
-            // A caller's own Material carries no cut of ours, so it already is
-            // what a face needs.
-            if (fill instanceof Material) return fill;
             return make(
               fill === null ? paletteAt(i) : fill,
               layer.opacity ?? wallOpacity,
@@ -441,26 +431,23 @@ export const ChunkMeshes = ({
 
     const carrier = !carrierMaterial
       ? null
-      : carrierMaterial instanceof Material
-        ? carrierMaterial
-        : make(carrierMaterial, surfaceOpacity, undefined, false, undefined, {
-            // The floor is the base of the deepest unit, so keeping that unit keeps
-            // it — AND'd with the explicit toggle rather than overriding it, so a
-            // caller can still keep the base plate whole on its own.
-            section: sectionCarrier && !keptUnit(layers.length - 1),
-            fence: fenceCarrier && !keptUnit(layers.length - 1),
-          });
+      : make(carrierMaterial, surfaceOpacity, undefined, false, undefined, {
+          // The floor is the base of the deepest unit, so keeping that unit keeps
+          // it — AND'd with the explicit toggle rather than overriding it, so a
+          // caller can still keep the base plate whole on its own.
+          section: sectionCarrier && !keptUnit(layers.length - 1),
+          fence: fenceCarrier && !keptUnit(layers.length - 1),
+        });
 
     // ⭐ The fragments a cap gave up because a layer ABOVE covered them, restored
     // where that cover has gone. Two ways it can go, so two materials: peeled away
     // entirely (draw everywhere) or cut away by the section (draw only in the half
-    // it vacated, which is what the negated plane gives). A caller's own Material
-    // cannot be given either, so such a layer keeps its holes.
+    // it vacated, which is what the negated plane gives).
     const patches = new Map<number, { open: Material; cut: Material | null }>();
     for (const surface of chunk.surfaces) {
       if (!surface.patchIndex || surface.ceiling) continue;
       const declared = layers[surface.layer];
-      if (!declared || declared.material instanceof Material) continue;
+      if (!declared) continue;
       patches.set(surface.layer, {
         open: make(
           declared.material ?? paletteAt(surface.layer),

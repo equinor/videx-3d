@@ -1,5 +1,5 @@
 import { createContext } from 'react';
-import { IUniform, Material, Vector4 } from 'three';
+import { IUniform, Vector4 } from 'three';
 import { PlanarPolygonGeometry, SurfaceMeta } from '../../sdk';
 import {
   ChunkBuildState,
@@ -65,11 +65,11 @@ export type ChunkStackContextValue = {
    */
   carrier?: ChunkCarrier;
   /**
-   * The carrier's cap material, published separately from `carrier` because it is
+   * The carrier's cap colour, published separately from `carrier` because it is
    * APPEARANCE: it must reach `ChunkMeshes` without joining the build spec, where
    * it would make recolouring the floor rebuild the geometry.
    */
-  carrierMaterial?: string | Material;
+  carrierMaterial?: string;
   /**
    * Fluid contacts drawn as LINES across whatever face crosses them, prepared as
    * textures. APPEARANCE only, like `carrierMaterial`: a contact takes no part in

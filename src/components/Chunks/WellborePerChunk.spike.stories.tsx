@@ -35,7 +35,6 @@ import { useChunkProgressPanel } from '../../storybook/hooks/useChunkProgressPan
 import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
-import { useSurfaceMaterial } from '../Surfaces/useSurfaceMaterial';
 import { UtmArea } from '../UtmArea';
 import { Chunk } from './Chunk';
 import { ChunkResolveOptions, DEFAULT_CHUNK_MAX_FILL } from './chunk-defs';
@@ -130,8 +129,6 @@ type PerChunkStoryProps = {
   wallOpacity: number;
   wireframe: boolean;
   inferredStyle: ChunkInferenceStyle;
-  topSurfaceMaterial: boolean;
-  topShowContours: boolean;
   showWells: boolean;
   wellColor: string;
 };
@@ -195,22 +192,6 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
       props.sealMode,
       props.minThickness,
     ],
-  );
-
-  // The uppermost surface of the whole stack may be drawn with the real
-  // `SurfaceMaterial` (elevation-driven colour ramp / contours) instead of the
-  // chunk's flat colour. It reads the grid through the geometry's UV attribute,
-  // which the shared tessellation writes per layer.
-  const topMeta = chunks[0]?.[0];
-  const topMaterial = useSurfaceMaterial(
-    props.topSurfaceMaterial ? topMeta : null,
-    {
-      showContours: props.topShowContours,
-      opacity: props.surfaceOpacity,
-      // Drawn on a chunk cap, whose mesh is sealed and hole-filled — without this
-      // the material discards wherever the grid has no data and holes the block.
-      geometryFallback: true,
-    },
   );
 
   const wellboreIds = useMemo(
@@ -441,8 +422,6 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
                 kind: 'wellbores',
                 options: { radius: marginAt(i, chunkProps.length) },
               }}
-              // The uppermost surface of the whole stack may use the real
-              // SurfaceMaterial — now just a material on that layer.
               layers={
                 i === 0
                   ? [
@@ -459,12 +438,7 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
                             },
                           ]
                         : []),
-                      ...(topMaterial
-                        ? [
-                            { ...layers[0], material: topMaterial },
-                            ...layers.slice(1),
-                          ]
-                        : layers),
+                      ...layers,
                     ]
                   : layers
               }
@@ -540,8 +514,6 @@ export const Default: Story = {
     wallOpacity: 1,
     wireframe: false,
     inferredStyle: 'hatched',
-    topSurfaceMaterial: false,
-    topShowContours: false,
     // Wells
     showWells: true,
     wellColor: '#00e5ff',
@@ -731,19 +703,7 @@ export const Default: Story = {
       control: 'select',
       options: ['none', 'hatched', 'checker', 'zigzag'],
       description:
-        'How the INVENTED part of the block is marked — the geometry the seal built where no surface was mapped. It is drawn as a pattern OVER the unit’s material, so it survives `topSurfaceMaterial` too.',
-      table: { category: 'Appearance' },
-    },
-    topSurfaceMaterial: {
-      control: 'boolean',
-      description:
-        'Draw the uppermost surface with the real `SurfaceMaterial` (elevation colour ramp) instead of the chunk’s flat colour, configured from its `SurfaceMeta`.',
-      table: { category: 'Appearance' },
-    },
-    topShowContours: {
-      control: 'boolean',
-      description:
-        'Contour lines on the top surface (needs the material above).',
+        'How the INVENTED part of the block is marked — the geometry the seal built where no surface was mapped. It is drawn as a pattern OVER the unit’s material.',
       table: { category: 'Appearance' },
     },
     showWells: {

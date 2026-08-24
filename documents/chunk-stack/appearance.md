@@ -22,8 +22,8 @@ boundary has two sides worth painting:
 ```ts
 type ChunkLayer = {
   // …
-  material?: string | Material;                     // the CAP
-  fill?: string | Material | boolean | null;        // the VOLUME BELOW
+  material?: string;                                // the CAP colour
+  fill?: string | boolean | null;                   // the VOLUME BELOW
   detail?: ChunkDetail;                             // procedural relief on both
   opacity?: number;                                 // overrides the chunk sliders
   contacts?: string[] | false;                      // which contacts draw here
@@ -34,16 +34,13 @@ type ChunkLayer = {
 - `fill: true` means *"the same as my own cap"* — the common case for a zone whose
   wall should read as the unit hanging below its top surface.
 - Omitting `fill` (or `null` / `false`) means **no volume at all**.
-- A `string` is a colour; the material is built and **owned** by `ChunkMeshes`.
-- A `Material` is **the caller's**, used exactly as given, and never disposed here.
-  `detail` is ignored on such a layer — it is your material, used as you supplied
-  it. It must be OIT-compatible if the stack is transparent (`makeOitCompatible`
-  is offered for that; `SurfaceMaterial` and the ocean materials already are).
+- Both slots take a **colour** (`string`); `ChunkMeshes` builds and **owns** the
+  material. A caller cannot supply its own `Material` — the shipped `ChunkMaterial`
+  is what carries the section cut, fence cut, water tint, contacts, procedural
+  detail and OIT variants, none of which an outside material could take part in.
 
-Materials never reach the build spec, so **recolouring cannot rebuild geometry**.
-There is no `colors` array and no `topMaterial` prop: both existed only because
-there was no per-layer material channel, and any layer can carry one now — a
-`SurfaceMaterial` on the top layer is just `material={surfaceMaterial}`.
+Colours never reach the build spec, so **recolouring cannot rebuild geometry**.
+There is no `colors` array and no `topMaterial` prop either.
 
 > ⭐ **Opacity belongs to the unit, not to the chunk.** Water at 0.45 over an
 > opaque sea bed is one chunk, not two. `ChunkLayer.opacity` is an **override**,
@@ -229,8 +226,7 @@ exactly as the invention does — on both caps and walls.
 > possible. A pattern cannot be mistaken for data.
 
 It is drawn as an **overlay mesh** sharing the unit's geometry, rather than as part
-of the unit's material, so it works over a caller-supplied (possibly textured)
-`Material` too. Consequences:
+of the unit's material. Consequences:
 
 - One overlay material per distinct **(opacity, cut)** pair, built lazily. Opacity,
   because a translucent unit must not be marked opaquely. Cut, because the overlay
@@ -339,8 +335,8 @@ right-click from a left one.
 
 ## Ownership rules
 
-1. **Built from a colour → owned here → disposed here.** Built from a caller's
-   `Material` → passed through untouched → never disposed here.
+1. **Every material is built from a colour → owned here → disposed here.** A caller
+   cannot supply its own `Material`, so nothing is passed through undisposed.
 2. **Materials are rebuilt on appearance change**, with a fresh identity, so the
    OIT pass re-classifies them.
 3. **Never attach the same property by two mechanisms** on one JSX element. Walls
