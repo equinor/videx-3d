@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.2.0](https://github.com/equinor/videx-3d/compare/v3.1.0...v3.2.0) (2026-08-24)
+
+
+### Features
+
+* **distance:** generic Bounds provider + pure distanceToBounds helper (tested), LOD stories & docs ([#262](https://github.com/equinor/videx-3d/issues/262)) ([7d1473e](https://github.com/equinor/videx-3d/commit/7d1473ec1da1fa064e970ed73d51a7d27d5f520a))
+
+
+### Bug Fixes
+
+* dependabot vulnerabilities and npm engine update ([#266](https://github.com/equinor/videx-3d/issues/266)) ([0f77172](https://github.com/equinor/videx-3d/commit/0f771723e310e9bc055edb5d04c85be56a121af3))
+* **npm:** bump js-yaml from 4.3.0 to 4.3.1 ([#264](https://github.com/equinor/videx-3d/issues/264)) ([af90eb2](https://github.com/equinor/videx-3d/commit/af90eb20dbe003aa3f3003bf7dcb60bff39d0d8b))
+
 ## [3.1.0](https://github.com/equinor/videx-3d/compare/v3.0.0...v3.1.0) (2026-08-10)
 
 
