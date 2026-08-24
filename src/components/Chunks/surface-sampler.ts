@@ -107,13 +107,30 @@ const samplers = new WeakMap<BufferGeometry, TinSampler>();
 function samplerFor(geometry: BufferGeometry): TinSampler | null {
   const cached = samplers.get(geometry);
   if (cached) return cached;
+  const index = geometry.getIndex();
   const position = geometry.getAttribute('position') as
     | BufferAttribute
     | undefined;
-  if (!position) return null;
-  const index = geometry.getIndex();
+  let positions = position?.array as ArrayLike<number> | undefined;
+  if (!positions) {
+    // Split cap layout: caps carry no `position` — assemble one from the shared
+    // `xz` and this layer's `y` for the CPU TIN. Paid only for a cap actually
+    // sampled, and held by the sampler cached below.
+    const xz = geometry.getAttribute('xz') as BufferAttribute | undefined;
+    const y = geometry.getAttribute('y') as BufferAttribute | undefined;
+    if (!xz || !y) return null;
+    const xzArr = xz.array as ArrayLike<number>;
+    const yArr = y.array as ArrayLike<number>;
+    const assembled = new Float32Array(y.count * 3);
+    for (let v = 0; v < y.count; v++) {
+      assembled[3 * v] = xzArr[2 * v];
+      assembled[3 * v + 1] = yArr[v];
+      assembled[3 * v + 2] = xzArr[2 * v + 1];
+    }
+    positions = assembled;
+  }
   const built = createTinSampler(
-    position.array as ArrayLike<number>,
+    positions,
     index ? (index.array as ArrayLike<number>) : null,
   );
   samplers.set(geometry, built);

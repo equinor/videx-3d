@@ -223,6 +223,8 @@ export class CameraManager {
   private commandedPosition = new Vector3();
   private commandedTarget = new Vector3();
   private stopWatchingInput: (() => void) | null = null;
+  /** Resolvers of pending {@link settled} waits, so `dispose` can end them. */
+  private pendingSettles = new Set<() => void>();
 
   constructor() {
     this.setControls = this.setControls.bind(this);
@@ -622,18 +624,26 @@ export class CameraManager {
     };
   }
 
-  /** Resolves once the controls have come to rest. */
+  /** Resolves once the controls have come to rest (or the manager is disposed). */
   settled(): Promise<void> {
     const controls = this.controls;
     if (!controls) return Promise.resolve();
     return new Promise(resolve => {
+      let raf = 0;
+      const done = () => {
+        cancelAnimationFrame(raf);
+        this.pendingSettles.delete(done);
+        resolve();
+      };
       const check = () => {
-        if (!controls.active) {
-          resolve();
+        // Detached or disposed controls will never come to rest — stop waiting.
+        if (this.controls !== controls || !controls.active) {
+          done();
           return;
         }
-        requestAnimationFrame(check);
+        raf = requestAnimationFrame(check);
       };
+      this.pendingSettles.add(done);
       check();
     });
   }
@@ -685,6 +695,9 @@ export class CameraManager {
     this.flying = false;
     this.stopWatchingInput?.();
     this.stopWatchingInput = null;
+    // Wake any settled() waiter: with no controls it can never resolve on its own.
+    this.pendingSettles.forEach(done => done());
+    this.pendingSettles.clear();
     if (this.removeEventlisteners) {
       this.removeEventlisteners();
       this.removeEventlisteners = null;

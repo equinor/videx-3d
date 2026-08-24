@@ -17,8 +17,8 @@ import {
   stackCarrierLevel,
   stackDepthStats,
   stackDuplicateFractions,
-  stackIntervalTriangles,
   StackGridLayer,
+  stackIntervalTriangles,
   stackLayerUvs,
   stackVertexPositions,
   tessellateStack,
@@ -1036,30 +1036,6 @@ describe('carrying the inference through to the geometry', () => {
       ),
     );
     expect(graded.size).toBeGreaterThan(2);
-  });
-
-  it('tells a grid-driven material where the grid stops describing the mesh', () => {
-    const top = layerFrom(() => 1000);
-    // Mapped over the left half only, but sealed, so the mesh continues.
-    const base = layerFrom((col, row) => (col > 16 ? null : 1400 + row));
-    const reference = buildStackReference([top, base], polygon, {
-      maxFill: 0,
-    })!;
-
-    const build = buildSurfaceStack(reference, [top, base], {
-      polygon,
-      maxError: 5,
-      coverageAbsence: false,
-    })!;
-
-    const nodata = build.layers[1].geometry!.getAttribute('nodata');
-    const values = Array.from(nodata.array as Float32Array);
-    expect(values.some(v => v === 1)).toBe(true);
-    expect(values.some(v => v === 0)).toBe(true);
-
-    // ⚠️ Inverted on purpose: an attribute the geometry does not carry reads as 0
-    // in WebGL, so a fully mapped layer must NOT be reported as fully uncovered.
-    expect(build.layers[0].geometry!.hasAttribute('nodata')).toBe(false);
   });
 });
 

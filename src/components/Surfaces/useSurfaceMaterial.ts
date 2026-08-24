@@ -259,7 +259,6 @@ export function useSurfaceMaterial(
 
   useEffect(() => {
     return () => {
-      material.normalMap?.dispose();
       material.dispose();
     };
   }, [material]);

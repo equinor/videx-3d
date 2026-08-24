@@ -1,7 +1,10 @@
 import { useStore, useThree } from '@react-three/fiber';
 import { useEffect, useRef } from 'react';
 import { generatorStatsKey } from '../../components/Chunks/chunk-defs';
-import { chunkResourceStats } from '../../components/Chunks/chunk-resources';
+import {
+  chunkResourceStats,
+  setChunkTracking,
+} from '../../components/Chunks/chunk-resources';
 import { useOutputPanelState } from '../../components/Html/OutputPanel/output-panel-state';
 import type { GeneratorStats } from '../../generators/generator-stats';
 import { useGenerator } from '../../hooks/useGenerator';
@@ -49,6 +52,13 @@ export const ResourceMonitor = ({ interval = 1000 }: ResourceMonitorProps) => {
 
   const baseline = useRef<{ heap: number; geometries: number } | null>(null);
   const peakHeap = useRef(0);
+
+  // Chunk accounting is off by default (measuring walks every attribute); turn it
+  // on only while this monitor is mounted.
+  useEffect(() => {
+    setChunkTracking(true);
+    return () => setChunkTracking(false);
+  }, []);
 
   useEffect(() => {
     let stopped = false;

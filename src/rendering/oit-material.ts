@@ -294,6 +294,15 @@ function buildVariant(
     variant = base.clone();
   }
 
+  // `copy()`/`clone()` drop `defaultAttributeValues`, but the split-cap layout
+  // relies on them (a missing `xz`/`y` or `position` must default to 0). Carry the
+  // base material's over to every variant.
+  const baseDefaults = (base as { defaultAttributeValues?: unknown })
+    .defaultAttributeValues;
+  if (baseDefaults)
+    (variant as { defaultAttributeValues?: unknown }).defaultAttributeValues =
+      baseDefaults;
+
   // Share designated custom uniform containers by reference so per-frame updates
   // on the base material reach every cloned variant (e.g. casing slice uniforms).
   if (options?.shareUniforms) {

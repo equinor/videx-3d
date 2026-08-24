@@ -139,6 +139,12 @@ export function createInferenceMaterial(
     toneMapped: false,
   });
 
+  // The overlay is drawn on both caps (shared xz + per-layer y) and walls
+  // (position); the absent attribute defaults to 0 so one material serves both.
+  (
+    material as unknown as { defaultAttributeValues: Record<string, number[]> }
+  ).defaultAttributeValues = { position: [0, 0, 0], xz: [0, 0], y: [0] };
+
   material.onBeforeCompile = shader => {
     // ⭐ Bound HERE rather than on the material: `makeOitCompatible` CLONES a
     // non-`ShaderMaterial` for its per-pass variants and re-links `onBeforeCompile`
@@ -161,6 +167,8 @@ export function createInferenceMaterial(
         '#include <common>',
         `#include <common>
 attribute float inferred;
+attribute vec2 xz;
+attribute float y;
 varying float vInferred;
 varying vec3 vInferPos;
 varying vec3 vInferNormal;${
@@ -178,7 +186,7 @@ varying vec3 vFencePos;`
       )
       .replace(
         '#include <begin_vertex>',
-        `#include <begin_vertex>
+        `vec3 transformed = position + vec3(xz.x, y, xz.y);
   vInferred = inferred;
   vInferPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
   vInferNormal = normalize(mat3(modelMatrix) * normal);${

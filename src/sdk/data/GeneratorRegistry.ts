@@ -20,7 +20,14 @@ export class GeneratorRegistry {
   /** The store a generator is bound to. STABLE across reconnects — see `setStore`. */
   private facade: ReadonlyStore | null = null;
   private limit: ReturnType<typeof pLimit> | null = null;
-  private running = 0;
+  /**
+   * In-flight store CALLS per proxy. A retired proxy is released the instant its
+   * own count reaches 0, so a build still reading the old channel is never cut off
+   * and an idle one is not pinned waiting on unrelated work.
+   */
+  private inFlight = new Map<Remote<ReadonlyStore>, number>();
+  /** Proxies replaced by a reconnect, awaiting their last call to drain. */
+  private pendingRelease = new Set<Remote<ReadonlyStore>>();
 
   constructor(config: RegistryConfig = {}, store?: ReadonlyStore) {
     this.config = { concurrentStoreCalls: 0, ...config };
@@ -45,14 +52,33 @@ export class GeneratorRegistry {
         if (!this.store) throw Error('No available store!');
         return this.store;
       };
-      const run = <T>(fn: () => Promise<T>) =>
-        this.limit ? this.limit(fn) : fn();
+      const run = <T>(
+        fn: (active: ReadonlyStore) => Promise<T>,
+      ): Promise<T> => {
+        const exec = () => {
+          const active = at();
+          // Count the call against the proxy actually serving it, so retiring a
+          // proxy waits for exactly the calls that used it — no more, no less.
+          const proxy =
+            this.storeProxy && (active as unknown) === this.storeProxy
+              ? this.storeProxy
+              : null;
+          if (proxy)
+            this.inFlight.set(proxy, (this.inFlight.get(proxy) ?? 0) + 1);
+          return Promise.resolve()
+            .then(() => fn(active))
+            .finally(() => {
+              if (proxy) this.retire(proxy);
+            });
+        };
+        return this.limit ? this.limit(exec) : exec();
+      };
       this.facade = {
         get: <T>(dataType: string, key: KeyType, args?: any) =>
-          run(() => at().get<T>(dataType, key, args)),
-        all: <T>(dataType: string) => run(() => at().all<T>(dataType)),
+          run(active => active.get<T>(dataType, key, args)),
+        all: <T>(dataType: string) => run(active => active.all<T>(dataType)),
         query: <T>(dataType: string, query: Partial<T>) =>
-          run(() => at().query<T>(dataType, query)),
+          run(active => active.query<T>(dataType, query)),
       };
     }
     if (this.config.concurrentStoreCalls && !this.limit) {
@@ -68,21 +94,26 @@ export class GeneratorRegistry {
     const proxy = wrap<ReadonlyStore>(port);
     this.storeProxy = proxy;
     this.setStore(proxy as unknown as ReadonlyStore);
-    // ⚠️⚠️ NOT immediately: a build in flight is awaiting `store.get` on the old
+    // ⚠️ NOT immediately: a build in flight is awaiting `store.get` on the old
     // proxy, and releasing it makes every further call throw 'Proxy has been
     // released' — which kills the build and leaves the chunk empty with no error
-    // the caller can see. Hand the port back once the work that was using it has
-    // drained.
-    if (previous) this.releaseWhenIdle(previous);
+    // the caller can see. Release it once the calls that were using it have
+    // drained, which is right now if none are in flight.
+    if (previous && previous !== proxy) {
+      if ((this.inFlight.get(previous) ?? 0) === 0) previous[releaseProxy]();
+      else this.pendingRelease.add(previous);
+    }
   }
 
-  private releaseWhenIdle(proxy: Remote<ReadonlyStore>, waited = 0) {
-    // Bounded, so a generator that never settles cannot pin the port for good.
-    if (this.running === 0 || waited > 30000) {
-      proxy[releaseProxy]();
+  /** One store call on `proxy` has settled; release it if it was retired and idle. */
+  private retire(proxy: Remote<ReadonlyStore>) {
+    const remaining = (this.inFlight.get(proxy) ?? 0) - 1;
+    if (remaining > 0) {
+      this.inFlight.set(proxy, remaining);
       return;
     }
-    setTimeout(() => this.releaseWhenIdle(proxy, waited + 250), 250);
+    this.inFlight.delete(proxy);
+    if (this.pendingRelease.delete(proxy)) proxy[releaseProxy]();
   }
 
   async invoke<T>(key: string, ...args: any[]): Promise<T> {
@@ -93,11 +124,6 @@ export class GeneratorRegistry {
 
     const generatorFunc = this.generators.get(key)!.bind(this.facade);
 
-    this.running++;
-    try {
-      return await generatorFunc(...args);
-    } finally {
-      this.running--;
-    }
+    return generatorFunc(...args);
   }
 }

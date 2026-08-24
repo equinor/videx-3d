@@ -35,7 +35,6 @@ import {
 import { ChunkSectionDebug } from './ChunkSectionDebug';
 import { StackImmersionFog } from './StackImmersionFog';
 import { ChunkContact } from './chunk-contacts';
-import { releaseGeometry } from './chunk-resources';
 import {
   ChunkBuildState,
   ChunkCarrier,
@@ -46,7 +45,6 @@ import {
   ChunkStackProgress,
   DEFAULT_SECTION_OFFSET,
   StackImmersion,
-  stackRelease,
   stackWater,
   StackWater,
   StackWaterResponse,
@@ -282,15 +280,6 @@ export const ChunkStack = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
   const stableWater = useMemo(() => water, [waterKey]);
 
-  // ⚠️ And a NARROWER key for the sea's GEOMETRY: only these three reach the
-  // build. Everything else on `water` is sea state, and keying the spec on the
-  // whole object made every wind/foam/opacity tick rebuild the lid in the worker.
-  const waterBuildKey = water
-    ? `${water.depth ?? 0}/${water.resolution ?? ''}/${water.displacement ? 1 : 0}`
-    : '';
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
-  const stableWaterBuild = useMemo(() => water, [waterBuildKey]);
-
   // And again for the build options, which decide the identity of the CACHED
   // column: everything cut from it has to ask for it with the same ones.
   const resolveKey = resolve ? JSON.stringify(resolve) : '';
@@ -402,7 +391,7 @@ export const ChunkStack = ({
       sectionState.plane.set(
         sectionNormal.copy(sectionForward).negate(),
         sectionForward.dot(sectionAnchor) +
-          (onTarget ? 0 : (section.cameraDistance ?? 0)),
+        (onTarget ? 0 : (section.cameraDistance ?? 0)),
       );
       // Built in world space; the stack's own frame is where it has to be tested,
       // and the two differ as soon as the stack carries a vertical exaggeration.
@@ -505,7 +494,7 @@ export const ChunkStack = ({
     setSeams(next.seams);
     setClaimed(previous =>
       previous.size === next.registry.size &&
-      [...next.registry.keys()].every(id => previous.has(id))
+        [...next.registry.keys()].every(id => previous.has(id))
         ? previous
         : new Set(next.registry.keys()),
     );
@@ -671,13 +660,13 @@ export const ChunkStack = ({
     list.sort((a, b) => at(a.topSurfaceId) - at(b.topSurfaceId));
     setMargins(previous =>
       previous.length === list.length &&
-      previous.every(
-        (p, i) =>
-          p.key === list[i].key &&
-          p.radius === list[i].radius &&
-          p.topSurfaceId === list[i].topSurfaceId &&
-          p.baseSurfaceId === list[i].baseSurfaceId,
-      )
+        previous.every(
+          (p, i) =>
+            p.key === list[i].key &&
+            p.radius === list[i].radius &&
+            p.topSurfaceId === list[i].topSurfaceId &&
+            p.baseSurfaceId === list[i].baseSurfaceId,
+        )
         ? previous
         : list,
     );
@@ -715,7 +704,6 @@ export const ChunkStack = ({
       sectionUniform,
       sectionUniformInverse,
       sectionCarrier: section?.carrier === true,
-      sectionEnabled: !!section && section.enabled !== false,
       fence: fenceState,
       fenceUniforms,
       fenceUniformsInverse,
@@ -747,7 +735,6 @@ export const ChunkStack = ({
     sectionUniform,
     sectionUniformInverse,
     section?.carrier,
-    section?.enabled,
     fenceState,
     fenceUniforms,
     fenceUniformsInverse,
@@ -771,26 +758,13 @@ export const ChunkStack = ({
   //     lids wherever their footprints overlap. -------------------------------
   const waterGenerator = useGenerator<StackWaterResponse>(stackWater);
 
-  // The resolved column is cached in the generator keyed on the column itself, so
-  // nothing collects it when the last chunk goes away. It is the heaviest thing
-  // held anywhere in the library — hundreds of MB at field scale.
-  const releaseGenerator = useGenerator<null>(stackRelease);
-  // ⚠️ Through a ref, so this fires on UNMOUNT only: re-running it because the
-  // callback's identity changed would throw the column away mid-session and make
-  // the next chunk refetch and resample everything.
-  const releaseStackRef = useRef(releaseGenerator);
-  useEffect(() => {
-    releaseStackRef.current = releaseGenerator;
-  }, [releaseGenerator]);
-  useEffect(() => () => void releaseStackRef.current(), []);
-
   const waterSpec = useMemo(() => {
     // Needs a footprint to be drawn over, and a column to end against.
-    if (!stableWaterBuild || !outline || !utm) return null;
+    if (!stableWater || !outline || !utm) return null;
     if (!column || column.length === 0) return null;
     const envelope = value.envelope;
     if (!envelope) return null;
-    return buildStackWaterSpec(stableWaterBuild, utm.utmToArea, outline, {
+    return buildStackWaterSpec(stableWater, utm.utmToArea, outline, {
       surfaces: column,
       envelope,
       carrier: stableCarrier,
@@ -800,7 +774,7 @@ export const ChunkStack = ({
       section: hasCut,
     });
   }, [
-    stableWaterBuild,
+    stableWater,
     outline,
     utm,
     column,
@@ -827,10 +801,10 @@ export const ChunkStack = ({
       setSeaGeometry(
         response
           ? {
-              lid: response.lid ? unpackBufferGeometry(response.lid) : null,
-              body: response.body ? unpackBufferGeometry(response.body) : null,
-              section: response.section,
-            }
+            lid: response.lid ? unpackBufferGeometry(response.lid) : null,
+            body: response.body ? unpackBufferGeometry(response.body) : null,
+            section: response.section,
+          }
           : null,
       );
     })();
@@ -840,13 +814,9 @@ export const ChunkStack = ({
   }, [waterGenerator, waterSpec]);
 
   useEffect(() => {
-    const stale = seaGeometry;
     return () => {
-      if (!stale) return;
-      queueMicrotask(() => {
-        if (stale.lid) releaseGeometry(stale.lid);
-        if (stale.body) releaseGeometry(stale.body);
-      });
+      seaGeometry?.lid?.dispose();
+      seaGeometry?.body?.dispose();
     };
   }, [seaGeometry]);
 
@@ -900,7 +870,7 @@ export const ChunkStack = ({
             <OceanContactContext.Provider value={sea?.contacts ?? null}>
               {/* Identity transform, present so a camera-locked section has a
                   frame to be brought into (see the `useFrame` above). */}
-              <group ref={stackFrame} name="ChunkStack">
+              <group ref={stackFrame}>
                 {immersion && (
                   <StackImmersionFog
                     immersion={immersion}
@@ -915,24 +885,15 @@ export const ChunkStack = ({
                   />
                 )}
                 {sea && seaGeometry?.lid && (
-                  <mesh
-                    name="sea:lid"
-                    geometry={seaGeometry.lid}
-                    material={sea.surface}
-                  />
+                  <mesh geometry={seaGeometry.lid} material={sea.surface} />
                 )}
                 {sea && seaGeometry?.body && (
-                  <mesh
-                    name="sea:body"
-                    geometry={seaGeometry.body}
-                    material={sea.volume}
-                  />
+                  <mesh geometry={seaGeometry.body} material={sea.volume} />
                 )}
                 {sea?.face &&
                   waterFace?.map(face => (
                     <mesh
                       key={`${face.interval}-${face.wall}`}
-                      name={`sea:section-${face.interval}-${face.wall}`}
                       geometry={face.geometry}
                       material={sea.face!}
                     />

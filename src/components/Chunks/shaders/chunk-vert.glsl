@@ -46,6 +46,13 @@ varying float vSectionDist;
 varying vec3 vObjectPos;
 #endif
 
+// Split cap layout: a cap carries a SHARED xz + per-layer y instead of a full
+// position (walls and cut faces keep position). Both resolve below — the absent
+// attribute defaults to 0 (see `ChunkMaterial.defaultAttributeValues`), so a cap is
+// `xz + y` and a wall is `position`, with no separate shader variant.
+attribute vec2 xz;
+attribute float y;
+
 #include <common>
 #include <fog_pars_vertex>
 #include <normal_pars_vertex>
@@ -58,7 +65,7 @@ void main() {
   #include <defaultnormal_vertex>
   #include <normal_vertex>
 
-  #include <begin_vertex>
+  vec3 transformed = position + vec3(xz.x, y, xz.y);
   #include <project_vertex>
   #include <logdepthbuf_vertex>
   #include <clipping_planes_vertex>

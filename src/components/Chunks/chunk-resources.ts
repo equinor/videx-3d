@@ -49,6 +49,23 @@ type SectionFaceLike = {
   target: { capacity: number; inferred: unknown | null };
 };
 
+// Accounting is OFF by default: measuring a chunk walks every attribute of every
+// mesh, so a shipped app pays nothing for it. A diagnostic view turns it on while
+// mounted (see `setChunkTracking`).
+let tracking = false;
+
+/**
+ * Enable or disable the built-chunk accounting (see {@link chunkResourceStats}).
+ * Off by default; a diagnostic view (e.g. `ResourceMonitor`) turns it on while it
+ * is mounted. `untrackChunk` is unaffected — it always balances a chunk that WAS
+ * tracked — so toggling this never strands a count.
+ *
+ * @group Components
+ */
+export function setChunkTracking(on: boolean): void {
+  tracking = on;
+}
+
 const sectionSets = new Set<readonly SectionFaceLike[]>();
 
 /**
@@ -58,6 +75,7 @@ const sectionSets = new Set<readonly SectionFaceLike[]>();
 export function registerSectionTargets(
   faces: readonly SectionFaceLike[],
 ): () => void {
+  if (!tracking) return () => {};
   sectionSets.add(faces);
   return () => {
     sectionSets.delete(faces);
@@ -154,11 +172,15 @@ function measure(chunk: SurfaceChunk): Measured {
     total += view.buffer.byteLength;
   };
   const count = (geometry: BufferGeometry) => {
-    verts += geometry.getAttribute('position')?.count ?? 0;
+    // Caps carry no `position` (split xz + y layout); fall back to `xz` for the
+    // vertex count.
+    const positionCount =
+      geometry.getAttribute('position')?.count ??
+      geometry.getAttribute('xz')?.count ??
+      0;
+    verts += positionCount;
     const index = geometry.getIndex();
-    tris +=
-      (index ? index.count : (geometry.getAttribute('position')?.count ?? 0)) /
-      3;
+    tris += (index ? index.count : positionCount) / 3;
   };
   for (const mesh of chunk.surfaces) {
     total += geometryBytes(mesh.geometry, seen);
@@ -182,7 +204,7 @@ function measure(chunk: SurfaceChunk): Measured {
 
 /** Start counting a built chunk (call once the geometries exist). */
 export function trackChunk(chunk: SurfaceChunk): void {
-  if (measured.has(chunk)) return;
+  if (!tracking || measured.has(chunk)) return;
   const size = measure(chunk);
   measured.set(chunk, size);
   chunks++;

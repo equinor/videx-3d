@@ -5,6 +5,12 @@ uniform float emitterId;
 varying vec3 vWorldPosition;
 flat varying float vEmitterId;
 
+// Split cap layout (see ChunkMaterial): caps carry a shared xz + per-layer y and no
+// position. The absent attribute defaults to 0 (see PickingMaterial), so this
+// resolves position-based objects and split caps alike.
+attribute vec2 xz;
+attribute float y;
+
 #include <common>
 #include <uv_pars_vertex>
 #include <logdepthbuf_pars_vertex>
@@ -13,7 +19,7 @@ flat varying float vEmitterId;
 void main() {
 	#include <uv_vertex>
 
-	#include <begin_vertex>
+  vec3 transformed = position + vec3(xz.x, y, xz.y);
 	#include <project_vertex>
 	#include <logdepthbuf_vertex>
 	#include <clipping_planes_vertex>

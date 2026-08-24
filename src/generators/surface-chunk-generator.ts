@@ -247,12 +247,7 @@ export async function buildSpecStack(
   //     shared by every chunk cut from the same column, so chunks agree with each
   //     other rather than each resolving its own layers in isolation. ----------
   if (spec.stack) {
-    const context = await getStackContext(
-      store,
-      spec.stack,
-      spec.resolve,
-      isStale,
-    );
+    const context = await getStackContext(store, spec.stack, spec.resolve);
     if (!context) return null;
     // The column is the long wait, and a superseded chunk has no use for it.
     if (isStale()) return null;

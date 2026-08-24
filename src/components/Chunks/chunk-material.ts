@@ -247,6 +247,12 @@ export class ChunkMaterial extends ShaderMaterial {
     // The pipeline tone-maps once, in the OutputPass.
     this.toneMapped = false;
     this.defines = {};
+    // Caps carry a shared `xz` + per-layer `y` (no `position`); walls and cut faces
+    // carry `position`. The absent attribute defaults to 0, so the vertex shader's
+    // `position + vec3(xz.x, y, xz.y)` resolves both without a separate variant.
+    (
+      this as unknown as { defaultAttributeValues: Record<string, number[]> }
+    ).defaultAttributeValues = { position: [0, 0, 0], xz: [0, 0], y: [0] };
 
     const u = this.uniforms;
     u.diffuse.value = new Color(parameters.color ?? '#ffffff');

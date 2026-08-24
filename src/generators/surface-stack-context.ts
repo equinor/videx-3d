@@ -89,12 +89,13 @@ export type StackContext = {
   resolveMs: number;
 };
 
-// ONE column is cached at a time: the channels are the heaviest thing the
-// generator holds (nodes x layers x 4 bytes), so keeping several would be worse
-// than rebuilding. Chunks of the same column arrive together and share the
-// in-flight promise; a different column evicts this one.
-let cached: { key: string; promise: Promise<StackContext | null> } | null =
-  null;
+// Columns are the heaviest thing the generator holds (nodes x layers x 4 bytes),
+// so only a few are kept resident — enough for several ChunkStacks (or one stack
+// whose chunks resolve differently) to coexist without evicting each other on
+// every request, yet bounded so a control sweep cannot pile columns up. Chunks of
+// the same column arrive together and share its in-flight promise.
+const MAX_CACHED_COLUMNS = 4;
+const columns = new Map<string, Promise<StackContext | null>>();
 
 // ⭐ Column builds are SERIALIZED on this chain. Eviction does not stop a build
 // that has already started, and each one holds its own full set of channels, so
@@ -102,10 +103,24 @@ let cached: { key: string; promise: Promise<StackContext | null> } | null =
 // allocation in the library by the number of stale requests.
 let chain: Promise<unknown> = Promise.resolve();
 
-/** What the current column keeps resident, for {@link stackContextStats}. */
-let retained: { key: string; bytes: number } | null = null;
+/** Bytes each cached column keeps resident, for {@link stackContextStats}. */
+const retainedByKey = new Map<string, number>();
 let columnsBuilt = 0;
 let columnsInFlight = 0;
+
+/** Drop a column from the cache (and its resident-bytes accounting). */
+function evictColumn(key: string): void {
+  columns.delete(key);
+  retainedByKey.delete(key);
+}
+
+/** Keep the cache within {@link MAX_CACHED_COLUMNS}, evicting least-recently-used. */
+function pruneColumns(): void {
+  while (columns.size > MAX_CACHED_COLUMNS) {
+    const oldest = columns.keys().next().value as string;
+    evictColumn(oldest);
+  }
+}
 
 /** Accounting for the resources the stack generators hold. */
 export type StackContextStats = {
@@ -123,10 +138,15 @@ export type StackContextStats = {
 
 /** What the stack generators currently hold (see `generatorStats`). */
 export function stackContextStats(): StackContextStats {
+  let columnBytes = 0;
+  for (const bytes of retainedByKey.values()) columnBytes += bytes;
+  // Most-recently-used column (last in insertion order).
+  let columnKey: string | null = null;
+  for (const key of columns.keys()) columnKey = key;
   return {
-    columnKey: retained?.key ?? null,
-    columnBytes: retained?.bytes ?? 0,
-    candidateBytes,
+    columnKey,
+    columnBytes,
+    candidateBytes: totalCandidateBytes(),
     columnsBuilt,
     columnsInFlight,
   };
@@ -145,28 +165,60 @@ export function getStackContext(
   store: ReadonlyStore,
   stack: SurfaceChunkStackSpec,
   resolve: ChunkResolveOptions | undefined,
-  isStale: () => boolean = () => false,
 ): Promise<StackContext | null> {
   const key = `${stack.key}|${resolve?.mode ?? 'truncate'}|${resolve?.minGap ?? 0}|${resolve?.maxNodes ?? ''}|${resolve?.maxFill ?? DEFAULT_CHUNK_MAX_FILL}|${resolve ? 1 : 0}|${resolve?.seal === false ? 0 : 1}|${resolve?.sealMode ?? 'proportional'}|${resolve?.minThickness ?? ''}`;
-  if (cached && cached.key === key) return cached.promise;
+  const existing = columns.get(key);
+  if (existing) {
+    // Touch: move to the most-recently-used end so a shared column is not the one
+    // an unrelated request evicts.
+    columns.delete(key);
+    columns.set(key, existing);
+    return existing;
+  }
+  // ⭐ The column is SHARED work — every chunk cut from it awaits this one promise,
+  // so it is deliberately NOT gated on any single caller's staleness. A chunk that
+  // has moved on abandons its OWN build (see `isStale` in the chunk generator); it
+  // does not abort the column its siblings are still waiting for.
   const promise = chain.then(() => {
-    // ⚠️ The CALLER has moved on (its own newer request superseded this one), so
-    // building the column now would cost a full column nobody will draw.
-    if (isStale()) return null;
-    // ⚠️⚠️ The single cache slot may have been taken while this request queued —
-    // by another chunk, or by this caller asking for a DIFFERENT column and then
-    // asking for this one again. The caller still wants it, so take the slot back
-    // and build. Returning null here (which this used to do) handed the chunk an
-    // empty result it treated as "nothing to draw", with nothing to retry it.
-    if (!cached || cached.key !== key) cached = { key, promise };
     columnsInFlight++;
     return buildStackContext(store, stack, resolve, key).finally(() => {
       columnsInFlight--;
     });
   });
-  cached = { key, promise };
+  // ⚠️ Never leave a failed or empty build cached: a null under the key would hand
+  // every later chunk of this column an empty result with nothing to retry it.
+  promise.then(
+    context => {
+      if (columns.get(key) !== promise) retainedByKey.delete(key);
+      else if (!context) evictColumn(key);
+    },
+    () => {
+      if (columns.get(key) === promise) evictColumn(key);
+      retainedByKey.delete(key);
+    },
+  );
+  columns.set(key, promise);
+  pruneColumns();
   chain = promise.catch(() => undefined);
   return promise;
+}
+
+// Live ChunkStacks, so the shared caches are torn down only when the LAST one
+// unmounts — two stacks in a scene must not release each other's column.
+const activeStacks = new Set<string>();
+
+/** Register a live ChunkStack (see `releaseStackResources`). */
+export function acquireStackContext(id: string): void {
+  activeStacks.add(id);
+}
+
+/**
+ * Drop a ChunkStack. Returns whether it was the last one still live — i.e. whether
+ * the heavy caches should now be cleared.
+ */
+export function releaseStackContext(id: string): boolean {
+  activeStacks.delete(id);
+  return activeStacks.size === 0;
 }
 
 /**
@@ -179,10 +231,10 @@ export function getStackContext(
  * loses the chance to be shared.
  */
 export function clearStackContext(): void {
-  cached = null;
-  retained = null;
+  columns.clear();
+  retainedByKey.clear();
   refinedByKey.clear();
-  candidateBytes = 0;
+  candidateBytesByKey.clear();
 }
 
 async function buildStackContext(
@@ -385,7 +437,7 @@ async function buildStackContext(
     sum(sealedReference.masks) +
     sum(resolved.absent) +
     sum(inferred);
-  retained = { key, bytes: retainedBytes };
+  retainedByKey.set(key, retainedBytes);
   columnsBuilt++;
 
   return {
@@ -423,27 +475,50 @@ const refinedByKey = new Map<
   Promise<{ candidates: Uint32Array[]; poolSize: number }>
 >();
 
-let candidateBytes = 0;
+/** Bytes each cached candidate set holds, keyed like {@link refinedByKey}. */
+const candidateBytesByKey = new Map<string, number>();
+
+function totalCandidateBytes(): number {
+  let total = 0;
+  for (const bytes of candidateBytesByKey.values()) total += bytes;
+  return total;
+}
 
 export function getStackCandidates(
   context: StackContext,
   maxError: number,
 ): Promise<{ candidates: Uint32Array[]; poolSize: number }> {
   const key = `${context.key}|${maxError}`;
-  let pending = refinedByKey.get(key);
-  if (!pending) {
-    // only the current column is worth keeping
-    refinedByKey.clear();
-    candidateBytes = 0;
-    pending = refineStackChannels(
-      context.reference.channels,
-      context.reference.header.nx,
-      maxError,
-    ).then(result => {
-      candidateBytes = result.candidates.reduce((a, c) => a + c.byteLength, 0);
-      return result;
-    });
-    refinedByKey.set(key, pending);
+  const existing = refinedByKey.get(key);
+  if (existing) {
+    refinedByKey.delete(key);
+    refinedByKey.set(key, existing);
+    return existing;
+  }
+  const pending = refineStackChannels(
+    context.reference.channels,
+    context.reference.header.nx,
+    maxError,
+  ).then(result => {
+    if (refinedByKey.get(key) === pending)
+      candidateBytesByKey.set(
+        key,
+        result.candidates.reduce((a, c) => a + c.byteLength, 0),
+      );
+    return result;
+  });
+  pending.catch(() => {
+    if (refinedByKey.get(key) === pending) {
+      refinedByKey.delete(key);
+      candidateBytesByKey.delete(key);
+    }
+  });
+  refinedByKey.set(key, pending);
+  // Kept in step with the column cache: the candidates belong to a column.
+  while (refinedByKey.size > MAX_CACHED_COLUMNS) {
+    const oldest = refinedByKey.keys().next().value as string;
+    refinedByKey.delete(oldest);
+    candidateBytesByKey.delete(oldest);
   }
   return pending;
 }

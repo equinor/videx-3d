@@ -5,6 +5,7 @@ import { buildEdgeOpposites, traceBoundaryRings } from './mesh-boundary';
 import { Coordinates2D, PlanarPolygonGeometry } from './planar-geometry';
 import { createPolygonCap } from './polygon-cap';
 import { ringSignedArea, ringsToPolygonCoordinates } from './polygon-outline';
+import { packTriangleMask, StackSectionSource } from './surface-section';
 import {
   collapseStackTriangles,
   makeStackInsideTest,
@@ -19,7 +20,6 @@ import {
   stackIntervalTriangles,
   StackLayer,
   StackLayerDepth,
-  stackLayerUvs,
   StackReference,
   StackResolveOptions,
   StackResolveResult,
@@ -34,7 +34,6 @@ import {
   collectStackCandidates,
   collectThicknessCrossings,
 } from './surface-stack-candidates';
-import { packTriangleMask, StackSectionSource } from './surface-section';
 import { buildRingWalls } from './surface-walls';
 
 /** One layer of a shared-tessellation stack, ready to render. */
@@ -59,9 +58,10 @@ export type StackGeometryLayer = {
 /**
  * Turn a resolved stack into one renderable geometry per layer.
  *
- * All layers share the shared tessellation's XZ and topology, so only `position.y`
- * (and the layer's own grid-space UVs) differ. Normals are per layer, computed
- * over the shared index buffer.
+ * ⭐ Split cap layout: every layer SHARES one `xz` attribute and the topology, and
+ * carries only a per-layer `y` (its heights). A cap holds no `position` or `uv` —
+ * the materials assemble the position from `xz` + `y` in the shader (see
+ * `ChunkMaterial`). Normals are per layer, computed over the shared index buffer.
  *
  * ⚠️ The index `BufferAttribute` is **shared** by every layer that keeps the full
  * triangle set — with a deep stack, duplicating it would cost more memory than all
@@ -69,21 +69,18 @@ export type StackGeometryLayer = {
  * together (three re-uploads the buffer if a surviving geometry is drawn after a
  * sibling was disposed, so it degrades to a re-upload rather than breaking).
  *
- * @param reference the common domain
  * @param tessellation the shared tessellation
- * @param heights per-layer vertex heights (already resolved)
- * @param layers the source layers, for their grid-space UVs
+ * @param positionsXZ scene XZ of every shared vertex ({@link stackVertexPositions});
+ *   shared by reference with the section source, so neither duplicates it
+ * @param heights per-layer vertex heights (already resolved); each array BECOMES
+ *   that layer's `y` attribute
  * @param layerIndices optional per-layer index subsets (see
  *   {@link collapseStackTriangles}); `null`/omitted entries use the shared set
  * @param caps per layer: whether to build a geometry at all
  * @param inferred per-layer vertex weights (see `sampleStackWeights`); a layer
  *   with any weight above zero gets an `inferred` attribute, whose PRESENCE is
  *   what tells the appearance layer the layer is partly invented
- * @param coverage per-layer vertex coverage (see `sampleStackMasks`); a layer that
- *   is not covered everywhere gets a `nodata` attribute (1 where the grid has none),
- *   which is what lets a grid-driven material (`SurfaceMaterial`) know where the
- *   grid stops describing the geometry it is drawn on. ⚠️ Inverted deliberately: a
- *   missing attribute reads as 0 in WebGL, which must mean "the grid is complete".
+ * @param peelIndices optional per-layer widened index for a peel/section patch
  *
  * @group Geometries
  */
@@ -141,64 +138,58 @@ function indexDifference(
 }
 
 export function buildStackGeometries(
-  reference: StackReference,
   tessellation: StackTessellation,
+  positionsXZ: Float32Array,
   heights: Float32Array[],
-  layers: StackLayer[],
   layerIndices?: (Uint32Array | null)[],
   caps?: boolean[],
   inferred?: Float32Array[],
-  coverage?: Uint8Array[],
   peelIndices?: (Uint32Array | null)[],
 ): StackGeometryLayer[] {
-  const positionsXZ = stackVertexPositions(reference, tessellation.coords);
   const shared = new BufferAttribute(tessellation.indices, 1);
+  // ⭐ Split cap layout: every cap SHARES one `xz` attribute; only `y` differs per
+  // layer, and that `y` IS the height array (shared by reference with the section
+  // source, so the two never duplicate it). A cap therefore stores no full
+  // (x, y, z) position — the materials assemble it in the shader (see
+  // `ChunkMaterial`). The scratch below exists ONLY to feed the CPU normal build.
+  const sharedXZ = new BufferAttribute(positionsXZ, 2);
+  const vertexCount = positionsXZ.length >> 1;
+  const scratch = new Float32Array(vertexCount * 3);
+  for (let v = 0; v < vertexCount; v++) {
+    scratch[3 * v] = positionsXZ[2 * v];
+    scratch[3 * v + 2] = positionsXZ[2 * v + 1];
+  }
 
   return heights.map((y, i) => {
     const rimY = stackRimHeights(y, tessellation.rimVertices);
     const peelIndex = peelIndices?.[i] ?? null;
     // A layer can take part WITHOUT being drawn — when the chunk above or below
     // already draws that surface. Its rim still matters (the walls hang from it),
-    // but building positions, UVs and normals for a mesh nobody renders would be
-    // pure waste, and an unowned geometry is a leak waiting to happen.
+    // but building a mesh nobody renders would be pure waste, and an unowned
+    // geometry is a leak waiting to happen.
     if (caps && caps[i] === false) return { geometry: null, rimY };
 
-    const count = y.length;
-    const positions = new Float32Array(count * 3);
-    for (let v = 0; v < count; v++) {
-      positions[3 * v] = positionsXZ[2 * v];
-      positions[3 * v + 1] = y[v];
-      positions[3 * v + 2] = positionsXZ[2 * v + 1];
-    }
     const own = layerIndices?.[i];
     const geometry = new BufferGeometry();
-    geometry.setAttribute('position', new BufferAttribute(positions, 3));
-    geometry.setAttribute(
-      'uv',
-      new BufferAttribute(
-        stackLayerUvs(reference, tessellation.coords, layers[i]),
-        2,
-      ),
-    );
+    geometry.setAttribute('xz', sharedXZ);
+    // `y` IS the per-layer height array — shared by reference with the section.
+    geometry.setAttribute('y', new BufferAttribute(y, 1));
     const marks = inferred?.[i];
     if (marks && marks.some(v => v > 0)) {
       geometry.setAttribute('inferred', new BufferAttribute(marks, 1));
     }
-    const covered = coverage?.[i];
-    if (covered && covered.some(v => v === 0)) {
-      const nodata = new Float32Array(covered.length);
-      for (let v = 0; v < covered.length; v++) nodata[v] = covered[v] ? 0 : 1;
-      geometry.setAttribute('nodata', new BufferAttribute(nodata, 1));
-    }
     // ⚠️⚠️ Normals are accumulated over the WIDEST index available, not the cap's
     // own: `computeVertexNormals` only touches vertices its index references, so a
     // vertex used ONLY by triangles the collapse dropped keeps a zero normal — and
-    // shades BLACK the moment the patch restores it (see `patchIndex`). The cap's
-    // shading is unchanged except for a smoother normal along that boundary, which
-    // is where the two meet.
+    // shades BLACK the moment the patch restores it (see `patchIndex`).
     const widest = peelIndex ?? own;
     geometry.setIndex(widest ? new BufferAttribute(widest, 1) : shared);
     const wound = widest ? widest[1] : tessellation.indices[1];
+    // Normals AND the bounding volumes need a real position; assemble it into the
+    // reused scratch (only `y` changes between layers), compute, and leave it OFF
+    // the geometry — it is never uploaded, so a cap ships `xz` + `y` + `normal`.
+    for (let v = 0; v < vertexCount; v++) scratch[3 * v + 1] = y[v];
+    geometry.setAttribute('position', new BufferAttribute(scratch, 3));
     computeUpwardNormals(geometry);
     let patchIndex: Uint32Array | null = null;
     if (peelIndex) {
@@ -217,6 +208,7 @@ export function buildStackGeometries(
       geometry.setIndex(own ? new BufferAttribute(own, 1) : shared);
     }
     quantizeNormals(geometry);
+    geometry.deleteAttribute('position');
     return { geometry, rimY, patchIndex };
   });
 }
@@ -651,8 +643,9 @@ export type SurfaceStackBuild = {
  * behind — the one thing a shared tessellation still z-fights on).
  *
  * @param reference the common domain from `buildStackReference`
- * @param layers the source layers, in stratigraphic order (shallowest first) —
- *   the caller's order IS the stratigraphic order; nothing here infers it
+ * @param _layers the source layers (shallowest first). Retained for API symmetry:
+ *   the `reference` is built from them and already carries everything the build
+ *   needs, so nothing here reads them.
  * @param options see {@link SurfaceStackOptions}
  * @returns the built stack, or `null` when the mask covers no geometry
  *
@@ -660,7 +653,7 @@ export type SurfaceStackBuild = {
  */
 export function buildSurfaceStack(
   reference: StackReference,
-  layers: StackLayer[],
+  _layers: StackLayer[],
   options: SurfaceStackOptions,
 ): SurfaceStackBuild | null {
   const maxError = options.maxError ?? 5;
@@ -852,21 +845,19 @@ export function buildSurfaceStack(
       : null;
   const tCollapse = performance.now();
 
+  const positionsXZ = stackVertexPositions(reference, tessellation.coords);
   const built = buildStackGeometries(
-    reference,
     tessellation,
+    positionsXZ,
     heights,
-    layers,
     collapsed?.indices,
     // The sea's lid is built below, on its own triangulation of the outline.
     unbounded
       ? unbounded.map((f, i) => !f && options.caps?.[i] !== false)
       : options.caps,
     inferred,
-    coverage,
     collapsed?.peelIndices,
   );
-  const positionsXZ = stackVertexPositions(reference, tessellation.coords);
   const rings = stackRimRings(positionsXZ, tessellation.rimVertices);
 
   if (options.unbounded) {
