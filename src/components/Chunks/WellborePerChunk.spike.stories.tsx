@@ -428,8 +428,6 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
   return (
     <>
       <UtmArea origin={origin} utmZone={utmZone}>
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[0.5, 1, 0.3]} intensity={1.1} />
         <ChunkStack
           cutSource={cutSource}
           surfaces={column}

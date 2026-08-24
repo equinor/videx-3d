@@ -15,6 +15,7 @@ import {
   DEFAULT_OCEAN_WATER_OPACITY,
 } from '../Ocean/ocean-material';
 import { ChunkContactTexture, resolveLayerContacts } from './chunk-contacts';
+import { releaseGeometry } from './chunk-resources';
 import { ChunkDepthMap } from './chunk-depth-map';
 import { ChunkDetail } from './chunk-detail';
 import {
@@ -111,6 +112,8 @@ export type ChunkMeshesProps = {
    * intact base plate.
    */
   sectionCarrier?: boolean;
+  /** whether the section is drawing (see `ChunkStackContextValue.sectionEnabled`) */
+  sectionEnabled?: boolean;
   /** the stack's live fence, or `null` for none */
   fence?: ChunkFenceState | null;
   /** the fence's shared uniforms (see `ChunkStackContextValue.fenceUniforms`) */
@@ -222,6 +225,7 @@ export const ChunkMeshes = ({
   sectionUniform,
   sectionUniformInverse,
   sectionCarrier = false,
+  sectionEnabled = true,
   fence = null,
   fenceUniforms,
   fenceUniformsInverse,
@@ -548,7 +552,12 @@ export const ChunkMeshes = ({
   // The cut face of each filled interval, rebuilt every frame from the chunk's own
   // channels. It is drawn with the interval's own fill material, so per-layer
   // opacity, detail and a caller's own `Material` all carry onto the section.
-  const planeFaces = useChunkSection(chunk.section, section, layers);
+  const planeFaces = useChunkSection(
+    chunk.section,
+    section,
+    layers,
+    sectionEnabled,
+  );
   const fenceFaces = useChunkFenceFace(chunk.section, fence, layers);
   const faces = fence?.enabled ? fenceFaces : planeFaces;
 
@@ -573,7 +582,7 @@ export const ChunkMeshes = ({
   }, [chunk.surfaces]);
 
   useEffect(() => {
-    return () => patchGeometries.forEach(g => g.dispose());
+    return () => patchGeometries.forEach(g => releaseGeometry(g));
   }, [patchGeometries]);
 
   // Peeling drops whole UNITS: a unit's cap and its volume go together, and the
@@ -596,7 +605,9 @@ export const ChunkMeshes = ({
   };
 
   return (
-    <group>
+    // Names match the React keys, so what an inspector shows lines up with what
+    // the code renders.
+    <group name="ChunkMeshes">
       {faces?.map(face => {
         if (face.layer < peeled) return null;
         const material =
@@ -605,11 +616,13 @@ export const ChunkMeshes = ({
         const overlay = face.geometry.hasAttribute('inferred')
           ? overlays.face(face.layer)
           : null;
+        const key = `section-${face.interval}-${face.wall}`;
         return (
-          <group key={`section-${face.interval}-${face.wall}`}>
+          <group key={key} name={key}>
             {/* ⚠️ Never culled: the buffers are preallocated and only the draw
                 range moves, so a bounding volume computed from them is meaningless. */}
             <mesh
+              name={`${key}:face`}
               geometry={face.geometry}
               material={material}
               frustumCulled={false}
@@ -617,6 +630,7 @@ export const ChunkMeshes = ({
             />
             {overlay && (
               <mesh
+                name={`${key}:inferred`}
                 geometry={face.geometry}
                 material={overlay}
                 frustumCulled={false}
@@ -639,16 +653,19 @@ export const ChunkMeshes = ({
           // removing the prop makes R3F reset it to a fresh `Mesh`'s default, a
           // white MeshBasicMaterial. R3F does not dispose materials passed as
           // props; the ones built here are disposed by the effect above.
+          const key = `wall-${i}`;
           return (
             // oxlint-disable-next-line react/no-array-index-key -- `layer` is NOT unique: a void split gives two meshes the same layer index.
-            <group key={`wall-${i}`}>
+            <group key={key} name={`${key} (layer ${wall.layer})`}>
               <mesh
+                name={`${key}:fill`}
                 geometry={wall.geometry}
                 material={material}
                 userData={{ layer: wall.layer, kind: 'wall' }}
               />
               {overlay && (
                 <mesh
+                  name={`${key}:inferred`}
                   geometry={wall.geometry}
                   material={overlay}
                   userData={{ layer: wall.layer, kind: 'wall' }}
@@ -667,7 +684,10 @@ export const ChunkMeshes = ({
           const declared = layers[surface.layer];
           // The floor is appended past the caller's layers (it is inferred from a
           // fill on the last one), so it is the one cap with nothing declaring it.
-          const isCarrier = !declared;
+          // ⚠️ EXACTLY one past: a larger index is a cap of a chunk that no longer
+          // matches these layers, and taking it for the floor gives it a material,
+          // which keeps it drawing.
+          const isCarrier = !declared && surface.layer === layers.length;
           // The ceiling of a void, and the carrier that closes the block, both
           // face UP, so what they show is the base of the unit ABOVE them rather
           // than a cap of their own — take that interval's fill. A layer with
@@ -697,13 +717,20 @@ export const ChunkMeshes = ({
               ? patch.open
               : patch.cut;
           const patchGeometry = patchGeometries.get(surface.layer);
+          const key = `surface-${i}`;
+          const role = isCarrier
+            ? 'carrier'
+            : surface.ceiling
+              ? 'ceiling'
+              : 'cap';
           return (
             // oxlint-disable-next-line react/no-array-index-key -- `layer` is NOT unique: a void split gives two meshes the same layer index.
-            <group key={`surface-${i}`}>
+            <group key={key} name={`${key} (${role} ${surface.layer})`}>
               {/* A pointer hit reports the Object3D it landed on, so the layer
                   index rides along with it — otherwise a handler knows a chunk
                   was hit but not which unit. */}
               <mesh
+                name={`${key}:${role}`}
                 geometry={surface.geometry}
                 userData={{ layer: surface.layer, kind: 'surface' }}
               >
@@ -715,6 +742,7 @@ export const ChunkMeshes = ({
               </mesh>
               {patchMaterial && patchGeometry && (
                 <mesh
+                  name={`${key}:patch`}
                   geometry={patchGeometry}
                   userData={{ layer: surface.layer, kind: 'surface' }}
                 >
@@ -727,6 +755,7 @@ export const ChunkMeshes = ({
               )}
               {overlay && (
                 <mesh
+                  name={`${key}:inferred`}
                   geometry={surface.geometry}
                   userData={{ layer: surface.layer, kind: 'surface' }}
                 >

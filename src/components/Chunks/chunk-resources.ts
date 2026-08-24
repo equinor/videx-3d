@@ -119,6 +119,30 @@ export function chunkBytes(chunk: SurfaceChunk): number {
   return measure(chunk).bytes;
 }
 
+/**
+ * Dispose a geometry AND drop its arrays.
+ *
+ * ⭐ `dispose()` only releases the GPU side. The CPU arrays go when the last
+ * reference does — and a React fiber's `alternate`, a memo's dependency array or
+ * a sampler entry can all outlive the swap. At field scale one chunk is hundreds
+ * of MB, so the payload is dropped explicitly: whatever still points here then
+ * holds an empty husk rather than a copy of the field.
+ *
+ * ⚠️ The geometry is unusable afterwards. Only call it where the meshes that drew
+ * it are already unmounted.
+ *
+ * @group Components
+ */
+export function releaseGeometry(geometry: BufferGeometry): void {
+  geometry.dispose();
+  for (const name in geometry.attributes) geometry.deleteAttribute(name);
+  geometry.setIndex(null);
+  geometry.morphAttributes = {};
+  geometry.clearGroups();
+  geometry.boundingBox = null;
+  geometry.boundingSphere = null;
+}
+
 function measure(chunk: SurfaceChunk): Measured {
   const seen = new Set<ArrayBufferLike>();
   let total = 0;

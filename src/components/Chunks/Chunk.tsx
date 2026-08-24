@@ -37,7 +37,7 @@ import {
 } from './chunk-defs';
 import { buildSurfaceChunkSpec } from './chunk-spec';
 import { chunkDetailKey } from './chunk-detail';
-import { trackChunk, untrackChunk } from './chunk-resources';
+import { trackChunk, untrackChunk, releaseGeometry } from './chunk-resources';
 import { ChunkStackContext, ChunkSurfaceClaim } from './ChunkContext';
 import { ChunkMeshes } from './ChunkMeshes';
 import { ChunkOutline, CutoutSource, resolveCutoutSource } from './cutout';
@@ -47,6 +47,13 @@ import { SurfaceSamplerRegistryContext } from './surface-sampler';
 
 /** Stable identity for the default resolve options (a new object rebuilds). */
 const DEFAULT_RESOLVE: ChunkResolveOptions = {};
+
+// Ordinal of a build request, so the generator can tell a superseded one from the
+// current one. ⚠️ MODULE scope, not a component ref: the worker's claim for a key
+// survives HMR and remounts, and a per-instance counter restarting at 0 would make
+// every request from the remounted chunk look superseded — nothing would build.
+let buildTokens = 0;
+const nextBuildToken = () => ++buildTokens;
 
 /**
  * How long a chunk waits on the stack's sibling bookkeeping before calling it a
@@ -144,11 +151,23 @@ export type ChunkProps = {
   children?: ReactNode;
 } & PointerEvents;
 
-/** Dispose every geometry a built {@link SurfaceChunk} owns. */
+/**
+ * Release everything a built {@link SurfaceChunk} owns, and empty it.
+ *
+ * ⭐ Deferred to a microtask: this runs from an effect cleanup, and the meshes
+ * that were drawing these geometries unmount in the same commit. Stripping them
+ * a task later means nothing can read an emptied attribute.
+ */
 function disposeChunk(chunk: SurfaceChunk | null) {
   if (!chunk) return;
-  chunk.surfaces.forEach(s => s.geometry.dispose());
-  chunk.walls.forEach(w => w.geometry.dispose());
+  queueMicrotask(() => {
+    chunk.surfaces.forEach(mesh => releaseGeometry(mesh.geometry));
+    chunk.walls.forEach(wall => releaseGeometry(wall.geometry));
+    // The channels the section cuts from are the other half of a chunk's weight.
+    chunk.surfaces.length = 0;
+    chunk.walls.length = 0;
+    chunk.section = undefined;
+  });
 }
 
 /**
@@ -645,10 +664,6 @@ export const Chunk = ({
   //     the returned geometry. Rebuilds ONLY on data / outline / build params. ----
   const generator = useGenerator<SurfaceChunkResponse>(surfaceChunk);
 
-  // Ordinal of this chunk's build requests, so the generator can tell a
-  // superseded one from the current one.
-  const buildToken = useRef(0);
-
   // Both a peel and a section can hide the layer a cap's collapse relied on
   // covering it, so the build has to keep what it dropped on that strength.
   // Keyed on the PRESENCE of a peel, so changing its value never rebuilds.
@@ -700,6 +715,16 @@ export const Chunk = ({
 
   const [chunk, setChunk] = useState<SurfaceChunk | null>(null);
   useEffect(() => {
+    // ⭐⭐ A run of this effect means every input the geometry was built from has
+    // moved on, so what is on screen is stale. Let it go NOW rather than carrying
+    // a whole second chunk through the build: at field scale that doubles the
+    // peak, and it is what makes "is the old one actually freed?" answerable —
+    // `live` goes to 0 and back to 1 instead of 1 → 2 → 1. Holding the old block
+    // up while its replacement is prepared is a nicety to add back deliberately,
+    // not something to get by accident.
+    // ⚠️ No-op re-render when it is already null (React bails on an equal value).
+    // oxlint-disable-next-line react-hooks/set-state-in-effect -- releasing the stale build IS the effect
+    setChunk(null);
     if (unlisted.length > 0) {
       console.error(
         `[Chunk] layers name ${unlisted.length} surface(s) the ChunkStack's own \`surfaces\` does not contain, so this chunk can never be built. Add them to the stack's column, or drop the layers:`,
@@ -748,7 +773,7 @@ export const Chunk = ({
         // only discards the result, after the worker has paid for it.
         const response = await generator({
           ...spec,
-          build: { key: registryKey, token: ++buildToken.current },
+          build: { key: registryKey, token: nextBuildToken() },
         });
         if (cancelled) return;
         const built = response ? unpackSurfaceChunk(response) : null;
@@ -865,7 +890,7 @@ export const Chunk = ({
 
   return (
     <>
-      <group ref={meshes}>
+      <group ref={meshes} name={`Chunk ${registryKey}`}>
         <ChunkMeshes
           chunk={chunk}
           layers={appearanceLayers}
@@ -884,6 +909,7 @@ export const Chunk = ({
           sectionUniform={stack.sectionUniform}
           sectionUniformInverse={stack.sectionUniformInverse}
           sectionCarrier={stack.sectionCarrier}
+          sectionEnabled={stack.sectionEnabled}
           fence={stack.fence}
           fenceUniforms={stack.fenceUniforms}
           fenceUniformsInverse={stack.fenceUniformsInverse}

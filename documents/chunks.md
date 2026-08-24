@@ -3483,6 +3483,15 @@ the right trade: a plane MOVES continuously and must never rebuild anything, but
 whether the sea is cut at all is a discrete choice. The sea's cut CHANNELS are asked
 for by the presence of a cut, not by `enabled`, so toggling does not rebuild the sea.
 
+⚠️ **`enabled` gates the FACES too** (2026-08-24). Presence buys the build payload;
+it must not also buy a preallocated cut buffer and a mesh per interval for a section
+that is switched off — those show up in an inspector as meshes whose attribute
+arrays are entirely zero, because a target is zero-filled until it is first cut.
+`useChunkSection` therefore watches `enabled` from the frame loop (it is written on
+the stack's stable state object, never as a React value) and publishes it as state,
+which costs one render per toggle and builds nothing — no faces, no spatial index —
+while the section is off.
+
 ⚠️⚠️ **Nothing else is cut**, and that is the deliberate scope (2026-08-13):
 wellbores, vessels, facilities, pipelines, annotations and host meshes all keep
 drawing whole, because the cut is a branch in the stack's own shaders rather than
@@ -3879,4 +3888,35 @@ with byte-identical triangle counts and `constraintFailures` 0.
 - 30 M triangles is ~580 MB of vertex data across 34 geometries. Even with an
   instant build, that scene is past interactive; some form of LOD (§7) is the
   answer, not more micro-optimisation.
+
+### 16.6 A rebuild RELEASES first, then builds (2026-08-24)
+
+`Chunk` used to keep the built chunk on screen while its replacement was being
+built. At field scale that means two chunks alive at once — 100 MB+ each — and,
+worse, it makes the question "was the old one actually freed?" unanswerable: the
+tracker's `live` went 1 → 2 → 1 and any retention hid inside that.
+
+⭐ So the effect that dispatches a build now drops the current chunk FIRST. `live`
+goes 1 → 0 → 1, the block disappears for the duration of the build, and anything
+still holding the old one shows up immediately. Keeping the old block up while its
+replacement is prepared is a nicety to add back deliberately (double-buffered per
+chunk, swap on arrival) — it was not a decision before, it was a side effect.
+
+⭐⭐ Disposal now RELEASES THE PAYLOAD, not just the GPU handle (`releaseGeometry`
+in `chunk-resources.ts`): every attribute is deleted, the index dropped, and the
+chunk's `surfaces` / `walls` / `section` emptied. `dispose()` only frees the GPU
+side; the CPU arrays go when the last reference does, and a React fiber's
+`alternate`, a memo's dependency array or a sampler entry can all outlive the
+swap. Whatever still points at a released chunk now holds an empty husk instead of
+a copy of the field. Deferred by one microtask so the meshes drawing it have
+unmounted first. The sea's lid/body, the section cut faces and the cap patches go
+the same way.
+
+⚠️ MEASURED BEFORE THE CHANGE (FieldColumn, `outline: grid`, sweeping
+`surfaceCount`, forced GC over CDP): 82 cap geometries holding **5.84 M vertices**
+were still reachable with no mesh pointing at them, against 16 live ones holding
+38 640. The retainer itself was never identified — the release above makes it not
+matter, but if per-build growth ever returns, that measurement (query every
+`BufferGeometry`, bucket by whether the scene still references it) is the one to
+repeat.
 

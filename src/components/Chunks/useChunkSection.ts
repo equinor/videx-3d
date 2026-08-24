@@ -11,7 +11,7 @@ import {
   StackSectionTarget,
 } from '../../sdk';
 import { ChunkLayer, ChunkSectionState } from './chunk-defs';
-import { registerSectionTargets } from './chunk-resources';
+import { registerSectionTargets, releaseGeometry } from './chunk-resources';
 
 /** One interval's cut face, ready to be drawn with that interval's own material. */
 export type ChunkSectionFace = {
@@ -34,6 +34,9 @@ type Face = ChunkSectionFace & { target: StackSectionTarget };
 
 // Enough for a plane crossing a few hundred cells; grown by doubling from there.
 const INITIAL_CAPACITY = 1024;
+
+// What a released target points at, so a stale face holds nothing.
+const EMPTY = new Float32Array(0);
 
 function attach(geometry: BufferGeometry, target: StackSectionTarget) {
   const set = (name: string, array: Float32Array, itemSize: number) => {
@@ -63,6 +66,11 @@ function attach(geometry: BufferGeometry, target: StackSectionTarget) {
  * @param layers the caller's layers, read for `ChunkLayer.section`: a unit kept
  *   whole gets no cut face — there is nothing to close, and a face there would sit
  *   inside solid material
+ * @param enabled whether the section is drawing. ⚠️ Must come from the PROP side
+ *   (`ChunkStackContextValue.sectionEnabled`), not from `section.enabled`: that is
+ *   written by the frame loop, and faces are built during RENDER, so reading it
+ *   there leaves the block cut open with nothing closing it until something forces
+ *   another render.
  * @returns one face per filled interval, or `null` when there is nothing to cut
  *
  * @group Components
@@ -71,9 +79,10 @@ export function useChunkSection(
   source: StackSectionSource | undefined,
   section: ChunkSectionState | null | undefined,
   layers?: ChunkLayer[],
+  enabled = true,
 ): ChunkSectionFace[] | null {
   const faces = useMemo<Face[] | null>(() => {
-    if (!source || !section) return null;
+    if (!source || !section || !enabled) return null;
     const built: Face[] = [];
     source.intervals.forEach((members, interval) => {
       if (!members) return;
@@ -89,14 +98,27 @@ export function useChunkSection(
       built.push({ interval, layer, geometry, target, wall: 0 });
     });
     return built.length > 0 ? built : null;
-  }, [source, section, layers]);
+  }, [source, section, layers, enabled]);
 
   useEffect(() => {
     if (!faces) return;
     const release = registerSectionTargets(faces);
     return () => {
       release();
-      faces.forEach(face => face.geometry.dispose());
+      queueMicrotask(() => {
+        faces.forEach(face => {
+          releaseGeometry(face.geometry);
+          // The preallocated cut buffers are the bulk of a face; the geometry only
+          // points at them.
+          face.target.positions = EMPTY;
+          face.target.normals = EMPTY;
+          face.target.uvs = EMPTY;
+          face.target.wallV = EMPTY;
+          face.target.inferred = null;
+          face.target.capacity = 0;
+          face.target.count = 0;
+        });
+      });
     };
   }, [faces]);
 
@@ -108,8 +130,9 @@ export function useChunkSection(
   // ⭐ The plane is the only thing that changes: the geometry is fixed for the
   // life of the build, so the index is built once and every frame reuses it.
   const index = useMemo(
-    () => (source && section ? buildStackSectionIndex(source) : null),
-    [source, section],
+    () =>
+      source && section && enabled ? buildStackSectionIndex(source) : null,
+    [source, section, enabled],
   );
   // What the faces were last cut with. A section that is not moving — a fixed
   // plane, or a camera-locked one with the camera at rest — would otherwise

@@ -145,15 +145,20 @@ export function getStackContext(
   store: ReadonlyStore,
   stack: SurfaceChunkStackSpec,
   resolve: ChunkResolveOptions | undefined,
+  isStale: () => boolean = () => false,
 ): Promise<StackContext | null> {
   const key = `${stack.key}|${resolve?.mode ?? 'truncate'}|${resolve?.minGap ?? 0}|${resolve?.maxNodes ?? ''}|${resolve?.maxFill ?? DEFAULT_CHUNK_MAX_FILL}|${resolve ? 1 : 0}|${resolve?.seal === false ? 0 : 1}|${resolve?.sealMode ?? 'proportional'}|${resolve?.minThickness ?? ''}`;
   if (cached && cached.key === key) return cached.promise;
   const promise = chain.then(() => {
-    // ⚠️ Superseded while queued: the caller that asked for this column has been
-    // rebuilt with different options, so building it now would cost a full column
-    // nobody will draw. (Two ChunkStacks with DIFFERENT columns in one scene would
-    // starve each other here — they already thrash the single-entry cache today.)
-    if (!cached || cached.key !== key) return null;
+    // ⚠️ The CALLER has moved on (its own newer request superseded this one), so
+    // building the column now would cost a full column nobody will draw.
+    if (isStale()) return null;
+    // ⚠️⚠️ The single cache slot may have been taken while this request queued —
+    // by another chunk, or by this caller asking for a DIFFERENT column and then
+    // asking for this one again. The caller still wants it, so take the slot back
+    // and build. Returning null here (which this used to do) handed the chunk an
+    // empty result it treated as "nothing to draw", with nothing to retry it.
+    if (!cached || cached.key !== key) cached = { key, promise };
     columnsInFlight++;
     return buildStackContext(store, stack, resolve, key).finally(() => {
       columnsInFlight--;

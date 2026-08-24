@@ -136,6 +136,7 @@ export const ChunkSectionDebug = ({
   return (
     <lineSegments
       ref={lines}
+      name="ChunkSectionDebug"
       geometry={geometry}
       material={material}
       layers={layers}

@@ -118,7 +118,17 @@ export type ChunkStackContextValue = {
    * is built, so it has to be visible to React — and a primitive cannot churn this
    * context's identity, which is what every chunk's build spec derives from.
    */
-  sectionCarrier?: boolean; /**
+  sectionCarrier?: boolean;
+  /**
+   * Whether the section is currently drawing (see `ChunkSection.enabled`). A
+   * PRIMITIVE for the same reason as {@link sectionCarrier}: the cut FACES are
+   * built during render, so a chunk has to know on its FIRST render whether to
+   * build them. Reading `enabled` off the live state object instead would leave
+   * the faces a frame or more behind — visible as a section with nothing closing
+   * it until something else forces a rebuild.
+   */
+  sectionEnabled?: boolean;
+  /**
    * The live fence through the whole stack, when the caller declared one (see
    * `ChunkStackProps.fence`). Stable identity — see {@link ChunkFenceState}.
    */

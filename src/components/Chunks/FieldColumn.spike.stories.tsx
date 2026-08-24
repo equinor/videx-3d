@@ -936,8 +936,6 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       <UtmArea origin={origin} utmZone={utmZone}>
         <Videx3dLocate />
         <ViewOffset into={viewOffset} />
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[0.5, 1, 0.3]} intensity={1.1} />
         <ChunkStack
           outline={outline}
           surfaces={column}

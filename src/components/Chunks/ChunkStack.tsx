@@ -35,6 +35,7 @@ import {
 import { ChunkSectionDebug } from './ChunkSectionDebug';
 import { StackImmersionFog } from './StackImmersionFog';
 import { ChunkContact } from './chunk-contacts';
+import { releaseGeometry } from './chunk-resources';
 import {
   ChunkBuildState,
   ChunkCarrier,
@@ -714,6 +715,7 @@ export const ChunkStack = ({
       sectionUniform,
       sectionUniformInverse,
       sectionCarrier: section?.carrier === true,
+      sectionEnabled: !!section && section.enabled !== false,
       fence: fenceState,
       fenceUniforms,
       fenceUniformsInverse,
@@ -745,6 +747,7 @@ export const ChunkStack = ({
     sectionUniform,
     sectionUniformInverse,
     section?.carrier,
+    section?.enabled,
     fenceState,
     fenceUniforms,
     fenceUniformsInverse,
@@ -837,9 +840,13 @@ export const ChunkStack = ({
   }, [waterGenerator, waterSpec]);
 
   useEffect(() => {
+    const stale = seaGeometry;
     return () => {
-      seaGeometry?.lid?.dispose();
-      seaGeometry?.body?.dispose();
+      if (!stale) return;
+      queueMicrotask(() => {
+        if (stale.lid) releaseGeometry(stale.lid);
+        if (stale.body) releaseGeometry(stale.body);
+      });
     };
   }, [seaGeometry]);
 
@@ -893,7 +900,7 @@ export const ChunkStack = ({
             <OceanContactContext.Provider value={sea?.contacts ?? null}>
               {/* Identity transform, present so a camera-locked section has a
                   frame to be brought into (see the `useFrame` above). */}
-              <group ref={stackFrame}>
+              <group ref={stackFrame} name="ChunkStack">
                 {immersion && (
                   <StackImmersionFog
                     immersion={immersion}
@@ -908,15 +915,24 @@ export const ChunkStack = ({
                   />
                 )}
                 {sea && seaGeometry?.lid && (
-                  <mesh geometry={seaGeometry.lid} material={sea.surface} />
+                  <mesh
+                    name="sea:lid"
+                    geometry={seaGeometry.lid}
+                    material={sea.surface}
+                  />
                 )}
                 {sea && seaGeometry?.body && (
-                  <mesh geometry={seaGeometry.body} material={sea.volume} />
+                  <mesh
+                    name="sea:body"
+                    geometry={seaGeometry.body}
+                    material={sea.volume}
+                  />
                 )}
                 {sea?.face &&
                   waterFace?.map(face => (
                     <mesh
                       key={`${face.interval}-${face.wall}`}
+                      name={`sea:section-${face.interval}-${face.wall}`}
                       geometry={face.geometry}
                       material={sea.face!}
                     />

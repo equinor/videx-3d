@@ -17,6 +17,11 @@ export class GeneratorRegistry {
   protected config: RegistryConfig;
   protected generators: Map<string, GeneratorFunction> = new Map();
 
+  /** The store a generator is bound to. STABLE across reconnects — see `setStore`. */
+  private facade: ReadonlyStore | null = null;
+  private limit: ReturnType<typeof pLimit> | null = null;
+  private running = 0;
+
   constructor(config: RegistryConfig = {}, store?: ReadonlyStore) {
     this.config = { concurrentStoreCalls: 0, ...config };
 
@@ -30,39 +35,69 @@ export class GeneratorRegistry {
   }
 
   setStore(store: ReadonlyStore) {
-    if (store && this.config.concurrentStoreCalls) {
-      const limit = pLimit(this.config.concurrentStoreCalls);
-      const throttledStore = {
-        get: <T>(dataType: string, key: KeyType, args?: any) =>
-          limit(() => store.get<T>(dataType, key, args)),
-        all: <T>(dataType: string) => limit(() => store.all<T>(dataType)),
-        query: <T>(dataType: string, query: Partial<T>) =>
-          limit(() => store.query(dataType, query)),
+    this.store = store;
+    // ⭐ A generator is bound to this object for the whole of its run, so it must
+    // OUTLIVE a reconnect: it reads `this.store` per call, which means a build
+    // still in flight when the channel is re-opened continues on the new one
+    // instead of on a proxy that is about to be released.
+    if (!this.facade) {
+      const at = () => {
+        if (!this.store) throw Error('No available store!');
+        return this.store;
       };
-      this.store = throttledStore;
-    } else {
-      this.store = store;
+      const run = <T>(fn: () => Promise<T>) =>
+        this.limit ? this.limit(fn) : fn();
+      this.facade = {
+        get: <T>(dataType: string, key: KeyType, args?: any) =>
+          run(() => at().get<T>(dataType, key, args)),
+        all: <T>(dataType: string) => run(() => at().all<T>(dataType)),
+        query: <T>(dataType: string, query: Partial<T>) =>
+          run(() => at().query<T>(dataType, query)),
+      };
+    }
+    if (this.config.concurrentStoreCalls && !this.limit) {
+      this.limit = pLimit(this.config.concurrentStoreCalls);
     }
   }
 
   async connectRemoteStore(port: MessagePort) {
-    // Every provider mount opens a NEW channel. Releasing the previous proxy is
-    // what closes both ends of the old one — otherwise the store keeps answering
-    // on a port nothing reads, and the listener holding it is never removed.
-    this.storeProxy?.[releaseProxy]();
+    // Every provider mount opens a NEW channel. The previous proxy has to be
+    // released — otherwise the store keeps answering on a port nothing reads, and
+    // the listener holding it is never removed.
+    const previous = this.storeProxy;
     const proxy = wrap<ReadonlyStore>(port);
     this.storeProxy = proxy;
     this.setStore(proxy as unknown as ReadonlyStore);
+    // ⚠️⚠️ NOT immediately: a build in flight is awaiting `store.get` on the old
+    // proxy, and releasing it makes every further call throw 'Proxy has been
+    // released' — which kills the build and leaves the chunk empty with no error
+    // the caller can see. Hand the port back once the work that was using it has
+    // drained.
+    if (previous) this.releaseWhenIdle(previous);
+  }
+
+  private releaseWhenIdle(proxy: Remote<ReadonlyStore>, waited = 0) {
+    // Bounded, so a generator that never settles cannot pin the port for good.
+    if (this.running === 0 || waited > 30000) {
+      proxy[releaseProxy]();
+      return;
+    }
+    setTimeout(() => this.releaseWhenIdle(proxy, waited + 250), 250);
   }
 
   async invoke<T>(key: string, ...args: any[]): Promise<T> {
-    if (!this.store) throw Error('No available store!');
+    if (!this.store || !this.facade) throw Error('No available store!');
 
     if (!this.generators.has(key))
       throw Error(`Generator with key '${key}' not found!`);
 
-    const generatorFunc = this.generators.get(key)!.bind(this.store);
+    const generatorFunc = this.generators.get(key)!.bind(this.facade);
 
-    return generatorFunc(...args);
+    this.running++;
+    try {
+      return await generatorFunc(...args);
+    } finally {
+      this.running--;
+    }
   }
 }
