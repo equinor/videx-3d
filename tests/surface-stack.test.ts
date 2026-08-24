@@ -28,6 +28,10 @@ import {
   collectStackCandidates,
 } from '../src/sdk/geometries/surface-stack-candidates';
 import { buildSurfaceStack } from '../src/sdk/geometries/surface-stack-geometry';
+import {
+  packBufferGeometry,
+  unpackBufferGeometry,
+} from '../src/sdk/geometries/packing';
 
 const NX = 33;
 const NY = 33;
@@ -891,6 +895,44 @@ describe('stackLayerUvs', () => {
  * the wall, and its PRESENCE is what tells the appearance layer there is anything
  * to mark at all.
  */
+describe('cap bounding volumes', () => {
+  const polygon = maskPolygon(4, 28);
+
+  it('gives a position-less cap a real bounding sphere, and it survives packing', () => {
+    const top = layerFrom(() => 1000);
+    // Relief so the cap has genuine vertical extent to bound.
+    const base = layerFrom(
+      (col, row) => 1400 + 40 * Math.sin(col / 3) * Math.cos(row / 3),
+    );
+    const reference = buildStackReference([top, base], polygon)!;
+    const build = buildSurfaceStack(reference, [top, base], {
+      polygon,
+      maxError: 5,
+      fills: [true, false],
+    })!;
+
+    const geometry = build.layers[0].geometry!;
+    // A cap assembles its position in the shader, so it deliberately carries none.
+    expect(geometry.hasAttribute('position')).toBe(false);
+    // ...but three needs a bounding sphere to frustum-test it — without one the
+    // cap is culled the moment the local origin leaves a close-up view.
+    expect(geometry.boundingSphere).not.toBeNull();
+    expect(geometry.boundingSphere!.radius).toBeGreaterThan(0);
+    expect(geometry.boundingBox).not.toBeNull();
+
+    // The bounds have to survive the worker boundary, or the story (which builds
+    // in a worker) still ships a cap three cannot frustum-test.
+    const [packed] = packBufferGeometry(geometry);
+    const restored = unpackBufferGeometry(packed);
+    expect(restored.boundingSphere).not.toBeNull();
+    expect(restored.boundingSphere!.radius).toBeCloseTo(
+      geometry.boundingSphere!.radius,
+      5,
+    );
+    expect(restored.boundingBox).not.toBeNull();
+  });
+});
+
 describe('carrying the inference through to the geometry', () => {
   const polygon = maskPolygon(4, 28);
 

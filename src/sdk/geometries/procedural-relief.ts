@@ -11,6 +11,7 @@
  * a centre means something only in a frame that does not move.
  */
 import { Vec2 } from '../types/common';
+import { valueNoise2, warpCoords } from './procedural-noise';
 
 /** Which procedural field a synthetic layer uses. */
 export type ReliefKind = 'dunes' | 'ridges' | 'ramp' | 'dome';
@@ -21,6 +22,13 @@ export type ReliefKind = 'dunes' | 'ridges' | 'ramp' | 'dome';
  */
 export const RELIEF_FEATURE_SIZE = 8000;
 
+// Value-noise cells across one featureSize at the COARSEST octave. Value noise
+// resolves roughly one feature per cell, so this sets the coarsest feature size;
+// the five octaves then run down from here (×2 each) to ~1/16 of it. Dunes start
+// finer than ridges so the rolling field carries more small-scale texture.
+const DUNE_BASE_FREQUENCY = 5;
+const RIDGE_BASE_FREQUENCY = 3;
+
 /** Smooth Hermite step, 0 below `a`, 1 above `b`. */
 function smoothstep(a: number, b: number, t: number): number {
   if (b === a) return t < a ? 0 : 1;
@@ -28,43 +36,77 @@ function smoothstep(a: number, b: number, t: number): number {
   return u * u * (3 - 2 * u);
 }
 
+const clamp01 = (v: number) => Math.min(Math.max(v, 0), 1);
+
 /**
- * Ridged, multi-octave [0, 1] field (`1 - |sin|` creases per octave, slow
- * amplitude falloff, sharpened) — reads as jagged rock rather than rolling sand.
+ * Ridged, multi-octave [0, 1] field — `1 - |2·noise − 1|` creases per octave,
+ * each rotated to decorrelate the layers, with a slow amplitude falloff and a
+ * sharpening `pow`. Reads as jagged rock rather than rolling sand. Built on
+ * value noise (via a domain warp) so it never forms an axis-aligned grid.
  */
-export function ridgeRelief(fx: number, fz: number, seed: number): number {
-  const ridge = (a: number) => 1 - Math.abs(Math.sin(a));
-  const freqs = [3, 7, 15, 29];
+export function ridgeRelief(
+  fx: number,
+  fz: number,
+  seed: number,
+  warp = 0.5,
+): number {
+  // Warp at the coarse (featureSize) scale so the big ridges meander, THEN scale
+  // up to the base frequency: value noise resolves ~one feature per cell, so the
+  // coarsest octave needs several cells across a featureSize or the field is all
+  // low-frequency swell with no rock detail.
+  let [ux, uz] = warpCoords(fx + seed * 1.37, fz - seed * 0.91, warp);
+  ux *= RIDGE_BASE_FREQUENCY;
+  uz *= RIDGE_BASE_FREQUENCY;
+  const ca = Math.cos(0.7);
+  const sa = Math.sin(0.7);
   let n = 0;
   let amp = 1;
   let norm = 0;
-  for (let o = 0; o < freqs.length; o++) {
-    const f = freqs[o];
-    n +=
-      amp *
-      ridge((fx * f + seed) * Math.PI) *
-      ridge((fz * f - seed * 0.7) * Math.PI + 0.9);
+  for (let o = 0; o < 5; o++) {
+    const v = valueNoise2(ux, uz);
+    n += amp * (1 - Math.abs(2 * v - 1)); // crease
     norm += amp;
     amp *= 0.62; // slow falloff keeps strong high-frequency (rocky) detail
+    // Rotate + double so successive octaves don't stack on the same lattice.
+    const rx = (ux * ca - uz * sa) * 2.0;
+    const rz = (ux * sa + uz * ca) * 2.0;
+    ux = rx;
+    uz = rz;
   }
-  n /= norm;
-  return Math.min(Math.max(Math.pow(n, 1.4), 0), 1); // sharpen toward blocky rock
+  return clamp01(Math.pow(n / norm, 1.4)); // sharpen toward blocky rock
 }
 
-/** Smooth [0, 1] field (a small sum of sines — rolling dunes). */
-export function duneRelief(fx: number, fz: number, seed: number): number {
-  let n = 0.5;
-  n +=
-    0.25 * Math.sin((fx * 6.0 + seed) * Math.PI) * Math.cos(fz * 5.0 * Math.PI);
-  n +=
-    0.15 *
-    Math.sin((fx * 13.0 - seed) * Math.PI + 1.7) *
-    Math.cos(fz * 11.0 * Math.PI - 0.6);
-  n +=
-    0.1 *
-    Math.sin(fx * 23.0 * Math.PI + 0.3) *
-    Math.cos(fz * 19.0 * Math.PI + 2.1);
-  return Math.min(Math.max(n, 0), 1);
+/**
+ * Smooth [0, 1] field — a domain-warped, rotated value-noise fbm (rolling
+ * dunes). The warp bends the features into meanders so they never read as a
+ * tiled grid, and the octaves run down to fine detail rather than stopping at
+ * the coarse swell.
+ */
+export function duneRelief(
+  fx: number,
+  fz: number,
+  seed: number,
+  warp = 0.7,
+): number {
+  // Warp coarse, then scale to the base frequency (see `ridgeRelief`).
+  let [ux, uz] = warpCoords(fx + seed * 1.37, fz - seed * 0.91, warp);
+  ux *= DUNE_BASE_FREQUENCY;
+  uz *= DUNE_BASE_FREQUENCY;
+  const ca = Math.cos(0.7);
+  const sa = Math.sin(0.7);
+  let n = 0;
+  let amp = 1;
+  let norm = 0;
+  for (let o = 0; o < 5; o++) {
+    n += amp * (valueNoise2(ux, uz) - 0.5); // signed about the mean
+    norm += amp;
+    amp *= 0.55; // keep fine octaves visible rather than dropping to swell
+    const rx = (ux * ca - uz * sa) * 2.0;
+    const rz = (ux * sa + uz * ca) * 2.0;
+    ux = rx;
+    uz = rz;
+  }
+  return clamp01(0.5 + n / norm);
 }
 
 /**
@@ -140,6 +182,12 @@ export type NoiseRelief = ReliefBase & {
    * {@link RELIEF_FEATURE_SIZE}.
    */
   featureSize?: number;
+  /**
+   * Domain-warp strength (in `featureSize` units) that bends the field's
+   * features into meanders, breaking up any residual regularity. `0` disables
+   * the warp. Defaults per kind (dunes are warped more than ridges).
+   */
+  warp?: number;
 };
 
 /** An eased rise along a direction — a coast (see {@link rampRelief}). */
@@ -221,5 +269,5 @@ export function sampleRelief(relief: ReliefSpec, x: number, z: number): number {
   const size = Math.max(relief.featureSize ?? RELIEF_FEATURE_SIZE, 1);
   const seed = relief.seed ?? 0;
   const field = relief.kind === 'ridges' ? ridgeRelief : duneRelief;
-  return field(x / size, z / size, seed);
+  return field(x / size, z / size, seed, relief.warp);
 }

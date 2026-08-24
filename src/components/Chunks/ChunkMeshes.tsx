@@ -563,6 +563,13 @@ export const ChunkMeshes = ({
         geometry.setAttribute(name, surface.geometry.attributes[name]);
       }
       geometry.setIndex(new BufferAttribute(surface.patchIndex, 1));
+      // A patch is a subset of the cap's triangles and carries no `position`, so
+      // reuse the cap's bounds — a conservative but valid bound that keeps three
+      // from culling the patch when the local origin leaves a close-up view.
+      if (surface.geometry.boundingSphere)
+        geometry.boundingSphere = surface.geometry.boundingSphere.clone();
+      if (surface.geometry.boundingBox)
+        geometry.boundingBox = surface.geometry.boundingBox.clone();
       built.set(surface.layer, geometry);
     }
     return built;

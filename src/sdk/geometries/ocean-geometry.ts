@@ -22,6 +22,7 @@ import {
   PlanarPolygonGeometry,
 } from './planar-geometry';
 import { createPolygonCap } from './polygon-cap';
+import { fbm2, warpCoords } from './procedural-noise';
 import { triangulateGridConstrained } from './triangulate-grid-delaunay';
 
 /** Options shared by the ocean geometry builders. */
@@ -90,8 +91,10 @@ export type OceanBox = {
  * Create the procedural sea-bed depth function used by the ocean-box builders.
  * Returns a depth (meters below the surface, i.e. the bed sits at `y = -depth`)
  * for a world X/Z point, varying smoothly in
- * `[waterDepth - depthVariation, waterDepth + depthVariation]` via a small sum
- * of sines normalised over the `[minX, minX + w] x [minZ, minZ + l]` extent.
+ * `[waterDepth - depthVariation, waterDepth + depthVariation]` via a
+ * domain-warped value-noise fbm normalised over the
+ * `[minX, minX + w] x [minZ, minZ + l]` extent — the same construction the sea
+ * bed shader uses, so the depth variation reads as terrain rather than a grid.
  */
 function makeBedDepthFn(
   minX: number,
@@ -103,22 +106,11 @@ function makeBedDepthFn(
   seed: number,
 ): (x: number, z: number) => number {
   return (x: number, z: number): number => {
-    const fx = (x - minX) / w;
-    const fz = (z - minZ) / l;
-    let n = 0.5;
-    n +=
-      0.25 *
-      Math.sin((fx * 6.0 + seed) * Math.PI) *
-      Math.cos(fz * 5.0 * Math.PI);
-    n +=
-      0.15 *
-      Math.sin((fx * 13.0 - seed) * Math.PI + 1.7) *
-      Math.cos(fz * 11.0 * Math.PI - 0.6);
-    n +=
-      0.1 *
-      Math.sin(fx * 23.0 * Math.PI + 0.3) *
-      Math.cos(fz * 19.0 * Math.PI + 2.1);
-    const c = Math.min(Math.max(n, 0), 1);
+    // ~6 coarse features across the box, warped so they meander.
+    const fx = ((x - minX) / w) * 6 + seed;
+    const fz = ((z - minZ) / l) * 6;
+    const [qx, qz] = warpCoords(fx, fz, 0.7);
+    const c = Math.min(Math.max(fbm2(qx, qz, 4), 0), 1);
     return waterDepth + (c * 2 - 1) * depthVariation;
   };
 }

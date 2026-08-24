@@ -1,4 +1,11 @@
-import { BufferAttribute, BufferGeometry, TypedArray } from 'three';
+import {
+  Box3,
+  BufferAttribute,
+  BufferGeometry,
+  Sphere,
+  TypedArray,
+  Vector3,
+} from 'three';
 // TODO: Add support for InterleavedBufferAttribute and InstancedBufferGeometry
 export type BufferAttributeDrawRange = {
   start: number;
@@ -34,6 +41,21 @@ export type PackedBufferAttribute = {
 
 export type PackedAttributes = Record<string, PackedBufferAttribute>;
 
+/**
+ * A geometry's bounding volumes, serialized as plain numbers so they survive a
+ * pack/transfer. Carried because a geometry that has no `position` attribute (a
+ * split-cap layout that assembles its position in the shader) cannot have three
+ * derive one on the main thread — without it the mesh is frustum-culled the
+ * moment the local origin leaves the view.
+ */
+export type PackedBounds = {
+  sphere?: { center: [number, number, number]; radius: number };
+  box?: {
+    min: [number, number, number];
+    max: [number, number, number];
+  };
+};
+
 export type PackedBufferGeometry = {
   drawRange: BufferAttributeDrawRange;
   groups: BufferAttributeGroups;
@@ -41,6 +63,7 @@ export type PackedBufferGeometry = {
   index: ArrayBufferLike | undefined;
   indexType: string | undefined;
   userData?: any;
+  bounds?: PackedBounds;
 };
 
 export type PackedBufferGeometryCollection = Record<
@@ -95,6 +118,47 @@ export function packAttribute(
     normalized,
   };
   return packed;
+}
+
+/** Serialize a geometry's bounding volumes, or `undefined` if it has none. */
+export function packBounds(geometry: BufferGeometry): PackedBounds | undefined {
+  const { boundingSphere, boundingBox } = geometry;
+  if (!boundingSphere && !boundingBox) return undefined;
+  const bounds: PackedBounds = {};
+  if (boundingSphere) {
+    const { center, radius } = boundingSphere;
+    bounds.sphere = { center: [center.x, center.y, center.z], radius };
+  }
+  if (boundingBox) {
+    const { min, max } = boundingBox;
+    bounds.box = {
+      min: [min.x, min.y, min.z],
+      max: [max.x, max.y, max.z],
+    };
+  }
+  return bounds;
+}
+
+/** Restore packed bounding volumes onto a geometry (see {@link packBounds}). */
+export function unpackBounds(
+  geometry: BufferGeometry,
+  bounds: PackedBounds | undefined,
+): void {
+  if (!bounds) return;
+  if (bounds.sphere) {
+    const { center, radius } = bounds.sphere;
+    geometry.boundingSphere = new Sphere(
+      new Vector3(center[0], center[1], center[2]),
+      radius,
+    );
+  }
+  if (bounds.box) {
+    const { min, max } = bounds.box;
+    geometry.boundingBox = new Box3(
+      new Vector3(min[0], min[1], min[2]),
+      new Vector3(max[0], max[1], max[2]),
+    );
+  }
 }
 
 export function packBufferGeometryLike(
@@ -157,6 +221,8 @@ export function packBufferGeometry(
     packed.userData = structuredClone(bufferGeometry.userData);
   }
 
+  packed.bounds = packBounds(bufferGeometry);
+
   return [packed, transferrables];
 }
 
@@ -207,6 +273,8 @@ export function unpackBufferGeometry(packed: PackedBufferGeometry) {
   if (packed.userData) {
     bufferGeometry.userData = packed.userData;
   }
+
+  unpackBounds(bufferGeometry, packed.bounds);
 
   return bufferGeometry;
 }

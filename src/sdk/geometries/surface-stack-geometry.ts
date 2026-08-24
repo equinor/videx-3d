@@ -208,6 +208,12 @@ export function buildStackGeometries(
       geometry.setIndex(own ? new BufferAttribute(own, 1) : shared);
     }
     quantizeNormals(geometry);
+    // The assembled position still exists here (deleted just below): compute the
+    // bounding volumes from it now, because a cap ships no `position` and three
+    // cannot derive one — a null bounding sphere frustum-culls the whole cap the
+    // moment the local origin leaves a close-up view.
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
     geometry.deleteAttribute('position');
     return { geometry, rimY, patchIndex };
   });
