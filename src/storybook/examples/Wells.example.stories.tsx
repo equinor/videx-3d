@@ -199,6 +199,18 @@ const Example = (args: ExampleProps) => {
     }
   }, [outputPanel]);
 
+  // Remove what this story added so a later story does not inherit stale rows.
+  useEffect(
+    () => () =>
+      useOutputPanelState.getState().set(state => {
+        const groups = { ...state.groups };
+        delete groups.selected;
+        delete groups.readout;
+        return { groups };
+      }),
+    [],
+  );
+
   useEffect(() => {
     if (args.selected)
       dispatchEvent(new WellboreSelectedEvent({ id: args.selected }));

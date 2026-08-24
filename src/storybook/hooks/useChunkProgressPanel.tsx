@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { ChunkStackProgress } from '../../components/Chunks/chunk-defs';
 import { useOutputPanelState } from '../../components/Html/OutputPanel/output-panel-state';
 
@@ -29,6 +29,23 @@ export function useChunkProgressPanel() {
   const busy = useRef(false);
   const startedAt = useRef(0);
   const elapsed = useRef<number | null>(null);
+
+  // Remove ONLY our own groups when the story unmounts, so the next one does not
+  // inherit a stale count. Deliberately NOT a `loaders` clear: that runs on every
+  // args change and would wipe a live panel when a control rebuilds nothing (e.g.
+  // a surface count already at the dataset's max, which resolves to the same
+  // column and emits no new progress to repopulate it).
+  useEffect(
+    () => () =>
+      useOutputPanelState.getState().set(state => {
+        const groups = { ...state.groups };
+        delete groups.build;
+        delete groups.rebuilds;
+        delete groups.time;
+        return { groups };
+      }),
+    [],
+  );
 
   return useCallback((p: ChunkStackProgress) => {
     const done = p.building === 0 && p.total > 0;

@@ -35,7 +35,6 @@ import { useChunkProgressPanel } from '../../storybook/hooks/useChunkProgressPan
 import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
-import { useOutputPanelState } from '../Html/OutputPanel/output-panel-state';
 import { useSurfaceMaterial } from '../Surfaces/useSurfaceMaterial';
 import { UtmArea } from '../UtmArea';
 import { Chunk } from './Chunk';
@@ -768,13 +767,6 @@ export const Default: Story = {
       fontSize: 11,
       opacity: 0.75,
     }),
-  ],
-  // The panel store is global; clear it so a reload does not show a stale count.
-  loaders: [
-    async () => {
-      useOutputPanelState.setState({ groups: {} });
-      return {};
-    },
   ],
   parameters: {
     // autoClear stays false (RenderingPipeline owns clearing; true wipes OIT targets).

@@ -61,7 +61,6 @@ import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
 import { Distance } from '../Distance/Distance';
 import { EventEmitterCallbackEvent } from '../EventEmitter';
-import { useOutputPanelState } from '../Html/OutputPanel/output-panel-state';
 import { useHighlighter } from '../Highlighter/highlight-state';
 import { Highlighter } from '../Highlighter/Highlighter';
 import { UtmArea } from '../UtmArea';
@@ -1566,12 +1565,5 @@ export const Default: Story = {
       fontSize: 11,
       opacity: 0.75,
     }),
-  ],
-  // The panel store is global; clear it so a reload does not show a stale count.
-  loaders: [
-    async () => {
-      useOutputPanelState.setState({ groups: {} });
-      return {};
-    },
   ],
 };

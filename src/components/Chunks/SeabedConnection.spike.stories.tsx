@@ -37,7 +37,6 @@ import { Chunk } from './Chunk';
 import { ChunkLayer, ChunkResolveOptions, StackWater } from './chunk-defs';
 import { ChunkStack } from './ChunkStack';
 import { WellboreOutlineMode } from './cutout';
-import { useOutputPanelState } from '../Html/OutputPanel/output-panel-state';
 
 const utmZone = storyArgs.utmZone;
 const origin = storyArgs.origin as Vec2;
@@ -607,12 +606,5 @@ export const Default: Story = {
       fontSize: 11,
       opacity: 0.75,
     }),
-  ],
-  // The panel store is global; clear it so a reload does not show a stale count.
-  loaders: [
-    async () => {
-      useOutputPanelState.setState({ groups: {} });
-      return {};
-    },
   ],
 };
