@@ -31,7 +31,9 @@ import {
   CARRIER_SEAM_ID,
   ChunkLayer,
   chunkLayerFill,
+  ChunkPeel,
   ChunkResolveOptions,
+  resolvePeel,
   surfaceChunk,
   SurfaceChunkResponse,
 } from './chunk-defs';
@@ -166,19 +168,26 @@ export type ChunkProps = {
   /** render the side walls. Default true. */
   showWalls?: boolean;
   /**
-   * Hide the first `peel` UNITS, exposing what is under them. Default 0.
+   * Peel units away to expose what is under them. A number peels that many off the
+   * TOP (a prefix — the first survivor's own cap keeps the block closed); the
+   * object form `{ from, count }` opens a WINDOW, peeling the top down to `from`
+   * AND the bottom up, so `{ from, count: 1 }` isolates a single unit. A falsy
+   * `count` means "to the bottom" (not windowed). See {@link ChunkPeel}. Default 0.
    *
    * ⭐ Exact and free, unlike a transparency slider: alpha compounds, so a deep
-   * stack at 0.5 is effectively opaque and cannot answer "what is underneath". The
-   * `layers` array IS the depth order, so not drawing a PREFIX of it is exact —
-   * which is why this is a count and not a per-layer flag: an arbitrary set can
-   * open the block, a prefix cannot.
+   * stack at 0.5 is effectively opaque and cannot answer "what is underneath". Not
+   * drawing part of the depth-ordered `layers` is exact; the window's exposed base
+   * is sealed by the next surface's cap, which already exists.
    *
    * ⚠️ Pure appearance: no rebuild, so it is free to sweep or animate. But its
    * PRESENCE (even `peel={0}`) asks the build for the extra indices a peel needs,
    * so adding or removing the prop does rebuild.
+   *
+   * ⚠️ If the window's base boundary is a void split (a ceiling/floor pair) the
+   * floor falls back to the horizon copy; where a void cavity is open there is no
+   * surface to seal against — outside the normal focus-on-a-unit case.
    */
-  peel?: number;
+  peel?: ChunkPeel;
   /**
    * Called with the build metrics each time the geometry is (re)built. Use it to
    * inspect `metrics.diagnostics` — in particular the crossing counts, which are
@@ -904,11 +913,21 @@ export const Chunk = ({
   // block is open, which presents as a rendering artefact rather than as a
   // consequence of the peel. Say so instead.
   useEffect(() => {
-    if (!peel || peel >= stableLayers.length) return;
-    if (layerSeams[peel]?.draw === false) {
+    const { top, base } = resolvePeel(peel, stableLayers.length);
+    if (
+      top > 0 &&
+      top < stableLayers.length &&
+      layerSeams[top]?.draw === false
+    ) {
       console.warn(
-        `Chunk: peel=${peel} exposes '${stableLayers[peel]?.surface?.id ?? peel}', ` +
+        `Chunk: peel exposes '${stableLayers[top]?.surface?.id ?? top}', ` +
           'a horizon a neighbouring chunk draws — this block will be open at the top.',
+      );
+    }
+    if (base < stableLayers.length && layerSeams[base]?.draw === false) {
+      console.warn(
+        `Chunk: the peel window's base '${stableLayers[base]?.surface?.id ?? base}' ` +
+          'is a horizon a neighbouring chunk draws — this block will be open at the bottom.',
       );
     }
   }, [peel, stableLayers, layerSeams]);

@@ -790,6 +790,54 @@ export function layersFromGroups(groups: SurfaceMeta[][]): ChunkLayer[] {
 }
 
 /**
+ * How much of a chunk to peel away, exposing what is under it.
+ *
+ * A plain number peels that many UNITS off the TOP — a prefix of the depth-ordered
+ * `layers`. That keeps the block sealed, because the first survivor's own cap
+ * closes the new top.
+ *
+ * The object form adds a bottom bound, opening a WINDOW onto the middle of the
+ * stack: `from` is the first visible unit (units above are peeled), `count` is how
+ * many units the window spans (units below are peeled). The exposed base is sealed
+ * by the next surface's cap, which already exists — so a window is still exact and
+ * free. Isolate one unit with `{ from, count: 1 }`.
+ *
+ * ⚠️ A falsy `count` (0 or omitted) means "to the bottom" — i.e. NOT windowed,
+ * exactly the plain-number behaviour. Only `count >= 1` opens a window.
+ *
+ * @group Components
+ */
+export type ChunkPeel = number | { from?: number; count?: number };
+
+/**
+ * Resolve a {@link ChunkPeel} to the two gating indices the renderer needs.
+ *
+ * @param peel the peel amount, or `undefined` for none
+ * @param layerCount the chunk's declared layer count
+ * @returns `top` — caps/units with a smaller layer index are hidden (the first
+ *   survivor's cap becomes the new top); `base` — the floor cap's layer: walls at
+ *   or below it and caps below it are hidden. `base === layerCount` draws the block
+ *   down to its natural base (a real surface or the carrier) — the un-windowed case.
+ *
+ * @group Components
+ */
+export function resolvePeel(
+  peel: ChunkPeel | undefined,
+  layerCount: number,
+): { top: number; base: number } {
+  const clamp = (v: number) => Math.max(0, Math.min(Math.round(v), layerCount));
+  if (peel === undefined) return { top: 0, base: layerCount };
+  if (typeof peel === 'number') return { top: clamp(peel), base: layerCount };
+  const top = clamp(peel.from ?? 0);
+  // Falsy count is "to the bottom"; only a positive count draws a bottom bound.
+  const base =
+    peel.count && peel.count >= 1
+      ? Math.min(top + Math.round(peel.count), layerCount)
+      : layerCount;
+  return { top, base };
+}
+
+/**
  * How a chunk's stack is made monotone, and what is dropped where a unit is not
  * present. Omit `ChunkResolveOptions` entirely to skip the pass.
  *

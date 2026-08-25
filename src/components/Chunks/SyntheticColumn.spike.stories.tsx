@@ -44,6 +44,7 @@ import { UtmArea } from '../UtmArea';
 import { Chunk } from './Chunk';
 import {
   ChunkLayer,
+  ChunkPeel,
   ChunkResolveOptions,
   StackImmersion,
   StackWater,
@@ -244,6 +245,7 @@ type SyntheticColumnProps = {
   sectionKeep: number;
   sectionDebug: boolean;
   peel: number;
+  peelCount: number;
   seal: boolean;
   sealMode: 'proportional' | 'void';
   minThickness: number;
@@ -291,6 +293,16 @@ const StackContents = ({
     onPlace,
   });
 
+  // A number peels off the top; a positive `peelCount` turns it into a window.
+  // Undefined when nothing is peeled, so a plain 0/0 skips the peel rebuild cost.
+  const peel = useMemo<ChunkPeel | undefined>(
+    () =>
+      props.peel > 0 || props.peelCount >= 1
+        ? { from: props.peel, count: props.peelCount }
+        : undefined,
+    [props.peel, props.peelCount],
+  );
+
   return (
     <>
       {props.sectionMode === 'fixed' && (
@@ -311,7 +323,7 @@ const StackContents = ({
         wallOpacity={props.wallOpacity}
         wireframe={props.wireframe}
         inferredStyle={props.inferredStyle}
-        peel={props.peel}
+        peel={peel}
         onBuild={onBuild}
         {...(props.cursor ? cursor.events : null)}
       />
@@ -891,6 +903,7 @@ export const Default: Story = {
     sectionKeep: -1,
     sectionDebug: false,
     peel: 0,
+    peelCount: 0,
     seal: true,
     sealMode: 'proportional',
     minThickness: 1,
@@ -1422,7 +1435,13 @@ export const Default: Story = {
     peel: {
       control: { type: 'range', min: 0, max: 19, step: 1 },
       description:
-        '⭐ Hide the first N UNITS, exposing what is under them. Exact and free, unlike lowering the opacity: alpha compounds, so a 20-layer stack at 0.5 is effectively opaque and a transparency slider cannot answer “what is underneath”. The layer array IS the depth order, so not drawing a PREFIX of it is exact — which is why this is a count and not a per-layer flag: an arbitrary set can open the block, a prefix cannot.\n\n⚠️ It removes each unit’s cap AND its volume, but keeps the cap of the first survivor, which is that unit’s own top — so the floor was never yours to drop and the block stays closed.',
+        '⭐ Peel UNITS away from the TOP, exposing what is under them. Exact and free, unlike lowering the opacity: alpha compounds, so a 20-layer stack at 0.5 is effectively opaque and a transparency slider cannot answer “what is underneath”. Pair with **peelCount** to open a WINDOW instead of a prefix.\n\n⚠️ It removes each unit’s cap AND its volume, but keeps the cap of the first survivor (that unit’s own top), so the block stays closed.',
+      table: { category: 'Appearance' },
+    },
+    peelCount: {
+      control: { type: 'range', min: 0, max: 19, step: 1 },
+      description:
+        '⭐ How many units the peel WINDOW spans, starting at **peel**. `0` = to the bottom (a plain top peel, today’s behaviour); `1` isolates a single unit with its volume, its exposed base sealed by the next surface’s cap. Pure appearance — no rebuild.',
       table: { category: 'Appearance' },
     },
     wallOpacity: {

@@ -26,9 +26,11 @@ import {
 import {
   ChunkFenceState,
   ChunkLayer,
+  ChunkPeel,
   ChunkSectionState,
   DEFAULT_BED_TINT_DEPTH,
   DEFAULT_PALETTE,
+  resolvePeel,
   StackWater,
 } from './chunk-defs';
 import {
@@ -123,19 +125,15 @@ export type ChunkMeshesProps = {
   /** whether the column's floor is cut by the fence */
   fenceCarrier?: boolean;
   /**
-   * Hide the first `peel` UNITS of the chunk, exposing what is under them.
+   * Peel units of the chunk away to expose what is under them — see
+   * {@link ChunkPeel}. A number peels a prefix off the top; `{ from, count }`
+   * opens a window and caps its exposed base with the next surface.
    *
    * ⭐ Exact and free, unlike lowering the opacity: alpha compounds, so a deep
    * stack at 0.5 is effectively opaque and a transparency slider cannot answer
-   * "what is underneath". The layer array IS the depth order, so simply not
-   * drawing a PREFIX of it is exact — which is also why this is a count rather
-   * than a per-layer flag: an arbitrary set can open the block, a prefix cannot.
-   *
-   * ⚠️ It removes each unit's cap AND its volume, but keeps the cap of the first
-   * surviving unit, which is that unit's own top — so the block stays closed by
-   * construction and the floor was never yours to drop.
+   * "what is underneath". Not drawing part of the depth-ordered layers is exact.
    */
-  peel?: number;
+  peel?: ChunkPeel;
 };
 
 /**
@@ -579,17 +577,18 @@ export const ChunkMeshes = ({
     return () => patchGeometries.forEach(g => releaseGeometry(g));
   }, [patchGeometries]);
 
-  // Peeling drops whole UNITS: a unit's cap and its volume go together, and the
-  // cap of the first survivor stays, because it is that unit's own top rather than
-  // the peeled unit's base.
-  const peeled = Math.max(0, Math.min(peel, layers.length));
+  // Peeling drops whole UNITS: a unit's cap and its volume go together. `top` is
+  // the first survivor (its own cap stays, closing the block); a window also sets
+  // `base`, the floor cap that seals the exposed bottom — the next surface, which
+  // already exists, so no carrier is needed.
+  const { top, base } = resolvePeel(peel, layers.length);
 
   // ⭐ A weld or truncation drop is justified only where the layer above is ACTUALLY
   // DRAWN, and both a peel and a section can shrink that region. `'open'` = it is
   // gone everywhere, `'cut'` = gone only in the half the section removed.
   const patchMode = (layer: number): 'open' | 'cut' | null => {
     if (!patchGeometries.has(layer)) return null;
-    if (layer === peeled && peeled > 0) return 'open';
+    if (layer === top && top > 0) return 'open';
     const kept = (i: number) => layers[i]?.section === false;
     const capCut = (i: number) => !kept(i) && !kept(i - 1);
     // This cap survives the section but the one above it does not.
@@ -603,7 +602,7 @@ export const ChunkMeshes = ({
     // the code renders.
     <group name="ChunkMeshes">
       {faces?.map(face => {
-        if (face.layer < peeled) return null;
+        if (face.layer < top || face.layer >= base) return null;
         const material =
           materials.faces[face.layer] ?? materials.walls[face.layer];
         if (!material) return null;
@@ -637,7 +636,7 @@ export const ChunkMeshes = ({
 
       {showWalls &&
         chunk.walls.map((wall, i) => {
-          if (wall.layer < peeled) return null;
+          if (wall.layer < top || wall.layer >= base) return null;
           const material = materials.walls[wall.layer];
           if (!material) return null;
           const overlay = wall.geometry.hasAttribute('inferred')
@@ -674,7 +673,16 @@ export const ChunkMeshes = ({
           // A cap belongs to the unit BELOW it, so the first survivor's cap stays
           // — that is what keeps the block closed. A void ceiling faces up into the
           // unit above, so it goes with that one instead.
-          if (surface.layer < peeled + (surface.ceiling ? 1 : 0)) return null;
+          if (surface.layer < top + (surface.ceiling ? 1 : 0)) return null;
+          // Below the window's floor cap, or the ceiling copy AT it (a void's
+          // underside must not stand in for the floor). The carrier sits at
+          // `layers.length` and is ceiling-tagged for its material, but it IS the
+          // natural base, so only guard against a ceiling on a real window base.
+          if (
+            surface.layer > base ||
+            (surface.layer === base && surface.ceiling && base < layers.length)
+          )
+            return null;
           const declared = layers[surface.layer];
           // The floor is appended past the caller's layers (it is inferred from a
           // fill on the last one), so it is the one cap with nothing declaring it.
