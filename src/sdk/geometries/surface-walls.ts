@@ -35,6 +35,16 @@ export type RingWallOptions = {
    * behaviour), 0 facets every one.
    */
   smoothAngle?: number;
+  /**
+   * Drop any quad with an edge strictly below this height. Default 0 keeps every
+   * quad (nothing is below zero height), which is the behaviour everywhere else.
+   * A fluid's wall (the sea, a contact) is built around an interval that pinches
+   * to nothing at the shoreline; the sea refines that waterline while the block's
+   * own tessellation does not, so a wall taken all the way to it diverges from
+   * the coarser neighbour and z-fights. Ending the wall on the vertices the two
+   * still share keeps them flush.
+   */
+  minHeight?: number;
 };
 
 /**
@@ -101,6 +111,7 @@ export function buildRingWalls(
   const minDot = Math.cos(
     ((options.smoothAngle ?? WALL_SMOOTH_ANGLE) * Math.PI) / 180,
   );
+  const minHeight = options.minHeight ?? 0;
 
   for (const { points, topY, bottomY, inferred } of rings) {
     const m = points.length;
@@ -179,6 +190,16 @@ export function buildRingWalls(
 
     for (let k = 0; k < m; k++) {
       const k1 = (k + 1) % m;
+      // A fluid's interval pinches to nothing at the shoreline. End the wall on
+      // the vertices it still shares with the coarser neighbour (both edges at or
+      // above minHeight) rather than following the sea's finer waterline into a
+      // sliver that diverges from that neighbour and z-fights. Strict, so the
+      // default (0) drops nothing and a zero-height pinch-out face still builds.
+      if (
+        topY[k] - bottomY[k] < minHeight ||
+        topY[k1] - bottomY[k1] < minHeight
+      )
+        continue;
       const t0 = outOf[k];
       const b0 = outOf[k] + 1;
       const t1 = inTo[k1];

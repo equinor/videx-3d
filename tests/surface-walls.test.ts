@@ -339,4 +339,57 @@ describe('buildStackWalls', () => {
     // ...and the part that IS submerged still has its wall.
     expect(triangleCount(wall)).toBeGreaterThan(0);
   });
+
+  it('drops the shoreline skirt where a fluid pinches to nothing', () => {
+    // An emergent island (the centre cell) with deep water all around it. The
+    // clamp lays the island's shore ring flat on the water line, so without the
+    // drop it would emit a closed band of pinched-out quads there — the thin
+    // lines the transparent body shader renders even at ~zero height.
+    const water = flat(-600);
+    const island = new Set([5, 6, 9, 10]); // the centre 2 x 2 block of the 4x4 grid
+    const seabed = new Float32Array(VERTICES);
+    for (let v = 0; v < VERTICES; v++) seabed[v] = island.has(v) ? -550 : -700;
+
+    const wall = buildStackWalls(tessellation, positionsXZ, [water, seabed], {
+      fills: [true, false],
+      threshold: 0.5,
+      fluid: [true, false],
+    }).walls[0]!;
+
+    // Only the deep outer rim is walled; the island's shore ring contributes
+    // nothing.
+    expect(triangleCount(wall)).toBe(rimRing.length * 2);
+    const position = wall.getAttribute('position');
+    for (let i = 0; i < position.count; i++)
+      expect(position.getY(i)).toBeLessThanOrEqual(-600);
+  });
+
+  it('stops a fluid wall on the shared rim, not in the refined shallows', () => {
+    // A bed that ramps deep -> just-submerged (0.2 m) -> emergent across the
+    // columns. The shallow column is where the sea would refine the waterline
+    // while a neighbour keeps the coarse rim; a wall taken there diverges and
+    // z-fights, so the quad bridging the deep rim to the shallow vertex must be
+    // dropped too — not just the fully sub-threshold ones.
+    const water = flat(0);
+    const seabed = new Float32Array(VERTICES);
+    for (let v = 0; v < VERTICES; v++) {
+      const c = v % N;
+      seabed[v] = c <= 1 ? -100 : c === 2 ? -0.2 : 50;
+    }
+    const wall = buildStackWalls(tessellation, positionsXZ, [water, seabed], {
+      fills: [true, false],
+      threshold: 0.5,
+      fluid: [true, false],
+    }).walls[0]!;
+
+    const position = wall.getAttribute('position');
+    const index = wall.getIndex()!;
+    // Nothing reaches the sub-threshold column (x = 200): the wall ends on the
+    // last full-height vertices (x = 100), flush with the coarser neighbour.
+    let maxX = -Infinity;
+    for (let i = 0; i < index.count; i++)
+      maxX = Math.max(maxX, position.getX(index.getX(i)));
+    expect(maxX).toBeLessThanOrEqual(100 + 1e-6);
+    expect(triangleCount(wall)).toBeGreaterThan(0);
+  });
 });

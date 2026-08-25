@@ -355,6 +355,11 @@ export function buildStackWalls(
     // pinch-out of a contact against the base of its own unit. Only for a pair
     // involving a fluid: everywhere else the resolve guarantees the order, and
     // quietly clamping would hide a crossing rather than report it.
+    //
+    // The clamped skirt is then ≤ `threshold` tall by construction (its boundary
+    // vertices are corners of a dropped, below-threshold triangle), and the two
+    // caps already meet there — so it is dropped via `minHeight` rather than
+    // rendered as a sliver.
     const clamped = !!(options.fluid?.[i] || options.fluid?.[i + 1]);
     const markTop = options.inferred?.[i];
     const markBottom = options.inferred?.[i + 1];
@@ -373,7 +378,10 @@ export function buildStackWalls(
               : undefined,
         };
       }),
-      { smoothAngle: options.smoothAngle },
+      {
+        smoothAngle: options.smoothAngle,
+        minHeight: clamped ? (options.threshold ?? 0.5) : 0,
+      },
     );
     walls[i] = geometry;
   }
