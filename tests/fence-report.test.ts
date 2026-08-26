@@ -54,36 +54,24 @@ function pad(value: string | number, width: number, right = true) {
 }
 
 function row(report: FenceReport, margin: number): string {
-  const { relax, head, extensions, sides } = report;
+  const { extensions, sides } = report;
   const problems = assertFenceInvariants(report);
   return [
     pad(report.wellbore ?? '', 12, false),
     pad(margin, 4),
     pad(report.sampling.count, 5),
     pad(report.sampling.maxTurn, 5),
-    pad(relax.headRadius === Infinity ? 9999 : relax.headRadius, 6),
-    relax.headRadius >= relax.requiredHeadRadius ? '  ok' : ' FAIL',
-    pad(relax.minRadius === Infinity ? 9999 : relax.minRadius, 6),
-    pad(relax.maxDeviation, 6),
-    pad(head.trimmedLength, 6),
-    pad(extensions.startClearance, 5),
-    pad(extensions.endClearance, 5),
-    pad(extensions.evenness * 100, 5),
+    pad(report.clearance, 5),
     pad(sides.plus.removedShare * 100, 5),
     pad(sides.minus.removedShare * 100, 5),
+    pad(sides.plus.burial, 5),
+    pad(sides.minus.burial, 5),
+    pad(sides.plus.bridges, 5),
+    pad(sides.minus.bridges, 5),
+    pad(Math.max(sides.plus.maxTurn, sides.minus.maxTurn), 5),
     pad(Math.min(...sides.plus.opening, ...sides.minus.opening), 5),
-    // How hard the sharpest junction bends, which is what tears the swept face.
-    // The opening is 180 - turn, so a straight junction reads 0 here either way.
-    pad(
-      Math.max(
-        ...[...sides.plus.opening, ...sides.minus.opening].map(o =>
-          Math.abs(180 - o),
-        ),
-      ),
-      5,
-    ),
+    pad(extensions.evenness * 100, 5),
     pad(sides.plus.loops + sides.minus.loops, 4),
-    pad(sides.plus.loopsRemoved + sides.minus.loopsRemoved, 4),
     problems.length === 0 ? '   -' : ` ${problems.length}`,
   ].join(' ');
 }
@@ -93,20 +81,17 @@ const HEADINGS = [
   pad('marg', 4),
   pad('smpl', 5),
   pad('turn', 5),
-  pad('head', 6),
-  ' head',
-  pad('radius', 6),
-  pad('devi', 6),
-  pad('trim', 6),
-  pad('clr0', 5),
-  pad('clr1', 5),
-  pad('even', 5),
+  pad('slck', 5),
   pad('rem+', 5),
   pad('rem-', 5),
+  pad('bur+', 5),
+  pad('bur-', 5),
+  pad('brg+', 5),
+  pad('brg-', 5),
+  pad('mxT', 5),
   pad('open', 5),
-  pad('bend', 5),
+  pad('even', 5),
   pad('loop', 4),
-  pad('cut', 4),
   ' bad',
 ].join(' ');
 
@@ -330,8 +315,7 @@ function sidesProbe(ids: string[]) {
     if (!fence.report.shared) diverged++;
     console.log(
       `${pad(wellboreName(id), 14, false)} ${pad(fence.report.shared ? 'yes' : 'NO', 6)}  ` +
-        `${pad(plus.blended ? 'y' : '.', 3)}${pad(minus.blended ? 'y' : '.', 2)}  ` +
-        `w${pad(plus.waistRemoved, 2)}/${pad(minus.waistRemoved, 1)}  ` +
+        `brdg${pad(plus.bridges, 2)}/${pad(minus.bridges, 1)}  ` +
         `${plus.opening.map(v => ((v * 180) / Math.PI).toFixed(0).padStart(6)).join('')}  ` +
         `${minus.opening.map(v => ((v * 180) / Math.PI).toFixed(0).padStart(6)).join('')}  ` +
         `${pad(maxSep, 7)}  ${plus.points.length}/${minus.points.length}`,

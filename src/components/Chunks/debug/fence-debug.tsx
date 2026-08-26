@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   assertFenceInvariants,
   buildWellboreFence,
+  Curve3D,
+  FenceDefect,
   FenceReport,
   fenceSideAt,
   getSplineCurve,
@@ -23,8 +25,10 @@ export type FenceDebugModel = {
   fence: WellboreFence;
   report: FenceReport;
   problems: string[];
-  /** the raw plan trace, before straightening */
+  /** the raw plan trace of the survey stations */
   trace: Vec2[];
+  /** the 3D spline, so a view can frame an exact curve position */
+  curve: Curve3D;
 };
 
 /** Every ring of an outline in absolute scene XZ. */
@@ -42,45 +46,26 @@ export function debugOutlineRings(
   return rings;
 }
 
-/** The angle budget the cut is built under, in DEGREES. */
-export type FenceTurnBudget = {
-  /** at TD, where the cut has to hug a trajectory that genuinely bends */
-  maxTurn: number;
-  /** at the wellhead, where there is nothing but survey scatter to follow */
-  headTurn: number;
-  /** arc length the budget is accumulated over, in metres */
-  turnWindow: number;
-};
-
 /** Build the model, or `null` while the trajectory has not resolved. */
 export function useFenceDebugModel(
   trajectory: Vec3[] | null,
   rings: Vec2[][],
   margin: number,
-  turn?: FenceTurnBudget,
 ): FenceDebugModel | null {
-  const { maxTurn, headTurn, turnWindow } = turn ?? {};
   return useMemo(() => {
     if (!trajectory || trajectory.length < 3 || rings.length === 0) return null;
     const curve = getSplineCurve(trajectory);
     if (!curve) return null;
-    const radians = (d?: number) =>
-      d === undefined ? undefined : (d * Math.PI) / 180;
-    const fence = buildWellboreFence(curve, {
-      rings,
-      margin,
-      maxTurn: radians(maxTurn),
-      headTurn: radians(headTurn),
-      turnWindow,
-    });
+    const fence = buildWellboreFence(curve, { rings, margin });
     if (!fence) return null;
     return {
       fence,
       report: fence.report,
       problems: assertFenceInvariants(fence.report),
       trace: trajectory.map(p => [p[0], p[2]] as Vec2),
+      curve,
     };
-  }, [trajectory, rings, margin, maxTurn, headTurn, turnWindow]);
+  }, [trajectory, rings, margin]);
 }
 
 const COLOURS = {
@@ -95,8 +80,16 @@ const COLOURS = {
   grid: '#1a1f26',
 };
 
+/** Fat semi-transparent overlay colours for each defect the diagnostic flags. */
+const DEFECT_COLOURS: Record<string, string> = {
+  burial: 'rgba(255, 60, 60, 0.5)',
+  sharp: 'rgba(255, 160, 40, 0.5)',
+  pinch: 'rgba(255, 110, 210, 0.5)',
+  wiggle: 'rgba(255, 220, 60, 0.5)',
+};
+
 /** What the plan view frames. @see FencePlanView */
-export type FenceFocus = 'fit' | 'head' | 'td';
+export type FenceFocus = 'fit' | 'head' | 'td' | 'curvepos';
 
 /**
  * Draw the whole fence in PLAN.
@@ -115,18 +108,24 @@ export function FencePlanView({
   size = 460,
   showTrace = true,
   showBase = true,
-  showSides = true,
+  showLeft = true,
+  showRight = true,
+  showDefects = true,
   focus = 'fit',
   focusRadius = 600,
+  curvePos = 0.5,
 }: {
   model: FenceDebugModel | null;
   rings: Vec2[][];
   size?: number;
   showTrace?: boolean;
   showBase?: boolean;
-  showSides?: boolean;
+  showLeft?: boolean;
+  showRight?: boolean;
+  showDefects?: boolean;
   focus?: FenceFocus;
   focusRadius?: number;
+  curvePos?: number;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
 
@@ -150,12 +149,20 @@ export function FencePlanView({
       if (p[1] > maxZ) maxZ = p[1];
     };
     if (focus === 'fit') {
-      for (const ring of rings) for (const p of ring) take(p);
-      for (const p of model.fence.plus.curve.points) take(p);
-      for (const p of model.fence.minus.curve.points) take(p);
+      // ⭐ Fit the TRAJECTORY, not the fence with its run-outs — the run-outs reach
+      // far past the footprint and would shrink the well to a dot. Their off-screen
+      // tails are what we are deliberately ignoring while the path is tuned.
+      for (const p of model.trace) take(p);
     } else {
-      const at =
-        focus === 'head' ? model.trace[0] : model.trace[model.trace.length - 1];
+      // ⭐ `curvepos` frames an EXACT position along the 3D spline (0 = head, 1 = TD),
+      // read straight off the interpolator so a specific feature can be dialled in.
+      let at: Vec2;
+      if (focus === 'head') at = model.trace[0];
+      else if (focus === 'td') at = model.trace[model.trace.length - 1];
+      else {
+        const p = model.curve.getPointAt(Math.min(1, Math.max(0, curvePos)));
+        at = [p[0], p[2]];
+      }
       const r = Math.max(focusRadius, 1);
       minX = at[0] - r;
       maxX = at[0] + r;
@@ -193,31 +200,40 @@ export function FencePlanView({
 
     if (showTrace) stroke(model.trace, COLOURS.trace, 1);
     if (showBase) stroke(model.fence.base.points, COLOURS.base, 2);
-    if (showSides) {
-      stroke(model.fence.plus.curve.points, COLOURS.plus, 1.5);
-      stroke(model.fence.minus.curve.points, COLOURS.minus, 1.5);
-    }
+    // ⭐ The followed path per side, WITHOUT run-outs. LEFT is the half to the left of
+    // the well's tangent (side +1); RIGHT is side -1. Toggled independently so one side
+    // can be read alone. At margin 0 the two coincide.
+    if (showLeft) stroke(model.fence.plus.curve.core, COLOURS.plus, 2.5);
+    if (showRight) stroke(model.fence.minus.curve.core, COLOURS.minus, 1.5);
 
-    // The run-out arms, so a fence that leaves without crossing the block shows.
-    for (const side of [model.fence.plus, model.fence.minus]) {
-      const points = side.curve.points;
-      context.setLineDash([4, 4]);
-      stroke([points[0], points[1]], COLOURS.arm, 1);
-      stroke(
-        [points[points.length - 2], points[points.length - 1]],
-        COLOURS.arm,
-        1,
-      );
-      context.setLineDash([]);
-    }
-
-    // Where the head was given up, if it was.
-    if (model.report.head.trimmedLength > 0) {
-      const at = model.fence.base.points[0];
-      context.fillStyle = COLOURS.base;
-      context.beginPath();
-      context.arc(toX(at[0]), toY(at[1]), 4, 0, Math.PI * 2);
-      context.fill();
+    // ⭐ Defect overlay: fat, semi-transparent marks over exactly what the diagnostic
+    // flags — burial runs sit on the WELL, the turn kinds on the offending core corner —
+    // so what the scorer catches (and misses) is visible at a glance.
+    if (showDefects) {
+      context.lineCap = 'round';
+      context.lineJoin = 'round';
+      const drawDefects = (defects: FenceDefect[]) => {
+        for (const d of defects) {
+          if (d.points.length === 0) continue;
+          context.strokeStyle =
+            DEFECT_COLOURS[d.kind] ?? 'rgba(255,255,255,0.5)';
+          context.lineWidth = 8;
+          context.beginPath();
+          context.moveTo(toX(d.points[0][0]), toY(d.points[0][1]));
+          for (let i = 1; i < d.points.length; i++) {
+            context.lineTo(toX(d.points[i][0]), toY(d.points[i][1]));
+          }
+          // A single-point run still renders as a dot under the round cap.
+          if (d.points.length === 1) {
+            context.lineTo(toX(d.points[0][0]), toY(d.points[0][1]));
+          }
+          context.stroke();
+        }
+      };
+      if (showLeft) drawDefects(model.report.sides.plus.diagnosis.defects);
+      if (showRight) drawDefects(model.report.sides.minus.diagnosis.defects);
+      context.lineCap = 'butt';
+      context.lineJoin = 'miter';
     }
 
     // ⭐ The WELLHEAD and TD. A cut can look perfect everywhere and still bury the
@@ -260,7 +276,19 @@ export function FencePlanView({
     context.stroke();
     context.font = '10px ui-monospace, monospace';
     context.fillText(`${bar} m`, pad + barPixels + 6, y + 3);
-  }, [model, rings, size, showTrace, showBase, showSides, focus, focusRadius]);
+  }, [
+    model,
+    rings,
+    size,
+    showTrace,
+    showBase,
+    showLeft,
+    showRight,
+    showDefects,
+    focus,
+    focusRadius,
+    curvePos,
+  ]);
 
   return (
     <canvas
@@ -324,25 +352,7 @@ export function FenceHud({ model }: { model: FenceDebugModel | null }) {
         label="kickoff"
         value={report.kickoff.found ? `${n(report.kickoff.md)} m MD` : 'none'}
       />
-      <Row
-        label="corridor"
-        value={`${n(report.relax.toleranceMin)}\u2013${n(report.relax.toleranceMax)} m`}
-      />
-      <Row label="deviation" value={`${n(report.relax.maxDeviation)} m`} />
-      <Row
-        label="head radius"
-        value={`${n(report.relax.headRadius)} / ${n(report.relax.requiredHeadRadius)} m`}
-        bad={report.relax.headRadius < report.relax.requiredHeadRadius}
-      />
-      <Row label="curve radius" value={`${n(report.relax.minRadius)} m`} />
-      <Row
-        label="head given up"
-        value={
-          report.head.trimmedLength > 0
-            ? `${n(report.head.trimmedLength)} m`
-            : 'no'
-        }
-      />
+      <Row label="clearance" value={`${n(report.clearance)} m`} />
       <Row
         label="run-out clearance"
         value={`${n(report.extensions.startClearance)}\u00b0 / ${n(report.extensions.endClearance)}\u00b0`}
@@ -352,33 +362,86 @@ export function FenceHud({ model }: { model: FenceDebugModel | null }) {
         value={`${n(report.extensions.evenness * 100)}% of ${report.extensions.scored} pairs`}
       />
       <Row
-        label="removed +/-"
+        label="removed L/R"
         value={`${n(report.sides.plus.removedShare * 100)}% / ${n(report.sides.minus.removedShare * 100)}%`}
       />
       <Row
-        label="opening +"
+        label="buried L/R"
+        value={`${n(report.sides.plus.burial)} / ${n(report.sides.minus.burial)} m`}
+        bad={Math.max(report.sides.plus.burial, report.sides.minus.burial) > 15}
+      />
+      <Row
+        label="bridges L/R"
+        value={`${report.sides.plus.bridges} / ${report.sides.minus.bridges}`}
+      />
+      <Row
+        label="opening L"
         value={report.sides.plus.opening.map(v => `${n(v)}\u00b0`).join(' ')}
       />
       <Row
-        label="opening -"
+        label="opening R"
         value={report.sides.minus.opening.map(v => `${n(v)}\u00b0`).join(' ')}
       />
       <Row
-        label="loops"
+        label="loops L/R"
         value={`${report.sides.plus.loops} / ${report.sides.minus.loops}`}
         bad={report.sides.plus.loops + report.sides.minus.loops > 0}
       />
       <Row
-        label="max turn +/-"
+        label="max turn L/R"
         value={`${n(report.sides.plus.maxTurn)}\u00b0 / ${n(report.sides.minus.maxTurn)}\u00b0`}
       />
       <Row
-        label="chorded +/-"
-        value={`${report.sides.plus.chorded} / ${report.sides.minus.chorded}`}
+        label="diag burial L/R"
+        value={`${n(report.sides.plus.diagnosis.burial, 1)} / ${n(report.sides.minus.diagnosis.burial, 1)} m`}
+        bad={
+          Math.max(
+            report.sides.plus.diagnosis.burial,
+            report.sides.minus.diagnosis.burial,
+          ) > report.sides.plus.diagnosis.tolerance
+        }
       />
       <Row
-        label="waists +/-"
-        value={`${report.sides.plus.waistRemoved} / ${report.sides.minus.waistRemoved}`}
+        label="sharp/pinch/wiggle L"
+        value={`${report.sides.plus.diagnosis.sharpTurns} / ${report.sides.plus.diagnosis.pinches} / ${report.sides.plus.diagnosis.wiggle}`}
+        bad={
+          report.sides.plus.diagnosis.sharpTurns +
+            report.sides.plus.diagnosis.pinches +
+            report.sides.plus.diagnosis.wiggle >
+          0
+        }
+      />
+      <Row
+        label="sharp/pinch/wiggle R"
+        value={`${report.sides.minus.diagnosis.sharpTurns} / ${report.sides.minus.diagnosis.pinches} / ${report.sides.minus.diagnosis.wiggle}`}
+        bad={
+          report.sides.minus.diagnosis.sharpTurns +
+            report.sides.minus.diagnosis.pinches +
+            report.sides.minus.diagnosis.wiggle >
+          0
+        }
+      />
+      <Row
+        label="bridged L/R"
+        value={`${n(report.sides.plus.diagnosis.bridged * 100)}% / ${n(report.sides.minus.diagnosis.bridged * 100)}%`}
+      />
+      <Row
+        label="verdict L"
+        value={
+          report.sides.plus.diagnosis.clean
+            ? 'clean'
+            : report.sides.plus.diagnosis.issues.join('; ')
+        }
+        bad={!report.sides.plus.diagnosis.clean}
+      />
+      <Row
+        label="verdict R"
+        value={
+          report.sides.minus.diagnosis.clean
+            ? 'clean'
+            : report.sides.minus.diagnosis.issues.join('; ')
+        }
+        bad={!report.sides.minus.diagnosis.clean}
       />
       <Row
         label="sides"
@@ -412,6 +475,8 @@ export function useFenceDebugHandle(model: FenceDebugModel | null) {
           base: model.fence.base.points,
           plus: model.fence.plus.curve.points,
           minus: model.fence.minus.curve.points,
+          plusCore: model.fence.plus.curve.core,
+          minusCore: model.fence.minus.curve.core,
           sampleField: (side: 1 | -1) => {
             const at = side > 0 ? model.fence.plus : model.fence.minus;
             return (x: number, z: number) =>

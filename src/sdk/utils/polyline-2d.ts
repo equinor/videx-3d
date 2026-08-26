@@ -393,6 +393,219 @@ export function removePolylineLoops(points: Vec2[]): Vec2[] {
 }
 
 /**
+ * The shortest polyline that keeps EVERY vertex of `points` on one side of it — the
+ * taut string pulled tight against the trace from the half being removed.
+ *
+ * ⭐⭐ This is the one primitive a fence side is built on. `side = 1` keeps the whole
+ * input on the LEFT of the result (the half the left normal points into); `-1` keeps
+ * it on the right. The output is a SUBSEQUENCE of the input vertices: it follows the
+ * trace exactly wherever the trace bends toward the KEPT side, and bridges straight
+ * across wherever it bends toward the REMOVED side — a loop, a hairpin, the inside of
+ * a dogleg. It cannot self-intersect and it cannot fold, because a taut string does
+ * neither, which is the whole reason to build the cut this way instead of smoothing
+ * and repairing an offset that can do both.
+ *
+ * ⚠️⚠️ The check is against EVERY skipped vertex of a candidate bridge, not just the
+ * turn at its ends. A one-sided hull that pops on the local turn alone (a plain
+ * convex-hull scan) drops a vertex a later bridge then passes on the wrong side of,
+ * and the cut buries the well there — measured at tens to hundreds of metres on the
+ * doubling-back wells. Taking the FURTHEST bridge whose every skipped vertex is on
+ * the removed side is what makes one-sidedness exact rather than approximate.
+ *
+ * ⚠️ The two sides of one trace are genuinely different curves: where one follows
+ * tightly the other bridges, so this must be run once per side.
+ *
+ * ⭐ `tolerance` is metres of slack: a bridge may leave a skipped vertex up to this
+ * far on the KEPT side, so survey scatter and small kept-side wiggle are bridged away
+ * rather than followed. At 0 the string is pulled fully taut and only removed-side
+ * excursions are bridged. Keep it at or below the feature the cut must not bury — the
+ * wellbore's render radius.
+ *
+ * @param points the trace, ordered head to terminal depth
+ * @param side which half is REMOVED; the trace is kept on the other one
+ * @param tolerance metres a skipped vertex may sit on the kept side. Default 0.
+ *
+ * @group Utils
+ */
+export function oneSidedGeodesic(
+  points: Vec2[],
+  side: 1 | -1,
+  tolerance = 0,
+): Vec2[] {
+  const n = points.length;
+  if (n < 3) return points.map(p => [p[0], p[1]] as Vec2);
+  const out: Vec2[] = [[points[0][0], points[0][1]]];
+  let i = 0;
+  while (i < n - 1) {
+    const ax = points[i][0];
+    const az = points[i][1];
+    // The furthest vertex reachable by a straight bridge that leaves every skipped
+    // vertex on the removed side (within `tolerance` of the kept side) — the taut
+    // shortcut from here.
+    let best = i + 1;
+    for (let j = i + 2; j < n; j++) {
+      const bx = points[j][0];
+      const bz = points[j][1];
+      // Cross-products scale with the bridge length, so the metric slack does too.
+      const limit = tolerance * (Math.hypot(bx - ax, bz - az) || 1);
+      let ok = true;
+      for (let k = i + 1; k < j; k++) {
+        // cross(b - a, k - a): positive means k is on the LEFT of a -> b.
+        const c =
+          (bx - ax) * (points[k][1] - az) - (bz - az) * (points[k][0] - ax);
+        // side 1 removes the left, so a skipped vertex on the RIGHT is buried.
+        if (side > 0 ? c < -limit : c > limit) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) best = j;
+    }
+    out.push([points[best][0], points[best][1]]);
+    i = best;
+  }
+  return out;
+}
+
+/**
+ * Remove self-intersections from an open polyline ONE-SIDED: each loop is bridged so
+ * its excursion falls on the half being REMOVED, rather than chorded through the
+ * middle where it would bury the well on the kept side.
+ *
+ * ⭐ Only the self-crossing span is touched — the taut one-sided string is run over
+ * that span alone — so a simple, smoothly bending trajectory (even one that alternates
+ * concave and convex) is returned untouched, and the two sides differ ONLY where the
+ * well genuinely crosses itself.
+ *
+ * ⚠️ A loop whose excursion faces the KEPT side is pushed clear of it, which on a hard
+ * hook is a long, narrow bridge deep into the column — the price of not burying it.
+ * Bounding that is left to the caller.
+ *
+ * @param points an open polyline, head to terminal depth
+ * @param side which half is REMOVED
+ * @param tolerance metres a bridged vertex may sit on the kept side. Default 0.
+ *
+ * @group Utils
+ */
+export function repairLoopsOneSided(
+  points: Vec2[],
+  side: 1 | -1,
+  tolerance = 0,
+): Vec2[] {
+  if (points.length < 4) return points;
+  const out = points.slice();
+  for (let guard = 0; guard < 4096; guard++) {
+    const loop = findPolylineLoop(out);
+    if (!loop) break;
+    // Rework only the self-crossing span, keeping its end anchors on the well.
+    const span = out.slice(loop.i, loop.j + 2);
+    const fixed = oneSidedGeodesic(span, side, tolerance);
+    out.splice(loop.i, loop.j + 2 - loop.i, ...fixed);
+  }
+  return out;
+}
+
+/**
+ * Offset a SIMPLE open polyline to one side by `margin`, DISSOLVING the fold that a
+ * bend tighter than the margin would otherwise make.
+ *
+ * ⭐ The push is toward the KEPT half (opposite the removed side's left normal), so the
+ * trajectory ends up `margin` inside the REMOVED half — a clear view of the well from
+ * the cut face. `side` = which half is REMOVED.
+ *
+ * ⚠️⚠️ A naive per-vertex offset SELF-CROSSES wherever the bend is tighter than the
+ * margin (an S alternates, so both lobes eventually do). Here the offset is DISSOLVED,
+ * not kept: a valid offset vertex sits ~`margin` from the source, so any vertex that
+ * lands CLOSER than that to some OTHER part of the source has been folded inside the
+ * true offset and is dropped; the survivors are re-stitched, collapsing a tight
+ * concavity to a straight bridge instead of a loop. The distance test is against the
+ * WHOLE source, so it is global — one lobe's fold is cut off by another lobe.
+ *
+ * @param points a SIMPLE open polyline (no self-crossings), head to terminal depth
+ * @param side which half is REMOVED
+ * @param margin metres of clearance to keep on the removed side
+ *
+ * @group Utils
+ */
+export function offsetPolyline2DDissolved(
+  points: Vec2[],
+  side: 1 | -1,
+  margin: number,
+): Vec2[] {
+  if (points.length < 2 || margin <= 0) return points;
+  const normals = polylineNormals2D(points);
+  const offset: Vec2[] = points.map((p, i) => [
+    p[0] - side * normals[i][0] * margin,
+    p[1] - side * normals[i][1] * margin,
+  ]);
+  // A folded vertex is closer than the margin to some part of the source; keep only
+  // those that stayed out at the true offset distance (a small tolerance for corners).
+  const keep = margin * 0.9;
+  const survivors: Vec2[] = [];
+  for (const q of offset) {
+    const hit = nearestOnPolyline(points, q[0], q[1]);
+    if (hit && hit.distance >= keep) survivors.push(q);
+  }
+  if (survivors.length < 2) return points;
+  // Re-stitch and clean any crossing the bridges introduced.
+  return removePolylineLoops(survivors);
+}
+
+/**
+ * Smooth a polyline while keeping every vertex within `radius` of where it started —
+ * corridor-constrained relaxation.
+ *
+ * ⭐⭐ Binomial smoothing rounds sharp bends and dissolves the tiny back-and-forth
+ * reversals an offset leaves, but on its own it drifts a curve wherever it likes. The
+ * per-vertex clamp back inside a disc of `radius` bounds the deviation BY CONSTRUCTION,
+ * so the result cannot fold and, when `radius` is the clearance already opened, cannot
+ * move the cut close enough to the well to bury it. Endpoints are pinned.
+ *
+ * @param points an open polyline
+ * @param radius metres a vertex may travel from its original position
+ * @param passes smoothing iterations. Default 12.
+ *
+ * @group Utils
+ */
+export function smoothPolyline2DWithinDisc(
+  points: Vec2[],
+  radius: number,
+  passes = 12,
+): Vec2[] {
+  if (points.length < 3 || !(radius > 0)) {
+    return points.map(p => [p[0], p[1]] as Vec2);
+  }
+  const origin = points.map(p => [p[0], p[1]] as Vec2);
+  let current = points.map(p => [p[0], p[1]] as Vec2);
+  const r2 = radius * radius;
+  for (let pass = 0; pass < passes; pass++) {
+    const next = current.map(p => [p[0], p[1]] as Vec2);
+    for (let i = 1; i + 1 < current.length; i++) {
+      let x =
+        0.25 * current[i - 1][0] +
+        0.5 * current[i][0] +
+        0.25 * current[i + 1][0];
+      let z =
+        0.25 * current[i - 1][1] +
+        0.5 * current[i][1] +
+        0.25 * current[i + 1][1];
+      const dx = x - origin[i][0];
+      const dz = z - origin[i][1];
+      const d2 = dx * dx + dz * dz;
+      if (d2 > r2) {
+        const s = radius / Math.sqrt(d2);
+        x = origin[i][0] + dx * s;
+        z = origin[i][1] + dz * s;
+      }
+      next[i][0] = x;
+      next[i][1] = z;
+    }
+    current = next;
+  }
+  return current;
+}
+
+/**
  * Unit left normal at every vertex, averaged across the two adjacent segments.
  *
  * @group Utils

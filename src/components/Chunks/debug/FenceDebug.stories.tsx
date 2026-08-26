@@ -53,14 +53,14 @@ function useVolve() {
 type Props = {
   wellbore: string;
   margin: number;
-  maxTurn: number;
-  headTurn: number;
-  turnWindow: number;
   focus: FenceFocus;
   focusRadius: number;
+  curvePos: number;
   showTrace: boolean;
   showBase: boolean;
-  showSides: boolean;
+  showLeft: boolean;
+  showRight: boolean;
+  showDefects: boolean;
   size: number;
 };
 
@@ -116,11 +116,7 @@ const FenceDebug = (props: Props) => {
     return trajectories.get(byName ?? props.wellbore) ?? null;
   }, [data, trajectories, props.wellbore]);
 
-  const model = useFenceDebugModel(selected, rings, props.margin, {
-    maxTurn: props.maxTurn,
-    headTurn: props.headTurn,
-    turnWindow: props.turnWindow,
-  });
+  const model = useFenceDebugModel(selected, rings, props.margin);
   useFenceDebugHandle(model);
 
   return (
@@ -141,9 +137,12 @@ const FenceDebug = (props: Props) => {
         size={props.size}
         showTrace={props.showTrace}
         showBase={props.showBase}
-        showSides={props.showSides}
+        showLeft={props.showLeft}
+        showRight={props.showRight}
+        showDefects={props.showDefects}
         focus={props.focus}
         focusRadius={props.focusRadius}
+        curvePos={props.curvePos}
       />
       <div>
         <div style={{ marginBottom: 8, opacity: 0.6 }}>
@@ -152,25 +151,68 @@ const FenceDebug = (props: Props) => {
         <FenceHud model={model} />
         <div style={{ marginTop: 12, opacity: 0.5, lineHeight: 1.6 }}>
           <div>
-            <span style={{ color: '#7a7a7a' }}>——</span> raw plan trace
+            <span style={{ color: '#7a7a7a' }}>——</span> survey trace
           </div>
           <div>
-            <span style={{ color: '#2ecc71' }}>——</span> straightened base curve
+            <span style={{ color: '#2ecc71' }}>——</span> spline path
           </div>
           <div>
-            <span style={{ color: '#4aa3ff' }}>——</span> side +1 cut
+            <span style={{ color: '#4aa3ff' }}>——</span> Left cut
           </div>
           <div>
-            <span style={{ color: '#ff7043' }}>——</span> side −1 cut
+            <span style={{ color: '#ff7043' }}>——</span> Right cut
           </div>
           <div>
-            <span style={{ color: '#ffd54f' }}>- -</span> run-outs
+            <span style={{ color: 'rgba(255,60,60,0.9)' }}>▬</span> burial{' '}
+            <span style={{ color: 'rgba(255,160,40,0.9)' }}>▬</span> sharp{' '}
+            <span style={{ color: 'rgba(255,110,210,0.9)' }}>▬</span> pinch{' '}
+            <span style={{ color: 'rgba(255,220,60,0.9)' }}>▬</span> wiggle
           </div>
           <div>
             <span style={{ color: '#ffffff' }}>⊕</span> wellhead,{' '}
             <span style={{ color: '#b388ff' }}>■</span> TD
           </div>
         </div>
+        <label
+          style={{
+            display: 'block',
+            marginTop: 14,
+            fontSize: 11,
+            opacity: 0.6,
+          }}
+        >
+          copy view — paste back with your note
+        </label>
+        <textarea
+          readOnly
+          onFocus={e => e.currentTarget.select()}
+          value={`fence-view ${JSON.stringify({
+            wellbore: props.wellbore,
+            margin: props.margin,
+            focus: props.focus,
+            curvePos: props.curvePos,
+            focusRadius: props.focusRadius,
+            showTrace: props.showTrace,
+            showBase: props.showBase,
+            showLeft: props.showLeft,
+            showRight: props.showRight,
+            showDefects: props.showDefects,
+            size: props.size,
+          })}`}
+          style={{
+            width: '100%',
+            height: 54,
+            marginTop: 4,
+            font: '11px ui-monospace, monospace',
+            background: '#11151b',
+            color: '#9fb3c8',
+            border: '1px solid #2a3441',
+            borderRadius: 4,
+            padding: 6,
+            boxSizing: 'border-box',
+            resize: 'vertical',
+          }}
+        />
       </div>
     </div>
   );
@@ -182,14 +224,14 @@ export default {
   args: {
     wellbore: 'NO 15/9-F-12',
     margin: 0,
-    maxTurn: 60,
-    headTurn: 25,
-    turnWindow: 300,
     focus: 'fit',
     focusRadius: 600,
-    showTrace: true,
+    curvePos: 0.5,
+    showTrace: false,
     showBase: true,
-    showSides: true,
+    showLeft: true,
+    showRight: true,
+    showDefects: true,
     size: 520,
   },
   argTypes: {
@@ -201,52 +243,51 @@ export default {
       table: { category: 'Fence' },
     },
     margin: {
-      control: { type: 'range', min: 0, max: 300, step: 5 },
+      control: { type: 'range', min: 0, max: 10, step: 0.5 },
       description:
-        'Metres of clearance baked into each side. ⭐ Watch the two side curves separate by twice this — the corridor between them is what both views remove, and it is where casings get room to be drawn.',
+        'Metres of hard clearance baked into each side. ⭐ Watch the two side curves separate by twice this — the corridor between them is what both views remove, and it is where casings get room to be drawn.',
       table: { category: 'Fence' },
-    },
-    maxTurn: {
-      control: { type: 'range', min: 10, max: 85, step: 5 },
-      description:
-        'Degrees the cut may turn within the window at TD. ⭐⭐ Measured over a WINDOW, not between neighbouring segments — a curve turning a few degrees per step for twenty steps passes every per-vertex test and is a near loop, which is what tears the swept face. Anything over budget is cut straight through. ⚠️ Never take this to 90: at a right angle the two faces of the turn are looking at each other.',
-      table: { category: 'Angles' },
-    },
-    headTurn: {
-      control: { type: 'range', min: 5, max: 85, step: 5 },
-      description:
-        'The same budget at the WELLHEAD. ⭐⭐ Deliberately tighter than at TD: near TD the trajectory genuinely bends and the cut has to hug it, while at the head there is nothing to follow but survey scatter and every degree spent there buys a fold. The budget is interpolated between the two by position along the well.',
-      table: { category: 'Angles' },
-    },
-    turnWindow: {
-      control: { type: 'range', min: 50, max: 1000, step: 25 },
-      description:
-        'Metres of arc the turn budget is accumulated over. ⭐ This is the “how far ahead does it look” dial: short sees only local kinks, long treats a wide sweeping bend as one turn.',
-      table: { category: 'Angles' },
     },
     focus: {
       control: { type: 'inline-radio' },
-      options: ['fit', 'head', 'td'],
+      options: ['fit', 'head', 'td', 'curvepos'],
       description:
-        'What to frame. ⭐⭐ The ENDS are where the run-out joins, and a whole-fence view flattens the junction into a couple of pixels — burial at the head is the failure a viewer notices and it is invisible in an aggregate. The scale bar is the reference for judging it.',
+        'What to frame. `fit` shows the whole trajectory; `head`/`td` centre on the ends; `curvepos` centres on an EXACT position along the spline set by `curvePos`. Everything but `fit` uses `focusRadius` for the zoom window.',
       table: { category: 'View' },
     },
     focusRadius: {
-      control: { type: 'range', min: 100, max: 3000, step: 50 },
+      control: { type: 'range', min: 1, max: 3000, step: 1 },
       description:
         'Half the width of the framed window, in metres. Ignored when focus is `fit`.',
       table: { category: 'View' },
     },
+    curvePos: {
+      control: { type: 'range', min: 0, max: 1, step: 0.001 },
+      description:
+        'Position along the spline to centre on when focus is `curvepos`: 0 = wellhead, 1 = TD. Read off the 3D interpolator, so e.g. 0.042 lands exactly on that point of the curve.',
+      table: { category: 'View' },
+    },
     showTrace: {
-      description: 'The raw projected trajectory, before straightening.',
+      description: 'The raw projected trajectory (survey stations).',
       table: { category: 'View' },
     },
     showBase: {
-      description: 'The straightened curve both sides are built from.',
+      description: 'The dense, simplified spline path the fence follows.',
       table: { category: 'View' },
     },
-    showSides: {
-      description: 'Each side’s finished cut curve.',
+    showLeft: {
+      description:
+        'The LEFT cut — the half to the left of the well’s tangent (head→TD). Blue.',
+      table: { category: 'View' },
+    },
+    showRight: {
+      description:
+        'The RIGHT cut — the half to the right of the tangent. Orange.',
+      table: { category: 'View' },
+    },
+    showDefects: {
+      description:
+        'Fat semi-transparent overlay on what the diagnostic flags: burial (red) on the well, sharp (orange) / pinch (pink) / wiggle (yellow) on the cut corner.',
       table: { category: 'View' },
     },
     size: {

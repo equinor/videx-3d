@@ -1,5 +1,5 @@
-import { RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
+import { RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DataTexture,
   FloatType,
@@ -27,8 +27,8 @@ import {
   Store,
   Vec2,
   Vec3,
-  WellboreHeader,
   WellboreFence,
+  WellboreHeader,
 } from '../../sdk';
 import {
   ChunkFence,

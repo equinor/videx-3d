@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertFenceInvariants,
-  fenceBaseCurve,
   fenceKickoff,
   fenceResidual,
-  fenceTolerance,
   rasterizeOutline,
   sampleTrajectoryPlan,
   splitShares,
@@ -82,7 +80,7 @@ describe('sampleTrajectoryPlan', () => {
   });
 });
 
-describe('fenceKickoff and fenceTolerance', () => {
+describe('fenceKickoff', () => {
   it('finds where the well stops being vertical', () => {
     const curve = getSplineCurve(syntheticWell(1.5))!;
     const samples = sampleTrajectoryPlan(curve, 10)!;
@@ -90,14 +88,6 @@ describe('fenceKickoff and fenceTolerance', () => {
     expect(kickoff.found).toBe(true);
     expect(kickoff.md).toBeGreaterThan(900);
     expect(kickoff.md).toBeLessThan(1600);
-  });
-
-  it('opens the corridor where the well is vertical and closes it where it is not', () => {
-    const curve = getSplineCurve(syntheticWell(1.5))!;
-    const samples = sampleTrajectoryPlan(curve, 10)!;
-    const tolerance = fenceTolerance(samples);
-    expect(tolerance[2]).toBeGreaterThan(100);
-    expect(tolerance[tolerance.length - 3]).toBeLessThan(20);
   });
 });
 
@@ -226,22 +216,6 @@ describe('splitShares', () => {
     ];
     const [smaller] = splitShares(barelyOut, mask);
     expect(smaller).toBeGreaterThan(0.3);
-  });
-});
-
-describe('fenceBaseCurve', () => {
-  it('smooths the shallow scatter rather than following it', () => {
-    const curve = getSplineCurve(syntheticWell(40))!;
-    const samples = sampleTrajectoryPlan(curve, 10)!;
-    const base = fenceBaseCurve(samples);
-    expect(base.headRadius).toBeGreaterThanOrEqual(base.requiredHeadRadius);
-  });
-
-  it('gives the head up only when smoothing cannot fix it', () => {
-    const gentle = fenceBaseCurve(
-      sampleTrajectoryPlan(getSplineCurve(syntheticWell(2))!, 10)!,
-    );
-    expect(gentle.trimmedLength).toBe(0);
   });
 });
 

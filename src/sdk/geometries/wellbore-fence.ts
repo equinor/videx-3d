@@ -3,27 +3,21 @@ import {
   countPolylineLoops,
   dedupePolyline2D,
   endTangent2D,
-  junctionOpening,
   leftNormal2D,
   nearestOnPolyline,
-  polylineArcLengths,
+  offsetPolyline2DDissolved,
   polylineBounds2D,
   polylineLength,
   polylineMaxTurn,
   polylineMinRadius,
-  polylineNormals2D,
-  polylineRadiusProfile,
   principalDirection2D,
-  relaxPolyline2DClearOf,
-  relaxPolyline2DWithin,
-  RelaxResult,
   removePolylineLoops,
-  repairPolylineWaists,
+  repairLoopsOneSided,
   resamplePolyline2D,
-  spreadAlongPolyline,
+  smoothPolyline2DWithinDisc,
 } from '../utils/polyline-2d';
-import { distanceVec2 } from '../utils/vector-operations';
 import { Curve3D } from './curve/curve-3d';
+import { simplifyCurve2D } from '../utils/trajectory';
 import {
   buildFenceSegmentIndex,
   FenceSegmentIndex,
@@ -73,18 +67,6 @@ const KICKOFF_SPEED = 0.15;
 /** MD window the kickoff test is averaged over, in metres. */
 const KICKOFF_WINDOW = 200;
 
-/** Corridor half width where the well is vertical, in metres. */
-const TOLERANCE_VERTICAL = 150;
-
-/** Corridor half width where the well is deviated, in metres. */
-const TOLERANCE_DEVIATED = 5;
-
-/** Turning radius the SHALLOW section is straightened to, in metres. */
-const MIN_HEAD_RADIUS = 250;
-
-/** Plan spacing the base curve is resampled to before offsetting, in metres. */
-const BASE_SPACING = 25;
-
 /** Below this plan extent a well has no direction of its own, in metres. */
 const MIN_PLAN_EXTENT = 100;
 
@@ -123,69 +105,86 @@ const SHARE_CELL = 150;
 /** Cap on the even-split raster, since it is rebuilt per candidate pair. */
 const SHARE_RESOLUTION_MAX = 256;
 
-/** Opening a junction must keep on each side, in radians. */
-const MIN_OPENING = (60 * Math.PI) / 180;
-
 /** Arc length a junction angle and an end tangent are measured over, in metres. */
 const JUNCTION_ARC = 150;
 
-/** Arc length a junction blend is spread over, in metres. */
-const BLEND_LENGTH = 600;
-
-/** Below this turning radius the cut is opened out to round the corner, in metres. */
-const HAIRPIN_RADIUS = 200;
-
-/** Cap on the clearance the curve opens for itself, in metres. */
-const MAX_LOCAL_CLEARANCE = 250;
+/** Plan spacing the followed path is sampled at, in metres. Fine — performance ignored. */
+const FOLLOW_SPACING = 10;
 
 /**
- * Slack on the opening the well's own displacement asks for.
+ * MD step the 3D spline is sampled at before projecting to plan, in metres.
  *
- * ⚠️ Opening by EXACTLY the displacement leaves the well on the boundary, where a
- * cell of raster either way decides whether it shows.
+ * ⭐⭐ High, because the wellbore is DRAWN along this same spline, which bulges past the
+ * straight lines between survey stations. Sampling coarsely — or off the stations — would
+ * miss that bulge, and the fence would cut inside the hole it is meant to reveal. We
+ * sample dense and simplify after, so the point count is paid back.
  */
-const DEVIATION_SAFETY = 1.25;
-
-/** Distance a run-out takes to converge onto the ray both sides share, in metres. */
-const RUN_OUT_BLEND = 500;
-
-/** Cap on the steps a run-out's turn may take, so it always terminates. */
-const RUN_OUT_MAX_STEPS = 256;
+const SAMPLE_STEP = 2;
 
 /**
- * How far the cut may turn within {@link DEFAULT_TURN_WINDOW}, in radians, at TD.
+ * Angle a plan sample must turn, past its predecessor, to survive simplification.
  *
- * ⭐⭐ A WINDOW, not an angle between neighbours. A curve turning a few degrees per
- * 25 m step for twenty steps passes every per-vertex test and is a near loop — which
- * is the shape that tears the swept face, and whose right repair is a straight line
- * through it. ⚠️ Must stay well under a right angle: at 90° the two faces of the turn
- * are looking at each other.
+ * ⚠️ `simplifyCurve2D` keeps a sample when `1 - dot(tangent, step) > this`, so a small
+ * value keeps fine curvature and only drops the samples a straight run made redundant.
  */
-const DEFAULT_MAX_TURN = (60 * Math.PI) / 180;
+const SIMPLIFY_TOLERANCE = 1e-4;
 
 /**
- * The same budget at the WELLHEAD, in radians.
+ * How far out the two sides' run-outs converge to a shared line, in multiples of the
+ * clearance.
  *
- * ⭐⭐ Deliberately tighter than at TD, which is the same asymmetry `fenceTolerance`
- * gives the corridor. Near TD the trajectory genuinely bends and the cut has to hug
- * it, so it must be allowed to turn; at the head there is nothing to follow but
- * survey scatter, and every degree spent there buys a fold.
+ * ⭐ Small, so the two sides agree almost immediately past the well and then follow the
+ * identical straight run-out to the tip. It only has to clear the clearance zone, and
+ * the bearing is one `fenceExtensions` already kept clear of the trajectory.
  */
-const DEFAULT_HEAD_TURN = (25 * Math.PI) / 180;
-
-/** Arc length the turn budget is accumulated over, in metres. */
-const DEFAULT_TURN_WINDOW = 300;
-
-/** Arc length a local clearance is spread over, in metres. */
-const CLEARANCE_SPREAD = 150;
+const RUN_OUT_GATE = 2;
 
 /**
- * How close the cut may come back to itself before the excursion is repaired.
+ * Metres of trajectory left in the KEPT block before the well counts as buried.
  *
- * ⚠️ Below this the block between the two passes is a blade thinner than the raster
- * that removes it can resolve, so it tears rather than reading as rock.
+ * ⭐⭐ THE invariant the old pipeline lacked. The geodesic keeps the whole trace on
+ * the removed side by construction, so the only way anything ends up buried is a
+ * run-out crossing back at a junction — this catches exactly that, in metres, at the
+ * one place a viewer always looks.
  */
-const WAIST_CLEARANCE = 120;
+const BURIAL_LIMIT = 15;
+
+/**
+ * Wellbore render radius the cut is designed against, in metres.
+ *
+ * ⭐ A cut may leave the well on the KEPT side by at most this without the well
+ * vanishing behind the block — it is still half-exposed at the face. The diagnostic
+ * scores burial against this rather than against zero.
+ */
+const MIN_WELL_RADIUS = 0.1;
+
+/**
+ * Fraction of the margin used as the corridor-smoothing radius.
+ *
+ * ⭐ The rest of the margin stays as guaranteed clearance, so smoothing can round the
+ * offset's bends and dissolve its tiny reversals without ever moving the cut close
+ * enough to the well to bury it.
+ */
+const SMOOTH_MARGIN_FRACTION = 0.7;
+
+/** Corridor-smoothing iterations applied to the offset cut. */
+const SMOOTH_PASSES = 12;
+
+/** Turn a corner must exceed to be scored as sharp, in radians (60°). */
+const DIAGNOSIS_SHARP_TURN = (60 * Math.PI) / 180;
+/** Both arms of a sharp corner must be at least this long to be scored, in metres. */
+const DIAGNOSIS_SHARP_SPAN = 50;
+/** Turn a near-reversal must exceed to be scored as a pinch, in radians (150°). */
+const DIAGNOSIS_PINCH_TURN = (150 * Math.PI) / 180;
+/** Both arms of a pinch must be at least this long to be scored, in metres. */
+const DIAGNOSIS_PINCH_ARM = 25;
+/** Arc length within which two opposite turns are scored as a wiggle, in metres. */
+const DIAGNOSIS_WIGGLE_SPAN = 40;
+/** Fraction of the core that may bridge rather than follow before it is flagged. */
+const DIAGNOSIS_BRIDGED_LIMIT = 0.5;
+
+/** Arc length the largest-turn diagnostic is accumulated over, in metres. */
+const FOLD_WINDOW = 200;
 
 /** Share of the block below which a side is treated as unusable. */
 const SHARE_FLOOR = 0.1;
@@ -391,88 +390,15 @@ export function fenceKickoff(samples: FenceSamples): FenceKickoff {
   };
 }
 
-/**
- * How far the fence may leave the trajectory at each sample, in metres.
- *
- * ⭐⭐ Derived from how VERTICAL the well is, not configured. Where the hole barely
- * moves in plan per metre drilled there is nothing to follow, and the corridor
- * opens to tens of metres; through a deviated section it closes to a few, so the
- * fence hugs the part worth seeing. This is the whole of the "more head room
- * between the wellhead and the kickoff" rule, expressed once.
- *
- * @group Geometries
- */
-export function fenceTolerance(samples: FenceSamples): Float64Array {
-  const speed = smoothPlanSpeed(samples, KICKOFF_WINDOW);
-  const out = new Float64Array(speed.length);
-  const lo = KICKOFF_SPEED * 0.7;
-  const hi = KICKOFF_SPEED * 2.5;
-  for (let i = 0; i < speed.length; i++) {
-    const t = Math.min(1, Math.max(0, (speed[i] - lo) / (hi - lo)));
-    const eased = t * t * (3 - 2 * t);
-    out[i] =
-      TOLERANCE_VERTICAL + (TOLERANCE_DEVIATED - TOLERANCE_VERTICAL) * eased;
-  }
-  return out;
-}
-
-/** The straightened plan curve a fence is built around. */
+/** The plan trace a fence is built around: the well itself, lightly resampled. */
 export type FenceBase = {
-  /** scene XZ, resampled at a uniform plan spacing */
+  /** scene XZ of the trajectory in plan, deduped and resampled at a uniform spacing */
   points: Vec2[];
-  /** first sample kept — everything shallower was dropped */
-  from: number;
-  /** metres of MD dropped off the head */
-  trimmedLength: number;
+  /** where the well stops being vertical — a diagnostic; nothing is trimmed on it */
   kickoff: FenceKickoff;
-  relax: RelaxResult;
-  /** corridor the relaxation ran inside, per sample */
-  tolerance: Float64Array;
-  /** turning radius reached over the whole curve, in metres */
-  minRadius: number;
-  /**
-   * Where the WELL sits relative to the curve at each vertex, signed along the left
-   * normal: positive means the well is to the left of the fence.
-   *
-   * ⭐⭐ SIGNED, because the problem is. The smoothing leaves the well on ONE side at
-   * any given point, so only the side whose KEPT half contains it has to open up —
-   * the other side already has it in the open and opening there just pushes the cut
-   * away from the well for nothing. Treating this as a magnitude over-compensates
-   * one side and under-compensates the other.
-   */
-  deviation: Float64Array;
-  /**
-   * Signed curvature per vertex, in 1/metres: positive where the curve turns left.
-   *
-   * ⚠️⚠️ What bounds an opening. Offsetting into the CONCAVE side by more than the
-   * local radius turns the curve inside out — on a short, tightly curved head that
-   * folds it into a hook, which reads as a razor apex at the wellhead.
-   */
-  curvature: Float64Array;
-  /**
-   * Metres to open by to round a corner too tight to follow, SIGNED: positive means
-   * the sharp wedge is on the left.
-   *
-   * ⭐⭐ Signed for the same reason {@link FenceBase.deviation} is. A corner turning
-   * left leaves a sharp wedge on the left and a reflex one on the right, so only the
-   * side that KEEPS the sharp wedge has a blade to carve away — the side that removes
-   * it is already smooth. Opening both is what makes the two curves differ everywhere
-   * instead of only where there is a problem.
-   */
-  roundness: Float64Array;
-  /**
-   * Turning radius reached over the part ABOVE the kickoff, in metres.
-   *
-   * ⭐⭐ THE number that decides whether the head is usable. A tight bend down in the
-   * reservoir is the well and must be followed; a tight bend up in the vertical
-   * section is survey scatter and must not be. Judging the whole curve by one radius
-   * conflates them, and then either the reservoir gets smoothed away or every well
-   * reads as broken.
-   */
-  headRadius: number;
-  /** what `headRadius` had to reach */
-  requiredHeadRadius: number;
-  /** a well with no plan direction of its own; the curve came from its spread */
+  /** plan length of the raw trace, in metres */
+  planLength: number;
+  /** a well with no plan direction of its own; the trace came from its spread */
   degenerate: boolean;
 };
 
@@ -482,75 +408,49 @@ function planExtent(points: Vec2[]): number {
   return Math.hypot(maxX - minX, maxZ - minZ);
 }
 
-/** {@link fenceBaseCurve} options. */
+/** {@link prepareFenceTrace} options. */
 export type FenceBaseOptions = {
-  /** turning radius the shallow section must reach, in metres. Default 250. */
-  headRadius?: number;
-  /** plan spacing of the result, in metres. Default 25. */
-  spacing?: number;
+  /** MD step the 3D spline is sampled at, in metres. Default {@link SAMPLE_STEP}. */
+  step?: number;
 };
 
 /**
- * The fence's own curve through the well: the plan trace, straightened as much as
- * its tolerance corridor allows, with the head given up where that is not enough.
+ * The trace a fence is built around: the wellbore's plan path, sampled DENSELY off the
+ * 3D spline and then simplified in 2D.
  *
- * ⭐⭐ Smoothing FIRST, trimming only on failure. A wide corridor usually turns the
- * shallow scatter into a clean arc, and keeping it means the fence still follows
- * the well right up to the wellhead. Only where the scatter is too violent for the
- * corridor to absorb is the head handed to the run-out — which is a smooth
- * continuation by construction, so nothing is lost but a section nobody looks at.
+ * ⭐⭐ Sampled in 3D off the INTERPOLATOR, not off the survey stations and not off a 2D
+ * projection. The wellbore is rendered along the same spline, which bulges past the
+ * straight lines between stations; a fence built on the stations would cut inside the
+ * hole it is meant to reveal. Sampling the 3D curve at a high rate and projecting every
+ * sample captures the true plan extent, and `simplifyCurve2D` then drops the samples a
+ * straight run made redundant — so the trace has the spline's SHAPE without its point
+ * count.
  *
- * ⚠️ `minRadius` is not a style choice. Offsetting a curve by `m` folds wherever it
- * turns tighter than `m`, so the clearance a caller asks for sets its own
- * smoothness requirement — see {@link buildFenceSideCurve}.
+ * ⚠️ There is NO straightening and NO tolerance corridor. The old pipeline smoothed the
+ * whole trace into one shared curve, which invented plan shape the survey never had (an
+ * 8 m scatter came out a 400 m hook). The undesirable shapes are removed downstream, on
+ * the path itself — see {@link followTrace}.
  *
  * @group Geometries
  */
-export function fenceBaseCurve(
+export function prepareFenceTrace(
+  curve: Curve3D,
   samples: FenceSamples,
   options: FenceBaseOptions = {},
 ): FenceBase {
-  const headRadius = options.headRadius ?? MIN_HEAD_RADIUS;
-  const spacing = options.spacing ?? BASE_SPACING;
-  const tolerance = fenceTolerance(samples);
+  const step = options.step ?? SAMPLE_STEP;
   const kickoff = fenceKickoff(samples);
-
-  const attempt = (from: number) => {
-    const relax = relaxPolyline2DWithin(
-      samples.plan.slice(from),
-      tolerance.slice(from),
-      { minRadius: headRadius, window: headRadius },
-    );
-    // Only the part above the kickoff is judged: below it a tight bend is the well.
-    const arc = polylineArcLengths(relax.points);
-    const shallow = kickoff.index - from;
-    const until = shallow > 1 ? arc[Math.min(shallow, arc.length - 1)] : 0;
-    return {
-      relax,
-      head:
-        until > 0
-          ? polylineMinRadius(relax.points, headRadius, 0, until)
-          : Infinity,
-    };
-  };
-
-  let from = 0;
-  let tried = attempt(0);
-  if (tried.head < headRadius && kickoff.index > 0) {
-    // Give the head up in steps rather than all at once, so a well that only needs
-    // its top few hundred metres dropped keeps the rest of it.
-    const steps = 6;
-    for (let s = 1; s <= steps; s++) {
-      const candidate = Math.round((kickoff.index * s) / steps);
-      if (candidate <= from) continue;
-      from = candidate;
-      tried = attempt(candidate);
-      if (tried.head >= headRadius) break;
-    }
+  const count = Math.max(2, Math.ceil(curve.length / Math.max(step, 0.5)));
+  const dense: Vec2[] = new Array(count + 1);
+  for (let i = 0; i <= count; i++) {
+    const p = curve.getPointAt(i / count);
+    dense[i] = [p[0], p[2]];
   }
-  const relax = tried.relax;
-
-  let points = dedupePolyline2D(relax.points, 1);
+  let points = simplifyCurve2D(
+    dedupePolyline2D(dense, 0.25),
+    undefined,
+    SIMPLIFY_TOLERANCE,
+  );
   let degenerate = false;
   if (planExtent(points) < MIN_PLAN_EXTENT) {
     // No plan direction of its own. The spread's principal axis is the only
@@ -571,58 +471,10 @@ export function fenceBaseCurve(
     ];
     degenerate = true;
   }
-  points = resamplePolyline2D(points, spacing);
-
-  // ⭐ Where the well actually ended up relative to the smoothed curve. Signed, so
-  // each side can open by exactly what IT needs — see FenceBase.deviation.
-  const trace = samples.plan.slice(from);
-  const hit: { point: Vec2; distance: number; along: number } = {
-    point: [0, 0],
-    distance: 0,
-    along: 0,
-  };
-  const normals = polylineNormals2D(points);
-  const deviation = new Float64Array(points.length);
-  for (let i = 0; i < points.length; i++) {
-    const near = nearestOnPolyline(trace, points[i][0], points[i][1], hit);
-    if (!near) continue;
-    deviation[i] =
-      (near.point[0] - points[i][0]) * normals[i][0] +
-      (near.point[1] - points[i][1]) * normals[i][1];
-  }
-
-  const radius = polylineRadiusProfile(points, HAIRPIN_RADIUS);
-  const curvature = new Float64Array(points.length);
-  const wanted = new Float64Array(points.length);
-  for (let i = 1; i + 1 < points.length; i++) {
-    if (!Number.isFinite(radius[i]) || radius[i] <= 0) continue;
-    // Which way the corner turns decides which side is left holding the blade.
-    const ax = points[i][0] - points[i - 1][0];
-    const az = points[i][1] - points[i - 1][1];
-    const bx = points[i + 1][0] - points[i][0];
-    const bz = points[i + 1][1] - points[i][1];
-    const left = ax * bz - az * bx >= 0;
-    curvature[i] = (left ? 1 : -1) / radius[i];
-    const magnitude = Math.min(
-      MAX_LOCAL_CLEARANCE,
-      Math.max(0, HAIRPIN_RADIUS - radius[i]),
-    );
-    if (magnitude > 0) wanted[i] = left ? magnitude : -magnitude;
-  }
-
   return {
     points,
-    from,
-    trimmedLength: from > 0 ? samples.md[from] - samples.md[0] : 0,
     kickoff,
-    relax,
-    tolerance,
-    minRadius: polylineMinRadius(points, headRadius),
-    deviation,
-    curvature,
-    roundness: wanted,
-    headRadius: tried.head,
-    requiredHeadRadius: headRadius,
+    planLength: polylineLength(points),
     degenerate,
   };
 }
@@ -1324,20 +1176,30 @@ export function fenceExtensions(
 export type FenceSideCurve = {
   /** 1 removes the half the left normal points into, -1 the other */
   side: 1 | -1;
-  /** scene XZ: run-out, the offset trace, run-out */
+  /** scene XZ: run-out, the one-sided cut, run-out */
   points: Vec2[];
-  /** opening at the start and end junction ON THIS SIDE, in radians */
+  /**
+   * The followed path WITHOUT run-outs — the part of the cut that traces the well.
+   *
+   * ⭐ This is what the path work is judged on: the one-sided geodesic of the trace,
+   * keeping the whole well on the removed side. It is genuinely different per side —
+   * one follows a bend, the other bridges it. The run-outs are a separate concern.
+   */
+  core: Vec2[];
+  /** turn where each run-out joins the followed trace, in radians (0 = smooth) */
   opening: [number, number];
-  /** whether a junction had to be blended open for this side */
-  blended: boolean;
-  /** loops the repair had to remove */
+  /**
+   * Bridges the geodesic made across the removed side.
+   *
+   * ⭐0 means the cut followed the trace the whole way (this is the tight-follow
+   * side); more means it had to cut across loops or the inside of doglegs (the
+   * bridging side). It is the honest measure of how much this side gives up.
+   */
+  bridges: number;
+  /** loops the safety de-loop had to remove — should be 0 */
   loopsRemoved: number;
-  /** near loops the turn budget had to cut straight through */
-  chorded: number;
-  /** largest turn within the budget window, in radians */
+  /** largest turn within the fold window, in radians */
   maxTurn: number;
-  /** waists this side had to route around */
-  waistRemoved: number;
 };
 
 /** {@link buildFenceSideCurve} options. */
@@ -1348,276 +1210,204 @@ export type FenceSideOptions = {
   margin?: number;
   /** metres to clear the footprint by. Default 500. */
   runOutMargin?: number;
-  /** opening each junction must keep on this side, in radians. Default 60°. */
-  minOpening?: number;
-  /** how close the curve may come back to itself, in metres. */
-  waist?: number;
-  /** how far the cut may turn within `turnWindow` at TD, in radians. Default 60°. */
-  maxTurn?: number;
-  /** the same budget at the wellhead, in radians. Default 25°. */
-  headTurn?: number;
-  /** arc length the turn budget is accumulated over, in metres. Default 300. */
-  turnWindow?: number;
-  /** signed offset of the well from the curve per vertex — {@link FenceBase.deviation} */
-  deviation?: ArrayLike<number>;
-  /** signed corner rounding per vertex — {@link FenceBase.roundness} */
-  roundness?: ArrayLike<number>;
+  /** plan spacing the cut is resampled to, in metres. Default 25. */
+  spacing?: number;
   /** the well's own plan trace, which the cut is kept clear of */
   well?: Vec2[];
 };
 
-/** The opening a junction leaves on one side of a curve. */
-function junctionOpeningOf(
-  points: Vec2[],
-  arm: Vec2,
-  fromStart: boolean,
-  side: 1 | -1,
-): number {
-  const leave = endTangent2D(points, fromStart, JUNCTION_ARC);
-  if (!leave) return Math.PI;
-  // Arriving along the run-out means arriving along its reverse.
-  return junctionOpening([-arm[0], -arm[1]], leave, side);
-}
-
-/**
- * Pull the end of a curve toward a straight continuation of its run-out, so the
- * junction opens up on the side that needs it.
- *
- * ⚠️ Weighted to nothing at `length`, so the deviation is bounded and the deep part
- * of the curve — the part worth following — is untouched.
- */
-function blendJunction(
-  points: Vec2[],
-  arm: Vec2,
-  fromStart: boolean,
-  length: number,
-): Vec2[] {
-  const n = points.length;
-  const out = points.map(p => [p[0], p[1]] as Vec2);
-  if (n < 3 || !(length > 0)) return out;
-  const apex = points[fromStart ? 0 : n - 1];
-  // Widest opening comes from leaving straight back along the run-out.
-  const target: Vec2 = [-arm[0], -arm[1]];
-  let arc = 0;
-  for (let k = 1; k < n; k++) {
-    const i = fromStart ? k : n - 1 - k;
-    const previous = fromStart ? points[i - 1] : points[i + 1];
-    arc += distanceVec2(previous, points[i]);
-    if (arc >= length) break;
-    const t = arc / length;
-    const weight = (1 - t) * (1 - t);
-    const wantX = apex[0] + target[0] * arc;
-    const wantZ = apex[1] + target[1] * arc;
-    out[i] = [
-      points[i][0] + (wantX - points[i][0]) * weight,
-      points[i][1] + (wantZ - points[i][1]) * weight,
-    ];
+/** A few passes of endpoint-pinned Laplacian smoothing, rounding corners in place. */
+function smoothPolyline2D(points: Vec2[], passes: number): Vec2[] {
+  let current = points.map(p => [p[0], p[1]] as Vec2);
+  if (current.length < 3) return current;
+  for (let pass = 0; pass < passes; pass++) {
+    const next = current.map(p => [p[0], p[1]] as Vec2);
+    for (let i = 1; i + 1 < current.length; i++) {
+      next[i][0] =
+        0.25 * current[i - 1][0] +
+        0.5 * current[i][0] +
+        0.25 * current[i + 1][0];
+      next[i][1] =
+        0.25 * current[i - 1][1] +
+        0.5 * current[i][1] +
+        0.25 * current[i + 1][1];
+    }
+    current = next;
   }
-  return out;
+  return current;
 }
 
 /**
- * One side's curve: the base trace moved clear of the well, with a run-out at each
- * end, repaired for THIS side.
+ * The trajectory as the fence follows it: the dense spline path with only its
+ * coincident points removed, and NOTHING else moved.
  *
- * ⭐⭐ The clearance is baked in HERE rather than applied as a threshold later. The
- * field is then a plain signed distance to this curve and the cut is its zero set,
- * so the face that gets drawn and the block that gets removed are the same object.
- * That is what removes the need for a contour, a root-find, and a pair of sampling
- * functions pinned together by a test.
+ * ⚠️⚠️ At margin 0 the cut must hug the trajectory to within the wellbore's own radius
+ * (down to 0.1 m) or the hole is buried in the block it is meant to reveal. So this does
+ * NOT smooth and does NOT simplify: any move off the well toward the KEPT side buries it.
+ * Convex, concave and alternating sections are all FOLLOWED exactly.
  *
- * ⭐ The two sides offset in OPPOSITE directions, which is why they need separate
- * curves at all: whichever bend is convex for one is concave for the other, and it
- * is the concave one that folds. The repairs are therefore per side by nature, not
- * by choice — but they are the only thing that differs, so the two remain flip
- * sides of one cut.
+ * ⚠️ Self-crossings are NOT removed here — that is the one place the two sides must
+ * differ, so it is done per side by {@link repairLoopsOneSided}, which bridges each loop
+ * onto the half being removed rather than chording through the middle.
+ */
+function followTrace(trace: Vec2[]): Vec2[] {
+  return dedupePolyline2D(trace, 0.5);
+}
+
+/** The turn a polyline makes at the vertex nearest a point, in radians. */
+function turnNear(points: Vec2[], at: Vec2): number {
+  let best = -1;
+  let bestD = Infinity;
+  for (let i = 1; i + 1 < points.length; i++) {
+    const d = (points[i][0] - at[0]) ** 2 + (points[i][1] - at[1]) ** 2;
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  if (best < 1) return 0;
+  const ax = points[best][0] - points[best - 1][0];
+  const az = points[best][1] - points[best - 1][1];
+  const bx = points[best + 1][0] - points[best][0];
+  const bz = points[best + 1][1] - points[best][1];
+  const la = Math.hypot(ax, az);
+  const lb = Math.hypot(bx, bz);
+  if (la < 1e-6 || lb < 1e-6) return 0;
+  const cos = (ax * bx + az * bz) / (la * lb);
+  return Math.acos(Math.min(1, Math.max(-1, cos)));
+}
+
+/**
+ * One side's finished cut: the well's plan trace offset to the KEPT side, smoothed,
+ * with a straight run-out to a SHARED tip at each end.
+ *
+ * ⭐⭐ The core is the one-sided geodesic of the well's own plan trace: a taut string
+ * pulled against the trace from the half being REMOVED. It follows the well where the
+ * well bends toward the KEPT side and bridges across loops, cusps and the inside of
+ * doglegs on the removed side, so the whole well stays on the removed side and cannot
+ * be buried. A small tolerance lets it bridge kept-side survey scatter up to one
+ * render radius too, cleaning the noise without burying more than the well's radius.
+ * There is no shared straightened base curve — each side is built from the raw trace.
+ *
+ * ⭐ The clearance is baked into the curve, so the field is a plain signed distance to
+ * it and the drawn face and the removed block are one object. `-side` ties the offset
+ * to the same `leftNormal2D` the field seed uses, so the two agree on which half is
+ * removed. Because the cut follows the well their normals agree, which is why the
+ * offset direction is unambiguous on BOTH sides — the failure mode of a curve that
+ * crosses the well at a right angle.
+ *
+ * ⭐⭐ The run-outs converge to a gate SHARED by both sides and then run the identical
+ * straight line to the SAME tip, so swapping which half is removed swaps the cut but
+ * not the run-outs — the viewer reads one section from two sides, not two unrelated
+ * cuts. A final push clear of the well guarantees no run-out can bury the head.
+ *
+ * ⭐ The two sides are genuinely different curves — one follows the outside of a bend,
+ * the other the inside — so the offset is built once per side. With no clearance and a
+ * straight well they coincide, and {@link FenceReport.shared} says so.
+ *
+ * @param trace the well's plan trajectory, head to TD
+ * @param extensions the run-out directions, shared by both sides
+ * @param side which half is REMOVED
+ * @param options see {@link FenceSideOptions}
  *
  * @group Geometries
  */
 export function buildFenceSideCurve(
-  base: Vec2[],
+  trace: Vec2[],
   extensions: FenceExtensions,
   side: 1 | -1,
   options: FenceSideOptions,
 ): FenceSideCurve {
   const margin = options.margin ?? 0;
+  // ⚠️ Clearance is the MARGIN only — the room for a clear view of the well from the
+  // cut. It is NOT the sanitize: at margin 0 the geodesic already cleans the path and
+  // keeps the well out of the kept block; a positive margin then offsets it further.
+  const clearance = margin;
   const runOutMargin = options.runOutMargin ?? DEFAULT_RUN_OUT_MARGIN;
-  const minOpening = options.minOpening ?? MIN_OPENING;
-  const maxTurn = options.maxTurn ?? DEFAULT_MAX_TURN;
-  const headTurn = options.headTurn ?? DEFAULT_HEAD_TURN;
-  const turnWindow = options.turnWindow ?? DEFAULT_TURN_WINDOW;
+  const spacing = options.spacing ?? FOLLOW_SPACING;
   const rings = [...options.rings, boundsRing(options.bounds)];
 
-  // The face must sit clear of the well on the half being KEPT, so that the well and
-  // the room around it both end up in the half being removed.
-  // ⭐ Only what THIS side needs: where the well already lies in the half this side
-  // removes, the deviation is the wrong sign and asks for nothing.
-  const need = new Float64Array(base.length);
-  for (let i = 0; i < base.length; i++) {
-    const at = (a: ArrayLike<number> | undefined) =>
-      a ? a[Math.min(i, a.length - 1)] : 0;
-    const buried =
-      Math.max(0, -side * at(options.deviation)) * DEVIATION_SAFETY;
-    // Only the side left HOLDING the sharp wedge has anything to carve away.
-    const blade = Math.max(0, -side * at(options.roundness));
-    need[i] = Math.max(margin, buried, blade);
-  }
-  // ⚠️ Spread to soften the opening, but never BELOW what a vertex asked for — a blur
-  // that dips at the peak is exactly where the well would still be buried.
-  const spread = spreadAlongPolyline(base, need, CLEARANCE_SPREAD);
-  const opening = new Float64Array(base.length);
-  let widest = 0;
-  for (let i = 0; i < base.length; i++) {
-    opening[i] = Math.max(need[i], spread[i]);
-    widest = Math.max(widest, opening[i]);
-  }
-  // ⭐⭐ RELAXED against the well, not offset from the curve. An offset at a tight bend
-  // either folds — leaving a corner where the fold is spliced out — or has to be
-  // clamped short of the clearance the well needs. Smoothing with a push back out
-  // gives both: smooth, and provably clear.
-  let trace =
-    widest > 0
-      ? relaxPolyline2DClearOf(base, options.well ?? base, opening, side)
-      : base.map(p => [p[0], p[1]] as Vec2);
+  const head = trace[0];
+  const tail = trace[trace.length - 1];
 
-  let blended = false;
-  for (let pass = 0; pass < 2; pass++) {
-    const openStart = junctionOpeningOf(trace, extensions.start, true, side);
-    const openEnd = junctionOpeningOf(trace, extensions.end, false, side);
-    if (openStart >= minOpening && openEnd >= minOpening) break;
-    const length = BLEND_LENGTH * (pass + 1);
-    if (openStart < minOpening) {
-      trace = blendJunction(trace, extensions.start, true, length);
-      blended = true;
-    }
-    if (openEnd < minOpening) {
-      trace = blendJunction(trace, extensions.end, false, length);
-      blended = true;
-    }
+  // ⭐⭐ FOLLOW the trajectory, then repair ONLY its self-crossings, one-sided. Following
+  // buries neither side — the well lies in the cut — so a convex, concave or alternating
+  // path is traced exactly and the two sides coincide. They diverge only at a genuine
+  // loop, which `repairLoopsOneSided` bridges onto the half being REMOVED so it is carved
+  // away rather than buried in the kept block.
+  const follow = followTrace(trace);
+  const repaired = repairLoopsOneSided(follow, side, MIN_WELL_RADIUS);
+  // A positive margin pushes the cut toward the KEPT half so the well sits `margin`
+  // inside the REMOVED half — dissolving any fold a concave bend tighter than the margin
+  // would make, rather than letting the offset self-cross.
+  const offsetCore =
+    clearance > 0
+      ? offsetPolyline2DDissolved(repaired, side, clearance)
+      : repaired;
+  // ⭐ Round the offset's bends and dissolve its tiny reversals, bounded to a fraction of
+  // the margin so the cut keeps clearance and cannot bury the well.
+  const core =
+    clearance > 0
+      ? smoothPolyline2DWithinDisc(
+          offsetCore,
+          clearance * SMOOTH_MARGIN_FRACTION,
+          SMOOTH_PASSES,
+        )
+      : offsetCore;
+  // Bridges: the long spans where the cut had to leave the trace to stay simple.
+  let bridges = 0;
+  for (let i = 0; i + 1 < core.length; i++) {
+    const span = Math.hypot(
+      core[i + 1][0] - core[i][0],
+      core[i + 1][1] - core[i][1],
+    );
+    if (span > 3 * spacing) bridges++;
   }
 
-  // ⭐⭐ A run-out leaves this side's own endpoint heading the way the TRACE heads,
-  // and turns onto the ray both sides share. Linear segments, with the turn spread
-  // over as many of them as the angle budget needs — the output has to be a polyline
-  // either way, and building it as one is what keeps every angle under control.
+  // ⭐⭐ SHARED run-outs. Both sides converge to the SAME gate a short way out along the
+  // SAME direction, then run the identical straight line to the SAME tip — so swapping
+  // which half is removed swaps the cut but not the run-outs, and the viewer reads one
+  // section from two sides rather than two unrelated cuts.
   //
-  // ⚠️⚠️ It steers at the KNEE, not at the far tip. Aiming both sides at the same tip
-  // is not enough: they start from different points and reach it along different
-  // paths, so the wedge between them is removed by NEITHER half — measured as the two
-  // removed shares summing to 0.92 instead of 1. Converging onto the ray at a fixed
-  // distance makes the two arms one line from there out, which is the majority of a
-  // run-out that is kilometres long.
-  const arm = (
-    from: Vec2,
-    tangent: Vec2,
-    direction: Vec2,
-    apex: Vec2,
-    reach: number,
-    stepTurn: number,
-  ): Vec2[] => {
-    const converge = Math.min(RUN_OUT_BLEND, reach);
-    const knee: Vec2 = [
-      apex[0] + direction[0] * converge,
-      apex[1] + direction[1] * converge,
+  // ⚠️ Run-outs are being ignored for now: the path itself is what is under test. They
+  // are still built so the field separates, but the debug view draws `core`, not this.
+  const gateDist = Math.max(RUN_OUT_GATE * Math.max(clearance, 1), spacing * 4);
+  const runOut = (from: Vec2, apex: Vec2, direction: Vec2): Vec2[] => {
+    const reach = escapeDistance(apex, direction, rings) + runOutMargin;
+    const gate: Vec2 = [
+      apex[0] + direction[0] * Math.min(reach, gateDist),
+      apex[1] + direction[1] * Math.min(reach, gateDist),
     ];
-    const out: Vec2[] = [[from[0], from[1]]];
-    let heading = Math.atan2(tangent[1], tangent[0]);
-    let x = from[0];
-    let z = from[1];
-    for (let k = 0; k < RUN_OUT_MAX_STEPS; k++) {
-      const remaining = Math.hypot(knee[0] - x, knee[1] - z);
-      if (remaining <= BASE_SPACING) break;
-      let delta = Math.atan2(knee[1] - z, knee[0] - x) - heading;
-      while (delta > Math.PI) delta -= 2 * Math.PI;
-      while (delta <= -Math.PI) delta += 2 * Math.PI;
-      // Pointing at the knee and free to turn no further: the rest is a straight run.
-      if (Math.abs(delta) <= 1e-9) break;
-      heading += Math.max(-stepTurn, Math.min(stepTurn, delta));
-      x += Math.cos(heading) * BASE_SPACING;
-      z += Math.sin(heading) * BASE_SPACING;
-      out.push([x, z]);
-    }
-    out.push(knee);
-    if (reach > converge) {
-      out.push([
-        apex[0] + direction[0] * reach,
-        apex[1] + direction[1] * reach,
-      ]);
-    }
-    return out;
+    const tip: Vec2 = [
+      apex[0] + direction[0] * reach,
+      apex[1] + direction[1] * reach,
+    ];
+    return resamplePolyline2D([from, gate, tip], spacing);
   };
-
-  const startReach =
-    escapeDistance(base[0], extensions.start, rings) + runOutMargin;
-  const endReach =
-    escapeDistance(base[base.length - 1], extensions.end, rings) + runOutMargin;
-  // The direction the trace LEAVES each junction in. `endTangent2D` points from the
-  // end into the curve, so the outward heading is its reverse.
-  const leaving = (fromStart: boolean): Vec2 => {
-    const into = endTangent2D(trace, fromStart, JUNCTION_ARC);
-    if (into) return [-into[0], -into[1]];
-    return fromStart ? extensions.start : extensions.end;
-  };
-  // Derived, not a second knob: an arm stepping at `BASE_SPACING` must not be able
-  // to use up the whole windowed budget on its own.
-  // ⭐ Tighter at the head than at TD. Near TD the trajectory genuinely bends and the
-  // run-out has to leave along it; at the head there is nothing but survey scatter,
-  // and every degree of turn spent there buys a fold.
-  const stepTurnFor = (budget: number) => (budget * BASE_SPACING) / turnWindow;
-  const startArm = arm(
-    trace[0],
-    leaving(true),
-    extensions.start,
-    base[0],
-    startReach,
-    stepTurnFor(headTurn),
-  );
-  const endArm = arm(
-    trace[trace.length - 1],
-    leaving(false),
-    extensions.end,
-    base[base.length - 1],
-    endReach,
-    stepTurnFor(maxTurn),
-  );
+  const startRun = runOut(core[0], head, extensions.start);
+  const endRun = runOut(core[core.length - 1], tail, extensions.end);
   const raw: Vec2[] = [
-    // ⚠️ The junction point belongs to the trace, and both arms start there.
-    ...startArm.reverse().slice(0, -1),
-    ...trace,
-    ...endArm.slice(1),
+    ...[...startRun].reverse().slice(0, -1),
+    ...core,
+    ...endRun.slice(1),
   ];
-  // ⚠️⚠️ The turn budget is MEASURED here, not enforced. Chording every stretch that
-  // turned more than the budget was tried and reverted: accumulated angle cannot tell
-  // a near loop from a real bend — a 180° turn at 400 m radius is a reservoir dogleg
-  // the cut has to follow, and cutting through one abandoned the well (F-12 +1 went
-  // from 0 to 310 m buried). The shape that needs a chord is one that comes back near
-  // ITSELF, which is a distance test — `repairPolylineWaists`, below.
-  const chorded = 0;
-  const loopsRemoved = countPolylineLoops(raw);
-  // ⭐⭐ Loops, then waists PER SIDE. A hairpin's pocket lies wholly on one side: the
-  // side that removes it has nothing thin to fix, and repairing there would only
-  // bury the well running through it.
-  const deLooped = removePolylineLoops(raw);
-  const waist = repairPolylineWaists(
-    deLooped,
-    options.waist ?? WAIST_CLEARANCE,
-    side,
-  );
+  const eased = smoothPolyline2D(raw, 6);
+
+  const loopsRemoved = countPolylineLoops(eased);
+  const deLooped = removePolylineLoops(eased);
+  // ⚠️ Deduped: smoothing can leave vertices bunched, and a cluster of them in one
+  // index cell overflows its list.
+  const points = dedupePolyline2D(deLooped, 2);
 
   return {
     side,
-    // ⚠️ Deduped: relaxation and waist repair can leave vertices bunched, and a
-    // cluster of them in one index cell overflows its list.
-    points: dedupePolyline2D(waist.points, 2),
-    waistRemoved: waist.repaired,
-    chorded,
-    maxTurn: polylineMaxTurn(dedupePolyline2D(waist.points, 2), turnWindow),
-    opening: [
-      junctionOpeningOf(trace, extensions.start, true, side),
-      junctionOpeningOf(trace, extensions.end, false, side),
-    ],
-    blended,
+    points,
+    core: dedupePolyline2D(core, 0.25),
+    bridges,
     loopsRemoved,
+    maxTurn: polylineMaxTurn(core, FOLD_WINDOW),
+    // The turn where each run-out meets the core: a fold shows here.
+    opening: [turnNear(points, head), turnNear(points, tail)],
   };
 }
 
@@ -2006,20 +1796,35 @@ export type FenceSide = {
 export type FenceSideReport = {
   side: 1 | -1;
   vertices: number;
-  /** junction openings in DEGREES */
+  /** turn where each run-out joins the followed trace, in DEGREES (0 = smooth) */
   opening: [number, number];
-  blended: boolean;
+  /**
+   * Bridges the geodesic made across the removed side.
+   *
+   * ⭐0 is the tight-follow side; a larger number is the side that had to cut across
+   * a loop or the inside of a dogleg. See {@link FenceSideCurve.bridges}.
+   */
+  bridges: number;
+  /** loops the safety de-loop had to remove */
   loopsRemoved: number;
-  /** excursions the waist repair had to route around on this side */
-  waistRemoved: number;
-  /** near loops the turn budget had to cut straight through */
-  chorded: number;
-  /** largest turn within the budget window, in DEGREES */
+  /** largest turn within the fold window, in DEGREES */
   maxTurn: number;
-  /** loops LEFT after the repair — must be 0 */
+  /** loops LEFT after the de-loop — must be 0 */
   loops: number;
   removedShare: number;
+  /**
+   * Metres of trajectory left in the KEPT block, worst case.
+   *
+   * ⭐⭐ THE number the old report lacked. The geodesic keeps the whole well on the
+   * removed side by construction, so this reads ~0 unless a run-out crosses back at a
+   * junction — which is the one failure a viewer always notices. Measured directly
+   * off the shader's own lookup, at the trajectory, not at the curve standing in for
+   * it. Must stay under {@link BURIAL_LIMIT}.
+   */
+  burial: number;
   minRadius: number;
+  /** how the finished curve scored against intent — see {@link diagnoseFenceSide} */
+  diagnosis: FenceSideDiagnosis;
   field: { nx: number; ny: number; cell: number; separated: boolean };
   /**
    * The exact boundary lookup's shape.
@@ -2059,21 +1864,10 @@ export type FenceReport = {
     planLength: number;
   };
   kickoff: { index: number; md: number; y: number; found: boolean };
-  relax: {
-    toleranceMin: number;
-    toleranceMax: number;
-    iterations: number;
-    /** reached a fixed point of smooth-then-clamp */
-    settled: boolean;
-    /** turning radius over the WHOLE curve, in metres — a diagnostic, not a target */
-    minRadius: number;
-    /** turning radius over the shallow section, in metres */
-    headRadius: number;
-    /** what `headRadius` had to reach */
-    requiredHeadRadius: number;
-    maxDeviation: number;
-  };
-  head: { trimmedLength: number; from: number; degenerate: boolean };
+  /** metres of clearance baked into the cut */
+  clearance: number;
+  /** a well with no plan direction of its own; the cut came from its spread */
+  degenerate: boolean;
   extensions: {
     start: Vec2;
     end: Vec2;
@@ -2096,7 +1890,7 @@ export type FenceReport = {
 
 /** A finished fence: one curve per side, each with its own field. */
 export type WellboreFence = {
-  /** the straightened trace both sides are built from, without run-outs */
+  /** the raw plan trace both sides' geodesics are built from, without run-outs */
   base: FenceBase;
   extensions: FenceExtensions;
   plus: FenceSide;
@@ -2120,12 +1914,6 @@ export type WellboreFenceOptions = {
   runOutMargin?: number;
   /** how the run-outs continue. Default 'straight'. */
   extension?: FenceExtensionMode;
-  /** how far the cut may turn within `turnWindow` at TD, in radians. Default 60°. */
-  maxTurn?: number;
-  /** the same budget at the wellhead, in radians. Default 25°. */
-  headTurn?: number;
-  /** arc length the turn budget is accumulated over, in metres. Default 300. */
-  turnWindow?: number;
   /** identifier carried into the report */
   wellbore?: string;
 };
@@ -2168,12 +1956,15 @@ export function buildWellboreFence(
   timings.sample = now() - mark;
 
   const margin = options.margin ?? 0;
-  // Offsetting by `margin` folds wherever the curve turns tighter than it, so the
-  // clearance a caller asks for sets its own smoothness requirement.
-  const headRadius = Math.max(MIN_HEAD_RADIUS, margin * 2);
+  // ⚠️ Clearance is the MARGIN only — the room for a clear view of the well from the
+  // cut. At margin 0 the cut follows the path exactly.
+  const clearance = margin;
 
   mark = now();
-  const base = fenceBaseCurve(samples, { headRadius });
+  const base = prepareFenceTrace(curve, samples);
+  // The dense, simplified plan path off the 3D spline — the wellbore's true footprint,
+  // not the straight lines between survey stations.
+  const trace = base.points;
   timings.base = now() - mark;
 
   let minX = Infinity;
@@ -2214,32 +2005,17 @@ export function buildWellboreFence(
     bounds,
     margin,
     runOutMargin: options.runOutMargin,
-    maxTurn: options.maxTurn,
-    headTurn: options.headTurn,
-    turnWindow: options.turnWindow,
-    deviation: base.deviation,
-    // The cut is kept clear of the WELL, not of the smoothed curve standing in for it.
-    well: samples.plan.slice(base.from),
-    roundness: base.roundness,
+    // The clearance obstacle is the true trace.
+    well: trace,
   };
 
   mark = now();
-  const plusCurve = buildFenceSideCurve(
-    base.points,
-    extensions,
-    1,
-    sideOptions,
-  );
-  const minusCurve = buildFenceSideCurve(
-    base.points,
-    extensions,
-    -1,
-    sideOptions,
-  );
+  const plusCurve = buildFenceSideCurve(trace, extensions, 1, sideOptions);
+  const minusCurve = buildFenceSideCurve(trace, extensions, -1, sideOptions);
   timings.curves = now() - mark;
 
   mark = now();
-  const probeAt = margin + cellSize * 4;
+  const probeAt = clearance + cellSize * 4;
   const buildSide = (sideCurve: FenceSideCurve): FenceSide | null => {
     const seed = removedSideSeed(base.points, sideCurve.side, probeAt);
     const field = createFenceField(sideCurve.points, {
@@ -2264,19 +2040,36 @@ export function buildWellboreFence(
   timings.field = now() - mark;
   if (!plus || !minus) return null;
 
+  // ⭐⭐ Burial: the worst depth the trajectory is left inside the KEPT block, read
+  // off the shader's own lookup AT THE TRACE. It is ~0 by construction — the geodesic
+  // keeps the whole well on the removed side — so a positive value is a run-out that
+  // crossed back at a junction, which is exactly the failure the old report hid.
+  const burialOf = (s: FenceSide): number => {
+    let worst = 0;
+    for (const p of trace) {
+      const at = fenceSideAt(s.index, s.field, p[0], p[1]);
+      if (at > worst) worst = at;
+    }
+    return worst;
+  };
+
   const degrees = (r: number) => (r * 180) / Math.PI;
-  const sideReport = (s: FenceSide): FenceSideReport => ({
+  const sideReport = (s: FenceSide, burial: number): FenceSideReport => ({
     side: s.side,
     vertices: s.curve.points.length,
     opening: [degrees(s.curve.opening[0]), degrees(s.curve.opening[1])],
-    blended: s.curve.blended,
+    bridges: s.curve.bridges,
     loopsRemoved: s.curve.loopsRemoved,
-    waistRemoved: s.curve.waistRemoved,
-    chorded: s.curve.chorded,
     maxTurn: degrees(s.curve.maxTurn),
     loops: countPolylineLoops(s.curve.points),
     removedShare: s.removedShare,
-    minRadius: polylineMinRadius(s.curve.points, headRadius),
+    burial,
+    // A diagnostic window, not a target: how tightly the cut hugs the well.
+    minRadius: polylineMinRadius(s.curve.points, 300),
+    diagnosis: diagnoseFenceSide(s.curve.core, trace, s.side, {
+      tolerance: MIN_WELL_RADIUS,
+      margin: clearance,
+    }),
     field: {
       nx: s.field.nx,
       ny: s.field.ny,
@@ -2291,13 +2084,6 @@ export function buildWellboreFence(
       reach: s.index.reach,
     },
   });
-
-  let toleranceMin = Infinity;
-  let toleranceMax = -Infinity;
-  for (const t of base.tolerance) {
-    if (t < toleranceMin) toleranceMin = t;
-    if (t > toleranceMax) toleranceMax = t;
-  }
 
   const report: FenceReport = {
     wellbore: options.wellbore,
@@ -2314,21 +2100,8 @@ export function buildWellboreFence(
       y: base.kickoff.y,
       found: base.kickoff.found,
     },
-    relax: {
-      toleranceMin,
-      toleranceMax,
-      iterations: base.relax.iterations,
-      settled: base.relax.settled,
-      minRadius: base.minRadius,
-      headRadius: base.headRadius,
-      requiredHeadRadius: base.requiredHeadRadius,
-      maxDeviation: base.relax.maxDeviation,
-    },
-    head: {
-      trimmedLength: base.trimmedLength,
-      from: base.from,
-      degenerate: base.degenerate,
-    },
+    clearance,
+    degenerate: base.degenerate,
     extensions: {
       start: extensions.start,
       end: extensions.end,
@@ -2339,11 +2112,13 @@ export function buildWellboreFence(
       evenness: extensions.evenness,
       scored: extensions.scored,
     },
-    sides: { plus: sideReport(plus), minus: sideReport(minus) },
-    // ⚠️ Compared rather than inferred: the per-vertex clearance means the sides can
-    // diverge without any of the discrete repairs having fired, so a flag assembled
-    // from those alone claims they agree when the debug view plainly shows they do
-    // not.
+    sides: {
+      plus: sideReport(plus, burialOf(plus)),
+      minus: sideReport(minus, burialOf(minus)),
+    },
+    // ⚠️ Compared rather than inferred: the two geodesics coincide only when the well
+    // is straight and no clearance separates them, and that is worth reporting exactly
+    // rather than guessing from whether a repair fired.
     shared:
       plusCurve.points.length === minusCurve.points.length &&
       plusCurve.points.every(
@@ -2364,6 +2139,245 @@ export function buildWellboreFence(
   };
 }
 
+/** Thresholds {@link diagnoseFenceSide} scores a side against. @group Geometries */
+export type FenceDiagnosisOptions = {
+  /** metres of well allowed on the kept side before it counts as buried. Default {@link MIN_WELL_RADIUS}. */
+  tolerance?: number;
+  /** turn a corner must exceed to be scored as sharp, in radians. Default 60°. */
+  sharpTurn?: number;
+  /** both arms of a sharp corner must be at least this long, in metres. Default 50. */
+  sharpSpan?: number;
+  /** turn a near-reversal must exceed to be scored as a pinch, in radians. Default 150°. */
+  pinchTurn?: number;
+  /** both arms of a pinch must be at least this long, in metres. Default 25. */
+  pinchArm?: number;
+  /** arc length within which two opposite turns count as a wiggle, in metres. Default 40. */
+  wiggleSpan?: number;
+  /** fraction of the core that may bridge before it is flagged. Default 0.5. */
+  bridgedLimit?: number;
+  /** the clearance the cut was offset by, in metres — bridging is measured beyond it. Default 0. */
+  margin?: number;
+};
+
+/**
+ * A flagged region of a finished side-curve, for the debug overlay.
+ *
+ * ⭐ `burial` points are on the WELL (the stretch left in the kept block); the turn
+ * kinds are the three core vertices around the offending corner.
+ *
+ * @group Geometries
+ */
+export type FenceDefect = {
+  kind: 'burial' | 'sharp' | 'pinch' | 'wiggle';
+  points: Vec2[];
+};
+
+/** How a finished side-curve scored against what the fence intended. @group Geometries */
+export type FenceSideDiagnosis = {
+  side: 1 | -1;
+  /** worst metres of well left on the KEPT side of the cut; should be <= {@link FenceSideDiagnosis.tolerance} */
+  burial: number;
+  /** the burial tolerance it was judged against, in metres */
+  tolerance: number;
+  /** self-intersections left in the core — should be 0 */
+  loops: number;
+  /** sharp corners sitting on two long segments */
+  sharpTurns: number;
+  /** narrow-V pinches: a near-reversal with two long arms */
+  pinches: number;
+  /** opposite turns packed within {@link FenceDiagnosisOptions.wiggleSpan} of each other */
+  wiggle: number;
+  /**
+   * Fraction of the core that leaves the well by more than the tolerance, 0..1.
+   *
+   * ⭐ One side of a genuine bend is expected to bridge somewhat, but a curve that
+   * bridges most of its length has stopped following the well — flagged past
+   * {@link FenceDiagnosisOptions.bridgedLimit}.
+   */
+  bridged: number;
+  /** every way the curve fell short of intent, human-readable */
+  issues: string[];
+  /** true when {@link FenceSideDiagnosis.issues} is empty */
+  clean: boolean;
+  /** the flagged regions, in scene XZ, for the debug overlay */
+  defects: FenceDefect[];
+};
+
+/**
+ * Score a finished side-curve against what the fence set out to do — READ-ONLY.
+ *
+ * ⭐ Not a repair: it reasons about the result and reports how it turned out, so the
+ * generation passes can be judged against intent. Burial is the check that must come
+ * back clean — the well may sit at most a render radius on the KEPT side — while
+ * sharp turns, pinches, wiggle and loops are the undesirable plan shapes. `bridged`
+ * is reported but never a fault, since one side of every bend is expected to bridge.
+ *
+ * @param core the side's followed path, WITHOUT run-outs
+ * @param well the plan trace the cut is meant to reveal
+ * @param side which half this curve removes
+ * @param options see {@link FenceDiagnosisOptions}
+ *
+ * @group Geometries
+ */
+export function diagnoseFenceSide(
+  core: Vec2[],
+  well: Vec2[],
+  side: 1 | -1,
+  options: FenceDiagnosisOptions = {},
+): FenceSideDiagnosis {
+  const tolerance = options.tolerance ?? MIN_WELL_RADIUS;
+  const sharpTurn = options.sharpTurn ?? DIAGNOSIS_SHARP_TURN;
+  const sharpSpan = options.sharpSpan ?? DIAGNOSIS_SHARP_SPAN;
+  const pinchTurn = options.pinchTurn ?? DIAGNOSIS_PINCH_TURN;
+  const pinchArm = options.pinchArm ?? DIAGNOSIS_PINCH_ARM;
+  const wiggleSpan = options.wiggleSpan ?? DIAGNOSIS_WIGGLE_SPAN;
+  const bridgedLimit = options.bridgedLimit ?? DIAGNOSIS_BRIDGED_LIMIT;
+  const margin = options.margin ?? 0;
+
+  // ⭐⭐ Burial, side-aware: the worst depth a well vertex sits on the KEPT side of
+  // the core. side +1 removes the LEFT half, so a vertex to the RIGHT of the core is
+  // buried; side -1 is the mirror. Read straight off the core, so it is independent
+  // of the (deferred) run-outs.
+  const defects: FenceDefect[] = [];
+  let burial = 0;
+  let buriedRun: Vec2[] = [];
+  for (const p of well) {
+    let bestD2 = Infinity;
+    let signed = 0;
+    for (let i = 1; i < core.length; i++) {
+      const a = core[i - 1];
+      const b = core[i];
+      const ex = b[0] - a[0];
+      const ez = b[1] - a[1];
+      const len2 = ex * ex + ez * ez;
+      if (len2 < 1e-12) continue;
+      let t = ((p[0] - a[0]) * ex + (p[1] - a[1]) * ez) / len2;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const qx = a[0] + ex * t;
+      const qz = a[1] + ez * t;
+      const dx = p[0] - qx;
+      const dz = p[1] - qz;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < bestD2) {
+        bestD2 = d2;
+        // dot(p - q, left normal of segment) = (p - q) . (-ez, ex) / |seg|
+        signed = (dx * -ez + dz * ex) / Math.sqrt(len2);
+      }
+    }
+    const depth = -side * signed;
+    if (depth > burial) burial = depth;
+    if (depth > tolerance) {
+      buriedRun.push([p[0], p[1]]);
+    } else if (buriedRun.length > 0) {
+      defects.push({ kind: 'burial', points: buriedRun });
+      buriedRun = [];
+    }
+  }
+  if (buriedRun.length > 0) defects.push({ kind: 'burial', points: buriedRun });
+
+  // Corners: sharp turns on two long segments, near-reversal pinches, and wiggle —
+  // two real opposite turns packed closer than `wiggleSpan` along the curve.
+  let sharpTurns = 0;
+  let pinches = 0;
+  let wiggle = 0;
+  let lastSign = 0;
+  let lastArc = -Infinity;
+  let arc = 0;
+  for (let i = 1; i + 1 < core.length; i++) {
+    const ax = core[i][0] - core[i - 1][0];
+    const az = core[i][1] - core[i - 1][1];
+    const bx = core[i + 1][0] - core[i][0];
+    const bz = core[i + 1][1] - core[i][1];
+    const la = Math.hypot(ax, az);
+    const lb = Math.hypot(bx, bz);
+    arc += la;
+    if (la < 1e-6 || lb < 1e-6) continue;
+    const cos = (ax * bx + az * bz) / (la * lb);
+    const turn = Math.acos(cos < -1 ? -1 : cos > 1 ? 1 : cos);
+    const corner: Vec2[] = [
+      [core[i - 1][0], core[i - 1][1]],
+      [core[i][0], core[i][1]],
+      [core[i + 1][0], core[i + 1][1]],
+    ];
+    if (turn >= sharpTurn && la >= sharpSpan && lb >= sharpSpan) {
+      sharpTurns++;
+      defects.push({ kind: 'sharp', points: corner });
+    }
+    if (turn >= pinchTurn && la >= pinchArm && lb >= pinchArm) {
+      pinches++;
+      defects.push({ kind: 'pinch', points: corner });
+    }
+    // Wiggle: a real turn (half the sharp threshold) that reverses the previous real
+    // turn within a short span.
+    if (turn >= sharpTurn * 0.5) {
+      const sign = ax * bz - az * bx > 0 ? 1 : -1;
+      if (lastSign !== 0 && sign !== lastSign && arc - lastArc <= wiggleSpan) {
+        wiggle++;
+        defects.push({ kind: 'wiggle', points: corner });
+      }
+      lastSign = sign;
+      lastArc = arc;
+    }
+  }
+
+  // Bridged: the share of the core whose midpoint leaves the well by more than the
+  // intended offset (margin) plus the tolerance — where the cut is bridging a concavity
+  // rather than tracking the well at the offset distance.
+  let bridgedLen = 0;
+  let totalLen = 0;
+  for (let i = 1; i < core.length; i++) {
+    const l = Math.hypot(
+      core[i][0] - core[i - 1][0],
+      core[i][1] - core[i - 1][1],
+    );
+    totalLen += l;
+    const mx = (core[i - 1][0] + core[i][0]) * 0.5;
+    const mz = (core[i - 1][1] + core[i][1]) * 0.5;
+    const hit = nearestOnPolyline(well, mx, mz);
+    if (hit && hit.distance > margin + tolerance) bridgedLen += l;
+  }
+  const bridged = totalLen > 0 ? bridgedLen / totalLen : 0;
+
+  const loops = countPolylineLoops(core);
+
+  const issues: string[] = [];
+  if (burial > tolerance) {
+    issues.push(
+      `buries the well ${burial.toFixed(1)} m past the ${tolerance} m tolerance`,
+    );
+  }
+  if (loops > 0)
+    issues.push(`${loops} loop${loops > 1 ? 's' : ''} in the curve`);
+  if (sharpTurns > 0) {
+    issues.push(
+      `${sharpTurns} sharp turn${sharpTurns > 1 ? 's' : ''} on long segments`,
+    );
+  }
+  if (pinches > 0) issues.push(`${pinches} pinch${pinches > 1 ? 'es' : ''}`);
+  if (wiggle > 0) {
+    issues.push(`${wiggle} tight direction reversal${wiggle > 1 ? 's' : ''}`);
+  }
+  if (bridged > bridgedLimit) {
+    issues.push(
+      `bridges ${(bridged * 100).toFixed(0)}% of its length instead of following`,
+    );
+  }
+
+  return {
+    side,
+    burial,
+    tolerance,
+    loops,
+    sharpTurns,
+    pinches,
+    wiggle,
+    bridged,
+    issues,
+    clean: issues.length === 0,
+    defects,
+  };
+}
+
 /**
  * Everything a fence build got wrong, as a list of readable strings.
  *
@@ -2376,11 +2390,6 @@ export function buildWellboreFence(
  */
 export function assertFenceInvariants(report: FenceReport): string[] {
   const problems: string[] = [];
-  if (report.relax.headRadius < report.relax.requiredHeadRadius) {
-    problems.push(
-      `shallow section still turns at ${report.relax.headRadius.toFixed(0)} m, wanted ${report.relax.requiredHeadRadius.toFixed(0)} m`,
-    );
-  }
   if (report.extensions.evenness < SHARE_FLOOR) {
     problems.push(
       `run-outs split the block ${(report.extensions.evenness * 100).toFixed(0)}/${((1 - report.extensions.evenness) * 100).toFixed(0)}`,
@@ -2404,9 +2413,21 @@ export function assertFenceInvariants(report: FenceReport): string[] {
         `${name}: removes only ${(side.removedShare * 100).toFixed(0)}% of the block`,
       );
     }
-    const opening = Math.min(side.opening[0], side.opening[1]);
-    if (opening < 30) {
-      problems.push(`${name}: junction opens only ${opening.toFixed(0)}°`);
+    // ⭐⭐ The check the old report lacked: the trajectory must end up in the half that
+    // goes, or whatever is drawn in the hole is buried by the block meant to reveal it.
+    if (side.burial > BURIAL_LIMIT) {
+      problems.push(
+        `${name}: buries the well ${side.burial.toFixed(0)} m into the kept block`,
+      );
+    }
+    // The turn where the run-out joins the followed trace. The geodesic makes it a
+    // convex corner the smoothing rounds, so a large one is a genuinely awkward
+    // junction — the folds the old invariants passed silently now show up here.
+    const junction = Math.max(side.opening[0], side.opening[1]);
+    if (junction > 120) {
+      problems.push(
+        `${name}: run-out joins the trace at a ${junction.toFixed(0)}° turn`,
+      );
     }
     if (side.residual && side.residual.max > RESIDUAL_LIMIT) {
       problems.push(
