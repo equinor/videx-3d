@@ -25,8 +25,8 @@ export type FenceDebugModel = {
   fence: WellboreFence;
   report: FenceReport;
   problems: string[];
-  /** the raw plan trace of the survey stations */
-  trace: Vec2[];
+  /** the raw plan trace of the survey stations (NOT the fence's spline) */
+  survey: Vec2[];
   /** the 3D spline, so a view can frame an exact curve position */
   curve: Curve3D;
 };
@@ -62,7 +62,7 @@ export function useFenceDebugModel(
       fence,
       report: fence.report,
       problems: assertFenceInvariants(fence.report),
-      trace: trajectory.map(p => [p[0], p[2]] as Vec2),
+      survey: trajectory.map(p => [p[0], p[2]] as Vec2),
       curve,
     };
   }, [trajectory, rings, margin]);
@@ -70,7 +70,7 @@ export function useFenceDebugModel(
 
 const COLOURS = {
   outline: '#3a4a5a',
-  trace: '#7a7a7a',
+  survey: '#7a7a7a',
   base: '#2ecc71',
   plus: '#4aa3ff',
   minus: '#ff7043',
@@ -87,6 +87,14 @@ const DEFECT_COLOURS: Record<string, string> = {
   pinch: 'rgba(255, 110, 210, 0.5)',
   wiggle: 'rgba(255, 220, 60, 0.5)',
 };
+
+/** Stable default so the overlay draws every kind unless a caller narrows it. */
+const ALL_DEFECT_KINDS: FenceDefect['kind'][] = [
+  'burial',
+  'sharp',
+  'pinch',
+  'wiggle',
+];
 
 /** What the plan view frames. @see FencePlanView */
 export type FenceFocus = 'fit' | 'head' | 'td' | 'curvepos';
@@ -106,11 +114,11 @@ export function FencePlanView({
   model,
   rings,
   size = 460,
-  showTrace = true,
+  showSurvey = true,
   showBase = true,
   showLeft = true,
   showRight = true,
-  showDefects = true,
+  defectKinds = ALL_DEFECT_KINDS,
   focus = 'fit',
   focusRadius = 600,
   curvePos = 0.5,
@@ -118,11 +126,11 @@ export function FencePlanView({
   model: FenceDebugModel | null;
   rings: Vec2[][];
   size?: number;
-  showTrace?: boolean;
+  showSurvey?: boolean;
   showBase?: boolean;
   showLeft?: boolean;
   showRight?: boolean;
-  showDefects?: boolean;
+  defectKinds?: FenceDefect['kind'][];
   focus?: FenceFocus;
   focusRadius?: number;
   curvePos?: number;
@@ -152,13 +160,13 @@ export function FencePlanView({
       // ⭐ Fit the TRAJECTORY, not the fence with its run-outs — the run-outs reach
       // far past the footprint and would shrink the well to a dot. Their off-screen
       // tails are what we are deliberately ignoring while the path is tuned.
-      for (const p of model.trace) take(p);
+      for (const p of model.survey) take(p);
     } else {
       // ⭐ `curvepos` frames an EXACT position along the 3D spline (0 = head, 1 = TD),
       // read straight off the interpolator so a specific feature can be dialled in.
       let at: Vec2;
-      if (focus === 'head') at = model.trace[0];
-      else if (focus === 'td') at = model.trace[model.trace.length - 1];
+      if (focus === 'head') at = model.survey[0];
+      else if (focus === 'td') at = model.survey[model.survey.length - 1];
       else {
         const p = model.curve.getPointAt(Math.min(1, Math.max(0, curvePos)));
         at = [p[0], p[2]];
@@ -198,23 +206,25 @@ export function FencePlanView({
       context.stroke();
     }
 
-    if (showTrace) stroke(model.trace, COLOURS.trace, 1);
+    if (showSurvey) stroke(model.survey, COLOURS.survey, 1);
     if (showBase) stroke(model.fence.base.points, COLOURS.base, 2);
-    // ⭐ The followed path per side, WITHOUT run-outs. LEFT is the half to the left of
-    // the well's tangent (side +1); RIGHT is side -1. Toggled independently so one side
-    // can be read alone. At margin 0 the two coincide.
-    if (showLeft) stroke(model.fence.plus.curve.core, COLOURS.plus, 2.5);
-    if (showRight) stroke(model.fence.minus.curve.core, COLOURS.minus, 1.5);
+    // ⭐ The ACTUAL cut per side — `curve.points`, the smoothed curve WITH run-outs that
+    // the field is built from and that burial is measured against. Drawing `core` (the
+    // pre-smoothing path) instead put the cut ~0.5 m off the burial highlight. LEFT is
+    // side +1, RIGHT side -1; toggled independently. At margin 0 the two coincide.
+    if (showLeft) stroke(model.fence.plus.curve.points, COLOURS.plus, 2.5);
+    if (showRight) stroke(model.fence.minus.curve.points, COLOURS.minus, 1.5);
 
     // ⭐ Defect overlay: fat, semi-transparent marks over exactly what the diagnostic
     // flags — burial runs sit on the WELL, the turn kinds on the offending core corner —
-    // so what the scorer catches (and misses) is visible at a glance.
-    if (showDefects) {
+    // so what the scorer catches (and misses) is visible at a glance. Each kind can be
+    // toggled independently to isolate one class of defect.
+    if (defectKinds.length > 0) {
       context.lineCap = 'round';
       context.lineJoin = 'round';
       const drawDefects = (defects: FenceDefect[]) => {
         for (const d of defects) {
-          if (d.points.length === 0) continue;
+          if (d.points.length === 0 || !defectKinds.includes(d.kind)) continue;
           context.strokeStyle =
             DEFECT_COLOURS[d.kind] ?? 'rgba(255,255,255,0.5)';
           context.lineWidth = 8;
@@ -239,8 +249,8 @@ export function FencePlanView({
     // ⭐ The WELLHEAD and TD. A cut can look perfect everywhere and still bury the
     // head, which is the one place a viewer always looks — so mark it rather than
     // leaving it to be inferred from where the red trace happens to start.
-    const head = model.trace[0];
-    const td = model.trace[model.trace.length - 1];
+    const head = model.survey[0];
+    const td = model.survey[model.survey.length - 1];
     context.strokeStyle = COLOURS.head;
     context.lineWidth = 2;
     context.beginPath();
@@ -280,11 +290,11 @@ export function FencePlanView({
     model,
     rings,
     size,
-    showTrace,
+    showSurvey,
     showBase,
     showLeft,
     showRight,
-    showDefects,
+    defectKinds,
     focus,
     focusRadius,
     curvePos,
@@ -473,6 +483,7 @@ export function useFenceDebugHandle(model: FenceDebugModel | null) {
           report: model.report,
           problems: model.problems,
           base: model.fence.base.points,
+          survey: model.survey,
           plus: model.fence.plus.curve.points,
           minus: model.fence.minus.curve.points,
           plusCore: model.fence.plus.curve.core,

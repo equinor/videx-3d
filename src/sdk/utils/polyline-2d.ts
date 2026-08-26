@@ -251,6 +251,96 @@ export function pointAtArcLength(
   ];
 }
 
+/** Signed area ×2 of triangle (a,b,c); >0 = c left of a→b, <0 = right, 0 = collinear. */
+function orient2D(
+  ax: number,
+  az: number,
+  bx: number,
+  bz: number,
+  cx: number,
+  cz: number,
+): number {
+  return (bx - ax) * (cz - az) - (bz - az) * (cx - ax);
+}
+
+/**
+ * How many times the segment `a→b` STRICTLY crosses `polyline`.
+ *
+ * ⭐⭐ A FULL traversal of every polyline segment — no nearest-segment shortcut — so
+ * the answer is a property of the WHOLE border, not of whichever segment happens to
+ * be closest. That is what makes it robust where the polyline doubles back on itself
+ * or runs through a concavity, exactly the places a single-segment cross product
+ * gives a false reading.
+ *
+ * ⚠️ Only PROPER crossings count: a segment that merely touches a vertex or lies
+ * collinear scores 0. Callers that need certainty against such grazing cases test
+ * several reference points and take the majority (see the fence burial check).
+ *
+ * @group Utils
+ */
+export function segmentPolylineCrossings(
+  ax: number,
+  az: number,
+  bx: number,
+  bz: number,
+  polyline: Vec2[],
+): number {
+  let count = 0;
+  for (let i = 1; i < polyline.length; i++) {
+    const c = polyline[i - 1];
+    const d = polyline[i];
+    const d1 = orient2D(ax, az, bx, bz, c[0], c[1]);
+    const d2 = orient2D(ax, az, bx, bz, d[0], d[1]);
+    const d3 = orient2D(c[0], c[1], d[0], d[1], ax, az);
+    const d4 = orient2D(c[0], c[1], d[0], d[1], bx, bz);
+    if (
+      ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+      ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+    ) {
+      count++;
+    }
+  }
+  return count;
+}
+
+/**
+ * The parameters `t ∈ (0,1)` along `a→b` where it STRICTLY crosses `polyline`, sorted.
+ *
+ * ⭐⭐ The exact crossing positions, from a full traversal of the whole polyline — so a
+ * segment can be split at the precise points where it passes through the border, with
+ * no sampling and no rounding to a grid. Companion to {@link segmentPolylineCrossings}
+ * (this is its crossings, located rather than merely counted).
+ *
+ * ⚠️ Proper crossings only, matching {@link segmentPolylineCrossings}: a mere touch of a
+ * vertex or a collinear overlap is not reported.
+ *
+ * @group Utils
+ */
+export function segmentPolylineCrossingParams(
+  ax: number,
+  az: number,
+  bx: number,
+  bz: number,
+  polyline: Vec2[],
+): number[] {
+  const rx = bx - ax;
+  const rz = bz - az;
+  const out: number[] = [];
+  for (let i = 1; i < polyline.length; i++) {
+    const c = polyline[i - 1];
+    const d = polyline[i];
+    const sx = d[0] - c[0];
+    const sz = d[1] - c[1];
+    const den = rx * sz - rz * sx;
+    if (den === 0) continue;
+    const t = ((c[0] - ax) * sz - (c[1] - az) * sx) / den;
+    const u = ((c[0] - ax) * rz - (c[1] - az) * rx) / den;
+    if (t > 0 && t < 1 && u > 0 && u < 1) out.push(t);
+  }
+  out.sort((p, q) => p - q);
+  return out;
+}
+
 /** Where a polyline crosses itself, and the point it crosses at. */
 type PolylineLoop = { i: number; j: number; at: Vec2 };
 

@@ -14,6 +14,8 @@ import {
   removePolylineLoops,
   repairLoopsOneSided,
   resamplePolyline2D,
+  segmentPolylineCrossingParams,
+  segmentPolylineCrossings,
   smoothPolyline2DWithinDisc,
 } from '../utils/polyline-2d';
 import { Curve3D } from './curve/curve-3d';
@@ -169,6 +171,16 @@ const SMOOTH_MARGIN_FRACTION = 0.7;
 
 /** Corridor-smoothing iterations applied to the offset cut. */
 const SMOOTH_PASSES = 12;
+
+/**
+ * Vertices on each side of a run-out junction that the assembly smoothing may move.
+ *
+ * ⭐⭐ The smoothing is CONSTRAINED to these windows and the core interior is restored
+ * exactly. The interior was already offset to clear the well by the margin; a global
+ * smooth pulled it back INTO the well (F-14 pocket: 1.0 m clear → 2.3 m buried) and
+ * moved the real cut off the followed path. Only the junctions need easing.
+ */
+const JUNCTION_SMOOTH_WINDOW = 8;
 
 /** Turn a corner must exceed to be scored as sharp, in radians (60°). */
 const DIAGNOSIS_SHARP_TURN = (60 * Math.PI) / 180;
@@ -1305,7 +1317,7 @@ function turnNear(points: Vec2[], at: Vec2): number {
  * the other the inside — so the offset is built once per side. With no clearance and a
  * straight well they coincide, and {@link FenceReport.shared} says so.
  *
- * @param trace the well's plan trajectory, head to TD
+ * @param well the well's plan trajectory, head to TD
  * @param extensions the run-out directions, shared by both sides
  * @param side which half is REMOVED
  * @param options see {@link FenceSideOptions}
@@ -1313,7 +1325,7 @@ function turnNear(points: Vec2[], at: Vec2): number {
  * @group Geometries
  */
 export function buildFenceSideCurve(
-  trace: Vec2[],
+  well: Vec2[],
   extensions: FenceExtensions,
   side: 1 | -1,
   options: FenceSideOptions,
@@ -1327,15 +1339,15 @@ export function buildFenceSideCurve(
   const spacing = options.spacing ?? FOLLOW_SPACING;
   const rings = [...options.rings, boundsRing(options.bounds)];
 
-  const head = trace[0];
-  const tail = trace[trace.length - 1];
+  const head = well[0];
+  const tail = well[well.length - 1];
 
   // ⭐⭐ FOLLOW the trajectory, then repair ONLY its self-crossings, one-sided. Following
   // buries neither side — the well lies in the cut — so a convex, concave or alternating
   // path is traced exactly and the two sides coincide. They diverge only at a genuine
   // loop, which `repairLoopsOneSided` bridges onto the half being REMOVED so it is carved
   // away rather than buried in the kept block.
-  const follow = followTrace(trace);
+  const follow = followTrace(well);
   const repaired = repairLoopsOneSided(follow, side, MIN_WELL_RADIUS);
   // A positive margin pushes the cut toward the KEPT half so the well sits `margin`
   // inside the REMOVED half — dissolving any fold a concave bend tighter than the margin
@@ -1391,7 +1403,19 @@ export function buildFenceSideCurve(
     ...core,
     ...endRun.slice(1),
   ];
+  // ⭐⭐ CONSTRAINED reshape: smooth the whole assembly to ease the run-out junctions,
+  // then RESTORE every vertex outside the junction windows to its exact pre-smooth
+  // position. The core interior keeps the clearance it was offset with — a global smooth
+  // moved it and re-buried the well — while the two joins still round off.
   const eased = smoothPolyline2D(raw, 6);
+  const startJoin = startRun.length - 1;
+  const endJoin = startJoin + core.length - 1;
+  for (let i = 0; i < raw.length; i++) {
+    const nearJoin =
+      Math.abs(i - startJoin) <= JUNCTION_SMOOTH_WINDOW ||
+      Math.abs(i - endJoin) <= JUNCTION_SMOOTH_WINDOW;
+    if (!nearJoin) eased[i] = raw[i];
+  }
 
   const loopsRemoved = countPolylineLoops(eased);
   const deLooped = removePolylineLoops(eased);
@@ -1964,7 +1988,7 @@ export function buildWellboreFence(
   const base = prepareFenceTrace(curve, samples);
   // The dense, simplified plan path off the 3D spline — the wellbore's true footprint,
   // not the straight lines between survey stations.
-  const trace = base.points;
+  const well = base.points;
   timings.base = now() - mark;
 
   let minX = Infinity;
@@ -2005,13 +2029,13 @@ export function buildWellboreFence(
     bounds,
     margin,
     runOutMargin: options.runOutMargin,
-    // The clearance obstacle is the true trace.
-    well: trace,
+    // The clearance obstacle is the well itself (the spline, `base.points`).
+    well,
   };
 
   mark = now();
-  const plusCurve = buildFenceSideCurve(trace, extensions, 1, sideOptions);
-  const minusCurve = buildFenceSideCurve(trace, extensions, -1, sideOptions);
+  const plusCurve = buildFenceSideCurve(well, extensions, 1, sideOptions);
+  const minusCurve = buildFenceSideCurve(well, extensions, -1, sideOptions);
   timings.curves = now() - mark;
 
   mark = now();
@@ -2040,21 +2064,59 @@ export function buildWellboreFence(
   timings.field = now() - mark;
   if (!plus || !minus) return null;
 
-  // ⭐⭐ Burial: the worst depth the trajectory is left inside the KEPT block, read
-  // off the shader's own lookup AT THE TRACE. It is ~0 by construction — the geodesic
-  // keeps the whole well on the removed side — so a positive value is a run-out that
-  // crossed back at a junction, which is exactly the failure the old report hid.
-  const burialOf = (s: FenceSide): number => {
-    let worst = 0;
-    for (const p of trace) {
-      const at = fenceSideAt(s.index, s.field, p[0], p[1]);
-      if (at > worst) worst = at;
-    }
-    return worst;
-  };
+  // ⭐⭐ Burial: is the WELL less than `margin` clear of the cut? Measured on the well
+  // (base.points) EXACTLY — the very curve that is drawn — with NO resampling, so the
+  // measurement, the highlight and the drawn path are one and the same. {@link fenceBurial}
+  // works in signed depth and bounds the runs exactly where the clearance meets the margin.
+  //
+  // ⭐⭐ Side is decided by crossing parity to LOCAL, OMNIDIRECTIONAL references — probe
+  // outward in eight directions and keep the ones the field confirms are on the removed
+  // side (its far-field sign is reliable past the curve), then majority-vote. The
+  // references are NOT aimed by the well tangent: inside a loop the tangent reverses and
+  // would point the wrong way. A far/global seed is wrong too — the segment to it threads
+  // the loop and run-outs and miscounts.
+  const dirs: Vec2[] = [];
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2;
+    dirs.push([Math.cos(a), Math.sin(a)]);
+  }
+  const keptSideFor =
+    (s: FenceSide) =>
+    (x: number, z: number): boolean => {
+      const refs: Vec2[] = [];
+      for (const d of dirs) {
+        for (const reach of [probeAt, probeAt * 2]) {
+          const rx = x + d[0] * reach;
+          const rz = z + d[1] * reach;
+          if (fenceSideAt(s.index, s.field, rx, rz) < 0) {
+            refs.push([rx, rz]);
+            break;
+          }
+        }
+      }
+      if (refs.length === 0) return false;
+      let odd = 0;
+      for (const ref of refs) {
+        if (
+          segmentPolylineCrossings(x, z, ref[0], ref[1], s.curve.points) % 2 ===
+          1
+        ) {
+          odd++;
+        }
+      }
+      return odd * 2 > refs.length;
+    };
+  const burialOf = (s: FenceSide): FenceBurial =>
+    fenceBurial(
+      s.curve.points,
+      well,
+      keptSideFor(s),
+      MIN_WELL_RADIUS,
+      clearance,
+    );
 
   const degrees = (r: number) => (r * 180) / Math.PI;
-  const sideReport = (s: FenceSide, burial: number): FenceSideReport => ({
+  const sideReport = (s: FenceSide, burial: FenceBurial): FenceSideReport => ({
     side: s.side,
     vertices: s.curve.points.length,
     opening: [degrees(s.curve.opening[0]), degrees(s.curve.opening[1])],
@@ -2063,12 +2125,14 @@ export function buildWellboreFence(
     maxTurn: degrees(s.curve.maxTurn),
     loops: countPolylineLoops(s.curve.points),
     removedShare: s.removedShare,
-    burial,
+    burial: burial.worst,
     // A diagnostic window, not a target: how tightly the cut hugs the well.
     minRadius: polylineMinRadius(s.curve.points, 300),
-    diagnosis: diagnoseFenceSide(s.curve.core, trace, s.side, {
+    diagnosis: diagnoseFenceSide(s.curve.core, base.points, s.side, {
       tolerance: MIN_WELL_RADIUS,
       margin: clearance,
+      burial: burial.worst,
+      burialDefects: burial.runs,
     }),
     field: {
       nx: s.field.nx,
@@ -2139,6 +2203,109 @@ export function buildWellboreFence(
   };
 }
 
+/** What one side of a fence buries, from the exact whole-border measurement. @group Geometries */
+export type FenceBurial = {
+  /** worst SIGNED depth in metres: positive = into the KEPT block, negative = clear on the removed side */
+  worst: number;
+  /** the buried stretches of the well (clearance below the margin), bounded EXACTLY, for the overlay */
+  runs: Vec2[][];
+};
+
+/**
+ * Where the finished cut BURIES the well — EXACTLY, from the whole cut border.
+ *
+ * ⭐⭐ A well point is buried when it is LESS THAN `margin` clear of the cut. Working
+ * with the SIGNED depth `d` (positive on the KEPT side, negative on the removed side),
+ * the well is clear at `d <= tolerance - margin` — the render radius `tolerance` is slack
+ * so a well resting exactly at its margin is not flagged. At margin 0 this is `d > tolerance`:
+ * the well may lie in the cut but not poke a render radius onto the kept side.
+ *
+ * ⭐⭐ No sampling rate. Evaluation points are the well's own vertices plus the EXACT
+ * points where it crosses the cut ({@link segmentPolylineCrossingParams}, where the
+ * signed depth is 0). Runs begin and end exactly where the signed depth meets the
+ * threshold, found by interpolating between adjacent evaluation points — no overshoot,
+ * no short stop, and a burial is caught however the well is sampled.
+ *
+ * ⭐ Side ({@link keptSide}) is decided by crossing parity against the whole cut, never a
+ * single nearest segment. Magnitude is the exact distance from the well to the cut.
+ *
+ * @param cutCurve the side's full cut curve, run-outs included
+ * @param well the spline to test, used EXACTLY — never a resampled proxy
+ * @param keptSide true when a point sits on the KEPT side of the cut (robust, full-border)
+ * @param tolerance the well's render radius, in metres — the slack allowed at margin 0
+ * @param margin the clearance the cut was offset by; the well must stay this far clear
+ *
+ * @group Geometries
+ */
+export function fenceBurial(
+  cutCurve: Vec2[],
+  well: Vec2[],
+  keptSide: (x: number, z: number) => boolean,
+  tolerance: number,
+  margin: number,
+): FenceBurial {
+  // Buried when the well is not `margin` clear of the cut on the removed side. Signed
+  // depth d must sit at or below −margin to be clear; the `tolerance` (render radius) is
+  // slack so a well resting exactly at its margin does not flicker as buried. At margin 0
+  // the well is MEANT to lie in the cut, so the only fault there is poking a render radius
+  // onto the kept side (d above `tolerance`).
+  const threshold = tolerance - margin;
+
+  const signedDepth = (x: number, z: number): number => {
+    const near = nearestOnPolyline(cutCurve, x, z);
+    const d = near ? near.distance : 0;
+    return keptSide(x, z) ? d : -d;
+  };
+
+  // Evaluation points along the well: every vertex, plus the EXACT cut crossings (signed
+  // depth 0). Driven by the geometry, not a step size.
+  type Eval = { x: number; z: number; sd: number };
+  const evals: Eval[] = [];
+  for (let i = 0; i + 1 < well.length; i++) {
+    const a = well[i];
+    const b = well[i + 1];
+    if (i === 0) evals.push({ x: a[0], z: a[1], sd: signedDepth(a[0], a[1]) });
+    const dx = b[0] - a[0];
+    const dz = b[1] - a[1];
+    for (const t of segmentPolylineCrossingParams(
+      a[0],
+      a[1],
+      b[0],
+      b[1],
+      cutCurve,
+    )) {
+      evals.push({ x: a[0] + dx * t, z: a[1] + dz * t, sd: 0 });
+    }
+    evals.push({ x: b[0], z: b[1], sd: signedDepth(b[0], b[1]) });
+  }
+
+  // Where the signed depth meets the threshold between two evaluation points.
+  const cross = (p: Eval, q: Eval): Vec2 => {
+    const denom = q.sd - p.sd;
+    const f = Math.abs(denom) < 1e-12 ? 0 : (threshold - p.sd) / denom;
+    const g = f < 0 ? 0 : f > 1 ? 1 : f;
+    return [p.x + (q.x - p.x) * g, p.z + (q.z - p.z) * g];
+  };
+
+  const runs: Vec2[][] = [];
+  let run: Vec2[] = [];
+  let worst = -Infinity;
+  for (let i = 0; i < evals.length; i++) {
+    const e = evals[i];
+    if (e.sd > worst) worst = e.sd;
+    if (e.sd > threshold) {
+      if (run.length === 0 && i > 0) run.push(cross(evals[i - 1], e));
+      run.push([e.x, e.z]);
+    } else if (run.length > 0) {
+      run.push(cross(evals[i - 1], e));
+      runs.push(run);
+      run = [];
+    }
+  }
+  if (run.length > 0) runs.push(run);
+  return { worst: worst === -Infinity ? 0 : worst, runs };
+}
+
 /** Thresholds {@link diagnoseFenceSide} scores a side against. @group Geometries */
 export type FenceDiagnosisOptions = {
   /** metres of well allowed on the kept side before it counts as buried. Default {@link MIN_WELL_RADIUS}. */
@@ -2157,6 +2324,14 @@ export type FenceDiagnosisOptions = {
   bridgedLimit?: number;
   /** the clearance the cut was offset by, in metres — bridging is measured beyond it. Default 0. */
   margin?: number;
+  /**
+   * Worst kept-side burial in metres, measured ROBUSTLY by the caller from the whole
+   * cut border (see {@link fenceBurial}). The diagnosis never signs geometry itself;
+   * defaults to 0 when not supplied.
+   */
+  burial?: number;
+  /** the buried spans of the well for the overlay, from the same robust measurement */
+  burialDefects?: Vec2[][];
 };
 
 /**
@@ -2234,46 +2409,15 @@ export function diagnoseFenceSide(
   const bridgedLimit = options.bridgedLimit ?? DIAGNOSIS_BRIDGED_LIMIT;
   const margin = options.margin ?? 0;
 
-  // ⭐⭐ Burial, side-aware: the worst depth a well vertex sits on the KEPT side of
-  // the core. side +1 removes the LEFT half, so a vertex to the RIGHT of the core is
-  // buried; side -1 is the mirror. Read straight off the core, so it is independent
-  // of the (deferred) run-outs.
+  // ⭐⭐ Burial is measured by the caller against the whole cut border, margin-aware, and
+  // handed in — the diagnosis only consumes it, so it never signs geometry from a single
+  // nearest segment (the naive rule that gave false side readings). `burial` is the worst
+  // SIGNED depth; the runs are the stretches short of the margin clearance.
+  const burial = options.burial ?? 0;
   const defects: FenceDefect[] = [];
-  let burial = 0;
-  let buriedRun: Vec2[] = [];
-  for (const p of well) {
-    let bestD2 = Infinity;
-    let signed = 0;
-    for (let i = 1; i < core.length; i++) {
-      const a = core[i - 1];
-      const b = core[i];
-      const ex = b[0] - a[0];
-      const ez = b[1] - a[1];
-      const len2 = ex * ex + ez * ez;
-      if (len2 < 1e-12) continue;
-      let t = ((p[0] - a[0]) * ex + (p[1] - a[1]) * ez) / len2;
-      t = t < 0 ? 0 : t > 1 ? 1 : t;
-      const qx = a[0] + ex * t;
-      const qz = a[1] + ez * t;
-      const dx = p[0] - qx;
-      const dz = p[1] - qz;
-      const d2 = dx * dx + dz * dz;
-      if (d2 < bestD2) {
-        bestD2 = d2;
-        // dot(p - q, left normal of segment) = (p - q) . (-ez, ex) / |seg|
-        signed = (dx * -ez + dz * ex) / Math.sqrt(len2);
-      }
-    }
-    const depth = -side * signed;
-    if (depth > burial) burial = depth;
-    if (depth > tolerance) {
-      buriedRun.push([p[0], p[1]]);
-    } else if (buriedRun.length > 0) {
-      defects.push({ kind: 'burial', points: buriedRun });
-      buriedRun = [];
-    }
+  for (const run of options.burialDefects ?? []) {
+    if (run.length > 0) defects.push({ kind: 'burial', points: run });
   }
-  if (buriedRun.length > 0) defects.push({ kind: 'burial', points: buriedRun });
 
   // Corners: sharp turns on two long segments, near-reversal pinches, and wiggle —
   // two real opposite turns packed closer than `wiggleSpan` along the curve.
@@ -2341,10 +2485,13 @@ export function diagnoseFenceSide(
   const loops = countPolylineLoops(core);
 
   const issues: string[] = [];
-  if (burial > tolerance) {
-    issues.push(
-      `buries the well ${burial.toFixed(1)} m past the ${tolerance} m tolerance`,
-    );
+  // Buried = the caller's margin-aware measurement found any run (see fenceBurial).
+  if ((options.burialDefects ?? []).length > 0) {
+    if (burial > tolerance) {
+      issues.push(`buries the well ${burial.toFixed(1)} m into the kept block`);
+    } else {
+      issues.push(`well short of the ${margin.toFixed(2)} m clearance`);
+    }
   }
   if (loops > 0)
     issues.push(`${loops} loop${loops > 1 ? 's' : ''} in the curve`);

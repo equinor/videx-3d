@@ -1,6 +1,6 @@
 import { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useMemo, useState } from 'react';
-import { createWellboreOutline, Vec2, Vec3 } from '../../../sdk';
+import { createWellboreOutline, FenceDefect, Vec2, Vec3 } from '../../../sdk';
 import { CRS, getProjectionDefFromUtmZone } from '../../../sdk/projection/crs';
 import storyArgs from '../../../storybook/story-args.json';
 import {
@@ -56,12 +56,12 @@ type Props = {
   focus: FenceFocus;
   focusRadius: number;
   curvePos: number;
-  showTrace: boolean;
+  showSurvey: boolean;
   showBase: boolean;
   showLeft: boolean;
   showRight: boolean;
-  showDefects: boolean;
   size: number;
+  defectKinds: FenceDefect['kind'][];
 };
 
 const FenceDebug = (props: Props) => {
@@ -135,11 +135,11 @@ const FenceDebug = (props: Props) => {
         model={model}
         rings={rings}
         size={props.size}
-        showTrace={props.showTrace}
+        showSurvey={props.showSurvey}
         showBase={props.showBase}
         showLeft={props.showLeft}
         showRight={props.showRight}
-        showDefects={props.showDefects}
+        defectKinds={props.defectKinds}
         focus={props.focus}
         focusRadius={props.focusRadius}
         curvePos={props.curvePos}
@@ -192,11 +192,11 @@ const FenceDebug = (props: Props) => {
             focus: props.focus,
             curvePos: props.curvePos,
             focusRadius: props.focusRadius,
-            showTrace: props.showTrace,
+            showSurvey: props.showSurvey,
             showBase: props.showBase,
             showLeft: props.showLeft,
             showRight: props.showRight,
-            showDefects: props.showDefects,
+            defectKinds: props.defectKinds,
             size: props.size,
           })}`}
           style={{
@@ -227,12 +227,12 @@ export default {
     focus: 'fit',
     focusRadius: 600,
     curvePos: 0.5,
-    showTrace: false,
+    showSurvey: false,
     showBase: true,
     showLeft: true,
     showRight: true,
-    showDefects: true,
     size: 520,
+    defectKinds: ['burial', 'sharp', 'pinch', 'wiggle'],
   },
   argTypes: {
     wellbore: {
@@ -267,7 +267,7 @@ export default {
         'Position along the spline to centre on when focus is `curvepos`: 0 = wellhead, 1 = TD. Read off the 3D interpolator, so e.g. 0.042 lands exactly on that point of the curve.',
       table: { category: 'View' },
     },
-    showTrace: {
+    showSurvey: {
       description: 'The raw projected trajectory (survey stations).',
       table: { category: 'View' },
     },
@@ -285,14 +285,16 @@ export default {
         'The RIGHT cut — the half to the right of the tangent. Orange.',
       table: { category: 'View' },
     },
-    showDefects: {
-      description:
-        'Fat semi-transparent overlay on what the diagnostic flags: burial (red) on the well, sharp (orange) / pinch (pink) / wiggle (yellow) on the cut corner.',
-      table: { category: 'View' },
-    },
     size: {
       control: { type: 'range', min: 320, max: 900, step: 20 },
       table: { category: 'View' },
+    },
+    defectKinds: {
+      control: { type: 'check' },
+      options: ['burial', 'sharp', 'pinch', 'wiggle'],
+      description:
+        'Which defect classes to overlay — toggle each on/off to isolate one class. burial (red) sits on the WELL wherever the cut leaves it buried; sharp (orange) / pinch (pink) / wiggle (yellow) sit on the offending cut corner.',
+      table: { category: 'Defects' },
     },
   },
 } satisfies Meta<typeof FenceDebug>;
