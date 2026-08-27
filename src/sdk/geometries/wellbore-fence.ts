@@ -1,6 +1,7 @@
 import { Vec2 } from '../types/common';
 import {
   countPolylineLoops,
+  cubicBezier2D,
   dedupePolyline2D,
   endTangent2D,
   leftNormal2D,
@@ -10,12 +11,13 @@ import {
   polylineLength,
   polylineMaxTurn,
   polylineMinRadius,
-  principalDirection2D,
+  polylineSharpEdges,
   removePolylineLoops,
   repairLoopsOneSided,
   resamplePolyline2D,
   segmentPolylineCrossingParams,
   segmentPolylineCrossings,
+  simplifyPolylineClearOf,
   smoothPolyline2DWithinDisc,
 } from '../utils/polyline-2d';
 import { Curve3D } from './curve/curve-3d';
@@ -132,14 +134,75 @@ const SAMPLE_STEP = 2;
 const SIMPLIFY_TOLERANCE = 1e-4;
 
 /**
- * How far out the two sides' run-outs converge to a shared line, in multiples of the
- * clearance.
+ * Where the two sides' run-outs converge — the shared GATHER point — as a fraction of
+ * the distance the run-out has to reach to clear the footprint, clamped to a metre band.
  *
- * ⭐ Small, so the two sides agree almost immediately past the well and then follow the
- * identical straight run-out to the tip. It only has to clear the clearance zone, and
- * the bearing is one `fenceExtensions` already kept clear of the trajectory.
+ * ⭐⭐ Both sides bend from their own core end onto this ONE point and then follow the
+ * identical straight run to the shared tip, so switching the removed half swaps the cut
+ * but not the run-out. It sits far enough out that each side's approach arc has room to
+ * turn off the core tangent onto the escape bearing without grazing the well.
  */
-const RUN_OUT_GATE = 2;
+const RUN_OUT_GATHER_FRACTION = 0.2;
+/** Nearest the gather point may sit to the apex, in metres — clears the well's near field. */
+const RUN_OUT_GATHER_MIN = 120;
+/** Furthest the gather point may sit from the apex, in metres. */
+const RUN_OUT_GATHER_MAX = 1000;
+
+/** Segments a run-out approach arc (the G1 Bézier turn) is sampled into. Fixed — bounded. */
+const RUN_OUT_ARC_SAMPLES = 64;
+
+/**
+ * Bézier handle length as a fraction of the arm span (core end → gather point).
+ *
+ * ⭐ Larger keeps the arc hugging the two end tangents longer before it turns, which
+ * both smooths the turn and holds the core's clearance further out.
+ */
+const RUN_OUT_ARC_HANDLE = 1 / 3;
+
+/**
+ * Turn beyond which the very last core vertex is treated as offset noise and dropped
+ * before the TD run-out attaches, in radians (25°).
+ *
+ * ⚠️ The TD arm must leave along the core's real tangent; a tiny bend at the final
+ * vertex would either define a false tangent or leave a micro-kink at the junction.
+ */
+const RUN_OUT_SPURIOUS_TURN = (25 * Math.PI) / 180;
+
+/**
+ * Most core arc length the flexible HEAD run-out may cut back, in metres, and how many
+ * trim points it tries within it.
+ *
+ * ⭐ The head is negotiable: trimming the near-head core lets the arm leave at a gentler
+ * angle (a head that doubles back would otherwise force the run-out to sweep across the
+ * well). Over-clearing the head is fine — only the TD end has to hold the margin.
+ */
+const RUN_OUT_HEAD_TRIM_MAX = 400;
+const RUN_OUT_TRIM_STEPS = 8;
+
+/**
+ * Junction turn the flexible HEAD arm settles for, in radians (90°).
+ *
+ * ⭐ The head trims only as much as it NEEDS to bring the junction turn under this — it
+ * does not chase the gentlest possible arm. So a head that already leaves smoothly is
+ * followed closely (no eager over-clearing), and only a head that doubles back is trimmed
+ * back until it leaves cleanly.
+ */
+const RUN_OUT_HEAD_TURN_OK = (90 * Math.PI) / 180;
+
+/**
+ * Metres of slack on the run-out clearance test — the linear-segment chord error the
+ * dedupe leaves, so a cut resting exactly at the margin is not rejected as too close.
+ */
+const RUN_OUT_CLEAR_TOL = 0.05;
+
+/**
+ * Score bonus, per unit of `dot(start, -end)`, that pulls a near-vertical well's two
+ * arms onto ONE straight axis when the footprint does not force otherwise.
+ */
+const RUN_OUT_COLLINEAR_BONUS = 0.05;
+
+/** Fallback plan angle for a well with no direction of its own, in degrees (scene XZ). */
+const DEFAULT_FALLBACK_ANGLE = 0;
 
 /**
  * Metres of trajectory left in the KEPT block before the well counts as buried.
@@ -173,19 +236,18 @@ const SMOOTH_MARGIN_FRACTION = 0.7;
 const SMOOTH_PASSES = 12;
 
 /**
- * Vertices on each side of a run-out junction that the assembly smoothing may move.
- *
- * ⭐⭐ The smoothing is CONSTRAINED to these windows and the core interior is restored
- * exactly. The interior was already offset to clear the well by the margin; a global
- * smooth pulled it back INTO the well (F-14 pocket: 1.0 m clear → 2.3 m buried) and
- * moved the real cut off the followed path. Only the junctions need easing.
+ * Sharp-edge constraint the cut is SIMPLIFIED against — the same arm-weighted rule the
+ * diagnostic uses, injected as a construction constraint so coarsening cannot introduce a
+ * sharp edge. Relative turn (radians) that is sharp at {@link CONSTRUCT_SHARP_ARM}.
  */
-const JUNCTION_SMOOTH_WINDOW = 8;
+const CONSTRUCT_SHARP_TURN = (30 * Math.PI) / 180;
+/** Arm length each side is capped at for the sharp-edge constraint, in metres. */
+const CONSTRUCT_SHARP_ARM = 10;
+/** Default coarsening deviation, in metres — 0 keeps the cut following the well tightly. */
+const DEFAULT_SIMPLIFY = 0;
 
-/** Turn a corner must exceed to be scored as sharp, in radians (60°). */
-const DIAGNOSIS_SHARP_TURN = (60 * Math.PI) / 180;
-/** Both arms of a sharp corner must be at least this long to be scored, in metres. */
-const DIAGNOSIS_SHARP_SPAN = 50;
+/** Turn a real direction reversal must exceed to be scored as a wiggle, in radians (30°). */
+const DIAGNOSIS_WIGGLE_TURN = (30 * Math.PI) / 180;
 /** Turn a near-reversal must exceed to be scored as a pinch, in radians (150°). */
 const DIAGNOSIS_PINCH_TURN = (150 * Math.PI) / 180;
 /** Both arms of a pinch must be at least this long to be scored, in metres. */
@@ -424,6 +486,14 @@ function planExtent(points: Vec2[]): number {
 export type FenceBaseOptions = {
   /** MD step the 3D spline is sampled at, in metres. Default {@link SAMPLE_STEP}. */
   step?: number;
+  /**
+   * Plan angle to fall back to when the well has no direction of its own, in degrees
+   * (scene XZ, 0 = +X). Default {@link DEFAULT_FALLBACK_ANGLE}.
+   *
+   * ⭐ Only used for a near-vertical (degenerate) well, whose plan spread is survey
+   * scatter with no real bearing; a deviated well's own trajectory always overrides it.
+   */
+  fallbackAngle?: number;
 };
 
 /**
@@ -465,9 +535,12 @@ export function prepareFenceTrace(
   );
   let degenerate = false;
   if (planExtent(points) < MIN_PLAN_EXTENT) {
-    // No plan direction of its own. The spread's principal axis is the only
-    // non-arbitrary answer, and the run-outs carry the rest of the cut.
-    const direction = principalDirection2D(points);
+    // No plan direction of its own. The well is near-vertical, so its plan spread is
+    // survey scatter with no real bearing — take the caller's fallback angle rather
+    // than the scatter's arbitrary principal axis, and let the run-outs carry the cut.
+    const angle =
+      ((options.fallbackAngle ?? DEFAULT_FALLBACK_ANGLE) * Math.PI) / 180;
+    const direction: Vec2 = [Math.cos(angle), Math.sin(angle)];
     let cx = 0;
     let cz = 0;
     for (const p of points) {
@@ -1025,6 +1098,19 @@ export type FenceExtensions = {
   endTurn: number;
   /** share of the footprint the SMALLER half keeps, 0..0.5 */
   evenness: number;
+  /**
+   * The SHARED gather point at each end, in scene XZ — where both sides' approach arcs
+   * converge before the identical straight run to the tip. Computed here so both sides
+   * read one point and cannot diverge.
+   */
+  startGather: Vec2;
+  endGather: Vec2;
+  /** the SHARED run-out tip at each end, in scene XZ (past the footprint) */
+  startTip: Vec2;
+  endTip: Vec2;
+  /** metres each run-out reaches from its apex to the tip */
+  startReach: number;
+  endReach: number;
   /** direction pairs scored */
   scored: number;
   /**
@@ -1048,6 +1134,18 @@ export type FenceExtensionOptions = {
   clearance?: number;
   /** how far a run-out may turn from the trace's heading, in radians. Default 90°. */
   maxTurn?: number;
+  /** the CUT clearance (margin), in metres — the floor the TD arm must hold. Default 0. */
+  margin?: number;
+  /** plan spacing the shared run is resampled to, in metres. Default {@link FOLLOW_SPACING}. */
+  spacing?: number;
+  /**
+   * The two sides' cores (offset+smoothed, no run-outs). When present, each candidate
+   * direction is scored on the ACTUAL arms it would grow — the TD arm strictly (it must
+   * hold the margin), the head arm loosely (it may over-clear). Absent, only evenness is used.
+   */
+  cores?: { plus: Vec2[]; minus: Vec2[] };
+  /** a near-vertical well, whose two arms are pulled onto one straight axis when possible */
+  nearVertical?: boolean;
   mode?: FenceExtensionMode;
 };
 
@@ -1077,6 +1175,10 @@ export function fenceExtensions(
   const clearance = options.clearance ?? RUN_OUT_CLEARANCE;
   const maxTurn = options.maxTurn ?? MAX_RUN_OUT_TURN;
   const margin = options.runOutMargin ?? DEFAULT_RUN_OUT_MARGIN;
+  const marginClear = options.margin ?? 0;
+  const spacing = options.spacing ?? FOLLOW_SPACING;
+  const cores = options.cores;
+  const nearVertical = options.nearVertical ?? false;
   // ⚠️⚠️ The curve has to leave the RASTER, not merely the outline: one that
   // escapes a concave footprint can still stop inside its bounding box, and the
   // flood fill that signs the field then walks around the end of it and calls the
@@ -1122,23 +1224,102 @@ export function fenceExtensions(
   const reach = (origin: Vec2, direction: Vec2) =>
     escapeDistance(origin, direction, rings) + margin;
 
+  // Shared per-end geometry: the tip past the footprint and the gather point both sides
+  // converge onto. Keyed only on apex + direction, so the two sides read one point.
+  const gatherOf = (apex: Vec2, direction: Vec2, r: number): Vec2 => {
+    const d = Math.min(
+      r * 0.9,
+      Math.max(
+        RUN_OUT_GATHER_MIN,
+        Math.min(RUN_OUT_GATHER_MAX, r * RUN_OUT_GATHER_FRACTION),
+      ),
+    );
+    return [apex[0] + direction[0] * d, apex[1] + direction[1] * d];
+  };
+  const endGeom = (apex: Vec2, direction: Vec2) => {
+    const r = reach(apex, direction);
+    const tip: Vec2 = [apex[0] + direction[0] * r, apex[1] + direction[1] * r];
+    return { r, tip, gather: gatherOf(apex, direction, r) };
+  };
+
+  // ⭐⭐ Score each candidate on the ARMS it would actually grow, against BOTH cores. The
+  // TD end is DOMINANT and strict — its arm must hold the margin (less the linear slack) —
+  // while the head end may over-clear, so it is rejected only for BURYING (crossing the
+  // well or grazing it). This is what lets the chosen bearings keep both sides clear.
+  const tdFloor = marginClear - RUN_OUT_CLEAR_TOL;
+  const scoreEnd = (direction: Vec2) => {
+    if (!cores) return { feasible: true, turn: 0 };
+    const g = endGeom(last, direction);
+    let clear = Infinity;
+    let turn = 0;
+    let cross = false;
+    for (const core of [cores.plus, cores.minus]) {
+      const arm = buildRunOutArm(
+        core,
+        base,
+        false,
+        direction,
+        g.gather,
+        g.tip,
+        spacing,
+      );
+      clear = Math.min(clear, arm.minClearance);
+      turn = Math.max(turn, arm.turn);
+      if (arm.crossesWell) cross = true;
+    }
+    return { feasible: !cross && clear >= tdFloor, turn };
+  };
+  const scoreStart = (direction: Vec2) => {
+    if (!cores) return { feasible: true, turn: 0 };
+    const g = endGeom(first, direction);
+    let turn = 0;
+    let ok = true;
+    for (const core of [cores.plus, cores.minus]) {
+      const arm = buildRunOutArm(
+        core,
+        base,
+        true,
+        direction,
+        g.gather,
+        g.tip,
+        spacing,
+      );
+      turn = Math.max(turn, arm.turn);
+      if (arm.crossesWell || arm.minClearance < RUN_OUT_CLEAR_TOL) ok = false;
+    }
+    return { feasible: ok, turn };
+  };
+
+  const endScored = ends.map(e => ({ dir: e, ...scoreEnd(e) }));
+  const startScored = starts.map(s => ({ dir: s, ...scoreStart(s) }));
+  // Prefer feasible bearings, but never leave the caller with no run-out at all.
+  const feasibleEnds = endScored.filter(x => x.feasible);
+  const usableEnds = feasibleEnds.length ? feasibleEnds : endScored;
+  const feasibleStarts = startScored.filter(x => x.feasible);
+  const usableStarts = feasibleStarts.length ? feasibleStarts : startScored;
+
   const candidates: FenceCandidate[] = [];
   let best: FenceExtensions | null = null;
+  let bestScore = -Infinity;
+  let bestArmTurn = Infinity;
   let scored = 0;
-  for (const s of starts) {
-    const sReach = reach(first, s);
-    const sTip: Vec2 = [first[0] + s[0] * sReach, first[1] + s[1] * sReach];
-    for (const e of ends) {
-      const eReach = reach(last, e);
-      const curve = removePolylineLoops([
-        sTip,
-        ...base,
-        [last[0] + e[0] * eReach, last[1] + e[1] * eReach] as Vec2,
-      ]);
+  for (const sItem of usableStarts) {
+    const s = sItem.dir;
+    const sGeom = endGeom(first, s);
+    for (const eItem of usableEnds) {
+      const e = eItem.dir;
+      const eGeom = endGeom(last, e);
+      const curve = removePolylineLoops([sGeom.tip, ...base, eGeom.tip]);
       scored++;
       const [smaller] = splitShares(curve, options.outline);
       const startClearance = clearanceOf(s, startBearings);
       const endClearance = clearanceOf(e, endBearings);
+      // Near-vertical: reward the two arms sharing one straight axis (end ≈ -start).
+      const collinear = nearVertical
+        ? RUN_OUT_COLLINEAR_BONUS * Math.max(0, -(s[0] * e[0] + s[1] * e[1]))
+        : 0;
+      const score = smaller + collinear;
+      const armTurn = sItem.turn + eItem.turn;
       candidates.push({
         start: s,
         end: e,
@@ -1153,32 +1334,58 @@ export function fenceExtensions(
         startTurn: turnFrom(s, startTangent),
         endTurn: turnFrom(e, endTangent),
         evenness: smaller,
+        startGather: sGeom.gather,
+        endGather: eGeom.gather,
+        startTip: sGeom.tip,
+        endTip: eGeom.tip,
+        startReach: sGeom.r,
+        endReach: eGeom.r,
         scored: 0,
         candidates: [],
         mode: options.mode ?? 'straight',
       };
+      const clearanceSum = startClearance + endClearance;
       const better =
         !best ||
-        candidate.evenness > best.evenness + 1e-4 ||
-        (Math.abs(candidate.evenness - best.evenness) <= 1e-4 &&
-          candidate.startClearance + candidate.endClearance >
-            best.startClearance + best.endClearance);
-      if (better) best = candidate;
+        score > bestScore + 1e-4 ||
+        // Tie on the objective: prefer the smoother arms, then the roomier bearings.
+        (Math.abs(score - bestScore) <= 1e-4 && armTurn < bestArmTurn - 1e-3) ||
+        (Math.abs(score - bestScore) <= 1e-4 &&
+          Math.abs(armTurn - bestArmTurn) <= 1e-3 &&
+          clearanceSum > best.startClearance + best.endClearance);
+      if (better) {
+        best = candidate;
+        bestScore = score;
+        bestArmTurn = armTurn;
+      }
     }
   }
 
-  const result: FenceExtensions = best ?? {
-    start: startTangent,
-    end: endTangent,
-    startClearance: clearanceOf(startTangent, startBearings),
-    endClearance: clearanceOf(endTangent, endBearings),
-    startTurn: 0,
-    endTurn: 0,
-    evenness: 0,
-    scored: 0,
-    candidates: [],
-    mode: options.mode ?? 'straight',
-  };
+  let result: FenceExtensions;
+  if (best) {
+    result = best;
+  } else {
+    const g0 = endGeom(first, startTangent);
+    const g1 = endGeom(last, endTangent);
+    result = {
+      start: startTangent,
+      end: endTangent,
+      startClearance: clearanceOf(startTangent, startBearings),
+      endClearance: clearanceOf(endTangent, endBearings),
+      startTurn: 0,
+      endTurn: 0,
+      evenness: 0,
+      startGather: g0.gather,
+      endGather: g1.gather,
+      startTip: g0.tip,
+      endTip: g1.tip,
+      startReach: g0.r,
+      endReach: g1.r,
+      scored: 0,
+      candidates: [],
+      mode: options.mode ?? 'straight',
+    };
+  }
   result.scored = scored;
   result.candidates = candidates.sort((a, b) => b.evenness - a.evenness);
   return result;
@@ -1226,28 +1433,23 @@ export type FenceSideOptions = {
   spacing?: number;
   /** the well's own plan trace, which the cut is kept clear of */
   well?: Vec2[];
+  /**
+   * The precomputed core for this side (offset+smoothed, no run-outs). When supplied it
+   * is reused rather than rebuilt — the same core {@link fenceExtensions} scored against.
+   */
+  core?: Vec2[];
+  /**
+   * metres a NON-defect vertex may be simplified away by. 0 (default) keeps the cut
+   * hugging real bends and only bridges defects; larger coarsens smooth stretches too.
+   */
+  simplify?: number;
+  /** the simplify's arm-weighted sharp-turn threshold, in radians. Default 30°. */
+  sharpTurn?: number;
+  /** the simplify's per-side arm cap, in metres. Default 10. */
+  sharpArm?: number;
+  /** render-radius slack: the cut aims to clear the well by `margin - tolerance`. Default 0.1. */
+  tolerance?: number;
 };
-
-/** A few passes of endpoint-pinned Laplacian smoothing, rounding corners in place. */
-function smoothPolyline2D(points: Vec2[], passes: number): Vec2[] {
-  let current = points.map(p => [p[0], p[1]] as Vec2);
-  if (current.length < 3) return current;
-  for (let pass = 0; pass < passes; pass++) {
-    const next = current.map(p => [p[0], p[1]] as Vec2);
-    for (let i = 1; i + 1 < current.length; i++) {
-      next[i][0] =
-        0.25 * current[i - 1][0] +
-        0.5 * current[i][0] +
-        0.25 * current[i + 1][0];
-      next[i][1] =
-        0.25 * current[i - 1][1] +
-        0.5 * current[i][1] +
-        0.25 * current[i + 1][1];
-    }
-    current = next;
-  }
-  return current;
-}
 
 /**
  * The trajectory as the fence follows it: the dense spline path with only its
@@ -1287,6 +1489,284 @@ function turnNear(points: Vec2[], at: Vec2): number {
   if (la < 1e-6 || lb < 1e-6) return 0;
   const cos = (ax * bx + az * bz) / (la * lb);
   return Math.acos(Math.min(1, Math.max(-1, cos)));
+}
+
+/**
+ * One side's cut CORE — the followed, one-sided-repaired, offset-and-smoothed plan path
+ * WITHOUT run-outs.
+ *
+ * ⭐ Built once per side up front and shared with {@link fenceExtensions}, so the run-out
+ * bearings are chosen against the very geometry their arms will attach to.
+ *
+ * @group Geometries
+ */
+export function buildFenceCore(
+  well: Vec2[],
+  side: 1 | -1,
+  margin: number,
+  tolerance = MIN_WELL_RADIUS,
+): Vec2[] {
+  const clearance = margin;
+  // FOLLOW the trajectory, then repair only its self-crossings, one-sided.
+  const follow = followTrace(well);
+  const repaired = repairLoopsOneSided(follow, side, MIN_WELL_RADIUS);
+  // A positive margin pushes the cut toward the KEPT half so the well sits `margin` inside
+  // the REMOVED half, dissolving any fold a bend tighter than the margin would make.
+  const offsetCore =
+    clearance > 0
+      ? offsetPolyline2DDissolved(repaired, side, clearance)
+      : repaired;
+  // Round the offset's bends within a fraction of the margin so it cannot bury the well —
+  // but never let the rounding pull a vertex back inside the margin it just established.
+  return clearance > 0
+    ? smoothPolyline2DWithinDisc(
+        offsetCore,
+        clearance * SMOOTH_MARGIN_FRACTION,
+        SMOOTH_PASSES,
+        { well, minClearance: clearance - tolerance },
+      )
+    : offsetCore;
+}
+
+/** One end's run-out arm and how well its turn clears the well. */
+type RunOutArm = {
+  /** the arm polyline, oriented from the core junction OUT to the shared tip */
+  points: Vec2[];
+  /** the core index the arm leaves from: the head trim, or the TD end past any noise */
+  coreIndex: number;
+  /** smallest distance from the arm's turn to the well, in metres */
+  minClearance: number;
+  /** whether the arm's turn crosses the well — a burial */
+  crossesWell: boolean;
+  /** turn from the core's exit tangent onto the escape bearing, in radians */
+  turn: number;
+};
+
+/**
+ * Unit OUTWARD tangent where a run-out leaves the core at `index`, averaged over an arc
+ * so a single noisy segment cannot define it.
+ */
+function coreExitTangent(core: Vec2[], index: number, isHead: boolean): Vec2 {
+  const sub = isHead ? core.slice(index) : core.slice(0, index + 1);
+  const inward = endTangent2D(sub, isHead, JUNCTION_ARC);
+  if (inward) return [-inward[0], -inward[1]];
+  // Degenerate stub: fall back to the chord to the adjacent vertex.
+  const other =
+    core[
+      isHead ? Math.min(core.length - 1, index + 1) : Math.max(0, index - 1)
+    ];
+  const dx = core[index][0] - other[0];
+  const dz = core[index][1] - other[1];
+  const l = Math.hypot(dx, dz) || 1;
+  return isHead ? [dx / l, dz / l] : [-dx / l, -dz / l];
+}
+
+/**
+ * Build one end's arm from a specific core vertex: a G1 cubic Bézier from `core[index]`
+ * (leaving along the core's exit tangent) onto the shared gather point (arriving along the
+ * escape bearing), then the identical straight run to the shared tip.
+ */
+function buildArmAt(
+  core: Vec2[],
+  well: Vec2[],
+  index: number,
+  isHead: boolean,
+  direction: Vec2,
+  gather: Vec2,
+  tip: Vec2,
+  spacing: number,
+): RunOutArm {
+  const start = core[index];
+  const outward = coreExitTangent(core, index, isHead);
+  const span = Math.hypot(gather[0] - start[0], gather[1] - start[1]) || 1;
+  const k = RUN_OUT_ARC_HANDLE * span;
+  const p1: Vec2 = [start[0] + outward[0] * k, start[1] + outward[1] * k];
+  const p2: Vec2 = [gather[0] - direction[0] * k, gather[1] - direction[1] * k];
+  const arc = cubicBezier2D(start, p1, p2, gather, RUN_OUT_ARC_SAMPLES);
+  const run = resamplePolyline2D([gather, tip], spacing);
+  const points = run.length > 1 ? [...arc, ...run.slice(1)] : arc;
+  // ⭐ Clearance and crossing are tested on the ARC alone — the straight run leaves along
+  // the escape bearing and only gets further from the well.
+  let minClearance = Infinity;
+  const hit = { point: [0, 0] as Vec2, distance: 0, along: 0 };
+  for (const p of arc) {
+    const h = nearestOnPolyline(well, p[0], p[1], hit);
+    if (h && h.distance < minClearance) minClearance = h.distance;
+  }
+  let crosses = false;
+  for (let i = 1; i < arc.length && !crosses; i++) {
+    if (
+      segmentPolylineCrossings(
+        arc[i - 1][0],
+        arc[i - 1][1],
+        arc[i][0],
+        arc[i][1],
+        well,
+      ) > 0
+    ) {
+      crosses = true;
+    }
+  }
+  const dot = outward[0] * direction[0] + outward[1] * direction[1];
+  const turn = Math.acos(Math.max(-1, Math.min(1, dot)));
+  return {
+    points,
+    coreIndex: index,
+    minClearance,
+    crossesWell: crosses,
+    turn,
+  };
+}
+
+/**
+ * Build one end's run-out arm.
+ *
+ * ⭐⭐ The two ends are NOT symmetric. The TD end (`isHead` false) is DOMINANT: it leaves
+ * exactly along the core's tangent and does not trim, and a spurious final vertex is
+ * dropped so a tiny bend cannot kink the junction. The HEAD end is flexible but not eager:
+ * it trims the near-head core back only as much as it takes to leave cleanly, since
+ * over-clearing the head is fine but not wanted where the head already leaves smoothly.
+ */
+function buildRunOutArm(
+  core: Vec2[],
+  well: Vec2[],
+  isHead: boolean,
+  direction: Vec2,
+  gather: Vec2,
+  tip: Vec2,
+  spacing: number,
+): RunOutArm {
+  const n = core.length;
+  if (!isHead) {
+    let end = n - 1;
+    for (let drop = 0; drop < 3 && end > 1; drop++) {
+      const robust = coreExitTangent(core, end, false);
+      let sx = core[end][0] - core[end - 1][0];
+      let sz = core[end][1] - core[end - 1][1];
+      const l = Math.hypot(sx, sz) || 1;
+      sx /= l;
+      sz /= l;
+      const dot = sx * robust[0] + sz * robust[1];
+      if (Math.acos(Math.max(-1, Math.min(1, dot))) <= RUN_OUT_SPURIOUS_TURN)
+        break;
+      end--;
+    }
+    return buildArmAt(core, well, end, false, direction, gather, tip, spacing);
+  }
+  // Head: trim only as much as NEEDED. Walk from no trim outward and take the FIRST arm
+  // that leaves cleanly (does not cross or graze the well) with a junction turn already
+  // under RUN_OUT_HEAD_TURN_OK — so a head that leaves smoothly is followed closely rather
+  // than over-cleared. Fall back to the gentlest clean arm, then to the least-bad one.
+  const maxIndex = Math.max(0, n - 3);
+  const step = RUN_OUT_HEAD_TRIM_MAX / RUN_OUT_TRIM_STEPS;
+  let idx = 0;
+  let arc = 0;
+  let firstClean: RunOutArm | null = null;
+  let gentlestClean: RunOutArm | null = null;
+  let bestAny: RunOutArm | null = null;
+  for (let s = 0; s <= RUN_OUT_TRIM_STEPS; s++) {
+    const target = s * step;
+    while (idx < maxIndex && arc < target) {
+      arc += Math.hypot(
+        core[idx + 1][0] - core[idx][0],
+        core[idx + 1][1] - core[idx][1],
+      );
+      idx++;
+    }
+    const arm = buildArmAt(
+      core,
+      well,
+      Math.min(idx, maxIndex),
+      true,
+      direction,
+      gather,
+      tip,
+      spacing,
+    );
+    if (!bestAny || arm.turn < bestAny.turn) bestAny = arm;
+    if (!arm.crossesWell && arm.minClearance >= RUN_OUT_CLEAR_TOL) {
+      if (!gentlestClean || arm.turn < gentlestClean.turn) gentlestClean = arm;
+      if (!firstClean && arm.turn <= RUN_OUT_HEAD_TURN_OK) firstClean = arm;
+    }
+    if (idx >= maxIndex) break;
+  }
+  return (
+    firstClean ??
+    gentlestClean ??
+    bestAny ??
+    buildArmAt(core, well, 0, true, direction, gather, tip, spacing)
+  );
+}
+
+/**
+ * Attach the two run-outs to a core, converging on the shared gather points and running
+ * to the shared tips.
+ *
+ * ⚠️ ONE place builds both ends, so the head bearing can never be paired with the TD apex
+ * or the tips swapped — a mismatch that has happened before. The head arm is reversed onto
+ * the front; the middle is the core between the two junctions; the TD arm runs off the back.
+ */
+function attachRunOuts(
+  core: Vec2[],
+  well: Vec2[],
+  extensions: FenceExtensions,
+  spacing: number,
+): { points: Vec2[]; headArm: RunOutArm; tdArm: RunOutArm } {
+  const headArm = buildRunOutArm(
+    core,
+    well,
+    true,
+    extensions.start,
+    extensions.startGather,
+    extensions.startTip,
+    spacing,
+  );
+  const tdArm = buildRunOutArm(
+    core,
+    well,
+    false,
+    extensions.end,
+    extensions.endGather,
+    extensions.endTip,
+    spacing,
+  );
+  let headStart = headArm.coreIndex;
+  let tdEnd = tdArm.coreIndex;
+  let head = headArm;
+  let td = tdArm;
+  if (headStart >= tdEnd) {
+    // The trims met — the core is too short to carry both arms. Fall back to the untrimmed
+    // ends so the two run-outs cannot cross inside the core.
+    head = buildArmAt(
+      core,
+      well,
+      0,
+      true,
+      extensions.start,
+      extensions.startGather,
+      extensions.startTip,
+      spacing,
+    );
+    td = buildArmAt(
+      core,
+      well,
+      core.length - 1,
+      false,
+      extensions.end,
+      extensions.endGather,
+      extensions.endTip,
+      spacing,
+    );
+    headStart = 0;
+    tdEnd = core.length - 1;
+  }
+  const midCore = core.slice(headStart, tdEnd + 1);
+  const points = [
+    ...[...head.points].reverse().slice(0, -1),
+    ...midCore,
+    ...td.points.slice(1),
+  ];
+  return { points, headArm: head, tdArm: td };
 }
 
 /**
@@ -1331,41 +1811,13 @@ export function buildFenceSideCurve(
   options: FenceSideOptions,
 ): FenceSideCurve {
   const margin = options.margin ?? 0;
-  // ⚠️ Clearance is the MARGIN only — the room for a clear view of the well from the
-  // cut. It is NOT the sanitize: at margin 0 the geodesic already cleans the path and
-  // keeps the well out of the kept block; a positive margin then offsets it further.
-  const clearance = margin;
-  const runOutMargin = options.runOutMargin ?? DEFAULT_RUN_OUT_MARGIN;
   const spacing = options.spacing ?? FOLLOW_SPACING;
-  const rings = [...options.rings, boundsRing(options.bounds)];
+  const tolerance = options.tolerance ?? MIN_WELL_RADIUS;
 
-  const head = well[0];
-  const tail = well[well.length - 1];
+  // The core is the followed, one-sided-repaired, offset+smoothed path — reused from the
+  // extension scoring when supplied so the arms attach to the very geometry that was scored.
+  const core = options.core ?? buildFenceCore(well, side, margin, tolerance);
 
-  // ⭐⭐ FOLLOW the trajectory, then repair ONLY its self-crossings, one-sided. Following
-  // buries neither side — the well lies in the cut — so a convex, concave or alternating
-  // path is traced exactly and the two sides coincide. They diverge only at a genuine
-  // loop, which `repairLoopsOneSided` bridges onto the half being REMOVED so it is carved
-  // away rather than buried in the kept block.
-  const follow = followTrace(well);
-  const repaired = repairLoopsOneSided(follow, side, MIN_WELL_RADIUS);
-  // A positive margin pushes the cut toward the KEPT half so the well sits `margin`
-  // inside the REMOVED half — dissolving any fold a concave bend tighter than the margin
-  // would make, rather than letting the offset self-cross.
-  const offsetCore =
-    clearance > 0
-      ? offsetPolyline2DDissolved(repaired, side, clearance)
-      : repaired;
-  // ⭐ Round the offset's bends and dissolve its tiny reversals, bounded to a fraction of
-  // the margin so the cut keeps clearance and cannot bury the well.
-  const core =
-    clearance > 0
-      ? smoothPolyline2DWithinDisc(
-          offsetCore,
-          clearance * SMOOTH_MARGIN_FRACTION,
-          SMOOTH_PASSES,
-        )
-      : offsetCore;
   // Bridges: the long spans where the cut had to leave the trace to stay simple.
   let bridges = 0;
   for (let i = 0; i + 1 < core.length; i++) {
@@ -1376,52 +1828,51 @@ export function buildFenceSideCurve(
     if (span > 3 * spacing) bridges++;
   }
 
-  // ⭐⭐ SHARED run-outs. Both sides converge to the SAME gate a short way out along the
-  // SAME direction, then run the identical straight line to the SAME tip — so swapping
-  // which half is removed swaps the cut but not the run-outs, and the viewer reads one
-  // section from two sides rather than two unrelated cuts.
-  //
-  // ⚠️ Run-outs are being ignored for now: the path itself is what is under test. They
-  // are still built so the field separates, but the debug view draws `core`, not this.
-  const gateDist = Math.max(RUN_OUT_GATE * Math.max(clearance, 1), spacing * 4);
-  const runOut = (from: Vec2, apex: Vec2, direction: Vec2): Vec2[] => {
-    const reach = escapeDistance(apex, direction, rings) + runOutMargin;
-    const gate: Vec2 = [
-      apex[0] + direction[0] * Math.min(reach, gateDist),
-      apex[1] + direction[1] * Math.min(reach, gateDist),
-    ];
-    const tip: Vec2 = [
-      apex[0] + direction[0] * reach,
-      apex[1] + direction[1] * reach,
-    ];
-    return resamplePolyline2D([from, gate, tip], spacing);
-  };
-  const startRun = runOut(core[0], head, extensions.start);
-  const endRun = runOut(core[core.length - 1], tail, extensions.end);
-  const raw: Vec2[] = [
-    ...[...startRun].reverse().slice(0, -1),
-    ...core,
-    ...endRun.slice(1),
-  ];
-  // ⭐⭐ CONSTRAINED reshape: smooth the whole assembly to ease the run-out junctions,
-  // then RESTORE every vertex outside the junction windows to its exact pre-smooth
-  // position. The core interior keeps the clearance it was offset with — a global smooth
-  // moved it and re-buried the well — while the two joins still round off.
-  const eased = smoothPolyline2D(raw, 6);
-  const startJoin = startRun.length - 1;
-  const endJoin = startJoin + core.length - 1;
-  for (let i = 0; i < raw.length; i++) {
-    const nearJoin =
-      Math.abs(i - startJoin) <= JUNCTION_SMOOTH_WINDOW ||
-      Math.abs(i - endJoin) <= JUNCTION_SMOOTH_WINDOW;
-    if (!nearJoin) eased[i] = raw[i];
-  }
+  // ⭐⭐ SHARED run-outs: both sides bend from their own core end onto the SAME gather
+  // point and then follow the identical straight run to the SAME tip. The TD arm holds the
+  // core tangent (dominant); the head arm may trim and over-clear. G1 by construction, so
+  // there is no junction corner to smooth away afterwards.
+  const {
+    points: raw,
+    headArm,
+    tdArm,
+  } = attachRunOuts(core, well, extensions, spacing);
 
-  const loopsRemoved = countPolylineLoops(eased);
-  const deLooped = removePolylineLoops(eased);
-  // ⚠️ Deduped: smoothing can leave vertices bunched, and a cluster of them in one
-  // index cell overflows its list.
-  const points = dedupePolyline2D(deLooped, 2);
+  const loopsRemoved = countPolylineLoops(raw);
+  const deLooped = removePolylineLoops(raw);
+  // ⭐⭐ CLEARANCE-CONSTRAINED simplify — replaces the flat 2 m dedup that coarsened the
+  // cut through every bend and let the well poke across into the block. A longer segment
+  // only ever leaves a LARGER clearance gap, never a smaller one, and a skipped vertex is
+  // dropped only where it is already sharp (a loop/zig-zag/pinch worth bridging across) or
+  // within `simplify` metres of the chord. At simplify 0 the cut keeps hugging real bends.
+  const simplify = options.simplify ?? DEFAULT_SIMPLIFY;
+  const simplified = simplifyPolylineClearOf(
+    deLooped,
+    well,
+    Math.max(0, margin - tolerance),
+    simplify,
+    options.sharpTurn ?? CONSTRUCT_SHARP_TURN,
+    options.sharpArm ?? CONSTRUCT_SHARP_ARM,
+  );
+  // Only exact coincidences remain to remove — the density is now the simplify's business.
+  const points = dedupePolyline2D(simplified, 0.1);
+
+  // ⚠️ MATCHING GUARD: the assembled cut must terminate on the SHARED tips. A head bearing
+  // paired with the TD apex, or a swapped gather/tip, lands it elsewhere and throws here
+  // rather than silently building a mismatched pair of sides.
+  const startMiss = Math.hypot(
+    points[0][0] - extensions.startTip[0],
+    points[0][1] - extensions.startTip[1],
+  );
+  const endMiss = Math.hypot(
+    points[points.length - 1][0] - extensions.endTip[0],
+    points[points.length - 1][1] - extensions.endTip[1],
+  );
+  if (startMiss > 1e-3 || endMiss > 1e-3) {
+    throw new Error(
+      'buildFenceSideCurve: assembled cut does not terminate on the shared run-out tips',
+    );
+  }
 
   return {
     side,
@@ -1430,8 +1881,11 @@ export function buildFenceSideCurve(
     bridges,
     loopsRemoved,
     maxTurn: polylineMaxTurn(core, FOLD_WINDOW),
-    // The turn where each run-out meets the core: a fold shows here.
-    opening: [turnNear(points, head), turnNear(points, tail)],
+    // The turn the assembled cut actually makes at each junction — ~0 when the arm is G1.
+    opening: [
+      turnNear(points, core[headArm.coreIndex]),
+      turnNear(points, core[tdArm.coreIndex]),
+    ],
   };
 }
 
@@ -1892,6 +2346,18 @@ export type FenceReport = {
   clearance: number;
   /** a well with no plan direction of its own; the cut came from its spread */
   degenerate: boolean;
+  /**
+   * Diagnostics of the SPLINE itself (the well's plan path), independent of the cut — so a
+   * sharp bend seen on a cut can be attributed to the trajectory rather than the run-out.
+   */
+  trace: {
+    /** sharp bends on the well's own plan path (real doglegs) */
+    sharpBends: number;
+    /** self-crossings in the plan trace */
+    loops: number;
+    /** the sharp regions, in scene XZ, for the debug overlay */
+    defects: FenceDefect[];
+  };
   extensions: {
     start: Vec2;
     end: Vec2;
@@ -1938,6 +2404,22 @@ export type WellboreFenceOptions = {
   runOutMargin?: number;
   /** how the run-outs continue. Default 'straight'. */
   extension?: FenceExtensionMode;
+  /**
+   * Plan angle the fence falls back to for a near-vertical well, in degrees (scene XZ,
+   * 0 = +X). Default {@link DEFAULT_FALLBACK_ANGLE}. A deviated well's trajectory overrides it.
+   */
+  fallbackAngle?: number;
+  /**
+   * metres a NON-defect cut vertex may be simplified away by. 0 (default) keeps the cut
+   * hugging real bends and only bridges defects; larger coarsens smooth stretches too.
+   */
+  simplify?: number;
+  /** arm-weighted sharp-edge threshold the cut is built and diagnosed against, in radians. Default 30°. */
+  sharpTurn?: number;
+  /** per-side arm cap for the sharp-edge test, in metres. Default 10. */
+  sharpArm?: number;
+  /** render-radius slack: the cut aims to clear the well by `margin - tolerance`, and the well is buried below it. Default 0.1. */
+  tolerance?: number;
   /** identifier carried into the report */
   wellbore?: string;
 };
@@ -1983,9 +2465,14 @@ export function buildWellboreFence(
   // ⚠️ Clearance is the MARGIN only — the room for a clear view of the well from the
   // cut. At margin 0 the cut follows the path exactly.
   const clearance = margin;
+  const tolerance = options.tolerance ?? MIN_WELL_RADIUS;
+  const sharpTurn = options.sharpTurn ?? CONSTRUCT_SHARP_TURN;
+  const sharpArm = options.sharpArm ?? CONSTRUCT_SHARP_ARM;
 
   mark = now();
-  const base = prepareFenceTrace(curve, samples);
+  const base = prepareFenceTrace(curve, samples, {
+    fallbackAngle: options.fallbackAngle,
+  });
   // The dense, simplified plan path off the 3D spline — the wellbore's true footprint,
   // not the straight lines between survey stations.
   const well = base.points;
@@ -2006,6 +2493,29 @@ export function buildWellboreFence(
   if (!(maxX > minX) || !(maxZ > minZ)) return null;
   const bounds: [number, number, number, number] = [minX, minZ, maxX, maxZ];
 
+  const cellSize = options.cellSize ?? fenceCellSize(bounds);
+  const sideOptions: FenceSideOptions = {
+    rings: options.rings,
+    bounds,
+    margin,
+    runOutMargin: options.runOutMargin,
+    // The clearance obstacle is the well itself (the spline, `base.points`).
+    well,
+    simplify: options.simplify,
+    sharpTurn,
+    sharpArm,
+    tolerance,
+  };
+
+  // ⭐⭐ CORES FIRST. Each side's core (offset+smoothed, no run-outs) is independent of the
+  // run-out bearings, so it is built up front and handed to `fenceExtensions` — the
+  // bearings are then chosen against the ACTUAL arms they will grow, and the same cores are
+  // reused to assemble the sides so scoring and building never diverge.
+  mark = now();
+  const plusCore = buildFenceCore(well, 1, margin, tolerance);
+  const minusCore = buildFenceCore(well, -1, margin, tolerance);
+  timings.curves = now() - mark;
+
   mark = now();
   const footprint =
     options.rings.length > 0 ? options.rings : [boundsRing(bounds)];
@@ -2019,25 +2529,25 @@ export function buildWellboreFence(
     bounds,
     outline: searchOutline,
     runOutMargin: options.runOutMargin,
+    margin,
+    spacing: sideOptions.spacing,
+    cores: { plus: plusCore, minus: minusCore },
+    // A near-vertical well has no bearing of its own — pull its two arms onto one axis.
+    nearVertical: base.degenerate,
     mode: options.extension,
   });
   timings.extensions = now() - mark;
 
-  const cellSize = options.cellSize ?? fenceCellSize(bounds);
-  const sideOptions: FenceSideOptions = {
-    rings: options.rings,
-    bounds,
-    margin,
-    runOutMargin: options.runOutMargin,
-    // The clearance obstacle is the well itself (the spline, `base.points`).
-    well,
-  };
-
   mark = now();
-  const plusCurve = buildFenceSideCurve(well, extensions, 1, sideOptions);
-  const minusCurve = buildFenceSideCurve(well, extensions, -1, sideOptions);
-  timings.curves = now() - mark;
-
+  const plusCurve = buildFenceSideCurve(well, extensions, 1, {
+    ...sideOptions,
+    core: plusCore,
+  });
+  const minusCurve = buildFenceSideCurve(well, extensions, -1, {
+    ...sideOptions,
+    core: minusCore,
+  });
+  timings.curves += now() - mark;
   mark = now();
   const probeAt = clearance + cellSize * 4;
   const buildSide = (sideCurve: FenceSideCurve): FenceSide | null => {
@@ -2107,15 +2617,12 @@ export function buildWellboreFence(
       return odd * 2 > refs.length;
     };
   const burialOf = (s: FenceSide): FenceBurial =>
-    fenceBurial(
-      s.curve.points,
-      well,
-      keptSideFor(s),
-      MIN_WELL_RADIUS,
-      clearance,
-    );
+    fenceBurial(s.curve.points, well, keptSideFor(s), tolerance, clearance);
 
   const degrees = (r: number) => (r * 180) / Math.PI;
+  // Diagnose the SPLINE itself (the well), independent of the cut, so a sharp bend can be
+  // attributed to the trajectory rather than the run-out.
+  const traceSharp = polylineSharpEdges(base.points, sharpTurn, sharpArm);
   const sideReport = (s: FenceSide, burial: FenceBurial): FenceSideReport => ({
     side: s.side,
     vertices: s.curve.points.length,
@@ -2128,9 +2635,14 @@ export function buildWellboreFence(
     burial: burial.worst,
     // A diagnostic window, not a target: how tightly the cut hugs the well.
     minRadius: polylineMinRadius(s.curve.points, 300),
-    diagnosis: diagnoseFenceSide(s.curve.core, base.points, s.side, {
-      tolerance: MIN_WELL_RADIUS,
+    // ⭐ Diagnose the GENERATED cut (run-outs included), so a tight run-out junction is
+    // seen; `core` is passed only for the bridged metric.
+    diagnosis: diagnoseFenceSide(s.curve.points, base.points, s.side, {
+      tolerance,
       margin: clearance,
+      sharpTurn,
+      sharpArm,
+      core: s.curve.core,
       burial: burial.worst,
       burialDefects: burial.runs,
     }),
@@ -2166,6 +2678,13 @@ export function buildWellboreFence(
     },
     clearance,
     degenerate: base.degenerate,
+    // Diagnose the SPLINE itself (the well), independent of the cut, so a sharp bend can
+    // be attributed to the trajectory rather than the run-out.
+    trace: {
+      sharpBends: traceSharp.length,
+      loops: countPolylineLoops(base.points),
+      defects: traceSharp.map(points => ({ kind: 'sharp' as const, points })),
+    },
     extensions: {
       start: extensions.start,
       end: extensions.end,
@@ -2310,10 +2829,10 @@ export function fenceBurial(
 export type FenceDiagnosisOptions = {
   /** metres of well allowed on the kept side before it counts as buried. Default {@link MIN_WELL_RADIUS}. */
   tolerance?: number;
-  /** turn a corner must exceed to be scored as sharp, in radians. Default 60°. */
+  /** arm-weighted relative turn that is a sharp edge at {@link FenceDiagnosisOptions.sharpArm}, in radians. Default 30°. */
   sharpTurn?: number;
-  /** both arms of a sharp corner must be at least this long, in metres. Default 50. */
-  sharpSpan?: number;
+  /** per-side arm cap for the sharp-edge test, in metres. Default 10. */
+  sharpArm?: number;
   /** turn a near-reversal must exceed to be scored as a pinch, in radians. Default 150°. */
   pinchTurn?: number;
   /** both arms of a pinch must be at least this long, in metres. Default 25. */
@@ -2324,6 +2843,12 @@ export type FenceDiagnosisOptions = {
   bridgedLimit?: number;
   /** the clearance the cut was offset by, in metres — bridging is measured beyond it. Default 0. */
   margin?: number;
+  /**
+   * The well-following core (no run-outs), for the bridged metric only. The run-outs
+   * leave the well by design, so bridging is measured on the core; corners are scored on
+   * the generated curve passed as the first argument. Defaults to that curve.
+   */
+  core?: Vec2[];
   /**
    * Worst kept-side burial in metres, measured ROBUSTLY by the caller from the whole
    * cut border (see {@link fenceBurial}). The diagnosis never signs geometry itself;
@@ -2387,7 +2912,11 @@ export type FenceSideDiagnosis = {
  * sharp turns, pinches, wiggle and loops are the undesirable plan shapes. `bridged`
  * is reported but never a fault, since one side of every bend is expected to bridge.
  *
- * @param core the side's followed path, WITHOUT run-outs
+ * ⚠️ Corners (sharp/pinch/wiggle) are scored on the GENERATED cut passed as `curve` —
+ * run-outs and all — so a tight run-out junction is seen. `bridged` is measured on the
+ * well-following `core` (via options), since the run-outs leave the well by design.
+ *
+ * @param curve the finished, generated side-curve (with run-outs) — what the shader cuts by
  * @param well the plan trace the cut is meant to reveal
  * @param side which half this curve removes
  * @param options see {@link FenceDiagnosisOptions}
@@ -2395,19 +2924,21 @@ export type FenceSideDiagnosis = {
  * @group Geometries
  */
 export function diagnoseFenceSide(
-  core: Vec2[],
+  curve: Vec2[],
   well: Vec2[],
   side: 1 | -1,
   options: FenceDiagnosisOptions = {},
 ): FenceSideDiagnosis {
   const tolerance = options.tolerance ?? MIN_WELL_RADIUS;
-  const sharpTurn = options.sharpTurn ?? DIAGNOSIS_SHARP_TURN;
-  const sharpSpan = options.sharpSpan ?? DIAGNOSIS_SHARP_SPAN;
+  const sharpTurn = options.sharpTurn ?? CONSTRUCT_SHARP_TURN;
+  const sharpArm = options.sharpArm ?? CONSTRUCT_SHARP_ARM;
   const pinchTurn = options.pinchTurn ?? DIAGNOSIS_PINCH_TURN;
   const pinchArm = options.pinchArm ?? DIAGNOSIS_PINCH_ARM;
   const wiggleSpan = options.wiggleSpan ?? DIAGNOSIS_WIGGLE_SPAN;
   const bridgedLimit = options.bridgedLimit ?? DIAGNOSIS_BRIDGED_LIMIT;
   const margin = options.margin ?? 0;
+  // The well-following part, for the bridged metric only (run-outs leave the well by design).
+  const core = options.core ?? curve;
 
   // ⭐⭐ Burial is measured by the caller against the whole cut border, margin-aware, and
   // handed in — the diagnosis only consumes it, so it never signs geometry from a single
@@ -2419,19 +2950,27 @@ export function diagnoseFenceSide(
     if (run.length > 0) defects.push({ kind: 'burial', points: run });
   }
 
-  // Corners: sharp turns on two long segments, near-reversal pinches, and wiggle —
-  // two real opposite turns packed closer than `wiggleSpan` along the curve.
-  let sharpTurns = 0;
+  // ⭐ Sharp: the arm-weighted edges of the WHOLE generated curve — the SAME rule the cut
+  // was built against, so a residual the construction could not bridge shows here and not
+  // where the construction already avoided one.
+  const sharpRegions = polylineSharpEdges(curve, sharpTurn, sharpArm);
+  const sharpTurns = sharpRegions.length;
+  for (const region of sharpRegions) {
+    defects.push({ kind: 'sharp', points: region });
+  }
+
+  // Pinch (a single-vertex near-reversal) and wiggle (two real opposite turns packed
+  // closer than `wiggleSpan`), scored on the generated curve.
   let pinches = 0;
   let wiggle = 0;
   let lastSign = 0;
   let lastArc = -Infinity;
   let arc = 0;
-  for (let i = 1; i + 1 < core.length; i++) {
-    const ax = core[i][0] - core[i - 1][0];
-    const az = core[i][1] - core[i - 1][1];
-    const bx = core[i + 1][0] - core[i][0];
-    const bz = core[i + 1][1] - core[i][1];
+  for (let i = 1; i + 1 < curve.length; i++) {
+    const ax = curve[i][0] - curve[i - 1][0];
+    const az = curve[i][1] - curve[i - 1][1];
+    const bx = curve[i + 1][0] - curve[i][0];
+    const bz = curve[i + 1][1] - curve[i][1];
     const la = Math.hypot(ax, az);
     const lb = Math.hypot(bx, bz);
     arc += la;
@@ -2439,21 +2978,16 @@ export function diagnoseFenceSide(
     const cos = (ax * bx + az * bz) / (la * lb);
     const turn = Math.acos(cos < -1 ? -1 : cos > 1 ? 1 : cos);
     const corner: Vec2[] = [
-      [core[i - 1][0], core[i - 1][1]],
-      [core[i][0], core[i][1]],
-      [core[i + 1][0], core[i + 1][1]],
+      [curve[i - 1][0], curve[i - 1][1]],
+      [curve[i][0], curve[i][1]],
+      [curve[i + 1][0], curve[i + 1][1]],
     ];
-    if (turn >= sharpTurn && la >= sharpSpan && lb >= sharpSpan) {
-      sharpTurns++;
-      defects.push({ kind: 'sharp', points: corner });
-    }
     if (turn >= pinchTurn && la >= pinchArm && lb >= pinchArm) {
       pinches++;
       defects.push({ kind: 'pinch', points: corner });
     }
-    // Wiggle: a real turn (half the sharp threshold) that reverses the previous real
-    // turn within a short span.
-    if (turn >= sharpTurn * 0.5) {
+    // Wiggle: a real turn that reverses the previous real turn within a short span.
+    if (turn >= DIAGNOSIS_WIGGLE_TURN) {
       const sign = ax * bz - az * bx > 0 ? 1 : -1;
       if (lastSign !== 0 && sign !== lastSign && arc - lastArc <= wiggleSpan) {
         wiggle++;
@@ -2496,9 +3030,7 @@ export function diagnoseFenceSide(
   if (loops > 0)
     issues.push(`${loops} loop${loops > 1 ? 's' : ''} in the curve`);
   if (sharpTurns > 0) {
-    issues.push(
-      `${sharpTurns} sharp turn${sharpTurns > 1 ? 's' : ''} on long segments`,
-    );
+    issues.push(`${sharpTurns} sharp bend${sharpTurns > 1 ? 's' : ''}`);
   }
   if (pinches > 0) issues.push(`${pinches} pinch${pinches > 1 ? 'es' : ''}`);
   if (wiggle > 0) {

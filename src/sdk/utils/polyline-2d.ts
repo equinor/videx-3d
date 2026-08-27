@@ -654,6 +654,9 @@ export function offsetPolyline2DDissolved(
  * @param points an open polyline
  * @param radius metres a vertex may travel from its original position
  * @param passes smoothing iterations. Default 12.
+ * @param clearOf keeps every vertex at least `minClearance` from `well`, projecting a
+ *   vertex the smoothing pulled inside that back out — so smoothing cannot erode the
+ *   clearance the offset established.
  *
  * @group Utils
  */
@@ -661,6 +664,7 @@ export function smoothPolyline2DWithinDisc(
   points: Vec2[],
   radius: number,
   passes = 12,
+  clearOf?: { well: Vec2[]; minClearance: number },
 ): Vec2[] {
   if (points.length < 3 || !(radius > 0)) {
     return points.map(p => [p[0], p[1]] as Vec2);
@@ -668,6 +672,7 @@ export function smoothPolyline2DWithinDisc(
   const origin = points.map(p => [p[0], p[1]] as Vec2);
   let current = points.map(p => [p[0], p[1]] as Vec2);
   const r2 = radius * radius;
+  const hit: PolylineHit = { point: [0, 0], distance: 0, along: 0 };
   for (let pass = 0; pass < passes; pass++) {
     const next = current.map(p => [p[0], p[1]] as Vec2);
     for (let i = 1; i + 1 < current.length; i++) {
@@ -687,12 +692,60 @@ export function smoothPolyline2DWithinDisc(
         x = origin[i][0] + dx * s;
         z = origin[i][1] + dz * s;
       }
+      // ⭐ Clearance floor: if smoothing pulled this vertex inside the margin, push it
+      // straight back out to the margin. One-sided — it can only move AWAY from the well.
+      if (clearOf) {
+        const h = nearestOnPolyline(clearOf.well, x, z, hit);
+        if (h && h.distance < clearOf.minClearance && h.distance > 1e-6) {
+          const s = clearOf.minClearance / h.distance;
+          x = h.point[0] + (x - h.point[0]) * s;
+          z = h.point[1] + (z - h.point[1]) * s;
+        }
+      }
       next[i][0] = x;
       next[i][1] = z;
     }
     current = next;
   }
   return current;
+}
+
+/**
+ * Sample a cubic Bézier as a polyline of `samples + 1` points, inclusive of both
+ * endpoints.
+ *
+ * ⭐ Used to join a fence's followed cut to its run-out with an EXACT G1 turn: with
+ * `p1 = p0 + tangentOut·k` and `p2 = p3 − tangentIn·k` the curve leaves `p0` along
+ * `tangentOut` and arrives at `p3` along `tangentIn`, so the junction has no corner no
+ * matter how the two tangents relate. An interpolating spline (Catmull-Rom) cannot
+ * pin both end tangents without phantom points; a Bézier states them directly.
+ *
+ * @param samples segments to divide the curve into; fixed by the caller, so bounded
+ *
+ * @group Utils
+ */
+export function cubicBezier2D(
+  p0: Vec2,
+  p1: Vec2,
+  p2: Vec2,
+  p3: Vec2,
+  samples: number,
+): Vec2[] {
+  const n = Math.max(1, Math.floor(samples));
+  const out: Vec2[] = new Array(n + 1);
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    const u = 1 - t;
+    const a = u * u * u;
+    const b = 3 * u * u * t;
+    const c = 3 * u * t * t;
+    const d = t * t * t;
+    out[i] = [
+      a * p0[0] + b * p1[0] + c * p2[0] + d * p3[0],
+      a * p0[1] + b * p1[1] + c * p2[1] + d * p3[1],
+    ];
+  }
+  return out;
 }
 
 /**
@@ -1070,6 +1123,270 @@ export function polylineMaxTurn(points: Vec2[], window: number): number {
     }
   }
   return worst;
+}
+
+/**
+ * The runs of vertices where a polyline turns more than `turn` radians across a `window`
+ * of arc CENTRED on the vertex — the genuinely tight bends a smooth cut should not have.
+ *
+ * ⭐⭐ Local CURVATURE, measured with the window straddling each vertex, so the flag sits
+ * on the bend itself. Accumulating forward from an arbitrary start instead makes the region
+ * bleed along a gentle continuation and fire wherever the curve happens to keep turning —
+ * a per-vertex centred window localises to the actual corner. A tight bend built from many
+ * short segments is still caught, because it is the turn over the window that counts, not
+ * the turn between two adjacent segments.
+ *
+ * ⚠️ The heading change is the SIGNED net across the window, so an S that turns one way then
+ * back (a wiggle) is not a sharp bend; only sustained one-way curvature is.
+ *
+ * @param points an open polyline
+ * @param turn heading change across the window that counts as sharp, in radians
+ * @param window arc length the turn is measured over, in metres
+ *
+ * @group Utils
+ */
+export function polylineSharpRegions(
+  points: Vec2[],
+  turn: number,
+  window: number,
+): Vec2[][] {
+  const n = points.length;
+  if (n < 3 || !(window > 0)) return [];
+  const arc = polylineArcLengths(points);
+  const heading = polylineHeadings2D(points);
+  const half = window / 2;
+  const sharp = new Array<boolean>(n).fill(false);
+  // Two pointers: the segment straddling `window/2` before and after each vertex. Both
+  // advance monotonically as the vertex walks forward, so this stays linear.
+  let a = 0;
+  let b = 0;
+  for (let k = 1; k < n - 1; k++) {
+    const lo = arc[k] - half;
+    const hi = arc[k] + half;
+    while (a < heading.length - 1 && arc[a + 1] <= lo) a++;
+    while (b < heading.length - 1 && arc[b + 1] <= hi) b++;
+    if (Math.abs(heading[b] - heading[a]) >= turn) sharp[k] = true;
+  }
+  const regions: Vec2[][] = [];
+  let k = 1;
+  while (k < n - 1) {
+    if (!sharp[k]) {
+      k++;
+      continue;
+    }
+    let e = k;
+    while (e + 1 < n - 1 && sharp[e + 1]) e++;
+    const region: Vec2[] = [];
+    for (let m = k; m <= e; m++) region.push([points[m][0], points[m][1]]);
+    regions.push(region);
+    k = e + 1;
+  }
+  return regions;
+}
+
+/**
+ * The runs of vertices that are SHARP EDGES: a large relative turn between two segments,
+ * weighted by the length of its arms.
+ *
+ * ⭐ On a polyline a sharp ANGLE is not always a sharp EDGE. A big turn between two LONG
+ * segments is a real corner; the same turn between two SHORT segments is just a densely
+ * sampled curve, not an edge. So a corner's strength is its relative turn scaled by arm
+ * length — but each arm is CAPPED at `arm` first, so a very long straight run (a run-out to
+ * the tip) cannot let a slight turn read as an edge, and the two capped arms are AVERAGED, so
+ * a corner needs length on BOTH sides. A right-angle relative turn is always an edge.
+ *
+ * @param points an open polyline
+ * @param angle the relative turn that is sharp when both arms reach `arm`, in radians
+ * @param arm the arm length each side is capped at, in metres; the threshold scales with it,
+ *   so a LARGER value is STRICTER: a turn then needs longer arms or a bigger angle to flag
+ *
+ * @group Utils
+ */
+export function polylineSharpEdges(
+  points: Vec2[],
+  angle: number,
+  arm: number,
+): Vec2[][] {
+  const n = points.length;
+  if (n < 3) return [];
+  const HARD_TURN = Math.PI / 2;
+  const cap = Math.max(1e-6, arm);
+  const budget = Math.max(1e-6, angle) * cap;
+  const sharp = new Array<boolean>(n).fill(false);
+  for (let k = 1; k < n - 1; k++) {
+    const ax = points[k][0] - points[k - 1][0];
+    const az = points[k][1] - points[k - 1][1];
+    const bx = points[k + 1][0] - points[k][0];
+    const bz = points[k + 1][1] - points[k][1];
+    const la = Math.hypot(ax, az);
+    const lb = Math.hypot(bx, bz);
+    if (la < 1e-9 || lb < 1e-9) continue;
+    const cos = (ax * bx + az * bz) / (la * lb);
+    const turn = Math.acos(cos < -1 ? -1 : cos > 1 ? 1 : cos);
+    // Each arm counts for at most `cap`, then the two are averaged, so neither a very long
+    // straight nor a single long arm alone can make a turn read as an edge.
+    const effArm = (Math.min(la, cap) + Math.min(lb, cap)) / 2;
+    if (turn >= HARD_TURN || turn * effArm > budget) sharp[k] = true;
+  }
+  const regions: Vec2[][] = [];
+  let k = 1;
+  while (k < n - 1) {
+    if (!sharp[k]) {
+      k++;
+      continue;
+    }
+    let e = k;
+    while (e + 1 < n - 1 && sharp[e + 1]) e++;
+    const region: Vec2[] = [];
+    for (let m = k; m <= e; m++) region.push([points[m][0], points[m][1]]);
+    regions.push(region);
+    k = e + 1;
+  }
+  return regions;
+}
+
+/** The relative turn at `b` (between a→b and b→c), weighted by capped, averaged arms. */
+function armWeightedSharp(
+  a: Vec2,
+  b: Vec2,
+  c: Vec2,
+  budget: number,
+  cap: number,
+): boolean {
+  const ax = b[0] - a[0];
+  const az = b[1] - a[1];
+  const bx = c[0] - b[0];
+  const bz = c[1] - b[1];
+  const la = Math.hypot(ax, az);
+  const lb = Math.hypot(bx, bz);
+  if (la < 1e-9 || lb < 1e-9) return false;
+  const cos = (ax * bx + az * bz) / (la * lb);
+  const turn = Math.acos(cos < -1 ? -1 : cos > 1 ? 1 : cos);
+  if (turn >= Math.PI / 2) return true;
+  const effArm = (Math.min(la, cap) + Math.min(lb, cap)) / 2;
+  return turn * effArm > budget;
+}
+
+/** Distance from point `p` to segment `a`–`b`. */
+function distToSegment(p: Vec2, a: Vec2, b: Vec2): number {
+  const ex = b[0] - a[0];
+  const ez = b[1] - a[1];
+  const len2 = ex * ex + ez * ez;
+  let t = 0;
+  if (len2 > 0) {
+    t = ((p[0] - a[0]) * ex + (p[1] - a[1]) * ez) / len2;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+  }
+  const qx = a[0] + ex * t;
+  const qz = a[1] + ez * t;
+  return Math.hypot(p[0] - qx, p[1] - qz);
+}
+
+/** Whether segment `a`–`b` stays at least `minClearance` from every vertex of `well`. */
+function segmentClearsWell(
+  a: Vec2,
+  b: Vec2,
+  well: Vec2[],
+  minClearance: number,
+): boolean {
+  const loX = Math.min(a[0], b[0]) - minClearance;
+  const hiX = Math.max(a[0], b[0]) + minClearance;
+  const loZ = Math.min(a[1], b[1]) - minClearance;
+  const hiZ = Math.max(a[1], b[1]) + minClearance;
+  for (let i = 0; i < well.length; i++) {
+    const w = well[i];
+    if (w[0] < loX || w[0] > hiX || w[1] < loZ || w[1] > hiZ) continue;
+    if (distToSegment(w, a, b) < minClearance) return false;
+  }
+  return true;
+}
+
+/**
+ * Simplify a cut curve as far as it can go while keeping every constraint the cut was
+ * built to — clearance, smoothness and simplicity — so coarsening cannot undo them.
+ *
+ * ⭐⭐ A single greedy that JUMPS from each anchor to the furthest point ahead whose chord
+ * (1) stays at least `minClearance` from the well — a longer segment only ever leaves a
+ * LARGER gap, never a smaller one — and (2) is not a sharp edge at its new joints by the
+ * arm-weighted rule ({@link polylineSharpEdges}). A skipped vertex is dropped only if it is
+ * ALREADY sharp — a loop, zig-zag or pinch worth bridging across — or lies within
+ * `maxDeviation` of the chord. So at `maxDeviation = 0` the cut keeps its dense following of
+ * a real bend but bridges the defects, and a larger value coarsens the smooth stretches too.
+ *
+ * ⚠️ It can BACKTRACK across a whole span, not just drop one vertex, which is what a loop or
+ * a run of zig-zags needs. A final {@link removePolylineLoops} guards against any chord that
+ * a bridge left crossing another part of the curve.
+ *
+ * @param points the cut curve, in scene XZ
+ * @param well the trajectory the cut must stay clear of
+ * @param minClearance metres the cut must stay off the well
+ * @param maxDeviation metres a NON-defect vertex may be simplified away by (0 = tightest)
+ * @param sharpAngle the arm-weighted sharp turn threshold, in radians
+ * @param sharpArm the arm length each side is capped at, in metres
+ *
+ * @group Utils
+ */
+export function simplifyPolylineClearOf(
+  points: Vec2[],
+  well: Vec2[],
+  minClearance: number,
+  maxDeviation: number,
+  sharpAngle: number,
+  sharpArm: number,
+): Vec2[] {
+  const n = points.length;
+  if (n < 3) return points.map(p => [p[0], p[1]] as Vec2);
+  const cap = Math.max(1e-6, sharpArm);
+  const budget = Math.max(1e-6, sharpAngle) * cap;
+  // A vertex already sharp on the input is a defect (loop/zig-zag/pinch) — bridgeable even
+  // beyond `maxDeviation`.
+  const defect = new Array<boolean>(n).fill(false);
+  for (let k = 1; k < n - 1; k++) {
+    defect[k] = armWeightedSharp(
+      points[k - 1],
+      points[k],
+      points[k + 1],
+      budget,
+      cap,
+    );
+  }
+  const out: Vec2[] = [[points[0][0], points[0][1]]];
+  let i = 0;
+  // Bounded so one anchor cannot scan the whole (possibly kilometre-long) curve.
+  const MAX_LOOKAHEAD = 200;
+  while (i < n - 1) {
+    const prev = out.length >= 2 ? out[out.length - 2] : null;
+    let best = i + 1;
+    const limit = Math.min(n - 1, i + MAX_LOOKAHEAD);
+    for (let j = i + 2; j <= limit; j++) {
+      // (1) Clearance: once the chord touches the well it only gets worse locally — stop.
+      if (!segmentClearsWell(points[i], points[j], well, minClearance)) break;
+      // (2) Smoothness: the new joints (at the anchor and at j) must not be sharp.
+      if (prev && armWeightedSharp(prev, points[i], points[j], budget, cap))
+        continue;
+      if (
+        j + 1 < n &&
+        armWeightedSharp(points[i], points[j], points[j + 1], budget, cap)
+      ) {
+        continue;
+      }
+      // (3) Skipped vertices: a defect may go; a good vertex only within maxDeviation.
+      let ok = true;
+      for (let k = i + 1; k < j; k++) {
+        if (
+          !defect[k] &&
+          distToSegment(points[k], points[i], points[j]) > maxDeviation
+        ) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) best = j;
+    }
+    out.push([points[best][0], points[best][1]]);
+    i = best;
+  }
+  return removePolylineLoops(out);
 }
 
 /**

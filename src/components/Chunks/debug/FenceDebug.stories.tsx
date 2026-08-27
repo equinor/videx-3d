@@ -1,15 +1,18 @@
 import { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useMemo, useState } from 'react';
+import { useArgs } from 'storybook/preview-api';
 import { createWellboreOutline, FenceDefect, Vec2, Vec3 } from '../../../sdk';
 import { CRS, getProjectionDefFromUtmZone } from '../../../sdk/projection/crs';
 import storyArgs from '../../../storybook/story-args.json';
 import {
   debugOutlineRings,
   FenceFocus,
+  FenceHealthLists,
   FenceHud,
   FencePlanView,
   useFenceDebugHandle,
   useFenceDebugModel,
+  useFenceHealth,
 } from './fence-debug';
 
 /**
@@ -34,6 +37,9 @@ const WELLBORES = Object.values(
   storyArgs.wellboreOptions as Record<string, string>,
 ).sort((a, b) => a.localeCompare(b));
 
+/** Stable empty headers so the health effect does not re-run before data loads. */
+const NO_HEADERS: Record<string, { name?: string }> = {};
+
 function useVolve() {
   const [data, setData] = useState<{
     headers: Record<string, Header>;
@@ -53,15 +59,21 @@ function useVolve() {
 type Props = {
   wellbore: string;
   margin: number;
+  simplify: number;
   focus: FenceFocus;
   focusRadius: number;
   curvePos: number;
+  sharpTurn: number;
+  sharpArm: number;
+  tolerance: number;
   showSurvey: boolean;
   showBase: boolean;
   showLeft: boolean;
   showRight: boolean;
   size: number;
   defectKinds: FenceDefect['kind'][];
+  /** provided by the story render, not a control — switches the selected wellbore */
+  onSelectWellbore?: (name: string) => void;
 };
 
 const FenceDebug = (props: Props) => {
@@ -116,9 +128,27 @@ const FenceDebug = (props: Props) => {
     return trajectories.get(byName ?? props.wellbore) ?? null;
   }, [data, trajectories, props.wellbore]);
 
-  const model = useFenceDebugModel(selected, rings, props.margin);
+  const model = useFenceDebugModel(
+    selected,
+    rings,
+    props.margin,
+    props.sharpTurn,
+    props.sharpArm,
+    props.tolerance,
+    props.simplify,
+  );
   useFenceDebugHandle(model);
 
+  const health = useFenceHealth(
+    trajectories,
+    data?.headers ?? NO_HEADERS,
+    rings,
+    props.margin,
+    props.sharpTurn,
+    props.sharpArm,
+    props.tolerance,
+    props.simplify,
+  );
   return (
     <div
       style={{
@@ -143,6 +173,8 @@ const FenceDebug = (props: Props) => {
         focus={props.focus}
         focusRadius={props.focusRadius}
         curvePos={props.curvePos}
+        sharpTurn={props.sharpTurn}
+        sharpArm={props.sharpArm}
       />
       <div>
         <div style={{ marginBottom: 8, opacity: 0.6 }}>
@@ -214,6 +246,11 @@ const FenceDebug = (props: Props) => {
           }}
         />
       </div>
+      <FenceHealthLists
+        health={health}
+        selected={props.wellbore}
+        onSelect={props.onSelectWellbore ?? (() => {})}
+      />
     </div>
   );
 };
@@ -224,9 +261,13 @@ export default {
   args: {
     wellbore: 'NO 15/9-F-12',
     margin: 0,
+    simplify: 0,
     focus: 'fit',
     focusRadius: 600,
     curvePos: 0.5,
+    sharpTurn: 30,
+    sharpArm: 10,
+    tolerance: 0.1,
     showSurvey: false,
     showBase: true,
     showLeft: true,
@@ -248,17 +289,23 @@ export default {
         'Metres of hard clearance baked into each side. ⭐ Watch the two side curves separate by twice this — the corridor between them is what both views remove, and it is where casings get room to be drawn.',
       table: { category: 'Fence' },
     },
+    simplify: {
+      control: { type: 'range', min: 0, max: 10, step: 0.5 },
+      description:
+        'Metres a NON-defect cut vertex may be simplified (chorded) away by. 0 keeps the cut hugging every real bend and only bridges defects (loops, zig-zags, pinches); larger coarsens the smooth stretches too. A longer segment only ever leaves a LARGER clearance gap, never a smaller one.',
+      table: { category: 'Fence' },
+    },
     focus: {
       control: { type: 'inline-radio' },
-      options: ['fit', 'head', 'td', 'curvepos'],
+      options: ['fit', 'wellbore', 'head', 'td', 'curvepos'],
       description:
-        'What to frame. `fit` shows the whole trajectory; `head`/`td` centre on the ends; `curvepos` centres on an EXACT position along the spline set by `curvePos`. Everything but `fit` uses `focusRadius` for the zoom window.',
+        'What to frame. `fit` shows the WHOLE fence including its run-outs; `wellbore` fits just the trajectory (run-outs off-screen) for tuning the path; `head`/`td` centre on the ends; `curvepos` centres on an EXACT position along the spline set by `curvePos`. `head`/`td`/`curvepos` use `focusRadius` for the zoom window.',
       table: { category: 'View' },
     },
     focusRadius: {
       control: { type: 'range', min: 1, max: 3000, step: 1 },
       description:
-        'Half the width of the framed window, in metres. Ignored when focus is `fit`.',
+        'Half the width of the framed window, in metres. Ignored when focus is `fit` or `wellbore`.',
       table: { category: 'View' },
     },
     curvePos: {
@@ -296,7 +343,36 @@ export default {
         'Which defect classes to overlay — toggle each on/off to isolate one class. burial (red) sits on the WELL wherever the cut leaves it buried; sharp (orange) / pinch (pink) / wiggle (yellow) sit on the offending cut corner.',
       table: { category: 'Defects' },
     },
+    sharpTurn: {
+      control: { type: 'range', min: 5, max: 90, step: 1 },
+      description:
+        'Sharp-edge threshold: the RELATIVE turn (DEGREES) between two segments that counts as a sharp edge at the reference arm length `sharpArm`. The turn is weighted by the LONGER arm, so a hard angle between long straights flags while the same angle between short segments (a densely sampled curve) does not. A 90° relative turn is always flagged. Recomputed live. Cut = orange, spline doglegs = cyan.',
+      table: { category: 'Defects' },
+    },
+    sharpArm: {
+      control: { type: 'range', min: 2, max: 60, step: 1 },
+      description:
+        'Arm length (metres) each side is CAPPED at for the sharp-edge test, then the two capped arms are averaged. Caps a very long straight (a run-out) so a slight turn on it is not an edge, and needs length on BOTH sides. LARGER = stricter (turns need longer arms or a bigger angle); SMALLER flags slighter turns.',
+      table: { category: 'Defects' },
+    },
+    tolerance: {
+      control: { type: 'range', min: 0, max: 2, step: 0.01 },
+      description:
+        'Render-radius slack, in metres, used for BOTH construction and diagnostics. The cut is built to clear the well by `margin − tolerance`, and the well counts as BURIED — highlighted, and a problem in the lists — wherever it comes closer than that. Larger = more slack. The same value the burial highlight and the health split use.',
+      table: { category: 'Defects' },
+    },
+    onSelectWellbore: { table: { disable: true }, control: false },
   },
 } satisfies Meta<typeof FenceDebug>;
 
-export const Default: StoryObj<typeof FenceDebug> = {};
+export const Default: StoryObj<typeof FenceDebug> = {
+  render: args => {
+    const [, updateArgs] = useArgs();
+    return (
+      <FenceDebug
+        {...args}
+        onSelectWellbore={name => updateArgs({ wellbore: name })}
+      />
+    );
+  },
+};

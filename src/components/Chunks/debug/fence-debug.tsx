@@ -9,6 +9,7 @@ import {
   getSplineCurve,
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
+  polylineSharpEdges,
   Vec2,
   Vec3,
   WellboreFence,
@@ -51,12 +52,23 @@ export function useFenceDebugModel(
   trajectory: Vec3[] | null,
   rings: Vec2[][],
   margin: number,
+  sharpTurn: number,
+  sharpArm: number,
+  tolerance: number,
+  simplify: number,
 ): FenceDebugModel | null {
   return useMemo(() => {
     if (!trajectory || trajectory.length < 3 || rings.length === 0) return null;
     const curve = getSplineCurve(trajectory);
     if (!curve) return null;
-    const fence = buildWellboreFence(curve, { rings, margin });
+    const fence = buildWellboreFence(curve, {
+      rings,
+      margin,
+      sharpTurn: (Math.max(1, sharpTurn) * Math.PI) / 180,
+      sharpArm: Math.max(1, sharpArm),
+      tolerance,
+      simplify,
+    });
     if (!fence) return null;
     return {
       fence,
@@ -65,7 +77,164 @@ export function useFenceDebugModel(
       survey: trajectory.map(p => [p[0], p[2]] as Vec2),
       curve,
     };
-  }, [trajectory, rings, margin]);
+  }, [trajectory, rings, margin, sharpTurn, sharpArm, tolerance, simplify]);
+}
+
+/** One well's health on the current fence. @see useFenceHealth */
+export type WellHealth = {
+  id: string;
+  name: string;
+  degenerate: boolean;
+  /** worst signed depth of the two sides, in metres (positive = well left on the kept side) */
+  burial: number;
+  /** true when the well is short of the margin clearance by more than the tolerance */
+  buried: boolean;
+  /** sharp-edge regions on the two cuts, by the arm-weighted rule */
+  sharp: number;
+};
+
+/** The per-well facts a build settles that the split does NOT recompute. */
+type WellBuild = Omit<WellHealth, 'sharp' | 'buried'> & {
+  plus: Vec2[];
+  minus: Vec2[];
+};
+
+/**
+ * Build a fence for EVERY well and record what its health turns on: the worst burial.
+ * Heavy — one fence per well, built with the SAME sharp and tolerance the diagnostics
+ * use, so a highlighted defect is one the construction actually failed to avoid.
+ */
+export function computeFenceHealth(
+  trajectories: Map<string, Vec3[]>,
+  headers: Record<string, { name?: string }>,
+  rings: Vec2[][],
+  margin: number,
+  sharpTurn: number,
+  sharpArm: number,
+  tolerance: number,
+  simplify: number,
+): WellBuild[] {
+  const out: WellBuild[] = [];
+  for (const [id, trajectory] of trajectories) {
+    if (trajectory.length < 3) continue;
+    const curve = getSplineCurve(trajectory);
+    if (!curve) continue;
+    const fence = buildWellboreFence(curve, {
+      rings,
+      margin,
+      sharpTurn: (Math.max(1, sharpTurn) * Math.PI) / 180,
+      sharpArm: Math.max(1, sharpArm),
+      tolerance,
+      simplify,
+    });
+    if (!fence) continue;
+    const plus = fence.plus.curve.points;
+    const minus = fence.minus.curve.points;
+    out.push({
+      id,
+      name: headers[id]?.name ?? id,
+      degenerate: fence.base.degenerate,
+      burial: Math.max(
+        fence.report.sides.plus.burial,
+        fence.report.sides.minus.burial,
+      ),
+      plus,
+      minus,
+    });
+  }
+  return out;
+}
+
+/** The two lists the debug view links to. @see useFenceHealth */
+export type FenceHealth = {
+  healthy: WellHealth[];
+  problem: WellHealth[];
+  /** true while the per-well builds are still running */
+  pending: boolean;
+};
+
+/**
+ * Split every well into HEALTHY vs PROBLEM (short of the margin clearance, or a sharp
+ * turn) on the REAL cut.
+ *
+ * ⭐ The heavy per-well build runs in an effect off the render path, keyed on every param
+ * that shapes the cut (margin, sharp, tolerance) so it stays interactive; the split is a
+ * memo over the built curves. Burial is the SAME margin-relative measure the overlay
+ * highlights and the sharp test the SAME {@link polylineSharpEdges} rule — and the cut was
+ * BUILT against both — so a problem here is exactly what the story highlights.
+ */
+export function useFenceHealth(
+  trajectories: Map<string, Vec3[]> | null,
+  headers: Record<string, { name?: string }>,
+  rings: Vec2[][],
+  margin: number,
+  sharpTurn: number,
+  sharpArm: number,
+  tolerance: number,
+  simplify: number,
+): FenceHealth {
+  const [builds, setBuilds] = useState<WellBuild[] | null>(null);
+  useEffect(() => {
+    if (!trajectories || rings.length === 0) {
+      setBuilds(null);
+      return;
+    }
+    // ⭐ Debounced ~1 s: every param here reshapes all 26 cuts, so a slider drag would
+    // otherwise rebuild the whole field on each tick. The cleanup cancels the pending run,
+    // and the previous lists stay on screen until the new build lands (no flicker).
+    let cancelled = false;
+    const handle = setTimeout(() => {
+      const result = computeFenceHealth(
+        trajectories,
+        headers,
+        rings,
+        margin,
+        sharpTurn,
+        sharpArm,
+        tolerance,
+        simplify,
+      );
+      if (!cancelled) setBuilds(result);
+    }, 1000);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [
+    trajectories,
+    headers,
+    rings,
+    margin,
+    sharpTurn,
+    sharpArm,
+    tolerance,
+    simplify,
+  ]);
+
+  return useMemo(() => {
+    if (!builds) return { healthy: [], problem: [], pending: true };
+    const turn = (Math.max(1, sharpTurn) * Math.PI) / 180;
+    const arm = Math.max(1, sharpArm);
+    // The well is short of the margin when its worst signed depth exceeds tolerance - margin.
+    const buriedFloor = tolerance - margin;
+    const rows: WellHealth[] = builds.map(b => ({
+      id: b.id,
+      name: b.name,
+      degenerate: b.degenerate,
+      burial: b.burial,
+      buried: b.burial > buriedFloor,
+      sharp:
+        polylineSharpEdges(b.plus, turn, arm).length +
+        polylineSharpEdges(b.minus, turn, arm).length,
+    }));
+    const isProblem = (r: WellHealth) => r.buried || r.sharp > 0;
+    // Worst (least cleared) first — the well's max signed depth, high to low.
+    const problem = rows.filter(isProblem).sort((a, b) => b.burial - a.burial);
+    const healthy = rows
+      .filter(r => !isProblem(r))
+      .sort((a, b) => b.burial - a.burial);
+    return { healthy, problem, pending: false };
+  }, [builds, sharpTurn, sharpArm, tolerance, margin]);
 }
 
 const COLOURS = {
@@ -97,7 +266,7 @@ const ALL_DEFECT_KINDS: FenceDefect['kind'][] = [
 ];
 
 /** What the plan view frames. @see FencePlanView */
-export type FenceFocus = 'fit' | 'head' | 'td' | 'curvepos';
+export type FenceFocus = 'fit' | 'wellbore' | 'head' | 'td' | 'curvepos';
 
 /**
  * Draw the whole fence in PLAN.
@@ -122,6 +291,8 @@ export function FencePlanView({
   focus = 'fit',
   focusRadius = 600,
   curvePos = 0.5,
+  sharpTurn = 30,
+  sharpArm = 10,
 }: {
   model: FenceDebugModel | null;
   rings: Vec2[][];
@@ -134,6 +305,10 @@ export function FencePlanView({
   focus?: FenceFocus;
   focusRadius?: number;
   curvePos?: number;
+  /** relative turn (DEGREES) that is a sharp edge at the reference arm length. */
+  sharpTurn?: number;
+  /** reference arm length, in metres — a longer arm makes a smaller turn count as sharp. */
+  sharpArm?: number;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
 
@@ -157,9 +332,15 @@ export function FencePlanView({
       if (p[1] > maxZ) maxZ = p[1];
     };
     if (focus === 'fit') {
-      // ⭐ Fit the TRAJECTORY, not the fence with its run-outs — the run-outs reach
-      // far past the footprint and would shrink the well to a dot. Their off-screen
-      // tails are what we are deliberately ignoring while the path is tuned.
+      // ⭐ Fit the WHOLE fence: both cuts with their run-outs, the footprint and the
+      // survey — the view for judging the run-outs and how the two sides converge.
+      for (const p of model.fence.plus.curve.points) take(p);
+      for (const p of model.fence.minus.curve.points) take(p);
+      for (const ring of rings) for (const p of ring) take(p);
+      for (const p of model.survey) take(p);
+    } else if (focus === 'wellbore') {
+      // ⭐ Fit the TRAJECTORY only — the run-outs reach far past the footprint and
+      // would shrink the well to a dot, so this is the view for tuning the PATH.
       for (const p of model.survey) take(p);
     } else {
       // ⭐ `curvepos` frames an EXACT position along the 3D spline (0 = head, 1 = TD),
@@ -222,12 +403,16 @@ export function FencePlanView({
     if (defectKinds.length > 0) {
       context.lineCap = 'round';
       context.lineJoin = 'round';
-      const drawDefects = (defects: FenceDefect[]) => {
+      const drawDefects = (
+        defects: FenceDefect[],
+        colour?: string,
+        lineWidth = 8,
+      ) => {
         for (const d of defects) {
           if (d.points.length === 0 || !defectKinds.includes(d.kind)) continue;
           context.strokeStyle =
-            DEFECT_COLOURS[d.kind] ?? 'rgba(255,255,255,0.5)';
-          context.lineWidth = 8;
+            colour ?? DEFECT_COLOURS[d.kind] ?? 'rgba(255,255,255,0.5)';
+          context.lineWidth = lineWidth;
           context.beginPath();
           context.moveTo(toX(d.points[0][0]), toY(d.points[0][1]));
           for (let i = 1; i < d.points.length; i++) {
@@ -240,8 +425,39 @@ export function FencePlanView({
           context.stroke();
         }
       };
-      if (showLeft) drawDefects(model.report.sides.plus.diagnosis.defects);
-      if (showRight) drawDefects(model.report.sides.minus.diagnosis.defects);
+      if (showLeft)
+        drawDefects(
+          model.report.sides.plus.diagnosis.defects.filter(
+            d => d.kind !== 'sharp',
+          ),
+        );
+      if (showRight)
+        drawDefects(
+          model.report.sides.minus.diagnosis.defects.filter(
+            d => d.kind !== 'sharp',
+          ),
+        );
+      // ⭐ Sharp bends recomputed LIVE from the story sliders, so the threshold can be
+      // dialled to the eye without a rebuild. Cut sharp in orange, the SPLINE's own
+      // doglegs in cyan so a sharp cut can be told apart from a sharp trajectory.
+      if (defectKinds.includes('sharp')) {
+        const turnRad = (Math.max(1, sharpTurn) * Math.PI) / 180;
+        const arm = Math.max(1, sharpArm);
+        const toDefects = (pts: Vec2[]): FenceDefect[] =>
+          polylineSharpEdges(pts, turnRad, arm).map(points => ({
+            kind: 'sharp' as const,
+            points,
+          }));
+        if (showLeft)
+          drawDefects(toDefects(model.fence.plus.curve.points), undefined, 8);
+        if (showRight)
+          drawDefects(toDefects(model.fence.minus.curve.points), undefined, 8);
+        drawDefects(
+          toDefects(model.fence.base.points),
+          'rgba(80, 220, 255, 0.55)',
+          4,
+        );
+      }
       context.lineCap = 'butt';
       context.lineJoin = 'miter';
     }
@@ -298,6 +514,8 @@ export function FencePlanView({
     focus,
     focusRadius,
     curvePos,
+    sharpTurn,
+    sharpArm,
   ]);
 
   return (
@@ -412,28 +630,13 @@ export function FenceHud({ model }: { model: FenceDebugModel | null }) {
         }
       />
       <Row
-        label="sharp/pinch/wiggle L"
-        value={`${report.sides.plus.diagnosis.sharpTurns} / ${report.sides.plus.diagnosis.pinches} / ${report.sides.plus.diagnosis.wiggle}`}
-        bad={
-          report.sides.plus.diagnosis.sharpTurns +
-            report.sides.plus.diagnosis.pinches +
-            report.sides.plus.diagnosis.wiggle >
-          0
-        }
-      />
-      <Row
-        label="sharp/pinch/wiggle R"
-        value={`${report.sides.minus.diagnosis.sharpTurns} / ${report.sides.minus.diagnosis.pinches} / ${report.sides.minus.diagnosis.wiggle}`}
-        bad={
-          report.sides.minus.diagnosis.sharpTurns +
-            report.sides.minus.diagnosis.pinches +
-            report.sides.minus.diagnosis.wiggle >
-          0
-        }
-      />
-      <Row
         label="bridged L/R"
         value={`${n(report.sides.plus.diagnosis.bridged * 100)}% / ${n(report.sides.minus.diagnosis.bridged * 100)}%`}
+      />
+      <Row
+        label="trace sharp/loops"
+        value={`${report.trace.sharpBends} / ${report.trace.loops}`}
+        bad={report.trace.loops > 0}
       />
       <Row
         label="verdict L"
@@ -468,6 +671,99 @@ export function FenceHud({ model }: { model: FenceDebugModel | null }) {
         {problems.length === 0
           ? 'invariants ok'
           : problems.map(p => <div key={p}>! {p}</div>)}
+      </div>
+    </div>
+  );
+}
+
+/** A clickable well name that switches the debug view to it. */
+function HealthRow({
+  row,
+  selected,
+  onSelect,
+}: {
+  row: WellHealth;
+  selected: boolean;
+  onSelect: (name: string) => void;
+}) {
+  const flags = (row.buried ? 'B' : '') + (row.sharp > 0 ? 'S' : '');
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(row.name)}
+      title={`burial ${row.burial.toFixed(2)} m \u00b7 sharp ${row.sharp}`}
+      style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        gap: 10,
+        width: '100%',
+        textAlign: 'left',
+        font: '11px ui-monospace, monospace',
+        color: selected ? '#0f1216' : '#cdd6e0',
+        background: selected ? '#4aa3ff' : 'transparent',
+        border: 'none',
+        borderRadius: 3,
+        padding: '2px 6px',
+        cursor: 'pointer',
+      }}
+    >
+      <span>
+        {row.name}
+        {row.degenerate ? ' \u00b7v' : ''}
+      </span>
+      <span style={{ opacity: 0.75 }}>{flags}</span>
+    </button>
+  );
+}
+
+/**
+ * The healthy and problem well lists, as links.
+ *
+ * ⭐ Click a name to switch the whole view to that well — the fastest way to sweep the
+ * healthy list for false passes, then read the problem list for what they share. A
+ * problem row is flagged B (burial) and/or S (sharp); its number is the burial, a
+ * healthy row's is the tightest clearance. A trailing \u00b7v marks a near-vertical well.
+ */
+export function FenceHealthLists({
+  health,
+  selected,
+  onSelect,
+}: {
+  health: FenceHealth;
+  selected: string;
+  onSelect: (name: string) => void;
+}) {
+  const { healthy, problem, pending } = health;
+  return (
+    <div style={{ minWidth: 250, maxHeight: '100vh', overflow: 'auto' }}>
+      <div style={{ color: '#66bb6a', margin: '0 0 4px' }}>
+        healthy ({healthy.length})
+        {pending ? (
+          <span style={{ opacity: 0.5 }}> {'\u2014 classifying\u2026'}</span>
+        ) : null}
+      </div>
+      <div style={{ display: 'grid', gap: 1 }}>
+        {healthy.map(r => (
+          <HealthRow
+            key={r.id}
+            row={r}
+            selected={r.name === selected}
+            onSelect={onSelect}
+          />
+        ))}
+      </div>
+      <div style={{ color: '#ff7043', margin: '12px 0 4px' }}>
+        problem ({problem.length})
+      </div>
+      <div style={{ display: 'grid', gap: 1 }}>
+        {problem.map(r => (
+          <HealthRow
+            key={r.id}
+            row={r}
+            selected={r.name === selected}
+            onSelect={onSelect}
+          />
+        ))}
       </div>
     </div>
   );
