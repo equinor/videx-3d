@@ -190,12 +190,6 @@ const RUN_OUT_TRIM_STEPS = 8;
 const RUN_OUT_HEAD_TURN_OK = (90 * Math.PI) / 180;
 
 /**
- * Metres of slack on the run-out clearance test — the linear-segment chord error the
- * dedupe leaves, so a cut resting exactly at the margin is not rejected as too close.
- */
-const RUN_OUT_CLEAR_TOL = 0.05;
-
-/**
  * Score bonus, per unit of `dot(start, -end)`, that pulls a near-vertical well's two
  * arms onto ONE straight axis when the footprint does not force otherwise.
  */
@@ -1136,6 +1130,8 @@ export type FenceExtensionOptions = {
   maxTurn?: number;
   /** the CUT clearance (margin), in metres — the floor the TD arm must hold. Default 0. */
   margin?: number;
+  /** render-radius slack: arms must clear the well by `margin - tolerance`. Default {@link MIN_WELL_RADIUS}. */
+  tolerance?: number;
   /** plan spacing the shared run is resampled to, in metres. Default {@link FOLLOW_SPACING}. */
   spacing?: number;
   /**
@@ -1176,6 +1172,7 @@ export function fenceExtensions(
   const maxTurn = options.maxTurn ?? MAX_RUN_OUT_TURN;
   const margin = options.runOutMargin ?? DEFAULT_RUN_OUT_MARGIN;
   const marginClear = options.margin ?? 0;
+  const tolerance = options.tolerance ?? MIN_WELL_RADIUS;
   const spacing = options.spacing ?? FOLLOW_SPACING;
   const cores = options.cores;
   const nearVertical = options.nearVertical ?? false;
@@ -1246,7 +1243,7 @@ export function fenceExtensions(
   // TD end is DOMINANT and strict — its arm must hold the margin (less the linear slack) —
   // while the head end may over-clear, so it is rejected only for BURYING (crossing the
   // well or grazing it). This is what lets the chosen bearings keep both sides clear.
-  const tdFloor = marginClear - RUN_OUT_CLEAR_TOL;
+  const tdFloor = marginClear - tolerance;
   const scoreEnd = (direction: Vec2) => {
     if (!cores) return { feasible: true, turn: 0 };
     const g = endGeom(last, direction);
@@ -1262,6 +1259,8 @@ export function fenceExtensions(
         g.gather,
         g.tip,
         spacing,
+        marginClear,
+        tolerance,
       );
       clear = Math.min(clear, arm.minClearance);
       turn = Math.max(turn, arm.turn);
@@ -1283,9 +1282,12 @@ export function fenceExtensions(
         g.gather,
         g.tip,
         spacing,
+        marginClear,
+        tolerance,
       );
       turn = Math.max(turn, arm.turn);
-      if (arm.crossesWell || arm.minClearance < RUN_OUT_CLEAR_TOL) ok = false;
+      if (arm.crossesWell || arm.minClearance < marginClear - tolerance)
+        ok = false;
     }
     return { feasible: ok, turn };
   };
@@ -1635,6 +1637,8 @@ function buildRunOutArm(
   gather: Vec2,
   tip: Vec2,
   spacing: number,
+  margin: number,
+  tolerance: number,
 ): RunOutArm {
   const n = core.length;
   if (!isHead) {
@@ -1684,7 +1688,7 @@ function buildRunOutArm(
       spacing,
     );
     if (!bestAny || arm.turn < bestAny.turn) bestAny = arm;
-    if (!arm.crossesWell && arm.minClearance >= RUN_OUT_CLEAR_TOL) {
+    if (!arm.crossesWell && arm.minClearance >= margin - tolerance) {
       if (!gentlestClean || arm.turn < gentlestClean.turn) gentlestClean = arm;
       if (!firstClean && arm.turn <= RUN_OUT_HEAD_TURN_OK) firstClean = arm;
     }
@@ -1711,6 +1715,8 @@ function attachRunOuts(
   well: Vec2[],
   extensions: FenceExtensions,
   spacing: number,
+  margin: number,
+  tolerance: number,
 ): { points: Vec2[]; headArm: RunOutArm; tdArm: RunOutArm } {
   const headArm = buildRunOutArm(
     core,
@@ -1720,6 +1726,8 @@ function attachRunOuts(
     extensions.startGather,
     extensions.startTip,
     spacing,
+    margin,
+    tolerance,
   );
   const tdArm = buildRunOutArm(
     core,
@@ -1729,6 +1737,8 @@ function attachRunOuts(
     extensions.endGather,
     extensions.endTip,
     spacing,
+    margin,
+    tolerance,
   );
   let headStart = headArm.coreIndex;
   let tdEnd = tdArm.coreIndex;
@@ -1836,7 +1846,7 @@ export function buildFenceSideCurve(
     points: raw,
     headArm,
     tdArm,
-  } = attachRunOuts(core, well, extensions, spacing);
+  } = attachRunOuts(core, well, extensions, spacing, margin, tolerance);
 
   const loopsRemoved = countPolylineLoops(raw);
   const deLooped = removePolylineLoops(raw);
@@ -2530,6 +2540,7 @@ export function buildWellboreFence(
     outline: searchOutline,
     runOutMargin: options.runOutMargin,
     margin,
+    tolerance,
     spacing: sideOptions.spacing,
     cores: { plus: plusCore, minus: minusCore },
     // A near-vertical well has no bearing of its own — pull its two arms onto one axis.
