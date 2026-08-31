@@ -83,9 +83,12 @@ void main() {
   // N·V so the dark rim can't shrink below ~1px (avoids a jagged fringe), and clamping
   // keeps thin/far tubes flat at the exact colour. (Scene fog / great distance may still
   // shift the colour — accepted.)
+  float rimDarken = 0.0;
+  #ifndef FLAT_SHADED
   float ndv = clamp(dot(normalize(vNormal), normalize(vViewPosition)), 0.0, 1.0);
   float ndvAA = clamp(max(ndv, fwidth(ndv)), 0.0, 1.0);
-  float rimDarken = shadingStrength * pow(1.0 - ndvAA, shadingFalloff);
+  rimDarken = shadingStrength * pow(1.0 - ndvAA, shadingFalloff);
+  #endif
   diffuseColor.rgb = mix(diffuseColor.rgb, shadingColor, rimDarken);
 
   // Depth markers: crisp world-space bands every `depthInterval` metres of measured depth

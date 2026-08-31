@@ -21,7 +21,7 @@ function makeSection(count: number): TrajectorySegmentsType {
     attributesBuffer[o + 3] = 1; // tangent.x
     attributesBuffer[o + 6] = 0; // normal.x
     attributesBuffer[o + 7] = 1; // normal.y
-    attributesBuffer[o + 9] = i / (count - 1); // curvePosition (global 0..1)
+    attributesBuffer[o + 9] = count > 1 ? i / (count - 1) : 0; // curvePosition (global 0..1)
   }
   return {
     attributesBuffer,
