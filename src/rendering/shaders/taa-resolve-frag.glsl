@@ -81,7 +81,22 @@ vec3 tonemap(vec3 c) {
 }
 
 vec3 untonemap(vec3 c) {
-  return c / max(1.0 - luma(c), 1e-4);
+  // Clamp the expansion luma below 1: the per-channel YCoCg clip/blend can decode to an
+  // RGB whose luma is >= 1, which would drive (1 - luma) to zero (or negative) and blow
+  // the result past the half-float max into +Inf - the seed of the NaN feedback loop
+  // that produces the growing black blob. Bounding luma keeps the expansion finite.
+  return c / (1.0 - min(luma(c), 0.999));
+}
+
+// Largest magnitude written back into the (half-float) history each frame. Well under
+// the half-float max (65504) so a composed frame can never round up to +Inf and seed
+// the NaN feedback loop.
+const float HALF_MAX_SAFE = 60000.0;
+
+// True when every channel is finite (no NaN / Inf). GLSL ES gives no portable
+// isnan/isinf, so test NaN via self-inequality (NaN != NaN) and Inf via magnitude.
+bool isFiniteColor(vec4 c) {
+  return c == c && all(lessThan(abs(c), vec4(1e20)));
 }
 
 // Clip point p into the axis-aligned box [mn, mx] by scaling its offset from the box
@@ -161,6 +176,12 @@ void main() {
   vec4 boxMax = m1 + boxGamma * sigma;
 
   vec4 h = texture2D(history, prevUv);
+  // A single NaN/Inf history texel would survive the blend and, fetched bilinearly at
+  // the reprojected prevUv, bleed into its neighbours every frame - the growing black
+  // blob. Drop non-finite history back to the current frame before it can propagate.
+  if(!isFiniteColor(h)) {
+    h = c;
+  }
   vec4 histY = vec4(rgb2ycocg(tonemap(h.rgb)), h.a);
 
   // Motion-gated neighbourhood clip. While the camera is still (clampStrength at its
@@ -182,5 +203,7 @@ void main() {
   // average and shimmers along thin edges.
   vec4 curY = vec4(rgb2ycocg(tonemap(c.rgb)), c.a);
   vec4 outY = mix(clippedY, curY, 1.0 - feedback);
-  gl_FragColor = vec4(untonemap(ycocg2rgb(outY.rgb)), outY.a);
+  // Clamp to a finite, non-negative range before writing back to history so a single
+  // pathological frame can never store an +Inf (and thus a NaN next frame).
+  gl_FragColor = vec4(clamp(untonemap(ycocg2rgb(outY.rgb)), 0.0, HALF_MAX_SAFE), outY.a);
 }
