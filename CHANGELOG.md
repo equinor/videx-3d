@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.2.1](https://github.com/equinor/videx-3d/compare/v3.2.0...v3.2.1) (2026-09-03)
+
+
+### Bug Fixes
+
+* dependabot warnings sept 26 ([#274](https://github.com/equinor/videx-3d/issues/274)) ([b3865b4](https://github.com/equinor/videx-3d/commit/b3865b4d1e370de0fb2a0b072cadea21d2b90990))
+
 ## [3.2.0](https://github.com/equinor/videx-3d/compare/v3.1.0...v3.2.0) (2026-08-24)
 
 
