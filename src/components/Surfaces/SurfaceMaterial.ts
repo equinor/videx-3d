@@ -13,15 +13,10 @@ import {
   Vector2,
 } from 'three';
 import { colorRampTexture } from '../../common/color-ramps';
+import { ContourColorMode } from '../../common/types';
 import { attachOitVariants } from '../../rendering/oit-material';
 import fragmentShader from './shaders/surface-frag.glsl';
 import vertexShader from './shaders/surface-vert.glsl';
-
-export enum ContourColorMode {
-  darken = 0,
-  lighten = 1,
-  mixed = 2,
-}
 
 export type SurfaceMaterialParameters = ShaderMaterialParameters &
   MeshLambertMaterialParameters & {

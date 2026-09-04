@@ -6,6 +6,7 @@ import {
   DoubleSide,
   InstancedMesh,
   Line,
+  Material,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
@@ -18,6 +19,12 @@ const instanceMatrix = new Matrix4();
 export type HighlighterProps = {
   color?: string | number | Color;
   blending?: Blending;
+  /**
+   * Opacity of the default ghost material (0..1, default `1`). Components that supply
+   * their own `userData.highlightMaterial` (e.g. `Trajectory`) manage their own opacity
+   * and are not affected by this.
+   */
+  opacity?: number;
   renderOrder?: number;
 };
 
@@ -40,6 +47,7 @@ export type HighlighterProps = {
 export const Highlighter = ({
   color,
   blending,
+  opacity,
   renderOrder,
 }: HighlighterProps) => {
   const { highlighted } = useHighlightState();
@@ -50,21 +58,29 @@ export const Highlighter = ({
       depthTest: true,
       depthWrite: false,
       transparent: true,
-      opacity: 1,
+      opacity: opacity ?? 1,
       blending: blending || AdditiveBlending,
       side: DoubleSide,
     });
-  }, [color, blending]);
+  }, [color, blending, opacity]);
 
   const highlightObjects = useMemo(() => {
     return highlighted.map(item => {
       let primitiveObject: Mesh | Line | InstancedMesh;
       const geometry = item.object.geometry;
 
+      // Objects whose geometry needs a custom shader (e.g. the instanced Trajectory
+      // tube, whose shape is reconstructed in its vertex shader) can supply a
+      // compatible ghost material via userData.highlightMaterial. Everything else
+      // falls back to the shared MeshBasicMaterial.
+      const ghostMaterial =
+        (item.object.userData.highlightMaterial as Material | undefined) ||
+        material;
+
       if (item.object instanceof InstancedMesh) {
         const instanced = item.object as InstancedMesh;
         if (item.instanceIndex !== undefined) {
-          primitiveObject = new Mesh(geometry, material);
+          primitiveObject = new Mesh(geometry, ghostMaterial);
           instanced.updateWorldMatrix(true, false);
           instanced.getMatrixAt(item.instanceIndex, instanceMatrix);
           primitiveObject.matrixAutoUpdate = false;
@@ -72,7 +88,11 @@ export const Highlighter = ({
             .copy(instanced.matrixWorld)
             .multiply(instanceMatrix);
         } else {
-          const imesh = new InstancedMesh(geometry, material, instanced.count);
+          const imesh = new InstancedMesh(
+            geometry,
+            ghostMaterial,
+            instanced.count,
+          );
           instanced.updateWorldMatrix(true, false);
           imesh.matrixAutoUpdate = false;
           imesh.matrix.copy(instanced.matrixWorld);
@@ -80,12 +100,12 @@ export const Highlighter = ({
           primitiveObject = imesh;
         }
       } else if (item.object instanceof Mesh) {
-        primitiveObject = new Mesh(geometry, material);
+        primitiveObject = new Mesh(geometry, ghostMaterial);
         item.object.updateWorldMatrix(true, false);
         primitiveObject.matrixAutoUpdate = false;
         primitiveObject.matrix.copy(item.object.matrixWorld);
       } else {
-        primitiveObject = new Line(geometry, material);
+        primitiveObject = new Line(geometry, ghostMaterial);
         item.object.updateWorldMatrix(true, false);
         primitiveObject.matrixAutoUpdate = false;
         primitiveObject.matrix.copy(item.object.matrixWorld);
