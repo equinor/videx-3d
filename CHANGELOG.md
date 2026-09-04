@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.2.3](https://github.com/equinor/videx-3d/compare/v3.2.2...v3.2.3) (2026-09-04)
+
+
+### Bug Fixes
+
+* **npm:** bump fflate ([#277](https://github.com/equinor/videx-3d/issues/277)) ([6f82dd2](https://github.com/equinor/videx-3d/commit/6f82dd2195f2a5d0691befe03b34495f76b81ec4))
+
 ## [3.2.2](https://github.com/equinor/videx-3d/compare/v3.2.1...v3.2.2) (2026-09-04)
 
 
