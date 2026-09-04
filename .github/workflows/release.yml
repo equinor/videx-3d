@@ -151,4 +151,4 @@ jobs:
             exit 1
           fi
 
-          npm publish "${tarballs[0]}" --access public --ignore-scripts --provenance
+          npm publish "./${tarballs[0]}" --access public --ignore-scripts --provenance
