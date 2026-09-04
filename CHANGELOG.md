@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.2.2](https://github.com/equinor/videx-3d/compare/v3.2.1...v3.2.2) (2026-09-04)
+
+
+### Bug Fixes
+
+* debug release workflow ([#276](https://github.com/equinor/videx-3d/issues/276)) ([fb6385f](https://github.com/equinor/videx-3d/commit/fb6385ff25143982f68180e08f4adab555b25321))
+
 ## [3.2.1](https://github.com/equinor/videx-3d/compare/v3.2.0...v3.2.1) (2026-09-03)
 
 
