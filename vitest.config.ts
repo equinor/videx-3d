@@ -8,8 +8,14 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    reporter: ['default', 'junit'],
+    outputFile: {
+      junit: 'test-results/junit.xml',
+    },
     coverage: {
-      reporter: ['text', 'json', 'html'],
+      provider: 'v8',
+      reporter: [['cobertura', { file: 'Cobertura.xml' }]],
+      reportsDirectory: 'coverage',
       include: ['src'],
       exclude: ['src/storybook', '**/*.tsx'],
     },
