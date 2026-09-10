@@ -29,12 +29,20 @@ extend({ ThreeLine: Line });
 export type BasicTrajectoryProps = CommonComponentProps &
   CustomMaterialProps & {
     color?: string;
+    /** Line opacity (1 = fully opaque, the default). Values < 1 render semi-transparent. */
+    opacity?: number;
     priority?: number;
   };
 
 /**
- * The BasicTrajectory renders a wellbore trajectory as a 1 pixel line.
+ * The BasicTrajectory renders a wellbore trajectory as a crisp 1 pixel line.
  * This component must be a child of the `Wellbore` component.
+ *
+ * It is ideal when you always want a thin line regardless of camera distance — for
+ * example as a lightweight fallback where a full tube would be overkill, or where
+ * trajectory data may not cover the whole path (e.g. behind casings and completion
+ * strings). For a tube that gains thickness as the camera approaches, use
+ * {@link Trajectory} instead.
  *
  * @example
  * <Wellbore id="abc">
@@ -64,6 +72,7 @@ export const BasicTrajectory = ({
   customMaterial,
   onMaterialPropertiesChange,
   color = 'red',
+  opacity = 1,
   priority = 0,
 }: BasicTrajectoryProps) => {
   const { id, fromMsl, segmentsPerMeter, simplificationThreshold } =
@@ -82,16 +91,21 @@ export const BasicTrajectory = ({
       : (props: Record<string, any>, material: Material | Material[]) => {
           const m = material as LineBasicMaterial;
           m.color = new Color(props.color);
+          m.opacity = props.opacity;
+          const shouldBeTransparent = props.opacity < 1;
+          if (m.transparent !== shouldBeTransparent) {
+            m.transparent = shouldBeTransparent;
+            m.needsUpdate = true;
+          }
         };
   }, [onMaterialPropertiesChange]);
 
   const material = useMemo<Material | Material[]>(() => {
     const m = customMaterial
       ? customMaterial
-      : makeOitCompatible(
-          new LineBasicMaterial({ transparent: true, opacity: 0.95 }),
-          { syncProperties: ['color'] },
-        );
+      : makeOitCompatible(new LineBasicMaterial(), {
+          syncProperties: ['color'],
+        });
     return m;
   }, [customMaterial]);
 
@@ -99,10 +113,11 @@ export const BasicTrajectory = ({
     onPropsChange(
       {
         color,
+        opacity,
       },
       material,
     );
-  }, [color, material, onPropsChange]);
+  }, [color, opacity, material, onPropsChange]);
 
   useEffect(() => {
     if (generator) {

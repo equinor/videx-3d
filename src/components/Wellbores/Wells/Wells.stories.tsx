@@ -17,15 +17,13 @@ import { useWellboreHeaders } from '../../../storybook/hooks/useWellboreHeaders'
 import storyArgs from '../../../storybook/story-args.json';
 import { useAnnotationsState } from '../../Annotations/annotations-state';
 import { CameraTargetMarker } from '../../CameraTargetMarker/CameraTargetMarker';
-import { Distance } from '../../Distance/Distance';
 import { EventEmitterCallbackEvent } from '../../EventEmitter';
 import { BoxGrid } from '../../Grids/BoxGrid/BoxGrid';
 import { useHighlighter } from '../../Highlighter/highlight-state';
 import { Highlighter } from '../../Highlighter/Highlighter';
 import { UtmArea } from '../../UtmArea/UtmArea';
 import { UtmPosition } from '../../UtmArea/UtmPosition';
-import { BasicTrajectory } from '../BasicTrajectory/BasicTrajectory';
-import { TubeTrajectory } from '../TubeTrajectory/TubeTrajectory';
+import { Trajectory } from '../Trajectory/Trajectory';
 import { Wellbore } from '../Wellbore/Wellbore';
 import { WellboreBounds } from '../WellboreBounds/WellboreBounds';
 import { WellboreLabel } from '../WellboreLabel/WellboreLabel';
@@ -151,15 +149,12 @@ const Wrapper = () => {
                     }}
                   >
                     <WellboreBounds id={wellbore.id} fromMsl={fromMsl}>
-                      <BasicTrajectory color={color} priority={9} />
-                      <Distance min={0} max={10000}>
-                        <TubeTrajectory
-                          radius={2}
-                          color={color}
-                          priority={8}
-                          radialSegments={16}
-                        />
-                      </Distance>
+                      <Trajectory
+                        radius={2}
+                        color={color}
+                        radialSegments={16}
+                        priority={8}
+                      />
                     </WellboreBounds>
                     <WellboreLabel color="cyan" size={16} />
                   </Wellbore>

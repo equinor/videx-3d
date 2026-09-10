@@ -32,15 +32,16 @@ const vec = new Vector3();
 
 /**
  * The `Wellbore` component serves as a provider/container component only. It does not visualize anything alone!
- * Visualization components, such as the `BasicTrajectory`, `TubeTrajectory`, `Casings`, `CompletionTools` etc. must be
+ * Visualization components, such as the `Trajectory`, `Casings`, `CompletionTools` etc. must be
  * added as child components, which will get the data needed from the `WellboreContext` provided this component.
  *
  * @example
  * <Wellbore id={wellboreId}>
- *  <BasicTrajectory color="red" />
+ *  <Trajectory color="red" radius={1} />
  * </Wellbore>
  *
  * @see {@link WellboreContext}
+ * @see {@link Trajectory}
  * @see {@link BasicTrajectory}
  * @see {@link TubeTrajectory}
  * @see {@link Casings}

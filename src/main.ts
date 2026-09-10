@@ -22,6 +22,7 @@ export * from './components/Wellbores/FormationMarkers';
 export * from './components/Wellbores/Perforations';
 export * from './components/Wellbores/Perimeter';
 export * from './components/Wellbores/Shoes';
+export * from './components/Wellbores/Trajectory';
 export * from './components/Wellbores/TubeTrajectory';
 export * from './components/Wellbores/Wellbore';
 export * from './components/Wellbores/WellboreBounds';

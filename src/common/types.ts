@@ -40,3 +40,17 @@ export type CustomMaterialProps = {
     material: Material | Material[],
   ) => void;
 };
+
+/**
+ * How a procedural line/marker modulates the underlying colour. Shared by the `Surface`
+ * contour lines and the `Trajectory` depth markers so the behaviour is consistent across
+ * components.
+ */
+export enum ContourColorMode {
+  /** Darken the colour toward black at the line. */
+  darken = 0,
+  /** Lighten the colour toward white at the line. */
+  lighten = 1,
+  /** Blend the colour toward a fixed marker colour at the line. */
+  mixed = 2,
+}

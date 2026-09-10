@@ -9,7 +9,8 @@ import { WellboreSelectedEvent } from '../../../events/wellbore-events';
 import { AnnotationsDecorator } from '../../../storybook/decorators/annotations-decorator';
 import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator';
 import storyArgs from '../../../storybook/story-args.json';
-import { TubeTrajectory } from '../TubeTrajectory/TubeTrajectory';
+import { Trajectory } from '../Trajectory/Trajectory';
+import { WellboreBounds } from '../WellboreBounds/WellboreBounds';
 import { DepthMarkers } from './DepthMarkers';
 
 const wellboreOptions = storyArgs.wellboreOptions;
@@ -61,7 +62,9 @@ export const Default: Story = {
     return (
       <>
         <Wellbore id={args.id}>
-          <TubeTrajectory radius={1} color="teal" />
+          <WellboreBounds id={args.id}>
+            <Trajectory radius={1} color="teal" />
+          </WellboreBounds>
           <DepthMarkers {...args} />
         </Wellbore>
       </>

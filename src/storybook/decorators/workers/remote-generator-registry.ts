@@ -15,6 +15,7 @@ import { perforationSymbols } from '../../../components/Wellbores/Perforations/p
 import { perimeterGeometry } from '../../../components/Wellbores/Perimeter/perimeter-defs';
 import { positionMarkers } from '../../../components/Wellbores/PositionMarkers/position-markers-defs';
 import { shoeSymbols } from '../../../components/Wellbores/Shoes/shoes-defs';
+import { trajectory } from '../../../components/Wellbores/Trajectory/trajectory-defs';
 import { tubeTrajectory } from '../../../components/Wellbores/TubeTrajectory/tube-geometry-defs';
 import { wellboreBounds } from '../../../components/Wellbores/WellboreBounds/wellbore-bounds-defs';
 import { wellboreFormationColumn } from '../../../components/Wellbores/WellboreFormationColumn/wellbore-formation-column-defs';
@@ -35,6 +36,7 @@ import {
   generateShoes,
   generateSurfaceGeometry,
   generateSurfaceTexturesData,
+  generateTrajectory,
   generateTubeTrajectory,
   generateWellboreFormationColumnGeometries,
   generateWellboreLabel,
@@ -48,6 +50,7 @@ const registry = new GeneratorRegistry({ concurrentStoreCalls: 50 });
 
 registry.add(wellboreBounds, calculateWellboreBounds);
 registry.add(basicTrajectory, generateBasicTrajectory);
+registry.add(trajectory, generateTrajectory);
 registry.add(tubeTrajectory, generateTubeTrajectory);
 registry.add(completionTools, generateCompletionTools);
 registry.add(casings, generateCasings);

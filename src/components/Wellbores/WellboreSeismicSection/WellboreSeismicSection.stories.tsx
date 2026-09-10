@@ -6,8 +6,9 @@ import { DataProviderDecorator } from '../../../storybook/decorators/data-provid
 import { DepthSelectorDecorator } from '../../../storybook/decorators/depth-selector-decorator';
 import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator';
 import storyArgs from '../../../storybook/story-args.json';
-import { TubeTrajectory } from '../TubeTrajectory';
+import { Trajectory } from '../Trajectory/Trajectory';
 import { Wellbore } from '../Wellbore/Wellbore';
+import { WellboreBounds } from '../WellboreBounds/WellboreBounds';
 import { WellboreSeismicSection } from './WellboreSeismicSection';
 
 const meta = {
@@ -83,7 +84,9 @@ export const Default: Story = {
       <>
         <Wellbore id={args.id}>
           <WellboreSeismicSection {...args} />
-          <TubeTrajectory color="crimson" radius={5} />
+          <WellboreBounds id={args.id}>
+            <Trajectory color="crimson" radius={5} />
+          </WellboreBounds>
         </Wellbore>
       </>
     );

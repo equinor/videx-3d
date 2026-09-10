@@ -47,10 +47,7 @@ const sphere = new Sphere();
  * @example
  * <Wellbore id={wellboreId}>
  *   <WellboreBounds id={wellboreId}>
- *     <BasicTrajectory />
- *     <Distance min={0} max={2000}>
- *       <TubeTrajectory />
- *     </Distance>
+ *     <Trajectory />
  *   </WellboreBounds>
  * </Wellbore>
  *
@@ -58,6 +55,7 @@ const sphere = new Sphere();
  * This component does not use the `WellboreContext` to retrieve the wellbore id, and must be provided as a prop.
  *
  * @see [Storybook](/videx-3d/?path=/docs/components-wellbores-wellborebounds--docs)
+ * @see {@link Trajectory}
  * @see {@link Distance}
  * @see {@link DistanceContext}
  *
