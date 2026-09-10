@@ -44,7 +44,8 @@
     "lint": "oxlint",
     "storybook": "node scripts/generate-story-args.js && storybook dev -p 6006",
     "test": "vitest",
-    "coverage": "vitest --coverage"
+    "coverage": "vitest run --coverage",
+    "coverage:ci": "vitest run --coverage"
   },
   "dependencies": {
     "curve-interpolator": "^3.3.1",
