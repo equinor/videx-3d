@@ -89,8 +89,8 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react": "^6.0.3",
-    "@vitest/coverage-v8": "^4.0.18",
-    "@vitest/ui": "^4.0.18",
+    "@vitest/coverage-v8": "^5.0.0",
+    "@vitest/ui": "^5.0.0",
     "eslint-plugin-storybook": "^10.4.6",
     "globals": "^17.4.0",
     "lodash": "^4.17.23",
@@ -109,7 +109,7 @@
     "vite-plugin-css-injected-by-js": "^4.0.1",
     "vite-plugin-glsl": "^1.5.5",
     "vite-plugin-static-copy": "^4.1.1",
-    "vitest": "^4.0.18"
+    "vitest": "^5.0.0"
   },
   "peerDependencies": {
     "@react-three/drei": ">=9",
