@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.3.0](https://github.com/equinor/videx-3d/compare/v3.2.3...v3.3.0) (2026-09-11)
+
+
+### Features
+
+* **trajectory:** new component for rendering trajectories ([3a938ab](https://github.com/equinor/videx-3d/commit/3a938ab4d8acfa5004a9f8c2f29b094529bdbab5))
+
+
+### Bug Fixes
+
+* dependabot security fixes sep 26 ([#286](https://github.com/equinor/videx-3d/issues/286)) ([ce3942d](https://github.com/equinor/videx-3d/commit/ce3942dd7061a33051aa19537e42f900ec03206a))
+
 ## [3.2.3](https://github.com/equinor/videx-3d/compare/v3.2.2...v3.2.3) (2026-09-07)
 
 
