@@ -1,6 +1,5 @@
 import { range as d3range } from 'd3-array';
 import { axisLeft } from 'd3-axis';
-import { format } from 'd3-format';
 import { scaleLinear } from 'd3-scale';
 import { select } from 'd3-selection';
 import { PropsWithChildren, useEffect, useMemo, useRef } from 'react';
@@ -109,7 +108,7 @@ export const Schematic = ({
       .offset(0)
       .tickPadding(4)
       .tickFormat(tick =>
-        noTickLabel.has(tick.valueOf()) ? '' : format(',.0f')(tick),
+        noTickLabel.has(tick.valueOf()) ? '' : tick.valueOf().toFixed(0),
       );
 
     return axis;
@@ -183,7 +182,9 @@ export const Schematic = ({
               cursor={axisHeader.description ? 'help' : 'default'}
             >
               {axisHeader.label}
-              {axisHeader.description && <title>{axisHeader.description}</title>}
+              {axisHeader.description && (
+                <title>{axisHeader.description}</title>
+              )}
             </text>
           )}
           <g

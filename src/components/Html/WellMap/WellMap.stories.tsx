@@ -106,7 +106,7 @@ export const Default: Story = {
       <WellMap
         {...args}
         colors={w => colorScale(w.id)}
-        axisHeader={{ label: 'KOP', description: 'Kick-off Point' }}
+        axisHeader={{ label: 'KOP', description: 'Kickoff Point' }}
       />
     );
   },
@@ -168,7 +168,7 @@ export const Headless: Story = {
 export const LightThemed: Story = {
   args: {
     theme: LightTheme,
-    axisHeader: { label: 'KOP', description: 'Kick-off Point' },
+    axisHeader: { label: 'KOP', description: 'Kickoff Point' },
   },
   decorators: [lightThemeDecorator],
   render: (args: ComponentProps<typeof WellMap>) => {
