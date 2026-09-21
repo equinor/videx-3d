@@ -24,6 +24,7 @@ type Props = {
   colorMap?: Record<string, string>;
   interactive?: boolean;
   depthCursor?: boolean;
+  axisHeader?: { label: string; description?: string };
 };
 
 export const Schematic = ({
@@ -36,6 +37,7 @@ export const Schematic = ({
   colorMap,
   interactive,
   depthCursor,
+  axisHeader,
   children,
 }: PropsWithChildren<Props>) => {
   const [svgRef, measure] = useMeasure();
@@ -170,6 +172,20 @@ export const Schematic = ({
     >
       {trackWidth > 0 && measure.height > 0 && (
         <>
+          {axisHeader?.label && (
+            <text
+              className="axis-header"
+              x={styles.depthAxisWidth}
+              y={12}
+              textAnchor="end"
+              fontSize={10}
+              fill={styles.textColor}
+              cursor={axisHeader.description ? 'help' : 'default'}
+            >
+              {axisHeader.label}
+              {axisHeader.description && <title>{axisHeader.description}</title>}
+            </text>
+          )}
           <g
             className="data-layer"
             transform={`translate(${styles.depthAxisWidth}, 0)`}

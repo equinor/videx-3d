@@ -102,7 +102,13 @@ const colorScale = scaleOrdinal([
 export const Default: Story = {
   decorators: [darkThemeDecorator],
   render: (args: ComponentProps<typeof WellMap>) => {
-    return <WellMap {...args} colors={w => colorScale(w.id)} />;
+    return (
+      <WellMap
+        {...args}
+        colors={w => colorScale(w.id)}
+        axisHeader={{ label: 'KOP', description: 'Kick-off Point' }}
+      />
+    );
   },
 };
 
@@ -162,6 +168,7 @@ export const Headless: Story = {
 export const LightThemed: Story = {
   args: {
     theme: LightTheme,
+    axisHeader: { label: 'KOP', description: 'Kick-off Point' },
   },
   decorators: [lightThemeDecorator],
   render: (args: ComponentProps<typeof WellMap>) => {
