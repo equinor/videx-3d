@@ -171,22 +171,6 @@ export const Schematic = ({
     >
       {trackWidth > 0 && measure.height > 0 && (
         <>
-          {axisHeader?.label && (
-            <text
-              className="axis-header"
-              x={styles.depthAxisWidth}
-              y={12}
-              textAnchor="end"
-              fontSize={10}
-              fill={styles.textColor}
-              cursor={axisHeader.description ? 'help' : 'default'}
-            >
-              {axisHeader.label}
-              {axisHeader.description && (
-                <title>{axisHeader.description}</title>
-              )}
-            </text>
-          )}
           <g
             className="data-layer"
             transform={`translate(${styles.depthAxisWidth}, 0)`}
@@ -232,6 +216,22 @@ export const Schematic = ({
           </g>
           {interactive && depthCursor && depth !== undefined && (
             <DepthCursor depth={depth} setDepth={setDepth} />
+          )}
+          {axisHeader?.label && (
+            <text
+              className="axis-header"
+              x={styles.depthAxisWidth}
+              y={12}
+              textAnchor="end"
+              fontSize={10}
+              fill={styles.textColor}
+              cursor={axisHeader.description ? 'help' : 'default'}
+            >
+              {axisHeader.label}
+              {axisHeader.description && (
+                <title>{axisHeader.description}</title>
+              )}
+            </text>
           )}
         </>
       )}
