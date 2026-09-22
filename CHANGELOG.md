@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.4.0](https://github.com/equinor/videx-3d/compare/v3.3.0...v3.4.0) (2026-09-22)
+
+
+### Features
+
+* axisheader in schematic ([#292](https://github.com/equinor/videx-3d/issues/292)) ([fdf8636](https://github.com/equinor/videx-3d/commit/fdf86368b8c845f9939bea0dd63e50be66c6129a))
+
+
+### Bug Fixes
+
+* **ci:** make release publishing restartable ([#289](https://github.com/equinor/videx-3d/issues/289)) ([6453c63](https://github.com/equinor/videx-3d/commit/6453c631752e0c6da357661fb3d64fcac4be74e6))
+
 ## [3.3.0](https://github.com/equinor/videx-3d/compare/v3.2.3...v3.3.0) (2026-09-11)
 
 
