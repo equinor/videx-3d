@@ -2,3 +2,5 @@
 
 /.github/ @equinor/rep-infra-frontend
 /.github/CODEOWNERS @equinor/rep-admin
+
+CHANGELOG.md @equinor/viz # review releases
