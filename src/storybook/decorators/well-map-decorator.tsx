@@ -1,21 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useData } from '../../hooks/useData';
-import { WellMap } from '../../components/Html/WellMap/WellMap';
-import {
-  WellboreSelectedEvent,
-  wellboreSelectedEventType,
-} from '../../events/wellbore-events';
-import { WellboreHeader } from '../../sdk/data/types/WellboreHeader';
-import { PositionLog } from '../../sdk/data/types/PositionLog';
 import { ScaleOrdinal } from 'd3-scale';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { WellMapCasingShoes } from '../../components/Html/WellMap/addons/WellMapCasingShoes';
 import { WellMapCompletionIntervals } from '../../components/Html/WellMap/addons/WellMapCompletionIntervals';
-import { Vec3 } from '../../sdk/types/common';
-import { WellboreManager } from '../../sdk/managers/WellboreManager';
+import { WellMap } from '../../components/Html/WellMap/WellMap';
 import {
   CameraFocusAtPointEvent,
   CameraSetPositionEvent,
 } from '../../events/camera-events';
+import {
+  WellboreSelectedEvent,
+  wellboreSelectedEventType,
+} from '../../events/wellbore-events';
+import { useData } from '../../hooks/useData';
+import { PositionLog } from '../../sdk/data/types/PositionLog';
+import { WellboreHeader } from '../../sdk/data/types/WellboreHeader';
+import { WellboreManager } from '../../sdk/managers/WellboreManager';
+import { Vec3 } from '../../sdk/types/common';
 import { getTrajectory, Trajectory } from '../../sdk/utils/trajectory';
 
 const style: any = {
@@ -175,6 +175,7 @@ const WellMapSelector = ({ colorScale }: Props) => {
           wellIdentifier={wellIdentifier}
           selected={selected}
           onSelect={onSelect}
+          axisHeader={{ label: 'KOP', description: 'Kickoff Point' }}
         >
           {/* <WellMapFormations formations={formations} /> */}
           <WellMapCasingShoes />

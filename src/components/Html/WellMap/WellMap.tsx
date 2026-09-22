@@ -32,6 +32,7 @@ export type WellMapProps = {
   headless?: boolean;
   depthCursor?: boolean;
   theme?: WellMapStyles;
+  axisHeader?: { label: string; description?: string };
 };
 
 /**
@@ -72,6 +73,7 @@ export const WellMap = ({
   headless = false,
   depthCursor = true,
   theme = { ...DarkTheme },
+  axisHeader,
   children,
 }: PropsWithChildren<WellMapProps>) => {
   const dataContext = useContext(DataContext);
@@ -175,7 +177,6 @@ export const WellMap = ({
             )}
           </div>
         )}
-
         <Schematic
           selected={selected}
           setSelected={onSelect}
@@ -186,6 +187,7 @@ export const WellMap = ({
           colorMap={colorMap}
           interactive={interactive}
           depthCursor={depthCursor}
+          axisHeader={axisHeader}
         >
           {children}
         </Schematic>

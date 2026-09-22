@@ -1,6 +1,5 @@
 import { range as d3range } from 'd3-array';
 import { axisLeft } from 'd3-axis';
-import { format } from 'd3-format';
 import { scaleLinear } from 'd3-scale';
 import { select } from 'd3-selection';
 import { PropsWithChildren, useEffect, useMemo, useRef } from 'react';
@@ -24,6 +23,7 @@ type Props = {
   colorMap?: Record<string, string>;
   interactive?: boolean;
   depthCursor?: boolean;
+  axisHeader?: { label: string; description?: string };
 };
 
 export const Schematic = ({
@@ -36,6 +36,7 @@ export const Schematic = ({
   colorMap,
   interactive,
   depthCursor,
+  axisHeader,
   children,
 }: PropsWithChildren<Props>) => {
   const [svgRef, measure] = useMeasure();
@@ -107,7 +108,7 @@ export const Schematic = ({
       .offset(0)
       .tickPadding(4)
       .tickFormat(tick =>
-        noTickLabel.has(tick.valueOf()) ? '' : format(',.0f')(tick),
+        noTickLabel.has(tick.valueOf()) ? '' : tick.valueOf().toFixed(0),
       );
 
     return axis;
@@ -215,6 +216,22 @@ export const Schematic = ({
           </g>
           {interactive && depthCursor && depth !== undefined && (
             <DepthCursor depth={depth} setDepth={setDepth} />
+          )}
+          {axisHeader?.label && (
+            <text
+              className="axis-header"
+              x={styles.depthAxisWidth}
+              y={12}
+              textAnchor="end"
+              fontSize={10}
+              fill={styles.textColor}
+              cursor={axisHeader.description ? 'help' : 'default'}
+            >
+              {axisHeader.label}
+              {axisHeader.description && (
+                <title>{axisHeader.description}</title>
+              )}
+            </text>
           )}
         </>
       )}
