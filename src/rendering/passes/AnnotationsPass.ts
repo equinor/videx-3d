@@ -1,7 +1,6 @@
 import {
   Camera,
   CanvasTexture,
-  Clock,
   createCanvasElement,
   DataTexture,
   FloatType,
@@ -47,7 +46,6 @@ const _cursor: [number, number] = [0, 0];
 export class AnnotationsPass extends Pass {
   maxVisible: number;
   camera: PerspectiveCamera;
-  clock: Clock;
   pointer: Vector2;
   ctx: CanvasRenderingContext2D;
   overlayTexture: CanvasTexture | null = null;
@@ -86,13 +84,11 @@ export class AnnotationsPass extends Pass {
 
   constructor(
     camera: Camera,
-    clock: Clock,
     pointer: Vector2,
     maxVisible: number = 100,
   ) {
     super();
     this.camera = camera as PerspectiveCamera;
-    this.clock = clock;
     this.pointer = pointer;
     this.maxVisible = maxVisible;
 
@@ -426,7 +422,6 @@ export class AnnotationsPass extends Pass {
     const visibleInstances = preprocessInstances(
       instances,
       camera,
-      this.clock,
       maxVisible,
     );
 
