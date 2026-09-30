@@ -5,6 +5,17 @@ uniform mat3 gridUvMat;
 varying vec3 vViewPosition;
 varying vec2 vGridUv;
 
+// Where the geometry is not fully described by the grid (a chunk cap, whose
+// heights have been resampled, hole-filled and sealed), the mesh itself carries
+// what the elevation texture cannot. ⚠️ `nodata` rather than `covered`: an
+// attribute the geometry does not have reads as 0, which must mean "grid is fine".
+#ifdef USE_GEOMETRY_FALLBACK
+attribute float nodata;
+varying float vNodata;
+varying float vGeoDepth;
+varying vec3 vGeoNormal;
+#endif
+
 #include <common>
 #include <uv_pars_vertex>
 #include <displacementmap_pars_vertex>
@@ -40,6 +51,14 @@ void main() {
 
   vViewPosition = -mvPosition.xyz;
   vGridUv = (gridUvMat * vec3(uv, 1.0)).xy;
+
+  #ifdef USE_GEOMETRY_FALLBACK
+  vNodata = nodata;
+  // Depth is positive-down while scene Y is not, and the grid encodes
+  // `value = referenceDepth - depth`, so the two agree at `depth = -y`.
+  vGeoDepth = -transformed.y;
+  vGeoNormal = normalize(transformedNormal);
+  #endif
 
 	#include <worldpos_vertex>
 	#include <envmap_vertex>

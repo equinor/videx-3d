@@ -2,5 +2,10 @@
   "liveServer.settings.root": "/static",
   "editor.codeActionsOnSave": {
     "source.organizeImports": "always"
+  },
+  "chat.tools.terminal.autoApprove": {
+    "npx vitest": true,
+    "npx oxlint": true,
+    "npx prettier": true
   }
 }

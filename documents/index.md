@@ -8,3 +8,4 @@ This section provides further documentation and examples on how to use this libr
 - [Order-Independent Transparency (OIT) Guide](./oit-guide.md)
 - [Trajectory](./trajectory.md)
 - [Trajectory migration guide](./trajectory-migration.md)
+- [Wellbore fence](./fence-curves.md)

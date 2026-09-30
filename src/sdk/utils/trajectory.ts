@@ -119,6 +119,13 @@ export function getTrajectory(
 
 /**
  * Simplifies a linear 2d curve by comparing direction changes to a threshold value.
+ *
+ * The threshold is ANGULAR, not a distance: a point survives when the chord from the last kept
+ * point turns more than `acos(1 - threshold)` off that point's tangent. On a bend of radius `R`
+ * the chord it admits therefore stands off the true curve by roughly `R * threshold` — so the
+ * implied error in metres grows with the radius, and a value chosen for a tight curve is loose
+ * on a gentle one (measured: 0.497 m on an R=5000 m bend at 1e-4, 0.005 m at 1e-6).
+ *
  * @param array input array
  * @param accessor accessor to array coordinate element
  * @param threshold threshold value (default 1e-7)
@@ -141,7 +148,11 @@ export function simplifyCurve2D<T>(
     const curr = accessor(array[i]);
     const v = normalizeVec2(subVec2(curr, prev));
 
-    if (Math.abs(dotVec2(tangent, v)) < 1 - threshold) {
+    // ⚠️⚠️ SIGNED, never `Math.abs`. A 180° reversal has dot −1, which under an absolute test
+    // scores identically to collinear — so an out-and-back excursion read as a straight line and
+    // was deleted outright (measured: a 100 m plan cusp came out 8 m long, both legs gone,
+    // because `prev` only advances on a KEPT point and the anchor stuck at the run's start).
+    if (dotVec2(tangent, v) < 1 - threshold) {
       // keep
       simplifiedArray.push(array[i]);
       tangent = v;

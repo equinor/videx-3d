@@ -7,6 +7,7 @@ import {
   NoBlending,
   OneFactor,
   OneMinusSrcAlphaFactor,
+  ShaderChunk,
   ShaderMaterial,
   Side,
   SrcAlphaFactor,
@@ -38,7 +39,21 @@ export type OitUniforms = {
   oitMinDepthTexture: IUniform<Texture | null>;
   oitSkipFront: IUniform<number>;
   oitOcclusionThreshold: IUniform<number>;
+  oitFrontTolerance: IUniform<number>;
 };
+
+/**
+ * Default front-peel tolerance — see `OITRenderPass.frontPeelTolerance`, which is
+ * what normally drives it.
+ *
+ * A FRACTION of the view distance, so the slab it defines is about
+ * `distance * DEFAULT_OIT_FRONT_TOLERANCE` metres. 1e-5 is roughly 80 float32 ULPs:
+ * far more than the last-ULP disagreement it has to absorb, and small enough that at
+ * field scale it stays sub-decimetre rather than spanning metres of geometry.
+ *
+ * @group Rendering
+ */
+export const DEFAULT_OIT_FRONT_TOLERANCE = 1e-5;
 
 /**
  * A material that can participate in the {@link OITRenderPass} hybrid pipeline.
@@ -148,6 +163,7 @@ function createOitUniforms(): OitUniforms {
     oitMinDepthTexture: new Uniform<Texture | null>(null),
     oitSkipFront: new Uniform(0),
     oitOcclusionThreshold: new Uniform(1),
+    oitFrontTolerance: new Uniform(DEFAULT_OIT_FRONT_TOLERANCE),
   };
 }
 
@@ -293,6 +309,15 @@ function buildVariant(
     variant = base.clone();
   }
 
+  // `copy()`/`clone()` drop `defaultAttributeValues`, but the split-cap layout
+  // relies on them (a missing `xz`/`y` or `position` must default to 0). Carry the
+  // base material's over to every variant.
+  const baseDefaults = (base as { defaultAttributeValues?: unknown })
+    .defaultAttributeValues;
+  if (baseDefaults)
+    (variant as { defaultAttributeValues?: unknown }).defaultAttributeValues =
+      baseDefaults;
+
   // Share designated custom uniform containers by reference so per-frame updates
   // on the base material reach every cloned variant (e.g. casing slice uniforms).
   if (options?.shareUniforms) {
@@ -434,6 +459,7 @@ export function attachOitVariants<T extends ShaderMaterial>(
   u.oitMinDepthTexture ??= uniforms.oitMinDepthTexture;
   u.oitSkipFront ??= uniforms.oitSkipFront;
   u.oitOcclusionThreshold ??= uniforms.oitOcclusionThreshold;
+  u.oitFrontTolerance ??= uniforms.oitFrontTolerance;
 
   const bound: OitUniforms = {
     oitDepthFar: u.oitDepthFar,
@@ -441,35 +467,84 @@ export function attachOitVariants<T extends ShaderMaterial>(
     oitMinDepthTexture: u.oitMinDepthTexture,
     oitSkipFront: u.oitSkipFront,
     oitOcclusionThreshold: u.oitOcclusionThreshold,
+    oitFrontTolerance: u.oitFrontTolerance,
   };
 
   return installOitVariants(material, bound, options);
 }
 
-const MAIN_SIGNATURE = /\bvoid\s+main\s*\(\s*\)\s*\{/;
+// `void main(void)` is legal GLSL and does appear in hand-written shaders.
+const MAIN_SIGNATURE = /\bvoid\s+main\s*\(\s*(?:void\s*)?\)\s*\{/;
+
+/** Three.js `#include <chunk>` directive pattern (matches its own resolver). */
+const INCLUDE_PATTERN = /^[ \t]*#include +<([\w\d./]+)>/gm;
+
+/**
+ * Resolve `#include <chunk>` directives (recursively) against `THREE.ShaderChunk`.
+ * Needed because lit built-ins declare `vViewPosition` in an included chunk (e.g. the
+ * fragment shader's `<lights_lambert_pars_fragment>`) rather than literally, so a
+ * plain text scan of the raw source would miss it and wrongly inject a duplicate.
+ * Unknown (user) includes are left untouched.
+ */
+function resolveIncludes(src: string, depth = 0): string {
+  if (depth > 8 || !src.includes('#include')) return src;
+  const chunks = ShaderChunk as Record<string, string | undefined>;
+  return src.replace(INCLUDE_PATTERN, (whole, name: string) => {
+    const chunk = chunks[name];
+    return chunk !== undefined ? resolveIncludes(chunk, depth + 1) : whole;
+  });
+}
 
 function hasViewPosition(src: string): boolean {
-  return /\bvViewPosition\b/.test(src);
+  return /\bvViewPosition\b/.test(resolveIncludes(src));
 }
 
 /**
- * Find the index just past the opening brace of `main()` and the index of its
- * matching closing brace. Returns null if not found.
+ * A copy of `src` with every comment blanked to spaces, newlines kept. Indices into
+ * it are therefore valid in the original. GLSL has no string literals, so a comment
+ * is the only place a brace — or a decoy `void main()` — can hide from a scan.
  */
-function findMainBraces(src: string): { open: number; close: number } | null {
-  const match = MAIN_SIGNATURE.exec(src);
+function maskComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, comment =>
+    comment.replace(/[^\n]/g, ' '),
+  );
+}
+
+/** Where `main()` begins and where its body ends. */
+type MainSpan = { start: number; close: number };
+
+/** Locate `main()` and its matching closing brace, or `null` if there is none. */
+function findMain(src: string): MainSpan | null {
+  const masked = maskComments(src);
+  const match = MAIN_SIGNATURE.exec(masked);
   if (!match) return null;
   const open = match.index + match[0].length;
   let depth = 1;
-  for (let i = open; i < src.length; i++) {
-    const c = src[i];
+  for (let i = open; i < masked.length; i++) {
+    const c = masked[i];
     if (c === '{') depth++;
-    else if (c === '}') {
-      depth--;
-      if (depth === 0) return { open, close: i };
-    }
+    else if (c === '}' && --depth === 0)
+      return { start: match.index, close: i };
   }
   return null;
+}
+
+/**
+ * Locate `main()`, or throw.
+ *
+ * ⛔ Never returns a partial result. The caller registers the material as
+ * OIT-capable regardless, so a shader that silently went unpatched is still routed
+ * through the OIT passes with no `oitProcess` call in it: it writes its raw colour
+ * into the min-depth target, floods the accumulation buffer, and never discards in
+ * the front pass. That is strictly worse than not being OIT at all, and invisible.
+ */
+function requireMain(src: string, context: string): MainSpan {
+  const span = findMain(src);
+  if (!span)
+    throw new Error(
+      `makeOitCompatible: could not locate a complete main() in the ${context}, so the OIT block cannot be injected.`,
+    );
+  return span;
 }
 
 /** Insert `declarations` before `void main` and `body` before main's closing brace. */
@@ -477,16 +552,14 @@ function insertAroundMain(
   src: string,
   declarations: string,
   body: string,
+  context: string,
 ): string {
-  const match = MAIN_SIGNATURE.exec(src);
-  if (!match) return src;
+  const span = requireMain(src, context);
   const withDecls =
-    src.slice(0, match.index) + declarations + src.slice(match.index);
-  const braces = findMainBraces(withDecls);
-  if (!braces) return withDecls;
-  return (
-    withDecls.slice(0, braces.close) + body + withDecls.slice(braces.close)
-  );
+    src.slice(0, span.start) + declarations + src.slice(span.start);
+  // The declarations land before main, so the closing brace just shifts by their length.
+  const close = span.close + declarations.length;
+  return withDecls.slice(0, close) + body + withDecls.slice(close);
 }
 
 /**
@@ -499,12 +572,24 @@ function insertAroundMain(
  * injected automatically. All injected code is guarded by `#ifdef USE_OIT`, so the
  * base program is unchanged outside the OIT pipeline.
  *
- * Note: targets materials compiled by Three.js (built-ins, `ShaderMaterial`). Raw
- * `RawShaderMaterial` (no Three.js shader prelude) is not auto-patched.
+ * ⚠️ CONTRACT for the injected `vViewPosition`. Where the vertex shader includes
+ * `<project_vertex>` (every stock Three.js material) it is taken from `mvPosition`
+ * and is correct whatever `<begin_vertex>` did. A material supplying its OWN vertex
+ * `main` has no such anchor, so the injection falls back to the `position`
+ * attribute — which means such a material MUST rasterise `position` as given. One
+ * that assembles its position from other attributes has to declare and write
+ * `vViewPosition` itself, or the OIT depth (and with it the min-depth buffer and the
+ * front-layer partition) is wrong for every fragment it draws.
+ *
+ * Note: targets materials compiled by Three.js (built-ins, `ShaderMaterial`).
+ * `RawShaderMaterial` gets no Three.js prelude, so `USE_OIT` would never be defined
+ * and every injected line would be dead — it is rejected rather than patched.
  *
  * @param material - the material to patch
  * @param options - optional overrides (e.g. `side`)
  * @returns the same material, typed as {@link OitCapableMaterial}
+ * @throws if `material` is a `RawShaderMaterial`, or if either of its shaders has no
+ *   `main()` for the OIT block to be injected into
  *
  * @group Rendering
  * @see {@link attachOitVariants}
@@ -513,8 +598,27 @@ export function makeOitCompatible<T extends Material>(
   material: T,
   options?: OitMaterialOptions,
 ): T & OitCapableMaterial {
+  // ⛔ Three adds no prelude to a raw shader, so the `USE_OIT` define that guards
+  // every injected line is never set: the material would be registered OIT-capable
+  // and then render through the OIT passes untouched.
+  if ((material as { isRawShaderMaterial?: boolean }).isRawShaderMaterial)
+    throw new Error(
+      'makeOitCompatible: RawShaderMaterial is not supported, because Three adds no shader prelude to it and USE_OIT is therefore never defined. Author the OIT block into the shader and use attachOitVariants instead.',
+    );
+
   const uniforms = createOitUniforms();
   const shaderMat = isShaderMaterial(material) ? material : null;
+
+  // A ShaderMaterial carries its source already, so the injection it will get at
+  // compile time can be checked HERE — where the stack still points at the caller
+  // rather than at whatever frame the renderer first compiled it on.
+  if (shaderMat) {
+    requireMain(shaderMat.vertexShader, `vertex shader of ${material.type}`);
+    requireMain(
+      shaderMat.fragmentShader,
+      `fragment shader of ${material.type}`,
+    );
+  }
 
   // For ShaderMaterials we can add the uniforms directly; for built-ins we bind a
   // standalone object via onBeforeCompile.
@@ -525,6 +629,7 @@ export function makeOitCompatible<T extends Material>(
     u.oitMinDepthTexture ??= uniforms.oitMinDepthTexture;
     u.oitSkipFront ??= uniforms.oitSkipFront;
     u.oitOcclusionThreshold ??= uniforms.oitOcclusionThreshold;
+    u.oitFrontTolerance ??= uniforms.oitFrontTolerance;
   }
 
   const prevOnBeforeCompile = material.onBeforeCompile;
@@ -541,6 +646,7 @@ export function makeOitCompatible<T extends Material>(
     shader.uniforms.oitMinDepthTexture = uniforms.oitMinDepthTexture;
     shader.uniforms.oitSkipFront = uniforms.oitSkipFront;
     shader.uniforms.oitOcclusionThreshold = uniforms.oitOcclusionThreshold;
+    shader.uniforms.oitFrontTolerance = uniforms.oitFrontTolerance;
 
     const needsViewPosition = !hasViewPosition(shader.fragmentShader);
 
@@ -559,17 +665,40 @@ export function makeOitCompatible<T extends Material>(
       shader.fragmentShader,
       fragDecls,
       fragBody,
+      `fragment shader of ${material.type}`,
     );
 
     if (needsViewPosition) {
       const vertDecls = '#ifdef USE_OIT\nvarying vec3 vViewPosition;\n#endif\n';
-      const vertBody =
-        '\n#ifdef USE_OIT\n  vViewPosition = -(modelViewMatrix * vec4(position, 1.0)).xyz;\n#endif\n';
-      shader.vertexShader = insertAroundMain(
-        shader.vertexShader,
-        vertDecls,
-        vertBody,
-      );
+      // ⭐ Prefer three's own `mvPosition`: by the time <project_vertex> runs it has
+      // folded in any <begin_vertex> override, morph targets, skinning, instancing
+      // and batching. The `position` attribute carries none of those, and is not even
+      // the rasterised vertex when a material assembles its position from other
+      // attributes — a chunk cap ships `xz` + `y` and no `position` at all, so the
+      // old form gave every fragment the model origin's depth.
+      const anchor = '#include <project_vertex>';
+      if (shader.vertexShader.includes(anchor)) {
+        shader.vertexShader = insertAroundMain(
+          shader.vertexShader,
+          vertDecls,
+          '',
+          `vertex shader of ${material.type}`,
+        ).replace(
+          anchor,
+          `${anchor}\n#ifdef USE_OIT\n  vViewPosition = -mvPosition.xyz;\n#endif`,
+        );
+      } else {
+        // A hand-written vertex main has no anchor to attach to; see the contract
+        // documented on makeOitCompatible.
+        const vertBody =
+          '\n#ifdef USE_OIT\n  vViewPosition = -(modelViewMatrix * vec4(position, 1.0)).xyz;\n#endif\n';
+        shader.vertexShader = insertAroundMain(
+          shader.vertexShader,
+          vertDecls,
+          vertBody,
+          `vertex shader of ${material.type}`,
+        );
+      }
     }
   };
   material.needsUpdate = true;

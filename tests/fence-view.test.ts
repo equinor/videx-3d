@@ -1,0 +1,233 @@
+import { describe, expect, it } from 'vitest';
+import {
+  fenceAutoSide,
+  fenceSideAt,
+  fenceViewPose,
+  FenceViewPose,
+  Vec2,
+  WellboreFence,
+} from '../src/sdk';
+import { fenceFor, wellboreIds, wellboreName } from './fence-fixtures';
+
+/**
+ * Framing a fence, and choosing the half to remove from where the camera is.
+ *
+ * ⭐ The one invariant worth asserting is the same for both: a cut face can only be
+ * read from the half that was taken away. So the pose must PUT the camera there,
+ * and the auto side must FOLLOW it there — and `fenceSideAt`, which the shader and
+ * the fog already agree with, is the judge of both.
+ */
+
+/**
+ * A handful of real wells, at the margin the rest of the suite already builds.
+ *
+ * ⭐ `FENCE_VIEW=all` sweeps every well instead. Env-guarded because a build is
+ * ~250 ms and the invariant is not per-well — the sweep is for when the RULE
+ * changes, not for every run.
+ */
+const wells =
+  process.env.FENCE_VIEW === 'all' ? wellboreIds : wellboreIds.slice(0, 3);
+
+/**
+ * The first test pays for every fence it touches; the rest read the cache.
+ *
+ * ⚠️ Generous even for three wells: a build is ~250 ms on an idle machine and
+ * several times that when the whole suite is competing for workers.
+ */
+const SWEEP_TIMEOUT = wells.length > 3 ? 120000 : 30000;
+
+const RANGE = { top: 0, bottom: -3500 };
+
+/**
+ * Where a pose actually puts the camera, in plan.
+ *
+ * ⚠️ Derived the way `CameraManager.orbit` does, from the azimuth and polar — the
+ * point of the check is that the two agree on what those mean. The distance is the
+ * box's diagonal, which is about what a 60° fov frames it from.
+ */
+function eyeAt(pose: ReturnType<typeof fenceViewPose>): Vec2 {
+  const azimuth = (pose.azimuth * Math.PI) / 180;
+  const polar = (pose.polar * Math.PI) / 180;
+  const { min, max } = pose.box;
+  const distance = Math.hypot(
+    max[0] - min[0],
+    max[1] - min[1],
+    max[2] - min[2],
+  );
+  const horizontal = distance * Math.sin(polar);
+  return [
+    pose.target[0] + horizontal * Math.cos(azimuth),
+    pose.target[2] + horizontal * Math.sin(azimuth),
+  ];
+}
+
+/**
+ * Degrees the camera can orbit each way from a pose before the cut closes.
+ *
+ * ⭐ Measured straight off the field at the pose's own radius, so it is
+ * independent of how the pose picked its heading.
+ */
+function clearance(
+  fence: WellboreFence,
+  pose: FenceViewPose,
+): [number, number] {
+  const at = fence[pose.side];
+  if (!at) throw new Error(`fence-view test: side ${pose.side} did not build`);
+  const [ex, ez] = eyeAt(pose);
+  const cx = pose.target[0];
+  const cz = pose.target[2];
+  const radius = Math.hypot(ex - cx, ez - cz);
+  const open = (offset: number) => {
+    const a = ((pose.azimuth + offset) * Math.PI) / 180;
+    return (
+      fenceSideAt(
+        at.index,
+        at.field,
+        cx + radius * Math.cos(a),
+        cz + radius * Math.sin(a),
+      ) < 0
+    );
+  };
+  const walk = (sign: 1 | -1) => {
+    let off = 0;
+    while (off < 90 && open(sign * (off + 1))) off++;
+    return off;
+  };
+  return [walk(-1), walk(1)];
+}
+
+describe('fenceViewPose', () => {
+  it(
+    'stands the camera in the half that was removed',
+    () => {
+      for (const id of wells) {
+        const fence = fenceFor(id);
+        if (!fence) continue;
+        for (const side of ['left', 'right'] as const) {
+          const pose = fenceViewPose(fence, { ...RANGE, side });
+          expect(pose.side).toBe(side);
+          expect(pose.open, `${wellboreName(id)} side ${side}`).toBe(true);
+          const [x, z] = eyeAt(pose);
+          const at = fence[side];
+          expect(
+            fenceSideAt(at.index, at.field, x, z),
+            `${wellboreName(id)} side ${side}`,
+          ).toBeLessThan(0);
+        }
+      }
+    },
+    SWEEP_TIMEOUT,
+  );
+
+  it('takes the side the view is already coming from', () => {
+    for (const id of wells) {
+      const fence = fenceFor(id);
+      if (!fence) continue;
+      // The 'left' pose's own offset is the direction that side has to be viewed from,
+      // so asking to come from there must give 'left' back, and from behind, 'right'.
+      const reference = fenceViewPose(fence, { ...RANGE, side: 'left' });
+      const azimuth = (reference.azimuth * Math.PI) / 180;
+      const from: Vec2 = [Math.cos(azimuth), Math.sin(azimuth)];
+      expect(fenceViewPose(fence, { ...RANGE, from }).side).toBe('left');
+      expect(
+        fenceViewPose(fence, { ...RANGE, from: [-from[0], -from[1]] }).side,
+      ).toBe('right');
+    }
+  });
+
+  it('frames the trace through the whole depth range', () => {
+    const fence = fenceFor(wells[0]);
+    if (!fence) return;
+    const pose = fenceViewPose(fence, { ...RANGE });
+    expect(pose.box.min[1]).toBe(RANGE.bottom);
+    expect(pose.box.max[1]).toBe(RANGE.top);
+    for (const [x, z] of fence.base.points) {
+      expect(x).toBeGreaterThanOrEqual(pose.box.min[0]);
+      expect(x).toBeLessThanOrEqual(pose.box.max[0]);
+      expect(z).toBeGreaterThanOrEqual(pose.box.min[2]);
+      expect(z).toBeLessThanOrEqual(pose.box.max[2]);
+    }
+  });
+
+  /**
+   * ⚠️⚠️ A well angled across the field opens only near its run-outs, and taking
+   * the FIRST heading that opens parks the camera on the edge of that opening —
+   * which is precisely where `fenceAutoSide` flips, so the fly-to landed a nudge
+   * away from swapping the half it had just removed.
+   */
+  it('leaves room either side of the heading it picks', () => {
+    const guard = 25;
+    for (const id of wells) {
+      const fence = fenceFor(id);
+      if (!fence) continue;
+      for (const side of ['left', 'right'] as const) {
+        const pose = fenceViewPose(fence, { ...RANGE, side, guard });
+        const [left, right] = clearance(fence, pose);
+        // The full guard, or half the window when the window cannot give it.
+        const wanted = Math.min(guard, Math.floor((left + right) / 2)) - 1;
+        expect(
+          Math.min(left, right),
+          `${wellboreName(id)} side ${side}`,
+        ).toBeGreaterThanOrEqual(wanted);
+      }
+    }
+  });
+});
+
+describe('fenceAutoSide', () => {
+  it('follows the camera across the cut', () => {
+    for (const id of wells) {
+      const fence = fenceFor(id);
+      if (!fence) continue;
+      const leftPose = fenceViewPose(fence, { ...RANGE, side: 'left' });
+      const rightPose = fenceViewPose(fence, { ...RANGE, side: 'right' });
+      const { index, field, curve } = fence.left;
+      const [lx, lz] = eyeAt(leftPose);
+      const [rx, rz] = eyeAt(rightPose);
+      expect(fenceAutoSide('right', index, field, curve.points, lx, lz)).toBe(
+        'left',
+      );
+      expect(fenceAutoSide('left', index, field, curve.points, rx, rz)).toBe(
+        'right',
+      );
+    }
+  });
+
+  /**
+   * ⚠️⚠️ The regression this file exists for. `fenceSideAt`'s MAGNITUDE saturates a
+   * few cells from the curve at `12 * field.cell` — a constant, and one that
+   * differs per build because the cell size is fitted to a node budget. Deadbanding
+   * that value instead of the true distance froze `auto` completely: measured 212.9
+   * m on this data, so the story's 250 m deadband was never once exceeded.
+   */
+  it('is decisive far from the cut whatever the deadband', () => {
+    const fence = fenceFor(wells[0]);
+    if (!fence) return;
+    const leftPose = fenceViewPose(fence, { ...RANGE, side: 'left' });
+    const { index, field, curve } = fence.left;
+    const [x, z] = eyeAt(leftPose);
+    for (const deadband of [0, 50, 250, 1000]) {
+      expect(
+        fenceAutoSide('right', index, field, curve.points, x, z, deadband),
+      ).toBe('left');
+    }
+  });
+
+  it('holds the side it has while the camera is on the cut', () => {
+    const fence = fenceFor(wells[0]);
+    if (!fence) return;
+    const { index, field, curve } = fence.left;
+    // A vertex of the trace is as close to the cut as it is possible to be.
+    const [x, z] = fence.base.points[fence.base.points.length >> 1];
+    expect(fenceAutoSide('left', index, field, curve.points, x, z, 500)).toBe(
+      'left',
+    );
+    expect(fenceAutoSide('right', index, field, curve.points, x, z, 500)).toBe(
+      'right',
+    );
+    // Without a deadband it has to commit to whichever half it is a hair inside.
+    expect(['left', 'right']).toContain(
+      fenceAutoSide('left', index, field, curve.points, x, z),
+    );
+  });
+});

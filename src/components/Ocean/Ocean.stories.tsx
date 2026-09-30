@@ -8,45 +8,33 @@ import {
   createOceanBoxFromSurface,
   createOceanEllipseBox,
   createOceanPlane,
-  CRS,
-  getProjectionDefFromUtmZone,
-  PlanarPolygonGeometry,
   SurfaceMeta,
   Vec2,
 } from '../../sdk';
-import { parseGeoJsonFeature } from '../../sdk/utils/geojson';
+import { createDemoMultiPolygon } from '../../storybook/data/demo-polygons';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
-import { get } from '../../storybook/dependencies/api';
+import { useFieldOutline } from '../../storybook/hooks/useFieldOutline';
 import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import storyArgs from '../../storybook/story-args.json';
 import { useOceanContact } from './ocean-contact';
 import { OceanContact } from './ocean-material';
 import { BuoyancyPoint, useBuoyancy } from './ocean-sampler';
 
-const utmZone = storyArgs.utmZone;
-const origin = storyArgs.origin as Vec2;
 const surfaceOptions = storyArgs.surfaceOptions as Record<string, string>;
-const crs = new CRS(getProjectionDefFromUtmZone(utmZone), origin, 'utm');
 
-/**
- * Selectable GeoJSON footprints for the polygon variant. The key is the public
- * URL fetched at runtime; the value is the label shown in the Storybook select.
- */
+/** Selectable footprints for the polygon variant, by label. */
 const polygonOptions: Record<string, string> = {
-  '/data/volve-polygon.json': 'Volve (single polygon)',
-  '/data/multi-polygon.json': 'Multi-polygon (with holes)',
+  field: 'Field outline (derived from the wells)',
+  demo: 'Multi-polygon (with holes)',
 };
 
 /**
- * Map a WGS84 lon/lat to world XY. The northing (Y) is negated because Three.js
- * shapes are authored in the XY plane and the world Z axis points south; after
- * the geometry is rotated onto the XZ plane the orientation comes out correct.
+ * Map to world XY. The northing (Y) is negated because Three.js shapes are
+ * authored in the XY plane and the world Z axis points south; after the geometry
+ * is rotated onto the XZ plane the orientation comes out correct.
  */
-const transformWgs84 = (pos: Vec2): Vec2 => {
-  const coord = crs.wgs84ToWorld(pos[0], pos[1]);
-  return [coord.x, -coord.z];
-};
+const flipNorthing = (pos: Vec2): Vec2 => [pos[0], -pos[1]];
 
 type OceanVariant =
   | 'plane'
@@ -161,7 +149,7 @@ type ExampleProps = {
   waterDepth: number;
   depthVariation: number;
   maxError: number;
-  rimSmoothing: number;
+  edgeSmoothing: number;
   surfaceId: string;
   polygonId: string;
 
@@ -214,6 +202,7 @@ type ExampleProps = {
 const OceanDemo = (props: ExampleProps) => {
   const data = useData();
   const surfaceMetaDict = useSurfaceMetaDict();
+  const fieldOutlineXY = useFieldOutline({ transform: flipNorthing });
 
   const [geometries, setGeometries] = useState<Geometries | null>(null);
 
@@ -281,19 +270,19 @@ const OceanDemo = (props: ExampleProps) => {
         }),
       );
     } else if (props.variant === 'polygon') {
-      get(props.polygonId).then(json => {
-        if (cancelled || !json) return;
-        const feature = parseGeoJsonFeature(json, transformWgs84);
-        feature.geometry.centralize();
+      const geometry =
+        props.polygonId === 'demo' ? createDemoMultiPolygon() : fieldOutlineXY;
+      if (geometry) {
+        geometry.centralize();
         apply(
-          createOceanBoxFromPolygon(feature.geometry as PlanarPolygonGeometry, {
+          createOceanBoxFromPolygon(geometry, {
             waterDepth: props.waterDepth,
             depthVariation: props.depthVariation,
             surfaceSegments: props.surfaceSegments,
             bedSegments: props.bedSegments,
           }),
         );
-      });
+      }
     } else if (props.variant === 'surface') {
       // NOTE: none of the surfaces bundled with this repo are actual sea-bed
       // surfaces — they are subsurface sediment horizons sampled well below sea
@@ -318,7 +307,7 @@ const OceanDemo = (props: ExampleProps) => {
                 {
                   surfaceSegments: props.surfaceSegments,
                   maxError: props.maxError,
-                  rimSmoothing: props.rimSmoothing,
+                  edgeSmoothing: props.edgeSmoothing,
                   // These repo surfaces are depth-normalized (stored as
                   // surfaceMeta.max - trueDepth), so pass the reference depth to
                   // place the bed at its true depth below sea level, exactly as
@@ -345,9 +334,10 @@ const OceanDemo = (props: ExampleProps) => {
     props.waterDepth,
     props.depthVariation,
     props.maxError,
-    props.rimSmoothing,
+    props.edgeSmoothing,
     props.surfaceId,
     props.polygonId,
+    fieldOutlineXY,
     data,
     surfaceMeta,
   ]);
@@ -456,7 +446,8 @@ const range = (min: number, max: number, step: number) => ({
  *   height match, oval otherwise) — a smooth outline for very large water bodies
  *   that avoids the hard corners of a rectangle.
  * - **Polygon** — `createOceanBoxFromPolygon`: a box whose footprint follows a
- *   field-outline polygon (with holes) parsed from GeoJSON.
+ *   polygon with holes — either the field outline derived from the wellbore
+ *   trajectories, or a made-up multi-component footprint.
  * - **Surface** — `createOceanBoxFromSurface`: a box whose sea bed is the
  *   bathymetry of a selectable depth surface. (The surfaces bundled with this
  *   repo are subsurface sediment horizons rather than real sea beds; they are
@@ -495,7 +486,7 @@ const meta = {
     waterDepth: { ...range(10, 500, 10), table: { category: 'Geometry' } },
     depthVariation: { ...range(0, 200, 5), table: { category: 'Geometry' } },
     maxError: { ...range(0.5, 20, 0.5), table: { category: 'Geometry' } },
-    rimSmoothing: { ...range(0, 1, 1), table: { category: 'Geometry' } },
+    edgeSmoothing: { ...range(0, 5, 1), table: { category: 'Geometry' } },
 
     oceanLevel: { ...range(-500, 500, 10), table: { category: 'Surface' } },
     waveCount: { ...range(1, 64, 1), table: { category: 'Surface' } },
@@ -617,7 +608,7 @@ const commonArgs = {
   waterDepth: 120,
   depthVariation: 20,
   maxError: 5,
-  rimSmoothing: 0,
+  edgeSmoothing: 0,
   surfaceId: Object.keys(surfaceOptions)[0],
   polygonId: Object.keys(polygonOptions)[0],
 
@@ -678,7 +669,7 @@ export const Box: Story = {
   args: { ...commonArgs, variant: 'box' },
 };
 
-/** Ocean box following a GeoJSON field-outline polygon (`createOceanBoxFromPolygon`). */
+/** Ocean box following a polygon footprint with holes (`createOceanBoxFromPolygon`). */
 export const Polygon: Story = {
   args: {
     ...commonArgs,

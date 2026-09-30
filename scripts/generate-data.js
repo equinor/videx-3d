@@ -32,6 +32,7 @@
  *  > FMU: /download/fmu/{modelid}/{surfaceid}
  *
  * !!!IMPORTANT: surface irapbin files must be put in the /public/data/surfaces folder, named by surface id!
+ * They are emitted as raw little-endian float32 grids ([surfaceId].bin), not JSON.
  *
  * node scripts/generate-data --input import/_volve && node scripts/generate-story-args
  */
@@ -43,6 +44,7 @@ import { transformCasings } from './transformations/transformCasings.js';
 import { transformCompletion } from './transformations/transformCompletion.js';
 import { transformPerforations } from './transformations/transformPerforations.js';
 import { transformPositionLogs } from './transformations/transformPositionLogs.js';
+import { transformStratColumns } from './transformations/transformStratColumns.js';
 import { transformSurfaceFiles } from './transformations/transformSurfaceFiles.js';
 import { transformSurfaceMeta } from './transformations/transformSurfaceMeta.js';
 import { transformWellboreHeaders } from './transformations/transformWellboreHeaders.js';
@@ -56,12 +58,13 @@ const outPath = ((args.output || './public/data') + '/').replace('//', '/');
 
 const fileNames = [
   'config',
+  'mapping',
   'wellbore-headers',
   'position-logs',
   'casings',
   'completion',
   'perforations',
-  //'strat-columns',
+  'strat-columns',
   //'picks',
   'wellbore-stratigraphy',
   'surface-meta',
@@ -90,6 +93,7 @@ for (let i = 0; i < fileNames.length; i++) {
 verify(input, 'config', 'wellbore-headers', 'position-logs');
 
 output['config'] = input['config']; // pass through
+output['mapping'] = input['mapping'] || {}; // pass through, optional
 
 console.info('> cleaning/preparing destination folder: ' + outPath);
 if (fs.existsSync(outPath)) {
@@ -108,8 +112,8 @@ console.info('> transforming completion data');
 transformCompletion(input, output);
 console.info('> transforming perforation data');
 transformPerforations(input, output);
-//console.info('> transforming strat columns')
-//transformStratColumns(input, output)
+console.info('> transforming strat columns');
+transformStratColumns(input, output);
 //console.info('> transforming pick data')
 //transformPicks(input, output)
 console.info('> transforming wellbore stratigraphy');

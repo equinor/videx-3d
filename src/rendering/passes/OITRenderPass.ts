@@ -28,7 +28,12 @@ import { LAYERS } from '../../layers/layers';
 import { FullscreenRenderer } from '../fullscreen-renderer';
 import { FxaaResolver } from '../fxaa-resolver';
 import { GpuTimer } from '../gpu-timer';
-import { isOitCapable, OitCapableMaterial, OitPass } from '../oit-material';
+import {
+  DEFAULT_OIT_FRONT_TOLERANCE,
+  isOitCapable,
+  OitCapableMaterial,
+  OitPass,
+} from '../oit-material';
 import { Pass } from '../Pass';
 import { getRenderingState } from '../rendering-state';
 import copyFragmentShader from '../shaders/copy-frag.glsl';
@@ -219,6 +224,27 @@ export class OITRenderPass extends Pass {
    * Useful for isolating tail behaviour and comparing against the hybrid result.
    */
   skipFront: boolean = false;
+
+  /**
+   * How close to the per-pixel nearest transparent fragment a fragment may be and
+   * still count as the front layer, **as a fraction of its view distance** — so the
+   * slab it defines is roughly `distance * frontPeelTolerance` metres (1e-5 is ~14 cm
+   * at 14 km).
+   *
+   * ⭐ It exists only to absorb the last-ULP disagreement between the min-depth
+   * pre-pass and the front/tail passes, which rasterise the same geometry from the
+   * same vertex source but as separate GL programs. It is NOT a modelling parameter,
+   * and raising it has a real cost: everything within the slab is composited by the
+   * exact front pass and removed from the tail average, so a second surface caught in
+   * it reads at full strength where the same surface reads washed-out elsewhere —
+   * visible as a harder, more opaque band wherever two surfaces meet at a shallow
+   * angle (a horizon meeting a section or fence cut face, for instance).
+   *
+   * ⚠️ Lowering it too far has the opposite failure: the genuine front fragment fails
+   * its own test, so the pixel resolves entirely through WBOIT and shimmers. Default
+   * {@link DEFAULT_OIT_FRONT_TOLERANCE}.
+   */
+  frontPeelTolerance: number = DEFAULT_OIT_FRONT_TOLERANCE;
 
   /**
    * Number of MSAA samples (0 = off) for the hybrid multisample path. When > 0 the
@@ -804,6 +830,7 @@ export class OITRenderPass extends Pass {
         u.oitMinDepthTexture.value = this.minDepthTarget.texture;
         u.oitSkipFront.value = this.skipFront ? 1 : 0;
         u.oitOcclusionThreshold.value = this.occlusionDepthThreshold;
+        u.oitFrontTolerance.value = this.frontPeelTolerance;
         // Re-sync the cached per-pass variants with the base material's current
         // program state (defines/wireframe/etc.). The cached pass-swap materials are
         // the same objects, mutated in place, so this keeps them up to date when the

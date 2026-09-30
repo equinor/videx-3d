@@ -299,6 +299,7 @@ useEffect(() => { oitPass.occlusionDepthStamp = true; }, [oitPass]);
 | Field | Default | Purpose |
 |-------|---------|---------|
 | `skipFront` | `false` | Debug: disable the exact depth-peeled front layer; resolve *every* transparent fragment through the WBOIT tail. Useful for isolating tail behaviour. |
+| `frontPeelTolerance` | `1e-5` | How close to the per-pixel nearest transparent fragment a fragment may be and still count as the front layer — see below. |
 | `occlusionDepthStamp` | `false` | Let sufficiently-opaque **transparent surfaces** occlude 2D annotation labels behind them. Transparent surfaces normally write no depth, so labels are never occluded; this stamps depth where a surface's own alpha ≥ `occlusionDepthThreshold`. |
 | `occlusionDepthThreshold` | `0.5` | Alpha threshold for `occlusionDepthStamp`. |
 | `emitterDepthStamp` | `false` | Let the dense core of an additive **emitter** (e.g. perforation jets, `LAYERS.EMISSIVE`) occlude transparent surfaces *behind* it, preventing wash-out. The emitter opts in by exposing a depth-stamp material on `material.userData.occlusionDepthMaterial`. |
@@ -312,6 +313,53 @@ routed through OIT rather than silently treated as opaque.
 
 These features cost nothing when off — the extra variant programs are only compiled
 by Three.js the first time a pass actually renders them.
+
+### `frontPeelTolerance` — units, and why it is not a style knob
+
+The hybrid splits each pixel into an **exact front fragment** (alpha-over) and a
+**weighted-average tail**. The split compares a fragment's linear view depth against
+a per-pixel minimum written by a separate pre-pass, with a tolerance:
+
+```glsl
+float tol = minZ * oitFrontTolerance + 1e-9;
+```
+
+`minZ` is normalised by `camera.far`, so the tolerance is a **fraction of the view
+distance**: the slab it defines is roughly `distance × frontPeelTolerance` metres —
+about 14 cm at 14 km with the default `1e-5`.
+
+It exists *only* to absorb the last-ULP disagreement between the min-depth pre-pass
+and the front/tail passes. Those rasterise the same geometry from the same vertex
+source, but a per-pass `#define` makes them separate GL programs, and GLSL guarantees
+no invariance across programs unless `invariant gl_Position` is declared (it is not,
+here). So it is a numerical fudge, not a modelling parameter, and both directions
+cost something:
+
+- **Too large** — a second surface grazing the first falls inside the slab, so it is
+  composited exactly *and* removed from the tail average. It then reads at full
+  strength where the same surface reads washed-out elsewhere: a harder, more opaque
+  band wherever two surfaces meet at a shallow angle (a horizon leaving a section or
+  fence cut face is the common one). With several surfaces in the slab, the front
+  pass blends them in scene-graph order — sorting is off during the OIT sub-passes —
+  so a *farther* one can paint over a nearer one.
+- **Too small** — the genuine front fragment fails its own test, nothing is drawn by
+  the front pass, and the pixel resolves entirely through WBOIT. Shows as per-pixel
+  shimmer, worst at grazing angles.
+
+⚠️ Two earlier forms of this tolerance were bugs, so do not "simplify" it back:
+
+- a **fixed** normalised epsilon is a fixed *world* slab of `eps × camera.far`, i.e.
+  tens of metres at field scale — which is the "too large" case, everywhere;
+- **`fwidth(linZ)`** spikes where a 2×2 derivative quad straddles a self-overlap
+  silhouette, inflating the tolerance into visible bands along the seam.
+
+Hence the current form: relative to depth (so it is a constant fraction of the view
+distance rather than a fixed distance) and gradient-free (so it cannot explode at an
+edge). The tail tests against a slab twice as wide as the front pass's, so a fragment
+can never be drawn by the front *and* kept by the tail — double-counting would read
+as extra opacity, which is the artefact class this whole knob is about.
+
+`skipFront = true` is the A/B: if an artefact survives it, the peel did not cause it.
 
 ---
 
@@ -480,6 +528,42 @@ after the pipeline), rather than relying on `toneMapped = false`.
   `uOpacity`) is classified *opaque* and never routed through OIT. Mirror the value:
   set `material.opacity = yourAlpha` (or expose an `opacity` uniform) so the router
   sees it.
+- **⚠️ A material with NO scalar alpha cannot be routed correctly — follow-up.**
+  Where alpha is computed PER FRAGMENT (from a vertex attribute, a pattern or a
+  texture), no single scalar summarises it: the router asks "is this opaque over its
+  whole footprint", and for such a material the answer is never yes. Set
+  `material.opacity` to 1 and it is drawn in the opaque pass as a real occluder —
+  with the shader's alpha never applied, so the mesh comes out solid.
+
+  Today the only remedy is to keep `opacity` strictly below 1 as a stand-in for the
+  PEAK alpha, which works but states something false about the material and is
+  enforced by nothing. Two components need it: `Chunk`'s inference overlay
+  (`createInferenceMaterial`, which clamps to `0.999`) and `PositionMarkers`, which
+  is parked for the same reason (see `oit-component-status.md`).
+
+  ⇒ Proposed: a `shaderAlpha?: boolean` option on `OitMaterialOptions`, recorded on
+  the material, making `OITRenderPass.isMaterialOpaque` return false for it whatever
+  `opacity` says. `isMaterialInvisible` would stay as it is — `opacity: 0` still
+  honestly means "draw nothing". Default off, so nothing that does not opt in
+  changes. **Not** for Ocean or Grid: they mirror a genuine scalar alpha, which is
+  the bullet above and is correct as it stands.
+- **An injected `vViewPosition` follows the vertex shader, not the `position`
+  attribute.** `makeOitCompatible` injects `vViewPosition` for materials that lack
+  one (`MeshBasicMaterial`, lines, points). Where the shader includes
+  `<project_vertex>` it is taken from `mvPosition`, so any `<begin_vertex>` override,
+  morph target, skinning or instancing is already folded in. A material supplying its
+  own vertex `main` has no such anchor and falls back to the `position` attribute, so
+  it MUST rasterise `position` as given — one that assembles its position from other
+  attributes has to declare and write `vViewPosition` itself.
+
+  This bit the `Chunk` inference overlay: a chunk cap ships `xz` + `y` and *no*
+  `position` (`buildStackGeometries` deletes it after computing normals and bounds),
+  so every fragment of the overlay reported the model origin's depth. A constant OIT
+  depth is not a subtle error — it is stamped across the overlay's whole footprint in
+  the min-depth pre-pass, which makes the overlay match its own stamp and claim the
+  front layer, while the real surfaces at those pixels fail the front test and drop
+  into the WBOIT tail. It renders as the marking pattern floating on top of geometry
+  that is nowhere near it.
 - **Cloned built-in variants snapshot appearance** (§3). To keep value properties
   live (e.g. `color`), pass `syncProperties` to `makeOitCompatible`; for live
   textures/program changes use a uniform-driven `ShaderMaterial`.

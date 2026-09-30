@@ -1,18 +1,38 @@
 import {
   Color,
   DoubleSide,
+  IUniform,
   ShaderMaterial,
   ShaderMaterialParameters,
   Uniform,
   Vector4,
 } from 'three';
 import { attachOitVariants } from '../../rendering/oit-material';
+import { applyOceanFence, OceanFence } from './ocean-material';
 import fragmentShader from './shaders/volume-fragment.glsl';
 import vertexShader from './shaders/volume-vertex.glsl';
 
 export type OceanVolumeMaterialParameters = ShaderMaterialParameters & {
   waveCount?: number;
+  /**
+   * Read the wall's unit-relative height from a `wallV` attribute rather than
+   * from `uv.y` — for a chunk's interval wall, whose uv is metric.
+   */
+  wallAttribute?: boolean;
+  /** see {@link OceanMaterialParameters.sectionPlane} */
+  sectionPlane?: IUniform<Vector4>;
+  /** see {@link OceanMaterialParameters.fence} */
+  fence?: OceanFence;
 };
+
+/**
+ * Default per-metre tint build-up through the water body.
+ *
+ * ⭐ Also the default density for the sea as an immersion medium, so the water seen
+ * THROUGH a wall and the water the camera is standing in build up at the same rate
+ * rather than through two knobs tuned to match.
+ */
+export const DEFAULT_OCEAN_BODY_FOG_DENSITY = 0.004;
 
 /**
  * OIT-compatible water-body (volume) material for the side walls of an ocean
@@ -34,7 +54,13 @@ export class OceanVolumeMaterial extends ShaderMaterial {
   isOceanVolumeMaterial = true;
 
   constructor(parameters: OceanVolumeMaterialParameters = {}) {
-    const { waveCount = 16, ...rest } = parameters;
+    const {
+      waveCount = 16,
+      wallAttribute = false,
+      sectionPlane,
+      fence,
+      ...rest
+    } = parameters;
 
     // Preallocated wave-component tables. Normally replaced by the surface's
     // tables (shared by reference) via setWaveTables(); the placeholders keep
@@ -55,6 +81,9 @@ export class OceanVolumeMaterial extends ShaderMaterial {
       defines: {
         OCEAN_WAVE_COUNT: waveCount,
         OCEAN_DISPLACE_COUNT: 3,
+        ...(wallAttribute ? { OCEAN_WALL_ATTRIBUTE: '' } : {}),
+        ...(sectionPlane ? { OCEAN_SECTION: '' } : {}),
+        ...(fence ? { OCEAN_FENCE: '' } : {}),
       },
       uniforms: {
         uTime: new Uniform(0),
@@ -64,7 +93,7 @@ export class OceanVolumeMaterial extends ShaderMaterial {
         uDisplacement: new Uniform(0),
         uDeepColor: new Uniform(new Color('#0a2540')),
         uShallowColor: new Uniform(new Color('#1b6f8a')),
-        uFogDensity: new Uniform(0.004),
+        uFogDensity: new Uniform(DEFAULT_OCEAN_BODY_FOG_DENSITY),
         uMaxOpacity: new Uniform(0.9),
         uShimmer: new Uniform(0.04),
         uMasterOpacity: new Uniform(1),
@@ -72,6 +101,10 @@ export class OceanVolumeMaterial extends ShaderMaterial {
     });
 
     if (Object.keys(rest).length) this.setValues(rest);
+
+    if (sectionPlane) this.uniforms.sectionPlane = sectionPlane;
+
+    if (fence) applyOceanFence(this, fence);
 
     attachOitVariants(this);
   }

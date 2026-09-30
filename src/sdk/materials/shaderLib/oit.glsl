@@ -36,6 +36,7 @@ uniform vec2 oitScreenSize;         // render target size in pixels
 uniform sampler2D oitMinDepthTexture; // per-pixel min linear depth (front layer)
 uniform int oitSkipFront;           // 1 = disable front peeling (debug: all WBOIT)
 uniform float oitOcclusionThreshold; // occlusion-stamp pass: min alpha to write depth
+uniform float oitFrontTolerance;    // front-peel slab, as a FRACTION of view distance
 
 // Process the straight (non-premultiplied) fragment color for the active pass.
 vec4 oitProcess(vec4 color) {
@@ -61,24 +62,30 @@ vec4 oitProcess(vec4 color) {
 
   #else
 
-  // Gradient-relative tolerance: only the surface that produced the per-pixel
-  // minimum qualifies as "front". A fixed epsilon would form a depth slab and let
-  // distinct surfaces grazing within it bleed into each other.
   vec2 uv = gl_FragCoord.xy / oitScreenSize;
   float minZ = texture2D(oitMinDepthTexture, uv).r;
-  // Depth-relative tolerance. The min-depth pre-pass and this pass rasterise the
-  // SAME geometry with the SAME vertex transform, so the genuine front fragment's
-  // linZ matches the stored minZ to near bit-exactness; a tiny epsilon suffices.
-  // Avoid fwidth(linZ) here: at self-overlap silhouettes the 2x2 derivative quads
-  // straddle the depth discontinuity between layers, so fwidth spikes and inflates
-  // the tolerance, misclassifying back-layer fragments as front (visible edges).
-  float tol = minZ * 1e-3 + 1e-6;
-  bool isFront = (linZ - minZ) <= tol;
+
+  // The tolerance exists ONLY to absorb the last-ULP disagreement between this pass
+  // and the min-depth pre-pass: they rasterise the same geometry with the same vertex
+  // source, but a per-pass #define makes them separate PROGRAMS, and GLSL guarantees
+  // no invariance across programs unless `invariant gl_Position` is declared. It is
+  // not a modelling parameter, and two earlier forms of it were real bugs:
+  //   - a FIXED normalised epsilon is a WORLD slab of eps * oitDepthFar (tens of
+  //     metres at field scale), so distinct grazing surfaces both count as front, are
+  //     alpha-blended in traversal order (sorting is off for the OIT sub-passes, so a
+  //     FARTHER one can paint over a nearer one) and both drop out of the tail;
+  //   - fwidth(linZ) spikes where a 2x2 derivative quad straddles a self-overlap
+  //     silhouette, inflating the tolerance into visible bands along the seam.
+  // Hence: relative to depth (so it is a constant fraction of the view distance, not
+  // a fixed distance) and gradient-free (so it cannot explode at an edge). In metres,
+  // the slab is about `distance * oitFrontTolerance`. The additive term only keeps
+  // the test off a bare equality as minZ approaches 0 at the camera.
+  float tol = minZ * oitFrontTolerance + 1e-9;
 
   #ifdef OIT_FRONT_PASS
 
   // Exact front layer: keep only the nearest fragment, blended alpha-over.
-  if(!isFront)
+  if((linZ - minZ) > tol)
     discard;
   return color;
 
@@ -86,7 +93,12 @@ vec4 oitProcess(vec4 color) {
 
   // Tail pass: exclude the front fragment (handled exactly by the front pass),
   // unless front peeling is disabled (debug: every fragment goes through WBOIT).
-  if(isFront && oitSkipFront == 0)
+  // ⚠️ Tested against a WIDER slab than the front pass uses. The two are separate
+  // programs, so right at the threshold they can disagree; a fragment the front pass
+  // draws and this one also keeps is counted twice and reads as extra opacity —
+  // exactly the artefact a tight tolerance is meant to remove. Erring wide here makes
+  // that impossible, leaving only the benign case of a fragment neither pass takes.
+  if((linZ - minZ) <= tol * 2.0 && oitSkipFront == 0)
     discard;
 
   float alpha = color.a;

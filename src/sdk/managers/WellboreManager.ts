@@ -14,7 +14,10 @@ export type WellboreManagerRecord = {
 
 const position = new Vector3();
 export class WellboreManager {
-  private map: Map<string, WellboreManagerRecord> = new Map();
+  // ⚠️ WEAK on purpose: this is a lookup, not an owner. A wellbore unmounted
+  // without dispatching its removal event would otherwise keep its whole subtree —
+  // geometries and materials included — alive for the life of the page.
+  private map: Map<string, WeakRef<Object3D>> = new Map();
 
   constructor() {
     this.onWellboreAdded = this.onWellboreAdded.bind(this);
@@ -25,10 +28,7 @@ export class WellboreManager {
   }
 
   private onWellboreAdded(event: WellboreAddedEvent) {
-    this.map.set(event.detail.id, {
-      wellboreId: event.detail.id,
-      object: event.detail.object,
-    });
+    this.map.set(event.detail.id, new WeakRef(event.detail.object));
   }
 
   private onWellboreRemoved(event: WellboreRemovedEvent) {
@@ -36,18 +36,23 @@ export class WellboreManager {
   }
 
   getInfo(id: string) {
-    const record = this.map.get(id);
-    if (record) {
-      record.object.getWorldPosition(position);
-      return {
-        ...record,
-        position: position.toArray() as Vec3,
-      };
+    const object = this.map.get(id)?.deref();
+    if (!object) {
+      // Collected: drop the empty reference rather than keep answering `undefined`.
+      this.map.delete(id);
+      return;
     }
+    object.getWorldPosition(position);
+    return {
+      wellboreId: id,
+      object,
+      position: position.toArray() as Vec3,
+    };
   }
 
   dispose() {
     removeEventListener(wellboreAddedEventType, this.onWellboreAdded);
     removeEventListener(wellboreRemovedEventType, this.onWellboreRemoved);
+    this.map.clear();
   }
 }

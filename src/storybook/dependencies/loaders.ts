@@ -7,17 +7,41 @@ import {
   KeyType,
   PositionLog,
   Store,
+  SurfaceMeta,
   WellboreHeader,
 } from '../../sdk';
 import { DataLoader } from '../../sdk/data/DataLoader';
 import { VerticalSlice } from '../../sdk/data/types/VerticalSlice';
-import { get } from './api';
+import {
+  getSyntheticSurface,
+  isSyntheticSurfaceId,
+  syntheticSurfaceIds,
+} from '../data/synthetic-surfaces';
+import {
+  EXTRA_WELLBORE_IDS,
+  EXTRA_WELLBORE_LOGS,
+  withExtraWellbores,
+} from '../data/extra-wellbores';
+import { get, getBinary } from './api';
+
+/**
+ * comlink transfer DETACHES the buffer it is given, so hand out a copy and keep
+ * the cached one intact for the next request.
+ */
+const transferCopy = (buffer: ArrayBuffer) => {
+  const copy = buffer.slice(0);
+  return transfer(new Float32Array(copy), [copy]);
+};
 
 export const wellboreHeadersLoader = (store: Store) =>
   new DataLoader(store, {
     preloaded: true,
     init: async () => {
-      const data = await get('/data/wellbore-headers.json');
+      const host = await get('/data/wellbore-headers.json');
+      // an extra's head is placed from the host wells' trajectories
+      const data = EXTRA_WELLBORE_IDS.length
+        ? withExtraWellbores(host, await get('/data/position-logs.json')).headers
+        : host;
       return Object.keys(data).map(key => {
         const record = data[key];
         const drilled = record.drilled ? new Date(record.drilled) : null;
@@ -30,17 +54,18 @@ export const positionLogsLoader = (store: Store) =>
   new DataLoader(store, {
     preloaded: true,
     init: async () => {
-      const positionLogsData = await get('/data/position-logs.json');
+      const positionLogsData = {
+        ...(await get('/data/position-logs.json')),
+        ...EXTRA_WELLBORE_LOGS,
+      };
+      // Cached as a compact buffer rather than the parsed `number[]`: half the
+      // memory, and a repeat request is a memcpy instead of a rebuild.
       return Object.keys(positionLogsData).map(key => [
         key,
-        positionLogsData[key],
+        new Float32Array(positionLogsData[key]).buffer,
       ]);
     },
-    transform: (r: number[]) => {
-      // create a typed array of source data so it can be transferred using comlink
-      const floatArray = new Float32Array(r);
-      return transfer(floatArray, [floatArray.buffer]);
-    },
+    transform: transferCopy,
   });
 
 export const surfaceMetaLoader = (store: Store) =>
@@ -48,20 +73,49 @@ export const surfaceMetaLoader = (store: Store) =>
     preloaded: true,
     init: async () => {
       const data = await get('/data/surface-meta.json');
-      return Object.keys(data).map(key => [key, data[key]]);
+      const real = Object.keys(data).map(key => [key, data[key]]);
+      // Generated surfaces are listed alongside the real ones so anything that
+      // enumerates the catalogue (story pickers, the strat sort) sees them too.
+      const synthetic = syntheticSurfaceIds
+        .map(id => getSyntheticSurface(id))
+        .filter(s => s !== null)
+        .map(s => [s.meta.id, s.meta]);
+      return [...real, ...synthetic] as [KeyType, any][];
     },
   });
 
 export const surfaceValuesLoader = (store: Store) =>
   new DataLoader(store, {
-    load: async (key: KeyType) => {
-      return get(`/data/surfaces/${key}.json`);
+    load: async <T>(key: KeyType): Promise<T | null> => {
+      if (isSyntheticSurfaceId(key)) {
+        // Generated on demand and memoized by the registry; the buffer is copied
+        // per request below, exactly as for a fetched grid.
+        const surface = getSyntheticSurface(key);
+        return (
+          surface ? surface.values.buffer : new Float32Array(0).buffer
+        ) as T;
+      }
+      // Raw little-endian float32, so there is nothing to parse — the JSON form
+      // this replaced cost ~260 ms per field-scale grid, serially in this worker.
+      const buffer = await getBinary(`/data/surfaces/${key}.bin`);
+      if (!buffer) return null;
+      // ⚠️ The payload does not describe its own shape, so a truncated or stale
+      // file would otherwise render as garbage rather than as an error.
+      const meta = await store.get<SurfaceMeta>('surface-meta', key);
+      if (meta) {
+        const expected = meta.header.nx * meta.header.ny * 4;
+        if (buffer.byteLength !== expected) {
+          console.error(
+            `[surface-values] '${key}' is ${buffer.byteLength} bytes, but its ` +
+              `header (${meta.header.nx} x ${meta.header.ny}) says ${expected}. ` +
+              'Regenerate the surface files.',
+          );
+          return null;
+        }
+      }
+      return buffer as T;
     },
-    transform: (r: number[]) => {
-      // create a typed array of source data so it can be transferred using comlink
-      const floatArray = new Float32Array(r);
-      return transfer(floatArray, [floatArray.buffer]);
-    },
+    transform: transferCopy,
   });
 
 function transformCasingData(items: CasingItem[]) {

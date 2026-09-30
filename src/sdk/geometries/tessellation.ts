@@ -76,21 +76,34 @@ function subdivideOnce(geometry: BufferGeometry): void {
  * outline. Only `position` is interpolated; stale `normal`/`uv` are dropped
  * (recompute afterwards). A no-op without an index or when `iterations <= 0`.
  *
+ * With `minEdgeLength`, refinement is ADAPTIVE: an edge is left alone once it is
+ * that short, so `iterations` becomes a cap rather than a count and the pass
+ * stops as soon as nothing is left to split. That is what lets a triangulation
+ * whose triangles differ wildly in size (an outline triangulated straight from
+ * its rim) converge on a roughly uniform edge length without quadrupling the
+ * parts that were already fine. Splitting is decided per EDGE, so the two
+ * triangles sharing one always agree and the mesh stays conforming.
+ *
  * @group Geometries
  */
 export function refineInteriorEdges(
   geometry: BufferGeometry,
   iterations: number,
+  minEdgeLength = 0,
 ): void {
   for (let it = 0; it < iterations; it++) {
-    refineInteriorOnce(geometry);
+    if (!refineInteriorOnce(geometry, minEdgeLength)) return;
   }
 }
 
-function refineInteriorOnce(geometry: BufferGeometry): void {
+/** @returns whether anything was split */
+function refineInteriorOnce(
+  geometry: BufferGeometry,
+  minEdgeLength: number,
+): boolean {
   const index = geometry.getIndex();
   const posAttr = geometry.getAttribute('position') as BufferAttribute;
-  if (!index) return;
+  if (!index) return false;
   const idx = index.array;
   const positions: number[] = [];
   for (let i = 0; i < posAttr.count; i++) {
@@ -124,8 +137,17 @@ function refineInteriorOnce(geometry: BufferGeometry): void {
     midCache.set(key, mi);
     return mi;
   };
+  const longEnough =
+    minEdgeLength > 0
+      ? (a: number, b: number) => {
+          const dx = positions[a * 3] - positions[b * 3];
+          const dy = positions[a * 3 + 1] - positions[b * 3 + 1];
+          const dz = positions[a * 3 + 2] - positions[b * 3 + 2];
+          return dx * dx + dy * dy + dz * dz > minEdgeLength * minEdgeLength;
+        }
+      : () => true;
   const isInterior = (a: number, b: number) =>
-    (edgeCount.get(edgeKey(a, b)) ?? 0) > 1;
+    (edgeCount.get(edgeKey(a, b)) ?? 0) > 1 && longEnough(a, b);
 
   const newIndices: number[] = [];
   for (let i = 0; i + 2 < idx.length; i += 3) {
@@ -179,6 +201,8 @@ function refineInteriorOnce(geometry: BufferGeometry): void {
     }
   }
 
+  if (midCache.size === 0) return false;
+
   const count = positions.length / 3;
   geometry.setAttribute(
     'position',
@@ -191,4 +215,5 @@ function refineInteriorOnce(geometry: BufferGeometry): void {
   geometry.setIndex(new BufferAttribute(newIdx, 1));
   geometry.deleteAttribute('normal');
   geometry.deleteAttribute('uv');
+  return true;
 }

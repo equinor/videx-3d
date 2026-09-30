@@ -33,12 +33,36 @@ varying vec2 vUv;
 // equals vWorldPosition.xz, so the default look is unchanged.
 varying vec2 vSurfaceXZ;
 
+#if defined(OCEAN_BATHYMETRY) || defined(OCEAN_FENCE)
+// OBJECT XZ, undisplaced. The bathymetry's affine and the fence's field are both
+// in the stack's own frame, and a vertical exaggeration or a group offset would
+// move a world-space one.
+varying vec2 vObjectXZ;
+#endif
+
+#ifdef OCEAN_SECTION
+// A `ChunkStack`'s section plane, in OBJECT space — the same uniform object the
+// chunk materials read, so the sea is cut on exactly the same plane as the block.
+// ⚠️ Taken BEFORE the wave displacement, or the cut edge would ripple.
+uniform vec4 sectionPlane;
+varying float vSectionDist;
+#endif
+
 #include <common>
+#include <fog_pars_vertex>
 #include <logdepthbuf_pars_vertex>
 #include ./waves.glsl
 
 void main() {
   vUv = uv;
+
+  #if defined(OCEAN_BATHYMETRY) || defined(OCEAN_FENCE)
+  vObjectXZ = position.xz;
+  #endif
+
+  #ifdef OCEAN_SECTION
+  vSectionDist = dot(sectionPlane.xyz, position) + sectionPlane.w;
+  #endif
 
   vec4 worldPos = modelMatrix * vec4(position, 1.0);
   vSurfaceXZ = worldPos.xz; // capture before displacement
@@ -60,5 +84,6 @@ void main() {
 
   gl_Position = projectionMatrix * mvPosition;
 
+  #include <fog_vertex>
   #include <logdepthbuf_vertex>
 }

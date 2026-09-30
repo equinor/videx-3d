@@ -1,6 +1,12 @@
 import { expose } from 'comlink';
 
 import {
+  generatorStatsKey,
+  stackRelease,
+  stackWater,
+  surfaceChunk,
+} from '../../../components/Chunks/chunk-defs';
+import {
   surfaceGeometry,
   surfaceTextures,
 } from '../../../components/Surfaces/surface-defs';
@@ -34,6 +40,8 @@ import {
   generatePerimeterGeometry,
   generatePositionMarkers,
   generateShoes,
+  generateStackWater,
+  generateSurfaceChunk,
   generateSurfaceGeometry,
   generateSurfaceTexturesData,
   generateTrajectory,
@@ -41,6 +49,8 @@ import {
   generateWellboreFormationColumnGeometries,
   generateWellboreLabel,
   generateWellboreSeismicSection,
+  generatorStats,
+  releaseStackResources,
 } from '../../../generators';
 
 import { wellboreSeismicSection } from '../../../components/Wellbores/WellboreSeismicSection/wellbore-seismic-section-defs';
@@ -63,6 +73,10 @@ registry.add(depthMarkers, generateDepthMarkers);
 registry.add(wellboreLabel, generateWellboreLabel);
 registry.add(surfaceGeometry, generateSurfaceGeometry);
 registry.add(surfaceTextures, generateSurfaceTexturesData);
+registry.add(surfaceChunk, generateSurfaceChunk);
+registry.add(stackWater, generateStackWater);
+registry.add(stackRelease, releaseStackResources);
+registry.add(generatorStatsKey, generatorStats);
 registry.add(perforationSymbols, generatePerforations);
 registry.add(positionMarkers, generatePositionMarkers);
 registry.add(

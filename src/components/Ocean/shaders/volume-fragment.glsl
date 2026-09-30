@@ -23,6 +23,21 @@ varying vec3 vWorldPosition;
 varying vec3 vViewPosition;
 varying float vWallV; // 1 at the top (surface) edge, 0 at the sea bed
 
+#ifdef OCEAN_SECTION
+varying float vSectionDist;
+#endif
+
+#ifdef OCEAN_FENCE
+// x: 1 while the cut is live, 0 to pass everything; y: +1 normally, -1 to keep only
+// what the fence removed.
+uniform vec2 fenceParams;
+uniform sampler2D fenceMap;
+uniform mat3 fenceToUv;   // object XZ -> uv
+uniform vec2 fenceSize;   // grid size in texels
+varying vec2 vObjectXZ;
+#include ../../../sdk/materials/shaderLib/fence-field.glsl
+#endif
+
 #include <common>
 #include <logdepthbuf_pars_fragment>
 
@@ -31,6 +46,16 @@ varying float vWallV; // 1 at the top (surface) edge, 0 at the sea bed
 #endif
 
 void main() {
+  #ifdef OCEAN_SECTION
+  if(vSectionDist > 0.0)
+    discard;
+  #endif
+
+  #ifdef OCEAN_FENCE
+  if(fenceParams.x > 0.5 && fenceParams.y * fenceSide(fenceMap, fenceToUv, fenceSize, vObjectXZ) < 0.0)
+    discard;
+  #endif
+
   #include <logdepthbuf_fragment>
 
   float dist = length(vViewPosition);
@@ -50,7 +75,11 @@ void main() {
   // Footprint anti-aliased: each layer fades out as its world wavelength
   // approaches the on-screen pixel size, so the body never shimmers/moirés when
   // zoomed far out at field scale (only resolving as the camera nears it).
-  if(uShimmer > 0.0) {
+  // ⚠️ Outward-facing side only. Caustics are light LANDING on a surface, and the
+  // inner face of a wall is not one — it stands in for the body of water, so light
+  // play painted on it reads as a texture on a pane of glass. Doing this properly
+  // means marching the volume, which is a long way past what this material is.
+  if(uShimmer > 0.0 && gl_FrontFacing) {
     float texel = max(length(fwidth(vWorldPosition.xz)), 1e-3);
 
     // Light concentrates near the surface and fades toward the bed (depth-cue).

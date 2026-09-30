@@ -92,25 +92,27 @@ export const GeneratorsProvider = ({
   }, [signal]);
 
   useEffect(() => {
-    if (dataContext) {
-      if (dataContext.isRemote && isRemote) {
-        dataContext.connectByMessagePort().then(port => {
-          if (port) {
-            registry
-              .connectRemoteStore(transfer(port, [port]))
-              .then(() => setIsReady(true));
-          } else {
-            throw Error('Unable to get port!');
-          }
+    if (!dataContext) return;
+    let cancelled = false;
+    if (dataContext.isRemote && isRemote) {
+      dataContext.connectByMessagePort().then(port => {
+        if (!port) throw Error('Unable to get port!');
+        // ⚠️ The port is TRANSFERRED, so this side cannot close it. The registry
+        // releases the previous proxy instead, which closes both ends.
+        registry.connectRemoteStore(transfer(port, [port])).then(() => {
+          if (!cancelled) setIsReady(true);
         });
-      } else {
-        const store = dataContext.connect();
-        if (store) {
-          registry.setStore(isRemote ? proxy(store) : store);
-          setIsReady(true);
-        }
+      });
+    } else {
+      const store = dataContext.connect();
+      if (store) {
+        registry.setStore(isRemote ? proxy(store) : store);
+        setIsReady(true);
       }
     }
+    return () => {
+      cancelled = true;
+    };
   }, [dataContext, registry, isRemote]);
 
   useEffect(() => {

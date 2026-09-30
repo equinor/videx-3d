@@ -17,6 +17,12 @@ export type EventEmitterCallbackEvent = {
   camera: Camera;
   domElement: HTMLElement;
   keys: KeysPressed;
+  /**
+   * Which mouse button started the click (`0` left, `1` middle, `2` right), as
+   * `PointerEvent.button`. Set on `click` only — the other handlers fire while no
+   * button is down.
+   */
+  button?: number;
   ref: any;
 };
 
@@ -37,6 +43,8 @@ export type Emitter = {
   instanced: boolean;
   instanceCount: number;
   threshold: number;
+  /** the traversal that last saw this object (see `PickingHelper.updateListeners`) */
+  generation?: number;
 };
 
 export type ObjectMapEntry = {

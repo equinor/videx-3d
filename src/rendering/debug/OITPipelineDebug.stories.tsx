@@ -28,7 +28,10 @@ import {
   Pass,
   RenderPass,
 } from '../../main.ts';
-import { makeOitCompatible } from '../oit-material.ts';
+import {
+  DEFAULT_OIT_FRONT_TOLERANCE,
+  makeOitCompatible,
+} from '../oit-material.ts';
 import { FXAAPass } from '../passes/FXAAPass.ts';
 import { OutputPass } from '../passes/OutputPass.ts';
 import { RenderingPipeline } from '../RenderingPipeline.tsx';
@@ -59,16 +62,18 @@ type DebugArgs = {
   debugPattern: 'off' | DebugPattern;
   patternScale: number;
   geometry:
-  | 'torusKnot'
-  | 'thinBars'
-  | 'lines'
-  | 'thinBars-transparent'
-  | 'lines-transparent';
+    | 'torusKnot'
+    | 'thinBars'
+    | 'lines'
+    | 'thinBars-transparent'
+    | 'lines-transparent';
   animate: boolean;
   supersample: 0.5 | 1 | 1.5 | 2 | 4;
   downsampleMode: 'mipmap' | 'box';
   oitEnabled: boolean;
   oitMaterials: boolean;
+  frontPeelTolerance: number;
+  skipFrontPeeling: boolean;
   aaMode: OITAntialiasMode;
   temporalClampStrength: number;
   taaRestClampStrength: number;
@@ -521,6 +526,14 @@ const DebugScene = (args: DebugArgs) => {
     if (oitPass) oitPass.debugTargets = args.showDebugTargets;
   }, [oitPass, args.showDebugTargets]);
 
+  useEffect(() => {
+    if (oitPass) oitPass.frontPeelTolerance = args.frontPeelTolerance;
+  }, [oitPass, args.frontPeelTolerance]);
+
+  useEffect(() => {
+    if (oitPass) oitPass.skipFront = args.skipFrontPeeling;
+  }, [oitPass, args.skipFrontPeeling]);
+
   // Live-tune the temporal AA anti-ghost knobs. The resolvers are created lazily
   // inside OITRenderPass.render() and recreated (resetting to defaults) on a mode
   // switch, so push the current control values every frame rather than via an effect
@@ -870,7 +883,7 @@ function buildInfoRows(
 
   const resolution = res
     ? `${res.cssW}×${res.cssH} css · ${res.bufW}×${res.bufH} buffer` +
-    (args.supersample !== 1 ? ` · ${res.renderW}×${res.renderH} render` : '')
+      (args.supersample !== 1 ? ` · ${res.renderW}×${res.renderH} render` : '')
     : '…';
 
   return [
@@ -1186,6 +1199,25 @@ const meta = {
         'surfaces resolve order-independently through the OIT pass.',
       table: { category: 'Pipeline' },
     },
+    frontPeelTolerance: {
+      control: 'select',
+      options: [1e-7, 1e-6, 1e-5, 1e-4, 1e-3],
+      description:
+        'How close to the nearest transparent fragment a fragment may be and still ' +
+        'count as the front layer, as a FRACTION of its view distance (so the slab ' +
+        'is about distance x tolerance metres). Too large and a second surface ' +
+        'grazing the first is composited exactly instead of averaged into the tail — ' +
+        'a harder, more opaque band where two surfaces meet at a shallow angle. Too ' +
+        'small and the true front fragment fails its own test and the pixel shimmers.',
+      table: { category: 'Pipeline' },
+    },
+    skipFrontPeeling: {
+      control: 'boolean',
+      description:
+        'Disable the exact front layer and resolve every transparent fragment ' +
+        'through the weighted-blended tail. The A/B for any front-peel question.',
+      table: { category: 'Pipeline' },
+    },
     supersample: {
       control: 'inline-radio',
       options: [0.5, 1, 1.5, 2, 4],
@@ -1223,6 +1255,8 @@ const meta = {
     // Pipeline
     oitEnabled: true,
     oitMaterials: true,
+    frontPeelTolerance: DEFAULT_OIT_FRONT_TOLERANCE,
+    skipFrontPeeling: false,
     supersample: 1,
     downsampleMode: 'mipmap',
   },

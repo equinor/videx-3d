@@ -25,8 +25,7 @@ export const OutputPanel = (panelProps: PanelProps) => {
         style={{
           display: 'flex',
           flexDirection: 'column',
-          padding: '0.5em 1em',
-          overflow: 'auto',
+          padding: '0.4em 0.7em',
         }}
       >
         {sortedGroups.map(group => (
@@ -35,17 +34,18 @@ export const OutputPanel = (panelProps: PanelProps) => {
             style={{
               display: 'flex',
               flexDirection: 'column',
-              marginTop: '0.5em',
-              marginBottom: '0.5em',
+              marginTop: '0.35em',
+              marginBottom: '0.35em',
             }}
           >
             <div
               style={{
-                fontSize: '16px',
+                fontSize: '1em',
                 fontWeight: 'bold',
                 paddingBottom: '0.2em',
                 borderBottom: '1px solid gray',
                 marginBottom: '0.25em',
+                overflowWrap: 'anywhere',
                 color: group.color || 'white',
               }}
             >
@@ -54,7 +54,8 @@ export const OutputPanel = (panelProps: PanelProps) => {
             {group.value && (
               <div
                 style={{
-                  fontSize: '14px',
+                  fontSize: '0.9em',
+                  overflowWrap: 'anywhere',
                 }}
               >
                 {group.value}
@@ -65,8 +66,10 @@ export const OutputPanel = (panelProps: PanelProps) => {
                 style={{
                   display: 'grid',
                   color: '#ccc',
-                  gridTemplateColumns: 'auto auto',
-                  fontSize: '12px',
+                  gridTemplateColumns: 'minmax(0, 1fr) auto',
+                  columnGap: '0.5em',
+                  overflowWrap: 'anywhere',
+                  fontSize: '0.8em',
                   padding: '0.25em',
                   marginTop: '0.25em',
                 }}

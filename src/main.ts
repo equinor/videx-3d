@@ -3,6 +3,7 @@
  */
 export * from './components/Annotations';
 export * from './components/CameraTargetMarker/CameraTargetMarker';
+export * from './components/Chunks';
 export * from './components/Distance';
 export * from './components/EventEmitter';
 export * from './components/Grids';
@@ -10,7 +11,9 @@ export * from './components/Highlighter';
 export * from './components/Html';
 export * from './components/ObservableGroup/ObservableGroup';
 export * from './components/Ocean';
+export * from './components/Pipeline';
 export * from './components/SDFTest/SDFTest';
+export * from './components/SubseaTemplate';
 export * from './components/Surfaces';
 export * from './components/Symbol';
 export * from './components/UtmArea';

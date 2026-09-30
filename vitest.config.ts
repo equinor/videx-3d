@@ -12,6 +12,9 @@ export default defineConfig({
     outputFile: {
       junit: 'test-results/junit.xml',
     },
+    // The `forks` default spawns a process per file and re-imports each file's
+    // whole module graph in it: ~18s wall clock for ~3s of actual test work.
+    pool: 'threads',
     coverage: {
       provider: 'v8',
       reporter: [['cobertura', { file: 'Cobertura.xml' }]],

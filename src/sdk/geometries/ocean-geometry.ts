@@ -8,7 +8,7 @@ import {
 } from 'three';
 import { Vec2 } from '../types/common';
 import { asVec2 } from '../utils/vector-operations';
-import { extractBoundaryLoops, smoothBoundaryLoops } from './boundary-loops';
+import { extractBoundaryLoops } from './boundary-loops';
 import {
   computePlanarXZUv,
   computeUpwardNormals,
@@ -21,8 +21,9 @@ import {
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
 } from './planar-geometry';
-import { refineInteriorEdges } from './tessellation';
-import { triangulateGridDelaunay } from './triangulate-grid-delaunay';
+import { createPolygonCap } from './polygon-cap';
+import { fbm2, warpCoords } from './procedural-noise';
+import { triangulateGridConstrained } from './triangulate-grid-delaunay';
 
 /** Options shared by the ocean geometry builders. */
 export type OceanGeometryOptions = {
@@ -90,8 +91,10 @@ export type OceanBox = {
  * Create the procedural sea-bed depth function used by the ocean-box builders.
  * Returns a depth (meters below the surface, i.e. the bed sits at `y = -depth`)
  * for a world X/Z point, varying smoothly in
- * `[waterDepth - depthVariation, waterDepth + depthVariation]` via a small sum
- * of sines normalised over the `[minX, minX + w] x [minZ, minZ + l]` extent.
+ * `[waterDepth - depthVariation, waterDepth + depthVariation]` via a
+ * domain-warped value-noise fbm normalised over the
+ * `[minX, minX + w] x [minZ, minZ + l]` extent — the same construction the sea
+ * bed shader uses, so the depth variation reads as terrain rather than a grid.
  */
 function makeBedDepthFn(
   minX: number,
@@ -103,22 +106,11 @@ function makeBedDepthFn(
   seed: number,
 ): (x: number, z: number) => number {
   return (x: number, z: number): number => {
-    const fx = (x - minX) / w;
-    const fz = (z - minZ) / l;
-    let n = 0.5;
-    n +=
-      0.25 *
-      Math.sin((fx * 6.0 + seed) * Math.PI) *
-      Math.cos(fz * 5.0 * Math.PI);
-    n +=
-      0.15 *
-      Math.sin((fx * 13.0 - seed) * Math.PI + 1.7) *
-      Math.cos(fz * 11.0 * Math.PI - 0.6);
-    n +=
-      0.1 *
-      Math.sin(fx * 23.0 * Math.PI + 0.3) *
-      Math.cos(fz * 19.0 * Math.PI + 2.1);
-    const c = Math.min(Math.max(n, 0), 1);
+    // ~6 coarse features across the box, warped so they meander.
+    const fx = ((x - minX) / w) * 6 + seed;
+    const fz = ((z - minZ) / l) * 6;
+    const [qx, qz] = warpCoords(fx, fz, 0.7);
+    const c = Math.min(Math.max(fbm2(qx, qz, 4), 0), 1);
     return waterDepth + (c * 2 - 1) * depthVariation;
   };
 }
@@ -568,18 +560,13 @@ export type OceanBoxFromSurfaceOptions = {
   /** Sea-bed TIN simplification error (meters) passed to the triangulator. Default 5. */
   maxError?: number;
   /**
-   * Optional rim smoothing strength. `0` (default) keeps the grid-aligned rim,
-   * which can look pixelated since the surface follows a regular grid; `1`–`3`
-   * progressively smooth it. The outline (rim) vertices of the water surface
-   * and sea bed are filtered with a windowed moving average whose window grows
-   * with this value, so long staircase runs collapse onto their straight centre
-   * line and the rim reads as one continuous curve (rather than a chain of small
-   * arcs). Only the X/Z position of the existing boundary vertices is moved —
-   * their depth (Y), the sea-bed TIN and every interior vertex are left
-   * untouched, so bathymetry detail (and the triangulator's efficiency) is
-   * preserved.
+   * Smooth the data-footprint rim by this strength so it reads as a continuous
+   * curve instead of a grid staircase (the outline is honored exactly by the
+   * constrained triangulation, so the surface/walls/bed still share one rim).
+   * `0` (default) keeps the exact cell-edge outline. Trades outline fidelity for
+   * smoothness.
    */
-  rimSmoothing?: number;
+  edgeSmoothing?: number;
 };
 
 /**
@@ -606,9 +593,11 @@ export type OceanBoxFromSurfaceOptions = {
  *   down to the bathymetry.
  * - **bed** — a simplified TIN of the (internal-hole-filled) bathymetry.
  *
- * Set `rimSmoothing` to relax the grid-aligned outline into a smooth, curved
- * rim by moving only the existing boundary vertices in place (the sea-bed TIN
- * and all interior detail are preserved).
+ * The valid-region outline is honored exactly via constrained Delaunay
+ * triangulation, so the rim is watertight and follows the data footprint at grid
+ * resolution (no ragged drop-triangle staircase). Set `edgeSmoothing` > 0 to
+ * relax that grid-aligned outline into a smooth, continuous curve (the surface,
+ * walls and bed still share one rim).
  *
  * Set `referenceDepth` when the input grid is depth-normalized (e.g. stored as
  * `referenceDepth - trueDepth`, as produced by this repo's IRAP parser) so the
@@ -628,7 +617,7 @@ export function createOceanBoxFromSurface(
   const referenceDepth = options.referenceDepth;
   const [segXf, segZf] = asVec2(options.surfaceSegments, 0);
   const maxError = options.maxError ?? 5;
-  const smoothing = Math.max(0, Math.floor(options.rimSmoothing ?? 0));
+  const edgeSmoothing = options.edgeSmoothing ?? 0;
   const isInvalid = (v: number) => v === nullValue || v < 0;
 
   // Recover the true positive-down depth of a sample. Depth-normalized grids are
@@ -667,13 +656,21 @@ export function createOceanBoxFromSurface(
   const rot = header.rot * (Math.PI / 180);
 
   // --- Sea bed: TIN of the (filled) bathymetry, y = -depth ------------------
-  const tin = triangulateGridDelaunay(
+  // Constrained Delaunay honors the exact valid-region outline (cutHoles), so the
+  // footprint boundary is clean and watertight instead of a ragged
+  // drop-invalid-triangles staircase. Internal holes were already filled above, so
+  // only the outer data extent is cut.
+  const tin = triangulateGridConstrained(
     filled,
     nx,
     xinc,
     yinc,
     nullValue,
     maxError,
+    [],
+    false,
+    true,
+    edgeSmoothing,
   );
   const bedPositions = tin.positions;
   for (let i = 1; i < bedPositions.length; i += 3) {
@@ -684,17 +681,14 @@ export function createOceanBoxFromSurface(
 
   // --- Sea bed (canonical mesh) --------------------------------------------
   // The TIN built above IS the canonical footprint: its boundary loops are the
-  // single outline shared by the surface rim and the walls. Build it first,
-  // relax its rim if requested, then derive the surface and walls from that
-  // exact rim so all three meet vertex-for-vertex (watertight, no snapping).
+  // single outline shared by the surface rim and the walls. Build it first, then
+  // derive the surface and walls from that exact rim so all three meet
+  // vertex-for-vertex (watertight, no snapping).
   const bed = new BufferGeometry();
   bed.setAttribute('position', new BufferAttribute(bedPositions, 3));
   bed.setAttribute('uv', new BufferAttribute(tin.uvs, 2));
   bed.setIndex(new BufferAttribute(tin.indices, 1));
   const bedLoops = extractBoundaryLoops(bed);
-  if (smoothing > 0) {
-    smoothBoundaryLoops(bed, bedLoops, smoothing); // moves rim X/Z only
-  }
   computeUpwardNormals(bed);
 
   // Canonical rim: bed boundary vertices (world X/Z plus their bed depth Y).
@@ -876,19 +870,11 @@ function refinementPasses(segments: number): number {
 }
 
 /**
- * Triangulate a polygon footprint straight from its outline (flat, y = 0).
- * Earcut reproduces the exact outline and holes for any topology without
- * dropping triangles; `passes` then refines the INTERIOR only (see
- * {@link refineInteriorEdges}), so the boundary — and its shared rim with the
- * walls and sea bed — is preserved exactly.
+ * Triangulate a polygon footprint straight from its outline (flat, y = 0), in
+ * the ocean builders' northing-negating frame.
  */
 function flatShapeSurface(shapes: Shape[], passes = 0): BufferGeometry {
-  const surface = new ShapeGeometry(shapes);
-  surface.rotateX(-Math.PI / 2); // XY -> XZ, normals -> +Y, (x, y) -> (x, -y)
-  if (passes > 0) refineInteriorEdges(surface, passes);
-  computePlanarXZUv(surface);
-  computeUpwardNormals(surface);
-  return surface;
+  return createPolygonCap(shapes, { passes, flipZ: true });
 }
 
 /** Even-odd ray cast: is point (x, y) inside the 2D ring? */

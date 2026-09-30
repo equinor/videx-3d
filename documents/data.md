@@ -13,7 +13,7 @@ Data type declarations can be found in `src/sdk/data/types/`
 | picks | Pick | Contains meta data and MD MSL depths for picks |
 | formations | Formation | Contains formation meta data and entry/exit depths |
 | surface-meta | SurfaceMeta | Contains meta data about horizons/surface grids |
-| surface-values | Float32Array | Contains grid elevation data for surfaces |
+| surface-values | Float32Array | Contains grid elevation data for surfaces. One value per grid node, row-major, matching `nx` * `ny` from the surface's `SurfaceMeta.header`. Prefer a transport your store can hand straight to a `Float32Array` — the demo store fetches raw little-endian float32 files, because parsing a field-scale grid from JSON costs a few hundred milliseconds per surface and a stack asks for dozens. |
 | strat-columns | StratColumn | Contains stratigraphy column meta and unit definitions |
 | wellbore-seismic-section | VerticalSlice | Seismic slice data along a wellbore path |
 

@@ -85,6 +85,15 @@ export const useHighlightState = create<HighlightState>(set => ({
 export const useHighlighter = () => {
   const set = useHighlightState(state => state.set);
 
+  // ⚠️ `parent` is the one that keeps this bounded: `removeObjects` can only reach
+  // the subtree a highlighted object has AT THAT MOMENT, so a component that
+  // rebuilds its meshes while highlighted would leave the old ones here — still
+  // drawn, and holding their geometry — until something else cleared them.
+  const live = (d: ObjectRef) =>
+    d.object.parent !== null &&
+    d.object.layers.isEnabled(LAYERS.EMITTER) &&
+    d.object.visible;
+
   return {
     highlight: (obj: Object3D, index?: number) =>
       set(prev => {
@@ -93,11 +102,7 @@ export const useHighlighter = () => {
           {},
         );
         addObjects(obj, objSet, index);
-        return {
-          highlighted: Object.values(objSet).filter(
-            d => d.object.layers.isEnabled(LAYERS.EMITTER) && d.object.visible,
-          ),
-        };
+        return { highlighted: Object.values(objSet).filter(live) };
       }),
     removeHighlight: (obj: Object3D, index?: number) =>
       set(prev => {
@@ -106,11 +111,7 @@ export const useHighlighter = () => {
           {},
         );
         removeObjects(obj, objSet, index);
-        return {
-          highlighted: Object.values(objSet).filter(
-            d => d.object.layers.isEnabled(LAYERS.EMITTER) && d.object.visible,
-          ),
-        };
+        return { highlighted: Object.values(objSet).filter(live) };
       }),
     removeAll: () => {
       set({ highlighted: [] });

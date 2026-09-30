@@ -30,6 +30,11 @@ export class PickingMaterial extends ShaderMaterial {
       side: DoubleSide,
       forceSinglePass: true,
     });
+    // Caps carry a shared `xz` + per-layer `y` and no `position`; the absent
+    // attribute defaults to 0 so one picking material serves both layouts.
+    (
+      this as unknown as { defaultAttributeValues: Record<string, number[]> }
+    ).defaultAttributeValues = { position: [0, 0, 0], xz: [0, 0], y: [0] };
   }
 
   dispose(): void {
