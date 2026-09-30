@@ -24,6 +24,7 @@ import {
   meanTangent2D,
   pointAtArcLength,
   polylineArcLengths,
+  polylineCrossings,
   polylineWorstTurn,
   segmentPolylineCrossingParams,
 } from './polyline-2d';
@@ -1047,12 +1048,6 @@ export function planHeadArm(
       turnout / (2 * Math.sin(approachAngle / 2)),
       hullDiameter(wrap.ring),
     );
-    const centre = along(
-      start,
-      [-hand * approach[1], hand * approach[0]],
-      turnRadius,
-    );
-    const r0 = sub(start, centre);
     // ⛔ Fine enough that the inner offset loses at most half the offset's prune slack at a vertex,
     // `margin·(1 − cos δ)`: at 3° it lost 0.013 m at margin 9.4 and the whole inner side was pruned.
     const vertexTurn = Math.min(
@@ -1060,15 +1055,40 @@ export function planHeadArm(
       Math.acos(1 - DEFAULT_OFFSET_TOLERANCE / (2 * margin)),
     );
     const nt = Math.max(2, Math.ceil(approachAngle / vertexTurn));
-    for (let k = nt; k >= 0; k--) {
-      const a = (hand * approachAngle * k) / nt;
-      const c = Math.cos(a);
-      const s = Math.sin(a);
-      turn.push([
-        centre[0] + r0[0] * c - r0[1] * s,
-        centre[1] + r0[0] * s + r0[1] * c,
-      ]);
+    const lay = (side: number): Vec2[] => {
+      const centre = along(
+        start,
+        [-side * approach[1], side * approach[0]],
+        turnRadius,
+      );
+      const r0 = sub(start, centre);
+      const arc: Vec2[] = [];
+      for (let k = nt; k >= 0; k--) {
+        const a = (side * approachAngle * k) / nt;
+        const c = Math.cos(a);
+        const s = Math.sin(a);
+        arc.push([
+          centre[0] + r0[0] * c - r0[1] * s,
+          centre[1] + r0[0] * s + r0[1] * c,
+        ]);
+      }
+      return arc;
+    };
+    const clears = (arc: Vec2[]): boolean => {
+      const far = along(
+        arc[0],
+        dir,
+        reachPastOutline(arc[0], dir, outline, extension) + extension,
+      );
+      return outside.every(piece => polylineCrossings([far, ...arc], piece) === 0);
+    };
+    // ⭐ At a U the hand's sign is noise (Y02 flipped at 179.9° → 180.0°): take the side that clears.
+    let arc = lay(hand);
+    if (!clears(arc)) {
+      const other = lay(-hand);
+      if (clears(other)) arc = other;
     }
+    turn.push(...arc);
     exit = turn[0];
   }
   // ⭐ The guide is as long as the ROD needs to land on it: a rod round a ring of diameter D leaves

@@ -22,6 +22,7 @@ import {
   resamplePolyline2D,
 } from '../src/sdk/utils/polyline-2d';
 import { Vec2, Vec3 } from '../src/sdk/types/common';
+import { syntheticTrajectory } from '../src/storybook/data/synthetic-trajectories';
 
 /** The clearance slack the cut is built to — see `WellboreFenceOptions.tolerance`. */
 const DEFAULT_TOLERANCE = 0.01;
@@ -427,5 +428,52 @@ describe('buildWellboreFence on real wellbores', () => {
       ),
       6,
     );
+  }, 30_000);
+
+  it('lays a U head turn on the side away from the well', () => {
+    // Out along +X (tilted by ±1°), bending towards −Z into a U that returns along exactly −X: the
+    // arm leaves at ~179° to the approach, where the cross product's sign is noise. Turned towards
+    // the hook, the arm ran back over the well (margins 1.8 → 1.9 of a real well).
+    const rings: Vec2[][] = [
+      [
+        [-5000, -5000],
+        [5000, -5000],
+        [5000, 5000],
+        [-5000, 5000],
+      ],
+    ];
+    const hook = (tilt: number): Vec3[] => {
+      const out = syntheticTrajectory({ defect: 'none' }).filter(
+        p => p[1] >= -600,
+      );
+      let [x, y, z] = out[out.length - 1];
+      let heading = (tilt * Math.PI) / 180;
+      const walk = (length: number, turn: number) => {
+        const n = Math.ceil(length / 10);
+        for (let k = 0; k < n; k++) {
+          heading += turn / n;
+          x += Math.cos(heading) * 10;
+          z += Math.sin(heading) * 10;
+          y -= 3;
+          out.push([x, y, z]);
+        }
+      };
+      walk(60, 0);
+      walk(250, -Math.PI / 6);
+      walk(Math.PI * 150, -Math.PI - heading);
+      walk(1200, 0);
+      return out;
+    };
+    const margin = 1;
+    for (const tilt of [-1, 1]) {
+      const curve = getSplineCurve(hook(tilt))!;
+      const block = fenceBlockTrace(curve, rings, { margin })!;
+      const well = prepareFenceTrace(block.curve, block.samples, {}).points;
+      const head = fenceCoreInputs(curve, block, well, margin, rings).headArm!;
+      expect(head.turnRadius, `tilt ${tilt}`).toBeGreaterThan(0);
+      expect(head.exit[1], `tilt ${tilt}`).toBeGreaterThan(well[0][1]);
+      expect(head.crosses, `tilt ${tilt}`).toBe(false);
+      expect(() => buildWellboreFence(curve, { rings, margin })).not.toThrow();
+    }
   }, 30_000);
 });

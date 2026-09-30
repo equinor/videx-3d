@@ -1922,6 +1922,9 @@ const SEED_POSITIONS = [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8, 0.1, 0.9];
  * seeded on the KEPT side with 58/58 well vertices on the far side of the cut from their own
  * seed — a whole-trajectory burial that no downstream pass could have repaired.
  *
+ * ⚠️ The step grows with the field's cell, so on a large field it overshot a cut passing 52–117 m
+ * beyond the well into the KEPT half. A step that crosses the cut stops halfway to it instead.
+ *
  * @param axis the HEAD→TD direction to read the side off, when the trace has none of its own — a
  * plan-degenerate well's trace is survey scatter, and its "tangent" put every seed across the cut
  * @throws when no candidate agrees with the well, which means the cut does not separate it
@@ -1946,6 +1949,7 @@ function removedSideSeed(
   const total = arc[base.length - 1];
   let best: Vec2 | null = null;
   let bestAgreement = 0;
+  let bestReach = 0;
   // Witnesses for the vote — a spread of the well, not the seed's own neighbourhood.
   const step = Math.max(1, Math.ceil(base.length / 24));
   for (const fraction of SEED_POSITIONS) {
@@ -1960,10 +1964,16 @@ function removedSideSeed(
       meanTangent2D(base.slice(at - 1), true, SEED_NORMAL_ARC);
     if (!tangent) continue;
     const n = leftNormal2D(tangent[0], tangent[1]);
-    const seed: Vec2 = [
-      base[at][0] + n[0] * sign * clearance,
-      base[at][1] + n[1] * sign * clearance,
-    ];
+    const [px, pz] = base[at];
+    const hits = segmentPolylineCrossingParams(
+      px,
+      pz,
+      px + n[0] * sign * clearance,
+      pz + n[1] * sign * clearance,
+      cut,
+    );
+    const reach = hits.length > 0 ? (hits[0] * clearance) / 2 : clearance;
+    const seed: Vec2 = [px + n[0] * sign * reach, pz + n[1] * sign * reach];
     let same = 0;
     let tested = 0;
     for (let i = 0; i < base.length; i += step) {
@@ -1978,11 +1988,17 @@ function removedSideSeed(
       tested++;
     }
     const agreement = tested > 0 ? same / tested : 0;
-    if (agreement > bestAgreement) {
+    if (agreement > 0.9 && hits.length === 0) return seed;
+    // ⭐ Among shortened steps the widest corridor wins: the fill starts from the NEAREST NODE.
+    const better =
+      agreement > 0.9
+        ? bestAgreement <= 0.9 || reach > bestReach
+        : agreement > bestAgreement;
+    if (better) {
       bestAgreement = agreement;
+      bestReach = reach;
       best = seed;
     }
-    if (agreement > 0.9) break;
   }
   if (!best || bestAgreement <= 0.5) {
     throw new Error(
