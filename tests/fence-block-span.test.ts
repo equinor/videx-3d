@@ -46,6 +46,7 @@ describe('fence block span', { timeout: 30_000 }, () => {
     });
     expect(ranged.left.curve.points).toEqual(plain.left.curve.points);
     expect(ranged.right.curve.points).toEqual(plain.right.curve.points);
+    expect(plain.report.verticalRange).toBeUndefined();
   });
 
   it('leaves the TD bare where the well leaves through the footprint', () => {
@@ -84,6 +85,7 @@ describe('fence block span', { timeout: 30_000 }, () => {
     // 900 m is well past the kickoff, so the kept head is already deviating.
     const f = build(field, [-5000, -900])!;
     const { block } = f.report;
+    expect(f.report.verticalRange).toEqual([-5000, -900]);
     expect(block.headArm).toBe(true);
     expect(Math.abs(depthAt(block.md[0]) - 900)).toBeLessThan(0.5);
     expect(f.report.coreReach[0]).toBe(0);

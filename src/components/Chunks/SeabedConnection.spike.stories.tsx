@@ -31,8 +31,9 @@ import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
 import { UtmArea, UtmPosition } from '../UtmArea';
-import { BasicTrajectory } from '../Wellbores/BasicTrajectory/BasicTrajectory';
+import { Trajectory } from '../Wellbores/Trajectory/Trajectory';
 import { Wellbore } from '../Wellbores/Wellbore/Wellbore';
+import { WellboreBounds } from '../Wellbores/WellboreBounds/WellboreBounds';
 import { Chunk } from './Chunk';
 import { ChunkLayer, ChunkResolveOptions, StackWater } from './chunk-defs';
 import { ChunkStack } from './ChunkStack';
@@ -403,7 +404,9 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
               northing={wb.northing}
             >
               <Wellbore id={wb.id}>
-                <BasicTrajectory color="#ff2020" />
+                <WellboreBounds id={wb.id}>
+                  <Trajectory color="#ff2020" />
+                </WellboreBounds>
               </Wellbore>
             </UtmPosition>
           ))}

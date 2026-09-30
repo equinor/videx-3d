@@ -161,9 +161,6 @@ const SAMPLE_STEP = 2;
  */
 const SIMPLIFY_TOLERANCE = 1e-6;
 
-/** Fallback plan angle for a well with no direction of its own, in degrees (scene XZ). */
-const DEFAULT_FALLBACK_ANGLE = 0;
-
 /**
  * Metres of trajectory left in the KEPT block before the well counts as buried.
  *
@@ -889,7 +886,7 @@ export type FenceBaseOptions = {
   step?: number;
   /**
    * Plan angle to fall back to when the well has no direction of its own, in degrees
-   * (scene XZ, 0 = +X). Default {@link DEFAULT_FALLBACK_ANGLE}.
+   * (scene XZ, 0 = +X). Default 0.
    *
    * ⭐ Only used for a near-vertical (degenerate) well, whose plan spread is survey
    * scatter with no real bearing; a deviated well's own trajectory always overrides it.
@@ -912,7 +909,7 @@ export type FenceBaseOptions = {
  * ⚠️ There is NO straightening and NO tolerance corridor. The old pipeline smoothed the
  * whole trace into one shared curve, which invented plan shape the survey never had (an
  * 8 m scatter came out a 400 m hook). The undesirable shapes are removed downstream, on
- * the path itself — see {@link followTrace}.
+ * the path itself.
  *
  * @group Geometries
  */
@@ -1332,28 +1329,6 @@ export type FenceSideCurve = {
   /** where the finished curve turns most sharply — the steep gate's evidence, always reported */
   worstTurn: PolylineTurn;
 };
-
-/**
- * The trajectory as the fence follows it: the dense spline path with only its
- * coincident points removed, and NOTHING else moved.
- *
- * ⚠️⚠️ At margin 0 the cut must hug the trajectory to within the wellbore's own radius
- * (down to 0.1 m) or the hole is buried in the block it is meant to reveal. So this does
- * NOT smooth and does NOT simplify: any move off the well toward the KEPT side buries it.
- * Convex, concave and alternating sections are all FOLLOWED exactly.
- *
- * ⚠️ Self-crossings are NOT removed here — that is the one place the two sides must
- * differ, so it is done per side by {@link repairLoopsOneSided}, which bridges each loop
- * onto the half being removed rather than chording through the middle.
- *
- * ⚠️⚠️ Deduped at {@link MIN_WELL_RADIUS}, NOT coarser: a tighter fold than that (a
- * near-vertical head wander is metres of arc packed into a sub-metre box) carries the
- * per-side routing from {@link repairFoldsOneSided}, and a coarser dedupe would collapse
- * that routing back to a single shared vertex — leaving both cuts identical over the fold.
- */
-function followTrace(trace: Vec2[]): Vec2[] {
-  return dedupePolyline2D(trace, MIN_WELL_RADIUS);
-}
 
 /** A rasterised signed distance to a fence curve. */
 export type FenceField = {
@@ -1821,6 +1796,8 @@ export type FenceReport = {
   arms: FenceArmsReport;
   /** the stretch of the trajectory the fence was built around — see {@link FenceBlockSpan} */
   block: FenceBlockSpan;
+  /** {@link WellboreFenceOptions.verticalRange} as `[lowest, highest]` scene Y; absent when unbounded */
+  verticalRange?: [number, number];
   /** metres the cores ran on past the block's head and TD — see {@link fenceCoreTrace} */
   coreReach: [number, number];
   /** each side's report — both are always present, see {@link WellboreFence.left} */
@@ -1897,7 +1874,7 @@ export type WellboreFenceOptions = {
   coreReach?: number;
   /**
    * Plan angle the fence falls back to for a near-vertical well, in degrees (scene XZ,
-   * 0 = +X). Default {@link DEFAULT_FALLBACK_ANGLE}. A deviated well's trajectory overrides it.
+   * 0 = +X). Default 0. A deviated well's trajectory overrides it.
    */
   fallbackAngle?: number;
   /** see {@link FenceArmsOptions.headTurnout}. Default 100. */
@@ -2747,6 +2724,10 @@ export function buildWellboreFence(
       head: arms.head,
     },
     block: span,
+    verticalRange: options.verticalRange && [
+      Math.min(...options.verticalRange),
+      Math.max(...options.verticalRange),
+    ],
     coreReach: inputs.reach,
     sides: {
       left: sideReport(left, burialOf(left)),

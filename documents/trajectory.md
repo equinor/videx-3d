@@ -139,6 +139,10 @@ de-duplicated into a small palette internally and uploaded as compact float text
 many intervals may share a colour cheaply. **Memoize the array** — passing a new
 reference rebuilds the textures.
 
+> **Planned:** an option to give interval `from`/`to` in TVD instead of MD. The component
+> would then colour every stretch of the path inside each TVD interval, found from the
+> curve's axis intersections — so a well leaving and re-entering a depth window is handled.
+
 ## Picking and highlighting
 
 `Trajectory` supports GPU picking and the `Highlighter` out of the box. Because the tube

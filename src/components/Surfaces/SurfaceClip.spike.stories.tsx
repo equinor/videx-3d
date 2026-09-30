@@ -29,10 +29,9 @@ import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
 import { UtmArea, UtmPosition } from '../UtmArea';
-import { BasicTrajectory } from '../Wellbores/BasicTrajectory/BasicTrajectory';
-import { TubeTrajectory } from '../Wellbores/TubeTrajectory/TubeTrajectory';
+import { Trajectory } from '../Wellbores/Trajectory/Trajectory';
 import { Wellbore } from '../Wellbores/Wellbore/Wellbore';
-import { Distance, WellboreBounds } from '../../main';
+import { WellboreBounds } from '../../main';
 import { Surface } from './Surface';
 
 const utmZone = storyArgs.utmZone;
@@ -79,7 +78,6 @@ type SurfaceClipStoryProps = {
   outlineAltitude: number;
   showReference: boolean;
   showWells: boolean;
-  showTube: boolean;
   wellRadius: number;
   wellColor: string;
 };
@@ -252,16 +250,11 @@ const SurfaceClipStory = (props: SurfaceClipStoryProps) => {
           <UtmPosition key={wb.id} easting={wb.easting} northing={wb.northing}>
             <Wellbore id={wb.id}>
               <WellboreBounds id={wb.id}>
-                <BasicTrajectory color={props.wellColor} />
-                {props.showTube && (
-                  <Distance min={0} max={2000}>
-                    <TubeTrajectory
-                      radius={props.wellRadius}
-                      color={props.wellColor}
-                      radialSegments={8}
-                    />
-                  </Distance>
-                )}
+                <Trajectory
+                  radius={props.wellRadius}
+                  color={props.wellColor}
+                  radialSegments={8}
+                />
               </WellboreBounds>
             </Wellbore>
           </UtmPosition>
@@ -295,7 +288,6 @@ export const Default: Story = {
     showReference: false,
     // Wells
     showWells: true,
-    showTube: true,
     wellRadius: 1,
     wellColor: '#222222',
   },
@@ -332,7 +324,6 @@ export const Default: Story = {
     },
     showReference: { control: 'boolean', table: { category: 'Mask' } },
     showWells: { control: 'boolean', table: { category: 'Wells' } },
-    showTube: { control: 'boolean', table: { category: 'Wells' } },
     wellRadius: {
       control: { type: 'range', min: 1, max: 50, step: 1 },
       table: { category: 'Wells' },

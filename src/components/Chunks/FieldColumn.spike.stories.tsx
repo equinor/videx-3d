@@ -1,5 +1,6 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { CurveInterpolator } from 'curve-interpolator';
 import { scaleOrdinal } from 'd3-scale';
 import {
   RefObject,
@@ -18,6 +19,7 @@ import {
   WellboreSelectedEvent,
   wellboreSelectedEventType,
 } from '../../events/wellbore-events';
+import { useData } from '../../hooks/useData';
 import { DEFAULT_OIT_FRONT_TOLERANCE, OITRenderPass, Pass } from '../../main';
 import { OutputPass } from '../../rendering/passes/OutputPass';
 import { RenderingPipeline } from '../../rendering/RenderingPipeline';
@@ -27,6 +29,7 @@ import {
   fenceViewPose,
   getProjectionDefFromUtmZone,
   PlanarPolygonGeometry,
+  PositionLog,
   readCameraTarget,
   SurfaceChunkMetrics,
   surfaceGridToWorld,
@@ -64,14 +67,13 @@ import { useFieldOutline } from '../../storybook/hooks/useFieldOutline';
 import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
-import { Distance } from '../Distance/Distance';
 import { EventEmitterCallbackEvent } from '../EventEmitter';
 import { useHighlighter } from '../Highlighter/highlight-state';
 import { Highlighter } from '../Highlighter/Highlighter';
 import { UtmArea } from '../UtmArea';
 import { UtmPosition } from '../UtmArea/UtmPosition';
-import { BasicTrajectory } from '../Wellbores/BasicTrajectory/BasicTrajectory';
-import { TubeTrajectory } from '../Wellbores/TubeTrajectory/TubeTrajectory';
+import { Trajectory } from '../Wellbores/Trajectory/Trajectory';
+import { TrajectoryColorInterval } from '../Wellbores/Trajectory/trajectory-defs';
 import { Wellbore } from '../Wellbores/Wellbore/Wellbore';
 import { WellboreBounds } from '../Wellbores/WellboreBounds/WellboreBounds';
 import { Wells } from '../Wellbores/Wells/Wells';
@@ -235,16 +237,42 @@ const FieldWells = ({
   color,
   selectedColor,
   radius,
-  tubeDistance,
+  fenceWindow,
 }: {
   selected?: string;
   color: string;
   selectedColor: string;
   radius: number;
-  tubeDistance: number;
+  fenceWindow: FenceWindow | null;
 }) => {
   const wellbores = useWellboreHeaders();
   const highlighter = useHighlighter();
+  const store = useData();
+  const [fenceIntervals, setFenceIntervals] = useState<{
+    wellbore: string;
+    intervals: TrajectoryColorInterval[];
+  } | null>(null);
+
+  useEffect(() => {
+    if (!store || !fenceWindow) return setFenceIntervals(null);
+    let cancelled = false;
+    store
+      .get<PositionLog>('position-logs', fenceWindow.wellbore)
+      .then(poslog => {
+        if (cancelled) return;
+        setFenceIntervals(
+          poslog && poslog.length >= 8
+            ? {
+              wellbore: fenceWindow.wellbore,
+              intervals: verticalRangeIntervals(poslog, fenceWindow.range),
+            }
+            : null,
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [store, fenceWindow]);
   // an extra wellbore is drawn only while it is the selected one
   const shown = useMemo(
     () => wellbores.filter(w => !isExtraWellbore(w.id) || w.id === selected),
@@ -281,19 +309,17 @@ const FieldWells = ({
             }}
           >
             <WellboreBounds id={wellbore.id} fromMsl={fromMsl}>
-              {/* Always drawn: the 1px line is what survives at field scale. */}
-              <BasicTrajectory
+              <Trajectory
+                radius={radius}
                 color={isSelected ? selectedColor : color}
-                priority={9}
+                priority={8}
+                radialSegments={12}
+                colorIntervals={
+                  fenceIntervals?.wellbore === wellbore.id
+                    ? fenceIntervals.intervals
+                    : undefined
+                }
               />
-              <Distance min={0} max={tubeDistance}>
-                <TubeTrajectory
-                  radius={radius}
-                  color={isSelected ? selectedColor : color}
-                  priority={8}
-                  radialSegments={12}
-                />
-              </Distance>
             </WellboreBounds>
           </Wellbore>
         </UtmPosition>
@@ -363,7 +389,6 @@ type FieldColumnStoryProps = {
   wellboreColor: string;
   wellboreSelectedColor: string;
   wellboreRadius: number;
-  wellboreTubeDistance: number;
   wellbore: string;
   fence: boolean;
   fenceSide: FenceSideName | 'auto';
@@ -375,6 +400,7 @@ type FieldColumnStoryProps = {
   fenceHeadBearing: 'opposite-td' | 'free';
   fenceHeadMinTdAngle: number;
   fenceDebug: boolean;
+  fenceColorTvd: boolean;
   fenceFlyTo: boolean;
   fenceFlyPadding: number;
   fenceFlyPolar: number;
@@ -409,6 +435,56 @@ const ViewOffset = ({ into }: { into: RefObject<Vec2 | null> }) => {
 
 /** How long a fly-to waits for the fence it is flying to, in ms. */
 const FENCE_WAIT = 20000;
+
+const FENCE_TVD_COLOR = 'orange';
+
+/** The vertical window a fence was cut for, in scene Y (= −TVD). */
+type FenceWindow = { wellbore: string; range: [number, number] };
+
+/**
+ * MD (MSL) intervals where a position log lies inside a scene-Y window.
+ *
+ * ⚠️ The spline is built exactly as `getTrajectory` builds it, so the crossings are the curve
+ * positions the `Trajectory` shader turns into MD.
+ */
+function verticalRangeIntervals(
+  poslog: PositionLog,
+  [low, high]: [number, number],
+): TrajectoryColorInterval[] {
+  const [origEast, , origNorth] = poslog;
+  const points: Vec3[] = [];
+  for (let j = 0; j + 3 < poslog.length; j += 4) {
+    points.push([
+      poslog[j] - origEast,
+      -poslog[j + 1],
+      origNorth - poslog[j + 2],
+    ]);
+  }
+  const spline = new CurveInterpolator(points, { alpha: 1, tension: 0 });
+  const cuts = [
+    0,
+    1,
+    ...spline.getIntersectsAsPositions(low, 1),
+    ...spline.getIntersectsAsPositions(high, 1),
+  ].sort((a, b) => a - b);
+  const top = poslog[3];
+  const length = poslog[poslog.length - 1] - top;
+
+  const intervals: TrajectoryColorInterval[] = [];
+  for (let i = 1; i < cuts.length; i++) {
+    const a = cuts[i - 1];
+    const b = cuts[i];
+    if (b <= a) continue;
+    const y = spline.getPointAt((a + b) / 2)[1];
+    if (y < low || y > high) continue;
+    const from = top + a * length;
+    const to = top + b * length;
+    const last = intervals[intervals.length - 1];
+    if (last?.to === from) last.to = to;
+    else intervals.push({ from, to, color: FENCE_TVD_COLOR });
+  }
+  return intervals;
+}
 
 const FieldColumnStory = (props: FieldColumnStoryProps) => {
   const surfaceMetaDict = useSurfaceMetaDict();
@@ -453,6 +529,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
 
   const viewOffset = useRef<Vec2 | null>(null);
   const builtFence = useRef<WellboreFence | null>(null);
+  const [fenceWindow, setFenceWindow] = useState<FenceWindow | null>(null);
   const awaiting = useRef<{
     id: string;
     resolve: (fence: WellboreFence | null) => void;
@@ -460,6 +537,17 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
 
   const onFence = useCallback((fence: WellboreFence | null) => {
     builtFence.current = fence;
+    const wellbore = fence?.report.wellbore;
+    const range = fence?.report.verticalRange;
+    setFenceWindow(previous =>
+      !wellbore || !range
+        ? null
+        : previous?.wellbore === wellbore &&
+          previous.range[0] === range[0] &&
+          previous.range[1] === range[1]
+          ? previous
+          : { wellbore, range },
+    );
     const waiting = awaiting.current;
     if (waiting && fence && fence.report.wellbore === waiting.id) {
       awaiting.current = null;
@@ -1051,7 +1139,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
             color={props.wellboreColor}
             selectedColor={props.wellboreSelectedColor}
             radius={props.wellboreRadius}
-            tubeDistance={props.wellboreTubeDistance}
+            fenceWindow={props.fence && props.fenceColorTvd ? fenceWindow : null}
           />
         )}
       </UtmArea>
@@ -1116,7 +1204,6 @@ export const Default: Story = {
     wellboreColor: '#9aa0a6',
     wellboreSelectedColor: 'tomato',
     wellboreRadius: 4,
-    wellboreTubeDistance: 12000,
     wellbore: storyArgs.defaultWellbore,
     // Fence
     fence: false,
@@ -1129,6 +1216,7 @@ export const Default: Story = {
     fenceHeadBearing: 'opposite-td',
     fenceHeadMinTdAngle: 90,
     fenceDebug: false,
+    fenceColorTvd: false,
     fenceFlyTo: true,
     fenceFlyPadding: 1.6,
     fenceFlyPolar: 78,
@@ -1273,13 +1361,6 @@ export const Default: Story = {
         'Tube radius in metres. ⚠️ A real 12¾" casing is well under a pixel across a 20 km field, so this is deliberately exaggerated. ⭐ ALSO the fence clearance: the cut is held this far off the trajectory so it does not slice the tube in half.',
       table: { category: 'Wellbores' },
     },
-    wellboreTubeDistance: {
-      control: { type: 'select' },
-      options: [2000, 5000, 12000, 30000, 100000],
-      description:
-        'Distance at which the tube gives way to the 1px line. The line is always drawn underneath it.',
-      table: { category: 'Wellbores' },
-    },
     wellbore: {
       options: [...Object.keys(storyArgs.wellboreOptions), ...EXTRA_WELLBORE_IDS],
       control: { type: 'select', labels: storyArgs.wellboreOptions },
@@ -1347,6 +1428,11 @@ export const Default: Story = {
     fenceDebug: {
       description:
         'Draw the cut face as a magenta wireframe instead of as rock — the ribbon the fence actually generated, on its own. ⭐ The face is built independently of the block, so this is the only way to tell a geometry fault from a clipping one.',
+      table: { category: 'Fence' },
+    },
+    fenceColorTvd: {
+      description:
+        'Colour the fenced well orange between the depths (TVD) the fence was cut for — every stretch inside that window, wherever the well leaves and re-enters it. Needs `wellbores` on.',
       table: { category: 'Fence' },
     },
     fenceFlyTo: {

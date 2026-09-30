@@ -67,7 +67,8 @@ so a side cannot succeed on its own — it is both sides or neither.
 
 `buildWellboreFence` first trims the trajectory to where it passes through the BLOCK —
 inside the footprint rings and inside `verticalRange` — and builds everything from that
-stretch alone (`report.block`):
+stretch alone (`report.block`). The window itself is echoed as `report.verticalRange`
+(scene Y, `[lowest, highest]`, absent when unbounded), so a host can relate it to its own data:
 
 - **Nothing inside** → `null`: no fence is published and a fly-to has nothing to frame.
 - **An end leaving through the footprint** is walked on until the trace is `2 × margin`
