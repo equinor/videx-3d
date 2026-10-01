@@ -105,6 +105,8 @@ export type StiffRodSeed = {
   head: number;
   /** where the source curve resumes AFTER the seed: `curve.slice(tail)` */
   tail: number;
+  /** the span under each locked clamp pair, `seed[0]`→`seed[1]` and `seed[n−2]`→`seed[n−1]` */
+  clamps: [Vec2[], Vec2[]];
 };
 
 const cross = (a: Vec2, b: Vec2): number => a[0] * b[1] - a[1] * b[0];
@@ -334,6 +336,14 @@ export function seedStiffRod(
     atom / 4,
     clear,
   );
+  const spanArc = polylineArcLengths(span);
+  const spanLength = spanArc[span.length - 1];
+  const step = spanLength / Math.max(1, seed.length - 1);
+  const under = (arcFrom: number, arcTo: number, a: Vec2, b: Vec2): Vec2[] => [
+    a,
+    ...span.filter((_, i) => spanArc[i] > arcFrom + 1e-9 && spanArc[i] < arcTo - 1e-9),
+    b,
+  ];
   return {
     seed,
     spacing: laid,
@@ -341,6 +351,10 @@ export function seedStiffRod(
     turn: [turnA, turnB],
     head: farA ? 0 : lo + 1,
     tail: farB ? curve.length : hi + 1,
+    clamps: [
+      under(0, step, seed[0], seed[1]),
+      under(spanLength - step, spanLength, seed[seed.length - 2], seed[seed.length - 1]),
+    ],
   };
 }
 

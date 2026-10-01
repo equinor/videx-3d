@@ -2087,6 +2087,10 @@ export function oneSidedOffset(
       trace: options.rodTrace,
     });
     let rod = settled.points;
+    // ⭐ The locked clamp pairs ship as the core under them: the settle needs them a full spacing long
+    // (its energy reads unequal chords as bending), but straight over a big ring's atom they cut a
+    // curving core (F-15 D, Z21, Z46 at margin 0.1: crossings 0–34 m from the clamp).
+    rod = [...laid.clamps[0], ...rod.slice(2, -2), ...laid.clamps[1]];
     // recorded before the hold so a throwing build still shows the rod it settled
     entry.seam = rod;
     entry.contacts = settled.contacts;

@@ -11,7 +11,7 @@ import {
   sampleTrajectoryPlan,
   splitShares,
 } from '../src/sdk/geometries/wellbore-fence';
-import { DEFAULT_HEAD_TURNOUT } from '../src/sdk/utils/fence-run-out';
+import { armPocket, DEFAULT_HEAD_TURNOUT } from '../src/sdk/utils/fence-run-out';
 import { hullDiameter } from '../src/sdk/utils/one-sided-offset';
 import { getSplineCurve } from '../src/sdk/geometries/curve/curve-3d';
 import {
@@ -421,10 +421,12 @@ describe('buildWellboreFence on real wellbores', () => {
     const well = prepareFenceTrace(block.curve, block.samples, {}).points;
     const head = fenceCoreInputs(curve, block, well, margin, rings).headArm!;
     expect(head.shift).toBe(0);
+    expect(head.grown).toBe(false);
+    // the ring the turn leaves — the final wrap also holds the framed turn
     expect(head.turnRadius).toBeCloseTo(
       Math.max(
         DEFAULT_HEAD_TURNOUT / (2 * Math.sin(head.approachAngle / 2)),
-        hullDiameter(head.wrap.ring),
+        hullDiameter(head.frame!.ring),
       ),
       6,
     );
@@ -475,5 +477,51 @@ describe('buildWellboreFence on real wellbores', () => {
       expect(head.crosses, `tilt ${tilt}`).toBe(false);
       expect(() => buildWellboreFence(curve, { rings, margin })).not.toThrow();
     }
+  }, 30_000);
+
+  it('diverts the TD arm of a U-shaped well rather than grow the head over it', () => {
+    // South from the head, a U to the east, north past the head's latitude and on towards it: the
+    // opposite-TD axis runs into the northbound leg, and grown to it the head wrap took the whole U.
+    const rings: Vec2[][] = [
+      [
+        [-5000, -5000],
+        [5000, -5000],
+        [5000, 5000],
+        [-5000, 5000],
+      ],
+    ];
+    const out = syntheticTrajectory({ defect: 'none' }).filter(
+      p => p[1] >= -600,
+    );
+    let [x, y, z] = out[out.length - 1];
+    let heading = Math.PI / 2;
+    const walk = (length: number, turn: number) => {
+      const n = Math.ceil(length / 10);
+      for (let k = 0; k < n; k++) {
+        heading += turn / n;
+        x += Math.cos(heading) * 10;
+        z += Math.sin(heading) * 10;
+        y -= 3;
+        out.push([x, y, z]);
+      }
+    };
+    walk(1500, 0);
+    walk(Math.PI * 400, -Math.PI);
+    walk(700, 0);
+    walk(300, -Math.PI / 4);
+    walk(100, 0);
+    const curve = getSplineCurve(out)!;
+    const margin = 0.5;
+    const block = fenceBlockTrace(curve, rings, { margin })!;
+    const well = prepareFenceTrace(block.curve, block.samples, {}).points;
+    const inputs = fenceCoreInputs(curve, block, well, margin, rings);
+    expect(inputs.tdPlan?.divert).toBeDefined();
+    expect(Math.abs(inputs.tdPlan!.divert!)).toBeLessThanOrEqual(Math.PI / 2);
+    // undiverted, the head wrap grew over the whole U (1950 m)
+    expect(inputs.headArm!.grown).toBe(false);
+    expect(hullDiameter(inputs.headArm!.wrap.hull)).toBeLessThan(200);
+    expect(armPocket(inputs.headArm!, well, margin)).toBeNull();
+    const fence = buildWellboreFence(curve, { rings, margin })!;
+    expect(assertFenceInvariants(fence.report)).toEqual([]);
   }, 30_000);
 });

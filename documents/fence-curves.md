@@ -154,10 +154,56 @@ limb that crowded the old one. `headTurnout: 0` restores the shift (bit-identica
 ⚠️ On a head cut from above, the arc starts along the well above the cut and crosses it in plan
 (41 of 75 top-cut L/U heads). That well lies above the block, so the cut never meets it.
 
+⭐ **A U-shaped well diverts its TD arm rather than grow the head over itself**
+(`tdDiversionAngles`, `planTdDiversion`). Where the opposite-TD axis runs into the well, `planHeadArm` grows the wrap
+over the WHOLE well up to the crossing — right for a hook beside the head (F-15 D, 188 m out), but
+on a well whose two ends point the same way the crossing is kilometres down: 46 failing wells of a
+large field had head hulls of 0.8–4 km grown from 7–21 m frames, and the rods round them failed.
+When the head grew (and the TD is armed and not a run-on), the TD arm instead runs on along its
+bearing for its gather distance, turns on an arc of chord `headTurnout` and leaves on a bearing up
+to 90° off, always AWAY from the head's side of the TD bearing; the head is then planned opposite
+that. The angle is the smallest 5° step whose head axis meets the well nowhere outside the head
+frame and the obstacles — a kink on the axis is wrapped, not met — else the step (or none) whose
+axis meets the well nearest WITHOUT a reversal (the well there heading back towards the head
+folds the cut round the grown wrap). An arm that would cross the well is never taken, and the
+diversion is kept only when it shrinks the head hull. Measured at margins 0.1/0.5: 7 of those
+wells (Z03, Z10, Z22, Z24, Z27, Z44, Z46) went from rod failures or 2.5–4 km hulls to builds with
+9–294 m hulls; F-12 diverts 85° (hull 96 → 29 m), F-15 D −90° (260 → 174 m, worst turn 3 → 14°).
+- ⭐ **No corridor along the arm** (`armPocket`): the trace problem detector run over the planned
+  head arm in front of the virtual well finds the arm running back alongside the well as a POCKET
+  (Z36: a 45 m mouth trapping 2140 m, ratio 47.8). Such an arm triggers a diversion too, and the
+  angle taken is the first growth-free one whose arm forms no pocket — screened cheaply first
+  (`frameArmPocket`, a straight arm from the frame's edge; it misses laid turns and grown wraps,
+  so every pick is confirmed on a planned arm). Z36/Z27/Z44/Z17 moved from −20/−10/5/−20° to
+  −65/−50/45/−60°, no pocket left. Where every such angle has one, the first MILD one (ratio < 10)
+  is kept and the head arm moved sideways away from the well (`headOffset`) by twice the mouth; a
+  laid turn takes it as a larger radius (Z03 mouth 162 → 868 m, Z46 501 → 929 m).
+
+⭐ **A laid U-turn (over 90°) is FRAMED, not followed** (`turnTrapezoid`): a trapezoid on the line
+from the head anchor to the guide's start, half as deep as the arc would bulge, legs at 45° and
+leaning 15° towards the arm, folded into the head wrap. The well's path hops through it and the
+cuts go round it by the rod, so the inner cut leaves the head straight onto the guide instead of
+following the turn round it. A widening only moves the guide's start sideways (a longer frame, not
+a deeper one). Inside a frame nothing follows the turn, so its radius is `headTurnout` alone — sized
+off the ring, a 2 km loop head framed a 2 km turn (Z01 2019 → 4594 m, Z34 1668 → 4078 m).
+- ⛔ Laid as the PATH instead of a hull, the trapezoid's 45° corners came through the cut (F-12,
+  F-15 D, Z10, Z21: worst turns 18–38°, every one ON a corner).
+- **Hairpin.** Where the well comes back level with the guide's start within 1.5 turn widths (`2R`)
+  of it, the frame takes that well too and the inner cut crosses the hairpin's mouth. Further off it
+  is a long run, not a hairpin (Z04 at 0.5: 1345 m; a synthetic U: 1859 m).
+- **A hook past a grown head.** A head that GREW and a well that turns more than 90° within 1.5 hull
+  diameters of leaving it: the hook is taken into the wrap, once, so the rods anchor past it rather
+  than bend round it. Those two together picked out exactly F-15 D, Z13 and Z21 of 14 wells (grown
+  Z10/Z12 barely turn; Z34/Z46 turn 107–115° but did not grow): F-15 D 16 → 3°, Z21 9 → 5–6° and
+  its corridor gone. At 2 diameters Z13 was clean too but its hull 1275 → 2738 m; at 1 Z21 missed its hook.
+
 **`headBearing: 'free'`** (default `'opposite-td'`) sends the head arm THROUGH the head instead:
 from where the well enters the head hull, through the hull's area centroid, turned only as far as
 it takes to stay `headMinTdAngle` (default 90°) off the TD arm; a degenerate well keeps its hull
 axis. The laid turn and the shifts then apply to whatever angle is left.
+- ⭐ Off a diverted TD arm the angle is only taken on the side AWAY from the diversion. Measured off
+  the well's own TD bearing instead, a head on the diversion's side ran 6–17° alongside the
+  diverted arm and looped (Z04, Z10, Z12).
 - ⭐ The hull is read as the straight-through axis frames it — grown over the fold that axis runs
   into. Read before growing, F-15 D's head was its kickoff alone, the bearing came out NNE into the
   hook (a 131° turn onto the arm, 705 m laid); grown, the well enters it from the hook and the arm
@@ -219,6 +265,12 @@ header. `settleRodConstrained` (`sdk/utils/stiff-rod-constrained.ts`) settles it
 
 - **Fixed vertices.** Tension plus bending, both clamps fixed in position and tangent, over the
   seed's vertices. Nothing is inserted, so no contact can make a short chord.
+- ⭐ **The clamp pairs ship as the core under them.** Each clamp is two seed vertices on the core,
+  one full spacing apart — the energy's uniform second differences read a shorter pair as a bend. But
+  straight over a big ring's atom (42–139 m) that chord cut a curving core: F-15 D, Z21 and Z46
+  failed at margin 0.1 "clr 0.00 x2 dips", crossing the well 0–34 m from a clamp, and shorter anchors
+  did not help. The settle keeps the full-length pair; only what ships follows the core there
+  (`StiffRodSeed.clamps`). All three built.
 - **Separating lines.** Each chord is held `margin` from every convex piece near it — each hull
   and each reliable well segment — by the line through their closest points: both chord ends at
   least `margin` beyond it. That is the chord's exact clearance, with no sagitta and no lifted ring.

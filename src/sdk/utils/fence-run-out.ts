@@ -5,10 +5,12 @@ import {
   FREE_ROD_STIFFNESS,
   FenceSideName,
   TraceProblemSpan,
+  TracePocketSpan,
   hullDiameter,
   isTracePocket,
   pointInConvex,
   ringAtom,
+  traceProblemSpans,
   zoneRing,
 } from './one-sided-offset';
 import {
@@ -116,8 +118,16 @@ export type FenceArmsOptions = {
    * the TD arm. A degenerate well keeps its hull axis.
    */
   headBearing?: 'opposite-td' | 'free';
-  /** the least angle between a `'free'` head arm and the TD arm, in DEGREES. Default {@link DEFAULT_HEAD_MIN_TD_ANGLE}. */
+  /**
+   * the least angle between a `'free'` head arm and the TD arm, in DEGREES — off a diverted TD arm
+   * ({@link planTdDiversion}) only on the side away from the diversion. Default {@link DEFAULT_HEAD_MIN_TD_ANGLE}.
+   */
   headMinTdAngle?: number;
+  /**
+   * Metres the head axis is moved sideways along `leftNormal2D(dir)`, to widen a corridor it forms
+   * with the well ({@link armPocket}); a laid turn takes it as a larger radius. Default 0.
+   */
+  headOffset?: number;
 };
 
 /** One built arm's construction, for the debug view. */
@@ -215,6 +225,79 @@ const unit = (v: Vec2): Vec2 => {
   const l = Math.hypot(v[0], v[1]) || 1;
   return [v[0] / l, v[1] / l];
 };
+
+/**
+ * An arc leaving `start` along `heading` and turning through `angle` (radians, positive towards
+ * `[-heading[1], heading[0]]`) at `radius`, start first.
+ */
+function turnArc(
+  start: Vec2,
+  heading: Vec2,
+  angle: number,
+  radius: number,
+  margin: number,
+): Vec2[] {
+  const side = Math.sign(angle) || 1;
+  const centre = along(start, [-side * heading[1], side * heading[0]], radius);
+  const r0 = sub(start, centre);
+  // ⛔ Fine enough that the inner offset loses at most half the offset's prune slack at a vertex,
+  // `margin·(1 − cos δ)`: at 3° it lost 0.013 m at margin 9.4 and the whole inner side was pruned.
+  const vertexTurn = Math.min(
+    TURN_STEP,
+    Math.acos(1 - DEFAULT_OFFSET_TOLERANCE / (2 * margin)),
+  );
+  const nt = Math.max(2, Math.ceil(Math.abs(angle) / vertexTurn));
+  const arc: Vec2[] = [];
+  for (let k = 0; k <= nt; k++) {
+    const a = (angle * k) / nt;
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    arc.push([
+      centre[0] + r0[0] * c - r0[1] * s,
+      centre[1] + r0[0] * s + r0[1] * c,
+    ]);
+  }
+  return arc;
+}
+
+/** Of the bulge a laid arc makes off its chord, the share a framed turn keeps ({@link turnTrapezoid}). */
+const TURN_FRAME_DEPTH = 0.5;
+
+/** How far a framed turn leans from its head anchor towards the arm, radians. */
+const TURN_FRAME_LEAN = (15 * Math.PI) / 180;
+
+/** The widest mouth a framed turn's hairpin may have, in turn widths (`2R`), before the well is left out. */
+const HAIRPIN_MOUTH_WIDTHS = 1.5;
+
+/**
+ * The TRAPEZOID a laid U-turn is framed as: its long side from the head anchor `p` to the guide's
+ * start `q`, legs at 45° and a far side {@link TURN_FRAME_DEPTH} as deep as `arc` bulged, leaning
+ * {@link TURN_FRAME_LEAN} about `p` towards the arm — a rod round it runs straight where the arc's
+ * D bulged towards the well beyond.
+ */
+function turnTrapezoid(p: Vec2, q: Vec2, arc: Vec2[]): Vec2[] {
+  const base = sub(q, p);
+  const length = Math.hypot(base[0], base[1]) || 1;
+  const ub: Vec2 = [base[0] / length, base[1] / length];
+  let n: Vec2 = [-ub[1], ub[0]];
+  const bulge = arc[arc.length >> 1];
+  if (dot(sub(bulge, p), n) < 0) n = negate(n);
+  let sag = 0;
+  for (const a of arc) sag = Math.max(sag, dot(sub(a, p), n));
+  const depth = Math.min(TURN_FRAME_DEPTH * sag, length / 2);
+  // lean the depth towards the base's guide end, the arm's side
+  const t = (Math.sign(n[0] * ub[1] - n[1] * ub[0]) || 1) * TURN_FRAME_LEAN;
+  const lean: Vec2 = [
+    n[0] * Math.cos(t) - n[1] * Math.sin(t),
+    n[0] * Math.sin(t) + n[1] * Math.cos(t),
+  ];
+  return [
+    p,
+    along(along(p, lean, depth), ub, depth),
+    along(along(q, lean, depth), ub, -depth),
+    q,
+  ];
+}
 
 /** Plan spread of a polyline END over `arc` metres — how much footprint its bearing has to lean on. */
 function endSpan(points: Vec2[], fromStart: boolean, arc: number): number {
@@ -599,6 +682,10 @@ export type HeadArmPlan = {
    * when the loop left the well a steep concave turn out of the wrap. Set by `planFenceHead`.
    */
   framing?: 'loop' | 'neck';
+  /** the head wrap as framed, before the axis grew it ({@link planTdDiversion} reads it) */
+  frame?: HeadWrap;
+  /** the mouth of the hairpin a laid U-turn makes with the well, framed into the wrap; 0 when none */
+  hairpinMouth?: number;
 };
 
 /**
@@ -922,15 +1009,19 @@ export function planHeadArm(
       const own: Vec2 = [through[0] / length, through[1] / length];
       const least =
         ((options.headMinTdAngle ?? DEFAULT_HEAD_MIN_TD_ANGLE) * Math.PI) / 180;
-      const off = Math.acos(Math.max(-1, Math.min(1, dot(own, tdDir))));
+      // ⭐ Off a diverted TD arm ({@link planTdDiversion}) only on the side AWAY from the diversion.
+      const divert = options.tdPlan?.divert ?? 0;
+      const ref = tdDir;
+      const across = ref[0] * own[1] - ref[1] * own[0];
+      const hand = divert !== 0 ? -Math.sign(divert) : Math.sign(across) || 1;
+      const off = hand * Math.atan2(across, dot(own, ref));
       if (off >= least) {
         dir = own;
       } else {
-        const a =
-          (Math.sign(tdDir[0] * own[1] - tdDir[1] * own[0]) || 1) * least;
+        const a = hand * least;
         dir = [
-          tdDir[0] * Math.cos(a) - tdDir[1] * Math.sin(a),
-          tdDir[0] * Math.sin(a) + tdDir[1] * Math.cos(a),
+          ref[0] * Math.cos(a) - ref[1] * Math.sin(a),
+          ref[0] * Math.sin(a) + ref[1] * Math.cos(a),
         ];
       }
       perp = leftNormal2D(dir[0], dir[1]);
@@ -940,6 +1031,30 @@ export function planHeadArm(
   let laid = false;
   const turnout = Math.max(0, options.headTurnout ?? DEFAULT_HEAD_TURNOUT);
   const maxTurn = options.maxRelativeTurn ?? DEFAULT_MAX_RELATIVE_TURN;
+  const wellArc = polylineArcLengths(well);
+  /**
+   * Where a hook the well makes just past the wrap ends: its largest turn within 1.5 hull diameters
+   * of leaving the ring, when that is over 90° — else -1.
+   */
+  const hookEnd = (): number => {
+    let e = wrap.headEndIndex;
+    while (e + 1 < well.length && pointInConvex(well[e], wrap.ring)) e++;
+    const reach = 1.5 * hullDiameter(wrap.hull);
+    let turned = 0;
+    let most = 0;
+    let at = -1;
+    for (let i = e + 1; i + 1 < well.length && wellArc[i] - wellArc[e] < reach; i++) {
+      const a = sub(well[i], well[i - 1]);
+      const b = sub(well[i + 1], well[i]);
+      turned += Math.atan2(a[0] * b[1] - a[1] * b[0], dot(a, b));
+      if (Math.abs(turned) > Math.abs(most)) {
+        most = turned;
+        at = i;
+      }
+    }
+    return Math.abs(most) > Math.PI / 2 ? at : -1;
+  };
+  let hooked = false;
   for (let round = 0; round < well.length; round++) {
     if (!frame()) {
       return planDegenerateHead(
@@ -964,6 +1079,17 @@ export function planHeadArm(
       grown = true;
       shift = 0;
       continue;
+    }
+    // ⭐ A head grown over the well and a well that hooks back right after it: the hook is taken into
+    // the wrap, once, so the rods anchor past it rather than bend round it (F-15 D, Z13, Z21).
+    if (grown && !hooked) {
+      hooked = true;
+      const hook = hookEnd();
+      if (hook > wrap.headEndIndex) {
+        wrap = wrapHead(well, hook, margin, wrap.absorbed, obstacles, wrap.extra);
+        shift = 0;
+        continue;
+      }
     }
     approach = negate(
       meanTangent2D(well.slice(entryIndex), true, tangentArc) ?? negate(dir),
@@ -1022,6 +1148,8 @@ export function planHeadArm(
     break;
   }
 
+  const offset = options.headOffset ?? 0;
+  if (!laid) shift += offset;
   let exit = axisStart();
   // A shifted exit joins the hull, so the guide leaves from a hull vertex and the chord back into
   // the hull is swallowed whole — the extension only covers ground on the far side from the limb.
@@ -1035,6 +1163,7 @@ export function planHeadArm(
   const turn: Vec2[] = [];
   let front = exit;
   let turnRadius = 0;
+  let hairpinMouth = 0;
   if (laid) {
     for (const p of wrap.hull) {
       if (dot(p, approach) > dot(front, approach)) front = p;
@@ -1048,32 +1177,9 @@ export function planHeadArm(
       turnout / (2 * Math.sin(approachAngle / 2)),
       hullDiameter(wrap.ring),
     );
-    // ⛔ Fine enough that the inner offset loses at most half the offset's prune slack at a vertex,
-    // `margin·(1 − cos δ)`: at 3° it lost 0.013 m at margin 9.4 and the whole inner side was pruned.
-    const vertexTurn = Math.min(
-      TURN_STEP,
-      Math.acos(1 - DEFAULT_OFFSET_TOLERANCE / (2 * margin)),
-    );
-    const nt = Math.max(2, Math.ceil(approachAngle / vertexTurn));
-    const lay = (side: number): Vec2[] => {
-      const centre = along(
-        start,
-        [-side * approach[1], side * approach[0]],
-        turnRadius,
-      );
-      const r0 = sub(start, centre);
-      const arc: Vec2[] = [];
-      for (let k = nt; k >= 0; k--) {
-        const a = (side * approachAngle * k) / nt;
-        const c = Math.cos(a);
-        const s = Math.sin(a);
-        arc.push([
-          centre[0] + r0[0] * c - r0[1] * s,
-          centre[1] + r0[0] * s + r0[1] * c,
-        ]);
-      }
-      return arc;
-    };
+    // HEAD→TD: from the guide's start back to `start`.
+    const lay = (side: number, radius = turnRadius): Vec2[] =>
+      turnArc(start, approach, side * approachAngle, radius, margin).reverse();
     const clears = (arc: Vec2[]): boolean => {
       const far = along(
         arc[0],
@@ -1084,12 +1190,54 @@ export function planHeadArm(
     };
     // ⭐ At a U the hand's sign is noise (Y02 flipped at 179.9° → 180.0°): take the side that clears.
     let arc = lay(hand);
+    let side = hand;
     if (!clears(arc)) {
       const other = lay(-hand);
-      if (clears(other)) arc = other;
+      if (clears(other)) {
+        arc = other;
+        side = -hand;
+      }
     }
-    turn.push(...arc);
-    exit = turn[0];
+    // ⭐ A U-turn (over 90°) is FRAMED, not followed: a trapezoid on the line from the head anchor to
+    // the guide's start, so the cuts go round it by the rod; where the well comes back level with
+    // the guide's start (a hairpin) the frame takes it too, and the inner cut crosses that mouth.
+    if (approachAngle > Math.PI / 2) {
+      // ⭐ Nothing follows a framed turn, so the ring floor on its radius does not apply: sized from the
+      // ring it framed a 2 km loop head's turn 2 km wide too (Z01 2019 → 4594 m, Z34 1668 → 4078 m).
+      turnRadius = turnout / (2 * Math.sin(approachAngle / 2));
+      arc = lay(side);
+      // a widening only moves the guide's start sideways — the frame gets longer, not deeper
+      const exitAt = offset !== 0 ? along(arc[0], perp, offset) : arc[0];
+      const framed = turnTrapezoid(start, exitAt, arc);
+      const cx = (framed[0][0] + framed[1][0] + framed[2][0] + framed[3][0]) / 4;
+      const cz = (framed[0][1] + framed[1][1] + framed[2][1] + framed[3][1]) / 4;
+      turn.push(exitAt, [cx, cz]);
+      exit = exitAt;
+      const level = dot(exit, dir);
+      let k = wrap.headEndIndex;
+      while (k + 1 < well.length && dot(well[k], dir) < level) k++;
+      // ⛔ A well that only comes back level far off is a long run, not a hairpin (1345 m on Z04 at 0.5)
+      const near =
+        Math.hypot(well[k][0] - arc[0][0], well[k][1] - arc[0][1]) <=
+        HAIRPIN_MOUTH_WIDTHS * 2 * turnRadius;
+      const end = k < well.length - 1 && near ? k : wrap.headEndIndex;
+      if (end > wrap.headEndIndex) {
+        hairpinMouth = Math.hypot(well[end][0] - exit[0], well[end][1] - exit[1]);
+      }
+      wrap = wrapHead(well, end, margin, wrap.absorbed, obstacles, [
+        ...wrap.extra,
+        ...framed,
+      ]);
+    } else {
+      // A larger radius moves the exit sideways by `R(1 − cos α)` — only ever further to the turn's side.
+      const lateral = dot(sub(arc[0], start), perp);
+      if (offset !== 0 && Math.sign(lateral) === Math.sign(offset)) {
+        turnRadius += Math.abs(offset) / (1 - Math.cos(approachAngle));
+        arc = lay(side);
+      }
+      turn.push(...arc);
+      exit = turn[0];
+    }
   }
   // ⭐ The guide is as long as the ROD needs to land on it: a rod round a ring of diameter D leaves
   // the ring a fraction of D past its exit and tapers onto `guide ± margin` at θ. `guideFrom` alone
@@ -1177,6 +1325,8 @@ export function planHeadArm(
     bearingSource: 'well',
     hullAspect: 0,
     td: null,
+    frame: headWrap,
+    hairpinMouth,
   };
 }
 
@@ -1371,10 +1521,14 @@ export type TdArmPlan = {
   apex: Vec2;
   /** the synthesized well continuation, `apex → exit` (reversed to follow it HEAD→TD) */
   guide: Vec2[];
-  /** the obstacle over the TD */
+  /** the obstacle over the TD — empty for a diverted TD arm */
   hull: Vec2[];
   /** its exclusion zone — the well inside it is not trusted */
   ring: Vec2[];
+  /** a diverted TD arm's run on from the TD and its turn, up to `exit` ({@link planTdDiversion}) */
+  lead?: Vec2[];
+  /** the diversion off the TD bearing, radians, positive towards its left normal */
+  divert?: number;
 };
 
 /**
@@ -1438,6 +1592,9 @@ export function planTdArm(
  * @group Utils
  */
 export function tdPlanTrace(trace: Vec2[], plan: TdArmPlan): Vec2[] {
+  if (plan.lead) {
+    return [...trace, ...plan.lead, ...[...plan.guide].reverse().slice(1)];
+  }
   let k = trace.length - 1;
   while (k > 0 && pointInConvex(trace[k], plan.ring)) k--;
   let cx = 0;
@@ -1453,6 +1610,252 @@ export function tdPlanTrace(trace: Vec2[], plan: TdArmPlan): Vec2[] {
     plan.exit,
     ...[...plan.guide].reverse(),
   ];
+}
+
+/** Diversion steps tried off the TD bearing, radians. */
+const DIVERT_STEP = (5 * Math.PI) / 180;
+const DIVERT_MAX = Math.PI / 2;
+
+/** The TD bearing, the side a diversion turns to and how far the arm runs on before it turns. */
+function tdDiversionBase(
+  well: Vec2[],
+  margin: number,
+  options: FenceArmsOptions,
+): { td: Vec2; away: 1 | -1; stretch: number } {
+  const tangentArc = options.tangentArc ?? DEFAULT_TANGENT_ARC;
+  const maxTurn = options.maxRelativeTurn ?? DEFAULT_MAX_RELATIVE_TURN;
+  const td = endBearing(
+    well,
+    false,
+    tangentArc,
+    options.degenerateSpan ?? DEFAULT_DEGENERATE_SPAN,
+    options.fallbackAngle ?? 0,
+  );
+  const toHead = sub(well[0], well[well.length - 1]);
+  return {
+    td,
+    away: td[0] * toHead[1] - td[1] * toHead[0] > 0 ? -1 : 1,
+    // the TD arm's own gather distance, as `buildFenceArms` lays it
+    stretch:
+      GATHER_FACTOR * Math.max(margin / Math.tan(maxTurn / 4), tangentArc),
+  };
+}
+
+const rotate2D = (v: Vec2, a: number): Vec2 => [
+  v[0] * Math.cos(a) - v[1] * Math.sin(a),
+  v[0] * Math.sin(a) + v[1] * Math.cos(a),
+];
+
+/** {@link tdDiversionAngles} result. Angles are signed radians off the TD bearing. */
+export type TdDiversionAngles = {
+  /** the well's TD bearing */
+  td: Vec2;
+  /** the angles whose head axis meets the well nowhere outside the frame and obstacles, smallest first */
+  clear: number[];
+  /** the angle (0 = undiverted) whose head axis meets the well nearest without a reversal, or null */
+  nearest: number | null;
+};
+
+/**
+ * The angles a TD arm may be DIVERTED by so the head arm, planned opposite it, stops growing over the
+ * well — for a well whose two ends point the same way (a U), where the opposite-TD axis runs into the
+ * well and the head wrap takes everything up to the crossing.
+ *
+ * ⭐ Always AWAY from the head's side of the TD bearing, in 5° steps to 90°. An angle is `clear` when
+ * its head axis meets the well nowhere outside the head frame and the obstacles — a kink on the axis
+ * is wrapped, not met. `nearest` is the one meeting it nearest without a reversal: the well there
+ * heading back towards the head folds the cut round the grown wrap.
+ * ⛔ An angle whose diverted arm ({@link planTdDiversion}) would cross the well is never listed.
+ *
+ * @param frame the head wrap before it grew ({@link HeadArmPlan.frame})
+ * @param obstacles the mid-trace hulls the cores route around
+ *
+ * @group Utils
+ */
+export function tdDiversionAngles(
+  well: Vec2[],
+  frame: HeadWrap,
+  obstacles: Vec2[][],
+  margin: number,
+  outline: Vec2[][],
+  options: FenceArmsOptions = {},
+): TdDiversionAngles {
+  const n = well.length;
+  const turnout = options.headTurnout ?? DEFAULT_HEAD_TURNOUT;
+  const { td, away, stretch } = tdDiversionBase(well, margin, options);
+  if (n < 2 || !(turnout > 0)) return { td, clear: [], nearest: null };
+  const extension = options.extension ?? DEFAULT_EXTENSION;
+  const head = well[0];
+  const last = well[n - 1];
+  const bend = along(last, td, stretch);
+
+  const skip = [frame.hull, ...obstacles].filter(h => h.length >= 3);
+  const skipped = (p: Vec2) =>
+    skip.some(h => {
+      if (pointInConvex(p, h)) return true;
+      for (let i = 0; i < h.length; i++) {
+        if (distanceToSegment2D(p, h[i], h[(i + 1) % h.length]) <= margin) {
+          return true;
+        }
+      }
+      return false;
+    });
+  /** Where the head axis along `dir` first meets the well outside the frame and the obstacles. */
+  const meets = (dir: Vec2): { at: number; heading: Vec2 } | null => {
+    const reach = reachPastOutline(head, dir, outline, extension) + extension;
+    const far = along(head, dir, reach);
+    let best = Infinity;
+    let heading: Vec2 | null = null;
+    for (let i = frame.headEndIndex + 1; i < n; i++) {
+      const seg = [well[i - 1], well[i]];
+      for (const t of segmentPolylineCrossingParams(head[0], head[1], far[0], far[1], seg)) {
+        if (t >= best || skipped(along(head, dir, t * reach))) continue;
+        best = t;
+        heading = unit(sub(well[i], well[i - 1]));
+      }
+    }
+    return heading ? { at: best * reach, heading } : null;
+  };
+
+  const undiverted = meets(negate(td));
+  let nearest =
+    undiverted && dot(undiverted.heading, negate(td)) >= 0
+      ? { angle: 0, at: undiverted.at }
+      : null;
+  const clear: number[] = [];
+  for (let phi = DIVERT_STEP; phi <= DIVERT_MAX + 1e-9; phi += DIVERT_STEP) {
+    const angle = away * phi;
+    const arc = turnArc(bend, td, angle, turnout / (2 * Math.sin(phi / 2)), margin);
+    const exit = arc[arc.length - 1];
+    const d = rotate2D(td, angle);
+    const far = along(exit, d, reachPastOutline(exit, d, outline, extension) + extension);
+    if (polylineCrossings([last, ...arc, far], well) > 0) continue;
+    const met = meets(negate(d));
+    if (!met) clear.push(angle);
+    else if (dot(met.heading, negate(d)) >= 0 && (!nearest || met.at < nearest.at)) {
+      nearest = { angle, at: met.at };
+    }
+  }
+  return { td, clear, nearest: nearest?.angle ?? null };
+}
+
+/**
+ * The TD arm diverted by `angle` ({@link tdDiversionAngles}): it runs on along the TD bearing for its
+ * gather distance, turns on an arc whose chord is `headTurnout` and leaves on the new bearing; the
+ * cores follow it like any TD guide.
+ *
+ * @group Utils
+ */
+export function planTdDiversion(
+  well: Vec2[],
+  angle: number,
+  margin: number,
+  outline: Vec2[][],
+  options: FenceArmsOptions = {},
+): TdArmPlan {
+  const extension = options.extension ?? DEFAULT_EXTENSION;
+  const tangentArc = options.tangentArc ?? DEFAULT_TANGENT_ARC;
+  const turnout = options.headTurnout ?? DEFAULT_HEAD_TURNOUT;
+  const { td, stretch } = tdDiversionBase(well, margin, options);
+  const last = well[well.length - 1];
+  const step = Math.min(4, Math.max(0.5, margin * 0.5));
+  const lead: Vec2[] = [];
+  const ns = Math.max(1, Math.ceil(stretch / step));
+  for (let k = 1; k <= ns; k++) lead.push(along(last, td, (stretch * k) / ns));
+  const bend = along(last, td, stretch);
+  const arc = turnArc(bend, td, angle, turnout / (2 * Math.sin(Math.abs(angle) / 2)), margin);
+  lead.push(...arc.slice(1));
+  const exit = arc[arc.length - 1];
+  const dir = rotate2D(td, angle);
+  const ng = Math.max(1, Math.ceil(tangentArc / step));
+  const guide: Vec2[] = [];
+  for (let k = ng; k >= 0; k--) guide.push(along(exit, dir, (tangentArc * k) / ng));
+  const apex = guide[0];
+  const gather = along(apex, dir, stretch);
+  const reach = Math.max(
+    reachPastOutline(apex, dir, outline, extension),
+    stretch + extension,
+  );
+  return {
+    end: { dir, gather, tip: along(apex, dir, reach) },
+    exit,
+    apex,
+    guide,
+    hull: [],
+    ring: [],
+    lead,
+    divert: angle,
+  };
+}
+
+/** Metres between the vertices an arm is laid with for the pocket detector. */
+const ARM_POCKET_STEP = 10;
+
+/** The deepest of the detector's pockets that open on the arm — the first `armEnd` vertices of `trace`. */
+function pocketsOnArm(
+  trace: Vec2[],
+  armEnd: number,
+  margin: number,
+): TracePocketSpan | null {
+  let worst: TracePocketSpan | null = null;
+  for (const s of traceProblemSpans(trace, { margin })) {
+    if (!isTracePocket(s) || s.span[0] >= armEnd) continue;
+    if (!worst || s.ratio > worst.ratio) worst = s;
+  }
+  return worst;
+}
+
+/** `from` → `to`, `to` excluded, at {@link ARM_POCKET_STEP}. */
+function armLine(from: Vec2, to: Vec2): Vec2[] {
+  const n = Math.max(1, Math.ceil(Math.hypot(to[0] - from[0], to[1] - from[1]) / ARM_POCKET_STEP));
+  const out: Vec2[] = [];
+  for (let k = 0; k < n; k++) {
+    out.push([from[0] + ((to[0] - from[0]) * k) / n, from[1] + ((to[1] - from[1]) * k) / n]);
+  }
+  return out;
+}
+
+/**
+ * The corridor a planned head arm forms with its own well: the trace problem detector run over the
+ * arm (tip to apex) in front of the plan's virtual well, and the deepest pocket opening on the arm.
+ *
+ * @group Utils
+ */
+export function armPocket(
+  plan: HeadArmPlan,
+  well: Vec2[],
+  margin: number,
+): TracePocketSpan | null {
+  const arm = armLine(plan.tip, plan.trace[0]);
+  const ownWell = well.length - plan.wrap.headEndIndex;
+  const head = plan.trace.slice(0, plan.trace.length - ownWell);
+  // ⛔ What lies inside the head ring (a hairpin's turn, the hop through the hull) is not trace.
+  const outside = head.filter(p => !pointInConvex(p, plan.wrap.ring));
+  const trace = [...arm, ...outside, ...well.slice(plan.wrap.headEndIndex)];
+  return pocketsOnArm(trace, arm.length + outside.length, margin);
+}
+
+/**
+ * {@link armPocket} without a plan: a straight arm along `axis` from the frame's far edge, joined to
+ * the well where the frame ends. A cheap screen only — it reads neither a laid turn nor a grown wrap.
+ *
+ * @group Utils
+ */
+export function frameArmPocket(
+  well: Vec2[],
+  frame: HeadWrap,
+  axis: Vec2,
+  margin: number,
+  outline: Vec2[][],
+  options: FenceArmsOptions = {},
+): TracePocketSpan | null {
+  let front = frame.hull[0] ?? well[0];
+  for (const p of frame.hull) if (dot(p, axis) > dot(front, axis)) front = p;
+  const start = along(front, axis, margin);
+  const reach =
+    reachPastOutline(start, axis, outline, 0) + (options.extension ?? DEFAULT_EXTENSION);
+  const arm = [...armLine(along(start, axis, reach), start), start];
+  return pocketsOnArm([...arm, ...well.slice(frame.headEndIndex)], arm.length, margin);
 }
 
 /**

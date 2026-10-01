@@ -1,11 +1,13 @@
 import { Vec2, Vec3 } from '../types/common';
 import {
+  armPocket,
   buildFenceCut,
   CurvePiece,
   DEFAULT_EXTENSION,
   DEFAULT_MAX_RELATIVE_TURN,
   FenceArmEnd,
   FenceArmsOptions,
+  frameArmPocket,
   HeadArmPlan,
   headRouteObstacles,
   headWrapExitAngle,
@@ -13,13 +15,16 @@ import {
   marginFrame,
   planHeadArm,
   planTdArm,
+  planTdDiversion,
   rodsCrowd,
   TdArmPlan,
+  tdDiversionAngles,
   tdPlanTrace,
 } from '../utils/fence-run-out';
 import { convexPolygonDistance } from '../utils/margin-zone';
 import {
   FenceSideName,
+  hullDiameter,
   isTracePocket,
   oneSidedOffset,
   pointInConvex,
@@ -764,7 +769,12 @@ export function planFenceHead(
   obstacles: Vec2[][],
   options: Pick<
     FenceArmsOptions,
-    'fallbackAngle' | 'tdPlan' | 'headTurnout' | 'headBearing' | 'headMinTdAngle'
+    | 'fallbackAngle'
+    | 'tdPlan'
+    | 'headTurnout'
+    | 'headBearing'
+    | 'headMinTdAngle'
+    | 'headOffset'
   > & {
     problems?: { trace: Vec2[]; spans: TraceProblemSpan[] };
     /** see {@link FenceObstacleOptions.fuse} — applied again when the obstacles are rebuilt */
@@ -2303,6 +2313,98 @@ export type FenceCoreInputs = {
   reach: [number, number];
 };
 
+/** Below this {@link TracePocketSpan.ratio} an arm's corridor is accepted, widened, when no angle avoids one. */
+const MILD_ARM_POCKET_RATIO = 10;
+
+/** How much wider an accepted corridor's mouth is made ({@link FenceArmsOptions.headOffset}). */
+const ARM_POCKET_WIDENING = 3;
+
+/**
+ * The TD arm DIVERTED for a head that grew over the well along the opposite-TD axis, or whose arm
+ * forms a corridor with it ({@link armPocket}) — or null to keep the undiverted plan.
+ *
+ * ⭐ Over the angles that keep the head from growing ({@link tdDiversionAngles}), in order: the first
+ * that {@link frameArmPocket} screens as clean AND the planned arm confirms; else the first planned
+ * clean one; else the first whose corridor is mild (ratio < {@link MILD_ARM_POCKET_RATIO}), with the
+ * head arm moved sideways away from the well until its mouth is {@link ARM_POCKET_WIDENING}× as wide.
+ * With no such angle at all, the one meeting the well nearest without a reversal. Kept only when the
+ * head hull is no larger than undiverted.
+ */
+function divertTdArm(
+  well: Vec2[],
+  base: HeadArmPlan,
+  obstacles: Vec2[][],
+  margin: number,
+  footprint: Vec2[][],
+  planHead: (td: TdArmPlan, headOffset?: number) => HeadArmPlan | null,
+  options: Pick<FenceArmsOptions, 'fallbackAngle' | 'headTurnout'>,
+): { td: TdArmPlan; plan: HeadArmPlan } | null {
+  const frame = base.frame;
+  if (!frame || (!base.grown && !armPocket(base, well, margin))) return null;
+  const angles = tdDiversionAngles(well, frame, obstacles, margin, footprint, options);
+  type Tried = { td: TdArmPlan; plan: HeadArmPlan; pocket: TracePocketSpan | null };
+  const tried = new Map<number, Tried | null>();
+  const attempt = (angle: number): Tried | null => {
+    if (!tried.has(angle)) {
+      const td = planTdDiversion(well, angle, margin, footprint, options);
+      const plan = planHead(td);
+      tried.set(
+        angle,
+        plan && !plan.degenerate ? { td, plan, pocket: armPocket(plan, well, margin) } : null,
+      );
+    }
+    return tried.get(angle)!;
+  };
+  const axis = (angle: number): Vec2 => [
+    -(angles.td[0] * Math.cos(angle) - angles.td[1] * Math.sin(angle)),
+    -(angles.td[0] * Math.sin(angle) + angles.td[1] * Math.cos(angle)),
+  ];
+  let chosen: Tried | null = null;
+  for (const angle of angles.clear) {
+    if (frameArmPocket(well, frame, axis(angle), margin, footprint)) continue;
+    const t = attempt(angle);
+    if (t && !t.pocket) {
+      chosen = t;
+      break;
+    }
+  }
+  let mild: Tried | null = null;
+  for (const angle of chosen ? [] : angles.clear) {
+    const t = attempt(angle);
+    if (!t?.pocket) {
+      chosen = t;
+      if (t) break;
+    } else if (!mild && t.pocket.ratio < MILD_ARM_POCKET_RATIO) mild = t;
+  }
+  if (!chosen && mild?.pocket) {
+    // the bar end further off the arm's axis is the well's side of the corridor
+    const perp = leftNormal2D(mild.plan.dir[0], mild.plan.dir[1]);
+    const side = (p: Vec2) =>
+      (p[0] - mild!.plan.exit[0]) * perp[0] + (p[1] - mild!.plan.exit[1]) * perp[1];
+    const [a, b] = mild.pocket.bar.map(side);
+    const wellSide = Math.abs(a) > Math.abs(b) ? a : b;
+    const offset = -Math.sign(wellSide) * (ARM_POCKET_WIDENING - 1) * mild.pocket.mouth;
+    const widened = planHead(mild.td, offset);
+    const opened = widened && !widened.degenerate ? armPocket(widened, well, margin) : null;
+    chosen =
+      widened &&
+      !widened.degenerate &&
+      !(widened.grown && !mild.plan.grown) &&
+      (!opened || opened.mouth > mild.pocket.mouth)
+        ? { td: mild.td, plan: widened, pocket: opened }
+        : mild;
+  }
+  if (!chosen && angles.clear.length === 0 && angles.nearest) {
+    chosen = attempt(angles.nearest);
+  }
+  // a hairpin framed into the wrap enlarges it, so only GROWTH over the well counts against a diversion
+  const keep =
+    chosen &&
+    (!chosen.plan.grown ||
+      (base.grown && hullDiameter(chosen.plan.wrap.hull) < hullDiameter(base.wrap.hull)));
+  return keep ? chosen : null;
+}
+
 /**
  * Everything the two cores of a fence are built from, exactly as {@link buildWellboreFence}
  * builds them: the run-on trace ({@link fenceRunOn}), its trace problems detected ONCE and
@@ -2369,13 +2471,14 @@ export function fenceCoreInputs(
   }
   // The head is one more obstacle: planned first, so each core rounds its ring by the same rod
   // as any mid-trace fold and lands on the guide the head arm leaves from.
-  const planHead = (td: TdArmPlan | null) =>
+  const planHead = (td: TdArmPlan | null, headOffset?: number) =>
     span.headArm
       ? planFenceHead(well, samples, margin, footprint, obstacles, {
           fallbackAngle: options.fallbackAngle,
           headTurnout: options.headTurnout,
           headBearing: options.headBearing,
           headMinTdAngle: options.headMinTdAngle,
+          headOffset,
           problems: { trace: coreWell, spans },
           tdPlan: td,
           fuse: options.fuse,
@@ -2387,6 +2490,18 @@ export function fenceCoreInputs(
   if (tdPlan && headArm?.wrap.merged.includes(tdPlan.hull)) {
     tdPlan = null;
     headArm = planHead(null);
+  }
+  // ⭐ A head grown over the well along the opposite-TD axis, or whose arm forms a corridor (a
+  // pocket) with the well: divert the TD arm — see {@link divertTdArm}.
+  if (headArm?.frame && !headArm.degenerate && !tdPlan && span.tdArm && !tdRunOn) {
+    const diverted = divertTdArm(well, headArm, obstacles, margin, footprint, planHead, {
+      fallbackAngle: options.fallbackAngle,
+      headTurnout: options.headTurnout,
+    });
+    if (diverted) {
+      tdPlan = diverted.td;
+      headArm = diverted.plan;
+    }
   }
   if (span.headArm && !headArm) {
     throw new Error(

@@ -294,7 +294,9 @@ function wellboreScene(
   const { headArm, reach, tdPlan } = inputs;
   notes.push(`cores run on past the block: head ${reach[0].toFixed(0)} m · TD ${reach[1].toFixed(0)} m`);
   if (fuse.length > 0) notes.push(`rods overlapped: re-planned with ${fuse.length} hull pair(s) fused`);
-  if (tdPlan) notes.push('TD: routed round the obstacle over it');
+  if (tdPlan?.divert) {
+    notes.push(`TD: diverted ${((tdPlan.divert * 180) / Math.PI).toFixed(0)}° so the head clears the well`);
+  } else if (tdPlan) notes.push('TD: routed round the obstacle over it');
   if (!span.headArm) notes.push('head: outside the footprint — no head arm');
   if (headArm) {
     const b = polylineBounds2D(headArm.wrap.ring);
@@ -666,7 +668,13 @@ function RodPlanView({
         ]);
       }
       if (model.scene.tdPlan) {
-        stroke(model.scene.tdPlan.guide, COLOURS.degenerate, 1.25, false, [4, 3]);
+        stroke(
+          [...(model.scene.tdPlan.lead ?? []), ...[...model.scene.tdPlan.guide].reverse()],
+          COLOURS.degenerate,
+          1.25,
+          false,
+          [4, 3],
+        );
       }
     }
     for (const s of ['left', 'right'] as const) {
