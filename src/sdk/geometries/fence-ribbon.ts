@@ -183,6 +183,11 @@ export type FenceRibbonOptions = {
   offset?: number;
   /** flip which way the face looks */
   flip?: boolean;
+  /**
+   * Where the face may stand at all — outside it the path is treated as off the tessellation, and
+   * the face stops exactly at the boundary. Default everywhere.
+   */
+  inside?: (x: number, z: number) => boolean;
 };
 
 /**
@@ -263,7 +268,15 @@ export function buildFenceRibbons(
 ): FenceRibbon[] {
   if (path.length < 2) return [];
   const { positionsXZ, indices, heights, intervals } = source;
-  const locator = createStackLocator(positionsXZ, indices);
+  const tessellation = createStackLocator(positionsXZ, indices);
+  const inside = options.inside;
+  const locator: StackLocator = inside
+    ? {
+        locate: (x, z, out) =>
+          inside(x, z) ? tessellation.locate(x, z, out) : null,
+        valueAt: tessellation.valueAt,
+      }
+    : tessellation;
   const offset = options.offset ?? 0;
   const layers = heights.length;
 

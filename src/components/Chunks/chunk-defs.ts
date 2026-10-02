@@ -680,6 +680,17 @@ export type ChunkFence = {
   headBearing?: 'opposite-td' | 'free';
   /** The least angle between a `'free'` head arm and the TD arm, in degrees. Default 90. */
   headMinTdAngle?: number;
+  /**
+   * What the cut reaches: `'stack'` (default) splits the stack's whole outline; `'touched'` cuts
+   * only the outline's islands (its polygons) the well's trace passes through, and leaves the
+   * rest whole — the fence is planned over those islands alone, and masked to them.
+   *
+   * ⚠️ The mask is as fine as the fence field's cell (10–50 m): an untouched island within about
+   * two cells of a touched one may be cut along its edge.
+   *
+   * ⚠️ Baked into the curve, so changing it rebuilds the fence (not the chunks).
+   */
+  scope?: 'stack' | 'touched';
   /** Draw the cut. Default true. */
   enabled?: boolean;
   /**
@@ -747,6 +758,8 @@ export type ChunkFenceState = {
    * metres — enough for the fog to switch on before the cut visually reaches you.
    */
   index: FenceSegmentIndex | null;
+  /** where the cut reaches, exactly, for the faces — `null` everywhere ({@link ChunkFence.scope}) */
+  inside: ((x: number, z: number) => boolean) | null;
   side: FenceSideName;
   offset: number;
   enabled: boolean;

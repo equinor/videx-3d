@@ -74,6 +74,13 @@ const FENCE_TILE = 16;
 export const FENCE_MAX_SEGMENTS = 64;
 
 /**
+ * The value a fence field node outside `WellboreFenceOptions.mask` holds: KEPT, and read as such
+ * without the exact segment test. ⚠️ Must equal `FENCE_MASKED` in `fence-field.glsl`; well inside
+ * GLSL ES's guaranteed highp range (±2^62), and far beyond any distance a field holds.
+ */
+export const FENCE_MASKED = 1e9;
+
+/**
  * Segments bucketed so a point can find every one that could be nearest.
  *
  * ⭐⭐ TWO LEVELS, because a fence is a CURVE in a PLANE. A dense grid fine enough to keep the
@@ -406,6 +413,10 @@ export function fenceSideAt(
     return field.values[fr * field.nx + fc];
   };
 
+  // ⚠️ A masked node is kept outright: near an arm the segment test below would cut it.
+  const far = coarse(x, z);
+  if (far >= FENCE_MASKED) return far;
+
   const c = Math.floor((x - index.origin[0]) / index.reach);
   const r = Math.floor((z - index.origin[1]) / index.reach);
   const pc = Math.floor(c / index.tile);
@@ -500,8 +511,10 @@ export function fenceAutoSide(
   z: number,
   deadband = 0,
 ): FenceSideName {
-  const wants: FenceSideName =
-    fenceSideAt(index, field, x, z) < 0 ? 'left' : 'right';
+  const at = fenceSideAt(index, field, x, z);
+  // outside a masked fence's reach neither half is open, so there is nothing to choose
+  if (at >= FENCE_MASKED) return current;
+  const wants: FenceSideName = at < 0 ? 'left' : 'right';
   // Agreeing costs one field lookup; only a disagreement pays for the curve.
   if (wants === current || deadband <= 0) return wants;
   const near = nearestOnPolyline(curve, x, z, autoHit);

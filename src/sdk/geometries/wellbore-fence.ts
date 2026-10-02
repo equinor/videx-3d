@@ -58,6 +58,7 @@ import { simplifyCurve2D } from '../utils/trajectory';
 import { Curve3D } from './curve/curve-3d';
 import {
   buildFenceSegmentIndex,
+  FENCE_MASKED,
   FenceSegmentIndex,
   fenceSideAt,
 } from './fence-segments';
@@ -1604,6 +1605,54 @@ export function createFenceField(
   };
 }
 
+/**
+ * Set every node of `field` more than one cell outside `rings` (even-odd) to {@link FENCE_MASKED},
+ * in place, so nothing there is cut.
+ *
+ * ⭐ Grown by a cell: the shader reads the NEAREST node, so a point just inside a ring can read a
+ * node just outside it.
+ *
+ * @group Geometries
+ */
+export function maskFenceField(field: FenceField, rings: Vec2[][]): void {
+  const { nx, ny, origin, cell, values } = field;
+  const inside = new Uint8Array(nx * ny);
+  const crossings: number[] = [];
+  for (let r = 0; r < ny; r++) {
+    const z = origin[1] + r * cell;
+    crossings.length = 0;
+    for (const ring of rings) {
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i];
+        const b = ring[(i + 1) % ring.length];
+        if (a[1] === b[1]) continue;
+        if (z < Math.min(a[1], b[1]) || z >= Math.max(a[1], b[1])) continue;
+        crossings.push(a[0] + ((z - a[1]) / (b[1] - a[1])) * (b[0] - a[0]));
+      }
+    }
+    crossings.sort((p, q) => p - q);
+    for (let k = 0; k + 1 < crossings.length; k += 2) {
+      const c0 = Math.max(0, Math.ceil((crossings[k] - origin[0]) / cell));
+      const c1 = Math.min(nx - 1, Math.floor((crossings[k + 1] - origin[0]) / cell));
+      for (let c = c0; c <= c1; c++) inside[r * nx + c] = 1;
+    }
+  }
+  for (let r = 0; r < ny; r++) {
+    for (let c = 0; c < nx; c++) {
+      let near = false;
+      for (let dr = -1; dr <= 1 && !near; dr++) {
+        const rr = r + dr;
+        if (rr < 0 || rr >= ny) continue;
+        for (let dc = -1; dc <= 1 && !near; dc++) {
+          const cc = c + dc;
+          if (cc >= 0 && cc < nx && inside[rr * nx + cc]) near = true;
+        }
+      }
+      if (!near) values[r * nx + c] = FENCE_MASKED;
+    }
+  }
+}
+
 /** Where a field sits, in the form the shader reads it. */
 export type FencePlacement = {
   /** row-major 3x3, object XZ -> uv */
@@ -1866,6 +1915,12 @@ export type WellboreFence = {
 export type WellboreFenceOptions = {
   /** every ring of the footprint, in scene XZ */
   rings: Vec2[][];
+  /**
+   * Rings, even-odd, outside which nothing is cut: every field node further than a cell outside
+   * them is set to {@link FENCE_MASKED}. Applied to the finished fields, after every check.
+   * ⚠️ As fine as the field's cell — ground within about two cells of them may still be cut.
+   */
+  mask?: Vec2[][];
   /**
    * Scene-Y interval the block occupies, `[lowest, highest]`. The trajectory above and below it
    * is left out of the fence — see {@link FenceBlockSpan}. Omit for no vertical limit.
@@ -2924,6 +2979,10 @@ export function buildWellboreFence(
     timings,
   };
 
+  if (options.mask) {
+    maskFenceField(left.field, options.mask);
+    maskFenceField(right.field, options.mask);
+  }
   return { base, left, right, report };
 }
 

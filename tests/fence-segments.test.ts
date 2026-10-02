@@ -1,6 +1,9 @@
 import { readFileSync } from 'fs';
 import { describe, expect, it } from 'vitest';
-import { FENCE_MAX_SEGMENTS } from '../src/sdk/geometries/fence-segments';
+import {
+  FENCE_MASKED,
+  FENCE_MAX_SEGMENTS,
+} from '../src/sdk/geometries/fence-segments';
 
 describe('fence segment index', () => {
   /**
@@ -17,5 +20,15 @@ describe('fence segment index', () => {
     const match = glsl.match(/#define\s+FENCE_MAX_SEGMENTS\s+(\d+)/);
     expect(match, 'fence-field.glsl defines FENCE_MAX_SEGMENTS').toBeTruthy();
     expect(Number(match![1])).toBe(FENCE_MAX_SEGMENTS);
+  });
+
+  it('marks a masked node with the same value the shader tests', () => {
+    const glsl = readFileSync(
+      'src/sdk/materials/shaderLib/fence-field.glsl',
+      'utf-8',
+    );
+    const match = glsl.match(/#define\s+FENCE_MASKED\s+([\d.e+]+)/);
+    expect(match, 'fence-field.glsl defines FENCE_MASKED').toBeTruthy();
+    expect(Number(match![1])).toBe(FENCE_MASKED);
   });
 });

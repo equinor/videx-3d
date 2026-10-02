@@ -295,6 +295,7 @@ type ChunkFence = {
   maxSpacing?: number;        // face sample spacing cap
   water?: boolean;            // default false
   carrier?: boolean;          // default false
+  scope?: 'stack' | 'touched'; // what the cut reaches. Default 'stack'
   debug?: boolean;            // draw the ribbon as a magenta wireframe
 };
 ```
@@ -359,6 +360,29 @@ slice in half.
 ⚠️ It is baked into the curve, so changing it rebuilds the fence (not the chunks).
 It also sets how smooth the curve has to be: an offset folds wherever the curve
 turns tighter than the offset itself.
+
+### `scope`: the islands a well touches
+
+An outline made of separate polygons (a field outline buffered round scattered wells)
+is cut as ONE plane split by default (`'stack'`): the arms run past the whole outline
+and slice every island in their way. `'touched'` cuts only the islands the well's
+trace passes through — by the same block test the fence trims the well with — and
+leaves the rest whole:
+
+- the fence is **planned over those islands alone**, so its arms reach past them and
+  its field and index cover only their bounds (a smaller footprint builds faster);
+- every field node more than a cell outside them is set to `FENCE_MASKED`, which
+  `fenceSide` (GLSL) and `fenceSideAt` read as KEPT without the exact segment test —
+  near an arm that test would otherwise cut an untouched island. Every material that
+  cuts by the fence follows: chunk surfaces and walls, the peel, the inferred hatch,
+  the sea, and the immersion fog's "is this opened" test;
+- the face stops exactly at the islands' edge (`buildFenceRibbons`' `inside`), and
+  `side: 'auto'` holds its side while the camera is outside them.
+
+⚠️ The mask is as fine as the field cell (10–50 m) and grown by one cell, so an
+untouched island within about two cells of a touched one may be cut along its edge.
+One outline polygon is one island: `'touched'` changes nothing for a single-polygon
+outline (the grid, or `chunked`).
 
 ### The fence face
 

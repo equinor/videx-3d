@@ -399,6 +399,7 @@ type FieldColumnStoryProps = {
   fenceMaxSpacing: number;
   fenceHeadBearing: 'opposite-td' | 'free';
   fenceHeadMinTdAngle: number;
+  fenceScope: 'stack' | 'touched';
   fenceDebug: boolean;
   fenceColorTvd: boolean;
   fenceFlyTo: boolean;
@@ -875,6 +876,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
           maxSpacing: props.fenceMaxSpacing,
           headBearing: props.fenceHeadBearing,
           headMinTdAngle: props.fenceHeadMinTdAngle,
+          scope: props.fenceScope,
           // The two cuts are mutually exclusive, so one pair of toggles drives
           // whichever is live.
           water: props.sectionWater,
@@ -895,6 +897,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       props.fenceMaxSpacing,
       props.fenceHeadBearing,
       props.fenceHeadMinTdAngle,
+      props.fenceScope,
       props.sectionWater,
       props.sectionCarrier,
       props.fenceDebug,
@@ -1220,6 +1223,7 @@ export const Default: Story = {
     fenceMaxSpacing: 25,
     fenceHeadBearing: 'opposite-td',
     fenceHeadMinTdAngle: 90,
+    fenceScope: 'stack',
     fenceDebug: false,
     fenceColorTvd: false,
     fenceFlyTo: true,
@@ -1423,6 +1427,13 @@ export const Default: Story = {
       description: 'The least angle between a `free` head arm and the TD arm, degrees.',
       table: { category: 'Fence' },
       if: { arg: 'fenceHeadBearing', eq: 'free' },
+    },
+    fenceScope: {
+      control: { type: 'inline-radio' },
+      options: ['stack', 'touched'],
+      description:
+        'What the cut reaches. `stack`: the whole outline, as one split. `touched`: only the outline’s islands the well passes through — the rest stay whole. Only differs where the outline has several islands (`outline: field`). ⚠️ Rebuilds the fence.',
+      table: { category: 'Fence' },
     },
     fenceOffset: {
       control: { type: 'range', min: -20, max: 20, step: 0.5 },

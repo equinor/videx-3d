@@ -18,12 +18,14 @@ import {
   assertFenceInvariants,
   buildWellboreFence,
   fenceAutoSide,
+  fenceBlockTrace,
   fenceFieldPlacement,
   FenceReport,
   FenceSideName,
   getSplineCurve,
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
+  pointInRing,
   PositionLog,
   Store,
   subdividePolyline2D,
@@ -71,20 +73,17 @@ type Resolved = {
   right: ResolvedSide;
   fence: WellboreFence;
   report: FenceReport;
+  inside: ((x: number, z: number) => boolean) | null;
 };
 
-/** Every ring of an outline in absolute scene XZ. */
-function outlineRings(outline: PlanarPolygonGeometry | null): Vec2[][] {
+/** Every polygon of an outline as its rings, in absolute scene XZ. */
+function outlineIslands(outline: PlanarPolygonGeometry | null): Vec2[][][] {
   if (!outline) return [];
   const [ox, oz] = outline.offset;
   const coordinates = outline.coordinates as PlanarPolygonCoordinates;
-  const rings: Vec2[][] = [];
-  for (const polygon of coordinates) {
-    for (const ring of polygon) {
-      rings.push(ring.map(p => [p[0] + ox, p[1] + oz] as Vec2));
-    }
-  }
-  return rings;
+  return coordinates.map(polygon =>
+    polygon.map(ring => ring.map(p => [p[0] + ox, p[1] + oz] as Vec2)),
+  );
 }
 
 /**
@@ -133,6 +132,7 @@ export function useStackFence(
             alongOffset: 0,
             field: null,
             index: null,
+            inside: null,
             side: 'right',
             offset: 0,
             enabled: false,
@@ -149,7 +149,8 @@ export function useStackFence(
   const headMinTdAngle = fence?.headMinTdAngle;
   const tolerance = fence?.tolerance ?? DEFAULT_FENCE_TOLERANCE;
   const maxSpacing = fence?.maxSpacing ?? DEFAULT_FENCE_MAX_SPACING;
-  const rings = useMemo(() => outlineRings(outline), [outline]);
+  const scope = fence?.scope ?? 'stack';
+  const islands = useMemo(() => outlineIslands(outline), [outline]);
 
   const [resolved, setResolved] = useState<Resolved | null>(null);
 
@@ -183,19 +184,34 @@ export function useStackFence(
         const curve = getSplineCurve(scene);
         if (!curve) return setResolved(null);
 
+        const verticalRange: [number, number] | undefined =
+          rangeLow !== undefined && rangeHigh !== undefined
+            ? [rangeLow, rangeHigh]
+            : undefined;
+        // ⭐ 'touched': only the islands the well's trace passes through, by the same block test
+        // the fence trims the well with.
+        const reached =
+          scope === 'touched'
+            ? islands.filter(
+                island =>
+                  !!fenceBlockTrace(curve, island, { margin, verticalRange }),
+              )
+            : islands;
+        if (reached.length === 0) return setResolved(null);
+        const rings = reached.flat();
+        const mask = scope === 'touched' ? rings : undefined;
+
         let built;
         try {
           built = buildWellboreFence(curve, {
             rings,
+            mask,
             margin,
             rodStiffness,
             headBearing,
             headMinTdAngle,
             wellbore,
-            verticalRange:
-              rangeLow !== undefined && rangeHigh !== undefined
-                ? [rangeLow, rangeHigh]
-                : undefined,
+            verticalRange,
           });
         } catch (thrown) {
           console.warn(
@@ -281,6 +297,15 @@ export function useStackFence(
           right: asSide(built.right),
           fence: built,
           report: built.report,
+          inside: mask
+            ? (x, z) => {
+                let within = false;
+                for (const ring of mask) {
+                  if (pointInRing(x, z, ring)) within = !within;
+                }
+                return within;
+              }
+            : null,
         });
       })
       .catch(() => {
@@ -294,7 +319,8 @@ export function useStackFence(
     wellbore,
     store,
     utmToArea,
-    rings,
+    islands,
+    scope,
     margin,
     rodStiffness,
     headBearing,
@@ -384,6 +410,7 @@ export function useStackFence(
     state.curve = current?.curve ?? null;
     state.field = live?.field ?? null;
     state.index = live?.index ?? null;
+    state.inside = resolved?.inside ?? null;
     state.enabled = fence.enabled !== false && !!current;
     state.debug = fence.debug === true;
 

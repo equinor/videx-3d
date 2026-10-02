@@ -43,12 +43,14 @@ export function useChunkFenceFace(
   const last = useRef<{
     source: unknown;
     curve: unknown;
+    inside: unknown;
     side: FenceSideName | null;
     offset: number;
     on: boolean;
   }>({
     source: null,
     curve: null,
+    inside: null,
     side: null,
     offset: NaN,
     on: false,
@@ -70,6 +72,7 @@ export function useChunkFenceFace(
       state.on &&
       state.source === source &&
       state.curve === fence.curve &&
+      state.inside === fence.inside &&
       state.side === fence.side &&
       state.offset === fence.offset
     ) {
@@ -78,6 +81,7 @@ export function useChunkFenceFace(
     state.on = true;
     state.source = source;
     state.curve = fence.curve;
+    state.inside = fence.inside;
     state.side = fence.side;
     state.offset = fence.offset;
 
@@ -87,6 +91,7 @@ export function useChunkFenceFace(
       alongOffset: fence.alongOffset,
       offset: fence.offset,
       flip: fenceSideSign(fence.side) < 0,
+      inside: fence.inside ?? undefined,
     });
 
     const built: ChunkSectionFace[] = [];
