@@ -1,10 +1,12 @@
 import { interpolateHcl, piecewise } from 'd3-interpolate';
 import {
   CanvasTexture,
+  DataTexture,
   LinearFilter,
   NearestFilter,
   RGBAFormat,
   SRGBColorSpace,
+  UnsignedByteType,
 } from 'three';
 
 export type RampFunction = (ctx: CanvasRenderingContext2D, y: number) => void;
@@ -331,4 +333,35 @@ colorRampTexture.generateMipmaps = false;
 colorRampTexture.colorSpace = SRGBColorSpace;
 colorRampTexture.format = RGBAFormat;
 colorRampTexture.anisotropy = 4;
+
+const palettes = new Map<number, DataTexture>();
+
+/**
+ * One of the built-in colour ramps (`colorRampTexture`'s rows) as its own 1-row texture — a
+ * palette for `ChunkFenceOverlay.palette`, or anything else that maps a value to a colour.
+ *
+ * ⚠️ Shared and cached per index: do not dispose it.
+ */
+export function colorRampPalette(index: number): DataTexture {
+  const row = Math.min(Math.max(Math.round(index), 0), canvas.height - 1);
+  let palette = palettes.get(row);
+  if (!palette) {
+    const pixels = canvas
+      .getContext('2d')!
+      .getImageData(0, row, canvas.width, 1).data;
+    palette = new DataTexture(
+      new Uint8Array(pixels),
+      canvas.width,
+      1,
+      RGBAFormat,
+      UnsignedByteType,
+    );
+    palette.colorSpace = SRGBColorSpace;
+    palette.magFilter = LinearFilter;
+    palette.minFilter = LinearFilter;
+    palette.needsUpdate = true;
+    palettes.set(row, palette);
+  }
+  return palette;
+}
 //ramp((t) => `hsl(${(1 - t) * 360},100%,50%)`),

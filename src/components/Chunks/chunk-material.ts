@@ -133,38 +133,32 @@ export function applyFenceSide(
 }
 
 /**
- * The shared uniforms a fence face's seismic reads. One set per stack, so loading a side or
- * moving the mix is a write into them rather than a material rebuild.
+ * The shared uniforms a fence face's overlay reads (see `ChunkFenceOverlay`). One set per stack,
+ * so a new side, palette or mix is a write into them rather than a material rebuild.
  *
  * @group Components
  */
-export type ChunkSeismicUniforms = {
-  /** one column per sampled position along the cut, rows from the top down */
-  map: IUniform<Texture | null>;
+export type ChunkFenceOverlayUniforms = {
+  /** the shown side's values, in `.r` */
+  values: IUniform<Texture | null>;
+  /** x, y: face `uv.x` at the values' u = 0 and u = 1 edges; z, w: scene Y at v = 0 and v = 1 */
+  rect: IUniform<Vector4>;
+  /** 1-row colour lookup */
+  palette: IUniform<Texture | null>;
   /**
-   * x: mix, 0 while there is nothing to show; y, z: face `uv.x` of the first and last column;
+   * x, y: the values at the palette's ends; z: mix, 0 while there is nothing to show;
    * w: shading — 0 flat, 1 lit, 2 facing
    */
   params: IUniform<Vector4>;
-  /** TVD MSL — x, y: top and bottom of the map's rows; z, w: the window it is drawn in */
-  depth: IUniform<Vector4>;
-  /** columns, rows */
-  size: IUniform<Vector2>;
-  /** x, y: value at either end of the colour ramp; z: ramp index; w: ramp count */
-  ramp: IUniform<Vector4>;
-  /** the colour ramps, one per row */
-  rampTexture: IUniform<Texture | null>;
 };
 
-/** The shared seismic uniforms, showing nothing. @group Components */
-export function createSeismicUniforms(): ChunkSeismicUniforms {
+/** The shared fence overlay uniforms, showing nothing. @group Components */
+export function createFenceOverlayUniforms(): ChunkFenceOverlayUniforms {
   return {
-    map: { value: null },
-    params: { value: new Vector4(0, 0, 1, 0) },
-    depth: { value: new Vector4(0, 1, 0, 1) },
-    size: { value: new Vector2(1, 1) },
-    ramp: { value: new Vector4(-1, 1, 6, 1) },
-    rampTexture: { value: null },
+    values: { value: null },
+    rect: { value: new Vector4(0, 1, 0, 1) },
+    palette: { value: null },
+    params: { value: new Vector4(0, 1, 0, 1) },
   };
 }
 
@@ -288,12 +282,12 @@ export type ChunkMaterialParameters = {
    */
   contacts?: ChunkContactTexture[];
   /**
-   * Mix seismic into the albedo of a fence's cut FACE, read by the face's `uv.x` (metres along
-   * the cut) and its depth. Only meaningful on a fence face.
+   * Mix an overlay into a fence's cut FACE, read by the face's `uv.x` (metres along the cut) and
+   * its height. Only meaningful on a fence face.
    *
    * ⚠️ Read at CONSTRUCTION, like `fence`.
    */
-  seismic?: ChunkSeismicUniforms;
+  fenceOverlay?: ChunkFenceOverlayUniforms;
 };
 
 const shader = {
@@ -421,14 +415,12 @@ export class ChunkMaterial extends ShaderMaterial {
       this.uniforms.fenceSegmentsSize = parameters.fence.segmentsSize;
     }
 
-    if (parameters.seismic) {
-      (this.defines as Record<string, unknown>).CHUNK_SEISMIC = '';
-      this.uniforms.seismicMap = parameters.seismic.map;
-      this.uniforms.seismicParams = parameters.seismic.params;
-      this.uniforms.seismicDepth = parameters.seismic.depth;
-      this.uniforms.seismicSize = parameters.seismic.size;
-      this.uniforms.seismicRamp = parameters.seismic.ramp;
-      this.uniforms.seismicRampTexture = parameters.seismic.rampTexture;
+    if (parameters.fenceOverlay) {
+      (this.defines as Record<string, unknown>).CHUNK_FENCE_OVERLAY = '';
+      this.uniforms.overlayValues = parameters.fenceOverlay.values;
+      this.uniforms.overlayRect = parameters.fenceOverlay.rect;
+      this.uniforms.overlayPalette = parameters.fenceOverlay.palette;
+      this.uniforms.overlayParams = parameters.fenceOverlay.params;
     }
 
     this.applyContacts(parameters.contacts);

@@ -12,7 +12,10 @@ import {
 } from './chunk-defs';
 import { CutoutSource } from './cutout';
 import { ChunkContactTexture } from './chunk-contacts';
-import { ChunkFenceUniforms, ChunkSeismicUniforms } from './chunk-material';
+import {
+  ChunkFenceOverlayUniforms,
+  ChunkFenceUniforms,
+} from './chunk-material';
 import { ChunkDepthMap } from './chunk-depth-map';
 import { SeamDecision } from './seams';
 
@@ -149,8 +152,8 @@ export type ChunkStackContextValue = {
    * peel patch {@link ChunkStackContextValue.sectionUniformInverse} serves.
    */
   fenceUniformsInverse?: ChunkFenceUniforms;
-  /** The fence face's shared seismic uniforms, when `ChunkFence.seismic` is set. */
-  fenceSeismicUniforms?: ChunkSeismicUniforms | null;
+  /** The fence face's shared overlay uniforms, when `ChunkFence.overlay` is set. */
+  fenceOverlayUniforms?: ChunkFenceOverlayUniforms | null;
   /** Whether the column's floor is cut by the fence (see `ChunkFence.carrier`). */
   fenceCarrier?: boolean;
   /** Whether the fence cuts the sea (see `ChunkFence.water`). */

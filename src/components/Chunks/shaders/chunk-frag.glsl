@@ -56,20 +56,18 @@ uniform vec2 fenceSize;   // grid size in texels
 #include ../../../sdk/materials/shaderLib/fence-field.glsl
 #endif
 
-#if defined(CHUNK_CONTACTS) || defined(CHUNK_BATHYMETRY) || defined(CHUNK_FENCE) || defined(CHUNK_SEISMIC)
+#if defined(CHUNK_CONTACTS) || defined(CHUNK_BATHYMETRY) || defined(CHUNK_FENCE) || defined(CHUNK_FENCE_OVERLAY)
 varying vec3 vObjectPos;
 #include ../../../sdk/materials/shaderLib/depth-map.glsl
 #endif
 
-#ifdef CHUNK_SEISMIC
-// Layout mirrored by `ChunkSeismicUniforms`.
-uniform sampler2D seismicMap;
-uniform vec4 seismicParams;   // x: mix, y, z: along of the first and last column
-uniform vec4 seismicDepth;    // TVD: x, y: map rows top and bottom, z, w: window drawn in
-uniform vec2 seismicSize;     // columns, rows
-uniform vec4 seismicRamp;     // x, y: value range, z: ramp index, w: ramp count
-uniform sampler2D seismicRampTexture;
-varying float vSeismicAlong;
+#ifdef CHUNK_FENCE_OVERLAY
+// Layout mirrored by `ChunkFenceOverlayUniforms`.
+uniform sampler2D overlayValues;
+uniform vec4 overlayRect;     // x, y: along at u = 0 and 1, z, w: scene Y at v = 0 and 1
+uniform sampler2D overlayPalette;
+uniform vec4 overlayParams;   // x, y: values at the palette's ends, z: mix, w: shading (0 flat, 1 lit, 2 facing)
+varying float vFenceAlong;
 #endif
 
 #ifdef CHUNK_CONTACTS
@@ -281,28 +279,27 @@ void main() {
   }
   #endif
 
-  #ifdef CHUNK_SEISMIC
+  #ifdef CHUNK_FENCE_OVERLAY
   // Kept for after lighting, where the unlit modes mix it in.
-  vec3 seismicColor = vec3(0.0);
-  float seismicShown = 0.0;
+  vec3 overlayColor = vec3(0.0);
+  float overlayShown = 0.0;
   {
-    float depth = -vObjectPos.y;
-    float u = (vSeismicAlong - seismicParams.y) / max(seismicParams.z - seismicParams.y, 1e-6);
-    float v = (depth - seismicDepth.x) / max(seismicDepth.y - seismicDepth.x, 1e-6);
-    float shown = seismicParams.x
-      * step(0.0, u) * step(u, 1.0)
-      * step(seismicDepth.z, depth) * step(depth, seismicDepth.w);
-    // Texel centres, so the first and last column land on the ends of the span.
-    vec2 texel = (vec2(u, v) * (seismicSize - 1.0) + 0.5) / seismicSize;
-    // ⚠️ Outside the branch: the map is mipmapped, and choosing a level needs derivatives.
-    float value = texture2D(seismicMap, texel).r;
+    vec2 uv = vec2(
+      (vFenceAlong - overlayRect.x) / (overlayRect.y - overlayRect.x),
+      (vObjectPos.y - overlayRect.z) / (overlayRect.w - overlayRect.z)
+    );
+    float shown = overlayParams.z
+      * step(0.0, uv.x) * step(uv.x, 1.0)
+      * step(0.0, uv.y) * step(uv.y, 1.0);
+    // ⚠️ Outside the branch: the values may be mipmapped, and choosing a level needs derivatives.
+    float value = texture2D(overlayValues, uv).r;
     if (shown > 0.0) {
-      // Reversed, as in `WellboreSeismicSection`, so the same ramp reads the same way.
-      float t = 1.0 - clamp((value - seismicRamp.x) / max(seismicRamp.y - seismicRamp.x, 1e-6), 0.0, 1.0);
-      seismicColor = texture2D(seismicRampTexture, vec2(t, (seismicRamp.z + 0.5) / seismicRamp.w)).rgb;
-      seismicShown = clamp(shown, 0.0, 1.0);
+      // ⭐ Coloured AFTER filtering, so a magnified view interpolates the data, not its colours.
+      float t = clamp((value - overlayParams.x) / (overlayParams.y - overlayParams.x), 0.0, 1.0);
+      overlayColor = texture2D(overlayPalette, vec2(t, 0.5)).rgb;
+      overlayShown = clamp(shown, 0.0, 1.0);
       // lit
-      if (abs(seismicParams.w - 1.0) < 0.5) diffuseColor.rgb = mix(diffuseColor.rgb, seismicColor, seismicShown);
+      if (abs(overlayParams.w - 1.0) < 0.5) diffuseColor.rgb = mix(diffuseColor.rgb, overlayColor, overlayShown);
     }
   }
   #endif
@@ -370,17 +367,17 @@ void main() {
   }
   #endif
 
-  #ifdef CHUNK_SEISMIC
-  // flat (0) or facing (2): the ramp colour, untouched by the scene lights
-  if (seismicShown > 0.0 && abs(seismicParams.w - 1.0) >= 0.5) {
-    vec3 shaded = seismicColor;
-    if (seismicParams.w > 1.5) {
+  #ifdef CHUNK_FENCE_OVERLAY
+  // flat (0) or facing (2): the palette colour, untouched by the scene lights
+  if (overlayShown > 0.0 && abs(overlayParams.w - 1.0) >= 0.5) {
+    vec3 shaded = overlayColor;
+    if (overlayParams.w > 1.5) {
       // As `WellboreSeismicSection`: darker as the face turns away. The geometric normal, so
       // procedural detail does not show through.
       float facing = max(dot(normalize(vNormal) * faceDirection, geometryViewDir), 0.0);
       shaded *= clamp(sqrt(facing), 0.5, 1.0);
     }
-    outgoingLight = mix(outgoingLight, shaded, seismicShown);
+    outgoingLight = mix(outgoingLight, shaded, overlayShown);
   }
   #endif
 

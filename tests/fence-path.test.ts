@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sampleFenceSeismicPath, Vec2 } from '../src/sdk';
+import { sampleFencePath, Vec2 } from '../src/sdk';
 
 const square = (h: number): Vec2[] => [
   [-h, -h],
@@ -15,9 +15,9 @@ const curve: Vec2[] = Array.from({ length: 401 }, (_, i) => [
   0,
 ]);
 
-describe('sampleFenceSeismicPath', () => {
+describe('sampleFencePath', () => {
   it('samples only the span inside the outline, one vertex either side', () => {
-    const path = sampleFenceSeismicPath(curve, [square(990)], 10, 4096)!;
+    const path = sampleFencePath(curve, [square(990)], 10, 4096)!;
     expect(path.along[0]).toBeCloseTo(4000);
     expect(path.along[1]).toBeCloseTo(6000);
     expect(path.points[0][0]).toBeCloseTo(-1000);
@@ -26,7 +26,7 @@ describe('sampleFenceSeismicPath', () => {
   });
 
   it('spaces the positions evenly, at no more than the step', () => {
-    const { points } = sampleFenceSeismicPath(curve, [square(1000)], 10, 4096)!;
+    const { points } = sampleFencePath(curve, [square(1000)], 10, 4096)!;
     const gaps = points.slice(1).map((p, i) => p[0] - points[i][0]);
     for (const gap of gaps) {
       expect(gap).toBeCloseTo(gaps[0]);
@@ -35,13 +35,13 @@ describe('sampleFenceSeismicPath', () => {
   });
 
   it('widens the step to stay within the column cap', () => {
-    const path = sampleFenceSeismicPath(curve, [], 1, 100)!;
+    const path = sampleFencePath(curve, [], 1, 100)!;
     expect(path.points.length).toBe(100);
     expect(path.along).toEqual([0, 10000]);
   });
 
   it('returns null for a curve that never enters the outline', () => {
     const away = curve.map(([x, z]) => [x, z + 5000] as Vec2);
-    expect(sampleFenceSeismicPath(away, [square(1000)], 10, 4096)).toBeNull();
+    expect(sampleFencePath(away, [square(1000)], 10, 4096)).toBeNull();
   });
 });

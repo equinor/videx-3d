@@ -15,7 +15,7 @@ export * from './geometries/curve/tube-geometry';
 export * from './geometries/delatin';
 export * from './geometries/fence';
 export * from './geometries/fence-ribbon';
-export * from './geometries/fence-seismic';
+export * from './geometries/fence-path';
 export * from './geometries/fence-segments';
 export * from './geometries/fence-view';
 export * from './geometries/geometry';

@@ -45,6 +45,7 @@ import {
   ChunkSectionState,
   ChunkStackProgress,
   DEFAULT_SECTION_OFFSET,
+  FenceSideInfo,
   StackImmersion,
   stackWater,
   StackWater,
@@ -73,7 +74,7 @@ import { useChunkFenceFace } from './useChunkFenceFace';
 import { useChunkSection } from './useChunkSection';
 import { useStackBathymetry } from './useStackBathymetry';
 import { useStackFence } from './useStackFence';
-import { useStackFenceSeismic } from './useStackFenceSeismic';
+import { useStackFenceOverlay } from './useStackFenceOverlay';
 import { useStackWater } from './useStackWater';
 
 // Scratch for the camera-locked plane, which is rebuilt every frame.
@@ -204,6 +205,12 @@ export type ChunkStackProps = {
    */
   onFence?: (fence: WellboreFence | null) => void;
   /**
+   * Called with where the SHOWN side's cut face runs, whenever the fence is rebuilt or the side
+   * changes, and with `null` when there is none — what a host needs to build a
+   * `ChunkFence.overlay` texture for it. See `useFenceSeismicOverlay`.
+   */
+  onFenceSide?: (info: FenceSideInfo | null) => void;
+  /**
    * How the column is made monotone before it is built, and what is dropped where
    * a unit is not present. Chunks inherit this unless they declare their own.
    *
@@ -257,6 +264,7 @@ export const ChunkStack = ({
   section,
   fence,
   onFence,
+  onFenceSide,
   resolve,
   rimSpacing,
   maxError,
@@ -675,14 +683,33 @@ export const ChunkStack = ({
     fenceRange?.high,
   );
 
-  const fenceSeismicUniforms = useStackFenceSeismic(
-    fence?.seismic,
+  const fenceOverlayUniforms = useStackFenceOverlay(
+    fence?.overlay,
     fence?.enabled !== false,
-    fenceBuilt,
     fenceSide,
-    store,
-    utm?.areaToUtm,
   );
+
+  // ⚠️ Held in a ref, like `onFence`, so an inline callback does not re-announce the same side.
+  const announceSide = useRef(onFenceSide);
+  announceSide.current = onFenceSide;
+  const areaToUtm = utm?.areaToUtm;
+  useEffect(() => {
+    if (!fenceBuilt || !areaToUtm) {
+      announceSide.current?.(null);
+      return;
+    }
+    announceSide.current?.({
+      fence: fenceBuilt.fence,
+      side: fenceSide,
+      curve: fenceBuilt.curves[fenceSide],
+      rings: fenceBuilt.rings,
+      verticalRange: fenceBuilt.fence.report.verticalRange,
+      toUtm: (x, z) => {
+        const p = areaToUtm(x, 0, z);
+        return [p.easting, p.northing];
+      },
+    });
+  }, [fenceBuilt, fenceSide, areaToUtm]);
 
   // Registered after both cuts' frames, so it reads this frame's state.
   useFrame(() => {
@@ -782,7 +809,7 @@ export const ChunkStack = ({
       fence: fenceState,
       fenceUniforms,
       fenceUniformsInverse,
-      fenceSeismicUniforms,
+      fenceOverlayUniforms,
       fenceCarrier: fence?.carrier === true,
       fenceWater: fence?.water === true,
       resolve: stableResolve,
@@ -817,7 +844,7 @@ export const ChunkStack = ({
     fenceState,
     fenceUniforms,
     fenceUniformsInverse,
-    fenceSeismicUniforms,
+    fenceOverlayUniforms,
     fence?.carrier,
     fence?.water,
     stableResolve,

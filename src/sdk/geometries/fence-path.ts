@@ -2,8 +2,8 @@ import { Vec2 } from '../types/common';
 import { pointAtArcLength, polylineArcLengths } from '../utils/polyline-2d';
 import { pointInRing } from './polygon-outline';
 
-/** Where a fence side's seismic is sampled. See {@link sampleFenceSeismicPath}. */
-export type FenceSeismicPath = {
+/** Where to sample along a fence side. See {@link sampleFencePath}. */
+export type FencePathSamples = {
   /** the positions to sample, evenly spaced along the curve */
   points: Vec2[];
   /** arc length of the first and last position, in the curve's own metres */
@@ -11,7 +11,7 @@ export type FenceSeismicPath = {
 };
 
 /**
- * Evenly spaced positions along a fence curve, for sampling seismic under its cut face.
+ * Evenly spaced positions along a fence curve, for sampling data under its cut face.
  *
  * ⭐ Only the span of the curve inside `rings` (even-odd) is sampled, from one vertex before it
  * enters to one after it leaves: the run-outs reach kilometres past the block, where there is no
@@ -25,12 +25,12 @@ export type FenceSeismicPath = {
  *
  * @group Geometries
  */
-export function sampleFenceSeismicPath(
+export function sampleFencePath(
   curve: Vec2[],
   rings: Vec2[][],
   step: number,
   maxColumns: number,
-): FenceSeismicPath | null {
+): FencePathSamples | null {
   if (curve.length < 2) return null;
   let first = 0;
   let last = curve.length - 1;

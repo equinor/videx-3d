@@ -14,4 +14,5 @@ export * from './inference-material';
 export * from './LevelledBase';
 export * from './surface-sampler';
 export * from './useChunkSection';
+export * from './useFenceSeismicOverlay';
 export * from './useImmersionFog';

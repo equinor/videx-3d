@@ -404,41 +404,63 @@ which half each side removes are all there, so a camera move can be built from t
 fence that was actually generated rather than from a re-derived guess (see
 `fenceViewPose` and [../fence-curves.md](../fence-curves.md)).
 
-### Seismic on the fence face
+### Overlays on the fence face
+
+The fence can carry data on its cut face — seismic, or any other property sampled
+along the cut — mixed into the formation colours. The fence itself knows nothing
+about the data: a host learns where the face runs, builds a texture for it, and hands
+it back.
 
 ```tsx
-<ChunkStack fence={{ wellbore, seismic: { mix: 1, step: 5, delay: 250 } }}>
+const [side, setSide] = useState<FenceSideInfo | null>(null);
+const seismic = useFenceSeismicOverlay(side, { step: 5, colorRampIndex: 6 });
+
+<ChunkStack
+  fence={{ wellbore, overlay: { ...seismic, mix: 1, shading: 'lit' } }}
+  onFenceSide={setSide}
+>
 ```
 
-`ChunkFence.seismic` mixes seismic into the cut face: `mix` 0 shows the formations
-only, 1 the seismic only. `shading` picks how it is lit — `'lit'` mixes it into the
-albedo so the scene lights it like the rock, `'flat'` mixes the plain ramp colour in
-after lighting, and `'facing'` does the same but darkens it as the face turns from the
-view, as `WellboreSeismicSection` does. It is opt-in —
-absent, nothing is loaded and the `CHUNK_SEISMIC` branch is not compiled; adding or
-removing it rebuilds the chunks' materials, while every field of it is a uniform
-write (or, for `step`, a reload).
+- `onFenceSide` reports the SHOWN side whenever the fence is rebuilt or the side
+  changes: its cut curve (face `uv.x` is arc length along it), the outline rings, the
+  fence's vertical range and a scene→UTM `toUtm`. A new `fence` in it means anything
+  built for the last one is stale.
+- `ChunkFence.overlay` takes a `FenceOverlayTexture` per side — `values` (`.r`), and
+  where its u = 0/1 edges sit along the cut and its v = 0/1 edges in scene Y — plus a
+  1-row `palette`, the `range` of values across it (`[max, min]` reverses it), `mix`
+  and `shading`. A side with no texture, or none yet, shows the formations alone.
+- ⭐ The VALUES are drawn, not their colours: the shader filters the values and colours
+  them after, so a magnified view interpolates the data rather than blending colours,
+  and the palette and range are uniform writes. The texture's filtering is the host's
+  call — nearest for categorical data, mipmaps against shimmer far away.
+- The textures are the host's: the stack never disposes them. Adding or removing the
+  overlay rebuilds the chunks' materials (`CHUNK_FENCE_OVERLAY`); its contents do not.
+- `shading`: `'lit'` mixes into the albedo so the scene lights it like the rock,
+  `'flat'` mixes the plain palette colour in after lighting, and `'facing'` does the
+  same but darkens it as the face turns from the view, as `WellboreSeismicSection` does.
 
-`useStackFenceSeismic` queries the store for the side being shown:
+#### `useFenceSeismicOverlay`
+
+The built-in provider for seismic. For the shown side it queries the store:
 
 ```ts
 store.get<FieldColumnSeismicSection>('field-column-seismic-section', wellboreId, {
   path: [e0, n0, e1, n1, ...], // UTM, evenly spaced along the side's cut curve
-  depthRange: [tvdTop, tvdBottom], // the fence's own TVD window (`report.verticalRange`)
+  depthRange: [tvdTop, tvdBottom], // the fence's own TVD window (`verticalRange`)
 });
 ```
 
-- The path is `sampleFenceSeismicPath`: the side's curve clipped to the outline (the
-  run-outs reach kilometres past it) and sampled every `step` metres, widened if the
-  column count would pass the GPU's largest texture.
-- The response holds one column per path position and rows from the top down. The face
-  reads it by its `uv.x` — metres along that same curve — and its depth, and shows it only
-  inside the TVD window.
+- The path is `sampleFencePath`: the curve clipped to the outline (the run-outs reach
+  kilometres past it) and sampled every `step` metres, widened past `maxColumns`.
+- The response holds one column per path position and rows from the top down. It is
+  placed half a sample past the outermost samples, so texel centres land on them, and
+  uploaded as mipmapped half floats divided by the largest amplitude.
 - The query waits `delay` ms for the fence and side to settle. A newer request clears a
   waiting one and drops a superseded response; the store call itself cannot be aborted,
   since `Store` has no signal and may run in a worker.
 - Each side is kept once loaded, so flipping back is free; the cache goes with the
-  fence. Until a side has loaded, its face shows the formations alone.
+  fence or a new `step`. `colorRampIndex` and `rangeOffset` only change the palette and
+  range.
 
 The demo store answers every well with the same slice, repeated along the path and
 stretched over the requested depths.

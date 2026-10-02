@@ -1,4 +1,4 @@
-import { ColorRepresentation, Plane } from 'three';
+import { ColorRepresentation, Plane, Texture } from 'three';
 import {
   FenceField,
   FenceSegmentIndex,
@@ -13,6 +13,7 @@ import {
   SurfaceClipHeader,
   SurfaceMeta,
   Vec2,
+  WellboreFence,
 } from '../../sdk';
 import { OceanBodyProps, OceanWaterProps } from '../Ocean/ocean-material-sync';
 import { ChunkDetail } from './chunk-detail';
@@ -600,52 +601,83 @@ export const DEFAULT_FENCE_AUTO_DEADBAND = 50;
 /** Default {@link ChunkFence.autoSettle}, in seconds. @group Components */
 export const DEFAULT_FENCE_AUTO_SETTLE = 0.2;
 
-/** Default {@link ChunkFenceSeismic.step}, in metres. @group Components */
-export const DEFAULT_FENCE_SEISMIC_STEP = 5;
-
-/** Default {@link ChunkFenceSeismic.delay}, in milliseconds. @group Components */
-export const DEFAULT_FENCE_SEISMIC_DELAY = 250;
-
 /**
- * Seismic drawn on a fence's cut face, mixed into the formation colours.
- *
- * Queried from the store as `'field-column-seismic-section'`, by the UTM positions along the
- * side's cut curve and over the fence's TVD window. Each side is fetched the first time it is
- * shown and then kept until the fence is rebuilt; until its data arrives the face shows the
- * formations alone.
+ * Values laid on one side of a fence's cut face. See {@link ChunkFenceOverlay}.
  *
  * @group Components
  */
-export type ChunkFenceSeismic = {
-  /** 0 shows the formations only, 1 the seismic only. Free to sweep. Default 1. */
-  mix?: number;
+export type FenceOverlayTexture = {
   /**
-   * Metres between seismic columns along the cut. Default {@link DEFAULT_FENCE_SEISMIC_STEP}.
-   * ⚠️ Widened if the cut would need more columns than the GPU's largest texture holds.
+   * Single-channel values (`.r`), coloured through {@link ChunkFenceOverlay.palette} AFTER
+   * filtering — so a magnified view interpolates the data rather than its colours.
+   *
+   * The caller owns it, and picks its filtering: nearest for categorical data, mipmaps against
+   * shimmer in a distant view.
    */
-  step?: number;
-  /**
-   * Milliseconds to wait for the fence and side to settle before querying. Default
-   * {@link DEFAULT_FENCE_SEISMIC_DELAY}. A newer request cancels a waiting one, and a
-   * superseded response is dropped.
-   */
-  delay?: number;
-  /** colour ramp index, as `WellboreSeismicSection`'s. Default 6 (seismic). */
-  colorRampIndex?: number;
-  /** widen (+) or narrow (-) the colour range, as a fraction of the largest amplitude. Default 0. */
-  rangeOffset?: number;
-  /**
-   * How the seismic is shaded. Free to switch. Default `'lit'`.
-   * - `'lit'`: lit by the scene like the rock, mixed into its albedo
-   * - `'flat'`: the ramp colour as is, untouched by the lights
-   * - `'facing'`: the ramp colour darkened as the face turns from the view, as
-   *   `WellboreSeismicSection` shades it — keeps a sense of depth without the lights
-   */
-  shading?: ChunkSeismicShading;
+  values: Texture;
+  /** face `uv.x` — metres along {@link FenceSideInfo.curve} — at the texture's u = 0 and u = 1 edges */
+  along: Vec2;
+  /** scene Y at the texture's v = 0 and v = 1 edges */
+  y: Vec2;
 };
 
-/** See {@link ChunkFenceSeismic.shading}. @group Components */
-export type ChunkSeismicShading = 'lit' | 'flat' | 'facing';
+/**
+ * How a {@link ChunkFenceOverlay} is shaded.
+ * - `'lit'`: lit by the scene like the rock, mixed into its albedo
+ * - `'flat'`: the palette colour as is, untouched by the lights
+ * - `'facing'`: the palette colour darkened as the face turns from the view, as
+ *   `WellboreSeismicSection` shades it — keeps a sense of depth without the lights
+ *
+ * @group Components
+ */
+export type ChunkFenceOverlayShading = 'lit' | 'flat' | 'facing';
+
+/**
+ * Data drawn on a fence's cut face — seismic, or any other property sampled along the cut —
+ * mixed into the formation colours.
+ *
+ * ⭐ The fence knows nothing about the data. A host learns where each side's face runs from
+ * `ChunkStackProps.onFenceSide`, builds a texture for it however it likes, and hands it back
+ * here. `useFenceSeismicOverlay` is a ready-made one for seismic.
+ *
+ * ⭐ One texture PER SIDE: the two sides cut along different curves. A side with none, or none
+ * yet, shows the formations alone.
+ *
+ * @group Components
+ */
+export type ChunkFenceOverlay = {
+  left?: FenceOverlayTexture | null;
+  right?: FenceOverlayTexture | null;
+  /** 1-row colour lookup the values are mapped through, e.g. `colorRampPalette(6)`. Caller-owned. */
+  palette: Texture;
+  /** the values at the palette's left and right end; `[max, min]` reverses it */
+  range: Vec2;
+  /** 0 shows the formations only, 1 the overlay only. Default 1. */
+  mix?: number;
+  /** Default `'lit'`. */
+  shading?: ChunkFenceOverlayShading;
+};
+
+/**
+ * Where one side of a fence's cut face runs, as `ChunkStackProps.onFenceSide` reports it — what
+ * a host needs to build a {@link FenceOverlayTexture} for it.
+ *
+ * @group Components
+ */
+export type FenceSideInfo = {
+  /** the built fence; a new one means everything built for the last is stale */
+  fence: WellboreFence;
+  /** the side shown, i.e. the half removed */
+  side: FenceSideName;
+  /** the side's cut curve in scene XZ, exactly as its face is built: face `uv.x` is arc length along it */
+  curve: Vec2[];
+  /** the outline rings the fence was planned over, in scene XZ */
+  rings: Vec2[][];
+  /** `[lowest, highest]` scene Y the fence was cut for, when bounded */
+  verticalRange?: Vec2;
+  /** scene XZ to UTM `[easting, northing]` */
+  toUtm: (x: number, z: number) => Vec2;
+};
 
 /**
  * Open a stack along a **fence** — a vertical surface swept along a curve in plan,
@@ -779,10 +811,10 @@ export type ChunkFence = {
    */
   debug?: boolean;
   /**
-   * Draw seismic on the cut face. Absent (the default) loads nothing and compiles nothing in;
-   * adding or removing it rebuilds the chunks' materials, changing its fields does not.
+   * Data to draw on the cut face — see {@link ChunkFenceOverlay}. Adding or removing it rebuilds
+   * the chunks' materials; changing its contents does not.
    */
-  seismic?: ChunkFenceSeismic;
+  overlay?: ChunkFenceOverlay;
 };
 
 /**

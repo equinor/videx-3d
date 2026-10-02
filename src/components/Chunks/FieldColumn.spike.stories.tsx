@@ -80,17 +80,19 @@ import { Wells } from '../Wellbores/Wells/Wells';
 import { Chunk } from './Chunk';
 import {
   ChunkFence,
+  ChunkFenceOverlayShading,
   ChunkLayer,
   ChunkResolveOptions,
   ChunkSection,
+  FenceSideInfo,
   StackImmersion,
   StackWater,
 } from './chunk-defs';
 import { CHUNK_DETAIL_PRESET_NAMES, ChunkDetailPreset } from './chunk-detail';
 import { ChunkStack } from './ChunkStack';
 import { ChunkOutline } from './cutout';
-import { ChunkSeismicShading } from './chunk-defs';
 import { ChunkInferenceStyle } from './inference-material';
+import { useFenceSeismicOverlay } from './useFenceSeismicOverlay';
 
 const utmZone = storyArgs.utmZone;
 const origin = storyArgs.origin as Vec2;
@@ -415,7 +417,7 @@ type FieldColumnStoryProps = {
   seismicDelay: number;
   seismicColorRamp: number;
   seismicRangeOffset: number;
-  seismicShading: ChunkSeismicShading;
+  seismicShading: ChunkFenceOverlayShading;
 };
 
 /** Publishes `window.videx3d.locate('wellbore', id)`; must sit inside `UtmArea`. */
@@ -865,6 +867,18 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
 
   // The fence follows whichever wellbore is selected — pick another in the 3D view
   // or the well map and the cut moves with it, with no rebuild.
+  const [fenceSideInfo, setFenceSideInfo] = useState<FenceSideInfo | null>(
+    null,
+  );
+  const seismicOverlay = useFenceSeismicOverlay(
+    props.fence && props.seismic ? fenceSideInfo : null,
+    {
+      step: props.seismicStep,
+      delay: props.seismicDelay,
+      colorRampIndex: props.seismicColorRamp,
+      rangeOffset: props.seismicRangeOffset,
+    },
+  );
   const fence = useMemo<ChunkFence | undefined>(
     () =>
       props.fence
@@ -890,13 +904,10 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
           water: props.sectionWater,
           carrier: props.sectionCarrier,
           debug: props.fenceDebug,
-          seismic: props.seismic
+          overlay: props.seismic
             ? {
+              ...seismicOverlay,
               mix: props.seismicMix,
-              step: props.seismicStep,
-              delay: props.seismicDelay,
-              colorRampIndex: props.seismicColorRamp,
-              rangeOffset: props.seismicRangeOffset,
               shading: props.seismicShading,
             }
             : undefined,
@@ -920,11 +931,8 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       props.sectionCarrier,
       props.fenceDebug,
       props.seismic,
+      seismicOverlay,
       props.seismicMix,
-      props.seismicStep,
-      props.seismicDelay,
-      props.seismicColorRamp,
-      props.seismicRangeOffset,
       props.seismicShading,
     ],
   );
@@ -1114,6 +1122,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
           section={section}
           fence={fence}
           onFence={onFence}
+          onFenceSide={setFenceSideInfo}
           onProgress={onProgress}
           resolve={resolve}
           rimSpacing={props.rimSpacing}

@@ -982,7 +982,7 @@ export const Chunk = ({
           fence={stack.fence}
           fenceUniforms={stack.fenceUniforms}
           fenceUniformsInverse={stack.fenceUniformsInverse}
-          fenceSeismicUniforms={stack.fenceSeismicUniforms}
+          fenceOverlayUniforms={stack.fenceOverlayUniforms}
           fenceCarrier={stack.fenceCarrier}
         />
       </group>
