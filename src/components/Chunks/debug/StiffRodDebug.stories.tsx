@@ -14,6 +14,7 @@ import { CRS, getProjectionDefFromUtmZone } from '../../../sdk/projection/crs';
 import { buildFenceCut, HeadArmPlan, TdArmPlan } from '../../../sdk/utils/fence-run-out';
 import {
   FenceSideName,
+  hullDiameter,
   oneSidedOffset,
   RodOverlapError,
   TransitionDebug,
@@ -924,7 +925,17 @@ function RodPlanView({
 type ReportRow = {
   margin: number;
   label: string;
+  /** planning the scene: block, head plan, TD diversion, obstacles */
+  planMs: number;
+  /** the rods and the cut */
   ms: number;
+  /** the head hull's diameter, m */
+  head?: number;
+  /** seed vertices of every rod, both sides */
+  rodVertices: number;
+  obstacles: number;
+  /** TD diversion, degrees */
+  divert?: number;
   bucket: 'built' | 'rod' | 'runaway' | 'arms' | 'flags' | 'other' | 'outside';
   detail: string;
   /** the args that reproduce this build */
@@ -977,6 +988,80 @@ function bucketOf(m: Model | null): Pick<ReportRow, 'bucket' | 'detail'> {
   return { bucket: 'built', detail: turns.join(' ') };
 }
 
+/** What a build's cost may follow, read off its model. */
+function costOf(m: Model | null): Pick<ReportRow, 'head' | 'rodVertices' | 'obstacles' | 'divert'> {
+  if (!m) return { rodVertices: 0, obstacles: 0 };
+  const hull = m.scene.headArm?.wrap.hull;
+  const divert = m.scene.tdPlan?.divert;
+  let rodVertices = 0;
+  for (const s of ['left', 'right'] as const) {
+    for (const t of m.sides[s].transitions) rodVertices += t.seed?.length ?? 0;
+  }
+  return {
+    head: hull && hull.length >= 3 ? hullDiameter(hull) : undefined,
+    rodVertices,
+    obstacles: m.scene.obstacles.length,
+    divert: divert !== undefined ? (divert * 180) / Math.PI : undefined,
+  };
+}
+
+function pearson(xs: number[], ys: number[]): number {
+  const n = xs.length;
+  if (n < 3) return NaN;
+  const mx = xs.reduce((s, v) => s + v, 0) / n;
+  const my = ys.reduce((s, v) => s + v, 0) / n;
+  let sxy = 0;
+  let sxx = 0;
+  let syy = 0;
+  for (let i = 0; i < n; i++) {
+    sxy += (xs[i] - mx) * (ys[i] - my);
+    sxx += (xs[i] - mx) ** 2;
+    syy += (ys[i] - my) ** 2;
+  }
+  return sxy / Math.sqrt(sxx * syy);
+}
+
+const SLOWEST_COUNT = 10;
+
+/** The slowest builds, and how build time correlates with what it may follow. */
+function SlowestBuilds({
+  rows,
+  link,
+}: {
+  rows: ReportRow[];
+  link: (r: ReportRow, text?: string | number) => React.ReactNode;
+}) {
+  if (rows.length === 0) return null;
+  const total = (r: ReportRow) => r.planMs + r.ms;
+  const slowest = [...rows].sort((a, b) => total(b) - total(a)).slice(0, SLOWEST_COUNT);
+  const built = rows.filter(r => r.bucket === 'built');
+  const withHead = built.filter(r => r.head !== undefined);
+  const r = (xs: number[], ys: number[]) => {
+    const v = pearson(xs, ys);
+    return Number.isFinite(v) ? v.toFixed(2) : '—';
+  };
+  const labelled = new Set(rows.map(row => row.label)).size > 1;
+  return (
+    <div style={{ marginTop: 8, borderTop: '1px solid #333', paddingTop: 6 }}>
+      <div style={{ fontWeight: 700 }}>slowest builds (plan + rods/cut)</div>
+      <div style={{ opacity: 0.6, marginBottom: 4 }}>
+        r(time, head Ø) {r(withHead.map(total), withHead.map(row => row.head!))} over {withHead.length} · r(time, rod
+        vertices) {r(built.map(total), built.map(row => row.rodVertices))} over {built.length} built
+      </div>
+      {slowest.map((row, i) => (
+        <div key={i} style={{ marginLeft: 8 }}>
+          {link(row, labelled ? row.label : row.margin)}
+          {labelled ? ` m${row.margin}` : ''} — {total(row).toFixed(0)} ms ({row.planMs.toFixed(0)} +{' '}
+          {row.ms.toFixed(0)}) · head Ø {row.head !== undefined ? `${row.head.toFixed(0)} m` : '—'} · rod{' '}
+          {row.rodVertices}v · {row.obstacles} obst
+          {row.divert !== undefined ? ` · divert ${row.divert.toFixed(0)}°` : ''}
+          {row.bucket !== 'built' ? ` · ${row.bucket}` : ''}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 const linkStyle: React.CSSProperties = {
   background: 'none',
   border: 'none',
@@ -1010,7 +1095,7 @@ function ReportView({
     </button>
   );
   const name = (r: ReportRow) => link(r);
-  const ms = rows.reduce((s, r) => s + r.ms, 0);
+  const ms = rows.reduce((s, r) => s + r.planMs + r.ms, 0);
   if (subject) {
     return (
       <div style={{ marginTop: 10, borderTop: '1px solid #333', paddingTop: 8, maxHeight: '50vh', overflowY: 'auto', scrollbarWidth: 'thin' }}>
@@ -1048,6 +1133,7 @@ function ReportView({
             </div>
           );
         })}
+        {!running && <SlowestBuilds rows={rows} link={link} />}
       </div>
     );
   }
@@ -1094,6 +1180,7 @@ function ReportView({
           </div>
         );
       })}
+      {!running && <SlowestBuilds rows={rows} link={link} />}
     </div>
   );
 }
@@ -1304,8 +1391,19 @@ const StiffRodDebug = (props: Props) => {
         return;
       }
       const { margin, subject } = jobs[k++];
-      const m = buildModel(subject.scene(margin), margin, props.rodStiffness, props.anchorScale, props.anchorBalanced);
-      rows.push({ margin, label: subject.label, ms: m?.ms ?? 0, pick: subject.pick(margin), ...bucketOf(m) });
+      const t0 = performance.now();
+      const scene = subject.scene(margin);
+      const planMs = performance.now() - t0;
+      const m = buildModel(scene, margin, props.rodStiffness, props.anchorScale, props.anchorBalanced);
+      rows.push({
+        margin,
+        label: subject.label,
+        planMs,
+        ms: m?.ms ?? 0,
+        pick: subject.pick(margin),
+        ...bucketOf(m),
+        ...costOf(m),
+      });
       setReport({ rows: [...rows], running: true, total: jobs.length, subject: only });
       setTimeout(step, 0);
     };

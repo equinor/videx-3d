@@ -4,6 +4,7 @@ import {
   buildFenceCut,
   CurvePiece,
   DEFAULT_EXTENSION,
+  DEFAULT_HEAD_MIN_TD_ANGLE,
   DEFAULT_MAX_RELATIVE_TURN,
   FenceArmEnd,
   FenceArmsOptions,
@@ -224,6 +225,9 @@ const fenceMargin = (requested?: number) => {
  * test. Small because the cut now holds the margin to within float noise on a clean follow.
  */
 const DEFAULT_TOLERANCE = 0.01;
+
+/** Degrees a `'free'` head's minimum TD angle is widened by per retry ({@link WellboreFenceOptions.headMinTdAngle}). */
+export const HEAD_ANGLE_FALLBACK_STEP = 15;
 
 /**
  * Sharp-edge constraint the cut is SIMPLIFIED against — the same arm-weighted rule the
@@ -1810,6 +1814,11 @@ export type FenceReport = {
   verticalRange?: [number, number];
   /** metres the cores ran on past the block's head and TD — see {@link fenceCoreTrace} */
   coreReach: [number, number];
+  /**
+   * Set when a `'free'` head could not be built at the requested minimum angle: the angle it was
+   * built at instead, in degrees, or `'opposite-td'`.
+   */
+  headBearingFallback?: { requested: number; used: number | 'opposite-td' };
   /** each side's report — both are always present, see {@link WellboreFence.left} */
   sides: { left: FenceSideReport; right: FenceSideReport };
   /** milliseconds per stage */
@@ -1891,7 +1900,11 @@ export type WellboreFenceOptions = {
   headTurnout?: number;
   /** see {@link FenceArmsOptions.headBearing}. Default `'opposite-td'`. */
   headBearing?: 'opposite-td' | 'free';
-  /** see {@link FenceArmsOptions.headMinTdAngle}. Default 90°. */
+  /**
+   * see {@link FenceArmsOptions.headMinTdAngle}. Default 90°. A `'free'` head that cannot be built at
+   * this angle is retried at {@link HEAD_ANGLE_FALLBACK_STEP} wider ones up to 180°, then opposite the
+   * TD — see {@link FenceReport.headBearingFallback}.
+   */
   headMinTdAngle?: number;
   /**
    * Slack the finished cut is VERIFIED against, in metres — never built against. Default
@@ -2618,64 +2631,107 @@ export function buildWellboreFence(
   // `one-sided-offset.ts`: the trace inside one of these is degenerate and cannot be measured.
   // ⭐ The cores run on past an open end or a cut — see {@link fenceRunOn} — and are cut back to
   // the block after, so a rod near its edge settles on the real well wherever the block ends.
-  mark = now();
-  const plan = (fuse?: Vec2[][]) =>
-    fenceCoreInputs(curve, block, well, margin, footprint, {
-      ...options,
-      fuse,
-    });
-  let inputs = plan();
-  timings.head = now() - mark;
-  // ⭐⭐ CORES FIRST, then the shared arms. Each side's core is the one-sided offset of the
-  // VIRTUAL well; the arms are decided from BOTH cores together, so they cannot diverge.
-  // ⚠️ `wellIndex` is NOT handed to the offset: it indexes the real well, and the offset's
-  // clearance reference is the virtual trace.
-  mark = now();
-  const coreOf = (side: FenceSideName): Vec2[] =>
-    oneSidedOffset(inputs.trace, side, margin, {
-      obstacles: inputs.route,
-      rodStiffness: options.rodStiffness,
-      rodAnchor: options.rodAnchor,
-      keep: inputs.trim,
-    }).points;
-  // ⭐ Two rods that need more run than lies between their rings: the pair is re-planned as ONE
-  // obstacle, for both sides. Each round routes one hull fewer, so it ends.
-  const fuse: Vec2[][] = [];
-  const cores = (): { left: Vec2[]; right: Vec2[] } => {
-    for (;;) {
+  const attempt = (
+    head: Pick<WellboreFenceOptions, 'headBearing' | 'headMinTdAngle'>,
+  ) => {
+    const stages: Record<string, number> = {};
+    let at = now();
+    const plan = (fuse?: Vec2[][]) =>
+      fenceCoreInputs(curve, block, well, margin, footprint, {
+        ...options,
+        ...head,
+        fuse,
+      });
+    let inputs = plan();
+    stages.head = now() - at;
+    // ⭐⭐ CORES FIRST, then the shared arms. Each side's core is the one-sided offset of the
+    // VIRTUAL well; the arms are decided from BOTH cores together, so they cannot diverge.
+    // ⚠️ `wellIndex` is NOT handed to the offset: it indexes the real well, and the offset's
+    // clearance reference is the virtual trace.
+    at = now();
+    const coreOf = (side: FenceSideName): Vec2[] =>
+      oneSidedOffset(inputs.trace, side, margin, {
+        obstacles: inputs.route,
+        rodStiffness: options.rodStiffness,
+        rodAnchor: options.rodAnchor,
+        keep: inputs.trim,
+      }).points;
+    // ⭐ Two rods that need more run than lies between their rings: the pair is re-planned as ONE
+    // obstacle, for both sides. Each round routes one hull fewer, so it ends.
+    const fuse: Vec2[][] = [];
+    const cores = (): { left: Vec2[]; right: Vec2[] } => {
+      for (;;) {
+        try {
+          return { left: coreOf('left'), right: coreOf('right') };
+        } catch (e) {
+          if (!(e instanceof RodOverlapError)) throw e;
+          fuse.push(convexHull2D([...e.hulls[0], ...e.hulls[1]]));
+          const next = plan([...fuse]);
+          if (next.route.length >= inputs.route.length) throw e;
+          inputs = next;
+        }
+      }
+    };
+    const { left: leftCore, right: rightCore } = cores();
+    stages.cores = now() - at;
+
+    at = now();
+    const arms = buildFenceCut(
+      well,
+      { left: leftCore, right: rightCore },
+      margin,
+      footprint,
+      {
+        wellIndex,
+        extension: options.runOutMargin,
+        fallbackAngle: options.fallbackAngle,
+        headArm: inputs.headArm,
+        tdPlan: inputs.tdPlan,
+        tdArm: span.tdArm,
+        bearingWell: inputs.bearing,
+        rodStiffness: options.rodStiffness,
+      },
+    );
+    stages.arms = now() - at;
+    return { inputs, arms, stages };
+  };
+  // ⭐ A free head that cannot be built is retried WIDER — whether an angle builds is only known once
+  // its cores and arms have been (no plan measure separated them on Z01), and it is not monotone in
+  // the angle (Z01 at margin 10: 120° builds, 135° fails, 150° builds) — so every step is tried.
+  let built: ReturnType<typeof attempt>;
+  let headBearingFallback: FenceReport['headBearingFallback'];
+  if (options.headBearing === 'free') {
+    const requested = options.headMinTdAngle ?? DEFAULT_HEAD_MIN_TD_ANGLE;
+    const tries: Array<number | 'opposite-td'> = [];
+    for (let a = requested; a <= 180; a += HEAD_ANGLE_FALLBACK_STEP) tries.push(a);
+    tries.push('opposite-td');
+    let first: unknown = null;
+    let result: ReturnType<typeof attempt> | null = null;
+    let rejected = 0;
+    for (const angle of tries) {
+      mark = now();
       try {
-        return { left: coreOf('left'), right: coreOf('right') };
+        result = attempt(
+          angle === 'opposite-td'
+            ? { headBearing: 'opposite-td' }
+            : { headBearing: 'free', headMinTdAngle: angle },
+        );
+        if (angle !== requested) headBearingFallback = { requested, used: angle };
+        break;
       } catch (e) {
-        if (!(e instanceof RodOverlapError)) throw e;
-        fuse.push(convexHull2D([...e.hulls[0], ...e.hulls[1]]));
-        const next = plan([...fuse]);
-        if (next.route.length >= inputs.route.length) throw e;
-        inputs = next;
+        first ??= e;
+        rejected += now() - mark;
       }
     }
-  };
-  const { left: leftCore, right: rightCore } = cores();
+    if (!result) throw first;
+    built = result;
+    if (rejected > 0) timings.rejected = rejected;
+  } else {
+    built = attempt(options);
+  }
+  Object.assign(timings, built.stages);
+  const { inputs, arms } = built;
   const { headArm, obstacles } = inputs;
-  timings.cores = now() - mark;
-
-  mark = now();
-  const arms = buildFenceCut(
-    well,
-    { left: leftCore, right: rightCore },
-    margin,
-    footprint,
-    {
-      wellIndex,
-      extension: options.runOutMargin,
-      fallbackAngle: options.fallbackAngle,
-      headArm,
-      tdPlan: inputs.tdPlan,
-      tdArm: span.tdArm,
-      bearingWell: inputs.bearing,
-      rodStiffness: options.rodStiffness,
-    },
-  );
-  timings.arms = now() - mark;
 
   mark = now();
   const probeAt = clearance + cellSize * 4;
@@ -2860,6 +2916,7 @@ export function buildWellboreFence(
       Math.max(...options.verticalRange),
     ],
     coreReach: inputs.reach,
+    headBearingFallback,
     sides: {
       left: sideReport(left, burialOf(left)),
       right: sideReport(right, burialOf(right)),

@@ -539,6 +539,11 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     builtFence.current = fence;
     const wellbore = fence?.report.wellbore;
     const range = fence?.report.verticalRange;
+    if (fence) {
+      // tvdFrom/tvdTo as the stiff rod debug story takes them
+      const tvd = range ? ` · tvdFrom ${(-range[1]).toFixed(0)} tvdTo ${(-range[0]).toFixed(0)}` : '';
+      console.info(`fence ${wellbore}${tvd}`, fence.report);
+    }
     setFenceWindow(previous =>
       !wellbore || !range
         ? null

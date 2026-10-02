@@ -6,6 +6,8 @@ import {
   segmentConvexNearest,
 } from './margin-zone';
 import {
+  ARC_TURN_STEP,
+  coarsenConvexHull,
   convexHull2D,
   countPolylineLoops,
   createPolylineIndex,
@@ -688,6 +690,10 @@ export function traceProblemSpans(
   };
   // The WORST pinch each station takes part in. Taking the nearest pass instead would always
   // answer "the next station", which is the straight-line case and hides the fold entirely.
+  // ⭐ Stations are `step` apart along the arc, so the chord to station j shrinks by at most `step`
+  // per station while the arc grows by `step`: stations that cannot reach `minRatio` are skipped.
+  const step = total / (count - 1);
+  const skipPerStation = minRatio > 0 ? step * (1 + 1 / minRatio) : Infinity;
   const found: Pinch[] = [];
   for (let i = 0; i < count; i++) {
     let best: Pinch | null = null;
@@ -695,7 +701,11 @@ export function traceProblemSpans(
       const d = Math.hypot(pts[i][0] - pts[j][0], pts[i][1] - pts[j][1]);
       if (d < 1e-9) continue;
       const ratio = (arcs[j] - arcs[i]) / d;
-      if (ratio < minRatio) continue;
+      if (ratio < minRatio) {
+        const skip = Math.floor((d - (arcs[j] - arcs[i]) / minRatio) / skipPerStation) - 1;
+        if (skip > 0) j += skip;
+        continue;
+      }
       if (!best || ratio > best.ratio) {
         best = { i, j, ratio, mouth: d, bar: [pts[i], pts[j]] };
       }
@@ -783,14 +793,14 @@ export function traceProblemSpans(
       reason: 'pocket',
       side: sideOf(hand),
       span: [first, last],
-      hull: convexHull2D(trace.slice(first, last + 1)),
+      hull: obstacleHull(convexHull2D(trace.slice(first, last + 1))),
       mouth: p.mouth,
       trappedArc,
       ratio: p.ratio,
       coverage,
       bar: p.bar,
       neck,
-      loop: { span: [a, b], hull: loopHull },
+      loop: { span: [a, b], hull: obstacleHull(loopHull) },
       threadable,
     });
   }
@@ -977,7 +987,7 @@ export function traceProblemSpans(
         reason: 'kink',
         side: sideOf(tightest.hand),
         span: [from, to],
-        hull: convexHull2D(trace.slice(from, to + 1)),
+        hull: obstacleHull(convexHull2D(trace.slice(from, to + 1))),
         radius: tightest.radius,
         coarseRadius: tightest.coarseRadius,
         sharpness: tightest.sharpness,
@@ -1280,22 +1290,54 @@ const cutCusps = (
 
 /** Widest separation between any two hull vertices. */
 /**
- * The widest separation between any two vertices of a convex ring.
+ * The widest separation between any two vertices of a convex ring, by rotating calipers: only
+ * antipodal pairs can be the widest.
  *
  * @group Utils
  */
 export const hullDiameter = (hull: Vec2[]): number => {
-  let d = 0;
-  for (let i = 0; i < hull.length; i++) {
-    for (let j = i + 1; j < hull.length; j++) {
-      d = Math.max(
-        d,
-        Math.hypot(hull[j][0] - hull[i][0], hull[j][1] - hull[i][1]),
-      );
+  const n = hull.length;
+  const dist = (i: number, j: number) =>
+    Math.hypot(hull[j][0] - hull[i][0], hull[j][1] - hull[i][1]);
+  if (n <= 3) {
+    let d = 0;
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) d = Math.max(d, dist(i, j));
     }
+    return d;
+  }
+  // twice the area of the triangle edge (i, i + 1) makes with vertex k — its height off the edge
+  const height = (i: number, ni: number, k: number) =>
+    Math.abs(
+      (hull[ni][0] - hull[i][0]) * (hull[k][1] - hull[i][1]) -
+        (hull[ni][1] - hull[i][1]) * (hull[k][0] - hull[i][0]),
+    );
+  let d = 0;
+  let j = 1;
+  for (let i = 0; i < n; i++) {
+    const ni = (i + 1) % n;
+    if (hull[ni][0] === hull[i][0] && hull[ni][1] === hull[i][1]) continue;
+    while (height(i, ni, (j + 1) % n) > height(i, ni, j)) j = (j + 1) % n;
+    const nj = (j + 1) % n;
+    d = Math.max(d, dist(i, j), dist(ni, j), dist(i, nj), dist(ni, nj));
   }
   return d;
 };
+
+/**
+ * An obstacle's hull with the vertices a dense trace leaves on its bends dropped: held as finely as
+ * a circle of its own diameter laid at {@link ARC_TURN_STEP}, so a larger hull is held more
+ * coarsely. It contains `hull` ({@link coarsenConvexHull}); every distance to it costs per vertex.
+ *
+ * @group Utils
+ */
+export const obstacleHull = (hull: Vec2[]): Vec2[] =>
+  hull.length < 4
+    ? hull
+    : coarsenConvexHull(
+        hull,
+        (hullDiameter(hull) / 2) * (1 - Math.cos(ARC_TURN_STEP / 2)),
+      );
 
 /**
  * The widest separation between any two points of a well's plan trace.

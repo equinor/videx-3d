@@ -8,12 +8,14 @@ import {
   TracePocketSpan,
   hullDiameter,
   isTracePocket,
+  obstacleHull,
   pointInConvex,
   ringAtom,
   traceProblemSpans,
   zoneRing,
 } from './one-sided-offset';
 import {
+  ARC_TURN_STEP,
   PolylineIndex,
   PolylineTurn,
   convexHull2D,
@@ -203,7 +205,7 @@ export const DEFAULT_HEAD_TURNOUT = 100;
 export const DEFAULT_HEAD_MIN_TD_ANGLE = 90;
 
 /** Radians per vertex of a laid head turn at most — the same sampling as `biarc2D`. */
-const TURN_STEP = Math.PI / 60;
+const TURN_STEP = ARC_TURN_STEP;
 
 /** Arc (m) over which a cut's own END direction is read, for a kink-free join. */
 const EXIT_ARC = 20;
@@ -543,7 +545,7 @@ function wrapHead(
   for (const s of absorbed) for (const p of s.hull) pts.push(p);
   pts.push(...extra);
   const merged: Vec2[][] = [];
-  let hull = convexHull2D(pts);
+  let hull = obstacleHull(convexHull2D(pts));
   let ring = zoneRing(hull, margin);
   for (;;) {
     let grew = false;
@@ -561,7 +563,7 @@ function wrapHead(
       grew = true;
     }
     if (!grew) break;
-    hull = convexHull2D(pts);
+    hull = obstacleHull(convexHull2D(pts));
     ring = zoneRing(hull, margin);
   }
   return { hull, ring, headEndIndex, absorbed, merged, obstacles, extra };
@@ -1091,9 +1093,17 @@ export function planHeadArm(
         continue;
       }
     }
-    approach = negate(
-      meanTangent2D(well.slice(entryIndex), true, tangentArc) ?? negate(dir),
-    );
+    // ⭐ A wrap over the TD obstacle too: the well "approaching" it is the TD tail, and a turn laid off
+    // it left both arms from the same tip of the ring (Z01: 90 m apart, the rod between them crossed).
+    const tdHull = options.tdPlan?.hull ?? [];
+    const overTd =
+      tdHull.length >= 3 && convexPolygonDistance(tdHull, wrap.hull) === 0;
+    approach = overTd
+      ? dir
+      : negate(
+          meanTangent2D(well.slice(entryIndex), true, tangentArc) ??
+            negate(dir),
+        );
     approachAngle = Math.acos(Math.max(-1, Math.min(1, dot(approach, dir))));
     laid = turnout > 0 && approachAngle > maxTurn;
     if (laid) break;
@@ -1557,8 +1567,10 @@ export function planTdArm(
     if (hull.length < 3) continue;
     const ring = zoneRing(hull, margin);
     if (!pointInConvex(last, ring)) continue;
+    // ⛔ Before the HULL, not its zone: the zone grows with the margin, and a bearing read off a curving
+    // well where it enters the zone turned with it (Z01: 22° between margins 10 and 11.75).
     let k = well.length - 1;
-    while (k > 0 && pointInConvex(well[k], ring)) k--;
+    while (k > 0 && pointInConvex(well[k], hull)) k--;
     if (k === 0) return null;
     const dir = endBearing(
       well.slice(0, k + 1),

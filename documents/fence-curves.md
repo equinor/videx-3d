@@ -107,6 +107,12 @@ stretch alone (`report.block`). The window itself is echoed as `report.verticalR
     and never leaves the hull — is planned like a real TD in a hull (`planTdArm`): the cores
     round it onto a guide along the well's bearing before the hull, with nothing cut back. It
     used to stop at the zone short of the TD, and the TD arm crossed the well (F-11 A at 1900 m).
+  - ⭐ That bearing is read where the well enters the HULL, not its zone. Read at the zone, it slid
+    back along a curving well as the margin grew and turned the head arm with it — Z01's 22° between
+    margins 10 and 11.75 — until at 11.8 the head wrap swallowed the TD hull, the plan was dropped,
+    the head was planned off the tangent INSIDE the hull, and the rod failed (49°) at every margin
+    from 11.8 to 20. Read at the hull the bearing is the same at every margin, and Z01 builds at all
+    of them; it is the only well of 72 with a TD obstacle plan at margins 0.1–20.
     A core landed on a TD guide (this plan or a degenerate one) leaves along the arm, as at the
     head: joined off its own end, still converging by 1–8°, the two sides' 300–780 m joins
     crossed each other by up to 7 m (35 ends over the census below; now none).
@@ -211,6 +217,13 @@ axis. The laid turn and the shifts then apply to whatever angle is left.
 - ⛔ Not the well's own heading into the head — that is the naive tangent the first version used.
 - Over F-15 D, F-12, X08 and 19 B on the full field at 0.1–19.9 (268 builds per mode): 0 throws in
   either mode, worst turn at most 32.5° in both.
+- ⭐ A head wrap over the TD obstacle too (Z01's 2 km loop) lays no turn: the well "approaching" it
+  is the TD tail, and a turn laid off it left both arms from the same tip of the ring, 90 m apart.
+- ⭐ **Fallback.** A free head that does not build (plan → cores → arms throws) is retried at
+  `HEAD_ANGLE_FALLBACK_STEP` (15°) wider minimum angles up to 180°, then opposite the TD, and the
+  report says so (`headBearingFallback: { requested, used }`). Nothing in the plan predicted the
+  outcome on Z01, and it is not monotone in the angle (margin 10: 120° builds, 135° fails, 150°
+  builds), so every step is built. A rejected angle costs plan + cores + arms, never the field.
 
 ## Which side is which
 
@@ -239,7 +252,14 @@ One polygon is left: `zoneRing`, the hull grown by the margin with no corner tur
 `maxRelativeTurn / 2` — outside the zone everywhere, and within 2% of the margin of it. It is
 the outline the story draws, the path the rod is seeded along, and the zone's extent (the rod's
 atom). Whether a point is IN the zone is never read from it.
-
+⭐ **An obstacle's hull is coarsened where it is made** (`obstacleHull`): a dense trace leaves every
+vertex of a bend on its hull (Z06's head: 1479), and every distance to it costs per vertex — half of a
+big-hull build. Runs of edges are replaced by extending their neighbours while the new corner stays
+within `D/2 · (1 − cos(ARC_TURN_STEP / 2))` of the hull: a circle of its own diameter laid at the
+arc step, so a larger hull is held more coarsely (0.22 m at Z06's 1283 m, 5 mm at F-12's 29 m). The
+result CONTAINS the hull (`coarsenConvexHull`). Z06 1479 → ~140 vertices; over 34 builds of the
+slowest wells at margins 0.1 and 4, the cores ran 2–6× faster on the big hulls, no build failed and
+one worst turn moved (Z34 at 0.1: right 6° → 11°).
 - **Runs.** `computeOffsetRuns` drops an offset candidate within `margin + tolerance` of a hull.
   ⛔ It also drops every candidate whose SOURCE well vertex is on or inside a hull, wherever its
   miter puts it: a corner candidate stands up to `miterLimit · margin` off its vertex, past the

@@ -321,13 +321,45 @@ export function marginCrossings(
   if (polyline.length === 0 || hull.length === 0) {
     return { startsInside: false, crossings };
   }
-  const within = (p: Vec2) => convexSignedDistance(p, hull).distance < margin;
-  const startsInside = within(polyline[0]);
+  // inside the hull is within any positive margin — no distance needed
+  const within = (p: Vec2) =>
+    (margin > 0 && hull.length >= 3 && insideConvex(p, hull)) ||
+    convexSignedDistance(p, hull).distance < margin;
+  const vertexWithin = new Int8Array(polyline.length).fill(-1);
+  const withinAt = (i: number) => {
+    if (vertexWithin[i] < 0) vertexWithin[i] = within(polyline[i]) ? 1 : 0;
+    return vertexWithin[i] === 1;
+  };
+  let x0 = Infinity;
+  let z0 = Infinity;
+  let x1 = -Infinity;
+  let z1 = -Infinity;
+  for (const p of hull) {
+    x0 = Math.min(x0, p[0]);
+    z0 = Math.min(z0, p[1]);
+    x1 = Math.max(x1, p[0]);
+    z1 = Math.max(z1, p[1]);
+  }
+  x0 -= margin;
+  z0 -= margin;
+  x1 += margin;
+  z1 += margin;
+  const startsInside = withinAt(0);
   let arc = 0;
   for (let i = 0; i + 1 < polyline.length; i++) {
     const a = polyline[i];
     const b = polyline[i + 1];
     const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    // a segment whose box is clear of the hull's grown box is more than the margin away
+    if (
+      Math.max(a[0], b[0]) < x0 ||
+      Math.min(a[0], b[0]) > x1 ||
+      Math.max(a[1], b[1]) < z0 ||
+      Math.min(a[1], b[1]) > z1
+    ) {
+      arc += len;
+      continue;
+    }
     const near = segmentConvexNearest(a, b, hull);
     if (near.distance < margin && len > 0) {
       const at = (t: number): Vec2 => [
@@ -343,11 +375,11 @@ export function marginCrossings(
         }
         return (out + inn) / 2;
       };
-      if (!within(a)) {
+      if (!withinAt(i)) {
         const t = bisect(0, near.t);
         crossings.push({ arc: arc + t * len, point: at(t), entering: true });
       }
-      if (!within(b)) {
+      if (!withinAt(i + 1)) {
         const t = bisect(1, near.t);
         crossings.push({ arc: arc + t * len, point: at(t), entering: false });
       }

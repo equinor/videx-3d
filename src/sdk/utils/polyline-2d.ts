@@ -95,6 +95,71 @@ export function convexHull2D(points: Vec2[]): Vec2[] {
 }
 
 /**
+ * A convex ring with fewer vertices that still CONTAINS it: runs of edges are replaced by extending
+ * the edges either side of them to where they meet, while that corner stays within `tolerance` of
+ * the ring. Convex, at most `tolerance` larger, and unchanged where no run can be dropped.
+ *
+ * @param hull a convex ring, as {@link convexHull2D} returns; either winding
+ * @param tolerance metres the result may stand outside `hull`
+ *
+ * @group Utils
+ */
+export function coarsenConvexHull(hull: Vec2[], tolerance: number): Vec2[] {
+  const n = hull.length;
+  if (n < 4 || !(tolerance > 0)) return hull;
+  let area = 0;
+  for (let i = 0; i < n; i++) {
+    const a = hull[i];
+    const b = hull[(i + 1) % n];
+    area += a[0] * b[1] - b[0] * a[1];
+  }
+  const ccw = area >= 0 ? 1 : -1;
+  const at = (k: number) => hull[k % n];
+  /** where the lines of edges `i` and `k` meet beyond the chain between them, or null */
+  const corner = (i: number, k: number): Vec2 | null => {
+    const p = at(i + 1);
+    const q = at(k);
+    const dx = p[0] - at(i)[0];
+    const dz = p[1] - at(i)[1];
+    const ex = at(k + 1)[0] - q[0];
+    const ez = at(k + 1)[1] - q[1];
+    const den = dx * ez - dz * ex;
+    if (!(den * ccw > 0)) return null;
+    const t = ((q[0] - p[0]) * ez - (q[1] - p[1]) * ex) / den;
+    const u = ((q[0] - p[0]) * dz - (q[1] - p[1]) * dx) / den;
+    // past the end of edge i, before the start of edge k
+    return t >= 0 && u <= 0 ? [p[0] + dx * t, p[1] + dz * t] : null;
+  };
+  // the nearest point of the ring to a corner beyond it lies on the chain the corner replaces
+  const within = (c: Vec2, i: number, k: number) => {
+    for (let j = i + 1; j < k; j++) {
+      if (distanceToSegment2D(c, at(j), at(j + 1)) <= tolerance) return true;
+    }
+    return false;
+  };
+  const kept = [0];
+  for (let i = 0; ; ) {
+    let k = i + 1;
+    while (k < n) {
+      const c = corner(i, k + 1);
+      if (!c || !within(c, i, k + 1)) break;
+      k++;
+    }
+    if (k >= n) break;
+    kept.push(k);
+    i = k;
+  }
+  if (kept.length === n) return hull;
+  const out: Vec2[] = [];
+  for (let m = 0; m < kept.length; m++) {
+    const i = kept[m];
+    const k = m + 1 < kept.length ? kept[m + 1] : n;
+    out.push(k === i + 1 ? at(k) : corner(i, k)!);
+  }
+  return out;
+}
+
+/**
  * Whether two CONVEX polygons share any area, boundaries included.
  *
  * ⭐ The separating-axis test: two convex sets are disjoint if and only if some line separates
@@ -2166,6 +2231,9 @@ export function boundedTurnPath2D(
   return best;
 }
 
+/** Radians per vertex an arc is laid with, 3° — {@link biarc2D}'s default and the fence's turns. */
+export const ARC_TURN_STEP = Math.PI / 60;
+
 /**
  * A BIARC turn: two tangent circular arcs from `p0` leaving along `t0` to `p1` arriving
  * along `t1`, sampled as a polyline.
@@ -2187,7 +2255,7 @@ export function boundedTurnPath2D(
  * @param p1 end point
  * @param t1 unit tangent arriving at `p1`
  * @param bias unit direction the turn bulges toward when the pose is degenerate
- * @param step radians per sample along each arc. Default 3°.
+ * @param step radians per sample along each arc. Default {@link ARC_TURN_STEP}.
  * @returns the turn, inclusive of both endpoints
  *
  * @group Utils
@@ -2198,7 +2266,7 @@ export function biarc2D(
   p1: Vec2,
   t1: Vec2,
   bias?: Vec2,
-  step: number = Math.PI / 60,
+  step: number = ARC_TURN_STEP,
 ): Vec2[] {
   const vx = p1[0] - p0[0];
   const vz = p1[1] - p0[1];
