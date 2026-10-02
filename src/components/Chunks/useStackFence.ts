@@ -74,6 +74,16 @@ type Resolved = {
   fence: WellboreFence;
   report: FenceReport;
   inside: ((x: number, z: number) => boolean) | null;
+  /** the outline rings the fence was planned over */
+  rings: Vec2[][];
+};
+
+/** What a fence was built from and into, for anything that follows the cut. */
+export type StackFenceBuilt = {
+  fence: WellboreFence;
+  rings: Vec2[][];
+  /** each side's cut curve, exactly as its face is built along it */
+  curves: Record<FenceSideName, Vec2[]>;
 };
 
 /** Every polygon of an outline as its rings, in absolute scene XZ. */
@@ -297,6 +307,7 @@ export function useStackFence(
           right: asSide(built.right),
           fence: built,
           report: built.report,
+          rings,
           inside: mask
             ? (x, z) => {
                 let within = false;
@@ -443,5 +454,24 @@ export function useStackFence(
     announce.current?.(resolved?.fence ?? null);
   }, [resolved]);
 
-  return { state, uniforms, uniformsInverse, report: resolved?.report ?? null };
+  const built = useMemo<StackFenceBuilt | null>(
+    () =>
+      resolved
+        ? {
+            fence: resolved.fence,
+            rings: resolved.rings,
+            curves: { left: resolved.left.curve, right: resolved.right.curve },
+          }
+        : null,
+    [resolved],
+  );
+
+  return {
+    state,
+    uniforms,
+    uniformsInverse,
+    report: resolved?.report ?? null,
+    built,
+    side,
+  };
 }

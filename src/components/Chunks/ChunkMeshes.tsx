@@ -21,6 +21,7 @@ import { ChunkDetail } from './chunk-detail';
 import {
   ChunkMaterial,
   ChunkFenceUniforms,
+  ChunkSeismicUniforms,
   ChunkWaterTintParameters,
 } from './chunk-material';
 import {
@@ -131,6 +132,8 @@ export type ChunkMeshesProps = {
   fenceUniforms?: ChunkFenceUniforms;
   /** their complement, for the peel patch */
   fenceUniformsInverse?: ChunkFenceUniforms;
+  /** seismic for the fence faces (see `ChunkFence.seismic`), or `null` for none */
+  fenceSeismicUniforms?: ChunkSeismicUniforms | null;
   /** whether the column's floor is cut by the fence */
   fenceCarrier?: boolean;
   /**
@@ -196,8 +199,7 @@ function buildInferenceOverlays(
   sectionUniform?: IUniform<Vector4>,
   fenceUniforms?: ChunkFenceUniforms,
 ) {
-  const cutSection = (i: number) =>
-    capCut(layers, i, seaBed && !sectionWater);
+  const cutSection = (i: number) => capCut(layers, i, seaBed && !sectionWater);
   const cutFence = (i: number) => capCut(layers, i, seaBed && !fenceWater);
   const built = new Map<string, Material | null>();
   const at = (opacity: number, section: boolean, fence: boolean) => {
@@ -261,6 +263,7 @@ export const ChunkMeshes = ({
   fence = null,
   fenceUniforms,
   fenceUniformsInverse,
+  fenceSeismicUniforms = null,
   fenceCarrier = false,
   peel = 0,
 }: ChunkMeshesProps) => {
@@ -288,6 +291,7 @@ export const ChunkMeshes = ({
         fence?: boolean;
         inverse?: boolean;
         contacts?: ChunkContactTexture[];
+        seismic?: ChunkSeismicUniforms;
       },
     ) => {
       // A unit kept whole opts out of both cuts; the floor opts out of each
@@ -304,6 +308,7 @@ export const ChunkMeshes = ({
         wall,
         waterTint,
         contacts: options?.contacts,
+        seismic: options?.seismic,
         sectionPlane: !cutSection
           ? undefined
           : options?.inverse
@@ -460,7 +465,14 @@ export const ChunkMeshes = ({
               layer.detail,
               true,
               undefined,
-              { section: false, fence: false, contacts: layerContacts(i) },
+              {
+                section: false,
+                fence: false,
+                contacts: layerContacts(i),
+                seismic: fence
+                  ? (fenceSeismicUniforms ?? undefined)
+                  : undefined,
+              },
             );
           });
 
@@ -533,6 +545,7 @@ export const ChunkMeshes = ({
     fenceDebug,
     fenceUniforms,
     fenceUniformsInverse,
+    fenceSeismicUniforms,
     fenceCarrier,
   ]);
 

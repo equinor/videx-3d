@@ -1,9 +1,10 @@
 import { filter as _filter } from 'lodash';
-import { KeyType, Store } from '../../sdk';
+import { FIELD_COLUMN_SEISMIC_SECTION, KeyType, Store } from '../../sdk';
 import { DataLoader } from '../../sdk/data/DataLoader';
 import {
   casingLoader,
   completionLoader,
+  fieldColumnSeismicSectionLoader,
   formationLoader,
   perforationLoader,
   positionLogsLoader,
@@ -29,6 +30,10 @@ export class MockStore implements Store {
     this._loaders.set(
       'wellbore-seismic-section',
       wellboreSeismicSectionLoader(this),
+    );
+    this._loaders.set(
+      FIELD_COLUMN_SEISMIC_SECTION,
+      fieldColumnSeismicSectionLoader(this),
     );
 
     // For the mock store used in our storybooks, we only need to preload data once.

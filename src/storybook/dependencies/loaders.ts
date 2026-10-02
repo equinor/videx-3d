@@ -2,6 +2,8 @@ import { transfer } from 'comlink';
 import { group } from 'd3-array';
 import {
   CasingItem,
+  FieldColumnSeismicSection,
+  FieldColumnSeismicSectionQuery,
   getProjectedTrajectory,
   getTrajectory,
   KeyType,
@@ -40,7 +42,8 @@ export const wellboreHeadersLoader = (store: Store) =>
       const host = await get('/data/wellbore-headers.json');
       // an extra's head is placed from the host wells' trajectories
       const data = EXTRA_WELLBORE_IDS.length
-        ? withExtraWellbores(host, await get('/data/position-logs.json')).headers
+        ? withExtraWellbores(host, await get('/data/position-logs.json'))
+            .headers
         : host;
       return Object.keys(data).map(key => {
         const record = data[key];
@@ -299,3 +302,49 @@ export const wellboreSeismicSectionLoader = (store: Store) =>
       return slice as T;
     },
   });
+
+/*
+  Stand-in for a seismic service queried by UTM positions: every request is answered
+  with the same demo slice, repeated along the path and stretched over the requested
+  depth range.
+*/
+export const fieldColumnSeismicSectionLoader = (store: Store) => {
+  let source: Promise<any> | null = null;
+  return new DataLoader(store, {
+    noCache: true,
+    load: async <T>(
+      _key: KeyType,
+      query?: FieldColumnSeismicSectionQuery,
+    ): Promise<T | null> => {
+      if (!query) return null;
+      source ??= get('/data/seismic.json').catch(() => (source = null));
+      const data = await source;
+      if (!data) return null;
+
+      const sourceWidth = data.xsamples;
+      const width = Math.floor(query.path.length / 2);
+      const height = data.ysamples;
+      if (width < 1) return null;
+
+      const values = new Float32Array(width * height);
+      for (let r = 0; r < height; r++) {
+        for (let c = 0; c < width; c++) {
+          // past the last source column, read back the other way
+          const sourceCol = c % sourceWidth;
+          const reverse = Math.floor(c / sourceWidth) % 2 === 1;
+          const readCol = reverse ? sourceWidth - 1 - sourceCol : sourceCol;
+          values[r * width + c] =
+            data.values[r * sourceWidth + readCol] / data.scaleFactor;
+        }
+      }
+
+      const section: FieldColumnSeismicSection = {
+        values,
+        samples: [width, height],
+        depthRange: [query.depthRange[0], query.depthRange[1]],
+        valueRange: [data.min, data.max],
+      };
+      return transfer(section, [values.buffer]) as T;
+    },
+  });
+};

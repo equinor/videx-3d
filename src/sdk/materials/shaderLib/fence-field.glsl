@@ -29,8 +29,9 @@ uniform vec2 fenceSegmentsSize;    // segment texture, in texels
 #define FENCE_MAX_SEGMENTS 64
 #endif
 
-// ⚠️⚠️ MUST equal `FENCE_MASKED` in `sdk/geometries/fence-segments.ts`: a node outside the fence's
-// mask, kept outright — near an arm the segment test would otherwise cut it.
+// ⚠️⚠️ MUST equal `FENCE_MASKED` in `sdk/geometries/fence-segments.ts`: the magnitude of a node
+// outside the fence's mask, kept outright — near an arm the segment test would otherwise cut it.
+// Its sign is the node's half, which only the CPU's view choice reads.
 #define FENCE_MASKED 1e9
 
 vec4 fenceTexel(sampler2D map, float at, vec2 size) {
@@ -65,9 +66,11 @@ float fenceCoarse(sampler2D map, mat3 toUv, vec2 size, vec2 xz) {
 // function the whole cut depends on is not worth carrying.
 float fenceSide(sampler2D map, mat3 toUv, vec2 size, vec2 xz) {
   float result = fenceCoarse(map, toUv, size, xz);
+  bool masked = abs(result) >= FENCE_MASKED;
+  if (masked) result = FENCE_MASKED;
   vec2 cell = floor((xz - fenceIndex.xy) / fenceIndex.z);
   vec2 page = floor(cell / fencePages.z);
-  bool inside = result < FENCE_MASKED
+  bool inside = !masked
     && page.x >= 0.0 && page.y >= 0.0
     && page.x < fencePages.x && page.y < fencePages.y;
 

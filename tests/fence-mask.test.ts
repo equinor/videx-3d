@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   buildFenceSegmentIndex,
   FENCE_MASKED,
+  fenceAutoSide,
+  fenceHalfAt,
   fenceSideAt,
 } from '../src/sdk/geometries/fence-segments';
 import {
@@ -72,6 +74,21 @@ describe('a fence masked to an island', () => {
     maskFenceField(field, [island, hole]);
     expect(fenceSideAt(index, field, -200, 0)).toBe(FENCE_MASKED);
     expect(fenceSideAt(index, field, -50, 0)).toBeLessThan(0);
+  });
+
+  it('still knows which half a masked point is in', () => {
+    const { field, index } = maskedField();
+    expect(fenceHalfAt(index, field, -600, -800)).toBe(-FENCE_MASKED);
+    expect(fenceHalfAt(index, field, 600, -800)).toBe(FENCE_MASKED);
+    expect(fenceHalfAt(index, field, -200, 0)).toBeLessThan(0);
+    expect(fenceHalfAt(index, field, 200, 0)).toBeGreaterThan(0);
+  });
+
+  it('lets auto choose a side from outside the island', () => {
+    const { field, index } = maskedField();
+    // the field's removed half is the LEFT side's, at x < 0
+    expect(fenceAutoSide('right', index, field, curve, -600, -800)).toBe('left');
+    expect(fenceAutoSide('left', index, field, curve, 600, 800)).toBe('right');
   });
 });
 

@@ -39,11 +39,16 @@ uniform vec4 sectionPlane;
 varying float vSectionDist;
 #endif
 
-#if defined(CHUNK_CONTACTS) || defined(CHUNK_BATHYMETRY) || defined(CHUNK_FENCE)
+#if defined(CHUNK_CONTACTS) || defined(CHUNK_BATHYMETRY) || defined(CHUNK_FENCE) || defined(CHUNK_SEISMIC)
 // OBJECT space for the same reason the water tint's depth is: a depth grid is in
 // metres, and a vertical exaggeration would rescale a world-space height away from
 // them. XZ locates the texture, Y is what a contact line is drawn against.
 varying vec3 vObjectPos;
+#endif
+
+#ifdef CHUNK_SEISMIC
+// Metres along the fence curve: a fence face's `uv.x` (see `buildFenceRibbons`).
+varying float vSeismicAlong;
 #endif
 
 // Split cap layout: a cap carries a SHARED xz + per-layer y instead of a full
@@ -87,8 +92,12 @@ void main() {
   vSectionDist = dot(sectionPlane.xyz, transformed) + sectionPlane.w;
   #endif
 
-  #if defined(CHUNK_CONTACTS) || defined(CHUNK_BATHYMETRY) || defined(CHUNK_FENCE)
+  #if defined(CHUNK_CONTACTS) || defined(CHUNK_BATHYMETRY) || defined(CHUNK_FENCE) || defined(CHUNK_SEISMIC)
   vObjectPos = transformed;
+  #endif
+
+  #ifdef CHUNK_SEISMIC
+  vSeismicAlong = uv.x;
   #endif
 
   #include <worldpos_vertex>

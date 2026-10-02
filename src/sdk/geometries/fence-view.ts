@@ -4,7 +4,7 @@ import {
   polylineBounds2D,
   principalDirection2D,
 } from '../utils/polyline-2d';
-import { fenceSideAt } from './fence-segments';
+import { fenceHalfAt } from './fence-segments';
 import { FenceSideName, fenceSideSign, WellboreFence } from './wellbore-fence';
 
 /**
@@ -95,7 +95,7 @@ const SCAN_LIMIT = 90;
 
 const DEG = Math.PI / 180;
 
-/** Signed distance to the cut at a heading, negative where the block is gone. */
+/** Signed distance to the cut at a heading, negative in the half being removed. */
 function probe(
   fence: WellboreFence,
   side: FenceSideName,
@@ -105,7 +105,7 @@ function probe(
 ): number {
   const at = fence[side];
   const a = azimuth * DEG;
-  return fenceSideAt(
+  return fenceHalfAt(
     at.index,
     at.field,
     centre[0] + radius * Math.cos(a),

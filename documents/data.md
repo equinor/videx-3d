@@ -16,6 +16,7 @@ Data type declarations can be found in `src/sdk/data/types/`
 | surface-values | Float32Array | Contains grid elevation data for surfaces. One value per grid node, row-major, matching `nx` * `ny` from the surface's `SurfaceMeta.header`. Prefer a transport your store can hand straight to a `Float32Array` — the demo store fetches raw little-endian float32 files, because parsing a field-scale grid from JSON costs a few hundred milliseconds per surface and a stack asks for dozens. |
 | strat-columns | StratColumn | Contains stratigraphy column meta and unit definitions |
 | wellbore-seismic-section | VerticalSlice | Seismic slice data along a wellbore path |
+| field-column-seismic-section | FieldColumnSeismicSection | Seismic along an arbitrary UTM path over a TVD range, queried with a `FieldColumnSeismicSectionQuery` as args. Used for the seismic on a `ChunkStack` fence face (`ChunkFence.seismic`). One column per path position, rows from the top down. |
 
 ## Store
 The `Store` interface is an abstraction added to separate data dependencies from components and generators. You can see this as an adaptor between the implementations in this library and the data layer of your project.

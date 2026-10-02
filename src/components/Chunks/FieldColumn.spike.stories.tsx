@@ -89,6 +89,7 @@ import {
 import { CHUNK_DETAIL_PRESET_NAMES, ChunkDetailPreset } from './chunk-detail';
 import { ChunkStack } from './ChunkStack';
 import { ChunkOutline } from './cutout';
+import { ChunkSeismicShading } from './chunk-defs';
 import { ChunkInferenceStyle } from './inference-material';
 
 const utmZone = storyArgs.utmZone;
@@ -408,6 +409,13 @@ type FieldColumnStoryProps = {
   fenceFlyGuard: number;
   fenceFlyRetreat: number;
   fenceFlyDuration: number;
+  seismic: boolean;
+  seismicMix: number;
+  seismicStep: number;
+  seismicDelay: number;
+  seismicColorRamp: number;
+  seismicRangeOffset: number;
+  seismicShading: ChunkSeismicShading;
 };
 
 /** Publishes `window.videx3d.locate('wellbore', id)`; must sit inside `UtmArea`. */
@@ -882,6 +890,16 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
           water: props.sectionWater,
           carrier: props.sectionCarrier,
           debug: props.fenceDebug,
+          seismic: props.seismic
+            ? {
+              mix: props.seismicMix,
+              step: props.seismicStep,
+              delay: props.seismicDelay,
+              colorRampIndex: props.seismicColorRamp,
+              rangeOffset: props.seismicRangeOffset,
+              shading: props.seismicShading,
+            }
+            : undefined,
         }
         : undefined,
     [
@@ -901,6 +919,13 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       props.sectionWater,
       props.sectionCarrier,
       props.fenceDebug,
+      props.seismic,
+      props.seismicMix,
+      props.seismicStep,
+      props.seismicDelay,
+      props.seismicColorRamp,
+      props.seismicRangeOffset,
+      props.seismicShading,
     ],
   );
 
@@ -1232,6 +1257,14 @@ export const Default: Story = {
     fenceFlyGuard: 25,
     fenceFlyRetreat: 2,
     fenceFlyDuration: 1.6,
+    // Seismic
+    seismic: false,
+    seismicMix: 1,
+    seismicStep: 5,
+    seismicDelay: 250,
+    seismicColorRamp: 6,
+    seismicRangeOffset: 0,
+    seismicShading: 'lit',
     // Resolve
     seal: true,
     sealMode: 'proportional',
@@ -1485,6 +1518,67 @@ export const Default: Story = {
       description:
         'Seconds for the WHOLE flight, split 30/40/30 across pulling back, swinging across and coming in. ⭐⭐ A budget, not a hint: `CameraControls` eases exponentially and never quite arrives, so each leg also hands over on time — the next one simply eases on from wherever it got to.',
       table: { category: 'Fly to' },
+    },
+    seismic: {
+      description:
+        'Draw seismic on the fence’s cut face, over the fence’s TVD window. ⚠️ Needs `fence` on and a wellbore selected. Queried from the store by the UTM positions along the cut — the demo store answers every well with the same slice. Each side loads the first time it is shown and is kept until the fence is rebuilt; until then the face shows the formations alone.',
+      table: { category: 'Seismic' },
+    },
+    seismicMix: {
+      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      if: { arg: 'seismic' },
+      description: '0 shows the formations only, 1 the seismic only. Free to sweep.',
+      table: { category: 'Seismic' },
+    },
+    seismicStep: {
+      control: { type: 'select' },
+      options: [2, 5, 10, 25],
+      if: { arg: 'seismic' },
+      description:
+        'Metres between seismic columns along the cut. ⚠️ Reloads both sides.',
+      table: { category: 'Seismic' },
+    },
+    seismicDelay: {
+      control: { type: 'range', min: 0, max: 1000, step: 50 },
+      if: { arg: 'seismic' },
+      description:
+        'Milliseconds the fence and side must settle before seismic is queried. A newer request cancels a waiting one.',
+      table: { category: 'Seismic' },
+    },
+    seismicColorRamp: {
+      options: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+      control: {
+        type: 'select',
+        labels: {
+          '0': 'rainbow',
+          '1': 'jet',
+          '2': 'portland',
+          '3': 'earth',
+          '4': 'plasma',
+          '5': 'salinity',
+          '6': 'seismic',
+          '7': 'seismic2',
+          '8': 'spectrum',
+          '9': 'gray',
+        },
+      },
+      if: { arg: 'seismic' },
+      table: { category: 'Seismic' },
+    },
+    seismicRangeOffset: {
+      control: { type: 'range', min: -0.99, max: 2, step: 0.01 },
+      if: { arg: 'seismic' },
+      description:
+        'Widen (+) or narrow (−) the colour range, as a fraction of the largest amplitude.',
+      table: { category: 'Seismic' },
+    },
+    seismicShading: {
+      control: { type: 'inline-radio' },
+      options: ['lit', 'flat', 'facing'],
+      if: { arg: 'seismic' },
+      description:
+        '`lit`: lit by the scene like the rock. `flat`: the ramp colour as is. `facing`: the ramp colour darkened as the face turns from the view, as `WellboreSeismicSection` shades it. Free to switch.',
+      table: { category: 'Seismic' },
     },
     seal: {
       description:

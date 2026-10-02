@@ -600,6 +600,53 @@ export const DEFAULT_FENCE_AUTO_DEADBAND = 50;
 /** Default {@link ChunkFence.autoSettle}, in seconds. @group Components */
 export const DEFAULT_FENCE_AUTO_SETTLE = 0.2;
 
+/** Default {@link ChunkFenceSeismic.step}, in metres. @group Components */
+export const DEFAULT_FENCE_SEISMIC_STEP = 5;
+
+/** Default {@link ChunkFenceSeismic.delay}, in milliseconds. @group Components */
+export const DEFAULT_FENCE_SEISMIC_DELAY = 250;
+
+/**
+ * Seismic drawn on a fence's cut face, mixed into the formation colours.
+ *
+ * Queried from the store as `'field-column-seismic-section'`, by the UTM positions along the
+ * side's cut curve and over the fence's TVD window. Each side is fetched the first time it is
+ * shown and then kept until the fence is rebuilt; until its data arrives the face shows the
+ * formations alone.
+ *
+ * @group Components
+ */
+export type ChunkFenceSeismic = {
+  /** 0 shows the formations only, 1 the seismic only. Free to sweep. Default 1. */
+  mix?: number;
+  /**
+   * Metres between seismic columns along the cut. Default {@link DEFAULT_FENCE_SEISMIC_STEP}.
+   * ⚠️ Widened if the cut would need more columns than the GPU's largest texture holds.
+   */
+  step?: number;
+  /**
+   * Milliseconds to wait for the fence and side to settle before querying. Default
+   * {@link DEFAULT_FENCE_SEISMIC_DELAY}. A newer request cancels a waiting one, and a
+   * superseded response is dropped.
+   */
+  delay?: number;
+  /** colour ramp index, as `WellboreSeismicSection`'s. Default 6 (seismic). */
+  colorRampIndex?: number;
+  /** widen (+) or narrow (-) the colour range, as a fraction of the largest amplitude. Default 0. */
+  rangeOffset?: number;
+  /**
+   * How the seismic is shaded. Free to switch. Default `'lit'`.
+   * - `'lit'`: lit by the scene like the rock, mixed into its albedo
+   * - `'flat'`: the ramp colour as is, untouched by the lights
+   * - `'facing'`: the ramp colour darkened as the face turns from the view, as
+   *   `WellboreSeismicSection` shades it — keeps a sense of depth without the lights
+   */
+  shading?: ChunkSeismicShading;
+};
+
+/** See {@link ChunkFenceSeismic.shading}. @group Components */
+export type ChunkSeismicShading = 'lit' | 'flat' | 'facing';
+
 /**
  * Open a stack along a **fence** — a vertical surface swept along a curve in plan,
  * normally a wellbore's trajectory, run out past both ends of the well so it
@@ -731,6 +778,11 @@ export type ChunkFence = {
    * fence actually generated can be seen on its own.
    */
   debug?: boolean;
+  /**
+   * Draw seismic on the cut face. Absent (the default) loads nothing and compiles nothing in;
+   * adding or removing it rebuilds the chunks' materials, changing its fields does not.
+   */
+  seismic?: ChunkFenceSeismic;
 };
 
 /**
@@ -866,7 +918,8 @@ export function chunkCutDepths(
     const next = i + 1 < layers.length ? ranges[i + 1] : null;
     top = Math.min(top, own ? own[0] : -Infinity);
     bottom = Math.max(bottom, own ? own[1] : Infinity);
-    if (i + 1 < layers.length) bottom = Math.max(bottom, next ? next[1] : Infinity);
+    if (i + 1 < layers.length)
+      bottom = Math.max(bottom, next ? next[1] : Infinity);
     else if (drawsCarrier) floor = true;
   }
   return any ? { top, bottom, floor } : null;

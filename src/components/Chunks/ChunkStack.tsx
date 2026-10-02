@@ -73,6 +73,7 @@ import { useChunkFenceFace } from './useChunkFenceFace';
 import { useChunkSection } from './useChunkSection';
 import { useStackBathymetry } from './useStackBathymetry';
 import { useStackFence } from './useStackFence';
+import { useStackFenceSeismic } from './useStackFenceSeismic';
 import { useStackWater } from './useStackWater';
 
 // Scratch for the camera-locked plane, which is rebuilt every frame.
@@ -661,6 +662,8 @@ export const ChunkStack = ({
     state: fenceState,
     uniforms: fenceUniforms,
     uniformsInverse: fenceUniformsInverse,
+    built: fenceBuilt,
+    side: fenceSide,
   } = useStackFence(
     fence,
     outline,
@@ -670,6 +673,15 @@ export const ChunkStack = ({
     onFence,
     fenceRange?.low,
     fenceRange?.high,
+  );
+
+  const fenceSeismicUniforms = useStackFenceSeismic(
+    fence?.seismic,
+    fence?.enabled !== false,
+    fenceBuilt,
+    fenceSide,
+    store,
+    utm?.areaToUtm,
   );
 
   // Registered after both cuts' frames, so it reads this frame's state.
@@ -770,6 +782,7 @@ export const ChunkStack = ({
       fence: fenceState,
       fenceUniforms,
       fenceUniformsInverse,
+      fenceSeismicUniforms,
       fenceCarrier: fence?.carrier === true,
       fenceWater: fence?.water === true,
       resolve: stableResolve,
@@ -804,6 +817,7 @@ export const ChunkStack = ({
     fenceState,
     fenceUniforms,
     fenceUniformsInverse,
+    fenceSeismicUniforms,
     fence?.carrier,
     fence?.water,
     stableResolve,

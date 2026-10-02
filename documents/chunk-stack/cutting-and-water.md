@@ -371,13 +371,16 @@ leaves the rest whole:
 
 - the fence is **planned over those islands alone**, so its arms reach past them and
   its field and index cover only their bounds (a smaller footprint builds faster);
-- every field node more than a cell outside them is set to `FENCE_MASKED`, which
+- every field node more than a cell outside them is set to `±FENCE_MASKED`, which
   `fenceSide` (GLSL) and `fenceSideAt` read as KEPT without the exact segment test —
   near an arm that test would otherwise cut an untouched island. Every material that
   cuts by the fence follows: chunk surfaces and walls, the peel, the inferred hatch,
   the sea, and the immersion fog's "is this opened" test;
-- the face stops exactly at the islands' edge (`buildFenceRibbons`' `inside`), and
-  `side: 'auto'` holds its side while the camera is outside them.
+- the masked node keeps its SIGN, i.e. which half of the cut it lies in, and
+  `fenceHalfAt` reads it. `side: 'auto'` and `fenceViewPose` choose the view with it,
+  so they work from anywhere — the face can be looked at from over ground the mask
+  leaves whole;
+- the face stops exactly at the islands' edge (`buildFenceRibbons`' `inside`).
 
 ⚠️ The mask is as fine as the field cell (10–50 m) and grown by one cell, so an
 untouched island within about two cells of a touched one may be cut along its edge.
@@ -400,6 +403,45 @@ is none), which is what a host needs to **frame** the cut: the curve, its extent
 which half each side removes are all there, so a camera move can be built from the
 fence that was actually generated rather than from a re-derived guess (see
 `fenceViewPose` and [../fence-curves.md](../fence-curves.md)).
+
+### Seismic on the fence face
+
+```tsx
+<ChunkStack fence={{ wellbore, seismic: { mix: 1, step: 5, delay: 250 } }}>
+```
+
+`ChunkFence.seismic` mixes seismic into the cut face: `mix` 0 shows the formations
+only, 1 the seismic only. `shading` picks how it is lit — `'lit'` mixes it into the
+albedo so the scene lights it like the rock, `'flat'` mixes the plain ramp colour in
+after lighting, and `'facing'` does the same but darkens it as the face turns from the
+view, as `WellboreSeismicSection` does. It is opt-in —
+absent, nothing is loaded and the `CHUNK_SEISMIC` branch is not compiled; adding or
+removing it rebuilds the chunks' materials, while every field of it is a uniform
+write (or, for `step`, a reload).
+
+`useStackFenceSeismic` queries the store for the side being shown:
+
+```ts
+store.get<FieldColumnSeismicSection>('field-column-seismic-section', wellboreId, {
+  path: [e0, n0, e1, n1, ...], // UTM, evenly spaced along the side's cut curve
+  depthRange: [tvdTop, tvdBottom], // the fence's own TVD window (`report.verticalRange`)
+});
+```
+
+- The path is `sampleFenceSeismicPath`: the side's curve clipped to the outline (the
+  run-outs reach kilometres past it) and sampled every `step` metres, widened if the
+  column count would pass the GPU's largest texture.
+- The response holds one column per path position and rows from the top down. The face
+  reads it by its `uv.x` — metres along that same curve — and its depth, and shows it only
+  inside the TVD window.
+- The query waits `delay` ms for the fence and side to settle. A newer request clears a
+  waiting one and drops a superseded response; the store call itself cannot be aborted,
+  since `Store` has no signal and may run in a worker.
+- Each side is kept once loaded, so flipping back is free; the cache goes with the
+  fence. Until a side has loaded, its face shows the formations alone.
+
+The demo store answers every well with the same slice, repeated along the path and
+stretched over the requested depths.
 
 ---
 

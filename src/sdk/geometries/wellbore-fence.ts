@@ -1606,8 +1606,8 @@ export function createFenceField(
 }
 
 /**
- * Set every node of `field` more than one cell outside `rings` (even-odd) to {@link FENCE_MASKED},
- * in place, so nothing there is cut.
+ * Set every node of `field` more than one cell outside `rings` (even-odd) to ±{@link FENCE_MASKED},
+ * in place, so nothing there is cut. The sign is kept, so the node still says which half it is in.
  *
  * ⭐ Grown by a cell: the shader reads the NEAREST node, so a point just inside a ring can read a
  * node just outside it.
@@ -1633,7 +1633,10 @@ export function maskFenceField(field: FenceField, rings: Vec2[][]): void {
     crossings.sort((p, q) => p - q);
     for (let k = 0; k + 1 < crossings.length; k += 2) {
       const c0 = Math.max(0, Math.ceil((crossings[k] - origin[0]) / cell));
-      const c1 = Math.min(nx - 1, Math.floor((crossings[k + 1] - origin[0]) / cell));
+      const c1 = Math.min(
+        nx - 1,
+        Math.floor((crossings[k + 1] - origin[0]) / cell),
+      );
       for (let c = c0; c <= c1; c++) inside[r * nx + c] = 1;
     }
   }
@@ -1648,7 +1651,9 @@ export function maskFenceField(field: FenceField, rings: Vec2[][]): void {
           if (cc >= 0 && cc < nx && inside[rr * nx + cc]) near = true;
         }
       }
-      if (!near) values[r * nx + c] = FENCE_MASKED;
+      if (!near)
+        values[r * nx + c] =
+          values[r * nx + c] < 0 ? -FENCE_MASKED : FENCE_MASKED;
     }
   }
 }
@@ -2409,8 +2414,19 @@ function divertTdArm(
 ): { td: TdArmPlan; plan: HeadArmPlan } | null {
   const frame = base.frame;
   if (!frame || (!base.grown && !armPocket(base, well, margin))) return null;
-  const angles = tdDiversionAngles(well, frame, obstacles, margin, footprint, options);
-  type Tried = { td: TdArmPlan; plan: HeadArmPlan; pocket: TracePocketSpan | null };
+  const angles = tdDiversionAngles(
+    well,
+    frame,
+    obstacles,
+    margin,
+    footprint,
+    options,
+  );
+  type Tried = {
+    td: TdArmPlan;
+    plan: HeadArmPlan;
+    pocket: TracePocketSpan | null;
+  };
   const tried = new Map<number, Tried | null>();
   const attempt = (angle: number): Tried | null => {
     if (!tried.has(angle)) {
@@ -2418,7 +2434,9 @@ function divertTdArm(
       const plan = planHead(td);
       tried.set(
         angle,
-        plan && !plan.degenerate ? { td, plan, pocket: armPocket(plan, well, margin) } : null,
+        plan && !plan.degenerate
+          ? { td, plan, pocket: armPocket(plan, well, margin) }
+          : null,
       );
     }
     return tried.get(angle)!;
@@ -2448,12 +2466,15 @@ function divertTdArm(
     // the bar end further off the arm's axis is the well's side of the corridor
     const perp = leftNormal2D(mild.plan.dir[0], mild.plan.dir[1]);
     const side = (p: Vec2) =>
-      (p[0] - mild!.plan.exit[0]) * perp[0] + (p[1] - mild!.plan.exit[1]) * perp[1];
+      (p[0] - mild!.plan.exit[0]) * perp[0] +
+      (p[1] - mild!.plan.exit[1]) * perp[1];
     const [a, b] = mild.pocket.bar.map(side);
     const wellSide = Math.abs(a) > Math.abs(b) ? a : b;
-    const offset = -Math.sign(wellSide) * (ARM_POCKET_WIDENING - 1) * mild.pocket.mouth;
+    const offset =
+      -Math.sign(wellSide) * (ARM_POCKET_WIDENING - 1) * mild.pocket.mouth;
     const widened = planHead(mild.td, offset);
-    const opened = widened && !widened.degenerate ? armPocket(widened, well, margin) : null;
+    const opened =
+      widened && !widened.degenerate ? armPocket(widened, well, margin) : null;
     chosen =
       widened &&
       !widened.degenerate &&
@@ -2469,7 +2490,8 @@ function divertTdArm(
   const keep =
     chosen &&
     (!chosen.plan.grown ||
-      (base.grown && hullDiameter(chosen.plan.wrap.hull) < hullDiameter(base.wrap.hull)));
+      (base.grown &&
+        hullDiameter(chosen.plan.wrap.hull) < hullDiameter(base.wrap.hull)));
   return keep ? chosen : null;
 }
 
@@ -2561,11 +2583,25 @@ export function fenceCoreInputs(
   }
   // ⭐ A head grown over the well along the opposite-TD axis, or whose arm forms a corridor (a
   // pocket) with the well: divert the TD arm — see {@link divertTdArm}.
-  if (headArm?.frame && !headArm.degenerate && !tdPlan && span.tdArm && !tdRunOn) {
-    const diverted = divertTdArm(well, headArm, obstacles, margin, footprint, planHead, {
-      fallbackAngle: options.fallbackAngle,
-      headTurnout: options.headTurnout,
-    });
+  if (
+    headArm?.frame &&
+    !headArm.degenerate &&
+    !tdPlan &&
+    span.tdArm &&
+    !tdRunOn
+  ) {
+    const diverted = divertTdArm(
+      well,
+      headArm,
+      obstacles,
+      margin,
+      footprint,
+      planHead,
+      {
+        fallbackAngle: options.fallbackAngle,
+        headTurnout: options.headTurnout,
+      },
+    );
     if (diverted) {
       tdPlan = diverted.td;
       headArm = diverted.plan;
@@ -2758,7 +2794,8 @@ export function buildWellboreFence(
   if (options.headBearing === 'free') {
     const requested = options.headMinTdAngle ?? DEFAULT_HEAD_MIN_TD_ANGLE;
     const tries: Array<number | 'opposite-td'> = [];
-    for (let a = requested; a <= 180; a += HEAD_ANGLE_FALLBACK_STEP) tries.push(a);
+    for (let a = requested; a <= 180; a += HEAD_ANGLE_FALLBACK_STEP)
+      tries.push(a);
     tries.push('opposite-td');
     let first: unknown = null;
     let result: ReturnType<typeof attempt> | null = null;
@@ -2771,7 +2808,8 @@ export function buildWellboreFence(
             ? { headBearing: 'opposite-td' }
             : { headBearing: 'free', headMinTdAngle: angle },
         );
-        if (angle !== requested) headBearingFallback = { requested, used: angle };
+        if (angle !== requested)
+          headBearingFallback = { requested, used: angle };
         break;
       } catch (e) {
         first ??= e;

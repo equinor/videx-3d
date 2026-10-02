@@ -74,9 +74,10 @@ const FENCE_TILE = 16;
 export const FENCE_MAX_SEGMENTS = 64;
 
 /**
- * The value a fence field node outside `WellboreFenceOptions.mask` holds: KEPT, and read as such
- * without the exact segment test. ⚠️ Must equal `FENCE_MASKED` in `fence-field.glsl`; well inside
- * GLSL ES's guaranteed highp range (±2^62), and far beyond any distance a field holds.
+ * The magnitude a fence field node outside `WellboreFenceOptions.mask` holds: KEPT, and read as such
+ * without the exact segment test. Its SIGN is still the node's half, which {@link fenceHalfAt}
+ * reads. ⚠️ Must equal `FENCE_MASKED` in `fence-field.glsl`; well inside GLSL ES's guaranteed
+ * highp range (±2^62), and far beyond any distance a field holds.
  */
 export const FENCE_MASKED = 1e9;
 
@@ -274,7 +275,8 @@ export function buildFenceSegmentIndex(
           const d = distanceToSegment2D(p, a, b);
           if (d < best) {
             best = d;
-            cross = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+            cross =
+              (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
           }
         }
         return { d: best, side: cross >= 0 };
@@ -401,21 +403,11 @@ export function fenceSideAt(
   x: number,
   z: number,
 ): number {
-  const coarse = (px: number, pz: number) => {
-    const fc = Math.min(
-      Math.max(Math.round((px - field.origin[0]) / field.cell), 0),
-      field.nx - 1,
-    );
-    const fr = Math.min(
-      Math.max(Math.round((pz - field.origin[1]) / field.cell), 0),
-      field.ny - 1,
-    );
-    return field.values[fr * field.nx + fc];
-  };
+  const coarse = (px: number, pz: number) => fieldNodeAt(field, px, pz);
 
   // ⚠️ A masked node is kept outright: near an arm the segment test below would cut it.
   const far = coarse(x, z);
-  if (far >= FENCE_MASKED) return far;
+  if (Math.abs(far) >= FENCE_MASKED) return FENCE_MASKED;
 
   const c = Math.floor((x - index.origin[0]) / index.reach);
   const r = Math.floor((z - index.origin[1]) / index.reach);
@@ -471,6 +463,40 @@ export function fenceSideAt(
   return bestCross >= 0 === field.removedCross > 0 ? -distance : distance;
 }
 
+/** The field node nearest a point, clamped to the grid. */
+function fieldNodeAt(field: FenceField, x: number, z: number): number {
+  const fc = Math.min(
+    Math.max(Math.round((x - field.origin[0]) / field.cell), 0),
+    field.nx - 1,
+  );
+  const fr = Math.min(
+    Math.max(Math.round((z - field.origin[1]) / field.cell), 0),
+    field.ny - 1,
+  );
+  return field.values[fr * field.nx + fc];
+}
+
+/**
+ * As {@link fenceSideAt}, but ignoring a mask: which HALF of the cut a point is in, wherever it is.
+ * A masked point returns ±{@link FENCE_MASKED}.
+ *
+ * ⭐ For choosing a view, not for cutting. The camera can look at a masked fence's face from
+ * anywhere in the half it removes, including from over ground the mask leaves whole.
+ *
+ * @returns negative in the half being removed
+ *
+ * @group Geometries
+ */
+export function fenceHalfAt(
+  index: FenceSegmentIndex,
+  field: FenceField,
+  x: number,
+  z: number,
+): number {
+  const far = fieldNodeAt(field, x, z);
+  return Math.abs(far) >= FENCE_MASKED ? far : fenceSideAt(index, field, x, z);
+}
+
 /** Reused per query — this runs every frame while a fence is on `auto`. */
 const autoHit: PolylineHit = { point: [0, 0], distance: 0, along: 0 };
 
@@ -511,9 +537,7 @@ export function fenceAutoSide(
   z: number,
   deadband = 0,
 ): FenceSideName {
-  const at = fenceSideAt(index, field, x, z);
-  // outside a masked fence's reach neither half is open, so there is nothing to choose
-  if (at >= FENCE_MASKED) return current;
+  const at = fenceHalfAt(index, field, x, z);
   const wants: FenceSideName = at < 0 ? 'left' : 'right';
   // Agreeing costs one field lookup; only a disagreement pays for the curve.
   if (wants === current || deadband <= 0) return wants;

@@ -1,6 +1,7 @@
 export * from './Casing';
 export * from './CompletionTool';
 export * from './DepthReferencePoint';
+export * from './FieldColumnSeismicSection';
 export * from './Formation';
 export * from './PerforationInterval';
 export * from './Pick';

@@ -3,14 +3,12 @@ import {
   BufferGeometry,
   DataTexture,
   DoubleSide,
-  FloatType,
   Group,
-  LinearFilter,
-  RedFormat,
   ShaderMaterial,
   Texture,
   Uniform,
 } from 'three';
+import { createSeismicTexture } from '../../../common/seismic-texture';
 import {
   colorRampTexture,
   CommonComponentProps,
@@ -141,23 +139,22 @@ export const WellboreSeismicSection = ({
           const bufferGeometry = unpackBufferGeometry(response.geometry);
           setGeometry(bufferGeometry);
 
-          const dataTexture = new DataTexture(
+          const amplitude = Math.max(
+            Math.abs(response.data.min),
+            Math.abs(response.data.max),
+          );
+          const texture = createSeismicTexture(
             response.data.array,
             response.data.width,
             response.data.height,
-            RedFormat,
-            FloatType,
+            amplitude,
           );
+          texture.flipY = true;
 
-          dataTexture.anisotropy = 4;
-          dataTexture.magFilter = LinearFilter;
-          dataTexture.minFilter = LinearFilter;
-          dataTexture.flipY = true;
-          dataTexture.needsUpdate = true;
+          const scale = amplitude > 0 ? 1 / amplitude : 1;
+          setMinMax([response.data.min * scale, response.data.max * scale]);
 
-          setMinMax([response.data.min, response.data.max]);
-
-          setDataTexture(dataTexture);
+          setDataTexture(texture);
         }
       },
     );
