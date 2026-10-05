@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.4.1](https://github.com/equinor/videx-3d/compare/v3.4.0...v3.4.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* **npm:** bump brace-expansion from 1.1.18 to 1.1.21 ([#299](https://github.com/equinor/videx-3d/issues/299)) ([4b589d7](https://github.com/equinor/videx-3d/commit/4b589d7a17e366676d2997b2ebc412ff5747d7bf))
+* **npm:** bump markdown-it from 14.2.0 to 14.3.2 ([#297](https://github.com/equinor/videx-3d/issues/297)) ([eed3581](https://github.com/equinor/videx-3d/commit/eed3581586a4d1d9d2d3e78e0bc9da0dffc48f2c))
+
 ## [3.4.0](https://github.com/equinor/videx-3d/compare/v3.3.0...v3.4.0) (2026-09-22)
 
 
