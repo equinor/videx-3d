@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.4.2](https://github.com/equinor/videx-3d/compare/v3.4.1...v3.4.2) (2026-10-06)
+
+
+### Bug Fixes
+
+* **npm:** bump source-map-js from 1.2.1 to 1.2.2 ([#300](https://github.com/equinor/videx-3d/issues/300)) ([f44cf4e](https://github.com/equinor/videx-3d/commit/f44cf4e0f0f9a3ca0a21b9224a4f968d16cd66f8))
+
 ## [3.4.1](https://github.com/equinor/videx-3d/compare/v3.4.0...v3.4.1) (2026-10-05)
 
 
