@@ -623,10 +623,9 @@ See [camera.md](./camera.md) for the flight that uses it.
   a column's chunks derive their outlines from the wellbores — cannot generally be split evenly by
   one well. The report flags it (`removes only N% of the block`) rather than failing silently.
 - A plan trace that genuinely crosses itself cannot be swept into a manifold vertical surface.
-- ⚠️ **Picking does not follow the cut.** `PickingMaterial` is an override material with its own
-  fragment shader, so neither the fence nor `ChunkSection` is applied during a pick — you can pick
-  block that was visually cut away. Closing it needs a fragment-shader hook on
-  `CustomPickingMaterial` and should cover the section case at the same time.
+- ~~**Picking does not follow the cut.**~~ **Closed 2026-10-09:** a cut chunk material registers a
+  `ChunkPickingMaterial` (`setPickingMaterial`) carrying the same fence and section discards, so
+  cut-away block is not picked and the fence face is.
 - **Practical margin ceiling is about 20 m.** Beyond it the field's own geometry runs out: a fold
   narrower than twice the margin cannot be threaded, and a well whose whole footprint is under
   `2 × margin` has no axis at all. The core itself has no fixed length scale left — the old flow

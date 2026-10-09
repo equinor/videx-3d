@@ -3371,8 +3371,9 @@ Other consequences:
 3. ~~**Component shape.**~~ **Settled:** the plane is declared on the
    `ChunkStack` and each chunk builds its own cut faces — the plane is one
    decision, the geometry is per chunk.
-4. **Which side is kept** — built (`plane.negate()`). Whether the discarded side
-   should remain **pickable** is still open, and today it does: see §15.9.4.
+4. **Which side is kept** — built (`plane.negate()`). ~~Whether the discarded
+   side should remain **pickable**~~ **Settled (2026-10-09): it does not** — see
+   §15.9.4.
 5. ~~Whether a fluid should be sectioned at all (§15.5).~~ **Settled:** opt-in —
    `water` defaults to `false` on both `ChunkSection` and `ChunkFence`.
 
@@ -3513,10 +3514,12 @@ ground under it is cut away.
 
 Two gaps remain, recorded rather than worked around:
 
-- **GPU picking is not cut.** The pick material is a separate shader, so the pointer
-  still hits chunk geometry that has been clipped away. One uniform away from being
-  fixed, and the reason to hold off is that "should the discarded side stay
-  pickable?" is a real question (§15.8.4), not an oversight.
+- ~~**GPU picking is not cut.**~~ **Closed (2026-10-09).** A cut chunk material
+  registers a `ChunkPickingMaterial` for itself (`setPickingMaterial`), which the
+  pick pass uses in place of the default pick shader: the same section and fence
+  discards, bound to the same uniform objects. What the cut takes away is no longer
+  picked, and the cut faces (fence and plane alike, `kind: 'section'`) are — so a
+  `Chunk`'s own pointer handlers cover the fence with nothing fence-specific.
 - **A caller-supplied `Material` is not cut**, since the chunk cannot patch one.
   The same class of limitation as procedural detail and the inference marking.
 

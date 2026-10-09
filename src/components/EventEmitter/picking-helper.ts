@@ -17,7 +17,7 @@ import { LAYERS } from '../../layers/layers';
 import { normalizedDeviceToScreen, Vec2, Vec3 } from '../../sdk';
 import { RenderableObject } from './EventEmitter';
 import { Emitter, Listener } from './EventEmitterContext';
-import { PickingMaterial } from './picking-material';
+import { getPickingMaterial, PickingMaterial } from './picking-material';
 
 const defaults = {
   radius: 3,
@@ -261,9 +261,11 @@ export class PickingHelper {
     // Trajectory tube, whose shape is reconstructed in its vertex shader) is picked
     // with the same silhouette it is drawn with. A material may be provided per-mesh
     // via `userData.emitterMaterial` (preferred — works under any ancestor listener,
-    // e.g. a Wellbore, with no dedicated registration) or per-listener via
-    // `customMaterial`. Guard against double-swapping a mesh reachable from multiple
-    // listeners so the original material is restored correctly.
+    // e.g. a Wellbore, with no dedicated registration), by the mesh's own material
+    // via `setPickingMaterial` (so a material that discards fragments is picked with
+    // the same discards), or per-listener via `customMaterial`. Guard against
+    // double-swapping a mesh reachable from multiple listeners so the original
+    // material is restored correctly.
     const postUpdates: (() => void)[] = [];
     const swapped = new Set<RenderableObject>();
     this._listeners.forEach(listener => {
@@ -273,6 +275,9 @@ export class PickingHelper {
         if (!robj.material || swapped.has(robj)) return;
         const material =
           (obj.userData.emitterMaterial as Material | undefined) ||
+          (Array.isArray(robj.material)
+            ? undefined
+            : getPickingMaterial(robj.material)) ||
           listener.customMaterial;
         if (material) {
           const originalMaterial = robj.material;

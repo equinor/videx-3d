@@ -89,6 +89,7 @@ Five ideas carry the whole design:
 | `chunk-material.ts` | `ChunkMaterial`, the Blinn-Phong shader material everything is drawn with. |
 | `chunk-detail.ts` | Procedural detail presets (`sand`, `shale`, …). |
 | `inference-material.ts` | Overlay marking invented geometry. |
+| `chunk-picking-material.ts` | The pick-pass twin of a cut material, so what is cut away is not picked. |
 | `chunk-contacts.ts`, `chunk-depth-map.ts` | Fluid contacts as lines, and depth grids as textures. |
 | `useChunkSection.ts`, `useChunkFenceFace.ts` | Cut-face geometry per interval. |
 | `useStackFence.ts`, `useStackWater.ts`, `useStackBathymetry.ts` | Stack-level fence, sea and bathymetry. |

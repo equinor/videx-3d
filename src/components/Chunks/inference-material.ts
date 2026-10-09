@@ -10,6 +10,7 @@ import { makeOitCompatible } from '../../rendering/oit-material';
 // `onBeforeCompile`, where the glsl plugin's include resolution has long finished.
 import fenceFieldShader from '../../sdk/materials/shaderLib/fence-field.glsl';
 import { ChunkFenceUniforms } from './chunk-material';
+import { attachChunkPicking } from './chunk-picking-material';
 
 /**
  * How the INVENTED part of a chunk is marked — the geometry a seal built where no
@@ -265,5 +266,7 @@ ${pattern(style, spacing, width)}
   // in the shader, so it is not in the key.
   material.customProgramCacheKey = () =>
     `chunk-inferred-${style}-${spacing}-${width}-${sectionPlane ? 'cut' : 'whole'}-${fence ? 'fence' : 'nofence'}`;
-  return makeOitCompatible(material);
+  const compatible = makeOitCompatible(material);
+  attachChunkPicking(compatible, { sectionPlane, fence });
+  return compatible;
 }

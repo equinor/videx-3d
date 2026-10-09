@@ -89,6 +89,10 @@ describe('fence uniforms', () => {
   it.each([
     ['chunk material', 'src/components/Chunks/chunk-material.ts'],
     ['inference material', 'src/components/Chunks/inference-material.ts'],
+    [
+      'chunk picking material',
+      'src/components/Chunks/chunk-picking-material.ts',
+    ],
     ['ocean material', 'src/components/Ocean/ocean-material.ts'],
   ])('%s binds every fence uniform', (_name, path) => {
     const source = readFileSync(path, 'utf-8');
@@ -111,6 +115,7 @@ describe('fence uniforms', () => {
     );
     const consumers = [
       'src/components/Chunks/shaders/chunk-frag.glsl',
+      'src/components/Chunks/shaders/chunk-pick-frag.glsl',
       'src/components/Chunks/inference-material.ts',
       'src/components/Ocean/shaders/fragment.glsl',
       'src/components/Ocean/shaders/volume-fragment.glsl',

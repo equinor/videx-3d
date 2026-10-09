@@ -325,6 +325,15 @@ Without it a hit only says *"this chunk"*. With it,
 stores `vec4(vEmitterId, vWorldPosition)`), and `event.button` distinguishes a
 right-click from a left one.
 
+⭐ **Picking follows the cut.** A material cut by a section or a fence registers a
+`ChunkPickingMaterial` for itself (`setPickingMaterial`), bound to the same uniform
+objects, so the pick pass discards exactly what the drawing does. Cut faces — the
+fence's included — are `kind: 'section'` and are picked like any other mesh.
+
+> ⚠️ A registered chunk also OCCLUDES in the pick pass (opacity plays no part there),
+> so wells inside a block are no longer clickable through it. Register only when the
+> block itself should answer the pointer.
+
 > ⚠️ A cursor or marker rendered **inside** the picked group becomes an emitter and
 > picks itself. Keep it outside (or use `LAYERS.NOT_EMITTER`).
 >

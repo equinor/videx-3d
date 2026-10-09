@@ -139,6 +139,14 @@ const GENERATED_SEABED = SEABED_ID
 const peelOf = (peel: number, layers: number) =>
   peel > 0 ? Math.min(Math.round(peel), layers) : undefined;
 
+/** ctrl+click flies to the point picked on the column, its cut faces included. */
+const focusOnCtrlClick = (event: EventEmitterCallbackEvent) => {
+  if (!event.position || !event.keys.ctrlKey) return;
+  dispatchEvent(
+    new CameraFocusAtPointEvent({ point: event.position, distance: 1000 }),
+  );
+};
+
 // Always-on OIT pipeline (SMAA), matching the other chunk spikes.
 const ChunkPipeline = ({
   frontPeelTolerance,
@@ -159,7 +167,7 @@ const ChunkPipeline = ({
     oitPass.frontPeelTolerance = frontPeelTolerance;
     oitPass.skipFront = skipFrontPeeling;
   }, [oitPass, frontPeelTolerance, skipFrontPeeling]);
-  useFrame(() => { }, 2);
+  useFrame(() => {}, 2);
   return <RenderingPipeline passes={passes} />;
 };
 
@@ -266,9 +274,9 @@ const FieldWells = ({
         setFenceIntervals(
           poslog && poslog.length >= 8
             ? {
-              wellbore: fenceWindow.wellbore,
-              intervals: verticalRangeIntervals(poslog, fenceWindow.range),
-            }
+                wellbore: fenceWindow.wellbore,
+                intervals: verticalRangeIntervals(poslog, fenceWindow.range),
+              }
             : null,
         );
       });
@@ -386,6 +394,7 @@ type FieldColumnStoryProps = {
   inferredStyle: ChunkInferenceStyle;
   detail: ChunkDetailPreset | 'none';
   detailStrength: number;
+  chunkPicking: boolean;
   resources: boolean;
   resourceInterval: number;
   wellbores: boolean;
@@ -526,13 +535,15 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
 
   // An extra wellbore joins the field only while it is selected, so the field's own
   // footprint — and every fence cut from it — is unchanged by the others.
-  const shownExtra = isExtraWellbore(selectedWellbore) ? selectedWellbore : null;
+  const shownExtra = isExtraWellbore(selectedWellbore)
+    ? selectedWellbore
+    : null;
   const fieldIds = useMemo(
     () =>
       EXTRA_WELLBORE_IDS.length > 0
         ? wellboreHeaders
-          .filter(w => !isExtraWellbore(w.id) || w.id === shownExtra)
-          .map(w => w.id)
+            .filter(w => !isExtraWellbore(w.id) || w.id === shownExtra)
+            .map(w => w.id)
         : undefined,
     [wellboreHeaders, shownExtra],
   );
@@ -552,15 +563,17 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     const range = fence?.report.verticalRange;
     if (fence) {
       // tvdFrom/tvdTo as the stiff rod debug story takes them
-      const tvd = range ? ` · tvdFrom ${(-range[1]).toFixed(0)} tvdTo ${(-range[0]).toFixed(0)}` : '';
+      const tvd = range
+        ? ` · tvdFrom ${(-range[1]).toFixed(0)} tvdTo ${(-range[0]).toFixed(0)}`
+        : '';
       console.info(`fence ${wellbore}${tvd}`, fence.report);
     }
     setFenceWindow(previous =>
       !wellbore || !range
         ? null
         : previous?.wellbore === wellbore &&
-          previous.range[0] === range[0] &&
-          previous.range[1] === range[1]
+            previous.range[0] === range[0] &&
+            previous.range[1] === range[1]
           ? previous
           : { wellbore, range },
     );
@@ -623,10 +636,10 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     const widest = column.reduce<SurfaceMeta | null>(
       (best, m) =>
         !best ||
-          m.header.nx * m.header.xinc * (m.header.ny * m.header.yinc) >
+        m.header.nx * m.header.xinc * (m.header.ny * m.header.yinc) >
           best.header.nx *
-          best.header.xinc *
-          (best.header.ny * best.header.yinc)
+            best.header.xinc *
+            (best.header.ny * best.header.yinc)
           ? m
           : best,
       null,
@@ -752,12 +765,12 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       i === 0 || i === last || wellboreIds.length === 0
         ? gridOutline
         : {
-          kind: 'wellbores' as const,
-          wellbores: wellboreIds,
-          // `above` accumulates trajectory with depth, so each chunk's footprint
-          // contains the one above it and the whole set stays nested.
-          options: { mode: 'above' as const, radius: props.chunkedRadius },
-        },
+            kind: 'wellbores' as const,
+            wellbores: wellboreIds,
+            // `above` accumulates trajectory with depth, so each chunk's footprint
+            // contains the one above it and the whole set stays nested.
+            options: { mode: 'above' as const, radius: props.chunkedRadius },
+          },
     );
   }, [chunkedLayers, gridOutline, wellboreIds, props.chunkedRadius]);
 
@@ -787,13 +800,13 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     () =>
       props.water
         ? {
-          depth: props.seaLevel,
-          opacity: props.waterLayerOpacity,
-          waterOpacity: props.waterOpacity,
-          windSpeed: props.windSpeed,
-          foamAmount: props.foamAmount,
-          bedTint: props.bedTint,
-        }
+            depth: props.seaLevel,
+            opacity: props.waterLayerOpacity,
+            waterOpacity: props.waterOpacity,
+            windSpeed: props.windSpeed,
+            foamAmount: props.foamAmount,
+            bedTint: props.bedTint,
+          }
         : undefined,
     [
       props.water,
@@ -812,12 +825,12 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     () =>
       props.immersion
         ? {
-          color: props.immersionColor,
-          visibility: props.immersionVisibility,
-          transition: props.immersionTransition,
-          settle: props.immersionSettle,
-          background: props.immersionBackground,
-        }
+            color: props.immersionColor,
+            visibility: props.immersionVisibility,
+            transition: props.immersionTransition,
+            settle: props.immersionSettle,
+            background: props.immersionBackground,
+          }
         : undefined,
     [
       props.immersion,
@@ -883,35 +896,35 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     () =>
       props.fence
         ? {
-          wellbore: fenceWellbore,
-          side:
-            props.fenceSide === 'auto'
-              ? (flightSide ?? 'auto')
-              : props.fenceSide,
-          autoDeadband: props.fenceAutoDeadband,
-          autoSettle: props.fenceAutoSettle,
-          // ⭐ The clearance exists to keep the cut off what is DRAWN in the hole, so it is
-          // the wellbore's own tube radius — not a knob of its own to be kept in sync.
-          margin: props.wellboreRadius,
-          offset: props.fenceOffset,
-          tolerance: props.fenceTolerance,
-          maxSpacing: props.fenceMaxSpacing,
-          headBearing: props.fenceHeadBearing,
-          headMinTdAngle: props.fenceHeadMinTdAngle,
-          scope: props.fenceScope,
-          // The two cuts are mutually exclusive, so one pair of toggles drives
-          // whichever is live.
-          water: props.sectionWater,
-          carrier: props.sectionCarrier,
-          debug: props.fenceDebug,
-          overlay: props.seismic
-            ? {
-              ...seismicOverlay,
-              mix: props.seismicMix,
-              shading: props.seismicShading,
-            }
-            : undefined,
-        }
+            wellbore: fenceWellbore,
+            side:
+              props.fenceSide === 'auto'
+                ? (flightSide ?? 'auto')
+                : props.fenceSide,
+            autoDeadband: props.fenceAutoDeadband,
+            autoSettle: props.fenceAutoSettle,
+            // ⭐ The clearance exists to keep the cut off what is DRAWN in the hole, so it is
+            // the wellbore's own tube radius — not a knob of its own to be kept in sync.
+            margin: props.wellboreRadius,
+            offset: props.fenceOffset,
+            tolerance: props.fenceTolerance,
+            maxSpacing: props.fenceMaxSpacing,
+            headBearing: props.fenceHeadBearing,
+            headMinTdAngle: props.fenceHeadMinTdAngle,
+            scope: props.fenceScope,
+            // The two cuts are mutually exclusive, so one pair of toggles drives
+            // whichever is live.
+            water: props.sectionWater,
+            carrier: props.sectionCarrier,
+            debug: props.fenceDebug,
+            overlay: props.seismic
+              ? {
+                  ...seismicOverlay,
+                  mix: props.seismicMix,
+                  shading: props.seismicShading,
+                }
+              : undefined,
+          }
         : undefined,
     [
       props.fence,
@@ -1155,6 +1168,9 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
                 wireframe={props.wireframe}
                 inferredStyle={props.inferredStyle}
                 peel={peelOf(props.peel, chunkLayers.length)}
+                onPointerClick={
+                  props.chunkPicking ? focusOnCtrlClick : undefined
+                }
                 onBuild={m =>
                   report(
                     m,
@@ -1171,6 +1187,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
               wireframe={props.wireframe}
               inferredStyle={props.inferredStyle}
               peel={peelOf(props.peel, layers.length)}
+              onPointerClick={props.chunkPicking ? focusOnCtrlClick : undefined}
               onBuild={report}
             />
           )}
@@ -1181,7 +1198,9 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
             color={props.wellboreColor}
             selectedColor={props.wellboreSelectedColor}
             radius={props.wellboreRadius}
-            fenceWindow={props.fence && props.fenceColorTvd ? fenceWindow : null}
+            fenceWindow={
+              props.fence && props.fenceColorTvd ? fenceWindow : null
+            }
           />
         )}
       </UtmArea>
@@ -1328,6 +1347,8 @@ export const Default: Story = {
     inferredStyle: 'none',
     detail: 'none',
     detailStrength: 1,
+    // Interaction
+    chunkPicking: false,
     // Diagnostics
     resources: true,
     resourceInterval: 1000,
@@ -1413,7 +1434,10 @@ export const Default: Story = {
       table: { category: 'Wellbores' },
     },
     wellbore: {
-      options: [...Object.keys(storyArgs.wellboreOptions), ...EXTRA_WELLBORE_IDS],
+      options: [
+        ...Object.keys(storyArgs.wellboreOptions),
+        ...EXTRA_WELLBORE_IDS,
+      ],
       control: { type: 'select', labels: storyArgs.wellboreOptions },
       description:
         'Which wellbore the fence follows. ⭐ The 3D view and the well map still select by event and will override this; picking here is for reaching a NAMED well directly, which is what an A/B needs. Ones worth trying: `NO 15/9-F-12`, `NO 15/9-F-11 A/B`, `NO 15/9-F-15 D` all misbehave, `NO 15/9-19 S` is clean.',
@@ -1466,7 +1490,8 @@ export const Default: Story = {
     },
     fenceHeadMinTdAngle: {
       control: { type: 'range', min: 45, max: 180, step: 5 },
-      description: 'The least angle between a `free` head arm and the TD arm, degrees.',
+      description:
+        'The least angle between a `free` head arm and the TD arm, degrees.',
       table: { category: 'Fence' },
       if: { arg: 'fenceHeadBearing', eq: 'free' },
     },
@@ -1536,7 +1561,8 @@ export const Default: Story = {
     seismicMix: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
       if: { arg: 'seismic' },
-      description: '0 shows the formations only, 1 the seismic only. Free to sweep.',
+      description:
+        '0 shows the formations only, 1 the seismic only. Free to sweep.',
       table: { category: 'Seismic' },
     },
     seismicStep: {
@@ -1816,6 +1842,11 @@ export const Default: Story = {
     detailStrength: {
       control: { type: 'range', min: 0, max: 2, step: 0.05 },
       table: { category: 'Appearance' },
+    },
+    chunkPicking: {
+      description:
+        'Register the chunks with the event emitter: ctrl+click flies to the picked point, on a cap, a wall or the cut face. Off by default because a registered block also hides what is behind it from picking — the wells inside it stop being clickable through it. ⭐ What the cut takes away is not picked.',
+      table: { category: 'Interaction' },
     },
     resources: {
       description:

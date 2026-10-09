@@ -1,6 +1,7 @@
 import {
   Camera,
   DoubleSide,
+  Material,
   NoBlending,
   Object3D,
   Scene,
@@ -74,4 +75,28 @@ export class CustomPickingMaterial extends PickingMaterial {
     }
     this.allowOverride = false;
   }
+}
+
+// ⚠️ A WeakMap, not `userData`: `Material.copy` JSON-clones `userData`, and materials get
+// cloned (the OIT pass variants, for one).
+const pickingMaterials = new WeakMap<Material, Material>();
+
+/**
+ * Pick every mesh drawn with `material` using `picking` instead of the default pick
+ * material — for a material that discards fragments, so what is picked matches what is
+ * drawn. A mesh's own `userData.emitterMaterial` still takes precedence. `null` removes it.
+ *
+ * @group Components
+ */
+export function setPickingMaterial(
+  material: Material,
+  picking: Material | null,
+): void {
+  if (picking) pickingMaterials.set(material, picking);
+  else pickingMaterials.delete(material);
+}
+
+/** The picking material registered for `material`, if any (see {@link setPickingMaterial}). */
+export function getPickingMaterial(material: Material): Material | undefined {
+  return pickingMaterials.get(material);
 }

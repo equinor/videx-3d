@@ -18,6 +18,7 @@ import { Vec2 } from '../../sdk';
 import { ChunkContactTexture } from './chunk-contacts';
 import { ChunkDepthMap } from './chunk-depth-map';
 import { ChunkDetail, resolveChunkDetail } from './chunk-detail';
+import { attachChunkPicking } from './chunk-picking-material';
 import fragmentShader from './shaders/chunk-frag.glsl';
 import vertexShader from './shaders/chunk-vert.glsl';
 
@@ -425,6 +426,10 @@ export class ChunkMaterial extends ShaderMaterial {
 
     this.applyContacts(parameters.contacts);
 
+    attachChunkPicking(this, {
+      sectionPlane: parameters.sectionPlane,
+      fence: parameters.fence,
+    });
     attachOitVariants(this);
   }
 
