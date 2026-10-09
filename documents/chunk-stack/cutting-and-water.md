@@ -433,6 +433,11 @@ const seismic = useFenceSeismicOverlay(side, { step: 5, colorRampIndex: 6 });
   them after, so a magnified view interpolates the data rather than blending colours,
   and the palette and range are uniform writes. The texture's filtering is the host's
   call — nearest for categorical data, mipmaps against shimmer far away.
+- ⭐ Minified, filtering the values is not enough: a palette is non-linear (a seismic
+  ramp is white at 0 and saturated at both extremes), so the colour of a smooth value
+  can still shimmer. `rampSampleFiltered` (`shaderLib/ramp-filter.glsl`) takes up to 8
+  samples spread over the pixel's footprint and averages their COLOURS; magnified it is
+  one sample. `WellboreSeismicSection` uses it too.
 - The textures are the host's: the stack never disposes them. Adding or removing the
   overlay rebuilds the chunks' materials (`CHUNK_FENCE_OVERLAY`); its contents do not.
 - `shading`: `'lit'` mixes into the albedo so the scene lights it like the rock,

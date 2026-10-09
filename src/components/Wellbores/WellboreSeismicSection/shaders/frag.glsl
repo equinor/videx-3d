@@ -20,26 +20,26 @@ varying vec2 vUv;
 #include ../../../../sdk/materials/shaderLib/oit.glsl
 #endif
 
-const bool colorRampReverse = true;
-
-vec3 getColor(float v) {
-  float min = colorRampMin;
-  float max = colorRampMax;
-
-  float t = saturate((v - min) / (max - min));
-  if(colorRampReverse) {
-    t = 1.0 - t;
-  }
-  vec4 texel = texture2D(colorRampTexture, vec2(t, (float(colorRampIndex) + 0.5) / float(colorRamps)));
-  return texel.rgb;
-}
+#include ../../../../sdk/materials/shaderLib/ramp-filter.glsl
 
 void main() {
+  vec2 uvDx = dFdx(vUv);
+  vec2 uvDy = dFdy(vUv);
+
 	#include <clipping_planes_fragment>
 
-  float dataPoint = texture2D(data, vUv).r;
+  // Reversed range, so the ramp reads the way it always has here.
+  vec3 color = rampSampleFiltered(
+    data,
+    vUv,
+    uvDx,
+    uvDy,
+    colorRampTexture,
+    (float(colorRampIndex) + 0.5) / float(colorRamps),
+    vec2(colorRampMax, colorRampMin)
+  );
 
-  vec4 diffuseColor = vec4(getColor(dataPoint), opacity);
+  vec4 diffuseColor = vec4(color, opacity);
 
 	#include <logdepthbuf_fragment>
   vec3 surfaceNormal = normalize(gl_FrontFacing ? vNormal : -vNormal);

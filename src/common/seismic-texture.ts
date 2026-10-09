@@ -32,7 +32,7 @@ export function createSeismicTexture(
   texture.generateMipmaps = true;
   texture.minFilter = LinearMipmapLinearFilter;
   texture.magFilter = LinearFilter;
-  texture.anisotropy = 4;
+  texture.anisotropy = 16;
   texture.needsUpdate = true;
   return texture;
 }

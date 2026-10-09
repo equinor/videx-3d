@@ -68,6 +68,7 @@ uniform vec4 overlayRect;     // x, y: along at u = 0 and 1, z, w: scene Y at v 
 uniform sampler2D overlayPalette;
 uniform vec4 overlayParams;   // x, y: values at the palette's ends, z: mix, w: shading (0 flat, 1 lit, 2 facing)
 varying float vFenceAlong;
+#include ../../../sdk/materials/shaderLib/ramp-filter.glsl
 #endif
 
 #ifdef CHUNK_CONTACTS
@@ -291,12 +292,13 @@ void main() {
     float shown = overlayParams.z
       * step(0.0, uv.x) * step(uv.x, 1.0)
       * step(0.0, uv.y) * step(uv.y, 1.0);
-    // ⚠️ Outside the branch: the values may be mipmapped, and choosing a level needs derivatives.
-    float value = texture2D(overlayValues, uv).r;
+    // ⚠️ Outside the branch: derivatives are undefined in non-uniform control flow.
+    vec2 uvDx = dFdx(uv);
+    vec2 uvDy = dFdy(uv);
     if (shown > 0.0) {
-      // ⭐ Coloured AFTER filtering, so a magnified view interpolates the data, not its colours.
-      float t = clamp((value - overlayParams.x) / (overlayParams.y - overlayParams.x), 0.0, 1.0);
-      overlayColor = texture2D(overlayPalette, vec2(t, 0.5)).rgb;
+      // ⭐ Coloured AFTER filtering, so a magnified view interpolates the data, not its colours;
+      // averaged in colour over the pixel when minified, so the palette does not shimmer.
+      overlayColor = rampSampleFiltered(overlayValues, uv, uvDx, uvDy, overlayPalette, 0.5, overlayParams.xy);
       overlayShown = clamp(shown, 0.0, 1.0);
       // lit
       if (abs(overlayParams.w - 1.0) < 0.5) diffuseColor.rgb = mix(diffuseColor.rgb, overlayColor, overlayShown);
