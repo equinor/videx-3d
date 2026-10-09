@@ -28,6 +28,8 @@ import {
   collectStackCandidates,
 } from '../src/sdk/geometries/surface-stack-candidates';
 import { buildSurfaceStack } from '../src/sdk/geometries/surface-stack-geometry';
+import { packSurfaceChunk } from '../src/sdk/geometries/surface-chunk-packing';
+import type { SurfaceChunk } from '../src/sdk/geometries/surface-chunk';
 import {
   packBufferGeometry,
   unpackBufferGeometry,
@@ -965,6 +967,49 @@ describe('cap neighbours', () => {
     expect(build.walls.map(w => w?.getIndex()?.count)).toEqual(
       plain.walls.map(w => w?.getIndex()?.count),
     );
+  });
+
+  it('ships the unfilled intervals for a cut face, voids flagged', () => {
+    const layers = [
+      layerFrom(() => 1000),
+      layerFrom(
+        (col, row) => 1200 + 30 * Math.sin(col / 3) * Math.cos(row / 4),
+      ),
+      layerFrom(() => 1400),
+    ];
+    const reference = buildStackReference(layers, polygon)!;
+    const build = buildSurfaceStack(reference, layers, {
+      polygon,
+      maxError: 5,
+      fills: [true, false, false],
+      ceiling: [false, true, false],
+      section: true,
+    })!;
+    const section = build.section!;
+    expect(section.intervals[0]).not.toBeNull();
+    expect(section.intervals[1]).toBeNull();
+    expect(section.gaps![0]).toBeNull();
+    expect(section.gaps![1]).not.toBeNull();
+    expect(section.voids).toEqual([false, true]);
+
+    const [, transfer] = packSurfaceChunk({
+      surfaces: [],
+      walls: [],
+      section,
+      metrics: {} as SurfaceChunk['metrics'],
+    });
+    expect(transfer).toContain(section.gaps![1]!.buffer);
+
+    // Under a gap the void's ceiling closes nothing, so the void is part of the gap.
+    const gapped = buildSurfaceStack(reference, layers, {
+      polygon,
+      maxError: 5,
+      fills: [false, false, false],
+      ceiling: [false, true, false],
+      section: true,
+    })!.section!;
+    expect(gapped.gaps![1]).not.toBeNull();
+    expect(gapped.voids).toEqual([false, false]);
   });
 });
 

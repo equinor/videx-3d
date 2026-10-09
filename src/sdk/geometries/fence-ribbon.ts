@@ -165,6 +165,8 @@ export type FenceRibbon = {
   /** the interval, i.e. the index of the layer above it */
   interval: number;
   geometry: BufferGeometry;
+  /** built across an UNFILLED interval (see {@link FenceRibbonOptions.gaps}) */
+  gap?: boolean;
 };
 
 /** {@link buildFenceRibbons} options. */
@@ -188,6 +190,14 @@ export type FenceRibbonOptions = {
    * the face stops exactly at the boundary. Default everywhere.
    */
   inside?: (x: number, z: number) => boolean;
+  /**
+   * Also build a face across each unfilled interval that has thickness — a gap left
+   * by `fill` ({@link StackSectionSource.gaps}). It has no material of its own; it
+   * exists to carry data drawn on the cut. Default false.
+   */
+  gaps?: boolean;
+  /** the same for a void's cavity ({@link StackSectionSource.voids}). Default false. */
+  voids?: boolean;
 };
 
 /**
@@ -279,12 +289,21 @@ export function buildFenceRibbons(
     : tessellation;
   const offset = options.offset ?? 0;
   const layers = heights.length;
+  // Every filled interval, plus the unfilled ones asked for.
+  const masks = intervals.map((members, interval) => {
+    if (members) return members;
+    const open = source.gaps?.[interval];
+    if (!open) return null;
+    return (source.voids?.[interval] ? options.voids : options.gaps)
+      ? open
+      : null;
+  });
 
   const sameClass = (a: StackLocation | null, b: StackLocation | null) => {
     if (!a || !b) return !a === !b;
     if (a.triangle === b.triangle) return true;
     for (let interval = 0; interval + 1 < layers; interval++) {
-      const members = intervals[interval];
+      const members = masks[interval];
       if (!members) continue;
       if (
         triangleInMask(members, a.triangle) !==
@@ -355,7 +374,7 @@ export function buildFenceRibbons(
   // of one segment, so adjacent quads share a normal and the face reads smooth.
   const ribbons: FenceRibbon[] = [];
   for (let interval = 0; interval + 1 < layers; interval++) {
-    const members = intervals[interval];
+    const members = masks[interval];
     if (!members) continue;
     const top = y[interval];
     const bottom = y[interval + 1];
@@ -456,7 +475,11 @@ export function buildFenceRibbons(
         new BufferAttribute(new Float32Array(inferred), 1),
       );
     }
-    ribbons.push({ interval, geometry });
+    ribbons.push(
+      intervals[interval]
+        ? { interval, geometry }
+        : { interval, geometry, gap: true },
+    );
   }
   return ribbons;
 }

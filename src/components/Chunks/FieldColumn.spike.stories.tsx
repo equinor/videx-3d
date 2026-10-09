@@ -341,10 +341,11 @@ const FieldWells = ({
 };
 
 type FieldColumnStoryProps = {
-  outline: 'grid' | 'field' | 'crop' | 'chunked';
+  outline: 'grid' | 'field' | 'crop' | 'nested';
   cropSize: number;
-  chunkedRadius: number;
-  chunkedGap: boolean;
+  footprintRadius: number;
+  chunking: 'single' | 'groups';
+  groupGaps: boolean;
   seabed: boolean;
   surfaceFrom: number;
   surfaceCount: number;
@@ -431,6 +432,8 @@ type FieldColumnStoryProps = {
   seismicColorRamp: number;
   seismicRangeOffset: number;
   seismicShading: ChunkFenceOverlayShading;
+  seismicGaps: boolean;
+  seismicVoids: boolean;
 };
 
 /** Publishes `window.videx3d.locate('wellbore', id)`; must sit inside `UtmArea`. */
@@ -676,11 +679,11 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     return new PlanarPolygonGeometry([[[...ring, ring[0]]]], [0, 0]);
   }, [props.cropSize]);
 
-  // ⚠️ `chunked` takes the GRID. The stack's outline is what the shared column is
+  // ⚠️ `nested` takes the GRID. The stack's outline is what the shared column is
   // built over and what the fence is built from, and both have to contain every
   // chunk's own footprint — the wellbore outlines below are nested inside it.
   const outline =
-    props.outline === 'grid' || props.outline === 'chunked'
+    props.outline === 'grid' || props.outline === 'nested'
       ? gridOutline
       : props.outline === 'crop'
         ? cropOutline
@@ -710,12 +713,20 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
         .filter(s => s !== '')
         .map(Number),
     );
+    // The last layer of a level-1 group, when gaps are asked for.
+    const groupEnd = (i: number) =>
+      props.groupGaps &&
+      i + 1 < selected.length &&
+      stratLayerGroup(names, i + 1) !== stratLayerGroup(names, i);
     const layers: ChunkLayer[] = selected.map((surface, i) => ({
       surface,
       material: colors[i],
       // The unit's colour serves as both the cap and the volume below it: they
       // are the same rock seen from two sides.
-      fill: i < selected.length - 1 || props.floor ? colors[i] : undefined,
+      fill:
+        (i < selected.length - 1 || props.floor) && !groupEnd(i)
+          ? colors[i]
+          : undefined,
       detail,
       // Listed layers opt out of the cut, so they stand whole over the section.
       section: kept.has(i) ? false : undefined,
@@ -724,16 +735,19 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
   }, [
     selected,
     props.floor,
+    props.groupGaps,
     props.detail,
     props.detailStrength,
     props.sectionKeep,
   ]);
 
-  // --- `chunked`: one chunk per stratigraphic GROUP, so the stack is drawn from
-  //     several footprints instead of one. The fence is a stack-level cut, so this
-  //     is what tells us whether it still agrees with a block it did not shape.
-  const chunkedLayers = useMemo(() => {
-    if (props.outline !== 'chunked' || layers.length < 3) return null;
+  // --- `groups`: one chunk per level-1 stratigraphic GROUP. On `nested` each group
+  //     also gets its own footprint, so the stack is drawn from several; the fence
+  //     is a stack-level cut, so that is what tells us whether it still agrees with
+  //     a block it did not shape.
+  const grouped = props.chunking === 'groups' || props.outline === 'nested';
+  const groupedLayers = useMemo(() => {
+    if (!grouped || layers.length < 3) return null;
     const starts = [0];
     for (let i = 1; i < layers.length; i++) {
       if (stratLayerGroup(names, i) !== stratLayerGroup(names, i - 1)) {
@@ -744,17 +758,17 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       const next = k + 1 < starts.length ? starts[k + 1] : layers.length;
       // Consecutive chunks SHARE the horizon between them — it is the base of one
       // and the top of the next, and declaring it twice is what closes the column.
-      // The stack settles which of the two actually draws it. With a gap, each
-      // chunk stops at its own last horizon and the unit below it is left out.
-      const end = props.chunkedGap ? next : next + 1;
-      const slice = layers.slice(start, Math.min(end, layers.length));
+      // The stack settles which of the two actually draws it. With gaps it is kept
+      // too: the chunk above then HOLDS the gap as an unfilled interval, which is
+      // what a fence overlay needs to be drawn across it.
+      const slice = layers.slice(start, Math.min(next + 1, layers.length));
       return slice.map((layer, j) =>
         j === slice.length - 1 && next < layers.length
           ? { ...layer, fill: undefined }
           : layer,
       );
     });
-  }, [props.outline, props.chunkedGap, layers, names]);
+  }, [grouped, layers, names]);
 
   const wellboreIds = useMemo(
     () => fieldIds ?? wellboreHeaders.map(w => w.id),
@@ -763,11 +777,13 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
 
   // ⚠️ Declared per CHUNK rather than as the stack's `cutSource`: a stack-level
   // wellbore source makes the wellbore envelope the footprint the shared column is
-  // built over, and the full-grid chunks below would then reach past it.
-  const chunkedOutlines = useMemo<ChunkOutline[] | null>(() => {
-    if (!chunkedLayers || !gridOutline) return null;
-    const last = chunkedLayers.length - 1;
-    return chunkedLayers.map((_, i) =>
+  // built over, and the full-grid chunks below would then reach past it. Any other
+  // outline leaves every group on the stack's own (`inherit`).
+  const groupOutlines = useMemo<ChunkOutline[] | null>(() => {
+    if (props.outline !== 'nested' || !groupedLayers || !gridOutline)
+      return null;
+    const last = groupedLayers.length - 1;
+    return groupedLayers.map((_, i) =>
       i === 0 || i === last || wellboreIds.length === 0
         ? gridOutline
         : {
@@ -775,10 +791,16 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
             wellbores: wellboreIds,
             // `above` accumulates trajectory with depth, so each chunk's footprint
             // contains the one above it and the whole set stays nested.
-            options: { mode: 'above' as const, radius: props.chunkedRadius },
+            options: { mode: 'above' as const, radius: props.footprintRadius },
           },
     );
-  }, [chunkedLayers, gridOutline, wellboreIds, props.chunkedRadius]);
+  }, [
+    props.outline,
+    groupedLayers,
+    gridOutline,
+    wellboreIds,
+    props.footprintRadius,
+  ]);
 
   const resolve = useMemo<ChunkResolveOptions>(
     () => ({
@@ -928,6 +950,8 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
                   ...seismicOverlay,
                   mix: props.seismicMix,
                   shading: props.seismicShading,
+                  gaps: props.seismicGaps,
+                  voids: props.seismicVoids,
                 }
               : undefined,
           }
@@ -953,6 +977,8 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       seismicOverlay,
       props.seismicMix,
       props.seismicShading,
+      props.seismicGaps,
+      props.seismicVoids,
     ],
   );
 
@@ -1163,11 +1189,11 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
               speed={props.sectionAnimateSpeed}
             />
           )}
-          {chunkedLayers && chunkedOutlines ? (
-            chunkedLayers.map((chunkLayers, i) => (
+          {groupedLayers ? (
+            groupedLayers.map((chunkLayers, i) => (
               <Chunk
                 key={i}
-                outline={chunkedOutlines[i]}
+                outline={groupOutlines?.[i]}
                 layers={chunkLayers}
                 surfaceOpacity={props.surfaceOpacity}
                 wallOpacity={props.wallOpacity}
@@ -1262,8 +1288,9 @@ export const Default: Story = {
     // Surfaces
     outline: 'field',
     cropSize: 7,
-    chunkedRadius: 600,
-    chunkedGap: false,
+    footprintRadius: 600,
+    chunking: 'single',
+    groupGaps: false,
     seabed: true,
     surfaceFrom: 0,
     surfaceCount: 12,
@@ -1303,6 +1330,8 @@ export const Default: Story = {
     seismicColorRamp: 6,
     seismicRangeOffset: 0,
     seismicShading: 'lit',
+    seismicGaps: false,
+    seismicVoids: false,
     // Resolve
     seal: true,
     sealMode: 'proportional',
@@ -1368,10 +1397,10 @@ export const Default: Story = {
   argTypes: {
     outline: {
       control: { type: 'inline-radio' },
-      options: ['grid', 'field', 'crop', 'chunked'],
+      options: ['grid', 'field', 'crop', 'nested'],
       description:
         '`grid` crops nothing — the whole survey rectangle of the widest surface (~1050 km² here). `field` uses the footprint buffered from the WELLS, which is where the field actually is (~10× smaller) and is the default. `crop` is a square about the scene origin, sized to match the generated column so the two can be compared like for like. ⚠️ A footprint reaching past a survey buys INFERENCE — watch `coverage` per layer. ⭐ It is also the control that makes `maxNodes` matter: watch `referenceNodes`.\n\n' +
-        '⭐⭐ `chunked` draws the column as **one chunk per stratigraphic group**, each buffered around the wells, with the sea bed and the basement left on the full `grid`. Everything else here draws one chunk from one footprint; this is the case where the block is made of several. ⚠️ Built on `grid`, so it is the slow one — the survey rectangle is what the shared column has to cover.',
+        '⭐⭐ `nested` gives every stratigraphic group its OWN footprint, buffered around the wells, with the sea bed and the basement left on the full `grid` — the case where the block is made of several footprints. Implies `chunking: groups`. ⚠️ Built on `grid`, so it is the slow one — the survey rectangle is what the shared column has to cover.',
       table: { category: 'Surfaces' },
     },
     cropSize: {
@@ -1381,17 +1410,23 @@ export const Default: Story = {
         'Side of the `crop` outline, in km. 7 is the generated column’s own size.',
       table: { category: 'Surfaces' },
     },
-    chunkedRadius: {
+    footprintRadius: {
       control: { type: 'range', min: 200, max: 3000, step: 100 },
-      if: { arg: 'outline', eq: 'chunked' },
+      if: { arg: 'outline', eq: 'nested' },
       description:
-        'Metres buffered around the wells for a `chunked` group’s footprint. ⭐ Resolved in `above` mode, so each chunk accumulates the trajectory down to its own base and the footprints stay NESTED — which is what keeps them all inside the stack outline the fence is built from.',
+        'Metres buffered around the wells for a `nested` group’s footprint. ⭐ Resolved in `above` mode, so each chunk accumulates the trajectory down to its own base and the footprints stay NESTED — which is what keeps them all inside the stack outline the fence is built from.',
       table: { category: 'Surfaces' },
     },
-    chunkedGap: {
-      if: { arg: 'outline', eq: 'chunked' },
+    chunking: {
+      control: { type: 'inline-radio' },
+      options: ['single', 'groups'],
       description:
-        'Leave the unit between consecutive chunks unfilled, so no horizon is shared — each chunk draws its own top and base, with open space between them.',
+        '`single` draws the column as one chunk. `groups` draws one chunk per level-1 stratigraphic group, connected through the horizon consecutive groups share (the stack decides which of the two draws it). On a shared outline the picture is the same, at one build per chunk. ⚠️ `outline: nested` always uses `groups`.',
+      table: { category: 'Surfaces' },
+    },
+    groupGaps: {
+      description:
+        'Leave the deepest unit of every group but the last unfilled, so open space separates the groups. With `chunking: groups` the gap belongs to the chunk above it, which keeps the horizon it shares with the next — so `seismicGaps` can draw across it.',
       table: { category: 'Surfaces' },
     },
     seabed: {
@@ -1631,6 +1666,18 @@ export const Default: Story = {
       if: { arg: 'seismic' },
       description:
         '`lit`: lit by the scene like the rock. `flat`: the ramp colour as is. `facing`: the ramp colour darkened as the face turns from the view, as `WellboreSeismicSection` shades it. Free to switch.',
+      table: { category: 'Seismic' },
+    },
+    seismicGaps: {
+      if: { arg: 'seismic' },
+      description:
+        'Draw the seismic across unfilled intervals too — the gaps `groupGaps` opens — where the cut face otherwise stops. At full strength, and only where there is data. Free to switch.',
+      table: { category: 'Seismic' },
+    },
+    seismicVoids: {
+      if: { arg: 'seismic' },
+      description:
+        'The same inside the cavities `sealMode: void` opens. Free to switch.',
       table: { category: 'Seismic' },
     },
     seal: {

@@ -409,25 +409,6 @@ export async function buildSpecStack(
     };
     const prepMs = tPrep - tContext + (performance.now() - tRefine);
 
-    // A voided layer draws no cap, and neither interval it bounds is filled.
-    // ⭐ A void's CEILING is capped by the chunk holding the interval above it,
-    // whatever the seam decided: the seam assigns the shared HORIZON, which is the
-    // floor copy, while the ceiling only exists inside the void and is the base of
-    // this chunk's own unit. It is not a double-draw because the collapse drops it
-    // where it has closed onto its own floor copy — which is why `chunkCopies`
-    // never hands out a ceiling without one.
-    const caps = ceilings.map((ceiling, k) => {
-      const i = source[k];
-      if (voided[i]) return false;
-      return ceiling && !loaded[i].carrier ? true : loaded[i].cap;
-    });
-    const cuts = densifyChunkCuts(spec);
-    const capCuts = ceilings.map((ceiling, k) =>
-      ceiling && !loaded[source[k]].carrier
-        ? null
-        : (loaded[source[k]].capCuts ?? null),
-    );
-    const carrierLayer = source.findIndex(i => loaded[i].carrier);
     // ⭐ A ceiling holds no volume: that is what makes the void below it a void,
     // and what makes the carrier a terminator rather than a unit.
     const fills = ceilings.map((ceiling, k) => {
@@ -439,6 +420,30 @@ export async function buildSpecStack(
         !(below !== undefined && voided[below])
       );
     });
+
+    // A voided layer draws no cap, and neither interval it bounds is filled.
+    // ⭐ A void's CEILING is capped by the chunk holding the interval above it,
+    // whatever the seam decided: the seam assigns the shared HORIZON, which is the
+    // floor copy, while the ceiling only exists inside the void and is the base of
+    // this chunk's own unit. It is not a double-draw because the collapse drops it
+    // where it has closed onto its own floor copy — which is why `chunkCopies`
+    // never hands out a ceiling without one.
+    // ⚠️ Only while that interval is FILLED: under a gap it closes nothing, and
+    // would float in the gap as a lens.
+    const caps = ceilings.map((ceiling, k) => {
+      const i = source[k];
+      if (voided[i]) return false;
+      return ceiling && !loaded[i].carrier
+        ? k > 0 && fills[k - 1]
+        : loaded[i].cap;
+    });
+    const cuts = densifyChunkCuts(spec);
+    const capCuts = ceilings.map((ceiling, k) =>
+      ceiling && !loaded[source[k]].carrier
+        ? null
+        : (loaded[source[k]].capCuts ?? null),
+    );
+    const carrierLayer = source.findIndex(i => loaded[i].carrier);
 
     // Only the chunk's FIRST layer can be truncated against a surface it does not
     // draw itself, and only then is a cover polygon meaningful.
@@ -680,7 +685,6 @@ export async function buildSpecStack(
   const tRefine = performance.now();
 
   // A voided layer draws no cap, and neither interval it bounds is filled.
-  const caps = source.map(i => loaded[i].cap && !voided[i]);
   const cuts = densifyChunkCuts(spec);
   const capCuts = source.map(i => loaded[i].capCuts ?? null);
   // See the shared path: the floor is only ever seen from below, and a ceiling
@@ -697,6 +701,13 @@ export async function buildSpecStack(
       !(below !== undefined && voided[below])
     );
   });
+  // See the shared path: a ceiling under a gap closes nothing.
+  const caps = source.map(
+    (i, k) =>
+      loaded[i].cap &&
+      !voided[i] &&
+      !(ceilings[k] && !loaded[i].carrier && !(k > 0 && fills[k - 1])),
+  );
 
   const build = buildSurfaceStack(
     reference,

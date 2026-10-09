@@ -338,7 +338,9 @@ right-click from a left one.
 ⭐ **Picking follows the cut.** A material cut by a section or a fence registers a
 `ChunkPickingMaterial` for itself (`setPickingMaterial`), bound to the same uniform
 objects, so the pick pass discards exactly what the drawing does. Cut faces — the
-fence's included — are `kind: 'section'` and are picked like any other mesh.
+fence's included — are `kind: 'section'` and are picked like any other mesh. A fence
+face drawn across a gap for the overlay (`ChunkFenceOverlay.gaps`) carries
+`userData.gap: true`, and is picked only where the overlay has data.
 
 > ⚠️ A registered chunk also OCCLUDES in the pick pass (opacity plays no part there),
 > so wells inside a block are no longer clickable through it. Register only when the

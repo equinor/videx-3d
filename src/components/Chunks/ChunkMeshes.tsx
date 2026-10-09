@@ -294,6 +294,7 @@ export const ChunkMeshes = ({
         inverse?: boolean;
         contacts?: ChunkContactTexture[];
         fenceOverlay?: ChunkFenceOverlayUniforms;
+        overlayOnly?: boolean;
       },
     ) => {
       // A unit kept whole opts out of both cuts; the floor opts out of each
@@ -311,6 +312,7 @@ export const ChunkMeshes = ({
         waterTint,
         contacts: options?.contacts,
         fenceOverlay: options?.fenceOverlay,
+        fenceOverlayOnly: options?.overlayOnly,
         sectionPlane: !cutSection
           ? undefined
           : options?.inverse
@@ -488,6 +490,17 @@ export const ChunkMeshes = ({
           fence: fenceCarrier && !keptUnit(layers.length - 1),
         });
 
+    // A fence face across an unfilled interval carries the overlay and nothing else.
+    const gapFace =
+      fence && fenceOverlayUniforms
+        ? make('#000000', 1, undefined, true, undefined, {
+            section: false,
+            fence: false,
+            fenceOverlay: fenceOverlayUniforms,
+            overlayOnly: true,
+          })
+        : null;
+
     // ⭐ The fragments a cap gave up because a layer ABOVE covered them, restored
     // where that cover has gone. Two ways it can go, so two materials: peeled away
     // entirely (draw everywhere) or cut away by the section or fence (draw only in
@@ -526,7 +539,16 @@ export const ChunkMeshes = ({
       });
     }
 
-    return { surfaces, walls, ceilings, carrier, patches, owned, faces };
+    return {
+      surfaces,
+      walls,
+      ceilings,
+      carrier,
+      patches,
+      owned,
+      faces,
+      gapFace,
+    };
   }, [
     chunk.surfaces,
     layers,
@@ -731,13 +753,17 @@ export const ChunkMeshes = ({
     <group ref={root} name="ChunkMeshes">
       {faces?.map(face => {
         if (face.layer < top || face.layer >= base) return null;
-        const material =
-          materials.faces[face.layer] ?? materials.walls[face.layer];
+        const material = face.gap
+          ? fenceDebug
+            ? materials.faces[face.layer]
+            : materials.gapFace
+          : (materials.faces[face.layer] ?? materials.walls[face.layer]);
         if (!material) return null;
-        const overlay = face.geometry.hasAttribute('inferred')
-          ? overlays.face(face.layer)
-          : null;
-        const key = `section-${face.interval}-${face.wall}`;
+        const overlay =
+          !face.gap && face.geometry.hasAttribute('inferred')
+            ? overlays.face(face.layer)
+            : null;
+        const key = `section-${face.interval}-${face.wall}${face.gap ? '-gap' : ''}`;
         return (
           <group key={key} name={key}>
             {/* ⚠️ Never culled: the buffers are preallocated and only the draw
@@ -747,7 +773,11 @@ export const ChunkMeshes = ({
               geometry={face.geometry}
               material={material}
               frustumCulled={false}
-              userData={{ layer: face.layer, kind: 'section' }}
+              userData={{
+                layer: face.layer,
+                kind: 'section',
+                gap: face.gap === true,
+              }}
             />
             {overlay && (
               <mesh

@@ -289,6 +289,12 @@ export type ChunkMaterialParameters = {
    * ⚠️ Read at CONSTRUCTION, like `fence`.
    */
   fenceOverlay?: ChunkFenceOverlayUniforms;
+  /**
+   * Draw the overlay ALONE — at full strength, and nothing where it has no data. For a
+   * face across an unfilled interval, which has no formation to fall back on. Needs
+   * `fenceOverlay`. ⚠️ Read at CONSTRUCTION.
+   */
+  fenceOverlayOnly?: boolean;
 };
 
 const shader = {
@@ -422,6 +428,9 @@ export class ChunkMaterial extends ShaderMaterial {
       this.uniforms.overlayRect = parameters.fenceOverlay.rect;
       this.uniforms.overlayPalette = parameters.fenceOverlay.palette;
       this.uniforms.overlayParams = parameters.fenceOverlay.params;
+      if (parameters.fenceOverlayOnly) {
+        (this.defines as Record<string, unknown>).CHUNK_FENCE_OVERLAY_ONLY = '';
+      }
     }
 
     this.applyContacts(parameters.contacts);
@@ -429,6 +438,9 @@ export class ChunkMaterial extends ShaderMaterial {
     attachChunkPicking(this, {
       sectionPlane: parameters.sectionPlane,
       fence: parameters.fence,
+      overlayOnly: parameters.fenceOverlayOnly
+        ? parameters.fenceOverlay
+        : undefined,
     });
     attachOitVariants(this);
   }

@@ -239,3 +239,47 @@ describe('buildFenceRibbons', () => {
     },
   );
 });
+
+describe('fence faces across unfilled intervals', () => {
+  // filled 0 → -10, then an unfilled interval -10 → -30 over the half x < 2.
+  function gappedStack(isVoid: boolean) {
+    const source = flatStack(4, 0, 10);
+    const count = source.heights[0].length;
+    source.heights.push(new Float32Array(count).fill(-30));
+    const triangles = source.indices.length / 3;
+    const open = new Uint8Array(triangles);
+    for (let t = 0; t < triangles; t++) {
+      const v = source.indices[3 * t];
+      if (source.positionsXZ[2 * v] < 2) open[t] = 1;
+    }
+    source.intervals.push(null);
+    source.gaps = [null, packTriangleMask(open)];
+    source.voids = [false, isVoid];
+    return source;
+  }
+  const path: Vec2[] = [];
+  for (let x = 0.25; x <= 3.75; x += 0.5) path.push([x, 2.2]);
+
+  it('builds them only when asked', () => {
+    const source = gappedStack(false);
+    expect(buildFenceRibbons(source, path).map(r => r.interval)).toEqual([0]);
+    const ribbons = buildFenceRibbons(source, path, { gaps: true });
+    expect(ribbons.map(r => [r.interval, !!r.gap])).toEqual([
+      [0, false],
+      [1, true],
+    ]);
+    // Only over the gap's own triangles.
+    const position = ribbons[1].geometry.getAttribute('position');
+    for (let i = 0; i < position.count; i++) {
+      expect(position.getX(i)).toBeLessThanOrEqual(2 + 1e-6);
+      expect(position.getY(i)).toBeGreaterThanOrEqual(-30 - 1e-6);
+      expect(position.getY(i)).toBeLessThanOrEqual(-10 + 1e-6);
+    }
+  });
+
+  it('tells a void from a gap', () => {
+    const source = gappedStack(true);
+    expect(buildFenceRibbons(source, path, { gaps: true })).toHaveLength(1);
+    expect(buildFenceRibbons(source, path, { voids: true })).toHaveLength(2);
+  });
+});

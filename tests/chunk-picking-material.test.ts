@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Vector2, Vector4 } from 'three';
 import {
   ChunkMaterial,
+  createFenceOverlayUniforms,
   createFenceUniforms,
 } from '../src/components/Chunks/chunk-material';
 import { ChunkPickingMaterial } from '../src/components/Chunks/chunk-picking-material';
@@ -67,6 +68,24 @@ describe('chunk picking material', () => {
     expect(getPickingMaterial(overlay)).toBeInstanceOf(ChunkPickingMaterial);
     expect(
       getPickingMaterial(createInferenceMaterial('hatched')!),
+    ).toBeUndefined();
+  });
+
+  // A face across a gap exists only where the overlay has data, so it is picked only there.
+  it('gives an overlay-only face the overlay test, bound by identity', () => {
+    const fenceOverlay = createFenceOverlayUniforms();
+    const material = new ChunkMaterial({
+      fenceOverlay,
+      fenceOverlayOnly: true,
+    });
+    const twin = getPickingMaterial(material) as ChunkPickingMaterial;
+    expect(twin).toBeInstanceOf(ChunkPickingMaterial);
+    expect(twin.defines).toHaveProperty('CHUNK_FENCE_OVERLAY_ONLY');
+    expect(twin.uniforms.overlayRect).toBe(fenceOverlay.rect);
+    expect(twin.uniforms.overlayParams).toBe(fenceOverlay.params);
+    // An ordinary overlay is drawn over rock that is there anyway.
+    expect(
+      getPickingMaterial(new ChunkMaterial({ fenceOverlay })),
     ).toBeUndefined();
   });
 });

@@ -681,6 +681,17 @@ export type ChunkFenceOverlay = {
   mix?: number;
   /** Default `'lit'`. */
   shading?: ChunkFenceOverlayShading;
+  /**
+   * Also draw the overlay across intervals left unfilled by `ChunkLayer.fill` — the gaps
+   * between groups — where the face otherwise stops. At full strength, since there is no
+   * formation to mix with, and only where the overlay has data. Default false.
+   */
+  gaps?: boolean;
+  /**
+   * The same inside the cavities `sealMode: 'void'` opens. A void directly under a gap
+   * is part of that gap and follows {@link ChunkFenceOverlay.gaps}. Default false.
+   */
+  voids?: boolean;
 };
 
 /**
@@ -873,6 +884,10 @@ export type ChunkFenceState = {
   offset: number;
   enabled: boolean;
   debug: boolean;
+  /** faces across unfilled intervals, for the overlay ({@link ChunkFenceOverlay.gaps}) */
+  gaps: boolean;
+  /** faces across void cavities ({@link ChunkFenceOverlay.voids}) */
+  voids: boolean;
 };
 
 /**

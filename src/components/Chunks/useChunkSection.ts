@@ -28,6 +28,8 @@ export type ChunkSectionFace = {
    */
   wall: number;
   geometry: BufferGeometry;
+  /** across an unfilled interval: drawn for the fence overlay only (see `ChunkFenceOverlay.gaps`) */
+  gap?: boolean;
 };
 
 type Face = ChunkSectionFace & { target: StackSectionTarget };

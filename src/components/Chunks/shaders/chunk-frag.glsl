@@ -165,6 +165,19 @@ void main() {
   }
   #endif
 
+  #ifdef CHUNK_FENCE_OVERLAY_ONLY
+  // ⚠️ Before the OIT early return, so the depth pass agrees about what is not there.
+  // Written as a negated `inside` test so a NaN rect (no overlay) discards too.
+  {
+    vec2 at = vec2(
+      (vFenceAlong - overlayRect.x) / (overlayRect.y - overlayRect.x),
+      (vObjectPos.y - overlayRect.z) / (overlayRect.w - overlayRect.z)
+    );
+    bool inside = at.x >= 0.0 && at.x <= 1.0 && at.y >= 0.0 && at.y <= 1.0;
+    if (!(overlayParams.z > 0.0 && inside)) discard;
+  }
+  #endif
+
   vec4 diffuseColor = vec4(diffuse, opacity);
   #include <clipping_planes_fragment>
 
@@ -292,6 +305,9 @@ void main() {
     float shown = overlayParams.z
       * step(0.0, uv.x) * step(uv.x, 1.0)
       * step(0.0, uv.y) * step(uv.y, 1.0);
+    #ifdef CHUNK_FENCE_OVERLAY_ONLY
+    shown = 1.0;
+    #endif
     // ⚠️ Outside the branch: derivatives are undefined in non-uniform control flow.
     vec2 uvDx = dFdx(uv);
     vec2 uvDy = dFdy(uv);

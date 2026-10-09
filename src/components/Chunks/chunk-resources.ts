@@ -197,6 +197,7 @@ function measure(chunk: SurfaceChunk): Measured {
     add(section.indices);
     section.heights.forEach(add);
     section.intervals.forEach(add);
+    section.gaps?.forEach(add);
     section.inferred?.forEach(add);
   }
   return { bytes: total, vertices: verts, triangles: Math.round(tris) };

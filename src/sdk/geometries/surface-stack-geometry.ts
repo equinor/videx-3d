@@ -891,17 +891,16 @@ export function buildSurfaceStack(
   // ⚠️ One pass serves both the walls and the cap neighbours, and it has to come
   // BEFORE the geometry build: that may reverse the winding of the kept indices in
   // place, and the neighbours match those against the shared set triple by triple.
+  const maskOptions = {
+    threshold: collapseThreshold,
+    coverage: coverageAbsence ? coverage : undefined,
+    coverageTriangles: coverageAbsence ? tessellation.coverage : undefined,
+    absent,
+    unbounded,
+  };
   const states =
     options.fills && options.capNeighbours
-      ? stackIntervalStates(heights, tessellation.indices, {
-          threshold: collapseThreshold,
-          coverage: coverageAbsence ? coverage : undefined,
-          coverageTriangles: coverageAbsence
-            ? tessellation.coverage
-            : undefined,
-          absent,
-          unbounded,
-        })
+      ? stackIntervalStates(heights, tessellation.indices, maskOptions)
       : undefined;
   const capNeighbours =
     states && options.fills
@@ -956,6 +955,7 @@ export function buildSurfaceStack(
   }
   const tGeometry = performance.now();
 
+  const members = states ? stackIntervalMembers(states) : undefined;
   const walls = options.fills
     ? buildStackWalls(tessellation, positionsXZ, heights, {
         fills: options.fills,
@@ -966,7 +966,7 @@ export function buildSurfaceStack(
         inferred,
         fluid,
         unbounded,
-        members: states ? stackIntervalMembers(states) : undefined,
+        members,
       })
     : {
         walls: heights.map(() => null),
@@ -976,19 +976,40 @@ export function buildSurfaceStack(
       };
   const tWalls = performance.now();
 
+  // The walls skip the masks when nothing is filled, but a gap still carries data.
+  const intervalMasks =
+    walls.intervals ??
+    (options.section && options.fills
+      ? (members ??
+        stackIntervalTriangles(heights, tessellation.indices, maskOptions))
+      : null);
+
   // An interval with no volume has no material to show on the cut, so it is left
   // out here rather than being filtered by every consumer.
   // ⭐ Packed to one bit per triangle here: the wall builder wants a byte it can
   // index, but this copy is the one that crosses to the main thread and stays for
   // the life of the build.
   const section =
-    options.section && walls.intervals
+    options.section && intervalMasks
       ? {
           positionsXZ,
           indices: tessellation.indices,
           heights,
-          intervals: walls.intervals.map((members, i) =>
-            options.fills?.[i] ? packTriangleMask(members) : null,
+          intervals: intervalMasks.map((mask, i) =>
+            options.fills?.[i] ? packTriangleMask(mask) : null,
+          ),
+          // A bit per triangle, and only for the few intervals left open.
+          gaps: intervalMasks.map((mask, i) =>
+            !options.fills?.[i] && mask.indexOf(1) >= 0
+              ? packTriangleMask(mask)
+              : null,
+          ),
+          // A void under a gap has no ceiling drawn, so it reads as part of the gap.
+          voids: intervalMasks.map(
+            (_, i) =>
+              options.ceiling?.[i] === true &&
+              i > 0 &&
+              !!options.fills?.[i - 1],
           ),
           inferred,
         }

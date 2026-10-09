@@ -82,11 +82,13 @@ export function packSurfaceChunk(
   // index, and any layer's `inferred` attribute — so the caller's transfer list has
   // to be deduped either way (a repeated buffer is a DataCloneError).
   if (chunk.section) {
-    const { positionsXZ, indices, heights, intervals, inferred } =
+    const { positionsXZ, indices, heights, intervals, gaps, inferred } =
       chunk.section;
     transferables.push(positionsXZ.buffer, indices.buffer);
     for (const y of heights) transferables.push(y.buffer);
     for (const members of intervals)
+      if (members) transferables.push(members.buffer);
+    for (const members of gaps ?? [])
       if (members) transferables.push(members.buffer);
     if (inferred)
       for (const marks of inferred) transferables.push(marks.buffer);

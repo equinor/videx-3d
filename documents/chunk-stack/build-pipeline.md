@@ -233,8 +233,10 @@ Three per-chunk decisions are made here:
   with its own floor copy, so a chunk given the ceiling alone would draw it over
   the whole footprint and fight the horizon its seam owner draws.
 - **`caps` / `capCuts`** — from the seam decision, except that a **void ceiling is
-  always capped** by the chunk holding the interval above it: the seam assigns the
-  shared *horizon* (the floor copy), while a ceiling exists only inside the void.
+  capped** by the chunk holding the interval above it: the seam assigns the shared
+  *horizon* (the floor copy), while a ceiling exists only inside the void.
+  ⚠️ Only while that interval is FILLED. Under a gap the ceiling closes nothing and
+  would float in it as a lens, so it stays a boundary and draws no cap.
 - **`fills`** — derived rather than passed down: `fills[k] = !ceiling[k] &&
   loaded[source[k]].fill && !voided`. A ceiling holds no volume, which is what
   makes the void below it a void.

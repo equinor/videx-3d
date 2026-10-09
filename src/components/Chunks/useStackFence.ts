@@ -147,6 +147,8 @@ export function useStackFence(
             offset: 0,
             enabled: false,
             debug: false,
+            gaps: false,
+            voids: false,
           }
         : null,
     [hasFence],
@@ -424,6 +426,8 @@ export function useStackFence(
     state.inside = resolved?.inside ?? null;
     state.enabled = fence.enabled !== false && !!current;
     state.debug = fence.debug === true;
+    state.gaps = fence.overlay?.gaps === true;
+    state.voids = fence.overlay?.voids === true;
 
     const on = state.enabled ? 1 : 0;
     uniform.value.set(on, 1);

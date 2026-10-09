@@ -16,8 +16,12 @@ uniform vec4 sectionPlane;
 varying float vSectionDist;
 #endif
 
-#ifdef CHUNK_FENCE
+#if defined(CHUNK_FENCE) || defined(CHUNK_FENCE_OVERLAY_ONLY)
 varying vec3 vObjectPos;
+#endif
+
+#ifdef CHUNK_FENCE_OVERLAY_ONLY
+varying float vFenceAlong;
 #endif
 
 #include <common>
@@ -55,7 +59,11 @@ void main() {
   vSectionDist = dot(sectionPlane.xyz, transformed) + sectionPlane.w;
   #endif
 
-  #ifdef CHUNK_FENCE
+  #if defined(CHUNK_FENCE) || defined(CHUNK_FENCE_OVERLAY_ONLY)
   vObjectPos = transformed;
+  #endif
+
+  #ifdef CHUNK_FENCE_OVERLAY_ONLY
+  vFenceAlong = uv.x;
   #endif
 }

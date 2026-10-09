@@ -46,6 +46,8 @@ export function useChunkFenceFace(
     inside: unknown;
     side: FenceSideName | null;
     offset: number;
+    gaps: boolean;
+    voids: boolean;
     on: boolean;
   }>({
     source: null,
@@ -53,6 +55,8 @@ export function useChunkFenceFace(
     inside: null,
     side: null,
     offset: NaN,
+    gaps: false,
+    voids: false,
     on: false,
   });
 
@@ -74,7 +78,9 @@ export function useChunkFenceFace(
       state.curve === fence.curve &&
       state.inside === fence.inside &&
       state.side === fence.side &&
-      state.offset === fence.offset
+      state.offset === fence.offset &&
+      state.gaps === fence.gaps &&
+      state.voids === fence.voids
     ) {
       return;
     }
@@ -84,6 +90,8 @@ export function useChunkFenceFace(
     state.inside = fence.inside;
     state.side = fence.side;
     state.offset = fence.offset;
+    state.gaps = fence.gaps;
+    state.voids = fence.voids;
 
     // The face looks INTO the half being removed. `side` names that half; the ribbon
     // builds from the same normal, so the flip is just the side's own sign.
@@ -92,12 +100,15 @@ export function useChunkFenceFace(
       offset: fence.offset,
       flip: fenceSideSign(fence.side) < 0,
       inside: fence.inside ?? undefined,
+      gaps: fence.gaps,
+      voids: fence.voids,
     });
 
     const built: ChunkSectionFace[] = [];
     for (const ribbon of ribbons) {
       const layer = source!.layers?.[ribbon.interval] ?? ribbon.interval;
-      if (layers?.[layer]?.section === false) {
+      // A gap holds no unit, so there is nothing for `section: false` to keep whole.
+      if (!ribbon.gap && layers?.[layer]?.section === false) {
         ribbon.geometry.dispose();
         continue;
       }
@@ -106,6 +117,7 @@ export function useChunkFenceFace(
         layer,
         wall: built.length,
         geometry: ribbon.geometry,
+        gap: ribbon.gap,
       });
     }
     setFaces(built.length > 0 ? built : null);

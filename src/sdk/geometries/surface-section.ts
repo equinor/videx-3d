@@ -31,6 +31,18 @@ export type StackSectionSource = {
    */
   intervals: (Uint8Array | null)[];
   /**
+   * Per interval, the same bits for an UNFILLED interval that still has thickness —
+   * a gap left by `fill`, or a void's cavity — where a cut face has no material to
+   * show but can still carry data (see `FenceRibbonOptions.gaps`). `null` for a
+   * filled interval and for one with no volume.
+   */
+  gaps?: (Uint8Array | null)[];
+  /**
+   * Per interval: it is a void's cavity (the interval below a void's ceiling copy).
+   * `false` for a void under a gap — its ceiling closes nothing, so it is part of the gap.
+   */
+  voids?: boolean[];
+  /**
    * Per layer, the invention weight at each vertex (see `sampleStackWeights`).
    * A cut vertex takes the LARGER of its two bounding layers', as a wall does.
    */

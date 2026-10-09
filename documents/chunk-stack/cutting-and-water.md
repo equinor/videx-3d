@@ -385,7 +385,7 @@ leaves the rest whole:
 ⚠️ The mask is as fine as the field cell (10–50 m) and grown by one cell, so an
 untouched island within about two cells of a touched one may be cut along its edge.
 One outline polygon is one island: `'touched'` changes nothing for a single-polygon
-outline (the grid, or `chunked`).
+outline (the grid, or `nested`).
 
 ### The fence face
 
@@ -443,6 +443,20 @@ const seismic = useFenceSeismicOverlay(side, { step: 5, colorRampIndex: 6 });
 - `shading`: `'lit'` mixes into the albedo so the scene lights it like the rock,
   `'flat'` mixes the plain palette colour in after lighting, and `'facing'` does the
   same but darkens it as the face turns from the view, as `WellboreSeismicSection` does.
+- `gaps` / `voids` (both default false, free to switch): also draw the overlay across
+  intervals left unfilled by `fill`, and inside the cavities `sealMode: 'void'` opens.
+  A void directly under a gap counts as part of the gap (its ceiling closes nothing
+  and is not drawn), so it follows `gaps`.
+  The build ships those intervals' triangle masks with the section channels
+  (`StackSectionSource.gaps`, plus a per-interval `voids` flag), `buildFenceRibbons`
+  builds a ribbon over them on request (`gap: true`), and they are drawn with one
+  overlay-only material per chunk (`CHUNK_FENCE_OVERLAY_ONLY`): full strength, and
+  DISCARDED wherever the overlay has no data — before the OIT early return, so the depth
+  pass agrees. Their picking twin makes the same test, so a gap face is picked exactly
+  where it is drawn (`userData.gap` is `true` on it).
+  ⚠️ A gap must belong to a chunk: one that lies BETWEEN two chunks belongs to neither.
+  Let the chunk above keep the horizon it shares with the next and leave its last
+  interval unfilled — the stack still draws that horizon once.
 
 #### `useFenceSeismicOverlay`
 

@@ -3,7 +3,10 @@ import {
   CustomPickingMaterial,
   setPickingMaterial,
 } from '../EventEmitter/picking-material';
-import type { ChunkFenceUniforms } from './chunk-material';
+import type {
+  ChunkFenceOverlayUniforms,
+  ChunkFenceUniforms,
+} from './chunk-material';
 import fragmentShader from './shaders/chunk-pick-frag.glsl';
 import vertexShader from './shaders/chunk-pick-vert.glsl';
 
@@ -11,6 +14,8 @@ import vertexShader from './shaders/chunk-pick-vert.glsl';
 export type ChunkPickingCut = {
   sectionPlane?: IUniform<Vector4>;
   fence?: ChunkFenceUniforms;
+  /** the overlay of an overlay-only face, which exists only where it has data */
+  overlayOnly?: ChunkFenceOverlayUniforms;
 };
 
 /**
@@ -23,7 +28,7 @@ export type ChunkPickingCut = {
  * @group Components
  */
 export class ChunkPickingMaterial extends CustomPickingMaterial {
-  constructor({ sectionPlane, fence }: ChunkPickingCut) {
+  constructor({ sectionPlane, fence, overlayOnly }: ChunkPickingCut) {
     super(vertexShader);
     this.fragmentShader = fragmentShader;
     const defines = this.defines as Record<string, unknown>;
@@ -44,6 +49,11 @@ export class ChunkPickingMaterial extends CustomPickingMaterial {
       this.uniforms.fencePages = fence.pages;
       this.uniforms.fenceSegmentsSize = fence.segmentsSize;
     }
+    if (overlayOnly) {
+      defines.CHUNK_FENCE_OVERLAY_ONLY = '';
+      this.uniforms.overlayRect = overlayOnly.rect;
+      this.uniforms.overlayParams = overlayOnly.params;
+    }
   }
 }
 
@@ -58,7 +68,7 @@ export function attachChunkPicking(
   material: Material,
   cut: ChunkPickingCut,
 ): ChunkPickingMaterial | null {
-  if (!cut.sectionPlane && !cut.fence) return null;
+  if (!cut.sectionPlane && !cut.fence && !cut.overlayOnly) return null;
   const picking = new ChunkPickingMaterial(cut);
   setPickingMaterial(material, picking);
   material.addEventListener('dispose', () => {

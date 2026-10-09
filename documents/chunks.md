@@ -2221,6 +2221,8 @@ so a chunk-private boundary must not set a shared surface's height.
   copy, so without one it is never dropped and is drawn over the whole footprint,
   fighting the horizon its seam owner draws. The floor itself draws nothing unless the
   seam gives this chunk the horizon too, and an uncapped layer builds no geometry.
+  ⚠️ And a ceiling is capped only while the interval ABOVE it is filled: under a gap
+  (`fill` left off) it closes nothing, and was drawn floating in the gap as a lens.
   ⚠️ **Reading the diagnostics under `void`:** a layer whose `triangles` equals its
   `droppedCollapsed` is NOT a defect — it is a layer the column split because it is
   unmapped SOMEWHERE IN THE ENVELOPE, seen from a chunk whose own footprint it covers
