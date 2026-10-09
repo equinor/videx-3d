@@ -10,11 +10,11 @@ import {
   LineLoop,
 } from 'three';
 import { useData } from '../../hooks/useData';
+import { useGenerator } from '../../hooks/useGenerator';
 import { OITRenderPass, Pass, RenderPass } from '../../main';
 import { OutputPass } from '../../rendering/passes/OutputPass';
 import { RenderingPipeline } from '../../rendering/RenderingPipeline';
 import {
-  ChunkSurfaceLayer,
   createSurfaceOutline,
   CRS,
   getProjectionDefFromUtmZone,
@@ -38,7 +38,11 @@ import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
 import { UtmArea } from '../UtmArea';
 import { Chunk } from './Chunk';
-import { layersFromGroups } from './chunk-defs';
+import {
+  layersFromGroups,
+  wellboreOutline,
+  WellboreOutlineResponse,
+} from './chunk-defs';
 import { ChunkStack } from './ChunkStack';
 import { CutoutSource, WellboreOutlineMode } from './cutout';
 import { resolveWellboreOutline } from './resolveWellboreOutline';
@@ -119,6 +123,8 @@ type OutlinesStoryProps = {
 
 const OutlinesStory = (props: OutlinesStoryProps) => {
   const data = useData();
+  const outlineGenerator =
+    useGenerator<WellboreOutlineResponse>(wellboreOutline);
   const surfaceMetaDict = useSurfaceMetaDict();
   const wellbores = useWellboreHeaders();
   const fieldOutline = useFieldOutline();
@@ -196,37 +202,20 @@ const OutlinesStory = (props: OutlinesStoryProps) => {
       const base =
         groups[groups.length - 1]?.[groups[groups.length - 1].length - 1];
       if (!top || !base) return null;
-      const [topValues, baseValues] = await Promise.all([
-        data.get<Float32Array>('surface-values', top.id),
-        data.get<Float32Array>('surface-values', base.id),
-      ]);
-      if (!topValues || !baseValues) return null;
-      const toLayer = (
-        meta: SurfaceMeta,
-        values: Float32Array,
-      ): ChunkSurfaceLayer => {
-        const wp = crs.utmToWorld(meta.header.xori, meta.header.yori, 0);
-        return {
-          values,
-          header: meta.header,
-          worldPosition: [wp.x, wp.z],
-          referenceDepth: meta.max,
-        };
-      };
       const options =
         cutoutSource.kind === 'wellbores' ? cutoutSource.options : undefined;
       const mode = options?.mode ?? 'window';
       return resolveWellboreOutline(
+        outlineGenerator,
         wellboreIds,
         options,
         [
           {
-            top: mode === 'above' ? null : toLayer(top, topValues),
-            base: mode === 'below' ? null : toLayer(base, baseValues),
+            top: mode === 'above' ? null : top,
+            base: mode === 'below' ? null : base,
             radius: options?.radius ?? 500,
           },
         ],
-        data,
         utmToArea,
       );
     };
@@ -238,6 +227,7 @@ const OutlinesStory = (props: OutlinesStoryProps) => {
     };
   }, [
     data,
+    outlineGenerator,
     props.source,
     props.rimSurfaceIndex,
     props.rimSmoothing,

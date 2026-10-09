@@ -206,8 +206,7 @@ export type SurfaceChunkDiagnostics = {
    *
    * ⚠️ A layer is sampled, resolved and collapsed at this full size and only then
    * dropped, so a layer keeping little still cost the same as one keeping all of
-   * it. ⚠️ A fluid's lid is tessellated on its own terms and is NOT a subset of
-   * this.
+   * it.
    */
   sharedTriangles: number;
   /**

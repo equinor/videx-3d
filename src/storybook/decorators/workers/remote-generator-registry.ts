@@ -5,6 +5,7 @@ import {
   stackRelease,
   stackWater,
   surfaceChunk,
+  wellboreOutline,
 } from '../../../components/Chunks/chunk-defs';
 import {
   surfaceGeometry,
@@ -48,6 +49,7 @@ import {
   generateTubeTrajectory,
   generateWellboreFormationColumnGeometries,
   generateWellboreLabel,
+  generateWellboreOutline,
   generateWellboreSeismicSection,
   generatorStats,
   releaseStackResources,
@@ -74,6 +76,7 @@ registry.add(wellboreLabel, generateWellboreLabel);
 registry.add(surfaceGeometry, generateSurfaceGeometry);
 registry.add(surfaceTextures, generateSurfaceTexturesData);
 registry.add(surfaceChunk, generateSurfaceChunk);
+registry.add(wellboreOutline, generateWellboreOutline);
 registry.add(stackWater, generateStackWater);
 registry.add(stackRelease, releaseStackResources);
 registry.add(generatorStatsKey, generatorStats);

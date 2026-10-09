@@ -1,5 +1,7 @@
 import { collectStackCandidates } from '../../sdk/geometries/surface-stack-candidates';
 import { resampleStackLayer } from '../../sdk/geometries/surface-stack-resample';
+import { createWellboreOutlineCoordinates } from '../../sdk/geometries/wellbore-outline';
+import type { Vec2 } from '../../sdk/types/common';
 import type {
   StackWorkerRequest,
   StackWorkerResponse,
@@ -11,7 +13,8 @@ import type {
  * refinement on it — entirely off the data store and free of three.js. Both are
  * fully independent between layers, which is what makes them poolable. Created by
  * `StackWorkerPool` inside the chunk generator and shipped inlined in the library
- * bundle (`?worker&inline`), so host apps need no worker configuration.
+ * bundle (`?worker&inline`), so host apps need no worker configuration. It also
+ * rasterizes wellbore outlines (`'outline'`), which are independent per chunk.
  */
 const workerSelf: {
   onmessage: ((e: MessageEvent<StackWorkerRequest>) => void) | null;
@@ -44,6 +47,27 @@ workerSelf.onmessage = e => {
     );
     return;
   }
+  if (e.data.kind === 'outline') {
+    const { id, paths, options } = e.data;
+    const { coordinates, metrics } = createWellboreOutlineCoordinates(
+      paths.map(({ points, radius }) => ({
+        points: unflatten(points),
+        radius,
+      })),
+      options,
+    );
+    workerSelf.postMessage(
+      {
+        kind: 'outline',
+        id,
+        coordinates,
+        metrics,
+        outlineMs: performance.now() - start,
+      },
+      [],
+    );
+    return;
+  }
   const { id, channel, nx, maxError } = e.data;
   const nodes = collectStackCandidates(channel, nx, maxError);
   workerSelf.postMessage(
@@ -51,3 +75,10 @@ workerSelf.onmessage = e => {
     [nodes.buffer],
   );
 };
+
+function unflatten(flat: Float64Array): Vec2[] {
+  const points: Vec2[] = [];
+  for (let i = 0; i + 1 < flat.length; i += 2)
+    points.push([flat[i], flat[i + 1]]);
+  return points;
+}

@@ -791,8 +791,7 @@ export function stackDiagnostics(
       );
       // Triangles actually drawn, summed over the layer's build copies. ⚠️ Read
       // off the GEOMETRY rather than derived from the drops: an uncapped layer
-      // builds none (which is what hid a void ceiling being drawn twice), and a
-      // fluid's lid is not a subset of the shared tessellation at all.
+      // builds none (which is what hid a void ceiling being drawn twice).
       const capped = built.some(k => result.caps[k]);
       const triangles = built.reduce((a, k) => {
         const geometry = build.layers[k]?.geometry;

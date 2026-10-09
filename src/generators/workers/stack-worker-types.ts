@@ -2,6 +2,10 @@ import type {
   StackGridPlacement,
   StackReferencePlan,
 } from '../../sdk/geometries/surface-stack-resample';
+import type {
+  WellboreOutlineCoordinates,
+  WellboreOutlineOptions,
+} from '../../sdk/geometries/wellbore-outline';
 
 /**
  * A shared-tessellation refinement task: refine ONE layer of the stack's common
@@ -62,5 +66,31 @@ export type ResampleResponse = {
   resampleMs: number;
 };
 
-export type StackWorkerRequest = RefineRequest | ResampleRequest;
-export type StackWorkerResponse = RefineResponse | ResampleResponse;
+export type StackWorkerRequest =
+  | RefineRequest
+  | ResampleRequest
+  | OutlineRequest;
+export type StackWorkerResponse =
+  | RefineResponse
+  | ResampleResponse
+  | OutlineResponse;
+
+/**
+ * A wellbore outline task: buffer and contour trajectory runs that were already
+ * cut to their depth windows. Only the runs travel — the surfaces they were cut
+ * against stay with the caller.
+ */
+export type OutlineRequest = {
+  kind: 'outline';
+  id: number;
+  /** per run, flat `[x0, z0, x1, z1, ...]` in scene XZ (transferred) */
+  paths: { points: Float64Array; radius?: number }[];
+  options: Omit<WellboreOutlineOptions, 'shapeFn' | 'onMetrics'>;
+};
+
+export type OutlineResponse = WellboreOutlineCoordinates & {
+  kind: 'outline';
+  id: number;
+  /** raster time (ms) measured inside the worker (profiling) */
+  outlineMs: number;
+};

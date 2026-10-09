@@ -23,4 +23,5 @@ export * from './tube-trajectory-generator';
 export * from './wellbore-bounds-generator';
 export * from './wellbore-formation-column-generator';
 export * from './wellbore-label-generator';
+export * from './wellbore-outline-generator';
 export * from './wellbore-seismic-section-generator';

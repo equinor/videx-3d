@@ -23,11 +23,12 @@ export type WellboreOutlineMode = 'window' | 'above' | 'below';
 /**
  * Options controlling a wellbore-derived {@link CutoutSource}: the SDK outline
  * options plus the orchestration knobs the {@link Chunk} needs to turn raw
- * trajectories into a footprint.
+ * trajectories into a footprint. The outline is built in a worker, so `shapeFn`
+ * (a function) is not available here.
  *
  * @group Components
  */
-export type WellboreCutoutOptions = WellboreOutlineOptions & {
+export type WellboreCutoutOptions = Omit<WellboreOutlineOptions, 'shapeFn'> & {
   /** which part of each well counts (default `'window'`). */
   mode?: WellboreOutlineMode;
   /**

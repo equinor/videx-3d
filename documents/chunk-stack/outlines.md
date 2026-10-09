@@ -66,24 +66,27 @@ The idea: a chunk's footprint is *where the wells are*, buffered — so a deep c
 is a small blob around the reservoir penetrations while a shallow one covers the
 whole platform area.
 
-`resolveWellboreOutline` (component side) → `createWellboreOutline` (SDK):
+`resolveWellboreOutline` (component side) → the `wellboreOutline` generator →
+`createWellboreOutlineCoordinates` (SDK) on the stack worker pool:
 
 ```mermaid
 flowchart TD
-  A["position-logs + wellbore-headers<br/>(per wellbore, from the store)"] --> B["place into the scene frame:<br/>utmToArea(head.easting + dE, head.northing + dN, −tvdMsl)"]
+  A["position-logs + wellbore-headers + bounding surfaces<br/>(read from the store, in the generator)"] --> B["place into the scene frame:<br/>utmToArea(head.easting + dE, head.northing + dN, −tvdMsl)"]
   B --> C["densifyPolyline(points, sampleSpacing)"]
   C --> D["collectTrajectoryRuns(dense, topSampler, baseSampler, window)<br/><i>the stretches inside the depth window</i>"]
   D --> E["WellborePath[] — each run with the radius<br/>of the interval it fell in"]
-  E --> F["createWellboreOutline(paths, options)"]
+  E --> F["createWellboreOutlineCoordinates(paths, options)<br/><i>on the stack worker pool</i>"]
   F --> G["cluster · simplify · rasterize a signed<br/>distance field · marching squares · smooth"]
-  G --> H["PlanarPolygonGeometry (scene XZ)"]
+  G --> H["PlanarPolygonGeometry (scene XZ),<br/>built back on the main thread"]
 ```
 
 Key points:
 
 - **The position log is head-relative and MSL-normalised.** The scene point is
   `utmToArea(head.easting + dE, head.northing + dN, -tvdMsl)` — exactly the frame
-  the surfaces use, so samplers and surfaces can be compared directly.
+  the surfaces use, so samplers and surfaces can be compared directly. The
+  generator gets `utmToArea` as an affine sampled from it
+  (`WellboreOutlineSpec.utmToScene`), which is exact for `UtmArea`'s translation.
   ⚠️ `utmToArea`'s signature is `(easting, northing, altitude)`. Depth is the
   **third** argument. Getting that wrong puts every trajectory point at
   northing-scale coordinates, every sampler returns null, and nothing renders.
@@ -108,17 +111,19 @@ Orchestration knobs added by the component layer:
 …on top of the SDK's `WellboreOutlineOptions`: `radius` (default 500),
 `minRadius` / `maxRadius`, `cellSize` (default `DEFAULT_OUTLINE_CELL_SIZE` = 100,
 also clamped to `minRadius / OUTLINE_CELLS_PER_RADIUS`), `maxCells` (default 1e6),
-`simplify`, `shapeFn` (angular radius modulation, for organic edges), `feather`,
-`smoothing`, `minRingArea`, and `onMetrics`.
+`simplify`, `feather`, `smoothing`, `minRingArea`, and `onMetrics` (called on the
+main thread with the metrics the generator returns). The SDK's `shapeFn` is not
+available here — a function cannot be sent to the worker.
 
-> ⚠️ **Cost.** The field is `O(nodes × paths)` and nodes go as `area / cellSize²`,
-> so halving `cellSize` quadruples the raster. Keep `cellSize` ≥ 150–200 and
-> `sampleSpacing` ≥ 50–100 at field scale, and watch
-> `WellboreOutlineMetrics.coarsened`, which reports when `maxCells` forced a cell
-> larger than the radius needs (i.e. an under-resolved buffer).
+> ⚠️ **Cost.** It follows the raster node count, `area / cellSize²` per group of
+> nearby wells — a segment index keeps each node's test local (measured in
+> [../chunks.md](../chunks.md) §4.2.2). Watch `WellboreOutlineMetrics.coarsened`,
+> which reports when `maxCells` forced a cell larger than the radius needs (i.e. an
+> under-resolved buffer).
 
-> ⚠️ This still runs on the **main thread**. It is fine at field scale, but it is
-> multiplied by the number of chunks.
+> The raster runs on the stack worker pool, so the outlines of several chunks build
+> in parallel and off the main thread. The bounding surfaces are read in the
+> generator and never reach the main thread.
 
 ---
 

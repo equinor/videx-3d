@@ -6,9 +6,16 @@ import {
   StackLayerResample,
   StackReferencePlan,
 } from '../../sdk/geometries/surface-stack-resample';
+import {
+  createWellboreOutlineCoordinates,
+  WellboreOutlineCoordinates,
+  WellborePath,
+} from '../../sdk/geometries/wellbore-outline';
 // oxlint-disable-next-line import/default -- Vite virtual module; the `?worker&inline` query is resolved by the bundler, not by the linter's resolver.
 import RefineWorker from './stack-refine.worker?worker&inline';
 import type {
+  OutlineRequest,
+  OutlineResponse,
   RefineResponse,
   ResampleResponse,
   StackWorkerRequest,
@@ -215,4 +222,31 @@ export async function refineStackChannels(
     ),
   );
   return { candidates, poolSize: pool.size };
+}
+
+/**
+ * Buffer and contour trajectory runs into a wellbore outline — on the pool when
+ * available, on the current thread otherwise. Only the runs cross to the worker.
+ *
+ * @group Generators
+ */
+export async function buildOutlineCoordinates(
+  paths: WellborePath[],
+  options: OutlineRequest['options'],
+): Promise<WellboreOutlineCoordinates> {
+  const pool = getStackPool();
+  if (!pool) return createWellboreOutlineCoordinates(paths, options);
+  const flat = paths.map(({ points, radius }) => {
+    const out = new Float64Array(points.length * 2);
+    points.forEach(([x, z], i) => {
+      out[i * 2] = x;
+      out[i * 2 + 1] = z;
+    });
+    return { points: out, radius };
+  });
+  const res = (await pool.run(
+    { kind: 'outline', id: taskId++, paths: flat, options },
+    flat.map(p => p.points.buffer),
+  )) as OutlineResponse;
+  return { coordinates: res.coordinates, metrics: res.metrics };
 }

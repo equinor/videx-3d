@@ -164,10 +164,11 @@ CutoutSource =
 
 `WellboreCutoutOptions` (per chunk, shallow-merged over the stack's): `mode`
 (§4.2.1), `radius` / `minRadius` / `maxRadius`, `cellSize`, `simplify`, `feather`
-(soft edge width), `shapeFn` (angular radius modifier for organic edges),
-`smoothing`, `minRingArea`, plus the orchestration knobs `sampleSpacing` and
-`tolerance`. We expect **more than one generation strategy** and treat this as a
-pluggable interface rather than a fixed algorithm.
+(soft edge width), `smoothing`, `minRingArea`, plus the orchestration knobs
+`sampleSpacing` and `tolerance`. The SDK's `shapeFn` is deliberately NOT among them:
+the outline is built in a worker, and a function cannot be sent there (§4.2.2). We
+expect **more than one generation strategy** and treat this as a pluggable
+interface rather than a fixed algorithm.
 
 ### 4.2 Wellbore-derived outline pipeline
 
@@ -248,13 +249,18 @@ in cells, and the cell now follows the radius.
 ⚠️ `shapeFn` measures its angle about the **group centroid**, which moves as groups
 merge. It is the odd one out in this design and is expected to be replaced by an
 additive, position-based perturbation (which commutes with the field's `min` and so
-survives accumulation).
+survives accumulation). It is no longer reachable from a `CutoutSource` (2026-10-09);
+predefined shapes can be added as plain options if they are ever needed.
 
 > **Status:** SDK helpers are pure and tested (`createSurfaceDepthSampler`,
 > `collectTrajectoryRuns`, `createWellboreOutline`, plus the reusable
 > `marchingSquares` / `ringsToPolygonCoordinates` / `simplifyPolyline`). The
-> `CutoutSource` (§4.1) is wired into `ChunkStack`/`Chunk`. Full pipeline still
-> main-thread (no worker yet).
+> `CutoutSource` (§4.1) is wired into `ChunkStack`/`Chunk`. **Off the main thread
+> (2026-10-09):** the `wellboreOutline` generator reads the trajectories and the
+> bounding surfaces next to the store and cuts the runs; only the runs go to the
+> stack worker pool, where `createWellboreOutlineCoordinates` rasterizes them —
+> the outlines of different chunks in parallel. The main thread sends a spec and
+> gets back ring coordinates.
 
 #### 4.2.3 Per-interval margins (the ramp)
 
@@ -590,8 +596,9 @@ left one and no consumer could tell.
 Water is a **level**, not a horizon — a real case in the model rather than a
 colour choice. Two of them, in fact, and they are worth keeping apart:
 
-- a **fluid**: a contact INSIDE a unit — an oil/water contact, a gas cap, a water
-  table. An ordinary boundary of the chunk that declares it (`ChunkLayer.fluid`).
+- a **contact**: a level INSIDE a unit — an oil/water contact, a gas cap, a water
+  table. Drawn as a LINE where it crosses a face (`ChunkStackProps.contacts`,
+  §6.1.1), not as a boundary of any chunk.
 - the **sea**: open water over the whole column, declared once on the
   `ChunkStack` (`ChunkStackProps.water`) and drawn by the stack itself.
 
@@ -1207,7 +1214,7 @@ opaque lid in front of them.
 - The bathymetry is uploaded at full grid resolution; a foam band would be happy
   with far less (§6.4.1).
 
-#### 6.6.5 ⚠️ A bilinear artefact the shore made visible
+#### 6.6.6 ⚠️ A bilinear artefact the shore made visible
 
 The hand-rolled bilinear in `depth-map.glsl` is C0 but not C1 — its gradient jumps
 at every texel boundary — and the shoal's steep response curve turned those jumps
@@ -1223,11 +1230,13 @@ wants the smoothed weights — which includes the contact lines (§6.1.1), whose
 
 ## 7. Cross-cutting: LOD, workers, picking
 
-- **Worker generation** for geometry (async; loading/suspense states) — the SDK
-  builder is synchronous today and must be promoted.
+- **Worker generation** for geometry — **done** (§12 step 3): the build runs in the
+  `surfaceChunk` generator, with refinement and resampling on an internal worker
+  pool.
 - **LOD** via `Distance`: coarse outline + low tessellation when far, refine when
   near (the builder already exposes `maxError` / `rimSpacing` / `segments`).
-- **GPU picking + annotations** as first-class chunk capabilities.
+- **GPU picking + annotations** as first-class chunk capabilities. Picking is
+  **built** (§5.1).
 
 ## 8. Relationship to the existing SDK
 
@@ -1239,16 +1248,15 @@ The component wraps and reuses the current SDK:
   component originally wrapped — are **removed**: the shared tessellation replaced
   them, and once the ocean and basement slots went, nothing but their own story and
   tests still called them.
-- New SDK building blocks anticipated: **trajectory-vs-surface crossings**, the
-  **outline generators** (distance-field / clustering / contour), and a **chunk
-  worker generator**.
+- New SDK building blocks anticipated: **trajectory-vs-surface crossings** and the
+  **outline generators** (distance-field / clustering / contour).
 
 > **Implemented (2026-07-12):** the outline building blocks now ship in the SDK —
 > `surface-outline.ts` (`createSurfaceOutline`: a surface's valid-data rim →
 > `PlanarPolygonGeometry`, reusing `traceValidBoundary`/`smoothRings` +
 > `surfaceGridToWorld`), `wellbore-outline.ts` (the trajectory pipeline),
 > `marching-squares.ts`, and `polygon-outline.ts` (`ringsToPolygonCoordinates`).
-> Still anticipated: the **chunk worker generator**.
+> The **chunk worker generator** followed (§12 step 3).
 
 ## 9. Shared tessellation (settled — 2026-08-06)
 
@@ -1804,8 +1812,8 @@ termination, not its area (§10.5).
    Three things to settle together, since they interact:
 
    - **Derive sidedness from sealedness**, not from opacity: opaque *and* sealed →
-     front faces only; transparent, or a block left open (an unfilled base, `cap:
-     false`) → both. A chunk is sealed exactly when every interval between drawn layers
+     front faces only; transparent, or a block left open (an unfilled base, a
+     shared horizon a sibling chunk draws, §10.8) → both. A chunk is sealed exactly when every interval between drawn layers
      is filled and it is terminated below, so this is computable rather than assumed.
    - **Peeling before transparency.** Alpha compounds — a 20-layer stack at 0.5 is
      effectively opaque — so a uniform opacity slider cannot answer "what is
@@ -3164,8 +3172,8 @@ having to carry them.
 > **Status: BUILT** (2026-08-13), as one plane, any orientation, animatable, with a
 > flip. The design below held up — §15.2's per-cell assembly and §15.3's "section the
 > channels" are what shipped — so it is left as written, with what changed marked in
-> place. §15.9 records the parts that are new. Fence sections, slabs and boxes
-> (§15.8) are not built.
+> place. §15.9 records the parts that are new. Fence sections were built later
+> (§15.8); slabs and boxes are not.
 
 A clip plane through a stack should not reveal a hollow shell. The cut should read
 as a **geological section**: each interval filled across the cut with the material
@@ -3354,6 +3362,10 @@ Other consequences:
    gives a section along a polyline — or along a wellbore path, which is the more
    valuable subsurface product. A cell is convex; a swept quad is not a half-space, so
    this needs per-segment planes rather than one.
+   **— built** as `ChunkStackProps.fence` (`ChunkFence`), along a wellbore — not with
+   per-segment planes but a signed distance to the cut curve in the shader, the face
+   swept from that same curve. See [chunk-stack/cutting-and-water.md](chunk-stack/cutting-and-water.md)
+   and [fence-curves.md](fence-curves.md).
 2. **Clip volumes.** Several planes, a slab, a box; and whether the cut faces of
    different planes need to meet each other (they do at a box corner).
 3. ~~**Component shape.**~~ **Settled:** the plane is declared on the
@@ -3361,7 +3373,8 @@ Other consequences:
    decision, the geometry is per chunk.
 4. **Which side is kept** — built (`plane.negate()`). Whether the discarded side
    should remain **pickable** is still open, and today it does: see §15.9.4.
-5. Whether a fluid should be sectioned at all (§15.5).
+5. ~~Whether a fluid should be sectioned at all (§15.5).~~ **Settled:** opt-in —
+   `water` defaults to `false` on both `ChunkSection` and `ChunkFence`.
 
 ### 15.9 What was built (2026-08-13)
 

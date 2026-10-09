@@ -81,9 +81,9 @@ Five ideas carry the whole design:
 | `ChunkMeshes.tsx` | Presentational. Turns a built chunk + layer declarations into meshes and materials. |
 | `ChunkContext.ts` | `ChunkStackContextValue` — everything the stack publishes downward. |
 | `chunk-defs.ts` | The public type surface: `ChunkLayer`, `ChunkResolveOptions`, `ChunkSection`, `ChunkFence`, `StackWater`, generator keys, defaults. |
-| `chunk-spec.ts` | Pure main-thread spec builders (`buildSurfaceChunkSpec`, `stackColumnSpec`, `buildStackWaterSpec`). |
+| `chunk-spec.ts` | Pure main-thread spec builders (`buildSurfaceChunkSpec`, `stackColumnSpec`, `buildStackWaterSpec`, `buildWellboreOutlineSpec`). |
 | `cutout.ts` | `CutoutSource` / `ChunkOutline` and the per-chunk override merge. |
-| `resolveWellboreOutline.ts` | Trajectories → footprint polygon. |
+| `resolveWellboreOutline.ts` | Calls the `wellboreOutline` generator and turns its rings into the footprint polygon. |
 | `chunk-outline-registry.ts` | Pure claim/outline bookkeeping (unit-tested). |
 | `seams.ts` | `resolveSeam` — who draws a horizon two chunks share. |
 | `chunk-material.ts` | `ChunkMaterial`, the Blinn-Phong shader material everything is drawn with. |
@@ -106,8 +106,9 @@ Five ideas carry the whole design:
 | `surface-stack-context.ts` | The shared-column cache (`getStackContext`). |
 | `stack-water-generator.ts` | `generateStackWater` — the sea's lid and body. |
 | `stack-release-generator.ts` | `releaseStackResources` — drops the cached column. |
+| `wellbore-outline-generator.ts` | `generateWellboreOutline` — trajectories → outline rings for a wellbore cut source. |
 | `generator-supersede.ts` | Latest-wins abort for superseded builds. |
-| `workers/stack-worker-pool.ts` | Sub-worker pool for resample + refine. |
+| `workers/stack-worker-pool.ts` | Sub-worker pool for resample, refine and outline rasterization. |
 | `workers/stack-refine.worker.ts` | The inlined, three.js-free worker body. |
 
 ### SDK — `src/sdk/geometries/`

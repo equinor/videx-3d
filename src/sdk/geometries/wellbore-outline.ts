@@ -6,8 +6,9 @@ import {
   ringsToPolygonCoordinates,
   simplifyPolyline,
 } from './polygon-outline';
+import type { PlanarPolygonCoordinates } from './planar-geometry';
 import { PlanarPolygonGeometry } from './planar-geometry';
-import { SurfaceClipHeader, surfaceWorldToGrid } from './surface-clip';
+import { SurfaceClipHeader, surfaceWorldToGrid } from './surface-grid';
 import { smoothRings } from './triangulate-grid-delaunay';
 
 /**
@@ -410,6 +411,37 @@ export function createWellboreOutline(
   paths: Vec2[][] | WellborePath[],
   options: WellboreOutlineOptions = {},
 ): PlanarPolygonGeometry | null {
+  const { coordinates, metrics } = createWellboreOutlineCoordinates(
+    paths,
+    options,
+  );
+  if (metrics) options.onMetrics?.(metrics);
+  return coordinates ? new PlanarPolygonGeometry(coordinates) : null;
+}
+
+/**
+ * What {@link createWellboreOutlineCoordinates} returns.
+ *
+ * @group Geometries
+ */
+export type WellboreOutlineCoordinates = {
+  /** the outline as `[outer, ...holes]` components, or `null` when empty */
+  coordinates: PlanarPolygonCoordinates | null;
+  /** `null` only when there was nothing to buffer at all */
+  metrics: WellboreOutlineMetrics | null;
+};
+
+/**
+ * {@link createWellboreOutline} as plain data: the same coordinates without the
+ * geometry, so it can run in a worker that carries no three.js. `onMetrics` is
+ * not called — the metrics are returned instead.
+ *
+ * @group Geometries
+ */
+export function createWellboreOutlineCoordinates(
+  paths: Vec2[][] | WellborePath[],
+  options: WellboreOutlineOptions = {},
+): WellboreOutlineCoordinates {
   const radius = options.radius ?? 500;
   const minRadius = options.minRadius;
   const maxRadius = options.maxRadius;
@@ -436,7 +468,7 @@ export function createWellboreOutline(
     if (r > widest) widest = r;
     kept.push({ points, radius: r });
   }
-  if (kept.length === 0) return null;
+  if (kept.length === 0) return { coordinates: null, metrics: null };
 
   // The clamps bound what `shapeFn` may do, so they widen the range the raster has
   // to resolve and pad for. Erring wide costs a finer raster and more padding,
@@ -610,7 +642,7 @@ export function createWellboreOutline(
     for (const ring of groupRings) rings.push(ring);
   }
 
-  options.onMetrics?.({
+  const metrics: WellboreOutlineMetrics = {
     groups: groups.length,
     paths: kept.length,
     segments,
@@ -620,18 +652,20 @@ export function createWellboreOutline(
     cellSize: effectiveCellSize,
     requestedCellSize,
     coarsened,
-  });
+  };
 
   let out = rings;
   if (options.minRingArea && options.minRingArea > 0) {
     const min = options.minRingArea;
     out = out.filter(r => Math.abs(ringSignedArea(r)) >= min);
   }
-  if (out.length === 0) return null;
+  if (out.length === 0) return { coordinates: null, metrics };
 
   const coordinates = ringsToPolygonCoordinates(out);
-  if (coordinates.length === 0) return null;
-  return new PlanarPolygonGeometry(coordinates);
+  return {
+    coordinates: coordinates.length === 0 ? null : coordinates,
+    metrics,
+  };
 }
 
 /** Distance from a point to a segment, scene units. A degenerate segment is a point. */

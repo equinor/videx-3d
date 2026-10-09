@@ -12,7 +12,6 @@ import { BufferGeometry, Group, Matrix4, Plane, Vector3, Vector4 } from 'three';
 import { useData } from '../../hooks/useData';
 import { useGenerator } from '../../hooks/useGenerator';
 import {
-  ChunkSurfaceLayer,
   PlanarPolygonGeometry,
   readCameraTarget,
   StackSectionSource,
@@ -50,6 +49,8 @@ import {
   stackWater,
   StackWater,
   StackWaterResponse,
+  wellboreOutline,
+  WellboreOutlineResponse,
 } from './chunk-defs';
 import {
   buildOutlineRegistry,
@@ -429,57 +430,43 @@ export const ChunkStack = ({
   // margin of the chunk that owns it. Read by the envelope effect below too.
   const marginEntries = useRef(new Map<string, ChunkMarginEntry>());
 
+  const outlineGenerator =
+    useGenerator<WellboreOutlineResponse>(wellboreOutline);
   useEffect(() => {
     if (!cutSource || cutSource.kind !== 'wellbores') return;
-    if (!store || !utm || !surfaces || surfaces.length === 0) return;
-    const topMeta = surfaces[0];
-    const baseMeta = surfaces[surfaces.length - 1];
-    const toLayer = (
-      meta: SurfaceMeta,
-      values: Float32Array,
-    ): ChunkSurfaceLayer => {
-      const p = utm.utmToArea(meta.header.xori, meta.header.yori, 0);
-      return {
-        values,
-        header: meta.header,
-        worldPosition: [p[0], p[2]],
-        referenceDepth: meta.max,
-      };
-    };
+    if (!utm || !surfaces || surfaces.length === 0) return;
+    const mode = cutSource.options?.mode ?? 'window';
+    // The envelope must CONTAIN every chunk's outline, so it takes the widest
+    // margin any chunk may use and the full depth range: a chunk's own window
+    // is always a sub-range of the column's, and its margin is one of these.
+    const widest = Math.max(
+      cutSource.options?.radius ?? 500,
+      ...[...marginEntries.current.values()].map(m => m.radius),
+    );
     let cancelled = false;
-    Promise.all([
-      store.get<Float32Array>('surface-values', topMeta.id),
-      store.get<Float32Array>('surface-values', baseMeta.id),
-    ]).then(([topValues, baseValues]) => {
-      if (cancelled || !topValues || !baseValues) return;
-      const mode = cutSource.options?.mode ?? 'window';
-      // The envelope must CONTAIN every chunk's outline, so it takes the widest
-      // margin any chunk may use and the full depth range: a chunk's own window
-      // is always a sub-range of the column's, and its margin is one of these.
-      const widest = Math.max(
-        cutSource.options?.radius ?? 500,
-        ...[...marginEntries.current.values()].map(m => m.radius),
-      );
-      return resolveWellboreOutline(
-        cutSource.wellbores,
-        cutSource.options,
-        [
-          {
-            top: mode === 'above' ? null : toLayer(topMeta, topValues),
-            base: mode === 'below' ? null : toLayer(baseMeta, baseValues),
-            radius: widest,
-          },
-        ],
-        store,
-        utm.utmToArea,
-      ).then(poly => {
+    resolveWellboreOutline(
+      outlineGenerator,
+      cutSource.wellbores,
+      cutSource.options,
+      [
+        {
+          top: mode === 'above' ? null : surfaces[0],
+          base: mode === 'below' ? null : surfaces[surfaces.length - 1],
+          radius: widest,
+        },
+      ],
+      utm.utmToArea,
+    )
+      .then(poly => {
         if (!cancelled) setWellboreEnvelope(poly);
+      })
+      .catch(() => {
+        if (!cancelled) setWellboreEnvelope(null);
       });
-    });
     return () => {
       cancelled = true;
     };
-  }, [cutSource, store, utm, surfaces]);
+  }, [cutSource, outlineGenerator, utm, surfaces]);
 
   // --- Outline registry: which chunks claim which surface, and (once resolved)
   //     with what footprint. Two things read it: a chunk's top layer is truncated

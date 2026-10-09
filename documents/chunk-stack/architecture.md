@@ -27,7 +27,7 @@ flowchart TD
 
 | Layer | Lives in | Changes when | Cost |
 |-------|----------|--------------|------|
-| 1. Outline | `Chunk` (`source`, `wellboreOutline`) | the outline prop, the cut source, the wellbore data, or the depth window changes | one async resolve; possibly real I/O |
+| 1. Outline | `Chunk` (`source`, `wellboreOutline`) | the outline prop, the cut source, the wellbore data, or the depth window changes | one async resolve; for a wellbore source a `wellboreOutline` generator call |
 | 2. Geometry | the `surfaceChunk` generator, in a worker | surfaces, fills, outline, `resolve`, `rimSpacing`, `maxError`, seams, or the *presence* of a section/fence/peel changes | seconds at field scale |
 | 3. Appearance | `ChunkMeshes` | materials, colours, opacity, `detail`, `wireframe`, `peel` value, `inferredStyle`, contacts, water tint | material rebuild only |
 

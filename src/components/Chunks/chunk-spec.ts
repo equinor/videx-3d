@@ -3,7 +3,6 @@ import {
   PlanarPolygonGeometry,
   StackCarrier,
   SurfaceMeta,
-  Vec2,
   Vec3,
 } from '../../sdk';
 import {
@@ -15,10 +14,13 @@ import {
   StackWater,
   StackWaterSpec,
   SurfaceChunkCut,
+  SurfaceChunkLayerSpec,
   SurfaceChunkSpec,
   SurfaceChunkSpecLayer,
   SurfaceChunkStackSpec,
+  WellboreOutlineSpec,
 } from './chunk-defs';
+import type { WellboreCutoutOptions } from './cutout';
 import { SeamDecision } from './seams';
 
 /** UTM -> scene-frame mapping (matches `UtmArea`'s `utmToArea`). */
@@ -62,7 +64,10 @@ export type BuildSurfaceChunkSpecOptions = {
 };
 
 /** Map one surface's meta into the serializable layer spec. */
-function toLayerSpec(meta: SurfaceMeta, utmToArea: UtmToArea) {
+function toLayerSpec(
+  meta: SurfaceMeta,
+  utmToArea: UtmToArea,
+): SurfaceChunkLayerSpec {
   const p = utmToArea(meta.header.xori, meta.header.yori, 0);
   return {
     id: meta.id,
@@ -74,8 +79,64 @@ function toLayerSpec(meta: SurfaceMeta, utmToArea: UtmToArea) {
       rot: meta.header.rot,
     },
     referenceDepth: meta.max,
-    worldPosition: [p[0], p[2]] as Vec2,
+    worldPosition: [p[0], p[2]],
   };
+}
+
+/**
+ * One depth interval of a wellbore outline and the margin its trajectory is
+ * buffered with. A `null` bound leaves that side unbounded (wellhead above, TD
+ * below).
+ */
+export type WellboreOutlineInterval = {
+  top: SurfaceMeta | null;
+  base: SurfaceMeta | null;
+  radius: number;
+};
+
+/**
+ * The `wellboreOutline` generator's spec. `onMetrics` is left out — the caller
+ * applies it to the metrics the generator returns.
+ */
+export function buildWellboreOutlineSpec(
+  wellbores: string[],
+  options: WellboreCutoutOptions | undefined,
+  intervals: WellboreOutlineInterval[],
+  utmToArea: UtmToArea,
+): WellboreOutlineSpec {
+  const surfaces: SurfaceChunkLayerSpec[] = [];
+  const indexOf = new Map<string, number>();
+  const at = (meta: SurfaceMeta | null) => {
+    if (!meta) return null;
+    let index = indexOf.get(meta.id);
+    if (index === undefined) {
+      index = surfaces.push(toLayerSpec(meta, utmToArea)) - 1;
+      indexOf.set(meta.id, index);
+    }
+    return index;
+  };
+  const cutOptions = { ...options };
+  delete cutOptions.onMetrics;
+  return {
+    wellbores,
+    surfaces,
+    intervals: intervals.map(({ top, base, radius }) => ({
+      top: at(top),
+      base: at(base),
+      radius,
+    })),
+    utmToScene: utmAffine(utmToArea),
+    options: cutOptions,
+  };
+}
+
+// `UtmArea` maps by a translation and a flip, so four samples reproduce it exactly.
+function utmAffine(utmToArea: UtmToArea): number[] {
+  const o = utmToArea(0, 0, 0);
+  const e = utmToArea(1, 0, 0);
+  const n = utmToArea(0, 1, 0);
+  const a = utmToArea(0, 0, 1);
+  return [0, 1, 2].flatMap(k => [e[k] - o[k], n[k] - o[k], a[k] - o[k], o[k]]);
 }
 
 /**

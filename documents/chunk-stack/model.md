@@ -392,10 +392,8 @@ Types are `'goc' | 'gwc' | 'owc' | 'hwc' | 'fwl'`, each with a default colour
 with `contacts: [ids]` or `contacts: false` — restricting a contact to the units
 that actually hold that fluid is *interpretation*, and belongs to the host.
 
-An alternative modelling choice, if a contact should split a unit into two
-differently-coloured parts, is to make it an ordinary `fluid` boundary in the
-`layers` array. That keeps it in the shared tessellation, which is what stops it
-z-fighting with the layers around it.
+Splitting a unit into differently-coloured fluid legs is not supported; see
+[../chunks.md](../chunks.md) §6.1.1 for why the fluid-layer version was removed.
 
 ---
 

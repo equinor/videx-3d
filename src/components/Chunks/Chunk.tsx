@@ -9,10 +9,8 @@ import {
   useState,
 } from 'react';
 import { Group } from 'three';
-import { useData } from '../../hooks/useData';
 import { useGenerator } from '../../hooks/useGenerator';
 import {
-  ChunkSurfaceLayer,
   PlanarPolygonGeometry,
   polygonArea,
   SurfaceChunk,
@@ -37,6 +35,8 @@ import {
   resolvePeel,
   surfaceChunk,
   SurfaceChunkResponse,
+  wellboreOutline as wellboreOutlineKey,
+  WellboreOutlineResponse,
 } from './chunk-defs';
 import { buildSurfaceChunkSpec } from './chunk-spec';
 import { chunkDetailKey } from './chunk-detail';
@@ -280,7 +280,6 @@ export const Chunk = ({
   onPointerMove,
   children,
 }: ChunkProps) => {
-  const store = useData();
   const utm = useContext(UtmAreaContext);
   const stack = useContext(ChunkStackContext);
 
@@ -375,9 +374,9 @@ export const Chunk = ({
 
   // --- Wellbore-derived outline (layer 1, async): built from the chunk's own top
   //     & base surfaces, so the footprint follows the wells through this chunk's
-  //     depth window. Only the bounding surfaces' values are loaded on the main
-  //     thread here (the full stack is loaded in the worker). setState only inside
-  //     the resolved promise. --------------------------------------------------
+  //     depth window. Built by the `wellboreOutline` generator, so the surface
+  //     grids never reach the main thread. setState only inside the resolved
+  //     promise. ---------------------------------------------------------------
   // Wrapped so that "still resolving" (null) is distinguishable from "resolved to
   // no footprint" ({ polygon: null }) — the chunks below wait for the first and
   // must not wait for the second. Note it is only ever settled ASYNCHRONOUSLY, so
@@ -387,6 +386,8 @@ export const Chunk = ({
   const [wellboreOutline, setWellboreOutline] = useState<{
     polygon: PlanarPolygonGeometry | null;
   } | null>(null);
+  const outlineGenerator =
+    useGenerator<WellboreOutlineResponse>(wellboreOutlineKey);
   const marginRamp = stack.margins;
   // Content key: the ramp is rebuilt whole on every publish, so the array identity
   // churns whenever any sibling settles.
@@ -398,7 +399,7 @@ export const Chunk = ({
     .join('|');
   useEffect(() => {
     if (!source || source.kind !== 'wellbores') return;
-    if (!store || !utm || stableLayers.length === 0) return;
+    if (!utm || stableLayers.length === 0) return;
     // The depth window comes from the chunk's REAL surfaces — a synthetic plane
     // has no grid to sample trajectories against, and a chunk may well start with
     // one (water above a seabed).
@@ -451,61 +452,32 @@ export const Chunk = ({
     const byId = new Map<string, SurfaceMeta>();
     for (const m of stack.surfaces ?? []) byId.set(m.id, m);
     for (const m of realSurfaces) byId.set(m.id, m);
-    const needed = [
-      ...new Set(
-        wanted
-          .flatMap(w => [w.topId, w.baseId])
-          .filter((id): id is string => !!id),
-      ),
-    ];
+    const metaOf = (id?: string) => (id ? (byId.get(id) ?? null) : null);
+    // A bound whose surface is unknown would be silently unbounded, which grows
+    // the outline rather than shrinking it — drop the interval instead.
+    const intervals = wanted
+      .filter(
+        w =>
+          (!w.topId || byId.has(w.topId)) && (!w.baseId || byId.has(w.baseId)),
+      )
+      .map(w => ({
+        top: metaOf(w.topId),
+        base: metaOf(w.baseId),
+        radius: w.radius,
+      }));
 
-    const toLayer = (
-      meta: SurfaceMeta,
-      values: Float32Array,
-    ): ChunkSurfaceLayer => {
-      const p = utm.utmToArea(meta.header.xori, meta.header.yori, 0);
-      return {
-        values,
-        header: meta.header,
-        worldPosition: [p[0], p[2]],
-        referenceDepth: meta.max,
-      };
-    };
     let cancelled = false;
     const settle = (polygon: PlanarPolygonGeometry | null) => {
       if (!cancelled) setWellboreOutline({ polygon });
     };
-    Promise.all(needed.map(id => store.get<Float32Array>('surface-values', id)))
-      .then(loaded => {
-        if (cancelled) return;
-        const bounds = new Map<string, ChunkSurfaceLayer>();
-        needed.forEach((id, i) => {
-          const meta = byId.get(id);
-          const values = loaded[i];
-          if (meta && values) bounds.set(id, toLayer(meta, values));
-        });
-        const intervals = wanted
-          .map(w => ({
-            top: w.topId ? (bounds.get(w.topId) ?? null) : null,
-            base: w.baseId ? (bounds.get(w.baseId) ?? null) : null,
-            radius: w.radius,
-          }))
-          // An interval whose bound failed to load would be silently unbounded,
-          // which grows the outline rather than shrinking it — drop it instead.
-          .filter(
-            (interval, i) =>
-              (!wanted[i].topId || interval.top) &&
-              (!wanted[i].baseId || interval.base),
-          );
-        if (intervals.length === 0) return settle(null);
-        return resolveWellboreOutline(
-          source.wellbores,
-          source.options,
-          intervals,
-          store,
-          utm.utmToArea,
-        ).then(settle);
-      })
+    resolveWellboreOutline(
+      outlineGenerator,
+      source.wellbores,
+      source.options,
+      intervals,
+      utm.utmToArea,
+    )
+      .then(settle)
       .catch(() => settle(null));
     return () => {
       cancelled = true;
@@ -513,7 +485,7 @@ export const Chunk = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ramp keyed by content
   }, [
     source,
-    store,
+    outlineGenerator,
     utm,
     stableLayers,
     realSurfaces,

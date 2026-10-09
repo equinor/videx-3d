@@ -501,12 +501,15 @@ outline, or a footprint cut away entirely. It reports `'empty'`.
 
 - Created lazily on first use, once per generator scope. Size
   `max(1, min(hardwareConcurrency − 1, 8))`.
-- The worker is imported with Vite's `?worker&inline`, so it ships **base64-encoded
-  inside the library bundle** — no host bundler configuration, and it works whether
-  the host runs the generator registry on the main thread or in a worker.
-- Two task kinds: `'resample'` and `'refine'`.
-- If `Worker` is unavailable or construction fails, the pool is `null` and both
-  paths fall back to running the SDK function serially (`poolSize: 0` in the
+- The worker is imported with Vite's `?worker&inline`, so it ships **inlined in the
+  library bundle** (as a string, turned into a Blob URL at runtime) — no host
+  bundler configuration, and it works whether the host runs the generator registry
+  on the main thread or in a worker. ⚠️ It must stay free of three.js (22.6 kB as
+  of 2026-10-09; three would add hundreds).
+- Three task kinds: `'resample'`, `'refine'`, and `'outline'` (a wellbore
+  outline's raster — only the cut runs are sent, never a surface grid).
+- If `Worker` is unavailable or construction fails, the pool is `null` and every
+  path falls back to running the SDK function serially (`poolSize: 0` in the
   result).
 
 | Task | Transferred in | Returned |

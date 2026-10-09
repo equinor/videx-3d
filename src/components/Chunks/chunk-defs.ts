@@ -14,12 +14,17 @@ import {
   SurfaceMeta,
   Vec2,
   WellboreFence,
+  WellboreOutlineCoordinates,
 } from '../../sdk';
 import { OceanBodyProps, OceanWaterProps } from '../Ocean/ocean-material-sync';
 import { ChunkDetail } from './chunk-detail';
+import type { WellboreCutoutOptions } from './cutout';
 
 /** Generator key for the {@link Chunk} geometry generator. */
 export const surfaceChunk = 'surfaceChunk';
+
+/** Generator key for a wellbore-derived chunk outline (`generateWellboreOutline`). */
+export const wellboreOutline = 'wellboreOutline';
 
 /** Generator key for the `ChunkStack` sea geometry generator. */
 export const stackWater = 'stackWater';
@@ -89,6 +94,26 @@ export type StackWaterResponse = {
    */
   section?: StackSectionSource;
 };
+
+/**
+ * What the `wellboreOutline` generator needs: which wells, the depth intervals to
+ * cut their trajectories to, and how to place both in the scene. Plain data — the
+ * grids and the trajectories are fetched in the worker.
+ */
+export type WellboreOutlineSpec = {
+  wellbores: string[];
+  /** the bounding surfaces, each listed once however many intervals share it */
+  surfaces: SurfaceChunkLayerSpec[];
+  /** depth intervals; bounds index `surfaces`, `null` = unbounded on that side */
+  intervals: { top: number | null; base: number | null; radius: number }[];
+  /** UTM -> scene, row-major 3x4: `[x, y, z] = M * [easting, northing, altitude, 1]` */
+  utmToScene: number[];
+  /** the cut options without `onMetrics`, which cannot cross to the worker */
+  options?: Omit<WellboreCutoutOptions, 'onMetrics'>;
+};
+
+/** What the `wellboreOutline` generator returns. */
+export type WellboreOutlineResponse = WellboreOutlineCoordinates;
 
 /**
  * One layer of a {@link SurfaceChunkSpec} backed by a surface: a reference plus how

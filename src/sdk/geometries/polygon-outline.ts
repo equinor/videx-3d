@@ -1,5 +1,5 @@
 import { Vec2 } from '../types/common';
-import {
+import type {
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
 } from './planar-geometry';
