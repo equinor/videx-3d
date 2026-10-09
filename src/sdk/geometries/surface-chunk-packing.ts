@@ -6,6 +6,7 @@ import {
 } from './packing';
 import {
   SurfaceChunk,
+  SurfaceChunkBoundary,
   SurfaceChunkMesh,
   SurfaceChunkMetrics,
 } from './surface-chunk';
@@ -36,6 +37,7 @@ export type PackedSurfaceChunk = {
   surfaces: PackedSurfaceChunkMesh[];
   walls: PackedSurfaceChunkMesh[];
   section?: StackSectionSource;
+  boundaries?: SurfaceChunkBoundary[];
   metrics: SurfaceChunkMetrics;
 };
 
@@ -65,12 +67,15 @@ export function packSurfaceChunk(
     })),
     walls: chunk.walls.map(w => ({ ...w, geometry: packGeo(w.geometry) })),
     section: chunk.section,
+    boundaries: chunk.boundaries,
     metrics: chunk.metrics,
   };
 
   // Carried by SPREAD above; only the transfer needs saying.
   for (const s of chunk.surfaces) {
     if (s.patchIndex) transferables.push(s.patchIndex.buffer);
+    if (s.above) transferables.push(s.above.buffer);
+    if (s.below) transferables.push(s.below.buffer);
   }
 
   // The section shares buffers with the geometries above — the shared triangle
@@ -108,6 +113,7 @@ export function unpackSurfaceChunk(packed: PackedSurfaceChunk): SurfaceChunk {
       geometry: unpackBufferGeometry(w.geometry),
     })),
     section: packed.section,
+    boundaries: packed.boundaries,
     metrics: packed.metrics,
   };
 }

@@ -55,6 +55,20 @@ describe('createTinSampler', () => {
     expect(worst).toBeLessThan(1e-4);
   });
 
+  it('locates the triangle and weights that reproduce the point', () => {
+    const { positions, indices } = plane();
+    const sampler = createTinSampler(positions, indices);
+    const at = sampler.locate(3.3, 7.1)!;
+    const coord = (v: number, k: number) => positions[3 * v + k];
+    const blend = (k: number) =>
+      at.wa * coord(at.a, k) + at.wb * coord(at.b, k) + at.wc * coord(at.c, k);
+    expect(at.wa + at.wb + at.wc).toBeCloseTo(1, 6);
+    expect(blend(0)).toBeCloseTo(3.3, 5);
+    expect(blend(2)).toBeCloseTo(7.1, 5);
+    expect(blend(1)).toBeCloseTo(sampler.getHeightAt(3.3, 7.1)!, 5);
+    expect(sampler.locate(-1, 5)).toBeNull();
+  });
+
   it('reports the plane normal, always facing up', () => {
     const { positions, indices } = plane();
     const sampler = createTinSampler(positions, indices);

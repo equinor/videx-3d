@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   BufferAttribute,
   BufferGeometry,
   DoubleSide,
+  Group,
   IUniform,
   Material,
   MeshBasicMaterial,
@@ -14,6 +15,13 @@ import {
   DEFAULT_OCEAN_DEEP_COLOR,
   DEFAULT_OCEAN_WATER_OPACITY,
 } from '../Ocean/ocean-material';
+import {
+  capCullingBlocked,
+  capCut,
+  CapCutRule,
+  capOpenTable,
+  openIntervals,
+} from './cap-visibility';
 import { ChunkContactTexture, resolveLayerContacts } from './chunk-contacts';
 import { releaseGeometry } from './chunk-resources';
 import { ChunkDepthMap } from './chunk-depth-map';
@@ -40,6 +48,7 @@ import {
 } from './inference-material';
 import { useChunkFenceFace } from './useChunkFenceFace';
 import { useChunkSection } from './useChunkSection';
+import { useCameraIntervals, useCulledCaps } from './useCapCulling';
 
 /**
  * {@link ChunkMeshes} props.
@@ -146,6 +155,8 @@ export type ChunkMeshesProps = {
    * "what is underneath". Not drawing part of the depth-ordered layers is exact.
    */
   peel?: ChunkPeel;
+  /** skip cap triangles buried inside the block (see `ChunkProps.cullHiddenCaps`). Default true. */
+  cullHiddenCaps?: boolean;
 };
 
 /**
@@ -166,16 +177,6 @@ export type ChunkMeshesProps = {
  *
  * @group Components
  */
-/**
- * Whether a cut takes cap `i`. ⭐ A unit is bounded by TWO caps, so keeping one
- * whole keeps the cap that FLOORS it too; `seaKept` makes the sea the kept unit
- * above cap 0, which is then its bed.
- */
-function capCut(layers: ChunkLayer[], i: number, seaKept: boolean) {
-  const kept = (j: number) => layers[j]?.section === false;
-  return !kept(i) && !kept(i - 1) && !(seaKept && i === 0);
-}
-
 /**
  * The inference-marking overlays: one material per distinct (opacity, cut) pair,
  * built lazily, plus the lookups that pick the right one per layer.
@@ -266,6 +267,7 @@ export const ChunkMeshes = ({
   fenceOverlayUniforms = null,
   fenceCarrier = false,
   peel = 0,
+  cullHiddenCaps = true,
 }: ChunkMeshesProps) => {
   // ⚠️ `fence` is a STABLE object mutated from the frame loop, so a change to
   // `fence.debug` is invisible to React and the materials below would keep the
@@ -642,6 +644,70 @@ export const ChunkMeshes = ({
   // already exists, so no carrier is needed.
   const { top, base } = resolvePeel(peel, layers.length);
 
+  // ⭐ A cap triangle with an opaque, closed unit against BOTH faces cannot be
+  // seen. The topology comes from the build; which units are open is decided here,
+  // per frame (see `cap-visibility`).
+  const root = useRef<Group>(null);
+  const cullable =
+    cullHiddenCaps &&
+    showSurfaces &&
+    !!chunk.boundaries &&
+    !capCullingBlocked({
+      layers,
+      surfaceOpacity,
+      wallOpacity,
+      wireframe,
+      showWalls,
+    });
+  const cameraUnits = useCameraIntervals(chunk, root, cullable);
+  const capTables = useMemo(() => {
+    const boundaries = chunk.boundaries;
+    if (!cullable || !boundaries) return null;
+    const open = openIntervals(boundaries, {
+      layers,
+      surfaceOpacity,
+      wallOpacity,
+      wireframe,
+      showWalls,
+      top,
+      base,
+      cameraUnits,
+    });
+    if (!open) return null;
+    const cuts: CapCutRule[] = [];
+    if (section || sectionUniform) {
+      cuts.push({ carrier: sectionCarrier, seaKept: seaBed && !sectionWater });
+    }
+    if (fence) {
+      cuts.push({ carrier: fenceCarrier, seaKept: seaBed && !fenceWater });
+    }
+    return chunk.surfaces.map(surface =>
+      surface.above
+        ? capOpenTable(open, boundaries, surface, layers, cuts)
+        : null,
+    );
+  }, [
+    chunk,
+    cullable,
+    layers,
+    surfaceOpacity,
+    wallOpacity,
+    wireframe,
+    showWalls,
+    top,
+    base,
+    cameraUnits,
+    section,
+    sectionUniform,
+    sectionCarrier,
+    sectionWater,
+    fence,
+    fenceCarrier,
+    fenceWater,
+    seaBed,
+  ]);
+  const capGeometries = useCulledCaps(chunk, capTables);
+
   // ⭐ A weld or truncation drop is justified only where the layer above is ACTUALLY
   // DRAWN, and both a peel and a section can shrink that region. `'open'` = it is
   // gone everywhere, `'cut'` = gone only in the half the section removed.
@@ -662,7 +728,7 @@ export const ChunkMeshes = ({
   return (
     // Names match the React keys, so what an inspector shows lines up with what
     // the code renders.
-    <group name="ChunkMeshes">
+    <group ref={root} name="ChunkMeshes">
       {faces?.map(face => {
         if (face.layer < top || face.layer >= base) return null;
         const material =
@@ -768,9 +834,14 @@ export const ChunkMeshes = ({
               ? materials.carrier
               : materials.surfaces[surface.layer];
           if (!material) return null;
-          const overlay = surface.geometry.hasAttribute('inferred')
-            ? overlays.surface(surface.layer)
-            : null;
+          // `null` = every triangle of this cap is buried this frame.
+          const capGeometry = capGeometries
+            ? capGeometries[i]
+            : surface.geometry;
+          const overlay =
+            capGeometry && surface.geometry.hasAttribute('inferred')
+              ? overlays.surface(surface.layer)
+              : null;
           // The fragments this cap gave up to a layer that is no longer covering
           // them. Same colour and shading as the cap; only the plane differs.
           const mode = patchMode(surface.layer);
@@ -793,17 +864,19 @@ export const ChunkMeshes = ({
               {/* A pointer hit reports the Object3D it landed on, so the layer
                   index rides along with it — otherwise a handler knows a chunk
                   was hit but not which unit. */}
-              <mesh
-                name={`${key}:${role}`}
-                geometry={surface.geometry}
-                userData={{ layer: surface.layer, kind: 'surface' }}
-              >
-                <primitive
-                  key={material.uuid}
-                  object={material}
-                  attach="material"
-                />
-              </mesh>
+              {capGeometry && (
+                <mesh
+                  name={`${key}:${role}`}
+                  geometry={capGeometry}
+                  userData={{ layer: surface.layer, kind: 'surface' }}
+                >
+                  <primitive
+                    key={material.uuid}
+                    object={material}
+                    attach="material"
+                  />
+                </mesh>
+              )}
               {patchMaterial && patchGeometry && (
                 <mesh
                   name={`${key}:patch`}
@@ -817,10 +890,10 @@ export const ChunkMeshes = ({
                   />
                 </mesh>
               )}
-              {overlay && (
+              {overlay && capGeometry && (
                 <mesh
                   name={`${key}:inferred`}
-                  geometry={surface.geometry}
+                  geometry={capGeometry}
                   userData={{ layer: surface.layer, kind: 'surface' }}
                 >
                   <primitive

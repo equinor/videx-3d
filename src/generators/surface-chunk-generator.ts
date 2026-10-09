@@ -493,6 +493,7 @@ export async function buildSpecStack(
         topCover: coverAbove,
         section: spec.section,
         peelable: spec.peelable,
+        capNeighbours: true,
       },
     );
     if (!build) return null;
@@ -720,6 +721,7 @@ export async function buildSpecStack(
       inferred: split?.inferred ?? sealed?.inferred,
       section: spec.section,
       peelable: spec.peelable,
+      capNeighbours: true,
     },
   );
   if (!build) return null;
@@ -873,6 +875,7 @@ export function toAssembleLayers(
     wall: result.build.walls[i],
     source: result.source[i] ?? i,
     ceiling: result.ceilings[i] ?? false,
+    neighbours: result.build.capNeighbours?.[i] ?? null,
   }));
 }
 

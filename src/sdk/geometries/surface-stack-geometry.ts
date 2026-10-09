@@ -14,9 +14,13 @@ import {
   sampleStackHeights,
   sampleStackMasks,
   sampleStackWeights,
+  StackCapNeighbours,
+  stackCapNeighbours,
   StackCollapseResult,
   stackDepthStats,
   stackDuplicateFractions,
+  stackIntervalMembers,
+  stackIntervalStates,
   stackIntervalTriangles,
   StackLayer,
   StackLayerDepth,
@@ -243,6 +247,12 @@ export type StackWallOptions = {
   unbounded?: boolean[];
   /** the turn past which a rim point is a crease; see `RingWallOptions` */
   smoothAngle?: number;
+  /**
+   * The per-interval triangle masks ({@link stackIntervalTriangles}), when the
+   * caller already has them — they are a full pass over every triangle per
+   * interval. Computed from the options above when omitted.
+   */
+  members?: Uint8Array[];
 };
 
 /** What {@link buildStackWalls} produced. */
@@ -303,13 +313,15 @@ export function buildStackWalls(
   const { indices, rimVertices } = tessellation;
   const vertexCount = tessellation.coords.length >> 1;
   const opposite = buildEdgeOpposites(indices, vertexCount);
-  const members = stackIntervalTriangles(heights, indices, {
-    threshold: options.threshold,
-    coverage: options.coverage,
-    coverageTriangles: options.coverageTriangles,
-    absent: options.absent,
-    unbounded: options.unbounded,
-  });
+  const members =
+    options.members ??
+    stackIntervalTriangles(heights, indices, {
+      threshold: options.threshold,
+      coverage: options.coverage,
+      coverageTriangles: options.coverageTriangles,
+      absent: options.absent,
+      unbounded: options.unbounded,
+    });
 
   const point = (v: number): Vec2 => [
     positionsXZ[2 * v],
@@ -567,6 +579,13 @@ export type SurfaceStackOptions = {
    * order not to open a hole where the collapse relied on a covering layer.
    */
   peelable?: boolean;
+  /**
+   * Also emit, per cap, the solid unit directly above and below each of its
+   * triangles (see {@link stackCapNeighbours}) — what lets a renderer skip the
+   * parts of a cap buried inside the block. Needs `fills`; costs two bytes per
+   * kept cap triangle.
+   */
+  capNeighbours?: boolean;
 };
 
 /**
@@ -643,6 +662,12 @@ export type SurfaceStackBuild = {
    * {@link SurfaceStackOptions.section} asked for them.
    */
   section?: StackSectionSource;
+  /**
+   * Per layer, the neighbours of its cap's triangles, when
+   * {@link SurfaceStackOptions.capNeighbours} asked for them. `null` for a layer
+   * with no cap, or whose cap is not on the shared tessellation (the sea's lid).
+   */
+  capNeighbours?: (StackCapNeighbours | null)[];
   timings: SurfaceStackTimings;
 };
 
@@ -857,6 +882,37 @@ export function buildSurfaceStack(
           peelable: options.peelable,
         })
       : null;
+
+  // The sea's lid is built below, on its own triangulation of the outline.
+  const caps = unbounded
+    ? unbounded.map((f, i) => !f && options.caps?.[i] !== false)
+    : options.caps;
+
+  // ⚠️ One pass serves both the walls and the cap neighbours, and it has to come
+  // BEFORE the geometry build: that may reverse the winding of the kept indices in
+  // place, and the neighbours match those against the shared set triple by triple.
+  const states =
+    options.fills && options.capNeighbours
+      ? stackIntervalStates(heights, tessellation.indices, {
+          threshold: collapseThreshold,
+          coverage: coverageAbsence ? coverage : undefined,
+          coverageTriangles: coverageAbsence
+            ? tessellation.coverage
+            : undefined,
+          absent,
+          unbounded,
+        })
+      : undefined;
+  const capNeighbours =
+    states && options.fills
+      ? stackCapNeighbours(
+          states,
+          options.fills,
+          tessellation.indices,
+          collapsed?.indices,
+          caps,
+        )
+      : undefined;
   const tCollapse = performance.now();
 
   const positionsXZ = stackVertexPositions(reference, tessellation.coords);
@@ -865,10 +921,7 @@ export function buildSurfaceStack(
     positionsXZ,
     heights,
     collapsed?.indices,
-    // The sea's lid is built below, on its own triangulation of the outline.
-    unbounded
-      ? unbounded.map((f, i) => !f && options.caps?.[i] !== false)
-      : options.caps,
+    caps,
     inferred,
     collapsed?.peelIndices,
   );
@@ -913,6 +966,7 @@ export function buildSurfaceStack(
         inferred,
         fluid,
         unbounded,
+        members: states ? stackIntervalMembers(states) : undefined,
       })
     : {
         walls: heights.map(() => null),
@@ -956,6 +1010,7 @@ export function buildSurfaceStack(
     duplicates,
     topKept,
     section,
+    capNeighbours,
     timings: {
       tessellateMs: tTessellate - t0,
       sampleMs: tSample - tTessellate,

@@ -3913,7 +3913,8 @@ with byte-identical triangle counts and `constraintFailures` 0.
   of them. The per-layer `kept` share is reported so the waste is visible.
 - 30 M triangles is ~580 MB of vertex data across 34 geometries. Even with an
   instant build, that scene is past interactive; some form of LOD (§7) is the
-  answer, not more micro-optimisation.
+  answer, not more micro-optimisation. The first step — not drawing buried caps —
+  is §16.7.
 
 ### 16.6 A rebuild RELEASES first, then builds (2026-08-24)
 
@@ -3945,4 +3946,56 @@ were still reachable with no mesh pointing at them, against 16 live ones holding
 matter, but if per-build growth ever returns, that measurement (query every
 `BufferGeometry`, bucket by whether the scene still references it) is the one to
 repeat.
+
+### 16.7 Buried caps are not drawn (2026-10-09)
+
+On an opaque column almost every cap lies between two closed units, where nothing
+can see it — yet each one is rasterised (depth test and all) in every OIT pass. A
+probe that drew only the shallowest cap and the floor bounded the saving: 1.53 M →
+172 k triangles, GPU 13.0 → 5.2 ms close up. It grows with how much SCREEN the
+hidden caps cover, not with their vertex count.
+
+⭐ THE RULE: draw a cap triangle iff the unit on EITHER side of it is open this frame
+— air, a void or gap, peeled, cut away, see-through, or the unit the camera is in.
+One build serves every state:
+
+- **Build (worker, topology only).** `SurfaceStackOptions.capNeighbours` emits, per
+  cap and per KEPT triangle, the build interval directly above and below it
+  (`stackCapNeighbours`, `CAP_SIDE_OPEN` = 255 for none). The walk steps over FLAT
+  intervals (`stackIntervalStates` tells flat from missing — two coincident surfaces
+  are one) and stops at anything else. Two bytes per kept cap triangle; the interval
+  pass is shared with the walls, so it costs no extra sweep. Off past 254 intervals.
+- **Runtime (main thread).** `cap-visibility.ts` turns the per-frame state into a
+  256-entry open table per cap (`openIntervals` + `capOpenTable`), and
+  `useCulledCaps` draws a VIEW of each cap — the cap's own attributes, shared, plus
+  an index of the visible triangles. A cap is re-filtered only when a unit it
+  actually FACES changes state (`capVisibilityKey`).
+- **The camera's unit** comes from `createIntervalProbe`: one triangle lookup
+  (`TinSampler.locate`) whose weights interpolate EVERY cap's `y` (shared topology),
+  widened by a 2 m band plus the near plane, which can clip a cap open. Gated by
+  the caps' bounding box, so a chunk the camera is not in costs a transform and a
+  compare per frame.
+
+⚠️ Conservative where exactness would need more data:
+
+- A TRANSPARENT CAP anywhere switches culling off. Where the collapse dropped a
+  coincident cap, a shallower one stands in for it, so the cap a viewer looks
+  through is not always the one bounding the unit behind. A transparent FILL is
+  exact per interval and only opens that unit. Wireframe and hidden walls also
+  switch it off.
+- A cut counts whenever it is DECLARED, not only while drawing: a cap that survives
+  a cut (the floor, a kept unit's caps, the sea bed) opens every unit the cut can
+  take. Such caps are few, and this never lags a toggle by a frame.
+- A horizon shared by two chunks is never culled — the unit on its far side lives
+  in the other chunk.
+
+⚠️ A view must be released with `releaseCapView` (detach the shared attributes,
+THEN dispose) or it frees the cap's buffers with its own index. Views retired by a
+change are freed only after the state that replaced them has committed.
+
+MEASURED (FieldColumn defaults, Volve, `outline: field`, 12 surfaces, opaque):
+wide 281 k → 51 k triangles, 50 → 39 draw calls, GPU 5.0 → 4.7 ms; close up
+281 k → 72 k, GPU 7.7 → 5.4 ms. Screenshots are BYTE-IDENTICAL with culling on and
+off across wide, close, peel, from below, inside a unit, and a section with a kept
+unit and a cut floor. `Chunk.cullHiddenCaps` (default true) is the A/B.
 

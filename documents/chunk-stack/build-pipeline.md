@@ -446,6 +446,7 @@ type SurfaceChunk = {
   surfaces: SurfaceChunkMesh[];   // caps
   walls: SurfaceChunkMesh[];      // interval walls
   section?: StackSectionSource;   // channels for a cut face
+  boundaries?: SurfaceChunkBoundary[]; // per build layer: {layer, ceiling, fill}
   metrics: SurfaceChunkMetrics;   // timings, counts, diagnostics
 };
 
@@ -454,6 +455,9 @@ type SurfaceChunkMesh = {
   layer: number;          // index into the CALLER's layers
   ceiling?: boolean;      // a void's upper copy, or the carrier
   patchIndex?: Uint32Array; // fragments given up to the layer above
+  boundary?: number;      // index into `boundaries` (the BUILD layer)
+  above?: Uint8Array;     // per cap triangle: build interval above, 255 = none
+  below?: Uint8Array;     // ... and below — what hidden-cap culling reads
 };
 ```
 

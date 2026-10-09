@@ -1869,6 +1869,37 @@ export function stackIntervalTriangles(
   indices: Uint32Array,
   options: StackCollapseOptions = {},
 ): Uint8Array[] {
+  return stackIntervalMembers(stackIntervalStates(heights, indices, options));
+}
+
+/** {@link stackIntervalStates}: a bounding surface is missing over the triangle. */
+export const INTERVAL_MISSING = 0;
+/** {@link stackIntervalStates}: the interval holds a volume over the triangle. */
+export const INTERVAL_PRESENT = 1;
+/**
+ * {@link stackIntervalStates}: both bounding surfaces are there but coincide
+ * (within the collapse threshold) — no volume, and nothing BETWEEN them either.
+ */
+export const INTERVAL_FLAT = 2;
+
+/**
+ * {@link stackIntervalTriangles} with the empty case split in two: a FLAT interval
+ * (both surfaces present, no thickness) is told apart from a MISSING one.
+ *
+ * ⭐ The difference matters to anything walking a column of intervals: a flat one
+ * can be stepped over (its two surfaces are one), a missing one cannot (something
+ * is open there). See {@link stackCapNeighbours}.
+ *
+ * @returns one array per interval, of {@link INTERVAL_MISSING},
+ *   {@link INTERVAL_PRESENT} or {@link INTERVAL_FLAT} per triangle
+ *
+ * @group Geometries
+ */
+export function stackIntervalStates(
+  heights: Float32Array[],
+  indices: Uint32Array,
+  options: StackCollapseOptions = {},
+): Uint8Array[] {
   const threshold = options.threshold ?? 0.5;
   const triangles = indices.length / 3;
   const out: Uint8Array[] = [];
@@ -1878,25 +1909,153 @@ export function stackIntervalTriangles(
     const bottom = heights[i + 1];
     const topMissing = makeAbsentTriangleTest(options, i);
     const bottomMissing = makeAbsentTriangleTest(options, i + 1);
-    const member = new Uint8Array(triangles);
+    const state = new Uint8Array(triangles);
     for (let t = 0; t < triangles; t++) {
       const a = indices[3 * t];
       const b = indices[3 * t + 1];
       const c = indices[3 * t + 2];
       if (topMissing(t, a, b, c)) continue;
       if (bottomMissing(t, a, b, c)) continue;
-      if (
+      state[t] =
         top[a] - bottom[a] <= threshold &&
         top[b] - bottom[b] <= threshold &&
         top[c] - bottom[c] <= threshold
-      ) {
-        continue;
-      }
-      member[t] = 1;
+          ? INTERVAL_FLAT
+          : INTERVAL_PRESENT;
     }
-    out.push(member);
+    out.push(state);
   }
 
+  return out;
+}
+
+/**
+ * Turn {@link stackIntervalStates} into {@link stackIntervalTriangles}' 0/1 masks
+ * IN PLACE, and return them.
+ *
+ * @group Geometries
+ */
+export function stackIntervalMembers(states: Uint8Array[]): Uint8Array[] {
+  for (const state of states) {
+    for (let t = 0; t < state.length; t++) {
+      if (state[t] === INTERVAL_FLAT) state[t] = INTERVAL_MISSING;
+    }
+  }
+  return states;
+}
+
+/**
+ * A cap side with no solid unit against it — open air, a void, or a hole in the
+ * stack. See {@link StackCapNeighbours}.
+ *
+ * @group Geometries
+ */
+export const CAP_SIDE_OPEN = 255;
+
+/**
+ * What one cap has against either face, per triangle it KEEPS (in the order of
+ * its own index): the id of the interval directly above and directly below, or
+ * {@link CAP_SIDE_OPEN}.
+ *
+ * ⭐ What lets a renderer skip a cap that cannot be seen: a cap triangle with a
+ * filled unit against BOTH faces is buried inside solid rock. Which units count
+ * as solid is a per-frame question (peel, cut, opacity, where the camera is), so
+ * only the topology is answered here.
+ *
+ * @group Geometries
+ */
+export type StackCapNeighbours = {
+  above: Uint8Array;
+  below: Uint8Array;
+};
+
+/**
+ * Per triangle of `subset`, its triangle number in `shared` — `subset` being an
+ * in-order subsequence of `shared`, as every collapse output is.
+ */
+function subsetTriangles(shared: Uint32Array, subset: Uint32Array) {
+  const ids = new Uint32Array(subset.length / 3);
+  let j = 0;
+  for (let i = 0; i < shared.length && j < subset.length; i += 3) {
+    if (
+      shared[i] === subset[j] &&
+      shared[i + 1] === subset[j + 1] &&
+      shared[i + 2] === subset[j + 2]
+    ) {
+      ids[j / 3] = i / 3;
+      j += 3;
+    }
+  }
+  return ids;
+}
+
+/**
+ * The solid unit, if any, directly above and below each triangle every cap keeps
+ * (see {@link StackCapNeighbours}).
+ *
+ * The walk from a cap steps over FLAT intervals (two surfaces that are one) and
+ * stops at the first that is not: a present, filled interval is the neighbour;
+ * anything else — a missing interval, an unfilled one (a void or a gap), the end
+ * of the stack — is {@link CAP_SIDE_OPEN}.
+ *
+ * ⚠️ Must run on the indices as the collapse emitted them, BEFORE any winding
+ * fix-up: the kept triangles are matched against the shared ones by their vertex
+ * triples, in order.
+ *
+ * @param states per interval, from {@link stackIntervalStates}
+ * @param fills per layer: whether the interval BELOW it is filled
+ * @param indices the shared triangle indices
+ * @param kept per layer, the collapse's kept subset; `null` = the shared set
+ * @param caps per layer: whether it has a cap at all; omitted = every layer
+ * @returns per layer, the neighbours of its kept triangles; `null` for a layer
+ *   with no cap, and for every layer when the stack has more intervals than an
+ *   id byte can hold (254)
+ *
+ * @group Geometries
+ */
+export function stackCapNeighbours(
+  states: Uint8Array[],
+  fills: boolean[],
+  indices: Uint32Array,
+  kept?: (Uint32Array | null)[],
+  caps?: boolean[],
+): (StackCapNeighbours | null)[] {
+  const layers = states.length + 1;
+  if (states.length >= CAP_SIDE_OPEN) return new Array(layers).fill(null);
+  const all = new Uint32Array(indices.length / 3);
+  for (let t = 0; t < all.length; t++) all[t] = t;
+
+  const out: (StackCapNeighbours | null)[] = [];
+  for (let layer = 0; layer < layers; layer++) {
+    if (caps && caps[layer] === false) {
+      out.push(null);
+      continue;
+    }
+    const own = kept?.[layer];
+    const ids = own ? subsetTriangles(indices, own) : all;
+    const above = new Uint8Array(ids.length);
+    const below = new Uint8Array(ids.length);
+    for (let k = 0; k < ids.length; k++) {
+      const t = ids[k];
+      let up = CAP_SIDE_OPEN;
+      for (let j = layer - 1; j >= 0; j--) {
+        const state = states[j][t];
+        if (state === INTERVAL_FLAT) continue;
+        if (state === INTERVAL_PRESENT && fills[j]) up = j;
+        break;
+      }
+      let down = CAP_SIDE_OPEN;
+      for (let j = layer; j < states.length; j++) {
+        const state = states[j][t];
+        if (state === INTERVAL_FLAT) continue;
+        if (state === INTERVAL_PRESENT && fills[j]) down = j;
+        break;
+      }
+      above[k] = up;
+      below[k] = down;
+    }
+    out.push({ above, below });
+  }
   return out;
 }
 

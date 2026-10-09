@@ -17,6 +17,21 @@ export type TinSample = {
 };
 
 /**
+ * Where a point landed in a {@link TinSampler}'s mesh: the triangle's three
+ * vertex indices and the point's barycentric weights in it.
+ *
+ * @group Geometries
+ */
+export type TinLocation = {
+  a: number;
+  b: number;
+  c: number;
+  wa: number;
+  wb: number;
+  wc: number;
+};
+
+/**
  * Options for {@link createTinSampler}.
  *
  * @group Geometries
@@ -46,6 +61,14 @@ export type TinSampler = {
   sampleAt(x: number, z: number, out?: TinSample): TinSample | null;
   /** Just the height, or `null` where the mesh does not cover the point. */
   getHeightAt(x: number, z: number): number | null;
+  /**
+   * The triangle under a world X/Z and the point's weights in it, or `null` where
+   * the mesh does not cover the point — for interpolating a channel OTHER than
+   * the sampled height, e.g. another layer's heights on the same topology.
+   *
+   * @param out reused to avoid allocating on a per-frame path
+   */
+  locate(x: number, z: number, out?: TinLocation): TinLocation | null;
   /** `[minX, minZ, maxX, maxZ]` of the sampled mesh */
   readonly bounds: [number, number, number, number];
   readonly triangles: number;
@@ -169,8 +192,12 @@ export function createTinSampler(
     }
   }
 
-  const sampleAt = (x: number, z: number, out?: TinSample) => {
-    if (x < minX || x > maxX || z < minZ || z > maxZ) return null;
+  // The weights of the last `find` hit, so neither query allocates.
+  let hitB = 0;
+  let hitC = 0;
+  let hitY = 0;
+  const find = (x: number, z: number) => {
+    if (x < minX || x > maxX || z < minZ || z > maxZ) return -1;
     const bucket = rowOf(z) * columns + columnOf(x);
     let best = -Infinity;
     let hit = -1;
@@ -198,12 +225,33 @@ export function createTinSampler(
       if (y > best) {
         best = y;
         hit = t;
+        hitB = wb;
+        hitC = wc;
       }
     }
+    hitY = best;
+    return hit;
+  };
+
+  const locate = (x: number, z: number, out?: TinLocation) => {
+    const hit = find(x, z);
+    if (hit < 0) return null;
+    const result = out ?? { a: 0, b: 0, c: 0, wa: 0, wb: 0, wc: 0 };
+    result.a = index[hit * 3];
+    result.b = index[hit * 3 + 1];
+    result.c = index[hit * 3 + 2];
+    result.wa = 1 - hitB - hitC;
+    result.wb = hitB;
+    result.wc = hitC;
+    return result;
+  };
+
+  const sampleAt = (x: number, z: number, out?: TinSample) => {
+    const hit = find(x, z);
     if (hit < 0) return null;
 
     const result = out ?? { y: 0, normal: [0, 1, 0] as Vec3 };
-    result.y = best;
+    result.y = hitY;
     const a = index[hit * 3] * 3;
     const b = index[hit * 3 + 1] * 3;
     const c = index[hit * 3 + 2] * 3;
@@ -236,6 +284,7 @@ export function createTinSampler(
   return {
     sampleAt,
     getHeightAt: (x, z) => sampleAt(x, z, scratch)?.y ?? null,
+    locate,
     bounds: [minX, minZ, maxX, maxZ],
     triangles,
   };

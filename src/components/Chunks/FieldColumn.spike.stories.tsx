@@ -68,6 +68,7 @@ import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
 import { EventEmitterCallbackEvent } from '../EventEmitter';
+import { RenderStats } from '../Html/RenderStats/RenderStats';
 import { useHighlighter } from '../Highlighter/highlight-state';
 import { Highlighter } from '../Highlighter/Highlighter';
 import { UtmArea } from '../UtmArea';
@@ -343,6 +344,7 @@ type FieldColumnStoryProps = {
   outline: 'grid' | 'field' | 'crop' | 'chunked';
   cropSize: number;
   chunkedRadius: number;
+  chunkedGap: boolean;
   seabed: boolean;
   surfaceFrom: number;
   surfaceCount: number;
@@ -391,10 +393,12 @@ type FieldColumnStoryProps = {
   skipFrontPeeling: boolean;
   wireframe: boolean;
   peel: number;
+  cullHiddenCaps: boolean;
   inferredStyle: ChunkInferenceStyle;
   detail: ChunkDetailPreset | 'none';
   detailStrength: number;
   chunkPicking: boolean;
+  renderStats: boolean;
   resources: boolean;
   resourceInterval: number;
   wellbores: boolean;
@@ -740,15 +744,17 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       const next = k + 1 < starts.length ? starts[k + 1] : layers.length;
       // Consecutive chunks SHARE the horizon between them — it is the base of one
       // and the top of the next, and declaring it twice is what closes the column.
-      // The stack settles which of the two actually draws it.
-      const slice = layers.slice(start, Math.min(next + 1, layers.length));
+      // The stack settles which of the two actually draws it. With a gap, each
+      // chunk stops at its own last horizon and the unit below it is left out.
+      const end = props.chunkedGap ? next : next + 1;
+      const slice = layers.slice(start, Math.min(end, layers.length));
       return slice.map((layer, j) =>
         j === slice.length - 1 && next < layers.length
           ? { ...layer, fill: undefined }
           : layer,
       );
     });
-  }, [props.outline, layers, names]);
+  }, [props.outline, props.chunkedGap, layers, names]);
 
   const wellboreIds = useMemo(
     () => fieldIds ?? wellboreHeaders.map(w => w.id),
@@ -1168,6 +1174,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
                 wireframe={props.wireframe}
                 inferredStyle={props.inferredStyle}
                 peel={peelOf(props.peel, chunkLayers.length)}
+                cullHiddenCaps={props.cullHiddenCaps}
                 onPointerClick={
                   props.chunkPicking ? focusOnCtrlClick : undefined
                 }
@@ -1187,6 +1194,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
               wireframe={props.wireframe}
               inferredStyle={props.inferredStyle}
               peel={peelOf(props.peel, layers.length)}
+              cullHiddenCaps={props.cullHiddenCaps}
               onPointerClick={props.chunkPicking ? focusOnCtrlClick : undefined}
               onBuild={report}
             />
@@ -1206,6 +1214,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       </UtmArea>
       {props.wellbores && <Highlighter />}
       {props.resources && <ResourceMonitor interval={props.resourceInterval} />}
+      {props.renderStats && <RenderStats origin="bottom-left" />}
       <ChunkPipeline
         frontPeelTolerance={props.frontPeelTolerance}
         skipFrontPeeling={props.skipFrontPeeling}
@@ -1254,6 +1263,7 @@ export const Default: Story = {
     outline: 'field',
     cropSize: 7,
     chunkedRadius: 600,
+    chunkedGap: false,
     seabed: true,
     surfaceFrom: 0,
     surfaceCount: 12,
@@ -1344,12 +1354,14 @@ export const Default: Story = {
     skipFrontPeeling: false,
     wireframe: false,
     peel: 0,
+    cullHiddenCaps: true,
     inferredStyle: 'none',
     detail: 'none',
     detailStrength: 1,
     // Interaction
     chunkPicking: false,
     // Diagnostics
+    renderStats: false,
     resources: true,
     resourceInterval: 1000,
   },
@@ -1374,6 +1386,12 @@ export const Default: Story = {
       if: { arg: 'outline', eq: 'chunked' },
       description:
         'Metres buffered around the wells for a `chunked` group’s footprint. ⭐ Resolved in `above` mode, so each chunk accumulates the trajectory down to its own base and the footprints stay NESTED — which is what keeps them all inside the stack outline the fence is built from.',
+      table: { category: 'Surfaces' },
+    },
+    chunkedGap: {
+      if: { arg: 'outline', eq: 'chunked' },
+      description:
+        'Leave the unit between consecutive chunks unfilled, so no horizon is shared — each chunk draws its own top and base, with open space between them.',
       table: { category: 'Surfaces' },
     },
     seabed: {
@@ -1825,6 +1843,11 @@ export const Default: Story = {
         'Hide the first N UNITS, exposing what is under them — a COUNT, so whole units only. Pure appearance: no rebuild, free to sweep. Clamped to what is drawn.',
       table: { category: 'Appearance' },
     },
+    cullHiddenCaps: {
+      description:
+        'Skip the cap triangles buried between two opaque units. ⭐ The A/B for the saving: compare `Tris` and `GPU` in `renderStats`. Switched off by itself at any opacity below 1, in wireframe, or with walls hidden.',
+      table: { category: 'Appearance' },
+    },
     inferredStyle: {
       control: { type: 'inline-radio' },
       options: ['none', 'hatched', 'checker', 'zigzag'],
@@ -1847,6 +1870,11 @@ export const Default: Story = {
       description:
         'Register the chunks with the event emitter: ctrl+click flies to the picked point, on a cap, a wall or the cut face. Off by default because a registered block also hides what is behind it from picking — the wells inside it stop being clickable through it. ⭐ What the cut takes away is not picked.',
       table: { category: 'Interaction' },
+    },
+    renderStats: {
+      description:
+        'GPU time, frame time, draw calls and triangles summed over every pass of the frame.',
+      table: { category: 'Diagnostics' },
     },
     resources: {
       description:

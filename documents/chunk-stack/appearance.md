@@ -305,6 +305,16 @@ self-transparency mitigation) — under OIT, `SurfaceMaterial` forces `DoubleSid
 its pass variants anyway. See
 [../oit-guide.md](../oit-guide.md).
 
+### Buried caps are skipped
+
+`Chunk.cullHiddenCaps` (default true, appearance only) skips every cap triangle with
+an opaque, closed unit against BOTH faces. The build ships, per cap triangle, which
+interval lies above and below it; each frame decides which units are open —
+unfilled, peeled, cut away, see-through, or holding the camera — and each cap draws
+a view of the triangles facing an open one. A transparent cap, wireframe or hidden
+walls switch it off. Pixel-identical by design; see
+[../chunks.md §16.7](../chunks.md) for the rule and its conservative cases.
+
 ---
 
 ## Pointer events

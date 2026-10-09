@@ -933,6 +933,41 @@ describe('cap bounding volumes', () => {
   });
 });
 
+describe('cap neighbours', () => {
+  const polygon = maskPolygon(4, 28);
+
+  it('describes every kept cap triangle, and leaves the walls as they were', () => {
+    const layers = [
+      layerFrom(() => 1000),
+      layerFrom(
+        (col, row) => 1200 + 30 * Math.sin(col / 3) * Math.cos(row / 4),
+      ),
+      layerFrom(() => 1400),
+    ];
+    const reference = buildStackReference(layers, polygon)!;
+    const options = { polygon, maxError: 5, fills: [true, true, false] };
+    const plain = buildSurfaceStack(reference, layers, options)!;
+    const build = buildSurfaceStack(reference, layers, {
+      ...options,
+      capNeighbours: true,
+    })!;
+
+    const sides = build.layers.map((layer, i) => {
+      const n = build.capNeighbours![i]!;
+      expect(n.above).toHaveLength(layer.geometry!.getIndex()!.count / 3);
+      return [new Set(n.above), new Set(n.below)].map(s => Array.from(s));
+    });
+    expect(sides).toEqual([
+      [[255], [0]],
+      [[0], [1]],
+      [[1], [255]],
+    ]);
+    expect(build.walls.map(w => w?.getIndex()?.count)).toEqual(
+      plain.walls.map(w => w?.getIndex()?.count),
+    );
+  });
+});
+
 describe('carrying the inference through to the geometry', () => {
   const polygon = maskPolygon(4, 28);
 

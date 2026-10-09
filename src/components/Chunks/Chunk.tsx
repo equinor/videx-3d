@@ -169,6 +169,16 @@ export type ChunkProps = {
   /** render the side walls. Default true. */
   showWalls?: boolean;
   /**
+   * Skip the parts of each cap that lie between two opaque, closed units, where
+   * nothing can see them. Reactive — appearance only, no rebuild. Default true.
+   *
+   * ⭐ On a deep column most cap area is buried like this, and drawing it costs
+   * fill rate for nothing. A unit counts as open — and the caps facing it are
+   * drawn — while it is peeled, cut away, see-through, or the camera is inside
+   * it. A transparent cap, wireframe or hidden walls switch culling off.
+   */
+  cullHiddenCaps?: boolean;
+  /**
    * Peel units away to expose what is under them. A number peels that many off the
    * TOP (a prefix — the first survivor's own cap keeps the block closed); the
    * object form `{ from, count }` opens a WINDOW, peeling the top down to `from`
@@ -271,6 +281,7 @@ export const Chunk = ({
   maxError,
   showSurfaces = true,
   showWalls = true,
+  cullHiddenCaps = true,
   peel,
   onBuild,
   onBuildStateChange,
@@ -934,6 +945,7 @@ export const Chunk = ({
           inferredStyle={inferredStyle}
           showSurfaces={showSurfaces}
           showWalls={showWalls}
+          cullHiddenCaps={cullHiddenCaps}
           peel={peel}
           water={stack.water}
           bathymetry={stack.bathymetry}

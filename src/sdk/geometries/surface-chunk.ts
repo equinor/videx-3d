@@ -6,6 +6,7 @@ import {
   PlanarPolygonGeometry,
 } from './planar-geometry';
 import { StackSectionSource } from './surface-section';
+import type { StackCapNeighbours } from './surface-stack';
 import { buildIntervalWalls } from './surface-walls';
 
 /**
@@ -38,6 +39,36 @@ export type SurfaceChunkMesh = {
    * interval's colour. Only ever set on a surface.
    */
   ceiling?: boolean;
+  /**
+   * Index into {@link SurfaceChunk.boundaries} — the BUILD layer this cap is,
+   * which differs from `layer` once a void split a surface in two. Set on a cap
+   * that carries {@link SurfaceChunkMesh.above}.
+   */
+  boundary?: number;
+  /**
+   * Per triangle of the cap (in its index order): the build interval directly
+   * above it, or `CAP_SIDE_OPEN` (see `StackCapNeighbours`). With
+   * {@link SurfaceChunkMesh.below}, what lets a renderer skip the parts of a cap
+   * buried inside the block.
+   */
+  above?: Uint8Array;
+  /** the build interval directly below each triangle; see {@link SurfaceChunkMesh.above} */
+  below?: Uint8Array;
+};
+
+/**
+ * One BUILD layer of a {@link SurfaceChunk} — a boundary between two intervals.
+ * Interval `i` lies between boundaries `i` and `i + 1`.
+ *
+ * @group Geometries
+ */
+export type SurfaceChunkBoundary = {
+  /** the caller's layer it came from (see {@link AssembleChunkLayer.source}) */
+  layer: number;
+  /** the upper copy of a surface split around a void */
+  ceiling: boolean;
+  /** whether the interval BELOW it is filled */
+  fill: boolean;
 };
 
 /**
@@ -304,6 +335,11 @@ export type SurfaceChunk = {
    * one part of a chunk that is data rather than geometry.
    */
   section?: StackSectionSource;
+  /**
+   * Every build layer, in depth order, when the caps carry neighbours (see
+   * {@link SurfaceChunkMesh.above}) — what an interval id there resolves to.
+   */
+  boundaries?: SurfaceChunkBoundary[];
   metrics: SurfaceChunkMetrics;
 };
 
@@ -429,6 +465,11 @@ export type AssembleChunkLayer = {
    * Set on the upper copy of a surface split around a void.
    */
   ceiling?: boolean;
+  /**
+   * The cap's neighbours (see `SurfaceStackBuild.capNeighbours`). When ANY layer
+   * has them, the chunk gets {@link SurfaceChunk.boundaries}.
+   */
+  neighbours?: StackCapNeighbours | null;
 };
 
 /** Options for {@link assembleChunk} (the non-clip build parameters). */
@@ -470,11 +511,15 @@ export function assembleChunk(
   layers.forEach((layer, i) => {
     rimY.push(layer.rimY);
     if (layer.geometry) {
+      const neighbours = layer.neighbours ?? undefined;
       surfaces.push({
         geometry: layer.geometry,
         layer: layer.source ?? i,
         ceiling: layer.ceiling,
         patchIndex: layer.patchIndex ?? undefined,
+        ...(neighbours
+          ? { boundary: i, above: neighbours.above, below: neighbours.below }
+          : {}),
       });
       const idx = layer.geometry.getIndex();
       if (idx) surfaceTris += idx.count / 3;
@@ -524,6 +569,13 @@ export function assembleChunk(
           ...options.section,
           layers: layers.map((layer, i) => layer.source ?? i),
         }
+      : undefined,
+    boundaries: layers.some(layer => layer.neighbours)
+      ? layers.map((layer, i) => ({
+          layer: layer.source ?? i,
+          ceiling: !!layer.ceiling,
+          fill: !!layer.fill,
+        }))
       : undefined,
     metrics,
   };
