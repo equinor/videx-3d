@@ -243,28 +243,54 @@ export function packBufferGeometries(
   return { data, transferrables };
 }
 
-export function unpackBufferGeometry(packed: PackedBufferGeometry) {
+/**
+ * @param shared attributes already unpacked, by buffer. Pass the same map for
+ *   geometries that shared attributes when packed: structured clone keeps a shared
+ *   BUFFER shared, but three uploads per attribute OBJECT, so wrapping it anew per
+ *   geometry uploads it once per geometry.
+ */
+export function unpackBufferGeometry(
+  packed: PackedBufferGeometry,
+  shared?: Map<ArrayBufferLike, BufferAttribute>,
+) {
   const bufferGeometry = new BufferGeometry();
+  const attribute = (
+    buffer: ArrayBufferLike,
+    type: string,
+    itemSize: number,
+    normalized = false,
+  ) => {
+    const known = shared?.get(buffer);
+    if (
+      known &&
+      known.itemSize === itemSize &&
+      known.normalized === normalized &&
+      getTypedArrayType(known.array) === type
+    ) {
+      return known;
+    }
+    const created = new BufferAttribute(
+      getTypedArrayFromBuffer(buffer, type),
+      itemSize,
+      normalized,
+    );
+    shared?.set(buffer, created);
+    return created;
+  };
 
   if (packed.index) {
-    const index = getTypedArrayFromBuffer(
-      packed.index!,
-      packed.indexType || 'Uint32Array',
+    bufferGeometry.setIndex(
+      attribute(packed.index, packed.indexType || 'Uint32Array', 1),
     );
-    const indexAttr = new BufferAttribute(index!, 1);
-    bufferGeometry.setIndex(indexAttr);
   }
 
   for (const name in packed.attributes) {
-    const attr = new BufferAttribute(
-      getTypedArrayFromBuffer(
-        packed.attributes[name].buffer,
-        packed.attributes[name].attributeType,
-      ),
-      packed.attributes[name].itemSize,
-      packed.attributes[name].normalized,
+    const { buffer, attributeType, itemSize, normalized } =
+      packed.attributes[name];
+    bufferGeometry.setAttribute(
+      name,
+      attribute(buffer, attributeType, itemSize, normalized),
     );
-    bufferGeometry.setAttribute(name, attr);
   }
 
   bufferGeometry.drawRange = packed.drawRange;

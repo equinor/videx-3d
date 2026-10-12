@@ -61,6 +61,10 @@ export type BuildSurfaceChunkSpecOptions = {
   section?: boolean;
   /** ask the build for the peel indices (see `SurfaceChunkSpec.peelable`) */
   peelable?: boolean;
+  /** see `SurfaceChunkSpec.diagnostics` */
+  diagnostics?: boolean;
+  /** see `SurfaceChunkSpec.preview` */
+  preview?: boolean;
 };
 
 /** Map one surface's meta into the serializable layer spec. */
@@ -323,5 +327,7 @@ export function buildSurfaceChunkSpec(
     resolve: options.resolve,
     section: options.section,
     peelable: options.peelable,
+    diagnostics: options.diagnostics,
+    preview: options.preview,
   };
 }

@@ -2339,6 +2339,201 @@ export function polylineNormals2D(points: Vec2[]): Vec2[] {
   return out;
 }
 
+/** Options for {@link polylineTangents2D}. */
+export type PolylineTangentOptions = {
+  /** the last point joins the first. Default false. */
+  closed?: boolean;
+  /**
+   * Turn, in degrees, beyond which a point is a CORNER and keeps both directions.
+   * Default 180: never.
+   */
+  smoothAngle?: number;
+  /**
+   * How far a point may lie from the segment between its neighbours and still be
+   * left out of the shape. Default 1e-4 × the mean segment length.
+   */
+  tolerance?: number;
+};
+
+/** Unit tangents per point, as `[x0, z0, x1, z1, ...]` (see {@link polylineTangents2D}). */
+export type PolylineTangents = {
+  /** the direction arriving at each point */
+  before: Float64Array;
+  /** the direction leaving it — `before`'s, except at a corner */
+  after: Float64Array;
+  /** per point: 1 at a corner */
+  corner: Uint8Array;
+};
+
+/**
+ * Unit tangents along a polyline, from its SHAPE rather than its sampling.
+ *
+ * ⭐ A point within `tolerance` of the segment between its neighbours is a sample,
+ * not a bend, so it takes no part: it gets the tangent interpolated along the arc
+ * between the points either side. Adding points on a straight run — a crossing
+ * noded into a rim, the boundary a ribbon is cut at — then moves no tangent. The
+ * rest average their two segment directions, which is what a vertex normal is.
+ * Averaging over whatever neighbours the sampling provides instead let a 1 cm
+ * segment, pointing wherever millimetre noise sent it, band a wall.
+ *
+ * @group Utils
+ */
+export function polylineTangents2D(
+  points: ArrayLike<ArrayLike<number>>,
+  options: PolylineTangentOptions = {},
+): PolylineTangents {
+  const m = points.length;
+  const before = new Float64Array(2 * m);
+  const after = new Float64Array(2 * m);
+  const corner = new Uint8Array(m);
+  if (m < 2) return { before, after, corner };
+  const closed = !!options.closed && m > 2;
+  const at = (k: number) => points[((k % m) + m) % m];
+
+  let total = 0;
+  const segments = closed ? m : m - 1;
+  for (let k = 0; k < segments; k++) {
+    const a = at(k);
+    const b = at(k + 1);
+    total += Math.hypot(b[0] - a[0], b[1] - a[1]);
+  }
+  const tolerance = options.tolerance ?? (total / segments) * 1e-4;
+  const minDot = Math.cos(((options.smoothAngle ?? 180) * Math.PI) / 180);
+
+  // Distance from point k to the SEGMENT a-b: a hairpin's tip is collinear with
+  // its neighbours but far from the segment between them.
+  const off = (k: number, a: number, b: number) => {
+    const p = at(k);
+    const pa = at(a);
+    const pb = at(b);
+    const dx = pb[0] - pa[0];
+    const dz = pb[1] - pa[1];
+    const len2 = dx * dx + dz * dz;
+    const t =
+      len2 > 0
+        ? Math.max(
+            0,
+            Math.min(1, ((p[0] - pa[0]) * dx + (p[1] - pa[1]) * dz) / len2),
+          )
+        : 0;
+    return Math.hypot(p[0] - pa[0] - t * dx, p[1] - pa[1] - t * dz);
+  };
+
+  // Walk order, so a closed ring starts on a point that is surely kept.
+  let start = 0;
+  if (closed) {
+    let worst = -1;
+    for (let k = 0; k < m; k++) {
+      const d = off(k, k - 1, k + 1);
+      if (d > worst) {
+        worst = d;
+        start = k;
+      }
+    }
+  }
+  const order = new Int32Array(m);
+  for (let s = 0; s < m; s++) order[s] = (start + s) % m;
+  const arc = new Float64Array(m + 1);
+  for (let s = 1; s <= m; s++) {
+    if (s === m && !closed) break;
+    const a = at(order[s - 1]);
+    const b = at(s === m ? order[0] : order[s]);
+    arc[s] = arc[s - 1] + Math.hypot(b[0] - a[0], b[1] - a[1]);
+  }
+
+  // Positions in `order` of the points that shape the line.
+  const kept: number[] = [0];
+  const last = closed ? m : m - 1;
+  for (let s = 1; s < last; s++) {
+    const next = s + 1 === m ? order[0] : order[s + 1];
+    if (off(order[s], order[kept[kept.length - 1]], next) > tolerance) {
+      kept.push(s);
+    }
+  }
+  if (!closed) kept.push(m - 1);
+  const n = kept.length;
+  if (n < 2) {
+    // A ring with no bend at all: nothing to take a direction from but itself.
+    for (let s = 1; s < m; s++) kept.push(s);
+  }
+
+  const count = kept.length;
+  const chords = closed ? count : count - 1;
+  const dir = new Float64Array(2 * chords);
+  for (let j = 0; j < chords; j++) {
+    const a = at(order[kept[j]]);
+    const b = at(order[kept[(j + 1) % count]]);
+    const dx = b[0] - a[0];
+    const dz = b[1] - a[1];
+    const len = Math.hypot(dx, dz);
+    if (len > 0) {
+      dir[2 * j] = dx / len;
+      dir[2 * j + 1] = dz / len;
+    } else if (j > 0) {
+      dir[2 * j] = dir[2 * j - 2];
+      dir[2 * j + 1] = dir[2 * j - 1];
+    }
+  }
+
+  for (let j = 0; j < count; j++) {
+    const k = order[kept[j]];
+    const i = closed ? (j - 1 + chords) % chords : Math.max(0, j - 1);
+    const o = closed ? j : Math.min(chords - 1, j);
+    const ix = dir[2 * i];
+    const iz = dir[2 * i + 1];
+    const ox = dir[2 * o];
+    const oz = dir[2 * o + 1];
+    if (ix * ox + iz * oz >= minDot) {
+      let x = ix + ox;
+      let z = iz + oz;
+      const len = Math.hypot(x, z);
+      // A 180° turn back on itself has no average; take the leaving direction.
+      if (len > 1e-12) {
+        x /= len;
+        z /= len;
+      } else {
+        x = ox;
+        z = oz;
+      }
+      before[2 * k] = after[2 * k] = x;
+      before[2 * k + 1] = after[2 * k + 1] = z;
+    } else {
+      before[2 * k] = ix;
+      before[2 * k + 1] = iz;
+      after[2 * k] = ox;
+      after[2 * k + 1] = oz;
+      corner[k] = 1;
+    }
+  }
+
+  // Everything left out lies on a chord: interpolate along it, as a vertex normal
+  // is interpolated across the face it no longer bends.
+  for (let j = 0; j < chords; j++) {
+    const s0 = kept[j];
+    const s1 = j + 1 < count ? kept[j + 1] : m;
+    const a = order[s0];
+    const b = order[s1 % m];
+    const span = arc[s1] - arc[s0];
+    for (let s = s0 + 1; s < s1; s++) {
+      const f = span > 0 ? (arc[s] - arc[s0]) / span : 0;
+      let x = (1 - f) * after[2 * a] + f * before[2 * b];
+      let z = (1 - f) * after[2 * a + 1] + f * before[2 * b + 1];
+      const len = Math.hypot(x, z);
+      if (len > 1e-12) {
+        x /= len;
+        z /= len;
+      } else {
+        x = after[2 * a];
+        z = after[2 * a + 1];
+      }
+      const k = order[s];
+      before[2 * k] = after[2 * k] = x;
+      before[2 * k + 1] = after[2 * k + 1] = z;
+    }
+  }
+  return { before, after, corner };
+}
+
 /**
  * Move a polyline `distance` along its left normal — negative for the right.
  *

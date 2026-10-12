@@ -8,6 +8,7 @@ import {
   layEmptyStackLayers,
   measureStackCoverage,
   planStackReference,
+  previewStackCandidates,
   resampleStackLayer,
   resolveStackGrid,
   resolveStackOrder,
@@ -28,7 +29,18 @@ import {
   collectStackCandidates,
 } from '../src/sdk/geometries/surface-stack-candidates';
 import { buildSurfaceStack } from '../src/sdk/geometries/surface-stack-geometry';
-import { packSurfaceChunk } from '../src/sdk/geometries/surface-chunk-packing';
+import {
+  scanThicknessLoops,
+  TERMINATION_MIN_VERTICES,
+  ThicknessLoops,
+  traceThicknessLines,
+} from '../src/sdk/geometries/surface-stack-terminations';
+import {
+  packSurfaceChunk,
+  unpackSurfaceChunk,
+} from '../src/sdk/geometries/surface-chunk-packing';
+import { assembleChunk } from '../src/sdk/geometries/surface-chunk';
+import { sortTrianglesSpatially } from '../src/sdk/geometries/triangle-order';
 import type { SurfaceChunk } from '../src/sdk/geometries/surface-chunk';
 import {
   packBufferGeometry,
@@ -401,6 +413,25 @@ describe('tessellateStack', () => {
     }
   });
 
+  it('emits its triangles in spatial order, with the vertices following', () => {
+    const bumpy = layerFrom(
+      (col, row) => 1000 + 60 * Math.sin(col / 3) * Math.cos(row / 4),
+    );
+    const polygon = maskPolygon(4, 28);
+    const reference = buildStackReference([bumpy], polygon)!;
+    const tess = tessellateStack(reference, polygon, 5)!;
+
+    expect([...sortTrianglesSpatially(tess.indices, tess.coords)]).toEqual([
+      ...tess.indices,
+    ]);
+    // compaction numbers the vertices in the order the triangles first use them
+    let next = 0;
+    for (const v of tess.indices) {
+      expect(v).toBeLessThanOrEqual(next);
+      if (v === next) next++;
+    }
+  });
+
   it('accepts precomputed per-layer candidates', () => {
     const bumpy = layerFrom(
       (col, row) => 1000 + 60 * Math.sin(col / 3) * Math.cos(row / 4),
@@ -452,6 +483,32 @@ describe('tessellateStack', () => {
     // are equally valid and the insertion history picks one.
     expect([...withInside.coords]).toEqual([...withAll.coords]);
     expect(withInside.indices.length).toBe(withAll.indices.length);
+  });
+});
+
+describe('previewStackCandidates', () => {
+  it('samples the footprint on a grid-aligned stride sized to the request', () => {
+    const reference = buildStackReference(
+      [layerFrom(() => 1000)],
+      maskPolygon(0, NX - 1),
+    )!;
+    const nx = reference.header.nx;
+    // 24 x 24 cells, asked for 64 nodes: every third node
+    const { candidates, stride } = previewStackCandidates(
+      reference,
+      maskPolygon(4, 28),
+      64,
+    );
+    expect(stride).toBe(3);
+    const nodes = [...candidates].map(n => [n % nx, Math.floor(n / nx)]);
+    // aligned to the grid, not to the outline: 6..27 in steps of 3
+    expect(new Set(nodes.map(([col]) => col))).toEqual(
+      new Set([6, 9, 12, 15, 18, 21, 24, 27]),
+    );
+    expect(new Set(nodes.map(([, row]) => row))).toEqual(
+      new Set([6, 9, 12, 15, 18, 21, 24, 27]),
+    );
+    expect(candidates.length).toBe(64);
   });
 });
 
@@ -933,6 +990,32 @@ describe('cap bounding volumes', () => {
     );
     expect(restored.boundingBox).not.toBeNull();
   });
+
+  it('keeps the caps sharing ONE xz and index attribute across the worker boundary', () => {
+    const layers = [layerFrom(() => 1000), layerFrom(() => 1400)];
+    const reference = buildStackReference(layers, polygon)!;
+    const build = buildSurfaceStack(reference, layers, {
+      polygon,
+      maxError: 5,
+    })!;
+    const chunk = assembleChunk(
+      build.layers.map(layer => ({
+        geometry: layer.geometry,
+        rimY: layer.rimY,
+      })),
+      [],
+      {},
+      { t0: 0, densifyMs: 0, clipMs: 0, rimMs: 0 },
+    );
+    // structuredClone keeps a buffer shared within one message, as postMessage does.
+    const [packed] = packSurfaceChunk(chunk);
+    const restored = unpackSurfaceChunk(structuredClone(packed));
+    const [a, b] = restored.surfaces.map(s => s.geometry);
+    // three uploads per attribute OBJECT, so sharing the buffer is not enough.
+    expect(a.getAttribute('xz')).toBe(b.getAttribute('xz'));
+    expect(a.getIndex()).toBe(b.getIndex());
+    expect(a.getAttribute('y')).not.toBe(b.getAttribute('y'));
+  });
 });
 
 describe('cap neighbours', () => {
@@ -999,6 +1082,10 @@ describe('cap neighbours', () => {
       metrics: {} as SurfaceChunk['metrics'],
     });
     expect(transfer).toContain(section.gaps![1]!.buffer);
+    // The spatial index is built with the source, so it ships rather than being
+    // rebuilt on the main thread.
+    expect(section.index!.items).toHaveLength(section.indices.length / 3);
+    expect(transfer).toContain(section.index!.items.buffer);
 
     // Under a gap the void's ceiling closes nothing, so the void is part of the gap.
     const gapped = buildSurfaceStack(reference, layers, {
@@ -1325,26 +1412,27 @@ describe('constraining a layer’s data boundary', () => {
     const layers = [rippled(), holed()];
     const reference = buildStackReference(layers, polygon)!;
     const mask = reference.masks[1];
-    const shared = tessellateStack(
-      { ...reference, masks: [mask, mask] },
-      polygon,
-      5,
-      undefined,
-      undefined,
-      true,
-    )!;
-    const copied = tessellateStack(
-      { ...reference, masks: [mask, Uint8Array.from(mask)] },
-      polygon,
-      5,
-      undefined,
-      undefined,
-      true,
-    )!;
+    const tessellate = (masks: Uint8Array[]) =>
+      tessellateStack(
+        { ...reference, masks },
+        polygon,
+        5,
+        undefined,
+        undefined,
+        true,
+      )!;
+    const shared = tessellate([mask, mask]);
+    // Resampling gives every layer its own array, so equal CONTENT must count.
+    const copied = tessellate([mask, Uint8Array.from(mask)]);
+    const changed = Uint8Array.from(mask);
+    changed[changed.indexOf(1)] = 0;
+    const different = tessellate([mask, changed]);
 
     // Same extent ⇒ one trace, one set of flags, shared by both layers.
     expect(shared.coverage![0]).toBe(shared.coverage![1]);
-    expect(copied.coverageRingPoints).toBe(2 * shared.coverageRingPoints!);
+    expect(copied.coverage![0]).toBe(copied.coverage![1]);
+    expect(copied.coverageRingPoints).toBe(shared.coverageRingPoints);
+    expect(different.coverage![0]).not.toBe(different.coverage![1]);
   });
 });
 
@@ -1675,5 +1763,217 @@ describe('the column carrier', () => {
       // ...while the one below it has nothing left
       expect(intervals[1][0]).toBe(0);
     });
+  });
+});
+
+describe('traceThicknessLines', () => {
+  const nx = 20;
+  const ny = 20;
+  const pair = (thickness: (col: number, row: number) => number) => {
+    const above = new Float32Array(nx * ny);
+    const below = new Float32Array(nx * ny);
+    for (let row = 0; row < ny; row++) {
+      for (let col = 0; col < nx; col++) {
+        below[row * nx + col] = -thickness(col, row);
+      }
+    }
+    return [above, below] as const;
+  };
+  const bilinear = (
+    field: (col: number, row: number) => number,
+    x: number,
+    y: number,
+  ) => {
+    const c = Math.min(Math.floor(x), nx - 2);
+    const r = Math.min(Math.floor(y), ny - 2);
+    const fx = x - c;
+    const fy = y - r;
+    return (
+      field(c, r) * (1 - fx) * (1 - fy) +
+      field(c + 1, r) * fx * (1 - fy) +
+      field(c, r + 1) * (1 - fx) * fy +
+      field(c + 1, r + 1) * fx * fy
+    );
+  };
+  const wedge = (col: number, row: number) => Math.max(0, col + row - 10);
+
+  it('puts every traced vertex exactly on the threshold', () => {
+    const { rings, tiny, discarded } = traceThicknessLines(
+      ...pair(wedge),
+      nx,
+      0.5,
+    );
+    expect(rings).toHaveLength(1);
+    expect(tiny + discarded).toBe(0);
+    let inside = 0;
+    for (const [x, y] of rings[0]) {
+      // the part of the ring closing it round the padding lies off the grid
+      if (x < 0 || y < 0 || x > nx - 1 || y > ny - 1) continue;
+      inside++;
+      expect(bilinear(wedge, x, y)).toBeCloseTo(0.5, 5);
+    }
+    expect(inside).toBeGreaterThanOrEqual(2);
+  });
+
+  it('simplifies a straight line', () => {
+    const { rings } = traceThicknessLines(...pair(wedge), nx, 0.5);
+    // the scan keeps every traced point: one per cell edge the line crosses
+    const { offsets } = scanThicknessLoops(...pair(wedge), nx, 0.5);
+    expect(rings[0].length).toBeLessThan(0.75 * (offsets[1] - offsets[0]));
+  });
+
+  it('keeps a point wherever another layer would stray from the line', () => {
+    // A third layer steps by 100 m across column 5, which the diagonal crosses.
+    const [above, below] = pair(wedge);
+    const cliff = new Float32Array(nx * ny);
+    for (let n = 0; n < cliff.length; n++) cliff[n] = n % nx >= 5 ? -100 : 0;
+    const near = (rings: number[][][]) =>
+      rings[0].some(([x, y]) => x >= 4 && x <= 6 && y >= 0 && y <= ny - 1);
+
+    const flat = traceThicknessLines(above, below, nx, 0.5);
+    const stepped = traceThicknessLines(above, below, nx, 0.5, {
+      channels: [above, below, cliff],
+      maxError: 5,
+    });
+
+    expect(near(flat.rings)).toBe(false);
+    expect(near(stepped.rings)).toBe(true);
+  });
+
+  it(`drops a flicker of at most ${TERMINATION_MIN_VERTICES} vertices`, () => {
+    const speck = (col: number, row: number) =>
+      col === 9 && row === 9 ? 0.2 : 10;
+    expect(traceThicknessLines(...pair(speck), nx, 0.5)).toEqual({
+      rings: [],
+      tiny: 1,
+      discarded: 0,
+    });
+  });
+
+  it('finds nothing where the pair never comes within the threshold', () => {
+    expect(traceThicknessLines(...pair(() => 10), nx, 0.5)).toEqual({
+      rings: [],
+      tiny: 0,
+      discarded: 0,
+    });
+  });
+});
+
+describe('constraining where a unit wedges out', () => {
+  const polygon = maskPolygon(4, 28);
+  // Relief common to every layer, so the shared TIN is refined in the interior
+  // while the thicknesses stay simple.
+  const relief = (col: number, row: number) =>
+    40 * Math.sin(col / 3) * Math.cos(row / 4);
+
+  const drawnArea = (
+    result: NonNullable<ReturnType<typeof buildSurfaceStack>>,
+    layer: number,
+  ) => {
+    const t = result.tessellation;
+    const indices = result.collapsed?.indices[layer] ?? t.indices;
+    let area = 0;
+    for (let i = 0; i < indices.length; i += 3) {
+      const a = indices[i];
+      const b = indices[i + 1];
+      const c = indices[i + 2];
+      area +=
+        Math.abs(
+          (t.coords[2 * b] - t.coords[2 * a]) *
+            (t.coords[2 * c + 1] - t.coords[2 * a + 1]) -
+            (t.coords[2 * c] - t.coords[2 * a]) *
+              (t.coords[2 * b + 1] - t.coords[2 * a + 1]),
+        ) / 2;
+    }
+    return area;
+  };
+
+  // The lower unit wedges out along the DIAGONAL col + row = 30.05, where its
+  // thickness reaches the 0.5 m threshold.
+  const wedge = () => [
+    layerFrom((col, row) => 1000 + relief(col, row)),
+    layerFrom(
+      (col, row) =>
+        1000 + relief(col, row) + Math.max(0, (col + row - 30) * 10),
+    ),
+  ];
+  const build = (constrainTerminations: boolean) => {
+    const layers = wedge();
+    const reference = buildStackReference(layers, polygon)!;
+    return buildSurfaceStack(reference, layers, {
+      polygon,
+      maxError: 5,
+      fills: [true, false],
+      constrainTerminations,
+    })!;
+  };
+
+  it('⭐ ends the unit exactly on the line, with fewer vertices', () => {
+    const constrained = build(true);
+    const refined = build(false);
+
+    expect(constrained.tessellation.constraintFailures).toBe(0);
+    expect(constrained.tessellation.terminationRingPoints).toBeGreaterThan(0);
+    // Everything of [4, 28]² beyond col + row = 30.05, in cells.
+    expect(drawnArea(constrained, 1)).toBeCloseTo(576 - 22.05 ** 2 / 2, 0);
+    expect(constrained.tessellation.coords.length).toBeLessThan(
+      refined.tessellation.coords.length,
+    );
+  });
+
+  it('keeps the wall closing a pinch-out within the threshold', () => {
+    expect(build(true).maxInteriorWall).toBeLessThanOrEqual(0.5 + 1e-3);
+    expect(build(false).maxInteriorWall).toBeLessThanOrEqual(0.5 + 1e-3);
+  });
+
+  it('reuses loops scanned elsewhere, and rescans ones taken at another threshold', () => {
+    const layers = wedge();
+    const reference = buildStackReference(layers, polygon)!;
+    const scan = (threshold: number) => [
+      scanThicknessLoops(
+        reference.channels[0],
+        reference.channels[1],
+        reference.header.nx,
+        threshold,
+      ),
+    ];
+    const run = (terminationLoops?: ThicknessLoops[]) =>
+      buildSurfaceStack(reference, layers, {
+        polygon,
+        maxError: 5,
+        fills: [true, false],
+        constrainTerminations: true,
+        terminationLoops,
+      })!.tessellation.coords;
+
+    const inline = run();
+    expect(scan(2)[0].xs).not.toEqual(scan(0.5)[0].xs);
+    expect(run(scan(0.5))).toEqual(inline);
+    expect(run(scan(2))).toEqual(inline);
+  });
+
+  it('⭐ judges a crossing of two lines by its own thickness', () => {
+    // Two units wedging out around overlapping circles, steeply: a split the
+    // noding puts where the two simplified lines cross sits up to half a cell off
+    // either true line — tens of metres of thickness at this gradient.
+    const dA = (c: number, r: number) => Math.hypot(c - 14, r - 16);
+    const dB = (c: number, r: number) => Math.hypot(c - 18, r - 16);
+    const t01 = (c: number, r: number) => Math.max(0, 40 * (dA(c, r) - 8));
+    const t12 = (c: number, r: number) => Math.max(0, 40 * (dB(c, r) - 7));
+    const layers = [
+      layerFrom((c, r) => 1000 + relief(c, r), 4000),
+      layerFrom((c, r) => 1000 + relief(c, r) + t01(c, r), 4000),
+      layerFrom((c, r) => 1000 + relief(c, r) + t01(c, r) + t12(c, r), 4000),
+    ];
+    const reference = buildStackReference(layers, polygon)!;
+    const result = buildSurfaceStack(reference, layers, {
+      polygon,
+      maxError: 5,
+      fills: [true, true, false],
+      constrainTerminations: true,
+    })!;
+
+    expect(result.tessellation.constraintFailures).toBe(0);
+    expect(result.maxInteriorWall).toBeLessThanOrEqual(0.5 + 1e-3);
   });
 });

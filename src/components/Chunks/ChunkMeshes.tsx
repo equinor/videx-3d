@@ -10,7 +10,7 @@ import {
   MeshBasicMaterial,
   Vector4,
 } from 'three';
-import { SurfaceChunk } from '../../sdk';
+import { SurfaceChunk, SurfaceChunkMesh } from '../../sdk';
 import {
   DEFAULT_OCEAN_DEEP_COLOR,
   DEFAULT_OCEAN_WATER_OPACITY,
@@ -157,6 +157,15 @@ export type ChunkMeshesProps = {
   peel?: ChunkPeel;
   /** skip cap triangles buried inside the block (see `ChunkProps.cullHiddenCaps`). Default true. */
   cullHiddenCaps?: boolean;
+  /**
+   * The layers to draw so far — caps, walls and cut faces — or omit to draw
+   * them all. What spreads a chunk's GPU upload over frames.
+   */
+  layersShown?: ReadonlySet<number>;
+  /** layers NOT to draw: a preview's, once the real chunk draws them */
+  layersHidden?: ReadonlySet<number>;
+  /** saturation of every material made here: 1 (default) as lit, 0 grey */
+  saturation?: number;
 };
 
 /**
@@ -268,6 +277,9 @@ export const ChunkMeshes = ({
   fenceCarrier = false,
   peel = 0,
   cullHiddenCaps = true,
+  layersShown,
+  layersHidden,
+  saturation = 1,
 }: ChunkMeshesProps) => {
   // ⚠️ `fence` is a STABLE object mutated from the frame loop, so a change to
   // `fence.debug` is invisible to React and the materials below would keep the
@@ -278,6 +290,12 @@ export const ChunkMeshes = ({
     const wanted = fence?.debug === true;
     if (wanted !== fenceDebug) setFenceDebug(wanted);
   });
+
+  // One saturation for every material made here, so changing it rebuilds none.
+  const [saturationUniform] = useState<IUniform<number>>(() => ({ value: 1 }));
+  useEffect(() => {
+    saturationUniform.value = saturation;
+  }, [saturationUniform, saturation]);
 
   const materials = useMemo(() => {
     // Every material built here is owned here and disposed on cleanup.
@@ -313,6 +331,7 @@ export const ChunkMeshes = ({
         contacts: options?.contacts,
         fenceOverlay: options?.fenceOverlay,
         fenceOverlayOnly: options?.overlayOnly,
+        saturation: saturationUniform,
         sectionPlane: !cutSection
           ? undefined
           : options?.inverse
@@ -387,12 +406,37 @@ export const ChunkMeshes = ({
 
     // A void's upper copy is drawn with the material of the interval ABOVE it, but
     // it is a CAP: it has no `wallV` attribute, so it needs its own instance rather
-    // than the wall's (which anchors bedding to that axis). Only built where the
-    // chunk actually has such a copy.
-    const ceilingOf = new Set<number>();
-    for (const surface of chunk.surfaces) {
-      if (surface.ceiling) ceilingOf.add(surface.layer - 1);
-    }
+    // than the wall's (which anchors bedding to that axis). Made on first use, as
+    // are the patches below: a streamed chunk's caps are still arriving.
+    // ⚠️ These getters pin the render that made them, which holds only this
+    // build's chunk because a new build remounts this component.
+    const ceilings = new Map<number, Material | null>();
+    const ceiling = (i: number) => {
+      if (!ceilings.has(i)) {
+        const layer = layers[i];
+        const fill = layer ? fillOf(layer, i) : null;
+        ceilings.set(
+          i,
+          fill === null
+            ? null
+            : // A ceiling is the BASE of the interval above it, so it follows
+              // that unit rather than its own layer index.
+              make(
+                fill,
+                layer.opacity ?? wallOpacity,
+                layer.detail,
+                false,
+                undefined,
+                {
+                  section: !keptUnit(i),
+                  fence: !keptUnit(i),
+                  contacts: layerContacts(i),
+                },
+              ),
+        );
+      }
+      return ceilings.get(i) ?? null;
+    };
 
     // `fill: true` means "the same as my own cap" — the common case for a zone
     // whose wall should read as the unit hanging below its top surface.
@@ -416,26 +460,6 @@ export const ChunkMeshes = ({
         {
           section: cutWall(i),
           fence: cutWall(i),
-          contacts: layerContacts(i),
-        },
-      );
-    });
-
-    const ceilings = layers.map((layer, i) => {
-      if (!ceilingOf.has(i)) return null;
-      const fill = fillOf(layer, i);
-      if (fill === null) return null;
-      // A ceiling is the BASE of the interval above it, so it follows that unit
-      // rather than its own layer index.
-      return make(
-        fill,
-        layer.opacity ?? wallOpacity,
-        layer.detail,
-        false,
-        undefined,
-        {
-          section: !keptUnit(i),
-          fence: !keptUnit(i),
           contacts: layerContacts(i),
         },
       );
@@ -505,52 +529,60 @@ export const ChunkMeshes = ({
     // where that cover has gone. Two ways it can go, so two materials: peeled away
     // entirely (draw everywhere) or cut away by the section or fence (draw only in
     // the half it vacated, which is what the inverse uniforms give).
-    const patches = new Map<number, { open: Material; cut: Material | null }>();
-    for (const surface of chunk.surfaces) {
-      if (!surface.patchIndex || surface.ceiling) continue;
-      const declared = layers[surface.layer];
-      if (!declared) continue;
-      patches.set(surface.layer, {
-        open: make(
-          declared.material ?? paletteAt(surface.layer),
-          declared.opacity ?? surfaceOpacity,
-          declared.detail,
-          false,
-          surface.layer === 0 ? waterTint : undefined,
-          {
-            section: false,
-            fence: false,
-            contacts: layerContacts(surface.layer),
-          },
-        ),
-        cut: sectionUniformInverse
-          ? make(
-              declared.material ?? paletteAt(surface.layer),
-              declared.opacity ?? surfaceOpacity,
-              declared.detail,
-              false,
-              surface.layer === 0 ? waterTint : undefined,
-              {
-                inverse: true,
-                contacts: layerContacts(surface.layer),
+    const patches = new Map<
+      number,
+      { open: Material; cut: Material | null } | null
+    >();
+    const patch = (layer: number) => {
+      if (!patches.has(layer)) {
+        const declared = layers[layer];
+        patches.set(
+          layer,
+          !declared
+            ? null
+            : {
+                open: make(
+                  declared.material ?? paletteAt(layer),
+                  declared.opacity ?? surfaceOpacity,
+                  declared.detail,
+                  false,
+                  layer === 0 ? waterTint : undefined,
+                  {
+                    section: false,
+                    fence: false,
+                    contacts: layerContacts(layer),
+                  },
+                ),
+                cut: sectionUniformInverse
+                  ? make(
+                      declared.material ?? paletteAt(layer),
+                      declared.opacity ?? surfaceOpacity,
+                      declared.detail,
+                      false,
+                      layer === 0 ? waterTint : undefined,
+                      {
+                        inverse: true,
+                        contacts: layerContacts(layer),
+                      },
+                    )
+                  : null,
               },
-            )
-          : null,
-      });
-    }
+        );
+      }
+      return patches.get(layer) ?? null;
+    };
 
     return {
       surfaces,
       walls,
-      ceilings,
+      ceiling,
       carrier,
-      patches,
+      patch,
       owned,
       faces,
       gapFace,
     };
   }, [
-    chunk.surfaces,
     layers,
     surfaceOpacity,
     wallOpacity,
@@ -571,6 +603,7 @@ export const ChunkMeshes = ({
     fenceUniformsInverse,
     fenceOverlayUniforms,
     fenceCarrier,
+    saturationUniform,
   ]);
 
   useEffect(() => {
@@ -634,37 +667,60 @@ export const ChunkMeshes = ({
   // draws.
   // ⚠️ Disposed with the chunk: three releases the shared attribute buffers with
   // it, which for a surviving sibling degrades to a re-upload — the same trade
-  // `buildStackGeometries` already documents for the shared index.
+  // `buildStackGeometries` already documents for the shared index. Kept PER CAP
+  // for that reason, so a streamed cap arriving never releases its siblings'.
+  const patchCache = useRef(new Map<SurfaceChunkMesh, BufferGeometry>());
   const patchGeometries = useMemo(() => {
     const built = new Map<number, BufferGeometry>();
     for (const surface of chunk.surfaces) {
       if (!surface.patchIndex || surface.ceiling) continue;
-      const geometry = new BufferGeometry();
-      for (const name in surface.geometry.attributes) {
-        geometry.setAttribute(name, surface.geometry.attributes[name]);
+      let geometry = patchCache.current.get(surface);
+      if (!geometry) {
+        geometry = new BufferGeometry();
+        for (const name in surface.geometry.attributes) {
+          geometry.setAttribute(name, surface.geometry.attributes[name]);
+        }
+        geometry.setIndex(new BufferAttribute(surface.patchIndex, 1));
+        // A patch is a subset of the cap's triangles and carries no `position`, so
+        // reuse the cap's bounds — a conservative but valid bound that keeps three
+        // from culling the patch when the local origin leaves a close-up view.
+        if (surface.geometry.boundingSphere)
+          geometry.boundingSphere = surface.geometry.boundingSphere.clone();
+        if (surface.geometry.boundingBox)
+          geometry.boundingBox = surface.geometry.boundingBox.clone();
+        patchCache.current.set(surface, geometry);
       }
-      geometry.setIndex(new BufferAttribute(surface.patchIndex, 1));
-      // A patch is a subset of the cap's triangles and carries no `position`, so
-      // reuse the cap's bounds — a conservative but valid bound that keeps three
-      // from culling the patch when the local origin leaves a close-up view.
-      if (surface.geometry.boundingSphere)
-        geometry.boundingSphere = surface.geometry.boundingSphere.clone();
-      if (surface.geometry.boundingBox)
-        geometry.boundingBox = surface.geometry.boundingBox.clone();
       built.set(surface.layer, geometry);
     }
     return built;
   }, [chunk.surfaces]);
 
   useEffect(() => {
-    return () => patchGeometries.forEach(g => releaseGeometry(g));
-  }, [patchGeometries]);
+    const cache = patchCache.current;
+    const live = new Set(chunk.surfaces);
+    for (const [surface, geometry] of cache) {
+      if (live.has(surface)) continue;
+      releaseGeometry(geometry);
+      cache.delete(surface);
+    }
+  }, [chunk.surfaces]);
+
+  useEffect(() => {
+    const cache = patchCache.current;
+    return () => {
+      cache.forEach(geometry => releaseGeometry(geometry));
+      cache.clear();
+    };
+  }, []);
 
   // Peeling drops whole UNITS: a unit's cap and its volume go together. `top` is
   // the first survivor (its own cap stays, closing the block); a window also sets
   // `base`, the floor cap that seals the exposed bottom — the next surface, which
   // already exists, so no carrier is needed.
   const { top, base } = resolvePeel(peel, layers.length);
+
+  const drawn = (layer: number) =>
+    (!layersShown || layersShown.has(layer)) && !layersHidden?.has(layer);
 
   // ⭐ A cap triangle with an opaque, closed unit against BOTH faces cannot be
   // seen. The topology comes from the build; which units are open is decided here,
@@ -728,7 +784,19 @@ export const ChunkMeshes = ({
     fenceWater,
     seaBed,
   ]);
-  const capGeometries = useCulledCaps(chunk, capTables);
+  // A cap not drawn yet gets no table, so its culled view is built when it is.
+  const revealedTables = useMemo(
+    () =>
+      capTables?.map((table, i) => {
+        const layer = chunk.surfaces[i].layer;
+        return (!layersShown || layersShown.has(layer)) &&
+          !layersHidden?.has(layer)
+          ? table
+          : null;
+      }) ?? null,
+    [capTables, layersShown, layersHidden, chunk.surfaces],
+  );
+  const capGeometries = useCulledCaps(chunk, revealedTables);
 
   // ⭐ A weld or truncation drop is justified only where the layer above is ACTUALLY
   // DRAWN, and both a peel and a section can shrink that region. `'open'` = it is
@@ -752,6 +820,7 @@ export const ChunkMeshes = ({
     // the code renders.
     <group ref={root} name="ChunkMeshes">
       {faces?.map(face => {
+        if (!drawn(face.layer)) return null;
         if (face.layer < top || face.layer >= base) return null;
         const material = face.gap
           ? fenceDebug
@@ -794,6 +863,7 @@ export const ChunkMeshes = ({
 
       {showWalls &&
         chunk.walls.map((wall, i) => {
+          if (!drawn(wall.layer)) return null;
           if (wall.layer < top || wall.layer >= base) return null;
           const material = materials.walls[wall.layer];
           if (!material) return null;
@@ -828,6 +898,7 @@ export const ChunkMeshes = ({
 
       {showSurfaces &&
         chunk.surfaces.map((surface, i) => {
+          if (!drawn(surface.layer)) return null;
           // A cap belongs to the unit BELOW it, so the first survivor's cap stays
           // — that is what keeps the block closed. A void ceiling faces up into the
           // unit above, so it goes with that one instead.
@@ -857,7 +928,7 @@ export const ChunkMeshes = ({
           const fromAbove =
             surface.ceiling && !(isCarrier && materials.carrier);
           const material = fromAbove
-            ? (materials.ceilings[surface.layer - 1] ??
+            ? (materials.ceiling(surface.layer - 1) ??
               materials.walls[surface.layer - 1] ??
               materials.surfaces[surface.layer])
             : isCarrier
@@ -875,7 +946,7 @@ export const ChunkMeshes = ({
           // The fragments this cap gave up to a layer that is no longer covering
           // them. Same colour and shading as the cap; only the plane differs.
           const mode = patchMode(surface.layer);
-          const patch = mode ? materials.patches.get(surface.layer) : null;
+          const patch = mode ? materials.patch(surface.layer) : null;
           const patchMaterial = !patch
             ? null
             : mode === 'open'

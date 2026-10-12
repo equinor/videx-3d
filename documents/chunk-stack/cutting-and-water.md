@@ -327,6 +327,12 @@ produces **both sides** up front:
 > ⭐ Building both sides up front means a side flip is a **texture swap and a curve
 > swap**: no rebuild, no refetch, and no window in which the shader cuts last side's
 > field with this side's test.
+>
+> ⚠️ The cut FACE is the exception: its ribbons follow the curve, so each side has
+> its own. `useChunkFenceFace` keeps the faces each side last built, and the triangle
+> locator they are draped with is built once per tessellation. On a field column a
+> flip used to rebuild both every time — a 140–190 ms frame per flip, ~115 ms of it
+> the locator; now only the first flip to a side builds (~50 ms).
 
 > ⭐ The curve is published **on the stack**, not derived per chunk — otherwise
 > every chunk repeats the most expensive step of the feature with identical inputs.

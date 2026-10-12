@@ -767,6 +767,7 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
     <>
       <UtmArea origin={origin} utmZone={utmZone}>
         <ChunkStack
+          diagnostics
           outline={outline}
           surfaces={column}
           water={water}

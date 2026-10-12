@@ -20,6 +20,7 @@ import {
   StackLayer,
   StackPairStats,
   StackReference,
+  SurfaceChunkPhase,
 } from '../sdk';
 import {
   getStackPool,
@@ -108,6 +109,50 @@ const retainedByKey = new Map<string, number>();
 let columnsBuilt = 0;
 let columnsInFlight = 0;
 
+/** Hears a step of shared work: `done` of `total` units of `phase`. */
+export type StackProgress = (
+  phase: SurfaceChunkPhase,
+  done: number,
+  total: number,
+) => void;
+
+type Watcher = {
+  listeners: Set<StackProgress>;
+  last: Parameters<StackProgress> | null;
+  report: StackProgress;
+};
+
+// Shared work IN FLIGHT, keyed like the work: every chunk waiting on it hears its
+// progress, and one that joins late starts from the last report.
+const watchers = new Map<string, Watcher>();
+
+function openWatcher(key: string): Watcher {
+  const watcher: Watcher = {
+    listeners: new Set(),
+    last: null,
+    report: (phase, done, total) => {
+      watcher.last = [phase, done, total];
+      watcher.listeners.forEach(listener => listener(phase, done, total));
+    },
+  };
+  watchers.set(key, watcher);
+  return watcher;
+}
+
+function closeWatcher(key: string, watcher: Watcher, work: Promise<unknown>) {
+  const close = () => {
+    if (watchers.get(key) === watcher) watchers.delete(key);
+  };
+  work.then(close, close);
+}
+
+function watch(key: string, listener: StackProgress | undefined): void {
+  const watcher = watchers.get(key);
+  if (!watcher || !listener) return;
+  watcher.listeners.add(listener);
+  if (watcher.last) listener(...watcher.last);
+}
+
 /** Drop a column from the cache (and its resident-bytes accounting). */
 function evictColumn(key: string): void {
   columns.delete(key);
@@ -160,11 +205,15 @@ export function stackContextStats(): StackContextStats {
  * what makes several chunks of one column agree about depth order — they sample
  * grids that were ordered together — as well as what keeps the cost flat as chunks
  * are added.
+ *
+ * @param onProgress hears the column's `fetch` and `resolve` steps while it is
+ *   being built, whichever chunk started it
  */
 export function getStackContext(
   store: ReadonlyStore,
   stack: SurfaceChunkStackSpec,
   resolve: ChunkResolveOptions | undefined,
+  onProgress?: StackProgress,
 ): Promise<StackContext | null> {
   const key = `${stack.key}|${resolve?.mode ?? 'truncate'}|${resolve?.minGap ?? 0}|${resolve?.maxNodes ?? ''}|${resolve?.maxFill ?? DEFAULT_CHUNK_MAX_FILL}|${resolve ? 1 : 0}|${resolve?.seal === false ? 0 : 1}|${resolve?.sealMode ?? 'proportional'}|${resolve?.minThickness ?? ''}`;
   const existing = columns.get(key);
@@ -173,18 +222,28 @@ export function getStackContext(
     // an unrelated request evicts.
     columns.delete(key);
     columns.set(key, existing);
+    watch(key, onProgress);
     return existing;
   }
   // ⭐ The column is SHARED work — every chunk cut from it awaits this one promise,
   // so it is deliberately NOT gated on any single caller's staleness. A chunk that
   // has moved on abandons its OWN build (see `isStale` in the chunk generator); it
   // does not abort the column its siblings are still waiting for.
+  const watcher = openWatcher(key);
   const promise = chain.then(() => {
     columnsInFlight++;
-    return buildStackContext(store, stack, resolve, key).finally(() => {
+    return buildStackContext(
+      store,
+      stack,
+      resolve,
+      key,
+      watcher.report,
+    ).finally(() => {
       columnsInFlight--;
     });
   });
+  closeWatcher(key, watcher, promise);
+  watch(key, onProgress);
   // ⚠️ Never leave a failed or empty build cached: a null under the key would hand
   // every later chunk of this column an empty result with nothing to retry it.
   promise.then(
@@ -242,6 +301,7 @@ async function buildStackContext(
   stack: SurfaceChunkStackSpec,
   resolve: ChunkResolveOptions | undefined,
   key: string,
+  report: StackProgress,
 ): Promise<StackContext | null> {
   const t0 = performance.now();
   const envelope = new PlanarPolygonGeometry(
@@ -268,12 +328,16 @@ async function buildStackContext(
   // hundreds of MB — for as long as the slowest resample takes. One in flight per
   // pool worker keeps the pool saturated, so the pipelining is unaffected.
   const inFlight = pLimit(Math.max(2, getStackPool()?.size ?? 4));
+  let fetched = 0;
   const resampled = await Promise.all(
     stack.layers.map((spec: SurfaceChunkLayerSpec) =>
       inFlight(async () => {
         const values = await store.get<Float32Array>('surface-values', spec.id);
         tFetch = performance.now();
-        if (!values) return null;
+        if (!values) {
+          report('fetch', ++fetched, stack.layers.length);
+          return null;
+        }
         bytes += values.byteLength;
         // ⚠️ `values` is TRANSFERRED into the worker and detached here. Safe
         // because nothing downstream reads a layer's samples — `isSyntheticLayer`
@@ -285,10 +349,12 @@ async function buildStackContext(
           values,
           spec.referenceDepth,
         );
+        report('fetch', ++fetched, stack.layers.length);
         return { spec, values, result };
       }),
     ),
   );
+  report('resolve', 0, 1);
 
   const layers: StackLayer[] = [];
   const index = new Map<string, number>();
@@ -487,18 +553,22 @@ function totalCandidateBytes(): number {
 export function getStackCandidates(
   context: StackContext,
   maxError: number,
+  onProgress?: StackProgress,
 ): Promise<{ candidates: Uint32Array[]; poolSize: number }> {
   const key = `${context.key}|${maxError}`;
   const existing = refinedByKey.get(key);
   if (existing) {
     refinedByKey.delete(key);
     refinedByKey.set(key, existing);
+    watch(key, onProgress);
     return existing;
   }
+  const watcher = openWatcher(key);
   const pending = refineStackChannels(
     context.reference.channels,
     context.reference.header.nx,
     maxError,
+    (done, total) => watcher.report('refine', done, total),
   ).then(result => {
     if (refinedByKey.get(key) === pending)
       candidateBytesByKey.set(
@@ -514,6 +584,8 @@ export function getStackCandidates(
     }
   });
   refinedByKey.set(key, pending);
+  closeWatcher(key, watcher, pending);
+  watch(key, onProgress);
   // Kept in step with the column cache: the candidates belong to a column.
   while (refinedByKey.size > MAX_CACHED_COLUMNS) {
     const oldest = refinedByKey.keys().next().value as string;

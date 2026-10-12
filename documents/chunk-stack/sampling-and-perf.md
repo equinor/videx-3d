@@ -203,6 +203,9 @@ Optimisations already in place, worth not undoing:
 3. **Resample runs on the worker pool**, with samples transferred **in** and never
    returned (nothing downstream reads `layer.values`).
 4. **`rasterizeStackOutline` is bbox-restricted.**
+5. **The shared triangles are drawn in spatial (Morton) order**, set once in
+   `tessellateStack`. Same triangles, ~27% less GPU time on a transparent column.
+   ⚠️ Compare GPU numbers only between builds drawn in the same order.
 
 ---
 
@@ -214,7 +217,8 @@ Optimisations already in place, worth not undoing:
 | `maxError` | 5 | interior simplification — directly sets the vertex count, i.e. group B |
 | `rimSpacing` | — | rim density; also the seam's sampling points |
 | `resolve.constrainCoverage` | off | exactness at a data edge, at vertices along every partly-mapped boundary |
-| `resolve.refineTerminations` | on | pinch-outs follow the contour instead of the nearest edges |
+| `resolve.constrainTerminations` | on | pinch-outs follow the traced contour exactly, at vertices along every termination line |
+| `resolve.refineTerminations` | off (on without `constrainTerminations`) | pinch-outs follow the contour by refining the grid nodes either side of it |
 | `water.resolution` | unset | ⚠️ quadratic in field size — only set it with displacement on |
 | `outline` cell size (wellbore) | 100 | the outline raster; `O(area / cellSize²)` |
 
@@ -274,6 +278,11 @@ Two retention traps already fixed, worth not reintroducing:
 `Chunk.onBuild(metrics)` gives `SurfaceChunkMetrics`, whose `diagnostics` is where
 the answers are. It is deliberately rich, because most failures here are *silent*
 — the pipeline makes any input self-consistent.
+
+> ⚠️ **Opt-in.** Set `diagnostics` on the `Chunk` (or as a default on the
+> `ChunkStack`); without it `metrics.diagnostics` is `undefined`. Measuring it is not
+> free — the per-layer depth statistics and duplicate shares cost ~0.9 s on a
+> 40-surface field column, ahead of any geometry.
 
 ### Was the input ordered correctly?
 

@@ -58,6 +58,11 @@ export type StackSectionSource = {
    * is where the two index spaces meet.
    */
   layers?: number[];
+  /**
+   * The spatial index ({@link buildStackSectionIndex}), when it was built with the
+   * source — in the worker, so the main thread does not pay for it on arrival.
+   */
+  index?: StackSectionIndex;
 };
 
 /**

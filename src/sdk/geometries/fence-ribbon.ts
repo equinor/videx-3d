@@ -1,5 +1,6 @@
 import { BufferAttribute, BufferGeometry } from 'three';
 import { Vec2 } from '../types/common';
+import { polylineTangents2D } from '../utils/polyline-2d';
 import { distanceVec2 } from '../utils/vector-operations';
 import { StackSectionSource, triangleInMask } from './surface-section';
 
@@ -33,6 +34,24 @@ const EPS = 1e-9;
 
 /** Target triangles per bucket of the lookup grid. */
 const CELL_TRIANGLES = 32;
+
+// One per tessellation: a pass over every triangle (~115 ms on a field column),
+// and a fence face is rebuilt on every side swap.
+const locators = new WeakMap<
+  Uint32Array,
+  { positionsXZ: Float32Array; locator: StackLocator }
+>();
+
+function stackLocatorFor(
+  positionsXZ: Float32Array,
+  indices: Uint32Array,
+): StackLocator {
+  const cached = locators.get(indices);
+  if (cached?.positionsXZ === positionsXZ) return cached.locator;
+  const locator = createStackLocator(positionsXZ, indices);
+  locators.set(indices, { positionsXZ, locator });
+  return locator;
+}
 
 /**
  * Build a point locator over a stack's shared triangles.
@@ -278,7 +297,7 @@ export function buildFenceRibbons(
 ): FenceRibbon[] {
   if (path.length < 2) return [];
   const { positionsXZ, indices, heights, intervals } = source;
-  const tessellation = createStackLocator(positionsXZ, indices);
+  const tessellation = stackLocatorFor(positionsXZ, indices);
   const inside = options.inside;
   const locator: StackLocator = inside
     ? {
@@ -322,17 +341,14 @@ export function buildFenceRibbons(
     along[k] = along[k - 1] + distanceVec2(path[k - 1], path[k]);
   }
 
-  // A central difference gives each sample the tangent of the curve rather than
-  // of one segment, so adjacent quads share a normal and the face reads smooth.
+  // From the curve's SHAPE: the points `refineAtBoundary` adds lie on a chord, so
+  // they must not bend the normals of the samples beside them.
   const sign = options.flip ? -1 : 1;
-  const normals: Vec2[] = path.map((_, k) => {
-    const a = path[Math.max(0, k - 1)];
-    const b = path[Math.min(path.length - 1, k + 1)];
-    const tx = b[0] - a[0];
-    const tz = b[1] - a[1];
-    const len = Math.hypot(tx, tz) || 1;
-    return [(-tz / len) * sign, (tx / len) * sign];
-  });
+  const { before: tangents } = polylineTangents2D(path);
+  const normals: Vec2[] = path.map((_, k) => [
+    -tangents[2 * k + 1] * sign,
+    tangents[2 * k] * sign,
+  ]);
 
   // ⚠️ Heights are read where the face actually STANDS, not where the path runs, or
   // an offset face's top edge no longer meets the cap it has to join.
@@ -370,8 +386,6 @@ export function buildFenceRibbons(
     marks.push(column);
   }
 
-  // A central difference gives each sample the tangent of the curve rather than
-  // of one segment, so adjacent quads share a normal and the face reads smooth.
   const ribbons: FenceRibbon[] = [];
   for (let interval = 0; interval + 1 < layers; interval++) {
     const members = masks[interval];

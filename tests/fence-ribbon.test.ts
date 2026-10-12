@@ -206,6 +206,84 @@ describe('buildFenceRibbons', () => {
     }
   });
 
+  it('shades the same where it is cut at a unit boundary', () => {
+    // ⚠️ The boundary adds two points on the chord beside a sample. Normals by
+    // central difference then took that sample's from one segment instead of the
+    // curve, a step in the shading at every pinch-out the face stops at.
+    const n = 40;
+    const plain = flatStack(n, 0, 10);
+    const cut = flatStack(n, 0, 10);
+    const triangles = plain.indices.length / 3;
+    const members = new Uint8Array(triangles);
+    for (let t = 0; t < triangles; t++) {
+      let x = 0;
+      for (let c = 0; c < 3; c++)
+        x += plain.positionsXZ[2 * plain.indices[3 * t + c]];
+      members[t] = x / 3 < 22.3 ? 1 : 0;
+    }
+    cut.intervals = [packTriangleMask(members)];
+    const path: Vec2[] = [];
+    for (let a = 120; a >= 60; a -= 3) {
+      const r = (a * Math.PI) / 180;
+      path.push([20 + 40 * Math.cos(r), -10 + 40 * Math.sin(r)]);
+    }
+
+    const normals = (source: StackSectionSource) => {
+      const geometry = buildFenceRibbons(source, path)[0].geometry;
+      const position = geometry.getAttribute('position');
+      const normal = geometry.getAttribute('normal');
+      const out = new Map<string, [number, number]>();
+      for (let i = 0; i < position.count; i++) {
+        out.set(
+          `${position.getX(i).toFixed(4)},${position.getZ(i).toFixed(4)}`,
+          [normal.getX(i), normal.getZ(i)],
+        );
+      }
+      return out;
+    };
+    const whole = normals(plain);
+    const stopped = normals(cut);
+    const key = (p: Vec2) =>
+      `${Math.fround(p[0]).toFixed(4)},${Math.fround(p[1]).toFixed(4)}`;
+    const sideways = (a: [number, number], b: [number, number]) =>
+      Math.abs(a[0] * b[1] - a[1] * b[0]);
+    let compared = 0;
+    let added = 0;
+    let worstKept = 0;
+    let worstAdded = 0;
+    for (const [at, normal] of stopped) {
+      const expected = whole.get(at);
+      if (expected) {
+        compared++;
+        worstKept = Math.max(worstKept, sideways(normal, expected));
+        continue;
+      }
+      // A point the cut added: it shades as the uncut face does there.
+      const [x, z] = at.split(',').map(Number);
+      for (let k = 0; k + 1 < path.length; k++) {
+        const [ax, az] = path[k];
+        const [bx, bz] = path[k + 1];
+        const len = Math.hypot(bx - ax, bz - az);
+        const f = ((x - ax) * (bx - ax) + (z - az) * (bz - az)) / (len * len);
+        if (f <= 0 || f >= 1) continue;
+        if (Math.abs((x - ax) * (bz - az) - (z - az) * (bx - ax)) / len > 1e-3)
+          continue;
+        const a = whole.get(key(path[k]))!;
+        const b = whole.get(key(path[k + 1]))!;
+        const mx = (1 - f) * a[0] + f * b[0];
+        const mz = (1 - f) * a[1] + f * b[1];
+        const m = Math.hypot(mx, mz);
+        worstAdded = Math.max(worstAdded, sideways(normal, [mx / m, mz / m]));
+        added++;
+        break;
+      }
+    }
+    expect(compared).toBeGreaterThan(5);
+    expect(added).toBeGreaterThan(0);
+    expect(worstKept).toBeLessThan(1e-6);
+    expect(worstAdded).toBeLessThan(1e-5);
+  });
+
   it.each([false, true])(
     'winds every triangle to face along its normal (flip: %s)',
     flip => {

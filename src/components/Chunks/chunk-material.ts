@@ -295,6 +295,12 @@ export type ChunkMaterialParameters = {
    * `fenceOverlay`. ⚠️ Read at CONSTRUCTION.
    */
   fenceOverlayOnly?: boolean;
+  /**
+   * Saturation of the lit colour: 1 (default) as lit, 0 grey. ⭐ SHARED like
+   * `sectionPlane`, so one write reaches every material given the same object —
+   * and a uniform, so it shares the shader program with every other value.
+   */
+  saturation?: IUniform<number>;
 };
 
 const shader = {
@@ -308,6 +314,7 @@ const shader = {
       detailGrainB: { value: new Vector4() },
       detailDunes: { value: new Vector4() },
       chunkAmbient: { value: new Vector2(1.35, 0.5) },
+      chunkSaturation: { value: 1 },
       waterTintColor: { value: new Color() },
       // x: water level, y: strength, z: 1 / depth scale
       waterTintParams: { value: new Vector3() },
@@ -372,6 +379,7 @@ export class ChunkMaterial extends ShaderMaterial {
     u.specular.value = new Color(parameters.specular ?? '#1a1a1a');
     u.shininess.value = parameters.shininess ?? 24;
     u.opacity.value = parameters.opacity ?? 1;
+    if (parameters.saturation) u.chunkSaturation = parameters.saturation;
 
     const ambient = parameters.ambient ?? DEFAULT_CHUNK_AMBIENT;
     if (ambient) {

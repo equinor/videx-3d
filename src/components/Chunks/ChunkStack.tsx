@@ -35,6 +35,7 @@ import { ChunkSectionDebug } from './ChunkSectionDebug';
 import { StackImmersionFog } from './StackImmersionFog';
 import { ChunkContact } from './chunk-contacts';
 import {
+  ChunkBuildProgress,
   ChunkBuildState,
   ChunkCarrier,
   ChunkCutDepths,
@@ -228,9 +229,24 @@ export type ChunkStackProps = {
   /** default interior simplification error (grid height units) for child chunks */
   maxError?: number;
   /**
-   * Called whenever a child chunk starts or finishes building — for a busy
-   * indicator or a progress bar. See {@link ChunkStackProgress} for why the count
-   * is in chunks rather than in work.
+   * Default for child chunks: measure and report `metrics.diagnostics` (see
+   * `ChunkProps.diagnostics`). Default false.
+   */
+  diagnostics?: boolean;
+  /**
+   * Default for child chunks: show a coarse preview while the real geometry
+   * builds (see `ChunkProps.preview`). Default true.
+   */
+  preview?: boolean;
+  /**
+   * Default for child chunks: the saturation a preview is drawn with (see
+   * `ChunkProps.previewSaturation`). Default 0.5.
+   */
+  previewSaturation?: number;
+  /**
+   * Called whenever a child chunk starts building, reports a step, or finishes —
+   * for a busy indicator or a progress bar. See {@link ChunkStackProgress} for why
+   * the count is in chunks rather than in work.
    */
   onProgress?: (progress: ChunkStackProgress) => void;
 };
@@ -269,6 +285,9 @@ export const ChunkStack = ({
   resolve,
   rimSpacing,
   maxError,
+  diagnostics,
+  preview,
+  previewSaturation,
   onProgress,
   children,
 }: PropsWithChildren<ChunkStackProps>) => {
@@ -512,29 +531,48 @@ export const ChunkStack = ({
   // --- Build progress: chunks report their own state, the stack counts them. A
   //     registered chunk that has not reported yet is still building. ----------
   const buildStates = useRef(new Map<string, ChunkBuildState>());
+  // Kept in report order, so the last entry is the latest step.
+  const buildSteps = useRef(new Map<string, ChunkBuildProgress>());
   const onProgressRef = useRef(onProgress);
   useEffect(() => {
     onProgressRef.current = onProgress;
   }, [onProgress]);
 
+  const emitProgress = useCallback(() => {
+    const total = claims.current.claims.size;
+    let completed = 0;
+    claims.current.claims.forEach((_, k) => {
+      const s = buildStates.current.get(k);
+      if (s && s !== 'building') completed++;
+    });
+    let current: ChunkBuildProgress | undefined;
+    for (const step of buildSteps.current.values()) current = step;
+    onProgressRef.current?.({
+      total,
+      building: total - completed,
+      completed,
+      fraction: total === 0 ? 1 : completed / total,
+      current,
+    });
+  }, []);
+
   const reportBuildState = useCallback(
     (key: string, state: ChunkBuildState) => {
       if (buildStates.current.get(key) === state) return;
       buildStates.current.set(key, state);
-      const total = claims.current.claims.size;
-      let completed = 0;
-      claims.current.claims.forEach((_, k) => {
-        const s = buildStates.current.get(k);
-        if (s && s !== 'building') completed++;
-      });
-      onProgressRef.current?.({
-        total,
-        building: total - completed,
-        completed,
-        fraction: total === 0 ? 1 : completed / total,
-      });
+      buildSteps.current.delete(key);
+      emitProgress();
     },
-    [],
+    [emitProgress],
+  );
+
+  const reportBuildProgress = useCallback(
+    (key: string, step: ChunkBuildProgress) => {
+      buildSteps.current.delete(key);
+      buildSteps.current.set(key, step);
+      emitProgress();
+    },
+    [emitProgress],
   );
 
   /** Drop everything held for a chunk that is going away for good. */
@@ -542,6 +580,7 @@ export const ChunkStack = ({
     (key: string) => {
       releaseFromStore(claims.current, key);
       buildStates.current.delete(key);
+      buildSteps.current.delete(key);
       rebuildRegistry();
     },
     [rebuildRegistry],
@@ -803,6 +842,9 @@ export const ChunkStack = ({
       envelope,
       rimSpacing,
       maxError,
+      diagnostics,
+      preview,
+      previewSaturation,
       outlines: registry,
       seams,
       margins,
@@ -812,6 +854,7 @@ export const ChunkStack = ({
       publishMargin,
       publishCutDepths,
       reportBuildState,
+      reportBuildProgress,
     };
   }, [
     outline,
@@ -838,6 +881,9 @@ export const ChunkStack = ({
     wellboreEnvelope,
     rimSpacing,
     maxError,
+    diagnostics,
+    preview,
+    previewSaturation,
     registry,
     seams,
     margins,
@@ -847,6 +893,7 @@ export const ChunkStack = ({
     publishMargin,
     publishCutDepths,
     reportBuildState,
+    reportBuildProgress,
   ]);
 
   // --- The sea (rendered here, not by a chunk): a lid covers its whole footprint

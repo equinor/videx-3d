@@ -1,12 +1,27 @@
-import { BufferAttribute, BufferGeometry } from 'three';
+import { BufferAttribute, BufferGeometry, Box3, Sphere, Vector3 } from 'three';
 import { Vec2 } from '../types/common';
-import { computeUpwardNormals } from './geometry-attributes';
+import {
+  buildStackCapArrays,
+  StackCapArrays,
+  StackCapInput,
+} from './stack-cap-arrays';
 import { buildEdgeOpposites, traceBoundaryRings } from './mesh-boundary';
 import { Coordinates2D, PlanarPolygonGeometry } from './planar-geometry';
 import { createPolygonCap } from './polygon-cap';
 import { ringSignedArea, ringsToPolygonCoordinates } from './polygon-outline';
-import { packTriangleMask, StackSectionSource } from './surface-section';
 import {
+  buildStackSectionIndex,
+  packTriangleMask,
+  StackSectionSource,
+} from './surface-section';
+import {
+  scanThicknessLoops,
+  simplifyThicknessLoops,
+  ThicknessLines,
+  ThicknessLoops,
+} from './surface-stack-terminations';
+import {
+  classifyThinTriangles,
   collapseStackTriangles,
   makeStackInsideTest,
   resolveStackOrder,
@@ -88,59 +103,6 @@ export type StackGeometryLayer = {
  *
  * @group Geometries
  */
-/**
- * Re-store a computed normal attribute as snorm16.
- *
- * ⭐ A stack layer carries one normal per shared vertex, which at field scale is
- * the second-largest thing a chunk holds after its positions — and a unit vector
- * needs nothing like float32 (snorm16 resolves ~3e-5, far below what shading can
- * show). Halves it, and three feeds normalized integer attributes to the shader
- * unchanged.
- */
-function quantizeNormals(geometry: BufferGeometry) {
-  const attribute = geometry.getAttribute('normal');
-  if (!attribute || !(attribute.array instanceof Float32Array)) return;
-  const source = attribute.array;
-  const packed = new Int16Array(source.length);
-  for (let i = 0; i < source.length; i++) {
-    packed[i] = Math.max(
-      -32767,
-      Math.min(32767, Math.round(source[i] * 32767)),
-    );
-  }
-  geometry.setAttribute('normal', new BufferAttribute(packed, 3, true));
-}
-
-/**
- * The triangles `widest` has and `own` does not.
- *
- * Both are emitted by the same pass over the triangles in the same order, and
- * `own` is a subset, so one walk finds the difference exactly.
- */
-function indexDifference(
-  widest: Uint32Array,
-  own: Uint32Array,
-): Uint32Array | null {
-  const patch = new Uint32Array(widest.length - own.length);
-  let j = 0;
-  let k = 0;
-  for (let i = 0; i < widest.length; i += 3) {
-    if (
-      j < own.length &&
-      widest[i] === own[j] &&
-      widest[i + 1] === own[j + 1] &&
-      widest[i + 2] === own[j + 2]
-    ) {
-      j += 3;
-      continue;
-    }
-    patch[k++] = widest[i];
-    patch[k++] = widest[i + 1];
-    patch[k++] = widest[i + 2];
-  }
-  return k > 0 ? patch : null;
-}
-
 export function buildStackGeometries(
   tessellation: StackTessellation,
   positionsXZ: Float32Array,
@@ -150,77 +112,144 @@ export function buildStackGeometries(
   inferred?: Float32Array[],
   peelIndices?: (Uint32Array | null)[],
 ): StackGeometryLayer[] {
+  const build = createStackGeometryBuilder(
+    tessellation,
+    positionsXZ,
+    heights,
+    layerIndices,
+    caps,
+    inferred,
+    peelIndices,
+  );
+  return heights.map((_, i) => build(i));
+}
+
+/**
+ * {@link buildStackGeometries} one layer at a time — same arguments; the returned
+ * function builds layer `i` — so a caller can hand each cap on as soon as it
+ * exists (see {@link SurfaceStackOptions.stream}).
+ *
+ * @group Geometries
+ */
+export function createStackGeometryBuilder(
+  tessellation: StackTessellation,
+  positionsXZ: Float32Array,
+  heights: Float32Array[],
+  layerIndices?: (Uint32Array | null)[],
+  caps?: boolean[],
+  inferred?: Float32Array[],
+  peelIndices?: (Uint32Array | null)[],
+): (layer: number) => StackGeometryLayer {
   const shared = new BufferAttribute(tessellation.indices, 1);
   // ⭐ Split cap layout: every cap SHARES one `xz` attribute; only `y` differs per
   // layer, and that `y` IS the height array (shared by reference with the section
   // source, so the two never duplicate it). A cap therefore stores no full
   // (x, y, z) position — the materials assemble it in the shader (see
-  // `ChunkMaterial`). The scratch below exists ONLY to feed the CPU normal build.
+  // `ChunkMaterial`).
   const sharedXZ = new BufferAttribute(positionsXZ, 2);
-  const vertexCount = positionsXZ.length >> 1;
-  const scratch = new Float32Array(vertexCount * 3);
-  for (let v = 0; v < vertexCount; v++) {
-    scratch[3 * v] = positionsXZ[2 * v];
-    scratch[3 * v + 2] = positionsXZ[2 * v + 1];
-  }
 
-  return heights.map((y, i) => {
+  return (i: number): StackGeometryLayer => {
+    const y = heights[i];
     const rimY = stackRimHeights(y, tessellation.rimVertices);
-    const peelIndex = peelIndices?.[i] ?? null;
     // A layer can take part WITHOUT being drawn — when the chunk above or below
     // already draws that surface. Its rim still matters (the walls hang from it),
     // but building a mesh nobody renders would be pure waste, and an unowned
     // geometry is a leak waiting to happen.
     if (caps && caps[i] === false) return { geometry: null, rimY };
+    const arrays = buildStackCapArrays(
+      stackCapInput(
+        tessellation.indices,
+        positionsXZ,
+        y,
+        i,
+        layerIndices,
+        peelIndices,
+      ),
+    );
+    return {
+      geometry: stackCapGeometry(arrays, sharedXZ, shared, y, inferred?.[i]),
+      rimY,
+      patchIndex: arrays.patchIndex,
+    };
+  };
+}
 
-    const own = layerIndices?.[i];
-    const geometry = new BufferGeometry();
-    geometry.setAttribute('xz', sharedXZ);
-    // `y` IS the per-layer height array — shared by reference with the section.
-    geometry.setAttribute('y', new BufferAttribute(y, 1));
-    const marks = inferred?.[i];
-    if (marks && marks.some(v => v > 0)) {
-      geometry.setAttribute('inferred', new BufferAttribute(marks, 1));
-    }
-    // ⚠️⚠️ Normals are accumulated over the WIDEST index available, not the cap's
-    // own: `computeVertexNormals` only touches vertices its index references, so a
-    // vertex used ONLY by triangles the collapse dropped keeps a zero normal — and
-    // shades BLACK the moment the patch restores it (see `patchIndex`).
-    const widest = peelIndex ?? own;
-    geometry.setIndex(widest ? new BufferAttribute(widest, 1) : shared);
-    const wound = widest ? widest[1] : tessellation.indices[1];
-    // Normals AND the bounding volumes need a real position; assemble it into the
-    // reused scratch (only `y` changes between layers), compute, and leave it OFF
-    // the geometry — it is never uploaded, so a cap ships `xz` + `y` + `normal`.
-    for (let v = 0; v < vertexCount; v++) scratch[3 * v + 1] = y[v];
-    geometry.setAttribute('position', new BufferAttribute(scratch, 3));
-    computeUpwardNormals(geometry);
-    let patchIndex: Uint32Array | null = null;
-    if (peelIndex) {
-      // ⚠️ `computeUpwardNormals` reverses the winding IN PLACE when the normals
-      // come out facing down, and it only holds one of the two arrays.
-      if (own && peelIndex[1] !== wound) {
-        for (let t = 0; t + 2 < own.length; t += 3) {
-          const swap = own[t + 1];
-          own[t + 1] = own[t + 2];
-          own[t + 2] = swap;
-        }
-      }
-      // After the fix-up both are wound the same way, so the triples still match.
-      // The union is dropped here; only the difference travels.
-      patchIndex = own ? indexDifference(peelIndex, own) : null;
-      geometry.setIndex(own ? new BufferAttribute(own, 1) : shared);
-    }
-    quantizeNormals(geometry);
-    // The assembled position still exists here (deleted just below): compute the
-    // bounding volumes from it now, because a cap ships no `position` and three
-    // cannot derive one — a null bounding sphere frustum-culls the whole cap the
-    // moment the local origin leaves a close-up view.
-    geometry.computeBoundingBox();
-    geometry.computeBoundingSphere();
-    geometry.deleteAttribute('position');
-    return { geometry, rimY, patchIndex };
-  });
+function stackCapInput(
+  shared: Uint32Array,
+  positionsXZ: Float32Array,
+  y: Float32Array,
+  i: number,
+  layerIndices?: (Uint32Array | null)[],
+  peelIndices?: (Uint32Array | null)[],
+): StackCapInput {
+  return {
+    positionsXZ,
+    y,
+    shared,
+    own: layerIndices?.[i] ?? null,
+    peel: peelIndices?.[i] ?? null,
+  };
+}
+
+/**
+ * A cap's geometry from its {@link StackCapArrays}: the shared `xz`, its own `y`
+ * (the height array itself), and what the arrays computed.
+ */
+function stackCapGeometry(
+  arrays: StackCapArrays,
+  sharedXZ: BufferAttribute,
+  shared: BufferAttribute,
+  y: Float32Array,
+  marks: Float32Array | undefined,
+): BufferGeometry {
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('xz', sharedXZ);
+  geometry.setAttribute('y', new BufferAttribute(y, 1));
+  if (marks && marks.some(v => v > 0)) {
+    geometry.setAttribute('inferred', new BufferAttribute(marks, 1));
+  }
+  geometry.setAttribute('normal', new BufferAttribute(arrays.normal, 3, true));
+  geometry.setIndex(
+    arrays.index ? new BufferAttribute(arrays.index, 1) : shared,
+  );
+  // ⚠️ A cap ships no `position`, so three cannot derive these — and a null
+  // bounding sphere frustum-culls the whole cap the moment the local origin leaves
+  // a close-up view.
+  const [x0, y0, z0, x1, y1, z1] = arrays.box;
+  geometry.boundingBox = new Box3(
+    new Vector3(x0, y0, z0),
+    new Vector3(x1, y1, z1),
+  );
+  const [cx, cy, cz, r] = arrays.sphere;
+  geometry.boundingSphere = new Sphere(new Vector3(cx, cy, cz), r);
+  return geometry;
+}
+
+/**
+ * Reverse `indices` in place when its triangles face DOWN in scene XZ — the flip
+ * `buildStackCapArrays` would make on the first cap drawn from the shared set. Done
+ * before the walls, the section and the caps, which read the same array — a cap
+ * built on a worker re-winds only its copy.
+ */
+function orientUpward(indices: Uint32Array, positionsXZ: Float32Array) {
+  // Twice the plan area, signed as the Y of each face normal: (b - a) × (c - a).
+  let area = 0;
+  for (let t = 0; t + 2 < indices.length; t += 3) {
+    const a = 2 * indices[t];
+    const b = 2 * indices[t + 1];
+    const c = 2 * indices[t + 2];
+    area +=
+      (positionsXZ[b + 1] - positionsXZ[a + 1]) *
+        (positionsXZ[c] - positionsXZ[a]) -
+      (positionsXZ[b] - positionsXZ[a]) *
+        (positionsXZ[c + 1] - positionsXZ[a + 1]);
+  }
+  if (area >= 0) return;
+  for (let t = 0; t + 2 < indices.length; t += 3) {
+    const swap = indices[t + 1];
+    indices[t + 1] = indices[t + 2];
+    indices[t + 2] = swap;
+  }
 }
 
 /** Options for {@link buildStackWalls}. */
@@ -245,6 +274,8 @@ export type StackWallOptions = {
   fluid?: boolean[];
   /** per layer: this boundary is the sea (see {@link StackCollapseOptions.unbounded}) */
   unbounded?: boolean[];
+  /** per-pair thin flags (see {@link StackCollapseOptions.thin}) */
+  thin?: (Uint8Array | null)[];
   /** the turn past which a rim point is a crease; see `RingWallOptions` */
   smoothAngle?: number;
   /**
@@ -270,6 +301,12 @@ export type StackWalls = {
   ringsDropped: number;
   /** boundary walks that did not close (see `BoundaryRings.open`) — should be 0 */
   ringsOpen: number;
+  /**
+   * The tallest wall point away from the rim. A pinch-out's is at most the
+   * collapse threshold by construction; anything taller is a data edge, or a
+   * termination drawn on the wrong side of its line.
+   */
+  maxInteriorWall: number;
 };
 
 /**
@@ -308,7 +345,13 @@ export function buildStackWalls(
 ): StackWalls {
   const walls: (BufferGeometry | null)[] = heights.map(() => null);
   if (!options.fills.some(Boolean))
-    return { walls, intervals: null, ringsDropped: 0, ringsOpen: 0 };
+    return {
+      walls,
+      intervals: null,
+      ringsDropped: 0,
+      ringsOpen: 0,
+      maxInteriorWall: 0,
+    };
 
   const { indices, rimVertices } = tessellation;
   const vertexCount = tessellation.coords.length >> 1;
@@ -321,7 +364,17 @@ export function buildStackWalls(
       coverageTriangles: options.coverageTriangles,
       absent: options.absent,
       unbounded: options.unbounded,
+      thin: options.thin,
     });
+  // The mesh boundary rather than `rimVertices`: a node lying exactly on the rim
+  // splits a rim edge without being one of the densified rim points.
+  const onRim = new Uint8Array(vertexCount);
+  for (let e = 0; e < indices.length; e++) {
+    if (opposite[e] >= 0) continue;
+    onRim[indices[e]] = 1;
+    onRim[indices[e - (e % 3) + ((e + 1) % 3)]] = 1;
+  }
+  let maxInteriorWall = 0;
 
   const point = (v: number): Vec2 => [
     positionsXZ[2 * v],
@@ -373,6 +426,14 @@ export function buildStackWalls(
     // caps already meet there — so it is dropped via `minHeight` rather than
     // rendered as a sliver.
     const clamped = !!(options.fluid?.[i] || options.fluid?.[i + 1]);
+    if (!clamped) {
+      for (const ring of rings) {
+        for (const v of ring) {
+          if (!onRim[v] && top[v] - bottom[v] > maxInteriorWall)
+            maxInteriorWall = top[v] - bottom[v];
+        }
+      }
+    }
     const markTop = options.inferred?.[i];
     const markBottom = options.inferred?.[i + 1];
     const geometry = buildRingWalls(
@@ -398,8 +459,56 @@ export function buildStackWalls(
     walls[i] = geometry;
   }
 
-  return { walls, intervals: members, ringsDropped, ringsOpen };
+  return {
+    walls,
+    intervals: members,
+    ringsDropped,
+    ringsOpen,
+    maxInteriorWall,
+  };
 }
+
+/**
+ * Default {@link SurfaceStackOptions.collapseThreshold}, in world units.
+ *
+ * @group Geometries
+ */
+export const DEFAULT_STACK_COLLAPSE_THRESHOLD = 0.5;
+
+/**
+ * What every layer of a stack shares, handed to {@link SurfaceStackStream.shared}
+ * before the first cap is built.
+ *
+ * ⚠️ The build goes on reading `positionsXZ`, `indices`, `heights` and `inferred`
+ * — they are what the caps are built from, and each cap's `xz`/`y`/`inferred`/index
+ * IS one of them. Send copies; transferring them would hollow out the caps.
+ *
+ * @group Geometries
+ */
+export type SurfaceStackShared = {
+  positionsXZ: Float32Array;
+  indices: Uint32Array;
+  heights: Float32Array[];
+  inferred?: Float32Array[];
+  section?: StackSectionSource;
+  /** per layer, the wall of the interval below it (see `SurfaceStackBuild.walls`) */
+  walls: (BufferGeometry | null)[];
+  capNeighbours?: (StackCapNeighbours | null)[];
+  /** per layer: whether a cap will follow */
+  caps: boolean[];
+};
+
+/**
+ * Hooks {@link buildSurfaceStack} calls as it goes. The walls and the section are
+ * built before any cap, so `shared` carries them.
+ *
+ * @group Geometries
+ */
+export type SurfaceStackStream = {
+  shared?: (shared: SurfaceStackShared) => void;
+  /** one cap as soon as it is built — in layer order from `buildSurfaceStack`, in the caller's from `beginSurfaceStack` */
+  cap?: (layer: number, built: StackGeometryLayer) => void;
+};
 
 /** Options for {@link buildSurfaceStack}. */
 export type SurfaceStackOptions = {
@@ -424,7 +533,8 @@ export type SurfaceStackOptions = {
   preResolved?: Uint8Array[];
   /**
    * Thickness below which a unit counts as absent and its triangles are dropped.
-   * Default 0.5; `0` disables the thickness test (coverage still applies).
+   * Default {@link DEFAULT_STACK_COLLAPSE_THRESHOLD}; `0` disables the thickness
+   * test (coverage still applies).
    */
   collapseThreshold?: number;
   /**
@@ -497,6 +607,25 @@ export type SurfaceStackOptions = {
    * ignored when `collapseThreshold` is 0.
    */
   refineTerminations?: boolean;
+  /**
+   * Constrain each pair's thickness termination into the shared tessellation
+   * instead (see `traceThicknessLines`): the line itself, simplified, rather than
+   * the grid nodes either side of it. Default false.
+   *
+   * ⭐ Supersedes `refineTerminations`, which defaults to OFF when this is on.
+   */
+  constrainTerminations?: boolean;
+  /**
+   * Per adjacent pair, the raw termination loops from `scanThicknessLoops`, when
+   * they were scanned elsewhere (on a worker pool). A pair scanned at any other
+   * threshold than `collapseThreshold` is scanned again here.
+   */
+  terminationLoops?: ThicknessLoops[];
+  /**
+   * Hooks to hand the build on WHILE it runs: what the layers share once, then
+   * each cap as soon as it is built (see `documents/chunk-stack/streaming.md`).
+   */
+  stream?: SurfaceStackStream;
   /**
    * Also refine along the edge of each layer's own DATA (see
    * `collectCoverageCrossings`). Default true.
@@ -586,6 +715,12 @@ export type SurfaceStackOptions = {
    * kept cap triangle.
    */
   capNeighbours?: boolean;
+  /**
+   * Also measure what only REPORTS: {@link SurfaceStackBuild.depths} and
+   * {@link SurfaceStackBuild.duplicates}. Default false — ~0.9 s on a field column,
+   * ahead of any geometry.
+   */
+  diagnostics?: boolean;
 };
 
 /**
@@ -641,17 +776,20 @@ export type SurfaceStackBuild = {
   ringsDropped: number;
   /** boundary walks that did not close — should be 0 (see {@link StackWalls}) */
   ringsOpen: number;
+  /** see {@link StackWalls.maxInteriorWall} */
+  maxInteriorWall: number;
   /** the shared rim rings in scene XZ, matching each layer's `rimY` */
   rings: Coordinates2D[];
   resolved: StackResolveResult;
   collapsed: StackCollapseResult | null;
-  /** per-layer depth statistics, measured inside the footprint */
-  depths: StackLayerDepth[];
+  /** per-layer depth statistics, measured inside the footprint (with `diagnostics`) */
+  depths?: StackLayerDepth[];
   /**
    * Per layer, the share of its jointly-covered vertices coincident with the layer
-   * above, measured BEFORE the resolve (~1 = a duplicated horizon).
+   * above, measured BEFORE the resolve (~1 = a duplicated horizon). With
+   * `diagnostics`.
    */
-  duplicates: number[];
+  duplicates?: number[];
   /**
    * Vertices where the TOP layer's absence was overridden because nothing above
    * covers them (see {@link SurfaceStackOptions.topCover}). 0 without a cover.
@@ -669,6 +807,26 @@ export type SurfaceStackBuild = {
    */
   capNeighbours?: (StackCapNeighbours | null)[];
   timings: SurfaceStackTimings;
+  /**
+   * Termination lines left out, when `constrainTerminations` was on: `tiny`
+   * flicker loops, and lines `discarded` because even the unsimplified trace
+   * crosses itself.
+   */
+  terminationLines?: { tiny: number; discarded: number };
+};
+
+/**
+ * A stack built up to its caps (see {@link beginSurfaceStack}).
+ *
+ * @group Geometries
+ */
+export type SurfaceStackPending = {
+  /** per layer, what its cap is built from, or `null` for a layer with no TIN cap */
+  jobs: (StackCapInput | null)[];
+  /** turn one layer's arrays (`null` for a `null` job) into its cap, and stream it */
+  finishCap(layer: number, arrays: StackCapArrays | null): StackGeometryLayer;
+  /** the build, from every layer's `finishCap` result in layer order */
+  finish(layers: StackGeometryLayer[]): SurfaceStackBuild;
 };
 
 /**
@@ -695,8 +853,30 @@ export function buildSurfaceStack(
   _layers: StackLayer[],
   options: SurfaceStackOptions,
 ): SurfaceStackBuild | null {
+  const pending = beginSurfaceStack(reference, _layers, options);
+  if (!pending) return null;
+  return pending.finish(
+    pending.jobs.map((job, i) =>
+      pending.finishCap(i, job && buildStackCapArrays(job)),
+    ),
+  );
+}
+
+/**
+ * {@link buildSurfaceStack} up to its caps, which are left to the caller: build
+ * each job's arrays anywhere (`buildStackCapArrays` is free of three.js, so a
+ * worker pool can), hand them to `finishCap` in ANY order, then `finish`.
+ *
+ * @group Geometries
+ */
+export function beginSurfaceStack(
+  reference: StackReference,
+  _layers: StackLayer[],
+  options: SurfaceStackOptions,
+): SurfaceStackPending | null {
   const maxError = options.maxError ?? 5;
-  const collapseThreshold = options.collapseThreshold ?? 0.5;
+  const collapseThreshold =
+    options.collapseThreshold ?? DEFAULT_STACK_COLLAPSE_THRESHOLD;
   const coverageAbsence = options.coverageAbsence ?? true;
   const fluid = options.fluid;
   const unbounded = options.unbounded?.map(f => !!f);
@@ -708,9 +888,13 @@ export function buildSurfaceStack(
   // cuts along, so refine them too — the candidates are a union, and the crossings
   // are a thin line, so this costs vertices only where a unit wedges out.
   let candidates = options.candidates;
+  const constrainTerminations =
+    collapseThreshold > 0 &&
+    !!options.constrainTerminations &&
+    reference.channels.length > 1;
   const refineTerminations =
     collapseThreshold > 0 &&
-    (options.refineTerminations ?? true) &&
+    (options.refineTerminations ?? !constrainTerminations) &&
     reference.channels.length > 1;
   const refineCoverage = options.refineCoverage ?? !options.constrainCoverage;
   if (refineTerminations || refineCoverage) {
@@ -750,6 +934,27 @@ export function buildSurfaceStack(
     });
   }
 
+  let terminations: ThicknessLines[] | undefined;
+  if (constrainTerminations) {
+    terminations = [];
+    for (let i = 1; i < reference.channels.length; i++) {
+      const scanned = options.terminationLoops?.[i - 1];
+      terminations.push(
+        simplifyThicknessLoops(
+          scanned?.threshold === collapseThreshold
+            ? scanned
+            : scanThicknessLoops(
+                reference.channels[i - 1],
+                reference.channels[i],
+                reference.header.nx,
+                collapseThreshold,
+              ),
+          { channels: reference.channels, maxError },
+        ),
+      );
+    }
+  }
+
   const tessellation = tessellateStack(
     reference,
     options.polygon,
@@ -757,6 +962,7 @@ export function buildSurfaceStack(
     candidates,
     options.cuts,
     options.constrainCoverage,
+    terminations?.map(t => t.rings),
   );
   if (!tessellation) return null;
   const tTessellate = performance.now();
@@ -773,8 +979,17 @@ export function buildSurfaceStack(
   const sampled = options.inferred
     ? sampleStackWeights(reference, tessellation.coords, options.inferred)
     : undefined;
-  const uncovered = (mask: Uint8Array) =>
-    Float32Array.from(mask, covered => (covered ? 0 : 1));
+  // Plain loops: `Float32Array.from(mask, fn)` and `.some(fn)` cost ~10x as much,
+  // and this runs per layer over every shared vertex.
+  const uncovered = (mask: Uint8Array) => {
+    const out = new Float32Array(mask.length);
+    for (let v = 0; v < mask.length; v++) out[v] = mask[v] ? 0 : 1;
+    return out;
+  };
+  const positive = (weights: Float32Array) => {
+    for (let v = 0; v < weights.length; v++) if (weights[v] > 0) return true;
+    return false;
+  };
   // ⚠️ A layer the seal could not process — nothing above it or below it to lean
   // on, which is what the end of a column looks like — comes back with all-zero
   // weights and is still drawn on the fill, so it would be the one invented thing
@@ -783,17 +998,15 @@ export function buildSurfaceStack(
   const inferred = coverageAbsence
     ? sampled
     : (sampled ?? coverage.map(uncovered)).map((weights, i) =>
-        weights.some(w => w > 0) ? weights : uncovered(coverage[i]),
+        positive(weights) ? weights : uncovered(coverage[i]),
       );
   const tSample = performance.now();
 
-  const depths = stackDepthStats(heights);
+  const depths = options.diagnostics ? stackDepthStats(heights) : undefined;
   // Measured BEFORE resolving, or the welding masquerades as duplication.
-  const duplicates = stackDuplicateFractions(
-    heights,
-    coverage,
-    collapseThreshold || 0.5,
-  );
+  const duplicates = options.diagnostics
+    ? stackDuplicateFractions(heights, coverage, collapseThreshold || 0.5)
+    : undefined;
 
   const resolved = resolveStackOrder(heights, {
     ...options.resolve,
@@ -866,6 +1079,10 @@ export function buildSurfaceStack(
   // nulls must not make the collapse run where it otherwise would not.
   const excludes = capExcluded?.some(mask => mask) ? capExcluded : undefined;
 
+  const thin = constrainTerminations
+    ? classifyThinTriangles(reference, tessellation, heights, collapseThreshold)
+    : undefined;
+
   const collapsed =
     collapseThreshold > 0 || coverageAbsence || excludes
       ? collapseStackTriangles(heights, tessellation.indices, {
@@ -880,6 +1097,7 @@ export function buildSurfaceStack(
           carrier: options.carrier,
           unbounded,
           peelable: options.peelable,
+          thin,
         })
       : null;
 
@@ -897,6 +1115,7 @@ export function buildSurfaceStack(
     coverageTriangles: coverageAbsence ? tessellation.coverage : undefined,
     absent,
     unbounded,
+    thin,
   };
   const states =
     options.fills && options.capNeighbours
@@ -915,45 +1134,10 @@ export function buildSurfaceStack(
   const tCollapse = performance.now();
 
   const positionsXZ = stackVertexPositions(reference, tessellation.coords);
-  const built = buildStackGeometries(
-    tessellation,
-    positionsXZ,
-    heights,
-    collapsed?.indices,
-    caps,
-    inferred,
-    collapsed?.peelIndices,
-  );
   const rings = stackRimRings(positionsXZ, tessellation.rimVertices);
-
-  if (options.unbounded) {
-    // Ear clipping puts no vertices on the boundary and the refinement never
-    // splits it, so the lid's rim IS the shared rim — the same points the wall of
-    // the volume below hangs from, at any resolution. Constant in Y, like the
-    // carrier, so any vertex of it is the plane.
-    let shapes: ReturnType<PlanarPolygonGeometry['toShapes']> | null = null;
-    options.unbounded.forEach((spec, i) => {
-      if (!spec || options.caps?.[i] === false) return;
-      shapes ??= new PlanarPolygonGeometry(
-        // The rim rings close implicitly; a ring that also repeats its first
-        // point would ear-clip a degenerate sliver.
-        ringsToPolygonCoordinates(
-          rings.map(ring =>
-            ring.length > 1 &&
-            ring[0][0] === ring[ring.length - 1][0] &&
-            ring[0][1] === ring[ring.length - 1][1]
-              ? ring.slice(0, -1)
-              : ring,
-          ),
-        ),
-      ).toShapes();
-      built[i].geometry = createPolygonCap(shapes, {
-        y: heights[i][0],
-        resolution: spec.resolution,
-      });
-    });
-  }
-  const tGeometry = performance.now();
+  // AFTER the cap neighbours, which match the collapse's indices against these
+  // triple by triple as both were emitted.
+  orientUpward(tessellation.indices, positionsXZ);
 
   const members = states ? stackIntervalMembers(states) : undefined;
   const walls = options.fills
@@ -966,6 +1150,7 @@ export function buildSurfaceStack(
         inferred,
         fluid,
         unbounded,
+        thin,
         members,
       })
     : {
@@ -973,6 +1158,7 @@ export function buildSurfaceStack(
         intervals: null,
         ringsDropped: 0,
         ringsOpen: 0,
+        maxInteriorWall: 0,
       };
   const tWalls = performance.now();
 
@@ -989,7 +1175,7 @@ export function buildSurfaceStack(
   // ⭐ Packed to one bit per triangle here: the wall builder wants a byte it can
   // index, but this copy is the one that crosses to the main thread and stays for
   // the life of the build.
-  const section =
+  const section: StackSectionSource | undefined =
     options.section && intervalMasks
       ? {
           positionsXZ,
@@ -1014,31 +1200,117 @@ export function buildSurfaceStack(
           inferred,
         }
       : undefined;
+  if (section) section.index = buildStackSectionIndex(section);
 
-  return {
-    tessellation,
+  options.stream?.shared?.({
+    positionsXZ,
+    indices: tessellation.indices,
     heights,
-    coverage,
     inferred,
-    layers: built,
-    walls: walls.walls,
-    ringsDropped: walls.ringsDropped,
-    ringsOpen: walls.ringsOpen,
-    rings,
-    resolved,
-    collapsed,
-    depths,
-    duplicates,
-    topKept,
     section,
+    walls: walls.walls,
     capNeighbours,
-    timings: {
-      tessellateMs: tTessellate - t0,
-      sampleMs: tSample - tTessellate,
-      resolveMs: tResolve - tSample,
-      collapseMs: tCollapse - tResolve,
-      geometryMs: tGeometry - tCollapse,
-      wallMs: tWalls - tGeometry,
-    },
+    caps: heights.map(
+      (_, i) =>
+        (caps?.[i] ?? true) ||
+        (!!options.unbounded?.[i] && options.caps?.[i] !== false),
+    ),
+  });
+  const tShared = performance.now();
+
+  // ⭐ After the walls and the section, and one at a time, so a streaming caller
+  // can hand each cap on as soon as it exists.
+  const sharedIndex = new BufferAttribute(tessellation.indices, 1);
+  const sharedXZ = new BufferAttribute(positionsXZ, 2);
+  const jobs = heights.map((y, i) =>
+    caps && caps[i] === false
+      ? null
+      : stackCapInput(
+          tessellation.indices,
+          positionsXZ,
+          y,
+          i,
+          collapsed?.indices,
+          collapsed?.peelIndices,
+        ),
+  );
+  let shapes: ReturnType<PlanarPolygonGeometry['toShapes']> | null = null;
+  const finishCap = (
+    i: number,
+    arrays: StackCapArrays | null,
+  ): StackGeometryLayer => {
+    const y = heights[i];
+    const layer: StackGeometryLayer = {
+      geometry: arrays
+        ? stackCapGeometry(arrays, sharedXZ, sharedIndex, y, inferred?.[i])
+        : null,
+      rimY: stackRimHeights(y, tessellation.rimVertices),
+      patchIndex: arrays?.patchIndex ?? null,
+    };
+    const lid = options.unbounded?.[i];
+    if (lid && options.caps?.[i] !== false) {
+      // Ear clipping puts no vertices on the boundary and the refinement never
+      // splits it, so the lid's rim IS the shared rim — the same points the wall
+      // of the volume below hangs from, at any resolution. Constant in Y, like the
+      // carrier, so any vertex of it is the plane.
+      shapes ??= new PlanarPolygonGeometry(
+        // The rim rings close implicitly; a ring that also repeats its first
+        // point would ear-clip a degenerate sliver.
+        ringsToPolygonCoordinates(
+          rings.map(ring =>
+            ring.length > 1 &&
+            ring[0][0] === ring[ring.length - 1][0] &&
+            ring[0][1] === ring[ring.length - 1][1]
+              ? ring.slice(0, -1)
+              : ring,
+          ),
+        ),
+      ).toShapes();
+      layer.geometry = createPolygonCap(shapes, {
+        y: heights[i][0],
+        resolution: lid.resolution,
+      });
+    }
+    if (layer.geometry) options.stream?.cap?.(i, layer);
+    return layer;
   };
+
+  const finish = (built: StackGeometryLayer[]): SurfaceStackBuild => {
+    const tGeometry = performance.now();
+    return {
+      tessellation,
+      heights,
+      coverage,
+      inferred,
+      layers: built,
+      walls: walls.walls,
+      ringsDropped: walls.ringsDropped,
+      ringsOpen: walls.ringsOpen,
+      maxInteriorWall: walls.maxInteriorWall,
+      rings,
+      resolved,
+      collapsed,
+      depths,
+      duplicates,
+      topKept,
+      section,
+      capNeighbours,
+      terminationLines: terminations
+        ? {
+            tiny: terminations.reduce((a, t) => a + t.tiny, 0),
+            discarded: terminations.reduce((a, t) => a + t.discarded, 0),
+          }
+        : undefined,
+      timings: {
+        tessellateMs: tTessellate - t0,
+        sampleMs: tSample - tTessellate,
+        resolveMs: tResolve - tSample,
+        collapseMs: tCollapse - tResolve,
+        geometryMs: tGeometry - tShared,
+        wallMs: tWalls - tCollapse,
+      },
+    };
+  };
+
+  return { jobs, finishCap, finish };
 }

@@ -283,6 +283,7 @@ type ChunkStackProgress = {
   building: number;
   completed: number;  // reached ready | empty | failed
   fraction: number;
+  current?: ChunkBuildProgress; // latest step of a chunk still building
 };
 ```
 
@@ -293,7 +294,9 @@ Two honest caveats:
 - **It counts chunks, not work.** The first chunk of a shared column pays for the
   fetch, the resample and the resolve — roughly half the wall clock — so the bar
   sits near 0 for most of the time and then sprints. A smooth bar here would be an
-  invented one; smoothing it properly needs phase-level progress out of the worker.
+  invented one. What moves WITHIN a chunk is `current`: the step it is on, counted
+  in that step's own units (surfaces fetched, layers refined, caps received — see
+  [streaming.md](./streaming.md#build-progress)).
 
 > ⚠️ A chunk that returns `null` never fires `onBuild`. Total silence looks
 > identical to a hang — wire `onBuildStateChange` (or `onProgress`) to tell them

@@ -133,7 +133,9 @@ export function useChunkSection(
   // life of the build, so the index is built once and every frame reuses it.
   const index = useMemo(
     () =>
-      source && section && enabled ? buildStackSectionIndex(source) : null,
+      source && section && enabled
+        ? (source.index ?? buildStackSectionIndex(source))
+        : null,
     [source, section, enabled],
   );
   // What the faces were last cut with. A section that is not moving — a fixed

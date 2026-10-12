@@ -409,6 +409,7 @@ const PerChunkStory = (props: PerChunkStoryProps) => {
     <>
       <UtmArea origin={origin} utmZone={utmZone}>
         <ChunkStack
+          diagnostics
           cutSource={cutSource}
           surfaces={column}
           maxError={props.maxError}

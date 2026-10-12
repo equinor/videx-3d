@@ -9,30 +9,217 @@ import {
 import {
   assembleChunk,
   AssembleChunkLayer,
+  beginSurfaceStack,
   buildStackReference,
   buildSurfaceStack,
   buildSyntheticChannel,
+  chunkBoundaries,
+  chunkSurfaceMesh,
+  chunkWallMeshes,
   clampStackToCarrier,
   collectStackCandidates,
+  DEFAULT_STACK_COLLAPSE_THRESHOLD,
   densifyChunkRim,
+  emitPartial,
   measureStackCoverage,
+  PackedSurfaceChunk,
   packSurfaceChunk,
+  packSurfaceChunkBase,
+  packSurfaceChunkCap,
+  PartialSink,
   PlanarPolygonGeometry,
+  previewStackCandidates,
   rasterizeStackOutline,
   ReadonlyStore,
+  releasePartialSink,
   sealStackChannels,
   splitVoidChannels,
   STACK_MASK_DATA,
   stackCarrierLevel,
+  StackGeometryLayer,
   StackLayer,
   StackPairStats,
+  StackReference,
   StackSyntheticLayer,
+  SurfaceChunk,
   SurfaceChunkDiagnostics,
+  SurfaceChunkPacket,
   SurfaceStackBuild,
+  SurfaceStackOptions,
+  SurfaceStackShared,
+  SurfaceStackStream,
 } from '../sdk';
+import type { ThicknessLoops } from '../sdk/geometries/surface-stack-terminations';
 import { claimGeneratorRun } from './generator-supersede';
-import { getStackCandidates, getStackContext } from './surface-stack-context';
-import { refineStackChannels } from './workers/stack-worker-pool';
+import {
+  getStackCandidates,
+  getStackContext,
+  StackProgress,
+} from './surface-stack-context';
+import {
+  buildStackCaps,
+  refineStackChannels,
+  scanStackTerminations,
+} from './workers/stack-worker-pool';
+
+/**
+ * `buildSurfaceStack`, with the caps built across the stack worker pool — each
+ * is independent of the others, and together they are its longest step after
+ * the tessellation. A streamed cap goes out as it finishes, in any order.
+ */
+async function buildStackOnPool(
+  reference: StackReference,
+  layers: StackLayer[],
+  options: SurfaceStackOptions,
+  isStale: () => boolean,
+): Promise<SurfaceStackBuild | null> {
+  const pending = beginSurfaceStack(reference, layers, options);
+  if (!pending) return null;
+  const built: StackGeometryLayer[] = new Array(pending.jobs.length);
+  await buildStackCaps(
+    pending.jobs,
+    (i, arrays) => {
+      built[i] = pending.finishCap(i, arrays);
+    },
+    isStale,
+  );
+  return pending.finish(built);
+}
+
+/**
+ * Each adjacent pair's termination loops, scanned on the pool when the build will
+ * constrain them — the scan needs only the pair, while the simplify that follows
+ * in `buildSurfaceStack` needs every channel.
+ */
+function scanTerminations(
+  spec: SurfaceChunkSpec,
+  reference: { channels: Float32Array[]; header: { nx: number } },
+  report?: StackProgress,
+): Promise<ThicknessLoops[] | undefined> {
+  const threshold =
+    spec.resolve?.collapseThreshold ?? DEFAULT_STACK_COLLAPSE_THRESHOLD;
+  if (
+    !(spec.resolve?.constrainTerminations ?? true) ||
+    threshold <= 0 ||
+    reference.channels.length < 2
+  ) {
+    return Promise.resolve(undefined);
+  }
+  return scanStackTerminations(
+    reference.channels,
+    reference.header.nx,
+    threshold,
+    report && ((done, total) => report('terminations', done, total)),
+  );
+}
+
+/**
+ * Hooks that hand a build on as {@link SurfaceChunkPacket}s while it runs, or
+ * `undefined` when nobody listens. Builds each mesh exactly as `assembleChunk`
+ * would (see `toAssembleLayers`).
+ */
+function streamPackets(
+  onPartial: PartialSink<SurfaceChunkPacket> | undefined,
+  isStale: () => boolean,
+  source: number[],
+  fills: boolean[],
+  ceilings: boolean[],
+): SurfaceStackStream | undefined {
+  if (!onPartial) return undefined;
+  let shared: SurfaceStackShared | null = null;
+  let layers: AssembleChunkLayer[] = [];
+  return {
+    shared: build => {
+      if (isStale()) return;
+      shared = build;
+      const count = build.heights.length;
+      layers = build.heights.map((_, i) => ({
+        geometry: null,
+        rimY: [],
+        fill: i + 1 < count && fills[i],
+        wall: build.walls[i],
+        source: source[i] ?? i,
+        ceiling: ceilings[i] ?? false,
+        neighbours: build.capNeighbours?.[i] ?? null,
+      }));
+      const [packet, moved] = packSurfaceChunkBase(
+        build,
+        chunkWallMeshes(layers, []),
+        chunkBoundaries(layers),
+        layers.map((layer, i) => layer.source ?? i),
+      );
+      emitPartial(onPartial, packet, moved);
+    },
+    cap: (i, built) => {
+      if (!shared || isStale()) return;
+      const mesh = chunkSurfaceMesh(
+        {
+          ...layers[i],
+          geometry: built.geometry,
+          patchIndex: built.patchIndex,
+        },
+        i,
+      );
+      if (!mesh) return;
+      const [packet, moved] = packSurfaceChunkCap(i, mesh, shared);
+      emitPartial(onPartial, packet, moved);
+    },
+  };
+}
+
+/** What a preview aims for inside the outline (see `previewStackCandidates`). */
+const PREVIEW_NODES = 8192;
+
+/**
+ * Build the whole chunk at coarse sampling and send it as a
+ * `SurfaceChunkPreviewPacket`, ahead of the refine and everything after it.
+ * Nothing it builds is shared with the real build, so all of it moves.
+ */
+function sendPreview(
+  onPartial: PartialSink<SurfaceChunkPacket>,
+  reference: StackReference,
+  layers: StackLayer[],
+  options: SurfaceStackOptions,
+  result: Pick<SpecStackResult, 'source' | 'fills' | 'ceilings'>,
+): void {
+  const t0 = performance.now();
+  const { candidates } = previewStackCandidates(
+    reference,
+    options.polygon,
+    PREVIEW_NODES,
+  );
+  const build = buildSurfaceStack(reference, layers, {
+    ...options,
+    candidates: reference.channels.map(() => candidates),
+    refineTerminations: false,
+    refineCoverage: false,
+    constrainCoverage: false,
+    constrainTerminations: false,
+  });
+  if (!build) return;
+  const chunk = assembleChunk(
+    toAssembleLayers({ ...result, build }),
+    build.rings,
+    { section: build.section },
+    {
+      t0,
+      densifyMs: 0,
+      clipMs: build.timings.tessellateMs,
+      rimMs: build.timings.sampleMs,
+    },
+  );
+  const [packed, moved] = packChunk(chunk);
+  emitPartial(onPartial, { kind: 'preview', chunk: packed }, moved);
+}
+
+/**
+ * `packSurfaceChunk` with its transfer list deduped: caps that kept the full
+ * triangle set share one index buffer, and a transfer list must not repeat one.
+ */
+function packChunk(chunk: SurfaceChunk): [PackedSurfaceChunk, Transferable[]] {
+  const [packed, transferables] = packSurfaceChunk(chunk);
+  return [packed, [...new Set(transferables)] as Transferable[]];
+}
 
 /** A fetched layer, kept with whether the interval below it is filled. */
 export type LoadedStackLayer = {
@@ -239,15 +426,29 @@ export async function buildSpecStack(
   densified: PlanarPolygonGeometry,
   maxError: number,
   isStale: () => boolean = () => false,
+  onPartial?: PartialSink<SurfaceChunkPacket>,
 ): Promise<SpecStackResult | null> {
   const flat = spec.layers;
   if (flat.length === 0) return null;
+
+  const report: StackProgress | undefined = onPartial
+    ? (phase, done, total) => {
+        if (!isStale()) {
+          emitPartial(onPartial, { kind: 'progress', phase, done, total });
+        }
+      }
+    : undefined;
 
   // --- Column path: the fetch, the common grid and the depth-order resolve are
   //     shared by every chunk cut from the same column, so chunks agree with each
   //     other rather than each resolving its own layers in isolation. ----------
   if (spec.stack) {
-    const context = await getStackContext(store, spec.stack, spec.resolve);
+    const context = await getStackContext(
+      store,
+      spec.stack,
+      spec.resolve,
+      report,
+    );
     if (!context) return null;
     // The column is the long wait, and a superseded chunk has no use for it.
     if (isStale()) return null;
@@ -336,13 +537,6 @@ export async function buildSpecStack(
     // (`getStackContext`), so a horizon two chunks share has one height and one
     // void, and their walls and caps meet. Nothing is left for this chunk to do:
     // a synthetic layer's mask is all ones, so it has no unmapped region.
-    const tPrep = performance.now();
-    const { candidates: allCandidates, poolSize } = await getStackCandidates(
-      context,
-      maxError,
-    );
-    if (isStale()) return null;
-    const tRefine = performance.now();
 
     // ⭐ EXPAND: a column layer the void split holds TWO of this chunk's layers.
     // Everything the build indexes by layer is pushed in ONE loop, because these
@@ -355,7 +549,9 @@ export async function buildSpecStack(
     const source: number[] = [];
     const ceilings: boolean[] = [];
     const inferredList: Float32Array[] = [];
-    const candidates: Uint32Array[] = [];
+    // The column's refinement (a channel index, read once the refine is done) or
+    // the layer's own.
+    const candidateOf: (number | Uint32Array)[] = [];
     const preResolved: Uint8Array[] = [];
     picks.forEach((at, j) => {
       // ⭐ A layer with no data anywhere in this chunk is NOT expanded: both
@@ -371,9 +567,9 @@ export async function buildSpecStack(
         source.push(j);
         ceilings.push(!!loaded[j].carrier);
         inferredList.push(zeros);
-        candidates.push(
+        candidateOf.push(
           at >= 0
-            ? allCandidates[context.expansion[at][0]]
+            ? context.expansion[at][0]
             : // A synthetic layer contributes refinement vertices only if it has
               // RELIEF of its own. A plane is exact everywhere, so it rides the
               // union the others produce; a dune field is not, and without this
@@ -398,7 +594,7 @@ export async function buildSpecStack(
         source.push(j);
         ceilings.push(context.ceiling[k] || !!loaded[j].carrier);
         inferredList.push(context.inferred?.[k] ?? zeros);
-        candidates.push(allCandidates[k]);
+        candidateOf.push(k);
         preResolved.push(context.absent[k]);
       });
     });
@@ -407,7 +603,6 @@ export async function buildSpecStack(
       channels: eChannels,
       masks: eMasks,
     };
-    const prepMs = tPrep - tContext + (performance.now() - tRefine);
 
     // ⭐ A ceiling holds no volume: that is what makes the void below it a void,
     // and what makes the carrier a terminator rather than a unit.
@@ -455,51 +650,89 @@ export async function buildSpecStack(
           )
         : undefined;
 
-    const build = buildSurfaceStack(
+    // What the preview and the real build share; the real one adds the refinement,
+    // the termination and coverage constraints, and the stream.
+    const stackLayers = source.map(i => loaded[i].layer);
+    const shared: SurfaceStackOptions = {
+      polygon: densified,
+      maxError,
+      // The column never saw a synthetic layer, so its `absent` masks do not
+      // cover this stack — fall back to the per-vertex resolve, which is cheap
+      // here because the column layers already arrive ordered (it only measures
+      // them). ⚠️ Ordering against a synthetic layer is therefore enforced PER
+      // CHUNK, not column-wide.
+      // ⚠️⚠️ A SEALED column is disqualified too, and not for the reason it
+      // looks like: its masks are perfectly valid, they are just decided per
+      // GRID NODE while a triangle is dropped only when all THREE of its own
+      // corners are marked. An island of marked vertices can never remove
+      // anything; an island of marked nodes spans cells and takes whole
+      // triangles with it, which draws a walled notch into the cap. The seal
+      // leaves surfaces running a metre apart over wide bands, so those islands
+      // are exactly what it produces.
+      preResolved:
+        spec.resolve && !synthetic && !sealing ? preResolved : undefined,
+      resolve:
+        spec.resolve && (synthetic || sealing)
+          ? { mode: spec.resolve.mode, minGap: spec.resolve.minGap }
+          : undefined,
+      collapseThreshold: spec.resolve?.collapseThreshold,
+      // Sealing gives the unmapped region a shape, so dropping it for want of
+      // data would delete the wedge the seal just built. The welded part still
+      // goes, by thickness.
+      coverageAbsence: sealing ? false : spec.resolve?.coverageAbsence,
+      caps,
+      cuts,
+      capCuts,
+      fills,
+      carrier: carrierLayer >= 0 ? carrierLayer : undefined,
+      ceiling: ceilings,
+      inferred: context.inferred ? inferredList : undefined,
+      topCover: coverAbove,
+      section: spec.section,
+      peelable: spec.peelable,
+    };
+
+    const tPreview = performance.now();
+    if (onPartial && spec.preview !== false) {
+      sendPreview(onPartial, reference, stackLayers, shared, {
+        source,
+        fills,
+        ceilings,
+      });
+    }
+
+    const tPrep = performance.now();
+    const { candidates: allCandidates, poolSize } = await getStackCandidates(
+      context,
+      maxError,
+      report,
+    );
+    if (isStale()) return null;
+    const tRefine = performance.now();
+    const candidates = candidateOf.map(c =>
+      typeof c === 'number' ? allCandidates[c] : c,
+    );
+
+    const terminationLoops = await scanTerminations(spec, reference, report);
+    if (isStale()) return null;
+    const prepMs = tPreview - tContext + (performance.now() - tRefine);
+
+    report?.('tessellate', 0, 1);
+    const build = await buildStackOnPool(
       reference,
-      source.map(i => loaded[i].layer),
+      stackLayers,
       {
-        polygon: densified,
-        maxError,
+        ...shared,
         candidates,
-        // The column never saw a synthetic layer, so its `absent` masks do not
-        // cover this stack — fall back to the per-vertex resolve, which is cheap
-        // here because the column layers already arrive ordered (it only measures
-        // them). ⚠️ Ordering against a synthetic layer is therefore enforced PER
-        // CHUNK, not column-wide.
-        // ⚠️⚠️ A SEALED column is disqualified too, and not for the reason it
-        // looks like: its masks are perfectly valid, they are just decided per
-        // GRID NODE while a triangle is dropped only when all THREE of its own
-        // corners are marked. An island of marked vertices can never remove
-        // anything; an island of marked nodes spans cells and takes whole
-        // triangles with it, which draws a walled notch into the cap. The seal
-        // leaves surfaces running a metre apart over wide bands, so those islands
-        // are exactly what it produces.
-        preResolved:
-          spec.resolve && !synthetic && !sealing ? preResolved : undefined,
-        resolve:
-          spec.resolve && (synthetic || sealing)
-            ? { mode: spec.resolve.mode, minGap: spec.resolve.minGap }
-            : undefined,
-        collapseThreshold: spec.resolve?.collapseThreshold,
-        // Sealing gives the unmapped region a shape, so dropping it for want of
-        // data would delete the wedge the seal just built. The welded part still
-        // goes, by thickness.
-        coverageAbsence: sealing ? false : spec.resolve?.coverageAbsence,
         refineTerminations: spec.resolve?.refineTerminations,
         constrainCoverage: spec.resolve?.constrainCoverage,
-        caps,
-        cuts,
-        capCuts,
-        fills,
-        carrier: carrierLayer >= 0 ? carrierLayer : undefined,
-        ceiling: ceilings,
-        inferred: context.inferred ? inferredList : undefined,
-        topCover: coverAbove,
-        section: spec.section,
-        peelable: spec.peelable,
+        constrainTerminations: spec.resolve?.constrainTerminations ?? true,
+        terminationLoops,
+        stream: streamPackets(onPartial, isStale, source, fills, ceilings),
         capNeighbours: true,
+        diagnostics: spec.diagnostics,
       },
+      isStale,
     );
     if (!build) return null;
 
@@ -544,14 +777,18 @@ export async function buildSpecStack(
   }
 
   const t0 = performance.now();
+  let fetched = 0;
   const grids = await Promise.all(
-    flat.map(f =>
-      isSyntheticSpecLayer(f)
-        ? Promise.resolve(null)
-        : store.get<Float32Array>('surface-values', f.id),
-    ),
+    flat.map(async f => {
+      const values = isSyntheticSpecLayer(f)
+        ? null
+        : await store.get<Float32Array>('surface-values', f.id);
+      report?.('fetch', ++fetched, flat.length);
+      return values;
+    }),
   );
   const tFetch = performance.now();
+  report?.('resolve', 0, 1);
 
   const loaded: LoadedStackLayer[] = [];
   let bytes = 0;
@@ -677,11 +914,16 @@ export async function buildSpecStack(
   }
   const tSeal = performance.now();
 
-  const { candidates, poolSize } = await refineStackChannels(
-    reference.channels,
-    reference.header.nx,
-    maxError,
-  );
+  // The scan runs alongside and stays silent, so two steps never interleave.
+  const [{ candidates, poolSize }, terminationLoops] = await Promise.all([
+    refineStackChannels(
+      reference.channels,
+      reference.header.nx,
+      maxError,
+      report && ((done, total) => report('refine', done, total)),
+    ),
+    scanTerminations(spec, reference),
+  ]);
   const tRefine = performance.now();
 
   // A voided layer draws no cap, and neither interval it bounds is filled.
@@ -709,7 +951,8 @@ export async function buildSpecStack(
       !(ceilings[k] && !loaded[i].carrier && !(k > 0 && fills[k - 1])),
   );
 
-  const build = buildSurfaceStack(
+  report?.('tessellate', 0, 1);
+  const build = await buildStackOnPool(
     reference,
     source.map(i => layers[i]),
     {
@@ -723,6 +966,9 @@ export async function buildSpecStack(
       coverageAbsence: sealing ? false : spec.resolve?.coverageAbsence,
       refineTerminations: spec.resolve?.refineTerminations,
       constrainCoverage: spec.resolve?.constrainCoverage,
+      constrainTerminations: spec.resolve?.constrainTerminations ?? true,
+      terminationLoops,
+      stream: streamPackets(onPartial, isStale, source, fills, ceilings),
       caps,
       cuts,
       capCuts,
@@ -733,7 +979,9 @@ export async function buildSpecStack(
       section: spec.section,
       peelable: spec.peelable,
       capNeighbours: true,
+      diagnostics: spec.diagnostics,
     },
+    isStale,
   );
   if (!build) return null;
 
@@ -781,8 +1029,12 @@ export function stackDiagnostics(
     rimDropped: build.tessellation.rimDropped,
     constraintFailures: build.tessellation.constraintFailures,
     coverageRingPoints: build.tessellation.coverageRingPoints ?? 0,
+    terminationRingPoints: build.tessellation.terminationRingPoints ?? 0,
+    terminationLinesTiny: build.terminationLines?.tiny ?? 0,
+    terminationLinesDiscarded: build.terminationLines?.discarded ?? 0,
     wallRingsDropped: build.ringsDropped,
     wallRingsOpen: build.ringsOpen,
+    maxInteriorWall: build.maxInteriorWall,
     layers: result.loaded.map((entry, i) => {
       // A layer can have been expanded into several build layers (a void split),
       // so the build's per-layer numbers are gathered by SOURCE rather than read
@@ -832,11 +1084,11 @@ export function stackDiagnostics(
         droppedCollapsed: collapsed,
         droppedExcluded: excluded,
         capped,
-        duplicate: build.duplicates[built[0] ?? i] ?? 0,
+        duplicate: build.duplicates?.[built[0] ?? i] ?? 0,
       };
     }),
     maxOverlap: pairs.reduce((a, p) => Math.max(a, p.maxOverlap), 0),
-    maxDuplicate: build.duplicates.reduce((a, d) => Math.max(a, d), 0),
+    maxDuplicate: (build.duplicates ?? []).reduce((a, d) => Math.max(a, d), 0),
     trianglesAbsent: dropped
       ? dropped.droppedAbsent.reduce((a, d) => a + d, 0)
       : 0,
@@ -875,7 +1127,7 @@ export function stackDiagnostics(
  * SURVIVED at that position — an interval is between the layers actually drawn.
  */
 export function toAssembleLayers(
-  result: SpecStackResult,
+  result: Pick<SpecStackResult, 'build' | 'fills' | 'source' | 'ceilings'>,
 ): AssembleChunkLayer[] {
   return result.build.layers.map((layer, i) => ({
     geometry: layer.geometry,
@@ -898,11 +1150,29 @@ export function toAssembleLayers(
  * back to the main thread. Only the (much smaller) triangulated geometry crosses
  * the boundary.
  *
+ * Pass `onPartial` to have the chunk STREAMED instead: the shared parts, walls
+ * and section first, then each cap as soon as it is built (see
+ * {@link SurfaceChunkPacket} and `documents/chunk-stack/streaming.md`). The
+ * return value then carries only the metrics, flagged `streamed`.
+ *
  * @group Generators
  */
 export async function generateSurfaceChunk(
   this: ReadonlyStore,
   spec: SurfaceChunkSpec,
+  onPartial?: PartialSink<SurfaceChunkPacket>,
+): Promise<SurfaceChunkResponse | null> {
+  try {
+    return await buildSurfaceChunkResponse(this, spec, onPartial);
+  } finally {
+    releasePartialSink(onPartial);
+  }
+}
+
+async function buildSurfaceChunkResponse(
+  store: ReadonlyStore,
+  spec: SurfaceChunkSpec,
+  onPartial: PartialSink<SurfaceChunkPacket> | undefined,
 ): Promise<SurfaceChunkResponse | null> {
   const isStale = claimGeneratorRun(spec.build);
   if (isStale()) return null;
@@ -916,7 +1186,22 @@ export async function generateSurfaceChunk(
   const densifyMs = performance.now() - t0;
   const maxError = spec.maxError ?? 5;
 
-  const result = await buildSpecStack(this, spec, densified, maxError, isStale);
+  let sent = 0;
+  const sink: PartialSink<SurfaceChunkPacket> | undefined =
+    onPartial &&
+    (packet => {
+      if (packet.kind === 'cap') sent++;
+      return onPartial(packet);
+    });
+
+  const result = await buildSpecStack(
+    store,
+    spec,
+    densified,
+    maxError,
+    isStale,
+    sink,
+  );
   if (!result) return null;
 
   const layers = toAssembleLayers(result);
@@ -924,7 +1209,7 @@ export async function generateSurfaceChunk(
     layers,
     result.build.rings,
     {
-      diagnostics: stackDiagnostics(result),
+      diagnostics: spec.diagnostics ? stackDiagnostics(result) : undefined,
       section: result.build.section,
     },
     {
@@ -934,16 +1219,16 @@ export async function generateSurfaceChunk(
       rimMs: result.build.timings.sampleMs,
     },
   );
+  // The meshes have gone ahead as packets, and their buffers with them.
+  if (onPartial) {
+    return {
+      surfaces: [],
+      walls: [],
+      metrics: chunk.metrics,
+      streamed: { caps: sent },
+    };
+  }
 
-  const [packed, transferables] = packSurfaceChunk(chunk);
-  // Layers that kept the full triangle set share one index buffer, so the same
-  // ArrayBuffer is referenced many times — structured clone keeps that identity,
-  // but a transfer list must not repeat it.
-  const seen = new Set<ArrayBufferLike>();
-  const unique = transferables.filter(buffer => {
-    if (seen.has(buffer)) return false;
-    seen.add(buffer);
-    return true;
-  });
-  return transfer(packed, unique);
+  const [packed, transferables] = packChunk(chunk);
+  return transfer(packed, transferables);
 }

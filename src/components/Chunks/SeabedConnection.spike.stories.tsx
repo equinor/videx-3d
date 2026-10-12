@@ -358,6 +358,7 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
     <>
       <UtmArea origin={origin} utmZone={utmZone}>
         <ChunkStack
+          diagnostics
           outline={field}
           surfaces={column}
           water={water}

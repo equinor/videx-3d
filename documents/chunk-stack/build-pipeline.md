@@ -289,7 +289,9 @@ where two of them converge or where one runs out of data. Two extra passes fix
 that, merged into the union:
 
 - `collectThicknessCrossings(above, below, nx, threshold)` — the line where a unit
-  wedges out (`refineTerminations`, default on). Majority-voted over the
+  wedges out (`refineTerminations`, on only when `constrainTerminations` is off;
+  a chunk constrains by default, which puts the line itself into the mesh).
+  Majority-voted over the
   4-neighbourhood first, because the raw test speckles where two surfaces run
   nearly parallel a hair apart.
 - `collectCoverageCrossings(mask, nx)` — the edge of a layer's own data
@@ -314,7 +316,10 @@ the neighbours' `cuts`, and `constrainCoverage`.
 - The **rim** is inserted and **constrained**. So are the `cuts` and, when asked,
   each layer's traced mask boundary — as *open chains* that do not extend the kept
   domain.
-- Exterior triangles are removed, vertices compacted.
+- Exterior triangles are removed, the rest are put in **Morton order** of their
+  centroids (`sortTrianglesSpatially`), and the vertices are compacted in that
+  order. Every layer's kept subset inherits it, which cut transparent GPU time by
+  about a quarter (chunks.md §16.8).
 - Per-cut and per-coverage triangle membership is decided by **centroid**, which is
   exact precisely because the ring is constrained.
 
@@ -483,21 +488,34 @@ The transfer list is **deduped**: `packSurfaceChunk` returns the same shared ind
 
 ## Stage 6 — back on the main thread
 
+`Chunk` passes a sink, so the chunk normally arrives STREAMED: walls and caps are
+shown as each packet lands, and the chunk lands when the return value and the last
+cap are both in — see [streaming.md](./streaming.md#part-3--the-main-thread). A
+generator that ignores the sink returns the packed chunk, which lands at once:
+
 ```ts
-const response = await generator({ ...spec, build: { key, token: ++buildToken.current } });
-const built = response ? unpackSurfaceChunk(response) : null;
-if (built) trackChunk(built);
-setChunk(built);
-if (built) onBuildRef.current?.(built.metrics);
-reportState(built ? 'ready' : 'empty');
+const response = await generator({ ...spec, build: { key, token } }, onPacket);
+if (response?.streamed) { /* land once receiver.complete */ }
+else land(response ? unpackSurfaceChunk(response) : null);
+// land: trackChunk(built); show it; onBuild(built.metrics); reportState('ready' | 'empty')
 ```
 
-`trackChunk` is called **before** `setChunk`, so the window in which the new chunk
-exists and the old one has not been released yet — the rebuild's peak — is visible
-in `chunkResourceStats()`.
+`trackChunk` is called **before** the landed chunk is shown, so the window in which
+the new chunk exists and the old one has not been released yet — the rebuild's
+peak — is visible in `chunkResourceStats()`.
 
 A `null` response is not an error. It means the chunk has nothing to draw: no
 outline, or a footprint cut away entirely. It reports `'empty'`.
+
+⭐ **Arrival is spread by the stream.** three uploads a geometry the first time it
+is drawn, so a field-scale chunk (~200 MB) drawn at once stalled one frame for
+~420 ms. A streamed chunk is drawn a layer at a time as each cap lands, and
+`useStaggeredReveal` holds each frame's upload to `CHUNK_REVEAL_BYTES_PER_FRAME`
+(see [streaming.md](./streaming.md#part-3--the-main-thread)) — which also spreads
+a chunk that arrives packed (a generator that ignores the sink). What the main
+thread would otherwise derive from the whole chunk on arrival comes from the
+worker: each cap's `SurfaceChunkMesh.units` and the section's spatial index
+(`StackSectionSource.index`).
 
 ---
 
@@ -512,8 +530,12 @@ outline, or a footprint cut away entirely. It reports `'empty'`.
   bundler configuration, and it works whether the host runs the generator registry
   on the main thread or in a worker. ⚠️ It must stay free of three.js (22.6 kB as
   of 2026-10-09; three would add hundreds).
-- Three task kinds: `'resample'`, `'refine'`, and `'outline'` (a wellbore
-  outline's raster — only the cut runs are sent, never a surface grid).
+- Five task kinds: `'resample'`, `'refine'`, `'terminations'` (one adjacent
+  pair's pinch-out loops, `scanThicknessLoops` — the simplify that follows needs
+  every channel, so it stays in `buildSurfaceStack`), `'outline'` (a wellbore
+  outline's raster — only the cut runs are sent, never a surface grid) and `'cap'`
+  (one cap's normals, index, patch and bounds, `buildStackCapArrays` — see
+  [streaming.md](./streaming.md#part-4--building-the-layers-in-parallel)).
 - If `Worker` is unavailable or construction fails, the pool is `null` and every
   path falls back to running the SDK function serially (`poolSize: 0` in the
   result).
@@ -522,11 +544,12 @@ outline, or a footprint cut away entirely. It reports `'empty'`.
 |------|----------------|----------|
 | `resample` | the raw grid `values` (never needed again downstream) | `channel` + `mask` |
 | `refine` | a **copy** of the channel (the caller still needs it) | candidate node indices |
+| `cap` | **copies** of `xz`, the layer's `y` and its index (the build reads them on) | snorm16 normals, the index if re-wound, patch index, bounds |
 
 > ⚠️⚠️ **The worker bundle must stay free of `three`.** `stack-refine.worker.ts`
-> imports only `collectStackCandidates` and `resampleStackLayer`, so
-> `surface-stack-candidates.ts`, `surface-stack-resample.ts`, `surface-grid.ts`,
-> `chamfer.ts` and `mesh-boundary.ts` must stay three.js-free. Pulling three in here
+> imports `collectStackCandidates`, `resampleStackLayer`, `scanThicknessLoops`,
+> `createWellboreOutlineCoordinates` and `buildStackCapArrays`, so those modules
+> (and `surface-grid.ts`, `chamfer.ts`, `mesh-boundary.ts`) must stay three.js-free. Pulling three in here
 > embeds a second copy of it in the bundle. Check with `vite build` — `generators.js`
 > should stay around 50 kB.
 

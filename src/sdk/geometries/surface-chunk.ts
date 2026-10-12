@@ -54,6 +54,12 @@ export type SurfaceChunkMesh = {
   above?: Uint8Array;
   /** the build interval directly below each triangle; see {@link SurfaceChunkMesh.above} */
   below?: Uint8Array;
+  /**
+   * The distinct interval ids in `above` and `below` (see
+   * `StackCapNeighbours.units`) — computed in the worker, so a renderer culling
+   * caps does not scan every triangle of every cap when the chunk arrives.
+   */
+  units?: number[];
 };
 
 /**
@@ -187,6 +193,18 @@ export type SurfaceChunkDiagnostics = {
    */
   coverageRingPoints: number;
   /**
+   * Vertices of the constrained termination lines (see
+   * `ChunkResolveOptions.constrainTerminations`). 0 when it is off.
+   */
+  terminationRingPoints: number;
+  /** termination lines left out as flicker (see `TERMINATION_MIN_VERTICES`) */
+  terminationLinesTiny: number;
+  /**
+   * Termination lines left out because their trace crosses itself. Should be 0;
+   * where it is not, the pinch-out falls back to the per-corner rule.
+   */
+  terminationLinesDiscarded: number;
+  /**
    * Boundary walks the wall tracer discarded as degenerate, and walks that failed
    * to close. Both should be 0: a discarded walk leaves a (small) piece of an
    * interval unwalled, and an unclosed one is sealed with an edge that does not
@@ -195,6 +213,12 @@ export type SurfaceChunkDiagnostics = {
   wallRingsDropped: number;
   /** see {@link SurfaceChunkDiagnostics.wallRingsDropped} */
   wallRingsOpen: number;
+  /**
+   * The tallest wall point away from the rim, in world units. A pinch-out's is at
+   * most the collapse threshold; anything taller is a data edge (unsealed), or a
+   * termination drawn on the wrong side of its line.
+   */
+  maxInteriorWall: number;
   /** deepest interpenetration found, in world units */
   maxOverlap: number;
   /** largest share of a layer coincident with the one above it (~1 = duplicated horizon) */
@@ -492,6 +516,74 @@ export type ChunkBuildTimings = {
 };
 
 /**
+ * The {@link SurfaceChunkMesh} of build layer `i`, or `null` when it draws no cap.
+ * What {@link assembleChunk} emits per layer, for a caller handing caps on one at a
+ * time.
+ *
+ * @group Geometries
+ */
+export function chunkSurfaceMesh(
+  layer: AssembleChunkLayer,
+  i: number,
+): SurfaceChunkMesh | null {
+  if (!layer.geometry) return null;
+  const neighbours = layer.neighbours ?? undefined;
+  return {
+    geometry: layer.geometry,
+    layer: layer.source ?? i,
+    ceiling: layer.ceiling,
+    patchIndex: layer.patchIndex ?? undefined,
+    ...(neighbours
+      ? {
+          boundary: i,
+          above: neighbours.above,
+          below: neighbours.below,
+          units: neighbours.units,
+        }
+      : {}),
+  };
+}
+
+/**
+ * The side walls of a chunk: one mesh per FILLED interval, tagged with the layer
+ * above it (see {@link assembleChunk}).
+ *
+ * @group Geometries
+ */
+export function chunkWallMeshes(
+  layers: AssembleChunkLayer[],
+  rings: Coordinates2D[],
+): SurfaceChunkMesh[] {
+  const walls: SurfaceChunkMesh[] = [];
+  for (let i = 0; i + 1 < layers.length; i++) {
+    if (!layers[i].fill) continue;
+    const geometry =
+      'wall' in layers[i]
+        ? layers[i].wall
+        : buildIntervalWalls(rings, layers[i].rimY, layers[i + 1].rimY);
+    if (geometry) walls.push({ geometry, layer: layers[i].source ?? i });
+  }
+  return walls;
+}
+
+/**
+ * {@link SurfaceChunk.boundaries} for a chunk built from `layers`.
+ *
+ * @group Geometries
+ */
+export function chunkBoundaries(
+  layers: AssembleChunkLayer[],
+): SurfaceChunkBoundary[] | undefined {
+  return layers.some(layer => layer.neighbours)
+    ? layers.map((layer, i) => ({
+        layer: layer.source ?? i,
+        ceiling: !!layer.ceiling,
+        fill: !!layer.fill,
+      }))
+    : undefined;
+}
+
+/**
  * Assemble a {@link SurfaceChunk} from already-built layers: the coloured side
  * walls and the metrics.
  *
@@ -504,45 +596,24 @@ export function assembleChunk(
   timings: ChunkBuildTimings,
 ): SurfaceChunk {
   const surfaces: SurfaceChunkMesh[] = [];
-  // rimY[layer][ring][vertex] — each layer's rim depth at the shared rim points.
-  const rimY: number[][][] = [];
   let surfaceTris = 0;
 
   layers.forEach((layer, i) => {
-    rimY.push(layer.rimY);
-    if (layer.geometry) {
-      const neighbours = layer.neighbours ?? undefined;
-      surfaces.push({
-        geometry: layer.geometry,
-        layer: layer.source ?? i,
-        ceiling: layer.ceiling,
-        patchIndex: layer.patchIndex ?? undefined,
-        ...(neighbours
-          ? { boundary: i, above: neighbours.above, below: neighbours.below }
-          : {}),
-      });
-      const idx = layer.geometry.getIndex();
-      if (idx) surfaceTris += idx.count / 3;
-    }
+    const mesh = chunkSurfaceMesh(layer, i);
+    if (!mesh) return;
+    surfaces.push(mesh);
+    const idx = mesh.geometry.getIndex();
+    if (idx) surfaceTris += idx.count / 3;
   });
 
-  // Side walls: one mesh per FILLED interval, tagged with the layer above it. An
-  // interval the caller did not fill is simply left open — that is how both a gap
-  // between zones and a surface with no volume are expressed.
+  // An interval the caller did not fill is simply left open — that is how both a
+  // gap between zones and a surface with no volume are expressed.
   const w0 = performance.now();
-  const walls: SurfaceChunkMesh[] = [];
+  const walls = chunkWallMeshes(layers, rings);
   let wallTris = 0;
-  for (let i = 0; i + 1 < layers.length; i++) {
-    if (!layers[i].fill) continue;
-    const geometry =
-      'wall' in layers[i]
-        ? layers[i].wall
-        : buildIntervalWalls(rings, rimY[i], rimY[i + 1]);
-    if (geometry) {
-      walls.push({ geometry, layer: layers[i].source ?? i });
-      const idx = geometry.getIndex();
-      if (idx) wallTris += idx.count / 3;
-    }
+  for (const wall of walls) {
+    const idx = wall.geometry.getIndex();
+    if (idx) wallTris += idx.count / 3;
   }
   const wallsMs = performance.now() - w0;
 
@@ -570,13 +641,7 @@ export function assembleChunk(
           layers: layers.map((layer, i) => layer.source ?? i),
         }
       : undefined,
-    boundaries: layers.some(layer => layer.neighbours)
-      ? layers.map((layer, i) => ({
-          layer: layer.source ?? i,
-          ceiling: !!layer.ceiling,
-          fill: !!layer.fill,
-        }))
-      : undefined,
+    boundaries: chunkBoundaries(layers),
     metrics,
   };
 }

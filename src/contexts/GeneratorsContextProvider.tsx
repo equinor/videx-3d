@@ -9,6 +9,7 @@ import {
   useState,
 } from 'react';
 import { GeneratorRegistry } from '../sdk/data/GeneratorRegistry';
+import { wireGeneratorArgs } from '../sdk/data/partial-results';
 import { DataContext } from './DataContext';
 import { GeneratorsContext } from './GeneratorsContext';
 
@@ -70,13 +71,15 @@ export const GeneratorsProvider = ({
       return queue.current.add(
         () => {
           if (suspended.current) return Promise.reject('aborted');
-          return registry.invoke<T>(key, ...args);
+          // A callback argument (a `PartialSink`) has to be proxied to cross the
+          // worker — here rather than at enqueue, so an aborted call opens no port.
+          return registry.invoke<T>(key, ...wireGeneratorArgs(args, isRemote));
         },
         { priority },
       ) as T;
     };
     return { invoke };
-  }, [registry]);
+  }, [registry, isRemote]);
 
   useEffect(() => {
     const currentQueue = queue.current;

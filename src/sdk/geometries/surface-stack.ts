@@ -26,6 +26,7 @@ import {
   StackGridPlacement,
   StackReferencePlan,
 } from './surface-stack-resample';
+import { sortTrianglesSpatially } from './triangle-order';
 import {
   GridPolygon,
   GridRing,
@@ -256,6 +257,13 @@ export type StackTessellation = {
   coverage?: Uint8Array[];
   /** vertices the constrained coverage boundaries added */
   coverageRingPoints?: number;
+  /** vertices of the constrained termination lines (see `tessellateStack`) */
+  terminationRingPoints?: number;
+  /**
+   * Per pair, in the order the `terminations` were given: the vertices lying on
+   * that pair's constrained line (repeats possible), or `null` where none reach.
+   */
+  terminationVertices?: (Uint32Array | null)[];
   /**
    * Rim vertices that ended up in NO kept triangle and are therefore missing from
    * `rimVertices`.
@@ -477,6 +485,16 @@ export type StackCollapseOptions = {
    * such drops.
    */
   peelable?: boolean;
+  /**
+   * Per layer `k > 0`, one flag per TRIANGLE for the pair `(k - 1, k)`: 1 where the
+   * two are within `threshold` of each other. `null` (or absent) = judge that pair
+   * at the corners.
+   *
+   * ⭐ Produced when the pair's termination line was constrained into the
+   * tessellation (see {@link classifyThinTriangles}), where reading the corners is
+   * ambiguous: a vertex ON the line is exactly at the threshold.
+   */
+  thin?: (Uint8Array | null)[];
 };
 
 /** The result of {@link collapseStackTriangles}. */
@@ -734,6 +752,73 @@ export function rasterizeStackOutline(
 }
 
 /**
+ * Every `stride`-th node of the reference grid over a chunk's footprint, with the
+ * stride chosen so that about `nodes` of them fall inside the outline — the
+ * refinement candidates of a coarse preview build (pass them as
+ * `SurfaceStackOptions.candidates`).
+ *
+ * ⭐ Aligned to the GRID rather than to the outline, so neighbouring chunks'
+ * previews sample the same nodes.
+ *
+ * @param reference the common domain from {@link buildStackReference}
+ * @param polygon the outline, in scene XZ
+ * @param nodes how many nodes to aim for inside the outline
+ *
+ * @group Geometries
+ */
+export function previewStackCandidates(
+  reference: StackReference,
+  polygon: PlanarPolygonGeometry,
+  nodes: number,
+): { candidates: Uint32Array; stride: number } {
+  const { nx, ny } = reference.header;
+  const toGrid = surfaceWorldToGrid(reference.header, reference.worldPosition);
+  let area = 0;
+  let minCol = Infinity;
+  let maxCol = -Infinity;
+  let minRow = Infinity;
+  let maxRow = -Infinity;
+  for (const rings of polygon.coordinates as PlanarPolygonCoordinates) {
+    rings.forEach((ring, k) => {
+      const grid = ring.map(([sx, sz]) => toGrid(sx, sz));
+      let twice = 0;
+      for (let i = 0; i < grid.length; i++) {
+        const [ax, ay] = grid[i];
+        const [bx, by] = grid[(i + 1) % grid.length];
+        twice += ax * by - bx * ay;
+        if (ax < minCol) minCol = ax;
+        if (ax > maxCol) maxCol = ax;
+        if (ay < minRow) minRow = ay;
+        if (ay > maxRow) maxRow = ay;
+      }
+      // the first ring of a component is its outer ring, the rest are holes
+      area += ((k === 0 ? 1 : -1) * Math.abs(twice)) / 2;
+    });
+  }
+  const stride = Math.max(
+    1,
+    Math.round(Math.sqrt(Math.max(area, 0) / Math.max(nodes, 1))),
+  );
+  if (!(maxCol >= minCol && maxRow >= minRow)) {
+    return { candidates: new Uint32Array(0), stride };
+  }
+  const col0 = Math.max(0, Math.ceil(minCol / stride) * stride);
+  const col1 = Math.min(nx - 1, Math.floor(maxCol));
+  const row0 = Math.max(0, Math.ceil(minRow / stride) * stride);
+  const row1 = Math.min(ny - 1, Math.floor(maxRow));
+  const cols = col1 >= col0 ? Math.floor((col1 - col0) / stride) + 1 : 0;
+  const rows = row1 >= row0 ? Math.floor((row1 - row0) / stride) + 1 : 0;
+  const candidates = new Uint32Array(cols * rows);
+  let at = 0;
+  for (let row = row0; row <= row1; row += stride) {
+    for (let col = col0; col <= col1; col += stride) {
+      candidates[at++] = row * nx + col;
+    }
+  }
+  return { candidates, stride };
+}
+
+/**
  * Measure how much of a chunk's footprint each layer actually has data for.
  *
  * ⚠️ Measured over the REQUESTED outline, and reported per layer rather than as a
@@ -793,10 +878,12 @@ export function measureStackCoverage(
  * Each layer's data boundary as grid rings, or `null` where the layer has nothing
  * to bound (fully mapped, or mapped nowhere).
  *
- * ⭐ Deduped by mask IDENTITY: surveys routinely share one interpreted polygon
- * (11 of the demo set's surfaces do), and untouched masks are shared by reference
- * down the whole column, so the trace runs once per distinct extent rather than
- * once per layer.
+ * ⭐ Deduped by mask CONTENT: surveys routinely share one interpreted polygon
+ * (11 of the demo set's surfaces do), and resampling onto the common grid gives
+ * each its own array, so identity alone misses them. Identical rings are not only
+ * traced and constrained once per copy — they overlap segment for segment, so
+ * the noder compares every copy against every other (measured: 15 sets from 6
+ * distinct masks cost 2.9 s of noding; deduped, 0.6 s).
  *
  * ⚠️⚠️ NOT simplified, though a trace carries one vertex per cell and
  * Ramer-Douglas-Peucker would cut that by an order of magnitude. Simplifying a
@@ -809,9 +896,29 @@ export function measureStackCoverage(
  */
 function coverageRings(masks: Uint8Array[], nx: number): (GridRing[] | null)[] {
   const traced = new Map<Uint8Array, GridRing[] | null>();
+  const byHash = new Map<number, Uint8Array[]>();
   return masks.map(mask => {
     const known = traced.get(mask);
     if (known !== undefined) return known;
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < mask.length; i++) {
+      hash = Math.imul(hash ^ mask[i], 16777619);
+    }
+    const candidates = byHash.get(hash);
+    const twin = candidates?.find(other => {
+      if (other.length !== mask.length) return false;
+      for (let i = 0; i < mask.length; i++) {
+        if (other[i] !== mask[i]) return false;
+      }
+      return true;
+    });
+    if (twin) {
+      const rings = traced.get(twin)!;
+      traced.set(mask, rings);
+      return rings;
+    }
+    if (candidates) candidates.push(mask);
+    else byHash.set(hash, [mask]);
     let missing = false;
     let present = false;
     for (let i = 0; i < mask.length; i++) {
@@ -849,6 +956,9 @@ function coverageRings(masks: Uint8Array[], nx: number): (GridRing[] | null)[] {
  *   {@link StackTessellation.coverage}. Costs vertices along every data edge; buys
  *   an exact drop rule instead of one that must either spill past the survey or
  *   bite into it.
+ * @param terminations per pair of adjacent layers, the lines where the lower unit
+ *   wedges out (see `traceThicknessLines`), constrained like a data boundary.
+ *   Only the lines that reach the outline are kept.
  * @returns the shared tessellation, or `null` when nothing survives the mask
  *
  * @group Geometries
@@ -860,6 +970,7 @@ export function tessellateStack(
   candidates?: Uint32Array[],
   cuts?: PlanarPolygonGeometry[],
   constrainCoverage?: boolean,
+  terminations?: GridRing[][],
 ): StackTessellation | null {
   const { nx, ny } = reference.header;
   const toGrid = surfaceWorldToGrid(reference.header, reference.worldPosition);
@@ -878,19 +989,66 @@ export function tessellateStack(
   layerRings?.forEach(rings => {
     if (rings && !coverageSets.includes(rings)) coverageSets.push(rings);
   });
+  // The lines are traced over the whole column grid, which a chunk may only
+  // occupy a corner of. Kept aligned with `terminations`: the index is the pair.
+  const terminationSets: GridPolygon[] = [];
+  // ⚠️ Only TRACED points lie exactly at the threshold. A split the noding adds
+  // where two lines cross sits on the simplified chord, up to the tolerance off
+  // the true line, and must be judged by its own thickness.
+  const traced = new Set<number[]>();
+  if (terminations && terminations.length > 0) {
+    // By BOX: a simplified straight run may cross the outline with no vertex in it.
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const rings of gridPolygons) {
+      for (const ring of rings) {
+        for (const [gx, gy] of ring) {
+          minX = Math.min(minX, gx);
+          maxX = Math.max(maxX, gx);
+          minY = Math.min(minY, gy);
+          maxY = Math.max(maxY, gy);
+        }
+      }
+    }
+    const reaches = (ring: GridRing) => {
+      let x0 = Infinity;
+      let x1 = -Infinity;
+      let y0 = Infinity;
+      let y1 = -Infinity;
+      for (const [gx, gy] of ring) {
+        x0 = Math.min(x0, gx);
+        x1 = Math.max(x1, gx);
+        y0 = Math.min(y0, gy);
+        y1 = Math.max(y1, gy);
+      }
+      return x1 >= minX && x0 <= maxX && y1 >= minY && y0 <= maxY;
+    };
+    for (const rings of terminations) {
+      const kept = rings.filter(reaches);
+      for (const ring of kept) for (const p of ring) traced.add(p);
+      terminationSets.push(kept);
+    }
+  }
 
   // ⚠️ A cut rim CROSSES this chunk's rim — that is what makes it a partial
   // overlap. Two crossing constraint edges can only both follow mesh edges if the
   // crossing is itself a vertex, so they are noded first (`nodeGridRings`);
   // without it the triangulator silently drops one of the two boundaries. A data
   // boundary crosses the rim and the other layers' boundaries the same way.
-  if (cutPolygons.length > 0 || coverageSets.length > 0) {
+  if (
+    cutPolygons.length > 0 ||
+    coverageSets.length > 0 ||
+    terminationSets.some(set => set.length > 0)
+  ) {
     const flat: GridRing[] = [];
     const visit = (polys: GridPolygon[]) =>
       polys.forEach(rings => rings.forEach(ring => flat.push(ring)));
     visit(gridPolygons);
     cutPolygons.forEach(visit);
     visit(coverageSets);
+    visit(terminationSets);
     const noded = nodeGridRings(flat);
     if (noded !== flat) {
       let at = 0;
@@ -901,6 +1059,7 @@ export function tessellateStack(
       replace(gridPolygons);
       cutPolygons.forEach(replace);
       replace(coverageSets);
+      replace(terminationSets);
     }
   }
 
@@ -960,8 +1119,9 @@ export function tessellateStack(
   union.delete((ny - 1) * nx + nx - 1);
 
   // Insert row by row: consecutive points are adjacent, so the locate walk that
-  // Delatin starts from its last hit resolves in a couple of steps.
-  const nodes = Array.from(union).sort((p, q) => p - q);
+  // Delatin starts from its last hit resolves in a couple of steps. (A typed sort:
+  // numeric without a comparator, which is most of the cost on a million nodes.)
+  const nodes = Uint32Array.from(union).sort();
   for (const node of nodes) {
     const col = node % nx;
     const row = (node - col) / nx;
@@ -995,7 +1155,7 @@ export function tessellateStack(
   // chunk that a neighbour also draws, so where it leaves the reference grid the
   // chain simply restarts. A data boundary is enforced the same way.
   let coverageRingPoints = 0;
-  const constrainRing = (ring: GridRing) => {
+  const constrainRing = (ring: GridRing, record?: number[]) => {
     let prev = -1;
     for (let i = 0; i <= ring.length; i++) {
       const [gx, gy] = ring[i % ring.length];
@@ -1010,6 +1170,7 @@ export function tessellateStack(
       }
       if (prev >= 0 && vi !== prev) master.constrainEdge(prev, vi);
       prev = vi;
+      if (record && traced.has(ring[i % ring.length])) record.push(vi);
     }
   };
   for (const cut of cutPolygons) {
@@ -1023,17 +1184,30 @@ export function tessellateStack(
       constrainRing(ring);
     }
   }
+  let terminationRingPoints = 0;
+  const terminationRecords = terminationSets.map(set => {
+    const record: number[] = [];
+    for (const ring of set) {
+      terminationRingPoints += ring.length;
+      constrainRing(ring, record);
+    }
+    return record;
+  });
 
   master.removeExteriorTriangles(insidePolygon);
   if (master.triangles.length === 0) return null;
 
+  // ⭐ Spatial order, BEFORE compaction so the vertices follow it too. Every
+  // layer's index is a subset of this one, in this order.
+  const ordered = sortTrianglesSpatially(master.triangles, master.coords);
+
   // Compact: the trimmed triangulation keeps every vertex ever inserted, and the
   // stack pays for each one N times over (one Y per layer).
   const remap = new Int32Array(master.coords.length >> 1).fill(-1);
-  const indices = new Uint32Array(master.triangles.length);
+  const indices = new Uint32Array(ordered.length);
   const coordList: number[] = [];
-  for (let i = 0; i < master.triangles.length; i++) {
-    const v = master.triangles[i];
+  for (let i = 0; i < ordered.length; i++) {
+    const v = ordered[i];
     let mapped = remap[v];
     if (mapped < 0) {
       mapped = coordList.length >> 1;
@@ -1052,6 +1226,13 @@ export function tessellateStack(
     }
     return mapped;
   });
+
+  const terminationVertices = terminations
+    ? terminationRecords.map(record => {
+        const kept = record.map(v => remap[v]).filter(v => v >= 0);
+        return kept.length > 0 ? Uint32Array.from(kept) : null;
+      })
+    : undefined;
 
   const coords = Float32Array.from(coordList);
 
@@ -1098,6 +1279,8 @@ export function tessellateStack(
     cuts: cutFlags,
     coverage: coverageFlags,
     coverageRingPoints,
+    terminationRingPoints,
+    terminationVertices,
     rimDropped,
     constraintFailures: master.constraintFailures,
   };
@@ -1550,22 +1733,63 @@ export function sampleStackWeights(
 ): Float32Array[] {
   const { nx, ny } = reference.header;
   const vertices = coords.length >> 1;
+  // Where each vertex reads, worked out once for every layer. Most vertices are
+  // grid nodes (`node >= 0`), and bilinear weights at a node ARE the node's
+  // value, so those read it directly; only constraint points interpolate.
+  const node = new Int32Array(vertices);
+  const fx = new Float64Array(vertices);
+  const fz = new Float64Array(vertices);
+  // the window of nodes the vertices read
+  let minCol = nx;
+  let maxCol = -1;
+  let minRow = ny;
+  let maxRow = -1;
+  for (let v = 0; v < vertices; v++) {
+    const col = Math.min(Math.max(coords[2 * v], 0), nx - 1);
+    const row = Math.min(Math.max(coords[2 * v + 1], 0), ny - 1);
+    const x0 = Math.floor(col);
+    const z0 = Math.floor(row);
+    fx[v] = col - x0;
+    fz[v] = row - z0;
+    node[v] = fx[v] === 0 && fz[v] === 0 ? z0 * nx + x0 : -1;
+    if (x0 < minCol) minCol = x0;
+    if (z0 < minRow) minRow = z0;
+    maxCol = Math.max(maxCol, Math.min(x0 + 1, nx - 1));
+    maxRow = Math.max(maxRow, Math.min(z0 + 1, ny - 1));
+  }
   return weights.map(weight => {
     const out = new Float32Array(vertices);
+    // A layer that needed no inference here is all zero — so is the answer.
+    // Scanned over the window only: the weights cover the whole column.
+    let any = false;
+    for (let row = minRow; row <= maxRow && !any; row++) {
+      const end = row * nx + maxCol;
+      for (let n = row * nx + minCol; n <= end; n++) {
+        if (weight[n] !== 0) {
+          any = true;
+          break;
+        }
+      }
+    }
+    if (!any) return out;
+
     for (let v = 0; v < vertices; v++) {
+      if (node[v] >= 0) {
+        out[v] = weight[node[v]];
+        continue;
+      }
       const col = Math.min(Math.max(coords[2 * v], 0), nx - 1);
       const row = Math.min(Math.max(coords[2 * v + 1], 0), ny - 1);
       const x0 = Math.floor(col);
       const z0 = Math.floor(row);
       const x1 = Math.min(x0 + 1, nx - 1);
       const z1 = Math.min(z0 + 1, ny - 1);
-      const fx = col - x0;
-      const fz = row - z0;
       const a = weight[z0 * nx + x0];
       const b = weight[z0 * nx + x1];
       const c = weight[z1 * nx + x0];
       const d = weight[z1 * nx + x1];
-      out[v] = (a + (b - a) * fx) * (1 - fz) + (c + (d - c) * fx) * fz;
+      out[v] =
+        (a + (b - a) * fx[v]) * (1 - fz[v]) + (c + (d - c) * fx[v]) * fz[v];
     }
     return out;
   });
@@ -1703,12 +1927,112 @@ function makeAbsentTriangleTest(
     (cut ? cut[a] === 1 && cut[b] === 1 && cut[c] === 1 : false);
 }
 
+// ⭐ The ONE place a pair's thickness is judged, so the collapse, the intervals
+// and everything built on them cannot disagree about where a unit wedges out.
+function makeThinTest(
+  heights: Float32Array[],
+  upper: number,
+  lower: number,
+  options: StackCollapseOptions,
+): (t: number, a: number, b: number, c: number) => boolean {
+  const flags = lower === upper + 1 ? options.thin?.[lower] : undefined;
+  if (flags) return t => flags[t] === 1;
+  const threshold = options.threshold ?? 0.5;
+  const top = heights[upper];
+  const bottom = heights[lower];
+  return (_t, a, b, c) =>
+    top[a] - bottom[a] <= threshold &&
+    top[b] - bottom[b] <= threshold &&
+    top[c] - bottom[c] <= threshold;
+}
+
+/**
+ * Per pair of adjacent layers whose termination line was constrained into the
+ * tessellation, one flag per triangle: 1 where the pair is within `threshold` of
+ * each other (see {@link StackCollapseOptions.thin}).
+ *
+ * A vertex ON the line is at the threshold by construction, so it counts as thin.
+ * Every edge bounding a thin region then has both ends at most `threshold` apart,
+ * and the wall closing it stays as invisible as the per-corner rule makes it. A
+ * triangle with all three corners on the line says nothing at its corners, and is
+ * judged by the grid at its centroid.
+ *
+ * @param reference the common grid the lines were traced on
+ * @param tessellation the shared tessellation, carrying `terminationVertices`
+ *   for the pairs `(k - 1, k)`, `k = 1, 2, …`
+ * @param heights per-layer vertex heights, after the resolve
+ * @param threshold the collapse threshold
+ * @returns per layer `k`, the flags for the pair `(k - 1, k)`; `null` where no line
+ *   was constrained
+ *
+ * @group Geometries
+ */
+export function classifyThinTriangles(
+  reference: StackReference,
+  tessellation: StackTessellation,
+  heights: Float32Array[],
+  threshold: number,
+): (Uint8Array | null)[] {
+  const out: (Uint8Array | null)[] = heights.map(() => null);
+  const lines = tessellation.terminationVertices;
+  if (!lines) return out;
+  const { coords, indices } = tessellation;
+  const { nx, ny } = reference.header;
+  const triangles = indices.length / 3;
+  const onLine = new Uint8Array(coords.length >> 1);
+  const isNoData = (v: number) => v === NO_DATA;
+
+  lines.forEach((line, p) => {
+    const lower = p + 1;
+    if (!line || lower >= heights.length) return;
+    onLine.fill(0);
+    for (let i = 0; i < line.length; i++) onLine[line[i]] = 1;
+    const top = heights[lower - 1];
+    const bottom = heights[lower];
+    const thinAt = (v: number) =>
+      onLine[v] === 1 || top[v] - bottom[v] <= threshold;
+    const flags = new Uint8Array(triangles);
+    for (let t = 0; t < triangles; t++) {
+      const a = indices[3 * t];
+      const b = indices[3 * t + 1];
+      const c = indices[3 * t + 2];
+      if (onLine[a] && onLine[b] && onLine[c]) {
+        const col = (coords[2 * a] + coords[2 * b] + coords[2 * c]) / 3;
+        const row =
+          (coords[2 * a + 1] + coords[2 * b + 1] + coords[2 * c + 1]) / 3;
+        const above = sampleValidGrid(
+          reference.channels[lower - 1],
+          nx,
+          ny,
+          col,
+          row,
+          isNoData,
+          0,
+        );
+        const below = sampleValidGrid(
+          reference.channels[lower],
+          nx,
+          ny,
+          col,
+          row,
+          isNoData,
+          0,
+        );
+        if (above - below <= threshold) flags[t] = 1;
+      } else if (thinAt(a) && thinAt(b) && thinAt(c)) {
+        flags[t] = 1;
+      }
+    }
+    out[lower] = flags;
+  });
+  return out;
+}
+
 export function collapseStackTriangles(
   heights: Float32Array[],
   indices: Uint32Array,
   options: StackCollapseOptions = {},
 ): StackCollapseResult {
-  const threshold = options.threshold ?? 0.5;
   const out: (Uint32Array | null)[] = [];
   const peelOut: (Uint32Array | null)[] = [];
   const dropped: number[] = [];
@@ -1716,7 +2040,7 @@ export function collapseStackTriangles(
   const droppedCollapsed: number[] = [];
   const droppedExcluded: number[] = [];
 
-  heights.forEach((current, layer) => {
+  heights.forEach((_, layer) => {
     const coverage =
       options.coverageTriangles?.[layer] ?? options.coverage?.[layer];
     const cut = options.absent?.[layer];
@@ -1743,6 +2067,13 @@ export function collapseStackTriangles(
       options.carrier !== undefined && !isCarrier && !isUnbounded
         ? (heights[options.carrier] ?? null)
         : null;
+    const aboveThin = above ? makeThinTest(heights, up, layer, options) : null;
+    const belowThin = below
+      ? makeThinTest(heights, layer, layer + 1, options)
+      : null;
+    const floorThin = floor
+      ? makeThinTest(heights, layer, options.carrier!, options)
+      : null;
     const excluded = options.capExcluded?.[layer] ?? null;
     const nothingToDrop =
       isUnbounded || (!coverage && !cut && !above && !below && !floor);
@@ -1783,18 +2114,8 @@ export function collapseStackTriangles(
       // Neither of these references a layer above, so they hold for the peel set
       // too: a void's ceiling yields to the horizon below it, and everything
       // flattened onto the floor is the floor.
-      const belowDrop = !!(
-        below &&
-        current[a] - below[a] <= threshold &&
-        current[b] - below[b] <= threshold &&
-        current[c] - below[c] <= threshold
-      );
-      const floorDrop = !!(
-        floor &&
-        current[a] - floor[a] <= threshold &&
-        current[b] - floor[b] <= threshold &&
-        current[c] - floor[c] <= threshold
-      );
+      const belowDrop = !!belowThin && belowThin(t, a, b, c);
+      const floorDrop = !!floorThin && floorThin(t, a, b, c);
       if (peelKept && !belowDrop && !floorDrop && !uncovered!(t, a, b, c)) {
         peelKept[peelN++] = a;
         peelKept[peelN++] = b;
@@ -1805,12 +2126,7 @@ export function collapseStackTriangles(
         absentDrops++;
         continue;
       }
-      if (
-        above &&
-        above[a] - current[a] <= threshold &&
-        above[b] - current[b] <= threshold &&
-        above[c] - current[c] <= threshold
-      ) {
+      if (aboveThin && aboveThin(t, a, b, c)) {
         collapsedDrops++;
         continue;
       }
@@ -1900,15 +2216,13 @@ export function stackIntervalStates(
   indices: Uint32Array,
   options: StackCollapseOptions = {},
 ): Uint8Array[] {
-  const threshold = options.threshold ?? 0.5;
   const triangles = indices.length / 3;
   const out: Uint8Array[] = [];
 
   for (let i = 0; i + 1 < heights.length; i++) {
-    const top = heights[i];
-    const bottom = heights[i + 1];
     const topMissing = makeAbsentTriangleTest(options, i);
     const bottomMissing = makeAbsentTriangleTest(options, i + 1);
+    const thin = makeThinTest(heights, i, i + 1, options);
     const state = new Uint8Array(triangles);
     for (let t = 0; t < triangles; t++) {
       const a = indices[3 * t];
@@ -1916,12 +2230,7 @@ export function stackIntervalStates(
       const c = indices[3 * t + 2];
       if (topMissing(t, a, b, c)) continue;
       if (bottomMissing(t, a, b, c)) continue;
-      state[t] =
-        top[a] - bottom[a] <= threshold &&
-        top[b] - bottom[b] <= threshold &&
-        top[c] - bottom[c] <= threshold
-          ? INTERVAL_FLAT
-          : INTERVAL_PRESENT;
+      state[t] = thin(t, a, b, c) ? INTERVAL_FLAT : INTERVAL_PRESENT;
     }
     out.push(state);
   }
@@ -1967,6 +2276,8 @@ export const CAP_SIDE_OPEN = 255;
 export type StackCapNeighbours = {
   above: Uint8Array;
   below: Uint8Array;
+  /** the distinct interval ids in `above` and `below`, ascending, without {@link CAP_SIDE_OPEN} */
+  units: number[];
 };
 
 /**
@@ -2035,6 +2346,7 @@ export function stackCapNeighbours(
     const ids = own ? subsetTriangles(indices, own) : all;
     const above = new Uint8Array(ids.length);
     const below = new Uint8Array(ids.length);
+    const seen = new Uint8Array(CAP_SIDE_OPEN + 1);
     for (let k = 0; k < ids.length; k++) {
       const t = ids[k];
       let up = CAP_SIDE_OPEN;
@@ -2053,8 +2365,12 @@ export function stackCapNeighbours(
       }
       above[k] = up;
       below[k] = down;
+      seen[up] = 1;
+      seen[down] = 1;
     }
-    out.push({ above, below });
+    const units: number[] = [];
+    for (let u = 0; u < CAP_SIDE_OPEN; u++) if (seen[u]) units.push(u);
+    out.push({ above, below, units });
   }
   return out;
 }

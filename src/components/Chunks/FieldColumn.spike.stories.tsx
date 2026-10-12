@@ -352,12 +352,15 @@ type FieldColumnStoryProps = {
   rimSpacing: number;
   maxError: number;
   maxNodes: number;
+  preview: boolean;
+  previewSaturation: number;
   seal: boolean;
   sealMode: 'proportional' | 'void';
   minThickness: number;
   maxFill: number;
   collapseThreshold: number;
   constrainCoverage: boolean;
+  constrainTerminations: boolean;
   section: boolean;
   sectionMode: 'fixed' | 'camera' | 'target';
   sectionCameraDistance: number;
@@ -400,6 +403,7 @@ type FieldColumnStoryProps = {
   detailStrength: number;
   chunkPicking: boolean;
   renderStats: boolean;
+  buildDiagnostics: boolean;
   resources: boolean;
   resourceInterval: number;
   wellbores: boolean;
@@ -810,6 +814,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       maxFill: props.maxFill,
       collapseThreshold: props.collapseThreshold,
       constrainCoverage: props.constrainCoverage,
+      constrainTerminations: props.constrainTerminations,
       maxNodes: props.maxNodes,
     }),
     [
@@ -819,6 +824,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       props.maxFill,
       props.collapseThreshold,
       props.constrainCoverage,
+      props.constrainTerminations,
       props.maxNodes,
     ],
   );
@@ -1139,6 +1145,10 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
             sharedTriangles: shared,
             crossings: d?.crossings ?? null,
             constraintFailures: d?.constraintFailures ?? null,
+            terminationRingPoints: d?.terminationRingPoints ?? null,
+            terminationLinesTiny: d?.terminationLinesTiny ?? null,
+            terminationLinesDiscarded: d?.terminationLinesDiscarded ?? null,
+            maxInteriorWall: d?.maxInteriorWall ?? null,
             referenceNodes: d?.referenceNodes ?? null,
             referenceStep: d?.referenceStep ?? null,
             ...chunkTimings(metrics),
@@ -1160,6 +1170,9 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
         <Videx3dLocate />
         <ViewOffset into={viewOffset} />
         <ChunkStack
+          diagnostics={props.buildDiagnostics}
+          preview={props.preview}
+          previewSaturation={props.previewSaturation}
           outline={outline}
           surfaces={column}
           water={water}
@@ -1297,6 +1310,8 @@ export const Default: Story = {
     rimSpacing: 250,
     maxError: 5,
     maxNodes: 4000000,
+    preview: true,
+    previewSaturation: 0.5,
     // Wellbores
     wellbores: false,
     wellboreColor: '#9aa0a6',
@@ -1339,6 +1354,7 @@ export const Default: Story = {
     maxFill: 250,
     collapseThreshold: 0.5,
     constrainCoverage: false,
+    constrainTerminations: true,
     // Section
     section: false,
     sectionMode: 'camera',
@@ -1391,6 +1407,7 @@ export const Default: Story = {
     chunkPicking: false,
     // Diagnostics
     renderStats: false,
+    buildDiagnostics: true,
     resources: true,
     resourceInterval: 1000,
   },
@@ -1464,6 +1481,18 @@ export const Default: Story = {
       options: [250000, 500000, 1000000, 2000000, 4000000],
       description:
         '⭐ QUALITY vs SPEED. Node budget for the stack’s common grid; beyond it the grid is decimated by an integer step. Resample, seal, depth-order resolve and refinement are all linear in it, so halving the budget quarters the work — at the cost of resolving every layer’s data edges and holes on a coarser cell. Check `referenceStep` in the report.',
+      table: { category: 'Surfaces' },
+    },
+    preview: {
+      description:
+        'Show a coarse build of the chunk as soon as the column is ready, replaced layer by layer as the real one arrives. Off: the real chunk streams in as it builds.',
+      table: { category: 'Surfaces' },
+    },
+    previewSaturation: {
+      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      if: { arg: 'preview' },
+      description:
+        'Saturation of the preview, so what is still provisional reads as such: 0 grey, 1 as the real chunk.',
       table: { category: 'Surfaces' },
     },
     wellbores: {
@@ -1718,6 +1747,11 @@ export const Default: Story = {
         'Constrain each layer’s data boundary into the shared tessellation, so a triangle is either wholly inside a survey or wholly outside it. Costs vertices along every partly-mapped layer’s edge.',
       table: { category: 'Resolve' },
     },
+    constrainTerminations: {
+      description:
+        'Constrain the lines where a unit wedges out into the shared tessellation (simplified to half a cell) instead of refining the grid nodes either side of them. Watch `sharedTriangles`, `tessellateMs` and `terminationRingPoints` in the report.',
+      table: { category: 'Resolve' },
+    },
     water: { table: { category: 'Water' } },
     section: {
       description:
@@ -1921,6 +1955,11 @@ export const Default: Story = {
     renderStats: {
       description:
         'GPU time, frame time, draw calls and triangles summed over every pass of the frame.',
+      table: { category: 'Diagnostics' },
+    },
+    buildDiagnostics: {
+      description:
+        'Measure `metrics.diagnostics` — the per-layer table and the `CHUNKREPORT` fields in the console. ⚠️ Costs ~0.9 s per build on this column, and the per-phase timings are part of it: off, the report keeps only the total.',
       table: { category: 'Diagnostics' },
     },
     resources: {

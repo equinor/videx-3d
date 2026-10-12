@@ -1,7 +1,12 @@
 import type {
+  StackCapArrays,
+  StackCapInput,
+} from '../../sdk/geometries/stack-cap-arrays';
+import type {
   StackGridPlacement,
   StackReferencePlan,
 } from '../../sdk/geometries/surface-stack-resample';
+import type { ThicknessLoops } from '../../sdk/geometries/surface-stack-terminations';
 import type {
   WellboreOutlineCoordinates,
   WellboreOutlineOptions,
@@ -69,11 +74,51 @@ export type ResampleResponse = {
 export type StackWorkerRequest =
   | RefineRequest
   | ResampleRequest
-  | OutlineRequest;
+  | OutlineRequest
+  | TerminationsRequest
+  | CapRequest;
 export type StackWorkerResponse =
   | RefineResponse
   | ResampleResponse
-  | OutlineResponse;
+  | OutlineResponse
+  | TerminationsResponse
+  | CapResponse;
+
+/**
+ * A cap task: build ONE cap's arrays (see `buildStackCapArrays`). Everything in
+ * `input` is transferred, so the caller sends copies.
+ */
+export type CapRequest = {
+  kind: 'cap';
+  id: number;
+  input: StackCapInput;
+};
+
+export type CapResponse = {
+  kind: 'cap';
+  id: number;
+  arrays: StackCapArrays;
+};
+
+/**
+ * A termination scan task: trace where ONE adjacent pair's thickness crosses the
+ * collapse threshold (see `scanThicknessLoops`). Both channels are transferred, so
+ * the caller sends copies.
+ */
+export type TerminationsRequest = {
+  kind: 'terminations';
+  id: number;
+  above: Float32Array;
+  below: Float32Array;
+  nx: number;
+  threshold: number;
+};
+
+export type TerminationsResponse = {
+  kind: 'terminations';
+  id: number;
+  loops: ThicknessLoops;
+};
 
 /**
  * A wellbore outline task: buffer and contour trajectory runs that were already

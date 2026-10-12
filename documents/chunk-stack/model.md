@@ -99,7 +99,7 @@ Two things follow:
   age**, which the host resolves from its own stratigraphic column data (surface
   name → unit → age). Sub-zone naming often counts *down* with depth
   (`Fm. 2.2` above `Fm. 2.1`), so name sorts get it backwards too.
-- **Check the diagnostics.** `Chunk.onBuild` reports
+- **Check the diagnostics.** With `diagnostics` set, `Chunk.onBuild` reports
   `metrics.diagnostics.crossings` and `crossingsCovered` — how many vertices were
   found out of order *before* the resolve enforced anything. A pair inverted over a
   large share of the footprint is nearly always an ordering mistake, not geology.

@@ -212,6 +212,7 @@ const SyntheticCoverageStory = (props: SyntheticCoverageProps) => {
     <>
       <UtmArea origin={origin} utmZone={utmZone}>
         <ChunkStack
+          diagnostics
           outline={outline}
           surfaces={column}
           resolve={resolve}

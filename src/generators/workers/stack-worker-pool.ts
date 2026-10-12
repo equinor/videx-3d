@@ -1,4 +1,9 @@
 import pLimit from 'p-limit';
+import {
+  buildStackCapArrays,
+  StackCapArrays,
+  StackCapInput,
+} from '../../sdk/geometries/stack-cap-arrays';
 import { collectStackCandidates } from '../../sdk/geometries/surface-stack-candidates';
 import {
   resampleStackLayer,
@@ -7,6 +12,10 @@ import {
   StackReferencePlan,
 } from '../../sdk/geometries/surface-stack-resample';
 import {
+  scanThicknessLoops,
+  ThicknessLoops,
+} from '../../sdk/geometries/surface-stack-terminations';
+import {
   createWellboreOutlineCoordinates,
   WellboreOutlineCoordinates,
   WellborePath,
@@ -14,12 +23,14 @@ import {
 // oxlint-disable-next-line import/default -- Vite virtual module; the `?worker&inline` query is resolved by the bundler, not by the linter's resolver.
 import RefineWorker from './stack-refine.worker?worker&inline';
 import type {
+  CapResponse,
   OutlineRequest,
   OutlineResponse,
   RefineResponse,
   ResampleResponse,
   StackWorkerRequest,
   StackWorkerResponse,
+  TerminationsResponse,
 } from './stack-worker-types';
 
 type PendingTask = {
@@ -189,19 +200,25 @@ export async function resampleStackChannel(
  * The channels are still needed by the caller afterwards (to sample the heights),
  * so each worker gets a transferred COPY rather than the channel itself.
  *
+ * @param onProgress called with the layers done so far, as each finishes
  * @returns the per-layer candidate node lists, and the pool size used (0 = serial)
  */
 export async function refineStackChannels(
   channels: Float32Array[],
   nx: number,
   maxError: number,
+  onProgress?: (done: number, total: number) => void,
 ): Promise<{ candidates: Uint32Array[]; poolSize: number }> {
+  const total = channels.length;
+  let done = 0;
   const pool = getStackPool();
   if (!pool) {
     return {
-      candidates: channels.map(channel =>
-        collectStackCandidates(channel, nx, maxError),
-      ),
+      candidates: channels.map(channel => {
+        const nodes = collectStackCandidates(channel, nx, maxError);
+        onProgress?.(++done, total);
+        return nodes;
+      }),
       poolSize: 0,
     };
   }
@@ -217,11 +234,113 @@ export async function refineStackChannels(
           { kind: 'refine', id: taskId++, channel: copy, nx, maxError },
           [copy.buffer],
         )) as RefineResponse;
+        onProgress?.(++done, total);
         return res.nodes;
       }),
     ),
   );
   return { candidates, poolSize: pool.size };
+}
+
+/**
+ * Scan every adjacent pair's termination loops (see `scanThicknessLoops`) —
+ * across the worker pool when available, on the current thread otherwise. Each
+ * pair needs only its own two channels, so each worker gets copies of those.
+ *
+ * @param onProgress called with the pairs done so far, as each finishes
+ * @returns per adjacent pair, aligned with `channels` (pair `i` is `i, i + 1`)
+ */
+export async function scanStackTerminations(
+  channels: Float32Array[],
+  nx: number,
+  threshold: number,
+  onProgress?: (done: number, total: number) => void,
+): Promise<ThicknessLoops[]> {
+  const pairs = channels.slice(1).map((below, i) => [channels[i], below]);
+  const total = pairs.length;
+  let done = 0;
+  const pool = getStackPool();
+  if (!pool) {
+    return pairs.map(([above, below]) => {
+      const loops = scanThicknessLoops(above, below, nx, threshold);
+      onProgress?.(++done, total);
+      return loops;
+    });
+  }
+  // Copies made inside the limited task, as in `refineStackChannels`.
+  const limit = pLimit(pool.size);
+  return Promise.all(
+    pairs.map(([above, below]) =>
+      limit(async () => {
+        const a = above.slice();
+        const b = below.slice();
+        const res = (await pool.run(
+          {
+            kind: 'terminations',
+            id: taskId++,
+            above: a,
+            below: b,
+            nx,
+            threshold,
+          },
+          [a.buffer, b.buffer],
+        )) as TerminationsResponse;
+        onProgress?.(++done, total);
+        return res.loops;
+      }),
+    ),
+  );
+}
+
+/**
+ * Build every cap of a stack (see `buildStackCapArrays`) — across the worker pool
+ * when available, on the current thread otherwise. `onCap` hears each one as it
+ * finishes, in ANY order; a `null` job, and every job once `isStale` says so, gets
+ * `null`.
+ */
+export async function buildStackCaps(
+  jobs: (StackCapInput | null)[],
+  onCap: (layer: number, arrays: StackCapArrays | null) => void,
+  isStale: () => boolean = () => false,
+): Promise<void> {
+  const pool = getStackPool();
+  if (!pool) {
+    jobs.forEach((job, i) =>
+      onCap(i, job && !isStale() ? buildStackCapArrays(job) : null),
+    );
+    return;
+  }
+  // Copies made inside the limited task, as in `refineStackChannels`, and the
+  // shared index only for a cap that draws it.
+  const limit = pLimit(pool.size);
+  await Promise.all(
+    jobs.map((job, i) =>
+      limit(async () => {
+        if (!job || isStale()) return onCap(i, null);
+        const input: StackCapInput = {
+          positionsXZ: job.positionsXZ.slice(),
+          y: job.y.slice(),
+          shared: job.own || job.peel ? new Uint32Array(0) : job.shared.slice(),
+          own: job.own?.slice() ?? null,
+          peel: job.peel?.slice() ?? null,
+        };
+        const transfer = [
+          input.positionsXZ,
+          input.y,
+          input.shared,
+          input.own,
+          input.peel,
+        ].flatMap(array =>
+          array && array.byteLength > 0 ? [array.buffer as ArrayBuffer] : [],
+        );
+        const res = (await pool.run(
+          { kind: 'cap', id: taskId++, input },
+          transfer,
+        )) as CapResponse;
+        onCap(i, res.arrays);
+      }),
+    ),
+  );
 }
 
 /**

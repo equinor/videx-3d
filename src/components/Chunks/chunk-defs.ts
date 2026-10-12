@@ -11,6 +11,7 @@ import {
   StackRelief,
   StackSectionSource,
   SurfaceClipHeader,
+  SurfaceChunkPhase,
   SurfaceMeta,
   Vec2,
   WellboreFence,
@@ -199,12 +200,25 @@ export function isCarrierSpecLayer(layer: SurfaceChunkSpecLayer): boolean {
 export type ChunkBuildState = 'building' | 'ready' | 'empty' | 'failed';
 
 /**
+ * The step a building chunk is on: `done` of `total` units of `phase` (layers,
+ * pairs or caps). A step with nothing to count reports `0` of `1`.
+ *
+ * @group Components
+ */
+export type ChunkBuildProgress = {
+  phase: SurfaceChunkPhase;
+  done: number;
+  total: number;
+};
+
+/**
  * How far a {@link ChunkStack} is through building its chunks.
  *
  * Counted in CHUNKS, not in work: the first chunk of a shared column pays for the
  * fetch, the resample and the resolve (~half the wall clock on the demo field), so
  * the count moves in uneven steps. It is still the honest signal — a smooth bar
- * here would be an invented one.
+ * here would be an invented one. What moves within a chunk is reported as
+ * `current`, in the units that step actually counts.
  *
  * @group Components
  */
@@ -217,6 +231,12 @@ export type ChunkStackProgress = {
   completed: number;
   /** `completed / total`, or 1 for an empty stack */
   fraction: number;
+  /**
+   * The latest step reported by a chunk still building, in real units of work
+   * rather than an estimate. Absent before the first report and once none is
+   * building.
+   */
+  current?: ChunkBuildProgress;
 };
 
 /**
@@ -1107,8 +1127,8 @@ export type ChunkResolveOptions = {
   /**
    * Refine the tessellation along the lines where a unit wedges out, so the
    * dropped area follows the pinch-out instead of the nearest edges the height
-   * refinement happened to leave there. Default true; costs vertices along those
-   * lines only. Turn off to see what it is buying.
+   * refinement happened to leave there. Default: on only when
+   * `constrainTerminations` is off, which puts the line itself into the mesh.
    */
   refineTerminations?: boolean;
   /**
@@ -1125,6 +1145,13 @@ export type ChunkResolveOptions = {
    * tessellation is shared by the whole stack.
    */
   constrainCoverage?: boolean;
+  /**
+   * Constrain the lines where a unit wedges out into the shared tessellation,
+   * simplified to within half a grid cell, instead of refining the grid nodes
+   * either side of them (`refineTerminations`, which this turns off). Default
+   * true.
+   */
+  constrainTerminations?: boolean;
   /**
    * Node budget for the stack's common grid — the ⭐ **quality/speed dial** for
    * the whole build. Default `DEFAULT_STACK_MAX_NODES` (4,000,000).
@@ -1308,6 +1335,13 @@ export type SurfaceChunkSpec = {
    * fragments on the strength of that cover.
    */
   peelable?: boolean;
+  /** measure and return `SurfaceChunkMetrics.diagnostics`. Default false. */
+  diagnostics?: boolean;
+  /**
+   * When streamed, send a coarse build of the whole chunk first (a
+   * `SurfaceChunkPreviewPacket`). Column builds only. Default true.
+   */
+  preview?: boolean;
   /**
    * Identifies the requesting chunk and the ordinal of this request, so a build
    * the caller has already superseded can give up instead of running to

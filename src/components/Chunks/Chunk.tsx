@@ -11,10 +11,12 @@ import {
 import { Group } from 'three';
 import { useGenerator } from '../../hooks/useGenerator';
 import {
+  createSurfaceChunkReceiver,
   PlanarPolygonGeometry,
   polygonArea,
   SurfaceChunk,
   SurfaceChunkMetrics,
+  SurfaceChunkPacket,
   SurfaceMeta,
   unpackSurfaceChunk,
 } from '../../sdk';
@@ -25,6 +27,7 @@ import {
 } from '../EventEmitter/EventEmitterContext';
 import { PointerEvents } from '../../events/interaction-events';
 import {
+  ChunkBuildProgress,
   ChunkBuildState,
   CARRIER_SEAM_ID,
   chunkCutDepths,
@@ -42,11 +45,13 @@ import { buildSurfaceChunkSpec } from './chunk-spec';
 import { chunkDetailKey } from './chunk-detail';
 import { trackChunk, untrackChunk, releaseGeometry } from './chunk-resources';
 import { ChunkStackContext, ChunkSurfaceClaim } from './ChunkContext';
-import { ChunkMeshes } from './ChunkMeshes';
+import { ChunkMeshes, ChunkMeshesProps } from './ChunkMeshes';
+import { chunkLayerReveal, chunkLayers } from './chunk-reveal';
 import { ChunkOutline, CutoutSource, resolveCutoutSource } from './cutout';
 import { ChunkInferenceStyle } from './inference-material';
 import { resolveWellboreOutline } from './resolveWellboreOutline';
 import { SurfaceSamplerRegistryContext } from './surface-sampler';
+import { useStaggeredReveal } from './useStaggeredReveal';
 
 /** Stable identity for the default resolve options (a new object rebuilds). */
 const DEFAULT_RESOLVE: ChunkResolveOptions = {};
@@ -57,6 +62,25 @@ const DEFAULT_RESOLVE: ChunkResolveOptions = {};
 // every request from the remounted chunk look superseded — nothing would build.
 let buildTokens = 0;
 const nextBuildToken = () => ++buildTokens;
+
+/**
+ * What is on screen. A streamed build hands out a new chunk object per packet over
+ * the SAME geometries, so it is the build, through its latest object, that owns
+ * them.
+ */
+type ShownChunk = {
+  chunk: SurfaceChunk;
+  build: { latest: SurfaceChunk };
+  complete: boolean;
+  /** the layers whose caps have arrived, in arrival order — all of them once complete */
+  ready: number[];
+};
+
+/** A coarse stand-in for the chunk being built (see `SurfaceChunkPreviewPacket`). */
+type PreviewChunk = {
+  chunk: SurfaceChunk;
+  build: { latest: SurfaceChunk };
+};
 
 /**
  * How long a chunk waits on the stack's sibling bookkeeping before calling it a
@@ -164,6 +188,23 @@ export type ChunkProps = {
   rimSpacing?: number;
   /** interior simplification error (grid height units). Inherits when unset. */
   maxError?: number;
+  /**
+   * Measure and report `metrics.diagnostics` (see `onBuild`). Off by default: on a
+   * field column the measuring alone costs about a second of the build. Inherits
+   * from the stack when unset.
+   */
+  diagnostics?: boolean;
+  /**
+   * Show a coarse version of the chunk while the real geometry builds. It is
+   * replaced layer by layer, each as soon as the real one arrives. Only a chunk of
+   * a `ChunkStack` column gets one. Inherits from the stack when unset; default true.
+   */
+  preview?: boolean;
+  /**
+   * Saturation the preview is drawn with, so it reads as provisional: 0 grey, 1 as
+   * the real chunk. Inherits from the stack when unset; default 0.5.
+   */
+  previewSaturation?: number;
   /** render the surface tops. Default true. */
   showSurfaces?: boolean;
   /** render the side walls. Default true. */
@@ -201,7 +242,7 @@ export type ChunkProps = {
   peel?: ChunkPeel;
   /**
    * Called with the build metrics each time the geometry is (re)built. Use it to
-   * inspect `metrics.diagnostics` — in particular the crossing counts, which are
+   * inspect `metrics.diagnostics` (present only with `diagnostics`) — in particular the crossing counts, which are
    * how a mis-ordered `layers` array makes itself visible (the resolve otherwise
    * dutifully makes ANY order consistent).
    */
@@ -279,6 +320,9 @@ export const Chunk = ({
   resolve,
   rimSpacing,
   maxError,
+  diagnostics,
+  preview,
+  previewSaturation,
   showSurfaces = true,
   showWalls = true,
   cullHiddenCaps = true,
@@ -323,8 +367,13 @@ export const Chunk = ({
   }, [onBuildStateChange]);
 
   const registryKey = useId();
-  const { registerChunk, releaseChunk, publishOutline, reportBuildState } =
-    stack;
+  const {
+    registerChunk,
+    releaseChunk,
+    publishOutline,
+    reportBuildState,
+    reportBuildProgress,
+  } = stack;
 
   // Released on UNMOUNT only, through a ref so the effect never re-runs: the
   // registration cleanup fires on every claims change too, and clearing the
@@ -343,8 +392,17 @@ export const Chunk = ({
     [reportBuildState, registryKey],
   );
 
+  const reportStep = useCallback(
+    (step: ChunkBuildProgress) => reportBuildProgress?.(registryKey, step),
+    [reportBuildProgress, registryKey],
+  );
+
   const resolvedRimSpacing = rimSpacing ?? stack.rimSpacing;
   const resolvedMaxError = maxError ?? stack.maxError;
+  const resolvedDiagnostics = diagnostics ?? stack.diagnostics ?? false;
+  const resolvedPreview = preview ?? stack.preview ?? true;
+  const resolvedPreviewSaturation =
+    previewSaturation ?? stack.previewSaturation ?? 0.5;
   const resolvedResolve = resolve ?? stack.resolve ?? DEFAULT_RESOLVE;
 
   // --- Outline (layer 1): resolve the cut source (explicit prop, else the stack
@@ -710,6 +768,8 @@ export const Chunk = ({
     return buildSurfaceChunkSpec(stableLayers, utm.utmToArea, outlinePolygon, {
       rimSpacing: resolvedRimSpacing,
       maxError: resolvedMaxError,
+      diagnostics: resolvedDiagnostics,
+      preview: resolvedPreview,
       resolve: resolvedResolve,
       coverAbove: coverAbove.polygon,
       seams: layerSeams,
@@ -734,6 +794,8 @@ export const Chunk = ({
     outlinePolygon,
     resolvedRimSpacing,
     resolvedMaxError,
+    resolvedDiagnostics,
+    resolvedPreview,
     resolvedResolve,
     coverAbove,
     layerSeams,
@@ -748,7 +810,9 @@ export const Chunk = ({
     peelable,
   ]);
 
-  const [chunk, setChunk] = useState<SurfaceChunk | null>(null);
+  const [shown, setShown] = useState<ShownChunk | null>(null);
+  const [previewed, setPreviewed] = useState<PreviewChunk | null>(null);
+  const chunk = shown?.chunk ?? null;
   useEffect(() => {
     // ⭐⭐ A run of this effect means every input the geometry was built from has
     // moved on, so what is on screen is stale. Let it go NOW rather than carrying
@@ -759,7 +823,8 @@ export const Chunk = ({
     // not something to get by accident.
     // ⚠️ No-op re-render when it is already null (React bails on an equal value).
     // oxlint-disable-next-line react-hooks/set-state-in-effect -- releasing the stale build IS the effect
-    setChunk(null);
+    setShown(null);
+    setPreviewed(null);
     if (unlisted.length > 0) {
       console.error(
         `[Chunk] layers name ${unlisted.length} surface(s) the ChunkStack's own \`surfaces\` does not contain, so this chunk can never be built. Add them to the stack's column, or drop the layers:`,
@@ -799,6 +864,63 @@ export const Chunk = ({
     }
     let cancelled = false;
     reportState('building');
+    const receiver = createSurfaceChunkReceiver();
+    let build: ShownChunk['build'] | null = null;
+    let finished = false;
+    const ready: number[] = [];
+    const show = (next: SurfaceChunk, complete: boolean) => {
+      build ??= { latest: next };
+      build.latest = next;
+      // Complete: a layer with no cap of its own (a neighbour draws it, or it
+      // collapsed away) is ready too.
+      if (complete) {
+        for (const layer of chunkLayers(next)) {
+          if (!ready.includes(layer)) ready.push(layer);
+        }
+      }
+      setShown({ chunk: next, build, complete, ready: ready.slice() });
+    };
+    const land = (built: SurfaceChunk | null) => {
+      // Counted from HERE rather than from the effect below, so the window where
+      // the new chunk exists and the old one has not been released yet — the
+      // rebuild's peak — is visible.
+      if (built) {
+        trackChunk(built);
+        show(built, true);
+        onBuildRef.current?.(built.metrics);
+      } else {
+        setShown(null);
+        setPreviewed(null);
+      }
+      reportState(built ? 'ready' : 'empty');
+    };
+    const onPacket = (packet: SurfaceChunkPacket) => {
+      if (cancelled) return;
+      if (packet.kind === 'progress') {
+        const { phase, done, total } = packet;
+        reportStep({ phase, done, total });
+        return;
+      }
+      if (packet.kind === 'preview') {
+        // Its own build, so it is disposed when the real chunk has replaced it.
+        const coarse = unpackSurfaceChunk(packet.chunk);
+        setPreviewed({ chunk: coarse, build: { latest: coarse } });
+        return;
+      }
+      if (packet.kind === 'cap' && !ready.includes(packet.mesh.layer)) {
+        ready.push(packet.mesh.layer);
+      }
+      const next = receiver.receive(packet);
+      if (!next) return;
+      // ⚠️ The final result travels on another port, so it can be here already.
+      if (finished && receiver.complete) return land(next);
+      show(next, false);
+      reportStep({
+        phase: 'caps',
+        done: receiver.received,
+        total: receiver.expected,
+      });
+    };
     (async () => {
       try {
         // ⚠️ The token rides OUTSIDE the memoized spec on purpose: it changes on
@@ -806,21 +928,21 @@ export const Chunk = ({
         // trigger the very rebuilds it exists to bound. It tells the generator to
         // abandon a build this chunk has already superseded — `cancelled` alone
         // only discards the result, after the worker has paid for it.
-        const response = await generator({
-          ...spec,
-          build: { key: registryKey, token: nextBuildToken() },
-        });
+        const response = await generator(
+          { ...spec, build: { key: registryKey, token: nextBuildToken() } },
+          onPacket,
+        );
         if (cancelled) return;
-        const built = response ? unpackSurfaceChunk(response) : null;
-        // Counted from HERE rather than from the effect below, so the window where
-        // the new chunk exists and the old one has not been released yet — the
-        // rebuild's peak — is visible.
-        if (built) trackChunk(built);
-        setChunk(built);
-        if (built) onBuildRef.current?.(built.metrics);
-        reportState(built ? 'ready' : 'empty');
+        if (response?.streamed) {
+          finished = true;
+          const built = receiver.finish(response);
+          if (receiver.complete) land(built);
+          return;
+        }
+        land(response ? unpackSurfaceChunk(response) : null);
       } catch (e) {
         if (cancelled) return;
+        setPreviewed(null);
         reportState('failed');
         throw e;
       }
@@ -833,6 +955,7 @@ export const Chunk = ({
     spec,
     registryKey,
     reportState,
+    reportStep,
     outlineSettled,
     outlinePolygon,
     coverAbove.pending,
@@ -842,13 +965,38 @@ export const Chunk = ({
     surfaceIds,
   ]);
 
-  // Dispose the previous chunk's geometries when it is replaced or unmounted.
+  // Dispose the previous build's geometries when it is replaced or unmounted.
+  const build = shown?.build ?? null;
   useEffect(() => {
     return () => {
-      if (chunk) untrackChunk(chunk);
-      disposeChunk(chunk);
+      if (!build) return;
+      untrackChunk(build.latest);
+      disposeChunk(build.latest);
     };
-  }, [chunk]);
+  }, [build]);
+
+  const previewBuild = previewed?.build ?? null;
+  useEffect(() => {
+    return () => {
+      if (previewBuild) disposeChunk(previewBuild.latest);
+    };
+  }, [previewBuild]);
+
+  // ⭐ Revealed a LAYER at a time — its caps, wall and cut face together — in the
+  // order the caps arrive, within an upload budget per frame. The preview draws
+  // every layer the real chunk does not, so each one swaps in a single frame.
+  const reveal = useMemo(
+    () => (shown ? chunkLayerReveal(shown.chunk, shown.ready) : []),
+    [shown],
+  );
+  const layersShown = useStaggeredReveal(reveal, shown?.build);
+  const replaced =
+    !!shown?.complete && reveal.every(item => layersShown.has(item.key));
+  useEffect(() => {
+    if (replaced) setPreviewed(null);
+  }, [replaced]);
+
+  const finished = shown?.complete ? shown.chunk : null;
 
   // ⚠️⚠️ React double-buffers its fibers: the `alternate` retains the PREVIOUS
   // render's props and hook state, which here is an entire replaced chunk —
@@ -858,18 +1006,18 @@ export const Chunk = ({
   // memoized, so nothing is rebuilt.
   const [, releaseAlternateFiber] = useState(0);
   useEffect(() => {
-    if (chunk) releaseAlternateFiber(n => n + 1);
-  }, [chunk]);
+    if (finished) releaseAlternateFiber(n => n + 1);
+  }, [finished]);
 
   // --- Offer what was drawn for sampling. Ceiling copies are left out: one faces
   //     UP but is the underside of the unit above, and something placed on it
   //     would sit inside the block. ------------------------------------------
   const samplerRegistry = useContext(SurfaceSamplerRegistryContext);
   useEffect(() => {
-    if (!samplerRegistry || !chunk) return;
+    if (!samplerRegistry || !finished) return;
     return samplerRegistry.register(
       registryKey,
-      chunk.surfaces
+      finished.surfaces
         .filter(mesh => !mesh.ceiling)
         .map(mesh => ({
           id: stableLayers[mesh.layer]?.surface?.id ?? null,
@@ -877,7 +1025,7 @@ export const Chunk = ({
           geometry: mesh.geometry,
         })),
     );
-  }, [samplerRegistry, chunk, stableLayers, registryKey]);
+  }, [samplerRegistry, finished, stableLayers, registryKey]);
 
   // --- Pointer events: the chunk's OWN meshes are the hit surface, so `children`
   //     stay outside the group. Each mesh carries its layer index in `userData`,
@@ -901,6 +1049,7 @@ export const Chunk = ({
     onPointerLeave,
     onPointerMove,
     chunk,
+    previewed,
   ]);
 
   // ⚠️ Peeling exposes the cap of the first surviving unit, which normally closes
@@ -931,44 +1080,63 @@ export const Chunk = ({
   // --- Appearance / rendering is delegated to ChunkMeshes (reactive layer). ---
   // ⭐ Nothing is borrowed across a seam: a horizon is drawn by the chunk it is the
   // lid of (see `resolveSeam`), so every chunk draws with its OWN appearance.
-  if (!chunk) return <>{children}</>;
+  if (!chunk && !previewed) return <>{children}</>;
+
+  const meshProps: Omit<ChunkMeshesProps, 'chunk'> = {
+    layers: appearanceLayers,
+    surfaceOpacity,
+    wallOpacity,
+    wireframe,
+    inferredStyle,
+    showSurfaces,
+    showWalls,
+    cullHiddenCaps,
+    peel,
+    water: stack.water,
+    bathymetry: stack.bathymetry,
+    seaBed:
+      !!stack.water &&
+      !!stableLayers[0]?.surface &&
+      stableLayers[0].surface.id === stack.column?.[0]?.id,
+    sectionWater: stack.sectionWater,
+    fenceWater: stack.fenceWater,
+    carrierMaterial: stack.carrierMaterial,
+    contacts: stack.contacts,
+    section: stack.section,
+    sectionUniform: stack.sectionUniform,
+    sectionUniformInverse: stack.sectionUniformInverse,
+    sectionCarrier: stack.sectionCarrier,
+    sectionEnabled: stack.sectionEnabled,
+    fence: stack.fence,
+    fenceUniforms: stack.fenceUniforms,
+    fenceUniformsInverse: stack.fenceUniformsInverse,
+    fenceOverlayUniforms: stack.fenceOverlayUniforms,
+    fenceCarrier: stack.fenceCarrier,
+  };
 
   return (
     <>
       <group ref={meshes} name={`Chunk ${registryKey}`}>
-        <ChunkMeshes
-          chunk={chunk}
-          layers={appearanceLayers}
-          surfaceOpacity={surfaceOpacity}
-          wallOpacity={wallOpacity}
-          wireframe={wireframe}
-          inferredStyle={inferredStyle}
-          showSurfaces={showSurfaces}
-          showWalls={showWalls}
-          cullHiddenCaps={cullHiddenCaps}
-          peel={peel}
-          water={stack.water}
-          bathymetry={stack.bathymetry}
-          seaBed={
-            !!stack.water &&
-            !!stableLayers[0]?.surface &&
-            stableLayers[0].surface.id === stack.column?.[0]?.id
-          }
-          sectionWater={stack.sectionWater}
-          fenceWater={stack.fenceWater}
-          carrierMaterial={stack.carrierMaterial}
-          contacts={stack.contacts}
-          section={stack.section}
-          sectionUniform={stack.sectionUniform}
-          sectionUniformInverse={stack.sectionUniformInverse}
-          sectionCarrier={stack.sectionCarrier}
-          sectionEnabled={stack.sectionEnabled}
-          fence={stack.fence}
-          fenceUniforms={stack.fenceUniforms}
-          fenceUniformsInverse={stack.fenceUniformsInverse}
-          fenceOverlayUniforms={stack.fenceOverlayUniforms}
-          fenceCarrier={stack.fenceCarrier}
-        />
+        {/* ⚠️ One instance per chunk, never one handed the other's chunk: React DEV
+            builds describe changed props two levels deep, which for a new
+            `section` walks every element of its typed arrays (measured 1.2 s). */}
+        {previewed && (
+          <ChunkMeshes
+            key="preview"
+            chunk={previewed.chunk}
+            {...meshProps}
+            saturation={resolvedPreviewSaturation}
+            layersHidden={chunk ? layersShown : undefined}
+          />
+        )}
+        {chunk && (
+          <ChunkMeshes
+            key="chunk"
+            chunk={chunk}
+            {...meshProps}
+            layersShown={layersShown}
+          />
+        )}
       </group>
       {children}
     </>

@@ -1,9 +1,26 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { ChunkStackProgress } from '../../components/Chunks/chunk-defs';
+import {
+  ChunkBuildProgress,
+  ChunkStackProgress,
+} from '../../components/Chunks/chunk-defs';
 import { useOutputPanelState } from '../../components/Html/OutputPanel/output-panel-state';
 
 function formatDuration(ms: number) {
   return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`;
+}
+
+const STEP_LABELS: Record<ChunkBuildProgress['phase'], string> = {
+  fetch: 'loading',
+  resolve: 'resolving',
+  refine: 'refining',
+  terminations: 'pinch-outs',
+  tessellate: 'tessellating',
+  caps: 'caps',
+};
+
+function formatStep({ phase, done, total }: ChunkBuildProgress) {
+  const counted = !(done === 0 && total === 1);
+  return `${STEP_LABELS[phase]}${counted ? ` ${done}/${total}` : ''}`;
 }
 
 /**
@@ -64,7 +81,9 @@ export function useChunkProgressPanel() {
           label: done ? 'Chunks built' : 'Building chunks',
           value: done
             ? `${p.total}`
-            : `${p.completed}/${p.total}  ${Math.round(100 * p.fraction)}%`,
+            : p.current
+              ? `${p.completed}/${p.total}  ${formatStep(p.current)}`
+              : `${p.completed}/${p.total}  ${Math.round(100 * p.fraction)}%`,
           color: done ? '#59a14f' : '#f28e2c',
           order: 0,
         },

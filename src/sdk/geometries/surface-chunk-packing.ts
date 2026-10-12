@@ -1,4 +1,4 @@
-import { BufferGeometry } from 'three';
+import { BufferAttribute, BufferGeometry } from 'three';
 import {
   packBufferGeometry,
   PackedBufferGeometry,
@@ -39,6 +39,12 @@ export type PackedSurfaceChunk = {
   section?: StackSectionSource;
   boundaries?: SurfaceChunkBoundary[];
   metrics: SurfaceChunkMetrics;
+  /**
+   * The meshes were streamed as packets (see `SurfaceChunkPacket`); this carries
+   * the metrics only, and how many cap packets were sent — a cap that collapsed
+   * entirely sends none, so the base packet's count is an upper bound.
+   */
+  streamed?: { caps: number };
 };
 
 /**
@@ -92,6 +98,15 @@ export function packSurfaceChunk(
       if (members) transferables.push(members.buffer);
     if (inferred)
       for (const marks of inferred) transferables.push(marks.buffer);
+    const index = chunk.section.index;
+    if (index) {
+      transferables.push(
+        index.starts.buffer,
+        index.items.buffer,
+        index.boxX.buffer,
+        index.boxZ.buffer,
+      );
+    }
   }
 
   return [packed, transferables];
@@ -105,14 +120,17 @@ export function packSurfaceChunk(
  * @group Geometries
  */
 export function unpackSurfaceChunk(packed: PackedSurfaceChunk): SurfaceChunk {
+  // ⭐ The caps share one `xz` and often one index: one attribute object each, or
+  // three uploads them once per cap.
+  const shared = new Map<ArrayBufferLike, BufferAttribute>();
   return {
     surfaces: packed.surfaces.map(s => ({
       ...s,
-      geometry: unpackBufferGeometry(s.geometry),
+      geometry: unpackBufferGeometry(s.geometry, shared),
     })),
     walls: packed.walls.map(w => ({
       ...w,
-      geometry: unpackBufferGeometry(w.geometry),
+      geometry: unpackBufferGeometry(w.geometry, shared),
     })),
     section: packed.section,
     boundaries: packed.boundaries,

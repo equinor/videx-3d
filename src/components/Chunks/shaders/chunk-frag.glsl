@@ -6,6 +6,7 @@ uniform vec3 emissive;
 uniform vec3 specular;
 uniform float shininess;
 uniform float opacity;
+uniform float chunkSaturation; // 1 = as lit, 0 = grey
 
 #ifdef CHUNK_AMBIENT
 uniform vec2 chunkAmbient; // x: multiplier facing up, y: facing down
@@ -425,6 +426,8 @@ void main() {
   CHUNK_CONTACT(7)
   #endif
   #endif
+
+  outgoingLight = mix(vec3(dot(outgoingLight, vec3(0.2126, 0.7152, 0.0722))), outgoingLight, chunkSaturation);
 
   #include <opaque_fragment>
   #include <tonemapping_fragment>

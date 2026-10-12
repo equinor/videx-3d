@@ -1,4 +1,5 @@
 import { BufferAttribute, BufferGeometry } from 'three';
+import { polylineTangents2D } from '../utils/polyline-2d';
 import { Coordinates2D } from './planar-geometry';
 
 /** A ring to build a wall on. */
@@ -108,9 +109,7 @@ export function buildRingWalls(
   const marks: number[] = [];
   const indices: number[] = [];
   let tagged = false;
-  const minDot = Math.cos(
-    ((options.smoothAngle ?? WALL_SMOOTH_ANGLE) * Math.PI) / 180,
-  );
+  const smoothAngle = options.smoothAngle ?? WALL_SMOOTH_ANGLE;
   const minHeight = options.minHeight ?? 0;
 
   for (const { points, topY, bottomY, inferred } of rings) {
@@ -118,21 +117,18 @@ export function buildRingWalls(
     if (m < 2) continue;
     if (inferred) tagged = true;
 
-    // Outward normal and length of segment k (point k -> k + 1).
-    const segX = new Float64Array(m);
-    const segZ = new Float64Array(m);
     const segLen = new Float64Array(m);
     for (let k = 0; k < m; k++) {
       const k1 = (k + 1) % m;
-      const dx = points[k1][0] - points[k][0];
-      const dz = points[k1][1] - points[k][1];
-      const len = Math.hypot(dx, dz);
-      segLen[k] = len;
-      if (len > 0) {
-        segX[k] = dz / len;
-        segZ[k] = -dx / len;
-      }
+      segLen[k] = Math.hypot(
+        points[k1][0] - points[k][0],
+        points[k1][1] - points[k][1],
+      );
     }
+    // ⚠️ From the rim's SHAPE, not its sampling: a pinch-out line crossing the
+    // rim adds a point on a straight run, and averaging over whatever neighbours
+    // that leaves squeezed a 4° bend into 5 m — a band down every wall.
+    const tangents = polylineTangents2D(points, { closed: true, smoothAngle });
 
     // Per point: the vertex segment k STARTS from, and the one segment k-1 ENDS
     // at. The same vertex where the point is smooth; two where it creases, which
@@ -157,34 +153,14 @@ export function buildRingWalls(
     };
 
     let arc = 0;
+    const { before, after, corner } = tangents;
     for (let k = 0; k < m; k++) {
-      const prev = (k - 1 + m) % m;
-      // A zero-length segment has no normal of its own, so borrow its
-      // neighbour's rather than let the point inherit a null one.
-      const px = segLen[prev] > 0 ? segX[prev] : segX[k];
-      const pz = segLen[prev] > 0 ? segZ[prev] : segZ[k];
-      const nx = segLen[k] > 0 ? segX[k] : px;
-      const nz = segLen[k] > 0 ? segZ[k] : pz;
-
-      if (px * nx + pz * nz >= minDot) {
-        // Smooth: one shared vertex pair, normal averaged across the point.
-        let ax = px + nx;
-        let az = pz + nz;
-        const len = Math.hypot(ax, az);
-        if (len > 0) {
-          ax /= len;
-          az /= len;
-        } else {
-          // a 180° turn back on itself — fall back to this segment's own normal
-          ax = nx;
-          az = nz;
-        }
-        inTo[k] = outOf[k] = emit(k, ax, az, arc);
-      } else {
-        // Creased: each wall keeps its own flat normal.
-        inTo[k] = emit(k, px, pz, arc);
-        outOf[k] = emit(k, nx, nz, arc);
-      }
+      // A wall faces the tangent's right: (tz, -tx).
+      inTo[k] = emit(k, before[2 * k + 1], -before[2 * k], arc);
+      // Creased: each wall keeps its own flat normal.
+      outOf[k] = corner[k]
+        ? emit(k, after[2 * k + 1], -after[2 * k], arc)
+        : inTo[k];
       arc += segLen[k];
     }
 

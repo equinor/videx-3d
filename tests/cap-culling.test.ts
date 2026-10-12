@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Box3, BufferAttribute, BufferGeometry, Vector3 } from 'three';
+import * as tin from '../src/sdk/geometries/tin-sampler';
 import {
   CapCullState,
   capOpenTable,
@@ -30,6 +31,8 @@ import {
 } from '../src/sdk/geometries/surface-stack';
 
 const OPEN = CAP_SIDE_OPEN;
+
+vi.mock('../src/sdk/geometries/tin-sampler', { spy: true });
 // A quad as two triangles; every layer is constant over it.
 const QUAD = new Uint32Array([0, 1, 2, 0, 2, 3]);
 const level = (y: number) => new Float32Array(4).fill(y);
@@ -81,6 +84,7 @@ describe('stackCapNeighbours', () => {
     expect(at(2)).toEqual({ above: [0, 0], below: [2, 2] });
     expect(at(3)).toEqual({ above: [2, 2], below: [OPEN, OPEN] });
     expect(at(4)).toEqual({ above: [OPEN, OPEN], below: [OPEN, OPEN] });
+    expect(result.map(r => r!.units)).toEqual([[0], [0, 2], [0, 2], [2], []]);
   });
 
   it('answers per KEPT triangle, in the order of the cap’s own index', () => {
@@ -286,6 +290,10 @@ describe('cap visibility rules', () => {
     expect(capVisibilityKey(surface, table)).toBe(before);
     table[1] = 1;
     expect(capVisibilityKey(surface, table)).not.toBe(before);
+    // The worker's list stands in for the scan.
+    expect(capVisibilityKey({ ...surface, units: [0, 1] }, table)).toBe(
+      capVisibilityKey(surface, table),
+    );
   });
 });
 
@@ -360,6 +368,21 @@ describe('createIntervalProbe', () => {
     const probe = createIntervalProbe(chunk([0, 2]));
     expect(probe(50, -5, 50, 0)).toEqual([0, 1]);
   });
+
+  it('builds one lookup grid, even off every cap and across probes', () => {
+    // Every cap keeps only the lower-right triangle, so the box's upper-left
+    // corner is inside the bounds and off every cap.
+    const c = chunk([0, 1, 2]);
+    c.surfaces.forEach(s =>
+      s.geometry.setIndex(new BufferAttribute(new Uint32Array([0, 1, 2]), 1)),
+    );
+    const built = vi.mocked(tin.createTinSampler);
+    built.mockClear();
+
+    expect(createIntervalProbe(c)(10, -5, 90, 0)).toEqual([0, 1]);
+    expect(createIntervalProbe({ ...c })(20, -5, 80, 0)).toEqual([0, 1]);
+    expect(built).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('carrying neighbours on a chunk', () => {
@@ -370,6 +393,7 @@ describe('carrying neighbours on a chunk', () => {
     const neighbours = {
       above: new Uint8Array([OPEN, OPEN]),
       below: new Uint8Array([0, 0]),
+      units: [0],
     };
     const chunk = assembleChunk(
       [
@@ -392,5 +416,6 @@ describe('carrying neighbours on a chunk', () => {
     const restored = unpackSurfaceChunk(packed);
     expect(restored.boundaries).toEqual(chunk.boundaries);
     expect(Array.from(restored.surfaces[0].below!)).toEqual([0, 0]);
+    expect(restored.surfaces[0].units).toEqual([0]);
   });
 });

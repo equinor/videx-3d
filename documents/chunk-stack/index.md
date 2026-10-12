@@ -67,6 +67,7 @@ Five ideas carry the whole design:
 | 6 | [appearance.md](./appearance.md) | Materials, procedural detail, inference marking, ownership and disposal. |
 | 7 | [cutting-and-water.md](./cutting-and-water.md) | Sections, fences, peeling, the sea, contacts, immersion fog. |
 | 8 | [sampling-and-perf.md](./sampling-and-perf.md) | Placing objects on what was drawn; cost model, budgets, diagnostics, troubleshooting. |
+| 9 | [streaming.md](./streaming.md) | Drawing a chunk layer by layer while it builds: partial results, packets, buffer ownership. |
 
 ---
 

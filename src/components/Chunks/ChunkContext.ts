@@ -2,6 +2,7 @@ import { createContext } from 'react';
 import { IUniform, Vector4 } from 'three';
 import { PlanarPolygonGeometry, SurfaceMeta } from '../../sdk';
 import {
+  ChunkBuildProgress,
   ChunkBuildState,
   ChunkCarrier,
   ChunkCutDepths,
@@ -37,6 +38,12 @@ export type ChunkStackContextValue = {
   rimSpacing?: number;
   /** default interior simplification error (grid height units) */
   maxError?: number;
+  /** default for `ChunkProps.diagnostics` */
+  diagnostics?: boolean;
+  /** default for `ChunkProps.preview` */
+  preview?: boolean;
+  /** default for `ChunkProps.previewSaturation` */
+  previewSaturation?: number;
   /**
    * Default build options for the column (see `ChunkStackProps.resolve`), used by
    * chunks that declare none of their own.
@@ -219,6 +226,11 @@ export type ChunkStackContextValue = {
    * as building.
    */
   reportBuildState?: (key: string, state: ChunkBuildState) => void;
+  /**
+   * Report the step a building chunk is on (see `ChunkStackProgress.current`).
+   * Cleared by its next state change.
+   */
+  reportBuildProgress?: (key: string, step: ChunkBuildProgress) => void;
   /**
    * Every chunk's depth window and wellbore margin, ordered shallow→deep by the
    * column. A chunk accumulating trajectory from outside its own window (see

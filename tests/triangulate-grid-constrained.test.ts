@@ -460,6 +460,19 @@ describe('nodeGridRings', () => {
     [x0, y1],
   ];
 
+  const constrain = (size: number, rings: number[][][]) => {
+    const d = new Delatin(new Float32Array(size * size), size);
+    d.run(5);
+    d.beginConstraints();
+    for (const ring of rings) {
+      const verts = ring.map(([x, y]) => d.insertPoint(x, y, 0));
+      for (let i = 0; i < verts.length; i++) {
+        d.constrainEdge(verts[i], verts[(i + 1) % verts.length]);
+      }
+    }
+    return d.constraintFailures;
+  };
+
   it('returns the input by identity when nothing crosses', () => {
     const rings = [square(0, 0, 4, 4), square(10, 10, 14, 14)];
     expect(nodeGridRings(rings)).toBe(rings);
@@ -488,28 +501,59 @@ describe('nodeGridRings', () => {
   });
 
   it('lets a triangulator enforce two crossing rims once they are noded', () => {
-    const size = 33;
-    const grid = new Float32Array(size * size);
     const a = square(4, 4, 24, 24);
     const b = square(14, 14, 30, 30);
-
-    const constrain = (rings: number[][][]) => {
-      const d = new Delatin(grid, size);
-      d.run(5);
-      d.beginConstraints();
-      for (const ring of rings) {
-        const verts = ring.map(([x, y]) => d.insertPoint(x, y, 0));
-        for (let i = 0; i < verts.length; i++) {
-          d.constrainEdge(verts[i], verts[(i + 1) % verts.length]);
-        }
-      }
-      return d.constraintFailures;
-    };
 
     // Crossing constraint edges can only both follow mesh edges if the crossing
     // is itself a vertex, so the raw rims are unenforceable and the noded ones
     // are not.
-    expect(constrain([a, b])).toBeGreaterThan(0);
-    expect(constrain(nodeGridRings([a, b]))).toBe(0);
+    expect(constrain(33, [a, b])).toBeGreaterThan(0);
+    expect(constrain(33, nodeGridRings([a, b]))).toBe(0);
+  });
+
+  it("splits a segment at another ring's vertices along a shared stretch", () => {
+    const a = square(0, 0, 10, 10);
+    const b = [
+      [3, 0],
+      [6, 0],
+      [6, -4],
+      [3, -4],
+    ];
+    const [na, nb] = nodeGridRings([a, b]);
+    expect(na).toEqual([
+      [0, 0],
+      [3, 0],
+      [6, 0],
+      [10, 0],
+      [10, 10],
+      [0, 10],
+    ]);
+    expect(nb).toEqual(b);
+  });
+
+  it('lets a triangulator enforce two rings running along one line with different vertices', () => {
+    // Ring b keeps two extra vertices on ring a's edge PQ. Computed in floating
+    // point they sit a rounding error to either side of it.
+    let seed = 7;
+    const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    let raw = 0;
+    let noded = 0;
+    for (let k = 0; k < 200; k++) {
+      const px = 8 + 20 * rand();
+      const py = 15 + 20 * rand();
+      const qx = px + 10 + 20 * rand();
+      const qy = py + 10 * rand();
+      const at = (f: number) => [px + (qx - px) * f, py + (qy - py) * f];
+      const side = (f: number) => [
+        (px + qx) / 2 - f * (qy - py),
+        (py + qy) / 2 + f * (qx - px),
+      ];
+      const a = [[px, py], [qx, qy], side(0.3)];
+      const b = [[px, py], at(1 / 3), at(2 / 3), [qx, qy], side(-0.3)];
+      raw += constrain(64, [a, b]);
+      noded += constrain(64, nodeGridRings([a, b]));
+    }
+    expect(raw).toBeGreaterThan(0);
+    expect(noded).toBe(0);
   });
 });

@@ -407,10 +407,19 @@ Responsibilities:
 
 Geometry building is asynchronous and can take seconds, so a host needs to know:
 
-- `onBuild(metrics)` — per-chunk timings, counts and `diagnostics` once built;
+- `onBuild(metrics)` — per-chunk timings, counts and (with `diagnostics` set on
+  the chunk or the stack) `diagnostics` once built;
 - `onBuildStateChange(state)` — `ChunkBuildState`: `'building' | 'ready' | 'empty' |
   'failed'`;
-- `ChunkStackProgress` — `{ total, building, completed, fraction }` from the stack.
+- `ChunkStackProgress` — `{ total, building, completed, fraction, current? }` from
+  the stack; `current` is the step a building chunk is on (see
+  [streaming.md](./chunk-stack/streaming.md#build-progress)).
+
+A chunk of a stack's column also shows a coarse PREVIEW within about a second, drawn
+at `previewSaturation` (default 0.5) and replaced layer by layer as the real layers
+arrive.
+`preview={false}` on the chunk or the stack turns it off (see
+[streaming.md](./chunk-stack/streaming.md#part-5--the-preview)).
 
 `'empty'` is not a failure: a chunk whose outline resolves to nothing, or whose
 layers have no data anywhere inside it (§9.9.1), has nothing to draw. Without the
@@ -1322,7 +1331,10 @@ precisely the key that misorders the stack.
   **absent** out there, not flat. Saying so explicitly (from the coverage mask)
   replaced an earlier feathered grid-level clamp, which only smoothed over the same
   question.
-- `refineTerminations` — default on. See §9.6.
+- `constrainTerminations` — default on: the traced line where a unit wedges out is
+  constrained into the tessellation, simplified to half a cell.
+- `refineTerminations` — the older alternative, refining the grid nodes either
+  side of that line; on only when `constrainTerminations` is off. See §9.6.
 
 ### 9.5 Which surface wins (shallow, deliberately)
 
@@ -1440,8 +1452,12 @@ edges and cannot cross itself. (Simplification would need self-noding first; the
 saving is an order of magnitude in boundary vertices, so it is worth revisiting if
 a survey boundary ever dominates a build.)
 
-Rings are deduped by mask **identity**, so a set of surfaces sharing one interpreted
-polygon — 11 of the demo set do — is traced once, not once per layer.
+Rings are deduped by mask **content**, so a set of surfaces sharing one interpreted
+polygon — 11 of the demo set do — is traced once, not once per layer. ⚠️ Identity is
+not enough: resampling onto the common grid gives each layer its own array, and
+identical rings overlap segment for segment, so the noder compares every copy with
+every other (measured on a 34-surface field: 15 sets from 6 distinct masks, 2.9 s
+of noding; deduped, 0.6 s).
 
 ⚠️ All of this only shows with `seal: false` — sealing invents a surface across the
 gap and switches coverage-driven absence off.
@@ -2363,6 +2379,11 @@ which is now landed on its own: `nodeGridRings` splits every ring segment at its
 crossings with another ring, computing each crossing once so both rings insert
 identical coordinates and resolve to one vertex. Without it two crossing constraint
 edges cannot both follow mesh edges, and `Delatin` silently dropped one of them.
+⚠️ It also splits a segment wherever another ring's ENDPOINT lies on it (within
+1e-6 cells) — a T-junction, or two collinear segments overlapping with different
+vertices, which is what two layer pairs tracing the same pinch-out produce once
+simplified. Left alone, the later ring's vertices land a rounding error to either
+side of the earlier ring's locked edge and the edge between them crosses it.
 `Delatin.constraintFailures` now counts what it could not enforce (⭐ it also stops
 `_constrainEdgeBrute` locking an edge it never created, which claimed a boundary
 that was not there — a latent bug in `main`, unreachable while only one outline was
@@ -4000,4 +4021,27 @@ wide 281 k → 51 k triangles, 50 → 39 draw calls, GPU 5.0 → 4.7 ms; close u
 281 k → 72 k, GPU 7.7 → 5.4 ms. Screenshots are BYTE-IDENTICAL with culling on and
 off across wide, close, peel, from below, inside a unit, and a section with a kept
 unit and a cut floor. `Chunk.cullHiddenCaps` (default true) is the A/B.
+
+### 16.8 Triangles are drawn in spatial order (2026-10-12)
+
+Delatin emits triangles in whatever order its refinement and the constraint flips
+created them, and every layer's cap inherited that order. `tessellateStack` now
+puts the shared triangles in Morton (Z-order) order of their centroids
+(`sortTrianglesSpatially`, sdk) BEFORE compacting the vertices, so the vertex
+buffer follows the same order, and every layer's kept subset — which the collapse
+emits as an in-order subsequence — keeps it.
+
+MEASURED (a 34-layer column of a larger field, `outline: field`, framed wide
+view, transparent so every cap is drawn): GPU **57.1 → 41.9 ms** at an identical
+triangle count; opaque unchanged (~5.6 ms); the sort costs nothing measurable in
+`tessellateMs`.
+
+⚠️ The order is not the post-transform vertex cache: the simulated cache miss
+ratio was ~2 per triangle either way. Order changes where consecutive fragments
+land on screen, which the transparency passes pay for.
+
+⚠️⚠️ Compare GPU numbers only between builds drawn in the same order. Before the
+sort, two tessellations of the same field differed by up to 30% in GPU time at
+equal triangle counts purely through order, which read as a cost of triangle
+SHAPE and misled a design comparison.
 

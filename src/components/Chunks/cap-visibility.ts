@@ -148,12 +148,13 @@ function capUnits(above: Uint8Array, below: Uint8Array) {
  * can: the open state of each unit the cap actually faces.
  */
 export function capVisibilityKey(
-  surface: Pick<SurfaceChunkMesh, 'above' | 'below'>,
+  surface: Pick<SurfaceChunkMesh, 'above' | 'below' | 'units'>,
   table: Uint8Array,
 ): string {
   if (!surface.above || !surface.below) return '';
   let key = '';
-  for (const unit of capUnits(surface.above, surface.below)) key += table[unit];
+  for (const unit of surface.units ?? capUnits(surface.above, surface.below))
+    key += table[unit];
   return key;
 }
 
@@ -218,6 +219,27 @@ export function releaseCapView(view: BufferGeometry) {
   view.dispose();
 }
 
+// Per cap geometry, and dies with it: a streamed chunk makes a new probe per packet.
+const locators = new WeakMap<BufferGeometry, TinSampler>();
+
+function capLocator(geometry: BufferGeometry): TinSampler {
+  let locator = locators.get(geometry);
+  if (!locator) {
+    const xz = geometry.getAttribute('xz').array as ArrayLike<number>;
+    const flat = new Float32Array((xz.length / 2) * 3);
+    for (let v = 0; v < xz.length / 2; v++) {
+      flat[3 * v] = xz[2 * v];
+      flat[3 * v + 2] = xz[2 * v + 1];
+    }
+    locator = createTinSampler(
+      flat,
+      geometry.getIndex()!.array as ArrayLike<number>,
+    );
+    locators.set(geometry, locator);
+  }
+  return locator;
+}
+
 /**
  * Which build intervals a point is in, or within `band` of — for the cap culling,
  * which must not hide the caps of a unit the camera is inside.
@@ -266,31 +288,13 @@ export function createIntervalProbe(chunk: SurfaceChunk) {
     maxZ = Math.max(maxZ, box.max.z);
   }
 
-  // Largest first: the one most likely to cover the point on its own.
-  const order = caps
-    .slice()
-    .sort(
-      (a, b) => b.geometry.getIndex()!.count - a.geometry.getIndex()!.count,
-    );
-  const locators: (TinSampler | undefined)[] = [];
-  const locatorAt = (k: number) => {
-    let locator = locators[k];
-    if (!locator) {
-      const geometry = order[k].geometry;
-      const xz = geometry.getAttribute('xz').array as ArrayLike<number>;
-      const flat = new Float32Array((xz.length / 2) * 3);
-      for (let v = 0; v < xz.length / 2; v++) {
-        flat[3 * v] = xz[2 * v];
-        flat[3 * v + 2] = xz[2 * v + 1];
-      }
-      locator = createTinSampler(
-        flat,
-        geometry.getIndex()!.array as ArrayLike<number>,
-      );
-      locators[k] = locator;
-    }
-    return locator;
-  };
+  // ⭐ Only the LARGEST cap is searched. Every cap is a subset of one shared
+  // tessellation, so a point it misses is off every cap bar a triangle only a
+  // smaller one kept — and a miss opens every unit, which can only cull less.
+  // Searching on cost a lookup grid PER CAP (~100 ms each) just outside the rim.
+  const largest = caps.reduce((a, b) =>
+    b.geometry.getIndex()!.count > a.geometry.getIndex()!.count ? b : a,
+  );
 
   const at: TinLocation = { a: 0, b: 0, c: 0, wa: 0, wb: 0, wc: 0 };
   const heights = new Float64Array(boundaries.length);
@@ -307,10 +311,7 @@ export function createIntervalProbe(chunk: SurfaceChunk) {
     ) {
       return [];
     }
-    let found: TinLocation | null = null;
-    for (let k = 0; k < order.length && !found; k++) {
-      found = locatorAt(k).locate(x, z, at);
-    }
+    const found = capLocator(largest.geometry).locate(x, z, at);
     // Inside the bounds but over no cap's triangle — e.g. just past the rim, in
     // the band. Nothing says which unit that is, so open them all.
     if (!found) return all;

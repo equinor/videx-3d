@@ -2,6 +2,7 @@ import { BufferGeometry } from 'three';
 import { describe, expect, it } from 'vitest';
 import { stackIntervalTriangles } from '../src/sdk/geometries/surface-stack';
 import { buildStackWalls } from '../src/sdk/geometries/surface-stack-geometry';
+import { buildRingWalls } from '../src/sdk/geometries/surface-walls';
 
 const N = 4;
 
@@ -108,6 +109,108 @@ describe('stackIntervalTriangles', () => {
       touching.size,
     );
     expect(interval[0]).toBe(0);
+  });
+});
+
+describe('buildRingWalls', () => {
+  it('ignores a noise-length segment, so a near-duplicate rim point leaves no band', () => {
+    // A 1 km circle at ~98 m spacing, with a point 1 cm past point 10 and 3 mm
+    // off the circle: its segment points ~17° off.
+    const points: [number, number][] = [];
+    for (let k = 0; k < 64; k++) {
+      const a = (k / 64) * 2 * Math.PI;
+      points.push([1000 * Math.cos(a), 1000 * Math.sin(a)]);
+      if (k === 10) {
+        const t = a + 1e-5;
+        points.push([1000.003 * Math.cos(t), 1000.003 * Math.sin(t)]);
+      }
+    }
+    const wall = buildRingWalls([
+      {
+        points,
+        topY: points.map(() => 0),
+        bottomY: points.map(() => -100),
+      },
+    ])!;
+
+    const position = wall.getAttribute('position');
+    const normal = wall.getAttribute('normal');
+    let worst = 0;
+    for (let i = 0; i < position.count; i++) {
+      const x = position.getX(i);
+      const z = position.getZ(i);
+      const dot = (normal.getX(i) * x + normal.getZ(i) * z) / Math.hypot(x, z);
+      worst = Math.max(worst, Math.abs(Math.acos(Math.min(1, dot))));
+    }
+    // Radial everywhere, to within the half-turn a 98 m chord makes; the extra
+    // point used to be pulled ~9° off.
+    expect((worst * 180) / Math.PI).toBeLessThan(3);
+  });
+
+  it('shades the same with points added on the rim, as a pinch-out crossing adds them', () => {
+    const ring: [number, number][] = [];
+    for (let k = 0; k < 40; k++) {
+      const a = (k / 40) * 2 * Math.PI;
+      ring.push([1000 * Math.cos(a), 1000 * Math.sin(a)]);
+    }
+    // A point 2 m past every other vertex, on its chord.
+    const dense: [number, number][] = [];
+    const inserts: { p: string; q: string; at: string; f: number }[] = [];
+    const key = ([x, z]: [number, number]) =>
+      `${Math.fround(x).toFixed(3)},${Math.fround(z).toFixed(3)}`;
+    ring.forEach((p, k) => {
+      dense.push(p);
+      if (k % 2) return;
+      const q = ring[(k + 1) % ring.length];
+      const f = 2 / Math.hypot(q[0] - p[0], q[1] - p[1]);
+      const at: [number, number] = [
+        p[0] + f * (q[0] - p[0]),
+        p[1] + f * (q[1] - p[1]),
+      ];
+      dense.push(at);
+      inserts.push({ p: key(p), q: key(q), at: key(at), f });
+    });
+    const wall = (points: [number, number][]) =>
+      buildRingWalls([
+        {
+          points,
+          topY: points.map(() => 0),
+          bottomY: points.map(() => -100),
+        },
+      ])!;
+    const normalsByPoint = (geometry: BufferGeometry) => {
+      const position = geometry.getAttribute('position');
+      const normal = geometry.getAttribute('normal');
+      const out = new Map<string, [number, number]>();
+      for (let i = 0; i < position.count; i++) {
+        out.set(key([position.getX(i), position.getZ(i)]), [
+          normal.getX(i),
+          normal.getZ(i),
+        ]);
+      }
+      return out;
+    };
+    const plain = normalsByPoint(wall(ring));
+    const added = normalsByPoint(wall(dense));
+    let worst = 0;
+    const off = (a: [number, number], b: [number, number]) =>
+      Math.abs(
+        Math.atan2(a[0] * b[1] - a[1] * b[0], a[0] * b[0] + a[1] * b[1]),
+      );
+    for (const [at, n] of plain)
+      worst = Math.max(worst, off(n, added.get(at)!));
+    // An added point shades as the face it sits in would have there: the plain
+    // wall's normals, interpolated. It used to take its segment's own normal,
+    // turning the whole half-step within 2 m.
+    for (const { p, q, at, f } of inserts) {
+      const a = plain.get(p)!;
+      const b = plain.get(q)!;
+      const x = (1 - f) * a[0] + f * b[0];
+      const z = (1 - f) * a[1] + f * b[1];
+      const len = Math.hypot(x, z);
+      worst = Math.max(worst, off([x / len, z / len], added.get(at)!));
+    }
+    expect(worst).toBeLessThan(1e-6);
   });
 });
 

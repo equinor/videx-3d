@@ -30,6 +30,17 @@ const bedSurface: SurfaceMeta = {
 };
 
 describe('ChunkMaterial', () => {
+  it('draws at full saturation unless given one, and shares one it is given', () => {
+    const plain = new ChunkMaterial({ color: '#4e79a7' });
+    const saturation = { value: 0.5 };
+    const a = new ChunkMaterial({ color: '#4e79a7', saturation });
+    const b = new ChunkMaterial({ color: '#f28e2b', saturation });
+    expect(plain.uniforms.chunkSaturation.value).toBe(1);
+    expect(a.uniforms.chunkSaturation).toBe(saturation);
+    expect(b.uniforms.chunkSaturation).toBe(saturation);
+    expect(defines(a)).toEqual(defines(plain));
+  });
+
   it('compiles no detail branch at all when none is asked for', () => {
     const material = new ChunkMaterial({ color: '#4e79a7' });
     expect('CHUNK_DETAIL' in defines(material)).toBe(false);

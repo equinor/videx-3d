@@ -56,6 +56,43 @@ As data is serialized and copied when passed across threads, you should take adv
 return transfer(data, [buffers])
 ```
 
+## Partial results
+A generator can hand back results BEFORE it returns — e.g. each layer of a stack
+as soon as it is built — through a callback the caller passes as an argument
+(`PartialSink`). Across a worker boundary the `GeneratorsProvider` proxies any
+function argument with comlink, so the same generator works with a local and a
+remote registry.
+
+```ts
+export async function myGenerator(
+  this: ReadonlyStore,
+  id: string,
+  onPartial?: PartialSink<MyPacket>,
+) {
+  try {
+    for (const part of parts) {
+      // moved, not copied, across the worker boundary — and detached here
+      emitPartial(onPartial, part, [part.values.buffer])
+    }
+    return summary
+  } finally {
+    // ⚠️ required: a proxied callback holds a MessagePort open until released
+    releasePartialSink(onPartial)
+  }
+}
+
+// caller
+const generator = useGenerator<Summary>('myGenerator')
+generator(id, (part: MyPacket) => { /* show it */ })
+```
+
+- The callback is optional, so callers that pass none get today's behaviour.
+- Across a worker each partial is fire-and-forget: it may arrive after the
+  generator's return value, so a caller that needs both must wait for both.
+- An error thrown by the caller's handler is logged, never thrown into the
+  generator.
+- Ignore partials from a run the caller has already superseded.
+
 ## GeneratorRegistry
 The `GeneratorRegistry` class is used to inject the generator functions you need in your project. It is a simple key-value store that maps a generator function to a key:
 
