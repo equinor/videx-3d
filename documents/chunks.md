@@ -1291,8 +1291,9 @@ painter's-algorithm ordering exact for the stack, which is what transparency nee
 
 ### 9.2 Pipeline
 
-1. `buildStackReference` — the finest layer's grid, cropped to the outline (and
-   decimated to a node budget), becomes a **common domain**. Every layer is
+1. `buildStackReference` — the finest layer's grid, with square cells of its finer
+   spacing, cropped to the outline (and decimated to a node budget), becomes a
+   **common domain**. Every layer is
    bilinearly resampled onto it, converted to **scene Y**, and its holes filled from
    the nearest valid sample so the triangulator has no cliff to chase. A per-layer
    `mask` records where the data is real.

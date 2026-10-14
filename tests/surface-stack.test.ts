@@ -118,6 +118,33 @@ describe('buildStackReference', () => {
     expect(fineChannel[0]).toBeCloseTo(-1000, 3);
   });
 
+  it('gives the common grid square cells of the finest layer’s finer spacing', () => {
+    // 200 m across, 100 m along: the same footprint as the default 33 x 33 grid.
+    // Depth grows 1 m per source column, so 0.5 m per 100 m common cell.
+    const anisotropic = layerFrom(
+      col => 1000 + col,
+      2000,
+      header(17, NY, INC * 2, INC),
+    );
+    const polygon = maskPolygon(4, 28);
+
+    const plan = planStackReference([anisotropic], polygon, { maxFill: 250 })!;
+    expect(plan.header.xinc).toBe(INC);
+    expect(plan.header.yinc).toBe(INC);
+    expect(plan.step).toBe(1);
+    // the crop is source columns 0..16 (clamped) and rows 2..30, in 100 m cells
+    expect(plan.header.nx).toBe(33);
+    expect(plan.header.ny).toBe(29);
+    // metres to cells with ONE cell size, so the fill radius is round
+    expect(plan.fillLimit).toBe(2.5);
+
+    const reference = buildStackReference([anisotropic], polygon)!;
+    const channel = reference.channels[0];
+    for (let col = 0; col + 1 < reference.header.nx; col++) {
+      expect(channel[col + 1] - channel[col]).toBeCloseTo(-0.5, 3);
+    }
+  });
+
   it('⚠️ lays a layer with NO data anywhere onto its neighbour, not at -1e30', () => {
     // A horizon eroded away across the whole area has nothing to fill from. Left
     // alone its channel keeps the NO_DATA sentinel and draws as a surface

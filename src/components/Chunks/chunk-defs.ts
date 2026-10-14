@@ -1175,9 +1175,9 @@ export type ChunkResolveOptions = {
    * Node budget for the stack's common grid — the ⭐ **quality/speed dial** for
    * the whole build. Default `DEFAULT_STACK_MAX_NODES` (4,000,000).
    *
-   * Every layer is resampled onto one grid derived from the finest layer's,
-   * cropped to the outline; when that window exceeds this budget it is decimated
-   * by an integer step. Fetching aside, essentially all of the build's cost —
+   * Every layer is resampled onto one grid derived from the finest layer's — with
+   * square cells of its finer spacing — cropped to the outline; when that window
+   * exceeds this budget it is decimated by an integer step. Fetching aside, essentially all of the build's cost —
    * resample, seal, depth-order resolve and the per-layer refinement — is linear
    * in the node count, so halving the budget quarters it.
    *

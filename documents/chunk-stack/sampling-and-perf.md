@@ -229,9 +229,9 @@ Optimisations already in place, worth not undoing:
 
 `maxNodes` deserves the detail:
 
-> Every layer is resampled onto one grid derived from the finest layer's, cropped to
-> the outline; when that window exceeds the budget it is decimated by an integer
-> step. What it costs is **resolution, and unevenly**. Heights barely suffer (the TIN
+> Every layer is resampled onto one grid derived from the finest layer's (with square
+> cells of its finer spacing), cropped to the outline; when that window exceeds the
+> budget it is decimated by an integer step. What it costs is **resolution, and unevenly**. Heights barely suffer (the TIN
 > is error-bounded by `maxError` either way, and a horizon is smooth at field
 > scale), but the coverage **masks** coarsen with it — so data edges, interior holes
 > and pinch-out contours are resolved to the coarser cell.

@@ -29,7 +29,10 @@ export const STACK_MASK_FILLED = 2;
 export type StackReferencePlan = {
   header: SurfaceClipHeader;
   worldPosition: Vec2;
-  /** how many source grid cells one reference cell spans (1 = full resolution) */
+  /**
+   * how many cells of the finest layer's finer spacing one reference cell spans
+   * (1 = full resolution)
+   */
   step: number;
   /**
    * How far a layer's coverage may extend past its own data, in CELLS of this

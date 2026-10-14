@@ -123,11 +123,18 @@ request, and putting it in the memo would churn it.
 
 ### The common grid
 
-`planStackReference` picks the **finest** layer's grid (smallest `xinc × yinc`) so
-no layer is resampled *up*, crops it to the envelope, and decimates by an integer
-`step` if the crop exceeds `maxNodes` (`DEFAULT_STACK_MAX_NODES` = 4,000,000).
-Every layer is then bilinearly resampled onto it, expressed in **scene Y**
-(`y = value − referenceDepth`).
+`planStackReference` picks the **finest** layer's grid (smallest `xinc × yinc`),
+gives it **square cells** of its finer spacing (`min(xinc, yinc)`), crops it to the
+envelope, and decimates by an integer `step` if the crop exceeds `maxNodes`
+(`DEFAULT_STACK_MAX_NODES` = 4,000,000). Every layer is then bilinearly resampled
+onto it, expressed in **scene Y** (`y = value − referenceDepth`).
+
+Square cells make everything counted in cells — `tileCells`, the `maxFill` radius,
+half-cell tolerances — the same distance along both axes, so tiles are square in
+metres. On a square-celled survey nothing changes. On an anisotropic one (e.g. 25 ×
+12.5 m) the coarser axis is resampled up, which costs nodes in proportion (×2 there)
+and adds no information along that axis; the finest layer keeps its own samples on
+every node only when the ratio is a whole number.
 
 `StackReference`:
 
@@ -137,7 +144,7 @@ Every layer is then bilinearly resampled onto it, expressed in **scene Y**
   worldPosition: Vec2;         // scene XZ of node (0,0)
   channels: Float32Array[];    // per layer: scene Y at every node
   masks: Uint8Array[];         // per layer: coverage
-  step: number;                // source cells per reference cell
+  step: number;                // finest-spacing cells per reference cell
 }
 ```
 

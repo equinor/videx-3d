@@ -592,8 +592,9 @@ export type StackCollapseResult = {
 const NO_DATA = STACK_NO_DATA;
 
 /**
- * Plan the common grid a stack will be resampled onto — the finest layer's grid,
- * cropped to the mask and decimated to the node budget.
+ * Plan the common grid a stack will be resampled onto — the finest layer's grid
+ * with square cells of its finer spacing, cropped to the mask and decimated to the
+ * node budget.
  *
  * ⭐ Reads the layers' HEADERS only. That is what lets a caller resample each
  * layer as its samples arrive (or on a worker) instead of holding the whole
@@ -642,29 +643,37 @@ export function planStackReference(
   const cropH = row1 - row0 + 1;
   if (cropW < 2 || cropH < 2) return null;
 
+  // Square cells of the source's finer spacing, so anything counted in cells —
+  // tiles, fill distance, tolerances — means the same distance along both axes.
+  // The coarser axis is resampled up; a square source keeps its own nodes.
+  const fine = Math.min(source.header.xinc, source.header.yinc);
+  const fineW =
+    Math.floor(((cropW - 1) * source.header.xinc) / fine + 1e-9) + 1;
+  const fineH =
+    Math.floor(((cropH - 1) * source.header.yinc) / fine + 1e-9) + 1;
+
   // Decimate when the window is bigger than the node budget.
   const step = Math.max(
     1,
-    Math.ceil(Math.sqrt((cropW * cropH) / Math.max(1, maxNodes))),
+    Math.ceil(Math.sqrt((fineW * fineH) / Math.max(1, maxNodes))),
   );
-  const nx = Math.floor((cropW - 1) / step) + 1;
-  const ny = Math.floor((cropH - 1) / step) + 1;
+  const nx = Math.floor((fineW - 1) / step) + 1;
+  const ny = Math.floor((fineH - 1) / step) + 1;
   if (nx < 2 || ny < 2) return null;
 
   const header: SurfaceClipHeader = {
     nx,
     ny,
-    xinc: source.header.xinc * step,
-    yinc: source.header.yinc * step,
+    xinc: fine * step,
+    yinc: fine * step,
     rot: source.header.rot,
   };
 
   // `maxFill` is given in metres so it survives decimation and means the same
   // thing on any survey; the chamfer transform counts in cells of THIS grid.
-  const cell = (header.xinc + header.yinc) / 2;
   const fillLimit =
     options.maxFill !== undefined && options.maxFill >= 0
-      ? options.maxFill / cell
+      ? options.maxFill / header.xinc
       : Infinity;
 
   // Place the cropped/decimated grid so its node (0, 0) lands exactly on the
@@ -684,10 +693,11 @@ export function planStackReference(
  * Resample a stack of surfaces onto one common grid — the first half of the
  * shared-tessellation build.
  *
- * The finest-resolution layer's grid, cropped to the mask, defines the common
- * domain; every layer is bilinearly resampled onto it and converted to **scene Y**
- * so all downstream work (tessellation, ordering, geometry) speaks one coordinate
- * system. Layers keep their own grids untouched.
+ * The finest-resolution layer's grid, with square cells of its finer spacing and
+ * cropped to the mask, defines the common domain; every layer is bilinearly
+ * resampled onto it and converted to **scene Y** so all downstream work
+ * (tessellation, ordering, geometry) speaks one coordinate system. Layers keep
+ * their own grids untouched.
  *
  * @param layers the stack, shallowest first
  * @param polygon the mask polygon (scene XZ) the chunk is clipped to
@@ -1595,12 +1605,10 @@ export function planStackTessellation(
   // A coarser level's plan tolerance grows with its error, so a thinned line
   // stays within it in plan as well as in height.
   const cellSize = Math.min(reference.header.xinc, reference.header.yinc);
-  const levelSpecs = lod?.errors.map(
-    (error): [number, number] => [
-      error,
-      Math.max(TERMINATION_TOLERANCE, error / cellSize),
-    ],
-  );
+  const levelSpecs = lod?.errors.map((error): [number, number] => [
+    error,
+    Math.max(TERMINATION_TOLERANCE, error / cellSize),
+  ]);
   for (let iy = 0; iy < tilesY; iy++) {
     for (let ix = 0; ix < tilesX; ix++) {
       const t = iy * tilesX + ix;
@@ -1881,7 +1889,11 @@ function blendOntoOutline(
       const qy = py - coords[2 * a + 1];
       const t = (qx * dx + qy * dy) / len2;
       // Noded onto the rim, so off it by no more than the float32 coordinates.
-      if (t <= 0 || t >= 1 || Math.abs(qx * dy - qy * dx) > 1e-4 * Math.sqrt(len2)) {
+      if (
+        t <= 0 ||
+        t >= 1 ||
+        Math.abs(qx * dy - qy * dx) > 1e-4 * Math.sqrt(len2)
+      ) {
         continue;
       }
       vertices.push(v);
@@ -1903,7 +1915,9 @@ function blendOntoOutline(
 // ones before it end.
 function tileStartsOf(outputs: { triangles: Uint32Array }[]): Uint32Array {
   const starts = new Uint32Array(outputs.length + 1);
-  outputs.forEach((o, t) => (starts[t + 1] = starts[t] + o.triangles.length / 3));
+  outputs.forEach(
+    (o, t) => (starts[t + 1] = starts[t] + o.triangles.length / 3),
+  );
   return starts;
 }
 
