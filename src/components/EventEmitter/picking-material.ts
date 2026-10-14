@@ -1,4 +1,5 @@
 import {
+  BufferGeometry,
   Camera,
   DoubleSide,
   Material,
@@ -10,7 +11,6 @@ import {
   UniformsUtils,
   WebGLRenderer,
 } from 'three';
-import { BufferGeometry } from 'three/webgpu';
 import { RenderableObject } from './EventEmitter';
 import fragmentShader from './shaders/pick_frag.glsl';
 import vertexShader from './shaders/pick_vertex.glsl';
@@ -67,9 +67,9 @@ export class PickingMaterial extends ShaderMaterial {
 }
 
 export class CustomPickingMaterial extends PickingMaterial {
-  constructor(vertexShader?: string, uniforms?: Record<string, Uniform>) {
+  constructor(shader?: string, uniforms?: Record<string, Uniform>) {
     super();
-    if (vertexShader) this.vertexShader = vertexShader;
+    if (shader) this.vertexShader = shader;
     if (uniforms) {
       this.uniforms = UniformsUtils.merge([this.uniforms, uniforms]);
     }

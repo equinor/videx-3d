@@ -46,7 +46,10 @@ sequenceDiagram
   P-->>G: refinement candidates
   Note over G: ↑ all of that is CACHED per column
   G->>G: pick this chunk's layers (by reference)
-  G->>G: buildSurfaceStack(...)
+  G->>G: planSurfaceStack(...)  (prep + plan)
+  G->>P: tessellateStackTile, per tile (when tiled)
+  P-->>G: tile triangulations
+  G->>G: plan.begin → the rest of buildSurfaceStack
   G->>G: assembleChunk · packSurfaceChunk
   G-->>R: transfer(packed, buffers)
   R->>R: unpackSurfaceChunk → trackChunk → setChunk
@@ -89,9 +92,9 @@ What it does:
    `orderedSurfaceIds | carrierDepth/carrierBelow`.
 
 > ⚠️⚠️ **Everything built from the same column must derive that key here.** The
-> cache holds exactly one entry, so two callers asking for the same column under
-> different names evict each other and pay for the fetch, the resample and the
-> resolve twice. This is why `buildStackWaterSpec` calls `stackColumnSpec` too.
+> cache is keyed by it, so two callers asking for the same column under different
+> names pay for the fetch, the resample and the resolve twice, and hold two copies.
+> This is why `buildStackWaterSpec` calls `stackColumnSpec` too.
 
 The spec is memoised on its inputs, and the build **token** rides outside it
 (`{ ...spec, build: { key, token: ++n } }`) on purpose: the token changes on every
@@ -187,9 +190,9 @@ MASK.** See [outlines.md](./outlines.md#bounded-fill).
 
 ## The shared column cache
 
-- **One entry.** The channels are the heaviest thing the library holds — nodes ×
-  layers × 4 bytes, hundreds of MB at field scale — so a second entry is not
-  affordable.
+- **Four entries, least recently used evicted** (`MAX_CACHED_COLUMNS`). The
+  channels are the heaviest thing the library holds — nodes × layers × 4 bytes,
+  hundreds of MB at field scale — so a few columns is the most that is affordable.
 - **Key** = `stack.key` (ordered surface ids + carrier) `|` `resolve.mode` `|`
   `minGap` `|` `maxNodes` `|` `maxFill` `|` *resolve present* `|` `seal` `|`
   `sealMode` `|` `minThickness`.
@@ -200,6 +203,10 @@ MASK.** See [outlines.md](./outlines.md#bounded-fill).
 - **Released** by the `stackRelease` generator (`releaseStackResources`), which
   `ChunkStack` invokes on unmount — through a ref, so a change of callback identity
   cannot throw the column away mid-session.
+- **What chunks derive from it is kept with it too** (`getStackDerived` /
+  `keepStackDerived`): each layer's data-edge crossings and, per layer set, the
+  simplified pinch-out lines — together about 1.2 s of every build of a 33-layer
+  field. See [Derived from the column alone](#derived-from-the-column-alone).
 
 `generatorStats()` reports `columnKey`, `columnBytes`, `candidateBytes`,
 `columnsBuilt`, `columnsInFlight`, `poolSize` and (in Chrome) the V8 heap.
@@ -271,7 +278,7 @@ z-fights on.
 
 ```mermaid
 flowchart TD
-  A["candidates:<br/>collectStackCandidates<br/>+ collectThicknessCrossings<br/>+ collectCoverageCrossings"] --> B["tessellateStack<br/><i>ONE triangulation for every layer</i>"]
+  A["candidates:<br/>collectStackCandidates<br/>+ collectThicknessCrossings<br/>+ collectCoverageCrossings"] --> B["planSurfaceStack → tessellateStackTile per tile → stitch<br/><i>ONE triangulation for every layer</i>"]
   B --> C["sampleStackHeights<br/>sampleStackMasks<br/>sampleStackWeights"]
   C --> D["stackDepthStats<br/>stackDuplicateFractions<br/><i>measured BEFORE the resolve</i>"]
   D --> E["resolveStackOrder<br/><i>measure only when preResolved</i>"]
@@ -331,6 +338,214 @@ Returns `StackTessellation`: `coords`, `indices`, `rimVertices`, optional `cuts`
 > rectilinear traced ring cross *itself* where two staircase arms pass within the
 > tolerance, and the noder skips same-ring pairs — so the constraint is silently not
 > enforced.
+
+### Tiled tessellation (`tileCells`)
+
+`ChunkResolveOptions.tileCells` (→ `SurfaceStackOptions.tileCells`) triangulates
+the chunk in square tiles of that many **reference-grid cells**, joined along their
+seams into one mesh. Omitted (or 0), the chunk is one triangulation. It is not part
+of the column's cache key, so changing it rebuilds the chunk only. The tiles are
+the unit the planned LOD will switch detail by.
+
+The build is split where the tiles are, the same way the caps already are:
+
+```
+planSurfaceStack(reference, layers, options)   → { tiles, begin, terminationLines, coverageCrossings }
+  tiles.map(tessellateStackTile)              ← anywhere: three.js-free, plain data in and out
+  begin(outputs)                              → SurfaceStackPending (jobs → finishCap → finish)
+```
+
+`beginSurfaceStack` and `buildSurfaceStack` do exactly that on the current thread;
+the generator runs the tiles on the pool (`tessellateStackTiles`).
+
+**How the seams stay closed.** `planStackTessellation` does everything that
+needs the whole chunk, once:
+
+- Seams run on **half-cell lines** (`k · cells − 0.5`), so no grid node, and no
+  traced data boundary (which follows cell edges), can lie on one. The outer tiles
+  reach the grid's edge.
+- Each seam is an open polyline — its ends, the seams crossing it, and the
+  positions its own height profile needs (`refineStackSeam`: a per-layer
+  Douglas–Peucker of the profile, kept positions unioned over layers; nothing else
+  refines a boundary). It is **noded with every other ring**, so where the rim, a
+  cut, a data edge or a pinch-out line crosses a seam there is ONE point.
+- A ring point within the noder's touch distance (`GRID_NODE_TOUCH`) of a seam is
+  put exactly on it, as a copy — a rounding error off a seam would otherwise land
+  inside one tile and on the other's boundary.
+- Every point on a seam is inserted **first** by **both** tiles beside it. Each
+  tile's Delatin is bootstrapped on its own rectangle (`new Delatin(…, bounds)`), so
+  the shared side is its convex hull and the two sides are the same chain of edges.
+  A constraint running along a seam is skipped: it is that boundary already.
+- Each tile then inserts its refinement nodes, its pieces of the rim (all inserted
+  before any is locked) and its pieces of the cuts, data edges and pinch-out lines;
+  trims to the outline; and sorts its triangles in Morton order.
+- `stitchStackTiles` joins them, merging vertices **by exact coordinate, and only
+  on a seam**. Vertices are numbered tile by tile, so the spatial order is Morton
+  inside a tile and row-major between tiles.
+
+> ⭐ **One tile is the untiled build, byte for byte.** That is a test, and it is
+> what makes the tiled path safe to have as the only path.
+
+What it costs, measured on a 33-layer field (troll, warm builds, 8 workers):
+
+| `tileCells` | Tiles | Shared triangles | Tessellation (ms) |
+|---|---|---|---|
+| off | 1 | 459,268 | 4,645 |
+| 128 | 40 | 465,372 (+1.3 %) | 3,813 — one tile is the critical path |
+| 64 | 160 | 471,578 (+2.7 %) | 3,006 — 2,317 once the column has the derived results |
+
+The extra triangles are the seam vertices. Constraint failures are 0 throughout.
+Where the rest goes is reported per build in `SurfaceChunkDiagnostics.tessellation`
+(`prepMs`, `planMs`, `tilesMs`, `tileWorkMs`, `slowestTileMs`, `stitchMs`,
+`tiles`; in the story's `CHUNKREPORT` as `tessPrepMs` … `tiles`).
+
+> ⚠️ **What is left is serial.** At 64 cells the tiles take ~0.5 s and the plan
+> ~1.3–1.6 s, of which noding every ring is ~0.66 s and cutting them into tile
+> pieces ~0.22 s. Noding and cutting per tile, on the pool, is the next step if it
+> is needed — it changes how a seam gets its shared points.
+
+> ⚠️ **Compare timings within one session.** Every phase moved by ~30 % between
+> sessions on the same machine and data, which is larger than most of the changes
+> being measured.
+
+**Seeing the tiles.** `debugTiles` on `Chunk` or `ChunkStack` (appearance only —
+no rebuild) tints every surface by tile and draws the seams: with a checker, or —
+while a level of detail is chosen per tile — by that level, green at full detail
+through yellow to red at the coarsest.
+`SurfaceChunkMetrics.tiling` describes the layout (`cells`, `first`, `count`, and
+`toGrid`, the affine map from scene XZ to grid column/row); `createTileUniforms`
+turns it into the uniforms `ChunkMaterial` reads through its `tiles` parameter
+(`CHUNK_TILE_DEBUG`). They include one value per tile (an R8 texture) and
+`byValue`, which switches the tint from the checker to that value.
+
+### Derived from the column alone
+
+Two inputs to the plan depend on the column's channels and nothing else, and cost
+about 1.2 s on a 33-layer field:
+
+- each layer's **data-edge crossings** (`collectCoverageCrossings`), when
+  `refineCoverage` is on;
+- the **pinch-out lines** per adjacent pair, simplified against every layer of the
+  chunk (two thirds of that time is reading 33 heights at each of ~400 k traced
+  points). That needs every channel, so it cannot go to the pool.
+
+The plan hands back what it derived (`SurfaceStackPlan.terminationLines` /
+`.coverageCrossings`) and takes it in again (`SurfaceStackOptions.terminationLines`
+/ `.coverageCrossings`). The generator keeps it with the column:
+
+- a data edge by the **identity of the mask**, a set of pinch-out lines by the
+  column index of every channel (by identity) plus threshold and `maxError`;
+- so a voided or synthetic layer, whose arrays are made per build, never matches;
+- in a `WeakMap` keyed by the column, so it goes when the column does; the lines
+  packed into typed arrays, at most four layer sets per column;
+- a hit also skips the pinch-out scan on the pool. It is not counted in
+  `generatorStats`.
+
+The first build of a column gains nothing; every later one, and every other chunk
+of the column drawing the same layers, skips the work.
+
+### Coarser levels of detail (`lod`)
+
+`ChunkResolveOptions.lod = { levels, factor }` (→ `SurfaceStackOptions.lod`)
+builds `levels` coarser triangulations of the same stack in the same build, level
+`k` simplified to `maxError × factor^k`. Each cap then carries one index per level
+(`SurfaceChunkMesh.levels`) over its own attributes. `lodLevel` on `Chunk` /
+`ChunkStack` (appearance only) draws every cap at one level, to judge them;
+otherwise `useChunkLod` picks one per tile from its error on screen
+(`lodPixelError`), and culls buried caps (chunks.md §16.7).
+
+What a level keeps and what it thins:
+
+- **Kept exactly:** the rim, cuts, data edges and every seam point, so a tile at
+  any level meets its neighbour at any other (a test checks the seam edges are the
+  same in every level).
+- **The full level's outline, at every level:** the walls are built along it, so
+  each tile hands its coarser levels every point on its own outline — a grid node
+  lying ON the rim included, which no level's refinement would otherwise keep. A
+  thinned line can still cross the rim somewhere new; such a vertex lies on an
+  edge of the full outline and takes its height along that edge
+  (`StackTessellation.outlineBlends`), so a coarse cap's edge runs exactly along
+  the top of the wall.
+- **Refinement nodes, nested for free:** `collectStackCandidateLevels` records,
+  per node, the running minimum of the mesh error at its insertion. The nodes with
+  a level above `E` are exactly what refining to `E` gives, so one refinement
+  serves every level. A node added for a line (thickness or data-edge crossings)
+  is kept at every level.
+- **Pinch-out lines, thinned:** each tile piece (its ends fixed on a seam or the
+  rim) is simplified by `thinChain` — Douglas–Peucker in plan to
+  `max(0.5 cell, E / cell size)` and then in height to `E` against every layer,
+  from heights the plan samples per point. A piece that would cross itself stays
+  whole. Thinned lines cross where the full ones did not, so each tile nodes its
+  pieces again (`nodeGridRings`, now three.js-free in `grid-noding.ts`).
+- **Vertices:** a level adds those it alone uses (where thinned lines cross)
+  after the full level's, so every per-vertex array covers both.
+- **Patches per level:** with `peelable`, each level's collapse also emits its
+  peel set, and a cap carries that level's patch (`patchLevels`: peel set minus
+  kept) with its own tile starts (`patchTileStarts`), so a peel or a kept unit
+  draws the patch at each tile's level (chunks.md §15.12).
+- **Normals: the attribute at full detail, a map on coarser tiles:** a
+  full-detail vertex normal stretched over a coarse triangle shades as a dark
+  smear beside every steep channel. So a build with levels also bakes each cap's
+  normals into a map (`bakeCapNormalMap`, `cap-normal-map.ts`): RG half floats
+  (x and z, y rebuilt) on a grid of `CAP_NORMAL_MAP_CELLS` (1) reference cells
+  per texel, its texel centres on grid nodes. A texel inside a full-level
+  triangle gets the vertex normals interpolated there; one only a coarser level
+  covers gets that level's; a sliver with no texel centre still marks its nearest
+  texel, and two rings around the cap are dilated so filtering at its edge reads
+  no blanks. The material reads the map only where the fragment's tile is drawn
+  coarser (`tileLevels`: the per-tile level texture `useChunkLod` writes, all 0
+  while LOD is off); a full-detail tile keeps its `normal` attribute. A level
+  change therefore touches no normals at all.
+  - Why not the map everywhere: compared with the attribute at full detail it
+    is identical from 15 km, but up close a sharp diagonal scarp, sampled on a
+    square grid, comes out softer and zigzagged at the texel spacing. The
+    attribute keeps close-ups exact, and LOD picks a coarser level only far away,
+    where the two agree. Not coarser than the grid either: at 2 cells per texel
+    the fault lines come out dashed at 15 km, where LOD first picks level 1.
+  - Half floats rather than 8 bits: a vertical exaggeration multiplies the slope,
+    and with it the quantisation, of an 8-bit normal.
+  - `ChunkMeshes` binds each cap's map per draw (`bindChunkNormalMap` from
+    `onBeforeRender`), since a void's ceiling can share its material with the cap
+    of the same layer.
+- **Per level:** the same drop rules (`collapseStackTriangles`, thin
+  classification from the level's own pinch-out vertices, cut and coverage flags).
+  Walls and cut faces stay at full detail.
+
+Measured on a 33-layer field (troll, `maxError` 5, 64-cell tiles, `levels` 3,
+`factor` 4):
+
+| Level | Error | Shared triangles | Cap triangles | Drawn (all passes) | GPU |
+|---|---|---|---|---|---|
+| full | 5 m | 471,578 | 11.0 M | 33.1 M | 57 ms |
+| 1 | 20 m | 262,135 | 5.6 M | 18.8 M | 38 ms |
+| 2 | 80 m | 92,649 | 2.1 M | 8.0 M | 28 ms |
+| 3 | 320 m | 42,483 | 1.0 M | 4.7 M | 27 ms |
+
+> ⚠️ **What it costs (same session, warm):** build 9.7 → 13.6 s (+40 %) and
+> chunk memory 327 → 465 MB (+42 %): 104 MB of level indices and 72,601 extra
+> vertices (+31 %), which every layer's per-vertex arrays carry. Level 1 still has
+> 1 constraint failure on that field, not yet diagnosed.
+
+**Chosen per tile, see-through** (2026-10-14, troll, all 33 layers, Intel Iris Xe,
+surface and wall opacity 0.75, so no cap is culled; GPU ms, median of 9, ±10 % run to
+run because levels coarsen with hysteresis):
+
+| View | LOD off | `lodPixelError` 2 | 4 | 8 | 16 |
+|---|---|---|---|---|---|
+| 40 km above | 40.9 | 21.1 | | | |
+| 15 km above | 58.1 | 34–37 | 31.0 | 28.5 | 26.3 |
+| 2.5 km, in the block | 59.8 | 52–58 | 45.5 | 44.1 | 37.9 |
+| inside a unit, 400 m | 45.7 | 38–39 | 38.0 | 30.1 | 27.7 |
+
+- Close views gain little: level 1 (20 m) is only allowed beyond ~7.9 km at 2 px
+  (918 px tall, 60°), and it keeps 56 % of level 0's triangles.
+- The image barely moves: against LOD off, at most 0.07 % of pixels differ by more
+  than 4/255 at 2 px, 0.1–0.2 % at 8 px — the layers behind average the error away.
+- A moving camera (300 frames per phase), mean frame LOD off → on: zoom above
+  51.8 → 32.9 ms, tilt 60.2 → 53.4, orbit below 64.7 → 49.8, zoom below 66.8 → 44.2;
+  at most 8 MB uploaded per frame.
+- What is left is mostly fragments, not triangles (see oit-guide.md, "What a
+  transparent frame costs").
 
 ### Collapse: what is dropped, and by which rule
 
@@ -462,6 +677,10 @@ type SurfaceChunkMesh = {
   layer: number;          // index into the CALLER's layers
   ceiling?: boolean;      // a void's upper copy, or the carrier
   patchIndex?: Uint32Array; // fragments given up to the layer above
+  levels?: Uint32Array[];   // per coarser level: what the cap keeps there
+  tileStarts?: Uint32Array[]; // per level: where each tile starts in it
+  patchLevels?: Uint32Array[]; // per coarser level: the patch there
+  patchTileStarts?: Uint32Array[]; // per level: where each tile starts in the patch
   boundary?: number;      // index into `boundaries` (the BUILD layer)
   above?: Uint8Array;     // per cap triangle: build interval above, 255 = none
   below?: Uint8Array;     // ... and below — what hidden-cap culling reads
@@ -530,12 +749,15 @@ worker: each cap's `SurfaceChunkMesh.units` and the section's spatial index
   bundler configuration, and it works whether the host runs the generator registry
   on the main thread or in a worker. ⚠️ It must stay free of three.js (22.6 kB as
   of 2026-10-09; three would add hundreds).
-- Five task kinds: `'resample'`, `'refine'`, `'terminations'` (one adjacent
+- Six task kinds: `'resample'`, `'refine'`, `'terminations'` (one adjacent
   pair's pinch-out loops, `scanThicknessLoops` — the simplify that follows needs
-  every channel, so it stays in `buildSurfaceStack`), `'outline'` (a wellbore
-  outline's raster — only the cut runs are sent, never a surface grid) and `'cap'`
-  (one cap's normals, index, patch and bounds, `buildStackCapArrays` — see
-  [streaming.md](./streaming.md#part-4--building-the-layers-in-parallel)).
+  every channel, so it stays in `planSurfaceStack`, and is kept with the column),
+  `'outline'` (a wellbore outline's raster — only the cut runs are sent, never a
+  surface grid), `'cap'` (one cap's normals, index, patch and bounds,
+  `buildStackCapArrays` — see
+  [streaming.md](./streaming.md#part-4--building-the-layers-in-parallel)) and
+  `'tile'` (one tile of a tiled tessellation, `tessellateStackTile` — largest
+  first; a build with one tile runs it in place).
 - If `Worker` is unavailable or construction fails, the pool is `null` and every
   path falls back to running the SDK function serially (`poolSize: 0` in the
   result).
@@ -544,12 +766,14 @@ worker: each cap's `SurfaceChunkMesh.units` and the section's spatial index
 |------|----------------|----------|
 | `resample` | the raw grid `values` (never needed again downstream) | `channel` + `mask` |
 | `refine` | a **copy** of the channel (the caller still needs it) | candidate node indices |
-| `cap` | **copies** of `xz`, the layer's `y` and its index (the build reads them on) | snorm16 normals, the index if re-wound, patch index, bounds |
+| `cap` | **copies** of `xz`, the layer's `y` and its index (the build reads them on) | snorm16 normals, the normal map when the build has levels, the index if re-wound, patch index, bounds |
+| `tile` | the tile's own arrays (`stackTileInputBuffers`); the outline is copied, every tile needs it | the tile's triangulation (`stackTileOutputBuffers`) |
 
 > ⚠️⚠️ **The worker bundle must stay free of `three`.** `stack-refine.worker.ts`
 > imports `collectStackCandidates`, `resampleStackLayer`, `scanThicknessLoops`,
-> `createWellboreOutlineCoordinates` and `buildStackCapArrays`, so those modules
-> (and `surface-grid.ts`, `chamfer.ts`, `mesh-boundary.ts`) must stay three.js-free. Pulling three in here
+> `createWellboreOutlineCoordinates`, `buildStackCapArrays` and `tessellateStackTile`, so those modules
+> (and `surface-grid.ts`, `chamfer.ts`, `mesh-boundary.ts`, `delatin.ts`, `grid-inside.ts`,
+> `grid-noding.ts`, `triangle-order.ts`, `cap-normal-map.ts`) must stay three.js-free. Pulling three in here
 > embeds a second copy of it in the bundle. Check with `vite build` — `generators.js`
 > should stay around 50 kB.
 

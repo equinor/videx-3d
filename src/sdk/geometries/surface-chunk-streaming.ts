@@ -221,7 +221,16 @@ export function packSurfaceChunkCap(
   const [geometry, transfer] = packBufferGeometry(own);
   const moved: Transferable[] = transfer.map(buffer => buffer as ArrayBuffer);
   if (index && !flags.index) moved.push(index.array.buffer as ArrayBuffer);
-  for (const array of [mesh.patchIndex, mesh.above, mesh.below]) {
+  for (const array of [
+    mesh.patchIndex,
+    mesh.above,
+    mesh.below,
+    ...(mesh.levels ?? []),
+    ...(mesh.tileStarts ?? []),
+    ...(mesh.patchLevels ?? []),
+    ...(mesh.patchTileStarts ?? []),
+    mesh.normalMap?.data,
+  ]) {
     if (array) moved.push(array.buffer as ArrayBuffer);
   }
   return [

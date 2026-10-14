@@ -105,12 +105,12 @@ Five ideas carry the whole design:
 | File | Role |
 |------|------|
 | `surface-chunk-generator.ts` | `generateSurfaceChunk` — the whole worker-side build. |
-| `surface-stack-context.ts` | The shared-column cache (`getStackContext`). |
+| `surface-stack-context.ts` | The shared-column cache (`getStackContext`), and what chunks derive from a column (`getStackDerived`). |
 | `stack-water-generator.ts` | `generateStackWater` — the sea's lid and body. |
 | `stack-release-generator.ts` | `releaseStackResources` — drops the cached column. |
 | `wellbore-outline-generator.ts` | `generateWellboreOutline` — trajectories → outline rings for a wellbore cut source. |
 | `generator-supersede.ts` | Latest-wins abort for superseded builds. |
-| `workers/stack-worker-pool.ts` | Sub-worker pool for resample, refine and outline rasterization. |
+| `workers/stack-worker-pool.ts` | Sub-worker pool for resample, refine, terminations, outline rasterization, caps and tessellation tiles. |
 | `workers/stack-refine.worker.ts` | The inlined, three.js-free worker body. |
 
 ### SDK — `src/sdk/geometries/`
@@ -118,7 +118,10 @@ Five ideas carry the whole design:
 | File | Role |
 |------|------|
 | `surface-stack.ts` | The stack maths: reference grid, tessellation, resolve, collapse, intervals. |
-| `surface-stack-geometry.ts` | `buildSurfaceStack` (the entry point), layer geometries, walls. |
+| `surface-stack-geometry.ts` | `buildSurfaceStack` (the entry point), `planSurfaceStack` (split at the tiles), layer geometries, walls. |
+| `stack-tiles.ts` | One tile of a tiled tessellation (and its coarser levels), joining tiles, seam refinement. **three.js-free.** |
+| `grid-inside.ts` | Point-in-polygon on grid rings, with a crossing index. **three.js-free.** |
+| `grid-noding.ts` | `nodeGridRings` — splitting rings where they cross. **three.js-free.** |
 | `surface-stack-resample.ts` | Resampling a grid onto the common grid. **three.js-free.** |
 | `surface-stack-candidates.ts` | Refinement candidates + termination/coverage crossings. **three.js-free.** |
 | `surface-seal.ts` | Closing the block where a surface is not mapped. |

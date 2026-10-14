@@ -1153,6 +1153,19 @@ export type ChunkResolveOptions = {
    */
   constrainTerminations?: boolean;
   /**
+   * Triangulate the chunk in square tiles of this many reference-grid cells,
+   * joined along their seams. Omitted = one triangulation. The tile layout is
+   * what LOD will switch detail by; `debugTiles` on the chunk shows it.
+   */
+  tileCells?: number;
+  /**
+   * Also build coarser levels of detail over the same vertices: level `k`
+   * simplified to `maxError × factor^k`, keeping the rim, cuts, data edges and
+   * tile seams and thinning the pinch-out lines (see `SurfaceStackOptions.lod`).
+   * Omitted, or `levels` 0 = off.
+   */
+  lod?: { levels: number; factor: number };
+  /**
    * Node budget for the stack's common grid — the ⭐ **quality/speed dial** for
    * the whole build. Default `DEFAULT_STACK_MAX_NODES` (4,000,000).
    *

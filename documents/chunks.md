@@ -1335,6 +1335,12 @@ precisely the key that misorders the stack.
   constrained into the tessellation, simplified to half a cell.
 - `refineTerminations` — the older alternative, refining the grid nodes either
   side of that line; on only when `constrainTerminations` is off. See §9.6.
+- `tileCells` — triangulate in square tiles of this many reference cells, on the
+  worker pool, joined along their seams. Off by default; see
+  [chunk-stack/build-pipeline.md](./chunk-stack/build-pipeline.md#tiled-tessellation-tilecells).
+- `lod` — also build coarser levels of detail over the same vertices. Off by
+  default; see
+  [chunk-stack/build-pipeline.md](./chunk-stack/build-pipeline.md#coarser-levels-of-detail-lod).
 
 ### 9.5 Which surface wins (shallow, deliberately)
 
@@ -2593,9 +2599,10 @@ draws is pure cost.
   `surfaces`: switching them would change the envelope's depth window and make
   `coverAbove` find a claimed surface above where it previously found none.
 
-⚠️ **The cache is single-entry and keyed on the whole ordered list**, so any change
-to the membership rebuilds all of it: a copy of every grid, a full resample, a full
-resolve, a full refinement. Per-surface caching of the resampled CHANNELS is the
+⚠️ **The cache is keyed on the whole ordered list** (four columns, least recently
+used evicted), so any change to the membership builds a new column from scratch —
+a copy of every grid, a full resample, a full resolve, a full refinement; only
+going back to a list still cached is free. Per-surface caching of the resampled CHANNELS is the
 obvious next step, and the reason it is not trivial is that **the common grid is
 derived from the membership** — `buildStackReference` picks the finest member's
 grid, so adding a coarser surface leaves every channel valid while adding a finer
@@ -3729,6 +3736,15 @@ column only two carry one (Draupne, 1555 triangles, and the unconformity's 23).
 It travels as `SurfaceChunkMesh.patchIndex` — **an index and nothing more**, since
 the patch shares the cap's positions, uv, normals and `inferred`.
 
+⭐ Under LOD each coarser level collapses its own triangles, so it drops its own
+fragments: the full-level patch does not fit a coarse tile. Each level therefore
+gets its own patch (`patchLevels`, that level's peel set minus what it keeps) and
+tile starts (`patchTileStarts`), and `useChunkLod` draws the patch from a second
+tile pool per cap, at the same tile levels as the cap. Without it a peel or a kept
+unit left holes that LOD off did not show. Cost on Troll (33 layers): 6.3 M patch
+triangles over the three coarser levels, about 72 MB, paid only when the build
+asks for patches (`peelable`).
+
 ⭐⭐ It carries the DIFFERENCE (the fragments the cap gave up), not the union, and
 is drawn IN ADDITION to the cap. The union would be a second full copy of every
 cap's index — hundreds of MB on a field-scale column — and would redraw the whole
@@ -3992,7 +4008,10 @@ One build serves every state:
   256-entry open table per cap (`openIntervals` + `capOpenTable`), and
   `useCulledCaps` draws a VIEW of each cap — the cap's own attributes, shared, plus
   an index of the visible triangles. A cap is re-filtered only when a unit it
-  actually FACES changes state (`capVisibilityKey`).
+  actually FACES changes state (`capVisibilityKey`). Until a change is applied, a
+  cap it reveals more of is drawn whole (only that cap); a change that only HIDES
+  (`keyOnlyHides`) keeps the cap's view, which draws more than needed and never a
+  hole, and is applied one cap per frame.
 - **The camera's unit** comes from `createIntervalProbe`: one triangle lookup
   (`TinSampler.locate`) whose weights interpolate EVERY cap's `y` (shared topology),
   widened by a 2 m band plus the near plane, which can clip a cap open. Gated by
@@ -4011,6 +4030,24 @@ One build serves every state:
   take. Such caps are few, and this never lags a toggle by a frame.
 - A horizon shared by two chunks is never culled — the unit on its far side lives
   in the other chunk.
+- Under LOD (`useChunkLod`) only the full level has neighbours. A tile drawn
+  coarser is kept for a cap when ANY of its full-level triangles shows, dropped
+  otherwise; full-detail tiles stay exact. From above with everything opaque that
+  is exact (Troll, 33 layers: 1.15 M of 12.0 M full-level triangles either way).
+  With one unit open — the camera in it, or peeled — a coarse tile keeps about 2×
+  (median 1.83, worst 2.94) what exact culling would. Exact culling per level
+  would need neighbours per level from the build: about +63 MB on Troll.
+- ⭐ Under LOD the culling lives in the cap's tile pool (`cullTilePool`). Each tile
+  keeps the distinct (above, below) pairs of its full-level triangles, so a new
+  table is judged per tile from a handful of pairs, not per triangle. A tile it
+  REVEALS more of is rewritten before the next frame (only its slot is uploaded);
+  one it only HIDES keeps drawing what it has and is applied within the frame
+  budget (`flushTilePool`). Why: orbiting a point inside the block takes the
+  camera through horizons as it tilts past level, and each crossing changes the
+  open units. Rebuilding every affected cap whole in one frame stuttered (Troll,
+  tilt 30°→150° at 2.5 km: worst frame 150 ms, 12 frames over 50 ms, 280 MB
+  uploaded); per tile it is 117 ms, 1 frame, 196 MB, most of it now the idle
+  repacking of pools that the hides leave sparse.
 
 ⚠️ A view must be released with `releaseCapView` (detach the shared attributes,
 THEN dispose) or it frees the cap's buffers with its own index. Views retired by a

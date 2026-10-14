@@ -1,0 +1,482 @@
+import {
+  Box3,
+  Camera,
+  Matrix4,
+  OrthographicCamera,
+  PerspectiveCamera,
+  Vector3,
+} from 'three';
+import type { StackTiling } from '../../sdk';
+
+/**
+ * A coarser level is taken only once its error is this far under the limit, so a
+ * tile on the boundary does not flip between two levels every frame.
+ */
+export const LOD_COARSEN_MARGIN = 0.8;
+
+/**
+ * Each tile's box in the chunk's own frame: its grid rectangle mapped to scene XZ,
+ * over the chunk's height range. In the tile order of `StackTiling` (row-major).
+ */
+export function chunkTileBoxes(
+  tiling: StackTiling,
+  yMin: number,
+  yMax: number,
+): Box3[] {
+  const { cells, first, count } = tiling;
+  const [a, b, c, d, e, f] = tiling.toGrid;
+  const det = a * e - b * d;
+  // The inverse of `toGrid`: grid (column, row) back to scene XZ.
+  const toScene = (col: number, row: number): [number, number] => [
+    (e * (col - c) - b * (row - f)) / det,
+    (a * (row - f) - d * (col - c)) / det,
+  ];
+  const boxes: Box3[] = [];
+  for (let j = 0; j < count[1]; j++) {
+    for (let i = 0; i < count[0]; i++) {
+      const col0 = (first[0] + i) * cells - 0.5;
+      const row0 = (first[1] + j) * cells - 0.5;
+      const box = new Box3();
+      for (const [col, row] of [
+        [col0, row0],
+        [col0 + cells, row0],
+        [col0, row0 + cells],
+        [col0 + cells, row0 + cells],
+      ]) {
+        const [x, z] = toScene(col, row);
+        box.expandByPoint(new Vector3(x, yMin, z));
+        box.expandByPoint(new Vector3(x, yMax, z));
+      }
+      boxes.push(box);
+    }
+  }
+  return boxes;
+}
+
+/**
+ * How many pixels one unit spans at a distance from `camera`, for a viewport
+ * `height` pixels tall. An orthographic camera's is the same at any distance.
+ */
+export function pixelsPerUnit(
+  camera: Camera,
+  height: number,
+): (distance: number) => number {
+  if ((camera as OrthographicCamera).isOrthographicCamera) {
+    const ortho = camera as OrthographicCamera;
+    const scale = (height * ortho.zoom) / (ortho.top - ortho.bottom);
+    return () => scale;
+  }
+  const perspective = camera as PerspectiveCamera;
+  const scale =
+    (height * (perspective.zoom ?? 1)) /
+    (2 * Math.tan(((perspective.fov ?? 50) * Math.PI) / 360));
+  return distance => scale / Math.max(distance, 1e-6);
+}
+
+const worldEye = new Vector3();
+const nearest = new Vector3();
+
+/**
+ * Pick each tile's level of detail: the coarsest whose height error, projected at
+ * the tile's nearest point to the eye, stays within `pixelError` pixels. A tile
+ * goes finer as soon as its level is over the limit, and coarser only once the
+ * next level is under it by {@link LOD_COARSEN_MARGIN}.
+ *
+ * @param eye the camera position in the boxes' frame
+ * @param errors per level, the full one first: its height error, ascending
+ * @param levels per tile, its current level; updated in place
+ * @param scales per tile, written with its pixels per unit of height error when given
+ * @param frame the boxes' frame to world, when the two differ: distances are
+ *   measured in the world, and the height errors take its vertical scale (a
+ *   vertical exaggeration)
+ * @returns whether any tile changed level
+ */
+export function selectTileLevels(
+  boxes: Box3[],
+  eye: Vector3,
+  scale: (distance: number) => number,
+  errors: number[],
+  pixelError: number,
+  levels: Uint8Array,
+  scales?: Float32Array,
+  frame?: Matrix4,
+): boolean {
+  let changed = false;
+  const last = errors.length - 1;
+  let vertical = 1;
+  if (frame) {
+    const m = frame.elements;
+    vertical = Math.hypot(m[4], m[5], m[6]);
+    worldEye.copy(eye).applyMatrix4(frame);
+  }
+  for (let t = 0; t < boxes.length; t++) {
+    // Per axis is exact for the scale an exaggeration is: diagonal in the box's frame.
+    const distance = frame
+      ? boxes[t].clampPoint(eye, nearest).applyMatrix4(frame).distanceTo(worldEye)
+      : boxes[t].distanceToPoint(eye);
+    const ppu = scale(distance) * vertical;
+    if (scales) scales[t] = ppu;
+    let k = Math.min(levels[t], last);
+    while (k > 0 && errors[k] * ppu > pixelError) k--;
+    while (k < last && errors[k + 1] * ppu <= pixelError * LOD_COARSEN_MARGIN)
+      k++;
+    if (k !== levels[t]) {
+      levels[t] = k;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/**
+ * The tiles whose drawn level (`applied`) is not the one wanted (`levels`), in the
+ * order to redraw them: those that need more detail first, the most visible error
+ * (`excess`, e.g. pixels) first; then those that can do with less, the least
+ * visible first.
+ */
+export function orderTileChanges(
+  levels: Uint8Array,
+  applied: Uint8Array,
+  excess: ArrayLike<number>,
+): number[] {
+  const finer: number[] = [];
+  const coarser: number[] = [];
+  for (let t = 0; t < levels.length; t++) {
+    if (levels[t] < applied[t]) finer.push(t);
+    else if (levels[t] > applied[t]) coarser.push(t);
+  }
+  finer.sort((a, b) => excess[b] - excess[a]);
+  coarser.sort((a, b) => excess[a] - excess[b]);
+  return finer.concat(coarser);
+}
+
+/** Room a {@link TilePool} keeps past its fullest layout, for tiles that grow. */
+export const TILE_POOL_HEADROOM = 0.25;
+
+/**
+ * One cap's index drawn at a level per tile, laid out so that a tile changing
+ * level rewrites that tile's slot and nothing else. A slot that grows moves to
+ * the end; what a tile no longer uses is filled with degenerate triangles, which
+ * draw nothing, until {@link compactTilePool} squeezes them out.
+ */
+export type TilePool = {
+  /** what is drawn, up to `end` */
+  index: Uint32Array;
+  /** per level, the full one first: the cap's triangles */
+  lists: ArrayLike<number>[];
+  /** per level: where each tile starts in its list (triangles) */
+  starts: Uint32Array[];
+  /** what the full level is culled by (see {@link cullTilePool}); `null` = nothing */
+  cull: TilePoolCull | null;
+  /** per tile, its level */
+  level: Uint8Array;
+  /** per tile, where its slot starts, how long it is and how much of it is in use (indices) */
+  slot: Uint32Array;
+  room: Uint32Array;
+  used: Uint32Array;
+  end: number;
+  /** indices in use; the rest of `[0, end)` is degenerate */
+  live: number;
+  /**
+   * Written since the caller last uploaded, as `[start, count]` pairs, none empty:
+   * WebGL2's `bufferSubData` reads a length of 0 as "to the end of the array".
+   */
+  written: number[];
+};
+
+/**
+ * What a {@link TilePool}'s full level is culled by: the units above and below each
+ * of its triangles, and per tile the distinct pairs among them — which tell what a
+ * new open table changes in a tile without scanning its triangles.
+ */
+export type TilePoolCull = {
+  above: Uint8Array;
+  below: Uint8Array;
+  /** the open table the tiles are brought to; `null` = everything shows */
+  table: Uint8Array | null;
+  /** per tile, where its pairs start (one past the end last) */
+  pairStart: Uint32Array;
+  pairAbove: Uint8Array;
+  pairBelow: Uint8Array;
+  /** full-level triangles per pair */
+  pairTriangles: Uint32Array;
+  /** per pair, whether it was showing when its tile was last written */
+  pairDrawn: Uint8Array;
+  /** per tile, its full-level triangles that show under `table` */
+  visible: Uint32Array;
+  /** per tile, drawn with more than `table` shows: a hide not applied yet */
+  stale: Uint8Array;
+  staleCount: number;
+};
+
+let pairSlots: Int32Array | null = null;
+
+function createPoolCull(
+  starts: Uint32Array,
+  above: Uint8Array,
+  below: Uint8Array,
+): TilePoolCull {
+  const tiles = starts.length - 1;
+  const slots = (pairSlots ??= new Int32Array(1 << 16).fill(-1));
+  const pairStart = new Uint32Array(tiles + 1);
+  const pairAbove: number[] = [];
+  const pairBelow: number[] = [];
+  const pairTriangles: number[] = [];
+  const visible = new Uint32Array(tiles);
+  for (let t = 0; t < tiles; t++) {
+    const first = pairAbove.length;
+    for (let i = starts[t]; i < starts[t + 1]; i++) {
+      const key = (above[i] << 8) | below[i];
+      let p = slots[key];
+      if (p < 0) {
+        p = pairAbove.length;
+        slots[key] = p;
+        pairAbove.push(above[i]);
+        pairBelow.push(below[i]);
+        pairTriangles.push(0);
+      }
+      pairTriangles[p]++;
+    }
+    for (let p = first; p < pairAbove.length; p++) {
+      slots[(pairAbove[p] << 8) | pairBelow[p]] = -1;
+    }
+    pairStart[t + 1] = pairAbove.length;
+    visible[t] = starts[t + 1] - starts[t];
+  }
+  return {
+    above,
+    below,
+    table: null,
+    pairStart,
+    pairAbove: Uint8Array.from(pairAbove),
+    pairBelow: Uint8Array.from(pairBelow),
+    pairTriangles: Uint32Array.from(pairTriangles),
+    pairDrawn: new Uint8Array(pairAbove.length).fill(1),
+    visible,
+    stale: new Uint8Array(tiles),
+    staleCount: 0,
+  };
+}
+
+function pairShows(cull: TilePoolCull, p: number) {
+  const table = cull.table;
+  return !table || !!(table[cull.pairAbove[p]] || table[cull.pairBelow[p]]);
+}
+
+function markDrawn(cull: TilePoolCull, t: number) {
+  for (let p = cull.pairStart[t]; p < cull.pairStart[t + 1]; p++) {
+    cull.pairDrawn[p] = pairShows(cull, p) ? 1 : 0;
+  }
+  if (cull.stale[t]) {
+    cull.stale[t] = 0;
+    cull.staleCount--;
+  }
+}
+
+function tileLength(pool: TilePool, t: number, k: number) {
+  const cull = pool.cull;
+  if (cull) {
+    if (k === 0) return cull.visible[t] * 3;
+    // A tile without full-level triangles has nothing to say it is buried.
+    if (cull.visible[t] === 0 && pool.starts[0][t + 1] > pool.starts[0][t]) {
+      return 0;
+    }
+  }
+  return (pool.starts[k][t + 1] - pool.starts[k][t]) * 3;
+}
+
+function copyTile(pool: TilePool, t: number, k: number, at: number) {
+  const cull = pool.cull;
+  const n = tileLength(pool, t, k);
+  const first = pool.starts[k][t];
+  const list = pool.lists[k] as Uint32Array;
+  if (cull && k === 0 && n < (pool.starts[0][t + 1] - first) * 3) {
+    const { above, below, table } = cull;
+    const index = pool.index;
+    let w = at;
+    for (let i = first; i < pool.starts[0][t + 1]; i++) {
+      if (!table![above[i]] && !table![below[i]]) continue;
+      index[w++] = list[3 * i];
+      index[w++] = list[3 * i + 1];
+      index[w++] = list[3 * i + 2];
+    }
+  } else {
+    pool.index.set(list.subarray(first * 3, first * 3 + n), at);
+  }
+  if (cull) markDrawn(cull, t);
+}
+
+/** A pool with each tile at `levels`, packed. */
+export function createTilePool(
+  lists: ArrayLike<number>[],
+  starts: Uint32Array[],
+  levels: Uint8Array,
+): TilePool {
+  const tiles = levels.length;
+  let fullest = 0;
+  for (let t = 0; t < tiles; t++) {
+    let most = 0;
+    for (const s of starts) most = Math.max(most, s[t + 1] - s[t]);
+    fullest += most * 3;
+  }
+  const pool: TilePool = {
+    index: new Uint32Array(Math.ceil(fullest * (1 + TILE_POOL_HEADROOM))),
+    lists,
+    starts,
+    cull: null,
+    level: levels.slice(),
+    slot: new Uint32Array(tiles),
+    room: new Uint32Array(tiles),
+    used: new Uint32Array(tiles),
+    end: 0,
+    live: 0,
+    written: [],
+  };
+  compactTilePool(pool);
+  return pool;
+}
+
+/** Pack every tile at its level, slots exactly its size. Returns the indices written. */
+export function compactTilePool(pool: TilePool): number {
+  let at = 0;
+  for (let t = 0; t < pool.level.length; t++) {
+    const n = tileLength(pool, t, pool.level[t]);
+    copyTile(pool, t, pool.level[t], at);
+    pool.slot[t] = at;
+    pool.room[t] = n;
+    pool.used[t] = n;
+    at += n;
+  }
+  pool.end = at;
+  pool.live = at;
+  pool.written.length = 0;
+  if (at > 0) pool.written.push(0, at);
+  return at;
+}
+
+/**
+ * Cull the full level by an open `table` (`null` = draw it all), and a coarser tile
+ * wherever none of its full-level triangles shows. A tile that would show more is
+ * rewritten now; one that would only show less keeps what it draws (more than
+ * needed, never a hole) and is left stale for {@link flushTilePool}. The first call
+ * learns the cap's neighbours, per triangle of its full level. Returns the indices
+ * written.
+ */
+export function cullTilePool(
+  pool: TilePool,
+  neighbours: { above: Uint8Array; below: Uint8Array },
+  table: Uint8Array | null,
+): number {
+  const cull = (pool.cull ??= createPoolCull(
+    pool.starts[0],
+    neighbours.above,
+    neighbours.below,
+  ));
+  cull.table = table;
+  const tiles = pool.level.length;
+  // Every count first: a write below may pack the whole pool.
+  for (let t = 0; t < tiles; t++) {
+    let visible = 0;
+    for (let p = cull.pairStart[t]; p < cull.pairStart[t + 1]; p++) {
+      if (pairShows(cull, p)) visible += cull.pairTriangles[p];
+    }
+    cull.visible[t] = visible;
+  }
+  let written = 0;
+  for (let t = 0; t < tiles; t++) {
+    let gains = false;
+    let loses = false;
+    let drew = false;
+    for (let p = cull.pairStart[t]; p < cull.pairStart[t + 1]; p++) {
+      const shows = pairShows(cull, p);
+      const drawn = cull.pairDrawn[p] === 1;
+      if (shows && !drawn) gains = true;
+      if (!shows && drawn) loses = true;
+      if (drawn) drew = true;
+    }
+    // A coarser tile is drawn whole or not at all.
+    if (pool.level[t] > 0) {
+      gains = cull.visible[t] > 0 && !drew;
+      loses = cull.visible[t] === 0 && drew;
+    }
+    if (gains) {
+      written += writePoolTile(pool, t, pool.level[t]);
+    } else if (loses) {
+      if (!cull.stale[t]) {
+        cull.stale[t] = 1;
+        cull.staleCount++;
+      }
+    } else {
+      markDrawn(cull, t);
+    }
+  }
+  return written;
+}
+
+/**
+ * Apply the hides {@link cullTilePool} left stale, until about `budget` indices
+ * are written. Returns the indices written.
+ */
+export function flushTilePool(pool: TilePool, budget: number): number {
+  const cull = pool.cull;
+  let written = 0;
+  for (let t = 0; t < pool.level.length; t++) {
+    if (!cull || cull.staleCount === 0 || written >= budget) break;
+    if (cull.stale[t]) written += writePoolTile(pool, t, pool.level[t]);
+  }
+  return written;
+}
+
+/** Whether {@link setPoolTile} can draw tile `t` at level `k` without packing the pool. */
+export function fitsPoolTile(pool: TilePool, t: number, k: number): boolean {
+  const n = tileLength(pool, t, k);
+  if (pool.level[t] === k || n <= pool.room[t]) return true;
+  const start = pool.slot[t];
+  if (start + pool.room[t] === pool.end) return start + n <= pool.index.length;
+  return pool.end + n <= pool.index.length;
+}
+
+/**
+ * Draw tile `t` at level `k`: in its slot when it fits there (or is the last one),
+ * otherwise in a new slot at the end, or after a compaction when there is no
+ * room left (see {@link fitsPoolTile}). Returns the indices written.
+ */
+export function setPoolTile(pool: TilePool, t: number, k: number): number {
+  if (pool.level[t] === k) return 0;
+  return writePoolTile(pool, t, k);
+}
+
+/** {@link setPoolTile}, also when `t` is at `k` already: its content changed. */
+function writePoolTile(pool: TilePool, t: number, k: number): number {
+  const n = tileLength(pool, t, k);
+  const old = pool.used[t];
+  let start = pool.slot[t];
+  let moved = 0;
+  if (n > pool.room[t]) {
+    if (start + pool.room[t] === pool.end && start + n <= pool.index.length) {
+      pool.end = start + n;
+    } else if (pool.end + n <= pool.index.length) {
+      pool.index.fill(0, start, start + old);
+      if (old > 0) pool.written.push(start, old);
+      moved = old;
+      start = pool.end;
+      pool.slot[t] = start;
+      pool.end += n;
+    } else {
+      pool.level[t] = k;
+      return compactTilePool(pool);
+    }
+    pool.room[t] = n;
+  }
+  pool.level[t] = k;
+  copyTile(pool, t, k, start);
+  let span = n;
+  if (!moved && n < old) {
+    pool.index.fill(0, start + n, start + old);
+    span = old;
+  }
+  if (span > 0) pool.written.push(start, span);
+  pool.used[t] = n;
+  pool.live += n - old;
+  return moved + span;
+}

@@ -159,6 +159,16 @@ export function capVisibilityKey(
 }
 
 /**
+ * Whether a cap going from key `from` to `to` (see {@link capVisibilityKey}) only
+ * closes units — what it drew before is then still enough: more, never a hole.
+ */
+export function keyOnlyHides(from: string, to: string): boolean {
+  if (from.length !== to.length) return false;
+  for (let i = 0; i < from.length; i++) if (to[i] > from[i]) return false;
+  return true;
+}
+
+/**
  * The triangles of a cap that are not buried: a triangle is kept when the unit
  * on EITHER side of it is open in `table`.
  *

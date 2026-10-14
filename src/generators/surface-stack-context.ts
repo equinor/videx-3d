@@ -21,11 +21,16 @@ import {
   StackPairStats,
   StackReference,
   SurfaceChunkPhase,
+  SurfaceStackOptions,
+  SurfaceStackPlan,
 } from '../sdk';
+import type { ThicknessLines } from '../sdk/geometries/surface-stack-terminations';
+import type { GridRing } from '../sdk/geometries/triangulate-grid-delaunay';
 import {
   getStackPool,
   refineStackChannels,
   resampleStackChannel,
+  StackCandidates,
 } from './workers/stack-worker-pool';
 
 /**
@@ -536,10 +541,7 @@ async function buildStackContext(
  * Refine the column's channels once and cache the candidates alongside it, so the
  * per-layer refinement is also shared by every chunk of the column.
  */
-const refinedByKey = new Map<
-  string,
-  Promise<{ candidates: Uint32Array[]; poolSize: number }>
->();
+const refinedByKey = new Map<string, Promise<StackCandidates>>();
 
 /** Bytes each cached candidate set holds, keyed like {@link refinedByKey}. */
 const candidateBytesByKey = new Map<string, number>();
@@ -554,7 +556,7 @@ export function getStackCandidates(
   context: StackContext,
   maxError: number,
   onProgress?: StackProgress,
-): Promise<{ candidates: Uint32Array[]; poolSize: number }> {
+): Promise<StackCandidates> {
   const key = `${context.key}|${maxError}`;
   const existing = refinedByKey.get(key);
   if (existing) {
@@ -573,7 +575,8 @@ export function getStackCandidates(
     if (refinedByKey.get(key) === pending)
       candidateBytesByKey.set(
         key,
-        result.candidates.reduce((a, c) => a + c.byteLength, 0),
+        result.candidates.reduce((a, c) => a + c.byteLength, 0) +
+          result.errors.reduce((a, e) => a + e.byteLength, 0),
       );
     return result;
   });
@@ -593,4 +596,117 @@ export function getStackCandidates(
     candidateBytesByKey.delete(oldest);
   }
   return pending;
+}
+
+/** One pair's termination lines, packed: a quarter of the memory of point arrays. */
+type PackedLines = {
+  points: Float64Array;
+  /** where each ring ends, in points */
+  ends: Uint32Array;
+  tiny: number;
+  discarded: number;
+};
+
+type ColumnDerived = {
+  coverage: Map<Uint8Array, Uint32Array>;
+  lines: Map<string, PackedLines[]>;
+};
+
+// By the context itself, so it goes when the column does.
+const derivedByColumn = new WeakMap<StackContext, ColumnDerived>();
+// Chunks of one column may draw different layer sets.
+const MAX_LINE_SETS = 4;
+
+/** What a stack plan may be handed instead of deriving it (see `planSurfaceStack`). */
+export type StackDerived = Pick<
+  SurfaceStackOptions,
+  'terminationLines' | 'coverageCrossings'
+>;
+
+/**
+ * What an earlier build of this column derived from its channels alone, for a
+ * build over `channels` and `masks`. Only the column's own arrays match: a
+ * synthetic or voided layer's are made per build, so nothing is reused for them.
+ *
+ * @param key whatever else the termination lines depend on (threshold, error)
+ */
+export function getStackDerived(
+  context: StackContext,
+  channels: Float32Array[],
+  masks: Uint8Array[],
+  key: string,
+): StackDerived {
+  const derived = derivedByColumn.get(context);
+  if (!derived) return {};
+  const set = layerSetKey(context, channels, key);
+  const packed = set !== null ? derived.lines.get(set) : undefined;
+  if (packed) {
+    derived.lines.delete(set!);
+    derived.lines.set(set!, packed);
+  }
+  return {
+    coverageCrossings: masks.map(mask => derived.coverage.get(mask)),
+    terminationLines: packed?.map(unpackLines),
+  };
+}
+
+/** Keep what a plan derived (see {@link getStackDerived}). */
+export function keepStackDerived(
+  context: StackContext,
+  channels: Float32Array[],
+  masks: Uint8Array[],
+  key: string,
+  plan: Pick<SurfaceStackPlan, 'terminationLines' | 'coverageCrossings'>,
+): void {
+  let derived = derivedByColumn.get(context);
+  if (!derived) {
+    derived = { coverage: new Map(), lines: new Map() };
+    derivedByColumn.set(context, derived);
+  }
+  const own = new Set(context.reference.masks);
+  plan.coverageCrossings?.forEach((crossings, i) => {
+    if (crossings && own.has(masks[i])) derived.coverage.set(masks[i], crossings);
+  });
+  const set = layerSetKey(context, channels, key);
+  if (!plan.terminationLines || set === null || derived.lines.has(set)) return;
+  derived.lines.set(set, plan.terminationLines.map(packLines));
+  while (derived.lines.size > MAX_LINE_SETS) {
+    derived.lines.delete(derived.lines.keys().next().value as string);
+  }
+}
+
+// The column index of every channel; `null` when one is not the column's own.
+function layerSetKey(
+  context: StackContext,
+  channels: Float32Array[],
+  key: string,
+): string | null {
+  const indices = channels.map(c => context.reference.channels.indexOf(c));
+  return indices.includes(-1) ? null : `${indices.join(',')}|${key}`;
+}
+
+function packLines({ rings, tiny, discarded }: ThicknessLines): PackedLines {
+  const ends = new Uint32Array(rings.length);
+  let count = 0;
+  rings.forEach((ring, r) => (ends[r] = count += ring.length));
+  const points = new Float64Array(2 * count);
+  let at = 0;
+  for (const ring of rings) {
+    for (const p of ring) {
+      points[at++] = p[0];
+      points[at++] = p[1];
+    }
+  }
+  return { points, ends, tiny, discarded };
+}
+
+function unpackLines({ points, ends, tiny, discarded }: PackedLines) {
+  const rings: GridRing[] = [];
+  let k = 0;
+  for (const end of ends) {
+    const ring: GridRing = [];
+    for (; k < end; k++) ring.push([points[2 * k], points[2 * k + 1]]);
+    rings.push(ring);
+  }
+  return { rings, tiny, discarded };
 }

@@ -3,6 +3,10 @@ import type {
   StackCapInput,
 } from '../../sdk/geometries/stack-cap-arrays';
 import type {
+  StackTileInput,
+  StackTileOutput,
+} from '../../sdk/geometries/stack-tiles';
+import type {
   StackGridPlacement,
   StackReferencePlan,
 } from '../../sdk/geometries/surface-stack-resample';
@@ -34,6 +38,8 @@ export type RefineResponse = {
   kind: 'refine';
   id: number;
   nodes: Uint32Array;
+  /** per node, its level (see `collectStackCandidateLevels`) */
+  errors: Float32Array;
   /** refinement time (ms) measured inside the worker (profiling) */
   refineMs: number;
 };
@@ -76,13 +82,31 @@ export type StackWorkerRequest =
   | ResampleRequest
   | OutlineRequest
   | TerminationsRequest
-  | CapRequest;
+  | CapRequest
+  | TileRequest;
 export type StackWorkerResponse =
   | RefineResponse
   | ResampleResponse
   | OutlineResponse
   | TerminationsResponse
-  | CapResponse;
+  | CapResponse
+  | TileResponse;
+
+/**
+ * A tessellation tile task: triangulate ONE tile of a tiled stack tessellation
+ * (see `tessellateStackTile`). Its arrays are transferred.
+ */
+export type TileRequest = {
+  kind: 'tile';
+  id: number;
+  tile: StackTileInput;
+};
+
+export type TileResponse = {
+  kind: 'tile';
+  id: number;
+  output: StackTileOutput;
+};
 
 /**
  * A cap task: build ONE cap's arrays (see `buildStackCapArrays`). Everything in

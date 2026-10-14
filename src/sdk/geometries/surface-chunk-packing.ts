@@ -80,6 +80,11 @@ export function packSurfaceChunk(
   // Carried by SPREAD above; only the transfer needs saying.
   for (const s of chunk.surfaces) {
     if (s.patchIndex) transferables.push(s.patchIndex.buffer);
+    s.levels?.forEach(level => transferables.push(level.buffer));
+    s.tileStarts?.forEach(starts => transferables.push(starts.buffer));
+    s.patchLevels?.forEach(level => transferables.push(level.buffer));
+    s.patchTileStarts?.forEach(starts => transferables.push(starts.buffer));
+    if (s.normalMap) transferables.push(s.normalMap.data.buffer);
     if (s.above) transferables.push(s.above.buffer);
     if (s.below) transferables.push(s.below.buffer);
   }

@@ -206,6 +206,9 @@ Optimisations already in place, worth not undoing:
 5. **The shared triangles are drawn in spatial (Morton) order**, set once in
    `tessellateStack`. Same triangles, ~27% less GPU time on a transparent column.
    ⚠️ Compare GPU numbers only between builds drawn in the same order.
+6. **What a chunk derives from the column alone is kept with it** — data-edge
+   crossings and simplified pinch-out lines, ~1.2 s per build of a 33-layer field
+   (see [build-pipeline.md](./build-pipeline.md#derived-from-the-column-alone)).
 
 ---
 
@@ -219,6 +222,8 @@ Optimisations already in place, worth not undoing:
 | `resolve.constrainCoverage` | off | exactness at a data edge, at vertices along every partly-mapped boundary |
 | `resolve.constrainTerminations` | on | pinch-outs follow the traced contour exactly, at vertices along every termination line |
 | `resolve.refineTerminations` | off (on without `constrainTerminations`) | pinch-outs follow the contour by refining the grid nodes either side of it |
+| `resolve.tileCells` | off | triangulate in tiles of this many reference cells, on the worker pool — a few % more shared triangles for a faster tessellation (64 on a field column); see [build-pipeline.md](./build-pipeline.md#tiled-tessellation-tilecells) |
+| `resolve.lod` | off | coarser levels of detail in the same build — +40 % build and memory on a field column; see [build-pipeline.md](./build-pipeline.md#coarser-levels-of-detail-lod) |
 | `water.resolution` | unset | ⚠️ quadratic in field size — only set it with displacement on |
 | `outline` cell size (wellbore) | 100 | the outline raster; `O(area / cellSize²)` |
 

@@ -1,17 +1,11 @@
 import { useFrame } from '@react-three/fiber';
-import {
-  ReactNode,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
-import { Object3D, PerspectiveCamera, Sphere, Vector3 } from 'three';
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { Matrix4, Object3D, PerspectiveCamera, Vector3 } from 'three';
 import { useGenerator } from '../../../hooks/useGenerator';
 import { Vec3 } from '../../../sdk/types/common';
 import { DistanceContext } from '../../Distance/DistanceContext';
 import { wellboreBounds } from './wellbore-bounds-defs';
+import { wellboreBoundsDistance } from './wellbore-bounds-distance';
 
 /**
  * WellboreBounds props
@@ -37,7 +31,6 @@ export type WellboreBoundsType = {
 };
 
 const vec = new Vector3();
-const sphere = new Sphere();
 
 /**
  * This component is used to provide a `DistanceContext` for a `Wellbore`, which allow the use
@@ -78,35 +71,16 @@ export const WellboreBounds = ({
     () => ({ current: Infinity }),
     [],
   );
-
-  const calculateDistance = useCallback(
-    (wellboreBounds: WellboreBoundsType, camera: PerspectiveCamera) => {
-      vec.copy(camera.position);
-      boundsRef.current.worldToLocal(vec);
-      sphere.center.set(...wellboreBounds.main.center);
-      sphere.radius = wellboreBounds.main.radius;
-
-      const mainDist = sphere.distanceToPoint(vec) / camera.zoom;
-      let dist = wellboreBounds.sampled.length
-        ? Math.max(sphere.radius, mainDist)
-        : Math.max(0, mainDist);
-
-      if (mainDist <= 0 && wellboreBounds.sampled.length) {
-        // negative distance means camera is inside main sphere, refine
-        dist = wellboreBounds.sampled.reduce((min, s) => {
-          sphere.center.set(...s.center);
-          sphere.radius = s.radius;
-          const sampledDist = Math.max(
-            0,
-            sphere.distanceToPoint(vec) / camera.zoom,
-          );
-
-          return Math.min(min, sampledDist);
-        }, wellboreBounds.main.radius);
-      }
-      currentDistanceRef.current = dist;
-    },
-    [currentDistanceRef],
+  // What the distance was last worked out from: bounds data, the bounds' world
+  // matrix (and its inverse), and the camera's position and zoom.
+  const seen = useMemo(
+    () => ({
+      spheres: null as Float32Array | null,
+      world: new Float64Array(16),
+      inverse: new Matrix4(),
+      eye: new Float64Array(4).fill(NaN),
+    }),
+    [],
   );
 
   useEffect(() => {
@@ -127,16 +101,56 @@ export const WellboreBounds = ({
               radius: boundsData[i + 3],
             });
           }
+          seen.spheres = boundsData;
+          seen.eye[0] = NaN;
           setBounds(generatedBounds);
         }
       });
     }
-  }, [id, boundsGenerator, fromMsl, boundsSampleSize]);
+  }, [id, boundsGenerator, fromMsl, boundsSampleSize, seen]);
 
+  // ⭐ From the world matrix the renderer already updated (a frame behind a parent
+  // that moved this frame), not `worldToLocal`, which recomputes every ancestor's
+  // matrix: per wellbore, per frame, that was most of this hook's cost.
   useFrame(({ camera }) => {
-    if (bounds) {
-      calculateDistance(bounds, camera as PerspectiveCamera);
+    const spheres = seen.spheres;
+    const object = boundsRef.current;
+    if (!spheres || !object) return;
+    const world = object.matrixWorld.elements;
+    let moved = false;
+    for (let i = 0; i < 16; i++) {
+      if (world[i] !== seen.world[i]) {
+        moved = true;
+        break;
+      }
     }
+    if (moved) {
+      seen.world.set(world);
+      seen.inverse.copy(object.matrixWorld).invert();
+    }
+    const eye = camera.position;
+    const zoom = (camera as PerspectiveCamera).zoom;
+    if (
+      !moved &&
+      eye.x === seen.eye[0] &&
+      eye.y === seen.eye[1] &&
+      eye.z === seen.eye[2] &&
+      zoom === seen.eye[3]
+    ) {
+      return;
+    }
+    seen.eye[0] = eye.x;
+    seen.eye[1] = eye.y;
+    seen.eye[2] = eye.z;
+    seen.eye[3] = zoom;
+    vec.copy(eye).applyMatrix4(seen.inverse);
+    currentDistanceRef.current = wellboreBoundsDistance(
+      spheres,
+      vec.x,
+      vec.y,
+      vec.z,
+      zoom,
+    );
   });
 
   return (

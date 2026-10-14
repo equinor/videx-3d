@@ -47,13 +47,14 @@ export type OitUniforms = {
  * what normally drives it.
  *
  * A FRACTION of the view distance, so the slab it defines is about
- * `distance * DEFAULT_OIT_FRONT_TOLERANCE` metres. 1e-5 is roughly 80 float32 ULPs:
- * far more than the last-ULP disagreement it has to absorb, and small enough that at
- * field scale it stays sub-decimetre rather than spanning metres of geometry.
+ * `distance * DEFAULT_OIT_FRONT_TOLERANCE` metres. 1e-7 is about two float32 ULPs.
+ * Measured on a 33-layer field: 1e-5 still caught converging surfaces (thin bands of
+ * one bleeding through the other), while 1e-8, 1e-9 and 0 drew exactly what 1e-7
+ * drew — the passes agreed to the last bit on that GPU; others are untested.
  *
  * @group Rendering
  */
-export const DEFAULT_OIT_FRONT_TOLERANCE = 1e-5;
+export const DEFAULT_OIT_FRONT_TOLERANCE = 1e-7;
 
 /**
  * A material that can participate in the {@link OITRenderPass} hybrid pipeline.

@@ -96,3 +96,34 @@ like a broken one.
 ⚠️ Restrict any error metric to the region that is actually **drawn**. A large
 value measured outside the footprint means nothing, and reporting one as a cause
 has wasted whole sessions here.
+
+## Frame-time tour (performance)
+
+A zoom from above is not a test: it never takes the camera through the block. Run
+all four phases, 300 frames each, driving the camera from `requestAnimationFrame`
+with `camera.orbit({ ..., transition: false })`:
+
+| phase | target | pose at `s` = 0 → 1 |
+| --- | --- | --- |
+| zoom above | `bounds().center` | azimuth `40 + 30s`, polar 50, distance `4000 + 41000·sin(πs)` |
+| tilt through level | `locate('wellbore', id).deepest` | azimuth 40, polar `30 + 120s`, distance 2500 |
+| orbit below | `bounds().center` | azimuth `360s`, polar 130, distance 12000 |
+| zoom below | `bounds().center` | azimuth 200, polar 150, distance `3000 + 27000·sin(πs)` |
+
+Per phase report mean, p95, max, frames over 50 ms, and the bytes uploaded per
+frame (wrap the canvas context's `bufferSubData` and `bufferData` and sum their
+sizes). For a stutter, profile the same phase with CDP
+(`page.context().newCDPSession(page)`, `Profiler.setSamplingInterval` 200) and sum
+inclusive time per function.
+
+- ⭐ The tilt phase is the one that exposes per-frame work tied to the camera's
+  position: orbiting a point inside the block takes the camera through horizons
+  as it passes level.
+- ⚠️ `bounds().center` can sit outside the outline at a low polar angle, where
+  everything opens; use a wellbore point to be inside the field.
+- Compare LOD on and off (`lodPixelError` 2 / 0) and culling on and off
+  (`cullHiddenCaps`) with `wellbores: false`, so the scene graph does not swamp
+  the numbers. Restore the args afterwards — the user shares the page.
+- ⚠️ Pause the story's render loop between measurements (and before any build,
+  probe or test run): in the story iframe, keep `requestAnimationFrame` and swap in
+  one that only stores the callbacks; restore it and re-queue them to resume.

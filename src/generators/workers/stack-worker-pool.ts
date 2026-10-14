@@ -4,7 +4,13 @@ import {
   StackCapArrays,
   StackCapInput,
 } from '../../sdk/geometries/stack-cap-arrays';
-import { collectStackCandidates } from '../../sdk/geometries/surface-stack-candidates';
+import {
+  stackTileInputBuffers,
+  StackTileInput,
+  StackTileOutput,
+  tessellateStackTile,
+} from '../../sdk/geometries/stack-tiles';
+import { collectStackCandidateLevels } from '../../sdk/geometries/surface-stack-candidates';
 import {
   resampleStackLayer,
   StackGridPlacement,
@@ -31,6 +37,7 @@ import type {
   StackWorkerRequest,
   StackWorkerResponse,
   TerminationsResponse,
+  TileResponse,
 } from './stack-worker-types';
 
 type PendingTask = {
@@ -201,24 +208,27 @@ export async function resampleStackChannel(
  * so each worker gets a transferred COPY rather than the channel itself.
  *
  * @param onProgress called with the layers done so far, as each finishes
- * @returns the per-layer candidate node lists, and the pool size used (0 = serial)
+ * @returns the per-layer candidate node lists with each node's level (see
+ *   `collectStackCandidateLevels`), and the pool size used (0 = serial)
  */
 export async function refineStackChannels(
   channels: Float32Array[],
   nx: number,
   maxError: number,
   onProgress?: (done: number, total: number) => void,
-): Promise<{ candidates: Uint32Array[]; poolSize: number }> {
+): Promise<StackCandidates> {
   const total = channels.length;
   let done = 0;
   const pool = getStackPool();
   if (!pool) {
+    const levels = channels.map(channel => {
+      const level = collectStackCandidateLevels(channel, nx, maxError);
+      onProgress?.(++done, total);
+      return level;
+    });
     return {
-      candidates: channels.map(channel => {
-        const nodes = collectStackCandidates(channel, nx, maxError);
-        onProgress?.(++done, total);
-        return nodes;
-      }),
+      candidates: levels.map(l => l.nodes),
+      errors: levels.map(l => l.errors),
       poolSize: 0,
     };
   }
@@ -226,7 +236,7 @@ export async function refineStackChannels(
   // column's worth of copies allocated up front is hundreds of MB sitting in the
   // pool's queue until a worker takes each one.
   const limit = pLimit(pool.size);
-  const candidates = await Promise.all(
+  const results = await Promise.all(
     channels.map(channel =>
       limit(async () => {
         const copy = channel.slice();
@@ -235,12 +245,24 @@ export async function refineStackChannels(
           [copy.buffer],
         )) as RefineResponse;
         onProgress?.(++done, total);
-        return res.nodes;
+        return res;
       }),
     ),
   );
-  return { candidates, poolSize: pool.size };
+  return {
+    candidates: results.map(r => r.nodes),
+    errors: results.map(r => r.errors),
+    poolSize: pool.size,
+  };
 }
+
+/** Per-layer refinement candidates (see {@link refineStackChannels}). */
+export type StackCandidates = {
+  candidates: Uint32Array[];
+  /** per layer, per candidate, its level (see `collectStackCandidateLevels`) */
+  errors: Float32Array[];
+  poolSize: number;
+};
 
 /**
  * Scan every adjacent pair's termination loops (see `scanThicknessLoops`) —
@@ -323,6 +345,8 @@ export async function buildStackCaps(
           shared: job.own || job.peel ? new Uint32Array(0) : job.shared.slice(),
           own: job.own?.slice() ?? null,
           peel: job.peel?.slice() ?? null,
+          levels: job.levels?.map(level => level.slice()) ?? null,
+          toGrid: job.toGrid ?? null,
         };
         const transfer = [
           input.positionsXZ,
@@ -330,6 +354,7 @@ export async function buildStackCaps(
           input.shared,
           input.own,
           input.peel,
+          ...(input.levels ?? []),
         ].flatMap(array =>
           array && array.byteLength > 0 ? [array.buffer as ArrayBuffer] : [],
         );
@@ -341,6 +366,48 @@ export async function buildStackCaps(
       }),
     ),
   );
+}
+
+/**
+ * Triangulate every tile of a tiled stack tessellation (see
+ * `tessellateStackTile`) — across the worker pool when there is more than one,
+ * on the current thread otherwise. `null` once `isStale` says so.
+ *
+ * ⚠️ Each tile's arrays are TRANSFERRED, so `tiles` must not be read again.
+ */
+export async function tessellateStackTiles(
+  tiles: StackTileInput[],
+  isStale: () => boolean = () => false,
+): Promise<StackTileOutput[] | null> {
+  const pool = getStackPool();
+  if (!pool || tiles.length < 2) {
+    return tiles.map(tile => tessellateStackTile(tile));
+  }
+  const work = tiles.map(
+    tile =>
+      tile.seams.length +
+      tile.nodes.length +
+      tile.rim.reduce((sum, c) => sum + c.points.length, 0) +
+      tile.chains.reduce((sum, c) => sum + c.points.length, 0),
+  );
+  // Largest first, so the slowest tile is not the last to start.
+  const order = tiles.map((_, t) => t).sort((a, b) => work[b] - work[a]);
+  const outputs: StackTileOutput[] = new Array(tiles.length);
+  const limit = pLimit(pool.size);
+  await Promise.all(
+    order.map(t =>
+      limit(async () => {
+        if (isStale()) return;
+        const tile = tiles[t];
+        const res = (await pool.run(
+          { kind: 'tile', id: taskId++, tile },
+          stackTileInputBuffers(tile),
+        )) as TileResponse;
+        outputs[t] = res.output;
+      }),
+    ),
+  );
+  return isStale() ? null : outputs;
 }
 
 /**

@@ -47,7 +47,18 @@ export class Delatin {
   // (consecutive ring points are adjacent, so the walk is typically a few steps)
   private _locateHint = 0;
 
-  constructor(data: Float32Array, width: number, nullValue = -1) {
+  /**
+   * @param bounds `[x0, y0, x1, y1]` of the starting rectangle in grid coordinates
+   *   (fractional allowed). Given, the mesh starts in the constraint phase and is
+   *   built by inserting points only — a tile of a larger grid, so `data` is never
+   *   read and `run` must not be called.
+   */
+  constructor(
+    data: Float32Array,
+    width: number,
+    nullValue = -1,
+    bounds?: [number, number, number, number],
+  ) {
     this.data = data;
     this.width = width;
     this.height = this.data.length / width;
@@ -55,17 +66,17 @@ export class Delatin {
     this.nullValue = nullValue;
     this._invalidPoints = new Set();
 
-    const x1 = this.width - 1;
-    const y1 = this.height - 1;
-    const p0 = this._addPoint(0, 0);
-    const p1 = this._addPoint(x1, 0);
-    const p2 = this._addPoint(0, y1);
+    const [x0, y0, x1, y1] = bounds ?? [0, 0, this.width - 1, this.height - 1];
+    const p0 = this._addPoint(x0, y0);
+    const p1 = this._addPoint(x1, y0);
+    const p2 = this._addPoint(x0, y1);
     const p3 = this._addPoint(x1, y1);
 
     // add initial two triangles
     const t0 = this._addTriangle(p3, p0, p2, -1, -1, -1);
     this._addTriangle(p0, p3, p1, t0, -1, -1);
-    this._flush();
+    if (bounds) this._constraintPhase = true;
+    else this._flush();
   }
 
   // refine the mesh until its maximum error gets below the given one
@@ -792,6 +803,9 @@ export class Delatin {
    * The rare degenerate case the walk can't resolve (segment through a vertex, a
    * boundary, or a crossing constraint) splits at that vertex or falls back to the
    * brute scan.
+   *
+   * Those flips are forced, so the edges they leave are restored to Delaunay once
+   * the constraint stands (see `_restoreDelaunay`).
    */
   constrainEdge(u: number, v: number) {
     if (u === v || u < 0 || v < 0) return;
@@ -836,10 +850,12 @@ export class Delatin {
     // Sloan resolves the set in O(crossings) flips; the bound only has to stop a
     // pathological retry cycle, and every iteration here is O(1).
     const maxIter = crossings.length * crossings.length + 64;
+    // The diagonals the flips create, as vertex pairs.
+    const created: number[] = [];
 
     while (head < queue.length) {
       if (++guard > maxIter) {
-        this._constrainEdgeBrute(u, v);
+        this._constrainEdgeBrute(u, v, created);
         return;
       }
       const a = queue[head];
@@ -851,7 +867,7 @@ export class Delatin {
       if (he < 0) continue; // already flipped away
       const o = this._halfedges[he];
       if (o < 0) {
-        this._constrainEdgeBrute(u, v); // boundary edge — not ours to flip
+        this._constrainEdgeBrute(u, v, created); // boundary edge — not ours to flip
         return;
       }
       // ⚠️ A CROSSING CONSTRAINT cannot be flipped away, and no sequence of flips
@@ -860,6 +876,7 @@ export class Delatin {
       // wasted work (O(edges) per flip on a large mesh), so give up here.
       if (this._isConstrained(a, b)) {
         this.constraintFailures++;
+        this._restoreDelaunay(created);
         return;
       }
 
@@ -887,6 +904,7 @@ export class Delatin {
       }
 
       this._flip(he);
+      created.push(p0, p1);
       // Keep the new diagonal in play only while it still blocks the segment.
       if (segmentsIntersect(ux, uy, vx, vy, p0x, p0y, p1x, p1y)) {
         queue.push(p0, p1);
@@ -894,10 +912,11 @@ export class Delatin {
     }
 
     if (this._findEdge(u, v) < 0) {
-      this._constrainEdgeBrute(u, v);
+      this._constrainEdgeBrute(u, v, created);
       return;
     }
     this._lockEdge(u, v);
+    this._restoreDelaunay(created);
   }
 
   // Whether vertex `w` lies (near-collinearly) strictly between `u` and `v`.
@@ -992,9 +1011,11 @@ export class Delatin {
 
   // Brute constraint enforcement: scan-and-flip across the whole mesh (O(E) per
   // flip). Kept as a robust fallback for the degenerate cases the walk declines.
-  private _constrainEdgeBrute(u: number, v: number) {
+  // `created` carries the diagonals earlier flips made for the same constraint.
+  private _constrainEdgeBrute(u: number, v: number, created: number[] = []) {
     if (this._findEdge(u, v) >= 0) {
       this._lockEdge(u, v);
+      this._restoreDelaunay(created);
       return;
     }
     const coords = this.coords;
@@ -1049,6 +1070,7 @@ export class Delatin {
         )
           continue;
         this._flip(e);
+        created.push(p0, p1);
         flipped = true;
         break;
       }
@@ -1058,6 +1080,65 @@ export class Delatin {
     // edges when it does not.
     if (this._findEdge(u, v) >= 0) this._lockEdge(u, v);
     else this.constraintFailures++;
+    this._restoreDelaunay(created);
+  }
+
+  /**
+   * Lawson flips from the edges in `pairs` (vertex pairs) until every one reached
+   * is Delaunay or locked — the last step of Sloan's constraint insertion. The
+   * forced flips that bring a constraint in leave arbitrary diagonals behind,
+   * which `_legalize` never revisits: it only checks edges facing a new point.
+   */
+  private _restoreDelaunay(pairs: number[]) {
+    const tris = this.triangles;
+    const coords = this.coords;
+    // Lawson converges; the bound only stops a cycle among near-cocircular points.
+    const maxIter = 64 * pairs.length + 1024;
+    for (let head = 0, guard = 0; head < pairs.length; head += 2) {
+      if (++guard > maxIter) return;
+      const a = pairs[head];
+      const b = pairs[head + 1];
+      if (this._isConstrained(a, b)) continue;
+      const he = this._findEdge(a, b);
+      if (he < 0) continue;
+      const o = this._halfedges[he];
+      if (o < 0) continue;
+      const pr = tris[he];
+      const pl = tris[nextEdge(he)];
+      const p0 = tris[prevEdge(he)];
+      const p1 = tris[prevEdge(o)];
+      if (
+        !inCircle(
+          coords[2 * p0],
+          coords[2 * p0 + 1],
+          coords[2 * pr],
+          coords[2 * pr + 1],
+          coords[2 * pl],
+          coords[2 * pl + 1],
+          coords[2 * p1],
+          coords[2 * p1 + 1],
+        )
+      ) {
+        continue;
+      }
+      // Near-collinear points can pass the circle test on a non-convex quad.
+      if (
+        !segmentsIntersect(
+          coords[2 * p0],
+          coords[2 * p0 + 1],
+          coords[2 * p1],
+          coords[2 * p1 + 1],
+          coords[2 * pr],
+          coords[2 * pr + 1],
+          coords[2 * pl],
+          coords[2 * pl + 1],
+        )
+      ) {
+        continue;
+      }
+      this._flip(he);
+      pairs.push(p0, pr, pr, p1, p1, pl, pl, p0);
+    }
   }
 
   /**

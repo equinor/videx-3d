@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { ChunkMaterial } from '../src/components/Chunks/chunk-material';
+import { Vector3 } from 'three';
+import {
+  ChunkMaterial,
+  createTileUniforms,
+} from '../src/components/Chunks/chunk-material';
 import { buildSurfaceDepthMap } from '../src/components/Chunks/chunk-depth-map';
-import { SurfaceMeta } from '../src/sdk';
+import { StackTiling, SurfaceMeta } from '../src/sdk';
 
 const defines = (material: ChunkMaterial) =>
   material.defines as Record<string, unknown>;
@@ -92,6 +96,55 @@ describe('ChunkMaterial', () => {
     expect(material.uniforms.opacity.value).toBe(0.4);
     material.opacity = 0.8;
     expect(material.uniforms.opacity.value).toBe(0.8);
+  });
+
+  describe('tile diagnostic', () => {
+    const tiling: StackTiling = {
+      cells: 64,
+      first: [1, 2],
+      count: [3, 4],
+      // col = 2x + 10, row = -z + 5
+      toGrid: [2, 0, 10, 0, -1, 5],
+    };
+
+    it('compiles the branch in only when given tiles', () => {
+      expect('CHUNK_TILE_DEBUG' in defines(new ChunkMaterial())).toBe(false);
+      const tiles = createTileUniforms(tiling);
+      const material = new ChunkMaterial({ tiles });
+      expect('CHUNK_TILE_DEBUG' in defines(material)).toBe(true);
+      // Shared, so a LOD level written into `values` reaches every material.
+      expect(material.uniforms.tileValues).toBe(tiles.values);
+      expect(material.uniforms.tileToGrid).toBe(tiles.toGrid);
+      // ...and so does switching the tint from the checker to the levels.
+      expect(material.uniforms.tileByValue).toBe(tiles.byValue);
+      expect(tiles.byValue.value).toBe(0);
+      tiles.values.value.dispose();
+    });
+
+    it('maps scene XZ to grid coordinates and holds one value per tile', () => {
+      const tiles = createTileUniforms(tiling);
+      const grid = new Vector3(3, -7, 1).applyMatrix3(tiles.toGrid.value);
+      expect(grid.x).toBe(16);
+      expect(grid.y).toBe(12);
+      expect(tiles.layout.value.toArray()).toEqual([64, 1, 2]);
+      const image = tiles.values.value.image;
+      expect([image.width, image.height]).toEqual([3, 4]);
+      expect(image.data).toHaveLength(12);
+      tiles.values.value.dispose();
+    });
+
+    it('lets a cap read the tile levels without the tint', () => {
+      const tiles = createTileUniforms(tiling);
+      const cap = new ChunkMaterial({ tileLevels: tiles });
+      const wall = new ChunkMaterial({ tileLevels: tiles, wall: true });
+      expect('CHUNK_TILE_LEVELS' in defines(cap)).toBe(true);
+      expect('CHUNK_TILE_DEBUG' in defines(cap)).toBe(false);
+      expect(cap.uniforms.tileValues).toBe(tiles.values);
+      // A wall has no normal map to choose.
+      expect('CHUNK_TILE_LEVELS' in defines(wall)).toBe(false);
+      expect('CHUNK_NORMAL_MAP' in defines(wall)).toBe(false);
+      tiles.values.value.dispose();
+    });
   });
 
   describe('water tint', () => {

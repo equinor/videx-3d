@@ -212,10 +212,11 @@ The same idiom appears on `ChunkStack` for `carrier`, `water`, `resolve` and
 - **`contacts` keys the surface by `id` only.** A grid cannot change under a stable
   id.
 
-`resolve` deserves a note of its own: those options **are** the shared column's
-cache key, and the cache holds exactly one entry. A chunk (or the sea) asking with
-a different identity rebuilds the whole column. Declare `resolve` on the
-**stack**, memoised, and let chunks inherit it.
+`resolve` deserves a note of its own: those options **are** part of the shared
+column's cache key. The cache keeps four columns, least recently used evicted
+(`MAX_CACHED_COLUMNS`), so a chunk (or the sea) asking with a different identity
+builds a whole column of its own and can push out one still in use. Declare
+`resolve` on the **stack**, memoised, and let chunks inherit it.
 
 ---
 

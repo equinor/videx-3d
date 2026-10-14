@@ -1,7 +1,9 @@
 import { BufferAttribute, BufferGeometry, Box3, Sphere, Vector3 } from 'three';
 import { Vec2 } from '../types/common';
+import { CAP_NORMAL_MAP_CELLS, StackCapNormalMap } from './cap-normal-map';
 import {
   buildStackCapArrays,
+  indexDifference,
   StackCapArrays,
   StackCapInput,
 } from './stack-cap-arrays';
@@ -46,11 +48,17 @@ import {
   stackRimRings,
   StackTessellation,
   stackVertexPositions,
-  tessellateStack,
+  planStackTessellation,
+  stackSceneToGrid,
 } from './surface-stack';
 import {
+  StackTileInput,
+  StackTileOutput,
+  tessellateStackTile,
+} from './stack-tiles';
+import {
   collectCoverageCrossings,
-  collectStackCandidates,
+  collectStackCandidateLevels,
   collectThicknessCrossings,
 } from './surface-stack-candidates';
 import { buildRingWalls } from './surface-walls';
@@ -72,6 +80,31 @@ export type StackGeometryLayer = {
    * the whole cap on top of itself, which under OIT blends the covered area twice.
    */
   patchIndex?: Uint32Array | null;
+  /**
+   * Per coarser level (see {@link SurfaceStackOptions.lod}), the triangles this
+   * cap keeps there, over the same vertices. Wound like the cap's own index.
+   */
+  levels?: Uint32Array[] | null;
+  /**
+   * Per level, the full one first and then each of `levels`: where each tile's
+   * triangles start in that level's index (in triangles; one past the end last).
+   */
+  tileStarts?: Uint32Array[] | null;
+  /**
+   * Per coarser level, the cap's patch there (see {@link patchIndex}): that level's
+   * triangles a layer above covered. Empty where it has none.
+   */
+  patchLevels?: Uint32Array[] | null;
+  /**
+   * Per level, the full one first: where each tile's triangles start in the patch
+   * there — what lets a renderer draw the patch at each tile's level.
+   */
+  patchTileStarts?: Uint32Array[] | null;
+  /**
+   * The cap's full-level normals on a coarse grid, which a tile drawn at a
+   * coarser level shades from (see {@link StackCapNormalMap}).
+   */
+  normalMap?: StackCapNormalMap | null;
 };
 
 /**
@@ -181,6 +214,8 @@ function stackCapInput(
   i: number,
   layerIndices?: (Uint32Array | null)[],
   peelIndices?: (Uint32Array | null)[],
+  levels?: Uint32Array[],
+  toGrid?: [number, number, number, number, number, number],
 ): StackCapInput {
   return {
     positionsXZ,
@@ -188,6 +223,8 @@ function stackCapInput(
     shared,
     own: layerIndices?.[i] ?? null,
     peel: peelIndices?.[i] ?? null,
+    levels: levels ?? null,
+    toGrid: toGrid ?? null,
   };
 }
 
@@ -223,6 +260,41 @@ function stackCapGeometry(
   const [cx, cy, cz, r] = arrays.sphere;
   geometry.boundingSphere = new Sphere(new Vector3(cx, cy, cz), r);
   return geometry;
+}
+
+/** A level with no patch: copied per cap when handed on, so sharing it is safe. */
+const NO_TRIANGLES = new Uint32Array(0);
+
+/**
+ * Where each tile's triangles start in `kept`, an in-order subset of `shared`
+ * (`null` = all of it), given where they start in `shared`.
+ */
+function keptTileStarts(
+  shared: Uint32Array,
+  sharedStarts: Uint32Array,
+  kept: Uint32Array | null,
+): Uint32Array {
+  if (!kept) return sharedStarts.slice();
+  const out = new Uint32Array(sharedStarts.length);
+  const triangles = shared.length / 3;
+  const keptTriangles = kept.length / 3;
+  let j = 0;
+  let tile = 0;
+  for (let i = 0; i < triangles; i++) {
+    while (tile + 1 < sharedStarts.length && i >= sharedStarts[tile + 1]) {
+      out[++tile] = j;
+    }
+    if (
+      j < keptTriangles &&
+      shared[3 * i] === kept[3 * j] &&
+      shared[3 * i + 1] === kept[3 * j + 1] &&
+      shared[3 * i + 2] === kept[3 * j + 2]
+    ) {
+      j++;
+    }
+  }
+  while (tile + 1 < out.length) out[++tile] = j;
+  return out;
 }
 
 /**
@@ -548,6 +620,19 @@ export type SurfaceStackOptions = {
    */
   candidates?: Uint32Array[];
   /**
+   * Per layer, per candidate, its level (see `collectStackCandidateLevels`) —
+   * what `lod` builds its coarser levels from. Computed inline with the
+   * candidates when they are omitted.
+   */
+  candidateErrors?: Float32Array[];
+  /**
+   * Also build coarser levels of detail over the same vertices (see
+   * {@link StackGeometryLayer.levels}): level `k` simplified to `maxError ×
+   * factor^k`, keeping the rim, cuts, data edges and tile seams and thinning the
+   * pinch-out lines. Off when omitted or `levels` is 0.
+   */
+  lod?: { levels: number; factor: number };
+  /**
    * Footprint of whatever will be drawn ABOVE this stack (scene XZ) — typically
    * the outline of the neighbouring chunk.
    *
@@ -616,11 +701,28 @@ export type SurfaceStackOptions = {
    */
   constrainTerminations?: boolean;
   /**
+   * Triangulate in square tiles of this many reference cells, joined along their
+   * seams (see `planStackTessellation`). Omitted = one triangulation.
+   */
+  tileCells?: number;
+  /**
    * Per adjacent pair, the raw termination loops from `scanThicknessLoops`, when
    * they were scanned elsewhere (on a worker pool). A pair scanned at any other
    * threshold than `collapseThreshold` is scanned again here.
    */
   terminationLoops?: ThicknessLoops[];
+  /**
+   * Per adjacent pair, the simplified termination lines from an earlier plan of
+   * the SAME channels at the same `collapseThreshold` and `maxError` (see
+   * {@link SurfaceStackPlan.terminationLines}). Supersedes `terminationLoops`.
+   */
+  terminationLines?: ThicknessLines[];
+  /**
+   * Per layer, its data edge's crossings (see `collectCoverageCrossings`) from an
+   * earlier plan of the same masks (see {@link SurfaceStackPlan.coverageCrossings}).
+   * Collected here for any layer without one.
+   */
+  coverageCrossings?: (Uint32Array | undefined)[];
   /**
    * Hooks to hand the build on WHILE it runs: what the layers share once, then
    * each cap as soon as it is built (see `documents/chunk-stack/streaming.md`).
@@ -750,6 +852,28 @@ export type SurfaceStackTimings = {
   collapseMs: number;
   geometryMs: number;
   wallMs: number;
+  /** where `tessellateMs` went */
+  tessellation: StackTessellationTimings;
+};
+
+/**
+ * The parts of {@link SurfaceStackTimings.tessellateMs} (ms).
+ *
+ * @group Geometries
+ */
+export type StackTessellationTimings = {
+  /** merging the candidates and simplifying the pinch-out lines */
+  prepMs: number;
+  /** noding, seams, and cutting into tiles */
+  planMs: number;
+  /** the tiles, wall clock, wherever they ran */
+  tilesMs: number;
+  /** every tile's own time, summed (÷ `tilesMs` = how parallel they ran) */
+  tileWorkMs: number;
+  slowestTileMs: number;
+  /** joining the tiles and flagging the triangles */
+  stitchMs: number;
+  tiles: number;
 };
 
 /** The result of {@link buildSurfaceStack}. */
@@ -874,12 +998,47 @@ export function beginSurfaceStack(
   _layers: StackLayer[],
   options: SurfaceStackOptions,
 ): SurfaceStackPending | null {
+  const plan = planSurfaceStack(reference, _layers, options);
+  return plan.begin(plan.tiles.map(tile => tessellateStackTile(tile)));
+}
+
+/**
+ * A stack planned up to its shared tessellation's tiles (see
+ * {@link planSurfaceStack}).
+ *
+ * @group Geometries
+ */
+export type SurfaceStackPlan = {
+  /** run each through `tessellateStackTile`, anywhere: it is free of three.js */
+  tiles: StackTileInput[];
+  /**
+   * The stack up to its caps, from every tile's output in tile order; `null` when
+   * the mask covers no geometry. Never reads `tiles`, so they may be transferred.
+   */
+  begin(outputs: StackTileOutput[]): SurfaceStackPending | null;
+  /**
+   * The termination lines it constrains, when it constrains them. Depends on the
+   * channels alone, so another build of them can skip making them again.
+   */
+  terminationLines?: ThicknessLines[];
+  /** per layer, its data edge's crossings, when it refines along them */
+  coverageCrossings?: (Uint32Array | undefined)[];
+};
+
+/**
+ * {@link beginSurfaceStack} up to its tessellation's tiles, which are left to the
+ * caller: triangulate them anywhere (a worker pool can), then `begin`.
+ *
+ * @group Geometries
+ */
+export function planSurfaceStack(
+  reference: StackReference,
+  _layers: StackLayer[],
+  options: SurfaceStackOptions,
+): SurfaceStackPlan {
   const maxError = options.maxError ?? 5;
   const collapseThreshold =
     options.collapseThreshold ?? DEFAULT_STACK_COLLAPSE_THRESHOLD;
-  const coverageAbsence = options.coverageAbsence ?? true;
-  const fluid = options.fluid;
-  const unbounded = options.unbounded?.map(f => !!f);
 
   const t0 = performance.now();
 
@@ -888,6 +1047,14 @@ export function beginSurfaceStack(
   // cuts along, so refine them too — the candidates are a union, and the crossings
   // are a thin line, so this costs vertices only where a unit wedges out.
   let candidates = options.candidates;
+  let candidateErrors = options.candidateErrors;
+  const lod =
+    options.lod && options.lod.levels > 0
+      ? Array.from(
+          { length: options.lod.levels },
+          (_, k) => maxError * options.lod!.factor ** (k + 1),
+        )
+      : undefined;
   const constrainTerminations =
     collapseThreshold > 0 &&
     !!options.constrainTerminations &&
@@ -897,12 +1064,25 @@ export function beginSurfaceStack(
     (options.refineTerminations ?? !constrainTerminations) &&
     reference.channels.length > 1;
   const refineCoverage = options.refineCoverage ?? !options.constrainCoverage;
+  const coverageCrossings = refineCoverage
+    ? reference.masks.map((mask, i) =>
+        mask
+          ? (options.coverageCrossings?.[i] ??
+            collectCoverageCrossings(mask, reference.header.nx))
+          : undefined,
+      )
+    : undefined;
   if (refineTerminations || refineCoverage) {
-    const lists =
-      candidates ??
-      reference.channels.map(channel =>
-        collectStackCandidates(channel, reference.header.nx, maxError),
+    let lists = candidates;
+    if (!lists) {
+      const levels = reference.channels.map(channel =>
+        collectStackCandidateLevels(channel, reference.header.nx, maxError),
       );
+      lists = levels.map(level => level.nodes);
+      candidateErrors = levels.map(level => level.errors);
+    }
+    const errors = candidateErrors;
+    candidateErrors = [];
     candidates = lists.map((list, i) => {
       const extra: Uint32Array[] = [];
       if (refineTerminations && i > 0) {
@@ -916,12 +1096,13 @@ export function beginSurfaceStack(
         );
       }
       // The edge of this layer's own data, which is where a seal's taper starts.
-      if (refineCoverage && reference.masks[i]) {
-        extra.push(
-          collectCoverageCrossings(reference.masks[i], reference.header.nx),
-        );
-      }
+      const coverage = coverageCrossings?.[i];
+      if (coverage) extra.push(coverage);
       const total = extra.reduce((a, e) => a + e.length, 0);
+      // An added node marks a line, which every coarser level keeps.
+      const levels = new Float32Array(list.length + total).fill(Infinity);
+      if (errors?.[i]) levels.set(errors[i]);
+      candidateErrors!.push(levels);
       if (total === 0) return list;
       const merged = new Uint32Array(list.length + total);
       merged.set(list);
@@ -935,7 +1116,9 @@ export function beginSurfaceStack(
   }
 
   let terminations: ThicknessLines[] | undefined;
-  if (constrainTerminations) {
+  if (constrainTerminations && options.terminationLines) {
+    terminations = options.terminationLines;
+  } else if (constrainTerminations) {
     terminations = [];
     for (let i = 1; i < reference.channels.length; i++) {
       const scanned = options.terminationLoops?.[i - 1];
@@ -954,8 +1137,9 @@ export function beginSurfaceStack(
       );
     }
   }
+  const tPrep = performance.now();
 
-  const tessellation = tessellateStack(
+  const plan = planStackTessellation(
     reference,
     options.polygon,
     maxError,
@@ -963,8 +1147,56 @@ export function beginSurfaceStack(
     options.cuts,
     options.constrainCoverage,
     terminations?.map(t => t.rings),
+    options.tileCells,
+    lod && { errors: lod, candidateErrors },
   );
-  if (!tessellation) return null;
+  const tPlan = performance.now();
+  return {
+    tiles: plan.tiles,
+    terminationLines: terminations,
+    coverageCrossings,
+    begin: outputs => {
+      const tTiles = performance.now();
+      const tessellation = plan.finish(outputs);
+      const timings: StackTessellationTimings = {
+        prepMs: tPrep - t0,
+        planMs: tPlan - tPrep,
+        tilesMs: tTiles - tPlan,
+        tileWorkMs: outputs.reduce((sum, o) => sum + o.tileMs, 0),
+        slowestTileMs: outputs.reduce((max, o) => Math.max(max, o.tileMs), 0),
+        stitchMs: performance.now() - tTiles,
+        tiles: outputs.length,
+      };
+      return (
+        tessellation &&
+        beginOnTessellation(
+          reference,
+          options,
+          tessellation,
+          t0,
+          terminations,
+          timings,
+        )
+      );
+    },
+  };
+}
+
+function beginOnTessellation(
+  reference: StackReference,
+  options: SurfaceStackOptions,
+  tessellation: StackTessellation,
+  t0: number,
+  terminations: ThicknessLines[] | undefined,
+  tessellationTimings: StackTessellationTimings,
+): SurfaceStackPending {
+  const collapseThreshold =
+    options.collapseThreshold ?? DEFAULT_STACK_COLLAPSE_THRESHOLD;
+  const coverageAbsence = options.coverageAbsence ?? true;
+  const fluid = options.fluid;
+  const unbounded = options.unbounded?.map(f => !!f);
+  const constrainTerminations = terminations !== undefined;
+  // Includes the tiles, wherever they ran.
   const tTessellate = performance.now();
 
   const heights = sampleStackHeights(reference, tessellation.coords);
@@ -1043,6 +1275,19 @@ export function beginSurfaceStack(
     absent?.[options.carrier]?.fill(0);
   }
 
+  // On the outline, a coarse cap takes the height of the full level's edge there,
+  // which is where the walls run. A blend of two ordered stacks stays ordered.
+  const blends = tessellation.outlineBlends;
+  if (blends) {
+    for (const h of heights) {
+      for (let i = 0; i < blends.vertices.length; i++) {
+        const a = h[blends.ends[2 * i]];
+        const b = h[blends.ends[2 * i + 1]];
+        h[blends.vertices[i]] = a + blends.along[i] * (b - a);
+      }
+    }
+  }
+
   // The top layer was truncated against a surface this stack does not draw, so its
   // absence is only safe where something else will stand in for it.
   let topKept = 0;
@@ -1061,23 +1306,26 @@ export function beginSurfaceStack(
     }
   }
 
-  const capExcluded = options.capCuts
-    ? options.capCuts.map(list => {
-        const flags = tessellation.cuts;
-        if (!list || list.length === 0 || !flags) return null;
-        if (list.length === 1) return (flags[list[0]] ?? null) as Uint8Array;
-        const merged = new Uint8Array(tessellation.indices.length / 3);
-        for (const k of list) {
-          const f = flags[k];
-          if (!f) continue;
-          for (let t = 0; t < merged.length; t++) if (f[t]) merged[t] = 1;
-        }
-        return merged;
-      })
-    : undefined;
-  // A chunk that shares nothing still gets an entry per layer, and an array of
-  // nulls must not make the collapse run where it otherwise would not.
-  const excludes = capExcluded?.some(mask => mask) ? capExcluded : undefined;
+  const excludedBy = (flags: Uint8Array[] | undefined, triangles: number) => {
+    const masks = options.capCuts?.map(list => {
+      if (!list || list.length === 0 || !flags) return null;
+      if (list.length === 1) return (flags[list[0]] ?? null) as Uint8Array;
+      const merged = new Uint8Array(triangles);
+      for (const k of list) {
+        const f = flags[k];
+        if (!f) continue;
+        for (let t = 0; t < merged.length; t++) if (f[t]) merged[t] = 1;
+      }
+      return merged;
+    });
+    // A chunk that shares nothing still gets an entry per layer, and an array of
+    // nulls must not make the collapse run where it otherwise would not.
+    return masks?.some(mask => mask) ? masks : undefined;
+  };
+  const excludes = excludedBy(
+    tessellation.cuts,
+    tessellation.indices.length / 3,
+  );
 
   const thin = constrainTerminations
     ? classifyThinTriangles(reference, tessellation, heights, collapseThreshold)
@@ -1100,6 +1348,95 @@ export function beginSurfaceStack(
           thin,
         })
       : null;
+
+  const positionsXZ = stackVertexPositions(reference, tessellation.coords);
+  // Each coarser level drops by the same rules, over its own triangles. Wound
+  // upward first, so its caps take their copies as they are.
+  const levelCollapses = tessellation.levels?.map(level => {
+    orientUpward(level.indices, positionsXZ);
+    const levelExcludes = excludedBy(level.cuts, level.indices.length / 3);
+    return collapseThreshold > 0 || coverageAbsence || levelExcludes
+      ? collapseStackTriangles(heights, level.indices, {
+          threshold: collapseThreshold,
+          coverage: coverageAbsence ? coverage : undefined,
+          coverageTriangles: coverageAbsence ? level.coverage : undefined,
+          absent,
+          ceiling: options.ceiling,
+          capExcluded: levelExcludes,
+          carrier: options.carrier,
+          unbounded,
+          peelable: options.peelable,
+          thin: constrainTerminations
+            ? classifyThinTriangles(
+                reference,
+                {
+                  ...tessellation,
+                  indices: level.indices,
+                  terminationVertices: level.terminationVertices,
+                },
+                heights,
+                collapseThreshold,
+              )
+            : undefined,
+        })
+      : null;
+  });
+  const levelKept = levelCollapses?.map((result, k) =>
+    heights.map((_, i) => result?.indices[i] ?? tessellation.levels![k].indices),
+  );
+  // Per cap, per level (the full one first): where each tile's triangles start,
+  // so a renderer can pick a level per tile. Before the shared index is re-wound.
+  const capTileStarts =
+    levelKept && tessellation.tileStarts
+      ? heights.map((_, i) => [
+          keptTileStarts(
+            tessellation.indices,
+            tessellation.tileStarts!,
+            collapsed?.indices[i] ?? null,
+          ),
+          ...tessellation.levels!.map((level, k) =>
+            keptTileStarts(
+              level.indices,
+              level.tileStarts,
+              levelKept[k][i] === level.indices ? null : levelKept[k][i],
+            ),
+          ),
+        ])
+      : undefined;
+  // Per cap with a patch at any level: the patch at each coarser level, and where
+  // each tile starts in it at every level — the full patch is the cap arrays'
+  // `patchIndex`, the same triangles in the same order.
+  const capPatches =
+    levelCollapses && levelKept && tessellation.tileStarts
+      ? heights.map((_, i) => {
+          const peel = collapsed?.peelIndices?.[i];
+          const full = peel
+            ? indexDifference(peel, collapsed!.indices[i] ?? tessellation.indices)
+            : null;
+          const levels = levelCollapses.map((result, k) => {
+            const levelPeel = result?.peelIndices?.[i];
+            return levelPeel ? indexDifference(levelPeel, levelKept[k][i]) : null;
+          });
+          if (!full && levels.every(patch => !patch)) return null;
+          return {
+            levels: levels.map(patch => patch ?? NO_TRIANGLES),
+            tileStarts: [
+              keptTileStarts(
+                tessellation.indices,
+                tessellation.tileStarts!,
+                full ?? NO_TRIANGLES,
+              ),
+              ...tessellation.levels!.map((level, k) =>
+                keptTileStarts(
+                  level.indices,
+                  level.tileStarts,
+                  levels[k] ?? NO_TRIANGLES,
+                ),
+              ),
+            ],
+          };
+        })
+      : undefined;
 
   // The sea's lid is built below, on its own triangulation of the outline.
   const caps = unbounded
@@ -1133,7 +1470,6 @@ export function beginSurfaceStack(
       : undefined;
   const tCollapse = performance.now();
 
-  const positionsXZ = stackVertexPositions(reference, tessellation.coords);
   const rings = stackRimRings(positionsXZ, tessellation.rimVertices);
   // AFTER the cap neighbours, which match the collapse's indices against these
   // triple by triple as both were emitted.
@@ -1222,6 +1558,12 @@ export function beginSurfaceStack(
   // can hand each cap on as soon as it exists.
   const sharedIndex = new BufferAttribute(tessellation.indices, 1);
   const sharedXZ = new BufferAttribute(positionsXZ, 2);
+  // Read only where a coarser level draws, so only built with one.
+  const toGrid = tessellation.levels?.length
+    ? (stackSceneToGrid(reference).map(
+        v => v / CAP_NORMAL_MAP_CELLS,
+      ) as ReturnType<typeof stackSceneToGrid>)
+    : undefined;
   const jobs = heights.map((y, i) =>
     caps && caps[i] === false
       ? null
@@ -1232,6 +1574,8 @@ export function beginSurfaceStack(
           i,
           collapsed?.indices,
           collapsed?.peelIndices,
+          levelKept?.map(kept => kept[i]),
+          toGrid,
         ),
   );
   let shapes: ReturnType<PlanarPolygonGeometry['toShapes']> | null = null;
@@ -1246,6 +1590,11 @@ export function beginSurfaceStack(
         : null,
       rimY: stackRimHeights(y, tessellation.rimVertices),
       patchIndex: arrays?.patchIndex ?? null,
+      levels: arrays ? (jobs[i]?.levels ?? null) : null,
+      tileStarts: arrays ? (capTileStarts?.[i] ?? null) : null,
+      patchLevels: arrays ? (capPatches?.[i]?.levels ?? null) : null,
+      patchTileStarts: arrays ? (capPatches?.[i]?.tileStarts ?? null) : null,
+      normalMap: arrays?.normalMap ?? null,
     };
     const lid = options.unbounded?.[i];
     if (lid && options.caps?.[i] !== false) {
@@ -1308,6 +1657,7 @@ export function beginSurfaceStack(
         collapseMs: tCollapse - tResolve,
         geometryMs: tGeometry - tShared,
         wallMs: tWalls - tCollapse,
+        tessellation: tessellationTimings,
       },
     };
   };

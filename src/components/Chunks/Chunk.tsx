@@ -205,6 +205,25 @@ export type ChunkProps = {
    * the real chunk. Inherits from the stack when unset; default 0.5.
    */
   previewSaturation?: number;
+  /**
+   * Tint by tessellation tile and draw the seams, when the chunk was built in
+   * tiles (`ChunkResolveOptions.tileCells`): by level of detail while one is
+   * chosen per tile, otherwise a checker. Appearance only. Inherits from the
+   * stack when unset; default false.
+   */
+  debugTiles?: boolean;
+  /**
+   * Draw every cap at this coarser level of detail (1 = the first), when the
+   * chunk was built with `resolve.lod`. A debug view, appearance only: culling and
+   * peel patches are off while it is set. Inherits from the stack; default 0.
+   */
+  lodLevel?: number;
+  /**
+   * With levels of detail built (`resolve.lod`), pick one per tile so its height
+   * error stays under this many pixels on screen; 0 = full detail. Appearance only.
+   * Inherits from the stack; default 2.
+   */
+  lodPixelError?: number;
   /** render the surface tops. Default true. */
   showSurfaces?: boolean;
   /** render the side walls. Default true. */
@@ -323,6 +342,9 @@ export const Chunk = ({
   diagnostics,
   preview,
   previewSaturation,
+  debugTiles,
+  lodLevel,
+  lodPixelError,
   showSurfaces = true,
   showWalls = true,
   cullHiddenCaps = true,
@@ -403,6 +425,9 @@ export const Chunk = ({
   const resolvedPreview = preview ?? stack.preview ?? true;
   const resolvedPreviewSaturation =
     previewSaturation ?? stack.previewSaturation ?? 0.5;
+  const resolvedDebugTiles = debugTiles ?? stack.debugTiles ?? false;
+  const resolvedLodLevel = lodLevel ?? stack.lodLevel ?? 0;
+  const resolvedLodPixelError = lodPixelError ?? stack.lodPixelError ?? 2;
   const resolvedResolve = resolve ?? stack.resolve ?? DEFAULT_RESOLVE;
 
   // --- Outline (layer 1): resolve the cut source (explicit prop, else the stack
@@ -1112,6 +1137,9 @@ export const Chunk = ({
     fenceUniformsInverse: stack.fenceUniformsInverse,
     fenceOverlayUniforms: stack.fenceOverlayUniforms,
     fenceCarrier: stack.fenceCarrier,
+    debugTiles: resolvedDebugTiles,
+    lodLevel: resolvedLodLevel,
+    lodPixelError: resolvedLodPixelError,
   };
 
   return (

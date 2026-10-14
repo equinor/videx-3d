@@ -556,4 +556,200 @@ describe('nodeGridRings', () => {
     expect(raw).toBeGreaterThan(0);
     expect(noded).toBe(0);
   });
+
+  // Three rings whose long edges pass within `jitter` of one centre, at random
+  // angles: each PAIR crossing is computed on its own, a rounding error apart.
+  const nearlyConcurrent = (rand: () => number, jitter: number) => {
+    const cx = 20 + 20 * rand();
+    const cy = 20 + 20 * rand();
+    return [0, 1, 2].map(k => {
+      const angle = (k * Math.PI) / 3 + 0.4 * rand();
+      const dx = Math.cos(angle);
+      const dy = Math.sin(angle);
+      const ox = cx + jitter * (rand() - 0.5);
+      const oy = cy + jitter * (rand() - 0.5);
+      return [
+        [ox - 12 * dx, oy - 12 * dy],
+        [ox + 12 * dx, oy + 12 * dy],
+        [ox - 6 * dy, oy + 6 * dx],
+      ];
+    });
+  };
+
+  it('welds the crossings of three rings meeting at almost one point', () => {
+    let seed = 11;
+    const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const rings = nearlyConcurrent(rand, 1e-7);
+    const inputs = new Set(rings.flat());
+    const added = [
+      ...new Map(
+        nodeGridRings(rings)
+          .flat()
+          .filter(p => !inputs.has(p))
+          .map(p => [`${p[0]}:${p[1]}`, p]),
+      ).values(),
+    ];
+    // Distinct points a rounding error apart are what a triangulator cannot hold.
+    let near = 0;
+    for (let i = 0; i < added.length; i++) {
+      for (let j = i + 1; j < added.length; j++) {
+        const d = Math.hypot(
+          added[i][0] - added[j][0],
+          added[i][1] - added[j][1],
+        );
+        if (d < 1e-5) near++;
+      }
+    }
+    expect(added.length).toBeGreaterThan(0);
+    expect(near).toBe(0);
+  });
+
+  it('lets a triangulator enforce three rings meeting at almost one point', () => {
+    let seed = 3;
+    const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    let failures = 0;
+    for (let k = 0; k < 300; k++) {
+      failures += constrain(64, nodeGridRings(nearlyConcurrent(rand, 1e-8)));
+    }
+    expect(failures).toBe(0);
+  });
+});
+
+describe('Delatin on a tile', () => {
+  const tile = (x0: number, y0: number, x1: number, y1: number) =>
+    new Delatin(new Float32Array(0), 1000, -1, [x0, y0, x1, y1]);
+
+  const area = (d: Delatin) => {
+    let sum = 0;
+    const c = d.coords;
+    for (let i = 0; i < d.triangles.length; i += 3) {
+      const a = 2 * d.triangles[i];
+      const b = 2 * d.triangles[i + 1];
+      const e = 2 * d.triangles[i + 2];
+      sum +=
+        Math.abs(
+          (c[b] - c[a]) * (c[e + 1] - c[a + 1]) -
+            (c[e] - c[a]) * (c[b + 1] - c[a + 1]),
+        ) / 2;
+    }
+    return sum;
+  };
+
+  // Edges used by exactly one triangle, as coordinate keys.
+  const boundary = (d: Delatin) => {
+    const count = new Map<string, number>();
+    const key = (u: number, v: number) => {
+      const p = `${d.coords[2 * u]}:${d.coords[2 * u + 1]}`;
+      const q = `${d.coords[2 * v]}:${d.coords[2 * v + 1]}`;
+      return p < q ? `${p}|${q}` : `${q}|${p}`;
+    };
+    for (let i = 0; i < d.triangles.length; i += 3) {
+      for (let k = 0; k < 3; k++) {
+        const e = key(d.triangles[i + k], d.triangles[i + ((k + 1) % 3)]);
+        count.set(e, (count.get(e) ?? 0) + 1);
+      }
+    }
+    return [...count].filter(([, n]) => n === 1).map(([e]) => e);
+  };
+
+  it('triangulates its own rectangle, by insertion only', () => {
+    const d = tile(10.5, 20.5, 30.5, 40.5);
+    let seed = 5;
+    const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < 200; i++) {
+      d.insertPoint(
+        11 + Math.floor(19 * rand()),
+        21 + Math.floor(19 * rand()),
+        0,
+      );
+    }
+    expect(d.insertPoint(5, 25, 0)).toBe(-1);
+    const a = d.insertPoint(12, 22, 0);
+    const b = d.insertPoint(29, 39, 0);
+    d.constrainEdge(a, b);
+    expect(d.constraintFailures).toBe(0);
+    expect(area(d)).toBeCloseTo(400, 9);
+  });
+
+  it('⭐ meets its neighbour edge for edge when both insert the same seam', () => {
+    let seed = 9;
+    const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const left = tile(0.5, 0.5, 10.5, 20.5);
+    const right = tile(10.5, 0.5, 20.5, 20.5);
+    const seam = [3.25, 7, 7.5, 12.125, 16];
+    for (const y of seam) {
+      left.insertPoint(10.5, y, 0);
+      right.insertPoint(10.5, y, 0);
+    }
+    for (let i = 0; i < 150; i++) {
+      left.insertPoint(
+        1 + Math.floor(10 * rand()),
+        1 + Math.floor(20 * rand()),
+        0,
+      );
+      right.insertPoint(
+        11 + Math.floor(10 * rand()),
+        1 + Math.floor(20 * rand()),
+        0,
+      );
+    }
+    const onSeam = (edges: string[]) =>
+      edges.filter(e => e.startsWith('10.5:') && e.includes('|10.5:')).sort();
+    const shared = onSeam(boundary(left));
+    expect(shared).toHaveLength(seam.length + 1);
+    expect(onSeam(boundary(right))).toEqual(shared);
+  });
+
+  it('leaves every unconstrained edge Delaunay once constraints are enforced', () => {
+    const d = tile(0, 0, 100, 100);
+    let seed = 7;
+    const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    // Three wavy lines, long segments through a dense field: each one has to be
+    // flipped into place across several edges.
+    const lineY = (k: number, x: number) => 20 + 30 * k + 8 * Math.sin(x / 7 + k);
+    for (let i = 0; i < 600; i++) {
+      const x = 1 + 98 * rand();
+      const y = 1 + 98 * rand();
+      if ([0, 1, 2].some(k => Math.abs(y - lineY(k, x)) < 1)) continue;
+      d.insertPoint(x, y, 0);
+    }
+    const key = (u: number, v: number) => (u < v ? `${u}:${v}` : `${v}:${u}`);
+    const constraints = new Set<string>();
+    for (let k = 0; k < 3; k++) {
+      const line: number[] = [];
+      for (let x = 2; x <= 98; x += 12) line.push(d.insertPoint(x, lineY(k, x), 0));
+      for (let i = 1; i < line.length; i++) {
+        d.constrainEdge(line[i - 1], line[i]);
+        constraints.add(key(line[i - 1], line[i]));
+      }
+    }
+    expect(d.constraintFailures).toBe(0);
+
+    // Each interior edge with the two vertices opposite it.
+    const opposite = new Map<string, number[]>();
+    const t = d.triangles;
+    for (let i = 0; i < t.length; i += 3) {
+      for (let k = 0; k < 3; k++) {
+        const e = key(t[i + k], t[i + ((k + 1) % 3)]);
+        opposite.set(e, [...(opposite.get(e) ?? []), t[i + ((k + 2) % 3)]]);
+      }
+    }
+    for (const c of constraints) expect(opposite.has(c), c).toBe(true);
+    const c = d.coords;
+    const angle = (p: number, u: number, v: number) => {
+      const ux = c[2 * u] - c[2 * p];
+      const uy = c[2 * u + 1] - c[2 * p + 1];
+      const vx = c[2 * v] - c[2 * p];
+      const vy = c[2 * v + 1] - c[2 * p + 1];
+      return Math.acos((ux * vx + uy * vy) / Math.hypot(ux, uy) / Math.hypot(vx, vy));
+    };
+    const violations: string[] = [];
+    for (const [e, [p, q]] of opposite) {
+      if (q === undefined || constraints.has(e)) continue;
+      const [u, v] = e.split(':').map(Number);
+      const excess = angle(p, u, v) + angle(q, u, v) - Math.PI;
+      if (excess > 1e-9) violations.push(`${e} +${((excess * 180) / Math.PI).toFixed(2)}°`);
+    }
+    expect(violations).toEqual([]);
+  });
 });

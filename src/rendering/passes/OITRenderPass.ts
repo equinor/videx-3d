@@ -228,7 +228,7 @@ export class OITRenderPass extends Pass {
   /**
    * How close to the per-pixel nearest transparent fragment a fragment may be and
    * still count as the front layer, **as a fraction of its view distance** — so the
-   * slab it defines is roughly `distance * frontPeelTolerance` metres (1e-5 is ~14 cm
+   * slab it defines is roughly `distance * frontPeelTolerance` metres (1e-7 is ~1.4 mm
    * at 14 km).
    *
    * ⭐ It exists only to absorb the last-ULP disagreement between the min-depth

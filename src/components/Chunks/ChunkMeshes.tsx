@@ -3,14 +3,16 @@ import { useFrame } from '@react-three/fiber';
 import {
   BufferAttribute,
   BufferGeometry,
+  DataTexture,
   DoubleSide,
   Group,
   IUniform,
   Material,
   MeshBasicMaterial,
+  Object3D,
   Vector4,
 } from 'three';
-import { SurfaceChunk, SurfaceChunkMesh } from '../../sdk';
+import { SurfaceChunk, SurfaceChunkMesh, StackTiling } from '../../sdk';
 import {
   DEFAULT_OCEAN_DEEP_COLOR,
   DEFAULT_OCEAN_WATER_OPACITY,
@@ -27,10 +29,13 @@ import { releaseGeometry } from './chunk-resources';
 import { ChunkDepthMap } from './chunk-depth-map';
 import { ChunkDetail } from './chunk-detail';
 import {
+  bindChunkNormalMap,
   ChunkMaterial,
   ChunkFenceUniforms,
   ChunkFenceOverlayUniforms,
   ChunkWaterTintParameters,
+  createCapNormalTexture,
+  createTileUniforms,
 } from './chunk-material';
 import {
   ChunkFenceState,
@@ -49,6 +54,17 @@ import {
 import { useChunkFenceFace } from './useChunkFenceFace';
 import { useChunkSection } from './useChunkSection';
 import { useCameraIntervals, useCulledCaps } from './useCapCulling';
+import { chunkLodActive, useChunkLod } from './useChunkLod';
+
+/** An untiled chunk's layout: every point in tile 0. */
+const SINGLE_TILE: StackTiling = {
+  cells: 1,
+  first: [0, 0],
+  count: [1, 1],
+  toGrid: [0, 0, 0, 0, 0, 0],
+};
+
+const NO_PATCHES = new Map<number, BufferGeometry>();
 
 /**
  * {@link ChunkMeshes} props.
@@ -166,6 +182,23 @@ export type ChunkMeshesProps = {
   layersHidden?: ReadonlySet<number>;
   /** saturation of every material made here: 1 (default) as lit, 0 grey */
   saturation?: number;
+  /**
+   * tint by tessellation tile and draw the seams, when the chunk was tiled: by
+   * level of detail while one is chosen, otherwise a checker
+   */
+  debugTiles?: boolean;
+  /**
+   * Draw every cap at this coarser level of detail (1 = the first), when the
+   * chunk was built with `lod`. A debug view: hidden-cap culling and peel patches
+   * are off while it is set. Default 0 (full detail).
+   */
+  lodLevel?: number;
+  /**
+   * With levels of detail built, pick one per tile so that its height error
+   * stays under this many pixels on screen. 0 = full detail everywhere.
+   * Culling and peel patches are off while levels are in use. Default 2.
+   */
+  lodPixelError?: number;
 };
 
 /**
@@ -280,6 +313,9 @@ export const ChunkMeshes = ({
   layersShown,
   layersHidden,
   saturation = 1,
+  debugTiles = false,
+  lodLevel = 0,
+  lodPixelError = 2,
 }: ChunkMeshesProps) => {
   // ⚠️ `fence` is a STABLE object mutated from the frame loop, so a change to
   // `fence.debug` is invisible to React and the materials below would keep the
@@ -296,6 +332,22 @@ export const ChunkMeshes = ({
   useEffect(() => {
     saturationUniform.value = saturation;
   }, [saturationUniform, saturation]);
+
+  // Keyed by the layout, not the chunk: the closures below must not pin geometry.
+  // Each tile's level, which the caps read their normals by and the tint shows; an
+  // untiled chunk with levels is one tile.
+  const hasLevels = !!chunk.metrics.lodErrors;
+  const tiling =
+    chunk.metrics.tiling ?? (hasLevels ? SINGLE_TILE : undefined);
+  const tilingKey = tiling ? JSON.stringify(tiling) : '';
+  const tileUniforms = useMemo(
+    () => (tilingKey ? createTileUniforms(JSON.parse(tilingKey)) : undefined),
+    [tilingKey],
+  );
+  useEffect(
+    () => () => tileUniforms?.values.value.dispose(),
+    [tileUniforms],
+  );
 
   const materials = useMemo(() => {
     // Every material built here is owned here and disposed on cleanup.
@@ -332,6 +384,8 @@ export const ChunkMeshes = ({
         fenceOverlay: options?.fenceOverlay,
         fenceOverlayOnly: options?.overlayOnly,
         saturation: saturationUniform,
+        tiles: debugTiles ? tileUniforms : undefined,
+        tileLevels: hasLevels ? tileUniforms : undefined,
         sectionPlane: !cutSection
           ? undefined
           : options?.inverse
@@ -527,8 +581,9 @@ export const ChunkMeshes = ({
 
     // ⭐ The fragments a cap gave up because a layer ABOVE covered them, restored
     // where that cover has gone. Two ways it can go, so two materials: peeled away
-    // entirely (draw everywhere) or cut away by the section or fence (draw only in
-    // the half it vacated, which is what the inverse uniforms give).
+    // entirely (draw wherever the cap draws, cut as it is) or cut away by the
+    // section or fence (draw only in the half it vacated, which is what the inverse
+    // uniforms give).
     const patches = new Map<
       number,
       { open: Material; cut: Material | null } | null
@@ -548,8 +603,9 @@ export const ChunkMeshes = ({
                   false,
                   layer === 0 ? waterTint : undefined,
                   {
-                    section: false,
-                    fence: false,
+                    // Peeled, the patch is part of the revealed surface: cut as its cap is.
+                    section: cutCapBySection(layer),
+                    fence: cutCapByFence(layer),
                     contacts: layerContacts(layer),
                   },
                 ),
@@ -604,6 +660,9 @@ export const ChunkMeshes = ({
     fenceOverlayUniforms,
     fenceCarrier,
     saturationUniform,
+    tileUniforms,
+    debugTiles,
+    hasLevels,
   ]);
 
   useEffect(() => {
@@ -670,11 +729,24 @@ export const ChunkMeshes = ({
   // `buildStackGeometries` already documents for the shared index. Kept PER CAP
   // for that reason, so a streamed cap arriving never releases its siblings'.
   const patchCache = useRef(new Map<SurfaceChunkMesh, BufferGeometry>());
-  const patchGeometries = useMemo(() => {
+  const [patchState, setPatchState] = useState<{
+    surfaces: SurfaceChunkMesh[];
+    built: Map<number, BufferGeometry>;
+  } | null>(null);
+  // An effect, not a memo: a remount (StrictMode, Fast Refresh) runs the cleanup
+  // below, and only an effect runs again to rebuild what it released.
+  useEffect(() => {
+    const cache = patchCache.current;
+    const live = new Set(chunk.surfaces);
+    for (const [surface, geometry] of cache) {
+      if (live.has(surface)) continue;
+      releaseGeometry(geometry);
+      cache.delete(surface);
+    }
     const built = new Map<number, BufferGeometry>();
     for (const surface of chunk.surfaces) {
       if (!surface.patchIndex || surface.ceiling) continue;
-      let geometry = patchCache.current.get(surface);
+      let geometry = cache.get(surface);
       if (!geometry) {
         geometry = new BufferGeometry();
         for (const name in surface.geometry.attributes) {
@@ -688,22 +760,14 @@ export const ChunkMeshes = ({
           geometry.boundingSphere = surface.geometry.boundingSphere.clone();
         if (surface.geometry.boundingBox)
           geometry.boundingBox = surface.geometry.boundingBox.clone();
-        patchCache.current.set(surface, geometry);
+        cache.set(surface, geometry);
       }
       built.set(surface.layer, geometry);
     }
-    return built;
+    setPatchState({ surfaces: chunk.surfaces, built });
   }, [chunk.surfaces]);
-
-  useEffect(() => {
-    const cache = patchCache.current;
-    const live = new Set(chunk.surfaces);
-    for (const [surface, geometry] of cache) {
-      if (live.has(surface)) continue;
-      releaseGeometry(geometry);
-      cache.delete(surface);
-    }
-  }, [chunk.surfaces]);
+  const patchGeometries =
+    patchState?.surfaces === chunk.surfaces ? patchState.built : NO_PATCHES;
 
   useEffect(() => {
     const cache = patchCache.current;
@@ -712,6 +776,65 @@ export const ChunkMeshes = ({
       cache.clear();
     };
   }, []);
+
+  // Each cap's normal map, bound per draw: one material can draw caps with
+  // different maps (a void's ceiling and the cap of the same layer). Read only on
+  // tiles drawn coarser, so bound only while LOD draws.
+  const lodDrawing = useRef(false);
+  const normalCache = useRef(
+    new Map<
+      SurfaceChunkMesh,
+      { bind: Object3D['onBeforeRender']; texture: DataTexture | null }
+    >(),
+  );
+  const normalBindings = useMemo(() => {
+    const built = new Map<SurfaceChunkMesh, Object3D['onBeforeRender']>();
+    // A patch is cut from the layer's own cap (never a ceiling's).
+    const patches = new Map<number, Object3D['onBeforeRender']>();
+    for (const surface of chunk.surfaces) {
+      let entry = normalCache.current.get(surface);
+      if (!entry) {
+        const made = surface.normalMap
+          ? createCapNormalTexture(surface.normalMap)
+          : null;
+        const texture = made?.texture ?? null;
+        const toUv = made?.toUv ?? null;
+        entry = {
+          texture,
+          bind: (_renderer, _scene, _camera, _geometry, material) =>
+            bindChunkNormalMap(
+              material,
+              lodDrawing.current ? texture : null,
+              toUv,
+            ),
+        };
+        normalCache.current.set(surface, entry);
+      }
+      built.set(surface, entry.bind);
+      if (!surface.ceiling) patches.set(surface.layer, entry.bind);
+    }
+    return { caps: built, patches };
+  }, [chunk.surfaces]);
+
+  useEffect(() => {
+    const cache = normalCache.current;
+    const live = new Set(chunk.surfaces);
+    for (const [surface, entry] of cache) {
+      if (live.has(surface)) continue;
+      entry.texture?.dispose();
+      cache.delete(surface);
+    }
+  }, [chunk.surfaces]);
+
+  useEffect(() => {
+    const cache = normalCache.current;
+    return () => {
+      cache.forEach(entry => entry.texture?.dispose());
+      cache.clear();
+    };
+  }, []);
+
+  const root = useRef<Group>(null);
 
   // Peeling drops whole UNITS: a unit's cap and its volume go together. `top` is
   // the first survivor (its own cap stays, closing the block); a window also sets
@@ -725,7 +848,6 @@ export const ChunkMeshes = ({
   // ⭐ A cap triangle with an opaque, closed unit against BOTH faces cannot be
   // seen. The topology comes from the build; which units are open is decided here,
   // per frame (see `cap-visibility`).
-  const root = useRef<Group>(null);
   const cullable =
     cullHiddenCaps &&
     showSurfaces &&
@@ -796,13 +918,80 @@ export const ChunkMeshes = ({
       }) ?? null,
     [capTables, layersShown, layersHidden, chunk.surfaces],
   );
-  const capGeometries = useCulledCaps(chunk, revealedTables);
+  // While LOD draws, it culls its own caps (see `useChunkLod`).
+  const lodActive = chunkLodActive(chunk, lodPixelError, lodLevel);
+  const capGeometries = useCulledCaps(
+    chunk,
+    lodActive ? null : revealedTables,
+  );
+
+  // A level of detail per tile: chosen on screen, or one `lodLevel` everywhere.
+  const lodViews = useChunkLod(
+    chunk,
+    root,
+    lodPixelError,
+    lodLevel,
+    revealedTables,
+    tileUniforms?.values.value,
+  );
+  const levelViews = lodViews?.caps ?? null;
+  useEffect(() => {
+    lodDrawing.current = levelViews !== null;
+    if (tileUniforms) tileUniforms.byValue.value = levelViews ? 1 : 0;
+  }, [tileUniforms, levelViews]);
+
+  // three builds its wireframe from `position`, which a cap does not carry (the
+  // shader assembles it from `xz` and `y`), so in wireframe it would draw nothing.
+  // An all-zero one, shared by every cap and made only while wireframe is on.
+  const wireframeViews = useMemo(() => {
+    if (!wireframe) return null;
+    const zeros = new Map<number, BufferAttribute>();
+    const views = new Map<SurfaceChunkMesh, BufferGeometry>();
+    for (const surface of chunk.surfaces) {
+      const source = levelViews?.get(surface) ?? surface.geometry;
+      const count = source.getAttribute('xz')?.count;
+      if (source.hasAttribute('position') || !count) continue;
+      let position = zeros.get(count);
+      if (!position) {
+        position = new BufferAttribute(new Float32Array(count * 3), 3);
+        zeros.set(count, position);
+      }
+      const view = new BufferGeometry();
+      for (const name in source.attributes) {
+        view.setAttribute(name, source.attributes[name]);
+      }
+      view.setAttribute('position', position);
+      view.setIndex(source.getIndex());
+      // Shared, so it follows a level of detail as that is rewritten.
+      view.drawRange = source.drawRange;
+      view.boundingBox = source.boundingBox?.clone() ?? null;
+      view.boundingSphere = source.boundingSphere?.clone() ?? null;
+      views.set(surface, view);
+    }
+    return views;
+  }, [wireframe, chunk.surfaces, levelViews]);
+  useEffect(
+    () => () =>
+      wireframeViews?.forEach(view => {
+        // Only the placeholder is the view's own; the rest belongs to the cap.
+        for (const name of Object.keys(view.attributes)) {
+          if (name !== 'position') view.deleteAttribute(name);
+        }
+        view.setIndex(null);
+        view.dispose();
+      }),
+    [wireframeViews],
+  );
 
   // ⭐ A weld or truncation drop is justified only where the layer above is ACTUALLY
   // DRAWN, and both a peel and a section can shrink that region. `'open'` = it is
   // gone everywhere, `'cut'` = gone only in the half the section removed.
-  const patchMode = (layer: number): 'open' | 'cut' | null => {
-    if (!patchGeometries.has(layer)) return null;
+  const patchMode = (surface: SurfaceChunkMesh): 'open' | 'cut' | null => {
+    const layer = surface.layer;
+    const patched = lodViews
+      ? lodViews.patches.has(surface)
+      : patchGeometries.has(layer);
+    if (!patched) return null;
     if (layer === top && top > 0) return 'open';
     // This cap survives the cut but the one above it does not. Where it draws is
     // left to the inverse uniforms, which follow whichever cut is live.
@@ -936,23 +1125,27 @@ export const ChunkMeshes = ({
               : materials.surfaces[surface.layer];
           if (!material) return null;
           // `null` = every triangle of this cap is buried this frame.
-          const capGeometry = capGeometries
-            ? capGeometries[i]
-            : surface.geometry;
+          const capGeometry =
+            wireframeViews?.get(surface) ??
+            levelViews?.get(surface) ??
+            (capGeometries ? capGeometries[i] : surface.geometry);
           const overlay =
             capGeometry && surface.geometry.hasAttribute('inferred')
               ? overlays.surface(surface.layer)
               : null;
           // The fragments this cap gave up to a layer that is no longer covering
           // them. Same colour and shading as the cap; only the plane differs.
-          const mode = patchMode(surface.layer);
+          const mode = patchMode(surface);
           const patch = mode ? materials.patch(surface.layer) : null;
           const patchMaterial = !patch
             ? null
             : mode === 'open'
               ? patch.open
               : patch.cut;
-          const patchGeometry = patchGeometries.get(surface.layer);
+          const patchGeometry = lodViews
+            ? lodViews.patches.get(surface)
+            : patchGeometries.get(surface.layer);
+          const bindNormals = normalBindings.caps.get(surface);
           const key = `surface-${i}`;
           const role = isCarrier
             ? 'carrier'
@@ -969,6 +1162,7 @@ export const ChunkMeshes = ({
                 <mesh
                   name={`${key}:${role}`}
                   geometry={capGeometry}
+                  onBeforeRender={bindNormals}
                   userData={{ layer: surface.layer, kind: 'surface' }}
                 >
                   <primitive
@@ -982,6 +1176,7 @@ export const ChunkMeshes = ({
                 <mesh
                   name={`${key}:patch`}
                   geometry={patchGeometry}
+                  onBeforeRender={normalBindings.patches.get(surface.layer)}
                   userData={{ layer: surface.layer, kind: 'surface' }}
                 >
                   <primitive

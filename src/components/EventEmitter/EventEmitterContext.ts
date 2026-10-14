@@ -75,33 +75,29 @@ export const EventEmitterContext = createContext<EventEmitterContextProps>(
  * const eventHandler = useEventEmitter()
  *
  * @remarks
- * The generator is an async function that process and returns data required
- * by your components, such as geometry for a mesh.
+ * Nothing is picked while no listener is registered, so an `EventEmitter` costs
+ * nothing until one is. Call `update()` when what is under a still pointer
+ * changes on its own (the emitter otherwise picks again only when the pointer, the
+ * camera or the listeners change).
  *
- * An optional threshold value may be provided in the register method. This is used
+ * An optional `threshold` may be given with the listener. This is used
  * to weight the distance when performing GPU picking, making objects with a
  * higher threshold more likely to be hit. This is usually used for thin/small objects,
  * which may otherwise be hard to hit.
  * @example
  *
  * useEffect(() => {
- *   let unregister: (() => void) | null = null
- *   if (eventHandler && ref.current) {
- *     const handlers: Record<string, EventEmitterCallback> = {}
+ *   if (!eventHandler || !ref.current) return
+ *   const handlers: Record<string, EventEmitterCallback> = {}
  *
- *     if (onPointerClick) handlers.click = onPointerClick
- *     if (onPointerEnter) handlers.enter = onPointerEnter
- *     if (onPointerLeave) handlers.leave = onPointerLeave
- *     if (onPointerMove) handlers.move = onPointerMove
+ *   if (onPointerClick) handlers.click = onPointerClick
+ *   if (onPointerEnter) handlers.enter = onPointerEnter
+ *   if (onPointerLeave) handlers.leave = onPointerLeave
+ *   if (onPointerMove) handlers.move = onPointerMove
  *
- *     if (Object.keys(handlers).length) {
- *       unregister = eventHandler.register(ref.current, handlers, id)
- *     }
- *   }
- *
- *   return () => {
- *     if (unregister) unregister()
- *   }
+ *   if (Object.keys(handlers).length === 0) return
+ *   // returns the unregister function, which the effect cleanup calls
+ *   return eventHandler.register({ object: ref.current, handlers, ref: id })
  * }, [eventHandler, onPointerClick, onPointerEnter, onPointerLeave, onPointerMove])
  *
  * @see {@link EventEmitter}

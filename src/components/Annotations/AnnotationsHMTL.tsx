@@ -91,6 +91,7 @@ const InstanceHTML = forwardRef<HTMLDivElement, InstanceProps>(
     return (
       <div
         ref={setRef}
+        role="presentation"
         style={annotationStyle}
         onClick={onClick}
         onPointerEnter={onPointerEnter}

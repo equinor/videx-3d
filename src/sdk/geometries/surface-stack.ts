@@ -1,5 +1,4 @@
 import { Vec2 } from '../types/common';
-import { Delatin } from './delatin';
 import { sampleValidGrid } from './grid-sampling';
 import {
   Coordinates2D,
@@ -15,9 +14,11 @@ import {
 } from './surface-grid';
 import { surfaceGridBounds } from './surface-clip';
 import {
+  collectStackCandidateLevels,
   collectStackCandidates,
   STACK_NO_DATA,
 } from './surface-stack-candidates';
+import { TERMINATION_TOLERANCE } from './surface-stack-terminations';
 import {
   layEmptyStackLayers,
   resampleStackLayer,
@@ -26,8 +27,16 @@ import {
   StackGridPlacement,
   StackReferencePlan,
 } from './surface-stack-resample';
-import { sortTrianglesSpatially } from './triangle-order';
 import {
+  refineStackSeam,
+  StackTileChain,
+  StackTileInput,
+  StackTileOutput,
+  stitchStackTiles,
+  tessellateStackTile,
+} from './stack-tiles';
+import {
+  GRID_NODE_TOUCH,
   GridPolygon,
   GridRing,
   makeGridInside,
@@ -282,6 +291,68 @@ export type StackTessellation = {
    * does NOT follow mesh edges, so a boundary drawn from it is a claim the mesh
    * does not support.
    */
+  constraintFailures: number;
+  /** how it was tiled, when it was (see {@link planStackTessellation}) */
+  tiling?: StackTiling;
+  /** per tile, where its triangles start in `indices` (in triangles; one past the end last) */
+  tileStarts?: Uint32Array;
+  /**
+   * Coarser levels of detail, when asked for (see {@link StackTessellationLod}),
+   * each its own triangles over `coords` — which then also holds the vertices
+   * only a coarser level uses, where its thinned pinch-out lines cross.
+   */
+  levels?: StackTessellationLevel[];
+  /**
+   * Vertices only a coarser level puts on the outline — a thinned line crossing
+   * it somewhere new — each on an outline edge of the full level, which the walls
+   * follow: `ends` holds that edge (two per vertex), `along` where on it (0..1).
+   * Their heights are taken along it, so a coarse cap meets the walls.
+   */
+  outlineBlends?: {
+    vertices: Uint32Array;
+    ends: Uint32Array;
+    along: Float64Array;
+  };
+};
+
+/**
+ * Coarser levels of detail to build with a tessellation (see
+ * {@link StackTessellation.levels}). Each keeps the rim, cuts, data edges and
+ * tile seams of the full tessellation — so tiles at different levels still meet
+ * — and has fewer refinement nodes and thinned pinch-out lines.
+ *
+ * @group Geometries
+ */
+export type StackTessellationLod = {
+  /** per coarser level, ascending: the height error it is simplified to */
+  errors: number[];
+  /**
+   * Per layer, per candidate (aligned with the `candidates` argument), its level
+   * (see `collectStackCandidateLevels`). Without them every refinement node is
+   * kept at every level; computed here when `candidates` is omitted.
+   */
+  candidateErrors?: Float32Array[];
+};
+
+/**
+ * One coarser level of a {@link StackTessellation}, over its `coords`.
+ *
+ * @group Geometries
+ */
+export type StackTessellationLevel = {
+  /** the height error it was simplified to */
+  error: number;
+  /** triangle indices, shared by every layer, tile by tile */
+  indices: Uint32Array;
+  /** as {@link StackTessellation.tileStarts}, for these triangles */
+  tileStarts: Uint32Array;
+  /** as {@link StackTessellation.cuts}, for these triangles */
+  cuts?: Uint8Array[];
+  /** as {@link StackTessellation.coverage}, for these triangles */
+  coverage?: Uint8Array[];
+  /** as {@link StackTessellation.terminationVertices}, for this level */
+  terminationVertices?: (Uint32Array | null)[];
+  /** as {@link StackTessellation.constraintFailures} — should be 0 */
   constraintFailures: number;
 };
 
@@ -959,6 +1030,10 @@ function coverageRings(masks: Uint8Array[], nx: number): (GridRing[] | null)[] {
  * @param terminations per pair of adjacent layers, the lines where the lower unit
  *   wedges out (see `traceThicknessLines`), constrained like a data boundary.
  *   Only the lines that reach the outline are kept.
+ * @param tileCells triangulate in square tiles of this many reference cells,
+ *   joined along their seams (see {@link planStackTessellation}); omitted = one
+ *   triangulation
+ * @param lod coarser levels to build as well (see {@link StackTessellation.levels})
  * @returns the shared tessellation, or `null` when nothing survives the mask
  *
  * @group Geometries
@@ -971,7 +1046,96 @@ export function tessellateStack(
   cuts?: PlanarPolygonGeometry[],
   constrainCoverage?: boolean,
   terminations?: GridRing[][],
+  tileCells?: number,
+  lod?: StackTessellationLod,
 ): StackTessellation | null {
+  const plan = planStackTessellation(
+    reference,
+    polygon,
+    maxError,
+    candidates,
+    cuts,
+    constrainCoverage,
+    terminations,
+    tileCells,
+    lod,
+  );
+  return plan.finish(plan.tiles.map(tile => tessellateStackTile(tile)));
+}
+
+/**
+ * {@link tessellateStack} split at its tiles: run each of `tiles` through
+ * `tessellateStackTile` (free of three.js, so a worker pool can) and hand the
+ * outputs, in order, to `finish`.
+ *
+ * @group Geometries
+ */
+export type StackTessellationPlan = {
+  tiles: StackTileInput[];
+  finish(outputs: StackTileOutput[]): StackTessellation | null;
+  /** the tile layout, when there is more than one tile */
+  tiling?: StackTiling;
+};
+
+/**
+ * How a tessellation was tiled: tile `(i, j)` covers reference columns
+ * `[(first[0] + i) * cells, (first[0] + i + 1) * cells)`, rows likewise, with
+ * seams on the half-cell lines between.
+ *
+ * @group Geometries
+ */
+export type StackTiling = {
+  cells: number;
+  first: [number, number];
+  count: [number, number];
+  /**
+   * Scene XZ to reference grid `(column, row)`, as `[a, b, c, d, e, f]`:
+   * `column = a x + b z + c`, `row = d x + e z + f`.
+   */
+  toGrid: [number, number, number, number, number, number];
+};
+
+/**
+ * Scene XZ to `reference`'s grid `(column, row)` as `[a, b, c, d, e, f]` (see
+ * {@link StackTiling.toGrid}).
+ *
+ * @group Geometries
+ */
+export function stackSceneToGrid(
+  reference: StackReference,
+): [number, number, number, number, number, number] {
+  const toGrid = surfaceWorldToGrid(reference.header, reference.worldPosition);
+  // The grid map is affine, so three points give it.
+  const [c0, r0] = toGrid(0, 0);
+  const [c1, r1] = toGrid(1, 0);
+  const [c2, r2] = toGrid(0, 1);
+  return [c1 - c0, c2 - c0, c0, r1 - r0, r2 - r0, r0];
+}
+
+/**
+ * The serial part of {@link tessellateStack}: the constraints, noded once for the
+ * whole chunk, cut into tiles; and the joining afterwards.
+ *
+ * ⭐ Seams run on half-cell lines, so no grid node and no traced data boundary
+ * (which follows cell edges) can lie on one. Each seam is noded with the other
+ * rings, so every crossing is one point both tiles insert, and its height
+ * profile is refined on its own (`refineStackSeam`) — nothing else refines a
+ * boundary. The outer tiles reach the grid's edge, so a single tile is exactly
+ * the untiled build.
+ *
+ * @group Geometries
+ */
+export function planStackTessellation(
+  reference: StackReference,
+  polygon: PlanarPolygonGeometry,
+  maxError: number,
+  candidates?: Uint32Array[],
+  cuts?: PlanarPolygonGeometry[],
+  constrainCoverage?: boolean,
+  terminations?: GridRing[][],
+  tileCells?: number,
+  lod?: StackTessellationLod,
+): StackTessellationPlan {
   const { nx, ny } = reference.header;
   const toGrid = surfaceWorldToGrid(reference.header, reference.worldPosition);
   const toGridPolygons = (p: PlanarPolygonGeometry): GridPolygon[] =>
@@ -1032,65 +1196,7 @@ export function tessellateStack(
     }
   }
 
-  // ⚠️ A cut rim CROSSES this chunk's rim — that is what makes it a partial
-  // overlap. Two crossing constraint edges can only both follow mesh edges if the
-  // crossing is itself a vertex, so they are noded first (`nodeGridRings`);
-  // without it the triangulator silently drops one of the two boundaries. A data
-  // boundary crosses the rim and the other layers' boundaries the same way.
-  if (
-    cutPolygons.length > 0 ||
-    coverageSets.length > 0 ||
-    terminationSets.some(set => set.length > 0)
-  ) {
-    const flat: GridRing[] = [];
-    const visit = (polys: GridPolygon[]) =>
-      polys.forEach(rings => rings.forEach(ring => flat.push(ring)));
-    visit(gridPolygons);
-    cutPolygons.forEach(visit);
-    visit(coverageSets);
-    visit(terminationSets);
-    const noded = nodeGridRings(flat);
-    if (noded !== flat) {
-      let at = 0;
-      const replace = (polys: GridPolygon[]) =>
-        polys.forEach((rings, ci) => {
-          polys[ci] = rings.map(() => noded[at++]);
-        });
-      replace(gridPolygons);
-      cutPolygons.forEach(replace);
-      replace(coverageSets);
-      replace(terminationSets);
-    }
-  }
-
-  // Union of every layer's refinement vertices, as reference grid node indices.
-  const union = new Set<number>();
-  const lists =
-    candidates ??
-    reference.channels.map(channel =>
-      collectStackCandidates(channel, nx, maxError),
-    );
-  for (const list of lists) {
-    for (let i = 0; i < list.length; i++) union.add(list[i]);
-  }
-
-  // ⭐ Only the nodes this chunk draws. The candidates are collected over the
-  // whole COLUMN — one grid, shared by every chunk cut from it — so a chunk with a
-  // small footprint is otherwise handed the entire field's detail. Dropping the
-  // rest cannot change the result: the rim is a CONSTRAINT edge and a flip never
-  // crosses one, so a point outside it takes part in no triangle that survives
-  // `removeExteriorTriangles`.
-  // ⚠️ DILATED BY ONE CELL (the neighbour test), because a node lying exactly ON
-  // the rim IS a vertex of kept triangles and the even-odd test is free to call it
-  // outside. The extra band costs a few exterior points; without it the chunk
-  // quietly loses rim detail.
-  const insidePolygon = makeGridInside(gridPolygons);
-  const nearPolygon = (col: number, row: number) =>
-    insidePolygon(col, row) ||
-    insidePolygon(col - 1, row) ||
-    insidePolygon(col + 1, row) ||
-    insidePolygon(col, row - 1) ||
-    insidePolygon(col, row + 1);
+  // The chunk's grid window, a cell wider than the outline all round.
   let minCol = Infinity;
   let maxCol = -Infinity;
   let minRow = Infinity;
@@ -1110,8 +1216,211 @@ export function tessellateStack(
   minRow -= 1;
   maxRow += 1;
 
-  const master = new Delatin(reference.channels[0], nx, NO_DATA);
-  master.beginConstraints();
+  const cells =
+    tileCells && tileCells >= 1 && minCol <= maxCol
+      ? Math.floor(tileCells)
+      : Infinity;
+  const tileOf = (v: number) =>
+    cells === Infinity ? 0 : Math.floor((v + 0.5) / cells);
+  const kx0 = tileOf(Math.max(minCol, 0));
+  const kx1 = tileOf(Math.min(maxCol, nx - 1));
+  const ky0 = tileOf(Math.max(minRow, 0));
+  const ky1 = tileOf(Math.min(maxRow, ny - 1));
+  const tilesX = kx1 - kx0 + 1;
+  const tilesY = ky1 - ky0 + 1;
+  const seamX: number[] = [];
+  const seamY: number[] = [];
+  for (let k = kx0 + 1; k <= kx1; k++) seamX.push(k * cells - 0.5);
+  for (let k = ky0 + 1; k <= ky1; k++) seamY.push(k * cells - 0.5);
+  const tiled = seamX.length > 0 || seamY.length > 0;
+  const tiling: StackTiling | undefined = tiled
+    ? {
+        cells,
+        first: [kx0, ky0],
+        count: [tilesX, tilesY],
+        toGrid: stackSceneToGrid(reference),
+      }
+    : undefined;
+  const tileIndex = (x: number, y: number) =>
+    (Math.min(Math.max(tileOf(y), ky0), ky1) - ky0) * tilesX +
+    Math.min(Math.max(tileOf(x), kx0), kx1) -
+    kx0;
+
+  // Open polylines along each seam: its ends, the seams crossing it, and the
+  // positions its own height profile needs.
+  const seamRings: GridRing[] = [];
+  if (tiled) {
+    const rows = [Math.max(Math.ceil(minRow), 0), Math.min(maxRow, ny - 1)];
+    const cols = [Math.max(Math.ceil(minCol), 0), Math.min(maxCol, nx - 1)];
+    const line = (ends: number[], crossing: number[], kept: number[]) =>
+      [...new Set([...ends, ...crossing, ...kept])].sort((a, b) => a - b);
+    for (const x of seamX) {
+      const kept = refineStackSeam(
+        reference.channels,
+        nx,
+        'x',
+        x,
+        rows[0],
+        Math.floor(rows[1]),
+        maxError,
+      );
+      seamRings.push(line([0, ny - 1], seamY, kept).map(y => [x, y]));
+    }
+    for (const y of seamY) {
+      const kept = refineStackSeam(
+        reference.channels,
+        nx,
+        'y',
+        y,
+        cols[0],
+        Math.floor(cols[1]),
+        maxError,
+      );
+      seamRings.push(line([0, nx - 1], seamX, kept).map(x => [x, y]));
+    }
+  }
+
+  // ⚠️ A point a rounding error off a seam would land inside one tile and on the
+  // other's boundary. Anything within the noder's touch distance goes ON it.
+  const snap = (v: number, k0: number, k1: number) => {
+    const k = Math.round((v + 0.5) / cells);
+    const at = k * cells - 0.5;
+    return k > k0 && k <= k1 && Math.abs(v - at) <= GRID_NODE_TOUCH ? at : v;
+  };
+  // Copies, never the caller's points: a pinch-out line is passed in.
+  const snapRings = (polys: GridPolygon[]) =>
+    polys.forEach(rings =>
+      rings.forEach((ring, ri) => {
+        let copy: GridRing | null = null;
+        ring.forEach((p, i) => {
+          const x = snap(p[0], kx0, kx1);
+          const y = snap(p[1], ky0, ky1);
+          if (x === p[0] && y === p[1]) return;
+          copy ??= ring.slice();
+          copy[i] = [x, y];
+          if (traced.has(p)) traced.add(copy[i]);
+        });
+        if (copy) rings[ri] = copy;
+      }),
+    );
+  if (tiled) {
+    snapRings(gridPolygons);
+    cutPolygons.forEach(snapRings);
+    snapRings(coverageSets);
+    snapRings(terminationSets);
+  }
+
+  // ⚠️ A cut rim CROSSES this chunk's rim — that is what makes it a partial
+  // overlap. Two crossing constraint edges can only both follow mesh edges if the
+  // crossing is itself a vertex, so they are noded first (`nodeGridRings`);
+  // without it the triangulator silently drops one of the two boundaries. A data
+  // boundary crosses the rim and the other layers' boundaries the same way, and
+  // every ring crosses the seams.
+  if (
+    cutPolygons.length > 0 ||
+    coverageSets.length > 0 ||
+    terminationSets.some(set => set.length > 0) ||
+    tiled
+  ) {
+    const flat: GridRing[] = [];
+    const visit = (polys: GridPolygon[]) =>
+      polys.forEach(rings => rings.forEach(ring => flat.push(ring)));
+    visit(gridPolygons);
+    cutPolygons.forEach(visit);
+    visit(coverageSets);
+    visit(terminationSets);
+    const open = flat.map(() => false);
+    for (const ring of seamRings) {
+      flat.push(ring);
+      open.push(true);
+    }
+    const noded = nodeGridRings(flat, open);
+    if (noded !== flat) {
+      let at = 0;
+      const replace = (polys: GridPolygon[]) =>
+        polys.forEach((rings, ci) => {
+          polys[ci] = rings.map(() => noded[at++]);
+        });
+      replace(gridPolygons);
+      cutPolygons.forEach(replace);
+      replace(coverageSets);
+      replace(terminationSets);
+      for (let i = 0; i < seamRings.length; i++) seamRings[i] = noded[at++];
+    }
+  }
+
+  // Every point ON a seam, by seam: both tiles beside it insert all of them.
+  // Crossings are computed on whichever segment came first, so they are put
+  // exactly on the line here (they are the noder's own points, shared by both).
+  const onSeamX = new Map(seamX.map(x => [x, new Map<number, number[]>()]));
+  const onSeamY = new Map(seamY.map(y => [y, new Map<number, number[]>()]));
+  if (tiled) {
+    const collect = (ring: GridRing) => {
+      for (const p of ring) {
+        p[0] = snap(p[0], kx0, kx1);
+        p[1] = snap(p[1], ky0, ky1);
+        onSeamX.get(p[0])?.set(p[1], p);
+        onSeamY.get(p[1])?.set(p[0], p);
+      }
+    };
+    const visit = (polys: GridPolygon[]) =>
+      polys.forEach(rings => rings.forEach(collect));
+    visit(gridPolygons);
+    cutPolygons.forEach(visit);
+    visit(coverageSets);
+    visit(terminationSets);
+    seamRings.forEach(collect);
+  }
+
+  // Union of every layer's refinement vertices, as reference grid node indices.
+  const union = new Set<number>();
+  let lists = candidates;
+  let listErrors = lod?.candidateErrors;
+  if (!lists && lod) {
+    const levels = reference.channels.map(channel =>
+      collectStackCandidateLevels(channel, nx, maxError),
+    );
+    lists = levels.map(level => level.nodes);
+    listErrors = levels.map(level => level.errors);
+  }
+  lists ??= reference.channels.map(channel =>
+    collectStackCandidates(channel, nx, maxError),
+  );
+  // Per node, the coarsest level any layer needs it at.
+  const nodeError = lod ? new Float32Array(nx * ny).fill(-Infinity) : null;
+  lists.forEach((list, l) => {
+    for (let i = 0; i < list.length; i++) union.add(list[i]);
+    if (!nodeError) return;
+    const errors = listErrors?.[l];
+    for (let i = 0; i < list.length; i++) {
+      const e = errors ? errors[i] : Infinity;
+      if (e > nodeError[list[i]]) nodeError[list[i]] = e;
+    }
+  });
+  const levelsOf = (node: number) => {
+    let k = 0;
+    while (k < lod!.errors.length && nodeError![node] > lod!.errors[k]) k++;
+    return k;
+  };
+
+  // ⭐ Only the nodes this chunk draws. The candidates are collected over the
+  // whole COLUMN — one grid, shared by every chunk cut from it — so a chunk with a
+  // small footprint is otherwise handed the entire field's detail. Dropping the
+  // rest cannot change the result: the rim is a CONSTRAINT edge and a flip never
+  // crosses one, so a point outside it takes part in no triangle that survives
+  // `removeExteriorTriangles`.
+  // ⚠️ DILATED BY ONE CELL (the neighbour test), because a node lying exactly ON
+  // the rim IS a vertex of kept triangles and the even-odd test is free to call it
+  // outside. The extra band costs a few exterior points; without it the chunk
+  // quietly loses rim detail.
+  const insidePolygon = makeGridInside(gridPolygons);
+  const nearPolygon = (col: number, row: number) =>
+    insidePolygon(col, row) ||
+    insidePolygon(col - 1, row) ||
+    insidePolygon(col + 1, row) ||
+    insidePolygon(col, row - 1) ||
+    insidePolygon(col, row + 1);
+
   // Corners come with the bootstrap triangulation.
   union.delete(0);
   union.delete(nx - 1);
@@ -1121,169 +1430,481 @@ export function tessellateStack(
   // Insert row by row: consecutive points are adjacent, so the locate walk that
   // Delatin starts from its last hit resolves in a couple of steps. (A typed sort:
   // numeric without a comparator, which is most of the cost on a million nodes.)
+  const tileCount = tilesX * tilesY;
+  const tileNodes: number[][] = Array.from({ length: tileCount }, () => []);
+  const tileNodeLevels: number[][] = Array.from(
+    { length: lod ? tileCount : 0 },
+    () => [],
+  );
   const nodes = Uint32Array.from(union).sort();
   for (const node of nodes) {
     const col = node % nx;
     const row = (node - col) / nx;
     if (col < minCol || col > maxCol || row < minRow || row > maxRow) continue;
     if (!nearPolygon(col, row)) continue;
-    master.insertPoint(col, row, 0);
+    const t = tileIndex(col, row);
+    tileNodes[t].push(col, row);
+    if (lod) tileNodeLevels[t].push(levelsOf(node));
   }
 
   // The rim: inserted as explicit points and locked as constraint edges, so every
-  // layer's boundary lands on exactly the same vertices as the walls.
+  // layer's boundary lands on exactly the same vertices as the walls. A ring that
+  // crosses a seam is locked piece by piece, each piece by the tile it runs in.
   const clampCol = (x: number) => Math.min(Math.max(x, 0), nx - 1);
   const clampRow = (y: number) => Math.min(Math.max(y, 0), ny - 1);
-  const rimVertices: number[][] = [];
+  const tileRim: StackTileChain[][] = Array.from(
+    { length: tileCount },
+    () => [],
+  );
+  // per tile, per rim piece: its ring, and the ring point behind each piece point
+  const rimRefs: { ring: number; at: number[] }[][] = Array.from(
+    { length: tileCount },
+    () => [],
+  );
+  const rims: GridRing[] = [];
   for (const poly of gridPolygons) {
     for (const ring of poly) {
-      const verts: number[] = [];
-      for (const [gx, gy] of ring) {
-        const vi = master.insertPoint(clampCol(gx), clampRow(gy), 0);
-        if (vi >= 0 && vi !== verts[verts.length - 1]) verts.push(vi);
+      const r = rims.length;
+      const points = ring.map(([gx, gy]) => [clampCol(gx), clampRow(gy)]);
+      rims.push(points);
+      const tiles = points.map((p, i) => {
+        const q = points[(i + 1) % points.length];
+        return tileIndex((p[0] + q[0]) / 2, (p[1] + q[1]) / 2);
+      });
+      if (tiles.every(t => t === tiles[0])) {
+        tileRim[tiles[0] ?? 0].push({
+          points: Float64Array.from(points.flat()),
+          closed: true,
+        });
+        rimRefs[tiles[0] ?? 0].push({ ring: r, at: points.map((_, i) => i) });
+        continue;
       }
-      if (verts.length >= 3) {
-        for (let i = 0; i < verts.length; i++) {
-          master.constrainEdge(verts[i], verts[(i + 1) % verts.length]);
-        }
+      for (let i = 0; i < points.length; ) {
+        const t = tiles[i];
+        const at = [i];
+        while (i < points.length && tiles[i] === t)
+          at.push(++i % points.length);
+        tileRim[t].push({
+          points: Float64Array.from(at.flatMap(k => points[k])),
+          closed: false,
+        });
+        rimRefs[t].push({ ring: r, at });
       }
-      rimVertices.push(verts);
     }
   }
 
   // A cut is constrained but never closed: it only has to bound the part of THIS
   // chunk that a neighbour also draws, so where it leaves the reference grid the
   // chain simply restarts. A data boundary is enforced the same way.
+  // ⭐ Noded rings meet the rim only at vertices, so a segment outside it bounds
+  // nothing kept and is skipped; an inside endpoint keeps it in case noding missed one.
   let coverageRingPoints = 0;
-  const constrainRing = (ring: GridRing, record?: number[]) => {
-    let prev = -1;
-    for (let i = 0; i <= ring.length; i++) {
-      const [gx, gy] = ring[i % ring.length];
-      if (gx < 0 || gx > nx - 1 || gy < 0 || gy > ny - 1) {
-        prev = -1;
-        continue;
+  let terminationRingPoints = 0;
+  const tileChains: StackTileChain[][] = Array.from(
+    { length: tileCount },
+    () => [],
+  );
+  // per tile, per chain: the pinch-out pair each traced point belongs to
+  const chainTags: (Int32Array | null)[][] = Array.from(
+    { length: tileCount },
+    () => [],
+  );
+  const inGrid = (p: number[]) =>
+    p[0] >= 0 && p[0] <= nx - 1 && p[1] >= 0 && p[1] <= ny - 1;
+  // Every layer's height along a pinch-out piece, for a coarser level to thin it by.
+  const layers = reference.channels.length;
+  const isNoData = (v: number) => v === NO_DATA;
+  const heightsAt = (points: Float64Array) => {
+    const out = new Float32Array((points.length >> 1) * layers);
+    for (let k = 0; k < points.length >> 1; k++) {
+      const col = points[2 * k];
+      const row = points[2 * k + 1];
+      for (let c = 0; c < layers; c++) {
+        out[k * layers + c] = sampleValidGrid(
+          reference.channels[c],
+          nx,
+          ny,
+          col,
+          row,
+          isNoData,
+          0,
+        );
       }
-      const vi = master.insertPoint(gx, gy, 0);
-      if (vi < 0) {
-        prev = -1;
-        continue;
-      }
-      if (prev >= 0 && vi !== prev) master.constrainEdge(prev, vi);
-      prev = vi;
-      if (record && traced.has(ring[i % ring.length])) record.push(vi);
     }
+    return out;
+  };
+  const cutRing = (ring: GridRing, pair = -1) => {
+    let tile = -1;
+    let at: number[] = [];
+    const flush = () => {
+      if (at.length < 2) return;
+      const points = new Float64Array(2 * at.length);
+      for (let j = 0; j < at.length; j++) {
+        points[2 * j] = ring[at[j]][0];
+        points[2 * j + 1] = ring[at[j]][1];
+      }
+      tileChains[tile].push(
+        lod && pair >= 0
+          ? { points, closed: false, heights: heightsAt(points) }
+          : { points, closed: false },
+      );
+      chainTags[tile].push(
+        pair < 0
+          ? null
+          : Int32Array.from(at, k => (traced.has(ring[k]) ? pair : -1)),
+      );
+    };
+    for (let i = 0; i < ring.length; i++) {
+      const p = ring[i];
+      const q = ring[(i + 1) % ring.length];
+      const kept =
+        inGrid(p) &&
+        inGrid(q) &&
+        (insidePolygon((p[0] + q[0]) / 2, (p[1] + q[1]) / 2) ||
+          insidePolygon(p[0], p[1]) ||
+          insidePolygon(q[0], q[1]));
+      const t = kept ? tileIndex((p[0] + q[0]) / 2, (p[1] + q[1]) / 2) : -1;
+      if (t !== tile || !kept) {
+        flush();
+        at = kept ? [i] : [];
+        tile = t;
+      }
+      if (kept) at.push((i + 1) % ring.length);
+    }
+    flush();
   };
   for (const cut of cutPolygons) {
     for (const poly of cut) {
-      for (const ring of poly) constrainRing(ring);
+      for (const ring of poly) cutRing(ring);
     }
   }
   for (const set of coverageSets) {
     for (const ring of set) {
       coverageRingPoints += ring.length;
-      constrainRing(ring);
+      cutRing(ring);
     }
   }
-  let terminationRingPoints = 0;
-  const terminationRecords = terminationSets.map(set => {
-    const record: number[] = [];
+  terminationSets.forEach((set, pair) => {
     for (const ring of set) {
       terminationRingPoints += ring.length;
-      constrainRing(ring, record);
+      cutRing(ring, pair);
     }
-    return record;
   });
 
-  master.removeExteriorTriangles(insidePolygon);
-  if (master.triangles.length === 0) return null;
-
-  // ⭐ Spatial order, BEFORE compaction so the vertices follow it too. Every
-  // layer's index is a subset of this one, in this order.
-  const ordered = sortTrianglesSpatially(master.triangles, master.coords);
-
-  // Compact: the trimmed triangulation keeps every vertex ever inserted, and the
-  // stack pays for each one N times over (one Y per layer).
-  const remap = new Int32Array(master.coords.length >> 1).fill(-1);
-  const indices = new Uint32Array(ordered.length);
-  const coordList: number[] = [];
-  for (let i = 0; i < ordered.length; i++) {
-    const v = ordered[i];
-    let mapped = remap[v];
-    if (mapped < 0) {
-      mapped = coordList.length >> 1;
-      remap[v] = mapped;
-      coordList.push(master.coords[2 * v], master.coords[2 * v + 1]);
+  const tiles: StackTileInput[] = [];
+  // A coarser level's plan tolerance grows with its error, so a thinned line
+  // stays within it in plan as well as in height.
+  const cellSize = Math.min(reference.header.xinc, reference.header.yinc);
+  const levelSpecs = lod?.errors.map(
+    (error): [number, number] => [
+      error,
+      Math.max(TERMINATION_TOLERANCE, error / cellSize),
+    ],
+  );
+  for (let iy = 0; iy < tilesY; iy++) {
+    for (let ix = 0; ix < tilesX; ix++) {
+      const t = iy * tilesX + ix;
+      const x0 = ix === 0 ? 0 : (kx0 + ix) * cells - 0.5;
+      const x1 = ix === tilesX - 1 ? nx - 1 : (kx0 + ix + 1) * cells - 0.5;
+      const y0 = iy === 0 ? 0 : (ky0 + iy) * cells - 0.5;
+      const y1 = iy === tilesY - 1 ? ny - 1 : (ky0 + iy + 1) * cells - 0.5;
+      const seams: number[] = [];
+      const side = (points: Map<number, number[]> | undefined) => {
+        for (const p of points?.values() ?? []) {
+          if (p[0] >= x0 && p[0] <= x1 && p[1] >= y0 && p[1] <= y1) {
+            seams.push(p[0], p[1]);
+          }
+        }
+      };
+      if (ix > 0) side(onSeamX.get(x0));
+      if (ix < tilesX - 1) side(onSeamX.get(x1));
+      if (iy > 0) side(onSeamY.get(y0));
+      if (iy < tilesY - 1) side(onSeamY.get(y1));
+      tiles.push({
+        bounds: [x0, y0, x1, y1],
+        shared: [ix > 0, iy > 0, ix < tilesX - 1, iy < tilesY - 1],
+        seams: Float64Array.from(seams),
+        nodes: Float64Array.from(tileNodes[t]),
+        rim: tileRim[t],
+        chains: tileChains[t],
+        polygons: gridPolygons,
+        ...(levelSpecs && {
+          lod: {
+            nodeLevels: Uint8Array.from(tileNodeLevels[t]),
+            levels: levelSpecs,
+            layers,
+          },
+        }),
+      });
     }
-    indices[i] = mapped;
   }
 
-  let rimDropped = 0;
-  const keptRims = rimVertices.map(ring => {
-    const mapped: number[] = [];
-    for (const v of ring) {
-      if (remap[v] >= 0) mapped.push(remap[v]);
-      else rimDropped++;
+  const finish = (outputs: StackTileOutput[]): StackTessellation | null => {
+    const stitched = stitchStackTiles(outputs, seamX, seamY);
+    const { indices, vertexOf } = stitched;
+    if (indices.length === 0) return null;
+
+    // Back to whole rings: each rim point's vertex, from whichever piece has it.
+    const rimLocal = rims.map(ring => new Int32Array(ring.length * 2).fill(-1));
+    outputs.forEach((o, t) =>
+      rimRefs[t].forEach(({ ring, at }, c) =>
+        at.forEach((k, j) => {
+          const local = o.rim[c][j];
+          if (local < 0 || rimLocal[ring][2 * k + 1] >= 0) return;
+          rimLocal[ring][2 * k] = t;
+          rimLocal[ring][2 * k + 1] = local;
+        }),
+      ),
+    );
+    let rimDropped = 0;
+    const keptRims = rimLocal.map(refs => {
+      const mapped: number[] = [];
+      let lastTile = -1;
+      let lastLocal = -1;
+      for (let k = 0; k < refs.length; k += 2) {
+        const tile = refs[k];
+        const local = refs[k + 1];
+        if (local < 0 || (tile === lastTile && local === lastLocal)) continue;
+        lastTile = tile;
+        lastLocal = local;
+        const v = vertexOf(tile, local);
+        if (v < 0) rimDropped++;
+        else mapped.push(v);
+      }
+      return mapped;
+    });
+
+    const records: number[][] = terminationSets.map(() => []);
+    outputs.forEach((o, t) =>
+      chainTags[t].forEach((tags, c) => {
+        if (!tags) return;
+        const verts = o.chains[c];
+        for (let k = 0; k < tags.length; k++) {
+          if (tags[k] < 0 || verts[k] < 0) continue;
+          records[tags[k]].push(vertexOf(t, verts[k]));
+        }
+      }),
+    );
+    const terminationVertices = terminations
+      ? records.map(record => {
+          const kept = record.filter(v => v >= 0);
+          return kept.length > 0 ? Uint32Array.from(kept) : null;
+        })
+      : undefined;
+
+    const fineCoords = stitched.coords;
+    // Coarser levels add the vertices only they use — where thinned lines cross —
+    // after the full level's, which every per-vertex array is then sized to.
+    const extra: number[] = [];
+    const levelJoins = lod?.errors.map((_, k) => {
+      const outs = outputs.map(o => o.levels![k]);
+      return { outs, stitched: stitchStackTiles(outs, seamX, seamY) };
+    });
+    let levelRemaps: Uint32Array[] | undefined;
+    if (levelJoins) {
+      const fineCount = fineCoords.length >> 1;
+      const known = new Map<string, number>();
+      for (let v = 0; v < fineCount; v++) {
+        known.set(`${fineCoords[2 * v]},${fineCoords[2 * v + 1]}`, v);
+      }
+      levelRemaps = levelJoins.map(({ stitched: level }) => {
+        const remap = new Uint32Array(level.coords.length >> 1);
+        for (let v = 0; v < remap.length; v++) {
+          const x = level.coords[2 * v];
+          const y = level.coords[2 * v + 1];
+          const key = `${x},${y}`;
+          let g = known.get(key);
+          if (g === undefined) {
+            g = fineCount + (extra.length >> 1);
+            extra.push(x, y);
+            known.set(key, g);
+          }
+          remap[v] = g;
+        }
+        return remap;
+      });
     }
-    return mapped;
-  });
+    const coords = new Float32Array(fineCoords.length + extra.length);
+    coords.set(fineCoords);
+    coords.set(extra, fineCoords.length);
+    const outlineBlends =
+      extra.length > 0
+        ? blendOntoOutline(coords, indices, fineCoords.length >> 1)
+        : undefined;
 
-  const terminationVertices = terminations
-    ? terminationRecords.map(record => {
-        const kept = record.map(v => remap[v]).filter(v => v >= 0);
-        return kept.length > 0 ? Uint32Array.from(kept) : null;
-      })
-    : undefined;
-
-  const coords = Float32Array.from(coordList);
-
-  const triangles = indices.length / 3;
-  // Membership by CENTROID, which is exact because the ring bounding it was
-  // constrained: no triangle straddles it, so any interior point decides.
-  const flagTriangles = (polys: GridPolygon[]) => {
-    const test = makeGridInside(polys);
-    const flags = new Uint8Array(triangles);
-    for (let t = 0; t < triangles; t++) {
-      const a = indices[3 * t];
-      const b = indices[3 * t + 1];
-      const c = indices[3 * t + 2];
-      const cx = (coords[2 * a] + coords[2 * b] + coords[2 * c]) / 3;
-      const cy =
-        (coords[2 * a + 1] + coords[2 * b + 1] + coords[2 * c + 1]) / 3;
-      if (test(cx, cy)) flags[t] = 1;
-    }
-    return flags;
-  };
-
-  const cutFlags =
-    cutPolygons.length > 0 ? cutPolygons.map(flagTriangles) : undefined;
-
-  let coverageFlags: Uint8Array[] | undefined;
-  if (layerRings) {
-    const everywhere = new Uint8Array(triangles).fill(1);
-    const bySet = new Map<GridRing[], Uint8Array>();
-    coverageFlags = layerRings.map(rings => {
-      if (!rings) return everywhere;
-      let flags = bySet.get(rings);
-      if (!flags) {
-        flags = flagTriangles([rings]);
-        bySet.set(rings, flags);
+    // Membership by CENTROID, which is exact because the ring bounding it was
+    // constrained: no triangle straddles it, so any interior point decides.
+    const flagTriangles = (polys: GridPolygon[], over: Uint32Array) => {
+      const test = makeGridInside(polys);
+      const flags = new Uint8Array(over.length / 3);
+      for (let t = 0; t < flags.length; t++) {
+        const a = over[3 * t];
+        const b = over[3 * t + 1];
+        const c = over[3 * t + 2];
+        const cx = (coords[2 * a] + coords[2 * b] + coords[2 * c]) / 3;
+        const cy =
+          (coords[2 * a + 1] + coords[2 * b + 1] + coords[2 * c + 1]) / 3;
+        if (test(cx, cy)) flags[t] = 1;
       }
       return flags;
-    });
-  }
+    };
 
-  return {
-    coords,
-    indices,
-    rimVertices: keptRims,
-    cuts: cutFlags,
-    coverage: coverageFlags,
-    coverageRingPoints,
-    terminationRingPoints,
-    terminationVertices,
-    rimDropped,
-    constraintFailures: master.constraintFailures,
+    const cutFlagsOf = (over: Uint32Array) =>
+      cutPolygons.length > 0
+        ? cutPolygons.map(polys => flagTriangles(polys, over))
+        : undefined;
+    const coverageFlagsOf = (over: Uint32Array) => {
+      if (!layerRings) return undefined;
+      const everywhere = new Uint8Array(over.length / 3).fill(1);
+      const bySet = new Map<GridRing[], Uint8Array>();
+      return layerRings.map(rings => {
+        if (!rings) return everywhere;
+        let flags = bySet.get(rings);
+        if (!flags) {
+          flags = flagTriangles([rings], over);
+          bySet.set(rings, flags);
+        }
+        return flags;
+      });
+    };
+    const cutFlags = cutFlagsOf(indices);
+    const coverageFlags = coverageFlagsOf(indices);
+
+    const levels = levelJoins?.map(({ outs, stitched: level }, k) => {
+      const remap = levelRemaps![k];
+      const levelIndices = level.indices.map(v => remap[v]);
+      const marks: number[][] = terminationSets.map(() => []);
+      outs.forEach((o, t) =>
+        chainTags[t].forEach((tags, c) => {
+          if (!tags) return;
+          const verts = o.chains[c];
+          for (let p = 0; p < tags.length; p++) {
+            if (tags[p] < 0 || verts[p] < 0) continue;
+            const v = level.vertexOf(t, verts[p]);
+            if (v >= 0) marks[tags[p]].push(remap[v]);
+          }
+        }),
+      );
+      return {
+        error: lod!.errors[k],
+        indices: levelIndices,
+        tileStarts: tileStartsOf(outs),
+        cuts: cutFlagsOf(levelIndices),
+        coverage: coverageFlagsOf(levelIndices),
+        terminationVertices: terminations
+          ? marks.map(m => (m.length > 0 ? Uint32Array.from(m) : null))
+          : undefined,
+        constraintFailures: outs.reduce(
+          (sum, o) => sum + o.constraintFailures,
+          0,
+        ),
+      };
+    });
+
+    return {
+      coords,
+      indices,
+      rimVertices: keptRims,
+      cuts: cutFlags,
+      coverage: coverageFlags,
+      coverageRingPoints,
+      terminationRingPoints,
+      terminationVertices,
+      rimDropped,
+      constraintFailures: outputs.reduce(
+        (sum, o) => sum + o.constraintFailures,
+        0,
+      ),
+      tiling,
+      tileStarts: tileStartsOf(outputs),
+      levels,
+      outlineBlends,
+    };
   };
+
+  return { tiles, finish, tiling };
+}
+
+/**
+ * The vertices from `first` on (those only a coarser level uses) that lie on an
+ * outline edge of the full level, with that edge and how far along it.
+ */
+function blendOntoOutline(
+  coords: Float32Array,
+  indices: Uint32Array,
+  first: number,
+): StackTessellation['outlineBlends'] {
+  const V = coords.length >> 1;
+  const uses = new Map<number, number>();
+  for (let i = 0; i < indices.length; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      const u = indices[i + k];
+      const v = indices[i + ((k + 1) % 3)];
+      const key = u < v ? u * V + v : v * V + u;
+      uses.set(key, (uses.get(key) ?? 0) + 1);
+    }
+  }
+  // Outline edges by the grid cells their boxes cover.
+  const cells = new Map<number, number[]>();
+  const cellKey = (x: number, y: number) => x * 1048576 + y;
+  for (const [key, n] of uses) {
+    if (n !== 1) continue;
+    const a = Math.floor(key / V);
+    const b = key - a * V;
+    const x0 = Math.floor(Math.min(coords[2 * a], coords[2 * b]));
+    const x1 = Math.floor(Math.max(coords[2 * a], coords[2 * b]));
+    const y0 = Math.floor(Math.min(coords[2 * a + 1], coords[2 * b + 1]));
+    const y1 = Math.floor(Math.max(coords[2 * a + 1], coords[2 * b + 1]));
+    for (let x = x0; x <= x1; x++) {
+      for (let y = y0; y <= y1; y++) {
+        const list = cells.get(cellKey(x, y));
+        if (list) list.push(a, b);
+        else cells.set(cellKey(x, y), [a, b]);
+      }
+    }
+  }
+  const vertices: number[] = [];
+  const ends: number[] = [];
+  const along: number[] = [];
+  for (let v = first; v < V; v++) {
+    const px = coords[2 * v];
+    const py = coords[2 * v + 1];
+    const list = cells.get(cellKey(Math.floor(px), Math.floor(py)));
+    if (!list) continue;
+    for (let i = 0; i < list.length; i += 2) {
+      const a = list[i];
+      const b = list[i + 1];
+      const dx = coords[2 * b] - coords[2 * a];
+      const dy = coords[2 * b + 1] - coords[2 * a + 1];
+      const len2 = dx * dx + dy * dy;
+      const qx = px - coords[2 * a];
+      const qy = py - coords[2 * a + 1];
+      const t = (qx * dx + qy * dy) / len2;
+      // Noded onto the rim, so off it by no more than the float32 coordinates.
+      if (t <= 0 || t >= 1 || Math.abs(qx * dy - qy * dx) > 1e-4 * Math.sqrt(len2)) {
+        continue;
+      }
+      vertices.push(v);
+      ends.push(a, b);
+      along.push(t);
+      break;
+    }
+  }
+  return vertices.length > 0
+    ? {
+        vertices: Uint32Array.from(vertices),
+        ends: Uint32Array.from(ends),
+        along: Float64Array.from(along),
+      }
+    : undefined;
+}
+
+// Stitched tiles keep their triangles in tile order, so a tile starts where the
+// ones before it end.
+function tileStartsOf(outputs: { triangles: Uint32Array }[]): Uint32Array {
+  const starts = new Uint32Array(outputs.length + 1);
+  outputs.forEach((o, t) => (starts[t + 1] = starts[t] + o.triangles.length / 3));
+  return starts;
 }
 
 /**

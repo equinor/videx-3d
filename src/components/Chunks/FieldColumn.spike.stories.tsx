@@ -404,6 +404,12 @@ type FieldColumnStoryProps = {
   chunkPicking: boolean;
   renderStats: boolean;
   buildDiagnostics: boolean;
+  tileCells: number;
+  debugTiles: boolean;
+  lodLevels: number;
+  lodFactor: number;
+  lodLevel: number;
+  lodPixelError: number;
   resources: boolean;
   resourceInterval: number;
   wellbores: boolean;
@@ -816,6 +822,11 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       constrainCoverage: props.constrainCoverage,
       constrainTerminations: props.constrainTerminations,
       maxNodes: props.maxNodes,
+      tileCells: props.tileCells || undefined,
+      lod:
+        props.lodLevels > 0
+          ? { levels: props.lodLevels, factor: props.lodFactor }
+          : undefined,
     }),
     [
       props.seal,
@@ -826,6 +837,9 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       props.constrainCoverage,
       props.constrainTerminations,
       props.maxNodes,
+      props.tileCells,
+      props.lodLevels,
+      props.lodFactor,
     ],
   );
 
@@ -1173,6 +1187,9 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
           diagnostics={props.buildDiagnostics}
           preview={props.preview}
           previewSaturation={props.previewSaturation}
+          debugTiles={props.debugTiles}
+          lodLevel={props.lodLevel}
+          lodPixelError={props.lodPixelError}
           outline={outline}
           surfaces={column}
           water={water}
@@ -1408,6 +1425,12 @@ export const Default: Story = {
     // Diagnostics
     renderStats: false,
     buildDiagnostics: true,
+    tileCells: 0,
+    debugTiles: false,
+    lodLevels: 0,
+    lodFactor: 4,
+    lodLevel: 0,
+    lodPixelError: 2,
     resources: true,
     resourceInterval: 1000,
   },
@@ -1960,6 +1983,45 @@ export const Default: Story = {
     buildDiagnostics: {
       description:
         'Measure `metrics.diagnostics` — the per-layer table and the `CHUNKREPORT` fields in the console. ⚠️ Costs ~0.9 s per build on this column, and the per-phase timings are part of it: off, the report keeps only the total.',
+      table: { category: 'Diagnostics' },
+    },
+    tileCells: {
+      control: { type: 'select' },
+      options: [0, 32, 64, 128, 256],
+      description:
+        'Triangulate in square tiles of this many reference-grid cells, joined along their seams (0 = one triangulation). The unit LOD will switch detail by. Rebuilds the chunk, not the shared column.',
+      table: { category: 'Diagnostics' },
+    },
+    debugTiles: {
+      description:
+        'Tint every surface by tessellation tile and draw the seams (needs `tileCells`): by level of detail while LOD is on (green full detail → red coarsest), otherwise a checker. Appearance only: toggling it rebuilds no geometry.',
+      table: { category: 'Diagnostics' },
+    },
+    lodLevels: {
+      control: { type: 'select' },
+      options: [0, 1, 2, 3, 4],
+      description:
+        'Also build this many coarser levels of detail over the same vertices, level k simplified to `maxError × lodFactor^k`: the rim, cuts, data edges and tile seams are kept, the pinch-out lines thinned. Rebuilds the chunk. See `lodTriangles` in the report.',
+      table: { category: 'Diagnostics' },
+    },
+    lodFactor: {
+      control: { type: 'select' },
+      options: [2, 4, 8],
+      description: 'How much coarser each level of detail is than the last.',
+      table: { category: 'Diagnostics' },
+    },
+    lodLevel: {
+      control: { type: 'select' },
+      options: [0, 1, 2, 3, 4],
+      description:
+        'Draw every cap at this level of detail (0 = full; needs `lodLevels`). Appearance only. Hidden-cap culling and peel patches are off while it is set.',
+      table: { category: 'Diagnostics' },
+    },
+    lodPixelError: {
+      control: { type: 'select' },
+      options: [0, 1, 2, 4, 8],
+      description:
+        'Pick a level of detail per tile so its height error stays under this many pixels on screen (0 = full detail; needs `lodLevels`). With `debugTiles` the tint shows each tile\'s level. Appearance only.',
       table: { category: 'Diagnostics' },
     },
     resources: {

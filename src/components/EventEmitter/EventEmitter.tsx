@@ -8,6 +8,14 @@ import {
 } from './EventEmitterContext';
 
 import { useFrame, useThree } from '@react-three/fiber';
+import {
+  createPickSchedule,
+  markPicked,
+  markRead,
+  observeCamera,
+  PickSchedule,
+  pickDue,
+} from './pick-schedule';
 import { PickingHelper, PickResult } from './picking-helper';
 
 const CLICK_SPEED = 300;
@@ -20,6 +28,14 @@ export type EmitterCallback = (e: PickResult) => void;
  * @expand
  */
 export type EventEmitterProps = {
+  /**
+   * Check every frame whether to pick (default `true`). A pick runs only while a
+   * listener is registered and the pointer is over the canvas, once the previous
+   * one is read back and four times its read back has passed (a read back waits
+   * for the GPU), and only when the pointer or the listeners changed since, the
+   * camera did and has stopped, or `update()` from the context asked for one.
+   * With `false`, `update()` picks at once instead.
+   */
   autoUpdate?: boolean;
   autoUpdateRenderPriority?: number;
   threshold?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
@@ -36,6 +52,9 @@ type EventState = {
   currentResult: PickResult;
   buttonDown: boolean;
   busy: boolean;
+  /** the pointer is over the canvas */
+  over: boolean;
+  schedule: PickSchedule;
   keys: KeysPressed;
   deltaTime: number;
   posX: number;
@@ -56,6 +75,8 @@ export const EventEmitter = ({
   const eventState = useMemo<EventState>(
     () => ({
       busy: false,
+      over: false,
+      schedule: createPickSchedule(),
       currentResult: {
         match: null,
         point: [0, 0],
@@ -193,22 +214,29 @@ export const EventEmitter = ({
     }
   }, [eventState, gl, camera]);
 
-  const update = useCallback(() => {
+  const pick = useCallback(() => {
+    const helper = eventState.pickingHelper;
     if (
-      eventState?.pickingHelper &&
-      !eventState.busy &&
-      !eventState.buttonDown
+      eventState.busy ||
+      eventState.buttonDown ||
+      helper.listenerCount === 0
     ) {
-      eventState.busy = true;
-      eventState.pickingHelper.updateListeners();
-      eventState.pickingHelper
-        .render(pointer, gl, scene, camera as PerspectiveCamera)
-        .then(pickResultHandler)
-        .finally(() => {
-          eventState.busy = false;
-        });
+      return;
     }
-  }, [gl, camera, scene, pointer, eventState, pickResultHandler]);
+    markPicked(eventState.schedule, pointer, camera, helper.version);
+    helper.updateListeners();
+    eventState.busy = helper.start(
+      pointer,
+      gl,
+      scene,
+      camera as PerspectiveCamera,
+    );
+  }, [gl, camera, scene, pointer, eventState]);
+
+  const update = useCallback(() => {
+    eventState.schedule.requested = true;
+    if (!autoUpdate) pick();
+  }, [eventState, autoUpdate, pick]);
 
   const context = useMemo<EventEmitterContextProps>(() => {
     return {
@@ -261,10 +289,22 @@ export const EventEmitter = ({
       eventState.keys.altKey = event.altKey;
     }
 
+    function onPointerOver() {
+      eventState.over = true;
+    }
+
+    let leaving: ReturnType<typeof setTimeout> | undefined;
     function onPointerLeave() {
-      setTimeout(() => {
+      eventState.over = false;
+      clearTimeout(leaving);
+      leaving = setTimeout(() => {
         pickResultHandler({ match: null, point: [0, 0], position: [0, 0, 0] });
       }, 60);
+    }
+
+    function onContextLost() {
+      eventState.pickingHelper.contextLost();
+      eventState.busy = false;
     }
 
     addEventListener('keydown', onKeyDown, { passive: true, capture: true });
@@ -278,10 +318,19 @@ export const EventEmitter = ({
       passive: true,
       capture: true,
     });
+    gl.domElement.addEventListener('pointermove', onPointerOver, {
+      passive: true,
+      capture: true,
+    });
+    gl.domElement.addEventListener('pointerenter', onPointerOver, {
+      passive: true,
+      capture: true,
+    });
     gl.domElement.addEventListener('pointerleave', onPointerLeave, {
       passive: true,
       capture: true,
     });
+    gl.domElement.addEventListener('webglcontextlost', onContextLost);
 
     return () => {
       // ⚠️ `capture` is part of a listener's identity: removing without it does
@@ -296,18 +345,48 @@ export const EventEmitter = ({
       gl.domElement.removeEventListener('pointerup', onPointerUp, {
         capture: true,
       });
+      gl.domElement.removeEventListener('pointermove', onPointerOver, {
+        capture: true,
+      });
+      gl.domElement.removeEventListener('pointerenter', onPointerOver, {
+        capture: true,
+      });
       gl.domElement.removeEventListener('pointerleave', onPointerLeave, {
         capture: true,
       });
+      gl.domElement.removeEventListener('webglcontextlost', onContextLost);
+      clearTimeout(leaving);
 
       eventState.pickingHelper.dispose();
     };
   }, [eventState, gl, checkOnClick, pickResultHandler]);
 
   useFrame(() => {
-    if (autoUpdate) {
-      update();
+    const helper = eventState.pickingHelper;
+    const schedule = eventState.schedule;
+    observeCamera(schedule, camera);
+    if (eventState.busy) {
+      const read = helper.poll();
+      if (read === undefined) return;
+      eventState.busy = false;
+      if (!read) return;
+      markRead(schedule, performance.now(), read.readMs);
+      // Landed after the pointer left: the leave reset already ran.
+      if (eventState.over) pickResultHandler(read.result);
+      return;
     }
+    if (!autoUpdate) return;
+    if (helper.listenerCount === 0) {
+      // Nothing left to tell: drop a hover whose listener is gone.
+      if (eventState.currentResult.match) {
+        eventState.currentResult = { ...eventState.currentResult, match: null };
+      }
+      return;
+    }
+    if (eventState.buttonDown || !eventState.over) return;
+    if (!pickDue(schedule, pointer, camera, helper.version, performance.now()))
+      return;
+    pick();
   }, autoUpdateRenderPriority);
 
   return (

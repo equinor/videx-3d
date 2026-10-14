@@ -1,20 +1,29 @@
 import {
+  ClampToEdgeWrapping,
   Color,
   ColorRepresentation,
+  DataTexture,
   DoubleSide,
+  HalfFloatType,
   IUniform,
+  LinearFilter,
+  Material,
   Matrix3,
+  NearestFilter,
+  RedFormat,
+  RGFormat,
   ShaderLib,
   ShaderMaterial,
   Side,
   Texture,
   UniformsUtils,
+  UnsignedByteType,
   Vector2,
   Vector3,
   Vector4,
 } from 'three';
 import { attachOitVariants } from '../../rendering/oit-material';
-import { Vec2 } from '../../sdk';
+import { StackCapNormalMap, StackTiling, Vec2 } from '../../sdk';
 import { ChunkContactTexture } from './chunk-contacts';
 import { ChunkDepthMap } from './chunk-depth-map';
 import { ChunkDetail, resolveChunkDetail } from './chunk-detail';
@@ -24,6 +33,104 @@ import vertexShader from './shaders/chunk-vert.glsl';
 
 /** Ambient multipliers facing up / facing down. See {@link ChunkMaterialParameters.ambient}. */
 export const DEFAULT_CHUNK_AMBIENT: Vec2 = [1.35, 0.5];
+
+/**
+ * The shared uniforms the tile diagnostic reads: where a chunk's tiles are, and
+ * one value per tile (`values`, red channel, 0..1 — meant for a LOD level).
+ *
+ * @group Components
+ */
+export type ChunkTileUniforms = {
+  toGrid: IUniform<Matrix3>;
+  /** x: cells per tile, yz: the first tile */
+  layout: IUniform<Vector3>;
+  values: IUniform<DataTexture>;
+  /** 1: colour each tile by its value; 0: a checker, which shows the tiling */
+  byValue: IUniform<number>;
+};
+
+/**
+ * {@link ChunkTileUniforms} for a chunk's tiling, every tile's value 0. The
+ * caller owns `values.value` and disposes it.
+ *
+ * @group Components
+ */
+export function createTileUniforms(tiling: StackTiling): ChunkTileUniforms {
+  const [a, b, c, d, e, f] = tiling.toGrid;
+  const [width, height] = tiling.count;
+  const values = new DataTexture(
+    new Uint8Array(width * height),
+    width,
+    height,
+    RedFormat,
+    UnsignedByteType,
+  );
+  values.magFilter = NearestFilter;
+  values.minFilter = NearestFilter;
+  values.needsUpdate = true;
+  return {
+    toGrid: { value: new Matrix3().set(a, b, c, d, e, f, 0, 0, 1) },
+    layout: {
+      value: new Vector3(tiling.cells, tiling.first[0], tiling.first[1]),
+    },
+    values: { value: values },
+    byValue: { value: 0 },
+  };
+}
+
+/**
+ * A cap's {@link StackCapNormalMap} as a texture, and the object XZ to uv
+ * transform to read it with (see {@link bindChunkNormalMap}). The caller disposes
+ * the texture.
+ *
+ * @group Components
+ */
+export function createCapNormalTexture(map: StackCapNormalMap): {
+  texture: DataTexture;
+  toUv: Matrix3;
+} {
+  const texture = new DataTexture(
+    map.data,
+    map.width,
+    map.height,
+    RGFormat,
+    HalfFloatType,
+  );
+  texture.magFilter = LinearFilter;
+  texture.minFilter = LinearFilter;
+  texture.wrapS = ClampToEdgeWrapping;
+  texture.wrapT = ClampToEdgeWrapping;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  const [a, b, c, d, e, f] = map.toUv;
+  return { texture, toUv: new Matrix3().set(a, b, c, d, e, f, 0, 0, 1) };
+}
+
+/**
+ * Point a {@link ChunkMaterial} at a cap's normal map for the draw about to
+ * happen, or off it with `null`. Read only where the tile is drawn coarser than
+ * the full level (see `ChunkMaterialParameters.tileLevels`); elsewhere the cap
+ * shades from its `normal` attribute. Meant for `Object3D.onBeforeRender`, which
+ * hands over the material actually drawn (an OIT variant included); anything else
+ * is left alone.
+ *
+ * ⚠️ Per draw rather than per material: one material can draw caps with different
+ * maps, and three re-uploads uniforms only when the material changes between draws.
+ *
+ * @group Components
+ */
+export function bindChunkNormalMap(
+  material: Material,
+  texture: Texture | null,
+  toUv: Matrix3 | null,
+): void {
+  const u = (material as ShaderMaterial).uniforms;
+  if (!u?.capNormalOn) return;
+  u.capNormalMap.value = texture;
+  if (toUv) (u.capNormalToUv.value as Matrix3).copy(toUv);
+  u.capNormalOn.value = texture ? 1 : 0;
+  (material as ShaderMaterial).uniformsNeedUpdate = true;
+}
 
 /**
  * The shared uniforms a fence cut reads. One set per stack, handed to every
@@ -301,6 +408,18 @@ export type ChunkMaterialParameters = {
    * and a uniform, so it shares the shader program with every other value.
    */
   saturation?: IUniform<number>;
+  /**
+   * Tint by tessellation tile, with the seams drawn: a diagnostic for tiling and
+   * LOD. SHARED like `sectionPlane`. ⚠️ Read at CONSTRUCTION.
+   */
+  tiles?: ChunkTileUniforms;
+  /**
+   * Each tile's level of detail (`values`, 0 = full): a cap reads its normal map
+   * only on a tile drawn coarser (see {@link bindChunkNormalMap}). Without it, a
+   * bound map is read everywhere. SHARED like `sectionPlane`. ⚠️ Read at
+   * CONSTRUCTION.
+   */
+  tileLevels?: ChunkTileUniforms;
 };
 
 const shader = {
@@ -405,6 +524,18 @@ export class ChunkMaterial extends ShaderMaterial {
     this.applyDetail(parameters.detail, parameters.wall === true);
     this.applyWaterTint(parameters.waterTint);
 
+    // A cap's tiles drawn coarser than the full level may shade from its normal
+    // map, bound per draw (see `bindChunkNormalMap`).
+    if (!parameters.wall) {
+      (this.defines as Record<string, unknown>).CHUNK_NORMAL_MAP = '';
+      u.capNormalMap = { value: null };
+      u.capNormalToUv = { value: new Matrix3() };
+      u.capNormalOn = { value: 0 };
+      if (parameters.tileLevels) {
+        (this.defines as Record<string, unknown>).CHUNK_TILE_LEVELS = '';
+      }
+    }
+
     // The shader has always carried the fog chunks, but a ShaderMaterial's `fog`
     // defaults to false, so three never defined USE_FOG and they compiled to
     // nothing. On, they let `scene.fog` attenuate a chunk by distance from the
@@ -442,6 +573,17 @@ export class ChunkMaterial extends ShaderMaterial {
     }
 
     this.applyContacts(parameters.contacts);
+
+    if (parameters.tiles) {
+      (this.defines as Record<string, unknown>).CHUNK_TILE_DEBUG = '';
+      this.uniforms.tileByValue = parameters.tiles.byValue;
+    }
+    const tiles = parameters.tiles ?? parameters.tileLevels;
+    if (tiles) {
+      this.uniforms.tileToGrid = tiles.toGrid;
+      this.uniforms.tileLayout = tiles.layout;
+      this.uniforms.tileValues = tiles.values;
+    }
 
     attachChunkPicking(this, {
       sectionPlane: parameters.sectionPlane,

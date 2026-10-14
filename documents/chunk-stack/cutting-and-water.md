@@ -199,6 +199,30 @@ thread. Two fixes:
 Measured: an animated section went from 250.3 ms/frame to 31.1 ms, and a still
 section costs the same as no section at all.
 
+3. **Only the cut part is uploaded** (`addUpdateRange` over `count`). The buffers
+   keep the size of the largest cut so far, and re-sending all of it every frame
+   meant that one horizontal cut made every later cut upload hundreds of MB.
+
+⚠️ A plane that is near-HORIZONTAL inside a field-scale column is still expensive
+while it moves (a camera-locked cut seen from above): it crosses nearly every
+triangle column, so the face is about as large as the tessellation. Troll, 33
+layers, sweeping through the block: about 350 ms per frame of cutting and 6 GB
+uploaded over 120 frames (27–39 GB before fix 3); a vertical cut in the same
+sweep costs about 55 ms per frame. Still, either costs nothing.
+💡 Possible future fixes (complementary — one makes cuts rarer, the other smaller):
+- **Rate-limit the plane:** move a moving plane (clip and faces together, so no
+  gaps) at most once per k × the last cut's duration, and always land it exactly
+  when the camera stops — a cheap vertical cut still follows every frame.
+- **Cut only what is in view, for a camera-locked plane.** Such a plane faces the
+  camera, so its visible part is the frustum's cross-section at the cut distance
+  (6.9 × 9.6 km at 6 km with a 60° camera). Measured over the same sweep: only
+  **6–13 %** of the emitted face triangles are on screen. The section index cells
+  already carry an XZ box and a per-interval Y range, so the frustum test sits next
+  to `|d| ≤ r`. ⚠️ Only for a camera-locked plane — a FIXED plane is free while the
+  camera moves today, and this would make every camera move recut it. ⚠️ Any other
+  camera (a second viewport, a user's own pass) would see hollow units outside the
+  cut region.
+
 The face is drawn with the **interval's own fill material**, so per-layer opacity
 and detail carry onto the section — with the cut switched off in that material (see
 [appearance.md](./appearance.md#which-mesh-gets-which-material)).

@@ -209,9 +209,15 @@ export function useChunkSection(
           options,
         );
       }
-      face.geometry.setDrawRange(0, face.target.count);
+      const count = face.target.count;
+      face.geometry.setDrawRange(0, count);
+      if (count === 0) continue;
+      // Only what was cut: the buffers keep the size of the largest cut so far.
       for (const name in face.geometry.attributes) {
-        face.geometry.attributes[name].needsUpdate = true;
+        const attribute = face.geometry.attributes[name] as BufferAttribute;
+        attribute.clearUpdateRanges();
+        attribute.addUpdateRange(0, count * attribute.itemSize);
+        attribute.needsUpdate = true;
       }
     }
   });

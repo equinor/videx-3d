@@ -1,3 +1,5 @@
+import { bakeCapNormalMap, StackCapNormalMap } from './cap-normal-map';
+
 /**
  * What one cap of a shared-tessellation stack is built from (see
  * {@link buildStackCapArrays}).
@@ -19,6 +21,16 @@ export type StackCapInput = {
   own: Uint32Array | null;
   /** the widened index of a peelable cap (see `StackGeometryLayer.patchIndex`) */
   peel: Uint32Array | null;
+  /**
+   * Per coarser level, the triangles the cap keeps there, already wound upward.
+   * Read only: the normal map covers what they draw beyond the full level.
+   */
+  levels?: Uint32Array[] | null;
+  /**
+   * Scene XZ to a grid, one texel per grid node (see `StackTiling.toGrid`). Given,
+   * the normals are ALSO baked into a {@link StackCapNormalMap} on that grid.
+   */
+  toGrid?: [number, number, number, number, number, number] | null;
 };
 
 /**
@@ -33,6 +45,8 @@ export type StackCapArrays = {
    * ~3e-5 resolution, half the bytes of the second-largest thing a cap holds.
    */
   normal: Int16Array;
+  /** the normals on the reference grid, when the input gave one (`toGrid`) */
+  normalMap: StackCapNormalMap | null;
   /** the index the cap draws, or `null` for the shared index, untouched */
   index: Uint32Array | null;
   /** see `StackGeometryLayer.patchIndex` */
@@ -112,7 +126,7 @@ function vertexNormals(
  * Both are emitted by the same pass over the triangles in the same order, and
  * `own` is a subset, so one walk finds the difference exactly.
  */
-function indexDifference(
+export function indexDifference(
   widest: Uint32Array,
   own: Uint32Array,
 ): Uint32Array | null {
@@ -157,6 +171,9 @@ export function buildStackCapArrays(input: StackCapInput): StackCapArrays {
     reverseWinding(widest);
     vertexNormals(xz, y, widest, normals);
   }
+  const normalMap = input.toGrid
+    ? bakeCapNormalMap(xz, y, normals, widest, input.levels, input.toGrid)
+    : null;
 
   let index: Uint32Array | null = widest;
   let patchIndex: Uint32Array | null = null;
@@ -206,6 +223,7 @@ export function buildStackCapArrays(input: StackCapInput): StackCapArrays {
 
   return {
     normal,
+    normalMap,
     index,
     patchIndex,
     box: [minX, minY, minZ, maxX, maxY, maxZ],

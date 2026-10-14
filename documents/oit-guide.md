@@ -299,7 +299,7 @@ useEffect(() => { oitPass.occlusionDepthStamp = true; }, [oitPass]);
 | Field | Default | Purpose |
 |-------|---------|---------|
 | `skipFront` | `false` | Debug: disable the exact depth-peeled front layer; resolve *every* transparent fragment through the WBOIT tail. Useful for isolating tail behaviour. |
-| `frontPeelTolerance` | `1e-5` | How close to the per-pixel nearest transparent fragment a fragment may be and still count as the front layer — see below. |
+| `frontPeelTolerance` | `1e-7` | How close to the per-pixel nearest transparent fragment a fragment may be and still count as the front layer — see below. |
 | `occlusionDepthStamp` | `false` | Let sufficiently-opaque **transparent surfaces** occlude 2D annotation labels behind them. Transparent surfaces normally write no depth, so labels are never occluded; this stamps depth where a surface's own alpha ≥ `occlusionDepthThreshold`. |
 | `occlusionDepthThreshold` | `0.5` | Alpha threshold for `occlusionDepthStamp`. |
 | `emitterDepthStamp` | `false` | Let the dense core of an additive **emitter** (e.g. perforation jets, `LAYERS.EMISSIVE`) occlude transparent surfaces *behind* it, preventing wash-out. The emitter opts in by exposing a depth-stamp material on `material.userData.occlusionDepthMaterial`. |
@@ -326,7 +326,13 @@ float tol = minZ * oitFrontTolerance + 1e-9;
 
 `minZ` is normalised by `camera.far`, so the tolerance is a **fraction of the view
 distance**: the slab it defines is roughly `distance × frontPeelTolerance` metres —
-about 14 cm at 14 km with the default `1e-5`.
+about 1.4 mm at 14 km with the default `1e-7`.
+
+Measured on a 33-layer field (2026-10-14, Intel Iris Xe), against `1e-7` at 15 km:
+`1e-4` changed 0.2 % of the pixels and `1e-5` (the former default) 0.025 % — thin
+bands where converging surfaces bled through each other — while `1e-8`, `1e-9` and
+`0` drew the same image as `1e-7`. On that GPU the passes agree to the last bit; on
+others, raise it if the front layer shimmers.
 
 It exists *only* to absorb the last-ULP disagreement between the min-depth pre-pass
 and the front/tail passes. Those rasterise the same geometry from the same vertex
@@ -360,6 +366,23 @@ can never be drawn by the front *and* kept by the tail — double-counting would
 as extra opacity, which is the artefact class this whole knob is about.
 
 `skipFront = true` is the A/B: if an artefact survives it, the peel did not cause it.
+
+### What a transparent frame costs
+
+Measured on a 33-layer chunk column (2026-10-14, Intel Iris Xe, opacity 0.75, chunk
+LOD at 2 px), GPU ms per render target:
+
+| View | Opaque | Min-depth | Tail | Composite + front | SMAA | Total |
+|---|---|---|---|---|---|---|
+| 15 km | 0.4 | 9.8 | 12.9 | 11.7 | 1.5 | 36 |
+| 2.5 km | 0.4 | 15.6 | 21.1 | 18.1 | 1.5 | 57 |
+| 15 km, LOD off | 0.4 | 17.9 | 19.1 | 18.9 | 1.5 | 58 |
+
+The min-depth pass returns before any shading, yet costs nearly as much as the two
+shaded passes: the cost is the number of fragments (about 21 surfaces deep per pixel,
+in each of three passes) plus about 1 ms per million triangles per pass, not the
+shader. Fewer fragments or fewer passes is what helps; `skipFront` (one pass instead
+of three) halves it.
 
 ---
 

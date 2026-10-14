@@ -6,6 +6,7 @@ import {
   capVisibilityKey,
   createCapView,
   createIntervalProbe,
+  keyOnlyHides,
   releaseCapView,
   visibleCapIndex,
 } from './cap-visibility';
@@ -61,19 +62,21 @@ type CapEntry = { key: string; geometry: BufferGeometry | null };
 
 type CulledCaps = {
   chunk: SurfaceChunk;
-  key: string | null;
+  /** per cap, the key its geometry answers for */
+  keys: string[] | null;
   geometries: (BufferGeometry | null)[] | null;
 };
 
 /**
  * What to draw for each of `chunk.surfaces`: the cap itself, a view of its
  * visible triangles (see `createCapView`), or `null` for nothing. `null` overall
- * means "draw every cap whole" — which is also the answer while a change is
- * still being applied, so a stale result can never hide a cap.
+ * means "draw every cap whole".
  *
  * ⭐ A cap is only re-filtered when the open state of a unit it actually faces
  * changes, so the camera crossing one horizon touches the caps of that unit and
- * nothing else.
+ * nothing else. Until a change is applied, a cap it reveals more of is drawn
+ * whole, so a stale result never hides one. A change that only hides keeps the
+ * cap's view (more than needed), and is applied one cap per frame.
  *
  * @param tables per surface, its open table (`capOpenTable`), or `null` to draw
  *   it whole; `null` overall to cull nothing
@@ -91,12 +94,20 @@ export function useCulledCaps(
         : null,
     [chunk, tables],
   );
-  const key = keys ? keys.join('|') : null;
 
   const [built, setBuilt] = useState<CulledCaps | null>(null);
   // Mutated in place, never reassigned, so the unmount cleanup can hold them.
   const live = useRef(new Map<SurfaceChunkMesh, CapEntry>());
   const retired = useRef<BufferGeometry[]>([]);
+  // Caps drawing more than their key needs, and the frame that swaps one of them.
+  const deferred = useRef(new Set<SurfaceChunkMesh>());
+  const applyOne = useRef(false);
+  const [tick, setTick] = useState(0);
+  useFrame(() => {
+    if (deferred.current.size === 0 || applyOne.current) return;
+    applyOne.current = true;
+    setTick(t => t + 1);
+  });
 
   // ⚠️ Declared BEFORE the effect that retires views: a view retired in this
   // commit may still be on screen until the state it was replaced in commits.
@@ -108,6 +119,11 @@ export function useCulledCaps(
   useEffect(() => {
     const previous = new Map(live.current);
     live.current.clear();
+    const due = applyOne.current
+      ? deferred.current.values().next().value
+      : undefined;
+    applyOne.current = false;
+    deferred.current.clear();
     const geometries =
       tables && keys
         ? chunk.surfaces.map((surface, i) => {
@@ -117,7 +133,14 @@ export function useCulledCaps(
               return surface.geometry;
             }
             let entry = previous.get(surface);
-            if (!entry || entry.key !== keys[i]) {
+            if (
+              entry &&
+              entry.key !== keys[i] &&
+              surface !== due &&
+              keyOnlyHides(entry.key, keys[i])
+            ) {
+              deferred.current.add(surface);
+            } else if (!entry || entry.key !== keys[i]) {
               const visible = visibleCapIndex(
                 index.array,
                 surface.above,
@@ -147,12 +170,12 @@ export function useCulledCaps(
     setBuilt(current =>
       current &&
       current.chunk === chunk &&
-      current.key === key &&
+      sameItems(current.keys, keys) &&
       sameItems(current.geometries, geometries)
         ? current
-        : { chunk, key, geometries },
+        : { chunk, keys, geometries },
     );
-  }, [chunk, tables, keys, key]);
+  }, [chunk, tables, keys, tick]);
 
   useEffect(() => {
     const views = live.current;
@@ -168,7 +191,13 @@ export function useCulledCaps(
     };
   }, []);
 
-  return built && built.chunk === chunk && built.key === key
-    ? built.geometries
-    : null;
+  return useMemo(() => {
+    if (!keys || !built || built.chunk !== chunk) return null;
+    const { keys: answered, geometries } = built;
+    if (!answered || !geometries) return null;
+    if (sameItems(answered, keys)) return geometries;
+    return chunk.surfaces.map((surface, i) =>
+      keyOnlyHides(answered[i], keys[i]) ? geometries[i] : surface.geometry,
+    );
+  }, [built, chunk, keys]);
 }

@@ -65,7 +65,7 @@ describe('buildStackCapArrays', () => {
       });
       const theirs = grid(12, up);
       const expected = viaThree(theirs.xz, theirs.y, theirs.index);
-      expect(Array.from(arrays.normal)).toEqual(expected.normal);
+      expect(Array.from(arrays.normal!)).toEqual(expected.normal);
       expect(Array.from(arrays.index!)).toEqual(expected.index);
       expect(arrays.box).toEqual(expected.box);
       expect(arrays.sphere).toEqual(expected.sphere);
@@ -111,5 +111,27 @@ describe('buildStackCapArrays', () => {
     expect(cap(true).arrays.index).toBeNull();
     const down = cap(false);
     expect(down.arrays.index).toBe(down.index);
+  });
+
+  it('also bakes the normals into a map, when given the grid', () => {
+    const { xz, y, index } = grid(6, true);
+    const arrays = buildStackCapArrays({
+      positionsXZ: xz,
+      y,
+      shared: new Uint32Array(0),
+      own: index,
+      peel: null,
+      toGrid: [0.1, 0, 0, 0, 0.1, 0],
+    });
+    const plain = buildStackCapArrays({
+      positionsXZ: xz,
+      y,
+      shared: new Uint32Array(0),
+      own: grid(6, true).index,
+      peel: null,
+    });
+    expect(Array.from(arrays.normal)).toEqual(Array.from(plain.normal));
+    expect(plain.normalMap).toBeNull();
+    expect(arrays.normalMap!.width).toBeGreaterThan(0);
   });
 });

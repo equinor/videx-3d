@@ -23,6 +23,9 @@ const defaults = {
   radius: 3,
 };
 
+/** Polls after which a read back still not done is given up (a wedged or lost GPU). */
+const PICK_MAX_FRAMES = 120;
+
 export type PickedObject = {
   emitter: Emitter;
   index: number;
@@ -41,7 +44,8 @@ export type PickResult = {
 export class PickingHelper {
   private _size: number;
   private _radius: number;
-  private _pbo: WebGLRenderTarget;
+  /** the patch under the pointer is rendered here, then read back */
+  private _target: WebGLRenderTarget;
   private _buffer: Float32Array;
   private _prevClearColor: Color = new Color();
 
@@ -64,6 +68,35 @@ export class PickingHelper {
   private _emitters = new Map<number, Emitter>();
   /** Stamped on every emitter each traversal, so stale ones can be swept. */
   private _generation = 0;
+  private _version = 0;
+
+  /** Meshes picked with a material of their own this pick (see `collectSwap`). */
+  private _swapObjects: RenderableObject[] = [];
+  private _swapMaterials: Material[] = [];
+  private _swapOriginals: Material[] = [];
+  private _swapCount = 0;
+  private _swapSeen = new Set<Object3D>();
+
+  /** The read back in flight: a pixel pack buffer per pick, deleted once read. */
+  private _gl: WebGL2RenderingContext | null = null;
+  private _pack: WebGLBuffer | null = null;
+  private _sync: WebGLSync | null = null;
+  private _pending: {
+    mapLength: number;
+    mapTotal: number;
+    point: Vec2;
+    frames: number;
+  } | null = null;
+
+  /** listeners registered; nothing is picked while there are none */
+  get listenerCount() {
+    return this._listeners.size;
+  }
+
+  /** changes whenever a listener is added or removed */
+  get version() {
+    return this._version;
+  }
 
   // Range-based object map rebuilt every pick. Each emitter occupies a
   // contiguous range of flat ids [start, start + count) so we store a single
@@ -81,7 +114,7 @@ export class PickingHelper {
     this._radius = Math.max(Math.min(10, radius), 0);
     this._size = 2 * this._radius + 1;
 
-    this._pbo = new WebGLRenderTarget(this._size, this._size, {
+    this._target = new WebGLRenderTarget(this._size, this._size, {
       colorSpace: NoColorSpace,
       samples: 0,
       format: RGBAFormat,
@@ -106,6 +139,7 @@ export class PickingHelper {
     rootId: number,
     depth: number,
     threshold?: number,
+    custom?: Material,
   ) => {
     if (object.visible && !object.layers.isEnabled(LAYERS.NOT_EMITTER)) {
       if (
@@ -159,6 +193,7 @@ export class PickingHelper {
           // assign an emitter id to the object and activate emitter layer
           object.userData.__emitterID = baseId + 1;
           object.layers.enable(LAYERS.EMITTER);
+          this.collectSwap(object as RenderableObject, custom);
         } else {
           object.layers.disable(LAYERS.EMITTER);
           delete object.userData.__emitterID;
@@ -166,14 +201,47 @@ export class PickingHelper {
       }
 
       for (let i = 0; i < object.children.length; i++) {
-        this.traverseObject(object.children[i], rootId, depth + 1, threshold);
+        this.traverseObject(
+          object.children[i],
+          rootId,
+          depth + 1,
+          threshold,
+          custom,
+        );
       }
     }
   };
 
+  /**
+   * Swap in custom emitter materials so displaced / instanced geometry (e.g. the
+   * Trajectory tube, whose shape is reconstructed in its vertex shader) is picked
+   * with the same silhouette it is drawn with. A material may be provided per-mesh
+   * via `userData.emitterMaterial` (preferred — works under any ancestor listener,
+   * e.g. a Wellbore, with no dedicated registration), by the mesh's own material
+   * via `setPickingMaterial` (so a material that discards fragments is picked with
+   * the same discards), or per-listener via `customMaterial`. A mesh reachable from
+   * more than one listener is swapped once, so its own material comes back.
+   */
+  private collectSwap(object: RenderableObject, custom?: Material) {
+    if (!object.material || this._swapSeen.has(object)) return;
+    const material =
+      (object.userData.emitterMaterial as Material | undefined) ||
+      (Array.isArray(object.material)
+        ? undefined
+        : getPickingMaterial(object.material)) ||
+      custom;
+    if (!material) return;
+    this._swapSeen.add(object);
+    this._swapObjects[this._swapCount] = object;
+    this._swapMaterials[this._swapCount] = material;
+    this._swapCount++;
+  }
+
   updateListeners = () => {
     this._objectMapLength = 0;
     this._objectMapCount = 0;
+    this._swapCount = 0;
+    this._swapSeen.clear();
     const generation = ++this._generation;
     this._listeners.forEach(listener => {
       this.traverseObject(
@@ -181,6 +249,7 @@ export class PickingHelper {
         listener.object.id,
         0,
         listener.threshold,
+        listener.customMaterial,
       );
     });
     // ⚠⚠ `traverseObject` only ever ADDS, and `removeListener` can only reach the
@@ -197,6 +266,7 @@ export class PickingHelper {
 
   addListener = (listener: Listener) => {
     this._listeners.set(listener.object.id, listener);
+    this._version++;
   };
 
   getListener = (id: number) => {
@@ -209,6 +279,7 @@ export class PickingHelper {
       const { object } = listener;
       // remove listener and associated emitters
       this._listeners.delete(id);
+      this._version++;
       object.traverse(obj => {
         obj.layers.disable(LAYERS.EMITTER);
         delete obj.userData.__emitterID;
@@ -217,12 +288,20 @@ export class PickingHelper {
     }
   };
 
-  async render(
+  /**
+   * Render the patch under `pointer` and start reading it back, without waiting:
+   * {@link poll} hands over the result once the GPU has it. Run {@link
+   * updateListeners} first. Returns false when nothing was started.
+   */
+  start(
     pointer: Vector2,
     renderer: WebGLRenderer,
     scene: Scene,
     camera: PerspectiveCamera,
-  ) {
+  ): boolean {
+    const gl = renderer.getContext() as WebGL2RenderingContext;
+    if (this._pending || gl.isContextLost()) return false;
+
     const width = renderer.domElement.clientWidth;
     const height = renderer.domElement.clientHeight;
     const point = pointer.toArray();
@@ -232,6 +311,7 @@ export class PickingHelper {
     const y = screen[1] - this._radius;
 
     const prevSceneBackground = scene.background;
+    const prevTarget = renderer.getRenderTarget();
 
     renderer.getClearColor(this._prevClearColor);
     const prevClearAlpha = renderer.getClearAlpha();
@@ -251,72 +331,100 @@ export class PickingHelper {
     // mouse (rebuilds the picking camera's projection only).
     pickCamera.setViewOffset(width, height, x, y, this._size, this._size);
 
-    // snapshot the active object map extent for the deferred readback (the
-    // arrays are not mutated again until this pick resolves and releases the
-    // EventEmitter's busy guard)
-    const mapLength = this._objectMapLength;
-    const mapTotal = this._objectMapCount;
+    const swaps = this._swapCount;
+    for (let i = 0; i < swaps; i++) {
+      const object = this._swapObjects[i];
+      this._swapOriginals[i] = object.material;
+      object.material = this._swapMaterials[i];
+    }
 
-    // Swap in custom emitter materials so displaced / instanced geometry (e.g. the
-    // Trajectory tube, whose shape is reconstructed in its vertex shader) is picked
-    // with the same silhouette it is drawn with. A material may be provided per-mesh
-    // via `userData.emitterMaterial` (preferred — works under any ancestor listener,
-    // e.g. a Wellbore, with no dedicated registration), by the mesh's own material
-    // via `setPickingMaterial` (so a material that discards fragments is picked with
-    // the same discards), or per-listener via `customMaterial`. Guard against
-    // double-swapping a mesh reachable from multiple listeners so the original
-    // material is restored correctly.
-    const postUpdates: (() => void)[] = [];
-    const swapped = new Set<RenderableObject>();
-    this._listeners.forEach(listener => {
-      listener.object.traverse((obj: Object3D) => {
-        if (!obj.layers.isEnabled(LAYERS.EMITTER)) return;
-        const robj = obj as RenderableObject;
-        if (!robj.material || swapped.has(robj)) return;
-        const material =
-          (obj.userData.emitterMaterial as Material | undefined) ||
-          (Array.isArray(robj.material)
-            ? undefined
-            : getPickingMaterial(robj.material)) ||
-          listener.customMaterial;
-        if (material) {
-          const originalMaterial = robj.material;
-          robj.material = material;
-          swapped.add(robj);
-          postUpdates.push(() => {
-            robj.material = originalMaterial;
-          });
-        }
-      });
-    });
-
-    renderer.setRenderTarget(this._pbo);
+    renderer.setRenderTarget(this._target);
     renderer.setClearColor(0x000000, 0);
     renderer.clear();
     renderer.render(scene, pickCamera);
 
     scene.background = prevSceneBackground;
-
     scene.overrideMaterial = null;
+    for (let i = 0; i < swaps; i++) {
+      this._swapObjects[i].material = this._swapOriginals[i];
+      this._swapOriginals[i] = null!;
+    }
 
-    // restore original material for emitter objects associated with listeners with custom material
-    postUpdates.forEach(callback => callback());
+    // Copy the patch into the pack buffer ON the GPU while the target is bound, and
+    // fence it: three's own async read asks the GPU for the pixel type first, which
+    // waits for it as long as a read back does.
+    renderer.setRenderTarget(this._target);
+    this._gl = gl;
+    // A new buffer each pick: refilling one makes Chrome warn on every pick.
+    this._pack = gl.createBuffer();
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this._pack);
+    gl.bufferData(gl.PIXEL_PACK_BUFFER, this._buffer.byteLength, gl.STREAM_READ);
+    gl.readPixels(0, 0, this._size, this._size, gl.RGBA, gl.FLOAT, 0);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    this._sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    gl.flush();
 
     renderer.setClearColor(this._prevClearColor, prevClearAlpha);
-    renderer.setRenderTarget(null);
+    renderer.setRenderTarget(prevTarget);
 
-    return renderer
-      .readRenderTargetPixelsAsync(
-        this._pbo,
-        0, // x
-        0, // y
-        this._size, // width
-        this._size, // height
+    // The object map is not touched again until this pick is polled out.
+    this._pending = {
+      mapLength: this._objectMapLength,
+      mapTotal: this._objectMapCount,
+      point,
+      frames: 0,
+    };
+    return true;
+  }
+
+  /**
+   * The pick {@link start} began, once the GPU has it: `undefined` while it is
+   * still on its way, `null` when there is none (none started, the context was
+   * lost, or it waited `PICK_MAX_FRAMES` polls). Poll once per frame.
+   */
+  poll(): { result: PickResult; readMs: number } | null | undefined {
+    const pending = this._pending;
+    const gl = this._gl;
+    if (!pending || !gl || !this._sync) return null;
+    if (gl.isContextLost()) {
+      this.contextLost();
+      return null;
+    }
+    const status = gl.clientWaitSync(this._sync, 0, 0);
+    if (status === gl.TIMEOUT_EXPIRED && ++pending.frames < PICK_MAX_FRAMES) {
+      return undefined;
+    }
+    const pack = this._pack;
+    gl.deleteSync(this._sync);
+    this._sync = null;
+    this._pack = null;
+    this._pending = null;
+    if (status !== gl.ALREADY_SIGNALED && status !== gl.CONDITION_SATISFIED) {
+      gl.deleteBuffer(pack);
+      return null;
+    }
+    const t0 = performance.now();
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pack);
+    gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, this._buffer);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    const readMs = performance.now() - t0;
+    gl.deleteBuffer(pack);
+    return {
+      result: this.pick(
         this._buffer,
-      )
-      .then(buffer =>
-        this.pick(buffer as Float32Array, mapLength, mapTotal, point),
-      );
+        pending.mapLength,
+        pending.mapTotal,
+        pending.point,
+      ),
+      readMs,
+    };
+  }
+
+  /** Forget the GPU objects of a lost context; the next pick makes new ones. */
+  contextLost() {
+    this._pack = null;
+    this._sync = null;
+    this._pending = null;
   }
 
   /**
@@ -410,7 +518,19 @@ export class PickingHelper {
   }
 
   dispose() {
-    this._pbo.dispose();
+    this._target.dispose();
+    const gl = this._gl;
+    if (gl && !gl.isContextLost()) {
+      if (this._sync) gl.deleteSync(this._sync);
+      if (this._pack) gl.deleteBuffer(this._pack);
+    }
+    this.contextLost();
+    this._gl = null;
+    this._swapObjects.length = 0;
+    this._swapMaterials.length = 0;
+    this._swapOriginals.length = 0;
+    this._swapCount = 0;
+    this._swapSeen.clear();
     const listeners = Array.from(this._listeners.values());
     this._material.dispose();
     listeners.forEach(listener =>

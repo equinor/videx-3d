@@ -244,6 +244,15 @@ export type ChunkStackProps = {
    */
   previewSaturation?: number;
   /**
+   * Default for child chunks: tint by tessellation tile and draw the seams (see
+   * `ChunkProps.debugTiles`). Default false.
+   */
+  debugTiles?: boolean;
+  /** Default for child chunks: see `ChunkProps.lodLevel`. Default 0. */
+  lodLevel?: number;
+  /** Default for child chunks: see `ChunkProps.lodPixelError`. Default 2. */
+  lodPixelError?: number;
+  /**
    * Called whenever a child chunk starts building, reports a step, or finishes —
    * for a busy indicator or a progress bar. See {@link ChunkStackProgress} for why
    * the count is in chunks rather than in work.
@@ -288,6 +297,9 @@ export const ChunkStack = ({
   diagnostics,
   preview,
   previewSaturation,
+  debugTiles,
+  lodLevel,
+  lodPixelError,
   onProgress,
   children,
 }: PropsWithChildren<ChunkStackProps>) => {
@@ -845,6 +857,9 @@ export const ChunkStack = ({
       diagnostics,
       preview,
       previewSaturation,
+      debugTiles,
+      lodLevel,
+      lodPixelError,
       outlines: registry,
       seams,
       margins,
@@ -884,6 +899,9 @@ export const ChunkStack = ({
     diagnostics,
     preview,
     previewSaturation,
+    debugTiles,
+    lodLevel,
+    lodPixelError,
     registry,
     seams,
     margins,

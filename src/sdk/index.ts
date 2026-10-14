@@ -10,6 +10,7 @@ export * from './data/Store';
 export * from './data/types';
 
 export * from './geometries/boundary-loops';
+export * from './geometries/cap-normal-map';
 export * from './geometries/chamfer';
 export * from './geometries/curve/curve-3d';
 export * from './geometries/curve/tube-geometry';
@@ -43,6 +44,7 @@ export * from './geometries/surface-outline';
 export * from './geometries/surface-seal';
 export * from './geometries/surface-section';
 export * from './geometries/stack-cap-arrays';
+export * from './geometries/stack-tiles';
 export * from './geometries/surface-stack';
 export * from './geometries/surface-stack-candidates';
 export * from './geometries/surface-stack-geometry';

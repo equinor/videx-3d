@@ -7,6 +7,7 @@ import {
   capVisibilityKey,
   createCapView,
   createIntervalProbe,
+  keyOnlyHides,
   openIntervals,
   releaseCapView,
   visibleCapIndex,
@@ -294,6 +295,16 @@ describe('cap visibility rules', () => {
     expect(capVisibilityKey({ ...surface, units: [0, 1] }, table)).toBe(
       capVisibilityKey(surface, table),
     );
+  });
+
+  it('tells a change that only closes units from one that opens any', () => {
+    expect(keyOnlyHides('110', '010')).toBe(true);
+    expect(keyOnlyHides('110', '110')).toBe(true);
+    expect(keyOnlyHides('010', '110')).toBe(false);
+    // One closes, one opens: it reveals something.
+    expect(keyOnlyHides('10', '01')).toBe(false);
+    // A cap with no table yet has nothing drawn to fall back on.
+    expect(keyOnlyHides('', '0')).toBe(false);
   });
 });
 

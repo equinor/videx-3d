@@ -659,9 +659,8 @@ export function sectionStackInterval(
         continue;
       }
       for (let k = 1; k + 1 < m; k++) {
-        const tri = [order[0], order[k], order[k + 1]];
         for (let s = 0; s < 3; s++) {
-          const p = tri[s];
+          const p = s === 0 ? order[0] : order[k + s - 1];
           const at = needed + s;
           target.positions[3 * at] = cutX[p] + ox;
           target.positions[3 * at + 1] = cutY[p] + oy;

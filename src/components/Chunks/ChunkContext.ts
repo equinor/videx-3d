@@ -44,6 +44,12 @@ export type ChunkStackContextValue = {
   preview?: boolean;
   /** default for `ChunkProps.previewSaturation` */
   previewSaturation?: number;
+  /** default for `ChunkProps.debugTiles` */
+  debugTiles?: boolean;
+  /** default for `ChunkProps.lodLevel` */
+  lodLevel?: number;
+  /** default for `ChunkProps.lodPixelError` */
+  lodPixelError?: number;
   /**
    * Default build options for the column (see `ChunkStackProps.resolve`), used by
    * chunks that declare none of their own.

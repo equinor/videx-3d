@@ -57,9 +57,36 @@ uniform vec2 fenceSize;   // grid size in texels
 #include ../../../sdk/materials/shaderLib/fence-field.glsl
 #endif
 
-#if defined(CHUNK_CONTACTS) || defined(CHUNK_BATHYMETRY) || defined(CHUNK_FENCE) || defined(CHUNK_FENCE_OVERLAY)
+#if defined(CHUNK_CONTACTS) || defined(CHUNK_BATHYMETRY) || defined(CHUNK_FENCE) || defined(CHUNK_FENCE_OVERLAY) || defined(CHUNK_TILE_DEBUG) || defined(CHUNK_TILE_LEVELS)
 varying vec3 vObjectPos;
 #include ../../../sdk/materials/shaderLib/depth-map.glsl
+#endif
+
+#if defined(CHUNK_TILE_DEBUG) || defined(CHUNK_TILE_LEVELS)
+uniform mat3 tileToGrid;      // object XZ -> reference grid (column, row)
+uniform vec3 tileLayout;      // x: cells per tile, yz: the first tile
+uniform sampler2D tileValues; // one texel per tile; red: a value per tile (LOD level)
+
+// Where `objectXZ` lies in tile units, by the same formula the tessellation tiles by.
+vec2 chunkTileCell(vec2 objectXZ) {
+  return ((tileToGrid * vec3(objectXZ, 1.0)).xy + 0.5) / tileLayout.x;
+}
+
+float chunkTileValue(vec2 tile) {
+  ivec2 at = clamp(ivec2(tile - tileLayout.yz), ivec2(0), textureSize(tileValues, 0) - 1);
+  return texelFetch(tileValues, at, 0).r;
+}
+#endif
+
+#ifdef CHUNK_TILE_DEBUG
+uniform float tileByValue;    // 1: colour by the value, 0: a checker
+#endif
+
+#ifdef CHUNK_NORMAL_MAP
+uniform sampler2D capNormalMap; // rg: the normal's x and z; its y is positive
+uniform float capNormalOn;
+uniform mat3 normalMatrix;
+varying vec2 vCapNormalUv;
 #endif
 
 #ifdef CHUNK_FENCE_OVERLAY
@@ -200,6 +227,26 @@ void main() {
 
   #include <specularmap_fragment>
   #include <normal_fragment_begin>
+
+  #if defined(CHUNK_NORMAL_MAP) && !defined(FLAT_SHADED)
+  // A coarse triangle has no normals of its own: the full level's, from the map.
+  #ifdef CHUNK_TILE_LEVELS
+  bool capNormalRead = capNormalOn > 0.5 && chunkTileValue(floor(chunkTileCell(vObjectPos.xz))) > 0.0;
+  #else
+  bool capNormalRead = capNormalOn > 0.5;
+  #endif
+  if (capNormalRead) {
+    vec2 capXZ = texture2D(capNormalMap, vCapNormalUv).rg;
+    normal = normalize(normalMatrix * vec3(capXZ.x, sqrt(max(1.0 - dot(capXZ, capXZ), 0.0)), capXZ.y));
+    #ifdef FLIP_SIDED
+    normal = -normal;
+    #endif
+    #ifdef DOUBLE_SIDED
+    normal *= faceDirection;
+    #endif
+    nonPerturbedNormal = normal;
+  }
+  #endif
 
   #ifdef CHUNK_DETAIL
   {
@@ -428,6 +475,24 @@ void main() {
   #endif
 
   outgoingLight = mix(vec3(dot(outgoingLight, vec3(0.2126, 0.7152, 0.0722))), outgoingLight, chunkSaturation);
+
+  #ifdef CHUNK_TILE_DEBUG
+  {
+    vec2 cell = chunkTileCell(vObjectPos.xz);
+    vec2 tile = floor(cell);
+    float value = chunkTileValue(tile);
+    // Green (full detail) through yellow to red (the coarsest level).
+    vec3 ramp = value < 0.5
+      ? mix(vec3(0.3, 0.85, 0.4), vec3(1.0, 0.85, 0.25), value * 2.0)
+      : mix(vec3(1.0, 0.85, 0.25), vec3(1.0, 0.25, 0.3), value * 2.0 - 1.0);
+    vec3 checker = mod(tile.x + tile.y, 2.0) < 0.5 ? vec3(1.0, 0.62, 0.25) : vec3(0.3, 0.65, 1.0);
+    vec3 hue = tileByValue > 0.5 ? ramp : checker;
+    outgoingLight = mix(outgoingLight, outgoingLight * hue * 1.5, 0.5);
+    // A line of constant width on screen, so it reads at field scale too.
+    vec2 edge = min(fract(cell), 1.0 - fract(cell)) / max(fwidth(cell), vec2(1e-6));
+    outgoingLight = mix(outgoingLight, vec3(0.02), 0.9 * (1.0 - smoothstep(0.5, 1.5, min(edge.x, edge.y))));
+  }
+  #endif
 
   #include <opaque_fragment>
   #include <tonemapping_fragment>

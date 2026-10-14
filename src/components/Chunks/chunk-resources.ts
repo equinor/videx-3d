@@ -186,6 +186,11 @@ function measure(chunk: SurfaceChunk): Measured {
     total += geometryBytes(mesh.geometry, seen);
     count(mesh.geometry);
     add(mesh.patchIndex);
+    mesh.levels?.forEach(add);
+    mesh.tileStarts?.forEach(add);
+    mesh.patchLevels?.forEach(add);
+    mesh.patchTileStarts?.forEach(add);
+    add(mesh.normalMap?.data);
   }
   for (const wall of chunk.walls) {
     total += geometryBytes(wall.geometry, seen);

@@ -9,7 +9,6 @@ import {
 import {
   assembleChunk,
   AssembleChunkLayer,
-  beginSurfaceStack,
   buildStackReference,
   buildSurfaceStack,
   buildSyntheticChannel,
@@ -17,7 +16,7 @@ import {
   chunkSurfaceMesh,
   chunkWallMeshes,
   clampStackToCarrier,
-  collectStackCandidates,
+  collectStackCandidateLevels,
   DEFAULT_STACK_COLLAPSE_THRESHOLD,
   densifyChunkRim,
   emitPartial,
@@ -28,6 +27,7 @@ import {
   packSurfaceChunkCap,
   PartialSink,
   PlanarPolygonGeometry,
+  planSurfaceStack,
   previewStackCandidates,
   rasterizeStackOutline,
   ReadonlyStore,
@@ -46,6 +46,7 @@ import {
   SurfaceChunkPacket,
   SurfaceStackBuild,
   SurfaceStackOptions,
+  SurfaceStackPlan,
   SurfaceStackShared,
   SurfaceStackStream,
 } from '../sdk';
@@ -54,26 +55,34 @@ import { claimGeneratorRun } from './generator-supersede';
 import {
   getStackCandidates,
   getStackContext,
+  getStackDerived,
+  keepStackDerived,
   StackProgress,
 } from './surface-stack-context';
 import {
   buildStackCaps,
   refineStackChannels,
   scanStackTerminations,
+  tessellateStackTiles,
 } from './workers/stack-worker-pool';
 
 /**
- * `buildSurfaceStack`, with the caps built across the stack worker pool — each
- * is independent of the others, and together they are its longest step after
- * the tessellation. A streamed cap goes out as it finishes, in any order.
+ * `buildSurfaceStack`, with the tessellation's tiles and then the caps built
+ * across the stack worker pool — each is independent of the others, and together
+ * they are its longest steps. A streamed cap goes out as it finishes, in any order.
  */
 async function buildStackOnPool(
   reference: StackReference,
   layers: StackLayer[],
   options: SurfaceStackOptions,
   isStale: () => boolean,
+  onPlan?: (plan: SurfaceStackPlan) => void,
 ): Promise<SurfaceStackBuild | null> {
-  const pending = beginSurfaceStack(reference, layers, options);
+  const plan = planSurfaceStack(reference, layers, options);
+  onPlan?.(plan);
+  const outputs = await tessellateStackTiles(plan.tiles, isStale);
+  if (!outputs) return null;
+  const pending = plan.begin(outputs);
   if (!pending) return null;
   const built: StackGeometryLayer[] = new Array(pending.jobs.length);
   await buildStackCaps(
@@ -157,6 +166,11 @@ function streamPackets(
           ...layers[i],
           geometry: built.geometry,
           patchIndex: built.patchIndex,
+          levels: built.levels,
+          tileStarts: built.tileStarts,
+          patchLevels: built.patchLevels,
+          patchTileStarts: built.patchTileStarts,
+          normalMap: built.normalMap,
         },
         i,
       );
@@ -195,6 +209,7 @@ function sendPreview(
     refineCoverage: false,
     constrainCoverage: false,
     constrainTerminations: false,
+    tileCells: undefined,
   });
   if (!build) return;
   const chunk = assembleChunk(
@@ -551,7 +566,10 @@ export async function buildSpecStack(
     const inferredList: Float32Array[] = [];
     // The column's refinement (a channel index, read once the refine is done) or
     // the layer's own.
-    const candidateOf: (number | Uint32Array)[] = [];
+    const candidateOf: (
+      | number
+      | { nodes: Uint32Array; errors: Float32Array }
+    )[] = [];
     const preResolved: Uint8Array[] = [];
     picks.forEach((at, j) => {
       // ⭐ A layer with no data anywhere in this chunk is NOT expanded: both
@@ -576,12 +594,12 @@ export async function buildSpecStack(
               // its shape would only be sampled where other layers happened to
               // need detail.
               (loaded[j].layer as StackSyntheticLayer).relief
-              ? collectStackCandidates(
+              ? collectStackCandidateLevels(
                   channels[j],
                   context.reference.header.nx,
                   maxError,
                 )
-              : new Uint32Array(0),
+              : { nodes: new Uint32Array(0), errors: new Float32Array(0) },
         );
         preResolved.push(
           at >= 0 ? context.absent[context.expansion[at][0]] : unresolved,
@@ -702,18 +720,31 @@ export async function buildSpecStack(
     }
 
     const tPrep = performance.now();
-    const { candidates: allCandidates, poolSize } = await getStackCandidates(
-      context,
-      maxError,
-      report,
-    );
+    const {
+      candidates: allCandidates,
+      errors: allErrors,
+      poolSize,
+    } = await getStackCandidates(context, maxError, report);
     if (isStale()) return null;
     const tRefine = performance.now();
     const candidates = candidateOf.map(c =>
-      typeof c === 'number' ? allCandidates[c] : c,
+      typeof c === 'number' ? allCandidates[c] : c.nodes,
+    );
+    const candidateErrors = candidateOf.map(c =>
+      typeof c === 'number' ? allErrors[c] : c.errors,
     );
 
-    const terminationLoops = await scanTerminations(spec, reference, report);
+    // What an earlier build of this column derived from the same channels.
+    const derivedKey = `${spec.resolve?.collapseThreshold ?? DEFAULT_STACK_COLLAPSE_THRESHOLD}|${maxError}`;
+    const derived = getStackDerived(
+      context,
+      reference.channels,
+      reference.masks,
+      derivedKey,
+    );
+    const terminationLoops = derived.terminationLines
+      ? undefined
+      : await scanTerminations(spec, reference, report);
     if (isStale()) return null;
     const prepMs = tPreview - tContext + (performance.now() - tRefine);
 
@@ -724,15 +755,27 @@ export async function buildSpecStack(
       {
         ...shared,
         candidates,
+        candidateErrors,
         refineTerminations: spec.resolve?.refineTerminations,
         constrainCoverage: spec.resolve?.constrainCoverage,
         constrainTerminations: spec.resolve?.constrainTerminations ?? true,
+        tileCells: spec.resolve?.tileCells,
+        lod: spec.resolve?.lod,
         terminationLoops,
+        ...derived,
         stream: streamPackets(onPartial, isStale, source, fills, ceilings),
         capNeighbours: true,
         diagnostics: spec.diagnostics,
       },
       isStale,
+      plan =>
+        keepStackDerived(
+          context,
+          reference.channels,
+          reference.masks,
+          derivedKey,
+          plan,
+        ),
     );
     if (!build) return null;
 
@@ -915,7 +958,8 @@ export async function buildSpecStack(
   const tSeal = performance.now();
 
   // The scan runs alongside and stays silent, so two steps never interleave.
-  const [{ candidates, poolSize }, terminationLoops] = await Promise.all([
+  const [{ candidates, errors: candidateErrors, poolSize }, terminationLoops] =
+    await Promise.all([
     refineStackChannels(
       reference.channels,
       reference.header.nx,
@@ -959,6 +1003,7 @@ export async function buildSpecStack(
       polygon: densified,
       maxError,
       candidates,
+      candidateErrors,
       resolve: spec.resolve
         ? { mode: spec.resolve.mode, minGap: spec.resolve.minGap }
         : undefined,
@@ -967,6 +1012,8 @@ export async function buildSpecStack(
       refineTerminations: spec.resolve?.refineTerminations,
       constrainCoverage: spec.resolve?.constrainCoverage,
       constrainTerminations: spec.resolve?.constrainTerminations ?? true,
+      tileCells: spec.resolve?.tileCells,
+      lod: spec.resolve?.lod,
       terminationLoops,
       stream: streamPackets(onPartial, isStale, source, fills, ceilings),
       caps,
@@ -1111,11 +1158,46 @@ export function stackDiagnostics(
     refinePool: result.poolSize,
     prepMs: result.prepMs,
     tessellateMs: build.timings.tessellateMs,
+    tessellation: build.timings.tessellation,
+    ...lodDiagnostics(build),
     sampleMs: build.timings.sampleMs,
     vertexResolveMs: build.timings.resolveMs,
     collapseMs: build.timings.collapseMs,
     geometryMs: build.timings.geometryMs,
     wallMs: build.timings.wallMs,
+  };
+}
+
+/**
+ * What each coarser level of detail costs, when the build made them (see
+ * `SurfaceChunkDiagnostics.lod`).
+ */
+function lodDiagnostics(
+  build: SurfaceStackBuild,
+): Pick<SurfaceChunkDiagnostics, 'lod' | 'lodVertices'> {
+  const levels = build.tessellation.levels;
+  if (!levels) return {};
+  let used = 0;
+  for (const v of build.tessellation.indices) if (v >= used) used = v + 1;
+  return {
+    lod: levels.map((level, k) => {
+      let triangles = 0;
+      let bytes = 0;
+      for (const layer of build.layers) {
+        const kept = layer.levels?.[k];
+        if (!kept) continue;
+        triangles += kept.length / 3;
+        bytes += kept.byteLength;
+      }
+      return {
+        error: level.error,
+        sharedTriangles: level.indices.length / 3,
+        triangles,
+        bytes,
+        constraintFailures: level.constraintFailures,
+      };
+    }),
+    lodVertices: build.tessellation.coords.length / 2 - used,
   };
 }
 
@@ -1133,6 +1215,11 @@ export function toAssembleLayers(
     geometry: layer.geometry,
     rimY: layer.rimY,
     patchIndex: layer.patchIndex,
+    levels: layer.levels,
+    tileStarts: layer.tileStarts,
+    patchLevels: layer.patchLevels,
+    patchTileStarts: layer.patchTileStarts,
+    normalMap: layer.normalMap,
     // The last layer has nothing below it inside this chunk.
     fill: i + 1 < result.build.layers.length && result.fills[i],
     wall: result.build.walls[i],
@@ -1211,6 +1298,11 @@ async function buildSurfaceChunkResponse(
     {
       diagnostics: spec.diagnostics ? stackDiagnostics(result) : undefined,
       section: result.build.section,
+      tiling: result.build.tessellation.tiling,
+      lodErrors: result.build.tessellation.levels && [
+        maxError,
+        ...result.build.tessellation.levels.map(level => level.error),
+      ],
     },
     {
       t0,

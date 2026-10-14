@@ -1,12 +1,14 @@
 import { BufferGeometry } from 'three';
 import { Vec2 } from '../types/common';
+import type { StackCapNormalMap } from './cap-normal-map';
 import {
   Coordinates2D,
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
 } from './planar-geometry';
 import { StackSectionSource } from './surface-section';
-import type { StackCapNeighbours } from './surface-stack';
+import type { StackCapNeighbours, StackTiling } from './surface-stack';
+import type { StackTessellationTimings } from './surface-stack-geometry';
 import { buildIntervalWalls } from './surface-walls';
 
 /**
@@ -33,6 +35,26 @@ export type SurfaceChunkMesh = {
    * that layer's cover become holes.
    */
   patchIndex?: Uint32Array;
+  /**
+   * Per coarser level of detail (see `SurfaceStackOptions.lod`), the triangles
+   * this cap keeps there — an index over the same attributes, like `patchIndex`.
+   */
+  levels?: Uint32Array[];
+  /**
+   * Per level, the full one first and then each of `levels`: where each
+   * tessellation tile's triangles start in that level's index (in triangles; one
+   * past the end last) — what lets a renderer pick a level per tile.
+   */
+  tileStarts?: Uint32Array[];
+  /** Per coarser level, the patch there (see `patchIndex`); empty where it has none. */
+  patchLevels?: Uint32Array[];
+  /** Per level, the full one first: where each tile starts in the patch there. */
+  patchTileStarts?: Uint32Array[];
+  /**
+   * The cap's normals on the reference grid. A cap that has one carries no
+   * `normal` attribute: it shades from this at every level of detail.
+   */
+  normalMap?: StackCapNormalMap;
   /**
    * This surface is the ceiling of a void: it faces UP, so it shows the BASE of
    * the interval above rather than the cap of `layer`, and should take that
@@ -296,6 +318,21 @@ export type SurfaceChunkDiagnostics = {
   prepMs: number;
   /** this chunk's own tessellation */
   tessellateMs: number;
+  /** where `tessellateMs` went */
+  tessellation: StackTessellationTimings;
+  /** per coarser level of detail, when built (see `SurfaceStackOptions.lod`) */
+  lod?: {
+    error: number;
+    /** triangles in the level's shared tessellation */
+    sharedTriangles: number;
+    /** triangles every cap keeps there, summed */
+    triangles: number;
+    /** bytes of the caps' level indices */
+    bytes: number;
+    constraintFailures: number;
+  }[];
+  /** vertices only the coarser levels use (where their thinned lines cross) */
+  lodVertices?: number;
   /** sampling every layer's height at the shared vertices */
   sampleMs: number;
   /** the per-vertex monotone resolve (0 when the column's grid resolve stands in) */
@@ -335,6 +372,13 @@ export type SurfaceChunkMetrics = {
    * tessellation path). See {@link SurfaceChunkDiagnostics}.
    */
   diagnostics?: SurfaceChunkDiagnostics;
+  /** how the tessellation was tiled, when it was */
+  tiling?: StackTiling;
+  /**
+   * Per level of detail, the full one first, the height error it was simplified
+   * to — when the build made coarser levels (see {@link SurfaceChunkMesh.levels}).
+   */
+  lodErrors?: number[];
 };
 
 /**
@@ -476,6 +520,16 @@ export type AssembleChunkLayer = {
   wall?: BufferGeometry | null;
   /** see {@link SurfaceChunkMesh.patchIndex} */
   patchIndex?: Uint32Array | null;
+  /** see {@link SurfaceChunkMesh.levels} */
+  levels?: Uint32Array[] | null;
+  /** see {@link SurfaceChunkMesh.tileStarts} */
+  tileStarts?: Uint32Array[] | null;
+  /** see {@link SurfaceChunkMesh.patchLevels} */
+  patchLevels?: Uint32Array[] | null;
+  /** see {@link SurfaceChunkMesh.patchTileStarts} */
+  patchTileStarts?: Uint32Array[] | null;
+  /** see {@link SurfaceChunkMesh.normalMap} */
+  normalMap?: StackCapNormalMap | null;
   /**
    * Index of the layer this one came FROM, when the build expanded the caller's
    * list (a surface split around a void becomes two layers). Meshes are tagged
@@ -502,6 +556,10 @@ export type AssembleChunkOptions = {
   diagnostics?: SurfaceChunkDiagnostics;
   /** carried through to the chunk (see {@link SurfaceChunk.section}) */
   section?: StackSectionSource;
+  /** carried into the metrics */
+  tiling?: StackTiling;
+  /** carried into the metrics (see {@link SurfaceChunkMetrics.lodErrors}) */
+  lodErrors?: number[];
 };
 
 /** Timings threaded into {@link assembleChunk} for the returned metrics. */
@@ -533,6 +591,19 @@ export function chunkSurfaceMesh(
     layer: layer.source ?? i,
     ceiling: layer.ceiling,
     patchIndex: layer.patchIndex ?? undefined,
+    // Its own copies: layers keeping a whole level share one array, and a
+    // transferred buffer can only be listed once.
+    ...(layer.levels ? { levels: layer.levels.map(l => l.slice()) } : {}),
+    ...(layer.tileStarts
+      ? { tileStarts: layer.tileStarts.map(s => s.slice()) }
+      : {}),
+    ...(layer.patchLevels && layer.patchTileStarts
+      ? {
+          patchLevels: layer.patchLevels.map(l => l.slice()),
+          patchTileStarts: layer.patchTileStarts.map(s => s.slice()),
+        }
+      : {}),
+    ...(layer.normalMap ? { normalMap: layer.normalMap } : {}),
     ...(neighbours
       ? {
           boundary: i,
@@ -630,6 +701,8 @@ export function assembleChunk(
     wallTriangles: Math.round(wallTris),
     rimPoints: rings.reduce((a, r) => a + r.length, 0),
     diagnostics: options.diagnostics,
+    tiling: options.tiling,
+    lodErrors: options.lodErrors,
   };
 
   return {

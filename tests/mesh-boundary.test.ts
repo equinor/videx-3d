@@ -35,19 +35,19 @@ describe('buildEdgeOpposites', () => {
     const indices = gridMesh(n);
     const opposite = buildEdgeOpposites(indices, n * n);
 
-    let paired = 0;
+    const paired: number[] = [];
     for (let he = 0; he < indices.length; he++) {
-      if (opposite[he] >= 0) {
-        paired++;
-        // the pairing is symmetric...
-        expect(opposite[opposite[he]]).toBe(he);
-        // ...and joins two DIFFERENT triangles
-        expect((opposite[he] / 3) | 0).not.toBe((he / 3) | 0);
-      }
+      if (opposite[he] >= 0) paired.push(he);
     }
+    // the pairing is symmetric...
+    expect(paired.filter(he => opposite[opposite[he]] !== he)).toEqual([]);
+    // ...and joins two DIFFERENT triangles
+    expect(
+      paired.filter(he => ((opposite[he] / 3) | 0) === ((he / 3) | 0)),
+    ).toEqual([]);
     // 8 triangles = 24 sides; a 2x2 quad grid has 8 sides on its outer boundary.
     expect(indices.length).toBe(24);
-    expect(paired).toBe(24 - 8);
+    expect(paired).toHaveLength(24 - 8);
   });
 });
 

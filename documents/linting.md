@@ -109,19 +109,19 @@ surface into two meshes that share a layer. Keying on it would collide.
 
 ---
 
-## Known remaining findings (not exceptions — open work)
+## Formerly open findings (resolved 2026-10-14)
 
-`npm run lint` does **not** pass cleanly today. Four errors remain, all pre-dating or
-deliberately deferred from the oxlint migration:
+`npm run lint` passes with no errors. The four that remained after the oxlint
+migration were resolved as follows:
 
-| Where | Rule | Note |
+| Where | Rule | Resolution |
 | --- | --- | --- |
-| `src/components/Annotations/AnnotationsHMTL.tsx` (×2) | `jsx-a11y/click-events-have-key-events`, `jsx-a11y/no-static-element-interactions` | Pre-existing on `main`. A clickable `div` with no keyboard handler or role — a genuine accessibility finding, not a false positive. |
-| `tests/mesh-boundary.test.ts` (×2) | `vitest/no-conditional-expect` | `expect` inside `if (opposite[he] >= 0)` within a loop. The rule guards against assertions that silently never run; here a separate `expect(paired).toBe(16)` proves they did. Suppress or restructure — not yet decided. |
+| `src/components/Annotations/AnnotationsHMTL.tsx` (×2) | `jsx-a11y/click-events-have-key-events`, `jsx-a11y/no-static-element-interactions` | The label wrapper carries `role="presentation"`: it positions a host-provided label component, and the click/hover handlers are a pointer convenience, not a control of its own. Keyboard access, where wanted, belongs in the label component. |
+| `tests/mesh-boundary.test.ts` (×2) | `vitest/no-conditional-expect` | Restructured: the loop collects the paired half-edges, and the checks run on that list afterwards. |
 
-Warnings are down from 168 to 79 after the changes above. The remainder are mostly
-pre-existing (`no-shadow`, `no-object-type-as-default-prop`,
-`jsx-no-new-function-as-prop`) and were left alone deliberately.
+The warnings (86) are mostly pre-existing (`no-shadow`,
+`no-object-type-as-default-prop`, `jsx-no-new-function-as-prop`) and were left alone
+deliberately.
 
 ## Rules considered and deliberately kept
 

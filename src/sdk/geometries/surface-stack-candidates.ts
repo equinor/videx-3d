@@ -27,13 +27,41 @@ export function collectStackCandidates(
   nx: number,
   maxError: number,
 ): Uint32Array {
+  return collectStackCandidateLevels(channel, nx, maxError).nodes;
+}
+
+/**
+ * {@link collectStackCandidates}, with each node's level: the error the mesh still
+ * had when it was inserted, as a running minimum. The nodes refining to any
+ * coarser error `E` are then exactly those with `errors[i] > E` — what
+ * `collectStackCandidates(channel, nx, E)` would return — so one refinement gives
+ * every coarser level, nested.
+ *
+ * @returns the nodes (`row * nx + col`) and, per node, its level (`Infinity` for
+ *   the grid's corners, which every level keeps)
+ *
+ * @group Geometries
+ */
+export function collectStackCandidateLevels(
+  channel: Float32Array,
+  nx: number,
+  maxError: number,
+): { nodes: Uint32Array; errors: Float32Array } {
   const delatin = new Delatin(channel, nx, STACK_NO_DATA);
-  delatin.run(maxError);
-  const out = new Uint32Array(delatin.coords.length >> 1);
-  for (let i = 0, j = 0; i < delatin.coords.length; i += 2, j++) {
-    out[j] = delatin.coords[i + 1] * nx + delatin.coords[i];
+  const levels: number[] = [];
+  while (levels.length < delatin.coords.length >> 1) levels.push(Infinity);
+  // ...the loop of `Delatin.run`, noting the error each insertion was made at.
+  let floor = Infinity;
+  for (let e = delatin.getMaxError(); e > maxError; e = delatin.getMaxError()) {
+    floor = Math.min(floor, e);
+    delatin.refine();
+    while (levels.length < delatin.coords.length >> 1) levels.push(floor);
   }
-  return out;
+  const nodes = new Uint32Array(delatin.coords.length >> 1);
+  for (let i = 0, j = 0; i < delatin.coords.length; i += 2, j++) {
+    nodes[j] = delatin.coords[i + 1] * nx + delatin.coords[i];
+  }
+  return { nodes, errors: Float32Array.from(levels) };
 }
 
 /**
