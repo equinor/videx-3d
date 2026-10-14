@@ -398,6 +398,7 @@ type FieldColumnStoryProps = {
   windSpeed: number;
   foamAmount: number;
   bedTint: number;
+  bodyShimmer: number;
   immersion: boolean;
   immersionColor: string;
   immersionVisibility: number;
@@ -875,6 +876,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
             windSpeed: props.windSpeed,
             foamAmount: props.foamAmount,
             bedTint: props.bedTint,
+            bodyShimmer: props.bodyShimmer,
           }
         : undefined,
     [
@@ -885,6 +887,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       props.windSpeed,
       props.foamAmount,
       props.bedTint,
+      props.bodyShimmer,
     ],
   );
 
@@ -1430,6 +1433,7 @@ export const Default: Story = {
     windSpeed: 10,
     foamAmount: 0.5,
     bedTint: 0.6,
+    bodyShimmer: 0.5,
     // Immersion
     immersion: false,
     // ⚠️ This fogs INSIDE THE BLOCK, so it is a near-black brown, not a water
@@ -1911,6 +1915,12 @@ export const Default: Story = {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
       description:
         'Tint the sea bed toward the water colour by DEPTH, so the shoreline appears on its own.',
+      table: { category: 'Water' },
+    },
+    bodyShimmer: {
+      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      description:
+        'Animated caustic light play in the water body, concentrated just under the surface. Fades out at field scale rather than shimmering.',
       table: { category: 'Water' },
     },
     immersion: {

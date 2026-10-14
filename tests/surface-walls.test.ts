@@ -239,6 +239,45 @@ describe('buildStackWalls', () => {
     expect(walls.every(w => w === null)).toBe(true);
   });
 
+  it('faces the walls outward whichever way the outline was wound', () => {
+    // Triangles facing away from the grid's centre, by their index winding — what
+    // decides `gl_FrontFacing`, which the water body's shimmer is drawn on.
+    const facing = (wall: BufferGeometry) => {
+      const p = wall.getAttribute('position');
+      const index = wall.getIndex()!;
+      let outward = 0;
+      let inward = 0;
+      for (let t = 0; t < index.count; t += 3) {
+        const [a, b, c] = [index.getX(t), index.getX(t + 1), index.getX(t + 2)];
+        const ux = p.getX(b) - p.getX(a);
+        const uy = p.getY(b) - p.getY(a);
+        const uz = p.getZ(b) - p.getZ(a);
+        const vx = p.getX(c) - p.getX(a);
+        const vy = p.getY(c) - p.getY(a);
+        const vz = p.getZ(c) - p.getZ(a);
+        const nx = uy * vz - uz * vy;
+        const nz = ux * vy - uy * vx;
+        const mx = (p.getX(a) + p.getX(b) + p.getX(c)) / 3 - 150;
+        const mz = (p.getZ(a) + p.getZ(b) + p.getZ(c)) / 3 - 150;
+        if (nx * mx + nz * mz > 0) outward++;
+        else inward++;
+      }
+      return { outward, inward };
+    };
+    for (const rim of [rimRing, rimRing.slice().reverse()]) {
+      const { walls } = buildStackWalls(
+        { ...tessellation, rimVertices: [rim] },
+        positionsXZ,
+        heights,
+        { fills: [true, false], threshold: 0.5 },
+      );
+      expect(facing(walls[0]!)).toEqual({
+        outward: rimRing.length * 2,
+        inward: 0,
+      });
+    }
+  });
+
   it('walls around a hole in the interval, not just the chunk rim', () => {
     // the unit pinches out over the middle cell: zero thickness there
     const top = flat(0);

@@ -4,7 +4,6 @@ import {
   buildFenceRibbons,
   FenceRibbon,
   FenceSideName,
-  fenceSideSign,
   StackSectionSource,
 } from '../../sdk';
 import { ChunkFenceState, ChunkLayer } from './chunk-defs';
@@ -81,7 +80,8 @@ export function useChunkFenceFace(
 
   useFrame(() => {
     const state = last.current;
-    const off = !source || !fence || !fence.enabled || !fence.curve;
+    const off =
+      !source || !fence || !fence.enabled || !fence.curve || !fence.field;
     if (off) {
       if (state.on || state.source !== source) {
         state.on = false;
@@ -134,12 +134,12 @@ export function useChunkFenceFace(
     }
     if (kept) retired.current.push(kept.faces);
 
-    // The face looks INTO the half being removed. `side` names that half; the ribbon
-    // builds from the same normal, so the flip is just the side's own sign.
+    // The face looks INTO the removed half: the left of the curve when the field the
+    // shader cuts by says that is the removed side (`removedCross` +1).
     const ribbons: FenceRibbon[] = buildFenceRibbons(source!, fence.curve!, {
       alongOffset: fence.alongOffset,
       offset: fence.offset,
-      flip: fenceSideSign(fence.side) < 0,
+      flip: fence.field!.removedCross < 0,
       inside: fence.inside ?? undefined,
       gaps: fence.gaps,
       voids: fence.voids,

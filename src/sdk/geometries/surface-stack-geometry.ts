@@ -425,7 +425,7 @@ export function buildStackWalls(
       maxInteriorWall: 0,
     };
 
-  const { indices, rimVertices } = tessellation;
+  const { indices } = tessellation;
   const vertexCount = tessellation.coords.length >> 1;
   const opposite = buildEdgeOpposites(indices, vertexCount);
   const members =
@@ -455,21 +455,6 @@ export function buildStackWalls(
   let ringsDropped = 0;
   let ringsOpen = 0;
 
-  // Which way round a ring has to run for `buildRingWalls` to face its quads away
-  // from the material. Rather than reason about it, take the convention from the
-  // rim the chunk's walls have always used: the largest rim ring is the outer one,
-  // and a traced region's rings sum to its (signed) area, so matching the two signs
-  // matches the convention.
-  let rimSign = 0;
-  let widest = 0;
-  for (const ring of rimVertices) {
-    const area = ringSignedArea(ring.map(point));
-    if (Math.abs(area) > widest) {
-      widest = Math.abs(area);
-      rimSign = Math.sign(area);
-    }
-  }
-
   for (let i = 0; i + 1 < heights.length; i++) {
     if (!options.fills[i]) continue;
     const traced = traceBoundaryRings(indices, opposite, members[i]);
@@ -478,8 +463,11 @@ export function buildStackWalls(
     const rings = traced.rings;
     if (rings.length === 0) continue;
 
+    // `buildRingWalls` faces a quad away from the material when the region's
+    // rings sum to a POSITIVE area. Fixed here rather than taken from the outline,
+    // whose winding is the caller's: a clockwise one turned every wall inward.
     const total = rings.reduce((a, r) => a + ringSignedArea(r.map(point)), 0);
-    const flip = rimSign !== 0 && total !== 0 && Math.sign(total) !== rimSign;
+    const flip = total < 0;
 
     const top = heights[i];
     const bottom = heights[i + 1];
