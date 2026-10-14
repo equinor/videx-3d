@@ -152,9 +152,15 @@ const focusOnCtrlClick = (event: EventEmitterCallbackEvent) => {
 const ChunkPipeline = ({
   frontPeelTolerance,
   skipFrontPeeling,
+  mergeFront,
+  tailSlices,
+  tailSliceSpacing,
 }: {
   frontPeelTolerance: number;
   skipFrontPeeling: boolean;
+  mergeFront: boolean;
+  tailSlices: number;
+  tailSliceSpacing: 'linear' | 'log';
 }) => {
   const scene = useThree(s => s.scene);
   const camera = useThree(s => s.camera);
@@ -167,7 +173,17 @@ const ChunkPipeline = ({
   useEffect(() => {
     oitPass.frontPeelTolerance = frontPeelTolerance;
     oitPass.skipFront = skipFrontPeeling;
-  }, [oitPass, frontPeelTolerance, skipFrontPeeling]);
+    oitPass.mergeFront = mergeFront;
+    oitPass.tailSlices = tailSlices;
+    oitPass.tailSliceSpacing = tailSliceSpacing;
+  }, [
+    oitPass,
+    frontPeelTolerance,
+    skipFrontPeeling,
+    mergeFront,
+    tailSlices,
+    tailSliceSpacing,
+  ]);
   useFrame(() => {}, 2);
   return <RenderingPipeline passes={passes} />;
 };
@@ -391,10 +407,15 @@ type FieldColumnStoryProps = {
   floor: boolean;
   floorClearance: number;
   floorColor: string;
+  floorDetail: ChunkDetailPreset | 'none';
+  floorDetailScale: number;
   surfaceOpacity: number;
   wallOpacity: number;
   frontPeelTolerance: number;
   skipFrontPeeling: boolean;
+  mergeFront: boolean;
+  tailSlices: 0 | 2 | 3;
+  tailSliceSpacing: 'linear' | 'log';
   wireframe: boolean;
   peel: number;
   cullHiddenCaps: boolean;
@@ -1204,7 +1225,18 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
           maxError={props.maxError}
           carrier={
             props.floor
-              ? { below: props.floorClearance, material: props.floorColor }
+              ? {
+                  below: props.floorClearance,
+                  material: props.floorColor,
+                  detail:
+                    props.floorDetail === 'none'
+                      ? undefined
+                      : {
+                          preset: props.floorDetail,
+                          strength: props.detailStrength,
+                          scale: props.floorDetailScale,
+                        },
+                }
               : undefined
           }
         >
@@ -1274,6 +1306,9 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       <ChunkPipeline
         frontPeelTolerance={props.frontPeelTolerance}
         skipFrontPeeling={props.skipFrontPeeling}
+        mergeFront={props.mergeFront}
+        tailSlices={props.tailSlices}
+        tailSliceSpacing={props.tailSliceSpacing}
       />
     </>
   );
@@ -1409,11 +1444,16 @@ export const Default: Story = {
     floor: true,
     floorClearance: 400,
     floorColor: '#6b6b6b',
+    floorDetail: 'basement',
+    floorDetailScale: 4,
     // Appearance
     surfaceOpacity: 1,
     wallOpacity: 1,
     frontPeelTolerance: DEFAULT_OIT_FRONT_TOLERANCE,
     skipFrontPeeling: false,
+    mergeFront: true,
+    tailSlices: 3,
+    tailSliceSpacing: 'log',
     wireframe: false,
     peel: 0,
     cullHiddenCaps: true,
@@ -1919,6 +1959,19 @@ export const Default: Story = {
       table: { category: 'Floor' },
     },
     floorColor: { control: { type: 'color' }, table: { category: 'Floor' } },
+    floorDetail: {
+      control: { type: 'select' },
+      options: ['none', ...CHUNK_DETAIL_PRESET_NAMES],
+      description:
+        'Procedural detail on the floor, so it reads as a surface from below rather than as a uniform veil. Scaled by `detailStrength`.',
+      table: { category: 'Floor' },
+    },
+    floorDetailScale: {
+      control: { type: 'range', min: 1, max: 16, step: 0.5 },
+      description:
+        'Multiplies the floor detail’s feature size. The presets’ coarsest cells are 5–20 m and are filtered out beyond a few km; the floor is mostly seen from further away than the layers.',
+      table: { category: 'Floor' },
+    },
     surfaceOpacity: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
       table: { category: 'Appearance' },
@@ -1938,6 +1991,25 @@ export const Default: Story = {
       control: { type: 'boolean' },
       description:
         'OIT: drop the exact front layer and resolve every transparent fragment through the weighted-blended tail. ⭐ The A/B for any front-peel question — if an artefact survives this, the peel is not what made it.',
+      table: { category: 'Appearance' },
+    },
+    mergeFront: {
+      control: { type: 'boolean' },
+      description:
+        'OIT: render the exact front layer in the same geometry pass as the tail instead of a separate front pass.',
+      table: { category: 'Appearance' },
+    },
+    tailSlices: {
+      control: { type: 'inline-radio' },
+      options: [0, 2, 3],
+      description:
+        'OIT: split the weighted-blended tail into per-pixel depth slices (between the nearest and farthest transparent fragment), composited back to front.',
+      table: { category: 'Appearance' },
+    },
+    tailSliceSpacing: {
+      control: { type: 'inline-radio' },
+      options: ['linear', 'log'],
+      if: { arg: 'tailSlices', neq: 0 },
       table: { category: 'Appearance' },
     },
     wireframe: { table: { category: 'Appearance' } },
@@ -2021,7 +2093,7 @@ export const Default: Story = {
       control: { type: 'select' },
       options: [0, 1, 2, 4, 8],
       description:
-        'Pick a level of detail per tile so its height error stays under this many pixels on screen (0 = full detail; needs `lodLevels`). With `debugTiles` the tint shows each tile\'s level. Appearance only.',
+        "Pick a level of detail per tile so its height error stays under this many pixels on screen (0 = full detail; needs `lodLevels`). With `debugTiles` the tint shows each tile's level. Appearance only.",
       table: { category: 'Diagnostics' },
     },
     resources: {

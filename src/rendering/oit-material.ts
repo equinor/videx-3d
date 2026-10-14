@@ -21,7 +21,8 @@ import oitChunk from '../sdk/materials/shaderLib/oit.glsl';
 /**
  * The OIT render passes a material provides a variant for.
  * - `depthMin`: min view-space linear depth pre-pass (front-layer detection)
- * - `accum`: single-buffer weighted-blended OIT tail (b-weighted, carries coverage)
+ * - `accum`: single-buffer weighted-blended OIT tail (b-weighted, carries coverage);
+ *   with `oitMergeFront` it also writes the front layer to a second attachment
  * - `front`: exact depth-peeled front layer (alpha-over)
  * - `occlusion`: optional depth-only stamp that writes depth where the surface's own
  *   alpha clears `oitOcclusionThreshold` (used to occlude annotation labels). Off by
@@ -40,6 +41,9 @@ export type OitUniforms = {
   oitSkipFront: IUniform<number>;
   oitOcclusionThreshold: IUniform<number>;
   oitFrontTolerance: IUniform<number>;
+  oitMergeFront: IUniform<number>;
+  oitTailSlices: IUniform<number>;
+  oitTailSliceSpacing: IUniform<number>;
 };
 
 /**
@@ -165,6 +169,9 @@ function createOitUniforms(): OitUniforms {
     oitSkipFront: new Uniform(0),
     oitOcclusionThreshold: new Uniform(1),
     oitFrontTolerance: new Uniform(DEFAULT_OIT_FRONT_TOLERANCE),
+    oitMergeFront: new Uniform(0),
+    oitTailSlices: new Uniform(0),
+    oitTailSliceSpacing: new Uniform(0),
   };
 }
 
@@ -461,6 +468,9 @@ export function attachOitVariants<T extends ShaderMaterial>(
   u.oitSkipFront ??= uniforms.oitSkipFront;
   u.oitOcclusionThreshold ??= uniforms.oitOcclusionThreshold;
   u.oitFrontTolerance ??= uniforms.oitFrontTolerance;
+  u.oitMergeFront ??= uniforms.oitMergeFront;
+  u.oitTailSlices ??= uniforms.oitTailSlices;
+  u.oitTailSliceSpacing ??= uniforms.oitTailSliceSpacing;
 
   const bound: OitUniforms = {
     oitDepthFar: u.oitDepthFar,
@@ -469,6 +479,9 @@ export function attachOitVariants<T extends ShaderMaterial>(
     oitSkipFront: u.oitSkipFront,
     oitOcclusionThreshold: u.oitOcclusionThreshold,
     oitFrontTolerance: u.oitFrontTolerance,
+    oitMergeFront: u.oitMergeFront,
+    oitTailSlices: u.oitTailSlices,
+    oitTailSliceSpacing: u.oitTailSliceSpacing,
   };
 
   return installOitVariants(material, bound, options);
@@ -631,6 +644,9 @@ export function makeOitCompatible<T extends Material>(
     u.oitSkipFront ??= uniforms.oitSkipFront;
     u.oitOcclusionThreshold ??= uniforms.oitOcclusionThreshold;
     u.oitFrontTolerance ??= uniforms.oitFrontTolerance;
+    u.oitMergeFront ??= uniforms.oitMergeFront;
+    u.oitTailSlices ??= uniforms.oitTailSlices;
+    u.oitTailSliceSpacing ??= uniforms.oitTailSliceSpacing;
   }
 
   const prevOnBeforeCompile = material.onBeforeCompile;
@@ -648,6 +664,9 @@ export function makeOitCompatible<T extends Material>(
     shader.uniforms.oitSkipFront = uniforms.oitSkipFront;
     shader.uniforms.oitOcclusionThreshold = uniforms.oitOcclusionThreshold;
     shader.uniforms.oitFrontTolerance = uniforms.oitFrontTolerance;
+    shader.uniforms.oitMergeFront = uniforms.oitMergeFront;
+    shader.uniforms.oitTailSlices = uniforms.oitTailSlices;
+    shader.uniforms.oitTailSliceSpacing = uniforms.oitTailSliceSpacing;
 
     const needsViewPosition = !hasViewPosition(shader.fragmentShader);
 

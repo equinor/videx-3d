@@ -13,9 +13,11 @@ import {
   Group,
   LineBasicMaterial,
   LinearSRGBColorSpace,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   NeutralToneMapping,
   NoToneMapping,
+  PlaneGeometry,
   ReinhardToneMapping,
   SRGBColorSpace,
   Line as ThreeLine,
@@ -35,6 +37,7 @@ import {
 import { FXAAPass } from '../passes/FXAAPass.ts';
 import { OutputPass } from '../passes/OutputPass.ts';
 import { RenderingPipeline } from '../RenderingPipeline.tsx';
+import { registerVidex3d } from '../../storybook/debug/videx3d.ts';
 import { DebugBoxOutputPass } from './DebugBoxOutputPass.ts';
 import { DebugPattern, DebugPatternPass } from './DebugPatternPass.ts';
 
@@ -66,7 +69,12 @@ type DebugArgs = {
     | 'thinBars'
     | 'lines'
     | 'thinBars-transparent'
-    | 'lines-transparent';
+    | 'lines-transparent'
+    | 'transparentStack';
+  stackLayers: number;
+  stackSegments: number;
+  stackOpacity: number;
+  stackMaterial: 'standard' | 'basic';
   animate: boolean;
   supersample: 0.5 | 1 | 1.5 | 2 | 4;
   downsampleMode: 'mipmap' | 'box';
@@ -74,6 +82,9 @@ type DebugArgs = {
   oitMaterials: boolean;
   frontPeelTolerance: number;
   skipFrontPeeling: boolean;
+  mergeFront: boolean;
+  tailSlices: 0 | 2 | 3;
+  tailSliceSpacing: 'linear' | 'log';
   aaMode: OITAntialiasMode;
   temporalClampStrength: number;
   taaRestClampStrength: number;
@@ -252,21 +263,142 @@ const TransparentLayers = ({ oit }: { oit: boolean }) => (
   </group>
 );
 
+type StackOptions = {
+  layers: number;
+  segments: number;
+  opacity: number;
+  material: DebugArgs['stackMaterial'];
+};
+
+const STACK_SIZE = 6;
+const STACK_HEIGHT = 2;
+const STACK_AMPLITUDE = 0.35;
+
+/**
+ * A heavy-overdraw OIT benchmark: `layers` wavy, double-sided, semi-transparent
+ * sheets filling the view, each a `segments`² grid. Neighbours undulate out of
+ * phase, so they cross one another (no per-object draw order is correct), and
+ * opaque rods plus transparent lines pass through the whole stack.
+ */
+const TransparentStack = ({
+  oit,
+  layers,
+  segments,
+  opacity,
+  material,
+}: StackOptions & { oit: boolean }) => {
+  const geometries = useMemo(
+    () =>
+      Array.from({ length: layers }, (_, i) => {
+        const g = new PlaneGeometry(STACK_SIZE, STACK_SIZE, segments, segments);
+        g.rotateX(-Math.PI / 2);
+        const base =
+          -STACK_HEIGHT / 2 + (STACK_HEIGHT * i) / Math.max(1, layers - 1);
+        const phase = i * 1.7;
+        const p = g.getAttribute('position');
+        for (let v = 0; v < p.count; v++) {
+          const x = p.getX(v);
+          const z = p.getZ(v);
+          const wave =
+            Math.sin(x * 1.3 + phase) * Math.cos(z * 1.1 + phase * 0.7) +
+            0.5 * Math.sin(2.1 * x - 1.7 * z + phase);
+          p.setY(v, base + STACK_AMPLITUDE * wave);
+        }
+        g.computeVertexNormals();
+        return g;
+      }),
+    [layers, segments],
+  );
+  useEffect(() => () => geometries.forEach(g => g.dispose()), [geometries]);
+
+  const materials = useMemo(
+    () =>
+      Array.from({ length: layers }, (_, i) => {
+        const params = {
+          color: new Color().setHSL(i / layers, 0.55, 0.55),
+          transparent: true,
+          opacity,
+          depthWrite: false,
+          side: DoubleSide,
+          toneMapped: false,
+        };
+        const m =
+          material === 'basic'
+            ? new MeshBasicMaterial(params)
+            : new MeshStandardMaterial({ ...params, roughness: 0.6 });
+        if (oit) makeOitCompatible(m, { side: DoubleSide });
+        return m;
+      }),
+    [layers, opacity, material, oit],
+  );
+  useEffect(() => () => materials.forEach(m => m.dispose()), [materials]);
+
+  return (
+    <group>
+      {geometries.map((g, i) => (
+        <mesh
+          key={`${g.uuid}-${materials[i].uuid}`}
+          geometry={g}
+          material={materials[i]}
+        />
+      ))}
+      {Array.from({ length: 5 }, (_, i) => {
+        const angle = (i / 5) * Math.PI * 2;
+        return (
+          <mesh
+            key={i}
+            position={[Math.cos(angle) * 1.4, 0, Math.sin(angle) * 1.4]}
+          >
+            <cylinderGeometry args={[0.08, 0.08, STACK_HEIGHT * 1.6, 16]} />
+            <OitStandardMaterial
+              oit={oit}
+              color="#d8d8d8"
+              metalness={0}
+              roughness={0.5}
+              transparent={false}
+              opacity={1}
+              depthWrite
+            />
+          </mesh>
+        );
+      })}
+      {Array.from({ length: 4 }, (_, i) => (
+        <WebGLLine
+          key={i}
+          position={[-1.5 + i, 0, 0.6 * (i % 2 ? 1 : -1)]}
+          color={getLineColor(2 * i)}
+          oitMaterials={oit}
+        />
+      ))}
+    </group>
+  );
+};
+
 /** Opaque high-frequency silhouettes + overlapping transparent layers (for OIT). */
 const TestGeometry = ({
   geometry,
   animate,
   oitMaterials,
+  stack,
 }: {
   geometry: DebugArgs['geometry'];
   animate: boolean;
   oitMaterials: boolean;
+  stack: StackOptions;
 }) => {
   const spinRef = useRef<Group>(null);
 
   useFrame((_, delta) => {
     if (animate && spinRef.current) spinRef.current.rotation.y += delta * 0.15;
   });
+
+  if (geometry === 'transparentStack') {
+    return (
+      <group ref={spinRef}>
+        <TransparentStack oit={oitMaterials} {...stack} />
+      </group>
+    );
+  }
 
   if (geometry === 'thinBars') {
     return (
@@ -424,6 +556,8 @@ const DebugScene = (args: DebugArgs) => {
   const camera = useThree(state => state.camera);
   const renderer = useThree(state => state.gl);
 
+  useEffect(() => registerVidex3d({ scene }), [scene]);
+
   // Tone mapping + output colour space can be changed on the live renderer (no
   // context rebuild needed), so drive them imperatively from the controls.
   useEffect(() => {
@@ -534,6 +668,16 @@ const DebugScene = (args: DebugArgs) => {
     if (oitPass) oitPass.skipFront = args.skipFrontPeeling;
   }, [oitPass, args.skipFrontPeeling]);
 
+  useEffect(() => {
+    if (oitPass) oitPass.mergeFront = args.mergeFront;
+  }, [oitPass, args.mergeFront]);
+
+  useEffect(() => {
+    if (!oitPass) return;
+    oitPass.tailSlices = args.tailSlices;
+    oitPass.tailSliceSpacing = args.tailSliceSpacing;
+  }, [oitPass, args.tailSlices, args.tailSliceSpacing]);
+
   // Live-tune the temporal AA anti-ghost knobs. The resolvers are created lazily
   // inside OITRenderPass.render() and recreated (resetting to defaults) on a mode
   // switch, so push the current control values every frame rather than via an effect
@@ -559,6 +703,12 @@ const DebugScene = (args: DebugArgs) => {
       {args.debugPattern === 'off' && (
         <TestGeometry
           geometry={args.geometry}
+          stack={{
+            layers: args.stackLayers,
+            segments: args.stackSegments,
+            opacity: args.stackOpacity,
+            material: args.stackMaterial,
+          }}
           animate={args.animate}
           oitMaterials={args.oitMaterials}
         />
@@ -1103,7 +1253,32 @@ const meta = {
         'thinBars-transparent',
         'lines',
         'lines-transparent',
+        'transparentStack',
       ],
+      table: { category: 'Content' },
+    },
+    stackLayers: {
+      control: { type: 'range', min: 2, max: 48, step: 1 },
+      if: { arg: 'geometry', eq: 'transparentStack' },
+      table: { category: 'Content' },
+    },
+    stackSegments: {
+      description: 'Grid cells per side of each layer (2 triangles per cell).',
+      control: { type: 'range', min: 16, max: 512, step: 16 },
+      if: { arg: 'geometry', eq: 'transparentStack' },
+      table: { category: 'Content' },
+    },
+    stackOpacity: {
+      control: { type: 'range', min: 0.05, max: 0.95, step: 0.05 },
+      if: { arg: 'geometry', eq: 'transparentStack' },
+      table: { category: 'Content' },
+    },
+    stackMaterial: {
+      description:
+        'Lit (standard) or unlit (basic) layers: how much shading costs.',
+      control: 'inline-radio',
+      options: ['standard', 'basic'],
+      if: { arg: 'geometry', eq: 'transparentStack' },
       table: { category: 'Content' },
     },
     animate: { control: 'boolean', table: { category: 'Content' } },
@@ -1218,6 +1393,27 @@ const meta = {
         'through the weighted-blended tail. The A/B for any front-peel question.',
       table: { category: 'Pipeline' },
     },
+    mergeFront: {
+      control: 'boolean',
+      description:
+        'Render the exact front layer in the same geometry pass as the tail (a ' +
+        'second render-target attachment) instead of a separate front pass.',
+      table: { category: 'Pipeline' },
+    },
+    tailSlices: {
+      control: 'inline-radio',
+      options: [0, 2, 3],
+      description:
+        'Split the weighted-blended tail into per-pixel depth slices (between the ' +
+        'nearest and farthest transparent fragment), composited back to front.',
+      table: { category: 'Pipeline' },
+    },
+    tailSliceSpacing: {
+      control: 'inline-radio',
+      options: ['linear', 'log'],
+      if: { arg: 'tailSlices', neq: 0 },
+      table: { category: 'Pipeline' },
+    },
     supersample: {
       control: 'inline-radio',
       options: [0.5, 1, 1.5, 2, 4],
@@ -1234,6 +1430,10 @@ const meta = {
     debugPattern: 'off',
     patternScale: 24,
     geometry: 'torusKnot',
+    stackLayers: 16,
+    stackSegments: 256,
+    stackOpacity: 0.5,
+    stackMaterial: 'standard',
     animate: true,
     // Rendering
     toneMapping: 'none',
@@ -1257,6 +1457,9 @@ const meta = {
     oitMaterials: true,
     frontPeelTolerance: DEFAULT_OIT_FRONT_TOLERANCE,
     skipFrontPeeling: false,
+    mergeFront: false,
+    tailSlices: 0,
+    tailSliceSpacing: 'linear',
     supersample: 1,
     downsampleMode: 'mipmap',
   },

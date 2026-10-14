@@ -16,9 +16,9 @@ import {
   RawShaderMaterial,
   RedFormat,
   RGBAFormat,
+  RGFormat,
   Scene,
   ShaderMaterial,
-  SrcAlphaFactor,
   Texture,
   Uniform,
   WebGLRenderer,
@@ -69,6 +69,45 @@ NOOP_MATERIAL.depthTest = false;
 NOOP_MATERIAL.blending = NoBlending;
 
 type RenderableKind = 'opaque' | 'oit';
+
+/** Tail accumulation target; a second attachment carries the merged front layer. */
+function createAccumTarget(width: number, height: number, count: number) {
+  return new WebGLRenderTarget(width, height, {
+    format: RGBAFormat,
+    type: HalfFloatType,
+    depthBuffer: true,
+    generateMipmaps: false,
+    count,
+  });
+}
+
+/** Min-depth target: nearest depth, plus -farthest depth when tail slicing needs it. */
+function createMinDepthTarget(width: number, height: number, channels: number) {
+  return new WebGLRenderTarget(width, height, {
+    format: channels > 1 ? RGFormat : RedFormat,
+    type: FloatType,
+    depthBuffer: true,
+    magFilter: NearestFilter,
+    minFilter: NearestFilter,
+    generateMipmaps: false,
+  });
+}
+
+/** Premultiplied alpha-over of the resolved transparent layers onto the main target. */
+const COMPOSITE_PARAMS = {
+  vertexShader: copyVertexShader,
+  fragmentShader: compositeFragmentShader,
+  transparent: true,
+  depthTest: false,
+  depthWrite: false,
+  blending: CustomBlending,
+  blendEquation: AddEquation,
+  blendSrc: OneFactor,
+  blendDst: OneMinusSrcAlphaFactor,
+  blendEquationAlpha: AddEquation,
+  blendSrcAlpha: OneFactor,
+  blendDstAlpha: OneMinusSrcAlphaFactor,
+} as const;
 
 /** Per-frame object counts for each classification, exposed for debugging. */
 export type OITRenderPassStats = {
@@ -138,11 +177,11 @@ export type OITRenderPassTimings = {
   emissive: number;
   /** Min-depth pre-pass (step 2). */
   minDepth: number;
-  /** Weighted-blended OIT tail pass (step 3). */
+  /** Weighted-blended OIT tail pass (step 3); includes the front layer with {@link OITRenderPass.mergeFront}. */
   tail: number;
   /** Fullscreen tail composite (step 4). */
   composite: number;
-  /** Exact front-layer pass (step 5). */
+  /** Exact front-layer pass (step 5); not run with {@link OITRenderPass.mergeFront}. */
   front: number;
   /** Optional occlusion depth-stamp pass (step 5b). */
   occlusion: number;
@@ -224,6 +263,37 @@ export class OITRenderPass extends Pass {
    * Useful for isolating tail behaviour and comparing against the hybrid result.
    */
   skipFront: boolean = false;
+
+  /**
+   * Render the exact front layer in the same geometry pass as the weighted-blended
+   * tail instead of in a separate pass. The tail target gets a second colour
+   * attachment that front fragments write to, and the composite resolves both, so the
+   * transparent geometry is rasterised twice per frame instead of three times.
+   *
+   * The front layer is then composited from a texture rather than drawn into the
+   * output, so it is not used when the output is multisampled ({@link opaqueSamples}
+   * or a multisample pipeline buffer) — the separate front pass keeps its MSAA edges
+   * there. Has no effect with {@link skipFront}.
+   */
+  mergeFront: boolean = false;
+
+  /**
+   * Split the weighted-blended tail into this many depth slices (0 or 1 = a single
+   * tail; at most 3). Each pixel divides its own range between its nearest and
+   * farthest transparent fragment, each slice is averaged on its own, and the slices
+   * are composited back to front — so ordering errors stay within a slice instead of
+   * spanning the whole tail. A fragment's weight is shared between the two nearest
+   * slices, so slice boundaries do not show as contours. Costs one render-target
+   * attachment per extra slice and a two-channel min-depth target, but no extra
+   * geometry pass. Has no effect with {@link skipFront}.
+   */
+  tailSlices: number = 0;
+
+  /**
+   * How {@link tailSlices} divides each pixel's depth range: `'linear'` (equal depth)
+   * or `'log'` (equal depth ratio, i.e. thinner slices nearer the front).
+   */
+  tailSliceSpacing: 'linear' | 'log' = 'linear';
 
   /**
    * How close to the per-pixel nearest transparent fragment a fragment may be and
@@ -473,7 +543,8 @@ export class OITRenderPass extends Pass {
 
   private minDepthTarget: WebGLRenderTarget;
   private accumTarget: WebGLRenderTarget;
-  private compositeMaterial: RawShaderMaterial;
+  /** Composite variants keyed by front merge and slice count, built on first use. */
+  private compositeMaterials = new Map<string, RawShaderMaterial>();
   /** Shared multisample target for the hybrid MSAA path (see {@link opaqueSamples}). */
   private opaqueTarget: WebGLRenderTarget | null = null;
   /** Sample count the current opaqueTarget was built with (-1 = none yet). */
@@ -517,39 +588,8 @@ export class OITRenderPass extends Pass {
     this.scene = scene;
     this.camera = camera;
 
-    this.minDepthTarget = new WebGLRenderTarget(1, 1, {
-      format: RedFormat,
-      type: FloatType,
-      depthBuffer: true,
-      magFilter: NearestFilter,
-      minFilter: NearestFilter,
-      generateMipmaps: false,
-    });
-    this.accumTarget = new WebGLRenderTarget(1, 1, {
-      format: RGBAFormat,
-      type: HalfFloatType,
-      depthBuffer: true,
-      generateMipmaps: false,
-    });
-
-    // Tail composite: alpha-over the weighted-blended tail onto the main target.
-    this.compositeMaterial = new RawShaderMaterial({
-      vertexShader: copyVertexShader,
-      fragmentShader: compositeFragmentShader,
-      uniforms: {
-        accumTexture: new Uniform<Texture | null>(null),
-      },
-      transparent: true,
-      depthTest: false,
-      depthWrite: false,
-      blending: CustomBlending,
-      blendEquation: AddEquation,
-      blendSrc: SrcAlphaFactor,
-      blendDst: OneMinusSrcAlphaFactor,
-      blendEquationAlpha: AddEquation,
-      blendSrcAlpha: OneFactor,
-      blendDstAlpha: OneMinusSrcAlphaFactor,
-    });
+    this.minDepthTarget = createMinDepthTarget(1, 1, 1);
+    this.accumTarget = createAccumTarget(1, 1, 1);
 
     // MSAA resolve blit: overwrite the buffer colour with the resolved multisample
     // colour (depth is shared and already resolved), no blending.
@@ -611,6 +651,50 @@ export class OITRenderPass extends Pass {
     this.opaqueTargetSamples = -1;
   }
 
+  /** Rebuild the accumulation target when its attachment count must change. */
+  private ensureAccumTarget(count: number) {
+    if (this.accumTarget.textures.length === count) return;
+    // Detach the borrowed depth texture first (see dispose).
+    this.accumTarget.depthTexture = null;
+    this.accumTarget.dispose();
+    this.accumTarget = createAccumTarget(this.width, this.height, count);
+  }
+
+  /** Rebuild the min-depth target when its channel count must change. */
+  private ensureMinDepthTarget(channels: number) {
+    const format = channels > 1 ? RGFormat : RedFormat;
+    if (this.minDepthTarget.texture.format === format) return;
+    this.minDepthTarget.depthTexture = null;
+    this.minDepthTarget.dispose();
+    this.minDepthTarget = createMinDepthTarget(
+      this.width,
+      this.height,
+      channels,
+    );
+  }
+
+  private getCompositeMaterial(mergeFront: boolean, slices: number) {
+    const key = `${mergeFront ? 1 : 0}:${slices}`;
+    let material = this.compositeMaterials.get(key);
+    if (!material) {
+      material = new RawShaderMaterial({
+        ...COMPOSITE_PARAMS,
+        defines: {
+          TAIL_SLICES: slices,
+          ...(mergeFront ? { MERGED_FRONT: '' } : {}),
+        },
+        uniforms: {
+          accumTexture: new Uniform<Texture | null>(null),
+          frontTexture: new Uniform<Texture | null>(null),
+          slice1Texture: new Uniform<Texture | null>(null),
+          slice2Texture: new Uniform<Texture | null>(null),
+        },
+      });
+      this.compositeMaterials.set(key, material);
+    }
+    return material;
+  }
+
   setSize(width: number, height: number) {
     this.width = Math.max(1, Math.floor(width));
     this.height = Math.max(1, Math.floor(height));
@@ -637,7 +721,8 @@ export class OITRenderPass extends Pass {
     this.minDepthTarget.dispose();
     this.accumTarget.dispose();
     this.disposeOpaqueTarget();
-    this.compositeMaterial.dispose();
+    for (const material of this.compositeMaterials.values()) material.dispose();
+    this.compositeMaterials.clear();
     this.opaqueBlitMaterial.dispose();
     this.debugMaterial?.dispose();
     this.fullscreenRenderer.dispose();
@@ -818,7 +903,11 @@ export class OITRenderPass extends Pass {
     for (const e of oitList) e.object.material = e.original;
   }
 
-  private setOitUniforms(oitList: RenderableEntry[]) {
+  private setOitUniforms(
+    oitList: RenderableEntry[],
+    mergeFront: boolean,
+    slices: number,
+  ) {
     for (const e of oitList) {
       const mats = Array.isArray(e.original) ? e.original : [e.original];
       for (const m of mats) {
@@ -831,6 +920,9 @@ export class OITRenderPass extends Pass {
         u.oitSkipFront.value = this.skipFront ? 1 : 0;
         u.oitOcclusionThreshold.value = this.occlusionDepthThreshold;
         u.oitFrontTolerance.value = this.frontPeelTolerance;
+        u.oitMergeFront.value = mergeFront ? 1 : 0;
+        u.oitTailSlices.value = slices > 1 ? slices : 0;
+        u.oitTailSliceSpacing.value = this.tailSliceSpacing === 'log' ? 1 : 0;
         // Re-sync the cached per-pass variants with the base material's current
         // program state (defines/wireframe/etc.). The cached pass-swap materials are
         // the same objects, mutated in place, so this keeps them up to date when the
@@ -1045,6 +1137,16 @@ export class OITRenderPass extends Pass {
     // Share the opaque depth with the auxiliary targets so opaque geometry occludes
     // transparent fragments in every OIT pass.
     const sharedDepth = buffer.depthTexture;
+    const msaaOpaque = this.opaqueSamples > 0 && sharedDepth != null;
+    const mergeFront =
+      this.mergeFront && !this.skipFront && !msaaOpaque && buffer.samples === 0;
+    // Slicing needs the min-depth pass, which skipFront turns off.
+    const slices = this.skipFront
+      ? 1
+      : Math.min(3, Math.max(1, Math.floor(this.tailSlices)));
+    // Attachments: 0 = (nearest) tail, 1 = merged front, 2-3 = farther slices.
+    this.ensureAccumTarget(slices > 1 ? slices + 1 : mergeFront ? 2 : 1);
+    this.ensureMinDepthTarget(slices > 1 ? 2 : 1);
     if (sharedDepth) {
       this.minDepthTarget.depthTexture = sharedDepth;
       this.accumTarget.depthTexture = sharedDepth;
@@ -1136,7 +1238,6 @@ export class OITRenderPass extends Pass {
     // composite is still single-sample, so opaque edges seen THROUGH transparent
     // surfaces keep a background-coloured fringe (MSAA is only clean for opaque-only
     // close-ups — see opaqueSamples). dst is the single-sample buffer when MSAA is off.
-    const msaaOpaque = this.opaqueSamples > 0 && sharedDepth != null;
     const dst = msaaOpaque
       ? this.ensureOpaqueTarget(renderer, sharedDepth!)
       : buffer;
@@ -1156,7 +1257,7 @@ export class OITRenderPass extends Pass {
     scene.background = null;
 
     // Update OIT uniforms now that depthFar/size are known.
-    this.setOitUniforms(oitList);
+    this.setOitUniforms(oitList, mergeFront, slices);
 
     // ---- step 1b: additive/glow emissive ----------------------------------
     // Drawn here (before the transparent layers) rather than last, so transparent
@@ -1243,7 +1344,8 @@ export class OITRenderPass extends Pass {
       // Single additive (ONE, ONE) pass into one RGBA16F target: accum.rgb = sum of
       // colour * b and accum.a = sum of b, where b = -ln(1 - alpha). The composite
       // recovers both the average colour and the coverage from this buffer, so no
-      // separate reveal pass is needed.
+      // separate reveal pass is needed. With mergeFront the target has a second
+      // attachment that receives the front layer in the same encoding.
       timer?.begin('tail');
       this.applyPassSwap(oitList, 'accum');
       renderer.setRenderTarget(this.accumTarget);
@@ -1252,22 +1354,23 @@ export class OITRenderPass extends Pass {
       renderer.render(scene, camera);
       timer?.end();
 
-      // ---- step 4: composite tail onto main -------------------------------
-      this.compositeMaterial.uniforms.accumTexture.value =
-        this.accumTarget.texture;
+      // ---- step 4: composite tail (slices, merged front) onto main --------
+      const composite = this.getCompositeMaterial(mergeFront, slices);
+      const layers = this.accumTarget.textures;
+      composite.uniforms.accumTexture.value = layers[0];
+      composite.uniforms.frontTexture.value = mergeFront ? layers[1] : null;
+      composite.uniforms.slice1Texture.value = slices > 1 ? layers[2] : null;
+      composite.uniforms.slice2Texture.value = slices > 2 ? layers[3] : null;
       timer?.begin('composite');
-      this.fullscreenRenderer.renderMaterial(
-        renderer,
-        dst,
-        this.compositeMaterial,
-      );
+      this.fullscreenRenderer.renderMaterial(renderer, dst, composite);
       timer?.end();
 
       // ---- step 5: exact front layer --------------------------------------
-      // Skipped in WBOIT-only debug mode (the tail already includes every fragment).
-      // Drawn back into the shared (MSAA) target so the surviving front fragments are
-      // anti-aliased against the opaque geometry already there.
-      if (!this.skipFront) {
+      // Skipped in WBOIT-only debug mode (the tail already includes every fragment)
+      // and when merged into the tail pass. Drawn back into the shared (MSAA) target
+      // so the surviving front fragments are anti-aliased against the opaque
+      // geometry already there.
+      if (!this.skipFront && !mergeFront) {
         this.applyPassSwap(oitList, 'front');
         renderer.setRenderTarget(dst);
         timer?.begin('front');
@@ -1415,7 +1518,7 @@ export class OITRenderPass extends Pass {
     // mode: 0 = rgb, 1 = red as grayscale, 2 = normalized depth (near = bright).
     const items: { texture: Texture; mode: number }[] = [
       { texture: this.minDepthTarget.texture, mode: 2 },
-      { texture: this.accumTarget.texture, mode: 0 },
+      ...this.accumTarget.textures.map(texture => ({ texture, mode: 0 })),
     ];
 
     const pad = Math.round(this.height * 0.015);

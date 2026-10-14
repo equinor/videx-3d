@@ -28,15 +28,36 @@
 //
 // The `oitSkipFront` uniform (1) disables front peeling so the tail pass keeps the
 // front fragments too (debug: everything resolved through WBOIT).
+//
+// The `oitMergeFront` uniform (1) makes the tail pass also carry the front layer:
+// the target then has a second attachment, front fragments write their b-weighted
+// colour there (and nothing to the tail), and the composite resolves both — one
+// geometry pass fewer than a separate front pass.
+//
+// The `oitTailSlices` uniform (2 or 3) splits the tail into depth slices: each pixel
+// divides its own range between the nearest and farthest transparent fragment (the
+// min-depth pass also stores -depth, so its minimum is -farthest), each slice goes
+// to its own attachment, and the composite stacks them back to front.
 
 #ifdef USE_OIT
 
 uniform float oitDepthFar;          // normalisation factor for view-space depth
 uniform vec2 oitScreenSize;         // render target size in pixels
-uniform sampler2D oitMinDepthTexture; // per-pixel min linear depth (front layer)
+uniform sampler2D oitMinDepthTexture; // per-pixel min linear depth (r), -max depth (g)
 uniform int oitSkipFront;           // 1 = disable front peeling (debug: all WBOIT)
 uniform float oitOcclusionThreshold; // occlusion-stamp pass: min alpha to write depth
 uniform float oitFrontTolerance;    // front-peel slab, as a FRACTION of view distance
+uniform int oitMergeFront;          // 1 = tail pass also writes the front layer
+uniform int oitTailSlices;          // 0 = one tail; 2 or 3 = depth slices
+uniform int oitTailSliceSpacing;    // 0 = equal depth, 1 = equal depth ratio (log)
+
+#if !defined(OIT_DEPTH_PASS) && !defined(OIT_FRONT_PASS) && !defined(OIT_OCCLUSION_PASS)
+// Extra colour attachments of the tail target (merged front layer, tail slices 1-2).
+// Always written; attachments the target does not have are discarded by the GPU.
+layout(location = 1) out highp vec4 oitFrontColor;
+layout(location = 2) out highp vec4 oitSlice1Color;
+layout(location = 3) out highp vec4 oitSlice2Color;
+#endif
 
 // Process the straight (non-premultiplied) fragment color for the active pass.
 vec4 oitProcess(vec4 color) {
@@ -57,13 +78,15 @@ vec4 oitProcess(vec4 color) {
 
   #ifdef OIT_DEPTH_PASS
 
-  // Written into an R32F target with MinEquation blending => per-pixel minimum.
-  return vec4(linZ, 0.0, 0.0, 1.0);
+  // Written with MinEquation blending => per-pixel minimum of depth (r) and of -depth
+  // (g, i.e. -farthest; dropped by a single-channel target).
+  return vec4(linZ, -linZ, 0.0, 1.0);
 
   #else
 
   vec2 uv = gl_FragCoord.xy / oitScreenSize;
-  float minZ = texture2D(oitMinDepthTexture, uv).r;
+  vec2 minMax = texture2D(oitMinDepthTexture, uv).rg;
+  float minZ = minMax.x;
 
   // The tolerance exists ONLY to absorb the last-ULP disagreement between this pass
   // and the min-depth pre-pass: they rasterise the same geometry with the same vertex
@@ -91,25 +114,57 @@ vec4 oitProcess(vec4 color) {
 
   #else
 
-  // Tail pass: exclude the front fragment (handled exactly by the front pass),
-  // unless front peeling is disabled (debug: every fragment goes through WBOIT).
-  // ⚠️ Tested against a WIDER slab than the front pass uses. The two are separate
-  // programs, so right at the threshold they can disagree; a fragment the front pass
-  // draws and this one also keeps is counted twice and reads as extra opacity —
-  // exactly the artefact a tight tolerance is meant to remove. Erring wide here makes
-  // that impossible, leaving only the benign case of a fragment neither pass takes.
-  if((linZ - minZ) <= tol * 2.0 && oitSkipFront == 0)
-    discard;
-
-  float alpha = color.a;
-
   // Optical-depth weight b = -ln(1 - alpha). Additive (ONE, ONE) blending then gives
   // accum.rgb = sum(rgb * b), accum.a = sum(b). The composite reconstructs both the
   // weighted-average colour (accum.rgb / accum.a) and the coverage
   // (1 - exp(-accum.a) = 1 - prod(1 - alpha)) from this single buffer, so no separate
   // reveal pass is needed. alpha is clamped below 1 to keep b finite.
-  float b = -log(1.0 - clamp(alpha, 0.0, 0.9999));
-  return vec4(color.rgb * b, b);
+  float b = -log(1.0 - clamp(color.a, 0.0, 0.9999));
+  vec4 weighted = vec4(color.rgb * b, b);
+
+  oitFrontColor = vec4(0.0);
+  oitSlice1Color = vec4(0.0);
+  oitSlice2Color = vec4(0.0);
+
+  if(oitMergeFront == 1) {
+    // Front and tail are decided by the SAME evaluation here, so the partition is
+    // exact: no fragment is counted twice or dropped. Encoding the front fragment
+    // with the same weight resolves a single fragment exactly (alpha = 1 - exp(-b))
+    // and fragments tied at the front depth order-independently.
+    if((linZ - minZ) <= tol) {
+      oitFrontColor = weighted;
+      return vec4(0.0);
+    }
+  } else if((linZ - minZ) <= tol * 2.0 && oitSkipFront == 0) {
+    // Tail pass: exclude the front fragment (handled exactly by the front pass),
+    // unless front peeling is disabled (debug: every fragment goes through WBOIT).
+    // ⚠️ Tested against a WIDER slab than the front pass uses. The two are separate
+    // programs, so right at the threshold they can disagree; a fragment the front
+    // pass draws and this one also keeps is counted twice and reads as extra opacity
+    // — exactly the artefact a tight tolerance is meant to remove. Erring wide here
+    // makes that impossible, leaving only the benign case of a fragment neither pass
+    // takes.
+    discard;
+  }
+
+  if(oitTailSlices > 1) {
+    // Position within this pixel's own [nearest, farthest] range. The guards only
+    // matter where the passes disagree in the last ULP (t then clamps to an end).
+    float maxZ = -minMax.y;
+    float t = oitTailSliceSpacing == 1
+      ? log(linZ / max(minZ, 1e-12)) / max(log(maxZ / max(minZ, 1e-12)), 1e-12)
+      : (linZ - minZ) / max(maxZ - minZ, 1e-12);
+    // Tent-split the weight between the two nearest slice centres: a hard boundary
+    // draws a contour wherever it falls between two close layers. The weights sum to
+    // 1, so the total optical depth (and transmittance) is unchanged.
+    float n = float(oitTailSlices);
+    float p = clamp(clamp(t, 0.0, 1.0) * n - 0.5, 0.0, n - 1.0);
+    oitSlice1Color = weighted * max(0.0, 1.0 - abs(p - 1.0));
+    oitSlice2Color = weighted * max(0.0, 1.0 - abs(p - 2.0));
+    return weighted * max(0.0, 1.0 - p);
+  }
+
+  return weighted;
 
   #endif // OIT_FRONT_PASS
   #endif // OIT_DEPTH_PASS

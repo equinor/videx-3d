@@ -124,6 +124,8 @@ export type ChunkMeshesProps = {
    * floor is drawn with the fill of the unit resting on it.
    */
   carrierMaterial?: string;
+  /** procedural detail for the floor's own material (see `ChunkCarrier.detail`) */
+  carrierDetail?: ChunkDetail;
   /** contacts drawn as lines on every layer that does not opt out */
   contacts?: ChunkContactTexture[] | null;
   /**
@@ -297,6 +299,7 @@ export const ChunkMeshes = ({
   sectionWater = false,
   fenceWater = false,
   carrierMaterial,
+  carrierDetail,
   contacts = null,
   section = null,
   sectionUniform,
@@ -337,17 +340,13 @@ export const ChunkMeshes = ({
   // Each tile's level, which the caps read their normals by and the tint shows; an
   // untiled chunk with levels is one tile.
   const hasLevels = !!chunk.metrics.lodErrors;
-  const tiling =
-    chunk.metrics.tiling ?? (hasLevels ? SINGLE_TILE : undefined);
+  const tiling = chunk.metrics.tiling ?? (hasLevels ? SINGLE_TILE : undefined);
   const tilingKey = tiling ? JSON.stringify(tiling) : '';
   const tileUniforms = useMemo(
     () => (tilingKey ? createTileUniforms(JSON.parse(tilingKey)) : undefined),
     [tilingKey],
   );
-  useEffect(
-    () => () => tileUniforms?.values.value.dispose(),
-    [tileUniforms],
-  );
+  useEffect(() => () => tileUniforms?.values.value.dispose(), [tileUniforms]);
 
   const materials = useMemo(() => {
     // Every material built here is owned here and disposed on cleanup.
@@ -560,7 +559,7 @@ export const ChunkMeshes = ({
 
     const carrier = !carrierMaterial
       ? null
-      : make(carrierMaterial, surfaceOpacity, undefined, false, undefined, {
+      : make(carrierMaterial, surfaceOpacity, carrierDetail, false, undefined, {
           // The floor is the base of the deepest unit, so keeping that unit keeps
           // it — AND'd with the explicit toggle rather than overriding it, so a
           // caller can still keep the base plate whole on its own.
@@ -649,6 +648,7 @@ export const ChunkMeshes = ({
     sectionWater,
     fenceWater,
     carrierMaterial,
+    carrierDetail,
     contacts,
     sectionUniform,
     sectionUniformInverse,
@@ -920,10 +920,7 @@ export const ChunkMeshes = ({
   );
   // While LOD draws, it culls its own caps (see `useChunkLod`).
   const lodActive = chunkLodActive(chunk, lodPixelError, lodLevel);
-  const capGeometries = useCulledCaps(
-    chunk,
-    lodActive ? null : revealedTables,
-  );
+  const capGeometries = useCulledCaps(chunk, lodActive ? null : revealedTables);
 
   // A level of detail per tile: chosen on screen, or one `lodLevel` everywhere.
   const lodViews = useChunkLod(

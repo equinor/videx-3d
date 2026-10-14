@@ -2488,7 +2488,10 @@ it, and a floor has none.
 There is no interval *below* a carrier, so it has a cap and no `fill`, and it is
 the only side of the block seen from underneath — which is why its cap defaults to
 the fill of the unit ABOVE it, exactly as a void's ceiling does. `carrier.material`
-overrides that, for a floor that should read as its own thing.
+overrides that, for a floor that should read as its own thing, and `carrier.detail`
+gives that floor procedural detail of its own. Seen from below, a flat floor with
+neither is a perfectly uniform veil and reads as haze rather than as a surface; its
+`scale` keeps the pattern resolvable from the distance a floor is usually seen at.
 
 ⚠️ The material lives on the STACK's carrier because the layer is inferred and has
 nowhere else to carry one. It is published to `ChunkMeshes` separately from the

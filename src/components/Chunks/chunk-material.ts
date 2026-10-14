@@ -606,19 +606,20 @@ export class ChunkMaterial extends ShaderMaterial {
     delete defines.CHUNK_WALL;
     if (!resolved) return;
 
-    const { params, strength } = resolved;
+    const { params, strength, scale } = resolved;
     const u = this.uniforms;
     defines.CHUNK_DETAIL = '';
     if (wall) defines.CHUNK_WALL = '';
     u.detailStrength.value = strength;
     (u.detailShade.value as Vector2).set(params.albedo, params.height);
 
+    // Slopes are frequency-independent in the shader, so scaling sizes keeps the look.
     if (params.granular) {
       const g = params.granular;
       defines.CHUNK_DETAIL_GRANULAR = '';
       (u.detailGranular.value as Vector4).set(
         g.strength,
-        g.frequency,
+        g.frequency / scale,
         g.octaves,
         g.anisotropy ?? 0,
       );
@@ -628,7 +629,7 @@ export class ChunkMaterial extends ShaderMaterial {
       defines.CHUNK_DETAIL_GRAIN = '';
       (u.detailGrain.value as Vector4).set(
         g.strength,
-        g.frequency,
+        g.frequency / scale,
         g.angle,
         g.sharpness,
       );
@@ -643,7 +644,12 @@ export class ChunkMaterial extends ShaderMaterial {
       const d = params.dunes;
       defines.CHUNK_DETAIL_DUNES = '';
       const [dx, dz] = d.direction ?? [1, 0];
-      (u.detailDunes.value as Vector4).set(d.strength, d.wavelength, dx, dz);
+      (u.detailDunes.value as Vector4).set(
+        d.strength,
+        d.wavelength * scale,
+        dx,
+        dz,
+      );
     }
   }
 

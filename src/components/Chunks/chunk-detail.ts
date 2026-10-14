@@ -28,7 +28,7 @@ export type ChunkDetailPreset =
 
 /**
  * Procedural surface detail for a chunk layer: a {@link ChunkDetailPreset}, or one
- * with its overall strength scaled.
+ * with its overall strength and feature size scaled.
  *
  * @group Components
  */
@@ -38,6 +38,13 @@ export type ChunkDetail =
       preset: ChunkDetailPreset;
       /** scales the whole preset. 0 = off, 1 = as designed. Default 1. */
       strength?: number;
+      /**
+       * Multiplies every feature size (default 1). The slopes stay the same, so the
+       * look is kept and only the size changes — for a surface mostly seen from
+       * further away than a preset resolves at (its coarsest cells are 5–20 m, gone
+       * beyond a few km).
+       */
+      scale?: number;
     };
 
 /**
@@ -211,6 +218,7 @@ export const CHUNK_DETAIL_PRESET_NAMES = Object.keys(
     preset: ChunkDetailPreset;
     params: ChunkDetailParams;
     strength: number;
+    scale: number;
   };
 
 /**
@@ -228,11 +236,14 @@ export function resolveChunkDetail(
   if (!params) return null;
   const strength = typeof detail === 'string' ? 1 : (detail.strength ?? 1);
   if (strength <= 0) return null;
-  return { preset, params, strength };
+  const scale = typeof detail === 'string' ? 1 : (detail.scale ?? 1);
+  return { preset, params, strength, scale: scale > 0 ? scale : 1 };
 }
 
 /** A stable key for a resolved detail, for memo/content keys. */
 export function chunkDetailKey(detail?: ChunkDetail): string {
   const resolved = resolveChunkDetail(detail);
-  return resolved ? `${resolved.preset}:${resolved.strength}` : '';
+  return resolved
+    ? `${resolved.preset}:${resolved.strength}:${resolved.scale}`
+    : '';
 }

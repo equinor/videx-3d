@@ -499,6 +499,12 @@ export type ChunkCarrier = StackCarrier & {
    * thing (a datum rather than the underside of the deepest unit).
    */
   material?: string;
+  /**
+   * The floor's procedural detail, as a layer's `detail`. Only used with
+   * {@link material}: without one the floor is drawn as the fill of the unit
+   * resting on it, detail included.
+   */
+  detail?: ChunkDetail;
 };
 
 /**

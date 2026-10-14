@@ -115,6 +115,7 @@ type ExampleProps = {
   msaaSamples: 0 | 2 | 4 | 8;
   smaaQuality: SMAAQuality;
   skipFrontPeeling: boolean;
+  mergeFront: boolean;
   showDebugTargets: boolean;
   profileTail: boolean;
   occlusionDepthStamp: boolean;
@@ -238,6 +239,10 @@ const Example = (args: ExampleProps) => {
   useEffect(() => {
     if (oitPass) oitPass.skipFront = args.skipFrontPeeling;
   }, [oitPass, args.skipFrontPeeling]);
+
+  useEffect(() => {
+    if (oitPass) oitPass.mergeFront = args.mergeFront;
+  }, [oitPass, args.mergeFront]);
 
   // Keep the GPU profiling toggle in sync.
   useEffect(() => {
@@ -849,6 +854,12 @@ const meta = {
       control: { type: 'boolean' },
       table: { category: 'Advanced (Diagnostics)' },
     },
+    mergeFront: {
+      control: { type: 'boolean' },
+      description:
+        'Render the exact front layer in the same geometry pass as the tail instead of a separate front pass.',
+      table: { category: 'Advanced (Diagnostics)' },
+    },
     showDebugTargets: {
       control: { type: 'boolean' },
       table: { category: 'Advanced (Diagnostics)' },
@@ -923,6 +934,7 @@ const commonArgs = {
   msaaSamples: 0 as const,
   smaaQuality: 'high' as const,
   skipFrontPeeling: false,
+  mergeFront: false,
   showDebugTargets: false,
   profileTail: false,
   occlusionDepthStamp: false,

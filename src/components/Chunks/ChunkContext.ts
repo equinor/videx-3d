@@ -13,6 +13,7 @@ import {
 } from './chunk-defs';
 import { CutoutSource } from './cutout';
 import { ChunkContactTexture } from './chunk-contacts';
+import { ChunkDetail } from './chunk-detail';
 import {
   ChunkFenceOverlayUniforms,
   ChunkFenceUniforms,
@@ -87,6 +88,8 @@ export type ChunkStackContextValue = {
    * it would make recolouring the floor rebuild the geometry.
    */
   carrierMaterial?: string;
+  /** The carrier's procedural detail; APPEARANCE only, like `carrierMaterial`. */
+  carrierDetail?: ChunkDetail;
   /**
    * Fluid contacts drawn as LINES across whatever face crosses them, prepared as
    * textures. APPEARANCE only, like `carrierMaterial`: a contact takes no part in

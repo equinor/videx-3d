@@ -34,6 +34,7 @@ import {
 import { ChunkSectionDebug } from './ChunkSectionDebug';
 import { StackImmersionFog } from './StackImmersionFog';
 import { ChunkContact } from './chunk-contacts';
+import { chunkDetailKey } from './chunk-detail';
 import {
   ChunkBuildProgress,
   ChunkBuildState,
@@ -315,6 +316,10 @@ export const ChunkStack = ({
     : '';
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
   const stableCarrier = useMemo(() => carrier, [carrierKey]);
+  // The floor's detail is appearance too, and as often written inline.
+  const carrierDetailKey = chunkDetailKey(carrier?.detail);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
+  const carrierDetail = useMemo(() => carrier?.detail, [carrierDetailKey]);
 
   // Same again for the sea, which every chunk's MATERIALS depend on (the bed
   // tint) — a fresh object each render would rebuild all of them.
@@ -836,6 +841,7 @@ export const ChunkStack = ({
       // Read off the LIVE prop, not the geometry-keyed copy, which is deliberately
       // stale whenever only the appearance changed.
       carrierMaterial: carrier?.material,
+      carrierDetail,
       contacts: contactTextures,
       water: stableWater ?? null,
       bathymetry,
@@ -878,6 +884,7 @@ export const ChunkStack = ({
     column,
     stableCarrier,
     carrier?.material,
+    carrierDetail,
     contactTextures,
     stableWater,
     bathymetry,

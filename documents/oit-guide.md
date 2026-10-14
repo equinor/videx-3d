@@ -299,6 +299,9 @@ useEffect(() => { oitPass.occlusionDepthStamp = true; }, [oitPass]);
 | Field | Default | Purpose |
 |-------|---------|---------|
 | `skipFront` | `false` | Debug: disable the exact depth-peeled front layer; resolve *every* transparent fragment through the WBOIT tail. Useful for isolating tail behaviour. |
+| `mergeFront` | `false` | Render the exact front layer in the same geometry pass as the tail (a second render-target attachment) instead of a separate front pass — one transparent geometry pass fewer, same image. Not used when the output is multisampled. See [What a transparent frame costs](#what-a-transparent-frame-costs). |
+| `tailSlices` | `0` | Split the weighted-blended tail into 2 or 3 per-pixel depth slices, composited back to front, so ordering errors stay within a slice. No extra geometry pass. See [Tail depth slices](#tail-depth-slices-tailslices). |
+| `tailSliceSpacing` | `'linear'` | How `tailSlices` divides each pixel's depth range: `'linear'` (equal depth) or `'log'` (equal depth ratio — thinner slices near the front). |
 | `frontPeelTolerance` | `1e-7` | How close to the per-pixel nearest transparent fragment a fragment may be and still count as the front layer — see below. |
 | `occlusionDepthStamp` | `false` | Let sufficiently-opaque **transparent surfaces** occlude 2D annotation labels behind them. Transparent surfaces normally write no depth, so labels are never occluded; this stamps depth where a surface's own alpha ≥ `occlusionDepthThreshold`. |
 | `occlusionDepthThreshold` | `0.5` | Alpha threshold for `occlusionDepthStamp`. |
@@ -363,7 +366,9 @@ Hence the current form: relative to depth (so it is a constant fraction of the v
 distance rather than a fixed distance) and gradient-free (so it cannot explode at an
 edge). The tail tests against a slab twice as wide as the front pass's, so a fragment
 can never be drawn by the front *and* kept by the tail — double-counting would read
-as extra opacity, which is the artefact class this whole knob is about.
+as extra opacity, which is the artefact class this whole knob is about. With
+`mergeFront` the front/tail decision is made once, in one program, so the split is
+exact and the wider tail slab is not needed.
 
 `skipFront = true` is the A/B: if an artefact survives it, the peel did not cause it.
 
@@ -379,10 +384,61 @@ LOD at 2 px), GPU ms per render target:
 | 15 km, LOD off | 0.4 | 17.9 | 19.1 | 18.9 | 1.5 | 58 |
 
 The min-depth pass returns before any shading, yet costs nearly as much as the two
-shaded passes: the cost is the number of fragments (about 21 surfaces deep per pixel,
-in each of three passes) plus about 1 ms per million triangles per pass, not the
-shader. Fewer fragments or fewer passes is what helps; `skipFront` (one pass instead
-of three) halves it.
+shaded passes. A generic benchmark (the OIT debug story's `transparentStack` scene:
+16 wavy double-sided layers, 2.1M triangles, 1542×1261) breaks it down further:
+
+- each transparent geometry pass costs about **3 ms per million triangles** — about
+  70 % of the frame (0.13M triangles: 11 ms; 2.1M: 30 ms);
+- turning blending off changes nothing, and depth testing costs 0.3 ms;
+- shading matters only in the tail (an unlit material saves 5 ms there);
+- linear instead of logarithmic depth saves about 3 ms.
+
+So the number of transparent geometry passes is the lever, which is what
+`mergeFront` reduces (three passes to two). Measured on the same GPU, `aaMode`
+`'none'` except the column (SMAA):
+
+| Scene | Separate front pass | `mergeFront` |
+|---|---|---|
+| Debug `transparentStack` (2.1M tris) | 29.8 ms | 23.7 ms (−20 %) |
+| OIT example story, Troll (2.5M tris) | 73.4 ms | 54.1 ms (−26 %) |
+| FieldColumn, 14 km, no water | 17.8 ms | 15.0 ms (−16 %) |
+| FieldColumn, 2.5 km | 16.4 ms | 14.1 ms (−14 %) |
+
+The merged tail pass costs 1.2–1.7 ms more than the plain tail (it writes two
+targets); the separate front pass it replaces cost 4.7–18.7 ms. The images match to
+rounding: 0.0012 % (debug benchmark) and 0.0001 % (FieldColumn, no water) of the
+pixels differ by more than 1/255. `skipFront` (one pass) is cheaper still, but drops
+the exact front layer.
+
+### Tail depth slices (`tailSlices`)
+
+Only the front layer is placed exactly; everything behind it is a single weighted
+average, so in a deep stack the colours of all the layers behind the front are mixed
+together. `tailSlices` splits that average into 2 or 3 depth slices composited back
+to front:
+
+- The min-depth pre-pass also stores the negated depth, whose minimum is minus the
+  farthest depth, so each pixel knows its own nearest and farthest transparent
+  fragment from the same pass. The slices divide that range per pixel and per frame,
+  so there is nothing to tune per scene or view.
+- Each slice is one more attachment of the tail target; the front layer keeps its own
+  (with `mergeFront`). At most 4 attachments, which every WebGL2 GPU supports.
+- A fragment's weight is shared between the two nearest slice centres (a tent
+  split). With hard boundaries, every place a boundary fell between two close layers
+  drew a contour line across the image. The shares sum to the full weight, so the
+  total transmittance is unchanged.
+
+Measured on the same GPU (1542×857, with `mergeFront`): 3 slices took the debug
+benchmark from 17.7 to 21.2 ms and the FieldColumn from 10.7 to 13.8 ms at 14 km and
+from 10.1 to 12.4 ms at 2.5 km — about 1 ms per extra slice. `'log'` and `'linear'`
+spacing measured the same; log puts more resolution near the front, where it shows
+most.
+
+⚠️ Only ONE layer is ever exact. Any transparent surface in front of the others — a
+sea surface, a semi-transparent grid — takes that slot, and the surface that would
+have been exact drops into a slice and is averaged with the layers behind it. Seen
+from above, a column under water can therefore look more colourful than the same
+column without it: what shows is deeper than the opacities say.
 
 ---
 

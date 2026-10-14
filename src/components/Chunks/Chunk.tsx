@@ -1126,6 +1126,7 @@ export const Chunk = ({
     sectionWater: stack.sectionWater,
     fenceWater: stack.fenceWater,
     carrierMaterial: stack.carrierMaterial,
+    carrierDetail: stack.carrierDetail,
     contacts: stack.contacts,
     section: stack.section,
     sectionUniform: stack.sectionUniform,
