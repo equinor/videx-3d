@@ -214,5 +214,7 @@ geology.
 paid four times unless the shader says otherwise. `chunk-frag.glsl` returns immediately
 under `OIT_DEPTH_PASS` (which writes only linear depth) and `OIT_OCCLUSION_PASS` (which
 needs only alpha), halving what the detail costs. Any library material carrying
-procedural detail should do the same.
+procedural detail should do the same. In the tail pass it also zeroes the noise where
+`oitInTail()` says the fragment is only seen through the front layer, so only the front
+layer is detailed.
 

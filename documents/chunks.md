@@ -141,7 +141,8 @@ used to patch through `makeOitCompatible`. Three reasons it is worth owning:
   FOUR OIT passes and `oitProcess` is called at the END of main, so the min-depth and
   occlusion passes would otherwise shade a fragment and throw the colour away.
   `chunk-frag.glsl` returns straight after `diffuseColor` under `OIT_DEPTH_PASS` /
-  `OIT_OCCLUSION_PASS`, so the detail is paid for twice rather than four times.
+  `OIT_OCCLUSION_PASS`, so the detail is paid for twice rather than four times. In the
+  tail pass, fragments behind the front layer (`oitInTail()`) skip it too.
 
 `detail` and `wall` are read at CONSTRUCTION (they set shader defines), which is
 consistent with layer 3 as it already works: `ChunkMeshes` rebuilds its materials on any

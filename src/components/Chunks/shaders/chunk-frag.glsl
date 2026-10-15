@@ -250,6 +250,14 @@ void main() {
 
   #ifdef CHUNK_DETAIL
   {
+    // Only the OIT front layer is detailed. The noise is zeroed rather than branched
+    // around, as the derivatives below need uniform control flow.
+    #ifdef USE_OIT
+    bool detailShown = !oitInTail();
+    #else
+    bool detailShown = true;
+    #endif
+
     // View -> world. `mat3(viewMatrix)` is orthonormal (the view transform is rigid),
     // so multiplying from the right is its inverse. Taking the normal from AFTER
     // <normal_fragment_begin> keeps the double-sided face flip.
@@ -282,16 +290,18 @@ void main() {
       // at. The slope is a horizontal-plane one, so it fades out as a face turns
       // vertical (a wall gets none).
       float texel = max(length(fwidth(vWorldPosition.xz)), 1e-3);
-      float crest;
-      vec2 g = pnDunes(vWorldPosition.xz, detailDunes.y, detailDunes.zw, texel, crest);
-      worldNormal = normalize(worldNormal + vec3(-g.x, 0.0, -g.y) * (detailDunes.x * detailStrength * axis.y));
-      shade += crest * detailDunes.x;
+      if (detailShown) {
+        float crest;
+        vec2 g = pnDunes(vWorldPosition.xz, detailDunes.y, detailDunes.zw, texel, crest);
+        worldNormal = normalize(worldNormal + vec3(-g.x, 0.0, -g.y) * (detailDunes.x * detailStrength * axis.y));
+        shade += crest * detailDunes.x;
+      }
     }
     #endif
 
     #ifdef CHUNK_DETAIL_GRANULAR
     {
-      int octaves = int(detailGranular.z);
+      int octaves = detailShown ? int(detailGranular.z) : 0;
       vec2 uv = q * detailGranular.y;
       // ⭐ Analytic slope, NOT perturbNormalHeight: a screen-space gradient is taken over
       // the pixel footprint, so the bump direction changes with distance and viewing
@@ -312,12 +322,12 @@ void main() {
       // thickness, so `laminae` beds fit between its top and base either way.
       g.y = mix(q.y, vWallV * detailGrainB.w / max(detailGrain.y, 1e-4), detailGrainB.z);
       #endif
-      int octaves = int(detailGrainB.y);
+      int octaves = detailShown ? int(detailGrainB.y) : 0;
       vec2 uv = g * detailGrain.y;
       // Fades on the BASE frequency (octaves = 1), not the finest: the flute component
       // band-limits itself and the irregular one is octave-filtered, so the whole layer
       // only has to go once its coarsest structure stops being resolvable.
-      float fade = pnFootprintFade(uv, 1);
+      float fade = pnFootprintFade(uv, 1) * (detailShown ? 1.0 : 0.0);
       // pnGrain is positive (0..1); centring it keeps the albedo modulation unbiased.
       // ⚠️ This one keeps the screen-space path: its shape function (a pow and a
       // footprint-widened smoothstep) has no cheap closed-form gradient.

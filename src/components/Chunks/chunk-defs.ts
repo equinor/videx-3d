@@ -288,7 +288,8 @@ export type ChunkLayer = {
   /**
    * Procedural surface relief for this layer's cap AND the volume below it — a
    * {@link ChunkDetail} preset such as `'sand'` or `'shale'`, adding subtle
-   * texture-free detail once the camera is close. OFF when omitted.
+   * texture-free detail once the camera is close. OFF when omitted. Under
+   * `OITRenderPass` only the front transparent layer is detailed.
    */
   detail?: ChunkDetail;
   /**

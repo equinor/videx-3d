@@ -38,6 +38,9 @@
 // divides its own range between the nearest and farthest transparent fragment (the
 // min-depth pass also stores -depth, so its minimum is -farthest), each slice goes
 // to its own attachment, and the composite stacks them back to front.
+//
+// `oitInTail()` tells a material whether the fragment ends up in the tail, i.e. is only
+// seen through the front layer, so costly shading (procedural detail) can be skipped.
 
 #ifdef USE_OIT
 
@@ -168,6 +171,24 @@ vec4 oitProcess(vec4 color) {
 
   #endif // OIT_FRONT_PASS
   #endif // OIT_DEPTH_PASS
+}
+
+// Whether this fragment is resolved in the weighted tail, i.e. only seen through the
+// exact front layer, so a material can skip shading the blend would lose. Mirrors the
+// partition in oitProcess; false in every other pass and with front peeling off.
+bool oitInTail() {
+  #if defined(OIT_DEPTH_PASS) || defined(OIT_FRONT_PASS) || defined(OIT_OCCLUSION_PASS)
+  return false;
+  #else
+  if(oitSkipFront == 1)
+    return false;
+  // Without mergeFront the front layer has its own pass, and this one keeps only the tail.
+  if(oitMergeFront == 0)
+    return true;
+  float linZ = abs(vViewPosition.z) / oitDepthFar;
+  float minZ = texture2D(oitMinDepthTexture, gl_FragCoord.xy / oitScreenSize).r;
+  return (linZ - minZ) > minZ * oitFrontTolerance + 1e-9;
+  #endif
 }
 
 #endif // USE_OIT

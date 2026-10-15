@@ -164,6 +164,10 @@ attachOitVariants(material, { side: DoubleSide });
 The fragment shader must provide `vViewPosition` (lit chunks like
 `lights_lambert_pars_fragment` already declare it — don't redeclare).
 
+`oit.glsl` also provides `oitInTail()`: true when the fragment is resolved in the
+weighted tail, i.e. only seen through the front layer. Use it to skip costly shading
+there (`ChunkMaterial` skips its procedural detail).
+
 ### 2c. `<OitMaterial>` — declarative inline materials
 
 For materials declared in JSX, drop `<OitMaterial>` in as a sibling of the material:

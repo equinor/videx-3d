@@ -153,6 +153,14 @@ and contact work is skipped in half the passes. Measured: 57 fps with detail on
 versus 59 off. **Any library material with procedural detail should copy this
 guard.**
 
+In the tail pass the detail is also skipped for every fragment `oitInTail()` (from
+`oit.glsl`) reports as seen only through the front layer: there the relief is lost in
+the blend. So under `OITRenderPass` only the front layer is detailed. The noise is
+zeroed (0 octaves) rather than branched around, because the pattern's derivatives need
+uniform control flow. Measured on an iGPU, close view of a 21-cap stack: the detail's
+cost in the tail pass fell from ~6–7 ms to ~3 ms. The ~3 ms left is paid even when no
+fragment shades the detail, i.e. for having the code in the program at all.
+
 ---
 
 ## Procedural detail
