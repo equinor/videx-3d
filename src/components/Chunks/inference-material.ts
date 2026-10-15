@@ -235,7 +235,9 @@ float chunkStripe(float h, float w) {
       )
       .replace(
         '#include <clipping_planes_fragment>',
-        `${
+        // Nothing to mark: also keeps the overlay out of the OIT min-depth there.
+        `if (vInferred <= 0.0) discard;
+  ${
           sectionPlane
             ? `if (vSectionDist > 0.0) discard;
   `

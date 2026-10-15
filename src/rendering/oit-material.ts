@@ -210,6 +210,9 @@ function configureVariantBlend(
   variant.depthWrite = false;
   variant.blending = CustomBlending;
   variant.toneMapped = false;
+  // Every OIT pass is order-independent, so three's back-then-front split of a
+  // transparent DoubleSide material would only draw it twice.
+  variant.forceSinglePass = true;
   if (side !== undefined) variant.side = side;
 
   switch (pass) {
