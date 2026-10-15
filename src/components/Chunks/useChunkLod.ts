@@ -11,14 +11,20 @@ import {
   Box3,
   BufferAttribute,
   BufferGeometry,
+  Camera,
   DataTexture,
+  Frustum,
   Group,
+  Matrix4,
   Vector3,
+  WebGLCoordinateSystem,
 } from 'three';
 import type { SurfaceChunk, SurfaceChunkMesh } from '../../sdk';
 import { createCapView, releaseCapView } from './cap-visibility';
 import {
+  capTileHeights,
   chunkTileBoxes,
+  chunkTileCorners,
   compactTilePool,
   createTilePool,
   cullTilePool,
@@ -28,7 +34,9 @@ import {
   pixelsPerUnit,
   selectTileLevels,
   setPoolTile,
+  tilesInView,
   TilePool,
+  viewTilePool,
 } from './chunk-lod';
 
 /**
@@ -40,6 +48,17 @@ const LOD_FRAME_BUDGET = 2_000_000;
 /** A pool this much degenerate is packed again, once no tile is waiting. */
 const LOD_COMPACT_WASTE = 0.25;
 
+/**
+ * How much wider than the view the off-screen test is, as a fraction of it: a tile
+ * is drawn a little before it shows, should the camera still move this frame.
+ */
+const VIEW_MARGIN = 0.1;
+const WIDEN = new Matrix4().makeScale(
+  1 / (1 + VIEW_MARGIN),
+  1 / (1 + VIEW_MARGIN),
+  1,
+);
+
 /** An index drawn at a level per tile, over a cap's attributes. */
 type PoolView = {
   view: BufferGeometry;
@@ -48,7 +67,11 @@ type PoolView = {
 };
 
 /** One cap drawn at a level per tile, and its patch at the same levels. */
-type LodCap = PoolView & { patch: PoolView | null };
+type LodCap = PoolView & {
+  patch: PoolView | null;
+  /** per tile, the low and high `y` it reaches (see `capTileHeights`) */
+  heights: Float32Array;
+};
 
 /** What {@link useChunkLod} draws: per cap, its view and its patch's. */
 export type ChunkLodViews = {
@@ -92,10 +115,14 @@ function createLodCap(
   surface: SurfaceChunkMesh,
   levels: Uint8Array,
   table: Uint8Array | null,
+  margin: number,
+  yRange: [number, number],
 ): LodCap | null {
   const own = surface.geometry.getIndex();
   if (!own || !surface.levels || !surface.tileStarts) return null;
   const { patchLevels, patchTileStarts } = surface;
+  const y = surface.geometry.getAttribute('y');
+  const full = surface.tileStarts[0];
   const cap: LodCap = {
     ...createPoolView(
       surface,
@@ -113,6 +140,14 @@ function createLodCap(
             levels,
           )
         : null,
+    heights: capTileHeights(
+      own.array,
+      full,
+      y?.array ?? null,
+      margin,
+      yRange[0],
+      yRange[1],
+    ),
   };
   // A new buffer is uploaded whole, so apply the hides at once too.
   cullLodCap(cap, surface, table);
@@ -165,6 +200,11 @@ export function chunkLodActive(
  * What a change of table reveals is drawn before the next frame; what it only
  * hides is applied within the budget (see `cullTilePool`).
  *
+ * With `cullOffscreen`, a cap's tile that lies wholly outside the camera's view
+ * draws nothing: written the frame it comes into view, emptied within the budget
+ * once it has left (see `viewTilePool`). Tested against the camera this hook sees,
+ * so a host drawing the scene from a second camera should turn it off.
+ *
  * ⚠️ The views share the caps' attributes; only their index is their own. A tile
  * drawn coarser shades from the cap's normal map, which `tileValues` (one texel
  * per tile, 0 = full level) tells the material; it reads all 0 while LOD is off.
@@ -176,6 +216,7 @@ export function useChunkLod(
   forced: number,
   tables: (Uint8Array | null)[] | null,
   tileValues?: DataTexture,
+  cullOffscreen = true,
 ): ChunkLodViews | null {
   const errors = chunk.metrics.lodErrors;
   const tiling = chunk.metrics.tiling;
@@ -193,16 +234,25 @@ export function useChunkLod(
     lod: ChunkLodViews;
   } | null>(null);
 
-  const boxes = useMemo(() => {
+  // Per tile, its box (what its level is chosen by) and its footprint (what the
+  // view is tested against, over each cap's own heights).
+  const layout = useMemo(() => {
     if (!active) return null;
     const bounds = new Box3();
     for (const s of chunk.surfaces) {
       if (s.geometry.boundingBox) bounds.union(s.geometry.boundingBox);
     }
-    return tiling
-      ? chunkTileBoxes(tiling, bounds.min.y, bounds.max.y)
-      : [bounds];
+    const { min, max } = bounds;
+    return {
+      boxes: tiling ? chunkTileBoxes(tiling, min.y, max.y) : [bounds],
+      corners: tiling
+        ? chunkTileCorners(tiling)
+        : Float32Array.of(min.x, min.z, max.x, min.z, min.x, max.z, max.x, max.z),
+      yRange: [min.y, max.y] as [number, number],
+    };
   }, [active, chunk.surfaces, tiling]);
+  // The view the tiles were last tested against; `null` = none hidden, or test again.
+  const viewed = useRef<Matrix4 | null>(null);
 
   // A layout effect, so a cap that just came into view is culled open before the
   // next frame draws it.
@@ -238,6 +288,8 @@ export function useChunkLod(
         applied: new Uint8Array(tiles - 1).fill(start),
       };
     }
+    // Every level lies within its height error of the full one's surface.
+    const margin = errors![0] + errors![errors!.length - 1];
     const lod: ChunkLodViews = { caps: new Map(), patches: new Map() };
     chunk.surfaces.forEach((surface, i) => {
       let cap = caps.get(surface);
@@ -246,16 +298,20 @@ export function useChunkLod(
           surface,
           state.current!.applied,
           tablesRef.current?.[i] ?? null,
+          margin,
+          layout!.yRange,
         );
         if (!made) return;
         caps.set(surface, made);
         cap = made;
+        // A new cap draws every tile until the view is tested again.
+        viewed.current = null;
       }
       lod.caps.set(surface, cap.view);
       if (cap.patch) lod.patches.set(surface, cap.patch.view);
     });
     setBuilt({ surfaces: chunk.surfaces, lod });
-  }, [active, chunk.surfaces, tiles, forced, errors]);
+  }, [active, chunk.surfaces, tiles, forced, errors, layout]);
   useEffect(() => {
     const caps = cache.current;
     return () => {
@@ -267,10 +323,13 @@ export function useChunkLod(
     active && built?.surfaces === chunk.surfaces ? built.lod : null;
 
   const eye = useMemo(() => new Vector3(), []);
+  const clip = useMemo(() => new Matrix4(), []);
+  const frustum = useMemo(() => new Frustum(), []);
   const perTile = useMemo(
     () => ({
       scales: new Float32Array(Math.max(tiles - 1, 0)),
       excess: new Float32Array(Math.max(tiles - 1, 0)),
+      inView: new Uint8Array(Math.max(tiles - 1, 0)),
     }),
     [tiles],
   );
@@ -284,16 +343,16 @@ export function useChunkLod(
   useFrame(({ camera, size }) => {
     const current = state.current;
     const group = root.current;
-    if (!views || !boxes || !current || !group || !errors) return;
+    if (!views || !layout || !current || !group || !errors) return;
     const { levels, applied } = current;
-    const { scales, excess } = perTile;
+    const { scales, excess, inView } = perTile;
     if (forced > 0) {
       levels.fill(Math.min(forced, errors.length - 1));
     } else {
       camera.getWorldPosition(eye);
       group.worldToLocal(eye);
       selectTileLevels(
-        boxes,
+        layout.boxes,
         eye,
         pixelsPerUnit(camera, size.height),
         errors,
@@ -311,6 +370,32 @@ export function useChunkLod(
     const pools: TilePool[] = [];
     for (const cap of caps) for (const { pool } of poolViews(cap)) pools.push(pool);
     let budget = LOD_FRAME_BUDGET;
+    // Out of view a tile draws nothing; what comes into view is written now.
+    if (cullOffscreen) {
+      camera.updateMatrixWorld();
+      clip
+        .multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+        .premultiply(WIDEN)
+        .multiply(group.matrixWorld);
+      if (!viewed.current?.equals(clip)) {
+        viewed.current = (viewed.current ?? new Matrix4()).copy(clip);
+        frustum.setFromProjectionMatrix(
+          clip,
+          WebGLCoordinateSystem,
+          (camera as Camera & { reversedDepth?: boolean }).reversedDepth,
+        );
+        for (const cap of caps) {
+          tilesInView(frustum, layout.corners, cap.heights, inView);
+          for (const { pool } of poolViews(cap)) {
+            budget -= viewTilePool(pool, inView);
+          }
+        }
+      }
+    } else if (viewed.current) {
+      viewed.current = null;
+      inView.fill(1);
+      for (const pool of pools) budget -= viewTilePool(pool, inView);
+    }
     let redrawn = false;
     const order = orderTileChanges(levels, applied, excess);
     let done = 0;
@@ -334,8 +419,8 @@ export function useChunkLod(
       redrawn = true;
       done++;
     }
-    // What a culling change only hid, while the budget lasts.
-    for (const { pool } of caps) {
+    // What a culling change or the view only hid, while the budget lasts.
+    for (const pool of pools) {
       if (budget <= 0) break;
       budget -= flushTilePool(pool, budget);
     }

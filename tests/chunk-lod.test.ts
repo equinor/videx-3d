@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  Frustum,
   Matrix4,
   OrthographicCamera,
   PerspectiveCamera,
   Vector3,
 } from 'three';
 import {
+  capTileHeights,
   chunkTileBoxes,
+  chunkTileCorners,
   compactTilePool,
   createTilePool,
   cullTilePool,
@@ -17,7 +20,9 @@ import {
   pixelsPerUnit,
   selectTileLevels,
   setPoolTile,
+  tilesInView,
   TilePool,
+  viewTilePool,
 } from '../src/components/Chunks/chunk-lod';
 import type { StackTiling } from '../src/sdk';
 
@@ -40,6 +45,64 @@ describe('chunkTileBoxes', () => {
     expect([a.min.y, a.max.y]).toEqual([-900, -100]);
     expect(b.min.x).toBeCloseTo(975);
     expect(b.max.x).toBeCloseTo(1475);
+  });
+});
+
+describe('capTileHeights', () => {
+  it('spans each tile\'s full-level triangles, widened, and a bare tile the range', () => {
+    const y = [-100, -200, -300, -400];
+    // Tile 0: one triangle over vertices 0-2; tile 1: none.
+    const heights = capTileHeights(
+      [0, 1, 2],
+      Uint32Array.from([0, 1, 1]),
+      y,
+      10,
+      -900,
+      -50,
+    );
+    expect(Array.from(heights)).toEqual([-310, -90, -900, -50]);
+    expect(
+      Array.from(capTileHeights([0, 1, 2], Uint32Array.from([0, 1]), null, 10, -900, -50)),
+    ).toEqual([-900, -50]);
+  });
+});
+
+describe('tilesInView', () => {
+  const corners = chunkTileCorners(tiling);
+  const look = (fov: number, eye: Vector3, at: Vector3, far = 10000) => {
+    const camera = new PerspectiveCamera(fov, 1, 1, far);
+    // Not +Y: looking straight down along it would leave `lookAt` no roll to pick.
+    camera.up.set(0, 0, -1);
+    camera.position.copy(eye);
+    camera.lookAt(at);
+    camera.updateMatrixWorld();
+    return new Frustum().setFromProjectionMatrix(
+      new Matrix4().multiplyMatrices(
+        camera.projectionMatrix,
+        camera.matrixWorldInverse,
+      ),
+    );
+  };
+
+  it('keeps the tiles whose prism reaches into the view', () => {
+    const heights = Float32Array.from([-900, -100, -900, -100]);
+    const inView = new Uint8Array(2);
+    // Straight down over tile 0 (x 475..975): ±254 m wide at the prism's base.
+    const above = look(10, new Vector3(700, 2000, -75), new Vector3(700, -500, -75));
+    tilesInView(above, corners, heights, inView);
+    expect(Array.from(inView)).toEqual([1, 0]);
+    // Wide enough to take in both.
+    const wide = look(60, new Vector3(975, 2000, -75), new Vector3(975, -500, -75));
+    tilesInView(wide, corners, heights, inView);
+    expect(Array.from(inView)).toEqual([1, 1]);
+  });
+
+  it('judges each cap by its own heights', () => {
+    const inView = new Uint8Array(2);
+    const view = look(60, new Vector3(975, 0, -75), new Vector3(975, -500, -75), 1000);
+    // Tile 1's cap lies beyond the far plane; tile 0's within it.
+    tilesInView(view, corners, Float32Array.from([-300, -200, -3000, -2900]), inView);
+    expect(Array.from(inView)).toEqual([1, 0]);
   });
 });
 
@@ -244,10 +307,16 @@ describe('tile pool', () => {
     for (const u of units) table[u] = 1;
     return table;
   };
-  // What must be drawn: the full level per triangle, a coarser tile whole or not at all.
-  const shows = (pool: TilePool, table: Uint8Array | null) => {
+  // What must be drawn: the full level per triangle, a coarser tile whole or not at
+  // all, and nothing of a tile out of `view`.
+  const shows = (
+    pool: TilePool,
+    table: Uint8Array | null,
+    view?: ArrayLike<number>,
+  ) => {
     const out: string[] = [];
     for (let t = 0; t < tiles; t++) {
+      if (view && !view[t]) continue;
       const k = pool.level[t];
       const full: number[] = [];
       for (let i = starts[0][t]; i < starts[0][t + 1]; i++) {
@@ -359,6 +428,68 @@ describe('tile pool', () => {
     sync();
     expect(triangles(gpu, pool.end)).toEqual(shows(pool, table));
     expect(pool.live).toBe(shows(pool, table).length * 3);
+  });
+
+  it('draws a tile coming into view at once, and empties one leaving only when flushed', () => {
+    const pool = createTilePool(lists, starts, Uint8Array.from([0, 1, 2]));
+    const view = [1, 0, 1];
+    // Leaving: still drawn (off screen, never a hole) until the hide goes in.
+    expect(viewTilePool(pool, view)).toBe(0);
+    expect(triangles(pool.index, pool.end)).toEqual(expected(pool));
+    expect(flushTilePool(pool, Infinity)).toBeGreaterThan(0);
+    expect(triangles(pool.index, pool.end)).toEqual(shows(pool, null, view));
+    // Back in view: written now.
+    expect(viewTilePool(pool, [1, 1, 1])).toBeGreaterThan(0);
+    expect(triangles(pool.index, pool.end)).toEqual(expected(pool));
+    // Out and back before a flush: what it draws is still right, nothing to write.
+    viewTilePool(pool, view);
+    expect(viewTilePool(pool, [1, 1, 1])).toBe(0);
+    expect(pool.viewStaleCount).toBe(0);
+    expect(triangles(pool.index, pool.end)).toEqual(expected(pool));
+  });
+
+  it('never leaves a hole in view, whatever order views, tables, levels and flushes come in', () => {
+    const pool = createTilePool(lists, starts, Uint8Array.from([2, 2, 2]));
+    const gpu = pool.index.slice();
+    pool.written.length = 0;
+    const sync = () => {
+      for (let i = 0; i < pool.written.length; i += 2) {
+        const [from, count] = [pool.written[i], pool.written[i + 1]];
+        gpu.set(pool.index.subarray(from, from + count), from);
+      }
+      pool.written.length = 0;
+    };
+    let seed = 23;
+    const next = () =>
+      (seed = (seed * 1103515245 + 12345) % 2147483648) >>> 16;
+    let table: Uint8Array | null = null;
+    let view = [1, 1, 1];
+    for (let step = 0; step < 600; step++) {
+      const action = next() % 4;
+      if (action === 0) {
+        view = [next() % 2, next() % 2, next() % 2];
+        viewTilePool(pool, view);
+      } else if (action === 1) {
+        table =
+          next() % 5 === 0
+            ? null
+            : opened(...[0, 1, 2, 5].filter(() => next() % 2 === 0));
+        cullTilePool(pool, neighbours, table);
+      } else if (action === 2) {
+        setPoolTile(pool, next() % tiles, next() % sizes.length);
+      } else {
+        flushTilePool(pool, next() % 20);
+      }
+      sync();
+      expect(includes(triangles(gpu, pool.end), shows(pool, table, view))).toBe(
+        true,
+      );
+      expect(pool.end).toBeLessThanOrEqual(pool.index.length);
+    }
+    flushTilePool(pool, Infinity);
+    sync();
+    expect(triangles(gpu, pool.end)).toEqual(shows(pool, table, view));
+    expect(pool.live).toBe(shows(pool, table, view).length * 3);
   });
 
   it('never reports an empty write, which WebGL would take as "to the end"', () => {

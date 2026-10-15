@@ -1,6 +1,7 @@
 import {
   Box3,
   Camera,
+  Frustum,
   Matrix4,
   OrthographicCamera,
   PerspectiveCamera,
@@ -15,42 +16,117 @@ import type { StackTiling } from '../../sdk';
 export const LOD_COARSEN_MARGIN = 0.8;
 
 /**
- * Each tile's box in the chunk's own frame: its grid rectangle mapped to scene XZ,
- * over the chunk's height range. In the tile order of `StackTiling` (row-major).
+ * Each tile's footprint in the chunk's own frame: its grid rectangle's four corners
+ * mapped to scene XZ, as x, z pairs (eight numbers per tile). In the tile order of
+ * `StackTiling` (row-major).
  */
-export function chunkTileBoxes(
-  tiling: StackTiling,
-  yMin: number,
-  yMax: number,
-): Box3[] {
+export function chunkTileCorners(tiling: StackTiling): Float32Array {
   const { cells, first, count } = tiling;
   const [a, b, c, d, e, f] = tiling.toGrid;
   const det = a * e - b * d;
-  // The inverse of `toGrid`: grid (column, row) back to scene XZ.
-  const toScene = (col: number, row: number): [number, number] => [
-    (e * (col - c) - b * (row - f)) / det,
-    (a * (row - f) - d * (col - c)) / det,
-  ];
-  const boxes: Box3[] = [];
+  const corners = new Float32Array(count[0] * count[1] * 8);
+  let at = 0;
   for (let j = 0; j < count[1]; j++) {
     for (let i = 0; i < count[0]; i++) {
       const col0 = (first[0] + i) * cells - 0.5;
       const row0 = (first[1] + j) * cells - 0.5;
-      const box = new Box3();
       for (const [col, row] of [
         [col0, row0],
         [col0 + cells, row0],
         [col0, row0 + cells],
         [col0 + cells, row0 + cells],
       ]) {
-        const [x, z] = toScene(col, row);
-        box.expandByPoint(new Vector3(x, yMin, z));
-        box.expandByPoint(new Vector3(x, yMax, z));
+        // The inverse of `toGrid`: grid (column, row) back to scene XZ.
+        corners[at++] = (e * (col - c) - b * (row - f)) / det;
+        corners[at++] = (a * (row - f) - d * (col - c)) / det;
       }
-      boxes.push(box);
     }
   }
+  return corners;
+}
+
+/**
+ * Each tile's box in the chunk's own frame: its footprint (see
+ * {@link chunkTileCorners}) over the chunk's height range.
+ */
+export function chunkTileBoxes(
+  tiling: StackTiling,
+  yMin: number,
+  yMax: number,
+): Box3[] {
+  const corners = chunkTileCorners(tiling);
+  const boxes: Box3[] = [];
+  const point = new Vector3();
+  for (let at = 0; at < corners.length; at += 8) {
+    const box = new Box3();
+    for (let k = at; k < at + 8; k += 2) {
+      box.expandByPoint(point.set(corners[k], yMin, corners[k + 1]));
+      box.expandByPoint(point.set(corners[k], yMax, corners[k + 1]));
+    }
+    boxes.push(box);
+  }
   return boxes;
+}
+
+/**
+ * Per tile, the lowest and highest `y` a cap's triangles reach, as pairs: over its
+ * full level (`index` with `starts` in triangles), widened by `margin` for the
+ * coarser levels, which stray from it by at most their height error. A tile with no
+ * full-level triangles, or every tile without `y`, gets `[yMin, yMax]`.
+ */
+export function capTileHeights(
+  index: ArrayLike<number>,
+  starts: Uint32Array,
+  y: ArrayLike<number> | null,
+  margin: number,
+  yMin: number,
+  yMax: number,
+): Float32Array {
+  const tiles = starts.length - 1;
+  const heights = new Float32Array(tiles * 2);
+  for (let t = 0; t < tiles; t++) {
+    let low = Infinity;
+    let high = -Infinity;
+    const end = y ? starts[t + 1] * 3 : 0;
+    for (let i = starts[t] * 3; i < end; i++) {
+      const h = y![index[i]];
+      if (h < low) low = h;
+      if (h > high) high = h;
+    }
+    heights[2 * t] = low <= high ? low - margin : yMin;
+    heights[2 * t + 1] = low <= high ? high + margin : yMax;
+  }
+  return heights;
+}
+
+/**
+ * Per tile, whether its prism — its footprint `corners` (see
+ * {@link chunkTileCorners}) over its `heights` (low, high pairs) — reaches into
+ * `frustum`, which must be in the same frame. A tile is out only when all eight
+ * corners are behind one plane, so a prism near a frustum corner stays in.
+ */
+export function tilesInView(
+  frustum: Frustum,
+  corners: ArrayLike<number>,
+  heights: ArrayLike<number>,
+  inView: Uint8Array,
+): void {
+  const planes = frustum.planes;
+  for (let t = 0; t < inView.length; t++) {
+    const low = heights[2 * t];
+    const high = heights[2 * t + 1];
+    let shows = 1;
+    for (let p = 0; p < planes.length && shows; p++) {
+      const { normal: n, constant } = planes[p];
+      let behind = true;
+      for (let k = 8 * t; k < 8 * t + 8 && behind; k += 2) {
+        const d = n.x * corners[k] + n.z * corners[k + 1] + constant;
+        if (d + n.y * low >= 0 || d + n.y * high >= 0) behind = false;
+      }
+      if (behind) shows = 0;
+    }
+    inView[t] = shows;
+  }
 }
 
 /**
@@ -168,6 +244,11 @@ export type TilePool = {
   starts: Uint32Array[];
   /** what the full level is culled by (see {@link cullTilePool}); `null` = nothing */
   cull: TilePoolCull | null;
+  /** per tile, whether it is in view (see {@link viewTilePool}): one that is not draws nothing */
+  inView: Uint8Array;
+  /** per tile, out of view but still drawn: a hide {@link flushTilePool} has not applied yet */
+  viewStale: Uint8Array;
+  viewStaleCount: number;
   /** per tile, its level */
   level: Uint8Array;
   /** per tile, where its slot starts, how long it is and how much of it is in use (indices) */
@@ -274,6 +355,7 @@ function markDrawn(cull: TilePoolCull, t: number) {
 }
 
 function tileLength(pool: TilePool, t: number, k: number) {
+  if (!pool.inView[t]) return 0;
   const cull = pool.cull;
   if (cull) {
     if (k === 0) return cull.visible[t] * 3;
@@ -288,6 +370,15 @@ function tileLength(pool: TilePool, t: number, k: number) {
 function copyTile(pool: TilePool, t: number, k: number, at: number) {
   const cull = pool.cull;
   const n = tileLength(pool, t, k);
+  if (pool.viewStale[t]) {
+    pool.viewStale[t] = 0;
+    pool.viewStaleCount--;
+  }
+  // Nothing to copy; and out of view, the culled copy below would not stop at `n`.
+  if (n === 0) {
+    if (cull) markDrawn(cull, t);
+    return;
+  }
   const first = pool.starts[k][t];
   const list = pool.lists[k] as Uint32Array;
   if (cull && k === 0 && n < (pool.starts[0][t + 1] - first) * 3) {
@@ -324,6 +415,9 @@ export function createTilePool(
     lists,
     starts,
     cull: null,
+    inView: new Uint8Array(tiles).fill(1),
+    viewStale: new Uint8Array(tiles),
+    viewStaleCount: 0,
     level: levels.slice(),
     slot: new Uint32Array(tiles),
     room: new Uint32Array(tiles),
@@ -414,15 +508,46 @@ export function cullTilePool(
 }
 
 /**
- * Apply the hides {@link cullTilePool} left stale, until about `budget` indices
- * are written. Returns the indices written.
+ * Apply the hides {@link cullTilePool} and {@link viewTilePool} left stale, until
+ * about `budget` indices are written. Returns the indices written.
  */
 export function flushTilePool(pool: TilePool, budget: number): number {
   const cull = pool.cull;
   let written = 0;
   for (let t = 0; t < pool.level.length; t++) {
-    if (!cull || cull.staleCount === 0 || written >= budget) break;
-    if (cull.stale[t]) written += writePoolTile(pool, t, pool.level[t]);
+    if (!cull?.staleCount && !pool.viewStaleCount) break;
+    if (written >= budget) break;
+    if (pool.viewStale[t] || cull?.stale[t]) {
+      written += writePoolTile(pool, t, pool.level[t]);
+    }
+  }
+  return written;
+}
+
+/**
+ * Draw only the tiles `inView` marks (non-zero). A tile coming into view is written
+ * now; one leaving keeps what it draws — off screen that costs vertex work, never a
+ * hole — until {@link flushTilePool} reaches it. Returns the indices written.
+ */
+export function viewTilePool(
+  pool: TilePool,
+  inView: ArrayLike<number>,
+): number {
+  let written = 0;
+  for (let t = 0; t < pool.inView.length; t++) {
+    const shows = inView[t] ? 1 : 0;
+    if (shows === pool.inView[t]) continue;
+    pool.inView[t] = shows;
+    if (shows && pool.viewStale[t]) {
+      // Left but never emptied: any change since would have rewritten it.
+      pool.viewStale[t] = 0;
+      pool.viewStaleCount--;
+    } else if (shows) {
+      written += writePoolTile(pool, t, pool.level[t]);
+    } else if (pool.used[t] > 0) {
+      pool.viewStale[t] = 1;
+      pool.viewStaleCount++;
+    }
   }
   return written;
 }

@@ -239,6 +239,16 @@ export type ChunkProps = {
    */
   cullHiddenCaps?: boolean;
   /**
+   * While levels of detail are drawn (`resolve.lod`), skip each cap's tiles that lie
+   * wholly outside the camera's view. Saves vertex work, which grows with the
+   * triangle count — most in close-ups and inside the column. Reactive, no rebuild.
+   * Default true.
+   *
+   * ⚠️ Tested against the camera the chunk renders with; turn it off when the same
+   * scene is drawn from a second camera as well.
+   */
+  cullOffscreen?: boolean;
+  /**
    * Peel units away to expose what is under them. A number peels that many off the
    * TOP (a prefix — the first survivor's own cap keeps the block closed); the
    * object form `{ from, count }` opens a WINDOW, peeling the top down to `from`
@@ -348,6 +358,7 @@ export const Chunk = ({
   showSurfaces = true,
   showWalls = true,
   cullHiddenCaps = true,
+  cullOffscreen = true,
   peel,
   onBuild,
   onBuildStateChange,
@@ -1116,6 +1127,7 @@ export const Chunk = ({
     showSurfaces,
     showWalls,
     cullHiddenCaps,
+    cullOffscreen,
     peel,
     water: stack.water,
     bathymetry: stack.bathymetry,

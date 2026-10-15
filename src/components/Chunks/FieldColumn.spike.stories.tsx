@@ -420,6 +420,7 @@ type FieldColumnStoryProps = {
   wireframe: boolean;
   peel: number;
   cullHiddenCaps: boolean;
+  cullOffscreen: boolean;
   inferredStyle: ChunkInferenceStyle;
   detail: ChunkDetailPreset | 'none';
   detailStrength: number;
@@ -1266,6 +1267,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
                 inferredStyle={props.inferredStyle}
                 peel={peelOf(props.peel, chunkLayers.length)}
                 cullHiddenCaps={props.cullHiddenCaps}
+                cullOffscreen={props.cullOffscreen}
                 onPointerClick={
                   props.chunkPicking ? focusOnCtrlClick : undefined
                 }
@@ -1286,6 +1288,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
               inferredStyle={props.inferredStyle}
               peel={peelOf(props.peel, layers.length)}
               cullHiddenCaps={props.cullHiddenCaps}
+              cullOffscreen={props.cullOffscreen}
               onPointerClick={props.chunkPicking ? focusOnCtrlClick : undefined}
               onBuild={report}
             />
@@ -1461,6 +1464,7 @@ export const Default: Story = {
     wireframe: false,
     peel: 0,
     cullHiddenCaps: true,
+    cullOffscreen: true,
     inferredStyle: 'none',
     detail: 'none',
     detailStrength: 1,
@@ -2032,6 +2036,11 @@ export const Default: Story = {
     cullHiddenCaps: {
       description:
         'Skip the cap triangles buried between two opaque units. ⭐ The A/B for the saving: compare `Tris` and `GPU` in `renderStats`. Switched off by itself at any opacity below 1, in wireframe, or with walls hidden.',
+      table: { category: 'Appearance' },
+    },
+    cullOffscreen: {
+      description:
+        'With `lodLevels`, skip each cap’s tiles that lie wholly outside the view. Saves vertex work only (off-screen triangles draw no pixels), so it pays with many triangles: close-ups and views inside the column. A/B with `GPU` in `renderStats`.',
       table: { category: 'Appearance' },
     },
     inferredStyle: {

@@ -554,6 +554,30 @@ run because levels coarsen with hysteresis):
 - What is left is mostly fragments, not triangles (see oit-guide.md, "What a
   transparent frame costs").
 
+**Off-screen tiles** (`cullOffscreen`, on by default while LOD draws): each cap's
+tile whose prism — the tile's footprint over the heights that cap reaches there,
+widened by the levels' height error — lies wholly outside the view (widened 10 %)
+draws nothing. It rides the same index pool: a tile coming into view is written that
+frame, one leaving is emptied within the frame budget (`viewTilePool`). Off-screen
+triangles draw no pixels, so it saves vertex work only. Measured (2026-10-15, troll,
+opacity 0.95, `lodPixelError` 2, 64-cell tiles = 89 tiles of 3.2 km, iGPU, GPU median
+of 9, on vs off):
+
+| View | Frame triangles | GPU |
+|---|---|---|
+| 15 km above | 10.6 → 10.3 M | 35.2 → 34.6 ms |
+| 2.5 km, polar 60 | 12.7 → 9.7–10.0 M | 44.8 → 43.1 |
+| inside, level, 2.5 km | 12.7 → 10.0 M | 32.6 → 31.1 |
+| inside a unit, 400 m | 13.5 → 9.7–10.3 M | 34.5 → 32.0 |
+
+- About 0.6 ms per million triangles, half what a 1×1-viewport floor suggested
+  (≈1.2 ms per million triangles per pass): that floor includes the clipped triangles' setup.
+- Moving (300 frames, opacity 0.5, two rounds): the orbit at 5 km gains 15–17 % mean frame
+  time in both; the tilt at 2.5 km is noise (+7 %, −10 %). It adds 400 vs 247 MB uploaded
+  over the orbit and 163 vs 0 MB over the tilt, at most 7.8 MB in one frame.
+- Turn it off when the same scene is drawn from a second camera: the tiles are tested
+  against the one the chunk renders with.
+
 ### Collapse: what is dropped, and by which rule
 
 `collapseStackTriangles` produces one index subset per layer. A triangle of layer

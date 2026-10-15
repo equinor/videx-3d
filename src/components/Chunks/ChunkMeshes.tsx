@@ -175,6 +175,8 @@ export type ChunkMeshesProps = {
   peel?: ChunkPeel;
   /** skip cap triangles buried inside the block (see `ChunkProps.cullHiddenCaps`). Default true. */
   cullHiddenCaps?: boolean;
+  /** skip cap tiles outside the view while LOD draws (see `ChunkProps.cullOffscreen`). Default true. */
+  cullOffscreen?: boolean;
   /**
    * The layers to draw so far — caps, walls and cut faces — or omit to draw
    * them all. What spreads a chunk's GPU upload over frames.
@@ -313,6 +315,7 @@ export const ChunkMeshes = ({
   fenceCarrier = false,
   peel = 0,
   cullHiddenCaps = true,
+  cullOffscreen = true,
   layersShown,
   layersHidden,
   saturation = 1,
@@ -930,6 +933,7 @@ export const ChunkMeshes = ({
     lodLevel,
     revealedTables,
     tileUniforms?.values.value,
+    cullOffscreen,
   );
   const levelViews = lodViews?.caps ?? null;
   useEffect(() => {
