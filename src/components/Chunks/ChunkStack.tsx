@@ -255,8 +255,8 @@ export type ChunkStackProps = {
   lodPixelError?: number;
   /**
    * Called whenever a child chunk starts building, reports a step, or finishes —
-   * for a busy indicator or a progress bar. See {@link ChunkStackProgress} for why
-   * the count is in chunks rather than in work.
+   * for a busy indicator or a progress bar. See {@link ChunkStackProgress} for the
+   * chunk count, the step a chunk is on and the weighted estimate.
    */
   onProgress?: (progress: ChunkStackProgress) => void;
 };
@@ -558,9 +558,15 @@ export const ChunkStack = ({
   const emitProgress = useCallback(() => {
     const total = claims.current.claims.size;
     let completed = 0;
+    let estimate = 0;
     claims.current.claims.forEach((_, k) => {
       const s = buildStates.current.get(k);
-      if (s && s !== 'building') completed++;
+      if (s && s !== 'building') {
+        completed++;
+        estimate += 1;
+      } else {
+        estimate += buildSteps.current.get(k)?.estimate ?? 0;
+      }
     });
     let current: ChunkBuildProgress | undefined;
     for (const step of buildSteps.current.values()) current = step;
@@ -569,6 +575,7 @@ export const ChunkStack = ({
       building: total - completed,
       completed,
       fraction: total === 0 ? 1 : completed / total,
+      estimate: total === 0 ? 1 : estimate / total,
       current,
     });
   }, []);

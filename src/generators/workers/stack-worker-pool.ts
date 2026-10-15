@@ -438,14 +438,23 @@ export async function buildStackCaps(
  * on the current thread otherwise. `null` once `isStale` says so.
  *
  * ⚠️ Each tile's arrays are TRANSFERRED, so `tiles` must not be read again.
+ *
+ * @param onProgress called with the tiles done so far, as each finishes
  */
 export async function tessellateStackTiles(
   tiles: StackTileInput[],
   isStale: () => boolean = () => false,
+  onProgress?: (done: number, total: number) => void,
 ): Promise<StackTileOutput[] | null> {
+  const total = tiles.length;
+  let done = 0;
   const pool = getStackPool();
   if (!pool || tiles.length < 2) {
-    return tiles.map(tile => tessellateStackTile(tile));
+    return tiles.map(tile => {
+      const output = tessellateStackTile(tile);
+      onProgress?.(++done, total);
+      return output;
+    });
   }
   const work = tiles.map(
     tile =>
@@ -468,6 +477,7 @@ export async function tessellateStackTiles(
           stackTileInputBuffers(tile),
         )) as TileResponse;
         outputs[t] = res.output;
+        onProgress?.(++done, total);
       }),
     ),
   );

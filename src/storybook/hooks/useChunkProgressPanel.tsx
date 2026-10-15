@@ -14,11 +14,18 @@ const STEP_LABELS: Record<ChunkBuildProgress['phase'], string> = {
   resolve: 'resolving',
   refine: 'refining',
   terminations: 'pinch-outs',
+  plan: 'planning',
   tessellate: 'tessellating',
+  assemble: 'assembling',
   caps: 'caps',
 };
 
 function formatStep({ phase, done, total }: ChunkBuildProgress) {
+  if (phase === 'tessellate') {
+    return total > 1
+      ? `${STEP_LABELS[phase]} tile ${done}/${total}`
+      : STEP_LABELS[phase];
+  }
   const counted = !(done === 0 && total === 1);
   return `${STEP_LABELS[phase]}${counted ? ` ${done}/${total}` : ''}`;
 }
@@ -78,12 +85,14 @@ export function useChunkProgressPanel() {
       groups: {
         ...state.groups,
         build: {
-          label: done ? 'Chunks built' : 'Building chunks',
+          label: done
+            ? 'Chunks built'
+            : `Building chunks ${Math.round(100 * p.estimate)}%`,
           value: done
             ? `${p.total}`
             : p.current
               ? `${p.completed}/${p.total}  ${formatStep(p.current)}`
-              : `${p.completed}/${p.total}  ${Math.round(100 * p.fraction)}%`,
+              : `${p.completed}/${p.total}`,
           color: done ? '#59a14f' : '#f28e2c',
           order: 0,
         },

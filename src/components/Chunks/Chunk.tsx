@@ -11,6 +11,7 @@ import {
 import { Group } from 'three';
 import { useGenerator } from '../../hooks/useGenerator';
 import {
+  createSurfaceChunkProgress,
   createSurfaceChunkReceiver,
   PlanarPolygonGeometry,
   polygonArea,
@@ -901,6 +902,7 @@ export const Chunk = ({
     let cancelled = false;
     reportState('building');
     const receiver = createSurfaceChunkReceiver();
+    const track = createSurfaceChunkProgress();
     let build: ShownChunk['build'] | null = null;
     let finished = false;
     const ready: number[] = [];
@@ -934,7 +936,7 @@ export const Chunk = ({
       if (cancelled) return;
       if (packet.kind === 'progress') {
         const { phase, done, total } = packet;
-        reportStep({ phase, done, total });
+        reportStep({ phase, done, total, estimate: track(phase, done, total) });
         return;
       }
       if (packet.kind === 'preview') {
@@ -951,10 +953,13 @@ export const Chunk = ({
       // ⚠️ The final result travels on another port, so it can be here already.
       if (finished && receiver.complete) return land(next);
       show(next, false);
+      const done = receiver.received;
+      const total = receiver.expected;
       reportStep({
         phase: 'caps',
-        done: receiver.received,
-        total: receiver.expected,
+        done,
+        total,
+        estimate: track('caps', done, total),
       });
     };
     (async () => {

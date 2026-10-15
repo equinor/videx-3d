@@ -201,7 +201,7 @@ export type ChunkBuildState = 'building' | 'ready' | 'empty' | 'failed';
 
 /**
  * The step a building chunk is on: `done` of `total` units of `phase` (layers,
- * pairs or caps). A step with nothing to count reports `0` of `1`.
+ * pairs, tiles or caps). A step with nothing to count reports `0` of `1`.
  *
  * @group Components
  */
@@ -209,16 +209,18 @@ export type ChunkBuildProgress = {
   phase: SurfaceChunkPhase;
   done: number;
   total: number;
+  /** an estimate of how far this chunk's whole build has come, 0 to 1 */
+  estimate: number;
 };
 
 /**
  * How far a {@link ChunkStack} is through building its chunks.
  *
- * Counted in CHUNKS, not in work: the first chunk of a shared column pays for the
- * fetch, the resample and the resolve (~half the wall clock on the demo field), so
- * the count moves in uneven steps. It is still the honest signal — a smooth bar
- * here would be an invented one. What moves within a chunk is reported as
- * `current`, in the units that step actually counts.
+ * `fraction` counts CHUNKS, not work: the first chunk of a shared column pays for
+ * the fetch, the resample and the resolve (~half the wall clock on the demo
+ * field), so it moves in uneven steps. What moves within a chunk is reported as
+ * `current`, in the units that step actually counts. `estimate` is the smooth
+ * number, weighted by a fixed guess at each step's cost.
  *
  * @group Components
  */
@@ -231,6 +233,12 @@ export type ChunkStackProgress = {
   completed: number;
   /** `completed / total`, or 1 for an empty stack */
   fraction: number;
+  /**
+   * Mean over the chunks of {@link ChunkBuildProgress.estimate}: 1 for a chunk
+   * that is done, 0 for one that has not reported a step yet. An ESTIMATE, and
+   * it drops when a chunk mounts.
+   */
+  estimate: number;
   /**
    * The latest step reported by a chunk still building, in real units of work
    * rather than an estimate. Absent before the first report and once none is

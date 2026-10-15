@@ -145,7 +145,9 @@ from a chunk still building; the chunk count is unchanged.
 | `resolve` | — (`0` of `1`) | the seal and the depth-order resolve |
 | `refine` | layers refined | `refineStackChannels` |
 | `terminations` | adjacent pairs scanned | `scanStackTerminations` (column path only) |
-| `tessellate` | — | `buildSurfaceStack`, up to the `base` packet |
+| `plan` | — | `planSurfaceStack`: the lines, the noding and the tiles |
+| `tessellate` | tiles triangulated | `tessellateStackTiles` (one tile when untiled) |
+| `assemble` | — | stitch, own-surface sampling, resolve, collapse and walls, up to the `base` packet |
 | `caps` | caps received of those announced | `Chunk`, from the receiver |
 
 ⭐ The column and its refinement are SHARED work, awaited by every chunk of the
@@ -153,9 +155,24 @@ column. Their progress is broadcast to every chunk waiting on them, and a chunk
 that joins late starts from the last report (`watch` in
 `surface-stack-context.ts`).
 
-⚠️ `tessellate` is the longest silent step (~7 s on that field: tessellation,
-vertex resolve, collapse and walls). Sub-steps would come from inside
-`buildSurfaceStack`.
+⚠️ `assemble` is the longest silent step left (~5 s on the 33-layer field: vertex
+resolve, collapse, walls). Sub-steps would come from inside `beginOnTessellation`.
+
+### The estimate
+
+`ChunkBuildProgress.estimate` turns the steps into one number, 0 to 1, with
+`createSurfaceChunkProgress` (SDK): each step weighs a fixed share, rough seconds
+from a cold 33-layer build with 64-cell tiles (fetch 3, resolve 1.2, refine 2.2,
+terminations 1.1, plan 2, tessellate 0.6, assemble 5, caps 3.6), and moves
+linearly with its own count. `ChunkStackProgress.estimate` is the mean over the
+chunks (1 once a chunk is done, 0 before its first step).
+
+- It starts at 0 from the FIRST step heard, so a rebuild on a cached column (which
+  starts at `refine` or later) still runs from 0. A step skipped later counts as
+  done, and the number never goes back.
+- ⚠️ It is an ESTIMATE: a warm fetch is ~20 ms, an untiled tessellation ~3× the
+  pooled one, so the bar speeds up and slows down. `fraction` and `current` stay
+  the exact counts.
 
 ---
 

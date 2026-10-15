@@ -50,8 +50,10 @@ export type SurfaceChunkCapPacket = {
 };
 
 /**
- * A step of a chunk build, in the order they run. `caps` is counted on the
- * receiving side, as cap packets arrive.
+ * A step of a chunk build, in the order they run. `plan` lays out the shared
+ * tessellation, `tessellate` triangulates its tiles, `assemble` turns them into
+ * the walls and what the caps share. `caps` is counted on the receiving side, as
+ * cap packets arrive.
  *
  * @group Geometries
  */
@@ -60,12 +62,15 @@ export type SurfaceChunkPhase =
   | 'resolve'
   | 'refine'
   | 'terminations'
+  | 'plan'
   | 'tessellate'
+  | 'assemble'
   | 'caps';
 
 /**
  * How far a streamed build has come: `done` of `total` units of `phase` (layers,
- * pairs or caps). A phase with no countable units reports `0` of `1` as it starts.
+ * pairs, tiles or caps). A phase with no countable units reports `0` of `1` as it
+ * starts.
  *
  * @group Geometries
  */
@@ -75,6 +80,70 @@ export type SurfaceChunkProgressPacket = {
   done: number;
   total: number;
 };
+
+const PHASE_ORDER: SurfaceChunkPhase[] = [
+  'fetch',
+  'resolve',
+  'refine',
+  'terminations',
+  'plan',
+  'tessellate',
+  'assemble',
+  'caps',
+];
+
+// Rough seconds per step: a cold 33-layer field (Troll) with 64-cell tiles.
+const PHASE_WEIGHTS: Record<SurfaceChunkPhase, number> = {
+  fetch: 3,
+  resolve: 1.2,
+  refine: 2.2,
+  terminations: 1.1,
+  plan: 2,
+  tessellate: 0.6,
+  assemble: 5,
+  caps: 3.6,
+};
+
+/**
+ * A tracker that turns a chunk build's steps into an ESTIMATE of how far the
+ * whole build has come, 0 to 1. Each step weighs a fixed share, so the number is
+ * only as good as those weights (cold caches and untiled builds shift them).
+ *
+ * It starts at 0 from the first step it hears, so a build that skips the column
+ * (already cached) still runs from 0; a step skipped later counts as done, and
+ * the estimate never goes back.
+ *
+ * @returns call with every step, in the order they arrive; one tracker per build
+ *
+ * @group Geometries
+ */
+export function createSurfaceChunkProgress(): (
+  phase: SurfaceChunkPhase,
+  done: number,
+  total: number,
+) => number {
+  let start = -1;
+  let span = 0;
+  let estimate = 0;
+  return (phase, done, total) => {
+    const at = PHASE_ORDER.indexOf(phase);
+    if (start < 0) {
+      start = at;
+      for (let k = at; k < PHASE_ORDER.length; k++) {
+        span += PHASE_WEIGHTS[PHASE_ORDER[k]];
+      }
+    }
+    if (at < start) return estimate;
+    let before = 0;
+    for (let k = start; k < at; k++) before += PHASE_WEIGHTS[PHASE_ORDER[k]];
+    const part = total > 0 ? Math.min(1, Math.max(0, done / total)) : 0;
+    estimate = Math.max(
+      estimate,
+      (before + PHASE_WEIGHTS[phase] * part) / span,
+    );
+    return estimate;
+  };
+}
 
 /**
  * A whole chunk built at coarse sampling, sent before any other geometry so there

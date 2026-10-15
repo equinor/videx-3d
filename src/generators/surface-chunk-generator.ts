@@ -77,12 +77,20 @@ async function buildStackOnPool(
   layers: StackLayer[],
   options: SurfaceStackOptions,
   isStale: () => boolean,
+  report?: StackProgress,
   onPlan?: (plan: SurfaceStackPlan) => void,
 ): Promise<SurfaceStackBuild | null> {
+  report?.('plan', 0, 1);
   const plan = planSurfaceStack(reference, layers, options);
   onPlan?.(plan);
-  const outputs = await tessellateStackTiles(plan.tiles, isStale);
+  report?.('tessellate', 0, plan.tiles.length);
+  const outputs = await tessellateStackTiles(
+    plan.tiles,
+    isStale,
+    report && ((done, total) => report('tessellate', done, total)),
+  );
   if (!outputs) return null;
+  report?.('assemble', 0, 1);
   const stitched = plan.stitch(outputs);
   if (!stitched) return null;
   if (stitched.own) {
@@ -771,7 +779,6 @@ export async function buildSpecStack(
     if (isStale()) return null;
     const prepMs = tPreview - tContext + (performance.now() - tRefine);
 
-    report?.('tessellate', 0, 1);
     const build = await buildStackOnPool(
       reference,
       stackLayers,
@@ -792,6 +799,7 @@ export async function buildSpecStack(
         diagnostics: spec.diagnostics,
       },
       isStale,
+      report,
       plan =>
         keepStackDerived(
           context,
@@ -1026,7 +1034,6 @@ export async function buildSpecStack(
       !(ceilings[k] && !loaded[i].carrier && !(k > 0 && fills[k - 1])),
   );
 
-  report?.('tessellate', 0, 1);
   const build = await buildStackOnPool(
     reference,
     source.map(i => layers[i]),
@@ -1061,6 +1068,7 @@ export async function buildSpecStack(
       diagnostics: spec.diagnostics,
     },
     isStale,
+    report,
   );
   if (!build) return null;
 

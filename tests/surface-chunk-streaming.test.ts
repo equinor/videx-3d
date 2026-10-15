@@ -11,6 +11,7 @@ import {
   unpackSurfaceChunk,
 } from '../src/sdk/geometries/surface-chunk-packing';
 import {
+  createSurfaceChunkProgress,
   createSurfaceChunkReceiver,
   SurfaceChunkPacket,
   SurfaceChunkPreviewPacket,
@@ -68,7 +69,11 @@ const outline = new PlanarPolygonGeometry([
   ],
 ]);
 
-async function build(stream: boolean, column?: { preview?: boolean }) {
+async function build(
+  stream: boolean,
+  column?: { preview?: boolean },
+  tileCells?: number,
+) {
   const store = new TestStore();
   store.data = {
     'surface-values': { top: top.values, mid: mid.values, base: base.values },
@@ -79,7 +84,12 @@ async function build(stream: boolean, column?: { preview?: boolean }) {
     { surface: base.meta },
   ];
   const spec = buildSurfaceChunkSpec(layers, utmToArea, outline, {
-    resolve: { seal: true, sealMode: 'void', constrainTerminations: true },
+    resolve: {
+      seal: true,
+      sealMode: 'void',
+      constrainTerminations: true,
+      tileCells,
+    },
     maxError: 5,
     section: true,
     ...(column && {
@@ -187,7 +197,14 @@ describe('a streamed chunk', () => {
     const { packets } = await build(true);
     const steps = packets.flatMap(p => (p.kind === 'progress' ? [p] : []));
     const phases = [...new Set(steps.map(p => p.phase))];
-    expect(phases).toEqual(['fetch', 'resolve', 'refine', 'tessellate']);
+    expect(phases).toEqual([
+      'fetch',
+      'resolve',
+      'refine',
+      'plan',
+      'tessellate',
+      'assemble',
+    ]);
     const fetched = steps.filter(p => p.phase === 'fetch');
     expect(fetched.map(p => p.done)).toEqual([1, 2, 3]);
     expect(fetched.every(p => p.total === 3)).toBe(true);
@@ -195,6 +212,27 @@ describe('a streamed chunk', () => {
     const kinds = packets.map(p => p.kind);
     expect(kinds.indexOf('base')).toBeGreaterThan(
       kinds.lastIndexOf('progress'),
+    );
+
+    // An estimate over them only moves forward, and the caps are still to come.
+    const track = createSurfaceChunkProgress();
+    const estimates = steps.map(p => track(p.phase, p.done, p.total));
+    estimates.slice(1).forEach((e, i) => {
+      expect(e).toBeGreaterThanOrEqual(estimates[i]);
+    });
+    expect(estimates[estimates.length - 1]).toBeLessThan(1);
+  });
+
+  it('counts the tiles of a tiled tessellation', async () => {
+    const { packets } = await build(true, undefined, 8);
+    const tiles = packets.flatMap(p =>
+      p.kind === 'progress' && p.phase === 'tessellate' ? [p] : [],
+    );
+    const total = tiles[0].total;
+    expect(total).toBeGreaterThan(1);
+    expect(tiles.every(p => p.total === total)).toBe(true);
+    expect(tiles.map(p => p.done)).toEqual(
+      Array.from({ length: total + 1 }, (_, i) => i),
     );
   });
 
@@ -250,5 +288,35 @@ describe('a streamed chunk', () => {
     });
     expect(receiver.complete).toBe(true);
     expect(receiver.expected).toBe(0);
+  });
+});
+
+describe('a chunk build estimate', () => {
+  it('runs from 0 at the first step it hears to 1 at the last cap', () => {
+    const cold = createSurfaceChunkProgress();
+    expect(cold('fetch', 0, 3)).toBe(0);
+    expect(cold('caps', 4, 4)).toBe(1);
+    // A cached column: the build starts at the refine, and so does the estimate.
+    const warm = createSurfaceChunkProgress();
+    expect(warm('refine', 0, 4)).toBe(0);
+    expect(warm('caps', 4, 4)).toBe(1);
+  });
+
+  it('counts a skipped step as done', () => {
+    const skipped = createSurfaceChunkProgress();
+    const heard = createSurfaceChunkProgress();
+    skipped('refine', 4, 4);
+    heard('refine', 4, 4);
+    heard('terminations', 3, 3);
+    expect(skipped('plan', 0, 1)).toBe(heard('plan', 0, 1));
+  });
+
+  it('never goes back', () => {
+    const track = createSurfaceChunkProgress();
+    track('fetch', 0, 3);
+    const at = track('tessellate', 5, 10);
+    expect(track('tessellate', 3, 10)).toBe(at);
+    expect(track('refine', 0, 4)).toBe(at);
+    expect(track('tessellate', 6, 10)).toBeGreaterThan(at);
   });
 });
