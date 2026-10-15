@@ -12,6 +12,10 @@ import type {
 } from '../../sdk/geometries/surface-stack-resample';
 import type { ThicknessLoops } from '../../sdk/geometries/surface-stack-terminations';
 import type {
+  StackOwnLayer,
+  StackOwnLayerJob,
+} from '../../sdk/geometries/surface-stack-own';
+import type {
   WellboreOutlineCoordinates,
   WellboreOutlineOptions,
 } from '../../sdk/geometries/wellbore-outline';
@@ -40,6 +44,8 @@ export type RefineResponse = {
   nodes: Uint32Array;
   /** per node, its level (see `collectStackCandidateLevels`) */
   errors: Float32Array;
+  /** the layer's own TIN, as triangles indexing `nodes` */
+  triangles: Uint16Array | Uint32Array;
   /** refinement time (ms) measured inside the worker (profiling) */
   refineMs: number;
 };
@@ -83,14 +89,33 @@ export type StackWorkerRequest =
   | OutlineRequest
   | TerminationsRequest
   | CapRequest
-  | TileRequest;
+  | TileRequest
+  | OwnRequest;
 export type StackWorkerResponse =
   | RefineResponse
   | ResampleResponse
   | OutlineResponse
   | TerminationsResponse
   | CapResponse
-  | TileResponse;
+  | TileResponse
+  | OwnResponse;
+
+/**
+ * An own-surface task: sample ONE layer at the shared vertices from its own TIN
+ * (see `sampleStackOwnLayer`). Everything in `job` is transferred, so the caller
+ * sends copies.
+ */
+export type OwnRequest = {
+  kind: 'own';
+  id: number;
+  job: StackOwnLayerJob;
+};
+
+export type OwnResponse = {
+  kind: 'own';
+  id: number;
+  layer: StackOwnLayer;
+};
 
 /**
  * A tessellation tile task: triangulate ONE tile of a tiled stack tessellation

@@ -61,7 +61,20 @@ import {
   collectStackCandidateLevels,
   collectThicknessCrossings,
 } from './surface-stack-candidates';
+import {
+  createStackOwnCombiner,
+  prepareStackOwnSurfaces,
+  sampleStackOwnLayer,
+  StackOwnCombiner,
+  StackOwnLayerJob,
+  StackOwnSampleOptions,
+  StackOwnSamples,
+  StackOwnSurfaces,
+} from './surface-stack-own';
 import { buildRingWalls } from './surface-walls';
+
+/** An up-facing snorm16 normal. */
+const FLAT = new Int16Array([0, 32767, 0]);
 
 /** One layer of a shared-tessellation stack, ready to render. */
 export type StackGeometryLayer = {
@@ -216,6 +229,7 @@ function stackCapInput(
   peelIndices?: (Uint32Array | null)[],
   levels?: Uint32Array[],
   toGrid?: [number, number, number, number, number, number],
+  normals?: Int16Array | null,
 ): StackCapInput {
   return {
     positionsXZ,
@@ -225,6 +239,7 @@ function stackCapInput(
     peel: peelIndices?.[i] ?? null,
     levels: levels ?? null,
     toGrid: toGrid ?? null,
+    normals: normals ?? null,
   };
 }
 
@@ -613,6 +628,14 @@ export type SurfaceStackOptions = {
    * candidates when they are omitted.
    */
   candidateErrors?: Float32Array[];
+  /**
+   * Per layer, its own TIN at `maxError` as triangles over the candidates it was
+   * refined to (see `collectStackCandidateLevels`). Given — or computed inline with
+   * the candidates — a layer's heights and normals at the vertices OTHER layers add
+   * are taken from its own surface rather than its grid (see
+   * `sampleStackOwnSurfaces`). An empty list samples that layer from its grid.
+   */
+  candidateTriangles?: (Uint16Array | Uint32Array)[];
   /**
    * Also build coarser levels of detail over the same vertices (see
    * {@link StackGeometryLayer.levels}): level `k` simplified to `maxError ×
@@ -1005,12 +1028,35 @@ export type SurfaceStackPlan = {
    */
   begin(outputs: StackTileOutput[]): SurfaceStackPending | null;
   /**
+   * {@link begin} with the sampling of each layer's own surface left to the
+   * caller: run the jobs anywhere (a worker pool can), then `begin`.
+   */
+  stitch(outputs: StackTileOutput[]): SurfaceStackStitched | null;
+  /**
    * The termination lines it constrains, when it constrains them. Depends on the
    * channels alone, so another build of them can skip making them again.
    */
   terminationLines?: ThicknessLines[];
   /** per layer, its data edge's crossings, when it refines along them */
   coverageCrossings?: (Uint32Array | undefined)[];
+};
+
+/**
+ * A stack stitched up to sampling each layer from its own surface (see
+ * {@link SurfaceStackPlan.stitch}).
+ *
+ * @group Geometries
+ */
+export type SurfaceStackStitched = {
+  /**
+   * One per layer: run each through `sampleStackOwnLayer`, anywhere, and hand the
+   * result to `own`. Empty when every layer is sampled from its grid.
+   */
+  jobs: StackOwnLayerJob[];
+  /** takes the jobs' results, in any order */
+  own: StackOwnCombiner | null;
+  /** the stack up to its caps, once every job's result is in */
+  begin(): SurfaceStackPending;
 };
 
 /**
@@ -1036,6 +1082,7 @@ export function planSurfaceStack(
   // are a thin line, so this costs vertices only where a unit wedges out.
   let candidates = options.candidates;
   let candidateErrors = options.candidateErrors;
+  let candidateTriangles = options.candidateTriangles;
   const lod =
     options.lod && options.lod.levels > 0
       ? Array.from(
@@ -1060,32 +1107,41 @@ export function planSurfaceStack(
           : undefined,
       )
     : undefined;
+  if (!candidates) {
+    const levels = reference.channels.map(channel =>
+      collectStackCandidateLevels(channel, reference.header.nx, maxError),
+    );
+    candidates = levels.map(level => level.nodes);
+    candidateErrors = levels.map(level => level.errors);
+    candidateTriangles = levels.map(level => level.triangles);
+  }
+  // Before the lines below are added: the triangles index these.
+  const tinNodes = candidates;
+  // Per layer, the added nodes that lie on ITS lines, which keep its grid height.
+  const lineNodes: Uint32Array[][] = reference.channels.map(() => []);
   if (refineTerminations || refineCoverage) {
-    let lists = candidates;
-    if (!lists) {
-      const levels = reference.channels.map(channel =>
-        collectStackCandidateLevels(channel, reference.header.nx, maxError),
-      );
-      lists = levels.map(level => level.nodes);
-      candidateErrors = levels.map(level => level.errors);
-    }
+    const lists = candidates;
     const errors = candidateErrors;
     candidateErrors = [];
     candidates = lists.map((list, i) => {
       const extra: Uint32Array[] = [];
       if (refineTerminations && i > 0) {
-        extra.push(
-          collectThicknessCrossings(
-            reference.channels[i - 1],
-            reference.channels[i],
-            reference.header.nx,
-            collapseThreshold,
-          ),
+        const crossings = collectThicknessCrossings(
+          reference.channels[i - 1],
+          reference.channels[i],
+          reference.header.nx,
+          collapseThreshold,
         );
+        extra.push(crossings);
+        lineNodes[i - 1].push(crossings);
+        lineNodes[i].push(crossings);
       }
       // The edge of this layer's own data, which is where a seal's taper starts.
       const coverage = coverageCrossings?.[i];
-      if (coverage) extra.push(coverage);
+      if (coverage) {
+        extra.push(coverage);
+        lineNodes[i].push(coverage);
+      }
       const total = extra.reduce((a, e) => a + e.length, 0);
       // An added node marks a line, which every coarser level keeps.
       const levels = new Float32Array(list.length + total).fill(Infinity);
@@ -1102,6 +1158,9 @@ export function planSurfaceStack(
       return merged;
     });
   }
+  const own: StackOwnSurfaces | undefined = candidateTriangles
+    ? { nodes: tinNodes, triangles: candidateTriangles, lineNodes }
+    : undefined;
 
   let terminations: ThicknessLines[] | undefined;
   if (constrainTerminations && options.terminationLines) {
@@ -1139,34 +1198,73 @@ export function planSurfaceStack(
     lod && { errors: lod, candidateErrors },
   );
   const tPlan = performance.now();
-  return {
-    tiles: plan.tiles,
-    terminationLines: terminations,
-    coverageCrossings,
-    begin: outputs => {
-      const tTiles = performance.now();
-      const tessellation = plan.finish(outputs);
-      const timings: StackTessellationTimings = {
-        prepMs: tPrep - t0,
-        planMs: tPlan - tPrep,
-        tilesMs: tTiles - tPlan,
-        tileWorkMs: outputs.reduce((sum, o) => sum + o.tileMs, 0),
-        slowestTileMs: outputs.reduce((max, o) => Math.max(max, o.tileMs), 0),
-        stitchMs: performance.now() - tTiles,
-        tiles: outputs.length,
-      };
-      return (
-        tessellation &&
+  const stitch = (outputs: StackTileOutput[]): SurfaceStackStitched | null => {
+    const tTiles = performance.now();
+    const tessellation = plan.finish(outputs);
+    const timings: StackTessellationTimings = {
+      prepMs: tPrep - t0,
+      planMs: tPlan - tPrep,
+      tilesMs: tTiles - tPlan,
+      tileWorkMs: outputs.reduce((sum, o) => sum + o.tileMs, 0),
+      slowestTileMs: outputs.reduce((max, o) => Math.max(max, o.tileMs), 0),
+      stitchMs: performance.now() - tTiles,
+      tiles: outputs.length,
+    };
+    if (!tessellation) return null;
+    // Includes the tiles, wherever they ran.
+    const tTessellate = performance.now();
+    const ownOptions = own && stackOwnOptions(reference, options);
+    const jobs = own
+      ? prepareStackOwnSurfaces(reference, tessellation, own, ownOptions)
+      : [];
+    const combiner = own
+      ? createStackOwnCombiner(jobs.length, ownOptions)
+      : null;
+    return {
+      jobs,
+      own: combiner,
+      begin: () =>
         beginOnTessellation(
           reference,
           options,
           tessellation,
           t0,
+          tTessellate,
           terminations,
           timings,
-        )
+          combiner?.result(),
+        ),
+    };
+  };
+  return {
+    tiles: plan.tiles,
+    terminationLines: terminations,
+    coverageCrossings,
+    stitch,
+    begin: outputs => {
+      const stitched = stitch(outputs);
+      if (!stitched) return null;
+      stitched.jobs.forEach((job, i) =>
+        stitched.own!.add(i, sampleStackOwnLayer(job)),
       );
+      return stitched.begin();
     },
+  };
+}
+
+function stackOwnOptions(
+  reference: StackReference,
+  options: SurfaceStackOptions,
+): StackOwnSampleOptions {
+  const unbounded = options.unbounded;
+  return {
+    normals: reference.channels.map(
+      (_, i) => !unbounded?.[i] && options.caps?.[i] !== false,
+    ),
+    threshold: options.collapseThreshold ?? DEFAULT_STACK_COLLAPSE_THRESHOLD,
+    nonTruncating: reference.channels.map(
+      (_, i) => !!options.fluid?.[i] || !!unbounded?.[i],
+    ),
   };
 }
 
@@ -1175,8 +1273,10 @@ function beginOnTessellation(
   options: SurfaceStackOptions,
   tessellation: StackTessellation,
   t0: number,
+  tTessellate: number,
   terminations: ThicknessLines[] | undefined,
   tessellationTimings: StackTessellationTimings,
+  ownSamples?: StackOwnSamples,
 ): SurfaceStackPending {
   const collapseThreshold =
     options.collapseThreshold ?? DEFAULT_STACK_COLLAPSE_THRESHOLD;
@@ -1184,10 +1284,10 @@ function beginOnTessellation(
   const fluid = options.fluid;
   const unbounded = options.unbounded?.map(f => !!f);
   const constrainTerminations = terminations !== undefined;
-  // Includes the tiles, wherever they ran.
-  const tTessellate = performance.now();
 
-  const heights = sampleStackHeights(reference, tessellation.coords);
+  const heights =
+    ownSamples?.heights ?? sampleStackHeights(reference, tessellation.coords);
+  const normals = ownSamples?.normals;
   const coverage = sampleStackMasks(reference, tessellation.coords);
   // Constant over the whole grid, so any vertex of it is the plane.
   const carrierLevel =
@@ -1232,10 +1332,12 @@ function beginOnTessellation(
     ...options.resolve,
     coverage,
     fluid,
+    normals,
     // A stack resolved on the common grid arrives ordered, so the pass only
-    // measures — re-clamping identical values would be busywork.
+    // measures — unless the layers were taken from their own surfaces, which
+    // can cross where the grid has them ordered.
     apply: options.preResolved
-      ? false
+      ? !!ownSamples
       : options.resolve
         ? (options.resolve.apply ?? true)
         : false,
@@ -1256,8 +1358,12 @@ function beginOnTessellation(
     floor.fill(carrierLevel);
     heights.forEach((y, i) => {
       if (i === options.carrier) return;
+      const normal = normals?.[i];
       for (let v = 0; v < y.length; v++) {
-        if (y[v] < carrierLevel) y[v] = carrierLevel;
+        if (y[v] < carrierLevel) {
+          y[v] = carrierLevel;
+          normal?.set(FLAT, 3 * v);
+        }
       }
     });
     absent?.[options.carrier]?.fill(0);
@@ -1370,7 +1476,9 @@ function beginOnTessellation(
       : null;
   });
   const levelKept = levelCollapses?.map((result, k) =>
-    heights.map((_, i) => result?.indices[i] ?? tessellation.levels![k].indices),
+    heights.map(
+      (_, i) => result?.indices[i] ?? tessellation.levels![k].indices,
+    ),
   );
   // Per cap, per level (the full one first): where each tile's triangles start,
   // so a renderer can pick a level per tile. Before the shared index is re-wound.
@@ -1399,11 +1507,16 @@ function beginOnTessellation(
       ? heights.map((_, i) => {
           const peel = collapsed?.peelIndices?.[i];
           const full = peel
-            ? indexDifference(peel, collapsed!.indices[i] ?? tessellation.indices)
+            ? indexDifference(
+                peel,
+                collapsed!.indices[i] ?? tessellation.indices,
+              )
             : null;
           const levels = levelCollapses.map((result, k) => {
             const levelPeel = result?.peelIndices?.[i];
-            return levelPeel ? indexDifference(levelPeel, levelKept[k][i]) : null;
+            return levelPeel
+              ? indexDifference(levelPeel, levelKept[k][i])
+              : null;
           });
           if (!full && levels.every(patch => !patch)) return null;
           return {
@@ -1564,6 +1677,7 @@ function beginOnTessellation(
           collapsed?.peelIndices,
           levelKept?.map(kept => kept[i]),
           toGrid,
+          normals?.[i],
         ),
   );
   let shapes: ReturnType<PlanarPolygonGeometry['toShapes']> | null = null;

@@ -31,6 +31,12 @@ export type StackCapInput = {
    * the normals are ALSO baked into a {@link StackCapNormalMap} on that grid.
    */
   toGrid?: [number, number, number, number, number, number] | null;
+  /**
+   * Per vertex, the normals to shade with (snorm16, 3 each), e.g. the layer's own
+   * surface's (see `sampleStackOwnSurfaces`). Given, they are not computed from
+   * the triangles, and this array IS the output's `normal`.
+   */
+  normals?: Int16Array | null;
 };
 
 /**
@@ -120,6 +126,22 @@ function vertexNormals(
   return sumY;
 }
 
+/** The sum of the face normals' Y over `index` — its sign is the winding's, as {@link vertexNormals}'. */
+function windingSum(xz: Float32Array, index: Uint32Array): number {
+  let sum = 0;
+  for (let t = 0; t + 2 < index.length; t += 3) {
+    const a = index[t];
+    const b = index[t + 1];
+    const c = index[t + 2];
+    const bx = xz[2 * b];
+    const bz = xz[2 * b + 1];
+    sum +=
+      (xz[2 * c + 1] - bz) * (xz[2 * a] - bx) -
+      (xz[2 * c] - bx) * (xz[2 * a + 1] - bz);
+  }
+  return sum;
+}
+
 /**
  * The triangles `widest` has and `own` does not.
  *
@@ -164,12 +186,22 @@ export function indexDifference(
 export function buildStackCapArrays(input: StackCapInput): StackCapArrays {
   const { positionsXZ: xz, y, shared, own, peel } = input;
   const widest = peel ?? own ?? shared;
-  const normals = new Float32Array(y.length * 3);
-  // Height fields face up: a downward sum means the winding is reversed.
-  const flipped = vertexNormals(xz, y, widest, normals) < 0;
-  if (flipped) {
-    reverseWinding(widest);
-    vertexNormals(xz, y, widest, normals);
+  const given = input.normals ?? null;
+  let normals: Float32Array;
+  let flipped: boolean;
+  if (given) {
+    flipped = windingSum(xz, widest) < 0;
+    if (flipped) reverseWinding(widest);
+    normals = new Float32Array(input.toGrid ? given.length : 0);
+    for (let i = 0; i < normals.length; i++) normals[i] = given[i] / 32767;
+  } else {
+    normals = new Float32Array(y.length * 3);
+    // Height fields face up: a downward sum means the winding is reversed.
+    flipped = vertexNormals(xz, y, widest, normals) < 0;
+    if (flipped) {
+      reverseWinding(widest);
+      vertexNormals(xz, y, widest, normals);
+    }
   }
   const normalMap = input.toGrid
     ? bakeCapNormalMap(xz, y, normals, widest, input.levels, input.toGrid)
@@ -185,12 +217,15 @@ export function buildStackCapArrays(input: StackCapInput): StackCapArrays {
   }
   if (index === shared && !(flipped && widest === shared)) index = null;
 
-  const normal = new Int16Array(normals.length);
-  for (let i = 0; i < normals.length; i++) {
-    normal[i] = Math.max(
-      -32767,
-      Math.min(32767, Math.round(normals[i] * 32767)),
-    );
+  let normal = given;
+  if (!normal) {
+    normal = new Int16Array(normals.length);
+    for (let i = 0; i < normals.length; i++) {
+      normal[i] = Math.max(
+        -32767,
+        Math.min(32767, Math.round(normals[i] * 32767)),
+      );
+    }
   }
 
   let minX = Infinity;

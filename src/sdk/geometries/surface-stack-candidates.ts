@@ -37,8 +37,9 @@ export function collectStackCandidates(
  * `collectStackCandidates(channel, nx, E)` would return — so one refinement gives
  * every coarser level, nested.
  *
- * @returns the nodes (`row * nx + col`) and, per node, its level (`Infinity` for
- *   the grid's corners, which every level keeps)
+ * @returns the nodes (`row * nx + col`); per node, its level (`Infinity` for the
+ *   grid's corners, which every level keeps); and the layer's own TIN at
+ *   `maxError`, as triangles indexing `nodes`
  *
  * @group Geometries
  */
@@ -46,7 +47,11 @@ export function collectStackCandidateLevels(
   channel: Float32Array,
   nx: number,
   maxError: number,
-): { nodes: Uint32Array; errors: Float32Array } {
+): {
+  nodes: Uint32Array;
+  errors: Float32Array;
+  triangles: Uint16Array | Uint32Array;
+} {
   const delatin = new Delatin(channel, nx, STACK_NO_DATA);
   const levels: number[] = [];
   while (levels.length < delatin.coords.length >> 1) levels.push(Infinity);
@@ -61,7 +66,15 @@ export function collectStackCandidateLevels(
   for (let i = 0, j = 0; i < delatin.coords.length; i += 2, j++) {
     nodes[j] = delatin.coords[i + 1] * nx + delatin.coords[i];
   }
-  return { nodes, errors: Float32Array.from(levels) };
+  return {
+    nodes,
+    errors: Float32Array.from(levels),
+    // Kept with the column for as long as it is cached, so half the bytes where they fit.
+    triangles:
+      nodes.length <= 0xffff
+        ? Uint16Array.from(delatin.triangles)
+        : Uint32Array.from(delatin.triangles),
+  };
 }
 
 /**

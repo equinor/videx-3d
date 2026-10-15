@@ -134,4 +134,30 @@ describe('buildStackCapArrays', () => {
     expect(plain.normalMap).toBeNull();
     expect(arrays.normalMap!.width).toBeGreaterThan(0);
   });
+
+  it('shades with GIVEN normals as they are, and still re-winds a downward index', () => {
+    for (const up of [false, true]) {
+      const { xz, y, index } = grid(6, up);
+      const normals = new Int16Array(y.length * 3);
+      for (let v = 0; v < y.length; v++) normals[3 * v + 1] = 32767;
+      const arrays = buildStackCapArrays({
+        positionsXZ: xz,
+        y,
+        shared: new Uint32Array(0),
+        own: index,
+        peel: null,
+        normals,
+      });
+      // Re-wound exactly as when the normals are computed from the triangles.
+      const computed = buildStackCapArrays({
+        positionsXZ: xz,
+        y,
+        shared: new Uint32Array(0),
+        own: grid(6, up).index,
+        peel: null,
+      });
+      expect(arrays.normal).toBe(normals);
+      expect(Array.from(arrays.index!)).toEqual(Array.from(computed.index!));
+    }
+  });
 });

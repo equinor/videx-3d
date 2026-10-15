@@ -286,9 +286,9 @@ z-fights on.
 ```mermaid
 flowchart TD
   A["candidates:<br/>collectStackCandidates<br/>+ collectThicknessCrossings<br/>+ collectCoverageCrossings"] --> B["planSurfaceStack → tessellateStackTile per tile → stitch<br/><i>ONE triangulation for every layer</i>"]
-  B --> C["sampleStackHeights<br/>sampleStackMasks<br/>sampleStackWeights"]
+  B --> C["sampleStackOwnSurfaces (each layer's own TIN)<br/>or sampleStackHeights (the grid)<br/>sampleStackMasks<br/>sampleStackWeights"]
   C --> D["stackDepthStats<br/>stackDuplicateFractions<br/><i>measured BEFORE the resolve</i>"]
-  D --> E["resolveStackOrder<br/><i>measure only when preResolved</i>"]
+  D --> E["resolveStackOrder<br/><i>measure only when preResolved and grid-sampled</i>"]
   E --> F["carrier clamp<br/>topCover override"]
   F --> G["collapseStackTriangles<br/><i>per-layer index subsets</i>"]
   G --> H["buildStackGeometries<br/>+ createPolygonCap for an unbounded lid"]
@@ -317,6 +317,55 @@ Coverage refinement is the one a **sealed** stack needs: a sealed surface keeps 
 thickness either side of its data edge, so that edge is not a thickness crossing and
 nothing else would put vertices on it — the taper would then start wherever the
 height refinement happened to leave a vertex, hundreds of metres inside the data.
+
+### Heights and normals: each layer's own surface
+
+The shared tessellation is the union of every layer's refinement, so each cap also
+carries the vertices the OTHER layers needed: their nodes, their pinch-out lines, the
+tile seams. Sampled from the grid, such a vertex sits up to `maxError` off the
+layer's own TIN, and the slivers it makes with the layer's own vertices tilt the
+shading — a surface looked different depending on how many others shared its stack
+(Snorre: streaks on a cap at 40 surfaces, none at 4).
+
+`sampleStackOwnSurfaces` (`surface-stack-own.ts`) takes each layer from its own TIN
+instead: the triangles `collectStackCandidateLevels` returns with the nodes
+(`SurfaceStackOptions.candidateTriangles`, cached with the column's candidates).
+
+- **Heights:** the other layers' vertices are interpolated on the layer's own TIN.
+  Kept on the grid: its nodes (on its TIN anyway), its own lines — both pairs'
+  termination lines, its data edge, nodes added along them — and the rim and cuts
+  other chunks meet.
+- **Normals:** every vertex is shaded with the own TIN's normal there
+  (`StackCapInput.normals`). Heights alone are not enough: the shared triangles do
+  not contain the TIN's edges, so their normals still differ (measured: 1007 → 768
+  of 12.5k vertices more than 5° off).
+
+> ⭐ **Which units exist stays the grid's call.** Two TINs are off their grids
+> independently, so a unit the grid has pinched out reopens as slivers (first
+> attempt: 5× the wall vertices; a test wedge drawn over 46 % more area). Per vertex,
+> against the layer above: **thin** on the grid → it lies that grid thickness under
+> the layer above and takes its normal; **thick** → its own surface, but never within
+> the threshold of the layer above. A vertex kept on the grid stays there for the
+> layer it is pinched against above too. Collapse and walls then come out exactly as
+> from the grid (Snorre: every cap's triangle and wall's vertex count unchanged).
+
+Layers taken from different TINs can still cross where the grid has them ordered, so
+the vertex resolve CLAMPS even for a `preResolved` stack, and a clamped vertex takes
+the normal of the layer above (`StackResolveOptions.normals`). The preview build and
+a layer without a TIN (a plane) are sampled from the grid.
+
+Cost (Snorre, 40 layers, 225k shared vertices): sampling 0.76 s from the grid,
+2.55 s from the own TINs serially, **0.78 s on the pool** — the per-layer part
+(`sampleStackOwnLayer`: grid height, own height, normals) needs no other layer, so
+`SurfaceStackPlan.stitch` hands it out as jobs, and the generator runs them as
+`'own'` tasks between the tiles and the caps. The pinch-out rule is the only step
+that needs the layer above; `createStackOwnCombiner` takes the layers in any order
+and applies it as soon as a layer's neighbour above is in, so only the stragglers'
+arrays wait. Points are located by walking the TIN from the last hit (~5 steps —
+the vertices come in tile and row order); the bucket sampler scans its whole bucket
+and was twice as slow. The own TINs grow the candidate cache 2.7 → 6.6 MB, with
+triangles stored as 16-bit indices wherever a layer's TIN has fewer than 65,536
+vertices.
 
 ### tessellateStack
 
@@ -614,7 +663,7 @@ cap:
 |-----------|---------|-----------------------|
 | `xz` | node plan position (`vec2`) | **yes — one `BufferAttribute` for the whole stack** |
 | `y` | this layer's height at each node (`float`) | no — and it IS the height array, shared by reference with the section source so neither duplicates it |
-| `normal` | packed, assigned explicitly (a zero normal marks a collapsed vertex) | no |
+| `normal` | packed, assigned explicitly: the layer's own surface's (see above), or from the triangles when grid-sampled (then a zero normal marks a collapsed vertex) | no |
 | `inferred` | the seal's taper weight, when present | no |
 | index | the triangle list | shared by the layers that keep the full set |
 
@@ -778,17 +827,18 @@ worker: each cap's `SurfaceChunkMesh.units` and the section's spatial index
 - The worker is imported with Vite's `?worker&inline`, so it ships **inlined in the
   library bundle** (as a string, turned into a Blob URL at runtime) — no host
   bundler configuration, and it works whether the host runs the generator registry
-  on the main thread or in a worker. ⚠️ It must stay free of three.js (22.6 kB as
-  of 2026-10-09; three would add hundreds).
-- Six task kinds: `'resample'`, `'refine'`, `'terminations'` (one adjacent
+  on the main thread or in a worker. ⚠️ It must stay free of three.js (46.6 kB as
+  of 2026-10-15; three would add hundreds).
+- Seven task kinds: `'resample'`, `'refine'`, `'terminations'` (one adjacent
   pair's pinch-out loops, `scanThicknessLoops` — the simplify that follows needs
   every channel, so it stays in `planSurfaceStack`, and is kept with the column),
   `'outline'` (a wellbore outline's raster — only the cut runs are sent, never a
   surface grid), `'cap'` (one cap's normals, index, patch and bounds,
   `buildStackCapArrays` — see
-  [streaming.md](./streaming.md#part-4--building-the-layers-in-parallel)) and
+  [streaming.md](./streaming.md#part-4--building-the-layers-in-parallel)),
   `'tile'` (one tile of a tiled tessellation, `tessellateStackTile` — largest
-  first; a build with one tile runs it in place).
+  first; a build with one tile runs it in place) and `'own'` (one layer sampled
+  from its own surface, `sampleStackOwnLayer`).
 - If `Worker` is unavailable or construction fails, the pool is `null` and every
   path falls back to running the SDK function serially (`poolSize: 0` in the
   result).
@@ -796,15 +846,16 @@ worker: each cap's `SurfaceChunkMesh.units` and the section's spatial index
 | Task | Transferred in | Returned |
 |------|----------------|----------|
 | `resample` | the raw grid `values` (never needed again downstream) | `channel` + `mask` |
-| `refine` | a **copy** of the channel (the caller still needs it) | candidate node indices |
-| `cap` | **copies** of `xz`, the layer's `y` and its index (the build reads them on) | snorm16 normals, the normal map when the build has levels, the index if re-wound, patch index, bounds |
+| `refine` | a **copy** of the channel (the caller still needs it) | candidate node indices, their levels, and the layer's own TIN |
+| `cap` | **copies** of `xz`, the layer's `y` and its index (the build reads them on); its own normals, transferred | snorm16 normals (those same ones, when given), the normal map when the build has levels, the index if re-wound, patch index, bounds |
 | `tile` | the tile's own arrays (`stackTileInputBuffers`); the outline is copied, every tile needs it | the tile's triangulation (`stackTileOutputBuffers`) |
+| `own` | **copies** of the shared coords, the layer's channel and its TIN (the build and the column read them on) | its grid heights, own heights and snorm16 normals |
 
 > ⚠️⚠️ **The worker bundle must stay free of `three`.** `stack-refine.worker.ts`
 > imports `collectStackCandidates`, `resampleStackLayer`, `scanThicknessLoops`,
-> `createWellboreOutlineCoordinates`, `buildStackCapArrays` and `tessellateStackTile`, so those modules
+> `createWellboreOutlineCoordinates`, `buildStackCapArrays`, `tessellateStackTile` and `sampleStackOwnLayer`, so those modules
 > (and `surface-grid.ts`, `chamfer.ts`, `mesh-boundary.ts`, `delatin.ts`, `grid-inside.ts`,
-> `grid-noding.ts`, `triangle-order.ts`, `cap-normal-map.ts`) must stay three.js-free. Pulling three in here
+> `grid-noding.ts`, `triangle-order.ts`, `cap-normal-map.ts`, `tin-sampler.ts`) must stay three.js-free. Pulling three in here
 > embeds a second copy of it in the bundle. Check with `vite build` — `generators.js`
 > should stay around 50 kB.
 

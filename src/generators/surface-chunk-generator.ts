@@ -62,6 +62,7 @@ import {
 import {
   buildStackCaps,
   refineStackChannels,
+  sampleStackOwnLayers,
   scanStackTerminations,
   tessellateStackTiles,
 } from './workers/stack-worker-pool';
@@ -82,8 +83,18 @@ async function buildStackOnPool(
   onPlan?.(plan);
   const outputs = await tessellateStackTiles(plan.tiles, isStale);
   if (!outputs) return null;
-  const pending = plan.begin(outputs);
-  if (!pending) return null;
+  const stitched = plan.stitch(outputs);
+  if (!stitched) return null;
+  if (stitched.own) {
+    const own = stitched.own;
+    await sampleStackOwnLayers(
+      stitched.jobs,
+      (i, sampled) => own.add(i, sampled),
+      isStale,
+    );
+    if (isStale()) return null;
+  }
+  const pending = stitched.begin();
   const built: StackGeometryLayer[] = new Array(pending.jobs.length);
   await buildStackCaps(
     pending.jobs,
@@ -568,7 +579,11 @@ export async function buildSpecStack(
     // the layer's own.
     const candidateOf: (
       | number
-      | { nodes: Uint32Array; errors: Float32Array }
+      | {
+          nodes: Uint32Array;
+          errors: Float32Array;
+          triangles: Uint16Array | Uint32Array;
+        }
     )[] = [];
     const preResolved: Uint8Array[] = [];
     picks.forEach((at, j) => {
@@ -599,7 +614,11 @@ export async function buildSpecStack(
                   context.reference.header.nx,
                   maxError,
                 )
-              : { nodes: new Uint32Array(0), errors: new Float32Array(0) },
+              : {
+                  nodes: new Uint32Array(0),
+                  errors: new Float32Array(0),
+                  triangles: new Uint32Array(0),
+                },
         );
         preResolved.push(
           at >= 0 ? context.absent[context.expansion[at][0]] : unresolved,
@@ -723,6 +742,7 @@ export async function buildSpecStack(
     const {
       candidates: allCandidates,
       errors: allErrors,
+      triangles: allTriangles,
       poolSize,
     } = await getStackCandidates(context, maxError, report);
     if (isStale()) return null;
@@ -732,6 +752,9 @@ export async function buildSpecStack(
     );
     const candidateErrors = candidateOf.map(c =>
       typeof c === 'number' ? allErrors[c] : c.errors,
+    );
+    const candidateTriangles = candidateOf.map(c =>
+      typeof c === 'number' ? allTriangles[c] : c.triangles,
     );
 
     // What an earlier build of this column derived from the same channels.
@@ -756,6 +779,7 @@ export async function buildSpecStack(
         ...shared,
         candidates,
         candidateErrors,
+        candidateTriangles,
         refineTerminations: spec.resolve?.refineTerminations,
         constrainCoverage: spec.resolve?.constrainCoverage,
         constrainTerminations: spec.resolve?.constrainTerminations ?? true,
@@ -958,8 +982,15 @@ export async function buildSpecStack(
   const tSeal = performance.now();
 
   // The scan runs alongside and stays silent, so two steps never interleave.
-  const [{ candidates, errors: candidateErrors, poolSize }, terminationLoops] =
-    await Promise.all([
+  const [
+    {
+      candidates,
+      errors: candidateErrors,
+      triangles: candidateTriangles,
+      poolSize,
+    },
+    terminationLoops,
+  ] = await Promise.all([
     refineStackChannels(
       reference.channels,
       reference.header.nx,
@@ -1004,6 +1035,7 @@ export async function buildSpecStack(
       maxError,
       candidates,
       candidateErrors,
+      candidateTriangles,
       resolve: spec.resolve
         ? { mode: spec.resolve.mode, minGap: spec.resolve.minGap }
         : undefined,

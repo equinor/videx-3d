@@ -576,7 +576,8 @@ export function getStackCandidates(
       candidateBytesByKey.set(
         key,
         result.candidates.reduce((a, c) => a + c.byteLength, 0) +
-          result.errors.reduce((a, e) => a + e.byteLength, 0),
+          result.errors.reduce((a, e) => a + e.byteLength, 0) +
+          result.triangles.reduce((a, t) => a + t.byteLength, 0),
       );
     return result;
   });

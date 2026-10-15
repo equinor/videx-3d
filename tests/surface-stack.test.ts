@@ -557,6 +557,17 @@ describe('resolveStackOrder', () => {
     expect(result.pairs[0].maxOverlap).toBeGreaterThan(50);
   });
 
+  it('hands a clamped vertex the normal of the surface it now lies on', () => {
+    const heights = [Float32Array.from([0, 0]), Float32Array.from([-1, 5])];
+    const normals = [
+      Int16Array.from([1, 2, 3, 4, 5, 6]),
+      Int16Array.from([7, 8, 9, 10, 11, 12]),
+    ];
+    resolveStackOrder(heights, { normals });
+    expect(Array.from(heights[1])).toEqual([-1, 0]);
+    expect(Array.from(normals[1])).toEqual([7, 8, 9, 4, 5, 6]);
+  });
+
   it('leaves NO interpenetration anywhere on the shared tessellation', () => {
     const polygon = maskPolygon(4, 28);
     const reference = buildStackReference([top(), base()], polygon)!;

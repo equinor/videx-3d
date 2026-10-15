@@ -4,6 +4,7 @@ import {
   tessellateStackTile,
 } from '../../sdk/geometries/stack-tiles';
 import { collectStackCandidateLevels } from '../../sdk/geometries/surface-stack-candidates';
+import { sampleStackOwnLayer } from '../../sdk/geometries/surface-stack-own';
 import { resampleStackLayer } from '../../sdk/geometries/surface-stack-resample';
 import { scanThicknessLoops } from '../../sdk/geometries/surface-stack-terminations';
 import { createWellboreOutlineCoordinates } from '../../sdk/geometries/wellbore-outline';
@@ -23,7 +24,8 @@ import type {
  * rasterizes wellbore outlines (`'outline'`), which are independent per chunk, and
  * scans each layer pair's termination loops (`'terminations'`), and builds each
  * cap's normals, index and bounds (`'cap'`), and triangulates the tiles of a
- * tiled tessellation (`'tile'`).
+ * tiled tessellation (`'tile'`), and samples each layer from its own surface
+ * (`'own'`).
  */
 const workerSelf: {
   onmessage: ((e: MessageEvent<StackWorkerRequest>) => void) | null;
@@ -110,11 +112,30 @@ workerSelf.onmessage = e => {
     );
     return;
   }
+  if (e.data.kind === 'own') {
+    const { id, job } = e.data;
+    const layer = sampleStackOwnLayer(job);
+    const transfer: Transferable[] = [layer.grid.buffer, layer.y.buffer];
+    if (layer.normals) transfer.push(layer.normals.buffer);
+    workerSelf.postMessage({ kind: 'own', id, layer }, transfer);
+    return;
+  }
   const { id, channel, nx, maxError } = e.data;
-  const { nodes, errors } = collectStackCandidateLevels(channel, nx, maxError);
+  const { nodes, errors, triangles } = collectStackCandidateLevels(
+    channel,
+    nx,
+    maxError,
+  );
   workerSelf.postMessage(
-    { kind: 'refine', id, nodes, errors, refineMs: performance.now() - start },
-    [nodes.buffer, errors.buffer],
+    {
+      kind: 'refine',
+      id,
+      nodes,
+      errors,
+      triangles,
+      refineMs: performance.now() - start,
+    },
+    [nodes.buffer, errors.buffer, triangles.buffer],
   );
 };
 

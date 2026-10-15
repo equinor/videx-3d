@@ -12,6 +12,11 @@ import {
 } from '../../sdk/geometries/stack-tiles';
 import { collectStackCandidateLevels } from '../../sdk/geometries/surface-stack-candidates';
 import {
+  sampleStackOwnLayer,
+  StackOwnLayer,
+  StackOwnLayerJob,
+} from '../../sdk/geometries/surface-stack-own';
+import {
   resampleStackLayer,
   StackGridPlacement,
   StackLayerResample,
@@ -32,6 +37,7 @@ import type {
   CapResponse,
   OutlineRequest,
   OutlineResponse,
+  OwnResponse,
   RefineResponse,
   ResampleResponse,
   StackWorkerRequest,
@@ -229,6 +235,7 @@ export async function refineStackChannels(
     return {
       candidates: levels.map(l => l.nodes),
       errors: levels.map(l => l.errors),
+      triangles: levels.map(l => l.triangles),
       poolSize: 0,
     };
   }
@@ -252,6 +259,7 @@ export async function refineStackChannels(
   return {
     candidates: results.map(r => r.nodes),
     errors: results.map(r => r.errors),
+    triangles: results.map(r => r.triangles),
     poolSize: pool.size,
   };
 }
@@ -261,6 +269,8 @@ export type StackCandidates = {
   candidates: Uint32Array[];
   /** per layer, per candidate, its level (see `collectStackCandidateLevels`) */
   errors: Float32Array[];
+  /** per layer, its own TIN over `candidates` (see `collectStackCandidateLevels`) */
+  triangles: (Uint16Array | Uint32Array)[];
   poolSize: number;
 };
 
@@ -315,6 +325,57 @@ export async function scanStackTerminations(
 }
 
 /**
+ * Sample each layer from its own surface (see `sampleStackOwnLayer`) — across the
+ * worker pool when available, on the current thread otherwise. `onLayer` hears
+ * each one as it finishes, in ANY order; nothing once `isStale` says so.
+ */
+export async function sampleStackOwnLayers(
+  jobs: StackOwnLayerJob[],
+  onLayer: (layer: number, sampled: StackOwnLayer) => void,
+  isStale: () => boolean = () => false,
+): Promise<void> {
+  const pool = getStackPool();
+  if (!pool) {
+    jobs.forEach((job, i) => {
+      if (!isStale()) onLayer(i, sampleStackOwnLayer(job));
+    });
+    return;
+  }
+  // Copies made inside the limited task, as in `refineStackChannels`: the build
+  // reads the channels and coords on, and the TINs belong to the column.
+  const limit = pLimit(pool.size);
+  await Promise.all(
+    jobs.map((job, i) =>
+      limit(async () => {
+        if (isStale()) return;
+        const input: StackOwnLayerJob = {
+          ...job,
+          coords: job.coords.slice(),
+          channel: job.channel.slice(),
+          nodes: job.nodes?.slice() ?? null,
+          triangles: job.triangles?.slice() ?? null,
+          exact: job.exact?.slice() ?? null,
+        };
+        const transfer = [
+          input.coords,
+          input.channel,
+          input.nodes,
+          input.triangles,
+          input.exact,
+        ].flatMap(array =>
+          array && array.byteLength > 0 ? [array.buffer as ArrayBuffer] : [],
+        );
+        const res = (await pool.run(
+          { kind: 'own', id: taskId++, job: input },
+          transfer,
+        )) as OwnResponse;
+        if (!isStale()) onLayer(i, res.layer);
+      }),
+    ),
+  );
+}
+
+/**
  * Build every cap of a stack (see `buildStackCapArrays`) — across the worker pool
  * when available, on the current thread otherwise. `onCap` hears each one as it
  * finishes, in ANY order; a `null` job, and every job once `isStale` says so, gets
@@ -347,6 +408,8 @@ export async function buildStackCaps(
           peel: job.peel?.slice() ?? null,
           levels: job.levels?.map(level => level.slice()) ?? null,
           toGrid: job.toGrid ?? null,
+          // Not read again here: it comes back as the cap's `normal`.
+          normals: job.normals ?? null,
         };
         const transfer = [
           input.positionsXZ,
@@ -354,6 +417,7 @@ export async function buildStackCaps(
           input.shared,
           input.own,
           input.peel,
+          input.normals,
           ...(input.levels ?? []),
         ].flatMap(array =>
           array && array.byteLength > 0 ? [array.buffer as ArrayBuffer] : [],

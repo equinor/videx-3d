@@ -407,6 +407,12 @@ export type StackResolveOptions = {
    * nothing else.
    */
   fluid?: boolean[];
+  /**
+   * Per layer, its normals at the shared vertices (snorm16, 3 each), or `null`.
+   * A vertex clamped onto the layer above takes that layer's normal there, as it
+   * now lies on that surface.
+   */
+  normals?: (Int16Array | null)[];
 };
 
 /** Per-pair statistics from {@link resolveStackOrder}. */
@@ -2001,6 +2007,8 @@ export function resolveStackOrder(
     const from = authority;
     const above = heights[from];
     const current = heights[i];
+    const normalAbove = options.normals?.[from];
+    const normal = normalAbove ? options.normals?.[i] : null;
     if (!fluid) authority = i;
     const cut = absent[i];
     const covered = options.coverage;
@@ -2026,7 +2034,14 @@ export function resolveStackOrder(
       }
       const limit = above[v] - minGap;
       if (current[v] > limit) {
-        if (apply) current[v] = limit;
+        if (apply) {
+          current[v] = limit;
+          if (normal && normalAbove) {
+            normal[3 * v] = normalAbove[3 * v];
+            normal[3 * v + 1] = normalAbove[3 * v + 1];
+            normal[3 * v + 2] = normalAbove[3 * v + 2];
+          }
+        }
         // The unit had negative thickness here, so it is not present: mark it
         // rather than leaving a welded copy of the surface above.
         if (truncate) cut[v] = 1;
