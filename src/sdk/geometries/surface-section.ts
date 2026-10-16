@@ -26,6 +26,10 @@ export type StackSectionSource = {
    * the interval is unfilled — there is no material to show, so the cut face has
    * nothing to draw there.
    *
+   * ⭐ Also set where the interval is thinner than the collapse threshold but not
+   * zero, which the caps and walls treat as absent: the faces either side end on
+   * their own layers, so leaving it out opens a slit as tall as the unit.
+   *
    * ⭐ A bit rather than a byte because this is what SHIPS and what stays resident
    * for the life of the build: on a field-scale column it is 4.5 MB instead of 36.
    */

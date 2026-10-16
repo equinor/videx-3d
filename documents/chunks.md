@@ -3275,9 +3275,10 @@ What that buys, in order:
   root of the triangle count — each producing at most three triangles. ⚠️ Unmeasured;
   measure crossed-cell count on a real stack before committing to per-frame rebuild.
 
-⚠️ **Two things the design did not say, and both are load-bearing.** See §15.9.1:
-watertightness needs a CANONICAL edge orientation, and a cell the plane merely
-GRAZES must be handled on purpose: skipped at a corner, closed along a side.
+⚠️ **Three things the design did not say, and all are load-bearing.** See §15.9.1:
+watertightness needs a CANONICAL edge orientation, a cell the plane merely
+GRAZES must be handled on purpose (skipped at a corner, closed along a side), and
+a unit thinner than the collapse threshold must still be cut.
 
 ### 15.3 ⭐ Section the CHANNELS, not the drawn meshes
 
@@ -3437,9 +3438,9 @@ shader tests the raw `position` attribute rather than the world position, so the
 CPU — which builds the face from the same vertex data — and the GPU cannot disagree
 under a vertical exaggeration. No `matrixWorld` is involved anywhere.
 
-#### 15.9.1 Two things §15.2 did not say
+#### 15.9.1 Three things §15.2 did not say
 
-Both are the difference between "watertight by construction" as a claim and as a
+All three are the difference between "watertight by construction" as a claim and as a
 fact:
 
 - ⭐⭐ **The crossing on an edge must be computed in a CANONICAL direction.** Two
@@ -3458,6 +3459,12 @@ fact:
   left slits wherever a fixed plane ran along a row of grid vertices.
   - Side effect: an outline edge lying on the plane gets a face in front of its
     wall (there is no cell across it to tell the two cases apart).
+- ⚠️ **A unit thinner than the collapse threshold is still CUT.** The collapse drops
+  its lower cap and the walls skip it, but the faces either side end on their own
+  layers, so leaving it out of `StackSectionSource.intervals` opened a slit up to
+  the threshold (0.5 m) tall wherever a cut crossed a pinch-out. Only cells with
+  zero thickness at every corner are left out, and never across a fluid, which the
+  resolve does not order.
 
 #### 15.9.2 The channels have to be asked for
 

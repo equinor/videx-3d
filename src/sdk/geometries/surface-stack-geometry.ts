@@ -36,6 +36,8 @@ import {
   StackCollapseResult,
   stackDepthStats,
   stackDuplicateFractions,
+  INTERVAL_FLAT,
+  INTERVAL_PRESENT,
   stackIntervalMembers,
   stackIntervalStates,
   stackIntervalTriangles,
@@ -1268,6 +1270,35 @@ function stackOwnOptions(
   };
 }
 
+/**
+ * One interval's {@link StackSectionSource.intervals} bits: where it holds a volume,
+ * plus (with `thin`) where it is FLAT but not zero. The collapse drops those cells,
+ * but a cut that skips them leaves a slit as tall as the unit between the faces
+ * either side of it.
+ */
+function packCutMask(
+  state: Uint8Array,
+  top: Float32Array,
+  bottom: Float32Array,
+  indices: Uint32Array,
+  thin: boolean,
+): Uint8Array {
+  const mask = new Uint8Array((state.length + 7) >> 3);
+  for (let t = 0; t < state.length; t++) {
+    const s = state[t];
+    if (s !== INTERVAL_PRESENT) {
+      if (!thin || s !== INTERVAL_FLAT) continue;
+      const a = indices[3 * t];
+      const b = indices[3 * t + 1];
+      const c = indices[3 * t + 2];
+      if (top[a] <= bottom[a] && top[b] <= bottom[b] && top[c] <= bottom[c])
+        continue;
+    }
+    mask[t >> 3] |= 1 << (t & 7);
+  }
+  return mask;
+}
+
 function beginOnTessellation(
   reference: StackReference,
   options: SurfaceStackOptions,
@@ -1556,11 +1587,11 @@ function beginOnTessellation(
     thin,
   };
   const states =
-    options.fills && options.capNeighbours
+    options.fills && (options.capNeighbours || options.section)
       ? stackIntervalStates(heights, tessellation.indices, maskOptions)
       : undefined;
   const capNeighbours =
-    states && options.fills
+    states && options.fills && options.capNeighbours
       ? stackCapNeighbours(
           states,
           options.fills,
@@ -1576,6 +1607,22 @@ function beginOnTessellation(
   // triple by triple as both were emitted.
   orientUpward(tessellation.indices, positionsXZ);
 
+  // Before the states become members, which forgets which cells are only thin.
+  // ⚠️ Not across a fluid: the resolve does not order it, so a thin cell may invert.
+  const cutIntervals =
+    options.section && states
+      ? states.map((state, i) =>
+          options.fills?.[i]
+            ? packCutMask(
+                state,
+                heights[i],
+                heights[i + 1],
+                tessellation.indices,
+                !fluid?.[i] && !fluid?.[i + 1],
+              )
+            : null,
+        )
+      : undefined;
   const members = states ? stackIntervalMembers(states) : undefined;
   const walls = options.fills
     ? buildStackWalls(tessellation, positionsXZ, heights, {
@@ -1600,27 +1647,21 @@ function beginOnTessellation(
   const tWalls = performance.now();
 
   // The walls skip the masks when nothing is filled, but a gap still carries data.
-  const intervalMasks =
-    walls.intervals ??
-    (options.section && options.fills
-      ? (members ??
-        stackIntervalTriangles(heights, tessellation.indices, maskOptions))
-      : null);
+  const intervalMasks = walls.intervals ?? members ?? null;
 
   // An interval with no volume has no material to show on the cut, so it is left
-  // out here rather than being filtered by every consumer.
+  // out here rather than being filtered by every consumer — but a thin one is kept
+  // (see `packCutMask`).
   // ⭐ Packed to one bit per triangle here: the wall builder wants a byte it can
   // index, but this copy is the one that crosses to the main thread and stays for
   // the life of the build.
   const section: StackSectionSource | undefined =
-    options.section && intervalMasks
+    options.section && intervalMasks && cutIntervals
       ? {
           positionsXZ,
           indices: tessellation.indices,
           heights,
-          intervals: intervalMasks.map((mask, i) =>
-            options.fills?.[i] ? packTriangleMask(mask) : null,
-          ),
+          intervals: cutIntervals,
           // A bit per triangle, and only for the few intervals left open.
           gaps: intervalMasks.map((mask, i) =>
             !options.fills?.[i] && mask.indexOf(1) >= 0

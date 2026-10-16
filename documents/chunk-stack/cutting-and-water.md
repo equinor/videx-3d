@@ -163,6 +163,10 @@ type StackSectionSource = {
 > faces of adjacent intervals meet exactly because they share the same triangles
 > and the same heights.
 
+> ⚠️ That only holds if no interval in between is skipped. A unit thinner than the
+> collapse threshold is dropped from the caps and walls, but its membership still
+> marks it wherever it is not zero, so the cut draws its sliver instead of a slit.
+
 ```
        plane
          │

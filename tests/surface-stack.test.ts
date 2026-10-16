@@ -40,7 +40,15 @@ import {
   unpackSurfaceChunk,
 } from '../src/sdk/geometries/surface-chunk-packing';
 import { assembleChunk } from '../src/sdk/geometries/surface-chunk';
+import { buildFenceRibbons } from '../src/sdk/geometries/fence-ribbon';
+import {
+  createStackSectionTarget,
+  growStackSectionTarget,
+  sectionStackInterval,
+  triangleInMask,
+} from '../src/sdk/geometries/surface-section';
 import { sortTrianglesSpatially } from '../src/sdk/geometries/triangle-order';
+import type { Vec2, Vec3 } from '../src/sdk/types/common';
 import type { SurfaceChunk } from '../src/sdk/geometries/surface-chunk';
 import {
   packBufferGeometry,
@@ -1135,6 +1143,89 @@ describe('cap neighbours', () => {
     })!.section!;
     expect(gapped.gaps![1]).not.toBeNull();
     expect(gapped.voids).toEqual([false, false]);
+  });
+
+  it('⭐ cuts a unit thinner than the collapse threshold, so the faces either side meet', () => {
+    const relief = (col: number, row: number) =>
+      30 * Math.sin(col / 3) * Math.cos(row / 4);
+    // Interval 1 is 0.3 m thick right of column 16 and zero thick left of it.
+    const layers = [
+      layerFrom(() => 1000),
+      layerFrom((col, row) => 1200 + relief(col, row)),
+      layerFrom((col, row) => 1200 + relief(col, row) + (col > 16 ? 0.3 : 0)),
+      layerFrom(() => 1400),
+    ];
+    const reference = buildStackReference(layers, polygon)!;
+    const section = buildSurfaceStack(reference, layers, {
+      polygon,
+      maxError: 5,
+      fills: [true, true, true, false],
+      section: true,
+    })!.section!;
+
+    const triangles = section.indices.length / 3;
+    let thin = 0;
+    for (let t = 0; t < triangles; t++) {
+      if (triangleInMask(section.intervals[1]!, t)) thin++;
+    }
+    expect(thin).toBeGreaterThan(0);
+    // where it has no thickness at all there is nothing to cut
+    expect(thin).toBeLessThan(triangles);
+
+    const path: Vec2[] = [];
+    for (let x = sceneX(6); x <= sceneX(26); x += 25)
+      path.push([x, sceneZ(16)]);
+    const spans = buildFenceRibbons(section, path).map(ribbon => {
+      const position = ribbon.geometry.getAttribute('position');
+      const wallV = ribbon.geometry.getAttribute('wallV');
+      const top = new Map<string, number>();
+      const bottom = new Map<string, number>();
+      for (let v = 0; v < position.count; v++) {
+        const key = `${position.getX(v)},${position.getZ(v)}`;
+        (wallV.getX(v) > 0.5 ? top : bottom).set(key, position.getY(v));
+      }
+      return { interval: ribbon.interval, top, bottom };
+    });
+    expect(spans.map(s => s.interval)).toEqual([0, 1, 2]);
+    const [above, between, below] = spans;
+    let covered = 0;
+    let worst = 0;
+    for (const [key, base] of above.bottom) {
+      const top = between.top.get(key);
+      const gap =
+        top === undefined
+          ? Math.abs(below.top.get(key)! - base)
+          : Math.max(
+              Math.abs(top - base),
+              Math.abs(between.bottom.get(key)! - below.top.get(key)!),
+            );
+      if (top !== undefined) covered++;
+      worst = Math.max(worst, gap);
+    }
+    expect(worst).toBe(0);
+    expect(covered).toBeGreaterThan(0);
+
+    // The plane cut: the column's faces add up to the whole column, 400 m tall.
+    const plane = { normal: [1, 0, 0] as Vec3, constant: -sceneX(20.3) };
+    let area = 0;
+    for (let interval = 0; interval < 3; interval++) {
+      const target = createStackSectionTarget(256, !!section.inferred);
+      const needed = sectionStackInterval(section, interval, plane, target);
+      if (needed > target.capacity) {
+        growStackSectionTarget(target, needed);
+        sectionStackInterval(section, interval, plane, target);
+      }
+      const p = target.positions;
+      for (let t = 0; t + 2 < target.count; t += 3) {
+        const [a, b, c] = [3 * t, 3 * t + 3, 3 * t + 6];
+        area += Math.abs(
+          ((p[b + 1] - p[a + 1]) * (p[c + 2] - p[a + 2]) -
+            (p[b + 2] - p[a + 2]) * (p[c + 1] - p[a + 1])) /
+            2,
+        );
+      }
+    }
+    expect(area).toBeCloseTo(400 * (sceneZ(28) - sceneZ(4)), 0);
   });
 });
 
