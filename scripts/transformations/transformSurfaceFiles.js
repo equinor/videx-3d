@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { rimrafSync } from 'rimraf';
+import { emptyDir } from '../utils.js';
 
 function parseIrapbin(
   buffer,
@@ -66,10 +66,7 @@ export function transformSurfaceFiles(meta, inPath, outPath) {
   const destPath = outPath + 'surfaces';
   console.info('Processing surface files...');
   console.info('> preparing destination path');
-  if (fs.existsSync(destPath)) {
-    rimrafSync(destPath);
-  }
-  fs.mkdirSync(destPath);
+  emptyDir(destPath);
 
   let n = 0;
   Object.keys(meta).forEach(surfaceId => {

@@ -39,7 +39,6 @@
 
 import minimist from 'minimist';
 import fs from 'node:fs';
-import { rimrafSync } from 'rimraf';
 import { transformCasings } from './transformations/transformCasings.js';
 import { transformCompletion } from './transformations/transformCompletion.js';
 import { transformPerforations } from './transformations/transformPerforations.js';
@@ -49,7 +48,7 @@ import { transformSurfaceFiles } from './transformations/transformSurfaceFiles.j
 import { transformSurfaceMeta } from './transformations/transformSurfaceMeta.js';
 import { transformWellboreHeaders } from './transformations/transformWellboreHeaders.js';
 import { transformWellboreStratigraphy } from './transformations/transformWellboreStratigraphy.js';
-import { verify } from './utils.js';
+import { emptyDir, verify } from './utils.js';
 
 const args = minimist(process.argv.slice(2));
 
@@ -96,10 +95,7 @@ output['config'] = input['config']; // pass through
 output['mapping'] = input['mapping'] || {}; // pass through, optional
 
 console.info('> cleaning/preparing destination folder: ' + outPath);
-if (fs.existsSync(outPath)) {
-  rimrafSync(outPath);
-}
-fs.mkdirSync(outPath);
+emptyDir(outPath);
 
 /// transformations
 console.info('> transforming wellbore headers');

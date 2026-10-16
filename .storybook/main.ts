@@ -1,5 +1,13 @@
 import type { StorybookConfig } from '@storybook/react-vite';
+import { fileURLToPath } from 'node:url';
 import { addons } from 'storybook/manager-api';
+import { mergeConfig } from 'vite';
+
+// Never imported by a story: coverage reports, raw data imports, probes and build output.
+const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\\/g, '/');
+const unwatched = ['coverage', 'import', 'private', 'static'].map(
+  dir => `${root}${dir}/**`,
+);
 
 const config: StorybookConfig = {
   stories: ['../src/**/*.stories.@(js|jsx|mjs|ts|tsx)'],
@@ -13,6 +21,10 @@ const config: StorybookConfig = {
       },
     },
   },
+
+  // Storybook replaces the Vite config file's `server` block, so the watcher is set here.
+  viteFinal: config =>
+    mergeConfig(config, { server: { watch: { ignored: unwatched } } }),
 
   docs: {},
 
