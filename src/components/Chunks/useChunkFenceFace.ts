@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useReleasedFrame } from '../../hooks/useReleasedFrame';
 import {
   buildFenceRibbons,
   FenceRibbon,
@@ -78,7 +78,7 @@ export function useChunkFenceFace(
     on: false,
   });
 
-  useFrame(() => {
+  useReleasedFrame(() => {
     const state = last.current;
     const off =
       !source || !fence || !fence.enabled || !fence.curve || !fence.field;

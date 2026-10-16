@@ -266,7 +266,7 @@ callback identity change cannot throw it away mid-session).
 `candidateBytes`, `columnsBuilt`, `columnsInFlight`, `poolSize`, and the V8 heap in
 Chrome.
 
-Two retention traps already fixed, worth not reintroducing:
+Three retention traps already fixed, worth not reintroducing:
 
 - **React's fiber `alternate`** retains the previous render's hook state — an entire
   replaced chunk. `Chunk` forces one extra render after a build lands so the
@@ -275,6 +275,10 @@ Two retention traps already fixed, worth not reintroducing:
   captured by any closure inside it, so a closure memoised on *appearance* and
   defined in the component body pins that render's whole `chunk`. Pass the inputs as
   arguments (`buildInferenceOverlays` is module-scope for exactly this).
+- **R3F's initial store state** keeps every `useFrame` callback registered before
+  the first unsubscribe, with its scope — one whole chunk for the life of the
+  canvas. Chunk hooks use `useReleasedFrame` instead (see
+  [architecture.md](./architecture.md#react-specific-notes)).
 
 ---
 

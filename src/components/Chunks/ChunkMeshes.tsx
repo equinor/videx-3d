@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useFrame } from '@react-three/fiber';
 import {
   BufferAttribute,
   BufferGeometry,
@@ -12,6 +11,7 @@ import {
   Object3D,
   Vector4,
 } from 'three';
+import { useReleasedFrame } from '../../hooks/useReleasedFrame';
 import { SurfaceChunk, SurfaceChunkMesh, StackTiling } from '../../sdk';
 import {
   DEFAULT_OCEAN_DEEP_COLOR,
@@ -328,7 +328,7 @@ export const ChunkMeshes = ({
   // ones they were first built with. Mirroring it into state is what makes the
   // toggle work without a remount.
   const [fenceDebug, setFenceDebug] = useState(fence?.debug === true);
-  useFrame(() => {
+  useReleasedFrame(() => {
     const wanted = fence?.debug === true;
     if (wanted !== fenceDebug) setFenceDebug(wanted);
   });

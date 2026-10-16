@@ -1,6 +1,6 @@
 import { RefObject, useEffect, useMemo, useRef, useState } from 'react';
-import { useFrame } from '@react-three/fiber';
 import { BufferGeometry, Object3D, PerspectiveCamera, Vector3 } from 'three';
+import { useReleasedFrame } from '../../hooks/useReleasedFrame';
 import { SurfaceChunk, SurfaceChunkMesh } from '../../sdk';
 import {
   capVisibilityKey,
@@ -39,7 +39,7 @@ export function useCameraIntervals(
     [chunk, enabled],
   );
   const [units, setUnits] = useState<readonly number[]>(NONE);
-  useFrame(({ camera }) => {
+  useReleasedFrame(({ camera }) => {
     let next = NONE;
     if (probe && root.current) {
       camera.getWorldPosition(cameraLocal);
@@ -103,7 +103,7 @@ export function useCulledCaps(
   const deferred = useRef(new Set<SurfaceChunkMesh>());
   const applyOne = useRef(false);
   const [tick, setTick] = useState(0);
-  useFrame(() => {
+  useReleasedFrame(() => {
     if (deferred.current.size === 0 || applyOne.current) return;
     applyOne.current = true;
     setTick(t => t + 1);

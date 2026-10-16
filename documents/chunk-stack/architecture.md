@@ -248,7 +248,7 @@ builds a whole column of its own and can push out one still in use. Declare
 ³ ocean uniforms are updated per frame; the *materials* are keyed on `waterKey`.
 ⁴ only if it changes a seam decision this chunk takes part in.
 
-### Two React-specific notes
+### React-specific notes
 
 - **A rebuilt chunk forces one extra render.** React double-buffers its fibers, and
   the `alternate` retains the previous render's hook state — here an entire
@@ -261,6 +261,13 @@ builds a whole column of its own and can push out one still in use. Declare
   inside it, so closures defined in the component body pinned that render's whole
   `chunk` until the appearance happened to change. Passing the inputs as arguments
   keeps the captured scope to exactly those parameters.
+- **Frame callbacks go through `useReleasedFrame`.** R3F's store keeps its
+  *initial* state, whose `internal.subscribers` array is the live one until the
+  first unsubscribe and is never touched again after. A `useFrame` callback
+  registered before then stays referenced for the life of the canvas, and its
+  scope with it: in `ChunkMeshes` that was a whole replaced chunk (~500 MB on a
+  34-layer field), in production builds too. The hook hands R3F a relay that
+  closes over a holder only, and empties the holder on unmount.
 
 ---
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { useFrame } from '@react-three/fiber';
 import { BufferAttribute, BufferGeometry, DynamicDrawUsage } from 'three';
+import { useReleasedFrame } from '../../hooks/useReleasedFrame';
 import {
   buildStackSectionIndex,
   createStackSectionTarget,
@@ -153,7 +153,7 @@ export function useChunkSection(
     off: number;
   }>({ faces: null, x: NaN, y: NaN, z: NaN, c: NaN, on: false, off: NaN });
 
-  useFrame(() => {
+  useReleasedFrame(() => {
     if (!faces || !source || !section) return;
     const state = last.current;
     if (!section.enabled) {

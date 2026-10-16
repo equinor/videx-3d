@@ -6,7 +6,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useFrame } from '@react-three/fiber';
 import {
   Box3,
   BufferAttribute,
@@ -19,6 +18,7 @@ import {
   Vector3,
   WebGLCoordinateSystem,
 } from 'three';
+import { useReleasedFrame } from '../../hooks/useReleasedFrame';
 import type { SurfaceChunk, SurfaceChunkMesh } from '../../sdk';
 import { createCapView, releaseCapView } from './cap-visibility';
 import {
@@ -340,7 +340,7 @@ export function useChunkLod(
     tileValues.needsUpdate = true;
     painted.current = null;
   }, [views, tileValues]);
-  useFrame(({ camera, size }) => {
+  useReleasedFrame(({ camera, size }) => {
     const current = state.current;
     const group = root.current;
     if (!views || !layout || !current || !group || !errors) return;
