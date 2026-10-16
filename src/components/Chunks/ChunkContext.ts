@@ -109,6 +109,12 @@ export type ChunkStackContextValue = {
    */
   bathymetry?: ChunkDepthMap | null;
   /**
+   * Whether chunks are built ready for a cut: `ChunkStackProps.prepareCuts`, or a
+   * declared section or fence. A PRIMITIVE, so a cut coming and going cannot
+   * churn a build spec.
+   */
+  prepareCuts?: boolean;
+  /**
    * The live clip plane through the whole stack, when the caller declared one (see
    * `ChunkStackProps.section`). A chunk reads it every frame to build its own cut
    * faces. Stable identity — see {@link ChunkSectionState}.

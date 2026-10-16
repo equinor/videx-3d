@@ -28,7 +28,7 @@ flowchart TD
 | Layer | Lives in | Changes when | Cost |
 |-------|----------|--------------|------|
 | 1. Outline | `Chunk` (`source`, `wellboreOutline`) | the outline prop, the cut source, the wellbore data, or the depth window changes | one async resolve; for a wellbore source a `wellboreOutline` generator call |
-| 2. Geometry | the `surfaceChunk` generator, in a worker | surfaces, fills, outline, `resolve`, `rimSpacing`, `maxError`, seams, or the *presence* of a section/fence/peel changes | seconds at field scale |
+| 2. Geometry | the `surfaceChunk` generator, in a worker | surfaces, fills, outline, `resolve`, `rimSpacing`, `maxError`, seams, `prepareCuts`, or (with `prepareCuts` off) the *presence* of a section/fence/peel changes | seconds at field scale |
 | 3. Appearance | `ChunkMeshes` | materials, colours, opacity, `detail`, `wireframe`, `peel` value, `inferredStyle`, contacts, water tint | material rebuild only |
 
 The consequences show up all over the API and are worth stating explicitly:
@@ -36,11 +36,13 @@ The consequences show up all over the API and are worth stating explicitly:
 - **Materials never reach the build spec.** `buildSurfaceChunkSpec` deliberately
   drops `material`, `fill`'s colour, `detail` and `opacity`. Colour used to be a
   build parameter baked into geometry, and recolouring rebuilt the block.
-- **Toggles are free, presence is not.** `section.enabled`, `fence.enabled` and the
-  *value* of `peel` are appearance. But the **presence** of `section`, `fence` or
-  the `peel` prop asks the build for extra payload (cut channels, peel indices), so
-  adding or removing the prop *does* rebuild. This is why the props are read as
-  `!!stack.section` rather than `stack.section?.enabled`.
+- **Toggles are free, presence may not be.** `section.enabled`, `fence.enabled` and
+  the *value* of `peel` are appearance. The payload they need (cut channels, peel
+  indices) is built up front by default (`ChunkStackProps.prepareCuts`), so a
+  section, fence or peel can also come and go without a rebuild. With `prepareCuts`
+  off, their **presence** asks the build for that payload, and adding or removing
+  the prop *does* rebuild. Chunks read it as the primitive `stack.prepareCuts`,
+  never as the section/fence state objects, which come and go with the cut.
 - **Anything driven per frame bypasses React entirely.** The section plane, the
   fence field and the sea's uniforms are shared mutable objects written once per
   frame from `useFrame`. Moving a section plane costs no render and no material
@@ -229,14 +231,15 @@ builds a whole column of its own and can push out one still in use. Declare
 | `material` / `fill` colour / `opacity` / `detail` | — | — | ● | — |
 | `wireframe`, `showSurfaces`, `showWalls` | — | — | ●¹ | — |
 | `peel` **value** | — | — | — | ● |
-| `peel` **prop added or removed** | — | ● | ● | — |
+| `peel` **prop added or removed** | — | ●⁵ | ● | — |
 | `inferredStyle` | — | — | overlays only | — |
 | `outline` / `cutSource` / wellbore options | ● | ● | ● | — |
 | `resolve` object identity | — | ● (whole column) | ● | — |
 | `section.plane` mutated, `section.enabled` | — | — | — | ● |
-| `section` prop added or removed | — | ● | ● | — |
+| `section` prop added or removed | — | ●⁵ | ● | — |
 | `fence.wellbore`, `fence.side` | — | — | —² | ● |
-| `fence` prop added or removed | — | ● | ● | — |
+| `fence` prop added or removed | — | ●⁵ | ● | — |
+| `ChunkStack.prepareCuts` | — | ● (and the sea) | ● | — |
 | `fence.debug` | — | — | ● | — |
 | `ChunkStack.contacts` | — | — | ● | — |
 | `ChunkStack.water` sea state | — | — | ●³ | — |
@@ -247,6 +250,7 @@ builds a whole column of its own and can push out one still in use. Declare
 ² a `side` flip swaps a texture and a curve; both sides are built up front.
 ³ ocean uniforms are updated per frame; the *materials* are keyed on `waterKey`.
 ⁴ only if it changes a seam decision this chunk takes part in.
+⁵ only with `ChunkStack.prepareCuts` off; by default the payload is built up front.
 
 ### React-specific notes
 

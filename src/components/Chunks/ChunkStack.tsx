@@ -171,6 +171,14 @@ export type ChunkStackProps = {
    */
   contacts?: ChunkContact[];
   /**
+   * Build every chunk, and the sea, with what a section, fence or peel needs: the
+   * cut channels and a patch index per layer. Default true, so any of them can be
+   * added and removed without a rebuild. False saves that memory and build time
+   * where nothing is ever cut or peeled; a declared cut or peel then asks for it
+   * itself, and adding or removing one rebuilds.
+   */
+  prepareCuts?: boolean;
+  /**
    * Cut the whole stack with a plane and FILL the cut face per interval, so the
    * block reads as a geological section. See {@link ChunkSection}.
    *
@@ -179,9 +187,9 @@ export type ChunkStackProps = {
    * `ChunkMaterial`'s shader, not in the renderer), but it means an object resting
    * on the sea bed keeps its geometry while the ground under it is cut away.
    *
-   * ⚠️ Its PRESENCE asks each chunk's build for the extra channels a cut face
-   * needs, so adding or removing the prop rebuilds them. `enabled` is the free
-   * toggle.
+   * ⚠️ With {@link ChunkStackProps.prepareCuts} off, its PRESENCE asks each
+   * chunk's build for the extra channels a cut face needs, so adding or removing
+   * the prop rebuilds them. `enabled` is always the free toggle.
    */
   section?: ChunkSection;
   /**
@@ -194,7 +202,8 @@ export type ChunkStackProps = {
    * ⭐ Unlike the section it needs no rebuild to CHANGE: the field it cuts by is
    * one number per vertex, so switching wellbores is a resample and an upload, not
    * a build. It does share the section's requirement that the chunk carry the cut
-   * channels, so its PRESENCE is still a build input.
+   * channels, so with {@link ChunkStackProps.prepareCuts} off its PRESENCE is a
+   * build input.
    */
   fence?: ChunkFence;
   /**
@@ -288,6 +297,7 @@ export const ChunkStack = ({
   water,
   immersion,
   contacts,
+  prepareCuts = true,
   section,
   fence,
   onFence,
@@ -383,8 +393,8 @@ export const ChunkStack = ({
 
   const hasSection = !!section;
   // ⚠️ Deliberately NOT keyed on the prop: `section={{ plane, enabled }}` is a new
-  // object every render, and this context's identity is what every chunk's build
-  // spec derives from. Only its presence may change identity.
+  // object every render, and every chunk and material reads this one through the
+  // context. Only its presence may change identity.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
   const sectionState = useMemo<ChunkSectionState | null>(
     () =>
@@ -767,10 +777,9 @@ export const ChunkStack = ({
     else sectionUniformInverse.value.copy(sectionUniform.value).negate();
   });
 
-  // ⚠️ PRESENCE, not `enabled`: the sea's cut channels are a build output, so
-  // keying them on the toggle would rebuild the sea every time a cut is switched
-  // on or off.
-  const hasCut = !!section || !!fence;
+  // ⚠️ Not `enabled`: the cut channels are a build output, so keying them on the
+  // toggle would rebuild the sea and every chunk each time a cut is switched.
+  const hasCut = prepareCuts || !!section || !!fence;
 
   const sea = useStackWater(
     stableWater,
@@ -852,6 +861,7 @@ export const ChunkStack = ({
       contacts: contactTextures,
       water: stableWater ?? null,
       bathymetry,
+      prepareCuts: hasCut,
       section: sectionState,
       sectionUniform,
       sectionUniformInverse,
@@ -895,6 +905,7 @@ export const ChunkStack = ({
     contactTextures,
     stableWater,
     bathymetry,
+    hasCut,
     sectionState,
     sectionUniform,
     sectionUniformInverse,

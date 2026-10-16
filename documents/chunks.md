@@ -3455,10 +3455,11 @@ leave the worker. `SurfaceStackOptions.section` makes the build emit a
 `StackSectionSource` (shared XZ, the shared index, per-layer heights, per-interval
 triangle masks, the `inferred` weights), which `packSurfaceChunk` transfers.
 
-- **Opt-in**, requested by the PRESENCE of a section on the stack rather than by
-  `enabled`: it is part of the build, so following the toggle would rebuild the
-  geometry every time the section was switched on or off. Nobody who is not
-  sectioning pays anything.
+- **Requested up front** by `ChunkStackProps.prepareCuts` (default true), or by
+  the presence of a section or fence when that is off — never by `enabled`: it is
+  part of the build, so following the toggle would rebuild the geometry every time
+  a cut was switched on or off. A stack that never cuts can turn it off and pay
+  nothing.
 - ⭐ Most of it is **already being transferred**. The shared triangle index is the
   same `ArrayBuffer` the layer geometries use, and so is each layer's `inferred`
   attribute — the transfer list is deduped either way (a repeated buffer is a
@@ -3530,8 +3531,8 @@ would let a stack with no `section` prop lose its fence's floor cut.
 
 ⚠️ Both are DEFINES, so toggling either rebuilds the materials concerned. That is
 the right trade: a plane MOVES continuously and must never rebuild anything, but
-whether the sea is cut at all is a discrete choice. The sea's cut CHANNELS are asked
-for by the presence of a cut, not by `enabled`, so toggling does not rebuild the sea.
+whether the sea is cut at all is a discrete choice. The sea's cut CHANNELS follow
+`prepareCuts` (or a cut's presence), not `enabled`, so toggling does not rebuild the sea.
 
 ⚠️ **`enabled` gates the FACES too** (2026-08-24). Presence buys the build payload;
 it must not also buy a preallocated cut buffer and a mesh per interval for a section

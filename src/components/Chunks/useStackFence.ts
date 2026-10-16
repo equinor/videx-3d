@@ -132,8 +132,7 @@ export function useStackFence(
 ) {
   const hasFence = !!fence;
   // ⚠️ Keyed only on PRESENCE, as `sectionState` is: this object reaches every
-  // chunk through the context, whose identity is what their build specs derive
-  // from.
+  // chunk and material through the context.
   const state = useMemo<ChunkFenceState | null>(
     () =>
       hasFence

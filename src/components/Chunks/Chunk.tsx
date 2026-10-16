@@ -262,9 +262,9 @@ export type ChunkProps = {
    * drawing part of the depth-ordered `layers` is exact; the window's exposed base
    * is sealed by the next surface's cap, which already exists.
    *
-   * ⚠️ Pure appearance: no rebuild, so it is free to sweep or animate. But its
-   * PRESENCE (even `peel={0}`) asks the build for the extra indices a peel needs,
-   * so adding or removing the prop does rebuild.
+   * ⚠️ Pure appearance: no rebuild, so it is free to sweep or animate. With the
+   * stack's `prepareCuts` off, its PRESENCE (even `peel={0}`) asks the build for
+   * the extra indices a peel needs, so adding or removing the prop does rebuild.
    *
    * ⚠️ If the window's base boundary is a void split (a ceiling/floor pair) the
    * floor falls back to the horizon copy; where a void cavity is open there is no
@@ -795,10 +795,12 @@ export const Chunk = ({
   //     the returned geometry. Rebuilds ONLY on data / outline / build params. ----
   const generator = useGenerator<SurfaceChunkResponse>(surfaceChunk);
 
-  // Both a peel and a section can hide the layer a cap's collapse relied on
-  // covering it, so the build has to keep what it dropped on that strength.
-  // Keyed on the PRESENCE of a peel, so changing its value never rebuilds.
-  const peelable = peel !== undefined || !!stack.section || !!stack.fence;
+  // Both a peel and a cut can hide the layer a cap's collapse relied on covering
+  // it, so the build has to keep what it dropped on that strength. Keyed on the
+  // PRESENCE of a peel, so changing its value never rebuilds.
+  // ⚠️ A primitive: the section and fence state objects come and go with the cut.
+  const cutsPrepared = stack.prepareCuts === true;
+  const peelable = peel !== undefined || cutsPrepared;
 
   const spec = useMemo(() => {
     if (!outlinePolygon || !utm || stableLayers.length === 0) return null;
@@ -813,11 +815,10 @@ export const Chunk = ({
       seams: layerSeams,
       carrierSeam,
       carrier: stack.carrier,
-      // Asked for by the PRESENCE of a section on the stack, not by whether one is
-      // currently enabled: it is part of the build, so following the toggle would
-      // rebuild the geometry every time the section is switched on or off. A fence
-      // cuts the same cells and needs the same channels.
-      section: !!stack.section || !!stack.fence,
+      // Asked for up front (`ChunkStackProps.prepareCuts`), not by whether a cut is
+      // currently drawing: it is part of the build, so following the toggle would
+      // rebuild the geometry every time a section or fence is switched on or off.
+      section: cutsPrepared,
       peelable,
       // Only a declared column with an envelope can be shared; otherwise this
       // chunk builds (and resolves) on its own.
@@ -843,8 +844,7 @@ export const Chunk = ({
     stack.carrier,
     stack.column,
     stack.envelope,
-    stack.section,
-    stack.fence,
+    cutsPrepared,
     peelable,
   ]);
 

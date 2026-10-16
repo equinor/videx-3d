@@ -76,8 +76,9 @@ export type StackWaterSpec = {
   resolve?: ChunkResolveOptions;
   /**
    * Also return the channels a cut FACE is built from, so a section or a fence can
-   * close the water body instead of leaving it open. Requested by the PRESENCE of a
-   * cut on the stack, so switching one on or off does not rebuild the sea.
+   * close the water body instead of leaving it open. Requested up front (see
+   * `ChunkStackProps.prepareCuts`), so switching a cut on or off does not rebuild
+   * the sea.
    */
   section?: boolean;
 };
@@ -597,8 +598,8 @@ export type ChunkSection = {
   vertical?: boolean;
   /**
    * Draw the section. Default true. Toggling it is free — the build payload the
-   * cut face needs is requested by the section's PRESENCE, so switching it off
-   * does not throw the geometry away.
+   * cut face needs does not follow it (see `ChunkStackProps.prepareCuts`), so
+   * switching it off does not throw the geometry away.
    */
   enabled?: boolean;
   /**
@@ -1350,10 +1351,10 @@ export type SurfaceChunkSpec = {
   resolve?: ChunkResolveOptions;
   /**
    * Also return the channels a clip plane's cut face is built from (see
-   * `SurfaceChunk.section`). Requested by the presence of a section on the
-   * enclosing `ChunkStack`, NOT by whether one is currently enabled — the payload
-   * is part of the build, so making it follow a toggle would rebuild the geometry
-   * every time the section is switched on or off.
+   * `SurfaceChunk.section`). Requested up front by the enclosing `ChunkStack`
+   * (`ChunkStackProps.prepareCuts`), NOT by whether a cut is currently drawing —
+   * the payload is part of the build, so making it follow a toggle would rebuild
+   * the geometry every time a section or fence is switched on or off.
    */
   section?: boolean;
   /**

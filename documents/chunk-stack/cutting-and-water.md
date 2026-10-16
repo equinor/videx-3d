@@ -41,9 +41,12 @@ Two things they share:
 > at), but it means an object resting on the sea bed stays put while the ground
 > under it is cut away.
 
-> ⚠️ **Presence is a build input; `enabled` is not.** The cut face is built from
-> channels the *build* has to emit (`SurfaceChunkSpec.section`), so adding or
-> removing the prop rebuilds every chunk. Toggling `enabled` is free.
+> ⚠️ **The cut payload is a build input; `enabled` is not.** The cut face is built
+> from channels the *build* has to emit (`SurfaceChunkSpec.section`). By default
+> the stack asks for them up front (`ChunkStackProps.prepareCuts`), so adding or
+> removing a section or fence rebuilds nothing. With `prepareCuts: false` they are
+> asked for by a cut's presence, and adding or removing one rebuilds every chunk.
+> Toggling `enabled` is always free.
 
 ---
 

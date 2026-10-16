@@ -132,10 +132,10 @@ const GENERATED_SEABED = SEABED_ID
   : (getSyntheticSurface(SYNTHETIC_SEABED_ID)?.meta ?? null);
 
 /**
- * ⚠️ `undefined` rather than 0 when nothing is peeled: the PRESENCE of `peel` is a
- * build input (it makes every layer carry a second index — hundreds of MB at field
- * scale), so passing 0 would pay for peeling that never happens. Going from 0 to 1
- * rebuilds once; every step after that is free.
+ * ⚠️ `undefined` rather than 0 when nothing is peeled: with the stack's `prepareCuts`
+ * off, the PRESENCE of `peel` is a build input (it makes every layer carry a second
+ * index — hundreds of MB at field scale), so passing 0 would pay for peeling that
+ * never happens.
  */
 const peelOf = (peel: number, layers: number) =>
   peel > 0 ? Math.min(Math.round(peel), layers) : undefined;
@@ -921,11 +921,8 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
   const section = useMemo<ChunkSection>(
     () => ({
       plane: sectionPlane,
-      // ⚠️ The two cuts are mutually exclusive, and the section's PRESENCE is a
-      // build input — so the fence disables it rather than removing the prop,
-      // which would rebuild the geometry. What that presence costs is the section
-      // channels plus a patch index per layer; both were cut by roughly an order
-      // of magnitude, which is what makes carrying them unconditionally sane.
+      // ⚠️ The two cuts are mutually exclusive, so the fence disables the section
+      // rather than removing the prop.
       enabled: props.section && !props.fence,
       // In camera mode the stack computes the plane itself and `plane` is ignored.
       cameraDistance:
@@ -1826,7 +1823,7 @@ export const Default: Story = {
     water: { table: { category: 'Water' } },
     section: {
       description:
-        'Cut the block with a plane. ⭐ Toggling is free — the cut face’s build payload is requested by the section’s PRESENCE, so switching it off throws no geometry away.',
+        'Cut the block with a plane. ⭐ Toggling is free — the stack is built ready for cuts (`prepareCuts`), so switching it off throws no geometry away.',
       table: { category: 'Section' },
     },
     sectionMode: {
