@@ -52,6 +52,10 @@ import {
 } from '../../storybook/data/synthetic-surfaces';
 import { useVidex3dLocate } from '../../storybook/debug/useVidex3dLocate';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
+import {
+  ChunkProgressArgs,
+  createChunkProgressDecorator,
+} from '../../storybook/decorators/chunk-progress-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
@@ -85,11 +89,13 @@ import {
   ChunkLayer,
   ChunkResolveOptions,
   ChunkSection,
+  ChunkStackProgress,
   FenceSideInfo,
   StackImmersion,
   StackWater,
 } from './chunk-defs';
 import { CHUNK_DETAIL_PRESET_NAMES, ChunkDetailPreset } from './chunk-detail';
+import { createChunkProgressStore } from './chunk-progress';
 import { ChunkStack } from './ChunkStack';
 import { ChunkOutline } from './cutout';
 import { ChunkInferenceStyle } from './inference-material';
@@ -100,6 +106,9 @@ const origin = storyArgs.origin as Vec2;
 const surfaceOptions = storyArgs.surfaceOptions as Record<string, string>;
 
 const crs = new CRS(getProjectionDefFromUtmZone(utmZone), origin, 'utm');
+
+// Outside the canvas, read by the progress decorator: what a host would hold.
+const progressStore = createChunkProgressStore();
 
 /** Branch colours, shared with the well map through `parameters.colorScale`. */
 const colorScale = scaleOrdinal([
@@ -467,7 +476,7 @@ type FieldColumnStoryProps = {
   seismicShading: ChunkFenceOverlayShading;
   seismicGaps: boolean;
   seismicVoids: boolean;
-};
+} & ChunkProgressArgs;
 
 /** Publishes `window.videx3d.locate('wellbore', id)`; must sit inside `UtmArea`. */
 const Videx3dLocate = () => {
@@ -795,11 +804,14 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       // too: the chunk above then HOLDS the gap as an unfilled interval, which is
       // what a fence overlay needs to be drawn across it.
       const slice = layers.slice(start, Math.min(next + 1, layers.length));
-      return slice.map((layer, j) =>
-        j === slice.length - 1 && next < layers.length
-          ? { ...layer, fill: undefined }
-          : layer,
-      );
+      return {
+        name: stratLayerGroup(names, start) ?? undefined,
+        layers: slice.map((layer, j) =>
+          j === slice.length - 1 && next < layers.length
+            ? { ...layer, fill: undefined }
+            : layer,
+        ),
+      };
     });
   }, [grouped, layers, names]);
 
@@ -1196,7 +1208,14 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     [names],
   );
 
-  const onProgress = useChunkProgressPanel();
+  const panelProgress = useChunkProgressPanel();
+  const onProgress = useCallback(
+    (progress: ChunkStackProgress) => {
+      panelProgress(progress);
+      progressStore.report(progress);
+    },
+    [panelProgress],
+  );
 
   if (!outline || layers.length === 0) return null;
 
@@ -1253,9 +1272,10 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
             />
           )}
           {groupedLayers ? (
-            groupedLayers.map((chunkLayers, i) => (
+            groupedLayers.map(({ name, layers: chunkLayers }, i) => (
               <Chunk
                 key={i}
+                name={name}
                 outline={groupOutlines?.[i]}
                 layers={chunkLayers}
                 surfaceOpacity={props.surfaceOpacity}
@@ -1478,6 +1498,16 @@ export const Default: Story = {
     lodPixelError: 2,
     resources: true,
     resourceInterval: 1000,
+    // Progress
+    progressDisplay: 'popup',
+    progressPosition: 'center',
+    progressStage: true,
+    progressChunks: true,
+    progressExpandable: true,
+    progressDismissible: true,
+    progressStayOpen: false,
+    progressSummary: true,
+    progressInlineIdle: 'show',
   },
   argTypes: {
     outline: {
@@ -2124,6 +2154,66 @@ export const Default: Story = {
         'Sampling period in ms. ⚠️ The generator row is answered by the worker, so it stops updating while the worker is inside a long synchronous build phase.',
       table: { category: 'Diagnostics' },
     },
+    progressDisplay: {
+      control: { type: 'inline-radio' },
+      options: ['popup', 'inline', 'custom', 'off'],
+      description:
+        'How the build progress is shown, OUTSIDE the canvas, from a store fed by `ChunkStack.onProgress`: `popup` = `ChunkProgressPopup` (shows while building), `inline` = `ChunkProgress` docked bottom-right (stays, showing the last outcome), `custom` = a hairline along the top built on `useChunkProgress` + `describeChunkProgress` alone. The look is this story’s own CSS; the library ships none.',
+      table: { category: 'Progress' },
+    },
+    progressPosition: {
+      control: { type: 'select' },
+      options: [
+        'center',
+        'top',
+        'bottom',
+        'left',
+        'right',
+        'top-left',
+        'top-right',
+        'bottom-left',
+        'bottom-right',
+      ],
+      if: { arg: 'progressDisplay', eq: 'popup' },
+      table: { category: 'Progress' },
+    },
+    progressStage: {
+      description: 'Show the step being worked on.',
+      table: { category: 'Progress' },
+    },
+    progressChunks: {
+      description:
+        'One row per chunk — only with more than one (`chunking: groups`).',
+      table: { category: 'Progress' },
+    },
+    progressExpandable: {
+      description: 'Put the details behind a toggle.',
+      table: { category: 'Progress' },
+    },
+    progressDismissible: {
+      description: 'A `×` that hides the popup until the next build starts.',
+      if: { arg: 'progressDisplay', eq: 'popup' },
+      table: { category: 'Progress' },
+    },
+    progressStayOpen: {
+      description:
+        'Keep the popup up once the build is done (`data-state="done"`), until dismissed or the next build starts.',
+      if: { arg: 'progressDisplay', eq: 'popup' },
+      table: { category: 'Progress' },
+    },
+    progressSummary: {
+      description:
+        'Once the build is done, show its time, tiles and triangles — a `footer` on `popup`/`inline`, the strip’s text for a few seconds on `custom`. Tiles need `tileCells`.',
+      table: { category: 'Progress' },
+    },
+    progressInlineIdle: {
+      control: { type: 'inline-radio' },
+      options: ['show', 'hide'],
+      description:
+        '`hide` fades the inline display out once the build is done — with CSS alone, on its `data-state="idle"`.',
+      if: { arg: 'progressDisplay', eq: 'inline' },
+      table: { category: 'Progress' },
+    },
   },
   decorators: [
     EventEmitterDecorator,
@@ -2141,5 +2231,6 @@ export const Default: Story = {
       fontSize: 11,
       opacity: 0.75,
     }),
+    createChunkProgressDecorator(progressStore),
   ],
 };

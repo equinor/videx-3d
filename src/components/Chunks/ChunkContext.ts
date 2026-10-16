@@ -1,6 +1,10 @@
 import { createContext } from 'react';
 import { IUniform, Vector4 } from 'three';
-import { PlanarPolygonGeometry, SurfaceMeta } from '../../sdk';
+import {
+  PlanarPolygonGeometry,
+  SurfaceChunkMetrics,
+  SurfaceMeta,
+} from '../../sdk';
 import {
   ChunkBuildProgress,
   ChunkBuildState,
@@ -240,12 +244,21 @@ export type ChunkStackContextValue = {
    * {@link ChunkStackProgress}. Registered chunks that have not reported yet count
    * as building.
    */
-  reportBuildState?: (key: string, state: ChunkBuildState) => void;
+  reportBuildState?: (
+    key: string,
+    state: ChunkBuildState,
+    metrics?: SurfaceChunkMetrics,
+  ) => void;
   /**
    * Report the step a building chunk is on (see `ChunkStackProgress.current`).
    * Cleared by its next state change.
    */
   reportBuildProgress?: (key: string, step: ChunkBuildProgress) => void;
+  /**
+   * Publish a chunk's display name for {@link ChunkStackProgress.chunks}. Kept
+   * apart from the claims so a rename never touches the build.
+   */
+  nameChunk?: (key: string, name: string | undefined) => void;
   /**
    * Every chunk's depth window and wellbore margin, ordered shallow→deep by the
    * column. A chunk accumulating trajectory from outside its own window (see

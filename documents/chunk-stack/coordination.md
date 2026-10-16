@@ -282,11 +282,33 @@ type ChunkStackProgress = {
   total: number;      // chunks mounted
   building: number;
   completed: number;  // reached ready | empty | failed
+  failed: number;     // of which failed
   fraction: number;
   estimate: number;   // weighted whole-build estimate, mean over chunks
   current?: ChunkBuildProgress; // latest step of a chunk still building
+  chunks: ChunkProgressEntry[]; // per chunk, mount order (below)
 };
 ```
+
+A `ChunkProgressEntry` carries `key`, `index`, `name?`, `state`, `step?` and
+`estimate`, plus what its latest build counted, measured and took:
+
+- `counts` — the last `total` each step reported (surfaces fetched, layers refined,
+  pinch-out pairs, tiles, caps), kept once the build is done. ⚠️ The shared
+  column's steps appear only when this build ran them, not when the column came
+  from cache.
+- `metrics` — the chunk's `SurfaceChunkMetrics` once it is `ready` (triangles,
+  layers, tiling; the phase timings only with `diagnostics`).
+- `startedAt` / `finishedAt` — `performance.now()` at the build's start and end.
+
+A rebuild clears them, and the aggregation passes `metrics` only for a `ready`
+chunk and `finishedAt` only for a finished one, so a rebuild never shows the last
+build's numbers.
+
+`ChunkProps.name` labels a chunk in `chunks` (and its Object3D group). The stack
+reports again when a chunk is released, and once more with NO chunks when the stack
+itself unmounts — so anything listening never stays "building" after the stack is
+gone. Chunks releasing after that final report are ignored.
 
 Two honest caveats:
 
@@ -303,6 +325,63 @@ Two honest caveats:
 > ⚠️ A chunk that returns `null` never fires `onBuild`. Total silence looks
 > identical to a hang — wire `onBuildStateChange` (or `onProgress`) to tell them
 > apart.
+
+### Showing progress in the host
+
+The stack lives inside the R3F canvas; a progress display belongs in the host's DOM.
+A `ChunkProgressStore` carries it across, and only what reads the store re-renders —
+passing `setState` to `onProgress` instead would re-render the whole `<Canvas>` on
+every report.
+
+```tsx
+const progress = useMemo(createChunkProgressStore, []);
+// inside the canvas
+<ChunkStack onProgress={progress.report}>…</ChunkStack>
+```
+
+The store notifies at most once per animation frame. Its snapshot adds what a display
+needs to treat builds one at a time: `building`, a `percent` that never moves
+backwards within a build (the stack's `estimate` drops whenever a chunk mounts) and
+stays below 100 until it finishes, a `session` counter, `startedAt`/`finishedAt`, and
+the last build's `outcome` (`ready` | `failed`). It also holds whether the details are
+`expanded` (`setExpanded`), so a popup that comes back opens the way it was left, and
+every display reading one store agrees.
+
+Three ways to show it, from most to least custom:
+
+| | What | Visibility |
+|---|---|---|
+| 1 | `useChunkProgress(store)` + `describeChunkProgress(snapshot, labels?)` → title, percent, stage text, `durationMs` / `tiles` / `triangles` once done, one row per chunk (each with its own) | yours |
+| 2 | `<ChunkProgress store details expandable onDismiss? footer? />` — plain HTML where it is placed | from the first report on; shows the finished state afterwards |
+| 3 | `<ChunkProgressPopup store position offset delay exitDuration dismissible stayOpen />` — tier 2 in a click-through layer over the positioned element holding the canvas | while building: mounts when a build starts (after `delay`), `data-state="closing"` for `exitDuration` when it finishes or is dismissed, then unmounts. With `stayOpen` it stays as `data-state="done"` until dismissed or the next build |
+
+`footer(view, snapshot)` adds content to tiers 2 and 3 without going fully custom —
+e.g. "12.3 s · 48 tiles · 1.2 M triangles" from `view.durationMs`, `view.tiles` and
+`view.triangles`, which are `null` while building and wherever no chunk reported
+them.
+
+Tier 2 visible only while building needs no option: it stays mounted and turns
+`data-state="idle"`, so CSS can fade it out (`opacity: 0; visibility: hidden` with a
+delayed `visibility` transition).
+
+All texts come from `CHUNK_PROGRESS_LABELS`, overridable piecewise through `labels`
+(e.g. `{ phases: { fetch: 'Henter flater' } }`). A step's count (`3/16`) is shown only
+when it has several units.
+
+⭐ The library ships NO CSS. The only inline styles are the popup's anchoring, the
+bar fill's width and a `--videx-chunk-progress` custom property (0 to 1). Everything
+else is the host's, through the `videx-chunk-progress` BEM classes (`__header`,
+`__title`, `__percent`, `__dismiss`, `__bar`, `__fill`, `__toggle`, `__details`,
+`__stage`, `__chunks`, `__chunk`, `__chunk-name`, `__chunk-stage`,
+`__chunk-percent`, `__footer`), `data-state` / `data-outcome` / `data-expanded` on the root,
+`data-state` per chunk row, and `data-state` / `data-position` on
+`videx-chunk-progress-popup`. The popup mounts when a build starts, so it enters with
+a CSS animation and leaves with a transition on `[data-state='closing']`. The bar is
+decorative (`aria-hidden`); the title and percentage carry it as text.
+
+The `FieldColumn` story shows all three (`progressDisplay`), with its own stylesheet
+in `src/storybook/styles/chunk-progress.css`; its output panel keeps only a
+`Building chunks` / `Chunks built` / `Error` status, the rebuild count and the time.
 
 ---
 

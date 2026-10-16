@@ -11,6 +11,7 @@ import {
   StackRelief,
   StackSectionSource,
   SurfaceClipHeader,
+  SurfaceChunkMetrics,
   SurfaceChunkPhase,
   SurfaceMeta,
   Vec2,
@@ -215,6 +216,38 @@ export type ChunkBuildProgress = {
 };
 
 /**
+ * One chunk in {@link ChunkStackProgress.chunks}.
+ *
+ * @group Components
+ */
+export type ChunkProgressEntry = {
+  /** the chunk's key in its stack, stable while it is mounted */
+  key: string;
+  /** its position among the stack's chunks, in mount order */
+  index: number;
+  /** `ChunkProps.name`, when given */
+  name?: string;
+  state: ChunkBuildState;
+  /** the step it is on, while building and once it has reported one */
+  step?: ChunkBuildProgress;
+  /** 1 once it is done, else its step's estimate (0 before the first step) */
+  estimate: number;
+  /**
+   * The last `total` each step of the latest build reported: surfaces fetched,
+   * layers refined, pinch-out pairs, tiles, caps. Kept once the build is done.
+   * ⚠️ The shared column's steps (`fetch`, `resolve`, `refine`) appear only when
+   * this build ran them, not when the column came from cache.
+   */
+  counts?: Partial<Record<SurfaceChunkPhase, number>>;
+  /** the latest build's metrics, once it is `ready` (timings need `diagnostics`) */
+  metrics?: SurfaceChunkMetrics;
+  /** `performance.now()` when the latest build started */
+  startedAt?: number;
+  /** `performance.now()` when the latest build reached a terminal state */
+  finishedAt?: number;
+};
+
+/**
  * How far a {@link ChunkStack} is through building its chunks.
  *
  * `fraction` counts CHUNKS, not work: the first chunk of a shared column pays for
@@ -232,6 +265,8 @@ export type ChunkStackProgress = {
   building: number;
   /** chunks that reached a terminal state (ready, empty or failed) */
   completed: number;
+  /** chunks whose build failed, counted in `completed` too */
+  failed: number;
   /** `completed / total`, or 1 for an empty stack */
   fraction: number;
   /**
@@ -246,6 +281,8 @@ export type ChunkStackProgress = {
    * building.
    */
   current?: ChunkBuildProgress;
+  /** every chunk, in mount order */
+  chunks: ChunkProgressEntry[];
 };
 
 /**

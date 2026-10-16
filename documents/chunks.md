@@ -412,10 +412,14 @@ Geometry building is asynchronous and can take seconds, so a host needs to know:
   the chunk or the stack) `diagnostics` once built;
 - `onBuildStateChange(state)` — `ChunkBuildState`: `'building' | 'ready' | 'empty' |
   'failed'`;
-- `ChunkStackProgress` — `{ total, building, completed, fraction, estimate,
-  current? }` from the stack; `current` is the step a building chunk is on, and
+- `ChunkStackProgress` — `{ total, building, completed, failed, fraction, estimate,
+  current?, chunks }` from the stack; `current` is the step a building chunk is on,
   `estimate` a weighted whole-build percentage (see
-  [streaming.md](./chunk-stack/streaming.md#build-progress)).
+  [streaming.md](./chunk-stack/streaming.md#build-progress)) and `chunks` the same
+  per chunk, named by `ChunkProps.name`. To show it in the host's DOM, feed a
+  `ChunkProgressStore` and use `useChunkProgress`, `ChunkProgress` or
+  `ChunkProgressPopup` (see
+  [coordination.md](./chunk-stack/coordination.md#showing-progress-in-the-host)).
 
 A chunk of a stack's column also shows a coarse PREVIEW within about a second, drawn
 at `previewSaturation` (default 0.5) and replaced layer by layer as the real layers

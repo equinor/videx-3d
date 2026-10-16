@@ -42,6 +42,9 @@ const crs = new CRS(
 /** Ids are prefixed so the loaders can route them without a lookup. */
 export const SYNTHETIC_PREFIX = 'synthetic:';
 
+/** The name of the generated sea bed (see {@link SYNTHETIC_SEABED_ID}). */
+export const SYNTHETIC_SEABED_NAME = 'Generated Sea Bed';
+
 /** Matches the demo surveys, so generated and real surfaces are comparable. */
 const CELL = 25;
 const ROT = 220;
@@ -262,7 +265,7 @@ const SCENARIOS: Record<string, Scenario> = {
   // plain bathymetry, wholly submerged, and deliberately not the landforms the
   // generated column uses.
   'cap-seabed': {
-    name: 'Generated Sea Bed',
+    name: SYNTHETIC_SEABED_NAME,
     nx: CAP_GRID.nx,
     ny: CAP_GRID.ny,
     cell: CAP_GRID.cell,

@@ -147,6 +147,11 @@ const chunkLayersAppearanceKey = (layers: ChunkLayer[]) =>
  */
 export type ChunkProps = {
   /**
+   * Display name, shown per chunk by the progress displays (see
+   * {@link ChunkStackProgress.chunks}) and used for its Object3D group.
+   */
+  name?: string;
+  /**
    * The chunk's boundaries in stratigraphic order (shallowest first), each
    * saying whether the interval below it is filled. See {@link ChunkLayer}, and
    * {@link layersFromGroups} for the grouped-zones shorthand.
@@ -340,6 +345,7 @@ function disposeChunk(chunk: SurfaceChunk | null) {
  * @group Components
  */
 export const Chunk = ({
+  name,
   layers,
   outline = 'inherit',
 
@@ -408,6 +414,7 @@ export const Chunk = ({
     publishOutline,
     reportBuildState,
     reportBuildProgress,
+    nameChunk,
   } = stack;
 
   // Released on UNMOUNT only, through a ref so the effect never re-runs: the
@@ -417,12 +424,16 @@ export const Chunk = ({
   releaseRef.current = releaseChunk;
   useEffect(() => () => releaseRef.current?.(registryKey), [registryKey]);
 
+  useEffect(() => {
+    nameChunk?.(registryKey, name);
+  }, [nameChunk, registryKey, name]);
+
   // Both the caller's callback and the stack's progress counter hear the same
   // thing, so a host can use either without wiring both.
   const reportState = useCallback(
-    (state: ChunkBuildState) => {
+    (state: ChunkBuildState, metrics?: SurfaceChunkMetrics) => {
       onStateRef.current?.(state);
-      reportBuildState?.(registryKey, state);
+      reportBuildState?.(registryKey, state, metrics);
     },
     [reportBuildState, registryKey],
   );
@@ -931,7 +942,7 @@ export const Chunk = ({
         setShown(null);
         setPreviewed(null);
       }
-      reportState(built ? 'ready' : 'empty');
+      reportState(built ? 'ready' : 'empty', built?.metrics);
     };
     const onPacket = (packet: SurfaceChunkPacket) => {
       if (cancelled) return;
@@ -1166,7 +1177,7 @@ export const Chunk = ({
 
   return (
     <>
-      <group ref={meshes} name={`Chunk ${registryKey}`}>
+      <group ref={meshes} name={`Chunk ${name ?? registryKey}`}>
         {/* ⚠️ One instance per chunk, never one handed the other's chunk: React DEV
             builds describe changed props two levels deep, which for a new
             `section` walks every element of its typed arrays (measured 1.2 s). */}

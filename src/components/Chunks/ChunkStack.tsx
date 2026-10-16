@@ -15,6 +15,7 @@ import {
   PlanarPolygonGeometry,
   readCameraTarget,
   StackSectionSource,
+  SurfaceChunkMetrics,
   SurfaceMeta,
   unpackBufferGeometry,
   Vec3,
@@ -62,6 +63,7 @@ import {
   releaseChunk as releaseFromStore,
   setClaims,
 } from './chunk-outline-registry';
+import { aggregateChunkProgress, ChunkProgressInput } from './chunk-progress';
 import { buildStackWaterSpec } from './chunk-spec';
 import { CutoutSource } from './cutout';
 import { resolveWellboreOutline } from './resolveWellboreOutline';
@@ -265,7 +267,9 @@ export type ChunkStackProps = {
   /**
    * Called whenever a child chunk starts building, reports a step, or finishes —
    * for a busy indicator or a progress bar. See {@link ChunkStackProgress} for the
-   * chunk count, the step a chunk is on and the weighted estimate.
+   * chunk count, the step a chunk is on and the weighted estimate. Reports once
+   * more, with no chunks, when the stack unmounts. Pass a
+   * {@link ChunkProgressStore}'s `report` to show it in the host's DOM.
    */
   onProgress?: (progress: ChunkStackProgress) => void;
 };
@@ -524,6 +528,8 @@ export const ChunkStack = ({
   );
   const [seams, setSeams] = useState<ChunkSeamRegistry>(() => new Map());
   const [claimed, setClaimed] = useState<Set<string>>(() => new Set());
+  const mountOrder = useRef(new Map<string, number>());
+  const mountCount = useRef(0);
 
   const rebuildRegistry = useCallback(() => {
     const next = buildOutlineRegistry(claims.current);
@@ -545,6 +551,10 @@ export const ChunkStack = ({
   // those is the chunk's own job, on unmount (see `releaseChunk`).
   const registerChunk = useCallback(
     (key: string, claimedSurfaces: ChunkSurfaceClaim[]) => {
+      // Re-registering re-inserts the claims, so their map order is not mount order.
+      if (!mountOrder.current.has(key)) {
+        mountOrder.current.set(key, mountCount.current++);
+      }
       setClaims(claims.current, key, claimedSurfaces);
       rebuildRegistry();
       return () => {
@@ -557,44 +567,74 @@ export const ChunkStack = ({
 
   // --- Build progress: chunks report their own state, the stack counts them. A
   //     registered chunk that has not reported yet is still building. ----------
+  const chunkNames = useRef(new Map<string, string>());
   const buildStates = useRef(new Map<string, ChunkBuildState>());
   // Kept in report order, so the last entry is the latest step.
   const buildSteps = useRef(new Map<string, ChunkBuildProgress>());
+  // What the latest build of each chunk counted, measured and took.
+  const buildRecords = useRef(
+    new Map<
+      string,
+      Pick<
+        ChunkProgressInput,
+        'counts' | 'metrics' | 'startedAt' | 'finishedAt'
+      >
+    >(),
+  );
   const onProgressRef = useRef(onProgress);
   useEffect(() => {
     onProgressRef.current = onProgress;
   }, [onProgress]);
+  // Set once the stack unmounts: its chunks release afterwards and must not
+  // report a half-empty stack as building again.
+  const progressClosed = useRef(false);
 
   const emitProgress = useCallback(() => {
-    const total = claims.current.claims.size;
-    let completed = 0;
-    let estimate = 0;
-    claims.current.claims.forEach((_, k) => {
-      const s = buildStates.current.get(k);
-      if (s && s !== 'building') {
-        completed++;
-        estimate += 1;
-      } else {
-        estimate += buildSteps.current.get(k)?.estimate ?? 0;
-      }
-    });
-    let current: ChunkBuildProgress | undefined;
-    for (const step of buildSteps.current.values()) current = step;
-    onProgressRef.current?.({
-      total,
-      building: total - completed,
-      completed,
-      fraction: total === 0 ? 1 : completed / total,
-      estimate: total === 0 ? 1 : estimate / total,
-      current,
-    });
+    if (progressClosed.current) return;
+    const order = mountOrder.current;
+    const reported = [...buildSteps.current.keys()];
+    const keys = [...claims.current.claims.keys()].sort(
+      (a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0),
+    );
+    onProgressRef.current?.(
+      aggregateChunkProgress(
+        keys.map(key =>
+          Object.assign(
+            {
+              key,
+              name: chunkNames.current.get(key),
+              state: buildStates.current.get(key),
+              step: buildSteps.current.get(key),
+              reported: reported.indexOf(key),
+            },
+            buildRecords.current.get(key),
+          ),
+        ),
+      ),
+    );
   }, []);
 
+  useEffect(() => {
+    progressClosed.current = false;
+    if (claims.current.claims.size > 0) emitProgress();
+    return () => {
+      progressClosed.current = true;
+      onProgressRef.current?.(aggregateChunkProgress([]));
+    };
+  }, [emitProgress]);
+
   const reportBuildState = useCallback(
-    (key: string, state: ChunkBuildState) => {
+    (key: string, state: ChunkBuildState, metrics?: SurfaceChunkMetrics) => {
       if (buildStates.current.get(key) === state) return;
       buildStates.current.set(key, state);
       buildSteps.current.delete(key);
+      const now = performance.now();
+      buildRecords.current.set(
+        key,
+        state === 'building'
+          ? { counts: {}, startedAt: now }
+          : { ...buildRecords.current.get(key), metrics, finishedAt: now },
+      );
       emitProgress();
     },
     [emitProgress],
@@ -604,6 +644,21 @@ export const ChunkStack = ({
     (key: string, step: ChunkBuildProgress) => {
       buildSteps.current.delete(key);
       buildSteps.current.set(key, step);
+      const record = buildRecords.current.get(key) ?? {};
+      buildRecords.current.set(key, {
+        ...record,
+        counts: { ...record.counts, [step.phase]: step.total },
+      });
+      emitProgress();
+    },
+    [emitProgress],
+  );
+
+  const nameChunk = useCallback(
+    (key: string, name: string | undefined) => {
+      if (chunkNames.current.get(key) === name) return;
+      if (name === undefined) chunkNames.current.delete(key);
+      else chunkNames.current.set(key, name);
       emitProgress();
     },
     [emitProgress],
@@ -613,11 +668,15 @@ export const ChunkStack = ({
   const releaseChunk = useCallback(
     (key: string) => {
       releaseFromStore(claims.current, key);
+      mountOrder.current.delete(key);
+      chunkNames.current.delete(key);
       buildStates.current.delete(key);
       buildSteps.current.delete(key);
+      buildRecords.current.delete(key);
       rebuildRegistry();
+      emitProgress();
     },
-    [rebuildRegistry],
+    [rebuildRegistry, emitProgress],
   );
 
   const publishOutline = useCallback(
@@ -893,6 +952,7 @@ export const ChunkStack = ({
       publishCutDepths,
       reportBuildState,
       reportBuildProgress,
+      nameChunk,
     };
   }, [
     outline,
@@ -937,6 +997,7 @@ export const ChunkStack = ({
     publishCutDepths,
     reportBuildState,
     reportBuildProgress,
+    nameChunk,
   ]);
 
   // --- The sea (rendered here, not by a chunk): a lid covers its whole footprint

@@ -1,4 +1,5 @@
 import storyArgs from '../story-args.json';
+import { SYNTHETIC_SEABED_NAME } from './synthetic-surfaces';
 
 /** One stratigraphic unit, as the demo dataset's own column describes it. */
 export type StratUnit = {
@@ -107,10 +108,19 @@ for (const entry of Object.values(STRAT_UNITS)) {
 }
 
 /**
+ * The group a GENERATED horizon belongs to, which the strat column cannot know.
+ * Group only: it gets no unit and so keeps the neutral colour, being made up.
+ * The sea bed is the top of the youngest group on the NCS.
+ */
+const SYNTHETIC_HORIZON_GROUPS: Readonly<Record<string, string>> = {
+  [SYNTHETIC_SEABED_NAME]: 'NORDLAND GP.',
+};
+
+/**
  * The level-1 GROUP a layer belongs to, found by climbing its unit's parents.
  *
- * `null` for a layer the column names no unit for — a generated sea bed, or a
- * surface the strat column has no horizon for.
+ * `null` for a layer the column names no unit for — a surface the strat column
+ * has no horizon for, or a generated one whose group the column does not define.
  *
  * @param names the surface names, shallowest first
  * @param i the layer to name the group of
@@ -119,6 +129,9 @@ export function stratLayerGroup(
   names: (string | undefined)[],
   i: number,
 ): string | null {
+  const horizon = names[i];
+  const synthetic = horizon ? SYNTHETIC_HORIZON_GROUPS[horizon] : undefined;
+  if (synthetic) return UNIT_COLORS[synthetic] ? synthetic : null;
   let name = stratLayerUnitName(names, i);
   for (let guard = 0; name && guard < 8; guard++) {
     const unit = UNITS_BY_NAME[name];
