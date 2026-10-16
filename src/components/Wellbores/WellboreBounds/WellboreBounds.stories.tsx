@@ -62,19 +62,39 @@ const OutputLogger = () => {
 export const Default: Story = {
   args: {
     id: wellboreId,
-    boundsSampleSize: 250,
+    boundsTolerance: 100,
+    exactWithin: 3000,
+    boundsPadding: 0,
   },
   argTypes: {
     id: {
       options: Object.keys(storyArgs.wellboreOptions),
       control: { type: 'select', labels: storyArgs.wellboreOptions },
     },
-    boundsSampleSize: {
+    boundsTolerance: {
+      type: 'number',
+      control: {
+        type: 'range',
+        max: 500,
+        min: 1,
+        step: 1,
+      },
+    },
+    exactWithin: {
+      type: 'number',
+      control: {
+        type: 'range',
+        max: 20000,
+        min: 0,
+        step: 100,
+      },
+    },
+    boundsPadding: {
       type: 'number',
       control: {
         type: 'range',
         max: 1000,
-        min: 10,
+        min: 0,
         step: 10,
       },
     },

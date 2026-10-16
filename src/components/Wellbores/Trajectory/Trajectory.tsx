@@ -13,6 +13,8 @@ import {
   Color,
   Material,
   Mesh,
+  OrthographicCamera,
+  PerspectiveCamera,
   Texture,
 } from 'three';
 import {
@@ -22,6 +24,7 @@ import {
 } from '../../../common/types';
 import { useGenerator } from '../../../hooks/useGenerator';
 import { useWellboreContext } from '../../../hooks/useWellboreContext';
+import { pixelsPerUnit } from '../../../sdk/utils/lod';
 import { DistanceContext } from '../../Distance/DistanceContext';
 import {
   trajectory,
@@ -30,9 +33,11 @@ import {
   TrajectorySegmentsType,
 } from './trajectory-defs';
 import {
-  createTrajectoryCapsGeometry,
-  createTrajectoryGeometry,
+  createTrajectoryGeometries,
+  radialSilhouetteError,
+  trajectoryRadialLevels,
 } from './trajectory-geometry';
+import { selectTrajectoryLod } from './trajectory-lod';
 import { TrajectoryEmitterMaterial } from './TrajectoryEmitterMaterial';
 import { TrajectoryHighlightMaterial } from './TrajectoryHighlightMaterial';
 import { TrajectoryMaterial } from './TrajectoryMaterial';
@@ -115,12 +120,16 @@ export type TrajectoryProps = CommonComponentProps &
      * reference rebuilds the interval textures.
      */
     colorIntervals?: TrajectoryColorInterval[];
-    /** Radial resolution of the high LOD. */
+    /** Radial resolution up close (the most sides drawn). Default 12. */
     radialSegments?: number;
-    /** Radial resolution of the low (field-scale) LOD. */
+    /** Radial resolution at field scale (the fewest sides drawn). Default 4. */
     lowRadialSegments?: number;
-    /** Camera distance (from DistanceContext) below which the high LOD is used. */
-    lodDistance?: number;
+    /**
+     * How far, in CSS pixels, the drawn tube may stray from the full-detail one: picks
+     * the number of sides and how coarsely the curve is followed. `0` always draws full
+     * detail. Default 0.5.
+     */
+    lodPixelError?: number;
     priority?: number;
   };
 
@@ -128,10 +137,11 @@ export type TrajectoryProps = CommonComponentProps &
  * Renders a wellbore trajectory as a single instanced tube. Radius is a shader uniform
  * (so thickness — and a future Y-axis scale — never rebuild geometry), with a
  * screen-space `minPixelRadius` floor so the tube reads as a ~1 px line at field scale
- * and gains thickness continuously as the camera approaches. A coarse radial-segment
- * geometry LOD is swapped based on the `DistanceContext` published by `WellboreBounds`.
- * Must be a child of the `Wellbore` component (wrap it in a `WellboreBounds` for the
- * distance-driven LOD).
+ * and gains thickness continuously as the camera approaches. The level of detail — the
+ * number of sides and how coarsely the curve is followed — is picked per frame so the
+ * tube never strays more than `lodPixelError` pixels from full detail, from the
+ * distance published by `WellboreBounds`. Must be a child of the `Wellbore` component
+ * (wrap it in a `WellboreBounds` for the LOD; without one it draws full detail).
  *
  * This supersedes the older `BasicTrajectory` + `TubeTrajectory` composition: one
  * generator, one geometry, GPU picking and `Highlighter` support, OIT-compatible, plus
@@ -192,7 +202,7 @@ export const Trajectory = ({
   colorIntervals,
   radialSegments = 12,
   lowRadialSegments = 4,
-  lodDistance = 2000,
+  lodPixelError = 0.5,
   priority = 0,
 }: TrajectoryProps) => {
   const { id, fromMsl, segmentsPerMeter, simplificationThreshold } =
@@ -309,31 +319,29 @@ export const Trajectory = ({
     }
   }, [material, customMaterial, section]);
 
-  const geometries = useMemo(() => {
+  const lod = useMemo(() => {
     if (!section) return null;
+    const geometries = createTrajectoryGeometries(section);
+    const sides = trajectoryRadialLevels(lowRadialSegments, radialSegments);
     return {
-      low: {
-        tube: createTrajectoryGeometry(section, lowRadialSegments),
-        caps: createTrajectoryCapsGeometry(section, lowRadialSegments),
-      },
-      high: {
-        tube: createTrajectoryGeometry(section, radialSegments),
-        caps: createTrajectoryCapsGeometry(section, radialSegments),
-      },
+      geometries,
+      sides,
+      sideErrors: sides.map(radialSilhouetteError),
+      // see `selectTrajectoryLod`; full detail as first mounted, no range yet
+      state: new Float64Array([0, 0, 0, NaN, NaN]),
+      // projection scale and viewport height the range was worked out for
+      view: new Float64Array(2),
     };
   }, [section, lowRadialSegments, radialSegments]);
 
+  useEffect(() => {
+    if (lod) lod.state[3] = NaN;
+  }, [lod, lodPixelError, radius, minPixelRadius, dpr]);
+
   // Dispose the library-created geometries when they are replaced or on unmount.
   useEffect(() => {
-    return () => {
-      if (geometries) {
-        geometries.low.tube.dispose();
-        geometries.low.caps.dispose();
-        geometries.high.tube.dispose();
-        geometries.high.caps.dispose();
-      }
-    };
-  }, [geometries]);
+    return () => lod?.geometries.dispose();
+  }, [lod]);
 
   // Expose the ghost + picking materials to the Highlighter / EventEmitter's
   // PickingHelper (re-runs when the meshes mount). Both are per-mesh overrides the
@@ -346,7 +354,7 @@ export const Trajectory = ({
         mesh.userData.emitterMaterial = emitterMaterial;
       }
     }
-  }, [highlightMaterial, emitterMaterial, geometries]);
+  }, [highlightMaterial, emitterMaterial, lod]);
 
   // Dispose the library-created material on unmount (skip user-supplied material).
   useEffect(() => {
@@ -446,30 +454,55 @@ export const Trajectory = ({
     highlightMaterial.setResolution(width, height);
   }, [material, customMaterial, size, dpr, highlightMaterial]);
 
-  // Swap the bound geometry between low/high LOD based on camera distance. Comparing
-  // against the currently bound geometry keeps this self-correcting when a React
-  // re-render reasserts the initial `geometry` prop below.
-  useFrame(() => {
-    if (!geometries || !tubeMeshRef.current || !capsMeshRef.current) return;
-    // No WellboreBounds ancestor => distance stays Infinity (the DistanceContext
-    // default); fall back to the high LOD so a stand-alone Trajectory still looks
-    // correct up close. With bounds present, swap on the reported camera distance.
+  // Pick the level of detail from the distance `WellboreBounds` publishes. Each pick
+  // also works out the distance range over which it stays right, so a moving camera
+  // costs two comparisons per well until a level boundary is crossed.
+  useFrame(({ camera }) => {
+    const tube = tubeMeshRef.current;
+    const caps = capsMeshRef.current;
+    if (!lod || !tube || !caps) return;
+    const { geometries, sides, sideErrors, state, view } = lod;
+    const projection = camera.projectionMatrix.elements[5];
+    if (projection !== view[0] || size.height !== view[1]) {
+      view[0] = projection;
+      view[1] = size.height;
+      state[3] = NaN;
+    }
+    // No WellboreBounds ancestor => distance stays Infinity: full detail (-1).
     const distance = distanceContext.current;
-    const lod =
-      !Number.isFinite(distance) || distance < lodDistance ? 'high' : 'low';
-    const target = geometries[lod];
-    if (tubeMeshRef.current.geometry !== target.tube) {
-      tubeMeshRef.current.geometry = target.tube;
+    const on = Number.isFinite(distance) && lodPixelError > 0;
+    // the published distance is divided by zoom; this is metres from the eye
+    const eye = on
+      ? Math.max(0, distance - (distanceContext.tolerance ?? 0)) *
+        ((camera as PerspectiveCamera).zoom ?? 1)
+      : -1;
+    if (eye >= state[3] && eye < state[4]) return;
+
+    const curve = state[0];
+    const radial = state[1];
+    const capped = state[2];
+    if (on) {
+      selectTrajectoryLod(
+        state,
+        eye,
+        pixelsPerUnit(camera, size.height)(1),
+        !!(camera as OrthographicCamera).isOrthographicCamera,
+        geometries.tolerances,
+        sideErrors,
+        radius,
+        minPixelRadius / dpr,
+        lodPixelError,
+      );
+    } else {
+      state.set([0, 0, 0, -1, 0]);
     }
-    // Drop the caps on the low LOD: far away they are effectively sub-pixel, so this
-    // reclaims the extra vertices vs a plain line. NOTE: with a large minPixelRadius
-    // the floor keeps the tube several px wide even far out, where an open end could
-    // show a small hollow ring — revisit (e.g. keep caps) if that becomes visible.
-    const showCaps = lod === 'high';
-    capsMeshRef.current.visible = showCaps;
-    if (showCaps && capsMeshRef.current.geometry !== target.caps) {
-      capsMeshRef.current.geometry = target.caps;
-    }
+    if (state[0] === curve && state[1] === radial && state[2] === capped)
+      return;
+    const n = sides[state[1]];
+    tube.geometry = geometries.tube(state[0], n);
+    const showCaps = state[2] === 0;
+    caps.visible = showCaps;
+    if (showCaps) caps.geometry = geometries.caps(n);
   });
 
   // The group is always rendered so it can be registered with the EventEmitter on
@@ -477,7 +510,7 @@ export const Trajectory = ({
   // (which re-traverses each pick) then picks them up.
   return (
     <group position={position} userData={userData} visible={visible}>
-      {geometries && (
+      {lod && (
         <>
           <mesh
             ref={tubeMeshRef}
@@ -486,7 +519,7 @@ export const Trajectory = ({
             layers={layers}
             castShadow={castShadow}
             receiveShadow={receiveShadow}
-            geometry={geometries.low.tube}
+            geometry={lod.geometries.tube(0, lod.sides[0])}
             material={material}
             customDepthMaterial={customDepthMaterial}
             customDistanceMaterial={customDistanceMaterial}
@@ -497,7 +530,7 @@ export const Trajectory = ({
             layers={layers}
             castShadow={castShadow}
             receiveShadow={receiveShadow}
-            geometry={geometries.low.caps}
+            geometry={lod.geometries.caps(lod.sides[0])}
             material={material}
             customDepthMaterial={customDepthMaterial}
             customDistanceMaterial={customDistanceMaterial}

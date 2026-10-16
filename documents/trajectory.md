@@ -46,21 +46,37 @@ zoomed out while each well thickens smoothly as you fly in.
 
 ## Level of detail (LOD)
 
-The tube uses a coarse **radial-segment** LOD (it does not change the radius). The high
-LOD is used within `lodDistance` of the camera, the low LOD beyond it, and the end caps
-are dropped on the low LOD:
+Each frame the tube is drawn as coarsely as it can be without straying more than
+`lodPixelError` CSS pixels from full detail, along two axes:
+
+- **Sides** — from `radialSegments` down to `lowRadialSegments`, halving, by how far an
+  `n`-sided silhouette falls inside the round one at the tube's on-screen radius.
+- **Caps** — a missing end cap changes the well's end by about its radius, so the caps
+  are dropped only once the radius on screen (before `minPixelRadius`) is within
+  `lodPixelError` — well after the fewest sides are reached. Dropping them saves one
+  draw call per well at field scale.
+- **Curve** — the generator also produces coarser copies of the trajectory (chord
+  tolerances 0.25, 1, 4, 16 and 64 m), each a subset of the full curve positions with
+  their rings copied unchanged, so switching level cannot twist the tube.
 
 | Prop | Default | Meaning |
 |--|--|--|
-| `radialSegments` | `12` | Radial resolution up close. |
-| `lowRadialSegments` | `4` | Radial resolution at field scale. |
-| `lodDistance` | `2000` | Camera distance (metres) below which the high LOD is used. |
+| `radialSegments` | `12` | Radial resolution up close (the most sides drawn). |
+| `lowRadialSegments` | `4` | Radial resolution at field scale (the fewest sides drawn). |
+| `lodPixelError` | `0.5` | CSS pixels the tube may stray from full detail. `0` always draws full detail. |
 
-The distance comes from the `DistanceContext` published by `WellboreBounds`. **Without a
-`WellboreBounds` ancestor there is no distance to drive the LOD, so the high LOD is
-used** (the field-scale low LOD only kicks in when a `WellboreBounds` reports a distance
-beyond `lodDistance`) — still, wrap `Trajectory` in a `WellboreBounds` so the low LOD can
-save geometry at field scale.
+A level is taken coarser only once it is 20% under the limit, so a well at a boundary
+does not flip. Each pick also records the distance range over which it stays right, so
+a moving camera costs two comparisons per well until a boundary is crossed.
+
+The distance comes from the `DistanceContext` published by `WellboreBounds`, less its
+`tolerance`, so the pixel error is never exceeded. **Without a `WellboreBounds`
+ancestor there is no distance to drive the LOD, so full detail is drawn** — wrap
+`Trajectory` in a `WellboreBounds` so it can save geometry at field scale.
+
+Measured on a 943-well field (integrated GPU, wells only): at 40 km, 7.2M → 63k
+triangles and about 17 → 5.5 ms of GPU time; LOD vs full detail differs less on screen
+than turning the camera by half a pixel, and a level switch changes less still.
 
 ## Opacity and transparency
 

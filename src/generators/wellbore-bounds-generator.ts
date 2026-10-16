@@ -1,100 +1,73 @@
 import { transfer } from 'comlink';
 import {
-  WellboreBoundingSphere,
-  WellboreBoundsType,
-} from '../components/Wellbores/WellboreBounds';
-import {
   clamp,
   getTrajectory,
   lengthVec3,
   PositionLog,
   ReadonlyStore,
+  simplifyPolyline3D,
   Vec3,
 } from '../sdk';
 
+/** Spacing of the stations along the curve the chain is simplified from, in metres. */
+const STATION_SPACING = 10;
+
+/**
+ * Generates the bounds `WellboreBounds` measures the camera distance to, as one
+ * `Float32Array`: a sphere `[cx, cy, cz, r]` around the trajectory, then the trajectory
+ * as a chain of points `[x, y, z, ...]` that stays within `tolerance` metres of it.
+ *
+ * The chain is simplified from stations every few metres along the spline, so it does
+ * not depend on how densely the position log was surveyed.
+ */
 export async function calculateWellboreBounds(
   this: ReadonlyStore,
   id: string,
   fromMsl?: number,
-  sampleSize: number = 250,
+  tolerance: number = 100,
 ) {
   const poslogMsl = await this.get<PositionLog>('position-logs', id);
+  const trajectory = poslogMsl ? getTrajectory(id, poslogMsl) : null;
 
-  const bounds: WellboreBoundsType = {
-    main: {
-      center: [0, 0, 0],
-      radius: 10,
-    },
-    sampled: [],
-  };
-
-  if (poslogMsl) {
-    const trajectory = getTrajectory(id, poslogMsl);
-    if (trajectory) {
-      const from =
-        fromMsl !== undefined
-          ? clamp(
-              (fromMsl - trajectory.measuredTop) / trajectory.measuredLength,
-              0,
-              1,
-            )
-          : 0;
-
-      // calculate main bounding sphere
-
-      const boundingBox = trajectory.curve.getBoundingBox(from);
-
-      const hWidth = (boundingBox.max[0] - boundingBox.min[0]) / 2;
-      const hHeight = (boundingBox.max[1] - boundingBox.min[1]) / 2;
-      const hDepth = (boundingBox.max[2]! - boundingBox.min[2]!) / 2;
-
-      const radius = lengthVec3([hWidth, hHeight, hDepth!]) + sampleSize * 2; // add a little padding
-      const center: Vec3 = [
-        boundingBox.min[0] + hWidth,
-        boundingBox.min[1] + hHeight,
-        boundingBox.min[2]! + hDepth,
-      ];
-
-      bounds.main.center = center;
-      bounds.main.radius = radius;
-
-      if (sampleSize > 0) {
-        // create samples along trajectory
-        const nSamples = Math.max(
-          2,
-          Math.ceil(((1 - from) * trajectory.curve.length) / sampleSize),
-        );
-        const sampledPoints = trajectory.curve.getPoints(nSamples, from, 1);
-        const samples: WellboreBoundingSphere[] = [];
-
-        sampledPoints.forEach(point => {
-          samples.push({
-            center: point,
-            radius: sampleSize,
-          });
-        });
-
-        bounds.sampled = samples;
-      }
-    }
+  if (!trajectory) {
+    const data = Float32Array.from([0, 0, 0, 10]);
+    return transfer(data, [data.buffer]);
   }
 
-  const data = new Float32Array(4 + bounds.sampled.length * 4);
+  const from =
+    fromMsl !== undefined
+      ? clamp(
+          (fromMsl - trajectory.measuredTop) / trajectory.measuredLength,
+          0,
+          1,
+        )
+      : 0;
 
-  // convert to typed array for faster transfer
-  let i = 0;
-  data[i] = bounds.main.center[0];
-  data[i + 1] = bounds.main.center[1];
-  data[i + 2] = bounds.main.center[2];
-  data[i + 3] = bounds.main.radius;
+  const box = trajectory.curve.getBoundingBox(from);
+  const half: Vec3 = [
+    (box.max[0] - box.min[0]) / 2,
+    (box.max[1] - box.min[1]) / 2,
+    (box.max[2] - box.min[2]) / 2,
+  ];
 
-  i = 4;
-  for (let s = 0; s < bounds.sampled.length; s++, i += 4) {
-    data[i] = bounds.sampled[s].center[0];
-    data[i + 1] = bounds.sampled[s].center[1];
-    data[i + 2] = bounds.sampled[s].center[2];
-    data[i + 3] = bounds.sampled[s].radius;
+  const n = Math.max(
+    1,
+    Math.ceil(((1 - from) * trajectory.curve.length) / STATION_SPACING),
+  );
+  const stations: Vec3[] = new Array(n + 1);
+  for (let i = 0; i <= n; i++) {
+    // `from + (1 - from) * n / n` can round past 1, where the spline throws
+    const u = Math.min(1, from + ((1 - from) * i) / n);
+    stations[i] = trajectory.curve.getPointAt(u);
   }
+  const chain = simplifyPolyline3D(stations, tolerance);
+
+  const data = new Float32Array(4 + chain.length * 3);
+  data[0] = box.min[0] + half[0];
+  data[1] = box.min[1] + half[1];
+  data[2] = box.min[2] + half[2];
+  data[3] = lengthVec3(half);
+  chain.forEach((p, i) => data.set(p, 4 + i * 3));
 
   return transfer(data, [data.buffer]);
 }

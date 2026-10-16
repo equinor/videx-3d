@@ -31,13 +31,13 @@ import {
   fitsPoolTile,
   flushTilePool,
   orderTileChanges,
-  pixelsPerUnit,
   selectTileLevels,
   setPoolTile,
   tilesInView,
   TilePool,
   viewTilePool,
 } from './chunk-lod';
+import { pixelsPerUnit } from '../../sdk/utils/lod';
 
 /**
  * Indices rewritten per frame, over every cap: what spreads a big change of view

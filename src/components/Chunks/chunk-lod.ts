@@ -1,19 +1,6 @@
-import {
-  Box3,
-  Camera,
-  Frustum,
-  Matrix4,
-  OrthographicCamera,
-  PerspectiveCamera,
-  Vector3,
-} from 'three';
+import { Box3, Frustum, Matrix4, Vector3 } from 'three';
 import type { StackTiling } from '../../sdk';
-
-/**
- * A coarser level is taken only once its error is this far under the limit, so a
- * tile on the boundary does not flip between two levels every frame.
- */
-export const LOD_COARSEN_MARGIN = 0.8;
+import { selectLodLevel } from '../../sdk/utils/lod';
 
 /**
  * Each tile's footprint in the chunk's own frame: its grid rectangle's four corners
@@ -129,34 +116,13 @@ export function tilesInView(
   }
 }
 
-/**
- * How many pixels one unit spans at a distance from `camera`, for a viewport
- * `height` pixels tall. An orthographic camera's is the same at any distance.
- */
-export function pixelsPerUnit(
-  camera: Camera,
-  height: number,
-): (distance: number) => number {
-  if ((camera as OrthographicCamera).isOrthographicCamera) {
-    const ortho = camera as OrthographicCamera;
-    const scale = (height * ortho.zoom) / (ortho.top - ortho.bottom);
-    return () => scale;
-  }
-  const perspective = camera as PerspectiveCamera;
-  const scale =
-    (height * (perspective.zoom ?? 1)) /
-    (2 * Math.tan(((perspective.fov ?? 50) * Math.PI) / 360));
-  return distance => scale / Math.max(distance, 1e-6);
-}
-
 const worldEye = new Vector3();
 const nearest = new Vector3();
 
 /**
  * Pick each tile's level of detail: the coarsest whose height error, projected at
- * the tile's nearest point to the eye, stays within `pixelError` pixels. A tile
- * goes finer as soon as its level is over the limit, and coarser only once the
- * next level is under it by {@link LOD_COARSEN_MARGIN}.
+ * the tile's nearest point to the eye, stays within `pixelError` pixels (see
+ * {@link selectLodLevel}).
  *
  * @param eye the camera position in the boxes' frame
  * @param errors per level, the full one first: its height error, ascending
@@ -178,7 +144,6 @@ export function selectTileLevels(
   frame?: Matrix4,
 ): boolean {
   let changed = false;
-  const last = errors.length - 1;
   let vertical = 1;
   if (frame) {
     const m = frame.elements;
@@ -192,10 +157,7 @@ export function selectTileLevels(
       : boxes[t].distanceToPoint(eye);
     const ppu = scale(distance) * vertical;
     if (scales) scales[t] = ppu;
-    let k = Math.min(levels[t], last);
-    while (k > 0 && errors[k] * ppu > pixelError) k--;
-    while (k < last && errors[k + 1] * ppu <= pixelError * LOD_COARSEN_MARGIN)
-      k++;
+    const k = selectLodLevel(errors, ppu, pixelError, levels[t]);
     if (k !== levels[t]) {
       levels[t] = k;
       changed = true;

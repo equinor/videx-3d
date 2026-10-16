@@ -274,12 +274,14 @@ const FieldWells = ({
   color,
   selectedColor,
   radius,
+  lodPixelError,
   fenceWindow,
 }: {
   selected?: string;
   color: string;
   selectedColor: string;
   radius: number;
+  lodPixelError: number;
   fenceWindow: FenceWindow | null;
 }) => {
   const wellbores = useWellboreHeaders();
@@ -351,6 +353,7 @@ const FieldWells = ({
                 color={isSelected ? selectedColor : color}
                 priority={8}
                 radialSegments={12}
+                lodPixelError={lodPixelError}
                 colorIntervals={
                   fenceIntervals?.wellbore === wellbore.id
                     ? fenceIntervals.intervals
@@ -448,6 +451,7 @@ type FieldColumnStoryProps = {
   wellboreColor: string;
   wellboreSelectedColor: string;
   wellboreRadius: number;
+  wellboreLodPixelError: number;
   wellbore: string;
   fence: boolean;
   fenceSide: FenceSideName | 'auto';
@@ -1317,6 +1321,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
             color={props.wellboreColor}
             selectedColor={props.wellboreSelectedColor}
             radius={props.wellboreRadius}
+            lodPixelError={props.wellboreLodPixelError}
             fenceWindow={
               props.fence && props.fenceColorTvd ? fenceWindow : null
             }
@@ -1392,6 +1397,7 @@ export const Default: Story = {
     wellboreColor: '#9aa0a6',
     wellboreSelectedColor: 'tomato',
     wellboreRadius: 4,
+    wellboreLodPixelError: 0.5,
     wellbore: storyArgs.defaultWellbore,
     // Fence
     fence: false,
@@ -1611,6 +1617,13 @@ export const Default: Story = {
       options: [1, 2, 4, 8, 16],
       description:
         'Tube radius in metres. ⚠️ A real 12¾" casing is well under a pixel across a 20 km field, so this is deliberately exaggerated. ⭐ ALSO the fence clearance: the cut is held this far off the trajectory so it does not slice the tube in half.',
+      table: { category: 'Wellbores' },
+    },
+    wellboreLodPixelError: {
+      control: { type: 'select' },
+      options: [0, 0.25, 0.5, 1, 2],
+      description:
+        'CSS pixels a trajectory may stray from full detail (sides and curve). `0` = no LOD — the reference to compare against.',
       table: { category: 'Wellbores' },
     },
     wellbore: {

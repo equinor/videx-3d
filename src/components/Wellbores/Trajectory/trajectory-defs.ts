@@ -26,6 +26,20 @@ export type TrajectorySegmentsType = {
     center: Vec3;
     radius: number;
   };
+  /** coarser copies for far views, by ascending `tolerance` */
+  levels?: TrajectoryLevel[];
+};
+
+/**
+ * A coarser copy of a trajectory's segment data: a subset of its curve positions, with
+ * their rows copied unchanged, whose chords stay within `tolerance` metres of it. Same
+ * layout as {@link TrajectorySegmentsType.attributesBuffer}; the first and last
+ * positions are always kept.
+ */
+export type TrajectoryLevel = {
+  tolerance: number;
+  attributesBuffer: Float32Array;
+  segments: number;
 };
 
 export type TrajectoryGeneratorResponse = TrajectorySegmentsType | null;

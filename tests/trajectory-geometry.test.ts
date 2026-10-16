@@ -1,7 +1,11 @@
 import { InstancedBufferGeometry, InterleavedBufferAttribute } from 'three';
 import {
+  createTrajectoryAttributes,
   createTrajectoryCapsGeometry,
+  createTrajectoryGeometries,
   createTrajectoryGeometry,
+  radialSilhouetteError,
+  trajectoryRadialLevels,
 } from '../src/components/Wellbores/Trajectory/trajectory-geometry';
 import { TrajectorySegmentsType } from '../src/components/Wellbores/Trajectory/trajectory-defs';
 
@@ -115,6 +119,74 @@ describe('trajectory-geometry', () => {
       const endCentre = perCap;
       expect(capSign.getX(startCentre)).toBe(-1);
       expect(capSign.getX(endCentre)).toBe(1);
+    });
+  });
+
+  // three uploads one GPU buffer per InterleavedBuffer object.
+  test('geometries given one attributes buffer all read that buffer', () => {
+    const section = makeSection(3);
+    const attributes = createTrajectoryAttributes(section);
+    const geometries = [
+      createTrajectoryGeometry(section, 4, attributes),
+      createTrajectoryGeometry(section, 12, attributes),
+      createTrajectoryCapsGeometry(section, 12, attributes),
+    ];
+    for (const geometry of geometries) {
+      for (const name of ['positionA', 'positionB', 'tangentA', 'normalB']) {
+        expect(interleaved(geometry, name).data).toBe(attributes);
+      }
+    }
+  });
+
+  test('radial levels halve from the most sides down to the fewest', () => {
+    expect(trajectoryRadialLevels(4, 12)).toEqual([12, 6, 4]);
+    expect(trajectoryRadialLevels(4, 32)).toEqual([32, 16, 8, 4]);
+    expect(trajectoryRadialLevels(4, 4)).toEqual([4]);
+    expect(radialSilhouetteError(4)).toBeCloseTo(1 - Math.SQRT1_2, 9);
+  });
+
+  describe('createTrajectoryGeometries', () => {
+    const section = {
+      ...makeSection(5),
+      levels: [
+        {
+          tolerance: 1,
+          attributesBuffer: makeSection(3).attributesBuffer,
+          segments: 3,
+        },
+        {
+          tolerance: 4,
+          attributesBuffer: makeSection(2).attributesBuffer,
+          segments: 2,
+        },
+      ],
+    };
+
+    test('lists each level with its tolerance, the full one first', () => {
+      expect(createTrajectoryGeometries(section).tolerances).toEqual([0, 1, 4]);
+    });
+
+    test('builds each tube once, every one of a level reading one buffer', () => {
+      const lod = createTrajectoryGeometries(section);
+      expect(lod.tube(1, 8)).toBe(lod.tube(1, 8));
+      expect(lod.tube(1, 4)).not.toBe(lod.tube(1, 8));
+      expect(interleaved(lod.tube(1, 4), 'positionA').data).toBe(
+        interleaved(lod.tube(1, 8), 'positionA').data,
+      );
+      expect(interleaved(lod.tube(2, 8), 'positionA').data).not.toBe(
+        interleaved(lod.tube(1, 8), 'positionA').data,
+      );
+      expect(lod.tube(0, 8).instanceCount).toBe(4);
+      expect(lod.tube(1, 8).instanceCount).toBe(2);
+      expect(lod.tube(2, 8).instanceCount).toBe(1);
+    });
+
+    test('caps read the full level', () => {
+      const lod = createTrajectoryGeometries(section);
+      expect(interleaved(lod.caps(8), 'positionA').data).toBe(
+        interleaved(lod.tube(0, 8), 'positionA').data,
+      );
+      expect(lod.caps(8)).toBe(lod.caps(8));
     });
   });
 });

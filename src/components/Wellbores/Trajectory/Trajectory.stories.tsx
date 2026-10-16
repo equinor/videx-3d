@@ -96,7 +96,7 @@ type TrajectoryArgs = {
   opacity: number;
   radialSegments: number;
   lowRadialSegments: number;
-  lodDistance: number;
+  lodPixelError: number;
   shadingColor: string;
   shadingStrength: number;
   shadingFalloff: number;
@@ -130,7 +130,7 @@ const baseArgs: TrajectoryArgs = {
   opacity: 1,
   radialSegments: 16,
   lowRadialSegments: 4,
-  lodDistance: 2000,
+  lodPixelError: 0.5,
   shadingColor: '#000000',
   shadingStrength: 0.6,
   shadingFalloff: 2,
@@ -161,7 +161,7 @@ const baseArgs: TrajectoryArgs = {
 /**
  * The unified `Trajectory` renders a wellbore path as a single instanced tube with a
  * screen-space ~1 px floor (so it reads as a thin line at field scale and thickens as
- * you approach), a radial-segment LOD driven by `WellboreBounds`, GPU picking and
+ * you approach), a pixel-error LOD (sides and curve detail) driven by `WellboreBounds`, GPU picking and
  * `Highlighter` support, and optional rim shading, an albedo texture map, depth-marker
  * bands and data-driven interval colouring.
  *
@@ -192,8 +192,10 @@ const meta = {
       control: { type: 'range', min: 3, max: 12, step: 1 },
       table: { category: 'Trajectory' },
     },
-    lodDistance: {
-      control: { type: 'range', min: 0, max: 20000, step: 100 },
+    lodPixelError: {
+      control: { type: 'range', min: 0, max: 4, step: 0.25 },
+      description:
+        'CSS pixels the tube may stray from full detail; 0 = no LOD.',
       table: { category: 'Trajectory' },
     },
     shadingColor: {
@@ -420,7 +422,7 @@ const meta = {
                               colorIntervals={colorBands}
                               radialSegments={args.radialSegments}
                               lowRadialSegments={args.lowRadialSegments}
-                              lodDistance={args.lodDistance}
+                              lodPixelError={args.lodPixelError}
                               highlightColor={args.highlightColor}
                               highlightOpacity={args.highlightOpacity}
                               highlightBlending={args.highlightBlending}

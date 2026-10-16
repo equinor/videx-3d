@@ -1,4 +1,4 @@
-import { Vec2 } from '../types/common';
+import { Vec2, Vec3 } from '../types/common';
 import type {
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
@@ -252,6 +252,64 @@ export function simplifyPolyline(points: Vec2[], tolerance: number): Vec2[] {
   }
 
   const out: Vec2[] = [];
+  for (let i = 0; i < n; i++) if (keep[i]) out.push(points[i]);
+  return out;
+}
+
+/**
+ * The 3D form of {@link simplifyPolyline}: drop the vertices of an OPEN polyline that
+ * carry no shape, keeping every point of the result within `tolerance` of the original
+ * (Ramer–Douglas–Peucker, iterative).
+ *
+ * @group Geometries
+ */
+export function simplifyPolyline3D(points: Vec3[], tolerance: number): Vec3[] {
+  const n = points.length;
+  if (n < 3) return points.slice();
+  const keep = new Uint8Array(n);
+  keep[0] = 1;
+  keep[n - 1] = 1;
+  const stack: [number, number][] = [[0, n - 1]];
+  const sq = tolerance * tolerance;
+
+  while (stack.length > 0) {
+    const [first, last] = stack.pop()!;
+    if (last <= first + 1) continue;
+    const [ax, ay, az] = points[first];
+    const dx = points[last][0] - ax;
+    const dy = points[last][1] - ay;
+    const dz = points[last][2] - az;
+    const len = dx * dx + dy * dy + dz * dz;
+    let worst = -1;
+    let worstAt = -1;
+    for (let i = first + 1; i < last; i++) {
+      const [px, py, pz] = points[i];
+      const t =
+        len === 0
+          ? 0
+          : Math.max(
+              0,
+              Math.min(
+                1,
+                ((px - ax) * dx + (py - ay) * dy + (pz - az) * dz) / len,
+              ),
+            );
+      const ex = px - ax - t * dx;
+      const ey = py - ay - t * dy;
+      const ez = pz - az - t * dz;
+      const d = ex * ex + ey * ey + ez * ez;
+      if (d > worst) {
+        worst = d;
+        worstAt = i;
+      }
+    }
+    if (worst > sq && worstAt > 0) {
+      keep[worstAt] = 1;
+      stack.push([first, worstAt], [worstAt, last]);
+    }
+  }
+
+  const out: Vec3[] = [];
   for (let i = 0; i < n; i++) if (keep[i]) out.push(points[i]);
   return out;
 }

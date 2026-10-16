@@ -44,14 +44,15 @@ needed:
 </WellboreBounds>
 ```
 
-Keep the `WellboreBounds` — `Trajectory` needs it for the distance-driven LOD.
+Keep the `WellboreBounds` — `Trajectory` needs it for the pixel-error LOD.
 
 ### Prop mapping
 
 | Old | New |
 |--|--|
 | `TubeTrajectory radius` | `Trajectory radius` (now a live uniform, not baked). |
-| `TubeTrajectory radialSegments` | `Trajectory radialSegments` (high LOD) + `lowRadialSegments` (field scale). |
+| `TubeTrajectory radialSegments` | `Trajectory radialSegments` (most sides, up close) + `lowRadialSegments` (fewest, field scale). |
+| `Trajectory lodDistance` | `Trajectory lodPixelError` (CSS pixels; `0` = full detail). |
 | `BasicTrajectory` (always-on 1 px line) | `Trajectory minPixelRadius` (default `1`). |
 | two generators (`basicTrajectory` + `tubeTrajectory`) | one generator (`trajectory`). |
 

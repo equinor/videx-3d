@@ -11,24 +11,103 @@ import { TrajectorySegmentsType } from './trajectory-defs';
 const STRIDE = 10;
 
 /**
+ * The per-segment centerline data as an instanced buffer. three uploads one GPU buffer
+ * per `InterleavedBuffer` object, so pass the SAME one to every geometry of a section.
+ */
+export function createTrajectoryAttributes(section: TrajectorySegmentsType) {
+  return new InstancedInterleavedBuffer(section.attributesBuffer, STRIDE, 1);
+}
+
+/**
+ * The radial resolutions a trajectory is drawn with, most sides first: `max`, then
+ * halving down to no fewer than `min`, and `min` itself.
+ */
+export function trajectoryRadialLevels(min: number, max: number): number[] {
+  const levels = [max];
+  for (let n = Math.floor(max / 2); n > min; n = Math.floor(n / 2)) {
+    levels.push(n);
+  }
+  if (min < max) levels.push(min);
+  return levels;
+}
+
+/**
+ * How far an `n`-sided tube's silhouette falls inside the round one it stands for, as
+ * a fraction of the radius.
+ */
+export function radialSilhouetteError(n: number) {
+  return 1 - Math.cos(Math.PI / n);
+}
+
+/**
+ * A trajectory's geometries, built on first use, per curve level (0 = the full
+ * section, then `section.levels`) and radial resolution. Every geometry of a level
+ * reads one shared GPU buffer; the caps read the full one, whose ends every level
+ * keeps.
+ */
+export function createTrajectoryGeometries(section: TrajectorySegmentsType) {
+  const levels: (TrajectorySegmentsType & { tolerance?: number })[] = [
+    section,
+    ...(section.levels ?? []).map(level => Object.assign({}, section, level)),
+  ];
+  const buffers = levels.map(level => createTrajectoryAttributes(level));
+  const tubes = new Map<number, InstancedBufferGeometry>();
+  const caps = new Map<number, InstancedBufferGeometry>();
+  return {
+    /** per curve level, how far it may stray from the full trajectory, in metres */
+    tolerances: levels.map(level => level.tolerance ?? 0),
+    tube(level: number, radialSegments: number) {
+      const key = level * 4096 + radialSegments;
+      let geometry = tubes.get(key);
+      if (!geometry) {
+        geometry = createTrajectoryGeometry(
+          levels[level],
+          radialSegments,
+          buffers[level],
+        );
+        tubes.set(key, geometry);
+      }
+      return geometry;
+    },
+    caps(radialSegments: number) {
+      let geometry = caps.get(radialSegments);
+      if (!geometry) {
+        geometry = createTrajectoryCapsGeometry(
+          section,
+          radialSegments,
+          buffers[0],
+        );
+        caps.set(radialSegments, geometry);
+      }
+      return geometry;
+    },
+    dispose() {
+      for (const geometry of tubes.values()) geometry.dispose();
+      for (const geometry of caps.values()) geometry.dispose();
+      tubes.clear();
+      caps.clear();
+    },
+  };
+}
+
+export type TrajectoryGeometries = ReturnType<
+  typeof createTrajectoryGeometries
+>;
+
+/**
  * Builds an instanced single-wall tube geometry for a trajectory at the given radial
  * resolution. The per-segment centerline data is shared as an interleaved instanced
  * buffer (mirroring the Casings pattern): endpoint A reads from offset 0 and endpoint
  * B reads STRIDE floats ahead, so consecutive curve positions form each segment.
  *
  * Radius is applied in the vertex shader, so the SAME segment data can drive multiple
- * radial-resolution LODs (call this once per LOD).
+ * radial-resolution LODs (call this once per LOD, with one shared `attributesBuffer`).
  */
 export function createTrajectoryGeometry(
   section: TrajectorySegmentsType,
   radialSegments: number,
+  attributesBuffer = createTrajectoryAttributes(section),
 ) {
-  const attributesBuffer = new InstancedInterleavedBuffer(
-    section.attributesBuffer,
-    STRIDE,
-    1,
-  );
-
   const radialPositions = radialSegments + 1;
   const nVertices = radialPositions * 2;
 
@@ -127,12 +206,8 @@ export function createTrajectoryGeometry(
 export function createTrajectoryCapsGeometry(
   section: TrajectorySegmentsType,
   radialSegments: number,
+  attributesBuffer = createTrajectoryAttributes(section),
 ) {
-  const attributesBuffer = new InstancedInterleavedBuffer(
-    section.attributesBuffer,
-    STRIDE,
-    1,
-  );
   // Endpoint B reads the last curve position so a single instance spans the whole tube.
   const bOffset = (section.segments - 1) * STRIDE;
 

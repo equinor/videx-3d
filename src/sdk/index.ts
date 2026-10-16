@@ -72,6 +72,7 @@ export * from './utils/depth-reader';
 export * from './utils/elevation-map';
 export * from './utils/glyphs';
 export * from './utils/irapbin-parser';
+export * from './utils/lod';
 export * from './utils/margin-zone';
 export * from './utils/num-array';
 export * from './utils/numbers';

@@ -15,9 +15,7 @@ import {
   cullTilePool,
   fitsPoolTile,
   flushTilePool,
-  LOD_COARSEN_MARGIN,
   orderTileChanges,
-  pixelsPerUnit,
   selectTileLevels,
   setPoolTile,
   tilesInView,
@@ -25,6 +23,7 @@ import {
   viewTilePool,
 } from '../src/components/Chunks/chunk-lod';
 import type { StackTiling } from '../src/sdk';
+import { LOD_COARSEN_MARGIN, pixelsPerUnit } from '../src/sdk/utils/lod';
 
 // 2 x 1 tiles of 10 cells, 50 m cells, grid column = x / 50 and row = -z / 50 + 3.
 const tiling: StackTiling = {

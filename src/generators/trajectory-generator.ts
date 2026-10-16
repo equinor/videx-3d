@@ -1,5 +1,6 @@
 import { transfer } from 'comlink';
 import { Box3, Sphere, Vector3 } from 'three';
+import type { TrajectoryLevel } from '../components/Wellbores/Trajectory/trajectory-defs';
 import {
   calculateFrenetFrames,
   clamp,
@@ -7,9 +8,16 @@ import {
   getTrajectory,
   PositionLog,
   ReadonlyStore,
+  simplifyPolyline3D,
 } from '../sdk';
 
 const sphere = new Sphere();
+
+/** Floats per curve position in the attributes buffer. */
+const STRIDE = 10;
+
+/** How far each coarser level may stray from the full trajectory, in metres. */
+const LEVEL_TOLERANCES = [0.25, 1, 4, 16, 64];
 
 /**
  * Generates a single-wall instanced-tube description for a wellbore trajectory.
@@ -66,6 +74,31 @@ export async function generateTrajectory(
 
   const attributesBuffer = Float32Array.from(attributesArray);
 
+  // Subsets of the full positions with their rows copied, so a kept ring is identical
+  // at every level and switching levels cannot twist the tube.
+  const positions = frenetFrames.map(frame => frame.position);
+  const indexOf = new Map(positions.map((p, i) => [p, i]));
+  const levels: TrajectoryLevel[] = [];
+  let previous = positions.length;
+  for (const tolerance of LEVEL_TOLERANCES) {
+    const kept = simplifyPolyline3D(positions, tolerance);
+    if (kept.length >= previous) continue;
+    const level = new Float32Array(kept.length * STRIDE);
+    kept.forEach((p, j) => {
+      const i = indexOf.get(p)!;
+      level.set(
+        attributesBuffer.subarray(i * STRIDE, (i + 1) * STRIDE),
+        j * STRIDE,
+      );
+    });
+    levels.push({
+      tolerance,
+      attributesBuffer: level,
+      segments: kept.length,
+    });
+    previous = kept.length;
+  }
+
   const bbox = trajectory.curve.getBoundingBox(from, 1);
   const box3 = new Box3(new Vector3(...bbox.min), new Vector3(...bbox.max));
   box3.getBoundingSphere(sphere);
@@ -83,7 +116,11 @@ export async function generateTrajectory(
       center: sphere.center.toArray() as [number, number, number],
       radius: sphere.radius,
     },
+    levels,
   };
 
-  return transfer(response, [attributesBuffer.buffer]);
+  return transfer(response, [
+    attributesBuffer.buffer,
+    ...levels.map(level => level.attributesBuffer.buffer),
+  ]);
 }

@@ -2,6 +2,8 @@ import { createContext } from 'react';
 
 export type DistanceContextProps = {
   current: number;
+  /** How much `current` may exceed the true distance, when the provider knows. */
+  tolerance?: number;
 };
 
 /**

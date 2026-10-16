@@ -1,11 +1,24 @@
 import { useFrame } from '@react-three/fiber';
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import { Matrix4, Object3D, PerspectiveCamera, Vector3 } from 'three';
+import {
+  BufferAttribute,
+  BufferGeometry,
+  Matrix4,
+  Object3D,
+  PerspectiveCamera,
+  Vector3,
+} from 'three';
 import { useGenerator } from '../../../hooks/useGenerator';
 import { Vec3 } from '../../../sdk/types/common';
-import { DistanceContext } from '../../Distance/DistanceContext';
+import {
+  DistanceContext,
+  DistanceContextProps,
+} from '../../Distance/DistanceContext';
 import { wellboreBounds } from './wellbore-bounds-defs';
-import { wellboreBoundsDistance } from './wellbore-bounds-distance';
+import {
+  prepareWellboreBounds,
+  wellboreBoundsDistance,
+} from './wellbore-bounds-distance';
 
 /**
  * WellboreBounds props
@@ -14,7 +27,18 @@ import { wellboreBoundsDistance } from './wellbore-bounds-distance';
 export type WellboreBoundsProps = {
   id: string;
   fromMsl?: number;
-  boundsSampleSize?: number;
+  /**
+   * How far the simplified trajectory the distance is measured to may stray from the
+   * real one, in metres. Default 100.
+   */
+  boundsTolerance?: number;
+  /**
+   * Distances below this are exact (within `boundsTolerance`); beyond it a cheaper value
+   * that is never more than the true distance and never less than this. Default 3000.
+   */
+  exactWithin?: number;
+  /** Subtracted from the distance, as if the wellbore were this thick, in metres. Default 0. */
+  boundsPadding?: number;
   visible?: boolean;
   priority?: number;
   children?: ReactNode;
@@ -26,8 +50,10 @@ export type WellboreBoundingSphere = {
 };
 
 export type WellboreBoundsType = {
+  /** encloses the whole trajectory */
   main: WellboreBoundingSphere;
-  sampled: WellboreBoundingSphere[];
+  /** the trajectory, simplified to within `boundsTolerance` */
+  chain: Vec3[];
 };
 
 const vec = new Vector3();
@@ -36,6 +62,9 @@ const vec = new Vector3();
  * This component is used to provide a `DistanceContext` for a `Wellbore`, which allow the use
  * of the `Distance` component to conditionally show/hide other components depending on the distance from the
  * wellbore to the camera.
+ *
+ * The distance is measured to the trajectory itself (simplified to within `boundsTolerance`)
+ * up to `exactWithin`; further out it costs one square root per wellbore.
  *
  * @example
  * <Wellbore id={wellboreId}>
@@ -57,7 +86,9 @@ const vec = new Vector3();
 export const WellboreBounds = ({
   id,
   fromMsl,
-  boundsSampleSize = 250,
+  boundsTolerance = 100,
+  exactWithin = 3000,
+  boundsPadding = 0,
   visible = false,
   priority = 0,
   children,
@@ -67,15 +98,15 @@ export const WellboreBounds = ({
   const boundsGenerator = useGenerator<Float32Array>(wellboreBounds, priority);
 
   const [bounds, setBounds] = useState<WellboreBoundsType | null>(null);
-  const currentDistanceRef = useMemo<{ current: number }>(
-    () => ({ current: Infinity }),
+  const currentDistanceRef = useMemo<DistanceContextProps>(
+    () => ({ current: Infinity, tolerance: 0 }),
     [],
   );
   // What the distance was last worked out from: bounds data, the bounds' world
   // matrix (and its inverse), and the camera's position and zoom.
   const seen = useMemo(
     () => ({
-      spheres: null as Float32Array | null,
+      bounds: null as Float64Array | null,
       world: new Float64Array(16),
       inverse: new Matrix4(),
       eye: new Float64Array(4).fill(NaN),
@@ -85,37 +116,37 @@ export const WellboreBounds = ({
 
   useEffect(() => {
     if (boundsGenerator) {
-      boundsGenerator(id, fromMsl, boundsSampleSize).then(boundsData => {
+      boundsGenerator(id, fromMsl, boundsTolerance).then(boundsData => {
         if (boundsData) {
-          const generatedBounds: WellboreBoundsType = {
+          const chain: Vec3[] = [];
+          for (let i = 4; i + 2 < boundsData.length; i += 3) {
+            chain.push([boundsData[i], boundsData[i + 1], boundsData[i + 2]]);
+          }
+          seen.bounds = prepareWellboreBounds(boundsData);
+          seen.eye[0] = NaN;
+          setBounds({
             main: {
               center: [boundsData[0], boundsData[1], boundsData[2]],
               radius: boundsData[3],
             },
-            sampled: [],
-          };
-
-          for (let i = 4; i < boundsData.length; i += 4) {
-            generatedBounds.sampled.push({
-              center: [boundsData[i], boundsData[i + 1], boundsData[i + 2]],
-              radius: boundsData[i + 3],
-            });
-          }
-          seen.spheres = boundsData;
-          seen.eye[0] = NaN;
-          setBounds(generatedBounds);
+            chain,
+          });
         }
       });
     }
-  }, [id, boundsGenerator, fromMsl, boundsSampleSize, seen]);
+  }, [id, boundsGenerator, fromMsl, boundsTolerance, seen]);
+
+  useEffect(() => {
+    seen.eye[0] = NaN;
+  }, [exactWithin, boundsPadding, seen]);
 
   // ⭐ From the world matrix the renderer already updated (a frame behind a parent
   // that moved this frame), not `worldToLocal`, which recomputes every ancestor's
   // matrix: per wellbore, per frame, that was most of this hook's cost.
   useFrame(({ camera }) => {
-    const spheres = seen.spheres;
+    const data = seen.bounds;
     const object = boundsRef.current;
-    if (!spheres || !object) return;
+    if (!data || !object) return;
     const world = object.matrixWorld.elements;
     let moved = false;
     for (let i = 0; i < 16; i++) {
@@ -145,13 +176,31 @@ export const WellboreBounds = ({
     seen.eye[3] = zoom;
     vec.copy(eye).applyMatrix4(seen.inverse);
     currentDistanceRef.current = wellboreBoundsDistance(
-      spheres,
+      data,
       vec.x,
       vec.y,
       vec.z,
       zoom,
+      exactWithin,
+      boundsPadding,
     );
+    currentDistanceRef.tolerance = boundsTolerance / zoom;
   });
+
+  const chainGeometry = useMemo(() => {
+    if (!visible || !bounds || bounds.chain.length < 2) return null;
+    const { chain } = bounds;
+    const positions = new Float32Array((chain.length - 1) * 6);
+    for (let i = 1; i < chain.length; i++) {
+      positions.set(chain[i - 1], (i - 1) * 6);
+      positions.set(chain[i], (i - 1) * 6 + 3);
+    }
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new BufferAttribute(positions, 3));
+    return geometry;
+  }, [visible, bounds]);
+
+  useEffect(() => () => chainGeometry?.dispose(), [chainGeometry]);
 
   return (
     <object3D name="wellbore-bounds" ref={boundsRef}>
@@ -172,19 +221,11 @@ export const WellboreBounds = ({
           </mesh>
         )
       }
-      {visible &&
-        bounds &&
-        bounds.sampled.map((s, i) => (
-          <mesh name="wellbore-bounds-debug" key={i} position={s.center}>
-            <sphereGeometry args={[s.radius, 16, 8]} />
-            <meshBasicMaterial
-              color="gray"
-              wireframe
-              transparent
-              opacity={0.25}
-            />
-          </mesh>
-        ))}
+      {chainGeometry && (
+        <lineSegments name="wellbore-bounds-debug" geometry={chainGeometry}>
+          <lineBasicMaterial color="yellow" />
+        </lineSegments>
+      )}
     </object3D>
   );
 };

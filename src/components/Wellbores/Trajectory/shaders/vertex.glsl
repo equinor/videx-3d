@@ -34,13 +34,12 @@ varying float vAxial;
 #include <logdepthbuf_pars_vertex>
 #include <clipping_planes_pars_vertex>
 
-mat4 rotation3d(vec3 axis, float angle) {
-  axis = normalize(axis);
+// `v` rotated by -angle about the unit `axis` (Rodrigues): what the 4x4 rotation matrix
+// this replaces computed, without building it per vertex.
+vec3 rotateAboutAxis(vec3 v, vec3 axis, float angle) {
   float s = sin(angle);
   float c = cos(angle);
-  float oc = 1.0 - c;
-
-  return mat4(oc * axis.x * axis.x + c, oc * axis.x * axis.y - axis.z * s, oc * axis.z * axis.x + axis.y * s, 0.0, oc * axis.x * axis.y + axis.z * s, oc * axis.y * axis.y + c, oc * axis.y * axis.z - axis.x * s, 0.0, oc * axis.z * axis.x - axis.y * s, oc * axis.y * axis.z + axis.x * s, oc * axis.z * axis.z + c, 0.0, 0.0, 0.0, 0.0, 1.0);
+  return v * c - cross(axis, v) * s + axis * (dot(axis, v) * (1.0 - c));
 }
 
 void main() {
@@ -54,8 +53,7 @@ void main() {
   // direction for this vertex and doubles as the surface normal.
   float offsetAngle = (0.5 - vertex.x) * 2.0 * PI;
   vec3 directionalPoint = normalize(mix(normalA, normalB, vertex.y));
-  mat4 rotMat = rotation3d(segmentTangent, offsetAngle);
-  vec3 k = normalize((rotMat * vec4(directionalPoint, 1.0)).xyz);
+  vec3 k = normalize(rotateAboutAxis(directionalPoint, segmentTangent, offsetAngle));
 
   // End caps (capSign = -1 start / +1 end) face along the segment tangent; the tube
   // wall (capSign = 0) faces radially outward along k.

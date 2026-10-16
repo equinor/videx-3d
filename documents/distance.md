@@ -10,7 +10,7 @@ providers are the building blocks for this distance‑based level of detail (LOD
 
 | Piece | Role |
 |--|--|
-| [`DistanceContext`](../src/components/Distance/DistanceContext.ts) | Carries the current camera‑to‑object distance (a `{ current: number }`), updated each frame. |
+| [`DistanceContext`](../src/components/Distance/DistanceContext.ts) | Carries the current camera‑to‑object distance (a `{ current: number }`), updated each frame, plus an optional `tolerance`: how much `current` may exceed the true distance. |
 | [`Bounds`](../src/components/Distance/Bounds.tsx) | **Generic** provider — publishes the distance from a supplied `sphere`, `box` or `position`. |
 | [`WellboreBounds`](../src/components/Wellbores/WellboreBounds/WellboreBounds.tsx) | Wellbore‑specific provider — publishes the distance from a generated wellbore bounds. |
 | [`Distance`](../src/components/Distance/Distance.tsx) | **Consumer** — shows/hides (or mounts/unmounts) its children based on that distance. |
@@ -79,10 +79,8 @@ import { Bounds, Distance } from '@equinor/videx-3d'
 
 ## `WellboreBounds` (wellbore provider)
 
-Provides the `DistanceContext` for a wellbore, computed from a generated bounds (a main
-sphere plus sampled sub‑spheres along the trajectory, so the distance is accurate even
-for long, deviated wells). Wrap wellbore visualization components in it to drive their
-LOD:
+Provides the `DistanceContext` for a wellbore: the camera's distance to the trajectory
+itself. Wrap wellbore visualization components in it to drive their LOD:
 
 ```tsx
 import { Wellbore, WellboreBounds, Distance } from '@equinor/videx-3d'
@@ -95,6 +93,27 @@ import { Wellbore, WellboreBounds, Distance } from '@equinor/videx-3d'
   </WellboreBounds>
 </Wellbore>
 ```
+
+The `wellboreBounds` generator simplifies the trajectory into a short chain of straight
+segments (stations every 10 m along the spline, simplified to within `boundsTolerance`,
+so it does not depend on how densely the well was surveyed), plus a sphere around it.
+Each frame the camera moves, the distance is:
+
+- **to the chain**, while it is below `exactWithin` — exact to within `boundsTolerance`;
+- **to the sphere**, once the sphere alone is further than `exactWithin` — one square
+  root per wellbore, never more than the true distance and never less than `exactWithin`.
+
+The two agree where they meet, so the distance never jumps, and a still camera costs
+nothing. The context's `tolerance` is set to `boundsTolerance` (divided by zoom), so a
+consumer that must never underestimate detail — like `Trajectory`'s LOD — can use
+`current - tolerance`.
+
+| Prop | Default | Meaning |
+|--|--|--|
+| `boundsTolerance` | `100` | How far the chain may stray from the trajectory, in metres. Smaller = more segments per wellbore. |
+| `exactWithin` | `3000` | Distances below this are exact; keep it at or above the largest `Distance` threshold you use. Beyond it `Trajectory` only ever draws finer, never coarser. |
+| `boundsPadding` | `0` | Subtracted from the distance, as if the wellbore were this thick, in metres. |
+| `visible` | `false` | Draws the sphere and the chain, for debugging. |
 
 ## Composing multiple swaps
 
