@@ -36,9 +36,9 @@ import {
  *
  * ⭐⭐ The point of this story is ground truth. Every detector in the fence was calibrated on
  * Volve, which a survey of four datasets says is the least representative field we hold: its
- * plan-extent ÷ TVD is 0.46 against Troll's 2.08 (2.90 and 5.34 at the extremes), and it contains
+ * plan-extent ÷ TVD is 0.46 against field-5c1be1's 2.08 (2.90 and 5.34 at the extremes), and it contains
  * no plan turn above 120° at all — so the 150° reversal rule effectively never fires there, and
- * the deviated-section plan loops that appear in Troll have no public example. Here the shape is
+ * the deviated-section plan loops that appear in field-5c1be1 have no public example. Here the shape is
  * built to order, so what a detector SHOULD say is known before it is asked.
  *
  * ⭐ `mouth` and `at` are the controls that matter. `mouth` is the defect's opening as a fraction
@@ -818,7 +818,7 @@ const meta: Meta<Props> = {
       control: { type: 'range', min: 500, max: 4000, step: 50 },
       table: { category: 'shape' },
       description:
-        'extent ÷ TVD runs 0.46 on Volve and 2.08 on Troll — keep both ends of that in the sweep',
+        'extent ÷ TVD runs 0.46 on Volve and 2.08 on field-5c1be1 — keep both ends of that in the sweep',
     },
     heading: {
       control: { type: 'range', min: -180, max: 180, step: 5 },

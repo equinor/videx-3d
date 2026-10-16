@@ -92,7 +92,7 @@ const PHASE_ORDER: SurfaceChunkPhase[] = [
   'caps',
 ];
 
-// Rough seconds per step: a cold 33-layer field (Troll) with 64-cell tiles.
+// Rough seconds per step: a cold 33-layer field (field-5c1be1) with 64-cell tiles.
 const PHASE_WEIGHTS: Record<SurfaceChunkPhase, number> = {
   fetch: 3,
   resolve: 1.2,

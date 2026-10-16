@@ -3050,6 +3050,10 @@ much. It measured 43 m out before that was fixed.
 is generated instead (§14.4). Demo data stays unmodified open data, so what a
 reader sees is reproducible from the published source.
 
+Some measurements in these documents come from fields that are not public. They
+are named by an alias: `field-` and the first 6 hex digits of the SHA-256 of the
+dataset's `config.json`. Volve keeps its name.
+
 Getting there was not a file swap. Working against a second, deeper field had grown
 four dependencies on *that* field's ids, names and origin, and every one of them
 would have failed silently rather than loudly. All four are now derived instead of
@@ -3748,7 +3752,7 @@ fragments: the full-level patch does not fit a coarse tile. Each level therefore
 gets its own patch (`patchLevels`, that level's peel set minus what it keeps) and
 tile starts (`patchTileStarts`), and `useChunkLod` draws the patch from a second
 tile pool per cap, at the same tile levels as the cap. Without it a peel or a kept
-unit left holes that LOD off did not show. Cost on Troll (33 layers): 6.3 M patch
+unit left holes that LOD off did not show. Cost on field-5c1be1 (33 layers): 6.3 M patch
 triangles over the three coarser levels, about 72 MB, paid only when the build
 asks for patches (`peelable`).
 
@@ -4044,10 +4048,10 @@ One build serves every state:
 - Under LOD (`useChunkLod`) only the full level has neighbours. A tile drawn
   coarser is kept for a cap when ANY of its full-level triangles shows, dropped
   otherwise; full-detail tiles stay exact. From above with everything opaque that
-  is exact (Troll, 33 layers: 1.15 M of 12.0 M full-level triangles either way).
+  is exact (field-5c1be1, 33 layers: 1.15 M of 12.0 M full-level triangles either way).
   With one unit open — the camera in it, or peeled — a coarse tile keeps about 2×
   (median 1.83, worst 2.94) what exact culling would. Exact culling per level
-  would need neighbours per level from the build: about +63 MB on Troll.
+  would need neighbours per level from the build: about +63 MB on field-5c1be1.
 - ⭐ Under LOD the culling lives in the cap's tile pool (`cullTilePool`). Each tile
   keeps the distinct (above, below) pairs of its full-level triangles, so a new
   table is judged per tile from a handful of pairs, not per triangle. A tile it
@@ -4055,7 +4059,7 @@ One build serves every state:
   one it only HIDES keeps drawing what it has and is applied within the frame
   budget (`flushTilePool`). Why: orbiting a point inside the block takes the
   camera through horizons as it tilts past level, and each crossing changes the
-  open units. Rebuilding every affected cap whole in one frame stuttered (Troll,
+  open units. Rebuilding every affected cap whole in one frame stuttered (field-5c1be1,
   tilt 30°→150° at 2.5 km: worst frame 150 ms, 12 frames over 50 ms, 280 MB
   uploaded); per tile it is 117 ms, 1 frame, 196 MB, most of it now the idle
   repacking of pools that the hides leave sparse.

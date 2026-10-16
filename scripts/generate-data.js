@@ -38,6 +38,7 @@
  */
 
 import minimist from 'minimist';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { transformCasings } from './transformations/transformCasings.js';
 import { transformCompletion } from './transformations/transformCompletion.js';
@@ -135,4 +136,9 @@ if (output['surface-meta']) {
 console.info('> copying seismic mock data');
 fs.copyFileSync(inPath + 'seismic.json', outPath + 'seismic.json');
 
-console.info('Generate data complete!');
+// How docs and notes name a non-public dataset: a hash of the config.json written above.
+const alias = createHash('sha256')
+  .update(JSON.stringify(output['config']))
+  .digest('hex')
+  .slice(0, 6);
+console.info('Generate data complete! Dataset alias: field-' + alias);

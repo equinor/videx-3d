@@ -3,10 +3,10 @@
  *
  * ⭐⭐ Why these exist: every constant in the fence was calibrated on Volve, and a survey of the
  * four datasets we hold says Volve is the least representative of them. Plan-extent ÷ TVD is 0.46
- * on Volve and 2.08 on Troll (max 5.34, min 0.01 across all four) — a 500× spread that no absolute
+ * on Volve and 2.08 on field-5c1be1 (max 5.34, min 0.01 across all four) — a 500× spread that no absolute
  * length constant survives. Volve also contains NO plan turn above 120°, so the 150° reversal rule
  * effectively never fires there, and it has none of the deviated-section plan loops that appear in
- * Troll. Calibrating a detector on it over-fits to one field.
+ * field-5c1be1. Calibrating a detector on it over-fits to one field.
  *
  * ⭐ The controls are deliberately ORTHOGONAL rather than a gallery of named shapes: `featureSize`
  * and `mouth` set how deep and how open the defect is, and `at` slides the SAME defect from the
@@ -536,7 +536,7 @@ export function syntheticTrajectory(
  * Named cases worth keeping fixed — the ones a detector's behaviour is argued about.
  *
  * ⭐ The two `*-envelope` entries are sized from the real datasets (plan-extent ÷ TVD of 0.46 for
- * Volve and 2.08 for Troll) so a rule is never checked against one field's proportions alone.
+ * Volve and 2.08 for field-5c1be1) so a rule is never checked against one field's proportions alone.
  */
 export const TRAJECTORY_PRESETS: Record<string, SyntheticTrajectoryOptions> = {
   straight: { defect: 'none' },
@@ -565,9 +565,9 @@ export const TRAJECTORY_PRESETS: Record<string, SyntheticTrajectoryOptions> = {
     smoothing: 1,
   },
   spiral: { defect: 'spiral', at: 0.45, featureSize: 700 },
-  // The Troll case: a plan loop over a large XZ displacement with barely any Y between the two
+  // The field-5c1be1 case: a plan loop over a large XZ displacement with barely any Y between the two
   // passes — exactly one wellbore in 929 looked like this, and nothing public does.
-  'deviated loop (troll-like)': {
+  'deviated loop (field-5c1be1-like)': {
     defect: 'loop',
     at: 0.5,
     featureSize: 700,
@@ -582,7 +582,7 @@ export const TRAJECTORY_PRESETS: Record<string, SyntheticTrajectoryOptions> = {
     totalDepth: 3100,
     reach: 900,
   },
-  'troll envelope': {
+  'field-5c1be1 envelope': {
     defect: 'fold',
     at: 0.5,
     mouth: 0.8,

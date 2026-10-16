@@ -1,6 +1,6 @@
 /**
  * Reference grid cells per {@link StackCapNormalMap} texel. 2 draws fault lines
- * dashed at the distance LOD first picks a coarser level (troll, 15 km).
+ * dashed at the distance LOD first picks a coarser level (field-5c1be1, 15 km).
  *
  * @group Geometries
  */

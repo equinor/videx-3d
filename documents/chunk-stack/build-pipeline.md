@@ -325,7 +325,7 @@ carries the vertices the OTHER layers needed: their nodes, their pinch-out lines
 tile seams. Sampled from the grid, such a vertex sits up to `maxError` off the
 layer's own TIN, and the slivers it makes with the layer's own vertices tilt the
 shading — a surface looked different depending on how many others shared its stack
-(Snorre: streaks on a cap at 40 surfaces, none at 4).
+(field-27090c: streaks on a cap at 40 surfaces, none at 4).
 
 `sampleStackOwnSurfaces` (`surface-stack-own.ts`) takes each layer from its own TIN
 instead: the triangles `collectStackCandidateLevels` returns with the nodes
@@ -347,14 +347,14 @@ instead: the triangles `collectStackCandidateLevels` returns with the nodes
 > the layer above and takes its normal; **thick** → its own surface, but never within
 > the threshold of the layer above. A vertex kept on the grid stays there for the
 > layer it is pinched against above too. Collapse and walls then come out exactly as
-> from the grid (Snorre: every cap's triangle and wall's vertex count unchanged).
+> from the grid (field-27090c: every cap's triangle and wall's vertex count unchanged).
 
 Layers taken from different TINs can still cross where the grid has them ordered, so
 the vertex resolve CLAMPS even for a `preResolved` stack, and a clamped vertex takes
 the normal of the layer above (`StackResolveOptions.normals`). The preview build and
 a layer without a TIN (a plane) are sampled from the grid.
 
-Cost (Snorre, 40 layers, 225k shared vertices): sampling 0.76 s from the grid,
+Cost (field-27090c, 40 layers, 225k shared vertices): sampling 0.76 s from the grid,
 2.55 s from the own TINs serially, **0.78 s on the pool** — the per-layer part
 (`sampleStackOwnLayer`: grid height, own height, normals) needs no other layer, so
 `SurfaceStackPlan.stitch` hands it out as jobs, and the generator runs them as
@@ -442,7 +442,7 @@ needs the whole chunk, once:
 > ⭐ **One tile is the untiled build, byte for byte.** That is a test, and it is
 > what makes the tiled path safe to have as the only path.
 
-What it costs, measured on a 33-layer field (troll, warm builds, 8 workers):
+What it costs, measured on a 33-layer field (field-5c1be1, warm builds, 8 workers):
 
 | `tileCells` | Tiles | Shared triangles | Tessellation (ms) |
 |---|---|---|---|
@@ -567,7 +567,7 @@ What a level keeps and what it thins:
   classification from the level's own pinch-out vertices, cut and coverage flags).
   Walls and cut faces stay at full detail.
 
-Measured on a 33-layer field (troll, `maxError` 5, 64-cell tiles, `levels` 3,
+Measured on a 33-layer field (field-5c1be1, `maxError` 5, 64-cell tiles, `levels` 3,
 `factor` 4):
 
 | Level | Error | Shared triangles | Cap triangles | Drawn (all passes) | GPU |
@@ -582,7 +582,7 @@ Measured on a 33-layer field (troll, `maxError` 5, 64-cell tiles, `levels` 3,
 > vertices (+31 %), which every layer's per-vertex arrays carry. Level 1 still has
 > 1 constraint failure on that field, not yet diagnosed.
 
-**Chosen per tile, see-through** (2026-10-14, troll, all 33 layers, Intel Iris Xe,
+**Chosen per tile, see-through** (2026-10-14, field-5c1be1, all 33 layers, Intel Iris Xe,
 surface and wall opacity 0.75, so no cap is culled; GPU ms, median of 9, ±10 % run to
 run because levels coarsen with hysteresis):
 
@@ -608,7 +608,7 @@ tile whose prism — the tile's footprint over the heights that cap reaches ther
 widened by the levels' height error — lies wholly outside the view (widened 10 %)
 draws nothing. It rides the same index pool: a tile coming into view is written that
 frame, one leaving is emptied within the frame budget (`viewTilePool`). Off-screen
-triangles draw no pixels, so it saves vertex work only. Measured (2026-10-15, troll,
+triangles draw no pixels, so it saves vertex work only. Measured (2026-10-15, field-5c1be1,
 opacity 0.95, `lodPixelError` 2, 64-cell tiles = 89 tiles of 3.2 km, iGPU, GPU median
 of 9, on vs off):
 

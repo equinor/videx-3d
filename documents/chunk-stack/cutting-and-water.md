@@ -208,7 +208,7 @@ section costs the same as no section at all.
 
 ⚠️ A plane that is near-HORIZONTAL inside a field-scale column is still expensive
 while it moves (a camera-locked cut seen from above): it crosses nearly every
-triangle column, so the face is about as large as the tessellation. Troll, 33
+triangle column, so the face is about as large as the tessellation. field-5c1be1, 33
 layers, sweeping through the block: about 350 ms per frame of cutting and 6 GB
 uploaded over 120 frames (27–39 GB before fix 3); a vertical cut in the same
 sweep costs about 55 ms per frame. Still, either costs nothing.

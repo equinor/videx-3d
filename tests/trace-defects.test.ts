@@ -101,7 +101,7 @@ describe('traceProblemSpans', () => {
   it('catches a loop, whose mouth has closed entirely', () => {
     const spans = traceProblemSpans(
       traceOf({
-        ...TRAJECTORY_PRESETS['deviated loop (troll-like)'],
+        ...TRAJECTORY_PRESETS['deviated loop (field-5c1be1-like)'],
         verticalDrift: 0,
       }),
     );

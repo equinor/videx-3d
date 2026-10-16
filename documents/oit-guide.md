@@ -404,7 +404,7 @@ So the number of transparent geometry passes is the lever, which is what
 | Scene | Separate front pass | `mergeFront` |
 |---|---|---|
 | Debug `transparentStack` (2.1M tris) | 29.8 ms | 23.7 ms (−20 %) |
-| OIT example story, Troll (2.5M tris) | 73.4 ms | 54.1 ms (−26 %) |
+| OIT example story, field-5c1be1 (2.5M tris) | 73.4 ms | 54.1 ms (−26 %) |
 | FieldColumn, 14 km, no water | 17.8 ms | 15.0 ms (−16 %) |
 | FieldColumn, 2.5 km | 16.4 ms | 14.1 ms (−14 %) |
 
