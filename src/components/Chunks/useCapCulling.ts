@@ -1,7 +1,11 @@
 import { RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { BufferGeometry, Object3D, PerspectiveCamera, Vector3 } from 'three';
 import { useReleasedFrame } from '../../hooks/useReleasedFrame';
-import { SurfaceChunk, SurfaceChunkMesh } from '../../sdk';
+import {
+  PlanarPolygonCoordinates,
+  SurfaceChunk,
+  SurfaceChunkMesh,
+} from '../../sdk';
 import {
   capVisibilityKey,
   createCapView,
@@ -27,16 +31,18 @@ function sameItems<T>(a: readonly T[] | null, b: readonly T[] | null) {
  * when the answer changes.
  *
  * @param root an object in the chunk's own frame (its meshes' parent)
+ * @param outline the polygon the chunk was clipped to (see `createIntervalProbe`)
  */
 export function useCameraIntervals(
   chunk: SurfaceChunk,
   root: RefObject<Object3D | null>,
   enabled: boolean,
+  outline?: PlanarPolygonCoordinates | null,
   band = 2,
 ): readonly number[] {
   const probe = useMemo(
-    () => (enabled ? createIntervalProbe(chunk) : null),
-    [chunk, enabled],
+    () => (enabled ? createIntervalProbe(chunk, outline) : null),
+    [chunk, enabled, outline],
   );
   const [units, setUnits] = useState<readonly number[]>(NONE);
   useReleasedFrame(({ camera }) => {

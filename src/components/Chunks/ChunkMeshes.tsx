@@ -12,7 +12,12 @@ import {
   Vector4,
 } from 'three';
 import { useReleasedFrame } from '../../hooks/useReleasedFrame';
-import { SurfaceChunk, SurfaceChunkMesh, StackTiling } from '../../sdk';
+import {
+  PlanarPolygonCoordinates,
+  SurfaceChunk,
+  SurfaceChunkMesh,
+  StackTiling,
+} from '../../sdk';
 import {
   DEFAULT_OCEAN_DEEP_COLOR,
   DEFAULT_OCEAN_WATER_OPACITY,
@@ -175,6 +180,8 @@ export type ChunkMeshesProps = {
   peel?: ChunkPeel;
   /** skip cap triangles buried inside the block (see `ChunkProps.cullHiddenCaps`). Default true. */
   cullHiddenCaps?: boolean;
+  /** the polygon the chunk was clipped to, in scene XZ: lets the culling tell a camera outside the block */
+  outline?: PlanarPolygonCoordinates | null;
   /** skip cap tiles outside the view while LOD draws (see `ChunkProps.cullOffscreen`). Default true. */
   cullOffscreen?: boolean;
   /**
@@ -315,6 +322,7 @@ export const ChunkMeshes = ({
   fenceCarrier = false,
   peel = 0,
   cullHiddenCaps = true,
+  outline = null,
   cullOffscreen = true,
   layersShown,
   layersHidden,
@@ -862,7 +870,7 @@ export const ChunkMeshes = ({
       wireframe,
       showWalls,
     });
-  const cameraUnits = useCameraIntervals(chunk, root, cullable);
+  const cameraUnits = useCameraIntervals(chunk, root, cullable, outline);
   const capTables = useMemo(() => {
     const boundaries = chunk.boundaries;
     if (!cullable || !boundaries) return null;

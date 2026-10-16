@@ -21,6 +21,7 @@ import {
   packSurfaceChunk,
   unpackSurfaceChunk,
 } from '../src/sdk/geometries/surface-chunk-packing';
+import type { PlanarPolygonCoordinates } from '../src/sdk/geometries/planar-geometry';
 import {
   CAP_SIDE_OPEN,
   INTERVAL_FLAT,
@@ -393,6 +394,46 @@ describe('createIntervalProbe', () => {
     expect(createIntervalProbe(c)(10, -5, 90, 0)).toEqual([0, 1]);
     expect(createIntervalProbe({ ...c })(20, -5, 80, 0)).toEqual([0, 1]);
     expect(built).toHaveBeenCalledTimes(1);
+  });
+
+  describe('off every cap, inside the bounds', () => {
+    // Every cap keeps the triangle under the diagonal x = z, and so does the outline.
+    const c = chunk([0, 1, 2]);
+    c.surfaces.forEach(s =>
+      s.geometry.setIndex(new BufferAttribute(new Uint32Array([0, 1, 2]), 1)),
+    );
+    const triangle: PlanarPolygonCoordinates = [
+      [
+        [
+          [0, 0],
+          [100, 0],
+          [100, 100],
+        ],
+      ],
+    ];
+    const square: PlanarPolygonCoordinates = [
+      [
+        [
+          [0, 0],
+          [100, 0],
+          [100, 100],
+          [0, 100],
+        ],
+      ],
+    ];
+
+    it('is outside the block beyond the band of the outline', () => {
+      const probe = createIntervalProbe(c, triangle);
+      expect(probe(10, -5, 90, 2)).toEqual([]);
+      // 7.07 m off the diagonal edge
+      expect(probe(45, -5, 55, 2)).toEqual([]);
+      expect(probe(45, -5, 55, 8)).toEqual([0, 1]);
+    });
+
+    it('opens every unit inside the outline, or with no outline', () => {
+      expect(createIntervalProbe(c, square)(10, -5, 90, 2)).toEqual([0, 1]);
+      expect(createIntervalProbe(c)(10, -5, 90, 2)).toEqual([0, 1]);
+    });
   });
 });
 

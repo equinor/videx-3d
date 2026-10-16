@@ -4022,7 +4022,11 @@ One build serves every state:
   (`TinSampler.locate`) whose weights interpolate EVERY cap's `y` (shared topology),
   widened by a 2 m band plus the near plane, which can clip a cap open. Gated by
   the caps' bounding box, so a chunk the camera is not in costs a transform and a
-  compare per frame.
+  compare per frame. A point in the box but over no cap opens every unit only if
+  it is inside the chunk's outline or within the band of it; farther out it is
+  OUTSIDE the block, as beyond the box. Without that, a camera near the wall of an
+  irregular field (inside its bounding box, off the footprint) culled nothing:
+  5.0 M → 0.88 M triangles and 15.7 → 10.1 ms GPU at one such pose (34 layers, iGPU).
 
 ⚠️ Conservative where exactness would need more data:
 

@@ -2,11 +2,15 @@ import { BufferAttribute, BufferGeometry } from 'three';
 import {
   CAP_SIDE_OPEN,
   createTinSampler,
+  distanceToSegment2D,
+  PlanarPolygonCoordinates,
+  pointInPolygon,
   SurfaceChunk,
   SurfaceChunkBoundary,
   SurfaceChunkMesh,
   TinLocation,
   TinSampler,
+  Vec2,
 } from '../../sdk';
 import type { ChunkLayer } from './chunk-defs';
 
@@ -263,9 +267,15 @@ function capLocator(geometry: BufferGeometry): TinSampler {
  * The lookup structure is built on the first query that lands inside the chunk's
  * bounds, so a chunk the camera never enters pays nothing.
  *
+ * @param outline the polygon the chunk was clipped to, in its XZ frame. A point
+ *   more than `band` outside it is outside the block, as one beyond the bounds
+ *   is; without it, every point in the bounds but off the caps opens every unit.
  * @returns `(x, y, z, band) => intervals`, in the chunk's own frame
  */
-export function createIntervalProbe(chunk: SurfaceChunk) {
+export function createIntervalProbe(
+  chunk: SurfaceChunk,
+  outline?: PlanarPolygonCoordinates | null,
+) {
   const boundaries = chunk.boundaries;
   const caps = chunk.surfaces.filter(
     s =>
@@ -310,6 +320,21 @@ export function createIntervalProbe(chunk: SurfaceChunk) {
   const heights = new Float64Array(boundaries.length);
   const all = boundaries.slice(0, -1).map((_, i) => i);
 
+  const point: Vec2 = [0, 0];
+  const nearOutline = (x: number, z: number, band: number) => {
+    if (!outline || pointInPolygon(x, z, outline)) return true;
+    point[0] = x;
+    point[1] = z;
+    for (const rings of outline) {
+      for (const ring of rings) {
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+          if (distanceToSegment2D(point, ring[j], ring[i]) <= band) return true;
+        }
+      }
+    }
+    return false;
+  };
+
   return (x: number, y: number, z: number, band: number): number[] => {
     if (
       x < minX - band ||
@@ -322,9 +347,9 @@ export function createIntervalProbe(chunk: SurfaceChunk) {
       return [];
     }
     const found = capLocator(largest.geometry).locate(x, z, at);
-    // Inside the bounds but over no cap's triangle — e.g. just past the rim, in
-    // the band. Nothing says which unit that is, so open them all.
-    if (!found) return all;
+    // Over no cap's triangle. In or near the outline nothing says which unit that
+    // is, so open them all; farther out the camera is outside the block.
+    if (!found) return nearOutline(x, z, band) ? all : [];
 
     heights.fill(NaN);
     for (const cap of caps) {

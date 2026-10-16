@@ -13,6 +13,7 @@ import { useGenerator } from '../../hooks/useGenerator';
 import {
   createSurfaceChunkProgress,
   createSurfaceChunkReceiver,
+  PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
   polygonArea,
   SurfaceChunk,
@@ -1132,6 +1133,9 @@ export const Chunk = ({
     showSurfaces,
     showWalls,
     cullHiddenCaps,
+    outline: outlinePolygon?.coordinates as
+      | PlanarPolygonCoordinates
+      | undefined,
     cullOffscreen,
     peel,
     water: stack.water,
