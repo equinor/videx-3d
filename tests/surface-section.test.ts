@@ -276,10 +276,26 @@ describe('sectionStackInterval', () => {
     for (const [x] of vertices(target)) expect(x).toBeCloseTo(50 + 0.25, 6);
   });
 
-  it('draws nothing where the plane only grazes a cell', () => {
+  it('draws nothing where the plane only touches a corner', () => {
     const source = oneCell(0, -50);
-    // x = 0 touches vertices 0 and 2 and removes nothing else.
-    expect(run(source, plane([-1, 0, 0], 0)).needed).toBe(0);
+    // x + z = 0 touches vertex 0 alone and removes nothing.
+    expect(run(source, plane([-1, 0, -1], 0)).needed).toBe(0);
+  });
+
+  it('closes a side lying on the plane once, from the kept cell', () => {
+    // Two cells sharing the edge (0, 1) on x = 50; the cell at x > 50 is removed.
+    const source: StackSectionSource = {
+      positionsXZ: Float32Array.from([50, 0, 50, 100, 0, 50, 100, 50]),
+      indices: Uint32Array.from([0, 1, 2, 1, 0, 3]),
+      heights: [
+        Float32Array.from([0, 0, 0, 0]),
+        Float32Array.from([-50, -50, -50, -50]),
+      ],
+      intervals: [packTriangleMask(Uint8Array.from([1, 1]))],
+    };
+    const { target } = run(source, plane([1, 0, 0], -50));
+    expect(area(target)).toBeCloseTo(100 * 50, 4);
+    for (const [x] of vertices(target)) expect(x).toBe(50);
   });
 });
 

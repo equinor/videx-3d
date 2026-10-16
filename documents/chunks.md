@@ -3273,7 +3273,7 @@ What that buys, in order:
 
 ⚠️ **Two things the design did not say, and both are load-bearing.** See §15.9.1:
 watertightness needs a CANONICAL edge orientation, and a cell the plane merely
-GRAZES must be skipped rather than closed.
+GRAZES must be handled on purpose: skipped at a corner, closed along a side.
 
 ### 15.3 ⭐ Section the CHANNELS, not the drawn meshes
 
@@ -3445,12 +3445,15 @@ fact:
   by `(layer, vertex index)`, which both cells agree on. The same ordering is what
   makes interval *i*'s base and interval *i+1*'s top land on identical points,
   since that boundary is one layer's heights read twice.
-- ⚠️ **A cell the plane merely GRAZES must be skipped.** Treating `d == 0` as "cut
+- ⚠️ **A cell the plane merely GRAZES is a special case.** Treating `d == 0` as "cut
   away" (which is what removes the doubled vertex when a plane passes exactly
   through a corner) also means a plane *touching* a cell classifies corners as
-  removed while removing no volume. Closing that emits a zero-area polygon whose
-  vertices are all coincident. A cell is cut only when some corner is *strictly*
-  removed.
+  removed while removing no volume. At a corner, closing that emits a zero-area
+  polygon, so it is skipped. But a whole SIDE on the plane must be closed by the
+  kept cell: the cell across it is wholly "above" and emits nothing. Skipping both
+  left slits wherever a fixed plane ran along a row of grid vertices.
+  - Side effect: an outline edge lying on the plane gets a face in front of its
+    wall (there is no cell across it to tell the two cases apart).
 
 #### 15.9.2 The channels have to be asked for
 
@@ -3861,9 +3864,8 @@ frame without the index → **31.1 ms** with it (~8×); a still section **16.7 m
 which is exactly what the same block costs with the section switched off.
 
 ⚠️ A test plane must be kept OFF the vertex lattice. A plane landing exactly on a
-column of grid vertices only GRAZES, which the cut deliberately reports as no face
-(§15.2) — an equivalence test written on a round coordinate compares two empty
-faces and proves nothing.
+column of grid vertices takes the graze path (§15.9.1), so an equivalence test
+written on a round coordinate does not exercise the ordinary cut.
 
 ## 16. Build cost: what scales with what (measured 2026-08-15/16)
 

@@ -583,14 +583,25 @@ export function sectionStackInterval(
         if (!(pd[k] < 0)) above++;
         if (pd[k] > 0) strict++;
       }
-      // Wholly on one side: no face, and the common case by a wide margin. `strict`
-      // is what separates a cut from a GRAZE — a plane touching a corner or an edge
-      // removes nothing, and closing it would emit a zero-area polygon whose
-      // vertices are all coincident.
-      if (strict === 0 || above === 6) continue;
+      // Wholly removed: no face, and the common case by a wide margin.
+      if (above === 6) continue;
 
       let m = 0;
-      for (let e = 0; e < 9; e++) {
+      if (strict === 0) {
+        // Nothing removed: at most a GRAZE. A corner on the plane closes nothing,
+        // but a whole side on it must be closed here, as the cell across it is
+        // removed and emits nothing.
+        for (let k = 0; k < 6 && m < MAX_POLY; k++) {
+          if (pd[k] !== 0) continue;
+          cutX[m] = px[k];
+          cutY[m] = py[k];
+          cutZ[m] = pz[k];
+          cutV[m] = pw[k];
+          if (marks) cutM[m] = pm[k];
+          m++;
+        }
+      }
+      for (let e = 0; e < 9 && strict > 0; e++) {
         let i0 = EDGES[e][0];
         let i1 = EDGES[e][1];
         // ⭐⭐ THE watertightness step. Two triangles sharing an XZ edge list its
