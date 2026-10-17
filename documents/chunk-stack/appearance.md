@@ -26,6 +26,7 @@ type ChunkLayer = {
   fill?: string | boolean | null;                   // the VOLUME BELOW
   detail?: ChunkDetail;                             // procedural relief on both
   opacity?: number;                                 // overrides the chunk sliders
+  capOpacity?: number;                              // the cap alone, over `opacity`
   contacts?: string[] | false;                      // which contacts draw here
   section?: boolean;                                // false = keep this unit whole
 };
@@ -47,6 +48,11 @@ There is no `colors` array and no `topMaterial` prop either.
 > not a multiplier, so it wins outright — which also means the chunk-level
 > `surfaceOpacity` / `wallOpacity` sliders no longer reach that layer. Leave it
 > unset on the layers a global transparency control should sweep.
+
+`capOpacity` splits a layer the way the two sliders split the chunk: it applies to
+the cap alone, so a see-through sea bed can lie over solid rock. Any transparent
+cap still switches hidden-cap culling off; a transparent unit under an opaque cap
+only opens that unit.
 
 ---
 

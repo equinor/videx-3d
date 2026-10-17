@@ -120,6 +120,7 @@ const CHUNK_LAYER_KEY = {
   material: { appearance: l => appearanceId(l.material) },
   detail: { appearance: l => chunkDetailKey(l.detail) },
   opacity: { appearance: l => `${l.opacity ?? ''}` },
+  capOpacity: { appearance: l => `${l.capOpacity ?? ''}` },
   section: { appearance: l => (l.section === false ? '0' : '1') },
   contacts: {
     appearance: l =>

@@ -211,6 +211,7 @@ type SyntheticColumnProps = {
   immersionBackground: boolean;
   bedTint: number;
   bedTintDepth: number;
+  bedOpacity: number;
   ship: boolean;
   shipX: number;
   shipZ: number;
@@ -241,6 +242,7 @@ type SyntheticColumnProps = {
   sectionAnimate: boolean;
   sectionAnimateSpeed: number;
   sectionWater: boolean;
+  keepBed: boolean;
   sectionCarrier: boolean;
   sectionKeep: number;
   sectionDebug: boolean;
@@ -513,6 +515,10 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
         section: false,
       };
     }
+    // The sea bed is the first unit's cap: only the cap, so the rock under it stays solid.
+    if (props.bedOpacity < 1 && units.length > 0) {
+      units[0] = { ...units[0], capOpacity: props.bedOpacity };
+    }
     // ⭐ The floor is asked for by the FILL on the last layer, and by nothing else:
     // a volume there has no next boundary to end on, so the column's carrier ends
     // it. Take the fill away and the block simply stops at its deepest surface,
@@ -529,6 +535,7 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
     props.detailStrength,
     props.floor,
     props.sectionKeep,
+    props.bedOpacity,
   ]);
 
   // The sea is the COLUMN's, not a chunk layer: one lid over the whole stack,
@@ -562,6 +569,7 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
       bedTintDepth: props.bedTintDepth,
       wetBand: props.wetBand,
       wetStrength: props.wetStrength,
+      keepBed: props.keepBed,
     };
   }, [
     props.water,
@@ -590,6 +598,7 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
     props.bedTintDepth,
     props.wetBand,
     props.wetStrength,
+    props.keepBed,
   ]);
 
   // Absent unless asked for — its presence is what installs `scene.fog`, and that
@@ -870,6 +879,7 @@ export const Default: Story = {
     immersionBackground: true,
     bedTint: 0.6,
     bedTintDepth: 80,
+    bedOpacity: 1,
     ship: true,
     shipX: 2200,
     shipZ: 1800,
@@ -900,6 +910,7 @@ export const Default: Story = {
     sectionAnimate: false,
     sectionAnimateSpeed: 1,
     sectionWater: true,
+    keepBed: false,
     sectionCarrier: true,
     sectionKeep: -1,
     sectionDebug: false,
@@ -1200,6 +1211,12 @@ export const Default: Story = {
         'Depth below sea level at which `bedTint` reaches ~86% of its strength, in metres — how tight the gradient at the shoreline is. ⚠️ Beer-Lambert saturates: at 80 anything below ~250 m is already past 95%, so on a deep bed the whole cap reads uniform and the gradient is spent around the coast. Raise it to see depth across the whole bed.',
       table: { category: 'Sea bed' },
     },
+    bedOpacity: {
+      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      description:
+        'Opacity of the sea bed CAP alone (`ChunkLayer.capOpacity` on the first unit) — the rock below stays solid. Pair with `keepBed` to leave a see-through bed over a cut. ⚠️ Below 1 it switches hidden-cap culling off, as any transparent cap does.',
+      table: { category: 'Sea bed' },
+    },
     ship: {
       control: 'boolean',
       description:
@@ -1377,6 +1394,12 @@ export const Default: Story = {
       control: 'boolean',
       description:
         'Cut the sea too. ⭐ The water body is CLOSED by a face of its own, built over the sea’s level and bed the way the block’s face is built over its layers. Off (the library default) keeps the sea whole over a sliced block, which frames it — usually what you want when the cut is only meant to expose the geology. The sea then acts as a KEPT unit: its bed cap stays whole as its floor, and no water face is drawn. ⚠️ Changing it rebuilds the two ocean materials (the cut is a shader define).',
+      table: { category: 'Section' },
+    },
+    keepBed: {
+      control: 'boolean',
+      description:
+        'Leave the sea bed CAP whole when the cut takes the sea (`StackWater.keepBed`): the bed stays as a sheet over the removed half while the rock under it is cut. No effect while `sectionWater` is off — a sea kept whole keeps its bed anyway.',
       table: { category: 'Section' },
     },
     sectionCarrier: {

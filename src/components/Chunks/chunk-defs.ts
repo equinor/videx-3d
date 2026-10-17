@@ -351,6 +351,12 @@ export type ChunkLayer = {
    */
   opacity?: number;
   /**
+   * Opacity for this layer's CAP alone, overriding `opacity` (and the chunk's
+   * `surfaceOpacity`) there. The volume below keeps `opacity` — a see-through
+   * sea bed over solid rock, say.
+   */
+  capOpacity?: number;
+  /**
    * Let the stack's section cut this unit. Default true; `false` keeps it WHOLE
    * while everything around it is cut away — a slab standing proud of the section,
    * which is how you single out a reservoir, a seal or the sea bed.
@@ -462,6 +468,12 @@ export type StackWater = OceanWaterProps &
      * triangle count grows with the square of the field size.
      */
     resolution?: number;
+    /**
+     * Leave the sea bed's CAP whole when a cut takes the sea (`ChunkSection.water`
+     * / `ChunkFence.water`), while the unit below it is cut as usual. A sea the cut
+     * leaves whole keeps its bed anyway. Default false.
+     */
+    keepBed?: boolean;
   };
 
 /**

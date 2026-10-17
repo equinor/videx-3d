@@ -27,6 +27,7 @@ import {
   capCut,
   CapCutRule,
   capOpenTable,
+  layerCapOpacity,
   openIntervals,
 } from './cap-visibility';
 import { ChunkContactTexture, resolveLayerContacts } from './chunk-contacts';
@@ -115,7 +116,8 @@ export type ChunkMeshesProps = {
   bathymetry?: ChunkDepthMap | null;
   /**
    * Whether layer 0 is the stack's sea BED. A sea a cut leaves whole keeps its bed
-   * cap whole with it, the way a kept unit keeps the cap that floors it.
+   * cap whole with it, the way a kept unit keeps the cap that floors it — and so
+   * does a cut sea under `StackWater.keepBed`.
    */
   seaBed?: boolean;
   /** whether the section takes the sea with it (see `ChunkSection.water`) */
@@ -247,14 +249,13 @@ function buildInferenceOverlays(
   surfaceOpacity: number,
   wallOpacity: number,
   wireframe: boolean,
-  seaBed: boolean,
-  sectionWater: boolean,
-  fenceWater: boolean,
+  seaBedBySection: boolean,
+  seaBedByFence: boolean,
   sectionUniform?: IUniform<Vector4>,
   fenceUniforms?: ChunkFenceUniforms,
 ) {
-  const cutSection = (i: number) => capCut(layers, i, seaBed && !sectionWater);
-  const cutFence = (i: number) => capCut(layers, i, seaBed && !fenceWater);
+  const cutSection = (i: number) => capCut(layers, i, seaBedBySection);
+  const cutFence = (i: number) => capCut(layers, i, seaBedByFence);
   const built = new Map<string, Material | null>();
   const at = (opacity: number, section: boolean, fence: boolean) => {
     if (wireframe) return null;
@@ -275,7 +276,7 @@ function buildInferenceOverlays(
   return {
     surface: (layer: number) =>
       at(
-        layers[layer]?.opacity ?? surfaceOpacity,
+        layerCapOpacity(layers[layer], surfaceOpacity),
         cutSection(layer),
         cutFence(layer),
       ),
@@ -359,6 +360,11 @@ export const ChunkMeshes = ({
   );
   useEffect(() => () => tileUniforms?.values.value.dispose(), [tileUniforms]);
 
+  // Whether each cut leaves the sea bed's cap whole: the sea is kept, or `keepBed`.
+  const keepBed = water?.keepBed === true;
+  const seaBedBySection = seaBed && (!sectionWater || keepBed);
+  const seaBedByFence = seaBed && (!fenceWater || keepBed);
+
   const materials = useMemo(() => {
     // Every material built here is owned here and disposed on cleanup.
     const owned: Material[] = [];
@@ -429,10 +435,8 @@ export const ChunkMeshes = ({
     // the cap between them, once. A sea left whole by a cut keeps its bed the same way.
     const keptUnit = (i: number) => layers[i]?.section === false;
     const cutWall = (i: number) => !keptUnit(i);
-    const cutCapBySection = (i: number) =>
-      capCut(layers, i, seaBed && !sectionWater);
-    const cutCapByFence = (i: number) =>
-      capCut(layers, i, seaBed && !fenceWater);
+    const cutCapBySection = (i: number) => capCut(layers, i, seaBedBySection);
+    const cutCapByFence = (i: number) => capCut(layers, i, seaBedByFence);
 
     // The sea tints the SHALLOWEST cap toward the water colour, as if seen through
     // the water column standing over it — the body itself only stands at the rim and
@@ -456,7 +460,7 @@ export const ChunkMeshes = ({
     const surfaces = layers.map((layer, i) =>
       make(
         layer.material ?? paletteAt(i),
-        layer.opacity ?? surfaceOpacity,
+        layerCapOpacity(layer, surfaceOpacity),
         layer.detail,
         false,
         i === 0 ? waterTint : undefined,
@@ -608,7 +612,7 @@ export const ChunkMeshes = ({
             : {
                 open: make(
                   declared.material ?? paletteAt(layer),
-                  declared.opacity ?? surfaceOpacity,
+                  layerCapOpacity(declared, surfaceOpacity),
                   declared.detail,
                   false,
                   layer === 0 ? waterTint : undefined,
@@ -622,7 +626,7 @@ export const ChunkMeshes = ({
                 cut: sectionUniformInverse
                   ? make(
                       declared.material ?? paletteAt(layer),
-                      declared.opacity ?? surfaceOpacity,
+                      layerCapOpacity(declared, surfaceOpacity),
                       declared.detail,
                       false,
                       layer === 0 ? waterTint : undefined,
@@ -655,9 +659,8 @@ export const ChunkMeshes = ({
     wireframe,
     water,
     bathymetry,
-    seaBed,
-    sectionWater,
-    fenceWater,
+    seaBedBySection,
+    seaBedByFence,
     carrierMaterial,
     carrierDetail,
     contacts,
@@ -695,9 +698,8 @@ export const ChunkMeshes = ({
         surfaceOpacity,
         wallOpacity,
         wireframe,
-        seaBed,
-        sectionWater,
-        fenceWater,
+        seaBedBySection,
+        seaBedByFence,
         sectionUniform,
         fenceUniforms,
       ),
@@ -707,9 +709,8 @@ export const ChunkMeshes = ({
       surfaceOpacity,
       wallOpacity,
       wireframe,
-      seaBed,
-      sectionWater,
-      fenceWater,
+      seaBedBySection,
+      seaBedByFence,
       sectionUniform,
       fenceUniforms,
     ],
@@ -887,10 +888,10 @@ export const ChunkMeshes = ({
     if (!open) return null;
     const cuts: CapCutRule[] = [];
     if (section || sectionUniform) {
-      cuts.push({ carrier: sectionCarrier, seaKept: seaBed && !sectionWater });
+      cuts.push({ carrier: sectionCarrier, seaKept: seaBedBySection });
     }
     if (fence) {
-      cuts.push({ carrier: fenceCarrier, seaKept: seaBed && !fenceWater });
+      cuts.push({ carrier: fenceCarrier, seaKept: seaBedByFence });
     }
     return chunk.surfaces.map(surface =>
       surface.above
@@ -911,11 +912,10 @@ export const ChunkMeshes = ({
     section,
     sectionUniform,
     sectionCarrier,
-    sectionWater,
+    seaBedBySection,
     fence,
     fenceCarrier,
-    fenceWater,
-    seaBed,
+    seaBedByFence,
   ]);
   // A cap not drawn yet gets no table, so its culled view is built when it is.
   const revealedTables = useMemo(

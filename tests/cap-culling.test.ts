@@ -234,8 +234,20 @@ describe('cap visibility rules', () => {
     expect(
       openIntervals(boundaries, state({ layers: [{}, { opacity: 0.5 }, {}] })),
     ).toBeNull();
+    expect(
+      openIntervals(
+        boundaries,
+        state({ layers: [{ capOpacity: 0.5 }, {}, {}] }),
+      ),
+    ).toBeNull();
     expect(openIntervals(boundaries, state({ wireframe: true }))).toBeNull();
     expect(openIntervals(boundaries, state({ showWalls: false }))).toBeNull();
+  });
+
+  it('culls around a see-through unit whose cap stays opaque', () => {
+    const layers = [{}, { opacity: 0.5, capOpacity: 1 }, {}];
+    const open = openIntervals(boundaries, state({ layers }))!;
+    expect([open[0], open[1]]).toEqual([0, 1]);
   });
 
   it('opens what a cut takes, around a cap that survives it', () => {
@@ -249,6 +261,11 @@ describe('cap visibility rules', () => {
     expect(capOpenTable(open, boundaries, { layer: 0 }, layers, [cut])).toBe(
       open,
     );
+    // ...unless the cut keeps the sea bed, which then lies over the cut-open unit 0.
+    const bed = capOpenTable(open, boundaries, { layer: 0 }, layers, [
+      { carrier: false, seaKept: true },
+    ]);
+    expect([bed[0], bed[1]]).toEqual([1, 0]);
     // The floor survives a cut that leaves it whole, and goes with one that does not.
     const floor = { layer: 3, ceiling: true };
     expect(capOpenTable(open, boundaries, floor, [{}, {}, {}], [cut])[0]).toBe(

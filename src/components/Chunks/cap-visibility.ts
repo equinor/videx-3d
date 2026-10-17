@@ -16,8 +16,8 @@ import type { ChunkLayer } from './chunk-defs';
 
 /**
  * Whether a cut takes cap `i`. ⭐ A unit is bounded by TWO caps, so keeping one
- * whole keeps the cap that FLOORS it too; `seaKept` makes the sea the kept unit
- * above cap 0, which is then its bed.
+ * whole keeps the cap that FLOORS it too; `seaKept` keeps cap 0, the sea bed —
+ * as the floor of a sea the cut leaves whole, or on its own (`StackWater.keepBed`).
  */
 export function capCut(
   layers: readonly ChunkLayer[],
@@ -26,6 +26,14 @@ export function capCut(
 ) {
   const kept = (j: number) => layers[j]?.section === false;
   return !kept(i) && !kept(i - 1) && !(seaKept && i === 0);
+}
+
+/** The opacity a layer's CAP is drawn with: `capOpacity`, else `opacity`, else `fallback`. */
+export function layerCapOpacity(
+  layer: ChunkLayer | undefined,
+  fallback: number,
+) {
+  return layer?.capOpacity ?? layer?.opacity ?? fallback;
 }
 
 /** What decides, per frame, which units a cap can be seen through. */
@@ -59,7 +67,7 @@ export function capCullingBlocked(
     state.wireframe ||
     !state.showWalls ||
     state.surfaceOpacity < 1 ||
-    state.layers.some(layer => layer.opacity !== undefined && layer.opacity < 1)
+    state.layers.some(layer => layerCapOpacity(layer, 1) < 1)
   );
 }
 
@@ -93,7 +101,7 @@ export function openIntervals(
 export type CapCutRule = {
   /** whether it takes the column's floor (`sectionCarrier` / `fenceCarrier`) */
   carrier: boolean;
-  /** whether the sea stays whole, keeping its bed cap */
+  /** whether it leaves the sea bed's cap whole: the sea stays, or `StackWater.keepBed` */
   seaKept: boolean;
 };
 

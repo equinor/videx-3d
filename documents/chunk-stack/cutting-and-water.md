@@ -139,6 +139,11 @@ Mutating `section.plane` directly therefore animates the section at no render co
 Turn `water: true` on when the water column itself is the subject. ⚠️ It rebuilds
 the two ocean materials (the cut is a define).
 
+`StackWater.keepBed` keeps the sea bed's **cap** whole under a cut that takes the
+sea, while the rock below it is cut as usual — the sea floor stays as a sheet over
+the opened block, which is what a subsea layout is placed on. Pair it with
+`capOpacity` on the bed layer to see the section through it.
+
 ---
 
 ## The cut face

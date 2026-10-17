@@ -400,6 +400,7 @@ type FieldColumnStoryProps = {
   sectionAnimate: boolean;
   sectionAnimateSpeed: number;
   sectionWater: boolean;
+  keepBed: boolean;
   sectionCarrier: boolean;
   sectionKeep: string;
   sectionDebug: boolean;
@@ -410,6 +411,7 @@ type FieldColumnStoryProps = {
   windSpeed: number;
   foamAmount: number;
   bedTint: number;
+  bedOpacity: number;
   bodyShimmer: number;
   immersion: boolean;
   immersionColor: string;
@@ -776,6 +778,9 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       detail,
       // Listed layers opt out of the cut, so they stand whole over the section.
       section: kept.has(i) ? false : undefined,
+      // The first drawn layer's cap is the sea bed; only the cap, not the rock under it.
+      capOpacity:
+        i === 0 && props.bedOpacity < 1 ? props.bedOpacity : undefined,
     }));
     return { layers, names };
   }, [
@@ -785,6 +790,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     props.detail,
     props.detailStrength,
     props.sectionKeep,
+    props.bedOpacity,
   ]);
 
   // --- `groups`: one chunk per level-1 stratigraphic GROUP. On `nested` each group
@@ -894,6 +900,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
             foamAmount: props.foamAmount,
             bedTint: props.bedTint,
             bodyShimmer: props.bodyShimmer,
+            keepBed: props.keepBed,
           }
         : undefined,
     [
@@ -905,6 +912,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       props.foamAmount,
       props.bedTint,
       props.bodyShimmer,
+      props.keepBed,
     ],
   );
 
@@ -1448,6 +1456,7 @@ export const Default: Story = {
     sectionAnimate: false,
     sectionAnimateSpeed: 1,
     sectionWater: false,
+    keepBed: false,
     sectionCarrier: false,
     sectionKeep: '',
     sectionDebug: false,
@@ -1459,6 +1468,7 @@ export const Default: Story = {
     windSpeed: 10,
     foamAmount: 0.5,
     bedTint: 0.6,
+    bedOpacity: 1,
     bodyShimmer: 0.5,
     // Immersion
     immersion: false,
@@ -1916,6 +1926,11 @@ export const Default: Story = {
         'Cut the sea too — with the plane or the fence, whichever is live. ⭐ The water body is CLOSED by a face of its own, built over the sea’s level and bed the same way the block’s face is built over its layers, so the two meet on the same curve. Off (the default) keeps the sea whole over a sliced block, which frames it. The sea then acts as a KEPT unit: its bed cap stays whole as its floor, and no water face is drawn. The immersion fog still reports water where the block has been opened.',
       table: { category: 'Section' },
     },
+    keepBed: {
+      description:
+        'Leave the sea bed CAP whole when the cut takes the sea (`StackWater.keepBed`): the bed stays as a sheet over the removed half while the rock under it is cut. No effect while `sectionWater` is off — a sea kept whole keeps its bed anyway.',
+      table: { category: 'Section' },
+    },
     sectionCarrier: {
       description:
         'Cut the floor too — with the plane or the fence, whichever is live. Off (the default) leaves the block standing on an intact base plate, which reads as a frame rather than as a hole.',
@@ -1959,6 +1974,12 @@ export const Default: Story = {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
       description:
         'Tint the sea bed toward the water colour by DEPTH, so the shoreline appears on its own.',
+      table: { category: 'Water' },
+    },
+    bedOpacity: {
+      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      description:
+        'Opacity of the first drawn layer’s CAP alone (`ChunkLayer.capOpacity`) — the sea bed when `water` is on; the rock below stays solid. Pair with `keepBed` to leave a see-through bed over a cut. ⚠️ Below 1 it switches hidden-cap culling off, as any transparent cap does.',
       table: { category: 'Water' },
     },
     bodyShimmer: {
