@@ -1,4 +1,4 @@
-import { Clock, PerspectiveCamera, Vector3 } from 'three';
+import { PerspectiveCamera, Vector3 } from 'three';
 
 import RBush from 'rbush';
 import { PI, Vec2, Vec3, clamp, edgeOfRectangle } from '../../sdk';
@@ -15,6 +15,11 @@ const transitionRate = 5;
 const position = new Vector3();
 
 let prevTime = 0;
+
+/** Get elapsed time in seconds, replacing deprecated THREE.Clock */
+function getElapsedTime(): number {
+  return performance.now() / 1000;
+}
 let _transform: string, _opacity: string, _zIndex: string;
 let x: number, y: number;
 
@@ -112,10 +117,10 @@ function setTransition(
 export function preprocessInstances(
   instances: AnnotationInstance[],
   camera: PerspectiveCamera,
-  clock: Clock,
   maxVisible: number,
 ) {
-  const deltaTime = clock.elapsedTime - prevTime;
+  const now = getElapsedTime();
+  const deltaTime = now - prevTime;
   const halfFovRad = (camera.fov * PI) / 360;
 
   let nInViewSpace = 0;
@@ -283,7 +288,7 @@ export function preprocessInstances(
     }
   });
 
-  prevTime = clock.elapsedTime;
+  prevTime = now;
 
   inViewspace.sort((a, b) => b.rank - a.rank);
 
