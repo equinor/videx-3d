@@ -123,6 +123,7 @@ const CHUNK_LAYER_KEY = {
   capOpacity: { appearance: l => `${l.capOpacity ?? ''}` },
   section: { appearance: l => (l.section === false ? '0' : '1') },
   keepCap: { appearance: l => (l.keepCap ? '1' : '0') },
+  drawCap: { appearance: l => (l.drawCap === false ? '0' : '1') },
   contacts: {
     appearance: l =>
       l.contacts === false ? 'none' : (l.contacts?.join('+') ?? ''),
@@ -1153,10 +1154,6 @@ export const Chunk = ({
     peel,
     water: stack.water,
     bathymetry: stack.bathymetry,
-    waterFog: stack.waterFog,
-    waterFogBed:
-      !!stableLayers[0]?.surface &&
-      stableLayers[0].surface.id === stack.column?.[0]?.id,
     seaBed:
       !!stack.water &&
       !!stableLayers[0]?.surface &&

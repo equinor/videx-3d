@@ -3,17 +3,17 @@ import { Canvas } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { scaleOrdinal } from 'd3-scale';
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { BufferAttribute, BufferGeometry, MathUtils } from 'three';
+import { BufferGeometry, MathUtils } from 'three';
 import { CameraLookAtEvent } from '../../events/camera-events';
 import { useData } from '../../hooks/useData';
 import { useGenerator } from '../../hooks/useGenerator';
 import { SurfaceMeta } from '../../sdk/data/types/SurfaceMeta';
-import { extractBoundaryLoops } from '../../sdk/geometries/boundary-loops';
 import { unpackBufferGeometry } from '../../sdk/geometries/packing';
 import { PlanarPolygonGeometry } from '../../sdk/geometries/planar-geometry';
-import { ringsToPolygonCoordinates } from '../../sdk/geometries/polygon-outline';
-import { createClippedSurface } from '../../sdk/geometries/surface-clip';
-import { createTinSampler } from '../../sdk/geometries/tin-sampler';
+import {
+  createClippedSurface,
+  SeabedMesh,
+} from '../../sdk/geometries/surface-clip';
 import { CameraManager } from '../../sdk/managers/CameraManager';
 import { Vec2, Vec3 } from '../../sdk/types/common';
 import { EnvironmentProbes } from '../../storybook/components/EnvironmentProbes';
@@ -57,7 +57,6 @@ import {
   surfaceGeometry,
   SurfaceGeometryResponse,
 } from '../Surfaces/surface-defs';
-import { useSurfaceMaterial } from '../Surfaces/useSurfaceMaterial';
 import { UtmArea, UtmAreaContext, UtmPosition } from '../UtmArea';
 import { Casings, MaterialOptions } from '../Wellbores/Casings/Casings';
 import { defaultMaterialOptions } from '../Wellbores/Casings/casings-defs';
@@ -67,11 +66,7 @@ import { Wells } from '../Wellbores/Wells/Wells';
 import { Sky } from './Sky';
 import { SkyBoxStage } from './SkyBoxStage';
 import { useSkyOcean } from './sky-context';
-import {
-  createSkyStageMaterial,
-  SkyStageElevationAt,
-  SkyStageElevations,
-} from './sky-stage';
+import { skyStageRim } from './sky-stage';
 
 // The videx `<Sky>` over the demo field: the sky and its light, the abyss, the endless
 // sea and a stage, with any surface as the seabed. Owns its canvas so lighting is local.
@@ -150,12 +145,10 @@ type SkySpikeArgs = {
   stageWater: boolean;
   stageSeabed: boolean;
   seabedSurface: string;
-  seabedShading: SeabedShading;
   seabedRelief: number;
   seabedClip: boolean;
   seabedEdgeSmoothing: number;
   seabedFalloff: number;
-  seabedBlend: number;
   environment: boolean;
   envResolution: number;
   environmentIntensity: number;
@@ -194,50 +187,31 @@ const FieldStage = (args: SkySpikeArgs) => {
   );
 };
 
-type SeabedShading = 'ramp' | 'contours' | 'solid' | 'sand';
-
 type SeabedOccupant = {
-  geometry: BufferGeometry;
+  mesh: SeabedMesh;
   outline: PlanarPolygonGeometry;
-  elevations: SkyStageElevations;
-  elevationAt: SkyStageElevationAt;
 };
 
 // A surface's own mesh as the seabed, placed as `Surface` draws it, its relief scaled
-// and lifted by `y`: its rim is the occupant's outline, with the rim's own heights.
+// and lifted by `y`: its rim is the occupant's outline.
 function createSeabedOccupant(
   surface: BufferGeometry,
   [x, y, z]: Vec3,
   relief: number,
-): SeabedOccupant {
-  const geometry = surface.clone();
-  geometry.scale(1, relief, 1);
-  geometry.translate(x, y, z);
-  geometry.computeVertexNormals();
-  const position = geometry.getAttribute('position') as BufferAttribute;
-
-  const heights = new Map<Vec2[], number[]>();
-  const rings = extractBoundaryLoops(geometry).map(loop => {
-    const ring = loop.map(i => [position.getX(i), position.getZ(i)] as Vec2);
-    heights.set(
-      ring,
-      loop.map(i => position.getY(i)),
-    );
-    return ring;
-  });
-  const coordinates = ringsToPolygonCoordinates(rings);
-  const sampler = createTinSampler(
-    position.array,
-    geometry.getIndex()?.array ?? null,
-  );
-  return {
-    geometry,
-    outline: new PlanarPolygonGeometry(coordinates),
-    elevations: coordinates.map(component =>
-      component.map(ring => heights.get(ring as Vec2[]) ?? []),
-    ),
-    elevationAt: (px, pz) => sampler.getHeightAt(px, pz),
+): SeabedOccupant | null {
+  const index = surface.getIndex();
+  if (!index) return null;
+  const positions = Float32Array.from(surface.getAttribute('position').array);
+  for (let i = 0; i < positions.length; i += 3) {
+    positions[i] += x;
+    positions[i + 1] = positions[i + 1] * relief + y;
+    positions[i + 2] += z;
+  }
+  const mesh: SeabedMesh = {
+    positions,
+    indices: index.array as Uint32Array | Uint16Array,
   };
+  return { mesh, outline: skyStageRim(mesh).outline };
 }
 
 // From the store rather than the catalogue file, which lists no generated surfaces.
@@ -260,8 +234,8 @@ const useStoreSurfaceMeta = (id: string) => {
   return meta;
 };
 
-// Any surface as the seabed: its deepest point on the sea's seabed at `depth`, its relief
-// scaled.
+// Any surface as the seabed, handed to the stage, which draws it as the sea's: its
+// deepest point on the sea's seabed at `depth`, its relief scaled.
 const SeabedStage = ({
   meta,
   depth,
@@ -332,70 +306,19 @@ const SeabedStage = ({
     [mesh, place, lift, args.seabedRelief],
   );
 
-  useEffect(() => () => occupant?.geometry.dispose(), [occupant]);
-
-  const sand = useMemo(
-    () =>
-      ocean
-        ? createSkyStageMaterial(
-            ocean.material,
-            args.stageWater ? 'relief-bed' : 'dry-relief-bed',
-          )
-        : null,
-    [ocean, args.stageWater],
-  );
-
-  useEffect(() => () => sand?.dispose(), [sand]);
-
-  // The same material `Surface` draws with: it reads the data, not the geometry.
-  const surfaceMaterial = useSurfaceMaterial(meta, {
-    useColorRamp: args.seabedShading !== 'solid',
-    colorRamp: 3,
-    rampMin: meta?.displayMin,
-    rampMax: meta?.displayMax,
-    showContours: args.seabedShading === 'contours',
-    contoursInterval: 25,
-    color: args.oceanBed,
-    doubleSide: true,
-  });
-
-  if (!occupant || !mesh) return null;
+  if (!occupant || !ocean || !args.stage) return null;
   const { min, max } = occupant.outline.getBounds();
   const m = args.stageMargin;
-  const shown = args.stageSeabed;
   return (
-    <>
-      {shown &&
-        (args.seabedShading === 'sand' && ocean && sand ? (
-          <mesh
-            geometry={occupant.geometry}
-            material={sand}
-            onBeforeRender={(renderer, _, camera) =>
-              ocean.material.setStageView(renderer, camera)
-            }
-          />
-        ) : (
-          <UtmPosition easting={meta.header.xori} northing={meta.header.yori}>
-            <group position-y={lift} scale-y={args.seabedRelief}>
-              <mesh geometry={mesh} material={surfaceMaterial} />
-            </group>
-          </UtmPosition>
-        ))}
-      {args.stage && ocean && (
-        <SkyBoxStage
-          bounds={[min[0] - m, min[1] - m, max[0] + m, max[1] + m]}
-          occupant={{
-            outline: occupant.outline,
-            elevations: shown ? occupant.elevations : undefined,
-            elevationAt: occupant.elevationAt,
-            water: args.stageWater,
-            seabed: false,
-          }}
-          seabedFalloff={args.seabedFalloff}
-          seabedBlend={args.seabedBlend}
-        />
-      )}
-    </>
+    <SkyBoxStage
+      bounds={[min[0] - m, min[1] - m, max[0] + m, max[1] + m]}
+      occupant={{
+        outline: occupant.outline,
+        water: args.stageWater,
+        seabed: args.stageSeabed ? occupant.mesh : false,
+      }}
+      seabedFalloff={args.seabedFalloff}
+    />
   );
 };
 
@@ -741,11 +664,6 @@ const meta = {
       },
       table: { category: 'Seabed' },
     },
-    seabedShading: {
-      options: ['ramp', 'contours', 'solid', 'sand'],
-      control: { type: 'radio' },
-      table: { category: 'Seabed' },
-    },
     seabedRelief: range(0, 3, 0.05, 'Seabed'),
     seabedClip: {
       description:
@@ -755,7 +673,6 @@ const meta = {
     },
     seabedEdgeSmoothing: range(0, 10, 0.5, 'Seabed'),
     seabedFalloff: range(0, 20000, 100, 'Seabed'),
-    seabedBlend: range(0, 3000, 50, 'Seabed'),
     ...skyCutawayArgTypes(),
     lightIntensity: range(0, 5, 0.05, 'Lighting'),
     ambientIntensity: range(0, 2, 0.05, 'Lighting'),
@@ -855,12 +772,10 @@ export const Default: Story = {
     stageWater: true,
     stageSeabed: true,
     seabedSurface: '',
-    seabedShading: 'ramp',
     seabedRelief: 1,
     seabedClip: false,
     seabedEdgeSmoothing: 0,
     seabedFalloff: 3000,
-    seabedBlend: 500,
     ...skyCutawayArgs,
     ...skySunArgs,
     sunElevation: 30,

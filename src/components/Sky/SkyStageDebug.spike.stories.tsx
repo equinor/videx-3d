@@ -1,8 +1,6 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect, useMemo } from 'react';
-import { BufferAttribute, BufferGeometry, MeshBasicMaterial } from 'three';
-import { createLayers, LAYERS } from '../../layers/layers';
+import { useMemo } from 'react';
 import { Pass } from '../../rendering/Pass';
 import { RenderingPipeline } from '../../rendering/RenderingPipeline';
 import { OITRenderPass } from '../../rendering/passes/OITRenderPass';
@@ -11,7 +9,7 @@ import {
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
 } from '../../sdk/geometries/planar-geometry';
-import { pointInPolygon } from '../../sdk/geometries/polygon-outline';
+import type { SeabedMesh } from '../../sdk/geometries/surface-clip';
 import { EnvironmentProbes } from '../../storybook/components/EnvironmentProbes';
 import {
   skyCutawayArgs,
@@ -35,20 +33,14 @@ import {
   toneMappingArgTypes,
 } from '../../storybook/components/tone-mapping-controls';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
-import { ChunkMaterial } from '../Chunks/chunk-material';
 import { RenderStats } from '../Html/RenderStats/RenderStats';
 import { Sky, SkyLayer } from './Sky';
 import { SkyBoxStage, SkyBoxStageLayer } from './SkyBoxStage';
-import { useSkyWaterFog } from './sky-context';
 import { skyDefaults } from './sky-model';
-import {
-  SkyStageBounds,
-  SkyStageElevationAt,
-  SkyStageElevations,
-} from './sky-stage';
+import { SkyStageBounds } from './sky-stage';
 
-// How the sky, its stage and an occupant fit together: a synthetic seabed as the occupant,
-// lit and fogged as the sky's own, and debug views that only change what is drawn.
+// How the sky, its stage and an occupant fit together: a synthetic seabed handed to the
+// stage as the occupant's, and debug views that only change what is drawn.
 
 const LEVEL = 0;
 const DEPTH = 100;
@@ -57,8 +49,6 @@ const RADIUS = 3000;
 const RINGS = 40;
 const SEGMENTS = 192;
 const BOUNDS: SkyStageBounds = [-8000, -8000, 8000, 8000];
-// Drawn last by the OITRenderPass too, over its transparent layers.
-const OVERLAY_LAYERS = createLayers(LAYERS.OVERLAY);
 
 // A lobed outline, so the stage meets it along turns of both hands.
 const rimRadius = (angle: number) =>
@@ -85,10 +75,8 @@ const seabedHeight = (x: number, z: number) => {
 };
 
 type SyntheticSeabed = {
-  geometry: BufferGeometry;
+  mesh: SeabedMesh;
   outline: PlanarPolygonGeometry;
-  elevations: SkyStageElevations;
-  elevationAt: SkyStageElevationAt;
 };
 
 // A polar grid out to the outline, whose outer ring IS the outline.
@@ -115,73 +103,14 @@ function createSyntheticSeabed(): SyntheticSeabed {
       indices.push(at(k, j), at(k - 1, j + 1), at(k, j + 1));
     }
   }
-  const geometry = new BufferGeometry();
-  geometry.setAttribute(
-    'position',
-    new BufferAttribute(new Float32Array(positions), 3),
-  );
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-
-  const coordinates: PlanarPolygonCoordinates = [[ring]];
   return {
-    geometry,
-    outline: new PlanarPolygonGeometry(coordinates),
-    elevations: [[ring.map(([x, z]) => seabedHeight(x, z))]],
-    elevationAt: (x, z) =>
-      pointInPolygon(x, z, coordinates) ? seabedHeight(x, z) : null,
+    mesh: {
+      positions: new Float32Array(positions),
+      indices: new Uint32Array(indices),
+    },
+    outline: new PlanarPolygonGeometry([[ring]] as PlanarPolygonCoordinates),
   };
 }
-
-// Drawn as a chunk would draw it, with the sky's seabed look and water.
-const Occupant = ({
-  seabed,
-  visible,
-  wireframe,
-}: {
-  seabed: SyntheticSeabed;
-  visible: boolean;
-  wireframe: boolean;
-}) => {
-  const fog = useSkyWaterFog();
-  const material = useMemo(
-    () =>
-      new ChunkMaterial({
-        color: skyDefaults.ocean.seabed.color,
-        detail: skyDefaults.ocean.seabed.detail,
-        waterFog: fog ?? undefined,
-        waterFogBed: true,
-      }),
-    [fog],
-  );
-  useEffect(() => () => material.dispose(), [material]);
-  const wire = useMemo(
-    () =>
-      new MeshBasicMaterial({
-        color: '#d8d8d8',
-        wireframe: true,
-        transparent: true,
-        depthTest: false,
-        depthWrite: false,
-        toneMapped: false,
-      }),
-    [],
-  );
-  useEffect(() => () => wire.dispose(), [wire]);
-  return (
-    <>
-      <mesh geometry={seabed.geometry} material={material} visible={visible} />
-      {wireframe && visible && (
-        <mesh
-          geometry={seabed.geometry}
-          material={wire}
-          renderOrder={1e9}
-          layers={OVERLAY_LAYERS}
-        />
-      )}
-    </>
-  );
-};
 
 const OitPipeline = () => {
   const scene = useThree(s => s.scene);
@@ -206,11 +135,11 @@ const STAGE_LAYERS: SkyBoxStageLayer[] = [
   'bed',
   'relief',
   'inner-bed',
-  'band',
+  'occupant-bed',
   'walls',
 ];
 
-const HIDE_OPTIONS = [...Object.keys(SKY_LAYERS), ...STAGE_LAYERS, 'occupant'];
+const HIDE_OPTIONS = [...Object.keys(SKY_LAYERS), ...STAGE_LAYERS];
 
 type StageDebugArgs = {
   occupant: boolean;
@@ -251,7 +180,6 @@ type StageDebugArgs = {
 
 const StageDebug = (args: StageDebugArgs) => {
   const seabed = useMemo(createSyntheticSeabed, []);
-  useEffect(() => () => seabed.geometry.dispose(), [seabed]);
   const hide = args.hide ?? [];
 
   return (
@@ -309,14 +237,7 @@ const StageDebug = (args: StageDebugArgs) => {
             args.occupant
               ? {
                   outline: seabed.outline,
-                  elevations: args.occupantSeabed
-                    ? seabed.elevations
-                    : undefined,
-                  elevationAt: args.occupantSeabed
-                    ? seabed.elevationAt
-                    : undefined,
-                  tolerance: 1,
-                  seabed: !args.occupantSeabed,
+                  seabed: args.occupantSeabed ? seabed.mesh : true,
                   water: args.occupantWater,
                 }
               : undefined
@@ -327,13 +248,6 @@ const StageDebug = (args: StageDebugArgs) => {
             hide: STAGE_LAYERS.filter(l => hide.includes(l)),
           }}
         />
-        {args.occupant && args.occupantSeabed && (
-          <Occupant
-            seabed={seabed}
-            visible={!hide.includes('occupant')}
-            wireframe={args.wireframe}
-          />
-        )}
         {args.showProbes && (
           <EnvironmentProbes
             size={args.probeSize}
@@ -367,7 +281,7 @@ const meta = {
     },
     occupantSeabed: {
       description:
-        'The occupant draws its own seabed (the synthetic one), and the stage eases into it: `relief` and `band`. Off, the stage keeps its flat seabed under the outline: `inner-bed`. Changes the stage, unlike the debug options.',
+        'The occupant hands the stage its own seabed (the synthetic one), which the stage draws as the sea\u2019s: `occupant-bed`, eased into the stage\u2019s own by the `relief`. Off, the stage keeps its flat seabed under the outline: `inner-bed`. Changes the stage, unlike the debug options.',
       table: { category: 'Occupant' },
     },
     occupantWater: {
@@ -506,7 +420,7 @@ const meta = {
     },
     tint: {
       description:
-        'Tint each part by what draws it. The sky: its sea, seabed and void red, what it leaves to the stage purple, its surface layer orange. The stage: surface blue, flat seabed green, relief cyan, band magenta, walls yellow. Untinted is the occupant.',
+        'Tint each part by what draws it. The sky: its sea, seabed and void red, what it leaves to the stage purple, its surface layer orange. The stage: surface blue, flat seabed green, relief cyan, the occupant\u2019s seabed magenta, walls yellow.',
       table: { category: 'Debug' },
     },
     outline: {
@@ -516,7 +430,7 @@ const meta = {
     },
     wireframe: {
       description:
-        'The triangles of every layer drawn, over everything: the stage’s in its `tint` colours, the occupant’s in light grey.',
+        'The triangles of every layer drawn, over everything, in their `tint` colours.',
       table: { category: 'Debug' },
     },
     hide: {

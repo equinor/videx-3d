@@ -1,6 +1,8 @@
 // A stage's real geometry, shaded with the sky's own sea so it continues the background
 // without a seam. One of STAGE_SURFACE, STAGE_BED or STAGE_WALL is defined; STAGE_DRY
-// marks a seabed with no water over it, STAGE_DRAINED a wall around a drained hole.
+// marks a seabed with no water over it, STAGE_DRAINED a wall around a drained hole, and
+// STAGE_OCCUPANT an occupant's own seabed, which the cutaway never cuts. STAGE_SECTION and
+// STAGE_FENCE cut that seabed with the occupant instead, by its own uniforms.
 
 #include <common>
 #include <logdepthbuf_pars_fragment>
@@ -21,9 +23,30 @@ varying float vStageWallV;
 #ifdef STAGE_RELIEF
 varying vec3 vStageNormal;
 #endif
-#ifdef STAGE_BAND
-varying float vStageFade;
+
+#ifdef STAGE_SECTION
+uniform vec4 sectionPlane; // the half-space it points at is cut away
 #endif
+#ifdef STAGE_FENCE
+uniform vec2 fenceParams; // x: 1 while the cut is live, y: +1 keeps the block
+uniform sampler2D fenceMap;
+uniform mat3 fenceToUv;
+uniform vec2 fenceSize;
+#include ../../../sdk/materials/shaderLib/fence-field.glsl
+#endif
+
+// Cut away with the occupant, by its section and its fence, as the occupant cuts itself.
+bool stageCutAway() {
+  #ifdef STAGE_SECTION
+  if(dot(sectionPlane.xyz, vStageWorld) + sectionPlane.w > 0.0)
+    return true;
+  #endif
+  #ifdef STAGE_FENCE
+  if(fenceParams.x > 0.5 && fenceParams.y * fenceSide(fenceMap, fenceToUv, fenceSize, vStageWorld.xz) < 0.0)
+    return true;
+  #endif
+  return false;
+}
 
 #ifdef USE_OIT
 #include ../../../sdk/materials/shaderLib/oit.glsl
@@ -115,33 +138,30 @@ void main() {
   vec3 color = skyOceanBed(world, up, bedDepth);
   float cutaway = skyOceanCutawayAlong(cameraPosition, world);
   float seabed = skyOceanCutawaySeabed(cutaway);
+    #ifdef STAGE_OCCUPANT
+  seabed = 1.0;
+    #endif
   if(fromAbove) {
       #ifndef STAGE_DRY
     float light = skyOceanLight(0.5 * (bedDepth + max(-altitude, 0.0)));
     float path = skyOceanPathBelowSurface(cameraPosition, world) * skyOceanCutawayWater(cutaway);
     color = skyOceanFog(color, path, light);
       #endif
-      #ifndef STAGE_BAND
         // Bitten through: the void, as the background draws it through the gap. Without its
         // rock: it cannot show in the edge's fade under the rim, and would cost a copy.
     if(seabed < 1.0)
       color = mix(skyOceanThroughCutaway(skyAbyssGradient(y), dir, cameraPosition), color, seabed);
-      #endif
   } else {
       // From the void: the lid, as the background draws it.
     color = skyAbyssCeiling(world, distance(cameraPosition, world));
     if(uSkyAbyssDarkening > 0.0)
       color *= exp((altitude + bedDepth) / uSkyAbyssDarkening);
   }
-    #ifdef STAGE_BAND
-      // Over an occupant's seabed, which the cutaway leaves.
-  gl_FragColor = vec4(color, vStageFade * seabed);
-    #else
-      // Bitten through, what lies behind shows, with the background's void beyond.
-  if(seabed < 1e-3)
+      // Bitten through, what lies behind shows, with the background's void beyond. Cut
+      // away with the occupant only here, once the derivatives above are taken.
+  if(seabed < 1e-3 || stageCutAway())
     discard;
   gl_FragColor = vec4(color, 1.0);
-    #endif
   if(skyDraws)
     discard;
   #else
@@ -170,7 +190,7 @@ void main() {
   // Debug tints (SkyDebug.tint), by part.
   #if defined(STAGE_SURFACE)
   vec3 debugTint = vec3(0.1, 0.35, 1.0);
-  #elif defined(STAGE_BAND)
+  #elif defined(STAGE_OCCUPANT)
   vec3 debugTint = vec3(1.0, 0.1, 0.8);
   #elif defined(STAGE_RELIEF)
   vec3 debugTint = vec3(0.0, 0.85, 0.9);

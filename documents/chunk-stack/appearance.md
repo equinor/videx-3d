@@ -27,6 +27,7 @@ type ChunkLayer = {
   detail?: ChunkDetail;                             // procedural relief on both
   opacity?: number;                                 // overrides the chunk sliders
   capOpacity?: number;                              // the cap alone, over `opacity`
+  drawCap?: boolean;                                // false = built, but drawn by someone else
   contacts?: string[] | false;                      // which contacts draw here
   section?: boolean;                                // false = keep this unit whole
 };
@@ -53,6 +54,14 @@ There is no `colors` array and no `topMaterial` prop either.
 the cap alone, so a see-through sea bed can lie over solid rock. Any transparent
 cap still switches hidden-cap culling off; a transparent unit under an opaque cap
 only opens that unit.
+
+`drawCap: false` keeps a layer's cap in the build — its walls, cuts and hidden-cap
+culling are unchanged — but does not draw it, because something else does: typically a
+`SkyBoxStage` the sea bed was handed to (see [sky.md](../sky.md#skyboxstage)), which
+draws it as the sea's seabed, under its water. ⚠️ Culling still counts the cap as
+covering what is under it, so whatever draws it must draw it opaque, and whole or cut
+exactly as the stack cuts it: the stack hands its cut out through `onCut` for that.
+Toggling it makes new materials (it is part of the appearance key), not new geometry.
 
 ---
 
@@ -120,10 +129,8 @@ type ChunkMaterialParameters = {
   detail?: ChunkDetail;                // procedural relief
   wall?: boolean;                      // anchor detail to the unit, not to depth
   waterTint?: ChunkWaterTintParameters;
-  waterFog?: WaterFogUniforms;         // fog through a body of water: the Sky's sea (ChunkStackProps.waterFog)
-  waterFogBed?: boolean;               // this layer is the seabed: all the water over it fogs it
   sectionPlane?: IUniform<Vector4>;    // the shared plane uniform
-  fence?: ChunkFenceUniforms;          // the shared fence uniforms
+  fence?: ChunkFenceUniforms;          // the shared fence uniforms (the sdk's FenceFieldUniforms)
   contacts?: ChunkContactTexture[];
 };
 ```
@@ -136,13 +143,11 @@ appearance memo produces (a fresh identity also makes the OIT pass re-classify).
 
 `CHUNK_AMBIENT`, `SURFACE_DETAIL` (+ `SURFACE_DETAIL_GRANULAR`, `SURFACE_DETAIL_GRAIN`,
 `SURFACE_DETAIL_DUNES`, `SURFACE_DETAIL_BEDDING`; set by the sdk's `applySurfaceDetail`),
-`CHUNK_WALL`, `CHUNK_WATER_TINT`, `CHUNK_BATHYMETRY`, `CHUNK_WATER_FOG` (+ `CHUNK_WATER_FOG_BED`),
+`CHUNK_WALL`, `CHUNK_WATER_TINT`, `CHUNK_BATHYMETRY`,
 `CHUNK_SECTION`, `CHUNK_FENCE`, `CHUNK_CONTACTS` (whose value is the count).
 
-`waterFog` shares its arithmetic with the `Sky`'s sea (`sdk/materials/shaderLib/water-fog.glsl`):
-the seabed cap is dimmed by the water over it and fogged along the view ray below the surface,
-exactly as the sky's own seabed is; anything below the seabed only by the water above the
-sea's depth (`WaterFogUniforms.depth`).
+The fence uniforms are bound with the sdk's `applyFenceField`, as every material cut by a
+fence binds them, under the names `shaderLib/fence-field.glsl` reads.
 
 ### Ambient, and why it is there
 

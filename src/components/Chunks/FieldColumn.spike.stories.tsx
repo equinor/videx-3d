@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { BufferAttribute, Plane, Vector3 } from 'three';
+import { Plane, Vector3 } from 'three';
 import {
   CameraFlyToEvent,
   CameraFocusAtPointEvent,
@@ -26,6 +26,7 @@ import { OutputPass } from '../../rendering/passes/OutputPass';
 import { RenderingPipeline } from '../../rendering/RenderingPipeline';
 import {
   CRS,
+  CutUniforms,
   FenceSideName,
   fenceViewPose,
   getProjectionDefFromUtmZone,
@@ -39,10 +40,7 @@ import {
   Vec3,
   WellboreFence,
 } from '../../sdk';
-import { unpackBufferGeometry } from '../../sdk/geometries/packing';
-import { PlanarPolygonCoordinates } from '../../sdk/geometries/planar-geometry';
-import { createTinSampler } from '../../sdk/geometries/tin-sampler';
-import { WaterFogUniforms } from '../../sdk/materials/water-fog';
+import type { SeabedMesh } from '../../sdk/geometries/surface-clip';
 import { ResourceMonitor } from '../../storybook/components/ResourceMonitor';
 import {
   skyCutawayArgs,
@@ -87,13 +85,9 @@ import { useHighlighter } from '../Highlighter/highlight-state';
 import { Highlighter } from '../Highlighter/Highlighter';
 import { RenderStats } from '../Html/RenderStats/RenderStats';
 import { Sky } from '../Sky/Sky';
-import { useSkyWaterFog } from '../Sky/sky-context';
-import { SkyStageElevationAt, SkyStageElevations } from '../Sky/sky-stage';
+import { skySeabed, SkySeabedResponse } from '../Sky/sky-defs';
+import { skyStageRim } from '../Sky/sky-stage';
 import { SkyBoxStage } from '../Sky/SkyBoxStage';
-import {
-  surfaceGeometry,
-  SurfaceGeometryResponse,
-} from '../Surfaces/surface-defs';
 import { UtmArea } from '../UtmArea';
 import { UtmPosition } from '../UtmArea/UtmPosition';
 import { Trajectory } from '../Wellbores/Trajectory/Trajectory';
@@ -511,84 +505,50 @@ type FieldColumnStoryProps = {
   sunElevation: number;
   stageMargin: number;
   seabedFalloff: number;
-  seabedBlend: number;
 } & ChunkProgressArgs &
   SkyCutawayArgs;
 
 type ColumnBed = {
-  elevations: SkyStageElevations;
-  elevationAt: SkyStageElevationAt;
-  /** the heights along the outline, ascending */
+  mesh: SeabedMesh;
+  /** the heights along its rim, ascending */
   rim: number[];
 };
 
 /**
- * The column's top surface as the sky's stage needs it, in scene Y: its heights along
- * the column's outline, and anywhere under it.
+ * The column's sea bed as the sky's stage takes it, in the scene frame: the surface
+ * clipped to the column's outline at the column's `maxError`, and its heights along
+ * that outline. Built by a generator, so the grid never comes to this thread.
  */
 const useColumnBed = (
   meta: SurfaceMeta | undefined,
   outline: PlanarPolygonGeometry | null,
+  maxError: number,
 ): ColumnBed | null => {
-  const generator = useGenerator<SurfaceGeometryResponse>(surfaceGeometry);
+  const generator = useGenerator<SkySeabedResponse>(skySeabed);
   const [bed, setBed] = useState<ColumnBed | null>(null);
   useEffect(() => {
     setBed(null);
     if (!meta || !outline || !generator) return;
     let current = true;
-    generator(meta.id, 5, true, 0).then(response => {
-      if (!current || !response) return;
-      // Where `Surface` places it: at the survey origin, at its real depth.
-      const geometry = unpackBufferGeometry(response);
-      const p = crs.utmToWorld(meta.header.xori, meta.header.yori, 0);
-      geometry.translate(p.x, p.y, p.z);
-      const sampler = createTinSampler(
-        (geometry.getAttribute('position') as BufferAttribute).array,
-        geometry.getIndex()?.array ?? null,
-      );
-      const elevationAt: SkyStageElevationAt = (x, z) =>
-        sampler.getHeightAt(x, z);
-      const sampled = (outline.coordinates as PlanarPolygonCoordinates).map(
-        component =>
-          component.map(ring => ring.map(([x, z]) => elevationAt(x, z))),
-      );
-      const rim = sampled
-        .flat(2)
-        .filter((h): h is number => h !== null)
+    // Where `Surface` places it: at the survey origin, at its real depth.
+    const p = crs.utmToWorld(meta.header.xori, meta.header.yori, 0);
+    generator(meta.id, outline.coordinates, [p.x, p.z], maxError).then(mesh => {
+      if (!current || !mesh) return;
+      const rim = skyStageRim(mesh)
+        .elevations.flat(2)
         .sort((a, b) => a - b);
-      if (rim.length === 0) return;
-      // Off the surface's data, the rim's median.
-      const fill = rim[rim.length >> 1];
-      setBed({
-        elevations: sampled.map(c => c.map(r => r.map(h => h ?? fill))),
-        elevationAt,
-        rim,
-      });
+      if (rim.length > 0) setBed({ mesh, rim });
     });
     return () => {
       current = false;
     };
-  }, [generator, meta, outline]);
+  }, [generator, meta, outline, maxError]);
   return bed;
 };
 
 /** Publishes `window.videx3d.locate('wellbore', id)`; must sit inside `UtmArea`. */
 const Videx3dLocate = () => {
   useVidex3dLocate();
-  return null;
-};
-
-/** Hands the sky's water out of `<Sky>` to the stack beside it. */
-const SkyWaterFogBridge = ({
-  onChange,
-}: {
-  onChange: (fog: WaterFogUniforms | null) => void;
-}) => {
-  const fog = useSkyWaterFog();
-  useEffect(() => {
-    onChange(fog);
-    return () => onChange(null);
-  }, [fog, onChange]);
   return null;
 };
 
@@ -845,6 +805,16 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     [column, props.surfaceFrom, props.surfaceCount],
   );
 
+  // The dataset's sea bed, whether or not the column draws it: the sky's seabed lies
+  // at it. While the sky's stage draws it, as the sea's, the column hides its own cap.
+  const seabedMeta = SEABED_ID ? surfaceMetaDict[SEABED_ID] : GENERATED_SEABED;
+  // Peeled, the column no longer has the sea bed on top.
+  const drawsSeabed =
+    !!seabedMeta && selected[0]?.id === seabedMeta.id && !(props.peel > 0);
+  const [seabedOnStage, setSeabedOnStage] = useState(false);
+  const bedOnStage = drawsSeabed && seabedOnStage;
+  const [stackCut, setStackCut] = useState<CutUniforms | null>(null);
+
   // ⭐ COLOUR IS THE HOST'S JOB. The library takes array order as stratigraphic
   // order and never assigns a colour; here the story maps each surface's name to
   // the strat column's unit and takes the colour the column itself gives it —
@@ -884,6 +854,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       capOpacity:
         i === 0 && props.bedOpacity < 1 ? props.bedOpacity : undefined,
       keepCap: i === 0 && props.keepBed ? true : undefined,
+      drawCap: i === 0 && bedOnStage ? false : undefined,
     }));
     return { layers, names };
   }, [
@@ -895,6 +866,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     props.sectionKeep,
     props.bedOpacity,
     props.keepBed,
+    bedOnStage,
   ]);
 
   // --- `groups`: one chunk per level-1 stratigraphic GROUP. On `nested` each group
@@ -1334,18 +1306,14 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
   );
 
   // The sky's seabed lies at the dataset's sea bed, along the outline — shallowest,
-  // median or deepest — whether or not the column draws it. Without water or seabed
-  // the sky has no sea, and no stage.
+  // median or deepest. Without water or seabed the sky has no sea, and no stage.
   const sea = props.skyWater || props.skySeabed;
-  const seabedMeta =
-    (SEABED_ID ? surfaceMetaDict[SEABED_ID] : GENERATED_SEABED) ?? selected[0];
-  const drawsSeabed = !!seabedMeta && selected[0]?.id === seabedMeta.id;
-  const bed = useColumnBed(props.sky && sea ? seabedMeta : undefined, outline);
+  const bed = useColumnBed(
+    props.sky && sea && seabedMeta ? seabedMeta : undefined,
+    outline,
+    props.maxError,
+  );
   const skyLevel = -props.seaLevel;
-  // The sky's water fogs the column wherever the stage leaves its water over it.
-  const [skyFog, setSkyFog] = useState<WaterFogUniforms | null>(null);
-  const waterFog =
-    props.sky && props.skyWater && props.stageWater ? skyFog : null;
   const bedHeight = bed
     ? props.skyBed === 'top'
       ? bed.rim[bed.rim.length - 1]
@@ -1373,12 +1341,12 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
           outline={outline}
           surfaces={column}
           water={water}
-          waterFog={waterFog}
           immersion={immersion}
           section={section}
           fence={fence}
           onFence={onFence}
           onFenceSide={setFenceSideInfo}
+          onCut={setStackCut}
           onProgress={onProgress}
           resolve={resolve}
           rimSpacing={props.rimSpacing}
@@ -1489,7 +1457,6 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
             }
           }
         >
-          <SkyWaterFogBridge onChange={setSkyFog} />
           {sea && bed && (
             <SkyBoxStage
               bounds={[
@@ -1500,16 +1467,18 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
               ]}
               occupant={{
                 outline,
-                // While the column draws the seabed; without it, the outline is open.
-                elevations: drawsSeabed ? bed.elevations : undefined,
-                elevationAt: bed.elevationAt,
-                // Two tessellations, each within `maxError` of the surface.
-                tolerance: 2 * props.maxError,
+                // While the column draws the sea bed, the stage draws it instead, as
+                // the sea's; without it, the outline is open.
+                seabed: drawsSeabed ? bed.mesh : false,
+                // Cut with the column, unless the column keeps its sea bed whole.
+                cut:
+                  layers[0]?.keepCap || layers[0]?.section === false
+                    ? undefined
+                    : (stackCut ?? undefined),
                 water: props.stageWater,
-                seabed: false,
+                onStage: state => setSeabedOnStage(state.seabed),
               }}
               seabedFalloff={props.seabedFalloff}
-              seabedBlend={props.seabedBlend}
             />
           )}
         </Sky>
@@ -1714,7 +1683,6 @@ export const Default: Story = {
     sunElevation: 30,
     stageMargin: 4000,
     seabedFalloff: 3000,
-    seabedBlend: 500,
     ...skyCutawayArgs,
   },
   argTypes: {
@@ -1743,7 +1711,7 @@ export const Default: Story = {
     },
     matchBed: {
       description:
-        'The sky\u2019s seabed takes the look of the column\u2019s top layer: its colour and `detail`. Both are lit alike, so with `skyWater` off they should meet without a seam.',
+        'The sky\u2019s seabed takes the look of the column\u2019s top layer: its colour and `detail`. So does the column\u2019s sea bed while the stage draws it, as the sea\u2019s.',
       if: { arg: 'sky' },
       table: { category: 'Sky' },
     },
@@ -1776,13 +1744,6 @@ export const Default: Story = {
       control: { type: 'range', min: 0, max: 20000, step: 100 },
       description:
         'How far outside the outline the seabed eases from the column\u2019s top to the sky\u2019s seabed, in metres.',
-      if: { arg: 'sky' },
-      table: { category: 'Sky' },
-    },
-    seabedBlend: {
-      control: { type: 'range', min: 0, max: 3000, step: 50 },
-      description:
-        'How far inside the outline the sky\u2019s seabed fades into the column\u2019s top, in metres.',
       if: { arg: 'sky' },
       table: { category: 'Sky' },
     },
@@ -2530,8 +2491,8 @@ export const Default: Story = {
   ],
 };
 
-// The field under the videx sky: its sea over the column, its seabed eased into the
-// column's top around the outline.
+// The field under the videx sky: its sea over the column, the column's sea bed drawn by
+// the sky's stage as the sea's, and the sky's seabed eased into it around the outline.
 export const WithSky: Story = {
   ...Default,
   args: { ...Default.args, sky: true, water: false },

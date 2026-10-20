@@ -1,5 +1,4 @@
-// The sky's gradient and the sun's halo: what the sky is drawn from, and all its stand-in
-// draws while the sky compiles.
+// The sky's gradient and the sun's halo: what the sky is drawn from.
 
 uniform vec3 uSkyUp; // normalised
 uniform vec3 uSkyZenithColor;

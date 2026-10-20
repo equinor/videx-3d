@@ -12,30 +12,11 @@ uniform float chunkSaturation; // 1 = as lit, 0 = grey
 uniform vec2 chunkAmbient; // x: multiplier facing up, y: facing down
 #endif
 
-#if defined(SURFACE_DETAIL) || defined(CHUNK_WATER_FOG)
+#ifdef SURFACE_DETAIL
 varying vec3 vWorldPosition;
 #endif
 #if defined(SURFACE_DETAIL) && defined(CHUNK_WALL)
 varying float vWallV;
-#endif
-
-#ifdef CHUNK_WATER_FOG
-// Shared with the body of water (see `WaterFogUniforms`).
-uniform vec3 waterFogUp;
-uniform float waterFogLevel;
-uniform float waterFogDepth;
-uniform float waterFogDensity;
-uniform vec3 waterFogShallow;
-uniform vec3 waterFogDeep;
-uniform float waterFogDaylight;
-uniform float waterFogIntensity;
-uniform float waterFogCamera;
-uniform vec3 waterFogCutawayAnchor;
-uniform vec3 waterFogCutawayHeading;
-uniform vec4 waterFogCutawayShape;
-uniform vec3 waterFogCutawayWaveA;
-uniform vec3 waterFogCutawayWaveB;
-#include ../../../sdk/materials/shaderLib/water-fog.glsl
 #endif
 
 #ifdef CHUNK_WATER_TINT
@@ -362,27 +343,6 @@ void main() {
     // shoreline runs.
     float absorb = 1.0 - exp(-max(depth, 0.0) * waterTintParams.z);
     outgoingLight = mix(outgoingLight, waterTintColor, clamp(absorb * waterTintParams.y * facing, 0.0, 1.0));
-  }
-  #endif
-
-  #ifdef CHUNK_WATER_FOG
-  {
-    // As the water fogs its own seabed: dimmed by the water standing over the fragment,
-    // then seen through the water on the way to it.
-    float ha = dot(cameraPosition, waterFogUp) - waterFogLevel;
-    float hb = dot(vWorldPosition, waterFogUp) - waterFogLevel;
-    #ifdef CHUNK_WATER_FOG_BED
-    float bottom = hb;
-    #else
-    // Below the seabed, only the water above it.
-    float bottom = max(hb, -waterFogDepth);
-    #endif
-    // A camera in the water sees what lies above it through water all the way; one in
-    // the ground sees everything through rock.
-    float path = waterFogCamera < -0.5 ? 0.0 : waterFogPath(ha, hb, distance(cameraPosition, vWorldPosition), waterFogCamera > 0.5 ? min(bottom, ha) : bottom, 0.0);
-    path *= waterFogCutawayKeepAlong(WaterFogCutaway(waterFogCutawayAnchor, waterFogCutawayHeading, waterFogCutawayShape, waterFogCutawayWaveA, waterFogCutawayWaveB), cameraPosition, vWorldPosition, waterFogUp);
-    float light = waterFogLight(0.5 * (-bottom + max(-ha, 0.0)), waterFogDensity, waterFogDaylight);
-    outgoingLight = waterFog(outgoingLight * waterFogDim(-bottom, waterFogDensity), path, waterFogDensity, waterFogShallow, waterFogDeep, light * waterFogIntensity);
   }
   #endif
 

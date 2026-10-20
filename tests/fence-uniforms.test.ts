@@ -6,11 +6,12 @@ import {
   applyFenceSide,
   createFenceUniforms,
 } from '../src/components/Chunks/chunk-material';
+import { applyFenceField } from '../src/sdk/materials/fence-field';
 
 /**
- * The fence's shared uniforms are hand-copied in FOUR places — the side swap in
- * `useStackFence`, and the three material binders. Nothing typechecks any of them: a field
- * can be declared, typed and assigned in three places and still be missed by the copy,
+ * The fence's shared uniforms are copied in TWO places — the side swap in `useStackFence`,
+ * and `applyFenceField`, which every material binds them with. Nothing typechecks either: a
+ * field can be declared, typed and assigned elsewhere and still be missed by the copy,
  * which is exactly what happened to `pages`. It stayed at its neutral value, so the shader's
  * page-bounds test failed for every fragment and the whole cut silently fell back to the
  * coarse flood fill.
@@ -82,10 +83,20 @@ describe('fence uniforms', () => {
     expect(uniforms.segments.value).toBeNull();
   });
 
-  /**
-   * ⚠️ The three binders are hand-written copies of the same list, and they drift the same
-   * way the side swap did. Each must bind `fence<Key>` for every key of the type.
-   */
+  it('applyFenceField binds every uniform, as the very object', () => {
+    const fence = createFenceUniforms({ value: new Vector2(0, 1) });
+    const bound: Record<string, unknown> = {};
+    applyFenceField(bound as Parameters<typeof applyFenceField>[0], fence);
+    const missed = Object.entries(fence)
+      .filter(
+        ([key, uniform]) =>
+          bound[`fence${key[0].toUpperCase()}${key.slice(1)}`] !== uniform,
+      )
+      .map(([key]) => key);
+    expect(missed, 'uniforms not bound by applyFenceField').toEqual([]);
+  });
+
+  // ⚠️ A material binding the fence by hand drifts the way the side swap did.
   it.each([
     ['chunk material', 'src/components/Chunks/chunk-material.ts'],
     ['inference material', 'src/components/Chunks/inference-material.ts'],
@@ -94,12 +105,12 @@ describe('fence uniforms', () => {
       'src/components/Chunks/chunk-picking-material.ts',
     ],
     ['ocean material', 'src/components/Ocean/ocean-material.ts'],
-  ])('%s binds every fence uniform', (_name, path) => {
+    ['ocean volume material', 'src/components/Ocean/ocean-volume-material.ts'],
+    ['sky stage material', 'src/components/Sky/sky-stage.ts'],
+  ])('%s binds the fence with applyFenceField', (_name, path) => {
     const source = readFileSync(path, 'utf-8');
-    const missing = ['params', ...Object.keys(SOURCE)].filter(
-      key => !source.includes(`fence.${key};`),
-    );
-    expect(missing, `${path} does not bind`).toEqual([]);
+    expect(source).toContain('applyFenceField(');
+    expect(source).not.toMatch(/\.fence\w+ = /);
   });
 
   /**
@@ -119,6 +130,7 @@ describe('fence uniforms', () => {
       'src/components/Chunks/inference-material.ts',
       'src/components/Ocean/shaders/fragment.glsl',
       'src/components/Ocean/shaders/volume-fragment.glsl',
+      'src/components/Sky/shaders/stage-fragment.glsl',
     ].map(path => [path, readFileSync(path, 'utf-8')] as const);
 
     const declares = (source: string, key: string) =>

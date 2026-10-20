@@ -114,17 +114,9 @@ below the water. The seabed's look (`SkySeabed`) is lit with the model and optio
 `ChunkMaterial`, so a chunk layer given the same colour and detail continues it without
 a seam.
 
-To fog a `ChunkStack` as the sea fogs its own seabed, hand it the sea's water:
-
-```tsx
-const waterFog = useSkyWaterFog() // inside the <Sky>
-
-<ChunkStack waterFog={waterFog} /* ... */ />
-```
-
-⚠️ `useSkyWaterFog` reads the enclosing sky, so call it in a child of `<Sky>`, and lift
-the value out with state if the stack lives elsewhere. Leave it off an occupant that
-drains its water.
+The sea never tints the data: a `Chunk`, `ChunkStack` or `Surface` is drawn as it is,
+wherever it lies. A field column whose top is the sea bed hands that seabed to a stage
+instead, which draws it as the sea's own (see below).
 
 The sea is part of the background, so on its own it never hides anything in the scene.
 To have the water in FRONT of the scene, add a stage.
@@ -138,24 +130,60 @@ is below it — unless the camera is below it too. It reaches the camera's far p
 beyond `bounds`, so every view ray that can reach the scene crosses it.
 
 ```tsx
+// the column's sea bed, clipped to its outline in the scene frame, built where the data is
+const generate = useGenerator<SkySeabedResponse>(skySeabed)
+const [seabed, setSeabed] = useState<SeabedMesh | null>(null)
+useEffect(() => {
+  generate?.(meta.id, outline.coordinates, [origin.x, origin.z], maxError).then(setSeabed)
+}, [generate, meta, outline, origin, maxError])
+const [cut, setCut] = useState<CutUniforms | null>(null)
+const [staged, setStaged] = useState(false)
+
 <Sky ocean={{ level: 0, depth: 120 }}>
   <SkyBoxStage
     bounds={[minX, minZ, maxX, maxZ]}
-    occupant={{ outline, seabed: false, elevations, elevationAt }}
+    occupant={{
+      outline,
+      seabed: seabed ?? false,
+      cut: cut ?? undefined,
+      onStage: state => setStaged(state.seabed),
+    }}
   />
 </Sky>
+<ChunkStack outline={outline} onCut={setCut} /* ... */>
+  <Chunk layers={[{ surface: meta, drawCap: !staged /* ... */ }, ...below]} />
+</ChunkStack>
 ```
 
 `bounds` is the scene's rectangle in scene X/Z, and should hold the whole scene. An
 `occupant` claims part of it — typically a field column:
 
 - `water: false` drains the water over the outline, walled in by the sea around it.
-- `seabed: false` when the occupant draws its own seabed. Given its heights along the
-  outline (`elevations`), the stage's seabed starts there and eases to the sea's depth
-  over `seabedFalloff` (default 3000); given `elevationAt`, it also cross-fades into the
-  occupant's seabed over `seabedBlend` (default 500) inside the outline.
-- `tolerance` holds that cross-fade in front of a seabed the occupant draws from its own
-  tessellation rather than from `elevationAt`.
+- `seabed` is what lies under the outline. `true` (the default) is the stage's own flat
+  seabed; `false` leaves the outline open, for an occupant that draws a seabed of its
+  own.
+- A `SeabedMesh` hands the occupant's seabed to the stage, which draws it as the sea's
+  own: lit, coloured and under the water exactly as the sea's seabed. It is always
+  opaque, and never cut by the cutaway. The stage's seabed starts on its rim and eases
+  to the sea's depth over `seabedFalloff` (default 3000), meeting it vertex for vertex.
+  `createSeabedMesh` (sdk) makes one from a surface, clipped to the outline in the scene
+  frame; the `skySeabed` generator (`generateSkySeabed`) runs it where the generators
+  run, so the surface's grid never has to reach the main thread. The stage wraps its
+  arrays without copying them: hand a new one rather than changing it.
+- `cut` is the occupant's own cut, which the stage cuts the handed seabed with: a
+  section `plane` and a `fence`, as the very uniform objects the occupant's materials
+  read (`CutUniforms`), so it follows the cut every frame at no cost. A `ChunkStack`
+  hands out its own through `onCut`; anything cut with the same shader pieces (a plane
+  uniform, `shaderLib/fence-field.glsl`) can hand out its own. They must be in the scene
+  frame. Leave it off while the occupant keeps that seabed whole (`keepCap`).
+- `onStage({ seabed })` tells the occupant whether the stage draws its seabed: not
+  before the sky has compiled, nor while the sky is hidden (`background: false`). Until
+  then the occupant draws its own — a chunk layer's `drawCap` — so one of the two always
+  draws it, give or take the frame a change takes to reach the occupant.
+
+⚠️ The handed seabed is the occupant's surface tessellated again, so along the outline
+and along a cut it can stand up to about the occupant's `maxError` off the occupant's
+own edges (measured on the demo field at `maxError` 5: 0.2 m median, 4.8 m worst).
 
 The stage's transparent parts are ready for the `OITRenderPass`. ⚠️ It assumes the
 default `up` (+Y), and renders nothing without a sky `ocean`.
@@ -206,8 +234,8 @@ the renderer from an effect, and use the Canvas `flat` prop rather than
   11): the background ~2.5 s, the sea surface layer ~1.7 s, a stage's surface ~1.6 s,
   each seabed part ~0.4 s. Clouds add ~0.4 s to the background.
 - They compile in the background where the browser has `KHR_parallel_shader_compile`:
-  until the sky, its stages and its bakes are ready, a stand-in (the sky's gradient, and
-  its sea's colour below the horizon) is drawn, a stage draws nothing and nothing is
+  until the sky, its stages and its bakes are ready, a stand-in (the void's grey
+  gradient, without its detail) is drawn, a stage draws nothing and nothing is
   baked. A recompile (below) shows the stand-in again for as long as it takes. A
   `ChunkStack`'s meshes likewise stay hidden until theirs are ready.
 - The bakes draw with the very programs the background and its surface layer do, so
@@ -244,9 +272,11 @@ option and debug view) and `Spikes/Sky/Baseline` (a real field) exercise all of 
 | `sky-material.ts` | `SkyMaterial`: the background's shader and the uniform objects everything else shares |
 | `sky-baker.ts` | bakes the environment and light probe per zone (internal) |
 | `sky-stage.ts`, `SkyBoxStage.tsx` | the stage's geometry and materials |
-| `sky-context.ts` | `useSky`, `useSkyOcean`, `useSkyWaterFog` |
+| `sky-defs.ts`, `generators/sky-seabed-generator.ts` | the `skySeabed` generator: an occupant's seabed, built where the data is |
+| `sky-context.ts` | `useSky`, `useSkyOcean` |
 | `shaders/sky.glsl` | the sky itself: gradient, sun, night, clouds, void, `skyRadiance` |
-| `shaders/sky-gradient.glsl`, `sky-stand-in-fragment.glsl` | the gradient alone, and the stand-in drawn with it while the sky compiles |
+| `shaders/sky-gradient.glsl` | the gradient alone |
+| `shaders/sky-stand-in-fragment.glsl` | the stand-in drawn while the sky compiles: the void's gradient |
 | `shaders/sky-ocean.glsl` | the sea: surface, water, seabed, cutaway |
 | `shaders/stage-fragment.glsl`, `sky-surface-fragment.glsl` | the stage's parts, and the sea surface layer |
 
@@ -263,9 +293,16 @@ option and debug view) and `Spikes/Sky/Baseline` (a real field) exercise all of 
   it compiles as the scene draws, i.e. for the `RenderingPipeline`'s render target and
   through the `OITRenderPass`'s variants. The sky waits for its own meshes, the stages
   registered through `SkyOceanState.stage`, and the baker's scenes and PMREM prefilter.
-- The water fog (`sdk/materials/shaderLib/water-fog.glsl`, `WaterFogUniforms`) and the
-  cutaway's edge are shared with `ChunkMaterial`, so a chunk is fogged and cut exactly
-  as the sea around it is.
+- ⭐ An occupant's seabed is the stage's `occupant-bed` part: the relief's shading
+  (`STAGE_BED`, `STAGE_RELIEF`) plus `STAGE_OCCUPANT`, which holds it whole after the
+  cutaway has cleared the water over it. The relief and the walls are built on its rim
+  (`skyStageRim`), its boundary loops, so they share its vertices; the camera's ground
+  (`oceanGround`) is read from it too.
+- The occupant's `cut` compiles in as `STAGE_SECTION` / `STAGE_FENCE`, bound with
+  `applyFenceField` as every fence-cut material is. Its materials are made apart from the
+  stage's others, and their uniforms INHERIT the sky's (`Object.create`) rather than copy
+  them, so what the sky adds later still reaches them. The discard waits for the
+  seabed's own, after its derivatives are taken.
 - ⭐ On Direct3D (ANGLE), every call of a shader function compiles a copy of it. A heavy
   function (the waves, a noise) called from two places costs twice the compile time:
   compute it once and pass the result down (see `SkyOceanWave`, `depths` in

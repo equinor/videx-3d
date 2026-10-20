@@ -25,6 +25,7 @@ The generator functions can be imported from `@equinor/videx-3d/generators` (def
 | **Perimeter** | perimeterGeometry | generatePerimeterGeometry | - position-logs |
 | **FormationMarkers** | formationSymbols | generateFormationMarkers | - position-logs<br/>- formations |
 | **Shoes** | shoeSymbols | generateShoes | - position-logs<br/>- casings |
+| **SkyBoxStage** _(an occupant's seabed, called by the host)_ | skySeabed | generateSkySeabed | - surface-meta<br/>- surface-values |
 | **Surface** | surfaceGeometry | generateSurfaceGeometry | - surface-meta<br/>- surface-values |
 | **Surface** | surfaceTextures | generateSurfaceTextureData | - surface-meta<br/>- surface-values |
 | **Trajectory** | trajectory | generateTrajectory | - position-logs |

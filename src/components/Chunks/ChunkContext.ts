@@ -5,7 +5,7 @@ import {
   SurfaceChunkMetrics,
   SurfaceMeta,
 } from '../../sdk';
-import { WaterFogUniforms } from '../../sdk/materials/water-fog';
+import { ChunkContactTexture } from './chunk-contacts';
 import {
   ChunkBuildProgress,
   ChunkBuildState,
@@ -16,14 +16,13 @@ import {
   ChunkSectionState,
   StackWater,
 } from './chunk-defs';
-import { CutoutSource } from './cutout';
-import { ChunkContactTexture } from './chunk-contacts';
+import { ChunkDepthMap } from './chunk-depth-map';
 import { ChunkDetail } from './chunk-detail';
 import {
   ChunkFenceOverlayUniforms,
   ChunkFenceUniforms,
 } from './chunk-material';
-import { ChunkDepthMap } from './chunk-depth-map';
+import { CutoutSource } from './cutout';
 import { SeamDecision } from './seams';
 
 /**
@@ -113,8 +112,6 @@ export type ChunkStackContextValue = {
    * tinted by the water standing over it rather than by its own depth.
    */
   bathymetry?: ChunkDepthMap | null;
-  /** a body of water the column lies in (see `ChunkStackProps.waterFog`); APPEARANCE only */
-  waterFog?: WaterFogUniforms | null;
   /**
    * Whether chunks are built ready for a cut: `ChunkStackProps.prepareCuts`, or a
    * declared section or fence. A PRIMITIVE, so a cut coming and going cannot

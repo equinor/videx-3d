@@ -89,7 +89,7 @@ export * from './utils/typed-array';
 export * from './utils/vector-operations';
 
 export * from './materials/depth-material';
+export * from './materials/fence-field';
 export * from './materials/surface-detail';
 export * from './materials/tube-material';
 export * from './materials/uv-material';
-export * from './materials/water-fog';

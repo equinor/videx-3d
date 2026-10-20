@@ -3,7 +3,7 @@
 
 varying vec3 vViewPosition;
 
-#if defined(SURFACE_DETAIL) || defined(CHUNK_WATER_FOG)
+#ifdef SURFACE_DETAIL
 // World position drives the procedural detail, so the pattern is anchored in the
 // scene rather than in each surface's own UV space (that is what removes the
 // per-surface repeat/scale problem), and so a cap and the wall below it carry the
@@ -88,10 +88,8 @@ void main() {
   vCapNormalUv = (capNormalToUv * vec3(transformed.xz, 1.0)).xy;
   #endif
 
-  #if defined(SURFACE_DETAIL) || defined(CHUNK_WATER_FOG)
-  vWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;
-  #endif
   #ifdef SURFACE_DETAIL
+  vWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;
   #ifdef CHUNK_WALL
   vWallV = wallV;
   #endif

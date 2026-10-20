@@ -1,31 +1,24 @@
-// Drawn in the sky's place while its shaders compile: its gradient and the sun's halo,
-// with the sea's colour below the horizon, and all round under the sea surface. Small,
-// so it is up at once.
+// Drawn in the sky's place while its shaders compile: the void's gradient all round, lid
+// above the horizon and depths below, without its detail and wherever the camera is.
+// Small, so it is up at once.
 
 #include <common>
 #include <fog_pars_fragment>
-#include ./sky-gradient.glsl
 
-uniform float uSkyHorizonBlend;
+uniform vec3 uSkyUp; // normalised
 uniform float uSkyIntensity;
-#ifdef SKY_OCEAN
-uniform float uSkyOceanLevel;
-uniform vec3 uDeepColor;
-#endif
+uniform vec3 uSkyAbyssCeilingColor;
+uniform vec3 uSkyAbyssHorizonColor;
+uniform vec3 uSkyAbyssDepthColor;
+uniform float uSkyAbyssFalloff;
 
 varying vec3 vSkyDirection;
 
 void main() {
-  vec3 dir = normalize(vSkyDirection);
-  float y = dot(dir, uSkyUp);
-  float blend = max(uSkyHorizonBlend, fwidth(y));
-  vec3 color = skySurface(dir, blend);
-  #ifdef SKY_OCEAN
-  float above = step(uSkyOceanLevel, dot(cameraPosition, uSkyUp));
-  vec3 sea = uDeepColor * mix(0.15, 1.0, uSkyDaylight);
-  color = mix(sea, color, above * smoothstep(-blend, 0.0, y));
-  #endif
-  gl_FragColor = vec4(color * uSkyIntensity, 1.0);
+  float y = dot(normalize(vSkyDirection), uSkyUp);
+  vec3 lid = mix(uSkyAbyssHorizonColor, uSkyAbyssCeilingColor, sqrt(max(y, 0.0)));
+  vec3 depths = mix(uSkyAbyssHorizonColor, uSkyAbyssDepthColor, pow(max(-y, 0.0), uSkyAbyssFalloff));
+  gl_FragColor = vec4((y > 0.0 ? lid : depths) * uSkyIntensity, 1.0);
 
   #include <tonemapping_fragment>
   #include <colorspace_fragment>

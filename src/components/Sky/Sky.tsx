@@ -21,14 +21,12 @@ import {
   ShaderMaterial,
   SphericalHarmonics3,
   Texture,
-  Uniform,
   Vector2,
   Vector3,
   Vector4,
 } from 'three';
 import { precompile } from '../../rendering/precompile';
 import { surfaceDetailKey } from '../../sdk/materials/surface-detail';
-import { WaterFogUniforms } from '../../sdk/materials/water-fog';
 import { Vec3 } from '../../sdk/types/common';
 import { directionFromCompass } from '../../sdk/utils/vector-operations';
 import { OceanMaterial } from '../Ocean/ocean-material';
@@ -166,7 +164,8 @@ export type SkyDebug = {
   /**
    * Tint each part by what draws it. The sky: its sea, seabed and void red, what it
    * leaves to a stage purple, its surface layer orange. A stage: its surface blue, flat
-   * seabed green, relief cyan, band magenta, walls yellow. Untinted is the scene.
+   * seabed green, relief cyan, an occupant's seabed magenta, walls yellow. Untinted is
+   * the scene.
    */
   tint?: boolean;
   /** layers not to draw */
@@ -249,7 +248,7 @@ const scratch = new Color();
 // Primitive dependency for a colour prop, so an inline `new Color()` does not re-bake every render.
 const toHex = (value: ColorRepresentation) => scratch.set(value).getHex();
 
-// Drawn while the sky's shaders compile: its gradient, and with `SKY_OCEAN` its sea's colour.
+// Drawn while the sky's shaders compile: the void's gradient, whatever the sky is.
 function createSkyStandInMaterial(sky: SkyMaterial) {
   return new ShaderMaterial({
     vertexShader: skyVertexShader,
@@ -462,31 +461,6 @@ export const Sky = ({
     ? moonIntensity * state.moonlight
     : sunIntensity * state.daylight;
 
-  // The water's colours from the water itself, whose uniform objects the sky shares.
-  // The density is the fog's own: none while the sky, and with it the sea, is not drawn.
-  const [fogDensity] = useState(() => new Uniform(0));
-  const [fogCamera] = useState(() => new Uniform(0));
-  const fog = useMemo<WaterFogUniforms | null>(
-    () =>
-      water && {
-        up: material.uniforms.uSkyUp,
-        level: material.uniforms.uSkyOceanLevel,
-        depth: material.uniforms.uSkyOceanDepth,
-        density: fogDensity,
-        shallowColor: water.uniforms.uShallowColor,
-        deepColor: water.uniforms.uDeepColor,
-        daylight: material.uniforms.uSkyDaylight,
-        intensity: material.uniforms.uSkyIntensity,
-        camera: fogCamera,
-        cutawayAnchor: material.uniforms.uSkyOceanCutawayAnchor,
-        cutawayHeading: material.uniforms.uSkyOceanCutawayHeading,
-        cutawayShape: material.uniforms.uSkyOceanCutawayShape,
-        cutawayWaveA: material.uniforms.uSkyOceanCutawayWaveA,
-        cutawayWaveB: material.uniforms.uSkyOceanCutawayWaveB,
-      },
-    [material, water, fogDensity, fogCamera],
-  );
-
   // Whether what the sky draws is compiled; until then the stand-in is drawn instead.
   const [ready, setReady] = useState(false);
   // Stages hand over their parts, compiled with the sky's own (see SkyOceanState.stage).
@@ -503,7 +477,7 @@ export const Sky = ({
 
   const oceanState = useMemo<SkyOceanState | null>(
     () =>
-      water && fog
+      water
         ? {
             material,
             level: oceanLevel,
@@ -511,7 +485,6 @@ export const Sky = ({
             water: oceanWater,
             seabed: oceanSeabed,
             bedDetail: bedDetailKey,
-            fog,
             visible: background,
             ready,
             stage: addStage,
@@ -519,7 +492,6 @@ export const Sky = ({
         : null,
     [
       water,
-      fog,
       material,
       oceanLevel,
       oceanDepth,
@@ -777,11 +749,6 @@ export const Sky = ({
   const own = useRef<Group>(null);
   const compiling = useRef('');
   useLayoutEffect(() => {
-    if ((standIn.defines.SKY_OCEAN !== undefined) !== material.ocean) {
-      if (material.ocean) standIn.defines.SKY_OCEAN = '';
-      else delete standIn.defines.SKY_OCEAN;
-      standIn.needsUpdate = true;
-    }
     const group = own.current;
     if (!group) return;
     const resolution = hasEnvironment ? environmentResolution : null;
@@ -826,7 +793,6 @@ export const Sky = ({
     scene,
     sceneCamera,
     material,
-    standIn,
     baker,
     bakeProbe,
     surfaceLayer,
@@ -899,7 +865,6 @@ export const Sky = ({
     if (sunShimmer && sunRays > 0) material.sunRayPhase += delta;
     material.sunRadiance =
       (hdr ?? gl.toneMapping !== NoToneMapping) ? SKY_HDR_SUN_RADIANCE : 1;
-    fogDensity.value = background ? material.oceanFogDensity : 0;
 
     const height = camera.position.dot(material.up);
     const zone = skyZone(height, {
@@ -914,7 +879,6 @@ export const Sky = ({
       background,
     });
     zoneInView.current = zone;
-    fogCamera.value = zone === 'water' ? 1 : zone === 'subsurface' ? -1 : 0;
     // Inside an occupant's seabed above the sea's own, the stage's relief is seen from below.
     material.oceanBuried =
       material.ocean &&

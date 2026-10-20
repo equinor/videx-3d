@@ -8,7 +8,10 @@ import {
   Vector4,
 } from 'three';
 import { attachOitVariants } from '../../rendering/oit-material';
-import { applyOceanFence, OceanFence } from './ocean-material';
+import {
+  applyFenceField,
+  FenceFieldUniforms,
+} from '../../sdk/materials/fence-field';
 import fragmentShader from './shaders/volume-fragment.glsl';
 import vertexShader from './shaders/volume-vertex.glsl';
 
@@ -22,7 +25,7 @@ export type OceanVolumeMaterialParameters = ShaderMaterialParameters & {
   /** see {@link OceanMaterialParameters.sectionPlane} */
   sectionPlane?: IUniform<Vector4>;
   /** see {@link OceanMaterialParameters.fence} */
-  fence?: OceanFence;
+  fence?: FenceFieldUniforms;
 };
 
 /**
@@ -104,7 +107,7 @@ export class OceanVolumeMaterial extends ShaderMaterial {
 
     if (sectionPlane) this.uniforms.sectionPlane = sectionPlane;
 
-    if (fence) applyOceanFence(this, fence);
+    if (fence) applyFenceField(this.uniforms, fence);
 
     attachOitVariants(this);
   }

@@ -1,6 +1,5 @@
 import { createContext, useContext } from 'react';
 import { Color, Object3D, Vector3 } from 'three';
-import type { WaterFogUniforms } from '../../sdk/materials/water-fog';
 import type { SkyMaterial } from './sky-material';
 
 /**
@@ -40,8 +39,6 @@ export type SkyOceanState = {
   seabed: boolean;
   /** the seabed's detail, as a key: a new one recompiles the sea (see `SkyMaterial.oceanBedDetail`) */
   bedDetail: string;
-  /** the sea's water, for fogging what lies in it as the sea fogs its own seabed (see {@link useSkyWaterFog}) */
-  fog: WaterFogUniforms;
   /** height of the sea surface along `up` */
   level: number;
   /** depth of the seabed below the surface */
@@ -62,17 +59,4 @@ export const SkyOceanContext = createContext<SkyOceanState | null>(null);
 /** The sea of the enclosing {@link Sky}, or `null` when it has none. */
 export function useSkyOcean() {
   return useContext(SkyOceanContext);
-}
-
-/**
- * The water of the enclosing {@link Sky}'s sea, or `null` when it has none: hand it to
- * `ChunkStack`'s `waterFog` and the column is fogged as the sea's own seabed is. The
- * uniforms follow the sky, and keep their identity while it has a sea; while the sky is
- * not drawn (`background`) the fog is off.
- *
- * ⚠️ Fogs wherever the sea has water, so leave it off a stage occupant that drains
- * its water (`SkyBoxStage`'s `occupant.water: false`).
- */
-export function useSkyWaterFog() {
-  return useContext(SkyOceanContext)?.fog ?? null;
 }

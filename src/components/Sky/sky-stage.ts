@@ -9,6 +9,7 @@ import {
   ShaderMaterial,
   SrcAlphaFactor,
 } from 'three';
+import { extractBoundaryLoops } from '../../sdk/geometries/boundary-loops';
 import { createDelaunayCap } from '../../sdk/geometries/delaunay-cap';
 import { createPolygonCap } from '../../sdk/geometries/polygon-cap';
 import { computeUpwardNormals } from '../../sdk/geometries/geometry-attributes';
@@ -17,6 +18,12 @@ import {
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
 } from '../../sdk/geometries/planar-geometry';
+import { ringsToPolygonCoordinates } from '../../sdk/geometries/polygon-outline';
+import type { SeabedMesh } from '../../sdk/geometries/surface-clip';
+import {
+  applyFenceField,
+  type CutUniforms,
+} from '../../sdk/materials/fence-field';
 import { Vec2 } from '../../sdk/types/common';
 import { attachOitVariants } from '../../rendering/oit-material';
 import skyVertexShader from './shaders/sky-vertex.glsl';
@@ -31,8 +38,11 @@ export type SkyStageBounds = [number, number, number, number];
 /** Scene Y at every vertex of an outline, nested as its `coordinates` are. */
 export type SkyStageElevations = number[][][];
 
-/** A seabed's height at a scene X/Z, or `null` where it has none. */
-export type SkyStageElevationAt = (x: number, z: number) => number | null;
+/** A seabed's rim: its boundary as an outline, and the heights along it. */
+export type SkyStageRim = {
+  outline: PlanarPolygonGeometry;
+  elevations: SkyStageElevations;
+};
 
 /**
  * A stage's caps, flat at y = 0, to be moved to the sea level and the seabed.
@@ -154,6 +164,7 @@ export function createSkyStageWalls(
  * The seabed around an occupant with a seabed of its own, over the near rectangle less
  * the outline (see {@link createSkyStageGeometry}): it starts on the outline at the
  * occupant's `elevations` and eases to `bedY` over `falloff`, in scene Y, with its normals.
+ * Given the occupant's rim (see {@link skyStageRim}), it meets its seabed vertex for vertex.
  *
  * Along the outline the heights are blended by inverse distance to its segments, so the
  * slope stays smooth where the outline turns. The triangles are as fine as the outline at
@@ -192,134 +203,51 @@ export function createSkyStageRelief(
 }
 
 /**
- * A band just inside an outline, `width` wide, lying on the occupant's seabed in scene
- * Y, with a `fade` attribute: 1 on the outline, 0 at `width` in, and a `slack`
- * attribute: how far the occupant's seabed rises above the band's triangles, plus the
- * `tolerance` its drawn seabed may depart from `elevationAt` by. A stage
- * draws its own seabed on it to cross-fade into the occupant's. Its triangles are as fine
- * as the outline at it (down to `width / 48`) and grow inward to `width / 6`. `null` when
- * nothing is left of it.
+ * The rim of an occupant's seabed: its boundary loops, grouped into outer rings and
+ * holes, with their heights. A relief or walls built on it meet the seabed vertex for
+ * vertex (see {@link createSkyStageRelief}, {@link createSkyStageWalls}).
  */
-export function createSkyStageBand(
-  outline: PlanarPolygonGeometry,
-  elevations: SkyStageElevations,
-  elevationAt: SkyStageElevationAt,
-  width: number,
-  tolerance = 0,
-): BufferGeometry | null {
-  const components = outline.coordinates as PlanarPolygonCoordinates;
-  const rings = components.flat().map(openRing);
-  // A grid's diagonals are its longest edges.
-  const coarse = width / 6 / Math.SQRT2;
-  const fine = Math.min(
-    Math.max(medianSegmentLength(rings), width / 48),
-    coarse,
-  );
-  const { min, max } = outline.getBounds();
-  // Two rows past the band, so the triangles filling the rest end at fade 0.
-  const cap = createDelaunayCap(rings, {
-    points: gradedPoints(
-      [min[0], min[1], max[0], max[1]],
-      rings,
-      fine,
-      coarse,
-      width + 2 * coarse,
-    ),
+export function skyStageRim(seabed: SeabedMesh): SkyStageRim {
+  const { positions } = seabed;
+  const heights = new Map<Vec2[], number[]>();
+  const rings = extractBoundaryLoops(seabedGeometry(seabed)).map(loop => {
+    const ring = loop.map(
+      i => [positions[3 * i], positions[3 * i + 2]] as Vec2,
+    );
+    heights.set(
+      ring,
+      loop.map(i => positions[3 * i + 1]),
+    );
+    return ring;
   });
-  const index = createOutlineIndex(components, elevations, width / 2);
-  const position = cap.getAttribute('position') as BufferAttribute;
-  const triangles = cap.getIndex()!.array;
-  const count = position.count;
-
-  const fade = new Float32Array(count);
-  const edge = new Float64Array(count).fill(NaN);
-  for (let i = 0; i < count; i++) {
-    let nearest = Infinity;
-    index.near(position.getX(i), position.getZ(i), width, (d, h) => {
-      if (d >= nearest) return;
-      nearest = d;
-      if (d < ON_OUTLINE) edge[i] = h;
-    });
-    fade[i] = 1 - smoothstep(0, width, nearest);
-  }
-
-  const height = new Float64Array(count).fill(NaN);
-  const heightOf = (i: number) => {
-    if (Number.isNaN(height[i])) {
-      height[i] = Number.isNaN(edge[i])
-        ? (elevationAt(position.getX(i), position.getZ(i)) ?? Infinity)
-        : edge[i];
-    }
-    return height[i];
+  const coordinates = ringsToPolygonCoordinates(rings);
+  return {
+    outline: new PlanarPolygonGeometry(coordinates),
+    elevations: coordinates.map(component =>
+      component.map(ring => heights.get(ring as Vec2[]) ?? []),
+    ),
   };
+}
 
-  const remap = new Int32Array(count).fill(-1);
-  const positions: number[] = [];
-  const fades: number[] = [];
-  const indices: number[] = [];
-  for (let t = 0; t < triangles.length; t += 3) {
-    const corners = [triangles[t], triangles[t + 1], triangles[t + 2]];
-    if (corners.every(i => fade[i] <= 0)) continue;
-    if (!corners.every(i => Number.isFinite(heightOf(i)))) continue;
-    for (const i of corners) {
-      if (remap[i] < 0) {
-        remap[i] = fades.length;
-        positions.push(position.getX(i), height[i], position.getZ(i));
-        fades.push(fade[i]);
-      }
-      indices.push(remap[i]);
-    }
-  }
-  cap.dispose();
-  if (indices.length === 0) return null;
+/**
+ * An occupant's seabed as a stage draws it: the arrays wrapped, not copied, with normals
+ * of its own, facing up. Disposing it leaves the arrays to their owner.
+ */
+export function createSkyStageSeabed(seabed: SeabedMesh): BufferGeometry {
+  const geometry = seabedGeometry(seabed);
+  computeUpwardNormals(geometry);
+  return geometry;
+}
 
-  // How far the occupant's seabed rises above each corner's triangles, between the
-  // corners, plus how far its drawn seabed may depart from `elevationAt`: the band must
-  // be pulled past that to stay in front of it.
-  const slack = new Float32Array(fades.length).fill(tolerance);
-  for (let t = 0; t < indices.length; t += 3) {
-    const [a, b, c] = [indices[t] * 3, indices[t + 1] * 3, indices[t + 2] * 3];
-    let gap = 0;
-    for (const [u, v] of SLACK_SAMPLES) {
-      const w = 1 - u - v;
-      const x = positions[a] * w + positions[b] * u + positions[c] * v;
-      const y =
-        positions[a + 1] * w + positions[b + 1] * u + positions[c + 1] * v;
-      const z =
-        positions[a + 2] * w + positions[b + 2] * u + positions[c + 2] * v;
-      const h = elevationAt(x, z);
-      if (h !== null && h > y + gap) gap = h - y;
-    }
-    for (let k = 0; k < 3; k++) {
-      const i = indices[t + k];
-      if (gap + tolerance > slack[i]) slack[i] = gap + tolerance;
-    }
-  }
-
-  const band = new BufferGeometry();
-  band.setAttribute(
-    'position',
-    new BufferAttribute(new Float32Array(positions), 3),
-  );
-  band.setAttribute('fade', new BufferAttribute(new Float32Array(fades), 1));
-  band.setAttribute('slack', new BufferAttribute(slack, 1));
-  band.setIndex(indices);
-  band.computeVertexNormals();
-  return band;
+function seabedGeometry({ positions, indices }: SeabedMesh) {
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new BufferAttribute(positions, 3));
+  geometry.setIndex(new BufferAttribute(indices, 1));
+  return geometry;
 }
 
 // Closer than this to the outline, a point is ON it and takes its elevation exactly.
 const ON_OUTLINE = 0.05;
-
-// Barycentric (u, v) points where a band triangle is checked against the occupant's
-// seabed: a quarter grid, corners left out (they lie on it).
-const SLACK_SAMPLES: [number, number][] = [];
-for (let i = 0; i <= 4; i++) {
-  for (let j = 0; i + j <= 4; j++) {
-    if (i === 4 || j === 4 || (i === 0 && j === 0)) continue;
-    SLACK_SAMPLES.push([i / 4, j / 4]);
-  }
-}
 
 const OUTLINE_RIM = new Color('#ffffff');
 const OUTLINE_SURFACE = new Color('#000000');
@@ -722,8 +650,8 @@ export type SkyStagePart =
   | 'dry-bed'
   | 'relief-bed'
   | 'dry-relief-bed'
-  | 'band'
-  | 'dry-band'
+  | 'occupant-bed'
+  | 'dry-occupant-bed'
   | 'wall'
   | 'drained-wall';
 
@@ -741,35 +669,55 @@ function oceanDefines(sky: SkyMaterial) {
  *
  * The sky shows what lies beyond the seabed through any gap in the stage (see
  * `skyOceanStaged`). The `relief` beds are shaded where the geometry lies rather than on
- * the flat seabed, and a `band` fades out by its `fade` attribute, drawn
- * over an occupant's seabed (see {@link createSkyStageBand}). `dry-` parts have no water
- * over them. A `wall` is the sea's water body seen through, from either side; a
- * `drained-wall` also shows the endless sea beyond it to a camera in the drained hole.
- * The transparent parts (surface, band, walls) are wired for the `OITRenderPass`.
+ * the flat seabed, and so is an `occupant` bed (see {@link createSkyStageSeabed}), which
+ * a cutaway never cuts: it only takes the water over it. It is cut instead with the
+ * occupant, by the `cut` it hands over (its uniform objects, in the scene frame). `dry-`
+ * parts have no water over them. A `wall` is the sea's water body seen through, from
+ * either side; a `drained-wall` also shows the endless sea beyond it to a camera in the
+ * drained hole.
+ * The transparent parts (surface, walls) are wired for the `OITRenderPass`.
  * The seabed is lit by the scene's lights, as the sky's is; a seabed or sea that changes
  * the sky's defines (its detail, its waves) needs new materials.
  */
-export function createSkyStageMaterial(sky: SkyMaterial, part: SkyStagePart) {
+export function createSkyStageMaterial(
+  sky: SkyMaterial,
+  part: SkyStagePart,
+  cut?: CutUniforms,
+) {
   const defines = oceanDefines(sky);
-  const band = part === 'band' || part === 'dry-band';
+  const occupant = part.endsWith('occupant-bed');
   const wall = part === 'wall' || part === 'drained-wall';
   if (part === 'surface') defines.STAGE_SURFACE = '';
   else if (wall) defines.STAGE_WALL = '';
   else defines.STAGE_BED = '';
   if (part.startsWith('dry-')) defines.STAGE_DRY = '';
-  if (band || part.endsWith('relief-bed')) defines.STAGE_RELIEF = '';
-  if (band) defines.STAGE_BAND = '';
+  if (occupant || part.endsWith('relief-bed')) defines.STAGE_RELIEF = '';
+  if (occupant) defines.STAGE_OCCUPANT = '';
   if (part === 'drained-wall') defines.STAGE_DRAINED = '';
 
-  const transparent = part === 'surface' || band || wall;
+  // Inherits the sky's uniforms rather than copying them, so what the sky adds later reaches it too.
+  let uniforms = sky.uniforms;
+  if (occupant && (cut?.plane || cut?.fence)) {
+    uniforms = Object.create(sky.uniforms) as typeof sky.uniforms;
+    if (cut.plane) {
+      defines.STAGE_SECTION = '';
+      uniforms.sectionPlane = cut.plane;
+    }
+    if (cut.fence) {
+      defines.STAGE_FENCE = '';
+      applyFenceField(uniforms, cut.fence);
+    }
+  }
+
+  const transparent = part === 'surface' || wall;
   const material = new ShaderMaterial({
     vertexShader,
     fragmentShader,
-    uniforms: sky.uniforms,
+    uniforms,
     defines,
     transparent,
     // A drained wall is opaque toward the hole, and hides what lies beyond it.
-    depthWrite: part !== 'surface' && !band && part !== 'wall',
+    depthWrite: part !== 'surface' && part !== 'wall',
     side: DoubleSide,
     lights: true,
   });

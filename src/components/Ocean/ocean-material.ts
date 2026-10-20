@@ -14,6 +14,10 @@ import {
   Vector4,
 } from 'three';
 import { attachOitVariants } from '../../rendering/oit-material';
+import {
+  applyFenceField,
+  FenceFieldUniforms,
+} from '../../sdk/materials/fence-field';
 import { oceanSlopeVariance, sampleOceanWaves } from './ocean-waves';
 import fragmentShader from './shaders/fragment.glsl';
 import vertexShader from './shaders/vertex.glsl';
@@ -32,55 +36,6 @@ export type OceanBathymetry = {
   /** grid spacing in metres, used to take the bed's gradient */
   cellSize: number;
 };
-
-/**
- * The shared uniforms a **fence** cut reads — a vertical surface swept along a
- * curve in plan, normally a wellbore's trajectory. Everything is in OBJECT XZ, so
- * the sea is cut on exactly the same curve as the block under it.
- *
- * ⚠️ Structural on purpose — `ChunkFenceUniforms` satisfies it, without this
- * material having to depend on the chunk components.
- */
-export type OceanFence = {
-  /** x: 1 while the cut is live, y: +1, or -1 to draw only what was removed */
-  params: IUniform<Vector2>;
-  /** flood-fill sign of the fence over the footprint, read NEAREST */
-  map: IUniform<Texture | null>;
-  /** object XZ -> uv */
-  toUv: IUniform<Matrix3>;
-  /** grid size in texels */
-  size: IUniform<Vector2>;
-  /** the page table followed by the allocated tiles */
-  cells: IUniform<Texture | null>;
-  /** the curve itself, bucketed: xy = segment start, zw = segment end */
-  segments: IUniform<Texture | null>;
-  /** xy: index origin, z: metres per fine cell, w: cross sign meaning removed */
-  index: IUniform<Vector4>;
-  /** `cells` texture size in texels */
-  indexSize: IUniform<Vector2>;
-  /** xy: page grid, z: fine cells per tile, w: the exactness band in metres */
-  pages: IUniform<Vector4>;
-  /** segment texture size in texels */
-  segmentsSize: IUniform<Vector2>;
-};
-
-/**
- * Bind a fence's shared uniforms onto a material whose shader was compiled with
- * `OCEAN_FENCE`. The names are the ones `shaderLib/fence-field.glsl` declares.
- */
-export function applyOceanFence(material: ShaderMaterial, fence: OceanFence) {
-  const u = material.uniforms;
-  u.fenceParams = fence.params;
-  u.fenceMap = fence.map;
-  u.fenceToUv = fence.toUv;
-  u.fenceSize = fence.size;
-  u.fenceCells = fence.cells;
-  u.fenceSegments = fence.segments;
-  u.fenceIndex = fence.index;
-  u.fenceIndexSize = fence.indexSize;
-  u.fencePages = fence.pages;
-  u.fenceSegmentsSize = fence.segmentsSize;
-}
 
 /** Default depth over which water shoals from clear to its full body colour. */
 export const DEFAULT_OCEAN_SHOAL_DEPTH = 25;
@@ -123,7 +78,7 @@ export type OceanMaterialParameters = ShaderMaterialParameters & {
    *
    * ⚠️ Read at CONSTRUCTION, like {@link OceanMaterialParameters.sectionPlane}.
    */
-  fence?: OceanFence;
+  fence?: FenceFieldUniforms;
   /**
    * The sea bed's depth grid, which makes the water shoal: clearer and paler
    * where the bed is close to the surface, its full body colour where it is not.
@@ -348,7 +303,7 @@ export class OceanMaterial extends ShaderMaterial {
 
     if (sectionPlane) this.uniforms.sectionPlane = sectionPlane;
 
-    if (fence) applyOceanFence(this, fence);
+    if (fence) applyFenceField(this.uniforms, fence);
 
     if (bathymetry) {
       const image = bathymetry.texture.image as {

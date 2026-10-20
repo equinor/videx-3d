@@ -1,5 +1,5 @@
-// Fog through a body of water (see water-fog.ts), shared by the Sky's sea and the chunks
-// under it so the two agree. Heights are along the world's up, from the water surface.
+// Fog through a body of water, as the Sky's sea draws it. Heights are along the world's
+// up, from the water surface.
 
 // How much of a segment `len` long, from height `ha` to height `hb`, lies between `bottom`
 // and `top`.
@@ -27,7 +27,7 @@ vec3 waterFog(vec3 color, float dist, float density, vec3 shallowColor, vec3 dee
   return mix(color, mix(shallowColor, deepColor, fog) * light, fog);
 }
 
-// The cutaway through the water in front of the view (see `WaterFogUniforms.cutawayShape`):
+// The cutaway through the water in front of the view:
 // everything nearer than a line across the view, `shape.x` ahead of `anchor` along
 // `heading`, waved across it by `waveA` and `waveB` (amplitude, angular frequency, phase).
 // `shape.y` is its scale (0: no cutaway), `shape.z` its edge's width, `shape.w` the opacity

@@ -12,6 +12,7 @@ import { BufferGeometry, Group, Matrix4, Plane, Vector3, Vector4 } from 'three';
 import { useData } from '../../hooks/useData';
 import { useGenerator } from '../../hooks/useGenerator';
 import {
+  CutUniforms,
   PlanarPolygonGeometry,
   readCameraTarget,
   StackSectionSource,
@@ -21,7 +22,6 @@ import {
   Vec3,
   WellboreFence,
 } from '../../sdk';
-import { WaterFogUniforms } from '../../sdk/materials/water-fog';
 import { OceanContactContext } from '../Ocean/ocean-contact';
 import { OceanSamplerContext } from '../Ocean/ocean-sampler';
 import { UtmAreaContext } from '../UtmArea';
@@ -154,15 +154,6 @@ export type ChunkStackProps = {
    */
   water?: StackWater;
   /**
-   * Fog the column through a body of water that is not its own — the `Sky`'s sea, from
-   * `useSkyWaterFog()` — as that water fogs its own seabed, so the two meet without a
-   * seam. The column's first surface is taken as the seabed. APPEARANCE only: changing
-   * it rebuilds materials, never geometry.
-   *
-   * ⚠️ Not with `water`, whose bed tint is the same effect.
-   */
-  waterFog?: WaterFogUniforms | null;
-  /**
    * Fog the view while the camera is INSIDE the sea or the block. See
    * {@link StackImmersion}.
    *
@@ -234,6 +225,13 @@ export type ChunkStackProps = {
    * `ChunkFence.overlay` texture for it. See `useFenceSeismicOverlay`.
    */
   onFenceSide?: (info: FenceSideInfo | null) => void;
+  /**
+   * Called with the stack's cut — its section's plane and its fence — as the uniform
+   * objects its own materials read, so something drawn for the stack can be cut with it:
+   * a `SkyBoxStage` occupant's seabed, say. Once; the objects follow the cut every frame,
+   * and cut nothing while it is off. `null` on unmount.
+   */
+  onCut?: (cut: CutUniforms | null) => void;
   /**
    * How the column is made monotone before it is built, and what is dropped where
    * a unit is not present. Chunks inherit this unless they declare their own.
@@ -309,7 +307,6 @@ export const ChunkStack = ({
   surfaces,
   carrier,
   water,
-  waterFog = null,
   immersion,
   contacts,
   prepareCuts = true,
@@ -317,6 +314,7 @@ export const ChunkStack = ({
   fence,
   onFence,
   onFenceSide,
+  onCut,
   resolve,
   rimSpacing,
   maxError,
@@ -847,6 +845,13 @@ export const ChunkStack = ({
     });
   }, [fenceBuilt, fenceSide, areaToUtm]);
 
+  const announceCut = useRef(onCut);
+  announceCut.current = onCut;
+  useEffect(() => {
+    announceCut.current?.({ plane: sectionUniform, fence: fenceUniforms });
+    return () => announceCut.current?.(null);
+  }, [sectionUniform, fenceUniforms]);
+
   // Registered after both cuts' frames, so it reads this frame's state.
   useFrame(() => {
     if (fenceState?.enabled) sectionUniformInverse.value.set(0, 0, 0, -1);
@@ -937,7 +942,6 @@ export const ChunkStack = ({
       contacts: contactTextures,
       water: stableWater ?? null,
       bathymetry,
-      waterFog,
       prepareCuts: hasCut,
       section: sectionState,
       sectionUniform,
@@ -983,7 +987,6 @@ export const ChunkStack = ({
     contactTextures,
     stableWater,
     bathymetry,
-    waterFog,
     hasCut,
     sectionState,
     sectionUniform,

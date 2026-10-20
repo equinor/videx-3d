@@ -1,4 +1,5 @@
 import { IUniform, Material, Vector4 } from 'three';
+import { applyFenceField } from '../../sdk/materials/fence-field';
 import {
   CustomPickingMaterial,
   setPickingMaterial,
@@ -38,16 +39,7 @@ export class ChunkPickingMaterial extends CustomPickingMaterial {
     }
     if (fence) {
       defines.CHUNK_FENCE = '';
-      this.uniforms.fenceParams = fence.params;
-      this.uniforms.fenceMap = fence.map;
-      this.uniforms.fenceToUv = fence.toUv;
-      this.uniforms.fenceSize = fence.size;
-      this.uniforms.fenceCells = fence.cells;
-      this.uniforms.fenceSegments = fence.segments;
-      this.uniforms.fenceIndex = fence.index;
-      this.uniforms.fenceIndexSize = fence.indexSize;
-      this.uniforms.fencePages = fence.pages;
-      this.uniforms.fenceSegmentsSize = fence.segmentsSize;
+      applyFenceField(this.uniforms, fence);
     }
     if (overlayOnly) {
       defines.CHUNK_FENCE_OVERLAY_ONLY = '';

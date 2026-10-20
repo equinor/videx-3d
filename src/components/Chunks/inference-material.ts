@@ -9,6 +9,7 @@ import { makeOitCompatible } from '../../rendering/oit-material';
 // ⚠️ Imported as a STRING, not `#include`d: this shader is assembled at runtime in
 // `onBeforeCompile`, where the glsl plugin's include resolution has long finished.
 import fenceFieldShader from '../../sdk/materials/shaderLib/fence-field.glsl';
+import { applyFenceField } from '../../sdk/materials/fence-field';
 import { ChunkFenceUniforms } from './chunk-material';
 import { attachChunkPicking } from './chunk-picking-material';
 
@@ -153,16 +154,7 @@ export function createInferenceMaterial(
     // is what makes one write per frame reach every variant.
     if (sectionPlane) shader.uniforms.sectionPlane = sectionPlane;
     if (fence) {
-      shader.uniforms.fenceParams = fence.params;
-      shader.uniforms.fenceMap = fence.map;
-      shader.uniforms.fenceToUv = fence.toUv;
-      shader.uniforms.fenceSize = fence.size;
-      shader.uniforms.fenceCells = fence.cells;
-      shader.uniforms.fenceSegments = fence.segments;
-      shader.uniforms.fenceIndex = fence.index;
-      shader.uniforms.fenceIndexSize = fence.indexSize;
-      shader.uniforms.fencePages = fence.pages;
-      shader.uniforms.fenceSegmentsSize = fence.segmentsSize;
+      applyFenceField(shader.uniforms, fence);
     }
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -238,16 +230,16 @@ float chunkStripe(float h, float w) {
         // Nothing to mark: also keeps the overlay out of the OIT min-depth there.
         `if (vInferred <= 0.0) discard;
   ${
-          sectionPlane
-            ? `if (vSectionDist > 0.0) discard;
+    sectionPlane
+      ? `if (vSectionDist > 0.0) discard;
   `
-            : ''
-        }${
-          fence
-            ? `if (fenceParams.x > 0.5 && fenceParams.y * fenceSide(fenceMap, fenceToUv, fenceSize, vFencePos.xz) < 0.0) discard;
+      : ''
+  }${
+    fence
+      ? `if (fenceParams.x > 0.5 && fenceParams.y * fenceSide(fenceMap, fenceToUv, fenceSize, vFencePos.xz) < 0.0) discard;
   `
-            : ''
-        }#include <clipping_planes_fragment>`,
+      : ''
+  }#include <clipping_planes_fragment>`,
       )
       .replace(
         '#include <color_fragment>',

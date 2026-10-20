@@ -25,11 +25,14 @@ import {
 import { attachOitVariants } from '../../rendering/oit-material';
 import { StackCapNormalMap, StackTiling, Vec2 } from '../../sdk';
 import {
+  applyFenceField,
+  FenceFieldUniforms,
+} from '../../sdk/materials/fence-field';
+import {
   applySurfaceDetail,
   createSurfaceDetailUniforms,
   SurfaceDetailUniforms,
 } from '../../sdk/materials/surface-detail';
-import { WaterFogUniforms } from '../../sdk/materials/water-fog';
 import { ChunkContactTexture } from './chunk-contacts';
 import { ChunkDepthMap } from './chunk-depth-map';
 import { ChunkDetail } from './chunk-detail';
@@ -144,39 +147,7 @@ export function bindChunkNormalMap(
  *
  * @group Components
  */
-export type ChunkFenceUniforms = {
-  /** x: 1 while the cut is live, y: +1, or -1 to draw only what was removed */
-  params: IUniform<Vector2>;
-  /**
-   * Flood-fill sign of the fence over the footprint, read NEAREST.
-   *
-   * ⚠️ A SIGN, not a distance to interpolate. It settles the global topology; the
-   * boundary itself comes from {@link ChunkFenceUniforms.segments}.
-   */
-  map: IUniform<Texture | null>;
-  /** object XZ -> uv */
-  toUv: IUniform<Matrix3>;
-  /** grid size in texels */
-  size: IUniform<Vector2>;
-  /** the page table followed by the allocated tiles: page r = tile or -1, cell rg = offset, count */
-  cells: IUniform<Texture | null>;
-  /**
-   * The curve itself, bucketed: xy = segment start, zw = segment end.
-   *
-   * ⭐⭐ Carrying the segments is what makes the cut EXACT. Reconstructing them from
-   * a raster cannot reproduce a polyline, and the error shows as gaps and a wavy
-   * edge where the block meets the cut face.
-   */
-  segments: IUniform<Texture | null>;
-  /** xy: index origin, z: metres per fine cell, w: cross sign meaning removed */
-  index: IUniform<Vector4>;
-  /** `cells` texture size in texels */
-  indexSize: IUniform<Vector2>;
-  /** xy: page grid, z: fine cells per tile, w: the exactness band in metres */
-  pages: IUniform<Vector4>;
-  /** segment texture size in texels */
-  segmentsSize: IUniform<Vector2>;
-};
+export type ChunkFenceUniforms = FenceFieldUniforms;
 
 /**
  * The per-side values {@link ChunkFenceUniforms} is filled from.
@@ -352,17 +323,6 @@ export type ChunkMaterialParameters = {
    */
   waterTint?: ChunkWaterTintParameters;
   /**
-   * Fog this layer through a body of water it lies in, as that water fogs its own seabed
-   * (the `Sky`'s sea: see `useSkyWaterFog`). SHARED uniforms, like `sectionPlane`.
-   * ⚠️ Read at CONSTRUCTION. Not with `waterTint` as well, which would tint it twice.
-   */
-  waterFog?: WaterFogUniforms;
-  /**
-   * This layer IS the seabed the `waterFog` water stands on, so all the water over it
-   * fogs it. Otherwise only the water above the seabed's depth (`waterFog.depth`) does.
-   */
-  waterFogBed?: boolean;
-  /**
    * Cut this material with a plane: fragments where `dot(xyz, position) + w > 0`
    * are discarded, in the mesh's OWN object space.
    *
@@ -536,27 +496,6 @@ export class ChunkMaterial extends ShaderMaterial {
     this.applyDetail(parameters.detail, parameters.wall === true);
     this.applyWaterTint(parameters.waterTint);
 
-    if (parameters.waterFog) {
-      const fog = parameters.waterFog;
-      const defines = this.defines as Record<string, unknown>;
-      defines.CHUNK_WATER_FOG = '';
-      if (parameters.waterFogBed) defines.CHUNK_WATER_FOG_BED = '';
-      u.waterFogUp = fog.up;
-      u.waterFogLevel = fog.level;
-      u.waterFogDepth = fog.depth;
-      u.waterFogDensity = fog.density;
-      u.waterFogShallow = fog.shallowColor;
-      u.waterFogDeep = fog.deepColor;
-      u.waterFogDaylight = fog.daylight;
-      u.waterFogIntensity = fog.intensity;
-      u.waterFogCamera = fog.camera;
-      u.waterFogCutawayAnchor = fog.cutawayAnchor;
-      u.waterFogCutawayHeading = fog.cutawayHeading;
-      u.waterFogCutawayShape = fog.cutawayShape;
-      u.waterFogCutawayWaveA = fog.cutawayWaveA;
-      u.waterFogCutawayWaveB = fog.cutawayWaveB;
-    }
-
     // A cap's tiles drawn coarser than the full level may shade from its normal
     // map, bound per draw (see `bindChunkNormalMap`).
     if (!parameters.wall) {
@@ -582,16 +521,7 @@ export class ChunkMaterial extends ShaderMaterial {
 
     if (parameters.fence) {
       (this.defines as Record<string, unknown>).CHUNK_FENCE = '';
-      this.uniforms.fenceParams = parameters.fence.params;
-      this.uniforms.fenceMap = parameters.fence.map;
-      this.uniforms.fenceToUv = parameters.fence.toUv;
-      this.uniforms.fenceSize = parameters.fence.size;
-      this.uniforms.fenceCells = parameters.fence.cells;
-      this.uniforms.fenceSegments = parameters.fence.segments;
-      this.uniforms.fenceIndex = parameters.fence.index;
-      this.uniforms.fenceIndexSize = parameters.fence.indexSize;
-      this.uniforms.fencePages = parameters.fence.pages;
-      this.uniforms.fenceSegmentsSize = parameters.fence.segmentsSize;
+      applyFenceField(this.uniforms, parameters.fence);
     }
 
     if (parameters.fenceOverlay) {
