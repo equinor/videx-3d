@@ -403,13 +403,18 @@ export const ChunkStack = ({
   const sectionState = useMemo<ChunkSectionState | null>(
     () =>
       hasSection
-        ? { plane: new Plane(), enabled: true, offset: DEFAULT_SECTION_OFFSET }
+        ? {
+            plane: new Plane(),
+            enabled: true,
+            offset: DEFAULT_SECTION_OFFSET,
+            listeners: new Set(),
+          }
         : null,
     [hasSection],
   );
-  // ⚠️ Registered here, so it runs AFTER any child's own `useFrame` (child effects
-  // subscribe first) — a caller animating the plane from inside the stack is
-  // therefore read in the same frame it wrote, not the next one.
+  // ⚠️ Registered here, so it runs AFTER the `useFrame` of any child mounted WITH the
+  // stack (child effects subscribe first) — a caller animating the plane from such a
+  // child is therefore read in the same frame it wrote, not the next one.
   useFrame(({ camera, controls }) => {
     if (!section || !sectionState) {
       sectionUniform.value.set(0, 0, 0, -1);
@@ -466,6 +471,7 @@ export const ChunkStack = ({
     if (sectionState.enabled)
       sectionUniform.value.set(normal.x, normal.y, normal.z, constant);
     else sectionUniform.value.set(0, 0, 0, -1);
+    sectionState.listeners?.forEach(listener => listener());
   });
 
   // --- Envelope: the footprint the shared column grid is built over. It must

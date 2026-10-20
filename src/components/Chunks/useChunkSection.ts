@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { BufferAttribute, BufferGeometry, DynamicDrawUsage } from 'three';
 import { useReleasedFrame } from '../../hooks/useReleasedFrame';
 import {
@@ -153,7 +153,7 @@ export function useChunkSection(
     off: number;
   }>({ faces: null, x: NaN, y: NaN, z: NaN, c: NaN, on: false, off: NaN });
 
-  useReleasedFrame(() => {
+  const rebuild = () => {
     if (!faces || !source || !section) return;
     const state = last.current;
     if (!section.enabled) {
@@ -220,6 +220,25 @@ export function useChunkSection(
         attribute.needsUpdate = true;
       }
     }
+  };
+
+  // Run by the stack as soon as it has moved the plane (see
+  // `ChunkSectionState.listeners`); a section without listeners, from our own frame.
+  const latest = useRef(rebuild);
+  useLayoutEffect(() => {
+    latest.current = rebuild;
+  });
+  useLayoutEffect(() => {
+    const listeners = section?.listeners;
+    if (!listeners) return;
+    const run = () => latest.current();
+    listeners.add(run);
+    return () => {
+      listeners.delete(run);
+    };
+  }, [section]);
+  useReleasedFrame(() => {
+    if (!section?.listeners) rebuild();
   });
 
   return faces;

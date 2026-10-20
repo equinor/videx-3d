@@ -992,6 +992,12 @@ export type ChunkSectionState = {
   plane: Plane;
   enabled: boolean;
   offset: number;
+  /**
+   * Run by the stack right after it moves the plane each frame. The cut faces rebuild
+   * here rather than in a frame callback of their own, which runs BEFORE the stack's
+   * whenever it subscribed first, and so would cut a frame behind the shader.
+   */
+  listeners?: Set<() => void>;
 };
 
 /**
