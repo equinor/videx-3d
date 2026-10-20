@@ -357,6 +357,12 @@ export type ChunkLayer = {
    */
   capOpacity?: number;
   /**
+   * Leave this layer's CAP whole under the section and the fence, while the unit below
+   * it is cut as usual: the cap stays as a sheet over the removed half. What
+   * {@link StackWater.keepBed} does for the sea bed, without needing a sea. Default false.
+   */
+  keepCap?: boolean;
+  /**
    * Let the stack's section cut this unit. Default true; `false` keeps it WHOLE
    * while everything around it is cut away — a slab standing proud of the section,
    * which is how you single out a reservoir, a seal or the sea bed.

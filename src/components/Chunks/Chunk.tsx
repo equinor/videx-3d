@@ -122,6 +122,7 @@ const CHUNK_LAYER_KEY = {
   opacity: { appearance: l => `${l.opacity ?? ''}` },
   capOpacity: { appearance: l => `${l.capOpacity ?? ''}` },
   section: { appearance: l => (l.section === false ? '0' : '1') },
+  keepCap: { appearance: l => (l.keepCap ? '1' : '0') },
   contacts: {
     appearance: l =>
       l.contacts === false ? 'none' : (l.contacts?.join('+') ?? ''),

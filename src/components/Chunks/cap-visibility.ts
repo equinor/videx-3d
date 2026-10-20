@@ -17,7 +17,8 @@ import type { ChunkLayer } from './chunk-defs';
 /**
  * Whether a cut takes cap `i`. ⭐ A unit is bounded by TWO caps, so keeping one
  * whole keeps the cap that FLOORS it too; `seaKept` keeps cap 0, the sea bed —
- * as the floor of a sea the cut leaves whole, or on its own (`StackWater.keepBed`).
+ * as the floor of a sea the cut leaves whole, or on its own (`StackWater.keepBed`) —
+ * and `ChunkLayer.keepCap` keeps a cap alone.
  */
 export function capCut(
   layers: readonly ChunkLayer[],
@@ -25,7 +26,9 @@ export function capCut(
   seaKept: boolean,
 ) {
   const kept = (j: number) => layers[j]?.section === false;
-  return !kept(i) && !kept(i - 1) && !(seaKept && i === 0);
+  return (
+    !kept(i) && !kept(i - 1) && !layers[i]?.keepCap && !(seaKept && i === 0)
+  );
 }
 
 /** The opacity a layer's CAP is drawn with: `capOpacity`, else `opacity`, else `fallback`. */
