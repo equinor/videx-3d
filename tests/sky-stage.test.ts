@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { BufferAttribute, BufferGeometry } from 'three';
 import {
   createSkyStageBed,
-  createSkyStageGeometry,
+  createSkyStagePlane,
   createSkyStageRelief,
+  createSkyStageRings,
   createSkyStageSeabed,
   SkyStageBounds,
   skyStageRim,
@@ -16,6 +17,7 @@ import type { SeabedMesh } from '../src/sdk/geometries/surface-clip';
 
 const BED_Y = -100;
 const near: SkyStageBounds = [-6000, -6000, 6000, 6000];
+const extent: SkyStageBounds = [-50000, -50000, 50000, 50000];
 const ring: [number, number][] = [];
 for (let j = 0; j < 96; j++) {
   const a = (j / 96) * Math.PI * 2;
@@ -52,10 +54,10 @@ const boundary = (geometry: BufferGeometry) => {
   return vertices;
 };
 
-const onRectangle = ([x, z]: number[]) =>
-  [x - near[0], z - near[1], near[2] - x, near[3] - z].some(
-    d => Math.abs(d) < 1e-3,
-  );
+const onRectangle = (
+  [x, z]: number[],
+  [minX, minZ, maxX, maxZ]: SkyStageBounds = near,
+) => [x - minX, z - minZ, maxX - x, maxZ - z].some(d => Math.abs(d) < 1e-3);
 
 // An occupant's seabed: polar rings from a hole of radius 500 out to the outline, whose
 // outer ring IS the outline, at `heightAt`.
@@ -117,17 +119,22 @@ describe('sky stage caps', () => {
     }
   });
 
-  it('the near cap meets the far rings vertex for vertex', () => {
-    const { near: cap, far } = createSkyStageGeometry(
-      near,
-      [-50000, -50000, 50000, 50000],
-    );
-    const inner = boundary(cap);
-    const rings = boundary(far);
-    for (const at of inner.keys()) {
-      expect(onRectangle(at.split(',').map(Number))).toBe(true);
-      expect(rings.has(at)).toBe(true);
+  it('⭐ the plane is one piece: its only edge is the extent', () => {
+    const plane = createSkyStagePlane(near, extent);
+    const edge = boundary(plane);
+    expect(edge.size).toBeGreaterThan(0);
+    for (const at of edge.keys()) {
+      expect(onRectangle(at.split(',').map(Number), extent)).toBe(true);
     }
+  });
+
+  it('the rings meet the relief vertex for vertex', () => {
+    const relief = createSkyStageRelief(near, outline, elevations, BED_Y, 2000);
+    const onNear = (edge: Map<string, number>) =>
+      [...edge.keys()].filter(at => onRectangle(at.split(',').map(Number)));
+    const inner = onNear(boundary(createSkyStageRings(near, extent)));
+    expect(inner.length).toBeGreaterThan(0);
+    expect(new Set(inner)).toEqual(new Set(onNear(boundary(relief))));
   });
 
   it('the rim of a handed seabed: its outer ring and hole as one component, with their heights', () => {

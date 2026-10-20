@@ -318,6 +318,12 @@ option and debug view) and `Spikes/Sky/Baseline` (a real field) exercise all of 
   it compiles as the scene draws, i.e. for the `RenderingPipeline`'s render target and
   through the `OITRenderPass`'s variants. The sky waits for its own meshes, the stages
   registered through `SkyOceanState.stage`, and the baker's scenes and PMREM prefilter.
+- The water lies on one mesh (`createSkyStagePlane`): `bounds` as a 4 × 4 grid, then rings
+  each about twice as wide as the one inside, out to the far plane. The flat parts are
+  shaded at the ray's exact hit, so their triangles only need to grow with their distance
+  from the scene: ~1000 km triangles crack where the GPU clips them. Without an occupant
+  the seabed lies on the same mesh; with one, on rings around the relief's rectangle
+  (`skyStageNearBounds`, `createSkyStageRings`), which share their inner edge with it.
 - ⭐ An occupant's seabed is the stage's `occupant-bed` part: the relief's shading
   (`STAGE_BED`, `STAGE_RELIEF`) plus `STAGE_OCCUPANT`, which holds it whole after the
   cutaway has cleared the water over it. The relief is built on its rim (`skyStageRim`),

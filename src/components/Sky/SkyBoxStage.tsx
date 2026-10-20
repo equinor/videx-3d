@@ -22,11 +22,12 @@ import { createTinSampler } from '../../sdk/geometries/tin-sampler';
 import type { CutUniforms } from '../../sdk/materials/fence-field';
 import { useSkyOcean } from './sky-context';
 import {
-  createSkyStageGeometry,
   createSkyStageBed,
   createSkyStageMaterial,
   createSkyStageOutline,
+  createSkyStagePlane,
   createSkyStageRelief,
+  createSkyStageRings,
   createSkyStageSeabed,
   SkyStageBounds,
   skyStageNearBounds,
@@ -36,7 +37,7 @@ import {
 // Share of the far plane the stage draws the sea out to; the sky draws beyond, where
 // the far plane would clip the stage.
 const STAGE_REACH = 0.8;
-// Room between the outline and the far rings when there is no relief to make room for.
+// Room between the outline and the rings when there is no relief to make room for.
 const MIN_NEAR_MARGIN = 1000;
 
 // Without OIT, see-through parts draw in this order: the scene's own (most of it under the
@@ -188,26 +189,35 @@ export const SkyBoxStage = ({
     () => [minX - far, minZ - far, maxX + far, maxZ + far],
     [minX, minZ, maxX, maxZ, far],
   );
-  // At least the relief's falloff, so the relief ends on the far rings at the seabed.
+  // The water's, and the seabed's without an occupant.
+  const plane = useMemo(
+    () => createSkyStagePlane([minX, minZ, maxX, maxZ], extent),
+    [minX, minZ, maxX, maxZ, extent],
+  );
+  useEffect(() => () => plane.dispose(), [plane]);
+
+  // Around an occupant: at least the relief's falloff, so the relief ends on the rings at
+  // the seabed.
   const near = useMemo(
     () =>
-      skyStageNearBounds(
-        [minX, minZ, maxX, maxZ],
-        extent,
-        outline,
-        Math.max(seabedFalloff, MIN_NEAR_MARGIN),
-      ),
-    [minX, minZ, maxX, maxZ, extent, outline, seabedFalloff],
+      outline
+        ? skyStageNearBounds(
+            extent,
+            outline,
+            Math.max(seabedFalloff, MIN_NEAR_MARGIN),
+          )
+        : null,
+    [extent, outline, seabedFalloff],
   );
-
-  const geometry = useMemo(
-    () => createSkyStageGeometry(near, extent),
+  const rings = useMemo(
+    () => (near ? createSkyStageRings(near, extent) : null),
     [near, extent],
   );
+  useEffect(() => () => rings?.dispose(), [rings]);
 
   const relief = useMemo(
     () =>
-      hasBed && rim && seabedFalloff > 0
+      hasBed && rim && near && seabedFalloff > 0
         ? createSkyStageRelief(
             near,
             rim.outline,
@@ -245,18 +255,12 @@ export const SkyBoxStage = ({
     [sky, bedDetail, seeThrough, cutPlane, cutFence],
   );
 
-  useEffect(
-    () => () => {
-      geometry.near.dispose();
-      geometry.far.dispose();
-    },
-    [geometry],
-  );
-
   // Around an occupant's seabed with no relief to meet it, the flat seabed leaves it a hole.
   const bedAround = useMemo(
     () =>
-      hasBed && outline && !relief ? createSkyStageBed(near, outline) : null,
+      hasBed && near && outline && !relief
+        ? createSkyStageBed(near, outline)
+        : null,
     [hasBed, outline, relief, near],
   );
   useEffect(() => () => bedAround?.dispose(), [bedAround]);
@@ -405,7 +409,8 @@ export const SkyBoxStage = ({
     register,
     materials,
     occupantBed,
-    geometry,
+    plane,
+    rings,
     relief,
     bedAround,
     seabedMesh,
@@ -426,44 +431,47 @@ export const SkyBoxStage = ({
     order?: number;
   }[] = [];
   if (wet) {
-    for (const [key, cap] of [
-      ['surface-far', geometry.far],
-      ['surface-near', geometry.near],
-    ] as const) {
-      parts.push({
-        key,
-        layer: 'surface',
-        geometry: cap,
-        material: materials.surface,
-        y: level,
-        order: SURFACE_ORDER,
-      });
-    }
+    parts.push({
+      key: 'surface',
+      layer: 'surface',
+      geometry: plane,
+      material: materials.surface,
+      y: level,
+      order: SURFACE_ORDER,
+    });
   }
-  if (hasBed) {
+  if (hasBed && rings) {
     parts.push({
       key: 'bed-far',
       layer: 'bed',
-      geometry: geometry.far,
+      geometry: rings,
       material: materials.bed,
       y: bedY,
     });
-    parts.push(
-      relief
-        ? {
-            key: 'relief',
-            layer: 'relief',
-            geometry: relief,
-            material: materials.reliefBed,
-          }
-        : {
-            key: 'bed-near',
-            layer: 'bed',
-            geometry: bedAround ?? geometry.near,
-            material: materials.bed,
-            y: bedY,
-          },
-    );
+    if (relief) {
+      parts.push({
+        key: 'relief',
+        layer: 'relief',
+        geometry: relief,
+        material: materials.reliefBed,
+      });
+    } else if (bedAround) {
+      parts.push({
+        key: 'bed-near',
+        layer: 'bed',
+        geometry: bedAround,
+        material: materials.bed,
+        y: bedY,
+      });
+    }
+  } else if (hasBed) {
+    parts.push({
+      key: 'bed',
+      layer: 'bed',
+      geometry: plane,
+      material: materials.bed,
+      y: bedY,
+    });
   }
   if (seabedMesh && hasBed) {
     parts.push({

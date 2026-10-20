@@ -44,26 +44,14 @@ export type SkyStageRim = {
 };
 
 /**
- * A stage's caps, flat at y = 0, to be moved to the sea level and the seabed.
- */
-export type SkyStageGeometry = {
-  /** the near rectangle (see {@link skyStageNearBounds}) */
-  near: BufferGeometry;
-  /** the rest of the stage, in rings widening away from the near rectangle */
-  far: BufferGeometry;
-};
-
-/**
- * The rectangle a stage fills finely: the outline's bounds grown by `margin`, held inside
- * `extent`. Without an outline, `bounds`.
+ * The rectangle around an occupant that its relief, or the flat seabed around it, fills:
+ * the outline's bounds grown by `margin`, held inside `extent`.
  */
 export function skyStageNearBounds(
-  bounds: SkyStageBounds,
   extent: SkyStageBounds,
-  outline: PlanarPolygonGeometry | null,
+  outline: PlanarPolygonGeometry,
   margin: number,
 ): SkyStageBounds {
-  if (!outline) return bounds;
   const { min, max } = outline.getBounds();
   return [
     Math.max(min[0] - margin, extent[0] + 1),
@@ -74,26 +62,39 @@ export function skyStageNearBounds(
 }
 
 /**
- * Build a stage's caps: `near` fills the near rectangle, `far` the rest of `extent`, sharing
- * its boundary vertex for vertex. The water lies on both, and so does the seabed where no
- * occupant hands the stage one.
+ * The whole stage, flat at y = 0: `bounds` as a grid, then rings out to `extent` (see
+ * {@link createSkyStageRings}), in one mesh. The water lies on it, and so does the seabed
+ * without an occupant.
+ *
+ * ⚠️ `bounds` must lie inside `extent`.
+ */
+export function createSkyStagePlane(
+  bounds: SkyStageBounds,
+  extent: SkyStageBounds,
+): BufferGeometry {
+  return createRings(bounds, extent, true);
+}
+
+/**
+ * `extent` less `near`, flat at y = 0, as rings each about twice as wide as the one inside
+ * it, so the triangles grow with their distance from `near`: huge ones crack where the GPU
+ * clips them. Their inner edge is `near`'s perimeter, which the relief and the flat seabed
+ * around an occupant share vertex for vertex.
  *
  * ⚠️ `near` must lie inside `extent`.
  */
-export function createSkyStageGeometry(
+export function createSkyStageRings(
   near: SkyStageBounds,
   extent: SkyStageBounds,
-): SkyStageGeometry {
-  return {
-    near: createSkyStageBed(near, null),
-    far: createSkyStageRings(near, extent),
-  };
+): BufferGeometry {
+  return createRings(near, extent, false);
 }
 
 /**
  * The near rectangle less an occupant's `outline`, flat at y = 0: the seabed around the
  * occupant's own where no relief eases into it (see {@link createSkyStageRelief}). It
- * shares its boundary with the far rings and with the outline vertex for vertex.
+ * shares its boundary with the rings and with the outline vertex for vertex. Shaded per
+ * pixel, so it needs no points inside.
  *
  * ⚠️ The outline must lie inside `near`.
  *
@@ -101,20 +102,18 @@ export function createSkyStageGeometry(
  */
 export function createSkyStageBed(
   near: SkyStageBounds,
-  outline: PlanarPolygonGeometry | null,
+  outline: PlanarPolygonGeometry,
 ): BufferGeometry {
-  const components = (outline?.coordinates ?? []) as PlanarPolygonCoordinates;
-  const rings = components.flat().map(openRing);
-  // Flat, so shaded per pixel: a coarse grid of points only keeps its triangles compact.
-  const spacing = Math.max(near[2] - near[0], near[3] - near[1]) / 16;
-  return createDelaunayCap([perimeter(near), ...rings], {
-    points: gradedPoints(near, rings, spacing, spacing, Infinity),
-  });
+  const components = outline.coordinates as PlanarPolygonCoordinates;
+  return createDelaunayCap([
+    perimeter(near),
+    ...components.flat().map(openRing),
+  ]);
 }
 
 /**
  * The seabed around an occupant with a seabed of its own, over the near rectangle less
- * the outline (see {@link createSkyStageGeometry}): it starts on the outline at the
+ * the outline (see {@link skyStageNearBounds}): it starts on the outline at the
  * occupant's `elevations` and eases to `bedY` over `falloff`, in scene Y, with its normals.
  * Given the occupant's rim (see {@link skyStageRim}), it meets its seabed vertex for vertex.
  *
@@ -289,13 +288,12 @@ function perimeter([minX, minZ, maxX, maxZ]: SkyStageBounds): Vec2[] {
   return points;
 }
 
-/**
- * `outer` less `inner`, flat at y = 0, as rings each about twice as wide as the one inside
- * it, so the triangles grow with the distance from `inner` and keep their shape.
- */
-function createSkyStageRings(
+// The rings from `inner` out to `outer`, and with `fill`, `inner` too, as a grid whose edge
+// is the first ring's own vertices.
+function createRings(
   inner: SkyStageBounds,
   outer: SkyStageBounds,
+  fill: boolean,
 ): BufferGeometry {
   const first =
     Math.max(inner[2] - inner[0], inner[3] - inner[1]) / RING_SEGMENTS;
@@ -314,7 +312,6 @@ function createSkyStageRings(
   const points = boundaries.map(perimeter);
   const count = points[0].length;
   const flat = points.flat();
-  const positions = flat.flatMap(([x, z]) => [x, 0, z]);
   const indices: number[] = [];
   const at = (k: number, i: number) => k * count + (i % count);
   const add = (a: number, b: number, c: number) => {
@@ -333,6 +330,35 @@ function createSkyStageRings(
     }
   }
 
+  if (fill) {
+    const n = RING_SEGMENTS;
+    const [minX, minZ, maxX, maxZ] = inner;
+    const start = flat.length;
+    for (let j = 1; j < n; j++) {
+      for (let i = 1; i < n; i++) {
+        flat.push([
+          minX + ((maxX - minX) * i) / n,
+          minZ + ((maxZ - minZ) * j) / n,
+        ]);
+      }
+    }
+    // Grid vertex (i, j): on the edge the first ring's, in `perimeter`'s order.
+    const grid = (i: number, j: number) => {
+      if (j === 0 && i < n) return i;
+      if (i === n && j < n) return n + j;
+      if (j === n && i > 0) return 3 * n - i;
+      if (i === 0 && j > 0) return 4 * n - j;
+      return start + (j - 1) * (n - 1) + (i - 1);
+    };
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        add(grid(i, j), grid(i + 1, j), grid(i + 1, j + 1));
+        add(grid(i, j), grid(i + 1, j + 1), grid(i, j + 1));
+      }
+    }
+  }
+
+  const positions = flat.flatMap(([x, z]) => [x, 0, z]);
   const geometry = new BufferGeometry();
   geometry.setAttribute(
     'position',
@@ -503,8 +529,6 @@ function gradedPoints(
     spacing = Math.min(2 * spacing, coarse)
   ) {
     const to = spacing >= coarse ? reach : from + GRADED_ROWS * spacing;
-    // Unbounded, only the clearance needs a distance: nothing within it, and it is kept.
-    const limit = Number.isFinite(to) ? to : spacing;
     const columns = Math.floor((maxX - minX) / spacing);
     const rows = Math.floor((maxZ - minZ) / spacing);
     const nearest = new Float64Array(columns * rows).fill(Infinity);
@@ -519,16 +543,12 @@ function gradedPoints(
         const dx = bx - ax;
         const dz = bz - az;
         const length2 = dx * dx + dz * dz;
-        const r1 = last(Math.max(az, bz) + limit, minZ, rows);
-        const c1 = last(Math.max(ax, bx) + limit, minX, columns);
-        for (
-          let row = first(Math.min(az, bz) - limit, minZ);
-          row <= r1;
-          row++
-        ) {
+        const r1 = last(Math.max(az, bz) + to, minZ, rows);
+        const c1 = last(Math.max(ax, bx) + to, minX, columns);
+        for (let row = first(Math.min(az, bz) - to, minZ); row <= r1; row++) {
           const z = minZ + (row + 0.5) * spacing;
           for (
-            let column = first(Math.min(ax, bx) - limit, minX);
+            let column = first(Math.min(ax, bx) - to, minX);
             column <= c1;
             column++
           ) {
@@ -550,7 +570,7 @@ function gradedPoints(
     for (let k = 0; k < nearest.length; k++) {
       const d = nearest[k];
       if (d < Math.max(from, spacing / 2)) continue;
-      if (d >= to && Number.isFinite(to)) continue;
+      if (d >= to) continue;
       const column = k % columns;
       const row = (k - column) / columns;
       points.push([
