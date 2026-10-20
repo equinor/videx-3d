@@ -11,7 +11,6 @@ import {
 } from 'three';
 import { extractBoundaryLoops } from '../../sdk/geometries/boundary-loops';
 import { createDelaunayCap } from '../../sdk/geometries/delaunay-cap';
-import { createPolygonCap } from '../../sdk/geometries/polygon-cap';
 import { computeUpwardNormals } from '../../sdk/geometries/geometry-attributes';
 import {
   Coordinates2D,
@@ -48,12 +47,10 @@ export type SkyStageRim = {
  * A stage's caps, flat at y = 0, to be moved to the sea level and the seabed.
  */
 export type SkyStageGeometry = {
-  /** the near rectangle (see {@link skyStageNearBounds}) less the outline */
+  /** the near rectangle (see {@link skyStageNearBounds}) */
   near: BufferGeometry;
   /** the rest of the stage, in rings widening away from the near rectangle */
   far: BufferGeometry;
-  /** the outline itself */
-  inner: BufferGeometry | null;
 };
 
 /**
@@ -77,87 +74,42 @@ export function skyStageNearBounds(
 }
 
 /**
- * Build a stage's caps: `near` fills the near rectangle less the outline, `far` the rest
- * of `extent`. Every boundary is shared vertex for vertex, so the caps, the walls and the
- * relief meet exactly.
+ * Build a stage's caps: `near` fills the near rectangle, `far` the rest of `extent`, sharing
+ * its boundary vertex for vertex. The water lies on both, and so does the seabed where no
+ * occupant hands the stage one.
  *
- * ⚠️ The outline must lie inside `near`, and `near` inside `extent`.
- *
- * @param outline in scene X/Z, without an offset
+ * ⚠️ `near` must lie inside `extent`.
  */
 export function createSkyStageGeometry(
   near: SkyStageBounds,
   extent: SkyStageBounds,
-  outline?: PlanarPolygonGeometry | null,
 ): SkyStageGeometry {
-  const components = (outline?.coordinates ?? []) as PlanarPolygonCoordinates;
-  const rings = components.flat().map(openRing);
-
-  // Flat, so shaded per pixel: a coarse grid of points only keeps its triangles compact.
-  const spacing = Math.max(near[2] - near[0], near[3] - near[1]) / 16;
-  const nearCap = createDelaunayCap([perimeter(near), ...rings], {
-    points: gradedPoints(near, rings, spacing, spacing, Infinity),
-  });
-  const far = createSkyStageRings(near, extent);
-  if (rings.length === 0) return { near: nearCap, far, inner: null };
-
-  const inner = createPolygonCap(
-    new PlanarPolygonGeometry(components).toShapes(),
-  );
-  return { near: nearCap, far, inner };
+  return {
+    near: createSkyStageBed(near, null),
+    far: createSkyStageRings(near, extent),
+  };
 }
 
 /**
- * The walls along every ring of an outline, from `top` down to the seabed — the
- * `elevations` where given, else `bottom` — in scene Y. Front faces look into the
- * outline; `uv.y` is 1 at the top and 0 at the bottom, as `OceanVolumeMaterial` reads it,
- * and `bedY` is the seabed at each foot.
+ * The near rectangle less an occupant's `outline`, flat at y = 0: the seabed around the
+ * occupant's own where no relief eases into it (see {@link createSkyStageRelief}). It
+ * shares its boundary with the far rings and with the outline vertex for vertex.
+ *
+ * ⚠️ The outline must lie inside `near`.
+ *
+ * @param outline in scene X/Z, without an offset
  */
-export function createSkyStageWalls(
-  outline: PlanarPolygonGeometry,
-  top: number,
-  bottom: number,
-  elevations?: SkyStageElevations | null,
+export function createSkyStageBed(
+  near: SkyStageBounds,
+  outline: PlanarPolygonGeometry | null,
 ): BufferGeometry {
-  const components = outline.coordinates as PlanarPolygonCoordinates;
-  const positions: number[] = [];
-  const uvs: number[] = [];
-  const beds: number[] = [];
-  const indices: number[] = [];
-  // The occupied side on the left of travel: outer rings counter-clockwise, holes clockwise.
-  components.forEach((component, c) =>
-    component.forEach((ring, r) => {
-      const points = openRing(ring);
-      if (points.length < 3) return;
-      const heights = points.map((_, i) => elevations?.[c]?.[r]?.[i] ?? bottom);
-      const ccw = signedArea(points) > 0;
-      if (ccw !== (r === 0)) {
-        points.reverse();
-        heights.reverse();
-      }
-      const start = positions.length / 3;
-      points.forEach(([x, z], i) => {
-        positions.push(x, top, z, x, heights[i], z);
-        uvs.push(0, 1, 0, 0);
-        beds.push(heights[i], heights[i]);
-      });
-      const n = points.length;
-      for (let i = 0; i < n; i++) {
-        const top0 = start + i * 2;
-        const top1 = start + ((i + 1) % n) * 2;
-        indices.push(top0, top0 + 1, top1, top1, top0 + 1, top1 + 1);
-      }
-    }),
-  );
-  const geometry = new BufferGeometry();
-  geometry.setAttribute(
-    'position',
-    new BufferAttribute(new Float32Array(positions), 3),
-  );
-  geometry.setAttribute('uv', new BufferAttribute(new Float32Array(uvs), 2));
-  geometry.setAttribute('bedY', new BufferAttribute(new Float32Array(beds), 1));
-  geometry.setIndex(indices);
-  return geometry;
+  const components = (outline?.coordinates ?? []) as PlanarPolygonCoordinates;
+  const rings = components.flat().map(openRing);
+  // Flat, so shaded per pixel: a coarse grid of points only keeps its triangles compact.
+  const spacing = Math.max(near[2] - near[0], near[3] - near[1]) / 16;
+  return createDelaunayCap([perimeter(near), ...rings], {
+    points: gradedPoints(near, rings, spacing, spacing, Infinity),
+  });
 }
 
 /**
@@ -204,8 +156,8 @@ export function createSkyStageRelief(
 
 /**
  * The rim of an occupant's seabed: its boundary loops, grouped into outer rings and
- * holes, with their heights. A relief or walls built on it meet the seabed vertex for
- * vertex (see {@link createSkyStageRelief}, {@link createSkyStageWalls}).
+ * holes, with their heights. A relief built on it meets the seabed vertex for vertex (see
+ * {@link createSkyStageRelief}).
  */
 export function skyStageRim(seabed: SeabedMesh): SkyStageRim {
   const { positions } = seabed;
@@ -633,27 +585,16 @@ function openRing(ring: Coordinates2D): Vec2[] {
   return points;
 }
 
-function signedArea(points: Vec2[]) {
-  let area = 0;
-  for (let i = 0; i < points.length; i++) {
-    const [x0, z0] = points[i];
-    const [x1, z1] = points[(i + 1) % points.length];
-    area += x0 * z1 - x1 * z0;
-  }
-  return area / 2;
-}
-
 /** Which part of a stage a material draws. */
-export type SkyStagePart =
-  | 'surface'
-  | 'bed'
-  | 'dry-bed'
-  | 'relief-bed'
-  | 'dry-relief-bed'
-  | 'occupant-bed'
-  | 'dry-occupant-bed'
-  | 'wall'
-  | 'drained-wall';
+export type SkyStagePart = 'surface' | 'bed' | 'relief-bed' | 'occupant-bed';
+
+/** How a stage's seabed part is drawn (see {@link createSkyStageMaterial}). */
+export type SkyStageMaterialOptions = {
+  /** at the sea's seabed opacity, as a transparent part; opaque otherwise */
+  seeThrough?: boolean;
+  /** an occupant bed's: the occupant's own cut, in the scene frame */
+  cut?: CutUniforms;
+};
 
 function oceanDefines(sky: SkyMaterial) {
   const defines: Record<string, unknown> = { SKY_OCEAN: '', SKY_ABYSS: '' };
@@ -671,29 +612,26 @@ function oceanDefines(sky: SkyMaterial) {
  * `skyOceanStaged`). The `relief` beds are shaded where the geometry lies rather than on
  * the flat seabed, and so is an `occupant` bed (see {@link createSkyStageSeabed}), which
  * a cutaway never cuts: it only takes the water over it. It is cut instead with the
- * occupant, by the `cut` it hands over (its uniform objects, in the scene frame). `dry-`
- * parts have no water over them. A `wall` is the sea's water body seen through, from
- * either side; a `drained-wall` also shows the endless sea beyond it to a camera in the
- * drained hole.
- * The transparent parts (surface, walls) are wired for the `OITRenderPass`.
+ * occupant, by the `cut` it hands over (its uniform objects, in the scene frame). A
+ * `seeThrough` seabed is drawn at the sea's seabed opacity (`SkyMaterial.oceanSeabedOpacity`);
+ * the surface always is.
+ * The transparent parts are wired for the `OITRenderPass`.
  * The seabed is lit by the scene's lights, as the sky's is; a seabed or sea that changes
  * the sky's defines (its detail, its waves) needs new materials.
  */
 export function createSkyStageMaterial(
   sky: SkyMaterial,
   part: SkyStagePart,
-  cut?: CutUniforms,
+  { seeThrough = false, cut }: SkyStageMaterialOptions = {},
 ) {
   const defines = oceanDefines(sky);
-  const occupant = part.endsWith('occupant-bed');
-  const wall = part === 'wall' || part === 'drained-wall';
-  if (part === 'surface') defines.STAGE_SURFACE = '';
-  else if (wall) defines.STAGE_WALL = '';
+  const occupant = part === 'occupant-bed';
+  const surface = part === 'surface';
+  if (surface) defines.STAGE_SURFACE = '';
   else defines.STAGE_BED = '';
-  if (part.startsWith('dry-')) defines.STAGE_DRY = '';
-  if (occupant || part.endsWith('relief-bed')) defines.STAGE_RELIEF = '';
+  if (occupant || part === 'relief-bed') defines.STAGE_RELIEF = '';
   if (occupant) defines.STAGE_OCCUPANT = '';
-  if (part === 'drained-wall') defines.STAGE_DRAINED = '';
+  if (!surface && seeThrough) defines.STAGE_SEE_THROUGH = '';
 
   // Inherits the sky's uniforms rather than copying them, so what the sky adds later reaches it too.
   let uniforms = sky.uniforms;
@@ -709,15 +647,14 @@ export function createSkyStageMaterial(
     }
   }
 
-  const transparent = part === 'surface' || wall;
+  const transparent = surface || seeThrough;
   const material = new ShaderMaterial({
     vertexShader,
     fragmentShader,
     uniforms,
     defines,
     transparent,
-    // A drained wall is opaque toward the hole, and hides what lies beyond it.
-    depthWrite: part !== 'surface' && part !== 'wall',
+    depthWrite: !transparent,
     side: DoubleSide,
     lights: true,
   });

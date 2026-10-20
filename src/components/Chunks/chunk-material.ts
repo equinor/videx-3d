@@ -274,6 +274,8 @@ export type ChunkWaterTintParameters = {
   wetBand?: number;
   /** how much that band darkens the ground, 0..1 */
   wetStrength?: number;
+  /** a SHARED 1 while the water is drawn and 0 while not, which the tint is scaled by: hiding it is a write, not a rebuild */
+  shown?: IUniform<number>;
 };
 
 /** {@link ChunkMaterial} parameters. */
@@ -411,6 +413,7 @@ const shader = {
       waterTintParams: { value: new Vector3() },
       // x: 1 / wet band depth, y: darkening amount
       waterTintShore: { value: new Vector2() },
+      waterTintShown: { value: 1 },
     },
   ]),
   vertexShader,
@@ -591,6 +594,7 @@ export class ChunkMaterial extends ShaderMaterial {
       1 / Math.max(tint.wetBand ?? 0, 1e-3),
       tint.wetBand ? (tint.wetStrength ?? 0.4) : 0,
     );
+    if (tint.shown) u.waterTintShown = tint.shown;
 
     if (tint.map) {
       defines.CHUNK_BATHYMETRY = '';

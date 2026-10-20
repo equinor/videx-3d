@@ -154,6 +154,12 @@ export type ChunkStackProps = {
    */
   water?: StackWater;
   /**
+   * Draw the `water`. Default true. `false` keeps the sea built but hides it, the bed
+   * tint and the immersion fog in it with it — while a `SkyBoxStage` owns the water over
+   * the column, say (see its occupant's `onStage`). Switching it rebuilds nothing.
+   */
+  drawWater?: boolean;
+  /**
    * Fog the view while the camera is INSIDE the sea or the block. See
    * {@link StackImmersion}.
    *
@@ -307,6 +313,7 @@ export const ChunkStack = ({
   surfaces,
   carrier,
   water,
+  drawWater = true,
   immersion,
   contacts,
   prepareCuts = true,
@@ -376,6 +383,11 @@ export const ChunkStack = ({
     () => ({ value: new Vector4(0, 0, 0, -1) }),
     [],
   );
+  // Shared like the plane: hiding the sea hides its bed tint with one write.
+  const [waterTintShown] = useState(() => ({ value: 1 }));
+  useEffect(() => {
+    waterTintShown.value = drawWater ? 1 : 0;
+  }, [waterTintShown, drawWater]);
   // ⭐ The exact COMPLEMENT of the above, for geometry that must appear only where
   // the section took something away — the fragments a cap's collapse dropped
   // because a layer above covered them. Negating the plane makes the patch and the
@@ -941,6 +953,7 @@ export const ChunkStack = ({
       carrierDetail,
       contacts: contactTextures,
       water: stableWater ?? null,
+      waterTintShown,
       bathymetry,
       prepareCuts: hasCut,
       section: sectionState,
@@ -986,6 +999,7 @@ export const ChunkStack = ({
     carrierDetail,
     contactTextures,
     stableWater,
+    waterTintShown,
     bathymetry,
     hasCut,
     sectionState,
@@ -1147,7 +1161,7 @@ export const ChunkStack = ({
                 {immersion && (
                   <StackImmersionFog
                     immersion={immersion}
-                    water={stableWater ?? null}
+                    water={drawWater ? (stableWater ?? null) : null}
                     sampler={sampler}
                     base={blockBase}
                     section={sectionState}
@@ -1158,10 +1172,18 @@ export const ChunkStack = ({
                   />
                 )}
                 {sea && seaGeometry?.lid && (
-                  <mesh geometry={seaGeometry.lid} material={sea.surface} />
+                  <mesh
+                    geometry={seaGeometry.lid}
+                    material={sea.surface}
+                    visible={drawWater}
+                  />
                 )}
                 {sea && seaGeometry?.body && (
-                  <mesh geometry={seaGeometry.body} material={sea.volume} />
+                  <mesh
+                    geometry={seaGeometry.body}
+                    material={sea.volume}
+                    visible={drawWater}
+                  />
                 )}
                 {sea?.face &&
                   seaCut &&
@@ -1170,6 +1192,7 @@ export const ChunkStack = ({
                       key={`${face.interval}-${face.wall}`}
                       geometry={face.geometry}
                       material={sea.face!}
+                      visible={drawWater}
                     />
                   ))}
                 {sectionBounds && (

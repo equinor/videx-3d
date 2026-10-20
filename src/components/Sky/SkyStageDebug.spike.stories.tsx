@@ -5,10 +5,6 @@ import { Pass } from '../../rendering/Pass';
 import { RenderingPipeline } from '../../rendering/RenderingPipeline';
 import { OITRenderPass } from '../../rendering/passes/OITRenderPass';
 import { OutputPass } from '../../rendering/passes/OutputPass';
-import {
-  PlanarPolygonCoordinates,
-  PlanarPolygonGeometry,
-} from '../../sdk/geometries/planar-geometry';
 import type { SeabedMesh } from '../../sdk/geometries/surface-clip';
 import { EnvironmentProbes } from '../../storybook/components/EnvironmentProbes';
 import {
@@ -33,6 +29,7 @@ import {
   toneMappingArgTypes,
 } from '../../storybook/components/tone-mapping-controls';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
+import { DEFAULT_OCEAN_WATER_OPACITY } from '../Ocean/ocean-material';
 import { RenderStats } from '../Html/RenderStats/RenderStats';
 import { Sky, SkyLayer } from './Sky';
 import { SkyBoxStage, SkyBoxStageLayer } from './SkyBoxStage';
@@ -74,15 +71,9 @@ const seabedHeight = (x: number, z: number) => {
   return height;
 };
 
-type SyntheticSeabed = {
-  mesh: SeabedMesh;
-  outline: PlanarPolygonGeometry;
-};
-
-// A polar grid out to the outline, whose outer ring IS the outline.
-function createSyntheticSeabed(): SyntheticSeabed {
+// A polar grid out to its rim, with lobes in it.
+function createSyntheticSeabed(): SeabedMesh {
   const positions: number[] = [0, seabedHeight(0, 0), 0];
-  const ring: [number, number][] = [];
   for (let k = 1; k <= RINGS; k++) {
     for (let j = 0; j < SEGMENTS; j++) {
       const angle = (j / SEGMENTS) * Math.PI * 2;
@@ -90,7 +81,6 @@ function createSyntheticSeabed(): SyntheticSeabed {
       const x = r * Math.cos(angle);
       const z = r * Math.sin(angle);
       positions.push(x, seabedHeight(x, z), z);
-      if (k === RINGS) ring.push([x, z]);
     }
   }
   const at = (k: number, j: number) =>
@@ -104,11 +94,8 @@ function createSyntheticSeabed(): SyntheticSeabed {
     }
   }
   return {
-    mesh: {
-      positions: new Float32Array(positions),
-      indices: new Uint32Array(indices),
-    },
-    outline: new PlanarPolygonGeometry([[ring]] as PlanarPolygonCoordinates),
+    positions: new Float32Array(positions),
+    indices: new Uint32Array(indices),
   };
 }
 
@@ -131,24 +118,23 @@ const SKY_LAYERS: Record<string, SkyLayer> = {
 
 const STAGE_LAYERS: SkyBoxStageLayer[] = [
   'surface',
-  'inner-surface',
   'bed',
   'relief',
-  'inner-bed',
   'occupant-bed',
-  'walls',
 ];
 
 const HIDE_OPTIONS = [...Object.keys(SKY_LAYERS), ...STAGE_LAYERS];
 
 type StageDebugArgs = {
   occupant: boolean;
-  occupantSeabed: boolean;
-  occupantWater: boolean;
+  water: boolean;
+  seabed: boolean;
+  waterOpacity: number;
+  seabedOpacity: number;
   drawSky: boolean;
   environment: boolean;
   lightProbe: boolean;
-  studioIntensity: number;
+  subsurfaceIntensity: number;
   voidDetail: number;
   voidDetailScale: number;
   voidFalloff: number;
@@ -159,11 +145,11 @@ type StageDebugArgs = {
   voidLidDetail: number;
   voidLidDetailScale: number;
   voidDarkening: number;
-  studioLightColor: string;
-  studioLightIntensity: number;
-  studioBelow: boolean;
-  studioBelowColor: string;
-  studioBelowIntensity: number;
+  subsurfaceLightColor: string;
+  subsurfaceLightIntensity: number;
+  subsurfaceBelow: boolean;
+  subsurfaceBelowColor: string;
+  subsurfaceBelowIntensity: number;
   showProbes: boolean;
   probeSize: number;
   probeElevation: number;
@@ -203,7 +189,14 @@ const StageDebug = (args: StageDebugArgs) => {
           detailScale: args.voidLidDetailScale,
           darkening: args.voidDarkening,
         }}
-        ocean={{ level: LEVEL, depth: DEPTH }}
+        ocean={{
+          level: LEVEL,
+          depth: DEPTH,
+          water: args.water,
+          seabed: args.seabed,
+          waterOpacity: args.waterOpacity,
+          seabedOpacity: args.seabedOpacity,
+        }}
         sun={skySunFromArgs(args)}
         moon={skyMoonFromArgs(args)}
         stars={skyStarsFromArgs(args)}
@@ -213,14 +206,14 @@ const StageDebug = (args: StageDebugArgs) => {
         environment={args.environment}
         lightProbe={args.lightProbe}
         subsurface={{
-          intensity: args.studioIntensity,
+          intensity: args.subsurfaceIntensity,
           lights: {
-            color: args.studioLightColor,
-            intensity: args.studioLightIntensity,
-            below: args.studioBelow
+            color: args.subsurfaceLightColor,
+            intensity: args.subsurfaceLightIntensity,
+            below: args.subsurfaceBelow
               ? {
-                  color: args.studioBelowColor,
-                  intensity: args.studioBelowIntensity,
+                  color: args.subsurfaceBelowColor,
+                  intensity: args.subsurfaceBelowIntensity,
                 }
               : undefined,
           },
@@ -233,15 +226,7 @@ const StageDebug = (args: StageDebugArgs) => {
       >
         <SkyBoxStage
           bounds={BOUNDS}
-          occupant={
-            args.occupant
-              ? {
-                  outline: seabed.outline,
-                  seabed: args.occupantSeabed ? seabed.mesh : true,
-                  water: args.occupantWater,
-                }
-              : undefined
-          }
+          occupant={args.occupant ? { seabed } : undefined}
           debug={{
             outline: args.outline,
             wireframe: args.wireframe,
@@ -276,22 +261,32 @@ const meta = {
   argTypes: {
     occupant: {
       description:
-        'The stage has an occupant: the synthetic seabed\u2019s outline. Off, the stage is whole \u2014 no hole, relief, band or walls. Changes the stage, unlike the debug options.',
+        'The stage has an occupant, which hands it its own seabed (the synthetic one): the stage draws it as the sea\u2019s, `occupant-bed`, eased into its own by the `relief`. Off, the stage is whole. Changes the stage, unlike the debug options.',
       table: { category: 'Occupant' },
     },
-    occupantSeabed: {
+    water: {
       description:
-        'The occupant hands the stage its own seabed (the synthetic one), which the stage draws as the sea\u2019s: `occupant-bed`, eased into the stage\u2019s own by the `relief`. Off, the stage keeps its flat seabed under the outline: `inner-bed`. Changes the stage, unlike the debug options.',
-      table: { category: 'Occupant' },
+        'The sea\u2019s water, everywhere. Off, the seabed lies dry, and the cutaway cuts it.',
+      table: { category: 'Sea' },
     },
-    occupantWater: {
+    seabed: {
       description:
-        'The stage keeps its water over the outline: `inner-surface`. Off, the outline is drained and walled in by the sea around it: `walls`. Changes the stage, unlike the debug options.',
-      table: { category: 'Occupant' },
+        'The sea\u2019s seabed, everywhere, the occupant\u2019s included. Off, the void lies below the water, and the cutaway cuts the water alone.',
+      table: { category: 'Sea' },
+    },
+    waterOpacity: {
+      control: { type: 'range', min: 0, max: 1, step: 0.01 },
+      table: { category: 'Sea' },
+    },
+    seabedOpacity: {
+      control: { type: 'range', min: 0, max: 1, step: 0.01 },
+      description:
+        'How much of what lies under the seabed it hides. Crossing 1 rebuilds the seabed\u2019s materials, which compile again.',
+      table: { category: 'Sea' },
     },
     drawSky: {
       description:
-        'Draw the sky and the stage. Off, both vanish at once, and the environment and the light probe switch to the studio.',
+        'Draw the sky and the stage. Off, both vanish at once, and the environment and the light probe switch to the subsurface.',
       table: { category: 'Sky' },
     },
     ...skyCutawayArgTypes(),
@@ -377,38 +372,38 @@ const meta = {
         'Height of the spheres\u2019 centres, in metres: the sea surface is at 0, its seabed at -100.',
       table: { category: 'Probes' },
     },
-    studioIntensity: {
+    subsurfaceIntensity: {
       control: { type: 'range', min: 0, max: 4, step: 0.05 },
-      description: 'Scales the whole studio: backdrop and panels.',
-      table: { category: 'Studio' },
+      description: 'Scales the whole subsurface light: backdrop and panels.',
+      table: { category: 'Subsurface' },
     },
-    studioLightColor: {
+    subsurfaceLightColor: {
       control: { type: 'color' },
       description: 'Colour of every light panel.',
-      table: { category: 'Studio' },
+      table: { category: 'Subsurface' },
     },
-    studioLightIntensity: {
+    subsurfaceLightIntensity: {
       control: { type: 'range', min: 0, max: 20, step: 0.1 },
       description: 'Radiance of every light panel.',
-      table: { category: 'Studio' },
+      table: { category: 'Subsurface' },
     },
-    studioBelow: {
+    subsurfaceBelow: {
       description: 'Light the panels below the horizon apart.',
-      table: { category: 'Studio' },
+      table: { category: 'Subsurface' },
     },
-    studioBelowColor: {
+    subsurfaceBelowColor: {
       control: { type: 'color' },
-      if: { arg: 'studioBelow' },
-      table: { category: 'Studio' },
+      if: { arg: 'subsurfaceBelow' },
+      table: { category: 'Subsurface' },
     },
-    studioBelowIntensity: {
+    subsurfaceBelowIntensity: {
       control: { type: 'range', min: 0, max: 20, step: 0.1 },
-      if: { arg: 'studioBelow' },
-      table: { category: 'Studio' },
+      if: { arg: 'subsurfaceBelow' },
+      table: { category: 'Subsurface' },
     },
     showEnvironment: {
       description:
-        'The environment\u2019s bake for the zone in view (air, water or studio) as its six faces, lower right: `+Y` over `-X -Z +X +Z`, `-Y` under.',
+        'The environment\u2019s bake for the zone in view (air, water or subsurface) as its six faces, lower right: `+Y` over `-X -Z +X +Z`, `-Y` under.',
       table: { category: 'Debug' },
     },
     pipeline: {
@@ -420,7 +415,7 @@ const meta = {
     },
     tint: {
       description:
-        'Tint each part by what draws it. The sky: its sea, seabed and void red, what it leaves to the stage purple, its surface layer orange. The stage: surface blue, flat seabed green, relief cyan, the occupant\u2019s seabed magenta, walls yellow.',
+        'Tint each part by what draws it. The sky: its sea, seabed and void red, what it leaves to the stage purple, its surface layer orange. The stage: surface blue, flat seabed green, relief cyan, the occupant\u2019s seabed magenta.',
       table: { category: 'Debug' },
     },
     outline: {
@@ -448,17 +443,19 @@ const meta = {
   },
   args: {
     occupant: true,
-    occupantSeabed: true,
-    occupantWater: true,
+    water: true,
+    seabed: true,
+    waterOpacity: DEFAULT_OCEAN_WATER_OPACITY,
+    seabedOpacity: skyDefaults.ocean.seabedOpacity,
     drawSky: true,
     environment: true,
     lightProbe: true,
-    studioIntensity: skyDefaults.studio.intensity,
-    studioLightColor: skyDefaults.studio.lights.color,
-    studioLightIntensity: skyDefaults.studio.lights.intensity,
-    studioBelow: false,
-    studioBelowColor: '#9fb4d0',
-    studioBelowIntensity: 1,
+    subsurfaceIntensity: skyDefaults.subsurface.intensity,
+    subsurfaceLightColor: skyDefaults.subsurface.lights.color,
+    subsurfaceLightIntensity: skyDefaults.subsurface.lights.intensity,
+    subsurfaceBelow: false,
+    subsurfaceBelowColor: '#9fb4d0',
+    subsurfaceBelowIntensity: 1,
     showProbes: false,
     probeSize: 150,
     probeElevation: 300,

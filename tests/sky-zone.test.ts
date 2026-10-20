@@ -10,7 +10,6 @@ const sea: SkyZoneLevels = {
   oceanLevel: 0,
   oceanDepth: 100,
   oceanWater: true,
-  oceanDrained: false,
   // As Sky sets it: the ocean turns the abyss on at its seabed.
   abyss: true,
   abyssLevel: -100,
@@ -18,16 +17,15 @@ const sea: SkyZoneLevels = {
 };
 
 describe('skyZone', () => {
-  it('is air over the sea, water in it and the studio below its seabed', () => {
+  it('is air over the sea, water in it and the subsurface below its seabed', () => {
     expect(skyZone(500, sea)).toBe('air');
     expect(skyZone(-50, sea)).toBe('water');
     expect(skyZone(-150, sea)).toBe('subsurface');
   });
 
-  it('is air down to the seabed where the sea is dry or drained', () => {
+  it('is air down to the seabed where the sea is dry', () => {
     expect(skyZone(-50, { ...sea, oceanWater: false })).toBe('air');
-    expect(skyZone(-50, { ...sea, oceanDrained: true })).toBe('air');
-    expect(skyZone(-150, { ...sea, oceanDrained: true })).toBe('subsurface');
+    expect(skyZone(-150, { ...sea, oceanWater: false })).toBe('subsurface');
   });
 
   it('follows the abyss level without a sea', () => {
@@ -45,7 +43,7 @@ describe('skyZone', () => {
     expect(skyZone(-60, { ...sea, oceanGround: null })).toBe('water');
   });
 
-  it('is all studio when the sky is not drawn', () => {
+  it('is all subsurface when the sky is not drawn', () => {
     expect(skyZone(500, { ...sea, background: false })).toBe('subsurface');
   });
 });

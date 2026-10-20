@@ -87,7 +87,7 @@ import { RenderStats } from '../Html/RenderStats/RenderStats';
 import { Sky } from '../Sky/Sky';
 import { skySeabed, SkySeabedResponse } from '../Sky/sky-defs';
 import { skyStageRim } from '../Sky/sky-stage';
-import { SkyBoxStage } from '../Sky/SkyBoxStage';
+import { SkyBoxStage, SkyBoxStageOccupantState } from '../Sky/SkyBoxStage';
 import { UtmArea } from '../UtmArea';
 import { UtmPosition } from '../UtmArea/UtmPosition';
 import { Trajectory } from '../Wellbores/Trajectory/Trajectory';
@@ -159,6 +159,13 @@ const GENERATED_SEABED = SEABED_ID
  * index — hundreds of MB at field scale), so passing 0 would pay for peeling that
  * never happens.
  */
+// Without a stage, the column draws its own sea bed and water.
+const OFF_STAGE: SkyBoxStageOccupantState = {
+  seabed: false,
+  seabedOpacity: 1,
+  water: false,
+};
+
 const peelOf = (peel: number, layers: number) =>
   peel > 0 ? Math.min(Math.round(peel), layers) : undefined;
 
@@ -498,7 +505,7 @@ type FieldColumnStoryProps = {
   sky: boolean;
   skyWater: boolean;
   skySeabed: boolean;
-  stageWater: boolean;
+  skySeabedOpacity: number;
   matchBed: boolean;
   skyBed: 'top' | 'median' | 'bottom';
   sunAzimuth: number;
@@ -811,8 +818,9 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
   // Peeled, the column no longer has the sea bed on top.
   const drawsSeabed =
     !!seabedMeta && selected[0]?.id === seabedMeta.id && !(props.peel > 0);
-  const [seabedOnStage, setSeabedOnStage] = useState(false);
-  const bedOnStage = drawsSeabed && seabedOnStage;
+  // What the sky's stage does for the column: draws its sea bed, owns the water.
+  const [stage, setStage] = useState<SkyBoxStageOccupantState>(OFF_STAGE);
+  const bedOnStage = drawsSeabed && stage.seabed;
   const [stackCut, setStackCut] = useState<CutUniforms | null>(null);
 
   // ⭐ COLOUR IS THE HOST'S JOB. The library takes array order as stratigraphic
@@ -851,8 +859,17 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       // Listed layers opt out of the cut, so they stand whole over the section.
       section: kept.has(i) ? false : undefined,
       // The first drawn layer's cap is the sea bed; only the cap, not the rock under it.
+      // While the stage draws it, at the sea's seabed opacity, so culling allows for it.
       capOpacity:
-        i === 0 && props.bedOpacity < 1 ? props.bedOpacity : undefined,
+        i !== 0
+          ? undefined
+          : bedOnStage
+            ? stage.seabedOpacity < 1
+              ? stage.seabedOpacity
+              : undefined
+            : props.bedOpacity < 1
+              ? props.bedOpacity
+              : undefined,
       keepCap: i === 0 && props.keepBed ? true : undefined,
       drawCap: i === 0 && bedOnStage ? false : undefined,
     }));
@@ -867,6 +884,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     props.bedOpacity,
     props.keepBed,
     bedOnStage,
+    stage.seabedOpacity,
   ]);
 
   // --- `groups`: one chunk per level-1 stratigraphic GROUP. On `nested` each group
@@ -1306,10 +1324,9 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
   );
 
   // The sky's seabed lies at the dataset's sea bed, along the outline — shallowest,
-  // median or deepest. Without water or seabed the sky has no sea, and no stage.
-  const sea = props.skyWater || props.skySeabed;
+  // median or deepest.
   const bed = useColumnBed(
-    props.sky && sea && seabedMeta ? seabedMeta : undefined,
+    props.sky && seabedMeta ? seabedMeta : undefined,
     outline,
     props.maxError,
   );
@@ -1341,6 +1358,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
           outline={outline}
           surfaces={column}
           water={water}
+          drawWater={!stage.water}
           immersion={immersion}
           section={section}
           fence={fence}
@@ -1433,54 +1451,45 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
         )}
       </UtmArea>
       {props.wellbores && <Highlighter />}
-      {props.sky && (!sea || bedHeight !== null) && (
+      {props.sky && bed && bedHeight !== null && (
         <Sky
           sun={{ azimuth: props.sunAzimuth, elevation: props.sunElevation }}
           abyss
           cutaway={skyCutawayFromArgs(props)}
-          ocean={
-            sea &&
-            bedHeight !== null && {
-              water: props.skyWater,
-              seabed:
-                props.skySeabed &&
-                (!props.matchBed || {
-                  color: layers[0]?.material,
-                  detail: layers[0]?.detail ?? false,
-                }),
-              level: skyLevel,
-              depth: Math.max(skyLevel - bedHeight, 1),
-              waterOpacity: props.waterOpacity,
-              windSpeed: props.windSpeed,
-              foamAmount: props.foamAmount,
-              bodyShimmer: props.bodyShimmer,
-            }
-          }
+          ocean={{
+            water: props.skyWater,
+            seabed:
+              props.skySeabed &&
+              (!props.matchBed || {
+                color: layers[0]?.material,
+                detail: layers[0]?.detail ?? false,
+              }),
+            seabedOpacity: props.skySeabedOpacity,
+            level: skyLevel,
+            depth: Math.max(skyLevel - bedHeight, 1),
+            waterOpacity: props.waterOpacity,
+            windSpeed: props.windSpeed,
+            foamAmount: props.foamAmount,
+          }}
         >
-          {sea && bed && (
-            <SkyBoxStage
-              bounds={[
-                outlineMin[0] - margin,
-                outlineMin[1] - margin,
-                outlineMax[0] + margin,
-                outlineMax[1] + margin,
-              ]}
-              occupant={{
-                outline,
-                // While the column draws the sea bed, the stage draws it instead, as
-                // the sea's; without it, the outline is open.
-                seabed: drawsSeabed ? bed.mesh : false,
-                // Cut with the column, unless the column keeps its sea bed whole.
-                cut:
-                  layers[0]?.keepCap || layers[0]?.section === false
-                    ? undefined
-                    : (stackCut ?? undefined),
-                water: props.stageWater,
-                onStage: state => setSeabedOnStage(state.seabed),
-              }}
-              seabedFalloff={props.seabedFalloff}
-            />
-          )}
+          <SkyBoxStage
+            bounds={[
+              outlineMin[0] - margin,
+              outlineMin[1] - margin,
+              outlineMax[0] + margin,
+              outlineMax[1] + margin,
+            ]}
+            occupant={{
+              seabed: drawsSeabed ? bed.mesh : undefined,
+              // Cut with the column, unless the column keeps its sea bed whole.
+              cut:
+                layers[0]?.keepCap || layers[0]?.section === false
+                  ? undefined
+                  : (stackCut ?? undefined),
+              onStage: setStage,
+            }}
+            seabedFalloff={props.seabedFalloff}
+          />
         </Sky>
       )}
       {props.resources && <ResourceMonitor interval={props.resourceInterval} />}
@@ -1676,7 +1685,7 @@ export const Default: Story = {
     sky: false,
     skyWater: true,
     skySeabed: true,
-    stageWater: true,
+    skySeabedOpacity: 1,
     matchBed: true,
     skyBed: 'median',
     sunAzimuth: 200,
@@ -1688,24 +1697,25 @@ export const Default: Story = {
   argTypes: {
     sky: {
       description:
-        'Put the field under the videx `<Sky>`, which lights the scene instead of the default lights, with the column as its stage\u2019s occupant. The column\u2019s own `water`, `seabed` and `immersion` stay as set, so every combination can be inspected.',
+        'Put the field under the videx `<Sky>`, which lights the scene instead of the default lights, with the column as its stage\u2019s occupant. The sky owns the water then: the column\u2019s own `water` is hidden while it is on (`ChunkStack.drawWater`), and the stage draws the column\u2019s sea bed.',
       table: { category: 'Sky' },
     },
     skyWater: {
       description:
-        'The sky\u2019s sea has water. With `skySeabed` too off, the sky has no sea, and no stage.',
+        'The sky\u2019s water, everywhere: off, there is none, the column\u2019s own included. With the cutaway, it cuts the seabed.',
       if: { arg: 'sky' },
       table: { category: 'Sky' },
     },
     skySeabed: {
       description:
-        'The sky\u2019s seabed, and the stage\u2019s. Off, the void lies below the water \u2014 with the column\u2019s `seabed` on, only the column\u2019s seabed shows. With `skyWater` too off, no sea and no stage.',
+        'The sky\u2019s seabed, everywhere: off, the void lies below the water, and the column draws its own sea bed again. With the cutaway, it cuts the water alone.',
       if: { arg: 'sky' },
       table: { category: 'Sky' },
     },
-    stageWater: {
+    skySeabedOpacity: {
+      control: { type: 'range', min: 0, max: 1, step: 0.01 },
       description:
-        'The stage\u2019s sea covers the column. Off, it is drained inside the outline, behind walls; the column\u2019s own `water` can then fill it.',
+        'How much of what lies under the seabed it hides, the column\u2019s sea bed included. Below 1 the column stops culling under it (`capOpacity`), and both rebuild their materials once.',
       if: { arg: 'sky' },
       table: { category: 'Sky' },
     },
@@ -2495,5 +2505,5 @@ export const Default: Story = {
 // the sky's stage as the sea's, and the sky's seabed eased into it around the outline.
 export const WithSky: Story = {
   ...Default,
-  args: { ...Default.args, sky: true, water: false },
+  args: { ...Default.args, sky: true },
 };

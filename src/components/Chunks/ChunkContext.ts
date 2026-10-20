@@ -106,6 +106,8 @@ export type ChunkStackContextValue = {
    * their shallowest cap; the sea's own geometry belongs to the stack.
    */
   water?: StackWater | null;
+  /** 1 while the stack draws its sea, 0 while not: the bed tint follows it (see `ChunkStackProps.drawWater`) */
+  waterTintShown?: IUniform<number>;
   /**
    * The sea bed's depth grid as a texture, when a sea is declared. APPEARANCE
    * only: it drives the bed tint per fragment, so a face hanging below the bed is

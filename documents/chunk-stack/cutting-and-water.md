@@ -595,6 +595,15 @@ no sea-level parent group is needed.
 
 See [../ocean.md](../ocean.md).
 
+### Hiding it without a rebuild
+
+`drawWater={false}` hides the sea — lid, body and cut faces — and the immersion
+fog, and zeroes the water tint (`waterTintShown`), while keeping everything built:
+the sea itself, the cut that leaves room for it, the bed's tint materials. Turning
+it back on shows it at once. It is for a sky that owns the water over the column
+(`SkyBoxStage`'s `onStage` `water`; see [../sky.md](../sky.md)), so the two seas
+hand over without a stutter.
+
 ---
 
 ## Immersion fog

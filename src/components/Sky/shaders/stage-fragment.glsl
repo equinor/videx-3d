@@ -1,25 +1,18 @@
 // A stage's real geometry, shaded with the sky's own sea so it continues the background
-// without a seam. One of STAGE_SURFACE, STAGE_BED or STAGE_WALL is defined; STAGE_DRY
-// marks a seabed with no water over it, STAGE_DRAINED a wall around a drained hole, and
+// without a seam. STAGE_SURFACE or STAGE_BED is defined; STAGE_SEE_THROUGH marks a seabed
+// drawn at the sea's seabed opacity, and
 // STAGE_OCCUPANT an occupant's own seabed, which the cutaway never cuts. STAGE_SECTION and
 // STAGE_FENCE cut that seabed with the occupant instead, by its own uniforms.
 
 #include <common>
 #include <logdepthbuf_pars_fragment>
 #include ./sky.glsl
-#include ../../Ocean/shaders/ocean-body.glsl
 
 uniform mat4 uSkyStageInverseProjection;
 uniform vec4 uSkyStageViewport; // the pixels being drawn: x, y, width, height
-uniform float uSkyOceanShimmer; // light play in the water body's walls
-uniform float uSkyOceanBodyOpacity; // densest tint of the water body's walls
 
 varying vec3 vStageWorld;
 varying vec3 vViewPosition;
-#ifdef STAGE_WALL
-varying float vStageBedY;
-varying float vStageWallV;
-#endif
 #ifdef STAGE_RELIEF
 varying vec3 vStageNormal;
 #endif
@@ -76,7 +69,7 @@ void main() {
   #else
   float planeAltitude = altitude + uSkyOceanDepth;
   #endif
-  #if defined(STAGE_WALL) || defined(STAGE_RELIEF)
+  #ifdef STAGE_RELIEF
   vec3 world = vStageWorld;
   #else
   vec3 world = cameraPosition + dir * (abs(planeAltitude) / max(abs(y), 1e-6));
@@ -116,7 +109,7 @@ void main() {
   }
   if(skyDraws || underLid)
     discard;
-  #elif defined(STAGE_BED)
+  #else
     #ifdef STAGE_RELIEF
   vec3 up = normalize(vStageNormal);
   up *= dot(up, uSkyUp) < 0.0 ? -1.0 : 1.0;
@@ -142,15 +135,16 @@ void main() {
   seabed = 1.0;
     #endif
   if(fromAbove) {
-      #ifndef STAGE_DRY
+    // Dry, the fog's density is 0.
     float light = skyOceanLight(0.5 * (bedDepth + max(-altitude, 0.0)));
     float path = skyOceanPathBelowSurface(cameraPosition, world) * skyOceanCutawayWater(cutaway);
     color = skyOceanFog(color, path, light);
-      #endif
+      #ifndef STAGE_SEE_THROUGH
         // Bitten through: the void, as the background draws it through the gap. Without its
         // rock: it cannot show in the edge's fade under the rim, and would cost a copy.
     if(seabed < 1.0)
       color = mix(skyOceanThroughCutaway(skyAbyssGradient(y), dir, cameraPosition), color, seabed);
+      #endif
   } else {
       // From the void: the lid, as the background draws it.
     color = skyAbyssCeiling(world, distance(cameraPosition, world));
@@ -161,29 +155,12 @@ void main() {
       // away with the occupant only here, once the derivatives above are taken.
   if(seabed < 1e-3 || stageCutAway())
     discard;
+    #ifdef STAGE_SEE_THROUGH
+  gl_FragColor = vec4(color, seabed * uSkyOceanSeabedOpacity);
+    #else
   gl_FragColor = vec4(color, 1.0);
+    #endif
   if(skyDraws)
-    discard;
-  #else
-    // A wall of the sea along the outline: its water body, tinted over the view distance
-    // as OceanVolumeMaterial tints it, with light play on the side facing in.
-  float fog = 1.0 - exp(-dist * uSkyOceanFogDensity);
-  vec3 tint = mix(uShallowColor, uDeepColor, fog);
-  float alpha = clamp(fog * uSkyOceanBodyOpacity, 0.0, 1.0);
-    #ifdef STAGE_DRAINED
-      // Facing into the drained hole, the endless sea beyond. Taken on both faces: it
-      // takes derivatives.
-  vec3 beyond = skyOceanInWater(world, dir, blend, dist, uSkyOceanLevel - vStageBedY, skyOceanVoid(dir));
-    #endif
-  if(uSkyOceanShimmer > 0.0 && gl_FrontFacing) {
-    tint = oceanBodyLight(tint, world, vStageWallV, uTime, uSkyOceanShimmer, uShallowColor);
-  }
-  gl_FragColor = vec4(tint, alpha);
-    #ifdef STAGE_DRAINED
-  if(gl_FrontFacing)
-    gl_FragColor = vec4(mix(beyond, tint, alpha), 1.0);
-    #endif
-  if(underLid)
     discard;
   #endif
 
@@ -194,10 +171,8 @@ void main() {
   vec3 debugTint = vec3(1.0, 0.1, 0.8);
   #elif defined(STAGE_RELIEF)
   vec3 debugTint = vec3(0.0, 0.85, 0.9);
-  #elif defined(STAGE_BED)
-  vec3 debugTint = vec3(0.15, 0.8, 0.2);
   #else
-  vec3 debugTint = vec3(1.0, 0.9, 0.1);
+  vec3 debugTint = vec3(0.15, 0.8, 0.2);
   #endif
   gl_FragColor.rgb = skyDebugTint(gl_FragColor.rgb, debugTint);
 

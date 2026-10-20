@@ -23,6 +23,7 @@ varying float vWallV;
 uniform vec3 waterTintColor;  // the water colour, in the working colour space
 uniform vec3 waterTintParams; // x: water level (vertex stage), y: strength, z: 1 / depth scale
 uniform vec2 waterTintShore;  // x: 1 / wet band depth, y: darkening amount
+uniform float waterTintShown; // 1 while the water is drawn, 0 while not
 varying float vWaterDepth;
 #ifdef CHUNK_BATHYMETRY
 // The sea bed's own grid. Sampling it gives the water column standing over this
@@ -335,14 +336,14 @@ void main() {
     // the whole coast, which is the one place the eye is already looking.
     float wetT = depth * waterTintShore.x;
     float wet = smoothstep(-0.25, 0.0, wetT) * (1.0 - smoothstep(0.0, 1.0, wetT));
-    outgoingLight *= 1.0 - wet * waterTintShore.y * facing;
+    outgoingLight *= 1.0 - wet * waterTintShore.y * facing * waterTintShown;
 
     // Absorption through that column: nothing at the waterline, saturating with
     // depth. Being depth-dependent is what lets a sea bed rise THROUGH the water
     // - a coast, an island - without anything here having to know where the
     // shoreline runs.
     float absorb = 1.0 - exp(-max(depth, 0.0) * waterTintParams.z);
-    outgoingLight = mix(outgoingLight, waterTintColor, clamp(absorb * waterTintParams.y * facing, 0.0, 1.0));
+    outgoingLight = mix(outgoingLight, waterTintColor, clamp(absorb * waterTintParams.y * facing * waterTintShown, 0.0, 1.0));
   }
   #endif
 

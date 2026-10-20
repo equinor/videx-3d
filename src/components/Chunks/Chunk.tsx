@@ -1153,6 +1153,7 @@ export const Chunk = ({
     cullOffscreen,
     peel,
     water: stack.water,
+    waterTintShown: stack.waterTintShown,
     bathymetry: stack.bathymetry,
     seaBed:
       !!stack.water &&

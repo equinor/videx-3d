@@ -30,12 +30,11 @@ vec3 waterFog(vec3 color, float dist, float density, vec3 shallowColor, vec3 dee
 // The cutaway through the water in front of the view:
 // everything nearer than a line across the view, `shape.x` ahead of `anchor` along
 // `heading`, waved across it by `waveA` and `waveB` (amplitude, angular frequency, phase).
-// `shape.y` is its scale (0: no cutaway), `shape.z` its edge's width, `shape.w` the opacity
-// of the water left in it.
+// `shape.y` is its scale (0: no cutaway), `shape.z` its edge's width.
 struct WaterFogCutaway {
   vec3 anchor;
   vec3 heading;
-  vec4 shape;
+  vec3 shape;
   vec3 waveA;
   vec3 waveB;
 };
@@ -77,11 +76,4 @@ bool waterFogCutawayPoint(vec3 a, vec3 b, vec3 anchor, vec3 up, out vec3 point) 
 float waterFogCutawayAlong(WaterFogCutaway cutaway, vec3 a, vec3 b, vec3 up) {
   vec3 point;
   return waterFogCutawayPoint(a, b, cutaway.anchor, up, point) ? waterFogCutaway(cutaway, point, up) : 0.0;
-}
-
-// How much of the water the cutaway keeps along a sight line from `a` through `b`.
-float waterFogCutawayKeepAlong(WaterFogCutaway cutaway, vec3 a, vec3 b, vec3 up) {
-  if(cutaway.shape.w >= 1.0)
-    return 1.0;
-  return 1.0 - waterFogCutawayAlong(cutaway, a, b, up) * (1.0 - cutaway.shape.w);
 }

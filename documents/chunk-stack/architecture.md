@@ -243,6 +243,7 @@ builds a whole column of its own and can push out one still in use. Declare
 | `fence.debug` | — | — | ● | — |
 | `ChunkStack.contacts` | — | — | ● | — |
 | `ChunkStack.water` sea state | — | — | ●³ | — |
+| `ChunkStack.drawWater` | — | — | — | ● |
 | `ChunkStack.water.depth` / `.resolution` / `.displacement` | — | sea only | ● | — |
 | a sibling chunk's outline settling | — | ●⁴ | ● | — |
 

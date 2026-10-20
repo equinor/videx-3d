@@ -18,7 +18,6 @@ import {
   UniformsLib,
   UniformsUtils,
   Vector3,
-  Vector4,
   WebGLCubeRenderTarget,
   WebGLRenderer,
   WebGLRenderTarget,
@@ -26,9 +25,13 @@ import {
 import { LightProbeGenerator } from 'three/examples/jsm/lights/LightProbeGenerator.js';
 import { precompile } from '../../rendering/precompile';
 import skyVertexShader from './shaders/sky-vertex.glsl';
-import studioFragmentShader from './shaders/studio-fragment.glsl';
+import subsurfaceFragmentShader from './shaders/subsurface-fragment.glsl';
 import { createSkyGeometry, SkyMaterial } from './sky-material';
-import { SKY_WATER_BAKE_DEPTH, SkyStudioColors, SkyZone } from './sky-model';
+import {
+  SKY_WATER_BAKE_DEPTH,
+  SkySubsurfaceColors,
+  SkyZone,
+} from './sky-model';
 import { createSkySurfaceMaterial } from './sky-stage';
 
 const PROBE_RESOLUTION = 32;
@@ -43,10 +46,12 @@ export type SkyBakerSun = {
 };
 
 /**
- * What lights the scene below the seabed: a studio, or a map of the host's own (an
- * equirectangular or cube texture, as for `scene.background`).
+ * What lights the scene below the seabed: the subsurface's light panels, or a map of the
+ * host's own (an equirectangular or cube texture, as for `scene.background`).
  */
-export type SkySubsurface = { studio: SkyStudioColors } | { map: Texture };
+export type SkyBakerSubsurface =
+  | { light: SkySubsurfaceColors }
+  | { map: Texture };
 
 type ZoneBake = {
   cube: WebGLCubeRenderTarget | null;
@@ -66,7 +71,7 @@ const compileCamera = new PerspectiveCamera();
 /**
  * Films a {@link SkyMaterial} into an environment map (for `scene.environment`) and into
  * light-probe coefficients, once per {@link SkyZone}: the air over its sea, the water in
- * it, and the studio below its seabed. Internal to {@link Sky}.
+ * it, and the subsurface below its seabed. Internal to {@link Sky}.
  */
 export class SkyBaker {
   private readonly scene = new Scene();
@@ -74,14 +79,14 @@ export class SkyBaker {
   // Fog as the visible sky has it, so the two share a program: this scene has none.
   private readonly material = new SkyMaterial();
   // No disc: the directional light is the sun. No stage: the light comes off the whole sea.
-  // Never drained or buried, and nothing cut away: the zones are the sea's own.
+  // Never buried, nothing cut away and the seabed whole: the zones are the sea's own.
   // Lights of its own: three wires a material's light uniforms to the scene it is drawn in.
   private readonly overrides: Record<string, IUniform> = {
     uSkySunDisc: new Uniform(0),
     uSkyOceanStageReach: new Uniform(0),
-    uSkyOceanDrained: new Uniform(0),
     uSkyOceanBuried: new Uniform(0),
-    uSkyOceanCutawayShape: new Uniform(new Vector4(0, 0, 0, 1)),
+    uSkyOceanCutawayShape: new Uniform(new Vector3()),
+    uSkyOceanSeabedOpacity: new Uniform(1),
     uSkyDebug: new Uniform(0),
     ...UniformsUtils.clone(UniformsLib.lights),
   };
@@ -89,9 +94,9 @@ export class SkyBaker {
   private readonly sun = new DirectionalLight();
   private readonly probe = new LightProbe();
   private surface: Mesh<BufferGeometry, ShaderMaterial> | null = null;
-  private readonly studioScene = new Scene();
-  private readonly studio: ShaderMaterial;
-  private readonly studioMesh: Mesh;
+  private readonly subsurfaceScene = new Scene();
+  private readonly subsurface: ShaderMaterial;
+  private readonly subsurfaceMesh: Mesh;
   private readonly probeTarget = new WebGLCubeRenderTarget(PROBE_RESOLUTION, {
     type: HalfFloatType,
   });
@@ -113,24 +118,24 @@ export class SkyBaker {
     mesh.frustumCulled = false;
     this.scene.add(mesh, this.sun, this.probe);
 
-    this.studio = new ShaderMaterial({
+    this.subsurface = new ShaderMaterial({
       vertexShader: skyVertexShader,
-      fragmentShader: studioFragmentShader,
+      fragmentShader: subsurfaceFragmentShader,
       uniforms: {
         uSkyUp: source.uniforms.uSkyUp,
         uSkyNorth: source.uniforms.uSkyNorth,
         uSkyEast: source.uniforms.uSkyEast,
-        uStudioTop: new Uniform(new Color()),
-        uStudioBottom: new Uniform(new Color()),
-        uStudioAbove: new Uniform(new Color()),
-        uStudioBelow: new Uniform(new Color()),
+        uSubsurfaceTop: new Uniform(new Color()),
+        uSubsurfaceBottom: new Uniform(new Color()),
+        uSubsurfaceAbove: new Uniform(new Color()),
+        uSubsurfaceBelow: new Uniform(new Color()),
       },
       depthTest: false,
       depthWrite: false,
     });
-    this.studioMesh = new Mesh(this.geometry, this.studio);
-    this.studioMesh.frustumCulled = false;
-    this.studioScene.add(this.studioMesh);
+    this.subsurfaceMesh = new Mesh(this.geometry, this.subsurface);
+    this.subsurfaceMesh.frustumCulled = false;
+    this.subsurfaceScene.add(this.subsurfaceMesh);
   }
 
   /** Light the seabed in the bakes with the sky's sun and light probe, `null` for none. */
@@ -149,19 +154,19 @@ export class SkyBaker {
   }
 
   /** What the `'subsurface'` zone films from now on. */
-  setSubsurface(subsurface: SkySubsurface) {
+  setSubsurface(subsurface: SkyBakerSubsurface) {
     if ('map' in subsurface) {
-      this.studioScene.background = subsurface.map;
-      this.studioMesh.visible = false;
+      this.subsurfaceScene.background = subsurface.map;
+      this.subsurfaceMesh.visible = false;
       return;
     }
-    this.studioScene.background = null;
-    this.studioMesh.visible = true;
-    const { uniforms } = this.studio;
-    uniforms.uStudioTop.value.copy(subsurface.studio.top);
-    uniforms.uStudioBottom.value.copy(subsurface.studio.bottom);
-    uniforms.uStudioAbove.value.copy(subsurface.studio.above);
-    uniforms.uStudioBelow.value.copy(subsurface.studio.below);
+    this.subsurfaceScene.background = null;
+    this.subsurfaceMesh.visible = true;
+    const { uniforms } = this.subsurface;
+    uniforms.uSubsurfaceTop.value.copy(subsurface.light.top);
+    uniforms.uSubsurfaceBottom.value.copy(subsurface.light.bottom);
+    uniforms.uSubsurfaceAbove.value.copy(subsurface.light.above);
+    uniforms.uSubsurfaceBelow.value.copy(subsurface.light.below);
   }
 
   // Follows the visible sky's sea and abyss, which can change after this was made: its
@@ -216,9 +221,9 @@ export class SkyBaker {
       precompile(renderer, this.scene, compileCamera, this.scene, 'offscreen'),
       precompile(
         renderer,
-        this.studioScene,
+        this.subsurfaceScene,
         compileCamera,
-        this.studioScene,
+        this.subsurfaceScene,
         'offscreen',
       ),
       resolution === null ? null : this.precompilePmrem(renderer, resolution),
@@ -295,11 +300,11 @@ export class SkyBaker {
     );
   }
 
-  // The sky from where its zone is seen, or the studio.
+  // The sky from where its zone is seen, or the subsurface.
   private film(renderer: WebGLRenderer, zone: SkyZone, camera: CubeCamera) {
     if (zone === 'subsurface') {
       camera.position.set(0, 0, 0);
-      camera.update(renderer, this.studioScene);
+      camera.update(renderer, this.subsurfaceScene);
       return;
     }
     this.sync();
@@ -320,7 +325,7 @@ export class SkyBaker {
     this.geometry.dispose();
     this.material.dispose();
     this.surface?.material.dispose();
-    this.studio.dispose();
+    this.subsurface.dispose();
     this.probeTarget.dispose();
     for (const bake of Object.values(this.bakes)) {
       bake.cube?.dispose();

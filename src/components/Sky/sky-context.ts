@@ -37,6 +37,8 @@ export type SkyOceanState = {
   water: boolean;
   /** the sea has a seabed; without it the void lies below the water */
   seabed: boolean;
+  /** how much of what lies beyond the seabed it hides, 0 to 1 (see `SkyOcean.seabedOpacity`) */
+  seabedOpacity: number;
   /** the seabed's detail, as a key: a new one recompiles the sea (see `SkyMaterial.oceanBedDetail`) */
   bedDetail: string;
   /** height of the sea surface along `up` */

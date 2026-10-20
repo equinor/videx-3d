@@ -133,20 +133,17 @@ export class SkyMaterial extends ShaderMaterial {
         uSkyOceanBedShininess: new Uniform(ocean.seabed.shininess),
         uSkyOceanBedAmbient: new Uniform(new Vector2(...ocean.seabed.ambient)),
         uSkyOceanFogDensity: new Uniform(ocean.bodyFogDensity),
-        uSkyOceanDrained: new Uniform(0),
         uSkyOceanBuried: new Uniform(0),
         uSkyOceanCutawayAnchor: new Uniform(new Vector3()),
         uSkyOceanCutawayHeading: new Uniform(new Vector3(0, 0, -1)),
-        uSkyOceanCutawayShape: new Uniform(new Vector4(0, 0, 0, 1)),
+        uSkyOceanCutawayShape: new Uniform(new Vector3()),
         uSkyOceanCutawayWaveA: new Uniform(new Vector3()),
         uSkyOceanCutawayWaveB: new Uniform(new Vector3()),
-        uSkyOceanCutawaySeabedOpacity: new Uniform(1),
         uSkyOceanCutawayRim: new Uniform(new Vector4(1, 1, 1, 0)),
         uSkyOceanCutawayShadow: new Uniform(new Vector2()),
         uSkyOceanWater: new Uniform(1),
         uSkyOceanSeabed: new Uniform(1),
-        uSkyOceanShimmer: new Uniform(skyDefaults.ocean.bodyShimmer),
-        uSkyOceanBodyOpacity: new Uniform(0.7),
+        uSkyOceanSeabedOpacity: new Uniform(1),
         uSkyOceanStage: new Uniform(new Vector4(...NO_STAGE)),
         uSkyOceanStageReach: new Uniform(0),
         uSkyStageInverseProjection: new Uniform(new Matrix4()),
@@ -605,14 +602,6 @@ export class SkyMaterial extends ShaderMaterial {
     this.uniforms.uSkyOceanFogDensity.value = Math.max(value, 0);
   }
 
-  /** the camera is in air below the sea level, inside a stage occupant that drained it */
-  get oceanDrained(): boolean {
-    return this.uniforms.uSkyOceanDrained.value > 0;
-  }
-  set oceanDrained(value: boolean) {
-    this.uniforms.uSkyOceanDrained.value = value ? 1 : 0;
-  }
-
   /** the camera is inside a stage occupant's seabed, above the sea's own (see {@link oceanGround}) */
   get oceanBuried(): boolean {
     return this.uniforms.uSkyOceanBuried.value > 0;
@@ -646,20 +635,15 @@ export class SkyMaterial extends ShaderMaterial {
     this.uniforms.uSkyOceanSeabed.value = value ? 1 : 0;
   }
 
-  /** light play in the water body's walls, 0 for none */
-  get oceanShimmer(): number {
-    return this.uniforms.uSkyOceanShimmer.value;
+  /** how much of what lies beyond the seabed it hides, 0 to 1 */
+  get oceanSeabedOpacity(): number {
+    return this.uniforms.uSkyOceanSeabedOpacity.value;
   }
-  set oceanShimmer(value: number) {
-    this.uniforms.uSkyOceanShimmer.value = Math.max(value, 0);
-  }
-
-  /** densest tint of the water body's walls, 0 to 1 */
-  get oceanBodyOpacity(): number {
-    return this.uniforms.uSkyOceanBodyOpacity.value;
-  }
-  set oceanBodyOpacity(value: number) {
-    this.uniforms.uSkyOceanBodyOpacity.value = Math.min(Math.max(value, 0), 1);
+  set oceanSeabedOpacity(value: number) {
+    this.uniforms.uSkyOceanSeabedOpacity.value = Math.min(
+      Math.max(value, 0),
+      1,
+    );
   }
 
   /**

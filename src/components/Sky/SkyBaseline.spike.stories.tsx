@@ -127,6 +127,7 @@ type SkySpikeArgs = {
   oceanShallow: string;
   oceanBed: string;
   oceanOpacity: number;
+  oceanSeabedOpacity: number;
   oceanFogDensity: number;
   windSpeed: number;
   windDirection: number;
@@ -137,13 +138,10 @@ type SkySpikeArgs = {
   tonalVariation: number;
   tonalScale: number;
   fresnelPower: number;
-  bodyShimmer: number;
   detailFadeStart: number;
   detailFadeEnd: number;
   stage: boolean;
   stageMargin: number;
-  stageWater: boolean;
-  stageSeabed: boolean;
   seabedSurface: string;
   seabedRelief: number;
   seabedClip: boolean;
@@ -170,20 +168,14 @@ type SkySpikeArgs = {
   SkySunArgs &
   ToneMappingArgs;
 
+// A stage around the wells' outline, with no seabed of its own to hand it.
 const FieldStage = (args: SkySpikeArgs) => {
   const outline = useFieldOutline();
   if (!outline) return null;
   const { min, max } = outline.getBounds();
   const m = args.stageMargin;
   return (
-    <SkyBoxStage
-      bounds={[min[0] - m, min[1] - m, max[0] + m, max[1] + m]}
-      occupant={{
-        outline,
-        water: args.stageWater,
-        seabed: args.stageSeabed,
-      }}
-    />
+    <SkyBoxStage bounds={[min[0] - m, min[1] - m, max[0] + m, max[1] + m]} />
   );
 };
 
@@ -312,11 +304,7 @@ const SeabedStage = ({
   return (
     <SkyBoxStage
       bounds={[min[0] - m, min[1] - m, max[0] + m, max[1] + m]}
-      occupant={{
-        outline: occupant.outline,
-        water: args.stageWater,
-        seabed: args.stageSeabed ? occupant.mesh : false,
-      }}
+      occupant={{ seabed: occupant.mesh }}
       seabedFalloff={args.seabedFalloff}
     />
   );
@@ -472,6 +460,7 @@ const SkyScene = (args: SkySpikeArgs) => {
           sea && {
             water: args.ocean,
             seabed: args.seabed && { color: args.oceanBed },
+            seabedOpacity: args.oceanSeabedOpacity,
             level: args.oceanLevel,
             depth,
             deepColor: args.oceanDeep,
@@ -491,7 +480,6 @@ const SkyScene = (args: SkySpikeArgs) => {
             tonalVariation: args.tonalVariation,
             tonalScale: args.tonalScale,
             fresnelPower: args.fresnelPower,
-            bodyShimmer: args.bodyShimmer,
             detailFadeDistance: [args.detailFadeStart, args.detailFadeEnd],
           }
         }
@@ -626,6 +614,7 @@ const meta = {
     oceanShallow: { control: { type: 'color' }, table: { category: 'Ocean' } },
     oceanBed: { control: { type: 'color' }, table: { category: 'Ocean' } },
     oceanOpacity: range(0, 1, 0.01, 'Ocean'),
+    oceanSeabedOpacity: range(0, 1, 0.01, 'Ocean'),
     oceanFogDensity: range(0, 0.05, 0.0005, 'Ocean'),
     windSpeed: range(0.5, 30, 0.5, 'Ocean'),
     windDirection: range(0, 360, 1, 'Ocean'),
@@ -636,13 +625,10 @@ const meta = {
     tonalVariation: range(0, 1, 0.01, 'Ocean'),
     tonalScale: range(0.5, 20, 0.5, 'Ocean'),
     fresnelPower: range(1, 8, 0.1, 'Ocean'),
-    bodyShimmer: range(0, 1, 0.01, 'Ocean'),
     detailFadeStart: range(0, 200000, 1000, 'Ocean'),
     detailFadeEnd: range(1000, 400000, 1000, 'Ocean'),
     stage: { control: { type: 'boolean' }, table: { category: 'Stage' } },
     stageMargin: range(0, 20000, 100, 'Stage'),
-    stageWater: { control: { type: 'boolean' }, table: { category: 'Stage' } },
-    stageSeabed: { control: { type: 'boolean' }, table: { category: 'Stage' } },
     seabedSurface: {
       options: [
         '',
@@ -754,6 +740,7 @@ export const Default: Story = {
     oceanShallow: '#1b6f8a',
     oceanBed: '#b8a06a',
     oceanOpacity: 0.7,
+    oceanSeabedOpacity: 1,
     oceanFogDensity: 0.004,
     windSpeed: 10,
     windDirection: 90,
@@ -764,13 +751,10 @@ export const Default: Story = {
     tonalVariation: 0.4,
     tonalScale: 4,
     fresnelPower: 4,
-    bodyShimmer: 0.5,
     detailFadeStart: 15000,
     detailFadeEnd: 60000,
     stage: false,
     stageMargin: 4000,
-    stageWater: true,
-    stageSeabed: true,
     seabedSurface: '',
     seabedRelief: 1,
     seabedClip: false,
@@ -813,7 +797,7 @@ export const Shell: Story = {
   },
 };
 
-// Volve's wells on a stage: the field outline is the occupant, whose water and seabed can go.
+// Volve's wells on a stage around the field's outline.
 export const Stage: Story = {
   args: {
     ...Default.args,

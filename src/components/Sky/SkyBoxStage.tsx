@@ -17,22 +17,17 @@ import {
   WebGLRenderer,
 } from 'three';
 import { createLayers, LAYERS } from '../../layers/layers';
-import {
-  PlanarPolygonCoordinates,
-  PlanarPolygonGeometry,
-} from '../../sdk/geometries/planar-geometry';
-import { pointInPolygon } from '../../sdk/geometries/polygon-outline';
 import type { SeabedMesh } from '../../sdk/geometries/surface-clip';
 import { createTinSampler } from '../../sdk/geometries/tin-sampler';
 import type { CutUniforms } from '../../sdk/materials/fence-field';
 import { useSkyOcean } from './sky-context';
 import {
   createSkyStageGeometry,
+  createSkyStageBed,
   createSkyStageMaterial,
   createSkyStageOutline,
   createSkyStageRelief,
   createSkyStageSeabed,
-  createSkyStageWalls,
   SkyStageBounds,
   skyStageNearBounds,
   skyStageRim,
@@ -54,67 +49,55 @@ const OVERLAY_LAYERS = createLayers(LAYERS.OVERLAY);
 // Wireframe colours, as `SkyDebug.tint` colours the layers.
 const WIRE_COLORS: Record<SkyBoxStageLayer, string> = {
   surface: '#1a59ff',
-  'inner-surface': '#1a59ff',
   bed: '#26cc33',
   relief: '#00d9e6',
-  'inner-bed': '#26cc33',
   'occupant-bed': '#ff1acc',
-  walls: '#ffe61a',
 };
 
 /** What a {@link SkyBoxStage} does for its occupant, as {@link SkyBoxStageOccupant.onStage} tells it. */
 export type SkyBoxStageOccupantState = {
-  /** the stage draws the occupant's seabed: it was given one, and the sky is drawn and compiled. While false, draw your own */
+  /** the stage draws the occupant's seabed: the sea has one, and the sky is drawn and compiled. While false, draw your own */
   seabed: boolean;
+  /** the opacity the stage draws it at, the sea's (`SkyOcean.seabedOpacity`): below 1, cull nothing under it */
+  seabedOpacity: number;
+  /** the stage owns the water over the occupant: it is under a drawn sky with a sea, with water or not. While true, draw none of your own */
+  water: boolean;
 };
 
 /**
- * The space a {@link SkyBoxStage}'s scene claims, and which of the sea it keeps there.
- * Without its water or its seabed, the sea is walled along the outline by its water
- * body, as a field column's sea is.
+ * What claims part of a {@link SkyBoxStage}: a field column, say, which hands the stage
+ * its seabed and is told what the stage does for it.
  */
 export type SkyBoxStageOccupant = {
-  /** in scene X/Z, inside the stage's `bounds` */
-  outline: PlanarPolygonGeometry;
-  /** keep the water over the outline; off drains it, walled in by the sea around it, and a camera inside is in air. Default true */
-  water?: boolean;
   /**
-   * The seabed under the outline: `true` the sea's own, flat; `false` none, with the
-   * outline walled in by the water body over the void; or the occupant's own, in scene
-   * coordinates, which the stage draws as the sea's seabed — shaded, lit and fogged as the
-   * sky's, eased into the sea's seabed around it (see {@link SkyBoxStageProps.seabedFalloff}),
-   * and never cut by a cutaway, which only takes the water over it. Build it with
-   * `createSeabedMesh`, or the `skySeabed` generator, clipped to `outline`, so its rim is
-   * the outline itself. Default true
+   * The occupant's seabed, in scene coordinates, which the stage draws as the sea's:
+   * shaded, lit and fogged as the sky's, at its seabed opacity, eased into the sea's seabed
+   * around it (see {@link SkyBoxStageProps.seabedFalloff}), and never cut by a cutaway,
+   * which only takes the water over it. Its rim is the occupant's outline. Build it with
+   * `createSeabedMesh`, or the `skySeabed` generator. Without one, the sea's flat seabed
+   * lies under the occupant too.
    *
-   * ⚠️ Drawn opaque and whole — or cut as `cut` cuts it — so the occupant may cull
-   * whatever lies under it. Stop drawing your own while the stage draws it (see `onStage`).
+   * ⚠️ At a seabed opacity of 1 it is drawn opaque and whole — or cut as `cut` cuts it — so
+   * the occupant may cull whatever lies under it. Stop drawing your own while the stage
+   * draws it (see `onStage`).
    */
-  seabed?: boolean | SeabedMesh;
+  seabed?: SeabedMesh;
   /**
    * The occupant's own cut — a `ChunkStack`'s, from its `onCut` — which the stage cuts
    * the occupant's seabed with, as the occupant cuts itself. The same uniform objects, so
    * it follows the cut every frame; they must be in the scene frame.
    */
   cut?: CutUniforms;
-  /** told what the stage does for the occupant, whenever that changes; `seabed: false` once the stage is gone */
+  /** told what the stage does for the occupant, whenever that changes; all `false` once the stage is gone */
   onStage?: (state: SkyBoxStageOccupantState) => void;
 };
 
 /**
- * A layer a {@link SkyBoxStage} draws: the sea `surface` around the outline and the
- * `inner-surface` over it; the flat `bed` around it (beyond the relief, when there is
- * one), the `relief` easing from the occupant's seabed, the `inner-bed` under the
- * outline, or the `occupant-bed`, the occupant's own; the `walls` of the water.
+ * A layer a {@link SkyBoxStage} draws: the sea `surface`; the flat `bed` (beyond the
+ * relief, when there is one), the `relief` easing from the occupant's seabed, and the
+ * `occupant-bed`, the occupant's own.
  */
-export type SkyBoxStageLayer =
-  | 'surface'
-  | 'inner-surface'
-  | 'bed'
-  | 'relief'
-  | 'inner-bed'
-  | 'occupant-bed'
-  | 'walls';
+export type SkyBoxStageLayer = 'surface' | 'bed' | 'relief' | 'occupant-bed';
 
 /**
  * Views for seeing how a stage fits the sky and its occupant (and see `SkyDebug.tint`).
@@ -137,7 +120,7 @@ export type SkyBoxStageProps = {
   /** the scene's rectangle, `[minX, minZ, maxX, maxZ]` in scene X/Z; it should hold the whole scene */
   bounds: SkyStageBounds;
   occupant?: SkyBoxStageOccupant;
-  /** how far outside the outline the seabed eases from the occupant's own to the sea's depth. Default 3000 */
+  /** how far outside the occupant the seabed eases from its own to the sea's depth. Default 3000 */
   seabedFalloff?: number;
   /** debug views (see {@link SkyBoxStageDebug}) */
   debug?: SkyBoxStageDebug;
@@ -147,15 +130,14 @@ export type SkyBoxStageProps = {
  * Real geometry between the scene and the endless sea of a {@link Sky} with `ocean`: the
  * same sea and seabed, drawn with the sky's own shading so it has no seam with the
  * background. Being geometry, it puts the water in front of the scene — what lies under
- * the surface is seen through it — and the opaque seabed hides what is below it, unless
- * the camera is below it too.
+ * the surface is seen through it — and the seabed hides what is below it (all of it at
+ * the sea's `seabedOpacity` of 1), unless the camera is below it too.
  *
  * It reaches the camera's far plane beyond `bounds`, so every view ray that can reach
  * the scene crosses it rather than the sky's background.
  *
- * An `occupant` claims part of the stage, where its water or seabed can be taken away.
- * One with a seabed of its own hands it to the stage, which draws it as the sea's, and
- * eases its own seabed into it around the outline.
+ * An `occupant` claims part of the stage and hands it its seabed, which the stage draws as
+ * the sea's, easing its own seabed into it around the occupant.
  *
  * ⚠️ Assumes the default `up` (+Y). Renders nothing without a sky ocean.
  *
@@ -171,17 +153,36 @@ export const SkyBoxStage = ({
   const sky = ocean?.material ?? null;
   const far = useThree(state => state.camera.far);
   const [minX, minZ, maxX, maxZ] = bounds;
-  const outline = occupant?.outline ?? null;
-  const water = occupant?.water ?? true;
-  const seabed = occupant?.seabed ?? true;
-  const occupantSeabed = typeof seabed === 'object' ? seabed : null;
+  const occupantSeabed = occupant?.seabed ?? null;
   const level = ocean?.level ?? 0;
   const bedY = level - (ocean?.depth ?? 0);
   // The sky's own sea has water; without it every part of the stage lies dry.
   const wet = ocean?.water ?? true;
-  // Without a seabed, the stage draws none either: the void lies below the water.
+  // Without a seabed, the stage draws none, nor the occupant's: the void lies below the water.
   const hasBed = ocean?.seabed ?? true;
+  const seabedOpacity = ocean?.seabedOpacity ?? 1;
+  const seeThrough = seabedOpacity < 1;
   const bedDetail = ocean?.bedDetail;
+
+  // The occupant's seabed: its rim, which is the occupant's outline and where the relief
+  // meets it, the stage's mesh of it, and the ground under a camera in it.
+  const rim = useMemo(
+    () => (occupantSeabed ? skyStageRim(occupantSeabed) : null),
+    [occupantSeabed],
+  );
+  const outline = rim?.outline ?? null;
+  const seabedMesh = useMemo(
+    () => (occupantSeabed ? createSkyStageSeabed(occupantSeabed) : null),
+    [occupantSeabed],
+  );
+  const ground = useMemo(
+    () =>
+      occupantSeabed
+        ? createTinSampler(occupantSeabed.positions, occupantSeabed.indices)
+        : null,
+    [occupantSeabed],
+  );
+  useEffect(() => () => seabedMesh?.dispose(), [seabedMesh]);
 
   const extent: SkyStageBounds = useMemo(
     () => [minX - far, minZ - far, maxX + far, maxZ + far],
@@ -200,40 +201,8 @@ export const SkyBoxStage = ({
   );
 
   const geometry = useMemo(
-    () => createSkyStageGeometry(near, extent, outline),
-    [near, extent, outline],
-  );
-
-  // The occupant's seabed: where the relief and the walls meet it, the stage's mesh of it,
-  // and the ground under a camera in it.
-  const rim = useMemo(
-    () => (occupantSeabed ? skyStageRim(occupantSeabed) : null),
-    [occupantSeabed],
-  );
-  const seabedMesh = useMemo(
-    () => (occupantSeabed ? createSkyStageSeabed(occupantSeabed) : null),
-    [occupantSeabed],
-  );
-  const ground = useMemo(
-    () =>
-      occupantSeabed
-        ? createTinSampler(occupantSeabed.positions, occupantSeabed.indices)
-        : null,
-    [occupantSeabed],
-  );
-  useEffect(() => () => seabedMesh?.dispose(), [seabedMesh]);
-
-  const walls = useMemo(
-    () =>
-      outline
-        ? createSkyStageWalls(
-            rim?.outline ?? outline,
-            level,
-            bedY,
-            rim?.elevations,
-          )
-        : null,
-    [outline, rim, level, bedY],
+    () => createSkyStageGeometry(near, extent),
+    [near, extent],
   );
 
   const relief = useMemo(
@@ -254,40 +223,43 @@ export const SkyBoxStage = ({
     () =>
       sky && {
         surface: createSkyStageMaterial(sky, 'surface'),
-        bed: createSkyStageMaterial(sky, 'bed'),
-        dryBed: createSkyStageMaterial(sky, 'dry-bed'),
-        reliefBed: createSkyStageMaterial(sky, 'relief-bed'),
-        wall: createSkyStageMaterial(sky, 'wall'),
-        drainedWall: createSkyStageMaterial(sky, 'drained-wall'),
+        bed: createSkyStageMaterial(sky, 'bed', { seeThrough }),
+        reliefBed: createSkyStageMaterial(sky, 'relief-bed', { seeThrough }),
       },
     // The seabed's detail is compiled in, from the sky's defines: a new one needs new materials.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sky, bedDetail],
+    [sky, bedDetail, seeThrough],
   );
 
-  // Apart from the rest, since the occupant's cut is compiled into them too.
+  // Apart from the rest, since the occupant's cut is compiled into it too.
   const cutPlane = occupant?.cut?.plane;
   const cutFence = occupant?.cut?.fence;
-  const occupantBeds = useMemo(() => {
-    if (!sky) return null;
-    const cut = { plane: cutPlane, fence: cutFence };
-    return {
-      wet: createSkyStageMaterial(sky, 'occupant-bed', cut),
-      dry: createSkyStageMaterial(sky, 'dry-occupant-bed', cut),
-    };
+  const occupantBed = useMemo(
+    () =>
+      sky &&
+      createSkyStageMaterial(sky, 'occupant-bed', {
+        seeThrough,
+        cut: { plane: cutPlane, fence: cutFence },
+      }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sky, bedDetail, cutPlane, cutFence]);
+    [sky, bedDetail, seeThrough, cutPlane, cutFence],
+  );
 
   useEffect(
     () => () => {
       geometry.near.dispose();
       geometry.far.dispose();
-      geometry.inner?.dispose();
     },
     [geometry],
   );
 
-  useEffect(() => () => walls?.dispose(), [walls]);
+  // Around an occupant's seabed with no relief to meet it, the flat seabed leaves it a hole.
+  const bedAround = useMemo(
+    () =>
+      hasBed && outline && !relief ? createSkyStageBed(near, outline) : null,
+    [hasBed, outline, relief, near],
+  );
+  useEffect(() => () => bedAround?.dispose(), [bedAround]);
 
   useEffect(() => () => relief?.dispose(), [relief]);
 
@@ -299,37 +271,13 @@ export const SkyBoxStage = ({
     [materials],
   );
 
-  useEffect(
-    () => () => {
-      occupantBeds?.wet.dispose();
-      occupantBeds?.dry.dispose();
-    },
-    [occupantBeds],
-  );
+  useEffect(() => () => occupantBed?.dispose(), [occupantBed]);
 
   useLayoutEffect(() => {
     if (!sky) return;
     sky.setOceanStage(extent, far * STAGE_REACH);
     return () => sky.setOceanStage(null);
   }, [sky, extent, far]);
-
-  const drained = wet && !water ? outline : null;
-
-  useEffect(() => {
-    if (!sky || !drained) return;
-    return () => {
-      sky.oceanDrained = false;
-    };
-  }, [sky, drained]);
-
-  useFrame(({ camera }) => {
-    if (!sky || !ocean || !drained) return;
-    const { x, y, z } = camera.position;
-    sky.oceanDrained =
-      y <= ocean.level &&
-      y > ocean.level - ocean.depth &&
-      pointInPolygon(x, z, drained.coordinates as PlanarPolygonCoordinates);
-  });
 
   // The occupant's seabed under the camera, which the sky takes for its own there. Looked
   // up only below the sea surface and inside the occupant's bounds.
@@ -368,16 +316,23 @@ export const SkyBoxStage = ({
         : null;
   });
 
-  // The occupant draws its own seabed whenever the stage does not: told on every change.
-  const seabedDrawn = !!seabedMesh && !!ocean?.visible && !!ocean.ready;
+  // Told on every change: the occupant draws its own seabed whenever the stage does not,
+  // and its own water only while the stage does not own it.
+  const seabedDrawn =
+    !!seabedMesh && hasBed && !!ocean?.visible && !!ocean.ready;
+  const ownsWater = !!ocean?.visible;
   const onStage = useRef(occupant?.onStage);
   useLayoutEffect(() => {
     onStage.current = occupant?.onStage;
   });
   useEffect(() => {
-    onStage.current?.({ seabed: seabedDrawn });
-  }, [seabedDrawn]);
-  useEffect(() => () => onStage.current?.({ seabed: false }), []);
+    onStage.current?.({ seabed: seabedDrawn, seabedOpacity, water: ownsWater });
+  }, [seabedDrawn, seabedOpacity, ownsWater]);
+  useEffect(
+    () => () =>
+      onStage.current?.({ seabed: false, seabedOpacity: 1, water: false }),
+    [],
+  );
 
   const setView = useCallback(
     (renderer: WebGLRenderer, _: Scene, camera: Camera) =>
@@ -391,7 +346,7 @@ export const SkyBoxStage = ({
       showOutline
         ? createSkyStageOutline(
             [minX, minZ, maxX, maxZ],
-            rim?.outline ?? outline,
+            outline,
             level,
             bedY,
             rim?.elevations,
@@ -449,20 +404,18 @@ export const SkyBoxStage = ({
   }, [
     register,
     materials,
-    occupantBeds,
+    occupantBed,
     geometry,
-    walls,
     relief,
+    bedAround,
     seabedMesh,
     wet,
     hasBed,
-    water,
-    seabed,
     wireMaterials,
     outlineLines,
   ]);
 
-  if (!ocean || !materials || !occupantBeds) return null;
+  if (!ocean || !materials || !occupantBed) return null;
 
   const parts: {
     key: string;
@@ -506,45 +459,18 @@ export const SkyBoxStage = ({
         : {
             key: 'bed-near',
             layer: 'bed',
-            geometry: geometry.near,
+            geometry: bedAround ?? geometry.near,
             material: materials.bed,
             y: bedY,
           },
     );
   }
-  if (geometry.inner && wet && water) {
-    parts.push({
-      key: 'inner-surface',
-      layer: 'inner-surface',
-      geometry: geometry.inner,
-      material: materials.surface,
-      y: level,
-      order: SURFACE_ORDER,
-    });
-  }
-  if (geometry.inner && seabed === true && hasBed) {
-    parts.push({
-      key: 'inner-bed',
-      layer: 'inner-bed',
-      geometry: geometry.inner,
-      material: water ? materials.bed : materials.dryBed,
-      y: bedY,
-    });
-  }
-  if (seabedMesh) {
+  if (seabedMesh && hasBed) {
     parts.push({
       key: 'occupant-bed',
       layer: 'occupant-bed',
       geometry: seabedMesh,
-      material: water ? occupantBeds.wet : occupantBeds.dry,
-    });
-  }
-  if (walls && wet && (!water || seabed === false)) {
-    parts.push({
-      key: 'walls',
-      layer: 'walls',
-      geometry: walls,
-      material: water ? materials.wall : materials.drainedWall,
+      material: occupantBed,
     });
   }
 

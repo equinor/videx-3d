@@ -7,8 +7,6 @@ export type SkyCutawayArgs = {
   cutawayReach: number;
   cutawayExitTilt: number;
   cutawaySoftness: number;
-  cutawayWaterOpacity: number;
-  cutawaySeabedOpacity: number;
   cutawayWave1Amplitude: number;
   cutawayWave1Frequency: number;
   cutawayWave1Phase: number;
@@ -30,8 +28,6 @@ export const skyCutawayArgs: SkyCutawayArgs = {
   cutawayReach: 0.5,
   cutawayExitTilt: 45,
   cutawaySoftness: 0.01,
-  cutawayWaterOpacity: 0,
-  cutawaySeabedOpacity: 0,
   cutawayWave1Amplitude: 0.12,
   cutawayWave1Frequency: 1,
   cutawayWave1Phase: 0,
@@ -53,8 +49,6 @@ export const skyCutawayFromArgs = (args: SkyCutawayArgs): SkyCutaway | false =>
     reach: args.cutawayReach,
     exitTilt: args.cutawayExitTilt,
     softness: args.cutawaySoftness,
-    waterOpacity: args.cutawayWaterOpacity,
-    seabedOpacity: args.cutawaySeabedOpacity,
     waves: [
       {
         amplitude: args.cutawayWave1Amplitude,
@@ -96,7 +90,7 @@ export const skyCutawayArgTypes = (
   cutaway: {
     control: { type: 'boolean' },
     description:
-      'Cut the sea\u2019s water and seabed in front of the view: everything nearer than a line across it, where the `cutawayReach` row meets the surface (or the seabed, with the camera in the water). Two waves bend the line, a rim marks it and a shadow falls inside it. The occupant and the data are never cut.',
+      'Cut the sea\u2019s water and seabed in front of the view: everything nearer than a line across it, where the `cutawayReach` row meets the surface (or the seabed, with the camera in the water or the sea dry). Two waves bend the line, a rim marks it and a shadow falls inside it. The occupant and the data are never cut.',
     ...(shownIf ? { if: { arg: shownIf } } : {}),
     table: { category: 'Cutaway' },
   },
@@ -117,18 +111,6 @@ export const skyCutawayArgTypes = (
     0.3,
     0.005,
     'Width of the edge\u2019s fade, relative to the frame\u2019s half-width at the edge.',
-  ),
-  cutawayWaterOpacity: detail(
-    0,
-    1,
-    0.01,
-    'Opacity of the water left in the cut, surface and fog alike; 0 cuts it all.',
-  ),
-  cutawaySeabedOpacity: detail(
-    0,
-    1,
-    0.01,
-    'Opacity of the seabed left in the cut; 0 opens it to the void, and what lies behind it.',
   ),
   cutawayWave1Amplitude: detail(
     0,

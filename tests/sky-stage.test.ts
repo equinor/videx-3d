@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BufferAttribute, BufferGeometry } from 'three';
 import {
+  createSkyStageBed,
   createSkyStageGeometry,
   createSkyStageRelief,
   createSkyStageSeabed,
@@ -107,17 +108,25 @@ describe('sky stage caps', () => {
     }
   });
 
-  it('the flat near cap keeps the same rim', () => {
-    const { near: cap } = createSkyStageGeometry(
-      near,
-      [-50000, -50000, 50000, 50000],
-      outline,
-    );
-    const rim = boundary(cap);
+  it('the flat bed around an outline keeps the same rim', () => {
+    const rim = boundary(createSkyStageBed(near, outline));
     for (const [x, z] of ring) expect(rim.has(key(x, z))).toBe(true);
     for (const at of rim.keys()) {
       if (ring.some(p => key(p[0], p[1]) === at)) continue;
       expect(onRectangle(at.split(',').map(Number))).toBe(true);
+    }
+  });
+
+  it('the near cap meets the far rings vertex for vertex', () => {
+    const { near: cap, far } = createSkyStageGeometry(
+      near,
+      [-50000, -50000, 50000, 50000],
+    );
+    const inner = boundary(cap);
+    const rings = boundary(far);
+    for (const at of inner.keys()) {
+      expect(onRectangle(at.split(',').map(Number))).toBe(true);
+      expect(rings.has(at)).toBe(true);
     }
   });
 

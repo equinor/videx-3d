@@ -170,24 +170,26 @@ export type SkySeabed = {
  * in the scene.
  */
 export type SkyOcean = SkyOceanWater & {
-  /** the water; off leaves the seabed dry, with no surface, fog or walls. Default true */
+  /** the water; off leaves the seabed dry, with no surface or fog. Default true */
   water?: boolean;
   /** the seabed, and its look; off leaves the void below the water, with no lid seen from it. Default true */
   seabed?: boolean | SkySeabed;
+  /**
+   * How much of what lies beyond the seabed it hides, 0 to 1, as `waterOpacity` is the
+   * water's: below 1 the data under it shows through, and so does a `SkyBoxStage`
+   * occupant's seabed. Default 1
+   */
+  seabedOpacity?: number;
   /** height of the sea surface along `up`, in world units. Default 0 */
   level?: number;
   /** depth of the seabed below the surface, in world units. Default 100 */
   depth?: number;
   /** how quickly the water tints what is seen through it, per world unit, as on `Ocean`. Default 0.004 */
   bodyFogDensity?: number;
-  /** densest tint of the water body's walls (see `SkyBoxStage`), as on `Ocean`. Defaults to `waterOpacity` */
-  bodyMaxOpacity?: number;
-  /** light play in the water body's walls, as on `Ocean`. Default 0.04 */
-  bodyShimmer?: number;
 };
 
-/** The colour and intensity of a {@link SkyStudio}'s light panels. */
-export type SkyStudioLight = {
+/** The colour and intensity of a {@link SkySubsurface}'s light panels. */
+export type SkySubsurfaceLight = {
   /** Default `#ffffff` */
   color?: ColorRepresentation;
   /** radiance of the panels; above 1 they outshine display white. Default 3 */
@@ -199,8 +201,8 @@ export type SkyStudioLight = {
  * drawn, where its own light means nothing: a dark backdrop and soft light panels, some
  * above the horizon and some below, fixed in the sky's up/north frame.
  */
-export type SkyStudio = {
-  /** scales the whole studio. Default 1 */
+export type SkySubsurface = {
+  /** scales the whole subsurface light. Default 1 */
   intensity?: number;
   /** the backdrop's gradient */
   colors?: {
@@ -210,7 +212,7 @@ export type SkyStudio = {
     bottom?: ColorRepresentation;
   };
   /** the light panels; the ones below the horizon take `below` where given */
-  lights?: SkyStudioLight & { below?: SkyStudioLight };
+  lights?: SkySubsurfaceLight & { below?: SkySubsurfaceLight };
 };
 
 /** Which of a {@link Sky}'s environments lights the scene. */
@@ -222,7 +224,6 @@ export type SkyZoneLevels = {
   oceanLevel: number;
   oceanDepth: number;
   oceanWater: boolean;
-  oceanDrained: boolean;
   abyss: boolean;
   abyssLevel: number;
   /** the seabed's height under the camera where a stage occupant draws its own; else the sea's flat one */
@@ -233,18 +234,16 @@ export type SkyZoneLevels = {
 
 /**
  * The environment for a camera at `height` along up: the air above the sea (or the
- * abyss level), the water below its surface, and the studio below its seabed — an
- * occupant's own where it has one. A dry or drained sea is air down to the seabed, and
- * an undrawn sky is all studio.
+ * abyss level), the water below its surface, and the subsurface below its seabed — an
+ * occupant's own where it has one. A dry sea is air down to the seabed, and an undrawn
+ * sky is all subsurface.
  */
 export function skyZone(height: number, levels: SkyZoneLevels): SkyZone {
   if (!levels.background) return 'subsurface';
   if (levels.ocean) {
     if (height > levels.oceanLevel) return 'air';
     const ground = levels.oceanGround ?? levels.oceanLevel - levels.oceanDepth;
-    if (height > ground) {
-      return levels.oceanWater && !levels.oceanDrained ? 'water' : 'air';
-    }
+    if (height > ground) return levels.oceanWater ? 'water' : 'air';
     return 'subsurface';
   }
   return levels.abyss && height < levels.abyssLevel ? 'subsurface' : 'air';
@@ -263,8 +262,8 @@ export function skyWaterDimming(depth: number, fogDensity: number) {
   );
 }
 
-/** A {@link SkyStudio} with its defaults filled in, as colours in the working space. */
-export type SkyStudioColors = {
+/** A {@link SkySubsurface} with its defaults filled in, as colours in the working space. */
+export type SkySubsurfaceColors = {
   top: Color;
   bottom: Color;
   /** the panels above the horizon, colour times intensity */
@@ -273,18 +272,20 @@ export type SkyStudioColors = {
   below: Color;
 };
 
-export function skyStudioColors(studio: SkyStudio = {}): SkyStudioColors {
-  const defaults = skyDefaults.studio;
-  const scale = studio.intensity ?? defaults.intensity;
-  const light = studio.lights ?? {};
+export function skySubsurfaceColors(
+  subsurface: SkySubsurface = {},
+): SkySubsurfaceColors {
+  const defaults = skyDefaults.subsurface;
+  const scale = subsurface.intensity ?? defaults.intensity;
+  const light = subsurface.lights ?? {};
   const color = light.color ?? defaults.lights.color;
   const intensity = light.intensity ?? defaults.lights.intensity;
   return {
-    top: new Color(studio.colors?.top ?? defaults.colors.top).multiplyScalar(
-      scale,
-    ),
+    top: new Color(
+      subsurface.colors?.top ?? defaults.colors.top,
+    ).multiplyScalar(scale),
     bottom: new Color(
-      studio.colors?.bottom ?? defaults.colors.bottom,
+      subsurface.colors?.bottom ?? defaults.colors.bottom,
     ).multiplyScalar(scale),
     above: new Color(color).multiplyScalar(intensity * scale),
     below: new Color(light.below?.color ?? color).multiplyScalar(
@@ -346,9 +347,9 @@ export const skyDefaults = {
       detail: 'seabed',
     },
     bodyFogDensity: DEFAULT_OCEAN_BODY_FOG_DENSITY,
-    bodyShimmer: 0.04,
+    seabedOpacity: 1,
   },
-  studio: {
+  subsurface: {
     intensity: 1,
     colors: { top: '#4a5058', bottom: '#1c1f24' },
     lights: { color: '#ffffff', intensity: 3 },

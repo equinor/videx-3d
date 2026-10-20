@@ -110,6 +110,8 @@ export type ChunkMeshesProps = {
    * here: the sea's own geometry belongs to the stack.
    */
   water?: StackWater | null;
+  /** 1 while the stack draws its sea, 0 while not: the bed tint follows it */
+  waterTintShown?: IUniform<number>;
   /**
    * The sea bed's depth grid, from the stack. Drives the bed tint by the water
    * standing over each fragment's MAP location instead of by its own depth — which
@@ -306,6 +308,7 @@ export const ChunkMeshes = ({
   showSurfaces = true,
   showWalls = true,
   water = null,
+  waterTintShown,
   bathymetry = null,
   seaBed = false,
   sectionWater = false,
@@ -456,6 +459,7 @@ export const ChunkMeshes = ({
         map: bathymetry ?? undefined,
         wetBand: water.wetBand,
         wetStrength: water.wetStrength,
+        shown: waterTintShown,
       };
     })();
 
@@ -660,6 +664,7 @@ export const ChunkMeshes = ({
     wallOpacity,
     wireframe,
     water,
+    waterTintShown,
     bathymetry,
     seaBedBySection,
     seaBedByFence,

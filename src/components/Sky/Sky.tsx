@@ -54,8 +54,8 @@ import {
   SkySeabed,
   skyStarShare,
   SkyStars,
-  SkyStudio,
-  skyStudioColors,
+  SkySubsurface,
+  skySubsurfaceColors,
   SkySun,
   skySunColor,
   skyWaterDimming,
@@ -103,15 +103,11 @@ export type SkyCutawayWave = {
 /**
  * A cut through the sea's water and seabed in front of the view, so what lies under it is
  * seen clearly: everything nearer than a line across the view, where a row of the frame
- * meets the surface (or the seabed, with the camera in the water). Waves bend the line, a
- * rim marks it on the surface and a shadow falls just inside it. It follows the camera. An
- * occupant and the data are never cut.
+ * meets the surface (or the seabed, with the camera in the water or the sea dry). Waves
+ * bend the line, a rim marks it on the surface and a shadow falls just inside it. It
+ * follows the camera. An occupant and the data are never cut.
  */
 export type SkyCutaway = {
-  /** opacity of the water left in the cut, surface and fog alike; 0 cuts it all. Default 0 */
-  waterOpacity?: number;
-  /** opacity of the seabed left in the cut; 0 opens it to the void, and what lies behind it. Default 0 */
-  seabedOpacity?: number;
   /** the frame row whose sight line sets the edge looking level: 0 the bottom, 1 the top. Tilting down raises it to the top, looking straight down. Default 0.5 */
   reach?: number;
   /** the downward tilt, in degrees, from which the edge slides up out of the view, gone looking straight down. Default 45 */
@@ -164,8 +160,7 @@ export type SkyDebug = {
   /**
    * Tint each part by what draws it. The sky: its sea, seabed and void red, what it
    * leaves to a stage purple, its surface layer orange. A stage: its surface blue, flat
-   * seabed green, relief cyan, an occupant's seabed magenta, walls yellow. Untinted is
-   * the scene.
+   * seabed green, relief cyan, an occupant's seabed magenta. Untinted is the scene.
    */
   tint?: boolean;
   /** layers not to draw */
@@ -192,7 +187,7 @@ export type SkyProps = {
   /**
    * Draw the sky, and its `SkyBoxStage`, behind the scene. Switched instantly: nothing
    * is rebuilt or baked again, and the environment and the light probe stay on, lit by
-   * the `subsurface` studio. Default true
+   * the `subsurface`. Default true
    */
   background?: boolean;
   /** below a level, a lid hides the sky and a void fills the view (see {@link SkyAbyss}). Default false */
@@ -204,11 +199,11 @@ export type SkyProps = {
   /** bake the sky into a LightProbe, which lights every `lights: true` material. Default true */
   lightProbe?: boolean | SkyLightProbeOptions;
   /**
-   * The light below the seabed (or the abyss level), and wherever the sky is not drawn: a
-   * studio (see {@link SkyStudio}), or a map of your own (an equirectangular or cube
-   * texture, as for `scene.background`). Default a studio
+   * The light below the seabed (or the abyss level), and wherever the sky is not drawn:
+   * soft light panels on a dark backdrop (see {@link SkySubsurface}), or a map of your own
+   * (an equirectangular or cube texture, as for `scene.background`). Default the panels
    */
-  subsurface?: SkyStudio | Texture;
+  subsurface?: SkySubsurface | Texture;
   /** how often the bakes follow a changing sky (see {@link SkyCaptureOptions}) */
   capture?: SkyCaptureOptions;
   /** cut away the sea's water and seabed in front of the view (see {@link SkyCutaway}). Default false */
@@ -268,7 +263,7 @@ function createSkyStandInMaterial(sky: SkyMaterial) {
  * library depends on this component.
  *
  * The environment and light probe are baked once for each zone the camera can be in —
- * the air over the sea, the water in it and, below the seabed, the `subsurface` studio —
+ * the air over the sea, the water in it and, below the seabed, the `subsurface` —
  * and swapped as the camera crosses a level, so a moving camera never bakes. They are
  * baked again when the sky changes. In the water they dim with depth.
  * Children can read the sun with {@link useSky}.
@@ -381,6 +376,11 @@ export const Sky = ({
   const oceanDepth = oceanOptions?.depth ?? oceanDefaults.depth;
   const oceanWater = oceanOptions?.water ?? true;
   const oceanSeabed = oceanOptions?.seabed !== false;
+  const oceanSeabedOpacity = MathUtils.clamp(
+    oceanOptions?.seabedOpacity ?? oceanDefaults.seabedOpacity,
+    0,
+    1,
+  );
   const seabedOptions: SkySeabed | null =
     typeof oceanOptions?.seabed === 'object' ? oceanOptions.seabed : null;
   const bedDefaults = oceanDefaults.seabed;
@@ -484,6 +484,7 @@ export const Sky = ({
             depth: oceanDepth,
             water: oceanWater,
             seabed: oceanSeabed,
+            seabedOpacity: oceanSeabedOpacity,
             bedDetail: bedDetailKey,
             visible: background,
             ready,
@@ -497,6 +498,7 @@ export const Sky = ({
       oceanDepth,
       oceanWater,
       oceanSeabed,
+      oceanSeabedOpacity,
       bedDetailKey,
       background,
       ready,
@@ -524,7 +526,7 @@ export const Sky = ({
   // One readback at a time: they are slow to come back, and piled up they stall.
   const probeBusy = useRef(false);
   const captureInterval = capture?.interval ?? DEFAULT_CAPTURE_INTERVAL;
-  // The zones the camera can be in; the studio also lights an undrawn sky.
+  // The zones the camera can be in; the subsurface also lights an undrawn sky.
   const zones = useMemo<SkyZone[]>(
     () =>
       hasOcean && oceanWater
@@ -536,18 +538,20 @@ export const Sky = ({
   const subsurfaceMap = (subsurface as Texture | undefined)?.isTexture
     ? (subsurface as Texture)
     : null;
-  const studio = subsurfaceMap ? null : (subsurface as SkyStudio | undefined);
-  const studioKey = JSON.stringify(studio ?? null);
+  const panels = subsurfaceMap
+    ? null
+    : (subsurface as SkySubsurface | undefined);
+  const panelsKey = JSON.stringify(panels ?? null);
   useLayoutEffect(() => {
     baker.setSubsurface(
       subsurfaceMap
         ? { map: subsurfaceMap }
-        : { studio: skyStudioColors(studio ?? undefined) },
+        : { light: skySubsurfaceColors(panels ?? undefined) },
     );
     dirty.current = true;
-    // `studio` is an inline object: compared by value, as `studioKey`.
+    // `subsurface` is an inline object: compared by value, as `panelsKey`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baker, subsurfaceMap, studioKey]);
+  }, [baker, subsurfaceMap, panelsKey]);
 
   useLayoutEffect(() => {
     material.setFrame({
@@ -666,6 +670,7 @@ export const Sky = ({
     material.oceanFogDensity = oceanWater ? bodyFogDensity : 0;
     material.oceanWater = oceanWater;
     material.oceanSeabed = oceanSeabed;
+    material.oceanSeabedOpacity = oceanSeabedOpacity;
     dirty.current = true;
   }, [
     material,
@@ -680,20 +685,20 @@ export const Sky = ({
     bodyFogDensity,
     oceanWater,
     oceanSeabed,
+    oceanSeabedOpacity,
   ]);
 
   // Every render: the props are an inline object, and applying them is cheap.
   useLayoutEffect(() => {
     if (!water || !oceanOptions) return;
     applyOceanWaterProps(water, oceanOptions);
-    material.oceanShimmer =
-      oceanOptions.bodyShimmer ?? oceanDefaults.bodyShimmer;
-    material.oceanBodyOpacity =
-      oceanOptions.bodyMaxOpacity ?? water.waterOpacity;
   });
 
-  // The bakes see the water too, but an inline object is new every render.
-  const waterKey = oceanOptions ? JSON.stringify(oceanOptions) : '';
+  // The bakes see the water too, but an inline object is new every render. Not the seabed's
+  // opacity: the bakes take the seabed whole.
+  const waterKey = oceanOptions
+    ? JSON.stringify({ ...oceanOptions, seabedOpacity: undefined })
+    : '';
   useEffect(() => {
     dirty.current = true;
   }, [waterKey]);
@@ -813,16 +818,6 @@ export const Sky = ({
   ]);
 
   const cutawayOptions = cutaway === true ? {} : cutaway || null;
-  const cutawayWaterOpacity = MathUtils.clamp(
-    cutawayOptions?.waterOpacity ?? 0,
-    0,
-    1,
-  );
-  const cutawaySeabedOpacity = MathUtils.clamp(
-    cutawayOptions?.seabedOpacity ?? 0,
-    0,
-    1,
-  );
   const cutawayReach = MathUtils.clamp(cutawayOptions?.reach ?? 0.5, 0, 1);
   const cutawayExitTilt = MathUtils.clamp(
     cutawayOptions?.exitTilt ?? 45,
@@ -872,7 +867,6 @@ export const Sky = ({
       oceanLevel: material.oceanLevel,
       oceanDepth: material.oceanDepth,
       oceanWater: material.oceanWater,
-      oceanDrained: material.oceanDrained,
       oceanGround: material.oceanGround,
       abyss: material.abyss,
       abyssLevel: material.abyssLevel,
@@ -887,24 +881,22 @@ export const Sky = ({
       height > material.oceanLevel - material.oceanDepth;
 
     // The cutaway: from below the camera to where the `reach` row meets its plane, the
-    // surface from above the water and the seabed from in it.
+    // surface from above the water and the seabed from in it, or from above a dry one.
     const cutawayShape = material.uniforms.uSkyOceanCutawayShape
-      .value as Vector4;
+      .value as Vector3;
     const size = cutawaySize.current;
-    const plane =
-      zone === 'air' && height > material.oceanLevel
+    const bedLevel = material.oceanLevel - material.oceanDepth;
+    const plane = !material.oceanWater
+      ? height > bedLevel
+        ? bedLevel
+        : null
+      : zone === 'air' && height > material.oceanLevel
         ? material.oceanLevel
         : zone === 'water'
-          ? material.oceanLevel - material.oceanDepth
+          ? bedLevel
           : null;
     const altitude = plane === null ? 0 : height - plane;
-    if (
-      !cutawayOptions ||
-      !material.ocean ||
-      !material.oceanWater ||
-      plane === null ||
-      altitude <= 0
-    ) {
+    if (!cutawayOptions || !material.ocean || plane === null || altitude <= 0) {
       cutawayShape.y = 0;
       size.active = false;
     } else {
@@ -1004,7 +996,6 @@ export const Sky = ({
         size.reach,
         width,
         Math.max(width * cutawaySoftness, CUTAWAY_MIN_EDGE),
-        cutawayWaterOpacity,
       );
       setCutawayWave(
         material.uniforms.uSkyOceanCutawayWaveA.value,
@@ -1018,8 +1009,6 @@ export const Sky = ({
         size.frame,
         far,
       );
-      material.uniforms.uSkyOceanCutawaySeabedOpacity.value =
-        cutawaySeabedOpacity;
       // Thinning with the cut, down to a pixel.
       (material.uniforms.uSkyOceanCutawayRim.value as Vector4).set(
         cutawayRimColor.r,
