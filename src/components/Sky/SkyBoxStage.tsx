@@ -1,8 +1,15 @@
 import { useFrame, useThree } from '@react-three/fiber';
-import { useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from 'react';
 import {
   BufferGeometry,
   Camera,
+  Group,
   LineBasicMaterial,
   MeshBasicMaterial,
   Scene,
@@ -384,6 +391,28 @@ export const SkyBoxStage = ({
 
   const shown = (layer: SkyBoxStageLayer) => !debug?.hide?.includes(layer);
 
+  // Compiled with the sky before either is drawn; again when the parts may have changed.
+  const root = useRef<Group>(null);
+  const register = ocean?.stage;
+  useLayoutEffect(() => {
+    if (!register || !root.current) return;
+    return register(root.current);
+  }, [
+    register,
+    materials,
+    geometry,
+    walls,
+    relief,
+    band,
+    wet,
+    hasBed,
+    water,
+    seabed,
+    elevations,
+    wireMaterials,
+    outlineLines,
+  ]);
+
   if (!ocean || !materials) return null;
 
   const parts: {
@@ -472,7 +501,7 @@ export const SkyBoxStage = ({
   }
 
   return (
-    <group visible={ocean?.visible ?? true}>
+    <group ref={root} visible={ocean.visible && ocean.ready}>
       {parts.map(part => (
         <mesh
           key={part.key}

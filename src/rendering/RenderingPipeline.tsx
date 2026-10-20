@@ -11,6 +11,7 @@ import {
   WebGLRenderTarget,
 } from 'three';
 import { Pass } from './Pass';
+import { setPipelinePasses } from './precompile';
 
 /** Transparent-black used to reset the default framebuffer each frame. */
 const SCREEN_CLEAR_COLOR = new Color(0, 0, 0);
@@ -66,7 +67,14 @@ export const RenderingPipeline = ({
   supersample = 1,
   priority = 1,
 }: RenderingPipelineProps) => {
-  const { gl: renderer, size, viewport } = useThree();
+  const { gl: renderer, size, viewport, scene } = useThree();
+
+  // In render as well: a sibling precompiling in this commit's layout effects must see it.
+  useMemo(() => setPipelinePasses(scene, passes), [scene, passes]);
+  useLayoutEffect(() => {
+    setPipelinePasses(scene, passes);
+    return () => setPipelinePasses(scene, null);
+  }, [scene, passes]);
 
   const drawingBufferSize = useMemo(() => new Vector2(), []);
   const prevClearColor = useMemo(() => new Color(), []);

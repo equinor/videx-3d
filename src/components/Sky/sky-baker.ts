@@ -6,7 +6,9 @@ import {
   HalfFloatType,
   IUniform,
   LightProbe,
+  Material,
   Mesh,
+  PerspectiveCamera,
   PMREMGenerator,
   Scene,
   ShaderMaterial,
@@ -22,13 +24,10 @@ import {
   WebGLRenderTarget,
 } from 'three';
 import { LightProbeGenerator } from 'three/examples/jsm/lights/LightProbeGenerator.js';
+import { precompile } from '../../rendering/precompile';
 import skyVertexShader from './shaders/sky-vertex.glsl';
 import studioFragmentShader from './shaders/studio-fragment.glsl';
-import {
-  createSkyGeometry,
-  SKY_SHARED_DEFINES,
-  SkyMaterial,
-} from './sky-material';
+import { createSkyGeometry, SkyMaterial } from './sky-material';
 import { SKY_WATER_BAKE_DEPTH, SkyStudioColors, SkyZone } from './sky-model';
 import { createSkySurfaceMaterial } from './sky-stage';
 
@@ -54,6 +53,16 @@ type ZoneBake = {
   prefiltered: WebGLRenderTarget | null;
 };
 
+// PMREMGenerator makes its prefilter material only with its first targets, privately.
+type PmremInternals = {
+  _setSize?: (cubeSize: number) => void;
+  _allocateTargets?: () => WebGLRenderTarget;
+  _ggxMaterial?: Material | null;
+  _blurMaterial?: Material | null;
+};
+
+const compileCamera = new PerspectiveCamera();
+
 /**
  * Films a {@link SkyMaterial} into an environment map (for `scene.environment`) and into
  * light-probe coefficients, once per {@link SkyZone}: the air over its sea, the water in
@@ -62,7 +71,8 @@ type ZoneBake = {
 export class SkyBaker {
   private readonly scene = new Scene();
   private readonly geometry = createSkyGeometry();
-  private readonly material = new SkyMaterial({ fog: false });
+  // Fog as the visible sky has it, so the two share a program: this scene has none.
+  private readonly material = new SkyMaterial();
   // No disc: the directional light is the sun. No stage: the light comes off the whole sea.
   // Never drained or buried, and nothing cut away: the zones are the sea's own.
   // Lights of its own: three wires a material's light uniforms to the scene it is drawn in.
@@ -162,17 +172,13 @@ export class SkyBaker {
       if (!(name in this.overrides))
         material.uniforms[name] = source.uniforms[name];
     }
-    material.abyss = source.abyss;
-    material.ocean = source.ocean;
-    material.clouds = source.clouds;
-    let changed = false;
-    for (const key of SKY_SHARED_DEFINES) {
-      if (material.defines[key] === source.defines[key]) continue;
-      if (source.defines[key] === undefined) delete material.defines[key];
-      else material.defines[key] = source.defines[key];
-      changed = true;
+    // In the visible sky's order too: a program is keyed on the order of its defines.
+    const changed =
+      JSON.stringify(material.defines) !== JSON.stringify(source.defines);
+    if (changed) {
+      material.defines = { ...source.defines };
+      material.needsUpdate = true;
     }
-    if (changed) material.needsUpdate = true;
 
     // From above the water, the sea surface is a layer of its own over the seabed.
     if (this.surface && (changed || !source.ocean)) {
@@ -194,6 +200,45 @@ export class SkyBaker {
   /** A zone's last film, before prefiltering; `null` before the first. */
   cubeOf(zone: SkyZone): Texture | null {
     return this.bakes[zone].cube?.texture ?? null;
+  }
+
+  /**
+   * Compile what the bakes draw with — and with an environment of `resolution`, its
+   * prefilter — in the background where the browser can (see `precompile`). Set the
+   * lights first: they are compiled in. `null` when all is ready already.
+   */
+  precompile(
+    renderer: WebGLRenderer,
+    resolution: number | null,
+  ): Promise<void> | null {
+    this.sync();
+    const waits = [
+      precompile(renderer, this.scene, compileCamera, this.scene, 'offscreen'),
+      precompile(
+        renderer,
+        this.studioScene,
+        compileCamera,
+        this.studioScene,
+        'offscreen',
+      ),
+      resolution === null ? null : this.precompilePmrem(renderer, resolution),
+    ].filter(wait => wait !== null);
+    return waits.length > 0 ? Promise.all(waits).then(() => {}) : null;
+  }
+
+  private precompilePmrem(renderer: WebGLRenderer, resolution: number) {
+    this.pmrem ??= new PMREMGenerator(renderer);
+    const pmrem = this.pmrem as unknown as PmremInternals;
+    if (pmrem._setSize && pmrem._allocateTargets) {
+      pmrem._setSize(resolution);
+      // Its working target and material stay, for the bakes of this size.
+      pmrem._allocateTargets().dispose();
+    }
+    const material = pmrem._ggxMaterial ?? pmrem._blurMaterial;
+    if (!material) return null;
+    const scene = new Scene();
+    scene.add(new Mesh(this.geometry, material));
+    return precompile(renderer, scene, compileCamera, scene, 'offscreen');
   }
 
   /** A zone's last environment map; `null` before the first. */

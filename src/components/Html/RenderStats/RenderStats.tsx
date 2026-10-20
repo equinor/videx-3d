@@ -46,6 +46,9 @@ const ORIGIN_STYLES: Record<
  * - **GPU** — actual GPU time per frame (via `EXT_disjoint_timer_query_webgl2`),
  *   which — unlike frame time — is not hidden by the vsync cap, so you can compare
  *   GPU cost even at a locked 60 fps.
+ * - **CPU** — main-thread time per frame, from R3F's first to its last callback:
+ *   every `useFrame` and the render calls. Smoothed, with the longest frame of the
+ *   last interval in brackets — where a shader compile shows.
  * - **Frame / FPS** — wall-clock frame time and rate.
  * - **Draw calls** and **Triangles** — accumulated across every render pass in the
  *   frame (it sets `renderer.info.autoReset = false` while mounted and resets once
@@ -116,6 +119,7 @@ export const RenderStats = ({
     };
 
     addRow('GPU');
+    addRow('CPU');
     addRow('Frame');
     addRow('FPS');
     addRow('Calls');
@@ -136,8 +140,12 @@ export const RenderStats = ({
     let emaFrameMs = -1;
     let lastTs: number | null = null;
     let lastReport = 0;
+    let cpuStart = 0;
+    let emaCpuMs = -1;
+    let maxCpuMs = 0;
 
     const beforeUnsub = addEffect(() => {
+      cpuStart = performance.now();
       gl.info.reset();
       timer?.poll();
       timer?.begin('frame');
@@ -145,6 +153,10 @@ export const RenderStats = ({
 
     const afterUnsub = addAfterEffect((ts: number) => {
       timer?.end();
+
+      const cpuMs = performance.now() - cpuStart;
+      emaCpuMs = emaCpuMs < 0 ? cpuMs : emaCpuMs * 0.9 + cpuMs * 0.1;
+      maxCpuMs = Math.max(maxCpuMs, cpuMs);
 
       if (lastTs !== null) {
         const dt = ts - lastTs;
@@ -161,6 +173,11 @@ export const RenderStats = ({
         : gpuMs < 0
           ? '…'
           : `${gpuMs.toFixed(2)} ms`;
+      rows['CPU'].textContent =
+        emaCpuMs < 0
+          ? '…'
+          : `${emaCpuMs.toFixed(2)} ms (${maxCpuMs.toFixed(1)})`;
+      maxCpuMs = 0;
       rows['Frame'].textContent =
         emaFrameMs < 0 ? '…' : `${emaFrameMs.toFixed(2)} ms`;
       rows['FPS'].textContent =

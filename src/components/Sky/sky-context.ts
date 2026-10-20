@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import { Color, Vector3 } from 'three';
+import { Color, Object3D, Vector3 } from 'three';
 import type { WaterFogUniforms } from '../../sdk/materials/water-fog';
 import type { SkyMaterial } from './sky-material';
 
@@ -48,6 +48,13 @@ export type SkyOceanState = {
   depth: number;
   /** the sky is drawn (its `background`): a stage is drawn with it */
   visible: boolean;
+  /** the sky's shaders, and its stages', are compiled: until then a stage draws nothing */
+  ready: boolean;
+  /**
+   * Hand the sky a stage's parts (no lights among them), compiled with its own before
+   * either is drawn; again whenever they change. Returns the release.
+   */
+  stage: (parts: Object3D) => () => void;
 };
 
 export const SkyOceanContext = createContext<SkyOceanState | null>(null);

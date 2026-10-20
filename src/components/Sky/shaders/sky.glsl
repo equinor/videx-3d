@@ -4,17 +4,11 @@
 // stays in [0, 1] everywhere except at the sun. The sun colour and daylight factor
 // are computed on the CPU (sky-model.ts) and shared with the directional light.
 
-uniform vec3 uSkyUp; // normalised
+#include ./sky-gradient.glsl
+
 uniform vec3 uSkyNorth; // normalised, perpendicular to uSkyUp
 uniform vec3 uSkyEast;
-uniform vec3 uSkyZenithColor;
-uniform vec3 uSkyHorizonColor;
-uniform vec3 uSkyGroundColor;
-uniform vec3 uSkyNadirColor;
-uniform vec3 uSkySunDirection; // world space, normalised
-uniform vec3 uSkySunColor;
 uniform float uSkySunSize; // angular radius, radians
-uniform float uSkySunGlow;
 uniform float uSkySunRadiance; // disc multiplier; > 1 only when tone mapped
 uniform float uSkySunDisc; // 0 in the environment / light-probe bakes: no discs, no stars
 uniform vec3 uSkyMoonDirection; // world space, normalised
@@ -24,7 +18,6 @@ uniform float uSkyMoonGlow;
 uniform float uSkyNight; // 0 by day to 1 at night: how much the moon and the stars show
 uniform vec2 uSkyStars; // brightness, and the share of the sky's cells holding one
 uniform float uSkyHorizonBlend; // width of the horizon -> ground transition, in dot(dir, up)
-uniform float uSkyDaylight;
 uniform float uSkyIntensity;
 uniform float uSkyDebug; // 1: tint each part by what draws it (SkyDebug.tint)
 
@@ -37,22 +30,6 @@ uniform float uSkyDebug; // 1: tint each part by what draws it (SkyDebug.tint)
 // `color` shifted halfway toward the debug `tint` of the part that drew it, while debugging.
 vec3 skyDebugTint(vec3 color, vec3 tint) {
   return uSkyDebug > 0.5 ? mix(color, tint, 0.5) : color;
-}
-
-// Gradient, daylight and the sun's halo; no disc.
-vec3 skySurface(vec3 dir, float blend) {
-  float y = dot(dir, uSkyUp);
-  vec3 sky = mix(uSkyHorizonColor, uSkyZenithColor, sqrt(max(y, 0.0)));
-  vec3 ground = mix(uSkyGroundColor, uSkyNadirColor, sqrt(max(-y, 0.0)));
-  // The sky carries on a little below the horizon, reading as distant haze.
-  vec3 color = mix(sky, ground, smoothstep(0.0, blend, -y));
-
-  // Night keeps a little light so the scene never goes black.
-  color *= mix(0.15, 1.0, uSkyDaylight);
-
-  float toward = max(dot(dir, uSkySunDirection), 0.0);
-  float halo = 0.6 * pow(toward, 6.0) + 0.4 * pow(toward, 48.0);
-  return color + uSkySunColor * halo * uSkySunGlow * smoothstep(-blend, 0.0, y);
 }
 
 // A hash in [0, 1) of a point.

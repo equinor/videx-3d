@@ -11,11 +11,14 @@ import {
 import {
   Color,
   ColorRepresentation,
+  DoubleSide,
+  Group,
   LightProbe,
   MathUtils,
   NoToneMapping,
   Object3D,
   PerspectiveCamera,
+  ShaderMaterial,
   SphericalHarmonics3,
   Texture,
   Uniform,
@@ -23,12 +26,15 @@ import {
   Vector3,
   Vector4,
 } from 'three';
+import { precompile } from '../../rendering/precompile';
 import { surfaceDetailKey } from '../../sdk/materials/surface-detail';
 import { WaterFogUniforms } from '../../sdk/materials/water-fog';
 import { Vec3 } from '../../sdk/types/common';
 import { directionFromCompass } from '../../sdk/utils/vector-operations';
 import { OceanMaterial } from '../Ocean/ocean-material';
 import { applyOceanWaterProps } from '../Ocean/ocean-material-sync';
+import standInFragmentShader from './shaders/sky-stand-in-fragment.glsl';
+import skyVertexShader from './shaders/sky-vertex.glsl';
 import { SkyBaker } from './sky-baker';
 import {
   SkyContext,
@@ -243,6 +249,19 @@ const scratch = new Color();
 // Primitive dependency for a colour prop, so an inline `new Color()` does not re-bake every render.
 const toHex = (value: ColorRepresentation) => scratch.set(value).getHex();
 
+// Drawn while the sky's shaders compile: its gradient, and with `SKY_OCEAN` its sea's colour.
+function createSkyStandInMaterial(sky: SkyMaterial) {
+  return new ShaderMaterial({
+    vertexShader: skyVertexShader,
+    fragmentShader: standInFragmentShader,
+    uniforms: sky.uniforms,
+    side: DoubleSide,
+    depthTest: false,
+    depthWrite: false,
+    fog: true,
+  });
+}
+
 /**
  * Procedural sky: a background that shows where the horizon and the sun are, and the
  * light that comes from it — a directional sun light, an environment map and a light
@@ -289,6 +308,7 @@ export const Sky = ({
 }: SkyProps) => {
   const gl = useThree(state => state.gl);
   const scene = useThree(state => state.scene);
+  const sceneCamera = useThree(state => state.camera);
 
   const azimuth = sun?.azimuth ?? skyDefaults.sun.azimuth;
   const elevation = sun?.elevation ?? skyDefaults.sun.elevation;
@@ -389,6 +409,7 @@ export const Sky = ({
   const probeIntensity = probeOptions?.intensity ?? 1;
 
   const [material] = useState(() => new SkyMaterial());
+  const [standIn] = useState(() => createSkyStandInMaterial(material));
   const [geometry] = useState(createSkyGeometry);
   const [baker] = useState(() => new SkyBaker(material));
   const [probe] = useState(() => new LightProbe());
@@ -402,16 +423,18 @@ export const Sky = ({
   useEffect(() => () => water?.dispose(), [water]);
 
   // In render rather than an effect, so a stage made in this commit compiles with it. A
-  // no-op unless the detail changed.
+  // no-op unless the detail changed. The waves' defines likewise, for the surface layer.
   material.oceanBedDetail = bedDetail;
+  if (water) material.linkOcean(water);
 
   useEffect(
     () => () => {
       material.dispose();
+      standIn.dispose();
       geometry.dispose();
       baker.dispose();
     },
-    [material, geometry, baker],
+    [material, standIn, geometry, baker],
   );
 
   const state = useMemo<SkyState>(() => {
@@ -439,7 +462,7 @@ export const Sky = ({
     ? moonIntensity * state.moonlight
     : sunIntensity * state.daylight;
 
-  // The water's colours from the water itself: `linkOcean` shares them only after render.
+  // The water's colours from the water itself, whose uniform objects the sky shares.
   // The density is the fog's own: none while the sky, and with it the sea, is not drawn.
   const [fogDensity] = useState(() => new Uniform(0));
   const [fogCamera] = useState(() => new Uniform(0));
@@ -464,6 +487,20 @@ export const Sky = ({
     [material, water, fogDensity, fogCamera],
   );
 
+  // Whether what the sky draws is compiled; until then the stand-in is drawn instead.
+  const [ready, setReady] = useState(false);
+  // Stages hand over their parts, compiled with the sky's own (see SkyOceanState.stage).
+  const stages = useRef(new Set<Object3D>());
+  const [stageVersion, setStageVersion] = useState(0);
+  const addStage = useCallback((object: Object3D) => {
+    stages.current.add(object);
+    setStageVersion(version => version + 1);
+    return () => {
+      stages.current.delete(object);
+      setStageVersion(version => version + 1);
+    };
+  }, []);
+
   const oceanState = useMemo<SkyOceanState | null>(
     () =>
       water && fog
@@ -476,6 +513,8 @@ export const Sky = ({
             bedDetail: bedDetailKey,
             fog,
             visible: background,
+            ready,
+            stage: addStage,
           }
         : null,
     [
@@ -488,6 +527,8 @@ export const Sky = ({
       oceanSeabed,
       bedDetailKey,
       background,
+      ready,
+      addStage,
     ],
   );
 
@@ -731,6 +772,80 @@ export const Sky = ({
   // What lights a bake's seabed: the light probe of its own zone.
   const [bakeProbe] = useState(() => new LightProbe());
 
+  // After the effects above set the defines: anything new compiles in the background while
+  // the stand-in is drawn, and the bakes wait for it.
+  const own = useRef<Group>(null);
+  const compiling = useRef('');
+  useLayoutEffect(() => {
+    if ((standIn.defines.SKY_OCEAN !== undefined) !== material.ocean) {
+      if (material.ocean) standIn.defines.SKY_OCEAN = '';
+      else delete standIn.defines.SKY_OCEAN;
+      standIn.needsUpdate = true;
+    }
+    const group = own.current;
+    if (!group) return;
+    const resolution = hasEnvironment ? environmentResolution : null;
+    const key = [
+      JSON.stringify(material.defines),
+      surfaceLayer !== null && oceanWater,
+      stageVersion,
+      resolution,
+      sunLight,
+      hasProbe,
+    ].join('|');
+    if (key === compiling.current) return;
+    compiling.current = key;
+    // Which lights the bakes have is compiled in; their values are not.
+    baker.setLights(
+      sunLight
+        ? {
+            direction: lightDirection,
+            color: lightColor,
+            intensity: lightIntensity,
+          }
+        : null,
+      hasProbe ? bakeProbe : null,
+    );
+    const pending = [
+      ...[group, ...stages.current].map(root =>
+        precompile(gl, root, sceneCamera, scene),
+      ),
+      baker.precompile(gl, resolution),
+    ].filter(wait => wait !== null);
+    if (pending.length === 0) {
+      setReady(true);
+      return;
+    }
+    setReady(false);
+    Promise.all(pending).then(() => {
+      if (compiling.current === key) setReady(true);
+    });
+    // The defines are read from the material: the props that set them are deps too.
+  }, [
+    gl,
+    scene,
+    sceneCamera,
+    material,
+    standIn,
+    baker,
+    bakeProbe,
+    surfaceLayer,
+    oceanWater,
+    stageVersion,
+    hasEnvironment,
+    environmentResolution,
+    sunLight,
+    hasProbe,
+    lightDirection,
+    lightColor,
+    lightIntensity,
+    water,
+    hasAbyss,
+    hasOcean,
+    cloudsOn,
+    bedDetailKey,
+  ]);
+
   const cutawayOptions = cutaway === true ? {} : cutaway || null;
   const cutawayWaterOpacity = MathUtils.clamp(
     cutawayOptions?.waterOpacity ?? 0,
@@ -968,13 +1083,13 @@ export const Sky = ({
       environmentDue.has(z) || (probeDue.has(z) && !probeBusy.current);
     const next = due(zone) ? zone : zones.find(due);
     const now = performance.now();
-    if (next && now - lastBake.current >= captureInterval) {
+    if (ready && next && now - lastBake.current >= captureInterval) {
       lastBake.current = now;
       const nextProbe = zoneProbes.current[next];
-      if (nextProbe) {
-        bakeProbe.sh.copy(nextProbe);
-        bakeProbe.intensity = probeIntensity;
-      }
+      // There without coefficients too: its light is compiled into the bakes' programs.
+      if (nextProbe) bakeProbe.sh.copy(nextProbe);
+      else bakeProbe.sh.zero();
+      bakeProbe.intensity = probeIntensity;
       baker.setLights(
         sunLight
           ? {
@@ -983,7 +1098,7 @@ export const Sky = ({
               intensity: lightIntensity,
             }
           : null,
-        hasProbe && nextProbe ? bakeProbe : null,
+        hasProbe ? bakeProbe : null,
       );
       if (environmentDue.delete(next)) {
         baker.environment(gl, next, environmentResolution);
@@ -1030,24 +1145,34 @@ export const Sky = ({
 
   return (
     <SkyContext.Provider value={state}>
-      <mesh
-        geometry={geometry}
-        material={material}
-        frustumCulled={false}
-        renderOrder={renderOrder}
-        visible={background && !debug?.hide?.includes('background')}
-        dispose={null}
-      />
-      {surfaceLayer && oceanWater && (
+      <group ref={own}>
         <mesh
           geometry={geometry}
-          material={surfaceLayer}
+          material={material}
           frustumCulled={false}
-          renderOrder={renderOrder + 1}
-          visible={background && !debug?.hide?.includes('surface')}
+          renderOrder={renderOrder}
+          visible={background && ready && !debug?.hide?.includes('background')}
           dispose={null}
         />
-      )}
+        {surfaceLayer && oceanWater && (
+          <mesh
+            geometry={geometry}
+            material={surfaceLayer}
+            frustumCulled={false}
+            renderOrder={renderOrder + 1}
+            visible={background && ready && !debug?.hide?.includes('surface')}
+            dispose={null}
+          />
+        )}
+      </group>
+      <mesh
+        geometry={geometry}
+        material={standIn}
+        frustumCulled={false}
+        renderOrder={renderOrder}
+        visible={background && !ready}
+        dispose={null}
+      />
       {hasProbe && <primitive object={probe} />}
       {sunLight && (
         <>

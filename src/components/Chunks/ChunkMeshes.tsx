@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useThree } from '@react-three/fiber';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   BufferAttribute,
   BufferGeometry,
@@ -12,6 +13,7 @@ import {
   Vector4,
 } from 'three';
 import { useReleasedFrame } from '../../hooks/useReleasedFrame';
+import { precompile } from '../../rendering/precompile';
 import {
   PlanarPolygonCoordinates,
   SurfaceChunk,
@@ -862,6 +864,42 @@ export const ChunkMeshes = ({
   }, []);
 
   const root = useRef<Group>(null);
+
+  // A material not drawn before compiles in the background with the chunk hidden, rather
+  // than stalling the frame that first draws it. Checked every render: caps stream in.
+  const gl = useThree(state => state.gl);
+  const scene = useThree(state => state.scene);
+  const camera = useThree(state => state.camera);
+  const compiled = useRef(new WeakSet<Material>());
+  const compiling = useRef(0);
+  useLayoutEffect(() => {
+    const group = root.current;
+    if (!group) return;
+    const fresh = new Set<Material>();
+    group.traverse(object => {
+      const material = (
+        object as Object3D & { material?: Material | Material[] }
+      ).material;
+      if (!material) return;
+      for (const m of Array.isArray(material) ? material : [material]) {
+        if (!compiled.current.has(m)) fresh.add(m);
+      }
+    });
+    if (fresh.size === 0) return;
+    const generation = ++compiling.current;
+    const done = () => {
+      if (generation !== compiling.current) return;
+      fresh.forEach(m => compiled.current.add(m));
+      group.visible = true;
+    };
+    const pending = precompile(gl, group, camera, scene);
+    if (!pending) {
+      done();
+      return;
+    }
+    group.visible = false;
+    pending.then(done);
+  });
 
   // Peeling drops whole UNITS: a unit's cap and its volume go together. `top` is
   // the first survivor (its own cap stays, closing the block); a window also sets

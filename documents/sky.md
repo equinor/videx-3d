@@ -202,10 +202,23 @@ the renderer from an effect, and use the Canvas `flat` prop rather than
 
 ## Performance
 
-- The shaders are large, and the first frame stalls while they compile. Measured cold
-  on an Intel Iris Xe laptop (ANGLE / Direct3D 11): the background ~2.5 s, the sea
-  surface layer ~1.7 s, a stage's surface ~1.6 s, each seabed part ~0.4 s. Clouds add
-  ~0.4 s to the background.
+- The shaders are large. Measured cold on an Intel Iris Xe laptop (ANGLE / Direct3D
+  11): the background ~2.5 s, the sea surface layer ~1.7 s, a stage's surface ~1.6 s,
+  each seabed part ~0.4 s. Clouds add ~0.4 s to the background.
+- They compile in the background where the browser has `KHR_parallel_shader_compile`:
+  until the sky, its stages and its bakes are ready, a stand-in (the sky's gradient, and
+  its sea's colour below the horizon) is drawn, a stage draws nothing and nothing is
+  baked. A recompile (below) shows the stand-in again for as long as it takes. A
+  `ChunkStack`'s meshes likewise stay hidden until theirs are ready.
+- The bakes draw with the very programs the background and its surface layer do, so
+  they cost no compile of their own — when both draw into a render target (a
+  `RenderingPipeline`) and with the same lights (the sky's own directional light and
+  probe).
+- ⚠️ ANGLE on Direct3D compiles a program's pixel shader for one colour attachment,
+  and again at its first draw into several. `OITRenderPass` draws into several with
+  `mergeFront` or `tailSlices`, so the first frame that shows a stage's see-through
+  parts still stalls (~1.6 s for its surface, measured cold). Without either, nothing
+  stalls.
 - Switching `ocean`, `abyss`, `clouds`, the seabed's `detail` or the sea's wave count
   recompiles; every other option only changes uniforms.
 - The bakes run only when the sky changes, never as the camera moves, and swap
@@ -233,13 +246,23 @@ option and debug view) and `Spikes/Sky/Baseline` (a real field) exercise all of 
 | `sky-stage.ts`, `SkyBoxStage.tsx` | the stage's geometry and materials |
 | `sky-context.ts` | `useSky`, `useSkyOcean`, `useSkyWaterFog` |
 | `shaders/sky.glsl` | the sky itself: gradient, sun, night, clouds, void, `skyRadiance` |
+| `shaders/sky-gradient.glsl`, `sky-stand-in-fragment.glsl` | the gradient alone, and the stand-in drawn with it while the sky compiles |
 | `shaders/sky-ocean.glsl` | the sea: surface, water, seabed, cutaway |
 | `shaders/stage-fragment.glsl`, `sky-surface-fragment.glsl` | the stage's parts, and the sea surface layer |
 
 - The stage's materials and the baker's share the background material's UNIFORM
   OBJECTS, so they follow every change to it. Defines are copied: the ones a stage needs
   are listed in `SKY_SHARED_DEFINES`; background-only switches (`SKY_CLOUDS`) are not,
-  and the baker copies its switches in `sync()`.
+  and the baker copies all of them, IN ORDER, in `sync()`.
+- ⭐ A program is keyed on its defines' order, the `fog` flag and the number of lights
+  as well as on the source: the baker's material copies the background's defines in
+  their order, keeps `fog: true` (its scene has none) and keeps its light probe in the
+  scene without coefficients, so both share one program. `linkOcean` runs in render, so
+  the surface layer and a stage's materials are made with the waves' defines.
+- Compiling ahead goes through `precompile` (`src/rendering/precompile.ts`, internal):
+  it compiles as the scene draws, i.e. for the `RenderingPipeline`'s render target and
+  through the `OITRenderPass`'s variants. The sky waits for its own meshes, the stages
+  registered through `SkyOceanState.stage`, and the baker's scenes and PMREM prefilter.
 - The water fog (`sdk/materials/shaderLib/water-fog.glsl`, `WaterFogUniforms`) and the
   cutaway's edge are shared with `ChunkMaterial`, so a chunk is fogged and cut exactly
   as the sea around it is.
