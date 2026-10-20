@@ -142,6 +142,11 @@ export type OceanWaterProps = {
   detailScale?: number;
   /** Micro-ripple normal strength. */
   detailStrength?: number;
+  /**
+   * Distances from the camera, `[start, end]`, over which the waves, foam and tonal
+   * variation fade out, leaving a flat mirror. Default `[15000, 60000]`.
+   */
+  detailFadeDistance?: [number, number];
 };
 
 /**
@@ -271,6 +276,8 @@ export function applyOceanWaterProps(
   if (props.detailScale !== undefined) material.detailScale = props.detailScale;
   if (props.detailStrength !== undefined)
     material.detailStrength = props.detailStrength;
+  if (props.detailFadeDistance)
+    material.detailFadeDistance = props.detailFadeDistance;
 
   material.uniforms.uMasterOpacity.value = opacity;
   // Drive OIT opacity-aware routing via material.opacity (the pass reads the

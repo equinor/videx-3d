@@ -23,6 +23,12 @@ const surface = createOceanPlane({ size: 100000 })
 follow from it (≈ 10 m/s ⇒ ~2 m significant wave height). Colours, foam,
 reflection and opacity are all tunable via props.
 
+Far from the camera the detail fades out: between the two distances of
+`detailFadeDistance` (default `[15000, 60000]` m) the waves, foam and tonal
+patches give way to a flat mirror of the sky. The sun's glint widens by the
+slopes that faded out rather than shrinking to a point. The `<Sky>`'s endless
+sea takes the same prop.
+
 ## Geometry builders
 
 The component only renders geometry; build it with one of the SDK helpers:

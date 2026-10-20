@@ -14,6 +14,7 @@ import {
   Vector4,
 } from 'three';
 import { attachOitVariants } from '../../rendering/oit-material';
+import { oceanSlopeVariance, sampleOceanWaves } from './ocean-waves';
 import fragmentShader from './shaders/fragment.glsl';
 import vertexShader from './shaders/vertex.glsl';
 
@@ -182,12 +183,38 @@ export const DEFAULT_OCEAN_DEEP_COLOR = '#0a2540';
  */
 export const DEFAULT_OCEAN_WATER_OPACITY = 0.7;
 
-// Deterministic pseudo-random in [0,1] used to decorrelate wave phases and
-// directions. Stable per index so the sea state is reproducible.
-function oceanHash01(n: number): number {
-  const f = Math.sin(n * 127.1 + 311.7) * 43758.5453;
-  return f - Math.floor(f);
-}
+/**
+ * The uniforms `shaders/ocean-surface.glsl` reads, wave tables included. Another
+ * material that includes it shares an {@link OceanMaterial}'s water by pointing
+ * these entries at the same uniform objects.
+ */
+export const OCEAN_SURFACE_UNIFORMS = [
+  'uTime',
+  'uWindDirection',
+  'uWindSpeed',
+  'uSignificantHeight',
+  'uSteepness',
+  'uDeepColor',
+  'uShallowColor',
+  'uOpacity',
+  'uTonalVariation',
+  'uTonalScale',
+  'uTonalSharpness',
+  'uTonalColor',
+  'uReflectionIntensity',
+  'uSunDirection',
+  'uSunColor',
+  'uSunShininess',
+  'uFoamColor',
+  'uFoamAmount',
+  'uFresnelPower',
+  'uDetailScale',
+  'uDetailStrength',
+  'uDetailFade',
+  'uSlopeVariance',
+  'uWaveA',
+  'uWaveB',
+] as const;
 
 /**
  * Stylized, OIT-compatible ocean surface material.
@@ -210,7 +237,6 @@ function oceanHash01(n: number): number {
 export class OceanMaterial extends ShaderMaterial {
   isOceanMaterial = true;
 
-  private _waveCount!: number;
   private _waveHeightScale!: number;
   private _directionalSpread!: number;
   private _contactCount!: number;
@@ -307,12 +333,13 @@ export class OceanMaterial extends ShaderMaterial {
         uFresnelPower: new Uniform(4),
         uDetailScale: new Uniform(0.05),
         uDetailStrength: new Uniform(0.2),
+        uDetailFade: new Uniform(new Vector2(15000, 60000)),
+        uSlopeVariance: new Uniform(0),
 
         uMasterOpacity: new Uniform(1),
       },
     });
 
-    this._waveCount = waveCount;
     this._waveHeightScale = 1;
     this._directionalSpread = 1.2;
     this._contactCount = contactCount;
@@ -376,78 +403,17 @@ export class OceanMaterial extends ShaderMaterial {
    * when the wind/height inputs change, never per frame.
    */
   private updateWaves(): void {
-    const N = this._waveCount;
-    const g = 9.81;
-    const gamma = 3.3; // North Sea JONSWAP peak enhancement
-    const U = Math.max(this.uniforms.uWindSpeed.value as number, 0.5);
-    const dir = this.uniforms.uWindDirection.value as Vector2;
-    const baseAngle = Math.atan2(dir.y, dir.x);
-
-    // Peak angular frequency + significant wave height (Pierson-Moskowitz,
-    // fully developed). Hs ~ 0.21 U^2 / g; the height scale lets users tune it.
-    const omegaP = (0.855 * g) / U;
-    const Hs = ((0.21 * U * U) / g) * this._waveHeightScale;
-
-    // Sample the spectrum geometrically across the energy-bearing band.
-    const omegaMin = 0.6 * omegaP;
-    const omegaMax = 3.0 * omegaP;
-    const logStep = Math.log(omegaMax / omegaMin) / Math.max(N - 1, 1);
-
     const waveA = this.uniforms.uWaveA.value as Vector4[];
     const waveB = this.uniforms.uWaveB.value as Vector4[];
-
-    type Comp = {
-      ax: number;
-      az: number;
-      k: number;
-      omega: number;
-      a: number;
-      ph: number;
-    };
-    const comps: Comp[] = [];
-    let m0 = 0; // zeroth spectral moment (variance) of the sampled set
-
-    for (let i = 0; i < N; i++) {
-      const omega = omegaMin * Math.exp(logStep * i);
-      const dOmega = omega * logStep; // geometric bin width
-      const sigma = omega <= omegaP ? 0.07 : 0.09;
-      const alpha = 0.0081;
-      const r = Math.exp(
-        -((omega - omegaP) * (omega - omegaP)) /
-          (2 * sigma * sigma * omegaP * omegaP),
-      );
-      const S =
-        ((alpha * g * g) / Math.pow(omega, 5)) *
-        Math.exp(-1.25 * Math.pow(omegaP / omega, 4)) *
-        Math.pow(gamma, r);
-      const a = Math.sqrt(2 * S * dOmega);
-      m0 += 0.5 * a * a;
-
-      const k = (omega * omega) / g; // deep-water dispersion
-      // Directional spreading: a deterministic fan plus a per-wave jitter,
-      // both scaled by the spread, so directions are non-uniform but centred on
-      // the wind direction.
-      const fan = N > 1 ? (i / (N - 1) - 0.5) * 2 : 0; // -1..1
-      const jitter = oceanHash01(i * 12.9898 + 4.1) - 0.5;
-      const angle =
-        baseAngle + (fan * 0.6 + jitter * 0.6) * this._directionalSpread;
-      const ph = oceanHash01(i * 78.233 + 1.7) * Math.PI * 2;
-
-      comps.push({ ax: Math.cos(angle), az: Math.sin(angle), k, omega, a, ph });
-    }
-
-    // Renormalise component amplitudes so the field's significant wave height
-    // (4 * sqrt(m0)) matches the physical target Hs regardless of N.
-    const curHs = 4 * Math.sqrt(Math.max(m0, 1e-12));
-    const scale = curHs > 1e-6 ? Hs / curHs : 0;
-
-    for (let i = 0; i < N; i++) {
-      const c = comps[i];
-      waveA[i].set(c.ax, c.az, c.k, c.omega);
-      waveB[i].set(c.a * scale, c.ph, 0, 0);
-    }
-
-    this.uniforms.uSignificantHeight.value = Hs;
+    this.uniforms.uSignificantHeight.value = sampleOceanWaves(
+      waveA,
+      waveB,
+      this.uniforms.uWindSpeed.value as number,
+      this.uniforms.uWindDirection.value as Vector2,
+      this._waveHeightScale,
+      this._directionalSpread,
+    );
+    this.uniforms.uSlopeVariance.value = oceanSlopeVariance(waveA, waveB);
   }
 
   get time(): number {
@@ -797,6 +763,18 @@ export class OceanMaterial extends ShaderMaterial {
   }
   set detailStrength(value: number) {
     this.uniforms.uDetailStrength.value = value;
+  }
+
+  /**
+   * Distances from the camera, `[start, end]`, over which the waves, foam and tonal
+   * variation fade out, leaving a flat mirror whose sun glint keeps the waves' spread.
+   */
+  get detailFadeDistance(): [number, number] {
+    const fade = this.uniforms.uDetailFade.value as Vector2;
+    return [fade.x, fade.y];
+  }
+  set detailFadeDistance([start, end]: [number, number]) {
+    this.uniforms.uDetailFade.value.set(start, Math.max(end, start + 1));
   }
 
   /** Maximum number of contact footprints this material can render at once. */
