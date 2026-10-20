@@ -1,0 +1,23 @@
+// Sky vertex shader: a clip-space fullscreen triangle.
+//
+// The view ray is rebuilt from the active camera, so the sky has no size, no
+// depth range and no position - it works for the main camera, a jittered (TAA)
+// projection and each face of a CubeCamera alike.
+
+#include <fog_pars_vertex>
+
+varying vec3 vSkyDirection;
+
+void main() {
+  // Points on the far plane are affine in NDC for a perspective projection, so the
+  // interpolated direction is exact.
+  vec4 view = inverse(projectionMatrix) * vec4(position.xy, 1.0, 1.0);
+  vSkyDirection = mat3(inverse(viewMatrix)) * (view.xyz / view.w);
+
+  #ifdef USE_FOG
+    // Far beyond any fog range, so the sky turns to the fog colour once fog has density.
+    vFogDepth = 1e5;
+  #endif
+
+  gl_Position = vec4(position.xy, 0.0, 1.0);
+}

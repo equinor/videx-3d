@@ -6,6 +6,7 @@ This section provides further documentation and examples on how to use this libr
 - [Generators](./generators.md)
 - [Ocean](./ocean.md)
 - [Order-Independent Transparency (OIT) Guide](./oit-guide.md)
+- [Sky](./sky.md)
 - [Trajectory](./trajectory.md)
 - [Trajectory migration guide](./trajectory-migration.md)
 - [Wellbore fence](./fence-curves.md)

@@ -7,6 +7,9 @@ reconstructed per-pixel, so the surface stays detailed when zoomed in and
 artifact-free when zoomed out. It composites correctly with subsurface geometry
 through the `OITRenderPass`.
 
+For an endless sea that is part of the sky — with a seabed, seen from above, in and
+below the water — see the `<Sky>`'s `ocean` in [Sky](./sky.md).
+
 ## Basic usage
 
 The simplest ocean is a flat plane at sea level:

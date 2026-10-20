@@ -13,6 +13,7 @@ export * from './components/ObservableGroup/ObservableGroup';
 export * from './components/Ocean';
 export * from './components/Pipeline';
 export * from './components/SDFTest/SDFTest';
+export * from './components/Sky';
 export * from './components/SubseaTemplate';
 export * from './components/Surfaces';
 export * from './components/Symbol';

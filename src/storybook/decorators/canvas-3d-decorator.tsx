@@ -1,7 +1,7 @@
 import { CameraControls, Environment } from '@react-three/drei';
 import { Canvas, useThree } from '@react-three/fiber';
 import { useCallback, useEffect, useState } from 'react';
-import { Color, NoToneMapping } from 'three';
+import { Color } from 'three';
 import { PI2 } from '../../sdk';
 import { CameraManager } from '../../sdk/managers/CameraManager';
 import {
@@ -18,7 +18,7 @@ import {
  * ⚠️ Must live INSIDE the canvas — the scene only exists here, and `ready()` and
  * `bounds()` are both about the scene rather than the camera.
  */
-const Videx3dBridge = ({ manager }: { manager: CameraManager }) => {
+export const Videx3dBridge = ({ manager }: { manager: CameraManager }) => {
   const scene = useThree(state => state.scene);
   useEffect(
     () =>
@@ -35,8 +35,10 @@ const Videx3dBridge = ({ manager }: { manager: CameraManager }) => {
   return null;
 };
 
-export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
+export const Canvas3dDecorator = (Story: any, { parameters, args }: any) => {
   const scale = parameters.scale || 100;
+  // `parameters.ownLighting(args)`: the story lights itself (a `<Sky>`), so add none here.
+  const defaultLighting = !parameters.ownLighting?.(args);
   // Lazy initialiser, NOT `useRef(new CameraManager())` — that argument is
   // evaluated on every render and only the first result is ever kept.
   const [cameraManager] = useState(() => new CameraManager());
@@ -71,11 +73,12 @@ export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
         fov: 60,
       }}
       dpr={Math.min(2, parameters.pixelRatio || devicePixelRatio)}
+      // No tone mapping, set once: as a `gl` prop it would undo a story's own on every re-render.
+      flat
       gl={{
         logarithmicDepthBuffer: parameters.logDepth ?? true,
         autoClear: !!parameters.autoClear,
         antialias: !parameters.msaaDisabled,
-        toneMapping: NoToneMapping,
       }}
       style={{
         backgroundColor: parameters.background || '#000',
@@ -92,17 +95,21 @@ export const Canvas3dDecorator = (Story: any, { parameters }: any) => {
         }
       }}
     >
-      <ambientLight intensity={0.5} />
-      <directionalLight position={[-1, 2, -3]} intensity={1.2} />
-      {/* ⚠️ Served from `public/`, NOT drei's `preset`. A preset fetches its HDR
-          from raw.githubusercontent.com at runtime, and a 429 or an offline
-          machine throws inside <Canvas>, replacing every 3D story with an error
-          boundary. */}
-      <Environment
-        files="/hdri/studio_small_03_1k.hdr"
-        environmentIntensity={0.5}
-        backgroundRotation={[0, PI2, 0]}
-      />
+      {defaultLighting && (
+        <>
+          <ambientLight intensity={0.5} />
+          <directionalLight position={[-1, 2, -3]} intensity={1.2} />
+          {/* ⚠️ Served from `public/`, NOT drei's `preset`. A preset fetches its HDR
+              from raw.githubusercontent.com at runtime, and a 429 or an offline
+              machine throws inside <Canvas>, replacing every 3D story with an error
+              boundary. */}
+          <Environment
+            files="/hdri/studio_small_03_1k.hdr"
+            environmentIntensity={0.5}
+            backgroundRotation={[0, PI2, 0]}
+          />
+        </>
+      )}
 
       <Story />
       {/* <axesHelper args={[1000]} /> */}

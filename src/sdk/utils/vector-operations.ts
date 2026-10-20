@@ -167,6 +167,52 @@ export function distanceVec3(v1: Vec3, v2: Vec3): number {
   return lengthVec3(subVec3(v2, v1));
 }
 
+/**
+ * Which way is up and which way is north in a scene.
+ */
+export type CompassFrame = {
+  /** Default `[0, 1, 0]` */
+  up?: Vec3;
+  /** Default `[0, 0, -1]` (see `CRS.utmToWorld`). Only its part perpendicular to `up` is used. */
+  north?: Vec3;
+};
+
+/**
+ * Orthonormal `up`, `north` and `east` vectors of a {@link CompassFrame}: north is
+ * levelled perpendicular to up, and east completes a right-handed frame.
+ */
+export function compassBasis(frame: CompassFrame = {}) {
+  const up = normalizeVec3(copyVec3(frame.up ?? [0, 1, 0]));
+  const north = frame.north ?? [0, 0, -1];
+  const level = normalizeVec3(
+    subVec3(north, scaleVec3(copyVec3(up), dotVec3(north, up))),
+  );
+  return { up, north: level, east: crossVec3(level, up) };
+}
+
+/**
+ * Unit direction for a compass bearing (clockwise from north, seen from above) and an
+ * elevation above the horizon, both in degrees.
+ */
+export function directionFromCompass(
+  azimuth: number,
+  elevation: number,
+  frame: CompassFrame = {},
+  target: Vec3 = [0, 0, 0],
+): Vec3 {
+  const { up, north, east } = compassBasis(frame);
+
+  const az = (azimuth * Math.PI) / 180;
+  const el = (elevation * Math.PI) / 180;
+  const n = Math.cos(az) * Math.cos(el);
+  const e = Math.sin(az) * Math.cos(el);
+  const u = Math.sin(el);
+  for (let i = 0; i < 3; i++) {
+    target[i] = north[i] * n + east[i] * e + up[i] * u;
+  }
+  return target;
+}
+
 // Vec2
 
 /**

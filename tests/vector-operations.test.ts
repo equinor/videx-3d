@@ -3,8 +3,10 @@ import {
   addVec2,
   addVec3,
   angleVec3,
+  compassBasis,
   copyVec3,
   crossVec3,
+  directionFromCompass,
   dotVec3,
   getVec2,
   getVec3,
@@ -126,5 +128,50 @@ describe('vector operations', () => {
     const copy = copyVec3(v);
     expect(v).toEqual(copy);
     expect(v).not.toBe(copy);
+  });
+
+  test('maps compass bearings onto the default frame (north -Z, east +X, up +Y)', () => {
+    const cases: [number, number, Vec3][] = [
+      [0, 0, [0, 0, -1]],
+      [90, 0, [1, 0, 0]],
+      [180, 0, [0, 0, 1]],
+      [270, 0, [-1, 0, 0]],
+      [123, 90, [0, 1, 0]],
+      [180, 45, [0, Math.SQRT1_2, Math.SQRT1_2]],
+    ];
+    for (const [azimuth, elevation, expected] of cases) {
+      const direction = directionFromCompass(azimuth, elevation);
+      direction.forEach((v, i) => expect(v).toBeCloseTo(expected[i]));
+    }
+  });
+
+  test('maps compass bearings onto a custom frame', () => {
+    // Z up, Y north: east is then +X.
+    const frame = { up: [0, 0, 2] as Vec3, north: [0, 1, 0.5] as Vec3 };
+    const cases: [number, number, Vec3][] = [
+      [0, 0, [0, 1, 0]],
+      [90, 0, [1, 0, 0]],
+      [0, 90, [0, 0, 1]],
+    ];
+    for (const [azimuth, elevation, expected] of cases) {
+      const direction = directionFromCompass(azimuth, elevation, frame);
+      direction.forEach((v, i) => expect(v).toBeCloseTo(expected[i]));
+    }
+  });
+
+  test('writes the compass direction into the target when one is given', () => {
+    const target: Vec3 = [9, 9, 9];
+    expect(directionFromCompass(90, 0, {}, target)).toBe(target);
+    expect(target[0]).toBeCloseTo(1);
+  });
+
+  test('levels north and completes a right-handed compass basis', () => {
+    const { up, north, east } = compassBasis({
+      up: [0, 2, 0],
+      north: [0, 1, -1],
+    });
+    [0, 1, 0].forEach((v, i) => expect(up[i]).toBeCloseTo(v));
+    [0, 0, -1].forEach((v, i) => expect(north[i]).toBeCloseTo(v));
+    [1, 0, 0].forEach((v, i) => expect(east[i]).toBeCloseTo(v));
   });
 });
