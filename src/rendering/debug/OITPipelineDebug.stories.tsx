@@ -1173,13 +1173,14 @@ const DebugCanvas = ({
         key={logDepth ? 'log' : 'linear'}
         camera={{ near: 0.1, far: 5000, position: [3.2, 2.2, 3.6], fov: 60 }}
         dpr={args.dpr}
+        // No tone mapping, set once: as a `gl` prop it would undo the control on every re-render.
+        flat
         gl={{
           logarithmicDepthBuffer: logDepth,
           antialias: false,
           alpha: true,
           premultipliedAlpha: true,
           preserveDrawingBuffer: true,
-          toneMapping: NoToneMapping,
         }}
         style={{ background: 'transparent' }}
       >

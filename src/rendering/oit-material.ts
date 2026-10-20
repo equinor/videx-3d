@@ -311,10 +311,17 @@ function buildVariant(
   let variant: Material;
   if (isShaderMaterial(base)) {
     const v = new ShaderMaterial();
-    v.copy(base);
     // Share the base uniforms object so live uniform updates (and the OIT uniforms
-    // set by the pass) propagate to every variant.
-    v.uniforms = base.uniforms;
+    // set by the pass) propagate to every variant. Hidden from `copy()` meanwhile: it
+    // would clone them all (and warn on render-target textures) only to be replaced.
+    const uniforms = base.uniforms;
+    base.uniforms = {};
+    try {
+      v.copy(base);
+    } finally {
+      base.uniforms = uniforms;
+    }
+    v.uniforms = uniforms;
     variant = v;
   } else {
     variant = base.clone();

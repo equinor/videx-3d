@@ -152,7 +152,11 @@ export const RenderingPipeline = ({
   ]);
 
   useFrame(() => {
-    // Nothing else clears the default framebuffer (autoClear is disabled above), so
+    // Again each frame: R3F sets the Canvas `gl` props (`autoClear` among them) anew
+    // whenever the Canvas re-renders, and a pass's fullscreen draws must not clear.
+    renderer.autoClear = false;
+
+    // Nothing else clears the default framebuffer (autoClear is disabled), so
     // clear it to transparent-black each frame before the passes run. With an opaque
     // final composite this is effectively a no-op (the OutputPass fully overwrites the
     // screen), but a transparent-background composite blends *over* the screen — and
