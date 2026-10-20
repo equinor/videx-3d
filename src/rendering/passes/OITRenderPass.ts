@@ -11,6 +11,7 @@ import {
   MeshBasicMaterial,
   NearestFilter,
   NoBlending,
+  Object3D,
   OneFactor,
   OneMinusSrcAlphaFactor,
   RawShaderMaterial,
@@ -28,6 +29,7 @@ import { LAYERS } from '../../layers/layers';
 import { FullscreenRenderer } from '../fullscreen-renderer';
 import { FxaaResolver } from '../fxaa-resolver';
 import { GpuTimer } from '../gpu-timer';
+import { hideIdleBranches } from '../idle-branches';
 import {
   DEFAULT_OIT_FRONT_TOLERANCE,
   isOitCapable,
@@ -825,6 +827,7 @@ export class OITRenderPass extends Pass {
    * are added to `opaqueList` only, so they render with their material untouched.
    * Emissive objects are detected by the EMISSIVE layer, overlay objects by the
    * OVERLAY layer. Hidden objects are left out: the passes show what they collect again.
+   * The visible lights are collected too: the OIT sub-passes keep them.
    */
   private collect(
     oitList: RenderableEntry[],
@@ -833,8 +836,13 @@ export class OITRenderPass extends Pass {
     overlayList: Renderable[],
     oitOpaqueList: RenderableEntry[],
     invisibleOitList: Renderable[],
+    lights: Object3D[],
   ) {
     this.scene.traverseVisible(obj => {
+      if ((obj as Object3D & { isLight?: boolean }).isLight) {
+        lights.push(obj);
+        return;
+      }
       const r = obj as Renderable;
       if (!(r.isMesh || r.isLine || r.isPoints) || !r.material) return;
 
@@ -1081,6 +1089,7 @@ export class OITRenderPass extends Pass {
     const overlayList: Renderable[] = [];
     const oitOpaqueList: RenderableEntry[] = [];
     const invisibleOitList: Renderable[] = [];
+    const lights: Object3D[] = [];
     const entriesBefore = this.entriesCreated;
     this.collect(
       oitList,
@@ -1089,6 +1098,7 @@ export class OITRenderPass extends Pass {
       overlayList,
       oitOpaqueList,
       invisibleOitList,
+      lights,
     );
 
     // Update per-pass object counts for debugging/inspection.
@@ -1159,6 +1169,7 @@ export class OITRenderPass extends Pass {
     const prevClearAlpha = renderer.getClearAlpha();
     const prevBackground = scene.background;
     const prevSortObjects = renderer.sortObjects;
+    const prevMatrixWorldAutoUpdate = scene.matrixWorldAutoUpdate;
 
     // Temporal supersampling: jitter the camera projection before the scene render
     // (every sub-pass below uses the same jittered camera, so the frame is
@@ -1253,6 +1264,9 @@ export class OITRenderPass extends Pass {
     renderer.render(scene, camera);
     timer?.end();
 
+    // The opaque render brought the world matrices up to date: the renders below reuse them.
+    scene.matrixWorldAutoUpdate = false;
+
     // Background is opaque; null it so it doesn't contaminate the auxiliary passes.
     scene.background = null;
 
@@ -1317,6 +1331,12 @@ export class OITRenderPass extends Pass {
       // only OIT renderables should draw into the auxiliary targets.
       this.setVisible(hiddenOit, true);
       this.setVisible(opaqueList, false);
+      // Nor walk the branches holding neither an OIT renderable nor a light.
+      const idleBranches: Object3D[] = [];
+      hideIdleBranches(
+        [...oitList.map(e => e.object as Object3D), ...lights],
+        idleBranches,
+      );
 
       // Every OIT sub-pass is order-independent: min-depth (MinEquation), the
       // weighted tail (additive) and the depth-peeled front layer (a single layer
@@ -1395,6 +1415,7 @@ export class OITRenderPass extends Pass {
       // Restore OIT materials and re-show the plain-opaque renderables.
       this.restoreMaterials(oitList);
       this.setVisible(opaqueList, true);
+      for (const o of idleBranches) o.visible = true;
     }
 
     // Object sorting was disabled for the order-independent OIT sub-passes; restore
@@ -1482,6 +1503,7 @@ export class OITRenderPass extends Pass {
 
     camera.layers.mask = prevCameraMask;
     scene.background = prevBackground;
+    scene.matrixWorldAutoUpdate = prevMatrixWorldAutoUpdate;
     renderer.setClearColor(prevClearColor, prevClearAlpha);
     this.restoreForcedOpaque();
 
