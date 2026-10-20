@@ -255,6 +255,10 @@ A cutaway also keeps the scene lit as from above the water.
 <Sky ocean cutaway={{ reach: 0.5, rim: { width: 3 }, shadow: { opacity: 0.5 } }} />
 ```
 
+- `water` (default 1) is how much of the water it cuts: 0 leaves it whole, 0.5 half of it.
+  `seabed: false` leaves the seabed whole, seen through the cut; for a see-through seabed,
+  lower the sea's `seabedOpacity` instead. The rim and the shadow mark the edge either way;
+  only cutting some of the water lights the scene as from above it.
 - `reach` is the frame row the edge sits on when looking level; tilting down raises it,
   and from `exitTilt` (default 45°) it slides out of the top of the view.
 - `zoomFollow` is how much of a zoom its size follows on screen: 1 keeps it fixed in

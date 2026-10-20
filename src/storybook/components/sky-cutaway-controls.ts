@@ -4,6 +4,8 @@ import type { SkyCutaway } from '../../components/Sky/Sky';
 /** A {@link SkyCutaway} as story args. */
 export type SkyCutawayArgs = {
   cutaway: boolean;
+  cutawayWater: number;
+  cutawaySeabed: boolean;
   cutawayReach: number;
   cutawayExitTilt: number;
   cutawaySoftness: number;
@@ -25,6 +27,8 @@ export type SkyCutawayArgs = {
 /** The Sky's own defaults, with the cutaway off. */
 export const skyCutawayArgs: SkyCutawayArgs = {
   cutaway: false,
+  cutawayWater: 1,
+  cutawaySeabed: true,
   cutawayReach: 0.5,
   cutawayExitTilt: 45,
   cutawaySoftness: 0.01,
@@ -46,6 +50,8 @@ export const skyCutawayArgs: SkyCutawayArgs = {
 /** A Sky's `cutaway` from {@link SkyCutawayArgs}. */
 export const skyCutawayFromArgs = (args: SkyCutawayArgs): SkyCutaway | false =>
   args.cutaway && {
+    water: args.cutawayWater,
+    seabed: args.cutawaySeabed,
     reach: args.cutawayReach,
     exitTilt: args.cutawayExitTilt,
     softness: args.cutawaySoftness,
@@ -92,6 +98,19 @@ export const skyCutawayArgTypes = (
     description:
       'Cut the sea\u2019s water and seabed in front of the view: everything nearer than a line across it, where the `cutawayReach` row meets the surface (or the seabed, with the camera in the water or the sea dry). Two waves bend the line, a rim marks it and a shadow falls inside it. The occupant and the data are never cut.',
     ...(shownIf ? { if: { arg: shownIf } } : {}),
+    table: { category: 'Cutaway' },
+  },
+  cutawayWater: detail(
+    0,
+    1,
+    0.01,
+    'How much of the water the cut takes: 1 all, 0 none, 0.5 half of it.',
+  ),
+  cutawaySeabed: {
+    control: { type: 'boolean' },
+    description:
+      'Cut the seabed too. For a see-through seabed, lower the sea\u2019s seabed opacity instead.',
+    if: { arg: 'cutaway' },
     table: { category: 'Cutaway' },
   },
   cutawayReach: detail(

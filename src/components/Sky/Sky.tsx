@@ -110,13 +110,18 @@ export type SkyCutawayWave = {
 };
 
 /**
- * A cut through the sea's water and seabed in front of the view, so what lies under it is
- * seen clearly: everything nearer than a line across the view, where a row of the frame
- * meets the surface (or the seabed, with the camera in the water or the sea dry). Waves
- * bend the line, a rim marks it on the surface and a shadow falls just inside it. It
- * follows the camera. An occupant and the data are never cut.
+ * A cut through the sea's water (as much of it as `water` says) and seabed (unless `seabed`
+ * is false) in front of the view, so what lies under it is seen clearly: everything nearer
+ * than a line across the view, where a row of the frame meets the surface (or the seabed,
+ * with the camera in the water or the sea dry). Waves bend the line, a rim marks it on the
+ * surface and a shadow falls just inside it. It follows the camera. An occupant and the data
+ * are never cut.
  */
 export type SkyCutaway = {
+  /** how much of the water it cuts: 1 all, 0 none, 0.5 half of it. Default 1 */
+  water?: number;
+  /** cut the seabed too; for a see-through seabed, set the sea's `seabedOpacity` instead. Default true */
+  seabed?: boolean;
   /** the frame row whose sight line sets the edge looking level: 0 the bottom, 1 the top. Tilting down raises it to the top, looking straight down. Default 0.5 */
   reach?: number;
   /** the downward tilt, in degrees, from which the edge slides up out of the view, gone looking straight down. Default 45 */
@@ -215,7 +220,7 @@ export type SkyProps = {
   subsurface?: SkySubsurface | Texture;
   /** how often the bakes follow a changing sky (see {@link SkyCaptureOptions}) */
   capture?: SkyCaptureOptions;
-  /** cut away the sea's water and seabed in front of the view (see {@link SkyCutaway}). Default false */
+  /** cut away the sea's water and seabed, or some of each, in front of the view (see {@link SkyCutaway}). Default false */
   cutaway?: boolean | SkyCutaway;
   /** add a directional light from the sun, and from the moon at night. Default true */
   sunLight?: boolean;
@@ -853,6 +858,8 @@ export const Sky = ({
   ]);
 
   const cutawayOptions = cutaway === true ? {} : cutaway || null;
+  const cutawayWater = MathUtils.clamp(cutawayOptions?.water ?? 1, 0, 1);
+  const cutawaySeabed = cutawayOptions?.seabed ?? true;
   const cutawayReach = MathUtils.clamp(cutawayOptions?.reach ?? 0.5, 0, 1);
   const cutawayExitTilt = MathUtils.clamp(
     cutawayOptions?.exitTilt ?? 45,
@@ -906,7 +913,7 @@ export const Sky = ({
       oceanDepth: material.oceanDepth,
       oceanWater: material.oceanWater,
       oceanGround: material.oceanGround,
-      cutaway: !!cutawayOptions,
+      cutaway: !!cutawayOptions && cutawayWater > 0,
       abyss: material.abyss,
       abyssLevel: material.abyssLevel,
       background,
@@ -936,10 +943,23 @@ export const Sky = ({
           ? material.oceanLevel
           : bedLevel;
     const altitude = plane === null ? 0 : height - plane;
-    if (!cutawayOptions || !material.ocean || plane === null || altitude <= 0) {
+    const cutsAny =
+      (cutawayWater > 0 && material.oceanWater) ||
+      (cutawaySeabed && material.oceanSeabed);
+    if (
+      !cutawayOptions ||
+      !material.ocean ||
+      !cutsAny ||
+      plane === null ||
+      altitude <= 0
+    ) {
       cutawayShape.y = 0;
       size.active = false;
     } else {
+      (material.uniforms.uSkyOceanCutawayCuts.value as Vector2).set(
+        cutawayWater,
+        cutawaySeabed ? 1 : 0,
+      );
       const skyUp = material.up;
       const anchor = material.uniforms.uSkyOceanCutawayAnchor.value as Vector3;
       anchor.copy(camera.position).addScaledVector(skyUp, -altitude);

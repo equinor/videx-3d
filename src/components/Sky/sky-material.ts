@@ -151,6 +151,7 @@ export class SkyMaterial extends ShaderMaterial {
         uSkyOceanCutawayWaveB: new Uniform(new Vector3()),
         uSkyOceanCutawayRim: new Uniform(new Vector4(1, 1, 1, 0)),
         uSkyOceanCutawayShadow: new Uniform(new Vector2()),
+        uSkyOceanCutawayCuts: new Uniform(new Vector2(1, 1)),
         uSkyOceanWater: new Uniform(1),
         uSkyOceanSeabed: new Uniform(1),
         uSkyOceanSeabedOpacity: new Uniform(1),

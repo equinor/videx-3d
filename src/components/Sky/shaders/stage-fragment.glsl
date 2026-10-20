@@ -106,10 +106,11 @@ void main() {
     vec3 underside = skyOceanUndersideOf(-wave.normal, dir, blend, -altitude);
     float wall = skyOceanCutawayWall(cameraPosition, dir);
     // The cutaway's cut takes the surface over it too: the background shows the sky there.
-    cutThrough = wall >= dist;
-    float path = max(skyOceanWaterPath(cameraPosition, world) - wall, 0.0);
+    float kept = wall >= dist ? 1.0 - uSkyOceanCutawayCuts.x : 1.0;
+    cutThrough = kept < 1e-3;
+    float path = skyOceanCutawayPath(skyOceanWaterPath(cameraPosition, world), wall, 1.0);
     vec3 seen = skyOceanFog(underside, path, skyOceanLight(-0.5 * altitude));
-    gl_FragColor = vec4(skyOceanThroughVoid(seen, cameraPosition, dir), 1.0);
+    gl_FragColor = vec4(skyOceanThroughVoid(seen, cameraPosition, dir), kept);
   }
   if(skyDraws || underLid || cutThrough)
     discard;
@@ -142,7 +143,7 @@ void main() {
     // Dry, the fog's density is 0.
     float light = skyOceanLight(0.5 * (bedDepth + max(-altitude, 0.0)));
     float below = skyOceanPathBelowSurface(cameraPosition, world);
-    float path = max(below - skyOceanCutawayWall(cameraPosition, dir), 0.0) * skyOceanCutawayWater(cutaway);
+    float path = skyOceanCutawayPath(below, skyOceanCutawayWall(cameraPosition, dir), skyOceanCutawayWater(cutaway));
     color = skyOceanFog(color, path, light);
       #ifndef STAGE_SEE_THROUGH
         // Bitten through: the void, as the background draws it through the gap. Without its

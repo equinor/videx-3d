@@ -38,6 +38,7 @@ uniform vec3 uSkyOceanCutawayWaveA;
 uniform vec3 uSkyOceanCutawayWaveB;
 uniform vec4 uSkyOceanCutawayRim; // colour, and width in pixels
 uniform vec2 uSkyOceanCutawayShadow; // opacity, and width in world units
+uniform vec2 uSkyOceanCutawayCuts; // how much of the water it cuts (1 all, 0 none), and whether the seabed (1 or 0)
 
 WaterFogCutaway skyOceanCutawayParams() {
   return WaterFogCutaway(uSkyOceanCutawayAnchor, uSkyOceanCutawayHeading, uSkyOceanCutawayShape, uSkyOceanCutawayWaveA, uSkyOceanCutawayWaveB);
@@ -51,19 +52,25 @@ float skyOceanCutawayAlong(vec3 a, vec3 b) {
 
 // How much of the water, and of the seabed, shows where the cutaway covers `cutaway` of it.
 float skyOceanCutawayWater(float cutaway) {
-  return 1.0 - cutaway;
+  return 1.0 - cutaway * uSkyOceanCutawayCuts.x;
 }
 
 float skyOceanCutawaySeabed(float cutaway) {
-  return 1.0 - cutaway;
+  return 1.0 - cutaway * uSkyOceanCutawayCuts.y;
 }
 
 // How far a view ray from `origin` runs before the water: from in it, the cutaway leaves none
 // nearer than the wall standing on its edge (see waterFogCutawayWall).
 float skyOceanCutawayWall(vec3 origin, vec3 dir) {
-  if(dot(origin, uSkyUp) > uSkyOceanLevel)
+  if(dot(origin, uSkyUp) > uSkyOceanLevel || uSkyOceanCutawayCuts.x <= 0.0)
     return 0.0;
   return waterFogCutawayWall(skyOceanCutawayParams(), origin, dir, uSkyUp);
+}
+
+// How much of a stretch `t` long from `origin` stays water, `wall` the cutaway's along it:
+// what the cut leaves before the wall, and `beyond` of the rest.
+float skyOceanCutawayPath(float t, float wall, float beyond) {
+  return max(t - wall, 0.0) * beyond + min(t, wall) * (1.0 - uSkyOceanCutawayCuts.x);
 }
 
 // Pixels from the cutaway's rim to `p` on its plane, seen from `origin`; negative inside.
@@ -85,7 +92,7 @@ vec4 skyOceanCutawayMark(vec4 surface, vec3 p, float rimAt) {
   if(cutaway.shape.y <= 0.0)
     return surface;
   float across = waterFogCutawayEdge(cutaway, p, uSkyUp);
-  float covered = 1.0 - smoothstep(-cutaway.shape.z, 0.0, across);
+  float covered = (1.0 - smoothstep(-cutaway.shape.z, 0.0, across)) * uSkyOceanCutawayCuts.x;
   float water = surface.a * (1.0 - covered);
 
   // Both from the middle of the edge's fade, where the rim runs.
@@ -286,14 +293,14 @@ vec3 skyOceanInWater(vec3 origin, vec3 dir, float blend, float travelled, float 
   vec2 p = skyOceanPlane(origin + dir * tSurface);
   float texel = max(length(fwidth(p)), 1e-3);
   vec3 underside = skyOceanUnderside(p, texel, travelled + tSurface, dir, blend, -altitude);
-  vec3 above = skyOceanFog(underside, max(tSurface - wall, 0.0), skyOceanLight(-0.5 * altitude));
+  vec3 above = skyOceanFog(underside, skyOceanCutawayPath(tSurface, wall, 1.0), skyOceanLight(-0.5 * altitude));
 
   float tBed = max(altitude + bedDepth, 0.0) / ay;
   vec3 bedPoint = origin + dir * tBed;
   vec3 bed = skyOceanBed(bedPoint, uSkyUp, bedDepth);
   float cutaway = skyOceanCutawayAlong(origin, bedPoint);
   vec3 ground = skyOceanFloor(bed, depths, cutaway);
-  vec3 below = skyOceanFog(ground, max(tBed - wall, 0.0) * skyOceanCutawayWater(cutaway), skyOceanBedPathLight(origin, bedDepth));
+  vec3 below = skyOceanFog(ground, skyOceanCutawayPath(tBed, wall, skyOceanCutawayWater(cutaway)), skyOceanBedPathLight(origin, bedDepth));
 
   return y > 0.0 ? above : below;
 }
@@ -327,7 +334,8 @@ vec3 skyOcean(vec3 color, vec3 dir, vec3 origin, vec3 inWater, vec3 depths) {
   if(altitude <= 0.0 && uSkyOceanWater > 0.5) {
     // Up through the cutaway's cut, which takes the surface over it too: the sky.
     float rise = dot(dir, uSkyUp);
-    return rise > 0.0 && skyOceanCutawayWall(origin, dir) * rise > -altitude ? color : inWater;
+    bool through = rise > 0.0 && skyOceanCutawayWall(origin, dir) * rise > -altitude;
+    return through ? mix(inWater, color, uSkyOceanCutawayCuts.x) : inWater;
   }
 
   float y = dot(dir, uSkyUp);
