@@ -83,6 +83,8 @@ export class SkyMaterial extends ShaderMaterial {
       fragmentShader,
       uniforms: {
         ...UniformsUtils.clone(UniformsLib.lights),
+        // `fog: true` makes three write these once a scene has fog (see `useImmersionFog`).
+        ...UniformsUtils.clone(UniformsLib.fog),
         ...createSurfaceDetailUniforms(),
         uSkyUp: new Uniform(new Vector3(0, 1, 0)),
         uSkyNorth: new Uniform(new Vector3(0, 0, -1)),
