@@ -142,6 +142,7 @@ export class SkyMaterial extends ShaderMaterial {
         uSkyOceanCutawayRim: new Uniform(new Vector4(1, 1, 1, 0)),
         uSkyOceanCutawayShadow: new Uniform(new Vector2()),
         uSkyOceanWater: new Uniform(1),
+        uSkyOceanViewDry: new Uniform(0),
         uSkyOceanSeabed: new Uniform(1),
         uSkyOceanSeabedOpacity: new Uniform(1),
         uSkyOceanStage: new Uniform(new Vector4(...NO_STAGE)),
@@ -625,6 +626,14 @@ export class SkyMaterial extends ShaderMaterial {
   }
   set oceanWater(value: boolean) {
     this.uniforms.uSkyOceanWater.value = value ? 1 : 0;
+  }
+
+  /** the camera, in the water with a cutaway, sees the sea dry; bakes see it as it is */
+  get oceanViewDry(): boolean {
+    return this.uniforms.uSkyOceanViewDry.value > 0;
+  }
+  set oceanViewDry(value: boolean) {
+    this.uniforms.uSkyOceanViewDry.value = value ? 1 : 0;
   }
 
   /** the sea has a seabed; without it the void lies below the water */

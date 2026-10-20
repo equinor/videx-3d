@@ -228,6 +228,8 @@ export type SkyZoneLevels = {
   abyssLevel: number;
   /** the seabed's height under the camera where a stage occupant draws its own; else the sea's flat one */
   oceanGround?: number | null;
+  /** a cutaway is on: the camera is never in the water */
+  cutaway?: boolean;
   /** the sky is drawn */
   background: boolean;
 };
@@ -235,15 +237,16 @@ export type SkyZoneLevels = {
 /**
  * The environment for a camera at `height` along up: the air above the sea (or the
  * abyss level), the water below its surface, and the subsurface below its seabed — an
- * occupant's own where it has one. A dry sea is air down to the seabed, and an undrawn
- * sky is all subsurface.
+ * occupant's own where it has one. A dry sea, or one with a cutaway, is air down to the
+ * seabed, and an undrawn sky is all subsurface.
  */
 export function skyZone(height: number, levels: SkyZoneLevels): SkyZone {
   if (!levels.background) return 'subsurface';
   if (levels.ocean) {
     if (height > levels.oceanLevel) return 'air';
     const ground = levels.oceanGround ?? levels.oceanLevel - levels.oceanDepth;
-    if (height > ground) return levels.oceanWater ? 'water' : 'air';
+    if (height > ground)
+      return levels.oceanWater && !levels.cutaway ? 'water' : 'air';
     return 'subsurface';
   }
   return levels.abyss && height < levels.abyssLevel ? 'subsurface' : 'air';

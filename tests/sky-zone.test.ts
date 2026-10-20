@@ -28,6 +28,13 @@ describe('skyZone', () => {
     expect(skyZone(-150, { ...sea, oceanWater: false })).toBe('subsurface');
   });
 
+  it('never puts the camera in the water with a cutaway', () => {
+    const cut = { ...sea, cutaway: true };
+    expect(skyZone(500, cut)).toBe('air');
+    expect(skyZone(-50, cut)).toBe('air');
+    expect(skyZone(-150, cut)).toBe('subsurface');
+  });
+
   it('follows the abyss level without a sea', () => {
     const abyss = { ...sea, ocean: false, abyssLevel: 20 };
     expect(skyZone(30, abyss)).toBe('air');

@@ -82,7 +82,7 @@ void main() {
   #endif
   // The sky draws the band a pixel inside the stage's edge (see skyOceanStaged), and the
   // stage leaves it, and everything beyond, alone.
-  bool dry = uSkyOceanWater < 0.5;
+  bool dry = !skyOceanWet();
   float bedAltitude = altitude + uSkyOceanDepth;
   bool staged = skyOceanStaged(dir, cameraPosition, 1.0, false);
   #ifdef STAGE_RELIEF
@@ -107,7 +107,7 @@ void main() {
     vec3 seen = skyOceanFog(underside, path, skyOceanLight(-0.5 * altitude));
     gl_FragColor = vec4(skyOceanThroughVoid(seen, cameraPosition, dir), 1.0);
   }
-  if(skyDraws || underLid)
+  if(dry || skyDraws || underLid)
     discard;
   #else
     #ifdef STAGE_RELIEF

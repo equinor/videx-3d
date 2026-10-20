@@ -85,6 +85,7 @@ export class SkyBaker {
     uSkySunDisc: new Uniform(0),
     uSkyOceanStageReach: new Uniform(0),
     uSkyOceanBuried: new Uniform(0),
+    uSkyOceanViewDry: new Uniform(0),
     uSkyOceanCutawayShape: new Uniform(new Vector3()),
     uSkyOceanSeabedOpacity: new Uniform(1),
     uSkyDebug: new Uniform(0),

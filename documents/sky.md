@@ -229,7 +229,9 @@ them is seen clearly — an illustration's cutaway rather than a realistic one. 
 everything nearer than a line across the view where a row of the frame meets the
 surface (the seabed, with the camera in the water or the sea dry); waves bend the line,
 a rim marks it and a shadow falls just inside it. The scene itself — the occupant, the
-data, an occupant's seabed — is never cut.
+data, an occupant's seabed — is never cut. With a cutaway the camera is never in the
+water: between the surface and the seabed it sees the sea dry, cut as a dry one is, and
+the scene is lit as from above the water.
 
 ```tsx
 <Sky ocean cutaway={{ reach: 0.5, rim: { width: 3 }, shadow: { opacity: 0.5 } }} />

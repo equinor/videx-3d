@@ -503,6 +503,7 @@ type FieldColumnStoryProps = {
   seismicGaps: boolean;
   seismicVoids: boolean;
   sky: boolean;
+  skyBackground: boolean;
   skyWater: boolean;
   skySeabed: boolean;
   skySeabedOpacity: number;
@@ -1453,6 +1454,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       {props.wellbores && <Highlighter />}
       {props.sky && bed && bedHeight !== null && (
         <Sky
+          background={props.skyBackground}
           sun={{ azimuth: props.sunAzimuth, elevation: props.sunElevation }}
           abyss
           cutaway={skyCutawayFromArgs(props)}
@@ -1683,6 +1685,7 @@ export const Default: Story = {
     progressInlineIdle: 'show',
     // Sky
     sky: false,
+    skyBackground: true,
     skyWater: true,
     skySeabed: true,
     skySeabedOpacity: 1,
@@ -1698,6 +1701,12 @@ export const Default: Story = {
     sky: {
       description:
         'Put the field under the videx `<Sky>`, which lights the scene instead of the default lights, with the column as its stage\u2019s occupant. The sky owns the water then: the column\u2019s own `water` is hidden while it is on (`ChunkStack.drawWater`), and the stage draws the column\u2019s sea bed.',
+      table: { category: 'Sky' },
+    },
+    skyBackground: {
+      description:
+        'Draw the sky and its stage behind the scene (`Sky.background`). Switched instantly, with nothing rebuilt or baked: off, the sky still lights the scene, and the column draws its own water and sea bed again.',
+      if: { arg: 'sky' },
       table: { category: 'Sky' },
     },
     skyWater: {
