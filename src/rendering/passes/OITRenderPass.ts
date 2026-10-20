@@ -824,7 +824,7 @@ export class OITRenderPass extends Pass {
    * depth-writing), making them real occluders. Objects tagged `LAYERS.OIT_EXCLUDED`
    * are added to `opaqueList` only, so they render with their material untouched.
    * Emissive objects are detected by the EMISSIVE layer, overlay objects by the
-   * OVERLAY layer.
+   * OVERLAY layer. Hidden objects are left out: the passes show what they collect again.
    */
   private collect(
     oitList: RenderableEntry[],
@@ -834,7 +834,7 @@ export class OITRenderPass extends Pass {
     oitOpaqueList: RenderableEntry[],
     invisibleOitList: Renderable[],
   ) {
-    this.scene.traverse(obj => {
+    this.scene.traverseVisible(obj => {
       const r = obj as Renderable;
       if (!(r.isMesh || r.isLine || r.isPoints) || !r.material) return;
 
