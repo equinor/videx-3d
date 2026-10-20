@@ -88,19 +88,7 @@ varying vec3 vBitangent;
 #ifdef USE_DEBUG
 #include ../../../sdk/materials/shaderLib/glyphs.glsl
 #include ../../../sdk/materials/shaderLib/render-number.glsl
-
-float pristineGrid(vec2 uv, vec2 lineWidth) {
-  vec2 uvDeriv = fwidth(uv * 2.0);
-
-  vec2 drawWidth = clamp(lineWidth, uvDeriv, vec2(0.5));
-  vec2 lineAA = uvDeriv * 1.5;
-  vec2 gridUV = 1.0 - abs(fract(uv) * 2.0 - 1.0);
-  vec2 grid2 = smoothstep(drawWidth + lineAA, drawWidth - lineAA, gridUV);
-  grid2 *= saturate(lineWidth / drawWidth);
-  grid2 = mix(grid2, lineWidth, clamp(uvDeriv * 2.0 - 1.0, 0.0, 1.0));
-
-  return max(grid2.x, grid2.y);
-}
+#include ../../../sdk/materials/shaderLib/grid.glsl
 
 vec4 drawGrid(vec4 color, vec2 uv, vec3 lineColor, vec2 lineWidth) {
   float grid = pristineGrid(uv, lineWidth);
