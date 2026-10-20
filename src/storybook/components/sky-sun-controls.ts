@@ -21,6 +21,7 @@ export type SkySunArgs = {
   sunGlare: number;
   sunRays: number;
   sunShimmer: boolean;
+  sunTwilight: number;
   moon: boolean;
   moonIntensity: number;
   stars: boolean;
@@ -46,6 +47,7 @@ export const skySunArgs: SkySunArgs = {
   sunGlare: 0.5,
   sunRays: 0,
   sunShimmer: false,
+  sunTwilight: 1,
   moon: true,
   moonIntensity: 0.3,
   stars: true,
@@ -78,6 +80,7 @@ export const skySunFromArgs = (args: SkySunArgs): SkySun => ({
   glare: args.sunGlare,
   rays: args.sunRays,
   shimmer: args.sunShimmer,
+  twilight: args.sunTwilight,
 });
 
 /** A Sky's `clouds` from {@link SkySunArgs}. */
@@ -171,6 +174,13 @@ export const skySunArgTypes = (category = 'Sun'): ArgTypes<SkySunArgs> => ({
     if: { arg: 'sunRays', truthy: true },
     table: { category },
   },
+  sunTwilight: range(
+    0,
+    2,
+    0.05,
+    category,
+    'Strength of the warm glow along the horizon at sunrise and sunset, and the pink belt opposite it; 0 for none.',
+  ),
   moon: {
     control: { type: 'boolean' },
     description:

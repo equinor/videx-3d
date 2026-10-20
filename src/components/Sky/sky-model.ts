@@ -24,6 +24,8 @@ export type SkySun = {
   rays?: number;
   /** the rays shimmer slowly. Default false */
   shimmer?: boolean;
+  /** strength of the warm glow along the horizon at sunrise and sunset, and the pink belt opposite it; 0 for none. Default 1 */
+  twilight?: number;
 };
 
 /**
@@ -307,6 +309,7 @@ export const skyDefaults = {
     glare: 0.5,
     rays: 0,
     shimmer: false,
+    twilight: 1,
   },
   moon: { intensity: 0.3, color: '#c4cfdf', size: 0.6, glow: 0.3 },
   stars: { brightness: 0.6, density: 0.5 },
@@ -362,7 +365,8 @@ export const skyDefaults = {
 /** Sun disc multiplier when the output is tone mapped. */
 export const SKY_HDR_SUN_RADIANCE = 16;
 
-const SUN_LOW = new Color('#ffb36b');
+const SUN_HORIZON = new Color('#ff6e33');
+const SUN_LOW = new Color('#ffa552');
 const SUN_HIGH = new Color('#fff6e8');
 
 /**
@@ -380,16 +384,34 @@ export function skyMoonlight(elevation: number) {
   return 1 - MathUtils.smoothstep(elevation, -12, -6);
 }
 
+/**
+ * How much the horizon glows at sunrise and sunset, for a sun elevation in degrees: most
+ * with the sun from just above the horizon to a few degrees below it, none from about 12
+ * up nor below -12.
+ */
+export function skyTwilight(elevation: number) {
+  return (
+    MathUtils.smoothstep(elevation, -12, -3) *
+    (1 - MathUtils.smoothstep(elevation, 1, 12))
+  );
+}
+
 /** The share of the sky's cells holding a star, for a {@link SkyStars} density. */
 export function skyStarShare(density: number) {
   return MathUtils.clamp(density, 0, 1) * 0.06;
 }
 
 /**
- * Sun colour for an elevation in degrees: warm near the horizon, near white higher up.
+ * Sun colour for an elevation in degrees: deep red-orange on the horizon, orange a few
+ * degrees up, near white from 25.
  */
 export function skySunColor(elevation: number, target = new Color()) {
+  if (elevation < 6) {
+    return target
+      .copy(SUN_HORIZON)
+      .lerp(SUN_LOW, MathUtils.smoothstep(elevation, -2, 6));
+  }
   return target
     .copy(SUN_LOW)
-    .lerp(SUN_HIGH, MathUtils.smoothstep(elevation, 0, 25));
+    .lerp(SUN_HIGH, MathUtils.smoothstep(elevation, 6, 25));
 }

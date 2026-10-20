@@ -582,7 +582,8 @@ count grows with the **square** of the field size. `DEFAULT_WATER_RESOLUTION` is
 ### Floating objects come free
 
 `useStackWater` also creates the wave **sampler** (`createOceanSampler(surface,
--depth)`) and an `OceanContactRegistry`, and `ChunkStack` provides them as
+-depth)`) and a contact registry (`createOceanContactRegistry`, shared with `<Ocean>`
+and `<Sky>`), and `ChunkStack` provides them as
 `OceanSamplerContext` / `OceanContactContext`. A floating child — a vessel, a buoy —
 heaves with the swell and spreads foam exactly as it would inside an `<Ocean>`,
 with nothing extra wired. Heights come back **absolute** in the stack's frame, so

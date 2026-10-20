@@ -16,6 +16,7 @@ uniform vec3 uSkyMoonColor;
 uniform float uSkyMoonSize; // angular radius, radians
 uniform float uSkyMoonGlow;
 uniform float uSkyNight; // 0 by day to 1 at night: how much the moon and the stars show
+uniform float uSkyMoonlight; // 0 until the daylight is gone, 1 by nautical twilight: how much the moon lights (skyMoonlight)
 uniform vec2 uSkyStars; // brightness, and the share of the sky's cells holding one
 uniform float uSkyHorizonBlend; // width of the horizon -> ground transition, in dot(dir, up)
 uniform float uSkyIntensity;
@@ -145,18 +146,26 @@ vec3 skyClouds(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
   float lit = clamp(1.0 - (ahead - n) * 4.0, 0.35, 1.0);
 
   vec3 ambient = mix(uSkyHorizonColor, uSkyZenithColor, 0.5) * mix(0.15, 1.0, uSkyDaylight);
-  vec3 direct = uSkyDaylight > 0.0 ? uSkySunColor * uSkyDaylight : uSkyMoonColor * uSkyNight * 0.25;
-  vec3 cloud = uSkyCloudsColor.rgb * (ambient * 0.55 + direct * lit * 0.75);
+  // At sunset and sunrise their undersides catch the glow, most toward the sun.
+  float twilight = min(uSkyTwilight.x * uSkyTwilight.y, 1.0);
+  float facing = 0.5 + 0.5 * dot(dir, uSkySunDirection);
+  ambient += SKY_TWILIGHT_ORANGE * twilight * 0.25 * facing * facing;
+  // Toward the low sun they are seen from their shaded side: dark, with bright linings.
+  float backlit = twilight * smoothstep(0.6, 0.95, facing);
+  float lining = 1.0 + 2.0 * backlit;
+  // The moon takes over only once the sun's light is gone, so the hand-over shows nothing.
+  vec3 direct = uSkyDaylight > 0.0 ? skyTwilightLight() * uSkyDaylight : uSkyMoonColor * uSkyMoonlight * 0.25;
+  vec3 cloud = uSkyCloudsColor.rgb * (ambient * 0.55 * (1.0 - 0.75 * backlit) + direct * lit * 0.75 * (1.0 - backlit));
   float cosLight = dot(dir, light);
   // A bright rim where they thin toward the light.
-  cloud += direct * (1.0 - density) * pow(max(cosLight, 0.0), 8.0) * 0.6;
+  cloud += direct * (1.0 - density) * pow(max(cosLight, 0.0), 8.0) * 0.6 * lining;
   // Optical depth: none where the edge begins, enough in the cores to hide the sun.
   float tau = max(n - threshold + edge, 0.0) * 30.0;
   float transmit = exp(-tau);
   // Forward scattering (Henyey-Greenstein, g 0.85, 1 at the light): the glow around it,
   // brightest where the cloud is about one optical depth thick.
   float phase = 0.003375 / pow(1.7225 - 1.7 * cosLight, 1.5);
-  cloud += direct * phase * tau * transmit * 2.718 * uSkySunDisc;
+  cloud += direct * phase * tau * transmit * 2.718 * uSkySunDisc * lining;
   // Far off they melt into the haze at the horizon.
   float far = 1.0 - exp(-t / (uSkyClouds.z * 15.0));
   cloud = mix(cloud, haze, far * 0.8);
@@ -168,8 +177,8 @@ vec3 skyClouds(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
   float angle = atan(length(cross(dir, light)), cosLight);
   float soft = max(fwidth(angle), 1e-5) + size * min(tau * 0.5, 1.0);
   float disc = 1.0 - smoothstep(size - soft, size + soft, angle);
-  float through = disc * min(100.0 * transmit, 1.0) * (day ? 1.0 : uSkyNight) * uSkySunDisc;
-  cloud = mix(cloud, day ? uSkySunColor * uSkySunRadiance : uSkyMoonColor, through);
+  float through = disc * min(100.0 * transmit, 1.0) * (day ? 1.0 : uSkyMoonlight) * uSkySunDisc;
+  cloud = mix(cloud, day ? skySunDiscColor() * uSkySunRadiance : uSkyMoonColor, through);
 
   float above = smoothstep(0.0, 0.03, y);
   return mix(color, cloud, density * uSkyCloudsColor.a * fade * above);
@@ -313,10 +322,10 @@ vec3 skyRadiance(vec3 dir, vec3 origin) {
     float angle = atan(length(cross(dir, uSkySunDirection)), cosSun);
     float aa = max(fwidth(angle), 1e-5);
     float disc = 1.0 - smoothstep(uSkySunSize - aa, uSkySunSize + aa, angle);
-    color = mix(color, uSkySunColor * uSkySunRadiance, disc * uSkySunDisc);
+    color = mix(color, skySunDiscColor() * uSkySunRadiance, disc * uSkySunDisc);
     // Over the disc too, so it is never dimmer than its glare; above the horizon, while the sun is up.
     float up = smoothstep(-blend, 0.0, y) * smoothstep(-uSkySunSize, uSkySunSize, dot(uSkySunDirection, uSkyUp));
-    color += uSkySunColor * skySunGlare(dir, angle, aa) * up * uSkySunDisc;
+    color += skyTwilightLight() * skySunGlare(dir, angle, aa) * up * uSkySunDisc;
   }
   color = skyNight(color, dir, blend);
   #ifdef SKY_CLOUDS

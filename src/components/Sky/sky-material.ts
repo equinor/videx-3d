@@ -34,7 +34,14 @@ import {
 import { OCEAN_SURFACE_UNIFORMS, OceanMaterial } from '../Ocean/ocean-material';
 import fragmentShader from './shaders/sky-fragment.glsl';
 import vertexShader from './shaders/sky-vertex.glsl';
-import { SkyClouds, skyDaylight, skyDefaults, skySunColor } from './sky-model';
+import {
+  SkyClouds,
+  skyDaylight,
+  skyDefaults,
+  skyMoonlight,
+  skySunColor,
+  skyTwilight,
+} from './sky-model';
 
 // An empty rectangle: nothing is on a stage.
 const NO_STAGE = [1, 1, -1, -1] as const;
@@ -43,6 +50,7 @@ const NO_STAGE = [1, 1, -1, -1] as const;
 export const SKY_SHARED_DEFINES = [
   'OCEAN_WAVE_COUNT',
   'OCEAN_DETAIL_OCTAVES',
+  'OCEAN_CONTACT_COUNT',
   ...SURFACE_DETAIL_DEFINES,
 ];
 
@@ -98,11 +106,13 @@ export class SkyMaterial extends ShaderMaterial {
         uSkySunSize: new Uniform(MathUtils.degToRad(sun.size)),
         uSkySunGlow: new Uniform(sun.glow),
         uSkySunGlare: new Uniform(new Vector3(sun.glare, sun.rays, 0)),
+        uSkyTwilight: new Uniform(new Vector2(sun.twilight, 0)),
         uSkyMoonDirection: new Uniform(new Vector3(0, 1, 0)),
         uSkyMoonColor: new Uniform(new Color()),
         uSkyMoonSize: new Uniform(0),
         uSkyMoonGlow: new Uniform(0),
         uSkyNight: new Uniform(0),
+        uSkyMoonlight: new Uniform(0),
         uSkyStars: new Uniform(new Vector2()),
         uSkySunRadiance: new Uniform(1),
         uSkySunDisc: new Uniform(1),
@@ -172,6 +182,8 @@ export class SkyMaterial extends ShaderMaterial {
     this.uniforms.uSkySunDirection.value.fromArray(direction);
     skySunColor(elevation, this.uniforms.uSkySunColor.value);
     this.uniforms.uSkyDaylight.value = skyDaylight(elevation);
+    this.twilight = skyTwilight(elevation);
+    this.moonlight = skyMoonlight(elevation);
   }
 
   /** Set which way is up (the horizon is perpendicular to it) and which way is north. */
@@ -243,6 +255,30 @@ export class SkyMaterial extends ShaderMaterial {
   }
   set sunGlow(value: number) {
     this.uniforms.uSkySunGlow.value = Math.max(value, 0);
+  }
+
+  /** strength of the glow along the horizon at sunrise and sunset (see {@link twilight}) */
+  get sunTwilight(): number {
+    return this.uniforms.uSkyTwilight.value.x;
+  }
+  set sunTwilight(value: number) {
+    this.uniforms.uSkyTwilight.value.x = Math.max(value, 0);
+  }
+
+  /** how much the horizon glows for the sun's elevation, 0 to 1 (`skyTwilight`) */
+  get twilight(): number {
+    return this.uniforms.uSkyTwilight.value.y;
+  }
+  set twilight(value: number) {
+    this.uniforms.uSkyTwilight.value.y = MathUtils.clamp(value, 0, 1);
+  }
+
+  /** how much the moon lights the clouds for the sun's elevation, 0 to 1 (`skyMoonlight`) */
+  get moonlight(): number {
+    return this.uniforms.uSkyMoonlight.value;
+  }
+  set moonlight(value: number) {
+    this.uniforms.uSkyMoonlight.value = MathUtils.clamp(value, 0, 1);
   }
 
   /** strength of the bright glare hugging the sun disc */
@@ -519,12 +555,15 @@ export class SkyMaterial extends ShaderMaterial {
     }
     const waves = water.uniforms.uWaveA.value.length;
     const octaves = water.defines.OCEAN_DETAIL_OCTAVES;
+    const contacts = water.contactCount;
     if (
       this.defines.OCEAN_WAVE_COUNT !== waves ||
-      this.defines.OCEAN_DETAIL_OCTAVES !== octaves
+      this.defines.OCEAN_DETAIL_OCTAVES !== octaves ||
+      this.defines.OCEAN_CONTACT_COUNT !== contacts
     ) {
       this.defines.OCEAN_WAVE_COUNT = waves;
       this.defines.OCEAN_DETAIL_OCTAVES = octaves;
+      this.defines.OCEAN_CONTACT_COUNT = contacts;
       this.needsUpdate = true;
     }
   }

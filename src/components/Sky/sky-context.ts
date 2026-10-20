@@ -11,6 +11,8 @@ export type SkyState = {
   sunColor: Color;
   /** 0 (night) to 1 (day) */
   daylight: number;
+  /** 0 to 1 about sunrise and sunset: how much the horizon glows (`skyTwilight`) */
+  twilight: number;
   /** world-space direction toward the moon, normalised: opposite the sun */
   moonDirection: Vector3;
   /** 0 (day, and dusk) to 1 (night): how much the moon lights the scene */

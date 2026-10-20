@@ -42,8 +42,17 @@ background, environment and light probe alike.
 The sun is a disc (`size`, an angular radius in degrees) with a broad halo (`glow`), a
 bright glare hugging the disc (`glare`, default 0.5) and, optionally, rays around it
 (`rays`, default 0). `shimmer: true` lets the rays brighten and fade slowly, each on
-its own cycle. Its colour and the daylight follow the elevation: warm near the horizon,
-and the daylight gone below civil twilight (−6°).
+its own cycle. Its colour and the daylight follow the elevation: red-orange on the
+horizon, orange a few degrees up and near white from 25°, and the daylight gone below
+civil twilight (−6°). About sunrise and sunset (`skyTwilight`: from about 12° down to
+−12°, most with the sun near the horizon) the sun's side of the sky turns gold about it
+and orange around, replacing the blue rather than tinting it (red over blue reads pink).
+It closes about the sun while it is up, spreads widest about sunset and sinks onto the
+horizon as the sun goes down. The disc stays near white-gold (it is overexposed even when
+its light is red), clouds toward the sun go dark with bright linings, those away from it
+catch the light, and a faint pink belt rises opposite; `twilight` scales it all (default
+1, 0 for none). The sea reflects it, with a broad glitter path under the low sun
+(`OceanMaterial.sunGlintSpread`), and the bakes see it.
 
 `moon` (default on) is a full moon opposite the sun, so it is up at night. The sky has
 ONE directional light: the sun's while it is up, the moon's once the sun is well down
@@ -71,7 +80,8 @@ haze toward the horizon, and out as the camera climbs to the deck.
 
 The sun shows through all but the thickest parts: a softened disc through thin cloud,
 a glow around it and bright silver edges where cloud thins in front of it. The moon does
-the same at night; the stars are hidden.
+the same at night; the stars are hidden. The moon takes over as the sun's light ends
+(−6°) and fades in as the scene's moonlight does, so the hand-over shows nothing.
 
 ⚠️ `altitude` is measured along `up` from the world origin, not from sea level. The
 clouds are part of the background only: the water does not reflect them, and they do
@@ -123,6 +133,13 @@ instead, which draws it as the sea's own (see below).
 
 The sea is part of the background, so on its own it never hides anything in the scene.
 To have the water in FRONT of the scene, add a stage.
+
+Floating children work as inside an `<Ocean>`: while the sea has water, `<Sky>` provides
+the wave sampler (`OceanSamplerContext`) and the contact-foam registry
+(`OceanContactContext`) to its children, so a `<Tanker>` — or anything using
+`useBuoyancy` and `useOceanContact` — rides the sky's waves and leaves a foam collar on
+its surface. Heights are absolute, the sea level included. ⚠️ Assumes the default `up`
+(+Y).
 
 ## SkyBoxStage
 

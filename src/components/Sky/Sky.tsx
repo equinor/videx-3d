@@ -31,6 +31,14 @@ import { Vec3 } from '../../sdk/types/common';
 import { directionFromCompass } from '../../sdk/utils/vector-operations';
 import { OceanMaterial } from '../Ocean/ocean-material';
 import { applyOceanWaterProps } from '../Ocean/ocean-material-sync';
+import {
+  createOceanContactRegistry,
+  OceanContactContext,
+} from '../Ocean/ocean-contact';
+import {
+  createOceanSampler,
+  OceanSamplerContext,
+} from '../Ocean/ocean-sampler';
 import standInFragmentShader from './shaders/sky-stand-in-fragment.glsl';
 import skyVertexShader from './shaders/sky-vertex.glsl';
 import { SkyBaker } from './sky-baker';
@@ -58,6 +66,7 @@ import {
   skySubsurfaceColors,
   SkySun,
   skySunColor,
+  skyTwilight,
   skyWaterDimming,
   SkyZone,
   skyZone,
@@ -236,6 +245,8 @@ const CUTAWAY_MIN_EDGE = 0.01;
 const CUTAWAY_MIN_DOWN = 0.01;
 // Past the frame's top, for the rim and its antialiasing: of the frame's half-width there.
 const CUTAWAY_EXIT_MARGIN = 0.05;
+// Roughness added to the sea's sun glint at the height of twilight (OceanMaterial.sunGlintSpread).
+const SKY_TWILIGHT_GLINT_SPREAD = 0.08;
 const DEFAULT_UP: Vec3 = [0, 1, 0];
 const DEFAULT_NORTH: Vec3 = [0, 0, -1];
 
@@ -312,6 +323,7 @@ export const Sky = ({
   const sunGlare = sun?.glare ?? skyDefaults.sun.glare;
   const sunRays = sun?.rays ?? skyDefaults.sun.rays;
   const sunShimmer = sun?.shimmer ?? skyDefaults.sun.shimmer;
+  const sunTwilight = sun?.twilight ?? skyDefaults.sun.twilight;
   const moonOptions: SkyMoon | null = moon === true ? {} : moon || null;
   const moonDefaults = skyDefaults.moon;
   const moonIntensity = moonOptions?.intensity ?? moonDefaults.intensity;
@@ -421,6 +433,13 @@ export const Sky = ({
 
   useEffect(() => () => water?.dispose(), [water]);
 
+  // For floating children, as in an `Ocean`: the waves they ride, and their contact foam.
+  const sampler = useMemo(
+    () => (water && oceanWater ? createOceanSampler(water, oceanLevel) : null),
+    [water, oceanWater, oceanLevel],
+  );
+  const contacts = useMemo(createOceanContactRegistry, []);
+
   // In render rather than an effect, so a stage made in this commit compiles with it. A
   // no-op unless the detail changed. The waves' defines likewise, for the surface layer.
   material.oceanBedDetail = bedDetail;
@@ -447,6 +466,7 @@ export const Sky = ({
       sunDirection,
       sunColor: skySunColor(elevation),
       daylight: skyDaylight(elevation),
+      twilight: skyTwilight(elevation),
       moonDirection: sunDirection.clone().negate(),
       moonlight: skyMoonlight(elevation),
     };
@@ -561,8 +581,11 @@ export const Sky = ({
     material.sunDirection = state.sunDirection;
     material.sunColor = state.sunColor;
     material.daylight = state.daylight;
+    material.twilight = state.twilight;
+    material.moonlight = state.moonlight;
     material.sunSize = sunSize;
     material.sunGlow = sunGlow;
+    material.sunTwilight = sunTwilight;
     material.sunGlare = sunGlare;
     material.sunRays = sunRays;
     material.moonDirection = state.moonDirection;
@@ -599,6 +622,7 @@ export const Sky = ({
     northZ,
     sunSize,
     sunGlow,
+    sunTwilight,
     sunGlare,
     sunRays,
     moonColor,
@@ -710,7 +734,18 @@ export const Sky = ({
     water.sunColor = scratch
       .copy(lightColor)
       .multiplyScalar(lightIntensity / Math.max(sunIntensity, 1e-6));
-  }, [water, lightDirection, lightColor, lightIntensity, sunIntensity]);
+    // A low sun lays a broad glitter path.
+    water.sunGlintSpread =
+      SKY_TWILIGHT_GLINT_SPREAD * state.twilight * sunTwilight;
+  }, [
+    water,
+    lightDirection,
+    lightColor,
+    lightIntensity,
+    sunIntensity,
+    state.twilight,
+    sunTwilight,
+  ]);
 
   useEffect(() => {
     dirty.current = true;
@@ -856,7 +891,10 @@ export const Sky = ({
 
   // Bakes run here so several prop changes in one frame cost one bake.
   useFrame(({ camera }, delta) => {
-    if (water) water.time += delta;
+    if (water) {
+      water.time += delta;
+      contacts.upload(water);
+    }
     if (sunShimmer && sunRays > 0) material.sunRayPhase += delta;
     material.sunRadiance =
       (hdr ?? gl.toneMapping !== NoToneMapping) ? SKY_HDR_SUN_RADIANCE : 1;
@@ -1141,7 +1179,11 @@ export const Sky = ({
         </>
       )}
       <SkyOceanContext.Provider value={oceanState}>
-        {children}
+        <OceanSamplerContext.Provider value={sampler}>
+          <OceanContactContext.Provider value={sampler && contacts}>
+            {children}
+          </OceanContactContext.Provider>
+        </OceanSamplerContext.Provider>
       </SkyOceanContext.Provider>
       {debug?.environment && <SkyCubeView cube={environmentCube} />}
     </SkyContext.Provider>

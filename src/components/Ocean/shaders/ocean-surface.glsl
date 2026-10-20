@@ -1,7 +1,7 @@
 // Shared ocean surface shading: the wave normal with its micro ripples, Fresnel, the
-// large-scale tonal variation, reflection and sun glint, and wind-driven foam. The
-// Ocean surface and the Sky's endless sea both include it, so they read the same
-// uniforms and look the same.
+// large-scale tonal variation, reflection and sun glint, and wind-driven and contact
+// foam. The Ocean surface and the Sky's endless sea both include it, so they read the
+// same uniforms and look the same.
 //
 // ⚠️ oceanFresnel, oceanTonal and oceanFoam take screen-space derivatives: call them
 // under uniform control flow.
@@ -11,6 +11,11 @@
 #endif
 #ifndef OCEAN_DETAIL_OCTAVES
 #define OCEAN_DETAIL_OCTAVES 4
+#endif
+// Maximum number of floating-object contact footprints that can spread foam on
+// the surface (see uContactCount / uContactA / uContactB).
+#ifndef OCEAN_CONTACT_COUNT
+#define OCEAN_CONTACT_COUNT 8
 #endif
 // Share of the foam lost once its detail goes sub-pixel.
 #define OCEAN_FOAM_FAR_FADE 0.85
@@ -35,6 +40,7 @@ uniform float uReflectionIntensity;
 uniform vec3 uSunDirection; // world space, normalised
 uniform vec3 uSunColor;
 uniform float uSunShininess;
+uniform float uSunGlintSpread; // roughness added to the glint, widening its path; 0 = none
 
 uniform vec3 uFoamColor;
 uniform float uFoamAmount;
@@ -44,6 +50,18 @@ uniform float uDetailScale;    // micro-ripple frequency (waves per world unit)
 uniform float uDetailStrength; // micro-ripple normal strength
 uniform vec2 uDetailFade;      // distances from the camera over which the detail fades to a flat mirror
 uniform float uSlopeVariance;  // mean square slope of the wave field
+
+// Contact foam from floating objects (e.g. a vessel hull). Each active contact
+// is an oriented ellipse footprint: uContactA = vec4(centerX, centerZ, forwardX,
+// forwardZ) with forward the UNIT DIRECTION the object points in (not the sine
+// and cosine of its heading — see OceanMaterial.setContacts), uContactB =
+// vec4(halfLength, halfWidth, foamWidth, intensity), uContactC =
+// vec4(endFalloff, unused...). uContactCount active entries; 0 = no objects, so
+// the loop exits immediately (no cost when nothing floats on the ocean).
+uniform int uContactCount;
+uniform vec4 uContactA[OCEAN_CONTACT_COUNT];
+uniform vec4 uContactB[OCEAN_CONTACT_COUNT];
+uniform vec4 uContactC[OCEAN_CONTACT_COUNT];
 
 #include ./waves.glsl
 
@@ -217,13 +235,15 @@ vec3 oceanShade(vec3 N, vec3 V, vec3 waterColor, vec3 sky, float fresnel, float 
   vec3 H = normalize(V + normalize(uSunDirection));
   float ndh = max(dot(N, H), 0.0);
   // The faded-out slopes still scatter the sun: their variance widens the glint
-  // (the exponent read as a Beckmann roughness), at the same energy.
+  // (the exponent read as a Beckmann roughness), at the same energy. The added
+  // spread (uSunGlintSpread) keeps its peak instead, so the path also brightens.
   float shininess = uSunShininess;
   float energy = 1.0;
-  if(flatness > 0.0) {
-    float roughness = 2.0 / (uSunShininess + 2.0) + flatness * uSlopeVariance * uSteepness * uSteepness;
-    shininess = 2.0 / roughness - 2.0;
-    energy = (shininess + 2.0) / (uSunShininess + 2.0);
+  if(flatness > 0.0 || uSunGlintSpread > 0.0) {
+    float base = 2.0 / (uSunShininess + 2.0);
+    float roughness = base + flatness * uSlopeVariance * uSteepness * uSteepness;
+    shininess = 2.0 / (roughness + uSunGlintSpread) - 2.0;
+    energy = base / roughness;
   }
   float spec = pow(ndh, shininess) * energy;
   vec3 specular = uSunColor * spec * tonalSpec;
@@ -239,6 +259,45 @@ float oceanWindFoam(vec2 slope, float height) {
   float crest = smoothstep(0.45, 0.9, height / max(uSignificantHeight, 1e-3));
   float steep = smoothstep(0.7, 1.4, length(slope) * uSteepness);
   return clamp((crest * 0.7 + steep * 0.7) * uFoamAmount * windFoam, 0.0, 1.0);
+}
+
+// Foam coverage [0,1] spread around floating-object contact footprints. For
+// each active contact the point `p` on the sea's plane is transformed into the
+// object's local frame and tested against an oriented ellipse (the hull waterline);
+// foam is a soft band hugging that ellipse boundary (inside and out by
+// `foamWidth`), gently pulsing in time so the collar shimmers. The band is scaled
+// by the per-contact intensity and tapered toward the bow/stern (forward axis) by
+// endFalloff, so the foam concentrates along the sides where a hull pushes the
+// most water. Independent of wind, so a near-stationary object still leaves a
+// foam collar in calm water. The loop breaks at uContactCount, so it is free
+// when no objects are registered.
+float oceanContactFoam(vec2 p, float t) {
+  float foam = 0.0;
+  for(int i = 0; i < OCEAN_CONTACT_COUNT; i++) {
+    if(i >= uContactCount)
+      break;
+    vec4 a = uContactA[i];
+    vec4 b = uContactB[i];
+    vec2 d = p - a.xy;
+    vec2 fwd = a.zw;
+    // Rotate into the object's local axes (forward, starboard).
+    vec2 local = vec2(dot(d, fwd), dot(d, vec2(-fwd.y, fwd.x)));
+    vec2 halfExtent = max(b.xy, vec2(1e-3));
+    vec2 nrm = local / halfExtent;
+    float dn = length(nrm);
+    // Approximate signed distance (world units) to the ellipse boundary.
+    float sd = (dn - 1.0) * min(halfExtent.x, halfExtent.y);
+    float width = max(b.z, 1e-3);
+    float band = 1.0 - smoothstep(0.0, width, abs(sd));
+    // Taper toward the ends (bow/stern): dirN.x is the cosine of the boundary
+    // point's angle from the forward axis, so dirN.x^2 is ~1 at the ends and ~0
+    // on the sides. endFalloff (0..1) scales how much foam is removed there.
+    vec2 dirN = nrm / max(dn, 1e-3);
+    float endWeight = mix(1.0, 1.0 - dirN.x * dirN.x, clamp(uContactC[i].x, 0.0, 1.0));
+    float pulse = 0.8 + 0.2 * sin(t * 1.5 + a.x * 0.05 + a.y * 0.05);
+    foam = max(foam, band * pulse * endWeight * max(b.w, 0.0));
+  }
+  return foam;
 }
 
 // How much foam a `coverage` draws, before its distance fade. The coverage is

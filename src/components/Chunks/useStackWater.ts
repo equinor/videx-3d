@@ -1,15 +1,15 @@
 import { useFrame } from '@react-three/fiber';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo } from 'react';
 import { IUniform, Vector4 } from 'three';
 import {
+  createOceanContactRegistry,
   OceanContactRegistry,
-  OceanContactSource,
 } from '../Ocean/ocean-contact';
 import {
   applyOceanBodyProps,
   applyOceanWaterProps,
 } from '../Ocean/ocean-material-sync';
-import { OceanContact, OceanMaterial } from '../Ocean/ocean-material';
+import { OceanMaterial } from '../Ocean/ocean-material';
 import { createOceanSampler, OceanSampler } from '../Ocean/ocean-sampler';
 import { OceanVolumeMaterial } from '../Ocean/ocean-volume-material';
 import { ChunkDepthMap } from './chunk-depth-map';
@@ -64,19 +64,7 @@ export function useStackWater(
   const enabled = !!water;
   const level = -(water?.depth ?? 0);
 
-  const contactSources = useRef<Set<OceanContactSource>>(new Set());
-  const contactScratch = useRef<OceanContact[]>([]);
-  const contacts = useMemo<OceanContactRegistry>(
-    () => ({
-      register(source) {
-        contactSources.current.add(source);
-        return () => {
-          contactSources.current.delete(source);
-        };
-      },
-    }),
-    [],
-  );
+  const contacts = useMemo(createOceanContactRegistry, []);
 
   // ⚠️ The section is a DEFINE, so cutting the sea or leaving it whole means new
   // materials. That is a discrete choice, unlike the sea state, which is swept.
@@ -145,18 +133,7 @@ export function useStackWater(
     // Collect the registered floating-object footprints and upload them as
     // contact foam. Skipped entirely when nothing is registered, so a sea with no
     // floating children costs nothing per frame.
-    const sources = contactSources.current;
-    if (sources.size > 0) {
-      const scratch = contactScratch.current;
-      scratch.length = 0;
-      for (const source of sources) {
-        const contact = source();
-        if (contact) scratch.push(contact);
-      }
-      materials.surface.setContacts(scratch);
-    } else if ((materials.surface.uniforms.uContactCount.value as number) > 0) {
-      materials.surface.clearContacts();
-    }
+    contacts.upload(materials.surface);
   });
 
   return useMemo(

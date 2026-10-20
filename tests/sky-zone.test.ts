@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  skySunColor,
+  skyTwilight,
   skyWaterDimming,
   skyZone,
   SkyZoneLevels,
@@ -60,5 +62,30 @@ describe('skyWaterDimming', () => {
     expect(skyWaterDimming(0.5, 0.004)).toBe(1);
     expect(skyWaterDimming(101, 0.004)).toBeCloseTo(Math.exp(-100 * 0.002));
     expect(skyWaterDimming(101, 0)).toBe(1);
+  });
+});
+
+describe('skyTwilight', () => {
+  it('glows about sunrise and sunset only, most with the sun near the horizon', () => {
+    expect(skyTwilight(35)).toBe(0);
+    expect(skyTwilight(-25)).toBe(0);
+    expect(skyTwilight(0)).toBe(1);
+    expect(skyTwilight(-2)).toBe(1);
+    expect(skyTwilight(-8)).toBeGreaterThan(0);
+    expect(skyTwilight(-8)).toBeLessThan(1);
+    expect(skyTwilight(6)).toBeGreaterThan(0);
+    expect(skyTwilight(6)).toBeLessThan(skyTwilight(0));
+  });
+});
+
+describe('skySunColor', () => {
+  it('runs from red-orange on the horizon to near white high up, without a jump', () => {
+    const low = skySunColor(-2);
+    const high = skySunColor(40);
+    expect(low.r / low.b).toBeGreaterThan(high.r / high.b);
+    expect(high.equals(skySunColor(25))).toBe(true);
+    const below = skySunColor(5.999);
+    const above = skySunColor(6.001);
+    expect(Math.abs(below.g - above.g)).toBeLessThan(1e-3);
   });
 });

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef } from 'react';
-import { OceanContact } from './ocean-material';
+import type { OceanContact, OceanMaterial } from './ocean-material';
 
 /**
  * A function returning a floating object's current contact footprint (in the
@@ -17,6 +17,41 @@ export type OceanContactSource = () => OceanContact | null;
 export interface OceanContactRegistry {
   /** Register a footprint source; returns a function that unregisters it. */
   register(source: OceanContactSource): () => void;
+}
+
+/** An {@link OceanContactRegistry} that also uploads the registered footprints. */
+export interface OceanContactUploader extends OceanContactRegistry {
+  /** Read every source and write the footprints into `material`; call once a frame. Free while none is registered. */
+  upload(material: OceanMaterial): void;
+}
+
+/**
+ * A registry for the floating children of whatever draws an {@link OceanMaterial}'s
+ * water: provide it through {@link OceanContactContext}, and `upload` it each frame.
+ */
+export function createOceanContactRegistry(): OceanContactUploader {
+  const sources = new Set<OceanContactSource>();
+  const scratch: OceanContact[] = [];
+  return {
+    register(source) {
+      sources.add(source);
+      return () => {
+        sources.delete(source);
+      };
+    },
+    upload(material) {
+      if (sources.size > 0) {
+        scratch.length = 0;
+        for (const source of sources) {
+          const contact = source();
+          if (contact) scratch.push(contact);
+        }
+        material.setContacts(scratch);
+      } else if ((material.uniforms.uContactCount.value as number) > 0) {
+        material.clearContacts();
+      }
+    },
+  };
 }
 
 /**

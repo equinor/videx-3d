@@ -45,27 +45,11 @@
 #ifndef OCEAN_LEE_EXPOSURE
 #define OCEAN_LEE_EXPOSURE 0.25
 #endif
-// Maximum number of floating-object contact footprints that can spread foam on
-// the surface (see uContactCount / uContactA / uContactB).
-#ifndef OCEAN_CONTACT_COUNT
-#define OCEAN_CONTACT_COUNT 8
-#endif
 
-// The surface's own uniforms are declared in ocean-surface.glsl, shared with the Sky's sea.
+// The surface's own uniforms, contact foam's included, are declared in ocean-surface.glsl,
+// shared with the Sky's sea.
 uniform vec3 uSkyColor;
 uniform vec3 uHorizonColor;
-
-// Contact foam from floating objects (e.g. a vessel hull). Each active contact
-// is an oriented ellipse footprint: uContactA = vec4(centerX, centerZ, forwardX,
-// forwardZ) with forward the UNIT DIRECTION the object points in (not the sine
-// and cosine of its heading — see OceanMaterial.setContacts), uContactB =
-// vec4(halfLength, halfWidth, foamWidth, intensity), uContactC =
-// vec4(endFalloff, unused...). uContactCount active entries; 0 = no objects, so
-// the loop exits immediately (no cost when nothing floats on the ocean).
-uniform int uContactCount;
-uniform vec4 uContactA[OCEAN_CONTACT_COUNT];
-uniform vec4 uContactB[OCEAN_CONTACT_COUNT];
-uniform vec4 uContactC[OCEAN_CONTACT_COUNT];
 
 uniform float uMasterOpacity; // master multiplier (CommonComponent opacity prop)
 
@@ -129,45 +113,6 @@ vec3 oceanSkyReflection(vec3 dir) {
   float sun = max(dot(dir, normalize(uSunDirection)), 0.0);
   sky += uSunColor * pow(sun, 64.0) * 0.6;
   return sky;
-}
-
-// Foam coverage [0,1] spread around floating-object contact footprints. For
-// each active contact the world point is transformed into the object's local
-// frame and tested against an oriented ellipse (the hull waterline); foam is a
-// soft band hugging that ellipse boundary (inside and out by `foamWidth`),
-// gently pulsing in time so the collar shimmers. The band is scaled by the
-// per-contact intensity and tapered toward the bow/stern (forward axis) by
-// endFalloff, so the foam concentrates along the sides where a hull pushes the
-// most water. Independent of wind, so a near-stationary object still leaves a
-// foam collar in calm water. The loop breaks at uContactCount, so it is free
-// when no objects are registered.
-float oceanContactFoam(vec2 p, float t) {
-  float foam = 0.0;
-  for(int i = 0; i < OCEAN_CONTACT_COUNT; i++) {
-    if(i >= uContactCount)
-      break;
-    vec4 a = uContactA[i];
-    vec4 b = uContactB[i];
-    vec2 d = p - a.xy;
-    vec2 fwd = a.zw;
-    // Rotate into the object's local axes (forward, starboard).
-    vec2 local = vec2(dot(d, fwd), dot(d, vec2(-fwd.y, fwd.x)));
-    vec2 halfExtent = max(b.xy, vec2(1e-3));
-    vec2 nrm = local / halfExtent;
-    float dn = length(nrm);
-    // Approximate signed distance (world units) to the ellipse boundary.
-    float sd = (dn - 1.0) * min(halfExtent.x, halfExtent.y);
-    float width = max(b.z, 1e-3);
-    float band = 1.0 - smoothstep(0.0, width, abs(sd));
-    // Taper toward the ends (bow/stern): dirN.x is the cosine of the boundary
-    // point's angle from the forward axis, so dirN.x^2 is ~1 at the ends and ~0
-    // on the sides. endFalloff (0..1) scales how much foam is removed there.
-    vec2 dirN = nrm / max(dn, 1e-3);
-    float endWeight = mix(1.0, 1.0 - dirN.x * dirN.x, clamp(uContactC[i].x, 0.0, 1.0));
-    float pulse = 0.8 + 0.2 * sin(t * 1.5 + a.x * 0.05 + a.y * 0.05);
-    foam = max(foam, band * pulse * endWeight * max(b.w, 0.0));
-  }
-  return foam;
 }
 
 void main() {

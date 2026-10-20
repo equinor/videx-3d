@@ -160,6 +160,7 @@ export const OCEAN_SURFACE_UNIFORMS = [
   'uSunDirection',
   'uSunColor',
   'uSunShininess',
+  'uSunGlintSpread',
   'uFoamColor',
   'uFoamAmount',
   'uFresnelPower',
@@ -169,6 +170,10 @@ export const OCEAN_SURFACE_UNIFORMS = [
   'uSlopeVariance',
   'uWaveA',
   'uWaveB',
+  'uContactCount',
+  'uContactA',
+  'uContactB',
+  'uContactC',
 ] as const;
 
 /**
@@ -275,6 +280,7 @@ export class OceanMaterial extends ShaderMaterial {
         uSunDirection: new Uniform(new Vector3(-0.3, 0.8, -0.5).normalize()),
         uSunColor: new Uniform(new Color('#fff6e0')),
         uSunShininess: new Uniform(200),
+        uSunGlintSpread: new Uniform(0),
 
         uFoamColor: new Uniform(new Color('#ffffff')),
         uFoamAmount: new Uniform(0.5),
@@ -683,6 +689,14 @@ export class OceanMaterial extends ShaderMaterial {
   }
   set sunShininess(value: number) {
     this.uniforms.uSunShininess.value = value;
+  }
+
+  /** roughness added to the sun glint, widening its path at the same energy; 0 = none */
+  get sunGlintSpread(): number {
+    return this.uniforms.uSunGlintSpread.value;
+  }
+  set sunGlintSpread(value: number) {
+    this.uniforms.uSunGlintSpread.value = Math.max(value, 0);
   }
 
   get foamColor(): Color {

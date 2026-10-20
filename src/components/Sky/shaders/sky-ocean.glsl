@@ -242,7 +242,8 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   vec3 surface = oceanShade(normal, V, waterColor, skySurface(normalize(r), blend), fresnel, tonalReflect, tonalSpec, flatness);
 
   float foamFar;
-  float foamBlend = oceanFoam(wave.np, texel, oceanWindFoam(wave.slope, wave.height), foamFar);
+  float coverage = max(oceanWindFoam(wave.slope, wave.height), oceanContactFoam(p, uTime));
+  float foamBlend = oceanFoam(wave.np, texel, coverage, foamFar);
   float foamOpacity = foamBlend * (1.0 - clamp(foamFar * OCEAN_FOAM_FAR_FADE, 0.0, 1.0));
   surface = mix(surface, uFoamColor * night, foamOpacity);
 

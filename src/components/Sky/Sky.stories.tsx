@@ -1,6 +1,6 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   skyCutawayArgs,
   SkyCutawayArgs,
@@ -26,6 +26,7 @@ import {
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { RenderStats } from '../Html/RenderStats/RenderStats';
 import { DEFAULT_OCEAN_WATER_OPACITY } from '../Ocean/ocean-material';
+import { Tanker } from '../Tanker/Tanker';
 import { Sky } from './Sky';
 import { SkyBoxStage } from './SkyBoxStage';
 import { SkyStageBounds } from './sky-stage';
@@ -44,6 +45,7 @@ type TimelapseArgs = {
   windSpeed: number;
   foamAmount: number;
   stats: boolean;
+  tanker: boolean;
 } & SkySunArgs &
   SkyCutawayArgs &
   ToneMappingArgs;
@@ -97,6 +99,11 @@ const SkyTimelapse = (args: TimelapseArgs) => {
 
   const sunArgs = { ...args, sunFromTime: true, sunHour: hour };
   const { elevation } = skySunPosition(sunArgs);
+  // Kept out of the clock's re-render every frame.
+  const tanker = useMemo(
+    () => args.tanker && <Tanker position={[0, 0, -900]} />,
+    [args.tanker],
+  );
 
   return (
     <>
@@ -121,6 +128,7 @@ const SkyTimelapse = (args: TimelapseArgs) => {
         capture={{ interval: args.captureInterval }}
       >
         <SkyBoxStage bounds={BOUNDS} />
+        {tanker}
       </Sky>
       <ClockOverlay
         text={`${args.sunDate}  ${formatHour(hour)} solar time  sun ${elevation.toFixed(1)}\u00b0`}
@@ -204,6 +212,12 @@ const meta = {
     foamAmount: range(0, 1, 0.01, 'Sea', 'Whitecaps on the waves.'),
     ...skyCutawayArgTypes(),
     ...toneMappingArgTypes(),
+    tanker: {
+      control: { type: 'boolean' },
+      description:
+        'A tanker riding the sky’s waves, with a foam collar where it meets the water: inside a `Sky`, floating components work as inside an `Ocean`.',
+      table: { category: 'Sea' },
+    },
     stats: {
       control: { type: 'boolean' },
       description:
@@ -216,15 +230,17 @@ const meta = {
     ...skyCutawayArgs,
     ...toneMappingArgs,
     playing: true,
-    speed: 1,
+    speed: 0.5,
     sunFromTime: true,
     sunHour: 5,
+    clouds: true,
     // The Sky's own default.
     captureInterval: 250,
     waterOpacity: DEFAULT_OCEAN_WATER_OPACITY,
     windSpeed: 10,
     foamAmount: 0.5,
     stats: false,
+    tanker: true,
   },
 } satisfies Meta<typeof SkyTimelapse>;
 

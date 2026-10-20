@@ -20,11 +20,10 @@ import {
   OceanWaterProps,
 } from './ocean-material-sync';
 import {
+  createOceanContactRegistry,
   OceanContactContext,
-  OceanContactRegistry,
-  OceanContactSource,
 } from './ocean-contact';
-import { OceanContact, OceanMaterial } from './ocean-material';
+import { OceanMaterial } from './ocean-material';
 import { createOceanSampler, OceanSamplerContext } from './ocean-sampler';
 import { OceanVolumeMaterial } from './ocean-volume-material';
 
@@ -200,19 +199,7 @@ export const Ocean = forwardRef(
     // Registry of floating children that contribute contact-foam footprints.
     // Children register a source via OceanContactContext (see useOceanContact);
     // their footprints are collected and uploaded to the material each frame.
-    const contactSources = useRef<Set<OceanContactSource>>(new Set());
-    const contactScratch = useRef<OceanContact[]>([]);
-    const contactRegistry = useMemo<OceanContactRegistry>(
-      () => ({
-        register(source) {
-          contactSources.current.add(source);
-          return () => {
-            contactSources.current.delete(source);
-          };
-        },
-      }),
-      [],
-    );
+    const contactRegistry = useMemo(createOceanContactRegistry, []);
 
     // Sync prop-driven uniforms onto the material.
     useEffect(() => {
@@ -372,18 +359,7 @@ export const Ocean = forwardRef(
         // Collect the registered floating-object footprints and upload them as
         // contact foam. Skipped entirely when nothing is registered, so there is
         // no per-frame cost on an ocean with no floating children.
-        const sources = contactSources.current;
-        if (sources.size > 0) {
-          const scratch = contactScratch.current;
-          scratch.length = 0;
-          for (const source of sources) {
-            const contact = source();
-            if (contact) scratch.push(contact);
-          }
-          material.setContacts(scratch);
-        } else if ((material.uniforms.uContactCount.value as number) > 0) {
-          material.clearContacts();
-        }
+        contactRegistry.upload(material);
       }
       if (volumeMaterial) {
         volumeMaterial.time += delta;
