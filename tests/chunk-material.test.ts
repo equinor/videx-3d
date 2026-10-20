@@ -47,26 +47,26 @@ describe('ChunkMaterial', () => {
 
   it('compiles no detail branch at all when none is asked for', () => {
     const material = new ChunkMaterial({ color: '#4e79a7' });
-    expect('CHUNK_DETAIL' in defines(material)).toBe(false);
-    expect('CHUNK_DETAIL_GRANULAR' in defines(material)).toBe(false);
+    expect('SURFACE_DETAIL' in defines(material)).toBe(false);
+    expect('SURFACE_DETAIL_GRANULAR' in defines(material)).toBe(false);
   });
 
   it('treats a zero strength as no detail', () => {
     const material = new ChunkMaterial({
       detail: { preset: 'sand', strength: 0 },
     });
-    expect('CHUNK_DETAIL' in defines(material)).toBe(false);
+    expect('SURFACE_DETAIL' in defines(material)).toBe(false);
   });
 
   it('enables only the layers a preset actually uses', () => {
     const sand = new ChunkMaterial({ detail: 'sand' });
-    expect('CHUNK_DETAIL' in defines(sand)).toBe(true);
-    expect('CHUNK_DETAIL_GRANULAR' in defines(sand)).toBe(true);
-    expect('CHUNK_DETAIL_GRAIN' in defines(sand)).toBe(false);
-    expect('CHUNK_DETAIL_DUNES' in defines(sand)).toBe(false);
+    expect('SURFACE_DETAIL' in defines(sand)).toBe(true);
+    expect('SURFACE_DETAIL_GRANULAR' in defines(sand)).toBe(true);
+    expect('SURFACE_DETAIL_GRAIN' in defines(sand)).toBe(false);
+    expect('SURFACE_DETAIL_DUNES' in defines(sand)).toBe(false);
 
     const seabed = new ChunkMaterial({ detail: 'seabed' });
-    expect('CHUNK_DETAIL_DUNES' in defines(seabed)).toBe(true);
+    expect('SURFACE_DETAIL_DUNES' in defines(seabed)).toBe(true);
     expect(seabed.uniforms.detailDunes.value.y).toBeGreaterThan(0);
   });
 
@@ -77,6 +77,8 @@ describe('ChunkMaterial', () => {
     const cap = new ChunkMaterial({ detail: 'shale' });
     expect('CHUNK_WALL' in defines(wall)).toBe(true);
     expect('CHUNK_WALL' in defines(cap)).toBe(false);
+    expect('SURFACE_DETAIL_BEDDING' in defines(wall)).toBe(true);
+    expect('SURFACE_DETAIL_BEDDING' in defines(cap)).toBe(false);
     expect(wall.uniforms.detailGrainB.value.z).toBeGreaterThan(0);
     expect(cap.uniforms.detailGrainB.value.z).toBe(0);
   });

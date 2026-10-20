@@ -1,0 +1,87 @@
+// Fog through a body of water (see water-fog.ts), shared by the Sky's sea and the chunks
+// under it so the two agree. Heights are along the world's up, from the water surface.
+
+// How much of a segment `len` long, from height `ha` to height `hb`, lies between `bottom`
+// and `top`.
+float waterFogPath(float ha, float hb, float len, float bottom, float top) {
+  float lo = min(ha, hb);
+  float hi = max(ha, hb);
+  if(hi - lo < 1e-6)
+    return ha >= bottom && ha <= top ? len : 0.0;
+  return max(min(hi, top) - max(lo, bottom), 0.0) / (hi - lo) * len;
+}
+
+// Daylight left `depth` below the surface.
+float waterFogDim(float depth, float density) {
+  return exp(-max(depth, 0.0) * density * 0.5);
+}
+
+// The light the water itself carries `depth` down; night keeps a little, as the sky does.
+float waterFogLight(float depth, float density, float daylight) {
+  return waterFogDim(depth, density) * mix(0.15, 1.0, daylight);
+}
+
+// `color` seen through `dist` of water, tinted toward the water's colour lit by `light`.
+vec3 waterFog(vec3 color, float dist, float density, vec3 shallowColor, vec3 deepColor, float light) {
+  float fog = 1.0 - exp(-dist * density);
+  return mix(color, mix(shallowColor, deepColor, fog) * light, fog);
+}
+
+// The cutaway through the water in front of the view (see `WaterFogUniforms.cutawayShape`):
+// everything nearer than a line across the view, `shape.x` ahead of `anchor` along
+// `heading`, waved across it by `waveA` and `waveB` (amplitude, angular frequency, phase).
+// `shape.y` is its scale (0: no cutaway), `shape.z` its edge's width, `shape.w` the opacity
+// of the water left in it.
+struct WaterFogCutaway {
+  vec3 anchor;
+  vec3 heading;
+  vec4 shape;
+  vec3 waveA;
+  vec3 waveB;
+};
+
+// How far `p` on the cutaway's plane lies beyond its edge, across it; negative inside.
+float waterFogCutawayEdge(WaterFogCutaway cutaway, vec3 p, vec3 up) {
+  vec3 d = p - cutaway.anchor;
+  float ahead = dot(d, cutaway.heading);
+  float side = dot(d, cross(cutaway.heading, up));
+  vec3 a = cutaway.waveA;
+  vec3 b = cutaway.waveB;
+  float edge = cutaway.shape.x + a.x * sin(a.y * side + a.z) + b.x * sin(b.y * side + b.z);
+  // Across: divided by the edge's slope there, to first order.
+  float slope = a.x * a.y * cos(a.y * side + a.z) + b.x * b.y * cos(b.y * side + b.z);
+  return (ahead - edge) / sqrt(1.0 + slope * slope);
+}
+
+// How much the cutaway covers `p` on its plane: 1 inside, 0 outside, easing over its edge.
+float waterFogCutaway(WaterFogCutaway cutaway, vec3 p, vec3 up) {
+  if(cutaway.shape.y <= 0.0)
+    return 0.0;
+  return 1.0 - smoothstep(-cutaway.shape.z, 0.0, waterFogCutawayEdge(cutaway, p, up));
+}
+
+// Where a sight line from `a` through `b` meets the cutaway's plane, level with its `anchor`:
+// before or past `b`. False where the line never comes down to it.
+bool waterFogCutawayPoint(vec3 a, vec3 b, vec3 anchor, vec3 up, out vec3 point) {
+  float level = dot(anchor, up);
+  float ha = dot(a, up) - level;
+  float hb = dot(b, up) - level;
+  point = a;
+  if(ha <= 0.0 || hb >= ha)
+    return false;
+  point = a + (b - a) * (ha / (ha - hb));
+  return true;
+}
+
+// How much the cutaway covers a sight line from `a` through `b` (see waterFogCutawayPoint).
+float waterFogCutawayAlong(WaterFogCutaway cutaway, vec3 a, vec3 b, vec3 up) {
+  vec3 point;
+  return waterFogCutawayPoint(a, b, cutaway.anchor, up, point) ? waterFogCutaway(cutaway, point, up) : 0.0;
+}
+
+// How much of the water the cutaway keeps along a sight line from `a` through `b`.
+float waterFogCutawayKeepAlong(WaterFogCutaway cutaway, vec3 a, vec3 b, vec3 up) {
+  if(cutaway.shape.w >= 1.0)
+    return 1.0;
+  return 1.0 - waterFogCutawayAlong(cutaway, a, b, up) * (1.0 - cutaway.shape.w);
+}

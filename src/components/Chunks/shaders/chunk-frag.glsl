@@ -12,20 +12,30 @@ uniform float chunkSaturation; // 1 = as lit, 0 = grey
 uniform vec2 chunkAmbient; // x: multiplier facing up, y: facing down
 #endif
 
-#ifdef CHUNK_DETAIL
-// Packed so a preset costs a handful of uniforms rather than a dozen; the layout is
-// mirrored by `chunk-material.ts`, which is the only thing that writes them.
-uniform float detailStrength;   // overall multiplier (the caller's one knob)
-uniform vec2 detailShade;       // x: albedo modulation, y: bump height
-uniform vec4 detailGranular;    // x: strength, y: frequency, z: octaves, w: anisotropy
-uniform vec4 detailGrain;       // x: strength, y: frequency, z: angle, w: sharpness
-uniform vec4 detailGrainB;      // x: uniformity, y: octaves, z: bedding mix, w: laminae
-uniform vec4 detailDunes;       // x: strength, y: wavelength, zw: direction
-
+#if defined(SURFACE_DETAIL) || defined(CHUNK_WATER_FOG)
 varying vec3 vWorldPosition;
-#ifdef CHUNK_WALL
+#endif
+#if defined(SURFACE_DETAIL) && defined(CHUNK_WALL)
 varying float vWallV;
 #endif
+
+#ifdef CHUNK_WATER_FOG
+// Shared with the body of water (see `WaterFogUniforms`).
+uniform vec3 waterFogUp;
+uniform float waterFogLevel;
+uniform float waterFogDepth;
+uniform float waterFogDensity;
+uniform vec3 waterFogShallow;
+uniform vec3 waterFogDeep;
+uniform float waterFogDaylight;
+uniform float waterFogIntensity;
+uniform float waterFogCamera;
+uniform vec3 waterFogCutawayAnchor;
+uniform vec3 waterFogCutawayHeading;
+uniform vec4 waterFogCutawayShape;
+uniform vec3 waterFogCutawayWaveA;
+uniform vec3 waterFogCutawayWaveB;
+#include ../../../sdk/materials/shaderLib/water-fog.glsl
 #endif
 
 #ifdef CHUNK_WATER_TINT
@@ -129,10 +139,10 @@ vec3 contactLine(float contactY, vec4 style, vec3 lineColor, float lineOpacity, 
   // ⚠️ Best-effort dashes. An implicit contour has no arc length, but its
   // direction in SCREEN space is perpendicular to the gradient of `d`, so the
   // pattern can at least run along the line rather than across it.
-  if (style.z > 0.0) {
+  if(style.z > 0.0) {
     vec2 g = vec2(dFdx(d), dFdy(d));
     float gl = length(g);
-    if (gl > 1e-9) {
+    if(gl > 1e-9) {
       float along = dot(gl_FragCoord.xy, vec2(-g.y, g.x) / gl);
       float t = mod(along, style.z + style.w);
       line *= 1.0 - smoothstep(style.z - 0.5, style.z + 0.5, t);
@@ -162,8 +172,9 @@ vec3 contactLine(float contactY, vec4 style, vec3 lineColor, float lineOpacity, 
 #include <logdepthbuf_pars_fragment>
 #include <clipping_planes_pars_fragment>
 
-#ifdef CHUNK_DETAIL
+#ifdef SURFACE_DETAIL
 #include ../../../sdk/materials/shaderLib/procedural-normal.glsl
+#include ../../../sdk/materials/shaderLib/surface-detail.glsl
 #endif
 
 #ifdef USE_OIT
@@ -175,7 +186,8 @@ void main() {
   // fragment that is cut away must be gone in the min-depth and occlusion passes
   // too, or the block goes on occluding through the cut it is not drawn in.
   #ifdef CHUNK_SECTION
-  if (vSectionDist > 0.0) discard;
+  if(vSectionDist > 0.0)
+    discard;
   #endif
 
   #ifdef CHUNK_FENCE
@@ -187,9 +199,10 @@ void main() {
   // and the read is EXACT because the curve is carried rather than reconstructed.
   // The face is that same curve, so face and cut are one object.
   // x: whether the cut is live, y: +1 for the block, -1 for the peel patch.
-  if (fenceParams.x > 0.5) {
+  if(fenceParams.x > 0.5) {
     float fenceAt = fenceSide(fenceMap, fenceToUv, fenceSize, vObjectPos.xz);
-    if (fenceParams.y * fenceAt < 0.0) discard;
+    if(fenceParams.y * fenceAt < 0.0)
+      discard;
   }
   #endif
 
@@ -197,12 +210,10 @@ void main() {
   // ⚠️ Before the OIT early return, so the depth pass agrees about what is not there.
   // Written as a negated `inside` test so a NaN rect (no overlay) discards too.
   {
-    vec2 at = vec2(
-      (vFenceAlong - overlayRect.x) / (overlayRect.y - overlayRect.x),
-      (vObjectPos.y - overlayRect.z) / (overlayRect.w - overlayRect.z)
-    );
+    vec2 at = vec2((vFenceAlong - overlayRect.x) / (overlayRect.y - overlayRect.x), (vObjectPos.y - overlayRect.z) / (overlayRect.w - overlayRect.z));
     bool inside = at.x >= 0.0 && at.x <= 1.0 && at.y >= 0.0 && at.y <= 1.0;
-    if (!(overlayParams.z > 0.0 && inside)) discard;
+    if(!(overlayParams.z > 0.0 && inside))
+      discard;
   }
   #endif
 
@@ -235,7 +246,7 @@ void main() {
   #else
   bool capNormalRead = capNormalOn > 0.5;
   #endif
-  if (capNormalRead) {
+  if(capNormalRead) {
     vec2 capXZ = texture2D(capNormalMap, vCapNormalUv).rg;
     normal = normalize(normalMatrix * vec3(capXZ.x, sqrt(max(1.0 - dot(capXZ, capXZ), 0.0)), capXZ.y));
     #ifdef FLIP_SIDED
@@ -248,106 +259,21 @@ void main() {
   }
   #endif
 
-  #ifdef CHUNK_DETAIL
+  #ifdef SURFACE_DETAIL
   {
-    // Only the OIT front layer is detailed. The noise is zeroed rather than branched
-    // around, as the derivatives below need uniform control flow.
+    // Only the OIT front layer is detailed.
     #ifdef USE_OIT
     bool detailShown = !oitInTail();
     #else
     bool detailShown = true;
     #endif
-
-    // View -> world. `mat3(viewMatrix)` is orthonormal (the view transform is rigid),
-    // so multiplying from the right is its inverse. Taking the normal from AFTER
-    // <normal_fragment_begin> keeps the double-sided face flip.
-    vec3 worldNormal = normalize(normal * mat3(viewMatrix));
-    vec3 axis = abs(worldNormal);
-    // Project onto the plane the face most nearly lies in: XZ for a cap, one of the
-    // two vertical planes for a wall. A cap and the wall hanging from it then share
-    // the pattern's scale and phase along their common edge.
-    bool horizontal = axis.y >= axis.x && axis.y >= axis.z;
-    bool alongX = axis.x >= axis.z;
-    vec2 q = horizontal
-      ? vWorldPosition.xz
-      : (alongX ? vec2(vWorldPosition.z, vWorldPosition.y) : vec2(vWorldPosition.x, vWorldPosition.y));
-    // The plane's unit axes and its normal, for tilting from an analytic slope.
-    vec3 planeU = horizontal ? vec3(1.0, 0.0, 0.0) : (alongX ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0));
-    vec3 planeV = horizontal ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
-    vec3 planeN = horizontal ? vec3(0.0, 1.0, 0.0) : (alongX ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 0.0, 1.0));
-    // A back face's normal is flipped, so its relief has to tilt the other way.
-    float facing = dot(worldNormal, planeN) >= 0.0 ? 1.0 : -1.0;
-
-    float height = 0.0; // fine relief, perturbed from its screen-space gradient
-    float shade = 0.0;  // the same relief as a faint albedo modulation
-    vec2 slope = vec2(0.0); // relief with an EXACT slope, tilted in the plane above
-
-    #ifdef CHUNK_DETAIL_DUNES
-    {
-      // Dunes tilt the WORLD normal from their exact analytic slope rather than going
-      // through perturbNormalHeight: the ridges are tens of metres wide, and a
-      // screen-space gradient degrades at exactly the grazing angles a sea bed is seen
-      // at. The slope is a horizontal-plane one, so it fades out as a face turns
-      // vertical (a wall gets none).
-      float texel = max(length(fwidth(vWorldPosition.xz)), 1e-3);
-      if (detailShown) {
-        float crest;
-        vec2 g = pnDunes(vWorldPosition.xz, detailDunes.y, detailDunes.zw, texel, crest);
-        worldNormal = normalize(worldNormal + vec3(-g.x, 0.0, -g.y) * (detailDunes.x * detailStrength * axis.y));
-        shade += crest * detailDunes.x;
-      }
-    }
+    #ifdef CHUNK_WALL
+    float bedding = vWallV;
+    #else
+    float bedding = 0.0;
     #endif
-
-    #ifdef CHUNK_DETAIL_GRANULAR
-    {
-      int octaves = detailShown ? int(detailGranular.z) : 0;
-      vec2 uv = q * detailGranular.y;
-      // ⭐ Analytic slope, NOT perturbNormalHeight: a screen-space gradient is taken over
-      // the pixel footprint, so the bump direction changes with distance and viewing
-      // angle and the detail visibly slides across the surface as the camera moves.
-      // Dividing the height by the frequency keeps `strength` frequency-INDEPENDENT,
-      // which leaves the slope as simply strength x gradient.
-      vec3 n = pnGranularFilteredGrad(uv, detailGranular.w, octaves);
-      slope += detailGranular.x * n.yz;
-      shade += n.x * detailGranular.x;
-    }
-    #endif
-
-    #ifdef CHUNK_DETAIL_GRAIN
-    {
-      vec2 g = q;
-      #ifdef CHUNK_WALL
-      // Bedding follows the UNIT: `vWallV` spans 0..1 whatever the interval's
-      // thickness, so `laminae` beds fit between its top and base either way.
-      g.y = mix(q.y, vWallV * detailGrainB.w / max(detailGrain.y, 1e-4), detailGrainB.z);
-      #endif
-      int octaves = detailShown ? int(detailGrainB.y) : 0;
-      vec2 uv = g * detailGrain.y;
-      // Fades on the BASE frequency (octaves = 1), not the finest: the flute component
-      // band-limits itself and the irregular one is octave-filtered, so the whole layer
-      // only has to go once its coarsest structure stops being resolvable.
-      float fade = pnFootprintFade(uv, 1) * (detailShown ? 1.0 : 0.0);
-      // pnGrain is positive (0..1); centring it keeps the albedo modulation unbiased.
-      // ⚠️ This one keeps the screen-space path: its shape function (a pow and a
-      // footprint-widened smoothstep) has no cheap closed-form gradient.
-      float n = pnGrainFiltered(uv, detailGrain.z, detailGrain.w, detailGrainB.x, octaves) - 0.5;
-      height += detailGrain.x * fade * n / max(detailGrain.y, 1e-4);
-      shade += n * fade * detailGrain.x * 0.5;
-    }
-    #endif
-
-    #ifdef CHUNK_DETAIL_GRANULAR
-    slope *= detailStrength * detailShade.y * facing;
-    worldNormal = normalize(worldNormal - (slope.x * planeU + slope.y * planeV));
-    #endif
-    #if defined(CHUNK_DETAIL_DUNES) || defined(CHUNK_DETAIL_GRANULAR)
-    normal = normalize(mat3(viewMatrix) * worldNormal);
-    #endif
-    #ifdef CHUNK_DETAIL_GRAIN
-    normal = perturbNormalHeight(normal, -vViewPosition, height * detailStrength * detailShade.y);
-    #endif
-    diffuseColor.rgb *= 1.0 + clamp(shade * detailShade.x * detailStrength, -0.5, 0.5);
+    // Taking the normal from AFTER <normal_fragment_begin> keeps the double-sided face flip.
+    diffuseColor.rgb *= surfaceDetail(normal, vWorldPosition, -vViewPosition, bedding, detailShown);
   }
   #endif
 
@@ -356,26 +282,22 @@ void main() {
   vec3 overlayColor = vec3(0.0);
   float overlayShown = 0.0;
   {
-    vec2 uv = vec2(
-      (vFenceAlong - overlayRect.x) / (overlayRect.y - overlayRect.x),
-      (vObjectPos.y - overlayRect.z) / (overlayRect.w - overlayRect.z)
-    );
-    float shown = overlayParams.z
-      * step(0.0, uv.x) * step(uv.x, 1.0)
-      * step(0.0, uv.y) * step(uv.y, 1.0);
+    vec2 uv = vec2((vFenceAlong - overlayRect.x) / (overlayRect.y - overlayRect.x), (vObjectPos.y - overlayRect.z) / (overlayRect.w - overlayRect.z));
+    float shown = overlayParams.z * step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
     #ifdef CHUNK_FENCE_OVERLAY_ONLY
     shown = 1.0;
     #endif
     // ⚠️ Outside the branch: derivatives are undefined in non-uniform control flow.
     vec2 uvDx = dFdx(uv);
     vec2 uvDy = dFdy(uv);
-    if (shown > 0.0) {
+    if(shown > 0.0) {
       // ⭐ Coloured AFTER filtering, so a magnified view interpolates the data, not its colours;
       // averaged in colour over the pixel when minified, so the palette does not shimmer.
       overlayColor = rampSampleFiltered(overlayValues, uv, uvDx, uvDy, overlayPalette, 0.5, overlayParams.xy);
       overlayShown = clamp(shown, 0.0, 1.0);
       // lit
-      if (abs(overlayParams.w - 1.0) < 0.5) diffuseColor.rgb = mix(diffuseColor.rgb, overlayColor, overlayShown);
+      if(abs(overlayParams.w - 1.0) < 0.5)
+        diffuseColor.rgb = mix(diffuseColor.rgb, overlayColor, overlayShown);
     }
   }
   #endif
@@ -443,11 +365,32 @@ void main() {
   }
   #endif
 
+  #ifdef CHUNK_WATER_FOG
+  {
+    // As the water fogs its own seabed: dimmed by the water standing over the fragment,
+    // then seen through the water on the way to it.
+    float ha = dot(cameraPosition, waterFogUp) - waterFogLevel;
+    float hb = dot(vWorldPosition, waterFogUp) - waterFogLevel;
+    #ifdef CHUNK_WATER_FOG_BED
+    float bottom = hb;
+    #else
+    // Below the seabed, only the water above it.
+    float bottom = max(hb, -waterFogDepth);
+    #endif
+    // A camera in the water sees what lies above it through water all the way; one in
+    // the ground sees everything through rock.
+    float path = waterFogCamera < -0.5 ? 0.0 : waterFogPath(ha, hb, distance(cameraPosition, vWorldPosition), waterFogCamera > 0.5 ? min(bottom, ha) : bottom, 0.0);
+    path *= waterFogCutawayKeepAlong(WaterFogCutaway(waterFogCutawayAnchor, waterFogCutawayHeading, waterFogCutawayShape, waterFogCutawayWaveA, waterFogCutawayWaveB), cameraPosition, vWorldPosition, waterFogUp);
+    float light = waterFogLight(0.5 * (-bottom + max(-ha, 0.0)), waterFogDensity, waterFogDaylight);
+    outgoingLight = waterFog(outgoingLight * waterFogDim(-bottom, waterFogDensity), path, waterFogDensity, waterFogShallow, waterFogDeep, light * waterFogIntensity);
+  }
+  #endif
+
   #ifdef CHUNK_FENCE_OVERLAY
   // flat (0) or facing (2): the palette colour, untouched by the scene lights
-  if (overlayShown > 0.0 && abs(overlayParams.w - 1.0) >= 0.5) {
+  if(overlayShown > 0.0 && abs(overlayParams.w - 1.0) >= 0.5) {
     vec3 shaded = overlayColor;
-    if (overlayParams.w > 1.5) {
+    if(overlayParams.w > 1.5) {
       // As `WellboreSeismicSection`: darker as the face turns away. The geometric normal, so
       // procedural detail does not show through.
       float facing = max(dot(normalize(vNormal) * faceDirection, geometryViewDir), 0.0);
@@ -492,9 +435,7 @@ void main() {
     vec2 tile = floor(cell);
     float value = chunkTileValue(tile);
     // Green (full detail) through yellow to red (the coarsest level).
-    vec3 ramp = value < 0.5
-      ? mix(vec3(0.3, 0.85, 0.4), vec3(1.0, 0.85, 0.25), value * 2.0)
-      : mix(vec3(1.0, 0.85, 0.25), vec3(1.0, 0.25, 0.3), value * 2.0 - 1.0);
+    vec3 ramp = value < 0.5 ? mix(vec3(0.3, 0.85, 0.4), vec3(1.0, 0.85, 0.25), value * 2.0) : mix(vec3(1.0, 0.85, 0.25), vec3(1.0, 0.25, 0.3), value * 2.0 - 1.0);
     vec3 checker = mod(tile.x + tile.y, 2.0) < 0.5 ? vec3(1.0, 0.62, 0.25) : vec3(0.3, 0.65, 1.0);
     vec3 hue = tileByValue > 0.5 ? ramp : checker;
     outgoingLight = mix(outgoingLight, outgoingLight * hue * 1.5, 0.5);

@@ -24,9 +24,15 @@ import {
 } from 'three';
 import { attachOitVariants } from '../../rendering/oit-material';
 import { StackCapNormalMap, StackTiling, Vec2 } from '../../sdk';
+import {
+  applySurfaceDetail,
+  createSurfaceDetailUniforms,
+  SurfaceDetailUniforms,
+} from '../../sdk/materials/surface-detail';
+import { WaterFogUniforms } from '../../sdk/materials/water-fog';
 import { ChunkContactTexture } from './chunk-contacts';
 import { ChunkDepthMap } from './chunk-depth-map';
-import { ChunkDetail, resolveChunkDetail } from './chunk-detail';
+import { ChunkDetail } from './chunk-detail';
 import { attachChunkPicking } from './chunk-picking-material';
 import fragmentShader from './shaders/chunk-frag.glsl';
 import vertexShader from './shaders/chunk-vert.glsl';
@@ -346,6 +352,17 @@ export type ChunkMaterialParameters = {
    */
   waterTint?: ChunkWaterTintParameters;
   /**
+   * Fog this layer through a body of water it lies in, as that water fogs its own seabed
+   * (the `Sky`'s sea: see `useSkyWaterFog`). SHARED uniforms, like `sectionPlane`.
+   * ⚠️ Read at CONSTRUCTION. Not with `waterTint` as well, which would tint it twice.
+   */
+  waterFog?: WaterFogUniforms;
+  /**
+   * This layer IS the seabed the `waterFog` water stands on, so all the water over it
+   * fogs it. Otherwise only the water above the seabed's depth (`waterFog.depth`) does.
+   */
+  waterFogBed?: boolean;
+  /**
    * Cut this material with a plane: fragments where `dot(xyz, position) + w > 0`
    * are discarded, in the mesh's OWN object space.
    *
@@ -426,12 +443,7 @@ const shader = {
   uniforms: UniformsUtils.merge([
     UniformsUtils.clone(ShaderLib['phong'].uniforms),
     {
-      detailStrength: { value: 1 },
-      detailShade: { value: new Vector2() },
-      detailGranular: { value: new Vector4() },
-      detailGrain: { value: new Vector4() },
-      detailGrainB: { value: new Vector4() },
-      detailDunes: { value: new Vector4() },
+      ...createSurfaceDetailUniforms(),
       chunkAmbient: { value: new Vector2(1.35, 0.5) },
       chunkSaturation: { value: 1 },
       waterTintColor: { value: new Color() },
@@ -524,6 +536,27 @@ export class ChunkMaterial extends ShaderMaterial {
     this.applyDetail(parameters.detail, parameters.wall === true);
     this.applyWaterTint(parameters.waterTint);
 
+    if (parameters.waterFog) {
+      const fog = parameters.waterFog;
+      const defines = this.defines as Record<string, unknown>;
+      defines.CHUNK_WATER_FOG = '';
+      if (parameters.waterFogBed) defines.CHUNK_WATER_FOG_BED = '';
+      u.waterFogUp = fog.up;
+      u.waterFogLevel = fog.level;
+      u.waterFogDepth = fog.depth;
+      u.waterFogDensity = fog.density;
+      u.waterFogShallow = fog.shallowColor;
+      u.waterFogDeep = fog.deepColor;
+      u.waterFogDaylight = fog.daylight;
+      u.waterFogIntensity = fog.intensity;
+      u.waterFogCamera = fog.camera;
+      u.waterFogCutawayAnchor = fog.cutawayAnchor;
+      u.waterFogCutawayHeading = fog.cutawayHeading;
+      u.waterFogCutawayShape = fog.cutawayShape;
+      u.waterFogCutawayWaveA = fog.cutawayWaveA;
+      u.waterFogCutawayWaveB = fog.cutawayWaveB;
+    }
+
     // A cap's tiles drawn coarser than the full level may shade from its normal
     // map, bound per draw (see `bindChunkNormalMap`).
     if (!parameters.wall) {
@@ -597,60 +630,16 @@ export class ChunkMaterial extends ShaderMaterial {
 
   /** Write a preset into the uniforms and enable the shader's branches for it. */
   private applyDetail(detail: ChunkDetail | undefined, wall: boolean) {
-    const resolved = resolveChunkDetail(detail);
     const defines = this.defines as Record<string, unknown>;
-    delete defines.CHUNK_DETAIL;
-    delete defines.CHUNK_DETAIL_GRANULAR;
-    delete defines.CHUNK_DETAIL_GRAIN;
-    delete defines.CHUNK_DETAIL_DUNES;
-    delete defines.CHUNK_WALL;
-    if (!resolved) return;
-
-    const { params, strength, scale } = resolved;
-    const u = this.uniforms;
-    defines.CHUNK_DETAIL = '';
-    if (wall) defines.CHUNK_WALL = '';
-    u.detailStrength.value = strength;
-    (u.detailShade.value as Vector2).set(params.albedo, params.height);
-
-    // Slopes are frequency-independent in the shader, so scaling sizes keeps the look.
-    if (params.granular) {
-      const g = params.granular;
-      defines.CHUNK_DETAIL_GRANULAR = '';
-      (u.detailGranular.value as Vector4).set(
-        g.strength,
-        g.frequency / scale,
-        g.octaves,
-        g.anisotropy ?? 0,
-      );
-    }
-    if (params.grain) {
-      const g = params.grain;
-      defines.CHUNK_DETAIL_GRAIN = '';
-      (u.detailGrain.value as Vector4).set(
-        g.strength,
-        g.frequency / scale,
-        g.angle,
-        g.sharpness,
-      );
-      (u.detailGrainB.value as Vector4).set(
-        g.uniformity,
-        g.octaves,
-        wall ? (g.bedding ?? 0) : 0,
-        g.laminae ?? 1,
-      );
-    }
-    if (params.dunes) {
-      const d = params.dunes;
-      defines.CHUNK_DETAIL_DUNES = '';
-      const [dx, dz] = d.direction ?? [1, 0];
-      (u.detailDunes.value as Vector4).set(
-        d.strength,
-        d.wavelength * scale,
-        dx,
-        dz,
-      );
-    }
+    const on = applySurfaceDetail(
+      this.uniforms as unknown as SurfaceDetailUniforms,
+      defines,
+      detail,
+      wall,
+    );
+    // A wall carries `wallV`, which the bedding reads.
+    if (on && wall) defines.CHUNK_WALL = '';
+    else delete defines.CHUNK_WALL;
   }
 
   /** Write the water tint into the uniforms and enable the shader's branch for it. */

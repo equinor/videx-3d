@@ -128,7 +128,9 @@ used to patch through `makeOitCompatible`. Three reasons it is worth owning:
   AND the wall of the interval below it. OFF by default; the only caller dial is one
   overall `strength`. ⭐ The library ships the presets but never assigns one — which unit
   is sand is host knowledge, exactly like colour (§ "colour is config"). The names match
-  `SedimentClass` so a generated column maps straight through.
+  `SedimentClass` so a generated column maps straight through. The presets and the shader
+  (`shaderLib/surface-detail.glsl`) live in the sdk as `SurfaceDetail`, which the `Sky`'s
+  seabed uses too.
 - **World anchoring instead of a UV.** The pattern coordinate is the WORLD position
   projected onto the plane the face most nearly lies in. A cap carries a per-layer grid
   uv and a wall a metric one, so there is no shared UV space; and a texture would need a

@@ -18,6 +18,7 @@ import {
   SurfaceChunkMesh,
   StackTiling,
 } from '../../sdk';
+import { WaterFogUniforms } from '../../sdk/materials/water-fog';
 import {
   DEFAULT_OCEAN_DEEP_COLOR,
   DEFAULT_OCEAN_WATER_OPACITY,
@@ -120,6 +121,10 @@ export type ChunkMeshesProps = {
    * does a cut sea under `StackWater.keepBed`.
    */
   seaBed?: boolean;
+  /** a body of water the chunk lies in, fogging every material made here (see `ChunkStackProps.waterFog`) */
+  waterFog?: WaterFogUniforms | null;
+  /** whether layer 0 is the seabed that water stands on (see `ChunkMaterialParameters.waterFogBed`) */
+  waterFogBed?: boolean;
   /** whether the section takes the sea with it (see `ChunkSection.water`) */
   sectionWater?: boolean;
   /** whether the fence takes the sea with it (see `ChunkFence.water`) */
@@ -306,6 +311,8 @@ export const ChunkMeshes = ({
   water = null,
   bathymetry = null,
   seaBed = false,
+  waterFog = null,
+  waterFogBed = false,
   sectionWater = false,
   fenceWater = false,
   carrierMaterial,
@@ -381,6 +388,7 @@ export const ChunkMeshes = ({
         contacts?: ChunkContactTexture[];
         fenceOverlay?: ChunkFenceOverlayUniforms;
         overlayOnly?: boolean;
+        bed?: boolean;
       },
     ) => {
       // A unit kept whole opts out of both cuts; the floor opts out of each
@@ -396,6 +404,8 @@ export const ChunkMeshes = ({
         detail,
         wall,
         waterTint,
+        waterFog: waterFog ?? undefined,
+        waterFogBed: waterFogBed && options?.bed === true,
         contacts: options?.contacts,
         fenceOverlay: options?.fenceOverlay,
         fenceOverlayOnly: options?.overlayOnly,
@@ -468,6 +478,7 @@ export const ChunkMeshes = ({
           section: cutCapBySection(i),
           fence: cutCapByFence(i),
           contacts: layerContacts(i),
+          bed: i === 0,
         },
       ),
     );
@@ -621,6 +632,7 @@ export const ChunkMeshes = ({
                     section: cutCapBySection(layer),
                     fence: cutCapByFence(layer),
                     contacts: layerContacts(layer),
+                    bed: layer === 0,
                   },
                 ),
                 cut: sectionUniformInverse
@@ -633,6 +645,7 @@ export const ChunkMeshes = ({
                       {
                         inverse: true,
                         contacts: layerContacts(layer),
+                        bed: layer === 0,
                       },
                     )
                   : null,
@@ -659,6 +672,8 @@ export const ChunkMeshes = ({
     wireframe,
     water,
     bathymetry,
+    waterFog,
+    waterFogBed,
     seaBedBySection,
     seaBedByFence,
     carrierMaterial,

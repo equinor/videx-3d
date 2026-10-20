@@ -5,6 +5,7 @@ import {
   SurfaceChunkMetrics,
   SurfaceMeta,
 } from '../../sdk';
+import { WaterFogUniforms } from '../../sdk/materials/water-fog';
 import {
   ChunkBuildProgress,
   ChunkBuildState,
@@ -112,6 +113,8 @@ export type ChunkStackContextValue = {
    * tinted by the water standing over it rather than by its own depth.
    */
   bathymetry?: ChunkDepthMap | null;
+  /** a body of water the column lies in (see `ChunkStackProps.waterFog`); APPEARANCE only */
+  waterFog?: WaterFogUniforms | null;
   /**
    * Whether chunks are built ready for a cut: `ChunkStackProps.prepareCuts`, or a
    * declared section or fence. A PRIMITIVE, so a cut coming and going cannot

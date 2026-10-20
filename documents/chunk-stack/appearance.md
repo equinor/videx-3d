@@ -120,6 +120,8 @@ type ChunkMaterialParameters = {
   detail?: ChunkDetail;                // procedural relief
   wall?: boolean;                      // anchor detail to the unit, not to depth
   waterTint?: ChunkWaterTintParameters;
+  waterFog?: WaterFogUniforms;         // fog through a body of water: the Sky's sea (ChunkStackProps.waterFog)
+  waterFogBed?: boolean;               // this layer is the seabed: all the water over it fogs it
   sectionPlane?: IUniform<Vector4>;    // the shared plane uniform
   fence?: ChunkFenceUniforms;          // the shared fence uniforms
   contacts?: ChunkContactTexture[];
@@ -132,9 +134,15 @@ Every feature is `#define`-gated, and the defines are read **at construction** â
 changing one needs a **new material**, which is exactly what `ChunkMeshes`'
 appearance memo produces (a fresh identity also makes the OIT pass re-classify).
 
-`CHUNK_AMBIENT`, `CHUNK_DETAIL` (+ `CHUNK_DETAIL_GRANULAR`, `CHUNK_DETAIL_GRAIN`,
-`CHUNK_DETAIL_DUNES`), `CHUNK_WALL`, `CHUNK_WATER_TINT`, `CHUNK_BATHYMETRY`,
+`CHUNK_AMBIENT`, `SURFACE_DETAIL` (+ `SURFACE_DETAIL_GRANULAR`, `SURFACE_DETAIL_GRAIN`,
+`SURFACE_DETAIL_DUNES`, `SURFACE_DETAIL_BEDDING`; set by the sdk's `applySurfaceDetail`),
+`CHUNK_WALL`, `CHUNK_WATER_TINT`, `CHUNK_BATHYMETRY`, `CHUNK_WATER_FOG` (+ `CHUNK_WATER_FOG_BED`),
 `CHUNK_SECTION`, `CHUNK_FENCE`, `CHUNK_CONTACTS` (whose value is the count).
+
+`waterFog` shares its arithmetic with the `Sky`'s sea (`sdk/materials/shaderLib/water-fog.glsl`):
+the seabed cap is dimmed by the water over it and fogged along the view ray below the surface,
+exactly as the sky's own seabed is; anything below the seabed only by the water above the
+sea's depth (`WaterFogUniforms.depth`).
 
 ### Ambient, and why it is there
 

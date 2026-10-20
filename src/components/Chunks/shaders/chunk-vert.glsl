@@ -3,7 +3,7 @@
 
 varying vec3 vViewPosition;
 
-#ifdef CHUNK_DETAIL
+#if defined(SURFACE_DETAIL) || defined(CHUNK_WATER_FOG)
 // World position drives the procedural detail, so the pattern is anchored in the
 // scene rather than in each surface's own UV space (that is what removes the
 // per-surface repeat/scale problem), and so a cap and the wall below it carry the
@@ -11,7 +11,9 @@ varying vec3 vViewPosition;
 // deliberately: under a vertical exaggeration (`scale={[1,k,1]}` on the stack) the
 // pattern then stays square on screen instead of being stretched with the geometry.
 varying vec3 vWorldPosition;
+#endif
 
+#ifdef SURFACE_DETAIL
 #ifdef CHUNK_WALL
 // Unit-relative height, 1 on the wall's top edge and 0 on its base (see
 // `buildRingWalls`). Lets bedding follow the unit rather than absolute depth.
@@ -86,8 +88,10 @@ void main() {
   vCapNormalUv = (capNormalToUv * vec3(transformed.xz, 1.0)).xy;
   #endif
 
-  #ifdef CHUNK_DETAIL
+  #if defined(SURFACE_DETAIL) || defined(CHUNK_WATER_FOG)
   vWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;
+  #endif
+  #ifdef SURFACE_DETAIL
   #ifdef CHUNK_WALL
   vWallV = wallV;
   #endif

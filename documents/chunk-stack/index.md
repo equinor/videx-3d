@@ -88,7 +88,7 @@ Five ideas carry the whole design:
 | `chunk-outline-registry.ts` | Pure claim/outline bookkeeping (unit-tested). |
 | `seams.ts` | `resolveSeam` — who draws a horizon two chunks share. |
 | `chunk-material.ts` | `ChunkMaterial`, the Blinn-Phong shader material everything is drawn with. |
-| `chunk-detail.ts` | Procedural detail presets (`sand`, `shale`, …). |
+| `chunk-detail.ts` | The chunk names of the sdk's procedural detail presets (`sdk/materials/surface-detail.ts`). |
 | `inference-material.ts` | Overlay marking invented geometry. |
 | `chunk-picking-material.ts` | The pick-pass twin of a cut material, so what is cut away is not picked. |
 | `chunk-contacts.ts`, `chunk-depth-map.ts` | Fluid contacts as lines, and depth grids as textures. |

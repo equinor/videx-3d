@@ -1153,6 +1153,10 @@ export const Chunk = ({
     peel,
     water: stack.water,
     bathymetry: stack.bathymetry,
+    waterFog: stack.waterFog,
+    waterFogBed:
+      !!stableLayers[0]?.surface &&
+      stableLayers[0].surface.id === stack.column?.[0]?.id,
     seaBed:
       !!stack.water &&
       !!stableLayers[0]?.surface &&

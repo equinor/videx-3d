@@ -21,6 +21,7 @@ import {
   Vec3,
   WellboreFence,
 } from '../../sdk';
+import { WaterFogUniforms } from '../../sdk/materials/water-fog';
 import { OceanContactContext } from '../Ocean/ocean-contact';
 import { OceanSamplerContext } from '../Ocean/ocean-sampler';
 import { UtmAreaContext } from '../UtmArea';
@@ -152,6 +153,15 @@ export type ChunkStackProps = {
    * `cutSource` alone gives nothing to draw the sea over.
    */
   water?: StackWater;
+  /**
+   * Fog the column through a body of water that is not its own — the `Sky`'s sea, from
+   * `useSkyWaterFog()` — as that water fogs its own seabed, so the two meet without a
+   * seam. The column's first surface is taken as the seabed. APPEARANCE only: changing
+   * it rebuilds materials, never geometry.
+   *
+   * ⚠️ Not with `water`, whose bed tint is the same effect.
+   */
+  waterFog?: WaterFogUniforms | null;
   /**
    * Fog the view while the camera is INSIDE the sea or the block. See
    * {@link StackImmersion}.
@@ -299,6 +309,7 @@ export const ChunkStack = ({
   surfaces,
   carrier,
   water,
+  waterFog = null,
   immersion,
   contacts,
   prepareCuts = true,
@@ -926,6 +937,7 @@ export const ChunkStack = ({
       contacts: contactTextures,
       water: stableWater ?? null,
       bathymetry,
+      waterFog,
       prepareCuts: hasCut,
       section: sectionState,
       sectionUniform,
@@ -971,6 +983,7 @@ export const ChunkStack = ({
     contactTextures,
     stableWater,
     bathymetry,
+    waterFog,
     hasCut,
     sectionState,
     sectionUniform,
