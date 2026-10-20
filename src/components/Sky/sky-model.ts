@@ -228,7 +228,7 @@ export type SkyZoneLevels = {
   abyssLevel: number;
   /** the seabed's height under the camera where a stage occupant draws its own; else the sea's flat one */
   oceanGround?: number | null;
-  /** a cutaway is on: the camera is never in the water */
+  /** a cutaway is on: the scene is lit as from above the water, wherever the camera is */
   cutaway?: boolean;
   /** the sky is drawn */
   background: boolean;

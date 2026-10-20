@@ -82,7 +82,7 @@ void main() {
   #endif
   // The sky draws the band a pixel inside the stage's edge (see skyOceanStaged), and the
   // stage leaves it, and everything beyond, alone.
-  bool dry = !skyOceanWet();
+  bool dry = uSkyOceanWater < 0.5;
   float bedAltitude = altitude + uSkyOceanDepth;
   bool staged = skyOceanStaged(dir, cameraPosition, 1.0, false);
   #ifdef STAGE_RELIEF
@@ -99,15 +99,19 @@ void main() {
   #if defined(STAGE_SURFACE)
   // One wave for both sides: each call compiles a full copy of it.
   SkyOceanWave wave = skyOceanWave(p, texel, dist);
+  bool cutThrough = false;
   if(altitude > 0.0) {
     gl_FragColor = skyOceanCutawayMark(skyOceanSurfaceOf(wave, p, texel, dir, blend), world, rimAt);
   } else {
     vec3 underside = skyOceanUndersideOf(-wave.normal, dir, blend, -altitude);
-    float path = skyOceanWaterPath(cameraPosition, world);
+    float wall = skyOceanCutawayWall(cameraPosition, dir);
+    // The cutaway's cut takes the surface over it too: the background shows the sky there.
+    cutThrough = wall >= dist;
+    float path = max(skyOceanWaterPath(cameraPosition, world) - wall, 0.0);
     vec3 seen = skyOceanFog(underside, path, skyOceanLight(-0.5 * altitude));
     gl_FragColor = vec4(skyOceanThroughVoid(seen, cameraPosition, dir), 1.0);
   }
-  if(dry || skyDraws || underLid)
+  if(skyDraws || underLid || cutThrough)
     discard;
   #else
     #ifdef STAGE_RELIEF
@@ -137,7 +141,8 @@ void main() {
   if(fromAbove) {
     // Dry, the fog's density is 0.
     float light = skyOceanLight(0.5 * (bedDepth + max(-altitude, 0.0)));
-    float path = skyOceanPathBelowSurface(cameraPosition, world) * skyOceanCutawayWater(cutaway);
+    float below = skyOceanPathBelowSurface(cameraPosition, world);
+    float path = max(below - skyOceanCutawayWall(cameraPosition, dir), 0.0) * skyOceanCutawayWater(cutaway);
     color = skyOceanFog(color, path, light);
       #ifndef STAGE_SEE_THROUGH
         // Bitten through: the void, as the background draws it through the gap. Without its

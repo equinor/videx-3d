@@ -874,13 +874,6 @@ export const Sky = ({
       background,
     });
     zoneInView.current = zone;
-    // A cutaway keeps the camera out of the water: from in it, the sea is seen dry.
-    const viewDry =
-      material.ocean &&
-      material.oceanWater &&
-      zone === 'air' &&
-      height <= material.oceanLevel;
-    material.oceanViewDry = viewDry;
     // Inside an occupant's seabed above the sea's own, the stage's relief is seen from below.
     material.oceanBuried =
       material.ocean &&
@@ -894,16 +887,16 @@ export const Sky = ({
       .value as Vector3;
     const size = cutawaySize.current;
     const bedLevel = material.oceanLevel - material.oceanDepth;
-    const plane =
-      !material.oceanWater || viewDry
-        ? height > bedLevel
-          ? bedLevel
-          : null
-        : zone === 'air' && height > material.oceanLevel
+    // A cutaway lights the water as the air (see skyZone), so the plane goes by height.
+    const plane = !material.oceanWater
+      ? height > bedLevel
+        ? bedLevel
+        : null
+      : zone === 'subsurface'
+        ? null
+        : height > material.oceanLevel
           ? material.oceanLevel
-          : zone === 'water'
-            ? bedLevel
-            : null;
+          : bedLevel;
     const altitude = plane === null ? 0 : height - plane;
     if (!cutawayOptions || !material.ocean || plane === null || altitude <= 0) {
       cutawayShape.y = 0;

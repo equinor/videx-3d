@@ -77,3 +77,27 @@ float waterFogCutawayAlong(WaterFogCutaway cutaway, vec3 a, vec3 b, vec3 up) {
   vec3 point;
   return waterFogCutawayPoint(a, b, cutaway.anchor, up, point) ? waterFogCutaway(cutaway, point, up) : 0.0;
 }
+
+// How far a ray from `origin` inside the cutaway runs along `dir` before it crosses the wall
+// standing on its edge: 0 where `origin` lies beyond it or there is no cutaway, 1e30 where
+// the ray heads away from it.
+float waterFogCutawayWall(WaterFogCutaway cutaway, vec3 origin, vec3 dir, vec3 up) {
+  if(cutaway.shape.y <= 0.0 || waterFogCutawayEdge(cutaway, origin, up) >= 0.0)
+    return 0.0;
+  float along = dot(dir, cutaway.heading);
+  if(along <= 1e-6)
+    return 1e30;
+  // Between the reaches of the edge's waves, by bisection.
+  float ahead = dot(origin - cutaway.anchor, cutaway.heading);
+  float swing = abs(cutaway.waveA.x) + abs(cutaway.waveB.x);
+  float lo = max(cutaway.shape.x - swing - ahead, 0.0) / along;
+  float hi = (cutaway.shape.x + swing - ahead) / along;
+  for(int i = 0; i < 10; i++) {
+    float mid = 0.5 * (lo + hi);
+    if(waterFogCutawayEdge(cutaway, origin + dir * mid, up) < 0.0)
+      lo = mid;
+    else
+      hi = mid;
+  }
+  return hi;
+}
