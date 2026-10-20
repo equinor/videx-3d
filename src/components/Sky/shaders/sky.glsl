@@ -88,8 +88,8 @@ float skyStars(vec3 dir) {
   vec3 star = normalize(cell + 0.5 + jitter * 0.6) * cells;
   if(any(notEqual(floor(star), cell)))
     return 0.0;
-  // Mostly faint, a few brighter.
-  float shine = 0.15 + 0.85 * pow(skyHash(cell + 9.2), 3.0);
+  // As star counts go, N(brighter than L) ~ L^-1.5: mostly faint, a rare few at full.
+  float shine = min(0.08 * pow(max(skyHash(cell + 9.2), 1e-4), -2.0 / 3.0), 1.0);
   return shine * (1.0 - smoothstep(0.0, 1.2 * pixel, length(p - star)));
 }
 
@@ -103,8 +103,9 @@ vec3 skyNight(vec3 color, vec3 dir, float blend) {
   float aa = max(fwidth(angle), 1e-5);
   float disc = 1.0 - smoothstep(uSkyMoonSize - aa, uSkyMoonSize + aa, angle);
   float glow = uSkyMoonGlow * pow(max(cosMoon, 0.0), 200.0);
-  // The stars come out late, once it is dark.
-  float stars = uSkyStars.x * skyStars(dir) * uSkyNight * uSkyNight * uSkyNight;
+  // The stars come out late, once it is dark, and fade low down through more air.
+  float airmass = 1.0 / (max(dot(dir, uSkyUp), 0.0) + 0.05);
+  float stars = uSkyStars.x * skyStars(dir) * exp(-0.25 * (airmass - 1.0)) * uSkyNight * uSkyNight * uSkyNight;
   color += (uSkyMoonColor * glow * uSkyNight + vec3(stars * uSkySunDisc)) * above;
   return mix(color, uSkyMoonColor, disc * uSkyNight * above * uSkySunDisc);
 }
