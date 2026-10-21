@@ -185,4 +185,11 @@ describe('sky stage caps', () => {
       expect(normal.getY(v)).toBeGreaterThan(0);
     }
   });
+
+  it('keeps the normals a seabed is handed with', () => {
+    const normals = new Float32Array(seabed.positions.length);
+    for (let v = 0; v < normals.length; v += 3) normals[v + 2] = 1;
+    const geometry = createSkyStageSeabed({ ...seabed, normals });
+    expect(geometry.getAttribute('normal').array).toBe(normals);
+  });
 });

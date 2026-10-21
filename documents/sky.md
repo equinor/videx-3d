@@ -190,6 +190,8 @@ useEffect(() => {
   generate?.(meta.id, outline.coordinates, [origin.x, origin.z], maxError).then(setSeabed)
 }, [generate, meta, outline, origin, maxError])
 const [cut, setCut] = useState<CutUniforms | null>(null)
+// the column's own, once its build has finished: exact against its cut faces
+const [built, setBuilt] = useState<SeabedMesh | null>(null)
 const [stage, setStage] = useState<SkyBoxStageOccupantState>({
   seabed: false,
   seabedOpacity: 1,
@@ -199,10 +201,10 @@ const [stage, setStage] = useState<SkyBoxStageOccupantState>({
 <Sky ocean={{ level: 0, depth: 120 }}>
   <SkyBoxStage
     bounds={[minX, minZ, maxX, maxZ]}
-    occupant={{ seabed: seabed ?? undefined, cut: cut ?? undefined, onStage: setStage }}
+    occupant={{ seabed: built ?? seabed ?? undefined, cut: cut ?? undefined, onStage: setStage }}
   />
 </Sky>
-<ChunkStack outline={outline} water={water} drawWater={!stage.water} onCut={setCut} /* ... */>
+<ChunkStack outline={outline} seabed={meta.id} water={water} drawWater={!stage.water} onCut={setCut} onSeabed={setBuilt} /* ... */>
   <Chunk
     layers={[
       {
@@ -231,7 +233,14 @@ const [stage, setStage] = useState<SkyBoxStageOccupantState>({
   `createSeabedMesh` (sdk) makes one from a surface, clipped to the outline in the scene
   frame; the `skySeabed` generator (`generateSkySeabed`) runs it where the generators
   run, so the surface's grid never has to reach the main thread. The stage wraps its
-  arrays without copying them: hand a new one rather than changing it.
+  arrays without copying them: hand a new one rather than changing it. Its `normals`
+  are optional; without them the stage computes its own, facing up.
+  A `ChunkStack` hands out its own sea bed through `onSeabed` once its build has
+  finished (`stackCapSeabed` turns a built cap into one): the very triangles its walls
+  and section and fence faces were built against, so they meet with no seam. A
+  re-tessellation agrees with them only within its `maxError` — hairline gaps along a
+  cut — so hand the generated one while the column builds, and the column's own once
+  it is there, as above.
 - `cut` is the occupant's own cut, which the stage cuts the handed seabed with: a
   section `plane` and a `fence`, as the very uniform objects the occupant's materials
   read (`CutUniforms`), so it follows the cut every frame at no cost. A `ChunkStack`

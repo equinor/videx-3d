@@ -101,11 +101,16 @@ export type ChunkStackContextValue = {
    */
   contacts?: ChunkContactTexture[] | null;
   /**
-   * The sea over the whole column, when the caller declared one (see
-   * `ChunkStackProps.water`). Chunks read it for APPEARANCE only — the bed tint on
-   * their shallowest cap; the sea's own geometry belongs to the stack.
+   * The sea over the whole column, when the caller declared one and the column holds
+   * its sea bed (see `ChunkStackProps.water` / `seabed`). Chunks read it for
+   * APPEARANCE only — the bed tint on the sea bed's cap; the sea's own geometry
+   * belongs to the stack.
    */
   water?: StackWater | null;
+  /** the sea bed's surface id, when declared and the column holds it (see `ChunkStackProps.seabed`) */
+  seabed?: string | null;
+  /** whether the stack draws its sea (see `ChunkStackProps.drawWater`) */
+  drawWater?: boolean;
   /** 1 while the stack draws its sea, 0 while not: the bed tint follows it (see `ChunkStackProps.drawWater`) */
   waterTintShown?: IUniform<number>;
   /**

@@ -527,7 +527,8 @@ type ColumnBed = {
 /**
  * The column's sea bed as the sky's stage takes it, in the scene frame: the surface
  * clipped to the column's outline at the column's `maxError`, and its heights along
- * that outline. Built by a generator, so the grid never comes to this thread.
+ * that outline. Built by a generator, so the grid never comes to this thread. It sets
+ * the sky's depth, and stands in on the stage until the column's own cap is built.
  */
 const useColumnBed = (
   meta: SurfaceMeta | undefined,
@@ -825,6 +826,8 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
   const [stage, setStage] = useState<SkyBoxStageOccupantState>(OFF_STAGE);
   const bedOnStage = drawsSeabed && stage.seabed;
   const [stackCut, setStackCut] = useState<CutUniforms | null>(null);
+  // The column's own sea bed cap, exact against its cut faces and walls.
+  const [columnSeabed, setColumnSeabed] = useState<SeabedMesh | null>(null);
 
   // ⭐ COLOUR IS THE HOST'S JOB. The library takes array order as stratigraphic
   // order and never assigns a colour; here the story maps each surface's name to
@@ -1361,6 +1364,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
           outline={outline}
           surfaces={column}
           water={water}
+          seabed={seabedMeta?.id}
           drawWater={!stage.water}
           immersion={immersion}
           section={section}
@@ -1368,6 +1372,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
           onFence={onFence}
           onFenceSide={setFenceSideInfo}
           onCut={setStackCut}
+          onSeabed={setColumnSeabed}
           onProgress={onProgress}
           resolve={resolve}
           rimSpacing={props.rimSpacing}
@@ -1485,7 +1490,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
               outlineMax[1] + margin,
             ]}
             occupant={{
-              seabed: drawsSeabed ? bed.mesh : undefined,
+              seabed: drawsSeabed ? (columnSeabed ?? bed.mesh) : undefined,
               // Cut with the column, unless the column keeps its sea bed whole.
               cut:
                 layers[0]?.keepCap || layers[0]?.section === false

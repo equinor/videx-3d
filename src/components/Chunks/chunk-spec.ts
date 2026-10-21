@@ -188,7 +188,7 @@ export function stackColumnSpec(
  * Build the serializable {@link StackWaterSpec} for the `stackWater` generator.
  *
  * The sea is the COLUMN's, so it is built from the same column spec the chunks
- * use: its bed is that column's shallowest surface, on the same channels.
+ * use: its bed is the column's declared sea bed, on the same channels.
  */
 export function buildStackWaterSpec(
   water: StackWater,
@@ -196,6 +196,8 @@ export function buildStackWaterSpec(
   outlinePolygon: PlanarPolygonGeometry,
   options: {
     surfaces: SurfaceMeta[];
+    /** the sea bed's surface id, one of `surfaces` */
+    bed: string;
     envelope: PlanarPolygonGeometry;
     carrier?: ChunkCarrier;
     rimSpacing?: number;
@@ -224,6 +226,7 @@ export function buildStackWaterSpec(
       utmToArea,
       options.carrier,
     ),
+    bed: options.bed,
     resolve: options.resolve,
     section: options.section,
   };

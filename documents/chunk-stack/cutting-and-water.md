@@ -267,10 +267,11 @@ solid material.
 
 ⭐ **The sea follows the same rule, as the unit above the sea bed.** When the live
 cut leaves the sea whole (`ChunkSection.water` / `ChunkFence.water` false), the
-bed cap (the column's shallowest surface, the same one the sea ends against) is
-kept whole as the sea's floor, and no water face is drawn along the cut. When
-the cut takes the sea, the water face closes it and the bed cap is cut by the
-usual rule. The decision is made separately for the section and for the fence
+bed cap (the declared `seabed`, the same one the sea ends against) is kept whole as
+the sea's floor, and no water face is drawn along the cut — while the stack draws
+its sea (`drawWater`); a sea it hides keeps nothing, and the bed is cut like any
+cap. When the cut takes the sea, the water face closes it and the bed cap is cut by
+the usual rule. The decision is made separately for the section and for the fence
 (`capCut(layers, i, seaKept)` in `ChunkMeshes`), so switching between the two cuts
 needs nothing live.
 
@@ -531,7 +532,7 @@ stretched over the requested depths.
 ## The sea
 
 ```tsx
-<ChunkStack outline={fieldPolygon} water={{ depth: 0, windSpeed: 8, opacity: 0.9 }}>
+<ChunkStack outline={fieldPolygon} surfaces={column} seabed={seabedId} water={{ depth: 0, windSpeed: 8, opacity: 0.9 }}>
 ```
 
 > ⭐ **The sea belongs to the COLUMN, not to a chunk.** A lid covers its whole
@@ -546,9 +547,11 @@ stretched over the requested depths.
 The `stackWater` generator builds the sea as a stack of exactly **two boundaries**
 — `[level, bed]` — over the stack outline:
 
-- the **bed** is the column's shallowest surface, pulled from `getStackContext`
+- the **bed** is the surface `ChunkStack.seabed` names, pulled from `getStackContext`
   (a cache **hit**, using the same key the chunks derive), so the water body meets
-  the bed the chunks draw rather than a second opinion about where it is;
+  the bed the chunks draw rather than a second opinion about where it is. It is
+  declared, never inferred: with no `seabed`, or one no chunk draws (a column cut
+  from deeper down), there is no sea, and a warning says so;
 - `caps: [true, false]` — the bed is drawn by whichever chunk it is the lid of;
 - the level layer contributes **no refinement candidates** (a plane is exact
   everywhere) and the bed reuses the column's candidates.

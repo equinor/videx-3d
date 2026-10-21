@@ -288,6 +288,8 @@ export type SeabedMesh = {
   positions: Float32Array;
   /** triangle indices */
   indices: Uint32Array | Uint16Array;
+  /** unit vertex normals, xyz interleaved; omitted, the stage computes them, facing up */
+  normals?: Float32Array;
 };
 
 /**

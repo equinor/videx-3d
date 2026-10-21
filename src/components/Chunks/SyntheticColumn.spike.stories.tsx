@@ -780,6 +780,7 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
           outline={outline}
           surfaces={column}
           water={water}
+          seabed={units[0]?.id}
           immersion={immersion}
           contacts={contacts}
           resolve={resolve}

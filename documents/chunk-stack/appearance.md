@@ -60,7 +60,8 @@ culling are unchanged — but does not draw it, because something else does: typ
 `SkyBoxStage` the sea bed was handed to (see [sky.md](../sky.md#skyboxstage)), which
 draws it as the sea's seabed, under its water. ⚠️ Culling still counts the cap as
 covering what is under it, so whatever draws it must draw it opaque, and whole or cut
-exactly as the stack cuts it: the stack hands its cut out through `onCut` for that.
+exactly as the stack cuts it: the stack hands its cut out through `onCut` for that, and
+the sea bed's cap itself through `onSeabed`, so the two meet the cut faces exactly.
 Toggling it makes new materials (it is part of the appearance key), not new geometry.
 
 ---

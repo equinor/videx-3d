@@ -11,6 +11,7 @@ import { buildEdgeOpposites, traceBoundaryRings } from './mesh-boundary';
 import { Coordinates2D, PlanarPolygonGeometry } from './planar-geometry';
 import { createPolygonCap } from './polygon-cap';
 import { ringSignedArea, ringsToPolygonCoordinates } from './polygon-outline';
+import type { SeabedMesh } from './surface-clip';
 import {
   buildStackSectionIndex,
   packTriangleMask,
@@ -281,6 +282,52 @@ function stackCapGeometry(
 
 /** A level with no patch: copied per cap when handed on, so sharing it is safe. */
 const NO_TRIANGLES = new Uint32Array(0);
+
+/**
+ * A built cap as a {@link SeabedMesh}, in its own frame: positions from its `xz` and
+ * `y`, its index and normals copied. Exactly the triangles the stack's walls and cut
+ * faces were built against, so whatever draws it instead meets them with no seam.
+ *
+ * @returns the mesh, or `null` for a geometry with no index or no positions
+ *
+ * @group Geometries
+ */
+export function stackCapSeabed(geometry: BufferGeometry): SeabedMesh | null {
+  const index = geometry.getIndex();
+  if (!index) return null;
+  const xz = geometry.getAttribute('xz') as BufferAttribute | undefined;
+  const y = geometry.getAttribute('y') as BufferAttribute | undefined;
+  const position = geometry.getAttribute('position') as
+    | BufferAttribute
+    | undefined;
+  let positions: Float32Array;
+  if (xz && y) {
+    positions = new Float32Array(y.count * 3);
+    for (let v = 0; v < y.count; v++) {
+      positions[3 * v] = xz.getX(v);
+      positions[3 * v + 1] = y.getX(v);
+      positions[3 * v + 2] = xz.getY(v);
+    }
+  } else if (position) {
+    positions = Float32Array.from(position.array as ArrayLike<number>);
+  } else return null;
+  const normal = geometry.getAttribute('normal') as BufferAttribute | undefined;
+  let normals: Float32Array | undefined;
+  if (normal) {
+    // getX/Y/Z undo the Int16 normalisation a cap's normals are stored with.
+    normals = new Float32Array(normal.count * 3);
+    for (let v = 0; v < normal.count; v++) {
+      normals[3 * v] = normal.getX(v);
+      normals[3 * v + 1] = normal.getY(v);
+      normals[3 * v + 2] = normal.getZ(v);
+    }
+  }
+  return {
+    positions,
+    indices: (index.array as Uint32Array | Uint16Array).slice(),
+    normals,
+  };
+}
 
 /**
  * Where each tile's triangles start in `kept`, an in-order subset of `shared`

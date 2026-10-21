@@ -26,10 +26,11 @@ import { getStackCandidates, getStackContext } from './surface-stack-context';
  * flattened onto it, and the body simply runs out of thickness where it does —
  * which is the shoreline, drawn by the ordinary interval machinery.
  *
- * ⭐⭐ The bed is not resampled here: it is the COLUMN's shallowest surface, taken
- * from the very channels every chunk is built on (`getStackContext`, cache hit),
- * sealed and ordered exactly as they draw it. A second opinion about where the sea
- * bed is would show up as a gap along the whole shoreline.
+ * ⭐⭐ The bed is not resampled here: it is the column's declared sea bed
+ * (`spec.bed`), taken from the very channels every chunk is built on
+ * (`getStackContext`, cache hit), sealed and ordered exactly as they draw it. A
+ * second opinion about where the sea bed is would show up as a gap along the
+ * whole shoreline.
  *
  * ⚠️ The two still meet on DIFFERENT tessellations — this one is refined for the
  * water, the chunk's for its own stack — so they agree only within `maxError`, the
@@ -44,10 +45,9 @@ export async function generateStackWater(
   const context = await getStackContext(this, spec.stack, spec.resolve);
   if (!context) return null;
 
-  // The sea bed is the shallowest surface of the column, by definition: a flag
-  // saying so could never point anywhere else.
-  const bed = context.expansion[0]?.[0];
-  if (bed === undefined) return null;
+  const at = context.index.get(spec.bed);
+  const bed = at === undefined ? undefined : context.expansion[at]?.[0];
+  if (at === undefined || bed === undefined) return null;
 
   const outline = new PlanarPolygonGeometry(
     spec.polygon.coordinates,
@@ -78,7 +78,7 @@ export async function generateStackWater(
 
   const build = buildSurfaceStack(
     reference,
-    [{ depth: spec.depth }, context.layers[0]],
+    [{ depth: spec.depth }, context.layers[at]],
     {
       polygon: densified,
       maxError,

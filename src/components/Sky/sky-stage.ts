@@ -181,12 +181,14 @@ export function skyStageRim(seabed: SeabedMesh): SkyStageRim {
 }
 
 /**
- * An occupant's seabed as a stage draws it: the arrays wrapped, not copied, with normals
- * of its own, facing up. Disposing it leaves the arrays to their owner.
+ * An occupant's seabed as a stage draws it: the arrays wrapped, not copied, with its own
+ * normals, or normals computed facing up. Disposing it leaves the arrays to their owner.
  */
 export function createSkyStageSeabed(seabed: SeabedMesh): BufferGeometry {
   const geometry = seabedGeometry(seabed);
-  computeUpwardNormals(geometry);
+  if (seabed.normals)
+    geometry.setAttribute('normal', new BufferAttribute(seabed.normals, 3));
+  else computeUpwardNormals(geometry);
   return geometry;
 }
 

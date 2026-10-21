@@ -85,7 +85,7 @@ A subsurface block can carry its own sea instead of an `<Ocean>` of its own:
 declare `water` on the `ChunkStack`.
 
 ```tsx
-<ChunkStack outline={field} surfaces={column} water={{ depth: 0, windSpeed: 10 }}>
+<ChunkStack outline={field} surfaces={column} seabed={seabedId} water={{ depth: 0, windSpeed: 10 }}>
   <Chunk layers={[{ surface: seabed, material: '#c2b280' }, /* ... */]} />
   <Tanker position={[x, 0, z]} heading={heading} />
 </ChunkStack>
@@ -95,8 +95,9 @@ declare `water` on the `ChunkStack`.
 the column — every chunk cut from it stands under the same water — and a lid
 covers its whole footprint by design, so two chunks each drawing part of it would
 leave two coplanar lids wherever their footprints overlap. The stack draws it
-once, as a two-boundary stack of its own: the level, and the column's shallowest
-surface as its bed.
+once, as a two-boundary stack of its own: the level, and the column's sea bed as
+its bed — the surface `seabed` names, which the stack never guesses: without it, or
+with a column that does not hold it, there is no sea.
 
 The sea state props are the same ones the component takes (`OceanWaterProps` /
 `OceanBodyProps`), and the stack supplies both materials: the animated surface for

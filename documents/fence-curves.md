@@ -567,7 +567,7 @@ hand, the water's cut face uses the same builders the chunks use: `buildFenceRib
 `sectionStackInterval` for a plane.
 
 ⭐ Why it lines up: the face is swept over the sea's own channels, whose bed IS the column's
-shallowest surface, along the same curve the block's face follows. There is no second opinion
+declared sea bed, along the same curve the block's face follows. There is no second opinion
 about where the sea bed is to leave a gap along the seam.
 
 ⭐ It is drawn with a third `OceanVolumeMaterial` carrying no cut of its own. The face lies exactly

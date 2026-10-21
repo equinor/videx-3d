@@ -75,8 +75,10 @@ export type SkyBoxStageOccupant = {
    * shaded, lit and fogged as the sky's, at its seabed opacity, eased into the sea's seabed
    * around it (see {@link SkyBoxStageProps.seabedFalloff}), and never cut by a cutaway,
    * which only takes the water over it. Its rim is the occupant's outline. Build it with
-   * `createSeabedMesh`, or the `skySeabed` generator. Without one, the sea's flat seabed
-   * lies under the occupant too.
+   * `createSeabedMesh`, or the `skySeabed` generator; a `ChunkStack` hands out its own
+   * through `onSeabed` once built — the only one that meets its cut faces with no seam,
+   * as a re-tessellation agrees with them only within its `maxError`. Without one, the
+   * sea's flat seabed lies under the occupant too.
    *
    * ⚠️ At a seabed opacity of 1 it is drawn opaque and whole — or cut as `cut` cuts it — so
    * the occupant may cull whatever lies under it. Stop drawing your own while the stage

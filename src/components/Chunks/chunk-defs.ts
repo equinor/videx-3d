@@ -69,11 +69,13 @@ export type StackWaterSpec = {
   rimSpacing?: number;
   maxError?: number;
   /**
-   * The column the sea's bed comes from — its shallowest surface, taken from the
-   * very channels the chunks are built on, so the water body meets the bed they
-   * draw rather than a second opinion about where it is.
+   * The column the sea's bed comes from, taken from the very channels the chunks
+   * are built on, so the water body meets the bed they draw rather than a second
+   * opinion about where it is.
    */
   stack: SurfaceChunkStackSpec;
+  /** the sea bed's surface id, one of the column's layers (see `ChunkStackProps.seabed`) */
+  bed: string;
   resolve?: ChunkResolveOptions;
   /**
    * Also return the channels a cut FACE is built from, so a section or a fence can

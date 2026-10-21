@@ -1138,6 +1138,8 @@ export const Chunk = ({
   // lid of (see `resolveSeam`), so every chunk draws with its OWN appearance.
   if (!chunk && !previewed) return <>{children}</>;
 
+  const holdsSeabed =
+    !!stack.seabed && stableLayers[0]?.surface?.id === stack.seabed;
   const meshProps: Omit<ChunkMeshesProps, 'chunk'> = {
     layers: appearanceLayers,
     surfaceOpacity,
@@ -1152,13 +1154,11 @@ export const Chunk = ({
       | undefined,
     cullOffscreen,
     peel,
-    water: stack.water,
+    water: holdsSeabed ? stack.water : null,
     waterTintShown: stack.waterTintShown,
     bathymetry: stack.bathymetry,
-    seaBed:
-      !!stack.water &&
-      !!stableLayers[0]?.surface &&
-      stableLayers[0].surface.id === stack.column?.[0]?.id,
+    // A sea kept whole keeps its bed only while the stack draws that sea.
+    seaBed: holdsSeabed && !!stack.water && stack.drawWater !== false,
     sectionWater: stack.sectionWater,
     fenceWater: stack.fenceWater,
     carrierMaterial: stack.carrierMaterial,

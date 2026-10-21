@@ -17,6 +17,8 @@ import {
   CutUniforms,
   PlanarPolygonGeometry,
   readCameraTarget,
+  SeabedMesh,
+  stackCapSeabed,
   StackSectionSource,
   SurfaceChunkMetrics,
   SurfaceMeta,
@@ -152,13 +154,22 @@ export type ChunkStackProps = {
    * It also provides the wave sampler and the contact-foam registry to everything
    * inside it, so a floating child (a vessel, a buoy) heaves with the swell and
    * spreads foam exactly as it would inside an `<Ocean>`. Needs an `outline` — a
-   * `cutSource` alone gives nothing to draw the sea over.
+   * `cutSource` alone gives nothing to draw the sea over — and a `seabed` the column
+   * holds: without one there is no sea (and a warning).
    */
   water?: StackWater;
   /**
+   * The id of the surface in `surfaces` that is the sea bed. Declared, never
+   * inferred: the column holds a sea bed only while a chunk draws this surface, and
+   * only then is there a sea (`water`), a bed tint, a cap kept whole under a kept
+   * sea, and an `onSeabed`. A column cut from deeper down holds none.
+   */
+  seabed?: string | null;
+  /**
    * Draw the `water`. Default true. `false` keeps the sea built but hides it, the bed
    * tint and the immersion fog in it with it — while a `SkyBoxStage` owns the water over
-   * the column, say (see its occupant's `onStage`). Switching it rebuilds nothing.
+   * the column, say (see its occupant's `onStage`). A hidden sea keeps no bed whole: a
+   * cut takes the sea bed's cap like any other. Switching it rebuilds no geometry.
    */
   drawWater?: boolean;
   /**
@@ -241,6 +252,14 @@ export type ChunkStackProps = {
    */
   onCut?: (cut: CutUniforms | null) => void;
   /**
+   * Called with the column's sea bed (`seabed`) as the chunk that draws it built it,
+   * once that build has finished: exactly the triangles the stack's walls and cut
+   * faces were built against, so a `SkyBoxStage` occupant's seabed handed this meets
+   * them with no seam. `null` while no chunk has it built — through a rebuild too —
+   * while the column holds no sea bed, and on unmount.
+   */
+  onSeabed?: (seabed: SeabedMesh | null) => void;
+  /**
    * How the column is made monotone before it is built, and what is dropped where
    * a unit is not present. Chunks inherit this unless they declare their own.
    *
@@ -315,6 +334,7 @@ export const ChunkStack = ({
   surfaces,
   carrier,
   water,
+  seabed,
   drawWater = true,
   immersion,
   contacts,
@@ -324,6 +344,7 @@ export const ChunkStack = ({
   onFence,
   onFenceSide,
   onCut,
+  onSeabed,
   resolve,
   rimSpacing,
   maxError,
@@ -759,12 +780,52 @@ export const ChunkStack = ({
     [surfaces, claimed],
   );
 
-  // The bed the sea stands on is the column's shallowest surface — the same one
-  // `stackWater` ends against. Its grid drives the bed tint per fragment, and it
-  // is the sea surface's only depth input: without it the water shader uses the
-  // view angle as a stand-in and cannot tell a shoal from open sea.
+  // The sea bed is declared, never inferred: the column holds it only while a chunk
+  // draws it, and there is no sea without it to end on.
+  const seabedMeta = useMemo(
+    () => (seabed != null ? column?.find(m => m.id === seabed) : undefined),
+    [column, seabed],
+  );
+  const seaWater = seabedMeta ? stableWater : undefined;
+  const missingBedWarned = useRef<string | null>(null);
+  useEffect(() => {
+    if (!stableWater || !column?.length || seabedMeta) return;
+    const key = seabed ?? '';
+    if (missingBedWarned.current === key) return;
+    missingBedWarned.current = key;
+    console.warn(
+      seabed == null
+        ? 'ChunkStack: `water` needs a `seabed` — no sea is drawn.'
+        : `ChunkStack: no chunk draws the sea bed '${seabed}' — no sea is drawn.`,
+    );
+  }, [stableWater, column, seabedMeta, seabed]);
+  const seabedId = seabedMeta?.id;
+  // Its cap as drawn, for `onSeabed`: published by a chunk once it has finished, and
+  // withdrawn when it rebuilds.
+  const seabedCap = useMemo(() => {
+    if (!seabedId) return null;
+    for (const entries of drawn.current.values()) {
+      const entry = entries.find(e => e.id === seabedId);
+      if (entry) return entry.geometry;
+    }
+    return null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- a new version is a new set of caps
+  }, [drawnVersion, seabedId]);
+  const announceSeabed = useRef(onSeabed);
+  announceSeabed.current = onSeabed;
+  const handsSeabed = !!onSeabed;
+  useEffect(() => {
+    if (!handsSeabed) return;
+    announceSeabed.current?.(seabedCap ? stackCapSeabed(seabedCap) : null);
+  }, [seabedCap, handsSeabed]);
+  useEffect(() => () => announceSeabed.current?.(null), []);
+
+  // The bed the sea stands on — the same one `stackWater` ends against. Its grid
+  // drives the bed tint per fragment, and it is the sea surface's only depth input:
+  // without it the water shader uses the view angle as a stand-in and cannot tell a
+  // shoal from open sea.
   const bathymetry = useStackBathymetry(
-    stableWater && column?.length ? column[0] : undefined,
+    seaWater ? seabedMeta : undefined,
     utm?.utmToArea,
   );
 
@@ -810,9 +871,9 @@ export const ChunkStack = ({
       );
     }
     // A fence that cuts the sea follows the well up through it.
-    if (fenceWater && stableWater) top = Math.min(top, stableWater.depth ?? 0);
+    if (fenceWater && seaWater) top = Math.min(top, seaWater.depth ?? 0);
     return { low: -bottom, high: -top };
-  }, [cutRange, stableCarrier, column, fenceWater, stableWater]);
+  }, [cutRange, stableCarrier, column, fenceWater, seaWater]);
 
   const {
     state: fenceState,
@@ -877,7 +938,7 @@ export const ChunkStack = ({
   const hasCut = prepareCuts || !!section || !!fence;
 
   const sea = useStackWater(
-    stableWater,
+    seaWater,
     false,
     section && section.water === true ? sectionUniform : undefined,
     bathymetry,
@@ -954,7 +1015,9 @@ export const ChunkStack = ({
       carrierMaterial: carrier?.material,
       carrierDetail,
       contacts: contactTextures,
-      water: stableWater ?? null,
+      water: seaWater ?? null,
+      seabed: seabedId ?? null,
+      drawWater,
       waterTintShown,
       bathymetry,
       prepareCuts: hasCut,
@@ -1000,7 +1063,9 @@ export const ChunkStack = ({
     carrier?.material,
     carrierDetail,
     contactTextures,
-    stableWater,
+    seaWater,
+    seabedId,
+    drawWater,
     waterTintShown,
     bathymetry,
     hasCut,
@@ -1044,13 +1109,14 @@ export const ChunkStack = ({
   const waterGenerator = useGenerator<StackWaterResponse>(stackWater);
 
   const waterSpec = useMemo(() => {
-    // Needs a footprint to be drawn over, and a column to end against.
-    if (!stableWater || !outline || !utm) return null;
+    // Needs a footprint to be drawn over, and a bed in the column to end against.
+    if (!seaWater || !seabedId || !outline || !utm) return null;
     if (!column || column.length === 0) return null;
     const envelope = value.envelope;
     if (!envelope) return null;
-    return buildStackWaterSpec(stableWater, utm.utmToArea, outline, {
+    return buildStackWaterSpec(seaWater, utm.utmToArea, outline, {
       surfaces: column,
+      bed: seabedId,
       envelope,
       carrier: stableCarrier,
       rimSpacing,
@@ -1059,7 +1125,8 @@ export const ChunkStack = ({
       section: hasCut,
     });
   }, [
-    stableWater,
+    seaWater,
+    seabedId,
     outline,
     utm,
     column,
@@ -1149,7 +1216,7 @@ export const ChunkStack = ({
     if (stableCarrier?.depth !== undefined)
       bottom = Math.min(bottom, -stableCarrier.depth);
     else if (stableCarrier?.below !== undefined) bottom -= stableCarrier.below;
-    if (stableWater) top = Math.max(top, -(stableWater.depth ?? 0));
+    if (seaWater) top = Math.max(top, -(seaWater.depth ?? 0));
     if (bottom >= top) bottom = top - 1;
     return {
       min: [min[0], bottom, min[1]] as Vec3,
@@ -1161,7 +1228,7 @@ export const ChunkStack = ({
     outline,
     column,
     stableCarrier,
-    stableWater,
+    seaWater,
   ]);
 
   return (
@@ -1176,7 +1243,7 @@ export const ChunkStack = ({
                 {immersion && (
                   <StackImmersionFog
                     immersion={immersion}
-                    water={drawWater ? (stableWater ?? null) : null}
+                    water={drawWater ? (seaWater ?? null) : null}
                     sampler={sampler}
                     base={blockBase}
                     section={sectionState}

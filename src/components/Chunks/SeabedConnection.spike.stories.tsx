@@ -362,6 +362,7 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
           outline={field}
           surfaces={column}
           water={water}
+          seabed={seabed.id}
           resolve={resolve}
           onProgress={onProgress}
           carrier={

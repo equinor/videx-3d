@@ -774,7 +774,9 @@ it, and being the FIRST layer there is then nothing left in the stack to order a
 all. The bed keeps its own shape; an island rises through the plane; the body runs
 out of thickness where it does.
 
-⭐⭐ The bed is **the column's shallowest surface**, taken from the very channels
+⭐⭐ The bed is **the column's declared sea bed** (`ChunkStack.seabed`; it was once
+the shallowest surface, which a column cut from deeper down got wrong), taken from
+the very channels
 every chunk is built on (`getStackContext`, a cache hit) — sealed and ordered
 exactly as they draw it. A second opinion about where the sea bed is would show up
 as a gap along the whole shoreline. It is not capped here: that horizon is drawn
@@ -872,7 +874,7 @@ the water shaders have no depth input of any kind.
   grid rectangle onto the sea as a crisp, view-dependent imprint. An unmapped bed
   now reads as DEEP water (`shoal = mix(1.0, …, bathy)`), and the stand-in is used
   only in the variant compiled without a map at all — which is what it was for.
-- ⚠️ The surface is the COLUMN's shallowest (`column[0]`), the same one the sea's
+- ⚠️ The surface is the declared sea bed (`ChunkStack.seabed`), the same one the sea's
   own geometry ends against — a second opinion about where the bed is would show
   along the whole shoreline. It is loaded in the appearance layer
   (`useStackBathymetry`) and published on `ChunkStackContextValue.bathymetry`, so

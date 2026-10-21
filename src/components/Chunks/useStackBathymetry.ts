@@ -13,7 +13,7 @@ import {
  * ⭐ Appearance layer, like `useChunkContacts`: the bathymetry never enters a
  * build spec, so it costs one texture upload and no geometry rebuild.
  *
- * ⚠️ The surface is the COLUMN's shallowest, i.e. the same one the sea's own
+ * ⚠️ The surface is the stack's declared sea bed, i.e. the same one the sea's own
  * geometry ends against — a second opinion about where the bed is would show as a
  * mismatch along the whole shoreline.
  */

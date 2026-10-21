@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BufferAttribute, BufferGeometry } from 'three';
 import { computeUpwardNormals } from '../src/sdk/geometries/geometry-attributes';
 import { buildStackCapArrays } from '../src/sdk/geometries/stack-cap-arrays';
+import { stackCapSeabed } from '../src/sdk/geometries/surface-stack-geometry';
 
 // A wavy n x n grid TIN. `up` winds it so its normals face +Y.
 function grid(n: number, up: boolean) {
@@ -159,5 +160,56 @@ describe('buildStackCapArrays', () => {
       expect(arrays.normal).toBe(normals);
       expect(Array.from(arrays.index!)).toEqual(Array.from(computed.index!));
     }
+  });
+});
+
+describe('stackCapSeabed', () => {
+  // A cap as the stack builds it: shared `xz`, its own `y`, Int16 normals, no position.
+  function cap() {
+    const { xz, y, index } = grid(5, true);
+    const arrays = buildStackCapArrays({
+      positionsXZ: xz,
+      y,
+      shared: new Uint32Array(0),
+      own: index,
+      peel: null,
+    });
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('xz', new BufferAttribute(xz, 2));
+    geometry.setAttribute('y', new BufferAttribute(y, 1));
+    geometry.setAttribute(
+      'normal',
+      new BufferAttribute(arrays.normal!, 3, true),
+    );
+    geometry.setIndex(new BufferAttribute(arrays.index!, 1));
+    return { geometry, xz, y, arrays };
+  }
+
+  it('assembles positions from xz and y, and copies the index', () => {
+    const { geometry, xz, y, arrays } = cap();
+    const mesh = stackCapSeabed(geometry)!;
+    for (let v = 0; v < y.length; v++) {
+      expect(mesh.positions[3 * v]).toBe(xz[2 * v]);
+      expect(mesh.positions[3 * v + 1]).toBe(y[v]);
+      expect(mesh.positions[3 * v + 2]).toBe(xz[2 * v + 1]);
+    }
+    expect(Array.from(mesh.indices)).toEqual(Array.from(arrays.index!));
+    expect(mesh.indices).not.toBe(arrays.index);
+  });
+
+  it('decodes its Int16 normals to unit floats', () => {
+    const { geometry, arrays } = cap();
+    const { normals } = stackCapSeabed(geometry)!;
+    expect(normals).toHaveLength(arrays.normal!.length);
+    for (let k = 0; k < normals!.length; k++) {
+      expect(normals![k]).toBeCloseTo(arrays.normal![k] / 32767, 6);
+    }
+  });
+
+  it('needs an index and positions', () => {
+    const { geometry } = cap();
+    geometry.setIndex(null);
+    expect(stackCapSeabed(geometry)).toBeNull();
+    expect(stackCapSeabed(new BufferGeometry())).toBeNull();
   });
 });
