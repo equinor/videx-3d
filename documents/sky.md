@@ -181,8 +181,20 @@ at least every `capture.maxWait` (default 1000 ms).
 
 `subsurface` is the light where the sky's own means nothing: below the seabed, and
 wherever the sky is not drawn (`background: false`). By default it is a dark backdrop
-with soft light panels above and below the horizon (see `SkySubsurface`). Pass an
-equirectangular or cube texture to use a map of your own instead.
+with soft light panels above and below the horizon (`panels`, see `SkySubsurface`); give
+`map` (an equirectangular or cube texture) to use one of your own instead. The directional
+light changes too: below the seabed it is the subsurface's `light`, steady whatever the time
+of day, rather than the sun's or the moon's. By default it is fixed (azimuth 200°,
+elevation 45°, the high sun's near white, the sun's `intensity`); with `followSun` it turns
+with the sun's compass bearing, its elevation held within `elevationRange` (default 30° to
+60°), so it never lights from below at night. It switches with the environment as the camera
+crosses the seabed, or eases over `transition` seconds. Above the water everything keeps the
+real sun, the sea's glint and the bakes included; data seen from there through a cutaway is
+lit as the scene is.
+
+```tsx
+<Sky subsurface={{ light: { followSun: true, elevationRange: [25, 55], transition: 0.5 } }} />
+```
 
 `background: false` hides the sky (and its stage) instantly: nothing is rebuilt or baked
 again, and the scene stays lit, by the subsurface.
@@ -409,7 +421,11 @@ debug={...}>` hides stage layers, and draws its outline and wireframe over every
 None of them rebuild or bake anything.
 
 The Storybook stories `Spikes/Sky/StageDebug` (a synthetic seabed occupant, every
-option and debug view) and `Spikes/Sky/Baseline` (a real field) exercise all of it.
+option and debug view) and `Spikes/Sky/Baseline` (a real field) exercise all of it. Every
+story drawing a `<Sky>` takes its controls from one module,
+`src/storybook/components/sky-controls.ts`, so a control has the same name everywhere: the
+basic ones show in every story, the advanced and debug ones only in `StageDebug`
+(`skyArgTypes({ debug: true })`), keeping their defaults elsewhere.
 
 ## For maintainers
 

@@ -3,7 +3,7 @@ import { Canvas } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { scaleOrdinal } from 'd3-scale';
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { BufferGeometry, MathUtils } from 'three';
+import { BufferGeometry } from 'three';
 import { CameraLookAtEvent } from '../../events/camera-events';
 import { useData } from '../../hooks/useData';
 import { useGenerator } from '../../hooks/useGenerator';
@@ -16,30 +16,16 @@ import {
 } from '../../sdk/geometries/surface-clip';
 import { CameraManager } from '../../sdk/managers/CameraManager';
 import { Vec2, Vec3 } from '../../sdk/types/common';
-import { EnvironmentProbes } from '../../storybook/components/EnvironmentProbes';
 import {
-  skyCutawayArgs,
-  SkyCutawayArgs,
-  skyCutawayArgTypes,
-  skyCutawayDecorator,
-  skyCutawayFromArgs,
-} from '../../storybook/components/sky-cutaway-controls';
-import {
-  skyMoonFromArgs,
-  skyObserverFromArgs,
-  skyStarsFromArgs,
-  skyCloudsFromArgs,
-  skySunArgs,
-  SkySunArgs,
-  skySunArgTypes,
-  skySunFromArgs,
-} from '../../storybook/components/sky-sun-controls';
-import {
-  RendererToneMapping,
-  toneMappingArgs,
-  ToneMappingArgs,
-  toneMappingArgTypes,
-} from '../../storybook/components/tone-mapping-controls';
+  skyAbyssFromArgs,
+  skyArgs,
+  SkyArgs,
+  skyArgTypes,
+  skyDecorators,
+  skyOceanFromArgs,
+  skyPropsFromArgs,
+} from '../../storybook/components/sky-controls';
+import { SkyStoryRendering } from '../../storybook/components/sky-story-rendering';
 import {
   SYNTHETIC_COLUMN_PREFIX,
   SYNTHETIC_PREFIX,
@@ -100,48 +86,10 @@ const colorScale = scaleOrdinal([
 ]);
 
 type SkySpikeArgs = {
-  skyZenith: string;
-  skyHorizon: string;
-  skyGround: string;
-  skyNadir: string;
-  skyIntensity: number;
-  skyHorizonBlend: number;
-  sunSize: number;
-  sunGlow: number;
   abyss: boolean;
   abyssLevel: number;
-  abyssCeiling: string;
-  abyssHorizon: string;
-  abyssDepth: string;
-  abyssFadeDistance: number;
-  abyssTransition: number;
-  abyssDarkening: number;
-  abyssDetail: number;
-  abyssDetailScale: number;
-  abyssDepthDetail: number;
-  abyssDepthDetailScale: number;
-  abyssFalloff: number;
-  ocean: boolean;
-  seabed: boolean;
   oceanLevel: number;
   oceanDepth: number;
-  oceanDeep: string;
-  oceanShallow: string;
-  oceanBed: string;
-  oceanOpacity: number;
-  oceanSeabedOpacity: number;
-  oceanFogDensity: number;
-  windSpeed: number;
-  windDirection: number;
-  oceanSteepness: number;
-  foamAmount: number;
-  detailScale: number;
-  detailStrength: number;
-  tonalVariation: number;
-  tonalScale: number;
-  fresnelPower: number;
-  detailFadeStart: number;
-  detailFadeEnd: number;
   stage: boolean;
   stageMargin: number;
   seabedSurface: string;
@@ -149,13 +97,7 @@ type SkySpikeArgs = {
   seabedClip: boolean;
   seabedEdgeSmoothing: number;
   seabedFalloff: number;
-  environment: boolean;
-  envResolution: number;
-  environmentIntensity: number;
-  lightIntensity: number;
   ambientIntensity: number;
-  lightProbe: boolean;
-  lightProbeIntensity: number;
   surfaceId: string;
   showSurface: boolean;
   showWells: boolean;
@@ -163,12 +105,7 @@ type SkySpikeArgs = {
   showCasings: boolean;
   casingSlice: boolean;
   casingRoughness: number;
-  showProbes: boolean;
-  probeSize: number;
-  probeElevation: number;
-} & SkyCutawayArgs &
-  SkySunArgs &
-  ToneMappingArgs;
+} & SkyArgs;
 
 // A stage around the wells' outline, with no seabed of its own to hand it.
 const FieldStage = (args: SkySpikeArgs) => {
@@ -410,7 +347,7 @@ const Field = (args: SkySpikeArgs) => {
 };
 
 const SkyScene = (args: SkySpikeArgs) => {
-  const sea = args.ocean || args.seabed;
+  const sea = args.skyWater || args.skySeabed;
   const seabedMeta = useStoreSurfaceMeta(args.seabedSurface);
   // Test logic: the sea deepens by the seabed surface's relief, so its top stays at
   // `oceanDepth` and its base meets the flat seabed rather than rising into islands.
@@ -420,83 +357,16 @@ const SkyScene = (args: SkySpikeArgs) => {
 
   return (
     <>
-      <RendererToneMapping
-        toneMapping={args.toneMapping}
-        exposure={args.exposure}
-      />
+      <SkyStoryRendering args={args} />
       <ambientLight intensity={args.ambientIntensity} />
       <Sky
-        sun={{
-          ...skySunFromArgs(args),
-          intensity: args.lightIntensity,
-          size: args.sunSize,
-          glow: args.sunGlow,
-        }}
-        observer={skyObserverFromArgs(args)}
-        colors={{
-          zenith: args.skyZenith,
-          horizon: args.skyHorizon,
-          ground: args.skyGround,
-          nadir: args.skyNadir,
-        }}
-        intensity={args.skyIntensity}
-        horizonBlend={args.skyHorizonBlend}
+        {...skyPropsFromArgs(args)}
         abyss={
-          args.abyss && {
-            level: args.abyssLevel,
-            colors: {
-              ceiling: args.abyssCeiling,
-              horizon: args.abyssHorizon,
-              depth: args.abyssDepth,
-            },
-            fadeDistance: args.abyssFadeDistance,
-            transition: args.abyssTransition,
-            darkening: args.abyssDarkening,
-            detail: args.abyssDetail,
-            detailScale: args.abyssDetailScale,
-            depthDetail: args.abyssDepthDetail,
-            depthDetailScale: args.abyssDepthDetailScale,
-            falloff: args.abyssFalloff,
-          }
+          args.abyss && { ...skyAbyssFromArgs(args), level: args.abyssLevel }
         }
         ocean={
-          sea && {
-            water: args.ocean,
-            seabed: args.seabed && { color: args.oceanBed },
-            seabedOpacity: args.oceanSeabedOpacity,
-            level: args.oceanLevel,
-            depth,
-            deepColor: args.oceanDeep,
-            shallowColor: args.oceanShallow,
-            waterOpacity: args.oceanOpacity,
-            bodyFogDensity: args.oceanFogDensity,
-            windSpeed: args.windSpeed,
-            // A compass bearing in the controls; Ocean takes world X/Z.
-            windDirection: [
-              Math.sin(MathUtils.degToRad(args.windDirection)),
-              -Math.cos(MathUtils.degToRad(args.windDirection)),
-            ],
-            steepness: args.oceanSteepness,
-            foamAmount: args.foamAmount,
-            detailScale: args.detailScale,
-            detailStrength: args.detailStrength,
-            tonalVariation: args.tonalVariation,
-            tonalScale: args.tonalScale,
-            fresnelPower: args.fresnelPower,
-            detailFadeDistance: [args.detailFadeStart, args.detailFadeEnd],
-          }
+          sea && { ...skyOceanFromArgs(args), level: args.oceanLevel, depth }
         }
-        environment={
-          args.environment && {
-            intensity: args.environmentIntensity,
-            resolution: args.envResolution,
-          }
-        }
-        lightProbe={args.lightProbe && { intensity: args.lightProbeIntensity }}
-        cutaway={skyCutawayFromArgs(args)}
-        moon={skyMoonFromArgs(args)}
-        stars={skyStarsFromArgs(args)}
-        clouds={skyCloudsFromArgs(args)}
       >
         {args.seabedSurface
           ? // The seabed stands without the sky's sea; only its stage needs it.
@@ -513,12 +383,6 @@ const SkyScene = (args: SkySpikeArgs) => {
             )}
       </Sky>
       <Field {...args} />
-      {args.showProbes && (
-        <EnvironmentProbes
-          size={args.probeSize}
-          elevation={args.probeElevation}
-        />
-      )}
     </>
   );
 };
@@ -568,72 +432,19 @@ const meta = {
   decorators: [
     GeneratorsProviderDecorator,
     DataProviderDecorator,
-    skyCutawayDecorator,
+    ...skyDecorators,
   ],
   argTypes: {
-    ...skySunArgTypes('Sky'),
-    sunSize: range(0.1, 5, 0.05, 'Sky'),
-    sunGlow: range(0, 2, 0.05, 'Sky'),
-    skyZenith: { control: { type: 'color' }, table: { category: 'Sky' } },
-    skyHorizon: { control: { type: 'color' }, table: { category: 'Sky' } },
-    skyGround: { control: { type: 'color' }, table: { category: 'Sky' } },
-    skyNadir: { control: { type: 'color' }, table: { category: 'Sky' } },
-    skyIntensity: range(0, 3, 0.05, 'Sky'),
-    skyHorizonBlend: range(0.001, 0.3, 0.001, 'Sky'),
-    abyss: { control: { type: 'boolean' }, table: { category: 'Abyss' } },
-    abyssLevel: range(-5000, 5000, 10, 'Abyss'),
-    abyssCeiling: { control: { type: 'color' }, table: { category: 'Abyss' } },
-    abyssHorizon: { control: { type: 'color' }, table: { category: 'Abyss' } },
-    abyssDepth: { control: { type: 'color' }, table: { category: 'Abyss' } },
-    abyssFadeDistance: range(500, 100000, 500, 'Abyss'),
-    abyssTransition: range(1, 2000, 1, 'Abyss'),
-    abyssDarkening: range(0, 20000, 100, 'Abyss'),
-    abyssDetail: range(0, 1, 0.01, 'Abyss'),
-    abyssDetailScale: range(50, 10000, 50, 'Abyss'),
-    abyssDepthDetail: {
-      ...range(0, 0.5, 0.01, 'Abyss'),
-      description:
-        'Faint distant rock in the depths, wavy strata broken by crags; 0 for none.',
-    },
-    abyssDepthDetailScale: {
-      ...range(0.25, 4, 0.05, 'Abyss'),
-      description: 'Size of the rock\u2019s features in the depths.',
-    },
-    abyssFalloff: {
-      ...range(0.1, 3, 0.05, 'Abyss'),
-      description:
-        'How the depths darken below the horizon: the gradient\u2019s exponent. Smaller reaches the depth colour sooner.',
-    },
-    ocean: {
-      description: 'The water. Off with `seabed` on leaves the seabed dry.',
+    ...skyArgTypes(),
+    abyss: {
       control: { type: 'boolean' },
-      table: { category: 'Ocean' },
-    },
-    seabed: {
       description:
-        'The endless seabed. Off, the void lies below the water, with no lid seen from it; with `ocean` off too, there is no sea.',
-      control: { type: 'boolean' },
-      table: { category: 'Ocean' },
+        'The void below `abyssLevel`, where there is no sea (the sea sets its own at its seabed).',
+      table: { category: 'Void' },
     },
-    oceanLevel: range(-1000, 1000, 1, 'Ocean'),
-    oceanDepth: range(0, 3000, 5, 'Ocean'),
-    oceanDeep: { control: { type: 'color' }, table: { category: 'Ocean' } },
-    oceanShallow: { control: { type: 'color' }, table: { category: 'Ocean' } },
-    oceanBed: { control: { type: 'color' }, table: { category: 'Ocean' } },
-    oceanOpacity: range(0, 1, 0.01, 'Ocean'),
-    oceanSeabedOpacity: range(0, 1, 0.01, 'Ocean'),
-    oceanFogDensity: range(0, 0.05, 0.0005, 'Ocean'),
-    windSpeed: range(0.5, 30, 0.5, 'Ocean'),
-    windDirection: range(0, 360, 1, 'Ocean'),
-    oceanSteepness: range(0, 2, 0.05, 'Ocean'),
-    foamAmount: range(0, 2, 0.05, 'Ocean'),
-    detailScale: range(0.005, 0.5, 0.005, 'Ocean'),
-    detailStrength: range(0, 1, 0.01, 'Ocean'),
-    tonalVariation: range(0, 1, 0.01, 'Ocean'),
-    tonalScale: range(0.5, 20, 0.5, 'Ocean'),
-    fresnelPower: range(1, 8, 0.1, 'Ocean'),
-    detailFadeStart: range(0, 200000, 1000, 'Ocean'),
-    detailFadeEnd: range(1000, 400000, 1000, 'Ocean'),
+    abyssLevel: range(-5000, 5000, 10, 'Void'),
+    oceanLevel: range(-1000, 1000, 1, 'Sea'),
+    oceanDepth: range(0, 3000, 5, 'Sea'),
     stage: { control: { type: 'boolean' }, table: { category: 'Stage' } },
     stageMargin: range(0, 20000, 100, 'Stage'),
     seabedSurface: {
@@ -666,25 +477,7 @@ const meta = {
     },
     seabedEdgeSmoothing: range(0, 10, 0.5, 'Seabed'),
     seabedFalloff: range(0, 20000, 100, 'Seabed'),
-    ...skyCutawayArgTypes(),
-    lightIntensity: range(0, 5, 0.05, 'Lighting'),
     ambientIntensity: range(0, 2, 0.05, 'Lighting'),
-    lightProbe: {
-      control: { type: 'boolean' },
-      table: { category: 'Lighting' },
-    },
-    lightProbeIntensity: range(0, 3, 0.05, 'Lighting'),
-    environment: {
-      control: { type: 'boolean' },
-      table: { category: 'Lighting' },
-    },
-    environmentIntensity: range(0, 3, 0.05, 'Lighting'),
-    envResolution: {
-      options: [64, 128, 256, 512, 1024],
-      control: { type: 'select' },
-      table: { category: 'Lighting' },
-    },
-    ...toneMappingArgTypes(),
     surfaceId: {
       options: Object.keys(storyArgs.surfaceOptions),
       control: { type: 'select', labels: storyArgs.surfaceOptions },
@@ -701,13 +494,6 @@ const meta = {
       table: { category: 'Scene' },
     },
     casingRoughness: range(0, 1, 0.05, 'Scene'),
-    showProbes: { control: { type: 'boolean' }, table: { category: 'Scene' } },
-    probeSize: range(10, 1000, 10, 'Scene'),
-    probeElevation: {
-      ...range(-4000, 2000, 10, 'Scene'),
-      description:
-        'Height of the probes\u2019 centres, metres above sea level.',
-    },
   },
 } satisfies Meta<typeof SkySpike>;
 
@@ -718,48 +504,14 @@ type Story = StoryObj<typeof meta>;
 // designed to look right without tone mapping.
 export const Default: Story = {
   args: {
-    sunSize: 0.75,
-    sunGlow: 0.5,
-    skyZenith: '#6f8fb3',
-    skyHorizon: '#c9d3dc',
-    skyGround: '#7a7f86',
-    skyNadir: '#3a3e44',
-    skyIntensity: 1,
-    skyHorizonBlend: 0.04,
+    ...skyArgs,
+    sunElevation: 30,
     abyss: true,
     abyssLevel: 0,
-    abyssCeiling: '#2a2d32',
-    abyssHorizon: '#4a5058',
-    abyssDepth: '#0e1013',
-    abyssFadeDistance: 20000,
-    abyssTransition: 200,
-    abyssDarkening: 0,
-    abyssDetail: 0.2,
-    abyssDetailScale: 1000,
-    abyssDepthDetail: 0.08,
-    abyssDepthDetailScale: 1,
-    abyssFalloff: 0.5,
-    ocean: false,
-    seabed: false,
+    skyWater: false,
+    skySeabed: false,
     oceanLevel: 0,
     oceanDepth: 90,
-    oceanDeep: '#0a2540',
-    oceanShallow: '#1b6f8a',
-    oceanBed: '#b8a06a',
-    oceanOpacity: 0.7,
-    oceanSeabedOpacity: 1,
-    oceanFogDensity: 0.004,
-    windSpeed: 10,
-    windDirection: 90,
-    oceanSteepness: 0.7,
-    foamAmount: 0.5,
-    detailScale: 0.05,
-    detailStrength: 0.2,
-    tonalVariation: 0.4,
-    tonalScale: 4,
-    fresnelPower: 4,
-    detailFadeStart: 15000,
-    detailFadeEnd: 60000,
     stage: false,
     stageMargin: 4000,
     seabedSurface: '',
@@ -767,17 +519,7 @@ export const Default: Story = {
     seabedClip: false,
     seabedEdgeSmoothing: 0,
     seabedFalloff: 3000,
-    ...skyCutawayArgs,
-    ...skySunArgs,
-    sunElevation: 30,
-    lightIntensity: 1.5,
     ambientIntensity: 0,
-    lightProbe: true,
-    lightProbeIntensity: 1,
-    environment: true,
-    environmentIntensity: 1,
-    envResolution: 128,
-    ...toneMappingArgs,
     surfaceId: Object.keys(storyArgs.surfaceOptions)[0],
     showSurface: true,
     showWells: true,
@@ -785,9 +527,6 @@ export const Default: Story = {
     showCasings: true,
     casingSlice: false,
     casingRoughness: 0.8,
-    showProbes: true,
-    probeSize: 150,
-    probeElevation: 600,
   },
 };
 
@@ -795,12 +534,11 @@ export const Default: Story = {
 export const Shell: Story = {
   args: {
     ...Default.args,
-    ocean: true,
-    seabed: true,
+    skyWater: true,
+    skySeabed: true,
     showSurface: false,
     showWells: false,
     showCasings: false,
-    showProbes: false,
   },
 };
 
@@ -808,11 +546,10 @@ export const Shell: Story = {
 export const Stage: Story = {
   args: {
     ...Default.args,
-    ocean: true,
-    seabed: true,
+    skyWater: true,
+    skySeabed: true,
     stage: true,
     showSurface: false,
     showCasings: false,
-    showProbes: false,
   },
 };

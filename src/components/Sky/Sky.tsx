@@ -11,6 +11,7 @@ import {
 import {
   Color,
   ColorRepresentation,
+  DirectionalLight,
   DoubleSide,
   Group,
   LightProbe,
@@ -20,7 +21,6 @@ import {
   PerspectiveCamera,
   ShaderMaterial,
   SphericalHarmonics3,
-  Texture,
   Vector2,
   Vector3,
   Vector4,
@@ -73,6 +73,7 @@ import {
   SkyStars,
   SkySubsurface,
   skySubsurfaceColors,
+  skySubsurfaceLightPosition,
   SkySun,
   skySunColor,
   skyTwilight,
@@ -247,10 +248,10 @@ export type SkyProps = {
   lightProbe?: boolean | SkyLightProbeOptions;
   /**
    * The light below the seabed (or the abyss level), and wherever the sky is not drawn:
-   * soft light panels on a dark backdrop (see {@link SkySubsurface}), or a map of your own
-   * (an equirectangular or cube texture, as for `scene.background`). Default the panels
+   * soft light panels on a dark backdrop, or a map of your own, and a steady directional
+   * light in place of the sun's (see {@link SkySubsurface}). Default the panels and a fixed light
    */
-  subsurface?: SkySubsurface | Texture;
+  subsurface?: SkySubsurface;
   /** how often the bakes follow a changing sky (see {@link SkyCaptureOptions}) */
   capture?: SkyCaptureOptions;
   /** cut away the sea's water and seabed, or some of each, in front of the view (see {@link SkyCutaway}). Default false */
@@ -566,6 +567,46 @@ export const Sky = ({
     ? moonIntensity * state.moonlight
     : sunIntensity * state.daylight;
 
+  // Below the seabed, a steady light in place of the sun's and the moon's.
+  const subsurfaceLight = subsurface?.light;
+  const subsurfaceDefaults = skyDefaults.subsurface.light;
+  const { azimuth: subsurfaceAzimuth, elevation: subsurfaceElevation } =
+    skySubsurfaceLightPosition(azimuth, elevation, subsurfaceLight);
+  const subsurfaceDirection = useMemo(
+    () =>
+      new Vector3().fromArray(
+        directionFromCompass(subsurfaceAzimuth, subsurfaceElevation, {
+          up: [upX, upY, upZ],
+          north: [northX, northY, northZ],
+        }),
+      ),
+    [
+      subsurfaceAzimuth,
+      subsurfaceElevation,
+      upX,
+      upY,
+      upZ,
+      northX,
+      northY,
+      northZ,
+    ],
+  );
+  const subsurfaceHex = toHex(
+    subsurfaceLight?.color ?? subsurfaceDefaults.color,
+  );
+  const subsurfaceColor = useMemo(
+    () => new Color(subsurfaceHex),
+    [subsurfaceHex],
+  );
+  const subsurfaceIntensity = subsurfaceLight?.intensity ?? sunIntensity;
+  const subsurfaceTransition = Math.max(
+    subsurfaceLight?.transition ?? subsurfaceDefaults.transition,
+    0,
+  );
+  const light = useRef<DirectionalLight>(null);
+  // 0 the sky's light, 1 the subsurface's; null until the first frame, which takes the zone's.
+  const subsurfaceShare = useRef<number | null>(null);
+
   // Whether what the sky draws is compiled; until then the stand-in is drawn instead.
   const [ready, setReady] = useState(false);
   // Stages hand over their parts, compiled with the sky's own (see SkyOceanState.stage).
@@ -643,18 +684,18 @@ export const Sky = ({
     [hasOcean, oceanWater],
   );
 
-  const subsurfaceMap = (subsurface as Texture | undefined)?.isTexture
-    ? (subsurface as Texture)
-    : null;
-  const panels = subsurfaceMap
-    ? null
-    : (subsurface as SkySubsurface | undefined);
-  const panelsKey = JSON.stringify(panels ?? null);
+  const subsurfaceMap = subsurface?.map ?? null;
+  // The backdrop and the panels: the light is not baked.
+  const panelsKey = JSON.stringify(
+    subsurfaceMap
+      ? null
+      : [subsurface?.intensity, subsurface?.colors, subsurface?.panels],
+  );
   useLayoutEffect(() => {
     baker.setSubsurface(
       subsurfaceMap
         ? { map: subsurfaceMap }
-        : { light: skySubsurfaceColors(panels ?? undefined) },
+        : { light: skySubsurfaceColors(subsurface) },
     );
     subsurfaceDirty.current = true;
     // `subsurface` is an inline object: compared by value, as `panelsKey`.
@@ -1177,6 +1218,30 @@ export const Sky = ({
       background,
     });
     zoneInView.current = zone;
+
+    // The subsurface's own light below the seabed, eased into over `transition`.
+    const below = zone === 'subsurface' ? 1 : 0;
+    let share = subsurfaceShare.current ?? below;
+    if (subsurfaceTransition > 0) {
+      const step = delta / subsurfaceTransition;
+      share =
+        share < below
+          ? Math.min(share + step, below)
+          : Math.max(share - step, below);
+    } else {
+      share = below;
+    }
+    subsurfaceShare.current = share;
+    if (light.current) {
+      const t = share * share * (3 - 2 * share);
+      light.current.position.copy(lightDirection).lerp(subsurfaceDirection, t);
+      light.current.color.copy(lightColor).lerp(subsurfaceColor, t);
+      light.current.intensity = MathUtils.lerp(
+        lightIntensity,
+        subsurfaceIntensity,
+        t,
+      );
+    }
     // Inside an occupant's seabed above the sea's own, the stage's relief is seen from below.
     material.oceanBuried =
       material.ocean &&
@@ -1521,12 +1586,8 @@ export const Sky = ({
       {hasProbe && <primitive object={probe} />}
       {sunLight && (
         <>
-          <directionalLight
-            position={lightDirection}
-            target={lightTarget}
-            color={lightColor}
-            intensity={lightIntensity}
-          />
+          {/* Set each frame: the sky's light, or below the seabed the subsurface's. */}
+          <directionalLight ref={light} target={lightTarget} />
           <primitive object={lightTarget} />
         </>
       )}

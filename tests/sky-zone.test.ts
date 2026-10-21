@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   skyStarFrame,
+  skySubsurfaceColors,
+  skySubsurfaceLightPosition,
   skySunColor,
   skyTwilight,
   skyWaterDimming,
@@ -139,5 +141,52 @@ describe('skyStarFrame', () => {
     expect(
       Math.hypot(morning[0] - evening[0], morning[1] - evening[1]),
     ).toBeGreaterThan(1);
+  });
+});
+
+describe('skySubsurfaceLightPosition', () => {
+  it('is fixed by default, whatever the sun does', () => {
+    for (const [az, el] of [
+      [90, 5],
+      [200, 35],
+      [0, -40],
+    ])
+      expect(skySubsurfaceLightPosition(az, el)).toEqual({
+        azimuth: 200,
+        elevation: 45,
+      });
+    expect(
+      skySubsurfaceLightPosition(90, 5, { azimuth: 120, elevation: 70 }),
+    ).toEqual({ azimuth: 120, elevation: 70 });
+  });
+
+  it('follows the sun’s bearing, its elevation held within the range', () => {
+    const follow = { followSun: true };
+    expect(skySubsurfaceLightPosition(135, 45, follow)).toEqual({
+      azimuth: 135,
+      elevation: 45,
+    });
+    // Below the horizon at night, and high at noon: held at 30 and 60.
+    expect(skySubsurfaceLightPosition(0, -40, follow).elevation).toBe(30);
+    expect(skySubsurfaceLightPosition(180, 75, follow).elevation).toBe(60);
+    // A range given either way round.
+    expect(
+      skySubsurfaceLightPosition(180, 5, {
+        ...follow,
+        elevationRange: [50, 20],
+      }).elevation,
+    ).toBe(20);
+  });
+});
+
+describe('skySubsurfaceColors', () => {
+  it('lights the panels below as those above unless told apart', () => {
+    const colors = skySubsurfaceColors({ panels: { intensity: 2 } });
+    expect(colors.below.equals(colors.above)).toBe(true);
+    expect(colors.above.r).toBeCloseTo(2, 6);
+    const apart = skySubsurfaceColors({
+      panels: { intensity: 2, below: { intensity: 1 } },
+    });
+    expect(apart.below.r).toBeCloseTo(1, 6);
   });
 });

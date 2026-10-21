@@ -1,4 +1,4 @@
-import { Color, ColorRepresentation, MathUtils } from 'three';
+import { Color, ColorRepresentation, MathUtils, type Texture } from 'three';
 import type { SurfaceDetail } from '../../sdk/materials/surface-detail';
 import type { Vec2, Vec3 } from '../../sdk/types/common';
 import {
@@ -227,7 +227,7 @@ export type SkyOcean = SkyOceanWater & {
 };
 
 /** The colour and intensity of a {@link SkySubsurface}'s light panels. */
-export type SkySubsurfaceLight = {
+export type SkySubsurfacePanel = {
   /** Default `#ffffff` */
   color?: ColorRepresentation;
   /** radiance of the panels; above 1 they outshine display white. Default 3 */
@@ -235,12 +235,37 @@ export type SkySubsurfaceLight = {
 };
 
 /**
+ * The directional light below a {@link Sky}'s seabed, in place of the sun's and the moon's:
+ * steady, whatever the time of day. Fixed by default; with `followSun` it turns with the
+ * sun's compass bearing.
+ */
+export type SkySubsurfaceLight = {
+  /** turn with the sun's compass bearing, its elevation held within `elevationRange`. Default false */
+  followSun?: boolean;
+  /** compass bearing in degrees, while not following the sun. Default 200 */
+  azimuth?: number;
+  /** degrees above the horizon, while not following the sun. Default 45 */
+  elevation?: number;
+  /** the elevations, in degrees, the sun's is held within while following it. Default [30, 60] */
+  elevationRange?: Vec2;
+  /** Default `#fff6e8`, the high sun's */
+  color?: ColorRepresentation;
+  /** Default the sun's `intensity` */
+  intensity?: number;
+  /** seconds the light eases over between the sun's and this as the camera crosses into or out of the subsurface; 0 for at once. Default 0 */
+  transition?: number;
+};
+
+/**
  * The light below a {@link Sky}'s seabed (or its abyss level), and wherever the sky is not
  * drawn, where its own light means nothing: a dark backdrop and soft light panels, some
- * above the horizon and some below, fixed in the sky's up/north frame.
+ * above the horizon and some below, fixed in the sky's up/north frame, or a map of your
+ * own; and a steady directional light in place of the sun's.
  */
 export type SkySubsurface = {
-  /** scales the whole subsurface light. Default 1 */
+  /** a map of your own instead of the backdrop and the panels: an equirectangular or cube texture, as for `scene.background` */
+  map?: Texture;
+  /** scales the backdrop and the panels. Default 1 */
   intensity?: number;
   /** the backdrop's gradient */
   colors?: {
@@ -250,7 +275,9 @@ export type SkySubsurface = {
     bottom?: ColorRepresentation;
   };
   /** the light panels; the ones below the horizon take `below` where given */
-  lights?: SkySubsurfaceLight & { below?: SkySubsurfaceLight };
+  panels?: SkySubsurfacePanel & { below?: SkySubsurfacePanel };
+  /** the directional light (see {@link SkySubsurfaceLight}); it needs the Sky's `sunLight` */
+  light?: SkySubsurfaceLight;
 };
 
 /** Which of a {@link Sky}'s environments lights the scene. */
@@ -318,9 +345,9 @@ export function skySubsurfaceColors(
 ): SkySubsurfaceColors {
   const defaults = skyDefaults.subsurface;
   const scale = subsurface.intensity ?? defaults.intensity;
-  const light = subsurface.lights ?? {};
-  const color = light.color ?? defaults.lights.color;
-  const intensity = light.intensity ?? defaults.lights.intensity;
+  const panels = subsurface.panels ?? {};
+  const color = panels.color ?? defaults.panels.color;
+  const intensity = panels.intensity ?? defaults.panels.intensity;
   return {
     top: new Color(
       subsurface.colors?.top ?? defaults.colors.top,
@@ -329,9 +356,32 @@ export function skySubsurfaceColors(
       subsurface.colors?.bottom ?? defaults.colors.bottom,
     ).multiplyScalar(scale),
     above: new Color(color).multiplyScalar(intensity * scale),
-    below: new Color(light.below?.color ?? color).multiplyScalar(
-      (light.below?.intensity ?? intensity) * scale,
+    below: new Color(panels.below?.color ?? color).multiplyScalar(
+      (panels.below?.intensity ?? intensity) * scale,
     ),
+  };
+}
+
+/**
+ * Where a {@link SkySubsurfaceLight} shines from, in degrees, with the sun at `sunAzimuth`
+ * and `sunElevation`: fixed, or the sun's bearing at its elevation held within the range.
+ */
+export function skySubsurfaceLightPosition(
+  sunAzimuth: number,
+  sunElevation: number,
+  light: SkySubsurfaceLight = {},
+) {
+  const defaults = skyDefaults.subsurface.light;
+  if (!(light.followSun ?? defaults.followSun)) {
+    return {
+      azimuth: light.azimuth ?? defaults.azimuth,
+      elevation: light.elevation ?? defaults.elevation,
+    };
+  }
+  const [a, b] = light.elevationRange ?? defaults.elevationRange;
+  return {
+    azimuth: sunAzimuth,
+    elevation: MathUtils.clamp(sunElevation, Math.min(a, b), Math.max(a, b)),
   };
 }
 
@@ -395,7 +445,15 @@ export const skyDefaults = {
   subsurface: {
     intensity: 1,
     colors: { top: '#4a5058', bottom: '#1c1f24' },
-    lights: { color: '#ffffff', intensity: 3 },
+    panels: { color: '#ffffff', intensity: 3 },
+    light: {
+      followSun: false,
+      azimuth: 200,
+      elevation: 45,
+      elevationRange: [30, 60],
+      color: '#fff6e8',
+      transition: 0,
+    },
   },
 } as const;
 

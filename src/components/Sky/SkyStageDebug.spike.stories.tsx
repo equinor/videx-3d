@@ -1,43 +1,20 @@
-import { useFrame, useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useMemo } from 'react';
-import { Pass } from '../../rendering/Pass';
-import { RenderingPipeline } from '../../rendering/RenderingPipeline';
-import { OITRenderPass } from '../../rendering/passes/OITRenderPass';
-import { OutputPass } from '../../rendering/passes/OutputPass';
 import type { SeabedMesh } from '../../sdk/geometries/surface-clip';
 import { EnvironmentProbes } from '../../storybook/components/EnvironmentProbes';
 import {
-  skyCutawayArgs,
-  SkyCutawayArgs,
-  skyCutawayArgTypes,
-  skyCutawayDecorator,
-  skyCutawayFromArgs,
-} from '../../storybook/components/sky-cutaway-controls';
-import {
-  skyMoonFromArgs,
-  skyObserverFromArgs,
-  skyObserverNowArgType,
-  skyObserverNowDecorator,
-  skyStarsFromArgs,
-  skyCloudsFromArgs,
-  skySunArgs,
-  SkySunArgs,
-  skySunArgTypes,
-  skySunFromArgs,
-} from '../../storybook/components/sky-sun-controls';
-import {
-  RendererToneMapping,
-  toneMappingArgs,
-  ToneMappingArgs,
-  toneMappingArgTypes,
-} from '../../storybook/components/tone-mapping-controls';
+  skyAbyssFromArgs,
+  skyArgs,
+  SkyArgs,
+  skyArgTypes,
+  skyDecorators,
+  skyOceanFromArgs,
+  skyPropsFromArgs,
+} from '../../storybook/components/sky-controls';
+import { SkyStoryRendering } from '../../storybook/components/sky-story-rendering';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
-import { DEFAULT_OCEAN_WATER_OPACITY } from '../Ocean/ocean-material';
-import { RenderStats } from '../Html/RenderStats/RenderStats';
 import { Sky, SkyLayer } from './Sky';
 import { SkyBoxStage, SkyBoxStageLayer } from './SkyBoxStage';
-import { skyDefaults } from './sky-model';
 import { SkyStageBounds } from './sky-stage';
 
 // How the sky, its stage and an occupant fit together: a synthetic seabed handed to the
@@ -103,18 +80,6 @@ function createSyntheticSeabed(): SeabedMesh {
   };
 }
 
-const OitPipeline = () => {
-  const scene = useThree(s => s.scene);
-  const camera = useThree(s => s.camera);
-  const passes = useMemo<Pass[]>(() => {
-    const base = new OITRenderPass(scene, camera);
-    base.antialias = 'smaa';
-    return [base, new OutputPass()];
-  }, [scene, camera]);
-  useFrame(() => {}, 2);
-  return <RenderingPipeline passes={passes} />;
-};
-
 const SKY_LAYERS: Record<string, SkyLayer> = {
   'sky background': 'background',
   'sky surface': 'surface',
@@ -131,43 +96,13 @@ const HIDE_OPTIONS = [...Object.keys(SKY_LAYERS), ...STAGE_LAYERS];
 
 type StageDebugArgs = {
   occupant: boolean;
-  water: boolean;
-  seabed: boolean;
-  waterOpacity: number;
-  seabedOpacity: number;
-  drawSky: boolean;
-  environment: boolean;
-  lightProbe: boolean;
-  subsurfaceIntensity: number;
-  voidDetail: number;
-  voidDetailScale: number;
-  voidFalloff: number;
-  voidHorizonColor: string;
-  voidDepthColor: string;
-  voidLidColor: string;
-  voidLidFade: number;
-  voidLidDetail: number;
-  voidLidDetailScale: number;
-  voidDarkening: number;
-  subsurfaceLightColor: string;
-  subsurfaceLightIntensity: number;
-  subsurfaceBelow: boolean;
-  subsurfaceBelowColor: string;
-  subsurfaceBelowIntensity: number;
   showProbes: boolean;
   probeSize: number;
   probeElevation: number;
-  pipeline: 'default' | 'oit';
-  tint: boolean;
   outline: boolean;
   wireframe: boolean;
-  showEnvironment: boolean;
   hide: string[];
-  stats: boolean;
-  observerNow: boolean;
-} & SkyCutawayArgs &
-  SkySunArgs &
-  ToneMappingArgs;
+} & SkyArgs;
 
 const StageDebug = (args: StageDebugArgs) => {
   const seabed = useMemo(createSyntheticSeabed, []);
@@ -175,55 +110,11 @@ const StageDebug = (args: StageDebugArgs) => {
 
   return (
     <>
-      <RendererToneMapping
-        toneMapping={args.toneMapping}
-        exposure={args.exposure}
-      />
+      <SkyStoryRendering args={args} />
       <Sky
-        abyss={{
-          depthDetail: args.voidDetail,
-          depthDetailScale: args.voidDetailScale,
-          falloff: args.voidFalloff,
-          colors: {
-            horizon: args.voidHorizonColor,
-            depth: args.voidDepthColor,
-            ceiling: args.voidLidColor,
-          },
-          fadeDistance: args.voidLidFade,
-          detail: args.voidLidDetail,
-          detailScale: args.voidLidDetailScale,
-          darkening: args.voidDarkening,
-        }}
-        ocean={{
-          level: LEVEL,
-          depth: DEPTH,
-          water: args.water,
-          seabed: args.seabed,
-          waterOpacity: args.waterOpacity,
-          seabedOpacity: args.seabedOpacity,
-        }}
-        sun={skySunFromArgs(args)}
-        observer={skyObserverFromArgs(args)}
-        moon={skyMoonFromArgs(args)}
-        stars={skyStarsFromArgs(args)}
-        clouds={skyCloudsFromArgs(args)}
-        background={args.drawSky}
-        cutaway={skyCutawayFromArgs(args)}
-        environment={args.environment}
-        lightProbe={args.lightProbe}
-        subsurface={{
-          intensity: args.subsurfaceIntensity,
-          lights: {
-            color: args.subsurfaceLightColor,
-            intensity: args.subsurfaceLightIntensity,
-            below: args.subsurfaceBelow
-              ? {
-                  color: args.subsurfaceBelowColor,
-                  intensity: args.subsurfaceBelowIntensity,
-                }
-              : undefined,
-          },
-        }}
+        {...skyPropsFromArgs(args)}
+        abyss={skyAbyssFromArgs(args)}
+        ocean={{ ...skyOceanFromArgs(args), level: LEVEL, depth: DEPTH }}
         debug={{
           tint: args.tint,
           hide: hide.filter(l => l in SKY_LAYERS).map(l => SKY_LAYERS[l]),
@@ -246,8 +137,6 @@ const StageDebug = (args: StageDebugArgs) => {
           />
         )}
       </Sky>
-      {args.pipeline === 'oit' && <OitPipeline />}
-      {args.stats && <RenderStats origin="bottom-left" />}
     </>
   );
 };
@@ -255,7 +144,7 @@ const StageDebug = (args: StageDebugArgs) => {
 const meta = {
   title: 'Spikes/Sky/StageDebug',
   component: StageDebug,
-  decorators: [Canvas3dDecorator, skyCutawayDecorator, skyObserverNowDecorator],
+  decorators: [Canvas3dDecorator, ...skyDecorators],
   parameters: {
     scale: 1000,
     // With every layer hidden nothing else clears the frame, and the last one stays up.
@@ -265,103 +154,12 @@ const meta = {
     ownLighting: () => true,
   },
   argTypes: {
+    // Every control, advanced and debug ones included.
+    ...skyArgTypes({ debug: true }),
     occupant: {
       description:
         'The stage has an occupant, which hands it its own seabed (the synthetic one): the stage draws it as the sea\u2019s, `occupant-bed`, eased into its own by the `relief`. Off, the stage is whole. Changes the stage, unlike the debug options.',
       table: { category: 'Occupant' },
-    },
-    water: {
-      description:
-        'The sea\u2019s water, everywhere. Off, the seabed lies dry, and the cutaway cuts it.',
-      table: { category: 'Sea' },
-    },
-    seabed: {
-      description:
-        'The sea\u2019s seabed, everywhere, the occupant\u2019s included. Off, the void lies below the water, and the cutaway cuts the water alone.',
-      table: { category: 'Sea' },
-    },
-    waterOpacity: {
-      control: { type: 'range', min: 0, max: 1, step: 0.01 },
-      table: { category: 'Sea' },
-    },
-    seabedOpacity: {
-      control: { type: 'range', min: 0, max: 1, step: 0.01 },
-      description:
-        'How much of what lies under the seabed it hides. Crossing 1 rebuilds the seabed\u2019s materials, which compile again.',
-      table: { category: 'Sea' },
-    },
-    drawSky: {
-      description:
-        'Draw the sky and the stage. Off, both vanish at once, and the environment and the light probe switch to the subsurface.',
-      table: { category: 'Sky' },
-    },
-    ...skyCutawayArgTypes(),
-    ...skySunArgTypes(),
-    ...skyObserverNowArgType(),
-    ...toneMappingArgTypes(),
-    voidDetail: {
-      control: { type: 'range', min: 0, max: 0.5, step: 0.01 },
-      description:
-        'Faint distant rock in the depths of the void, wavy strata broken by crags; 0 for none.',
-      table: { category: 'Void' },
-    },
-    voidDetailScale: {
-      control: { type: 'range', min: 0.25, max: 4, step: 0.05 },
-      description: 'Size of the rock\u2019s features.',
-      table: { category: 'Void' },
-    },
-    voidFalloff: {
-      control: { type: 'range', min: 0.1, max: 3, step: 0.05 },
-      description:
-        'How the depths darken below the horizon: the gradient\u2019s exponent. Smaller reaches the depth colour sooner.',
-      table: { category: 'Void' },
-    },
-    voidHorizonColor: {
-      control: { type: 'color' },
-      description: 'Where the lid and the depths meet, far away.',
-      table: { category: 'Void' },
-    },
-    voidDepthColor: {
-      control: { type: 'color' },
-      description: 'Straight down, deep in the void.',
-      table: { category: 'Void' },
-    },
-    voidLidColor: {
-      control: { type: 'color' },
-      description: 'The lid overhead, near the camera.',
-      table: { category: 'Void' },
-    },
-    voidLidFade: {
-      control: { type: 'range', min: 500, max: 100000, step: 500 },
-      description:
-        'Distance over which the lid recedes into the horizon colour, in metres.',
-      table: { category: 'Void' },
-    },
-    voidLidDetail: {
-      control: { type: 'range', min: 0, max: 1, step: 0.01 },
-      description: 'Strength of the noise relief on the lid; 0 for none.',
-      table: { category: 'Void' },
-    },
-    voidLidDetailScale: {
-      control: { type: 'range', min: 50, max: 10000, step: 50 },
-      description: 'Size of the lid\u2019s noise relief, in metres.',
-      table: { category: 'Void' },
-    },
-    voidDarkening: {
-      control: { type: 'range', min: 0, max: 20000, step: 100 },
-      description:
-        'Depth below the seabed over which the void dims toward black, in metres; 0 for none.',
-      table: { category: 'Void' },
-    },
-    environment: {
-      description:
-        'Bake the sky into `scene.environment` (for MeshStandard materials; nothing here uses it). Its prefiltering is most of a bake\u2019s GPU time.',
-      table: { category: 'Bakes' },
-    },
-    lightProbe: {
-      description:
-        'Bake the sky into a light probe, which lights the stage\u2019s and the occupant\u2019s seabed. Read back from the GPU asynchronously.',
-      table: { category: 'Bakes' },
     },
     showProbes: {
       description:
@@ -378,47 +176,6 @@ const meta = {
       description:
         'Height of the spheres\u2019 centres, in metres: the sea surface is at 0, its seabed at -100.',
       table: { category: 'Probes' },
-    },
-    subsurfaceIntensity: {
-      control: { type: 'range', min: 0, max: 4, step: 0.05 },
-      description: 'Scales the whole subsurface light: backdrop and panels.',
-      table: { category: 'Subsurface' },
-    },
-    subsurfaceLightColor: {
-      control: { type: 'color' },
-      description: 'Colour of every light panel.',
-      table: { category: 'Subsurface' },
-    },
-    subsurfaceLightIntensity: {
-      control: { type: 'range', min: 0, max: 20, step: 0.1 },
-      description: 'Radiance of every light panel.',
-      table: { category: 'Subsurface' },
-    },
-    subsurfaceBelow: {
-      description: 'Light the panels below the horizon apart.',
-      table: { category: 'Subsurface' },
-    },
-    subsurfaceBelowColor: {
-      control: { type: 'color' },
-      if: { arg: 'subsurfaceBelow' },
-      table: { category: 'Subsurface' },
-    },
-    subsurfaceBelowIntensity: {
-      control: { type: 'range', min: 0, max: 20, step: 0.1 },
-      if: { arg: 'subsurfaceBelow' },
-      table: { category: 'Subsurface' },
-    },
-    showEnvironment: {
-      description:
-        'The environment\u2019s bake for the zone in view (air, water or subsurface) as its six faces, lower right: `+Y` over `-X -Z +X +Z`, `-Y` under.',
-      table: { category: 'Debug' },
-    },
-    pipeline: {
-      control: { type: 'inline-radio' },
-      options: ['default', 'oit'],
-      description:
-        'R3F’s own render, or the `OITRenderPass` (SMAA) + `OutputPass` pipeline the chunk stories use.',
-      table: { category: 'Debug' },
     },
     tint: {
       description:
@@ -442,51 +199,16 @@ const meta = {
         'Layers not to draw. Only their visibility changes: nothing is rebuilt or baked again.',
       table: { category: 'Debug' },
     },
-    stats: {
-      description:
-        'GPU time, frame time and FPS, draw calls, triangles and resident geometries, textures and programs.',
-      table: { category: 'Debug' },
-    },
   },
   args: {
+    ...skyArgs,
     occupant: true,
-    water: true,
-    seabed: true,
-    waterOpacity: DEFAULT_OCEAN_WATER_OPACITY,
-    seabedOpacity: skyDefaults.ocean.seabedOpacity,
-    drawSky: true,
-    environment: true,
-    lightProbe: true,
-    subsurfaceIntensity: skyDefaults.subsurface.intensity,
-    subsurfaceLightColor: skyDefaults.subsurface.lights.color,
-    subsurfaceLightIntensity: skyDefaults.subsurface.lights.intensity,
-    subsurfaceBelow: false,
-    subsurfaceBelowColor: '#9fb4d0',
-    subsurfaceBelowIntensity: 1,
     showProbes: false,
     probeSize: 150,
     probeElevation: 300,
-    ...skyCutawayArgs,
-    ...skySunArgs,
-    observerNow: false,
-    ...toneMappingArgs,
-    voidDetail: skyDefaults.abyss.depthDetail,
-    voidDetailScale: skyDefaults.abyss.depthDetailScale,
-    voidFalloff: skyDefaults.abyss.falloff,
-    voidHorizonColor: skyDefaults.abyss.colors.horizon,
-    voidDepthColor: skyDefaults.abyss.colors.depth,
-    voidLidColor: skyDefaults.abyss.colors.ceiling,
-    voidLidFade: skyDefaults.abyss.fadeDistance,
-    voidLidDetail: skyDefaults.abyss.detail,
-    voidLidDetailScale: skyDefaults.abyss.detailScale,
-    voidDarkening: skyDefaults.abyss.darkening,
-    pipeline: 'default',
-    tint: false,
     outline: false,
     wireframe: false,
-    showEnvironment: false,
     hide: [],
-    stats: false,
   },
 } satisfies Meta<typeof StageDebug>;
 

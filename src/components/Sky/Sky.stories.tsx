@@ -2,32 +2,17 @@ import { useFrame, useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  skyCutawayArgs,
-  SkyCutawayArgs,
-  skyCutawayArgTypes,
-  skyCutawayDecorator,
-  skyCutawayFromArgs,
-} from '../../storybook/components/sky-cutaway-controls';
-import {
-  skyCloudsFromArgs,
-  skyMoonFromArgs,
-  skyObserverFromArgs,
-  skyStarsFromArgs,
-  skySunArgs,
-  SkySunArgs,
-  skySunArgTypes,
-  skySunFromArgs,
+  skyAbyssFromArgs,
+  skyArgs,
+  SkyArgs,
+  skyArgTypes,
+  skyDecorators,
+  skyOceanFromArgs,
+  skyPropsFromArgs,
   skySunPosition,
-} from '../../storybook/components/sky-sun-controls';
-import {
-  RendererToneMapping,
-  toneMappingArgs,
-  ToneMappingArgs,
-  toneMappingArgTypes,
-} from '../../storybook/components/tone-mapping-controls';
+} from '../../storybook/components/sky-controls';
+import { SkyStoryRendering } from '../../storybook/components/sky-story-rendering';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
-import { RenderStats } from '../Html/RenderStats/RenderStats';
-import { DEFAULT_OCEAN_WATER_OPACITY } from '../Ocean/ocean-material';
 import { Tanker } from '../Tanker/Tanker';
 import { Sky } from './Sky';
 import { SkyBoxStage } from './SkyBoxStage';
@@ -42,17 +27,8 @@ const BOUNDS: SkyStageBounds = [-5000, -5000, 5000, 5000];
 type TimelapseArgs = {
   playing: boolean;
   speed: number;
-  captureMaxWait: number;
-  waterOpacity: number;
-  windSpeed: number;
-  foamAmount: number;
-  air: boolean;
-  stats: boolean;
-  showEnvironment: boolean;
   tanker: boolean;
-} & SkySunArgs &
-  SkyCutawayArgs &
-  ToneMappingArgs;
+} & SkyArgs;
 
 const formatHour = (hour: number) => {
   const minutes = Math.floor(hour * 60) % (24 * 60);
@@ -111,28 +87,11 @@ const SkyTimelapse = (args: TimelapseArgs) => {
 
   return (
     <>
-      <RendererToneMapping
-        toneMapping={args.toneMapping}
-        exposure={args.exposure}
-      />
+      <SkyStoryRendering args={args} />
       <Sky
-        abyss
-        ocean={{
-          level: 0,
-          depth: DEPTH,
-          waterOpacity: args.waterOpacity,
-          windSpeed: args.windSpeed,
-          foamAmount: args.foamAmount,
-        }}
-        sun={skySunFromArgs(sunArgs)}
-        observer={skyObserverFromArgs(sunArgs)}
-        moon={skyMoonFromArgs(args)}
-        stars={skyStarsFromArgs(args)}
-        clouds={skyCloudsFromArgs(args)}
-        air={args.air}
-        cutaway={skyCutawayFromArgs(args)}
-        capture={{ maxWait: args.captureMaxWait }}
-        debug={args.showEnvironment ? { environment: true } : undefined}
+        {...skyPropsFromArgs(sunArgs)}
+        abyss={skyAbyssFromArgs(args)}
+        ocean={{ ...skyOceanFromArgs(args), level: 0, depth: DEPTH }}
       >
         <SkyBoxStage bounds={BOUNDS} />
         {tanker}
@@ -140,7 +99,6 @@ const SkyTimelapse = (args: TimelapseArgs) => {
       <ClockOverlay
         text={`${args.sunDate}  ${formatHour(hour)} solar time  sun ${elevation.toFixed(1)}\u00b0`}
       />
-      {args.stats && <RenderStats origin="bottom-left" />}
     </>
   );
 };
@@ -162,7 +120,7 @@ const hidden = { table: { disable: true } };
 const meta = {
   title: 'Components/Misc/Sky',
   component: SkyTimelapse,
-  decorators: [Canvas3dDecorator, skyCutawayDecorator],
+  decorators: [Canvas3dDecorator, ...skyDecorators],
   parameters: {
     scale: 1000,
     // Low over the water, looking south and a little up: the sun crosses the view about noon.
@@ -171,7 +129,7 @@ const meta = {
     ownLighting: () => true,
   },
   argTypes: {
-    ...skySunArgTypes(),
+    ...skyArgTypes(),
     playing: {
       control: { type: 'boolean' },
       description: 'Run the clock.',
@@ -204,50 +162,19 @@ const meta = {
       'Degrees north. Far north in June the sun never sets; in December it never rises.',
     ),
     sunLongitude: range(-180, 180, 0.1, 'Timelapse', 'Degrees east.'),
-    captureMaxWait: range(
-      0,
-      2000,
-      50,
-      'Timelapse',
-      'Longest the environment and the light probe go without a bake while the sun moves, in milliseconds. Lower lights the scene more smoothly, at more cost.',
-    ),
+    // The clock always sets the sun.
     sunFromTime: hidden,
     sunAzimuth: hidden,
     sunElevation: hidden,
-    waterOpacity: range(0, 1, 0.01, 'Sea', 'The water\u2019s own opacity.'),
-    windSpeed: range(0, 25, 0.5, 'Sea', 'Drives the waves, in m/s.'),
-    foamAmount: range(0, 1, 0.01, 'Sea', 'Whitecaps on the waves.'),
-    air: {
-      control: { type: 'boolean' },
-      description:
-        'The air thins with height: climbing, the sky deepens and its haze closes onto the horizon. Seen from low down, the far sea fades into the horizon.',
-      table: { category: 'Sky' },
-    },
-    ...skyCutawayArgTypes(),
-    ...toneMappingArgTypes(),
     tanker: {
       control: { type: 'boolean' },
       description:
         'A tanker riding the sky’s waves, with a foam collar where it meets the water: inside a `Sky`, floating components work as inside an `Ocean`.',
       table: { category: 'Sea' },
     },
-    stats: {
-      control: { type: 'boolean' },
-      description:
-        'GPU time, frame time and FPS, draw calls, triangles and resident geometries, textures and programs.',
-      table: { category: 'Debug' },
-    },
-    showEnvironment: {
-      control: { type: 'boolean' },
-      description:
-        'The environment\u2019s bake for the zone in view as its six faces, lower right: `+Y` over `-X -Z +X +Z`, `-Y` under. Watch it follow the sun.',
-      table: { category: 'Debug' },
-    },
   },
   args: {
-    ...skySunArgs,
-    ...skyCutawayArgs,
-    ...toneMappingArgs,
+    ...skyArgs,
     playing: true,
     speed: 0.5,
     sunFromTime: true,
@@ -255,12 +182,6 @@ const meta = {
     clouds: true,
     // Sooner than the Sky's own 1000, so the light keeps up with the sun.
     captureMaxWait: 250,
-    waterOpacity: DEFAULT_OCEAN_WATER_OPACITY,
-    windSpeed: 10,
-    foamAmount: 0.5,
-    air: true,
-    stats: false,
-    showEnvironment: false,
     tanker: true,
   },
 } satisfies Meta<typeof SkyTimelapse>;

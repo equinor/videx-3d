@@ -43,12 +43,15 @@ import {
 import type { SeabedMesh } from '../../sdk/geometries/surface-clip';
 import { ResourceMonitor } from '../../storybook/components/ResourceMonitor';
 import {
-  skyCutawayArgs,
-  SkyCutawayArgs,
-  skyCutawayArgTypes,
-  skyCutawayDecorator,
-  skyCutawayFromArgs,
-} from '../../storybook/components/sky-cutaway-controls';
+  skyAbyssFromArgs,
+  skyArgs,
+  SkyArgs,
+  skyArgTypes,
+  skyDecorators,
+  skyOceanFromArgs,
+  skyPropsFromArgs,
+} from '../../storybook/components/sky-controls';
+import { RendererToneMapping } from '../../storybook/components/tone-mapping-controls';
 import { chunkTimings } from '../../storybook/data/chunk-timings';
 import {
   EXTRA_WELLBORE_IDS,
@@ -460,7 +463,6 @@ type FieldColumnStoryProps = {
   detail: ChunkDetailPreset | 'none';
   detailStrength: number;
   chunkPicking: boolean;
-  renderStats: boolean;
   buildDiagnostics: boolean;
   tileCells: number;
   debugTiles: boolean;
@@ -504,19 +506,12 @@ type FieldColumnStoryProps = {
   seismicGaps: boolean;
   seismicVoids: boolean;
   sky: boolean;
-  skyBackground: boolean;
-  skyClouds: boolean;
-  skyWater: boolean;
-  skySeabed: boolean;
-  skySeabedOpacity: number;
   matchBed: boolean;
   skyBed: 'top' | 'median' | 'bottom';
-  sunAzimuth: number;
-  sunElevation: number;
   stageMargin: number;
   seabedFalloff: number;
 } & ChunkProgressArgs &
-  SkyCutawayArgs;
+  SkyArgs;
 
 type ColumnBed = {
   mesh: SeabedMesh;
@@ -1461,25 +1456,20 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       {props.wellbores && <Highlighter />}
       {props.sky && bed && bedHeight !== null && (
         <Sky
-          background={props.skyBackground}
-          sun={{ azimuth: props.sunAzimuth, elevation: props.sunElevation }}
-          clouds={{ enabled: props.skyClouds }}
-          abyss
-          cutaway={skyCutawayFromArgs(props)}
+          {...skyPropsFromArgs(props)}
+          abyss={skyAbyssFromArgs(props)}
           ocean={{
-            water: props.skyWater,
+            ...skyOceanFromArgs(props),
             seabed:
               props.skySeabed &&
-              (!props.matchBed || {
-                color: layers[0]?.material,
-                detail: layers[0]?.detail ?? false,
-              }),
-            seabedOpacity: props.skySeabedOpacity,
+              (props.matchBed
+                ? {
+                    color: layers[0]?.material,
+                    detail: layers[0]?.detail ?? false,
+                  }
+                : { color: props.skySeabedColor }),
             level: skyLevel,
             depth: Math.max(skyLevel - bedHeight, 1),
-            waterOpacity: props.waterOpacity,
-            windSpeed: props.windSpeed,
-            foamAmount: props.foamAmount,
           }}
         >
           <SkyBoxStage
@@ -1503,7 +1493,11 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
         </Sky>
       )}
       {props.resources && <ResourceMonitor interval={props.resourceInterval} />}
-      {props.renderStats && <RenderStats origin="bottom-left" />}
+      {props.stats && <RenderStats origin="bottom-left" />}
+      <RendererToneMapping
+        toneMapping={props.toneMapping}
+        exposure={props.exposure}
+      />
       <ChunkPipeline
         frontPeelTolerance={props.frontPeelTolerance}
         skipFrontPeeling={props.skipFrontPeeling}
@@ -1531,7 +1525,7 @@ const meta = {
     wellMapCamera: false,
     // Under the sky, the sky lights the scene.
     ownLighting: (args: FieldColumnStoryProps) => args.sky,
-    // `skyBackground` and `immersionBackground` are switches, not colours.
+    // `immersionBackground` is a switch, not a colour.
     controls: { matchers: { color: /color$/i } },
     docs: {
       description: {
@@ -1555,6 +1549,7 @@ type Story = StoryObj<typeof FieldColumnStory>;
 
 export const Default: Story = {
   args: {
+    ...skyArgs,
     // Surfaces
     outline: 'field',
     cropSize: 7,
@@ -1673,7 +1668,6 @@ export const Default: Story = {
     // Interaction
     chunkPicking: false,
     // Diagnostics
-    renderStats: false,
     buildDiagnostics: true,
     tileCells: 0,
     debugTiles: false,
@@ -1695,36 +1689,25 @@ export const Default: Story = {
     progressInlineIdle: 'show',
     // Sky
     sky: false,
-    skyBackground: true,
-    skyClouds: false,
-    skyWater: true,
-    skySeabed: true,
-    skySeabedOpacity: 1,
     matchBed: true,
     skyBed: 'median',
-    sunAzimuth: 200,
     sunElevation: 30,
     stageMargin: 4000,
     seabedFalloff: 3000,
-    ...skyCutawayArgs,
   },
   argTypes: {
+    // Behind `sky`; the story draws through its own OIT pipeline always.
+    ...skyArgTypes({ shownIf: 'sky' }),
+    pipeline: { table: { disable: true } },
     sky: {
       description:
         'Put the field under the videx `<Sky>`, which lights the scene instead of the default lights, with the column as its stage\u2019s occupant. The sky owns the water then: the column\u2019s own `water` is hidden while it is on (`ChunkStack.drawWater`), and the stage draws the column\u2019s sea bed.',
       table: { category: 'Sky' },
     },
-    skyBackground: {
+    drawSky: {
       control: { type: 'boolean' },
       description:
         'Draw the sky and its stage behind the scene (`Sky.background`). Switched instantly, with nothing rebuilt or baked: off, the sky still lights the scene, and the column draws its own water and sea bed again.',
-      if: { arg: 'sky' },
-      table: { category: 'Sky' },
-    },
-    skyClouds: {
-      control: { type: 'boolean' },
-      description:
-        'The sky\u2019s clouds, with their defaults (`clouds.enabled`): compiled in from the start, so switching them is instant.',
       if: { arg: 'sky' },
       table: { category: 'Sky' },
     },
@@ -1761,16 +1744,6 @@ export const Default: Story = {
       if: { arg: 'sky' },
       table: { category: 'Sky' },
     },
-    sunAzimuth: {
-      control: { type: 'range', min: 0, max: 360, step: 1 },
-      if: { arg: 'sky' },
-      table: { category: 'Sky' },
-    },
-    sunElevation: {
-      control: { type: 'range', min: -10, max: 90, step: 0.5 },
-      if: { arg: 'sky' },
-      table: { category: 'Sky' },
-    },
     stageMargin: {
       control: { type: 'range', min: 0, max: 20000, step: 100 },
       description:
@@ -1785,7 +1758,6 @@ export const Default: Story = {
       if: { arg: 'sky' },
       table: { category: 'Sky' },
     },
-    ...skyCutawayArgTypes('sky'),
     outline: {
       control: { type: 'inline-radio' },
       options: ['grid', 'field', 'crop', 'nested'],
@@ -2357,12 +2329,12 @@ export const Default: Story = {
     },
     cullHiddenCaps: {
       description:
-        'Skip the cap triangles buried between two opaque units. ⭐ The A/B for the saving: compare `Tris` and `GPU` in `renderStats`. Switched off by itself at any opacity below 1, in wireframe, or with walls hidden.',
+        'Skip the cap triangles buried between two opaque units. ⭐ The A/B for the saving: compare `Tris` and `GPU` in `stats`. Switched off by itself at any opacity below 1, in wireframe, or with walls hidden.',
       table: { category: 'Appearance' },
     },
     cullOffscreen: {
       description:
-        'With `lodLevels`, skip each cap’s tiles that lie wholly outside the view. Saves vertex work only (off-screen triangles draw no pixels), so it pays with many triangles: close-ups and views inside the column. A/B with `GPU` in `renderStats`.',
+        'With `lodLevels`, skip each cap’s tiles that lie wholly outside the view. Saves vertex work only (off-screen triangles draw no pixels), so it pays with many triangles: close-ups and views inside the column. A/B with `GPU` in `stats`.',
       table: { category: 'Appearance' },
     },
     inferredStyle: {
@@ -2388,7 +2360,8 @@ export const Default: Story = {
         'Register the chunks with the event emitter: ctrl+click flies to the picked point, on a cap, a wall or the cut face. Off by default because a registered block also hides what is behind it from picking — the wells inside it stop being clickable through it. ⭐ What the cut takes away is not picked.',
       table: { category: 'Interaction' },
     },
-    renderStats: {
+    stats: {
+      control: { type: 'boolean' },
       description:
         'GPU time, frame time, draw calls and triangles summed over every pass of the frame.',
       table: { category: 'Diagnostics' },
@@ -2527,7 +2500,7 @@ export const Default: Story = {
       opacity: 0.75,
     }),
     createChunkProgressDecorator(progressStore),
-    skyCutawayDecorator,
+    ...skyDecorators,
   ],
 };
 
