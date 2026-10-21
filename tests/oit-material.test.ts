@@ -474,6 +474,31 @@ void main() {
       }
     });
 
+    test('builds variants of a material whose properties live in its uniforms', () => {
+      // As SurfaceMaterial does: `opacity` read through to a uniform.
+      const material = new ShaderMaterial({
+        uniforms: {
+          opacity: { value: 0.4 },
+          diffuse: { value: new Color(0xff0000) },
+        },
+      });
+      Object.defineProperty(material, 'opacity', {
+        get() {
+          return this.uniforms.opacity.value;
+        },
+        set(value) {
+          this.uniforms.opacity.value = value;
+        },
+      });
+      const base = attachOitVariants(material);
+      const v = base.getOitVariants();
+      for (const pass of ALL_PASSES) {
+        expect(v[pass].opacity).toBe(0.4);
+        expect((v[pass] as ShaderMaterial).uniforms).toBe(base.uniforms);
+      }
+      expect(base.uniforms.diffuse.value.getHex()).toBe(0xff0000);
+    });
+
     test('re-syncs variant programs when the base program signature changes', () => {
       const base = attachOitVariants(new ShaderMaterial());
       const v = base.getOitVariants();

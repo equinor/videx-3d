@@ -314,8 +314,15 @@ function buildVariant(
     // Share the base uniforms object so live uniform updates (and the OIT uniforms
     // set by the pass) propagate to every variant. Hidden from `copy()` meanwhile: it
     // would clone them all (and warn on render-target textures) only to be replaced.
+    // Each entry stays, its objects left out: a property may read one (SurfaceMaterial's
+    // `opacity` does).
     const uniforms = base.uniforms;
-    base.uniforms = {};
+    base.uniforms = Object.fromEntries(
+      Object.entries(uniforms).map(([name, uniform]) => [
+        name,
+        { value: typeof uniform.value === 'object' ? null : uniform.value },
+      ]),
+    );
     try {
       v.copy(base);
     } finally {
