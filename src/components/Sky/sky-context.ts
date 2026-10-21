@@ -13,10 +13,12 @@ export type SkyState = {
   daylight: number;
   /** 0 to 1 about sunrise and sunset: how much the horizon glows (`skyTwilight`) */
   twilight: number;
-  /** world-space direction toward the moon, normalised: opposite the sun */
+  /** world-space direction toward the moon, normalised: opposite the sun, or where an observer sees it */
   moonDirection: Vector3;
-  /** 0 (day, and dusk) to 1 (night): how much the moon lights the scene */
+  /** 0 (day, and dusk) to 1 (night): how much the moon lights the scene — with an observer, as its phase and height allow */
   moonlight: number;
+  /** share of the moon's disc lit, 0 (new) to 1 (full); always 1 without an observer */
+  moonPhase: number;
 };
 
 export const SkyContext = createContext<SkyState | null>(null);

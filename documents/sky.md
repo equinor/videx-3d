@@ -39,7 +39,8 @@ background, environment and light probe alike.
 
 ## Sun, moon and stars
 
-The sun is a disc (`size`, an angular radius in degrees) with a broad halo (`glow`), a
+The sun is a disc (`size`, an angular radius in degrees) with a broad halo (`glow`, full
+down to about 3° below the horizon and gone with the twilight by 12°), a
 bright glare hugging the disc (`glare`, default 0.5) and, optionally, rays around it
 (`rays`, default 0). `shimmer: true` lets the rays brighten and fade slowly, each on
 its own cycle. Its colour and the daylight follow the elevation: red-orange on the
@@ -66,7 +67,43 @@ Disc, glare, rays, moon and stars are left out of the environment and light-prob
 
 ⚠️ Without tone mapping the disc is display white. With it (the renderer's
 `toneMapping`, or `hdr: true` when a pipeline pass tone maps instead), the disc goes 16×
-past white, as a bright sun should.
+past white, as a bright sun should. Without tone mapping the glare also keeps its full
+strength only while its light is warm (up to about 15°); once the light is white it drops
+to a quarter, as over the bright halo it would clip to a white blob twice the disc's size.
+
+### The real sky: `observer`
+
+`observer: { date, latitude, longitude }` (a moment, degrees north and east) makes it the
+sky over that place at that moment; `sun.azimuth` and `elevation` are then ignored. An
+invalid one (no real date, a latitude past ±90) falls back to the sky above.
+
+- **Sun:** `solarPosition`.
+- **Moon:** where it really is (the Astronomical Almanac's low-precision series, within
+  a few tenths of a degree, with parallax), drawn as a sphere lit from the sun, so the
+  phase and the tilt of its lit side come out on their own, with faint earthshine on the
+  dark side, which shows the air in front of it a shade darker than the sky around it.
+  It is up by day too, as a pale disc. Its light scales with the phase and
+  is gone while it is below the horizon, so a night with a new moon is dark.
+- **Stars:** the 1630 stars to magnitude 5 of the Yale Bright Star Catalogue, in place,
+  each in its colour (from its B-V), over the procedural stars as a faint filler for the
+  fainter ones. Each comes out as the sky darkens enough for it: the brightest a few
+  degrees after sunset, magnitude 5 once the sun is 11.5° down.
+- **Planets:** Mercury, Venus, Mars, Jupiter and Saturn, from JPL's Keplerian elements
+  (valid 1800–2050, within a fraction of a degree), as bright as they are (Saturn's rings
+  aside): Venus is out by sunset. They come and go with `stars`.
+
+A star of magnitude m is drawn `0.08 · 10^(0.2 (5 − m))` bright — the square root of its
+light, as the eye compresses it — and wider the brighter it is. The catalogue is looked
+up per pixel from a cube-face grid over the sky (`sky-star-catalogue.ts`), each star listed
+in every cell within half a degree of it, so a pixel reads one cell.
+
+The astronomy is in the SDK, free of three.js: `julianDay`, `localSiderealTime`,
+`equatorialToHorizontal`, `precessFromJ2000`, `lunarPosition`, `planetPosition` and
+`brightStars`. `scripts/generate-bright-stars.js` extracts the catalogue (from CDS, or a
+local copy) into `src/sdk/utils/bright-stars-data.ts`, 6 bytes a star.
+
+The catalogue: Hoffleit, D. & Warren, W. H. Jr. (1991), *The Bright Star Catalogue, 5th
+Revised Ed.*, Astronomical Data Center, NSSDC/ADC; CDS catalogue V/50.
 
 ## Clouds
 

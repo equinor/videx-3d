@@ -59,8 +59,13 @@ import {
   SkyColors,
   skyDaylight,
   skyDefaults,
+  skyCelestialFrame,
+  skyEphemeris,
   SkyMoon,
   skyMoonlight,
+  skyMoonShine,
+  SkyObserver,
+  skyObserverValid,
   SkyOcean,
   SkySeabed,
   skyStarShare,
@@ -209,6 +214,14 @@ export type SkyDebug = {
  */
 export type SkyProps = {
   sun?: SkySun;
+  /**
+   * Where and when the sky is seen from: the sun and the moon — with its phase, up by
+   * day too — are then the real ones for that moment and place, and so are the stars and
+   * the planets. `sun.azimuth` and `elevation` are ignored while it is valid; without
+   * one, they set the sun, the moon is a full one opposite it and the stars are
+   * procedural.
+   */
+  observer?: SkyObserver | null;
   colors?: SkyColors;
   /** the world's up direction. Default `[0, 1, 0]` */
   up?: Vec3;
@@ -246,7 +259,7 @@ export type SkyProps = {
   sunLight?: boolean;
   /** a moon opposite the sun, for some light at night (see {@link SkyMoon}). Default true */
   moon?: boolean | SkyMoon;
-  /** faint stars at night (see {@link SkyStars}). Default true */
+  /** stars at night, and with an `observer` the planets (see {@link SkyStars}). Default true */
   stars?: boolean | SkyStars;
   /** a deck of still clouds (see {@link SkyClouds}). Default false */
   clouds?: boolean | SkyClouds;
@@ -317,6 +330,7 @@ function createSkyStandInMaterial(sky: SkyMaterial) {
  */
 export const Sky = ({
   sun,
+  observer,
   colors,
   up,
   north,
@@ -345,8 +359,27 @@ export const Sky = ({
   const sceneCamera = useThree(state => state.camera);
   const getThree = useThree(state => state.get);
 
-  const azimuth = sun?.azimuth ?? skyDefaults.sun.azimuth;
-  const elevation = sun?.elevation ?? skyDefaults.sun.elevation;
+  // Primitives, so an observer object made each render recomputes nothing.
+  const observing = skyObserverValid(observer);
+  const observedAt = observing ? observer.date.getTime() : NaN;
+  const observedLatitude = observing ? observer.latitude : NaN;
+  const observedLongitude = observing ? observer.longitude : NaN;
+  const ephemeris = useMemo(
+    () =>
+      Number.isFinite(observedAt)
+        ? skyEphemeris(
+            new Date(observedAt),
+            observedLatitude,
+            observedLongitude,
+          )
+        : null,
+    [observedAt, observedLatitude, observedLongitude],
+  );
+
+  const azimuth =
+    ephemeris?.sun.azimuth ?? sun?.azimuth ?? skyDefaults.sun.azimuth;
+  const elevation =
+    ephemeris?.sun.elevation ?? sun?.elevation ?? skyDefaults.sun.elevation;
   const sunIntensity = sun?.intensity ?? skyDefaults.sun.intensity;
   const sunSize = sun?.size ?? skyDefaults.sun.size;
   const sunGlow = sun?.glow ?? skyDefaults.sun.glow;
@@ -355,6 +388,7 @@ export const Sky = ({
   const sunShimmer = sun?.shimmer ?? skyDefaults.sun.shimmer;
   const sunTwilight = sun?.twilight ?? skyDefaults.sun.twilight;
   const moonOptions: SkyMoon | null = moon === true ? {} : moon || null;
+  const hasMoon = moonOptions !== null;
   const moonDefaults = skyDefaults.moon;
   const moonIntensity = moonOptions?.intensity ?? moonDefaults.intensity;
   const moonHex = toHex(moonOptions?.color ?? moonDefaults.color);
@@ -499,21 +533,29 @@ export const Sky = ({
   );
 
   const state = useMemo<SkyState>(() => {
+    const frame = {
+      up: [upX, upY, upZ] as Vec3,
+      north: [northX, northY, northZ] as Vec3,
+    };
     const sunDirection = new Vector3().fromArray(
-      directionFromCompass(azimuth, elevation, {
-        up: [upX, upY, upZ],
-        north: [northX, northY, northZ],
-      }),
+      directionFromCompass(azimuth, elevation, frame),
     );
+    const observed = ephemeris?.moon;
     return {
       sunDirection,
       sunColor: skySunColor(elevation),
       daylight: skyDaylight(elevation),
       twilight: skyTwilight(elevation),
-      moonDirection: sunDirection.clone().negate(),
-      moonlight: skyMoonlight(elevation),
+      moonDirection: observed
+        ? new Vector3().fromArray(
+            directionFromCompass(observed.azimuth, observed.elevation, frame),
+          )
+        : sunDirection.clone().negate(),
+      moonlight:
+        skyMoonlight(elevation) * (observed ? skyMoonShine(observed) : 1),
+      moonPhase: observed?.illumination ?? 1,
     };
-  }, [azimuth, elevation, upX, upY, upZ, northX, northY, northZ]);
+  }, [azimuth, elevation, ephemeris, upX, upY, upZ, northX, northY, northZ]);
 
   // One directional light, so nothing recompiles at dusk: the sun's fades out by
   // twilight, and only then does the moon's fade in.
@@ -674,14 +716,38 @@ export const Sky = ({
     material.moonColor = moonColor;
     material.moonSize = moonSize;
     material.moonGlow = moonGlow;
+    material.moonPhase = state.moonPhase;
+    // Only an observer's moon can be up by day; the one opposite the sun never is.
+    material.moonDay = ephemeris && hasMoon ? 1 : 0;
     material.night = 1 - state.daylight;
     material.setStars(starBrightness, starShare);
+    const compass = {
+      up: [upX, upY, upZ] as Vec3,
+      north: [northX, northY, northZ] as Vec3,
+    };
     material.setStarFrame(
-      skyStarFrame(azimuth, elevation, starLatitude, {
-        up: [upX, upY, upZ],
-        north: [northX, northY, northZ],
-      }),
+      Number.isFinite(observedAt)
+        ? skyCelestialFrame(
+            new Date(observedAt),
+            observedLatitude,
+            observedLongitude,
+            compass,
+          )
+        : skyStarFrame(azimuth, elevation, starLatitude, compass),
     );
+    material.observed = !!ephemeris && starBrightness > 0;
+    if (ephemeris) {
+      material.setPlanets(
+        ephemeris.planets.map(planet => ({
+          direction: directionFromCompass(
+            planet.azimuth,
+            planet.elevation,
+            compass,
+          ),
+          magnitude: planet.magnitude,
+        })),
+      );
+    }
     material.clouds = cloudsOn;
     material.setClouds({
       coverage: cloudCoverage,
@@ -722,6 +788,11 @@ export const Sky = ({
     starLatitude,
     azimuth,
     elevation,
+    ephemeris,
+    hasMoon,
+    observedAt,
+    observedLatitude,
+    observedLongitude,
     cloudsOn,
     cloudCoverage,
     cloudAltitude,

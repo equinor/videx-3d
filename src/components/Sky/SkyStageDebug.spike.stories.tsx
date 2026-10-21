@@ -16,6 +16,9 @@ import {
 } from '../../storybook/components/sky-cutaway-controls';
 import {
   skyMoonFromArgs,
+  skyObserverFromArgs,
+  skyObserverNowArgType,
+  skyObserverNowDecorator,
   skyStarsFromArgs,
   skyCloudsFromArgs,
   skySunArgs,
@@ -161,6 +164,7 @@ type StageDebugArgs = {
   showEnvironment: boolean;
   hide: string[];
   stats: boolean;
+  observerNow: boolean;
 } & SkyCutawayArgs &
   SkySunArgs &
   ToneMappingArgs;
@@ -199,6 +203,7 @@ const StageDebug = (args: StageDebugArgs) => {
           seabedOpacity: args.seabedOpacity,
         }}
         sun={skySunFromArgs(args)}
+        observer={skyObserverFromArgs(args)}
         moon={skyMoonFromArgs(args)}
         stars={skyStarsFromArgs(args)}
         clouds={skyCloudsFromArgs(args)}
@@ -250,7 +255,7 @@ const StageDebug = (args: StageDebugArgs) => {
 const meta = {
   title: 'Spikes/Sky/StageDebug',
   component: StageDebug,
-  decorators: [Canvas3dDecorator, skyCutawayDecorator],
+  decorators: [Canvas3dDecorator, skyCutawayDecorator, skyObserverNowDecorator],
   parameters: {
     scale: 1000,
     // With every layer hidden nothing else clears the frame, and the last one stays up.
@@ -292,6 +297,7 @@ const meta = {
     },
     ...skyCutawayArgTypes(),
     ...skySunArgTypes(),
+    ...skyObserverNowArgType(),
     ...toneMappingArgTypes(),
     voidDetail: {
       control: { type: 'range', min: 0, max: 0.5, step: 0.01 },
@@ -462,6 +468,7 @@ const meta = {
     probeElevation: 300,
     ...skyCutawayArgs,
     ...skySunArgs,
+    observerNow: false,
     ...toneMappingArgs,
     voidDetail: skyDefaults.abyss.depthDetail,
     voidDetailScale: skyDefaults.abyss.depthDetailScale,

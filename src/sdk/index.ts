@@ -81,6 +81,8 @@ export * from './utils/polyline-2d';
 export * from './utils/scene';
 export * from './utils/segments';
 export * from './utils/solar-position';
+export * from './utils/astronomy';
+export * from './utils/bright-stars';
 export * from './utils/strings';
 export * from './utils/trajectory';
 export * from './utils/trigonometry';

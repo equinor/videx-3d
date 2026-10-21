@@ -3,6 +3,7 @@ import {
   Camera,
   Color,
   ColorRepresentation,
+  DataTexture,
   DoubleSide,
   Float32BufferAttribute,
   MathUtils,
@@ -43,6 +44,10 @@ import {
   skySunColor,
   skyTwilight,
 } from './sky-model';
+import { createSkyStarTextures } from './sky-star-catalogue';
+
+// The naked-eye planets (`PLANETS`); sky.glsl's `uSkyPlanets` has as many.
+const SKY_PLANET_COUNT = 5;
 
 // An empty rectangle: nothing is on a stage.
 const NO_STAGE = [1, 1, -1, -1] as const;
@@ -84,6 +89,7 @@ export class SkyMaterial extends ShaderMaterial {
   isSkyMaterial = true;
   private bedDetail: SurfaceDetail | undefined;
   private bedDetailKey = '';
+  private starTextures: { cells: DataTexture; list: DataTexture } | null = null;
 
   constructor(parameters: ShaderMaterialParameters = {}) {
     const { sun, colors, abyss, ocean } = skyDefaults;
@@ -112,10 +118,21 @@ export class SkyMaterial extends ShaderMaterial {
         uSkyMoonColor: new Uniform(new Color()),
         uSkyMoonSize: new Uniform(0),
         uSkyMoonGlow: new Uniform(0),
+        uSkyMoonPhase: new Uniform(1),
+        uSkyMoonDay: new Uniform(0),
         uSkyNight: new Uniform(0),
         uSkyMoonlight: new Uniform(0),
         uSkyStars: new Uniform(new Vector2()),
         uSkyStarFrame: new Uniform(new Matrix3()),
+        uSkyObserved: new Uniform(0),
+        uSkyPlanets: new Uniform(
+          Array.from(
+            { length: SKY_PLANET_COUNT },
+            () => new Vector4(0, 0, 1, 99),
+          ),
+        ),
+        uSkyStarCells: new Uniform<DataTexture | null>(null),
+        uSkyStarList: new Uniform<DataTexture | null>(null),
         uSkySunRadiance: new Uniform(1),
         uSkySunDisc: new Uniform(1),
         uSkyHorizonBlend: new Uniform(skyDefaults.horizonBlend),
@@ -355,6 +372,22 @@ export class SkyMaterial extends ShaderMaterial {
     this.uniforms.uSkyMoonGlow.value = Math.max(value, 0);
   }
 
+  /** share of the moon's disc lit, 0 (new) to 1 (full): its halo and earthshine follow it */
+  get moonPhase(): number {
+    return this.uniforms.uSkyMoonPhase.value;
+  }
+  set moonPhase(value: number) {
+    this.uniforms.uSkyMoonPhase.value = MathUtils.clamp(value, 0, 1);
+  }
+
+  /** 1 while the moon can be up by day, drawn as a pale disc; 0 hides it until night */
+  get moonDay(): number {
+    return this.uniforms.uSkyMoonDay.value;
+  }
+  set moonDay(value: number) {
+    this.uniforms.uSkyMoonDay.value = MathUtils.clamp(value, 0, 1);
+  }
+
   /** 0 by day to 1 at night: how much the moon and the stars show; 0 hides them */
   get night(): number {
     return this.uniforms.uSkyNight.value;
@@ -384,6 +417,40 @@ export class SkyMaterial extends ShaderMaterial {
       z[1],
       z[2],
     );
+  }
+
+  /**
+   * The real sky of an observer: the catalogue's stars in the star frame (then
+   * `skyCelestialFrame`'s) and the planets, with the procedural stars a faint filler.
+   * The catalogue is uploaded the first time.
+   */
+  get observed(): boolean {
+    return this.uniforms.uSkyObserved.value > 0;
+  }
+  set observed(value: boolean) {
+    this.uniforms.uSkyObserved.value = value ? 1 : 0;
+    if (value && !this.starTextures) {
+      this.starTextures = createSkyStarTextures();
+      this.uniforms.uSkyStarCells.value = this.starTextures.cells;
+      this.uniforms.uSkyStarList.value = this.starTextures.list;
+    }
+  }
+
+  /** the planets (`PLANETS` order), by world direction and apparent magnitude */
+  setPlanets(planets: { direction: Vec3; magnitude: number }[]) {
+    const uniform = this.uniforms.uSkyPlanets.value as Vector4[];
+    uniform.forEach((value, i) => {
+      const planet = planets[i];
+      if (planet) value.set(...planet.direction, planet.magnitude);
+      else value.w = 99;
+    });
+  }
+
+  dispose() {
+    this.starTextures?.cells.dispose();
+    this.starTextures?.list.dispose();
+    this.starTextures = null;
+    super.dispose();
   }
 
   /** width of the horizon -> ground transition, as a sine of the angle below the horizon */

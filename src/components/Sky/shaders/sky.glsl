@@ -15,10 +15,16 @@ uniform vec3 uSkyMoonDirection; // world space, normalised
 uniform vec3 uSkyMoonColor;
 uniform float uSkyMoonSize; // angular radius, radians
 uniform float uSkyMoonGlow;
+uniform float uSkyMoonPhase; // share of its disc lit: 1 opposite the sun
+uniform float uSkyMoonDay; // 1 while it can be up by day (an observer's moon)
 uniform float uSkyNight; // 0 by day to 1 at night: how much the moon and the stars show
 uniform float uSkyMoonlight; // 0 until the daylight is gone, 1 by nautical twilight: how much the moon lights (skyMoonlight)
 uniform vec2 uSkyStars; // brightness, and the share of the sky's cells holding one
 uniform mat3 uSkyStarFrame; // world direction -> the turning star sphere's
+uniform float uSkyObserved; // 1 with an observer: the catalogue's stars and the planets, over a faint procedural filler
+uniform vec4 uSkyPlanets[5]; // world direction, and apparent magnitude
+uniform sampler2D uSkyStarCells; // each cell of a cube-face grid over the star sphere: its first entry, and count
+uniform sampler2D uSkyStarList; // each entry: the star's direction scaled by 2 + its B-V, and its magnitude
 uniform float uSkyHorizonBlend; // width of the horizon -> ground transition, in dot(dir, up)
 uniform float uSkyIntensity;
 uniform float uSkyDebug; // 1: tint each part by what draws it (SkyDebug.tint)
@@ -28,6 +34,14 @@ uniform float uSkyDebug; // 1: tint each part by what draws it (SkyDebug.tint)
 #define SKY_DEBUG_SEA vec3(0.9, 0.15, 0.1)
 #define SKY_DEBUG_STAGED vec3(0.55, 0.1, 0.8)
 #define SKY_DEBUG_LAYER vec3(1.0, 0.55, 0.0)
+// The moon's dark side in earthshine, as a share of its lit side, near new moon.
+#define SKY_EARTHSHINE 0.05
+// The moon's dark side shows the air in front of it, a shade darker than the sky around it.
+#define SKY_MOON_DARK 0.75
+// How bright the moon shows by day, over the sky behind it.
+#define SKY_MOON_DAY 0.35
+// The procedural stars as a filler under an observer's catalogue, relative to their own.
+#define SKY_STAR_FILLER 0.35
 
 // `color` shifted halfway toward the debug `tint` of the part that drew it, while debugging.
 vec3 skyDebugTint(vec3 color, vec3 tint) {
@@ -39,6 +53,19 @@ float skyHash(vec3 p) {
   p = fract(p * 0.1031);
   p += dot(p, p.zyx + 31.32);
   return fract((p.x + p.y) * p.z);
+}
+
+// The sun's disc without tone mapping: near white, warming a little at sunrise and sunset.
+#define SKY_SUN_DISC_WARM vec3(1.0, 0.86, 0.66)
+// The glare once white, without tone mapping: over the bright halo it clips to a white blob twice the disc.
+#define SKY_SUN_DAY_GLARE 0.25
+
+// The sun's disc as drawn. Tone mapped, past white, so the mapping burns its core; without,
+// its light's own orange would read as a flat orange disc, so it is drawn near white.
+vec3 skySunDiscRadiance() {
+  if(uSkySunRadiance > 1.0)
+    return skySunDiscColor() * uSkySunRadiance;
+  return mix(vec3(1.0), SKY_SUN_DISC_WARM, min(uSkyTwilight.x * uSkyTwilight.y, 1.0));
 }
 
 uniform vec3 uSkySunGlare; // glare, rays, and the rays' shimmer phase in radians
@@ -95,21 +122,120 @@ float skyStars(vec3 dir) {
   return shine * (1.0 - smoothstep(0.0, 1.2 * pixel, length(p - star)));
 }
 
-// The moon and the stars over `color`, as night falls. ⚠️ Derivatives.
+// How bright a star of magnitude `m` is drawn: 0.08 at magnitude 5, and the square root
+// of its light brighter, as the eye's response compresses it.
+float skyStarShine(float m) {
+  return 0.08 * exp2(0.6644 * (5.0 - m));
+}
+
+// How much a star of magnitude `m` shows, for the sun's elevation in degrees: Venus by
+// sunset, the brightest stars a few degrees later, magnitude 5 once it is 11.5° down.
+float skyStarSeen(float m, float sunElevation) {
+  float onset = -4.0 - (m < 0.0 ? 1.0 : 1.5) * m;
+  return 1.0 - smoothstep(onset - 2.0, onset, sunElevation);
+}
+
+// A star's colour from its B-V index: faintly blue to faintly red, as the eye sees them.
+vec3 skyStarColor(float bv) {
+  vec3 color = mix(vec3(0.7, 0.8, 1.0), vec3(0.9, 0.93, 1.0), smoothstep(-0.3, 0.0, bv));
+  color = mix(color, vec3(1.0, 0.96, 0.88), smoothstep(0.0, 0.6, bv));
+  return mix(color, vec3(1.0, 0.78, 0.58), smoothstep(0.6, 1.6, bv));
+}
+
+// A point of light `shine` bright at `star`, along `dir`, `pixel` the angle a pixel spans:
+// the brighter, the wider too, so the bright ones stand out of the faint.
+float skyPoint(vec3 dir, vec3 star, float shine, float pixel) {
+  float radius = 1.2 * pixel * (1.0 + sqrt(shine));
+  return min(shine, 1.0) * (1.0 - smoothstep(0.0, radius, length(dir - star)));
+}
+
+// The catalogue's stars along `s`, on the star sphere: those listed in its cell of a
+// cube-face grid. ⚠️ The cell is `skyStarCell`'s (sky-star-catalogue.ts).
+vec3 skyCatalogue(vec3 s, float pixel, float sunElevation) {
+  int cells = textureSize(uSkyStarCells, 0).x;
+  vec3 a = abs(s);
+  int face;
+  vec2 uv;
+  if(a.x >= a.y && a.x >= a.z) {
+    face = s.x > 0.0 ? 0 : 1;
+    uv = s.yz / a.x;
+  } else if(a.y >= a.z) {
+    face = s.y > 0.0 ? 2 : 3;
+    uv = s.xz / a.y;
+  } else {
+    face = s.z > 0.0 ? 4 : 5;
+    uv = s.xy / a.z;
+  }
+  ivec2 cell = clamp(ivec2(floor((uv * 0.5 + 0.5) * float(cells))), ivec2(0), ivec2(cells - 1));
+  vec2 entries = texelFetch(uSkyStarCells, ivec2(cell.x, face * cells + cell.y), 0).xy;
+  int first = int(entries.x);
+  int count = int(entries.y);
+  int width = textureSize(uSkyStarList, 0).x;
+  vec3 light = vec3(0.0);
+  for(int i = 0; i < count; i++) {
+    int k = first + i;
+    vec4 star = texelFetch(uSkyStarList, ivec2(k % width, k / width), 0);
+    float scale = length(star.xyz);
+    float shine = skyStarShine(star.w) * skyStarSeen(star.w, sunElevation);
+    light += skyStarColor(scale - 2.0) * skyPoint(s, star.xyz / scale, shine * uSkyStars.x, pixel);
+  }
+  return light;
+}
+
+// The naked-eye planets along `dir`, with their B-V: Mercury, Venus, Mars, Jupiter, Saturn.
+vec3 skyPlanets(vec3 dir, float pixel, float sunElevation) {
+  const float colorIndex[5] = float[5](0.93, 0.82, 1.36, 0.83, 1.04);
+  vec3 light = vec3(0.0);
+  for(int i = 0; i < 5; i++) {
+    vec4 planet = uSkyPlanets[i];
+    float shine = skyStarShine(planet.w) * skyStarSeen(planet.w, sunElevation);
+    light += skyStarColor(colorIndex[i]) * skyPoint(dir, planet.xyz, shine * uSkyStars.x, pixel);
+  }
+  return light;
+}
+
+// The moon and the stars over `color`, as night falls; the moon by day too, while it
+// can be up. ⚠️ Derivatives.
 vec3 skyNight(vec3 color, vec3 dir, float blend) {
-  if(uSkyNight <= 0.0)
+  if(uSkyNight <= 0.0 && uSkyMoonDay <= 0.0)
     return color;
   float above = smoothstep(-blend, blend, dot(dir, uSkyUp));
   float cosMoon = dot(dir, uSkyMoonDirection);
   float angle = atan(length(cross(dir, uSkyMoonDirection)), cosMoon);
   float aa = max(fwidth(angle), 1e-5);
   float disc = 1.0 - smoothstep(uSkyMoonSize - aa, uSkyMoonSize + aa, angle);
-  float glow = uSkyMoonGlow * pow(max(cosMoon, 0.0), 200.0);
+  // The disc as a sphere lit from the sun: the phase, and which way the crescent faces.
+  vec3 across = dir - uSkyMoonDirection * cosMoon;
+  float r = min(angle / max(uSkyMoonSize, 1e-6), 1.0);
+  vec3 normal = -uSkyMoonDirection * sqrt(1.0 - r * r) + across * (r / max(length(across), 1e-8));
+  float edge = aa / max(uSkyMoonSize, 1e-6);
+  float lit = smoothstep(-edge, edge, dot(normal, uSkySunDirection));
+  // The dark side faintly lit by the Earth, most near new moon.
+  float face = lit + SKY_EARTHSHINE * (1.0 - uSkyMoonPhase) * (1.0 - lit);
+  float glow = uSkyMoonGlow * uSkyMoonPhase * pow(max(cosMoon, 0.0), 200.0);
   // The stars come out late, once it is dark, and fade low down through more air.
   float airmass = 1.0 / (max(dot(dir, uSkyUp), 0.0) + 0.05);
-  float stars = uSkyStars.x * skyStars(uSkyStarFrame * dir) * exp(-0.25 * (airmass - 1.0)) * uSkyNight * uSkyNight * uSkyNight;
-  color += (uSkyMoonColor * glow * uSkyNight + vec3(stars * uSkySunDisc)) * above;
-  return mix(color, uSkyMoonColor, disc * uSkyNight * above * uSkySunDisc);
+  vec3 starDir = uSkyStarFrame * dir;
+  float pixel = length(fwidth(dir));
+  float procedural = skyStars(starDir);
+  vec3 stars;
+  if(uSkyObserved > 0.5 && uSkySunDisc > 0.0) {
+    float sunElevation = degrees(asin(clamp(dot(uSkySunDirection, uSkyUp), -1.0, 1.0)));
+    // The procedural ones stand in for those past the catalogue, to about magnitude 6.5.
+    float filler = min(procedural * SKY_STAR_FILLER, skyStarShine(5.5)) * skyStarSeen(5.5, sunElevation);
+    stars = skyCatalogue(starDir, pixel, sunElevation) + skyPlanets(dir, pixel, sunElevation) + filler * uSkyStars.x;
+  } else {
+    stars = vec3(uSkyStars.x * procedural * uSkyNight * uSkyNight * uSkyNight);
+  }
+  stars *= exp(-0.25 * (airmass - 1.0));
+  vec3 air = color + uSkyMoonColor * glow * uSkyNight * above;
+  color = air + stars * uSkySunDisc * above;
+  float shown = disc * above * uSkySunDisc;
+  // By night it hides the stars behind it, its dark side a shade darker than the air in
+  // front of it; by day it is a pale disc over the sky.
+  vec3 dark = air * SKY_MOON_DARK + uSkyMoonColor * SKY_EARTHSHINE * (1.0 - uSkyMoonPhase);
+  color = mix(color, mix(dark, uSkyMoonColor, lit), shown * uSkyNight);
+  return color + uSkyMoonColor * face * shown * uSkyMoonDay * (1.0 - uSkyNight) * SKY_MOON_DAY;
 }
 
 #if defined(SKY_ABYSS) || defined(SKY_OCEAN) || defined(SKY_CLOUDS)
@@ -179,7 +305,7 @@ vec3 skyClouds(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
   float soft = max(fwidth(angle), 1e-5) + size * min(tau * 0.5, 1.0);
   float disc = 1.0 - smoothstep(size - soft, size + soft, angle);
   float through = disc * min(100.0 * transmit, 1.0) * (day ? 1.0 : uSkyMoonlight) * uSkySunDisc;
-  cloud = mix(cloud, day ? skySunDiscColor() * uSkySunRadiance : uSkyMoonColor, through);
+  cloud = mix(cloud, day ? skySunDiscRadiance() : uSkyMoonColor, through);
 
   float above = smoothstep(0.0, 0.03, y);
   return mix(color, cloud, density * uSkyCloudsColor.a * fade * above);
@@ -323,10 +449,14 @@ vec3 skyRadiance(vec3 dir, vec3 origin) {
     float angle = atan(length(cross(dir, uSkySunDirection)), cosSun);
     float aa = max(fwidth(angle), 1e-5);
     float disc = 1.0 - smoothstep(uSkySunSize - aa, uSkySunSize + aa, angle);
-    color = mix(color, skySunDiscColor() * uSkySunRadiance, disc * uSkySunDisc);
+    color = mix(color, skySunDiscRadiance(), disc * uSkySunDisc);
     // Over the disc too, so it is never dimmer than its glare; above the horizon, while the sun is up.
     float up = smoothstep(-blend, 0.0, y) * smoothstep(-uSkySunSize, uSkySunSize, dot(uSkySunDirection, uSkyUp));
-    color += skyTwilightLight() * skySunGlare(dir, angle, aa) * up * uSkySunDisc;
+    vec3 light = skyTwilightLight();
+    // Full while warm (to ~15° up), a quarter once white (~20°).
+    float white = min(light.r, min(light.g, light.b)) / max(max(light.r, max(light.g, light.b)), 1e-4);
+    float glare = uSkySunRadiance > 1.0 ? 1.0 : mix(1.0, SKY_SUN_DAY_GLARE, smoothstep(0.3, 0.7, white));
+    color += light * skySunGlare(dir, angle, aa) * glare * up * uSkySunDisc;
   }
   color = skyNight(color, dir, blend);
   #ifdef SKY_CLOUDS

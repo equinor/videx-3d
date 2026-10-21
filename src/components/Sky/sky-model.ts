@@ -1,7 +1,22 @@
 import { Color, ColorRepresentation, MathUtils } from 'three';
 import type { SurfaceDetail } from '../../sdk/materials/surface-detail';
 import type { Vec2, Vec3 } from '../../sdk/types/common';
-import { CompassFrame, compassBasis } from '../../sdk/utils/vector-operations';
+import {
+  equatorialToHorizontal,
+  localSiderealTime,
+  LunarPosition,
+  lunarPosition,
+  PlanetPosition,
+  planetPosition,
+  PLANETS,
+  precessFromJ2000,
+} from '../../sdk/utils/astronomy';
+import { SolarPosition, solarPosition } from '../../sdk/utils/solar-position';
+import {
+  CompassFrame,
+  compassBasis,
+  directionFromCompass,
+} from '../../sdk/utils/vector-operations';
 import type { OceanWaterProps } from '../Ocean/ocean-material-sync';
 import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../Ocean/ocean-volume-material';
 
@@ -30,8 +45,9 @@ export type SkySun = {
 };
 
 /**
- * The moon of a {@link Sky}, kept simple: a full moon opposite the sun, so it is up at
- * night. The sky's directional light comes from it once the sun is well down.
+ * The moon of a {@link Sky}: a full moon opposite the sun, so it is up at night — or,
+ * with an observer, the real one, where it stands and as much of it lit as is, by day
+ * too. The sky's directional light comes from it once the sun is well down.
  */
 export type SkyMoon = {
   /** intensity of the sky's directional light by moonlight, at full night. Default 0.3 */
@@ -44,13 +60,17 @@ export type SkyMoon = {
   glow?: number;
 };
 
-/** Faint stars of a {@link Sky}, out once it is dark. */
+/**
+ * The stars of a {@link Sky}, out once it is dark. With an observer they are the real
+ * ones, to magnitude 5, and the planets, each out as the sky darkens enough for it,
+ * over faint procedural ones; without one, procedural stars.
+ */
 export type SkyStars = {
   /** Default 0.6 */
   brightness?: number;
-  /** how many, from 0 (none) to 1. Default 0.5 */
+  /** how many procedural ones, from 0 (none) to 1. Default 0.5 */
   density?: number;
-  /** the latitude they turn for, in degrees: the celestial pole stands this high over north (below 0, south). Default 60 */
+  /** without an observer, the latitude they turn for, in degrees: the celestial pole stands this high over north (below 0, south). Default 60 */
   latitude?: number;
 };
 
@@ -399,6 +419,92 @@ export function skyDaylight(elevation: number) {
  */
 export function skyMoonlight(elevation: number) {
   return 1 - MathUtils.smoothstep(elevation, -12, -6);
+}
+
+/**
+ * Where and when a {@link Sky} is seen from: the sun, the moon and its phase are then
+ * the real ones for that moment and place.
+ */
+export type SkyObserver = {
+  /** the moment */
+  date: Date;
+  /** degrees north */
+  latitude: number;
+  /** degrees east */
+  longitude: number;
+};
+
+/** Whether a sky can be computed for `observer`: a real moment and a place on Earth. */
+export function skyObserverValid(
+  observer: SkyObserver | null | undefined,
+): observer is SkyObserver {
+  return (
+    !!observer &&
+    observer.date instanceof Date &&
+    Number.isFinite(observer.date.getTime()) &&
+    Number.isFinite(observer.latitude) &&
+    Math.abs(observer.latitude) <= 90 &&
+    Number.isFinite(observer.longitude)
+  );
+}
+
+/** The sun, the moon and the planets an observer sees. */
+export type SkyEphemeris = {
+  sun: SolarPosition;
+  moon: LunarPosition;
+  /** in `PLANETS` order */
+  planets: PlanetPosition[];
+};
+
+/** The sun, the moon and the planets at `date`, seen from `latitude` and `longitude` (degrees, north and east). */
+export function skyEphemeris(
+  date: Date,
+  latitude: number,
+  longitude: number,
+): SkyEphemeris {
+  return {
+    sun: solarPosition(date, latitude, longitude),
+    moon: lunarPosition(date, latitude, longitude),
+    planets: PLANETS.map(planet =>
+      planetPosition(planet, date, latitude, longitude),
+    ),
+  };
+}
+
+/**
+ * How much of the full moon's light a moon gives: its phase, as a lit sphere scatters
+ * it, and nothing once it is below the horizon.
+ */
+export function skyMoonShine(moon: LunarPosition) {
+  const phase = Math.acos(MathUtils.clamp(2 * moon.illumination - 1, -1, 1));
+  const scattered =
+    (Math.sin(phase) + (Math.PI - phase) * Math.cos(phase)) / Math.PI;
+  return scattered * MathUtils.smoothstep(moon.elevation, -1, 3);
+}
+
+/**
+ * The frame the stars are fixed in for an observer, as {@link skyStarFrame}'s: the
+ * celestial sphere of J2000 — the frame star catalogues use — as it stands over
+ * `latitude` and `longitude` (degrees) at `date`.
+ */
+export function skyCelestialFrame(
+  date: Date,
+  latitude: number,
+  longitude: number,
+  frame: CompassFrame = {},
+): [Vec3, Vec3, Vec3] {
+  const lst = localSiderealTime(date, longitude);
+  const axis = (rightAscension: number, declination: number): Vec3 => {
+    const now = precessFromJ2000(rightAscension, declination, date);
+    const { azimuth, elevation } = equatorialToHorizontal(
+      now.rightAscension,
+      now.declination,
+      lst,
+      latitude,
+    );
+    return directionFromCompass(azimuth, elevation, frame);
+  };
+  return [axis(0, 0), axis(90, 0), axis(0, 90)];
 }
 
 /**

@@ -1,7 +1,9 @@
-import type { ArgTypes } from '@storybook/react-vite';
+import type { ArgTypes, Decorator } from '@storybook/react-vite';
+import { useArgs, useEffect } from 'storybook/preview-api';
 import type {
   SkyClouds,
   SkyMoon,
+  SkyObserver,
   SkyStars,
   SkySun,
 } from '../../components/Sky/sky-model';
@@ -61,18 +63,93 @@ export const skySunArgs: SkySunArgs = {
   cloudSeed: 0,
 };
 
-/** The sun's azimuth and elevation from {@link SkySunArgs}: as set, or from the time and place. */
-export function skySunPosition(args: SkySunArgs) {
-  const manual = { azimuth: args.sunAzimuth, elevation: args.sunElevation };
-  if (!args.sunFromTime) return manual;
+/** The moment {@link SkySunArgs} set, or null: local solar time is UTC shifted by the longitude, 15° an hour. */
+function skySunDate(args: SkySunArgs) {
   const [year, month, day] = args.sunDate.split('-').map(Number);
-  // Local solar time is UTC shifted by the longitude, 15° an hour.
   const utc =
     Date.UTC(year, month - 1, day) +
     (args.sunHour - args.sunLongitude / 15) * 3600000;
-  if (!Number.isFinite(utc)) return manual;
-  return solarPosition(new Date(utc), args.sunLatitude, args.sunLongitude);
+  return Number.isFinite(utc) ? new Date(utc) : null;
 }
+
+/** The sun's azimuth and elevation from {@link SkySunArgs}: as set, or from the time and place. */
+export function skySunPosition(args: SkySunArgs) {
+  const manual = { azimuth: args.sunAzimuth, elevation: args.sunElevation };
+  const date = args.sunFromTime ? skySunDate(args) : null;
+  if (!date) return manual;
+  return solarPosition(date, args.sunLatitude, args.sunLongitude);
+}
+
+/** A Sky's `observer` from {@link SkySunArgs}: the time and place, when the sun is set from them. */
+export function skyObserverFromArgs(args: SkySunArgs): SkyObserver | null {
+  const date = args.sunFromTime ? skySunDate(args) : null;
+  return (
+    date && {
+      date,
+      latitude: args.sunLatitude,
+      longitude: args.sunLongitude,
+    }
+  );
+}
+
+/** {@link SkySunArgs} for `date` at a place: its local solar date and hour. */
+export function skySunArgsAt(
+  date: Date,
+  latitude: number,
+  longitude: number,
+): Partial<SkySunArgs> {
+  const solar = new Date(date.getTime() + (longitude / 15) * 3600000);
+  const hour =
+    solar.getUTCHours() +
+    solar.getUTCMinutes() / 60 +
+    solar.getUTCSeconds() / 3600;
+  return {
+    sunFromTime: true,
+    sunDate: solar.toISOString().slice(0, 10),
+    sunHour: Math.round(hour * 100) / 100,
+    sunLatitude: Math.round(latitude * 100) / 100,
+    sunLongitude: Math.round(longitude * 100) / 100,
+  };
+}
+
+/**
+ * Ticking `observerNow` sets the sun's time to now and its place to the browser's (if it
+ * may tell; else the place stays), then clears it. Add it outermost: `useArgs` is a
+ * preview hook, valid only in a decorator.
+ */
+export const skyObserverNowDecorator: Decorator = Story => {
+  const [args, updateArgs] = useArgs<SkySunArgs & { observerNow?: boolean }>();
+  const now = !!args.observerNow;
+  useEffect(() => {
+    if (!now) return;
+    const set = (latitude: number, longitude: number) =>
+      updateArgs({
+        ...skySunArgsAt(new Date(), latitude, longitude),
+        observerNow: false,
+      });
+    const stay = () => set(args.sunLatitude, args.sunLongitude);
+    if (!navigator.geolocation) {
+      stay();
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => set(coords.latitude, coords.longitude),
+      stay,
+      { timeout: 10000, maximumAge: 600000 },
+    );
+  }, [now, args.sunLatitude, args.sunLongitude, updateArgs]);
+  return Story();
+};
+
+/** The control for {@link skyObserverNowDecorator}, under `category`. */
+export const skyObserverNowArgType = (category = 'Sun') => ({
+  observerNow: {
+    control: { type: 'boolean' as const },
+    description:
+      'Set the time to now and the place to yours, if the browser may tell; then it clears itself.',
+    table: { category },
+  },
+});
 
 /** A Sky's `sun` from {@link SkySunArgs}: where it is, its glare and its rays. */
 export const skySunFromArgs = (args: SkySunArgs): SkySun => ({
@@ -119,7 +196,7 @@ export const skySunArgTypes = (category = 'Sun'): ArgTypes<SkySunArgs> => ({
   sunFromTime: {
     control: { type: 'boolean' },
     description:
-      'Set the sun from a date, an hour and a place (`solarPosition`) rather than by hand.',
+      'Set the sky from a date, an hour and a place (the Sky\u2019s `observer`): the real sun, moon and its phase, stars and planets. Off, the sun is set by hand, the moon is a full one opposite it and the stars are procedural.',
     table: { category },
   },
   sunAzimuth: {
@@ -184,7 +261,7 @@ export const skySunArgTypes = (category = 'Sun'): ArgTypes<SkySunArgs> => ({
   moon: {
     control: { type: 'boolean' },
     description:
-      'A full moon opposite the sun: its disc and glow at night, and the sky\u2019s light once the sun is well down.',
+      'The moon: its disc and glow, and the sky\u2019s light once the sun is well down. From a time and place it is the real one, with its phase, up by day too; else a full moon opposite the sun.',
     table: { category },
   },
   moonIntensity: {
@@ -199,7 +276,8 @@ export const skySunArgTypes = (category = 'Sun'): ArgTypes<SkySunArgs> => ({
   },
   stars: {
     control: { type: 'boolean' },
-    description: 'Faint stars, out once it is dark.',
+    description:
+      'Stars, out once it is dark. From a time and place, the real ones to magnitude 5 and the planets, each out as the sky darkens enough for it, over faint procedural ones; else procedural.',
     table: { category },
   },
   starBrightness: {

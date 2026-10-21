@@ -100,7 +100,9 @@ vec3 skySurface(vec3 dir, float blend) {
     color += twilight * 0.2 * belt * overHorizon;
   }
 
-  float halo = 0.6 * pow(toward, 6.0) + 0.4 * pow(toward, 48.0);
+  // Full down to about 3° below the horizon, gone with the twilight by 12°.
+  float fade = smoothstep(-0.2, -0.05, dot(uSkySunDirection, uSkyUp));
+  float halo = (0.6 * pow(toward, 6.0) + 0.4 * pow(toward, 48.0)) * fade;
   color += skyTwilightLight() * halo * uSkySunGlow * overHorizon;
   return color;
 }

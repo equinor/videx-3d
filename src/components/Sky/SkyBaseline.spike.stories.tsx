@@ -26,6 +26,7 @@ import {
 } from '../../storybook/components/sky-cutaway-controls';
 import {
   skyMoonFromArgs,
+  skyObserverFromArgs,
   skyStarsFromArgs,
   skyCloudsFromArgs,
   skySunArgs,
@@ -431,6 +432,7 @@ const SkyScene = (args: SkySpikeArgs) => {
           size: args.sunSize,
           glow: args.sunGlow,
         }}
+        observer={skyObserverFromArgs(args)}
         colors={{
           zenith: args.skyZenith,
           horizon: args.skyHorizon,

@@ -11,6 +11,7 @@ import {
 import {
   skyCloudsFromArgs,
   skyMoonFromArgs,
+  skyObserverFromArgs,
   skyStarsFromArgs,
   skySunArgs,
   SkySunArgs,
@@ -124,6 +125,7 @@ const SkyTimelapse = (args: TimelapseArgs) => {
           foamAmount: args.foamAmount,
         }}
         sun={skySunFromArgs(sunArgs)}
+        observer={skyObserverFromArgs(sunArgs)}
         moon={skyMoonFromArgs(args)}
         stars={skyStarsFromArgs(args)}
         clouds={skyCloudsFromArgs(args)}
