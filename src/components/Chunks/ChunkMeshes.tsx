@@ -8,6 +8,7 @@ import {
   Group,
   IUniform,
   Material,
+  Mesh,
   MeshBasicMaterial,
   Object3D,
   Vector4,
@@ -875,6 +876,18 @@ export const ChunkMeshes = ({
         if (!compiled.current.has(m)) fresh.add(m);
       }
     });
+    // A cap drawn by someone else (`drawCap: false`) is compiled too, from a stand-in never
+    // added to the scene, so taking it back does not stall.
+    const undrawn = new Group();
+    for (const surface of chunk.surfaces) {
+      if (surface.ceiling || layers[surface.layer]?.drawCap !== false) continue;
+      const material = materials.surfaces[surface.layer];
+      if (!material || compiled.current.has(material)) continue;
+      undrawn.add(new Mesh(surface.geometry, material));
+      compiled.current.add(material);
+    }
+    if (undrawn.children.length > 0)
+      void precompile(gl, undrawn, camera, scene);
     if (fresh.size === 0) return;
     const generation = ++compiling.current;
     const done = () => {

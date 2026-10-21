@@ -62,7 +62,8 @@ export type PrecompileTarget = 'scene' | 'offscreen';
  * OIT pipeline, as its pass variants — and lit by `scene`'s lights. With
  * `KHR_parallel_shader_compile` the compile runs off the main thread: keep `root`
  * hidden until the promise resolves, and the frame that first draws it does not stall.
- * `null` when every program is ready already, or the browser cannot tell.
+ * `null` when every program is ready already, or the browser cannot tell. `hidden` compiles
+ * the hidden objects under `root` too, for something shown later.
  *
  * ⚠️ `root` must hold no lights: three counts the lights of both `root` and `scene`.
  */
@@ -72,6 +73,7 @@ export function precompile(
   camera: Camera,
   scene: Scene,
   target: PrecompileTarget = 'scene',
+  hidden = false,
 ): Promise<void> | null {
   const passes = target === 'scene' ? pipelines.get(scene) : undefined;
   const oit = passes?.find(
@@ -112,6 +114,15 @@ export function precompile(
   const face = renderer.getActiveCubeFace();
   const mipmap = renderer.getActiveMipmapLevel();
   const materials = new Set<Material>();
+  // three compiles only what is visible.
+  const shown: Object3D[] = [];
+  if (hidden) {
+    root.traverse(object => {
+      if (object.visible) return;
+      object.visible = true;
+      shown.push(object);
+    });
+  }
   const compile = () =>
     renderer.compile(root, camera, scene).forEach(m => materials.add(m));
   try {
@@ -133,6 +144,7 @@ export function precompile(
   } finally {
     for (const { object, original } of swaps) object.material = original;
     for (const m of forced) m.transparent = true;
+    for (const object of shown) object.visible = false;
     renderer.setRenderTarget(previous, face, mipmap);
   }
 

@@ -1,15 +1,17 @@
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import {
   PropsWithChildren,
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
 import { BufferGeometry, Group, Matrix4, Plane, Vector3, Vector4 } from 'three';
 import { useData } from '../../hooks/useData';
+import { precompile } from '../../rendering/precompile';
 import { useGenerator } from '../../hooks/useGenerator';
 import {
   CutUniforms,
@@ -1103,6 +1105,19 @@ export const ChunkStack = ({
     };
   }, [seaGeometry]);
 
+  // Compiled even while hidden (`drawWater={false}`, a sky drawing it), so showing it
+  // again does not stall a frame on its programs.
+  const gl = useThree(state => state.gl);
+  const camera = useThree(state => state.camera);
+  const scene = useThree(state => state.scene);
+  const seaRoot = useRef<Group>(null);
+  const seaSurface = sea?.surface;
+  const seaVolume = sea?.volume;
+  useLayoutEffect(() => {
+    if (seaRoot.current && seaSurface)
+      void precompile(gl, seaRoot.current, camera, scene, 'scene', true);
+  }, [gl, camera, scene, seaSurface, seaVolume, seaGeometry]);
+
   // ⭐ The face that CLOSES the water body at a cut, off the sea's own channels —
   // so it meets the block's face on the same curve, over the same bed, rather than
   // leaving an open body to look into. Same two builders the chunks use; the sea is
@@ -1171,20 +1186,22 @@ export const ChunkStack = ({
                     frame={stackFrame}
                   />
                 )}
-                {sea && seaGeometry?.lid && (
-                  <mesh
-                    geometry={seaGeometry.lid}
-                    material={sea.surface}
-                    visible={drawWater}
-                  />
-                )}
-                {sea && seaGeometry?.body && (
-                  <mesh
-                    geometry={seaGeometry.body}
-                    material={sea.volume}
-                    visible={drawWater}
-                  />
-                )}
+                <group ref={seaRoot}>
+                  {sea && seaGeometry?.lid && (
+                    <mesh
+                      geometry={seaGeometry.lid}
+                      material={sea.surface}
+                      visible={drawWater}
+                    />
+                  )}
+                  {sea && seaGeometry?.body && (
+                    <mesh
+                      geometry={seaGeometry.body}
+                      material={sea.volume}
+                      visible={drawWater}
+                    />
+                  )}
+                </group>
                 {sea?.face &&
                   seaCut &&
                   waterFace?.map(face => (
