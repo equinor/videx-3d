@@ -106,6 +106,18 @@ vec2 skyOceanCutawayGrip(vec2 rimAt) {
   return clamp(vec2(1.25, 2.5) * k + 0.5 - d, 0.0, 1.0);
 }
 
+// `surface` seen through the air, fading into the horizon's colour.
+vec4 skyOceanThroughAir(vec4 surface, vec3 origin, vec3 dir, float dist, float blend) {
+  float haze = skyAirHaze(origin, dir, dist);
+  if(haze <= 0.0)
+    return surface;
+  vec3 level = dir - uSkyUp * dot(dir, uSkyUp);
+  float n = length(level);
+  vec3 horizon = skySurface(n > 1e-4 ? level / n : uSkyNorth, blend);
+  float alpha = haze + (1.0 - haze) * surface.a;
+  return vec4((haze * horizon + (1.0 - haze) * surface.a * surface.rgb) / alpha, alpha);
+}
+
 // The surface seen from above at `p`, `surface` its colour and opacity, with the cutaway
 // marked on it: the water cut away, a shadow inside the edge over what shows through, the
 // rim along it and the grip on the rim. `rimAt` is skyOceanCutawayRimAt there.
@@ -423,5 +435,5 @@ vec4 skyOceanSurfaceLayer(vec3 dir, vec3 origin, float blend) {
   // colour from those derivatives cannot reach the blend.
   if(y >= 0.0 || skyOceanOnStage(p, t, texel))
     return vec4(0.0);
-  return skyOceanCutawayMark(surface, origin + dir * t, rimAt);
+  return skyOceanCutawayMark(skyOceanThroughAir(surface, origin, dir, t, blend), origin + dir * t, rimAt);
 }

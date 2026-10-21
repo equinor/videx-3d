@@ -54,6 +54,7 @@ import { createSkyGeometry, SkyMaterial } from './sky-material';
 import {
   SKY_HDR_SUN_RADIANCE,
   SkyAbyss,
+  SkyAir,
   SkyClouds,
   SkyColors,
   skyDaylight,
@@ -249,6 +250,8 @@ export type SkyProps = {
   stars?: boolean | SkyStars;
   /** a deck of still clouds (see {@link SkyClouds}). Default false */
   clouds?: boolean | SkyClouds;
+  /** the air thinning with height, and hazing the far sea (see {@link SkyAir}). Default true */
+  air?: boolean | SkyAir;
   /**
    * The output is tone mapped, so the sun disc may go past display white. Defaults to
    * the renderer's `toneMapping`; set it when a pipeline pass tone maps instead.
@@ -331,6 +334,7 @@ export const Sky = ({
   moon = true,
   stars = true,
   clouds = false,
+  air = true,
   hdr,
   renderOrder = -1e9,
   debug,
@@ -415,6 +419,15 @@ export const Sky = ({
   const hasOcean = oceanOptions !== null;
   const oceanDefaults = skyDefaults.ocean;
   const oceanLevel = oceanOptions?.level ?? oceanDefaults.level;
+  const airOptions: SkyAir | null = air === true ? {} : air || null;
+  const airScaleHeight = airOptions
+    ? (airOptions.scaleHeight ?? skyDefaults.air.scaleHeight)
+    : 0;
+  const airVisibility = airOptions
+    ? (airOptions.visibility ?? skyDefaults.air.visibility)
+    : 0;
+  // The air's ground: the sea's surface, or the void's lid.
+  const airLevel = hasOcean ? oceanLevel : hasAbyss ? abyssLevel : 0;
   const oceanDepth = oceanOptions?.depth ?? oceanDefaults.depth;
   const oceanWater = oceanOptions?.water ?? true;
   const oceanSeabed = oceanOptions?.seabed !== false;
@@ -679,6 +692,7 @@ export const Sky = ({
       color: cloudColor,
       seed: cloudSeed,
     });
+    material.setAir(airLevel, airScaleHeight, airVisibility);
     material.zenithColor = zenith;
     material.horizonColor = horizon;
     material.groundColor = ground;
@@ -716,6 +730,9 @@ export const Sky = ({
     cloudOpacity,
     cloudColor,
     cloudSeed,
+    airLevel,
+    airScaleHeight,
+    airVisibility,
     zenith,
     horizon,
     ground,

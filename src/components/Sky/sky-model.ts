@@ -79,6 +79,17 @@ export type SkyClouds = {
 };
 
 /**
+ * The air over a {@link Sky}, thinning with height: higher up the sky deepens and its haze
+ * closes onto the horizon, and seen from low down the far sea fades into the horizon.
+ */
+export type SkyAir = {
+  /** height over which the air thins by e, in world units; 0 for no change with height. Default 8000 */
+  scaleHeight?: number;
+  /** distance over which the air at sea level hazes the sea by e, in world units; 0 for no haze. Default 60000 */
+  visibility?: number;
+};
+
+/**
  * Sky gradient colours, as display colours: the sky reproduces them exactly
  * without tone mapping.
  */
@@ -327,6 +338,7 @@ export const skyDefaults = {
     color: '#ffffff',
     seed: 0,
   },
+  air: { scaleHeight: 8000, visibility: 60000 },
   colors: {
     zenith: '#6f8fb3',
     horizon: '#c9d3dc',

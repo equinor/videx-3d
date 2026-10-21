@@ -45,6 +45,7 @@ type TimelapseArgs = {
   waterOpacity: number;
   windSpeed: number;
   foamAmount: number;
+  air: boolean;
   stats: boolean;
   showEnvironment: boolean;
   tanker: boolean;
@@ -126,6 +127,7 @@ const SkyTimelapse = (args: TimelapseArgs) => {
         moon={skyMoonFromArgs(args)}
         stars={skyStarsFromArgs(args)}
         clouds={skyCloudsFromArgs(args)}
+        air={args.air}
         cutaway={skyCutawayFromArgs(args)}
         capture={{ maxWait: args.captureMaxWait }}
         debug={args.showEnvironment ? { environment: true } : undefined}
@@ -213,6 +215,12 @@ const meta = {
     waterOpacity: range(0, 1, 0.01, 'Sea', 'The water\u2019s own opacity.'),
     windSpeed: range(0, 25, 0.5, 'Sea', 'Drives the waves, in m/s.'),
     foamAmount: range(0, 1, 0.01, 'Sea', 'Whitecaps on the waves.'),
+    air: {
+      control: { type: 'boolean' },
+      description:
+        'The air thins with height: climbing, the sky deepens and its haze closes onto the horizon. Seen from low down, the far sea fades into the horizon.',
+      table: { category: 'Sky' },
+    },
     ...skyCutawayArgTypes(),
     ...toneMappingArgTypes(),
     tanker: {
@@ -248,6 +256,7 @@ const meta = {
     waterOpacity: DEFAULT_OCEAN_WATER_OPACITY,
     windSpeed: 10,
     foamAmount: 0.5,
+    air: true,
     stats: false,
     showEnvironment: false,
     tanker: true,

@@ -94,6 +94,25 @@ the same at night; the stars are hidden. The moon takes over as the sun's light 
 clouds are part of the background only: the water does not reflect them, and they do
 not dim the scene's light.
 
+## The air
+
+`air` (default on) thins with height, so the sky changes as the camera climbs: the
+zenith deepens toward a saturated blue (a grey sky stays grey) and the haze at the
+horizon closes onto it. Seen from low down, the far sea fades into the horizon's
+colour; from high up it stays clear much further out.
+
+```tsx
+<Sky air={{ scaleHeight: 8000, visibility: 60000 }} />
+```
+
+`scaleHeight` is the height over which the air thins by e (0 for no change with
+height), and `visibility` the distance over which the air at sea level hazes the sea
+by e (0 for no haze). Heights are measured from the sea's `level` (the void's lid
+without a sea). `air: false` turns both off.
+
+The bakes film near the level, so the scene's light does not change with the camera's
+height. The sea's surface is hazed; the seabed seen through cut-away water is not.
+
 ## Lighting the scene
 
 `environment` bakes the sky into `scene.environment` (lights MeshStandard and

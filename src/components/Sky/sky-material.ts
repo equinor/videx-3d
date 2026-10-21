@@ -138,6 +138,7 @@ export class SkyMaterial extends ShaderMaterial {
         uSkyClouds: new Uniform(new Vector4()),
         uSkyCloudsColor: new Uniform(new Vector4(1, 1, 1, 1)),
         uSkyCloudsSeed: new Uniform(new Vector2()),
+        uSkyAir: new Uniform(new Vector3()),
         uSkyOceanLevel: new Uniform(ocean.level),
         uSkyOceanDepth: new Uniform(ocean.depth),
         uSkyOceanBedColor: new Uniform(new Color(ocean.seabed.color)),
@@ -457,6 +458,18 @@ export class SkyMaterial extends ShaderMaterial {
     this.uniforms.uSkyCloudsSeed.value.set(
       (clouds.seed * 12.9898) % 1000,
       (clouds.seed * 78.233) % 1000,
+    );
+  }
+
+  /**
+   * The air: the height of its ground along {@link up}, the height over which it thins by e
+   * (0 for none) and the distance over which it hazes the sea at that ground (0 for none).
+   */
+  setAir(level: number, scaleHeight: number, visibility: number) {
+    this.uniforms.uSkyAir.value.set(
+      level,
+      Math.max(scaleHeight, 0),
+      Math.max(visibility, 0),
     );
   }
 

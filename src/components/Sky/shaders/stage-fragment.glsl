@@ -101,7 +101,8 @@ void main() {
   SkyOceanWave wave = skyOceanWave(p, texel, dist);
   bool cutThrough = false;
   if(altitude > 0.0) {
-    gl_FragColor = skyOceanCutawayMark(skyOceanSurfaceOf(wave, p, texel, dir, blend), world, rimAt);
+    vec4 surface = skyOceanThroughAir(skyOceanSurfaceOf(wave, p, texel, dir, blend), cameraPosition, dir, dist, blend);
+    gl_FragColor = skyOceanCutawayMark(surface, world, rimAt);
   } else {
     vec3 underside = skyOceanUndersideOf(-wave.normal, dir, blend, -altitude);
     float wall = skyOceanCutawayWall(cameraPosition, dir);

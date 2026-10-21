@@ -10,6 +10,7 @@ uniform vec3 uSkySunColor;
 uniform float uSkySunGlow;
 uniform float uSkyDaylight;
 uniform vec2 uSkyTwilight; // strength, and how much the horizon glows for the sun's elevation (skyTwilight)
+uniform vec3 uSkyAir; // its ground along up, the height it thins by e over (0 for none), and its visibility there (0 for no haze)
 
 // The twilight sky on the sun's side, linear: gold about the sun, orange around it, deep
 // orange high up; and the sun's disc, overexposed even when its light is red.
@@ -30,10 +31,37 @@ vec3 skySunDiscColor() {
   return mix(uSkySunColor, SKY_TWILIGHT_DISC, min(uSkyTwilight.x * uSkyTwilight.y, 1.0));
 }
 
+// How much of the air lies below the camera: 0 on its ground, toward 1 high above it.
+float skyAirBelow() {
+  if(uSkyAir.y <= 0.0)
+    return 0.0;
+  return 1.0 - exp(-max(dot(cameraPosition, uSkyUp) - uSkyAir.x, 0.0) / uSkyAir.y);
+}
+
+// How much the air hazes what lies `dist` along `dir` from `origin`: it thins with height,
+// so a ray through high air hazes far less than one along the sea.
+float skyAirHaze(vec3 origin, vec3 dir, float dist) {
+  if(uSkyAir.z <= 0.0)
+    return 0.0;
+  float start = max(dot(origin, uSkyUp) - uSkyAir.x, 0.0);
+  float mean = 1.0;
+  if(uSkyAir.y > 0.0) {
+    // The mean density between the heights the ray runs between.
+    float climb = (max(start + dot(dir, uSkyUp) * dist, 0.0) - start) / uSkyAir.y;
+    mean = exp(-start / uSkyAir.y) * (abs(climb) > 1e-4 ? (1.0 - exp(-climb)) / climb : 1.0);
+  }
+  return 1.0 - exp(-dist * mean / uSkyAir.z);
+}
+
 // Gradient, daylight, the sun's halo and the twilight glow; no disc.
 vec3 skySurface(vec3 dir, float blend) {
   float y = dot(dir, uSkyUp);
-  vec3 sky = mix(uSkyHorizonColor, uSkyZenithColor, sqrt(max(y, 0.0)));
+  // Higher up, the sky deepens and its haze closes onto the horizon.
+  float below = skyAirBelow();
+  // Deeper, not darker: the weaker channels drop, so a blue grows saturated and a grey stays grey.
+  vec3 deep = uSkyZenithColor * uSkyZenithColor / max(max(uSkyZenithColor.r, max(uSkyZenithColor.g, uSkyZenithColor.b)), 1e-4);
+  vec3 zenith = mix(uSkyZenithColor, deep * 0.85, below * below);
+  vec3 sky = mix(uSkyHorizonColor, zenith, pow(max(y, 0.0), mix(0.5, 0.3, below)));
   vec3 ground = mix(uSkyGroundColor, uSkyNadirColor, sqrt(max(-y, 0.0)));
   // The sky carries on a little below the horizon, reading as distant haze.
   vec3 color = mix(sky, ground, smoothstep(0.0, blend, -y));
