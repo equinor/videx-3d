@@ -1,6 +1,7 @@
 import { Color, ColorRepresentation, MathUtils } from 'three';
 import type { SurfaceDetail } from '../../sdk/materials/surface-detail';
-import type { Vec2 } from '../../sdk/types/common';
+import type { Vec2, Vec3 } from '../../sdk/types/common';
+import { CompassFrame, compassBasis } from '../../sdk/utils/vector-operations';
 import type { OceanWaterProps } from '../Ocean/ocean-material-sync';
 import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../Ocean/ocean-volume-material';
 
@@ -49,6 +50,8 @@ export type SkyStars = {
   brightness?: number;
   /** how many, from 0 (none) to 1. Default 0.5 */
   density?: number;
+  /** the latitude they turn for, in degrees: the celestial pole stands this high over north (below 0, south). Default 60 */
+  latitude?: number;
 };
 
 /**
@@ -314,7 +317,7 @@ export const skyDefaults = {
     twilight: 1,
   },
   moon: { intensity: 0.3, color: '#c4cfdf', size: 0.6, glow: 0.3 },
-  stars: { brightness: 0.6, density: 0.5 },
+  stars: { brightness: 0.6, density: 0.5, latitude: 60 },
   clouds: {
     coverage: 0.4,
     altitude: 6000,
@@ -401,6 +404,48 @@ export function skyTwilight(elevation: number) {
 /** The share of the sky's cells holding a star, for a {@link SkyStars} density. */
 export function skyStarShare(density: number) {
   return MathUtils.clamp(density, 0, 1) * 0.06;
+}
+
+/**
+ * The frame the stars are fixed in, as three world directions: a direction's dot with each
+ * is where it points on the star sphere. The sphere turns about the celestial pole, which
+ * stands `latitude` degrees over north, with the sun at `azimuth` and `elevation`
+ * (degrees), as a day turns it (the sun's drift through the year aside): the stars wheel
+ * with the time of day.
+ */
+export function skyStarFrame(
+  azimuth: number,
+  elevation: number,
+  latitude: number,
+  frame: CompassFrame = {},
+): [Vec3, Vec3, Vec3] {
+  const { up, north, east } = compassBasis(frame);
+  const phi = MathUtils.degToRad(latitude);
+  const az = MathUtils.degToRad(azimuth);
+  const el = MathUtils.degToRad(elevation);
+  // In north, east, up: the sun, the pole, and the equator on the meridian.
+  const sun = [
+    Math.cos(az) * Math.cos(el),
+    Math.sin(az) * Math.cos(el),
+    Math.sin(el),
+  ];
+  const pole = [Math.cos(phi), 0, Math.sin(phi)];
+  const meridian = [-Math.sin(phi), 0, Math.cos(phi)];
+  // The sun's hour angle, westward from the meridian.
+  const hour = Math.atan2(-sun[1], sun[0] * meridian[0] + sun[2] * meridian[2]);
+  const c = Math.cos(hour);
+  const s = Math.sin(hour);
+  const toWorld = ([n, e, u]: number[]): Vec3 => [
+    north[0] * n + east[0] * e + up[0] * u,
+    north[1] * n + east[1] * e + up[1] * u,
+    north[2] * n + east[2] * e + up[2] * u,
+  ];
+  // West is (0, -1, 0).
+  return [
+    toWorld([meridian[0] * c, -s, meridian[2] * c]),
+    toWorld([-meridian[0] * s, -c, -meridian[2] * s]),
+    toWorld(pole),
+  ];
 }
 
 /**

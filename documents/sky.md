@@ -56,7 +56,10 @@ catch the light, and a faint pink belt rises opposite; `twilight` scales it all 
 
 `moon` (default on) is a full moon opposite the sun, so it is up at night. The sky has
 ONE directional light: the sun's while it is up, the moon's once the sun is well down
-(it fades in between −6° and −12°). `stars` (default on) come out once it is dark.
+(it fades in between −6° and −12°). `stars` (default on) come out once it is dark. They
+are no real star map, but they turn as the real ones do: about the celestial pole, which
+stands `stars.latitude` degrees (default 60) over north, with the sun's hour angle, so they
+wheel through the night in a timelapse.
 
 Disc, glare, rays, moon and stars are left out of the environment and light-probe bakes
 — the directional light already carries that light — so they never light the scene twice.

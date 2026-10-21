@@ -18,6 +18,7 @@ uniform float uSkyMoonGlow;
 uniform float uSkyNight; // 0 by day to 1 at night: how much the moon and the stars show
 uniform float uSkyMoonlight; // 0 until the daylight is gone, 1 by nautical twilight: how much the moon lights (skyMoonlight)
 uniform vec2 uSkyStars; // brightness, and the share of the sky's cells holding one
+uniform mat3 uSkyStarFrame; // world direction -> the turning star sphere's
 uniform float uSkyHorizonBlend; // width of the horizon -> ground transition, in dot(dir, up)
 uniform float uSkyIntensity;
 uniform float uSkyDebug; // 1: tint each part by what draws it (SkyDebug.tint)
@@ -76,7 +77,7 @@ float skySunGlare(vec3 dir, float angle, float aa) {
   return glare + uSkySunGlare.y * rays;
 }
 
-// Faint stars along `dir`, fixed in the sky: at most one in each cell of a grid around
+// Faint stars along `dir`, on the star sphere: at most one in each cell of a grid around
 // it, kept only where it falls in its own cell so none is cut off. ⚠️ Derivatives.
 float skyStars(vec3 dir) {
   const float cells = 150.0;
@@ -106,7 +107,7 @@ vec3 skyNight(vec3 color, vec3 dir, float blend) {
   float glow = uSkyMoonGlow * pow(max(cosMoon, 0.0), 200.0);
   // The stars come out late, once it is dark, and fade low down through more air.
   float airmass = 1.0 / (max(dot(dir, uSkyUp), 0.0) + 0.05);
-  float stars = uSkyStars.x * skyStars(dir) * exp(-0.25 * (airmass - 1.0)) * uSkyNight * uSkyNight * uSkyNight;
+  float stars = uSkyStars.x * skyStars(uSkyStarFrame * dir) * exp(-0.25 * (airmass - 1.0)) * uSkyNight * uSkyNight * uSkyNight;
   color += (uSkyMoonColor * glow * uSkyNight + vec3(stars * uSkySunDisc)) * above;
   return mix(color, uSkyMoonColor, disc * uSkyNight * above * uSkySunDisc);
 }

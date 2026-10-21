@@ -6,6 +6,7 @@ import {
   DoubleSide,
   Float32BufferAttribute,
   MathUtils,
+  Matrix3,
   Matrix4,
   ShaderMaterial,
   ShaderMaterialParameters,
@@ -25,7 +26,7 @@ import {
   surfaceDetailKey,
   SurfaceDetailUniforms,
 } from '../../sdk/materials/surface-detail';
-import { Vec2 } from '../../sdk/types/common';
+import { Vec2, Vec3 } from '../../sdk/types/common';
 import {
   compassBasis,
   CompassFrame,
@@ -114,6 +115,7 @@ export class SkyMaterial extends ShaderMaterial {
         uSkyNight: new Uniform(0),
         uSkyMoonlight: new Uniform(0),
         uSkyStars: new Uniform(new Vector2()),
+        uSkyStarFrame: new Uniform(new Matrix3()),
         uSkySunRadiance: new Uniform(1),
         uSkySunDisc: new Uniform(1),
         uSkyHorizonBlend: new Uniform(skyDefaults.horizonBlend),
@@ -365,6 +367,21 @@ export class SkyMaterial extends ShaderMaterial {
     this.uniforms.uSkyStars.value.set(
       Math.max(brightness, 0),
       MathUtils.clamp(share, 0, 1),
+    );
+  }
+
+  /** the frame the stars are fixed in, as rows of world directions (see `skyStarFrame`) */
+  setStarFrame([x, y, z]: [Vec3, Vec3, Vec3]) {
+    (this.uniforms.uSkyStarFrame.value as Matrix3).set(
+      x[0],
+      x[1],
+      x[2],
+      y[0],
+      y[1],
+      y[2],
+      z[0],
+      z[1],
+      z[2],
     );
   }
 

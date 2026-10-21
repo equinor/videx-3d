@@ -100,7 +100,7 @@ export const skyMoonFromArgs = (args: SkySunArgs): SkyMoon | false =>
 
 /** A Sky's `stars` from {@link SkySunArgs}. */
 export const skyStarsFromArgs = (args: SkySunArgs): SkyStars | false =>
-  args.stars && { brightness: args.starBrightness };
+  args.stars && { brightness: args.starBrightness, latitude: args.sunLatitude };
 
 const range = (
   min: number,

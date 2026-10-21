@@ -63,6 +63,7 @@ import {
   SkyOcean,
   SkySeabed,
   skyStarShare,
+  skyStarFrame,
   SkyStars,
   SkySubsurface,
   skySubsurfaceColors,
@@ -363,6 +364,7 @@ export const Sky = ({
   const starShare = skyStarShare(
     starsOptions?.density ?? skyDefaults.stars.density,
   );
+  const starLatitude = starsOptions?.latitude ?? skyDefaults.stars.latitude;
   const cloudsOptions: SkyClouds | null = clouds === true ? {} : clouds || null;
   const cloudsOn = cloudsOptions !== null;
   const cloudDefaults = skyDefaults.clouds;
@@ -661,6 +663,12 @@ export const Sky = ({
     material.moonGlow = moonGlow;
     material.night = 1 - state.daylight;
     material.setStars(starBrightness, starShare);
+    material.setStarFrame(
+      skyStarFrame(azimuth, elevation, starLatitude, {
+        up: [upX, upY, upZ],
+        north: [northX, northY, northZ],
+      }),
+    );
     material.clouds = cloudsOn;
     material.setClouds({
       coverage: cloudCoverage,
@@ -697,6 +705,9 @@ export const Sky = ({
     moonGlow,
     starBrightness,
     starShare,
+    starLatitude,
+    azimuth,
+    elevation,
     cloudsOn,
     cloudCoverage,
     cloudAltitude,

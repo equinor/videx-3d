@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  skyStarFrame,
   skySunColor,
   skyTwilight,
   skyWaterDimming,
   skyZone,
   SkyZoneLevels,
 } from '../src/components/Sky/sky-model';
+import type { Vec3 } from '../src/sdk/types/common';
+import { directionFromCompass } from '../src/sdk/utils/vector-operations';
 
 const sea: SkyZoneLevels = {
   ocean: true,
@@ -87,5 +90,54 @@ describe('skySunColor', () => {
     const below = skySunColor(5.999);
     const above = skySunColor(6.001);
     expect(Math.abs(below.g - above.g)).toBeLessThan(1e-3);
+  });
+});
+
+describe('skyStarFrame', () => {
+  const apply = (rows: Vec3[], dir: Vec3) =>
+    rows.map(r => r[0] * dir[0] + r[1] * dir[1] + r[2] * dir[2]);
+  const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  // A day's suns at 58° N, by azimuth and elevation.
+  const suns: [number, number][] = [
+    [90, 5],
+    [135, 25],
+    [180, 32],
+    [225, 25],
+    [270, 5],
+    [0, -10],
+  ];
+
+  it('is a rotation', () => {
+    for (const [az, el] of suns) {
+      const rows = skyStarFrame(az, el, 58);
+      for (let i = 0; i < 3; i++) {
+        for (let j = 0; j < 3; j++)
+          expect(dot(rows[i], rows[j])).toBeCloseTo(i === j ? 1 : 0, 9);
+      }
+    }
+  });
+
+  it('keeps the sun on one meridian of the star sphere', () => {
+    for (const [az, el] of suns) {
+      const [x, y] = apply(
+        skyStarFrame(az, el, 58),
+        directionFromCompass(az, el),
+      );
+      expect(y).toBeCloseTo(0, 9);
+      expect(x).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('turns about the celestial pole, which stays put', () => {
+    const pole = directionFromCompass(0, 58);
+    for (const [az, el] of suns)
+      expect(apply(skyStarFrame(az, el, 58), pole)[2]).toBeCloseTo(1, 9);
+    // The zenith is a different place on the sphere morning and evening.
+    const zenith: Vec3 = [0, 1, 0];
+    const morning = apply(skyStarFrame(90, 5, 58), zenith);
+    const evening = apply(skyStarFrame(270, 5, 58), zenith);
+    expect(
+      Math.hypot(morning[0] - evening[0], morning[1] - evening[1]),
+    ).toBeGreaterThan(1);
   });
 });
