@@ -46,6 +46,7 @@ type TimelapseArgs = {
   windSpeed: number;
   foamAmount: number;
   stats: boolean;
+  showEnvironment: boolean;
   tanker: boolean;
 } & SkySunArgs &
   SkyCutawayArgs &
@@ -127,6 +128,7 @@ const SkyTimelapse = (args: TimelapseArgs) => {
         clouds={skyCloudsFromArgs(args)}
         cutaway={skyCutawayFromArgs(args)}
         capture={{ maxWait: args.captureMaxWait }}
+        debug={args.showEnvironment ? { environment: true } : undefined}
       >
         <SkyBoxStage bounds={BOUNDS} />
         {tanker}
@@ -225,6 +227,12 @@ const meta = {
         'GPU time, frame time and FPS, draw calls, triangles and resident geometries, textures and programs.',
       table: { category: 'Debug' },
     },
+    showEnvironment: {
+      control: { type: 'boolean' },
+      description:
+        'The environment\u2019s bake for the zone in view as its six faces, lower right: `+Y` over `-X -Z +X +Z`, `-Y` under. Watch it follow the sun.',
+      table: { category: 'Debug' },
+    },
   },
   args: {
     ...skySunArgs,
@@ -235,12 +243,13 @@ const meta = {
     sunFromTime: true,
     sunHour: 5,
     clouds: true,
-    // The Sky's own default.
+    // Sooner than the Sky's own 1000, so the light keeps up with the sun.
     captureMaxWait: 250,
     waterOpacity: DEFAULT_OCEAN_WATER_OPACITY,
     windSpeed: 10,
     foamAmount: 0.5,
     stats: false,
+    showEnvironment: false,
     tanker: true,
   },
 } satisfies Meta<typeof SkyTimelapse>;
