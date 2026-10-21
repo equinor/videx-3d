@@ -186,6 +186,8 @@ export class SkyMaterial extends ShaderMaterial {
       side: DoubleSide,
       depthTest: false,
       depthWrite: false,
+      // Breaks up the steps of the dark night gradient.
+      dithering: true,
       fog: true,
       lights: true,
     });

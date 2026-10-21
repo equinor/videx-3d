@@ -2,6 +2,7 @@
 
 #include <common>
 #include <fog_pars_fragment>
+#include <dithering_pars_fragment>
 #include ./sky.glsl
 
 varying vec3 vSkyDirection;
@@ -12,4 +13,5 @@ void main() {
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
   #include <fog_fragment>
+  #include <dithering_fragment>
 }

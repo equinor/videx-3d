@@ -45,7 +45,7 @@ bright glare hugging the disc (`glare`, default 0.5) and, optionally, rays aroun
 (`rays`, default 0). `shimmer: true` lets the rays brighten and fade slowly, each on
 its own cycle. Its colour and the daylight follow the elevation: red-orange on the
 horizon, orange a few degrees up and near white from 25°, and the daylight gone below
-civil twilight (−6°). At night the sky and the sea keep 7.5% of their light
+civil twilight (−6°). At night the sky and the sea keep 4.5% of their light
 (`SKY_NIGHT_LEVEL` in `sky-gradient.glsl`), dark enough for the stars to stand out; the
 bakes see it, so it is also the scene's light at night besides the moon's. About sunrise
 and sunset (`skyTwilight`: from about 12° down to
@@ -97,7 +97,9 @@ invalid one (no real date, a latitude past ±90) falls back to the sky above.
   aside): Venus is out by sunset. They come and go with `stars`.
 
 A star of magnitude m is drawn `0.08 · 10^(0.2 (5 − m))` bright — the square root of its
-light, as the eye compresses it — and wider the brighter it is. The catalogue is looked
+light, as the eye compresses it — and wider the brighter it is, its light pulled into a
+crisp centre (`SKY_STAR_CORE`), as the procedural stars are. The sky is dithered, so its
+dark night gradient does not band. The catalogue is looked
 up per pixel from a cube-face grid over the sky (`sky-star-catalogue.ts`), each star listed
 in every cell within half a degree of it, so a pixel reads one cell. The catalogue (13 KB,
 10 KB gzipped) is a chunk of its own (`codeSplitting` in `vite.config.ts`), loaded the

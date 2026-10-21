@@ -53,7 +53,7 @@ export const skySunArgs: SkySunArgs = {
   moon: true,
   moonIntensity: 0.3,
   stars: true,
-  starBrightness: 0.6,
+  starBrightness: 1,
   clouds: false,
   cloudCoverage: 0.4,
   cloudAltitude: 6000,

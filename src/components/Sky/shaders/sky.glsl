@@ -42,6 +42,14 @@ uniform float uSkyDebug; // 1: tint each part by what draws it (SkyDebug.tint)
 #define SKY_MOON_DAY 0.35
 // The procedural stars as a filler under an observer's catalogue, relative to their own.
 #define SKY_STAR_FILLER 0.35
+// A star's light pulled into a crisp centre, this much brighter, at the same size.
+#define SKY_STAR_CORE 1.5
+
+// A star's profile `d` from its centre, out to `radius`.
+float skyStarCore(float shine, float d, float radius) {
+  float t = 1.0 - smoothstep(0.0, radius, d);
+  return min(shine * SKY_STAR_CORE, 1.0) * t * t;
+}
 
 // `color` shifted halfway toward the debug `tint` of the part that drew it, while debugging.
 vec3 skyDebugTint(vec3 color, vec3 tint) {
@@ -119,7 +127,7 @@ float skyStars(vec3 dir) {
     return 0.0;
   // As star counts go, N(brighter than L) ~ L^-1.5: mostly faint, a rare few at full.
   float shine = min(0.08 * pow(max(skyHash(cell + 9.2), 1e-4), -2.0 / 3.0), 1.0);
-  return shine * (1.0 - smoothstep(0.0, 1.2 * pixel, length(p - star)));
+  return skyStarCore(shine, length(p - star), 1.2 * pixel);
 }
 
 // How bright a star of magnitude `m` is drawn: 0.08 at magnitude 5, and the square root
@@ -145,8 +153,7 @@ vec3 skyStarColor(float bv) {
 // A point of light `shine` bright at `star`, along `dir`, `pixel` the angle a pixel spans:
 // the brighter, the wider too, so the bright ones stand out of the faint.
 float skyPoint(vec3 dir, vec3 star, float shine, float pixel) {
-  float radius = 1.2 * pixel * (1.0 + sqrt(shine));
-  return min(shine, 1.0) * (1.0 - smoothstep(0.0, radius, length(dir - star)));
+  return skyStarCore(shine, length(dir - star), 1.2 * pixel * (1.0 + sqrt(shine)));
 }
 
 // The catalogue's stars along `s`, on the star sphere: those listed in its cell of a

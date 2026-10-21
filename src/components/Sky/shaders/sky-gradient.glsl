@@ -21,7 +21,7 @@ uniform vec3 uSkyAir; // its ground along up, the height it thins by e over (0 f
 // Warmer than the gold: tone mapping turns a bright gold lemon.
 #define SKY_TWILIGHT_LIGHT vec3(1.0, 0.36, 0.045)
 // What night leaves of the sky's and the sea's light, so the scene, lit by the bakes, never goes black.
-#define SKY_NIGHT_LEVEL 0.075
+#define SKY_NIGHT_LEVEL 0.045
 
 // The sun's light on the sky and the clouds: golden about sunrise and sunset, where its
 // red over the blue sky would read pink.

@@ -66,7 +66,7 @@ export type SkyMoon = {
  * over faint procedural ones; without one, procedural stars.
  */
 export type SkyStars = {
-  /** Default 0.6 */
+  /** Default 1 */
   brightness?: number;
   /** how many procedural ones, from 0 (none) to 1. Default 0.5 */
   density?: number;
@@ -348,7 +348,7 @@ export const skyDefaults = {
     twilight: 1,
   },
   moon: { intensity: 0.3, color: '#c4cfdf', size: 0.6, glow: 0.3 },
-  stars: { brightness: 0.6, density: 0.5, latitude: 60 },
+  stars: { brightness: 1, density: 0.5, latitude: 60 },
   clouds: {
     coverage: 0.4,
     altitude: 6000,
