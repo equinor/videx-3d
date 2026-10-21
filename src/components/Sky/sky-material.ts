@@ -44,7 +44,6 @@ import {
   skySunColor,
   skyTwilight,
 } from './sky-model';
-import { createSkyStarTextures } from './sky-star-catalogue';
 
 // The naked-eye planets (`PLANETS`); sky.glsl's `uSkyPlanets` has as many.
 const SKY_PLANET_COUNT = 5;
@@ -90,6 +89,9 @@ export class SkyMaterial extends ShaderMaterial {
   private bedDetail: SurfaceDetail | undefined;
   private bedDetailKey = '';
   private starTextures: { cells: DataTexture; list: DataTexture } | null = null;
+  private observing = false;
+  private starsLoading = false;
+  private starGeneration = 0;
 
   constructor(parameters: ShaderMaterialParameters = {}) {
     const { sun, colors, abyss, ocean } = skyDefaults;
@@ -422,18 +424,30 @@ export class SkyMaterial extends ShaderMaterial {
   /**
    * The real sky of an observer: the catalogue's stars in the star frame (then
    * `skyCelestialFrame`'s) and the planets, with the procedural stars a faint filler.
-   * The catalogue is uploaded the first time.
+   * The catalogue is loaded (its own chunk) and uploaded the first time; until it is
+   * in, the procedural stars show.
    */
   get observed(): boolean {
-    return this.uniforms.uSkyObserved.value > 0;
+    return this.observing;
   }
   set observed(value: boolean) {
-    this.uniforms.uSkyObserved.value = value ? 1 : 0;
-    if (value && !this.starTextures) {
-      this.starTextures = createSkyStarTextures();
-      this.uniforms.uSkyStarCells.value = this.starTextures.cells;
-      this.uniforms.uSkyStarList.value = this.starTextures.list;
-    }
+    this.observing = value;
+    this.uniforms.uSkyObserved.value = value && this.starTextures ? 1 : 0;
+    if (!value || this.starTextures || this.starsLoading) return;
+    this.starsLoading = true;
+    const generation = this.starGeneration;
+    import('./sky-star-catalogue')
+      .then(({ createSkyStarTextures }) => {
+        if (generation !== this.starGeneration) return;
+        this.starTextures = createSkyStarTextures();
+        this.uniforms.uSkyStarCells.value = this.starTextures.cells;
+        this.uniforms.uSkyStarList.value = this.starTextures.list;
+        this.uniforms.uSkyObserved.value = this.observing ? 1 : 0;
+      })
+      .catch(error => console.warn('SkyMaterial: no star catalogue', error))
+      .finally(() => {
+        if (generation === this.starGeneration) this.starsLoading = false;
+      });
   }
 
   /** the planets (`PLANETS` order), by world direction and apparent magnitude */
@@ -447,9 +461,18 @@ export class SkyMaterial extends ShaderMaterial {
   }
 
   dispose() {
-    this.starTextures?.cells.dispose();
-    this.starTextures?.list.dispose();
-    this.starTextures = null;
+    // A catalogue still loading is dropped when it arrives.
+    this.starGeneration++;
+    this.starsLoading = false;
+    // Only the owner's: a bake's material shares these uniforms.
+    if (this.starTextures) {
+      this.starTextures.cells.dispose();
+      this.starTextures.list.dispose();
+      this.starTextures = null;
+      this.uniforms.uSkyObserved.value = 0;
+      this.uniforms.uSkyStarCells.value = null;
+      this.uniforms.uSkyStarList.value = null;
+    }
     super.dispose();
   }
 

@@ -218,9 +218,9 @@ vec3 skyNight(vec3 color, vec3 dir, float blend) {
   vec3 starDir = uSkyStarFrame * dir;
   float pixel = length(fwidth(dir));
   float procedural = skyStars(starDir);
+  float sunElevation = degrees(asin(clamp(dot(uSkySunDirection, uSkyUp), -1.0, 1.0)));
   vec3 stars;
   if(uSkyObserved > 0.5 && uSkySunDisc > 0.0) {
-    float sunElevation = degrees(asin(clamp(dot(uSkySunDirection, uSkyUp), -1.0, 1.0)));
     // The procedural ones stand in for those past the catalogue, to about magnitude 6.5.
     float filler = min(procedural * SKY_STAR_FILLER, skyStarShine(5.5)) * skyStarSeen(5.5, sunElevation);
     stars = skyCatalogue(starDir, pixel, sunElevation) + skyPlanets(dir, pixel, sunElevation) + filler * uSkyStars.x;
@@ -232,8 +232,10 @@ vec3 skyNight(vec3 color, vec3 dir, float blend) {
   color = air + stars * uSkySunDisc * above;
   float shown = disc * above * uSkySunDisc;
   // By night it hides the stars behind it, its dark side a shade darker than the air in
-  // front of it; by day it is a pale disc over the sky.
-  vec3 dark = air * SKY_MOON_DARK + uSkyMoonColor * SKY_EARTHSHINE * (1.0 - uSkyMoonPhase);
+  // front of it once they are out (in twilight it is lost in the sky); by day it is a
+  // pale disc over the sky.
+  float darkSide = mix(1.0, SKY_MOON_DARK, skyStarSeen(2.0, sunElevation));
+  vec3 dark = air * darkSide + uSkyMoonColor * SKY_EARTHSHINE * (1.0 - uSkyMoonPhase);
   color = mix(color, mix(dark, uSkyMoonColor, lit), shown * uSkyNight);
   return color + uSkyMoonColor * face * shown * uSkyMoonDay * (1.0 - uSkyNight) * SKY_MOON_DAY;
 }
@@ -272,7 +274,7 @@ vec3 skyClouds(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
   float density = smoothstep(threshold - edge, threshold + edge, n);
   float lit = clamp(1.0 - (ahead - n) * 4.0, 0.35, 1.0);
 
-  vec3 ambient = mix(uSkyHorizonColor, uSkyZenithColor, 0.5) * mix(0.15, 1.0, uSkyDaylight);
+  vec3 ambient = mix(uSkyHorizonColor, uSkyZenithColor, 0.5) * mix(SKY_NIGHT_LEVEL, 1.0, uSkyDaylight);
   // At sunset and sunrise their undersides catch the glow, most toward the sun.
   float twilight = min(uSkyTwilight.x * uSkyTwilight.y, 1.0);
   float facing = 0.5 + 0.5 * dot(dir, uSkySunDirection);

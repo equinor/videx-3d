@@ -54,6 +54,10 @@ export default defineConfig({
         /^node:/.test(id),
       output: {
         chunkFileNames: 'chunk-[hash].js',
+        // The star catalogue in a chunk of its own: `main` loads it only for a Sky with an observer.
+        codeSplitting: {
+          groups: [{ name: 'bright-stars', test: /bright-stars/ }],
+        },
       },
       treeshake: true,
     },

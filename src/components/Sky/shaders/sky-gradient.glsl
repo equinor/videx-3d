@@ -20,6 +20,8 @@ uniform vec3 uSkyAir; // its ground along up, the height it thins by e over (0 f
 #define SKY_TWILIGHT_DISC vec3(1.0, 0.75, 0.4)
 // Warmer than the gold: tone mapping turns a bright gold lemon.
 #define SKY_TWILIGHT_LIGHT vec3(1.0, 0.36, 0.045)
+// What night leaves of the sky's and the sea's light, so the scene, lit by the bakes, never goes black.
+#define SKY_NIGHT_LEVEL 0.075
 
 // The sun's light on the sky and the clouds: golden about sunrise and sunset, where its
 // red over the blue sky would read pink.
@@ -66,8 +68,7 @@ vec3 skySurface(vec3 dir, float blend) {
   // The sky carries on a little below the horizon, reading as distant haze.
   vec3 color = mix(sky, ground, smoothstep(0.0, blend, -y));
 
-  // Night keeps a little light so the scene never goes black.
-  color *= mix(0.15, 1.0, uSkyDaylight);
+  color *= mix(SKY_NIGHT_LEVEL, 1.0, uSkyDaylight);
 
   float toward = max(dot(dir, uSkySunDirection), 0.0);
   float overHorizon = smoothstep(-blend, 0.0, y);

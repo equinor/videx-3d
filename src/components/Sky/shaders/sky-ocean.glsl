@@ -273,7 +273,7 @@ SkyOceanWave skyOceanWave(vec2 p, float texel, float dist) {
 vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float blend) {
   float flatness = wave.flatness;
   vec3 normal = wave.normal;
-  float night = mix(0.15, 1.0, uSkyDaylight);
+  float night = mix(SKY_NIGHT_LEVEL, 1.0, uSkyDaylight);
 
   vec3 V = -dir;
   float ndvAA;
