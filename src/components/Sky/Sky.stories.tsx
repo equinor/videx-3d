@@ -5,6 +5,7 @@ import {
   skyCutawayArgs,
   SkyCutawayArgs,
   skyCutawayArgTypes,
+  skyCutawayDecorator,
   skyCutawayFromArgs,
 } from '../../storybook/components/sky-cutaway-controls';
 import {
@@ -155,7 +156,7 @@ const hidden = { table: { disable: true } };
 const meta = {
   title: 'Components/Misc/Sky',
   component: SkyTimelapse,
-  decorators: [Canvas3dDecorator],
+  decorators: [Canvas3dDecorator, skyCutawayDecorator],
   parameters: {
     scale: 1000,
     // Low over the water, looking south and a little up: the sun crosses the view about noon.

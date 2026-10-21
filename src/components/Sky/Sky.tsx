@@ -48,6 +48,7 @@ import {
   SkyOceanState,
   SkyState,
 } from './sky-context';
+import { SkyCutawayHandle } from './sky-cutaway-handle';
 import { createSkyGeometry, SkyMaterial } from './sky-material';
 import {
   SKY_HDR_SUN_RADIANCE,
@@ -124,6 +125,12 @@ export type SkyCutaway = {
   seabed?: boolean;
   /** the frame row whose sight line sets the edge looking level: 0 the bottom, 1 the top. Tilting down raises it to the top, looking straight down. Default 0.5 */
   reach?: number;
+  /** moves the edge ahead (+) or back (−) of where `reach` puts it, relative to the frame's half-width at the edge, so it keeps its proportions through a zoom or tilt. Default 0 */
+  offset?: number;
+  /** a grip on the rim, in the middle of the view, that drags the edge (see `offset`); a double click or tap puts it back. Default false */
+  handle?: boolean;
+  /** called with the new `offset` when a drag of the grip ends, and on a reset. The sky keeps the dragged offset until `offset` changes */
+  onOffsetChange?: (offset: number) => void;
   /** the downward tilt, in degrees, from which the edge slides up out of the view, gone looking straight down. Default 45 */
   exitTilt?: number;
   /** width of the edge's fade, relative to the frame's half-width at the edge. Default 0.01 */
@@ -163,6 +170,13 @@ function setCutawayWave(
     amplitude * frame * far,
     (Math.PI * frequency) / frame,
     2 * Math.PI * phase,
+  );
+}
+
+// How far ahead of its anchor the edge runs, `side` across its heading (see waterFogCutawayEdge).
+function cutawayEdgeAhead(side: number, reach: number, a: Vector3, b: Vector3) {
+  return (
+    reach + a.x * Math.sin(a.y * side + a.z) + b.x * Math.sin(b.y * side + b.z)
   );
 }
 
@@ -319,6 +333,7 @@ export const Sky = ({
   const gl = useThree(state => state.gl);
   const scene = useThree(state => state.scene);
   const sceneCamera = useThree(state => state.camera);
+  const getThree = useThree(state => state.get);
 
   const azimuth = sun?.azimuth ?? skyDefaults.sun.azimuth;
   const elevation = sun?.elevation ?? skyDefaults.sun.elevation;
@@ -893,8 +908,105 @@ export const Sky = ({
     shift: 0,
     plane: 0,
     active: false,
+    // This frame's edge without its offset, the offset's unit, and the slide-out holding the
+    // edge past `floor`, for the grip.
+    base: 0,
+    unit: 1,
+    exit: 0,
+    floor: 0,
   });
   const [cutawayRay] = useState(() => new Vector3());
+  const [cutawayScratch] = useState(() => ({
+    a: new Vector3(),
+    b: new Vector3(),
+    side: new Vector3(),
+  }));
+
+  const cutawayOffset = cutawayOptions?.offset ?? 0;
+  const cutawayHandleOn = !!cutawayOptions?.handle;
+  const cutawayGrip = useRef<SkyCutawayHandle | null>(null);
+  // The dragged offset, kept until `offset` changes.
+  const cutawayDragged = useRef<number | null>(null);
+  const onCutawayOffset = useRef(cutawayOptions?.onOffsetChange);
+  useLayoutEffect(() => {
+    onCutawayOffset.current = cutawayOptions?.onOffsetChange;
+  });
+  useEffect(() => {
+    if (!cutawayGrip.current?.active) cutawayDragged.current = null;
+  }, [cutawayOffset]);
+
+  useEffect(() => {
+    if (!cutawayHandleOn) return;
+    const canvas = gl.domElement;
+    const { a, b, side } = cutawayScratch;
+    // The offset that puts the edge under client point `x`, `y`, where its sight line comes
+    // down to the cut's plane.
+    const offsetAt = (x: number, y: number) => {
+      const size = cutawaySize.current;
+      if (!size.active) return null;
+      const { camera } = getThree();
+      const skyUp = material.up;
+      const altitude = camera.position.dot(skyUp) - size.plane;
+      const box = canvas.getBoundingClientRect();
+      const ray = a
+        .set(
+          ((x - box.left) / box.width) * 2 - 1,
+          1 - ((y - box.top) / box.height) * 2,
+          0.5,
+        )
+        .unproject(camera)
+        .sub(camera.position)
+        .normalize();
+      const down = -ray.dot(skyUp);
+      if (altitude <= 0 || down <= 0) return null;
+      const anchor = material.uniforms.uSkyOceanCutawayAnchor.value as Vector3;
+      const heading = material.uniforms.uSkyOceanCutawayHeading
+        .value as Vector3;
+      const point = b
+        .copy(camera.position)
+        .addScaledVector(ray, altitude / Math.max(down, CUTAWAY_MIN_DOWN))
+        .sub(anchor);
+      const wave = cutawayEdgeAhead(
+        point.dot(side.crossVectors(heading, skyUp)),
+        0,
+        material.uniforms.uSkyOceanCutawayWaveA.value,
+        material.uniforms.uSkyOceanCutawayWaveB.value,
+      );
+      let edge = point.dot(heading) - wave;
+      // Sliding out, the edge is eased toward `floor` from below it (see the frame): undone.
+      if (size.exit > 0 && edge < size.floor) {
+        if (size.exit >= 1) return null;
+        edge = (edge - size.floor * size.exit) / (1 - size.exit);
+      }
+      const offset = (edge - size.base) / size.unit;
+      // No nearer than straight below the camera.
+      return Math.max(offset, (-size.shift - size.base) / size.unit);
+    };
+    // Reported once a drag ends: reports on the way would come back as props behind it.
+    let dragged = false;
+    const grip = new SkyCutawayHandle(canvas.parentElement ?? document.body, {
+      drag: (x, y) => {
+        const offset = offsetAt(x, y);
+        if (offset === null) return;
+        cutawayDragged.current = offset;
+        dragged = true;
+      },
+      release: () => {
+        if (!dragged || cutawayDragged.current === null) return;
+        dragged = false;
+        onCutawayOffset.current?.(cutawayDragged.current);
+      },
+      reset: () => {
+        cutawayDragged.current = 0;
+        onCutawayOffset.current?.(0);
+      },
+    });
+    cutawayGrip.current = grip;
+    return () => {
+      grip.dispose();
+      cutawayGrip.current = null;
+    };
+  }, [cutawayHandleOn, gl, material, getThree, cutawayScratch]);
 
   // Bakes run here so several prop changes in one frame cost one bake.
   useFrame(({ camera }, delta) => {
@@ -928,6 +1040,9 @@ export const Sky = ({
 
     // The cutaway: from below the camera to where the `reach` row meets its plane, the
     // surface from above the water and the seabed from in it, or from above a dry one.
+    // Camera controls move the camera before this runs but leave its matrices to the render:
+    // read with this frame's position, last frame's would swing the edge as it moves.
+    camera.updateMatrixWorld();
     const cutawayShape = material.uniforms.uSkyOceanCutawayShape
       .value as Vector3;
     const size = cutawaySize.current;
@@ -955,6 +1070,8 @@ export const Sky = ({
     ) {
       cutawayShape.y = 0;
       size.active = false;
+      (material.uniforms.uSkyOceanCutawayGrip.value as Vector2).x = 0;
+      cutawayGrip.current?.hide();
     } else {
       (material.uniforms.uSkyOceanCutawayCuts.value as Vector2).set(
         cutawayWater,
@@ -1016,8 +1133,13 @@ export const Sky = ({
       // Zoomed out the cut shrinks in the frame: its waves level out with it.
       const far = Math.min(scale, 1);
       // Looking down, from `exitTilt` on, the edge slides past the frame's top.
-      let target = reach * scale;
+      size.base = reach * scale;
+      size.unit = Math.max(halfWidth * scale, 1e-6);
+      const offset = cutawayDragged.current ?? cutawayOffset;
+      let target = Math.max(size.base + offset * size.unit, -shift);
       const exit = MathUtils.smoothstep(tilt, cutawayExitTilt / 90, 1);
+      size.exit = exit;
+      size.floor = -Infinity;
       if (exit > 0) {
         cutawayRay
           .set(0, 1, 0.5)
@@ -1033,17 +1155,18 @@ export const Sky = ({
           far;
         const inside = scale * (cutawayShadowWidth + cutawaySoftness);
         const clearance = halfWidth * (swing + inside + CUTAWAY_EXIT_MARGIN);
-        target = MathUtils.lerp(
-          target,
-          Math.max(target, top - shift + clearance),
-          exit,
-        );
+        size.floor = top - shift + clearance;
+        target = MathUtils.lerp(target, Math.max(target, size.floor), exit);
       }
       // The size eases, so a tilt near the horizon never makes the edge jump. Switching
       // plane starts it over: the cutaway keeps its place in the frame either way.
       if (size.plane !== plane) size.active = false;
+      const grip = cutawayGrip.current;
+      // Dragged, the edge stays under the pointer.
       const ease =
-        size.active && cutawayEase > 0 ? 1 - Math.exp(-delta / cutawayEase) : 1;
+        size.active && cutawayEase > 0 && !grip?.active
+          ? 1 - Math.exp(-delta / cutawayEase)
+          : 1;
       size.reach += (target - size.reach) * ease;
       size.width += (halfWidth * scale - size.width) * ease;
       size.frame += (halfWidth - size.frame) * ease;
@@ -1069,17 +1192,63 @@ export const Sky = ({
         size.frame,
         far,
       );
-      // Thinning with the cut, down to a pixel.
+      // Thinning with the cut, down to a pixel; wider while the grip is held or hovered.
+      const held = !!grip && (grip.active || grip.hover);
+      const rimWidth = cutawayRimWidth * (held ? 1.5 : 1);
       (material.uniforms.uSkyOceanCutawayRim.value as Vector4).set(
         cutawayRimColor.r,
         cutawayRimColor.g,
         cutawayRimColor.b,
-        Math.max(cutawayRimWidth * far, Math.min(cutawayRimWidth, 1)),
+        Math.max(rimWidth * far, Math.min(rimWidth, 1)),
       );
       (material.uniforms.uSkyOceanCutawayShadow.value as Vector2).set(
         cutawayShadowOpacity,
         width * cutawayShadowWidth,
       );
+
+      // The grip, drawn on the rim in the middle of the view, and the element taking the
+      // pointer over it. Like the rim, only on the surface seen from above.
+      const gripUniform = material.uniforms.uSkyOceanCutawayGrip
+        .value as Vector2;
+      gripUniform.set(0, held ? 1.2 : 1);
+      if (grip) {
+        const { a, b, side } = cutawayScratch;
+        const waveA = material.uniforms.uSkyOceanCutawayWaveA.value as Vector3;
+        const waveB = material.uniforms.uSkyOceanCutawayWaveB.value as Vector3;
+        side.crossVectors(heading, skyUp);
+        const edgeAt = (s: number, out: Vector3) =>
+          out
+            .copy(anchor)
+            .addScaledVector(
+              heading,
+              cutawayEdgeAhead(s, size.reach, waveA, waveB),
+            )
+            .addScaledVector(side, s)
+            .project(camera);
+        const centre = edgeAt(0, a);
+        const along = edgeAt(width * 0.1, b);
+        if (
+          plane !== material.oceanLevel ||
+          Math.abs(centre.x) > 1 ||
+          Math.abs(centre.y) > 1 ||
+          Math.abs(centre.z) > 1
+        ) {
+          grip.hide();
+        } else {
+          gripUniform.x = 1;
+          const canvas = gl.domElement;
+          const w = canvas.clientWidth;
+          const h = canvas.clientHeight;
+          grip.place(
+            canvas.offsetLeft + ((centre.x + 1) / 2) * w,
+            canvas.offsetTop + ((1 - centre.y) / 2) * h,
+            Math.atan2(
+              ((centre.y - along.y) * h) / 2,
+              ((along.x - centre.x) * w) / 2,
+            ),
+          );
+        }
+      }
     }
 
     const { environment: environmentDue, probe: probeDue } = stale.current;

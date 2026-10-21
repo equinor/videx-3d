@@ -39,6 +39,7 @@ uniform vec3 uSkyOceanCutawayWaveB;
 uniform vec4 uSkyOceanCutawayRim; // colour, and width in pixels
 uniform vec2 uSkyOceanCutawayShadow; // opacity, and width in world units
 uniform vec2 uSkyOceanCutawayCuts; // how much of the water it cuts (1 all, 0 none), and whether the seabed (1 or 0)
+uniform vec2 uSkyOceanCutawayGrip; // 1 to draw the grip on the rim, and its scale
 
 WaterFogCutaway skyOceanCutawayParams() {
   return WaterFogCutaway(uSkyOceanCutawayAnchor, uSkyOceanCutawayHeading, uSkyOceanCutawayShape, uSkyOceanCutawayWaveA, uSkyOceanCutawayWaveB);
@@ -73,21 +74,42 @@ float skyOceanCutawayPath(float t, float wall, float beyond) {
   return max(t - wall, 0.0) * beyond + min(t, wall) * (1.0 - uSkyOceanCutawayCuts.x);
 }
 
-// Pixels from the cutaway's rim to `p` on its plane, seen from `origin`; negative inside.
-// Measured on the distance over the range: toward the horizon a pixel's footprint outgrows
-// the distance itself, which put the rim all along it. ⚠️ Derivatives.
-float skyOceanCutawayRimAt(vec3 p, vec3 origin) {
+// Pixels from the cutaway's rim to `p` on its plane, seen from `origin` (negative inside), and
+// along it from the middle of the view, where the grip sits. Measured on distances over the
+// range: toward the horizon a pixel's footprint outgrows the distance itself, which put the
+// rim all along it. ⚠️ Derivatives.
+vec2 skyOceanCutawayRimAt(vec3 p, vec3 origin) {
   WaterFogCutaway cutaway = skyOceanCutawayParams();
   if(cutaway.shape.y <= 0.0)
-    return 1e9;
-  float g = (waterFogCutawayEdge(cutaway, p, uSkyUp) + 0.5 * cutaway.shape.z) / distance(p, origin);
-  return g / max(length(vec2(dFdx(g), dFdy(g))), 1e-12);
+    return vec2(1e9);
+  float range = distance(p, origin);
+  float g = (waterFogCutawayEdge(cutaway, p, uSkyUp) + 0.5 * cutaway.shape.z) / range;
+  float s = dot(p - cutaway.anchor, cross(cutaway.heading, uSkyUp)) / range;
+  // Toward the horizon the derivatives fail and would put the grip there too: only near the edge.
+  float along = s / max(length(vec2(dFdx(s), dFdy(s))), 1e-12);
+  return vec2(g / max(length(vec2(dFdx(g), dFdy(g))), 1e-12), abs(g) < 0.5 ? along : 1e9);
+}
+
+// Pixels from `p` to the segment from `a` to `b`.
+float skyOceanSegment(vec2 p, vec2 a, vec2 b) {
+  vec2 pa = p - a;
+  vec2 ba = b - a;
+  return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0));
+}
+
+// The grip's two strokes across the rim, —/—/—, `rimAt` pixels across and along it: how much
+// of the pixel they cover, and their dark outline.
+vec2 skyOceanCutawayGrip(vec2 rimAt) {
+  float k = uSkyOceanCutawayGrip.y;
+  vec2 q = rimAt.yx;
+  float d = min(skyOceanSegment(q, vec2(-7.0, -8.0) * k, vec2(-1.0, 8.0) * k), skyOceanSegment(q, vec2(1.0, -8.0) * k, vec2(7.0, 8.0) * k));
+  return clamp(vec2(1.25, 2.5) * k + 0.5 - d, 0.0, 1.0);
 }
 
 // The surface seen from above at `p`, `surface` its colour and opacity, with the cutaway
-// marked on it: the water cut away, a shadow inside the edge over what shows through, and
-// the rim along it. `rimAt` is skyOceanCutawayRimAt there.
-vec4 skyOceanCutawayMark(vec4 surface, vec3 p, float rimAt) {
+// marked on it: the water cut away, a shadow inside the edge over what shows through, the
+// rim along it and the grip on the rim. `rimAt` is skyOceanCutawayRimAt there.
+vec4 skyOceanCutawayMark(vec4 surface, vec3 p, vec2 rimAt) {
   WaterFogCutaway cutaway = skyOceanCutawayParams();
   if(cutaway.shape.y <= 0.0)
     return surface;
@@ -96,15 +118,21 @@ vec4 skyOceanCutawayMark(vec4 surface, vec3 p, float rimAt) {
   float water = surface.a * (1.0 - covered);
 
   // Both from the middle of the edge's fade, where the rim runs.
-  float within = 1.0 - smoothstep(-1.0, 1.0, rimAt);
+  float within = 1.0 - smoothstep(-1.0, 1.0, rimAt.x);
   float inside = max(-(across + 0.5 * cutaway.shape.z), 0.0) / max(uSkyOceanCutawayShadow.y, 1e-3);
   float shadow = uSkyOceanCutawayShadow.x * within * (1.0 - smoothstep(0.0, 1.0, inside));
-  float rim = uSkyOceanCutawayRim.w > 0.0 ? clamp(0.5 * uSkyOceanCutawayRim.w + 0.5 - abs(rimAt), 0.0, 1.0) : 0.0;
+  float rim = uSkyOceanCutawayRim.w > 0.0 ? clamp(0.5 * uSkyOceanCutawayRim.w + 0.5 - abs(rimAt.x), 0.0, 1.0) : 0.0;
 
-  // The water over the shadow, the rim over both.
+  // The water over the shadow, the rim over both, the grip and its outline over all.
   float under = water + shadow * (1.0 - water);
   float alpha = rim + under * (1.0 - rim);
   vec3 color = surface.rgb * water * (1.0 - rim) + uSkyOceanCutawayRim.rgb * rim;
+  if(uSkyOceanCutawayGrip.x > 0.5) {
+    vec2 grip = skyOceanCutawayGrip(rimAt);
+    float outline = 0.45 * grip.y;
+    alpha = grip.x + (outline + alpha * (1.0 - outline)) * (1.0 - grip.x);
+    color = uSkyOceanCutawayRim.rgb * grip.x + color * (1.0 - outline) * (1.0 - grip.x);
+  }
   return vec4(alpha > 0.0 ? color / alpha : vec3(0.0), alpha);
 }
 
@@ -384,7 +412,7 @@ vec4 skyOceanSurfaceLayer(vec3 dir, vec3 origin, float blend) {
   float t = altitude / max(abs(y), 1e-6);
   vec2 p = skyOceanPlane(origin + dir * t);
   float texel = max(length(fwidth(p)), 1e-3);
-  float rimAt = skyOceanCutawayRimAt(origin + dir * t, origin);
+  vec2 rimAt = skyOceanCutawayRimAt(origin + dir * t, origin);
   // Skipped where hidden with a margin, so a quad's pixels that still shade are hidden too
   // and the derivatives they take across the skipped ones never show.
   if(y >= 2.0 * fwidth(y) || skyOceanOnStage(p, t + 2.0 * fwidth(t), 4.0 * texel))

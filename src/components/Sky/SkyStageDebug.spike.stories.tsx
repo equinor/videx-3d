@@ -11,6 +11,7 @@ import {
   skyCutawayArgs,
   SkyCutawayArgs,
   skyCutawayArgTypes,
+  skyCutawayDecorator,
   skyCutawayFromArgs,
 } from '../../storybook/components/sky-cutaway-controls';
 import {
@@ -249,7 +250,7 @@ const StageDebug = (args: StageDebugArgs) => {
 const meta = {
   title: 'Spikes/Sky/StageDebug',
   component: StageDebug,
-  decorators: [Canvas3dDecorator],
+  decorators: [Canvas3dDecorator, skyCutawayDecorator],
   parameters: {
     scale: 1000,
     // With every layer hidden nothing else clears the frame, and the last one stays up.

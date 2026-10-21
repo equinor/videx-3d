@@ -261,6 +261,17 @@ A cutaway also keeps the scene lit as from above the water.
   only cutting some of the water lights the scene as from above it.
 - `reach` is the frame row the edge sits on when looking level; tilting down raises it,
   and from `exitTilt` (default 45°) it slides out of the top of the view.
+- `offset` moves the edge ahead (+) or back (−) of where `reach` puts it, in the frame's
+  half-width at the edge, so it keeps its proportions through a zoom or a tilt. Keep
+  `reach` where the cut reads well (0.5) and move the edge with `offset`: near the horizon
+  a row's sight line runs far for a small step, an offset never does.
+- `handle: true` draws a grip on the rim in the middle of the view: dragging it sets the
+  offset, under the pointer, and a double click or tap puts it back to 0. It reports
+  through `onOffsetChange` once the drag ends (and on a reset), and the sky keeps the
+  dragged offset until `offset` changes.
+  The shader draws it with the rim, so it is drawn only where the rim is (on the surface
+  seen from above); an invisible element over it takes the pointer, so camera controls
+  never see the drag. It works while the edge slides out too.
 - `zoomFollow` is how much of a zoom its size follows on screen: 1 keeps it fixed in
   the frame, 0 fixed in the world. It has its frame size with the camera `reference`
   high (default half the width of a stage's occupant).

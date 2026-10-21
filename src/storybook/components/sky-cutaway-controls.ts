@@ -1,4 +1,5 @@
-import type { ArgTypes } from '@storybook/react-vite';
+import type { ArgTypes, Decorator } from '@storybook/react-vite';
+import { useArgs } from 'storybook/preview-api';
 import type { SkyCutaway } from '../../components/Sky/Sky';
 
 /** A {@link SkyCutaway} as story args. */
@@ -7,6 +8,10 @@ export type SkyCutawayArgs = {
   cutawayWater: number;
   cutawaySeabed: boolean;
   cutawayReach: number;
+  cutawayOffset: number;
+  cutawayHandle: boolean;
+  /** injected by {@link skyCutawayDecorator}: writes a dragged offset back */
+  onCutawayOffset?: (offset: number) => void;
   cutawayExitTilt: number;
   cutawaySoftness: number;
   cutawayWave1Amplitude: number;
@@ -24,12 +29,14 @@ export type SkyCutawayArgs = {
   cutawayReference: number;
 };
 
-/** The Sky's own defaults, with the cutaway off. */
+/** The Sky's own defaults, with the cutaway off and its grip on. */
 export const skyCutawayArgs: SkyCutawayArgs = {
   cutaway: false,
   cutawayWater: 1,
   cutawaySeabed: true,
   cutawayReach: 0.5,
+  cutawayOffset: 0,
+  cutawayHandle: true,
   cutawayExitTilt: 45,
   cutawaySoftness: 0.01,
   cutawayWave1Amplitude: 0.12,
@@ -53,6 +60,9 @@ export const skyCutawayFromArgs = (args: SkyCutawayArgs): SkyCutaway | false =>
     water: args.cutawayWater,
     seabed: args.cutawaySeabed,
     reach: args.cutawayReach,
+    offset: args.cutawayOffset,
+    handle: args.cutawayHandle,
+    onOffsetChange: args.onCutawayOffset,
     exitTilt: args.cutawayExitTilt,
     softness: args.cutawaySoftness,
     waves: [
@@ -76,6 +86,21 @@ export const skyCutawayFromArgs = (args: SkyCutawayArgs): SkyCutaway | false =>
     zoomFollow: args.cutawayZoomFollow,
     reference: args.cutawayReference > 0 ? args.cutawayReference : undefined,
   };
+
+/**
+ * Writes an offset dragged with the cutaway's grip back into `cutawayOffset`. Add it last
+ * (outermost): `useArgs` is a preview hook, valid only in a decorator.
+ */
+export const skyCutawayDecorator: Decorator = (Story, context) => {
+  const [, updateArgs] = useArgs();
+  return Story({
+    args: {
+      ...context.args,
+      onCutawayOffset: (offset: number) =>
+        updateArgs({ cutawayOffset: offset }),
+    },
+  });
+};
 
 const detail = (
   min: number,
@@ -119,6 +144,20 @@ export const skyCutawayArgTypes = (
     0.01,
     'The frame row whose sight line sets the edge looking level: 0 the bottom, 1 the top. Tilting down raises it to the top, looking straight down.',
   ),
+  cutawayOffset: detail(
+    -1,
+    3,
+    0.01,
+    'Moves the edge ahead (+) or back (\u2212) of where `cutawayReach` puts it, relative to the frame\u2019s half-width at the edge. The grip drags it.',
+  ),
+  cutawayHandle: {
+    control: { type: 'boolean' },
+    description:
+      'A grip on the rim, in the middle of the view: drag it to move the edge (`cutawayOffset`); a double click or tap puts it back.',
+    if: { arg: 'cutaway' },
+    table: { category: 'Cutaway' },
+  },
+  onCutawayOffset: { table: { disable: true } },
   cutawayExitTilt: detail(
     0,
     90,

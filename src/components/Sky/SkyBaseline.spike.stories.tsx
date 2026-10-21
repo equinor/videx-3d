@@ -21,6 +21,7 @@ import {
   skyCutawayArgs,
   SkyCutawayArgs,
   skyCutawayArgTypes,
+  skyCutawayDecorator,
   skyCutawayFromArgs,
 } from '../../storybook/components/sky-cutaway-controls';
 import {
@@ -562,7 +563,11 @@ const range = (min: number, max: number, step: number, category: string) => ({
 const meta = {
   title: 'Spikes/Sky/Baseline',
   component: SkySpike,
-  decorators: [GeneratorsProviderDecorator, DataProviderDecorator],
+  decorators: [
+    GeneratorsProviderDecorator,
+    DataProviderDecorator,
+    skyCutawayDecorator,
+  ],
   argTypes: {
     ...skySunArgTypes('Sky'),
     sunSize: range(0.1, 5, 0.05, 'Sky'),

@@ -46,6 +46,7 @@ import {
   skyCutawayArgs,
   SkyCutawayArgs,
   skyCutawayArgTypes,
+  skyCutawayDecorator,
   skyCutawayFromArgs,
 } from '../../storybook/components/sky-cutaway-controls';
 import { chunkTimings } from '../../storybook/data/chunk-timings';
@@ -2507,6 +2508,7 @@ export const Default: Story = {
       opacity: 0.75,
     }),
     createChunkProgressDecorator(progressStore),
+    skyCutawayDecorator,
   ],
 };
 

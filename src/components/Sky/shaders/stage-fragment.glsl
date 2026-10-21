@@ -78,7 +78,7 @@ void main() {
   float texel = max(length(fwidth(p)), 1e-3);
   float dist = distance(cameraPosition, world);
   #ifdef STAGE_SURFACE
-  float rimAt = skyOceanCutawayRimAt(world, cameraPosition);
+  vec2 rimAt = skyOceanCutawayRimAt(world, cameraPosition);
   #endif
   // The sky draws the band a pixel inside the stage's edge (see skyOceanStaged), and the
   // stage leaves it, and everything beyond, alone.
