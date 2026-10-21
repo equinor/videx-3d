@@ -127,7 +127,7 @@ uniform vec2 uSkyCloudsSeed; // offset of the pattern
 vec3 skyClouds(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
   float below = uSkyClouds.y - dot(origin, uSkyUp);
   float fade = 1.0 - smoothstep(0.5, 1.0, 1.0 - below / uSkyClouds.y);
-  if(fade <= 0.0)
+  if(fade <= 0.0 || uSkyCloudsColor.a <= 0.0)
     return color;
   float y = dot(dir, uSkyUp);
   // Rays that never reach the deck take the mirrored hit, so the derivatives stay continuous.

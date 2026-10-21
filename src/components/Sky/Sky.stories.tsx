@@ -41,7 +41,7 @@ const BOUNDS: SkyStageBounds = [-5000, -5000, 5000, 5000];
 type TimelapseArgs = {
   playing: boolean;
   speed: number;
-  captureInterval: number;
+  captureMaxWait: number;
   waterOpacity: number;
   windSpeed: number;
   foamAmount: number;
@@ -126,7 +126,7 @@ const SkyTimelapse = (args: TimelapseArgs) => {
         stars={skyStarsFromArgs(args)}
         clouds={skyCloudsFromArgs(args)}
         cutaway={skyCutawayFromArgs(args)}
-        capture={{ interval: args.captureInterval }}
+        capture={{ maxWait: args.captureMaxWait }}
       >
         <SkyBoxStage bounds={BOUNDS} />
         {tanker}
@@ -198,12 +198,12 @@ const meta = {
       'Degrees north. Far north in June the sun never sets; in December it never rises.',
     ),
     sunLongitude: range(-180, 180, 0.1, 'Timelapse', 'Degrees east.'),
-    captureInterval: range(
+    captureMaxWait: range(
       0,
       2000,
       50,
       'Timelapse',
-      'Least time between two bakes of the environment and the light probe, in milliseconds, while the sun moves. Lower lights the scene more smoothly, at more cost.',
+      'Longest the environment and the light probe go without a bake while the sun moves, in milliseconds. Lower lights the scene more smoothly, at more cost.',
     ),
     sunFromTime: hidden,
     sunAzimuth: hidden,
@@ -236,7 +236,7 @@ const meta = {
     sunHour: 5,
     clouds: true,
     // The Sky's own default.
-    captureInterval: 250,
+    captureMaxWait: 250,
     waterOpacity: DEFAULT_OCEAN_WATER_OPACITY,
     windSpeed: 10,
     foamAmount: 0.5,

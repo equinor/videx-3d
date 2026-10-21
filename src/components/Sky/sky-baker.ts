@@ -208,17 +208,30 @@ export class SkyBaker {
   }
 
   /**
-   * Compile what the bakes draw with — and with an environment of `resolution`, its
-   * prefilter — in the background where the browser can (see `precompile`). Set the
-   * lights first: they are compiled in. `null` when all is ready already.
+   * Compile what the sky's bakes draw with, in the background where the browser can (see
+   * `precompile`). Set the lights first: they are compiled in. `null` when all is ready
+   * already.
    */
-  precompile(
+  precompile(renderer: WebGLRenderer): Promise<void> | null {
+    this.sync();
+    return precompile(
+      renderer,
+      this.scene,
+      compileCamera,
+      this.scene,
+      'offscreen',
+    );
+  }
+
+  /**
+   * The same for the subsurface's bake — and with an environment of `resolution`, the
+   * prefilter every environment bake takes. Small, so it is ready first.
+   */
+  precompileSubsurface(
     renderer: WebGLRenderer,
     resolution: number | null,
   ): Promise<void> | null {
-    this.sync();
     const waits = [
-      precompile(renderer, this.scene, compileCamera, this.scene, 'offscreen'),
       precompile(
         renderer,
         this.subsurfaceScene,

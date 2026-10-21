@@ -422,7 +422,7 @@ export class SkyMaterial extends ShaderMaterial {
   }
 
   /** the clouds' look (see `SkyClouds`) */
-  setClouds(clouds: Required<SkyClouds>) {
+  setClouds(clouds: Required<Omit<SkyClouds, 'enabled'>>) {
     this.uniforms.uSkyClouds.value.set(
       MathUtils.clamp(clouds.coverage, 0, 1),
       Math.max(clouds.altitude, 1),

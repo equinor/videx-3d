@@ -78,6 +78,10 @@ or the moon at night:
 `softness` the width of their edges; `seed` picks another pattern. They fade into the
 haze toward the horizon, and out as the camera climbs to the deck.
 
+Turning `clouds` on or off recompiles the sky. To switch them often, keep `clouds` set
+and toggle `enabled` instead: they stay compiled in, so it is instant, and while hidden
+they cost a single branch.
+
 The sun shows through all but the thickest parts: a softened disc through thin cloud,
 a glow around it and bright silver edges where cloud thins in front of it. The moon does
 the same at night; the stars are hidden. The moon takes over as the sun's light ends
@@ -97,8 +101,15 @@ the sky's diffuse light from each.
 The bakes are made once for each zone the camera can be in — the air over the sea, the
 water in it and, below the seabed (or the abyss level), the `subsurface` — and swapped as
 the camera crosses a level, so a moving camera never bakes. In the water the light dims
-with depth. The sky is baked again when it changes; while it keeps changing (a slider
-being dragged) at most once per `capture.interval` (default 250 ms).
+with depth. The subsurface is baked first: its program is small and compiles on its own,
+so the scene is lit by it within moments, and a zone not yet baked borrows its maps until
+its own are swapped in. It is baked again only when its own inputs change (its panels or
+map, the frame, the environment's resolution), never with the sky.
+
+The sky is baked again when it changes, once it has been still for `capture.interval`
+(default 250 ms): a slider being dragged bakes nothing on the way, so the sky follows it at
+once and only the light it casts waits. A sky that keeps changing (a timelapse) is baked
+at least every `capture.maxWait` (default 1000 ms).
 
 `subsurface` is the light where the sky's own means nothing: below the seabed, and
 wherever the sky is not drawn (`background: false`). By default it is a dark backdrop

@@ -57,6 +57,8 @@ export type SkyStars = {
  * by the water.
  */
 export type SkyClouds = {
+  /** false hides them, still compiled in, so showing them again is instant. Default true */
+  enabled?: boolean;
   /** how much of the sky they cover, from 0 to 1. Default 0.4 */
   coverage?: number;
   /** height of the deck along `up`, in world units. Default 6000 */

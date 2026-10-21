@@ -42,6 +42,7 @@ import {
 import standInFragmentShader from './shaders/sky-stand-in-fragment.glsl';
 import skyVertexShader from './shaders/sky-vertex.glsl';
 import { SkyBaker } from './sky-baker';
+import { SkyBakeSchedule } from './sky-bake-schedule';
 import {
   SkyContext,
   SkyOceanContext,
@@ -88,13 +89,16 @@ export type SkyLightProbeOptions = {
 };
 
 /**
- * How often the environment and the light probe are baked again while the sky keeps
- * changing, as while a slider is dragged. The last change is always baked, once the
- * interval has passed. A camera moving never bakes.
+ * When the environment and the light probe are baked again as the sky changes. A change is
+ * baked once the sky has been still for `interval`, so a slider being dragged bakes nothing
+ * on the way, and at least every `maxWait` while it keeps changing. The sky itself follows
+ * at once; only the light it casts waits. A camera moving never bakes.
  */
 export type SkyCaptureOptions = {
-  /** least time between two bakes, in milliseconds. Default 250 */
+  /** how long the sky must be still before it is baked, in milliseconds. Default 250 */
   interval?: number;
+  /** longest a changing sky goes without a bake, in milliseconds. Default 1000 */
+  maxWait?: number;
 };
 
 /** A layer the {@link Sky} draws itself: its background, and its sea's surface layer. */
@@ -258,6 +262,7 @@ export type SkyProps = {
 
 const DEFAULT_ENVIRONMENT_RESOLUTION = 128;
 const DEFAULT_CAPTURE_INTERVAL = 250;
+const DEFAULT_CAPTURE_MAX_WAIT = 1000;
 // Narrowest edge, in world units: a fade of none is undefined in the shader.
 const CUTAWAY_MIN_EDGE = 0.01;
 // The cutaway's tip row never looks flatter than this (sine; about 0.6° below the horizon).
@@ -365,7 +370,10 @@ export const Sky = ({
   const cloudAltitude = cloudsOptions?.altitude ?? cloudDefaults.altitude;
   const cloudScale = cloudsOptions?.scale ?? cloudDefaults.scale;
   const cloudSoftness = cloudsOptions?.softness ?? cloudDefaults.softness;
-  const cloudOpacity = cloudsOptions?.opacity ?? cloudDefaults.opacity;
+  const cloudOpacity =
+    cloudsOptions?.enabled === false
+      ? 0
+      : (cloudsOptions?.opacity ?? cloudDefaults.opacity);
   const cloudColor = toHex(cloudsOptions?.color ?? cloudDefaults.color);
   const cloudSeed = cloudsOptions?.seed ?? cloudDefaults.seed;
   const zenith = toHex(colors?.zenith ?? skyDefaults.colors.zenith);
@@ -554,6 +562,8 @@ export const Sky = ({
   useEffect(() => () => surfaceLayer?.dispose(), [surfaceLayer]);
 
   const dirty = useRef(true);
+  // The subsurface's bakes owe nothing to the sky: they are due only when their own inputs change.
+  const subsurfaceDirty = useRef(true);
   // The zones whose environment and light probe are due a bake; each zone's coefficients.
   const stale = useRef({
     environment: new Set<SkyZone>(),
@@ -562,10 +572,11 @@ export const Sky = ({
   const zoneProbes = useRef<Partial<Record<SkyZone, SphericalHarmonics3>>>({});
   const appliedProbe = useRef<SphericalHarmonics3 | null>(null);
   const zoneInView = useRef<SkyZone>('air');
-  const lastBake = useRef(-Infinity);
+  const [schedule] = useState(() => new SkyBakeSchedule());
   // One readback at a time: they are slow to come back, and piled up they stall.
   const probeBusy = useRef(false);
   const captureInterval = capture?.interval ?? DEFAULT_CAPTURE_INTERVAL;
+  const captureMaxWait = capture?.maxWait ?? DEFAULT_CAPTURE_MAX_WAIT;
   // The zones the camera can be in; the subsurface also lights an undrawn sky.
   const zones = useMemo<SkyZone[]>(
     () =>
@@ -588,10 +599,46 @@ export const Sky = ({
         ? { map: subsurfaceMap }
         : { light: skySubsurfaceColors(panels ?? undefined) },
     );
-    dirty.current = true;
+    subsurfaceDirty.current = true;
     // `subsurface` is an inline object: compared by value, as `panelsKey`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baker, subsurfaceMap, panelsKey]);
+
+  // The subsurface's panels turn with the frame; what is baked, with the environment.
+  useEffect(() => {
+    subsurfaceDirty.current = true;
+  }, [
+    upX,
+    upY,
+    upZ,
+    northX,
+    northY,
+    northZ,
+    hasEnvironment,
+    hasProbe,
+    environmentResolution,
+  ]);
+
+  // Its program is small and compiles on its own, so its bakes light the scene first.
+  const [subsurfaceReady, setSubsurfaceReady] = useState(false);
+  useLayoutEffect(() => {
+    const pending = baker.precompileSubsurface(
+      gl,
+      hasEnvironment ? environmentResolution : null,
+    );
+    if (!pending) {
+      setSubsurfaceReady(true);
+      return;
+    }
+    let current = true;
+    setSubsurfaceReady(false);
+    pending.then(() => {
+      if (current) setSubsurfaceReady(true);
+    });
+    return () => {
+      current = false;
+    };
+  }, [gl, baker, hasEnvironment, environmentResolution]);
 
   useLayoutEffect(() => {
     material.setFrame({
@@ -837,7 +884,7 @@ export const Sky = ({
       ...[group, ...stages.current].map(root =>
         precompile(gl, root, sceneCamera, scene),
       ),
-      baker.precompile(gl, resolution),
+      baker.precompile(gl),
     ].filter(wait => wait !== null);
     if (pending.length === 0) {
       setReady(true);
@@ -1252,21 +1299,35 @@ export const Sky = ({
     }
 
     const { environment: environmentDue, probe: probeDue } = stale.current;
-    if (dirty.current) {
-      dirty.current = false;
-      for (const z of zones) {
-        if (hasEnvironment) environmentDue.add(z);
-        if (hasProbe) probeDue.add(z);
-      }
-    }
-
-    // The zone in view first, then the others: one zone a frame, one readback at a time.
-    const due = (z: SkyZone) =>
-      environmentDue.has(z) || (probeDue.has(z) && !probeBusy.current);
-    const next = due(zone) ? zone : zones.find(due);
     const now = performance.now();
-    if (ready && next && now - lastBake.current >= captureInterval) {
-      lastBake.current = now;
+    if (dirty.current || subsurfaceDirty.current) schedule.change(now);
+    for (const z of zones) {
+      const changed =
+        z === 'subsurface' ? subsurfaceDirty.current : dirty.current;
+      if (!changed) continue;
+      if (hasEnvironment) environmentDue.add(z);
+      if (hasProbe) probeDue.add(z);
+    }
+    dirty.current = false;
+    subsurfaceDirty.current = false;
+
+    const next = schedule.next(
+      now,
+      zones,
+      zone,
+      z =>
+        environmentDue.has(z)
+          ? 'due'
+          : probeDue.has(z)
+            ? probeBusy.current
+              ? 'blocked'
+              : 'due'
+            : 'none',
+      { sky: ready, subsurface: subsurfaceReady },
+      captureInterval,
+      captureMaxWait,
+    );
+    if (next) {
       const nextProbe = zoneProbes.current[next];
       // There without coefficients too: its light is compiled into the bakes' programs.
       if (nextProbe) bakeProbe.sh.copy(nextProbe);
@@ -1295,6 +1356,7 @@ export const Sky = ({
             if (next !== 'subsurface' && !zoneProbes.current[next]) {
               if (hasEnvironment) environmentDue.add(next);
               probeDue.add(next);
+              schedule.change(performance.now());
             }
             zoneProbes.current[next] = sh;
           })
@@ -1304,7 +1366,8 @@ export const Sky = ({
       }
     }
 
-    // The zone's bakes, swapped in as the camera crosses a level: no GPU work.
+    // The zone's bakes, swapped in as the camera crosses a level: no GPU work. Until it has
+    // its own, the subsurface's light the scene.
     const dim =
       zone === 'water'
         ? skyWaterDimming(
@@ -1313,11 +1376,12 @@ export const Sky = ({
           )
         : 1;
     if (hasEnvironment) {
-      const map = baker.environmentOf(zone);
+      const map =
+        baker.environmentOf(zone) ?? baker.environmentOf('subsurface');
       if (map && scene.environment !== map) scene.environment = map;
       scene.environmentIntensity = environmentIntensity * dim;
     }
-    const zoneProbe = zoneProbes.current[zone];
+    const zoneProbe = zoneProbes.current[zone] ?? zoneProbes.current.subsurface;
     if (zoneProbe && appliedProbe.current !== zoneProbe) {
       probe.sh.copy(zoneProbe);
       appliedProbe.current = zoneProbe;
