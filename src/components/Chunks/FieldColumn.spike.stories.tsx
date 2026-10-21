@@ -505,6 +505,7 @@ type FieldColumnStoryProps = {
   seismicVoids: boolean;
   sky: boolean;
   skyBackground: boolean;
+  skyClouds: boolean;
   skyWater: boolean;
   skySeabed: boolean;
   skySeabedOpacity: number;
@@ -1457,6 +1458,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
         <Sky
           background={props.skyBackground}
           sun={{ azimuth: props.sunAzimuth, elevation: props.sunElevation }}
+          clouds={{ enabled: props.skyClouds }}
           abyss
           cutaway={skyCutawayFromArgs(props)}
           ocean={{
@@ -1524,6 +1526,8 @@ const meta = {
     wellMapCamera: false,
     // Under the sky, the sky lights the scene.
     ownLighting: (args: FieldColumnStoryProps) => args.sky,
+    // `skyBackground` and `immersionBackground` are switches, not colours.
+    controls: { matchers: { color: /color$/i } },
     docs: {
       description: {
         component:
@@ -1687,6 +1691,7 @@ export const Default: Story = {
     // Sky
     sky: false,
     skyBackground: true,
+    skyClouds: false,
     skyWater: true,
     skySeabed: true,
     skySeabedOpacity: 1,
@@ -1705,8 +1710,16 @@ export const Default: Story = {
       table: { category: 'Sky' },
     },
     skyBackground: {
+      control: { type: 'boolean' },
       description:
         'Draw the sky and its stage behind the scene (`Sky.background`). Switched instantly, with nothing rebuilt or baked: off, the sky still lights the scene, and the column draws its own water and sea bed again.',
+      if: { arg: 'sky' },
+      table: { category: 'Sky' },
+    },
+    skyClouds: {
+      control: { type: 'boolean' },
+      description:
+        'The sky\u2019s clouds, with their defaults (`clouds.enabled`): compiled in from the start, so switching them is instant.',
       if: { arg: 'sky' },
       table: { category: 'Sky' },
     },
@@ -2260,6 +2273,7 @@ export const Default: Story = {
       table: { category: 'Immersion' },
     },
     immersionBackground: {
+      control: { type: 'boolean' },
       description: 'Tint the background to match, not just the geometry.',
       table: { category: 'Immersion' },
     },
