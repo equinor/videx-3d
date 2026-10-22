@@ -52,16 +52,13 @@ export type SkyArgs = {
   sunRays: number;
   sunShimmer: boolean;
   sunTwilight: number;
-  // Moon and stars
-  moon: boolean;
-  moonIntensity: number;
-  stars: boolean;
-  starBrightness: number;
   // Clouds
   clouds: boolean;
   cloudCoverage: number;
   cloudAltitude: number;
   cloudScale: number;
+  cloudThickness: number;
+  cloudCurved: boolean;
   cloudSoftness: number;
   cloudOpacity: number;
   cloudSeed: number;
@@ -74,6 +71,10 @@ export type SkyArgs = {
   skyNadir: string;
   skyIntensity: number;
   skyHorizonBlend: number;
+  moon: boolean;
+  moonIntensity: number;
+  stars: boolean;
+  starBrightness: number;
   // Sea
   skyWater: boolean;
   skySeabed: boolean;
@@ -95,18 +96,6 @@ export type SkyArgs = {
   seaFresnelPower: number;
   seaDetailFadeStart: number;
   seaDetailFadeEnd: number;
-  // Void
-  abyssCeiling: string;
-  abyssHorizon: string;
-  abyssDepth: string;
-  abyssFadeDistance: number;
-  abyssTransition: number;
-  abyssDarkening: number;
-  abyssDetail: number;
-  abyssDetailScale: number;
-  abyssDepthDetail: number;
-  abyssDepthDetailScale: number;
-  abyssFalloff: number;
   // Subsurface
   subsurfaceFollowSun: boolean;
   subsurfaceLightAzimuth: number;
@@ -122,7 +111,18 @@ export type SkyArgs = {
   subsurfaceBelow: boolean;
   subsurfaceBelowColor: string;
   subsurfaceBelowIntensity: number;
-  // Lighting
+  abyssCeiling: string;
+  abyssHorizon: string;
+  abyssDepth: string;
+  abyssFadeDistance: number;
+  abyssTransition: number;
+  abyssDarkening: number;
+  abyssDetail: number;
+  abyssDetailScale: number;
+  abyssDepthDetail: number;
+  abyssDepthDetailScale: number;
+  abyssFalloff: number;
+  // Environment
   environment: boolean;
   lightProbe: boolean;
   environmentIntensity: number;
@@ -155,14 +155,12 @@ export const skyArgs: SkyArgs = {
   sunRays: skyDefaults.sun.rays,
   sunShimmer: skyDefaults.sun.shimmer,
   sunTwilight: skyDefaults.sun.twilight,
-  moon: true,
-  moonIntensity: skyDefaults.moon.intensity,
-  stars: true,
-  starBrightness: skyDefaults.stars.brightness,
   clouds: false,
   cloudCoverage: skyDefaults.clouds.coverage,
   cloudAltitude: skyDefaults.clouds.altitude,
   cloudScale: skyDefaults.clouds.scale,
+  cloudThickness: skyDefaults.clouds.thickness,
+  cloudCurved: skyDefaults.clouds.curved,
   cloudSoftness: skyDefaults.clouds.softness,
   cloudOpacity: skyDefaults.clouds.opacity,
   cloudSeed: skyDefaults.clouds.seed,
@@ -174,6 +172,10 @@ export const skyArgs: SkyArgs = {
   skyNadir: skyDefaults.colors.nadir,
   skyIntensity: skyDefaults.intensity,
   skyHorizonBlend: skyDefaults.horizonBlend,
+  moon: true,
+  moonIntensity: skyDefaults.moon.intensity,
+  stars: true,
+  starBrightness: skyDefaults.stars.brightness,
   skyWater: true,
   skySeabed: true,
   waterOpacity: DEFAULT_OCEAN_WATER_OPACITY,
@@ -194,17 +196,6 @@ export const skyArgs: SkyArgs = {
   seaFresnelPower: 4,
   seaDetailFadeStart: 15000,
   seaDetailFadeEnd: 60000,
-  abyssCeiling: skyDefaults.abyss.colors.ceiling,
-  abyssHorizon: skyDefaults.abyss.colors.horizon,
-  abyssDepth: skyDefaults.abyss.colors.depth,
-  abyssFadeDistance: skyDefaults.abyss.fadeDistance,
-  abyssTransition: skyDefaults.abyss.transition,
-  abyssDarkening: skyDefaults.abyss.darkening,
-  abyssDetail: skyDefaults.abyss.detail,
-  abyssDetailScale: skyDefaults.abyss.detailScale,
-  abyssDepthDetail: skyDefaults.abyss.depthDetail,
-  abyssDepthDetailScale: skyDefaults.abyss.depthDetailScale,
-  abyssFalloff: skyDefaults.abyss.falloff,
   subsurfaceFollowSun: skyDefaults.subsurface.light.followSun,
   subsurfaceLightAzimuth: skyDefaults.subsurface.light.azimuth,
   subsurfaceLightElevation: skyDefaults.subsurface.light.elevation,
@@ -219,6 +210,17 @@ export const skyArgs: SkyArgs = {
   subsurfaceBelow: false,
   subsurfaceBelowColor: '#9fb4d0',
   subsurfaceBelowIntensity: 1,
+  abyssCeiling: skyDefaults.abyss.colors.ceiling,
+  abyssHorizon: skyDefaults.abyss.colors.horizon,
+  abyssDepth: skyDefaults.abyss.colors.depth,
+  abyssFadeDistance: skyDefaults.abyss.fadeDistance,
+  abyssTransition: skyDefaults.abyss.transition,
+  abyssDarkening: skyDefaults.abyss.darkening,
+  abyssDetail: skyDefaults.abyss.detail,
+  abyssDetailScale: skyDefaults.abyss.detailScale,
+  abyssDepthDetail: skyDefaults.abyss.depthDetail,
+  abyssDepthDetailScale: skyDefaults.abyss.depthDetailScale,
+  abyssFalloff: skyDefaults.abyss.falloff,
   environment: true,
   lightProbe: true,
   environmentIntensity: 1,
@@ -335,6 +337,8 @@ export const skyCloudsFromArgs = (args: SkyArgs): SkyClouds | false =>
     coverage: args.cloudCoverage,
     altitude: args.cloudAltitude,
     scale: args.cloudScale,
+    thickness: args.cloudThickness,
+    curved: args.cloudCurved,
     softness: args.cloudSoftness,
     opacity: args.cloudOpacity,
     seed: args.cloudSeed,
@@ -510,7 +514,6 @@ const ADVANCED = new Set<string>([
   'abyssFalloff',
   'subsurfaceIntensity',
   'subsurfacePanelColor',
-  'subsurfacePanelIntensity',
   'subsurfaceBelow',
   'subsurfaceBelowColor',
   'subsurfaceBelowIntensity',
@@ -539,13 +542,11 @@ const ADVANCED = new Set<string>([
 ]);
 
 const SUN = 'Sun';
-const NIGHT = 'Moon and stars';
 const CLOUDS = 'Clouds';
 const SKY = 'Sky';
 const SEA = 'Sea';
-const VOID = 'Void';
 const SUBSURFACE = 'Subsurface';
-const LIGHTING = 'Lighting';
+const ENVIRONMENT = 'Environment';
 const DEBUG = 'Debug';
 
 const allSkyArgTypes = (): ArgTypes<SkyArgs> => ({
@@ -629,22 +630,6 @@ const allSkyArgTypes = (): ArgTypes<SkyArgs> => ({
     SUN,
     'Strength of the warm glow along the horizon at sunrise and sunset, and the pink belt opposite it; 0 for none.',
   ),
-  moon: toggle(
-    NIGHT,
-    'The moon: its disc and glow, and the sky\u2019s light once the sun is well down. From a time and place it is the real one, with its phase, up by day too; else a full moon opposite the sun.',
-  ),
-  moonIntensity: {
-    ...range(0, 1, 0.01, NIGHT, 'Intensity of the moonlight, at full night.'),
-    if: { arg: 'moon' },
-  },
-  stars: toggle(
-    NIGHT,
-    'Stars, out once it is dark. From a time and place, the real ones to magnitude 5 and the planets, each out as the sky darkens enough for it, over faint procedural ones; else procedural.',
-  ),
-  starBrightness: {
-    ...range(0, 2, 0.05, NIGHT, 'Brightness of the stars.'),
-    if: { arg: 'stars' },
-  },
   clouds: toggle(
     CLOUDS,
     'A deck of still clouds, seen from below and lit by the sun, or the moon at night. They fade out as the camera climbs to the deck, and the water does not reflect them.',
@@ -659,6 +644,23 @@ const allSkyArgTypes = (): ArgTypes<SkyArgs> => ({
   },
   cloudScale: {
     ...range(200, 30000, 100, CLOUDS, 'Size of the clouds, in metres.'),
+    if: { arg: 'clouds' },
+  },
+  cloudThickness: {
+    ...range(
+      0,
+      5000,
+      50,
+      CLOUDS,
+      'Depth of the deck, in metres: thicker parts shift against their outlines as the view moves. 0 for a flat sheet.',
+    ),
+    if: { arg: 'clouds' },
+  },
+  cloudCurved: {
+    ...toggle(
+      CLOUDS,
+      'The deck curves with the Earth, down toward the horizon. Off, it is a flat plane.',
+    ),
     if: { arg: 'clouds' },
   },
   cloudSoftness: {
@@ -699,6 +701,22 @@ const allSkyArgTypes = (): ArgTypes<SkyArgs> => ({
     SKY,
     'Width of the horizon to ground transition.',
   ),
+  moon: toggle(
+    SKY,
+    'The moon: its disc and glow, and the sky\u2019s light once the sun is well down. From a time and place it is the real one, with its phase, up by day too; else a full moon opposite the sun.',
+  ),
+  moonIntensity: {
+    ...range(0, 1, 0.01, SKY, 'Intensity of the moonlight, at full night.'),
+    if: { arg: 'moon' },
+  },
+  stars: toggle(
+    SKY,
+    'Stars, out once it is dark. From a time and place, the real ones to magnitude 5 and the planets, each out as the sky darkens enough for it, over faint procedural ones; else procedural.',
+  ),
+  starBrightness: {
+    ...range(0, 2, 0.05, SKY, 'Brightness of the stars.'),
+    if: { arg: 'stars' },
+  },
   skyWater: toggle(
     SEA,
     'The sea\u2019s water, everywhere. Off, the seabed lies dry, and the cutaway cuts it.',
@@ -765,59 +783,6 @@ const allSkyArgTypes = (): ArgTypes<SkyArgs> => ({
     1000,
     SEA,
     'Distance at which they are gone.',
-  ),
-  abyssCeiling: color(VOID, 'The lid overhead.'),
-  abyssHorizon: color(VOID, 'Where the lid and the depths meet, far away.'),
-  abyssDepth: color(VOID, 'Straight down, deep in the void.'),
-  abyssFadeDistance: range(
-    500,
-    100000,
-    500,
-    VOID,
-    'Distance over which the lid recedes into the horizon colour, in metres.',
-  ),
-  abyssTransition: range(
-    1,
-    2000,
-    1,
-    VOID,
-    'Depth below the level over which the void fades in, in metres.',
-  ),
-  abyssDarkening: range(
-    0,
-    20000,
-    100,
-    VOID,
-    'Depth below the level over which the void dims toward black, in metres; 0 for none.',
-  ),
-  abyssDetail: range(0, 1, 0.01, VOID, 'Noise relief on the lid; 0 for none.'),
-  abyssDetailScale: range(
-    50,
-    10000,
-    50,
-    VOID,
-    'Size of that relief, in metres.',
-  ),
-  abyssDepthDetail: range(
-    0,
-    0.5,
-    0.01,
-    VOID,
-    'Faint distant rock in the depths, wavy strata broken by crags; 0 for none.',
-  ),
-  abyssDepthDetailScale: range(
-    0.25,
-    4,
-    0.05,
-    VOID,
-    'Size of the rock\u2019s features.',
-  ),
-  abyssFalloff: range(
-    0.1,
-    3,
-    0.05,
-    VOID,
-    'How the depths darken below the horizon: the gradient\u2019s exponent. Smaller reaches the depth colour sooner.',
   ),
   subsurfaceFollowSun: toggle(
     SUBSURFACE,
@@ -899,16 +864,78 @@ const allSkyArgTypes = (): ArgTypes<SkyArgs> => ({
     ...range(0, 20, 0.1, SUBSURFACE),
     if: { arg: 'subsurfaceBelow' },
   },
+  abyssCeiling: color(SUBSURFACE, 'The void\u2019s lid overhead.'),
+  abyssHorizon: color(
+    SUBSURFACE,
+    'Where the void\u2019s lid and depths meet, far away.',
+  ),
+  abyssDepth: color(SUBSURFACE, 'Straight down, deep in the void.'),
+  abyssFadeDistance: range(
+    500,
+    100000,
+    500,
+    SUBSURFACE,
+    'Distance over which the void\u2019s lid recedes into its horizon colour, in metres.',
+  ),
+  abyssTransition: range(
+    1,
+    2000,
+    1,
+    SUBSURFACE,
+    'Depth below the level over which the void fades in, in metres.',
+  ),
+  abyssDarkening: range(
+    0,
+    20000,
+    100,
+    SUBSURFACE,
+    'Depth below the level over which the void dims toward black, in metres; 0 for none.',
+  ),
+  abyssDetail: range(
+    0,
+    1,
+    0.01,
+    SUBSURFACE,
+    'Noise relief on the void\u2019s lid; 0 for none.',
+  ),
+  abyssDetailScale: range(
+    50,
+    10000,
+    50,
+    SUBSURFACE,
+    'Size of that relief, in metres.',
+  ),
+  abyssDepthDetail: range(
+    0,
+    0.5,
+    0.01,
+    SUBSURFACE,
+    'Faint distant rock in the void\u2019s depths, wavy strata broken by crags; 0 for none.',
+  ),
+  abyssDepthDetailScale: range(
+    0.25,
+    4,
+    0.05,
+    SUBSURFACE,
+    'Size of the rock\u2019s features.',
+  ),
+  abyssFalloff: range(
+    0.1,
+    3,
+    0.05,
+    SUBSURFACE,
+    'How the void\u2019s depths darken below the horizon: the gradient\u2019s exponent. Smaller reaches the depth colour sooner.',
+  ),
   environment: toggle(
-    LIGHTING,
+    ENVIRONMENT,
     'Bake the sky into `scene.environment`, which lights MeshStandard/MeshPhysical materials.',
   ),
   lightProbe: toggle(
-    LIGHTING,
+    ENVIRONMENT,
     'Bake the sky into a light probe, which lights every `lights: true` material.',
   ),
   environmentIntensity: {
-    ...range(0, 3, 0.05, LIGHTING),
+    ...range(0, 3, 0.05, ENVIRONMENT),
     if: { arg: 'environment' },
   },
   environmentResolution: {
@@ -916,24 +943,24 @@ const allSkyArgTypes = (): ArgTypes<SkyArgs> => ({
     options: [64, 128, 256, 512, 1024],
     description: 'Cube face size of the environment\u2019s bake.',
     if: { arg: 'environment' },
-    table: { category: LIGHTING },
+    table: { category: ENVIRONMENT },
   },
   lightProbeIntensity: {
-    ...range(0, 3, 0.05, LIGHTING),
+    ...range(0, 3, 0.05, ENVIRONMENT),
     if: { arg: 'lightProbe' },
   },
   captureInterval: range(
     0,
     2000,
     50,
-    LIGHTING,
+    ENVIRONMENT,
     'How long the sky must be still before it is baked again, in milliseconds.',
   ),
   captureMaxWait: range(
     0,
     2000,
     50,
-    LIGHTING,
+    ENVIRONMENT,
     'Longest the environment and the light probe go without a bake while the sky keeps changing, in milliseconds.',
   ),
   pipeline: {

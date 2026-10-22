@@ -410,6 +410,8 @@ export const Sky = ({
   const cloudCoverage = cloudsOptions?.coverage ?? cloudDefaults.coverage;
   const cloudAltitude = cloudsOptions?.altitude ?? cloudDefaults.altitude;
   const cloudScale = cloudsOptions?.scale ?? cloudDefaults.scale;
+  const cloudThickness = cloudsOptions?.thickness ?? cloudDefaults.thickness;
+  const cloudCurved = cloudsOptions?.curved ?? cloudDefaults.curved;
   const cloudSoftness = cloudsOptions?.softness ?? cloudDefaults.softness;
   const cloudOpacity =
     cloudsOptions?.enabled === false
@@ -794,6 +796,8 @@ export const Sky = ({
       coverage: cloudCoverage,
       altitude: cloudAltitude,
       scale: cloudScale,
+      thickness: cloudThickness,
+      curved: cloudCurved,
       softness: cloudSoftness,
       opacity: cloudOpacity,
       color: cloudColor,
@@ -838,6 +842,8 @@ export const Sky = ({
     cloudCoverage,
     cloudAltitude,
     cloudScale,
+    cloudThickness,
+    cloudCurved,
     cloudSoftness,
     cloudOpacity,
     cloudColor,

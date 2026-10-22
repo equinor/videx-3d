@@ -37,6 +37,7 @@ import { OCEAN_SURFACE_UNIFORMS, OceanMaterial } from '../Ocean/ocean-material';
 import fragmentShader from './shaders/sky-fragment.glsl';
 import vertexShader from './shaders/sky-vertex.glsl';
 import {
+  SKY_EARTH_RADIUS,
   SkyClouds,
   skyDaylight,
   skyDefaults,
@@ -157,6 +158,7 @@ export class SkyMaterial extends ShaderMaterial {
         uSkyClouds: new Uniform(new Vector4()),
         uSkyCloudsColor: new Uniform(new Vector4(1, 1, 1, 1)),
         uSkyCloudsSeed: new Uniform(new Vector2()),
+        uSkyCloudsShape: new Uniform(new Vector2()),
         uSkyAir: new Uniform(new Vector3()),
         uSkyOceanLevel: new Uniform(ocean.level),
         uSkyOceanDepth: new Uniform(ocean.depth),
@@ -538,6 +540,10 @@ export class SkyMaterial extends ShaderMaterial {
       Math.max(clouds.altitude, 1),
       Math.max(clouds.scale, 1),
       MathUtils.clamp(clouds.softness, 0, 1),
+    );
+    this.uniforms.uSkyCloudsShape.value.set(
+      clouds.curved ? SKY_EARTH_RADIUS + Math.max(clouds.altitude, 1) : 0,
+      Math.max(clouds.thickness, 0),
     );
     const color = new Color(clouds.color);
     this.uniforms.uSkyCloudsColor.value.set(

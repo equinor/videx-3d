@@ -127,6 +127,18 @@ or the moon at night:
 `softness` the width of their edges; `seed` picks another pattern. They fade into the
 haze toward the horizon, and out as the camera climbs to the deck.
 
+A flat deck shows no parallax: climbing only zooms it, moving only slides it, so it reads
+as a painted ceiling. Two cheap departures from the plane give it depth. `curved` (default
+on) lays it on a sphere about the Earth's centre, `SKY_EARTH_RADIUS` plus `altitude` in
+radius, so it bends down toward the horizon and is not squeezed into streaks there. A
+tighter dome looks curved further up but puts the horizon a finite distance away: clouds
+then slide over its rim as the camera moves instead of shrinking into the horizon.
+`thickness` (world units, default 1500; 0 for a sheet) makes it a slab: each cloud's
+thicker parts are looked up further along the view ray, so they shift against its outline
+as the view moves. The shading is the same either way. Marching the slab for real sides
+was tried and dropped: a 2D pattern on a vertical wall streaks, and its silhouettes cut
+hard.
+
 Turning `clouds` on or off recompiles the sky. To switch them often, keep `clouds` set
 and toggle `enabled` instead: they stay compiled in, so it is instant, and while hidden
 they cost a single branch.
@@ -185,7 +197,7 @@ with soft light panels above and below the horizon (`panels`, see `SkySubsurface
 `map` (an equirectangular or cube texture) to use one of your own instead. The directional
 light changes too: below the seabed it is the subsurface's `light`, steady whatever the time
 of day, rather than the sun's or the moon's. By default it is fixed (azimuth 200°,
-elevation 45°, the high sun's near white, the sun's `intensity`); with `followSun` it turns
+elevation 45°, white, the sun's `intensity`); with `followSun` it turns
 with the sun's compass bearing, its elevation held within `elevationRange` (default 30° to
 60°), so it never lights from below at night. It switches with the environment as the camera
 crosses the seabed, or eases over `transition` seconds. Above the water everything keeps the

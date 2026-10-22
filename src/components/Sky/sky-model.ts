@@ -88,6 +88,10 @@ export type SkyClouds = {
   altitude?: number;
   /** size of the clouds, in world units. Default 4000 */
   scale?: number;
+  /** depth of the deck, in world units: its thicker parts shift against their outlines as the view moves, so it reads as a slab rather than a sheet. 0 for a sheet. Default 1500 */
+  thickness?: number;
+  /** curve the deck with the Earth, on a sphere {@link SKY_EARTH_RADIUS} plus `altitude` in radius: it bends down toward the horizon, which it still reaches only far off; false for a flat plane. Default true */
+  curved?: boolean;
   /** width of their edges, from 0 (crisp) to 1. Default 0.25 */
   softness?: number;
   /** Default 0.9 */
@@ -248,7 +252,7 @@ export type SkySubsurfaceLight = {
   elevation?: number;
   /** the elevations, in degrees, the sun's is held within while following it. Default [30, 60] */
   elevationRange?: Vec2;
-  /** Default `#fff6e8`, the high sun's */
+  /** Default `#ffffff`, so it does not tint the data it lights */
   color?: ColorRepresentation;
   /** Default the sun's `intensity` */
   intensity?: number;
@@ -385,6 +389,9 @@ export function skySubsurfaceLightPosition(
   };
 }
 
+/** The Earth's mean radius, in world units (metres). */
+export const SKY_EARTH_RADIUS = 6371000;
+
 export const skyDefaults = {
   sun: {
     azimuth: 200,
@@ -403,6 +410,8 @@ export const skyDefaults = {
     coverage: 0.4,
     altitude: 6000,
     scale: 4000,
+    thickness: 1500,
+    curved: true,
     softness: 0.25,
     opacity: 0.9,
     color: '#ffffff',
@@ -451,7 +460,7 @@ export const skyDefaults = {
       azimuth: 200,
       elevation: 45,
       elevationRange: [30, 60],
-      color: '#fff6e8',
+      color: '#ffffff',
       transition: 0,
     },
   },

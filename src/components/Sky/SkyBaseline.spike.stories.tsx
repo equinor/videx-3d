@@ -440,9 +440,9 @@ const meta = {
       control: { type: 'boolean' },
       description:
         'The void below `abyssLevel`, where there is no sea (the sea sets its own at its seabed).',
-      table: { category: 'Void' },
+      table: { category: 'Subsurface' },
     },
-    abyssLevel: range(-5000, 5000, 10, 'Void'),
+    abyssLevel: range(-5000, 5000, 10, 'Subsurface'),
     oceanLevel: range(-1000, 1000, 1, 'Sea'),
     oceanDepth: range(0, 3000, 5, 'Sea'),
     stage: { control: { type: 'boolean' }, table: { category: 'Stage' } },
@@ -477,7 +477,7 @@ const meta = {
     },
     seabedEdgeSmoothing: range(0, 10, 0.5, 'Seabed'),
     seabedFalloff: range(0, 20000, 100, 'Seabed'),
-    ambientIntensity: range(0, 2, 0.05, 'Lighting'),
+    ambientIntensity: range(0, 2, 0.05, 'Environment'),
     surfaceId: {
       options: Object.keys(storyArgs.surfaceOptions),
       control: { type: 'select', labels: storyArgs.surfaceOptions },

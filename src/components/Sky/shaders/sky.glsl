@@ -255,6 +255,9 @@ vec3 skyNight(vec3 color, vec3 dir, float blend) {
 uniform vec4 uSkyClouds; // coverage, altitude along up, feature size (world units), edge softness
 uniform vec4 uSkyCloudsColor; // lit colour, and opacity
 uniform vec2 uSkyCloudsSeed; // offset of the pattern
+uniform vec2 uSkyCloudsShape; // radius of the deck's sphere about the Earth's centre (0 for flat), and its thickness; world units
+// Most a cloud's core shifts against its outline, in cloud sizes.
+#define SKY_CLOUD_PARALLAX 0.3
 
 // Still clouds on a deck over `color`, seen from `origin` below it along `dir`, lit by
 // the sun, or the moon at night. Far off they melt into `haze`, the sky without its sun
@@ -266,10 +269,26 @@ vec3 skyClouds(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
   if(fade <= 0.0 || uSkyCloudsColor.a <= 0.0)
     return color;
   float y = dot(dir, uSkyUp);
-  // Rays that never reach the deck take the mirrored hit, so the derivatives stay continuous.
-  float t = below / max(abs(y), 1e-4);
+  // Rays that never reach the plane take the mirrored hit, so the derivatives stay continuous.
+  float plane = below / max(abs(y), 1e-4);
+  float t = plane;
+  if(uSkyCloudsShape.x > 0.0) {
+    // Centred under the camera, which needs no origin: at the Earth's radius, within tens of
+    // metres of one centred under the world's origin across a field.
+    float r = uSkyCloudsShape.x - below;
+    float q = below * max(2.0 * uSkyCloudsShape.x - below, 0.0);
+    t = q / max(r * y + sqrt(r * r * y * y + q), 1e-3);
+  }
   vec3 hit = origin + dir * t;
   vec2 p = vec2(dot(hit, uSkyEast), dot(hit, uSkyNorth)) / uSkyClouds.z + uSkyCloudsSeed;
+  if(uSkyCloudsShape.y > 0.0) {
+    // A slab, not a sheet: thicker parts lie further along the ray, so they shift against
+    // their outlines as the view moves.
+    float height = clamp(pnFbmSigned2Filtered(p, 3) + 0.5, 0.0, 1.0);
+    vec2 slope = vec2(dot(dir, uSkyEast), dot(dir, uSkyNorth)) / max(y, 0.02);
+    vec2 shift = slope * (uSkyCloudsShape.y / uSkyClouds.z) * height;
+    p += shift * min(1.0, SKY_CLOUD_PARALLAX / max(length(shift), 1e-6));
+  }
   float n = pnFbmSigned2Filtered(p, 5) + 0.5;
 
   // Denser toward the light, the darker the side seen from below.
@@ -302,8 +321,8 @@ vec3 skyClouds(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
   // brightest where the cloud is about one optical depth thick.
   float phase = 0.003375 / pow(1.7225 - 1.7 * cosLight, 1.5);
   cloud += direct * phase * tau * transmit * 2.718 * uSkySunDisc * lining;
-  // Far off they melt into the haze at the horizon.
-  float far = 1.0 - exp(-t / (uSkyClouds.z * 15.0));
+  // Far off they melt into the haze at the horizon, by the plane's distance, as if flat.
+  float far = 1.0 - exp(-plane / (uSkyClouds.z * 15.0));
   cloud = mix(cloud, haze, far * 0.8);
 
   // The light itself, far brighter than the sky it hides, shows through all but the cores,
