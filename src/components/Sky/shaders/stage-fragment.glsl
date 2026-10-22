@@ -63,16 +63,18 @@ void main() {
   float altitude = dot(cameraPosition, uSkyUp) - uSkyOceanLevel;
   float y = dot(dir, uSkyUp);
 
-  // The flat caps are shaded where the ray meets their plane, exactly.
+  // The flat caps are shaded where the ray meets their plane, exactly; from above, beyond the
+  // scene, where it meets them falling away with the Earth's curve, as the sky's own sea.
   #if defined(STAGE_SURFACE)
   float planeAltitude = altitude;
   #else
   float planeAltitude = altitude + uSkyOceanDepth;
   #endif
+  vec3 reach = planeAltitude > 0.0 ? skyOceanReach(cameraPosition, dir, planeAltitude) : vec3(-planeAltitude / max(abs(y), 1e-6), 0.0, 0.0);
   #ifdef STAGE_RELIEF
   vec3 world = vStageWorld;
   #else
-  vec3 world = cameraPosition + dir * (abs(planeAltitude) / max(abs(y), 1e-6));
+  vec3 world = cameraPosition + dir * reach.x;
   #endif
   vec2 p = skyOceanPlane(world);
   float texel = max(length(fwidth(p)), 1e-3);
@@ -95,10 +97,19 @@ void main() {
   // From the void under a seabed the lid hides the water: through an occupant's section,
   // or a see-through one, the background draws it.
   bool underLid = bedAltitude < 0.0 && uSkyOceanSeabed > 0.5;
+  // Over the curved sea's horizon there is none, nor a seabed under it: the background's sky shows.
+  #if defined(STAGE_SURFACE)
+  float overSea = reach.z;
+  #else
+  vec3 surfaceReach = skyOceanReach(cameraPosition, dir, altitude);
+  float overSea = altitude > 0.0 && !dry ? surfaceReach.z : bedAltitude > 0.0 && dry ? reach.z : 0.0;
+  #endif
+  bool overCurve = uSkyCurvature > 0.0 && planeAltitude > 0.0 && overSea > 0.5;
 
   #if defined(STAGE_SURFACE)
   // One wave for both sides: each call compiles a full copy of it.
   SkyOceanWave wave = skyOceanWave(p, texel, dist);
+  wave.normal = skyOceanTilt(wave.normal, dir, reach.y);
   bool cutThrough = false;
   if(altitude > 0.0) {
     vec4 surface = skyOceanThroughAir(skyOceanSurfaceOf(wave, p, texel, dir, blend), cameraPosition, dir, dist, blend);
@@ -113,7 +124,7 @@ void main() {
     vec3 seen = skyOceanFog(underside, path, skyOceanLight(-0.5 * altitude));
     gl_FragColor = vec4(skyOceanThroughVoid(seen, cameraPosition, dir), kept);
   }
-  if(skyDraws || underLid || cutThrough)
+  if(skyDraws || underLid || cutThrough || overCurve)
     discard;
   #else
     #ifdef STAGE_RELIEF
@@ -144,6 +155,11 @@ void main() {
     // Dry, the fog's density is 0.
     float light = skyOceanLight(0.5 * (bedDepth + max(-altitude, 0.0)));
     float below = skyOceanPathBelowSurface(cameraPosition, world);
+      #ifndef STAGE_RELIEF
+    // Beyond the scene both fall away with the curve: the water lies between them, not under the level.
+    if(altitude > 0.0 && uSkyCurvature > 0.0)
+      below = max(reach.x - surfaceReach.x, 0.0);
+      #endif
     float path = skyOceanCutawayPath(below, skyOceanCutawayWall(cameraPosition, dir), skyOceanCutawayWater(cutaway));
     color = skyOceanFog(color, path, light);
       #ifndef STAGE_SEE_THROUGH
@@ -167,7 +183,7 @@ void main() {
     #else
   gl_FragColor = vec4(color, 1.0);
     #endif
-  if(skyDraws)
+  if(skyDraws || overCurve)
     discard;
   #endif
 

@@ -138,7 +138,8 @@ void main() {
   vec2 slope;
   float height;
   vec2 np;
-  vec3 N = oceanWaveNormal(worldXZ, texel, flatness, slope, height, np);
+  float rough;
+  vec3 N = oceanWaveNormal(worldXZ, texel, flatness, slope, height, np, rough);
 
   // Viewed from below (inside the ocean box), the surface is back-facing; flip
   // the normal toward the camera so the underside is shaded as a water surface
@@ -218,7 +219,7 @@ void main() {
   float tonalSpec;
   oceanTonal(worldXZ, flatness, waterColor, tonalReflect, tonalSpec);
 
-  vec3 color = oceanShade(N, V, waterColor, oceanSkyReflection(reflect(-V, N)), fresnel, tonalReflect, tonalSpec, flatness);
+  vec3 color = oceanShade(N, V, waterColor, oceanSkyReflection(reflect(-V, N)), fresnel, tonalReflect, tonalSpec, rough);
 
   // Foam: wind-driven whitecaps, then the foam the contacts and the shore add.
   float foamCoverage = oceanWindFoam(slope, height);

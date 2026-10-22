@@ -1339,6 +1339,15 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
         ? bed.rim[0]
         : bed.rim[bed.rim.length >> 1]
     : null;
+  // The sea bed's unit, as the whole column colours it: the column may start below it.
+  const bedColor = drawsSeabed
+    ? layers[0]?.material
+    : seabedMeta
+      ? stratLayerColors([
+          seabedMeta.name,
+          column.find(m => m.id !== seabedMeta.id)?.name,
+        ])[0]
+      : undefined;
 
   if (!outline || layers.length === 0) return null;
   const { min: outlineMin, max: outlineMax } = outline.getBounds();
@@ -1464,7 +1473,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
               props.skySeabed &&
               (props.matchBed
                 ? {
-                    color: layers[0]?.material,
+                    color: bedColor,
                     detail: layers[0]?.detail ?? false,
                   }
                 : { color: props.skySeabedColor }),
@@ -1732,7 +1741,7 @@ export const Default: Story = {
     },
     matchBed: {
       description:
-        'The sky\u2019s seabed takes the look of the column\u2019s top layer: its colour and `detail`. So does the column\u2019s sea bed while the stage draws it, as the sea\u2019s.',
+        'The sky\u2019s seabed takes the look of the column\u2019s sea bed: its unit\u2019s colour, even while the column starts below it, and `detail`. So does the column\u2019s sea bed while the stage draws it, as the sea\u2019s.',
       if: { arg: 'sky' },
       table: { category: 'Sky' },
     },

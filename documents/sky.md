@@ -162,11 +162,16 @@ wide as clouds of `scale` look at that distance and as tall as ones of `thicknes
 `altitude` raises the band and fills it with more of them rather than stretching them. They
 take the same `coverage`, `softness`, `opacity`, `color` and `seed` as the deck's, and are lit
 the same way (both share `skyCloudColor`). The band melts into the air's haze over its
-distance, so it clears as the camera climbs and thickens toward the horizon. Climbing, it sinks
-by up to 1.5° and its clouds flatten a little, quickly at first and then hardly at all, and it
-stays in view above the deck.
+distance, so it clears as the camera climbs and thickens toward the horizon. Climbing, it goes
+down with the horizon as the Earth's curve lowers it (see The curved horizon); on a flat sea
+(`curvedHorizon: false`) it sinks by up to 1.5° instead. With the curve it also squashes onto
+the horizon as far as its tops would sink seen from the camera's height: as clouds
+`bandDistance` off, and from over them as their layer's own horizon. By default its tops stand
+5.7° over the horizon up to about 1 km, 3.5° at its base's height, 1.2° at 15 km and 0.4° at
+100 km, its clouds flattened with it. Its clouds also flatten a little, quickly at first and
+then hardly at all, and it stays in view above the deck.
 
-With both, the deck is drawn along each view ray turned down, by the hinge at the horizon and
+With both, the deck is drawn along each view ray turned down, by the hinge over the horizon and
 not at all straight up, so that its own horizon sits at the band's base, where the deck is at
 the band's distance: it never crosses the band. Where the view runs within about 9° of parallel
 to it, it dissolves, wisps first, rather than being squeezed toward that line.
@@ -175,8 +180,9 @@ The numbers are fixed (`SKY_CLOUD_*` in `sky.glsl`). Tried and dropped along the
 
 - narrowing the band's clouds as the camera climbs: a ring of directions can only gain
   clouds by sampling a new pattern, which churns;
-- squashing the band onto the horizon as the camera climbs, and sinking it linearly: both
-  read as the band moving with the camera;
+- squashing the band onto the horizon at a rate set by hand as the camera climbs, and sinking
+  it linearly: both read as the band moving with the camera (its squash now follows where its
+  tops would show, and barely starts below a few kilometres);
 - a soft warp of the deck down to the real horizon instead of the hinge;
 - rings or rows of clouds between band and deck, at distances of their own, each shifting at
   its rate: cardboard cut-outs.
@@ -203,7 +209,9 @@ not dim the scene's light.
 `air` (default on) thins with height, so the sky changes as the camera climbs: the
 zenith deepens toward a saturated blue (a grey sky stays grey) and the haze at the
 horizon closes onto it. Seen from low down, the far sea fades into the horizon's
-colour; from high up it stays clear much further out.
+colour; from high up it stays clear much further out. Looking down, the haze takes the
+colour of the sky overhead instead, so from high up the sea seen through all the air below
+turns a deeper blue.
 
 ```tsx
 <Sky air={{ scaleHeight: 8000, visibility: 60000 }} />
@@ -214,8 +222,59 @@ height), and `visibility` the distance over which the air at sea level hazes the
 by e (0 for no haze). Heights are measured from the sea's `level` (the void's lid
 without a sea). `air: false` turns both off.
 
+Above the tropopause the sky darkens toward space, black from the top of the stratosphere
+(`SKY_SPACE_START` 12 km, `SKY_SPACE` 50 km), by how little air each view passes: the lowest
+height it reaches and, from high up, higher the more steeply it looks up, as a view straight
+up leaves the air some 35 times sooner than one along the level (`SKY_AIR_LEVEL_MASS`, of
+which `SKY_AIR_PATH` counts). The air thins by e every `scaleHeight`, so the sky grows
+see-through long before it is gone. It keeps its gradient at every height, pale toward the
+horizon and dark overhead, and runs on smoothly across the level; below about 5 km nothing
+changes. From 10 km it is a deep blue overhead; with the curved horizon, from high up, a
+thin glowing rim of air stays over the horizon under a black sky, its twilight colours with
+it. On the way to black it deepens to the blue overhead, and through the ozone layer
+(densest at 25 km, 15–35 km; `SKY_OZONE_LAYER`) it turns bluer still, as ozone takes out
+orange and red (`SKY_OZONE`). So from high up the rim is pale, or warm at twilight, at its
+bottom, a saturated blue above and black at its top. Where the sky is all but black (under a
+twentieth of its light) the stars, the planets and the moon show as at night, by day too: none
+from 20 km at noon, the full field from about 40 km. The sun's disc and glare are drawn over
+it as before. The sea reflects the sky as seen from the sea. From over the clouds' tops, the
+band's clouds are lit from above: white, or warm at twilight, instead of their shaded
+undersides.
+
+With the curved horizon, the sun sets later the higher up: from 20 km it is still up
+4.5° below the level. So the sky's own light (its daylight, twilight and moonlight, the sun's
+colour, when the stars come out) goes by the sun over the horizon where it is seen: the
+camera's for the air above it, the sea's for the air low along the horizon, in between by
+height for the clouds (`SkyMaterial.setAirLight`, from `Sky` each frame). From high up the air
+around the camera stays lit after the sea's sunset, over a horizon already in twilight. The
+sea, the scene's light and the bakes keep the sea's light.
+
 The bakes film near the level, so the scene's light does not change with the camera's
 height. The sea's surface is hazed; the seabed seen through cut-away water is not.
+
+## The curved horizon
+
+`curvedHorizon` (default on) lets the sea, the sky and the clouds follow the Earth's curve
+(`SKY_EARTH_RADIUS`): as the camera climbs, the horizon drops below the level by about
+√(2h/R) — 0.2° at 40 m, 1° at 1 km, 4° at 15 km — and from high up it bows across the
+view. The sea ends at it, its waves tipped with the curve so that the view grazes them there
+and they reflect the horizon's colour. The sky's gradient, its twilight and the haze's colour
+are measured from it, the sun, moon and stars set behind it rather than at the level, and the
+clouds' band sits on it, squashed onto it from high up. The water reflects the sky as seen from
+the sea, with a level horizon. Off, every one of them is as on a flat sea.
+
+The sea stays flat over a disc about the scene, the one holding a `SkyBoxStage`'s `bounds`, so
+what meets the water there meets it level; without a stage the disc is a point at the world
+origin. Beyond its edge the sea falls away as a sphere's surface would, measured along each view
+ray's level line from the disc's edge, which is close enough where it shows. From 40 m over a
+10 km scene the horizon drops 0.15° rather than 0.2°; higher up the difference fades.
+
+A stage reaches the camera's far plane, so it draws most of the sea in view: its geometry and
+depth stay flat, but beyond the disc it shades the sea where the view meets the curve and leaves
+the sky above the curved horizon to the background, which then draws the very same sea. The void
+and the subsurface, the views from in the water and below the seabed, and the bakes stay flat:
+the bakes film a level horizon, as a few degrees barely change the light, so climbing never
+bakes. Switching it only changes a uniform; it costs about a square root per pixel.
 
 ## Lighting the scene
 
@@ -269,7 +328,10 @@ from above, from inside the water and, below the seabed, as the void.
 The water takes the `<Ocean>` component's props under the same names (see
 [Ocean](./ocean.md)), so one object can drive both; the sun and the reflected sky come
 from the sky. `water: false` leaves the seabed dry; `seabed: false` leaves the void
-below the water. `seabedOpacity` (default 1) lets the void, or the scene under a stage's
+below the water. Far off, over the waves' `detailFadeDistance`, and everywhere once the
+camera climbs from 2 to 5 km over the sea (`SKY_OCEAN_OPAQUE`), the water turns opaque
+whatever its `waterOpacity`, so from high up the seabed no longer greys the sea; close to it
+the water stays as see-through as set. `seabedOpacity` (default 1) lets the void, or the scene under a stage's
 seabed, show through it. Each of these only changes uniforms, except that crossing a
 `seabedOpacity` of 1 makes a stage's seabed materials again (see Performance). The
 seabed's look (`SkySeabed`) is lit with the model and options of a
@@ -296,7 +358,9 @@ its surface. Heights are absolute, the sea level included. ⚠️ Assumes the de
 background, drawn with the sky's own shading so the two meet without a seam. Being
 geometry, the water lies in front of what is under it, and the seabed hides what is
 below it at the sea's `seabedOpacity` — unless the camera is below it too. It reaches the camera's far plane
-beyond `bounds`, so every view ray that can reach the scene crosses it.
+beyond `bounds`, so every view ray that can reach the scene crosses it. With the sky's
+`curvedHorizon` it stays flat but shades the sea beyond the disc holding `bounds` as curving
+away (see The curved horizon).
 
 ```tsx
 // the column's sea bed, clipped to its outline in the scene frame, built where the data is

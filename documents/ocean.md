@@ -28,8 +28,11 @@ reflection and opacity are all tunable via props.
 
 Far from the camera the detail fades out: between the two distances of
 `detailFadeDistance` (default `[15000, 60000]` m) the waves, foam and tonal
-patches give way to a flat mirror of the sky. The sun's glint widens by the
-slopes that faded out rather than shrinking to a point. The `<Sky>`'s endless
+patches give way to a flat mirror of the sky. The sun's glint widens by every slope a pixel
+cannot show rather than shrinking to a point: the waves too small for its footprint or faded
+out with distance, and the small ones no wave stands for once the fine ripples fade, as much
+as the wind gives (Cox and Munk's mean square slope, `0.003 + 0.00512 × windSpeed`). So far
+off, and from high up, it spreads into a broad soft patch, as seen from aircraft. The `<Sky>`'s endless
 sea takes the same prop. `OceanMaterial.sunGlintSpread` (default 0) widens the
 glint further at the same peak, so its path broadens and brightens; the `<Sky>`
 raises it about sunrise and sunset for a broad glitter path.

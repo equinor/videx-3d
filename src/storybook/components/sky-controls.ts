@@ -64,6 +64,8 @@ export type SkyArgs = {
   cloudSoftness: number;
   cloudOpacity: number;
   cloudSeed: number;
+  /** TEMPORARY, to compare */
+  cloudBandSink: boolean;
   // Sky
   drawSky: boolean;
   air: boolean;
@@ -125,6 +127,7 @@ export type SkyArgs = {
   abyssDepthDetailScale: number;
   abyssFalloff: number;
   // Environment
+  curvedHorizon: boolean;
   environment: boolean;
   lightProbe: boolean;
   environmentIntensity: number;
@@ -167,6 +170,7 @@ export const skyArgs: SkyArgs = {
   cloudSoftness: skyDefaults.clouds.softness,
   cloudOpacity: skyDefaults.clouds.opacity,
   cloudSeed: skyDefaults.clouds.seed,
+  cloudBandSink: skyDefaults.clouds.bandSink,
   drawSky: true,
   air: true,
   skyZenith: skyDefaults.colors.zenith,
@@ -224,6 +228,7 @@ export const skyArgs: SkyArgs = {
   abyssDepthDetail: skyDefaults.abyss.depthDetail,
   abyssDepthDetailScale: skyDefaults.abyss.depthDetailScale,
   abyssFalloff: skyDefaults.abyss.falloff,
+  curvedHorizon: skyDefaults.curvedHorizon,
   environment: true,
   lightProbe: true,
   environmentIntensity: 1,
@@ -346,6 +351,7 @@ export const skyCloudsFromArgs = (args: SkyArgs): SkyClouds | false =>
     softness: args.cloudSoftness,
     opacity: args.cloudOpacity,
     seed: args.cloudSeed,
+    bandSink: args.cloudBandSink,
   };
 
 /** A Sky's `moon` from {@link SkyArgs}. */
@@ -418,6 +424,7 @@ export const skyPropsFromArgs = (args: SkyArgs) =>
     },
     intensity: args.skyIntensity,
     horizonBlend: args.skyHorizonBlend,
+    curvedHorizon: args.curvedHorizon,
     background: args.drawSky,
     subsurface: {
       intensity: args.subsurfaceIntensity,
@@ -696,6 +703,13 @@ const allSkyArgTypes = (): ArgTypes<SkyArgs> => ({
     ...range(0, 100, 1, CLOUDS, 'Picks another pattern.'),
     if: { arg: 'clouds' },
   },
+  cloudBandSink: {
+    ...toggle(
+      CLOUDS,
+      'TEMPORARY, to compare: with the curved horizon, the band also sinks a little as the camera climbs, as on a flat sea.',
+    ),
+    if: { arg: 'clouds' },
+  },
   drawSky: toggle(
     SKY,
     'Draw the sky and its stage behind the scene (`background`). Switched instantly, with nothing rebuilt or baked: off, the sky still lights the scene, by the subsurface.',
@@ -946,6 +960,10 @@ const allSkyArgTypes = (): ArgTypes<SkyArgs> => ({
     0.05,
     SUBSURFACE,
     'How the void\u2019s depths darken below the horizon: the gradient\u2019s exponent. Smaller reaches the depth colour sooner.',
+  ),
+  curvedHorizon: toggle(
+    ENVIRONMENT,
+    'The sea, the sky and the clouds follow the Earth\u2019s curve, so the horizon drops as the camera climbs: about 1\u00b0 at 1 km, 4\u00b0 at 15 km. The sea stays flat over the scene.',
   ),
   environment: toggle(
     ENVIRONMENT,

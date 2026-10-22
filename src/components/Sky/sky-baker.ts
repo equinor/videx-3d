@@ -80,6 +80,7 @@ export class SkyBaker {
   private readonly material = new SkyMaterial();
   // No disc: the directional light is the sun. No stage: the light comes off the whole sea.
   // Never buried, nothing cut away and the seabed whole: the zones are the sea's own.
+  // A level horizon, so climbing never needs a new bake: a few degrees' drop barely changes the light.
   // Lights of its own: three wires a material's light uniforms to the scene it is drawn in.
   private readonly overrides: Record<string, IUniform> = {
     uSkySunDisc: new Uniform(0),
@@ -87,6 +88,7 @@ export class SkyBaker {
     uSkyOceanBuried: new Uniform(0),
     uSkyOceanCutawayShape: new Uniform(new Vector3()),
     uSkyOceanSeabedOpacity: new Uniform(1),
+    uSkyCurvature: new Uniform(0),
     uSkyDebug: new Uniform(0),
     ...UniformsUtils.clone(UniformsLib.lights),
   };

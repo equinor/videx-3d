@@ -18,6 +18,8 @@
 #include ../../../sdk/materials/shaderLib/water-fog.glsl
 
 #define SKY_OCEAN_WATER_IOR 1.333
+// Over the sea, the camera's heights over which the water turns opaque (world units).
+#define SKY_OCEAN_OPAQUE vec2(2000.0, 5000.0)
 
 uniform float uSkyOceanLevel; // along uSkyUp
 uniform float uSkyOceanDepth;
@@ -106,14 +108,19 @@ vec2 skyOceanCutawayGrip(vec2 rimAt) {
   return clamp(vec2(1.25, 2.5) * k + 0.5 - d, 0.0, 1.0);
 }
 
-// `surface` seen through the air, fading into the horizon's colour.
+// `surface` seen through the air, fading into the air's light: the horizon's colour along the
+// view's bearing toward the horizon; looking down, the sky overhead as seen from the sea,
+// which also has no bearing, so the sun's side cannot show as a wedge where all of them meet.
 vec4 skyOceanThroughAir(vec4 surface, vec3 origin, vec3 dir, float dist, float blend) {
   float haze = skyAirHaze(origin, dir, dist);
   if(haze <= 0.0)
     return surface;
   vec3 level = dir - uSkyUp * dot(dir, uSkyUp);
-  float n = length(level);
-  vec3 horizon = skySurface(n > 1e-4 ? level / n : uSkyNorth, blend);
+  float n2 = dot(level, level);
+  vec3 horizon = n2 > 1e-8 ? skyHorizonColor(level * inversesqrt(n2), blend) : vec3(0.0);
+  float toward = n2 * n2;
+  if(toward < 0.999)
+    horizon = mix(skySurfaceAt(uSkyUp, blend, 0.0), horizon, toward);
   float alpha = haze + (1.0 - haze) * surface.a;
   return vec4((haze * horizon + (1.0 - haze) * surface.a * surface.rgb) / alpha, alpha);
 }
@@ -151,6 +158,41 @@ vec4 skyOceanCutawayMark(vec4 surface, vec3 p, vec2 rimAt) {
 // A +Y-up vector of the wave plane, in the world.
 vec3 skyOceanLift(vec3 v) {
   return uSkyEast * v.x + uSkyUp * v.y - uSkyNorth * v.z;
+}
+
+// Where a view ray from `origin`, `height` above a level of the sea (its surface or its
+// seabed), meets it: flat over the disc about the scene (uSkyFlat), falling away with the
+// Earth's curve beyond. How far along the ray, how steeply the level falls away from the
+// camera there, and 1 if the ray misses it; a miss takes the mirrored or the grazing hit,
+// so the derivatives stay continuous.
+vec3 skyOceanReach(vec3 origin, vec3 dir, float height) {
+  float y = dot(dir, uSkyUp);
+  float plane = height / max(abs(y), 1e-6);
+  float missed = y < 0.0 ? 0.0 : 1.0;
+  if(uSkyCurvature <= 0.0 || height <= 0.0)
+    return vec3(plane, 0.0, missed);
+  vec3 level = dir - uSkyUp * y;
+  float c = length(level);
+  float run = c > 1e-6 ? skyFlatRun(origin, level / c) : uSkyFlat.w;
+  // Down before the disc's edge.
+  if(height * c + y * run <= 0.0)
+    return vec3(plane, 0.0, missed);
+  // Past it, k/2 (c t - run)^2 below the level: k/2 c^2 t^2 + b t + h = 0, its nearer root.
+  float k = uSkyCurvature;
+  float b = y - k * c * run;
+  float h = height + 0.5 * k * run * run;
+  float d = b * b - 2.0 * k * c * c * h;
+  float t = 2.0 * h / (abs(b) + sqrt(max(d, 0.0)));
+  return vec3(t, k * max(c * t - run, 0.0), b < 0.0 && d >= 0.0 ? 0.0 : 1.0);
+}
+
+// `normal` on the sea where it falls away from a camera looking along `dir` by `fall`
+// (skyOceanReach), tipped with it: at the horizon the view then grazes it.
+vec3 skyOceanTilt(vec3 normal, vec3 dir, float fall) {
+  if(fall <= 0.0)
+    return normal;
+  vec3 level = dir - uSkyUp * dot(dir, uSkyUp);
+  return normalize(normal + level * (fall * inversesqrt(max(dot(level, level), 1e-12))));
 }
 
 // Daylight left `depth` below the surface; night keeps a little, as the sky does.
@@ -258,12 +300,13 @@ struct SkyOceanWave {
   float height;
   vec2 np;
   float flatness;
+  float rough;
 };
 
 SkyOceanWave skyOceanWave(vec2 p, float texel, float dist) {
   SkyOceanWave wave;
   wave.flatness = oceanFlatness(dist);
-  wave.normal = skyOceanLift(oceanWaveNormal(p, texel, wave.flatness, wave.slope, wave.height, wave.np));
+  wave.normal = skyOceanLift(oceanWaveNormal(p, texel, wave.flatness, wave.slope, wave.height, wave.np, wave.rough));
   return wave;
 }
 
@@ -284,9 +327,10 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   oceanTonal(p, flatness, waterColor, tonalReflect, tonalSpec);
 
   vec3 r = reflect(dir, normal);
-  // Steep waves can tip a reflection below the horizon; mirror it back up.
+  // Steep waves can tip a reflection below the horizon; mirror it back up. As seen from the
+  // sea: a level horizon, under all the air.
   r -= 2.0 * min(dot(r, uSkyUp), 0.0) * uSkyUp;
-  vec3 surface = oceanShade(normal, V, waterColor, skySurface(normalize(r), blend), fresnel, tonalReflect, tonalSpec, flatness);
+  vec3 surface = oceanShade(normal, V, waterColor, skySurfaceAt(normalize(r), blend, 0.0), fresnel, tonalReflect, tonalSpec, wave.rough);
 
   float foamFar;
   float coverage = max(oceanWindFoam(wave.slope, wave.height), oceanContactFoam(p, uTime));
@@ -294,12 +338,10 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   float foamOpacity = foamBlend * (1.0 - clamp(foamFar * OCEAN_FOAM_FAR_FADE, 0.0, 1.0));
   surface = mix(surface, uFoamColor * night, foamOpacity);
 
-  return vec4(surface, max(mix(uOpacity, 1.0, fresnel), foamOpacity));
-}
-
-// The same, `dist` along the view ray. ⚠️ Derivatives.
-vec4 skyOceanSurface(vec2 p, float texel, float dist, vec3 dir, float blend) {
-  return skyOceanSurfaceOf(skyOceanWave(p, texel, dist), p, texel, dir, blend);
+  // Far off, where its detail has faded, and from a few kilometres up, the water hides what lies under it.
+  float above = dot(cameraPosition, uSkyUp) - uSkyOceanLevel;
+  float opacity = mix(uOpacity, 1.0, max(flatness, smoothstep(SKY_OCEAN_OPAQUE.x, SKY_OCEAN_OPAQUE.y, above)));
+  return vec4(surface, max(mix(opacity, 1.0, fresnel), foamOpacity));
 }
 
 // The surface seen from below, its `normal` facing down, `depth` under it: the sky
@@ -382,16 +424,20 @@ vec3 skyOcean(vec3 color, vec3 dir, vec3 origin, vec3 inWater, vec3 depths) {
   float ay = max(abs(y), 1e-6);
   // Rays that never reach the water take the mirrored hits, so the derivatives stay
   // continuous; they are discarded at the end. Dry, the bed is the same distance away
-  // from below the sea level too, and the fog is off.
-  float t = altitude / ay;
-  float path = uSkyOceanDepth / ay;
-  vec3 bedPoint = origin + dir * (t + path);
+  // from below the sea level too, and the fog is off. Beyond the scene both fall away with
+  // the Earth's curve: above the sea's horizon there is neither, though the seabed's is lower.
+  vec3 reach = skyOceanReach(origin, dir, altitude + uSkyOceanDepth);
+  bool wet = altitude > 0.0 && uSkyOceanWater > 0.5;
+  vec3 surface = skyOceanReach(origin, dir, altitude);
+  float missed = wet ? surface.z : reach.z;
+  float path = wet && uSkyCurvature > 0.0 ? max(reach.x - surface.x, 0.0) : uSkyOceanDepth / ay;
+  vec3 bedPoint = origin + dir * reach.x;
   vec3 bed = skyOceanBed(bedPoint, uSkyUp, uSkyOceanDepth);
   float cutaway = skyOceanCutawayAlong(origin, bedPoint);
   vec3 ground = skyOceanFloor(bed, depths, cutaway);
   vec3 seen = skyOceanFog(ground, path * skyOceanCutawayWater(cutaway), skyOceanBedPathLight(origin, uSkyOceanDepth));
 
-  return y < 0.0 ? seen : color;
+  return missed < 0.5 ? seen : color;
 }
 
 // `color` seen down through a gap the cutaway opened in a stage's seabed: under the water it
@@ -421,19 +467,27 @@ vec4 skyOceanSurfaceLayer(vec3 dir, vec3 origin, float blend) {
     return vec4(0.0);
 
   float y = dot(dir, uSkyUp);
-  float t = altitude / max(abs(y), 1e-6);
+  // Where a stage draws it is told on the flat plane, as the stage's geometry lies.
+  float plane = altitude / max(abs(y), 1e-6);
+  vec2 onPlane = skyOceanPlane(origin + dir * plane);
+  float planeTexel = max(length(fwidth(onPlane)), 1e-3);
+  vec3 reach = skyOceanReach(origin, dir, altitude);
+  float t = reach.x;
   vec2 p = skyOceanPlane(origin + dir * t);
   float texel = max(length(fwidth(p)), 1e-3);
   vec2 rimAt = skyOceanCutawayRimAt(origin + dir * t, origin);
   // Skipped where hidden with a margin, so a quad's pixels that still shade are hidden too
   // and the derivatives they take across the skipped ones never show.
-  if(y >= 2.0 * fwidth(y) || skyOceanOnStage(p, t + 2.0 * fwidth(t), 4.0 * texel))
+  float over = y - skyHorizonAt(dir, origin, altitude);
+  if(over >= 2.0 * fwidth(y) || skyOceanOnStage(onPlane, plane + 2.0 * fwidth(plane), 4.0 * planeTexel))
     return vec4(0.0);
-  vec4 surface = skyOceanSurface(p, texel, t, dir, blend);
+  SkyOceanWave wave = skyOceanWave(p, texel, t);
+  wave.normal = skyOceanTilt(wave.normal, dir, reach.y);
+  vec4 surface = skyOceanSurfaceOf(wave, p, texel, dir, blend);
   // The band a pixel inside the stage's edge too, which the stage leaves to this layer:
   // the same test on both sides, so every pixel is drawn exactly once. All zero, so a
   // colour from those derivatives cannot reach the blend.
-  if(y >= 0.0 || skyOceanOnStage(p, t, texel))
+  if(reach.z > 0.5 || skyOceanOnStage(onPlane, plane, planeTexel))
     return vec4(0.0);
   return skyOceanCutawayMark(skyOceanThroughAir(surface, origin, dir, t, blend), origin + dir * t, rimAt);
 }

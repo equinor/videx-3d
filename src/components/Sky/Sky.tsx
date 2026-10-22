@@ -52,6 +52,7 @@ import {
 import { SkyCutawayHandle } from './sky-cutaway-handle';
 import { createSkyGeometry, SkyMaterial } from './sky-material';
 import {
+  SKY_EARTH_RADIUS,
   SKY_HDR_SUN_RADIANCE,
   SkyAbyss,
   SkyAir,
@@ -233,6 +234,12 @@ export type SkyProps = {
   /** width of the horizon -> ground transition, as a sine of the angle below the horizon. Default 0.04 */
   horizonBlend?: number;
   /**
+   * The sea, the sky and the clouds follow the Earth's curve, so the horizon drops as the
+   * camera climbs (about 1° at 1 km, 4° at 15 km). Under a `SkyBoxStage` the sea stays flat
+   * over the disc that holds its `bounds`. The bakes keep a level horizon. Default true
+   */
+  curvedHorizon?: boolean;
+  /**
    * Draw the sky, and its `SkyBoxStage`, behind the scene. Switched instantly: nothing
    * is rebuilt or baked again, and the environment and the light probe stay on, lit by
    * the `subsurface`. Default true
@@ -337,6 +344,7 @@ export const Sky = ({
   north,
   intensity = skyDefaults.intensity,
   horizonBlend = skyDefaults.horizonBlend,
+  curvedHorizon = skyDefaults.curvedHorizon,
   background = true,
   abyss = false,
   ocean = false,
@@ -421,6 +429,7 @@ export const Sky = ({
       : (cloudsOptions?.opacity ?? cloudDefaults.opacity);
   const cloudColor = toHex(cloudsOptions?.color ?? cloudDefaults.color);
   const cloudSeed = cloudsOptions?.seed ?? cloudDefaults.seed;
+  const cloudBandSink = cloudsOptions?.bandSink ?? cloudDefaults.bandSink;
   const zenith = toHex(colors?.zenith ?? skyDefaults.colors.zenith);
   const horizon = toHex(colors?.horizon ?? skyDefaults.colors.horizon);
   const ground = toHex(colors?.ground ?? skyDefaults.colors.ground);
@@ -561,6 +570,7 @@ export const Sky = ({
       moonPhase: observed?.illumination ?? 1,
     };
   }, [azimuth, elevation, ephemeris, upX, upY, upZ, northX, northY, northZ]);
+  const moonShine = ephemeris ? skyMoonShine(ephemeris.moon) : 1;
 
   // One directional light, so nothing recompiles at dusk: the sun's fades out by
   // twilight, and only then does the moon's fade in.
@@ -805,6 +815,7 @@ export const Sky = ({
       opacity: cloudOpacity,
       color: cloudColor,
       seed: cloudSeed,
+      bandSink: cloudBandSink,
     });
     material.setAir(airLevel, airScaleHeight, airVisibility);
     material.zenithColor = zenith;
@@ -852,6 +863,7 @@ export const Sky = ({
     cloudOpacity,
     cloudColor,
     cloudSeed,
+    cloudBandSink,
     airLevel,
     airScaleHeight,
     airVisibility,
@@ -897,6 +909,11 @@ export const Sky = ({
     abyssDepthDetailScale,
     abyssFalloff,
   ]);
+
+  // Not baked: the bakes keep a level horizon.
+  useLayoutEffect(() => {
+    material.curvedHorizon = curvedHorizon;
+  }, [material, curvedHorizon]);
 
   useLayoutEffect(() => {
     if (water) material.linkOcean(water);
@@ -1216,6 +1233,14 @@ export const Sky = ({
       (hdr ?? gl.toneMapping !== NoToneMapping) ? SKY_HDR_SUN_RADIANCE : 1;
 
     const height = camera.position.dot(material.up);
+    // From high up the sky's own light goes by the sun over the lowered horizon; the sea's,
+    // the scene's and the bakes' stay by the sea's.
+    const airHeight = height - airLevel;
+    const dip =
+      material.curvedHorizon && airHeight > 0
+        ? Math.acos(SKY_EARTH_RADIUS / (SKY_EARTH_RADIUS + airHeight))
+        : 0;
+    material.setAirLight(elevation, dip, moonShine);
     const zone = skyZone(height, {
       ocean: material.ocean,
       oceanLevel: material.oceanLevel,

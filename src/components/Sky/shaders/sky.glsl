@@ -18,7 +18,6 @@ uniform float uSkyMoonGlow;
 uniform float uSkyMoonPhase; // share of its disc lit: 1 opposite the sun
 uniform float uSkyMoonDay; // 1 while it can be up by day (an observer's moon)
 uniform float uSkyNight; // 0 by day to 1 at night: how much the moon and the stars show
-uniform float uSkyMoonlight; // 0 until the daylight is gone, 1 by nautical twilight: how much the moon lights (skyMoonlight)
 uniform vec2 uSkyStars; // brightness, and the share of the sky's cells holding one
 uniform mat3 uSkyStarFrame; // world direction -> the turning star sphere's
 uniform float uSkyObserved; // 1 with an observer: the catalogue's stars and the planets, over a faint procedural filler
@@ -70,10 +69,10 @@ float skyHash(vec3 p) {
 
 // The sun's disc as drawn. Tone mapped, past white, so the mapping burns its core; without,
 // its light's own orange would read as a flat orange disc, so it is drawn near white.
-vec3 skySunDiscRadiance() {
+vec3 skySunDiscRadiance(SkyLight seen) {
   if(uSkySunRadiance > 1.0)
-    return skySunDiscColor() * uSkySunRadiance;
-  return mix(vec3(1.0), SKY_SUN_DISC_WARM, min(uSkyTwilight.x * uSkyTwilight.y, 1.0));
+    return skySunDiscColor(seen) * uSkySunRadiance;
+  return mix(vec3(1.0), SKY_SUN_DISC_WARM, min(uSkyTwilight.x * seen.twilight, 1.0));
 }
 
 uniform vec3 uSkySunGlare; // glare, rays, and the rays' shimmer phase in radians
@@ -201,12 +200,19 @@ vec3 skyPlanets(vec3 dir, float pixel, float sunElevation) {
   return light;
 }
 
-// The moon and the stars over `color`, as night falls; the moon by day too, while it
-// can be up. ⚠️ Derivatives.
+// The moon and the stars over `color`, as night falls, and by day where the sky is space;
+// the moon by day too, while it can be up. ⚠️ Derivatives.
 vec3 skyNight(vec3 color, vec3 dir, float blend) {
-  if(uSkyNight <= 0.0 && uSkyMoonDay <= 0.0)
+  float height = dot(cameraPosition, uSkyUp) - uSkyAir.x;
+  if(uSkyNight <= 0.0 && uSkyMoonDay <= 0.0 && !skyNearSpace(height))
     return color;
-  float above = smoothstep(-blend, blend, dot(dir, uSkyUp));
+  // By day too where the sky has gone all but black, under a twentieth of its light.
+  float black = smoothstep(0.95, 1.0, skySpace(dir, height));
+  // From high up, by the sun over the lowered horizon, where it can still be up.
+  float share = skyLightShare(dir, height);
+  float night = max(mix(uSkyNight, 1.0 - uSkyAirLight.x, share), black);
+  float y = skyOverHorizon(dot(dir, uSkyUp), skyHorizon(dir));
+  float above = smoothstep(-blend, blend, y);
   float cosMoon = dot(dir, uSkyMoonDirection);
   float angle = atan(length(cross(dir, uSkyMoonDirection)), cosMoon);
   float aa = max(fwidth(angle), 1e-5);
@@ -221,21 +227,22 @@ vec3 skyNight(vec3 color, vec3 dir, float blend) {
   float face = lit + SKY_EARTHSHINE * (1.0 - uSkyMoonPhase) * (1.0 - lit);
   float glow = uSkyMoonGlow * uSkyMoonPhase * pow(max(cosMoon, 0.0), 200.0);
   // The stars come out late, once it is dark, and fade low down through more air.
-  float airmass = 1.0 / (max(dot(dir, uSkyUp), 0.0) + 0.05);
+  float airmass = 1.0 / (max(y, 0.0) + 0.05);
   vec3 starDir = uSkyStarFrame * dir;
   float pixel = length(fwidth(dir));
   float procedural = skyStars(starDir);
-  float sunElevation = degrees(asin(clamp(dot(uSkySunDirection, uSkyUp), -1.0, 1.0)));
+  // In space as if the sun were well down.
+  float sunElevation = mix(degrees(asin(skyLight(share).sunY)), -18.0, black);
   vec3 stars;
   if(uSkyObserved > 0.5 && uSkySunDisc > 0.0) {
     // The procedural ones stand in for those past the catalogue, to about magnitude 6.5.
     float filler = min(procedural * SKY_STAR_FILLER, skyStarShine(5.5)) * skyStarSeen(5.5, sunElevation);
     stars = skyCatalogue(starDir, pixel, sunElevation) + skyPlanets(dir, pixel, sunElevation) + filler * uSkyStars.x;
   } else {
-    stars = vec3(uSkyStars.x * procedural * uSkyNight * uSkyNight * uSkyNight);
+    stars = vec3(uSkyStars.x * procedural * night * night * night);
   }
   stars *= exp(-0.25 * (airmass - 1.0));
-  vec3 air = color + uSkyMoonColor * glow * uSkyNight * above;
+  vec3 air = color + uSkyMoonColor * glow * night * above;
   color = air + stars * uSkySunDisc * above;
   float shown = disc * above * uSkySunDisc;
   // By night it hides the stars behind it, its dark side a shade darker than the air in
@@ -243,8 +250,8 @@ vec3 skyNight(vec3 color, vec3 dir, float blend) {
   // pale disc over the sky.
   float darkSide = mix(1.0, SKY_MOON_DARK, skyStarSeen(2.0, sunElevation));
   vec3 dark = air * darkSide + uSkyMoonColor * SKY_EARTHSHINE * (1.0 - uSkyMoonPhase);
-  color = mix(color, mix(dark, uSkyMoonColor, lit), shown * uSkyNight);
-  return color + uSkyMoonColor * face * shown * uSkyMoonDay * (1.0 - uSkyNight) * SKY_MOON_DAY;
+  color = mix(color, mix(dark, uSkyMoonColor, lit), shown * night);
+  return color + uSkyMoonColor * face * shown * uSkyMoonDay * (1.0 - night) * SKY_MOON_DAY;
 }
 
 #if defined(SKY_ABYSS) || defined(SKY_OCEAN) || defined(SKY_CLOUDS)
@@ -273,6 +280,8 @@ uniform vec2 uSkyCloudsSeed; // offset of the pattern
 // Radius of the deck's sphere about the Earth's centre and their thickness (world units); the
 // layers (0 deck, 1 band, 2 both); the band's distance (world units).
 uniform vec4 uSkyCloudsShape;
+// TEMPORARY, to compare: how much of the band's sink a curved horizon keeps (1 on a flat sea).
+uniform float uSkyCloudsSink;
 // Most a cloud's core shifts against its outline, in cloud sizes.
 #define SKY_CLOUD_PARALLAX 0.3
 // How much they hide the sun, moon and stars behind them, at opacity 0.5 and up.
@@ -284,7 +293,7 @@ uniform vec4 uSkyCloudsShape;
 // tall as ones of `thickness`.
 #define SKY_CLOUD_BAND_WIDTH 0.533
 #define SKY_CLOUD_BAND_HEIGHT 0.83
-// Climbing, the band sinks by up to this (radians, 1.5°), and its clouds flatten by up to this share.
+// Climbing, the band sinks by up to this (radians, 1.5°) on a flat sea, and its clouds flatten by up to this share.
 #define SKY_CLOUD_BAND_SINK 0.0262
 #define SKY_CLOUD_BAND_FLATTEN 0.05
 // With the band, the deck dissolves where the view runs within this (a sine, about 9°) of
@@ -305,22 +314,29 @@ float skyNoise3Fbm(vec3 p) {
   return sum / norm;
 }
 
+// The light where the clouds are, at their base.
+SkyLight skyCloudLight() {
+  return skyLight(skyLightShareAt(uSkyClouds.y - uSkyAir.x));
+}
+
 // The clouds' colour along `dir`, shared by the deck and the band: `n` their pattern there,
 // `threshold` and `edge` its density's, `density` how much cloud, `lit` how much light reaches
 // the side seen, `hazed` how far they melt into `haze`; `angle` the view's from the light, `aa`
-// its footprint.
-vec3 skyCloudColor(vec3 dir, float n, float threshold, float edge, float density, float lit, vec3 haze, float hazed, float angle, float aa) {
-  vec3 light = uSkyDaylight > 0.0 ? uSkySunDirection : uSkyMoonDirection;
-  vec3 ambient = mix(uSkyHorizonColor, uSkyZenithColor, 0.5) * mix(SKY_NIGHT_LEVEL, 1.0, uSkyDaylight);
+// its footprint; `under` how much they are seen from below, 0 from over their tops.
+vec3 skyCloudColor(vec3 dir, float n, float threshold, float edge, float density, float lit, vec3 haze, float hazed, float angle, float aa, float under) {
+  SkyLight seen = skyCloudLight();
+  bool day = seen.daylight > 0.0;
+  vec3 light = day ? uSkySunDirection : uSkyMoonDirection;
+  vec3 ambient = mix(uSkyHorizonColor, uSkyZenithColor, 0.5) * mix(SKY_NIGHT_LEVEL, 1.0, seen.daylight);
   // At sunset and sunrise their undersides catch the glow, most toward the sun.
-  float twilight = min(uSkyTwilight.x * uSkyTwilight.y, 1.0);
+  float twilight = min(uSkyTwilight.x * seen.twilight, 1.0);
   float facing = 0.5 + 0.5 * dot(dir, uSkySunDirection);
   ambient += SKY_TWILIGHT_ORANGE * twilight * 0.25 * facing * facing;
   // Toward the low sun they are seen from their shaded side: dark, with bright linings.
-  float backlit = twilight * smoothstep(0.6, 0.95, facing);
+  float backlit = twilight * smoothstep(0.6, 0.95, facing) * under;
   float lining = 1.0 + 2.0 * backlit;
   // The moon takes over only once the sun's light is gone, so the hand-over shows nothing.
-  vec3 direct = uSkyDaylight > 0.0 ? skyTwilightLight() * uSkyDaylight * (uSkySunRadiance > 1.0 ? SKY_CLOUD_HDR_SUNLIGHT : 1.0) : uSkyMoonColor * uSkyMoonlight * 0.25;
+  vec3 direct = day ? skyTwilightLight(seen) * seen.daylight * (uSkySunRadiance > 1.0 ? SKY_CLOUD_HDR_SUNLIGHT : 1.0) : uSkyMoonColor * seen.moonlight * 0.25;
   vec3 cloud = uSkyCloudsColor.rgb * (ambient * 0.55 * (1.0 - 0.75 * backlit) + direct * lit * 0.75 * (1.0 - backlit));
   float cosLight = dot(dir, light);
   // A bright rim where they thin toward the light.
@@ -336,12 +352,11 @@ vec3 skyCloudColor(vec3 dir, float n, float threshold, float edge, float density
 
   // The light itself, far brighter than the sky it hides, shows through all but the cores,
   // softer the thicker the cloud.
-  bool day = uSkyDaylight > 0.0;
   float size = day ? uSkySunSize : uSkyMoonSize;
   float soft = aa + size * min(tau * 0.5, 1.0);
   float disc = 1.0 - smoothstep(size - soft, size + soft, angle);
-  float through = disc * min(100.0 * transmit, 1.0) * (day ? 1.0 : uSkyMoonlight) * uSkySunDisc;
-  return mix(cloud, day ? skySunDiscRadiance() : uSkyMoonColor, through);
+  float through = disc * min(100.0 * transmit, 1.0) * (day ? 1.0 : seen.moonlight) * uSkySunDisc;
+  return mix(cloud, day ? skySunDiscRadiance(seen) : uSkyMoonColor, through);
 }
 
 // The threshold their pattern must pass at `coverage` 0 and 1: below 0.2 it rises out of reach,
@@ -364,22 +379,41 @@ vec2 skyCloudBandSpan() {
   return vec2(atan(uSkyClouds.y / far), atan((uSkyClouds.y + uSkyCloudsShape.y) / far));
 }
 
+// How high over the horizon the band's tops would show from `height` as the Earth curves:
+// as clouds bandDistance off, or from over them as their layer's own horizon (radians).
+float skyCloudBandTop(float height) {
+  float k = uSkyCurvature;
+  float top = uSkyClouds.y + uSkyCloudsShape.y;
+  float d = max(uSkyCloudsShape.w, sqrt(2.0 * max(height - top, 0.0) / k));
+  return atan((top - height) / d - 0.5 * k * d) + sqrt(2.0 * k * max(height, 0.0));
+}
+
+// How far the band is squashed onto the horizon from `origin`, as its tops sink: 1 on a flat sea.
+float skyCloudBandSquash(vec3 origin) {
+  if(uSkyCurvature <= 0.0)
+    return 1.0;
+  return clamp(skyCloudBandTop(dot(origin, uSkyUp)) / skyCloudBandTop(0.0), 1e-3, 1.0);
+}
+
 // Distant clouds along the horizon, fixed to directions: so far off that the camera's moves
 // barely shift them. Seen side-on: under the nearest ones' base, ever further ones overlap
-// densely down to the horizon; above it, their tops vary. Climbing, they sink a little and
+// densely down to the horizon; above it, their tops vary. Climbing, they go down with the
+// horizon as the Earth's curve lowers it (on a flat sea they sink a little instead), squash
+// onto it as their tops sink, until from high above they are a thin strip along it, and
 // flatten, quickly at first and then hardly at all. ⚠️ Derivatives, taken before it branches.
 vec3 skyCloudBand(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
   if(uSkyCloudsShape.z < 0.5 || uSkyClouds.x <= 0.0 || uSkyCloudsColor.a <= 0.0)
     return color;
-  vec3 light = uSkyDaylight > 0.0 ? uSkySunDirection : uSkyMoonDirection;
+  vec3 light = skyCloudLight().daylight > 0.0 ? uSkySunDirection : uSkyMoonDirection;
   float angle = atan(length(cross(dir, light)), dot(dir, light));
   float aa = max(fwidth(angle), 1e-5);
   float y = dot(dir, uSkyUp);
-  float elevation = asin(clamp(y, -1.0, 1.0));
+  float over = asin(clamp(y, -1.0, 1.0)) - asin(skyHorizon(dir));
   vec2 span = skyCloudBandSpan();
   float climb = 1.0 - exp(-max(dot(origin, uSkyUp), 0.0) / (1.5 * uSkyClouds.y));
-  float e = max(elevation + SKY_CLOUD_BAND_SINK * climb, 0.0);
-  if(elevation <= -0.002 || e >= span.y)
+  float sink = uSkyCurvature > 0.0 ? uSkyCloudsSink : 1.0;
+  float e = max(over + SKY_CLOUD_BAND_SINK * climb * sink, 0.0) / skyCloudBandSquash(origin);
+  if(over <= -0.002 || e >= span.y)
     return color;
   float v = e / span.y;
   float far = uSkyCloudsShape.w;
@@ -393,13 +427,16 @@ vec3 skyCloudBand(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
   float density = smoothstep(threshold - edge, threshold + edge, n) * (1.0 - smoothstep(span.x / span.y, 1.0, v));
   if(density <= 0.0)
     return color;
-  // Brighter toward their tops, and the side seen lit as much as it faces the light.
+  // Brighter toward their tops, and the side seen lit as much as it faces the light; from over
+  // their tops, a thickness up, the sunlit tops themselves.
   float lit = clamp(1.0 - (skyNoise3Fbm(q + vec3(0.0, 0.0, 0.25)) - n) * 4.0, 0.35, 1.0);
   vec3 level = dir - uSkyUp * y;
   float side = 0.5 - 0.5 * dot(level, light) / max(length(level), 1e-4);
-  lit = clamp(0.5 * lit + 0.5 * side, 0.35, 1.0);
+  float tops = uSkyClouds.y + uSkyCloudsShape.y;
+  float above = clamp((dot(origin, uSkyUp) - tops) / max(uSkyCloudsShape.y, 500.0), 0.0, 1.0);
+  lit = clamp(0.5 * lit + 0.5 * mix(side, 1.0, above), 0.35, 1.0);
   float hazed = skyAirHaze(origin, dir, far);
-  vec3 cloud = skyCloudColor(dir, n, threshold, edge, density, lit, haze, hazed, angle, aa);
+  vec3 cloud = skyCloudColor(dir, n, threshold, edge, density, lit, haze, hazed, angle, aa, 1.0 - above);
   return skyCloudOver(color, haze, cloud, density);
 }
 
@@ -415,11 +452,12 @@ vec3 skyClouds(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
   if(below <= 0.0 || bandOnly || uSkyClouds.x <= 0.0 || uSkyCloudsColor.a <= 0.0)
     return color;
   float elevationSine = dot(dir, uSkyUp);
+  float horizon = skyHorizon(dir);
   bool hinged = uSkyCloudsShape.z > 1.5;
   vec3 ray = dir;
   if(hinged) {
-    // Turned down by the hinge at the horizon, and not at all straight up.
-    float hinge = skyCloudBandSpan().x;
+    // Turned down by the hinge over the horizon, and not at all straight up.
+    float hinge = skyCloudBandSpan().x * skyCloudBandSquash(origin) + asin(horizon);
     float elevation = asin(clamp(elevationSine, -1.0, 1.0));
     float turned = (elevation - hinge) * (1.5707963 / (1.5707963 - hinge));
     vec3 across = dir - uSkyUp * elevationSine;
@@ -452,7 +490,7 @@ vec3 skyClouds(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
   float graze = hinged ? smoothstep(0.0, SKY_CLOUD_GRAZE, y + (n - 0.5) * 0.8 * SKY_CLOUD_GRAZE) : 1.0;
 
   // Denser toward the light, the darker the side seen from below.
-  vec3 light = uSkyDaylight > 0.0 ? uSkySunDirection : uSkyMoonDirection;
+  vec3 light = skyCloudLight().daylight > 0.0 ? uSkySunDirection : uSkyMoonDirection;
   vec2 toward = vec2(dot(light, uSkyEast), dot(light, uSkyNorth));
   float ahead = pnFbmSigned2Filtered(p + toward * 0.25, 3) + 0.5;
   float threshold = skyCloudThreshold(0.68, 0.32);
@@ -462,10 +500,10 @@ vec3 skyClouds(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
   // Far off they melt into the haze at the horizon, by the plane's distance, as if flat.
   float far = 1.0 - exp(-plane / (uSkyClouds.z * 15.0));
   float angle = atan(length(cross(dir, light)), dot(dir, light));
-  vec3 cloud = skyCloudColor(dir, n, threshold, edge, density, lit, haze, far * 0.8, angle, max(fwidth(angle), 1e-5));
+  vec3 cloud = skyCloudColor(dir, n, threshold, edge, density, lit, haze, far * 0.8, angle, max(fwidth(angle), 1e-5), 1.0);
 
   // The hinge is in open sky, with no strip above it to hide as at the sea's horizon.
-  float above = smoothstep(0.0, hinged ? 0.008 : 0.03, y);
+  float above = hinged ? smoothstep(0.0, 0.008, y) : smoothstep(0.0, 0.03, skyOverHorizon(y, horizon));
   return skyCloudOver(color, haze, cloud, density * near * above * graze);
 }
 #endif
@@ -581,7 +619,9 @@ vec3 skyRadiance(vec3 dir, vec3 origin) {
     origin -= uSkyUp * (dot(origin, uSkyUp) - uSkyOceanLevel + uSkyOceanDepth + 1.0);
   #endif
   float y = dot(dir, uSkyUp);
-  float blend = max(uSkyHorizonBlend, fwidth(y));
+  float dy = fwidth(y);
+  float blend = max(uSkyHorizonBlend, dy);
+  float horizon = skyHorizon(dir);
 
   vec3 color = skySurface(dir, blend);
   #ifdef SKY_CLOUDS
@@ -594,10 +634,12 @@ vec3 skyRadiance(vec3 dir, vec3 origin) {
     float angle = atan(length(cross(dir, uSkySunDirection)), cosSun);
     float aa = max(fwidth(angle), 1e-5);
     float disc = 1.0 - smoothstep(uSkySunSize - aa, uSkySunSize + aa, angle);
-    color = mix(color, skySunDiscRadiance(), disc * uSkySunDisc);
+    SkyLight seen = skyLight(skyLightShare(uSkySunDirection, dot(cameraPosition, uSkyUp) - uSkyAir.x));
+    color = mix(color, skySunDiscRadiance(seen), disc * uSkySunDisc);
     // Over the disc too, so it is never dimmer than its glare; above the horizon, while the sun is up.
-    float up = smoothstep(-blend, 0.0, y) * smoothstep(-uSkySunSize, uSkySunSize, dot(uSkySunDirection, uSkyUp));
-    vec3 light = skyTwilightLight();
+    float sunOver = skyOverHorizon(dot(uSkySunDirection, uSkyUp), skyHorizon(uSkySunDirection));
+    float up = smoothstep(-blend, 0.0, skyOverHorizon(y, horizon)) * smoothstep(-uSkySunSize, uSkySunSize, sunOver);
+    vec3 light = skyTwilightLight(seen);
     // Full while warm (to ~15° up), a quarter once white (~20°).
     float white = min(light.r, min(light.g, light.b)) / max(max(light.r, max(light.g, light.b)), 1e-4);
     float glare = uSkySunRadiance > 1.0 ? 1.0 : mix(1.0, SKY_SUN_DAY_GLARE, smoothstep(0.3, 0.7, white));
@@ -649,9 +691,11 @@ vec3 skyRadiance(vec3 dir, vec3 origin) {
 
   #ifdef SKY_OCEAN
     // The stage draws the sea here; what shows through its gaps lies beyond its seabed.
+    // It leaves the sky over the sea's curved horizon: from a little below, so none it leaves is void.
   if(staged) {
       #ifdef SKY_ABYSS
-    color = y < 0.0 ? skyOceanThroughCutaway(depths, dir, origin) : color;
+    float sea = uSkyCurvature > 0.0 ? horizon - 2.0 * dy : 0.0;
+    color = y < sea ? skyOceanThroughCutaway(depths, dir, origin) : color;
       #else
     color = open;
       #endif

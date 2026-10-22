@@ -125,6 +125,8 @@ export class SkyMaterial extends ShaderMaterial {
         uSkyMoonDay: new Uniform(0),
         uSkyNight: new Uniform(0),
         uSkyMoonlight: new Uniform(0),
+        uSkyAirLight: new Uniform(new Vector4()),
+        uSkyAirSunColor: new Uniform(new Color()),
         uSkyStars: new Uniform(new Vector2()),
         uSkyStarFrame: new Uniform(new Matrix3()),
         uSkyObserved: new Uniform(0),
@@ -159,7 +161,12 @@ export class SkyMaterial extends ShaderMaterial {
         uSkyCloudsColor: new Uniform(new Vector4(1, 1, 1, 1)),
         uSkyCloudsSeed: new Uniform(new Vector2()),
         uSkyCloudsShape: new Uniform(new Vector4()),
+        uSkyCloudsSink: new Uniform(0),
         uSkyAir: new Uniform(new Vector3()),
+        uSkyCurvature: new Uniform(
+          skyDefaults.curvedHorizon ? 1 / SKY_EARTH_RADIUS : 0,
+        ),
+        uSkyFlat: new Uniform(new Vector4()),
         uSkyOceanLevel: new Uniform(ocean.level),
         uSkyOceanDepth: new Uniform(ocean.depth),
         uSkyOceanBedColor: new Uniform(new Color(ocean.seabed.color)),
@@ -212,6 +219,24 @@ export class SkyMaterial extends ShaderMaterial {
     this.uniforms.uSkyDaylight.value = skyDaylight(elevation);
     this.twilight = skyTwilight(elevation);
     this.moonlight = skyMoonlight(elevation);
+    this.setAirLight(elevation, 0);
+  }
+
+  /**
+   * The sky's light seen from the camera's height, where the Earth's curve lowers the horizon
+   * by `dip` (radians): for the sun at `elevation` (degrees) plus that drop, so from high up
+   * the air stays lit after the sea's sunset. The sea, the scene's light and the bakes keep
+   * the sea's ({@link setSun}). `moonShine` scales the moonlight, as for an observer's moon.
+   */
+  setAirLight(elevation: number, dip: number, moonShine = 1) {
+    const seen = elevation + MathUtils.radToDeg(dip);
+    this.uniforms.uSkyAirLight.value.set(
+      skyDaylight(seen),
+      skyTwilight(seen),
+      skyMoonlight(seen) * moonShine,
+      Math.max(dip, 0),
+    );
+    skySunColor(seen, this.uniforms.uSkyAirSunColor.value);
   }
 
   /** Set which way is up (the horizon is perpendicular to it) and which way is north. */
@@ -559,6 +584,7 @@ export class SkyMaterial extends ShaderMaterial {
       (clouds.seed * 12.9898) % 1000,
       (clouds.seed * 78.233) % 1000,
     );
+    this.uniforms.uSkyCloudsSink.value = clouds.bandSink ? 1 : 0;
   }
 
   /**
@@ -570,6 +596,33 @@ export class SkyMaterial extends ShaderMaterial {
       level,
       Math.max(scaleHeight, 0),
       Math.max(visibility, 0),
+    );
+  }
+
+  /** the sea, the sky and the clouds follow the Earth's curve, so the horizon drops as the camera climbs */
+  get curvedHorizon(): boolean {
+    return this.uniforms.uSkyCurvature.value > 0;
+  }
+  set curvedHorizon(value: boolean) {
+    this.uniforms.uSkyCurvature.value = value ? 1 / SKY_EARTH_RADIUS : 0;
+  }
+
+  /**
+   * With {@link curvedHorizon}, keep the sea flat over the disc that holds this rectangle,
+   * `[minX, minZ, maxX, maxZ]` in world X/Z: where the scene is, so what meets the water
+   * there meets it level. `null` for none.
+   */
+  setFlatSea(bounds: [number, number, number, number] | null) {
+    if (!bounds) {
+      this.uniforms.uSkyFlat.value.set(0, 0, 0, 0);
+      return;
+    }
+    const [minX, minZ, maxX, maxZ] = bounds;
+    this.uniforms.uSkyFlat.value.set(
+      (minX + maxX) / 2,
+      0,
+      (minZ + maxZ) / 2,
+      Math.hypot(maxX - minX, maxZ - minZ) / 2,
     );
   }
 

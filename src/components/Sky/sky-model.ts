@@ -111,6 +111,8 @@ export type SkyClouds = {
   color?: ColorRepresentation;
   /** picks another pattern. Default 0 */
   seed?: number;
+  /** TEMPORARY, to compare: with a curved horizon, the band also sinks a little as the camera climbs, as on a flat sea. Default false */
+  bandSink?: boolean;
 };
 
 /**
@@ -428,6 +430,7 @@ export const skyDefaults = {
     opacity: 1,
     color: '#ffffff',
     seed: 0,
+    bandSink: false,
   },
   air: { scaleHeight: 8000, visibility: 60000 },
   colors: {
@@ -438,6 +441,7 @@ export const skyDefaults = {
   },
   intensity: 1,
   horizonBlend: 0.04,
+  curvedHorizon: true,
   abyss: {
     level: 0,
     colors: { ceiling: '#2a2d32', horizon: '#4a5058', depth: '#0e1013' },

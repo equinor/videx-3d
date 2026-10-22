@@ -19,6 +19,8 @@
 #endif
 // Share of the foam lost once its detail goes sub-pixel.
 #define OCEAN_FOAM_FAR_FADE 0.85
+// The sea's mean square slope for a wind (m/s), the small waves included (Cox and Munk).
+#define OCEAN_COX_MUNK(wind) (0.003 + 0.00512 * (wind))
 
 uniform float uTime;
 uniform vec2 uWindDirection;
@@ -113,11 +115,12 @@ float oceanFbm(vec2 p) {
 // The surface normal at `worldXZ` (+Y up, in the X/Z wave plane), with the spectral
 // `slope` and `height` for the foam and `np`, the wind-drifted coordinates the fine
 // detail is drawn in. `texel` is world units per pixel; `flatness` (oceanFlatness)
-// fades the waves out.
-vec3 oceanWaveNormal(vec2 worldXZ, float texel, float flatness, out vec2 slope, out float height, out vec2 np) {
+// fades the waves out. `rough` is the slope variance the pixel cannot show (oceanShade).
+vec3 oceanWaveNormal(vec2 worldXZ, float texel, float flatness, out vec2 slope, out float height, out vec2 np, out float rough) {
   float detail = 1.0 - flatness;
   slope = vec2(0.0);
   height = 0.0;
+  float kept = 0.0;
   if(detail > 0.001) {
     // --- Break the periodicity of the finite spectral sum -------------------
     // The wave field is a finite sum of sinusoids, so it tiles *exactly* in
@@ -135,7 +138,7 @@ vec3 oceanWaveNormal(vec2 worldXZ, float texel, float flatness, out vec2 slope, 
     vec2 waveXZ = worldXZ + warp * 240.0;
 
     // --- Spectral wave surface: per-pixel slope + height --------------------
-    oceanSurface(waveXZ, uTime, texel, slope, height);
+    oceanSurface(waveXZ, uTime, texel, slope, height, kept);
     slope *= detail;
     height *= detail;
   }
@@ -163,6 +166,11 @@ vec3 oceanWaveNormal(vec2 worldXZ, float texel, float flatness, out vec2 slope, 
   float microAA = 1.0 - smoothstep(0.25, 4.0, microK * texel);
   microAA *= microAA; // bias toward lower blend, softer near the camera
   microAA *= detail;
+  // Too small for the pixel or faded out with distance, the slopes still roughen the glint: the
+  // waves left out, and the small ones no wave stands for once the ripples fade.
+  float s2 = uSteepness * uSteepness;
+  float small = max(OCEAN_COX_MUNK(uWindSpeed) - uSlopeVariance * s2, 0.0);
+  rough = max(uSlopeVariance - kept * detail * detail, 0.0) * s2 + small * (1.0 - microAA);
   if(microAA > 0.001) {
     float e = 0.5;
     vec2 mp = np * 4.0;
@@ -226,22 +234,24 @@ void oceanTonal(vec2 worldXZ, float flatness, inout vec3 waterColor, out float t
 }
 
 // The lit surface: the body colour against the reflection by Fresnel, plus the sun's
-// glint. `sky` is the sky's colour in the reflected direction, reflect(-V, N).
-vec3 oceanShade(vec3 N, vec3 V, vec3 waterColor, vec3 sky, float fresnel, float tonalReflect, float tonalSpec, float flatness) {
+// glint. `sky` is the sky's colour in the reflected direction, reflect(-V, N); `rough` the
+// slope variance the pixel cannot show (oceanWaveNormal).
+vec3 oceanShade(vec3 N, vec3 V, vec3 waterColor, vec3 sky, float fresnel, float tonalReflect, float tonalSpec, float rough) {
   vec3 reflection = sky * uReflectionIntensity * tonalReflect;
 
   // Modulated more strongly than the reflection (tonalSpec) so the tonal
   // patches show a pronounced difference in sun glint.
   vec3 H = normalize(V + normalize(uSunDirection));
   float ndh = max(dot(N, H), 0.0);
-  // The faded-out slopes still scatter the sun: their variance widens the glint
-  // (the exponent read as a Beckmann roughness), at the same energy. The added
-  // spread (uSunGlintSpread) keeps its peak instead, so the path also brightens.
+  // The slopes the pixel cannot show still scatter the sun: their variance widens the glint
+  // (the exponent read as a Beckmann roughness), at the same energy, so from far off or high
+  // up it spreads into a broad patch. The added spread (uSunGlintSpread) keeps its peak
+  // instead, so the path also brightens.
   float shininess = uSunShininess;
   float energy = 1.0;
-  if(flatness > 0.0 || uSunGlintSpread > 0.0) {
+  if(rough > 0.0 || uSunGlintSpread > 0.0) {
     float base = 2.0 / (uSunShininess + 2.0);
-    float roughness = base + flatness * uSlopeVariance * uSteepness * uSteepness;
+    float roughness = base + rough;
     shininess = 2.0 / (roughness + uSunGlintSpread) - 2.0;
     energy = base / roughness;
   }

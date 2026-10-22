@@ -78,16 +78,19 @@ vec3 oceanDisplacement(
 // once its wavelength approaches the on-screen pixel size (`texel` = world
 // units per pixel). This both removes shimmer/aliasing at the horizon and,
 // because the fade is a smooth function of each wave's projected size rather
-// than a fixed world-distance radius, eliminates any visible LOD ring.
+// than a fixed world-distance radius, eliminates any visible LOD ring. `kept` is the slope
+// variance of what is drawn, so what the fade leaves out can roughen the glint.
 void oceanSurface(
   vec2 p,
   float t,
   float texel,
   out vec2 slope,
-  out float height
+  out float height,
+  out float kept
 ) {
   slope = vec2(0.0);
   height = 0.0;
+  kept = 0.0;
   for(int i = 0; i < OCEAN_WAVE_COUNT; i++) {
     vec4 a = uWaveA[i];
     vec2 d = a.xy;
@@ -101,5 +104,6 @@ void oceanSurface(
     float ph = k * dot(d, p) - omega * t + uWaveB[i].y;
     height += amp * sin(ph) * aa;
     slope += d * (amp * k * cos(ph)) * aa;
+    kept += 0.5 * amp * k * amp * k * aa * aa;
   }
 }
