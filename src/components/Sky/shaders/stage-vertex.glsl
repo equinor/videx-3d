@@ -6,14 +6,14 @@
 varying vec3 vStageWorld;
 // View-space position, which the OIT pipeline sorts by.
 varying vec3 vViewPosition;
-#ifdef STAGE_RELIEF
+#ifdef STAGE_SHAPED
 varying vec3 vStageNormal;
 #endif
 
 void main() {
   vec4 world = modelMatrix * vec4(position, 1.0);
   vStageWorld = world.xyz;
-  #ifdef STAGE_RELIEF
+  #ifdef STAGE_SHAPED
   vStageNormal = normalize(mat3(modelMatrix) * normal);
   #endif
   vec4 view = viewMatrix * world;

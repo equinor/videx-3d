@@ -64,7 +64,7 @@ export const Canvas3dDecorator = (Story: any, { parameters, args }: any) => {
     <Canvas
       camera={{
         near: 0.1,
-        far: 500 * scale,
+        far: parameters.far ?? 500 * scale,
         position: parameters.cameraPosition || [
           -1 * scale,
           1 * scale,

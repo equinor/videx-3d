@@ -463,6 +463,9 @@ own edges (measured on the demo field at `maxError` 5: 0.2 m median, 4.8 m worst
 The stage's transparent parts are ready for the `OITRenderPass`. ⚠️ It assumes the
 default `up` (+Y), and renders nothing without a sky `ocean`.
 
+A `relief` puts land and seabed from your own elevation data beyond the stage's area,
+out to the horizon (see [Relief](./relief.md)).
+
 ## The void (`abyss`)
 
 `abyss` puts an endless lid overhead below a `level` and a bottomless gradient below the
@@ -594,13 +597,13 @@ basic ones show in every story, the advanced and debug ones only in `StageDebug`
   each about twice as wide as the one inside, out to the far plane. The flat parts are
   shaded at the ray's exact hit, so their triangles only need to grow with their distance
   from the scene: ~1000 km triangles crack where the GPU clips them. Without an occupant
-  the seabed lies on the same mesh; with one, on rings around the relief's rectangle
+  the seabed lies on the same mesh; with one, on rings around the falloff's rectangle
   (`skyStageNearBounds`, `createSkyStageRings`), which share their inner edge with it.
-- ⭐ An occupant's seabed is the stage's `occupant-bed` part: the relief's shading
-  (`STAGE_BED`, `STAGE_RELIEF`) plus `STAGE_OCCUPANT`, which holds it whole after the
-  cutaway has cleared the water over it. The relief is built on its rim (`skyStageRim`),
+- ⭐ An occupant's seabed is the stage's `occupant-bed` part: the falloff's shading
+  (`STAGE_BED`, `STAGE_SHAPED`) plus `STAGE_OCCUPANT`, which holds it whole after the
+  cutaway has cleared the water over it. The falloff is built on its rim (`skyStageRim`),
   its boundary loops, so they share its vertices; the camera's ground (`oceanGround`) is
-  read from it too. Without a relief, the flat near bed is holed along the same rim
+  read from it too. Without a falloff, the flat near bed is holed along the same rim
   (`createSkyStageBed`).
 - Below a `seabedOpacity` of 1 the seabed parts compile with `STAGE_SEE_THROUGH`:
   transparent, without depth writes, and with the seabed's opacity as their alpha rather

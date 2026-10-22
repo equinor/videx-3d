@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { BufferAttribute, BufferGeometry } from 'three';
 import {
   createSkyStageBed,
+  createSkyStageFalloff,
   createSkyStagePlane,
-  createSkyStageRelief,
   createSkyStageRings,
   createSkyStageSeabed,
   SkyStageBounds,
@@ -95,9 +95,15 @@ const seabed: SeabedMesh = (() => {
 const keys = (points: number[][]) => new Set(points.map(([x, z]) => key(x, z)));
 
 describe('sky stage caps', () => {
-  it('⭐ the relief meets the walls at the elevations and the far rings at the bed', () => {
-    const relief = createSkyStageRelief(near, outline, elevations, BED_Y, 2000);
-    const rim = boundary(relief);
+  it('⭐ the falloff meets the walls at the elevations and the far rings at the bed', () => {
+    const falloff = createSkyStageFalloff(
+      near,
+      outline,
+      elevations,
+      BED_Y,
+      2000,
+    );
+    const rim = boundary(falloff);
     for (const [x, z] of ring) {
       expect(rim.get(key(x, z))).toBeCloseTo(heightAt(x, z), 3);
     }
@@ -128,13 +134,19 @@ describe('sky stage caps', () => {
     }
   });
 
-  it('the rings meet the relief vertex for vertex', () => {
-    const relief = createSkyStageRelief(near, outline, elevations, BED_Y, 2000);
+  it('the rings meet the falloff vertex for vertex', () => {
+    const falloff = createSkyStageFalloff(
+      near,
+      outline,
+      elevations,
+      BED_Y,
+      2000,
+    );
     const onNear = (edge: Map<string, number>) =>
       [...edge.keys()].filter(at => onRectangle(at.split(',').map(Number)));
     const inner = onNear(boundary(createSkyStageRings(near, extent)));
     expect(inner.length).toBeGreaterThan(0);
-    expect(new Set(inner)).toEqual(new Set(onNear(boundary(relief))));
+    expect(new Set(inner)).toEqual(new Set(onNear(boundary(falloff))));
   });
 
   it('the rim of a handed seabed: its outer ring and hole as one component, with their heights', () => {
@@ -153,16 +165,16 @@ describe('sky stage caps', () => {
     });
   });
 
-  it('⭐ a relief on that rim meets the handed seabed vertex for vertex', () => {
+  it('⭐ a falloff on that rim meets the handed seabed vertex for vertex', () => {
     const rim = skyStageRim(seabed);
-    const relief = createSkyStageRelief(
+    const falloff = createSkyStageFalloff(
       near,
       rim.outline,
       rim.elevations,
       BED_Y,
       2000,
     );
-    const around = boundary(relief);
+    const around = boundary(falloff);
     const bed = boundary(createSkyStageSeabed(seabed));
     const outer = keys(ring);
     for (const [at, y] of bed) {

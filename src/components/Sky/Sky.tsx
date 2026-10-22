@@ -201,7 +201,7 @@ export type SkyDebug = {
   /**
    * Tint each part by what draws it. The sky: its sea, seabed and void red, what it
    * leaves to a stage purple, its surface layer orange. A stage: its surface blue, flat
-   * seabed green, relief cyan, an occupant's seabed magenta. Untinted is the scene.
+   * seabed green, falloff cyan, an occupant's seabed magenta. Untinted is the scene.
    */
   tint?: boolean;
   /** layers not to draw */
@@ -1287,7 +1287,7 @@ export const Sky = ({
         t,
       );
     }
-    // Inside an occupant's seabed above the sea's own, the stage's relief is seen from below.
+    // Inside an occupant's seabed above the sea's own, the stage's falloff is seen from below.
     material.oceanBuried =
       material.ocean &&
       material.oceanGround !== null &&

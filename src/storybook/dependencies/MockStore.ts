@@ -8,6 +8,8 @@ import {
   formationLoader,
   perforationLoader,
   positionLogsLoader,
+  reliefMetaLoader,
+  reliefValuesLoader,
   surfaceMetaLoader,
   surfaceValuesLoader,
   wellboreHeadersLoader,
@@ -23,6 +25,8 @@ export class MockStore implements Store {
     this._loaders.set('position-logs', positionLogsLoader(this));
     this._loaders.set('surface-meta', surfaceMetaLoader(this));
     this._loaders.set('surface-values', surfaceValuesLoader(this));
+    this._loaders.set('relief-meta', reliefMetaLoader(this));
+    this._loaders.set('relief-values', reliefValuesLoader(this));
     this._loaders.set('formations', formationLoader(this));
     this._loaders.set('casings', casingLoader(this));
     this._loaders.set('completion-tools', completionLoader(this));

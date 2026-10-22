@@ -121,6 +121,33 @@ export const surfaceValuesLoader = (store: Store) =>
     transform: transferCopy,
   });
 
+// Outside /data, which generate-data wipes: the relief is the region's, not a field's.
+export const reliefMetaLoader = (store: Store) =>
+  new DataLoader(store, {
+    preloaded: true,
+    init: async () => {
+      const data = (await get('/relief/relief-meta.json')) ?? {};
+      return Object.keys(data).map(key => [key, data[key]]);
+    },
+  });
+
+export const reliefValuesLoader = (store: Store) =>
+  new DataLoader(store, {
+    load: async <T>(key: KeyType): Promise<T | null> => {
+      const buffer = await getBinary(`/relief/${key}.bin`);
+      if (!buffer) return null;
+      const meta = await store.get<SurfaceMeta>('relief-meta', key);
+      if (meta && buffer.byteLength !== meta.header.nx * meta.header.ny * 4) {
+        console.error(
+          `[relief-values] '${key}' is ${buffer.byteLength} bytes, but its header says ${meta.header.nx} x ${meta.header.ny}.`,
+        );
+        return null;
+      }
+      return buffer as T;
+    },
+    transform: transferCopy,
+  });
+
 function transformCasingData(items: CasingItem[]) {
   const grouped = group(items, d => d.properties.Diameter);
 

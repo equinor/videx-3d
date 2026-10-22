@@ -1,3 +1,5 @@
+import { toHalfFloatBits } from '../utils/half-float';
+
 /**
  * Reference grid cells per {@link StackCapNormalMap} texel. 2 draws fault lines
  * dashed at the distance LOD first picks a coarser level (field-5c1be1, 15 km).
@@ -35,24 +37,6 @@ const EMPTY = 0;
 const FULL = 1;
 const LEVEL = 2;
 const SPLAT = 3;
-
-const f32 = new Float32Array(1);
-const u32 = new Uint32Array(f32.buffer);
-
-/** The bits of the IEEE half float nearest `value` (|value| <= 1). */
-function toHalf(value: number): number {
-  f32[0] = value;
-  const bits = u32[0];
-  const sign = (bits >>> 16) & 0x8000;
-  const exponent = ((bits >>> 23) & 0xff) - 112;
-  const mantissa = bits & 0x7fffff;
-  if (exponent <= 0) {
-    if (exponent < -10) return sign;
-    return sign | ((((mantissa | 0x800000) >>> (1 - exponent)) + 0x1000) >>> 13);
-  }
-  // A rounding carry out of the mantissa steps the exponent, which is right.
-  return sign | ((exponent << 10) + ((mantissa + 0x1000) >>> 13));
-}
 
 /**
  * Bake a cap's normals into a {@link StackCapNormalMap} over the cap's own window
@@ -269,8 +253,8 @@ export function bakeCapNormalMap(
   const data = new Uint16Array(texels * 2);
   for (let texel = 0; texel < texels; texel++) {
     if (state[texel] === EMPTY) continue;
-    data[2 * texel] = toHalf(acc[3 * texel]);
-    data[2 * texel + 1] = toHalf(acc[3 * texel + 2]);
+    data[2 * texel] = toHalfFloatBits(acc[3 * texel]);
+    data[2 * texel + 1] = toHalfFloatBits(acc[3 * texel + 2]);
   }
 
   return {

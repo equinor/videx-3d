@@ -1,6 +1,7 @@
 import type { ArgTypes, Decorator } from '@storybook/react-vite';
 import { useArgs, useEffect } from 'storybook/preview-api';
 import type { SkyProps } from '../../components/Sky/Sky';
+import type { SkyBoxStageRelief } from '../../components/Sky/SkyBoxStage';
 import {
   skyDefaults,
   type SkyAbyss,
@@ -14,6 +15,10 @@ import {
 } from '../../components/Sky/sky-model';
 import { DEFAULT_OCEAN_WATER_OPACITY } from '../../components/Ocean/ocean-material';
 import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../../components/Ocean/ocean-volume-material';
+import {
+  ReliefFrame,
+  reliefFrameAt,
+} from '../../sdk/geometries/relief-grid';
 import { solarPosition } from '../../sdk/utils/solar-position';
 import {
   skyCutawayArgs,
@@ -1066,3 +1071,72 @@ export function skyArgTypes({
   }
   return argTypes;
 }
+
+/** Story args for a `SkyBoxStage`'s relief (see {@link skyReliefFromArgs}). */
+export type SkyReliefArgs = {
+  relief: boolean;
+  reliefColor: 'flat' | 'ramp';
+  reliefLandColor: string;
+};
+
+/** The demo relief in the stories' store (see scripts/generate-relief.js). */
+export const SKY_DEMO_RELIEF = 'etopo-2022-nordic';
+
+export const skyReliefArgs: SkyReliefArgs = {
+  relief: false,
+  reliefColor: 'flat',
+  reliefLandColor: '#837f63',
+};
+
+/** Controls for {@link SkyReliefArgs}; with `shownIf`, the toggle shows only while that arg is on. */
+export function skyReliefArgTypes(
+  shownIf?: string,
+): ArgTypes<SkyReliefArgs> {
+  return {
+    relief: {
+      ...toggle(
+        SEA,
+        'Land and seabed beyond the stage, from the store: ETOPO 2022 (NOAA) from Norway to the British Isles at 2 arc-minutes. The stage keeps its own seabed over its area.',
+      ),
+      ...(shownIf ? { if: { arg: shownIf } } : {}),
+    },
+    reliefColor: {
+      control: { type: 'inline-radio' },
+      options: ['flat', 'ramp'],
+      description:
+        'The land flat, the seabed as the sea\u2019s; or both by height, with the earth colour ramp.',
+      table: { category: SEA },
+      if: { arg: 'relief' },
+    },
+    reliefLandColor: {
+      ...color(SEA, 'The land\u2019s colour.'),
+      if: { arg: 'reliefColor', eq: 'flat' },
+    },
+  };
+}
+
+/**
+ * Where a story's scene lies on the map when no `UtmArea` places it: at the sun's place
+ * (see {@link SkyArgs}), which Storybook leaves out of the args while the sun is set by hand.
+ */
+export const skyReliefFrame = (args: Partial<SkyArgs>): ReliefFrame =>
+  reliefFrameAt(
+    args.sunLongitude ?? skyArgs.sunLongitude,
+    args.sunLatitude ?? skyArgs.sunLatitude,
+  );
+
+/** A `SkyBoxStage`'s `relief` from {@link SkyReliefArgs}, the scene placed by `frame`. */
+export const skyReliefFromArgs = (
+  args: Partial<SkyReliefArgs>,
+  frame: ReliefFrame,
+): SkyBoxStageRelief | undefined =>
+  args.relief
+    ? {
+        id: SKY_DEMO_RELIEF,
+        frame,
+        color:
+          args.reliefColor === 'ramp'
+            ? 'ramp'
+            : (args.reliefLandColor ?? skyReliefArgs.reliefLandColor),
+      }
+    : undefined;

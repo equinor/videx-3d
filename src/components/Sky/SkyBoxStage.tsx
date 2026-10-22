@@ -5,10 +5,12 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
 } from 'react';
 import {
   BufferGeometry,
   Camera,
+  ColorRepresentation,
   Group,
   LineBasicMaterial,
   MeshBasicMaterial,
@@ -16,17 +18,21 @@ import {
   ShaderMaterial,
   WebGLRenderer,
 } from 'three';
+import { useGenerator } from '../../hooks/useGenerator';
 import { createLayers, LAYERS } from '../../layers/layers';
+import type { ReliefFrame, ReliefGrid } from '../../sdk/geometries/relief-grid';
 import type { SeabedMesh } from '../../sdk/geometries/surface-clip';
 import { createTinSampler } from '../../sdk/geometries/tin-sampler';
 import type { CutUniforms } from '../../sdk/materials/fence-field';
+import { SkyBoxStageReliefLayer } from './SkyBoxStageReliefLayer';
 import { useSkyOcean } from './sky-context';
+import { skyRelief, SkyReliefResponse } from './sky-defs';
 import {
   createSkyStageBed,
+  createSkyStageFalloff,
   createSkyStageMaterial,
   createSkyStageOutline,
   createSkyStagePlane,
-  createSkyStageRelief,
   createSkyStageRings,
   createSkyStageSeabed,
   SkyStageBounds,
@@ -37,8 +43,11 @@ import {
 // Share of the far plane the stage draws the sea out to; the sky draws beyond, where
 // the far plane would clip the stage.
 const STAGE_REACH = 0.8;
-// Room between the outline and the rings when there is no relief to make room for.
+// Room between the outline and the rings when there is no falloff to make room for.
 const MIN_NEAR_MARGIN = 1000;
+// A relief's flat land, a muted olive: rock and heath seen through the air.
+const RELIEF_LAND_COLOR = '#837f63';
+const RELIEF_FALLOFF = 10000;
 
 // Without OIT, see-through parts draw in this order: the scene's own (most of it under the
 // sea), then the water over everything.
@@ -48,10 +57,10 @@ const OUTLINE_ORDER = 1e9;
 // Drawn last by the OITRenderPass too, over its transparent layers.
 const OVERLAY_LAYERS = createLayers(LAYERS.OVERLAY);
 // Wireframe colours, as `SkyDebug.tint` colours the layers.
-const WIRE_COLORS: Record<SkyBoxStageLayer, string> = {
+const WIRE_COLORS: Record<StagePartLayer, string> = {
   surface: '#1a59ff',
   bed: '#26cc33',
-  relief: '#00d9e6',
+  falloff: '#00d9e6',
   'occupant-bed': '#ff1acc',
 };
 
@@ -97,10 +106,43 @@ export type SkyBoxStageOccupant = {
 
 /**
  * A layer a {@link SkyBoxStage} draws: the sea `surface`; the flat `bed` (beyond the
- * relief, when there is one), the `relief` easing from the occupant's seabed, and the
- * `occupant-bed`, the occupant's own.
+ * falloff, when there is one), the `falloff` easing from the occupant's seabed, and the
+ * `occupant-bed`, the occupant's own; and beyond its own area the `relief`, when it has one.
  */
-export type SkyBoxStageLayer = 'surface' | 'bed' | 'relief' | 'occupant-bed';
+export type SkyBoxStageLayer =
+  | 'surface'
+  | 'bed'
+  | 'falloff'
+  | 'occupant-bed'
+  | 'relief';
+
+// The layers drawn as plain meshes, which the wireframe view can draw too.
+type StagePartLayer = Exclude<SkyBoxStageLayer, 'relief'>;
+
+/**
+ * Land and seabed beyond a {@link SkyBoxStage}'s own area: a relief from the store, which
+ * rises from the stage's flat seabed past its area and continues to the sea's horizon. It
+ * is land where it rises above the sea, lit and fading into the air as the far sea does,
+ * and seabed below it, seen through the water as the stage's own is. Always opaque: the
+ * seabed is see-through only over the stage's own area.
+ */
+export type SkyBoxStageRelief = {
+  /**
+   * The relief in the store: a `relief-meta` record (a `SurfaceMeta`, with the relief's
+   * `projection`) and its `relief-values`, heights in metres above mean sea level, NaN
+   * for none. Read by the `skyRelief` generator, so it needs a `GeneratorsProvider`.
+   */
+  id: string;
+  /** where the scene lies on the map; `reliefFrameAt` places a scene by its longitude and latitude */
+  frame: ReliefFrame;
+  /**
+   * `'ramp'` colours land and seabed by height with the earth colour ramp; a colour is the
+   * land's, the seabed taking the sea's. Default a muted olive
+   */
+  color?: 'ramp' | ColorRepresentation;
+  /** how far past the stage's own area it rises from the stage's flat seabed, in world units. Default 10000 */
+  falloff?: number;
+};
 
 /**
  * Views for seeing how a stage fits the sky and its occupant (and see `SkyDebug.tint`).
@@ -125,6 +167,8 @@ export type SkyBoxStageProps = {
   occupant?: SkyBoxStageOccupant;
   /** how far outside the occupant the seabed eases from its own to the sea's depth. Default 3000 */
   seabedFalloff?: number;
+  /** land and seabed beyond the stage's own area (see {@link SkyBoxStageRelief}); none by default */
+  relief?: SkyBoxStageRelief;
   /** debug views (see {@link SkyBoxStageDebug}) */
   debug?: SkyBoxStageDebug;
 };
@@ -144,6 +188,9 @@ export type SkyBoxStageProps = {
  * An `occupant` claims part of the stage and hands it its seabed, which the stage draws as
  * the sea's, easing its own seabed into it around the occupant.
  *
+ * A `relief` puts land and seabed from the store beyond the stage's own area: `bounds`,
+ * and the occupant's with its falloff. Over that area the stage keeps its own seabed.
+ *
  * ⚠️ Assumes the default `up` (+Y). Renders nothing without a sky ocean.
  *
  * @group Components
@@ -152,6 +199,7 @@ export const SkyBoxStage = ({
   bounds,
   occupant,
   seabedFalloff = 3000,
+  relief,
   debug,
 }: SkyBoxStageProps) => {
   const ocean = useSkyOcean();
@@ -169,7 +217,7 @@ export const SkyBoxStage = ({
   const seeThrough = seabedOpacity < 1;
   const bedDetail = ocean?.bedDetail;
 
-  // The occupant's seabed: its rim, which is the occupant's outline and where the relief
+  // The occupant's seabed: its rim, which is the occupant's outline and where the falloff
   // meets it, the stage's mesh of it, and the ground under a camera in it.
   const rim = useMemo(
     () => (occupantSeabed ? skyStageRim(occupantSeabed) : null),
@@ -200,7 +248,7 @@ export const SkyBoxStage = ({
   );
   useEffect(() => () => plane.dispose(), [plane]);
 
-  // Around an occupant: at least the relief's falloff, so the relief ends on the rings at
+  // Around an occupant: at least the falloff's width, so the falloff ends on the rings at
   // the seabed.
   const near = useMemo(
     () =>
@@ -213,16 +261,64 @@ export const SkyBoxStage = ({
         : null,
     [extent, outline, seabedFalloff],
   );
+  // A relief lies beyond the stage's own area, `bounds` and the occupant's near rectangle,
+  // over which the stage keeps its own seabed; only where the sea has one.
+  const reliefOn = !!relief && hasBed;
+  const area = useMemo<SkyStageBounds | null>(
+    () =>
+      !reliefOn
+        ? null
+        : near
+          ? [
+              Math.min(minX, near[0]),
+              Math.min(minZ, near[1]),
+              Math.max(maxX, near[2]),
+              Math.max(maxZ, near[3]),
+            ]
+          : [minX, minZ, maxX, maxZ],
+    [reliefOn, near, minX, minZ, maxX, maxZ],
+  );
   const rings = useMemo(
-    () => (near ? createSkyStageRings(near, extent) : null),
-    [near, extent],
+    () => (near ? createSkyStageRings(near, area ?? extent) : null),
+    [near, area, extent],
   );
   useEffect(() => () => rings?.dispose(), [rings]);
+  // Without an occupant the seabed lies on the plane, or under a relief on the area alone.
+  const areaBed = useMemo(
+    () => (area && !near ? createSkyStagePlane(area, area) : null),
+    [area, near],
+  );
+  useEffect(() => () => areaBed?.dispose(), [areaBed]);
 
-  const relief = useMemo(
+  const generator = useGenerator<SkyReliefResponse>(skyRelief);
+  const reliefId = reliefOn ? relief.id : null;
+  // By its content: a frame written inline is a new object every render.
+  const frameKey = relief ? JSON.stringify(relief.frame) : '';
+  const centerX = (minX + maxX) / 2;
+  const centerZ = (minZ + maxZ) / 2;
+  const [reliefGrid, setReliefGrid] = useState<ReliefGrid | null>(null);
+  useEffect(() => {
+    if (!reliefId || !frameKey) {
+      setReliefGrid(null);
+      return;
+    }
+    let current = true;
+    // Out to the far plane around the scene: no farther than the stage reaches.
+    generator(reliefId, JSON.parse(frameKey) as ReliefFrame, {
+      center: [centerX, centerZ],
+      radius: far,
+    }).then(grid => {
+      if (current) setReliefGrid(grid ?? null);
+    });
+    return () => {
+      current = false;
+    };
+  }, [generator, reliefId, frameKey, centerX, centerZ, far]);
+
+  const falloff = useMemo(
     () =>
       hasBed && rim && near && seabedFalloff > 0
-        ? createSkyStageRelief(
+        ? createSkyStageFalloff(
             near,
             rim.outline,
             rim.elevations,
@@ -236,13 +332,15 @@ export const SkyBoxStage = ({
   const materials = useMemo(
     () =>
       sky && {
-        surface: createSkyStageMaterial(sky, 'surface'),
+        surface: createSkyStageMaterial(sky, 'surface', {
+          curvedDepth: reliefOn,
+        }),
         bed: createSkyStageMaterial(sky, 'bed', { seeThrough }),
-        reliefBed: createSkyStageMaterial(sky, 'relief-bed', { seeThrough }),
+        falloffBed: createSkyStageMaterial(sky, 'falloff-bed', { seeThrough }),
       },
     // The seabed's detail is compiled in, from the sky's defines: a new one needs new materials.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sky, bedDetail, seeThrough],
+    [sky, bedDetail, seeThrough, reliefOn],
   );
 
   // Apart from the rest, since the occupant's cut is compiled into it too.
@@ -259,17 +357,17 @@ export const SkyBoxStage = ({
     [sky, bedDetail, seeThrough, cutPlane, cutFence],
   );
 
-  // Around an occupant's seabed with no relief to meet it, the flat seabed leaves it a hole.
+  // Around an occupant's seabed with no falloff to meet it, the flat seabed leaves it a hole.
   const bedAround = useMemo(
     () =>
-      hasBed && near && outline && !relief
+      hasBed && near && outline && !falloff
         ? createSkyStageBed(near, outline)
         : null,
-    [hasBed, outline, relief, near],
+    [hasBed, outline, falloff, near],
   );
   useEffect(() => () => bedAround?.dispose(), [bedAround]);
 
-  useEffect(() => () => relief?.dispose(), [relief]);
+  useEffect(() => () => falloff?.dispose(), [falloff]);
 
   useEffect(
     () => () => {
@@ -284,12 +382,13 @@ export const SkyBoxStage = ({
   useLayoutEffect(() => {
     if (!sky) return;
     sky.setOceanStage(extent, far * STAGE_REACH);
-    sky.setFlatSea([minX, minZ, maxX, maxZ]);
+    // Under a relief, flat over the stage's whole area, so its seabed and the relief meet level.
+    sky.setFlatSea(area ?? [minX, minZ, maxX, maxZ]);
     return () => {
       sky.setOceanStage(null);
       sky.setFlatSea(null);
     };
-  }, [sky, extent, far, minX, minZ, maxX, maxZ]);
+  }, [sky, extent, far, area, minX, minZ, maxX, maxZ]);
 
   // The occupant's seabed under the camera, which the sky takes for its own there. Looked
   // up only below the sea surface and inside the occupant's bounds.
@@ -384,8 +483,8 @@ export const SkyBoxStage = ({
   const showWireframe = debug?.wireframe === true;
   const wireMaterials = useMemo(() => {
     if (!showWireframe) return null;
-    const made = {} as Record<SkyBoxStageLayer, MeshBasicMaterial>;
-    for (const layer of Object.keys(WIRE_COLORS) as SkyBoxStageLayer[]) {
+    const made = {} as Record<StagePartLayer, MeshBasicMaterial>;
+    for (const layer of Object.keys(WIRE_COLORS) as StagePartLayer[]) {
       made[layer] = new MeshBasicMaterial({
         color: WIRE_COLORS[layer],
         wireframe: true,
@@ -419,11 +518,13 @@ export const SkyBoxStage = ({
     occupantBed,
     plane,
     rings,
-    relief,
+    falloff,
     bedAround,
+    areaBed,
     seabedMesh,
     wet,
     hasBed,
+    reliefGrid,
     wireMaterials,
     outlineLines,
   ]);
@@ -432,7 +533,7 @@ export const SkyBoxStage = ({
 
   const parts: {
     key: string;
-    layer: SkyBoxStageLayer;
+    layer: StagePartLayer;
     geometry: BufferGeometry;
     material: ShaderMaterial;
     y?: number;
@@ -456,12 +557,12 @@ export const SkyBoxStage = ({
       material: materials.bed,
       y: bedY,
     });
-    if (relief) {
+    if (falloff) {
       parts.push({
-        key: 'relief',
-        layer: 'relief',
-        geometry: relief,
-        material: materials.reliefBed,
+        key: 'falloff',
+        layer: 'falloff',
+        geometry: falloff,
+        material: materials.falloffBed,
       });
     } else if (bedAround) {
       parts.push({
@@ -476,7 +577,7 @@ export const SkyBoxStage = ({
     parts.push({
       key: 'bed',
       layer: 'bed',
-      geometry: plane,
+      geometry: areaBed ?? plane,
       material: materials.bed,
       y: bedY,
     });
@@ -492,6 +593,20 @@ export const SkyBoxStage = ({
 
   return (
     <group ref={root} visible={ocean.visible && ocean.ready}>
+      {relief && reliefGrid && area && sky && (
+        <SkyBoxStageReliefLayer
+          sky={sky}
+          grid={reliefGrid}
+          area={area}
+          falloff={relief.falloff ?? RELIEF_FALLOFF}
+          color={relief.color ?? RELIEF_LAND_COLOR}
+          reach={far * STAGE_REACH}
+          level={level}
+          bedY={bedY}
+          bedDetail={bedDetail}
+          visible={shown('relief')}
+        />
+      )}
       {parts.map(part => (
         <mesh
           key={part.key}

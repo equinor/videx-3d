@@ -10,6 +10,11 @@ import {
   skyDecorators,
   skyOceanFromArgs,
   skyPropsFromArgs,
+  skyReliefArgs,
+  SkyReliefArgs,
+  skyReliefArgTypes,
+  skyReliefFrame,
+  skyReliefFromArgs,
 } from '../../storybook/components/sky-controls';
 import {
   SkyDebugPanel,
@@ -17,6 +22,8 @@ import {
 } from '../../storybook/components/sky-debug-panel';
 import { SkyStoryRendering } from '../../storybook/components/sky-story-rendering';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
+import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
+import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { Sky, SkyLayer } from './Sky';
 import { SkyBoxStage, SkyBoxStageLayer } from './SkyBoxStage';
 import { SkyStageBounds } from './sky-stage';
@@ -35,6 +42,8 @@ const POSITIONS: Record<string, [number, number]> = {
   centre: [0, 0],
   'stage edge': [BOUNDS[2], 0],
   beyond: [30000, 0],
+  // Off the Norwegian coast, from Volve, where the sun's place puts the relief.
+  coast: [200000, -50000],
 };
 
 // A lobed outline, so the stage meets it along turns of both hands.
@@ -97,8 +106,9 @@ const SKY_LAYERS: Record<string, SkyLayer> = {
 const STAGE_LAYERS: SkyBoxStageLayer[] = [
   'surface',
   'bed',
-  'relief',
+  'falloff',
   'occupant-bed',
+  'relief',
 ];
 
 const HIDE_OPTIONS = [...Object.keys(SKY_LAYERS), ...STAGE_LAYERS];
@@ -112,7 +122,8 @@ type StageDebugArgs = {
   wireframe: boolean;
   hide: string[];
   panel: boolean;
-} & SkyArgs;
+} & SkyArgs &
+  SkyReliefArgs;
 
 const StageDebug = (storyArgs: StageDebugArgs) => {
   const seabed = useMemo(createSyntheticSeabed, []);
@@ -143,6 +154,7 @@ const StageDebug = (storyArgs: StageDebugArgs) => {
         <SkyBoxStage
           bounds={BOUNDS}
           occupant={args.occupant ? { seabed } : undefined}
+          relief={skyReliefFromArgs(args, skyReliefFrame(args))}
           debug={{
             outline: args.outline,
             wireframe: args.wireframe,
@@ -163,9 +175,17 @@ const StageDebug = (storyArgs: StageDebugArgs) => {
 const meta = {
   title: 'Spikes/Sky/StageDebug',
   component: StageDebug,
-  decorators: [Canvas3dDecorator, ...skyDecorators],
+  decorators: [
+    Canvas3dDecorator,
+    // The relief's, read from the store by a generator.
+    GeneratorsProviderDecorator,
+    DataProviderDecorator,
+    ...skyDecorators,
+  ],
   parameters: {
     scale: 1000,
+    // Past the horizon from 100 km up (1130 km), so the stage and its relief reach it.
+    far: 3000000,
     // With every layer hidden nothing else clears the frame, and the last one stays up.
     autoClear: true,
     cameraPosition: [9000, 2500, 9000],
@@ -175,9 +195,10 @@ const meta = {
   argTypes: {
     // Every control, advanced and debug ones included.
     ...skyArgTypes({ debug: true }),
+    ...skyReliefArgTypes(),
     occupant: {
       description:
-        'The stage has an occupant, which hands it its own seabed (the synthetic one): the stage draws it as the sea\u2019s, `occupant-bed`, eased into its own by the `relief`. Off, the stage is whole. Changes the stage, unlike the debug options.',
+        'The stage has an occupant, which hands it its own seabed (the synthetic one): the stage draws it as the sea\u2019s, `occupant-bed`, eased into its own by the `falloff`. Off, the stage is whole. Changes the stage, unlike the debug options.',
       table: { category: 'Occupant' },
     },
     showProbes: {
@@ -198,7 +219,7 @@ const meta = {
     },
     tint: {
       description:
-        'Tint each part by what draws it. The sky: its sea, seabed and void red, what it leaves to the stage purple, its surface layer orange. The stage: surface blue, flat seabed green, relief cyan, the occupant\u2019s seabed magenta.',
+        'Tint each part by what draws it. The sky: its sea, seabed and void red, what it leaves to the stage purple, its surface layer orange. The stage: surface blue, flat seabed green, falloff cyan, the occupant\u2019s seabed magenta, the relief amber.',
       table: { category: 'Debug' },
     },
     outline: {
@@ -226,6 +247,7 @@ const meta = {
   },
   args: {
     ...skyArgs,
+    ...skyReliefArgs,
     occupant: true,
     showProbes: false,
     probeSize: 150,

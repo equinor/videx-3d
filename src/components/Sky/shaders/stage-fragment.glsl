@@ -3,6 +3,7 @@
 // drawn at the sea's seabed opacity, and
 // STAGE_OCCUPANT an occupant's own seabed, which the cutaway never cuts. STAGE_SECTION and
 // STAGE_FENCE cut that seabed with the occupant instead, by its own uniforms.
+// STAGE_CURVED_DEPTH has the surface write the depth of the curved sea, for a relief.
 
 #include <common>
 #include <logdepthbuf_pars_fragment>
@@ -13,7 +14,7 @@ uniform vec4 uSkyStageViewport; // the pixels being drawn: x, y, width, height
 
 varying vec3 vStageWorld;
 varying vec3 vViewPosition;
-#ifdef STAGE_RELIEF
+#ifdef STAGE_SHAPED
 varying vec3 vStageNormal;
 #endif
 
@@ -71,10 +72,21 @@ void main() {
   float planeAltitude = altitude + uSkyOceanDepth;
   #endif
   vec3 reach = planeAltitude > 0.0 ? skyOceanReach(cameraPosition, dir, planeAltitude) : vec3(-planeAltitude / max(abs(y), 1e-6), 0.0, 0.0);
-  #ifdef STAGE_RELIEF
+  #ifdef STAGE_SHAPED
   vec3 world = vStageWorld;
   #else
   vec3 world = cameraPosition + dir * reach.x;
+  #endif
+  #ifdef STAGE_CURVED_DEPTH
+  // At the sea's own depth where it falls away with the curve, which a relief beyond the
+  // scene, falling away with it, meets.
+  vec3 viewHit = mat3(viewMatrix) * dir * reach.x;
+    #ifdef USE_LOGARITHMIC_DEPTH_BUFFER
+  gl_FragDepth = vIsPerspective == 0.0 ? gl_FragCoord.z : log2(1.0 - viewHit.z) * logDepthBufFC * 0.5;
+    #else
+  vec4 clipHit = projectionMatrix * vec4(viewHit, 1.0);
+  gl_FragDepth = 0.5 * clipHit.z / clipHit.w + 0.5;
+    #endif
   #endif
   vec2 p = skyOceanPlane(world);
   float texel = max(length(fwidth(p)), 1e-3);
@@ -87,8 +99,8 @@ void main() {
   bool dry = uSkyOceanWater < 0.5;
   float bedAltitude = altitude + uSkyOceanDepth;
   bool staged = skyOceanStaged(dir, cameraPosition, 1.0, false);
-  #ifdef STAGE_RELIEF
-    // Over a dry bed the relief rises in front of the bed plane.
+  #ifdef STAGE_SHAPED
+    // Over a dry bed the shaped bed rises in front of the bed plane.
   if(dry && bedAltitude > 0.0)
     staged = skyOceanOnStage(p, dist, texel);
   #endif
@@ -127,7 +139,7 @@ void main() {
   if(skyDraws || underLid || cutThrough || overCurve)
     discard;
   #else
-    #ifdef STAGE_RELIEF
+    #ifdef STAGE_SHAPED
   vec3 up = normalize(vStageNormal);
   up *= dot(up, uSkyUp) < 0.0 ? -1.0 : 1.0;
   float bedDepth = uSkyOceanLevel - dot(world, uSkyUp);
@@ -155,7 +167,7 @@ void main() {
     // Dry, the fog's density is 0.
     float light = skyOceanLight(0.5 * (bedDepth + max(-altitude, 0.0)));
     float below = skyOceanPathBelowSurface(cameraPosition, world);
-      #ifndef STAGE_RELIEF
+      #ifndef STAGE_SHAPED
     // Beyond the scene both fall away with the curve: the water lies between them, not under the level.
     if(altitude > 0.0 && uSkyCurvature > 0.0)
       below = max(reach.x - surfaceReach.x, 0.0);
@@ -192,7 +204,7 @@ void main() {
   vec3 debugTint = vec3(0.1, 0.35, 1.0);
   #elif defined(STAGE_OCCUPANT)
   vec3 debugTint = vec3(1.0, 0.1, 0.8);
-  #elif defined(STAGE_RELIEF)
+  #elif defined(STAGE_SHAPED)
   vec3 debugTint = vec3(0.0, 0.85, 0.9);
   #else
   vec3 debugTint = vec3(0.15, 0.8, 0.2);

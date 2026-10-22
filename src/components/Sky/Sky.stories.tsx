@@ -9,6 +9,11 @@ import {
   skyDecorators,
   skyOceanFromArgs,
   skyPropsFromArgs,
+  skyReliefArgs,
+  SkyReliefArgs,
+  skyReliefArgTypes,
+  skyReliefFrame,
+  skyReliefFromArgs,
   skySunPosition,
 } from '../../storybook/components/sky-controls';
 import {
@@ -17,6 +22,8 @@ import {
 } from '../../storybook/components/sky-debug-panel';
 import { SkyStoryRendering } from '../../storybook/components/sky-story-rendering';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
+import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
+import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { Tanker } from '../Tanker/Tanker';
 import { Sky } from './Sky';
 import { SkyBoxStage } from './SkyBoxStage';
@@ -32,7 +39,8 @@ type TimelapseArgs = {
   playing: boolean;
   speed: number;
   tanker: boolean;
-} & SkyArgs;
+} & SkyArgs &
+  SkyReliefArgs;
 
 // A line of text over the canvas, outside the scene.
 const ClockOverlay = ({ text }: { text: string }) => {
@@ -79,7 +87,10 @@ const SkyTimelapse = (args: TimelapseArgs) => {
         abyss={skyAbyssFromArgs(args)}
         ocean={{ ...skyOceanFromArgs(args), level: 0, depth: DEPTH }}
       >
-        <SkyBoxStage bounds={BOUNDS} />
+        <SkyBoxStage
+          bounds={BOUNDS}
+          relief={skyReliefFromArgs(args, skyReliefFrame(args))}
+        />
         {tanker}
       </Sky>
       <ClockOverlay
@@ -106,9 +117,17 @@ const hidden = { table: { disable: true } };
 const meta = {
   title: 'Components/Misc/Sky',
   component: SkyTimelapse,
-  decorators: [Canvas3dDecorator, ...skyDecorators],
+  decorators: [
+    Canvas3dDecorator,
+    // The relief's, read from the store by a generator.
+    GeneratorsProviderDecorator,
+    DataProviderDecorator,
+    ...skyDecorators,
+  ],
   parameters: {
     scale: 1000,
+    // Past the horizon from 100 km up (1130 km), so the stage and its relief reach it.
+    far: 3000000,
     // Low over the water, looking south and a little up: the sun crosses the view about noon.
     cameraPosition: [0, 40, -1500],
     cameraTarget: [0, 360, 0],
@@ -116,6 +135,7 @@ const meta = {
   },
   argTypes: {
     ...skyArgTypes(),
+    ...skyReliefArgTypes(),
     playing: {
       control: { type: 'boolean' },
       description: 'Run the clock.',
@@ -161,6 +181,7 @@ const meta = {
   },
   args: {
     ...skyArgs,
+    ...skyReliefArgs,
     playing: true,
     speed: 0.5,
     sunFromTime: true,

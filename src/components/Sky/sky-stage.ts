@@ -44,7 +44,7 @@ export type SkyStageRim = {
 };
 
 /**
- * The rectangle around an occupant that its relief, or the flat seabed around it, fills:
+ * The rectangle around an occupant that its falloff, or the flat seabed around it, fills:
  * the outline's bounds grown by `margin`, held inside `extent`.
  */
 export function skyStageNearBounds(
@@ -78,7 +78,7 @@ export function createSkyStagePlane(
 /**
  * `extent` less `near`, flat at y = 0, as rings each about twice as wide as the one inside
  * it, so the triangles grow with their distance from `near`: huge ones crack where the GPU
- * clips them. Their inner edge is `near`'s perimeter, which the relief and the flat seabed
+ * clips them. Their inner edge is `near`'s perimeter, which the falloff and the flat seabed
  * around an occupant share vertex for vertex.
  *
  * ⚠️ `near` must lie inside `extent`.
@@ -92,7 +92,7 @@ export function createSkyStageRings(
 
 /**
  * The near rectangle less an occupant's `outline`, flat at y = 0: the seabed around the
- * occupant's own where no relief eases into it (see {@link createSkyStageRelief}). It
+ * occupant's own where no falloff eases into it (see {@link createSkyStageFalloff}). It
  * shares its boundary with the rings and with the outline vertex for vertex. Shaded per
  * pixel, so it needs no points inside.
  *
@@ -124,7 +124,7 @@ export function createSkyStageBed(
  *
  * ⚠️ The near rectangle must reach `falloff` past the outline, so its rim is at `bedY`.
  */
-export function createSkyStageRelief(
+export function createSkyStageFalloff(
   near: SkyStageBounds,
   outline: PlanarPolygonGeometry,
   elevations: SkyStageElevations,
@@ -138,25 +138,25 @@ export function createSkyStageRelief(
     Math.max(medianSegmentLength(rings), falloff / 96),
     coarse,
   );
-  const relief = createDelaunayCap([perimeter(near), ...rings], {
+  const geometry = createDelaunayCap([perimeter(near), ...rings], {
     points: gradedPoints(near, rings, fine, coarse, falloff + coarse),
   });
   const index = createOutlineIndex(components, elevations, falloff / 2);
-  const position = relief.getAttribute('position') as BufferAttribute;
+  const position = geometry.getAttribute('position') as BufferAttribute;
   for (let i = 0; i < position.count; i++) {
     position.setY(
       i,
-      reliefHeight(index, position.getX(i), position.getZ(i), bedY, falloff),
+      falloffHeight(index, position.getX(i), position.getZ(i), bedY, falloff),
     );
   }
-  relief.computeVertexNormals();
-  return relief;
+  geometry.computeVertexNormals();
+  return geometry;
 }
 
 /**
  * The rim of an occupant's seabed: its boundary loops, grouped into outer rings and
- * holes, with their heights. A relief built on it meets the seabed vertex for vertex (see
- * {@link createSkyStageRelief}).
+ * holes, with their heights. A falloff built on it meets the seabed vertex for vertex (see
+ * {@link createSkyStageFalloff}).
  */
 export function skyStageRim(seabed: SeabedMesh): SkyStageRim {
   const { positions } = seabed;
@@ -482,7 +482,7 @@ function createOutlineIndex(
 }
 
 // The occupant's edge, blended along the outline, eased to the flat seabed by distance.
-function reliefHeight(
+function falloffHeight(
   index: OutlineIndex,
   x: number,
   z: number,
@@ -608,7 +608,7 @@ function openRing(ring: Coordinates2D): Vec2[] {
 }
 
 /** Which part of a stage a material draws. */
-export type SkyStagePart = 'surface' | 'bed' | 'relief-bed' | 'occupant-bed';
+export type SkyStagePart = 'surface' | 'bed' | 'falloff-bed' | 'occupant-bed';
 
 /** How a stage's seabed part is drawn (see {@link createSkyStageMaterial}). */
 export type SkyStageMaterialOptions = {
@@ -616,9 +616,15 @@ export type SkyStageMaterialOptions = {
   seeThrough?: boolean;
   /** an occupant bed's: the occupant's own cut, in the scene frame */
   cut?: CutUniforms;
+  /**
+   * the surface's: write the depth of the sea where it falls away with the Earth's curve,
+   * rather than of the flat geometry, so a relief beyond the scene meets it there
+   */
+  curvedDepth?: boolean;
 };
 
-function oceanDefines(sky: SkyMaterial) {
+/** The defines a material drawing the sky's sea needs, from the sky's. */
+export function skyOceanDefines(sky: SkyMaterial) {
   const defines: Record<string, unknown> = { SKY_OCEAN: '', SKY_ABYSS: '' };
   for (const key of SKY_SHARED_DEFINES) {
     if (sky.defines[key] !== undefined) defines[key] = sky.defines[key];
@@ -631,7 +637,7 @@ function oceanDefines(sky: SkyMaterial) {
  * material's uniform objects, so it follows every change to the sky and its water.
  *
  * The sky shows what lies beyond the seabed through any gap in the stage (see
- * `skyOceanStaged`). The `relief` beds are shaded where the geometry lies rather than on
+ * `skyOceanStaged`). The `falloff` bed is shaded where the geometry lies rather than on
  * the flat seabed, and so is an `occupant` bed (see {@link createSkyStageSeabed}), which
  * a cutaway never cuts: it only takes the water over it. It is cut instead with the
  * occupant, by the `cut` it hands over (its uniform objects, in the scene frame). A
@@ -644,14 +650,15 @@ function oceanDefines(sky: SkyMaterial) {
 export function createSkyStageMaterial(
   sky: SkyMaterial,
   part: SkyStagePart,
-  { seeThrough = false, cut }: SkyStageMaterialOptions = {},
+  { seeThrough = false, cut, curvedDepth = false }: SkyStageMaterialOptions = {},
 ) {
-  const defines = oceanDefines(sky);
+  const defines = skyOceanDefines(sky);
   const occupant = part === 'occupant-bed';
   const surface = part === 'surface';
   if (surface) defines.STAGE_SURFACE = '';
   else defines.STAGE_BED = '';
-  if (occupant || part === 'relief-bed') defines.STAGE_RELIEF = '';
+  if (surface && curvedDepth) defines.STAGE_CURVED_DEPTH = '';
+  if (occupant || part === 'falloff-bed') defines.STAGE_SHAPED = '';
   if (occupant) defines.STAGE_OCCUPANT = '';
   if (!surface && seeThrough) defines.STAGE_SEE_THROUGH = '';
 
@@ -695,7 +702,7 @@ export function createSkySurfaceMaterial(sky: SkyMaterial) {
     vertexShader: skyVertexShader,
     fragmentShader: skySurfaceShader,
     uniforms: sky.uniforms,
-    defines: oceanDefines(sky),
+    defines: skyOceanDefines(sky),
     side: DoubleSide,
     depthTest: false,
     depthWrite: false,

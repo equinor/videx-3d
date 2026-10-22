@@ -50,6 +50,10 @@ import {
   skyDecorators,
   skyOceanFromArgs,
   skyPropsFromArgs,
+  skyReliefArgs,
+  SkyReliefArgs,
+  skyReliefArgTypes,
+  skyReliefFromArgs,
 } from '../../storybook/components/sky-controls';
 import { RendererToneMapping } from '../../storybook/components/tone-mapping-controls';
 import { chunkTimings } from '../../storybook/data/chunk-timings';
@@ -123,6 +127,8 @@ const origin = storyArgs.origin as Vec2;
 const surfaceOptions = storyArgs.surfaceOptions as Record<string, string>;
 
 const crs = new CRS(getProjectionDefFromUtmZone(utmZone), origin, 'utm');
+// Where the relief lies around the field: the UtmArea's map.
+const reliefFrame = { projection: crs.utmDef, origin: crs.originUtm };
 
 // Outside the canvas, read by the progress decorator: what a host would hold.
 const progressStore = createChunkProgressStore();
@@ -511,7 +517,8 @@ type FieldColumnStoryProps = {
   stageMargin: number;
   seabedFalloff: number;
 } & ChunkProgressArgs &
-  SkyArgs;
+  SkyArgs &
+  SkyReliefArgs;
 
 type ColumnBed = {
   mesh: SeabedMesh;
@@ -1498,6 +1505,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
               onStage: setStage,
             }}
             seabedFalloff={props.seabedFalloff}
+            relief={skyReliefFromArgs(props, reliefFrame)}
           />
         </Sky>
       )}
@@ -1559,6 +1567,7 @@ type Story = StoryObj<typeof FieldColumnStory>;
 export const Default: Story = {
   args: {
     ...skyArgs,
+    ...skyReliefArgs,
     // Surfaces
     outline: 'field',
     cropSize: 7,
@@ -1707,6 +1716,7 @@ export const Default: Story = {
   argTypes: {
     // Behind `sky`; the story draws through its own OIT pipeline always.
     ...skyArgTypes({ shownIf: 'sky' }),
+    ...skyReliefArgTypes('sky'),
     pipeline: { table: { disable: true } },
     sky: {
       description:
