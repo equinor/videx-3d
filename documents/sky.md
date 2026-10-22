@@ -116,28 +116,70 @@ Revised Ed.*, Astronomical Data Center, NSSDC/ADC; CDS catalogue V/50.
 
 ## Clouds
 
-`clouds` (default off) adds a deck of still clouds, seen from below and lit by the sun,
-or the moon at night:
+`clouds` (default on: a thin band along the horizon) adds still clouds, lit by the sun, or
+the moon at night: a deck seen from below, and a band of distant ones along the horizon (see
+below):
 
 ```tsx
-<Sky clouds={{ coverage: 0.5, altitude: 6000, scale: 4000, seed: 3 }} />
+<Sky clouds={{ layers: 'both', coverage: 0.5, altitude: 6000, scale: 4000, seed: 3 }} />
 ```
 
-`coverage` is how much of the sky they cover, `scale` the size of the clouds and
-`softness` the width of their edges; `seed` picks another pattern. They fade into the
-haze toward the horizon, and out as the camera climbs to the deck.
+`coverage` is how much of the sky they cover (0 for none; below 0.2 they thin out fast),
+`altitude` the height of their base, `scale` the size of the clouds and `softness` the
+width of their edges; `seed` picks another pattern. `opacity` (default 1) is how much they
+stand out from the sky behind them, for a softer look; the sun, moon and stars stay hidden
+behind them as if opaque, and only from 0.5 down less so. They fade into the haze toward the
+horizon. Close up the deck would show it is flat, so it fades out from about 0.7 of its
+altitude from the camera, gone by 0.3. Its own pattern breaks up that distance, so wisps go
+before cores and the fade has no clean edge: from sea level nothing fades, and climbing to
+the deck clears it from overhead out toward the horizon.
 
 A flat deck shows no parallax: climbing only zooms it, moving only slides it, so it reads
-as a painted ceiling. Two cheap departures from the plane give it depth. `curved` (default
-on) lays it on a sphere about the Earth's centre, `SKY_EARTH_RADIUS` plus `altitude` in
-radius, so it bends down toward the horizon and is not squeezed into streaks there. A
-tighter dome looks curved further up but puts the horizon a finite distance away: clouds
-then slide over its rim as the camera moves instead of shrinking into the horizon.
+as a painted ceiling. Two cheap departures from the plane give it depth. The deck lies on
+a sphere about the Earth's centre, `SKY_EARTH_RADIUS` plus `altitude` in radius, so it
+bends down toward the horizon and is not squeezed into streaks there; it costs a square
+root more than a plane. A tighter dome looks curved further up but puts the horizon a
+finite distance away: clouds then slide over its rim as the camera moves instead of
+shrinking into the horizon.
 `thickness` (world units, default 1500; 0 for a sheet) makes it a slab: each cloud's
 thicker parts are looked up further along the view ray, so they shift against its outline
 as the view moves. The shading is the same either way. Marching the slab for real sides
 was tried and dropped: a 2D pattern on a vertical wall streaks, and its silhouettes cut
 hard.
+
+### The band on the horizon
+
+`layers` picks what is drawn: `'deck'`, the deck alone out to the horizon; `'band'` (the
+default), only a band of distant clouds along the horizon; or `'both'`. Switching is instant.
+
+The band is fixed to directions, as the stars are: its clouds are `bandDistance` off (default
+75 km) and more, so the camera's moves barely shift them. That is what clouds near the horizon
+do, and it is where a deck, flat or not, gives itself away: squeezed into streaks that slide as
+the camera moves. Its nearest clouds have their base at `altitude` and their tops up to
+`thickness` above it, seen side-on: 4.6° and 5.7° from sea level by default. Below that base,
+ever further ones overlap densely down to the horizon; above it, their tops vary. They are as
+wide as clouds of `scale` look at that distance and as tall as ones of `thickness`, so a higher
+`altitude` raises the band and fills it with more of them rather than stretching them. They
+take the same `coverage`, `softness`, `opacity`, `color` and `seed` as the deck's, and are lit
+the same way (both share `skyCloudColor`). The band melts into the air's haze over its
+distance, so it clears as the camera climbs and thickens toward the horizon. Climbing, it sinks
+by up to 1.5° and its clouds flatten a little, quickly at first and then hardly at all, and it
+stays in view above the deck.
+
+With both, the deck is drawn along each view ray turned down, by the hinge at the horizon and
+not at all straight up, so that its own horizon sits at the band's base, where the deck is at
+the band's distance: it never crosses the band. Where the view runs within about 9° of parallel
+to it, it dissolves, wisps first, rather than being squeezed toward that line.
+
+The numbers are fixed (`SKY_CLOUD_*` in `sky.glsl`). Tried and dropped along the way:
+
+- narrowing the band's clouds as the camera climbs: a ring of directions can only gain
+  clouds by sampling a new pattern, which churns;
+- squashing the band onto the horizon as the camera climbs, and sinking it linearly: both
+  read as the band moving with the camera;
+- a soft warp of the deck down to the real horizon instead of the hinge;
+- rings or rows of clouds between band and deck, at distances of their own, each shifting at
+  its rate: cardboard cut-outs.
 
 Turning `clouds` on or off recompiles the sky. To switch them often, keep `clouds` set
 and toggle `enabled` instead: they stay compiled in, so it is instant, and while hidden
@@ -146,7 +188,11 @@ they cost a single branch.
 The sun shows through all but the thickest parts: a softened disc through thin cloud,
 a glow around it and bright silver edges where cloud thins in front of it. The moon does
 the same at night; the stars are hidden. The moon takes over as the sun's light ends
-(−6°) and fades in as the scene's moonlight does, so the hand-over shows nothing.
+(−6°) and fades in as the scene's moonlight does, so the hand-over shows nothing. When the
+output is tone mapped, the sunlight on them is doubled (`SKY_CLOUD_HDR_SUNLIGHT`), as the
+sun's disc is brightened: at noon their sunlit parts would otherwise be only 1.5 times the
+sky's brightness, and tone mapping squeezes them into it. Their shaded sides and moonlight
+are left as they are.
 
 ⚠️ `altitude` is measured along `up` from the world origin, not from sea level. The
 clouds are part of the background only: the water does not reflect them, and they do

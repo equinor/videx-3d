@@ -4,6 +4,7 @@ import type { SkyProps } from '../../components/Sky/Sky';
 import {
   skyDefaults,
   type SkyAbyss,
+  type SkyCloudLayers,
   type SkyClouds,
   type SkyMoon,
   type SkyObserver,
@@ -54,11 +55,12 @@ export type SkyArgs = {
   sunTwilight: number;
   // Clouds
   clouds: boolean;
+  cloudLayers: SkyCloudLayers;
   cloudCoverage: number;
   cloudAltitude: number;
   cloudScale: number;
   cloudThickness: number;
-  cloudCurved: boolean;
+  cloudBandDistance: number;
   cloudSoftness: number;
   cloudOpacity: number;
   cloudSeed: number;
@@ -155,12 +157,13 @@ export const skyArgs: SkyArgs = {
   sunRays: skyDefaults.sun.rays,
   sunShimmer: skyDefaults.sun.shimmer,
   sunTwilight: skyDefaults.sun.twilight,
-  clouds: false,
+  clouds: true,
+  cloudLayers: skyDefaults.clouds.layers,
   cloudCoverage: skyDefaults.clouds.coverage,
   cloudAltitude: skyDefaults.clouds.altitude,
   cloudScale: skyDefaults.clouds.scale,
   cloudThickness: skyDefaults.clouds.thickness,
-  cloudCurved: skyDefaults.clouds.curved,
+  cloudBandDistance: skyDefaults.clouds.bandDistance,
   cloudSoftness: skyDefaults.clouds.softness,
   cloudOpacity: skyDefaults.clouds.opacity,
   cloudSeed: skyDefaults.clouds.seed,
@@ -334,11 +337,12 @@ export const skySunFromArgs = (args: SkyArgs): SkySun => ({
 /** A Sky's `clouds` from {@link SkyArgs}. */
 export const skyCloudsFromArgs = (args: SkyArgs): SkyClouds | false =>
   args.clouds && {
+    layers: args.cloudLayers,
     coverage: args.cloudCoverage,
     altitude: args.cloudAltitude,
     scale: args.cloudScale,
     thickness: args.cloudThickness,
-    curved: args.cloudCurved,
+    bandDistance: args.cloudBandDistance,
     softness: args.cloudSoftness,
     opacity: args.cloudOpacity,
     seed: args.cloudSeed,
@@ -632,14 +636,22 @@ const allSkyArgTypes = (): ArgTypes<SkyArgs> => ({
   ),
   clouds: toggle(
     CLOUDS,
-    'A deck of still clouds, seen from below and lit by the sun, or the moon at night. They fade out as the camera climbs to the deck, and the water does not reflect them.',
+    'Still clouds, lit by the sun, or the moon at night: a deck overhead and a band of distant ones along the horizon. The deck fades out close to the camera, so climbing to it clears it from overhead outward, and the water does not reflect them.',
   ),
+  cloudLayers: {
+    control: { type: 'inline-radio' },
+    options: ['deck', 'band', 'both'],
+    description:
+      'The deck alone, out to the horizon; the band alone; or both, the deck meeting the band at its base.',
+    if: { arg: 'clouds' },
+    table: { category: CLOUDS },
+  },
   cloudCoverage: {
-    ...range(0, 1, 0.01, CLOUDS, 'How much of the sky they cover.'),
+    ...range(0, 1, 0.01, CLOUDS, 'How much of the sky they cover; 0 for none.'),
     if: { arg: 'clouds' },
   },
   cloudAltitude: {
-    ...range(500, 30000, 100, CLOUDS, 'Height of the deck, in metres.'),
+    ...range(500, 30000, 100, CLOUDS, 'Height of their base, in metres.'),
     if: { arg: 'clouds' },
   },
   cloudScale: {
@@ -652,14 +664,17 @@ const allSkyArgTypes = (): ArgTypes<SkyArgs> => ({
       5000,
       50,
       CLOUDS,
-      'Depth of the deck, in metres: thicker parts shift against their outlines as the view moves. 0 for a flat sheet.',
+      'Depth of the clouds, in metres: how far the band\u2019s tops reach above their base, and how far the deck\u2019s thicker parts shift against their outlines as the view moves.',
     ),
     if: { arg: 'clouds' },
   },
-  cloudCurved: {
-    ...toggle(
+  cloudBandDistance: {
+    ...range(
+      20000,
+      200000,
+      1000,
       CLOUDS,
-      'The deck curves with the Earth, down toward the horizon. Off, it is a flat plane.',
+      'How far off the band\u2019s clouds are, in metres: further, they sit lower, look smaller and are hazier.',
     ),
     if: { arg: 'clouds' },
   },
@@ -668,7 +683,13 @@ const allSkyArgTypes = (): ArgTypes<SkyArgs> => ({
     if: { arg: 'clouds' },
   },
   cloudOpacity: {
-    ...range(0, 1, 0.01, CLOUDS, 'Their opacity.'),
+    ...range(
+      0,
+      1,
+      0.01,
+      CLOUDS,
+      'How much they stand out from the sky behind them. The sun, moon and stars stay hidden behind them, from 0.5 down less so.',
+    ),
     if: { arg: 'clouds' },
   },
   cloudSeed: {

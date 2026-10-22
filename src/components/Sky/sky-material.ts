@@ -158,7 +158,7 @@ export class SkyMaterial extends ShaderMaterial {
         uSkyClouds: new Uniform(new Vector4()),
         uSkyCloudsColor: new Uniform(new Vector4(1, 1, 1, 1)),
         uSkyCloudsSeed: new Uniform(new Vector2()),
-        uSkyCloudsShape: new Uniform(new Vector2()),
+        uSkyCloudsShape: new Uniform(new Vector4()),
         uSkyAir: new Uniform(new Vector3()),
         uSkyOceanLevel: new Uniform(ocean.level),
         uSkyOceanDepth: new Uniform(ocean.depth),
@@ -542,8 +542,10 @@ export class SkyMaterial extends ShaderMaterial {
       MathUtils.clamp(clouds.softness, 0, 1),
     );
     this.uniforms.uSkyCloudsShape.value.set(
-      clouds.curved ? SKY_EARTH_RADIUS + Math.max(clouds.altitude, 1) : 0,
+      SKY_EARTH_RADIUS + Math.max(clouds.altitude, 1),
       Math.max(clouds.thickness, 0),
+      { deck: 0, band: 1, both: 2 }[clouds.layers],
+      Math.max(clouds.bandDistance, 1),
     );
     const color = new Color(clouds.color);
     this.uniforms.uSkyCloudsColor.value.set(

@@ -262,7 +262,7 @@ export type SkyProps = {
   moon?: boolean | SkyMoon;
   /** stars at night, and with an `observer` the planets (see {@link SkyStars}). Default true */
   stars?: boolean | SkyStars;
-  /** a deck of still clouds (see {@link SkyClouds}). Default false */
+  /** still clouds: a band along the horizon, a deck overhead, or both (see {@link SkyClouds}). Default true */
   clouds?: boolean | SkyClouds;
   /** the air thinning with height, and hazing the far sea (see {@link SkyAir}). Default true */
   air?: boolean | SkyAir;
@@ -348,7 +348,7 @@ export const Sky = ({
   sunLight = true,
   moon = true,
   stars = true,
-  clouds = false,
+  clouds = true,
   air = true,
   hdr,
   renderOrder = -1e9,
@@ -410,8 +410,10 @@ export const Sky = ({
   const cloudCoverage = cloudsOptions?.coverage ?? cloudDefaults.coverage;
   const cloudAltitude = cloudsOptions?.altitude ?? cloudDefaults.altitude;
   const cloudScale = cloudsOptions?.scale ?? cloudDefaults.scale;
+  const cloudLayers = cloudsOptions?.layers ?? cloudDefaults.layers;
   const cloudThickness = cloudsOptions?.thickness ?? cloudDefaults.thickness;
-  const cloudCurved = cloudsOptions?.curved ?? cloudDefaults.curved;
+  const cloudBandDistance =
+    cloudsOptions?.bandDistance ?? cloudDefaults.bandDistance;
   const cloudSoftness = cloudsOptions?.softness ?? cloudDefaults.softness;
   const cloudOpacity =
     cloudsOptions?.enabled === false
@@ -796,8 +798,9 @@ export const Sky = ({
       coverage: cloudCoverage,
       altitude: cloudAltitude,
       scale: cloudScale,
+      layers: cloudLayers,
       thickness: cloudThickness,
-      curved: cloudCurved,
+      bandDistance: cloudBandDistance,
       softness: cloudSoftness,
       opacity: cloudOpacity,
       color: cloudColor,
@@ -842,8 +845,9 @@ export const Sky = ({
     cloudCoverage,
     cloudAltitude,
     cloudScale,
+    cloudLayers,
     cloudThickness,
-    cloudCurved,
+    cloudBandDistance,
     cloudSoftness,
     cloudOpacity,
     cloudColor,

@@ -74,27 +74,38 @@ export type SkyStars = {
   latitude?: number;
 };
 
+/** Which of a {@link Sky}'s cloud layers are drawn (see {@link SkyClouds}). */
+export type SkyCloudLayers = 'deck' | 'band' | 'both';
+
 /**
- * A deck of still clouds over a {@link Sky}, seen from below and lit by the sun, or the
- * moon at night. They fade out as the camera climbs to the deck, and are not reflected
- * by the water.
+ * Still clouds over a {@link Sky}, lit by the sun, or the moon at night, and not reflected by
+ * the water: a deck overhead, on a sphere about the Earth's centre ({@link SKY_EARTH_RADIUS}
+ * plus `altitude` in radius), and a band of distant clouds along the horizon (`layers`). The
+ * deck fades out close to the camera, wisps before cores, so climbing to it clears it from
+ * overhead outward.
  */
 export type SkyClouds = {
   /** false hides them, still compiled in, so showing them again is instant. Default true */
   enabled?: boolean;
-  /** how much of the sky they cover, from 0 to 1. Default 0.4 */
+  /**
+   * `'deck'` the deck alone, out to the horizon; `'band'` the band alone; `'both'` the band,
+   * with the deck meeting it at its base and dissolving where seen nearly edge-on. Switching
+   * is instant. Default 'band'
+   */
+  layers?: SkyCloudLayers;
+  /** how much of the sky they cover, from 0 (none) to 1. Default 0.2 */
   coverage?: number;
-  /** height of the deck along `up`, in world units. Default 6000 */
+  /** height of their base along `up`, in world units. Default 6000 */
   altitude?: number;
   /** size of the clouds, in world units. Default 4000 */
   scale?: number;
-  /** depth of the deck, in world units: its thicker parts shift against their outlines as the view moves, so it reads as a slab rather than a sheet. 0 for a sheet. Default 1500 */
+  /** depth of the clouds, in world units: the band's tops reach this far above their base, and the deck's thicker parts shift against their outlines as the view moves, so it reads as a slab rather than a sheet. Default 1500 */
   thickness?: number;
-  /** curve the deck with the Earth, on a sphere {@link SKY_EARTH_RADIUS} plus `altitude` in radius: it bends down toward the horizon, which it still reaches only far off; false for a flat plane. Default true */
-  curved?: boolean;
+  /** how far off the band's clouds are, in world units: further, they sit lower, look smaller and are hazier. Default 75000 */
+  bandDistance?: number;
   /** width of their edges, from 0 (crisp) to 1. Default 0.25 */
   softness?: number;
-  /** Default 0.9 */
+  /** how much they stand out from the sky behind them, from 0 (none: no clouds) to 1; the sun, moon and stars stay hidden behind them as if opaque, from 0.5 down less so. Default 1 */
   opacity?: number;
   /** their colour in full light. Default `#ffffff` */
   color?: ColorRepresentation;
@@ -407,13 +418,14 @@ export const skyDefaults = {
   moon: { intensity: 0.3, color: '#c4cfdf', size: 0.6, glow: 0.3 },
   stars: { brightness: 1, density: 0.5, latitude: 60 },
   clouds: {
-    coverage: 0.4,
+    layers: 'band' as SkyCloudLayers,
+    coverage: 0.2,
     altitude: 6000,
     scale: 4000,
     thickness: 1500,
-    curved: true,
+    bandDistance: 75000,
     softness: 0.25,
-    opacity: 0.9,
+    opacity: 1,
     color: '#ffffff',
     seed: 0,
   },
