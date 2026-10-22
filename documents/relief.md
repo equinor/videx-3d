@@ -39,8 +39,9 @@ texture size allows over the area it covers.
 
 The `skyRelief` generator (`generateSkyRelief`) reads the grid where the generators run,
 so the stage needs a `GeneratorsProvider`. It resamples the grid onto the scene with
-`resampleRelief` (sdk): around the stage, out to the camera's far plane, as an RG half
-float texture of height times coverage and coverage, with its mip levels.
+`resampleRelief` (sdk): around the stage, out to the camera's far plane and at least
+2000 km (the sea's horizon from some 300 km up), as an RG half float texture of height
+times coverage and coverage, with its mip levels.
 
 `frame` says where the scene lies on the map: the projection it is drawn in and the map
 coordinates of its origin, as a `UtmArea` places a scene (scene X east, scene Z south).
@@ -64,9 +65,10 @@ server into `public/relief/`, outside `public/data`, which `generate-data` repla
   before (`seabedFalloff`).
 - Under a relief the sea stays flat over the disc holding the whole area, and the stage's
   sea surface writes the depth of the curved sea, so land beyond the scene meets it there.
-- `color`: a colour is the land's, the seabed taking the sea's; `'ramp'` colours land
-  and seabed by height with the earth colour ramp, the sea's level between its blues and
-  its greens.
+- `color`: a colour is the land's, the seabed taking the sea's; `'ramp'` colours the land
+  by height — green lowland, umber at 600 m, grey high ground at 1500 m, eased between —
+  and
+  darkens the sea's seabed colour with depth, to half 600 m below the stage's own seabed.
 - The coast follows the height map per pixel, not the triangles: they miss the curved
   sea by up to tens of metres where they are coarse, so the map decides which shows.
   Seabed stays behind the sea over it, and where the view would meet the sea over land
@@ -79,15 +81,23 @@ server into `public/relief/`, outside `public/data`, which `generate-data` repla
 
 ## The far plane
 
-The stage, and the relief with it, reach 80% of the camera's far plane; past that the
-sky's own sea takes over, with no land, and the curved sea's depth is clamped. Set the
-far plane past the horizon from the highest the camera goes: about 360 km from 10 km up,
-760 km from 45 km and 1130 km from 100 km (the sky stories use 3000 km). With a
-logarithmic depth buffer that costs almost nothing (about 1 m of depth resolution at
-1000 km); with a standard one, a far plane that far from a near plane of centimetres has
-no resolution left, so use a logarithmic or reversed depth buffer. However far the far
-plane, the relief is drawn no farther than the curved sea's horizon from the camera,
-plus the highest relief's own.
+The stage, and the relief's mesh with it, reach 80% of the camera's far plane, measured
+along the curved sea; past that the sky's own sea takes over, and the curved sea's depth
+is clamped. Where the sea's
+horizon lies farther, a fullscreen layer at the far plane draws the relief on past the
+mesh: what the map holds above the sea (without water, the seabed too), shaded and faded
+through the air as the mesh is, but flat on the curved sea, so mountains past the mesh
+show no outline against the sky.
+It draws only where nothing nearer is drawn, and is hidden while the mesh reaches the
+horizon.
+
+For mountains on the horizon, set the far plane past it from the highest the camera goes:
+about 360 km from 10 km up, 760 km from 45 km and 1130 km from 100 km (the sky stories
+use 3000 km). With a logarithmic depth buffer that costs almost nothing (about 1 m of
+depth resolution at 1000 km); with a standard one, a far plane that far from a near plane
+of centimetres has no resolution left, so use a logarithmic or reversed depth buffer.
+However far the far plane, the relief is drawn no farther than the curved sea's horizon
+from the camera, plus the highest relief's own.
 
 ## Level of detail
 
@@ -102,7 +112,8 @@ nodes, about 200k triangles.
 ## Limits
 
 - Beyond the stage's reach (see The far plane) the sky's own flat seabed and sea take
-  over. A dry seabed view shows that edge.
+  over, with the relief drawn flat over them: its land, and without water its seabed too.
+  A dry seabed view shows that edge.
 - The sea's curve is measured from the scene along each view, so the farther the camera
   is from the scene, the more the ground under it falls away: hundreds of kilometres out,
   a camera a few kilometres up is far above the land below it.

@@ -1104,7 +1104,7 @@ export function skyReliefArgTypes(
       control: { type: 'inline-radio' },
       options: ['flat', 'ramp'],
       description:
-        'The land flat, the seabed as the sea\u2019s; or both by height, with the earth colour ramp.',
+        'The land flat, the seabed as the sea\u2019s; or the land by height, the sea\u2019s seabed darkening with depth.',
       table: { category: SEA },
       if: { arg: 'relief' },
     },

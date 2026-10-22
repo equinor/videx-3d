@@ -1,6 +1,12 @@
 import { useFrame } from '@react-three/fiber';
-import { useEffect, useMemo } from 'react';
-import { ColorRepresentation, InstancedBufferAttribute, Vector2, Vector4 } from 'three';
+import { useEffect, useMemo, useRef } from 'react';
+import {
+  ColorRepresentation,
+  InstancedBufferAttribute,
+  Mesh,
+  Vector2,
+  Vector4,
+} from 'three';
 import type { ReliefGrid } from '../../sdk/geometries/relief-grid';
 import {
   createTerrainLod,
@@ -9,13 +15,14 @@ import {
   terrainLodMorph,
 } from '../../sdk/geometries/terrain-lod';
 import {
+  createSkyReliefFarMaterial,
   createSkyReliefMaterial,
   createSkyReliefPatch,
   createSkyReliefTexture,
   SKY_RELIEF_CELLS,
   SKY_RELIEF_LEVELS,
 } from './sky-relief';
-import type { SkyMaterial } from './sky-material';
+import { createSkyGeometry, type SkyMaterial } from './sky-material';
 import { SKY_EARTH_RADIUS } from './sky-model';
 import type { SkyStageBounds } from './sky-stage';
 
@@ -37,7 +44,8 @@ type SkyBoxStageReliefLayerProps = {
 
 /**
  * A stage's relief: the patch drawn once per node the level of detail picks from the
- * camera, every frame.
+ * camera, every frame. Past its reach, while the sea's horizon lies farther, a fullscreen
+ * layer draws the land flat on the sea.
  */
 export const SkyBoxStageReliefLayer = ({
   sky,
@@ -64,6 +72,17 @@ export const SkyBoxStageReliefLayer = ({
     [sky, texture, grid, ramp, bedDetail],
   );
   useEffect(() => () => material.dispose(), [material]);
+  const farMaterial = useMemo(
+    () => createSkyReliefFarMaterial(material),
+    [material],
+  );
+  useEffect(() => () => farMaterial.dispose(), [farMaterial]);
+  useEffect(() => {
+    material.uniforms.uReliefReach.value = reach;
+  }, [material, reach]);
+  const farGeometry = useMemo(() => createSkyGeometry(), []);
+  useEffect(() => () => farGeometry.dispose(), [farGeometry]);
+  const farMesh = useRef<Mesh>(null);
   useEffect(() => {
     if (!ramp) material.uniforms.uReliefLandColor.value.set(color);
   }, [material, ramp, color]);
@@ -104,6 +123,7 @@ export const SkyBoxStageReliefLayer = ({
   useFrame(({ camera }) => {
     const { x, y, z } = camera.position;
     seen.reach = lod.reach;
+    let beyond = true;
     if (sky.curvedHorizon) {
       // The farthest the curved sea's horizon lies along any bearing (it curves away from
       // the disc the sea is flat over), and past it the highest relief's own horizon.
@@ -114,7 +134,9 @@ export const SkyBoxStageReliefLayer = ({
         Math.sqrt(2 * SKY_EARTH_RADIUS * Math.max(y - level, 0)) +
         Math.sqrt(2 * SKY_EARTH_RADIUS * Math.max(grid.max, 0));
       seen.reach = Math.min(lod.reach, horizon + lod.nodeSize);
+      beyond = horizon > lod.reach;
     }
+    if (farMesh.current) farMesh.current.visible = visible && beyond;
     const count = selectTerrainNodes(
       [x, y, z],
       seen,
@@ -131,11 +153,21 @@ export const SkyBoxStageReliefLayer = ({
   });
 
   return (
-    <mesh
-      geometry={geometry}
-      material={material}
-      frustumCulled={false}
-      visible={visible}
-    />
+    <>
+      <mesh
+        geometry={geometry}
+        material={material}
+        frustumCulled={false}
+        visible={visible}
+      />
+      {/* Shown each frame. */}
+      <mesh
+        ref={farMesh}
+        geometry={farGeometry}
+        material={farMaterial}
+        frustumCulled={false}
+        visible={false}
+      />
+    </>
   );
 };

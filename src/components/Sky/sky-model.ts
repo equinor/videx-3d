@@ -210,7 +210,7 @@ export type SkyOceanWater = Omit<
  * continues it without a seam.
  */
 export type SkySeabed = {
-  /** Default `#b8a06a` */
+  /** Default `#8c8573` */
   color?: ColorRepresentation;
   /** specular highlight colour. Default `#1a1a1a`, as on `ChunkMaterial` */
   specular?: ColorRepresentation;
@@ -463,7 +463,7 @@ export const skyDefaults = {
     level: 0,
     depth: 100,
     seabed: {
-      color: '#b8a06a',
+      color: '#8c8573',
       specular: '#1a1a1a',
       shininess: 24,
       ambient: [1.35, 0.5],

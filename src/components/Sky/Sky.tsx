@@ -287,6 +287,9 @@ export type SkyProps = {
 
 const DEFAULT_ENVIRONMENT_RESOLUTION = 128;
 const DEFAULT_CAPTURE_INTERVAL = 250;
+// Seconds the scene's light probe takes to ease most of the way to a new bake: about as
+// long as bakes come apart while the sky changes.
+const PROBE_EASE = 0.15;
 const DEFAULT_CAPTURE_MAX_WAIT = 1000;
 // Narrowest edge, in world units: a fade of none is undefined in the shader.
 const CUTAWAY_MIN_EDGE = 0.01;
@@ -684,7 +687,7 @@ export const Sky = ({
     probe: new Set<SkyZone>(),
   });
   const zoneProbes = useRef<Partial<Record<SkyZone, SphericalHarmonics3>>>({});
-  const appliedProbe = useRef<SphericalHarmonics3 | null>(null);
+  const appliedProbe = useRef<SkyZone | null>(null);
   const zoneInView = useRef<SkyZone>('air');
   const [schedule] = useState(() => new SkyBakeSchedule());
   // One readback at a time: they are slow to come back, and piled up they stall.
@@ -1590,10 +1593,17 @@ export const Sky = ({
       if (map && scene.environment !== map) scene.environment = map;
       scene.environmentIntensity = environmentIntensity * dim;
     }
-    const zoneProbe = zoneProbes.current[zone] ?? zoneProbes.current.subsurface;
-    if (zoneProbe && appliedProbe.current !== zoneProbe) {
-      probe.sh.copy(zoneProbe);
-      appliedProbe.current = zoneProbe;
+    const probeZone = zoneProbes.current[zone] ? zone : 'subsurface';
+    const zoneProbe = zoneProbes.current[probeZone];
+    if (zoneProbe) {
+      // Eased toward each new bake of the zone, so a moving sun does not step the light; a
+      // zone's first, or another zone's, at once.
+      if (appliedProbe.current !== probeZone) {
+        probe.sh.copy(zoneProbe);
+        appliedProbe.current = probeZone;
+      } else {
+        probe.sh.lerp(zoneProbe, 1 - Math.exp(-delta / PROBE_EASE));
+      }
     }
     probe.intensity = probeIntensity * dim;
   });

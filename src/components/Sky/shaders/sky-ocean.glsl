@@ -206,12 +206,15 @@ float skyOceanLight(float depth) {
 // above the water, else the seabed), more than `inset` pixels inside its edge. The stage
 // and the background both take this test. `sure` adds a margin that holds for the
 // pixel's neighbours too, so a quad can skip work by it. ⚠️ Derivatives.
+// From above a level, its reach is measured on the curved sea, as a relief's is: on the
+// flat plane it would run on past the far plane near the horizon.
 bool skyOceanStaged(vec3 dir, vec3 origin, float inset, bool sure) {
   float altitude = dot(origin, uSkyUp) - uSkyOceanLevel;
   float bedAltitude = altitude + uSkyOceanDepth;
   float y = dot(dir, uSkyUp);
   bool surface = altitude > 0.0 && uSkyOceanWater > 0.5;
-  float t = abs(surface ? altitude : bedAltitude) / max(abs(y), 1e-6);
+  float height = surface ? altitude : bedAltitude;
+  float t = height > 0.0 ? skyOceanReach(origin, dir, height).x : -height / max(abs(y), 1e-6);
   vec2 p = skyOceanPlane(origin + dir * t);
   // Selected, not scaled: fwidth(t) is infinite at the horizon.
   float dy = sure ? 2.0 * fwidth(y) : 0.0;
@@ -469,10 +472,6 @@ vec4 skyOceanSurfaceLayer(vec3 dir, vec3 origin, float blend) {
     return vec4(0.0);
 
   float y = dot(dir, uSkyUp);
-  // Where a stage draws it is told on the flat plane, as the stage's geometry lies.
-  float plane = altitude / max(abs(y), 1e-6);
-  vec2 onPlane = skyOceanPlane(origin + dir * plane);
-  float planeTexel = max(length(fwidth(onPlane)), 1e-3);
   vec3 reach = skyOceanReach(origin, dir, altitude);
   float t = reach.x;
   vec2 p = skyOceanPlane(origin + dir * t);
@@ -481,15 +480,15 @@ vec4 skyOceanSurfaceLayer(vec3 dir, vec3 origin, float blend) {
   // Skipped where hidden with a margin, so a quad's pixels that still shade are hidden too
   // and the derivatives they take across the skipped ones never show.
   float over = y - skyHorizonAt(dir, origin, altitude);
-  if(over >= 2.0 * fwidth(y) || skyOceanOnStage(onPlane, plane + 2.0 * fwidth(plane), 4.0 * planeTexel))
+  if(over >= 2.0 * fwidth(y) || skyOceanOnStage(p, t + 2.0 * fwidth(t), 4.0 * texel))
     return vec4(0.0);
   SkyOceanWave wave = skyOceanWave(p, texel, t);
   wave.normal = skyOceanTilt(wave.normal, dir, reach.y);
   vec4 surface = skyOceanSurfaceOf(wave, p, texel, dir, blend);
   // The band a pixel inside the stage's edge too, which the stage leaves to this layer:
-  // the same test on both sides, so every pixel is drawn exactly once. All zero, so a
-  // colour from those derivatives cannot reach the blend.
-  if(reach.z > 0.5 || skyOceanOnStage(onPlane, plane, planeTexel))
+  // the same test on both sides (skyOceanStaged), so every pixel is drawn exactly once. All
+  // zero, so a colour from those derivatives cannot reach the blend.
+  if(reach.z > 0.5 || skyOceanOnStage(p, t, texel))
     return vec4(0.0);
   return skyOceanCutawayMark(skyOceanThroughAir(surface, origin, dir, t, blend), origin + dir * t, rimAt);
 }

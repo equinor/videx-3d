@@ -19,5 +19,10 @@ void main() {
     vFogDepth = 1e5;
   #endif
 
+  #ifdef SKY_AT_FAR
+  // On the far plane, so a depth test leaves it only where nothing nearer is drawn.
+  gl_Position = vec4(position.xy, 1.0, 1.0);
+  #else
   gl_Position = vec4(position.xy, 0.0, 1.0);
+  #endif
 }

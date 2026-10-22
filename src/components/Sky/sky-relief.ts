@@ -16,10 +16,10 @@ import {
   Vector2,
   Vector4,
 } from 'three';
-import { colorRampPalette } from '../../common/color-ramps';
 import type { ReliefGrid } from '../../sdk/geometries/relief-grid';
 import fragmentShader from './shaders/relief-fragment.glsl';
 import vertexShader from './shaders/relief-vertex.glsl';
+import skyVertexShader from './shaders/sky-vertex.glsl';
 import type { SkyMaterial } from './sky-material';
 import { skyOceanDefines } from './sky-stage';
 
@@ -29,8 +29,6 @@ export const SKY_RELIEF_CELLS = 32;
 export const SKY_RELIEF_MAX_NODES = 1024;
 /** The most levels of detail a relief has (its shader's morph table). */
 export const SKY_RELIEF_LEVELS = 16;
-// The earth ramp's row in `colorRampTexture`.
-const EARTH_RAMP = 3;
 
 /** A {@link ReliefGrid} as an RG half float texture with its mip levels. The caller disposes it. */
 export function createSkyReliefTexture(grid: ReliefGrid): DataTexture {
@@ -96,7 +94,8 @@ export function createSkyReliefPatch(
  * sky material's uniform objects, so it follows every change to the sky and its water; a
  * change to the sky's defines needs a new one.
  *
- * @param color `'ramp'` colours by height with the earth ramp; a colour, the land flat
+ * @param color `'ramp'` colours the land by height and darkens the sea's seabed colour with
+ *   depth; a colour, the land flat
  */
 export function createSkyReliefMaterial(
   sky: SkyMaterial,
@@ -120,6 +119,7 @@ export function createSkyReliefMaterial(
   uniforms.uReliefMapSize = new Uniform(new Vector2(first.width, first.height));
   uniforms.uReliefArea = new Uniform(new Vector4());
   uniforms.uReliefFalloff = new Uniform(0);
+  uniforms.uReliefReach = new Uniform(1e30);
   uniforms.uReliefCells = new Uniform(SKY_RELIEF_CELLS);
   uniforms.uReliefMorph = new Uniform(
     Array.from({ length: SKY_RELIEF_LEVELS }, () => new Vector2()),
@@ -127,8 +127,6 @@ export function createSkyReliefMaterial(
   uniforms.uReliefDy = new Uniform(0);
   if (color === 'ramp') {
     defines.RELIEF_RAMP = '';
-    uniforms.uReliefPalette = new Uniform(colorRampPalette(EARTH_RAMP));
-    uniforms.uReliefRange = new Uniform(new Vector2(grid.min, grid.max));
   } else {
     uniforms.uReliefLandColor = new Uniform(new Color(color));
   }
@@ -138,5 +136,24 @@ export function createSkyReliefMaterial(
     uniforms,
     defines,
     lights: true,
+    dithering: true,
+  });
+}
+
+/**
+ * The land past a relief's mesh, for a far plane short of the sea's horizon: what
+ * `relief`'s map holds above the sea past its `uReliefReach`, flat on the curved sea, on a
+ * fullscreen layer (`createSkyGeometry`) at the far plane, so only where nothing nearer is
+ * drawn. It shares `relief`'s uniform objects.
+ */
+export function createSkyReliefFarMaterial(relief: ShaderMaterial) {
+  return new ShaderMaterial({
+    vertexShader: skyVertexShader,
+    fragmentShader,
+    uniforms: relief.uniforms,
+    defines: { ...relief.defines, RELIEF_FAR: '', SKY_AT_FAR: '' },
+    depthWrite: false,
+    lights: true,
+    dithering: true,
   });
 }

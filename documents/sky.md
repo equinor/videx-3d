@@ -305,7 +305,9 @@ map, the frame, the environment's resolution), never with the sky.
 The sky is baked again when it changes, once it has been still for `capture.interval`
 (default 250 ms): a slider being dragged bakes nothing on the way, so the sky follows it at
 once and only the light it casts waits. A sky that keeps changing (a timelapse) is baked
-at least every `capture.maxWait` (default 1000 ms).
+at least every `capture.maxWait` (default 1000 ms). The scene's light probe eases toward
+each new bake of its zone over a fraction of a second, so the light does not step as the
+sun moves; another zone's is swapped in at once. The environment map is swapped in.
 
 `subsurface` is the light where the sky's own means nothing: below the seabed, and
 wherever the sky is not drawn (`background: false`). By default it is a dark backdrop

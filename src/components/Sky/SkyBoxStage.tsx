@@ -48,6 +48,8 @@ const MIN_NEAR_MARGIN = 1000;
 // A relief's flat land, a muted olive: rock and heath seen through the air.
 const RELIEF_LAND_COLOR = '#837f63';
 const RELIEF_FALLOFF = 10000;
+// The least a relief's map reaches around the scene: the sea's horizon from some 300 km up.
+const RELIEF_RADIUS = 2000000;
 
 // Without OIT, see-through parts draw in this order: the scene's own (most of it under the
 // sea), then the water over everything.
@@ -136,8 +138,9 @@ export type SkyBoxStageRelief = {
   /** where the scene lies on the map; `reliefFrameAt` places a scene by its longitude and latitude */
   frame: ReliefFrame;
   /**
-   * `'ramp'` colours land and seabed by height with the earth colour ramp; a colour is the
-   * land's, the seabed taking the sea's. Default a muted olive
+   * `'ramp'` colours the land by height — green lowland, umber upland, grey high ground —
+   * and darkens the sea's seabed colour with depth; a colour is the land's, the seabed
+   * taking the sea's. Default a muted olive
    */
   color?: 'ramp' | ColorRepresentation;
   /** how far past the stage's own area it rises from the stage's flat seabed, in world units. Default 10000 */
@@ -303,10 +306,11 @@ export const SkyBoxStage = ({
       return;
     }
     let current = true;
-    // Out to the far plane around the scene: no farther than the stage reaches.
+    // Out to the far plane around the scene, and past a nearer one to the horizon, where the
+    // relief's far layer draws it.
     generator(reliefId, JSON.parse(frameKey) as ReliefFrame, {
       center: [centerX, centerZ],
-      radius: far,
+      radius: Math.max(far, RELIEF_RADIUS),
     }).then(grid => {
       if (current) setReliefGrid(grid ?? null);
     });

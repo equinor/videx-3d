@@ -19,6 +19,8 @@
 #endif
 // Share of the foam lost once its detail goes sub-pixel.
 #define OCEAN_FOAM_FAR_FADE 0.85
+// The foam noise's spread about its mean, which stands in for it once sub-pixel.
+#define OCEAN_FOAM_SPREAD 0.2
 // The sea's mean square slope for a wind (m/s), the small waves included (Cox and Munk).
 #define OCEAN_COX_MUNK(wind) (0.003 + 0.00512 * (wind))
 
@@ -314,7 +316,8 @@ float oceanContactFoam(vec2 p, float t) {
 // thresholded against a noise texture, with the threshold's transition width
 // tracking the pixel footprint: edges stay crisp (and get crisper as the camera
 // approaches) yet remain anti-aliased at distance. A finer foam octave fades in up
-// close for sharp filaments. `foamFar` -> 1 once the foam detail is sub-pixel.
+// close for sharp filaments. `foamFar` -> 1 once the foam detail is sub-pixel, where
+// the share of foam a pixel holds is drawn instead: an even tint, none without coverage.
 float oceanFoam(vec2 np, float texel, float coverage, out float foamFar) {
   float foamNoise = oceanFbm(np * 2.0 + 3.7);
   float fineK = uDetailScale * 8.0 * 6.2831853;
@@ -340,7 +343,9 @@ float oceanFoam(vec2 np, float texel, float coverage, out float foamFar) {
   // high-contrast white cutout.
   float foamAaw = clamp(fwidth(foamTex) + 0.015, 0.01, 0.5);
   float edge = foamAaw + closeness * 0.2;
-  float foam = smoothstep(foamT - edge, foamT + edge, foamTex);
+  // ⚠️ Sub-pixel, fwidth measures the aliasing: the edge it widens let foam through at no coverage.
+  float spread = mix(edge, OCEAN_FOAM_SPREAD, foamFar);
+  float foam = smoothstep(foamT - spread, foamT + spread, mix(foamTex, 0.5, foamFar));
 
   // Up close, modulate the foam fill with a finer bubble noise so it reads as
   // clumpy froth instead of a flat sheet of white — this breaks up the uniform
