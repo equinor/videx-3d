@@ -16,6 +16,7 @@ uniform float uSkyMoonlight; // 0 until the daylight is gone, 1 by nautical twil
 uniform vec4 uSkyAirLight;
 uniform vec3 uSkyAirSunColor;
 uniform vec3 uSkyAir; // its ground along up, the height it thins by e over (0 for none), and its visibility there (0 for no haze)
+uniform vec2 uSkyHaze; // the low haze layer: the height it thins by e over, and its share of the haze at the ground
 uniform float uSkyCurvature; // 1 over the Earth's radius; 0 for a flat sea
 uniform vec4 uSkyFlat; // the disc about the scene the sea stays flat over: its centre (world) and radius
 
@@ -49,17 +50,34 @@ float skyAirBelow() {
   return 1.0 - exp(-max(dot(cameraPosition, uSkyUp) - uSkyAir.x, 0.0) / uSkyAir.y);
 }
 
-// How much the air hazes what lies `dist` along `dir` from `origin`: it thins with height,
-// so a ray through high air hazes far less than one along the sea.
+// The same of the haze, the low layer by its share: the camera soon rises out of most of it.
+float skyHazeBelow() {
+  if(uSkyAir.y <= 0.0 || uSkyHaze.x <= 0.0)
+    return skyAirBelow();
+  float layer = 1.0 - exp(-max(dot(cameraPosition, uSkyUp) - uSkyAir.x, 0.0) / uSkyHaze.x);
+  return mix(skyAirBelow(), layer, uSkyHaze.y);
+}
+
+// The mean density, relative to its ground's, of air thinning by e every `scale` along a ray
+// from `start` over its ground that climbs `rise`.
+float skyAirMean(float start, float rise, float scale) {
+  float climb = (max(start + rise, 0.0) - start) / scale;
+  return exp(-start / scale) * (abs(climb) > 1e-4 ? (1.0 - exp(-climb)) / climb : 1.0);
+}
+
+// How much the air hazes what lies `dist` along `dir` from `origin`: the low haze layer and
+// the clear air above it, each thinning with height, so a ray down from high up crosses the
+// layer only at its end, and one along the sea hazes most.
 float skyAirHaze(vec3 origin, vec3 dir, float dist) {
   if(uSkyAir.z <= 0.0)
     return 0.0;
   float start = max(dot(origin, uSkyUp) - uSkyAir.x, 0.0);
   float mean = 1.0;
   if(uSkyAir.y > 0.0) {
-    // The mean density between the heights the ray runs between.
-    float climb = (max(start + dot(dir, uSkyUp) * dist, 0.0) - start) / uSkyAir.y;
-    mean = exp(-start / uSkyAir.y) * (abs(climb) > 1e-4 ? (1.0 - exp(-climb)) / climb : 1.0);
+    float rise = dot(dir, uSkyUp) * dist;
+    float clear = skyAirMean(start, rise, uSkyAir.y);
+    float layer = uSkyHaze.x > 0.0 ? skyAirMean(start, rise, uSkyHaze.x) : clear;
+    mean = mix(clear, layer, uSkyHaze.y);
   }
   return 1.0 - exp(-dist * mean / uSkyAir.z);
 }
@@ -198,10 +216,10 @@ float skySpace(vec3 dir, float height) {
 vec3 skySurfaceAt(vec3 dir, float blend, float height) {
   float y = skyOverHorizon(dot(dir, uSkyUp), skyHorizonAt(dir, cameraPosition, height));
   SkyLight seen = skyLight(skyLightShare(dir, height));
-  // Higher up, the sky deepens and its haze closes onto the horizon.
+  // Higher up, the sky deepens, and its haze closes onto the horizon as the camera rises out of it.
   float below = skyAirBelow();
   vec3 zenith = mix(uSkyZenithColor, skyDeepZenith(), below * below);
-  vec3 sky = mix(uSkyHorizonColor, zenith, pow(max(y, 0.0), mix(0.5, 0.3, below)));
+  vec3 sky = mix(uSkyHorizonColor, zenith, pow(max(y, 0.0), mix(0.5, 0.3, skyHazeBelow())));
   vec3 ground = mix(uSkyGroundColor, uSkyNadirColor, sqrt(max(-y, 0.0)));
   // The sky carries on a little below the horizon, reading as distant haze.
   vec3 color = mix(sky, ground, smoothstep(0.0, blend, -y));

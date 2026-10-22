@@ -111,6 +111,7 @@ vec2 skyOceanCutawayGrip(vec2 rimAt) {
 // `surface` seen through the air, fading into the air's light: the horizon's colour along the
 // view's bearing toward the horizon; looking down, the sky overhead as seen from the sea,
 // which also has no bearing, so the sun's side cannot show as a wedge where all of them meet.
+// At twilight the horizon's glow keeps to the far sea, and the air below is the dusk overhead.
 vec4 skyOceanThroughAir(vec4 surface, vec3 origin, vec3 dir, float dist, float blend) {
   float haze = skyAirHaze(origin, dir, dist);
   if(haze <= 0.0)
@@ -118,7 +119,8 @@ vec4 skyOceanThroughAir(vec4 surface, vec3 origin, vec3 dir, float dist, float b
   vec3 level = dir - uSkyUp * dot(dir, uSkyUp);
   float n2 = dot(level, level);
   vec3 horizon = n2 > 1e-8 ? skyHorizonColor(level * inversesqrt(n2), blend) : vec3(0.0);
-  float toward = n2 * n2;
+  float dusk = min(uSkyTwilight.x * uSkyTwilight.y, 1.0);
+  float toward = pow(n2, 2.0 + 14.0 * dusk);
   if(toward < 0.999)
     horizon = mix(skySurfaceAt(uSkyUp, blend, 0.0), horizon, toward);
   float alpha = haze + (1.0 - haze) * surface.a;

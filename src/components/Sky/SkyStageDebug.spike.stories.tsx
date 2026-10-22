@@ -11,6 +11,10 @@ import {
   skyOceanFromArgs,
   skyPropsFromArgs,
 } from '../../storybook/components/sky-controls';
+import {
+  SkyDebugPanel,
+  useSkyTimelapse,
+} from '../../storybook/components/sky-debug-panel';
 import { SkyStoryRendering } from '../../storybook/components/sky-story-rendering';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { Sky, SkyLayer } from './Sky';
@@ -27,6 +31,11 @@ const RADIUS = 3000;
 const RINGS = 40;
 const SEGMENTS = 192;
 const BOUNDS: SkyStageBounds = [-8000, -8000, 8000, 8000];
+const POSITIONS: Record<string, [number, number]> = {
+  centre: [0, 0],
+  'stage edge': [BOUNDS[2], 0],
+  beyond: [30000, 0],
+};
 
 // A lobed outline, so the stage meets it along turns of both hands.
 const rimRadius = (angle: number) =>
@@ -102,15 +111,25 @@ type StageDebugArgs = {
   outline: boolean;
   wireframe: boolean;
   hide: string[];
+  panel: boolean;
 } & SkyArgs;
 
-const StageDebug = (args: StageDebugArgs) => {
+const StageDebug = (storyArgs: StageDebugArgs) => {
   const seabed = useMemo(createSyntheticSeabed, []);
-  const hide = args.hide ?? [];
+  const hide = storyArgs.hide ?? [];
+  const { args, timelapse } = useSkyTimelapse(storyArgs);
 
   return (
     <>
       <SkyStoryRendering args={args} />
+      {args.panel && (
+        <SkyDebugPanel
+          args={args}
+          level={LEVEL}
+          positions={POSITIONS}
+          timelapse={timelapse}
+        />
+      )}
       <Sky
         {...skyPropsFromArgs(args)}
         abyss={skyAbyssFromArgs(args)}
@@ -199,6 +218,11 @@ const meta = {
         'Layers not to draw. Only their visibility changes: nothing is rebuilt or baked again.',
       table: { category: 'Debug' },
     },
+    panel: {
+      description:
+        'Buttons over the view: the camera\u2019s height, moves to set altitudes, places and views, and a timelapse of the sun from the date and place.',
+      table: { category: 'Debug' },
+    },
   },
   args: {
     ...skyArgs,
@@ -209,6 +233,7 @@ const meta = {
     outline: false,
     wireframe: false,
     hide: [],
+    panel: true,
   },
 } satisfies Meta<typeof StageDebug>;
 

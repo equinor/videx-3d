@@ -69,6 +69,8 @@ export type SkyArgs = {
   // Sky
   drawSky: boolean;
   air: boolean;
+  airHaze: number;
+  airHazeHeight: number;
   skyZenith: string;
   skyHorizon: string;
   skyGround: string;
@@ -173,6 +175,8 @@ export const skyArgs: SkyArgs = {
   cloudBandSink: skyDefaults.clouds.bandSink,
   drawSky: true,
   air: true,
+  airHaze: skyDefaults.air.haze,
+  airHazeHeight: skyDefaults.air.hazeHeight,
   skyZenith: skyDefaults.colors.zenith,
   skyHorizon: skyDefaults.colors.horizon,
   skyGround: skyDefaults.colors.ground,
@@ -415,7 +419,7 @@ export const skyPropsFromArgs = (args: SkyArgs) =>
     moon: skyMoonFromArgs(args),
     stars: skyStarsFromArgs(args),
     clouds: skyCloudsFromArgs(args),
-    air: args.air,
+    air: args.air && { haze: args.airHaze, hazeHeight: args.airHazeHeight },
     colors: {
       zenith: args.skyZenith,
       horizon: args.skyHorizon,
@@ -718,6 +722,26 @@ const allSkyArgTypes = (): ArgTypes<SkyArgs> => ({
     SKY,
     'The air thins with height: climbing, the sky deepens and its haze closes onto the horizon. Seen from low down, the far sea fades into the horizon.',
   ),
+  airHaze: {
+    ...range(
+      0,
+      1,
+      0.01,
+      SKY,
+      'How much of the haze at sea level lies in a low layer rather than in the clear air: from above it, the sea below is clearer and the layer shows as a bright band along the horizon.',
+    ),
+    if: { arg: 'air' },
+  },
+  airHazeHeight: {
+    ...range(
+      200,
+      5000,
+      50,
+      SKY,
+      'Height over which the low haze thins by e, in metres: a hazier or a warmer day lifts it.',
+    ),
+    if: { arg: 'air' },
+  },
   skyZenith: color(SKY, 'Straight up.'),
   skyHorizon: color(SKY, 'Just above the horizon.'),
   skyGround: color(SKY, 'Just below the horizon.'),

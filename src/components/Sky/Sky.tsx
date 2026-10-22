@@ -474,6 +474,8 @@ export const Sky = ({
   const airVisibility = airOptions
     ? (airOptions.visibility ?? skyDefaults.air.visibility)
     : 0;
+  const airHaze = airOptions?.haze ?? skyDefaults.air.haze;
+  const airHazeHeight = airOptions?.hazeHeight ?? skyDefaults.air.hazeHeight;
   // The air's ground: the sea's surface, or the void's lid.
   const airLevel = hasOcean ? oceanLevel : hasAbyss ? abyssLevel : 0;
   const oceanDepth = oceanOptions?.depth ?? oceanDefaults.depth;
@@ -817,7 +819,13 @@ export const Sky = ({
       seed: cloudSeed,
       bandSink: cloudBandSink,
     });
-    material.setAir(airLevel, airScaleHeight, airVisibility);
+    material.setAir(
+      airLevel,
+      airScaleHeight,
+      airVisibility,
+      airHaze,
+      airHazeHeight,
+    );
     material.zenithColor = zenith;
     material.horizonColor = horizon;
     material.groundColor = ground;
@@ -867,6 +875,8 @@ export const Sky = ({
     airLevel,
     airScaleHeight,
     airVisibility,
+    airHaze,
+    airHazeHeight,
     zenith,
     horizon,
     ground,

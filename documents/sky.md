@@ -211,16 +211,27 @@ zenith deepens toward a saturated blue (a grey sky stays grey) and the haze at t
 horizon closes onto it. Seen from low down, the far sea fades into the horizon's
 colour; from high up it stays clear much further out. Looking down, the haze takes the
 colour of the sky overhead instead, so from high up the sea seen through all the air below
-turns a deeper blue.
+turns a deeper blue. At twilight the horizon's glow keeps to the far sea, and the air
+below takes the dusk overhead sooner, so the sea under a high camera stays dark blue
+rather than the colour of the sunset.
 
 ```tsx
-<Sky air={{ scaleHeight: 8000, visibility: 60000 }} />
+<Sky air={{ scaleHeight: 8000, visibility: 60000, haze: 0.75, hazeHeight: 1500 }} />
 ```
 
-`scaleHeight` is the height over which the air thins by e (0 for no change with
+`scaleHeight` is the height over which the clear air thins by e (0 for no change with
 height), and `visibility` the distance over which the air at sea level hazes the sea
-by e (0 for no haze). Heights are measured from the sea's `level` (the void's lid
-without a sea). `air: false` turns both off.
+by e (0 for no haze). Most of that haze lies low, in a layer thinning by e every
+`hazeHeight` (default 1.5 km), `haze` its share of it at sea level (default 0.75); the rest
+is the clear air. Along the sea at sea level the two together haze as one, but from above
+the layer a view down crosses it only at its end, so the sea below is clearer and bluer,
+while a view toward the horizon runs a long way through it: the layer shows edge-on as a
+bright band along the horizon, and the clear sky above it closes onto the horizon as the
+camera rises out of it. The far clouds, seen through little of it, stay crisp. Real haze
+grows over the day, as the sun mixes the air, and is thicker in summer: neither changes by
+itself here, but a host can drive `haze` and `hazeHeight` with the time or the season.
+Heights are measured from the sea's `level` (the void's lid without a sea). `air: false`
+turns all of it off.
 
 Above the tropopause the sky darkens toward space, black from the top of the stratosphere
 (`SKY_SPACE_START` 12 km, `SKY_SPACE` 50 km), by how little air each view passes: the lowest

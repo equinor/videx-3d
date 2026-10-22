@@ -117,13 +117,18 @@ export type SkyClouds = {
 
 /**
  * The air over a {@link Sky}, thinning with height: higher up the sky deepens and its haze
- * closes onto the horizon, and seen from low down the far sea fades into the horizon.
+ * closes onto the horizon, and seen from low down the far sea fades into the horizon. Most of
+ * its haze lies low, in a layer that thins far faster than the clear air above it.
  */
 export type SkyAir = {
-  /** height over which the air thins by e, in world units; 0 for no change with height. Default 8000 */
+  /** height over which the clear air thins by e, in world units; 0 for no change with height. Default 8000 */
   scaleHeight?: number;
   /** distance over which the air at sea level hazes the sea by e, in world units; 0 for no haze. Default 60000 */
   visibility?: number;
+  /** how much of that haze at sea level is the low haze layer rather than the clear air, 0 to 1. Default 0.75 */
+  haze?: number;
+  /** height over which the low haze thins by e, in world units: a hazier day, or a warmer one, lifts it. Default 1500 */
+  hazeHeight?: number;
 };
 
 /**
@@ -432,7 +437,7 @@ export const skyDefaults = {
     seed: 0,
     bandSink: false,
   },
-  air: { scaleHeight: 8000, visibility: 60000 },
+  air: { scaleHeight: 8000, visibility: 60000, haze: 0.75, hazeHeight: 1500 },
   colors: {
     zenith: '#6f8fb3',
     horizon: '#c9d3dc',

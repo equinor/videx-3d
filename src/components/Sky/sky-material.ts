@@ -163,6 +163,9 @@ export class SkyMaterial extends ShaderMaterial {
         uSkyCloudsShape: new Uniform(new Vector4()),
         uSkyCloudsSink: new Uniform(0),
         uSkyAir: new Uniform(new Vector3()),
+        uSkyHaze: new Uniform(
+          new Vector2(skyDefaults.air.hazeHeight, skyDefaults.air.haze),
+        ),
         uSkyCurvature: new Uniform(
           skyDefaults.curvedHorizon ? 1 / SKY_EARTH_RADIUS : 0,
         ),
@@ -588,10 +591,21 @@ export class SkyMaterial extends ShaderMaterial {
   }
 
   /**
-   * The air: the height of its ground along {@link up}, the height over which it thins by e
-   * (0 for none) and the distance over which it hazes the sea at that ground (0 for none).
+   * The air: the height of its ground along {@link up}, the height over which its clear air thins
+   * by e (0 for none) and the distance over which it hazes the sea at that ground (0 for none);
+   * how much of that haze is the low haze layer (0 to 1), and the height it thins by e over.
    */
-  setAir(level: number, scaleHeight: number, visibility: number) {
+  setAir(
+    level: number,
+    scaleHeight: number,
+    visibility: number,
+    haze: number = skyDefaults.air.haze,
+    hazeHeight: number = skyDefaults.air.hazeHeight,
+  ) {
+    this.uniforms.uSkyHaze.value.set(
+      Math.max(hazeHeight, 0),
+      MathUtils.clamp(haze, 0, 1),
+    );
     this.uniforms.uSkyAir.value.set(
       level,
       Math.max(scaleHeight, 0),

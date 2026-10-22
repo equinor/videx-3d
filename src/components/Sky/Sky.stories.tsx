@@ -1,6 +1,6 @@
-import { useFrame, useThree } from '@react-three/fiber';
+import { useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   skyAbyssFromArgs,
   skyArgs,
@@ -11,6 +11,10 @@ import {
   skyPropsFromArgs,
   skySunPosition,
 } from '../../storybook/components/sky-controls';
+import {
+  formatSkyHour,
+  useSunClock,
+} from '../../storybook/components/sky-debug-panel';
 import { SkyStoryRendering } from '../../storybook/components/sky-story-rendering';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { Tanker } from '../Tanker/Tanker';
@@ -29,12 +33,6 @@ type TimelapseArgs = {
   speed: number;
   tanker: boolean;
 } & SkyArgs;
-
-const formatHour = (hour: number) => {
-  const minutes = Math.floor(hour * 60) % (24 * 60);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`;
-};
 
 // A line of text over the canvas, outside the scene.
 const ClockOverlay = ({ text }: { text: string }) => {
@@ -63,19 +61,7 @@ const ClockOverlay = ({ text }: { text: string }) => {
 };
 
 const SkyTimelapse = (args: TimelapseArgs) => {
-  const [hour, setHour] = useState(args.sunHour);
-  const clock = useRef(args.sunHour);
-  // A new start hour sets the clock.
-  useEffect(() => {
-    clock.current = args.sunHour;
-    setHour(args.sunHour);
-  }, [args.sunHour]);
-  useFrame((_, delta) => {
-    if (!args.playing || args.speed <= 0) return;
-    // Capped, so the frame after a stall does not skip hours.
-    clock.current = (clock.current + Math.min(delta, 0.1) * args.speed) % 24;
-    setHour(clock.current);
-  });
+  const { hour } = useSunClock(args.sunHour, args.playing, args.speed);
 
   const sunArgs = { ...args, sunFromTime: true, sunHour: hour };
   const { elevation } = skySunPosition(sunArgs);
@@ -97,7 +83,7 @@ const SkyTimelapse = (args: TimelapseArgs) => {
         {tanker}
       </Sky>
       <ClockOverlay
-        text={`${args.sunDate}  ${formatHour(hour)} solar time  sun ${elevation.toFixed(1)}\u00b0`}
+        text={`${args.sunDate}  ${formatSkyHour(hour)} solar time  sun ${elevation.toFixed(1)}\u00b0`}
       />
     </>
   );
