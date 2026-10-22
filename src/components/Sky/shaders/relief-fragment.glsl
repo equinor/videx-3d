@@ -121,10 +121,15 @@ void main() {
   float altitude = dot(cameraPosition, uSkyUp) - uSkyOceanLevel;
   bool water = uSkyOceanWater > 0.5;
   float sea = water && altitude > 0.0 ? skyOceanReach(cameraPosition, dir, altitude).x : 0.0;
+  // The cutaway takes the seabed in front of the view, and the water over it, as over the
+  // stage's own; the land stands.
+  float cutaway = skyOceanCutawayAlong(cameraPosition, vReliefWorld);
+  float seabed = under ? skyOceanCutawaySeabed(cutaway) : 1.0;
   if(under && water) {
     // Through the water over it, from where the view enters it.
     color *= waterFogDim(-height, uSkyOceanFogDensity);
-    float path = altitude > 0.0 ? max(dist - sea, 0.0) : skyOceanPathBelowSurface(cameraPosition, vReliefWorld);
+    float below = altitude > 0.0 ? max(dist - sea, 0.0) : skyOceanPathBelowSurface(cameraPosition, vReliefWorld);
+    float path = skyOceanCutawayPath(below, skyOceanCutawayWall(cameraPosition, dir), skyOceanCutawayWater(cutaway));
     color = skyOceanFog(color, path, skyOceanLight(0.5 * (-height + max(-altitude, 0.0))));
     if(altitude > 0.0 && sea > dist)
       gl_FragDepth = reliefDepthAt(dir, sea * 1.0001);
@@ -133,6 +138,9 @@ void main() {
     if(water && sea < dist && reliefGround((cameraPosition + dir * sea).xz, lod, margin, bed).x >= 0.0)
       gl_FragDepth = reliefDepthAt(dir, sea * 0.9999);
   }
+  // Bitten through: the void, as the background draws it through the gap.
+  if(seabed < 1.0)
+    color = mix(skyOceanThroughCutaway(skyAbyssGradient(dot(dir, uSkyUp)), dir, cameraPosition), color, seabed);
 
   gl_FragColor = vec4(color, 1.0);
   gl_FragColor.rgb = skyDebugTint(gl_FragColor.rgb, vec3(0.95, 0.6, 0.1));
@@ -142,6 +150,6 @@ void main() {
   #include <colorspace_fragment>
 
   // Once the derivatives above are taken.
-  if(reliefInArea(xz))
+  if(reliefInArea(xz) || seabed < 1e-3)
     discard;
 }
