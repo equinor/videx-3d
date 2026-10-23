@@ -514,7 +514,7 @@ vec3 skyClouds(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
 #ifdef SKY_OCEAN
 // Where a stage's real geometry draws the sea instead: xy min, zw max in the wave plane.
 uniform vec4 uSkyOceanStage;
-// How far from the camera the stage draws it: short of the far plane, which clips it.
+// How far from the camera the stage draws it: out to the far plane.
 uniform float uSkyOceanStageReach;
 
 // Coordinates in the wave plane the Ocean works in: world X/Z in the default frame.

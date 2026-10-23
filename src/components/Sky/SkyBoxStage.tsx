@@ -41,9 +41,6 @@ import {
   skyStageRim,
 } from './sky-stage';
 
-// Share of the far plane the stage draws the sea out to; the sky draws beyond, where
-// the far plane would clip the stage.
-const STAGE_REACH = 0.8;
 // Room between the outline and the rings when there is no falloff to make room for.
 const MIN_NEAR_MARGIN = 1000;
 // A relief's flat land, a dark green-grey, which keeps its colour through the air.
@@ -386,7 +383,9 @@ export const SkyBoxStage = ({
 
   useLayoutEffect(() => {
     if (!sky) return;
-    sky.setOceanStage(extent, far * STAGE_REACH);
+    // Out to the far plane (stage-vertex keeps its vertices inside): any shorter, and the
+    // scene between would show through the sky's sea, drawn on the far plane.
+    sky.setOceanStage(extent, far);
     // Under a relief, flat over the stage's whole area, so its seabed and the relief meet level.
     sky.setFlatSea(area ?? [minX, minZ, maxX, maxZ]);
     return () => {
@@ -616,7 +615,7 @@ export const SkyBoxStage = ({
           area={area}
           falloff={relief.falloff ?? RELIEF_FALLOFF}
           color={relief.color ?? RELIEF_LAND_COLOR}
-          reach={far * STAGE_REACH}
+          reach={far}
           level={level}
           bedY={bedY}
           bedDetail={bedDetail}

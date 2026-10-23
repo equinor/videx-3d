@@ -93,7 +93,9 @@ export class SkyMaterial extends ShaderMaterial {
   private bedDetail: SurfaceDetail | undefined;
   private bedDetailKey = '';
   // The scene's flat sea (setFlatSea), before followFlatSea moves it.
-  private flatSea = new Vector4();
+  private get flatSea(): Vector4 {
+    return this.uniforms.uSkyStageFlat.value;
+  }
   private starTextures: { cells: DataTexture; list: DataTexture } | null = null;
   private observing = false;
   private starsLoading = false;
@@ -175,6 +177,7 @@ export class SkyMaterial extends ShaderMaterial {
           skyDefaults.curvedHorizon ? 1 / SKY_EARTH_RADIUS : 0,
         ),
         uSkyFlat: new Uniform(new Vector4()),
+        uSkyStageFlat: new Uniform(new Vector4()),
         uSkyOceanLevel: new Uniform(ocean.level),
         uSkyOceanDepth: new Uniform(ocean.depth),
         uSkyOceanBedColor: new Uniform(new Color(ocean.seabed.color)),

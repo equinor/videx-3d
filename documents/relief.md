@@ -65,6 +65,8 @@ server into `public/relief/`, outside `public/data`, which `generate-data` repla
   before (`seabedFalloff`).
 - Under a relief the sea stays flat over the disc holding the whole area, and the stage's
   sea surface writes the depth of the curved sea, so land beyond the scene meets it there.
+  Over that disc it keeps its own flat depth: from 100 km up the curve is measured from
+  under the camera, and would sink the sea below the scene.
 - `color`: a colour is the land's, the seabed taking the sea's; `'ramp'` colours the land
   by height — green lowland, umber at 600 m, grey high ground at 1500 m, eased between —
   and
@@ -81,9 +83,10 @@ server into `public/relief/`, outside `public/data`, which `generate-data` repla
 
 ## The far plane
 
-The stage, and the relief's mesh with it, reach 80% of the camera's far plane, measured
-along the curved sea; past that the sky's own sea takes over, and the curved sea's depth
-is clamped. Where the sea's horizon lies farther, a fullscreen layer at the far plane
+The stage, and the relief's mesh with it, reach the camera's far plane, measured along
+the curved sea (their vertices are kept just inside it, see below); past that the sky's
+own sea takes over, and the curved sea's depth is clamped. Any shorter, and the scene
+between would show through the sky's sea, which is drawn on the far plane. Where the sea's horizon lies farther, a fullscreen layer at the far plane
 draws the relief on past the mesh: what the map holds above the sea (without water, the
 seabed too), shaded and faded through the air as the mesh is, but flat on the curved sea,
 so mountains past the mesh show no outline against the sky. It draws only where nothing

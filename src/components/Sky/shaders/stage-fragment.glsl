@@ -28,6 +28,9 @@ uniform mat3 fenceToUv;
 uniform vec2 fenceSize;
 #include ../../../sdk/materials/shaderLib/fence-field.glsl
 #endif
+#ifdef STAGE_CURVED_DEPTH
+uniform vec4 uSkyStageFlat; // the scene's own flat disc, where uSkyFlat starts before it follows the camera
+#endif
 
 // Cut away with the occupant, by its section and its fence, as the occupant cuts itself.
 bool stageCutAway() {
@@ -79,13 +82,22 @@ void main() {
   #endif
   #ifdef STAGE_CURVED_DEPTH
   // At the sea's own depth where it falls away with the curve, which a relief beyond the
-  // scene, falling away with it, meets.
-  vec3 viewHit = mat3(viewMatrix) * dir * reach.x;
+  // scene, falling away with it, meets. Over the scene's own disc at the geometry's: the
+  // scene is flat, and a curve measured from the disc under a high camera sinks it below.
+  vec3 fromScene = vStageWorld - uSkyStageFlat.xyz;
+  fromScene -= uSkyUp * dot(fromScene, uSkyUp);
+  if(dot(fromScene, fromScene) > uSkyStageFlat.w * uSkyStageFlat.w) {
+    vec3 viewHit = mat3(viewMatrix) * dir * reach.x;
     #ifdef USE_LOGARITHMIC_DEPTH_BUFFER
-  gl_FragDepth = vIsPerspective == 0.0 ? gl_FragCoord.z : log2(1.0 - viewHit.z) * logDepthBufFC * 0.5;
+    gl_FragDepth = vIsPerspective == 0.0 ? gl_FragCoord.z : log2(1.0 - viewHit.z) * logDepthBufFC * 0.5;
     #else
-  vec4 clipHit = projectionMatrix * vec4(viewHit, 1.0);
-  gl_FragDepth = 0.5 * clipHit.z / clipHit.w + 0.5;
+    vec4 clipHit = projectionMatrix * vec4(viewHit, 1.0);
+    gl_FragDepth = 0.5 * clipHit.z / clipHit.w + 0.5;
+    #endif
+  }
+    #ifndef USE_LOGARITHMIC_DEPTH_BUFFER
+  else
+    gl_FragDepth = gl_FragCoord.z;
     #endif
   #endif
   vec2 p = skyOceanPlane(world);
