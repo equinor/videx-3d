@@ -16,7 +16,7 @@ export type TerrainLod = {
   levels: number;
   /** how far each level reaches, in its own node widths; at least 2 keeps neighbours within a level of each other */
   range: number;
-  /** nodes wholly farther than this along the level are left out */
+  /** nodes wholly farther than this from the camera, its height above or below the terrain counted, are left out */
   reach: number;
   /** the lowest and highest heights the terrain holds, in world Y */
   minY: number;
@@ -121,8 +121,8 @@ export function selectTerrainNodes(
   // Whether the node is handled: drawn, split, or beyond the reach.
   const select = (x: number, z: number, size: number, level: number) => {
     const flat = across(x, z, size);
-    if (flat > lod.reach) return true;
     const distance = Math.hypot(flat, dy);
+    if (distance > lod.reach) return true;
     if (distance > ranges[level]) return false;
     if (level === 0 || distance > ranges[level - 1]) {
       emit(x, z, size, level);

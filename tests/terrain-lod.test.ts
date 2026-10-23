@@ -69,6 +69,18 @@ describe('selectTerrainNodes', () => {
     expect(nodes.length).toBeLessThan(200);
   });
 
+  it('counts the camera\u2019s height in the reach', () => {
+    const camera: [number, number, number] = [0, 300000, 0];
+    const { lod, nodes } = select(camera);
+    const dy = camera[1] - lod.maxY;
+    for (const n of nodes) {
+      const dx = Math.max(n.x - camera[0], camera[0] - (n.x + n.size), 0);
+      const dz = Math.max(n.z - camera[2], camera[2] - (n.z + n.size), 0);
+      expect(Math.hypot(dx, dz, dy)).toBeLessThanOrEqual(lod.reach);
+    }
+    expect(holding(nodes, 250000, 0)).toHaveLength(1);
+  });
+
   it('ends each level\u2019s morph at its range', () => {
     const { lod } = select([0, 40, 0]);
     const morph = terrainLodMorph(lod);

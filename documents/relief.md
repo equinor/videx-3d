@@ -73,29 +73,30 @@ server into `public/relief/`, outside `public/data`, which `generate-data` repla
   sea by up to tens of metres where they are coarse, so the map decides which shows.
   Seabed stays behind the sea over it, and where the view would meet the sea over land
   the land comes in front.
-- Land, and a dry seabed, fade through the air channel by channel, blue fastest: into
-  the sky's blue over short paths and the horizon's colour over long ones, so distant
-  land turns blue before it fades into the horizon. Its air counts 1.5 times the sea's
-  haze from 3 km down and twice from 20 km up, where the air below is thin.
+- Land, and a dry seabed, fade through the air as the sea does, channel by channel and
+  blue a little fastest: into the sky's blue over short paths and the horizon's colour
+  over long ones, so distant land turns blue before it fades into the horizon, but keeps
+  its own colour in most views.
 - `debug.hide: ['relief']` hides it, like the stage's other layers.
 
 ## The far plane
 
 The stage, and the relief's mesh with it, reach 80% of the camera's far plane, measured
 along the curved sea; past that the sky's own sea takes over, and the curved sea's depth
-is clamped. Where the sea's
-horizon lies farther, a fullscreen layer at the far plane draws the relief on past the
-mesh: what the map holds above the sea (without water, the seabed too), shaded and faded
-through the air as the mesh is, but flat on the curved sea, so mountains past the mesh
-show no outline against the sky.
-It draws only where nothing nearer is drawn, and is hidden while the mesh reaches the
-horizon.
+is clamped. Where the sea's horizon lies farther, a fullscreen layer at the far plane
+draws the relief on past the mesh: what the map holds above the sea (without water, the
+seabed too), shaded and faded through the air as the mesh is, but flat on the curved sea,
+so mountains past the mesh show no outline against the sky. It draws only where nothing
+nearer is drawn, and is hidden while the mesh reaches the horizon.
 
 For mountains on the horizon, set the far plane past it from the highest the camera goes:
 about 360 km from 10 km up, 760 km from 45 km and 1130 km from 100 km (the sky stories
 use 3000 km). With a logarithmic depth buffer that costs almost nothing (about 1 m of
 depth resolution at 1000 km); with a standard one, a far plane that far from a near plane
 of centimetres has no resolution left, so use a logarithmic or reversed depth buffer.
+Either way the GPU clips by the ordinary clip depth, which that far from a near plane of
+centimetres rounds past the far plane and drops vertices at random: the mesh keeps its
+vertices just inside it.
 However far the far plane, the relief is drawn no farther than the curved sea's horizon
 from the camera, plus the highest relief's own.
 

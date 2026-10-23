@@ -54,5 +54,8 @@ void main() {
   vReliefWorld = world;
   vReliefPlane = xz;
   gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
+  // ⚠️ Far off, clip z rounds past w in fp32 (a near plane of centimetres, a far one of
+  // thousands of km) and clips vertices at random; a logarithmic depth is the fragment's own.
+  gl_Position.z = min(gl_Position.z, gl_Position.w * (1.0 - 1e-7));
   #include <logdepthbuf_vertex>
 }

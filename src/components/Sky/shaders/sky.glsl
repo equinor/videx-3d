@@ -296,6 +296,8 @@ uniform float uSkyCloudsSink;
 // Climbing, the band sinks by up to this (radians, 1.5°) on a flat sea, and its clouds flatten by up to this share.
 #define SKY_CLOUD_BAND_SINK 0.0262
 #define SKY_CLOUD_BAND_FLATTEN 0.05
+// Between these camera heights (world units) the band fades out: from far up it would rim the globe.
+#define SKY_CLOUD_BAND_FADE vec2(100000.0, 250000.0)
 // With the band, the deck dissolves where the view runs within this (a sine, about 9°) of
 // parallel to it.
 #define SKY_CLOUD_GRAZE 0.15
@@ -402,7 +404,8 @@ float skyCloudBandSquash(vec3 origin) {
 // onto it as their tops sink, until from high above they are a thin strip along it, and
 // flatten, quickly at first and then hardly at all. ⚠️ Derivatives, taken before it branches.
 vec3 skyCloudBand(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
-  if(uSkyCloudsShape.z < 0.5 || uSkyClouds.x <= 0.0 || uSkyCloudsColor.a <= 0.0)
+  float shown = 1.0 - smoothstep(SKY_CLOUD_BAND_FADE.x, SKY_CLOUD_BAND_FADE.y, dot(origin, uSkyUp));
+  if(uSkyCloudsShape.z < 0.5 || uSkyClouds.x <= 0.0 || uSkyCloudsColor.a <= 0.0 || shown <= 0.0)
     return color;
   vec3 light = skyCloudLight().daylight > 0.0 ? uSkySunDirection : uSkyMoonDirection;
   float angle = atan(length(cross(dir, light)), dot(dir, light));
@@ -424,7 +427,7 @@ vec3 skyCloudBand(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
   float n = skyNoise3Fbm(q);
   float threshold = skyCloudThreshold(0.62, 0.38) + (v - 0.35) * 0.3 - 0.05;
   float edge = 0.02 + 0.2 * uSkyClouds.w;
-  float density = smoothstep(threshold - edge, threshold + edge, n) * (1.0 - smoothstep(span.x / span.y, 1.0, v));
+  float density = smoothstep(threshold - edge, threshold + edge, n) * (1.0 - smoothstep(span.x / span.y, 1.0, v)) * shown;
   if(density <= 0.0)
     return color;
   // Brighter toward their tops, and the side seen lit as much as it faces the light; from over

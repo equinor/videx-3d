@@ -15,6 +15,7 @@ import {
   SeabedMesh,
 } from '../../sdk/geometries/surface-clip';
 import { CameraManager } from '../../sdk/managers/CameraManager';
+import { CRS, getProjectionDefFromUtmZone } from '../../sdk/projection/crs';
 import { Vec2, Vec3 } from '../../sdk/types/common';
 import {
   skyAbyssFromArgs,
@@ -24,6 +25,10 @@ import {
   skyDecorators,
   skyOceanFromArgs,
   skyPropsFromArgs,
+  skyReliefArgs,
+  SkyReliefArgs,
+  skyReliefArgTypes,
+  skyReliefFromArgs,
 } from '../../storybook/components/sky-controls';
 import { SkyStoryRendering } from '../../storybook/components/sky-story-rendering';
 import {
@@ -62,6 +67,9 @@ import { skyStageRim } from './sky-stage';
 const utmZone = storyArgs.utmZone;
 const origin = storyArgs.origin as Vec2;
 const defaultWellbore = storyArgs.defaultWellbore;
+// Where the relief lies around the field: the UtmArea's map.
+const crs = new CRS(getProjectionDefFromUtmZone(utmZone), origin, 'utm');
+const reliefFrame = { projection: crs.utmDef, origin: crs.originUtm };
 // The generated scenarios, without the units of the generated columns.
 const SYNTHETIC_SEABEDS = syntheticSurfaceIds.filter(
   id => !id.startsWith(SYNTHETIC_COLUMN_PREFIX),
@@ -105,7 +113,8 @@ type SkySpikeArgs = {
   showCasings: boolean;
   casingSlice: boolean;
   casingRoughness: number;
-} & SkyArgs;
+} & SkyArgs &
+  SkyReliefArgs;
 
 // A stage around the wells' outline, with no seabed of its own to hand it.
 const FieldStage = (args: SkySpikeArgs) => {
@@ -114,7 +123,10 @@ const FieldStage = (args: SkySpikeArgs) => {
   const { min, max } = outline.getBounds();
   const m = args.stageMargin;
   return (
-    <SkyBoxStage bounds={[min[0] - m, min[1] - m, max[0] + m, max[1] + m]} />
+    <SkyBoxStage
+      bounds={[min[0] - m, min[1] - m, max[0] + m, max[1] + m]}
+      relief={skyReliefFromArgs(args, reliefFrame)}
+    />
   );
 };
 
@@ -245,6 +257,7 @@ const SeabedStage = ({
       bounds={[min[0] - m, min[1] - m, max[0] + m, max[1] + m]}
       occupant={{ seabed: occupant.mesh }}
       seabedFalloff={args.seabedFalloff}
+      relief={skyReliefFromArgs(args, reliefFrame)}
     />
   );
 };
@@ -436,6 +449,7 @@ const meta = {
   ],
   argTypes: {
     ...skyArgTypes(),
+    ...skyReliefArgTypes('stage'),
     abyss: {
       control: { type: 'boolean' },
       description:
@@ -505,6 +519,7 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {
   args: {
     ...skyArgs,
+    ...skyReliefArgs,
     sunElevation: 30,
     abyss: true,
     abyssLevel: 0,

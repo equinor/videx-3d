@@ -1085,7 +1085,7 @@ export const SKY_DEMO_RELIEF = 'etopo-2022-nordic';
 export const skyReliefArgs: SkyReliefArgs = {
   relief: false,
   reliefColor: 'flat',
-  reliefLandColor: '#837f63',
+  reliefLandColor: '#34433b',
 };
 
 /** Controls for {@link SkyReliefArgs}; with `shownIf`, the toggle shows only while that arg is on. */

@@ -45,8 +45,8 @@ import {
 const STAGE_REACH = 0.8;
 // Room between the outline and the rings when there is no falloff to make room for.
 const MIN_NEAR_MARGIN = 1000;
-// A relief's flat land, a muted olive: rock and heath seen through the air.
-const RELIEF_LAND_COLOR = '#837f63';
+// A relief's flat land, a dark green-grey, which keeps its colour through the air.
+const RELIEF_LAND_COLOR = '#34433b';
 const RELIEF_FALLOFF = 10000;
 // The least a relief's map reaches around the scene: the sea's horizon from some 300 km up.
 const RELIEF_RADIUS = 2000000;
@@ -140,7 +140,7 @@ export type SkyBoxStageRelief = {
   /**
    * `'ramp'` colours the land by height — green lowland, umber upland, grey high ground —
    * and darkens the sea's seabed colour with depth; a colour is the land's, the seabed
-   * taking the sea's. Default a muted olive
+   * taking the sea's. Default `#34433b`, a dark green-grey
    */
   color?: 'ramp' | ColorRepresentation;
   /** how far past the stage's own area it rises from the stage's flat seabed, in world units. Default 10000 */

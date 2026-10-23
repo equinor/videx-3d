@@ -19,12 +19,9 @@
 #define RELIEF_LAND_SPECULAR vec3(0.02)
 #define RELIEF_LAND_SHININESS 8.0
 // How much more of each channel than of green the air takes: it scatters blue most, so
-// distant land turns blue before it fades into the horizon.
-#define RELIEF_AIR_SPREAD vec3(0.5, 1.0, 2.0)
-// How much more the relief's air counts than the sea's haze, for a sense of distance: from
-// low down, and from high up, where the air below is thin; eased between those heights.
-#define RELIEF_AIR_DEPTH vec2(1.5, 2.0)
-#define RELIEF_AIR_HEIGHTS vec2(3000.0, 20000.0)
+// distant land turns blue before it fades into the horizon. Kept mild: more and the land's
+// own colour is lost.
+#define RELIEF_AIR_SPREAD vec3(0.75, 1.0, 1.5)
 
 #ifdef RELIEF_RAMP
 // The land by height: green lowland, umber upland and grey high ground, eased between these heights.
@@ -79,7 +76,7 @@ float reliefDepthAt(vec3 dir, float t) {
 // into the sky's blue over short paths and the horizon's colour over long ones. Looking
 // down, into the sky overhead as seen from the sea, as the sea's haze does
 // (skyOceanThroughAir), so the sun's side cannot show as a wedge below.
-vec3 reliefThroughAir(vec3 color, vec3 dir, float dist, float blend, float altitude) {
+vec3 reliefThroughAir(vec3 color, vec3 dir, float dist, float blend) {
   float haze = skyAirHaze(cameraPosition, dir, dist);
   if(haze <= 0.0)
     return color;
@@ -96,7 +93,7 @@ vec3 reliefThroughAir(vec3 color, vec3 dir, float dist, float blend, float altit
     blue = mix(overhead, blue, toward);
     horizon = mix(overhead, horizon, toward);
   }
-  float depth = -log(max(1.0 - haze, 1e-4)) * mix(RELIEF_AIR_DEPTH.x, RELIEF_AIR_DEPTH.y, smoothstep(RELIEF_AIR_HEIGHTS.x, RELIEF_AIR_HEIGHTS.y, altitude));
+  float depth = -log(max(1.0 - haze, 1e-4));
   vec3 kept = exp(-depth * RELIEF_AIR_SPREAD);
   vec3 scatter = mix(blue, horizon, 1.0 - exp(-depth));
   return color * kept + scatter * (1.0 - kept);
@@ -158,7 +155,7 @@ void main() {
   color /= max(uSkyIntensity, 1e-4);
 
   #ifdef RELIEF_FAR
-  color = reliefThroughAir(color, dir, dist, blend, altitude);
+  color = reliefThroughAir(color, dir, dist, blend);
   #else
   // The triangles miss the curved sea by up to tens of metres, more the coarser they are
   // and the farther the camera is from the scene (the curve follows the view). So the map
@@ -178,9 +175,10 @@ void main() {
     if(altitude > 0.0 && sea > dist)
       gl_FragDepth = reliefDepthAt(dir, sea * 1.0001);
   } else if(altitude > 0.0) {
-    color = reliefThroughAir(color, dir, dist, blend, altitude);
-    if(water && sea < dist && reliefGround((cameraPosition + dir * sea).xz, lod, margin, bed).x >= 0.0)
-      gl_FragDepth = reliefDepthAt(dir, sea * 0.9999);
+    color = reliefThroughAir(color, dir, dist, blend);
+    // Also where the land only just clears the sea: there the two depths tie, and the sea won.
+    if(water && sea < dist * 1.0001 && reliefGround((cameraPosition + dir * sea).xz, lod, margin, bed).x >= 0.0)
+      gl_FragDepth = reliefDepthAt(dir, min(sea, dist) * 0.9999);
   }
   // Bitten through: the void, as the background draws it through the gap.
   if(seabed < 1.0)

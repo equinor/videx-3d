@@ -59,10 +59,13 @@ float skyHazeBelow() {
 }
 
 // The mean density, relative to its ground's, of air thinning by e every `scale` along a ray
-// from `start` over its ground that climbs `rise`.
+// from `start` over its ground that climbs `rise`. ⚠️ From its lower end: from the top,
+// exp(-start / scale) underflows high up while its partner overflows (0 * inf).
 float skyAirMean(float start, float rise, float scale) {
-  float climb = (max(start + rise, 0.0) - start) / scale;
-  return exp(-start / scale) * (abs(climb) > 1e-4 ? (1.0 - exp(-climb)) / climb : 1.0);
+  float a = start / scale;
+  float b = max(start + rise, 0.0) / scale;
+  float span = abs(b - a);
+  return exp(-min(a, b)) * (span > 1e-4 ? (1.0 - exp(-span)) / span : 1.0);
 }
 
 // How much the air hazes what lies `dist` along `dir` from `origin`: the low haze layer and

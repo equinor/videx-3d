@@ -169,7 +169,8 @@ the horizon as far as its tops would sink seen from the camera's height: as clou
 `bandDistance` off, and from over them as their layer's own horizon. By default its tops stand
 5.7° over the horizon up to about 1 km, 3.5° at its base's height, 1.2° at 15 km and 0.4° at
 100 km, its clouds flattened with it. Its clouds also flatten a little, quickly at first and
-then hardly at all, and it stays in view above the deck.
+then hardly at all, and it stays in view above the deck. From 100 km up it fades out, gone by
+250 km: from there it would rim the whole globe.
 
 With both, the deck is drawn along each view ray turned down, by the hinge over the horizon and
 not at all straight up, so that its own horizon sits at the band's base, where the deck is at
