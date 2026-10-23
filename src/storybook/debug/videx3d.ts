@@ -1,6 +1,7 @@
 import { Box3, Object3D, Scene, Vector3 } from 'three';
 import { CameraManager } from '../../sdk/managers/CameraManager';
 import { Vec3 } from '../../sdk';
+import type { ProfileOptions, ProfileResult } from './profile';
 
 /**
  * What an agent (or a curious human) can reach from the browser console.
@@ -24,6 +25,8 @@ export type Videx3dHandle = {
   /** change story controls WITHOUT reloading the page */
   setArgs: (args: Record<string, unknown>) => Promise<void>;
   getArgs: () => Record<string, unknown> | null;
+  /** GPU and main-thread frame times, and per-draw times of named groups (see `profileFrames`) */
+  profile: (options?: ProfileOptions) => Promise<ProfileResult>;
 };
 
 declare global {

@@ -47,6 +47,16 @@ Then `screenshot_page`.
 | `camera.frame(box, {azimuth, polar, padding})` | fit a box to the view |
 | `camera.pose()` | current pose, in the form `orbit` takes — paste it back to return |
 | `camera.settled()` | resolves when the controls stop moving |
+| `profile({frames, warmup, groups, timeout})` | frame GPU ms (timer query) and main-thread ms as median/p90, bake frames apart; with `groups` (`{ name: object => boolean }`) a second pass times those objects' draws |
+
+`profile` needs the tab in front and the user's hands off (ask first), and no other GPU
+timer open (`OITRenderPass.profile`). Hide-and-compare a draw with `object.layers.set(30)`
+to tell whether it shows at all.
+
+⚠️ On an integrated GPU at 60 fps a lighter frame lowers the GPU clock, so a saving shows
+partly as OTHER draws getting slower (background −1.6 ms, column draws +0.7 ms, frame
+unchanged). Interleave A/B/A, watch an unchanged group as the clock check, and judge a
+change by its own group as well as the frame.
 
 Conventions: **azimuth** is measured from +X toward +Z; **polar** is 0 straight
 down, 90 at the horizon, 180 straight up. `transition: false` lands exactly and
