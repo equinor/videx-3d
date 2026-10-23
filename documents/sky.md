@@ -525,9 +525,15 @@ A cutaway also keeps the scene lit as from above the water.
 
 ## Rendering
 
-The sky draws before everything else (`renderOrder` −1e9), and its sea surface as a
-second fullscreen layer right after it. It works with R3F's own render and with a
+The sky draws after the opaque scene (`renderOrder` 1e9), on the far plane with a depth
+test, so it is shaded only where nothing nearer is drawn; its sea surface draws as a
+second fullscreen layer right after it, and a stage's relief past its mesh after both.
+Transparent parts draw after all of them. It works with R3F's own render and with a
 `RenderingPipeline` of `OITRenderPass` + `OutputPass`.
+
+⚠️ An opaque object that writes no depth (`depthWrite: false` without `transparent`) is
+drawn over by the sky: make it transparent. The far plane assumes a standard depth
+buffer, not a reversed one.
 
 ⚠️ R3F applies the Canvas `gl` props again whenever the Canvas re-renders, undoing
 anything set on the renderer since. Set tone mapping that should change at runtime on
@@ -559,6 +565,53 @@ the renderer from an effect, and use the Canvas `flat` prop rather than
 - The bakes run only when the sky changes, never as the camera moves, and swap
   per zone at a level crossing.
 - Shimmering rays, the waves and the cutaway are uniforms updated per frame.
+- Below the sea surface the surface layer is not drawn, and below the seabed (with one)
+  neither is a stage's surface: each would discard every pixel there. Under an
+  `OITRenderPass` that saves more than the draw: with nothing else see-through in view the
+  pass skips its transparent passes too (FieldColumn: 8.3 → 5.5 ms inside the column,
+  9.8 → 6.2 ms below it).
+
+### Frame cost by zone
+
+GPU ms per frame (median of 120), measured with `videx3d.profile()` in Storybook on an
+Intel Iris Xe laptop at 1.04 megapixels, sun at 11:00, clock paused, while the sky still
+drew first and before the two layers above were skipped. The sky's draws are
+fill-bound: they scale with the pixels drawn, about double at 1080p.
+
+`Sky` Timelapse (R3F's own render, relief on); the surface layer adds 0.16–0.18 in every view:
+
+| Camera | Frame | Background | Stage's sea | Stage's seabed | Relief |
+|--|--|--|--|--|--|
+| 40 m | 8.2 | 2.5 | 3.85 | 0.87 | 0.78 |
+| 2 km | 7.6 | 2.4 | 2.9 | 0.82 | 1.28 |
+| 100 km | 5.9 | 2.3 | 1.76 | 0.03 | 1.64 |
+| −30 m, in the water | 7.0 | 3.54 | 1.56 | 0.89 | 0.73 |
+| −500 m, below the seabed | 4.4 | 2.45 | 1.02 | 0.78 | 0.07 |
+
+`FieldColumn` WithSky (Volve as the occupant, an `OITRenderPass` pipeline, no relief):
+
+| Camera | Frame | Sky off | Background | Stage's sea | Stage's seabed |
+|--|--|--|--|--|--|
+| 2 km | 9.2 | 5.3 | 1.43 | 2.84 | 0.81 |
+| 40 m | 8.4 | 5.05 | 1.39 | 2.62 | 0.39 |
+| −40 m, in the water | 8.4 | 5.5 | 2.34 | 1.39 | 0.40 |
+| −1.5 km, inside the column | 7.4 | 5.4 | 1.87 | 0.83 | 0.59 |
+| −6 km, below it | 8.45 | 5.6 | 1.33 | 1.55 | 1.05 |
+
+- A Timelapse frame takes 1–1.3 ms on the main thread, everything included. A frame
+  that bakes (1 in 8 with the clock running) costs about 3.6 ms more GPU and 4.4 ms more CPU.
+- The relief costs 0.3–0.7 ms net (the stage's seabed draws where it does not). The far
+  plane does not change it: the relief reaches at least 2000 km either way.
+- What a zone draws for nothing, from hiding each draw and comparing the frame: below the
+  seabed the stage's sea and the surface layer change no pixel (now skipped), and without
+  an occupant neither do the stage's seabed and the relief; in the water the background
+  changes under 1% (the stage's sea seen from below and its seabed cover it); inside the
+  column no sky draw changes a pixel. The background then drew first, so it was shaded
+  under everything that covers it, in every zone.
+- Drawn after the scene instead, the same pixels, the background costs (FieldColumn,
+  ms) 1.47 → 0.51 from 2 km, 1.44 → 0.85 from 40 m, 2.33 → 1.73 in the water (the
+  stage's sea seen from below writes no depth, so the background is still shaded behind
+  it) and 1.6 → 0.1 below the seabed; the frame 0.5–1.2 ms less.
 
 ## Debugging
 

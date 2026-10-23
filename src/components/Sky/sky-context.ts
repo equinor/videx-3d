@@ -37,6 +37,8 @@ export function useSky() {
 export type SkyOceanState = {
   /** the sky's material: its uniforms are the sea's */
   material: SkyMaterial;
+  /** the sky's `renderOrder`; its sea surface layer draws at the next one */
+  renderOrder: number;
   /** the sea has water; without it the seabed lies dry */
   water: boolean;
   /** the sea has a seabed; without it the void lies below the water */

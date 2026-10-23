@@ -695,18 +695,19 @@ export function createSkyStageMaterial(
 
 /**
  * The sky's sea surface as a fullscreen layer of its own, drawn right after the
- * background and blended over it. It shares the sky material's uniform objects.
+ * background and blended over it. It shares the sky material's uniform objects. On the
+ * far plane, as the background is; the bakes draw it without a depth test.
  */
 export function createSkySurfaceMaterial(sky: SkyMaterial) {
   return new ShaderMaterial({
     vertexShader: skyVertexShader,
     fragmentShader: skySurfaceShader,
     uniforms: sky.uniforms,
-    defines: skyOceanDefines(sky),
+    defines: { ...skyOceanDefines(sky), SKY_AT_FAR: '' },
     side: DoubleSide,
     depthTest: false,
     depthWrite: false,
-    // Blended without being `transparent`, so it stays in the opaque list, before the scene.
+    // Blended without being `transparent`, so it stays in the opaque list, after the background.
     // ⚠️ Alpha as three's normal blending does, or the canvas turns see-through here.
     blending: CustomBlending,
     blendSrc: SrcAlphaFactor,

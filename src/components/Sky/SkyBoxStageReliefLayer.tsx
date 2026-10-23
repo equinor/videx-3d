@@ -39,6 +39,8 @@ type SkyBoxStageReliefLayerProps = {
   bedY: number;
   /** the sky's seabed detail (its key), compiled into the material with the sky's defines */
   bedDetail?: string;
+  /** the sky's sea surface layer's `renderOrder`: the far layer draws after it */
+  skyOrder: number;
   visible: boolean;
 };
 
@@ -57,6 +59,7 @@ export const SkyBoxStageReliefLayer = ({
   level,
   bedY,
   bedDetail,
+  skyOrder,
   visible,
 }: SkyBoxStageReliefLayerProps) => {
   const texture = useMemo(() => createSkyReliefTexture(grid), [grid]);
@@ -166,6 +169,7 @@ export const SkyBoxStageReliefLayer = ({
         geometry={farGeometry}
         material={farMaterial}
         frustumCulled={false}
+        renderOrder={skyOrder + 1}
         visible={false}
       />
     </>

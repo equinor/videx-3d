@@ -13,6 +13,7 @@ import {
   ColorRepresentation,
   Group,
   LineBasicMaterial,
+  Mesh,
   MeshBasicMaterial,
   Scene,
   ShaderMaterial,
@@ -417,8 +418,19 @@ export const SkyBoxStage = ({
     };
   }, [sky, outline]);
 
+  const surface = useRef<Mesh>(null);
+  const surfaceShown = !debug?.hide?.includes('surface');
   useFrame(({ camera }) => {
-    if (!sky || !ocean || !groundBounds || !ground) return;
+    if (!sky || !ocean) return;
+    // Under the seabed its lid hides the water: the surface would discard every pixel.
+    if (surface.current)
+      surface.current.visible =
+        surfaceShown &&
+        !(
+          sky.oceanSeabed &&
+          camera.position.dot(sky.up) - sky.oceanLevel + sky.oceanDepth < 0
+        );
+    if (!groundBounds || !ground) return;
     const { x, y, z } = camera.position;
     const { min, max } = groundBounds;
     sky.oceanGround =
@@ -608,16 +620,19 @@ export const SkyBoxStage = ({
           level={level}
           bedY={bedY}
           bedDetail={bedDetail}
+          skyOrder={ocean.renderOrder + 1}
           visible={shown('relief')}
         />
       )}
       {parts.map(part => (
         <mesh
           key={part.key}
+          ref={part.key === 'surface' ? surface : undefined}
           geometry={part.geometry}
           material={part.material}
           position-y={part.y ?? 0}
           renderOrder={part.order ?? 0}
+          // The surface's is set each frame too.
           visible={shown(part.layer)}
           onBeforeRender={setView}
         />

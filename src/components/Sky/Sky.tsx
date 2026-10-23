@@ -16,6 +16,7 @@ import {
   Group,
   LightProbe,
   MathUtils,
+  Mesh,
   NoToneMapping,
   Object3D,
   PerspectiveCamera,
@@ -278,7 +279,11 @@ export type SkyProps = {
    * the renderer's `toneMapping`; set it when a pipeline pass tone maps instead.
    */
   hdr?: boolean;
-  /** Default -1e9, so the sky is drawn before everything else */
+  /**
+   * Default 1e9: the sky is drawn after the opaque scene, on the far plane with a depth
+   * test, so only what nothing nearer covers is shaded. An opaque object that writes no
+   * depth is drawn over: make it `transparent`.
+   */
   renderOrder?: number;
   /** debug views (see {@link SkyDebug}) */
   debug?: SkyDebug;
@@ -312,8 +317,8 @@ function createSkyStandInMaterial(sky: SkyMaterial) {
     vertexShader: skyVertexShader,
     fragmentShader: standInFragmentShader,
     uniforms: sky.uniforms,
+    defines: { SKY_AT_FAR: '' },
     side: DoubleSide,
-    depthTest: false,
     depthWrite: false,
     fog: true,
   });
@@ -362,7 +367,7 @@ export const Sky = ({
   clouds = true,
   air = true,
   hdr,
-  renderOrder = -1e9,
+  renderOrder = 1e9,
   debug,
   children,
 }: SkyProps) => {
@@ -515,7 +520,13 @@ export const Sky = ({
   const hasProbe = probeOptions !== null;
   const probeIntensity = probeOptions?.intensity ?? 1;
 
-  const [material] = useState(() => new SkyMaterial());
+  const [material] = useState(() => {
+    const sky = new SkyMaterial();
+    // The bakes take the define, so they share its program, but not the depth test.
+    sky.defines.SKY_AT_FAR = '';
+    sky.depthTest = true;
+    return sky;
+  });
   const [standIn] = useState(() => createSkyStandInMaterial(material));
   const [geometry] = useState(createSkyGeometry);
   const [baker] = useState(() => new SkyBaker(material));
@@ -645,6 +656,7 @@ export const Sky = ({
       water
         ? {
             material,
+            renderOrder,
             level: oceanLevel,
             depth: oceanDepth,
             water: oceanWater,
@@ -659,6 +671,7 @@ export const Sky = ({
     [
       water,
       material,
+      renderOrder,
       oceanLevel,
       oceanDepth,
       oceanWater,
@@ -671,10 +684,13 @@ export const Sky = ({
     ],
   );
 
-  const surfaceLayer = useMemo(
-    () => (water ? createSkySurfaceMaterial(material) : null),
-    [water, material],
-  );
+  const surfaceLayer = useMemo(() => {
+    if (!water) return null;
+    const layer = createSkySurfaceMaterial(material);
+    layer.depthTest = true;
+    return layer;
+  }, [water, material]);
+  const surfaceMesh = useRef<Mesh>(null);
 
   useEffect(() => () => surfaceLayer?.dispose(), [surfaceLayer]);
 
@@ -1247,6 +1263,13 @@ export const Sky = ({
 
     const height = camera.position.dot(material.up);
     material.followFlatSea(camera.position);
+    // From the sea surface down the layer is clear everywhere (skyOceanSurfaceLayer).
+    if (surfaceMesh.current)
+      surfaceMesh.current.visible =
+        background &&
+        ready &&
+        !debug?.hide?.includes('surface') &&
+        height > material.oceanLevel;
     // From high up the sky's own light goes by the sun over the lowered horizon; the sea's,
     // the scene's and the bakes' stay by the sea's.
     const airHeight = height - airLevel;
@@ -1622,11 +1645,13 @@ export const Sky = ({
         />
         {surfaceLayer && oceanWater && (
           <mesh
+            ref={surfaceMesh}
             geometry={geometry}
             material={surfaceLayer}
             frustumCulled={false}
             renderOrder={renderOrder + 1}
-            visible={background && ready && !debug?.hide?.includes('surface')}
+            // Shown each frame.
+            visible={false}
             dispose={null}
           />
         )}
