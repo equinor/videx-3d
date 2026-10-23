@@ -1246,6 +1246,7 @@ export const Sky = ({
       (hdr ?? gl.toneMapping !== NoToneMapping) ? SKY_HDR_SUN_RADIANCE : 1;
 
     const height = camera.position.dot(material.up);
+    material.followFlatSea(camera.position);
     // From high up the sky's own light goes by the sun over the lowered horizon; the sea's,
     // the scene's and the bakes' stay by the sea's.
     const airHeight = height - airLevel;

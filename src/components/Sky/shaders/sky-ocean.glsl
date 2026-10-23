@@ -306,13 +306,30 @@ struct SkyOceanWave {
   vec2 np;
   float flatness;
   float rough;
+  vec3 up; // the sea's own up there, which the curve tilts (skyOceanTiltWave)
 };
 
 SkyOceanWave skyOceanWave(vec2 p, float texel, float dist) {
   SkyOceanWave wave;
   wave.flatness = oceanFlatness(dist);
   wave.normal = skyOceanLift(oceanWaveNormal(p, texel, wave.flatness, wave.slope, wave.height, wave.np, wave.rough));
+  wave.up = uSkyUp;
   return wave;
+}
+
+// `wave` where the sea falls away from a camera looking along `dir` by `fall` (skyOceanReach).
+void skyOceanTiltWave(inout SkyOceanWave wave, vec3 dir, float fall) {
+  wave.normal = skyOceanTilt(wave.normal, dir, fall);
+  wave.up = skyOceanTilt(uSkyUp, dir, fall);
+}
+
+// `v` as seen from the sea where its up is `up` (skyOceanTiltWave), with the camera's up.
+vec3 skyOceanUntilt(vec3 v, vec3 up, vec3 dir) {
+  if(dot(up, uSkyUp) > 0.9999999)
+    return v;
+  vec3 level = normalize(dir - uSkyUp * dot(dir, uSkyUp));
+  vec3 axis = cross(uSkyUp, level);
+  return uSkyUp * dot(v, up) + level * dot(v, cross(axis, up)) + axis * dot(v, axis);
 }
 
 // The surface seen from above at plane point `p`, with its `wave` there: its colour,
@@ -332,9 +349,10 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   oceanTonal(p, flatness, waterColor, tonalReflect, tonalSpec);
 
   vec3 r = reflect(dir, normal);
-  // Steep waves can tip a reflection below the horizon; mirror it back up. As seen from the
-  // sea: a level horizon, under all the air.
-  r -= 2.0 * min(dot(r, uSkyUp), 0.0) * uSkyUp;
+  // Steep waves can tip a reflection below the sea's horizon; mirror it back up. Then the sky
+  // it sees is the one over that sea's own horizon: about the camera's, far off it would fold.
+  r -= 2.0 * min(dot(r, wave.up), 0.0) * wave.up;
+  r = skyOceanUntilt(r, wave.up, dir);
   vec3 surface = oceanShade(normal, V, waterColor, skySurfaceAt(normalize(r), blend, 0.0), fresnel, tonalReflect, tonalSpec, wave.rough);
 
   float foamFar;
@@ -483,7 +501,7 @@ vec4 skyOceanSurfaceLayer(vec3 dir, vec3 origin, float blend) {
   if(over >= 2.0 * fwidth(y) || skyOceanOnStage(p, t + 2.0 * fwidth(t), 4.0 * texel))
     return vec4(0.0);
   SkyOceanWave wave = skyOceanWave(p, texel, t);
-  wave.normal = skyOceanTilt(wave.normal, dir, reach.y);
+  skyOceanTiltWave(wave, dir, reach.y);
   vec4 surface = skyOceanSurfaceOf(wave, p, texel, dir, blend);
   // The band a pixel inside the stage's edge too, which the stage leaves to this layer:
   // the same test on both sides (skyOceanStaged), so every pixel is drawn exactly once. All

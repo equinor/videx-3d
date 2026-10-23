@@ -42,6 +42,10 @@ uniform vec4 uSkyFlat; // the disc about the scene the sea stays flat over: its 
 // that the darkening toward space counts: 1 would be all, which darkens overhead too soon.
 #define SKY_AIR_LEVEL_MASS 35.0
 #define SKY_AIR_PATH 0.5
+// From high up, a glow over the Earth's edge: it fades by e every this much the view passes
+// over the ground (softer than the air itself), and shows between these camera heights.
+#define SKY_RIM_HEIGHT 60000.0
+#define SKY_RIM_SHOWN vec2(20000.0, 80000.0)
 
 // How much of the air lies below the camera: 0 on its ground, toward 1 high above it.
 float skyAirBelow() {
@@ -113,12 +117,20 @@ float skyHorizon(vec3 dir) {
 }
 
 // The lowest height over the air's ground a view along `dir` from `height` passes: the
-// camera's own looking up; toward the horizon, as low as the Earth's curve brings it.
+// camera's own looking up; toward the horizon, as low as the Earth's curve brings it. On the
+// sea's own curve (skyOceanReach), so the air meets the sea's edge: from high up a true
+// sphere would put that edge in space.
 float skyLowest(vec3 dir, float height) {
   float y = dot(dir, uSkyUp);
   if(y >= 0.0 || uSkyCurvature <= 0.0)
     return height;
-  return height - (1.0 / uSkyCurvature + height) * y * y / (1.0 + sqrt(1.0 - y * y));
+  vec3 level = dir - uSkyUp * y;
+  float c = max(length(level), 1e-3);
+  float run = skyFlatRun(cameraPosition, level / c);
+  // Past the camera only when the view falls less than the curve: else lowest overhead.
+  if(run - y / (uSkyCurvature * c) <= 0.0)
+    return height + 0.5 * uSkyCurvature * run * run;
+  return height + y * run / c - y * y / (2.0 * uSkyCurvature * c * c);
 }
 
 // The sky's light where it is seen: by the sun over the horizon there, which the Earth's curve
@@ -268,7 +280,8 @@ vec3 skySurfaceAt(vec3 dir, float blend, float height) {
 }
 
 // The same from the camera. Toward space, by the air the view passes, it deepens to the blue
-// overhead, bluer still through the ozone layer, and goes black.
+// overhead, bluer still through the ozone layer, and goes black, but for a glow over the
+// Earth's edge: pale low down, deep blue higher, brighter toward the sun.
 vec3 skySurface(vec3 dir, float blend) {
   float height = dot(cameraPosition, uSkyUp) - uSkyAir.x;
   vec3 color = skySurfaceAt(dir, blend, height);
@@ -276,9 +289,18 @@ vec3 skySurface(vec3 dir, float blend) {
     return color;
   float air = skyAirHeight(dir, height);
   float space = skySpaceAbove(air);
-  color = mix(color, skyDeepZenith() * mix(SKY_NIGHT_LEVEL, 1.0, skyLight(skyLightShare(dir, height)).daylight), smoothstep(0.0, 0.5, space));
+  SkyLight seen = skyLight(skyLightShare(dir, height));
+  color = mix(color, skyDeepZenith() * mix(SKY_NIGHT_LEVEL, 1.0, seen.daylight), smoothstep(0.0, 0.5, space));
   float ozone = 1.0 - smoothstep(0.0, SKY_OZONE_LAYER.y, abs(air - SKY_OZONE_LAYER.x));
-  return color * mix(vec3(1.0), SKY_OZONE, ozone) * (1.0 - space);
+  color *= mix(vec3(1.0), SKY_OZONE, ozone) * (1.0 - space);
+  float lowest = max(skyLowest(dir, height), 0.0);
+  float rim = exp(-lowest / SKY_RIM_HEIGHT) * smoothstep(SKY_RIM_SHOWN.x, SKY_RIM_SHOWN.y, height);
+  if(rim > 1e-3) {
+    float toward = max(dot(dir, uSkySunDirection), 0.0);
+    vec3 glow = mix(skyDeepZenith(), uSkyHorizonColor, exp(-lowest / (0.35 * SKY_RIM_HEIGHT)));
+    color += glow * rim * seen.daylight * (0.55 + 0.45 * toward * toward);
+  }
+  return color;
 }
 
 // The horizon's colour along the bearing `way` (unit, level), where it is seen from the

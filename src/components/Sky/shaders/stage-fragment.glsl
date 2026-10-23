@@ -121,7 +121,7 @@ void main() {
   #if defined(STAGE_SURFACE)
   // One wave for both sides: each call compiles a full copy of it.
   SkyOceanWave wave = skyOceanWave(p, texel, dist);
-  wave.normal = skyOceanTilt(wave.normal, dir, reach.y);
+  skyOceanTiltWave(wave, dir, reach.y);
   bool cutThrough = false;
   if(altitude > 0.0) {
     vec4 surface = skyOceanThroughAir(skyOceanSurfaceOf(wave, p, texel, dir, blend), cameraPosition, dir, dist, blend);

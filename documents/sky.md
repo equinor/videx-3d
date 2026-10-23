@@ -246,7 +246,10 @@ thin glowing rim of air stays over the horizon under a black sky, its twilight c
 it. On the way to black it deepens to the blue overhead, and through the ozone layer
 (densest at 25 km, 15–35 km; `SKY_OZONE_LAYER`) it turns bluer still, as ozone takes out
 orange and red (`SKY_OZONE`). So from high up the rim is pale, or warm at twilight, at its
-bottom, a saturated blue above and black at its top. Where the sky is all but black (under a
+bottom, a saturated blue above and black at its top. From 20 km up, fully by 80 km
+(`SKY_RIM_SHOWN`), a glow lies over the Earth's edge on top of it: pale just over the edge,
+deep blue higher, fading by e every 60 km the view passes over the ground (`SKY_RIM_HEIGHT`)
+and brighter toward the sun, so from far off the Earth keeps a soft halo. Where the sky is all but black (under a
 twentieth of its light) the stars, the planets and the moon show as at night, by day too: none
 from 20 km at noon, the full field from about 40 km. The sun's disc and glare are drawn over
 it as before. The sea reflects the sky as seen from the sea. From over the clouds' tops, the
@@ -273,13 +276,18 @@ view. The sea ends at it, its waves tipped with the curve so that the view graze
 and they reflect the horizon's colour. The sky's gradient, its twilight and the haze's colour
 are measured from it, the sun, moon and stars set behind it rather than at the level, and the
 clouds' band sits on it, squashed onto it from high up. The water reflects the sky as seen from
-the sea, with a level horizon. Off, every one of them is as on a flat sea.
+where it lies, with its own level horizon: far out, where the sea is tipped with the curve, a
+wave's reflection is turned back by that tilt. Off, every one of them is as on a flat sea.
 
 The sea stays flat over a disc about the scene, the one holding a `SkyBoxStage`'s `bounds`, so
 what meets the water there meets it level; without a stage the disc is a point at the world
 origin. Beyond its edge the sea falls away as a sphere's surface would, measured along each view
 ray's level line from the disc's edge, which is close enough where it shows. From 40 m over a
-10 km scene the horizon drops 0.15° rather than 0.2°; higher up the difference fades.
+10 km scene the horizon drops 0.15° rather than 0.2°; higher up the difference fades. From
+100 km up the disc moves toward the point under the camera, all the way by 500 km
+(`SkyMaterial.followFlatSea`, from `Sky` each frame): measured from a disc off to one side, the
+Earth's edge would kink toward the scene. How low a view passes through the air, which darkens
+the sky toward space, is measured on the same curve, so the rim of air sits on the sea's edge.
 
 A stage reaches the camera's far plane, so it draws most of the sea in view: its geometry and
 depth stay flat, but beyond the disc it shades the sea where the view meets the curve and leaves

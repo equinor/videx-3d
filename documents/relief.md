@@ -95,8 +95,8 @@ use 3000 km). With a logarithmic depth buffer that costs almost nothing (about 1
 depth resolution at 1000 km); with a standard one, a far plane that far from a near plane
 of centimetres has no resolution left, so use a logarithmic or reversed depth buffer.
 Either way the GPU clips by the ordinary clip depth, which that far from a near plane of
-centimetres rounds past the far plane and drops vertices at random: the mesh keeps its
-vertices just inside it.
+centimetres rounds past the far plane and drops vertices at random: the mesh, and the
+stage's sea and seabed, keep their vertices just inside it.
 However far the far plane, the relief is drawn no farther than the curved sea's horizon
 from the camera, plus the highest relief's own.
 
@@ -117,6 +117,10 @@ nodes, about 200k triangles.
   A dry seabed view shows that edge.
 - The sea's curve is measured from the scene along each view, so the farther the camera
   is from the scene, the more the ground under it falls away: hundreds of kilometres out,
-  a camera a few kilometres up is far above the land below it.
+  a camera a few kilometres up is far above the land below it. From 100 km up the curve
+  is measured from under the camera instead (see the sky's curved horizon).
+- Where the map's data ends the land ends in a straight line: the coverage fades out
+  over a texel or so (more at coarse mip levels), and the land keeps its colour to the
+  end. A map with data reaching past the horizon hides it.
 - The environment bakes do not include it.
 - ⚠️ It assumes the default `up` (+Y), as the stage does.

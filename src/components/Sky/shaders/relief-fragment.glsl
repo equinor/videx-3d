@@ -55,8 +55,8 @@ vec3 reliefAlbedo(float height, float weight) {
   vec3 bed = uSkyOceanBedColor;
   #endif
   vec3 color = mix(bed, land, smoothstep(-1.0, 1.0, height));
-  // Into the stage's own seabed where the relief eases into it.
-  return mix(uSkyOceanBedColor, color, weight);
+  // Into the stage's own seabed where the relief eases into it; land keeps its colour.
+  return mix(uSkyOceanBedColor, color, max(weight, smoothstep(-1.0, 1.0, height)));
 }
 
 // The depth of the point `t` along this pixel's view ray `dir`, as the stage writes the curved sea's.

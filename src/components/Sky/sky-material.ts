@@ -51,6 +51,9 @@ const SKY_PLANET_COUNT = 5;
 
 // An empty rectangle: nothing is on a stage.
 const NO_STAGE = [1, 1, -1, -1] as const;
+// Camera heights over the sea between which the flat sea's disc moves from the scene to
+// under the camera: from far off, the curve measured from a disc to one side is lopsided.
+const FLAT_SEA_FOLLOW: Vec2 = [100000, 500000];
 
 /** The defines a material drawing the sky's sea takes over from the {@link SkyMaterial}. */
 export const SKY_SHARED_DEFINES = [
@@ -89,6 +92,8 @@ export class SkyMaterial extends ShaderMaterial {
   isSkyMaterial = true;
   private bedDetail: SurfaceDetail | undefined;
   private bedDetailKey = '';
+  // The scene's flat sea (setFlatSea), before followFlatSea moves it.
+  private flatSea = new Vector4();
   private starTextures: { cells: DataTexture; list: DataTexture } | null = null;
   private observing = false;
   private starsLoading = false;
@@ -628,15 +633,40 @@ export class SkyMaterial extends ShaderMaterial {
    */
   setFlatSea(bounds: [number, number, number, number] | null) {
     if (!bounds) {
-      this.uniforms.uSkyFlat.value.set(0, 0, 0, 0);
-      return;
+      this.flatSea.set(0, 0, 0, 0);
+    } else {
+      const [minX, minZ, maxX, maxZ] = bounds;
+      this.flatSea.set(
+        (minX + maxX) / 2,
+        0,
+        (minZ + maxZ) / 2,
+        Math.hypot(maxX - minX, maxZ - minZ) / 2,
+      );
     }
-    const [minX, minZ, maxX, maxZ] = bounds;
-    this.uniforms.uSkyFlat.value.set(
-      (minX + maxX) / 2,
-      0,
-      (minZ + maxZ) / 2,
-      Math.hypot(maxX - minX, maxZ - minZ) / 2,
+    this.uniforms.uSkyFlat.value.copy(this.flatSea);
+  }
+
+  /**
+   * Move the flat sea's disc ({@link setFlatSea}) toward the point under `camera` as it
+   * climbs from 100 to 500 km over the sea, so from high up the Earth's edge stays round.
+   * Every frame.
+   */
+  followFlatSea(camera: Vector3) {
+    const flat = this.uniforms.uSkyFlat.value as Vector4;
+    const up = this.up;
+    const t = MathUtils.smoothstep(
+      camera.dot(up) - this.oceanLevel,
+      FLAT_SEA_FOLLOW[0],
+      FLAT_SEA_FOLLOW[1],
+    );
+    const scene = this.flatSea;
+    const along = scene.x * up.x + scene.y * up.y + scene.z * up.z;
+    const lift = along - camera.dot(up);
+    flat.set(
+      scene.x + (camera.x + up.x * lift - scene.x) * t,
+      scene.y + (camera.y + up.y * lift - scene.y) * t,
+      scene.z + (camera.z + up.z * lift - scene.z) * t,
+      scene.w,
     );
   }
 
