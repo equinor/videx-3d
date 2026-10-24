@@ -172,12 +172,55 @@ export type SkyAbyss = {
   detail?: number;
   /** size of the noise relief, in world units. Default 1000 */
   detailScale?: number;
-  /** strength of the faint distant rock in the depths, wavy strata broken by crags; 0 for none. Default 0.08 */
+  /** strength of the faint distant rock in the depths, wavy strata broken by crags; 0 for none, and none with walls. Default 0.08 */
   depthDetail?: number;
   /** size of that rock's features, relative. Default 1 */
   depthDetailScale?: number;
   /** how the depths darken below the horizon: the gradient's exponent; smaller reaches the depth colour sooner. Default 0.5 */
   falloff?: number;
+  /** walls of a hollow about the stage, so moving in the void shows its scale; off by default (see {@link SkyAbyssWalls}) */
+  walls?: boolean | SkyAbyssWalls;
+};
+
+/**
+ * The void's walls: cliffs about the stage from the lid down, standing out from it by
+ * `distance`, wandering in long bays and headlands and leaning out with depth, so the
+ * hollow they leave widens. Raked by a light of their own and filled in by the subsurface's
+ * light map, they fade into the void's haze and dim with depth. They are cut away up to a
+ * vertical plane facing the camera's heading, through the stage's centre or `clip` in front
+ * of the camera, whichever is further; where it cuts their rock, the rock's inside shows. A
+ * prototype, drawn from below the lid as a coarse mesh pushed out by cliffs baked once
+ * (`bakeSkyCliffs`), their finer relief from the same bake's normal map.
+ */
+export type SkyAbyssWalls = {
+  /** how far out from the stage's edge they stand at the lid, in world units. Default 10500 */
+  distance?: number;
+  /** their rock's colour. Default '#6e7379' */
+  color?: ColorRepresentation;
+  /** the colour of their rock's inside, where they are cut: bedded and jointed. Default '#4c535e' */
+  cutColor?: ColorRepresentation;
+  /** how strongly the raking light shows on them, 0 to 1. Default 0.07 */
+  strength?: number;
+  /** elevation of the raking light, in degrees, at the subsurface light's bearing; below 0 from below. Default 0 */
+  lightElevation?: number;
+  /** distance over which they fade into the void's haze, in world units. Default 73000 */
+  haze?: number;
+  /** how dense the mist clinging to them is, in patches, 0 to 1; the open gap stays clear. Default 0 */
+  mist?: number;
+  /** how far that mist hangs off the rock, in world units. Default 1500 */
+  mistReach?: number;
+  /** size of their rock's features, in world units. Default 9900 */
+  scale?: number;
+  /** how far their rock stands in and out, in world units; at most 0.9 of `distance`. Default 5200 */
+  relief?: number;
+  /** how far they lean out per unit of depth below the lid. Default 0.3 */
+  flare?: number;
+  /** how far their outline wanders in and out in long bays and headlands, in world units; at most `distance` less `relief`. Default 4000 */
+  wander?: number;
+  /** how far in front of the camera, at least, a vertical plane facing it cuts them away, in world units; it cuts through the stage's centre while that is further. Default 4800 */
+  clip?: number;
+  /** depth below the lid over which the light on them fades to nearly black, in world units. Default 8000 */
+  blackDepth?: number;
 };
 
 /**
@@ -458,6 +501,22 @@ export const skyDefaults = {
     depthDetail: 0.08,
     depthDetailScale: 1,
     falloff: 0.5,
+    walls: {
+      distance: 10500,
+      color: '#6e7379',
+      cutColor: '#4c535e',
+      strength: 0.07,
+      lightElevation: 0,
+      haze: 73000,
+      mist: 0,
+      mistReach: 1500,
+      scale: 9900,
+      relief: 5200,
+      flare: 0.3,
+      wander: 4000,
+      clip: 4800,
+      blackDepth: 8000,
+    },
   },
   ocean: {
     level: 0,

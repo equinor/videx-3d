@@ -101,6 +101,7 @@ function createSyntheticSeabed(): SeabedMesh {
 const SKY_LAYERS: Record<string, SkyLayer> = {
   'sky background': 'background',
   'sky surface': 'surface',
+  'sky walls': 'walls',
 };
 
 const STAGE_LAYERS: SkyBoxStageLayer[] = [
@@ -120,6 +121,8 @@ type StageDebugArgs = {
   probeElevation: number;
   outline: boolean;
   wireframe: boolean;
+  wallWireframe: boolean;
+  wallFlat: boolean;
   hide: string[];
   panel: boolean;
 } & SkyArgs &
@@ -149,6 +152,7 @@ const StageDebug = (storyArgs: StageDebugArgs) => {
           tint: args.tint,
           hide: hide.filter(l => l in SKY_LAYERS).map(l => SKY_LAYERS[l]),
           environment: args.showEnvironment,
+          walls: { wireframe: args.wallWireframe, flat: args.wallFlat },
         }}
       >
         <SkyBoxStage
@@ -232,6 +236,16 @@ const meta = {
         'The triangles of every layer drawn, over everything, in their `tint` colours.',
       table: { category: 'Debug' },
     },
+    wallWireframe: {
+      description:
+        'The void walls\u2019 mesh drawn as its triangles\u2019 edges, in one colour, where it is drawn (below the lid, behind the cut). The panel\u2019s readout counts its triangles.',
+      table: { category: 'Debug' },
+    },
+    wallFlat: {
+      description:
+        'The void walls shaded as their mesh\u2019s triangles face, without the rock\u2019s finer relief from the cliffs\u2019 normal map.',
+      table: { category: 'Debug' },
+    },
     hide: {
       control: { type: 'check' },
       options: HIDE_OPTIONS,
@@ -254,6 +268,8 @@ const meta = {
     probeElevation: 300,
     outline: false,
     wireframe: false,
+    wallWireframe: false,
+    wallFlat: false,
     hide: [],
     panel: true,
   },

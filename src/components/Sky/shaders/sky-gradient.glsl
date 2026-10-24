@@ -19,6 +19,7 @@ uniform vec3 uSkyAir; // its ground along up, the height it thins by e over (0 f
 uniform vec2 uSkyHaze; // the low haze layer: the height it thins by e over, and its share of the haze at the ground
 uniform float uSkyCurvature; // 1 over the Earth's radius; 0 for a flat sea
 uniform vec4 uSkyFlat; // the disc about the scene the sea stays flat over: its centre (world) and radius
+uniform vec4 uSkyStageFlat; // the same about the scene itself, where uSkyFlat starts before it follows the camera
 
 // The twilight sky on the sun's side, linear: gold about the sun, orange around it, deep
 // orange high up; and the sun's disc, overexposed even when its light is red.

@@ -47,6 +47,8 @@ export type SkyOceanState = {
   seabedOpacity: number;
   /** the seabed's detail, as a key: a new one recompiles the sea (see `SkyMaterial.oceanBedDetail`) */
   bedDetail: string;
+  /** the void has walls (see `SkyAbyss.walls`): a stage's seabed recompiles to leave them to the sky */
+  abyssWalls: boolean;
   /** height of the sea surface along `up` */
   level: number;
   /** depth of the seabed below the surface */

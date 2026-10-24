@@ -486,6 +486,66 @@ The lid recedes into the horizon colour (`fadeDistance`) and has a noise relief
 (`detail`, `detailScale`); the depths have faint distant rock (`depthDetail`) and a
 `falloff`. A sea turns the void on below its seabed by itself.
 
+`walls` (off by default; a prototype) adds cliffs about the stage, from the lid down, so
+moving in the void shows its scale. They follow the stage's rectangle (the one the flat
+sea keeps level over) pushed out by `distance`, a rounded rectangle given by one signed
+distance; their outline wanders in and out by `wander` in a few long waves, whole numbers
+of them round it, drifting with depth, and leans out by `flare` per unit of depth, so the
+hollow they leave widens.
+Their rock stands in and out of that outline by up to `relief`, as a baked cliff texture
+says (`bakeSkyCliffs`, a 1024² tile repeating both ways, with mip levels): bays and
+headlands, tall ridged buttresses and gullies, and ledges with sheer faces under them that
+come and go, features `scale` across. It is laid along the walls by the distance round
+the outline, a whole number of tiles round so it has no seam, and down them by depth.
+The walls' faces are a mesh (`SkyAbyssWallLayer`), not a search per pixel, and a light
+one: a single fixed grid round the outline and down from the lid, a column every 4 texels
+of the cliffs (128 to 1024 of them, about 400 for Volve) and 32 rows, closer together near
+the lid, to `2.5 x blackDepth` deep; past that the walls are black. Every vertex holds its
+column and row and is pushed out to the rock's face in the vertex shader, the cliffs read
+as coarsely as its cells are wide, and faces as the mesh lies across its neighbours. It is
+one draw of some 25k triangles, the same every frame wherever the camera is: no level of
+detail, no culling, nothing to pop or crack. Its detail is the fragment shader's, from the
+baked relief (see below). Its grid (`skyAbyssWallGrid`) is the sky material's, which the
+background needs too. They are cut away up to a vertical plane facing the camera's heading
+(as the cutaway's, so looking straight down the top of the screen decides which side is
+kept): through the stage's centre, or `clip` in front of the camera once that is further,
+so from a distance the near half of the hollow is gone and nothing of it stands in front of
+the scene. Like a section, it turns with the camera, sweeping the cut through the rock.
+Views start past the plane. Where it cuts their rock, a solid fill, drawn by the background
+(the mesh leaves every pixel behind it), shows the rock's inside,
+unlike the eroded outside of the walls: beds of varying tone (`cutColor`), warped so they
+lean and pinch out, finer laminae in them, and joints straight down here and there, each
+within its bed; lit flat and matte, darkening with depth and hazing as the walls do, with a
+thin paler edge where it meets their face. Whether a view starts in the rock is decided by
+the mesh itself: the triangle over the start's way round and depth, its three vertices
+laid as the vertex shader lays them, so fill and faces meet without a gap. From above, the
+lid cuts the rock the same way, so outside the hollow its top shows.
+The rock, `color`, faces as its mesh does. Its finer relief, columns as tall cells of
+varying width that end at their own heights, finer flutes on them and cracks down some of
+their creases, is the baked tile's normal map and creases, laid three ways and blended by how each face turns: round the outline and
+down where it faces into the hollow, out across it and down on a protrusion's sides, round
+and out where it faces up or down (only the ways that show are read); laid one way only, it smears on the others. It is raked
+by a light of its own, at the subsurface light's bearing and `lightElevation` (level by
+default, which brings out the cliffs; below 0 from below), as strongly as `strength`, and
+filled in by the subsurface's light map (its backdrop, and its panels below bouncing up),
+its creases shadowed, and the light on it dims with depth to nearly black by `blackDepth`.
+The data keep the subsurface light. Walls and fill fade
+over `haze` into a haze of their own, the void's horizon colour dimmed as deep as they
+stand, and stay solid: hazed into what lies behind, the void's horizon would show through
+them as the view tilts. With walls the depths below the horizon are that haze too: a view
+that meets none of the mesh passes under its foot, and is drawn as a wall would be there,
+at least a haze length on, so as dark as the walls' foot; they lose the gradient and its
+faint strata (`depthDetail`). Mist clings to the walls in patches fixed in the world (`mist`), hanging
+`mistReach` off the rock: a veil in front of it, thicker the more a view runs along it. The
+open gap stays clear.
+The mesh is drawn only from below the lid, before the background; the fill and the haze
+beyond show wherever
+the void does: from inside it, and looking into it from above through a cutaway, a
+see-through seabed or a section (but in the band under a cutaway's rim, which the stage
+draws). A stage's seabed seen from below leaves the fill to the background where it hangs
+in front; the faces hide it by depth. Without walls the void costs nothing extra
+(`SKY_ABYSS_WALLS`).
+
 ## Cutaway
 
 `cutaway` cuts the sea's water and seabed away in front of the view, so what lies under

@@ -661,6 +661,8 @@ export function createSkyStageMaterial(
   if (occupant || part === 'falloff-bed') defines.STAGE_SHAPED = '';
   if (occupant) defines.STAGE_OCCUPANT = '';
   if (!surface && seeThrough) defines.STAGE_SEE_THROUGH = '';
+  // Its lid, seen from the void, leaves the cave's walls to the background.
+  if (!surface && sky.abyssWalls) defines.SKY_ABYSS_WALLS = '';
 
   // Inherits the sky's uniforms rather than copying them, so what the sky adds later reaches it too.
   let uniforms = sky.uniforms;

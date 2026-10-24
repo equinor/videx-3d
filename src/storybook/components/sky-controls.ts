@@ -133,6 +133,21 @@ export type SkyArgs = {
   abyssDepthDetail: number;
   abyssDepthDetailScale: number;
   abyssFalloff: number;
+  abyssWalls: boolean;
+  abyssWallDistance: number;
+  abyssWallColor: string;
+  abyssWallCutColor: string;
+  abyssWallStrength: number;
+  abyssWallLightElevation: number;
+  abyssWallHaze: number;
+  abyssWallMist: number;
+  abyssWallMistReach: number;
+  abyssWallScale: number;
+  abyssWallRelief: number;
+  abyssWallFlare: number;
+  abyssWallWander: number;
+  abyssWallClip: number;
+  abyssWallBlackDepth: number;
   // Environment
   curvedHorizon: boolean;
   environment: boolean;
@@ -237,6 +252,22 @@ export const skyArgs: SkyArgs = {
   abyssDepthDetail: skyDefaults.abyss.depthDetail,
   abyssDepthDetailScale: skyDefaults.abyss.depthDetailScale,
   abyssFalloff: skyDefaults.abyss.falloff,
+  // TODO: back to false once the walls are done.
+  abyssWalls: true,
+  abyssWallDistance: skyDefaults.abyss.walls.distance,
+  abyssWallColor: skyDefaults.abyss.walls.color,
+  abyssWallCutColor: skyDefaults.abyss.walls.cutColor,
+  abyssWallStrength: skyDefaults.abyss.walls.strength,
+  abyssWallLightElevation: skyDefaults.abyss.walls.lightElevation,
+  abyssWallHaze: skyDefaults.abyss.walls.haze,
+  abyssWallMist: skyDefaults.abyss.walls.mist,
+  abyssWallMistReach: skyDefaults.abyss.walls.mistReach,
+  abyssWallScale: skyDefaults.abyss.walls.scale,
+  abyssWallRelief: skyDefaults.abyss.walls.relief,
+  abyssWallFlare: skyDefaults.abyss.walls.flare,
+  abyssWallWander: skyDefaults.abyss.walls.wander,
+  abyssWallClip: skyDefaults.abyss.walls.clip,
+  abyssWallBlackDepth: skyDefaults.abyss.walls.blackDepth,
   curvedHorizon: skyDefaults.curvedHorizon,
   environment: true,
   lightProbe: true,
@@ -411,6 +442,22 @@ export const skyAbyssFromArgs = (args: SkyArgs): SkyAbyss => ({
   depthDetail: args.abyssDepthDetail,
   depthDetailScale: args.abyssDepthDetailScale,
   falloff: args.abyssFalloff,
+  walls: args.abyssWalls && {
+    distance: args.abyssWallDistance,
+    color: args.abyssWallColor,
+    cutColor: args.abyssWallCutColor,
+    strength: args.abyssWallStrength,
+    lightElevation: args.abyssWallLightElevation,
+    haze: args.abyssWallHaze,
+    mist: args.abyssWallMist,
+    mistReach: args.abyssWallMistReach,
+    scale: args.abyssWallScale,
+    relief: args.abyssWallRelief,
+    flare: args.abyssWallFlare,
+    wander: args.abyssWallWander,
+    clip: args.abyssWallClip,
+    blackDepth: args.abyssWallBlackDepth,
+  },
 });
 
 /**
@@ -990,6 +1037,138 @@ const allSkyArgTypes = (): ArgTypes<SkyArgs> => ({
     SUBSURFACE,
     'How the void\u2019s depths darken below the horizon: the gradient\u2019s exponent. Smaller reaches the depth colour sooner.',
   ),
+  abyssWalls: toggle(
+    SUBSURFACE,
+    'Prototype: cliffs about the stage in the void, so moving in it shows its scale.',
+  ),
+  abyssWallDistance: {
+    ...range(
+      1000,
+      50000,
+      500,
+      SUBSURFACE,
+      'How far out from the stage\u2019s edge the walls stand at the lid, in metres.',
+    ),
+    if: { arg: 'abyssWalls' },
+  },
+  abyssWallColor: {
+    ...color(SUBSURFACE, 'The walls\u2019 rock.'),
+    if: { arg: 'abyssWalls' },
+  },
+  abyssWallCutColor: {
+    ...color(SUBSURFACE, 'The rock\u2019s inside, where the walls are cut.'),
+    if: { arg: 'abyssWalls' },
+  },
+  abyssWallStrength: {
+    ...range(
+      0,
+      1,
+      0.01,
+      SUBSURFACE,
+      'How strongly the raking light shows on the walls.',
+    ),
+    if: { arg: 'abyssWalls' },
+  },
+  abyssWallLightElevation: {
+    ...range(
+      -90,
+      90,
+      1,
+      SUBSURFACE,
+      'Elevation of the light raking the walls, in degrees, at the subsurface light\u2019s bearing; below 0 from below.',
+    ),
+    if: { arg: 'abyssWalls' },
+  },
+  abyssWallHaze: {
+    ...range(
+      1000,
+      100000,
+      1000,
+      SUBSURFACE,
+      'Distance over which the walls fade into the haze, in metres.',
+    ),
+    if: { arg: 'abyssWalls' },
+  },
+  abyssWallMist: {
+    ...range(
+      0,
+      1,
+      0.01,
+      SUBSURFACE,
+      'How dense the mist clinging to the walls is, in patches; the open gap stays clear.',
+    ),
+    if: { arg: 'abyssWalls' },
+  },
+  abyssWallMistReach: {
+    ...range(
+      100,
+      10000,
+      100,
+      SUBSURFACE,
+      'How far the mist hangs off the rock, in metres.',
+    ),
+    if: { arg: 'abyssWalls' },
+  },
+  abyssWallScale: {
+    ...range(
+      200,
+      20000,
+      100,
+      SUBSURFACE,
+      'Size of the walls\u2019 rock features, in metres.',
+    ),
+    if: { arg: 'abyssWalls' },
+  },
+  abyssWallRelief: {
+    ...range(
+      0,
+      10000,
+      100,
+      SUBSURFACE,
+      'How far the walls\u2019 rock stands in and out, in metres.',
+    ),
+    if: { arg: 'abyssWalls' },
+  },
+  abyssWallFlare: {
+    ...range(
+      0,
+      2,
+      0.05,
+      SUBSURFACE,
+      'How far the walls lean out per metre of depth, so the hollow widens.',
+    ),
+    if: { arg: 'abyssWalls' },
+  },
+  abyssWallWander: {
+    ...range(
+      0,
+      20000,
+      100,
+      SUBSURFACE,
+      'How far the walls\u2019 outline wanders in and out in long bays and headlands, in metres.',
+    ),
+    if: { arg: 'abyssWalls' },
+  },
+  abyssWallClip: {
+    ...range(
+      0,
+      20000,
+      100,
+      SUBSURFACE,
+      'How far in front of the camera, at least, a vertical plane cuts the walls away, in metres; it cuts through the stage\u2019s centre while that is further.',
+    ),
+    if: { arg: 'abyssWalls' },
+  },
+  abyssWallBlackDepth: {
+    ...range(
+      100,
+      50000,
+      100,
+      SUBSURFACE,
+      'Depth below the lid over which the light on the walls fades to nearly black, in metres.',
+    ),
+    if: { arg: 'abyssWalls' },
+  },
   curvedHorizon: toggle(
     ENVIRONMENT,
     'The sea, the sky and the clouds follow the Earth\u2019s curve, so the horizon drops as the camera climbs: about 1\u00b0 at 1 km, 4\u00b0 at 15 km. The sea stays flat over the scene.',

@@ -1,7 +1,7 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import { Ref, useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot, Root } from 'react-dom/client';
-import { Camera, Vector3 } from 'three';
+import { Camera, Mesh, Object3D, Vector3 } from 'three';
 import { SKY_EARTH_RADIUS } from '../../components/Sky/sky-model';
 import { CameraLookAtEvent } from '../../events/camera-events';
 import { Vec3 } from '../../sdk';
@@ -207,9 +207,11 @@ export const SkyDebugPanel = ({
 }: SkyDebugPanelProps) => {
   const gl = useThree(state => state.gl);
   const camera = useThree(state => state.camera);
+  const scene = useThree(state => state.scene);
   const root = useRef<Root | null>(null);
   const readout = useRef<HTMLDivElement>(null);
   const since = useRef(0);
+  const walls = useRef<Object3D | undefined>(undefined);
   const [showReadout, setShowReadout] = useState(true);
 
   const sun = skySunPosition(args);
@@ -265,7 +267,7 @@ export const SkyDebugPanel = ({
       buttons: [
         {
           label: showReadout ? 'on' : 'off',
-          title: 'The camera’s height above the sea, the horizon’s dip and the sun’s elevation.',
+          title: 'The camera’s height above the sea, the horizon’s dip, the sun’s elevation, and the triangles the void’s walls are drawn with.',
           on: showReadout,
           click: () => setShowReadout(!showReadout),
         },
@@ -359,9 +361,20 @@ export const SkyDebugPanel = ({
     since.current = 0;
     const height = camera.position.y - level;
     const clock = args.sunFromTime ? `  ${formatSkyHour(args.sunHour)}` : '';
+    if (!walls.current?.parent)
+      walls.current = scene.getObjectByName('sky:abyss-walls');
+    const mesh = walls.current as Mesh | undefined;
+    const triangles =
+      mesh?.visible && mesh.geometry.index
+        ? Math.min(mesh.geometry.drawRange.count, mesh.geometry.index.count) /
+          3
+        : 0;
+    const wallText = mesh
+      ? `  walls ${triangles > 0 ? `${(triangles / 1000).toFixed(1)}k tris` : 'off'}`
+      : '';
     element.textContent =
       `height ${formatHeight(height)}  dip ${(dip(height) / RAD).toFixed(2)}°` +
-      `  sun ${sun.elevation.toFixed(1)}°${clock}`;
+      `  sun ${sun.elevation.toFixed(1)}°${clock}${wallText}`;
   });
 
   return null;

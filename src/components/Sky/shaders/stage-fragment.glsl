@@ -28,9 +28,6 @@ uniform mat3 fenceToUv;
 uniform vec2 fenceSize;
 #include ../../../sdk/materials/shaderLib/fence-field.glsl
 #endif
-#ifdef STAGE_CURVED_DEPTH
-uniform vec4 uSkyStageFlat; // the scene's own flat disc, where uSkyFlat starts before it follows the camera
-#endif
 
 // Cut away with the occupant, by its section and its fence, as the occupant cuts itself.
 bool stageCutAway() {
@@ -172,6 +169,7 @@ void main() {
   vec3 color = skyOceanBed(world, up, bedDepth);
   float cutaway = skyOceanCutawayAlong(cameraPosition, world);
   float seabed = skyOceanCutawaySeabed(cutaway);
+  bool behindWall = false;
     #ifdef STAGE_OCCUPANT
   seabed = 1.0;
     #endif
@@ -197,10 +195,16 @@ void main() {
     color = skyAbyssCeiling(world, distance(cameraPosition, world));
     if(uSkyAbyssDarkening > 0.0)
       color *= exp((altitude + bedDepth) / uSkyAbyssDarkening);
+      #ifdef SKY_ABYSS_WALLS
+    // The walls' fill stands in front of the lid here: the background draws it. Their
+    // faces are a mesh of their own, which hides the lid by depth.
+    vec3 wallStart = skyAbyssWallStart(cameraPosition, dir);
+    behindWall = wallStart.y > 0.0 && wallStart.x < distance(cameraPosition, world);
+      #endif
   }
       // Bitten through, what lies behind shows, with the background's void beyond. Cut
       // away with the occupant only here, once the derivatives above are taken.
-  if(seabed < 1e-3 || stageCutAway())
+  if(seabed < 1e-3 || stageCutAway() || behindWall)
     discard;
     #ifdef STAGE_SEE_THROUGH
   gl_FragColor = vec4(color, seabed * uSkyOceanSeabedOpacity);

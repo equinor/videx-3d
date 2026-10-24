@@ -11,6 +11,7 @@ import {
   Matrix4,
   ShaderMaterial,
   ShaderMaterialParameters,
+  Texture,
   Uniform,
   UniformsLib,
   UniformsUtils,
@@ -36,13 +37,16 @@ import {
 import { OCEAN_SURFACE_UNIFORMS, OceanMaterial } from '../Ocean/ocean-material';
 import fragmentShader from './shaders/sky-fragment.glsl';
 import vertexShader from './shaders/sky-vertex.glsl';
+import { skyAbyssWallGrid } from './sky-abyss-walls';
 import {
   SKY_EARTH_RADIUS,
+  SkyAbyssWalls,
   SkyClouds,
   skyDaylight,
   skyDefaults,
   skyMoonlight,
   skySunColor,
+  SkySubsurfaceColors,
   skyTwilight,
 } from './sky-model';
 
@@ -51,6 +55,7 @@ const SKY_PLANET_COUNT = 5;
 
 // An empty rectangle: nothing is on a stage.
 const NO_STAGE = [1, 1, -1, -1] as const;
+const clipHeading = new Vector3();
 // Camera heights over the sea between which the flat sea's disc moves from the scene to
 // under the camera: from far off, the curve measured from a disc to one side is lopsided.
 const FLAT_SEA_FOLLOW: Vec2 = [100000, 500000];
@@ -92,6 +97,8 @@ export class SkyMaterial extends ShaderMaterial {
   isSkyMaterial = true;
   private bedDetail: SurfaceDetail | undefined;
   private bedDetailKey = '';
+  // How far in front of the camera clipAbyssWalls cuts the walls away.
+  private abyssWallClip: number = skyDefaults.abyss.walls.clip;
   // The scene's flat sea (setFlatSea), before followFlatSea moves it.
   private get flatSea(): Vector4 {
     return this.uniforms.uSkyStageFlat.value;
@@ -164,6 +171,38 @@ export class SkyMaterial extends ShaderMaterial {
           new Vector2(abyss.depthDetail, abyss.depthDetailScale),
         ),
         uSkyAbyssFalloff: new Uniform(abyss.falloff),
+        uSkyAbyssWalls: new Uniform(
+          new Vector4(
+            abyss.walls.distance,
+            abyss.walls.strength,
+            abyss.walls.haze,
+            abyss.walls.scale,
+          ),
+        ),
+        uSkyAbyssWallShape: new Uniform(
+          new Vector4(
+            abyss.walls.relief,
+            abyss.walls.flare,
+            abyss.walls.blackDepth,
+            abyss.walls.wander,
+          ),
+        ),
+        // The plane they are cut away up to (clipAbyssWalls): what is on the far side of its normal shows.
+        uSkyAbyssWallClip: new Uniform(new Vector4(0, 0, 1, -1e30)),
+        uSkyAbyssWallColor: new Uniform(new Color(abyss.walls.color)),
+        uSkyAbyssWallCutColor: new Uniform(new Color(abyss.walls.cutColor)),
+        uSkyAbyssWallMist: new Uniform(
+          new Vector2(abyss.walls.mist, abyss.walls.mistReach),
+        ),
+        uSkyAbyssWallLight: new Uniform(new Vector3(0, 1, 0)),
+        uSkyAbyssWallLightColor: new Uniform(new Color(1, 1, 1)),
+        // The subsurface's light map (skySubsurfaceColors), filling in their shade.
+        uSkyAbyssWallFillTop: new Uniform(new Color()),
+        uSkyAbyssWallFillBottom: new Uniform(new Color()),
+        uSkyAbyssWallFillBelow: new Uniform(new Color()),
+        uSkyAbyssWallRock: new Uniform<Texture | null>(null),
+        // The grid their mesh is laid on (updateAbyssWallGrid): columns, rows and depth.
+        uSkyAbyssWallGrid: new Uniform(new Vector3()),
         uSkyClouds: new Uniform(new Vector4()),
         uSkyCloudsColor: new Uniform(new Vector4(1, 1, 1, 1)),
         uSkyCloudsSeed: new Uniform(new Vector2()),
@@ -178,6 +217,8 @@ export class SkyMaterial extends ShaderMaterial {
         ),
         uSkyFlat: new Uniform(new Vector4()),
         uSkyStageFlat: new Uniform(new Vector4()),
+        // The rectangle setFlatSea was given: its centre and half extents, world X/Z.
+        uSkyStageBox: new Uniform(new Vector4()),
         uSkyOceanLevel: new Uniform(ocean.level),
         uSkyOceanDepth: new Uniform(ocean.depth),
         uSkyOceanBedColor: new Uniform(new Color(ocean.seabed.color)),
@@ -637,6 +678,7 @@ export class SkyMaterial extends ShaderMaterial {
   setFlatSea(bounds: [number, number, number, number] | null) {
     if (!bounds) {
       this.flatSea.set(0, 0, 0, 0);
+      this.uniforms.uSkyStageBox.value.set(0, 0, 0, 0);
     } else {
       const [minX, minZ, maxX, maxZ] = bounds;
       this.flatSea.set(
@@ -645,8 +687,15 @@ export class SkyMaterial extends ShaderMaterial {
         (minZ + maxZ) / 2,
         Math.hypot(maxX - minX, maxZ - minZ) / 2,
       );
+      this.uniforms.uSkyStageBox.value.set(
+        (minX + maxX) / 2,
+        (minZ + maxZ) / 2,
+        (maxX - minX) / 2,
+        (maxZ - minZ) / 2,
+      );
     }
     this.uniforms.uSkyFlat.value.copy(this.flatSea);
+    this.updateAbyssWallGrid();
   }
 
   /**
@@ -764,6 +813,112 @@ export class SkyMaterial extends ShaderMaterial {
   }
   set abyssFalloff(value: number) {
     this.uniforms.uSkyAbyssFalloff.value = Math.max(value, 0.01);
+  }
+
+  /** the void's walls (see {@link SkyAbyssWalls}); changing it recompiles */
+  get abyssWalls(): boolean {
+    return this.defines.SKY_ABYSS_WALLS !== undefined;
+  }
+  set abyssWalls(value: boolean) {
+    if (value === this.abyssWalls) return;
+    if (value) this.defines.SKY_ABYSS_WALLS = '';
+    else delete this.defines.SKY_ABYSS_WALLS;
+    this.needsUpdate = true;
+  }
+
+  /** the walls' look (see {@link SkyAbyssWalls}) */
+  setAbyssWalls(walls: Required<SkyAbyssWalls>) {
+    const distance = Math.max(walls.distance, 1);
+    const relief = MathUtils.clamp(walls.relief, 1, 0.9 * distance);
+    this.uniforms.uSkyAbyssWalls.value.set(
+      distance,
+      MathUtils.clamp(walls.strength, 0, 1),
+      Math.max(walls.haze, 1),
+      Math.max(walls.scale, 1),
+    );
+    this.uniforms.uSkyAbyssWallShape.value.set(
+      relief,
+      Math.max(walls.flare, 0),
+      Math.max(walls.blackDepth, 1),
+      MathUtils.clamp(walls.wander, 0, distance - relief),
+    );
+    (this.uniforms.uSkyAbyssWallColor.value as Color).set(walls.color);
+    (this.uniforms.uSkyAbyssWallCutColor.value as Color).set(walls.cutColor);
+    (this.uniforms.uSkyAbyssWallMist.value as Vector2).set(
+      MathUtils.clamp(walls.mist, 0, 1),
+      Math.max(walls.mistReach, 1),
+    );
+    this.abyssWallClip = Math.max(walls.clip, 0);
+    this.updateAbyssWallGrid();
+  }
+
+  // The grid the walls' mesh is laid on, for the stage, the walls and their cliffs.
+  private updateAbyssWallGrid() {
+    const rock = this.uniforms.uSkyAbyssWallRock.value as Texture | null;
+    if (!rock) return;
+    const box = this.uniforms.uSkyStageBox.value as Vector4;
+    const walls = this.uniforms.uSkyAbyssWalls.value as Vector4;
+    const shape = this.uniforms.uSkyAbyssWallShape.value as Vector4;
+    const grid = skyAbyssWallGrid(
+      [box.z, box.w],
+      walls.x,
+      walls.w,
+      shape.z,
+      (rock.image as { width: number }).width,
+    );
+    (this.uniforms.uSkyAbyssWallGrid.value as Vector3).set(
+      grid.columns,
+      grid.rows,
+      grid.depth,
+    );
+  }
+
+  /** the subsurface's light map, filling in the walls' shade */
+  setAbyssWallFill(colors: SkySubsurfaceColors) {
+    this.uniforms.uSkyAbyssWallFillTop.value.copy(colors.top);
+    this.uniforms.uSkyAbyssWallFillBottom.value.copy(colors.bottom);
+    this.uniforms.uSkyAbyssWallFillBelow.value.copy(colors.below);
+  }
+
+  /**
+   * Cut the walls away up to a vertical plane facing `camera`'s heading, as the cutaway's
+   * does: through the stage's centre, or {@link SkyAbyssWalls.clip} in front of the camera
+   * once that is further. Every frame.
+   */
+  clipAbyssWalls(camera: Camera) {
+    const up = this.up;
+    // The frame's up plus its view direction, laid level: defined looking straight down too.
+    const m = camera.matrixWorld.elements;
+    const heading = clipHeading.set(m[4] - m[8], m[5] - m[9], m[6] - m[10]);
+    heading.addScaledVector(up, -heading.dot(up));
+    const clip = this.uniforms.uSkyAbyssWallClip.value as Vector4;
+    if (heading.lengthSq() > 1e-12) {
+      heading.normalize();
+      clip.set(heading.x, heading.y, heading.z, 0);
+    }
+    const box = this.uniforms.uSkyStageBox.value as Vector4;
+    clip.w = Math.max(
+      clip.x * camera.position.x +
+        clip.y * camera.position.y +
+        clip.z * camera.position.z +
+        this.abyssWallClip,
+      clip.x * box.x + clip.z * box.y,
+    );
+  }
+
+  /** the raking light the walls are shaded by: `direction` toward it, in the subsurface light's `color` */
+  setAbyssWallLight(direction: Vector3, color: Color) {
+    this.uniforms.uSkyAbyssWallLight.value.copy(direction).normalize();
+    this.uniforms.uSkyAbyssWallLightColor.value.copy(color);
+  }
+
+  /** the cliffs the walls are drawn from (`bakeSkyCliffs`) */
+  get abyssWallRock(): Texture | null {
+    return this.uniforms.uSkyAbyssWallRock.value;
+  }
+  set abyssWallRock(value: Texture | null) {
+    this.uniforms.uSkyAbyssWallRock.value = value;
+    this.updateAbyssWallGrid();
   }
 
   /** the endless sea (see {@link SkyOcean}); link its water first ({@link linkOcean}). Changing it recompiles */

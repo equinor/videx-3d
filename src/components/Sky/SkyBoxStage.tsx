@@ -217,6 +217,7 @@ export const SkyBoxStage = ({
   const seabedOpacity = ocean?.seabedOpacity ?? 1;
   const seeThrough = seabedOpacity < 1;
   const bedDetail = ocean?.bedDetail;
+  const abyssWalls = ocean?.abyssWalls;
 
   // The occupant's seabed: its rim, which is the occupant's outline and where the falloff
   // meets it, the stage's mesh of it, and the ground under a camera in it.
@@ -342,7 +343,7 @@ export const SkyBoxStage = ({
       },
     // The seabed's detail is compiled in, from the sky's defines: a new one needs new materials.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sky, bedDetail, seeThrough, reliefOn],
+    [sky, bedDetail, abyssWalls, seeThrough, reliefOn],
   );
 
   // Apart from the rest, since the occupant's cut is compiled into it too.
@@ -356,7 +357,7 @@ export const SkyBoxStage = ({
         cut: { plane: cutPlane, fence: cutFence },
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sky, bedDetail, seeThrough, cutPlane, cutFence],
+    [sky, bedDetail, abyssWalls, seeThrough, cutPlane, cutFence],
   );
 
   // Around an occupant's seabed with no falloff to meet it, the flat seabed leaves it a hole.

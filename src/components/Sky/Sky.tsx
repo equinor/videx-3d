@@ -84,6 +84,8 @@ import {
   skyZone,
 } from './sky-model';
 import { createSkySurfaceMaterial } from './sky-stage';
+import { bakeSkyCliffs } from './sky-cliffs';
+import { SkyAbyssWallLayer } from './SkyAbyssWallLayer';
 import { SkyCubeView } from './SkyCubeView';
 
 export type SkyEnvironmentOptions = {
@@ -111,8 +113,8 @@ export type SkyCaptureOptions = {
   maxWait?: number;
 };
 
-/** A layer the {@link Sky} draws itself: its background, and its sea's surface layer. */
-export type SkyLayer = 'background' | 'surface';
+/** A layer the {@link Sky} draws itself: its background, its sea's surface layer, and its void's walls' mesh. */
+export type SkyLayer = 'background' | 'surface' | 'walls';
 
 /** A wave along a {@link SkyCutaway}'s edge. */
 export type SkyCutawayWave = {
@@ -209,6 +211,8 @@ export type SkyDebug = {
   hide?: SkyLayer[];
   /** the environment's bake for the zone in view as its six faces, in the canvas' lower right corner (`+Y` over `-X -Z +X +Z`, `-Y` under) */
   environment?: boolean;
+  /** the void's walls' mesh: its triangles drawn as lines in one colour (`wireframe`), and shaded as its triangles face, without the rock's relief (`flat`) */
+  walls?: { wireframe?: boolean; flat?: boolean };
 };
 
 /**
@@ -470,6 +474,28 @@ export const Sky = ({
   const abyssDepthDetailScale =
     abyssOptions?.depthDetailScale ?? abyssDefaults.depthDetailScale;
   const abyssFalloff = abyssOptions?.falloff ?? abyssDefaults.falloff;
+  const wallsOptions =
+    abyssOptions?.walls === true ? {} : abyssOptions?.walls || null;
+  const hasWalls = wallsOptions !== null;
+  const wallDistance = wallsOptions?.distance ?? abyssDefaults.walls.distance;
+  const wallColor = toHex(wallsOptions?.color ?? abyssDefaults.walls.color);
+  const wallCutColor = toHex(
+    wallsOptions?.cutColor ?? abyssDefaults.walls.cutColor,
+  );
+  const wallStrength = wallsOptions?.strength ?? abyssDefaults.walls.strength;
+  const wallLightElevation =
+    wallsOptions?.lightElevation ?? abyssDefaults.walls.lightElevation;
+  const wallHaze = wallsOptions?.haze ?? abyssDefaults.walls.haze;
+  const wallMist = wallsOptions?.mist ?? abyssDefaults.walls.mist;
+  const wallMistReach =
+    wallsOptions?.mistReach ?? abyssDefaults.walls.mistReach;
+  const wallScale = wallsOptions?.scale ?? abyssDefaults.walls.scale;
+  const wallRelief = wallsOptions?.relief ?? abyssDefaults.walls.relief;
+  const wallFlare = wallsOptions?.flare ?? abyssDefaults.walls.flare;
+  const wallWander = wallsOptions?.wander ?? abyssDefaults.walls.wander;
+  const wallClip = wallsOptions?.clip ?? abyssDefaults.walls.clip;
+  const wallBlackDepth =
+    wallsOptions?.blackDepth ?? abyssDefaults.walls.blackDepth;
 
   const oceanOptions: SkyOcean | null = ocean === true ? {} : ocean || null;
   const hasOcean = oceanOptions !== null;
@@ -550,6 +576,7 @@ export const Sky = ({
   // In render rather than an effect, so a stage made in this commit compiles with it. A
   // no-op unless the detail changed. The waves' defines likewise, for the surface layer.
   material.oceanBedDetail = bedDetail;
+  material.abyssWalls = hasWalls;
   if (water) material.linkOcean(water);
 
   useEffect(
@@ -633,6 +660,40 @@ export const Sky = ({
     subsurfaceLight?.transition ?? subsurfaceDefaults.transition,
     0,
   );
+  // The void's walls stand in the subsurface: raked by a light at its light's bearing, at
+  // their own elevation, and filled in by its light map.
+  const wallLightDirection = useMemo(
+    () =>
+      new Vector3().fromArray(
+        directionFromCompass(subsurfaceAzimuth, wallLightElevation, {
+          up: [upX, upY, upZ],
+          north: [northX, northY, northZ],
+        }),
+      ),
+    [
+      subsurfaceAzimuth,
+      wallLightElevation,
+      upX,
+      upY,
+      upZ,
+      northX,
+      northY,
+      northZ,
+    ],
+  );
+  useLayoutEffect(() => {
+    material.setAbyssWallLight(wallLightDirection, subsurfaceColor);
+  }, [material, wallLightDirection, subsurfaceColor]);
+  // Their cliffs, baked once while they are on.
+  useEffect(() => {
+    if (!hasWalls) return;
+    const cliffs = bakeSkyCliffs(gl);
+    material.abyssWallRock = cliffs.texture;
+    return () => {
+      material.abyssWallRock = null;
+      cliffs.dispose();
+    };
+  }, [gl, material, hasWalls]);
   const light = useRef<DirectionalLight>(null);
   // 0 the sky's light, 1 the subsurface's; null until the first frame, which takes the zone's.
   const subsurfaceShare = useRef<number | null>(null);
@@ -663,6 +724,7 @@ export const Sky = ({
             seabed: oceanSeabed,
             seabedOpacity: oceanSeabedOpacity,
             bedDetail: bedDetailKey,
+            abyssWalls: hasWalls,
             visible: background,
             ready,
             stage: addStage,
@@ -678,6 +740,7 @@ export const Sky = ({
       oceanSeabed,
       oceanSeabedOpacity,
       bedDetailKey,
+      hasWalls,
       background,
       ready,
       addStage,
@@ -733,9 +796,11 @@ export const Sky = ({
         : { light: skySubsurfaceColors(subsurface) },
     );
     subsurfaceDirty.current = true;
+    // A map of its own lights the scene; the walls keep to the panels.
+    material.setAbyssWallFill(skySubsurfaceColors(subsurface));
     // `subsurface` is an inline object: compared by value, as `panelsKey`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baker, subsurfaceMap, panelsKey]);
+  }, [baker, material, subsurfaceMap, panelsKey]);
 
   // The subsurface's panels turn with the frame; what is baked, with the environment.
   useEffect(() => {
@@ -918,6 +983,22 @@ export const Sky = ({
     material.abyssDepthDetail = abyssDepthDetail;
     material.abyssDepthDetailScale = abyssDepthDetailScale;
     material.abyssFalloff = abyssFalloff;
+    material.setAbyssWalls({
+      distance: wallDistance,
+      color: wallColor,
+      cutColor: wallCutColor,
+      strength: wallStrength,
+      lightElevation: wallLightElevation,
+      haze: wallHaze,
+      mist: wallMist,
+      mistReach: wallMistReach,
+      scale: wallScale,
+      relief: wallRelief,
+      flare: wallFlare,
+      wander: wallWander,
+      clip: wallClip,
+      blackDepth: wallBlackDepth,
+    });
     dirty.current = true;
   }, [
     material,
@@ -937,6 +1018,21 @@ export const Sky = ({
     abyssDepthDetail,
     abyssDepthDetailScale,
     abyssFalloff,
+    hasWalls,
+    wallDistance,
+    wallColor,
+    wallCutColor,
+    wallStrength,
+    wallLightElevation,
+    wallHaze,
+    wallMist,
+    wallMistReach,
+    wallScale,
+    wallRelief,
+    wallFlare,
+    wallWander,
+    wallClip,
+    wallBlackDepth,
   ]);
 
   // Not baked: the bakes keep a level horizon.
@@ -1113,6 +1209,7 @@ export const Sky = ({
     hasOcean,
     cloudsOn,
     bedDetailKey,
+    hasWalls,
   ]);
 
   const cutawayOptions = cutaway === true ? {} : cutaway || null;
@@ -1263,6 +1360,7 @@ export const Sky = ({
 
     const height = camera.position.dot(material.up);
     material.followFlatSea(camera.position);
+    if (material.abyssWalls) material.clipAbyssWalls(camera);
     // From the sea surface down the layer is clear everywhere (skyOceanSurfaceLayer).
     if (surfaceMesh.current)
       surfaceMesh.current.visible =
@@ -1653,6 +1751,21 @@ export const Sky = ({
             // Shown each frame.
             visible={false}
             dispose={null}
+          />
+        )}
+        {/* Shown each frame. Drawn just before the background, which fills only what it leaves. */}
+        {hasWalls && (
+          <SkyAbyssWallLayer
+            sky={material}
+            renderOrder={renderOrder - 1}
+            visible={
+              background &&
+              ready &&
+              !debug?.hide?.includes('background') &&
+              !debug?.hide?.includes('walls')
+            }
+            wireframe={debug?.walls?.wireframe}
+            flat={debug?.walls?.flat}
           />
         )}
       </group>
