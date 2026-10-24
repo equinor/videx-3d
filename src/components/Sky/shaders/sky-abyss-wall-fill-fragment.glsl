@@ -20,18 +20,17 @@ void main() {
   vec3 dir = toward / t;
   // Taken before the discards, past which it is undefined.
   float pixel = length(fwidth(dir));
-  // On the lid, its rock is cut away in front of the plane too.
-  if(uSkyAbyssWallFillLid > 0.5 && dot(uSkyAbyssWallClip.xyz, p) < uSkyAbyssWallClip.w)
+  // On the lid, its rock is cut away in front of the plane too; from above, beyond the stage,
+  // an opaque seabed hides it.
+  if(uSkyAbyssWallFillLid > 0.5 && (dot(uSkyAbyssWallClip.xyz, p) < uSkyAbyssWallClip.w || skyAbyssWallCovered(cameraPosition, dir)))
     discard;
   float h = dot(p, uSkyUp);
-  float r = -skyAbyssWallGap(p, h);
-  if(r > -skyAbyssWallLap() / uSkyAbyssWallGrid.x)
-    r = skyAbyssWallInto(p, h);
+  float r = skyAbyssWallInRock(p, h);
   if(r <= 0.0)
     discard;
 
   vec3 color = skyAbyssWallFill(cameraPosition, dir, vec3(t, r, uSkyAbyssWallFillLid), pixel);
-  color = skyAbyssWallHaze(color, p, t);
+  color = skyAbyssWallHaze(color, skyAbyssWallFar(p), cameraPosition, dir, t);
   if(uSkyAbyssDarkening > 0.0)
     color *= exp(min(dot(cameraPosition, uSkyUp) - uSkyAbyssLevel, 0.0) / uSkyAbyssDarkening);
   gl_FragColor = vec4(skyDebugTint(color, vec3(0.95, 0.85, 0.1)), 1.0);

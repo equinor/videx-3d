@@ -100,7 +100,8 @@ export type SkyBoxStageOccupant = {
   /**
    * The occupant's own cut — a `ChunkStack`'s, from its `onCut` — which the stage cuts
    * the occupant's seabed with, as the occupant cuts itself. The same uniform objects, so
-   * it follows the cut every frame; they must be in the scene frame.
+   * it follows the cut every frame; they must be in the scene frame. While it cuts, the
+   * void shows through the seabed, and the sky draws the void's walls from above too.
    */
   cut?: CutUniforms;
   /** told what the stage does for the occupant, whenever that changes; all `false` once the stage is gone */
@@ -362,6 +363,22 @@ export const SkyBoxStage = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [sky, bedDetail, abyssWalls, seeThrough, cutPlane, cutFence],
   );
+  // While the occupant's cut opens its seabed, the void's walls show through it from above.
+  useEffect(() => {
+    if (!sky || !occupantSeabed || (!cutPlane && !cutFence)) return;
+    const open = () => {
+      const cutting = cutPlane?.value;
+      return (
+        (!!cutting &&
+          (cutting.x !== 0 || cutting.y !== 0 || cutting.z !== 0)) ||
+        (cutFence?.params.value.x ?? 0) > 0.5
+      );
+    };
+    sky.abyssOpenings.add(open);
+    return () => {
+      sky.abyssOpenings.delete(open);
+    };
+  }, [sky, occupantSeabed, cutPlane, cutFence]);
 
   // Around an occupant's seabed with no falloff to meet it, the flat seabed leaves it a hole.
   const bedAround = useMemo(
@@ -425,14 +442,12 @@ export const SkyBoxStage = ({
   const surfaceShown = !debug?.hide?.includes('surface');
   useFrame(({ camera }) => {
     if (!sky || !ocean) return;
-    // Under the seabed its lid hides the water: the surface would discard every pixel.
+    // Under the seabed's level the void's lid hides the water, seabed or not: the surface
+    // would discard every pixel.
     if (surface.current)
       surface.current.visible =
         surfaceShown &&
-        !(
-          sky.oceanSeabed &&
-          camera.position.dot(sky.up) - sky.oceanLevel + sky.oceanDepth < 0
-        );
+        camera.position.dot(sky.up) - sky.oceanLevel + sky.oceanDepth >= 0;
     if (!groundBounds || !ground) return;
     const { x, y, z } = camera.position;
     const { min, max } = groundBounds;

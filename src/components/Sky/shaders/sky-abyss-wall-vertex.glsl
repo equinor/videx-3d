@@ -16,7 +16,7 @@ uniform float uSkyAbyssLevel;
 varying vec3 vSkyAbyssWall; // world
 varying vec3 vSkyAbyssWallNormal; // facing the hollow
 varying vec2 vSkyAbyssWallOutward; // out of the outline, in the stage's plane
-varying vec3 vSkyAbyssWallAt; // the way round (to whole tiles of the relief), the depth below the lid, how far out of the walls' middle
+varying vec4 vSkyAbyssWallAt; // the way round (to whole tiles of the relief), the depth below the lid, how far out of the walls' middle, and the share of the way round
 
 void main() {
   vec2 ij = position.xy;
@@ -31,8 +31,9 @@ void main() {
   float lap = skyAbyssWallLap();
   float s = ij.x / uSkyAbyssWallGrid.x * lap;
   float tile = uSkyAbyssWalls.w * SKY_ABYSS_CLIFF_TILE / SKY_ABYSS_RELIEF_REPEAT;
-  // Not wrapped: the last column runs on to a whole number of tiles, not back to 0.
-  vSkyAbyssWallAt = vec3(s / lap * max(floor(lap / tile + 0.5), 1.0) * tile, skyAbyssWallRowDepth(ij.y), vertex.w);
+  // Not wrapped: the last column runs on to a whole number of tiles, not back to 0. The share
+  // runs on to 1, which the sand's waves, whole numbers of them round, take as 0.
+  vSkyAbyssWallAt = vec4(s / lap * max(floor(lap / tile + 0.5), 1.0) * tile, skyAbyssWallRowDepth(ij.y), vertex.w, s / lap);
   s = mod(s, lap);
   vSkyAbyssWallOutward = skyAbyssWallOutline(s, 1.0) - skyAbyssWallOutline(s, 0.0);
   vSkyAbyssWall = vertex.xyz;

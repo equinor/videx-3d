@@ -12,7 +12,7 @@ uniform vec2 uSkyAbyssWallDebug; // above 0.5: x drawn in one colour (for a wire
 varying vec3 vSkyAbyssWall;
 varying vec3 vSkyAbyssWallNormal;
 varying vec2 vSkyAbyssWallOutward;
-varying vec3 vSkyAbyssWallAt;
+varying vec4 vSkyAbyssWallAt;
 
 // The rock lit, facing `normal`, with its relief laid three ways and blended by how the face
 // turns: round the outline and down where it faces into the hollow, out across it and down
@@ -52,27 +52,34 @@ void main() {
   #include <logdepthbuf_fragment>
 
   // Taken before the discard, past which they are undefined.
-  vec3 uvw = vSkyAbyssWallAt / (uSkyAbyssWalls.w * SKY_ABYSS_CLIFF_TILE / SKY_ABYSS_RELIEF_REPEAT);
+  vec3 uvw = vSkyAbyssWallAt.xyz / (uSkyAbyssWalls.w * SKY_ABYSS_CLIFF_TILE / SKY_ABYSS_RELIEF_REPEAT);
   vec3 dx = dFdx(uvw);
   vec3 dy = dFdy(uvw);
 
   vec3 toward = vSkyAbyssWall - cameraPosition;
   float t = length(toward);
   vec3 dir = toward / t;
-  if(skyAbyssWallHidden(cameraPosition, dir, t))
+  // Cut away, behind their fill or rock, or, from above, under an opaque seabed.
+  if(skyAbyssWallHidden(cameraPosition, dir, t) || skyAbyssWallCovered(cameraPosition, dir))
     discard;
 
   vec3 color = vec3(0.95, 0.85, 0.1);
   if(uSkyAbyssWallDebug.x < 0.5) {
     vec3 normal = normalize(vSkyAbyssWallNormal);
-    color = skyAbyssWallFace(normal, dot(vSkyAbyssWall, uSkyUp), uvw, dx, dy);
+    // The sand over their rock: its own shade, and no reads of the cliffs where it is all sand.
+    float rock = skyAbyssWallRockShare(vSkyAbyssWallAt.y, vSkyAbyssWallAt.w);
+    float h = dot(vSkyAbyssWall, uSkyUp);
+    color = rock > 0.0 ? skyAbyssWallFace(normal, h, uvw, dx, dy) : vec3(0.0);
+    if(rock < 1.0)
+      color = mix(skyAbyssWallSandShade(normal, vSkyAbyssWall), color, rock);
     // Veiled by the mist clinging to the rock, thicker the more the view runs along it.
     float mist = uSkyAbyssWallMist.x;
     if(mist > 0.0) {
       float veil = 1.0 - exp(-mist * skyAbyssWallMistAt(vSkyAbyssWall) * SKY_ABYSS_MIST_VEIL / max(abs(dot(normal, dir)), 0.08));
       color = mix(color, skyAbyssWallMistLight(dot(vSkyAbyssWall, uSkyUp)), veil);
     }
-    color = skyAbyssWallHaze(color, vSkyAbyssWall, t);
+    // On their rim, all the hollow's light is left.
+    color = skyAbyssWallHaze(color, 1.0, cameraPosition, dir, t);
     // Dimmed with the camera's depth, as the background dims the void (skyAbyss).
     if(uSkyAbyssDarkening > 0.0)
       color *= exp((dot(cameraPosition, uSkyUp) - uSkyAbyssLevel) / uSkyAbyssDarkening);

@@ -319,7 +319,7 @@ each new bake of its zone over a fraction of a second, so the light does not ste
 sun moves; another zone's is swapped in at once. The environment map is swapped in.
 
 `subsurface` is the light where the sky's own means nothing: below the seabed, and
-wherever the sky is not drawn (`background: false`). By default it is a dark backdrop
+wherever the sky is not drawn (`background: false`, or `'void'`). By default it is a dark backdrop
 with soft light panels above and below the horizon (`panels`, see `SkySubsurface`); give
 `map` (an equirectangular or cube texture) to use one of your own instead. The directional
 light changes too: below the seabed it is the subsurface's `light`, steady whatever the time
@@ -338,6 +338,20 @@ lit as the scene is.
 `background: false` hides the sky (and its stage) instantly: nothing is rebuilt or baked
 again, and the scene stays lit, by the subsurface.
 
+`background: 'void'` draws the void's grey gradient in the sky's place, the very gradient
+the stand-in shows while the sky compiles: the lid's colour overhead fading to the
+horizon's, and the depths' below, measured from the horizon the Earth's curve lowers, so
+from high up it meets the far ground's haze without a seam. There is no air, sun, moon,
+stars or clouds (all compiled
+out, `SKY_VOID`, so the background is cheaper too). The void itself, its walls, a stage
+and a sea are drawn as ever; with neither water nor a seabed it is the void all round.
+The scene is lit by the subsurface everywhere, as with `false`, so only its zone is baked.
+Changing to or from it recompiles the sky.
+
+```tsx
+<Sky background="void" abyss={{ walls: true }} ocean={{ water: false, seabed: false }} />
+```
+
 ## The endless sea
 
 `ocean` adds a sea: a wavy surface at `level` over a flat seabed `depth` below it, seen
@@ -350,7 +364,8 @@ from above, from inside the water and, below the seabed, as the void.
 The water takes the `<Ocean>` component's props under the same names (see
 [Ocean](./ocean.md)), so one object can drive both; the sun and the reflected sky come
 from the sky. `water: false` leaves the seabed dry; `seabed: false` leaves the void
-below the water. Far off, over the waves' `detailFadeDistance`, and everywhere once the
+below the water, seen through it from above, while from the void its lid is still a roof,
+as under a seabed. Far off, over the waves' `detailFadeDistance`, and everywhere once the
 camera climbs from 2 to 5 km over the sea (`SKY_OCEAN_OPAQUE`), the water turns opaque
 whatever its `waterOpacity`, so from high up the seabed no longer greys the sea; close to it
 the water stays as see-through as set. `seabedOpacity` (default 1) lets the void, or the scene under a stage's
@@ -484,7 +499,8 @@ horizon, so a camera under the ground does not see the sky. It is part of the
 background, so it never hides anything in the scene, including objects above the level.
 The lid recedes into the horizon colour (`fadeDistance`) and has a noise relief
 (`detail`, `detailScale`); the depths have faint distant rock (`depthDetail`) and a
-`falloff`. A sea turns the void on below its seabed by itself.
+`falloff`. A sea turns the void on below its seabed by itself, and with or without a
+seabed its lid is a roof from below.
 
 `walls` (off by default; a prototype) adds cliffs about the stage, from the lid down, so
 moving in the void shows its scale. They follow the stage's rectangle (the one the flat
@@ -511,6 +527,25 @@ background needs too. They are cut away up to a vertical plane facing the camera
 kept): through the stage's centre, or `clip` in front of the camera once that is further,
 so from a distance the near half of the hollow is gone and nothing of it stands in front of
 the scene. Like a section, it turns with the camera, sweeping the cut through the rock.
+Looking up, the bottom of the screen decides instead, so the plane keeps its side as the
+view tilts past 45° and straight up (laid level, the view and the screen's top or bottom
+agree looking level). The cut takes away all that lies short of the plane, whichever side
+of it the camera is on: a view from the side cut away starts at the plane, one from the
+side kept ends there, and at the plane the two agree, so the plane can pass through the
+camera without a jump. Below the lid the plane is pushed on past the stage's far corner
+(easing in over `clip` down from the lid), so the whole stage lies in what is cut away and
+no cut face or rim ever stands behind it, whatever the view; the lid shows over the rock
+taken away. Once the whole stage is in view through the hollow, nothing is cut: the plane
+eases back through the camera and past the far rim, and then is gone, so from inside the
+hollow, or from the dark below it looking up through its opening, the whole lit rim and
+the lid over it show (`skyAbyssWallInView`: how far inside the hollow, at its narrowest,
+the camera is, or below the walls' foot the sight lines to the stage's corners pass; the
+hollow is convex at every depth, so its corners prove all of it). Below their foot the
+camera never counts as inside their rock, which is black anyway. A view rising into that
+rock from under the foot is black, and hides the walls' faces beyond it (from there, each
+of their pixels checks that: at most three reads of the cliffs). A camera in their rock is
+never in view of the stage, so it always has its cut (`skyAbyssWallClipPlane`,
+tested in `tests/sky-abyss-walls.test.ts`).
 Views start past the plane. Where it cuts their rock, a solid fill, drawn by the background
 (the mesh leaves every pixel behind it), shows the rock's inside,
 unlike the eroded outside of the walls: beds of varying tone (`cutColor`), warped so they
@@ -535,15 +570,58 @@ stand, and stay solid: hazed into what lies behind, the void's horizon would sho
 them as the view tilts. With walls the depths below the horizon are that haze too: a view
 that meets none of the mesh passes under its foot, and is drawn as a wall would be there,
 at least a haze length on, so as dark as the walls' foot; they lose the gradient and its
-faint strata (`depthDetail`). Mist clings to the walls in patches fixed in the world (`mist`), hanging
+faint strata (`depthDetail`). Their rock runs on down past the mesh's foot (the fill cuts
+it there too), so from under the foot a view rising out of the hollow before it is up to
+the foot has met that rock, and is as dark; one that rises into the hollow sees it, and
+the lid over it. Mist clings to the walls in patches fixed in the world (`mist`), hanging
 `mistReach` off the rock: a veil in front of it, thicker the more a view runs along it. The
 open gap stays clear.
-The mesh is drawn only from below the lid, before the background; the fill and the haze
-beyond show wherever
+Their top is a layer of soft `sand` over the rock (default 1000 deep; 0 for none, all
+rock), as the overburden over older rock under a real sea: in it the mesh follows the
+rock's large shape alone, its cliffs read three mip levels coarser, so the sand drapes the
+bays and headlands without their sharp relief, and is shaded dull and matte in
+`sandColor`, faintly mottled, with no reads of the cliffs where it is all sand. Its
+contact with the rock eases over a fifth of its depth either way and wanders a little
+round the outline; where the walls are cut, the sand shows thin laminae instead of the
+rock's beds. The lid seen from below is that sand's underside (`skyAbyssLid`, for the
+background and a stage's seabed from below alike), rippled by the void's `detail`, in the
+walls' haze. A dim light at the top of the stage (`glow`) lights the lid and the sand over
+the stage, fading out over about `distance` beyond it. Without sand the lid is the void's
+own, as without walls. It all only changes uniforms; with `sand: 0` the walls draw exactly
+as before.
+Far from the hollow its light fades out (`fade`, default 20 km; 0 for none), so zoomed out
+the lid, the sand and the cut darken toward black instead of fading into the haze's grey.
+It is measured beyond the rim itself, the walls' middle at each depth, wandering and leaning
+out as they do (`skyAbyssWallFar`), so the dark follows the hollow's own outline rather
+than a rectangle or a circle, and eases down to a fifth of the light over `fade`, then the
+rest to black over twice that again (`SKY_ABYSS_FADED_OUT`), the two easing into each
+other. What is
+seen is darkened by what is left where it is (the walls' faces stand on the rim and keep
+all of it). Their haze thins out over the same `fade` beyond the rim (`skyAbyssWallFog`):
+thick in the hollow, gone far from it, so from far out a view passes clear air until it
+nears the hollow and the darkened lid shows rather than a grey haze. Its thickness along a
+view is summed at the middles of six stretches of the part of the view over the rectangle
+it can lie over (`skyAbyssWallClear`), each a box distance to the rim without its wander:
+the haze is smooth. Inside the hollow it is as thick as without the fade, so little
+changes there. Without sand the void's lid darkens, and thins its fade into the horizon
+colour, the same way. A point inside the rim however far it wanders skips the way round:
+the walls' faces, and anything in the hollow, pay one box distance for its light.
+A view rising from under the foot counts as gone into the rock there once it passes within
+about a pixel of it (`SKY_ABYSS_FOOT_OVERLAP`), so that rock overlaps the mesh's last edge
+and no hairline of the lid shows between them.
+The mesh is drawn from below the lid, before the background, and from above it only while
+the void can show there: through a seabed that is off or see-through, a cutaway that takes
+the seabed, or a stage's occupant cut (a `SkyBoxStage` tells the sky while its occupant's
+`cut` cuts). From above, a view going down through the lid beyond the stage while the
+background's seabed there is opaque, and a cutaway does not take it, leaves the mesh hidden
+(`skyAbyssWallCovered`, which reads the sea's cutaway as the background does); over
+the stage the stage's own seabed hides it by depth, but where it is cut. The fill and the
+haze beyond show wherever
 the void does: from inside it, and looking into it from above through a cutaway, a
 see-through seabed or a section (but in the band under a cutaway's rim, which the stage
 draws). A stage's seabed seen from below leaves the fill to the background where it hangs
-in front; the faces hide it by depth. Without walls the void costs nothing extra
+in front, and from under the foot the rock below it, where a view went into that rock
+first; the faces hide it by depth. Without walls the void costs nothing extra
 (`SKY_ABYSS_WALLS`).
 
 ## Cutaway
@@ -599,6 +677,28 @@ buffer, not a reversed one.
 anything set on the renderer since. Set tone mapping that should change at runtime on
 the renderer from an effect, and use the Canvas `flat` prop rather than
 `gl={{ toneMapping: NoToneMapping }}`; otherwise the next re-render resets it.
+
+⚠️ With a logarithmic depth buffer and MSAA, data under the sea can show through its
+surface and seabed along its edges, most of all from far up, where a sphere or a
+wellbore is only a few pixels wide and nearly all edge. three.js writes a log depth from
+a value it interpolates at the pixel's centre, and at an edge that centre can lie off
+the triangle: the value is extrapolated, by kilometres along a steep side, and comes out
+in front of the water. It is the data's own materials, not the sky's, so the sky cannot
+mend it. A host can have three interpolate it inside the triangle instead, before any
+material compiles (measured: 16–18 such pixels at 40–600 km, none after):
+
+```ts
+import { ShaderChunk } from 'three';
+
+ShaderChunk.logdepthbuf_pars_vertex = ShaderChunk.logdepthbuf_pars_vertex.replace(
+  'varying float vFragDepth;',
+  'centroid varying float vFragDepth;',
+);
+ShaderChunk.logdepthbuf_pars_fragment = ShaderChunk.logdepthbuf_pars_fragment.replace(
+  'varying float vFragDepth;',
+  'centroid varying float vFragDepth;',
+);
+```
 
 ## Performance
 
@@ -678,10 +778,8 @@ fill-bound: they scale with the pixels drawn, about double at 1080p.
 `<Sky debug={...}>` tints each part by what draws it (`tint`), hides layers (`hide`) and
 shows the environment's bake for the zone in view (`environment`). Its `walls` views draw
 the void walls' mesh as lines (`wireframe`); flat, without the rock's relief, with the
-faces of their cut drawn as geometry, so they hide what lies behind the rock (`flat`);
-from above the lid too, still cut (`whole`), so with the sky's background and the stage's
-layers hidden their shape shows against the data from anywhere; and the plane they are
-cut along as a grid (`cut`). `<SkyBoxStage debug={...}>` hides stage layers, and draws
+faces of their cut drawn as geometry, so they hide what lies behind the rock (`flat`); and
+the plane they are cut along as a grid (`cut`). `<SkyBoxStage debug={...}>` hides stage layers, and draws
 its outline (with, under walls, a faint copy at their foot) and wireframe over everything.
 None of them rebuild or bake anything.
 
@@ -705,13 +803,14 @@ basic ones show in every story, the advanced and debug ones only in `StageDebug`
 | `sky-context.ts` | `useSky`, `useSkyOcean` |
 | `shaders/sky.glsl` | the sky itself: gradient, sun, night, clouds, void, `skyRadiance` |
 | `shaders/sky-gradient.glsl` | the gradient alone |
+| `shaders/sky-void.glsl` | the void's gradient alone: its colours, the depths' gradient, and the whole of it as the stand-in and `background: 'void'` draw it |
 | `shaders/sky-stand-in-fragment.glsl` | the stand-in drawn while the sky compiles: the void's gradient |
 | `shaders/sky-ocean.glsl` | the sea: surface, water, seabed, cutaway |
 | `shaders/stage-fragment.glsl`, `sky-surface-fragment.glsl` | the stage's parts, and the sea surface layer |
 
 - The stage's materials and the baker's share the background material's UNIFORM
   OBJECTS, so they follow every change to it. Defines are copied: the ones a stage needs
-  are listed in `SKY_SHARED_DEFINES`; background-only switches (`SKY_CLOUDS`) are not,
+  are listed in `SKY_SHARED_DEFINES`; background-only switches (`SKY_CLOUDS`, `SKY_VOID`) are not,
   and the baker copies all of them, IN ORDER, in `sync()`.
 - ⭐ A program is keyed on its defines' order, the `fog` flag and the number of lights
   as well as on the source: the baker's material copies the background's defines in

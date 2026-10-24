@@ -85,7 +85,7 @@ import {
 } from './sky-model';
 import { createSkySurfaceMaterial } from './sky-stage';
 import { bakeSkyCliffs } from './sky-cliffs';
-import { SkyAbyssWallLayer } from './SkyAbyssWallLayer';
+import { SkyAbyssWallFrame, SkyAbyssWallLayer } from './SkyAbyssWallLayer';
 import { SkyCubeView } from './SkyCubeView';
 
 export type SkyEnvironmentOptions = {
@@ -211,8 +211,8 @@ export type SkyDebug = {
   hide?: SkyLayer[];
   /** the environment's bake for the zone in view as its six faces, in the canvas' lower right corner (`+Y` over `-X -Z +X +Z`, `-Y` under) */
   environment?: boolean;
-  /** the void's walls' mesh: its triangles drawn as lines in one colour (`wireframe`, over everything while `whole`); shaded as its triangles face, without the rock's relief, with the faces of the cut drawn as geometry that hides what lies behind the rock (`flat`); drawn from above the lid too, still cut (`whole`); and the plane they are cut along, as a grid over everything (`cut`) */
-  walls?: { wireframe?: boolean; flat?: boolean; whole?: boolean; cut?: boolean };
+  /** the void's walls' mesh: its triangles drawn as lines in one colour (`wireframe`); shaded as its triangles face, without the rock's relief, with the faces of the cut drawn as geometry that hides what lies behind the rock (`flat`); and the plane they are cut along, as a grid over everything (`cut`) */
+  walls?: { wireframe?: boolean; flat?: boolean; cut?: boolean };
 };
 
 /**
@@ -247,9 +247,12 @@ export type SkyProps = {
   /**
    * Draw the sky, and its `SkyBoxStage`, behind the scene. Switched instantly: nothing
    * is rebuilt or baked again, and the environment and the light probe stay on, lit by
-   * the `subsurface`. Default true
+   * the `subsurface`. `'void'` draws the void's grey gradient in the sky's place (the
+   * stand-in's, while the sky compiles): no air, sun, moon, stars or clouds, and the
+   * scene lit by the `subsurface` everywhere; the void, its walls and a sea are drawn as
+   * ever. Changing to or from it recompiles. Default true
    */
-  background?: boolean;
+  background?: boolean | 'void';
   /** below a level, a lid hides the sky and a void fills the view (see {@link SkyAbyss}). Default false */
   abyss?: boolean | SkyAbyss;
   /** an endless sea; below its seabed the abyss takes over (see {@link SkyOcean}). Default false */
@@ -496,6 +499,16 @@ export const Sky = ({
   const wallClip = wallsOptions?.clip ?? abyssDefaults.walls.clip;
   const wallBlackDepth =
     wallsOptions?.blackDepth ?? abyssDefaults.walls.blackDepth;
+  const wallSand = wallsOptions?.sand ?? abyssDefaults.walls.sand;
+  const wallSandColor = toHex(
+    wallsOptions?.sandColor ?? abyssDefaults.walls.sandColor,
+  );
+  const wallGlow = wallsOptions?.glow ?? abyssDefaults.walls.glow;
+  const wallFade = wallsOptions?.fade ?? abyssDefaults.walls.fade;
+  // Drawn at all; the void's gradient in the sky's place; the sky itself.
+  const drawn = background !== false;
+  const voided = background === 'void';
+  const skyShown = background === true;
 
   const oceanOptions: SkyOcean | null = ocean === true ? {} : ocean || null;
   const hasOcean = oceanOptions !== null;
@@ -577,6 +590,7 @@ export const Sky = ({
   // no-op unless the detail changed. The waves' defines likewise, for the surface layer.
   material.oceanBedDetail = bedDetail;
   material.abyssWalls = hasWalls;
+  material.voidBackground = voided;
   if (water) material.linkOcean(water);
 
   useEffect(
@@ -725,7 +739,7 @@ export const Sky = ({
             seabedOpacity: oceanSeabedOpacity,
             bedDetail: bedDetailKey,
             abyssWalls: hasWalls,
-            visible: background,
+            visible: drawn,
             ready,
             stage: addStage,
           }
@@ -741,7 +755,7 @@ export const Sky = ({
       oceanSeabedOpacity,
       bedDetailKey,
       hasWalls,
-      background,
+      drawn,
       ready,
       addStage,
     ],
@@ -754,6 +768,8 @@ export const Sky = ({
     return layer;
   }, [water, material]);
   const surfaceMesh = useRef<Mesh>(null);
+  // The walls' layer's work each frame, run after their cut (see SkyAbyssWallLayer).
+  const wallFrame = useRef<SkyAbyssWallFrame | null>(null);
 
   useEffect(() => () => surfaceLayer?.dispose(), [surfaceLayer]);
 
@@ -773,13 +789,16 @@ export const Sky = ({
   const probeBusy = useRef(false);
   const captureInterval = capture?.interval ?? DEFAULT_CAPTURE_INTERVAL;
   const captureMaxWait = capture?.maxWait ?? DEFAULT_CAPTURE_MAX_WAIT;
-  // The zones the camera can be in; the subsurface also lights an undrawn sky.
+  // The zones the camera can be in; the subsurface also lights an undrawn sky, and the
+  // void's gradient everywhere, so then nothing else is baked.
   const zones = useMemo<SkyZone[]>(
     () =>
-      hasOcean && oceanWater
-        ? ['air', 'water', 'subsurface']
-        : ['air', 'subsurface'],
-    [hasOcean, oceanWater],
+      voided
+        ? ['subsurface']
+        : hasOcean && oceanWater
+          ? ['air', 'water', 'subsurface']
+          : ['air', 'subsurface'],
+    [voided, hasOcean, oceanWater],
   );
 
   const subsurfaceMap = subsurface?.map ?? null;
@@ -998,6 +1017,10 @@ export const Sky = ({
       wander: wallWander,
       clip: wallClip,
       blackDepth: wallBlackDepth,
+      sand: wallSand,
+      sandColor: wallSandColor,
+      glow: wallGlow,
+      fade: wallFade,
     });
     dirty.current = true;
   }, [
@@ -1033,6 +1056,10 @@ export const Sky = ({
     wallWander,
     wallClip,
     wallBlackDepth,
+    wallSand,
+    wallSandColor,
+    wallGlow,
+    wallFade,
   ]);
 
   // Not baked: the bakes keep a level horizon.
@@ -1210,6 +1237,7 @@ export const Sky = ({
     cloudsOn,
     bedDetailKey,
     hasWalls,
+    voided,
   ]);
 
   const cutawayOptions = cutaway === true ? {} : cutaway || null;
@@ -1360,11 +1388,15 @@ export const Sky = ({
 
     const height = camera.position.dot(material.up);
     material.followFlatSea(camera.position);
+    // Camera controls move the camera before this runs but leave its matrices to the render:
+    // read with this frame's position, last frame's would swing the cuts as it moves. Once,
+    // for the walls' cut and the cutaway alike.
+    if (material.abyssWalls || cutawayOptions) camera.updateMatrixWorld();
     if (material.abyssWalls) material.clipAbyssWalls(camera);
     // From the sea surface down the layer is clear everywhere (skyOceanSurfaceLayer).
     if (surfaceMesh.current)
       surfaceMesh.current.visible =
-        background &&
+        drawn &&
         ready &&
         !debug?.hide?.includes('surface') &&
         height > material.oceanLevel;
@@ -1385,7 +1417,7 @@ export const Sky = ({
       cutaway: !!cutawayOptions && cutawayWater > 0,
       abyss: material.abyss,
       abyssLevel: material.abyssLevel,
-      background,
+      background: skyShown,
     });
     zoneInView.current = zone;
 
@@ -1421,9 +1453,7 @@ export const Sky = ({
 
     // The cutaway: from below the camera to where the `reach` row meets its plane, the
     // surface from above the water and the seabed from in it, or from above a dry one.
-    // Camera controls move the camera before this runs but leave its matrices to the render:
-    // read with this frame's position, last frame's would swing the edge as it moves.
-    camera.updateMatrixWorld();
+    // The camera's matrices are this frame's (above).
     const cutawayShape = material.uniforms.uSkyOceanCutawayShape
       .value as Vector3;
     const size = cutawaySize.current;
@@ -1632,6 +1662,14 @@ export const Sky = ({
       }
     }
 
+    // The walls' own placements, by this frame's cut; from above the lid only while the
+    // void can show there, as through this frame's cutaway.
+    if (material.abyssWalls)
+      wallFrame.current?.(
+        camera,
+        material.abyssOpenFromAbove(size.active && cutawaySeabed),
+      );
+
     const { environment: environmentDue, probe: probeDue } = stale.current;
     const now = performance.now();
     if (dirty.current || subsurfaceDirty.current) schedule.change(now);
@@ -1738,7 +1776,7 @@ export const Sky = ({
           material={material}
           frustumCulled={false}
           renderOrder={renderOrder}
-          visible={background && ready && !debug?.hide?.includes('background')}
+          visible={drawn && ready && !debug?.hide?.includes('background')}
           dispose={null}
         />
         {surfaceLayer && oceanWater && (
@@ -1757,17 +1795,12 @@ export const Sky = ({
         {hasWalls && (
           <SkyAbyssWallLayer
             sky={material}
-            // As a whole wireframe, over everything: after the sky's own layers too.
-            renderOrder={
-              debug?.walls?.whole && debug.walls.wireframe
-                ? renderOrder + 2
-                : renderOrder - 1
-            }
-            visible={background && ready && !debug?.hide?.includes('walls')}
+            renderOrder={renderOrder - 1}
+            visible={drawn && ready && !debug?.hide?.includes('walls')}
             wireframe={debug?.walls?.wireframe}
             flat={debug?.walls?.flat}
-            whole={debug?.walls?.whole}
             cut={debug?.walls?.cut}
+            frame={wallFrame}
           />
         )}
       </group>
@@ -1776,7 +1809,7 @@ export const Sky = ({
         material={standIn}
         frustumCulled={false}
         renderOrder={renderOrder}
-        visible={background && !ready}
+        visible={drawn && !ready}
         dispose={null}
       />
       {hasProbe && <primitive object={probe} />}

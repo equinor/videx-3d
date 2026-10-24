@@ -188,9 +188,17 @@ export type SkyAbyss = {
  * hollow they leave widens. Raked by a light of their own and filled in by the subsurface's
  * light map, they fade into the void's haze and dim with depth. They are cut away up to a
  * vertical plane facing the camera's heading, through the stage's centre or `clip` in front
- * of the camera, whichever is further; where it cuts their rock, the rock's inside shows. A
+ * of the camera, whichever is further; where it cuts their rock, the rock's inside shows.
+ * Looking up it keeps its side. Below the lid it is pushed on past the stage, so no cut
+ * face stands behind it, and once the whole stage is in view through the hollow nothing is
+ * cut, so from inside it the whole rim shows. Their top is a layer of soft `sand` over
+ * the rock, smooth and draped over its large shape, and the lid seen from below is that
+ * sand, dimly lit from the top of the stage (`glow`). Far beyond their rim the hollow's light
+ * fades out and its haze thins (`fade`), so zoomed out all darkens toward black. A
  * prototype, drawn from below the lid as a coarse mesh pushed out by cliffs baked once
- * (`bakeSkyCliffs`), their finer relief from the same bake's normal map.
+ * (`bakeSkyCliffs`), their finer relief from the same bake's normal map; from above it
+ * only while the void can show there (a seabed that is off or see-through, a cutaway
+ * taking it, or an occupant's cut).
  */
 export type SkyAbyssWalls = {
   /** how far out from the stage's edge they stand at the lid, in world units. Default 10500 */
@@ -217,10 +225,18 @@ export type SkyAbyssWalls = {
   flare?: number;
   /** how far their outline wanders in and out in long bays and headlands, in world units; at most `distance` less `relief`. Default 4000 */
   wander?: number;
-  /** how far in front of the camera, at least, a vertical plane facing it cuts them away, in world units; it cuts through the stage's centre while that is further. Default 4800 */
+  /** how far in front of the camera, at least, a vertical plane facing it cuts them away, in world units; it cuts through the stage's centre while that is further, and below the lid past the stage, easing in over this distance down from the lid. Default 4800 */
   clip?: number;
   /** depth below the lid over which the light on them fades to nearly black, in world units. Default 8000 */
   blackDepth?: number;
+  /** how thick the soft sand over their rock is, below the lid, in world units: the hollow's top in it is smooth, draped over the rock's large shape, and the lid seen from below is that sand; 0 for none, all rock. Default 1000 */
+  sand?: number;
+  /** that sand's colour, dull and wet. Default '#6a6254' */
+  sandColor?: ColorRepresentation;
+  /** how bright a dim light at the top of the stage is, 0 to 1: on the lid and the sand over the stage, fading out beyond it over about `distance`. Default 0.5 */
+  glow?: number;
+  /** the distance beyond their rim over which the hollow's light fades out, to a fifth and the rest to black over twice that again, and their haze thins to none, in world units: far from the hollow the lid, the sand and the cut darken to black, seen through clear air, rather than fading into the haze's grey; 0 for none. Default 20000 */
+  fade?: number;
 };
 
 /**
@@ -275,7 +291,7 @@ export type SkySeabed = {
 export type SkyOcean = SkyOceanWater & {
   /** the water; off leaves the seabed dry, with no surface or fog. Default true */
   water?: boolean;
-  /** the seabed, and its look; off leaves the void below the water, with no lid seen from it. Default true */
+  /** the seabed, and its look; off leaves the void below the water, seen through it from above, its lid still a roof from below. Default true */
   seabed?: boolean | SkySeabed;
   /**
    * How much of what lies beyond the seabed it hides, 0 to 1, as `waterOpacity` is the
@@ -360,7 +376,7 @@ export type SkyZoneLevels = {
   oceanGround?: number | null;
   /** a cutaway is on: the scene is lit as from above the water, wherever the camera is */
   cutaway?: boolean;
-  /** the sky is drawn */
+  /** the sky itself is drawn: neither hidden nor the void's gradient in its place */
   background: boolean;
 };
 
@@ -368,7 +384,7 @@ export type SkyZoneLevels = {
  * The environment for a camera at `height` along up: the air above the sea (or the
  * abyss level), the water below its surface, and the subsurface below its seabed — an
  * occupant's own where it has one. A dry sea, or one with a cutaway, is air down to the
- * seabed, and an undrawn sky is all subsurface.
+ * seabed, and a sky not drawn, or drawn as the void's gradient, is all subsurface.
  */
 export function skyZone(height: number, levels: SkyZoneLevels): SkyZone {
   if (!levels.background) return 'subsurface';
@@ -516,6 +532,10 @@ export const skyDefaults = {
       wander: 4000,
       clip: 4800,
       blackDepth: 8000,
+      sand: 1000,
+      sandColor: '#6a6254',
+      glow: 0.5,
+      fade: 20000,
     },
   },
   ocean: {

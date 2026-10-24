@@ -115,9 +115,9 @@ void main() {
   #endif
   bool outsideWater = dry || altitude > 0.0 || bedAltitude < 0.0;
   bool skyDraws = outsideWater && !staged;
-  // From the void under a seabed the lid hides the water: through an occupant's section,
+  // From the void the lid hides the water, seabed or not: through an occupant's section,
   // or a see-through one, the background draws it.
-  bool underLid = bedAltitude < 0.0 && uSkyOceanSeabed > 0.5;
+  bool underLid = bedAltitude < 0.0;
   // Over the curved sea's horizon there is none, nor a seabed under it: the background's sky shows.
   #if defined(STAGE_SURFACE)
   float overSea = reach.z;
@@ -143,7 +143,7 @@ void main() {
     cutThrough = kept < 1e-3;
     float path = skyOceanCutawayPath(skyOceanWaterPath(cameraPosition, world), wall, 1.0);
     vec3 seen = skyOceanFog(underside, path, skyOceanLight(-0.5 * altitude));
-    gl_FragColor = vec4(skyOceanThroughVoid(seen, cameraPosition, dir), kept);
+    gl_FragColor = vec4(seen, kept);
   }
   if(skyDraws || underLid || cutThrough || overCurve)
     discard;
@@ -192,14 +192,20 @@ void main() {
       #endif
   } else {
       // From the void: the lid, as the background draws it.
+      #ifdef SKY_ABYSS_WALLS
+    color = skyAbyssLid(cameraPosition, dir, distance(cameraPosition, world));
+      #else
     color = skyAbyssCeiling(world, distance(cameraPosition, world));
+      #endif
     if(uSkyAbyssDarkening > 0.0)
       color *= exp((altitude + bedDepth) / uSkyAbyssDarkening);
       #ifdef SKY_ABYSS_WALLS
-    // The walls' fill stands in front of the lid here: the background draws it. Their
+    // The walls' fill stands in front of the lid here, or, from under their foot, the rock
+    // that runs on down below it (skyAbyssWallUnder): the background draws both. Their
     // faces are a mesh of their own, which hides the lid by depth.
     vec3 wallStart = skyAbyssWallStart(cameraPosition, dir);
-    behindWall = wallStart.y > 0.0 && wallStart.x < distance(cameraPosition, world);
+    float lidAt = distance(cameraPosition, world);
+    behindWall = (wallStart.y > 0.0 && wallStart.x < lidAt) || skyAbyssWallUnder(cameraPosition, dir, wallStart) < lidAt;
       #endif
   }
       // Bitten through, what lies behind shows, with the background's void beyond. Cut

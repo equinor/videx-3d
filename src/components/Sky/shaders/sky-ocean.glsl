@@ -30,7 +30,7 @@ uniform vec2 uSkyOceanBedAmbient; // x: facing up, y: facing down
 uniform float uSkyOceanFogDensity; // per world unit
 uniform float uSkyOceanBuried; // 1: the camera is inside an occupant's seabed above the sea's (SkyMaterial.oceanBuried)
 uniform float uSkyOceanWater; // 0: no water, the seabed lies dry (SkyMaterial.oceanWater)
-uniform float uSkyOceanSeabed; // 0: no seabed, the void lies below the water (SkyMaterial.oceanSeabed)
+uniform float uSkyOceanSeabed; // 0: no seabed, the void lies below the water; from the void its lid still hides it (SkyMaterial.oceanSeabed)
 uniform float uSkyOceanSeabedOpacity; // how much of the void beyond the seabed it hides (SkyMaterial.oceanSeabedOpacity)
 // The cutaway through the water and the seabed in front of the view (see WaterFogCutaway, Sky's `cutaway`).
 uniform vec3 uSkyOceanCutawayAnchor;
@@ -246,20 +246,6 @@ vec3 skyOceanFloor(vec3 bed, vec3 depths, float cutaway) {
   return mix(depths, bed, shown);
 }
 
-// From the void below a sea without a seabed, `color` recedes into the void's horizon
-// over the distance the ray crosses the void, as the lid does.
-vec3 skyOceanThroughVoid(vec3 color, vec3 origin, vec3 dir) {
-  #ifdef SKY_ABYSS
-  float under = uSkyOceanLevel - uSkyOceanDepth - dot(origin, uSkyUp);
-  if(uSkyOceanSeabed > 0.5 || under <= 0.0)
-    return color;
-  float reach = under / max(dot(dir, uSkyUp), 1e-6);
-  return mix(uSkyAbyssHorizonColor, color, exp(-reach / uSkyAbyssFadeDistance));
-  #else
-  return color;
-  #endif
-}
-
 // The seabed at `world`, `depth` under the surface, facing `up` (the slope it lies on):
 // lit by the scene's lights, and dimmed by the water over it. ⚠️ Derivatives.
 vec3 skyOceanBed(vec3 world, vec3 up, float depth) {
@@ -385,9 +371,9 @@ vec3 skyOceanUnderside(vec2 p, float texel, float dist, vec3 dir, float blend, f
 }
 
 // What is seen from `origin`, in the water, along `dir`: the surface's underside above,
-// the seabed `bedDepth` down below, water all round. `travelled` is how far the view ray
-// came to reach `origin`; `depths` the void along it (skyOceanVoid). ⚠️ Derivatives.
-vec3 skyOceanInWater(vec3 origin, vec3 dir, float blend, float travelled, float bedDepth, vec3 depths) {
+// the seabed `bedDepth` down below, water all round. `depths` is the void along it
+// (skyOceanVoid). ⚠️ Derivatives.
+vec3 skyOceanInWater(vec3 origin, vec3 dir, float blend, float bedDepth, vec3 depths) {
   float altitude = dot(origin, uSkyUp) - uSkyOceanLevel;
   float y = dot(dir, uSkyUp);
   float ay = max(abs(y), 1e-6);
@@ -397,7 +383,7 @@ vec3 skyOceanInWater(vec3 origin, vec3 dir, float blend, float travelled, float 
   float tSurface = -altitude / ay;
   vec2 p = skyOceanPlane(origin + dir * tSurface);
   float texel = max(length(fwidth(p)), 1e-3);
-  vec3 underside = skyOceanUnderside(p, texel, travelled + tSurface, dir, blend, -altitude);
+  vec3 underside = skyOceanUnderside(p, texel, tSurface, dir, blend, -altitude);
   vec3 above = skyOceanFog(underside, skyOceanCutawayPath(tSurface, wall, 1.0), skyOceanLight(-0.5 * altitude));
 
   float tBed = max(altitude + bedDepth, 0.0) / ay;
@@ -411,21 +397,16 @@ vec3 skyOceanInWater(vec3 origin, vec3 dir, float blend, float travelled, float 
 }
 
 // Whether the background needs its view in the water from a camera at `origin`: in the
-// water, or under a sea with no seabed.
+// water. From the void below, seabed or not, its lid hides the water (skyAbyss).
 bool skyOceanNeedsWaterView(vec3 origin) {
   float altitude = dot(origin, uSkyUp) - uSkyOceanLevel;
-  bool inWater = altitude <= 0.0 && altitude + uSkyOceanDepth > 0.0;
-  bool underSea = altitude + uSkyOceanDepth < 0.0 && uSkyOceanSeabed < 0.5;
-  return uSkyOceanWater > 0.5 && (inWater || underSea);
+  return uSkyOceanWater > 0.5 && altitude <= 0.0 && altitude + uSkyOceanDepth > 0.0;
 }
 
-// That view: from the camera in the water, or from where a ray up from the void enters a
-// sea with no seabed. Each call compiles a full copy of the waves, so it is taken once
-// (see skyOcean and skyOceanFromBelow). ⚠️ Derivatives.
+// That view, from the camera in the water. Each call compiles a full copy of the waves, so
+// it is taken once (see skyOcean). ⚠️ Derivatives.
 vec3 skyOceanWaterView(vec3 dir, vec3 origin, float blend, vec3 depths) {
-  float under = uSkyOceanLevel - uSkyOceanDepth - dot(origin, uSkyUp);
-  float reach = max(under, 0.0) / max(abs(dot(dir, uSkyUp)), 1e-6);
-  return skyOceanInWater(origin + dir * reach, dir, blend, reach, uSkyOceanDepth, depths);
+  return skyOceanInWater(origin, dir, blend, uSkyOceanDepth, depths);
 }
 
 // The background's sea, for a camera at `origin` looking along `dir`, `inWater` its view
@@ -476,11 +457,6 @@ vec3 skyOceanThroughCutaway(vec3 color, vec3 dir, vec3 origin) {
   return skyOceanFog(color, path, skyOceanBedPathLight(origin, uSkyOceanDepth));
 }
 
-// A sea without a seabed, seen from the void below it: no lid, the water from the
-// seabed's level up (`inWater`, see skyOceanWaterView); `open` (the sky) where it is dry.
-vec3 skyOceanFromBelow(vec3 dir, vec3 origin, vec3 open, vec3 inWater) {
-  return skyOceanThroughVoid(uSkyOceanWater > 0.5 ? inWater : open, origin, dir);
-}
 
 // The background's sea surface, as its own layer: colour, and the opacity to blend it
 // with. Nothing where the ray misses it or a stage draws it. ⚠️ Derivatives.

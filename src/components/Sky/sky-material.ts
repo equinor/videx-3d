@@ -37,7 +37,11 @@ import {
 import { OCEAN_SURFACE_UNIFORMS, OceanMaterial } from '../Ocean/ocean-material';
 import fragmentShader from './shaders/sky-fragment.glsl';
 import vertexShader from './shaders/sky-vertex.glsl';
-import { skyAbyssWallGrid } from './sky-abyss-walls';
+import {
+  SkyAbyssWallCut,
+  skyAbyssWallClipPlane,
+  skyAbyssWallGrid,
+} from './sky-abyss-walls';
 import {
   SKY_EARTH_RADIUS,
   SkyAbyssWalls,
@@ -55,7 +59,6 @@ const SKY_PLANET_COUNT = 5;
 
 // An empty rectangle: nothing is on a stage.
 const NO_STAGE = [1, 1, -1, -1] as const;
-const clipHeading = new Vector3();
 // Camera heights over the sea between which the flat sea's disc moves from the scene to
 // under the camera: from far off, the curve measured from a disc to one side is lopsided.
 const FLAT_SEA_FOLLOW: Vec2 = [100000, 500000];
@@ -99,6 +102,18 @@ export class SkyMaterial extends ShaderMaterial {
   private bedDetailKey = '';
   // How far in front of the camera clipAbyssWalls cuts the walls away.
   private abyssWallClip: number = skyDefaults.abyss.walls.clip;
+  // What clipAbyssWalls cuts by, kept to fill in each frame.
+  private readonly abyssWallCut: SkyAbyssWallCut = {
+    centre: [0, 0],
+    half: [0, 0],
+    level: 0,
+    depth: 0,
+    clip: 0,
+    distance: 0,
+    flare: 0,
+    wander: 0,
+    relief: 0,
+  };
   // The scene's flat sea (setFlatSea), before followFlatSea moves it.
   private get flatSea(): Vector4 {
     return this.uniforms.uSkyStageFlat.value;
@@ -187,6 +202,15 @@ export class SkyMaterial extends ShaderMaterial {
             abyss.walls.wander,
           ),
         ),
+        // Their sand: how thick, how bright the glow over the stage, and its colour.
+        uSkyAbyssWallSand: new Uniform(
+          new Vector2(abyss.walls.sand, abyss.walls.glow),
+        ),
+        uSkyAbyssWallSandColor: new Uniform(new Color(abyss.walls.sandColor)),
+        // The distance beyond their rim the hollow's light and haze fade out over.
+        uSkyAbyssWallFade: new Uniform(abyss.walls.fade),
+        // 1 while the seabed beyond the stage, which the background draws, hides them from above.
+        uSkyAbyssWallCover: new Uniform(0),
         // The plane they are cut away up to (clipAbyssWalls): what is on the far side of its normal shows.
         uSkyAbyssWallClip: new Uniform(new Vector4(0, 0, 1, -1e30)),
         uSkyAbyssWallColor: new Uniform(new Color(abyss.walls.color)),
@@ -599,6 +623,20 @@ export class SkyMaterial extends ShaderMaterial {
     this.needsUpdate = true;
   }
 
+  /**
+   * No sky: the void's gradient in its place, with no air, sun, moon, stars or clouds
+   * (`background: 'void'`); changing it recompiles
+   */
+  get voidBackground(): boolean {
+    return this.defines.SKY_VOID !== undefined;
+  }
+  set voidBackground(value: boolean) {
+    if (value === this.voidBackground) return;
+    if (value) this.defines.SKY_VOID = '';
+    else delete this.defines.SKY_VOID;
+    this.needsUpdate = true;
+  }
+
   /** a deck of still clouds (see {@link setClouds}); changing it recompiles */
   get clouds(): boolean {
     return this.defines.SKY_CLOUDS !== undefined;
@@ -826,6 +864,28 @@ export class SkyMaterial extends ShaderMaterial {
     this.needsUpdate = true;
   }
 
+  /**
+   * Openings to the void from above that stages make (a `SkyBoxStage` occupant's cut),
+   * each telling whether it is open now. While one is, the walls are drawn from above the lid.
+   */
+  readonly abyssOpenings = new Set<() => boolean>();
+
+  /**
+   * Whether the void, and with it the walls, can show from above the lid: through a seabed
+   * that is off or see-through, a cutaway taking the seabed (`cutaway`), or a stage's
+   * opening ({@link abyssOpenings}). Sets whether the seabed beyond the stage, which the
+   * background draws, hides them there.
+   */
+  abyssOpenFromAbove(cutaway: boolean) {
+    const covers =
+      this.ocean && this.oceanSeabed && this.oceanSeabedOpacity >= 1;
+    this.uniforms.uSkyAbyssWallCover.value = covers ? 1 : 0;
+    if (!this.ocean) return false;
+    if (!covers || cutaway) return true;
+    for (const open of this.abyssOpenings) if (open()) return true;
+    return false;
+  }
+
   /** the walls' look (see {@link SkyAbyssWalls}) */
   setAbyssWalls(walls: Required<SkyAbyssWalls>) {
     const distance = Math.max(walls.distance, 1);
@@ -848,6 +908,12 @@ export class SkyMaterial extends ShaderMaterial {
       MathUtils.clamp(walls.mist, 0, 1),
       Math.max(walls.mistReach, 1),
     );
+    (this.uniforms.uSkyAbyssWallSand.value as Vector2).set(
+      Math.max(walls.sand, 0),
+      MathUtils.clamp(walls.glow, 0, 1),
+    );
+    (this.uniforms.uSkyAbyssWallSandColor.value as Color).set(walls.sandColor);
+    this.uniforms.uSkyAbyssWallFade.value = Math.max(walls.fade, 0);
     this.abyssWallClip = Math.max(walls.clip, 0);
     this.updateAbyssWallGrid();
   }
@@ -883,26 +949,33 @@ export class SkyMaterial extends ShaderMaterial {
   /**
    * Cut the walls away up to a vertical plane facing `camera`'s heading, as the cutaway's
    * does: through the stage's centre, or {@link SkyAbyssWalls.clip} in front of the camera
-   * once that is further. Every frame.
+   * once that is further, and below the lid past the stage, until the whole stage is in view
+   * through the hollow (see `skyAbyssWallClipPlane`). Every frame, with the camera's
+   * matrices this frame's.
    */
   clipAbyssWalls(camera: Camera) {
-    const up = this.up;
-    // The frame's up plus its view direction, laid level: defined looking straight down too.
-    const m = camera.matrixWorld.elements;
-    const heading = clipHeading.set(m[4] - m[8], m[5] - m[9], m[6] - m[10]);
-    heading.addScaledVector(up, -heading.dot(up));
-    const clip = this.uniforms.uSkyAbyssWallClip.value as Vector4;
-    if (heading.lengthSq() > 1e-12) {
-      heading.normalize();
-      clip.set(heading.x, heading.y, heading.z, 0);
-    }
-    const box = this.uniforms.uSkyStageBox.value as Vector4;
-    clip.w = Math.max(
-      clip.x * camera.position.x +
-        clip.y * camera.position.y +
-        clip.z * camera.position.z +
-        this.abyssWallClip,
-      clip.x * box.x + clip.z * box.y,
+    const u = this.uniforms;
+    const box = u.uSkyStageBox.value as Vector4;
+    const walls = u.uSkyAbyssWalls.value as Vector4;
+    const shape = u.uSkyAbyssWallShape.value as Vector4;
+    const cut = this.abyssWallCut;
+    cut.centre[0] = box.x;
+    cut.centre[1] = box.y;
+    cut.half[0] = box.z;
+    cut.half[1] = box.w;
+    cut.level = this.abyssLevel;
+    cut.depth = (u.uSkyAbyssWallGrid.value as Vector3).z;
+    cut.clip = this.abyssWallClip;
+    cut.distance = walls.x;
+    cut.flare = shape.y;
+    cut.wander = shape.w;
+    cut.relief = shape.x;
+    skyAbyssWallClipPlane(
+      camera.matrixWorld,
+      camera.position,
+      this.up,
+      cut,
+      u.uSkyAbyssWallClip.value as Vector4,
     );
   }
 

@@ -13,10 +13,13 @@ uniform vec4 uSkyAbyssWallShape; // how far their rock stands in and out; how fa
 uniform sampler2D uSkyAbyssWallRock; // the baked cliffs (sky-cliffs-fragment.glsl): R how far they stand out, GB their rock's relief, A its creases
 uniform vec4 uSkyStageBox; // the stage's rectangle: its centre and half extents, world X/Z
 uniform vec3 uSkyAbyssWallGrid; // their mesh's columns round, its rows down, and how deep it goes (skyAbyssWallGrid)
+uniform vec2 uSkyAbyssWallSand; // how thick the sand over their rock is below the lid (0 for none); how bright the glow over the stage, 0 to 1
 // Features across one tile of the cliffs.
 #define SKY_ABYSS_CLIFF_TILE 8.0
 // Tiles of the rock's relief to one of the cliffs'.
 #define SKY_ABYSS_RELIEF_REPEAT 4.0
+// How many mip levels coarser the cliffs are read at under the sand: it drapes their large shape alone.
+#define SKY_ABYSS_SAND_LOD 3.0
 
 // Where `p` (world) lies in the stage's plane, from its centre.
 vec2 skyAbyssWallPlane(vec3 p) {
@@ -136,14 +139,37 @@ float skyAbyssWallRowLod(float j) {
   return log2(max(max(across, down) / skyAbyssWallTexel(), 1.0));
 }
 
+// How thick the sand over their rock is a `share` of the way round their outline:
+// uSkyAbyssWallSand.x, a little more or less in a few long waves, whole numbers of them round.
+float skyAbyssWallSandDepth(float share) {
+  float a = 6.2831853 * share;
+  return uSkyAbyssWallSand.x * (1.0 + 0.2 * sin(3.0 * a + 1.3) + 0.1 * sin(7.0 * a + 4.2));
+}
+
+// How much of the walls is rock rather than sand, 0 to 1, `depth` below the lid a `share` of
+// the way round: none in the sand, all below it, eased across their contact; all without sand.
+float skyAbyssWallRockShare(float depth, float share) {
+  float sand = skyAbyssWallSandDepth(share);
+  return uSkyAbyssWallSand.x > 0.0 ? smoothstep(0.8 * sand, 1.2 * sand, depth) : 1.0;
+}
+
 // The mesh's vertex in column `ij.x` round the outline and row `ij.y` down from the lid
 // (world, xyz), pushed out to the rock's face, and how far that stands out of the walls'
-// middle (w). Their cliffs stand in and out of the middle by uSkyAbyssWallShape.x.
+// middle (w). Their cliffs stand in and out of the middle by uSkyAbyssWallShape.x. In the
+// sand the face follows the rock's top, read coarser, so it drapes the rock's large shape.
 vec4 skyAbyssWallVertex(vec2 ij) {
   float around = skyAbyssWallLap();
   float s = mod(ij.x / uSkyAbyssWallGrid.x * around, around);
   float depth = skyAbyssWallRowDepth(ij.y);
-  float off = uSkyAbyssWallShape.x * (1.0 - 2.0 * skyAbyssWallCliff(s, around, depth, skyAbyssWallRowLod(ij.y)));
-  vec2 q = skyAbyssWallOutline(s, max(skyAbyssWallMiddle(s / around, depth) + off, 0.0)) + uSkyStageBox.xy;
+  float lod = skyAbyssWallRowLod(ij.y);
+  float cliff = skyAbyssWallCliff(s, around, depth, lod);
+  float share = s / around;
+  float rock = skyAbyssWallRockShare(depth, share);
+  if(rock < 1.0) {
+    float top = 1.2 * skyAbyssWallSandDepth(share);
+    cliff = mix(skyAbyssWallCliff(s, around, max(depth, top), lod + SKY_ABYSS_SAND_LOD), cliff, rock);
+  }
+  float off = uSkyAbyssWallShape.x * (1.0 - 2.0 * cliff);
+  vec2 q = skyAbyssWallOutline(s, max(skyAbyssWallMiddle(share, depth) + off, 0.0)) + uSkyStageBox.xy;
   return vec4(uSkyEast * q.x - uSkyNorth * q.y + uSkyUp * (uSkyAbyssLevel - depth), off);
 }

@@ -76,6 +76,7 @@ export type SkyArgs = {
   cloudBandSink: boolean;
   // Sky
   drawSky: boolean;
+  skyVoid: boolean;
   air: boolean;
   airHaze: number;
   airHazeHeight: number;
@@ -151,6 +152,10 @@ export type SkyArgs = {
   abyssWallWander: number;
   abyssWallClip: number;
   abyssWallBlackDepth: number;
+  abyssWallSand: number;
+  abyssWallSandColor: string;
+  abyssWallGlow: number;
+  abyssWallFade: number;
   // Environment
   curvedHorizon: boolean;
   environment: boolean;
@@ -197,6 +202,7 @@ export const skyArgs: SkyArgs = {
   cloudSeed: skyDefaults.clouds.seed,
   cloudBandSink: skyDefaults.clouds.bandSink,
   drawSky: true,
+  skyVoid: false,
   air: true,
   airHaze: skyDefaults.air.haze,
   airHazeHeight: skyDefaults.air.hazeHeight,
@@ -271,6 +277,10 @@ export const skyArgs: SkyArgs = {
   abyssWallWander: skyDefaults.abyss.walls.wander,
   abyssWallClip: skyDefaults.abyss.walls.clip,
   abyssWallBlackDepth: skyDefaults.abyss.walls.blackDepth,
+  abyssWallSand: skyDefaults.abyss.walls.sand,
+  abyssWallSandColor: skyDefaults.abyss.walls.sandColor,
+  abyssWallGlow: skyDefaults.abyss.walls.glow,
+  abyssWallFade: skyDefaults.abyss.walls.fade,
   curvedHorizon: skyDefaults.curvedHorizon,
   environment: true,
   lightProbe: true,
@@ -460,6 +470,10 @@ export const skyAbyssFromArgs = (args: SkyArgs): SkyAbyss => ({
     wander: args.abyssWallWander,
     clip: args.abyssWallClip,
     blackDepth: args.abyssWallBlackDepth,
+    sand: args.abyssWallSand,
+    sandColor: args.abyssWallSandColor,
+    glow: args.abyssWallGlow,
+    fade: args.abyssWallFade,
   },
 });
 
@@ -484,7 +498,7 @@ export const skyPropsFromArgs = (args: SkyArgs) =>
     intensity: args.skyIntensity,
     horizonBlend: args.skyHorizonBlend,
     curvedHorizon: args.curvedHorizon,
-    background: args.drawSky,
+    background: args.drawSky && (args.skyVoid ? 'void' : true),
     subsurface: {
       intensity: args.subsurfaceIntensity,
       panels: {
@@ -773,6 +787,13 @@ const allSkyArgTypes = (): ArgTypes<SkyArgs> => ({
     SKY,
     'Draw the sky and its stage behind the scene (`background`). Switched instantly, with nothing rebuilt or baked: off, the sky still lights the scene, by the subsurface.',
   ),
+  skyVoid: {
+    ...toggle(
+      SKY,
+      'The void\u2019s grey gradient in the sky\u2019s place (`background: \'void\'`), as the stand-in draws it while the sky compiles: no air, sun, moon, stars or clouds, and the scene lit by the subsurface everywhere. The void, its walls and a sea are drawn as ever. Recompiles.',
+    ),
+    if: { arg: 'drawSky' },
+  },
   air: toggle(
     SKY,
     'The air thins with height: climbing, the sky deepens and its haze closes onto the horizon. Seen from low down, the far sea fades into the horizon.',
@@ -837,7 +858,7 @@ const allSkyArgTypes = (): ArgTypes<SkyArgs> => ({
   ),
   skySeabed: toggle(
     SEA,
-    'The sea\u2019s seabed, everywhere, an occupant\u2019s included. Off, the void lies below the water, and the cutaway cuts the water alone.',
+    'The sea\u2019s seabed, everywhere, an occupant\u2019s included. Off, the void lies below the water, its lid still a roof from below, and the cutaway cuts the water alone.',
   ),
   waterOpacity: range(0, 1, 0.01, SEA, 'The water\u2019s own opacity.'),
   skySeabedOpacity: range(
@@ -1158,7 +1179,7 @@ const allSkyArgTypes = (): ArgTypes<SkyArgs> => ({
       20000,
       100,
       SUBSURFACE,
-      'How far in front of the camera, at least, a vertical plane cuts the walls away, in metres; it cuts through the stage\u2019s centre while that is further.',
+      'How far in front of the camera, at least, a vertical plane cuts the walls away, in metres; it cuts through the stage\u2019s centre while that is further, and below the lid past the stage, so no cut face stands behind it (easing in over this distance down from the lid). Once the whole stage is in view through the hollow, nothing is cut.',
     ),
     if: { arg: 'abyssWalls' },
   },
@@ -1169,6 +1190,40 @@ const allSkyArgTypes = (): ArgTypes<SkyArgs> => ({
       100,
       SUBSURFACE,
       'Depth below the lid over which the light on the walls fades to nearly black, in metres.',
+    ),
+    if: { arg: 'abyssWalls' },
+  },
+  abyssWallSand: {
+    ...range(
+      0,
+      5000,
+      100,
+      SUBSURFACE,
+      'How thick the soft sand over the walls\u2019 rock is, below the lid, in metres: the hollow\u2019s top in it is smooth, draped over the rock\u2019s large shape, and the lid seen from below is that sand. 0 for none: all rock, and the void\u2019s own lid.',
+    ),
+    if: { arg: 'abyssWalls' },
+  },
+  abyssWallSandColor: {
+    ...color(SUBSURFACE, 'The sand over the walls\u2019 rock, and the lid from below.'),
+    if: { arg: 'abyssWalls' },
+  },
+  abyssWallGlow: {
+    ...range(
+      0,
+      1,
+      0.01,
+      SUBSURFACE,
+      'A dim light at the top of the stage: on the lid and the sand over it, fading out beyond it over about the walls\u2019 distance. Needs sand.',
+    ),
+    if: { arg: 'abyssWalls' },
+  },
+  abyssWallFade: {
+    ...range(
+      0,
+      200000,
+      1000,
+      SUBSURFACE,
+      'The distance beyond the walls\u2019 rim over which the hollow\u2019s light fades out, to a fifth and the rest to black over twice that again, and their haze thins to none, in metres: far from the hollow the lid, the sand and the cut darken to black, seen through clear air, instead of fading into the haze\u2019s grey. 0 for none.',
     ),
     if: { arg: 'abyssWalls' },
   },
@@ -1306,21 +1361,19 @@ export const skyOutlineArgType = {
 export type SkyWallDebugArgs = {
   wallWireframe: boolean;
   wallFlat: boolean;
-  wallWhole: boolean;
   wallCut: boolean;
 };
 
 export const skyWallDebugArgs: SkyWallDebugArgs = {
   wallWireframe: false,
   wallFlat: false,
-  wallWhole: false,
   wallCut: false,
 };
 
 export const skyWallDebugArgTypes: ArgTypes<SkyWallDebugArgs> = {
   wallWireframe: {
     description:
-      'The void walls\u2019 mesh drawn as its triangles\u2019 edges, in one colour; with `wallWhole`, over everything.',
+      'The void walls\u2019 mesh drawn as its triangles\u2019 edges, in one colour.',
     table: { category: 'Debug' },
   },
   wallFlat: {
@@ -1328,14 +1381,9 @@ export const skyWallDebugArgTypes: ArgTypes<SkyWallDebugArgs> = {
       'The void walls shaded as their mesh\u2019s triangles face, without the rock\u2019s finer relief from the cliffs\u2019 normal map; and the faces of their cut (on the cut plane, and on the lid from above) drawn as geometry, so they hide the data behind the rock.',
     table: { category: 'Debug' },
   },
-  wallWhole: {
-    description:
-      'The void walls drawn from above the lid too, as through a cutaway, still cut. The sky\u2019s sea is a background and cannot hide them there: hide the sky background and the stage\u2019s layers to see them against the data.',
-    table: { category: 'Debug' },
-  },
   wallCut: {
     description:
-      'The vertical plane the void walls are cut along, as a grid over everything: it faces the camera\u2019s heading, through the stage\u2019s centre or `abyssWallClip` in front of the camera, from the lid down to the walls\u2019 foot.',
+      'The vertical plane the void walls are cut along, as a grid over everything: it faces the camera\u2019s heading, through the stage\u2019s centre or `abyssWallClip` in front of the camera, and below the lid past the stage, from the lid down to the walls\u2019 foot; gone once the whole stage is in view through the hollow and nothing is cut.',
     table: { category: 'Debug' },
   },
 };
@@ -1345,7 +1393,6 @@ export function skyWallDebugFromArgs(args: SkyWallDebugArgs) {
   return {
     wireframe: args.wallWireframe,
     flat: args.wallFlat,
-    whole: args.wallWhole,
     cut: args.wallCut,
   };
 }

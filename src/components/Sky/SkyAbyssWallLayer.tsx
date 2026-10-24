@@ -1,7 +1,7 @@
-import { useFrame } from '@react-three/fiber';
-import { useEffect, useMemo, useRef } from 'react';
+import { MutableRefObject, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import {
   BufferGeometry,
+  Camera,
   Float32BufferAttribute,
   LineBasicMaterial,
   LineSegments,
@@ -16,6 +16,8 @@ import {
   createSkyAbyssWallFillMaterial,
   createSkyAbyssWallGeometry,
   createSkyAbyssWallMaterial,
+  SKY_ABYSS_WALL_UNCUT,
+  skyAbyssWallReach,
 } from './sky-abyss-walls';
 import type { SkyMaterial } from './sky-material';
 
@@ -49,7 +51,7 @@ function wallReach(sky: SkyMaterial) {
   const walls = u.uSkyAbyssWalls.value as Vector4;
   const shape = u.uSkyAbyssWallShape.value as Vector4;
   const depth = (u.uSkyAbyssWallGrid.value as Vector3).z;
-  return Math.hypot(box.z, box.w) + walls.x + shape.y * depth + shape.w + shape.x;
+  return skyAbyssWallReach([box.z, box.w], walls.x, shape.y, depth, shape.w, shape.x);
 }
 
 // The stage's centre at the lid (world).
@@ -94,16 +96,22 @@ function createCutQuad() {
   return new PlaneGeometry(2, 1).translate(0, -0.5, 0);
 }
 
+/**
+ * The walls' layer's work each frame, which the {@link Sky} runs once it has cut them:
+ * `fromAbove` while the void can show from above the lid (`SkyMaterial.abyssOpenFromAbove`).
+ */
+export type SkyAbyssWallFrame = (camera: Camera, fromAbove: boolean) => void;
+
 type SkyAbyssWallLayerProps = {
   sky: SkyMaterial;
   renderOrder: number;
   visible: boolean;
+  /** given this layer's work each frame, for the sky to run after the walls' cut (`clipAbyssWalls`) */
+  frame: MutableRefObject<SkyAbyssWallFrame | null>;
   /** its triangles drawn as lines, in one colour */
   wireframe?: boolean;
   /** shaded without the rock's relief, as the mesh faces; its cut faces drawn as geometry */
   flat?: boolean;
-  /** drawn from above the lid too, still cut; as lines, over everything */
-  whole?: boolean;
   /** the plane they are cut along, as a grid over everything */
   cut?: boolean;
 };
@@ -111,16 +119,19 @@ type SkyAbyssWallLayerProps = {
 /**
  * The void's walls' faces as a mesh (see `SkyAbyssWalls`): one fixed grid round their
  * outline and down from the lid, as many columns as the sky's grid has
- * (`uSkyAbyssWallGrid`), below the lid only. The background draws their fill and what lies
- * beyond them.
+ * (`uSkyAbyssWallGrid`). Drawn from below the lid, and from above it while the void can
+ * show there; under an opaque seabed beyond the stage the background's seabed hides it
+ * (skyAbyssWallCovered), over the stage the stage's own. The background draws their fill
+ * and what lies beyond them. Its work each frame is run by the sky once it has cut them
+ * (`frame`), so the camera's matrices are updated and the cut made once a frame.
  */
 export const SkyAbyssWallLayer = ({
   sky,
   renderOrder,
   visible,
+  frame,
   wireframe = false,
   flat = false,
-  whole = false,
   cut = false,
 }: SkyAbyssWallLayerProps) => {
   const geometry = useMemo(createSkyAbyssWallGeometry, []);
@@ -129,19 +140,11 @@ export const SkyAbyssWallLayer = ({
   useEffect(() => () => material.dispose(), [material]);
   useEffect(() => {
     material.wireframe = wireframe;
-    // Over everything: in the transparent pass, which comes after a stage's water.
-    const cage = whole && wireframe;
-    if (material.transparent !== cage) {
-      material.transparent = cage;
-      material.needsUpdate = true;
-    }
-    material.depthTest = !cage;
-    material.depthWrite = !cage;
     (material.uniforms.uSkyAbyssWallDebug.value as Vector2).set(
       wireframe ? 1 : 0,
       flat ? 1 : 0,
     );
-  }, [material, wireframe, flat, whole]);
+  }, [material, wireframe, flat]);
   const mesh = useRef<Mesh>(null);
   const cutGrid = useMemo(() => (cut ? createCutGrid() : null), [cut]);
   useEffect(() => () => cutGrid?.dispose(), [cutGrid]);
@@ -186,32 +189,38 @@ export const SkyAbyssWallLayer = ({
   const cutFill = useRef<Mesh>(null);
   const lidFill = useRef<Mesh>(null);
 
-  useFrame(({ camera }) => {
-    const m = mesh.current;
-    if (!m) return;
-    const height = camera.position.dot(sky.up) - sky.abyssLevel;
-    const shown = visible && sky.abyssWallRock !== null;
-    // From above the lid the sky's sea, a background, cannot hide them: shown there only whole.
-    m.visible = shown && (whole || height < 0);
-    const lines = cutLines.current;
-    if (lines) lines.visible = shown;
-    if (cutFill.current) cutFill.current.visible = m.visible;
-    if (lidFill.current) lidFill.current.visible = m.visible && height > 0;
-    if (!m.visible && !lines?.visible) return;
-    // This frame's cut, not the last: the sky's own frame may run after this one.
-    camera.updateMatrixWorld();
-    sky.clipAbyssWalls(camera);
-    for (const object of [lines, cutFill.current]) {
-      if (!object?.visible) continue;
-      cutPlaneFrame(sky, object.matrix);
-      object.matrixWorldNeedsUpdate = true;
-    }
-    if (lidFill.current?.visible) {
-      lidFrame(sky, lidFill.current.matrix);
-      lidFill.current.matrixWorldNeedsUpdate = true;
-    }
-    const grid = sky.uniforms.uSkyAbyssWallGrid.value as Vector3;
-    geometry.setDrawRange(0, 6 * grid.x * grid.y);
+  // Rebuilt each render, so it reads this render's props; run by the sky after the cut.
+  useLayoutEffect(() => {
+    frame.current = (camera, fromAbove) => {
+      const m = mesh.current;
+      if (!m) return;
+      const height = camera.position.dot(sky.up) - sky.abyssLevel;
+      const shown = visible && sky.abyssWallRock !== null;
+      m.visible = shown && (height < 0 || fromAbove);
+      const clip = sky.uniforms.uSkyAbyssWallClip.value as Vector4;
+      const cuts = clip.w > SKY_ABYSS_WALL_UNCUT / 2;
+      const lines = cutLines.current;
+      if (lines) lines.visible = shown && cuts;
+      // The cut's face looks back at what it cuts away: seen only from that side.
+      const facing =
+        clip.w > clip.x * camera.position.x + clip.y * camera.position.y + clip.z * camera.position.z;
+      if (cutFill.current) cutFill.current.visible = m.visible && cuts && facing;
+      if (lidFill.current) lidFill.current.visible = m.visible && height > 0;
+      for (const object of [lines, cutFill.current]) {
+        if (!object?.visible) continue;
+        cutPlaneFrame(sky, object.matrix);
+        object.matrixWorldNeedsUpdate = true;
+      }
+      if (lidFill.current?.visible) {
+        lidFrame(sky, lidFill.current.matrix);
+        lidFill.current.matrixWorldNeedsUpdate = true;
+      }
+      const grid = sky.uniforms.uSkyAbyssWallGrid.value as Vector3;
+      geometry.setDrawRange(0, 6 * grid.x * grid.y);
+    };
+    return () => {
+      frame.current = null;
+    };
   });
 
   return (
