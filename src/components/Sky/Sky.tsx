@@ -211,8 +211,8 @@ export type SkyDebug = {
   hide?: SkyLayer[];
   /** the environment's bake for the zone in view as its six faces, in the canvas' lower right corner (`+Y` over `-X -Z +X +Z`, `-Y` under) */
   environment?: boolean;
-  /** the void's walls' mesh: its triangles drawn as lines in one colour (`wireframe`), and shaded as its triangles face, without the rock's relief (`flat`) */
-  walls?: { wireframe?: boolean; flat?: boolean };
+  /** the void's walls' mesh: its triangles drawn as lines in one colour (`wireframe`, over everything while `whole`); shaded as its triangles face, without the rock's relief, with the faces of the cut drawn as geometry that hides what lies behind the rock (`flat`); drawn from above the lid too, still cut (`whole`); and the plane they are cut along, as a grid over everything (`cut`) */
+  walls?: { wireframe?: boolean; flat?: boolean; whole?: boolean; cut?: boolean };
 };
 
 /**
@@ -1757,15 +1757,17 @@ export const Sky = ({
         {hasWalls && (
           <SkyAbyssWallLayer
             sky={material}
-            renderOrder={renderOrder - 1}
-            visible={
-              background &&
-              ready &&
-              !debug?.hide?.includes('background') &&
-              !debug?.hide?.includes('walls')
+            // As a whole wireframe, over everything: after the sky's own layers too.
+            renderOrder={
+              debug?.walls?.whole && debug.walls.wireframe
+                ? renderOrder + 2
+                : renderOrder - 1
             }
+            visible={background && ready && !debug?.hide?.includes('walls')}
             wireframe={debug?.walls?.wireframe}
             flat={debug?.walls?.flat}
+            whole={debug?.walls?.whole}
+            cut={debug?.walls?.cut}
           />
         )}
       </group>

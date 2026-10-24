@@ -13,10 +13,12 @@ import {
   ColorRepresentation,
   Group,
   LineBasicMaterial,
+  LineSegments,
   Mesh,
   MeshBasicMaterial,
   Scene,
   ShaderMaterial,
+  Vector3,
   WebGLRenderer,
 } from 'three';
 import { useGenerator } from '../../hooks/useGenerator';
@@ -33,6 +35,7 @@ import {
   createSkyStageFalloff,
   createSkyStageMaterial,
   createSkyStageOutline,
+  createSkyStageFootprint,
   createSkyStagePlane,
   createSkyStageRings,
   createSkyStageSeabed,
@@ -152,7 +155,7 @@ export type SkyBoxStageRelief = {
 export type SkyBoxStageDebug = {
   /** layers not to draw */
   hide?: SkyBoxStageLayer[];
-  /** draw the outline along its seabed rim (white) and at the sea surface (black), and `bounds` (grey), over everything */
+  /** draw the outline along its seabed rim (white) and at the sea surface (black), and `bounds` (grey), over everything; with the void's walls, both again faintly at their foot */
   outline?: boolean;
   /** draw the triangles of every layer drawn, over everything, in the colour `SkyDebug.tint` gives it */
   wireframe?: boolean;
@@ -482,6 +485,21 @@ export const SkyBoxStage = ({
     [showOutline, minX, minZ, maxX, maxZ, outline, rim, level, bedY],
   );
   useEffect(() => () => outlineLines?.dispose(), [outlineLines]);
+  const footprintLines = useMemo(
+    () =>
+      showOutline && abyssWalls
+        ? createSkyStageFootprint([minX, minZ, maxX, maxZ], outline)
+        : null,
+    [showOutline, abyssWalls, minX, minZ, maxX, maxZ, outline],
+  );
+  useEffect(() => () => footprintLines?.dispose(), [footprintLines]);
+  const footprint = useRef<LineSegments>(null);
+  // At the void walls' foot, wherever their depth puts it.
+  useFrame(() => {
+    if (!footprint.current || !sky) return;
+    const grid = sky.uniforms.uSkyAbyssWallGrid.value as Vector3;
+    footprint.current.position.y = sky.abyssLevel - grid.z;
+  });
   const lineMaterial = useMemo(
     () =>
       new LineBasicMaterial({
@@ -655,6 +673,16 @@ export const SkyBoxStage = ({
       {outlineLines && (
         <lineSegments
           geometry={outlineLines}
+          material={lineMaterial}
+          renderOrder={OUTLINE_ORDER + 1}
+          layers={OVERLAY_LAYERS}
+          frustumCulled={false}
+        />
+      )}
+      {footprintLines && (
+        <lineSegments
+          ref={footprint}
+          geometry={footprintLines}
           material={lineMaterial}
           renderOrder={OUTLINE_ORDER + 1}
           layers={OVERLAY_LAYERS}

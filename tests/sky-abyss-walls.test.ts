@@ -52,31 +52,31 @@ describe('createSkyAbyssWallGeometry', () => {
     const columns = 300;
     const drawn = indices.subarray(0, 6 * columns * rows);
     const cells = new Set<string>();
+    let outside = 0;
     for (let k = 0; k < drawn.length; k += 3) {
       const corners = [0, 1, 2].map(n => at(drawn[k + n]));
-      for (const [i, j] of corners) {
-        expect(i).toBeLessThanOrEqual(columns);
-        expect(j).toBeLessThanOrEqual(rows);
-      }
+      for (const [i, j] of corners) if (i > columns || j > rows) outside++;
       const i = Math.min(...corners.map(c => c[0]));
       const j = Math.min(...corners.map(c => c[1]));
       cells.add(`${i},${j}`);
     }
+    expect(outside).toBe(0);
     expect(cells.size).toBe(columns * rows);
   });
 
   it('meets along each cell’s diagonal from (i + 1, j) to (i, j + 1), all wound alike', () => {
+    let off = 0;
     for (let k = 0; k < indices.length; k += 3) {
       const [a, b, c] = [0, 1, 2].map(n => at(indices[k + n]));
       const i = Math.min(a[0], b[0], c[0]);
       const j = Math.min(a[1], b[1], c[1]);
       const keys = [a, b, c].map(([x, y]) => `${x - i},${y - j}`);
-      expect(keys).toContain('1,0');
-      expect(keys).toContain('0,1');
       // Round (i) then down (j): the same turn for every triangle.
       const turn =
         (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-      expect(turn).toBe(-1);
+      const diagonal = keys.includes('1,0') && keys.includes('0,1');
+      if (turn !== -1 || diagonal === false) off++;
     }
+    expect(off).toBe(0);
   });
 });

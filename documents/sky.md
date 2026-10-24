@@ -676,12 +676,17 @@ fill-bound: they scale with the pixels drawn, about double at 1080p.
 ## Debugging
 
 `<Sky debug={...}>` tints each part by what draws it (`tint`), hides layers (`hide`) and
-shows the environment's bake for the zone in view (`environment`). `<SkyBoxStage
-debug={...}>` hides stage layers, and draws its outline and wireframe over everything.
+shows the environment's bake for the zone in view (`environment`). Its `walls` views draw
+the void walls' mesh as lines (`wireframe`); flat, without the rock's relief, with the
+faces of their cut drawn as geometry, so they hide what lies behind the rock (`flat`);
+from above the lid too, still cut (`whole`), so with the sky's background and the stage's
+layers hidden their shape shows against the data from anywhere; and the plane they are
+cut along as a grid (`cut`). `<SkyBoxStage debug={...}>` hides stage layers, and draws
+its outline (with, under walls, a faint copy at their foot) and wireframe over everything.
 None of them rebuild or bake anything.
 
-The Storybook stories `Spikes/Sky/StageDebug` (a synthetic seabed occupant, every
-option and debug view) and `Spikes/Sky/Baseline` (a real field) exercise all of it. Every
+The Storybook stories `Spikes/Sky/StageDebug` (a stage of any size, an optional synthetic
+seabed occupant and stand-in spheres, every option and debug view) and `Spikes/Sky/Baseline` (a real field) exercise all of it. Every
 story drawing a `<Sky>` takes its controls from one module,
 `src/storybook/components/sky-controls.ts`, so a control has the same name everywhere: the
 basic ones show in every story, the advanced and debug ones only in `StageDebug`

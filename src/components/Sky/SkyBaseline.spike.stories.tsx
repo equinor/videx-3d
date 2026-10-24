@@ -23,12 +23,19 @@ import {
   SkyArgs,
   skyArgTypes,
   skyDecorators,
+  skyHideArgType,
+  skyHideFromArgs,
   skyOceanFromArgs,
+  skyOutlineArgType,
   skyPropsFromArgs,
   skyReliefArgs,
   SkyReliefArgs,
   skyReliefArgTypes,
   skyReliefFromArgs,
+  skyWallDebugArgs,
+  SkyWallDebugArgs,
+  skyWallDebugArgTypes,
+  skyWallDebugFromArgs,
 } from '../../storybook/components/sky-controls';
 import { SkyStoryRendering } from '../../storybook/components/sky-story-rendering';
 import {
@@ -113,8 +120,11 @@ type SkySpikeArgs = {
   showCasings: boolean;
   casingSlice: boolean;
   casingRoughness: number;
+  hide: string[];
+  outline: boolean;
 } & SkyArgs &
-  SkyReliefArgs;
+  SkyReliefArgs &
+  SkyWallDebugArgs;
 
 // A stage around the wells' outline, with no seabed of its own to hand it.
 const FieldStage = (args: SkySpikeArgs) => {
@@ -126,6 +136,7 @@ const FieldStage = (args: SkySpikeArgs) => {
     <SkyBoxStage
       bounds={[min[0] - m, min[1] - m, max[0] + m, max[1] + m]}
       relief={skyReliefFromArgs(args, reliefFrame)}
+      debug={{ hide: skyHideFromArgs(args.hide).stage, outline: args.outline }}
     />
   );
 };
@@ -258,6 +269,7 @@ const SeabedStage = ({
       occupant={{ seabed: occupant.mesh }}
       seabedFalloff={args.seabedFalloff}
       relief={skyReliefFromArgs(args, reliefFrame)}
+      debug={{ hide: skyHideFromArgs(args.hide).stage, outline: args.outline }}
     />
   );
 };
@@ -380,6 +392,10 @@ const SkyScene = (args: SkySpikeArgs) => {
         ocean={
           sea && { ...skyOceanFromArgs(args), level: args.oceanLevel, depth }
         }
+        debug={{
+          hide: skyHideFromArgs(args.hide).sky,
+          walls: skyWallDebugFromArgs(args),
+        }}
       >
         {args.seabedSurface
           ? // The seabed stands without the sky's sea; only its stage needs it.
@@ -508,6 +524,9 @@ const meta = {
       table: { category: 'Scene' },
     },
     casingRoughness: range(0, 1, 0.05, 'Scene'),
+    hide: skyHideArgType,
+    outline: skyOutlineArgType,
+    ...skyWallDebugArgTypes,
   },
 } satisfies Meta<typeof SkySpike>;
 
@@ -542,6 +561,9 @@ export const Default: Story = {
     showCasings: true,
     casingSlice: false,
     casingRoughness: 0.8,
+    hide: [],
+    outline: false,
+    ...skyWallDebugArgs,
   },
 };
 

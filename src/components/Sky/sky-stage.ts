@@ -205,19 +205,10 @@ const ON_OUTLINE = 0.05;
 const OUTLINE_RIM = new Color('#ffffff');
 const OUTLINE_SURFACE = new Color('#000000');
 const OUTLINE_BOUNDS = new Color('#909090');
+const OUTLINE_FOOT = new Color('#505050');
 
-/**
- * Debug lines, as segments with vertex colours: the outline along its seabed rim (the
- * `elevations`, else `bedY`) in white and at the sea `level` in black, and `bounds` at
- * `bedY` in grey.
- */
-export function createSkyStageOutline(
-  bounds: SkyStageBounds,
-  outline: PlanarPolygonGeometry | null,
-  level: number,
-  bedY: number,
-  elevations?: SkyStageElevations | null,
-): BufferGeometry {
+// Line segments with vertex colours, a closed loop at a time.
+function outlineLoops() {
   const positions: number[] = [];
   const colors: number[] = [];
   const loop = (
@@ -238,6 +229,34 @@ export function createSkyStageOutline(
       colors.push(color.r, color.g, color.b, color.r, color.g, color.b);
     });
   };
+  const build = () => {
+    const geometry = new BufferGeometry();
+    geometry.setAttribute(
+      'position',
+      new BufferAttribute(new Float32Array(positions), 3),
+    );
+    geometry.setAttribute(
+      'color',
+      new BufferAttribute(new Float32Array(colors), 3),
+    );
+    return geometry;
+  };
+  return { loop, build };
+}
+
+/**
+ * Debug lines, as segments with vertex colours: the outline along its seabed rim (the
+ * `elevations`, else `bedY`) in white and at the sea `level` in black, and `bounds` at
+ * `bedY` in grey.
+ */
+export function createSkyStageOutline(
+  bounds: SkyStageBounds,
+  outline: PlanarPolygonGeometry | null,
+  level: number,
+  bedY: number,
+  elevations?: SkyStageElevations | null,
+): BufferGeometry {
+  const { loop, build } = outlineLoops();
   const components = (outline?.coordinates ?? []) as PlanarPolygonCoordinates;
   components.forEach((component, c) =>
     component.forEach((ring, r) => {
@@ -247,16 +266,23 @@ export function createSkyStageOutline(
     }),
   );
   loop(rectangle(bounds), () => bedY, OUTLINE_BOUNDS);
-  const geometry = new BufferGeometry();
-  geometry.setAttribute(
-    'position',
-    new BufferAttribute(new Float32Array(positions), 3),
-  );
-  geometry.setAttribute(
-    'color',
-    new BufferAttribute(new Float32Array(colors), 3),
-  );
-  return geometry;
+  return build();
+}
+
+/**
+ * The same outline and `bounds`, flat at height 0 in a faint grey: moved down to the void
+ * walls' foot, it shows how far they lean out from the stage.
+ */
+export function createSkyStageFootprint(
+  bounds: SkyStageBounds,
+  outline: PlanarPolygonGeometry | null,
+): BufferGeometry {
+  const { loop, build } = outlineLoops();
+  const components = (outline?.coordinates ?? []) as PlanarPolygonCoordinates;
+  for (const component of components)
+    for (const ring of component) loop(openRing(ring), () => 0, OUTLINE_FOOT);
+  loop(rectangle(bounds), () => 0, OUTLINE_FOOT);
+  return build();
 }
 
 function rectangle([minX, minZ, maxX, maxZ]: SkyStageBounds): Coordinates2D {

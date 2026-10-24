@@ -1,7 +1,10 @@
 import type { ArgTypes, Decorator } from '@storybook/react-vite';
 import { useArgs, useEffect } from 'storybook/preview-api';
-import type { SkyProps } from '../../components/Sky/Sky';
-import type { SkyBoxStageRelief } from '../../components/Sky/SkyBoxStage';
+import type { SkyLayer, SkyProps } from '../../components/Sky/Sky';
+import type {
+  SkyBoxStageLayer,
+  SkyBoxStageRelief,
+} from '../../components/Sky/SkyBoxStage';
 import {
   skyDefaults,
   type SkyAbyss,
@@ -1260,6 +1263,92 @@ export type SkyReliefArgs = {
 
 /** The demo relief in the stories' store (see scripts/generate-relief.js). */
 export const SKY_DEMO_RELIEF = 'etopo-2022-nordic';
+
+// The layers a `hide` control offers: the sky's own, by label, and a stage's.
+const SKY_HIDE_LAYERS: Record<string, SkyLayer> = {
+  'sky background': 'background',
+  'sky surface': 'surface',
+  'sky walls': 'walls',
+};
+const STAGE_HIDE_LAYERS: SkyBoxStageLayer[] = [
+  'surface',
+  'bed',
+  'falloff',
+  'occupant-bed',
+  'relief',
+];
+
+/** A `hide` control for a sky story: layers of the sky and of its stage not to draw (see {@link skyHideFromArgs}). */
+export const skyHideArgType = {
+  control: { type: 'check' },
+  options: [...Object.keys(SKY_HIDE_LAYERS), ...STAGE_HIDE_LAYERS],
+  description:
+    'Layers not to draw. Only their visibility changes: nothing is rebuilt or baked again.',
+  table: { category: 'Debug' },
+} as const;
+
+/** The layers a `hide` control's `hide` names, as the `Sky`'s and a `SkyBoxStage`'s debug views take them. */
+export function skyHideFromArgs(hide: string[] = []) {
+  return {
+    sky: hide.filter(l => l in SKY_HIDE_LAYERS).map(l => SKY_HIDE_LAYERS[l]),
+    stage: STAGE_HIDE_LAYERS.filter(l => hide.includes(l)),
+  };
+}
+
+/** A `SkyBoxStage`'s `outline` debug view as a control. */
+export const skyOutlineArgType = {
+  description:
+    'The stage\u2019s `bounds` (grey) and, with an occupant, its outline along its seabed rim (white) and at the sea surface (black), drawn over everything.',
+  table: { category: 'Debug' },
+} as const;
+
+/** Story args for the void walls' debug views (see {@link skyWallDebugFromArgs}). */
+export type SkyWallDebugArgs = {
+  wallWireframe: boolean;
+  wallFlat: boolean;
+  wallWhole: boolean;
+  wallCut: boolean;
+};
+
+export const skyWallDebugArgs: SkyWallDebugArgs = {
+  wallWireframe: false,
+  wallFlat: false,
+  wallWhole: false,
+  wallCut: false,
+};
+
+export const skyWallDebugArgTypes: ArgTypes<SkyWallDebugArgs> = {
+  wallWireframe: {
+    description:
+      'The void walls\u2019 mesh drawn as its triangles\u2019 edges, in one colour; with `wallWhole`, over everything.',
+    table: { category: 'Debug' },
+  },
+  wallFlat: {
+    description:
+      'The void walls shaded as their mesh\u2019s triangles face, without the rock\u2019s finer relief from the cliffs\u2019 normal map; and the faces of their cut (on the cut plane, and on the lid from above) drawn as geometry, so they hide the data behind the rock.',
+    table: { category: 'Debug' },
+  },
+  wallWhole: {
+    description:
+      'The void walls drawn from above the lid too, as through a cutaway, still cut. The sky\u2019s sea is a background and cannot hide them there: hide the sky background and the stage\u2019s layers to see them against the data.',
+    table: { category: 'Debug' },
+  },
+  wallCut: {
+    description:
+      'The vertical plane the void walls are cut along, as a grid over everything: it faces the camera\u2019s heading, through the stage\u2019s centre or `abyssWallClip` in front of the camera, from the lid down to the walls\u2019 foot.',
+    table: { category: 'Debug' },
+  },
+};
+
+/** The void walls' debug views (`SkyDebug.walls`) from {@link SkyWallDebugArgs}. */
+export function skyWallDebugFromArgs(args: SkyWallDebugArgs) {
+  return {
+    wireframe: args.wallWireframe,
+    flat: args.wallFlat,
+    whole: args.wallWhole,
+    cut: args.wallCut,
+  };
+}
 
 export const skyReliefArgs: SkyReliefArgs = {
   relief: false,

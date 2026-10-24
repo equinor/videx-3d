@@ -1,11 +1,14 @@
 import {
   BufferAttribute,
   BufferGeometry,
+  DoubleSide,
   MathUtils,
   ShaderMaterial,
   Uniform,
   Vector2,
 } from 'three';
+import fillFragmentShader from './shaders/sky-abyss-wall-fill-fragment.glsl';
+import fillVertexShader from './shaders/sky-abyss-wall-fill-vertex.glsl';
 import fragmentShader from './shaders/sky-abyss-wall-fragment.glsl';
 import vertexShader from './shaders/sky-abyss-wall-vertex.glsl';
 import type { SkyMaterial } from './sky-material';
@@ -107,6 +110,24 @@ export function createSkyAbyssWallMaterial(sky: SkyMaterial) {
     fragmentShader,
     uniforms,
     defines: { SKY_ABYSS: '', SKY_ABYSS_WALLS: '' },
+    dithering: true,
+  });
+}
+
+/**
+ * A material for the void walls' fill drawn as geometry, on a quad on the plane they are
+ * cut along, or on the lid (`lid`): where it lies in their rock, shaded as the background
+ * shades their fill, with its depth. A debug view (`SkyDebug.walls.flat`).
+ */
+export function createSkyAbyssWallFillMaterial(sky: SkyMaterial, lid: boolean) {
+  const uniforms = Object.create(sky.uniforms) as Record<string, Uniform>;
+  uniforms.uSkyAbyssWallFillLid = new Uniform(lid ? 1 : 0);
+  return new ShaderMaterial({
+    vertexShader: fillVertexShader,
+    fragmentShader: fillFragmentShader,
+    uniforms,
+    defines: { SKY_ABYSS: '', SKY_ABYSS_WALLS: '' },
+    side: DoubleSide,
     dithering: true,
   });
 }
