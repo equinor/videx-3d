@@ -281,8 +281,6 @@ uniform vec2 uSkyCloudsSeed; // offset of the pattern
 // Radius of the deck's sphere about the Earth's centre and their thickness (world units); the
 // layers (0 deck, 1 band, 2 both); the band's distance (world units).
 uniform vec4 uSkyCloudsShape;
-// TEMPORARY, to compare: how much of the band's sink a curved horizon keeps (1 on a flat sea).
-uniform float uSkyCloudsSink;
 // Most a cloud's core shifts against its outline, in cloud sizes.
 #define SKY_CLOUD_PARALLAX 0.3
 // How much they hide the sun, moon and stars behind them, at opacity 0.5 and up.
@@ -415,7 +413,8 @@ vec3 skyCloudBand(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
   float over = asin(clamp(y, -1.0, 1.0)) - asin(skyHorizon(dir));
   vec2 span = skyCloudBandSpan();
   float climb = 1.0 - exp(-max(dot(origin, uSkyUp), 0.0) / (1.5 * uSkyClouds.y));
-  float sink = uSkyCurvature > 0.0 ? uSkyCloudsSink : 1.0;
+  // On a flat sea only: with the Earth's curve the horizon itself goes down.
+  float sink = uSkyCurvature > 0.0 ? 0.0 : 1.0;
   float e = max(over + SKY_CLOUD_BAND_SINK * climb * sink, 0.0) / skyCloudBandSquash(origin);
   if(over <= -0.002 || e >= span.y)
     return color;
@@ -541,9 +540,10 @@ uniform float uSkyAbyssDetailScale; // world units
 uniform vec2 uSkyAbyssDepthDetail; // the rock in the depths: strength, and feature size
 // Its colours and the depths' falloff: sky-void.glsl.
 
-// The lid seen at `hit`, `reach` away: it recedes into the horizon colour. ⚠️ Derivatives.
+// The lid seen at `hit`, `reach` away: it recedes into the horizon colour over the fade
+// distance, or never (0). ⚠️ Derivatives.
 vec3 skyAbyssCeiling(vec3 hit, float reach) {
-  float near = exp(-reach / uSkyAbyssFadeDistance);
+  float near = uSkyAbyssFadeDistance > 0.0 ? exp(-reach / uSkyAbyssFadeDistance) : 1.0;
   vec3 ceiling = mix(uSkyAbyssHorizonColor, uSkyAbyssCeilingColor, near);
   if(uSkyAbyssDetail > 0.0) {
     // Pinned to the lid, so it slides and scales as the camera moves; far hits fade out.
@@ -603,7 +603,9 @@ uniform vec3 uSkyAbyssWallFillBelow; // and its panels below
 #define SKY_ABYSS_MIST_LIGHT 1.3
 #define SKY_ABYSS_MIST_VEIL 0.6
 uniform vec3 uSkyAbyssWallSandColor; // the sand over their rock's
-// How bright the glow at the top of the stage is, at full `glow`, against the void's horizon colour.
+uniform vec3 uSkyAbyssWallGlowColor; // the dim light at the top of the stage's
+uniform float uSkyAbyssWallHazeDepth; // depth below the lid over which the haze in the hollow darkens; 0 for never
+// How bright the glow at the top of the stage is, at full `glow`, against its colour.
 #define SKY_ABYSS_GLOW 4.0
 // The sand's laminae where it is cut, as a share of uSkyAbyssWalls.w.
 #define SKY_ABYSS_SAND_BED 0.02
@@ -750,9 +752,16 @@ bool skyAbyssWallCovered(vec3 origin, vec3 dir) {
 #endif
 
 // Of the light in the hollow, how much is left `h` high: it dims with depth below the lid,
-// to nearly black by uSkyAbyssWallShape.z.
+// to nearly black by uSkyAbyssWallShape.z (`lightDepth`). On the rock, the sand and the glow.
 float skyAbyssDim(float h) {
   return exp(3.0 * min(h - uSkyAbyssLevel, 0.0) / uSkyAbyssWallShape.z);
+}
+
+// The haze in the hollow `h` high: the void's horizon colour, darkening with depth below the
+// lid to nearly black by uSkyAbyssWallHazeDepth (`hazeDepth`), or never.
+vec3 skyAbyssHazeColor(float h) {
+  float dim = uSkyAbyssWallHazeDepth > 0.0 ? exp(3.0 * min(h - uSkyAbyssLevel, 0.0) / uSkyAbyssWallHazeDepth) : 1.0;
+  return uSkyAbyssHorizonColor * dim;
 }
 
 // The light on the walls' rock facing `surface`, `h` high: raked by uSkyAbyssWallLight as
@@ -771,12 +780,12 @@ vec3 skyAbyssWallShade(vec3 surface, float open, float h) {
   return uSkyAbyssWallColor * skyAbyssWallLit(surface, h) * mix(0.45, 1.0, open);
 }
 
-// The dim light at the top of the stage, at `p`: over the stage, fading out beyond it over
-// the walls' distance, and dimming with depth as all the light in the hollow does.
+// The dim light at the top of the stage, at `p`, in its own colour: over the stage, fading
+// out beyond it over the walls' distance, and dimming with depth as the rock's light does.
 vec3 skyAbyssWallGlow(vec3 p) {
   float beyond = max(sdfBox(skyAbyssWallPlane(p), uSkyStageBox.zw), 0.0);
   float glow = SKY_ABYSS_GLOW * uSkyAbyssWallSand.y * exp(-beyond / uSkyAbyssWalls.x);
-  return uSkyAbyssHorizonColor * (glow * skyAbyssDim(dot(p, uSkyUp)));
+  return uSkyAbyssWallGlowColor * (glow * skyAbyssDim(dot(p, uSkyUp)));
 }
 
 // The sand over their rock at `p`, facing `surface`: dull and matte, lit as the rock is
@@ -851,9 +860,9 @@ float skyAbyssWallMistAt(vec3 p) {
   return smoothstep(0.45, 0.75, 0.65 * skyNoise3(q) + 0.35 * skyNoise3(q * 2.3 + 7.1));
 }
 
-// The mist's light `h` high: paler than the rock, dimming with depth as the light on it does.
+// The mist's light `h` high: paler than the haze it is of, darkening with depth as it does.
 vec3 skyAbyssWallMistLight(float h) {
-  return uSkyAbyssHorizonColor * SKY_ABYSS_MIST_LIGHT * skyAbyssDim(h);
+  return SKY_ABYSS_MIST_LIGHT * skyAbyssHazeColor(h);
 }
 
 // How much of the hollow's light is left at `p`, beyond the walls' rim: all of it inside,
@@ -889,10 +898,10 @@ float skyAbyssWallFog(vec2 q, float depth) {
 // How much of what lies `t` along `dir` from `origin` shows through a haze `haze` long where
 // it is thickest (skyAbyssWallFog): its thickness summed along the view, at the middles of
 // SKY_ABYSS_FOG_SAMPLES stretches of the part of it over the rectangle the haze can lie
-// over. Without the fade, as thick everywhere.
+// over. Without the fade, as thick everywhere; all of it with no haze (`haze` 0).
 float skyAbyssWallClear(vec3 origin, vec3 dir, float t, float haze) {
   float thick = t;
-  if(uSkyAbyssWallFade > 0.0) {
+  if(uSkyAbyssWallFade > 0.0 && haze > 0.0) {
     float deepest = max(uSkyAbyssLevel - min(dot(origin, uSkyUp), dot(origin + dir * t, uSkyUp)), 0.0);
     vec2 reach = uSkyStageBox.zw + uSkyAbyssWalls.x + uSkyAbyssWallShape.y * deepest + uSkyAbyssWallFade;
     vec2 q = skyAbyssWallPlane(origin);
@@ -912,46 +921,34 @@ float skyAbyssWallClear(vec3 origin, vec3 dir, float t, float haze) {
       thick *= stretch;
     }
   }
-  return exp(-thick / haze);
+  return haze > 0.0 ? exp(-thick / haze) : 1.0;
 }
 
-// `color` `t` along `dir` from `origin`, in the walls' own haze: the void's horizon colour
-// dimmed as deep as it stands there, thick in the hollow and thinning out beyond its rim
-// (skyAbyssWallClear). `color` is darkened by the hollow's light left where it is (`far`,
-// skyAbyssWallFar; 1 on their rim), so far from the hollow all fades to near black.
-// Solid: hazed into what lies behind, its horizon would show through them.
+// `color` `t` along `dir` from `origin`, in the walls' own haze (skyAbyssHazeColor where it
+// ends), thick in the hollow and thinning out beyond its rim (skyAbyssWallClear). `color`
+// is darkened by the hollow's light left where it is (`far`, skyAbyssWallFar; 1 on their
+// rim), so far from the hollow all fades to black. Solid: hazed into what lies behind,
+// its horizon would show through them.
 vec3 skyAbyssWallHaze(vec3 color, float far, vec3 origin, vec3 dir, float t) {
-  vec3 haze = uSkyAbyssHorizonColor * skyAbyssDim(dot(origin + dir * t, uSkyUp));
+  vec3 haze = skyAbyssHazeColor(dot(origin + dir * t, uSkyUp));
   return mix(haze, color * far, skyAbyssWallClear(origin, dir, t, uSkyAbyssWalls.z));
 }
 
-// The lid seen from below `reach` along `dir` from `origin`: with sand over the walls' rock,
-// the sand's underside, lit as the sand in the walls is (the glow at the top of the stage
-// over it), faintly rippled as the void's lid is (uSkyAbyssDetail), in the walls' haze;
-// without, the void's own lid, receding into its horizon colour as that haze thins.
-// Either way darkened far from the hollow (skyAbyssWallFar). Sand or not is the same for
-// every pixel. ⚠️ Derivatives.
+// The lid seen from below `reach` along `dir` from `origin`, in the walls' haze: with sand
+// over the walls' rock, the sand's underside, lit as the sand in the walls is (the glow at
+// the top of the stage over it); without, the void's own lid colour. Faintly rippled as
+// the void's lid is (uSkyAbyssDetail), the ripples fading as the haze thickens, and
+// darkened far from the hollow (skyAbyssWallFar). Sand or not is the same for every pixel.
+// ⚠️ Derivatives.
 vec3 skyAbyssLid(vec3 origin, vec3 dir, float reach) {
   vec3 hit = origin + dir * reach;
-  float near = exp(-reach / uSkyAbyssFadeDistance);
-  vec3 lid;
-  if(uSkyAbyssWallSand.x > 0.0) {
-    lid = skyAbyssWallSandShade(-uSkyUp, hit);
-    if(uSkyAbyssDetail > 0.0) {
-      vec2 cells = vec2(dot(hit, uSkyEast), dot(hit, uSkyNorth)) / uSkyAbyssDetailScale;
-      lid *= 1.0 + pnFbmSigned2Filtered(cells, 5) * 2.0 * uSkyAbyssDetail * near;
-    }
-    lid = skyAbyssWallHaze(lid, skyAbyssWallFar(hit), origin, dir, reach);
-  } else {
-    // As skyAbyssCeiling, which it is without the fade.
-    float clear = skyAbyssWallClear(origin, dir, reach, uSkyAbyssFadeDistance);
-    lid = mix(uSkyAbyssHorizonColor, uSkyAbyssCeilingColor * skyAbyssWallFar(hit), clear);
-    if(uSkyAbyssDetail > 0.0) {
-      vec2 cells = vec2(dot(hit, uSkyEast), dot(hit, uSkyNorth)) / uSkyAbyssDetailScale;
-      lid *= 1.0 + pnFbmSigned2Filtered(cells, 5) * 2.0 * uSkyAbyssDetail * near;
-    }
+  float clear = skyAbyssWallClear(origin, dir, reach, uSkyAbyssWalls.z);
+  vec3 lid = uSkyAbyssWallSand.x > 0.0 ? skyAbyssWallSandShade(-uSkyUp, hit) : uSkyAbyssCeilingColor;
+  if(uSkyAbyssDetail > 0.0) {
+    vec2 cells = vec2(dot(hit, uSkyEast), dot(hit, uSkyNorth)) / uSkyAbyssDetailScale;
+    lid *= 1.0 + pnFbmSigned2Filtered(cells, 5) * 2.0 * uSkyAbyssDetail * clear;
   }
-  return lid;
+  return mix(skyAbyssHazeColor(dot(hit, uSkyUp)), lid * skyAbyssWallFar(hit), clear);
 }
 
 // What the background draws of the walls along `dir` from `origin`, below the lid, laid

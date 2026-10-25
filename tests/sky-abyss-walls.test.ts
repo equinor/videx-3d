@@ -102,13 +102,13 @@ describe('skyAbyssWallClipPlane', () => {
     half: [12000, 4000],
     level: -100,
     depth: 20000,
-    clip: 4800,
+    cutDistance: 4800,
     distance: 10500,
     flare: 0.3,
     wander: 4000,
     relief: 5200,
   };
-  const { centre, clip, level } = walls;
+  const { centre, cutDistance, level } = walls;
   const extent = walls.half;
   const above = new Vector3(2000, 2000, 40000);
   // Between the lid and the walls' foot, out in their rock.
@@ -144,7 +144,9 @@ describe('skyAbyssWallClipPlane', () => {
     Math.max(
       ...[-1, 1].flatMap(sx =>
         [-1, 1].map(
-          sz => p.x * (centre[0] + sx * extent[0]) + p.z * (centre[1] + sz * extent[1]),
+          sz =>
+            p.x * (centre[0] + sx * extent[0]) +
+            p.z * (centre[1] + sz * extent[1]),
         ),
       ),
     );
@@ -153,10 +155,10 @@ describe('skyAbyssWallClipPlane', () => {
     for (const yaw of [0, 37, 140, 270]) {
       for (const pitch of [0, -20, -60, -90]) {
         const m = cameraAt(pitch, yaw, above).matrixWorld.elements;
-        // The screen's top plus the view, laid level; through the centre or `clip` ahead.
+        // The screen's top plus the view, laid level; through the centre or `cutDistance` ahead.
         const old = new Vector3(m[4] - m[8], 0, m[6] - m[10]).normalize();
         const w = Math.max(
-          old.dot(above) + clip,
+          old.dot(above) + cutDistance,
           old.x * centre[0] + old.z * centre[1],
         );
         const p = plane(pitch, yaw, above);
@@ -184,19 +186,22 @@ describe('skyAbyssWallClipPlane', () => {
         const p = plane(pitch, yaw, outside);
         // Short of the plane: the stage's every corner, and the camera.
         expect(p.w).toBeGreaterThanOrEqual(farCorner(p) - 1e-6);
-        expect(p.w).toBeGreaterThanOrEqual(along(p, outside) + clip - 1e-6);
+        expect(p.w).toBeGreaterThanOrEqual(
+          along(p, outside) + cutDistance - 1e-6,
+        );
       }
     }
   });
 
-  it('eases the push in over `clip` down from the lid, without a jump across it', () => {
+  it('eases the push in over `cutDistance` down from the lid, without a jump across it', () => {
     const at = (height: number) =>
       plane(20, 37, new Vector3(outside.x, height, outside.z));
     expect(Math.abs(at(level + 1).w - at(level - 1).w)).toBeLessThan(1);
-    const pushed = at(level - clip);
+    const pushed = at(level - cutDistance);
     expect(pushed.w).toBeCloseTo(
       Math.max(
-        along(pushed, new Vector3(outside.x, level - clip, outside.z)) + clip,
+        along(pushed, new Vector3(outside.x, level - cutDistance, outside.z)) +
+          cutDistance,
         farCorner(pushed),
       ),
       3,
@@ -226,7 +231,7 @@ describe('skyAbyssWallInView', () => {
     half: [12000, 4000],
     level: -100,
     depth: 20000,
-    clip: 4800,
+    cutDistance: 4800,
     distance: 10500,
     flare: 0.3,
     wander: 4000,
@@ -240,7 +245,8 @@ describe('skyAbyssWallInView', () => {
     const dx = Math.abs(x - centre[0]) - extent[0];
     const dz = Math.abs(z - centre[1]) - extent[1];
     const out =
-      Math.hypot(Math.max(dx, 0), Math.max(dz, 0)) + Math.min(Math.max(dx, dz), 0);
+      Math.hypot(Math.max(dx, 0), Math.max(dz, 0)) +
+      Math.min(Math.max(dx, dz), 0);
     const inner =
       walls.distance + walls.flare * (level - h) - walls.wander - walls.relief;
     return inner - out;
@@ -259,7 +265,11 @@ describe('skyAbyssWallInView', () => {
     for (const sx of [-1, 1])
       for (const sz of [-1, 1])
         for (const h of [level, foot])
-          targets.push([centre[0] + sx * extent[0], h, centre[1] + sz * extent[1]]);
+          targets.push([
+            centre[0] + sx * extent[0],
+            h,
+            centre[1] + sz * extent[1],
+          ]);
     for (let i = 0; i < 40; i++)
       targets.push([
         centre[0] + (2 * random() - 1) * extent[0],
@@ -280,7 +290,11 @@ describe('skyAbyssWallInView', () => {
           const s = s0 + ((1 - s0) * i) / 20;
           least = Math.min(
             least,
-            margin(p.x + (tx - p.x) * s, p.y + (th - p.y) * s, p.z + (tz - p.z) * s),
+            margin(
+              p.x + (tx - p.x) * s,
+              p.y + (th - p.y) * s,
+              p.z + (tz - p.z) * s,
+            ),
           );
         }
       }
@@ -289,7 +303,10 @@ describe('skyAbyssWallInView', () => {
         margin(centre[0] + extent[0], level, centre[1] + extent[1]),
         margin(centre[0] + extent[0], foot, centre[1] + extent[1]),
       );
-      expect(least).toBeCloseTo(Math.min(skyAbyssWallInView(p, up, walls), own), 3);
+      expect(least).toBeCloseTo(
+        Math.min(skyAbyssWallInView(p, up, walls), own),
+        3,
+      );
     }
   });
 

@@ -497,10 +497,13 @@ out to the horizon (see [Relief](./relief.md)).
 `abyss` puts an endless lid overhead below a `level` and a bottomless gradient below the
 horizon, so a camera under the ground does not see the sky. It is part of the
 background, so it never hides anything in the scene, including objects above the level.
-The lid recedes into the horizon colour (`fadeDistance`) and has a noise relief
+The lid recedes into the horizon colour (`fadeDistance`; 0 for never) and has a noise relief
 (`detail`, `detailScale`); the depths have faint distant rock (`depthDetail`) and a
 `falloff`. A sea turns the void on below its seabed by itself, and with or without a
-seabed its lid is a roof from below.
+seabed its lid is a roof from below. With walls, the lid is in their haze instead
+(`hazeDistance`), the depths are their haze, and the void's `horizon` colour is that
+haze's: `fadeDistance`, `depthDetail` and, but for `background: 'void'` and the stand-in,
+`depth` and `falloff` apply only without them, and `ceiling` only without their `sand`.
 
 `walls` (off by default; a prototype) adds cliffs about the stage, from the lid down, so
 moving in the void shows its scale. They follow the stage's rectangle (the one the flat
@@ -511,12 +514,12 @@ hollow they leave widens.
 Their rock stands in and out of that outline by up to `relief`, as a baked cliff texture
 says (`bakeSkyCliffs`, a 1024² tile repeating both ways, with mip levels): bays and
 headlands, tall ridged buttresses and gullies, and ledges with sheer faces under them that
-come and go, features `scale` across. It is laid along the walls by the distance round
+come and go, features `rockSize` across. It is laid along the walls by the distance round
 the outline, a whole number of tiles round so it has no seam, and down them by depth.
 The walls' faces are a mesh (`SkyAbyssWallLayer`), not a search per pixel, and a light
 one: a single fixed grid round the outline and down from the lid, a column every 4 texels
 of the cliffs (128 to 1024 of them, about 400 for Volve) and 32 rows, closer together near
-the lid, to `2.5 x blackDepth` deep; past that the walls are black. Every vertex holds its
+the lid, to `2.5 x lightDepth` deep; past that the walls are black. Every vertex holds its
 column and row and is pushed out to the rock's face in the vertex shader, the cliffs read
 as coarsely as its cells are wide, and faces as the mesh lies across its neighbours. It is
 one draw of some 25k triangles, the same every frame wherever the camera is: no level of
@@ -524,7 +527,7 @@ detail, no culling, nothing to pop or crack. Its detail is the fragment shader's
 baked relief (see below). Its grid (`skyAbyssWallGrid`) is the sky material's, which the
 background needs too. They are cut away up to a vertical plane facing the camera's heading
 (as the cutaway's, so looking straight down the top of the screen decides which side is
-kept): through the stage's centre, or `clip` in front of the camera once that is further,
+kept): through the stage's centre, or `cutDistance` in front of the camera once that is further,
 so from a distance the near half of the hollow is gone and nothing of it stands in front of
 the scene. Like a section, it turns with the camera, sweeping the cut through the rock.
 Looking up, the bottom of the screen decides instead, so the plane keeps its side as the
@@ -533,7 +536,7 @@ agree looking level). The cut takes away all that lies short of the plane, which
 of it the camera is on: a view from the side cut away starts at the plane, one from the
 side kept ends there, and at the plane the two agree, so the plane can pass through the
 camera without a jump. Below the lid the plane is pushed on past the stage's far corner
-(easing in over `clip` down from the lid), so the whole stage lies in what is cut away and
+(easing in over `cutDistance` down from the lid), so the whole stage lies in what is cut away and
 no cut face or rim ever stands behind it, whatever the view; the lid shows over the rock
 taken away. Once the whole stage is in view through the hollow, nothing is cut: the plane
 eases back through the camera and past the far rim, and then is gone, so from inside the
@@ -561,12 +564,16 @@ their creases, is the baked tile's normal map and creases, laid three ways and b
 down where it faces into the hollow, out across it and down on a protrusion's sides, round
 and out where it faces up or down (only the ways that show are read); laid one way only, it smears on the others. It is raked
 by a light of its own, at the subsurface light's bearing and `lightElevation` (level by
-default, which brings out the cliffs; below 0 from below), as strongly as `strength`, and
-filled in by the subsurface's light map (its backdrop, and its panels below bouncing up),
-its creases shadowed, and the light on it dims with depth to nearly black by `blackDepth`.
+default, which brings out the cliffs; below 0 from below), as strongly as `lightStrength`
+(0 for none), and filled in by the subsurface's light map (its backdrop, and its panels
+below bouncing up), its creases shadowed, and the light on it dims with depth to nearly
+black by `lightDepth`, as does the sand's and the glow's.
 The data keep the subsurface light. Walls and fill fade
-over `haze` into a haze of their own, the void's horizon colour dimmed as deep as they
-stand, and stay solid: hazed into what lies behind, the void's horizon would show through
+over `hazeDistance` (0 for none) into a haze of their own, the void's horizon colour
+darkening with depth to nearly black by `hazeDepth` (0 for never), apart from the light on
+the rock: a deeper `lightDepth` lights the rock further down without lighting more haze,
+and a deeper `hazeDepth` shows more haze. They stay solid: hazed into what lies behind, the
+void's horizon would show through
 them as the view tilts. With walls the depths below the horizon are that haze too: a view
 that meets none of the mesh passes under its foot, and is drawn as a wall would be there,
 at least a haze length on, so as dark as the walls' foot; they lose the gradient and its
@@ -574,8 +581,8 @@ faint strata (`depthDetail`). Their rock runs on down past the mesh's foot (the 
 it there too), so from under the foot a view rising out of the hollow before it is up to
 the foot has met that rock, and is as dark; one that rises into the hollow sees it, and
 the lid over it. Mist clings to the walls in patches fixed in the world (`mist`), hanging
-`mistReach` off the rock: a veil in front of it, thicker the more a view runs along it. The
-open gap stays clear.
+`mistReach` off the rock: a veil in front of it, thicker the more a view runs along it,
+lit as the haze is. The open gap stays clear.
 Their top is a layer of soft `sand` over the rock (default 1000 deep; 0 for none, all
 rock), as the overburden over older rock under a real sea: in it the mesh follows the
 rock's large shape alone, its cliffs read three mip levels coarser, so the sand drapes the
@@ -584,27 +591,26 @@ bays and headlands without their sharp relief, and is shaded dull and matte in
 contact with the rock eases over a fifth of its depth either way and wanders a little
 round the outline; where the walls are cut, the sand shows thin laminae instead of the
 rock's beds. The lid seen from below is that sand's underside (`skyAbyssLid`, for the
-background and a stage's seabed from below alike), rippled by the void's `detail`, in the
-walls' haze. A dim light at the top of the stage (`glow`) lights the lid and the sand over
-the stage, fading out over about `distance` beyond it. Without sand the lid is the void's
-own, as without walls. It all only changes uniforms; with `sand: 0` the walls draw exactly
-as before.
-Far from the hollow its light fades out (`fade`, default 20 km; 0 for none), so zoomed out
+background and a stage's seabed from below alike), rippled by the void's `detail`, the
+ripples fading as the walls' haze thickens, in that haze. A dim light at the top of the
+stage (`glow`, in `glowColor`) lights the lid and the sand over the stage, fading out over
+about `distance` beyond it. Without sand the lid is the void's own colour (`ceiling`), in
+the walls' haze as well.
+Far from the hollow its light fades out (`rimFade`, default 20 km; 0 for none), so zoomed out
 the lid, the sand and the cut darken toward black instead of fading into the haze's grey.
 It is measured beyond the rim itself, the walls' middle at each depth, wandering and leaning
 out as they do (`skyAbyssWallFar`), so the dark follows the hollow's own outline rather
-than a rectangle or a circle, and eases down to a fifth of the light over `fade`, then the
+than a rectangle or a circle, and eases down to a fifth of the light over `rimFade`, then the
 rest to black over twice that again (`SKY_ABYSS_FADED_OUT`), the two easing into each
 other. What is
 seen is darkened by what is left where it is (the walls' faces stand on the rim and keep
-all of it). Their haze thins out over the same `fade` beyond the rim (`skyAbyssWallFog`):
+all of it). Their haze thins out over the same `rimFade` beyond the rim (`skyAbyssWallFog`):
 thick in the hollow, gone far from it, so from far out a view passes clear air until it
 nears the hollow and the darkened lid shows rather than a grey haze. Its thickness along a
 view is summed at the middles of six stretches of the part of the view over the rectangle
 it can lie over (`skyAbyssWallClear`), each a box distance to the rim without its wander:
 the haze is smooth. Inside the hollow it is as thick as without the fade, so little
-changes there. Without sand the void's lid darkens, and thins its fade into the horizon
-colour, the same way. A point inside the rim however far it wanders skips the way round:
+changes there. A point inside the rim however far it wanders skips the way round:
 the walls' faces, and anything in the hollow, pay one box distance for its light.
 A view rising from under the foot counts as gone into the rock there once it passes within
 about a pixel of it (`SKY_ABYSS_FOOT_OVERLAP`), so that rock overlaps the mesh's last edge

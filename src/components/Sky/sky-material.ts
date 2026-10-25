@@ -101,14 +101,14 @@ export class SkyMaterial extends ShaderMaterial {
   private bedDetail: SurfaceDetail | undefined;
   private bedDetailKey = '';
   // How far in front of the camera clipAbyssWalls cuts the walls away.
-  private abyssWallClip: number = skyDefaults.abyss.walls.clip;
+  private abyssWallCutDistance: number = skyDefaults.abyss.walls.cutDistance;
   // What clipAbyssWalls cuts by, kept to fill in each frame.
   private readonly abyssWallCut: SkyAbyssWallCut = {
     centre: [0, 0],
     half: [0, 0],
     level: 0,
     depth: 0,
-    clip: 0,
+    cutDistance: 0,
     distance: 0,
     flare: 0,
     wander: 0,
@@ -189,26 +189,29 @@ export class SkyMaterial extends ShaderMaterial {
         uSkyAbyssWalls: new Uniform(
           new Vector4(
             abyss.walls.distance,
-            abyss.walls.strength,
-            abyss.walls.haze,
-            abyss.walls.scale,
+            abyss.walls.lightStrength,
+            abyss.walls.hazeDistance,
+            abyss.walls.rockSize,
           ),
         ),
         uSkyAbyssWallShape: new Uniform(
           new Vector4(
             abyss.walls.relief,
             abyss.walls.flare,
-            abyss.walls.blackDepth,
+            abyss.walls.lightDepth,
             abyss.walls.wander,
           ),
         ),
+        // The depth over which the haze in the hollow darkens; 0 for never.
+        uSkyAbyssWallHazeDepth: new Uniform(abyss.walls.hazeDepth),
         // Their sand: how thick, how bright the glow over the stage, and its colour.
         uSkyAbyssWallSand: new Uniform(
           new Vector2(abyss.walls.sand, abyss.walls.glow),
         ),
         uSkyAbyssWallSandColor: new Uniform(new Color(abyss.walls.sandColor)),
+        uSkyAbyssWallGlowColor: new Uniform(new Color(abyss.walls.glowColor)),
         // The distance beyond their rim the hollow's light and haze fade out over.
-        uSkyAbyssWallFade: new Uniform(abyss.walls.fade),
+        uSkyAbyssWallFade: new Uniform(abyss.walls.rimFade),
         // 1 while the seabed beyond the stage, which the background draws, hides them from above.
         uSkyAbyssWallCover: new Uniform(0),
         // The plane they are cut away up to (clipAbyssWalls): what is on the far side of its normal shows.
@@ -231,7 +234,6 @@ export class SkyMaterial extends ShaderMaterial {
         uSkyCloudsColor: new Uniform(new Vector4(1, 1, 1, 1)),
         uSkyCloudsSeed: new Uniform(new Vector2()),
         uSkyCloudsShape: new Uniform(new Vector4()),
-        uSkyCloudsSink: new Uniform(0),
         uSkyAir: new Uniform(new Vector3()),
         uSkyHaze: new Uniform(
           new Vector2(skyDefaults.air.hazeHeight, skyDefaults.air.haze),
@@ -674,7 +676,6 @@ export class SkyMaterial extends ShaderMaterial {
       (clouds.seed * 12.9898) % 1000,
       (clouds.seed * 78.233) % 1000,
     );
-    this.uniforms.uSkyCloudsSink.value = clouds.bandSink ? 1 : 0;
   }
 
   /**
@@ -789,12 +790,12 @@ export class SkyMaterial extends ShaderMaterial {
     this.uniforms.uSkyAbyssDepthColor.value.set(value);
   }
 
-  /** distance over which the lid recedes into the horizon colour */
+  /** distance over which the lid recedes into the horizon colour; 0 for never (without walls) */
   get abyssFadeDistance(): number {
     return this.uniforms.uSkyAbyssFadeDistance.value;
   }
   set abyssFadeDistance(value: number) {
-    this.uniforms.uSkyAbyssFadeDistance.value = Math.max(value, 1e-3);
+    this.uniforms.uSkyAbyssFadeDistance.value = Math.max(value, 0);
   }
 
   /** depth below the level over which the void fades in */
@@ -892,16 +893,17 @@ export class SkyMaterial extends ShaderMaterial {
     const relief = MathUtils.clamp(walls.relief, 1, 0.9 * distance);
     this.uniforms.uSkyAbyssWalls.value.set(
       distance,
-      MathUtils.clamp(walls.strength, 0, 1),
-      Math.max(walls.haze, 1),
-      Math.max(walls.scale, 1),
+      MathUtils.clamp(walls.lightStrength, 0, 1),
+      Math.max(walls.hazeDistance, 0),
+      Math.max(walls.rockSize, 1),
     );
     this.uniforms.uSkyAbyssWallShape.value.set(
       relief,
       Math.max(walls.flare, 0),
-      Math.max(walls.blackDepth, 1),
+      Math.max(walls.lightDepth, 1),
       MathUtils.clamp(walls.wander, 0, distance - relief),
     );
+    this.uniforms.uSkyAbyssWallHazeDepth.value = Math.max(walls.hazeDepth, 0);
     (this.uniforms.uSkyAbyssWallColor.value as Color).set(walls.color);
     (this.uniforms.uSkyAbyssWallCutColor.value as Color).set(walls.cutColor);
     (this.uniforms.uSkyAbyssWallMist.value as Vector2).set(
@@ -913,8 +915,9 @@ export class SkyMaterial extends ShaderMaterial {
       MathUtils.clamp(walls.glow, 0, 1),
     );
     (this.uniforms.uSkyAbyssWallSandColor.value as Color).set(walls.sandColor);
-    this.uniforms.uSkyAbyssWallFade.value = Math.max(walls.fade, 0);
-    this.abyssWallClip = Math.max(walls.clip, 0);
+    (this.uniforms.uSkyAbyssWallGlowColor.value as Color).set(walls.glowColor);
+    this.uniforms.uSkyAbyssWallFade.value = Math.max(walls.rimFade, 0);
+    this.abyssWallCutDistance = Math.max(walls.cutDistance, 0);
     this.updateAbyssWallGrid();
   }
 
@@ -948,7 +951,7 @@ export class SkyMaterial extends ShaderMaterial {
 
   /**
    * Cut the walls away up to a vertical plane facing `camera`'s heading, as the cutaway's
-   * does: through the stage's centre, or {@link SkyAbyssWalls.clip} in front of the camera
+   * does: through the stage's centre, or {@link SkyAbyssWalls.cutDistance} in front of the camera
    * once that is further, and below the lid past the stage, until the whole stage is in view
    * through the hollow (see `skyAbyssWallClipPlane`). Every frame, with the camera's
    * matrices this frame's.
@@ -965,7 +968,7 @@ export class SkyMaterial extends ShaderMaterial {
     cut.half[1] = box.w;
     cut.level = this.abyssLevel;
     cut.depth = (u.uSkyAbyssWallGrid.value as Vector3).z;
-    cut.clip = this.abyssWallClip;
+    cut.cutDistance = this.abyssWallCutDistance;
     cut.distance = walls.x;
     cut.flare = shape.y;
     cut.wander = shape.w;

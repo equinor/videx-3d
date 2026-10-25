@@ -444,7 +444,6 @@ export const Sky = ({
       : (cloudsOptions?.opacity ?? cloudDefaults.opacity);
   const cloudColor = toHex(cloudsOptions?.color ?? cloudDefaults.color);
   const cloudSeed = cloudsOptions?.seed ?? cloudDefaults.seed;
-  const cloudBandSink = cloudsOptions?.bandSink ?? cloudDefaults.bandSink;
   const zenith = toHex(colors?.zenith ?? skyDefaults.colors.zenith);
   const horizon = toHex(colors?.horizon ?? skyDefaults.colors.horizon);
   const ground = toHex(colors?.ground ?? skyDefaults.colors.ground);
@@ -485,26 +484,34 @@ export const Sky = ({
   const wallCutColor = toHex(
     wallsOptions?.cutColor ?? abyssDefaults.walls.cutColor,
   );
-  const wallStrength = wallsOptions?.strength ?? abyssDefaults.walls.strength;
+  const wallLightStrength =
+    wallsOptions?.lightStrength ?? abyssDefaults.walls.lightStrength;
   const wallLightElevation =
     wallsOptions?.lightElevation ?? abyssDefaults.walls.lightElevation;
-  const wallHaze = wallsOptions?.haze ?? abyssDefaults.walls.haze;
+  const wallLightDepth =
+    wallsOptions?.lightDepth ?? abyssDefaults.walls.lightDepth;
+  const wallHazeDistance =
+    wallsOptions?.hazeDistance ?? abyssDefaults.walls.hazeDistance;
+  const wallHazeDepth =
+    wallsOptions?.hazeDepth ?? abyssDefaults.walls.hazeDepth;
   const wallMist = wallsOptions?.mist ?? abyssDefaults.walls.mist;
   const wallMistReach =
     wallsOptions?.mistReach ?? abyssDefaults.walls.mistReach;
-  const wallScale = wallsOptions?.scale ?? abyssDefaults.walls.scale;
+  const wallRockSize = wallsOptions?.rockSize ?? abyssDefaults.walls.rockSize;
   const wallRelief = wallsOptions?.relief ?? abyssDefaults.walls.relief;
   const wallFlare = wallsOptions?.flare ?? abyssDefaults.walls.flare;
   const wallWander = wallsOptions?.wander ?? abyssDefaults.walls.wander;
-  const wallClip = wallsOptions?.clip ?? abyssDefaults.walls.clip;
-  const wallBlackDepth =
-    wallsOptions?.blackDepth ?? abyssDefaults.walls.blackDepth;
+  const wallCutDistance =
+    wallsOptions?.cutDistance ?? abyssDefaults.walls.cutDistance;
   const wallSand = wallsOptions?.sand ?? abyssDefaults.walls.sand;
   const wallSandColor = toHex(
     wallsOptions?.sandColor ?? abyssDefaults.walls.sandColor,
   );
   const wallGlow = wallsOptions?.glow ?? abyssDefaults.walls.glow;
-  const wallFade = wallsOptions?.fade ?? abyssDefaults.walls.fade;
+  const wallGlowColor = toHex(
+    wallsOptions?.glowColor ?? abyssDefaults.walls.glowColor,
+  );
+  const wallRimFade = wallsOptions?.rimFade ?? abyssDefaults.walls.rimFade;
   // Drawn at all; the void's gradient in the sky's place; the sky itself.
   const drawn = background !== false;
   const voided = background === 'void';
@@ -920,7 +927,6 @@ export const Sky = ({
       opacity: cloudOpacity,
       color: cloudColor,
       seed: cloudSeed,
-      bandSink: cloudBandSink,
     });
     material.setAir(
       airLevel,
@@ -974,7 +980,6 @@ export const Sky = ({
     cloudOpacity,
     cloudColor,
     cloudSeed,
-    cloudBandSink,
     airLevel,
     airScaleHeight,
     airVisibility,
@@ -1006,21 +1011,23 @@ export const Sky = ({
       distance: wallDistance,
       color: wallColor,
       cutColor: wallCutColor,
-      strength: wallStrength,
+      lightStrength: wallLightStrength,
       lightElevation: wallLightElevation,
-      haze: wallHaze,
+      lightDepth: wallLightDepth,
+      hazeDistance: wallHazeDistance,
+      hazeDepth: wallHazeDepth,
       mist: wallMist,
       mistReach: wallMistReach,
-      scale: wallScale,
+      rockSize: wallRockSize,
       relief: wallRelief,
       flare: wallFlare,
       wander: wallWander,
-      clip: wallClip,
-      blackDepth: wallBlackDepth,
+      cutDistance: wallCutDistance,
       sand: wallSand,
       sandColor: wallSandColor,
       glow: wallGlow,
-      fade: wallFade,
+      glowColor: wallGlowColor,
+      rimFade: wallRimFade,
     });
     dirty.current = true;
   }, [
@@ -1045,21 +1052,23 @@ export const Sky = ({
     wallDistance,
     wallColor,
     wallCutColor,
-    wallStrength,
+    wallLightStrength,
     wallLightElevation,
-    wallHaze,
+    wallLightDepth,
+    wallHazeDistance,
+    wallHazeDepth,
     wallMist,
     wallMistReach,
-    wallScale,
+    wallRockSize,
     wallRelief,
     wallFlare,
     wallWander,
-    wallClip,
-    wallBlackDepth,
+    wallCutDistance,
     wallSand,
     wallSandColor,
     wallGlow,
-    wallFade,
+    wallGlowColor,
+    wallRimFade,
   ]);
 
   // Not baked: the bakes keep a level horizon.

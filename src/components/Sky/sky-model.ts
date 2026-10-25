@@ -111,8 +111,6 @@ export type SkyClouds = {
   color?: ColorRepresentation;
   /** picks another pattern. Default 0 */
   seed?: number;
-  /** TEMPORARY, to compare: with a curved horizon, the band also sinks a little as the camera climbs, as on a flat sea. Default false */
-  bandSink?: boolean;
 };
 
 /**
@@ -152,21 +150,21 @@ export type SkyColors = {
  * in the scene, including objects above the level.
  */
 export type SkyAbyss = {
-  /** height of the lid along `up`, in world units. Default 0 */
+  /** height of the lid along `up`, in world units; with a sea, its seabed's. Default 0 */
   level?: number;
   colors?: {
-    /** the lid overhead */
+    /** the lid overhead; with walls, only while they have no `sand` */
     ceiling?: ColorRepresentation;
-    /** where lid and depths meet, far away */
+    /** where lid and depths meet, far away; with walls, the colour of their haze and mist */
     horizon?: ColorRepresentation;
-    /** straight down */
+    /** straight down; with walls, only in `background: 'void'` and the stand-in, as their haze fills the depths */
     depth?: ColorRepresentation;
   };
-  /** distance over which the lid recedes into the horizon colour, in world units. Default 20000 */
+  /** distance over which the lid recedes into the horizon colour, in world units; 0 for never. Without walls only: with them the lid is in their haze (`SkyAbyssWalls.hazeDistance`). Default 20000 */
   fadeDistance?: number;
-  /** depth below `level` over which the void fades in, in world units. Default 200 */
+  /** depth below `level` over which the void fades in, in world units; without a sea only, as under one it begins at the seabed. Default 200 */
   transition?: number;
-  /** depth below `level` over which the void dims toward black, in world units. Default 0 (off) */
+  /** depth of the camera below `level` over which the whole void dims toward black, in world units; 0 for none. Default 0 */
   darkening?: number;
   /** strength of the noise relief on the lid; 0 for none. Default 0.2 */
   detail?: number;
@@ -176,7 +174,7 @@ export type SkyAbyss = {
   depthDetail?: number;
   /** size of that rock's features, relative. Default 1 */
   depthDetailScale?: number;
-  /** how the depths darken below the horizon: the gradient's exponent; smaller reaches the depth colour sooner. Default 0.5 */
+  /** how the depths darken below the horizon: the gradient's exponent; smaller reaches the depth colour sooner. With walls, only in `background: 'void'` and the stand-in. Default 0.5 */
   falloff?: number;
   /** walls of a hollow about the stage, so moving in the void shows its scale; off by default (see {@link SkyAbyssWalls}) */
   walls?: boolean | SkyAbyssWalls;
@@ -186,57 +184,62 @@ export type SkyAbyss = {
  * The void's walls: cliffs about the stage from the lid down, standing out from it by
  * `distance`, wandering in long bays and headlands and leaning out with depth, so the
  * hollow they leave widens. Raked by a light of their own and filled in by the subsurface's
- * light map, they fade into the void's haze and dim with depth. They are cut away up to a
- * vertical plane facing the camera's heading, through the stage's centre or `clip` in front
- * of the camera, whichever is further; where it cuts their rock, the rock's inside shows.
- * Looking up it keeps its side. Below the lid it is pushed on past the stage, so no cut
- * face stands behind it, and once the whole stage is in view through the hollow nothing is
- * cut, so from inside it the whole rim shows. Their top is a layer of soft `sand` over
- * the rock, smooth and draped over its large shape, and the lid seen from below is that
- * sand, dimly lit from the top of the stage (`glow`). Far beyond their rim the hollow's light
- * fades out and its haze thins (`fade`), so zoomed out all darkens toward black. A
- * prototype, drawn from below the lid as a coarse mesh pushed out by cliffs baked once
- * (`bakeSkyCliffs`), their finer relief from the same bake's normal map; from above it
- * only while the void can show there (a seabed that is off or see-through, a cutaway
+ * light map, they dim with depth (`lightDepth`) and fade into a haze of their own
+ * (`hazeDistance`), itself dimming with depth (`hazeDepth`). They are cut away up to a
+ * vertical plane facing the camera's heading, through the stage's centre or `cutDistance`
+ * in front of the camera, whichever is further; where it cuts their rock, the rock's
+ * inside shows. Looking up it keeps its side. Below the lid it is pushed on past the
+ * stage, so no cut face stands behind it, and once the whole stage is in view through the
+ * hollow nothing is cut, so from inside it the whole rim shows. Their top is a layer of
+ * soft `sand` over the rock, smooth and draped over its large shape, and the lid seen from
+ * below is that sand, dimly lit from the top of the stage (`glow`). Beyond their rim the
+ * hollow's light fades out and its haze thins (`rimFade`), so zoomed out all darkens to
+ * black. A prototype, drawn from below the lid as a coarse mesh pushed out by cliffs baked
+ * once (`bakeSkyCliffs`), their finer relief from the same bake's normal map; from above
+ * it only while the void can show there (a seabed that is off or see-through, a cutaway
  * taking it, or an occupant's cut).
  */
 export type SkyAbyssWalls = {
-  /** how far out from the stage's edge they stand at the lid, in world units. Default 10500 */
+  /** how far out from the stage's edge they stand at the lid, in world units; also how far the `glow` reaches beyond the stage. Default 10500 */
   distance?: number;
   /** their rock's colour. Default '#6e7379' */
   color?: ColorRepresentation;
   /** the colour of their rock's inside, where they are cut: bedded and jointed. Default '#4c535e' */
   cutColor?: ColorRepresentation;
-  /** how strongly the raking light shows on them, 0 to 1. Default 0.07 */
-  strength?: number;
-  /** elevation of the raking light, in degrees, at the subsurface light's bearing; below 0 from below. Default 0 */
+  /** how strongly their own light rakes them, bringing out the cliffs, 0 to 1; 0 for none, the subsurface's light map alone. Default 0.07 */
+  lightStrength?: number;
+  /** elevation of that raking light, in degrees, at the subsurface light's bearing; below 0 from below. Default 0 */
   lightElevation?: number;
-  /** distance over which they fade into the void's haze, in world units. Default 73000 */
-  haze?: number;
-  /** how dense the mist clinging to them is, in patches, 0 to 1; the open gap stays clear. Default 0 */
+  /** depth below the lid over which the light on them, the sand and the `glow` fades to nearly black, in world units; their mesh reaches 2.5 times as deep. Default 8000 */
+  lightDepth?: number;
+  /** distance over which they, the lid and the depths fade into the haze in the hollow (the void's horizon colour), in world units; 0 for none. Default 73000 */
+  hazeDistance?: number;
+  /** depth below the lid over which that haze, and the mist, darken to nearly black, in world units; 0 for never. Default 8000 */
+  hazeDepth?: number;
+  /** how dense the mist clinging to them is, in patches, 0 to 1; 0 for none; the open gap stays clear. Default 0 */
   mist?: number;
   /** how far that mist hangs off the rock, in world units. Default 1500 */
   mistReach?: number;
-  /** size of their rock's features, in world units. Default 9900 */
-  scale?: number;
+  /** size of their rock's features, in world units: the cliffs, the beds and joints where cut, the sand's mottle; smaller is finer and needs more of their mesh's columns. Default 9900 */
+  rockSize?: number;
   /** how far their rock stands in and out, in world units; at most 0.9 of `distance`. Default 5200 */
   relief?: number;
-  /** how far they lean out per unit of depth below the lid. Default 0.3 */
+  /** how far they lean out per unit of depth below the lid, so the hollow widens with depth; 0 for straight down. Default 0.3 */
   flare?: number;
-  /** how far their outline wanders in and out in long bays and headlands, in world units; at most `distance` less `relief`. Default 4000 */
+  /** how far their outline wanders in and out in long bays and headlands, in world units; 0 for none; at most `distance` less `relief`. Default 4000 */
   wander?: number;
   /** how far in front of the camera, at least, a vertical plane facing it cuts them away, in world units; it cuts through the stage's centre while that is further, and below the lid past the stage, easing in over this distance down from the lid. Default 4800 */
-  clip?: number;
-  /** depth below the lid over which the light on them fades to nearly black, in world units. Default 8000 */
-  blackDepth?: number;
-  /** how thick the soft sand over their rock is, below the lid, in world units: the hollow's top in it is smooth, draped over the rock's large shape, and the lid seen from below is that sand; 0 for none, all rock. Default 1000 */
+  cutDistance?: number;
+  /** how thick the soft sand over their rock is, below the lid, in world units: the hollow's top in it is smooth, draped over the rock's large shape, and the lid seen from below is that sand; 0 for none, all rock and the void's own lid. Default 1000 */
   sand?: number;
   /** that sand's colour, dull and wet. Default '#6a6254' */
   sandColor?: ColorRepresentation;
-  /** how bright a dim light at the top of the stage is, 0 to 1: on the lid and the sand over the stage, fading out beyond it over about `distance`. Default 0.5 */
+  /** how bright a dim light at the top of the stage is, 0 to 1; 0 for none: on the lid and the sand over the stage, fading out beyond it over about `distance`. Needs `sand`. Default 0.5 */
   glow?: number;
-  /** the distance beyond their rim over which the hollow's light fades out, to a fifth and the rest to black over twice that again, and their haze thins to none, in world units: far from the hollow the lid, the sand and the cut darken to black, seen through clear air, rather than fading into the haze's grey; 0 for none. Default 20000 */
-  fade?: number;
+  /** that light's colour. Default '#4a5058', the void's horizon colour by default */
+  glowColor?: ColorRepresentation;
+  /** the distance beyond their rim over which the hollow's light fades to a fifth, and the rest to black over twice that again, and their haze thins to none, in world units: far from the hollow the lid, the sand and the cut darken to black, seen through clear air, rather than fading into the haze's grey; 0 for none. Default 20000 */
+  rimFade?: number;
 };
 
 /**
@@ -494,7 +497,6 @@ export const skyDefaults = {
     opacity: 1,
     color: '#ffffff',
     seed: 0,
-    bandSink: false,
   },
   air: { scaleHeight: 8000, visibility: 60000, haze: 0.75, hazeHeight: 1500 },
   colors: {
@@ -521,21 +523,23 @@ export const skyDefaults = {
       distance: 10500,
       color: '#6e7379',
       cutColor: '#4c535e',
-      strength: 0.07,
+      lightStrength: 0.07,
       lightElevation: 0,
-      haze: 73000,
+      lightDepth: 8000,
+      hazeDistance: 73000,
+      hazeDepth: 8000,
       mist: 0,
       mistReach: 1500,
-      scale: 9900,
+      rockSize: 9900,
       relief: 5200,
       flare: 0.3,
       wander: 4000,
-      clip: 4800,
-      blackDepth: 8000,
+      cutDistance: 4800,
       sand: 1000,
       sandColor: '#6a6254',
       glow: 0.5,
-      fade: 20000,
+      glowColor: '#4a5058',
+      rimFade: 20000,
     },
   },
   ocean: {

@@ -22,7 +22,7 @@ export const SKY_ABYSS_WALL_ROWS = 32;
 export const SKY_ABYSS_WALL_COLUMNS = [128, 1024] as const;
 // Texels of the cliffs to a column of the mesh.
 const SKY_ABYSS_WALL_COLUMN_TEXELS = 4;
-// How deep the mesh goes, in the depths the light on the walls fades to nearly black by.
+// How deep the mesh goes, in the depths the light on the walls fades to nearly black by (`lightDepth`).
 const SKY_ABYSS_WALL_DEPTH = 2.5;
 // Features across one tile of the cliffs (SKY_ABYSS_CLIFF_TILE in the shaders).
 const SKY_ABYSS_CLIFF_TILE = 8;
@@ -46,7 +46,9 @@ export function skyAbyssWallReach(
   wander: number,
   relief: number,
 ) {
-  return Math.hypot(half[0], half[1]) + distance + flare * depth + wander + relief;
+  return (
+    Math.hypot(half[0], half[1]) + distance + flare * depth + wander + relief
+  );
 }
 
 /** `uSkyAbyssWallClip.w` when nothing is cut: the plane infinitely far behind. */
@@ -62,8 +64,8 @@ export type SkyAbyssWallCut = {
   level: number;
   /** how deep their mesh goes below the lid; 0 before it is laid */
   depth: number;
-  /** `SkyAbyssWalls.clip` */
-  clip: number;
+  /** `SkyAbyssWalls.cutDistance` */
+  cutDistance: number;
   /** `SkyAbyssWalls.distance` */
   distance: number;
   /** `SkyAbyssWalls.flare` */
@@ -113,7 +115,8 @@ export function skyAbyssWallInView(
     const dx = Math.abs(x - centre[0]) - half[0];
     const dz = Math.abs(z - centre[1]) - half[1];
     return (
-      Math.hypot(Math.max(dx, 0), Math.max(dz, 0)) + Math.min(Math.max(dx, dz), 0)
+      Math.hypot(Math.max(dx, 0), Math.max(dz, 0)) +
+      Math.min(Math.max(dx, dz), 0)
     );
   };
   const foot = level - depth;
@@ -141,12 +144,12 @@ const clipScreenUp = new Vector3();
  * defined looking straight down too, and with its bottom looking up, so it keeps its side
  * as the view tilts up past 45° and straight up; the two agree looking level. Undefined, it
  * keeps `target`'s normal. The plane passes through the stage's `centre` (world X and Z),
- * or `clip` in front of the camera once that is further; below the lid it is pushed on past
- * the stage's far corner, easing in over `clip` down from the lid, so the whole stage lies
- * in what is cut away and no cut face stands behind it. Once the whole stage is in view
- * through the hollow (`skyAbyssWallInView`) the cut eases back past the camera and the far
- * rim, so less and less is cut, and then nothing is (SKY_ABYSS_WALL_UNCUT): from there,
- * the whole rim shows.
+ * or `cutDistance` in front of the camera once that is further; below the lid it is pushed
+ * on past the stage's far corner, easing in over `cutDistance` down from the lid, so the
+ * whole stage lies in what is cut away and no cut face stands behind it. Once the whole
+ * stage is in view through the hollow (`skyAbyssWallInView`) the cut eases back past the
+ * camera and the far rim, so less and less is cut, and then nothing is
+ * (SKY_ABYSS_WALL_UNCUT): from there, the whole rim shows.
  */
 export function skyAbyssWallClipPlane(
   matrix: Matrix4,
@@ -165,9 +168,13 @@ export function skyAbyssWallClipPlane(
     heading.normalize();
     target.set(heading.x, heading.y, heading.z, 0);
   }
-  const { centre, half, clip } = walls;
+  const { centre, half, cutDistance } = walls;
   // Down from the lid, the push past the stage and the opening come in together.
-  const below = MathUtils.smoothstep(walls.level - position.dot(up), 0, clip);
+  const below = MathUtils.smoothstep(
+    walls.level - position.dot(up),
+    0,
+    cutDistance,
+  );
   const opened =
     below *
     MathUtils.smoothstep(
@@ -179,16 +186,18 @@ export function skyAbyssWallClipPlane(
     target.w = SKY_ABYSS_WALL_UNCUT;
     return target;
   }
-  const at = target.x * position.x + target.y * position.y + target.z * position.z;
+  const at =
+    target.x * position.x + target.y * position.y + target.z * position.z;
   const across = target.x * centre[0] + target.z * centre[1];
   let far = -Infinity;
   for (const [sx, sz] of STAGE_CORNERS) {
     far = Math.max(
       far,
-      target.x * (centre[0] + sx * half[0]) + target.z * (centre[1] + sz * half[1]),
+      target.x * (centre[0] + sx * half[0]) +
+        target.z * (centre[1] + sz * half[1]),
     );
   }
-  let cut = Math.max(at + clip, across);
+  let cut = Math.max(at + cutDistance, across);
   cut += Math.max(far - cut, 0) * below;
   const reach = skyAbyssWallReach(
     half,
@@ -198,7 +207,11 @@ export function skyAbyssWallClipPlane(
     walls.wander,
     walls.relief,
   );
-  target.w = MathUtils.lerp(cut, Math.min(across - reach, at - clip), opened);
+  target.w = MathUtils.lerp(
+    cut,
+    Math.min(across - reach, at - cutDistance),
+    opened,
+  );
   return target;
 }
 
@@ -214,17 +227,17 @@ export type SkyAbyssWallGrid = {
 
 /**
  * The grid for walls `away` out from a stage of half extents `half`, their rock's features
- * `scale` across and their light black by `black` below the lid, from cliffs baked `texels`
- * across: a column every few texels of the cliffs, and as deep as the walls show.
+ * `rockSize` across and their light black by `lightDepth` below the lid, from cliffs baked
+ * `texels` across: a column every few texels of the cliffs, and as deep as the walls show.
  */
 export function skyAbyssWallGrid(
   half: [number, number],
   away: number,
-  scale: number,
-  black: number,
+  rockSize: number,
+  lightDepth: number,
   texels: number,
 ): SkyAbyssWallGrid {
-  const texel = (scale * SKY_ABYSS_CLIFF_TILE) / texels;
+  const texel = (rockSize * SKY_ABYSS_CLIFF_TILE) / texels;
   const [fewest, most] = SKY_ABYSS_WALL_COLUMNS;
   const columns = Math.round(
     skyAbyssWallLap(half, away) / (SKY_ABYSS_WALL_COLUMN_TEXELS * texel),
@@ -232,7 +245,7 @@ export function skyAbyssWallGrid(
   return {
     columns: MathUtils.clamp(columns, fewest, most),
     rows: SKY_ABYSS_WALL_ROWS,
-    depth: SKY_ABYSS_WALL_DEPTH * black,
+    depth: SKY_ABYSS_WALL_DEPTH * lightDepth,
   };
 }
 
