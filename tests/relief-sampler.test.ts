@@ -4,18 +4,19 @@ import {
   RELIEF_SURFACE,
   ReliefPins,
   ReliefSamplerTile,
+  reliefSquareTile,
 } from '../src/components/Sky/sky-relief-sampler';
 import type { ReliefTile } from '../src/sdk/geometries/relief-tiles';
 
 const CELLS = 4;
 
-/** A tile over a square, its nodes (and the border around them) at `f(x, z)`. */
+/** A tile over a square, its nodes (and the border around them) at `f(x, z)`: where a point lies on it. */
 function tileOver(
   minX: number,
   minZ: number,
   width: number,
   f: (x: number, z: number) => number,
-): ReliefSamplerTile {
+): (x: number, z: number) => ReliefSamplerTile {
   const nodes = CELLS + 3;
   const heights = new Float32Array(nodes * nodes);
   const cell = width / CELLS;
@@ -25,7 +26,7 @@ function tileOver(
     }
   }
   const tile = { cells: CELLS, heights } as unknown as ReliefTile;
-  return { tile, minX, minZ, width };
+  return (x, z) => reliefSquareTile(tile, minX, minZ, width, x, z);
 }
 
 describe('ReliefPins', () => {
@@ -58,7 +59,8 @@ describe('createReliefSampler', () => {
   const plane = (x: number, z: number) => 20 + 0.1 * x - 0.05 * z;
   const tile = tileOver(0, 0, 400, plane);
   const sampler = createReliefSampler(
-    (x, z) => (x >= 0 && x <= 400 && z >= 0 && z <= 400 ? tile : undefined),
+    (x, z) =>
+      x >= 0 && x <= 400 && z >= 0 && z <= 400 ? tile(x, z) : undefined,
     -30,
     new ReliefPins(),
   );
@@ -78,7 +80,7 @@ describe('createReliefSampler', () => {
     const bowl = (x: number, z: number) =>
       ((x - 200) ** 2 + (z - 200) ** 2) / 100;
     const curved = tileOver(0, 0, 400, bowl);
-    const ground = createReliefSampler(() => curved, 0, new ReliefPins());
+    const ground = createReliefSampler(curved, 0, new ReliefPins());
     // On a node, exact; between, on the chord, above the bowl.
     expect(ground.getHeightAt(100, 100)).toBeCloseTo(bowl(100, 100), 4);
     const mid = ground.getHeightAt(150, 100)!;

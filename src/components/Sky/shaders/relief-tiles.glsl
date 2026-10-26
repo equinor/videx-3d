@@ -10,7 +10,10 @@ uniform float uReliefCameraUnder;
 
 varying vec2 vReliefTileNode;
 flat varying float vReliefTileSlot;
-flat varying vec3 vReliefTileSquare;
+flat varying vec2 vReliefTileLongitude;
+flat varying vec3 vReliefTileLatitude;
+flat varying vec2 vReliefTileDepthCell;
+varying vec3 vReliefEast;
 varying float vReliefSkirt;
 varying float vReliefSkirtTop;
 
@@ -33,14 +36,17 @@ float reliefTileHeight() {
   return reliefTileHeightAt(vReliefTileNode);
 }
 
-// The width of the tile's cells.
+// The width of the tile's cells along a meridian.
 float reliefTileCell() {
-  return vReliefTileSquare.z / uReliefTileCells;
+  return vReliefTileDepthCell.y;
 }
 
-// Whether the tile has ground at or above the sea at world X/Z `xz`: false off the tile.
-bool reliefTileClearsAt(vec2 xz) {
-  vec2 node = (xz - vReliefTileSquare.xy) / vReliefTileSquare.z * uReliefTileCells + 1.5;
+// Whether the tile has ground at or above the sea under `p`: false off the tile. Its
+// latitude taken linearly between its edges, near enough for the coast.
+bool reliefTileClearsAt(vec3 p) {
+  vec2 offset = globeSphereOffset(p);
+  vec2 along = vec2((offset.y - vReliefTileLongitude.x) / (vReliefTileLongitude.y - vReliefTileLongitude.x), (offset.x - vReliefTileLatitude.x) / (vReliefTileLatitude.z - vReliefTileLatitude.x));
+  vec2 node = along * uReliefTileCells + 1.5;
   if(any(lessThan(node, vec2(1.5))) || any(greaterThan(node, vec2(uReliefTileCells + 1.5))))
     return false;
   return reliefTileHeightAt(node) >= 0.0;
@@ -72,7 +78,8 @@ bool reliefTileLeftToOther(vec2 xz) {
   #endif
 }
 
-// The normal at this pixel, in the world.
+// The normal at this pixel, along true east (x), up (y) and true south (z) where its node
+// lies on the globe.
 vec3 reliefTileNormal() {
   vec2 n = texture(uReliefTileNormals, vec3(vReliefTileNode / uReliefTileNodes, vReliefTileSlot)).rg;
   return normalize(vec3(n.x, sqrt(max(1.0 - dot(n, n), 0.0)), n.y));
@@ -154,7 +161,6 @@ bool reliefCutAway() {
 
 #if defined(RELIEF_DEBUG_TILES) || defined(RELIEF_DEBUG_LAYERS)
 uniform highp sampler2DArray uReliefTileLayers;
-uniform float uReliefTileRoot;
 
 vec3 reliefDebugHue(float t) {
   return clamp(abs(fract(t + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
@@ -164,7 +170,7 @@ vec3 reliefDebugHue(float t) {
 vec3 reliefTileDebug(vec3 color) {
   #ifdef RELIEF_DEBUG_TILES
   // By the tile's depth, its border a line a pixel or two wide.
-  float depth = log2(uReliefTileRoot / vReliefTileSquare.z);
+  float depth = vReliefTileDepthCell.x;
   vec3 tint = reliefDebugHue(depth * 0.13);
   vec2 cell = vReliefTileNode - 1.5;
   vec2 edge = min(cell, uReliefTileCells - cell) / max(fwidth(cell), vec2(1e-6));

@@ -10,7 +10,9 @@ import {
 import {
   applyHeightFieldClip,
   createHeightFieldClipBinding,
+  HEIGHT_FIELD_NO_WARP,
   HeightFieldClip,
+  heightFieldWarp,
 } from '../src/sdk/materials/height-field-clip';
 
 const tile = (
@@ -145,6 +147,7 @@ describe('createHeightFieldClipBinding', () => {
         heightClipIndex: { value: index },
         heightClipRegion: { value: new Vector4(1, 2, 3, 0) },
         heightClipParams: { value: new Vector4(1, -10, -200, 32) },
+        heightClipWarp: { value: HEIGHT_FIELD_NO_WARP.clone() },
       },
       heightAt: () => null,
       margin: 0,
@@ -157,5 +160,29 @@ describe('createHeightFieldClipBinding', () => {
     expect((into.heightClipParams.value as Vector4).x).toBe(0);
     binding.set(null);
     expect(into.heightClipIndex.value).toBeNull();
+  });
+
+  it('warps nothing by default, and a warp as its columns say', () => {
+    expect(heightFieldWarp(HEIGHT_FIELD_NO_WARP, 123.5, -77.25)).toEqual([
+      123.5, -77.25,
+    ]);
+    const warp = HEIGHT_FIELD_NO_WARP.clone().fromArray([
+      10, 20, 1, 2, 0.5, 0.1, -0.2, 2, 0.01, 0.02, 0.03, 0, -0.01, 0, 0.05, 0,
+    ]);
+    const [dx, dz] = [3, -4];
+    const [q0, q1] = heightFieldWarp(warp, 10 + dx, 20 + dz);
+    expect(q0).toBeCloseTo(
+      1 +
+        0.5 * dx +
+        0.1 * dz +
+        0.01 * dx * dx +
+        0.02 * dx * dz +
+        0.03 * dz * dz,
+      12,
+    );
+    expect(q1).toBeCloseTo(
+      2 - 0.2 * dx + 2 * dz - 0.01 * dx * dx + 0.05 * dz * dz,
+      12,
+    );
   });
 });

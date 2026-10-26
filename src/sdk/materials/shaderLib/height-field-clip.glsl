@@ -13,10 +13,21 @@ uniform vec4 heightClipRegion;
 // x: 1 while live; y: the Y heights are measured from; z: the Y at and below which
 // nothing is clipped; w: cells along a tile's side.
 uniform vec4 heightClipParams;
+// From the consumer's X/Z to the coordinates the tiles are squares in (see
+// `heightFieldWarp`): a point and the coordinates there; their derivatives along X and Z;
+// and each one's second-order terms. The identity for tiles that are squares in X/Z.
+uniform mat4 heightClipWarp;
 
-// The ground as drawn at `p`; false where none is.
-bool heightFieldGroundAt(vec2 p, out float ground) {
+vec2 heightFieldWarp(vec2 p) {
+  vec2 d = p - heightClipWarp[0].xy;
+  vec3 second = vec3(d.x * d.x, d.x * d.y, d.y * d.y);
+  return heightClipWarp[0].zw + vec2(dot(heightClipWarp[1].xy, d), dot(heightClipWarp[1].zw, d)) + vec2(dot(heightClipWarp[2].xyz, second), dot(heightClipWarp[3].xyz, second));
+}
+
+// The ground as drawn at `xz`; false where none is.
+bool heightFieldGroundAt(vec2 xz, out float ground) {
   ground = 0.0;
+  vec2 p = heightFieldWarp(xz);
   ivec2 size = textureSize(heightClipIndex, 0);
   ivec2 entry = ivec2(floor((p - heightClipRegion.xy) / heightClipRegion.z));
   if(any(lessThan(entry, ivec2(0))) || any(greaterThanEqual(entry, size)))

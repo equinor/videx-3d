@@ -25,6 +25,26 @@ export type QuadtreeTileInfo = {
 };
 
 /**
+ * How a quadtree's tiles lie, when not as squares in X/Z about the origin (a geographic
+ * quadtree's, say): its roots, each tile's square in the layout's own coordinates — in
+ * which `finer` and pinned squares are given too — and, in scene units, how far a tile is
+ * from the eye, whether it can be seen, and how wide it is along the ground.
+ *
+ * @group Tiles
+ */
+export type QuadtreeLayout = {
+  roots: readonly number[];
+  /** a tile's min corner and width, in the layout's coordinates */
+  square(key: number): [number, number, number];
+  /** from the eye to the nearest point of the tile, reaching from `minY` to `maxY` */
+  distance(key: number, minY: number, maxY: number): number;
+  /** whether the tile, reaching from `minY` to `maxY`, can be seen: within reach and in view */
+  shows(key: number, minY: number, maxY: number): boolean;
+  /** how wide the tile is along the ground: its cells are this over their count */
+  width(key: number): number;
+};
+
+/**
  * How {@link selectQuadtreeTiles} chooses.
  *
  * @group Tiles
@@ -75,6 +95,12 @@ export type QuadtreeSelectOptions = {
   cellPixels?: { cells: number; pixels: number; minSlope?: number };
   /** the tiles split last time: one is merged back only once well under the limit */
   split?: ReadonlySet<number>;
+  /**
+   * how the tiles lie, when not as squares in X/Z (see {@link QuadtreeLayout}): then
+   * `eye`, `reach`, `rootSize` and `inView` are not used, and `finer` and `errorCap` take
+   * the layout's coordinates
+   */
+  layout?: QuadtreeLayout;
 };
 
 /**
@@ -120,6 +146,7 @@ export function selectQuadtreeTiles(
     finer,
     cellPixels,
     split: wasSplit,
+    layout,
   } = options;
   const [ex, ey, ez] = eye;
   const draw: number[] = [];
@@ -160,17 +187,44 @@ export function selectQuadtreeTiles(
     nearXZ(minX, minZ, size) <= reach &&
     (!inView || inView(minX, minZ, minX + size, minZ + size, minY, maxY));
 
-  const visit = (key: number, tile: QuadtreeTileInfo) => {
+  // A tile's square, how far it is, whether it shows and how wide it is: the layout's, or
+  // as squares in X/Z.
+  const squareOf = (key: number): [number, number, number] => {
+    if (layout) return layout.square(key);
     const [depth, i, j] = tileAddress(key);
     const size = rootSize / 2 ** depth;
-    const minX = i * size;
-    const minZ = j * size;
-    const dy = Math.max(tile.minY - ey, ey - tile.maxY, 0);
-    const scale = pixelsPerUnit(Math.hypot(nearXZ(minX, minZ, size), dy));
+    return [i * size, j * size, size];
+  };
+  const distanceOf = (
+    key: number,
+    [minX, minZ, size]: [number, number, number],
+    minY: number,
+    maxY: number,
+  ) =>
+    layout
+      ? layout.distance(key, minY, maxY)
+      : Math.hypot(nearXZ(minX, minZ, size), Math.max(minY - ey, ey - maxY, 0));
+  const showsTile = (
+    key: number,
+    [minX, minZ, size]: [number, number, number],
+    minY: number,
+    maxY: number,
+  ) =>
+    layout
+      ? layout.shows(key, minY, maxY)
+      : shows(minX, minZ, size, minY, maxY);
+
+  const visit = (key: number, tile: QuadtreeTileInfo) => {
+    const [depth] = tileAddress(key);
+    const square = squareOf(key);
+    const [minX, minZ, size] = square;
+    const scale = pixelsPerUnit(distanceOf(key, square, tile.minY, tile.maxY));
     const shown = tile.error * scale;
     // How far a cell spans on screen, over its limit (0 at the limit); only where the
     // ground's slope strays from the tile's.
-    const cell = cellPixels ? size / cellPixels.cells : 0;
+    const cell = cellPixels
+      ? (layout ? layout.width(key) : size) / cellPixels.cells
+      : 0;
     const cellOver =
       cellPixels &&
       (!cellPixels.minSlope || tile.error > (cellPixels.minSlope * cell) / 2)
@@ -196,16 +250,13 @@ export function selectQuadtreeTiles(
       return;
     }
     const children = tileChildren(key);
-    const half = size / 2;
     const inside: [number, QuadtreeTileInfo | undefined][] = [];
     let missing = false;
     for (let c = 0; c < 4; c++) {
       const child = children[c];
       const childInfo = info(child);
       const range = childInfo ?? tile;
-      const cx = minX + (c & 1) * half;
-      const cz = minZ + (c >> 1) * half;
-      if (!shows(cx, cz, half, range.minY, range.maxY)) continue;
+      if (!showsTile(child, squareOf(child), range.minY, range.maxY)) continue;
       inside.push([child, childInfo]);
       if (!childInfo) missing = true;
     }
@@ -225,6 +276,18 @@ export function selectQuadtreeTiles(
     for (const [child, childInfo] of inside) visit(child, childInfo!);
   };
 
+  if (layout) {
+    for (const key of layout.roots) {
+      const root = info(key);
+      if (!root) {
+        want.push({ key, priority: Infinity });
+        continue;
+      }
+      if (!showsTile(key, squareOf(key), root.minY, root.maxY)) continue;
+      visit(key, root);
+    }
+    return { draw, want, split };
+  }
   const i0 = Math.floor((ex - reach) / rootSize);
   const i1 = Math.floor((ex + reach) / rootSize);
   const j0 = Math.floor((ez - reach) / rootSize);
@@ -274,6 +337,8 @@ export function selectPinnedTiles(options: {
   rootSize?: number;
   /** the most tiles walked. Default 1024 */
   limit?: number;
+  /** how the tiles lie (see {@link QuadtreeLayout}): `squares` are in its coordinates */
+  layout?: Pick<QuadtreeLayout, 'roots' | 'square'>;
 }): { keep: number[]; want: { key: number; priority: number }[] } {
   const {
     squares,
@@ -281,6 +346,7 @@ export function selectPinnedTiles(options: {
     maxDepth = 24,
     rootSize = TILE_ROOT_SIZE,
     limit = 1024,
+    layout,
   } = options;
   type Square = [number, number, number, number];
   const keep: number[] = [];
@@ -297,21 +363,33 @@ export function selectPinnedTiles(options: {
     keep.push(key);
     const [depth] = tileAddress(key);
     if (tile.leaf || depth >= maxDepth) return;
-    const size = rootSize / 2 ** (depth + 1);
     for (const child of tileChildren(key)) {
-      const [, i, j] = tileAddress(child);
+      const [cx, cz, size] = squareOf(child);
       const under = over.filter(
         ([x0, z0, x1, z1]) =>
-          i * size <= x1 &&
-          j * size <= z1 &&
-          (i + 1) * size >= x0 &&
-          (j + 1) * size >= z0,
+          cx <= x1 && cz <= z1 && cx + size >= x0 && cz + size >= z0,
       );
       if (under.length > 0) visit(child, under);
     }
   };
+  const squareOf = (key: number): [number, number, number] => {
+    if (layout) return layout.square(key);
+    const [depth, i, j] = tileAddress(key);
+    const size = rootSize / 2 ** depth;
+    return [i * size, j * size, size];
+  };
   const roots = new Map<number, Square[]>();
-  for (const square of squares) {
+  if (layout) {
+    for (const key of layout.roots) {
+      const [rx, rz, size] = squareOf(key);
+      const over = squares.filter(
+        ([x0, z0, x1, z1]) =>
+          rx <= x1 && rz <= z1 && rx + size >= x0 && rz + size >= z0,
+      );
+      if (over.length > 0) roots.set(key, over);
+    }
+  }
+  for (const square of layout ? [] : squares) {
     const [x0, z0, x1, z1] = square;
     for (
       let j = Math.floor(z0 / rootSize);

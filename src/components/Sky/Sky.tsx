@@ -28,7 +28,11 @@ import {
 } from 'three';
 import { precompile } from '../../rendering/precompile';
 import { surfaceDetailKey } from '../../sdk/materials/surface-detail';
-import { geoFrameLocation } from '../../sdk/projection/geo-frame';
+import {
+  geoFrameAt,
+  geoFrameLocation,
+  placeGeoFrame,
+} from '../../sdk/projection/geo-frame';
 import { Vec3 } from '../../sdk/types/common';
 import { directionFromCompass } from '../../sdk/utils/vector-operations';
 import { OceanMaterial } from '../Ocean/ocean-material';
@@ -469,7 +473,17 @@ export const Sky = ({
   const ground = toHex(colors?.ground ?? skyDefaults.colors.ground);
   const nadir = toHex(colors?.nadir ?? skyDefaults.colors.nadir);
   const [upX, upY, upZ] = up ?? DEFAULT_UP;
-  const [northX, northY, northZ] = north ?? DEFAULT_NORTH;
+  // In a World, compass north is true north at its origin: its map's grid north turned by
+  // the map's convergence there.
+  const trueNorth = useMemo((): Vec3 | null => {
+    if (!worldFrame || !worldPlace) return null;
+    const { rotation } = placeGeoFrame(
+      geoFrameAt(worldPlace.longitude, worldPlace.latitude),
+      { projection: worldFrame.projection, origin: worldFrame.origin },
+    );
+    return [-Math.sin(rotation), 0, -Math.cos(rotation)];
+  }, [worldFrame, worldPlace]);
+  const [northX, northY, northZ] = north ?? trueNorth ?? DEFAULT_NORTH;
 
   const abyssOptions: SkyAbyss | null = abyss === true ? {} : abyss || null;
   const hasAbyss = abyssOptions !== null;
@@ -1102,6 +1116,12 @@ export const Sky = ({
     () => provideGlobe?.(material.globe),
     [provideGlobe, material],
   );
+  // And it lies on the Earth where the World says.
+  useLayoutEffect(() => {
+    if (!worldFrame) return;
+    material.globe.setFrame(worldFrame);
+    return () => material.globe.setFrame(null);
+  }, [material, worldFrame]);
 
   useLayoutEffect(() => {
     if (water) material.linkOcean(water);

@@ -288,6 +288,48 @@ describe('selectQuadtreeTiles', () => {
     expect(again.draw.sort()).toEqual([...draw].sort());
   });
 
+  it('lays tiles out as told: the X/Z squares given as a layout choose the same', () => {
+    const eye: [number, number, number] = [10, 50, 10];
+    const reach = 900;
+    const nearXZ = (key: number) => {
+      const [x, z, size] = tileSquare(key, ROOT);
+      return Math.hypot(
+        Math.max(x - eye[0], eye[0] - (x + size), 0),
+        Math.max(z - eye[2], eye[2] - (z + size), 0),
+      );
+    };
+    const options = {
+      eye,
+      reach,
+      pixelsPerUnit: near,
+      pixelError: 2,
+      rootSize: ROOT,
+      info: everyTile(),
+      cellPixels: { cells: 32, pixels: 8 },
+    };
+    const plain = selectQuadtreeTiles(options);
+    const laid = selectQuadtreeTiles({
+      ...options,
+      layout: {
+        roots: [
+          tileKey(0, -1, -1),
+          tileKey(0, 0, -1),
+          tileKey(0, -1, 0),
+          tileKey(0, 0, 0),
+        ],
+        square: key => tileSquare(key, ROOT),
+        distance: (key, minY, maxY) =>
+          Math.hypot(nearXZ(key), Math.max(minY - eye[1], eye[1] - maxY, 0)),
+        shows: key => nearXZ(key) <= reach,
+        width: key => tileSquare(key, ROOT)[2],
+      },
+    });
+    expect(plain.draw.length).toBeGreaterThan(4);
+    expect(laid.draw).toEqual(plain.draw);
+    expect(laid.want).toEqual(plain.want);
+    expect([...laid.split].sort()).toEqual([...plain.split].sort());
+  });
+
   it('leaves out what is not in view', () => {
     const { draw } = selectQuadtreeTiles({
       eye: [10, 50, 10],

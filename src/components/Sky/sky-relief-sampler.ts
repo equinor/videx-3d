@@ -36,13 +36,41 @@ export type ReliefSampler = SurfaceSampler & {
   pin(squares: Square[]): () => void;
 };
 
-/** A relief tile in, and its square. */
+/** A relief tile in, and where a point lies on it. */
 export type ReliefSamplerTile = {
   tile: ReliefTile;
-  minX: number;
-  minZ: number;
-  width: number;
+  /** the point, in the tile's cells from its first node, along its columns and rows */
+  u: number;
+  v: number;
+  /** how far a cell spans there along its columns and along its rows, in scene units */
+  cellU: number;
+  cellV: number;
+  /** its columns' direction there in scene X/Z (unit): its rows run a right angle on, south */
+  east: [number, number];
 };
+
+/**
+ * Where `x`, `z` lies on a relief tile that is a square in scene X/Z (min X, min Z, width):
+ * for a {@link createReliefSampler}'s `finestAt`.
+ */
+export function reliefSquareTile(
+  tile: ReliefTile,
+  minX: number,
+  minZ: number,
+  width: number,
+  x: number,
+  z: number,
+): ReliefSamplerTile {
+  const cell = width / tile.cells;
+  return {
+    tile,
+    u: (x - minX) / cell,
+    v: (z - minZ) / cell,
+    cellU: cell,
+    cellV: cell,
+    east: [1, 0],
+  };
+}
 
 /** The squares pinned on a relief sampler, by whoever pinned them. */
 export class ReliefPins {
@@ -94,16 +122,17 @@ export function createReliefSampler(
     if (surface !== undefined && surface !== RELIEF_SURFACE) return null;
     const found = finestAt(x, z);
     if (!found) return null;
-    const { tile, minX, minZ, width } = found;
+    const { tile, u, v, cellU, cellV, east } = found;
     const { cells, heights } = tile;
     const nodes = cells + 3;
     const node = (i: number, j: number) => heights[(1 + j) * nodes + 1 + i];
-    const u = ((x - minX) / width) * cells;
-    const v = ((z - minZ) / width) * cells;
-    const cell = width / cells;
     const [du, dv] = heightFieldPatchSlope(node, cells, u, v);
-    const nx = -du / cell;
-    const nz = -dv / cell;
+    // Along the tile's columns and rows, then into the scene: rows run south of columns.
+    const nu = -du / cellU;
+    const nv = -dv / cellV;
+    const [ex, ez] = east;
+    const nx = nu * ex - nv * ez;
+    const nz = nu * ez + nv * ex;
     const length = Math.hypot(nx, 1, nz);
     const result = out ?? { y: 0, normal: [0, 1, 0] };
     result.y = level + heightFieldPatchAt(node, cells, u, v);
@@ -122,7 +151,7 @@ export function createReliefSampler(
     surfaces: [RELIEF_SURFACE],
     cellAt: (x, z) => {
       const found = finestAt(x, z);
-      return found ? found.width / found.tile.cells : null;
+      return found ? Math.max(found.cellU, found.cellV) : null;
     },
     pin: pins.add,
   };

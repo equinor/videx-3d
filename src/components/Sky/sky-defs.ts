@@ -13,7 +13,7 @@ export type SkyReliefResponse = ReliefGrid | null;
 
 /**
  * Generator key for one tile of a `SkyBoxStage`'s relief: its layers merged onto the
- * tile (see `generateSkyReliefTile`, `buildReliefTile`).
+ * tile, a geographic one (see `generateSkyReliefTile`, `buildGeoReliefTile`).
  */
 export const skyReliefTile = 'skyReliefTile';
 

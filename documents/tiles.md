@@ -229,6 +229,12 @@ j)` is `S / 2^d` wide, with `S` = 2^21 (about 2100 km) for the roots, and its mi
 [Open questions](#11-open-questions)), so at depth 11 a cell is 32 m and at depth 13, 8 m.
 Keys pack into one number for maps and sets.
 
+**The relief's tiles are geographic since 2026-10-26** (world.md
+[step 6](./world.md#11-step-6-in-detail-tiles-on-the-globe)): keyed by latitude and
+longitude (`sdk/tiles/geo-tile-keys.ts`), two roots of 180° x 180°, a tile at depth `d`
+`180 / 2^d` degrees each way, packed as above. The X/Z quadtree stays for anything laid in
+the scene's plane; the selection takes either (a `layout`, below).
+
 ### Choosing what to draw: `selectQuadtreeTiles`
 
 Each frame, from the roots within reach:
@@ -279,6 +285,12 @@ Each frame, from the roots within reach:
 - out: the tiles to draw, and the tiles wanted, each with how many pixels its error (or
   its cells) is over the limit, for the streamer's order (as `orderTileChanges` orders
   the chunks').
+
+**A layout (built 2026-10-26):** `layout` (`QuadtreeLayout`) lays the tiles out
+otherwise: its roots, each tile's square in its own coordinates (for finer regions and
+pins), how far a tile is, whether it shows, and how wide it is along the ground (for
+`cellPixels`). The relief's geographic tiles pass one; without one, the tiles are squares
+in X/Z as above. `selectPinnedTiles` takes the same.
 
 The chunks' helpers `tilesInView`, `selectTileLevels` and `orderTileChanges` moved from
 `components/Chunks/chunk-lod.ts` to `sdk/tiles/tile-lod.ts` (built 2026-10-25), exported
@@ -346,6 +358,12 @@ three.js-free in the sdk (`buildReliefTile`):
 Neighbours at the same depth share their edge nodes exactly: the same positions, the
 same merge. Neighbours at different depths are closed by skirts (see
 [Drawing](#5-drawing-the-relief)).
+
+**Geographic tiles (built 2026-10-26):** the relief draws `buildGeoReliefTile`'s, the
+same steps over a tile's longitudes and latitudes rather than scene X/Z, with no frame:
+normals east and south where each node lies, errors, cells and feathers in metres
+(world.md [6b](./world.md#6b-geographic-tiles-built-2026-10-26)). `buildReliefTile`
+builds a tile in a frame as before.
 
 **The detail under a tile (built 2026-10-25).** The error at the half-cell points is
 measured against the level under the tile's: averages. A layer much smaller than a
@@ -429,7 +447,9 @@ start-up only).
 ```
 
 - **One draw:** a `T × T` patch with a skirt round it, instanced once per tile drawn. Per
-  tile: its corner, width, slot and height range. Heights and normals sit in two
+  tile: its edges on the globe (its west and east longitude, its north, middle and south
+  latitude, as offsets on the conformal sphere from the disc's centre), its depth, slot
+  and skirt's drop. Heights and normals sit in two
   `DataArrayTexture`s (16-bit floats), one slot per resident tile; the layer ids in a third
   only while the debug view asks for them. The vertex shader reads its node with
   `texelFetch`, and a skirt vertex drops by the tile's error.
@@ -481,8 +501,9 @@ start-up only).
     the cutaway on, it bites the sea and the relief around the field, and the relief over
     the outline stands, the column's walls meeting it.
 - **The ground under the camera (built 2026-10-25):** read on the CPU each frame from the
-  finest tile in under the camera (`reliefTileHeightAt`, the tile found with
-  `tileKeyAt`), drawn or not. Below the sea it is the sky's `oceanGround` wherever no
+  finest tile in under the camera (`geoReliefTileHeightAt`, the tile found with
+  `geoTileKeyAt` at the camera's latitude and longitude), drawn or not. Below the sea it
+  is the sky's `oceanGround` wherever no
   occupant's seabed is under the camera, no deeper than the sea's own seabed (under that
   lies the void); so the sky knows the camera is under the ground anywhere the relief has
   data, and the lighting and the void follow.
@@ -505,8 +526,9 @@ start-up only).
 The sky draws the Earth as a fixed globe (world.md
 [step 2](./world.md#9-step-2-in-detail-the-sky-on-a-fixed-globe)): a sphere fixed below
 the scene, its cap over the stage's disc cut flat. The relief's vertices are placed on it
-(`globePlace` in `relief-tiles-vertex.glsl`): the ground at its map X/Z, its height and
-skirt along up there. Nothing is measured from the camera but the horizon, so the relief
+by their latitudes and longitudes (`globeGeodetic` in `relief-tiles-vertex.glsl`, since
+2026-10-26; before, `globePlace` at their map X/Z), their height and skirt along up there.
+Nothing is measured from the camera but the horizon, so the relief
 and the sea hold still against each other as the camera moves or turns.
 
 - **What is drawn flat goes onto the globe, rigidly.** `SkyAnchor` (inside the `Sky`) and
@@ -564,6 +586,12 @@ Built (2026-10-25), one region per occupant, each handed out through the occupan
   once and follow the clip as it comes, goes and changes, with no copies and no lag.
 - **Live only while the ground is drawn** (the stage draws the occupant's seabed, and the
   relief is shown). Otherwise the column draws its own top, which the clip would remove.
+- **A warp (built 2026-10-26):** the relief's tiles are squares in degrees, not in X/Z,
+  so the clip takes X/Z into their coordinates first: `heightClipWarp`, a quadratic
+  about the region's middle (`heightFieldWarp`; `HEIGHT_FIELD_NO_WARP` for tiles in X/Z),
+  fitted by the relief whenever the region or the globe changes. It is off by millimetres
+  on the ground at a field's edge (world.md
+  [6c](./world.md#6c-the-relief-drawn-from-geographic-tiles-built-2026-10-26)).
 
 ---
 
@@ -760,7 +788,8 @@ type ReliefSampler = SurfaceSampler & {
 ```
 
 - **Provided by the stage** (`ReliefSamplerContext`, `useReliefSampler`), from the tiles
-  in (`tileKeyAt` and `reliefTileHeightAt`, as the ground under the camera reads them):
+  in (`tileKeyAt` and `reliefTileHeightAt`, as the ground under the camera reads them;
+  since 2026-10-26 the geographic tile at the point's latitude and longitude):
   synchronous, a few lookups per query. `surfaces` is `['relief']`; `solidAt` is below
   the relief. Its identity changes when a finer tile under a pinned square comes in,
   which is the signal to settle again, as a chunk's rebuild is today.
@@ -799,7 +828,8 @@ Built (2026-10-25), with these changes:
   `Pipeline` a square at every `spacing`. `selectPinnedTiles` walks all the squares
   together, each tile once with the squares over it, keeping what is in and wanting the
   first missing tile on each path at `PINNED_TILE_PRIORITY`, ahead of the view.
-- **The globe's chunk** is the sdk's `materials/shaderLib/globe.glsl` (`globePlace`),
+- **The globe's chunk** is the sdk's `materials/shaderLib/globe.glsl` (`globePlace`; the
+  geographic tiles' `globeGeodetic` since 2026-10-26),
   which both relief vertex shaders include (until 2026-10-26 the sky's own
   `sky-curve.glsl`, `skyCurveDrop`). `applyGlobe(material, globe)` puts it into any stock
   material: each vertex is placed after three's `project_vertex`, so log depth, the view

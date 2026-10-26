@@ -176,11 +176,11 @@ Nothing above is needed for one field. What keeps it cheap to add later:
 | 3 | **Fields placed on the Earth** ([in detail](#10-step-3-in-detail-fields-placed-on-the-earth)): `GeoFrame` (was `ReliefFrame`); a `World` holding the scene's; a `UtmArea` in another frame placed in it, on the globe with a sky; the observer's place and the relief's frame from the `World` | ✅ built (2026-10-26): a second field in UTM 32N, 123 km out, placed to about 10 cm 5 km around (ReliefTiles' `facility: 'field'`), with the sky and without |
 | 4 | **The view's origin** — reduced by step 3. Its precision comes free: three.js composes each draw's model-view matrix in 64 bits, so a placed field is as precise 300 km out as at home. Left: a level horizon far off (1.8° rolled at 200 km), which needs the world turned under the camera — every sky shader takes one `up` (`uSkyUp`) and the stage an axis-aligned box — with the host's controls moved by a callback, any controls can take. A host can level it today by setting its camera's up to the globe's there (`Globe.upAt`) | ⏸ deferred until a host flies far from its fields |
 | 5 | **The relief in its own frame** — folded into step 6. In a frame of its own the relief would part from the chosen field's UTM by the two maps' scale (UTM's 0.9996 against 1: 3 m at 8 km), right where its column meets it; laid in the chosen field's frame it meets it exactly, and a placed field's to its placement's precision | → step 6 |
-| 6 | **Tiles on the globe** ([in detail](#11-step-6-in-detail-tiles-on-the-globe)): tile keys by latitude and longitude, the relief contract unchanged (a tile asks each layer for a window of its own grid, as now); the overlays' tiles move with them, sharing the core. Everything placed by latitude and longitude on one sphere, the ellipsoid's conformal sphere matched at the chosen field; each field's column samples the relief through its transform | in progress: 6a (the geographic globe) and 6b (geographic tiles) built 2026-10-26 |
+| 6 | **Tiles on the globe** ([in detail](#11-step-6-in-detail-tiles-on-the-globe)): tile keys by latitude and longitude, the relief contract unchanged (a tile asks each layer for a window of its own grid, as now); the overlays' tiles move with them, sharing the core. Everything placed by latitude and longitude on one sphere, the ellipsoid's conformal sphere matched at the chosen field; each field's column samples the relief through its transform | in progress: 6a (the geographic globe), 6b (geographic tiles) and 6c (the relief drawn from them) built 2026-10-26; 6d (the whole globe) next |
 | 7 | **Two fields:** a story with two fields in two UTM zones, the camera flying between them, either chosen: the `World`'s frame switched, a stage per field | the goal; step 3 placed the second field |
 
-Steps 1 to 3 are built. Step 6 waits for a host that needs to see beyond one region (about
-2000 km), step 7's stage per field for a host with two fields' columns at once.
+Steps 1 to 3 are built, and step 6 is under way. Step 7's stage per field waits for a host
+with two fields' columns at once.
 
 ---
 
@@ -582,7 +582,8 @@ as much. So the relief, `place`, `tangent`, `foot` and the placed fields switch 
   goes through the point's latitude and longitude, `foot` back (to proj4's round trip, a
   millimetre through ED50), and `tangent` with them. Over the disc `place` is the map
   itself, as before. `location` is the disc's centre's latitude and longitude, `north`
-  true north. Without a frame, nothing changes: nothing sets one until 6c.
+  true north. Without a frame, nothing changes; since 6c the `World` or the stage's relief
+  sets one.
 - **Against the map at the field:** 3 cm 5.5 km out, 11 cm 11 km out (a 16 km stage's
   corner): UTM's own scale changing across the field, 65 km off its meridian, which no
   sphere matched at one point follows. The bridge's clip closes the seams anyway.
@@ -613,3 +614,60 @@ as much. So the relief, `place`, `tangent`, `foot` and the placed fields switch 
   read onto a tile's longitudes and latitudes to a millimetre, its normals east and
   south, its leaf; the same ground as a tile in the map; a layer in longitude and latitude
   node for node.
+
+### 6c: the relief drawn from geographic tiles (built 2026-10-26)
+
+- **The switch.** `SkyBoxStageReliefTiles` keys its tiles by latitude and longitude (6b's
+  keys, depth 19 at most: cells of 1.2 m north–south) and builds them with no frame, the
+  same tiles in any scene. The globe needs the map its X/Z are in: the `Sky` sets the
+  `World`'s (`globe.setFrame`), or the stage its relief's `frame` where there is no
+  `World`. Without either, no tiles are drawn.
+- **Placed on the GPU by latitude and longitude** (`relief-tiles-vertex.glsl`). Per tile,
+  its edges' offsets on the conformal sphere from the disc's centre
+  (`Globe.sphereOffset`: Δχ, ΔΛ): the longitude linear from its west edge to its east,
+  the latitude a quadratic through its north edge, middle and south edge. Neighbours
+  share their edges' values exactly, so nothing cracks between them.
+  `globeGeodetic(offset, height)` places a node (haversine forms, the far side included),
+  `globeSphereOffset(p)` takes a point back (the coast's test and the tiles' own), and
+  `globeGeodeticEast(offset)` gives true east there. The tiles' normals are east and
+  south (6b), so the fragment turns them by east and up where they lie.
+- **The quadtree takes a layout** (`QuadtreeLayout`, sdk `tiles/quadtree.ts`): its roots,
+  each tile's square in the layout's own coordinates (here longitude east and latitude
+  south, in degrees), how far it is, whether it shows, and how wide it is along the
+  ground. The X/Z quadtree is unchanged without one. A geographic tile's distance is to
+  its nearest point on the globe; it shows if it is within reach, in the frustum (a box
+  over points of it, more for larger tiles, for the bulge) and its nearest point is not
+  past the horizon. `selectPinnedTiles` takes the same layout.
+- **The clip warps** (`HeightFieldClip`, `heightClipWarp`): what a column ends at is read
+  from tiles that are squares in degrees, not in X/Z. The clip takes world X/Z there
+  through a quadratic (`heightFieldWarp`, about the region's middle, longitude and
+  latitude scaled to metres), fitted per region whenever the region or the globe changes
+  (`geoWarp`, least squares over 5 x 5 points of the exact `geographic(place(x, z))`).
+  What it leaves is cubic: on the ground 2.4 mm at the edge of an 8 km stage at 58°N,
+  19 mm at the edge of a 16 km one (`tests/sky-relief-geo.test.ts`). Map-laid tiles pass
+  `HEIGHT_FIELD_NO_WARP`.
+- **Read back the same way:** the ground under the camera from the camera's latitude and
+  longitude (`globe.geographic`); the column's relief samples through `geoAt` (a sampler
+  tile is its square and its cells along and across, `ReliefSamplerTile`).
+- **True north with a `World`:** the `Sky`'s default `north` is true north at the
+  `World`'s frame (`placeGeoFrame`), so the sun stands where it does on the Earth. Without
+  a `World` the stage gives the globe its frame, but the `Sky` cannot see it, and its
+  north stays grid north.
+- **With the globe off** (`globe: false`), `geodetic` is stereographic about the disc's
+  centre, as the GPU draws it then, and `geographic` its inverse.
+- **Coarser over flat ground, by one step.** Over Volve's flat seabed, geographic tiles
+  stop one power of two coarser than map tiles did (cells of 870 m against 512 m from
+  3 km up): `minSlope` stops both, and a geographic tile's width falls between two map
+  tiles'. At the same size their errors agree (a depth-8 geographic tile, 78 km: 5.6 m; a
+  depth-4 map tile, 131 km: 22.6 m). Not a fault.
+- **Not changed:** the overview past the far plane is still drawn from the map (6d);
+  `applyGlobe` stays gnomonic (no component uses it).
+- **Checked:** in ReliefTiles, Lysefjord from 948 m and the Stavanger coast and its fjords
+  from 108 km, with no cracks; in FieldColumn (`WithSky`, `relief` on), the column built on
+  the relief, seen through a see-through seabed, and nothing poking through an opaque
+  one from straight above; StageDebug draws 65 tiles with no errors. Tested: the layout
+  against the X/Z quadtree (`tests/tiles.test.ts`), the warp (`tests/sky-relief-geo.test.ts`
+  and `tests/height-field-clip.test.ts`), the sampler (`tests/relief-sampler.test.ts`).
+- **Not yet checked:** pictures against the map-laid relief and the frame's cost; a seam
+  at a grazing view; a dark band seen once on the horizon with the sea off (possibly
+  older); `GL_INVALID_VALUE` warnings from `glGetProgramiv` at load.

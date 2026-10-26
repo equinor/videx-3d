@@ -319,6 +319,15 @@ export const SkyBoxStage = ({
   const reliefFrame = relief?.frame ?? world?.frame ?? null;
   const tiled = !!relief?.layers.length && hasBed && !!reliefFrame;
 
+  // A relief is placed by latitude and longitude: the globe lies on the Earth where its
+  // frame says, the World's (set by the Sky) or, without a World, the relief's own.
+  const ownFrame = !world && relief?.frame ? JSON.stringify(relief.frame) : '';
+  useLayoutEffect(() => {
+    if (!sky || !ownFrame) return;
+    sky.globe.setFrame(JSON.parse(ownFrame) as GeoFrame);
+    return () => sky.globe.setFrame(null);
+  }, [sky, ownFrame]);
+
   const generator = useGenerator<SkyReliefResponse>(skyRelief);
   // The first (coarsest) layer is the overview past the tiles, only while the far plane
   // falls short of the farthest horizon.
@@ -716,7 +725,6 @@ export const SkyBoxStage = ({
         <SkyBoxStageReliefTiles
           sky={sky}
           source={{
-            frame: reliefFrame,
             layers: relief.layers,
             base: -(relief.depth ?? ocean.depth),
           }}

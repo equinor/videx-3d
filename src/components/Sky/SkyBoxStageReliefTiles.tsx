@@ -1,38 +1,45 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Box3,
   ColorRepresentation,
   Frustum,
   InstancedBufferAttribute,
   Matrix4,
-  Vector3,
   Vector4,
 } from 'three';
 import { useGenerator } from '../../hooks/useGenerator';
 import {
+  geoReliefTileHeightAt,
   RELIEF_TILE_CELLS,
+  ReliefLayersSource,
   ReliefTile,
-  reliefTileHeightAt,
-  ReliefTileSource,
 } from '../../sdk/geometries/relief-tiles';
 import type { HeightFieldClip } from '../../sdk/materials/height-field-clip';
 import {
+  QuadtreeLayout,
   selectPinnedTiles,
   selectQuadtreeTiles,
 } from '../../sdk/tiles/quadtree';
 import {
-  TILE_ROOT_SIZE,
-  tileAddress,
-  tileKeyAt,
-  tileParent,
-  tileSquare,
-} from '../../sdk/tiles/tile-keys';
+  GEO_TILE_ROOTS,
+  geoTileKeyAt,
+  geoTileRegion,
+} from '../../sdk/tiles/geo-tile-keys';
+import { tileAddress, tileParent } from '../../sdk/tiles/tile-keys';
 import { TileStreamer } from '../../sdk/tiles/tile-streamer';
 import { pixelsPerUnit } from '../../sdk/utils/lod';
 import { skyReliefTile, SkyReliefTileResponse } from './sky-defs';
 import type { SkyMaterial } from './sky-material';
-import { SKY_EARTH_RADIUS } from './sky-model';
+import {
+  geoAt,
+  geoSquareOver,
+  geoTileDistance,
+  geoTileInView,
+  geoTileOffsets,
+  geoTileSquare,
+  geoTileWidth,
+  geoWarp,
+} from './sky-relief-geo';
 import {
   createReliefSampler,
   ReliefPins,
@@ -58,8 +65,8 @@ const MAX_SLOTS = 1024;
 const TILE_BYTES = (RELIEF_TILE_CELLS + 3) ** 2 * (4 + 4 + 1);
 // Triangles a tile draws: its grid, and its skirts.
 const TILE_TRIANGLES = 2 * RELIEF_TILE_CELLS ** 2 + 8 * RELIEF_TILE_CELLS;
-// The deepest tile: about 1 m cells.
-const MAX_DEPTH = 16;
+// The deepest tile: about 1 m cells north–south (geographic tiles, 180° / 2^19 / 32).
+const MAX_DEPTH = 19;
 // The slope a tile's surface may stray from the ground's before its cells' size on screen
 // splits it too: about 0.6°. Flat seabed is shaded alike at any depth.
 const CELL_MIN_SLOPE = 0.01;
@@ -90,8 +97,9 @@ export type SkyReliefTileStats = {
 };
 
 type SkyBoxStageReliefTilesProps = {
+  /** its globe needs a frame (`Globe.setFrame`): the tiles are placed by latitude and longitude */
   sky: SkyMaterial;
-  source: ReliefTileSource;
+  source: ReliefLayersSource;
   color: 'ramp' | ColorRepresentation;
   /** how far from the camera to draw it */
   reach: number;
@@ -138,11 +146,12 @@ export type SkyReliefTileGroundRequest = {
 };
 
 /**
- * A stage's relief drawn from tiles (see documents/tiles.md): each frame the tiles to
- * draw are chosen by their error and their cells' size on screen, those wanted are loaded
- * from the `skyReliefTile` generator, and every tile drawn is one instance of the same
- * patch. With a see-through seabed the tiles over the stage's own area are drawn again,
- * see-through, and the opaque draw leaves that area to them.
+ * A stage's relief drawn from geographic tiles (see documents/tiles.md and world.md, step
+ * 6): each frame the tiles to draw are chosen by their error and their cells' size on
+ * screen, those wanted are loaded from the `skyReliefTile` generator, and every tile drawn
+ * is one instance of the same patch, its nodes placed by their latitude and longitude on
+ * the sky's globe. With a see-through seabed the tiles over the stage's own area are drawn
+ * again, see-through, and the opaque draw leaves that area to them.
  */
 export const SkyBoxStageReliefTiles = ({
   sky,
@@ -210,6 +219,7 @@ export const SkyBoxStageReliefTiles = ({
   useEffect(
     () => () => {
       subset.deleteAttribute('reliefTile');
+      subset.deleteAttribute('reliefTileChi');
       subset.deleteAttribute('reliefTileSkirt');
       subset.dispose();
     },
@@ -234,10 +244,28 @@ export const SkyBoxStageReliefTiles = ({
   const generate = useGenerator<SkyReliefTileResponse>(skyReliefTile);
   // What is placed on the relief pins the ground under it (see `ReliefSampler`).
   const pins = useMemo(() => new ReliefPins(), []);
+  // The pins' squares in the tiles' coordinates (geoTileSquare's), kept with the squares
+  // they were found from.
+  const geoPins = useRef<{
+    from: unknown;
+    squares: [number, number, number, number][];
+  }>({ from: null, squares: [] });
+  const pinnedSquares = () => {
+    const squares = pins.squares;
+    if (geoPins.current.from !== squares) {
+      geoPins.current = {
+        from: squares,
+        squares: sky.globe.frame
+          ? squares.map(square => geoSquareOver(sky.globe, square))
+          : [],
+      };
+    }
+    return geoPins.current.squares;
+  };
   // By its content: a source written inline is a new object every render.
   const sourceKey = JSON.stringify(source);
   const streaming = useMemo(() => {
-    const plain = JSON.parse(sourceKey) as ReliefTileSource;
+    const plain = JSON.parse(sourceKey) as ReliefLayersSource;
     const slotOf = new Map<number, number>();
     // The highest ground in so far, for the horizon.
     const reached = { highest: 0 };
@@ -258,9 +286,11 @@ export const SkyBoxStageReliefTiles = ({
           slotOf.set(key, textures.put(tile));
           reached.highest = Math.max(reached.highest, tile.max);
           resident.changes++;
-          const [minX, minZ, width] = tileSquare(key);
-          if (pins.overlaps(minX, minZ, minX + width, minZ + width))
-            resident.pinnedIn = true;
+          const [x0, z0, width] = geoTileSquare(key);
+          for (const [a0, b0, a1, b1] of pinnedSquares()) {
+            if (a0 <= x0 + width && b0 <= z0 + width && a1 >= x0 && b1 >= z0)
+              resident.pinnedIn = true;
+          }
         },
         onEvict: key => {
           textures.release(slotOf.get(key) ?? -1);
@@ -270,32 +300,46 @@ export const SkyBoxStageReliefTiles = ({
       },
     );
     return { streamer, slotOf, reached, resident, split: new Set<number>() };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pinnedSquares reads refs
   }, [generate, sourceKey, textures, slots, pins]);
   useEffect(() => () => streaming.streamer.dispose(), [streaming]);
 
   // The relief's sampler: a new one whenever a pinned tile comes in, for what settled on
   // the ground to settle again. Its tiles are what is in, whatever the GPU holds.
   const [samplerVersion, setSamplerVersion] = useState(0);
-  const sampler = useMemo(
-    () =>
-      createReliefSampler(
-        (x, z) => {
-          for (let depth = MAX_DEPTH; depth >= 0; depth--) {
-            const key = tileKeyAt(depth, x, z);
-            const tile = streaming.streamer.get(key);
-            if (!tile) continue;
-            const [minX, minZ, width] = tileSquare(key);
-            return { tile, minX, minZ, width };
-          }
-          return undefined;
-        },
-        level,
-        pins,
-      ),
+  const sampler = useMemo(() => {
+    const globe = sky.globe;
+    const there = { latitude: 0, longitude: 0 };
+    return createReliefSampler(
+      (x, z) => {
+        if (!globe.frame) return undefined;
+        const { latitude, longitude } = geoAt(globe, x, z, there);
+        for (let depth = MAX_DEPTH; depth >= 0; depth--) {
+          const key = geoTileKeyAt(depth, longitude, latitude);
+          const tile = streaming.streamer.get(key);
+          if (!tile) continue;
+          const [west, north, span] = geoTileRegion(key);
+          const cells = tile.cells;
+          const east = ((((longitude - west + 180) % 360) + 360) % 360) - 180;
+          const cellV = ((span / cells) * Math.PI * globe.radius) / 180;
+          const north2 = globe.north;
+          return {
+            tile,
+            u: (east / span) * cells,
+            v: ((north - latitude) / span) * cells,
+            cellU: cellV * Math.cos((latitude * Math.PI) / 180),
+            cellV,
+            east: [-north2.z, north2.x],
+          };
+        }
+        return undefined;
+      },
+      level,
+      pins,
+    );
     // A new sampler is the signal to settle again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [streaming, level, pins, samplerVersion],
-  );
+  }, [streaming, level, pins, samplerVersion, sky]);
   const announceSampler = useRef(onSampler);
   useEffect(() => {
     announceSampler.current = onSampler;
@@ -320,6 +364,13 @@ export const SkyBoxStageReliefTiles = ({
         clip: new SkyReliefTileGround(textures, RELIEF_TILE_CELLS),
         // What it was indexed from last: the tiles drawn there, and those in.
         indexed: '',
+        // The region in the tiles' coordinates, and its warp (see the frame loop), with
+        // the globe they were found on.
+        globeKey: '',
+        square: [0, 0, 0, 0] as [number, number, number, number],
+        origin: [0, 0] as [number, number],
+        scale: 1,
+        warp: new Matrix4(),
       })),
     [groundsKey, textures],
   );
@@ -333,7 +384,10 @@ export const SkyBoxStageReliefTiles = ({
     };
   }, [handed]);
   useEffect(() => {
-    for (const ground of handed) ground.indexed = '';
+    for (const ground of handed) {
+      ground.indexed = '';
+      ground.globeKey = '';
+    }
   }, [handed, streaming, level]);
 
   const stats = useRef(onStats);
@@ -345,13 +399,19 @@ export const SkyBoxStageReliefTiles = ({
     () => ({
       frustum: new Frustum(),
       matrix: new Matrix4(),
-      box: new Box3(),
-      corner: new Vector3(),
-      foot: new Vector3(),
+      eye: { latitude: 0, longitude: 0 },
+      warp: new Matrix4(),
+      stage: {
+        key: '',
+        square: [0, 0, 0, 0] as [number, number, number, number],
+      },
     }),
     [],
   );
   const tiles = geometry.getAttribute('reliefTile') as InstancedBufferAttribute;
+  const chis = geometry.getAttribute(
+    'reliefTileChi',
+  ) as InstancedBufferAttribute;
   const skirts = geometry.getAttribute(
     'reliefTileSkirt',
   ) as InstancedBufferAttribute;
@@ -359,9 +419,14 @@ export const SkyBoxStageReliefTiles = ({
   useFrame(({ camera, size, viewport }) => {
     const { streamer, slotOf } = streaming;
     const globe = sky.globe;
-    // The camera in the tiles' own frame, the map's: the map point under it, and its
-    // altitude over the globe. Over the globe's disc, where it is.
-    const { x, z } = globe.foot(camera.position, view.foot);
+    // Placed by latitude and longitude: nothing without the map the scene is in.
+    if (!globe.frame) {
+      geometry.instanceCount = 0;
+      subset.instanceCount = 0;
+      return;
+    }
+    // The camera: where it is over the Earth, and its altitude over the globe.
+    const eye = globe.geographic(camera.position, view.eye);
     const altitude = globe.altitude(camera.position);
     const y = level + altitude;
     view.matrix.multiplyMatrices(
@@ -374,8 +439,12 @@ export const SkyBoxStageReliefTiles = ({
     // the one under a camera looking level is out of view.
     let ground: number | null = null;
     for (let depth = MAX_DEPTH; depth >= 0 && ground === null; depth--) {
-      const tile = streamer.get(tileKeyAt(depth, x, z));
-      if (tile) ground = level + reliefTileHeightAt(tile, x, z);
+      const tile = streamer.get(
+        geoTileKeyAt(depth, eye.longitude, eye.latitude),
+      );
+      if (tile)
+        ground =
+          level + geoReliefTileHeightAt(tile, eye.longitude, eye.latitude);
     }
     if (cameraGround) cameraGround.current = ground;
     // Under it, the skirts are seen from below, where there are no cracks to close.
@@ -386,12 +455,11 @@ export const SkyBoxStageReliefTiles = ({
     // the disc's flat sea, over which a view runs on level.
     let seen = reach;
     if (sky.globeEnabled) {
+      const R = globe.radius;
       const horizon =
         globe.discRadius +
-        Math.sqrt(2 * SKY_EARTH_RADIUS * Math.max(altitude, 0)) +
-        Math.sqrt(
-          2 * SKY_EARTH_RADIUS * Math.max(streaming.reached.highest, 0),
-        );
+        Math.sqrt(2 * R * Math.max(altitude, 0) + altitude * altitude) +
+        Math.sqrt(2 * R * Math.max(streaming.reached.highest, 0));
       seen = Math.min(reach, horizon);
     }
 
@@ -406,37 +474,45 @@ export const SkyBoxStageReliefTiles = ({
         leaf: tile.leaf,
       };
     };
-    const inView = (
-      minX: number,
-      minZ: number,
-      maxX: number,
-      maxZ: number,
-      minY: number,
-      maxY: number,
-    ) => {
-      // Where the globe has it: its corners from its lowest (and a skirt) to its highest,
-      // and its middle at its highest, which bulges over the corners on the sphere.
-      const { box, corner } = view;
-      const low = minY - level - (maxX - minX) * 0.01;
-      const high = maxY - level;
-      box.makeEmpty();
-      for (const [cx, cz] of [
-        [minX, minZ],
-        [maxX, minZ],
-        [minX, maxZ],
-        [maxX, maxZ],
-      ]) {
-        box.expandByPoint(globe.place(cx, cz, low, corner));
-        box.expandByPoint(globe.place(cx, cz, high, corner));
-      }
-      box.expandByPoint(
-        globe.place((minX + maxX) / 2, (minZ + maxZ) / 2, high, corner),
-      );
-      return view.frustum.intersectsBox(box);
+    // Where the tiles lie: on the globe by their latitudes and longitudes. Their lowest
+    // reaches a skirt lower.
+    const layout: QuadtreeLayout = {
+      roots: GEO_TILE_ROOTS,
+      square: geoTileSquare,
+      distance: (key, minY, maxY) =>
+        geoTileDistance(
+          globe,
+          key,
+          camera.position,
+          eye,
+          altitude,
+          minY - level,
+          maxY - level,
+        ),
+      shows: (key, minY, maxY) =>
+        geoTileDistance(
+          globe,
+          key,
+          camera.position,
+          eye,
+          altitude,
+          minY - level,
+          maxY - level,
+        ) <= seen &&
+        geoTileInView(
+          globe,
+          key,
+          view.frustum,
+          camera.position,
+          eye,
+          minY - level - geoTileWidth(globe, key) * 0.01,
+          maxY - level,
+        ),
+      width: key => geoTileWidth(globe, key),
     };
 
     const selection = selectQuadtreeTiles({
-      eye: [x, y, z],
+      eye: [0, y, 0],
       reach: seen,
       pixelsPerUnit: pixelsPerUnit(camera, size.height * viewport.dpr),
       pixelError,
@@ -451,32 +527,34 @@ export const SkyBoxStageReliefTiles = ({
             },
       maxDepth: MAX_DEPTH,
       info,
-      inView,
       split: streaming.split,
       // Over the ground handed out, what ends at it never stands off it visibly.
-      finer: handed.map(({ bounds }) => ({
-        bounds,
+      finer: handed.map(({ square }) => ({
+        bounds: square,
         pixelError: GROUND_PIXEL_ERROR,
       })),
+      layout,
     });
     streaming.split = selection.split;
     // What is pinned is held in down to the finest, whatever the view.
-    const pinned =
-      pins.squares.length > 0
+    const pinned = pinnedSquares();
+    const pinning =
+      pinned.length > 0
         ? selectPinnedTiles({
-            squares: pins.squares,
+            squares: pinned,
             info: key => {
               const tile = streamer.get(key);
               return tile ? { leaf: tile.leaf } : undefined;
             },
             maxDepth: MAX_DEPTH,
+            layout,
           })
         : null;
     streamer.update(
-      pinned
-        ? [...selection.draw, ...selection.split, ...pinned.keep]
+      pinning
+        ? [...selection.draw, ...selection.split, ...pinning.keep]
         : [...selection.draw, ...selection.split],
-      pinned ? [...pinned.want, ...selection.want] : selection.want,
+      pinning ? [...pinning.want, ...selection.want] : selection.want,
     );
     if (streaming.resident.pinnedIn) {
       streaming.resident.pinnedIn = false;
@@ -484,6 +562,7 @@ export const SkyBoxStageReliefTiles = ({
     }
 
     const array = tiles.array as Float32Array;
+    const chiArray = chis.array as Float32Array;
     const drops = skirts.array as Float32Array;
     let count = 0;
     let deepest = 0;
@@ -492,106 +571,152 @@ export const SkyBoxStageReliefTiles = ({
       const tile = streamer.get(key);
       const slot = slotOf.get(key);
       if (!tile || slot === undefined || slot < 0) continue;
-      const [minX, minZ, width] = tileSquare(key);
       const [depth] = tileAddress(key);
       deepest = Math.max(deepest, depth);
-      array[4 * count] = minX;
-      array[4 * count + 1] = minZ;
-      array[4 * count + 2] = width;
+      geoTileOffsets(globe, key, array, 4 * count, chiArray, 3 * count);
+      array[4 * count + 2] = depth;
       array[4 * count + 3] = slot;
       // Deep enough to close the crack to a neighbour a level coarser.
       const parent = depth > 0 ? streamer.get(tileParent(key)) : undefined;
       drops[count] =
         Math.max(tile.error, parent?.error ?? 0) +
-        (width / RELIEF_TILE_CELLS) * 0.05;
+        (geoTileWidth(globe, key) / RELIEF_TILE_CELLS) * 0.05;
       count++;
     }
     geometry.instanceCount = count;
     // ⚠️ An empty update range uploads the whole array's tail instead.
     if (count > 0) {
-      tiles.clearUpdateRanges();
-      tiles.addUpdateRange(0, 4 * count);
-      tiles.needsUpdate = true;
-      skirts.clearUpdateRanges();
-      skirts.addUpdateRange(0, count);
-      skirts.needsUpdate = true;
+      for (const [attribute, size] of [
+        [tiles, 4],
+        [chis, 3],
+        [skirts, 1],
+      ] as const) {
+        attribute.clearUpdateRanges();
+        attribute.addUpdateRange(0, size * count);
+        attribute.needsUpdate = true;
+      }
     }
 
     // The tiles that touch the stage's area, again, for the see-through draw.
     let inStage = 0;
     if (seeThroughMaterial) {
+      const stageKey = `${stageMinX},${stageMinZ},${stageMaxX},${stageMaxZ},${globe.discCentre.x},${globe.radius}`;
+      if (view.stage.key !== stageKey) {
+        view.stage.key = stageKey;
+        view.stage.square = geoSquareOver(globe, [
+          stageMinX,
+          stageMinZ,
+          stageMaxX,
+          stageMaxZ,
+        ]);
+      }
+      const [s0, t0, s1, t1] = view.stage.square;
       const subsetTiles = subset.getAttribute(
         'reliefTile',
+      ) as InstancedBufferAttribute;
+      const subsetChis = subset.getAttribute(
+        'reliefTileChi',
       ) as InstancedBufferAttribute;
       const subsetSkirts = subset.getAttribute(
         'reliefTileSkirt',
       ) as InstancedBufferAttribute;
       const into = subsetTiles.array as Float32Array;
+      const intoChis = subsetChis.array as Float32Array;
       const intoSkirts = subsetSkirts.array as Float32Array;
-      for (let i = 0; i < count; i++) {
-        const tx = array[4 * i];
-        const tz = array[4 * i + 1];
-        const width = array[4 * i + 2];
-        if (
-          tx >= stageMaxX ||
-          tz >= stageMaxZ ||
-          tx + width <= stageMinX ||
-          tz + width <= stageMinZ
-        )
-          continue;
+      let drawn = 0;
+      for (const key of selection.draw) {
+        const slot = slotOf.get(key);
+        if (!streamer.get(key) || slot === undefined || slot < 0) continue;
+        const i = drawn++;
+        if (i >= count) break;
+        const [a, b, width] = geoTileSquare(key);
+        if (a >= s1 || b >= t1 || a + width <= s0 || b + width <= t0) continue;
         into.set(array.subarray(4 * i, 4 * i + 4), 4 * inStage);
+        intoChis.set(chiArray.subarray(3 * i, 3 * i + 3), 3 * inStage);
         intoSkirts[inStage] = drops[i];
         inStage++;
       }
       if (inStage > 0) {
-        subsetTiles.clearUpdateRanges();
-        subsetTiles.addUpdateRange(0, 4 * inStage);
-        subsetTiles.needsUpdate = true;
-        subsetSkirts.clearUpdateRanges();
-        subsetSkirts.addUpdateRange(0, inStage);
-        subsetSkirts.needsUpdate = true;
+        for (const [attribute, size] of [
+          [subsetTiles, 4],
+          [subsetChis, 3],
+          [subsetSkirts, 1],
+        ] as const) {
+          attribute.clearUpdateRanges();
+          attribute.addUpdateRange(0, size * inStage);
+          attribute.needsUpdate = true;
+        }
       }
     }
     subset.instanceCount = inStage;
 
-    // Out of view, the finest tile in: a face in view may stand on ground that is not.
-    const finestAt = (
-      px: number,
-      pz: number,
-    ): SkyReliefTileGroundTile | undefined => {
-      for (let depth = MAX_DEPTH; depth >= 0; depth--) {
-        const key = tileKeyAt(depth, px, pz);
-        const tile = streamer.get(key);
-        const slot = slotOf.get(key);
-        if (!tile || slot === undefined || slot < 0) continue;
-        const [minX, minZ, width] = tileSquare(key);
-        return { square: { minX, minZ, width, slot }, tile };
-      }
-      return undefined;
-    };
+    // The ground handed out over each region: the tiles there, in their squares scaled to
+    // metres about the region's middle (the warp's coordinates), the warp from the world's
+    // X/Z fitted when the region or the globe changes.
     for (const handout of handed) {
+      const globeKey = `${globe.discCentre.x},${globe.discCentre.z},${globe.radius},${globe.enabled}`;
+      if (handout.globeKey !== globeKey) {
+        handout.globeKey = globeKey;
+        handout.square = geoSquareOver(globe, handout.bounds);
+        const [a0, b0, a1, b1] = handout.square;
+        handout.origin = [(a0 + a1) / 2, (b0 + b1) / 2];
+        handout.scale = (Math.PI / 180) * globe.radius;
+        geoWarp(
+          globe,
+          handout.bounds,
+          handout.origin[0],
+          -handout.origin[1],
+          handout.scale,
+          handout.warp,
+        );
+        handout.indexed = '';
+      }
+      const [a0, b0, a1, b1] = handout.square;
+      const [oa, ob] = handout.origin;
+      const k = handout.scale;
+      const scaled = (key: number): [number, number, number] => {
+        const [a, b, width] = geoTileSquare(key);
+        return [(a - oa) * k, (b - ob) * k, width * k];
+      };
+      // Out of view, the finest tile in: a face in view may stand on ground that is not.
+      const finestAt = (
+        qa: number,
+        qb: number,
+      ): SkyReliefTileGroundTile | undefined => {
+        const longitude = oa + qa / k;
+        const latitude = -(ob + qb / k);
+        for (let depth = MAX_DEPTH; depth >= 0; depth--) {
+          const key = geoTileKeyAt(depth, longitude, latitude);
+          const tile = streamer.get(key);
+          const slot = slotOf.get(key);
+          if (!tile || slot === undefined || slot < 0) continue;
+          const [minX, minZ, width] = scaled(key);
+          return { square: { minX, minZ, width, slot }, tile };
+        }
+        return undefined;
+      };
       // Indexed again only when the tiles drawn there, or those in, change.
-      const [rx0, rz0, rx1, rz1] = handout.bounds;
       const there: SkyReliefTileGroundTile[] = [];
       let indexed = `${streaming.resident.changes}`;
       for (const key of selection.draw) {
-        const [minX, minZ, width] = tileSquare(key);
-        if (
-          minX >= rx1 ||
-          minZ >= rz1 ||
-          minX + width <= rx0 ||
-          minZ + width <= rz0
-        )
-          continue;
+        const [a, b, width] = geoTileSquare(key);
+        if (a >= a1 || b >= b1 || a + width <= a0 || b + width <= b0) continue;
         const tile = streamer.get(key);
         const slot = slotOf.get(key);
         if (!tile || slot === undefined || slot < 0) continue;
-        there.push({ square: { minX, minZ, width, slot }, tile });
+        const [minX, minZ, w] = scaled(key);
+        there.push({ square: { minX, minZ, width: w, slot }, tile });
         indexed += `,${key}`;
       }
       if (indexed !== handout.indexed) {
         handout.indexed = indexed;
-        handout.clip.set(there, handout.bounds, level, finestAt);
+        handout.clip.set(
+          there,
+          [(a0 - oa) * k, (b0 - ob) * k, (a1 - oa) * k, (b1 - ob) * k],
+          level,
+          handout.warp,
+          finestAt,
+        );
       }
       handout.clip.setLive(groundLive && visible);
     }
@@ -602,7 +727,9 @@ export const SkyBoxStageReliefTiles = ({
         drawn: count,
         triangles: count * TILE_TRIANGLES,
         depth: deepest,
-        cell: TILE_ROOT_SIZE / 2 ** deepest / RELIEF_TILE_CELLS,
+        cell:
+          ((180 / 2 ** deepest / RELIEF_TILE_CELLS) * Math.PI * globe.radius) /
+          180,
         resident: held.resident,
         loading: held.loading,
         queued: held.queued,

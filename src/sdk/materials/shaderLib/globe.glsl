@@ -109,6 +109,78 @@ vec3 globeFoot(vec3 p) {
   return uGlobeDisc.xyz + across * (uGlobe.y / (h + uGlobe.y));
 }
 
+// On the Earth (with a frame, `Globe.setFrame`): uniform vec3s true east and north at the
+// disc's centre, and the conformal sphere's latitude there.
+uniform vec3 uGlobeEast;
+uniform vec3 uGlobeNorth;
+uniform vec4 uGlobeSphere; // sin χ₀, cos χ₀, n, 1 with a frame
+
+float globeHaversine(float angle) {
+  float sine = sin(0.5 * angle);
+  return sine * sine;
+}
+
+// The direction from the sphere's centre at `offset` (Δχ, ΔΛ: `Globe.sphereOffset`),
+// about the disc's centre: its east, north and up parts (x, y, z), and how far up falls
+// short of 1 (w), all written so nothing near-equal is subtracted near it.
+vec4 globeSphereDirection(vec2 offset) {
+  float sinChi0 = uGlobeSphere.x;
+  float cosChi0 = uGlobeSphere.y;
+  float cosChi = cosChi0 * cos(offset.x) - sinChi0 * sin(offset.x);
+  float havLambda = globeHaversine(offset.y);
+  float below = 2.0 * (globeHaversine(offset.x) + cosChi * cosChi0 * havLambda);
+  return vec4(cosChi * sin(offset.y), sin(offset.x) + 2.0 * cosChi * sinChi0 * havLambda, 1.0 - below, below);
+}
+
+// The point `height` over the ground at `offset` (Δχ, ΔΛ: `Globe.sphereOffset`): the twin
+// of `Globe.geodetic`. On the sphere, along the line from its centre; over the disc, where
+// that line meets the level plane. Off, the sphere laid flat about the disc's centre
+// (stereographically), with nothing to curve.
+vec3 globeGeodetic(vec2 offset, float height) {
+  vec4 d = globeSphereDirection(offset);
+  vec3 c = uGlobeDisc.xyz;
+  vec3 across = d.x * uGlobeEast + d.y * uGlobeNorth;
+  if(!globeOn())
+    return c + across * (2.0 * uGlobe.x / (1.0 + d.z)) + uGlobeUp * height;
+  float R = uGlobe.x;
+  float s = uGlobe.y;
+  float reach = s / d.z;
+  if(d.z > 0.0 && reach * reach * dot(d.xy, d.xy) <= uGlobe.z)
+    return c + across * reach + uGlobeUp * height;
+  // R (e, n, u − 1) + (R − s) up about the disc's centre, then `height` along up there.
+  float lift = uGlobe.z / (R + s) - R * d.w;
+  return c + across * (R + height) + uGlobeUp * (lift + height * d.z);
+}
+
+// True east where `offset` lies on the sphere (unit): along its parallel, toward growing
+// longitude.
+vec3 globeGeodeticEast(vec2 offset) {
+  float sinChi0 = uGlobeSphere.x;
+  float cosChi0 = uGlobeSphere.y;
+  float s = sin(offset.y);
+  return cos(offset.y) * uGlobeEast + (sinChi0 * s) * uGlobeNorth - (cosChi0 * s) * uGlobeUp;
+}
+
+// The offset (Δχ, ΔΛ) on the sphere of the ground under `p`, as `globeGeodetic` places it:
+// its inverse, written about the disc's centre so it holds near the field in 32-bit floats.
+vec2 globeSphereOffset(vec3 p) {
+  vec3 v = p - uGlobeDisc.xyz;
+  float h = dot(v, uGlobeUp);
+  vec3 across = v - uGlobeUp * h;
+  float e = dot(across, uGlobeEast);
+  float n = dot(across, uGlobeNorth);
+  float u = uGlobe.y + (dot(across, across) <= uGlobe.z ? 0.0 : h);
+  float sinChi0 = uGlobeSphere.x;
+  float cosChi0 = uGlobeSphere.y;
+  // The direction's latitude about the disc's centre's, from its parts: sin and cos of
+  // Δχ, scaled alike, with its distance from the axis `w` and its part along it `q`.
+  float q = u * cosChi0 - n * sinChi0;
+  float w = sqrt(e * e + q * q);
+  float sinD = n - sinChi0 * e * e / max(q + w, 1e-30);
+  float cosD = n * sinChi0 * cosChi0 + u * sinChi0 * sinChi0 + w * cosChi0;
+  return vec2(atan(sinD, cosD), atan(e, q));
+}
+
 // Where a view from `origin` along `dir` (unit) meets the ground `below` lower — a seabed:
 // the plane `below` down over the disc, the sphere of radius R − below beyond: how far
 // along it, and 1 if it misses. A miss, or a view from inside the sphere, reports where the

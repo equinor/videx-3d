@@ -1,4 +1,4 @@
-import { IUniform, Texture, Vector4 } from 'three';
+import { IUniform, Matrix4, Texture, Vector4 } from 'three';
 
 /**
  * The uniforms `shaderLib/height-field-clip.glsl` reads.
@@ -17,7 +17,49 @@ export type HeightFieldClipUniforms = {
    * nothing is clipped (the lowest ground); w: cells along a tile's side
    */
   heightClipParams: IUniform<Vector4>;
+  /**
+   * Where the tiles' squares are, from the consumer's X/Z (see {@link heightFieldWarp}):
+   * the identity for tiles that are squares in X/Z ({@link HEIGHT_FIELD_NO_WARP})
+   */
+  heightClipWarp: IUniform<Matrix4>;
 };
+
+/**
+ * The warp of tiles that are squares in the consumer's own X/Z: none.
+ *
+ * @group Materials
+ */
+export const HEIGHT_FIELD_NO_WARP: Readonly<Matrix4> = new Matrix4().fromArray([
+  0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+]);
+
+/**
+ * Where `warp` (a `heightClipWarp`) takes X/Z: into the coordinates its tiles are squares
+ * in, a quadratic about a point — for tiles laid out on the Earth (geographic tiles), in
+ * longitude and latitude about the region, nearly linear over a field. Its columns: the
+ * point (X, Z) and the coordinates there; the derivatives along X and Z of each
+ * coordinate (dq₀/dx, dq₀/dz, dq₁/dx, dq₁/dz); and per coordinate its second-order terms
+ * in dx², dx dz and dz². As `shaderLib/height-field-clip.glsl` reads it.
+ *
+ * @group Materials
+ */
+export function heightFieldWarp(
+  warp: Readonly<Matrix4>,
+  x: number,
+  z: number,
+  target: [number, number] = [0, 0],
+): [number, number] {
+  const m = warp.elements;
+  const dx = x - m[0];
+  const dz = z - m[1];
+  const xx = dx * dx;
+  const xz = dx * dz;
+  const zz = dz * dz;
+  target[0] = m[2] + m[4] * dx + m[5] * dz + m[8] * xx + m[9] * xz + m[10] * zz;
+  target[1] =
+    m[3] + m[6] * dx + m[7] * dz + m[12] * xx + m[13] * xz + m[14] * zz;
+  return target;
+}
 
 /**
  * Ground drawn as a height field from tiles, for whatever must end where it is drawn: a
@@ -51,6 +93,7 @@ export function applyHeightFieldClip(
   uniforms.heightClipIndex = clip.heightClipIndex;
   uniforms.heightClipRegion = clip.heightClipRegion;
   uniforms.heightClipParams = clip.heightClipParams;
+  uniforms.heightClipWarp = clip.heightClipWarp;
 }
 
 /**
@@ -85,6 +128,7 @@ export function createHeightFieldClipBinding(): {
       heightClipIndex: read('heightClipIndex', null),
       heightClipRegion: read('heightClipRegion', region),
       heightClipParams: read('heightClipParams', off),
+      heightClipWarp: read('heightClipWarp', HEIGHT_FIELD_NO_WARP as Matrix4),
     },
     set(clip) {
       current = clip;

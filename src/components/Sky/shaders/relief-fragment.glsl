@@ -157,8 +157,11 @@ void main() {
   float sea = uSkyOceanWater > 0.5 && altitude > 0.0 ? skyOceanReach(cameraPosition, dir, altitude).x : 0.0;
   // Only taken from above the water, with water: where the stage's test reaches the sea.
   bool staged = skyOceanStagedAlong(dir, cameraPosition, sea, 1.0, false);
-  // The map's normal, turned onto the globe where the tile lies (its up, from the vertices).
-  vec3 normal = globeTurn(reliefTileNormal(), normalize(vReliefUp));
+  // The tile's normal, along true east, up and true south where it lies on the globe.
+  vec3 tileNormal = reliefTileNormal();
+  vec3 up = normalize(vReliefUp);
+  vec3 east = normalize(vReliefEast - up * dot(vReliefEast, up));
+  vec3 normal = normalize(east * tileNormal.x + up * tileNormal.y + cross(east, up) * tileNormal.z);
   vec2 ground = vec2(reliefTileHeight(), 1.0);
   #endif
   float height = ground.x;
@@ -205,7 +208,7 @@ void main() {
     // sea stands for the sea's point; past that, the ground there decides when the tile
     // holds it, and else the sea is met over open water well in front: the land lies past
     // the horizon, and stays behind.
-    bool clears = height >= 0.0 && (dist - sea < 2.0 * reliefTileCell() || reliefTileClearsAt(globeFoot(cameraPosition + dir * sea).xz));
+    bool clears = height >= 0.0 && (dist - sea < 2.0 * reliefTileCell() || reliefTileClearsAt(cameraPosition + dir * sea));
     if(water && sea < dist * 1.0001 && clears)
       gl_FragDepth = reliefDepthAt(dir, min(sea, dist) * 0.9999);
   }

@@ -11,6 +11,7 @@ import {
   InstancedBufferGeometry,
   IUniform,
   LinearFilter,
+  Matrix4,
   NearestFilter,
   RedFormat,
   RGBAFormat,
@@ -35,7 +36,10 @@ import type {
   HeightFieldClip,
   HeightFieldClipUniforms,
 } from '../../sdk/materials/height-field-clip';
-import { TILE_ROOT_SIZE } from '../../sdk/tiles/tile-keys';
+import {
+  HEIGHT_FIELD_NO_WARP,
+  heightFieldWarp,
+} from '../../sdk/materials/height-field-clip';
 import { attachOitVariants } from '../../rendering/oit-material';
 import fragmentShader from './shaders/relief-fragment.glsl';
 import vertexShader from './shaders/relief-tiles-vertex.glsl';
@@ -45,13 +49,18 @@ import { skyOceanDefines } from './sky-stage';
 /** The most relief tiles drawn at once. */
 export const SKY_RELIEF_MAX_TILES = 2048;
 
+// SkyReliefTileGround.heightAt's warped point.
+const warped: [number, number] = [0, 0];
+
 /**
  * The patch every relief tile is drawn with: `cells` x `cells` cells over node
  * coordinates 0…`cells` in X/Z, facing up, and a skirt down from each side (its lower
- * edge marked by `reliefSkirt`), facing out. Instanced by a `reliefTile` (min X/Z, width,
- * slot) and a `reliefTileSkirt` (how far its skirt drops) per tile. Its triangles'
- * diagonals run from node (i + 1, j) to (i, j + 1), as `buildReliefTile` measures a
- * tile's error.
+ * edge marked by `reliefSkirt`), facing out. Instanced per geographic tile by a
+ * `reliefTile` (its west and east edges' longitude on the conformal sphere from the
+ * globe's disc's centre, its depth and its slot), a `reliefTileChi` (its north edge's,
+ * middle's and south edge's latitude there: `Globe.sphereOffset`) and a `reliefTileSkirt`
+ * (how far its skirt drops). Its triangles' diagonals run from node (i + 1, j) to
+ * (i, j + 1), as `buildReliefTile` measures a tile's error.
  */
 export function createSkyReliefTilePatch(
   cells: number,
@@ -100,13 +109,7 @@ export function createSkyReliefTilePatch(
   geometry.setAttribute('position', new BufferAttribute(positions, 3));
   geometry.setAttribute('reliefSkirt', new BufferAttribute(skirt, 1));
   geometry.setIndex(indices);
-  const tiles = new InstancedBufferAttribute(new Float32Array(4 * maxTiles), 4);
-  tiles.setUsage(DynamicDrawUsage);
-  geometry.setAttribute('reliefTile', tiles);
-  const skirts = new InstancedBufferAttribute(new Float32Array(maxTiles), 1);
-  skirts.setUsage(DynamicDrawUsage);
-  geometry.setAttribute('reliefTileSkirt', skirts);
-  geometry.instanceCount = 0;
+  addTileAttributes(geometry, maxTiles);
   return geometry;
 }
 
@@ -206,8 +209,10 @@ export type SkyReliefTileGroundTile = {
 
 /**
  * The ground a stage's relief tiles draw over a region, handed out as a
- * `HeightFieldClip`: an index of the tiles there over the tiles' own heights texture.
- * `set` it when the tiles there change; it is live while `live` is set and it has tiles.
+ * `HeightFieldClip`: an index of the tiles there over the tiles' own heights texture, the
+ * tiles' squares in the coordinates the `warp` (`heightFieldWarp`) takes the consumer's
+ * X/Z into. `set` it when the tiles there change; it is live while `live` is set and it has
+ * tiles.
  */
 export class SkyReliefTileGround implements HeightFieldClip {
   readonly uniforms: HeightFieldClipUniforms;
@@ -225,19 +230,23 @@ export class SkyReliefTileGround implements HeightFieldClip {
       heightClipIndex: { value: null },
       heightClipRegion: { value: new Vector4() },
       heightClipParams: { value: new Vector4(0, 0, 0, cells) },
+      heightClipWarp: { value: HEIGHT_FIELD_NO_WARP.clone() },
     };
   }
 
   /**
-   * Index `tiles` over `region` (min X, min Z, max X, max Z), the drawn ones first; where
-   * none is, `fill`'s at a point. Heights are measured from `level`.
+   * Index `tiles` over `region` (min, max of the warp's coordinates), the drawn ones
+   * first; where none is, `fill`'s at a point of them. Heights are measured from `level`;
+   * `warp` takes X/Z to the tiles' coordinates.
    */
   set(
     tiles: SkyReliefTileGroundTile[],
     region: [number, number, number, number],
     level: number,
+    warp: Matrix4,
     fill?: (x: number, z: number) => SkyReliefTileGroundTile | undefined,
   ) {
+    this.uniforms.heightClipWarp.value.copy(warp);
     let margin = 0;
     let lowest = Infinity;
     const take = ({ square, tile }: SkyReliefTileGroundTile) => {
@@ -292,7 +301,13 @@ export class SkyReliefTileGround implements HeightFieldClip {
   heightAt(x: number, z: number): number | null {
     const index = this.index;
     if (!index) return null;
-    const at = heightFieldIndexAt(index, x, z);
+    const [qx, qz] = heightFieldWarp(
+      this.uniforms.heightClipWarp.value,
+      x,
+      z,
+      warped,
+    );
+    const at = heightFieldIndexAt(index, qx, qz);
     if (at < 0) return null;
     const { data } = index;
     const cells = this.cells;
@@ -305,8 +320,8 @@ export class SkyReliefTileGround implements HeightFieldClip {
       heightFieldPatchAt(
         (i, j) => heights[offset + (1 + j) * nodes + 1 + i],
         cells,
-        ((x - data[at]) / width) * cells,
-        ((z - data[at + 1]) / width) * cells,
+        ((qx - data[at]) / width) * cells,
+        ((qz - data[at + 1]) / width) * cells,
       )
     );
   }
@@ -410,7 +425,6 @@ export function createSkyReliefTileMaterial(
   uniforms.uReliefTileLayers = new Uniform(textures.layers);
   uniforms.uReliefTileNodes = new Uniform(textures.nodes);
   uniforms.uReliefTileCells = new Uniform(textures.nodes - 3);
-  uniforms.uReliefTileRoot = new Uniform(TILE_ROOT_SIZE);
   uniforms.uReliefReach = new Uniform(1e30);
   uniforms.uReliefCameraUnder = new Uniform(0);
   uniforms.uReliefStage = new Uniform(new Vector4());
@@ -483,12 +497,34 @@ export function createSkyReliefTileSubset(
   geometry.setAttribute('position', patch.getAttribute('position'));
   geometry.setAttribute('reliefSkirt', patch.getAttribute('reliefSkirt'));
   geometry.setIndex(patch.getIndex());
-  const tiles = new InstancedBufferAttribute(new Float32Array(4 * maxTiles), 4);
-  tiles.setUsage(DynamicDrawUsage);
-  geometry.setAttribute('reliefTile', tiles);
-  const skirts = new InstancedBufferAttribute(new Float32Array(maxTiles), 1);
-  skirts.setUsage(DynamicDrawUsage);
-  geometry.setAttribute('reliefTileSkirt', skirts);
-  geometry.instanceCount = 0;
+  addTileAttributes(geometry, maxTiles);
   return geometry;
 }
+
+// Per tile (see createSkyReliefTilePatch): `reliefTile`, `reliefTileChi` and
+// `reliefTileSkirt`, for `maxTiles` tiles, none drawn yet.
+function addTileAttributes(
+  geometry: InstancedBufferGeometry,
+  maxTiles: number,
+) {
+  for (const [name, size] of [
+    ['reliefTile', 4],
+    ['reliefTileChi', 3],
+    ['reliefTileSkirt', 1],
+  ] as const) {
+    const attribute = new InstancedBufferAttribute(
+      new Float32Array(size * maxTiles),
+      size,
+    );
+    attribute.setUsage(DynamicDrawUsage);
+    geometry.setAttribute(name, attribute);
+  }
+  geometry.instanceCount = 0;
+}
+
+/** A relief tile's attributes for one draw (`reliefTile`, `reliefTileChi`, `reliefTileSkirt`). */
+export const SKY_RELIEF_TILE_ATTRIBUTES = [
+  'reliefTile',
+  'reliefTileChi',
+  'reliefTileSkirt',
+] as const;
