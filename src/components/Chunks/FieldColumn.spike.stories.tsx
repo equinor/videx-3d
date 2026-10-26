@@ -1848,8 +1848,9 @@ export const Default: Story = {
     progressStayOpen: false,
     progressSummary: true,
     progressInlineIdle: 'show',
-    // Sky
-    sky: false,
+    // Sky: it lights the column, and draws nothing behind it (`drawSky`; see `WithSky`).
+    sky: true,
+    drawSky: false,
     matchBed: true,
     skyBed: 'median',
     sunElevation: 30,
@@ -2688,5 +2689,5 @@ export const Default: Story = {
 // the sky's stage as the sea's, and the sky's seabed eased into it around the outline.
 export const WithSky: Story = {
   ...Default,
-  args: { ...Default.args, sky: true },
+  args: { ...Default.args, sky: true, drawSky: true },
 };

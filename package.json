@@ -40,7 +40,7 @@
     "start": "npm run storybook",
     "build": "npm run build-lib && npm run build-static",
     "build-lib": "tsc && vite build",
-    "build-static": "node scripts/generate-story-args.js && storybook build -o static && typedoc",
+    "build-static": "node scripts/generate-relief.js && node scripts/generate-story-args.js && storybook build -o static && typedoc",
     "lint": "oxlint",
     "storybook": "node scripts/generate-story-args.js && storybook dev -p 6006",
     "test": "vitest",

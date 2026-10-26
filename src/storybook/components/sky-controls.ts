@@ -1313,10 +1313,14 @@ const allSkyArgTypes = (): ArgTypes<SkyArgs> => ({
   ...toneMappingArgTypes(),
 });
 
+// The renderer's tone mapping, applied with a sky or without: never behind `shownIf`.
+const UNGATED = new Set(Object.keys(toneMappingArgs));
+
 /**
  * Controls for {@link SkyArgs}. The basic ones show; with `debug`, so do the advanced and
  * debug ones. With `shownIf`, each control shows only while that arg is on (unless it has a
- * condition of its own).
+ * condition of its own, or is the renderer's tone mapping). ⚠️ Storybook also leaves such an
+ * arg out of the story's args while it is hidden.
  */
 export function skyArgTypes({
   debug = false,
@@ -1327,7 +1331,7 @@ export function skyArgTypes({
     if (!argType) continue;
     if (!debug && ADVANCED.has(key)) {
       argTypes[key as keyof SkyArgs] = { ...argType, table: { disable: true } };
-    } else if (shownIf && !argType.if) {
+    } else if (shownIf && !argType.if && !UNGATED.has(key)) {
       argTypes[key as keyof SkyArgs] = { ...argType, if: { arg: shownIf } };
     }
   }

@@ -46,11 +46,15 @@ export const toneMappingArgTypes = (
   },
 });
 
-/** Sets the renderer's tone mapping from {@link ToneMappingArgs}. */
+/**
+ * Sets the renderer's tone mapping from {@link ToneMappingArgs}. An arg left out takes its
+ * default: Storybook leaves out of a story's args any whose `if` fails, and an undefined
+ * exposure makes an `OutputPass` draw every pixel black.
+ */
 export const RendererToneMapping = ({
-  toneMapping,
-  exposure,
-}: ToneMappingArgs) => {
+  toneMapping = toneMappingArgs.toneMapping,
+  exposure = toneMappingArgs.exposure,
+}: Partial<ToneMappingArgs>) => {
   const gl = useThree(state => state.gl);
   useEffect(() => {
     gl.toneMapping = TONE_MAPPING[toneMapping];

@@ -76,7 +76,8 @@ The stories' store holds four, coarse to fine: ETOPO 2022 from 12°W to 32°E an
 72°N at 2 arc-minutes (`etopo-2022-nordic`), ETOPO 2022 at 15″ and EMODnet at 1/8′ from
 Volve east to the coast (EMODnet has no land), and EMODnet at 1/16′ around Volve. They
 are not in git: `npm run generate-relief` fetches them into `public/relief/` (which git
-ignores). The demo store also bakes any of its surfaces into a relief on demand
+ignores), and `npm run build-static` runs it first, so the deployed Storybook has them.
+The demo store also bakes any of its surfaces into a relief on demand
 (`surface:<id>`, with `surfaceToRelief`), and makes StageDebug's synthetic ground; the
 stories add them over the demo reliefs as their own finest layers (`reliefLayers`,
 `skyReliefFromArgs`).
