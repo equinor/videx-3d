@@ -233,7 +233,7 @@ export const SkyDebugPanel = ({
 
   const sun = skySunPosition(args);
   const dip = (height: number) =>
-    args.curvedHorizon && height > 0
+    args.globe && height > 0
       ? Math.acos(SKY_EARTH_RADIUS / (SKY_EARTH_RADIUS + height))
       : 0;
 

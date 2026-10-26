@@ -239,11 +239,17 @@ export type SkyProps = {
   /** width of the horizon -> ground transition, as a sine of the angle below the horizon. Default 0.04 */
   horizonBlend?: number;
   /**
-   * The sea, the sky and the clouds follow the Earth's curve, so the horizon drops as the
-   * camera climbs (about 1° at 1 km, 4° at 15 km). Under a `SkyBoxStage` the sea stays flat
-   * over the disc that holds its `bounds`. The bakes keep a level horizon. Default true
+   * The Earth is a fixed globe (`SkyMaterial.globe`): the sea, the sky and the clouds follow
+   * its curve, so the horizon drops as the camera climbs (about 1° at 1 km, 4° at 15 km).
+   * Under a `SkyBoxStage` the sea stays flat over the disc that holds its `bounds`. The
+   * bakes keep a level horizon. Default true
+   *
+   * ⚠️ Off, the sea is a flat plane everywhere: right for one field seen from near it, wrong
+   * far from it, where the relief and anchored content stay flat too and the horizon never
+   * drops. Kept for comparison and for a host that needs a level horizon; to be revisited
+   * with the view's origin (see `documents/world.md`).
    */
-  curvedHorizon?: boolean;
+  globe?: boolean;
   /**
    * Draw the sky, and its `SkyBoxStage`, behind the scene. Switched instantly: nothing
    * is rebuilt or baked again, and the environment and the light probe stay on, lit by
@@ -359,7 +365,7 @@ export const Sky = ({
   north,
   intensity = skyDefaults.intensity,
   horizonBlend = skyDefaults.horizonBlend,
-  curvedHorizon = skyDefaults.curvedHorizon,
+  globe = skyDefaults.globe,
   background = true,
   abyss = false,
   ocean = false,
@@ -1073,8 +1079,8 @@ export const Sky = ({
 
   // Not baked: the bakes keep a level horizon.
   useLayoutEffect(() => {
-    material.curvedHorizon = curvedHorizon;
-  }, [material, curvedHorizon]);
+    material.globeEnabled = globe;
+  }, [material, globe]);
 
   useLayoutEffect(() => {
     if (water) material.linkOcean(water);
@@ -1413,7 +1419,7 @@ export const Sky = ({
     // the scene's and the bakes' stay by the sea's.
     const airHeight = height - airLevel;
     const dip =
-      material.curvedHorizon && airHeight > 0
+      material.globeEnabled && airHeight > 0
         ? Math.acos(SKY_EARTH_RADIUS / (SKY_EARTH_RADIUS + airHeight))
         : 0;
     material.setAirLight(elevation, dip, moonShine);

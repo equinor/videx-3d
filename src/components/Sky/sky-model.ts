@@ -508,7 +508,7 @@ export const skyDefaults = {
   },
   intensity: 1,
   horizonBlend: 0.04,
-  curvedHorizon: true,
+  globe: true,
   abyss: {
     level: 0,
     colors: { ceiling: '#2a2d32', horizon: '#4a5058', depth: '#0e1013' },

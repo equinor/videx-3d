@@ -385,7 +385,7 @@ export const SkyBoxStageReliefTiles = ({
     // No farther than can be seen: past the globe's horizon, the highest ground's own, and
     // the disc's flat sea, over which a view runs on level.
     let seen = reach;
-    if (sky.curvedHorizon) {
+    if (sky.globeEnabled) {
       const horizon =
         globe.discRadius +
         Math.sqrt(2 * SKY_EARTH_RADIUS * Math.max(altitude, 0)) +

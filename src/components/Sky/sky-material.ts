@@ -99,7 +99,7 @@ export class SkyMaterial extends ShaderMaterial {
   isSkyMaterial = true;
   /**
    * The Earth the sky draws: flat over the stage's disc ({@link setFlatSea}), at the
-   * sea's level, curved while {@link curvedHorizon}. What else lies on the globe — the
+   * sea's level, curved while {@link globeEnabled}. What else lies on the globe — the
    * relief, a route, an anchored field — takes it from here. Kept in step by the setters;
    * not to be set directly.
    */
@@ -245,7 +245,7 @@ export class SkyMaterial extends ShaderMaterial {
           new Vector2(skyDefaults.air.hazeHeight, skyDefaults.air.haze),
         ),
         uSkyCurvature: new Uniform(
-          skyDefaults.curvedHorizon ? 1 / SKY_EARTH_RADIUS : 0,
+          skyDefaults.globe ? 1 / SKY_EARTH_RADIUS : 0,
         ),
         uSkyStageFlat: new Uniform(new Vector4()),
         // The rectangle setFlatSea was given: its centre and half extents, world X/Z.
@@ -288,7 +288,7 @@ export class SkyMaterial extends ShaderMaterial {
     this.oceanBedDetail = ocean.seabed.detail;
     // The globe's own uniform objects, so every material sharing the sky's shares them too.
     Object.assign(this.uniforms, this.globe.uniforms);
-    this.globe.enabled = this.curvedHorizon;
+    this.globe.enabled = this.globeEnabled;
     this.globe.level = this.oceanLevel;
 
     if (Object.keys(parameters).length) this.setValues(parameters);
@@ -720,17 +720,20 @@ export class SkyMaterial extends ShaderMaterial {
     );
   }
 
-  /** the sea, the sky and the clouds follow the Earth's curve, so the horizon drops as the camera climbs */
-  get curvedHorizon(): boolean {
+  /**
+   * The sea, the sky and the clouds lie on the {@link globe}, so the horizon drops as the
+   * camera climbs; off, on a flat plane everywhere. The `Sky`'s `globe`.
+   */
+  get globeEnabled(): boolean {
     return this.uniforms.uSkyCurvature.value > 0;
   }
-  set curvedHorizon(value: boolean) {
+  set globeEnabled(value: boolean) {
     this.uniforms.uSkyCurvature.value = value ? 1 / SKY_EARTH_RADIUS : 0;
     this.globe.enabled = value;
   }
 
   /**
-   * With {@link curvedHorizon}, keep the sea flat over the disc that holds this rectangle,
+   * With {@link globeEnabled}, keep the sea flat over the disc that holds this rectangle,
    * `[minX, minZ, maxX, maxZ]` in world X/Z: where the scene is, so what meets the water
    * there meets it level. The {@link globe}'s disc: beyond it, the sea is the sphere. `null`
    * for none.

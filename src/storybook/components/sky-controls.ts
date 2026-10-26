@@ -158,7 +158,7 @@ export type SkyArgs = {
   abyssWallGlowColor: string;
   abyssWallRimFade: number;
   // Environment
-  curvedHorizon: boolean;
+  globe: boolean;
   environment: boolean;
   lightProbe: boolean;
   environmentIntensity: number;
@@ -286,7 +286,7 @@ export const skyArgs: SkyArgs = {
   abyssWallGlow: skyDefaults.abyss.walls.glow,
   abyssWallGlowColor: skyDefaults.abyss.walls.glowColor,
   abyssWallRimFade: skyDefaults.abyss.walls.rimFade,
-  curvedHorizon: skyDefaults.curvedHorizon,
+  globe: skyDefaults.globe,
   environment: true,
   lightProbe: true,
   environmentIntensity: 1,
@@ -503,7 +503,7 @@ export const skyPropsFromArgs = (args: SkyArgs) =>
     },
     intensity: args.skyIntensity,
     horizonBlend: args.skyHorizonBlend,
-    curvedHorizon: args.curvedHorizon,
+    globe: args.globe,
     background: args.drawSky && (args.skyVoid ? 'void' : true),
     subsurface: {
       intensity: args.subsurfaceIntensity,
@@ -1252,9 +1252,9 @@ const allSkyArgTypes = (): ArgTypes<SkyArgs> => ({
     ),
     if: { arg: 'abyssWalls' },
   },
-  curvedHorizon: toggle(
+  globe: toggle(
     ENVIRONMENT,
-    'The sea, the sky and the clouds follow the Earth\u2019s curve, so the horizon drops as the camera climbs: about 1\u00b0 at 1 km, 4\u00b0 at 15 km. The sea stays flat over the scene.',
+    'The Earth is a fixed globe: the sea, the sky and the clouds follow its curve, so the horizon drops as the camera climbs: about 1\u00b0 at 1 km, 4\u00b0 at 15 km. The sea stays flat over the scene. Off, a flat sea everywhere: only right near one field.',
   ),
   environment: toggle(
     ENVIRONMENT,

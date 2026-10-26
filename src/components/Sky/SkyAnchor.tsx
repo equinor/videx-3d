@@ -35,7 +35,7 @@ export type SkyAnchorProps = {
  * (`applyGlobe`).
  *
  * ⚠️ Assumes the default `up` (+Y), as a `SkyBoxStage` does. Without a globe, or with it
- * off (`curvedHorizon: false`), it does nothing.
+ * off (`globe: false` on the `Sky`), it does nothing.
  *
  * @group Components
  */

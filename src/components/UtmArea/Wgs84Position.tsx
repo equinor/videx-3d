@@ -24,7 +24,7 @@ export type Wgs84PositionProps = {
  *
  * @remarks
  * Through the area's UTM zone, and as flat as {@link UtmPosition}: `altitude` is the
- * area's Y. Far from the field, under a `Sky` with a curved horizon, what this places
+ * area's Y. Far from the field, under a `Sky` with its `globe` on, what this places
  * stands off the curved sea; see {@link UtmPosition}.
  *
  * @see {@link UtmArea}

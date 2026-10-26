@@ -60,7 +60,7 @@ export const SkyBoxStageReliefOverview = ({
   useFrame(({ camera }) => {
     if (!mesh.current) return;
     let beyond = true;
-    if (sky.curvedHorizon) {
+    if (sky.globeEnabled) {
       // The farthest the globe's horizon lies from the camera, and past it the highest
       // relief's own; over the disc a view runs on level as far as its edge.
       const altitude = sky.globe.altitude(camera.position);

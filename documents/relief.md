@@ -6,7 +6,7 @@ tiles, as fine as the data where the camera is and no finer anywhere else. Below
 it is the seabed, seen through the water as the stage's own seabed is; above sea level it
 is land, lit by the sky's sun and fading into the air as the far sea does. It covers
 everything out to the sea's horizon, the stage's own area and its occupants included, and
-with the sky's `curvedHorizon` falls away with the Earth's curve, so coasts and mountains
+with the sky's `globe` falls away with the Earth's curve, so coasts and mountains
 stand on the horizon where they should. It is off by default.
 
 ```tsx
@@ -108,7 +108,7 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
   the sea on it, so land beyond the scene meets it there. Nothing in either depends on the
   camera, so the ground holds still against the sea from anywhere. What is drawn flat
   beyond the disc stands off it unless placed on the globe (`SkyAnchor`, `applyGlobe`; see
-  [sky.md](./sky.md#the-curved-horizon)).
+  [sky.md](./sky.md#the-globe)).
 - The ground under the camera is the sky's (`oceanGround`): under the relief the camera is
   in the ground, for the lighting and the void.
 - `debug.hide: ['relief']` hides it, like the stage's other layers; `debug.relief`

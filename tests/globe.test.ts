@@ -293,7 +293,7 @@ describe('Globe, the camera', () => {
 describe('SkyMaterial.globe', () => {
   it('follows the sky: its stage, its sea level, its curve and its up', () => {
     const sky = new SkyMaterial();
-    expect(sky.globe.enabled).toBe(sky.curvedHorizon);
+    expect(sky.globe.enabled).toBe(sky.globeEnabled);
     expect(sky.globe.level).toBe(sky.oceanLevel);
     sky.setFlatSea(BOUNDS);
     expect(sky.globe.discRadius).toBe(5000);
@@ -302,9 +302,9 @@ describe('SkyMaterial.globe', () => {
     sky.oceanLevel = 7;
     expect(sky.globe.level).toBe(7);
     expect(sky.globe.discCentre.y).toBe(7);
-    sky.curvedHorizon = false;
+    sky.globeEnabled = false;
     expect(sky.globe.enabled).toBe(false);
-    sky.curvedHorizon = true;
+    sky.globeEnabled = true;
     expect(sky.globe.enabled).toBe(true);
     sky.setFrame({ up: [0, 3, 0] });
     expect(sky.globe.up.toArray()).toEqual([0, 1, 0]);

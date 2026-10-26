@@ -259,7 +259,7 @@ export type SkyBoxStageProps = {
  * the sea's `seabedOpacity` of 1), unless the camera is below it too.
  *
  * It reaches the camera's far plane beyond `bounds`, so every view ray that can reach
- * the scene crosses it rather than the sky's background. With the sky's `curvedHorizon` its
+ * the scene crosses it rather than the sky's background. With the sky's `globe` its
  * geometry stays flat, but beyond the disc that holds `bounds` it shades the sea falling
  * away with the Earth's curve, as the background does.
  *

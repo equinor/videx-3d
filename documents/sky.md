@@ -163,8 +163,8 @@ wide as clouds of `scale` look at that distance and as tall as ones of `thicknes
 take the same `coverage`, `softness`, `opacity`, `color` and `seed` as the deck's, and are lit
 the same way (both share `skyCloudColor`). The band melts into the air's haze over its
 distance, so it clears as the camera climbs and thickens toward the horizon. Climbing, it goes
-down with the horizon as the Earth's curve lowers it (see The curved horizon); on a flat sea
-(`curvedHorizon: false`) it stays on the horizon. With the curve it also squashes onto
+down with the horizon as the Earth's curve lowers it (see The globe); on a flat sea
+(`globe: false`) it stays on the horizon. With the curve it also squashes onto
 the horizon as far as its tops would sink seen from the camera's height: as clouds
 `bandDistance` off, and from over them as their layer's own horizon. By default its tops stand
 5.7° over the horizon up to about 1 km, 3.5° at its base's height, 1.2° at 15 km and 0.4° at
@@ -243,7 +243,7 @@ up leaves the air some 35 times sooner than one along the level (`SKY_AIR_LEVEL_
 which `SKY_AIR_PATH` counts). The air thins by e every `scaleHeight`, so the sky grows
 see-through long before it is gone. It keeps its gradient at every height, pale toward the
 horizon and dark overhead, and runs on smoothly across the level; below about 5 km nothing
-changes. From 10 km it is a deep blue overhead; with the curved horizon, from high up, a
+changes. From 10 km it is a deep blue overhead; on the globe, from high up, a
 thin glowing rim of air stays over the horizon under a black sky, its twilight colours with
 it. On the way to black it deepens to the blue overhead, and through the ozone layer
 (densest at 25 km, 15–35 km; `SKY_OZONE_LAYER`) it turns bluer still, as ozone takes out
@@ -258,7 +258,7 @@ it as before. The sea reflects the sky as seen from the sea. From over the cloud
 band's clouds are lit from above: white, or warm at twilight, instead of their shaded
 undersides.
 
-With the curved horizon, the sun sets later the higher up: from 20 km it is still up
+On the globe, the sun sets later the higher up: from 20 km it is still up
 4.5° below the level. So the sky's own light (its daylight, twilight and moonlight, the sun's
 colour, when the stars come out) goes by the sun over the horizon where it is seen: the
 camera's for the air above it, the sea's for the air low along the horizon, in between by
@@ -269,9 +269,9 @@ sea, the scene's light and the bakes keep the sea's light.
 The bakes film near the level, so the scene's light does not change with the camera's
 height. The sea's surface is hazed; the seabed seen through cut-away water is not.
 
-## The curved horizon
+## The globe
 
-`curvedHorizon` (default on) lets the sea, the sky and the clouds follow the Earth's curve
+`globe` (default on) lets the sea, the sky and the clouds follow the Earth's curve
 (`SKY_EARTH_RADIUS`): as the camera climbs, the horizon drops below the level by about
 √(2h/R) — 0.2° at 40 m, 1° at 1 km, 4° at 15 km — and from high up it bows across the
 view. The sea ends at it, its waves tipped with the curve so that the view grazes them there
@@ -279,7 +279,11 @@ and they reflect the horizon's colour. The sky's gradient, its twilight and the 
 are measured from it, the sun, moon and stars set behind it rather than at the level, and the
 clouds' band sits on it, squashed onto it from high up. The water reflects the sky as seen from
 where it lies, with its own level horizon: far out, where the sea is tipped with the curve, a
-wave's reflection is turned back by that tilt. Off, every one of them is as on a flat sea.
+wave's reflection is turned back by that tilt. Off, every one of them is as on a flat sea:
+right for one field seen from near it, but far from it the horizon never drops and the
+relief and anchored content stay flat. It is kept for comparison and for a host that needs
+a level horizon, to be revisited with the view's origin
+([world.md, step 4](./world.md#6-order-of-work)).
 
 The Earth is a fixed globe (`SkyMaterial.globe`, an sdk `Globe`; see
 [world.md](./world.md#9-step-2-in-detail-the-sky-on-a-fixed-globe)): a sphere whose centre
@@ -409,8 +413,8 @@ background, drawn with the sky's own shading so the two meet without a seam. Bei
 geometry, the water lies in front of what is under it, and the seabed hides what is
 below it at the sea's `seabedOpacity` — unless the camera is below it too. It reaches the camera's far plane
 beyond `bounds`, so every view ray that can reach the scene crosses it. With the sky's
-`curvedHorizon` it stays flat but shades the sea beyond the disc holding `bounds` on the
-globe (see The curved horizon).
+`globe` it stays flat but shades the sea beyond the disc holding `bounds` on the
+globe (see The globe).
 
 ```tsx
 const relief = { frame: reliefFrameFromCrs(crs), layers: [{ id: 'etopo-2022-nordic' }] }
