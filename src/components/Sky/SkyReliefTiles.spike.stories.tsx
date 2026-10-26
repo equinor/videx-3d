@@ -112,14 +112,15 @@ type ReliefTilesArgs = SkyArgs & {
   tileDebug: 'none' | 'tiles' | 'layers';
   panel: boolean;
   field: 'anchored' | 'free' | 'none';
+  facility: 'anchored' | 'free' | 'none';
 };
 
 /**
  * A stand-in for the field's content, flat at sea level as a field's is: a 4 km plate and
- * a 1.5 km mast, to see from far off whether it stays on the sea.
+ * a 1.5 km mast, to see from far off whether it stays on the sea. `at` is its middle.
  */
-const FieldStandIn = () => (
-  <group>
+const FieldStandIn = ({ at = [0, 0] }: { at?: [number, number] }) => (
+  <group position={[at[0], 0, at[1]]}>
     <mesh position-y={2}>
       <boxGeometry args={[4000, 4, 4000]} />
       <meshBasicMaterial color="#ff7a1a" />
@@ -181,6 +182,12 @@ const ReliefTiles = (storyArgs: ReliefTilesArgs) => {
             </SkyAnchor>
           )}
           {args.field === 'free' && <FieldStandIn />}
+          {args.facility === 'anchored' && (
+            <SkyAnchor at={POSITIONS.trench}>
+              <FieldStandIn at={POSITIONS.trench} />
+            </SkyAnchor>
+          )}
+          {args.facility === 'free' && <FieldStandIn at={POSITIONS.trench} />}
         </Sky>
       </SkyGenerators>
     </>
@@ -275,7 +282,14 @@ const meta = {
       control: { type: 'inline-radio' },
       options: ['anchored', 'free', 'none'],
       description:
-        'A stand-in for the field\u2019s content at Volve (a 4 km plate and a 1.5 km mast), flat at sea level: ANCHORED in a `SkyAnchor`, placed on the sea\u2019s curve each frame, or FREE, left where it is — from far off it stands off the sea, curved from under the camera while the relief is drawn from tiles.',
+        'A stand-in for the field\u2019s content at Volve (a 4 km plate and a 1.5 km mast), flat at sea level: ANCHORED in a `SkyAnchor` or FREE, left where it is. The globe is flat over the stage, so the two are the same: it stays on the sea from anywhere.',
+      table: { category: 'Debug' },
+    },
+    facility: {
+      control: { type: 'inline-radio' },
+      options: ['anchored', 'free', 'none'],
+      description:
+        'The same stand-in 123 km east, over the trench, beyond the globe\u2019s flat disc: ANCHORED in a `SkyAnchor` at its point, it stands on the sea, upright on the globe; FREE, flat as `UtmPosition` places it, it stands 1.2 km over the sea, leaning 1.1\u00b0 from the globe\u2019s up there.',
       table: { category: 'Debug' },
     },
     panel: {
@@ -297,6 +311,7 @@ const meta = {
     tileDebug: 'none',
     panel: true,
     field: 'anchored',
+    facility: 'none',
   },
 } satisfies Meta<typeof ReliefTiles>;
 

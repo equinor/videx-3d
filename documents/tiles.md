@@ -500,34 +500,35 @@ start-up only).
   `'error'` view is left out: the error is a tile's, which `'tiles'` already shows by
   depth.
 
-### The Earth's curve, and what lies on it (built 2026-10-25)
+### The Earth's curve, and what lies on it (built 2026-10-25; a fixed globe since 2026-10-26)
 
-The sky lowers its sea beyond a flat disc about the scene, measured along each view's level
-line from where the view leaves the disc. (To be replaced by a fixed globe, the disc's cap
-cut flat, with nothing measured from the camera but the horizon: world.md
-[step 2](./world.md#9-step-2-in-detail-the-sky-on-a-fixed-globe).) Seen from far off to one side, that drop depends
-on the view's direction: a point's drop changed by up to 4.5 km as the camera turned at
-40 km near Stavanger, and the relief rose and sank as the camera orbited. With tiles the
-ground curves with the sea everywhere, so:
+The sky draws the Earth as a fixed globe (world.md
+[step 2](./world.md#9-step-2-in-detail-the-sky-on-a-fixed-globe)): a sphere fixed below
+the scene, its cap over the stage's disc cut flat. The relief's vertices are placed on it
+(`globePlace` in `relief-tiles-vertex.glsl`): the ground at its map X/Z, its height and
+skirt along up there. Nothing is measured from the camera but the horizon, so the relief
+and the sea hold still against each other as the camera moves or turns.
 
-- **The curve follows the camera far off.** The stage sets `SkyMaterial.followAway` while
-  its relief is drawn from tiles, and `followFlatSea` then moves the disc under the camera
-  as it goes from 5 to 40 km past the disc's edge along the level (as it already did from
-  100 to 500 km up). With the disc under the camera, a point's drop depends on its distance
-  only.
-- **What is drawn flat goes onto the curve, rigidly.** With the disc away from the scene,
-  the scene's flat content would stand off the sea (about 600 m at 100 km). `SkyAnchor`
-  (inside the `Sky`) and `SkyBoxStageOccupant.anchor` (a group outside it, such as the
-  field's `UtmArea`) lower and tilt it each frame to where and how the sea lies at its
-  middle (`placeOnSkyCurve`, with `SkyMaterial.curveDrop` as the shaders' drop on the CPU).
-  The stage places the occupant's seabed the same way. Over a field the plane and the curve
-  part by `d² / 2R`: about 5 m at 8 km from the middle. Near the scene nothing moves.
+- **What is drawn flat goes onto the globe, rigidly.** `SkyAnchor` (inside the `Sky`) and
+  `SkyBoxStageOccupant.anchor` (a group outside it, such as the field's `UtmArea`) place
+  it where the globe has its point, turned to the up there (`placeOnGlobe`). Over the disc
+  that moves nothing, so a field never moves; across what is placed the plane and the
+  globe part by `d² / 2R`, about 5 m at 8 km from its point. `UtmPosition` and
+  `Wgs84Position` place flat ([world.md, For a host](./world.md#for-a-host)).
 - **Land past the horizon stays behind.** Where the triangles miss the curved sea, the
   relief brings land in front of the sea it should clear. A tile holds only its own ground,
   so it does so only where the sea is met within two of its cells, or over ground of the
   same tile; otherwise the sea is met over open water well in front, and the land lies
   past the horizon. (Judged by the fragment's own height alone, the UK's coast showed as
   bright streaks below the horizon from 300 km off.)
+
+Before the globe (2026-10-25) the sky lowered its sea beyond a flat disc, measured along
+each view's level line from where the view left the disc. Seen from far off to one side
+that drop depended on the view's direction — a point's drop changed by up to 4.5 km as the
+camera turned at 40 km near Stavanger — so the relief rose and sank as the camera orbited.
+The curve then followed the camera far off (`followAway`, `followFlatSea`, the disc moved
+under the camera from 5 to 40 km past its edge), and the anchors were lowered and tilted
+each frame (`placeOnSkyCurve`). The globe made both unnecessary.
 
 ### What it publishes: a `HeightFieldClip`
 
@@ -775,9 +776,9 @@ type ReliefSampler = SurfaceSampler & {
   elsewhere](#sampling-the-same-ground-elsewhere)), the same merge at full detail, one
   call for the whole route, nothing pinned.
 - **The curve.** `SkyAnchor` places field-sized content rigidly. Something long, outside
-  the field, must follow the Earth's curve per vertex as the relief does, or it floats
-  off it from afar: the drop becomes a shared GLSL chunk (`sky_curve_drop`) for any
-  material to include, with `SkyMaterial.curveDrop` its CPU twin.
+  the field, must be placed on the globe per vertex as the relief is, or it floats off it
+  from afar: the sdk's `globe.glsl` for any material to include, with `Globe` its CPU
+  twin.
 
 Built (2026-10-25), with these changes:
 
@@ -798,11 +799,12 @@ Built (2026-10-25), with these changes:
   `Pipeline` a square at every `spacing`. `selectPinnedTiles` walks all the squares
   together, each tile once with the squares over it, keeping what is in and wanting the
   first missing tile on each path at `PINNED_TILE_PRIORITY`, ahead of the view.
-- **The curve's chunk** is `shaders/sky-curve.glsl` (`skyCurveDrop`), which both relief
-  vertex shaders include. `applySkyCurve(material, sky)` puts it into any stock material:
-  each vertex is lowered after three's `project_vertex`, so log depth, the view position
-  lit materials read, and OIT's all see the drop. It is for content outside any anchor;
-  under one it would drop twice. GPU picking still picks the flat position.
+- **The globe's chunk** is the sdk's `materials/shaderLib/globe.glsl` (`globePlace`),
+  which both relief vertex shaders include (until 2026-10-26 the sky's own
+  `sky-curve.glsl`, `skyCurveDrop`). `applyGlobe(material, globe)` puts it into any stock
+  material: each vertex is placed after three's `project_vertex`, so log depth, the view
+  position lit materials read, and OIT's all see the globe. It is for content outside any
+  anchor; under one it would be placed twice. GPU picking still picks the flat position.
 
 Measured in `FieldColumn` (`reliefMarkers`): four facilities placed from UTM, two on the
 column's top and two past the outline, one of each on a levelled base. Each lands within
@@ -811,8 +813,8 @@ a plane over their footprint. From 14 km away, with the camera never near, all f
 on the same heights within 4 s, and stay put while the camera moves. (The first walk
 shared one visited set across squares, so only the first pin went below a shared root;
 the others got their leaves only when the view asked for them.) Two 4 km boxes on the sea
-150 km out, seen from 2 km up: the one with `applySkyCurve` sits on the horizon, the plain
-one 1.5 km above it.
+150 km out, seen from 2 km up: the one with `applySkyCurve` (now `applyGlobe`) sits on the
+horizon, the plain one 1.5 km above it.
 
 ---
 

@@ -22,6 +22,15 @@ export type UtmPositionProps = {
  *  </UtmPosition>
  * </UtmArea>
  *
+ * @remarks
+ * Flat: `altitude` is the area's Y, whatever the Earth does there. Under a `Sky` with a
+ * curved horizon that is exact over the sky's flat disc (a `SkyBoxStage`'s `bounds`), where
+ * a field lies. Beyond it the sea falls away with the globe and what this places does not:
+ * for a disc of 10 km, at sea level it stands about 25 m over the sea 20 km from the
+ * field's middle, 780 m at 100 km and 3.1 km at 200 km, upright in the scene rather than
+ * on the globe's up (1.8° apart at 200 km). To put such content on the globe, wrap it in a
+ * `SkyAnchor` at its point (`at`, from `utmToArea`). See documents/world.md, For a host.
+ *
  * @see {@link UtmArea}
  *
  * @group Components

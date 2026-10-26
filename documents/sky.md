@@ -281,22 +281,33 @@ clouds' band sits on it, squashed onto it from high up. The water reflects the s
 where it lies, with its own level horizon: far out, where the sea is tipped with the curve, a
 wave's reflection is turned back by that tilt. Off, every one of them is as on a flat sea.
 
-The sea stays flat over a disc about the scene, the one holding a `SkyBoxStage`'s `bounds`, so
-what meets the water there meets it level; without a stage the disc is a point at the world
-origin. Beyond its edge the sea falls away as a sphere's surface would, measured along each view
-ray's level line from the disc's edge, which is close enough where it shows. From 40 m over a
-10 km scene the horizon drops 0.15° rather than 0.2°; higher up the difference fades. From
-100 km up the disc moves toward the point under the camera, all the way by 500 km
-(`SkyMaterial.followFlatSea`, from `Sky` each frame): measured from a disc off to one side, the
-Earth's edge would kink toward the scene. How low a view passes through the air, which darkens
-the sky toward space, is measured on the same curve, so the rim of air sits on the sea's edge.
+The Earth is a fixed globe (`SkyMaterial.globe`, an sdk `Globe`; see
+[world.md](./world.md#9-step-2-in-detail-the-sky-on-a-fixed-globe)): a sphere whose centre
+lies fixed below the scene, its cap over a disc about the scene — the one holding a
+`SkyBoxStage`'s `bounds` — cut flat, so what meets the water there meets it level. The plane
+and the sphere meet on the disc's edge, at an angle of `r / R` (0.1° for a 16 km stage);
+without a stage the disc is a point at the world origin. Every point of the sea has one
+place whatever the camera does: nothing rises or sinks as it moves. Heights are over the
+globe — far from the scene scene Y is not altitude: at Y = 40 m, 200 km off, the camera is
+3 km over the sea — and so is up, which far off tilts from the scene's (1.8° at 200 km).
+The camera's controls keep the scene's up, so there the horizon rolls a little. How low a
+view passes through the air, which darkens the sky toward space, is measured on the same
+globe, so the rim of air sits on the sea's edge.
 
-A stage reaches the camera's far plane, so it draws most of the sea in view: its geometry and
-depth stay flat, but beyond the disc it shades the sea where the view meets the curve and leaves
-the sky above the curved horizon to the background, which then draws the very same sea. The void
-and the subsurface, the views from in the water and below the seabed, and the bakes stay flat:
-the bakes film a level horizon, as a few degrees barely change the light, so climbing never
-bakes. Switching it only changes a uniform; it costs about a square root per pixel.
+A stage reaches the camera's far plane, so it draws most of the sea in view: its geometry
+stays flat, a carrier for pixels each shaded where the view meets the globe, and beyond
+the disc it leaves the sky above the curved horizon to the background, which then draws
+the very same sea. With the camera beyond the disc its planes sink under it, so they lie
+below it however far the globe falls away. The void and the subsurface, the views from in
+the water and below the seabed, and the bakes stay flat: the bakes film a level horizon, as
+a few degrees barely change the light, so climbing never bakes. Switching it only changes a
+uniform; it costs about a square root per pixel.
+
+What is drawn flat beyond the disc goes onto the globe with a `SkyAnchor` (rigidly, about a
+point) or `applyGlobe(material, globe)` (per vertex, for what is long). `UtmPosition` and
+`Wgs84Position` place flat, at the area's Y: over the disc that is exact, but 200 km out
+what they place stands 3 km over the sea
+([world.md, For a host](./world.md#for-a-host)).
 
 ## Lighting the scene
 
@@ -398,8 +409,8 @@ background, drawn with the sky's own shading so the two meet without a seam. Bei
 geometry, the water lies in front of what is under it, and the seabed hides what is
 below it at the sea's `seabedOpacity` — unless the camera is below it too. It reaches the camera's far plane
 beyond `bounds`, so every view ray that can reach the scene crosses it. With the sky's
-`curvedHorizon` it stays flat but shades the sea beyond the disc holding `bounds` as curving
-away (see The curved horizon).
+`curvedHorizon` it stays flat but shades the sea beyond the disc holding `bounds` on the
+globe (see The curved horizon).
 
 ```tsx
 const relief = { frame: reliefFrameFromCrs(crs), layers: [{ id: 'etopo-2022-nordic' }] }
@@ -457,13 +468,14 @@ relief is the seabed everywhere, the occupants' ground included (see
 relief is drawn (`clip`, from the occupant's `onGround`), and answers what is placed on
 its top from the relief (`reliefSampler`, from the relief's `onSampler`). Give the
 sampler through `SurfaceSamplerContext` to what stands past the column, too.
-`applySkyCurve` lowers a material's vertices with the Earth's curve as the relief's are,
-for what is long and outside any anchor.
+`applyGlobe(material, globe)`, with the sky's globe (`useSkyOcean()?.material.globe`),
+places a material's vertices on the globe as the relief's are, for what is long and
+outside any anchor.
 
 Each occupant:
 
 - `outline` (scene X/Z) is its footprint: the cutaway takes its size from it, and its
-  `anchor` is placed on the sea's curve about its middle. With a relief, over it the
+  `anchor` is placed on the globe about its middle. With a relief, over it the
   cutaway takes the water but not the ground, and over its bounds `onGround` hands out
   the ground as drawn (a `HeightFieldClip`), with the tiles' error held to half a pixel.
   The relief knows the outlines of 4 occupants at most.
@@ -474,7 +486,8 @@ Each occupant:
   occupant's floor; with `keepBed: false` it is cut with the occupant inside the outline,
   for one occupant at most, and the sky draws the void's walls through the opening.
 - `anchor` is the occupant's own group, drawn outside the `Sky`, which the stage places
-  on the sea's curve each frame (see `SkyAnchor`). How the scene places itself on the
+  on the globe about the outline's middle (see `SkyAnchor`): over the disc, where an
+  occupant lies, that moves nothing. How the scene places itself on the
   Earth today, and a design for more than one field, are in [world.md](./world.md).
 - `onStage({ seabed, seabedOpacity, water })` tells the occupant what the stage does for
   it, whenever that changes:

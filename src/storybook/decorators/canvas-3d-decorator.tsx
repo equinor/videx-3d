@@ -12,6 +12,7 @@ import {
   waitForStableScene,
 } from '../debug/videx3d';
 import { profileFrames } from '../debug/profile';
+import { videx3dGlobe } from '../debug/globe';
 
 /**
  * Publishes `window.videx3d` for Storybook-driven inspection.
@@ -32,6 +33,7 @@ export const Videx3dBridge = ({ manager }: { manager: CameraManager }) => {
         setArgs: setStoryArgs,
         getArgs: getStoryArgs,
         profile: options => profileFrames(gl, scene, options),
+        globe: videx3dGlobe(scene, manager),
       }),
     [scene, gl, manager],
   );

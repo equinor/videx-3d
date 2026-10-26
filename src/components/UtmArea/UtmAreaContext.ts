@@ -23,6 +23,13 @@ export type UtmAreaContextProps = {
 
 /**
  * Utm Area context
+ *
+ * @remarks
+ * The conversions are flat: an altitude is the area's Y. Far from the field, under a `Sky`
+ * with a curved horizon, a point on the curved sea or on the relief reads as below the sea
+ * (about −3.1 km at 200 km out) and a little nearer the field than its map position (about
+ * 100 m at 200 km). See {@link UtmPosition}.
+ *
  * @group Contexts
  */
 export const UtmAreaContext = createContext<UtmAreaContextProps>(null!);

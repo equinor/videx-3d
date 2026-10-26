@@ -765,7 +765,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
 
   const viewOffset = useRef<Vec2 | null>(null);
   const builtFence = useRef<WellboreFence | null>(null);
-  // The field, placed on the sky's curve by the stage while it curves from far off.
+  // The field, placed on the sky's globe by the stage: over its flat disc, so it stays put.
   const fieldAnchor = useRef<Group>(null);
   const [fenceWindow, setFenceWindow] = useState<FenceWindow | null>(null);
   const awaiting = useRef<{

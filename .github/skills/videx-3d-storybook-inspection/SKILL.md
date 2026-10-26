@@ -48,6 +48,13 @@ Then `screenshot_page`.
 | `camera.pose()` | current pose, in the form `orbit` takes — paste it back to return |
 | `camera.settled()` | resolves when the controls stop moving |
 | `profile({frames, warmup, groups, timeout})` | frame GPU ms (timer query) and main-thread ms as median/p90, bake frames apart; with `groups` (`{ name: object => boolean }`) a second pass times those objects' draws |
+| `globe.orbit({at: [x, z], height, azimuth, polar, distance, transition})` | `camera.orbit` about the point `height` over the sea at map X/Z, its angles about the globe's up there (a story with a `Sky`) |
+| `globe.place(x, z, height)` / `globe.foot(p)` / `globe.altitude(p)` / `globe.up(p)` | the sky's globe in plain arrays: a point over the sea, the map point under `p`, its height over the sea, up there; `null` without a `Sky` |
+
+⚠️ Under a `Sky` far from the field (beyond its stage), **scene Y is not altitude**: the
+sea lies on a globe, 3 km below Y = 0 at 200 km. Pose there with `globe.orbit` or
+`globe.place`, never with a hard-coded Y. Sky stories with a `SkyDebugPanel` have buttons
+for the same.
 
 `profile` needs the tab in front and the user's hands off (ask first), and no other GPU
 timer open (`OITRenderPass.profile`). Hide-and-compare a draw with `object.layers.set(30)`

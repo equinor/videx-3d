@@ -103,10 +103,12 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
 - Land, and a dry seabed, fade through the air as the sea does, channel by channel and
   blue a little fastest, so distant land turns blue before it fades into the horizon,
   but keeps its own colour in most views.
-- The sea stays flat over the disc holding `bounds`, and the stage's sea surface writes
-  the depth of the curved sea beyond it, so land beyond the scene meets it there. Once the
-  camera is 5 to 40 km past the scene, the curve is measured from under the camera, and
-  the stage places each occupant's `anchor` (and a `SkyAnchor` its children) on it.
+- The sea stays flat over the disc holding `bounds` and lies on the sky's globe beyond it;
+  the relief is placed on the same globe, and the stage's sea surface writes the depth of
+  the sea on it, so land beyond the scene meets it there. Nothing in either depends on the
+  camera, so the ground holds still against the sea from anywhere. What is drawn flat
+  beyond the disc stands off it unless placed on the globe (`SkyAnchor`, `applyGlobe`; see
+  [sky.md](./sky.md#the-curved-horizon)).
 - The ground under the camera is the sky's (`oceanGround`): under the relief the camera is
   in the ground, for the lighting and the void.
 - `debug.hide: ['relief']` hides it, like the stage's other layers; `debug.relief`

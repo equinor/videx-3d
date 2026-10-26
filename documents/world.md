@@ -1,7 +1,8 @@
 # World: where on Earth, and more than one field
 
-> **Status (2026-10-26): design, decisions taken; step 1 built, step 2 built but for
-> [2d](#9-step-2-in-detail-the-sky-on-a-fixed-globe).** How the scene places
+> **Status (2026-10-26): design, decisions taken; steps 1 and
+> [2](#9-step-2-in-detail-the-sky-on-a-fixed-globe) built, step 2's cost over the sea still
+> to take back.** How the scene places
 > itself on the Earth today, what more than one field needs, and a plan for it. The open
 > questions are settled ([Decided](#7-decided-2026-10-26)): the Earth is a fixed globe.
 > Step 2 comes before the overlays ([tiles.md](./tiles.md) step 8); the rest waits for a
@@ -32,12 +33,14 @@ them in step by hand:
 | `Sky` `observer` | latitude, longitude and a date | the sun, moon, planets and stars |
 | `SkyBoxStage` `relief.frame` | a projection and an origin (`ReliefFrame`) | reading the reliefs onto the scene's X/Z |
 
-Above the surface the sky fakes the Earth's curve: the sea is flat over a disc about the
-scene (`uSkyFlat`, the stage's `bounds`), and falls away beyond it by `½ κ d²`, measured
-along each view's level line. Far off, the disc moves under the camera
-(`SkyMaterial.followFlatSea`: from 100 km up, or 5 to 40 km past the disc's edge while
-the relief is drawn from tiles), and what is drawn flat is placed on the curve rigidly
-with a `SkyAnchor` (see [tiles.md](./tiles.md#the-earths-curve-and-what-lies-on-it-built-2026-10-25)).
+Above the surface the sky draws the Earth as a fixed globe (step 2, built 2026-10-26): a
+sphere whose centre lies fixed below the scene and whose cap over a disc about it (the
+stage's `bounds`) is cut flat, so the scene meets the sea level and nothing rises or sinks
+as the camera moves ([Step 2 in detail](#9-step-2-in-detail-the-sky-on-a-fixed-globe)).
+Before it the sky faked the curve: flat over the disc and falling away by `½ κ d²` beyond,
+measured along each view, with the disc moved under a camera far off. The data stays flat:
+what is drawn flat beyond the disc — `UtmPosition` and `Wgs84Position` included — goes onto
+the globe with a `SkyAnchor` or `applyGlobe` ([For a host](#for-a-host)).
 
 Precision: the GPU works in 32-bit floats, a step of about 6 cm at 1000 km from the
 origin and 0.5 m at 8000 km. A field's data, to the centimetre near the origin, is fine;
@@ -72,9 +75,10 @@ Earth is a **fixed globe**: a sphere of radius `R` whose centre does not move, b
 chosen field. Every point has one place on it whatever the camera does, so nothing rises
 or sinks as the view turns or the camera moves. (Decided 2026-10-26, against a sphere
 touching the Earth just below the camera: that one rolls the Earth under a moving camera,
-and cannot hold tiles by latitude and longitude in fixed places.) Today's `½ κ d²` is close
-in height (under 1% off at 1000 km); what it fakes is where it is measured from — a disc,
-along each view — which is why the ground can rise and sink as the view turns.
+and cannot hold tiles by latitude and longitude in fixed places.) The faked curve before
+it (`½ κ d²`) was close in height (under 1% off at 1000 km); what it faked was where it was
+measured from — a disc, along each view — which is why the ground rose and sank as the
+view turned.
 
 Over the chosen field the sea is flat: the field's plane cuts the sphere's cap off over
 its disc, and the centre lies just far enough below for the two to meet exactly on the
@@ -120,10 +124,10 @@ observer's latitude and longitude being the origin's, or the camera's once it tr
 
 | Part | Today | With the proposal |
 |--|--|--|
-| `UtmArea` | the scene's frame, at the world origin | one field's frame, a group placed by its transform; takes a `GeoFrame`; nested `UtmPosition`, picking and annotations unchanged |
+| `UtmArea` | the scene's frame, at the world origin; `UtmPosition` and `Wgs84Position` flat ([For a host](#for-a-host)) | one field's frame, a group placed by its transform; takes a `GeoFrame`; nested `UtmPosition`, picking and annotations unchanged |
 | Chunks, wells, surfaces | in `UtmArea` | unchanged, inside their field's `UtmArea` |
-| `SkyAnchor` | lowers and tilts flat content onto the faked curve, each frame as the camera sees it | places it on the globe once, where it is (step 2); then becomes the field's placement on the Earth |
-| Sky curve | flat disc + `½ κ d²`, disc under the camera far off | a fixed globe, its cap over the chosen field cut flat (step 2) |
+| `SkyAnchor` | places flat content on the globe, where it is (step 2) | becomes the field's placement on the Earth |
+| Sky curve | a fixed globe, its cap over the chosen field cut flat (step 2) | the same, the globe placed from the chosen field's `GeoFrame` |
 | Sky observer | given by the host | derived from the camera's place on the Earth, the date still given |
 | Relief | read in the stage's `frame`, the scene's | read in a relief frame of its own, placed on the globe; independent of the chosen field |
 | Relief tiles | keyed in the frame's X/Z, roots of 2097 km about its origin | keyed by latitude and longitude for the whole globe (step 6); until then as now, within one region |
@@ -156,7 +160,7 @@ Nothing above is needed for one field. What keeps it cheap to add later:
 | # | Step | Ends with |
 |--|--|--|
 | 1 | **One place for where:** sdk helpers that derive the relief's frame (`reliefFrameFromCrs`) and the sky's observer place (`crsOriginLocation`) from the CRS a `UtmArea` is given; the sky stories take all three from one CRS (`demoCrs`) | ✅ built (2026-10-25) |
-| 2 | **The sky on a fixed globe** ([in detail](#9-step-2-in-detail-the-sky-on-a-fixed-globe)): the sea, the horizon, the air and the clouds on a sphere fixed below the chosen field, flat over its disc; the relief and anchored content placed on it with no camera in the sum; `followFlatSea` and `followAway` go | next (2026-10-26), before tiles.md step 8. Ends with the same pictures at one field, nothing moving anywhere |
+| 2 | **The sky on a fixed globe** ([in detail](#9-step-2-in-detail-the-sky-on-a-fixed-globe)): the sea, the horizon, the air and the clouds on a sphere fixed below the chosen field, flat over its disc; the relief and anchored content placed on it with no camera in the sum; `followFlatSea` and `followAway` go | ✅ built (2026-10-26): the same pictures at one field, nothing moving anywhere. It costs 2–4 ms a frame over the sea, to take back (see 2d) |
 | 3 | **Fields placed on the Earth:** a field's transform from its frame; `SkyAnchor` becomes it. `GeoFrame`: `ReliefFrame` becomes it, `UtmArea` takes one, a `CRS` is built from one | one field, through the new path |
 | 4 | **The view's origin:** re-based in steps; transforms composed in 64 bits. The world moves under the camera, never the camera's controls: at each step the view's frame becomes the one under the camera, its up away from the globe's centre, and the host is told (a callback with the step's transform) to set its controls' position and target to the moved ones, which any controls can. Ready-made for drei's `CameraControls`, which the stories use; a host that does not take it keeps the scene's up, and the horizon tilts far off | a camera 1000 km out with a field's data as precise as at home, and a level horizon |
 | 5 | **The relief in its own frame:** drawn on the globe, read by each field's column through the bridge with a transform | the relief independent of the chosen field |
@@ -190,6 +194,10 @@ step 6 for one that needs to see beyond one region (about 2000 km).
 - **Picking and annotations across fields:** each field's `UtmArea` keeps its own
   context; a pick says which field it hit.
 - **The date** stays the host's, as the sky observer's is.
+- **`UtmPosition` and `Wgs84Position` stay flat** for now: they place at the area's
+  Y = `altitude`, as before, and far from the field what they place stands off the curved
+  sea; the behaviour is documented ([For a host](#for-a-host)) rather than changed. To
+  revisit with step 3, where `UtmArea` becomes a field's transform.
 
 - **The camera's controls are never changed by the library,** as a host may use any.
   Step 2 leaves the camera to them, in scene units with the scene's up; step 4 moves the
@@ -220,7 +228,7 @@ step 6 for one that needs to see beyond one region (about 2000 km).
 
 ## 9. Step 2 in detail: the sky on a fixed globe
 
-> Design (2026-10-26); 2a–2c built, 2d next.
+> Design (2026-10-26); built (2026-10-26), its cost over the sea still to take back (2d).
 
 Today the curve is measured from the camera in about ten places, and the disc it is
 flat over moves under a camera far off (`followFlatSea`, `followAway`). After this step
@@ -335,7 +343,19 @@ planes face up).
   a view across the direction to the field shows the horizon rolled by 1.8°. Step 4
   levels it without touching the controls (see [Order of work](#6-order-of-work)).
 - **Content beyond the disc drawn flat** still needs a `SkyAnchor` or `applyGlobe`, as
-  today, but it no longer moves as the camera does.
+  before, but it no longer moves as the camera does.
+- **`UtmPosition` and `Wgs84Position` are flat** (decided, [above](#7-decided-2026-10-26)):
+  `altitude` is the area's Y. Over the disc that is exact. Beyond it what they place stands
+  off the sea by `(d² − r²) / 2R` at `d` from the disc's middle — for a disc of 10 km about
+  25 m at 20 km, 270 m at 60 km, 780 m at 100 km, 3.1 km at 200 km — upright in the scene
+  rather than on the globe's up (`d / R`: 1.8° at 200 km), and, against the relief and the
+  sea, which the globe pulls in a little, about 100 m farther out at 200 km (12 m at
+  100 km). The flat conversions back (`areaToUtm`, `worldToUtm`, `areaToWgs84`,
+  `worldToWgs84`) read the same in reverse: a point on the sea 200 km out reads an
+  altitude of −3.1 km and a map position 100 m nearer the field. Wrapped in a `SkyAnchor`
+  at its point (`at`, from `utmToArea`), such content stands on the globe, upright there;
+  for a reading, `globe.foot(point)` and `globe.altitude(point)` give the map point and
+  the altitude.
 
 ### With and without a sky
 
@@ -377,4 +397,4 @@ way of drawing, applied on top.
 | 2a | **The globe on the CPU:** `Globe` in the sdk (the centre from its disc; `altitude`, `up`, `place`, `reach`); the `Sky` owns one, `setFlatSea` setting its disc; tests | ✅ built (2026-10-26); nothing drawn changes. `SkyMaterial.globe`, kept in step by `setFlatSea`, `oceanLevel`, `curvedHorizon` and `setFrame`; `tests/globe.test.ts` |
 | 2b | **Everything drawn, at once,** so the ground and the sea always agree: `globe.glsl` for `sky-curve.glsl`; the sea, horizon, air and clouds; the stage; the relief's tiles and overview; `applyGlobe`; the anchors placed once; `followFlatSea`, `followAway` and their constants gone | ✅ built (2026-10-26), with 2c. Against step 2a, clouds off, rows averaged: at the field and out to the coast within 4 levels, the waves' own noise (30 levels at 2 m); the horizon from 100 km 10 levels apart, the sphere now exact. Low on the horizon the clouds' band is brighter, its flat-sea sink gone. Far off the stage's planes sink under the camera ([The stage far off](#the-stage-far-off)) |
 | 2c | **Far off:** the tiles' selection and culling on the globe, the farthest seen, the ground under the camera | ✅ built with 2b: the ground under the camera at its foot (`Globe.foot`), the farthest seen from its altitude, boxes from corners placed on the globe. By eye at the coast and Lysefjord; the orbit and the timings in 2d |
-| 2d | **For a host:** `globe.place` in the stories and `videx3d.globe`, their far poses; sky.md (the curve, `SkyAnchor`, the globe), tiles.md's curve section, relief.md; the timings | step 2 done |
+| 2d | **For a host:** `globe.place` in the stories and `videx3d.globe`, their far poses; sky.md (the curve, `SkyAnchor`, the globe), tiles.md's curve section, relief.md; the timings | ✅ built (2026-10-26): `videx3d.globe` (`place`, `foot`, `altitude`, `up`, `orbit` about a point on the globe), shared with the debug panel; ReliefTiles' `facility`, a stand-in 123 km out, anchored or flat; `UtmPosition` and `Wgs84Position` documented ([For a host](#for-a-host)); the documents. Nothing moving: orbiting the coast 215 km out at 20 and 40 km, the globe's uniforms are the same from every pose and the coast holds. ⚠️ **Timed** A/B/A against 2a in ReliefTiles (GPU ms, frame and the background's draws): 40 m over Volve 12.1 → 14.9–16.7 (2.6 → 3.9–6.4), 100 km 14.5 → 17.3 (2.9 → 5.5), the coast 12.9 → 17.3–22.9 (2.5 → 4.1–5.2), Lysefjord 10.7 → 14.6 (3.8 → 6.0); the relief +0.5–2 ms, the stage +0.6–1.2; in the water and below the seabed the same or less. With `curvedHorizon` off the two match within noise, so it is the globe's own arithmetic per pixel: the camera's altitude and horizon about 20 times a pixel in the sky, each with a square root, and the relief's up and map point per pixel. Not within noise, as expected: to take back before step 3 |

@@ -283,7 +283,7 @@ const StageDebug = (storyArgs: StageDebugArgs) => {
           />
         )}
         {args.spheres > 0 && (
-          // On the sea's curve with the stage, from far off.
+          // On the globe with the stage: over its flat disc, so they never move.
           <SkyAnchor>
             <StandInSpheres
               count={args.spheres}

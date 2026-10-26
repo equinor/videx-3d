@@ -7,6 +7,7 @@ import { CameraLookAtEvent } from '../../events/camera-events';
 import { Vec3 } from '../../sdk';
 import type { Globe } from '../../sdk/projection/globe';
 import { directionFromCompass } from '../../sdk/utils/vector-operations';
+import { findSceneGlobe } from '../debug/globe';
 import { SkyArgs, skyArgs, skySunPosition } from './sky-controls';
 
 /** `hour` of the day as `hh:mm`. */
@@ -147,20 +148,6 @@ const formatHeight = (height: number) =>
     ? `${height.toFixed(0)} m`
     : `${(height / 1000).toFixed(2)} km`;
 
-// The sky's globe, from the scene: the panel lies outside the `Sky`. Null without one.
-function findGlobe(scene: Object3D): Globe | null {
-  let globe: Globe | null = null;
-  scene.traverse(object => {
-    if (globe) return;
-    const material = (object as Mesh).material as
-      | { isSkyMaterial?: boolean; globe?: Globe }
-      | undefined;
-    if (material && !Array.isArray(material) && material.isSkyMaterial)
-      globe = material.globe ?? null;
-  });
-  return globe;
-}
-
 const SCENE_UP = new Vector3(0, 1, 0);
 
 // Up where the camera is: the globe's there, else the scene's.
@@ -253,7 +240,7 @@ export const SkyDebugPanel = ({
   // The sky's globe, found again whenever there is none yet.
   const globe = useRef<Globe | null>(null);
   const currentGlobe = () => {
-    if (!globe.current) globe.current = findGlobe(scene);
+    if (!globe.current) globe.current = findSceneGlobe(scene);
     return globe.current;
   };
   // The map point under the camera and its height over the sea: over the globe with one.

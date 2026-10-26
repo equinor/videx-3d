@@ -1,6 +1,7 @@
 import { Box3, Object3D, Scene, Vector3 } from 'three';
 import { CameraManager } from '../../sdk/managers/CameraManager';
 import { Vec3 } from '../../sdk';
+import type { Videx3dGlobe } from './globe';
 import type { ProfileOptions, ProfileResult } from './profile';
 
 /**
@@ -27,6 +28,8 @@ export type Videx3dHandle = {
   getArgs: () => Record<string, unknown> | null;
   /** GPU and main-thread frame times, and per-draw times of named groups (see `profileFrames`) */
   profile: (options?: ProfileOptions) => Promise<ProfileResult>;
+  /** the sky's globe: where the sea is far from the field, and poses over it (null answers without a `Sky`) */
+  globe: Videx3dGlobe;
 };
 
 declare global {
