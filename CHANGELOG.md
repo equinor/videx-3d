@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.4.3](https://github.com/equinor/videx-3d/compare/v3.4.2...v3.4.3) (2026-10-26)
+
+
+### Bug Fixes
+
+* dependabot oct 26 ([#309](https://github.com/equinor/videx-3d/issues/309)) ([f3048aa](https://github.com/equinor/videx-3d/commit/f3048aa915fb4055650e623b958c1508c9169bab))
+* **npm:** bump markdown-it from 14.3.2 to 14.3.3 ([#304](https://github.com/equinor/videx-3d/issues/304)) ([2cd244c](https://github.com/equinor/videx-3d/commit/2cd244c99da815fe795e99f461fe57c73ddb24af))
+* **npm:** bump vite from 8.1.3 to 8.3.5 ([#305](https://github.com/equinor/videx-3d/issues/305)) ([1bb3e94](https://github.com/equinor/videx-3d/commit/1bb3e94cc9829fddb35b9ab2e2e567529c26efe0))
+
 ## [3.4.2](https://github.com/equinor/videx-3d/compare/v3.4.1...v3.4.2) (2026-10-06)
 
 
