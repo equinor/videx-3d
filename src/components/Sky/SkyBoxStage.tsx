@@ -50,7 +50,7 @@ import {
 } from './sky-relief-tiles';
 import type { ReliefSampler } from './sky-relief-sampler';
 import { useSkyOcean } from './sky-context';
-import { placeOnSkyCurve } from './sky-anchor';
+import { placeOnGlobe } from './sky-anchor';
 import { skyRelief, SkyReliefResponse } from './sky-defs';
 import {
   createSkyStageMaterial,
@@ -151,12 +151,12 @@ export type SkyBoxStageOccupant = {
    */
   onGround?: (clip: HeightFieldClip | null) => void;
   /**
-   * The occupant's own group, which the stage places on the sea's curve each frame (see
-   * `SkyAnchor`), about the middle of its `outline` (or of `bounds` without one): for an
-   * occupant drawn outside the `Sky`. Seen from far off, the sky curves the sea over the
-   * scene too, and what is drawn flat would stand off it. It is set back as it was once
-   * the stage lets go of it. ⚠️ Its position and rotation are the stage's: give it a group
-   * of its own.
+   * The occupant's own group, which the stage places on the sky's globe (see `SkyAnchor`),
+   * about the middle of its `outline` (or of `bounds` without one): for an occupant drawn
+   * outside the `Sky`. On the globe's disc — the stage's own `bounds` — nothing moves; an
+   * occupant beyond it is turned onto the globe where it lies. It is set back as it was
+   * once the stage lets go of it. ⚠️ Its position and rotation are the stage's: give it a
+   * group of its own.
    */
   anchor?: RefObject<Object3D | null>;
 };
@@ -442,16 +442,14 @@ export const SkyBoxStage = ({
     // Out to the far plane (stage-vertex keeps its vertices inside): any shorter, and the
     // scene between would show through the sky's sea, drawn on the far plane.
     sky.setOceanStage(extent, far);
-    // Flat over the stage's whole area, so the scene and the ground about it meet level.
+    // Flat over the stage's whole area, so the scene and the ground about it meet level:
+    // the globe's disc.
     sky.setFlatSea([minX, minZ, maxX, maxZ]);
-    // Tiles curve the ground as the sea, so the curve may follow the camera far off.
-    sky.followAway = tiled;
     return () => {
       sky.setOceanStage(null);
       sky.setFlatSea(null);
-      sky.followAway = false;
     };
-  }, [sky, extent, far, minX, minZ, maxX, maxZ, tiled]);
+  }, [sky, extent, far, minX, minZ, maxX, maxZ]);
 
   // The relief's ground under the camera, which the sky takes for its own there below the
   // sea surface.
@@ -509,7 +507,7 @@ export const SkyBoxStage = ({
       const object = anchor?.current;
       if (!object) return;
       const [ax, az] = anchorCentres[i] ?? [cx, cz];
-      placeOnSkyCurve(object, sky, camera.position, ax, az);
+      placeOnGlobe(object, sky.globe, ax, az);
       now.push(object);
     });
     for (const object of placed.current) {
@@ -520,14 +518,13 @@ export const SkyBoxStage = ({
     placed.current = now;
     // Under the seabed's level the void's lid hides the water, seabed or not: the surface
     // would discard every pixel.
+    const altitude = sky.globe.altitude(camera.position);
     if (surface.current)
-      surface.current.visible =
-        surfaceShown &&
-        camera.position.dot(sky.up) - sky.oceanLevel + sky.oceanDepth >= 0;
+      surface.current.visible = surfaceShown && altitude + sky.oceanDepth >= 0;
     if (!tiled) return;
     const underRelief = reliefGround.current;
     sky.oceanGround =
-      camera.position.y > ocean.level || underRelief === null
+      altitude > 0 || underRelief === null
         ? null
         : // No deeper than the sea's own seabed: under it lies the void, wherever the
           // relief is deeper (documents/tiles.md, Costs and risks).
@@ -706,7 +703,6 @@ export const SkyBoxStage = ({
           grid={reliefGrid}
           color={relief.color ?? RELIEF_LAND_COLOR}
           reach={far}
-          level={level}
           bedDetail={bedDetail}
           skyOrder={ocean.renderOrder + 1}
           visible={shown('relief')}

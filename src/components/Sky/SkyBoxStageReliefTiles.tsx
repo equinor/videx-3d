@@ -6,6 +6,7 @@ import {
   Frustum,
   InstancedBufferAttribute,
   Matrix4,
+  Vector3,
   Vector4,
 } from 'three';
 import { useGenerator } from '../../hooks/useGenerator';
@@ -341,7 +342,13 @@ export const SkyBoxStageReliefTiles = ({
   });
   const frame = useRef(0);
   const view = useMemo(
-    () => ({ frustum: new Frustum(), matrix: new Matrix4(), box: new Box3() }),
+    () => ({
+      frustum: new Frustum(),
+      matrix: new Matrix4(),
+      box: new Box3(),
+      corner: new Vector3(),
+      foot: new Vector3(),
+    }),
     [],
   );
   const tiles = geometry.getAttribute('reliefTile') as InstancedBufferAttribute;
@@ -351,7 +358,12 @@ export const SkyBoxStageReliefTiles = ({
 
   useFrame(({ camera, size, viewport }) => {
     const { streamer, slotOf } = streaming;
-    const { x, y, z } = camera.position;
+    const globe = sky.globe;
+    // The camera in the tiles' own frame, the map's: the map point under it, and its
+    // altitude over the globe. Over the globe's disc, where it is.
+    const { x, z } = globe.foot(camera.position, view.foot);
+    const altitude = globe.altitude(camera.position);
+    const y = level + altitude;
     view.matrix.multiplyMatrices(
       camera.projectionMatrix,
       camera.matrixWorldInverse,
@@ -359,7 +371,7 @@ export const SkyBoxStageReliefTiles = ({
     view.frustum.setFromProjectionMatrix(view.matrix);
 
     // The ground under the camera, from the finest tile in there, whether drawn or not:
-    // the one under a camera looking level is out of view. The curve drops nothing there.
+    // the one under a camera looking level is out of view.
     let ground: number | null = null;
     for (let depth = MAX_DEPTH; depth >= 0 && ground === null; depth--) {
       const tile = streamer.get(tileKeyAt(depth, x, z));
@@ -370,16 +382,13 @@ export const SkyBoxStageReliefTiles = ({
     material.uniforms.uReliefCameraUnder.value =
       ground !== null && y < ground ? 1 : 0;
 
-    // No farther than can be seen: past the curved sea's horizon, the highest ground's own.
+    // No farther than can be seen: past the globe's horizon, the highest ground's own, and
+    // the disc's flat sea, over which a view runs on level.
     let seen = reach;
-    const curvature = sky.uniforms.uSkyCurvature.value as number;
-    const flat = sky.uniforms.uSkyFlat.value as Vector4;
-    const inner = flat.w - Math.hypot(x - flat.x, z - flat.z);
     if (sky.curvedHorizon) {
       const horizon =
-        flat.w +
-        Math.hypot(x - flat.x, z - flat.z) +
-        Math.sqrt(2 * SKY_EARTH_RADIUS * Math.max(y - level, 0)) +
+        globe.discRadius +
+        Math.sqrt(2 * SKY_EARTH_RADIUS * Math.max(altitude, 0)) +
         Math.sqrt(
           2 * SKY_EARTH_RADIUS * Math.max(streaming.reached.highest, 0),
         );
@@ -405,16 +414,25 @@ export const SkyBoxStageReliefTiles = ({
       minY: number,
       maxY: number,
     ) => {
-      // Lowered by the most the Earth's curve drops any of it, and by a skirt.
-      const far = Math.hypot(
-        Math.max(Math.abs(minX - x), Math.abs(maxX - x)),
-        Math.max(Math.abs(minZ - z), Math.abs(maxZ - z)),
+      // Where the globe has it: its corners from its lowest (and a skirt) to its highest,
+      // and its middle at its highest, which bulges over the corners on the sphere.
+      const { box, corner } = view;
+      const low = minY - level - (maxX - minX) * 0.01;
+      const high = maxY - level;
+      box.makeEmpty();
+      for (const [cx, cz] of [
+        [minX, minZ],
+        [maxX, minZ],
+        [minX, maxZ],
+        [maxX, maxZ],
+      ]) {
+        box.expandByPoint(globe.place(cx, cz, low, corner));
+        box.expandByPoint(globe.place(cx, cz, high, corner));
+      }
+      box.expandByPoint(
+        globe.place((minX + maxX) / 2, (minZ + maxZ) / 2, high, corner),
       );
-      const past = Math.max(far - inner, 0);
-      const drop = 0.5 * curvature * past * past;
-      view.box.min.set(minX, minY - drop - (maxX - minX) * 0.01, minZ);
-      view.box.max.set(maxX, maxY, maxZ);
-      return view.frustum.intersectsBox(view.box);
+      return view.frustum.intersectsBox(box);
     };
 
     const selection = selectQuadtreeTiles({

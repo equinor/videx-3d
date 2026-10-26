@@ -109,6 +109,7 @@ export * from './utils/typed-2d-array';
 export * from './utils/typed-array';
 export * from './utils/vector-operations';
 
+export * from './materials/apply-globe';
 export * from './materials/depth-material';
 export * from './materials/fence-field';
 export * from './materials/height-field-clip';

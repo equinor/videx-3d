@@ -205,6 +205,21 @@ export class Globe {
   }
 
   /**
+   * The map point under `point`: where the line from the sphere's centre through it meets
+   * the level plane, which {@link place} carries back. Under the disc, straight down.
+   */
+  foot(point: Vector3, target: Vector3): Vector3 {
+    const up = this.sceneUp;
+    v.subVectors(point, this.c);
+    const h = v.dot(up);
+    flat.copy(v).addScaledVector(up, -h);
+    const onDisc = !this.on || flat.lengthSq() <= this.discR * this.discR;
+    return target
+      .copy(this.c)
+      .addScaledVector(flat, onDisc ? 1 : this.s / (h + this.s));
+  }
+
+  /**
    * Where a view from `origin` along `dir` meets the surface `below` lower (a seabed:
    * the plane `below` down over the disc, the sphere of radius `R − below` beyond). From
    * above it only: from on or under it, no hit at distance 0. A miss reports where the

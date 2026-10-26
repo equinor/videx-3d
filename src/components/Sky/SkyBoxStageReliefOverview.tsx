@@ -1,6 +1,6 @@
 import { useFrame } from '@react-three/fiber';
 import { useEffect, useMemo, useRef } from 'react';
-import { ColorRepresentation, Mesh, Vector4 } from 'three';
+import { ColorRepresentation, Mesh } from 'three';
 import type { ReliefGrid } from '../../sdk/geometries/relief-grid';
 import {
   createSkyReliefFarMaterial,
@@ -16,7 +16,6 @@ type SkyBoxStageReliefOverviewProps = {
   color: 'ramp' | ColorRepresentation;
   /** how far from the camera the tiles draw: the overview draws past it */
   reach: number;
-  level: number;
   /** the sky's seabed detail (its key), compiled into the material with the sky's defines */
   bedDetail?: string;
   /** the sky's sea surface layer's `renderOrder`: the overview draws after it */
@@ -33,7 +32,6 @@ export const SkyBoxStageReliefOverview = ({
   grid,
   color,
   reach,
-  level,
   bedDetail,
   skyOrder,
   visible,
@@ -63,14 +61,12 @@ export const SkyBoxStageReliefOverview = ({
     if (!mesh.current) return;
     let beyond = true;
     if (sky.curvedHorizon) {
-      // The farthest the curved sea's horizon lies along any bearing (it curves away from
-      // the disc the sea is flat over), and past it the highest relief's own horizon.
-      const { x, y, z } = camera.position;
-      const flat = sky.uniforms.uSkyFlat.value as Vector4;
+      // The farthest the globe's horizon lies from the camera, and past it the highest
+      // relief's own; over the disc a view runs on level as far as its edge.
+      const altitude = sky.globe.altitude(camera.position);
       const horizon =
-        flat.w +
-        Math.hypot(x - flat.x, z - flat.z) +
-        Math.sqrt(2 * SKY_EARTH_RADIUS * Math.max(y - level, 0)) +
+        sky.globe.discRadius +
+        Math.sqrt(2 * SKY_EARTH_RADIUS * Math.max(altitude, 0)) +
         Math.sqrt(2 * SKY_EARTH_RADIUS * Math.max(grid.max, 0));
       beyond = horizon > reach;
     }

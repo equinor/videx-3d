@@ -1,8 +1,9 @@
 import { useFrame } from '@react-three/fiber';
 import { ReactNode, useEffect, useRef } from 'react';
-import { Group, Vector4 } from 'three';
+import { Group } from 'three';
+import type { Globe } from '../../sdk/projection/globe';
 import type { Vec2 } from '../../sdk/types/common';
-import { placeOnSkyCurve } from './sky-anchor';
+import { placeOnGlobe } from './sky-anchor';
 import { useSkyOcean } from './sky-context';
 
 /**
@@ -11,58 +12,51 @@ import { useSkyOcean } from './sky-context';
  */
 export type SkyAnchorProps = {
   /**
-   * World X/Z of the point placed on the curve: what lies there meets the curved sea
-   * level and square. Default the middle of the flat sea's disc — a `SkyBoxStage`'s
-   * `bounds` — where a field usually lies.
+   * World X/Z of the point placed on the globe: what lies there meets the globe's sea level
+   * and square. Default the middle of the globe's disc — a `SkyBoxStage`'s `bounds` — where
+   * a field usually lies, and where nothing moves.
    */
   at?: Vec2;
+  /** the globe to place on; default the enclosing {@link Sky}'s */
+  globe?: Globe;
   children?: ReactNode;
 };
 
 /**
- * Places its children on the curve of the enclosing {@link Sky}'s sea, rigidly, each
- * frame: lowered by as much as the sea is at `at` and tilted to its slope there, so a
- * field — a chunk stack, wellbores, anything drawn flat — stays on the sea as the sky
- * curves it, seen from anywhere.
- *
- * While the camera is near the scene the sea is flat over it, and the children are not
- * moved at all. Once the camera is far off along the level (or high up), and while the
- * ground curves with the sea (a stage's relief drawn from tiles), the sky measures its
- * curve from under the camera (`SkyMaterial.followFlatSea`), and the scene's disc falls
- * away with the rest: without an anchor, what lies on it would stand off the sea. Over a
- * field the curve and the plane it is placed on then part by `d² / 2R`: about 5 m at 8 km
- * from `at`, 20 m at 16 km.
+ * Places its children rigidly on the globe — the enclosing {@link Sky}'s, or `globe` —
+ * about `at`: what lies there goes where the globe has it, turned so the scene's up is the
+ * globe's up there (`Globe.place`). For content drawn flat that lies beyond the globe's flat
+ * disc: a second field, a facility far out. Over the disc nothing moves, so the field the
+ * sky is about never does; the plane and the globe part by `d² / 2R` across what is placed,
+ * about 5 m at 8 km from `at`. Nothing in it depends on the camera.
  *
  * What lies outside the `Sky` can be anchored by the stage it occupies instead
- * (`SkyBoxStageOccupant.anchor`).
+ * (`SkyBoxStageOccupant.anchor`); what is long rather than rigid, per vertex
+ * (`applyGlobe`).
  *
- * ⚠️ Assumes the default `up` (+Y), as a `SkyBoxStage` does. Without a sky with a sea, or
- * without `curvedHorizon`, it does nothing.
+ * ⚠️ Assumes the default `up` (+Y), as a `SkyBoxStage` does. Without a globe, or with it
+ * off (`curvedHorizon: false`), it does nothing.
  *
  * @group Components
  */
-export const SkyAnchor = ({ at, children }: SkyAnchorProps) => {
+export const SkyAnchor = ({ at, globe, children }: SkyAnchorProps) => {
   const material = useSkyOcean()?.material ?? null;
+  const placing = globe ?? material?.globe ?? null;
   const group = useRef<Group>(null);
   const ax = at?.[0];
   const az = at?.[1];
 
   useEffect(() => {
-    if (material) return;
+    if (placing) return;
     group.current?.position.set(0, 0, 0);
     group.current?.quaternion.identity();
-  }, [material]);
+  }, [placing]);
 
-  useFrame(({ camera }) => {
-    if (!group.current || !material) return;
-    const stage = material.uniforms.uSkyStageFlat.value as Vector4;
-    placeOnSkyCurve(
-      group.current,
-      material,
-      camera.position,
-      ax ?? stage.x,
-      az ?? stage.z,
-    );
+  // Each frame, as the globe's disc or level may change under it: a few vector operations.
+  useFrame(() => {
+    if (!group.current || !placing) return;
+    const centre = placing.discCentre;
+    placeOnGlobe(group.current, placing, ax ?? centre.x, az ?? centre.z);
   });
 
   return <group ref={group}>{children}</group>;

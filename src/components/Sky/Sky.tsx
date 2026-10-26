@@ -1395,8 +1395,8 @@ export const Sky = ({
     material.sunRadiance =
       (hdr ?? gl.toneMapping !== NoToneMapping) ? SKY_HDR_SUN_RADIANCE : 1;
 
-    const height = camera.position.dot(material.up);
-    material.followFlatSea(camera.position);
+    // Along up as it is measured over the field: the camera's altitude over the globe.
+    const height = material.heightOf(camera.position);
     // Camera controls move the camera before this runs but leave its matrices to the render:
     // read with this frame's position, last frame's would swing the cuts as it moves. Once,
     // for the walls' cut and the cutaway alike.

@@ -1,7 +1,7 @@
 # World: where on Earth, and more than one field
 
-> **Status (2026-10-26): design, decisions taken; step 1 built,
-> [step 2](#9-step-2-in-detail-the-sky-on-a-fixed-globe) next.** How the scene places
+> **Status (2026-10-26): design, decisions taken; step 1 built, step 2 built but for
+> [2d](#9-step-2-in-detail-the-sky-on-a-fixed-globe).** How the scene places
 > itself on the Earth today, what more than one field needs, and a plan for it. The open
 > questions are settled ([Decided](#7-decided-2026-10-26)): the Earth is a fixed globe.
 > Step 2 comes before the overlays ([tiles.md](./tiles.md) step 8); the rest waits for a
@@ -220,7 +220,7 @@ step 6 for one that needs to see beyond one region (about 2000 km).
 
 ## 9. Step 2 in detail: the sky on a fixed globe
 
-> Design (2026-10-26), for review; not built.
+> Design (2026-10-26); 2a–2c built, 2d next.
 
 Today the curve is measured from the camera in about ten places, and the disc it is
 flat over moves under a camera far off (`followFlatSea`, `followAway`). After this step
@@ -299,7 +299,7 @@ chosen field's disc at the sea's level, `r` its radius (the stage's `bounds`, as
 | `sky-gradient.glsl` | `skyFlatRun`; the horizon and the lowest height a view passes from `½ κ d²` along the view | the horizon from the camera's altitude and up; the lowest height from the ray's closest approach to the centre; the air's heights over the globe |
 | `sky-ocean.glsl` | `skyOceanReach` (flat, then `½ κ (c t − run)²`); `skyOceanTilt` tips the normal by the fall | the reach on the globe; the waves' normal turned onto up at the hit, and `skyOceanTilt` goes |
 | `sky.glsl` | the clouds' deck on a sphere centred under the camera; the band's sink and squash from `½ κ d²`; the stage's sky over the curved horizon | the deck about `C`; the band from the camera's altitude; the horizon from the globe |
-| Stage (`stage-fragment.glsl`) | the reach and the water's path below the surface beyond the disc | the same, through the globe's reach |
+| Stage (`stage-fragment.glsl`) | the reach and the water's path below the surface beyond the disc | the same, through the globe's reach; the seabed facing up there; the planes sunk under a camera far off ([below](#the-stage-far-off)) |
 | Relief tiles (`relief-tiles-vertex.glsl`) | each vertex lowered by `skyCurveDrop`, its height along the scene's up | placed by the ground at its X/Z, its height and skirt along up there; `vReliefFlat` (the occupant's cut) stays flat |
 | Relief fragment, overview | the sea through `skyOceanReach` | the same, through the globe's reach |
 | `applySkyCurve` | per vertex, the drop as the camera sees it, from a `SkyMaterial` | per vertex, the ground at its X/Z and its height along up: the same from every camera. Takes a `Globe`; renamed `applyGlobe`, as nothing in it is the sky's |
@@ -310,6 +310,20 @@ chosen field's disc at the sea's level, `r` its radius (the stage's `bounds`, as
 
 Unchanged: the void, its walls and the cutaway, which lie under the disc; the
 environment's bakes, which draw a flat sea; `curvedHorizon: false`, a flat sea everywhere.
+
+### The stage far off
+
+The stage's surface and seabed are flat meshes out to the far plane that only carry
+fragments: each pixel is shaded from its view ray, not from where the mesh lies. Before
+the globe a camera's scene height was its altitude, so they always lay below a camera over
+the sea. On the globe they do not: 200 km off and 500 m up, the camera is 2.6 km below the
+scene's level, under them, and the sea below it got no fragment at all. So
+`stage-vertex.glsl` sinks each vertex, while the camera is beyond the disc, to the plane
+touching its level under the camera. All of that level on the globe lies below that plane,
+so every ray that reaches it crosses the mesh first; over the disc the plane is the level,
+and nothing moves. Sunk, the mesh bends back up toward the field, where a ray crosses it
+again from below: only the crossing from the camera's side draws (`gl_FrontFacing`; the
+planes face up).
 
 ### For a host
 
@@ -346,7 +360,8 @@ way of drawing, applied on top.
 - **Tests** of `Globe`, against a 64-bit sphere: nothing over the disc, the plane and the
   sphere meeting on its edge, `|p − C| = R` beyond, up, the stable forms, a ray's hit on
   the surface, the horizon's dip `acos(R / (R + h))` far off, an anchor's place the same
-  from any camera, flat with the globe off. `tests/sky-curve.test.ts` is rewritten for it.
+  from any camera, flat with the globe off. `tests/apply-globe.test.ts` (was
+  `sky-curve.test.ts`) is rewritten for it.
 - **The same pictures at the field:** screenshots before and after at fixed poses close in
   (StageDebug, FieldColumn WithSky, Baseline, ReliefTiles over Volve).
 - **Nothing moving:** at 40 and 215 km, orbiting a fixed target, the coast holds its place
@@ -360,6 +375,6 @@ way of drawing, applied on top.
 | # | Step | Ends with |
 |--|--|--|
 | 2a | **The globe on the CPU:** `Globe` in the sdk (the centre from its disc; `altitude`, `up`, `place`, `reach`); the `Sky` owns one, `setFlatSea` setting its disc; tests | ✅ built (2026-10-26); nothing drawn changes. `SkyMaterial.globe`, kept in step by `setFlatSea`, `oceanLevel`, `curvedHorizon` and `setFrame`; `tests/globe.test.ts` |
-| 2b | **Everything drawn, at once,** so the ground and the sea always agree: `globe.glsl` for `sky-curve.glsl`; the sea, horizon, air and clouds; the stage; the relief's tiles and overview; `applyGlobe`; the anchors placed once; `followFlatSea`, `followAway` and their constants gone | the same pictures at the field; far off, by eye |
-| 2c | **Far off:** the tiles' selection and culling on the globe, the farthest seen, the ground under the camera | no tile missing or wasted from far off |
+| 2b | **Everything drawn, at once,** so the ground and the sea always agree: `globe.glsl` for `sky-curve.glsl`; the sea, horizon, air and clouds; the stage; the relief's tiles and overview; `applyGlobe`; the anchors placed once; `followFlatSea`, `followAway` and their constants gone | ✅ built (2026-10-26), with 2c. Against step 2a, clouds off, rows averaged: at the field and out to the coast within 4 levels, the waves' own noise (30 levels at 2 m); the horizon from 100 km 10 levels apart, the sphere now exact. Low on the horizon the clouds' band is brighter, its flat-sea sink gone. Far off the stage's planes sink under the camera ([The stage far off](#the-stage-far-off)) |
+| 2c | **Far off:** the tiles' selection and culling on the globe, the farthest seen, the ground under the camera | ✅ built with 2b: the ground under the camera at its foot (`Globe.foot`), the farthest seen from its altitude, boxes from corners placed on the globe. By eye at the coast and Lysefjord; the orbit and the timings in 2d |
 | 2d | **For a host:** `globe.place` in the stories and `videx3d.globe`, their far poses; sky.md (the curve, `SkyAnchor`, the globe), tiles.md's curve section, relief.md; the timings | step 2 done |

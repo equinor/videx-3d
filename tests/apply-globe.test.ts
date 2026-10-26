@@ -2,20 +2,15 @@ import {
   MeshBasicMaterial,
   MeshStandardMaterial,
   ShaderLib,
-  Vector4,
   WebGLProgramParametersWithUniforms,
   WebGLRenderer,
 } from 'three';
 import { describe, expect, it } from 'vitest';
-import { applySkyCurve } from '../src/components/Sky/sky-curve';
-import type { SkyMaterial } from '../src/components/Sky/sky-material';
+import { applyGlobe } from '../src/sdk/materials/apply-globe';
+import { Globe } from '../src/sdk/projection/globe';
 
-const sky = {
-  uniforms: {
-    uSkyCurvature: { value: 1 / 6371000 },
-    uSkyFlat: { value: new Vector4(0, 0, 0, 10000) },
-  },
-} as unknown as SkyMaterial;
+const globe = new Globe();
+globe.setDisc([-5000, -5000, 5000, 5000]);
 
 const compile = (
   material: MeshStandardMaterial | MeshBasicMaterial,
@@ -30,30 +25,30 @@ const compile = (
   return shader;
 };
 
-describe('applySkyCurve', () => {
-  it('lowers each vertex after three projects it, before anything reads it', () => {
+describe('applyGlobe', () => {
+  it('places each vertex after three projects it, before anything reads it', () => {
     const shader = compile(
-      applySkyCurve(new MeshStandardMaterial(), sky),
+      applyGlobe(new MeshStandardMaterial(), globe),
       'standard',
     );
     const vertex = shader.vertexShader;
-    expect(vertex).toContain('float skyCurveDrop(vec2 xz)');
+    expect(vertex).toContain('vec3 globePlace(vec2 xz, float height)');
     // The anchor stays, once, for whatever else patches after it.
     expect(vertex.split('#include <project_vertex>')).toHaveLength(2);
     const anchor = vertex.indexOf('#include <project_vertex>');
-    const drop = vertex.indexOf('skyCurveDrop(skyCurveXZ)');
-    expect(drop).toBeGreaterThan(anchor);
-    expect(drop).toBeLessThan(vertex.indexOf('#include <logdepthbuf_vertex>'));
-    expect(drop).toBeLessThan(vertex.indexOf('vViewPosition = - mvPosition'));
+    const placed = vertex.indexOf('globePlace(globeWorld.xz');
+    expect(placed).toBeGreaterThan(anchor);
+    expect(placed).toBeLessThan(
+      vertex.indexOf('#include <logdepthbuf_vertex>'),
+    );
+    expect(placed).toBeLessThan(vertex.indexOf('vViewPosition = - mvPosition'));
   });
 
-  it("binds the sky's own uniforms", () => {
-    const shader = compile(
-      applySkyCurve(new MeshBasicMaterial(), sky),
-      'basic',
-    );
-    expect(shader.uniforms.uSkyCurvature).toBe(sky.uniforms.uSkyCurvature);
-    expect(shader.uniforms.uSkyFlat).toBe(sky.uniforms.uSkyFlat);
+  it("binds the globe's own uniforms", () => {
+    const shader = compile(applyGlobe(new MeshBasicMaterial(), globe), 'basic');
+    expect(shader.uniforms.uGlobe).toBe(globe.uniforms.uGlobe);
+    expect(shader.uniforms.uGlobeDisc).toBe(globe.uniforms.uGlobeDisc);
+    expect(shader.uniforms.uGlobeUp).toBe(globe.uniforms.uGlobeUp);
   });
 
   it('runs the hook the material held first', () => {
@@ -61,9 +56,9 @@ describe('applySkyCurve', () => {
     material.onBeforeCompile = shader => {
       shader.vertexShader = `// before\n${shader.vertexShader}`;
     };
-    const shader = compile(applySkyCurve(material, sky), 'basic');
+    const shader = compile(applyGlobe(material, globe), 'basic');
     expect(shader.vertexShader.startsWith('// before')).toBe(true);
-    expect(shader.vertexShader).toContain('skyCurveDrop(skyCurveXZ)');
+    expect(shader.vertexShader).toContain('globePlace(globeWorld.xz');
   });
 
   it('keys its program apart from the plain one, and by what it held', () => {
@@ -72,12 +67,12 @@ describe('applySkyCurve', () => {
     a.customProgramCacheKey = () => 'a';
     const b = new MeshBasicMaterial();
     b.customProgramCacheKey = () => 'b';
-    applySkyCurve(a, sky);
-    applySkyCurve(b, sky);
-    expect(a.customProgramCacheKey()).toBe('a|sky-curve');
-    expect(b.customProgramCacheKey()).toBe('b|sky-curve');
+    applyGlobe(a, globe);
+    applyGlobe(b, globe);
+    expect(a.customProgramCacheKey()).toBe('a|globe');
+    expect(b.customProgramCacheKey()).toBe('b|globe');
     expect(
-      applySkyCurve(new MeshBasicMaterial(), sky).customProgramCacheKey(),
+      applyGlobe(new MeshBasicMaterial(), globe).customProgramCacheKey(),
     ).not.toBe(plain.customProgramCacheKey());
   });
 });

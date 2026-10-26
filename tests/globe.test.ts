@@ -105,6 +105,20 @@ describe('Globe, the surface', () => {
     expect(turn).toBeCloseTo(5000 / R, 7);
   });
 
+  it('carries a point back to the map point under it', () => {
+    const g = globe();
+    for (const [x, z] of [
+      [2000, 0],
+      [1000 + 60000, -2000 + 30000],
+      [1000 - 900000, -2000 + 1200000],
+    ]) {
+      const foot = g.foot(g.place(x, z, 750, new Vector3()), new Vector3());
+      expect(foot.x).toBeCloseTo(x, 6);
+      expect(foot.y).toBeCloseTo(LEVEL, 6);
+      expect(foot.z).toBeCloseTo(z, 6);
+    }
+  });
+
   it('a disc of no size: the sphere touches the plane at the origin', () => {
     const g = new Globe();
     g.level = LEVEL;

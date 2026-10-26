@@ -32,11 +32,11 @@ void main() {
 
   vec3 dir = stageViewRay();
   float blend = max(uSkyHorizonBlend, fwidth(dot(dir, uSkyUp)));
-  float altitude = dot(cameraPosition, uSkyUp) - uSkyOceanLevel;
+  float altitude = skyOceanAltitude(cameraPosition);
   float y = dot(dir, uSkyUp);
 
   // The flat caps are shaded where the ray meets their plane, exactly; from above, beyond the
-  // scene, where it meets them falling away with the Earth's curve, as the sky's own sea.
+  // scene, where it meets them on the globe, as the sky's own sea.
   #if defined(STAGE_SURFACE)
   float planeAltitude = altitude;
   #else
@@ -44,10 +44,13 @@ void main() {
   #endif
   vec3 reach = planeAltitude > 0.0 ? skyOceanReach(cameraPosition, dir, planeAltitude) : vec3(-planeAltitude / max(abs(y), 1e-6), 0.0, 0.0);
   vec3 world = cameraPosition + dir * reach.x;
+  // Sunk under a camera far off (stage-vertex), the plane bends back up toward the scene,
+  // where a ray that crossed it crosses it again, from the other side: only the crossing
+  // from the camera's side draws. The planes' triangles face up.
+  bool fromBehind = gl_FrontFacing != (planeAltitude > 0.0);
   #ifdef STAGE_CURVED_DEPTH
-  // At the sea's own depth where it falls away with the curve, which a relief beyond the
-  // scene, falling away with it, meets. Over the scene's own disc at the geometry's: the
-  // scene is flat, and a curve measured from the disc under a high camera sinks it below.
+  // At the sea's own depth where it lies on the globe, which a relief beyond the scene, on
+  // the globe too, meets. Over the disc the globe is the plane the geometry lies on.
   vec3 fromScene = vStageWorld - uSkyStageFlat.xyz;
   fromScene -= uSkyUp * dot(fromScene, uSkyUp);
   if(dot(fromScene, fromScene) > uSkyStageFlat.w * uSkyStageFlat.w) {
@@ -92,7 +95,7 @@ void main() {
   #if defined(STAGE_SURFACE)
   // One wave for both sides: each call compiles a full copy of it.
   SkyOceanWave wave = skyOceanWave(p, texel, dist);
-  skyOceanTiltWave(wave, dir, reach.y);
+  skyOceanTiltWave(wave, globeUpAt(world));
   bool cutThrough = false;
   if(altitude > 0.0) {
     vec4 surface = skyOceanThroughAir(skyOceanSurfaceOf(wave, p, texel, dir, blend), cameraPosition, dir, dist, blend);
@@ -107,14 +110,14 @@ void main() {
     vec3 seen = skyOceanFog(underside, path, skyOceanLight(-0.5 * altitude));
     gl_FragColor = vec4(seen, kept);
   }
-  if(skyDraws || underLid || cutThrough || overCurve)
+  if(skyDraws || underLid || cutThrough || overCurve || fromBehind)
     discard;
   #else
-  vec3 up = uSkyUp;
+  // Beyond the disc the seabed lies on the globe, as the background's does.
+  vec3 up = globeUpAt(world);
   float bedDepth = uSkyOceanDepth;
   bool fromAbove = altitude + bedDepth > 0.0;
-  // Shaded on the side the camera is on, the same all over the flat seabed: from below
-  // only its lid is shaded.
+  // Shaded on the side the camera is on: from below only its lid is shaded.
   vec3 color = vec3(0.0);
   if(fromAbove)
     color = skyOceanBed(world, up, bedDepth);
@@ -165,7 +168,7 @@ void main() {
     #else
   gl_FragColor = vec4(color, 1.0);
     #endif
-  if(skyDraws || overCurve)
+  if(skyDraws || overCurve || fromBehind)
     discard;
   #endif
 

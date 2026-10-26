@@ -18,6 +18,7 @@ import {
   UniformsLib,
   UniformsUtils,
   Vector3,
+  Vector4,
   WebGLCubeRenderTarget,
   WebGLRenderer,
   WebGLRenderTarget,
@@ -89,6 +90,8 @@ export class SkyBaker {
     uSkyOceanCutawayShape: new Uniform(new Vector3()),
     uSkyOceanSeabedOpacity: new Uniform(1),
     uSkyCurvature: new Uniform(0),
+    // The globe off: a flat sea.
+    uGlobe: new Uniform(new Vector4()),
     uSkyDebug: new Uniform(0),
     ...UniformsUtils.clone(UniformsLib.lights),
   };

@@ -5,6 +5,7 @@ import { Camera, Mesh, Object3D, Vector3 } from 'three';
 import { SKY_EARTH_RADIUS } from '../../components/Sky/sky-model';
 import { CameraLookAtEvent } from '../../events/camera-events';
 import { Vec3 } from '../../sdk';
+import type { Globe } from '../../sdk/projection/globe';
 import { directionFromCompass } from '../../sdk/utils/vector-operations';
 import { SkyArgs, skyArgs, skySunPosition } from './sky-controls';
 
@@ -146,30 +147,59 @@ const formatHeight = (height: number) =>
     ? `${height.toFixed(0)} m`
     : `${(height / 1000).toFixed(2)} km`;
 
-// The camera's bearing over the sea and its angle above the horizontal.
-function cameraView(camera: Camera) {
+// The sky's globe, from the scene: the panel lies outside the `Sky`. Null without one.
+function findGlobe(scene: Object3D): Globe | null {
+  let globe: Globe | null = null;
+  scene.traverse(object => {
+    if (globe) return;
+    const material = (object as Mesh).material as
+      | { isSkyMaterial?: boolean; globe?: Globe }
+      | undefined;
+    if (material && !Array.isArray(material) && material.isSkyMaterial)
+      globe = material.globe ?? null;
+  });
+  return globe;
+}
+
+const SCENE_UP = new Vector3(0, 1, 0);
+
+// Up where the camera is: the globe's there, else the scene's.
+const upAt = (globe: Globe | null, position: Vector3) =>
+  globe ? globe.upAt(position, new Vector3()) : SCENE_UP.clone();
+
+// The camera's bearing over the sea and its angle above the horizontal, about `up`.
+function cameraView(camera: Camera, up: Vector3) {
   const forward = camera.getWorldDirection(new Vector3());
-  const heading = new Vector3(forward.x, 0, forward.z);
+  const along = forward.dot(up);
+  const heading = forward.clone().addScaledVector(up, -along);
   // Looking straight down the bearing is the top of the screen.
-  if (heading.lengthSq() < 1e-6)
-    heading.set(0, 1, 0).applyQuaternion(camera.quaternion).setY(0);
+  if (heading.lengthSq() < 1e-6) {
+    heading.set(0, 1, 0).applyQuaternion(camera.quaternion);
+    heading.addScaledVector(up, -heading.dot(up));
+  }
   if (heading.lengthSq() < 1e-6) heading.set(0, 0, -1);
   return {
     heading: heading.normalize(),
-    pitch: Math.asin(Math.min(Math.max(forward.y, -1), 1)),
+    pitch: Math.asin(Math.min(Math.max(along, -1), 1)),
   };
 }
 
-function lookFrom(position: Vec3, heading: Vector3, pitch: number) {
+function lookFrom(
+  position: Vec3,
+  heading: Vector3,
+  pitch: number,
+  up: Vector3 = SCENE_UP,
+) {
   const angle = Math.min(Math.max(pitch, -STEEPEST), STEEPEST);
   const level = REACH * Math.cos(angle);
+  const rise = REACH * Math.sin(angle);
   dispatchEvent(
     new CameraLookAtEvent({
       position,
       target: [
-        position[0] + level * heading.x,
-        position[1] + REACH * Math.sin(angle),
-        position[2] + level * heading.z,
+        position[0] + level * heading.x + rise * up.x,
+        position[1] + level * heading.y + rise * up.y,
+        position[2] + level * heading.z + rise * up.z,
       ],
       transition: false,
     }),
@@ -220,45 +250,87 @@ export const SkyDebugPanel = ({
       ? Math.acos(SKY_EARTH_RADIUS / (SKY_EARTH_RADIUS + height))
       : 0;
 
-  // Over `x, z` at `height` above the sea, `under` below the horizon along `heading`.
+  // The sky's globe, found again whenever there is none yet.
+  const globe = useRef<Globe | null>(null);
+  const currentGlobe = () => {
+    if (!globe.current) globe.current = findGlobe(scene);
+    return globe.current;
+  };
+  // The map point under the camera and its height over the sea: over the globe with one.
+  const where = () => {
+    const g = currentGlobe();
+    if (!g)
+      return {
+        x: camera.position.x,
+        z: camera.position.z,
+        height: camera.position.y - level,
+      };
+    const foot = g.foot(camera.position, new Vector3());
+    return { x: foot.x, z: foot.z, height: g.altitude(camera.position) };
+  };
+
+  // Over `x, z` at `height` above the sea (on the globe), `under` below the horizon along
+  // `heading`, levelled about the up there.
   const moveTo = (
     x: number,
     z: number,
     height: number,
     heading: Vector3,
     under: number,
-  ) => lookFrom([x, level + height, z], heading, -dip(height) - under);
+  ) => {
+    const g = currentGlobe();
+    const position = g
+      ? g.place(x, z, height, new Vector3())
+      : new Vector3(x, level + height, z);
+    const up = upAt(g, position);
+    const bearing = heading.clone().addScaledVector(up, -heading.dot(up));
+    if (bearing.lengthSq() < 1e-12) bearing.copy(heading);
+    lookFrom(position.toArray(), bearing.normalize(), -dip(height) - under, up);
+  };
 
   const move = (to: { x?: number; z?: number; height?: number }) => {
-    const { heading, pitch } = cameraView(camera);
-    const height = camera.position.y - level;
+    const { heading, pitch } = cameraView(
+      camera,
+      upAt(currentGlobe(), camera.position),
+    );
+    const here = where();
     moveTo(
-      to.x ?? camera.position.x,
-      to.z ?? camera.position.z,
-      to.height ?? height,
+      to.x ?? here.x,
+      to.z ?? here.z,
+      to.height ?? here.height,
       heading,
-      -pitch - dip(height),
+      -pitch - dip(here.height),
     );
   };
 
   const look = (under: number, heading?: Vector3) => {
-    const height = camera.position.y - level;
+    const here = where();
     moveTo(
-      camera.position.x,
-      camera.position.z,
-      height,
-      heading ?? cameraView(camera).heading,
+      here.x,
+      here.z,
+      here.height,
+      heading ??
+        cameraView(camera, upAt(currentGlobe(), camera.position)).heading,
       under,
     );
   };
 
   const toSun = (away: boolean) => {
-    const [x, y, z] = directionFromCompass(sun.azimuth, sun.elevation);
-    const heading = new Vector3(x, 0, z);
-    if (heading.lengthSq() < 1e-6) heading.copy(cameraView(camera).heading);
+    const up = upAt(currentGlobe(), camera.position);
+    const sunWay = new Vector3(
+      ...directionFromCompass(sun.azimuth, sun.elevation),
+    );
+    const heading = sunWay.clone().addScaledVector(up, -sunWay.dot(up));
+    if (heading.lengthSq() < 1e-6) heading.copy(cameraView(camera, up).heading);
     heading.normalize();
     if (away) look(0, heading.negate());
-    else lookFrom(camera.position.toArray(), heading, Math.asin(y));
+    else
+      lookFrom(
+        camera.position.toArray(),
+        heading,
+        Math.asin(Math.min(Math.max(sunWay.dot(up), -1), 1)),
+        up,
+      );
   };
 
   const rows: PanelRow[] = [
@@ -267,7 +339,8 @@ export const SkyDebugPanel = ({
       buttons: [
         {
           label: showReadout ? 'on' : 'off',
-          title: 'The camera’s height above the sea, the horizon’s dip, the sun’s elevation, and the triangles the void’s walls are drawn with.',
+          title:
+            'The camera’s height above the sea, the horizon’s dip, the sun’s elevation, and the triangles the void’s walls are drawn with.',
           on: showReadout,
           click: () => setShowReadout(!showReadout),
         },
@@ -359,15 +432,14 @@ export const SkyDebugPanel = ({
     const element = readout.current;
     if (!element || since.current < 0.1) return;
     since.current = 0;
-    const height = camera.position.y - level;
+    const height = where().height;
     const clock = args.sunFromTime ? `  ${formatSkyHour(args.sunHour)}` : '';
     if (!walls.current?.parent)
       walls.current = scene.getObjectByName('sky:abyss-walls');
     const mesh = walls.current as Mesh | undefined;
     const triangles =
       mesh?.visible && mesh.geometry.index
-        ? Math.min(mesh.geometry.drawRange.count, mesh.geometry.index.count) /
-          3
+        ? Math.min(mesh.geometry.drawRange.count, mesh.geometry.index.count) / 3
         : 0;
     const wallText = mesh
       ? `  walls ${triangles > 0 ? `${(triangles / 1000).toFixed(1)}k tris` : 'off'}`

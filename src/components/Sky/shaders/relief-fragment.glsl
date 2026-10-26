@@ -113,13 +113,14 @@ vec3 reliefThroughAir(vec3 color, vec3 dir, float dist, float blend) {
 }
 
 void main() {
-  float altitude = dot(cameraPosition, uSkyUp) - uSkyOceanLevel;
+  float altitude = skyOceanAltitude(cameraPosition);
   #ifdef RELIEF_FAR
   vec3 dir = normalize(vSkyDirection);
   vec3 hit = skyOceanReach(cameraPosition, dir, max(altitude, 1e-3));
   float dist = hit.x;
   vec3 world = cameraPosition + dir * dist;
-  vec2 xz = world.xz;
+  // The map point under it, which the globe carried there.
+  vec2 xz = globeFoot(world).xz;
   #else
   #include <logdepthbuf_fragment>
   #ifndef USE_LOGARITHMIC_DEPTH_BUFFER
@@ -146,12 +147,13 @@ void main() {
   float east = reliefGround(xz + vec2(footprint, 0.0), lod, bed).x;
   float north = reliefGround(xz - vec2(0.0, footprint), lod, bed).x;
   float south = reliefGround(xz + vec2(0.0, footprint), lod, bed).x;
-  vec3 normal = normalize(vec3(west - east, 2.0 * footprint, north - south));
+  vec3 normal = globeTurn(normalize(vec3(west - east, 2.0 * footprint, north - south)), globeUpAt(world));
   // Land or sea by the map at this pixel.
   vec2 ground = reliefGround(xz, lod, bed);
   #else
   bool staged = skyOceanStaged(dir, cameraPosition, 1.0, false);
-  vec3 normal = reliefTileNormal();
+  // The map's normal, turned onto the globe where the tile lies.
+  vec3 normal = globeTurn(reliefTileNormal(), globeUpAt(world));
   vec2 ground = vec2(reliefTileHeight(), 1.0);
   #endif
   float height = ground.x;
@@ -170,10 +172,10 @@ void main() {
   #ifdef RELIEF_FAR
   color = reliefThroughAir(color, dir, dist, blend);
   #else
-  // The triangles miss the curved sea by up to tens of metres, more the coarser they are
-  // and the farther the camera is from the scene (the curve follows the view). So the
-  // ground's height decides which of the two shows: the seabed stays behind the sea, and
-  // where the sea would be met over land there is none, so the land comes in front of it.
+  // The triangles' chords sag under the globe's sea, by up to tens of metres on the coarse
+  // tiles far off. So the ground's height decides which of the two shows: the seabed stays
+  // behind the sea, and where the sea would be met over land there is none, so the land
+  // comes in front of it.
   float sea = water && altitude > 0.0 ? skyOceanReach(cameraPosition, dir, altitude).x : 0.0;
   // The cutaway takes the seabed in front of the view, and the water over it, as over the
   // stage's own; the land stands.
@@ -199,7 +201,7 @@ void main() {
     // sea stands for the sea's point; past that, the ground there decides when the tile
     // holds it, and else the sea is met over open water well in front: the land lies past
     // the horizon, and stays behind.
-    bool clears = height >= 0.0 && (dist - sea < 2.0 * reliefTileCell() || reliefTileClearsAt((cameraPosition + dir * sea).xz));
+    bool clears = height >= 0.0 && (dist - sea < 2.0 * reliefTileCell() || reliefTileClearsAt(globeFoot(cameraPosition + dir * sea).xz));
     if(water && sea < dist * 1.0001 && clears)
       gl_FragDepth = reliefDepthAt(dir, min(sea, dist) * 0.9999);
   }

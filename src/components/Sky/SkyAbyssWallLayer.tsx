@@ -1,4 +1,10 @@
-import { MutableRefObject, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import {
+  MutableRefObject,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from 'react';
 import {
   BufferGeometry,
   Camera,
@@ -33,7 +39,8 @@ function createCutGrid() {
     const x = -1 + (2 * i) / across;
     points.push(x, 0, 0, x, -1, 0);
   }
-  for (let j = 0; j <= down; j++) points.push(-1, -j / down, 0, 1, -j / down, 0);
+  for (let j = 0; j <= down; j++)
+    points.push(-1, -j / down, 0, 1, -j / down, 0);
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new Float32BufferAttribute(points, 3));
   return geometry;
@@ -51,7 +58,14 @@ function wallReach(sky: SkyMaterial) {
   const walls = u.uSkyAbyssWalls.value as Vector4;
   const shape = u.uSkyAbyssWallShape.value as Vector4;
   const depth = (u.uSkyAbyssWallGrid.value as Vector3).z;
-  return skyAbyssWallReach([box.z, box.w], walls.x, shape.y, depth, shape.w, shape.x);
+  return skyAbyssWallReach(
+    [box.z, box.w],
+    walls.x,
+    shape.y,
+    depth,
+    shape.w,
+    shape.x,
+  );
 }
 
 // The stage's centre at the lid (world).
@@ -86,7 +100,11 @@ function lidFrame(sky: SkyMaterial, target: Matrix4) {
   const u = sky.uniforms;
   const reach = wallReach(sky);
   return target
-    .makeBasis(u.uSkyEast.value as Vector3, u.uSkyNorth.value as Vector3, sky.up)
+    .makeBasis(
+      u.uSkyEast.value as Vector3,
+      u.uSkyNorth.value as Vector3,
+      sky.up,
+    )
     .scale(size.set(reach, reach, 1))
     .setPosition(stageCentre(sky, centre));
 }
@@ -194,7 +212,7 @@ export const SkyAbyssWallLayer = ({
     frame.current = (camera, fromAbove) => {
       const m = mesh.current;
       if (!m) return;
-      const height = camera.position.dot(sky.up) - sky.abyssLevel;
+      const height = sky.heightOf(camera.position) - sky.abyssLevel;
       const shown = visible && sky.abyssWallRock !== null;
       m.visible = shown && (height < 0 || fromAbove);
       const clip = sky.uniforms.uSkyAbyssWallClip.value as Vector4;
@@ -203,8 +221,12 @@ export const SkyAbyssWallLayer = ({
       if (lines) lines.visible = shown && cuts;
       // The cut's face looks back at what it cuts away: seen only from that side.
       const facing =
-        clip.w > clip.x * camera.position.x + clip.y * camera.position.y + clip.z * camera.position.z;
-      if (cutFill.current) cutFill.current.visible = m.visible && cuts && facing;
+        clip.w >
+        clip.x * camera.position.x +
+          clip.y * camera.position.y +
+          clip.z * camera.position.z;
+      if (cutFill.current)
+        cutFill.current.visible = m.visible && cuts && facing;
       if (lidFill.current) lidFill.current.visible = m.visible && height > 0;
       for (const object of [lines, cutFill.current]) {
         if (!object?.visible) continue;

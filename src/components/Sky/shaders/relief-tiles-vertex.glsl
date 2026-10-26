@@ -1,12 +1,12 @@
 // A stage's relief drawn from tiles (SkyBoxStage `relief.layers`): one patch per tile,
 // its heights read at its nodes from the tiles' texture array, a skirt down from each
-// side closing the cracks between tiles at different depths, and falling away with the
-// Earth's curve beyond the disc about the scene the sea stays flat over, as the sea does
-// (skyOceanReach). ⚠️ Assumes the default `up` (+Y), as the stage does.
+// side closing the cracks between tiles at different depths, and placed on the globe
+// (globePlace) as the sea is: flat over the disc about the scene, the sphere beyond.
+// ⚠️ Assumes the default `up` (+Y), as the stage does.
 
 #include <common>
 #include <logdepthbuf_pars_vertex>
-#include ./sky-curve.glsl
+#include ../../../sdk/materials/shaderLib/globe.glsl
 
 uniform float uSkyOceanLevel;
 
@@ -43,16 +43,15 @@ void main() {
   height -= reliefSkirt * reliefTileSkirt;
   vec2 xz = reliefTile.xy + position.xz / uReliefTileCells * reliefTile.z;
 
-  float drop = skyCurveDrop(xz);
-
-  vec3 world = vec3(xz.x, uSkyOceanLevel + height - drop, xz.y);
+  // Heights from the sea's level, which is the globe's.
+  vec3 world = globePlace(xz, height);
   vReliefWorld = world;
   vReliefPlane = xz;
   vReliefTileNode = position.xz + 1.5;
   vReliefTileSlot = reliefTile.w;
   vReliefTileSquare = reliefTile.xyz;
   vReliefSkirt = reliefSkirt;
-  vReliefSkirtTop = uSkyOceanLevel + top - drop;
+  vReliefSkirtTop = uSkyOceanLevel + top;
   #ifdef RELIEF_CUT_OCCUPANT
   vReliefFlat = vec3(xz.x, uSkyOceanLevel + height, xz.y);
   #endif

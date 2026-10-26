@@ -164,7 +164,7 @@ take the same `coverage`, `softness`, `opacity`, `color` and `seed` as the deck'
 the same way (both share `skyCloudColor`). The band melts into the air's haze over its
 distance, so it clears as the camera climbs and thickens toward the horizon. Climbing, it goes
 down with the horizon as the Earth's curve lowers it (see The curved horizon); on a flat sea
-(`curvedHorizon: false`) it sinks by up to 1.5° instead. With the curve it also squashes onto
+(`curvedHorizon: false`) it stays on the horizon. With the curve it also squashes onto
 the horizon as far as its tops would sink seen from the camera's height: as clouds
 `bandDistance` off, and from over them as their layer's own horizon. By default its tops stand
 5.7° over the horizon up to about 1 km, 3.5° at its base's height, 1.2° at 15 km and 0.4° at
@@ -184,6 +184,8 @@ The numbers are fixed (`SKY_CLOUD_*` in `sky.glsl`). Tried and dropped along the
 - squashing the band onto the horizon at a rate set by hand as the camera climbs, and sinking
   it linearly: both read as the band moving with the camera (its squash now follows where its
   tops would show, and barely starts below a few kilometres);
+- sinking it on a flat sea as the camera climbs, by up to 1.5° (removed 2026-10-26, with the
+  globe of world.md step 2): the curve lowers the horizon itself;
 - a soft warp of the deck down to the real horizon instead of the hinge;
 - rings or rows of clouds between band and deck, at distances of their own, each shifting at
   its rate: cardboard cut-outs.
