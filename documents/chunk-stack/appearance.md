@@ -57,11 +57,12 @@ only opens that unit.
 
 `drawCap: false` keeps a layer's cap in the build — its walls, cuts and hidden-cap
 culling are unchanged — but does not draw it, because something else does: typically a
-`SkyBoxStage` the sea bed was handed to (see [sky.md](../sky.md#skyboxstage)), which
-draws it as the sea's seabed, under its water. ⚠️ Culling still counts the cap as
-covering what is under it, so whatever draws it must draw it opaque, and whole or cut
-exactly as the stack cuts it: the stack hands its cut out through `onCut` for that, and
-the sea bed's cap itself through `onSeabed`, so the two meet the cut faces exactly.
+`SkyBoxStage` whose relief is the ground over the column (see
+[sky.md](../sky.md#skyboxstage)), which the stack's sea bed is built on
+(`ChunkStack.relief`). ⚠️ Culling still counts the cap as covering what is under it, so
+whatever draws it must draw it opaque, and whole or cut exactly as the stack cuts it: the
+stack hands its cut out through `onCut` for that, and a relief kept whole over the column
+(`keepBed`) is its floor.
 Toggling it makes new materials (it is part of the appearance key), not new geometry.
 
 ---
@@ -293,10 +294,12 @@ ordinary geology and can rise **through** the water (a coast, an island). Absorp
 that fades to nothing at the waterline leaves land untinted without anything having
 to know where the shoreline runs — and stays right as the level is swept.
 
-The depth is read from the **bed's own grid** (`CHUNK_BATHYMETRY`, supplied by
-`useStackBathymetry`) rather than from each fragment's height, so the gradient
+The depth is read from the **bed's own grid** (`CHUNK_BATHYMETRY`: the column's bed
+channel, handed back by the `stackWater` generator and packed by
+`buildChannelDepthMap`) rather than from each fragment's height, so the gradient
 follows the bathymetry rather than the tessellation; where that grid is unmapped it
-falls back to the fragment's own depth.
+falls back to the fragment's own depth. Being the channel the column is built on, it
+is the relief (plus the column's margin) on a column built on one.
 
 Applied to the cap of the **shallowest** layer only: it stands for looking down
 through the water at the bed, not for making the whole column blue.

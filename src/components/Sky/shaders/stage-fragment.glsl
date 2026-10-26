@@ -1,9 +1,7 @@
 // A stage's real geometry, shaded with the sky's own sea so it continues the background
 // without a seam. STAGE_SURFACE or STAGE_BED is defined; STAGE_SEE_THROUGH marks a seabed
-// drawn at the sea's seabed opacity, and
-// STAGE_OCCUPANT an occupant's own seabed, which the cutaway never cuts. STAGE_SECTION and
-// STAGE_FENCE cut that seabed with the occupant instead, by its own uniforms.
-// STAGE_CURVED_DEPTH has the surface write the depth of the curved sea, for a relief.
+// drawn at the sea's seabed opacity. STAGE_CURVED_DEPTH has the surface write the depth of
+// the curved sea, for a relief.
 
 #include <common>
 #include <logdepthbuf_pars_fragment>
@@ -14,33 +12,6 @@ uniform vec4 uSkyStageViewport; // the pixels being drawn: x, y, width, height
 
 varying vec3 vStageWorld;
 varying vec3 vViewPosition;
-#ifdef STAGE_SHAPED
-varying vec3 vStageNormal;
-#endif
-
-#ifdef STAGE_SECTION
-uniform vec4 sectionPlane; // the half-space it points at is cut away
-#endif
-#ifdef STAGE_FENCE
-uniform vec2 fenceParams; // x: 1 while the cut is live, y: +1 keeps the block
-uniform sampler2D fenceMap;
-uniform mat3 fenceToUv;
-uniform vec2 fenceSize;
-#include ../../../sdk/materials/shaderLib/fence-field.glsl
-#endif
-
-// Cut away with the occupant, by its section and its fence, as the occupant cuts itself.
-bool stageCutAway() {
-  #ifdef STAGE_SECTION
-  if(dot(sectionPlane.xyz, vStageWorld) + sectionPlane.w > 0.0)
-    return true;
-  #endif
-  #ifdef STAGE_FENCE
-  if(fenceParams.x > 0.5 && fenceParams.y * fenceSide(fenceMap, fenceToUv, fenceSize, vStageWorld.xz) < 0.0)
-    return true;
-  #endif
-  return false;
-}
 
 #ifdef USE_OIT
 #include ../../../sdk/materials/shaderLib/oit.glsl
@@ -72,11 +43,7 @@ void main() {
   float planeAltitude = altitude + uSkyOceanDepth;
   #endif
   vec3 reach = planeAltitude > 0.0 ? skyOceanReach(cameraPosition, dir, planeAltitude) : vec3(-planeAltitude / max(abs(y), 1e-6), 0.0, 0.0);
-  #ifdef STAGE_SHAPED
-  vec3 world = vStageWorld;
-  #else
   vec3 world = cameraPosition + dir * reach.x;
-  #endif
   #ifdef STAGE_CURVED_DEPTH
   // At the sea's own depth where it falls away with the curve, which a relief beyond the
   // scene, falling away with it, meets. Over the scene's own disc at the geometry's: the
@@ -108,11 +75,6 @@ void main() {
   bool dry = uSkyOceanWater < 0.5;
   float bedAltitude = altitude + uSkyOceanDepth;
   bool staged = skyOceanStaged(dir, cameraPosition, 1.0, false);
-  #ifdef STAGE_SHAPED
-    // Over a dry bed the shaped bed rises in front of the bed plane.
-  if(dry && bedAltitude > 0.0)
-    staged = skyOceanOnStage(p, dist, texel);
-  #endif
   bool outsideWater = dry || altitude > 0.0 || bedAltitude < 0.0;
   bool skyDraws = outsideWater && !staged;
   // From the void the lid hides the water, seabed or not: through an occupant's section,
@@ -148,38 +110,16 @@ void main() {
   if(skyDraws || underLid || cutThrough || overCurve)
     discard;
   #else
-    #ifdef STAGE_SHAPED
-  vec3 up = normalize(vStageNormal);
-  up *= dot(up, uSkyUp) < 0.0 ? -1.0 : 1.0;
-  float bedDepth = uSkyOceanLevel - dot(world, uSkyUp);
-      // The lid is seen only from the void below the flat seabed, or from inside an
-      // occupant's seabed above it: anywhere else, and above the point, the camera sees
-      // seabed. Otherwise it asks which side of the slope it is on. ⚠️ From the face's
-      // own plane: a smoothed normal's slight tilt can outweigh the camera's height.
-  vec3 face = cross(dFdx(vStageWorld), dFdy(vStageWorld));
-  face *= dot(face, uSkyUp) < 0.0 ? -1.0 : 1.0;
-  bool inSea = altitude + uSkyOceanDepth > 0.0 && uSkyOceanBuried < 0.5;
-  bool fromAbove = inSea || altitude + bedDepth > 0.0 || dot(face, cameraPosition - world) > 0.0;
-    #else
   vec3 up = uSkyUp;
   float bedDepth = uSkyOceanDepth;
   bool fromAbove = altitude + bedDepth > 0.0;
-    #endif
-    // Shaded on the side the camera is on. A flat seabed's side is the same all over, so
-    // from below only its lid is shaded; a shaped one's changes across it, so both sides
-    // are, as they take derivatives.
-    #ifdef STAGE_SHAPED
-  vec3 color = skyOceanBed(world, up, bedDepth);
-    #else
+  // Shaded on the side the camera is on, the same all over the flat seabed: from below
+  // only its lid is shaded.
   vec3 color = vec3(0.0);
   if(fromAbove)
     color = skyOceanBed(world, up, bedDepth);
-    #endif
   float cutaway = skyOceanCutawayAlong(cameraPosition, world);
   float seabed = skyOceanCutawaySeabed(cutaway);
-    #ifdef STAGE_OCCUPANT
-  seabed = 1.0;
-    #endif
     #ifdef SKY_ABYSS_WALLS
   // The lid's ripples' footprint, before any pixel leaves or takes its own side below.
   float lidFootprint = skyAbyssLidFootprint(cameraPosition + dir * dist);
@@ -188,11 +128,9 @@ void main() {
     // Dry, the fog's density is 0.
     float light = skyOceanLight(0.5 * (bedDepth + max(-altitude, 0.0)));
     float below = skyOceanPathBelowSurface(cameraPosition, world);
-      #ifndef STAGE_SHAPED
     // Beyond the scene both fall away with the curve: the water lies between them, not under the level.
     if(altitude > 0.0 && uSkyCurvature > 0.0)
       below = max(reach.x - surfaceReach.x, 0.0);
-      #endif
     float path = skyOceanCutawayPath(below, skyOceanCutawayWall(cameraPosition, dir), skyOceanCutawayWater(cutaway));
     color = skyOceanFog(color, path, light);
       #ifndef STAGE_SEE_THROUGH
@@ -218,9 +156,9 @@ void main() {
     if(uSkyAbyssDarkening > 0.0)
       color *= exp((altitude + bedDepth) / uSkyAbyssDarkening);
   }
-      // Bitten through, what lies behind shows, with the background's void beyond. Cut
-      // away with the occupant only here, once the derivatives above are taken.
-  if(seabed < 1e-3 || stageCutAway())
+  // Bitten through, what lies behind shows, with the background's void beyond. Only here,
+  // once the derivatives above are taken.
+  if(seabed < 1e-3)
     discard;
     #ifdef STAGE_SEE_THROUGH
   gl_FragColor = vec4(color, seabed * uSkyOceanSeabedOpacity);
@@ -234,10 +172,6 @@ void main() {
   // Debug tints (SkyDebug.tint), by part.
   #if defined(STAGE_SURFACE)
   vec3 debugTint = vec3(0.1, 0.35, 1.0);
-  #elif defined(STAGE_OCCUPANT)
-  vec3 debugTint = vec3(1.0, 0.1, 0.8);
-  #elif defined(STAGE_SHAPED)
-  vec3 debugTint = vec3(0.0, 0.85, 0.9);
   #else
   vec3 debugTint = vec3(0.15, 0.8, 0.2);
   #endif

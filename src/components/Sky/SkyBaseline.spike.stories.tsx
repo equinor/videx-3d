@@ -2,21 +2,11 @@ import { CameraControls } from '@react-three/drei';
 import { Canvas } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { scaleOrdinal } from 'd3-scale';
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { BufferGeometry } from 'three';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CameraLookAtEvent } from '../../events/camera-events';
-import { useData } from '../../hooks/useData';
-import { useGenerator } from '../../hooks/useGenerator';
-import { SurfaceMeta } from '../../sdk/data/types/SurfaceMeta';
-import { unpackBufferGeometry } from '../../sdk/geometries/packing';
-import { PlanarPolygonGeometry } from '../../sdk/geometries/planar-geometry';
-import {
-  createClippedSurface,
-  SeabedMesh,
-} from '../../sdk/geometries/surface-clip';
 import { CameraManager } from '../../sdk/managers/CameraManager';
-import { CRS, getProjectionDefFromUtmZone } from '../../sdk/projection/crs';
-import { Vec2, Vec3 } from '../../sdk/types/common';
+import { reliefFrameFromCrs } from '../../sdk/geometries/relief-grid';
+import { Vec3 } from '../../sdk/types/common';
 import {
   skyAbyssFromArgs,
   skyArgs,
@@ -31,6 +21,7 @@ import {
   skyReliefArgs,
   SkyReliefArgs,
   skyReliefArgTypes,
+  skyBakedReliefLayer,
   skyReliefFromArgs,
   skyWallDebugArgs,
   SkyWallDebugArgs,
@@ -50,14 +41,11 @@ import { useFieldOutline } from '../../storybook/hooks/useFieldOutline';
 import { useSurfaceMeta } from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
+import { demoCrs } from '../../storybook/data/demo-crs';
 import { EventEmitter } from '../EventEmitter/EventEmitter';
 import { EventEmitterCallbackEvent } from '../EventEmitter/EventEmitterContext';
 import { Surface } from '../Surfaces/Surface';
-import {
-  surfaceGeometry,
-  SurfaceGeometryResponse,
-} from '../Surfaces/surface-defs';
-import { UtmArea, UtmAreaContext, UtmPosition } from '../UtmArea';
+import { UtmArea, UtmPosition } from '../UtmArea';
 import { Casings, MaterialOptions } from '../Wellbores/Casings/Casings';
 import { defaultMaterialOptions } from '../Wellbores/Casings/casings-defs';
 import { Trajectory } from '../Wellbores/Trajectory/Trajectory';
@@ -65,18 +53,15 @@ import { Wellbore } from '../Wellbores/Wellbore/Wellbore';
 import { Wells } from '../Wellbores/Wells/Wells';
 import { Sky } from './Sky';
 import { SkyBoxStage } from './SkyBoxStage';
-import { useSkyOcean } from './sky-context';
-import { skyStageRim } from './sky-stage';
 
 // The videx `<Sky>` over the demo field: the sky and its light, the abyss, the endless
 // sea and a stage, with any surface as the seabed. Owns its canvas so lighting is local.
 
-const utmZone = storyArgs.utmZone;
-const origin = storyArgs.origin as Vec2;
 const defaultWellbore = storyArgs.defaultWellbore;
+// Where the field lies, for its UtmArea, the relief's frame and the sky's place alike.
+const crs = demoCrs;
 // Where the relief lies around the field: the UtmArea's map.
-const crs = new CRS(getProjectionDefFromUtmZone(utmZone), origin, 'utm');
-const reliefFrame = { projection: crs.utmDef, origin: crs.originUtm };
+const reliefFrame = reliefFrameFromCrs(crs);
 // The generated scenarios, without the units of the generated columns.
 const SYNTHETIC_SEABEDS = syntheticSurfaceIds.filter(
   id => !id.startsWith(SYNTHETIC_COLUMN_PREFIX),
@@ -108,10 +93,6 @@ type SkySpikeArgs = {
   stage: boolean;
   stageMargin: number;
   seabedSurface: string;
-  seabedRelief: number;
-  seabedClip: boolean;
-  seabedEdgeSmoothing: number;
-  seabedFalloff: number;
   ambientIntensity: number;
   surfaceId: string;
   showSurface: boolean;
@@ -126,7 +107,7 @@ type SkySpikeArgs = {
   SkyReliefArgs &
   SkyWallDebugArgs;
 
-// A stage around the wells' outline, with no seabed of its own to hand it.
+// A stage around the wells' outline, a surface baked into its relief as the seabed.
 const FieldStage = (args: SkySpikeArgs) => {
   const outline = useFieldOutline();
   if (!outline) return null;
@@ -135,140 +116,11 @@ const FieldStage = (args: SkySpikeArgs) => {
   return (
     <SkyBoxStage
       bounds={[min[0] - m, min[1] - m, max[0] + m, max[1] + m]}
-      relief={skyReliefFromArgs(args, reliefFrame)}
-      debug={{ hide: skyHideFromArgs(args.hide).stage, outline: args.outline }}
-    />
-  );
-};
-
-type SeabedOccupant = {
-  mesh: SeabedMesh;
-  outline: PlanarPolygonGeometry;
-};
-
-// A surface's own mesh as the seabed, placed as `Surface` draws it, its relief scaled
-// and lifted by `y`: its rim is the occupant's outline.
-function createSeabedOccupant(
-  surface: BufferGeometry,
-  [x, y, z]: Vec3,
-  relief: number,
-): SeabedOccupant | null {
-  const index = surface.getIndex();
-  if (!index) return null;
-  const positions = Float32Array.from(surface.getAttribute('position').array);
-  for (let i = 0; i < positions.length; i += 3) {
-    positions[i] += x;
-    positions[i + 1] = positions[i + 1] * relief + y;
-    positions[i + 2] += z;
-  }
-  const mesh: SeabedMesh = {
-    positions,
-    indices: index.array as Uint32Array | Uint16Array,
-  };
-  return { mesh, outline: skyStageRim(mesh).outline };
-}
-
-// From the store rather than the catalogue file, which lists no generated surfaces.
-const useStoreSurfaceMeta = (id: string) => {
-  const store = useData();
-  const [meta, setMeta] = useState<SurfaceMeta | null>(null);
-  useEffect(() => {
-    if (!store || !id) {
-      setMeta(null);
-      return;
-    }
-    let current = true;
-    store
-      .get<SurfaceMeta>('surface-meta', id)
-      .then(found => current && setMeta(found ?? null));
-    return () => {
-      current = false;
-    };
-  }, [store, id]);
-  return meta;
-};
-
-// Any surface as the seabed, handed to the stage, which draws it as the sea's: its
-// deepest point on the sea's seabed at `depth`, its relief scaled.
-const SeabedStage = ({
-  meta,
-  depth,
-  ...args
-}: SkySpikeArgs & { meta: SurfaceMeta; depth: number }) => {
-  const ocean = useSkyOcean();
-  const area = useContext(UtmAreaContext);
-  const store = useData();
-  const field = useFieldOutline();
-  const generator = useGenerator<SurfaceGeometryResponse>(surfaceGeometry);
-  const [mesh, setMesh] = useState<BufferGeometry | null>(null);
-
-  const place = useMemo(
-    () => (meta ? area.utmToArea(meta.header.xori, meta.header.yori) : null),
-    [area, meta],
-  );
-
-  // As `Surface` builds it, or cut by the field outline; either way in the frame
-  // `Surface` places it in.
-  useEffect(() => {
-    if (!meta || !place) return;
-    let current = true;
-    const built = args.seabedClip
-      ? field &&
-        store?.get<Float32Array>('surface-values', meta.id).then(values =>
-          values
-            ? createClippedSurface(values, meta.header, {
-                polygon: field,
-                referenceDepth: meta.max,
-                worldPosition: [place[0], place[2]],
-                cutHoles: true,
-                edgeSmoothing: args.seabedEdgeSmoothing,
-              })
-            : null,
-        )
-      : generator?.(meta.id, 5, true, args.seabedEdgeSmoothing).then(
-          response => (response ? unpackBufferGeometry(response) : null),
-        );
-    built?.then(geometry => {
-      if (current) setMesh(geometry);
-      else geometry?.dispose();
-    });
-    return () => {
-      current = false;
-    };
-  }, [
-    generator,
-    store,
-    meta,
-    place,
-    field,
-    args.seabedClip,
-    args.seabedEdgeSmoothing,
-  ]);
-
-  useEffect(() => () => mesh?.dispose(), [mesh]);
-
-  const lift = args.oceanLevel - depth + args.seabedRelief * meta.max;
-  const occupant = useMemo(
-    () =>
-      mesh && place
-        ? createSeabedOccupant(
-            mesh,
-            [place[0], place[1] + lift, place[2]],
-            args.seabedRelief,
-          )
-        : null,
-    [mesh, place, lift, args.seabedRelief],
-  );
-
-  if (!occupant || !ocean || !args.stage) return null;
-  const { min, max } = occupant.outline.getBounds();
-  const m = args.stageMargin;
-  return (
-    <SkyBoxStage
-      bounds={[min[0] - m, min[1] - m, max[0] + m, max[1] + m]}
-      occupant={{ seabed: occupant.mesh }}
-      seabedFalloff={args.seabedFalloff}
-      relief={skyReliefFromArgs(args, reliefFrame)}
+      relief={skyReliefFromArgs(
+        args,
+        reliefFrame,
+        args.seabedSurface ? [skyBakedReliefLayer(args.seabedSurface)] : [],
+      )}
       debug={{ hide: skyHideFromArgs(args.hide).stage, outline: args.outline }}
     />
   );
@@ -298,7 +150,7 @@ const Field = (args: SkySpikeArgs) => {
   );
 
   return (
-    <UtmArea origin={origin} utmZone={utmZone}>
+    <UtmArea crsInstance={crs} origin={crs.originUtm}>
       {args.showSurface && surface && (
         <UtmPosition
           easting={surface.header.xori}
@@ -373,12 +225,6 @@ const Field = (args: SkySpikeArgs) => {
 
 const SkyScene = (args: SkySpikeArgs) => {
   const sea = args.skyWater || args.skySeabed;
-  const seabedMeta = useStoreSurfaceMeta(args.seabedSurface);
-  // Test logic: the sea deepens by the seabed surface's relief, so its top stays at
-  // `oceanDepth` and its base meets the flat seabed rather than rising into islands.
-  const depth =
-    args.oceanDepth +
-    (seabedMeta ? args.seabedRelief * (seabedMeta.max - seabedMeta.min) : 0);
 
   return (
     <>
@@ -390,26 +236,22 @@ const SkyScene = (args: SkySpikeArgs) => {
           args.abyss && { ...skyAbyssFromArgs(args), level: args.abyssLevel }
         }
         ocean={
-          sea && { ...skyOceanFromArgs(args), level: args.oceanLevel, depth }
+          sea && {
+            ...skyOceanFromArgs(args),
+            level: args.oceanLevel,
+            depth: args.oceanDepth,
+          }
         }
         debug={{
           hide: skyHideFromArgs(args.hide).sky,
           walls: skyWallDebugFromArgs(args),
         }}
       >
-        {args.seabedSurface
-          ? // The seabed stands without the sky's sea; only its stage needs it.
-            seabedMeta && (
-              <UtmArea origin={origin} utmZone={utmZone}>
-                <SeabedStage {...args} meta={seabedMeta} depth={depth} />
-              </UtmArea>
-            )
-          : sea &&
-            args.stage && (
-              <UtmArea origin={origin} utmZone={utmZone}>
-                <FieldStage {...args} />
-              </UtmArea>
-            )}
+        {sea && args.stage && (
+          <UtmArea crsInstance={crs} origin={crs.originUtm}>
+            <FieldStage {...args} />
+          </UtmArea>
+        )}
       </Sky>
       <Field {...args} />
     </>
@@ -486,7 +328,7 @@ const meta = {
       control: {
         type: 'select',
         labels: {
-          '': 'none (the wells\u2019 outline)',
+          '': 'none',
           ...storyArgs.surfaceOptions,
           ...Object.fromEntries(
             SYNTHETIC_SEABEDS.map(id => [
@@ -496,17 +338,11 @@ const meta = {
           ),
         },
       },
-      table: { category: 'Seabed' },
-    },
-    seabedRelief: range(0, 3, 0.05, 'Seabed'),
-    seabedClip: {
       description:
-        'Cut the seabed surface by the field outline (the wells\u2019).',
-      control: { type: 'boolean' },
+        'A surface as the seabed: baked into the stage\u2019s relief as its finest layer by the demo store (`surface:<id>`), at its real depth and faded in over 0.5 km from its edge. Over the demo reliefs with `relief` on; alone, the flat seabed around it. \u26a0\ufe0f A horizon far below the sea\u2019s seabed lies under the void\u2019s lid.',
       table: { category: 'Seabed' },
+      if: { arg: 'stage' },
     },
-    seabedEdgeSmoothing: range(0, 10, 0.5, 'Seabed'),
-    seabedFalloff: range(0, 20000, 100, 'Seabed'),
     ambientIntensity: range(0, 2, 0.05, 'Environment'),
     surfaceId: {
       options: Object.keys(storyArgs.surfaceOptions),
@@ -549,10 +385,6 @@ export const Default: Story = {
     stage: false,
     stageMargin: 4000,
     seabedSurface: '',
-    seabedRelief: 1,
-    seabedClip: false,
-    seabedEdgeSmoothing: 0,
-    seabedFalloff: 3000,
     ambientIntensity: 0,
     surfaceId: Object.keys(storyArgs.surfaceOptions)[0],
     showSurface: true,

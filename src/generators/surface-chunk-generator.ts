@@ -1,5 +1,6 @@
 import { transfer } from 'comlink';
 import {
+  DEFAULT_CHUNK_MAX_ERROR,
   DEFAULT_CHUNK_MAX_FILL,
   isCarrierSpecLayer,
   isSyntheticSpecLayer,
@@ -1311,7 +1312,7 @@ async function buildSurfaceChunkResponse(
   );
   const { densified } = densifyChunkRim(polygon, spec.rimSpacing ?? 250);
   const densifyMs = performance.now() - t0;
-  const maxError = spec.maxError ?? 5;
+  const maxError = spec.maxError ?? DEFAULT_CHUNK_MAX_ERROR;
 
   let sent = 0;
   const sink: PartialSink<SurfaceChunkPacket> | undefined =

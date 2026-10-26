@@ -846,10 +846,10 @@ know where the shoreline runs, and it stays right as the level is swept.
 
 The tint takes `level − bed(x, z)` from the bed's own grid, uploaded as a texture
 and sampled per fragment from object XZ — exactly the encoding the fluid contacts
-use (§6.1.1), and now shared with them as `buildSurfaceDepthMap` / `ChunkDepthMap`:
-R the scene Y, G the validity, NEAREST with the bilinear done in the shader, and
-the object-XZ → uv affine recovered by evaluating `surfaceWorldToGrid` at three
-points.
+use (§6.1.1), and now shared with them as `ChunkDepthMap` (`buildSurfaceDepthMap` for
+a contact's surface, `buildChannelDepthMap` for the bed's channel): R the scene Y, G
+the validity, NEAREST with the bilinear done in the shader, and the object-XZ → uv
+affine recovered by evaluating `surfaceWorldToGrid` at three points.
 
 ⚠️ **Be honest about what this buys.** On the cap the fragment's own height IS the
 bed, so the two agree by construction; all it removes is the TIN's interpolation of
@@ -874,20 +874,28 @@ the water shaders have no depth input of any kind.
   grid rectangle onto the sea as a crisp, view-dependent imprint. An unmapped bed
   now reads as DEEP water (`shoal = mix(1.0, …, bathy)`), and the stand-in is used
   only in the variant compiled without a map at all — which is what it was for.
-- ⚠️ The surface is the declared sea bed (`ChunkStack.seabed`), the same one the sea's
-  own geometry ends against — a second opinion about where the bed is would show
-  along the whole shoreline. It is loaded in the appearance layer
-  (`useStackBathymetry`) and published on `ChunkStackContextValue.bathymetry`, so
-  it costs one texture upload and never a geometry rebuild.
-- ⚠️ It is the RAW grid, not the sealed and resolved channel the geometry is built
-  from, so the two differ by whatever the seal invented (§10.7). Acceptable for a
-  tint; it would not be for anything that has to meet the mesh.
+- ⚠️ The grid is the declared sea bed's CHANNEL (`ChunkStack.seabed`) — exactly the
+  bed the sea's own geometry ends against and every chunk is built on, sealed and on
+  the column's common grid; a second opinion about where the bed is would show along
+  the whole shoreline. On a column built on a relief (`ChunkStack.relief`) that is the
+  relief, plus the column's margin. The `stackWater` generator hands it back with the
+  sea's geometry (`StackWaterResponse.bed`, a copy — the channels stay cached for the
+  next build), `buildChannelDepthMap` packs it, and it is published on
+  `ChunkStackContextValue.bathymetry`: one texture upload, never a geometry rebuild,
+  and the same texture kept when only the sea changes (`sameStackBedGrid`).
+  (2026-10-26; it used to be the bed SURFACE's raw grid, loaded on its own, which
+  differed from the mesh by whatever the seal invented (§10.7) and, on a relief
+  column, by the relief.)
+- ⚠️ So it needs what the sea needs: a footprint (an `outline` or a `cutSource`) and
+  `water`. A stack without a sea has no tint grid, and the tint falls back to the
+  fragment's own depth.
 - ⚠️ A chunk whose layer 0 is NOT the sea bed — a deep tier in a stack — is still
   tinted, and now by the water over it rather than by its own depth, so it goes
   from saturated to faint. Less wrong, but the scope is still "layer 0 of every
   chunk" and that remains the caller's to arrange.
-- ⚠️ The grid is uploaded at full resolution (a field grid is ~1001×1681 RG float),
-  which a tint does not need. Decimating it is an obvious saving and is not done.
+- ⚠️ The grid is uploaded at the common grid's resolution (FieldColumn on Volve:
+  579×715 RG float, 3.3 MB), which a tint does not need. Decimating it is an obvious
+  saving and is not done.
 
 ### 6.5 Floating objects
 
@@ -1230,8 +1238,8 @@ opaque lid in front of them.
 - Refraction (§6.6.2), which the swash weighting only papers over.
 - Refraction of the SURFACE itself, and foam that persists as a receding sheet
   rather than following the instantaneous surface.
-- The bathymetry is uploaded at full grid resolution; a foam band would be happy
-  with far less (§6.4.1).
+- The bathymetry is uploaded at the common grid's resolution; a foam band would be
+  happy with far less (§6.4.1).
 
 #### 6.6.6 ⚠️ A bilinear artefact the shore made visible
 

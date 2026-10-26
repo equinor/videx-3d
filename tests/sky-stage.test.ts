@@ -1,32 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { BufferAttribute, BufferGeometry } from 'three';
 import {
-  createSkyStageBed,
-  createSkyStageFalloff,
+  createSkyStageOutline,
   createSkyStagePlane,
-  createSkyStageRings,
-  createSkyStageSeabed,
   SkyStageBounds,
-  skyStageRim,
 } from '../src/components/Sky/sky-stage';
 import {
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
 } from '../src/sdk/geometries/planar-geometry';
-import type { SeabedMesh } from '../src/sdk/geometries/surface-clip';
 
-const BED_Y = -100;
-const near: SkyStageBounds = [-6000, -6000, 6000, 6000];
+const bounds: SkyStageBounds = [-6000, -6000, 6000, 6000];
 const extent: SkyStageBounds = [-50000, -50000, 50000, 50000];
-const ring: [number, number][] = [];
-for (let j = 0; j < 96; j++) {
-  const a = (j / 96) * Math.PI * 2;
-  const r = 3000 * (1 + 0.2 * Math.sin(3 * a));
-  ring.push([r * Math.cos(a), r * Math.sin(a)]);
-}
-const outline = new PlanarPolygonGeometry([[ring]] as PlanarPolygonCoordinates);
-const heightAt = (x: number, z: number) => BED_Y + 0.01 * x - 0.005 * z;
-const elevations = [[ring.map(([x, z]) => heightAt(x, z))]];
 
 const key = (x: number, z: number) =>
   `${Math.fround(x).toFixed(3)},${Math.fround(z).toFixed(3)}`;
@@ -56,77 +41,12 @@ const boundary = (geometry: BufferGeometry) => {
 
 const onRectangle = (
   [x, z]: number[],
-  [minX, minZ, maxX, maxZ]: SkyStageBounds = near,
+  [minX, minZ, maxX, maxZ]: SkyStageBounds,
 ) => [x - minX, z - minZ, maxX - x, maxZ - z].some(d => Math.abs(d) < 1e-3);
 
-// An occupant's seabed: polar rings from a hole of radius 500 out to the outline, whose
-// outer ring IS the outline, at `heightAt`.
-const HOLE_RADIUS = 500;
-const hole: [number, number][] = ring.map(([x, z]) => {
-  const r = Math.hypot(x, z);
-  return [(x / r) * HOLE_RADIUS, (z / r) * HOLE_RADIUS];
-});
-const seabed: SeabedMesh = (() => {
-  const RINGS = 8;
-  const n = ring.length;
-  const positions: number[] = [];
-  for (let k = 0; k <= RINGS; k++) {
-    const t = k / RINGS;
-    for (let j = 0; j < n; j++) {
-      const x = hole[j][0] + (ring[j][0] - hole[j][0]) * t;
-      const z = hole[j][1] + (ring[j][1] - hole[j][1]) * t;
-      positions.push(x, heightAt(x, z), z);
-    }
-  }
-  const at = (k: number, j: number) => k * n + (j % n);
-  const indices: number[] = [];
-  for (let k = 1; k <= RINGS; k++) {
-    for (let j = 0; j < n; j++) {
-      indices.push(at(k - 1, j), at(k - 1, j + 1), at(k, j));
-      indices.push(at(k, j), at(k - 1, j + 1), at(k, j + 1));
-    }
-  }
-  return {
-    positions: new Float32Array(positions),
-    indices: new Uint32Array(indices),
-  };
-})();
-
-const keys = (points: number[][]) => new Set(points.map(([x, z]) => key(x, z)));
-
-describe('sky stage caps', () => {
-  it('⭐ the falloff meets the walls at the elevations and the far rings at the bed', () => {
-    const falloff = createSkyStageFalloff(
-      near,
-      outline,
-      elevations,
-      BED_Y,
-      2000,
-    );
-    const rim = boundary(falloff);
-    for (const [x, z] of ring) {
-      expect(rim.get(key(x, z))).toBeCloseTo(heightAt(x, z), 3);
-    }
-    for (const [at, y] of rim) {
-      const [x, z] = at.split(',').map(Number);
-      if (ring.some(p => key(p[0], p[1]) === at)) continue;
-      // anything else on its boundary lies on the near rectangle, at the bed
-      expect(onRectangle([x, z])).toBe(true);
-      expect(y).toBeCloseTo(BED_Y, 3);
-    }
-  });
-
-  it('the flat bed around an outline keeps the same rim', () => {
-    const rim = boundary(createSkyStageBed(near, outline));
-    for (const [x, z] of ring) expect(rim.has(key(x, z))).toBe(true);
-    for (const at of rim.keys()) {
-      if (ring.some(p => key(p[0], p[1]) === at)) continue;
-      expect(onRectangle(at.split(',').map(Number))).toBe(true);
-    }
-  });
-
+describe('sky stage', () => {
   it('⭐ the plane is one piece: its only edge is the extent', () => {
-    const plane = createSkyStagePlane(near, extent);
+    const plane = createSkyStagePlane(bounds, extent);
     const edge = boundary(plane);
     expect(edge.size).toBeGreaterThan(0);
     for (const at of edge.keys()) {
@@ -134,74 +54,30 @@ describe('sky stage caps', () => {
     }
   });
 
-  it('the rings meet the falloff vertex for vertex', () => {
-    const falloff = createSkyStageFalloff(
-      near,
-      outline,
-      elevations,
-      BED_Y,
-      2000,
-    );
-    const onNear = (edge: Map<string, number>) =>
-      [...edge.keys()].filter(at => onRectangle(at.split(',').map(Number)));
-    const inner = onNear(boundary(createSkyStageRings(near, extent)));
-    expect(inner.length).toBeGreaterThan(0);
-    expect(new Set(inner)).toEqual(new Set(onNear(boundary(falloff))));
-  });
-
-  it('the rim of a handed seabed: its outer ring and hole as one component, with their heights', () => {
-    const rim = skyStageRim(seabed);
-    const components = rim.outline.coordinates as PlanarPolygonCoordinates;
-    expect(components).toHaveLength(1);
-    const [outer, inner] = components[0];
-    expect(components[0]).toHaveLength(2);
-    expect(keys(outer)).toEqual(keys(ring));
-    expect(keys(inner)).toEqual(keys(hole));
-    components[0].forEach((r, i) => {
-      expect(rim.elevations[0][i]).toHaveLength(r.length);
-      r.forEach(([x, z], v) =>
-        expect(rim.elevations[0][i][v]).toBeCloseTo(heightAt(x, z), 3),
-      );
-    });
-  });
-
-  it('⭐ a falloff on that rim meets the handed seabed vertex for vertex', () => {
-    const rim = skyStageRim(seabed);
-    const falloff = createSkyStageFalloff(
-      near,
-      rim.outline,
-      rim.elevations,
-      BED_Y,
-      2000,
-    );
-    const around = boundary(falloff);
-    const bed = boundary(createSkyStageSeabed(seabed));
-    const outer = keys(ring);
-    for (const [at, y] of bed) {
-      if (!outer.has(at)) continue;
-      expect(around.get(at)).toBeCloseTo(y, 3);
-    }
-    // and nowhere else: the rest of its boundary lies on the near rectangle
-    for (const at of around.keys()) {
-      if (bed.has(at)) continue;
-      expect(onRectangle(at.split(',').map(Number))).toBe(true);
-    }
-  });
-
-  it('the handed seabed is wrapped, not copied, and faces up', () => {
-    const geometry = createSkyStageSeabed(seabed);
-    expect(geometry.getAttribute('position').array).toBe(seabed.positions);
-    expect(geometry.getIndex()!.array).toBe(seabed.indices);
-    const normal = geometry.getAttribute('normal') as BufferAttribute;
-    for (let v = 0; v < normal.count; v++) {
-      expect(normal.getY(v)).toBeGreaterThan(0);
-    }
-  });
-
-  it('keeps the normals a seabed is handed with', () => {
-    const normals = new Float32Array(seabed.positions.length);
-    for (let v = 0; v < normals.length; v += 3) normals[v + 2] = 1;
-    const geometry = createSkyStageSeabed({ ...seabed, normals });
-    expect(geometry.getAttribute('normal').array).toBe(normals);
+  it('outlines every occupant, where its offset puts it', () => {
+    const square = (size: number) =>
+      [
+        [
+          [
+            [0, 0],
+            [size, 0],
+            [size, size],
+            [0, size],
+            [0, 0],
+          ],
+        ],
+      ] as PlanarPolygonCoordinates;
+    const a = new PlanarPolygonGeometry(square(100));
+    const b = new PlanarPolygonGeometry(square(10), [500, 700]);
+    const lines = createSkyStageOutline(bounds, [a, b], 0, -100);
+    const position = lines.getAttribute('position') as BufferAttribute;
+    // Each ring twice (at the seabed and at the surface), and the bounds once: as segments.
+    expect(position.count).toBe(2 * (4 + 4) * 2 + 4 * 2);
+    const points = new Set<string>();
+    for (let i = 0; i < position.count; i++)
+      points.add(key(position.getX(i), position.getZ(i)));
+    expect(points.has(key(100, 100))).toBe(true);
+    expect(points.has(key(510, 710))).toBe(true);
+    expect(points.has(key(10, 10))).toBe(false);
   });
 });

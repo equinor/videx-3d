@@ -49,7 +49,7 @@ describe('skyZone', () => {
     expect(skyZone(-1e6, { ...abyss, abyss: false })).toBe('air');
   });
 
-  it("takes an occupant's seabed under the camera for the sea's", () => {
+  it("takes a stage's ground under the camera for the sea's", () => {
     // Inside a hill rising above the sea's seabed: in the ground.
     expect(skyZone(-60, { ...sea, oceanGround: -20 })).toBe('subsurface');
     // In a valley sunk below it: in the water.

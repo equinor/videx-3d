@@ -19,7 +19,11 @@ import {
 import { DEFAULT_OCEAN_WATER_OPACITY } from '../../components/Ocean/ocean-material';
 import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../../components/Ocean/ocean-volume-material';
 import { ReliefFrame, reliefFrameAt } from '../../sdk/geometries/relief-grid';
+import type { ReliefLayer } from '../../sdk/geometries/relief-tiles';
+import { crsOriginLocation } from '../../sdk/projection/crs';
 import { solarPosition } from '../../sdk/utils/solar-position';
+import { bakedReliefId } from '../data/baked-reliefs';
+import { demoCrs } from '../data/demo-crs';
 import {
   skyCutawayArgs,
   SkyCutawayArgs,
@@ -170,6 +174,9 @@ export type SkyArgs = {
 } & SkyCutawayArgs &
   ToneMappingArgs;
 
+// The demo field's place, from the CRS its `UtmArea` places it with.
+const demoPlace = crsOriginLocation(demoCrs);
+
 // 10 September, 13:00 solar time over Volve: about the Sky's default sun (200°, 35°).
 export const skyArgs: SkyArgs = {
   sunFromTime: false,
@@ -177,8 +184,8 @@ export const skyArgs: SkyArgs = {
   sunElevation: skyDefaults.sun.elevation,
   sunDate: '2024-09-10',
   sunHour: 13,
-  sunLatitude: 58.44,
-  sunLongitude: 1.89,
+  sunLatitude: Math.round(demoPlace.latitude * 100) / 100,
+  sunLongitude: Math.round(demoPlace.longitude * 100) / 100,
   observerNow: false,
   sunIntensity: skyDefaults.sun.intensity,
   sunSize: skyDefaults.sun.size,
@@ -1330,12 +1337,45 @@ export function skyArgTypes({
 /** Story args for a `SkyBoxStage`'s relief (see {@link skyReliefFromArgs}). */
 export type SkyReliefArgs = {
   relief: boolean;
+  /** the demo reliefs merged, by id (see {@link SKY_DEMO_RELIEF_LAYERS}) */
+  reliefLayers: string[];
   reliefColor: 'flat' | 'ramp';
   reliefLandColor: string;
 };
 
-/** The demo relief in the stories' store (see scripts/generate-relief.js). */
-export const SKY_DEMO_RELIEF = 'etopo-2022-nordic';
+/**
+ * The demo reliefs around the field, coarse to fine, for a relief drawn from tiles: later
+ * ones win where they have data (see scripts/generate-relief.js).
+ */
+export const SKY_DEMO_RELIEF_LAYERS: ReliefLayer[] = [
+  { id: 'etopo-2022-nordic' },
+  { id: 'etopo-2022-15s-sw-norway', feather: 3000 },
+  { id: 'emodnet-2020-sw-norway', feather: 1500 },
+  { id: 'emodnet-2020-volve', feather: 500 },
+];
+
+// What each demo relief is, for the `reliefLayers` control.
+const SKY_DEMO_RELIEF_LABELS: Record<string, string> = {
+  'etopo-2022-nordic': 'ETOPO 2022, 2\u2032, Norway to the British Isles',
+  'etopo-2022-15s-sw-norway': 'ETOPO 2022, 15\u2033, Volve to the coast',
+  'emodnet-2020-sw-norway': 'EMODnet, 1/8\u2032, Volve to the coast (sea only)',
+  'emodnet-2020-volve': 'EMODnet, 1/16\u2032, around Volve (sea only)',
+};
+
+/**
+ * The synthetic column's sea bed baked into a relief (`surfaceToRelief`): a coast and an
+ * island over the field, made up, to see a local layer merge.
+ */
+export const SKY_DEMO_BAKED_SEABED = bakedReliefId('synthetic:cap-seabed');
+
+/**
+ * A store surface baked into a relief layer by the demo store, as a story's own finest
+ * layer: a field's sea bed, say, so the relief over it is the field's own top.
+ */
+export const skyBakedReliefLayer = (
+  surfaceId: string,
+  feather = 500,
+): ReliefLayer => ({ id: bakedReliefId(surfaceId), feather });
 
 // The layers a `hide` control offers: the sky's own, by label, and a stage's.
 const SKY_HIDE_LAYERS: Record<string, SkyLayer> = {
@@ -1343,13 +1383,7 @@ const SKY_HIDE_LAYERS: Record<string, SkyLayer> = {
   'sky surface': 'surface',
   'sky walls': 'walls',
 };
-const STAGE_HIDE_LAYERS: SkyBoxStageLayer[] = [
-  'surface',
-  'bed',
-  'falloff',
-  'occupant-bed',
-  'relief',
-];
+const STAGE_HIDE_LAYERS: SkyBoxStageLayer[] = ['surface', 'bed', 'relief'];
 
 /** A `hide` control for a sky story: layers of the sky and of its stage not to draw (see {@link skyHideFromArgs}). */
 export const skyHideArgType = {
@@ -1371,7 +1405,7 @@ export function skyHideFromArgs(hide: string[] = []) {
 /** A `SkyBoxStage`'s `outline` debug view as a control. */
 export const skyOutlineArgType = {
   description:
-    'The stage\u2019s `bounds` (grey) and, with an occupant, its outline along its seabed rim (white) and at the sea surface (black), drawn over everything.',
+    'The stage\u2019s `bounds` (grey) and its occupants\u2019 outlines at the sea\u2019s seabed (white) and at its surface (black), drawn over everything.',
   table: { category: 'Debug' },
 } as const;
 
@@ -1417,6 +1451,7 @@ export function skyWallDebugFromArgs(args: SkyWallDebugArgs) {
 
 export const skyReliefArgs: SkyReliefArgs = {
   relief: false,
+  reliefLayers: SKY_DEMO_RELIEF_LAYERS.map(layer => layer.id),
   reliefColor: 'flat',
   reliefLandColor: '#34433b',
 };
@@ -1427,9 +1462,17 @@ export function skyReliefArgTypes(shownIf?: string): ArgTypes<SkyReliefArgs> {
     relief: {
       ...toggle(
         SEA,
-        'Land and seabed beyond the stage, from the store: ETOPO 2022 (NOAA) from Norway to the British Isles at 2 arc-minutes. The stage keeps its own seabed over its area.',
+        'Land and seabed from the store, drawn from tiles over everything, the stage included: the demo reliefs ticked in `reliefLayers`, merged coarse to fine. Made on demand: `npm run generate-relief`.',
       ),
       ...(shownIf ? { if: { arg: shownIf } } : {}),
+    },
+    reliefLayers: {
+      control: { type: 'check', labels: SKY_DEMO_RELIEF_LABELS },
+      options: SKY_DEMO_RELIEF_LAYERS.map(layer => layer.id),
+      description:
+        'The demo reliefs merged, coarse to fine whatever the order ticked: a later one wins where it has data, faded in over 3, 1.5 and 0.5 km from where its data ends. A story may add layers of its own over them. Changing them builds every tile again.',
+      table: { category: SEA },
+      if: { arg: 'relief' },
     },
     reliefColor: {
       control: { type: 'inline-radio' },
@@ -1456,18 +1499,30 @@ export const skyReliefFrame = (args: Partial<SkyArgs>): ReliefFrame =>
     args.sunLatitude ?? skyArgs.sunLatitude,
   );
 
-/** A `SkyBoxStage`'s `relief` from {@link SkyReliefArgs}, the scene placed by `frame`. */
+/**
+ * A `SkyBoxStage`'s `relief` from {@link SkyReliefArgs}, the scene placed by `frame`: the
+ * demo reliefs ticked while `relief` is on, then the story's own `local` layers, finest
+ * last. None without any.
+ */
 export const skyReliefFromArgs = (
   args: Partial<SkyReliefArgs>,
   frame: ReliefFrame,
-): SkyBoxStageRelief | undefined =>
-  args.relief
-    ? {
-        id: SKY_DEMO_RELIEF,
-        frame,
-        color:
-          args.reliefColor === 'ramp'
-            ? 'ramp'
-            : (args.reliefLandColor ?? skyReliefArgs.reliefLandColor),
-      }
-    : undefined;
+  local: ReliefLayer[] = [],
+): SkyBoxStageRelief | undefined => {
+  const ticked = args.reliefLayers ?? skyReliefArgs.reliefLayers;
+  const layers = [
+    ...(args.relief
+      ? SKY_DEMO_RELIEF_LAYERS.filter(layer => ticked.includes(layer.id))
+      : []),
+    ...local,
+  ];
+  if (layers.length === 0) return undefined;
+  return {
+    frame,
+    layers,
+    color:
+      args.reliefColor === 'ramp'
+        ? 'ramp'
+        : (args.reliefLandColor ?? skyReliefArgs.reliefLandColor),
+  };
+};

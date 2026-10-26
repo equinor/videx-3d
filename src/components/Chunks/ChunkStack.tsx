@@ -15,10 +15,11 @@ import { precompile } from '../../rendering/precompile';
 import { useGenerator } from '../../hooks/useGenerator';
 import {
   CutUniforms,
+  createHeightFieldClipBinding,
+  HeightFieldClip,
   PlanarPolygonGeometry,
   readCameraTarget,
-  SeabedMesh,
-  stackCapSeabed,
+  ReliefSource,
   StackSectionSource,
   SurfaceChunkMetrics,
   SurfaceMeta,
@@ -51,8 +52,10 @@ import {
   ChunkSection,
   ChunkSectionState,
   ChunkStackProgress,
+  DEFAULT_CHUNK_MAX_ERROR,
   DEFAULT_SECTION_OFFSET,
   FenceSideInfo,
+  StackBedGrid,
   StackImmersion,
   stackWater,
   StackWater,
@@ -73,7 +76,9 @@ import { buildStackWaterSpec } from './chunk-spec';
 import { CutoutSource } from './cutout';
 import { resolveWellboreOutline } from './resolveWellboreOutline';
 import {
+  createReliefTopSampler,
   createSurfaceSampler,
+  SurfaceSampler,
   SurfaceSamplerContext,
   SurfaceSamplerEntry,
   SurfaceSamplerRegistry,
@@ -82,7 +87,11 @@ import {
 import { useChunkContacts } from './useChunkContacts';
 import { useChunkFenceFace } from './useChunkFenceFace';
 import { useChunkSection } from './useChunkSection';
-import { useStackBathymetry } from './useStackBathymetry';
+import {
+  buildChannelDepthMap,
+  ChunkDepthMap,
+  sameStackBedGrid,
+} from './chunk-depth-map';
 import { useStackFence } from './useStackFence';
 import { useStackFenceOverlay } from './useStackFenceOverlay';
 import { useStackWater } from './useStackWater';
@@ -162,9 +171,39 @@ export type ChunkStackProps = {
    * The id of the surface in `surfaces` that is the sea bed. Declared, never
    * inferred: the column holds a sea bed only while a chunk draws this surface, and
    * only then is there a sea (`water`), a bed tint, a cap kept whole under a kept
-   * sea, and an `onSeabed`. A column cut from deeper down holds none.
+   * sea, and a `relief` to build it on. A column cut from deeper down holds none.
    */
   seabed?: string | null;
+  /**
+   * The relief the column's sea bed (`seabed`) is built on, instead of on its surface's
+   * own values: merged onto the column's grid as a `SkyBoxStage` merges its tiles, and
+   * covering the whole column, so the column's top is the ground the stage draws. Derive
+   * it from the stage's props with `reliefSource`. The sea bed's surface still plans the
+   * grid. Needs the shared column (an `outline` or a `cutSource`). The column is built
+   * again when its `key` changes.
+   *
+   * ⚠️ The relief has no vertical exaggeration: under one, the column's top could not meet
+   * the ground, so the column builds on its own sea bed (and warns).
+   */
+  relief?: ReliefSource;
+  /**
+   * With `relief`: the ground as the stage draws it over the stack, from its occupant's
+   * `onGround`. Every chunk material leaves out what lies above it, per fragment and in
+   * the stack's own frame, so the walls and the section and fence faces end exactly where
+   * the ground is drawn, at any depth of its tiles. The column's top is built `margin`
+   * (`ReliefSource.margin`, default `maxError`) above the relief for that. The materials
+   * are compiled for it while the column is on a relief, so a clip coming and going
+   * rebuilds nothing.
+   */
+  clip?: HeightFieldClip | null;
+  /**
+   * With `relief`: the relief's own sampler, from the stage's `onSampler`. The stack's
+   * `SurfaceSamplerContext` answers its sea bed from it wherever the column holds it, so
+   * what is placed on the column's top lands on the ground as drawn rather than on the
+   * cap hidden `margin` above it; and its pins hold the finest ground under them. Without
+   * it the cap answers, less the margin: within `maxError` of the ground.
+   */
+  reliefSampler?: SurfaceSampler | null;
   /**
    * Draw the `water`. Default true. `false` keeps the sea built but hides it, the bed
    * tint and the immersion fog in it with it — while a `SkyBoxStage` owns the water over
@@ -247,18 +286,10 @@ export type ChunkStackProps = {
   /**
    * Called with the stack's cut — its section's plane and its fence — as the uniform
    * objects its own materials read, so something drawn for the stack can be cut with it:
-   * a `SkyBoxStage` occupant's seabed, say. Once; the objects follow the cut every frame,
-   * and cut nothing while it is off. `null` on unmount.
+   * the relief over it, as a `SkyBoxStage` occupant's `cut`, say. Once; the objects follow
+   * the cut every frame, and cut nothing while it is off. `null` on unmount.
    */
   onCut?: (cut: CutUniforms | null) => void;
-  /**
-   * Called with the column's sea bed (`seabed`) as the chunk that draws it built it,
-   * once that build has finished: exactly the triangles the stack's walls and cut
-   * faces were built against, so a `SkyBoxStage` occupant's seabed handed this meets
-   * them with no seam. `null` while no chunk has it built — through a rebuild too —
-   * while the column holds no sea bed, and on unmount.
-   */
-  onSeabed?: (seabed: SeabedMesh | null) => void;
   /**
    * How the column is made monotone before it is built, and what is dropped where
    * a unit is not present. Chunks inherit this unless they declare their own.
@@ -335,6 +366,9 @@ export const ChunkStack = ({
   carrier,
   water,
   seabed,
+  relief,
+  clip,
+  reliefSampler,
   drawWater = true,
   immersion,
   contacts,
@@ -344,7 +378,6 @@ export const ChunkStack = ({
   onFence,
   onFenceSide,
   onCut,
-  onSeabed,
   resolve,
   rimSpacing,
   maxError,
@@ -385,6 +418,11 @@ export const ChunkStack = ({
   const resolveKey = resolve ? JSON.stringify(resolve) : '';
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
   const stableResolve = useMemo(() => resolve, [resolveKey]);
+
+  // The relief joins the column's identity too; it carries its own content key.
+  const reliefKey = relief?.key ?? '';
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
+  const stableRelief = useMemo(() => relief, [reliefKey]);
 
   // Same again: every chunk's MATERIALS depend on these, so a fresh array each
   // render would rebuild all of them. ⚠️ The surface META is keyed by id only —
@@ -800,34 +838,18 @@ export const ChunkStack = ({
     );
   }, [stableWater, column, seabedMeta, seabed]);
   const seabedId = seabedMeta?.id;
-  // Its cap as drawn, for `onSeabed`: published by a chunk once it has finished, and
-  // withdrawn when it rebuilds.
-  const seabedCap = useMemo(() => {
-    if (!seabedId) return null;
-    for (const entries of drawn.current.values()) {
-      const entry = entries.find(e => e.id === seabedId);
-      if (entry) return entry.geometry;
-    }
-    return null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- a new version is a new set of caps
-  }, [drawnVersion, seabedId]);
-  const announceSeabed = useRef(onSeabed);
-  announceSeabed.current = onSeabed;
-  const handsSeabed = !!onSeabed;
-  useEffect(() => {
-    if (!handsSeabed) return;
-    announceSeabed.current?.(seabedCap ? stackCapSeabed(seabedCap) : null);
-  }, [seabedCap, handsSeabed]);
-  useEffect(() => () => announceSeabed.current?.(null), []);
 
-  // The bed the sea stands on — the same one `stackWater` ends against. Its grid
-  // drives the bed tint per fragment, and it is the sea surface's only depth input:
+  // The bed the sea stands on, exactly as the sea and every chunk are built on it: the
+  // column's bed channel (the relief, on one), handed back with the sea's geometry. Its
+  // grid drives the bed tint per fragment, and it is the sea surface's only depth input:
   // without it the water shader uses the view angle as a stand-in and cannot tell a
   // shoal from open sea.
-  const bathymetry = useStackBathymetry(
-    seaWater ? seabedMeta : undefined,
-    utm?.utmToArea,
-  );
+  const [bedTint, setBedTint] = useState<{
+    bed: StackBedGrid;
+    map: ChunkDepthMap;
+  } | null>(null);
+  useEffect(() => () => bedTint?.map.texture.dispose(), [bedTint]);
+  const bathymetry = bedTint?.map ?? null;
 
   // --- Fence depths: the trajectory above and below every unit a cut may take is
   //     left out of the fence (see `ChunkCutDepths`). Held as two primitives, so a
@@ -933,6 +955,63 @@ export const ChunkStack = ({
     else sectionUniformInverse.value.copy(sectionUniform.value).negate();
   });
 
+  // Under a vertical exaggeration the column's top could not meet the relief, which has
+  // none: the stack's frame is an identity, so its world matrix shows any above it.
+  const [exaggerated, setExaggerated] = useState(false);
+  useFrame(() => {
+    const root = stackFrame.current;
+    if (!stableRelief || !root) return;
+    const e = root.matrixWorld.elements;
+    const now =
+      Math.abs(
+        Math.hypot(e[4], e[5], e[6]) / Math.hypot(e[0], e[1], e[2]) - 1,
+      ) > 1e-4;
+    if (now !== exaggerated) setExaggerated(now);
+  });
+  const columnRelief = useMemo(() => {
+    if (!stableRelief || !seabedId || exaggerated) return null;
+    if (stableRelief.margin !== undefined)
+      return { source: stableRelief, seabed: seabedId };
+    // Above the relief by what the column's own tessellation may stray, so its faces
+    // reach the ground as drawn, and the clip ends them there.
+    const margin = maxError ?? DEFAULT_CHUNK_MAX_ERROR;
+    return {
+      source: {
+        ...stableRelief,
+        margin,
+        key: `${stableRelief.key}|margin=${margin}`,
+      },
+      seabed: seabedId,
+    };
+  }, [stableRelief, seabedId, exaggerated, maxError]);
+  // On a relief, the column's top is the ground, not its cap.
+  const stackSampler = useMemo(
+    () =>
+      columnRelief
+        ? createReliefTopSampler(sampler, {
+            seabed: columnRelief.seabed,
+            margin: columnRelief.source.margin ?? 0,
+            relief: reliefSampler,
+          })
+        : sampler,
+    [sampler, columnRelief, reliefSampler],
+  );
+  // Compiled into every material while the column is on the relief, clip or not.
+  const onRelief = !!columnRelief;
+  const clipBinding = useMemo(
+    () => (onRelief ? createHeightFieldClipBinding() : null),
+    [onRelief],
+  );
+  useLayoutEffect(() => {
+    clipBinding?.set(clip ?? null);
+  }, [clipBinding, clip]);
+  useEffect(() => {
+    if (stableRelief && exaggerated)
+      console.warn(
+        'ChunkStack: the stack is exaggerated vertically and the relief is not — the column builds on its own sea bed.',
+      );
+  }, [stableRelief, exaggerated]);
+
   // ⚠️ Not `enabled`: the cut channels are a build output, so keying them on the
   // toggle would rebuild the sea and every chunk each time a cut is switched.
   const hasCut = prepareCuts || !!section || !!fence;
@@ -1017,6 +1096,8 @@ export const ChunkStack = ({
       contacts: contactTextures,
       water: seaWater ?? null,
       seabed: seabedId ?? null,
+      columnRelief,
+      heightClip: clipBinding?.uniforms,
       drawWater,
       waterTintShown,
       bathymetry,
@@ -1065,6 +1146,8 @@ export const ChunkStack = ({
     contactTextures,
     seaWater,
     seabedId,
+    columnRelief,
+    clipBinding,
     drawWater,
     waterTintShown,
     bathymetry,
@@ -1119,6 +1202,7 @@ export const ChunkStack = ({
       bed: seabedId,
       envelope,
       carrier: stableCarrier,
+      relief: columnRelief,
       rimSpacing,
       maxError,
       resolve: stableResolve,
@@ -1132,11 +1216,20 @@ export const ChunkStack = ({
     column,
     value.envelope,
     stableCarrier,
+    columnRelief,
     rimSpacing,
     maxError,
     stableResolve,
     hasCut,
   ]);
+
+  const hasEnvelope = !!value.envelope;
+  useEffect(() => {
+    if (columnRelief && !hasEnvelope)
+      console.warn(
+        'ChunkStack: a `relief` needs the shared column (an `outline` or a `cutSource`) — the sea bed is built on its surface.',
+      );
+  }, [columnRelief, hasEnvelope]);
 
   const [seaGeometry, setSeaGeometry] = useState<{
     lid: BufferGeometry | null;
@@ -1145,7 +1238,10 @@ export const ChunkStack = ({
   } | null>(null);
 
   useEffect(() => {
-    if (!waterSpec) return;
+    if (!waterSpec) {
+      setBedTint(null);
+      return;
+    }
     let cancelled = false;
     (async () => {
       const response = await waterGenerator(waterSpec);
@@ -1158,6 +1254,13 @@ export const ChunkStack = ({
               section: response.section,
             }
           : null,
+      );
+      const bed = response?.bed ?? null;
+      // The same bed when only the sea changed: kept, so its materials are too.
+      setBedTint(held =>
+        held && bed && sameStackBedGrid(held.bed, bed)
+          ? held
+          : bed && { bed, map: buildChannelDepthMap(bed) },
       );
     })();
     return () => {
@@ -1234,7 +1337,7 @@ export const ChunkStack = ({
   return (
     <ChunkStackContext.Provider value={value}>
       <SurfaceSamplerRegistryContext.Provider value={samplerRegistry}>
-        <SurfaceSamplerContext.Provider value={sampler}>
+        <SurfaceSamplerContext.Provider value={stackSampler}>
           <OceanSamplerContext.Provider value={sea?.sampler ?? null}>
             <OceanContactContext.Provider value={sea?.contacts ?? null}>
               {/* Identity transform, present so a camera-locked section has a
@@ -1244,7 +1347,7 @@ export const ChunkStack = ({
                   <StackImmersionFog
                     immersion={immersion}
                     water={drawWater ? (seaWater ?? null) : null}
-                    sampler={sampler}
+                    sampler={stackSampler}
                     base={blockBase}
                     section={sectionState}
                     sectionWater={section?.water === true}

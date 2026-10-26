@@ -17,7 +17,7 @@ The generator functions can be imported from `@equinor/videx-3d/generators` (def
 | **Casings** | casings | generateCasings | - position-logs<br/>- casings |
 | **CompletionAnnotations** | completionToolAnnotations | generateCompletionToolAnnotations | - position-logs<br/>- completion-tools |
 | **CompletionTools** | completionTools | generateCompletionTools | - position-logs<br/>- completion-tools |
-| **Chunk** | surfaceChunk | generateSurfaceChunk | - surface-values |
+| **Chunk** | surfaceChunk | generateSurfaceChunk | - surface-values<br/>- relief-meta, relief-values _(with `ChunkStack.relief`: the sea bed on the relief, see [tiles](./tiles.md))_ |
 | **Chunk** / **ChunkStack** _(wellbore cut source)_ | wellboreOutline | generateWellboreOutline | - wellbore-headers<br/>- position-logs<br/>- surface-values |
 | **WellboreFormationColumn** | wellboreFormationColumn | generateWellboreFormationColumnGeometries | - position-logs<br/>- formations |
 | **DepthMarkers** | depthMarkers | generateDepthMarkers | - position-logs |
@@ -25,7 +25,8 @@ The generator functions can be imported from `@equinor/videx-3d/generators` (def
 | **Perimeter** | perimeterGeometry | generatePerimeterGeometry | - position-logs |
 | **FormationMarkers** | formationSymbols | generateFormationMarkers | - position-logs<br/>- formations |
 | **Shoes** | shoeSymbols | generateShoes | - position-logs<br/>- casings |
-| **SkyBoxStage** _(an occupant's seabed, called by the host)_ | skySeabed | generateSkySeabed | - surface-meta<br/>- surface-values |
+| **SkyBoxStage** _(`relief`, its tiles)_ | skyReliefTile | generateSkyReliefTile | - relief-meta<br/>- relief-values |
+| **SkyBoxStage** _(`relief`, its overview past a short far plane: the first layer)_ | skyRelief | generateSkyRelief | - relief-meta<br/>- relief-values |
 | **Surface** | surfaceGeometry | generateSurfaceGeometry | - surface-meta<br/>- surface-values |
 | **Surface** | surfaceTextures | generateSurfaceTextureData | - surface-meta<br/>- surface-values |
 | **Trajectory** | trajectory | generateTrajectory | - position-logs |
@@ -121,6 +122,22 @@ Components access the generator registry with the `useGenerator` hook (see below
     </GeneratorsProvider>
   </DataProvider>
 </>
+```
+
+Providers nest: `useGenerator` asks the nearest one. To keep one kind of work from waiting
+on another — a sky's relief tiles streaming while a column builds, say — give it a worker of
+its own, with a second registry holding its generators, around the components that use them.
+Each provider connects to the store on its own port:
+
+```tsx
+<GeneratorsProvider registry={registry}>
+  <ChunkStack /* builds on the first worker */ />
+  <GeneratorsProvider registry={skyRegistry /* skyReliefTile, skyRelief */}>
+    <Sky>
+      <SkyBoxStage /* ... */ />
+    </Sky>
+  </GeneratorsProvider>
+</GeneratorsProvider>
 ```
 
 ## useGenerator

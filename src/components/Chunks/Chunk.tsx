@@ -838,7 +838,11 @@ export const Chunk = ({
       // chunk builds (and resolves) on its own.
       stack:
         stack.column && stack.column.length > 0 && stack.envelope
-          ? { surfaces: stack.column, envelope: stack.envelope }
+          ? {
+              surfaces: stack.column,
+              envelope: stack.envelope,
+              relief: stack.columnRelief,
+            }
           : undefined,
     });
   }, [
@@ -858,6 +862,7 @@ export const Chunk = ({
     stack.carrier,
     stack.column,
     stack.envelope,
+    stack.columnRelief,
     cutsPrepared,
     peelable,
   ]);
@@ -1174,6 +1179,7 @@ export const Chunk = ({
     fenceUniformsInverse: stack.fenceUniformsInverse,
     fenceOverlayUniforms: stack.fenceOverlayUniforms,
     fenceCarrier: stack.fenceCarrier,
+    heightClip: stack.heightClip,
     debugTiles: resolvedDebugTiles,
     lodLevel: resolvedLodLevel,
     lodPixelError: resolvedLodPixelError,

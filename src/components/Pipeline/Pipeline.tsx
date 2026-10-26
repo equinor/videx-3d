@@ -174,6 +174,29 @@ export const Pipeline = ({
     return () => geometry.dispose();
   }, [geometry]);
 
+  // The finest ground along the route, held in whatever the view (see
+  // `SurfaceSampler.pin`): the line is laid again once it is in.
+  const pin = sampler?.pin;
+  useEffect(() => {
+    if (!pin || !path || path.length < 2) return;
+    const half = spacing / 2;
+    const squares: [number, number, number, number][] = [];
+    for (let i = 1; i < path.length; i++) {
+      const [ax, az] = path[i - 1];
+      const [bx, bz] = path[i];
+      const steps = Math.max(
+        Math.ceil(Math.hypot(bx - ax, bz - az) / spacing),
+        1,
+      );
+      for (let s = i === 1 ? 0 : 1; s <= steps; s++) {
+        const x = ax + ((bx - ax) * s) / steps;
+        const z = az + ((bz - az) * s) / steps;
+        squares.push([x - half, z - half, x + half, z + half]);
+      }
+    }
+    return pin(squares);
+  }, [pin, path, spacing]);
+
   const owned = useMemo(
     () =>
       material instanceof Material

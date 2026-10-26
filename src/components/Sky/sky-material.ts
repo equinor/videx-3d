@@ -62,6 +62,9 @@ const NO_STAGE = [1, 1, -1, -1] as const;
 // Camera heights over the sea between which the flat sea's disc moves from the scene to
 // under the camera: from far off, the curve measured from a disc to one side is lopsided.
 const FLAT_SEA_FOLLOW: Vec2 = [100000, 500000];
+// And how far past the disc's edge the camera goes, along the level, as it does: measured
+// from a disc off to one side, the ground near the camera rises and sinks as it turns.
+const FLAT_SEA_AWAY: Vec2 = [5000, 40000];
 
 /** The defines a material drawing the sky's sea takes over from the {@link SkyMaterial}. */
 export const SKY_SHARED_DEFINES = [
@@ -118,6 +121,13 @@ export class SkyMaterial extends ShaderMaterial {
   private get flatSea(): Vector4 {
     return this.uniforms.uSkyStageFlat.value;
   }
+  /**
+   * {@link followFlatSea} also measures the curve from under the camera once it is far
+   * off along the level, not only high up. For what curves the ground as well as the
+   * sea — a stage's relief drawn from tiles, which sets it — as the stage's own seabed is
+   * flat and would part from the curved sea.
+   */
+  followAway = false;
   private starTextures: { cells: DataTexture; list: DataTexture } | null = null;
   private observing = false;
   private starsLoading = false;
@@ -739,26 +749,67 @@ export class SkyMaterial extends ShaderMaterial {
 
   /**
    * Move the flat sea's disc ({@link setFlatSea}) toward the point under `camera` as it
-   * climbs from 100 to 500 km over the sea, so from high up the Earth's edge stays round.
-   * Every frame.
+   * climbs from 100 to 500 km over the sea — or, with {@link followAway}, as it goes from
+   * 5 to 40 km past the disc's edge along the level: measured from a disc to one side, the
+   * Earth's edge is lopsided from high up, and the ground about a camera off to one side
+   * rises and sinks as the camera turns. What lies on the scene's own disc then follows the
+   * curve too: place it with a `SkyAnchor`. Every frame.
    */
   followFlatSea(camera: Vector3) {
     const flat = this.uniforms.uSkyFlat.value as Vector4;
     const up = this.up;
-    const t = MathUtils.smoothstep(
+    const scene = this.flatSea;
+    const along = scene.x * up.x + scene.y * up.y + scene.z * up.z;
+    const lift = along - camera.dot(up);
+    // From the disc's centre to the point under the camera.
+    const ax = camera.x + up.x * lift - scene.x;
+    const ay = camera.y + up.y * lift - scene.y;
+    const az = camera.z + up.z * lift - scene.z;
+    const high = MathUtils.smoothstep(
       camera.dot(up) - this.oceanLevel,
       FLAT_SEA_FOLLOW[0],
       FLAT_SEA_FOLLOW[1],
     );
-    const scene = this.flatSea;
-    const along = scene.x * up.x + scene.y * up.y + scene.z * up.z;
-    const lift = along - camera.dot(up);
-    flat.set(
-      scene.x + (camera.x + up.x * lift - scene.x) * t,
-      scene.y + (camera.y + up.y * lift - scene.y) * t,
-      scene.z + (camera.z + up.z * lift - scene.z) * t,
-      scene.w,
-    );
+    const t = this.followAway
+      ? Math.max(
+          high,
+          MathUtils.smoothstep(
+            Math.hypot(ax, ay, az) - scene.w,
+            FLAT_SEA_AWAY[0],
+            FLAT_SEA_AWAY[1],
+          ),
+        )
+      : high;
+    flat.set(scene.x + ax * t, scene.y + ay * t, scene.z + az * t, scene.w);
+  }
+
+  /**
+   * How far below the level the curved sea lies at `point`, as seen from `eye`: as the
+   * shaders lower the sea and the relief (beyond the flat sea's disc, measured along the
+   * level from where the view leaves it). 0 without {@link curvedHorizon}. Reads the disc
+   * as {@link followFlatSea} last left it. Its twin on the GPU is `shaders/sky-curve.glsl`,
+   * which `applySkyCurve` puts into any material.
+   */
+  curveDrop(point: Vector3, eye: Vector3): number {
+    const curvature = this.uniforms.uSkyCurvature.value as number;
+    if (curvature <= 0) return 0;
+    const flat = this.uniforms.uSkyFlat.value as Vector4;
+    const up = this.up;
+    const dx = point.x - eye.x;
+    const dy = point.y - eye.y;
+    const dz = point.z - eye.z;
+    const vertical = dx * up.x + dy * up.y + dz * up.z;
+    const lx = dx - up.x * vertical;
+    const ly = dy - up.y * vertical;
+    const lz = dz - up.z * vertical;
+    const run = Math.hypot(lx, ly, lz);
+    if (run < 1e-3) return 0;
+    const inner =
+      flat.w -
+      ((eye.x - flat.x) * lx + (eye.y - flat.y) * ly + (eye.z - flat.z) * lz) /
+        run;
+    const past = Math.max(run - inner, 0);
+    return 0.5 * curvature * past * past;
   }
 
   /** height of the lid along {@link up} */
@@ -1104,7 +1155,7 @@ export class SkyMaterial extends ShaderMaterial {
     this.uniforms.uSkyOceanFogDensity.value = Math.max(value, 0);
   }
 
-  /** the camera is inside a stage occupant's seabed, above the sea's own (see {@link oceanGround}) */
+  /** the camera is under the ground a stage draws, above the sea's own seabed (see {@link oceanGround}) */
   get oceanBuried(): boolean {
     return this.uniforms.uSkyOceanBuried.value > 0;
   }
@@ -1113,8 +1164,8 @@ export class SkyMaterial extends ShaderMaterial {
   }
 
   /**
-   * The seabed's height under the camera where a stage occupant draws its own
-   * (`SkyBoxStage`), `null` where the sea's flat seabed is.
+   * The ground's height under the camera where a stage draws its own (`SkyBoxStage`, its
+   * relief drawn from tiles), `null` where the sea's flat seabed is.
    */
   oceanGround: number | null = null;
 

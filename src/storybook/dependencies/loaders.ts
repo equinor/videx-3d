@@ -8,12 +8,20 @@ import {
   getTrajectory,
   KeyType,
   PositionLog,
+  ReliefData,
+  ReliefMeta,
+  ReliefWindow,
+  reliefWindow,
   Store,
   SurfaceMeta,
+  surfaceToRelief,
   WellboreHeader,
 } from '../../sdk';
 import { DataLoader } from '../../sdk/data/DataLoader';
 import { VerticalSlice } from '../../sdk/data/types/VerticalSlice';
+import { demoCrs } from '../data/demo-crs';
+import { BAKED_RELIEF_PREFIX } from '../data/baked-reliefs';
+import { STAGE_GROUND_PREFIX, stageGroundRelief } from '../data/stage-ground';
 import {
   getSyntheticSurface,
   isSyntheticSurfaceId,
@@ -122,30 +130,124 @@ export const surfaceValuesLoader = (store: Store) =>
   });
 
 // Outside /data, which generate-data wipes: the relief is the region's, not a field's.
+// Generated on demand (`npm run generate-relief`); git ignores it.
+let reliefFiles: Promise<Record<string, ReliefMeta>> | null = null;
+const reliefFileRecords = () =>
+  (reliefFiles ??= get('/relief/relief-meta.json').then(found => {
+    const data: Record<string, ReliefMeta> = found ?? {};
+    // Records from before the relief contract have a `header`, not a `grid`.
+    const current = Object.keys(data).filter(key => !!data[key]?.grid);
+    if (current.length < Object.keys(data).length || !current.length) {
+      console.warn(
+        '[relief-meta] no reliefs, or reliefs from before the relief contract: run `npm run generate-relief`.',
+      );
+    }
+    return Object.fromEntries(current.map(key => [key, data[key]]));
+  }));
+
+/** A relief made in the store rather than read from a file: its record and its windows. */
+type MadeRelief = {
+  meta: ReliefMeta;
+  window: (window: ReliefWindow) => Float32Array;
+};
+
+// A store surface baked into a relief, generated ones included: in the demo field's map,
+// as its `UtmArea` places it (their records name the UTM zone only).
+async function bakeSurface(
+  store: Store,
+  key: string,
+): Promise<MadeRelief | null> {
+  const id = key.slice(BAKED_RELIEF_PREFIX.length);
+  const synthetic = getSyntheticSurface(id);
+  const meta =
+    synthetic?.meta ?? (await store.get<SurfaceMeta>('surface-meta', id));
+  const values =
+    synthetic?.values ?? (await store.get<Float32Array>('surface-values', id));
+  if (!meta || !values?.length) return null;
+  const data = surfaceToRelief(meta, values, {
+    id: key,
+    name: `${meta.name} (baked)`,
+    crs: demoCrs.utmDef,
+  });
+  return { meta: data.meta, window: window => reliefWindow(data, window) };
+}
+
+// Made once per key, and every window computed or cut from it.
+const madeReliefs = new Map<KeyType, Promise<MadeRelief | null>>();
+
+/** The relief a key makes in the store, or null for one read from a file. */
+function madeRelief(store: Store, key: KeyType) {
+  if (typeof key !== 'string') return null;
+  const baked = key.startsWith(BAKED_RELIEF_PREFIX);
+  if (!baked && !key.startsWith(STAGE_GROUND_PREFIX)) return null;
+  let made = madeReliefs.get(key);
+  if (!made) {
+    made = (
+      baked ? bakeSurface(store, key) : Promise.resolve(stageGroundRelief(key))
+    ).then(found => {
+      if (!found) madeReliefs.delete(key);
+      return found;
+    });
+    madeReliefs.set(key, made);
+  }
+  return made;
+}
+
 export const reliefMetaLoader = (store: Store) =>
   new DataLoader(store, {
-    preloaded: true,
-    init: async () => {
-      const data = (await get('/relief/relief-meta.json')) ?? {};
-      return Object.keys(data).map(key => [key, data[key]]);
+    load: async <T>(key: KeyType): Promise<T | null> => {
+      const made = madeRelief(store, key);
+      if (made) return ((await made)?.meta ?? null) as T | null;
+      return ((await reliefFileRecords())[key as string] ?? null) as T | null;
     },
   });
 
+// Each relief file is fetched whole once, and every window cut from it (`reliefWindow`).
+const reliefs = new Map<KeyType, Promise<ReliefData | null>>();
+
+async function loadRelief(store: Store, key: KeyType) {
+  const meta = await store.get<ReliefMeta>('relief-meta', key);
+  if (!meta) return null;
+  const buffer = await getBinary(`/relief/${key}.bin`);
+  if (!buffer) return null;
+  const [nx, ny] = meta.grid.size;
+  if (buffer.byteLength !== nx * ny * 4) {
+    console.error(
+      `[relief-values] '${key}' is ${buffer.byteLength} bytes, but its grid is ${nx} x ${ny}: run \`npm run generate-relief -- ${key} --force\`.`,
+    );
+    return null;
+  }
+  return { meta, values: new Float32Array(buffer) };
+}
+
 export const reliefValuesLoader = (store: Store) =>
   new DataLoader(store, {
-    load: async <T>(key: KeyType): Promise<T | null> => {
-      const buffer = await getBinary(`/relief/${key}.bin`);
-      if (!buffer) return null;
-      const meta = await store.get<SurfaceMeta>('relief-meta', key);
-      if (meta && buffer.byteLength !== meta.header.nx * meta.header.ny * 4) {
-        console.error(
-          `[relief-values] '${key}' is ${buffer.byteLength} bytes, but its header says ${meta.header.nx} x ${meta.header.ny}.`,
-        );
-        return null;
+    // Every window is a new array, cut from the relief kept above.
+    noCache: true,
+    load: async <T>(key: KeyType, args?: ReliefWindow): Promise<T | null> => {
+      const made = madeRelief(store, key);
+      let relief: MadeRelief | null;
+      if (made) {
+        relief = await made;
+      } else {
+        let file = reliefs.get(key);
+        if (!file) {
+          file = loadRelief(store, key);
+          reliefs.set(key, file);
+        }
+        const data = await file;
+        if (!data) reliefs.delete(key);
+        relief = data && {
+          meta: data.meta,
+          window: window => reliefWindow(data, window),
+        };
       }
-      return buffer as T;
+      if (!relief) return null;
+      const values = relief.window(
+        args ?? { level: 0, first: [0, 0], count: relief.meta.grid.size },
+      );
+      return transfer(values, [values.buffer]) as T;
     },
-    transform: transferCopy,
   });
 
 function transformCasingData(items: CasingItem[]) {

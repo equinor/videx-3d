@@ -15,7 +15,7 @@ export * from './perimieter-generator';
 export * from './position-markers-generator';
 export * from './shoes-generator';
 export * from './sky-relief-generator';
-export * from './sky-seabed-generator';
+export * from './sky-relief-tile-generator';
 export * from './stack-release-generator';
 export * from './stack-water-generator';
 export * from './surface-chunk-generator';

@@ -1029,7 +1029,7 @@ vec3 skyAbyss(vec3 color, vec3 dir, vec3 origin, vec3 depths, vec4 walls) {
 
 vec3 skyRadiance(vec3 dir, vec3 origin) {
   #ifdef SKY_OCEAN
-    // Inside an occupant's seabed the camera is in the ground: seen as from just below the sea's.
+    // Under a stage's ground the camera is in the rock: seen as from just below the sea's seabed.
   if(uSkyOceanBuried > 0.5)
     origin -= uSkyUp * (dot(origin, uSkyUp) - uSkyOceanLevel + uSkyOceanDepth + 1.0);
   #endif

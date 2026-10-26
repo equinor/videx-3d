@@ -1,20 +1,21 @@
 import type { ReliefGrid } from '../../sdk/geometries/relief-grid';
-import type { SeabedMesh } from '../../sdk/geometries/surface-clip';
+import type { ReliefTile } from '../../sdk/geometries/relief-tiles';
 
 /**
- * Generator key for a `SkyBoxStage` occupant's seabed: a surface clipped to the outline,
- * in the scene frame (see `generateSkySeabed`).
- */
-export const skySeabed = 'skySeabed';
-
-/** What the {@link skySeabed} generator returns: `null` without the surface, or off it. */
-export type SkySeabedResponse = SeabedMesh | null;
-
-/**
- * Generator key for a `SkyBoxStage`'s relief: a `relief-meta` record and its
- * `relief-values`, resampled around the stage (see `generateSkyRelief`).
+ * Generator key for a `SkyBoxStage`'s relief overview: a `relief-meta` record and its
+ * `relief-values`, resampled around the stage (see `generateSkyRelief`), which the stage
+ * draws past its tiles' reach from the relief's first layer.
  */
 export const skyRelief = 'skyRelief';
 
 /** What the {@link skyRelief} generator returns: `null` without the relief, or off it. */
 export type SkyReliefResponse = ReliefGrid | null;
+
+/**
+ * Generator key for one tile of a `SkyBoxStage`'s relief: its layers merged onto the
+ * tile (see `generateSkyReliefTile`, `buildReliefTile`).
+ */
+export const skyReliefTile = 'skyReliefTile';
+
+/** What the {@link skyReliefTile} generator returns. */
+export type SkyReliefTileResponse = ReliefTile | null;

@@ -91,9 +91,9 @@ Five ideas carry the whole design:
 | `chunk-detail.ts` | The chunk names of the sdk's procedural detail presets (`sdk/materials/surface-detail.ts`). |
 | `inference-material.ts` | Overlay marking invented geometry. |
 | `chunk-picking-material.ts` | The pick-pass twin of a cut material, so what is cut away is not picked. |
-| `chunk-contacts.ts`, `chunk-depth-map.ts` | Fluid contacts as lines, and depth grids as textures. |
+| `chunk-contacts.ts`, `chunk-depth-map.ts` | Fluid contacts as lines, and depth grids (a surface's, or the bed's channel) as textures. |
 | `useChunkSection.ts`, `useChunkFenceFace.ts` | Cut-face geometry per interval. |
-| `useStackFence.ts`, `useStackWater.ts`, `useStackBathymetry.ts` | Stack-level fence, sea and bathymetry. |
+| `useStackFence.ts`, `useStackWater.ts` | Stack-level fence and sea (the bed tint's grid comes back with the sea's geometry). |
 | `useImmersionFog.ts`, `StackImmersionFog.tsx` | Fog when the camera is inside the sea or the block. |
 | `surface-sampler.ts`, `LevelledBase.tsx` | Sampling what was drawn, and standing things on it. |
 | `chunk-resources.ts` | GPU/heap accounting and leak detection. |

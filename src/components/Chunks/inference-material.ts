@@ -9,7 +9,12 @@ import { makeOitCompatible } from '../../rendering/oit-material';
 // ⚠️ Imported as a STRING, not `#include`d: this shader is assembled at runtime in
 // `onBeforeCompile`, where the glsl plugin's include resolution has long finished.
 import fenceFieldShader from '../../sdk/materials/shaderLib/fence-field.glsl';
+import heightFieldClipShader from '../../sdk/materials/shaderLib/height-field-clip.glsl';
 import { applyFenceField } from '../../sdk/materials/fence-field';
+import {
+  applyHeightFieldClip,
+  HeightFieldClipUniforms,
+} from '../../sdk/materials/height-field-clip';
 import { ChunkFenceUniforms } from './chunk-material';
 import { attachChunkPicking } from './chunk-picking-material';
 
@@ -62,6 +67,8 @@ export type InferenceMaterialOptions = {
    * Cut the overlay with a fence, matching {@link ChunkMaterialParameters.fence}.
    */
   fence?: ChunkFenceUniforms;
+  /** Leave out what lies above the ground, matching {@link ChunkMaterialParameters.heightClip}. */
+  heightClip?: HeightFieldClipUniforms;
 };
 
 /** GLSL float literal (an integer-looking value would be an int in GLSL). */
@@ -119,6 +126,7 @@ export function createInferenceMaterial(
     opacity = 1,
     sectionPlane,
     fence,
+    heightClip,
   } = options;
 
   const material = new MeshBasicMaterial({
@@ -156,6 +164,7 @@ export function createInferenceMaterial(
     if (fence) {
       applyFenceField(shader.uniforms, fence);
     }
+    if (heightClip) applyHeightFieldClip(shader.uniforms, heightClip);
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -172,7 +181,7 @@ uniform vec4 sectionPlane;
 varying float vSectionDist;`
             : ''
         }${
-          fence
+          fence || heightClip
             ? `
 varying vec3 vFencePos;`
             : ''
@@ -189,7 +198,7 @@ varying vec3 vFencePos;`
   vSectionDist = dot(sectionPlane.xyz, transformed) + sectionPlane.w;`
       : ''
   }${
-    fence
+    fence || heightClip
       ? `
   vFencePos = transformed;`
       : ''
@@ -207,14 +216,23 @@ varying vec3 vInferNormal;${
 varying float vSectionDist;`
             : ''
         }${
+          fence || heightClip
+            ? `
+varying vec3 vFencePos;`
+            : ''
+        }${
           fence
             ? `
 uniform vec2 fenceParams;
 uniform sampler2D fenceMap;
 uniform mat3 fenceToUv;
 uniform vec2 fenceSize;
-varying vec3 vFencePos;
 ${fenceFieldShader}`
+            : ''
+        }${
+          heightClip
+            ? `
+${heightFieldClipShader}`
             : ''
         }
 
@@ -239,6 +257,11 @@ float chunkStripe(float h, float w) {
       ? `if (fenceParams.x > 0.5 && fenceParams.y * fenceSide(fenceMap, fenceToUv, fenceSize, vFencePos.xz) < 0.0) discard;
   `
       : ''
+  }${
+    heightClip
+      ? `if (heightFieldClipped(vFencePos)) discard;
+  `
+      : ''
   }#include <clipping_planes_fragment>`,
       )
       .replace(
@@ -259,8 +282,8 @@ ${pattern(style, spacing, width)}
   // different spacing would silently share one compiled program. `strength` is not
   // in the shader, so it is not in the key.
   material.customProgramCacheKey = () =>
-    `chunk-inferred-${style}-${spacing}-${width}-${sectionPlane ? 'cut' : 'whole'}-${fence ? 'fence' : 'nofence'}`;
+    `chunk-inferred-${style}-${spacing}-${width}-${sectionPlane ? 'cut' : 'whole'}-${fence ? 'fence' : 'nofence'}-${heightClip ? 'clip' : 'noclip'}`;
   const compatible = makeOitCompatible(material);
-  attachChunkPicking(compatible, { sectionPlane, fence });
+  attachChunkPicking(compatible, { sectionPlane, fence, heightClip });
   return compatible;
 }

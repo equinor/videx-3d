@@ -132,7 +132,11 @@ export const SeabedFacility = ({
 
   if (!base) {
     return (
-      <group ref={group} position={[position[0], 0, position[1]]}>
+      <group
+        ref={group}
+        name={site.name}
+        position={[position[0], 0, position[1]]}
+      >
         {structure}
       </group>
     );
@@ -147,7 +151,9 @@ export const SeabedFacility = ({
       material={color}
       onBuild={onBuilt}
     >
-      <group rotation={[0, yaw, 0]}>{structure}</group>
+      <group name={site.name} rotation={[0, yaw, 0]}>
+        {structure}
+      </group>
     </LevelledBase>
   );
 };

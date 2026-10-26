@@ -1,6 +1,7 @@
 import {
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
+  ReliefSource,
   StackCarrier,
   SurfaceMeta,
   Vec3,
@@ -26,6 +27,12 @@ import { SeamDecision } from './seams';
 /** UTM -> scene-frame mapping (matches `UtmArea`'s `utmToArea`). */
 type UtmToArea = (easting: number, northing: number, altitude?: number) => Vec3;
 
+/**
+ * The relief a column's sea bed is built on (see `ChunkStackProps.relief`): the source,
+ * and the id of the surface it stands in for.
+ */
+export type ColumnRelief = { source: ReliefSource; seabed: string };
+
 /** Build parameters carried into a {@link SurfaceChunkSpec}. */
 export type BuildSurfaceChunkSpecOptions = {
   rimSpacing?: number;
@@ -34,8 +41,13 @@ export type BuildSurfaceChunkSpecOptions = {
   /**
    * The column this chunk is cut from (see `ChunkStack.surfaces`) plus the
    * envelope footprint it is resolved over. Both are needed for the shared build.
+   * With `relief`, the column's sea bed is built on it.
    */
-  stack?: { surfaces: SurfaceMeta[]; envelope: PlanarPolygonGeometry };
+  stack?: {
+    surfaces: SurfaceMeta[];
+    envelope: PlanarPolygonGeometry;
+    relief?: ColumnRelief | null;
+  };
   /**
    * The flat floor the column terminates against (see `ChunkStackProps.carrier`).
    * Without it, a fill on the chunk's last layer has nothing to close it and is
@@ -163,16 +175,25 @@ function carrierSpec(carrier?: ChunkCarrier): StackCarrier | undefined {
  * evict each other, paying for the fetch, the resample and the resolve twice.
  *
  * The ordered surface ids decide both the common grid and the resolve; the carrier
- * joins them because it terminates the column.
+ * joins them because it terminates the column, and the relief because it is the
+ * column's top.
  */
 export function stackColumnSpec(
   surfaces: SurfaceMeta[],
   envelope: PlanarPolygonGeometry,
   utmToArea: UtmToArea,
   carrier?: ChunkCarrier,
+  relief?: ColumnRelief | null,
 ): SurfaceChunkStackSpec {
+  // The sea bed is built on the relief, when the column holds it.
+  const onRelief =
+    relief && surfaces.some(m => m.id === relief.seabed) ? relief : null;
   return {
-    layers: surfaces.map(meta => toLayerSpec(meta, utmToArea)),
+    layers: surfaces.map(meta =>
+      meta.id === onRelief?.seabed
+        ? { ...toLayerSpec(meta, utmToArea), reliefSource: onRelief.source }
+        : toLayerSpec(meta, utmToArea),
+    ),
     polygon: {
       coordinates: envelope.coordinates as PlanarPolygonCoordinates,
       offset: envelope.offset,
@@ -180,7 +201,7 @@ export function stackColumnSpec(
     carrier: carrierSpec(carrier),
     key: `${surfaces.map(m => m.id).join(',')}|${
       carrier ? `${carrier.depth ?? ''}/${carrier.below ?? ''}` : ''
-    }`,
+    }${onRelief ? `|${onRelief.seabed}@${onRelief.source.key}` : ''}`,
   };
 }
 
@@ -200,6 +221,8 @@ export function buildStackWaterSpec(
     bed: string;
     envelope: PlanarPolygonGeometry;
     carrier?: ChunkCarrier;
+    /** the relief the column's sea bed is built on (see `ColumnRelief`) */
+    relief?: ColumnRelief | null;
     rimSpacing?: number;
     maxError?: number;
     resolve?: ChunkResolveOptions;
@@ -225,6 +248,7 @@ export function buildStackWaterSpec(
       options.envelope,
       utmToArea,
       options.carrier,
+      options.relief,
     ),
     bed: options.bed,
     resolve: options.resolve,
@@ -306,6 +330,7 @@ export function buildSurfaceChunkSpec(
         options.stack.envelope,
         utmToArea,
         options.carrier,
+        options.stack.relief,
       )
     : undefined;
 

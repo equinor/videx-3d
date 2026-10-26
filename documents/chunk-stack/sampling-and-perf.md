@@ -45,11 +45,19 @@ type SurfaceSampler = {
   getHeightAt(x, z, surface?): number | null;
   solidAt(x, y, z, floor?): number | null;
   readonly surfaces: string[];
+  // A sampler over tiles streamed by the view (a stage's relief): hold the finest
+  // tiles under these squares in, whatever the view; returns a release.
+  pin?(squares: [minX, minZ, maxX, maxZ][]): () => void;
 };
 ```
 
 - Omit `surface` and the **highest drawn** surface answers, which is the ground as
   seen from above. Give an id to sample that horizon alone.
+- **On a relief** (`ChunkStackProps.relief`) the column's top is the ground the stage
+  draws, and its own cap lies hidden `margin` above it. Given the relief's sampler
+  (`reliefSampler`, from the stage's `relief.onSampler`), the stack's sampler answers
+  its sea bed from the relief wherever the column holds it, and pins on it; without
+  one, from the cap less the margin. See [tiles.md §7](../tiles.md#7-sampling-the-relief).
 - Under the hood, `createTinSampler(positions, indices, { cellSize, maxCells })`
   buckets triangles into a uniform XZ grid (CSR, two typed-array passes,
   cell = √(area / triangles)) and answers with a barycentric test in XZ plus the
@@ -106,9 +114,10 @@ type SurfaceFootprint = {
 ground, or anything in between), `enabled`, `onPlaced`.
 
 There is no `continuous` mode, on purpose: a surface only moves when its chunk
-rebuilds, which changes the sampler identity — so a `useFrame` subscription would
-be pure cost. `sampleSurfaceFootprint` reuses module scratch arrays for its one
-per-frame-capable path.
+rebuilds, or a finer tile under a pin comes in, which changes the sampler identity —
+so a `useFrame` subscription would be pure cost. The hook pins its footprint on a
+sampler that can (`pin`). `sampleSurfaceFootprint` reuses module scratch arrays for
+its one per-frame-capable path.
 
 > ⚠️⚠️ **Converting a context-consuming component into a hook moves it above the
 > provider.** A hook called in the story body is *outside* `<ChunkStack>`, so

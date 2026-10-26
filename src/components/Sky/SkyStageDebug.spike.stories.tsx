@@ -8,7 +8,8 @@ import {
   MeshStandardMaterial,
   SphereGeometry,
 } from 'three';
-import type { SeabedMesh } from '../../sdk/geometries/surface-clip';
+import { PlanarPolygonGeometry } from '../../sdk/geometries/planar-geometry';
+import type { Vec2 } from '../../sdk/types/common';
 import { EnvironmentProbes } from '../../storybook/components/EnvironmentProbes';
 import {
   skyAbyssFromArgs,
@@ -36,25 +37,32 @@ import {
   useSkyTimelapse,
 } from '../../storybook/components/sky-debug-panel';
 import { SkyStoryRendering } from '../../storybook/components/sky-story-rendering';
+import {
+  STAGE_GROUND_BASE_HALF,
+  stageGroundId,
+} from '../../storybook/data/stage-ground';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { Sky } from './Sky';
+import { SkyAnchor } from './SkyAnchor';
 import { SkyBoxStage } from './SkyBoxStage';
 import { SkyStageBounds } from './sky-stage';
 
-// How the sky, its stage and an occupant fit together: a stage of any size, a synthetic
-// seabed handed to it as the occupant's, spheres standing in for data, and debug views
+// How the sky, its stage and an occupant fit together: a stage of any size, synthetic
+// ground under it, an occupant's outline, spheres standing in for data, and debug views
 // that only change what is drawn.
 
 const LEVEL = 0;
 const DEPTH = 100;
 const BED_Y = LEVEL - DEPTH;
 const RADIUS = 3000;
-const RINGS = 40;
 const SEGMENTS = 192;
-// The stage's half extents the occupant was drawn for; it scales with the stage from there.
-const BASE_HALF = 8000;
+// The stage's half extents the occupant and the ground were drawn for; they scale with the
+// stage from there.
+const BASE_HALF = STAGE_GROUND_BASE_HALF;
+// How far the synthetic ground fades in from its edge, the stage's.
+const GROUND_FEATHER = 2000;
 // The panel's places, about a stage `halfWidth` wide (east-west).
 const stagePositions = (
   halfWidth: number,
@@ -70,53 +78,15 @@ const stagePositions = (
 const rimRadius = (angle: number) =>
   RADIUS * (1 + 0.18 * Math.sin(3 * angle + 0.4) + 0.08 * Math.cos(7 * angle));
 
-// Rolling ground and a channel around the sky's seabed depth, so the rim rises and dips
-// through it, and hills well above it: x, z, radius and peak height, all below sea level.
-const HILLS: [number, number, number, number][] = [
-  [1100, 700, 600, -20],
-  [-1400, -500, 500, -30],
-  [200, -1600, 450, -25],
-  [2500, 900, 500, -35],
-];
-const seabedHeight = (x: number, z: number) => {
-  let height =
-    BED_Y +
-    35 * Math.sin(x / 700) * Math.cos(z / 900) +
-    20 * Math.sin((x + 2 * z) / 1500);
-  for (const [hx, hz, radius, peak] of HILLS) {
-    const rise = Math.exp(-((x - hx) ** 2 + (z - hz) ** 2) / radius ** 2);
-    height += (peak - height) * rise;
+// The occupant's lobed outline, stretched by `sx` east-west and `sz` north-south.
+function createSyntheticOutline(sx: number, sz: number): PlanarPolygonGeometry {
+  const ring: Vec2[] = [];
+  for (let j = 0; j < SEGMENTS; j++) {
+    const angle = (j / SEGMENTS) * Math.PI * 2;
+    const r = rimRadius(angle);
+    ring.push([r * Math.cos(angle) * sx, r * Math.sin(angle) * sz]);
   }
-  return height;
-};
-
-// A polar grid out to its rim, with lobes in it, stretched by `sx` east-west and `sz`
-// north-south; its relief as drawn for the base stage.
-function createSyntheticSeabed(sx: number, sz: number): SeabedMesh {
-  const positions: number[] = [0, seabedHeight(0, 0), 0];
-  for (let k = 1; k <= RINGS; k++) {
-    for (let j = 0; j < SEGMENTS; j++) {
-      const angle = (j / SEGMENTS) * Math.PI * 2;
-      const r = (rimRadius(angle) * k) / RINGS;
-      const x = r * Math.cos(angle);
-      const z = r * Math.sin(angle);
-      positions.push(x * sx, seabedHeight(x, z), z * sz);
-    }
-  }
-  const at = (k: number, j: number) =>
-    k === 0 ? 0 : 1 + (k - 1) * SEGMENTS + (j % SEGMENTS);
-  const indices: number[] = [];
-  for (let j = 0; j < SEGMENTS; j++) indices.push(0, at(1, j + 1), at(1, j));
-  for (let k = 2; k <= RINGS; k++) {
-    for (let j = 0; j < SEGMENTS; j++) {
-      indices.push(at(k - 1, j), at(k - 1, j + 1), at(k, j));
-      indices.push(at(k, j), at(k - 1, j + 1), at(k, j + 1));
-    }
-  }
-  return {
-    positions: new Float32Array(positions),
-    indices: new Uint32Array(indices),
-  };
+  return new PlanarPolygonGeometry([[[...ring, ring[0]]]], [0, 0]);
 }
 
 // Stand-ins for data: radii (times `sphereSize`), how deep below the sea their centres go,
@@ -211,6 +181,7 @@ type StageDebugArgs = {
   stage: boolean;
   stageWidth: number;
   stageLength: number;
+  ground: boolean;
   occupant: boolean;
   spheres: number;
   sphereSize: number;
@@ -230,15 +201,20 @@ const StageDebug = (storyArgs: StageDebugArgs) => {
   const { args, timelapse } = useSkyTimelapse(storyArgs);
   const halfWidth = (args.stageWidth * 1000) / 2;
   const halfLength = (args.stageLength * 1000) / 2;
-  const bounds: SkyStageBounds = [-halfWidth, -halfLength, halfWidth, halfLength];
+  const bounds: SkyStageBounds = [
+    -halfWidth,
+    -halfLength,
+    halfWidth,
+    halfLength,
+  ];
   const sx = halfWidth / BASE_HALF;
   const sz = halfLength / BASE_HALF;
   const occupant = args.stage && !!args.occupant;
-  const seabed = useMemo(
-    () => (occupant ? createSyntheticSeabed(sx, sz) : null),
+  const occupantOutline = useMemo(
+    () => (occupant ? createSyntheticOutline(sx, sz) : null),
     [occupant, sx, sz],
   );
-  // Inside the occupant's rim where it has one, else the stage's rectangle.
+  // Inside the occupant's outline where it has one, else the stage's rectangle.
   const inside = useMemo(
     () =>
       occupant
@@ -279,8 +255,26 @@ const StageDebug = (storyArgs: StageDebugArgs) => {
         {args.stage && (
           <SkyBoxStage
             bounds={bounds}
-            occupant={seabed ? { seabed } : undefined}
-            relief={skyReliefFromArgs(args, skyReliefFrame(args))}
+            occupants={
+              occupantOutline ? [{ outline: occupantOutline }] : undefined
+            }
+            relief={skyReliefFromArgs(
+              args,
+              skyReliefFrame(args),
+              args.ground
+                ? [
+                    {
+                      id: stageGroundId(
+                        args.sunLongitude ?? skyArgs.sunLongitude,
+                        args.sunLatitude ?? skyArgs.sunLatitude,
+                        args.stageWidth,
+                        args.stageLength,
+                      ),
+                      feather: GROUND_FEATHER,
+                    },
+                  ]
+                : [],
+            )}
             debug={{
               outline: args.outline,
               wireframe: args.wireframe,
@@ -289,13 +283,16 @@ const StageDebug = (storyArgs: StageDebugArgs) => {
           />
         )}
         {args.spheres > 0 && (
-          <StandInSpheres
-            count={args.spheres}
-            size={args.sphereSize ?? 1}
-            halfWidth={halfWidth}
-            halfLength={halfLength}
-            inside={inside}
-          />
+          // On the sea's curve with the stage, from far off.
+          <SkyAnchor>
+            <StandInSpheres
+              count={args.spheres}
+              size={args.sphereSize ?? 1}
+              halfWidth={halfWidth}
+              halfLength={halfLength}
+              inside={inside}
+            />
+          </SkyAnchor>
         )}
         {args.showProbes && (
           <EnvironmentProbes
@@ -349,16 +346,22 @@ const meta = {
         'The stage\u2019s length north-south, in km. It also bounds the stand-in spheres.',
       table: { category: 'Stage' },
     },
+    ground: {
+      description:
+        'Synthetic ground under the stage, drawn as the relief\u2019s finest layer (the demo store makes it, `functionRelief`): rolling seabed and a channel about the sea\u2019s 100 m depth, rising and dipping through it, and hills well above it, stretched with the stage and fading in over 2 km of its edge. Over the demo reliefs with `relief` on; alone, the flat seabed around it. Off, and without `relief`, the stage\u2019s seabed is flat.',
+      table: { category: 'Stage' },
+      if: { arg: 'stage' },
+    },
     occupant: {
       description:
-        'The stage has an occupant, which hands it its own seabed (the synthetic one, stretched with the stage): the stage draws it as the sea\u2019s, `occupant-bed`, eased into its own by the `falloff`. Off, the stage is whole. Changes the stage, unlike the debug options.',
+        'The stage has an occupant, a lobed outline stretched with the stage: with the relief, the cutaway takes the water over it but not the ground. It also bounds the spheres, and sizes the cutaway. Changes the stage, unlike the debug options.',
       table: { category: 'Stage' },
       if: { arg: 'stage' },
     },
     spheres: {
       control: { type: 'range', min: 0, max: 400, step: 10 },
       description:
-        'Spheres standing in for data, the same ones every run: from the sea surface down to 5 km, wholly inside the stage (inside the occupant\u2019s rim where it has one). 0 for none.',
+        'Spheres standing in for data, the same ones every run: from the sea surface down to 5 km, wholly inside the stage (inside the occupant\u2019s outline where it has one). 0 for none.',
       table: { category: 'Stand-in data' },
     },
     sphereSize: {
@@ -385,7 +388,7 @@ const meta = {
     },
     tint: {
       description:
-        'Tint each part by what draws it. The sky: its sea, seabed and void red, what it leaves to the stage purple, its surface layer orange. The stage: surface blue, flat seabed green, falloff cyan, the occupant\u2019s seabed magenta, the relief amber.',
+        'Tint each part by what draws it. The sky: its sea, seabed and void red, what it leaves to the stage purple, its surface layer orange. The stage: surface blue, flat seabed green, the relief amber.',
       table: { category: 'Debug' },
     },
     outline: skyOutlineArgType,
@@ -409,6 +412,7 @@ const meta = {
     stage: true,
     stageWidth: 16,
     stageLength: 16,
+    ground: true,
     occupant: true,
     spheres: 0,
     sphereSize: 1,

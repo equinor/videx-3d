@@ -17,8 +17,8 @@ Data type declarations can be found in `src/sdk/data/types/`
 | strat-columns | StratColumn | Contains stratigraphy column meta and unit definitions |
 | wellbore-seismic-section | VerticalSlice | Seismic slice data along a wellbore path |
 | field-column-seismic-section | FieldColumnSeismicSection | Seismic along an arbitrary UTM path over a TVD range, queried with a `FieldColumnSeismicSectionQuery` as args. Used by `useFenceSeismicOverlay` for the seismic on a `ChunkStack` fence face (`ChunkFence.overlay`). One column per path position, rows from the top down. |
-| relief-meta | SurfaceMeta | A relief for a `SkyBoxStage` (see [Relief](./relief.md)): its grid header, and the grid's `projection` as a proj4 definition, or a name proj4 knows (`EPSG:4326`). |
-| relief-values | Float32Array | The relief's heights: metres above mean sea level, positive up, `NaN` for none. One value per grid node, row-major from the northern row, as `surface-values`. |
+| relief-meta | ReliefMeta | A relief for a `SkyBoxStage` (see [Relief](./relief.md)): its grid — origin, cell, size and rotation, laid out as an irapbin header lays it out — and the map it is laid out in (`crs`), as a proj4 definition, or a name proj4 knows (`EPSG:4326`). |
+| relief-values | Float32Array | The relief's heights: metres above mean sea level, positive up, `NaN` for none, row-major from the northern row. Asked for by window, a `ReliefWindow` as args: a level of the grid (each level averages 2 x 2 of the one below) and a block of it; `reliefWindow` cuts one from a relief held in memory. |
 
 ## Store
 The `Store` interface is an abstraction added to separate data dependencies from components and generators. You can see this as an adaptor between the implementations in this library and the data layer of your project.

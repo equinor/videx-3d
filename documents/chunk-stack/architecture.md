@@ -244,6 +244,8 @@ builds a whole column of its own and can push out one still in use. Declare
 | `ChunkStack.contacts` | — | — | ● | — |
 | `ChunkStack.water` sea state | — | — | ●³ | — |
 | `ChunkStack.drawWater` | — | — | — | ● |
+| `ChunkStack.relief` (its `key`) | — | ● (whole column, and the sea) | ● | — |
+| `ChunkStack.clip` (a clip coming, going or changing) | — | — | — | ● |
 | `ChunkStack.water.depth` / `.resolution` / `.displacement` | — | sea only | ● | — |
 | a sibling chunk's outline settling | — | ●⁴ | ● | — |
 
@@ -287,7 +289,8 @@ builds a whole column of its own and can push out one still in use. Declare
 | inference overlays | `ChunkMeshes` | `ChunkMeshes` (`overlays.built`) |
 | sea lid / body geometry | `ChunkStack` | `ChunkStack` |
 | ocean materials | `useStackWater` | `useStackWater` |
-| contact / bathymetry textures | `useChunkContacts` / `useStackBathymetry` | the same hooks |
+| contact textures | `useChunkContacts` | the same hook |
+| bathymetry texture (the bed tint) | `ChunkStack`, from the `stackWater` response | `ChunkStack`, when the bed changes or on unmount |
 | **the cached column** | the generator scope | `releaseStackResources`, called by `ChunkStack` on unmount |
 
 Two traps worth remembering:

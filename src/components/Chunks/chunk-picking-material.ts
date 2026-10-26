@@ -1,6 +1,10 @@
 import { IUniform, Material, Vector4 } from 'three';
 import { applyFenceField } from '../../sdk/materials/fence-field';
 import {
+  applyHeightFieldClip,
+  HeightFieldClipUniforms,
+} from '../../sdk/materials/height-field-clip';
+import {
   CustomPickingMaterial,
   setPickingMaterial,
 } from '../EventEmitter/picking-material';
@@ -17,11 +21,13 @@ export type ChunkPickingCut = {
   fence?: ChunkFenceUniforms;
   /** the overlay of an overlay-only face, which exists only where it has data */
   overlayOnly?: ChunkFenceOverlayUniforms;
+  /** the ground drawn over the stack, above which nothing is there */
+  heightClip?: HeightFieldClipUniforms;
 };
 
 /**
  * The picking twin of a cut chunk material: the standard pick shader behind the same
- * section and fence discards, so geometry that is cut away is not picked.
+ * section, fence and ground discards, so geometry that is cut away is not picked.
  *
  * ⭐ Bound to the SAME uniform objects as the material it stands in for, never
  * copies, so a moving plane or a fence side swap reaches it with no extra writes.
@@ -29,7 +35,12 @@ export type ChunkPickingCut = {
  * @group Components
  */
 export class ChunkPickingMaterial extends CustomPickingMaterial {
-  constructor({ sectionPlane, fence, overlayOnly }: ChunkPickingCut) {
+  constructor({
+    sectionPlane,
+    fence,
+    overlayOnly,
+    heightClip,
+  }: ChunkPickingCut) {
     super(vertexShader);
     this.fragmentShader = fragmentShader;
     const defines = this.defines as Record<string, unknown>;
@@ -46,6 +57,10 @@ export class ChunkPickingMaterial extends CustomPickingMaterial {
       this.uniforms.overlayRect = overlayOnly.rect;
       this.uniforms.overlayParams = overlayOnly.params;
     }
+    if (heightClip) {
+      defines.CHUNK_HEIGHT_CLIP = '';
+      applyHeightFieldClip(this.uniforms, heightClip);
+    }
   }
 }
 
@@ -60,7 +75,8 @@ export function attachChunkPicking(
   material: Material,
   cut: ChunkPickingCut,
 ): ChunkPickingMaterial | null {
-  if (!cut.sectionPlane && !cut.fence && !cut.overlayOnly) return null;
+  if (!cut.sectionPlane && !cut.fence && !cut.overlayOnly && !cut.heightClip)
+    return null;
   const picking = new ChunkPickingMaterial(cut);
   setPickingMaterial(material, picking);
   material.addEventListener('dispose', () => {

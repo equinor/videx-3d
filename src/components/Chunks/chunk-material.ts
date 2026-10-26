@@ -29,6 +29,10 @@ import {
   FenceFieldUniforms,
 } from '../../sdk/materials/fence-field';
 import {
+  applyHeightFieldClip,
+  HeightFieldClipUniforms,
+} from '../../sdk/materials/height-field-clip';
+import {
   applySurfaceDetail,
   createSurfaceDetailUniforms,
   SurfaceDetailUniforms,
@@ -399,6 +403,13 @@ export type ChunkMaterialParameters = {
    * CONSTRUCTION.
    */
   tileLevels?: ChunkTileUniforms;
+  /**
+   * Leave out what lies above the ground drawn over the stack — the relief a
+   * `SkyBoxStage` draws, through `ChunkStackProps.clip` — per fragment, in the mesh's
+   * OWN object space. SHARED like `sectionPlane`: one binding for every material, which
+   * follows the clip as it is drawn. ⚠️ Read at CONSTRUCTION.
+   */
+  heightClip?: HeightFieldClipUniforms;
 };
 
 const shader = {
@@ -551,12 +562,18 @@ export class ChunkMaterial extends ShaderMaterial {
       this.uniforms.tileValues = tiles.values;
     }
 
+    if (parameters.heightClip) {
+      (this.defines as Record<string, unknown>).CHUNK_HEIGHT_CLIP = '';
+      applyHeightFieldClip(this.uniforms, parameters.heightClip);
+    }
+
     attachChunkPicking(this, {
       sectionPlane: parameters.sectionPlane,
       fence: parameters.fence,
       overlayOnly: parameters.fenceOverlayOnly
         ? parameters.fenceOverlay
         : undefined,
+      heightClip: parameters.heightClip,
     });
     attachOitVariants(this);
   }

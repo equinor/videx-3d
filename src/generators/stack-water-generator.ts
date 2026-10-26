@@ -10,6 +10,7 @@ import {
   PlanarPolygonGeometry,
   ReadonlyStore,
   STACK_MASK_DATA,
+  STACK_MASK_NONE,
   StackReference,
 } from '../sdk';
 import { getStackCandidates, getStackContext } from './surface-stack-context';
@@ -112,7 +113,22 @@ export async function generateStackWater(
     return packed;
   };
 
-  const packed = { lid: pack(lid), body: pack(body), section: build.section };
+  const packed = {
+    lid: pack(lid),
+    body: pack(body),
+    section: build.section,
+    bed: {
+      header,
+      worldPosition: context.reference.worldPosition,
+      // Copies: the column's channels are cached for its next build, and handing them
+      // over would detach them.
+      heights: context.reference.channels[bed].slice(),
+      valid: Uint8Array.from(context.reference.masks[bed], mask =>
+        mask === STACK_MASK_NONE ? 0 : 1,
+      ),
+    },
+  };
+  transferables.push(packed.bed.heights.buffer, packed.bed.valid.buffer);
 
   if (build.section) {
     const { positionsXZ, indices, heights, intervals, inferred } =

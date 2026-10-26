@@ -11,7 +11,7 @@ import {
   surfaceGeometry,
   surfaceTextures,
 } from '../../../components/Surfaces/surface-defs';
-import { skyRelief, skySeabed } from '../../../components/Sky/sky-defs';
+import { skyRelief, skyReliefTile } from '../../../components/Sky/sky-defs';
 import { basicTrajectory } from '../../../components/Wellbores/BasicTrajectory/basic-trajectory-defs';
 import { casingAnnotations } from '../../../components/Wellbores/Casings/CasingAnnotations/casing-annotations-defs';
 import { casings } from '../../../components/Wellbores/Casings/casings-defs';
@@ -43,7 +43,7 @@ import {
   generatePositionMarkers,
   generateShoes,
   generateSkyRelief,
-  generateSkySeabed,
+  generateSkyReliefTile,
   generateStackWater,
   generateSurfaceChunk,
   generateSurfaceGeometry,
@@ -78,8 +78,8 @@ registry.add(depthMarkers, generateDepthMarkers);
 registry.add(wellboreLabel, generateWellboreLabel);
 registry.add(surfaceGeometry, generateSurfaceGeometry);
 registry.add(surfaceTextures, generateSurfaceTexturesData);
-registry.add(skySeabed, generateSkySeabed);
 registry.add(skyRelief, generateSkyRelief);
+registry.add(skyReliefTile, generateSkyReliefTile);
 registry.add(surfaceChunk, generateSurfaceChunk);
 registry.add(wellboreOutline, generateWellboreOutline);
 registry.add(stackWater, generateStackWater);

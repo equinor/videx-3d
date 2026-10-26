@@ -1,11 +1,15 @@
 // A stage's relief (SkyBoxStage `relief`): land where it rises above the sea, seabed below
 // it, coloured flat or by height, lit by the scene's lights as the stage's seabed
 // is. The seabed is seen through the water as the stage's is; the land, and a dry seabed,
-// through the air, turning blue with distance before it fades into the horizon. It leaves
-// the stage's own area to the stage.
-// RELIEF_RAMP colours the land by height and darkens the seabed with depth. RELIEF_FAR
-// draws it past the mesh's reach instead, on a fullscreen layer: what the map holds above
-// the sea, flat on the curved sea, per pixel.
+// through the air, turning blue with distance before it fades into the horizon.
+// RELIEF_RAMP colours the land by height and darkens the seabed with depth. One of:
+// RELIEF_TILES draws it from tiles (relief-tiles-vertex.glsl), which cover everything, the
+// stage's own area included; with a see-through seabed, RELIEF_STAGE_AROUND leaves that
+// area out and RELIEF_SEE_THROUGH draws it alone, at the sea's seabed opacity
+// (relief-tiles.glsl). RELIEF_OCCUPANTS keeps the cutaway off the ground over the stage's
+// occupants, and RELIEF_CUT_OCCUPANT cuts it with one of them, inside its outline.
+// RELIEF_FAR draws the overview past the tiles' reach instead, on a fullscreen layer: what
+// a map of the first layer holds above the sea, flat on the curved sea, per pixel.
 
 #include <common>
 #ifndef RELIEF_FAR
@@ -13,7 +17,16 @@
 #endif
 #include <dithering_pars_fragment>
 #include ./sky.glsl
+#ifdef RELIEF_FAR
 #include ./relief.glsl
+#else
+#include ./relief-tiles.glsl
+#endif
+#ifdef USE_OIT
+// View-space position, which the OIT pipeline sorts by.
+varying vec3 vViewPosition;
+#include ../../../sdk/materials/shaderLib/oit.glsl
+#endif
 
 // The land's shine, faint: rock and soil, not water.
 #define RELIEF_LAND_SPECULAR vec3(0.02)
@@ -35,7 +48,7 @@
 uniform vec3 uReliefLandColor;
 #endif
 
-// How far from the camera the mesh draws it: past it, the stage's sea ends, and so does the mesh.
+// How far from the camera the tiles draw it: past it, the stage's sea ends, and so do the tiles.
 uniform float uReliefReach;
 #ifdef RELIEF_FAR
 varying vec3 vSkyDirection;
@@ -121,26 +134,26 @@ void main() {
   #endif
   float blend = max(uSkyHorizonBlend, fwidth(dot(dir, uSkyUp)));
 
+  #ifdef RELIEF_FAR
   // The slope from the map, as finely as the pixel sees it.
   float footprint = max(length(fwidth(xz)), uReliefMapFrame.z);
-  #ifdef RELIEF_FAR
-  // Only where the sea is met past the mesh. Every derivative is taken above.
+  // Only where the sea is met past the tiles. Every derivative is taken above.
   if(altitude <= 0.0 || hit.z > 0.5 || dist < uReliefReach)
     discard;
-  #else
-  bool staged = skyOceanStaged(dir, cameraPosition, 1.0, false);
-  #endif
   float lod = min(log2(footprint / uReliefMapFrame.z), uReliefMapFrame.w);
   float bed = -uSkyOceanDepth;
-  float margin = 1.5 * footprint;
-  float west = reliefGround(xz - vec2(footprint, 0.0), lod, margin, bed).x;
-  float east = reliefGround(xz + vec2(footprint, 0.0), lod, margin, bed).x;
-  float north = reliefGround(xz - vec2(0.0, footprint), lod, margin, bed).x;
-  float south = reliefGround(xz + vec2(0.0, footprint), lod, margin, bed).x;
+  float west = reliefGround(xz - vec2(footprint, 0.0), lod, bed).x;
+  float east = reliefGround(xz + vec2(footprint, 0.0), lod, bed).x;
+  float north = reliefGround(xz - vec2(0.0, footprint), lod, bed).x;
+  float south = reliefGround(xz + vec2(0.0, footprint), lod, bed).x;
   vec3 normal = normalize(vec3(west - east, 2.0 * footprint, north - south));
-
-  // Land or sea by the map at this pixel, not by the triangle: the coast follows the map.
-  vec2 ground = reliefGround(xz, lod, margin, bed);
+  // Land or sea by the map at this pixel.
+  vec2 ground = reliefGround(xz, lod, bed);
+  #else
+  bool staged = skyOceanStaged(dir, cameraPosition, 1.0, false);
+  vec3 normal = reliefTileNormal();
+  vec2 ground = vec2(reliefTileHeight(), 1.0);
+  #endif
   float height = ground.x;
   bool under = height < 0.0;
   bool water = uSkyOceanWater > 0.5;
@@ -158,14 +171,19 @@ void main() {
   color = reliefThroughAir(color, dir, dist, blend);
   #else
   // The triangles miss the curved sea by up to tens of metres, more the coarser they are
-  // and the farther the camera is from the scene (the curve follows the view). So the map
-  // decides which of the two shows: the seabed stays behind the sea, and where the sea
-  // would be met over land there is none, so the land comes in front of it.
+  // and the farther the camera is from the scene (the curve follows the view). So the
+  // ground's height decides which of the two shows: the seabed stays behind the sea, and
+  // where the sea would be met over land there is none, so the land comes in front of it.
   float sea = water && altitude > 0.0 ? skyOceanReach(cameraPosition, dir, altitude).x : 0.0;
   // The cutaway takes the seabed in front of the view, and the water over it, as over the
   // stage's own; the land stands.
   float cutaway = skyOceanCutawayAlong(cameraPosition, world);
   float seabed = under ? skyOceanCutawaySeabed(cutaway) : 1.0;
+  #ifdef RELIEF_OCCUPANTS
+  // Over an occupant the cutaway takes the water, not the ground, as over its own seabed.
+  if(reliefOnOccupant(xz))
+    seabed = 1.0;
+  #endif
   if(under && water) {
     // Through the water over it, from where the view enters it.
     color *= waterFogDim(-height, uSkyOceanFogDensity);
@@ -176,8 +194,13 @@ void main() {
       gl_FragDepth = reliefDepthAt(dir, sea * 1.0001);
   } else if(altitude > 0.0) {
     color = reliefThroughAir(color, dir, dist, blend);
-    // Also where the land only just clears the sea: there the two depths tie, and the sea won.
-    if(water && sea < dist * 1.0001 && reliefGround((cameraPosition + dir * sea).xz, lod, margin, bed).x >= 0.0)
+    // Also where the land only just clears the sea: there the two depths tie, and the sea
+    // won. The tile holds its own ground only. Land met within a couple of its cells of the
+    // sea stands for the sea's point; past that, the ground there decides when the tile
+    // holds it, and else the sea is met over open water well in front: the land lies past
+    // the horizon, and stays behind.
+    bool clears = height >= 0.0 && (dist - sea < 2.0 * reliefTileCell() || reliefTileClearsAt((cameraPosition + dir * sea).xz));
+    if(water && sea < dist * 1.0001 && clears)
       gl_FragDepth = reliefDepthAt(dir, min(sea, dist) * 0.9999);
   }
   // Bitten through: the void, as the background draws it through the gap.
@@ -185,6 +208,9 @@ void main() {
     color = mix(skyOceanThroughCutaway(skyAbyssGradient(dot(dir, uSkyUp)), dir, cameraPosition), color, seabed);
   #endif
 
+  #if defined(RELIEF_DEBUG_TILES) || defined(RELIEF_DEBUG_LAYERS)
+  color = reliefTileDebug(color);
+  #endif
   gl_FragColor = vec4(color, 1.0);
   gl_FragColor.rgb = skyDebugTint(gl_FragColor.rgb, vec3(0.95, 0.6, 0.1));
   gl_FragColor.rgb *= uSkyIntensity;
@@ -198,7 +224,15 @@ void main() {
   // Once the derivatives above are taken. Seabed under water only where the stage's sea
   // covers it: past it the background's sea lies behind.
   bool past = under && water && altitude > 0.0 ? !staged : dist > uReliefReach;
-  if(reliefInArea(xz) || seabed < 1e-3 || past)
+  if(seabed < 1e-3 || past || reliefTileSkirtHidden() || reliefTileLeftToOther(xz) || reliefCutAway())
     discard;
+  #endif
+
+  #ifdef RELIEF_SEE_THROUGH
+  // As the stage's see-through seabed is: at the sea's seabed opacity, bitten by the cutaway.
+  gl_FragColor.a = seabed * uSkyOceanSeabedOpacity;
+  #endif
+  #ifdef USE_OIT
+  gl_FragColor = oitProcess(gl_FragColor);
   #endif
 }

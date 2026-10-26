@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Plane, Vector3 } from 'three';
+import { Group, Plane, Vector3 } from 'three';
 import {
   CameraFlyToEvent,
   CameraFocusAtPointEvent,
@@ -20,19 +20,20 @@ import {
   wellboreSelectedEventType,
 } from '../../events/wellbore-events';
 import { useData } from '../../hooks/useData';
-import { useGenerator } from '../../hooks/useGenerator';
 import { DEFAULT_OIT_FRONT_TOLERANCE, OITRenderPass, Pass } from '../../main';
 import { OutputPass } from '../../rendering/passes/OutputPass';
 import { RenderingPipeline } from '../../rendering/RenderingPipeline';
 import {
-  CRS,
   CutUniforms,
+  HeightFieldClip,
   FenceSideName,
   fenceViewPose,
-  getProjectionDefFromUtmZone,
+  PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
+  pointInPolygon,
   PositionLog,
   readCameraTarget,
+  reliefFrameFromCrs,
   SurfaceChunkMetrics,
   surfaceGridToWorld,
   SurfaceMeta,
@@ -40,8 +41,8 @@ import {
   Vec3,
   WellboreFence,
 } from '../../sdk';
-import type { SeabedMesh } from '../../sdk/geometries/surface-clip';
 import { ResourceMonitor } from '../../storybook/components/ResourceMonitor';
+import { SeabedFacility } from '../../storybook/components/SeabedFacility';
 import {
   skyAbyssFromArgs,
   skyArgs,
@@ -53,10 +54,13 @@ import {
   skyReliefArgs,
   SkyReliefArgs,
   skyReliefArgTypes,
+  skyBakedReliefLayer,
   skyReliefFromArgs,
 } from '../../storybook/components/sky-controls';
 import { RendererToneMapping } from '../../storybook/components/tone-mapping-controls';
 import { chunkTimings } from '../../storybook/data/chunk-timings';
+import { demoCrs } from '../../storybook/data/demo-crs';
+import type { SubseaSite } from '../../storybook/data/subsea-facilities';
 import {
   EXTRA_WELLBORE_IDS,
   isExtraWellbore,
@@ -80,6 +84,7 @@ import {
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
+import { SkyGenerators } from '../../storybook/decorators/sky-generators';
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
 import { createOutputPanelDecorator } from '../../storybook/decorators/output-panel-decorator';
 import { WellMapDecorator } from '../../storybook/decorators/well-map-decorator';
@@ -93,9 +98,10 @@ import { useHighlighter } from '../Highlighter/highlight-state';
 import { Highlighter } from '../Highlighter/Highlighter';
 import { RenderStats } from '../Html/RenderStats/RenderStats';
 import { Sky } from '../Sky/Sky';
-import { skySeabed, SkySeabedResponse } from '../Sky/sky-defs';
-import { skyStageRim } from '../Sky/sky-stage';
 import { SkyBoxStage, SkyBoxStageOccupantState } from '../Sky/SkyBoxStage';
+import type { SkyBoxStageRelief } from '../Sky/SkyBoxStage';
+import type { ReliefSampler } from '../Sky/sky-relief-sampler';
+import { reliefSource } from '../Sky/sky-relief-source';
 import { UtmArea } from '../UtmArea';
 import { UtmPosition } from '../UtmArea/UtmPosition';
 import { Trajectory } from '../Wellbores/Trajectory/Trajectory';
@@ -120,15 +126,72 @@ import { createChunkProgressStore } from './chunk-progress';
 import { ChunkStack } from './ChunkStack';
 import { ChunkOutline } from './cutout';
 import { ChunkInferenceStyle } from './inference-material';
+import {
+  SurfaceSampler,
+  SurfaceSamplerContext,
+  useSurfaceSampler,
+} from './surface-sampler';
 import { useFenceSeismicOverlay } from './useFenceSeismicOverlay';
 
-const utmZone = storyArgs.utmZone;
-const origin = storyArgs.origin as Vec2;
 const surfaceOptions = storyArgs.surfaceOptions as Record<string, string>;
 
-const crs = new CRS(getProjectionDefFromUtmZone(utmZone), origin, 'utm');
+// Where the field lies, for its UtmArea, the relief's frame and the sky's place alike.
+const crs = demoCrs;
 // Where the relief lies around the field: the UtmArea's map.
-const reliefFrame = { projection: crs.utmDef, origin: crs.originUtm };
+const reliefFrame = reliefFrameFromCrs(crs);
+// Where no layer of the relief drawn from tiles has data, metres below the sea: the demo
+// reliefs cover the region, so it seldom shows.
+const RELIEF_BASE_DEPTH = 100;
+
+/**
+ * Where `reliefMarkers` puts its facilities, given as a host gives them, in UTM: two
+ * inside the outline, on the column's top, and two past it, on the relief alone. Of
+ * each pair the first stands on a levelled base, the second on the slope itself.
+ */
+function reliefMarkerSites(outline: PlanarPolygonGeometry): {
+  inside: SubseaSite[];
+  outside: SubseaSite[];
+} {
+  const { max, size } = outline.getBounds();
+  const [cx, cz] = outline.center;
+  const site = (
+    name: string,
+    x: number,
+    z: number,
+    heading: number,
+  ): SubseaSite => {
+    const utm = crs.worldToUtm(x, 0, z);
+    return {
+      name,
+      easting: utm.easting,
+      northing: utm.northing,
+      heading,
+      slots: 4,
+    };
+  };
+  const polygon = outline.coordinates as PlanarPolygonCoordinates;
+  const dx = size[0] * 0.2;
+  const dz = size[1] * 0.2;
+  const inside = (
+    [
+      [cx, cz],
+      [cx + dx, cz + dz],
+      [cx - dx, cz - dz],
+      [cx + dx, cz - dz],
+      [cx - dx, cz + dz],
+    ] as Vec2[]
+  )
+    .filter(([x, z]) => pointInPolygon(x, z, polygon))
+    .slice(0, 2)
+    .map(([x, z], i) => site(`Column ${i + 1}`, x, z, 20 + 40 * i));
+  return {
+    inside,
+    outside: [
+      site('Relief east', max[0] + 800, cz, -30),
+      site('Relief south', cx, max[1] + 800, 45),
+    ],
+  };
+}
 
 // Outside the canvas, read by the progress decorator: what a host would hold.
 const progressStore = createChunkProgressStore();
@@ -515,48 +578,69 @@ type FieldColumnStoryProps = {
   matchBed: boolean;
   skyBed: 'top' | 'median' | 'bottom';
   stageMargin: number;
-  seabedFalloff: number;
+  bakeSeabed: boolean;
+  reliefCut: boolean;
+  reliefMarkers: boolean;
 } & ChunkProgressArgs &
   SkyArgs &
   SkyReliefArgs;
 
-type ColumnBed = {
-  mesh: SeabedMesh;
-  /** the heights along its rim, ascending */
-  rim: number[];
-};
+// Between the rim's samples along the outline, and how far to either side one is tried
+// again where the outline's own edge misses the cap.
+const RIM_STEP = 100;
+const RIM_NUDGE = 5;
+
+/** The heights of `sampler`'s highest drawn surface along `outline`, ascending. */
+function sampleRim(
+  sampler: SurfaceSampler,
+  outline: PlanarPolygonGeometry,
+): number[] {
+  const [ox, oz] = outline.offset;
+  const heights: number[] = [];
+  for (const component of outline.coordinates as PlanarPolygonCoordinates) {
+    for (const ring of component) {
+      for (let k = 0; k + 1 < ring.length; k++) {
+        const [x0, z0] = ring[k];
+        const [x1, z1] = ring[k + 1];
+        const length = Math.hypot(x1 - x0, z1 - z0);
+        if (length === 0) continue;
+        const nx = (z0 - z1) / length;
+        const nz = (x1 - x0) / length;
+        const steps = Math.max(1, Math.ceil(length / RIM_STEP));
+        for (let t = 0; t < steps; t++) {
+          const x = ox + x0 + ((x1 - x0) * t) / steps;
+          const z = oz + z0 + ((z1 - z0) * t) / steps;
+          const y =
+            sampler.getHeightAt(x, z) ??
+            sampler.getHeightAt(x + RIM_NUDGE * nx, z + RIM_NUDGE * nz) ??
+            sampler.getHeightAt(x - RIM_NUDGE * nx, z - RIM_NUDGE * nz);
+          if (y !== null) heights.push(y);
+        }
+      }
+    }
+  }
+  return heights.sort((a, b) => a - b);
+}
 
 /**
- * The column's sea bed as the sky's stage takes it, in the scene frame: the surface
- * clipped to the column's outline at the column's `maxError`, and its heights along
- * that outline. Built by a generator, so the grid never comes to this thread. It sets
- * the sky's depth, and stands in on the stage until the column's own cap is built.
+ * Tells the column's top along its outline (`sampleRim`) whenever the stack's sampler
+ * changes: sampled from the caps it built, so the grid never comes to this thread. Must
+ * sit inside `ChunkStack`.
  */
-const useColumnBed = (
-  meta: SurfaceMeta | undefined,
-  outline: PlanarPolygonGeometry | null,
-  maxError: number,
-): ColumnBed | null => {
-  const generator = useGenerator<SkySeabedResponse>(skySeabed);
-  const [bed, setBed] = useState<ColumnBed | null>(null);
+const ColumnRim = ({
+  outline,
+  onRim,
+}: {
+  outline: PlanarPolygonGeometry;
+  onRim: (rim: number[]) => void;
+}) => {
+  const sampler = useSurfaceSampler();
   useEffect(() => {
-    setBed(null);
-    if (!meta || !outline || !generator) return;
-    let current = true;
-    // Where `Surface` places it: at the survey origin, at its real depth.
-    const p = crs.utmToWorld(meta.header.xori, meta.header.yori, 0);
-    generator(meta.id, outline.coordinates, [p.x, p.z], maxError).then(mesh => {
-      if (!current || !mesh) return;
-      const rim = skyStageRim(mesh)
-        .elevations.flat(2)
-        .sort((a, b) => a - b);
-      if (rim.length > 0) setBed({ mesh, rim });
-    });
-    return () => {
-      current = false;
-    };
-  }, [generator, meta, outline, maxError]);
-  return bed;
+    if (!sampler) return;
+    const rim = sampleRim(sampler, outline);
+    if (rim.length > 0) onRim(rim);
+  }, [sampler, outline, onRim]);
+  return null;
 };
 
 /** Publishes `window.videx3d.locate('wellbore', id)`; must sit inside `UtmArea`. */
@@ -681,6 +765,8 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
 
   const viewOffset = useRef<Vec2 | null>(null);
   const builtFence = useRef<WellboreFence | null>(null);
+  // The field, placed on the sky's curve by the stage while it curves from far off.
+  const fieldAnchor = useRef<Group>(null);
   const [fenceWindow, setFenceWindow] = useState<FenceWindow | null>(null);
   const awaiting = useRef<{
     id: string;
@@ -828,8 +914,21 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
   const [stage, setStage] = useState<SkyBoxStageOccupantState>(OFF_STAGE);
   const bedOnStage = drawsSeabed && stage.seabed;
   const [stackCut, setStackCut] = useState<CutUniforms | null>(null);
-  // The column's own sea bed cap, exact against its cut faces and walls.
-  const [columnSeabed, setColumnSeabed] = useState<SeabedMesh | null>(null);
+  // The ground as the stage draws it, which the column's faces end at.
+  const [ground, setGround] = useState<HeightFieldClip | null>(null);
+  // The relief's own sampler, for what stands on it: the column's top included.
+  const [reliefSampler, setReliefSampler] = useState<ReliefSampler | null>(
+    null,
+  );
+  // The column's top along its outline, ascending, where the sky's seabed lies: from the
+  // column first built, so the relief's sampler coming in later moves nothing.
+  const [rim, setRim] = useState<number[] | null>(null);
+  const onRim = useCallback(
+    (next: number[]) => setRim(kept => kept ?? next),
+    [],
+  );
+  const topId = selected[0]?.id;
+  useEffect(() => setRim(null), [outline, topId, props.maxError]);
 
   // ⭐ COLOUR IS THE HOST'S JOB. The library takes array order as stratigraphic
   // order and never assigns a colour; here the story maps each surface's name to
@@ -1331,20 +1430,36 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     [panelProgress],
   );
 
-  // The sky's seabed lies at the dataset's sea bed, along the outline — shallowest,
-  // median or deepest.
-  const bed = useColumnBed(
-    props.sky && seabedMeta ? seabedMeta : undefined,
-    outline,
-    props.maxError,
-  );
   const skyLevel = -props.seaLevel;
-  const bedHeight = bed
+  // The sky's relief, which the column builds its sea bed on too, the column's own sea bed
+  // baked in as its finest layer: the ground over the field is then the column's top, and
+  // no unit is cut away where the bathymetry lies deeper. Its flat base is given here
+  // rather than taken from the sea's depth, which waits for the column's rim: the column
+  // would be built twice.
+  const demoRelief = skyReliefFromArgs(
+    props,
+    reliefFrame,
+    props.relief && props.bakeSeabed && seabedMeta
+      ? [skyBakedReliefLayer(seabedMeta.id)]
+      : [],
+  );
+  const stageRelief: SkyBoxStageRelief | undefined = demoRelief && {
+    ...demoRelief,
+    depth: RELIEF_BASE_DEPTH,
+    onSampler: setReliefSampler,
+  };
+  const columnRelief =
+    props.sky && stageRelief
+      ? reliefSource(stageRelief, { level: skyLevel })
+      : undefined;
+  // The sky's seabed lies at the column's top along the outline: shallowest, median or
+  // deepest.
+  const bedHeight = rim
     ? props.skyBed === 'top'
-      ? bed.rim[bed.rim.length - 1]
+      ? rim[rim.length - 1]
       : props.skyBed === 'bottom'
-        ? bed.rim[0]
-        : bed.rim[bed.rim.length >> 1]
+        ? rim[0]
+        : rim[rim.length >> 1]
     : null;
   // The sea bed's unit, as the whole column colours it: the column may start below it.
   const bedColor = drawsSeabed
@@ -1359,155 +1474,183 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
   if (!outline || layers.length === 0) return null;
   const { min: outlineMin, max: outlineMax } = outline.getBounds();
   const margin = props.stageMargin;
+  const markers =
+    props.sky && props.relief && props.reliefMarkers
+      ? reliefMarkerSites(outline)
+      : null;
 
   return (
     <>
-      <UtmArea origin={origin} utmZone={utmZone}>
-        <Videx3dLocate />
-        <ViewOffset into={viewOffset} />
-        <ChunkStack
-          diagnostics={props.buildDiagnostics}
-          preview={props.preview}
-          previewSaturation={props.previewSaturation}
-          debugTiles={props.debugTiles}
-          lodLevel={props.lodLevel}
-          lodPixelError={props.lodPixelError}
-          outline={outline}
-          surfaces={column}
-          water={water}
-          seabed={seabedMeta?.id}
-          drawWater={!stage.water}
-          immersion={immersion}
-          section={section}
-          fence={fence}
-          onFence={onFence}
-          onFenceSide={setFenceSideInfo}
-          onCut={setStackCut}
-          onSeabed={setColumnSeabed}
-          onProgress={onProgress}
-          resolve={resolve}
-          rimSpacing={props.rimSpacing}
-          maxError={props.maxError}
-          carrier={
-            props.floor
-              ? {
-                  below: props.floorClearance,
-                  material: props.floorColor,
-                  detail:
-                    props.floorDetail === 'none'
-                      ? undefined
-                      : {
-                          preset: props.floorDetail,
-                          strength: props.detailStrength,
-                          scale: props.floorDetailScale,
-                        },
-                }
-              : undefined
-          }
-        >
-          {props.sectionMode === 'fixed' && (
-            <SectionDriver
-              plane={sectionPlane}
-              azimuth={props.sectionAzimuth}
-              dip={props.sectionDip}
-              distance={props.sectionDistance}
-              flip={props.sectionFlip}
-              animate={props.sectionAnimate}
-              speed={props.sectionAnimateSpeed}
-            />
-          )}
-          {groupedLayers ? (
-            groupedLayers.map(({ name, layers: chunkLayers }, i) => (
+      <group ref={fieldAnchor}>
+        <UtmArea crsInstance={crs} origin={crs.originUtm}>
+          <Videx3dLocate />
+          <ViewOffset into={viewOffset} />
+          <ChunkStack
+            diagnostics={props.buildDiagnostics}
+            preview={props.preview}
+            previewSaturation={props.previewSaturation}
+            debugTiles={props.debugTiles}
+            lodLevel={props.lodLevel}
+            lodPixelError={props.lodPixelError}
+            outline={outline}
+            surfaces={column}
+            water={water}
+            seabed={seabedMeta?.id}
+            relief={columnRelief}
+            clip={ground}
+            reliefSampler={reliefSampler}
+            drawWater={!stage.water}
+            immersion={immersion}
+            section={section}
+            fence={fence}
+            onFence={onFence}
+            onFenceSide={setFenceSideInfo}
+            onCut={setStackCut}
+            onProgress={onProgress}
+            resolve={resolve}
+            rimSpacing={props.rimSpacing}
+            maxError={props.maxError}
+            carrier={
+              props.floor
+                ? {
+                    below: props.floorClearance,
+                    material: props.floorColor,
+                    detail:
+                      props.floorDetail === 'none'
+                        ? undefined
+                        : {
+                            preset: props.floorDetail,
+                            strength: props.detailStrength,
+                            scale: props.floorDetailScale,
+                          },
+                  }
+                : undefined
+            }
+          >
+            {props.sectionMode === 'fixed' && (
+              <SectionDriver
+                plane={sectionPlane}
+                azimuth={props.sectionAzimuth}
+                dip={props.sectionDip}
+                distance={props.sectionDistance}
+                flip={props.sectionFlip}
+                animate={props.sectionAnimate}
+                speed={props.sectionAnimateSpeed}
+              />
+            )}
+            {groupedLayers ? (
+              groupedLayers.map(({ name, layers: chunkLayers }, i) => (
+                <Chunk
+                  key={i}
+                  name={name}
+                  outline={groupOutlines?.[i]}
+                  layers={chunkLayers}
+                  surfaceOpacity={props.surfaceOpacity}
+                  wallOpacity={props.wallOpacity}
+                  wireframe={props.wireframe}
+                  inferredStyle={props.inferredStyle}
+                  peel={peelOf(props.peel, chunkLayers.length)}
+                  cullHiddenCaps={props.cullHiddenCaps}
+                  cullOffscreen={props.cullOffscreen}
+                  onPointerClick={
+                    props.chunkPicking ? focusOnCtrlClick : undefined
+                  }
+                  onBuild={m =>
+                    report(
+                      m,
+                      chunkLayers.map(l => l.surface?.name),
+                    )
+                  }
+                />
+              ))
+            ) : (
               <Chunk
-                key={i}
-                name={name}
-                outline={groupOutlines?.[i]}
-                layers={chunkLayers}
+                layers={layers}
                 surfaceOpacity={props.surfaceOpacity}
                 wallOpacity={props.wallOpacity}
                 wireframe={props.wireframe}
                 inferredStyle={props.inferredStyle}
-                peel={peelOf(props.peel, chunkLayers.length)}
+                peel={peelOf(props.peel, layers.length)}
                 cullHiddenCaps={props.cullHiddenCaps}
                 cullOffscreen={props.cullOffscreen}
                 onPointerClick={
                   props.chunkPicking ? focusOnCtrlClick : undefined
                 }
-                onBuild={m =>
-                  report(
-                    m,
-                    chunkLayers.map(l => l.surface?.name),
-                  )
-                }
+                onBuild={report}
               />
-            ))
-          ) : (
-            <Chunk
-              layers={layers}
-              surfaceOpacity={props.surfaceOpacity}
-              wallOpacity={props.wallOpacity}
-              wireframe={props.wireframe}
-              inferredStyle={props.inferredStyle}
-              peel={peelOf(props.peel, layers.length)}
-              cullHiddenCaps={props.cullHiddenCaps}
-              cullOffscreen={props.cullOffscreen}
-              onPointerClick={props.chunkPicking ? focusOnCtrlClick : undefined}
-              onBuild={report}
+            )}
+            {props.sky && <ColumnRim outline={outline} onRim={onRim} />}
+            {markers?.inside.map((site, i) => (
+              <SeabedFacility key={site.name} site={site} base={i === 0} />
+            ))}
+          </ChunkStack>
+          {markers && (
+            <SurfaceSamplerContext.Provider value={reliefSampler}>
+              {markers.outside.map((site, i) => (
+                <SeabedFacility key={site.name} site={site} base={i === 0} />
+              ))}
+            </SurfaceSamplerContext.Provider>
+          )}
+          {props.wellbores && (
+            <FieldWells
+              selected={selectedWellbore}
+              color={props.wellboreColor}
+              selectedColor={props.wellboreSelectedColor}
+              radius={props.wellboreRadius}
+              lodPixelError={props.wellboreLodPixelError}
+              fenceWindow={
+                props.fence && props.fenceColorTvd ? fenceWindow : null
+              }
             />
           )}
-        </ChunkStack>
-        {props.wellbores && (
-          <FieldWells
-            selected={selectedWellbore}
-            color={props.wellboreColor}
-            selectedColor={props.wellboreSelectedColor}
-            radius={props.wellboreRadius}
-            lodPixelError={props.wellboreLodPixelError}
-            fenceWindow={
-              props.fence && props.fenceColorTvd ? fenceWindow : null
-            }
-          />
-        )}
-      </UtmArea>
+        </UtmArea>
+      </group>
       {props.wellbores && <Highlighter />}
-      {props.sky && bed && bedHeight !== null && (
-        <Sky
-          {...skyPropsFromArgs(props)}
-          abyss={skyAbyssFromArgs(props)}
-          ocean={{
-            ...skyOceanFromArgs(props),
-            seabed:
-              props.skySeabed &&
-              (props.matchBed
-                ? {
-                    color: bedColor,
-                    detail: layers[0]?.detail ?? false,
-                  }
-                : { color: props.skySeabedColor }),
-            level: skyLevel,
-            depth: Math.max(skyLevel - bedHeight, 1),
-          }}
-        >
-          <SkyBoxStage
-            bounds={[
-              outlineMin[0] - margin,
-              outlineMin[1] - margin,
-              outlineMax[0] + margin,
-              outlineMax[1] + margin,
-            ]}
-            occupant={{
-              seabed: drawsSeabed ? (columnSeabed ?? bed.mesh) : undefined,
-              // Cut with the column, unless the column keeps its sea bed whole.
-              cut:
-                layers[0]?.keepCap || layers[0]?.section === false
-                  ? undefined
-                  : (stackCut ?? undefined),
-              onStage: setStage,
+      {props.sky && bedHeight !== null && (
+        <SkyGenerators>
+          <Sky
+            {...skyPropsFromArgs(props)}
+            abyss={skyAbyssFromArgs(props)}
+            ocean={{
+              ...skyOceanFromArgs(props),
+              seabed:
+                props.skySeabed &&
+                (props.matchBed
+                  ? {
+                      color: bedColor,
+                      detail: layers[0]?.detail ?? false,
+                    }
+                  : { color: props.skySeabedColor }),
+              level: skyLevel,
+              depth: Math.max(skyLevel - bedHeight, 1),
             }}
-            seabedFalloff={props.seabedFalloff}
-            relief={skyReliefFromArgs(props, reliefFrame)}
-          />
-        </Sky>
+          >
+            <SkyBoxStage
+              bounds={[
+                outlineMin[0] - margin,
+                outlineMin[1] - margin,
+                outlineMax[0] + margin,
+                outlineMax[1] + margin,
+              ]}
+              occupants={[
+                {
+                  outline,
+                  // Cut with the column, unless the column keeps its sea bed whole.
+                  cut:
+                    layers[0]?.keepCap || layers[0]?.section === false
+                      ? undefined
+                      : (stackCut ?? undefined),
+                  // The relief over it, kept whole unless asked to open.
+                  keepBed: !props.reliefCut,
+                  onStage: setStage,
+                  onGround: setGround,
+                  anchor: fieldAnchor,
+                },
+              ]}
+              relief={stageRelief}
+            />
+          </Sky>
+        </SkyGenerators>
       )}
       {props.resources && <ResourceMonitor interval={props.resourceInterval} />}
       {props.stats && <RenderStats origin="bottom-left" />}
@@ -1711,16 +1854,23 @@ export const Default: Story = {
     skyBed: 'median',
     sunElevation: 30,
     stageMargin: 4000,
-    seabedFalloff: 3000,
+    bakeSeabed: true,
+    reliefCut: false,
+    reliefMarkers: false,
   },
   argTypes: {
     // Behind `sky`; the story draws through its own OIT pipeline always.
     ...skyArgTypes({ shownIf: 'sky' }),
     ...skyReliefArgTypes('sky'),
+    relief: {
+      ...skyReliefArgTypes('sky').relief,
+      description:
+        'The relief drawn from tiles \u2014 the demo reliefs merged, Volve\u2019s survey finest \u2014 and the column\u2019s sea bed built on it (`ChunkStack.relief`), so its top is the ground the stage draws, and the stage draws it as the sea\u2019s. Off, the stage\u2019s seabed is flat, and the column draws its own. Rebuilds the column. Made on demand: `npm run generate-relief`.',
+    },
     pipeline: { table: { disable: true } },
     sky: {
       description:
-        'Put the field under the videx `<Sky>`, which lights the scene instead of the default lights, with the column as its stage\u2019s occupant. The sky owns the water then: the column\u2019s own `water` is hidden while it is on (`ChunkStack.drawWater`), and the stage draws the column\u2019s sea bed.',
+        'Put the field under the videx `<Sky>`, which lights the scene instead of the default lights, with the column as its stage\u2019s occupant. The sky owns the water then: the column\u2019s own `water` is hidden while it is on (`ChunkStack.drawWater`).',
       table: { category: 'Sky' },
     },
     drawSky: {
@@ -1770,11 +1920,22 @@ export const Default: Story = {
       if: { arg: 'sky' },
       table: { category: 'Sky' },
     },
-    seabedFalloff: {
-      control: { type: 'range', min: 0, max: 20000, step: 100 },
+    bakeSeabed: {
       description:
-        'How far outside the outline the seabed eases from the column\u2019s top to the sky\u2019s seabed, in metres.',
-      if: { arg: 'sky' },
+        'With the relief: the column\u2019s own sea bed baked into it as its finest layer (the demo store\u2019s `surface:<id>`, `surfaceToRelief`), faded in over 0.5 km from the survey\u2019s edge. The ground over the field is then the column\u2019s top, and no unit is cut away where the demo bathymetry lies deeper than the column\u2019s horizons. Rebuilds the column.',
+      if: { arg: 'relief' },
+      table: { category: 'Sky' },
+    },
+    reliefCut: {
+      description:
+        'With the relief: the column\u2019s section or fence cuts the relief over it too, inside the outline (the occupant\u2019s `keepBed` off), so the opening goes down from the ground. Off (the default), the relief stays whole over the column as its floor.',
+      if: { arg: 'relief' },
+      table: { category: 'Sky' },
+    },
+    reliefMarkers: {
+      description:
+        'With the relief: subsea facilities placed from UTM positions by sampling. Two inside the outline, through the stack\u2019s sampler (`ChunkStack.reliefSampler`), which answers the column\u2019s top from the relief; two past it, through the relief\u2019s own (`SkyBoxStageRelief.onSampler`). Of each pair, one stands on a levelled base, one on the slope. Their footprints pin the finest tiles under them, so they settle on the ground as it is drawn close up.',
+      if: { arg: 'relief' },
       table: { category: 'Sky' },
     },
     outline: {

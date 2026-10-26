@@ -70,6 +70,18 @@ export class CRS {
   }
 }
 
+/**
+ * Where on the Earth `crs`'s origin lies — the scene's origin, for a `UtmArea` given it —
+ * in degrees north and east (WGS84). Spread into a `Sky`'s `observer` with a date, so the
+ * sun and stars are those over the field: `{ date, ...crsOriginLocation(crs) }`.
+ */
+export function crsOriginLocation(crs: CRS): {
+  latitude: number;
+  longitude: number;
+} {
+  return { latitude: crs.originWgs84[1], longitude: crs.originWgs84[0] };
+}
+
 export function getProjectionDefFromUtmZone(utmZone: string) {
   const [, zone, hemisphere] =
     new RegExp(/^([0-9]{2})([N|S]?)$/).exec(utmZone) || [];

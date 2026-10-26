@@ -1,129 +1,150 @@
-# Relief: land and seabed beyond the stage
+# Relief: land and seabed around the stage
 
 A `SkyBoxStage` can put land and seabed from your own elevation data around the scene: a
-`relief`. Below sea level it is the seabed, seen through the water as the stage's own
-seabed is; above sea level it is land, lit by the sky's sun and fading into the air as the
-far sea does. It continues to the sea's horizon and, with the sky's `curvedHorizon`, falls
-away with the Earth's curve, so coasts and mountains stand on the horizon where they
-should. It is off by default.
+`relief`, merged from several data sets at once — global, regional, local — and drawn from
+tiles, as fine as the data where the camera is and no finer anywhere else. Below sea level
+it is the seabed, seen through the water as the stage's own seabed is; above sea level it
+is land, lit by the sky's sun and fading into the air as the far sea does. It covers
+everything out to the sea's horizon, the stage's own area and its occupants included, and
+with the sky's `curvedHorizon` falls away with the Earth's curve, so coasts and mountains
+stand on the horizon where they should. It is off by default.
 
 ```tsx
 <Sky ocean={{ level: 0, depth: 120 }}>
   <SkyBoxStage
     bounds={[minX, minZ, maxX, maxZ]}
-    occupant={{ seabed }}
+    occupants={[{ outline, onStage, onGround }]}
     relief={{
-      id: 'my-relief',
       // the UtmArea's map; reliefFrameAt(longitude, latitude) for a scene placed by a point
-      frame: { projection: crs.utmDef, origin: crs.originUtm },
+      frame: reliefFrameFromCrs(crs),
+      // coarse to fine: later layers win where they have data
+      layers: [
+        { id: 'etopo-2022-nordic' },
+        { id: 'emodnet-2020-sw-norway', feather: 1500 },
+        { id: 'my-survey', feather: 500 },
+      ],
+      depth: 100, // the flat seabed where no layer has data; default the sea's depth
       color: 'ramp',
     }}
   />
 </Sky>
 ```
 
+Without a relief the stage draws a flat seabed at the sea's depth, and its occupants draw
+their own. With one, the relief is the ground over the occupants too: a `ChunkStack`
+builds its column's top on it, ends its faces where it is drawn and places what stands on
+it by its sampler. See [tiles.md](./tiles.md) for the design and the bridge to the chunks.
+
 ## Data
 
-The relief comes from the store, as two data sets (see [Data](./data.md)):
+Each layer is a relief in the store, as two data sets (see [Data](./data.md)):
 
-- `relief-meta`: a `SurfaceMeta` record — a grid header and the grid's `projection`
-  (a proj4 definition, or a name proj4 knows, such as `EPSG:4326` for longitude/latitude).
-- `relief-values`: a `Float32Array`, one value per grid node, row-major from the northern
-  row, as `surface-values` are: metres above mean sea level, positive up, negative below,
-  `NaN` where there is none.
+- `relief-meta`: a `ReliefMeta` record — the grid (its south-west node's map coordinates,
+  its cell, its size and rotation, as an irapbin header lays it out) and the map it is
+  laid out in (`crs`: a proj4 definition, or a name proj4 knows, such as `EPSG:4326` for
+  longitude/latitude).
+- `relief-values`: a `Float32Array` of metres above mean sea level, positive up, `NaN`
+  where there is none, row-major from the northern row, for a window of the grid
+  (`ReliefWindow`): a level of it (each level averages 2 x 2 of the one below) and a block
+  of that level. The tiles ask for blocks of 128 x 128 at any level, so a store can cache
+  by level and block. A store holding a relief whole answers with `reliefWindow`;
+  `gridToRelief`, `irapbinToRelief`, `surfaceToRelief` and `functionRelief` (sdk) make
+  one from what a host has.
 
-One grid holds both land and seabed. Global grids that run from the deepest seabed to the
-mountain tops exist: ETOPO 2022 (NOAA, public domain) and GEBCO. The detail is the
-host's: the relief is as fine as its grid near the scene, but no finer than the GPU's
-texture size allows over the area it covers.
+One grid may hold both land and seabed: ETOPO 2022 (NOAA, public domain) and GEBCO run
+from the deepest seabed to the mountain tops. A layer fades in over its `feather` (scene
+units) from where its data ends, its holes and a coast without land data included, so a
+finer survey merges into the one under it without a step.
 
-The `skyRelief` generator (`generateSkyRelief`) reads the grid where the generators run,
-so the stage needs a `GeneratorsProvider`. It resamples the grid onto the scene with
-`resampleRelief` (sdk): around the stage, out to the camera's far plane and at least
-2000 km (the sea's horizon from some 300 km up), as an RG half float texture of height
-times coverage and coverage, with its mip levels.
+The `skyReliefTile` generator (`generateSkyReliefTile`) builds each tile where the
+generators run: it reads the blocks it needs from every layer, projects them into the
+scene and merges them, so the stage needs a `GeneratorsProvider`. Nest a second provider
+around the `Sky`, on a worker of its own, and the tiles stream while a column builds on
+the other.
 
 `frame` says where the scene lies on the map: the projection it is drawn in and the map
 coordinates of its origin, as a `UtmArea` places a scene (scene X east, scene Z south).
+`reliefFrameFromCrs(crs)` gives the frame of a scene a `UtmArea` places with `crs`; with
+the same CRS, `crsOriginLocation(crs)` gives the sky's `observer` its place
+(`{ date, ...crsOriginLocation(crs) }`), so the field, the relief and the sun agree.
 `reliefFrameAt(longitude, latitude)` gives a transverse Mercator map about a point, for a
 scene placed by its longitude and latitude only.
 
-### The demo relief
+### The demo reliefs
 
-The stories' store holds `etopo-2022-nordic`: ETOPO 2022 (ice surface) from 12°W to 32°E
-and 49°N to 72°N — Norway, Denmark, the British Isles and the North Sea — averaged to 2
-arc-minutes (1320 x 690, 3.6 MB). `scripts/generate-relief.js` crops it from NOAA's
-server into `public/relief/`, outside `public/data`, which `generate-data` replaces.
+The stories' store holds four, coarse to fine: ETOPO 2022 from 12°W to 32°E and 49°N to
+72°N at 2 arc-minutes (`etopo-2022-nordic`), ETOPO 2022 at 15″ and EMODnet at 1/8′ from
+Volve east to the coast (EMODnet has no land), and EMODnet at 1/16′ around Volve. They
+are not in git: `npm run generate-relief` fetches them into `public/relief/` (which git
+ignores). The demo store also bakes any of its surfaces into a relief on demand
+(`surface:<id>`, with `surfaceToRelief`), and makes StageDebug's synthetic ground; the
+stories add them over the demo reliefs as their own finest layers (`reliefLayers`,
+`skyReliefFromArgs`).
 
 ## How it fits the stage
 
-- The stage keeps its own seabed over its own area — `bounds`, and an occupant's near
-  rectangle with its falloff — where it can be see-through (`seabedOpacity`). The relief
-  lies beyond that area and is always opaque.
-- Around the area the relief rises from the stage's flat seabed over `falloff` (default
-  10000), so the two meet level. The occupant's seabed eases into the flat seabed as
-  before (`seabedFalloff`).
-- Under a relief the sea stays flat over the disc holding the whole area, and the stage's
-  sea surface writes the depth of the curved sea, so land beyond the scene meets it there.
-  Over that disc it keeps its own flat depth: from 100 km up the curve is measured from
-  under the camera, and would sink the sea below the scene.
+- The relief is the stage's seabed, everywhere. Over `bounds` it is see-through at the
+  sea's `seabedOpacity`; around it, always opaque.
+- Over each occupant's `outline` the cutaway takes the water but not the ground. The
+  relief stays whole under an occupant's `cut` unless its `keepBed` is off; then it is cut
+  with the occupant inside the outline (one occupant at most).
+- Each occupant's `onGround` hands out the ground as drawn over its outline's bounds (a
+  `HeightFieldClip`), and there the tiles' error shows no more than half a pixel. The
+  relief's `onSampler` hands out its sampler (`ReliefSampler`), which answers from the
+  finest tiles in, as their triangles draw them; what is placed with it pins the finest
+  tiles under it, whatever the view.
 - `color`: a colour is the land's, the seabed taking the sea's; `'ramp'` colours the land
   by height — green lowland, umber at 600 m, grey high ground at 1500 m, eased between —
-  and
-  darkens the sea's seabed colour with depth, to half 600 m below the stage's own seabed.
-- The coast follows the height map per pixel, not the triangles: they miss the curved
-  sea by up to tens of metres where they are coarse, so the map decides which shows.
-  Seabed stays behind the sea over it, and where the view would meet the sea over land
-  the land comes in front.
+  and darkens the sea's seabed colour with depth, to half 600 m below the sea's seabed.
+- The tiles miss the curved sea by up to tens of metres where they are coarse, so the
+  ground's height decides which shows: seabed stays behind the sea over it, and where the
+  view would meet the sea over land the land comes in front.
 - Land, and a dry seabed, fade through the air as the sea does, channel by channel and
-  blue a little fastest: into the sky's blue over short paths and the horizon's colour
-  over long ones, so distant land turns blue before it fades into the horizon, but keeps
-  its own colour in most views.
-- `debug.hide: ['relief']` hides it, like the stage's other layers.
-
-## The far plane
-
-The stage, and the relief's mesh with it, reach the camera's far plane, measured along
-the curved sea (their vertices are kept just inside it, see below); past that the sky's
-own sea takes over, and the curved sea's depth is clamped. Any shorter, and the scene
-between would show through the sky's sea, which is drawn on the far plane. Where the sea's horizon lies farther, a fullscreen layer at the far plane
-draws the relief on past the mesh: what the map holds above the sea (without water, the
-seabed too), shaded and faded through the air as the mesh is, but flat on the curved sea,
-so mountains past the mesh show no outline against the sky. It draws only where nothing
-nearer is drawn, and is hidden while the mesh reaches the horizon.
-
-For mountains on the horizon, set the far plane past it from the highest the camera goes:
-about 360 km from 10 km up, 760 km from 45 km and 1130 km from 100 km (the sky stories
-use 3000 km). With a logarithmic depth buffer that costs almost nothing (about 1 m of
-depth resolution at 1000 km); with a standard one, a far plane that far from a near plane
-of centimetres has no resolution left, so use a logarithmic or reversed depth buffer.
-Either way the GPU clips by the ordinary clip depth, which that far from a near plane of
-centimetres rounds past the far plane and drops vertices at random: the mesh, and the
-stage's sea and seabed, keep their vertices just inside it.
-However far the far plane, the relief is drawn no farther than the curved sea's horizon
-from the camera, plus the highest relief's own.
+  blue a little fastest, so distant land turns blue before it fades into the horizon,
+  but keeps its own colour in most views.
+- The sea stays flat over the disc holding `bounds`, and the stage's sea surface writes
+  the depth of the curved sea beyond it, so land beyond the scene meets it there. Once the
+  camera is 5 to 40 km past the scene, the curve is measured from under the camera, and
+  the stage places each occupant's `anchor` (and a `SkyAnchor` its children) on it.
+- The ground under the camera is the sky's (`oceanGround`): under the relief the camera is
+  in the ground, for the lighting and the void.
+- `debug.hide: ['relief']` hides it, like the stage's other layers; `debug.relief`
+  shows its tiles by depth (`'tiles'`) or which layer gave each node (`'layers'`).
 
 ## Level of detail
 
-The relief is drawn as one patch of a 32 x 32 grid per node of a quadtree around the
-camera (CDLOD, `selectTerrainNodes` in the sdk), in one instanced draw. The finest nodes
-are as fine as the relief's texels; each level up is twice as coarse and reaches twice as
-far, and toward the end of its range a node morphs into its parent's grid, so levels
-meet without cracks. Heights are read in the vertex shader, as coarsely as the grid they
-are drawn on; the slope for the lighting is read per pixel. Typically under a hundred
-nodes, about 200k triangles.
+The tiles are a quadtree over the scene, 32 x 32 cells each, drawn in one instanced draw.
+Each frame a tile is split while its error — the largest gap between its surface and the
+merged data — spans more than `pixelError` pixels (default 2), or while its cells span
+more than `cellPixels` (default 8) where the ground is rough, as the relief is shaded from
+its cells. A tile with no finer data under it is never split. A split tile is drawn until
+its four children are in, so ground is never missing; skirts close the cracks between
+tiles of different depths. Tiles load a few at a time, the most wanted first, and the
+least recently drawn go first under a budget. `onStats` reports what is drawn and held.
+
+## The far plane
+
+The tiles, and the stage's sea and seabed, reach the camera's far plane, measured along
+the curved sea; past that the sky's own sea takes over. Any shorter, and the scene between
+would show through the sky's sea, which is drawn on the far plane. Where the far plane
+falls short of the sea's horizon, an overview draws the relief's FIRST layer on past the
+tiles, on a fullscreen layer at the far plane (the `skyRelief` generator resamples it):
+what it holds above the sea, shaded and faded through the air, but flat on the curved sea.
+
+For mountains on the horizon, set the far plane past it from the highest the camera goes:
+about 360 km from 10 km up, 760 km from 45 km and 1130 km from 100 km (the sky stories
+use 3000 km, so no overview is made). With a logarithmic depth buffer that costs almost
+nothing (about 1 m of depth resolution at 1000 km); with a standard one, a far plane that
+far from a near plane of centimetres has no resolution left, so use a logarithmic or
+reversed depth buffer. Either way the GPU clips by the ordinary clip depth, which that far
+from a near plane of centimetres rounds past the far plane and drops vertices at random:
+the tiles, and the stage's sea and seabed, keep their vertices just inside it.
 
 ## Limits
 
-- Beyond the stage's reach (see The far plane) the sky's own flat seabed and sea take
-  over, with the relief drawn flat over them: its land, and without water its seabed too.
-  A dry seabed view shows that edge.
-- The sea's curve is measured from the scene along each view, so the farther the camera
-  is from the scene, the more the ground under it falls away: hundreds of kilometres out,
-  a camera a few kilometres up is far above the land below it. From 100 km up the curve
-  is measured from under the camera instead (see the sky's curved horizon).
-- Where the map's data ends the land ends in a straight line: the coverage fades out
-  over a texel or so (more at coarse mip levels), and the land keeps its colour to the
-  end. A map with data reaching past the horizon hides it.
+- Changing the layers or `depth` rebuilds a column built on the relief.
+- A quick fly-in shows coarser tiles for a moment while the finer ones load.
+- Where a layer's data ends with no layer under it, the ground falls to the flat seabed at
+  `depth`.
 - The environment bakes do not include it.
 - ⚠️ It assumes the default `up` (+Y), as the stage does.

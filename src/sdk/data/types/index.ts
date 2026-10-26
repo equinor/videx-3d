@@ -6,6 +6,7 @@ export * from './Formation';
 export * from './PerforationInterval';
 export * from './Pick';
 export * from './PositionLog';
+export * from './ReliefMeta';
 export * from './StratColumn';
 export * from './SurfaceMeta';
 export * from './Symbol';

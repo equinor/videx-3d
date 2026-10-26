@@ -49,9 +49,15 @@ uniform vec2 fenceSize;   // grid size in texels
 #include ../../../sdk/materials/shaderLib/fence-field.glsl
 #endif
 
-#if defined(CHUNK_CONTACTS) || defined(CHUNK_BATHYMETRY) || defined(CHUNK_FENCE) || defined(CHUNK_FENCE_OVERLAY) || defined(CHUNK_TILE_DEBUG) || defined(CHUNK_TILE_LEVELS)
+#if defined(CHUNK_CONTACTS) || defined(CHUNK_BATHYMETRY) || defined(CHUNK_FENCE) || defined(CHUNK_FENCE_OVERLAY) || defined(CHUNK_TILE_DEBUG) || defined(CHUNK_TILE_LEVELS) || defined(CHUNK_HEIGHT_CLIP)
 varying vec3 vObjectPos;
 #include ../../../sdk/materials/shaderLib/depth-map.glsl
+#endif
+
+#ifdef CHUNK_HEIGHT_CLIP
+// The ground drawn over the stack (`ChunkStackProps.clip`): what lies above it is not
+// there. In OBJECT space, the frame the column's top was built on the ground in.
+#include ../../../sdk/materials/shaderLib/height-field-clip.glsl
 #endif
 
 #if defined(CHUNK_TILE_DEBUG) || defined(CHUNK_TILE_LEVELS)
@@ -197,6 +203,13 @@ void main() {
     if(!(overlayParams.z > 0.0 && inside))
       discard;
   }
+  #endif
+
+  #ifdef CHUNK_HEIGHT_CLIP
+  // ⭐ Per fragment, against the triangles the ground is drawn with: the column's top is
+  // built a margin above the ground, so every face ends exactly where it is drawn.
+  if(heightFieldClipped(vObjectPos))
+    discard;
   #endif
 
   vec4 diffuseColor = vec4(diffuse, opacity);

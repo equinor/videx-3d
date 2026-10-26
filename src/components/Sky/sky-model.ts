@@ -298,8 +298,8 @@ export type SkyOcean = SkyOceanWater & {
   seabed?: boolean | SkySeabed;
   /**
    * How much of what lies beyond the seabed it hides, 0 to 1, as `waterOpacity` is the
-   * water's: below 1 the data under it shows through, and so does a `SkyBoxStage`
-   * occupant's seabed. Default 1
+   * water's: below 1 the data under it shows through, and so does a `SkyBoxStage`'s
+   * relief over the stage's own area. Default 1
    */
   seabedOpacity?: number;
   /** height of the sea surface along `up`, in world units. Default 0 */

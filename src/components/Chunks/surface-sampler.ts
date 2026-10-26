@@ -13,7 +13,14 @@ import {
   Quaternion,
   Vector3,
 } from 'three';
-import { createTinSampler, TinSample, TinSampler, Vec2, Vec3 } from '../../sdk';
+import {
+  createTinSampler,
+  SurfaceSampler,
+  TinSample,
+  TinSampler,
+  Vec2,
+  Vec3,
+} from '../../sdk';
 
 /**
  * One drawn surface a chunk offers for sampling.
@@ -36,59 +43,7 @@ export type SurfaceSamplerEntry = {
   group?: string;
 };
 
-/**
- * Read-only height queries against the surfaces a `ChunkStack` currently DRAWS.
- *
- * ⭐ It samples the triangles on screen, not the source grid: a grid sample and
- * the drawn mesh differ by up to the tessellation's `maxError`, which at field
- * scale is metres — enough for an object to visibly float above the sea bed it is
- * meant to be standing on.
- *
- * The counterpart to `OceanSampler`: that one is analytic because the sea is a
- * function of time, this one reads geometry because a horizon is a function of
- * data. Both return the caller's own scene frame, and both are `null` when there
- * is nothing to sample, so a consumer keeps its static pose rather than jumping to
- * the origin.
- *
- * @group Contexts
- */
-export type SurfaceSampler = {
-  /**
-   * Height and surface normal at a world X/Z, or `null` where nothing is drawn —
-   * outside the outline, in a hole, or where the unit has pinched out.
-   *
-   * @param surface a surface id to sample that horizon alone; omitted, the
-   *   HIGHEST drawn surface answers, which is the ground as it is seen from above
-   * @param out reused to avoid allocating on a per-pointer-move path
-   */
-  sampleAt(
-    x: number,
-    z: number,
-    surface?: string,
-    out?: TinSample,
-  ): TinSample | null;
-  /** Just the height, or `null` where nothing is drawn. */
-  getHeightAt(x: number, z: number, surface?: string): number | null;
-  /**
-   * How far inside the drawn block a point is, in metres to the nearest face, or
-   * `null` when it is in open air.
-   *
-   * ⭐ Asked per CHUNK. "Below the highest surface and above the block's base" is
-   * only the same question while the stack is one solid extrusion; give two chunks
-   * different footprints and there is open air between them wherever the narrower
-   * one is absent, which that test reads as rock.
-   *
-   * ⚠️ A chunk whose caps meet — a horizon its neighbour draws under the seam rule,
-   * or a unit pinched out to nothing — spans zero here, so a sliver at such a seam
-   * reads as air. The union over chunks covers most of it.
-   *
-   * @param floor the block's base below the deepest horizon, for a carrier fill
-   *   that is deliberately not sampleable
-   */
-  solidAt(x: number, y: number, z: number, floor?: number): number | null;
-  /** Ids of the surfaces currently drawn, and so sampleable. */
-  readonly surfaces: string[];
-};
+export type { SurfaceSampler } from '../../sdk/geometries/surface-sampler';
 
 /**
  * Where chunks publish the surfaces they have drawn. Separate from
@@ -236,6 +191,67 @@ export function createSurfaceSampler(
         .filter((id): id is string => id !== null)
         .filter((id, i, all) => all.indexOf(id) === i);
     },
+  };
+}
+
+/**
+ * A stack's sampler for a column built on a relief (`ChunkStackProps.relief`): its sea
+ * bed, wherever the column holds it, answered by the relief's own sampler — the finest
+ * ground there is, as the stage draws it close up — rather than by its cap, which is
+ * built `margin` above the relief and lies hidden under it. The other horizons answer
+ * from their caps. Without the relief's sampler, the cap answers with the margin taken
+ * off: within the tessellation's `maxError` of the ground. Pins go to the relief's.
+ *
+ * @group Components
+ */
+export function createReliefTopSampler(
+  caps: SurfaceSampler,
+  options: {
+    /** the column's sea bed's id */
+    seabed: string;
+    /** how far above the relief its cap is built */
+    margin: number;
+    /** the relief's own sampler (`SkyBoxStageRelief.onSampler`) */
+    relief?: SurfaceSampler | null;
+  },
+): SurfaceSampler {
+  const { seabed, margin, relief } = options;
+  const probe: TinSample = { y: 0, normal: [0, 1, 0] };
+  const scratch: TinSample = { y: 0, normal: [0, 1, 0] };
+  const sampleAt = (
+    x: number,
+    z: number,
+    surface?: string,
+    out?: TinSample,
+  ): TinSample | null => {
+    if (surface !== undefined && surface !== seabed)
+      return caps.sampleAt(x, z, surface, out);
+    // The sea bed is the column's top: where it holds it, the relief is the ground.
+    const cap = caps.sampleAt(x, z, seabed, probe);
+    if (!cap)
+      return surface === undefined ? caps.sampleAt(x, z, surface, out) : null;
+    const result = out ?? { y: 0, normal: [0, 1, 0] };
+    const ground = relief?.sampleAt(x, z, undefined, result);
+    if (ground) return ground;
+    result.y = cap.y - margin;
+    result.normal[0] = cap.normal[0];
+    result.normal[1] = cap.normal[1];
+    result.normal[2] = cap.normal[2];
+    return result;
+  };
+  return {
+    sampleAt,
+    getHeightAt: (x, z, surface) => sampleAt(x, z, surface, scratch)?.y ?? null,
+    solidAt: (x, y, z, floor) => {
+      // Above the ground is open water, though the column's top stands above it.
+      const top = sampleAt(x, z, undefined, scratch);
+      if (top && y > top.y) return null;
+      return caps.solidAt(x, y, z, floor);
+    },
+    get surfaces() {
+      return caps.surfaces;
+    },
+    pin: relief?.pin,
   };
 }
 
@@ -539,4 +555,13 @@ export function useSurfacePlacement(
   useEffect(() => {
     place(ref.current);
   }, [place, ref]);
+
+  // The finest ground under the footprint, held in whatever the view: the object settles
+  // on it once it is in (the sampler changes then), and stays put as the view moves.
+  const pin = sampler?.pin;
+  useEffect(() => {
+    if (!pin || !enabled) return;
+    const reach = Math.max(radius, 1);
+    return pin([[x - reach, z - reach, x + reach, z + reach]]);
+  }, [pin, enabled, x, z, radius]);
 }

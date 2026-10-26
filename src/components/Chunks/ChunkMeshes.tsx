@@ -21,6 +21,7 @@ import {
   SurfaceChunkMesh,
   StackTiling,
 } from '../../sdk';
+import type { HeightFieldClipUniforms } from '../../sdk/materials/height-field-clip';
 import {
   DEFAULT_OCEAN_DEEP_COLOR,
   DEFAULT_OCEAN_WATER_OPACITY,
@@ -176,6 +177,11 @@ export type ChunkMeshesProps = {
   /** whether the column's floor is cut by the fence */
   fenceCarrier?: boolean;
   /**
+   * The ground drawn over the stack (see `ChunkStackContextValue.heightClip`): every
+   * material made here leaves out what lies above it
+   */
+  heightClip?: HeightFieldClipUniforms;
+  /**
    * Peel units of the chunk away to expose what is under them — see
    * {@link ChunkPeel}. A number peels a prefix off the top; `{ from, count }`
    * opens a window and caps its exposed base with the next surface.
@@ -258,6 +264,7 @@ function buildInferenceOverlays(
   seaBedByFence: boolean,
   sectionUniform?: IUniform<Vector4>,
   fenceUniforms?: ChunkFenceUniforms,
+  heightClip?: HeightFieldClipUniforms,
 ) {
   const cutSection = (i: number) => capCut(layers, i, seaBedBySection);
   const cutFence = (i: number) => capCut(layers, i, seaBedByFence);
@@ -272,6 +279,7 @@ function buildInferenceOverlays(
           opacity,
           sectionPlane: section ? sectionUniform : undefined,
           fence: fence ? fenceUniforms : undefined,
+          heightClip,
         }),
       );
     }
@@ -327,6 +335,7 @@ export const ChunkMeshes = ({
   fenceUniformsInverse,
   fenceOverlayUniforms = null,
   fenceCarrier = false,
+  heightClip,
   peel = 0,
   cullHiddenCaps = true,
   outline = null,
@@ -418,6 +427,7 @@ export const ChunkMeshes = ({
           : options?.inverse
             ? fenceUniformsInverse
             : fenceUniforms,
+        heightClip,
       });
       owned.push(material);
       return material;
@@ -681,6 +691,7 @@ export const ChunkMeshes = ({
     fenceUniformsInverse,
     fenceOverlayUniforms,
     fenceCarrier,
+    heightClip,
     saturationUniform,
     tileUniforms,
     debugTiles,
@@ -710,6 +721,7 @@ export const ChunkMeshes = ({
         seaBedByFence,
         sectionUniform,
         fenceUniforms,
+        heightClip,
       ),
     [
       inferredStyle,
@@ -721,6 +733,7 @@ export const ChunkMeshes = ({
       seaBedByFence,
       sectionUniform,
       fenceUniforms,
+      heightClip,
     ],
   );
 

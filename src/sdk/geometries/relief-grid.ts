@@ -1,5 +1,6 @@
 import proj4 from 'proj4';
 import type { SurfaceMeta } from '../data/types/SurfaceMeta';
+import type { CRS } from '../projection/crs';
 import type { Vec2 } from '../types/common';
 import { toHalfFloatBits } from '../utils/half-float';
 
@@ -27,10 +28,28 @@ export type ReliefFrame = {
  *
  * @group Geometries
  */
-export function reliefFrameAt(longitude: number, latitude: number): ReliefFrame {
+export function reliefFrameAt(
+  longitude: number,
+  latitude: number,
+): ReliefFrame {
   return {
     projection: `+proj=tmerc +lat_0=${latitude} +lon_0=${longitude} +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs`,
     origin: [0, 0],
+  };
+}
+
+/**
+ * The {@link ReliefFrame} of a scene placed by `crs`, as a `UtmArea` given that CRS
+ * places it: the CRS's projection, its origin at scene `offset` (X/Z; a `UtmArea`'s
+ * `offset` X and Z, default `[0, 0]`). The reliefs then meet the field's own data.
+ *
+ * @group Geometries
+ */
+export function reliefFrameFromCrs(crs: CRS, offset?: Vec2): ReliefFrame {
+  return {
+    projection: crs.utmDef,
+    origin: [crs.originUtm[0], crs.originUtm[1]],
+    ...(offset && { offset }),
   };
 }
 

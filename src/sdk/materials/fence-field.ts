@@ -5,7 +5,8 @@ import { IUniform, Matrix3, Texture, Vector2, Vector4 } from 'three';
  * swept along a curve in plan, normally a wellbore's trajectory, in the cut object's own
  * XZ. Every material cut by one fence is handed the SAME objects, so moving the fence is a
  * write into them rather than a rebuild. A `ChunkStack` makes them for its fence; the
- * `Ocean` and a `SkyBoxStage` occupant's seabed take them to be cut with it.
+ * `Ocean` and a `SkyBoxStage`'s relief (through an occupant's `cut`) take them to be cut
+ * with it.
  */
 export type FenceFieldUniforms = {
   /** x: 1 while the cut is live, y: +1, or -1 to draw only what was removed */

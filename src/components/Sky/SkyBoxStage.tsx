@@ -1,5 +1,6 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import {
+  RefObject,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -16,6 +17,7 @@ import {
   LineSegments,
   Mesh,
   MeshBasicMaterial,
+  Object3D,
   Scene,
   ShaderMaterial,
   Vector3,
@@ -23,34 +25,64 @@ import {
 } from 'three';
 import { useGenerator } from '../../hooks/useGenerator';
 import { createLayers, LAYERS } from '../../layers/layers';
+import type {
+  PlanarPolygonCoordinates,
+  PlanarPolygonGeometry,
+} from '../../sdk/geometries/planar-geometry';
+import {
+  PolygonDistanceField,
+  polygonDistanceField,
+} from '../../sdk/geometries/polygon-distance-field';
 import type { ReliefFrame, ReliefGrid } from '../../sdk/geometries/relief-grid';
-import type { SeabedMesh } from '../../sdk/geometries/surface-clip';
-import { createTinSampler } from '../../sdk/geometries/tin-sampler';
+import type { ReliefLayer } from '../../sdk/geometries/relief-tiles';
 import type { CutUniforms } from '../../sdk/materials/fence-field';
-import { SkyBoxStageReliefLayer } from './SkyBoxStageReliefLayer';
+import type { HeightFieldClip } from '../../sdk/materials/height-field-clip';
+import { SkyBoxStageReliefOverview } from './SkyBoxStageReliefOverview';
+import {
+  SkyBoxStageReliefTiles,
+  SkyReliefTileStats,
+} from './SkyBoxStageReliefTiles';
+import {
+  SKY_RELIEF_MAX_OCCUPANTS,
+  SkyReliefOccupantFields,
+  SkyReliefTileDebug,
+  SkyReliefTileOccupants,
+} from './sky-relief-tiles';
+import type { ReliefSampler } from './sky-relief-sampler';
 import { useSkyOcean } from './sky-context';
+import { placeOnSkyCurve } from './sky-anchor';
 import { skyRelief, SkyReliefResponse } from './sky-defs';
 import {
-  createSkyStageBed,
-  createSkyStageFalloff,
   createSkyStageMaterial,
   createSkyStageOutline,
   createSkyStageFootprint,
   createSkyStagePlane,
-  createSkyStageRings,
-  createSkyStageSeabed,
   SkyStageBounds,
-  skyStageNearBounds,
-  skyStageRim,
 } from './sky-stage';
 
-// Room between the outline and the rings when there is no falloff to make room for.
-const MIN_NEAR_MARGIN = 1000;
 // A relief's flat land, a dark green-grey, which keeps its colour through the air.
 const RELIEF_LAND_COLOR = '#34433b';
-const RELIEF_FALLOFF = 10000;
 // The least a relief's map reaches around the scene: the sea's horizon from some 300 km up.
 const RELIEF_RADIUS = 2000000;
+const NO_OCCUPANTS: SkyBoxStageOccupant[] = [];
+
+// The same array as last render while its items are: one written inline is new every render.
+function useStableList<T>(list: T[]): T[] {
+  const kept = useRef(list);
+  if (
+    kept.current.length !== list.length ||
+    kept.current.some((item, i) => item !== list[i])
+  )
+    kept.current = list;
+  return kept.current;
+}
+
+// An outline's bounds in scene X/Z, its offset included.
+function outlineSquare(outline: PlanarPolygonGeometry): SkyStageBounds {
+  const { min, max } = outline.getBounds();
+  const [ox, oz] = outline.offset;
+  return [min[0] + ox, min[1] + oz, max[0] + ox, max[1] + oz];
+}
 
 // Without OIT, see-through parts draw in this order: the scene's own (most of it under the
 // sea), then the water over everything.
@@ -63,13 +95,15 @@ const OVERLAY_LAYERS = createLayers(LAYERS.OVERLAY);
 const WIRE_COLORS: Record<StagePartLayer, string> = {
   surface: '#1a59ff',
   bed: '#26cc33',
-  falloff: '#00d9e6',
-  'occupant-bed': '#ff1acc',
 };
 
 /** What a {@link SkyBoxStage} does for its occupant, as {@link SkyBoxStageOccupant.onStage} tells it. */
 export type SkyBoxStageOccupantState = {
-  /** the stage draws the occupant's seabed: the sea has one, and the sky is drawn and compiled. While false, draw your own */
+  /**
+   * the stage draws the occupant's seabed: the sea has one, the sky is drawn and compiled,
+   * and the stage has a relief, which is the ground over the occupant then. While false,
+   * draw your own
+   */
   seabed: boolean;
   /** the opacity the stage draws it at, the sea's (`SkyOcean.seabedOpacity`): below 1, cull nothing under it */
   seabedOpacity: number;
@@ -78,65 +112,101 @@ export type SkyBoxStageOccupantState = {
 };
 
 /**
- * What claims part of a {@link SkyBoxStage}: a field column, say, which hands the stage
- * its seabed and is told what the stage does for it.
+ * What claims part of a {@link SkyBoxStage}: a field column, say, which tells the stage
+ * where it lies and is told what the stage does for it.
  */
 export type SkyBoxStageOccupant = {
   /**
-   * The occupant's seabed, in scene coordinates, which the stage draws as the sea's:
-   * shaded, lit and fogged as the sky's, at its seabed opacity, eased into the sea's seabed
-   * around it (see {@link SkyBoxStageProps.seabedFalloff}), and never cut by a cutaway,
-   * which only takes the water over it. Its rim is the occupant's outline. Build it with
-   * `createSeabedMesh`, or the `skySeabed` generator; a `ChunkStack` hands out its own
-   * through `onSeabed` once built — the only one that meets its cut faces with no seam,
-   * as a re-tessellation agrees with them only within its `maxError`. Without one, the
-   * sea's flat seabed lies under the occupant too.
-   *
-   * ⚠️ At a seabed opacity of 1 it is drawn opaque and whole — or cut as `cut` cuts it — so
-   * the occupant may cull whatever lies under it. Stop drawing your own while the stage
-   * draws it (see `onStage`).
+   * The occupant's footprint, in scene X/Z. Its bounds are where the cutaway takes its
+   * size from and where `anchor` is placed about; and with a relief, over it the cutaway
+   * takes the water but not the ground, its bounds are where `onGround` hands out the
+   * ground, and with `keepBed` off the occupant's `cut` cuts the relief inside it.
    */
-  seabed?: SeabedMesh;
+  outline?: PlanarPolygonGeometry;
   /**
-   * The occupant's own cut — a `ChunkStack`'s, from its `onCut` — which the stage cuts
-   * the occupant's seabed with, as the occupant cuts itself. The same uniform objects, so
-   * it follows the cut every frame; they must be in the scene frame. While it cuts, the
-   * void shows through the seabed, and the sky draws the void's walls from above too.
+   * The occupant's own cut — a `ChunkStack`'s, from its `onCut` — which the stage cuts the
+   * relief over it with, as the occupant cuts itself, while its `keepBed` is off. The same
+   * uniform objects, so it follows the cut every frame; they must be in the scene frame.
+   * While it cuts, the void shows through the relief, and the sky draws the void's walls
+   * from above too.
    */
   cut?: CutUniforms;
+  /**
+   * With a relief: keep the relief over the occupant whole, as the occupant's floor,
+   * whatever its `cut` takes of the occupant. Default true. Off, the relief is cut with
+   * the occupant inside its `outline`, so its cut edge and the occupant's cut face (a
+   * `ChunkStack` with `clip`) are one line. Off for one occupant at most: the relief takes
+   * one occupant's cut.
+   */
+  keepBed?: boolean;
   /** told what the stage does for the occupant, whenever that changes; all `false` once the stage is gone */
   onStage?: (state: SkyBoxStageOccupantState) => void;
+  /**
+   * With a relief: told the ground as the relief draws it over the
+   * occupant (its `outline`'s bounds, or the stage's `bounds` without one), as a
+   * `HeightFieldClip` — hand it to a `ChunkStack` built on the relief (`clip`), whose
+   * faces then end where the ground is drawn — and null once there is none. Live only
+   * while the stage draws the occupant's seabed (`onStage`). Over that region a tile's
+   * error then shows no more than half a pixel.
+   */
+  onGround?: (clip: HeightFieldClip | null) => void;
+  /**
+   * The occupant's own group, which the stage places on the sea's curve each frame (see
+   * `SkyAnchor`), about the middle of its `outline` (or of `bounds` without one): for an
+   * occupant drawn outside the `Sky`. Seen from far off, the sky curves the sea over the
+   * scene too, and what is drawn flat would stand off it. It is set back as it was once
+   * the stage lets go of it. ⚠️ Its position and rotation are the stage's: give it a group
+   * of its own.
+   */
+  anchor?: RefObject<Object3D | null>;
 };
 
 /**
- * A layer a {@link SkyBoxStage} draws: the sea `surface`; the flat `bed` (beyond the
- * falloff, when there is one), the `falloff` easing from the occupant's seabed, and the
- * `occupant-bed`, the occupant's own; and beyond its own area the `relief`, when it has one.
+ * A layer a {@link SkyBoxStage} draws: the sea `surface`; the flat `bed` without a relief;
+ * and the `relief`, when it has one, and its overview.
  */
-export type SkyBoxStageLayer =
-  | 'surface'
-  | 'bed'
-  | 'falloff'
-  | 'occupant-bed'
-  | 'relief';
+export type SkyBoxStageLayer = 'surface' | 'bed' | 'relief';
 
 // The layers drawn as plain meshes, which the wireframe view can draw too.
 type StagePartLayer = Exclude<SkyBoxStageLayer, 'relief'>;
 
 /**
- * Land and seabed beyond a {@link SkyBoxStage}'s own area: a relief from the store, which
- * rises from the stage's flat seabed past its area and continues to the sea's horizon. It
- * is land where it rises above the sea, lit and fading into the air as the far sea does,
- * and seabed below it, seen through the water as the stage's own is. Always opaque: the
- * seabed is see-through only over the stage's own area.
+ * Land and seabed around a {@link SkyBoxStage}, drawn from tiles: reliefs from the store
+ * merged, covering everything out to the sea's horizon, the stage's own area and its
+ * occupants included. It is land where it rises above the sea, lit and fading into the air
+ * as the far sea does, and seabed below it, seen through the water as the stage's own is.
+ * See-through at the sea's seabed opacity over the stage's own area only.
  */
 export type SkyBoxStageRelief = {
   /**
-   * The relief in the store: a `relief-meta` record (a `SurfaceMeta`, with the relief's
-   * `projection`) and its `relief-values`, heights in metres above mean sea level, NaN
-   * for none. Read by the `skyRelief` generator, so it needs a `GeneratorsProvider`.
+   * The reliefs in the store — `relief-meta` records (`ReliefMeta`) and their
+   * `relief-values` — coarse to fine: later ones win where they have data. Read by the
+   * `skyReliefTile` generator, so it needs a `GeneratorsProvider`. With a far plane short
+   * of the sea's horizon, the first is also drawn past the tiles as an overview, read by
+   * the `skyRelief` generator.
    */
-  id: string;
+  layers: ReliefLayer[];
+  /** the flat seabed where no layer has data, metres below the sea. Default the sea's depth */
+  depth?: number;
+  /** The most a tile's error may show on screen, in pixels. Default 2 */
+  pixelError?: number;
+  /**
+   * the most a tile's cell may span on screen, in pixels, where finer data
+   * lies under it and the ground is rough. The relief is shaded from its tiles' cells —
+   * slopes, the coast, the colour by height — so this, not the error, keeps it sharp from
+   * high up, where the ground's error shows as next to nothing. Not applied with the
+   * camera under the ground, where the tiles' tops face away. Default 8
+   */
+  cellPixels?: number;
+  /** Told what the tiles draw and hold, every few frames */
+  onStats?: (stats: SkyReliefTileStats) => void;
+  /**
+   * told the relief's sampler (see `ReliefSampler`), for what is placed on
+   * the relief: hand it on through `SurfaceSamplerContext`, and to a `ChunkStack` built
+   * on the relief (`reliefSampler`). A new one whenever the ground under a pin comes in;
+   * null once gone
+   */
+  onSampler?: (sampler: ReliefSampler | null) => void;
   /** where the scene lies on the map; `reliefFrameAt` places a scene by its longitude and latitude */
   frame: ReliefFrame;
   /**
@@ -145,8 +215,6 @@ export type SkyBoxStageRelief = {
    * taking the sea's. Default `#34433b`, a dark green-grey
    */
   color?: 'ramp' | ColorRepresentation;
-  /** how far past the stage's own area it rises from the stage's flat seabed, in world units. Default 10000 */
-  falloff?: number;
 };
 
 /**
@@ -156,10 +224,16 @@ export type SkyBoxStageRelief = {
 export type SkyBoxStageDebug = {
   /** layers not to draw */
   hide?: SkyBoxStageLayer[];
-  /** draw the outline along its seabed rim (white) and at the sea surface (black), and `bounds` (grey), over everything; with the void's walls, both again faintly at their foot */
+  /** draw the occupants' outlines at the sea's seabed (white) and at its surface (black), and `bounds` (grey), over everything; with the void's walls, both again faintly at their foot */
   outline?: boolean;
   /** draw the triangles of every layer drawn, over everything, in the colour `SkyDebug.tint` gives it */
   wireframe?: boolean;
+  /**
+   * With a relief: `'tiles'` tints each tile by its depth and outlines it; `'layers'`
+   * colours each node by the layer that gave it (grey for the flat base). Recompiles the
+   * relief's material.
+   */
+  relief?: SkyReliefTileDebug;
 };
 
 /**
@@ -169,10 +243,9 @@ export type SkyBoxStageDebug = {
 export type SkyBoxStageProps = {
   /** the scene's rectangle, `[minX, minZ, maxX, maxZ]` in scene X/Z; it should hold the whole scene */
   bounds: SkyStageBounds;
-  occupant?: SkyBoxStageOccupant;
-  /** how far outside the occupant the seabed eases from its own to the sea's depth. Default 3000 */
-  seabedFalloff?: number;
-  /** land and seabed beyond the stage's own area (see {@link SkyBoxStageRelief}); none by default */
+  /** what claims parts of the stage: field columns, say. The relief knows the outlines of 4 at most */
+  occupants?: SkyBoxStageOccupant[];
+  /** land and seabed, drawn from tiles (see {@link SkyBoxStageRelief}); none by default, and a flat seabed */
   relief?: SkyBoxStageRelief;
   /** debug views (see {@link SkyBoxStageDebug}) */
   debug?: SkyBoxStageDebug;
@@ -190,11 +263,12 @@ export type SkyBoxStageProps = {
  * geometry stays flat, but beyond the disc that holds `bounds` it shades the sea falling
  * away with the Earth's curve, as the background does.
  *
- * An `occupant` claims part of the stage and hands it its seabed, which the stage draws as
- * the sea's, easing its own seabed into it around the occupant.
+ * Its `occupants` claim parts of the stage: field columns, say, each by its footprint.
  *
- * A `relief` puts land and seabed from the store beyond the stage's own area: `bounds`,
- * and the occupant's with its falloff. Over that area the stage keeps its own seabed.
+ * A `relief` puts land and seabed from the store everywhere, drawn from tiles. It is the
+ * ground over the occupants too: kept whole under their cuts unless one's `keepBed` is
+ * off, and handed out to each as drawn (`onGround`). Without one, the stage draws a flat
+ * seabed at the sea's depth, and the occupants draw their own.
  *
  * ⚠️ Assumes the default `up` (+Y). Renders nothing without a sky ocean.
  *
@@ -202,8 +276,7 @@ export type SkyBoxStageProps = {
  */
 export const SkyBoxStage = ({
   bounds,
-  occupant,
-  seabedFalloff = 3000,
+  occupants,
   relief,
   debug,
 }: SkyBoxStageProps) => {
@@ -211,93 +284,38 @@ export const SkyBoxStage = ({
   const sky = ocean?.material ?? null;
   const far = useThree(state => state.camera.far);
   const [minX, minZ, maxX, maxZ] = bounds;
-  const occupantSeabed = occupant?.seabed ?? null;
+  const claims = occupants ?? NO_OCCUPANTS;
   const level = ocean?.level ?? 0;
   const bedY = level - (ocean?.depth ?? 0);
   // The sky's own sea has water; without it every part of the stage lies dry.
   const wet = ocean?.water ?? true;
-  // Without a seabed, the stage draws none, nor the occupant's: the void lies below the water.
+  // Without a seabed, the stage draws none, nor a relief: the void lies below the water.
   const hasBed = ocean?.seabed ?? true;
   const seabedOpacity = ocean?.seabedOpacity ?? 1;
   const seeThrough = seabedOpacity < 1;
   const bedDetail = ocean?.bedDetail;
   const abyssWalls = ocean?.abyssWalls;
 
-  // The occupant's seabed: its rim, which is the occupant's outline and where the falloff
-  // meets it, the stage's mesh of it, and the ground under a camera in it.
-  const rim = useMemo(
-    () => (occupantSeabed ? skyStageRim(occupantSeabed) : null),
-    [occupantSeabed],
-  );
-  const outline = rim?.outline ?? null;
-  const seabedMesh = useMemo(
-    () => (occupantSeabed ? createSkyStageSeabed(occupantSeabed) : null),
-    [occupantSeabed],
-  );
-  const ground = useMemo(
-    () =>
-      occupantSeabed
-        ? createTinSampler(occupantSeabed.positions, occupantSeabed.indices)
-        : null,
-    [occupantSeabed],
-  );
-  useEffect(() => () => seabedMesh?.dispose(), [seabedMesh]);
-
   const extent: SkyStageBounds = useMemo(
     () => [minX - far, minZ - far, maxX + far, maxZ + far],
     [minX, minZ, maxX, maxZ, far],
   );
-  // The water's, and the seabed's without an occupant.
+  // The water's, and the flat seabed's without a relief.
   const plane = useMemo(
     () => createSkyStagePlane([minX, minZ, maxX, maxZ], extent),
     [minX, minZ, maxX, maxZ, extent],
   );
   useEffect(() => () => plane.dispose(), [plane]);
 
-  // Around an occupant: at least the falloff's width, so the falloff ends on the rings at
-  // the seabed.
-  const near = useMemo(
-    () =>
-      outline
-        ? skyStageNearBounds(
-            extent,
-            outline,
-            Math.max(seabedFalloff, MIN_NEAR_MARGIN),
-          )
-        : null,
-    [extent, outline, seabedFalloff],
-  );
-  // A relief lies beyond the stage's own area, `bounds` and the occupant's near rectangle,
-  // over which the stage keeps its own seabed; only where the sea has one.
-  const reliefOn = !!relief && hasBed;
-  const area = useMemo<SkyStageBounds | null>(
-    () =>
-      !reliefOn
-        ? null
-        : near
-          ? [
-              Math.min(minX, near[0]),
-              Math.min(minZ, near[1]),
-              Math.max(maxX, near[2]),
-              Math.max(maxZ, near[3]),
-            ]
-          : [minX, minZ, maxX, maxZ],
-    [reliefOn, near, minX, minZ, maxX, maxZ],
-  );
-  const rings = useMemo(
-    () => (near ? createSkyStageRings(near, area ?? extent) : null),
-    [near, area, extent],
-  );
-  useEffect(() => () => rings?.dispose(), [rings]);
-  // Without an occupant the seabed lies on the plane, or under a relief on the area alone.
-  const areaBed = useMemo(
-    () => (area && !near ? createSkyStagePlane(area, area) : null),
-    [area, near],
-  );
-  useEffect(() => () => areaBed?.dispose(), [areaBed]);
+  // A relief covers everything, the stage's own area included, and the stage draws no
+  // seabed of its own; only where the sea has one.
+  const tiled = !!relief?.layers.length && hasBed;
 
   const generator = useGenerator<SkyReliefResponse>(skyRelief);
-  const reliefId = reliefOn ? relief.id : null;
+  // The first (coarsest) layer is the overview past the tiles, only while the far plane
+  // falls short of the farthest horizon.
+  const reliefId =
+    tiled && far < RELIEF_RADIUS ? (relief?.layers[0]?.id ?? null) : null;
   // By its content: a frame written inline is a new object every render.
   const frameKey = relief ? JSON.stringify(relief.frame) : '';
   const centerX = (minX + maxX) / 2;
@@ -322,75 +340,94 @@ export const SkyBoxStage = ({
     };
   }, [generator, reliefId, frameKey, centerX, centerZ, far]);
 
-  const falloff = useMemo(
-    () =>
-      hasBed && rim && near && seabedFalloff > 0
-        ? createSkyStageFalloff(
-            near,
-            rim.outline,
-            rim.elevations,
-            bedY,
-            seabedFalloff,
-          )
-        : null,
-    [hasBed, near, rim, bedY, seabedFalloff],
-  );
-
   const materials = useMemo(
     () =>
       sky && {
-        surface: createSkyStageMaterial(sky, 'surface', {
-          curvedDepth: reliefOn,
-        }),
+        surface: createSkyStageMaterial(sky, 'surface', { curvedDepth: tiled }),
         bed: createSkyStageMaterial(sky, 'bed', { seeThrough }),
-        falloffBed: createSkyStageMaterial(sky, 'falloff-bed', { seeThrough }),
       },
     // The seabed's detail is compiled in, from the sky's defines: a new one needs new materials.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sky, bedDetail, abyssWalls, seeThrough, reliefOn],
+    [sky, bedDetail, abyssWalls, seeThrough, tiled],
   );
 
-  // Apart from the rest, since the occupant's cut is compiled into it too.
-  const cutPlane = occupant?.cut?.plane;
-  const cutFence = occupant?.cut?.fence;
-  const occupantBed = useMemo(
-    () =>
-      sky &&
-      createSkyStageMaterial(sky, 'occupant-bed', {
-        seeThrough,
-        cut: { plane: cutPlane, fence: cutFence },
-      }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sky, bedDetail, abyssWalls, seeThrough, cutPlane, cutFence],
-  );
-  // While the occupant's cut opens its seabed, the void's walls show through it from above.
+  // The occupants' outlines, for the relief: over them the cutaway takes
+  // the water, not the ground; and one occupant, its `keepBed` off, cuts the relief there.
+  const outlines = useStableList(claims.map(claim => claim.outline ?? null));
+  const fielded = useMemo(() => {
+    if (!tiled) return null;
+    const at = new Map<number, number>();
+    const fields: PolygonDistanceField[] = [];
+    outlines.forEach((shape, i) => {
+      if (!shape || fields.length >= SKY_RELIEF_MAX_OCCUPANTS) return;
+      const field = polygonDistanceField(
+        shape.coordinates as PlanarPolygonCoordinates,
+        shape.offset,
+      );
+      if (!field) return;
+      at.set(i, fields.length);
+      fields.push(field);
+    });
+    return fields.length > 0
+      ? { at, fields: new SkyReliefOccupantFields(fields) }
+      : null;
+  }, [tiled, outlines]);
+  useEffect(() => () => fielded?.fields.dispose(), [fielded]);
+  const cutters = tiled
+    ? claims.flatMap((claim, i) =>
+        claim.keepBed === false &&
+        claim.cut &&
+        (claim.cut.plane || claim.cut.fence) &&
+        fielded?.at.has(i)
+          ? [i]
+          : [],
+      )
+    : [];
+  const cutter = cutters.length > 0 ? cutters[0] : -1;
+  const reliefCut = cutter >= 0 ? claims[cutter].cut : undefined;
+  const reliefCutAt = cutter >= 0 ? (fielded?.at.get(cutter) ?? -1) : -1;
+  const tooManyCutters = cutters.length > 1;
   useEffect(() => {
-    if (!sky || !occupantSeabed || (!cutPlane && !cutFence)) return;
+    if (tooManyCutters)
+      console.warn(
+        'SkyBoxStage: the relief takes one occupant’s cut — `keepBed` is off for more than one; the first cuts it.',
+      );
+  }, [tooManyCutters]);
+  const reliefOccupants = useMemo<SkyReliefTileOccupants | undefined>(
+    () =>
+      fielded
+        ? {
+            fields: fielded.fields,
+            cut:
+              reliefCut && reliefCutAt >= 0
+                ? { index: reliefCutAt, with: reliefCut }
+                : undefined,
+          }
+        : undefined,
+    // The cut by its uniform objects: an inline `cut` is a new object every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fielded, reliefCutAt, reliefCut?.plane, reliefCut?.fence],
+  );
+
+  // While an occupant's cut opens the relief over it, the void's walls show through it from
+  // above.
+  const openingPlane = reliefCut?.plane;
+  const openingFence = reliefCut?.fence;
+  useEffect(() => {
+    if (!sky || (!openingPlane && !openingFence)) return;
     const open = () => {
-      const cutting = cutPlane?.value;
+      const cutting = openingPlane?.value;
       return (
         (!!cutting &&
           (cutting.x !== 0 || cutting.y !== 0 || cutting.z !== 0)) ||
-        (cutFence?.params.value.x ?? 0) > 0.5
+        (openingFence?.params.value.x ?? 0) > 0.5
       );
     };
     sky.abyssOpenings.add(open);
     return () => {
       sky.abyssOpenings.delete(open);
     };
-  }, [sky, occupantSeabed, cutPlane, cutFence]);
-
-  // Around an occupant's seabed with no falloff to meet it, the flat seabed leaves it a hole.
-  const bedAround = useMemo(
-    () =>
-      hasBed && near && outline && !falloff
-        ? createSkyStageBed(near, outline)
-        : null,
-    [hasBed, outline, falloff, near],
-  );
-  useEffect(() => () => bedAround?.dispose(), [bedAround]);
-
-  useEffect(() => () => falloff?.dispose(), [falloff]);
+  }, [sky, openingPlane, openingFence]);
 
   useEffect(
     () => () => {
@@ -400,83 +437,137 @@ export const SkyBoxStage = ({
     [materials],
   );
 
-  useEffect(() => () => occupantBed?.dispose(), [occupantBed]);
-
   useLayoutEffect(() => {
     if (!sky) return;
     // Out to the far plane (stage-vertex keeps its vertices inside): any shorter, and the
     // scene between would show through the sky's sea, drawn on the far plane.
     sky.setOceanStage(extent, far);
-    // Under a relief, flat over the stage's whole area, so its seabed and the relief meet level.
-    sky.setFlatSea(area ?? [minX, minZ, maxX, maxZ]);
+    // Flat over the stage's whole area, so the scene and the ground about it meet level.
+    sky.setFlatSea([minX, minZ, maxX, maxZ]);
+    // Tiles curve the ground as the sea, so the curve may follow the camera far off.
+    sky.followAway = tiled;
     return () => {
       sky.setOceanStage(null);
       sky.setFlatSea(null);
+      sky.followAway = false;
     };
-  }, [sky, extent, far, area, minX, minZ, maxX, maxZ]);
+  }, [sky, extent, far, minX, minZ, maxX, maxZ, tiled]);
 
-  // The occupant's seabed under the camera, which the sky takes for its own there. Looked
-  // up only below the sea surface and inside the occupant's bounds.
-  const groundBounds = useMemo(
-    () => (ground && outline ? outline.getBounds() : null),
-    [ground, outline],
-  );
-
+  // The relief's ground under the camera, which the sky takes for its own there below the
+  // sea surface.
+  const reliefGround = useRef<number | null>(null);
   useEffect(() => {
-    if (!sky || !groundBounds) return;
+    if (!sky || !tiled) return;
     return () => {
       sky.oceanGround = null;
     };
-  }, [sky, groundBounds]);
+  }, [sky, tiled]);
 
+  // The cutaway's size, from the first occupant's footprint.
+  const radiusOutline = outlines.find(o => o) ?? null;
   useEffect(() => {
-    if (!sky || !outline) return;
-    const { min, max } = outline.getBounds();
-    sky.occupantRadius = Math.hypot(max[0] - min[0], max[1] - min[1]) / 2;
+    if (!sky || !radiusOutline) return;
+    const [x0, z0, x1, z1] = outlineSquare(radiusOutline);
+    sky.occupantRadius = Math.hypot(x1 - x0, z1 - z0) / 2;
     return () => {
       sky.occupantRadius = null;
     };
-  }, [sky, outline]);
+  }, [sky, radiusOutline]);
 
   const surface = useRef<Mesh>(null);
   const surfaceShown = !debug?.hide?.includes('surface');
+  // Each occupant's group, placed about the middle of its outline, or of `bounds`.
+  const anchors = useStableList(claims.map(claim => claim.anchor ?? null));
+  const anchorCentres = useMemo(
+    () =>
+      outlines.map((shape): [number, number] => {
+        const [x0, z0, x1, z1] = shape
+          ? outlineSquare(shape)
+          : [minX, minZ, maxX, maxZ];
+        return [(x0 + x1) / 2, (z0 + z1) / 2];
+      }),
+    [outlines, minX, minZ, maxX, maxZ],
+  );
+  // The occupants' objects last placed, put back as they were once the stage lets go.
+  const placed = useRef<Object3D[]>([]);
+  useEffect(
+    () => () => {
+      for (const object of placed.current) {
+        object.position.set(0, 0, 0);
+        object.quaternion.identity();
+      }
+      placed.current = [];
+    },
+    [anchors],
+  );
   useFrame(({ camera }) => {
     if (!sky || !ocean) return;
+    const cx = (minX + maxX) / 2;
+    const cz = (minZ + maxZ) / 2;
+    const now: Object3D[] = [];
+    anchors.forEach((anchor, i) => {
+      const object = anchor?.current;
+      if (!object) return;
+      const [ax, az] = anchorCentres[i] ?? [cx, cz];
+      placeOnSkyCurve(object, sky, camera.position, ax, az);
+      now.push(object);
+    });
+    for (const object of placed.current) {
+      if (now.includes(object)) continue;
+      object.position.set(0, 0, 0);
+      object.quaternion.identity();
+    }
+    placed.current = now;
     // Under the seabed's level the void's lid hides the water, seabed or not: the surface
     // would discard every pixel.
     if (surface.current)
       surface.current.visible =
         surfaceShown &&
         camera.position.dot(sky.up) - sky.oceanLevel + sky.oceanDepth >= 0;
-    if (!groundBounds || !ground) return;
-    const { x, y, z } = camera.position;
-    const { min, max } = groundBounds;
+    if (!tiled) return;
+    const underRelief = reliefGround.current;
     sky.oceanGround =
-      y <= ocean.level &&
-      x >= min[0] &&
-      x <= max[0] &&
-      z >= min[1] &&
-      z <= max[1]
-        ? ground.getHeightAt(x, z)
-        : null;
+      camera.position.y > ocean.level || underRelief === null
+        ? null
+        : // No deeper than the sea's own seabed: under it lies the void, wherever the
+          // relief is deeper (documents/tiles.md, Costs and risks).
+          Math.max(underRelief, sky.oceanLevel - sky.oceanDepth);
   });
 
   // Told on every change: the occupant draws its own seabed whenever the stage does not,
-  // and its own water only while the stage does not own it.
-  const seabedDrawn =
-    !!seabedMesh && hasBed && !!ocean?.visible && !!ocean.ready;
+  // and its own water only while the stage does not own it. The relief is the occupant's
+  // seabed.
+  const seabedDrawn = tiled && !!ocean?.visible && !!ocean.ready;
   const ownsWater = !!ocean?.visible;
-  const onStage = useRef(occupant?.onStage);
+  const listeners = useStableList(claims.map(claim => claim.onStage ?? null));
+  const onStage = useRef(listeners);
   useLayoutEffect(() => {
-    onStage.current = occupant?.onStage;
+    onStage.current = listeners;
   });
   useEffect(() => {
-    onStage.current?.({ seabed: seabedDrawn, seabedOpacity, water: ownsWater });
-  }, [seabedDrawn, seabedOpacity, ownsWater]);
+    for (const listener of listeners)
+      listener?.({ seabed: seabedDrawn, seabedOpacity, water: ownsWater });
+  }, [listeners, seabedDrawn, seabedOpacity, ownsWater]);
   useEffect(
-    () => () =>
-      onStage.current?.({ seabed: false, seabedOpacity: 1, water: false }),
+    () => () => {
+      for (const listener of onStage.current)
+        listener?.({ seabed: false, seabedOpacity: 1, water: false });
+    },
     [],
+  );
+
+  // The ground handed out over each occupant that asks for it.
+  const groundRequests = claims.flatMap((claim, i) =>
+    claim.onGround
+      ? [
+          {
+            bounds: outlines[i]
+              ? outlineSquare(outlines[i]!)
+              : ([minX, minZ, maxX, maxZ] as SkyStageBounds),
+            onGround: claim.onGround,
+          },
+        ]
+      : [],
   );
 
   const setView = useCallback(
@@ -486,26 +577,29 @@ export const SkyBoxStage = ({
   );
 
   const showOutline = debug?.outline === true;
+  const drawnOutlines = useMemo(
+    () => outlines.filter((shape): shape is PlanarPolygonGeometry => !!shape),
+    [outlines],
+  );
   const outlineLines = useMemo(
     () =>
       showOutline
         ? createSkyStageOutline(
             [minX, minZ, maxX, maxZ],
-            outline,
+            drawnOutlines,
             level,
             bedY,
-            rim?.elevations,
           )
         : null,
-    [showOutline, minX, minZ, maxX, maxZ, outline, rim, level, bedY],
+    [showOutline, minX, minZ, maxX, maxZ, drawnOutlines, level, bedY],
   );
   useEffect(() => () => outlineLines?.dispose(), [outlineLines]);
   const footprintLines = useMemo(
     () =>
       showOutline && abyssWalls
-        ? createSkyStageFootprint([minX, minZ, maxX, maxZ], outline)
+        ? createSkyStageFootprint([minX, minZ, maxX, maxZ], drawnOutlines)
         : null,
-    [showOutline, abyssWalls, minX, minZ, maxX, maxZ, outline],
+    [showOutline, abyssWalls, minX, minZ, maxX, maxZ, drawnOutlines],
   );
   useEffect(() => () => footprintLines?.dispose(), [footprintLines]);
   const footprint = useRef<LineSegments>(null);
@@ -564,21 +658,16 @@ export const SkyBoxStage = ({
   }, [
     register,
     materials,
-    occupantBed,
     plane,
-    rings,
-    falloff,
-    bedAround,
-    areaBed,
-    seabedMesh,
     wet,
     hasBed,
     reliefGrid,
+    tiled,
     wireMaterials,
     outlineLines,
   ]);
 
-  if (!ocean || !materials || !occupantBed) return null;
+  if (!ocean || !materials) return null;
 
   const parts: {
     key: string;
@@ -598,63 +687,55 @@ export const SkyBoxStage = ({
       order: SURFACE_ORDER,
     });
   }
-  if (hasBed && rings) {
-    parts.push({
-      key: 'bed-far',
-      layer: 'bed',
-      geometry: rings,
-      material: materials.bed,
-      y: bedY,
-    });
-    if (falloff) {
-      parts.push({
-        key: 'falloff',
-        layer: 'falloff',
-        geometry: falloff,
-        material: materials.falloffBed,
-      });
-    } else if (bedAround) {
-      parts.push({
-        key: 'bed-near',
-        layer: 'bed',
-        geometry: bedAround,
-        material: materials.bed,
-        y: bedY,
-      });
-    }
-  } else if (hasBed) {
+  // A relief's tiles are the seabed, everywhere.
+  if (hasBed && !tiled) {
     parts.push({
       key: 'bed',
       layer: 'bed',
-      geometry: areaBed ?? plane,
+      geometry: plane,
       material: materials.bed,
       y: bedY,
-    });
-  }
-  if (seabedMesh && hasBed) {
-    parts.push({
-      key: 'occupant-bed',
-      layer: 'occupant-bed',
-      geometry: seabedMesh,
-      material: occupantBed,
     });
   }
 
   return (
     <group ref={root} visible={ocean.visible && ocean.ready}>
-      {relief && reliefGrid && area && sky && (
-        <SkyBoxStageReliefLayer
+      {tiled && relief && reliefGrid && sky && (
+        <SkyBoxStageReliefOverview
           sky={sky}
           grid={reliefGrid}
-          area={area}
-          falloff={relief.falloff ?? RELIEF_FALLOFF}
           color={relief.color ?? RELIEF_LAND_COLOR}
           reach={far}
           level={level}
-          bedY={bedY}
           bedDetail={bedDetail}
           skyOrder={ocean.renderOrder + 1}
           visible={shown('relief')}
+        />
+      )}
+      {tiled && relief && sky && (
+        <SkyBoxStageReliefTiles
+          sky={sky}
+          source={{
+            frame: relief.frame,
+            layers: relief.layers,
+            base: -(relief.depth ?? ocean.depth),
+          }}
+          color={relief.color ?? RELIEF_LAND_COLOR}
+          reach={far}
+          level={level}
+          pixelError={relief.pixelError ?? 2}
+          cellPixels={relief.cellPixels ?? 8}
+          bedDetail={bedDetail}
+          visible={shown('relief')}
+          onStats={relief.onStats}
+          cameraGround={reliefGround}
+          stage={[minX, minZ, maxX, maxZ]}
+          seeThrough={seeThrough}
+          debug={debug?.relief}
+          grounds={groundRequests}
+          groundLive={seabedDrawn}
+          occupants={reliefOccupants}
+          onSampler={relief.onSampler}
         />
       )}
       {parts.map(part => (

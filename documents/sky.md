@@ -400,15 +400,10 @@ beyond `bounds`, so every view ray that can reach the scene crosses it. With the
 away (see The curved horizon).
 
 ```tsx
-// the column's sea bed, clipped to its outline in the scene frame, built where the data is
-const generate = useGenerator<SkySeabedResponse>(skySeabed)
-const [seabed, setSeabed] = useState<SeabedMesh | null>(null)
-useEffect(() => {
-  generate?.(meta.id, outline.coordinates, [origin.x, origin.z], maxError).then(setSeabed)
-}, [generate, meta, outline, origin, maxError])
+const relief = { frame: reliefFrameFromCrs(crs), layers: [{ id: 'etopo-2022-nordic' }] }
 const [cut, setCut] = useState<CutUniforms | null>(null)
-// the column's own, once its build has finished: exact against its cut faces
-const [built, setBuilt] = useState<SeabedMesh | null>(null)
+const [ground, setGround] = useState<HeightFieldClip | null>(null)
+const [sampler, setSampler] = useState<ReliefSampler | null>(null)
 const [stage, setStage] = useState<SkyBoxStageOccupantState>({
   seabed: false,
   seabedOpacity: 1,
@@ -418,10 +413,21 @@ const [stage, setStage] = useState<SkyBoxStageOccupantState>({
 <Sky ocean={{ level: 0, depth: 120 }}>
   <SkyBoxStage
     bounds={[minX, minZ, maxX, maxZ]}
-    occupant={{ seabed: built ?? seabed ?? undefined, cut: cut ?? undefined, onStage: setStage }}
+    occupants={[{ outline, cut: cut ?? undefined, onStage: setStage, onGround: setGround }]}
+    relief={{ ...relief, onSampler: setSampler }}
   />
 </Sky>
-<ChunkStack outline={outline} seabed={meta.id} water={water} drawWater={!stage.water} onCut={setCut} onSeabed={setBuilt} /* ... */>
+<ChunkStack
+  outline={outline}
+  seabed={meta.id}
+  relief={reliefSource(relief, { level: 0 })}
+  clip={ground}
+  reliefSampler={sampler}
+  water={water}
+  drawWater={!stage.water}
+  onCut={setCut}
+  /* ... */
+>
   <Chunk
     layers={[
       {
@@ -436,38 +442,42 @@ const [stage, setStage] = useState<SkyBoxStageOccupantState>({
 </ChunkStack>
 ```
 
-`bounds` is the scene's rectangle in scene X/Z, and should hold the whole scene. An
-`occupant` claims part of it — typically a field column. The sky's sea is global: its
-`water`, `seabed` and their opacities hold over the occupant as everywhere else.
+`bounds` is the scene's rectangle in scene X/Z, and should hold the whole scene.
+`occupants` claim parts of it — typically field columns. The sky's sea is global: its
+`water`, `seabed` and their opacities hold over the occupants as everywhere else.
 
-- `seabed` (a `SeabedMesh`) hands the occupant's seabed to the stage, which draws it as
-  the sea's own: lit, coloured, under the water and at the sea's `seabedOpacity` exactly
-  as the sea's seabed, and never cut by the cutaway. Its rim is the occupant's outline.
-  The stage's seabed starts on that rim and eases to the sea's depth over
-  `seabedFalloff` (default 3000), meeting it vertex for vertex. Without one — the
-  occupant's top is not the sea bed, say — the stage's flat seabed lies under the
-  occupant too.
-  `createSeabedMesh` (sdk) makes one from a surface, clipped to the outline in the scene
-  frame; the `skySeabed` generator (`generateSkySeabed`) runs it where the generators
-  run, so the surface's grid never has to reach the main thread. The stage wraps its
-  arrays without copying them: hand a new one rather than changing it. Its `normals`
-  are optional; without them the stage computes its own, facing up.
-  A `ChunkStack` hands out its own sea bed through `onSeabed` once its build has
-  finished (`stackCapSeabed` turns a built cap into one): the very triangles its walls
-  and section and fence faces were built against, so they meet with no seam. A
-  re-tessellation agrees with them only within its `maxError` — hairline gaps along a
-  cut — so hand the generated one while the column builds, and the column's own once
-  it is there, as above.
-- `cut` is the occupant's own cut, which the stage cuts the handed seabed with: a
-  section `plane` and a `fence`, as the very uniform objects the occupant's materials
-  read (`CutUniforms`), so it follows the cut every frame at no cost. A `ChunkStack`
-  hands out its own through `onCut`; anything cut with the same shader pieces (a plane
-  uniform, `shaderLib/fence-field.glsl`) can hand out its own. They must be in the scene
-  frame. Leave it off while the occupant keeps that seabed whole (`keepCap`).
+Without a `relief` the stage's seabed is flat, at the sea's depth, over everything: the
+occupants draw their own seabeds, and the flat one lies under them too. With one, the
+relief is the seabed everywhere, the occupants' ground included (see
+[Relief](./relief.md)), and the bridge to a `ChunkStack` comes in three parts
+([tiles.md](./tiles.md)): the stack builds its sea bed on the relief (`relief`, from
+`reliefSource`, derived from the very props the stage is given), ends its faces where the
+relief is drawn (`clip`, from the occupant's `onGround`), and answers what is placed on
+its top from the relief (`reliefSampler`, from the relief's `onSampler`). Give the
+sampler through `SurfaceSamplerContext` to what stands past the column, too.
+`applySkyCurve` lowers a material's vertices with the Earth's curve as the relief's are,
+for what is long and outside any anchor.
+
+Each occupant:
+
+- `outline` (scene X/Z) is its footprint: the cutaway takes its size from it, and its
+  `anchor` is placed on the sea's curve about its middle. With a relief, over it the
+  cutaway takes the water but not the ground, and over its bounds `onGround` hands out
+  the ground as drawn (a `HeightFieldClip`), with the tiles' error held to half a pixel.
+  The relief knows the outlines of 4 occupants at most.
+- `cut` is the occupant's own cut: a section `plane` and a `fence`, as the very uniform
+  objects the occupant's materials read (`CutUniforms`), so it follows the cut every
+  frame at no cost. A `ChunkStack` hands out its own through `onCut`. They must be in the
+  scene frame. The relief over the occupant stays whole by default (`keepBed`), as the
+  occupant's floor; with `keepBed: false` it is cut with the occupant inside the outline,
+  for one occupant at most, and the sky draws the void's walls through the opening.
+- `anchor` is the occupant's own group, drawn outside the `Sky`, which the stage places
+  on the sea's curve each frame (see `SkyAnchor`). How the scene places itself on the
+  Earth today, and a design for more than one field, are in [world.md](./world.md).
 - `onStage({ seabed, seabedOpacity, water })` tells the occupant what the stage does for
   it, whenever that changes:
-  - `seabed`: the stage draws its seabed — not before the sky has compiled, nor while
-    the sky is hidden (`background: false`), nor while the sea has no seabed. Until then
+  - `seabed`: the stage draws its seabed — with a relief, once the sky has compiled,
+    while the sky is drawn (`background`), and while the sea has a seabed. Until then
     the occupant draws its own — a chunk layer's `drawCap` — so one of the two always
     draws it, give or take the frame a change takes to reach the occupant.
   - `seabedOpacity`: the opacity the stage draws it at. Below 1, the occupant must not
@@ -478,19 +488,12 @@ const [stage, setStage] = useState<SkyBoxStageOccupantState>({
 
   All three reset (`false`, 1, `false`) once the stage is gone.
 
-⚠️ The stage's seabed is flat apart from the occupant's. With a field column's top units
-peeled away, the occupant hands no seabed, so the flat seabed covers the units left
-under the outline unless the cutaway or `seabedOpacity` opens it.
-
-⚠️ The handed seabed is the occupant's surface tessellated again, so along the outline
-and along a cut it can stand up to about the occupant's `maxError` off the occupant's
-own edges (measured on the demo field at `maxError` 5: 0.2 m median, 4.8 m worst).
+⚠️ Without a relief the stage's flat seabed lies at one depth under the occupants: where
+an occupant's own top lies deeper, the flat seabed hides it unless the cutaway or
+`seabedOpacity` opens it.
 
 The stage's transparent parts are ready for the `OITRenderPass`. ⚠️ It assumes the
 default `up` (+Y), and renders nothing without a sky `ocean`.
-
-A `relief` puts land and seabed from your own elevation data beyond the stage's area,
-out to the horizon (see [Relief](./relief.md)).
 
 ## The void (`abyss`)
 
@@ -617,8 +620,8 @@ about a pixel of it (`SKY_ABYSS_FOOT_OVERLAP`), so that rock overlaps the mesh's
 and no hairline of the lid shows between them.
 The mesh is drawn from below the lid, before the background, and from above it only while
 the void can show there: through a seabed that is off or see-through, a cutaway that takes
-the seabed, or a stage's occupant cut (a `SkyBoxStage` tells the sky while its occupant's
-`cut` cuts). From above, a view going down through the lid beyond the stage while the
+the seabed, or a stage's relief cut with an occupant (a `SkyBoxStage` tells the sky while
+an occupant's `cut` opens its relief). From above, a view going down through the lid beyond the stage while the
 background's seabed there is opaque, and a cutaway does not take it, leaves the mesh hidden
 (`skyAbyssWallCovered`, which reads the sea's cutaway as the background does); over
 the stage the stage's own seabed hides it by depth, but where it is cut. The fill and the
@@ -637,7 +640,7 @@ them is seen clearly — an illustration's cutaway rather than a realistic one. 
 everything nearer than a line across the view where a row of the frame meets the
 surface (the seabed, with the camera in the water or the sea dry); waves bend the line,
 a rim marks it and a shadow falls just inside it. The scene itself — the occupant, the
-data, an occupant's seabed — is never cut. With the camera in the water, the cut takes
+data, a relief over an occupant's outline — is never cut. With the camera in the water, the cut takes
 the seabed in front of the view, and the water begins only at a wall standing on the
 cut's edge: inside it the view is clear, and the sky shows through the surface over it.
 A cutaway also keeps the scene lit as from above the water.
@@ -671,7 +674,8 @@ A cutaway also keeps the scene lit as from above the water.
 
 The sky draws after the opaque scene (`renderOrder` 1e9), on the far plane with a depth
 test, so it is shaded only where nothing nearer is drawn; its sea surface draws as a
-second fullscreen layer right after it, and a stage's relief past its mesh after both.
+second fullscreen layer right after it, and a stage's relief overview past its tiles after
+both.
 Transparent parts draw after all of them. It works with R3F's own render and with a
 `RenderingPipeline` of `OITRenderPass` + `OutputPass`.
 
@@ -808,8 +812,8 @@ the plane they are cut along as a grid (`cut`). `<SkyBoxStage debug={...}>` hide
 its outline (with, under walls, a faint copy at their foot) and wireframe over everything.
 None of them rebuild or bake anything.
 
-The Storybook stories `Spikes/Sky/StageDebug` (a stage of any size, an optional synthetic
-seabed occupant and stand-in spheres, every option and debug view) and `Spikes/Sky/Baseline` (a real field) exercise all of it. Every
+The Storybook stories `Spikes/Sky/StageDebug` (a stage of any size, synthetic ground under
+it, an optional occupant's outline and stand-in spheres, every option and debug view) and `Spikes/Sky/Baseline` (a real field) exercise all of it. Every
 story drawing a `<Sky>` takes its controls from one module,
 `src/storybook/components/sky-controls.ts`, so a control has the same name everywhere: the
 basic ones show in every story, the advanced and debug ones only in `StageDebug`
@@ -824,7 +828,8 @@ basic ones show in every story, the advanced and debug ones only in `StageDebug`
 | `sky-material.ts` | `SkyMaterial`: the background's shader and the uniform objects everything else shares |
 | `sky-baker.ts` | bakes the environment and light probe per zone (internal) |
 | `sky-stage.ts`, `SkyBoxStage.tsx` | the stage's geometry and materials |
-| `sky-defs.ts`, `generators/sky-seabed-generator.ts` | the `skySeabed` generator: an occupant's seabed, built where the data is |
+| `SkyBoxStageReliefTiles.tsx`, `sky-relief-tiles.ts`, `SkyBoxStageReliefOverview.tsx`, `sky-relief.ts` | the relief: its tiles, and its overview past the far plane (see [tiles.md](./tiles.md)) |
+| `sky-defs.ts`, `generators/sky-relief-*.ts` | the `skyReliefTile` and `skyRelief` generators: the relief's tiles, and its overview's grid |
 | `sky-context.ts` | `useSky`, `useSkyOcean` |
 | `shaders/sky.glsl` | the sky itself: gradient, sun, night, clouds, void, `skyRadiance` |
 | `shaders/sky-gradient.glsl` | the gradient alone |
@@ -849,23 +854,17 @@ basic ones show in every story, the advanced and debug ones only in `StageDebug`
 - The water lies on one mesh (`createSkyStagePlane`): `bounds` as a 4 × 4 grid, then rings
   each about twice as wide as the one inside, out to the far plane. The flat parts are
   shaded at the ray's exact hit, so their triangles only need to grow with their distance
-  from the scene: ~1000 km triangles crack where the GPU clips them. Without an occupant
-  the seabed lies on the same mesh; with one, on rings around the falloff's rectangle
-  (`skyStageNearBounds`, `createSkyStageRings`), which share their inner edge with it.
-- ⭐ An occupant's seabed is the stage's `occupant-bed` part: the falloff's shading
-  (`STAGE_BED`, `STAGE_SHAPED`) plus `STAGE_OCCUPANT`, which holds it whole after the
-  cutaway has cleared the water over it. The falloff is built on its rim (`skyStageRim`),
-  its boundary loops, so they share its vertices; the camera's ground (`oceanGround`) is
-  read from it too. Without a falloff, the flat near bed is holed along the same rim
-  (`createSkyStageBed`).
+  from the scene: ~1000 km triangles crack where the GPU clips them. Without a relief the
+  flat seabed lies on the same mesh; with one, the relief's tiles are the seabed.
 - Below a `seabedOpacity` of 1 the seabed parts compile with `STAGE_SEE_THROUGH`:
   transparent, without depth writes, and with the seabed's opacity as their alpha rather
   than mixed toward the void behind them.
-- The occupant's `cut` compiles in as `STAGE_SECTION` / `STAGE_FENCE`, bound with
-  `applyFenceField` as every fence-cut material is. Its materials are made apart from the
-  stage's others, and their uniforms INHERIT the sky's (`Object.create`) rather than copy
-  them, so what the sky adds later still reaches them. The discard waits for the
-  seabed's own, after its derivatives are taken.
+- The cutting occupant's `cut` compiles into the relief's material as
+  `RELIEF_CUT_OCCUPANT` with `RELIEF_OCCUPANT_SECTION` / `RELIEF_OCCUPANT_FENCE`, bound
+  with `applyFenceField` as every fence-cut material is, and applied inside its outline
+  only. The relief's uniforms INHERIT the sky's (`Object.create`) rather than copy them,
+  so what the sky adds later still reaches them. The discard waits until the
+  derivatives are taken.
 - ⭐ On Direct3D (ANGLE), every call of a shader function compiles a copy of it. A heavy
   function (the waves, a noise) called from two places costs twice the compile time:
   compute it once and pass the result down (see `SkyOceanWave`, `depths` in

@@ -6,6 +6,7 @@ import {
   PackedBufferGeometry,
   PackedSurfaceChunk,
   PlanarPolygonCoordinates,
+  ReliefSource,
   SealMode,
   StackCarrier,
   StackRelief,
@@ -98,6 +99,24 @@ export type StackWaterResponse = {
    * worker boundary as it is.
    */
   section?: StackSectionSource;
+  /** the bed the water stands on, as the column is built on it, for its tint */
+  bed?: StackBedGrid;
+};
+
+/**
+ * A column's sea bed on its common grid, as every chunk and the sea are built on it:
+ * sealed and resolved, and the relief where the column is built on one
+ * (`ChunkStackProps.relief`). What the water's tint reads (`buildChannelDepthMap`).
+ */
+export type StackBedGrid = {
+  /** the common grid's geometry */
+  header: SurfaceClipHeader;
+  /** scene X/Z of the grid's origin */
+  worldPosition: Vec2;
+  /** scene Y at every node, filled where the bed has no data */
+  heights: Float32Array;
+  /** 1 where the bed has data, or coverage the column bought for it */
+  valid: Uint8Array;
 };
 
 /**
@@ -135,6 +154,13 @@ export type SurfaceChunkLayerSpec = {
   referenceDepth: number;
   /** scene XZ of the surface origin (`utmToArea(xori, yori, 0)` -> `[x, z]`) */
   worldPosition: Vec2;
+  /**
+   * Build this layer on the relief instead of on the surface's own values: sampled onto
+   * the column's common grid, covering all of it. The header still plans that grid. Set
+   * on the column's sea bed while the stack has a `relief` (see `ChunkStackProps.relief`);
+   * honoured by the shared column only.
+   */
+  reliefSource?: ReliefSource;
 };
 
 export type SurfaceChunkSpecLayer = (
@@ -366,8 +392,8 @@ export type ChunkLayer = {
   keepCap?: boolean;
   /**
    * Draw this layer's cap. Default true. `false` leaves it to someone else — a
-   * `SkyBoxStage` given it as its occupant's seabed, say — while the layer stays in
-   * the build: walls, cuts and hidden-cap culling go on as if it were drawn.
+   * `SkyBoxStage` whose relief is the ground over the column, say — while the layer stays
+   * in the build: walls, cuts and hidden-cap culling go on as if it were drawn.
    *
    * ⚠️ Culling still counts it as covering what lies under it, so whatever draws it
    * instead must draw it opaque, and whole or cut as the stack cuts it (`onCut`).
@@ -412,7 +438,8 @@ export type ChunkLayer = {
  * to nothing at the waterline leaves a coast or an island untinted without
  * anything having to know where the shoreline runs.
  *
- * ⭐ The depth is read from the BED's own grid rather than from each fragment's
+ * ⭐ The depth is read from the BED's own grid — the column's bed channel, exactly
+ * as the sea and the chunks are built on it — rather than from each fragment's
  * height, so the gradient follows the bathymetry instead of the tessellation.
  * ⚠️ Where that grid is unmapped it falls back to the fragment's own depth.
  *
@@ -709,6 +736,9 @@ export type ChunkSection = {
 
 /** Default {@link ChunkSection.offset} — negative, so the face sits proud. @group Components */
 export const DEFAULT_SECTION_OFFSET = -0.05;
+
+/** A chunk's interior simplification error, in metres, when none is given (`maxError`). */
+export const DEFAULT_CHUNK_MAX_ERROR = 5;
 
 /** Default {@link ChunkFence.cellSize}, in metres. @group Components */
 export const DEFAULT_FENCE_CELL_SIZE = 50;

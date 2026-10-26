@@ -39,3 +39,6 @@ static/
 # Test coverage
 coverage/
 test-results/
+
+# Demo reliefs, generated on demand (npm run generate-relief)
+public/relief/

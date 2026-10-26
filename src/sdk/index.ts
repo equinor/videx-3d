@@ -8,6 +8,13 @@ export * from './data/helpers/formations-helpers';
 export * from './data/helpers/well-helpers';
 export * from './data/Store';
 export * from './data/types';
+export * from './data/relief/clip-relief';
+export * from './data/relief/function-relief';
+export * from './data/relief/grid-to-relief';
+export * from './data/relief/irapbin-to-relief';
+export * from './data/relief/relief-window';
+export * from './data/relief/stack-layer-to-relief';
+export * from './data/relief/surface-to-relief';
 
 export * from './geometries/boundary-loops';
 export * from './geometries/cap-normal-map';
@@ -29,12 +36,15 @@ export * from './geometries/marching-squares';
 export * from './geometries/mesh-boundary';
 export * from './geometries/ocean-geometry';
 export * from './geometries/packing';
+export * from './geometries/height-field-clip';
 export * from './geometries/planar-geometry';
 export * from './geometries/polygon-cap';
+export * from './geometries/polygon-distance-field';
 export * from './geometries/polygon-outline';
 export * from './geometries/procedural-noise';
 export * from './geometries/procedural-relief';
 export * from './geometries/relief-grid';
+export * from './geometries/relief-tiles';
 export * from './geometries/surface-chunk';
 export * from './geometries/surface-chunk-packing';
 export * from './geometries/surface-chunk-streaming';
@@ -43,13 +53,13 @@ export * from './geometries/surface-column';
 export * from './geometries/surface-drape';
 export * from './geometries/surface-field';
 export * from './geometries/surface-outline';
+export * from './geometries/surface-sampler';
 export * from './geometries/surface-seal';
 export * from './geometries/surface-section';
 export * from './geometries/stack-cap-arrays';
 export * from './geometries/stack-tiles';
 export * from './geometries/surface-stack';
 export * from './geometries/surface-stack-candidates';
-export * from './geometries/terrain-lod';
 export * from './geometries/surface-stack-geometry';
 export * from './geometries/surface-stack-terminations';
 export * from './geometries/surface-walls';
@@ -65,6 +75,11 @@ export * from './managers/CameraManager';
 export * from './managers/WellboreManager';
 
 export * from './projection/crs';
+
+export * from './tiles/quadtree';
+export * from './tiles/tile-keys';
+export * from './tiles/tile-lod';
+export * from './tiles/tile-streamer';
 
 export * from './types/common';
 
@@ -95,6 +110,7 @@ export * from './utils/vector-operations';
 
 export * from './materials/depth-material';
 export * from './materials/fence-field';
+export * from './materials/height-field-clip';
 export * from './materials/surface-detail';
 export * from './materials/tube-material';
 export * from './materials/uv-material';

@@ -15,9 +15,12 @@ const D1 = 1;
 const D2 = Math.SQRT2;
 
 /**
- * Distance from every node to the nearest set node, in cells.
+ * Distance from every node to the nearest set node, in cells — or, given the cells'
+ * size along X and Y, in those units.
  *
  * @param mask 1 where the node is a source
+ * @param wx a cell's size along X. Default 1
+ * @param wy a cell's size along Y. Default 1
  * @returns distances; `Infinity` everywhere when the mask is empty
  *
  * @group Geometries
@@ -26,7 +29,10 @@ export function chamferDistance(
   mask: Uint8Array,
   w: number,
   h: number,
+  wx = D1,
+  wy = D1,
 ): Float32Array {
+  const wd = wx === D1 && wy === D1 ? D2 : Math.hypot(wx, wy);
   const dist = new Float32Array(w * h);
   for (let i = 0; i < dist.length; i++) dist[i] = mask[i] ? 0 : Infinity;
 
@@ -37,11 +43,11 @@ export function chamferDistance(
       const i = row + x;
       if (dist[i] === 0) continue;
       let d = dist[i];
-      if (x > 0) d = Math.min(d, dist[i - 1] + D1);
+      if (x > 0) d = Math.min(d, dist[i - 1] + wx);
       if (y > 0) {
-        d = Math.min(d, dist[up + x] + D1);
-        if (x > 0) d = Math.min(d, dist[up + x - 1] + D2);
-        if (x < w - 1) d = Math.min(d, dist[up + x + 1] + D2);
+        d = Math.min(d, dist[up + x] + wy);
+        if (x > 0) d = Math.min(d, dist[up + x - 1] + wd);
+        if (x < w - 1) d = Math.min(d, dist[up + x + 1] + wd);
       }
       dist[i] = d;
     }
@@ -53,11 +59,11 @@ export function chamferDistance(
       const i = row + x;
       if (dist[i] === 0) continue;
       let d = dist[i];
-      if (x < w - 1) d = Math.min(d, dist[i + 1] + D1);
+      if (x < w - 1) d = Math.min(d, dist[i + 1] + wx);
       if (y < h - 1) {
-        d = Math.min(d, dist[down + x] + D1);
-        if (x < w - 1) d = Math.min(d, dist[down + x + 1] + D2);
-        if (x > 0) d = Math.min(d, dist[down + x - 1] + D2);
+        d = Math.min(d, dist[down + x] + wy);
+        if (x < w - 1) d = Math.min(d, dist[down + x + 1] + wd);
+        if (x > 0) d = Math.min(d, dist[down + x - 1] + wd);
       }
       dist[i] = d;
     }

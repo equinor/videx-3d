@@ -5,6 +5,7 @@ import {
   SurfaceChunkMetrics,
   SurfaceMeta,
 } from '../../sdk';
+import type { HeightFieldClipUniforms } from '../../sdk/materials/height-field-clip';
 import { ChunkContactTexture } from './chunk-contacts';
 import {
   ChunkBuildProgress,
@@ -22,6 +23,7 @@ import {
   ChunkFenceOverlayUniforms,
   ChunkFenceUniforms,
 } from './chunk-material';
+import type { ColumnRelief } from './chunk-spec';
 import { CutoutSource } from './cutout';
 import { SeamDecision } from './seams';
 
@@ -109,14 +111,27 @@ export type ChunkStackContextValue = {
   water?: StackWater | null;
   /** the sea bed's surface id, when declared and the column holds it (see `ChunkStackProps.seabed`) */
   seabed?: string | null;
+  /**
+   * The relief the column's sea bed is built on, while the stack has a `relief` and the
+   * column holds its sea bed (see `ChunkStackProps.relief`). A build input: chunks pass
+   * it to the shared column, whose key it joins.
+   */
+  columnRelief?: ColumnRelief | null;
+  /**
+   * While the column is built on a relief: the ground as drawn over the stack (see
+   * `ChunkStackProps.clip`), which every chunk material leaves out what lies above.
+   * Stable while the column is on the relief, whether a clip is given or not.
+   */
+  heightClip?: HeightFieldClipUniforms;
   /** whether the stack draws its sea (see `ChunkStackProps.drawWater`) */
   drawWater?: boolean;
   /** 1 while the stack draws its sea, 0 while not: the bed tint follows it (see `ChunkStackProps.drawWater`) */
   waterTintShown?: IUniform<number>;
   /**
-   * The sea bed's depth grid as a texture, when a sea is declared. APPEARANCE
-   * only: it drives the bed tint per fragment, so a face hanging below the bed is
-   * tinted by the water standing over it rather than by its own depth.
+   * The sea bed's depth grid as a texture, when the stack builds a sea: the column's
+   * bed channel (the relief, on a relief column), from the `stackWater` generator.
+   * APPEARANCE only: it drives the bed tint per fragment, so a face hanging below the
+   * bed is tinted by the water standing over it rather than by its own depth.
    */
   bathymetry?: ChunkDepthMap | null;
   /**

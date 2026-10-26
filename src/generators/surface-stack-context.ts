@@ -12,7 +12,10 @@ import {
   planStackReference,
   rasterizeStackOutline,
   ReadonlyStore,
+  ReliefReader,
+  ReliefSource,
   resolveStackGrid,
+  sampleReliefSource,
   sealStackChannels,
   splitVoidChannels,
   STACK_MASK_DATA,
@@ -20,7 +23,9 @@ import {
   StackLayer,
   StackPairStats,
   StackReference,
+  StackReferencePlan,
   SurfaceChunkPhase,
+  surfaceGridToWorld,
   SurfaceStackOptions,
   SurfaceStackPlan,
 } from '../sdk';
@@ -301,6 +306,44 @@ export function clearStackContext(): void {
   candidateBytesByKey.clear();
 }
 
+// One reader per store: it keeps the relief's records, and its blocks under a budget,
+// between columns.
+const reliefReaders = new WeakMap<ReadonlyStore, ReliefReader>();
+const RELIEF_BLOCK_BUDGET = 32 * 1024 * 1024;
+
+/**
+ * A column layer on the relief: merged onto the common grid as the stage merges its
+ * tiles, in scene Y — the sea's level, plus the height, plus the source's margin.
+ */
+async function sampleColumnRelief(
+  store: ReadonlyStore,
+  plan: StackReferencePlan,
+  source: ReliefSource,
+): Promise<Float32Array> {
+  let reader = reliefReaders.get(store);
+  if (!reader) {
+    reader = new ReliefReader(
+      (dataType, id, args) => store.get(dataType, id, args),
+      RELIEF_BLOCK_BUDGET,
+    );
+    reliefReaders.set(store, reader);
+  }
+  const { nx, ny } = plan.header;
+  const toWorld = surfaceGridToWorld(plan.header, plan.worldPosition);
+  const origin = toWorld(0, 0);
+  const [ux, uz] = toWorld(1, 0);
+  const [vx, vz] = toWorld(0, 1);
+  const channel = await sampleReliefSource(reader, source, {
+    origin,
+    u: [ux - origin[0], uz - origin[1]],
+    v: [vx - origin[0], vz - origin[1]],
+    size: [nx, ny],
+  });
+  const lift = source.level + (source.margin ?? 0);
+  for (let k = 0; k < channel.length; k++) channel[k] += lift;
+  return channel;
+}
+
 async function buildStackContext(
   store: ReadonlyStore,
   stack: SurfaceChunkStackSpec,
@@ -337,6 +380,27 @@ async function buildStackContext(
   const resampled = await Promise.all(
     stack.layers.map((spec: SurfaceChunkLayerSpec) =>
       inFlight(async () => {
+        if (spec.reliefSource) {
+          // On the relief: covered everywhere, and already on the common grid.
+          const channel = await sampleColumnRelief(
+            store,
+            plan,
+            spec.reliefSource,
+          );
+          tFetch = performance.now();
+          bytes += channel.byteLength;
+          report('fetch', ++fetched, stack.layers.length);
+          return {
+            spec,
+            // Read by nothing downstream (see below); a grid layer all the same.
+            values: new Float32Array(0),
+            result: {
+              channel,
+              mask: new Uint8Array(channel.length).fill(STACK_MASK_DATA),
+              empty: false,
+            },
+          };
+        }
         const values = await store.get<Float32Array>('surface-values', spec.id);
         tFetch = performance.now();
         if (!values) {
@@ -666,7 +730,8 @@ export function keepStackDerived(
   }
   const own = new Set(context.reference.masks);
   plan.coverageCrossings?.forEach((crossings, i) => {
-    if (crossings && own.has(masks[i])) derived.coverage.set(masks[i], crossings);
+    if (crossings && own.has(masks[i]))
+      derived.coverage.set(masks[i], crossings);
   });
   const set = layerSetKey(context, channels, key);
   if (!plan.terminationLines || set === null || derived.lines.has(set)) return;

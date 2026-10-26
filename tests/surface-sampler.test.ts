@@ -1,10 +1,13 @@
 import { BufferAttribute, BufferGeometry } from 'three';
 import { describe, expect, it } from 'vitest';
 import {
+  createReliefTopSampler,
   createSurfaceSampler,
   sampleSurfaceFootprint,
+  SurfaceSampler,
   SurfaceSamplerEntry,
 } from '../src/components/Chunks/surface-sampler';
+import type { TinSample } from '../src/sdk/geometries/tin-sampler';
 import { Vec2 } from '../src/sdk/types/common';
 
 /** A square sheet over [-50, 50]², at `f(x, z)`. */
@@ -227,5 +230,83 @@ describe('SurfaceSampler.solidAt', () => {
   it('treats untagged entries as the one volume a single outline is', () => {
     const entries = chunked().map(({ group: _, ...rest }) => rest);
     expect(createSurfaceSampler(entries).solidAt(150, -25, 50)).not.toBeNull();
+  });
+});
+
+describe('createReliefTopSampler', () => {
+  // A column on a relief: its sea bed's cap built 5 m above the ground, which dips east.
+  const caps = () =>
+    createSurfaceSampler([
+      { ...sheet('bed', () => -100), layer: 0 },
+      { ...sheet('deep', () => -600), layer: 1 },
+    ]);
+  const ground = (x: number) => -105 + x / 100;
+  const relief = (): SurfaceSampler & { pinned: number[][][] } => {
+    const pinned: number[][][] = [];
+    const sampleAt = (x: number, _z: number, _?: string, out?: TinSample) => {
+      const result = out ?? { y: 0, normal: [0, 1, 0] };
+      result.y = ground(x);
+      result.normal = [-0.01, 1, 0];
+      return result;
+    };
+    return {
+      pinned,
+      sampleAt,
+      getHeightAt: (x, z) => sampleAt(x, z).y,
+      solidAt: () => null,
+      surfaces: ['relief'],
+      pin: squares => {
+        pinned.push(squares);
+        return () => {};
+      },
+    };
+  };
+
+  it('answers the sea bed from the relief wherever the column holds it', () => {
+    const sampler = createReliefTopSampler(caps(), {
+      seabed: 'bed',
+      margin: 5,
+      relief: relief(),
+    });
+    expect(sampler.getHeightAt(20, 0)).toBeCloseTo(ground(20), 9);
+    expect(sampler.getHeightAt(20, 0, 'bed')).toBeCloseTo(ground(20), 9);
+    expect(sampler.sampleAt(20, 0)!.normal).toEqual([-0.01, 1, 0]);
+    // Its other horizons answer from their caps, and nothing past the column.
+    expect(sampler.getHeightAt(20, 0, 'deep')).toBe(-600);
+    expect(sampler.getHeightAt(500, 0)).toBeNull();
+    expect(sampler.getHeightAt(500, 0, 'bed')).toBeNull();
+    expect(sampler.surfaces).toEqual(['bed', 'deep']);
+  });
+
+  it('takes the margin off the cap without a relief sampler', () => {
+    const sampler = createReliefTopSampler(caps(), {
+      seabed: 'bed',
+      margin: 5,
+    });
+    expect(sampler.getHeightAt(20, 0)).toBe(-105);
+    expect(sampler.pin).toBeUndefined();
+  });
+
+  it('reads the water between the ground and the cap as open', () => {
+    const top = caps();
+    const sampler = createReliefTopSampler(top, {
+      seabed: 'bed',
+      margin: 5,
+      relief: relief(),
+    });
+    expect(sampler.solidAt(0, -102, 0)).toBeNull();
+    expect(sampler.solidAt(0, -300, 0)).toBe(top.solidAt(0, -300, 0));
+    expect(sampler.solidAt(0, -300, 0)).not.toBeNull();
+  });
+
+  it('pins on the relief', () => {
+    const under = relief();
+    const sampler = createReliefTopSampler(caps(), {
+      seabed: 'bed',
+      margin: 5,
+      relief: under,
+    });
+    sampler.pin!([[0, 0, 10, 10]]);
+    expect(under.pinned).toEqual([[[0, 0, 10, 10]]]);
   });
 });

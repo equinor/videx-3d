@@ -23,9 +23,16 @@ varying vec3 vObjectPos;
 uniform vec4 overlayRect;
 uniform vec4 overlayParams;
 varying float vFenceAlong;
+#if !defined(CHUNK_FENCE) && !defined(CHUNK_HEIGHT_CLIP)
+varying vec3 vObjectPos;
+#endif
+#endif
+
+#ifdef CHUNK_HEIGHT_CLIP
 #ifndef CHUNK_FENCE
 varying vec3 vObjectPos;
 #endif
+#include ../../../sdk/materials/shaderLib/height-field-clip.glsl
 #endif
 
 void main() {
@@ -50,6 +57,10 @@ void main() {
     bool inside = at.x >= 0.0 && at.x <= 1.0 && at.y >= 0.0 && at.y <= 1.0;
     if (!(overlayParams.z > 0.0 && inside)) discard;
   }
+  #endif
+
+  #ifdef CHUNK_HEIGHT_CLIP
+  if (heightFieldClipped(vObjectPos)) discard;
   #endif
 
   if(side == 1 && gl_FrontFacing || side == 0 && !gl_FrontFacing) {

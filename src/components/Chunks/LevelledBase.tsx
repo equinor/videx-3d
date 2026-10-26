@@ -110,6 +110,16 @@ export const LevelledBase = ({
     closed,
   ]);
 
+  // The finest ground under the footprint, held in whatever the view (see
+  // `SurfaceSampler.pin`): the base is built again once it is in.
+  const pin = sampler?.pin;
+  useEffect(() => {
+    if (!pin) return;
+    const { min, max } = footprint.getBounds();
+    const [ox, oz] = footprint.offset;
+    return pin([[min[0] + ox, min[1] + oz, max[0] + ox, max[1] + oz]]);
+  }, [pin, footprint]);
+
   useEffect(() => {
     if (!base) return;
     onBuildRef.current?.({ ...base.metrics, level: base.level });

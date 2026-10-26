@@ -5,7 +5,13 @@ import {
   NearestFilter,
   RGFormat,
 } from 'three';
-import { SurfaceMeta, surfaceWorldToGrid } from '../../sdk';
+import {
+  SurfaceClipHeader,
+  SurfaceMeta,
+  surfaceWorldToGrid,
+  Vec2,
+} from '../../sdk';
+import type { StackBedGrid } from './chunk-defs';
 
 /** Scene XZ of a surface grid's origin. */
 export type UtmToScene = (
@@ -75,14 +81,64 @@ export function buildSurfaceDepthMap(
     data[2 * i] = valid ? v - max : fill;
     data[2 * i + 1] = valid ? 1 : 0;
   }
+  const origin = utmToScene(header.xori, header.yori, 0);
+  return packDepthMap(data, header, [origin[0], origin[2]]);
+}
+
+/**
+ * Pack a column's sea bed channel (`StackBedGrid`, from the `stackWater` generator) the
+ * same way: the bed exactly as the sea and every chunk are built on it, sealed and on the
+ * common grid — the relief, where the column is built on one.
+ */
+export function buildChannelDepthMap(bed: StackBedGrid): ChunkDepthMap {
+  const { header, worldPosition, heights, valid } = bed;
+  const count = header.nx * header.ny;
+  const data = new Float32Array(count * 2);
+  // The channel is filled everywhere already: R needs no fill of its own.
+  for (let i = 0; i < count; i++) {
+    data[2 * i] = heights[i];
+    data[2 * i + 1] = valid[i] ? 1 : 0;
+  }
+  return packDepthMap(data, header, worldPosition);
+}
+
+/** Whether two bed grids hold the same bed, so a tint built from one serves the other. */
+export function sameStackBedGrid(a: StackBedGrid, b: StackBedGrid): boolean {
+  const ha = a.header;
+  const hb = b.header;
+  if (
+    ha.nx !== hb.nx ||
+    ha.ny !== hb.ny ||
+    ha.xinc !== hb.xinc ||
+    ha.yinc !== hb.yinc ||
+    ha.rot !== hb.rot ||
+    a.worldPosition[0] !== b.worldPosition[0] ||
+    a.worldPosition[1] !== b.worldPosition[1] ||
+    a.heights.length !== b.heights.length
+  )
+    return false;
+  for (let i = 0; i < a.heights.length; i++) {
+    if (a.heights[i] !== b.heights[i] || a.valid[i] !== b.valid[i])
+      return false;
+  }
+  return true;
+}
+
+// RG (scene Y, validity) at every node of a grid placed at `worldPosition`, as a texture
+// sampled from object X/Z.
+function packDepthMap(
+  data: Float32Array,
+  header: SurfaceClipHeader,
+  worldPosition: Vec2,
+): ChunkDepthMap {
+  const { nx, ny } = header;
   const texture = new DataTexture(data, nx, ny, RGFormat, FloatType);
   texture.magFilter = NearestFilter;
   texture.minFilter = NearestFilter;
   texture.generateMipmaps = false;
   texture.needsUpdate = true;
 
-  const origin = utmToScene(header.xori, header.yori, 0);
-  const toGrid = surfaceWorldToGrid(header, [origin[0], origin[2]]);
+  const toGrid = surfaceWorldToGrid(header, worldPosition);
   // Recovered by evaluation rather than rederived, so the mapping cannot drift
   // from the one the geometry is built with.
   const o = toGrid(0, 0);

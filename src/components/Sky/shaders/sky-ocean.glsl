@@ -28,7 +28,7 @@ uniform vec3 uSkyOceanBedSpecular;
 uniform float uSkyOceanBedShininess;
 uniform vec2 uSkyOceanBedAmbient; // x: facing up, y: facing down
 uniform float uSkyOceanFogDensity; // per world unit
-uniform float uSkyOceanBuried; // 1: the camera is inside an occupant's seabed above the sea's (SkyMaterial.oceanBuried)
+uniform float uSkyOceanBuried; // 1: the camera is under a stage's ground above the sea's seabed (SkyMaterial.oceanBuried)
 uniform float uSkyOceanWater; // 0: no water, the seabed lies dry (SkyMaterial.oceanWater)
 uniform float uSkyOceanSeabed; // 0: no seabed, the void lies below the water; from the void its lid still hides it (SkyMaterial.oceanSeabed)
 uniform float uSkyOceanSeabedOpacity; // how much of the void beyond the seabed it hides (SkyMaterial.oceanSeabedOpacity)
