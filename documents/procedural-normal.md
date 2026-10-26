@@ -26,6 +26,9 @@ vec3  pnValueNoise2Grad(vec2 p);
 // per-octave band-limited fbm for LARGE surfaces (see "Two ways to fade" below)
 float pnFbmSigned2Filtered    (vec2 p, int octaves);
 vec3  pnFbmSigned2FilteredGrad(vec2 p, int octaves);
+// the same over a footprint given in the first octave's cells (max of fwidth(p)): no
+// derivatives, so it may run after a pixel's own discard or branch
+float pnFbmSigned2FilteredOver(vec2 p, int octaves, float cells);
 
 // composable pattern heights - sum several to combine them
 float pnGranular (vec2 uv, float anisotropy, int octaves, float periodX);

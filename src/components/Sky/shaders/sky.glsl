@@ -934,20 +934,31 @@ vec3 skyAbyssWallHaze(vec3 color, float far, vec3 origin, vec3 dir, float t) {
   return mix(haze, color * far, skyAbyssWallClear(origin, dir, t, uSkyAbyssWalls.z));
 }
 
+// The lid's ripples' cells (uSkyAbyssDetailScale) at `hit` on the lid.
+vec2 skyAbyssLidCells(vec3 hit) {
+  return vec2(dot(hit, uSkyEast), dot(hit, uSkyNorth)) / uSkyAbyssDetailScale;
+}
+
+// How many of the ripples' cells a pixel spans at `hit` on the lid, for skyAbyssLid.
+// ⚠️ Derivatives: taken before any pixel discards or branches its own way.
+float skyAbyssLidFootprint(vec3 hit) {
+  vec2 d = fwidth(skyAbyssLidCells(hit));
+  return max(d.x, d.y);
+}
+
 // The lid seen from below `reach` along `dir` from `origin`, in the walls' haze: with sand
 // over the walls' rock, the sand's underside, lit as the sand in the walls is (the glow at
 // the top of the stage over it); without, the void's own lid colour. Faintly rippled as
-// the void's lid is (uSkyAbyssDetail), the ripples fading as the haze thickens, and
-// darkened far from the hollow (skyAbyssWallFar). Sand or not is the same for every pixel.
-// ⚠️ Derivatives.
-vec3 skyAbyssLid(vec3 origin, vec3 dir, float reach) {
+// the void's lid is (uSkyAbyssDetail), the ripples fading as the haze thickens and
+// smoothed over the `footprint` a pixel spans there (skyAbyssLidFootprint), and darkened
+// far from the hollow (skyAbyssWallFar). It takes no derivatives, so a pixel may discard
+// before it.
+vec3 skyAbyssLid(vec3 origin, vec3 dir, float reach, float footprint) {
   vec3 hit = origin + dir * reach;
   float clear = skyAbyssWallClear(origin, dir, reach, uSkyAbyssWalls.z);
   vec3 lid = uSkyAbyssWallSand.x > 0.0 ? skyAbyssWallSandShade(-uSkyUp, hit) : uSkyAbyssCeilingColor;
-  if(uSkyAbyssDetail > 0.0) {
-    vec2 cells = vec2(dot(hit, uSkyEast), dot(hit, uSkyNorth)) / uSkyAbyssDetailScale;
-    lid *= 1.0 + pnFbmSigned2Filtered(cells, 5) * 2.0 * uSkyAbyssDetail * clear;
-  }
+  if(uSkyAbyssDetail > 0.0)
+    lid *= 1.0 + pnFbmSigned2FilteredOver(skyAbyssLidCells(hit), 5, footprint) * 2.0 * uSkyAbyssDetail * clear;
   return mix(skyAbyssHazeColor(dot(hit, uSkyUp)), lid * skyAbyssWallFar(hit), clear);
 }
 
@@ -999,7 +1010,7 @@ vec3 skyAbyss(vec3 color, vec3 dir, vec3 origin, vec3 depths, vec4 walls) {
   float reach = depth / max(abs(y), 1e-6);
   vec3 hit = origin + dir * reach;
   #ifdef SKY_ABYSS_WALLS
-  vec3 ceiling = skyAbyssLid(origin, dir, reach);
+  vec3 ceiling = skyAbyssLid(origin, dir, reach, skyAbyssLidFootprint(hit));
   #else
   vec3 ceiling = skyAbyssCeiling(hit, reach);
   #endif
@@ -1027,12 +1038,26 @@ vec3 skyRadiance(vec3 dir, vec3 origin) {
   float blend = max(uSkyHorizonBlend, dy);
   float horizon = skyHorizon(dir);
 
+  // Under the void's lid, once it has faded in, the void covers the whole sky (skyAbyss):
+  // the sky is not shaded at all. The same for every pixel, so its derivatives stay sound.
+  bool covered = false;
+  #ifdef SKY_ABYSS
+  float underLid = uSkyAbyssLevel - dot(origin, uSkyUp);
+    #ifdef SKY_OCEAN
+  covered = underLid >= 0.0;
+    #else
+  covered = underLid >= uSkyAbyssTransition;
+    #endif
+  #endif
+
+  vec3 color = vec3(0.0);
+  if(!covered) {
   #ifdef SKY_VOID
   // No sky (`background: 'void'`): the void's gradient all round, as the stand-in draws it;
   // from the horizon the Earth's curve lowers, so it meets the far lid's haze without a seam.
-  vec3 color = skyVoidGradient(skyOverHorizon(y, horizon));
+  color = skyVoidGradient(skyOverHorizon(y, horizon));
   #else
-  vec3 color = skySurface(dir, blend);
+  color = skySurface(dir, blend);
   #ifdef SKY_CLOUDS
   vec3 haze = color;
   #endif
@@ -1060,6 +1085,7 @@ vec3 skyRadiance(vec3 dir, vec3 origin) {
   color = skyClouds(color, haze, dir, origin);
   #endif
   #endif
+  }
 
   // The void below the horizon, with its rock: taken once, as each call compiles a copy.
   #if defined(SKY_OCEAN)

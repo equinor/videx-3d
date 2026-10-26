@@ -779,6 +779,25 @@ fill-bound: they scale with the pixels drawn, about double at 1080p.
   stage's sea seen from below writes no depth, so the background is still shaded behind
   it) and 1.6 → 0.1 below the seabed; the frame 0.5–1.2 ms less.
 
+### The void and its walls
+
+Under the lid the background shades no sky at all: the void covers all of it. From below,
+a stage's flat seabed shades no sea floor (only seen from above), and where the walls' rock
+is in front of the lid it discards before shading the lid. Same pixels (one channel of one
+pixel off by 1/255, from rounding). GPU ms, StageDebug with walls, the sea and seabed on,
+210 spheres, Iris Xe at 1.92 megapixels:
+
+| Camera | Frame | Stage's seabed | Background | Walls |
+|--|--|--|--|--|
+| 94 km down, looking up | 13.5 → 9.4 | 7.3 → 3.8 | 3.4 → 2.8 | 2.1 |
+| In the hollow, 4 km down | 7.8 → 7.0 | 4.1 → 3.3 | 0.4 | 2.0 |
+| 150 km out, 33 km down | 8.0 → 6.0 | 3.7 → 2.8 | 3.4 → 2.6 | 0.5 |
+| At the rim, 500 m down | 9.0 → 7.8 | 2.0 → 1.5 | 3.0 → 2.4 | 2.5 |
+
+What is left: the walls' mesh writes its depth (log depth), so it gets no early depth test;
+the lid's ripples cost about 1 ms, and the haze's sampling (`hazeDistance`, `rimFade`)
+about 1.3 ms on the seabed.
+
 ## Debugging
 
 `<Sky debug={...}>` tints each part by what draws it (`tint`), hides layers (`hide`) and

@@ -165,13 +165,24 @@ void main() {
   float bedDepth = uSkyOceanDepth;
   bool fromAbove = altitude + bedDepth > 0.0;
     #endif
-    // Shaded whichever side the camera is on: it takes derivatives.
+    // Shaded on the side the camera is on. A flat seabed's side is the same all over, so
+    // from below only its lid is shaded; a shaped one's changes across it, so both sides
+    // are, as they take derivatives.
+    #ifdef STAGE_SHAPED
   vec3 color = skyOceanBed(world, up, bedDepth);
+    #else
+  vec3 color = vec3(0.0);
+  if(fromAbove)
+    color = skyOceanBed(world, up, bedDepth);
+    #endif
   float cutaway = skyOceanCutawayAlong(cameraPosition, world);
   float seabed = skyOceanCutawaySeabed(cutaway);
-  bool behindWall = false;
     #ifdef STAGE_OCCUPANT
   seabed = 1.0;
+    #endif
+    #ifdef SKY_ABYSS_WALLS
+  // The lid's ripples' footprint, before any pixel leaves or takes its own side below.
+  float lidFootprint = skyAbyssLidFootprint(cameraPosition + dir * dist);
     #endif
   if(fromAbove) {
     // Dry, the fog's density is 0.
@@ -191,26 +202,25 @@ void main() {
       color = mix(skyOceanThroughCutaway(skyAbyssGradient(y), dir, cameraPosition), color, seabed);
       #endif
   } else {
-      // From the void: the lid, as the background draws it.
       #ifdef SKY_ABYSS_WALLS
-    color = skyAbyssLid(cameraPosition, dir, distance(cameraPosition, world));
+    // The walls' fill stands in front of the lid here, or, from under their foot, the rock
+    // that runs on down below it (skyAbyssWallUnder): the background draws both, so it is
+    // left before the lid is shaded. Their faces are a mesh of their own, which hides the
+    // lid by depth.
+    vec3 wallStart = skyAbyssWallStart(cameraPosition, dir);
+    if((wallStart.y > 0.0 && wallStart.x < dist) || skyAbyssWallUnder(cameraPosition, dir, wallStart) < dist)
+      discard;
+    // From the void: the lid, as the background draws it.
+    color = skyAbyssLid(cameraPosition, dir, dist, lidFootprint);
       #else
     color = skyAbyssCeiling(world, distance(cameraPosition, world));
       #endif
     if(uSkyAbyssDarkening > 0.0)
       color *= exp((altitude + bedDepth) / uSkyAbyssDarkening);
-      #ifdef SKY_ABYSS_WALLS
-    // The walls' fill stands in front of the lid here, or, from under their foot, the rock
-    // that runs on down below it (skyAbyssWallUnder): the background draws both. Their
-    // faces are a mesh of their own, which hides the lid by depth.
-    vec3 wallStart = skyAbyssWallStart(cameraPosition, dir);
-    float lidAt = distance(cameraPosition, world);
-    behindWall = (wallStart.y > 0.0 && wallStart.x < lidAt) || skyAbyssWallUnder(cameraPosition, dir, wallStart) < lidAt;
-      #endif
   }
       // Bitten through, what lies behind shows, with the background's void beyond. Cut
       // away with the occupant only here, once the derivatives above are taken.
-  if(seabed < 1e-3 || stageCutAway() || behindWall)
+  if(seabed < 1e-3 || stageCutAway())
     discard;
     #ifdef STAGE_SEE_THROUGH
   gl_FragColor = vec4(color, seabed * uSkyOceanSeabedOpacity);

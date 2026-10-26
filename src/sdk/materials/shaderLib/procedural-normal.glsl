@@ -141,23 +141,9 @@ float pnFbm2Auto(vec2 p, int octaves, float periodX) {
   return periodX > 0.5 ? pnFbm2Tiled(p, periodX, octaves) : pnFbm2(p, octaves);
 }
 
-// SIGNED fbm (-0.5 .. 0.5) with PER-OCTAVE footprint AA: each octave fades out as ITS OWN
-// cells approach a pixel, so the field degrades gracefully toward its coarse structure
-// instead of vanishing all at once - and flattens to ZERO (not to a constant offset), so
-// a caller can drive both a normal and an albedo term from it without a DC shift
-// appearing at distance.
-//
-// ⭐ Prefer this over `pnFbm2 * pnFootprintFade` wherever the pattern is drawn on
-// something LARGE: pnFootprintFade kills the WHOLE layer as soon as its FINEST octave is
-// under-sampled, which is right for a close-up object and far too eager for a landscape,
-// where the coarse octaves are still perfectly well sampled. Because an fbm octave's
-// slope (amplitude x frequency) is roughly constant, dropping the fine octaves smooths
-// the relief without flattening it.
-//
-// Must be called under uniform control flow (screen-space derivatives).
-float pnFbmSigned2Filtered(vec2 p, int octaves) {
-  vec2 d = fwidth(p);
-  float cells = max(d.x, d.y);
+// pnFbmSigned2Filtered over a footprint of `cells` (in the first octave's cells) given
+// rather than taken from the pixel's, so it needs no uniform control flow.
+float pnFbmSigned2FilteredOver(vec2 p, int octaves, float cells) {
   float sum = 0.0;
   float amp = 0.5;
   float norm = 0.0;
@@ -176,6 +162,25 @@ float pnFbmSigned2Filtered(vec2 p, int octaves) {
     amp *= 0.5;
   }
   return norm > 0.0 ? sum / norm : 0.0;
+}
+
+// SIGNED fbm (-0.5 .. 0.5) with PER-OCTAVE footprint AA: each octave fades out as ITS OWN
+// cells approach a pixel, so the field degrades gracefully toward its coarse structure
+// instead of vanishing all at once - and flattens to ZERO (not to a constant offset), so
+// a caller can drive both a normal and an albedo term from it without a DC shift
+// appearing at distance.
+//
+// ⭐ Prefer this over `pnFbm2 * pnFootprintFade` wherever the pattern is drawn on
+// something LARGE: pnFootprintFade kills the WHOLE layer as soon as its FINEST octave is
+// under-sampled, which is right for a close-up object and far too eager for a landscape,
+// where the coarse octaves are still perfectly well sampled. Because an fbm octave's
+// slope (amplitude x frequency) is roughly constant, dropping the fine octaves smooths
+// the relief without flattening it.
+//
+// Must be called under uniform control flow (screen-space derivatives).
+float pnFbmSigned2Filtered(vec2 p, int octaves) {
+  vec2 d = fwidth(p);
+  return pnFbmSigned2FilteredOver(p, octaves, max(d.x, d.y));
 }
 
 // As pnFbmSigned2Filtered, but also accumulating the ANALYTIC gradient:
