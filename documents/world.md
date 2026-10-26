@@ -20,6 +20,7 @@
 - [8. Costs and risks](#8-costs-and-risks)
 - [9. Step 2 in detail: the sky on a fixed globe](#9-step-2-in-detail-the-sky-on-a-fixed-globe)
 - [10. Step 3 in detail: fields placed on the Earth](#10-step-3-in-detail-fields-placed-on-the-earth)
+- [11. Step 6 in detail: tiles on the globe](#11-step-6-in-detail-tiles-on-the-globe)
 
 ---
 
@@ -175,7 +176,7 @@ Nothing above is needed for one field. What keeps it cheap to add later:
 | 3 | **Fields placed on the Earth** ([in detail](#10-step-3-in-detail-fields-placed-on-the-earth)): `GeoFrame` (was `ReliefFrame`); a `World` holding the scene's; a `UtmArea` in another frame placed in it, on the globe with a sky; the observer's place and the relief's frame from the `World` | ✅ built (2026-10-26): a second field in UTM 32N, 123 km out, placed to about 10 cm 5 km around (ReliefTiles' `facility: 'field'`), with the sky and without |
 | 4 | **The view's origin** — reduced by step 3. Its precision comes free: three.js composes each draw's model-view matrix in 64 bits, so a placed field is as precise 300 km out as at home. Left: a level horizon far off (1.8° rolled at 200 km), which needs the world turned under the camera — every sky shader takes one `up` (`uSkyUp`) and the stage an axis-aligned box — with the host's controls moved by a callback, any controls can take. A host can level it today by setting its camera's up to the globe's there (`Globe.upAt`) | ⏸ deferred until a host flies far from its fields |
 | 5 | **The relief in its own frame** — folded into step 6. In a frame of its own the relief would part from the chosen field's UTM by the two maps' scale (UTM's 0.9996 against 1: 3 m at 8 km), right where its column meets it; laid in the chosen field's frame it meets it exactly, and a placed field's to its placement's precision | → step 6 |
-| 6 | **Tiles on the globe:** tile keys by latitude and longitude, the relief contract unchanged (a tile asks each layer for a window of its own grid, as now); the overlays' tiles move with them, sharing the core. Near the chosen field the tiles laid in its frame, so its column meets the relief exactly; each field's column samples the relief through its transform | a view of the whole globe, the relief independent of the chosen field |
+| 6 | **Tiles on the globe** ([in detail](#11-step-6-in-detail-tiles-on-the-globe)): tile keys by latitude and longitude, the relief contract unchanged (a tile asks each layer for a window of its own grid, as now); the overlays' tiles move with them, sharing the core. Everything placed by latitude and longitude on one sphere, the ellipsoid's conformal sphere matched at the chosen field; each field's column samples the relief through its transform | in progress: 6a (the geographic globe) built 2026-10-26 |
 | 7 | **Two fields:** a story with two fields in two UTM zones, the camera flying between them, either chosen: the `World`'s frame switched, a stage per field | the goal; step 3 placed the second field |
 
 Steps 1 to 3 are built. Step 6 waits for a host that needs to see beyond one region (about
@@ -199,7 +200,10 @@ Steps 1 to 3 are built. Step 6 waits for a host that needs to see beyond one reg
   with the relief contract unchanged — a tile asks each layer for a window of its own
   grid, as now (step 6). Until then, one regional frame: a projection for a region (a UTM
   zone stretched, or a Lambert conformal) holds about 2000 km well, the Norwegian shelf
-  from the North Sea to the Barents Sea at 1–2% scale error at its far edges.
+  from the North Sea to the Barents Sea at 1–2% scale error at its far edges. Step 6
+  (decided 2026-10-26): everything placed by latitude and longitude on the ellipsoid's
+  conformal sphere, matched at the chosen field, two geographic roots, true north for
+  the sun ([Step 6 in detail](#11-step-6-in-detail-tiles-on-the-globe)).
 - **The chosen field's sea is flat over it,** where the column meets it exactly; beyond,
   the sea is the globe. Curved everywhere would put the column's top 5 m off the sea at
   8 km.
@@ -534,3 +538,55 @@ moved, as without a world, at no cost.
   turned by the zones' convergence; magenta posts on its own grid 5 km out, thin cyan
   posts through them at the same points converted to the world's map and anchored one by
   one. They coincide with the globe on and off.
+
+---
+
+## 11. Step 6 in detail: tiles on the globe
+
+> Decided (2026-10-26): everything placed by latitude and longitude on one sphere; tiles
+> geographic, two roots of 180° × 180°; the sun's north true north; the whole globe in
+> scope. Built in parts: 6a the geographic globe; 6b geographic tile keys and the builder;
+> 6c the switch, drawing and every placement at once; 6d the whole globe.
+
+### Why everything moves at once
+
+Until step 6 the scene is drawn in the `World`'s map: the relief, the anchors, the placed
+fields and the sea are carried from the map's plane onto the sphere along the line from its
+centre (`Globe.place`, gnomonic). That agrees with itself, so nothing parts — but it is not
+the Earth's: 15 m off at 123 km, 1 km at 500 km, and nothing past 90°. Tiles keyed by
+latitude and longitude, placed where those are on the sphere, would part from all of it by
+as much. So the relief, `place`, `tangent`, `foot` and the placed fields switch together
+(6c), onto the same latitudes and longitudes.
+
+### 6a: the geographic globe (built 2026-10-26)
+
+- **The sphere is the ellipsoid's Gauss conformal sphere** (`conformalSphere`,
+  `sdk/projection/conformal-sphere.ts`, free of three.js), matched at the disc's centre:
+  the sphere the ellipsoid maps onto keeping angles, at scale 1 there — the one oblique
+  stereographic projections stand on (proj's `sterea`, against which it is tested to a
+  millimetre out to 1 600 km). Its radius there is the ellipsoid's mean radius of
+  curvature: 6 387.8 km at 58.4°N. A plain sphere would part from the ellipsoid by 0.2%
+  between north–south and east–west (16 m at 8 km).
+- **In the map's units, turned to true north.** The scene's units are the map's (UTM's
+  0.9996 at its meridian), so the radius is the map's metres per the ellipsoid's there
+  times the sphere's: 6 385.6 km at Volve. True north is grid north turned by the
+  convergence: −0.957° at Volve, west of its zone's meridian. Both measured with proj4
+  (`placeGeoFrame` of a transverse Mercator map about the point, the ellipsoid's own).
+- **Longitudes:** the conformal sphere scales them by `n` (1.00025 at 58.4°), which would
+  overlap itself by `(n − 1) · 360°` opposite the field; `Δλ + (n − 1) sin Δλ` is `n Δλ`
+  near the field and closes the sphere without a seam on the far side.
+- **`Globe.setFrame(frame)`** gives the globe the map its X/Z are in. With it,
+  `geodetic(latitude, longitude, height)` places a point anywhere on the Earth, the far
+  side included, in forms about the disc's centre that subtract nothing near-equal
+  (haversines), and `geographic(point)` gives it back (to 1e-9°); `place` beyond the disc
+  goes through the point's latitude and longitude, `foot` back (to proj4's round trip, a
+  millimetre through ED50), and `tangent` with them. Over the disc `place` is the map
+  itself, as before. `location` is the disc's centre's latitude and longitude, `north`
+  true north. Without a frame, nothing changes: nothing sets one until 6c.
+- **Against the map at the field:** 3 cm 5.5 km out, 11 cm 11 km out (a 16 km stage's
+  corner): UTM's own scale changing across the field, 65 km off its meridian, which no
+  sphere matched at one point follows. The bridge's clip closes the seams anyway.
+- **Tested** (`tests/globe-geodetic.test.ts`): the sphere against `sterea`; latitudes and
+  longitudes there and back, from the field to the far side; no seam opposite the field;
+  the map at the field; `place` beyond the disc where `geodetic` has its point; a
+  meridian's length; a field placed flat 5 km about the trench on the ground there.

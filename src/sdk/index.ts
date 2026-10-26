@@ -74,6 +74,7 @@ export * from './geometries/wellbore-outline';
 export * from './managers/CameraManager';
 export * from './managers/WellboreManager';
 
+export * from './projection/conformal-sphere';
 export * from './projection/crs';
 export * from './projection/geo-frame';
 export * from './projection/globe';

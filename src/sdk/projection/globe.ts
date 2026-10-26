@@ -1,4 +1,13 @@
+import proj4 from 'proj4';
 import { Matrix4, Uniform, Vector2, Vector3, Vector4 } from 'three';
+import {
+  ConformalSphere,
+  conformalLatitude,
+  conformalSphere,
+  geodeticLatitude,
+} from './conformal-sphere';
+import { wgs84Def } from './crs';
+import { GeoFrame, geoFrameAt, placeGeoFrame } from './geo-frame';
 
 /** The Earth's mean radius, in metres. */
 export const EARTH_RADIUS = 6371000;
@@ -67,6 +76,32 @@ const planeZ = new Vector3();
 const basis = new Matrix4();
 // Half the span over which Globe.tangent measures the placement, in metres.
 const TANGENT_STEP = 10;
+const DEG = Math.PI / 180;
+// hav θ = sin²(θ / 2) = (1 − cos θ) / 2.
+const haversine = (angle: number) => {
+  const half = Math.sin(angle / 2);
+  return half * half;
+};
+// An angle in (−π, π].
+const wrapAngle = (angle: number) =>
+  angle - 2 * Math.PI * Math.round(angle / (2 * Math.PI));
+// Globe.foot's latitude and longitude.
+const under = { latitude: 0, longitude: 0 };
+
+// The conformal sphere's longitude of one `delta` from the disc's centre's (radians): n Δλ
+// near it, where the sphere is conformal, but Δλ again on the far side of the Earth, so the
+// sphere closes without a seam (n Δλ would overlap itself there, by (n − 1) · 360°).
+const sphereLongitude = (n: number, delta: number) =>
+  delta + (n - 1) * Math.sin(delta);
+
+// Its inverse, by Newton's method: its slope is within (n − 1) of 1.
+const mapLongitude = (n: number, lambda: number) => {
+  let delta = lambda / n;
+  for (let i = 0; i < 6; i++)
+    delta -=
+      (sphereLongitude(n, delta) - lambda) / (1 + (n - 1) * Math.cos(delta));
+  return delta;
+};
 
 /**
  * The Earth as the scene draws it: a sphere fixed in the scene whose cap over a disc is
@@ -74,6 +109,15 @@ const TANGENT_STEP = 10;
  * meet the sphere exactly on the disc's edge. A field on the disc lies on the plane, as
  * drawn flat; beyond it the ground is the sphere. Off, it is the level plane everywhere.
  * See `documents/world.md`, step 2.
+ *
+ * Given the map the scene's X/Z are in ({@link setFrame}, a `World`'s), it lies on the
+ * Earth: the sphere is the WGS84 ellipsoid's Gauss conformal sphere matched at the disc's
+ * centre, in the map's units there, turned to true north, and a latitude and longitude
+ * have one place on it at any distance ({@link geodetic}), the far side of the Earth
+ * included. Near the field it meets the map to 3 cm 5.5 km out, 11 cm 11 km out: the
+ * map's own scale changing across the field (UTM's, away from its meridian). Without one,
+ * the map's X/Z are carried onto the sphere from the plane, along the line from its
+ * centre, which holds for a region only (world.md, step 6).
  *
  * Plain math, in 64-bit floats but written as a shader must in 32 (`globe.glsl` is its
  * twin): about the disc's centre, in forms that subtract no near-equal numbers. And the
@@ -84,17 +128,30 @@ const TANGENT_STEP = 10;
  * @group Utils
  */
 export class Globe {
-  /** the sphere's radius, in world units (metres) */
-  readonly radius: number;
   /** bound by reference; kept up to date as the globe changes */
   readonly uniforms: GlobeUniforms;
 
+  // The radius given, and the one drawn: the given, or the Earth's in the map's units.
+  private readonly givenRadius: number;
+  private R: number;
   private on = true;
   private seaLevel = 0;
   private readonly sceneUp = new Vector3(0, 1, 0);
   private discX = 0;
   private discZ = 0;
   private discR = 0;
+  // The map the scene's X/Z are in, and what is derived from it (update): its converter
+  // from WGS84, the conformal sphere matched at the disc's centre, that centre's longitude
+  // (radians) and conformal latitude, and true east and north there, in the world.
+  private mapFrame: GeoFrame | null = null;
+  private toMap: proj4.Converter | null = null;
+  private sphere: ConformalSphere | null = null;
+  private lambda0 = 0;
+  private sinChi0 = 0;
+  private cosChi0 = 1;
+  private readonly trueEast = new Vector3(1, 0, 0);
+  private readonly trueNorth = new Vector3(0, 0, -1);
+  private located: { latitude: number; longitude: number } | null = null;
   // Derived (update): the disc's centre on the level plane, the depth of the sphere's
   // centre below it, and the sphere's centre.
   private readonly c = new Vector3();
@@ -105,7 +162,8 @@ export class Globe {
   private cameraStale = true;
 
   constructor(radius = EARTH_RADIUS) {
-    this.radius = radius;
+    this.givenRadius = radius;
+    this.R = radius;
     this.uniforms = {
       uGlobeUp: new Uniform(new Vector3(0, 1, 0)),
       uGlobeDisc: new Uniform(new Vector4()),
@@ -116,6 +174,14 @@ export class Globe {
       uGlobeCameraDip: new Uniform(new Vector2(0, 1)),
     };
     this.update();
+  }
+
+  /**
+   * the sphere's radius, in world units: the one given, or with a {@link frame} the
+   * Earth's there (the conformal sphere's, in the map's units at the disc's centre)
+   */
+  get radius(): number {
+    return this.R;
   }
 
   /** whether the globe curves; off, the level plane everywhere */
@@ -186,6 +252,131 @@ export class Globe {
     return this.s;
   }
 
+  /** the map the scene's X/Z are in, or null; see {@link setFrame} */
+  get frame(): GeoFrame | null {
+    return this.mapFrame;
+  }
+
+  /**
+   * Set the map the scene's X/Z are in — a `World`'s frame — or none. With one the globe
+   * lies on the Earth (see {@link Globe}): its radius the Earth's there, {@link north} true
+   * north, and {@link place}, {@link foot} and {@link tangent} go through latitude and
+   * longitude, so what they place agrees with what is placed by its latitude and longitude
+   * ({@link geodetic}) at any distance. The frame must be projected, in metres.
+   */
+  setFrame(frame: GeoFrame | null) {
+    this.mapFrame = frame;
+    this.toMap = frame ? proj4(wgs84Def, frame.projection) : null;
+    this.update();
+  }
+
+  /** where the disc's centre lies on the Earth, in degrees; null without a {@link frame} */
+  get location(): { latitude: number; longitude: number } | null {
+    return this.located;
+  }
+
+  /**
+   * True north at the disc's centre, level, in the world (normalised; read only): the
+   * map's grid north turned by its convergence there. The scene's −Z without a
+   * {@link frame}.
+   */
+  get north(): Vector3 {
+    return this.trueNorth;
+  }
+
+  /**
+   * The point `height` over the ground at `latitude` and `longitude` (WGS84, degrees): on
+   * the conformal sphere, along the line from its centre; over the disc, where that line
+   * meets the level plane. Off, the level plane at the map's point. Needs a {@link frame}.
+   */
+  geodetic(
+    latitude: number,
+    longitude: number,
+    height: number,
+    target: Vector3,
+  ): Vector3 {
+    const sphere = this.sphere;
+    if (!sphere || !this.toMap)
+      throw new Error('Globe.geodetic needs a frame (Globe.setFrame)');
+    const up = this.sceneUp;
+    if (!this.on) {
+      const [x, z] = this.mapXZ(longitude, latitude);
+      return this.onPlane(x, z, target).addScaledVector(up, height);
+    }
+    const chi = conformalLatitude(sphere, latitude * DEG);
+    const lambda = sphereLongitude(
+      sphere.n,
+      wrapAngle(longitude * DEG - this.lambda0),
+    );
+    // The direction from the sphere's centre, about the disc's centre's: east, north and
+    // up parts, written so nothing near-equal is subtracted near it (haversines).
+    const cosChi = Math.cos(chi);
+    const havLambda = haversine(lambda);
+    const e = cosChi * Math.sin(lambda);
+    const n =
+      Math.sin(chi - sphere.chi0) + 2 * cosChi * this.sinChi0 * havLambda;
+    const below =
+      2 * (haversine(chi - sphere.chi0) + cosChi * this.cosChi0 * havLambda);
+    const u = 1 - below;
+    const R = this.R;
+    const s = this.s;
+    // Over the disc: where the line from the centre meets the plane, `s / u` along it.
+    const reach = s / u;
+    const r = this.discR;
+    if (u > 0 && reach * reach * (e * e + n * n) <= r * r)
+      return target
+        .copy(this.c)
+        .addScaledVector(this.trueEast, reach * e)
+        .addScaledVector(this.trueNorth, reach * n)
+        .addScaledVector(up, height);
+    // The sphere: R (e, n, u − 1) + (R − s) up about the disc's centre, then up there.
+    const lift = (r * r) / (R + s) - R * below;
+    return target
+      .copy(this.c)
+      .addScaledVector(this.trueEast, (R + height) * e)
+      .addScaledVector(this.trueNorth, (R + height) * n)
+      .addScaledVector(up, lift + height * u);
+  }
+
+  /**
+   * The latitude and longitude (WGS84, degrees) of the ground under `point`: the inverse
+   * of {@link geodetic}, its height left out. Needs a {@link frame}.
+   */
+  geographic(
+    point: Vector3,
+    target = { latitude: 0, longitude: 0 },
+  ): { latitude: number; longitude: number } {
+    const sphere = this.sphere;
+    if (!sphere || !this.toMap)
+      throw new Error('Globe.geographic needs a frame (Globe.setFrame)');
+    const up = this.sceneUp;
+    v.subVectors(point, this.c);
+    const h = v.dot(up);
+    flat.copy(v).addScaledVector(up, -h);
+    const onDisc = !this.on || flat.lengthSq() <= this.discR * this.discR;
+    if (!this.on) {
+      const [longitude, latitude] = this.toMap.inverse(
+        this.mapEN(point.x, point.z),
+      );
+      target.latitude = latitude;
+      target.longitude = longitude;
+      return target;
+    }
+    // Its direction from the sphere's centre; over the disc, its foot's.
+    const e = flat.dot(this.trueEast);
+    const n = flat.dot(this.trueNorth);
+    const u = this.s + (onDisc ? 0 : h);
+    const length = Math.hypot(e, n, u);
+    const chi = Math.asin(
+      Math.max(-1, Math.min(1, (n * this.cosChi0 + u * this.sinChi0) / length)),
+    );
+    const lambda = Math.atan2(e, u * this.cosChi0 - n * this.sinChi0);
+    target.latitude = geodeticLatitude(sphere, chi) / DEG;
+    target.longitude =
+      wrapAngle(this.lambda0 + mapLongitude(sphere.n, lambda)) / DEG;
+    return target;
+  }
+
   /**
    * Height of `point` over the surface: over the level plane above the disc, over the
    * sphere beyond.
@@ -216,23 +407,26 @@ export class Globe {
 
   /**
    * The point `height` over the ground at world X/Z (`x`, `z`): over the disc, the level
-   * plane's; beyond, the plane's point carried along the line from the sphere's centre
-   * onto the sphere, and `height` along up there.
+   * plane's; beyond, with a {@link frame}, the map's point where its latitude and longitude
+   * lie ({@link geodetic}); without, the plane's point carried along the line from the
+   * sphere's centre onto the sphere. Then `height` along up there.
    */
   place(x: number, z: number, height: number, target: Vector3): Vector3 {
     const up = this.sceneUp;
-    target
-      .set(x, 0, z)
-      .addScaledVector(up, this.seaLevel - (x * up.x + z * up.z));
+    this.onPlane(x, z, target);
     const r2 = this.discR * this.discR;
     // On the level plane, as the disc's centre is: no part along up.
     v.subVectors(target, this.c);
     const d2 = v.lengthSq();
     if (!this.on || d2 <= r2) return target.addScaledVector(up, height);
+    if (this.toMap) {
+      const [longitude, latitude] = this.toMap.inverse(this.mapEN(x, z));
+      return this.geodetic(latitude, longitude, height, target);
+    }
     const s = this.s;
     const q = Math.sqrt(d2 + s * s);
     // (R + height) / q − 1, with R − q written as (r² − d²) / (R + q).
-    const k = (height + (r2 - d2) / (this.radius + q)) / q;
+    const k = (height + (r2 - d2) / (this.R + q)) / q;
     return target
       .copy(this.c)
       .addScaledVector(v, 1 + k)
@@ -240,8 +434,10 @@ export class Globe {
   }
 
   /**
-   * The map point under `point`: where the line from the sphere's centre through it meets
-   * the level plane, which {@link place} carries back. Under the disc, straight down.
+   * The map point under `point`, on the level plane, which {@link place} carries back:
+   * under the disc, straight down; beyond, with a {@link frame}, the map's point at the
+   * latitude and longitude under it ({@link geographic}); without, where the line from the
+   * sphere's centre through it meets the plane.
    */
   foot(point: Vector3, target: Vector3): Vector3 {
     const up = this.sceneUp;
@@ -249,6 +445,11 @@ export class Globe {
     const h = v.dot(up);
     flat.copy(v).addScaledVector(up, -h);
     const onDisc = !this.on || flat.lengthSq() <= this.discR * this.discR;
+    if (!onDisc && this.toMap) {
+      const { latitude, longitude } = this.geographic(point, under);
+      const [x, z] = this.mapXZ(longitude, latitude);
+      return this.onPlane(x, z, target);
+    }
     return target
       .copy(this.c)
       .addScaledVector(flat, onDisc ? 1 : this.s / (h + this.s));
@@ -391,6 +592,66 @@ export class Globe {
     this.upAt(position, uGlobeCameraUp.value);
   }
 
+  // Where the frame has the disc's centre on the Earth, and the sphere matched there: its
+  // radius in the map's units, and true east and north. Without a frame, as given.
+  private locate() {
+    const frame = this.mapFrame;
+    const toMap = this.toMap;
+    if (!frame || !toMap) {
+      this.sphere = null;
+      this.located = null;
+      this.R = this.givenRadius;
+      this.trueEast.set(1, 0, 0);
+      this.trueNorth.set(0, 0, -1);
+      return;
+    }
+    const [longitude, latitude] = toMap.inverse(
+      this.mapEN(this.discX, this.discZ),
+    );
+    this.located = { latitude, longitude };
+    const sphere = conformalSphere(latitude * DEG);
+    this.sphere = sphere;
+    this.lambda0 = longitude * DEG;
+    this.sinChi0 = Math.sin(sphere.chi0);
+    this.cosChi0 = Math.cos(sphere.chi0);
+    // The map against the Earth there: its metres per the ellipsoid's, and how far its
+    // grid is turned from true north (a transverse Mercator map about the point is the
+    // ellipsoid's own, true north up, at scale 1).
+    const { rotation, scale } = placeGeoFrame(geoFrameAt(longitude, latitude), {
+      projection: frame.projection,
+      origin: frame.origin,
+    });
+    this.R = sphere.radius * scale;
+    const cos = Math.cos(rotation);
+    const sin = Math.sin(rotation);
+    // Turned about +Y by `rotation`: the true frame's +X and −Z.
+    this.trueEast.set(cos, 0, -sin);
+    this.trueNorth.set(-sin, 0, -cos);
+  }
+
+  // The map's easting and northing at world X/Z.
+  private mapEN(x: number, z: number): [number, number] {
+    const frame = this.mapFrame!;
+    const [ox, oz] = frame.offset ?? [0, 0];
+    return [frame.origin[0] + (x - ox), frame.origin[1] - (z - oz)];
+  }
+
+  // World X/Z of a longitude and latitude, through the map.
+  private mapXZ(longitude: number, latitude: number): [number, number] {
+    const frame = this.mapFrame!;
+    const [ox, oz] = frame.offset ?? [0, 0];
+    const [e, n] = this.toMap!.forward([longitude, latitude]);
+    return [e - frame.origin[0] + ox, frame.origin[1] - n + oz];
+  }
+
+  // The level plane's point at world X/Z.
+  private onPlane(x: number, z: number, target: Vector3): Vector3 {
+    const up = this.sceneUp;
+    return target
+      .set(x, 0, z)
+      .addScaledVector(up, this.seaLevel - (x * up.x + z * up.z));
+  }
+
   private update() {
     this.cameraStale = true;
     const up = this.sceneUp;
@@ -400,7 +661,8 @@ export class Globe {
         up,
         this.seaLevel - (this.discX * up.x + this.discZ * up.z),
       );
-    const R = this.radius;
+    this.locate();
+    const R = this.R;
     const r = Math.min(this.discR, R);
     this.s = Math.sqrt((R - r) * (R + r));
     this.C.copy(this.c).addScaledVector(up, -this.s);
