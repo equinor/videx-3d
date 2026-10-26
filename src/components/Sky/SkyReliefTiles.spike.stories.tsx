@@ -303,7 +303,7 @@ const meta = {
       control: { type: 'check' },
       options: LAYERS.map(layer => layer.id),
       description:
-        'The reliefs merged, coarse to fine whatever the order ticked: ETOPO 2022 at 2′ (Norway to the British Isles), ETOPO 2022 at 15″ and EMODnet at 1/8′ (Volve east to the coast; EMODnet has no land), EMODnet at 1/16′ around Volve, and the generated sea bed baked from its surface (a made-up coast and island over the field, off by default). A later one wins where it has data, faded in over 3, 1.5, 0.5 and 0.5 km from where its data ends.',
+        'The reliefs merged, coarse to fine whatever the order ticked: ETOPO 2022 at 10′ (the world), ETOPO 2022 at 2′ (Norway to the British Isles), ETOPO 2022 at 15″ and EMODnet at 1/8′ (Volve east to the coast; EMODnet has no land), EMODnet at 1/16′ around Volve, and the generated sea bed baked from its surface (a made-up coast and island over the field, off by default). A later one wins where it has data, faded in over 20, 3, 1.5, 0.5 and 0.5 km from where its data ends.',
       table: { category: 'Relief' },
       if: { arg: 'relief', eq: 'tiles' },
     },
@@ -404,4 +404,19 @@ export const Default: Story = {};
  */
 export const ShortFarPlane: Story = {
   parameters: { far: 200000 },
+};
+
+/**
+ * The whole Earth: a far plane of 50 000 km, the camera 20 000 km out over the field. The
+ * world's relief (ETOPO 2022 at 10′) under the finer ones, the far side hidden behind the
+ * globe, and seen from up there the night side dark; the sun and the real stars and
+ * planets for the date. Fly back down to the field from here.
+ */
+export const Earth: Story = {
+  parameters: {
+    far: 50000000,
+    cameraPosition: [0, 14000000, 14000000],
+    cameraTarget: [0, LEVEL - DEPTH, 0],
+  },
+  args: { field: 'none', sunFromTime: true },
 };

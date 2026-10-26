@@ -76,8 +76,21 @@ const SOURCES = {
   },
 };
 
-/** The reliefs: a source, the area to crop (degrees), and source cells per value. */
+/**
+ * The reliefs: a source, the area to crop (degrees), and source cells per value: every
+ * `stride`-th source value read (1 if not given), and `block` x `block` of those averaged.
+ */
 const RELIEFS = {
+  // Read whole at 60″ it would be 233 M values; every 5th, averaged 2 x 2, is 9 M.
+  'etopo-2022-world': {
+    name: 'ETOPO 2022, the world',
+    description:
+      'ETOPO 2022 Global Relief Model (ice surface), 60 arc-seconds, every 5th value averaged 2 x 2 to 10 arc-minutes.',
+    source: SOURCES.etopo60,
+    area: { west: -180, east: 180, south: -90, north: 90 },
+    stride: 5,
+    block: 2,
+  },
   'etopo-2022-nordic': {
     name: 'ETOPO 2022, Norway to the British Isles',
     description:
@@ -167,10 +180,13 @@ async function fetchText(url) {
   }
 }
 
-// Rows `j0` to `j0 + count - 1` (from the south) of columns `i0` to `i0 + cols - 1`: each
-// an array of numbers, NaN for none. Both servers write a grid row as `[k], v, v, …`.
-async function fetchRows(source, j0, count, i0, cols) {
-  const range = `%5B${j0}:1:${j0 + count - 1}%5D%5B${i0}:1:${i0 + cols - 1}%5D`;
+// `count` rows from `j0` (from the south) and `cols` columns from `i0`, every `stride`-th
+// of each: each row an array of numbers, NaN for none. Both servers write a grid row as
+// `[k], v, v, …`.
+async function fetchRows(source, j0, count, i0, cols, stride) {
+  const j1 = j0 + (count - 1) * stride;
+  const i1 = i0 + (cols - 1) * stride;
+  const range = `%5B${j0}:${stride}:${j1}%5D%5B${i0}:${stride}:${i1}%5D`;
   const text = await fetchText(`${source.url}?${source.variable}${range}`);
   const rows = [];
   for (const line of text.split('\n')) {
@@ -216,15 +232,17 @@ function averageBlocks(rows, cols, block) {
 
 async function generate(id, relief) {
   const { source, area, block } = relief;
+  const stride = relief.stride ?? 1;
+  const step = source.inc * stride;
   const lon = regular(
     await axis(source, source.axes.lon),
-    source.inc,
+    step,
     area.west,
     area.east,
   );
   const lat = regular(
     await axis(source, source.axes.lat),
-    source.inc,
+    step,
     area.south,
     area.north,
   );
@@ -232,21 +250,33 @@ async function generate(id, relief) {
   const i1 = Math.max(...lon.indices);
   const j0 = Math.min(...lat.indices);
   const j1 = Math.max(...lat.indices);
-  // The source rows from j0 to j1, then the regular grid's picked out of them.
+  // Read every `stride`-th value, so the grid must pick exactly those.
+  if (
+    stride > 1 &&
+    [...lon.indices.map(i => i - i0), ...lat.indices.map(j => j - j0)].some(
+      k => k % stride !== 0,
+    )
+  )
+    throw new Error(`the source's axes are not regular at stride ${stride}`);
+  // The source rows from j0 to j1, every `stride`-th, then the regular grid's picked out of them.
   const fetched = [];
-  for (let from = j0; from <= j1; from += ROWS_PER_REQUEST) {
-    const count = Math.min(ROWS_PER_REQUEST, j1 - from + 1);
-    fetched.push(...(await fetchRows(source, from, count, i0, i1 - i0 + 1)));
-    console.log(`  rows ${from + count - j0} of ${j1 - j0 + 1}`);
+  const cols = (i1 - i0) / stride + 1;
+  const total = (j1 - j0) / stride + 1;
+  for (let k = 0; k < total; k += ROWS_PER_REQUEST) {
+    const count = Math.min(ROWS_PER_REQUEST, total - k);
+    fetched.push(
+      ...(await fetchRows(source, j0 + k * stride, count, i0, cols, stride)),
+    );
+    console.log(`  rows ${k + count} of ${total}`);
   }
   const rows = lat.indices.map(j => {
-    const row = fetched[j - j0];
-    return lon.indices.map(i => row[i - i0]);
+    const row = fetched[(j - j0) / stride];
+    return lon.indices.map(i => row[(i - i0) / stride]);
   });
   const { values, nx, ny } = averageBlocks(rows, lon.indices.length, block);
-  const inc = source.inc * block;
+  const inc = step * block;
   // The centre of the first block.
-  const shift = ((block - 1) / 2) * source.inc;
+  const shift = ((block - 1) / 2) * step;
   return gridToRelief(
     {
       values,

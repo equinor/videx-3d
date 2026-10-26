@@ -189,13 +189,16 @@ makes it.
 
 | Id | Source | Area | Grid | Size |
 |--|--|--|--|--|
+| `etopo-2022-world` | ETOPO 2022, 60″, every 5th value averaged 2 × 2 to 10′ | the world | 2160 × 1080 | 9.3 MB |
 | `etopo-2022-nordic` | ETOPO 2022, 60″, averaged to 2′ | 12°W–32°E, 49–72°N | 1320 × 690 | 3.6 MB |
 | `etopo-2022-15s-sw-norway` | ETOPO 2022, 15″ | 1.5–6.5°E, 58–59.5°N | 1200 × 360 | 1.7 MB |
 | `emodnet-2020-sw-norway` | EMODnet DTM 2020, 1/16′ averaged 2 × 2 (sea only) | 1.5–6.5°E, 58–59.5°N | 2400 × 720 | 6.9 MB |
 | `emodnet-2020-volve` | EMODnet DTM 2020, 1/16′ (sea only) | 1.38–2.38°E, 58.19–58.69°N | 960 × 480 | 1.8 MB |
 
 - ETOPO 2022: NOAA NCEI, public domain, DOI 10.25921/fd45-gt74, from NOAA's OPeNDAP
-  server (the 15″ data from tile `N60E000`).
+  server (the 15″ data from tile `N60E000`). The world's is read at a stride
+  (`[j0:5:j1]`, the relief's `stride`): whole, the 60″ grid is 233 M values; every 5th,
+  averaged 2 × 2, 9 M, a few minutes' download.
 - EMODnet Digital Bathymetry (DTM 2020): EMODnet Bathymetry Consortium, free to use and
   redistribute with credit, DOI 10.12770/bb6a87dd-e579-4036-abe1-e649cea9881a, from
   ERDDAP (`dtm_2020_v2_e0bf_e7e4_5b8f`). Heights are above lowest astronomical tide, about
@@ -279,6 +282,13 @@ Each frame, from the roots within reach:
   slopes: 0.02 left Norway at depth 3 from 1000 km, blurred; 0.005 split the seabed
   again. With 0.01, Norway from 1000 km is 69 tiles of 4 km cells, and 300 km at 45° is
   138 tiles (the table above is without it);
+- **but across a coast always** (built 2026-10-26): a tile that reaches both above and
+  below the sea is `rough` (`QuadtreeTileInfo.rough`), split for its cells whatever its
+  error: land and sea are shaded apart however flat it is. Without it, from 18 000 km the
+  Earth stayed on its two roots, 627 km cells (their error, a few kilometres of averaged
+  mountains, under `minSlope` × half a cell); with it, 24 tiles of 78 km cells. Over the
+  coast from 300 km it draws 137 tiles where 122 did; Volve's seabed, Norway from 1000 km
+  and the coast's horizon draw the same;
 - **and not under the ground:** with the camera below the ground under it, the tiles'
   tops face away, so their shading cannot be seen, and the renderer leaves `cellPixels`
   out. Below Volve's seabed that is 21 tiles instead of 45;
@@ -411,14 +421,24 @@ sampled as a grid are its heights exactly (tested).
 ### The overview
 
 Built (2026-10-25) as the single-texture relief's own machinery, reused rather than a new
-generator: when the camera's far plane falls short of the farthest horizon (2000 km), the
-stage asks `skyRelief` for its FIRST, coarsest layer resampled over the reach, and draws
-only that relief's fullscreen far layer (now `SkyBoxStageReliefOverview`): land
-flat on the curved sea, at the far plane, past where the tiles end. The tiles still reach
-the far plane themselves, so with a far plane past the horizon (the stories' 3000 km) no
-overview is made at all. The first layer stands for the merge out there: past a few
-hundred kilometres the finer layers are regional and lie nearer. The `ShortFarPlane`
-story (a 200 km far plane) shows it.
+generator: when the camera's far plane falls short of the farthest horizon, the stage
+draws the relief's FIRST, coarsest layer on a fullscreen far layer
+(`SkyBoxStageReliefOverview`): land flat on the curved sea, at the far plane, past where
+the tiles end. The first layer stands for the merge out there: past a few hundred
+kilometres the finer layers are regional and lie nearer. The `ShortFarPlane` story (a
+200 km far plane) shows it.
+
+**Geographic since 2026-10-26** (world.md
+[6d](./world.md#6d-the-whole-globe-built-2026-10-26)): the `skyRelief` generator resamples
+the first layer onto longitude and latitude over all of it (`resampleReliefGeographic`,
+at most 4096 texels a side, all the way round for a world relief), and the far layer reads
+it where each view meets the globe's sea (`globeGeographic`): from anywhere, the far side
+of the Earth included, with any far plane. It was resampled in the map around the scene
+over 2000 km, so it ended there. It is made the first time the ground in view reaches past
+the far plane (a far plane that always reaches it costs nothing; the world's at 10′ is
+about 12 MB on the GPU), and compiled in the background before it shows. With a world
+layer first, the overview is the world's 10′ (18 km), coarser near the field than the
+Nordic layer's 2′ was.
 
 Not done: drawing the overview under the tiles while their roots load (a moment at
 start-up only).

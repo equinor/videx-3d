@@ -1,18 +1,25 @@
-import { useFrame } from '@react-three/fiber';
-import { useEffect, useMemo, useRef } from 'react';
+import { useFrame, useThree } from '@react-three/fiber';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ColorRepresentation, Mesh } from 'three';
-import type { ReliefGrid } from '../../sdk/geometries/relief-grid';
+import { precompile } from '../../rendering/precompile';
+import type { ReliefGeoGrid } from '../../sdk/geometries/relief-grid';
+import type { SkyReliefResponse } from './sky-defs';
 import {
   createSkyReliefFarMaterial,
   createSkyReliefTexture,
 } from './sky-relief';
 import { createSkyGeometry, type SkyMaterial } from './sky-material';
-import { SKY_EARTH_RADIUS } from './sky-model';
+
+// The highest ground on the Earth, metres: how far past the sea's horizon land can show
+// before the overview's grid, which knows its own, is in.
+const HIGHEST_GROUND = 8849;
 
 type SkyBoxStageReliefOverviewProps = {
   sky: SkyMaterial;
-  /** the relief's first layer, resampled over the reach (the `skyRelief` generator) */
-  grid: ReliefGrid;
+  /** the relief's first layer */
+  reliefId: string;
+  /** the `skyRelief` generator */
+  generator: (id: string) => Promise<SkyReliefResponse>;
   color: 'ramp' | ColorRepresentation;
   /** how far from the camera the tiles draw: the overview draws past it */
   reach: number;
@@ -25,54 +32,109 @@ type SkyBoxStageReliefOverviewProps = {
 
 /**
  * The overview behind a stage's relief drawn from tiles: past the tiles' reach, while the
- * sea's horizon lies farther, a fullscreen layer draws the land flat on the curved sea.
+ * farthest ground in view lies farther, a fullscreen layer draws the land flat on the
+ * globe's sea, from the relief's first layer in longitude and latitude, wherever on the
+ * Earth. Its grid is made the first time it is needed, so a far plane that always reaches
+ * the ground in view costs nothing.
  */
 export const SkyBoxStageReliefOverview = ({
   sky,
-  grid,
+  reliefId,
+  generator,
   color,
   reach,
   bedDetail,
   skyOrder,
   visible,
 }: SkyBoxStageReliefOverviewProps) => {
-  const texture = useMemo(() => createSkyReliefTexture(grid), [grid]);
-  useEffect(() => () => texture.dispose(), [texture]);
+  const [wanted, setWanted] = useState(false);
+  const [grid, setGrid] = useState<ReliefGeoGrid | null>(null);
+  useEffect(() => {
+    if (!wanted) return;
+    let current = true;
+    generator(reliefId).then(made => {
+      if (current) setGrid(made ?? null);
+    });
+    return () => {
+      current = false;
+      setGrid(null);
+    };
+  }, [wanted, generator, reliefId]);
+
+  const texture = useMemo(
+    () => (grid ? createSkyReliefTexture(grid) : null),
+    [grid],
+  );
+  useEffect(() => () => texture?.dispose(), [texture]);
 
   const ramp = color === 'ramp';
   const material = useMemo(
-    () => createSkyReliefFarMaterial(sky, texture, grid, ramp ? 'ramp' : 0),
+    () =>
+      grid && texture
+        ? createSkyReliefFarMaterial(sky, texture, grid, ramp ? 'ramp' : 0)
+        : null,
     // The seabed's detail is compiled in, from the sky's defines: a new one needs a new material.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [sky, texture, grid, ramp, bedDetail],
   );
-  useEffect(() => () => material.dispose(), [material]);
+  useEffect(() => () => material?.dispose(), [material]);
   useEffect(() => {
-    material.uniforms.uReliefReach.value = reach;
+    if (material) material.uniforms.uReliefReach.value = reach;
   }, [material, reach]);
   useEffect(() => {
-    if (!ramp) material.uniforms.uReliefLandColor.value.set(color);
+    if (material && !ramp) material.uniforms.uReliefLandColor.value.set(color);
   }, [material, ramp, color]);
   const geometry = useMemo(() => createSkyGeometry(), []);
   useEffect(() => () => geometry.dispose(), [geometry]);
 
+  // Compiled in the background, as the sky's own are, and shown once compiled: made late,
+  // it would otherwise stall the frame that first draws it.
   const mesh = useRef<Mesh>(null);
+  const [compiled, setCompiled] = useState<object | null>(null);
+  const gl = useThree(state => state.gl);
+  const scene = useThree(state => state.scene);
+  const sceneCamera = useThree(state => state.camera);
+  useLayoutEffect(() => {
+    if (!material || !mesh.current) return;
+    let current = true;
+    const pending = precompile(
+      gl,
+      mesh.current,
+      sceneCamera,
+      scene,
+      'scene',
+      true,
+    );
+    if (!pending) setCompiled(material);
+    else
+      pending.then(() => {
+        if (current) setCompiled(material);
+      });
+    return () => {
+      current = false;
+    };
+  }, [gl, scene, sceneCamera, material]);
+
   useFrame(({ camera }) => {
-    if (!mesh.current) return;
     let beyond = true;
     if (sky.globeEnabled) {
-      // The farthest the globe's horizon lies from the camera, and past it the highest
-      // relief's own; over the disc a view runs on level as far as its edge.
-      const altitude = sky.globe.altitude(camera.position);
+      // The farthest ground in view: the globe's horizon from the camera, and past it the
+      // highest ground's own; over the disc a view runs on level as far as its edge.
+      const R = sky.globe.radius;
+      const altitude = Math.max(sky.globe.altitude(camera.position), 0);
+      const highest = Math.max(grid?.max ?? HIGHEST_GROUND, 0);
       const horizon =
         sky.globe.discRadius +
-        Math.sqrt(2 * SKY_EARTH_RADIUS * Math.max(altitude, 0)) +
-        Math.sqrt(2 * SKY_EARTH_RADIUS * Math.max(grid.max, 0));
+        Math.sqrt(2 * R * altitude + altitude * altitude) +
+        Math.sqrt(2 * R * highest);
       beyond = horizon > reach;
     }
-    mesh.current.visible = visible && beyond;
+    if (visible && beyond && !wanted) setWanted(true);
+    if (mesh.current)
+      mesh.current.visible = visible && beyond && compiled === material;
   });
 
+  if (!material) return null;
   return (
     // Shown each frame.
     <mesh

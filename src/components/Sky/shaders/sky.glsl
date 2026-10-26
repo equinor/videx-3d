@@ -40,8 +40,11 @@ uniform float uSkyDebug; // 1: tint each part by what draws it (SkyDebug.tint)
 #define SKY_MOON_DARK 0.75
 // How bright the moon shows by day, over the sky behind it.
 #define SKY_MOON_DAY 0.35
-// The procedural stars as a filler under an observer's catalogue, relative to their own.
-#define SKY_STAR_FILLER 0.35
+// The procedural stars as a faint filler under an observer's catalogue, relative to their own,
+// and the magnitude the brightest of them is held to: half the light of the catalogue's
+// faintest (magnitude 5), so the real stars, the planets, the sun and the moon stand out.
+#define SKY_STAR_FILLER 0.12
+#define SKY_STAR_FILLER_BRIGHTEST 6.5
 // A star's light pulled into a crisp centre, this much brighter, at the same size.
 #define SKY_STAR_CORE 1.5
 
@@ -212,7 +215,7 @@ vec3 skyNight(vec3 color, vec3 dir, float blend) {
   // From high up, by the sun over the lowered horizon, where it can still be up.
   float share = skyLightShare(dir, height);
   float night = max(mix(uSkyNight, 1.0 - uSkyAirLight.x, share), black);
-  float y = skyOverHorizon(dot(dir, uSkyUp), skyHorizon(dir));
+  float y = skyOverSeaHorizon(dir);
   float above = smoothstep(-blend, blend, y);
   float cosMoon = dot(dir, uSkyMoonDirection);
   float angle = atan(length(cross(dir, uSkyMoonDirection)), cosMoon);
@@ -236,8 +239,8 @@ vec3 skyNight(vec3 color, vec3 dir, float blend) {
   float sunElevation = mix(degrees(asin(skyLight(share).sunY)), -18.0, black);
   vec3 stars;
   if(uSkyObserved > 0.5 && uSkySunDisc > 0.0) {
-    // The procedural ones stand in for those past the catalogue, to about magnitude 6.5.
-    float filler = min(procedural * SKY_STAR_FILLER, skyStarShine(5.5)) * skyStarSeen(5.5, sunElevation);
+    // The procedural ones stand in, faintly, for those past the catalogue.
+    float filler = min(procedural * SKY_STAR_FILLER, skyStarShine(SKY_STAR_FILLER_BRIGHTEST)) * skyStarSeen(SKY_STAR_FILLER_BRIGHTEST, sunElevation);
     stars = skyCatalogue(starDir, pixel, sunElevation) + skyPlanets(dir, pixel, sunElevation) + filler * uSkyStars.x;
   } else {
     stars = vec3(uSkyStars.x * procedural * night * night * night);

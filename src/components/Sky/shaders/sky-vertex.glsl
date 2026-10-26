@@ -9,9 +9,11 @@
 varying vec3 vSkyDirection;
 
 void main() {
-  // Points on the far plane are affine in NDC for a perspective projection, so the
-  // interpolated direction is exact.
-  vec4 view = inverse(projectionMatrix) * vec4(position.xy, 1.0, 1.0);
+  // A point of NDC depth 0 on each corner's ray: at a fixed depth, view positions are affine
+  // in NDC for a perspective projection, so the interpolated direction is exact. Not the far
+  // plane: with one far enough from the near (a far plane of 50 000 km over a near one of
+  // 0.1 m), -(f + n) / (f - n) rounds to -1 in 32-bit floats, its w to 0, and the ray flips.
+  vec4 view = inverse(projectionMatrix) * vec4(position.xy, 0.0, 1.0);
   vSkyDirection = mat3(inverse(viewMatrix)) * (view.xyz / view.w);
 
   #ifdef USE_FOG

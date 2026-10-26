@@ -1,27 +1,21 @@
 import { transfer } from 'comlink';
 import type { SkyReliefResponse } from '../components/Sky/sky-defs';
 import type { ReadonlyStore, ReliefMeta, SurfaceMeta } from '../sdk';
-import {
-  ReliefResampleOptions,
-  resampleRelief,
-} from '../sdk/geometries/relief-grid';
-import type { GeoFrame } from '../sdk/projection/geo-frame';
+import { resampleReliefGeographic } from '../sdk/geometries/relief-grid';
 
 /**
- * A relief — a `relief-meta` record and its `relief-values` — resampled onto a grid
- * aligned with the scene, as a `SkyBoxStage` draws its overview past its tiles (see
- * `resampleRelief`). The grid is read from the store where the generator runs, so only
- * the texture's levels reach the caller.
+ * A relief — a `relief-meta` record and its `relief-values` — resampled onto a grid of
+ * longitude and latitude over all of it, as a `SkyBoxStage` draws its overview past its
+ * tiles, wherever on the Earth (see `resampleReliefGeographic`). The grid is read from the
+ * store where the generator runs, so only the texture's levels reach the caller.
  *
  * @param id the relief
- * @param frame where the scene lies on the map
- * @param options the area to cover
+ * @param options the most texels along either side (default 4096)
  */
 export async function generateSkyRelief(
   this: ReadonlyStore,
   id: string,
-  frame: GeoFrame,
-  options: ReliefResampleOptions,
+  options?: { maxSize?: number },
 ): Promise<SkyReliefResponse> {
   const meta = await this.get<ReliefMeta>('relief-meta', id);
   if (!meta) return null;
@@ -31,7 +25,7 @@ export async function generateSkyRelief(
     count: meta.grid.size,
   });
   if (!values) return null;
-  const grid = resampleRelief(values, asSurfaceMeta(meta), frame, options);
+  const grid = resampleReliefGeographic(values, asSurfaceMeta(meta), options);
   if (!grid) return null;
   return transfer(
     grid,

@@ -6,7 +6,6 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
-  useState,
 } from 'react';
 import {
   BufferGeometry,
@@ -33,7 +32,6 @@ import {
   PolygonDistanceField,
   polygonDistanceField,
 } from '../../sdk/geometries/polygon-distance-field';
-import type { ReliefGrid } from '../../sdk/geometries/relief-grid';
 import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import type { ReliefLayer } from '../../sdk/geometries/relief-tiles';
 import type { CutUniforms } from '../../sdk/materials/fence-field';
@@ -64,8 +62,10 @@ import {
 
 // A relief's flat land, a dark green-grey, which keeps its colour through the air.
 const RELIEF_LAND_COLOR = '#34433b';
-// The least a relief's map reaches around the scene: the sea's horizon from some 300 km up.
-const RELIEF_RADIUS = 2000000;
+// The farthest from the camera the stage draws the sea, past which the sky's own does: the
+// far plane, but no farther. Its flat planes, sunk under a camera far off, cannot stand for
+// the globe much beyond; from space the sky draws all of it.
+const STAGE_REACH = 3000000;
 const NO_OCCUPANTS: SkyBoxStageOccupant[] = [];
 
 // The same array as last render while its items are: one written inline is new every render.
@@ -183,9 +183,10 @@ export type SkyBoxStageRelief = {
   /**
    * The reliefs in the store — `relief-meta` records (`ReliefMeta`) and their
    * `relief-values` — coarse to fine: later ones win where they have data. Read by the
-   * `skyReliefTile` generator, so it needs a `GeneratorsProvider`. With a far plane short
-   * of the sea's horizon, the first is also drawn past the tiles as an overview, read by
-   * the `skyRelief` generator.
+   * `skyReliefTile` generator, so it needs a `GeneratorsProvider`. Where the ground in view
+   * reaches past the camera's far plane, the first is also drawn past the tiles as an
+   * overview, from anywhere on the Earth, read by the `skyRelief` generator; a layer in
+   * longitude and latitude all the way round (a world relief) covers it everywhere.
    */
   layers: ReliefLayer[];
   /** the flat seabed where no layer has data, metres below the sea. Default the sea's depth */
@@ -289,6 +290,7 @@ export const SkyBoxStage = ({
   const ocean = useSkyOcean();
   const sky = ocean?.material ?? null;
   const far = useThree(state => state.camera.far);
+  const reach = Math.min(far, STAGE_REACH);
   const [minX, minZ, maxX, maxZ] = bounds;
   const claims = occupants ?? NO_OCCUPANTS;
   const level = ocean?.level ?? 0;
@@ -303,8 +305,8 @@ export const SkyBoxStage = ({
   const abyssWalls = ocean?.abyssWalls;
 
   const extent: SkyStageBounds = useMemo(
-    () => [minX - far, minZ - far, maxX + far, maxZ + far],
-    [minX, minZ, maxX, maxZ, far],
+    () => [minX - reach, minZ - reach, maxX + reach, maxZ + reach],
+    [minX, minZ, maxX, maxZ, reach],
   );
   // The water's, and the flat seabed's without a relief.
   const plane = useMemo(
@@ -329,33 +331,9 @@ export const SkyBoxStage = ({
   }, [sky, ownFrame]);
 
   const generator = useGenerator<SkyReliefResponse>(skyRelief);
-  // The first (coarsest) layer is the overview past the tiles, only while the far plane
-  // falls short of the farthest horizon.
-  const reliefId =
-    tiled && far < RELIEF_RADIUS ? (relief?.layers[0]?.id ?? null) : null;
-  // By its content: a frame written inline is a new object every render.
-  const frameKey = reliefFrame ? JSON.stringify(reliefFrame) : '';
-  const centerX = (minX + maxX) / 2;
-  const centerZ = (minZ + maxZ) / 2;
-  const [reliefGrid, setReliefGrid] = useState<ReliefGrid | null>(null);
-  useEffect(() => {
-    if (!reliefId || !frameKey) {
-      setReliefGrid(null);
-      return;
-    }
-    let current = true;
-    // Out to the far plane around the scene, and past a nearer one to the horizon, where the
-    // relief's far layer draws it.
-    generator(reliefId, JSON.parse(frameKey) as GeoFrame, {
-      center: [centerX, centerZ],
-      radius: Math.max(far, RELIEF_RADIUS),
-    }).then(grid => {
-      if (current) setReliefGrid(grid ?? null);
-    });
-    return () => {
-      current = false;
-    };
-  }, [generator, reliefId, frameKey, centerX, centerZ, far]);
+  // The first (coarsest) layer is the overview past the tiles, made the first time the
+  // ground in view reaches past the far plane.
+  const reliefId = tiled ? (relief?.layers[0]?.id ?? null) : null;
 
   const materials = useMemo(
     () =>
@@ -456,9 +434,10 @@ export const SkyBoxStage = ({
 
   useLayoutEffect(() => {
     if (!sky) return;
-    // Out to the far plane (stage-vertex keeps its vertices inside): any shorter, and the
-    // scene between would show through the sky's sea, drawn on the far plane.
-    sky.setOceanStage(extent, far);
+    // Out to the far plane (stage-vertex keeps its vertices inside), as far as STAGE_REACH:
+    // any shorter, and the scene between would show through the sky's sea, drawn on the far
+    // plane.
+    sky.setOceanStage(extent, reach);
     // Flat over the stage's whole area, so the scene and the ground about it meet level:
     // the globe's disc.
     sky.setFlatSea([minX, minZ, maxX, maxZ]);
@@ -466,7 +445,7 @@ export const SkyBoxStage = ({
       sky.setOceanStage(null);
       sky.setFlatSea(null);
     };
-  }, [sky, extent, far, minX, minZ, maxX, maxZ]);
+  }, [sky, extent, reach, minX, minZ, maxX, maxZ]);
 
   // The relief's ground under the camera, which the sky takes for its own there below the
   // sea surface.
@@ -671,7 +650,6 @@ export const SkyBoxStage = ({
     plane,
     wet,
     hasBed,
-    reliefGrid,
     tiled,
     wireMaterials,
     outlineLines,
@@ -710,10 +688,11 @@ export const SkyBoxStage = ({
 
   return (
     <group ref={root} visible={ocean.visible && ocean.ready}>
-      {tiled && relief && reliefGrid && sky && (
+      {tiled && relief && reliefId && sky && (
         <SkyBoxStageReliefOverview
           sky={sky}
-          grid={reliefGrid}
+          reliefId={reliefId}
+          generator={generator}
           color={relief.color ?? RELIEF_LAND_COLOR}
           reach={far}
           bedDetail={bedDetail}

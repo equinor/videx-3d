@@ -63,12 +63,18 @@ export type GlobeUniforms = {
    * (x, y), and 1 with a frame (w); see {@link Globe.sphereOffset}
    */
   uGlobeSphere: Uniform<Vector4>;
+  /**
+   * where the disc's centre lies on the Earth, for `globeGeographic`: its longitude
+   * (radians, x), and the conformal sphere's ½ ln c (y); see {@link Globe.geographic}
+   */
+  uGlobeLocation: Uniform<Vector2>;
 };
 
 /** A rectangle in world X/Z: `[minX, minZ, maxX, maxZ]`. */
 type Bounds = [number, number, number, number];
 
 const v = new Vector3();
+const offsetAt = new Vector2();
 const flat = new Vector3();
 const way = new Vector3();
 const across = new Vector3();
@@ -184,6 +190,7 @@ export class Globe {
       uGlobeEast: new Uniform(new Vector3(1, 0, 0)),
       uGlobeNorth: new Uniform(new Vector3(0, 0, -1)),
       uGlobeSphere: new Uniform(new Vector4(0, 1, 0, 0)),
+      uGlobeLocation: new Uniform(new Vector2()),
     };
     this.update();
   }
@@ -308,24 +315,44 @@ export class Globe {
     height: number,
     target: Vector3,
   ): Vector3 {
+    if (!this.sphere || !this.toMap)
+      throw new Error('Globe.geodetic needs a frame (Globe.setFrame)');
+    return this.sphereAt(
+      this.sphereOffset(latitude, longitude, offsetAt),
+      height,
+      target,
+    );
+  }
+
+  /**
+   * The conformal sphere's latitude at the disc's centre (radians): what
+   * {@link sphereOffset}'s latitudes are measured from. Needs a {@link frame}.
+   */
+  get sphereLatitude(): number {
+    if (!this.sphere)
+      throw new Error('Globe.sphereLatitude needs a frame (Globe.setFrame)');
+    return this.sphere.chi0;
+  }
+
+  /**
+   * The point `height` over the ground at `offset` on the conformal sphere from the disc's
+   * centre (as {@link sphereOffset} gives it): as {@link geodetic} places it, and as
+   * `globe.glsl`'s `globeGeodetic` does. Needs a {@link frame}.
+   */
+  sphereAt(offset: Vector2, height: number, target: Vector3): Vector3 {
     const sphere = this.sphere;
     if (!sphere || !this.toMap)
-      throw new Error('Globe.geodetic needs a frame (Globe.setFrame)');
+      throw new Error('Globe.sphereAt needs a frame (Globe.setFrame)');
     const up = this.sceneUp;
-    const chi = conformalLatitude(sphere, latitude * DEG);
-    const lambda = sphereLongitude(
-      sphere.n,
-      wrapAngle(longitude * DEG - this.lambda0),
-    );
+    const chi = sphere.chi0 + offset.x;
+    const lambda = offset.y;
     // The direction from the sphere's centre, about the disc's centre's: east, north and
     // up parts, written so nothing near-equal is subtracted near it (haversines).
     const cosChi = Math.cos(chi);
     const havLambda = haversine(lambda);
     const e = cosChi * Math.sin(lambda);
-    const n =
-      Math.sin(chi - sphere.chi0) + 2 * cosChi * this.sinChi0 * havLambda;
-    const below =
-      2 * (haversine(chi - sphere.chi0) + cosChi * this.cosChi0 * havLambda);
+    const n = Math.sin(offset.x) + 2 * cosChi * this.sinChi0 * havLambda;
+    const below = 2 * (haversine(offset.x) + cosChi * this.cosChi0 * havLambda);
     const u = 1 - below;
     const R = this.R;
     if (!this.on) {
@@ -706,6 +733,7 @@ export class Globe {
       uGlobeEast,
       uGlobeNorth,
       uGlobeSphere,
+      uGlobeLocation,
     } = this.uniforms;
     uGlobeUp.value.copy(up);
     uGlobeDisc.value.set(this.c.x, this.c.y, this.c.z, this.discR);
@@ -717,6 +745,10 @@ export class Globe {
       this.cosChi0,
       this.sphere?.n ?? 1,
       this.sphere ? 1 : 0,
+    );
+    uGlobeLocation.value.set(
+      this.sphere ? this.lambda0 : 0,
+      this.sphere?.halfLogC ?? 0,
     );
   }
 }

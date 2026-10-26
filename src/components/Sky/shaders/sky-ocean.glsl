@@ -128,19 +128,27 @@ vec2 skyOceanCutawayGrip(vec2 rimAt) {
 // view's bearing toward the horizon; looking down, the sky overhead as seen from the sea,
 // which also has no bearing, so the sun's side cannot show as a wedge where all of them meet.
 // At twilight the horizon's glow keeps to the far sea, and the air below is the dusk overhead.
+// From high up, the sea as space sees it where it lies (skyFromSpaceOver).
 vec4 skyOceanThroughAir(vec4 surface, vec3 origin, vec3 dir, float dist, float blend) {
   float haze = skyAirHaze(origin, dir, dist);
-  if(haze <= 0.0)
-    return surface;
-  vec3 level = dir - uSkyUp * dot(dir, uSkyUp);
-  float n2 = dot(level, level);
-  vec3 horizon = n2 > 1e-8 ? skyHorizonColor(level * inversesqrt(n2), blend) : vec3(0.0);
-  float dusk = min(uSkyTwilight.x * uSkyTwilight.y, 1.0);
-  float toward = pow(n2, 2.0 + 14.0 * dusk);
-  if(toward < 0.999)
-    horizon = mix(skySurfaceAt(uSkyUp, blend, 0.0), horizon, toward);
-  float alpha = haze + (1.0 - haze) * surface.a;
-  return vec4((haze * horizon + (1.0 - haze) * surface.a * surface.rgb) / alpha, alpha);
+  vec4 near = surface;
+  if(haze > 0.0) {
+    vec3 level = dir - uSkyUp * dot(dir, uSkyUp);
+    float n2 = dot(level, level);
+    vec3 horizon = n2 > 1e-8 ? skyHorizonColor(level * inversesqrt(n2), blend) : vec3(0.0);
+    float dusk = min(uSkyTwilight.x * uSkyTwilight.y, 1.0);
+    float toward = pow(n2, 2.0 + 14.0 * dusk);
+    if(toward < 0.999)
+      horizon = mix(skySurfaceAt(uSkyUp, blend, 0.0), horizon, toward);
+    float alpha = haze + (1.0 - haze) * surface.a;
+    near = vec4((haze * horizon + (1.0 - haze) * surface.a * surface.rgb) / alpha, alpha);
+  }
+  float space = skyFromSpace();
+  if(space <= 0.0)
+    return near;
+  vec3 p = origin + dir * dist;
+  vec3 sea = skySpaceSea(dir, globeUpAt(p));
+  return vec4(skyFromSpaceOver(near.rgb, sea, p, haze), mix(near.a, 1.0, space));
 }
 
 // The surface seen from above at `p`, `surface` its colour and opacity, with the cutaway
@@ -477,9 +485,13 @@ vec4 skyOceanSurfaceLayer(vec3 dir, vec3 origin, float blend) {
   float texel = max(length(fwidth(p)), 1e-3);
   vec2 rimAt = skyOceanCutawayRimAt(origin + dir * t, origin);
   // Skipped where hidden with a margin, so a quad's pixels that still shade are hidden too
-  // and the derivatives they take across the skipped ones never show.
+  // and the derivatives they take across the skipped ones never show. From space about the
+  // camera's own up and horizon, where the field's up is not up (skyFromSpace).
   float over = y - skyHorizonAt(dir, altitude);
-  if(over >= 2.0 * fwidth(y) || skyOceanOnStage(p, t + 2.0 * fwidth(t), 4.0 * texel))
+  float space = skyFromSpace();
+  if(space > 0.0)
+    over = mix(over, dot(dir, globeCameraUp()) + uGlobeCameraDip.x, space);
+  if(over >= 2.0 * fwidth(mix(y, over, space)) || skyOceanOnStage(p, t + 2.0 * fwidth(t), 4.0 * texel))
     return vec4(0.0);
   SkyOceanWave wave = skyOceanWave(p, texel, t);
   skyOceanTiltWave(wave, globeUpAt(origin + dir * t));

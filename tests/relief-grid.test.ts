@@ -1,7 +1,10 @@
 import proj4 from 'proj4';
 import { describe, expect, it } from 'vitest';
 import type { SurfaceMeta } from '../src/sdk/data/types/SurfaceMeta';
-import { resampleRelief } from '../src/sdk/geometries/relief-grid';
+import {
+  resampleRelief,
+  resampleReliefGeographic,
+} from '../src/sdk/geometries/relief-grid';
 import { geoFrameAt } from '../src/sdk/projection/geo-frame';
 import { toHalfFloatBits } from '../src/sdk/utils/half-float';
 
@@ -147,6 +150,87 @@ describe('resampleRelief', () => {
     expect(
       resampleRelief(values, meta, frame, { center: [0, 0], radius: 50000 }),
     ).toBeNull();
+  });
+});
+
+describe('resampleReliefGeographic', () => {
+  // A texel's height and coverage at longitude and latitude (degrees), nearest.
+  const geoTexel = (
+    grid: NonNullable<ReturnType<typeof resampleReliefGeographic>>,
+    lon: number,
+    lat: number,
+  ) => {
+    const [level] = grid.levels;
+    const i = Math.round((lon - grid.origin[0]) / grid.cell[0]);
+    const j = Math.round((lat - grid.origin[1]) / grid.cell[1]);
+    const k = 2 * (j * level.width + i);
+    const coverage = fromHalf(level.data[k + 1]);
+    return { height: fromHalf(level.data[k]) / coverage, coverage };
+  };
+
+  it('keeps a grid in longitude and latitude cell for cell, rows from the south', () => {
+    const height = (lon: number, lat: number) => 10 * lon + 100 * lat;
+    const { values, meta } = lonLatGrid(-2, 54, 1 / 30, 120, 90, height);
+    const grid = resampleReliefGeographic(values, meta)!;
+    expect(grid.wraps).toBe(false);
+    expect(grid.cell[0]).toBeCloseTo(1 / 30, 12);
+    expect(grid.cell[1]).toBeCloseTo(1 / 30, 12);
+    expect(grid.origin).toEqual([-2, 54]);
+    expect([grid.levels[0].width, grid.levels[0].height]).toEqual([120, 90]);
+    for (const [lon, lat] of [
+      [-2, 54],
+      [0, 55],
+      [1.5, 56.5],
+    ]) {
+      const sample = geoTexel(grid, lon, lat);
+      expect(sample.height).toBeCloseTo(height(lon, lat), -1);
+      expect(sample.coverage).toBeCloseTo(1, 2);
+    }
+  });
+
+  it('goes all the way round for a world relief, its texels 360° across', () => {
+    const { values, meta } = lonLatGrid(-179.5, -89.5, 1, 360, 180, lon => lon);
+    const grid = resampleReliefGeographic(values, meta)!;
+    expect(grid.wraps).toBe(true);
+    expect(grid.levels[0].width * grid.cell[0]).toBeCloseTo(360, 9);
+    expect(geoTexel(grid, 179.5, 0).height).toBeCloseTo(179.5, 0);
+    // At most the size asked, still all the way round.
+    const small = resampleReliefGeographic(values, meta, { maxSize: 90 })!;
+    expect(small.wraps).toBe(true);
+    expect(small.levels[0].width).toBe(90);
+    expect(small.levels[0].width * small.cell[0]).toBeCloseTo(360, 9);
+  });
+
+  it('covers a relief in a map over its own longitudes and latitudes', () => {
+    // 100 x 100 cells of 1 km on a transverse Mercator map about 2°E 58°N.
+    const values = new Float32Array(100 * 100).fill(50);
+    const meta = {
+      ...lonLatGrid(0, 0, 1, 2, 2, () => 0).meta,
+      projection: frame.projection,
+      header: {
+        nx: 100,
+        ny: 100,
+        xori: -50000,
+        yori: -50000,
+        xinc: 1000,
+        yinc: 1000,
+        xmax: 49000,
+        ymax: 49000,
+        rot: 0,
+      },
+    } satisfies SurfaceMeta;
+    const grid = resampleReliefGeographic(values, meta)!;
+    expect(grid.wraps).toBe(false);
+    // About 50 km either side: 0.45° north and south, 0.85° east and west at 58°N.
+    expect(grid.origin[1]).toBeCloseTo(58 - 0.449, 1);
+    expect(grid.origin[0]).toBeCloseTo(2 - 0.848, 1);
+    // A kilometre: 1/111 of a degree north, 1/59 east.
+    expect(grid.cell[1] * 111.2).toBeCloseTo(1, 1);
+    expect(grid.cell[0] * 111.2 * Math.cos((58 * Math.PI) / 180)).toBeCloseTo(
+      1,
+      1,
+    );
+    expect(geoTexel(grid, 2, 58).height).toBeCloseTo(50, 0);
   });
 });
 

@@ -55,8 +55,68 @@ export function geoTileWidth(globe: Globe, key: number): number {
 }
 
 /**
+ * The point of a geographic tile nearest the eye over the globe, as an offset on the
+ * conformal sphere from the disc's centre (`Globe.sphereOffset`). The tile is a rectangle
+ * of latitude and longitude on that sphere too, so the point is exact there: on the eye's
+ * meridian where the tile spans it, else on its nearer side's, at the latitude nearest the
+ * eye along it — not where the eye's latitude is, which far east or west of the tile lies
+ * tens of degrees off.
+ */
+export function geoTileNearest(
+  globe: Globe,
+  key: number,
+  eyeAt: { latitude: number; longitude: number },
+  target: Vector2,
+): Vector2 {
+  const [west, north, span] = geoTileRegion(key);
+  const chi0 = globe.sphereLatitude;
+  globe.sphereOffset(eyeAt.latitude, eyeAt.longitude, offset);
+  const chiEye = chi0 + offset.x;
+  const lonEye = offset.y;
+  globe.sphereOffset(north, west, offset);
+  const chiNorth = chi0 + offset.x;
+  const lonWest = offset.y;
+  globe.sphereOffset(north - span, west + span, offset);
+  const chiSouth = chi0 + offset.x;
+  let lonEast = offset.y;
+  if (lonEast <= lonWest) lonEast += 2 * Math.PI;
+  // East of the west side, and how far the tile spans.
+  const along =
+    (((lonEye - lonWest) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  const width = lonEast - lonWest;
+  let lon = lonEye;
+  let apart = 0;
+  if (along > width) {
+    const pastEast = along - width;
+    const toWest = 2 * Math.PI - along;
+    lon = pastEast < toWest ? lonEast : lonWest;
+    apart = Math.min(pastEast, toWest);
+  }
+  // Along a meridian `apart` from the eye's, cos χ cos χe cos Δ + sin χ sin χe is greatest
+  // at one latitude; within the tile's, there or at a side.
+  const a = Math.cos(chiEye) * Math.cos(apart);
+  const b = Math.sin(chiEye);
+  const best = Math.atan2(b, a);
+  let chi = chiNorth;
+  let most = -Infinity;
+  for (const candidate of [
+    Math.min(Math.max(best, chiSouth), chiNorth),
+    chiSouth,
+    chiNorth,
+  ]) {
+    const value = a * Math.cos(candidate) + b * Math.sin(candidate);
+    if (value > most) {
+      most = value;
+      chi = candidate;
+    }
+  }
+  return target.set(chi - chi0, lon);
+}
+
+/**
  * From `eye` to the nearest point of a geographic tile reaching from `low` to `high` over
- * the sea: the eye's latitude and longitude clamped into it, at its height clamped.
+ * the sea: its point nearest the eye over the globe (`geoTileNearest`), at the eye's
+ * height clamped to the tile's.
  */
 export function geoTileDistance(
   globe: Globe,
@@ -67,19 +127,17 @@ export function geoTileDistance(
   low: number,
   high: number,
 ): number {
-  const [west, north, span] = geoTileRegion(key);
-  const east = ((((eyeAt.longitude - west + 180) % 360) + 360) % 360) - 180;
-  const longitude = west + Math.min(Math.max(east, 0), span);
-  const latitude = Math.min(Math.max(eyeAt.latitude, north - span), north);
   const height = Math.min(Math.max(eyeHeight, low), high);
-  return globe.geodetic(latitude, longitude, height, corner).distanceTo(eye);
+  return globe
+    .sphereAt(geoTileNearest(globe, key, eyeAt, nearest), height, corner)
+    .distanceTo(eye);
 }
 
 /**
  * Whether a geographic tile reaching from `low` to `high` over the sea may be seen: some of
- * it in the frustum, and its nearest point to the eye (its latitude and longitude clamped
- * into it, as `geoTileDistance` finds it) not past the globe's horizon from `eye`. Bounded
- * by points over it, more the larger it is, for the sphere's bulge.
+ * it in the frustum, and its nearest point to the eye (`geoTileNearest`) not past the
+ * globe's horizon from `eye`, as far as ground `high` up shows over it. Bounded by points
+ * over it, more the larger it is, and padded by the sphere's bulge between them.
  */
 export function geoTileInView(
   globe: Globe,
@@ -92,22 +150,19 @@ export function geoTileInView(
 ): boolean {
   const [west, north, span] = geoTileRegion(key);
   const centre = globe.centre;
+  const R = globe.radius;
   toEye.subVectors(eye, centre);
   const fromCentre = toEye.length();
-  if (fromCentre > globe.radius) {
-    // The plane through the horizon's circle, seen from the eye: the ground under it is
-    // hidden, and what stands on it by as much as it stands.
-    const east = ((((eyeAt.longitude - west + 180) % 360) + 360) % 360) - 180;
-    globe.geodetic(
-      Math.min(Math.max(eyeAt.latitude, north - span), north),
-      west + Math.min(Math.max(east, 0), span),
-      Math.max(high, 0),
-      corner,
-    );
-    const horizon = (globe.radius * globe.radius) / fromCentre;
+  if (globe.enabled && fromCentre > R) {
+    // Ground `top` up is seen past the sea's horizon as far as the angle from the eye's
+    // foot at which its own horizon meets the eye's: acos(R / d) + acos(R / (R + top)).
+    const top = Math.max(high, 0);
+    globe.sphereAt(geoTileNearest(globe, key, eyeAt, nearest), 0, corner);
+    corner.sub(centre);
+    const angle = corner.angleTo(toEye);
     if (
-      corner.sub(centre).dot(toEye) / fromCentre <
-      horizon - Math.max(high, 0)
+      angle >
+      Math.acos(R / fromCentre) + Math.acos(R / (R + top)) + HORIZON_MARGIN
     )
       return false;
   }
@@ -125,12 +180,19 @@ export function geoTileInView(
     box.expandByPoint(
       globe.geodetic(north - span / 2, west + span / 2, high, corner),
     );
+  // Between its points the sphere bulges out, most across a diagonal of their grid.
+  const across = ((span / steps) * Math.SQRT2 * DEG) / 2;
+  box.expandByScalar((R + Math.max(high, 0)) * (1 - Math.cos(across)));
   return frustum.intersectsBox(box);
 }
 
+// An angle on the sphere the horizon test leaves to spare: the disc's flat cap, and the
+// ground drawn a hair off the sphere (about 600 m).
+const HORIZON_MARGIN = 1e-4;
 const box = new Box3();
 const toEye = new Vector3();
 const offset = new Vector2();
+const nearest = new Vector2();
 
 /**
  * Where a geographic tile is drawn (`reliefTile`, `reliefTileChi`): its west and east

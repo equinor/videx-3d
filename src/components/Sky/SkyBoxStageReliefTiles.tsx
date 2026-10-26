@@ -472,6 +472,8 @@ export const SkyBoxStageReliefTiles = ({
         minY: level + tile.min,
         maxY: level + tile.max,
         leaf: tile.leaf,
+        // Across the coast, land and sea are shaded apart however flat the tile.
+        rough: tile.min < 0 && tile.max > 0,
       };
     };
     // Where the tiles lie: on the globe by their latitudes and longitudes. Their lowest

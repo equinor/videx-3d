@@ -9,7 +9,8 @@
 // (relief-tiles.glsl). RELIEF_OCCUPANTS keeps the cutaway off the ground over the stage's
 // occupants, and RELIEF_CUT_OCCUPANT cuts it with one of them, inside its outline.
 // RELIEF_FAR draws the overview past the tiles' reach instead, on a fullscreen layer: what
-// a map of the first layer holds above the sea, flat on the curved sea, per pixel.
+// a map of the first layer in longitude and latitude holds above the sea, flat on the
+// globe's sea, per pixel, wherever on the Earth.
 
 #include <common>
 #ifndef RELIEF_FAR
@@ -120,8 +121,9 @@ void main() {
   vec3 hit = skyOceanReach(cameraPosition, dir, max(altitude, 1e-3));
   float dist = hit.x;
   vec3 world = cameraPosition + dir * dist;
-  // The map point under it, which the globe carried there.
-  vec2 xz = globeFoot(world).xz;
+  // Where it lies on the Earth: its longitude and latitude, in degrees.
+  vec2 offset = globeSphereOffset(world);
+  vec2 lonLat = globeGeographicAt(offset).yx * (180.0 / PI);
   #else
   #include <logdepthbuf_fragment>
   #ifndef USE_LOGARITHMIC_DEPTH_BUFFER
@@ -137,20 +139,27 @@ void main() {
   float blend = max(uSkyHorizonBlend, fwidth(dot(dir, uSkyUp)));
 
   #ifdef RELIEF_FAR
-  // The slope from the map, as finely as the pixel sees it.
-  float footprint = max(length(fwidth(xz)), uReliefMapFrame.z);
+  // The slope from the map, as finely as the pixel sees the ground: degrees east and north
+  // a pixel spans, no finer than a texel north–south.
+  float metresPerDegree = uGlobe.x * PI / 180.0;
+  float footprint = max(length(fwidth(world)), uReliefMapFrame.w * metresPerDegree);
+  vec2 span = footprint / metresPerDegree * vec2(1.0 / max(cos(radians(lonLat.y)), 1e-3), 1.0);
   // Only where the sea is met past the tiles. Every derivative is taken above.
   if(altitude <= 0.0 || hit.z > 0.5 || dist < uReliefReach)
     discard;
-  float lod = min(log2(footprint / uReliefMapFrame.z), uReliefMapFrame.w);
+  float lod = clamp(log2(max(span.x / uReliefMapFrame.z, span.y / uReliefMapFrame.w)), 0.0, uReliefMapSize.z);
   float bed = -uSkyOceanDepth;
-  float west = reliefGround(xz - vec2(footprint, 0.0), lod, bed).x;
-  float east = reliefGround(xz + vec2(footprint, 0.0), lod, bed).x;
-  float north = reliefGround(xz - vec2(0.0, footprint), lod, bed).x;
-  float south = reliefGround(xz + vec2(0.0, footprint), lod, bed).x;
-  vec3 normal = globeTurn(normalize(vec3(west - east, 2.0 * footprint, north - south)), globeUpAt(world));
+  float west = reliefGround(lonLat - vec2(span.x, 0.0), lod, bed).x;
+  float east = reliefGround(lonLat + vec2(span.x, 0.0), lod, bed).x;
+  float north = reliefGround(lonLat + vec2(0.0, span.y), lod, bed).x;
+  float south = reliefGround(lonLat - vec2(0.0, span.y), lod, bed).x;
+  // Along true east, up and true south where it lies on the globe, as the tiles' normals.
+  vec3 up = globeUpAt(world);
+  vec3 trueEast = globeGeodeticEast(offset);
+  trueEast = normalize(trueEast - up * dot(trueEast, up));
+  vec3 normal = normalize(trueEast * (west - east) + up * (2.0 * footprint) + cross(trueEast, up) * (north - south));
   // Land or sea by the map at this pixel.
-  vec2 ground = reliefGround(xz, lod, bed);
+  vec2 ground = reliefGround(lonLat, lod, bed);
   #else
   // The sea along the view, from above the water: both for the stage's test below and for
   // which of the sea and the ground shows.
@@ -178,7 +187,8 @@ void main() {
   color /= max(uSkyIntensity, 1e-4);
 
   #ifdef RELIEF_FAR
-  color = reliefThroughAir(color, dir, dist, blend);
+  // From high up, as lit where it lies (skyFromSpaceOver): dark over the Earth's night side.
+  color = skyFromSpaceOver(reliefThroughAir(color, dir, dist, blend), color, world, skyAirHaze(cameraPosition, dir, dist));
   #else
   // The triangles' chords sag under the globe's sea, by up to tens of metres on the coarse
   // tiles far off. So the ground's height decides which of the two shows: the seabed stays
@@ -202,7 +212,7 @@ void main() {
     if(altitude > 0.0 && sea > dist)
       gl_FragDepth = reliefDepthAt(dir, sea * 1.0001);
   } else if(altitude > 0.0) {
-    color = reliefThroughAir(color, dir, dist, blend);
+    color = skyFromSpaceOver(reliefThroughAir(color, dir, dist, blend), color, world, skyAirHaze(cameraPosition, dir, dist));
     // Also where the land only just clears the sea: there the two depths tie, and the sea
     // won. The tile holds its own ground only. Land met within a couple of its cells of the
     // sea stands for the sea's point; past that, the ground there decides when the tile

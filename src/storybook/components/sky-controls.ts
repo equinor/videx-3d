@@ -1355,7 +1355,8 @@ export type SkyReliefArgs = {
  * ones win where they have data (see scripts/generate-relief.js).
  */
 export const SKY_DEMO_RELIEF_LAYERS: ReliefLayer[] = [
-  { id: 'etopo-2022-nordic' },
+  { id: 'etopo-2022-world' },
+  { id: 'etopo-2022-nordic', feather: 20000 },
   { id: 'etopo-2022-15s-sw-norway', feather: 3000 },
   { id: 'emodnet-2020-sw-norway', feather: 1500 },
   { id: 'emodnet-2020-volve', feather: 500 },
@@ -1363,6 +1364,7 @@ export const SKY_DEMO_RELIEF_LAYERS: ReliefLayer[] = [
 
 // What each demo relief is, for the `reliefLayers` control.
 const SKY_DEMO_RELIEF_LABELS: Record<string, string> = {
+  'etopo-2022-world': 'ETOPO 2022, 10\u2032, the world',
   'etopo-2022-nordic': 'ETOPO 2022, 2\u2032, Norway to the British Isles',
   'etopo-2022-15s-sw-norway': 'ETOPO 2022, 15\u2033, Volve to the coast',
   'emodnet-2020-sw-norway': 'EMODnet, 1/8\u2032, Volve to the coast (sea only)',

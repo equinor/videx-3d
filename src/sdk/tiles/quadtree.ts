@@ -22,6 +22,11 @@ export type QuadtreeTileInfo = {
   maxY: number;
   /** nothing finer lies under it: it is never split */
   leaf: boolean;
+  /**
+   * shaded unevenly whatever its shape — across a coast, say: `cellPixels` applies to it
+   * whatever `minSlope` says
+   */
+  rough?: boolean;
 };
 
 /**
@@ -89,8 +94,8 @@ export type QuadtreeSelectOptions = {
    * that is not a leaf is also split while its cells (`cells` along its side) span more
    * than `pixels` on screen at its nearest point, however small its error — but only where
    * the ground's slope strays from the tile's by more than `minSlope` (its error over half
-   * a cell; default 0, everywhere): flat ground is shaded alike at any depth. Omitted,
-   * only the error splits.
+   * a cell; default 0, everywhere), or the tile is `rough`: flat ground is shaded alike at
+   * any depth. Omitted, only the error splits.
    */
   cellPixels?: { cells: number; pixels: number; minSlope?: number };
   /** the tiles split last time: one is merged back only once well under the limit */
@@ -227,7 +232,9 @@ export function selectQuadtreeTiles(
       : 0;
     const cellOver =
       cellPixels &&
-      (!cellPixels.minSlope || tile.error > (cellPixels.minSlope * cell) / 2)
+      (!cellPixels.minSlope ||
+        tile.rough ||
+        tile.error > (cellPixels.minSlope * cell) / 2)
         ? cell * scale - cellPixels.pixels
         : -Infinity;
     const cap = errorCap

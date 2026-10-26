@@ -64,7 +64,8 @@ export type SkyMoon = {
 /**
  * The stars of a {@link Sky}, out once it is dark. With an observer they are the real
  * ones, to magnitude 5, and the planets, each out as the sky darkens enough for it,
- * over faint procedural ones; without one, procedural stars.
+ * over faint procedural ones (none brighter than magnitude 6.5); without one, procedural
+ * stars.
  */
 export type SkyStars = {
   /** Default 1 */

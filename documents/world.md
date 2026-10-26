@@ -176,11 +176,11 @@ Nothing above is needed for one field. What keeps it cheap to add later:
 | 3 | **Fields placed on the Earth** ([in detail](#10-step-3-in-detail-fields-placed-on-the-earth)): `GeoFrame` (was `ReliefFrame`); a `World` holding the scene's; a `UtmArea` in another frame placed in it, on the globe with a sky; the observer's place and the relief's frame from the `World` | ✅ built (2026-10-26): a second field in UTM 32N, 123 km out, placed to about 10 cm 5 km around (ReliefTiles' `facility: 'field'`), with the sky and without |
 | 4 | **The view's origin** — reduced by step 3. Its precision comes free: three.js composes each draw's model-view matrix in 64 bits, so a placed field is as precise 300 km out as at home. Left: a level horizon far off (1.8° rolled at 200 km), which needs the world turned under the camera — every sky shader takes one `up` (`uSkyUp`) and the stage an axis-aligned box — with the host's controls moved by a callback, any controls can take. A host can level it today by setting its camera's up to the globe's there (`Globe.upAt`) | ⏸ deferred until a host flies far from its fields |
 | 5 | **The relief in its own frame** — folded into step 6. In a frame of its own the relief would part from the chosen field's UTM by the two maps' scale (UTM's 0.9996 against 1: 3 m at 8 km), right where its column meets it; laid in the chosen field's frame it meets it exactly, and a placed field's to its placement's precision | → step 6 |
-| 6 | **Tiles on the globe** ([in detail](#11-step-6-in-detail-tiles-on-the-globe)): tile keys by latitude and longitude, the relief contract unchanged (a tile asks each layer for a window of its own grid, as now); the overlays' tiles move with them, sharing the core. Everything placed by latitude and longitude on one sphere, the ellipsoid's conformal sphere matched at the chosen field; each field's column samples the relief through its transform | in progress: 6a (the geographic globe), 6b (geographic tiles) and 6c (the relief drawn from them) built 2026-10-26; 6d (the whole globe) next |
+| 6 | **Tiles on the globe** ([in detail](#11-step-6-in-detail-tiles-on-the-globe)): tile keys by latitude and longitude, the relief contract unchanged (a tile asks each layer for a window of its own grid, as now); the overlays' tiles move with them, sharing the core. Everything placed by latitude and longitude on one sphere, the ellipsoid's conformal sphere matched at the chosen field; each field's column samples the relief through its transform | ✅ built (2026-10-26) in four parts: 6a the geographic globe, 6b geographic tiles, 6c the relief drawn from them, 6d the whole globe — the Earth from 20 000 km, the far side included |
 | 7 | **Two fields:** a story with two fields in two UTM zones, the camera flying between them, either chosen: the `World`'s frame switched, a stage per field | the goal; step 3 placed the second field |
 
-Steps 1 to 3 are built, and step 6 is under way. Step 7's stage per field waits for a host
-with two fields' columns at once.
+Steps 1 to 3 and 6 are built. Step 7's stage per field waits for a host with two fields'
+columns at once.
 
 ---
 
@@ -660,8 +660,8 @@ as much. So the relief, `place`, `tangent`, `foot` and the placed fields switch 
   3 km up): `minSlope` stops both, and a geographic tile's width falls between two map
   tiles'. At the same size their errors agree (a depth-8 geographic tile, 78 km: 5.6 m; a
   depth-4 map tile, 131 km: 22.6 m). Not a fault.
-- **Not changed:** the overview past the far plane is still drawn from the map (6d);
-  `applyGlobe` stays gnomonic (no component uses it).
+- **Not changed:** `applyGlobe` stays gnomonic (no component uses it). The overview past
+  the far plane became geographic in 6d.
 - **Checked:** in ReliefTiles, Lysefjord from 948 m and the Stavanger coast and its fjords
   from 108 km, with no cracks; in FieldColumn (`WithSky`, `relief` on), the column built on
   the relief, seen through a see-through seabed, and nothing poking through an opaque
@@ -671,3 +671,59 @@ as much. So the relief, `place`, `tangent`, `foot` and the placed fields switch 
 - **Not yet checked:** pictures against the map-laid relief and the frame's cost; a seam
   at a grazing view; a dark band seen once on the horizon with the sea off (possibly
   older); `GL_INVALID_VALUE` warnings from `glGetProgramiv` at load.
+
+### 6d: the whole globe (built 2026-10-26)
+
+Decided: a world relief at 10′; the overview geographic; a minimal look from space (the
+night side dark, the sea lit where it lies), a physical atmosphere left for the 3D clouds.
+
+- **A world relief:** `etopo-2022-world`, ETOPO 2022 at 60″ read every 5th value and
+  averaged 2 × 2 to 10′ (2160 × 1080, 9.3 MB; `scripts/generate-relief.js`, a relief's
+  `stride`), first of the demo layers, the Nordic one now faded into it over 20 km.
+- **Tiles seen far off (the relief that went missing from afar):** a tile's point nearest
+  the eye was its latitude and longitude clamped apart, which east or west of the tile
+  lies tens of degrees from the nearest along the sphere, so the distance came out too
+  long and the horizon test hid tiles in view. Now `geoTileNearest` finds it on the
+  conformal sphere, where a tile is a rectangle of latitude and longitude too: on the
+  eye's meridian where the tile spans it, else on its nearer side's, at the latitude
+  nearest along it. The horizon test lets ground `high` up show past the sea's horizon as
+  far as it can (acos(R / d) + acos(R / (R + high)); it had used the height alone, which
+  hid mountains peeping over the horizon), and the frustum test pads a tile's box by the
+  sphere's bulge between its points (`Globe.sphereAt`, the CPU twin of `globeGeodetic`
+  from an offset). Tested by brute force (`tests/sky-relief-geo.test.ts`): eyes from
+  100 m to 20 000 km, tiles of every depth, each sampled densely: any of it in the frustum
+  and over the sea's sphere keeps it, and its distance is never too long. The old tests
+  failed it from 10 km up, a whole root missed from 2000 km.
+- **Across a coast, the cells:** a tile across sea level is split for its cells whatever
+  `minSlope` says (tiles.md, `rough`): from 18 000 km 24 tiles of 78 km cells, not the two
+  roots.
+- **The overview, geographic:** the first layer resampled onto longitude and latitude
+  (`resampleReliefGeographic`; the `skyRelief` generator), read where each view meets the
+  globe's sea through `globeGeographic` (GLSL, the twin of `Globe.geographic`, from the
+  globe's new `uGlobeLocation`): from anywhere with any far plane; made the first time
+  it is needed (tiles.md, [The overview](./tiles.md#the-overview)).
+- **From space** (sky.md, [From space](./sky.md#from-space-built-2026-10-26)): from 100 to
+  1000 km up the sea and the relief are shaded by where they lie, so the night side is
+  dark and the sea glints; the rim over the Earth's edge is dark over the night side; the
+  stars and the sea's layer test the camera's own horizon.
+- **The stage, to 3000 km:** its reach was the far plane; at 50 000 km its flat planes
+  claimed the whole Earth and drew nothing of it. Past 3000 km (`STAGE_REACH`) the sky
+  draws the sea.
+- **The sky's view ray** is rebuilt from NDC depth 0, not the far plane: with a far plane
+  of 50 000 km over a near one of 0.1 m, −(f + n) / (f − n) rounds to −1 in 32-bit floats,
+  the far plane's point to infinity, and the ray flipped.
+- **The light probe** keeps the last good bake over one that is not finite: a bake made as
+  the page opened with the camera in space came out NaN once, and since a probe lights the
+  next bake's seabed, every bake after it did too, and the relief went black. Why that
+  first bake fails is not found; flying up from the field never does.
+- **The `Earth` story** (ReliefTiles): a far plane of 50 000 km, the camera 20 000 km out,
+  the real sky for the date. The procedural stars under the real ones are fainter now
+  (sky.md, Stars).
+- **Seen:** the Earth from 20 000 km, lit by day, the terminator soft, the night side dark,
+  the far side (Africa, Madagascar, Antarctica) whole; from 3000 km Greenland, Iceland and
+  Scandinavia in the world's and the Nordic relief, the rim over the edge; the overview
+  past a 200 km far plane; the field from 1 km as before.
+- **Not done:** timings from space; poles and the 180th meridian close up (a world layer's
+  grid edge there takes the edge's values, no wrap, so a tile's border normals there are a
+  little off); the overview's grid crossing the 180th meridian unless it goes all the way
+  round; the sky's gradient far round the Earth at low altitude (step 4: the field's up).

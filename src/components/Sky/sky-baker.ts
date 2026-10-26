@@ -297,8 +297,9 @@ export class SkyBaker {
 
   /**
    * Film a zone and project it to spherical harmonics; the readback is asynchronous,
-   * and resolves `null` if the baker is disposed meanwhile. One at a time: they share a
-   * target.
+   * and resolves `null` if the baker is disposed meanwhile, or the bake is not finite: a
+   * probe lights the next bake's seabed, so one bad bake would poison every one after it.
+   * One at a time: they share a target.
    */
   lightProbe(
     renderer: WebGLRenderer,
@@ -310,7 +311,16 @@ export class SkyBaker {
       renderer,
       this.probeTarget,
     ).then(
-      probe => (generation === this.generation ? probe.sh : null),
+      probe =>
+        generation === this.generation &&
+        probe.sh.coefficients.every(
+          c =>
+            Number.isFinite(c.x) &&
+            Number.isFinite(c.y) &&
+            Number.isFinite(c.z),
+        )
+          ? probe.sh
+          : null,
       error => {
         if (generation === this.generation) throw error;
         return null;

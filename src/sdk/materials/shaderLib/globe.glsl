@@ -181,6 +181,37 @@ vec2 globeSphereOffset(vec3 p) {
   return vec2(atan(sinD, cosD), atan(e, q));
 }
 
+// Where the disc's centre lies on the Earth: its longitude (radians), and the conformal
+// sphere's ½ ln c.
+uniform vec2 uGlobeLocation;
+
+// WGS84's first eccentricity, and π.
+#define GLOBE_WGS84_E 0.0818191908426215
+#define GLOBE_PI 3.141592653589793
+
+// The latitude and longitude (WGS84, radians; longitude in [−π, π)) at `offset` (Δχ, ΔΛ:
+// `Globe.sphereOffset`), to metres in 32-bit floats (a kilometre or two at the poles).
+// Needs a frame.
+vec2 globeGeographicAt(vec2 offset) {
+  float n = uGlobeSphere.z;
+  float sinChi = clamp(uGlobeSphere.x * cos(offset.x) + uGlobeSphere.y * sin(offset.x), -0.9999999, 0.9999999);
+  // The conformal latitude's inverse (conformal-sphere.ts, geodeticLatitude), in 3 steps.
+  float q = (atanh(sinChi) - uGlobeLocation.y) / n;
+  float sinPhi = tanh(q);
+  for(int i = 0; i < 3; i++)
+    sinPhi = tanh(q + GLOBE_WGS84_E * atanh(GLOBE_WGS84_E * sinPhi));
+  // Δλ + (n − 1) sin Δλ, undone to first order: (n − 1)² is a few parts in 10⁸.
+  float lambda = uGlobeLocation.x + offset.y - (n - 1.0) * sin(offset.y);
+  lambda -= 2.0 * GLOBE_PI * floor((lambda + GLOBE_PI) / (2.0 * GLOBE_PI));
+  return vec2(asin(sinPhi), lambda);
+}
+
+// The latitude and longitude (radians) of the ground under `p`: the twin of
+// `Globe.geographic`. Needs a frame.
+vec2 globeGeographic(vec3 p) {
+  return globeGeographicAt(globeSphereOffset(p));
+}
+
 // Where a view from `origin` along `dir` (unit) meets the ground `below` lower — a seabed:
 // the plane `below` down over the disc, the sphere of radius R − below beyond: how far
 // along it, and 1 if it misses. A miss, or a view from inside the sphere, reports where the

@@ -91,8 +91,11 @@ invalid one (no real date, a latitude past ±90) falls back to the sky above. In
   is gone while it is below the horizon, so a night with a new moon is dark.
 - **Stars:** the 1630 stars to magnitude 5 of the Yale Bright Star Catalogue, in place,
   each in its colour (from its B-V), over the procedural stars as a faint filler for the
-  fainter ones. Each comes out as the sky darkens enough for it: the brightest a few
-  degrees after sunset, magnitude 5 once the sun is 11.5° down.
+  fainter ones: a third as bright as on their own, none brighter than magnitude 6.5, half
+  the light of the faintest real one, so the real stars, the planets, the sun and the moon
+  stand out (`SKY_STAR_FILLER`; `stars.density: 0` leaves them out). Each comes out as the
+  sky darkens enough for it: the brightest a few degrees after sunset, magnitude 5 once
+  the sun is 11.5° down.
 - **Planets:** Mercury, Venus, Mars, Jupiter and Saturn, from JPL's Keplerian elements
   (valid 1800–2050, within a fraction of a degree), as bright as they are (Saturn's rings
   aside): Venus is out by sunset. They come and go with `stars`.
@@ -270,6 +273,31 @@ sea, the scene's light and the bakes keep the sea's light.
 The bakes film near the level, so the scene's light does not change with the camera's
 height. The sea's surface is hazed; the seabed seen through cut-away water is not.
 
+### From space (built 2026-10-26)
+
+The sky's gradient, its light and the sea's shading take their elevations from the scene's
+up, the field's, and the sky's own light from the sun over the camera's horizon: right in
+the air, meaningless from space, where the view takes in the night side as well as the day
+and, round the Earth from the field, the field's up is not up. So between 100 and 1000 km
+over the air's ground (`SKY_FROM_SPACE`, `skyFromSpace`) what lies below is shaded by where
+it lies instead (`skyFromSpaceOver`):
+
+- **the sea:** dark blue as the sun lights it there, with the sun's glint off it
+  (`skySpaceSea`; `SKY_SPACE_SEA`, `SKY_SPACE_GLINT`);
+- **the relief:** its own lighting (the scene's sun on its normals), the night side's
+  ambient taken out;
+- **over both, the air** the view crosses (`skyAirHaze`, which measures the path through
+  the air from anywhere), coloured as the sky overhead and lit by the sun there
+  (`SKY_SPACE_AIR_PALE`): dark where the sun is down, down to the night's level;
+- **the rim** over the Earth's edge lit where the view passes closest to it (`skyDayAt`),
+  so it is dark over the night side;
+- **the stars and the sea's layer** test the horizon about the camera's own up and its own
+  horizon (`skyOverSeaHorizon`), so they stay right from the far side of the Earth.
+
+The deck of clouds is not drawn from above it and the band is gone above 250 km, so from
+space there are none (3D clouds would change that). Below 100 km nothing changes. A
+physical atmosphere (scattering tables) is left for the 3D clouds' work.
+
 ## The globe
 
 `globe` (default on) lets the sea, the sky and the clouds follow the Earth's curve
@@ -299,11 +327,13 @@ The camera's controls keep the scene's up, so there the horizon rolls a little. 
 view passes through the air, which darkens the sky toward space, is measured on the same
 globe, so the rim of air sits on the sea's edge.
 
-A stage reaches the camera's far plane, so it draws most of the sea in view: its geometry
+A stage reaches the camera's far plane, but no farther than 3000 km (`STAGE_REACH`), so it
+draws most of the sea in view: its geometry
 stays flat, a carrier for pixels each shaded where the view meets the globe, and beyond
 the disc it leaves the sky above the curved horizon to the background, which then draws
 the very same sea. With the camera beyond the disc its planes sink under it, so they lie
-below it however far the globe falls away. The void and the subsurface, the views from in
+below it however far the globe falls away. Past its reach the background draws the sea;
+from space, all of it (flat planes cannot stand for the globe there). The void and the subsurface, the views from in
 the water and below the seabed, and the bakes stay flat: the bakes film a level horizon, as
 a few degrees barely change the light, so climbing never bakes. Switching it only changes a
 uniform; it costs about a square root per pixel.
@@ -703,7 +733,9 @@ Transparent parts draw after all of them. It works with R3F's own render and wit
 
 ⚠️ An opaque object that writes no depth (`depthWrite: false` without `transparent`) is
 drawn over by the sky: make it transparent. The far plane assumes a standard depth
-buffer, not a reversed one.
+buffer, not a reversed one. Each layer rebuilds its view ray from a point at NDC depth 0,
+not on the far plane: with a far plane far enough from the near one (50 000 km over
+0.1 m), the far plane's point rounds to infinity in 32-bit floats and the ray flips.
 
 ⚠️ R3F applies the Canvas `gl` props again whenever the Canvas re-renders, undoing
 anything set on the renderer since. Set tone mapping that should change at runtime on
