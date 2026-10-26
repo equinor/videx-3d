@@ -18,6 +18,8 @@ import {
 } from '../../components/Sky/sky-model';
 import { DEFAULT_OCEAN_WATER_OPACITY } from '../../components/Ocean/ocean-material';
 import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../../components/Ocean/ocean-volume-material';
+import { builtInColorRamps } from '../../common/color-ramps';
+import { ContourColorMode } from '../../common/types';
 import type { ReliefLayer } from '../../sdk/geometries/relief-tiles';
 import {
   GeoFrame,
@@ -1342,13 +1344,230 @@ export function skyArgTypes({
 }
 
 /** Story args for a `SkyBoxStage`'s relief (see {@link skyReliefFromArgs}). */
-export type SkyReliefArgs = {
+export type SkyReliefArgs = SkyReliefLookArgs & {
   relief: boolean;
   /** the demo reliefs merged, by id (see {@link SKY_DEMO_RELIEF_LAYERS}) */
   reliefLayers: string[];
+};
+
+/** Story args for how a relief looks (see {@link skyReliefLookFromArgs}). */
+export type SkyReliefLookArgs = {
   reliefColor: 'flat' | 'ramp';
   reliefLandColor: string;
+  reliefRamp: string;
+  reliefRampRange: boolean;
+  reliefRampMin: number;
+  reliefRampMax: number;
+  reliefRampReverse: boolean;
+  reliefSeabed: 'sea' | 'ramp' | 'bathymetry';
+  reliefContours: boolean;
+  reliefContourInterval: number;
+  reliefContourMajor: number;
+  reliefContourThickness: number;
+  reliefContourMode: 'darken' | 'lighten' | 'mixed';
+  reliefContourFactor: number;
+  reliefContourColor: string;
+  reliefContourSeabed: boolean;
+  reliefLocalLook: boolean;
 };
+
+export const skyReliefLookArgs: SkyReliefLookArgs = {
+  reliefColor: 'flat',
+  reliefLandColor: '#34433b',
+  reliefRamp: 'terrain',
+  reliefRampRange: false,
+  reliefRampMin: 0,
+  reliefRampMax: 2000,
+  reliefRampReverse: false,
+  reliefSeabed: 'sea',
+  reliefContours: false,
+  reliefContourInterval: 100,
+  reliefContourMajor: 5,
+  reliefContourThickness: 0.8,
+  reliefContourMode: 'darken',
+  reliefContourFactor: 0.5,
+  reliefContourColor: '#000000',
+  reliefContourSeabed: true,
+  reliefLocalLook: false,
+};
+
+const RELIEF = 'Relief';
+
+/**
+ * Controls for {@link SkyReliefLookArgs}; with `shownIf`, its two switches (the colour and
+ * the contours) show only while that arg is on.
+ */
+export function skyReliefLookArgTypes(
+  shownIf?: string,
+): ArgTypes<SkyReliefLookArgs> {
+  const shown = shownIf ? { if: { arg: shownIf } } : {};
+  const ramped = { if: { arg: 'reliefColor', eq: 'ramp' } };
+  const lined = { if: { arg: 'reliefContours' } };
+  return {
+    reliefColor: {
+      control: { type: 'inline-radio' },
+      options: ['flat', 'ramp'],
+      description:
+        'The land in one colour, the seabed as the sea\u2019s; or by height through `reliefRamp`. Changing any of the look builds nothing again.',
+      table: { category: RELIEF },
+      ...shown,
+    },
+    reliefLandColor: {
+      ...color(RELIEF, 'The land\u2019s colour.'),
+      if: { arg: 'reliefColor', eq: 'flat' },
+    },
+    reliefRamp: {
+      control: { type: 'select' },
+      options: builtInColorRamps.map(ramp => ramp.name),
+      description:
+        'The colour ramp: TERRAIN (the default), ATLAS and TERRAIN-NORDIC run over heights of their own; any other over 0 to 2000 m (\u22123000 m with the seabed on it), unless `reliefRampRange` sets it.',
+      table: { category: RELIEF },
+      ...ramped,
+    },
+    reliefRampRange: {
+      ...toggle(
+        RELIEF,
+        'Set the heights the ramp runs over (`reliefRampMin`, `reliefRampMax`) instead of its own.',
+      ),
+      ...ramped,
+    },
+    reliefRampMin: {
+      ...range(
+        -11000,
+        9000,
+        10,
+        RELIEF,
+        'The height at the ramp\u2019s low end, metres.',
+      ),
+      if: { arg: 'reliefRampRange' },
+    },
+    reliefRampMax: {
+      ...range(-11000, 9000, 10, RELIEF, 'The height at its high end, metres.'),
+      if: { arg: 'reliefRampRange' },
+    },
+    reliefRampReverse: {
+      ...toggle(RELIEF, 'Run the ramp from high to low.'),
+      ...ramped,
+    },
+    reliefSeabed: {
+      control: { type: 'inline-radio' },
+      options: ['sea', 'ramp', 'bathymetry'],
+      description:
+        'The seabed: the SEA\u2019s seabed colour, darker with depth; the land\u2019s RAMP too, across both; or BATHYMETRY, a ramp of its own.',
+      table: { category: RELIEF },
+      ...ramped,
+    },
+    reliefContours: {
+      ...toggle(
+        RELIEF,
+        'Contour lines over the relief, from the sea\u2019s level.',
+      ),
+      ...shown,
+    },
+    reliefContourInterval: {
+      ...range(1, 1000, 1, RELIEF, 'Metres between contour lines.'),
+      ...lined,
+    },
+    reliefContourMajor: {
+      ...range(
+        0,
+        10,
+        1,
+        RELIEF,
+        'Every how many lines a major one, twice as wide; 0 for none.',
+      ),
+      ...lined,
+    },
+    reliefContourThickness: {
+      ...range(
+        0.1,
+        3,
+        0.1,
+        RELIEF,
+        'The lines\u2019 width, about pixels each side.',
+      ),
+      ...lined,
+    },
+    reliefContourMode: {
+      control: { type: 'inline-radio' },
+      options: ['darken', 'lighten', 'mixed'],
+      description:
+        'How a line shades the ground: DARKEN, LIGHTEN, or MIXED toward `reliefContourColor`.',
+      table: { category: RELIEF },
+      ...lined,
+    },
+    reliefContourFactor: {
+      ...range(0, 1, 0.05, RELIEF, 'How strongly a line shades.'),
+      ...lined,
+    },
+    reliefContourColor: {
+      ...color(RELIEF, 'The lines\u2019 colour, MIXED.'),
+      if: { arg: 'reliefContourMode', eq: 'mixed' },
+    },
+    reliefContourSeabed: {
+      ...toggle(RELIEF, 'Contour lines on the seabed too.'),
+      ...lined,
+    },
+    reliefLocalLook: {
+      ...toggle(
+        RELIEF,
+        'The finest layer a look of its own (`layerLooks`): a rainbow over its depths, \u2212130 to \u221260 m, and lines every 5 m, a major one every 25 m.',
+      ),
+      ...shown,
+    },
+  };
+}
+
+const CONTOUR_MODES = {
+  darken: ContourColorMode.darken,
+  lighten: ContourColorMode.lighten,
+  mixed: ContourColorMode.mixed,
+};
+
+/**
+ * A relief's `color`, `contours` and `layerLooks` from {@link SkyReliefLookArgs}, for a
+ * relief of `layers` (the last, the finest, takes `reliefLocalLook`).
+ */
+export function skyReliefLookFromArgs(
+  args: Partial<SkyReliefLookArgs>,
+  layers: ReliefLayer[],
+): Pick<SkyBoxStageRelief, 'color' | 'contours' | 'layerLooks'> {
+  const a = { ...skyReliefLookArgs, ...args };
+  const seabed =
+    a.reliefSeabed === 'bathymetry' ? { ramp: 'bathymetry' } : a.reliefSeabed;
+  const finest = layers[layers.length - 1];
+  return {
+    color:
+      a.reliefColor === 'ramp'
+        ? {
+            ramp: a.reliefRamp,
+            ...(a.reliefRampRange
+              ? { min: a.reliefRampMin, max: a.reliefRampMax }
+              : {}),
+            reverse: a.reliefRampReverse,
+            seabed,
+          }
+        : a.reliefLandColor,
+    contours: a.reliefContours && {
+      interval: a.reliefContourInterval,
+      major: a.reliefContourMajor,
+      thickness: a.reliefContourThickness,
+      colorMode: CONTOUR_MODES[a.reliefContourMode],
+      factor: a.reliefContourFactor,
+      color: a.reliefContourColor,
+      seabed: a.reliefContourSeabed,
+    },
+    layerLooks:
+      a.reliefLocalLook && finest
+        ? {
+            [finest.id]: {
+              color: { ramp: 'rainbow', min: -130, max: -60, seabed: 'ramp' },
+              contours: { interval: 5, major: 5 },
+            },
+          }
+        : undefined,
+  };
+}
 
 /**
  * The demo reliefs around the field, coarse to fine, for a relief drawn from tiles: later
@@ -1459,10 +1678,9 @@ export function skyWallDebugFromArgs(args: SkyWallDebugArgs) {
 }
 
 export const skyReliefArgs: SkyReliefArgs = {
+  ...skyReliefLookArgs,
   relief: false,
   reliefLayers: SKY_DEMO_RELIEF_LAYERS.map(layer => layer.id),
-  reliefColor: 'flat',
-  reliefLandColor: '#34433b',
 };
 
 /** Controls for {@link SkyReliefArgs}; with `shownIf`, the toggle shows only while that arg is on. */
@@ -1483,18 +1701,7 @@ export function skyReliefArgTypes(shownIf?: string): ArgTypes<SkyReliefArgs> {
       table: { category: SEA },
       if: { arg: 'relief' },
     },
-    reliefColor: {
-      control: { type: 'inline-radio' },
-      options: ['flat', 'ramp'],
-      description:
-        'The land flat, the seabed as the sea\u2019s; or the land by height, the sea\u2019s seabed darkening with depth.',
-      table: { category: SEA },
-      if: { arg: 'relief' },
-    },
-    reliefLandColor: {
-      ...color(SEA, 'The land\u2019s colour.'),
-      if: { arg: 'reliefColor', eq: 'flat' },
-    },
+    ...skyReliefLookArgTypes('relief'),
   };
 }
 
@@ -1529,9 +1736,6 @@ export const skyReliefFromArgs = (
   return {
     frame,
     layers,
-    color:
-      args.reliefColor === 'ramp'
-        ? 'ramp'
-        : (args.reliefLandColor ?? skyReliefArgs.reliefLandColor),
+    ...skyReliefLookFromArgs(args, layers),
   };
 };

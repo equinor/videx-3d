@@ -7,6 +7,7 @@ import {
   Texture,
 } from 'three';
 import { CommonComponentProps, ContourColorMode } from '../../common/types';
+import type { ColorRampRef } from '../../common/color-ramps';
 import { PointerEvents } from '../../events/interaction-events';
 import { useGenerator } from '../../hooks/useGenerator';
 import { createLayers, LAYERS } from '../../layers/layers';
@@ -28,7 +29,8 @@ export type SurfaceProps = CommonComponentProps &
   PointerEvents & {
     meta: SurfaceMeta;
     color?: string;
-    colorRamp?: number;
+    /** the colour ramp: a row of `colorRampTexture`, a ramp's name (`builtInColorRamps`, or registered), or a `ColorRamp`. Default 0, `'rainbow'` */
+    colorRamp?: ColorRampRef;
     rampMin?: number;
     rampMax?: number;
     reverseRamp?: boolean;

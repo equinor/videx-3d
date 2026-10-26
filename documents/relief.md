@@ -24,7 +24,9 @@ stand on the horizon where they should. It is off by default.
           { id: 'my-survey', feather: 500 },
         ],
         depth: 100, // the flat seabed where no layer has data; default the sea's depth
-        color: 'ramp',
+        color: { ramp: 'terrain', seabed: { ramp: 'bathymetry' } },
+        contours: { interval: 100, major: 5 },
+        layerLooks: { 'my-survey': { color: { ramp: 'rainbow', min: -130, max: -60 } } },
       }}
     />
   </Sky>
@@ -98,9 +100,7 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
   relief's `onSampler` hands out its sampler (`ReliefSampler`), which answers from the
   finest tiles in, as their triangles draw them; what is placed with it pins the finest
   tiles under it, whatever the view.
-- `color`: a colour is the land's, the seabed taking the sea's; `'ramp'` colours the land
-  by height — green lowland, umber at 600 m, grey high ground at 1500 m, eased between —
-  and darkens the sea's seabed colour with depth, to half 600 m below the sea's seabed.
+- `color` and `contours`: see [Colour and contours](#colour-and-contours).
 - The tiles miss the curved sea by up to tens of metres where they are coarse, so the
   ground's height decides which shows: seabed stays behind the sea over it, and where the
   view would meet the sea over land the land comes in front.
@@ -117,6 +117,61 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
   in the ground, for the lighting and the void.
 - `debug.hide: ['relief']` hides it, like the stage's other layers; `debug.relief`
   shows its tiles by depth (`'tiles'`) or which layer gave each node (`'layers'`).
+
+## Colour and contours
+
+How the relief looks is data, not shader code: changing any of it uploads a small table
+(`SkyReliefLooks`) and compiles nothing.
+
+- **`color`**, one of:
+  - a colour: the land flat, the seabed the sea's seabed colour. Default `#34433b`.
+  - `{ ramp, min?, max?, reverse?, seabed? }`: the ground by height, in metres from the
+    sea's level, through a colour ramp from the shared ramps (below), by name, row or a
+    `ColorRamp` of your own. `min` and `max` set the heights at its ends: by default a
+    terrain ramp's own range, else 0 to 2000 m (−3000 to 2000 m with the seabed on it). A
+    value ramp with no range of its own (`rainbow`, `jet`, …) runs as it does on a
+    `Surface`, which takes depths: from its start at the top, so a ground looks the same
+    either way. `seabed` is `'sea'` (default: the sea's seabed colour, darker with depth,
+    to half 600 m below the stage's seabed), `'ramp'` (the same ramp across land and
+    seabed alike) or a ramp of its own (`{ ramp: 'bathymetry' }`).
+  - `'ramp'`: short for `{ ramp: 'terrain' }`.
+- **`contours`**: `true`, or `{ interval?, major?, thickness?, colorMode?, factor?, color?, seabed? }`.
+  Lines every `interval` metres from the sea's level (default 100), a major one twice as
+  wide every `major`-th (default 5; 0 for none), shading the ground as a `Surface`'s do
+  (`ContourColorMode`, default darken by 0.5). On the seabed too unless `seabed: false`.
+  They fade out where they come closer than a few pixels apart, minor ones first, so a
+  distant view is no moiré. Only on the tiles: past them the overview has none.
+- **`layerLooks`**: a look of its own for a layer, by its id, `{ color?, contours? }`,
+  each falling back to the relief's. A local survey can be a rainbow over its depths with
+  5 m contours while the regional data stays a terrain ramp. Each tile node keeps the
+  layer that gave most of it (as `debug.relief: 'layers'` shows), so the look changes
+  where one layer's data takes over from another's, node by node: a hard edge, at the
+  tile's resolution. The overview takes the relief's own look. Up to 31 layers have looks
+  of their own; past that a layer takes the relief's.
+
+The colour ramps are shared with `Surface` and the seismic views
+([color-ramps.ts](../src/common/color-ramps.ts)): a texture of up to 64 rows. Rows 0–9
+are the value ramps as they always were (`rainbow`, `jet`, `portland`, `earth`, `plasma`,
+`salinity`, `seismic`, `seismic2`, `spectrum`, `gray`); then ramps by height in metres:
+`terrain` (green lowland, olive and ochre upland, brown mountains, grey rock and snow, to
+6000 m), `atlas` (an atlas's tints, to 5000 m), `terrain-nordic` (the old relief ramp, to
+1500 m) and `bathymetry` (−6000 to 0 m). `registerColorRamp` adds your own:
+
+```ts
+registerColorRamp({
+  name: 'my-ramp',
+  domain: [-200, 0], // stops in metres; without one, 0 to 1
+  interpolation: 'rgb', // default 'hcl'
+  stops: [
+    { at: -200, color: '#102040' },
+    { at: -100, color: '#2f6ea8' },
+    { at: 0, color: '#d0e8f0' },
+  ],
+});
+```
+
+A `ColorRamp` object can also be passed directly where a ramp is taken; it is registered
+the first time. `Surface.colorRamp` takes a name or a `ColorRamp` too.
 
 ## Level of detail
 

@@ -139,13 +139,7 @@ float getElevation(vec2 pos) {
 }
 
 #ifdef USE_CONTOURS
-
-float contourLine(float v) {
-  float f = abs(fract(v) - .5);
-  float df = max(0.0025, fwidth(v) * contoursThickness);
-  return smoothstep(0., df, f);
-}
-
+#include ../../../sdk/materials/shaderLib/contours.glsl
 #endif
 
 void main() {
@@ -282,16 +276,7 @@ void main() {
   #ifdef USE_CONTOURS
   float h = (depth + contoursInterval * 0.5) / contoursInterval;
 
-  float t = contourLine(h);
-
-  float colorMod = 1.;
-
-  if(contoursColorMode == 0) { // darken
-    colorMod = 1. - (1. - t) * contoursColorModeFactor;
-  } else if(contoursColorMode == 1) { // lighten
-    colorMod = 1.0 + (1. - t) * contoursColorModeFactor;
-  }
-
+  float t = contourLine(h, contoursThickness);
   #endif
 
   ReflectedLight reflectedLight = ReflectedLight(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0));
@@ -322,12 +307,7 @@ void main() {
   vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + totalEmissiveRadiance;
 
   #ifdef USE_CONTOURS
-  outgoingLight *= colorMod;
-
-  if(contoursColorMode == 2) { // mixed
-    outgoingLight = mix(outgoingLight, contoursColor, (1. - t) * contoursColorModeFactor);
-  }
-
+  outgoingLight = contourShade(outgoingLight, 1. - t, contoursColorMode, contoursColorModeFactor, contoursColor);
   #endif
 	#include <envmap_fragment>
 	#include <opaque_fragment>

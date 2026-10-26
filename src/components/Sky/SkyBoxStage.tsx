@@ -10,7 +10,6 @@ import {
 import {
   BufferGeometry,
   Camera,
-  ColorRepresentation,
   Group,
   LineBasicMaterial,
   LineSegments,
@@ -59,9 +58,13 @@ import {
   createSkyStagePlane,
   SkyStageBounds,
 } from './sky-stage';
+import {
+  ReliefColor,
+  ReliefContours,
+  ReliefLook,
+  SkyReliefLooks,
+} from './sky-relief-look';
 
-// A relief's flat land, a dark green-grey, which keeps its colour through the air.
-const RELIEF_LAND_COLOR = '#34433b';
 // The farthest from the camera the stage draws the sea, past which the sky's own does: the
 // far plane, but no farther. Its flat planes, sunk under a camera far off, cannot stand for
 // the globe much beyond; from space the sky draws all of it.
@@ -217,11 +220,21 @@ export type SkyBoxStageRelief = {
    */
   frame?: GeoFrame;
   /**
-   * `'ramp'` colours the land by height — green lowland, umber upland, grey high ground —
-   * and darkens the sea's seabed colour with depth; a colour is the land's, the seabed
-   * taking the sea's. Default `#34433b`, a dark green-grey
+   * How the land and seabed are coloured: one colour for the land, the seabed taking the
+   * sea's; or by height through a colour ramp — a terrain ramp, or any other, such as
+   * `'rainbow'` — over a range of heights, the seabed the sea's, the same ramp, or a ramp of
+   * its own (see {@link ReliefColorRamp}). `'ramp'` is `{ ramp: 'terrain' }`. Changing it
+   * builds nothing again. Default `#34433b`, a dark green-grey
    */
-  color?: 'ramp' | ColorRepresentation;
+  color?: ReliefColor;
+  /** contour lines over it (see {@link ReliefContours}); `true` for the defaults. Default none */
+  contours?: boolean | ReliefContours;
+  /**
+   * a look of its own for a layer, by its id: its `color` and `contours` where it gave the
+   * ground, over the relief's (a local survey by a rainbow and 10 m contours, say). Where
+   * layers overlap, the ground is the one that gave most of it, node by node.
+   */
+  layerLooks?: Record<string, ReliefLook>;
 };
 
 /**
@@ -314,6 +327,28 @@ export const SkyBoxStage = ({
     [minX, minZ, maxX, maxZ, extent],
   );
   useEffect(() => () => plane.dispose(), [plane]);
+
+  // The relief's looks, and its layers', as its shaders read them: a texture, so a change
+  // of colour or contours is an upload, never a new program.
+  const looks = useMemo(() => new SkyReliefLooks(), []);
+  useEffect(() => () => looks.dispose(), [looks]);
+  // Inline objects every render: compared by value.
+  const lookKey = relief
+    ? JSON.stringify([
+        relief.color,
+        relief.contours,
+        relief.layerLooks,
+        relief.layers.map(layer => layer.id),
+      ])
+    : '';
+  useEffect(() => {
+    if (!relief) return;
+    looks.update(
+      { color: relief.color, contours: relief.contours },
+      relief.layers.map(layer => relief.layerLooks?.[layer.id]),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [looks, lookKey]);
 
   // A relief covers everything, the stage's own area included, and the stage draws no
   // seabed of its own; only where the sea has one. Read in its own frame, or the World's.
@@ -436,7 +471,8 @@ export const SkyBoxStage = ({
     if (!sky) return;
     // Out to the far plane (stage-vertex keeps its vertices inside), as far as STAGE_REACH:
     // any shorter, and the scene between would show through the sky's sea, drawn on the far
-    // plane.
+    // plane. On the globe it claims nothing while the camera is off its rectangle, or on the
+    // far half of the Earth (SkyMaterial's claimStage).
     sky.setOceanStage(extent, reach);
     // Flat over the stage's whole area, so the scene and the ground about it meet level:
     // the globe's disc.
@@ -693,7 +729,7 @@ export const SkyBoxStage = ({
           sky={sky}
           reliefId={reliefId}
           generator={generator}
-          color={relief.color ?? RELIEF_LAND_COLOR}
+          looks={looks.texture}
           reach={far}
           bedDetail={bedDetail}
           skyOrder={ocean.renderOrder + 1}
@@ -707,7 +743,7 @@ export const SkyBoxStage = ({
             layers: relief.layers,
             base: -(relief.depth ?? ocean.depth),
           }}
-          color={relief.color ?? RELIEF_LAND_COLOR}
+          looks={looks.texture}
           reach={far}
           level={level}
           pixelError={relief.pixelError ?? 2}

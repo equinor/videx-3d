@@ -13,6 +13,10 @@ import {
   skyDecorators,
   skyOceanFromArgs,
   skyPropsFromArgs,
+  skyReliefLookArgs,
+  SkyReliefLookArgs,
+  skyReliefLookArgTypes,
+  skyReliefLookFromArgs,
   SKY_DEMO_BAKED_SEABED,
   SKY_DEMO_RELIEF_LAYERS,
 } from '../../storybook/components/sky-controls';
@@ -130,20 +134,20 @@ function useTileStats(shown: boolean) {
   }, []);
 }
 
-type ReliefTilesArgs = SkyArgs & {
-  relief: 'tiles' | 'none';
-  layers: string[];
-  pixelError: number;
-  cellPixels: number;
-  reliefColor: 'ramp' | 'flat';
-  baseDepth: number;
-  stageWidth: number;
-  tileStats: boolean;
-  tileDebug: 'none' | 'tiles' | 'layers';
-  panel: boolean;
-  field: 'anchored' | 'free' | 'none';
-  facility: 'field' | 'anchored' | 'free' | 'none';
-};
+type ReliefTilesArgs = SkyArgs &
+  SkyReliefLookArgs & {
+    relief: 'tiles' | 'none';
+    layers: string[];
+    pixelError: number;
+    cellPixels: number;
+    baseDepth: number;
+    stageWidth: number;
+    tileStats: boolean;
+    tileDebug: 'none' | 'tiles' | 'layers';
+    panel: boolean;
+    field: 'anchored' | 'free' | 'none';
+    facility: 'field' | 'anchored' | 'free' | 'none';
+  };
 
 /**
  * A stand-in for the field's content, flat at sea level as a field's is: a 4 km plate and
@@ -213,15 +217,15 @@ const ReliefTiles = (storyArgs: ReliefTilesArgs) => {
   const half = args.stageWidth * 500;
   const bounds: SkyStageBounds = [-half, -half, half, half];
   const onStats = useTileStats(args.tileStats && args.relief === 'tiles');
-  const color = args.reliefColor === 'ramp' ? 'ramp' : '#34433b';
+  const layers = LAYERS.filter(layer => args.layers.includes(layer.id));
   const relief: SkyBoxStageRelief | undefined =
     args.relief === 'tiles'
       ? {
-          layers: LAYERS.filter(layer => args.layers.includes(layer.id)),
+          layers,
           depth: args.baseDepth,
           pixelError: args.pixelError,
           cellPixels: args.cellPixels,
-          color,
+          ...skyReliefLookFromArgs(args, layers),
           onStats,
         }
       : undefined;
@@ -321,13 +325,7 @@ const meta = {
       table: { category: 'Relief' },
       if: { arg: 'relief', eq: 'tiles' },
     },
-    reliefColor: {
-      control: { type: 'inline-radio' },
-      options: ['ramp', 'flat'],
-      description:
-        'The land by height and the seabed darkening with depth, or the land in one colour.',
-      table: { category: 'Relief' },
-    },
+    ...skyReliefLookArgTypes(),
     baseDepth: {
       control: { type: 'range', min: 0, max: 500, step: 10 },
       description:
@@ -381,6 +379,7 @@ const meta = {
     layers: LAYERS.map(layer => layer.id).filter(id => id !== BAKED_SEABED),
     pixelError: 2,
     cellPixels: 8,
+    ...skyReliefLookArgs,
     reliefColor: 'ramp',
     baseDepth: DEPTH,
     stageWidth: 16,

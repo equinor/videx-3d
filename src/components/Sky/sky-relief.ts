@@ -1,7 +1,5 @@
 import {
   ClampToEdgeWrapping,
-  Color,
-  ColorRepresentation,
   DataTexture,
   HalfFloatType,
   LinearFilter,
@@ -9,9 +7,11 @@ import {
   RepeatWrapping,
   RGFormat,
   ShaderMaterial,
+  Texture,
   Uniform,
   Vector4,
 } from 'three';
+import { colorRampTexture } from '../../common/color-ramps';
 import type { ReliefGeoGrid } from '../../sdk/geometries/relief-grid';
 import fragmentShader from './shaders/relief-fragment.glsl';
 import skyVertexShader from './shaders/sky-vertex.glsl';
@@ -55,13 +55,14 @@ export function createSkyReliefTexture(grid: ReliefGeoGrid): DataTexture {
  * every change to the sky, its globe and its water; a change to the sky's defines needs a
  * new one.
  *
- * @param color `'ramp'` colours the land by height; a colour, the land flat
+ * @param looks the relief's looks (`SkyReliefLooks.texture`): the overview takes its own,
+ * the first
  */
 export function createSkyReliefFarMaterial(
   sky: SkyMaterial,
   texture: DataTexture,
   grid: ReliefGeoGrid,
-  color: 'ramp' | ColorRepresentation,
+  looks: Texture,
 ) {
   const defines = skyOceanDefines(sky);
   defines.RELIEF_FAR = '';
@@ -81,11 +82,8 @@ export function createSkyReliefFarMaterial(
     ),
   );
   uniforms.uReliefReach = new Uniform(1e30);
-  if (color === 'ramp') {
-    defines.RELIEF_RAMP = '';
-  } else {
-    uniforms.uReliefLandColor = new Uniform(new Color(color));
-  }
+  uniforms.uReliefLook = new Uniform(looks);
+  uniforms.uColorRamps = new Uniform(colorRampTexture);
   return new ShaderMaterial({
     vertexShader: skyVertexShader,
     fragmentShader,

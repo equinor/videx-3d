@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { DataTexture, DoubleSide, FrontSide, Texture } from 'three';
+import { ColorRampRef, resolveColorRamp } from '../../common/color-ramps';
 import { ContourColorMode } from '../../common/types';
 import { useGenerator } from '../../hooks/useGenerator';
 import {
@@ -14,7 +15,8 @@ import { SurfaceMaterial } from './SurfaceMaterial';
 /** Appearance options for {@link useSurfaceMaterial}. */
 export type SurfaceMaterialOptions = {
   color?: string;
-  colorRamp?: number;
+  /** a row of `colorRampTexture`, a ramp's name, or a `ColorRamp` (`resolveColorRamp`) */
+  colorRamp?: ColorRampRef;
   /** colour ramp lower bound. Defaults to the meta's `displayMin`. */
   rampMin?: number;
   /** colour ramp upper bound. Defaults to the meta's `displayMax`. */
@@ -137,7 +139,7 @@ export function useSurfaceMaterial(
   // --- grid uniforms (from the meta) + the reactive appearance ---------------
   useEffect(() => {
     if (!meta) return;
-    material.uniforms.colorRampIndex.value = colorRamp;
+    material.uniforms.colorRampIndex.value = resolveColorRamp(colorRamp);
     material.uniforms.opacity.value = opacity;
     material.uniforms.contoursColorMode.value = contoursColorMode;
     material.uniforms.contoursColorModeFactor.value = contoursColorModeFactor;

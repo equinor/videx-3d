@@ -1,8 +1,9 @@
 // A stage's relief (SkyBoxStage `relief`): land where it rises above the sea, seabed below
-// it, coloured flat or by height, lit by the scene's lights as the stage's seabed
-// is. The seabed is seen through the water as the stage's is; the land, and a dry seabed,
-// through the air, turning blue with distance before it fades into the horizon.
-// RELIEF_RAMP colours the land by height and darkens the seabed with depth. One of:
+// it, coloured as its look says (sky-relief-look.ts: flat, or by height through a colour
+// ramp, with contour lines), the relief's own or, from tiles, its layers', lit by the
+// scene's lights as the stage's seabed is. The seabed is seen through the water as the
+// stage's is; the land, and a dry seabed, through the air, turning blue with distance
+// before it fades into the horizon. One of:
 // RELIEF_TILES draws it from tiles (relief-tiles-vertex.glsl), which cover everything, the
 // stage's own area included; with a see-through seabed, RELIEF_STAGE_AROUND leaves that
 // area out and RELIEF_SEE_THROUGH draws it alone, at the sea's seabed opacity
@@ -28,6 +29,8 @@
 varying vec3 vViewPosition;
 #include ../../../sdk/materials/shaderLib/oit.glsl
 #endif
+#include ../../../sdk/materials/shaderLib/color-ramp.glsl
+#include ../../../sdk/materials/shaderLib/contours.glsl
 
 // The land's shine, faint: rock and soil, not water.
 #define RELIEF_LAND_SPECULAR vec3(0.02)
@@ -37,17 +40,20 @@ varying vec3 vViewPosition;
 // own colour is lost.
 #define RELIEF_AIR_SPREAD vec3(0.75, 1.0, 1.5)
 
-#ifdef RELIEF_RAMP
-// The land by height: green lowland, umber upland and grey high ground, eased between these heights.
-#define RELIEF_RAMP_LOW vec3(0.0497, 0.1022, 0.0273)
-#define RELIEF_RAMP_MID vec3(0.1845, 0.1470, 0.0844)
-#define RELIEF_RAMP_HIGH vec3(0.4851, 0.4735, 0.4342)
-#define RELIEF_RAMP_HEIGHTS vec3(0.0, 600.0, 1500.0)
-// How far below the stage's seabed the seabed's colour darkens to half.
-#define RELIEF_RAMP_DEEP 600.0
-#else
-uniform vec3 uReliefLandColor;
-#endif
+// The looks (SkyReliefLooks): a column per look, 0 the relief's own and 1 + i its layer
+// i's, of five rows:
+//   0: the land's ramp: its row of the colour ramps (-1 for a flat colour), its low and
+//      high heights, 1 to run it backwards (colorRampAt)
+//   1: the land's flat colour, linear; and how contours shade (ContourColorMode)
+//   2: the seabed's ramp, as the land's; its row -1 for the sea's seabed colour darkened
+//      with depth, -2 for it plain
+//   3: contours: metres apart (0 for none), width in pixels, every how many a major line,
+//      1 on the seabed too
+//   4: the contours' colour, linear; and how strongly they shade
+uniform highp sampler2D uReliefLook;
+uniform sampler2D uColorRamps;
+// How far below the stage's seabed the sea's seabed colour darkens to half.
+#define RELIEF_BED_DARKEN 600.0
 
 // How far from the camera the tiles draw it: past it, the stage's sea ends, and so do the tiles.
 uniform float uReliefReach;
@@ -59,19 +65,37 @@ varying vec2 vReliefPlane;
 varying vec3 vReliefUp;
 #endif
 
-vec3 reliefAlbedo(float height, float weight) {
-  #ifdef RELIEF_RAMP
-  vec3 land = mix(RELIEF_RAMP_LOW, RELIEF_RAMP_MID, smoothstep(RELIEF_RAMP_HEIGHTS.x, RELIEF_RAMP_HEIGHTS.y, height));
-  land = mix(land, RELIEF_RAMP_HIGH, smoothstep(RELIEF_RAMP_HEIGHTS.y, RELIEF_RAMP_HEIGHTS.z, height));
-  // From the stage's own seabed down, so the two meet in one colour.
-  vec3 bed = uSkyOceanBedColor * mix(1.0, 0.5, smoothstep(uSkyOceanDepth, uSkyOceanDepth + RELIEF_RAMP_DEEP, -height));
-  #else
-  vec3 land = uReliefLandColor;
+// A row of look `look` (uReliefLook).
+vec4 reliefLookRow(int look, int row) {
+  return texelFetch(uReliefLook, ivec2(look, row), 0);
+}
+
+// The colour of ground `height` metres from the sea's level by look `look`; `weight` how
+// much of the relief, against the stage's own seabed, it gets.
+vec3 reliefAlbedo(float height, float weight, int look) {
+  vec4 landRamp = reliefLookRow(look, 0);
+  vec4 bedRamp = reliefLookRow(look, 2);
+  vec3 land = landRamp.x >= 0.0 ? colorRampAt(uColorRamps, landRamp, height) : reliefLookRow(look, 1).rgb;
   vec3 bed = uSkyOceanBedColor;
-  #endif
+  if(bedRamp.x >= 0.0)
+    bed = colorRampAt(uColorRamps, bedRamp, height);
+  else if(bedRamp.x > -1.5)
+    // From the stage's own seabed down, so the two meet in one colour.
+    bed *= mix(1.0, 0.5, smoothstep(uSkyOceanDepth, uSkyOceanDepth + RELIEF_BED_DARKEN, -height));
   vec3 color = mix(bed, land, smoothstep(-1.0, 1.0, height));
   // Into the stage's own seabed where the relief eases into it; land keeps its colour.
   return mix(uSkyOceanBedColor, color, max(weight, smoothstep(-1.0, 1.0, height)));
+}
+
+// `color` with look `look`'s contour lines over it, for ground `height` metres from the
+// sea's level, `dHeight` its fwidth; on the seabed only if the look says so.
+vec3 reliefContours(vec3 color, float height, float dHeight, int look) {
+  vec4 lines = reliefLookRow(look, 3);
+  if(lines.x <= 0.0 || (height < 0.0 && lines.w < 0.5))
+    return color;
+  vec4 shade = reliefLookRow(look, 4);
+  float cover = contourCover(height, dHeight, lines.x, lines.y, lines.z);
+  return contourShade(color, cover, int(reliefLookRow(look, 1).w + 0.5), shade.w, shade.rgb);
 }
 
 // The depth of the point `t` along this pixel's view ray `dir`, as the stage writes the curved sea's.
@@ -95,16 +119,17 @@ vec3 reliefThroughAir(vec3 color, vec3 dir, float dist, float blend) {
   float haze = skyAirHaze(cameraPosition, dir, dist);
   if(haze <= 0.0)
     return color;
-  vec3 level = dir - uSkyUp * dot(dir, uSkyUp);
+  vec3 look = globeCameraLook();
+  vec3 level = dir - look * dot(dir, look);
   float n2 = dot(level, level);
   vec3 way = n2 > 1e-8 ? level * inversesqrt(n2) : uSkyEast;
   // The sky some 25 degrees up along the view's bearing.
-  vec3 blue = skySurfaceAt(normalize(way + uSkyUp * 0.47), blend, 0.0);
+  vec3 blue = skySurfaceAt(normalize(way + look * 0.47), blend, 0.0);
   vec3 horizon = skyHorizonColor(way, blend);
   float dusk = min(uSkyTwilight.x * uSkyTwilight.y, 1.0);
   float toward = pow(n2, 2.0 + 14.0 * dusk);
   if(toward < 0.999) {
-    vec3 overhead = skySurfaceAt(uSkyUp, blend, 0.0);
+    vec3 overhead = skySurfaceAt(look, blend, 0.0);
     blue = mix(overhead, blue, toward);
     horizon = mix(overhead, horizon, toward);
   }
@@ -136,7 +161,7 @@ void main() {
   vec3 dir = toPoint / max(dist, 1e-6);
   vec2 xz = vReliefPlane;
   #endif
-  float blend = max(uSkyHorizonBlend, fwidth(dot(dir, uSkyUp)));
+  float blend = max(uSkyHorizonBlend, fwidth(dot(dir, globeCameraLook())));
 
   #ifdef RELIEF_FAR
   // The slope from the map, as finely as the pixel sees the ground: degrees east and north
@@ -177,12 +202,25 @@ void main() {
   bool under = height < 0.0;
   bool water = uSkyOceanWater > 0.5;
   #ifdef RELIEF_FAR
+  // The overview is the relief's first layer: the relief's own look.
+  int look = 0;
   // The background's own sea and seabed show where the map holds nothing, or water covers it.
   if(ground.y <= 0.0 || (under && water))
     discard;
+  #else
+  // The look of the layer that gave the nearest node (the relief's own for the base, and
+  // for layers past those the table holds), and the height's footprint for the contours,
+  // before anything branches.
+  int look = reliefTileLayer();
+  look = look < textureSize(uReliefLook, 0).x ? look : 0;
+  float dHeight = fwidth(height);
   #endif
   vec3 position = (viewMatrix * vec4(world, 1.0)).xyz;
-  vec3 color = sceneBlinnPhong(reliefAlbedo(height, ground.y), under ? uSkyOceanBedSpecular : RELIEF_LAND_SPECULAR, under ? uSkyOceanBedShininess : RELIEF_LAND_SHININESS, uSkyOceanBedAmbient, position, normalize(mat3(viewMatrix) * normal));
+  vec3 color = sceneBlinnPhong(reliefAlbedo(height, ground.y, look), under ? uSkyOceanBedSpecular : RELIEF_LAND_SPECULAR, under ? uSkyOceanBedShininess : RELIEF_LAND_SHININESS, uSkyOceanBedAmbient, position, normalize(mat3(viewMatrix) * normal));
+  #ifndef RELIEF_FAR
+  // Lines over the lit ground, under the air and the water it is seen through.
+  color = reliefContours(color, height, dHeight, look);
+  #endif
   // The sky's own scale is applied to everything it draws, last; a lit surface keeps the scene's.
   color /= max(uSkyIntensity, 1e-4);
 

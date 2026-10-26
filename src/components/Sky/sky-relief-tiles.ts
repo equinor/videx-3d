@@ -1,7 +1,5 @@
 import {
   BufferAttribute,
-  Color,
-  ColorRepresentation,
   DataArrayTexture,
   DataTexture,
   DynamicDrawUsage,
@@ -17,11 +15,13 @@ import {
   RGBAFormat,
   RGFormat,
   ShaderMaterial,
+  Texture,
   Uniform,
   UnsignedByteType,
   Vector3,
   Vector4,
 } from 'three';
+import { colorRampTexture } from '../../common/color-ramps';
 import {
   buildHeightFieldIndex,
   HeightFieldIndex,
@@ -401,6 +401,8 @@ export type SkyReliefTileOccupants = {
  * inheriting the sky material's uniform objects; but its heights and normals are its
  * tiles'. A change to the sky's defines needs a new one.
  *
+ * @param looks the relief's looks (`SkyReliefLooks.texture`), the relief's own and its
+ *   layers', by the layer each node came from
  * @param stage with a see-through seabed: `'around'` leaves the stage's area
  *   (`uReliefStage`) to {@link createSkyReliefTileSeeThroughMaterial}; omitted, the
  *   tiles are drawn everywhere
@@ -409,7 +411,7 @@ export type SkyReliefTileOccupants = {
 export function createSkyReliefTileMaterial(
   sky: SkyMaterial,
   textures: SkyReliefTileTextures,
-  color: 'ramp' | ColorRepresentation,
+  looks: Texture,
   stage?: 'around',
   debug?: SkyReliefTileDebug,
   occupants?: SkyReliefTileOccupants,
@@ -445,11 +447,8 @@ export function createSkyReliefTileMaterial(
       }
     }
   }
-  if (color === 'ramp') {
-    defines.RELIEF_RAMP = '';
-  } else {
-    uniforms.uReliefLandColor = new Uniform(new Color(color));
-  }
+  uniforms.uReliefLook = new Uniform(looks);
+  uniforms.uColorRamps = new Uniform(colorRampTexture);
   return new ShaderMaterial({
     vertexShader,
     fragmentShader,

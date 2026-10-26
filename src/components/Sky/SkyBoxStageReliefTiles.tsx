@@ -1,10 +1,10 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ColorRepresentation,
   Frustum,
   InstancedBufferAttribute,
   Matrix4,
+  Texture,
   Vector4,
 } from 'three';
 import { useGenerator } from '../../hooks/useGenerator';
@@ -100,7 +100,8 @@ type SkyBoxStageReliefTilesProps = {
   /** its globe needs a frame (`Globe.setFrame`): the tiles are placed by latitude and longitude */
   sky: SkyMaterial;
   source: ReliefLayersSource;
-  color: 'ramp' | ColorRepresentation;
+  /** its looks (`SkyReliefLooks.texture`): the relief's own and its layers' */
+  looks: Texture;
   /** how far from the camera to draw it */
   reach: number;
   /** the sea's level, which heights are measured from */
@@ -156,7 +157,7 @@ export type SkyReliefTileGroundRequest = {
 export const SkyBoxStageReliefTiles = ({
   sky,
   source,
-  color,
+  looks,
   reach,
   level,
   pixelError,
@@ -192,20 +193,19 @@ export const SkyBoxStageReliefTiles = ({
   );
   useEffect(() => () => geometry.dispose(), [geometry]);
 
-  const ramp = color === 'ramp';
   const material = useMemo(
     () =>
       createSkyReliefTileMaterial(
         sky,
         textures,
-        ramp ? 'ramp' : 0,
+        looks,
         seeThrough ? 'around' : undefined,
         debug,
         occupants,
       ),
     // The seabed's detail is compiled in, from the sky's defines: a new one needs a new material.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sky, textures, ramp, bedDetail, seeThrough, debug, occupants],
+    [sky, textures, looks, bedDetail, seeThrough, debug, occupants],
   );
   useEffect(() => () => material.dispose(), [material]);
   const seeThroughMaterial = useMemo(
@@ -234,9 +234,6 @@ export const SkyBoxStageReliefTiles = ({
       stageMaxZ,
     );
   }, [material, stageMinX, stageMinZ, stageMaxX, stageMaxZ]);
-  useEffect(() => {
-    if (!ramp) material.uniforms.uReliefLandColor.value.set(color);
-  }, [material, ramp, color]);
   useEffect(() => {
     material.uniforms.uReliefReach.value = reach;
   }, [material, reach]);

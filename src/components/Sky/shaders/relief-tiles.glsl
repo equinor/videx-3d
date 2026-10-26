@@ -41,6 +41,14 @@ float reliefTileCell() {
   return vReliefTileDepthCell.y;
 }
 
+// Per node, 1 + the layer that gave most of it, or 0 for the base (sky-relief-tiles.ts).
+uniform highp sampler2DArray uReliefTileLayers;
+
+// The layer that gave the nearest node: 1 + its place among the relief's, or 0 for the base.
+int reliefTileLayer() {
+  return int(texelFetch(uReliefTileLayers, ivec3(ivec2(vReliefTileNode), int(vReliefTileSlot + 0.5)), 0).r * 255.0 + 0.5);
+}
+
 // Whether the tile has ground at or above the sea under `p`: false off the tile. Its
 // latitude taken linearly between its edges, near enough for the coast.
 bool reliefTileClearsAt(vec3 p) {
@@ -160,8 +168,6 @@ bool reliefCutAway() {
 }
 
 #if defined(RELIEF_DEBUG_TILES) || defined(RELIEF_DEBUG_LAYERS)
-uniform highp sampler2DArray uReliefTileLayers;
-
 vec3 reliefDebugHue(float t) {
   return clamp(abs(fract(t + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
 }

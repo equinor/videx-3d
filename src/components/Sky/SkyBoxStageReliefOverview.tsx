@@ -1,6 +1,6 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ColorRepresentation, Mesh } from 'three';
+import { Mesh, Texture } from 'three';
 import { precompile } from '../../rendering/precompile';
 import type { ReliefGeoGrid } from '../../sdk/geometries/relief-grid';
 import type { SkyReliefResponse } from './sky-defs';
@@ -20,7 +20,8 @@ type SkyBoxStageReliefOverviewProps = {
   reliefId: string;
   /** the `skyRelief` generator */
   generator: (id: string) => Promise<SkyReliefResponse>;
-  color: 'ramp' | ColorRepresentation;
+  /** the relief's looks (`SkyReliefLooks.texture`): the overview takes the relief's own */
+  looks: Texture;
   /** how far from the camera the tiles draw: the overview draws past it */
   reach: number;
   /** the sky's seabed detail (its key), compiled into the material with the sky's defines */
@@ -41,7 +42,7 @@ export const SkyBoxStageReliefOverview = ({
   sky,
   reliefId,
   generator,
-  color,
+  looks,
   reach,
   bedDetail,
   skyOrder,
@@ -67,23 +68,19 @@ export const SkyBoxStageReliefOverview = ({
   );
   useEffect(() => () => texture?.dispose(), [texture]);
 
-  const ramp = color === 'ramp';
   const material = useMemo(
     () =>
       grid && texture
-        ? createSkyReliefFarMaterial(sky, texture, grid, ramp ? 'ramp' : 0)
+        ? createSkyReliefFarMaterial(sky, texture, grid, looks)
         : null,
     // The seabed's detail is compiled in, from the sky's defines: a new one needs a new material.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sky, texture, grid, ramp, bedDetail],
+    [sky, texture, grid, looks, bedDetail],
   );
   useEffect(() => () => material?.dispose(), [material]);
   useEffect(() => {
     if (material) material.uniforms.uReliefReach.value = reach;
   }, [material, reach]);
-  useEffect(() => {
-    if (material && !ramp) material.uniforms.uReliefLandColor.value.set(color);
-  }, [material, ramp, color]);
   const geometry = useMemo(() => createSkyGeometry(), []);
   useEffect(() => () => geometry.dispose(), [geometry]);
 

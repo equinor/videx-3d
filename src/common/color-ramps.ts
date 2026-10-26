@@ -1,6 +1,7 @@
-import { interpolateHcl, piecewise } from 'd3-interpolate';
+import { interpolateHcl, interpolateRgb, piecewise } from 'd3-interpolate';
 import {
-  CanvasTexture,
+  Color,
+  ColorRepresentation,
   DataTexture,
   LinearFilter,
   NearestFilter,
@@ -9,8 +10,13 @@ import {
   UnsignedByteType,
 } from 'three';
 
+/** @deprecated draws a ramp onto a canvas row; see {@link ColorRamp} */
 export type RampFunction = (ctx: CanvasRenderingContext2D, y: number) => void;
 
+/**
+ * @deprecated a canvas of `ramps`, a row each; the shared {@link colorRampTexture} is built
+ * from {@link ColorRamp} data instead, and needs no DOM
+ */
 export function createColorRamps(
   ramps: RampFunction[],
   width: number,
@@ -33,7 +39,7 @@ export function createColorRamps(
   return canvas;
 }
 
-function ramp(color: (t: number) => string, n?: number): RampFunction {
+function canvasRamp(color: (t: number) => string, n?: number): RampFunction {
   return (ctx, y) => {
     const samples = n !== undefined ? n : ctx.canvas.width;
     const w = ctx.canvas.width / (samples - 1);
@@ -45,8 +51,12 @@ function ramp(color: (t: number) => string, n?: number): RampFunction {
   };
 }
 
-const interpolator = (palette: string[]) => (t: number) =>
-  piecewise(interpolateHcl, palette)(Math.min(Math.max(0, t), 1));
+const interpolator = (palette: string[]) =>
+  Object.assign(
+    (t: number) =>
+      piecewise(interpolateHcl, palette)(Math.min(Math.max(0, t), 1)),
+    { palette },
+  );
 const rainbow = interpolator([
   '#5d198e',
   '#2319a1',
@@ -308,6 +318,7 @@ const spectrum = interpolator([
 ]);
 const gray = interpolator(['#000', '#fff']);
 
+/** @deprecated the built-in ramps as functions of 0 to 1; see {@link builtInColorRamps} */
 export const colorRampInterpolators = [
   (t: number) => rainbow(1 - t),
   (t: number) => jet(1 - t),
@@ -321,37 +332,342 @@ export const colorRampInterpolators = [
   (t: number) => gray(1 - t),
 ];
 
-export const colorRamps = colorRampInterpolators.map(interp => ramp(interp));
+/** @deprecated the built-in ramps as canvas rows; see {@link builtInColorRamps} */
+export const colorRamps = colorRampInterpolators.map(interp =>
+  canvasRamp(interp),
+);
 
-const canvas = createColorRamps(colorRamps, 512);
+/**
+ * A colour stop of a {@link ColorRamp}: its colour `at` a place along the ramp, from 0 to 1,
+ * or with the ramp's `domain` a value in its units (a height in metres, say).
+ *
+ * @group Utils
+ */
+export type ColorRampStop = { at: number; color: ColorRepresentation };
 
-export const colorRampTexture = new CanvasTexture(canvas);
+/**
+ * A colour ramp: colours along a line, for mapping values to colours. Registered
+ * ({@link registerColorRamp}) it gets a row of the shared {@link colorRampTexture}, which
+ * shaders sample from 0 to 1 along it; built-in ones have rows already
+ * ({@link builtInColorRamps}).
+ *
+ * @group Utils
+ */
+export type ColorRamp = {
+  /** its name, by which it is found ({@link colorRampIndex}); registering a ramp of a name taken replaces that one */
+  name: string;
+  /** at least one, in any order */
+  stops: ColorRampStop[];
+  /**
+   * the values its stops are in, low and high: the range it is drawn over by default, which a
+   * user may stretch (a relief's `min` and `max`, say). Without one, stops are at 0 to 1.
+   */
+  domain?: [number, number];
+  /** how colours blend between stops: perceptually (`'hcl'`), or in sRGB. Default `'hcl'` */
+  interpolation?: 'hcl' | 'rgb';
+};
+
+/**
+ * A colour ramp by its row of the {@link colorRampTexture}, its name, or itself (registered
+ * the first time it is used).
+ *
+ * @group Utils
+ */
+export type ColorRampRef = number | string | ColorRamp;
+
+/** The {@link colorRampTexture}'s width: samples along a ramp. */
+export const COLOR_RAMP_WIDTH = 512;
+/** The {@link colorRampTexture}'s height: how many ramps it can hold. */
+export const COLOR_RAMP_CAPACITY = 64;
+
+// A built-in ramp of evenly spaced colours, blended in HCL, high to low as they always were.
+const paletteRamp = (
+  name: string,
+  { palette }: { palette: string[] },
+): ColorRamp => ({
+  name,
+  stops: palette.map((color, i) => ({
+    at: 1 - i / Math.max(palette.length - 1, 1),
+    color,
+  })),
+});
+
+/**
+ * The built-in colour ramps, in the {@link colorRampTexture}'s row order: the ten value
+ * ramps (rows 0 to 9, as they have always been), then ramps for the land and the seabed by
+ * height in metres:
+ * - `terrain`: green lowland, olive and ochre upland, brown mountains, grey rock and snow;
+ * - `atlas`: an atlas's tints, green through yellow and brown to white;
+ * - `terrain-nordic`: green lowland, umber upland and grey high ground by 1500 m;
+ * - `bathymetry`: the seabed, deep blue to pale toward the shore.
+ *
+ * @group Utils
+ */
+export const builtInColorRamps: readonly ColorRamp[] = [
+  paletteRamp('rainbow', rainbow),
+  paletteRamp('jet', jet),
+  paletteRamp('portland', portland),
+  paletteRamp('earth', earth),
+  paletteRamp('plasma', plasma),
+  paletteRamp('salinity', salinity),
+  paletteRamp('seismic', seismic),
+  paletteRamp('seismic2', seismic2),
+  paletteRamp('spectrum', spectrum),
+  paletteRamp('gray', gray),
+  {
+    name: 'terrain',
+    domain: [0, 6000],
+    interpolation: 'rgb',
+    stops: [
+      { at: 0, color: '#467a40' },
+      { at: 200, color: '#6a9749' },
+      { at: 600, color: '#a6a25e' },
+      { at: 1200, color: '#bb8e56' },
+      { at: 2000, color: '#916b4a' },
+      { at: 3000, color: '#857b72' },
+      { at: 4500, color: '#c2bdb6' },
+      { at: 5500, color: '#f2f2f2' },
+    ],
+  },
+  {
+    name: 'atlas',
+    domain: [0, 5000],
+    interpolation: 'rgb',
+    stops: [
+      { at: 0, color: '#6b9e52' },
+      { at: 200, color: '#a3c26a' },
+      { at: 500, color: '#e3dc96' },
+      { at: 1000, color: '#e2b46a' },
+      { at: 2000, color: '#c08650' },
+      { at: 3000, color: '#9a6a48' },
+      { at: 4000, color: '#c8b8a6' },
+      { at: 5000, color: '#ffffff' },
+    ],
+  },
+  {
+    name: 'terrain-nordic',
+    domain: [0, 1500],
+    interpolation: 'rgb',
+    stops: [
+      { at: 0, color: '#3f5a2e' },
+      { at: 600, color: '#776b52' },
+      { at: 1500, color: '#b9b7b0' },
+    ],
+  },
+  {
+    name: 'bathymetry',
+    domain: [-6000, 0],
+    interpolation: 'rgb',
+    stops: [
+      { at: -6000, color: '#0b1d4f' },
+      { at: -4000, color: '#13306d' },
+      { at: -2000, color: '#1f4f8f' },
+      { at: -1000, color: '#2f6ea8' },
+      { at: -200, color: '#4f95c2' },
+      { at: 0, color: '#8cc4dc' },
+    ],
+  },
+];
+
+const rampData = new Uint8Array(COLOR_RAMP_WIDTH * COLOR_RAMP_CAPACITY * 4);
+
+/**
+ * The colour ramps, a row each, {@link COLOR_RAMP_WIDTH} wide and {@link COLOR_RAMP_CAPACITY}
+ * high whatever is registered, so a shader's row count never changes. Sample row `i` at
+ * `(i + 0.5) / COLOR_RAMP_CAPACITY` ({@link colorRampRow}). sRGB, so it samples linear.
+ *
+ * @group Utils
+ */
+export const colorRampTexture = new DataTexture(
+  rampData,
+  COLOR_RAMP_WIDTH,
+  COLOR_RAMP_CAPACITY,
+  RGBAFormat,
+  UnsignedByteType,
+);
 colorRampTexture.magFilter = LinearFilter;
 colorRampTexture.minFilter = NearestFilter;
 colorRampTexture.flipY = false;
 colorRampTexture.generateMipmaps = false;
 colorRampTexture.colorSpace = SRGBColorSpace;
-colorRampTexture.format = RGBAFormat;
 colorRampTexture.anisotropy = 4;
 
+const registry: ColorRamp[] = [];
+const byName = new Map<string, number>();
+const byRamp = new WeakMap<ColorRamp, number>();
 const palettes = new Map<number, DataTexture>();
+const scratch = new Color();
+
+const clamp01 = (t: number) => Math.min(Math.max(t, 0), 1);
+
+// The 8-bit sRGB channels of d3's `rgb(r, g, b)`.
+function channels(css: string): [number, number, number] {
+  const m = /rgba?\((\d+(?:\.\d+)?),\s*(\d+(?:\.\d+)?),\s*(\d+(?:\.\d+)?)/.exec(
+    css,
+  );
+  if (!m) return [0, 0, 0];
+  return [Math.round(+m[1]), Math.round(+m[2]), Math.round(+m[3])];
+}
+
+// The ramp as a function of 0 to 1 giving 8-bit sRGB: its stops placed and blended once.
+function sampler(ramp: ColorRamp): (t: number) => [number, number, number] {
+  if (!ramp.stops.length)
+    throw new Error(`Colour ramp '${ramp.name}' has no stops`);
+  const [low, high] = ramp.domain ?? [0, 1];
+  const span = high - low || 1;
+  const stops = ramp.stops
+    .map(({ at, color }) => ({
+      t: clamp01((at - low) / span),
+      css: `#${scratch.set(color).getHexString()}`,
+    }))
+    .sort((a, b) => a.t - b.t);
+  const blend = ramp.interpolation === 'rgb' ? interpolateRgb : interpolateHcl;
+  const segments = stops
+    .slice(1)
+    .map((stop, i) => blend(stops[i].css, stop.css));
+  const ends = stops.map(stop => channels(blend(stop.css, stop.css)(0)));
+  return t => {
+    const at = clamp01(t);
+    if (at <= stops[0].t) return ends[0];
+    for (let i = 1; i < stops.length; i++) {
+      if (at <= stops[i].t) {
+        const width = stops[i].t - stops[i - 1].t;
+        if (width <= 0) return ends[i];
+        return channels(segments[i - 1]((at - stops[i - 1].t) / width));
+      }
+    }
+    return ends[stops.length - 1];
+  };
+}
 
 /**
- * One of the built-in colour ramps (`colorRampTexture`'s rows) as its own 1-row texture — a
- * palette for `ChunkFenceOverlay.palette`, or anything else that maps a value to a colour.
+ * The colour of `ramp` at `t`, from 0 to 1 along it (over its `domain`, with one), as 8-bit
+ * sRGB: what its row of the {@link colorRampTexture} holds there.
+ *
+ * @group Utils
+ */
+export function sampleColorRamp(
+  ramp: ColorRamp,
+  t: number,
+): [number, number, number] {
+  return sampler(ramp)(t);
+}
+
+function writeRow(index: number, ramp: ColorRamp) {
+  const at = sampler(ramp);
+  const row = index * COLOR_RAMP_WIDTH * 4;
+  for (let x = 0; x < COLOR_RAMP_WIDTH; x++) {
+    const [r, g, b] = at(x / (COLOR_RAMP_WIDTH - 1));
+    const i = row + x * 4;
+    rampData[i] = r;
+    rampData[i + 1] = g;
+    rampData[i + 2] = b;
+    rampData[i + 3] = 255;
+  }
+  colorRampTexture.needsUpdate = true;
+  const palette = palettes.get(index);
+  if (palette) {
+    (palette.image.data as Uint8Array).set(
+      rampData.subarray(row, row + COLOR_RAMP_WIDTH * 4),
+    );
+    palette.needsUpdate = true;
+  }
+}
+
+/**
+ * Give `ramp` a row of the {@link colorRampTexture}, or a ramp of its name a new look, and
+ * return its row. The same ramp object again returns at once, so a component may call it
+ * each render; to change a ramp, register a new object of the same name.
+ *
+ * @throws once the texture holds {@link COLOR_RAMP_CAPACITY} ramps
+ * @group Utils
+ */
+export function registerColorRamp(ramp: ColorRamp): number {
+  const known = byRamp.get(ramp);
+  if (known !== undefined && registry[known] === ramp) return known;
+  let index = byName.get(ramp.name);
+  if (index === undefined) {
+    index = registry.length;
+    if (index >= COLOR_RAMP_CAPACITY)
+      throw new Error(
+        `No room for colour ramp '${ramp.name}': the texture holds ${COLOR_RAMP_CAPACITY}`,
+      );
+    byName.set(ramp.name, index);
+  }
+  registry[index] = ramp;
+  byRamp.set(ramp, index);
+  writeRow(index, ramp);
+  return index;
+}
+
+for (const ramp of builtInColorRamps) registerColorRamp(ramp);
+
+/**
+ * The row of the ramp named `name` ({@link builtInColorRamps}, or registered), or -1.
+ *
+ * @group Utils
+ */
+export function colorRampIndex(name: string): number {
+  return byName.get(name) ?? -1;
+}
+
+/**
+ * The ramp at row `index`, or undefined.
+ *
+ * @group Utils
+ */
+export function colorRampOf(index: number): ColorRamp | undefined {
+  return registry[index];
+}
+
+const warned = new Set<string>();
+
+/**
+ * The row of a ramp given by row, name or itself (registering it): a row out of range is
+ * clamped into it, and an unknown name warns once and falls back to row 0.
+ *
+ * @group Utils
+ */
+export function resolveColorRamp(ref: ColorRampRef): number {
+  if (typeof ref === 'number')
+    return Math.min(Math.max(Math.round(ref), 0), registry.length - 1);
+  if (typeof ref === 'string') {
+    const index = colorRampIndex(ref);
+    if (index >= 0) return index;
+    if (!warned.has(ref)) {
+      warned.add(ref);
+      console.warn(`Unknown colour ramp '${ref}'; using '${registry[0].name}'`);
+    }
+    return 0;
+  }
+  return registerColorRamp(ref);
+}
+
+/**
+ * Where row `index` of the {@link colorRampTexture} is sampled, across it: `(index + 0.5) /`
+ * {@link COLOR_RAMP_CAPACITY}.
+ *
+ * @group Utils
+ */
+export function colorRampRow(index: number): number {
+  return (index + 0.5) / COLOR_RAMP_CAPACITY;
+}
+
+/**
+ * One of the colour ramps (`colorRampTexture`'s rows) as its own 1-row texture — a palette
+ * for `ChunkFenceOverlay.palette`, or anything else that maps a value to a colour. Kept in
+ * step when its ramp is registered anew.
  *
  * ⚠️ Shared and cached per index: do not dispose it.
  */
 export function colorRampPalette(index: number): DataTexture {
-  const row = Math.min(Math.max(Math.round(index), 0), canvas.height - 1);
+  const row = Math.min(Math.max(Math.round(index), 0), registry.length - 1);
   let palette = palettes.get(row);
   if (!palette) {
-    const pixels = canvas
-      .getContext('2d')!
-      .getImageData(0, row, canvas.width, 1).data;
+    const start = row * COLOR_RAMP_WIDTH * 4;
     palette = new DataTexture(
-      new Uint8Array(pixels),
-      canvas.width,
+      rampData.slice(start, start + COLOR_RAMP_WIDTH * 4),
+      COLOR_RAMP_WIDTH,
       1,
       RGBAFormat,
       UnsignedByteType,
@@ -364,4 +680,3 @@ export function colorRampPalette(index: number): DataTexture {
   }
   return palette;
 }
-//ramp((t) => `hsl(${(1 - t) * 360},100%,50%)`),
