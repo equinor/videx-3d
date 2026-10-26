@@ -10,24 +10,25 @@ with the sky's `globe` falls away with the Earth's curve, so coasts and mountain
 stand on the horizon where they should. It is off by default.
 
 ```tsx
-<Sky ocean={{ level: 0, depth: 120 }}>
-  <SkyBoxStage
-    bounds={[minX, minZ, maxX, maxZ]}
-    occupants={[{ outline, onStage, onGround }]}
-    relief={{
-      // the UtmArea's map; reliefFrameAt(longitude, latitude) for a scene placed by a point
-      frame: reliefFrameFromCrs(crs),
-      // coarse to fine: later layers win where they have data
-      layers: [
-        { id: 'etopo-2022-nordic' },
-        { id: 'emodnet-2020-sw-norway', feather: 1500 },
-        { id: 'my-survey', feather: 500 },
-      ],
-      depth: 100, // the flat seabed where no layer has data; default the sea's depth
-      color: 'ramp',
-    }}
-  />
-</Sky>
+<World frame={geoFrameFromCrs(crs)}>
+  <Sky ocean={{ level: 0, depth: 120 }}>
+    <SkyBoxStage
+      bounds={[minX, minZ, maxX, maxZ]}
+      occupants={[{ outline, onStage, onGround }]}
+      relief={{
+        // read in the World's frame; or a `frame` of its own (`geoFrameAt` about a point)
+        // coarse to fine: later layers win where they have data
+        layers: [
+          { id: 'etopo-2022-nordic' },
+          { id: 'emodnet-2020-sw-norway', feather: 1500 },
+          { id: 'my-survey', feather: 500 },
+        ],
+        depth: 100, // the flat seabed where no layer has data; default the sea's depth
+        color: 'ramp',
+      }}
+    />
+  </Sky>
+</World>
 ```
 
 Without a relief the stage draws a flat seabed at the sea's depth, and its occupants draw
@@ -62,13 +63,16 @@ scene and merges them, so the stage needs a `GeneratorsProvider`. Nest a second 
 around the `Sky`, on a worker of its own, and the tiles stream while a column builds on
 the other.
 
-`frame` says where the scene lies on the map: the projection it is drawn in and the map
-coordinates of its origin, as a `UtmArea` places a scene (scene X east, scene Z south).
-`reliefFrameFromCrs(crs)` gives the frame of a scene a `UtmArea` places with `crs`; with
-the same CRS, `crsOriginLocation(crs)` gives the sky's `observer` its place
-(`{ date, ...crsOriginLocation(crs) }`), so the field, the relief and the sun agree.
-`reliefFrameAt(longitude, latitude)` gives a transverse Mercator map about a point, for a
-scene placed by its longitude and latitude only.
+`frame` says where the scene lies on the map, a `GeoFrame`: the projection it is drawn in
+and the map coordinates of its origin, as a `UtmArea` places a scene (scene X east, scene Z
+south). By default it is the enclosing `World`'s, which also gives the sky's `observer` its
+place and places each field, so the fields, the relief and the sun agree from one value
+([world.md](./world.md#10-step-3-in-detail-fields-placed-on-the-earth)).
+`geoFrameFromCrs(crs)` gives the frame of a scene a `UtmArea` places with `crs`;
+`geoFrameAt(longitude, latitude)` gives a transverse Mercator map about a point, for a
+scene placed by its longitude and latitude only. The relief is laid out in that frame, the
+chosen field's, where it meets the field's column exactly; a field placed in another frame
+meets it to its placement's precision (about 10 cm 5 km around, 120 km off).
 
 ### The demo reliefs
 

@@ -33,7 +33,8 @@ import {
   PolygonDistanceField,
   polygonDistanceField,
 } from '../../sdk/geometries/polygon-distance-field';
-import type { ReliefFrame, ReliefGrid } from '../../sdk/geometries/relief-grid';
+import type { ReliefGrid } from '../../sdk/geometries/relief-grid';
+import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import type { ReliefLayer } from '../../sdk/geometries/relief-tiles';
 import type { CutUniforms } from '../../sdk/materials/fence-field';
 import type { HeightFieldClip } from '../../sdk/materials/height-field-clip';
@@ -50,7 +51,8 @@ import {
 } from './sky-relief-tiles';
 import type { ReliefSampler } from './sky-relief-sampler';
 import { useSkyOcean } from './sky-context';
-import { placeOnGlobe } from './sky-anchor';
+import { placeOnGlobe, releaseFromGlobe } from './sky-anchor';
+import { useWorld } from '../World/world-context';
 import { skyRelief, SkyReliefResponse } from './sky-defs';
 import {
   createSkyStageMaterial,
@@ -154,9 +156,9 @@ export type SkyBoxStageOccupant = {
    * The occupant's own group, which the stage places on the sky's globe (see `SkyAnchor`),
    * about the middle of its `outline` (or of `bounds` without one): for an occupant drawn
    * outside the `Sky`. On the globe's disc — the stage's own `bounds` — nothing moves; an
-   * occupant beyond it is turned onto the globe where it lies. It is set back as it was
-   * once the stage lets go of it. ⚠️ Its position and rotation are the stage's: give it a
-   * group of its own.
+   * occupant beyond it is placed onto the globe where it lies. It is set back as it was
+   * once the stage lets go of it. ⚠️ Its matrix is the stage's (its position, rotation and
+   * scale are not read meanwhile): give it a group of its own.
    */
   anchor?: RefObject<Object3D | null>;
 };
@@ -207,8 +209,12 @@ export type SkyBoxStageRelief = {
    * null once gone
    */
   onSampler?: (sampler: ReliefSampler | null) => void;
-  /** where the scene lies on the map; `reliefFrameAt` places a scene by its longitude and latitude */
-  frame: ReliefFrame;
+  /**
+   * where the scene lies on the map: default the enclosing `World`'s frame, which keeps the
+   * relief, the fields and the sun in one place. `geoFrameAt` makes one about a longitude
+   * and latitude. Without either, no relief is drawn.
+   */
+  frame?: GeoFrame;
   /**
    * `'ramp'` colours the land by height — green lowland, umber upland, grey high ground —
    * and darkens the sea's seabed colour with depth; a colour is the land's, the seabed
@@ -308,8 +314,10 @@ export const SkyBoxStage = ({
   useEffect(() => () => plane.dispose(), [plane]);
 
   // A relief covers everything, the stage's own area included, and the stage draws no
-  // seabed of its own; only where the sea has one.
-  const tiled = !!relief?.layers.length && hasBed;
+  // seabed of its own; only where the sea has one. Read in its own frame, or the World's.
+  const world = useWorld();
+  const reliefFrame = relief?.frame ?? world?.frame ?? null;
+  const tiled = !!relief?.layers.length && hasBed && !!reliefFrame;
 
   const generator = useGenerator<SkyReliefResponse>(skyRelief);
   // The first (coarsest) layer is the overview past the tiles, only while the far plane
@@ -317,7 +325,7 @@ export const SkyBoxStage = ({
   const reliefId =
     tiled && far < RELIEF_RADIUS ? (relief?.layers[0]?.id ?? null) : null;
   // By its content: a frame written inline is a new object every render.
-  const frameKey = relief ? JSON.stringify(relief.frame) : '';
+  const frameKey = reliefFrame ? JSON.stringify(reliefFrame) : '';
   const centerX = (minX + maxX) / 2;
   const centerZ = (minZ + maxZ) / 2;
   const [reliefGrid, setReliefGrid] = useState<ReliefGrid | null>(null);
@@ -329,7 +337,7 @@ export const SkyBoxStage = ({
     let current = true;
     // Out to the far plane around the scene, and past a nearer one to the horizon, where the
     // relief's far layer draws it.
-    generator(reliefId, JSON.parse(frameKey) as ReliefFrame, {
+    generator(reliefId, JSON.parse(frameKey) as GeoFrame, {
       center: [centerX, centerZ],
       radius: Math.max(far, RELIEF_RADIUS),
     }).then(grid => {
@@ -490,10 +498,7 @@ export const SkyBoxStage = ({
   const placed = useRef<Object3D[]>([]);
   useEffect(
     () => () => {
-      for (const object of placed.current) {
-        object.position.set(0, 0, 0);
-        object.quaternion.identity();
-      }
+      for (const object of placed.current) releaseFromGlobe(object);
       placed.current = [];
     },
     [anchors],
@@ -512,8 +517,7 @@ export const SkyBoxStage = ({
     });
     for (const object of placed.current) {
       if (now.includes(object)) continue;
-      object.position.set(0, 0, 0);
-      object.quaternion.identity();
+      releaseFromGlobe(object);
     }
     placed.current = now;
     // Under the seabed's level the void's lid hides the water, seabed or not: the surface
@@ -708,11 +712,11 @@ export const SkyBoxStage = ({
           visible={shown('relief')}
         />
       )}
-      {tiled && relief && sky && (
+      {tiled && relief && reliefFrame && sky && (
         <SkyBoxStageReliefTiles
           sky={sky}
           source={{
-            frame: relief.frame,
+            frame: reliefFrame,
             layers: relief.layers,
             base: -(relief.depth ?? ocean.depth),
           }}

@@ -600,22 +600,22 @@ export function skyMoonlight(elevation: number) {
 export type SkyObserver = {
   /** the moment */
   date: Date;
-  /** degrees north */
-  latitude: number;
-  /** degrees east */
-  longitude: number;
+  /** degrees north. Default the enclosing `World`'s origin's */
+  latitude?: number;
+  /** degrees east. Default the enclosing `World`'s origin's */
+  longitude?: number;
 };
 
 /** Whether a sky can be computed for `observer`: a real moment and a place on Earth. */
 export function skyObserverValid(
   observer: SkyObserver | null | undefined,
-): observer is SkyObserver {
+): observer is Required<SkyObserver> {
   return (
     !!observer &&
     observer.date instanceof Date &&
     Number.isFinite(observer.date.getTime()) &&
     Number.isFinite(observer.latitude) &&
-    Math.abs(observer.latitude) <= 90 &&
+    Math.abs(observer.latitude ?? NaN) <= 90 &&
     Number.isFinite(observer.longitude)
   );
 }

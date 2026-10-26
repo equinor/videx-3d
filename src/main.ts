@@ -35,6 +35,7 @@ export * from './components/Wellbores/WellboreLabel';
 export * from './components/Wellbores/WellboreRibbon';
 export * from './components/Wellbores/WellboreSeismicSection';
 export * from './components/Wellbores/Wells';
+export * from './components/World';
 
 export * from './contexts/DataContext';
 export * from './contexts/DataContextProvider';

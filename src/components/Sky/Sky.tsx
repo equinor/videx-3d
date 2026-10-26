@@ -28,10 +28,12 @@ import {
 } from 'three';
 import { precompile } from '../../rendering/precompile';
 import { surfaceDetailKey } from '../../sdk/materials/surface-detail';
+import { geoFrameLocation } from '../../sdk/projection/geo-frame';
 import { Vec3 } from '../../sdk/types/common';
 import { directionFromCompass } from '../../sdk/utils/vector-operations';
 import { OceanMaterial } from '../Ocean/ocean-material';
 import { applyOceanWaterProps } from '../Ocean/ocean-material-sync';
+import { useWorld } from '../World/world-context';
 import {
   createOceanContactRegistry,
   OceanContactContext,
@@ -224,9 +226,9 @@ export type SkyProps = {
   /**
    * Where and when the sky is seen from: the sun and the moon — with its phase, up by
    * day too — are then the real ones for that moment and place, and so are the stars and
-   * the planets. `sun.azimuth` and `elevation` are ignored while it is valid; without
-   * one, they set the sun, the moon is a full one opposite it and the stars are
-   * procedural.
+   * the planets. Inside a `World`, a date alone will do: the place is its origin's.
+   * `sun.azimuth` and `elevation` are ignored while it is valid; without one, they set the
+   * sun, the moon is a full one opposite it and the stars are procedural.
    */
   observer?: SkyObserver | null;
   colors?: SkyColors;
@@ -389,11 +391,23 @@ export const Sky = ({
   const sceneCamera = useThree(state => state.camera);
   const getThree = useThree(state => state.get);
 
+  // The World's place, for an observer that gives only a date.
+  const world = useWorld();
+  const worldFrame = world?.frame ?? null;
+  const worldPlace = useMemo(
+    () => (worldFrame ? geoFrameLocation(worldFrame) : null),
+    [worldFrame],
+  );
+  const located = observer && {
+    date: observer.date,
+    latitude: observer.latitude ?? worldPlace?.latitude,
+    longitude: observer.longitude ?? worldPlace?.longitude,
+  };
   // Primitives, so an observer object made each render recomputes nothing.
-  const observing = skyObserverValid(observer);
-  const observedAt = observing ? observer.date.getTime() : NaN;
-  const observedLatitude = observing ? observer.latitude : NaN;
-  const observedLongitude = observing ? observer.longitude : NaN;
+  const observing = skyObserverValid(located);
+  const observedAt = observing ? located.date.getTime() : NaN;
+  const observedLatitude = observing ? located.latitude : NaN;
+  const observedLongitude = observing ? located.longitude : NaN;
   const ephemeris = useMemo(
     () =>
       Number.isFinite(observedAt)
@@ -1081,6 +1095,13 @@ export const Sky = ({
   useLayoutEffect(() => {
     material.globeEnabled = globe;
   }, [material, globe]);
+
+  // What a World places is set on this globe.
+  const provideGlobe = world?.provideGlobe;
+  useLayoutEffect(
+    () => provideGlobe?.(material.globe),
+    [provideGlobe, material],
+  );
 
   useLayoutEffect(() => {
     if (water) material.linkOcean(water);

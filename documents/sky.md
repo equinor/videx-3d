@@ -78,7 +78,8 @@ to a quarter, as over the bright halo it would clip to a white blob twice the di
 
 `observer: { date, latitude, longitude }` (a moment, degrees north and east) makes it the
 sky over that place at that moment; `sun.azimuth` and `elevation` are then ignored. An
-invalid one (no real date, a latitude past ±90) falls back to the sky above.
+invalid one (no real date, a latitude past ±90) falls back to the sky above. Inside a
+`World`, `{ date }` will do: the place is the world's origin's (`geoFrameLocation`).
 
 - **Sun:** `solarPosition`.
 - **Moon:** where it really is (the Astronomical Almanac's low-precision series, within
@@ -307,10 +308,12 @@ the water and below the seabed, and the bakes stay flat: the bakes film a level 
 a few degrees barely change the light, so climbing never bakes. Switching it only changes a
 uniform; it costs about a square root per pixel.
 
-What is drawn flat beyond the disc goes onto the globe with a `SkyAnchor` (rigidly, about a
-point) or `applyGlobe(material, globe)` (per vertex, for what is long). `UtmPosition` and
-`Wgs84Position` place flat, at the area's Y: over the disc that is exact, but 200 km out
-what they place stands 3 km over the sea
+What is drawn flat beyond the disc goes onto the globe with a `SkyAnchor` (about a point,
+as the globe places the ground there) or `applyGlobe(material, globe)` (per vertex, for
+what is long); a field with a map of its own, another UTM zone, by its `UtmArea` in a
+`World` ([world.md](./world.md#10-step-3-in-detail-fields-placed-on-the-earth)).
+`UtmPosition` and `Wgs84Position` place flat, at the area's Y: over the disc that is
+exact, but 200 km out what they place stands 3 km over the sea
 ([world.md, For a host](./world.md#for-a-host)).
 
 ## Lighting the scene
@@ -417,7 +420,7 @@ beyond `bounds`, so every view ray that can reach the scene crosses it. With the
 globe (see The globe).
 
 ```tsx
-const relief = { frame: reliefFrameFromCrs(crs), layers: [{ id: 'etopo-2022-nordic' }] }
+const relief = { frame: geoFrameFromCrs(crs), layers: [{ id: 'etopo-2022-nordic' }] }
 const [cut, setCut] = useState<CutUniforms | null>(null)
 const [ground, setGround] = useState<HeightFieldClip | null>(null)
 const [sampler, setSampler] = useState<ReliefSampler | null>(null)
@@ -491,8 +494,8 @@ Each occupant:
   for one occupant at most, and the sky draws the void's walls through the opening.
 - `anchor` is the occupant's own group, drawn outside the `Sky`, which the stage places
   on the globe about the outline's middle (see `SkyAnchor`): over the disc, where an
-  occupant lies, that moves nothing. How the scene places itself on the
-  Earth today, and a design for more than one field, are in [world.md](./world.md).
+  occupant lies, that moves nothing. How the scene places itself on the Earth, a `World`
+  and fields in other frames are in [world.md](./world.md).
 - `onStage({ seabed, seabedOpacity, water })` tells the occupant what the stage does for
   it, whenever that changes:
   - `seabed`: the stage draws its seabed — with a relief, once the sky has compiled,

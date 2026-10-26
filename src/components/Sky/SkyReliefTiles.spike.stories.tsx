@@ -1,11 +1,10 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useThree } from '@react-three/fiber';
+import proj4 from 'proj4';
 import { useCallback, useEffect, useRef } from 'react';
-import {
-  ReliefFrame,
-  reliefFrameFromCrs,
-} from '../../sdk/geometries/relief-grid';
 import type { ReliefLayer } from '../../sdk/geometries/relief-tiles';
+import { getProjectionDefFromUtmZone } from '../../sdk/projection/crs';
+import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import {
   skyAbyssFromArgs,
   skyArgs,
@@ -26,7 +25,9 @@ import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorato
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { SkyGenerators } from '../../storybook/decorators/sky-generators';
-import { demoCrs } from '../../storybook/data/demo-crs';
+import { demoFrame } from '../../storybook/data/demo-crs';
+import { UtmArea } from '../UtmArea/UtmArea';
+import { World } from '../World/World';
 import { Sky } from './Sky';
 import { SkyAnchor } from './SkyAnchor';
 import { SkyBoxStage, SkyBoxStageRelief } from './SkyBoxStage';
@@ -39,8 +40,9 @@ import type { SkyStageBounds } from './sky-stage';
 const LEVEL = 0;
 const DEPTH = 100;
 
-// The scene at the demo field, as its `UtmArea` places it: scene X east, Z south.
-const FRAME: ReliefFrame = reliefFrameFromCrs(demoCrs);
+// The scene at the demo field, as its `UtmArea` places it: scene X east, Z south. The
+// story's `World`: the relief is read in it, and the field below placed in it.
+const FRAME: GeoFrame = demoFrame;
 
 // The generated sea bed baked into a relief (`surfaceToRelief`): a coast and an island
 // over the field, made up, to see a local layer merge.
@@ -60,6 +62,34 @@ const POSITIONS: Record<string, [number, number]> = {
   coast: [215000, -40000],
   Lysefjord: [256000, -62000],
 };
+
+// A second field over the trench, in the next UTM zone (32N), with a map of its own about
+// its point, to the metre: as a host gives a field it has data for there.
+const UTM_32N = getProjectionDefFromUtmZone('32N');
+const TRENCH_FRAME: GeoFrame = {
+  projection: UTM_32N,
+  origin: proj4(FRAME.projection, UTM_32N, [
+    FRAME.origin[0] + POSITIONS.trench[0],
+    FRAME.origin[1] - POSITIONS.trench[1],
+  ]).map(Math.round) as [number, number],
+};
+// Points on the second field's own grid, east and north of its origin, in metres.
+const TRENCH_MARKS: [number, number][] = [
+  [5000, 0],
+  [0, 5000],
+  [-5000, 0],
+  [0, -5000],
+  [3500, 3500],
+  [-3500, -3500],
+];
+// The same points as the World's map has them: its X/Z.
+const TRENCH_CHECKS = TRENCH_MARKS.map(([e, n]): [number, number] => {
+  const [x, y] = proj4(UTM_32N, FRAME.projection, [
+    TRENCH_FRAME.origin[0] + e,
+    TRENCH_FRAME.origin[1] + n,
+  ]);
+  return [x - FRAME.origin[0], FRAME.origin[1] - y];
+});
 
 /** What the tiles draw and hold, as a line of text over the canvas, bottom right. */
 function useTileStats(shown: boolean) {
@@ -112,7 +142,7 @@ type ReliefTilesArgs = SkyArgs & {
   tileDebug: 'none' | 'tiles' | 'layers';
   panel: boolean;
   field: 'anchored' | 'free' | 'none';
-  facility: 'anchored' | 'free' | 'none';
+  facility: 'field' | 'anchored' | 'free' | 'none';
 };
 
 /**
@@ -132,6 +162,52 @@ const FieldStandIn = ({ at = [0, 0] }: { at?: [number, number] }) => (
   </group>
 );
 
+/** A post `height` tall at `at`, on the sea. */
+const Post = ({
+  at,
+  width,
+  height,
+  color,
+}: {
+  at: [number, number];
+  width: number;
+  height: number;
+  color: string;
+}) => (
+  <mesh position={[at[0], height / 2, at[1]]}>
+    <boxGeometry args={[width, height, width]} />
+    <meshBasicMaterial color={color} />
+  </mesh>
+);
+
+/**
+ * The second field, drawn in its own map (UTM 32N) and placed by its `UtmArea` in the
+ * World's: the stand-in at its origin, and magenta posts on its own grid. Thin cyan posts
+ * mark the same points as the World's map has them, each anchored on the globe on its own:
+ * they run through the middle of the magenta ones where the placement is right.
+ */
+const TrenchField = () => (
+  <>
+    <UtmArea frame={TRENCH_FRAME}>
+      <FieldStandIn />
+      {TRENCH_MARKS.map(([e, n]) => (
+        <Post
+          key={`${e},${n}`}
+          at={[e, -n]}
+          width={80}
+          height={400}
+          color="#e040fb"
+        />
+      ))}
+    </UtmArea>
+    {TRENCH_CHECKS.map(at => (
+      <SkyAnchor key={at.join(',')} at={at}>
+        <Post at={at} width={20} height={700} color="#18ffff" />
+      </SkyAnchor>
+    ))}
+  </>
+);
+
 const ReliefTiles = (storyArgs: ReliefTilesArgs) => {
   const { args, timelapse } = useSkyTimelapse(storyArgs);
   const half = args.stageWidth * 500;
@@ -141,7 +217,6 @@ const ReliefTiles = (storyArgs: ReliefTilesArgs) => {
   const relief: SkyBoxStageRelief | undefined =
     args.relief === 'tiles'
       ? {
-          frame: FRAME,
           layers: LAYERS.filter(layer => args.layers.includes(layer.id)),
           depth: args.baseDepth,
           pixelError: args.pixelError,
@@ -152,7 +227,7 @@ const ReliefTiles = (storyArgs: ReliefTilesArgs) => {
       : undefined;
 
   return (
-    <>
+    <World frame={FRAME}>
       <SkyStoryRendering args={args} />
       {args.panel && (
         <SkyDebugPanel
@@ -190,7 +265,9 @@ const ReliefTiles = (storyArgs: ReliefTilesArgs) => {
           {args.facility === 'free' && <FieldStandIn at={POSITIONS.trench} />}
         </Sky>
       </SkyGenerators>
-    </>
+      {/* Outside the Sky: the World hands it the Sky's globe. */}
+      {args.facility === 'field' && <TrenchField />}
+    </World>
   );
 };
 
@@ -287,9 +364,9 @@ const meta = {
     },
     facility: {
       control: { type: 'inline-radio' },
-      options: ['anchored', 'free', 'none'],
+      options: ['field', 'anchored', 'free', 'none'],
       description:
-        'The same stand-in 123 km east, over the trench, beyond the globe\u2019s flat disc: ANCHORED in a `SkyAnchor` at its point, it stands on the sea, upright on the globe; FREE, flat as `UtmPosition` places it, it stands 1.2 km over the sea, leaning 1.1\u00b0 from the globe\u2019s up there.',
+        'Something 123 km east, over the trench, beyond the globe\u2019s flat disc. FIELD: a second field in the next UTM zone (32N), drawn in its own map and placed by its `UtmArea` in the story\u2019s `World` \u2014 the stand-in, and magenta posts 5 km out on its own grid, through which thin cyan posts run, the same points converted to the World\u2019s map and anchored one by one. ANCHORED: the stand-in in the World\u2019s map, in a `SkyAnchor` at its point: on the sea, upright on the globe. FREE: flat as `UtmPosition` places it, 1.2 km over the sea, leaning 1.1\u00b0 from the globe\u2019s up there.',
       table: { category: 'Debug' },
     },
     panel: {

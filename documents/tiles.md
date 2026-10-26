@@ -129,9 +129,9 @@ past the grid: those values are `NaN`.
 pre-cut into such blocks. A host that holds the whole grid in memory answers with
 `reliefWindow` (see [Mappers](#2-mappers)) in one line.
 
-**Where it lies in the scene.** As today: the stage's `frame` (a `ReliefFrame`) says
-where the scene lies on a map; each relief is projected from its `crs` into it with
-proj4. Scene X runs east, Z south, and heights are drawn from the sea's `level`.
+**Where it lies in the scene.** As today: the stage's `frame` (a `GeoFrame`, by default the
+`World`'s) says where the scene lies on a map; each relief is projected from its `crs` into
+it with proj4. Scene X runs east, Z south, and heights are drawn from the sea's `level`.
 
 Why a window and not a fixed tile pyramid (`level/x/y`): a window is what a WCS
 `GetCoverage` (bbox, width, height), an ERDDAP request (`[start:stride:stop]`) and cutting
@@ -864,10 +864,10 @@ type OverlayFeature = {
 };
 ```
 
-A mapper projects the rings into the relief's frame (`ReliefFrame`, a `GeoFrame` after
-world.md step 3; today the scene's) and densifies long edges first (a straight edge in
-longitude and latitude is curved in UTM). In the relief's frame, not a field's, the
-overlays' tiles share the relief's keys wherever the relief goes (world.md steps 5 and 6).
+A mapper projects the rings into the relief's frame (a `GeoFrame`; today the scene's, the
+`World`'s) and densifies long edges first (a straight edge in longitude and latitude is
+curved in UTM). In the relief's frame, not a field's, the overlays' tiles share the
+relief's keys wherever the relief goes (world.md step 6).
 Sodir's FactMaps publish fields and discoveries openly: a demo set fetched by a script, as
 the reliefs are.
 

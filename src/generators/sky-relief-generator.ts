@@ -2,10 +2,10 @@ import { transfer } from 'comlink';
 import type { SkyReliefResponse } from '../components/Sky/sky-defs';
 import type { ReadonlyStore, ReliefMeta, SurfaceMeta } from '../sdk';
 import {
-  ReliefFrame,
   ReliefResampleOptions,
   resampleRelief,
 } from '../sdk/geometries/relief-grid';
+import type { GeoFrame } from '../sdk/projection/geo-frame';
 
 /**
  * A relief — a `relief-meta` record and its `relief-values` — resampled onto a grid
@@ -20,7 +20,7 @@ import {
 export async function generateSkyRelief(
   this: ReadonlyStore,
   id: string,
-  frame: ReliefFrame,
+  frame: GeoFrame,
   options: ReliefResampleOptions,
 ): Promise<SkyReliefResponse> {
   const meta = await this.get<ReliefMeta>('relief-meta', id);

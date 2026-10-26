@@ -1,5 +1,5 @@
 import { evaluateRelief } from '../../geometries/procedural-relief';
-import type { ReliefFrame } from '../../geometries/relief-grid';
+import type { GeoFrame } from '../../projection/geo-frame';
 import type { StackSyntheticLayer } from '../../geometries/surface-stack';
 import type { ReliefMeta } from '../types/ReliefMeta';
 import { ComputedRelief, functionRelief } from './function-relief';
@@ -34,7 +34,7 @@ export type StackLayerToReliefOptions = {
  */
 export function stackLayerToRelief(
   layer: StackSyntheticLayer,
-  frame: ReliefFrame,
+  frame: GeoFrame,
   options: StackLayerToReliefOptions,
 ): ComputedRelief {
   if (layer.depth === undefined) {

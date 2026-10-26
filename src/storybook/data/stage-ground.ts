@@ -1,11 +1,11 @@
-import { ComputedRelief, functionRelief, reliefFrameAt } from '../../sdk';
+import { ComputedRelief, functionRelief, geoFrameAt } from '../../sdk';
 
 /**
  * StageDebug's synthetic ground, served by the demo store as a relief layer: rolling
  * seabed and a channel around a sea 100 m deep, so the ground rises and dips through the
  * sea's seabed, and hills well above it, all below sea level. It covers the stage, made
  * for one of `STAGE_GROUND_BASE_HALF` (16 km across) and stretched with it, and is laid
- * out in the stage's own map (`reliefFrameAt` about its place), so it is the scene's X/Z.
+ * out in the stage's own map (`geoFrameAt` about its place), so it is the scene's X/Z.
  */
 export const STAGE_GROUND_PREFIX = 'synthetic:stage-ground:';
 
@@ -63,7 +63,7 @@ export function stageGroundRelief(id: unknown): ComputedRelief | null {
     {
       id,
       name: `StageDebug ground, ${width} x ${length} km`,
-      crs: reliefFrameAt(longitude, latitude).projection,
+      crs: geoFrameAt(longitude, latitude).projection,
       grid: {
         // Map Y runs north, scene Z south.
         origin: [-halfWidth, -halfLength],

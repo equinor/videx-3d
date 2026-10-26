@@ -1,10 +1,8 @@
 import proj4 from 'proj4';
 import { describe, expect, it } from 'vitest';
 import type { SurfaceMeta } from '../src/sdk/data/types/SurfaceMeta';
-import {
-  reliefFrameAt,
-  resampleRelief,
-} from '../src/sdk/geometries/relief-grid';
+import { resampleRelief } from '../src/sdk/geometries/relief-grid';
+import { geoFrameAt } from '../src/sdk/projection/geo-frame';
 import { toHalfFloatBits } from '../src/sdk/utils/half-float';
 
 const LONLAT = '+proj=longlat +datum=WGS84 +no_defs';
@@ -62,7 +60,7 @@ function lonLatGrid(
 }
 
 // The scene centred on 2°E 58°N, in metres on a transverse Mercator map about it.
-const frame = reliefFrameAt(2, 58);
+const frame = geoFrameAt(2, 58);
 
 function texel(
   grid: NonNullable<ReturnType<typeof resampleRelief>>,

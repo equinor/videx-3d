@@ -1,12 +1,14 @@
 # World: where on Earth, and more than one field
 
-> **Status (2026-10-26): design, decisions taken; steps 1 and
-> [2](#9-step-2-in-detail-the-sky-on-a-fixed-globe) built.** How the scene places
-> itself on the Earth today, what more than one field needs, and a plan for it. The open
-> questions are settled ([Decided](#7-decided-2026-10-26)): the Earth is a fixed globe.
-> Step 2 comes before the overlays ([tiles.md](./tiles.md) step 8); the rest waits for a
-> host that needs it. Until then, [What to keep doing now](#5-what-to-keep-doing-now) is
-> what matters: small habits that keep the later steps cheap.
+> **Status (2026-10-26): design, decisions taken; steps 1,
+> [2](#9-step-2-in-detail-the-sky-on-a-fixed-globe) and
+> [3](#10-step-3-in-detail-fields-placed-on-the-earth) built.** How the scene places
+> itself on the Earth, what more than one field needs, and a plan for it. The open
+> questions are settled ([Decided](#7-decided-2026-10-26)): the Earth is a fixed globe, and
+> a `World` says once where the scene lies on it. Step 3 found the view's origin (step 4)
+> mostly unneeded and the relief's own frame (step 5) better left to step 6
+> ([Order of work](#6-order-of-work)); [What to keep doing now](#5-what-to-keep-doing-now)
+> keeps the later steps cheap.
 
 - [1. Today](#1-today)
 - [2. What more than one field needs](#2-what-more-than-one-field-needs)
@@ -17,20 +19,24 @@
 - [7. Decided (2026-10-26)](#7-decided-2026-10-26)
 - [8. Costs and risks](#8-costs-and-risks)
 - [9. Step 2 in detail: the sky on a fixed globe](#9-step-2-in-detail-the-sky-on-a-fixed-globe)
+- [10. Step 3 in detail: fields placed on the Earth](#10-step-3-in-detail-fields-placed-on-the-earth)
 
 ---
 
 ## 1. Today
 
-The scene is ONE flat frame in metres: scene X east, Y up, Z south, its origin at one
-point of one projection. Three things each say where that point is, and stories keep
-them in step by hand:
+The scene is one flat frame in metres: scene X east, Y up, Z south, its origin at one
+point of one projection. A `World` says where that point is, once, as a `GeoFrame` (a
+projection and an origin; step 3, built 2026-10-26), and what needs it takes it from there:
 
-| Who | What it is told | What it uses it for |
+| Who | What it takes from the `World` | What it uses it for |
 |--|--|--|
-| `UtmArea` | a UTM zone (or a `CRS`) and an origin | placing the data: chunks, wells, surfaces, annotations |
-| `Sky` `observer` | latitude, longitude and a date | the sun, moon, planets and stars |
-| `SkyBoxStage` `relief.frame` | a projection and an origin (`ReliefFrame`) | reading the reliefs onto the scene's X/Z |
+| `UtmArea` | the scene's frame, to place itself in: not moved in the world's own map, placed (turned, scaled, on the globe) in another | placing the data: chunks, wells, surfaces, annotations |
+| `Sky` `observer` | the origin's latitude and longitude, when it gives only a date | the sun, moon, planets and stars |
+| `SkyBoxStage` `relief.frame` | the frame itself, when it gives none | reading the reliefs onto the scene's X/Z |
+
+Without a `World` each still takes its own, as before: a `UtmArea` is then the scene's
+frame, the observer gives its place and the relief its `frame`.
 
 Above the surface the sky draws the Earth as a fixed globe (step 2, built 2026-10-26): a
 sphere whose centre lies fixed below the scene and whose cap over a disc about it (the
@@ -38,12 +44,16 @@ stage's `bounds`) is cut flat, so the scene meets the sea level and nothing rise
 as the camera moves ([Step 2 in detail](#9-step-2-in-detail-the-sky-on-a-fixed-globe)).
 Before it the sky faked the curve: flat over the disc and falling away by `½ κ d²` beyond,
 measured along each view, with the disc moved under a camera far off. The data stays flat:
-what is drawn flat beyond the disc — `UtmPosition` and `Wgs84Position` included — goes onto
-the globe with a `SkyAnchor` or `applyGlobe` ([For a host](#for-a-host)).
+a field in a frame of its own is placed on the globe by its `UtmArea`
+([Step 3 in detail](#10-step-3-in-detail-fields-placed-on-the-earth)); other content drawn
+flat beyond the disc — `UtmPosition` and `Wgs84Position` included — goes onto it with a
+`SkyAnchor` or `applyGlobe` ([For a host](#for-a-host)).
 
 Precision: the GPU works in 32-bit floats, a step of about 6 cm at 1000 km from the
-origin and 0.5 m at 8000 km. A field's data, to the centimetre near the origin, is fine;
-anything far from the origin is not, and nothing today needs it to be.
+origin and 0.5 m at 8000 km. A field's data is drawn in its own group, whose transform
+three.js composes with the camera's in 64-bit floats before it reaches the GPU, so a field
+300 km out is as precise as at home; only what a shader takes through world positions (the
+sky's own, and the wellbore ribbon's) works at the world-space step.
 
 ---
 
@@ -86,10 +96,10 @@ the sphere itself. See [Step 2 in detail](#9-step-2-in-detail-the-sky-on-a-fixed
 
 Altitude is the height over the globe, not scene Y: far from the field the two part (a
 camera at Y = 40 m, 215 km off, is 3.6 km over the sea there), and so does the camera's
-own up from the scene's. The relief's tiles are read in a frame of their own (a projection
-chosen for the region, as `ReliefFrame` is now; for the whole globe, tiles by latitude and
-longitude) and placed on the globe. The sun and the stars need the camera's latitude and
-longitude, which the Earth layer knows.
+own up from the scene's. The relief's tiles are read in a frame of a region (the chosen
+field's, the `World`'s, as now; for the whole globe, tiles by latitude and longitude) and
+placed on the globe. The sun and the stars need a latitude and longitude, which the
+`World` gives.
 
 ### Fields
 
@@ -114,24 +124,25 @@ floats, and only the result reaches the GPU.
 ### Where on Earth, in one place
 
 One value says where a frame is: a projection and an origin, a `GeoFrame`. `UtmArea`'s
-CRS, the relief's `ReliefFrame` and the sky's observer are all derived from it — the
-observer's latitude and longitude being the origin's, or the camera's once it travels.
+CRS, the relief's frame and the sky's observer are all derived from it — the observer's
+latitude and longitude being the origin's. Built in step 3: the `World` component holds
+the scene's ([Step 3 in detail](#10-step-3-in-detail-fields-placed-on-the-earth)).
 
 ---
 
 ## 4. What changes, part by part
 
-| Part | Today | With the proposal |
+| Part | Before step 3 | Now (step 3), and later |
 |--|--|--|
-| `UtmArea` | the scene's frame, at the world origin; `UtmPosition` and `Wgs84Position` flat ([For a host](#for-a-host)) | one field's frame, a group placed by its transform; takes a `GeoFrame`; nested `UtmPosition`, picking and annotations unchanged |
+| `UtmArea` | the scene's frame, at the world origin; `UtmPosition` and `Wgs84Position` flat ([For a host](#for-a-host)) | ✅ one field's frame: takes a `GeoFrame` (`frame`), and in a `World` with another frame places itself (`placeGeoFrame`, `geoFrameMatrix`); nested `UtmPosition`, picking and annotations unchanged; `worldToUtm` through its whole transform |
 | Chunks, wells, surfaces | in `UtmArea` | unchanged, inside their field's `UtmArea` |
-| `SkyAnchor` | places flat content on the globe, where it is (step 2) | becomes the field's placement on the Earth |
-| Sky curve | a fixed globe, its cap over the chosen field cut flat (step 2) | the same, the globe placed from the chosen field's `GeoFrame` |
-| Sky observer | given by the host | derived from the camera's place on the Earth, the date still given |
-| Relief | read in the stage's `frame`, the scene's | read in a relief frame of its own, placed on the globe; independent of the chosen field |
+| `SkyAnchor` | places flat content on the globe, where it is, rigidly (step 2) | ✅ places as the globe places the ground there (`Globe.tangent`), as a placed `UtmArea` is; for content without a frame of its own; takes the `World`'s globe outside the `Sky` |
+| Sky curve | a fixed globe, its cap over the chosen field cut flat (step 2) | the same; its disc from the chosen field's stage |
+| Sky observer | given by the host | ✅ its place from the `World`'s origin when it gives only a date; the date the host's |
+| Relief | read in the stage's `frame`, the scene's | ✅ the `World`'s frame by default, the chosen field's, where its column meets it exactly; its own frame waits for step 6 |
 | Relief tiles | keyed in the frame's X/Z, roots of 2097 km about its origin | keyed by latitude and longitude for the whole globe (step 6); until then as now, within one region |
-| `SkyBoxStage` | one stage, one occupant, at the scene's frame | one stage per field: its `bounds` in the field's frame, its seabed and cut on the field's transform |
-| Bridge (relief → chunk) | relief and column in the same frame | the column samples the relief in its field's frame: a transform between the two frames, which `reliefSource` carries |
+| `SkyBoxStage` | one stage, one occupant, at the scene's frame | as before, at the chosen field; a stage per field is step 7's |
+| Bridge (relief → chunk) | relief and column in the same frame | the same for the chosen field; a column in a placed field samples the relief through a transform, with step 6 |
 
 ---
 
@@ -140,15 +151,16 @@ observer's latitude and longitude being the origin's, or the camera's once it tr
 Nothing above is needed for one field. What keeps it cheap to add later:
 
 - **Ask "where" in one place.** New code that needs a latitude, a projection or an origin
-  derives it from the field's CRS (`crsOriginLocation`, `reliefFrameFromCrs`; see
-  [Order of work](#6-order-of-work), step 1), not from a prop of its own.
+  takes it from the `World`'s `GeoFrame` (`useWorld`, `geoFrameLocation`), or a field's
+  (`UtmAreaContext.frame`), not from a prop of its own.
 - **Measure from a frame given, never from world 0.** Everything above the surface
   already does (the sky, the relief's curve, the tiles' selection); after step 2 the
   globe's centre is one such frame, and nothing measures the curve from the camera.
-- **Keep a field's content under one group.** The anchor is that group today; tomorrow it
-  is the field's transform.
+- **Keep a field's content under its `UtmArea`.** Its group is the field's transform.
 - **Keep the relief's frame apart from the field's.** The tiles are built in the relief's
   frame; the column reads the relief through the bridge, which may then carry a transform.
+- **Draw through the model-view matrix.** A shader that goes through world positions
+  loses the precision a placed field keeps (see [Today](#1-today)).
 - **No scene-wide constants for a place.** Not in shaders (a uniform per frame instead),
   not in stories (one place per story).
 
@@ -158,16 +170,16 @@ Nothing above is needed for one field. What keeps it cheap to add later:
 
 | # | Step | Ends with |
 |--|--|--|
-| 1 | **One place for where:** sdk helpers that derive the relief's frame (`reliefFrameFromCrs`) and the sky's observer place (`crsOriginLocation`) from the CRS a `UtmArea` is given; the sky stories take all three from one CRS (`demoCrs`) | ✅ built (2026-10-25) |
+| 1 | **One place for where:** sdk helpers that derive the relief's frame and the sky's observer place from the CRS a `UtmArea` is given; the sky stories take all three from one CRS (`demoCrs`) | ✅ built (2026-10-25); the helpers became `geoFrameFromCrs` and `geoFrameLocation` in step 3 |
 | 2 | **The sky on a fixed globe** ([in detail](#9-step-2-in-detail-the-sky-on-a-fixed-globe)): the sea, the horizon, the air and the clouds on a sphere fixed below the chosen field, flat over its disc; the relief and anchored content placed on it with no camera in the sum; `followFlatSea` and `followAway` go | ✅ built (2026-10-26): the same pictures at one field, nothing moving anywhere, at 0–1 ms a frame over the sea (2e) |
-| 3 | **Fields placed on the Earth:** a field's transform from its frame; `SkyAnchor` becomes it. `GeoFrame`: `ReliefFrame` becomes it, `UtmArea` takes one, a `CRS` is built from one | one field, through the new path |
-| 4 | **The view's origin:** re-based in steps; transforms composed in 64 bits. The world moves under the camera, never the camera's controls: at each step the view's frame becomes the one under the camera, its up away from the globe's centre, and the host is told (a callback with the step's transform) to set its controls' position and target to the moved ones, which any controls can. Ready-made for drei's `CameraControls`, which the stories use; a host that does not take it keeps the scene's up, and the horizon tilts far off | a camera 1000 km out with a field's data as precise as at home, and a level horizon |
-| 5 | **The relief in its own frame:** drawn on the globe, read by each field's column through the bridge with a transform | the relief independent of the chosen field |
-| 6 | **Tiles on the globe:** tile keys by latitude and longitude, the relief contract unchanged (a tile asks each layer for a window of its own grid, as now); the overlays' tiles move with them, sharing the core | a view of the whole globe |
-| 7 | **Two fields:** a story with two fields in two UTM zones, the camera flying between them, either chosen | the goal |
+| 3 | **Fields placed on the Earth** ([in detail](#10-step-3-in-detail-fields-placed-on-the-earth)): `GeoFrame` (was `ReliefFrame`); a `World` holding the scene's; a `UtmArea` in another frame placed in it, on the globe with a sky; the observer's place and the relief's frame from the `World` | ✅ built (2026-10-26): a second field in UTM 32N, 123 km out, placed to about 10 cm 5 km around (ReliefTiles' `facility: 'field'`), with the sky and without |
+| 4 | **The view's origin** — reduced by step 3. Its precision comes free: three.js composes each draw's model-view matrix in 64 bits, so a placed field is as precise 300 km out as at home. Left: a level horizon far off (1.8° rolled at 200 km), which needs the world turned under the camera — every sky shader takes one `up` (`uSkyUp`) and the stage an axis-aligned box — with the host's controls moved by a callback, any controls can take. A host can level it today by setting its camera's up to the globe's there (`Globe.upAt`) | ⏸ deferred until a host flies far from its fields |
+| 5 | **The relief in its own frame** — folded into step 6. In a frame of its own the relief would part from the chosen field's UTM by the two maps' scale (UTM's 0.9996 against 1: 3 m at 8 km), right where its column meets it; laid in the chosen field's frame it meets it exactly, and a placed field's to its placement's precision | → step 6 |
+| 6 | **Tiles on the globe:** tile keys by latitude and longitude, the relief contract unchanged (a tile asks each layer for a window of its own grid, as now); the overlays' tiles move with them, sharing the core. Near the chosen field the tiles laid in its frame, so its column meets the relief exactly; each field's column samples the relief through its transform | a view of the whole globe, the relief independent of the chosen field |
+| 7 | **Two fields:** a story with two fields in two UTM zones, the camera flying between them, either chosen: the `World`'s frame switched, a stage per field | the goal; step 3 placed the second field |
 
-Step 2 comes first. Steps 3 to 5 and 7 wait for a host that needs more than one field;
-step 6 for one that needs to see beyond one region (about 2000 km).
+Steps 1 to 3 are built. Step 6 waits for a host that needs to see beyond one region (about
+2000 km), step 7's stage per field for a host with two fields' columns at once.
 
 ---
 
@@ -178,10 +190,11 @@ step 6 for one that needs to see beyond one region (about 2000 km).
   point lies depending on where the camera is, and cannot hold tiles by latitude and
   longitude in fixed places.
 - **Names:** `GeoFrame` for where a flat frame lies on the Earth: a projection and an
-  origin, plain data, so a worker can read it. `ReliefFrame` becomes it, a `CRS` can be
-  built from one, and `UtmArea` takes one (step 3). The globe's shape and its placement
-  are an sdk piece of their own, `Globe` (step 2), which the sky owns and anything else
-  can take. A component for the Earth layer comes only with the view's origin (step 4).
+  origin, plain data, so a worker can read it. `ReliefFrame` became it, a `CRS` is built
+  from one (`crsFromGeoFrame`), and `UtmArea` takes one (step 3). The globe's shape and its
+  placement are an sdk piece of their own, `Globe` (step 2), which the sky owns and
+  anything else can take. The component that says where the scene lies is `World`
+  (step 3; decided then, rather than with the view's origin).
 - **The whole globe:** tiles by latitude and longitude, as Cesium's and most globes' are,
   with the relief contract unchanged — a tile asks each layer for a window of its own
   grid, as now (step 6). Until then, one regional frame: a projection for a region (a UTM
@@ -195,8 +208,13 @@ step 6 for one that needs to see beyond one region (about 2000 km).
 - **The date** stays the host's, as the sky observer's is.
 - **`UtmPosition` and `Wgs84Position` stay flat** for now: they place at the area's
   Y = `altitude`, as before, and far from the field what they place stands off the curved
-  sea; the behaviour is documented ([For a host](#for-a-host)) rather than changed. To
-  revisit with step 3, where `UtmArea` becomes a field's transform.
+  sea; the behaviour is documented ([For a host](#for-a-host)) rather than changed. Since
+  step 3 a field far off has a `UtmArea` of its own, placed on the globe, and what it
+  places stands on the globe there.
+
+- **Step 3 in one go, with what of 4, 5 and 7 comes with it** (2026-10-26): the view's
+  origin deferred, its precision found free; the relief kept in the chosen field's frame
+  until step 6; a second field placed in the ReliefTiles story.
 
 - **The camera's controls are never changed by the library,** as a host may use any.
   Step 2 leaves the camera to them, in scene units with the scene's up; step 4 moves the
@@ -208,8 +226,8 @@ step 6 for one that needs to see beyond one region (about 2000 km).
 
 ## 8. Costs and risks
 
-- **Rebasing:** each step of the view's origin touches every field's transform and the
-  sky's uniforms — a handful of matrices, once in 10 km.
+- **Rebasing** (step 4, deferred): each step of the view's origin would touch every
+  field's transform and the sky's uniforms — a handful of matrices, once in 10 km.
 - **The exact curve per pixel:** a sphere's intersection costs a square root, as today's
   curve does; no change. The sea's normals become exact (from the centre), which drops
   the tilt today's curve adds.
@@ -219,9 +237,12 @@ step 6 for one that needs to see beyond one region (about 2000 km).
   [Step 2 in detail](#the-globe-in-32-bit-floats)).
 - **Two frames meeting:** where two fields' frames overlap, their data disagree by the
   projections' difference; each field is drawn in its own, and the sea and relief in the
-  Earth's.
+  chosen field's. A field placed in it meets them to its placement's precision: about
+  10 cm 5 km around its origin in the next UTM zone 120 km off, 40 cm at 10 km, growing
+  with the square of the distance from its origin
+  ([Step 3 in detail](#10-step-3-in-detail-fields-placed-on-the-earth)).
 - **Data far from any frame:** the relief already lives far from the field (hundreds of km);
-  with the view's origin near the camera it gets more precise, not less.
+  a field placed far off keeps its precision, its transform composed in 64 bits.
 
 ---
 
@@ -246,8 +267,9 @@ shaders bind its uniforms. What else is placed on the globe — the relief, a ro
 an anchored field — takes a `Globe`, not a `SkyMaterial`.
 
 So a host can place Earth-referenced data on the globe without a `Sky`, by making a
-`Globe` and setting its disc; until step 3 there is no component for it. Without a globe,
-nothing curves: see [With and without a sky](#with-and-without-a-sky).
+`Globe` and setting its disc. Without a globe, nothing curves: see
+[With and without a sky](#with-and-without-a-sky). Since step 3 a `Sky` in a `World` hands
+the world its globe, and what the world places is set on it.
 
 Built (2a, 2026-10-26): `new Globe(radius = EARTH_RADIUS)`; `enabled`, `level`,
 `setUp(up)`, `setDisc(bounds | null)`; read only `discCentre`, `discRadius`, `centre`,
@@ -362,10 +384,14 @@ planes face up).
   at map X/Z, to place a camera or a target; the stories' `videx3d` bridge gets the same
   (`videx3d.globe`). A helper only: the library never moves the camera.
 - **The horizon tilts far off.** The camera's controls keep the scene's up, so at 200 km
-  a view across the direction to the field shows the horizon rolled by 1.8°. Step 4
-  levels it without touching the controls (see [Order of work](#6-order-of-work)).
-- **Content beyond the disc drawn flat** still needs a `SkyAnchor` or `applyGlobe`, as
-  before, but it no longer moves as the camera does.
+  a view across the direction to the field shows the horizon rolled by 1.8°. A host can
+  level it by setting its camera's up to the globe's there (`globe.upAt`); step 4 would
+  level it without touching the controls, deferred (see [Order of work](#6-order-of-work)).
+- **A field with a map of its own** (another UTM zone, a field far off) goes in a
+  `UtmArea` of its own inside the `World`, which places it on the globe
+  ([Step 3 in detail](#10-step-3-in-detail-fields-placed-on-the-earth)).
+- **Other content beyond the disc drawn flat** still needs a `SkyAnchor` or `applyGlobe`,
+  as before, but it no longer moves as the camera does.
 - **`UtmPosition` and `Wgs84Position` are flat** (decided, [above](#7-decided-2026-10-26)):
   `altitude` is the area's Y. Over the disc that is exact. Beyond it what they place stands
   off the sea by `(d² − r²) / 2R` at `d` from the disc's middle — for a disc of 10 km about
@@ -381,10 +407,11 @@ planes face up).
 
 ### With and without a sky
 
-Either way the data stays flat in its field's frame. A `GeoFrame` (step 3; a `CRS` until
-then) converts what arrives in another projection — a pipeline in latitude and longitude,
-a facility in another UTM zone — into that frame, and that is all it does. The globe is a
-way of drawing, applied on top.
+Either way the data stays flat in its field's frame. A `GeoFrame` (step 3) says where that
+frame lies on the Earth; a field in another one — a facility in another UTM zone — is
+placed by its `UtmArea` in the `World`, flat without a sky and on the globe with one. What
+arrives in another projection as single points — a pipeline in latitude and longitude — is
+converted into the field's frame. The globe is a way of drawing, applied on top.
 
 - **Without a sky** there is usually no globe, and nothing curves. The frame is consistent
   with itself: a pipeline, a facility and a seabed surface agree wherever they are, and a
@@ -392,8 +419,9 @@ way of drawing, applied on top.
   something curved — the sea's horizon, a regional relief — and without a sky neither is
   drawn. A host that wants it curved anyway makes a `Globe` (above).
 - **With a sky** the sea and the relief are on its globe. What is Earth-referenced and
-  lies beyond the disc goes onto the same globe (`applyGlobe` per vertex, `SkyAnchor`
-  rigidly), or it floats over the sea far off (3 km at 200 km).
+  lies beyond the disc goes onto the same globe (a field's `UtmArea` in a `World`,
+  `SkyAnchor` about a point, `applyGlobe` per vertex), or it floats over the sea far off
+  (3 km at 200 km).
 - **Over the chosen field's disc** the globe is the field's plane: a field-scale scene is
   the same with a sky or without.
 
@@ -421,3 +449,88 @@ way of drawing, applied on top.
 | 2c | **Far off:** the tiles' selection and culling on the globe, the farthest seen, the ground under the camera | ✅ built with 2b: the ground under the camera at its foot (`Globe.foot`), the farthest seen from its altitude, boxes from corners placed on the globe. By eye at the coast and Lysefjord; the orbit and the timings in 2d |
 | 2d | **For a host:** `globe.place` in the stories and `videx3d.globe`, their far poses; sky.md (the curve, `SkyAnchor`, the globe), tiles.md's curve section, relief.md; the timings | ✅ built (2026-10-26): `videx3d.globe` (`place`, `foot`, `altitude`, `up`, `orbit` about a point on the globe), shared with the debug panel; ReliefTiles' `facility`, a stand-in 123 km out, anchored or flat; `UtmPosition` and `Wgs84Position` documented ([For a host](#for-a-host)); the documents. Nothing moving: orbiting the coast 215 km out at 20 and 40 km, the globe's uniforms are the same from every pose and the coast holds. ⚠️ **Timed** A/B/A against 2a in ReliefTiles (GPU ms, frame and the background's draws): 40 m over Volve 12.1 → 14.9–16.7 (2.6 → 3.9–6.4), 100 km 14.5 → 17.3 (2.9 → 5.5), the coast 12.9 → 17.3–22.9 (2.5 → 4.1–5.2), Lysefjord 10.7 → 14.6 (3.8 → 6.0); the relief +0.5–2 ms, the stage +0.6–1.2; in the water and below the seabed the same or less. With the globe off the two match within noise, so it is the globe's own arithmetic per pixel: the camera's altitude and horizon about 20 times a pixel in the sky, each with a square root, and the relief's up and map point per pixel. Not within noise, as expected: taken back in 2e |
 | 2e | **The globe's cost:** the camera's values per draw, not per pixel ([The camera, once per draw](#the-camera-once-per-draw)); the relief's up per vertex; the horizon, the lowest point a view passes and where it meets the sea each taken once per pixel | ✅ built (2026-10-26). The same pictures as 2d within a level (the air's rise, now to second order). Timed A/B/A against 2a in ReliefTiles, at a smaller window than 2d's (GPU ms, frame; the background, the relief and the stage): 40 m over Volve 8.4 → 9.1–9.2 (the background 1.9 → 2.3, the relief and the stage the same); 2 km, 30° down, the same; 100 km 8.8 → 9.5 (background +0.6, relief +0.3, stage +0.1); the coast 8.7 → 9.8 (+0.65, +0.3, +0.1); Lysefjord 8.8 → 8.2–8.8; in the water and below the seabed the same. So 0–1 ms over the sea, down from 2–4, and none of it below: what is left is the sphere's own per pixel, mostly in the background |
+
+---
+
+## 10. Step 3 in detail: fields placed on the Earth
+
+> Built (2026-10-26).
+
+### Where the scene lies, once
+
+```tsx
+<World frame={geoFrameFromCrs(crs)}>
+  <Sky observer={{ date }} ocean>
+    <SkyBoxStage bounds={bounds} relief={{ layers }} />
+  </Sky>
+  <UtmArea crsInstance={crs} origin={crs.originUtm}>{field}</UtmArea>
+  <UtmArea frame={{ projection: utm32, origin: [e, n] }}>{other}</UtmArea>
+</World>
+```
+
+- **`GeoFrame`** (`sdk/projection/geo-frame.ts`, free of three.js): `{ projection, origin,
+  offset? }`, what `ReliefFrame` was. `geoFrameAt(longitude, latitude)` (a transverse
+  Mercator map about a point), `geoFrameFromCrs(crs)`, `crsFromGeoFrame(frame)`,
+  `geoFrameLocation(frame)` (its origin's latitude and longitude), `geoFrameSameMap`.
+- **`World`** holds the scene's frame: world X/Z are its map's about its origin. It renders
+  nothing; `useWorld()` reads it. A `Sky` inside hands it its globe (`provideGlobe`), so
+  what the world places outside the `Sky` is set on the same globe.
+- **The `Sky`'s `observer`** may give only a date: its place is the world's origin's.
+- **A stage's `relief.frame`** defaults to the world's. `reliefSource` still takes one:
+  give it the world's.
+
+### A field in another frame
+
+A `UtmArea` takes a `frame` (or its CRS gives one, as before). In a `World` whose frame is
+another, it places itself; in the world's own map about the world's origin it is not
+moved, as without a world, at no cost.
+
+- **Flat** (`placeGeoFrame`, plain data): its origin converted into the world's map with
+  proj4, and the turn and the scale between the two maps' grids there, measured with proj4
+  over 200 m. Rotated about +Y, scaled along X and Z (heights not), moved. In the same
+  projection about another origin, only moved, exactly: proj4's round trip through a datum
+  shift (ED50's, in the demo's UTM) is a millimetre off. The rest is the two maps' second
+  order: the field at the trench, in UTM 32N, 123 km from Volve in 31N, lands to about
+  10 cm 5 km around its origin, 40 cm at 10 km. Its scale there is 0.999, the zones' scale
+  factors (UTM 32N's 1.0006 five degrees from its meridian): left out, 5 m at 5 km.
+- **On the globe** (`Globe.tangent`): then onto the globe about where its origin lands, as
+  the globe places the ground there, to first order: turned to the globe's up there, and
+  squeezed as the globe squeezes the ground around it — the gnomonic placement's
+  `cos² α` toward the disc and `cos α` across, 0.2% and 0.1% at 300 km. A rigid placement,
+  as `SkyAnchor` made before, would part from the relief by 10 m 5 km around at 300 km;
+  this one by under 20 cm. Flat, the field stands off the sphere toward its edge by
+  `d² / 2R` (2 m at 5 km), as the chosen field's own plane does over its disc.
+- **The matrix** (`geoFrameMatrix`) is set on the area's group, which three.js then leaves
+  as it is (`setObjectMatrix`: `matrixAutoUpdate` off, the world matrices composed again
+  only when it changes). Each frame a handful of `Globe.place` calls, as the disc or the
+  level may change. Its children stay in the area's own frame: `UtmPosition`, picking and
+  annotations unchanged; `worldToUtm` and `worldToWgs84` go through the whole transform.
+- **Precision:** three.js composes each draw's model-view matrix from the group's and the
+  camera's in 64-bit floats, so the field's data is as precise 300 km out as at home.
+  That is what made step 4 mostly unneeded.
+- **`SkyAnchor`** and the stage's occupant `anchor` place the same way now, about a point,
+  for content without a frame of its own; `SkyAnchor` takes the world's globe outside the
+  `Sky`.
+
+### Not in this step
+
+- **A column in a placed field** samples the relief in its own frame, which the bridge
+  does not yet carry: the chosen field's column only (step 6).
+- **A stage per field,** and switching the chosen one (the world's frame) with a camera
+  flying between them: step 7. Switching moves what is placed, not the camera, and the
+  relief's tiles are laid out again in the new frame.
+- **`UtmPosition` and `Wgs84Position`** stay flat, as decided: a field far off is placed by
+  its own `UtmArea`.
+
+### Checked by
+
+- **Tests** (`tests/geo-frame.test.ts`, `tests/globe.test.ts`): the helpers; the world's
+  own map not moved, another origin only moved; the trench field against proj4, flat
+  (10 cm at 5 km) and on the globe (under 15 cm along the ground, `d² / 2R` over it,
+  upright); `Globe.tangent` the identity over the disc and with the globe off, its point
+  where `place` has it, and 5 km around 300 km out within 20 cm of the ground placed point
+  by point.
+- **The story** (ReliefTiles, `facility: 'field'`): the trench field drawn in UTM 32N,
+  turned by the zones' convergence; magenta posts on its own grid 5 km out, thin cyan
+  posts through them at the same points converted to the world's map and anchored one by
+  one. They coincide with the globe on and off.

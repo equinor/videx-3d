@@ -5,7 +5,7 @@ import { scaleOrdinal } from 'd3-scale';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CameraLookAtEvent } from '../../events/camera-events';
 import { CameraManager } from '../../sdk/managers/CameraManager';
-import { reliefFrameFromCrs } from '../../sdk/geometries/relief-grid';
+import { geoFrameFromCrs } from '../../sdk/projection/geo-frame';
 import { Vec3 } from '../../sdk/types/common';
 import {
   skyAbyssFromArgs,
@@ -61,7 +61,7 @@ const defaultWellbore = storyArgs.defaultWellbore;
 // Where the field lies, for its UtmArea, the relief's frame and the sky's place alike.
 const crs = demoCrs;
 // Where the relief lies around the field: the UtmArea's map.
-const reliefFrame = reliefFrameFromCrs(crs);
+const reliefFrame = geoFrameFromCrs(crs);
 // The generated scenarios, without the units of the generated columns.
 const SYNTHETIC_SEABEDS = syntheticSurfaceIds.filter(
   id => !id.startsWith(SYNTHETIC_COLUMN_PREFIX),

@@ -1,4 +1,4 @@
-import { PerspectiveCamera, Vector3 } from 'three';
+import { Matrix4, PerspectiveCamera, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { SkyMaterial } from '../src/components/Sky/sky-material';
 import { EARTH_RADIUS, Globe } from '../src/sdk/projection/globe';
@@ -311,5 +311,48 @@ describe('SkyMaterial.globe', () => {
     sky.setFlatSea(null);
     expect(sky.globe.discRadius).toBe(0);
     sky.dispose();
+  });
+});
+
+describe('Globe.tangent', () => {
+  const m = new Matrix4();
+
+  it('is the identity over the disc, and with the globe off', () => {
+    expect(globe().tangent(2000, -3000, m).equals(new Matrix4())).toBe(true);
+    const off = globe();
+    off.enabled = false;
+    expect(off.tangent(300000, 0, m).equals(new Matrix4())).toBe(true);
+  });
+
+  it('places its point where place does, upright there', () => {
+    const g = globe();
+    g.tangent(300000, -40000, m);
+    const at = new Vector3(300000, LEVEL, -40000).applyMatrix4(m);
+    const placed = g.place(300000, -40000, 0, new Vector3());
+    expect(at.distanceTo(placed)).toBeLessThan(1e-6);
+    const up = new Vector3(0, 1, 0).transformDirection(m);
+    expect(up.angleTo(g.upAt(placed, new Vector3()))).toBeLessThan(1e-9);
+    // Heights along it, unscaled.
+    const above = new Vector3(300000, LEVEL + 100, -40000).applyMatrix4(m);
+    expect(above.distanceTo(placed)).toBeCloseTo(100, 6);
+  });
+
+  it('meets the ground placed point by point 5 km around, 300 km out', () => {
+    const g = globe();
+    const [x0, z0] = [300000, -40000];
+    g.tangent(x0, z0, m);
+    const up = g.upAt(g.place(x0, z0, 0, new Vector3()), new Vector3());
+    let along = 0;
+    for (let k = 0; k < 16; k++) {
+      const a = (k / 16) * 2 * Math.PI;
+      const [x, z] = [x0 + 5000 * Math.cos(a), z0 + 5000 * Math.sin(a)];
+      const miss = new Vector3(x, LEVEL, z)
+        .applyMatrix4(m)
+        .sub(g.place(x, z, 0, new Vector3()));
+      along = Math.max(along, miss.addScaledVector(up, -miss.dot(up)).length());
+    }
+    // A rigid placement would miss by about 10 m here: the globe squeezes the ground by
+    // 0.2% toward the disc, 0.1% across.
+    expect(along).toBeLessThan(0.2);
   });
 });

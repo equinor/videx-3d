@@ -10,7 +10,7 @@ import { TILE_ROOT_SIZE, tileSquare } from '../tiles/tile-keys';
 import type { Vec2 } from '../types/common';
 import { toHalfFloatBits } from '../utils/half-float';
 import { chamferDistance } from './chamfer';
-import type { ReliefFrame } from './relief-grid';
+import type { GeoFrame } from '../projection/geo-frame';
 
 // ⚠️ Free of three.js: it runs where the generators run.
 
@@ -56,7 +56,7 @@ export type ReliefLayer = {
  */
 export type ReliefTileSource = {
   /** where the scene lies on the map */
-  frame: ReliefFrame;
+  frame: GeoFrame;
   /** the data sets, later ones winning where they have data */
   layers: ReliefLayer[];
   /** the height where no layer has data, metres above mean sea level (negative: below) */
@@ -212,7 +212,7 @@ export class ReliefReader {
   }
 
   /** A layer made ready for tiles in `frame`. */
-  layer(id: string, frame: ReliefFrame): Promise<PreparedLayer | null> {
+  layer(id: string, frame: GeoFrame): Promise<PreparedLayer | null> {
     const key = `${id}|${JSON.stringify(frame)}`;
     let layer = this.layers.get(key);
     if (!layer) {
@@ -283,7 +283,7 @@ export class ReliefReader {
 
   private async prepare(
     id: string,
-    frame: ReliefFrame,
+    frame: GeoFrame,
   ): Promise<PreparedLayer | null> {
     const meta = await this.meta(id);
     if (!meta) return null;

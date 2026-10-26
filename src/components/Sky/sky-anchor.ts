@@ -1,18 +1,21 @@
-import { Object3D, Quaternion, Vector3 } from 'three';
+import { Matrix4, Object3D } from 'three';
 import type { Globe } from '../../sdk/projection/globe';
+import {
+  releaseObjectMatrix,
+  setObjectMatrix,
+} from '../../sdk/projection/place-frame';
 
-const pivot = new Vector3();
-const placed = new Vector3();
-const normal = new Vector3();
-const turn = new Quaternion();
+const placing = new Matrix4();
 
 /**
- * Place `object` rigidly on `globe` about world X/Z (`x`, `z`): what lies at that point of
- * the sea's level goes where the globe has it (`Globe.place`), turned so the scene's up is
- * the globe's up there. Nothing over the globe's disc, or with it off — no transform — so a
+ * Place `object` on `globe` about world X/Z (`x`, `z`) as the globe places the ground there,
+ * to first order (`Globe.tangent`): what lies at that point of the sea's level goes where
+ * the globe has it, turned so the scene's up is the globe's up there, and squeezed as the
+ * ground around it is. Nothing over the globe's disc, or with it off — no transform — so a
  * field on the disc is never moved. No camera in it: the same from anywhere.
  *
- * ⚠️ Sets the object's position and rotation: give it a group of its own.
+ * ⚠️ Sets the object's matrix, and stops three.js composing it from its position, rotation
+ * and scale until {@link releaseFromGlobe}: give it a group of its own.
  */
 export function placeOnGlobe(
   object: Object3D,
@@ -20,11 +23,8 @@ export function placeOnGlobe(
   x: number,
   z: number,
 ) {
-  const up = globe.up;
-  globe.place(x, z, 0, placed);
-  globe.upAt(placed, normal);
-  turn.setFromUnitVectors(up, normal);
-  pivot.set(x, 0, z).addScaledVector(up, globe.level - (x * up.x + z * up.z));
-  object.quaternion.copy(turn);
-  object.position.copy(placed).sub(pivot.applyQuaternion(turn));
+  setObjectMatrix(object, globe.tangent(x, z, placing));
 }
+
+/** Put an object {@link placeOnGlobe} placed back where it was: no transform. */
+export const releaseFromGlobe = releaseObjectMatrix;

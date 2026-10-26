@@ -1,57 +1,10 @@
 import proj4 from 'proj4';
 import type { SurfaceMeta } from '../data/types/SurfaceMeta';
-import type { CRS } from '../projection/crs';
+import type { GeoFrame } from '../projection/geo-frame';
 import type { Vec2 } from '../types/common';
 import { toHalfFloatBits } from '../utils/half-float';
 
 // ⚠️ Free of three.js: it runs in a generator's worker.
-
-/**
- * Where a scene lies on the map: the projection it is drawn in, and the point in it
- * that lies at the scene's `offset` (scene X/Z), as a `UtmArea` places a scene. Scene X
- * runs east, and scene Z south.
- *
- * @group Geometries
- */
-export type ReliefFrame = {
-  /** a proj4 definition, or a name proj4 knows (`EPSG:4326`) */
-  projection: string;
-  /** the map coordinates of the point at `offset` */
-  origin: Vec2;
-  /** scene X/Z of `origin`. Default `[0, 0]` */
-  offset?: Vec2;
-};
-
-/**
- * A {@link ReliefFrame} for a scene whose origin lies at `longitude`, `latitude` (WGS84,
- * degrees): a transverse Mercator map about it, in metres.
- *
- * @group Geometries
- */
-export function reliefFrameAt(
-  longitude: number,
-  latitude: number,
-): ReliefFrame {
-  return {
-    projection: `+proj=tmerc +lat_0=${latitude} +lon_0=${longitude} +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs`,
-    origin: [0, 0],
-  };
-}
-
-/**
- * The {@link ReliefFrame} of a scene placed by `crs`, as a `UtmArea` given that CRS
- * places it: the CRS's projection, its origin at scene `offset` (X/Z; a `UtmArea`'s
- * `offset` X and Z, default `[0, 0]`). The reliefs then meet the field's own data.
- *
- * @group Geometries
- */
-export function reliefFrameFromCrs(crs: CRS, offset?: Vec2): ReliefFrame {
-  return {
-    projection: crs.utmDef,
-    origin: [crs.originUtm[0], crs.originUtm[1]],
-    ...(offset && { offset }),
-  };
-}
 
 /** One mip level of a {@link ReliefGrid}. */
 export type ReliefGridLevel = {
@@ -109,7 +62,7 @@ const OUTLINE_POINTS = 64;
 export function resampleRelief(
   values: Float32Array,
   meta: SurfaceMeta,
-  frame: ReliefFrame,
+  frame: GeoFrame,
   { center, radius, maxSize = 2048 }: ReliefResampleOptions,
 ): ReliefGrid | null {
   const { nx, ny, xori, yori, xinc, yinc, rot } = meta.header;

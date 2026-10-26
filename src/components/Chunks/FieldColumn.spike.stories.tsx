@@ -33,7 +33,6 @@ import {
   pointInPolygon,
   PositionLog,
   readCameraTarget,
-  reliefFrameFromCrs,
   SurfaceChunkMetrics,
   surfaceGridToWorld,
   SurfaceMeta,
@@ -59,7 +58,7 @@ import {
 } from '../../storybook/components/sky-controls';
 import { RendererToneMapping } from '../../storybook/components/tone-mapping-controls';
 import { chunkTimings } from '../../storybook/data/chunk-timings';
-import { demoCrs } from '../../storybook/data/demo-crs';
+import { demoCrs, demoFrame } from '../../storybook/data/demo-crs';
 import type { SubseaSite } from '../../storybook/data/subsea-facilities';
 import {
   EXTRA_WELLBORE_IDS,
@@ -138,7 +137,7 @@ const surfaceOptions = storyArgs.surfaceOptions as Record<string, string>;
 // Where the field lies, for its UtmArea, the relief's frame and the sky's place alike.
 const crs = demoCrs;
 // Where the relief lies around the field: the UtmArea's map.
-const reliefFrame = reliefFrameFromCrs(crs);
+const reliefFrame = demoFrame;
 // Where no layer of the relief drawn from tiles has data, metres below the sea: the demo
 // reliefs cover the region, so it seldom shows.
 const RELIEF_BASE_DEPTH = 100;
@@ -1450,7 +1449,10 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
   };
   const columnRelief =
     props.sky && stageRelief
-      ? reliefSource(stageRelief, { level: skyLevel })
+      ? reliefSource(
+          { ...stageRelief, frame: reliefFrame },
+          { level: skyLevel },
+        )
       : undefined;
   // The sky's seabed lies at the column's top along the outline: shallowest, median or
   // deepest.

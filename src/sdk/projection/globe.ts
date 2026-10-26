@@ -1,4 +1,4 @@
-import { Uniform, Vector2, Vector3, Vector4 } from 'three';
+import { Matrix4, Uniform, Vector2, Vector3, Vector4 } from 'three';
 
 /** The Earth's mean radius, in metres. */
 export const EARTH_RADIUS = 6371000;
@@ -54,6 +54,19 @@ const v = new Vector3();
 const flat = new Vector3();
 const way = new Vector3();
 const across = new Vector3();
+// Globe.tangent's.
+const pivot = new Vector3();
+const placed = new Vector3();
+const ahead = new Vector3();
+const behind = new Vector3();
+const alongX = new Vector3();
+const alongZ = new Vector3();
+const normal = new Vector3();
+const planeX = new Vector3();
+const planeZ = new Vector3();
+const basis = new Matrix4();
+// Half the span over which Globe.tangent measures the placement, in metres.
+const TANGENT_STEP = 10;
 
 /**
  * The Earth as the scene draws it: a sphere fixed in the scene whose cap over a disc is
@@ -239,6 +252,42 @@ export class Globe {
     return target
       .copy(this.c)
       .addScaledVector(flat, onDisc ? 1 : this.s / (h + this.s));
+  }
+
+  /**
+   * How the globe places what lies about world X/Z (`x`, `z`), to first order: the matrix
+   * that takes the level plane there, and heights over it, to where {@link place} puts them
+   * — turned to the globe's up there, and squeezed as the ground around it is, by about
+   * `(d / R)²` toward the disc's centre and half that across (0.2% at 300 km out). Content
+   * drawn flat and placed by it meets what is placed point by point (a relief, a route)
+   * to under a metre 10 km around, 300 km out, and stands upright there. The identity over
+   * the disc, or with the globe off.
+   */
+  tangent(x: number, z: number, target: Matrix4): Matrix4 {
+    const up = this.sceneUp;
+    // The plane's point at x, z, as place takes it.
+    pivot
+      .set(x, 0, z)
+      .addScaledVector(up, this.seaLevel - (x * up.x + z * up.z));
+    v.subVectors(pivot, this.c);
+    if (!this.on || v.lengthSq() <= this.discR * this.discR)
+      return target.identity();
+    const step = TANGENT_STEP;
+    this.place(x, z, 0, placed);
+    this.place(x + step, z, 0, ahead);
+    this.place(x - step, z, 0, behind);
+    alongX.subVectors(ahead, behind).divideScalar(2 * step);
+    this.place(x, z + step, 0, ahead);
+    this.place(x, z - step, 0, behind);
+    alongZ.subVectors(ahead, behind).divideScalar(2 * step);
+    this.upAt(placed, normal);
+    // The plane's own steps along X and Z, and up, go to those: M = [X Z up]' · [X Z up]⁻¹.
+    planeX.set(1, 0, 0).addScaledVector(up, -up.x);
+    planeZ.set(0, 0, 1).addScaledVector(up, -up.z);
+    basis.makeBasis(planeX, up, planeZ).invert();
+    target.makeBasis(alongX, normal, alongZ).multiply(basis);
+    // And the plane's point to where it is placed.
+    return target.setPosition(placed.sub(pivot.applyMatrix4(target)));
   }
 
   /**

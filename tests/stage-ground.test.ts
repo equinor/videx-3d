@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { reliefFrameAt } from '../src/sdk/geometries/relief-grid';
+import { geoFrameAt } from '../src/sdk/projection/geo-frame';
 import {
   STAGE_GROUND_PREFIX,
   stageGroundHeight,
@@ -13,7 +13,7 @@ describe('stageGroundRelief', () => {
     const ground = stageGroundRelief(id)!;
     expect(ground.meta.id).toBe(id);
     // In the stage's own map, so the scene's X/Z with no projection between.
-    expect(ground.meta.crs).toBe(reliefFrameAt(1.9, 58.4).projection);
+    expect(ground.meta.crs).toBe(geoFrameAt(1.9, 58.4).projection);
     expect(ground.meta.grid.origin).toEqual([-8000, -12000]);
     expect(stageGroundRelief('etopo-2022-nordic')).toBeNull();
     expect(stageGroundRelief(`${STAGE_GROUND_PREFIX}1:58:wide:16`)).toBeNull();

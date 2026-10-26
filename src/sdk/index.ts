@@ -75,7 +75,9 @@ export * from './managers/CameraManager';
 export * from './managers/WellboreManager';
 
 export * from './projection/crs';
+export * from './projection/geo-frame';
 export * from './projection/globe';
+export * from './projection/place-frame';
 
 export * from './tiles/quadtree';
 export * from './tiles/tile-keys';

@@ -1,4 +1,5 @@
 import type { ReliefSource } from '../../sdk/geometries/relief-tiles';
+import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import type { SkyBoxStageRelief } from './SkyBoxStage';
 import { skyDefaults, SkyOcean } from './sky-model';
 
@@ -8,7 +9,7 @@ import { skyDefaults, SkyOcean } from './sky-model';
  * props given the stage and its sky, so the two agree. Its `key` follows its content: a
  * source built inline each render rebuilds nothing.
  *
- * @param relief the stage's `relief`
+ * @param relief the stage's `relief`, with its `frame`: the `World`'s, when the stage takes that
  * @param ocean the sky's `ocean`
  * @param margin how far above the relief what is built on it lies, in scene units
  * @returns undefined without layers: the stage draws no relief then
@@ -16,7 +17,7 @@ import { skyDefaults, SkyOcean } from './sky-model';
  * @group Components
  */
 export function reliefSource(
-  relief: Pick<SkyBoxStageRelief, 'frame' | 'layers' | 'depth'>,
+  relief: Pick<SkyBoxStageRelief, 'layers' | 'depth'> & { frame: GeoFrame },
   ocean: Pick<SkyOcean, 'level' | 'depth'> = {},
   margin?: number,
 ): ReliefSource | undefined {

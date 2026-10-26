@@ -18,12 +18,15 @@ import {
 } from '../../components/Sky/sky-model';
 import { DEFAULT_OCEAN_WATER_OPACITY } from '../../components/Ocean/ocean-material';
 import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../../components/Ocean/ocean-volume-material';
-import { ReliefFrame, reliefFrameAt } from '../../sdk/geometries/relief-grid';
 import type { ReliefLayer } from '../../sdk/geometries/relief-tiles';
-import { crsOriginLocation } from '../../sdk/projection/crs';
+import {
+  GeoFrame,
+  geoFrameAt,
+  geoFrameLocation,
+} from '../../sdk/projection/geo-frame';
 import { solarPosition } from '../../sdk/utils/solar-position';
 import { bakedReliefId } from '../data/baked-reliefs';
-import { demoCrs } from '../data/demo-crs';
+import { demoFrame } from '../data/demo-crs';
 import {
   skyCutawayArgs,
   SkyCutawayArgs,
@@ -175,7 +178,7 @@ export type SkyArgs = {
   ToneMappingArgs;
 
 // The demo field's place, from the CRS its `UtmArea` places it with.
-const demoPlace = crsOriginLocation(demoCrs);
+const demoPlace = geoFrameLocation(demoFrame);
 
 // 10 September, 13:00 solar time over Volve: about the Sky's default sun (200°, 35°).
 export const skyArgs: SkyArgs = {
@@ -1497,8 +1500,8 @@ export function skyReliefArgTypes(shownIf?: string): ArgTypes<SkyReliefArgs> {
  * Where a story's scene lies on the map when no `UtmArea` places it: at the sun's place
  * (see {@link SkyArgs}), which Storybook leaves out of the args while the sun is set by hand.
  */
-export const skyReliefFrame = (args: Partial<SkyArgs>): ReliefFrame =>
-  reliefFrameAt(
+export const skyReliefFrame = (args: Partial<SkyArgs>): GeoFrame =>
+  geoFrameAt(
     args.sunLongitude ?? skyArgs.sunLongitude,
     args.sunLatitude ?? skyArgs.sunLatitude,
   );
@@ -1510,7 +1513,7 @@ export const skyReliefFrame = (args: Partial<SkyArgs>): ReliefFrame =>
  */
 export const skyReliefFromArgs = (
   args: Partial<SkyReliefArgs>,
-  frame: ReliefFrame,
+  frame: GeoFrame,
   local: ReliefLayer[] = [],
 ): SkyBoxStageRelief | undefined => {
   const ticked = args.reliefLayers ?? skyReliefArgs.reliefLayers;
