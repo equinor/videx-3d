@@ -1,6 +1,7 @@
 # Tiles: streamed relief, and the bridge between the relief and the chunk stack
 
-> **Status (2026-10-26): built, steps 1–7; [overlays](#8-overlays-shapes-on-the-relief-the-sea-and-the-seabed)
+> **Status (2026-10-26): built, steps 1–7; [world.md step 2](./world.md#9-step-2-in-detail-the-sky-on-a-fixed-globe)
+> (the sky on a fixed globe), then [overlays](#8-overlays-shapes-on-the-relief-the-sea-and-the-seabed),
 > are next.** What a user needs is in [relief.md](./relief.md), [data.md](./data.md),
 > [sky.md](./sky.md) and the [chunk stack's documents](./chunk-stack/index.md); this stays
 > the maintainers' design and its record. Early testing happens in the Storybook story
@@ -502,7 +503,9 @@ start-up only).
 ### The Earth's curve, and what lies on it (built 2026-10-25)
 
 The sky lowers its sea beyond a flat disc about the scene, measured along each view's level
-line from where the view leaves the disc. Seen from far off to one side, that drop depends
+line from where the view leaves the disc. (To be replaced by a fixed globe, the disc's cap
+cut flat, with nothing measured from the camera but the horizon: world.md
+[step 2](./world.md#9-step-2-in-detail-the-sky-on-a-fixed-globe).) Seen from far off to one side, that drop depends
 on the view's direction: a point's drop changed by up to 4.5 km as the camera turned at
 40 km near Stavanger, and the relief rose and sank as the camera orbited. With tiles the
 ground curves with the sea everywhere, so:
@@ -859,9 +862,12 @@ type OverlayFeature = {
 };
 ```
 
-A mapper projects the rings into the scene's frame and densifies long edges first (a
-straight edge in longitude and latitude is curved in UTM). Sodir's FactMaps publish
-fields and discoveries openly: a demo set fetched by a script, as the reliefs are.
+A mapper projects the rings into the relief's frame (`ReliefFrame`, a `GeoFrame` after
+world.md step 3; today the scene's) and densifies long edges first (a straight edge in
+longitude and latitude is curved in UTM). In the relief's frame, not a field's, the
+overlays' tiles share the relief's keys wherever the relief goes (world.md steps 5 and 6).
+Sodir's FactMaps publish fields and discoveries openly: a demo set fetched by a script, as
+the reliefs are.
 
 Meshes still have their place for what does not lie on the ground: a discovery shown as
 a curtain down to its reservoir, an anchor for a label.
@@ -923,7 +929,7 @@ are back by step 6.
 | 5 | ✅ [What goes](#9-what-goes) | built (2026-10-25); every story still compiles and draws |
 | 6 | ✅ Stories: layer toggles; FieldColumn and StageDebug through the bridge, baking the column's seabed by default | built (2026-10-25), [below](#the-stories-2026-10-25); with it, [the detail under a tile](#4-relief-tiles) and `sampleReliefSource` on one-node-wide grids (a route) fixed |
 | 7 | ✅ Documents, checks, timings; the bed tint from the column's channel | built (2026-10-26), [timed below](#timed-the-column-with-the-relief-and-without-2026-10-26) |
-| 8 | [Overlays](#8-overlays-shapes-on-the-relief-the-sea-and-the-seabed): the contract and its mapper, overlay tiles, the second draw's overlay material, on the sea, picking; a demo set of discoveries | |
+| 8 | [Overlays](#8-overlays-shapes-on-the-relief-the-sea-and-the-seabed): the contract and its mapper, overlay tiles, the second draw's overlay material, on the sea, picking; a demo set of discoveries | after [world.md step 2](./world.md#9-step-2-in-detail-the-sky-on-a-fixed-globe) (2026-10-26) |
 
 Measured as the sky's [frame cost by zone](./sky.md#frame-cost-by-zone) is, before and
 after. The bar: inside the column and below the seabed, no cost beyond the noise.

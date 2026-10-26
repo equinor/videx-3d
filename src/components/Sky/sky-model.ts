@@ -1,5 +1,6 @@
 import { Color, ColorRepresentation, MathUtils, type Texture } from 'three';
 import type { SurfaceDetail } from '../../sdk/materials/surface-detail';
+import { EARTH_RADIUS } from '../../sdk/projection/globe';
 import type { Vec2, Vec3 } from '../../sdk/types/common';
 import {
   equatorialToHorizontal,
@@ -469,8 +470,8 @@ export function skySubsurfaceLightPosition(
   };
 }
 
-/** The Earth's mean radius, in world units (metres). */
-export const SKY_EARTH_RADIUS = 6371000;
+/** The Earth's mean radius, in world units (metres): the sdk's `EARTH_RADIUS`. */
+export const SKY_EARTH_RADIUS = EARTH_RADIUS;
 
 export const skyDefaults = {
   sun: {

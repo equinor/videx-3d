@@ -28,6 +28,7 @@ import {
   surfaceDetailKey,
   SurfaceDetailUniforms,
 } from '../../sdk/materials/surface-detail';
+import { Globe } from '../../sdk/projection/globe';
 import { Vec2, Vec3 } from '../../sdk/types/common';
 import {
   compassBasis,
@@ -101,6 +102,13 @@ export function createSkyGeometry() {
  */
 export class SkyMaterial extends ShaderMaterial {
   isSkyMaterial = true;
+  /**
+   * The Earth the sky draws: flat over the stage's disc ({@link setFlatSea}), at the
+   * sea's level, curved while {@link curvedHorizon}. What else lies on the globe — the
+   * relief, a route, an anchored field — takes it from here. Kept in step by the setters;
+   * not to be set directly.
+   */
+  readonly globe = new Globe();
   private bedDetail: SurfaceDetail | undefined;
   private bedDetailKey = '';
   // How far in front of the camera clipAbyssWalls cuts the walls away.
@@ -291,6 +299,8 @@ export class SkyMaterial extends ShaderMaterial {
 
     this.setSun(sun.azimuth, sun.elevation);
     this.oceanBedDetail = ocean.seabed.detail;
+    this.globe.enabled = this.curvedHorizon;
+    this.globe.level = this.oceanLevel;
 
     if (Object.keys(parameters).length) this.setValues(parameters);
   }
@@ -333,6 +343,7 @@ export class SkyMaterial extends ShaderMaterial {
     this.uniforms.uSkyUp.value.fromArray(up);
     this.uniforms.uSkyNorth.value.fromArray(north);
     this.uniforms.uSkyEast.value.fromArray(east);
+    this.globe.setUp(this.uniforms.uSkyUp.value);
   }
 
   /** the world's up direction (normalised); see {@link setFrame} */
@@ -717,6 +728,7 @@ export class SkyMaterial extends ShaderMaterial {
   }
   set curvedHorizon(value: boolean) {
     this.uniforms.uSkyCurvature.value = value ? 1 / SKY_EARTH_RADIUS : 0;
+    this.globe.enabled = value;
   }
 
   /**
@@ -744,6 +756,7 @@ export class SkyMaterial extends ShaderMaterial {
       );
     }
     this.uniforms.uSkyFlat.value.copy(this.flatSea);
+    this.globe.setDisc(bounds);
     this.updateAbyssWallGrid();
   }
 
@@ -1088,6 +1101,7 @@ export class SkyMaterial extends ShaderMaterial {
   }
   set oceanLevel(value: number) {
     this.uniforms.uSkyOceanLevel.value = value;
+    this.globe.level = value;
   }
 
   /** depth of the seabed below the surface */
