@@ -81,6 +81,7 @@ export * from './projection/globe';
 export * from './projection/place-frame';
 
 export * from './tiles/quadtree';
+export * from './tiles/geo-tile-keys';
 export * from './tiles/tile-keys';
 export * from './tiles/tile-lod';
 export * from './tiles/tile-streamer';

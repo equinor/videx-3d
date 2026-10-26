@@ -6,6 +6,9 @@ import {
   reliefNodeToMap,
 } from '../data/relief/relief-window';
 import type { ReliefMeta, ReliefWindow } from '../data/types/ReliefMeta';
+import { WGS84_A, WGS84_E2 } from '../projection/conformal-sphere';
+import { wgs84Def } from '../projection/crs';
+import { geoTileRegion } from '../tiles/geo-tile-keys';
 import { TILE_ROOT_SIZE, tileSquare } from '../tiles/tile-keys';
 import type { Vec2 } from '../types/common';
 import { toHalfFloatBits } from '../utils/half-float';
@@ -50,17 +53,25 @@ export type ReliefLayer = {
 };
 
 /**
- * What a relief's tiles are built from: plain data.
+ * What a relief is merged from: plain data.
  *
  * @group Geometries
  */
-export type ReliefTileSource = {
-  /** where the scene lies on the map */
-  frame: GeoFrame;
+export type ReliefLayersSource = {
   /** the data sets, later ones winning where they have data */
   layers: ReliefLayer[];
   /** the height where no layer has data, metres above mean sea level (negative: below) */
   base: number;
+};
+
+/**
+ * What a relief's tiles are built from, in a map: plain data.
+ *
+ * @group Geometries
+ */
+export type ReliefTileSource = ReliefLayersSource & {
+  /** where the scene lies on the map */
+  frame: GeoFrame;
 };
 
 /**
@@ -126,7 +137,10 @@ type ReliefDetail = {
 /** A layer made ready for tiles: its record, its map, its distance to its edge, its detail. */
 type PreparedLayer = {
   meta: ReliefMeta;
-  /** scene X/Z to the grid's fractional node (column, row from the north), or null */
+  /**
+   * a grid's point — scene X/Z in a frame, or longitude and latitude (degrees) — to the
+   * layer's fractional node (column, row from the north), or null
+   */
   toNode: (x: number, z: number) => Vec2 | null;
   /** metres to where the data ends, on a coarse level of the grid */
   edge: { level: number; size: Vec2; distance: Float32Array };
@@ -211,9 +225,12 @@ export class ReliefReader {
     return entry.block;
   }
 
-  /** A layer made ready for tiles in `frame`. */
-  layer(id: string, frame: GeoFrame): Promise<PreparedLayer | null> {
-    const key = `${id}|${JSON.stringify(frame)}`;
+  /**
+   * A layer made ready for tiles in `frame`, or with `null` for grids in longitude and
+   * latitude (degrees, WGS84): geographic tiles.
+   */
+  layer(id: string, frame: GeoFrame | null): Promise<PreparedLayer | null> {
+    const key = `${id}|${frame ? JSON.stringify(frame) : 'geographic'}`;
     let layer = this.layers.get(key);
     if (!layer) {
       layer = this.prepare(id, frame);
@@ -283,23 +300,45 @@ export class ReliefReader {
 
   private async prepare(
     id: string,
-    frame: GeoFrame,
+    frame: GeoFrame | null,
   ): Promise<PreparedLayer | null> {
     const meta = await this.meta(id);
     if (!meta) return null;
-    const converter = proj4(frame.projection, meta.crs);
-    const [ox, oy] = frame.origin;
-    const [sx, sz] = frame.offset ?? [0, 0];
-    const toNode = (x: number, z: number): Vec2 | null => {
-      const [mx, my] = converter.forward([x - sx + ox, oy - (z - sz)]);
-      if (!Number.isFinite(mx) || !Number.isFinite(my)) return null;
-      return reliefMapToNode(meta, mx, my);
-    };
-    const toScene = (col: number, row: number): Vec2 => {
-      const [mx, my] = reliefNodeToMap(meta, col, row);
-      const [fx, fy] = converter.inverse([mx, my]);
-      return [fx - ox + sx, oy - fy + sz];
-    };
+    let toNode: PreparedLayer['toNode'];
+    // Metres between the grid's nodes at (`col`, `row`) and one column or row on.
+    let between: (col: number, row: number, dc: number, dr: number) => number;
+    if (frame) {
+      const converter = proj4(frame.projection, meta.crs);
+      const [ox, oy] = frame.origin;
+      const [sx, sz] = frame.offset ?? [0, 0];
+      toNode = (x, z) => {
+        const [mx, my] = converter.forward([x - sx + ox, oy - (z - sz)]);
+        if (!Number.isFinite(mx) || !Number.isFinite(my)) return null;
+        return reliefMapToNode(meta, mx, my);
+      };
+      const toScene = (col: number, row: number): Vec2 => {
+        const [mx, my] = reliefNodeToMap(meta, col, row);
+        const [fx, fy] = converter.inverse([mx, my]);
+        return [fx - ox + sx, oy - fy + sz];
+      };
+      between = (col, row, dc, dr) => {
+        const [ax, az] = toScene(col, row);
+        const [bx, bz] = toScene(col + dc, row + dr);
+        return Math.hypot(bx - ax, bz - az);
+      };
+    } else {
+      const converter = proj4(wgs84Def, meta.crs);
+      toNode = (longitude, latitude) => {
+        const [mx, my] = converter.forward([longitude, latitude]);
+        if (!Number.isFinite(mx) || !Number.isFinite(my)) return null;
+        return reliefMapToNode(meta, mx, my);
+      };
+      between = (col, row, dc, dr) => {
+        const a = converter.inverse(reliefNodeToMap(meta, col, row));
+        const b = converter.inverse(reliefNodeToMap(meta, col + dc, row + dr));
+        return groundMetres(a[0], a[1], b[0], b[1]);
+      };
+    }
 
     const [nx, ny] = meta.grid.size;
     const maxLevel = Math.max(Math.ceil(Math.log2(Math.max(nx, ny))), 0);
@@ -309,15 +348,12 @@ export class ReliefReader {
     );
     const [w, h] = reliefLevelSize(meta, level);
     const coarse = await this.window(id, meta, level, 0, 0, w - 1, h - 1);
-    // Scene units per node along the grid's columns and rows, at its middle.
+    // Metres per node along the grid's columns and rows, at its middle.
     const c = (nx - 1) / 2;
     const r = (ny - 1) / 2;
-    const [ax, az] = toScene(c, r);
-    const [bx, bz] = toScene(c + 1, r);
-    const [cx, cz] = toScene(c, r + 1);
     const step = 2 ** level;
-    const wx = Math.hypot(bx - ax, bz - az) * step || 1;
-    const wy = Math.hypot(cx - ax, cz - az) * step || 1;
+    const wx = between(c, r, 1, 0) * step || 1;
+    const wy = between(c, r, 0, 1) * step || 1;
     const distance = coarse
       ? edgeDistance(coarse.values, w, h, wx, wy)
       : new Float32Array(w * h);
@@ -416,6 +452,35 @@ const smoothstep = (a: number, b: number, t: number) => {
   const u = Math.min(Math.max((t - a) / (b - a), 0), 1);
   return u * u * (3 - 2 * u);
 };
+
+const DEG = Math.PI / 180;
+
+/**
+ * The WGS84 ellipsoid's radii of curvature at `latitude` (degrees), in metres: along the
+ * meridian (north–south) and across it (east–west, before the cosine of the latitude).
+ */
+function ellipsoidRadii(latitude: number): [number, number] {
+  const sin = Math.sin(latitude * DEG);
+  const w = 1 - WGS84_E2 * sin * sin;
+  const across = WGS84_A / Math.sqrt(w);
+  return [(across * (1 - WGS84_E2)) / w, across];
+}
+
+// Metres along the ground between two nearby longitudes and latitudes (degrees).
+function groundMetres(
+  lonA: number,
+  latA: number,
+  lonB: number,
+  latB: number,
+): number {
+  const [meridian, across] = ellipsoidRadii((latA + latB) / 2);
+  const east =
+    (((((lonB - lonA + 540) % 360) + 360) % 360) - 180) *
+    DEG *
+    across *
+    Math.cos(((latA + latB) / 2) * DEG);
+  return Math.hypot(east, (latB - latA) * DEG * meridian);
+}
 
 // Bilinear in a level of `w` x `h` values from those holding data, NaN where none does.
 function sampleLevel(
@@ -573,7 +638,7 @@ function bilinear(
   return top * (1 - ty) + bottom * ty;
 }
 
-/** Where a grid's node (`u`, `v`) lies in the scene. */
+/** Where a grid's node (`u`, `v`) lies: scene X/Z in a frame, or longitude and latitude. */
 type GridPoint = (u: number, v: number) => Vec2;
 
 // The nodes of `nodes` along an axis the lattice projects exactly: every LATTICE, and
@@ -663,29 +728,34 @@ type LayerRead = {
   halfWindow: LevelWindow;
   /** with `halves`: how far the data under the grid may lie off `halfLevel`'s surface */
   detail: number;
-  /** scene units between the layer's own nodes, at the grid's middle */
+  /** metres between the layer's own nodes, at the grid's middle */
   spacing: number;
   /** how much of the layer a point gets: its coverage there, faded in over the feather */
   weightAt: (col: number, row: number, coverage: number) => number;
 };
 
 /**
- * Each layer of `source` projected onto a grid of `nodesU` x `nodesV` points, and the
- * windows it is read from: at the coarsest of its levels no coarser than `cell` (the
- * grid's spacing, in scene units), and with `halves` the level under it too.
+ * Each layer of `source` projected onto a grid of `nodesU` x `nodesV` points, lying in
+ * `space` (a frame's X/Z, or longitude and latitude with null), and the windows it is read
+ * from: at the coarsest of its levels no coarser than the grid's finer spacing (`cellU`
+ * metres between its columns, `cellV` between its rows), and with `halves` the level under
+ * it too.
  */
 function readReliefLayers(
   reader: ReliefReader,
-  source: ReliefTileSource,
+  source: ReliefLayersSource,
+  space: GeoFrame | null,
   point: GridPoint,
   nodesU: number,
   nodesV: number,
-  cell: number,
+  cellU: number,
+  cellV: number,
   halves: boolean,
 ): Promise<(LayerRead | null)[]> {
+  const cell = Math.min(cellU, cellV);
   return Promise.all(
     source.layers.map(async (spec, index): Promise<LayerRead | null> => {
-      const layer = await reader.layer(spec.id, source.frame);
+      const layer = await reader.layer(spec.id, space);
       if (!layer) return null;
       const { meta, edge } = layer;
       const lattice = new Lattice(layer.toNode, point, nodesU, nodesV);
@@ -695,21 +765,21 @@ function readReliefLayers(
       if (range[2] < -1 || range[3] < -1 || range[0] > nx || range[1] > ny)
         return null;
 
-      // Scene units per grid node along its finer axis, at the grid's middle.
+      // The layer's nodes per metre along its finer axis, at the grid's middle.
       const at = new Float64Array(2);
       const midU = (nodesU - 1) / 2;
       const midV = (nodesV - 1) / 2;
       lattice.node(midU, midV, at);
       const [c0, r0] = at;
       lattice.node(midU + 1, midV, at);
-      const dcx = at[0] - c0;
-      const drx = at[1] - r0;
+      const dcx = (at[0] - c0) / cellU;
+      const drx = (at[1] - r0) / cellU;
       lattice.node(midU, midV + 1, at);
-      const dcz = at[0] - c0;
-      const drz = at[1] - r0;
+      const dcz = (at[0] - c0) / cellV;
+      const drz = (at[1] - r0) / cellV;
       const perCol = Math.hypot(dcx, dcz);
       const perRow = Math.hypot(drx, drz);
-      const spacing = cell / Math.max(perCol, perRow, 1e-12);
+      const spacing = 1 / Math.max(perCol, perRow, 1e-12 / cell);
       const level = Math.min(
         Math.max(Math.floor(Math.log2(cell / spacing)), 0),
         layer.maxLevel,
@@ -839,9 +909,11 @@ export async function sampleReliefSource(
   const reads = await readReliefLayers(
     reader,
     source,
+    source.frame,
     point,
     nodesU,
     nodesV,
+    cell,
     cell,
     false,
   );
@@ -867,10 +939,32 @@ export function reliefTileHeightAt(
   rootSize = TILE_ROOT_SIZE,
 ): number {
   const [minX, minZ, size] = tileSquare(tile.key, rootSize);
+  return tileHeightAt(tile, (x - minX) / size, (z - minZ) / size);
+}
+
+/**
+ * The height of a built geographic relief tile (`buildGeoReliefTile`) at `longitude`,
+ * `latitude` (degrees), in metres above mean sea level: bilinear between its nodes, as the
+ * relief is shaded. A point off the tile takes its nearest edge.
+ *
+ * @group Geometries
+ */
+export function geoReliefTileHeightAt(
+  tile: ReliefTile,
+  longitude: number,
+  latitude: number,
+): number {
+  const [west, north, span] = geoTileRegion(tile.key);
+  const east = ((((longitude - west + 180) % 360) + 360) % 360) - 180;
+  return tileHeightAt(tile, east / span, (north - latitude) / span);
+}
+
+// A tile's height at (`u`, `v`), its own nodes from 0 to 1 along each side, clamped.
+function tileHeightAt(tile: ReliefTile, fu0: number, fv0: number): number {
   const { cells, heights } = tile;
   const nodes = cells + 3;
-  const u = Math.min(Math.max(((x - minX) / size) * cells, 0), cells);
-  const v = Math.min(Math.max(((z - minZ) / size) * cells, 0), cells);
+  const u = Math.min(Math.max(fu0 * cells, 0), cells);
+  const v = Math.min(Math.max(fv0 * cells, 0), cells);
   const i = Math.min(Math.floor(u), cells - 1);
   const j = Math.min(Math.floor(v), cells - 1);
   const fu = u - i;
@@ -904,6 +998,72 @@ export async function buildReliefTile(
 ): Promise<ReliefTile> {
   const [minX, minZ, size] = tileSquare(key, rootSize);
   const cell = size / cells;
+  return buildTile(reader, source, key, cells, {
+    space: source.frame,
+    point: (u, v) => [minX + (u - 1) * cell, minZ + (v - 1) * cell],
+    cellU: () => cell,
+    cellV: cell,
+  });
+}
+
+/**
+ * Build one tile of a relief on the geographic quadtree (see `geoTileRegion`): as
+ * {@link buildReliefTile}, its nodes on a grid of longitude and latitude, column by column
+ * east and row by row south from its north-west corner. Its normals' X and Z are east and
+ * south where each node lies, and its error and cells are in metres: a tile is the same
+ * whatever frame the scene is drawn in. See documents/world.md, step 6.
+ *
+ * @param key the tile (see `geoTileKeyAt`)
+ * @param cells cells along the tile's side
+ *
+ * @group Geometries
+ */
+export async function buildGeoReliefTile(
+  reader: ReliefReader,
+  source: ReliefLayersSource,
+  key: number,
+  cells = RELIEF_TILE_CELLS,
+): Promise<ReliefTile> {
+  const [west, north, span] = geoTileRegion(key);
+  const step = span / cells;
+  const latitudeAt = (v: number) =>
+    Math.min(Math.max(north - (v - 1) * step, -90), 90);
+  const [meridian] = ellipsoidRadii(north - span / 2);
+  const cellV = step * DEG * meridian;
+  return buildTile(reader, source, key, cells, {
+    space: null,
+    point: (u, v) => [west + (u - 1) * step, latitudeAt(v)],
+    cellU: v => {
+      const latitude = latitudeAt(v);
+      const [, across] = ellipsoidRadii(latitude);
+      // At a pole a row is a point: kept a sliver wide, so its slopes stay finite.
+      return Math.max(
+        step * DEG * across * Math.cos(latitude * DEG),
+        cellV * 1e-3,
+      );
+    },
+    cellV,
+  });
+}
+
+/** Where a tile's nodes lie, and how far apart, for `buildTile`. */
+type TileGrid = {
+  /** the frame its points are in, or null for longitude and latitude */
+  space: GeoFrame | null;
+  point: GridPoint;
+  /** metres between its columns along row `v` (fractional) */
+  cellU: (v: number) => number;
+  /** metres between its rows */
+  cellV: number;
+};
+
+async function buildTile(
+  reader: ReliefReader,
+  source: ReliefLayersSource,
+  key: number,
+  cells: number,
+  grid: TileGrid,
+): Promise<ReliefTile> {
   // The tile's nodes and a border of one around them.
   const nodes = cells + 3;
   // Its half-cell points: the nodes and the midpoints between them, without the border.
@@ -915,16 +1075,20 @@ export async function buildReliefTile(
 
   const node = new Float64Array(2);
   const sample = new Float64Array(2);
+  const midCellU = grid.cellU((nodes - 1) / 2);
+  const cell = Math.min(midCellU, grid.cellV);
 
   // Each layer's projection onto the tile, the level it is read at and its windows,
   // read all at once; merged in turn below.
   const reads = await readReliefLayers(
     reader,
     source,
-    (u, v) => [minX + (u - 1) * cell, minZ + (v - 1) * cell],
+    grid.space,
+    grid.point,
     nodes,
     nodes,
-    cell,
+    midCellU,
+    grid.cellV,
     true,
   );
 
@@ -979,15 +1143,16 @@ export async function buildReliefTile(
   for (let v = 0; v < nodes; v++) {
     const v0 = Math.max(v - 1, 0);
     const v1 = Math.min(v + 1, nodes - 1);
+    const cellU = grid.cellU(v);
     for (let u = 0; u < nodes; u++) {
       const u0 = Math.max(u - 1, 0);
       const u1 = Math.min(u + 1, nodes - 1);
       const dx =
         (heights[v * nodes + u1] - heights[v * nodes + u0]) /
-        ((u1 - u0) * cell);
+        ((u1 - u0) * cellU);
       const dz =
         (heights[v1 * nodes + u] - heights[v0 * nodes + u]) /
-        ((v1 - v0) * cell);
+        ((v1 - v0) * grid.cellV);
       const length = Math.hypot(dx, 1, dz);
       const k = 2 * (v * nodes + u);
       normals[k] = toHalfFloatBits(-dx / length);

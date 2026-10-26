@@ -176,7 +176,7 @@ Nothing above is needed for one field. What keeps it cheap to add later:
 | 3 | **Fields placed on the Earth** ([in detail](#10-step-3-in-detail-fields-placed-on-the-earth)): `GeoFrame` (was `ReliefFrame`); a `World` holding the scene's; a `UtmArea` in another frame placed in it, on the globe with a sky; the observer's place and the relief's frame from the `World` | ✅ built (2026-10-26): a second field in UTM 32N, 123 km out, placed to about 10 cm 5 km around (ReliefTiles' `facility: 'field'`), with the sky and without |
 | 4 | **The view's origin** — reduced by step 3. Its precision comes free: three.js composes each draw's model-view matrix in 64 bits, so a placed field is as precise 300 km out as at home. Left: a level horizon far off (1.8° rolled at 200 km), which needs the world turned under the camera — every sky shader takes one `up` (`uSkyUp`) and the stage an axis-aligned box — with the host's controls moved by a callback, any controls can take. A host can level it today by setting its camera's up to the globe's there (`Globe.upAt`) | ⏸ deferred until a host flies far from its fields |
 | 5 | **The relief in its own frame** — folded into step 6. In a frame of its own the relief would part from the chosen field's UTM by the two maps' scale (UTM's 0.9996 against 1: 3 m at 8 km), right where its column meets it; laid in the chosen field's frame it meets it exactly, and a placed field's to its placement's precision | → step 6 |
-| 6 | **Tiles on the globe** ([in detail](#11-step-6-in-detail-tiles-on-the-globe)): tile keys by latitude and longitude, the relief contract unchanged (a tile asks each layer for a window of its own grid, as now); the overlays' tiles move with them, sharing the core. Everything placed by latitude and longitude on one sphere, the ellipsoid's conformal sphere matched at the chosen field; each field's column samples the relief through its transform | in progress: 6a (the geographic globe) built 2026-10-26 |
+| 6 | **Tiles on the globe** ([in detail](#11-step-6-in-detail-tiles-on-the-globe)): tile keys by latitude and longitude, the relief contract unchanged (a tile asks each layer for a window of its own grid, as now); the overlays' tiles move with them, sharing the core. Everything placed by latitude and longitude on one sphere, the ellipsoid's conformal sphere matched at the chosen field; each field's column samples the relief through its transform | in progress: 6a (the geographic globe) and 6b (geographic tiles) built 2026-10-26 |
 | 7 | **Two fields:** a story with two fields in two UTM zones, the camera flying between them, either chosen: the `World`'s frame switched, a stage per field | the goal; step 3 placed the second field |
 
 Steps 1 to 3 are built. Step 6 waits for a host that needs to see beyond one region (about
@@ -590,3 +590,26 @@ as much. So the relief, `place`, `tangent`, `foot` and the placed fields switch 
   longitudes there and back, from the field to the far side; no seam opposite the field;
   the map at the field; `place` beyond the disc where `geodetic` has its point; a
   meridian's length; a field placed flat 5 km about the trench on the ground there.
+
+### 6b: geographic tiles (built 2026-10-26)
+
+- **Keys** (`sdk/tiles/geo-tile-keys.ts`): two roots, the western and the eastern
+  hemisphere, pole to pole (`GEO_TILE_ROOTS`); a tile at depth `d` spans `180 / 2^d`
+  degrees each way, its column running east from 180°W and its row south from 90°N.
+  `geoTileRegion(key)` (west, north, span), `geoTileKeyAt(depth, longitude, latitude)`;
+  packing, parents and children are the quadtree's own (`tileKey`, `tileParent`,
+  `tileChildren`). At 58°N a cell is half as wide as it is tall, at 70°N a third.
+- **Tiles** (`buildGeoReliefTile(reader, { layers, base }, key)`): the tile's nodes on
+  its longitudes and latitudes, each layer read through proj4 from them (the relief
+  contract unchanged: a layer still answers windows of its own grid). Its normals' X and Z
+  are east and south where each node lies, from the ellipsoid's radii of curvature there;
+  its error, its cells and a layer's feather are in metres. It takes no frame: the same
+  tile in any scene. `geoReliefTileHeightAt(tile, longitude, latitude)` reads one back.
+- **One builder** for both kinds of grid: a layer is prepared in a frame or, with none,
+  in longitude and latitude (its distance to its edge in metres either way), and a grid
+  has a cell along its columns and one along its rows, so a tile in a map is built as it
+  was (its tests unchanged).
+- **Tested** (`tests/geo-relief-tiles.test.ts`): keys, children, wrapping; a layer in UTM
+  read onto a tile's longitudes and latitudes to a millimetre, its normals east and
+  south, its leaf; the same ground as a tile in the map; a layer in longitude and latitude
+  node for node.
