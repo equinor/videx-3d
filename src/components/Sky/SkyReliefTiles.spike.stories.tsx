@@ -217,7 +217,8 @@ const ReliefTiles = (storyArgs: ReliefTilesArgs) => {
   const half = args.stageWidth * 500;
   const bounds: SkyStageBounds = [-half, -half, half, half];
   const onStats = useTileStats(args.tileStats && args.relief === 'tiles');
-  const layers = LAYERS.filter(layer => args.layers.includes(layer.id));
+  // Storybook leaves out the relief's own args (their `if`) while `relief` is NONE.
+  const layers = LAYERS.filter(layer => (args.layers ?? []).includes(layer.id));
   const relief: SkyBoxStageRelief | undefined =
     args.relief === 'tiles'
       ? {

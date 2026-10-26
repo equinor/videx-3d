@@ -211,7 +211,8 @@ vec3 skyNight(vec3 color, vec3 dir, float blend) {
   if(uSkyNight <= 0.0 && uSkyMoonDay <= 0.0 && !skyNearSpace(height))
     return color;
   // By day too where the sky has gone all but black, under a twentieth of its light.
-  float black = smoothstep(0.95, 1.0, skySpace(dir, height));
+  float space = skySpace(dir, height);
+  float black = smoothstep(0.95, 1.0, space);
   // From high up, by the sun over the lowered horizon, where it can still be up.
   float share = skyLightShare(dir, height);
   float night = max(mix(uSkyNight, 1.0 - uSkyAirLight.x, share), black);
@@ -229,7 +230,8 @@ vec3 skyNight(vec3 color, vec3 dir, float blend) {
   float lit = smoothstep(-edge, edge, dot(normal, uSkySunDirection));
   // The dark side faintly lit by the Earth, most near new moon.
   float face = lit + SKY_EARTHSHINE * (1.0 - uSkyMoonPhase) * (1.0 - lit);
-  float glow = uSkyMoonGlow * uSkyMoonPhase * pow(max(cosMoon, 0.0), 200.0);
+  // The air's glow about it: none where the view crosses no air.
+  float glow = uSkyMoonGlow * uSkyMoonPhase * pow(max(cosMoon, 0.0), 200.0) * (1.0 - space);
   // The stars come out late, once it is dark, and fade low down through more air.
   float airmass = 1.0 / (max(y, 0.0) + 0.05);
   vec3 starDir = uSkyStarFrame * dir;
@@ -1035,9 +1037,10 @@ vec3 skyAbyss(vec3 color, vec3 dir, vec3 origin, vec3 depths, vec4 walls) {
 
 vec3 skyRadiance(vec3 dir, vec3 origin) {
   #ifdef SKY_OCEAN
-    // Under a stage's ground the camera is in the rock: seen as from just below the sea's seabed.
+    // Under a stage's ground the camera is in the rock: seen as from just below the sea's
+    // seabed, by its height over the globe, which far off lies well below the scene's level.
   if(uSkyOceanBuried > 0.5)
-    origin -= uSkyUp * (dot(origin, uSkyUp) - uSkyOceanLevel + uSkyOceanDepth + 1.0);
+    origin -= uSkyUp * (skyOceanViewAltitude(origin) + uSkyOceanDepth + 1.0);
   #endif
   // The sky as the camera sees it, by its look up; what lies under the field, by the scene's.
   float y = dot(dir, globeCameraLook());
@@ -1076,6 +1079,11 @@ vec3 skyRadiance(vec3 dir, vec3 origin) {
     float aa = max(fwidth(angle), 1e-5);
     float disc = 1.0 - smoothstep(uSkySunSize - aa, uSkySunSize + aa, angle);
     SkyLight seen = skyLight(skyLightShare(uSkySunDirection, skyCameraHeight()));
+    // Reddened only by the air the view toward it crosses: from space, white, but through
+    // the air along the Earth's edge still red.
+    float bare = skySpace(uSkySunDirection, skyCameraHeight());
+    seen.sun = mix(seen.sun, SKY_SUN_HIGH, bare);
+    seen.twilight *= 1.0 - bare;
     color = mix(color, skySunDiscRadiance(seen), disc * uSkySunDisc);
     // Over the disc too, so it is never dimmer than its glare; above the horizon, while the sun is up.
     float sunOver = skyOverHorizon(dot(uSkySunDirection, globeCameraLook()), skyHorizon(uSkySunDirection));
@@ -1127,7 +1135,7 @@ vec3 skyRadiance(vec3 dir, vec3 origin) {
   if(!skip && skyOceanNeedsWaterView(origin))
     inWater = skyOceanWaterView(dir, origin, blend, depths);
   if(!skip)
-    color = skyOcean(color, dir, origin, inWater, depths);
+    color = skyOcean(color, dir, origin, inWater, depths, blend);
   #endif
 
   #ifdef SKY_ABYSS

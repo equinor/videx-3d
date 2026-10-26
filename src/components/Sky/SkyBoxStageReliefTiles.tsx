@@ -433,7 +433,8 @@ export const SkyBoxStageReliefTiles = ({
     view.frustum.setFromProjectionMatrix(view.matrix);
 
     // The ground under the camera, from the finest tile in there, whether drawn or not:
-    // the one under a camera looking level is out of view.
+    // the one under a camera looking level is out of view. On its triangles, so a camera
+    // just over the ground drawn is never taken to be in it.
     let ground: number | null = null;
     for (let depth = MAX_DEPTH; depth >= 0 && ground === null; depth--) {
       const tile = streamer.get(
@@ -441,12 +442,16 @@ export const SkyBoxStageReliefTiles = ({
       );
       if (tile)
         ground =
-          level + geoReliefTileHeightAt(tile, eye.longitude, eye.latitude);
+          level +
+          geoReliefTileHeightAt(tile, eye.longitude, eye.latitude, true);
     }
     if (cameraGround) cameraGround.current = ground;
     // Under it, the skirts are seen from below, where there are no cracks to close.
     material.uniforms.uReliefCameraUnder.value =
       ground !== null && y < ground ? 1 : 0;
+    // In it, above the sea's own seabed, the camera is in rock: the sky draws the void
+    // (SkyMaterial.oceanBuried), and none of the relief is drawn. Chosen and streamed still.
+    const buried = ground !== null && y <= ground && y > level - sky.oceanDepth;
 
     // No farther than can be seen: past the globe's horizon, the highest ground's own, and
     // the disc's flat sea, over which a view runs on level.
@@ -469,8 +474,9 @@ export const SkyBoxStageReliefTiles = ({
         minY: level + tile.min,
         maxY: level + tile.max,
         leaf: tile.leaf,
-        // Across the coast, land and sea are shaded apart however flat the tile.
-        rough: tile.min < 0 && tile.max > 0,
+        // Across the coast, land and sea are shaded apart however flat the tile; and across
+        // where a finer layer ends, or over one between its nodes.
+        rough: tile.edge || (tile.min < 0 && tile.max > 0),
       };
     };
     // Where the tiles lie: on the globe by their latitudes and longitudes. Their lowest
@@ -648,6 +654,10 @@ export const SkyBoxStageReliefTiles = ({
       }
     }
     subset.instanceCount = inStage;
+    if (buried) {
+      geometry.instanceCount = 0;
+      subset.instanceCount = 0;
+    }
 
     // The ground handed out over each region: the tiles there, in their squares scaled to
     // metres about the region's middle (the warp's coordinates), the warp from the world's

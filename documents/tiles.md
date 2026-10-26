@@ -248,7 +248,8 @@ Each frame, from the roots within reach:
   point (`pixelsPerUnit`), is over `pixelError`; it merges back only once under it by
   `LOD_COARSEN_MARGIN`, so a tile on the edge does not flip every frame (as
   `selectLodLevel`);
-- a tile marked `leaf` — no data finer than it under it — is never split;
+- a tile marked `leaf` — no data finer than it under it, by the data in its layers'
+  windows, not only what its nodes took — is never split;
 - **a split tile is drawn until all four children are in**, and those not in are wanted.
   Ground is never missing, and never drawn twice;
 - a region may cap the error (the bridge does, see
@@ -289,6 +290,17 @@ Each frame, from the roots within reach:
   mountains, under `minSlope` × half a cell); with it, 24 tiles of 78 km cells. Over the
   coast from 300 km it draws 137 tiles where 122 did; Volve's seabed, Norway from 1000 km
   and the coast's horizon draw the same;
+- **and where a finer layer ends** (built 2026-10-26): a tile is `edge`
+  (`ReliefTile.edge`) where a layer finer than its cells has data in its footprint but
+  does not cover all of its nodes, and the renderer takes it as `rough`. A layer smaller
+  than a cell can give no node at all, so whether there is finer data under a tile is told
+  by the data in the layer's window, not by what the nodes took: before, such a tile
+  stayed a `leaf` at the base, and with only ETOPO 15″ over south-west Norway (300 km)
+  the Earth stayed on its two roots from any height, the layer drawn only by the overview
+  past the far plane — a disc of bare base around the camera hid it. Its error counts the
+  layer's data lying between its nodes too (the window's range, widened by the layer's
+  detail). Now the layer draws from every height: 8 tiles to depth 5 from 2840 km, 120 to
+  depth 10 from 20 km;
 - **and not under the ground:** with the camera below the ground under it, the tiles'
   tops face away, so their shading cannot be seen, and the renderer leaves `cellPixels`
   out. Below Volve's seabed that is 21 tiles instead of 45;

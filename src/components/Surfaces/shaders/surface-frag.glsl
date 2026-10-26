@@ -274,9 +274,7 @@ void main() {
 
   // contour lines
   #ifdef USE_CONTOURS
-  float h = (depth + contoursInterval * 0.5) / contoursInterval;
-
-  float t = contourLine(h, contoursThickness);
+  float contour = contourCover(depth, contourGradient(depth), contoursInterval, contoursThickness, 0.0);
   #endif
 
   ReflectedLight reflectedLight = ReflectedLight(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0));
@@ -307,7 +305,7 @@ void main() {
   vec3 outgoingLight = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + totalEmissiveRadiance;
 
   #ifdef USE_CONTOURS
-  outgoingLight = contourShade(outgoingLight, 1. - t, contoursColorMode, contoursColorModeFactor, contoursColor);
+  outgoingLight = contourShade(outgoingLight, contour, contoursColorMode, contoursColorModeFactor, contoursColor);
   #endif
 	#include <envmap_fragment>
 	#include <opaque_fragment>

@@ -52,13 +52,28 @@ uniform vec4 uSkyStageFlat; // the disc about the scene the sea stays flat over:
 // heights over the air's ground the ground, the sea and the rim come to be lit by the sun
 // over their own horizon (skyDayAt). Below, the sky's light, the camera's sun's, holds.
 #define SKY_FROM_SPACE vec2(100000.0, 1000000.0)
-// From space: the sea's colour, as a share of the blue overhead deepened once more; the
-// sun's glint off it, its sharpness and strength; and how pale the air over the ground is,
-// toward the horizon's colour. Seen from space the air adds blue, not grey: pale, it greyed
-// the sea from navy to slate and the land toward the horizon's colour.
+// From space: the sea's colour, as a share of the blue overhead deepened once more, and the
+// share of the sky it reflects looking straight down (Fresnel's, toward 1 along the level);
+// the sun's glint off its waves: how tight (a power of the angle off the mirror, lower is
+// broader) and how strong, strengthened toward grazing.
 #define SKY_SPACE_SEA 0.35
-#define SKY_SPACE_GLINT vec2(300.0, 2.0)
-#define SKY_SPACE_AIR_PALE 0.1
+#define SKY_SPACE_SEA_REFLECT 0.02
+#define SKY_SPACE_GLINT vec2(60.0, 0.12)
+// From space, the air over the ground: how much more it hazes than its visibility says (that
+// is the low air's, and leaves out the blue it scatters overhead), and how far its light pales
+// from the blue overhead toward the horizon's colour as the view crosses more of it. Seen
+// from space the air adds blue, not grey: pale, it greyed the sea from navy to slate.
+#define SKY_SPACE_HAZE 2.0
+#define SKY_SPACE_AIR_PALE 0.5
+// From space, the ground as lit by the sun where it lies: the sun's irradiance at full day
+// and the ambient's, as the scene's sun (`sun.intensity`) and light probe give over the field.
+#define SKY_SPACE_GROUND_SUN 1.5
+#define SKY_SPACE_GROUND_AMBIENT 0.6
+// The sun's colour by its elevation (skySunColor, linear): on the horizon, a few degrees up,
+// and high.
+#define SKY_SUN_HORIZON vec3(1.0, 0.1559, 0.0331)
+#define SKY_SUN_LOW vec3(1.0, 0.3763, 0.0844)
+#define SKY_SUN_HIGH vec3(1.0, 0.9216, 0.8070)
 
 // The camera's height over the air's ground, over the globe (globeCameraHeight).
 float skyCameraHeight() {
@@ -76,6 +91,15 @@ float skyFromSpace() {
 // How sunlit the ground is under `up` (its up there): 0 by night, 1 by day.
 float skySunlit(vec3 up) {
   return smoothstep(-0.1, 0.05, dot(uSkySunDirection, up));
+}
+
+// The sun's colour seen through the air at an elevation whose sine is `sine`: the GLSL twin
+// of skySunColor, for where the sky's own light is not the place's (from space).
+vec3 skySunColorAt(float sine) {
+  float elevation = degrees(asin(clamp(sine, -1.0, 1.0)));
+  if(elevation < 6.0)
+    return mix(SKY_SUN_HORIZON, SKY_SUN_LOW, smoothstep(-2.0, 6.0, elevation));
+  return mix(SKY_SUN_LOW, SKY_SUN_HIGH, smoothstep(6.0, 25.0, elevation));
 }
 
 // How lit what lies at `p` is, seen from high up: by the sun over its own horizon there,
@@ -218,26 +242,66 @@ vec3 skyDeepZenith() {
   return 0.85 * uSkyZenithColor * uSkyZenithColor / max(max(uSkyZenithColor.r, max(uSkyZenithColor.g, uSkyZenithColor.b)), 1e-4);
 }
 
+// How much of what lies at `p`, where its up is `up`, the air over it hides from the camera
+// seen from space: by the air's mass the view crosses there, as the Chapman function gives it
+// for a round Earth — 1 / cos of the view's angle from up, but no more than
+// SKY_AIR_LEVEL_MASS along the level — so the haze thickens toward the Earth's edge. The
+// column is the clear air's and the low haze layer's, by its share.
+float skySpaceHaze(vec3 p, vec3 up) {
+  if(uSkyAir.z <= 0.0)
+    return 0.0;
+  float facing = max(dot(normalize(cameraPosition - p), up), 0.0);
+  float mass = (1.0 + 1.0 / SKY_AIR_LEVEL_MASS) / (facing + 1.0 / SKY_AIR_LEVEL_MASS);
+  float scale = uSkyAir.y > 0.0 ? uSkyAir.y : SKY_SPACE_START;
+  float column = mix(scale, uSkyHaze.x > 0.0 ? uSkyHaze.x : scale, uSkyHaze.y);
+  return 1.0 - exp(-SKY_SPACE_HAZE * column * mass / uSkyAir.z);
+}
+
+// The air's light over ground seen from space through `haze` of it (skySpaceHaze), where the
+// sun's elevation's sine is `sine`: the blue overhead, paler the more of the air the view
+// crosses, warmer where the sun is low there — a little: the high air the view grazes at the
+// Earth's edge is lit by the sun before the low air reddens it.
+vec3 skySpaceAir(float haze, float sine) {
+  vec3 warm = mix(vec3(1.0), min(skySunColorAt(sine) / SKY_SUN_HIGH, vec3(1.0)), 0.3);
+  return mix(uSkyZenithColor, uSkyHorizonColor, SKY_SPACE_AIR_PALE * haze) * warm;
+}
+
 // The open sea seen from space along `dir`, where its up is `up`: deep blue as the sun lights
-// it there, with the sun's glint off it. Unhazed (skyFromSpaceOver).
+// it there, reflecting more of the sky the more it is seen edge on, and the sun's glint off
+// its waves, broad, in the sun's colour there. Unhazed (skyFromSpaceOver).
 vec3 skySpaceSea(vec3 dir, vec3 up) {
-  float sun = max(dot(uSkySunDirection, up), 0.0);
-  float glint = pow(max(dot(reflect(dir, up), uSkySunDirection), 0.0), SKY_SPACE_GLINT.x);
+  float sine = dot(uSkySunDirection, up);
+  float sun = max(sine, 0.0);
+  float edgeOn = pow(1.0 - clamp(-dot(dir, up), 0.0, 1.0), 5.0);
+  float reflected = SKY_SPACE_SEA_REFLECT + (1.0 - SKY_SPACE_SEA_REFLECT) * edgeOn;
   vec3 deep = skyDeepZenith();
   deep *= deep / max(max(deep.r, max(deep.g, deep.b)), 1e-4);
-  return SKY_SPACE_SEA * deep * (0.2 + 0.8 * sun) + uSkySunColor * glint * SKY_SPACE_GLINT.y;
+  vec3 body = SKY_SPACE_SEA * deep * (0.2 + 0.8 * sun);
+  vec3 sky = uSkyZenithColor * skySunlit(up);
+  float glint = pow(max(dot(reflect(dir, up), uSkySunDirection), 0.0), SKY_SPACE_GLINT.x);
+  return mix(body, sky, reflected) + skySunColorAt(sine) * glint * SKY_SPACE_GLINT.y * (1.0 + 4.0 * edgeOn);
+}
+
+// Ground of colour `albedo` facing `normal` (world), at `p`, seen from space: lit by the
+// sun where it lies, in its colour there, and an even ambient; not by the scene's light,
+// which is the field's (skyFromSpaceOver takes the night side down).
+vec3 skySpaceGround(vec3 albedo, vec3 normal, vec3 p) {
+  float sine = dot(uSkySunDirection, globeUpAt(p));
+  float direct = max(dot(normal, uSkySunDirection), 0.0) * SKY_SPACE_GROUND_SUN;
+  return albedo * RECIPROCAL_PI * (skySunColorAt(sine) * direct + SKY_SPACE_GROUND_AMBIENT);
 }
 
 // `near`, as the sky shades it in the air, toward what it is from space: `lit`, its colour
 // as lit where it lies at `p` (unhazed), dark where the sun is down there, under the air the
-// view crosses over it (`haze`, skyAirHaze), the blue overhead as lit there.
-vec3 skyFromSpaceOver(vec3 near, vec3 lit, vec3 p, float haze) {
+// view crosses over it (skySpaceHaze), lit there (skySpaceAir).
+vec3 skyFromSpaceOver(vec3 near, vec3 lit, vec3 p) {
   float space = skyFromSpace();
   if(space <= 0.0)
     return near;
   vec3 up = globeUpAt(p);
   float day = mix(SKY_NIGHT_LEVEL, 1.0, skySunlit(up));
-  vec3 air = mix(skyDeepZenith(), uSkyHorizonColor, SKY_SPACE_AIR_PALE);
+  float haze = skySpaceHaze(p, up);
+  vec3 air = skySpaceAir(haze, dot(uSkySunDirection, up));
   return mix(near, mix(lit, air, haze) * day, space);
 }
 
@@ -347,7 +411,9 @@ vec3 skySurfaceAt(vec3 dir, float blend, float height) {
 
 // The same from the camera. Toward space, by the air the view passes, it deepens to the blue
 // overhead, bluer still through the ozone layer, and goes black, but for a glow over the
-// Earth's edge: pale low down, deep blue higher, brighter toward the sun. The horizon and the
+// Earth's edge: pale low down, deep blue higher, brighter toward the sun. From space only
+// the glow is left: the air's own gradient, lit by the field's light, would show its pale
+// horizon as a line a pixel or two thin, and over the night side too. The horizon and the
 // lowest the view passes taken once, for all of it.
 vec3 skySurface(vec3 dir, float blend) {
   float height = skyCameraHeight();
@@ -362,16 +428,27 @@ vec3 skySurface(vec3 dir, float blend) {
   float space = skySpaceAbove(air);
   color = mix(color, skyDeepZenith() * mix(SKY_NIGHT_LEVEL, 1.0, seen.daylight), smoothstep(0.0, 0.5, space));
   float ozone = 1.0 - smoothstep(0.0, SKY_OZONE_LAYER.y, abs(air - SKY_OZONE_LAYER.x));
-  color *= mix(vec3(1.0), SKY_OZONE, ozone) * (1.0 - space);
+  float fromSpace = skyFromSpace();
+  color *= mix(vec3(1.0), SKY_OZONE, ozone) * (1.0 - space) * (1.0 - fromSpace);
   float above = max(lowest, 0.0);
-  float rim = exp(-above / SKY_RIM_HEIGHT) * smoothstep(SKY_RIM_SHOWN.x, SKY_RIM_SHOWN.y, height);
+  // From far off the glow is wider than the air, so it never thins below a few pixels: the
+  // metres a pixel spans at the Earth's edge, as far off as the view grazes it.
+  float R = uSkyCurvature > 0.0 ? 1.0 / uSkyCurvature : 0.0;
+  float edgeMetres = sqrt(max(height, 0.0) * (2.0 * R + height)) * length(fwidth(dir));
+  float rimHeight = max(SKY_RIM_HEIGHT, 3.0 * edgeMetres);
+  float rim = exp(-above / rimHeight) * smoothstep(SKY_RIM_SHOWN.x, SKY_RIM_SHOWN.y, height);
   if(rim > 1e-3) {
     float toward = max(dot(dir, uSkySunDirection), 0.0);
-    vec3 glow = mix(skyDeepZenith(), uSkyHorizonColor, exp(-above / (0.35 * SKY_RIM_HEIGHT)));
     // From high up, lit where the view passes closest to the Earth: dark over its night side.
     vec3 centre = uGlobeDisc.xyz - uGlobeUp * uGlobe.y;
-    float day = skyDayAt(cameraPosition + dir * max(dot(centre - cameraPosition, dir), 0.0));
-    color += glow * rim * seen.daylight * day * (0.55 + 0.45 * toward * toward);
+    vec3 closest = cameraPosition + dir * max(dot(centre - cameraPosition, dir), 0.0);
+    // Low down, the horizon's colour, brighter toward the sun; from space, the air's over the
+    // ground at the edge (skySpaceAir) in its light there, so the two sides of the edge meet
+    // in one colour.
+    vec3 edge = mix(uSkyHorizonColor, skySpaceAir(1.0, dot(uSkySunDirection, globeUpAt(closest))), fromSpace);
+    vec3 glow = mix(skyDeepZenith(), edge, exp(-above / max(0.35 * SKY_RIM_HEIGHT, 1.5 * edgeMetres)));
+    float light = mix(seen.daylight * (0.55 + 0.45 * toward * toward), 1.0, fromSpace);
+    color += glow * rim * light * skyDayAt(closest);
   }
   return color;
 }

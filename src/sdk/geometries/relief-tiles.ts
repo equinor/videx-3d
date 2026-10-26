@@ -110,11 +110,17 @@ export type ReliefTile = {
   max: number;
   /**
    * how far its surface may stray from the merged data: the largest gap at its half-cell
-   * points, or more where a layer holds detail finer than those points read
+   * points, or more where a layer holds detail finer than those points read — or, where a
+   * layer's data lies between its nodes, how far that data lies off its heights
    */
   error: number;
   /** no layer under it has data finer than its cells: it need not be split */
   leaf: boolean;
+  /**
+   * where a layer finer than its cells ends, or lies wholly between its nodes: shaded apart
+   * from what is around it however flat — split by its cells' size on screen, as a coast is
+   */
+  edge: boolean;
 };
 
 type Read = (
@@ -836,7 +842,8 @@ function readReliefLayers(
 /**
  * Merge one layer onto a grid's `heights` (`nodesU` per row): eased toward the layer by
  * how much of it each node gets. With `layers`, a node more than half the layer's takes
- * its id (1 + its index). Returns whether it gave any node anything.
+ * its id (1 + its index). Returns how many nodes it gave anything, and how many it gave
+ * all of theirs.
  */
 function mergeReliefLayer(
   read: LayerRead,
@@ -844,11 +851,12 @@ function mergeReliefLayer(
   nodesU: number,
   nodesV: number,
   layers?: Uint8Array,
-): boolean {
+): [number, number] {
   const { index, lattice, level, window, weightAt } = read;
   const node = new Float64Array(2);
   const sample = new Float64Array(2);
-  let gives = false;
+  let gives = 0;
+  let whole = 0;
   for (let v = 0; v < nodesV; v++) {
     for (let u = 0; u < nodesU; u++) {
       lattice.node(u, v, node);
@@ -857,13 +865,25 @@ function mergeReliefLayer(
       window.sample(lc, lr, sample);
       const weight = weightAt(node[0], node[1], sample[1]);
       if (weight <= 0) continue;
-      gives = true;
+      gives++;
+      if (weight >= 1) whole++;
       const k = v * nodesU + u;
       heights[k] += (sample[0] - heights[k]) * weight;
       if (layers && weight > 0.5) layers[k] = index + 1;
     }
   }
-  return gives;
+  return [gives, whole];
+}
+
+// The lowest and highest data in a window, or null where it holds none.
+function windowRange(window: LevelWindow): [number, number] | null {
+  let min = Infinity;
+  let max = -Infinity;
+  for (const value of window.values) {
+    if (value < min) min = value;
+    if (value > max) max = value;
+  }
+  return min <= max ? [min, max] : null;
 }
 
 /**
@@ -945,7 +965,8 @@ export function reliefTileHeightAt(
 /**
  * The height of a built geographic relief tile (`buildGeoReliefTile`) at `longitude`,
  * `latitude` (degrees), in metres above mean sea level: bilinear between its nodes, as the
- * relief is shaded. A point off the tile takes its nearest edge.
+ * relief is shaded, or with `drawn` on the triangles it is drawn with. A point off the tile
+ * takes its nearest edge.
  *
  * @group Geometries
  */
@@ -953,14 +974,21 @@ export function geoReliefTileHeightAt(
   tile: ReliefTile,
   longitude: number,
   latitude: number,
+  drawn = false,
 ): number {
   const [west, north, span] = geoTileRegion(tile.key);
   const east = ((((longitude - west + 180) % 360) + 360) % 360) - 180;
-  return tileHeightAt(tile, east / span, (north - latitude) / span);
+  return tileHeightAt(tile, east / span, (north - latitude) / span, drawn);
 }
 
-// A tile's height at (`u`, `v`), its own nodes from 0 to 1 along each side, clamped.
-function tileHeightAt(tile: ReliefTile, fu0: number, fv0: number): number {
+// A tile's height at (`u`, `v`), its own nodes from 0 to 1 along each side, clamped:
+// bilinear, or `drawn` on its triangles, whose diagonals run from (i + 1, j) to (i, j + 1).
+function tileHeightAt(
+  tile: ReliefTile,
+  fu0: number,
+  fv0: number,
+  drawn = false,
+): number {
   const { cells, heights } = tile;
   const nodes = cells + 3;
   const u = Math.min(Math.max(fu0 * cells, 0), cells);
@@ -971,9 +999,16 @@ function tileHeightAt(tile: ReliefTile, fu0: number, fv0: number): number {
   const fv = v - j;
   // The tile's own node (i, j), past its border of one.
   const k = (1 + j) * nodes + 1 + i;
+  const h00 = heights[k];
+  const h10 = heights[k + 1];
+  const h01 = heights[k + nodes];
+  const h11 = heights[k + nodes + 1];
+  if (drawn)
+    return fu + fv <= 1
+      ? h00 + fu * (h10 - h00) + fv * (h01 - h00)
+      : h11 + (1 - fu) * (h01 - h11) + (1 - fv) * (h10 - h11);
   return (
-    (heights[k] * (1 - fu) + heights[k + 1] * fu) * (1 - fv) +
-    (heights[k + nodes] * (1 - fu) + heights[k + nodes + 1] * fu) * fv
+    (h00 * (1 - fu) + h10 * fu) * (1 - fv) + (h01 * (1 - fu) + h11 * fu) * fv
   );
 }
 
@@ -1072,6 +1107,10 @@ async function buildTile(
   const halves = new Float64Array(fine * fine).fill(source.base);
   const layers = new Uint8Array(nodes * nodes);
   let leaf = true;
+  let edge = false;
+  // The data of the layers that lie wholly between its nodes, lowest and highest.
+  let betweenMin = Infinity;
+  let betweenMax = -Infinity;
 
   const node = new Float64Array(2);
   const sample = new Float64Array(2);
@@ -1095,7 +1134,13 @@ async function buildTile(
   for (const read of reads) {
     if (!read) continue;
     const { lattice, halfLevel, halfWindow, weightAt } = read;
-    const gives = mergeReliefLayer(read, heights, nodes, nodes, layers);
+    const [gives, whole] = mergeReliefLayer(
+      read,
+      heights,
+      nodes,
+      nodes,
+      layers,
+    );
     for (let v = 0; v < fine; v++) {
       for (let u = 0; u < fine; u++) {
         lattice.node(1 + u / 2, 1 + v / 2, node);
@@ -1108,7 +1153,18 @@ async function buildTile(
         halves[k] += (sample[0] - halves[k]) * weight;
       }
     }
-    if (gives && read.spacing < cell * FINER) leaf = false;
+    // A layer smaller than a cell may give no node at all: its data in the window, not
+    // what the nodes took, tells whether there is anything finer under the tile.
+    const range = windowRange(read.window);
+    if (range && read.spacing < cell * FINER) {
+      leaf = false;
+      if (whole < nodes * nodes) edge = true;
+      if (gives === 0) {
+        // The window is averaged: its data may stray from it by the layer's detail.
+        betweenMin = Math.min(betweenMin, range[0] - read.detail);
+        betweenMax = Math.max(betweenMax, range[1] + read.detail);
+      }
+    }
   }
 
   // The tile's own nodes, and the gap at its half-cell points between the merged data
@@ -1125,6 +1181,8 @@ async function buildTile(
   }
   let error = 0;
   for (const read of reads) if (read) error = Math.max(error, read.detail);
+  if (betweenMin <= betweenMax)
+    error = Math.max(error, betweenMax - min, max - betweenMin);
   for (let v = 0; v < fine; v++) {
     for (let u = 0; u < fine; u++) {
       const i = u >> 1;
@@ -1160,5 +1218,5 @@ async function buildTile(
     }
   }
 
-  return { key, cells, heights, normals, layers, min, max, error, leaf };
+  return { key, cells, heights, normals, layers, min, max, error, leaf, edge };
 }

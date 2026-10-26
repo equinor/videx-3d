@@ -483,8 +483,8 @@ export const SkyBoxStage = ({
     };
   }, [sky, extent, reach, minX, minZ, maxX, maxZ]);
 
-  // The relief's ground under the camera, which the sky takes for its own there below the
-  // sea surface.
+  // The relief's ground under the camera, which the sky takes for its own there: the
+  // seabed below the sea surface, and in the ground above it, rock.
   const reliefGround = useRef<number | null>(null);
   useEffect(() => {
     if (!sky || !tiled) return;
@@ -545,18 +545,20 @@ export const SkyBoxStage = ({
     }
     placed.current = now;
     // Under the seabed's level the void's lid hides the water, seabed or not: the surface
-    // would discard every pixel.
+    // would discard every pixel. In the relief's ground above it the camera is in rock
+    // (SkyMaterial.oceanBuried), where none of the sea shows either.
     const altitude = sky.globe.altitude(camera.position);
+    const underRelief = tiled ? reliefGround.current : null;
+    const bed = sky.oceanLevel - sky.oceanDepth;
+    const y = sky.oceanLevel + altitude;
+    const buried = underRelief !== null && y <= underRelief && y > bed;
     if (surface.current)
-      surface.current.visible = surfaceShown && altitude + sky.oceanDepth >= 0;
+      surface.current.visible =
+        surfaceShown && altitude + sky.oceanDepth >= 0 && !buried;
     if (!tiled) return;
-    const underRelief = reliefGround.current;
-    sky.oceanGround =
-      altitude > 0 || underRelief === null
-        ? null
-        : // No deeper than the sea's own seabed: under it lies the void, wherever the
-          // relief is deeper (documents/tiles.md, Costs and risks).
-          Math.max(underRelief, sky.oceanLevel - sky.oceanDepth);
+    // No deeper than the sea's own seabed: under it lies the void, wherever the relief is
+    // deeper (documents/tiles.md, Costs and risks).
+    sky.oceanGround = underRelief === null ? null : Math.max(underRelief, bed);
   });
 
   // Told on every change: the occupant draws its own seabed whenever the stage does not,

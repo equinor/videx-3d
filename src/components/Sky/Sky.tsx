@@ -1449,13 +1449,22 @@ export const Sky = ({
     // for the walls' cut and the cutaway alike.
     if (material.abyssWalls || cutawayOptions) camera.updateMatrixWorld();
     if (material.abyssWalls) material.clipAbyssWalls(camera);
-    // From the sea surface down the layer is clear everywhere (skyOceanSurfaceLayer).
+    // Under a stage's ground above the sea's own seabed, as from inside rock: below the sea
+    // or in land above it.
+    material.oceanBuried =
+      material.ocean &&
+      material.oceanGround !== null &&
+      height <= material.oceanGround &&
+      height > material.oceanLevel - material.oceanDepth;
+    // From the sea surface down the layer is clear everywhere (skyOceanSurfaceLayer), and
+    // in rock there is no sea to see.
     if (surfaceMesh.current)
       surfaceMesh.current.visible =
         drawn &&
         ready &&
         !debug?.hide?.includes('surface') &&
-        height > material.oceanLevel;
+        height > material.oceanLevel &&
+        !material.oceanBuried;
     // The sky's own light where the camera is: by the sun over the level it sees the sky by
     // (Globe.lookUp), the field's over the field. From high up, over the horizon the
     // Earth's curve lowers. The scene's lights and the bakes stay the field's.
@@ -1509,12 +1518,6 @@ export const Sky = ({
         t,
       );
     }
-    // Under a stage's ground above the sea's own seabed, as from inside rock.
-    material.oceanBuried =
-      material.ocean &&
-      material.oceanGround !== null &&
-      height <= material.oceanGround &&
-      height > material.oceanLevel - material.oceanDepth;
 
     // The cutaway: from below the camera to where the `reach` row meets its plane, the
     // surface from above the water and the seabed from in it, or from above a dry one.

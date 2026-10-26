@@ -128,8 +128,9 @@ vec2 skyOceanCutawayGrip(vec2 rimAt) {
 // view's bearing toward the horizon; looking down, the sky overhead as seen from the sea,
 // which also has no bearing, so the sun's side cannot show as a wedge where all of them meet.
 // At twilight the horizon's glow keeps to the far sea, and the air below is the dusk overhead.
-// From high up, the sea as space sees it where it lies (skyFromSpaceOver).
-vec4 skyOceanThroughAir(vec4 surface, vec3 origin, vec3 dir, float dist, float blend) {
+// From high up, as space sees it where it lies (skyFromSpaceOver): the sea, or `dry`, the
+// seabed as the relief's ground is lit there, so the two meet without a seam at its reach.
+vec4 skyOceanThroughAirOver(vec4 surface, vec3 origin, vec3 dir, float dist, float blend, bool dry) {
   float haze = skyAirHaze(origin, dir, dist);
   vec4 near = surface;
   if(haze > 0.0) {
@@ -148,8 +149,14 @@ vec4 skyOceanThroughAir(vec4 surface, vec3 origin, vec3 dir, float dist, float b
   if(space <= 0.0)
     return near;
   vec3 p = origin + dir * dist;
-  vec3 sea = skySpaceSea(dir, globeUpAt(p));
-  return vec4(skyFromSpaceOver(near.rgb, sea, p, haze), mix(near.a, 1.0, space));
+  vec3 up = globeUpAt(p);
+  // The ground keeps the scene's scale, as a lit surface does (skyOceanBed).
+  vec3 lit = dry ? skySpaceGround(uSkyOceanBedColor, up, p) / max(uSkyIntensity, 1e-4) : skySpaceSea(dir, up);
+  return vec4(skyFromSpaceOver(near.rgb, lit, p), mix(near.a, 1.0, space));
+}
+
+vec4 skyOceanThroughAir(vec4 surface, vec3 origin, vec3 dir, float dist, float blend) {
+  return skyOceanThroughAirOver(surface, origin, dir, dist, blend, false);
 }
 
 // The surface seen from above at `p`, `surface` its colour and opacity, with the cutaway
@@ -429,7 +436,7 @@ vec3 skyOceanWaterView(vec3 dir, vec3 origin, float blend, vec3 depths) {
 // from in the water (skyOceanWaterView) and `depths` the void along it (skyOceanVoid).
 // From above the water it is only the seabed: the surface is a layer of its own, blended
 // over it (and over a stage) by the GPU, so the sky and a stage composite it the same way.
-vec3 skyOcean(vec3 color, vec3 dir, vec3 origin, vec3 inWater, vec3 depths) {
+vec3 skyOcean(vec3 color, vec3 dir, vec3 origin, vec3 inWater, vec3 depths, float blend) {
   float altitude = skyOceanViewAltitude(origin);
   if(altitude + uSkyOceanDepth <= 0.0)
     return color;
@@ -456,6 +463,11 @@ vec3 skyOcean(vec3 color, vec3 dir, vec3 origin, vec3 inWater, vec3 depths) {
   float cutaway = skyOceanCutawayAlong(origin, bedPoint);
   vec3 ground = skyOceanFloor(bed, depths, cutaway);
   vec3 seen = skyOceanFog(ground, path * skyOceanCutawayWater(cutaway), skyOceanBedPathLight(origin, uSkyOceanDepth));
+  // Dry, from high up: through the air and as space sees it, as the relief's ground past
+  // which it shows. Eased in by the same share, so nothing changes in the air.
+  float space = skyFromSpace();
+  if(!wet && space > 0.0)
+    seen = mix(seen, skyOceanThroughAirOver(vec4(seen, 1.0), origin, dir, reach.x, blend, true).rgb, space);
 
   return missed < 0.5 ? seen : color;
 }

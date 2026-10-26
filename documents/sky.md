@@ -284,18 +284,37 @@ over the air's ground (`SKY_FROM_SPACE`, `skyFromSpace`) what lies below is shad
 it lies instead (`skyFromSpaceOver`):
 
 - **the sea:** deep blue as the sun lights it there, the blue overhead deepened once more
-  (`skyDeepZenith`'s step again), with the sun's glint off it (`skySpaceSea`;
-  `SKY_SPACE_SEA`, `SKY_SPACE_GLINT`);
-- **the relief:** its own lighting (the scene's sun on its normals), the night side's
-  ambient taken out;
-- **over both, the air** the view crosses (`skyAirHaze`, which measures the path through
-  the air from anywhere), coloured as the deep blue overhead, barely paled toward the
-  horizon's colour (`SKY_SPACE_AIR_PALE` 0.1; at 0.35 it greyed the sea from navy to
-  slate), and lit by the sun there: dark where the sun is down, down to the night's level;
-- **the rim** over the Earth's edge lit where the view passes closest to it (`skyDayAt`),
-  so it is dark over the night side;
+  (`skyDeepZenith`'s step again), reflecting more of the sky the more it is seen edge on
+  (Fresnel's, from `SKY_SPACE_SEA_REFLECT` straight down), with the sun's glint off its
+  waves: broad and soft, stronger toward grazing, in the sun's colour there, warm near the
+  terminator and white by day (`skySpaceSea`, `skySunColorAt`, the GLSL twin of
+  `skySunColor`; `SKY_SPACE_SEA`, `SKY_SPACE_GLINT`). A tight, strong glint read as a
+  white blob;
+- **the relief:** lit by the sun where it lies, in its colour there, and an even ambient
+  (`skySpaceGround`; `SKY_SPACE_GROUND_SUN`, `SKY_SPACE_GROUND_AMBIENT`), not by the
+  scene's light, which is the field's: from space at the field's sunset the far side's
+  day was lit red. The sky's own dry seabed is lit the same way;
+- **over both, the air** the view crosses there (`skySpaceHaze`): by its mass, as the
+  Chapman function gives it for a round Earth — 1 / cos of the view's angle from up, at
+  most `SKY_AIR_LEVEL_MASS` along the level — over the column of the clear air and the
+  haze layer, `SKY_SPACE_HAZE` times what the visibility says (the visibility is the low
+  air's). So the haze is thin looking straight down and thickens toward the Earth's edge;
+  measured along the view instead (`skyAirHaze`), it was about the same everywhere and the
+  sea had no gradient. Its light (`skySpaceAir`) is the blue overhead, paling toward the
+  horizon's colour the more air is crossed (`SKY_SPACE_AIR_PALE`), a little warmer where
+  the sun is low, and lit by the sun there: dark where the sun is down, down to the
+  night's level;
+- **the rim** over the Earth's edge: lit where the view passes closest to it
+  (`skyDayAt`), so it is dark over the night side. From space it is all that is left of
+  the sky's own gradient, whose pale horizon read as a line a pixel or two thin, aliased,
+  and lit by the field's light. Its core takes the air's light at the edge, so the two
+  sides of the edge meet in one colour, and it never thins below a few pixels: its heights
+  are at least 3 (and 1.5) times the metres a pixel spans at the edge;
 - **the stars and the sea's layer** test the horizon about the camera's own up and its own
-  horizon (`skyOverSeaHorizon`), so they stay right from the far side of the Earth.
+  horizon (`skyOverSeaHorizon`), so they stay right from the far side of the Earth;
+- **the sun and the moon:** the sun's disc and glare are reddened only by the air the view
+  toward it crosses (`skySpace` along it), so from space it is white and through the air
+  over the Earth's edge still red; the moon's glow, the air's, goes as the air does.
 
 The deck of clouds is not drawn from above it and the band is gone above 250 km, so from
 space there are none (3D clouds would change that). Below 100 km nothing changes. A

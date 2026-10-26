@@ -88,13 +88,16 @@ vec3 reliefAlbedo(float height, float weight, int look) {
 }
 
 // `color` with look `look`'s contour lines over it, for ground `height` metres from the
-// sea's level, `dHeight` its fwidth; on the seabed only if the look says so.
-vec3 reliefContours(vec3 color, float height, float dHeight, int look) {
+// sea's level, `gHeight` its gradient on screen (contourGradient), `dist` from the camera;
+// on the seabed only if the look says so. They fade out over the last fifth of the tiles'
+// reach: past it the overview, which has none, draws the ground.
+vec3 reliefContours(vec3 color, float height, float gHeight, float dist, int look) {
   vec4 lines = reliefLookRow(look, 3);
   if(lines.x <= 0.0 || (height < 0.0 && lines.w < 0.5))
     return color;
   vec4 shade = reliefLookRow(look, 4);
-  float cover = contourCover(height, dHeight, lines.x, lines.y, lines.z);
+  float cover = contourCover(height, gHeight, lines.x, lines.y, lines.z);
+  cover *= 1.0 - smoothstep(0.8 * uReliefReach, uReliefReach, dist);
   return contourShade(color, cover, int(reliefLookRow(look, 1).w + 0.5), shade.w, shade.rgb);
 }
 
@@ -213,20 +216,27 @@ void main() {
   // before anything branches.
   int look = reliefTileLayer();
   look = look < textureSize(uReliefLook, 0).x ? look : 0;
-  float dHeight = fwidth(height);
+  float gHeight = contourGradient(height);
   #endif
   vec3 position = (viewMatrix * vec4(world, 1.0)).xyz;
-  vec3 color = sceneBlinnPhong(reliefAlbedo(height, ground.y, look), under ? uSkyOceanBedSpecular : RELIEF_LAND_SPECULAR, under ? uSkyOceanBedShininess : RELIEF_LAND_SHININESS, uSkyOceanBedAmbient, position, normalize(mat3(viewMatrix) * normal));
+  vec3 albedo = reliefAlbedo(height, ground.y, look);
+  vec3 color = sceneBlinnPhong(albedo, under ? uSkyOceanBedSpecular : RELIEF_LAND_SPECULAR, under ? uSkyOceanBedShininess : RELIEF_LAND_SHININESS, uSkyOceanBedAmbient, position, normalize(mat3(viewMatrix) * normal));
+  // From high up, as the sun lights it where it lies (skyFromSpaceOver): the same for every
+  // pixel, so the branch is uniform.
+  bool fromSpace = skyFromSpace() > 0.0;
+  vec3 lit = fromSpace ? skySpaceGround(albedo, normal, world) : color;
   #ifndef RELIEF_FAR
   // Lines over the lit ground, under the air and the water it is seen through.
-  color = reliefContours(color, height, dHeight, look);
+  color = reliefContours(color, height, gHeight, dist, look);
+  lit = fromSpace ? reliefContours(lit, height, gHeight, dist, look) : color;
   #endif
   // The sky's own scale is applied to everything it draws, last; a lit surface keeps the scene's.
   color /= max(uSkyIntensity, 1e-4);
+  lit /= max(uSkyIntensity, 1e-4);
 
   #ifdef RELIEF_FAR
   // From high up, as lit where it lies (skyFromSpaceOver): dark over the Earth's night side.
-  color = skyFromSpaceOver(reliefThroughAir(color, dir, dist, blend), color, world, skyAirHaze(cameraPosition, dir, dist));
+  color = skyFromSpaceOver(reliefThroughAir(color, dir, dist, blend), lit, world);
   #else
   // The triangles' chords sag under the globe's sea, by up to tens of metres on the coarse
   // tiles far off. So the ground's height decides which of the two shows: the seabed stays
@@ -250,7 +260,7 @@ void main() {
     if(altitude > 0.0 && sea > dist)
       gl_FragDepth = reliefDepthAt(dir, sea * 1.0001);
   } else if(altitude > 0.0) {
-    color = skyFromSpaceOver(reliefThroughAir(color, dir, dist, blend), color, world, skyAirHaze(cameraPosition, dir, dist));
+    color = skyFromSpaceOver(reliefThroughAir(color, dir, dist, blend), lit, world);
     // Also where the land only just clears the sea: there the two depths tie, and the sea
     // won. The tile holds its own ground only. Land met within a couple of its cells of the
     // sea stands for the sea's point; past that, the ground there decides when the tile

@@ -55,6 +55,9 @@ describe('skyZone', () => {
     // In a valley sunk below it: in the water.
     expect(skyZone(-120, { ...sea, oceanGround: -150 })).toBe('water');
     expect(skyZone(-60, { ...sea, oceanGround: null })).toBe('water');
+    // Inside land above the sea: in the ground; over it, in the air.
+    expect(skyZone(600, { ...sea, oceanGround: 830 })).toBe('subsurface');
+    expect(skyZone(900, { ...sea, oceanGround: 830 })).toBe('air');
   });
 
   it('is all subsurface when the sky is not drawn', () => {

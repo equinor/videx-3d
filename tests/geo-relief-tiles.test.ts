@@ -163,6 +163,20 @@ describe('buildGeoReliefTile', () => {
     expect(coarse.leaf).toBe(false);
   });
 
+  it('splits over a layer lying wholly between its nodes', async () => {
+    // Nodes 1.4° apart, about 80 km from the 12 km plane: none takes any of it.
+    const tile = await buildGeoReliefTile(
+      storeOf(utmPlane()),
+      { layers: [{ id: 'plane' }], base: -120 },
+      geoTileKeyAt(2, LON, LAT),
+    );
+    expect(tile.heights.every(h => h === -120)).toBe(true);
+    expect(tile.leaf).toBe(false);
+    expect(tile.edge).toBe(true);
+    // The plane reaches ±180 m; the tile stays at -120.
+    expect(tile.error).toBeGreaterThan(150);
+  });
+
   it('gives its normals east and south where each node lies, in metres', async () => {
     const reader = storeOf(utmPlane());
     const tile = await buildGeoReliefTile(

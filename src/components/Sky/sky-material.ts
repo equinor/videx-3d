@@ -1189,7 +1189,8 @@ export class SkyMaterial extends ShaderMaterial {
 
   /**
    * The ground's height under the camera where a stage draws its own (`SkyBoxStage`, its
-   * relief drawn from tiles), `null` where the sea's flat seabed is.
+   * relief drawn from tiles): the seabed, or land above the sea, no lower than the sea's own
+   * seabed. `null` where the sea's flat seabed is.
    */
   oceanGround: number | null = null;
 

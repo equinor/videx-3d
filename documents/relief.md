@@ -106,15 +106,21 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
   view would meet the sea over land the land comes in front.
 - Land, and a dry seabed, fade through the air as the sea does, channel by channel and
   blue a little fastest, so distant land turns blue before it fades into the horizon,
-  but keeps its own colour in most views.
+  but keeps its own colour in most views. From space the sky's own dry seabed past the
+  tiles is lit and hazed as their ground is, so the two meet without a seam at their reach.
 - The sea stays flat over the disc holding `bounds` and lies on the sky's globe beyond it;
   the relief is placed on the same globe, and the stage's sea surface writes the depth of
   the sea on it, so land beyond the scene meets it there. Nothing in either depends on the
   camera, so the ground holds still against the sea from anywhere. What is drawn flat
   beyond the disc stands off it unless placed on the globe (`SkyAnchor`, `applyGlobe`; see
   [sky.md](./sky.md#the-globe)).
-- The ground under the camera is the sky's (`oceanGround`): under the relief the camera is
-  in the ground, for the lighting and the void.
+- The ground under the camera is the sky's (`oceanGround`), sampled on the triangles drawn:
+  under the relief the camera is in the ground, for the lighting and the void — below the
+  sea, and in land above it too. In it (`SkyMaterial.oceanBuried`) none of the sea, the
+  relief or its overview is drawn: the sky shows the void as from just below the sea's
+  seabed and the scene is lit as the subsurface, so from inside a hill the data is seen in
+  rock rather than the sea through it. ⚠️ The void is laid out in the field's frame: far
+  from the field (any hill on land, from Volve) it is black.
 - `debug.hide: ['relief']` hides it, like the stage's other layers; `debug.relief`
   shows its tiles by depth (`'tiles'`) or which layer gave each node (`'layers'`).
 
@@ -139,8 +145,12 @@ How the relief looks is data, not shader code: changing any of it uploads a smal
   Lines every `interval` metres from the sea's level (default 100), a major one twice as
   wide every `major`-th (default 5; 0 for none), shading the ground as a `Surface`'s do
   (`ContourColorMode`, default darken by 0.5). On the seabed too unless `seabed: false`.
-  They fade out where they come closer than a few pixels apart, minor ones first, so a
-  distant view is no moiré. Only on the tiles: past them the overview has none.
+  Each is a solid line `thickness` pixels each side (default 0.8) with a pixel's soft
+  edge, as wide on steep ground and at grazing angles as on flat ground: its distance
+  from the line is measured in pixels by the height's slope on screen. Lines fade out
+  between 8 and 3 pixels apart, minor ones first, so a distant view is no smear or moiré.
+  `Surface` contours are drawn the same way (`contours.glsl`). Only on the tiles: they
+  fade out over the last fifth of the tiles' reach, past which the overview has none.
 - **`layerLooks`**: a look of its own for a layer, by its id, `{ color?, contours? }`,
   each falling back to the relief's. A local survey can be a rainbow over its depths with
   5 m contours while the regional data stays a terrain ramp. Each tile node keeps the
@@ -178,8 +188,10 @@ the first time. `Surface.colorRamp` takes a name or a `ColorRamp` too.
 The tiles are a quadtree over the scene, 32 x 32 cells each, drawn in one instanced draw.
 Each frame a tile is split while its error — the largest gap between its surface and the
 merged data — spans more than `pixelError` pixels (default 2), or while its cells span
-more than `cellPixels` (default 8) where the ground is rough, as the relief is shaded from
-its cells. A tile with no finer data under it is never split. A split tile is drawn until
+more than `cellPixels` (default 8) where the ground is rough, across a coast, or where a
+finer layer ends, as the relief is shaded from its cells. A tile with no finer data under
+it is never split; a layer smaller than a tile's cells still splits it, so a small local
+layer draws at its own detail from every height. A split tile is drawn until
 its four children are in, so ground is never missing; skirts close the cracks between
 tiles of different depths. Tiles load a few at a time, the most wanted first, and the
 least recently drawn go first under a budget. `onStats` reports what is drawn and held.
