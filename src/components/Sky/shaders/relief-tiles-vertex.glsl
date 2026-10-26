@@ -19,6 +19,8 @@ attribute float reliefTileSkirt; // how far its skirt drops
 
 varying vec3 vReliefWorld;
 varying vec2 vReliefPlane;
+// Up where the vertex lies on the globe (globeUpAt), for the fragment's normal.
+varying vec3 vReliefUp;
 // The node in the tile's texel grid (its border counted), and its slot.
 varying vec2 vReliefTileNode;
 flat varying float vReliefTileSlot;
@@ -47,6 +49,7 @@ void main() {
   vec3 world = globePlace(xz, height);
   vReliefWorld = world;
   vReliefPlane = xz;
+  vReliefUp = globeUpAt(world);
   vReliefTileNode = position.xz + 1.5;
   vReliefTileSlot = reliefTile.w;
   vReliefTileSquare = reliefTile.xyz;

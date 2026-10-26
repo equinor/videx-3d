@@ -82,6 +82,7 @@ export const SkyBoxStageReliefOverview = ({
       frustumCulled={false}
       renderOrder={skyOrder + 1}
       visible={false}
+      onBeforeRender={sky.onBeforeDraw}
     />
   );
 };

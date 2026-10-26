@@ -52,7 +52,7 @@ bool reliefTileClearsAt(vec2 xz) {
 // Whether the camera stands over the ground cannot be told from the skirt alone: in a
 // fjord the crack up a cliff lies above it.
 bool reliefTileSkirtHidden() {
-  return uReliefCameraUnder > 0.5 && vReliefSkirt > 0.0 && globeHeight(cameraPosition) < vReliefSkirtTop;
+  return uReliefCameraUnder > 0.5 && vReliefSkirt > 0.0 && globeCameraHeight() < vReliefSkirtTop;
 }
 
 // The stage's area (SkyBoxStage `bounds`), min X/Z and max X/Z.

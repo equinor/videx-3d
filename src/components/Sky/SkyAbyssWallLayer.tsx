@@ -254,6 +254,7 @@ export const SkyAbyssWallLayer = ({
         material={material}
         frustumCulled={false}
         renderOrder={renderOrder}
+        onBeforeRender={sky.onBeforeDraw}
       />
       {fills && (
         <>
@@ -264,6 +265,7 @@ export const SkyAbyssWallLayer = ({
             matrixAutoUpdate={false}
             frustumCulled={false}
             renderOrder={renderOrder}
+            onBeforeRender={sky.onBeforeDraw}
           />
           <mesh
             ref={lidFill}
@@ -272,6 +274,7 @@ export const SkyAbyssWallLayer = ({
             matrixAutoUpdate={false}
             frustumCulled={false}
             renderOrder={renderOrder}
+            onBeforeRender={sky.onBeforeDraw}
           />
         </>
       )}

@@ -1,8 +1,7 @@
 # World: where on Earth, and more than one field
 
 > **Status (2026-10-26): design, decisions taken; steps 1 and
-> [2](#9-step-2-in-detail-the-sky-on-a-fixed-globe) built, step 2's cost over the sea still
-> to take back.** How the scene places
+> [2](#9-step-2-in-detail-the-sky-on-a-fixed-globe) built.** How the scene places
 > itself on the Earth today, what more than one field needs, and a plan for it. The open
 > questions are settled ([Decided](#7-decided-2026-10-26)): the Earth is a fixed globe.
 > Step 2 comes before the overlays ([tiles.md](./tiles.md) step 8); the rest waits for a
@@ -160,7 +159,7 @@ Nothing above is needed for one field. What keeps it cheap to add later:
 | # | Step | Ends with |
 |--|--|--|
 | 1 | **One place for where:** sdk helpers that derive the relief's frame (`reliefFrameFromCrs`) and the sky's observer place (`crsOriginLocation`) from the CRS a `UtmArea` is given; the sky stories take all three from one CRS (`demoCrs`) | ✅ built (2026-10-25) |
-| 2 | **The sky on a fixed globe** ([in detail](#9-step-2-in-detail-the-sky-on-a-fixed-globe)): the sea, the horizon, the air and the clouds on a sphere fixed below the chosen field, flat over its disc; the relief and anchored content placed on it with no camera in the sum; `followFlatSea` and `followAway` go | ✅ built (2026-10-26): the same pictures at one field, nothing moving anywhere. It costs 2–4 ms a frame over the sea, to take back (see 2d) |
+| 2 | **The sky on a fixed globe** ([in detail](#9-step-2-in-detail-the-sky-on-a-fixed-globe)): the sea, the horizon, the air and the clouds on a sphere fixed below the chosen field, flat over its disc; the relief and anchored content placed on it with no camera in the sum; `followFlatSea` and `followAway` go | ✅ built (2026-10-26): the same pictures at one field, nothing moving anywhere, at 0–1 ms a frame over the sea (2e) |
 | 3 | **Fields placed on the Earth:** a field's transform from its frame; `SkyAnchor` becomes it. `GeoFrame`: `ReliefFrame` becomes it, `UtmArea` takes one, a `CRS` is built from one | one field, through the new path |
 | 4 | **The view's origin:** re-based in steps; transforms composed in 64 bits. The world moves under the camera, never the camera's controls: at each step the view's frame becomes the one under the camera, its up away from the globe's centre, and the host is told (a callback with the step's transform) to set its controls' position and target to the moved ones, which any controls can. Ready-made for drei's `CameraControls`, which the stories use; a host that does not take it keeps the scene's up, and the horizon tilts far off | a camera 1000 km out with a field's data as precise as at home, and a level horizon |
 | 5 | **The relief in its own frame:** drawn on the globe, read by each field's column through the bridge with a transform | the relief independent of the chosen field |
@@ -228,7 +227,7 @@ step 6 for one that needs to see beyond one region (about 2000 km).
 
 ## 9. Step 2 in detail: the sky on a fixed globe
 
-> Design (2026-10-26); built (2026-10-26), its cost over the sea still to take back (2d).
+> Design (2026-10-26); built (2026-10-26).
 
 Today the curve is measured from the camera in about ten places, and the disc it is
 flat over moves under a camera far off (`followFlatSea`, `followAway`). After this step
@@ -296,6 +295,29 @@ chosen field's disc at the sea's level, `r` its radius (the stage's `bounds`, as
   numbers subtracted, good to a millimetre near the field, and far off to the precision of
   the position itself (12 cm at 2000 km);
 - `s`, `r²` and `R` reach the GPU from 64-bit floats on the CPU.
+
+### The camera, once per draw
+
+What the shaders need of the camera — its height over the globe, its up, the distance to
+where its view grazes the sphere and the horizon's dip — is the same for every pixel.
+`Globe.setCamera(position)` works it out on the CPU, in 64-bit floats, into uniforms of its
+own (`uGlobeCamera…`), and the shaders read them (`globeCameraHeight`, `globeCameraUp`,
+`globeCameraHorizon`, `globeCameraDescent`; `globeViewHeight` for a view's origin moved
+straight along up from the camera, as the background's view from under a stage's ground
+is). Each mesh drawn with the sky's shaders sets them from its `onBeforeRender`
+(`SkyMaterial.onBeforeDraw`, and the stage's `setStageView`), with the camera drawing it, so
+a second view or a bake's camera gets its own; for the same place it returns at once. The
+bakes keep the globe off and read none of them.
+
+Per pixel the globe still costs what only a sphere needs: where a view meets it, the
+horizon along the pixel's bearing and the lowest point a view passes, each taken once. The
+air's rise along a view is the camera's sphere to second order (`globeCameraRise`), with no
+square root: under 1% of the rise off at 1000 km.
+
+⚠️ The shaders are inlined whole and compiled through ANGLE to Direct3D, where an early
+`return` in a small, often called function can cost far more than it saves: one that
+skipped the light share's descent from the sea's level cost the stage 1.6 ms at 40 m. Write
+them with one return.
 
 ### What changes, part by part
 
@@ -397,4 +419,5 @@ way of drawing, applied on top.
 | 2a | **The globe on the CPU:** `Globe` in the sdk (the centre from its disc; `altitude`, `up`, `place`, `reach`); the `Sky` owns one, `setFlatSea` setting its disc; tests | ✅ built (2026-10-26); nothing drawn changes. `SkyMaterial.globe`, kept in step by `setFlatSea`, `oceanLevel`, `curvedHorizon` and `setFrame`; `tests/globe.test.ts` |
 | 2b | **Everything drawn, at once,** so the ground and the sea always agree: `globe.glsl` for `sky-curve.glsl`; the sea, horizon, air and clouds; the stage; the relief's tiles and overview; `applyGlobe`; the anchors placed once; `followFlatSea`, `followAway` and their constants gone | ✅ built (2026-10-26), with 2c. Against step 2a, clouds off, rows averaged: at the field and out to the coast within 4 levels, the waves' own noise (30 levels at 2 m); the horizon from 100 km 10 levels apart, the sphere now exact. Low on the horizon the clouds' band is brighter, its flat-sea sink gone. Far off the stage's planes sink under the camera ([The stage far off](#the-stage-far-off)) |
 | 2c | **Far off:** the tiles' selection and culling on the globe, the farthest seen, the ground under the camera | ✅ built with 2b: the ground under the camera at its foot (`Globe.foot`), the farthest seen from its altitude, boxes from corners placed on the globe. By eye at the coast and Lysefjord; the orbit and the timings in 2d |
-| 2d | **For a host:** `globe.place` in the stories and `videx3d.globe`, their far poses; sky.md (the curve, `SkyAnchor`, the globe), tiles.md's curve section, relief.md; the timings | ✅ built (2026-10-26): `videx3d.globe` (`place`, `foot`, `altitude`, `up`, `orbit` about a point on the globe), shared with the debug panel; ReliefTiles' `facility`, a stand-in 123 km out, anchored or flat; `UtmPosition` and `Wgs84Position` documented ([For a host](#for-a-host)); the documents. Nothing moving: orbiting the coast 215 km out at 20 and 40 km, the globe's uniforms are the same from every pose and the coast holds. ⚠️ **Timed** A/B/A against 2a in ReliefTiles (GPU ms, frame and the background's draws): 40 m over Volve 12.1 → 14.9–16.7 (2.6 → 3.9–6.4), 100 km 14.5 → 17.3 (2.9 → 5.5), the coast 12.9 → 17.3–22.9 (2.5 → 4.1–5.2), Lysefjord 10.7 → 14.6 (3.8 → 6.0); the relief +0.5–2 ms, the stage +0.6–1.2; in the water and below the seabed the same or less. With `curvedHorizon` off the two match within noise, so it is the globe's own arithmetic per pixel: the camera's altitude and horizon about 20 times a pixel in the sky, each with a square root, and the relief's up and map point per pixel. Not within noise, as expected: to take back before step 3 |
+| 2d | **For a host:** `globe.place` in the stories and `videx3d.globe`, their far poses; sky.md (the curve, `SkyAnchor`, the globe), tiles.md's curve section, relief.md; the timings | ✅ built (2026-10-26): `videx3d.globe` (`place`, `foot`, `altitude`, `up`, `orbit` about a point on the globe), shared with the debug panel; ReliefTiles' `facility`, a stand-in 123 km out, anchored or flat; `UtmPosition` and `Wgs84Position` documented ([For a host](#for-a-host)); the documents. Nothing moving: orbiting the coast 215 km out at 20 and 40 km, the globe's uniforms are the same from every pose and the coast holds. ⚠️ **Timed** A/B/A against 2a in ReliefTiles (GPU ms, frame and the background's draws): 40 m over Volve 12.1 → 14.9–16.7 (2.6 → 3.9–6.4), 100 km 14.5 → 17.3 (2.9 → 5.5), the coast 12.9 → 17.3–22.9 (2.5 → 4.1–5.2), Lysefjord 10.7 → 14.6 (3.8 → 6.0); the relief +0.5–2 ms, the stage +0.6–1.2; in the water and below the seabed the same or less. With `curvedHorizon` off the two match within noise, so it is the globe's own arithmetic per pixel: the camera's altitude and horizon about 20 times a pixel in the sky, each with a square root, and the relief's up and map point per pixel. Not within noise, as expected: taken back in 2e |
+| 2e | **The globe's cost:** the camera's values per draw, not per pixel ([The camera, once per draw](#the-camera-once-per-draw)); the relief's up per vertex; the horizon, the lowest point a view passes and where it meets the sea each taken once per pixel | ✅ built (2026-10-26). The same pictures as 2d within a level (the air's rise, now to second order). Timed A/B/A against 2a in ReliefTiles, at a smaller window than 2d's (GPU ms, frame; the background, the relief and the stage): 40 m over Volve 8.4 → 9.1–9.2 (the background 1.9 → 2.3, the relief and the stage the same); 2 km, 30° down, the same; 100 km 8.8 → 9.5 (background +0.6, relief +0.3, stage +0.1); the coast 8.7 → 9.8 (+0.65, +0.3, +0.1); Lysefjord 8.8 → 8.2–8.8; in the water and below the seabed the same. So 0–1 ms over the sea, down from 2–4, and none of it below: what is left is the sphere's own per pixel, mostly in the background |

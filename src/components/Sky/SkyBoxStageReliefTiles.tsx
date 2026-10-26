@@ -618,6 +618,7 @@ export const SkyBoxStageReliefTiles = ({
         material={material}
         frustumCulled={false}
         visible={visible}
+        onBeforeRender={sky.onBeforeDraw}
       />
       {seeThroughMaterial && (
         <mesh
@@ -625,6 +626,7 @@ export const SkyBoxStageReliefTiles = ({
           material={seeThroughMaterial}
           frustumCulled={false}
           visible={visible}
+          onBeforeRender={sky.onBeforeDraw}
         />
       )}
     </>

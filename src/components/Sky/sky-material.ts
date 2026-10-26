@@ -9,6 +9,7 @@ import {
   MathUtils,
   Matrix3,
   Matrix4,
+  Scene,
   ShaderMaterial,
   ShaderMaterialParameters,
   Texture,
@@ -1160,5 +1161,25 @@ export class SkyMaterial extends ShaderMaterial {
     this.uniforms.uSkyStageInverseProjection.value.copy(
       camera.projectionMatrixInverse,
     );
+    this.syncCamera(camera);
   }
+
+  /**
+   * The {@link globe}'s camera uniforms for `camera` (`Globe.setCamera`): what every shader
+   * of this sky reads of the camera's height, up and horizon. Call it before each mesh drawn
+   * with them is drawn, with the camera drawing it, as {@link onBeforeDraw} does: a bake or a
+   * second view draws from a camera of its own. Returns at once for the same place.
+   */
+  syncCamera(camera: Camera) {
+    this.globe.setCamera(cameraAt.setFromMatrixPosition(camera.matrixWorld));
+  }
+
+  /** An `onBeforeRender` for a mesh drawn with this sky's shaders: {@link syncCamera}. */
+  readonly onBeforeDraw = (
+    _renderer: WebGLRenderer,
+    _scene: Scene,
+    camera: Camera,
+  ) => this.syncCamera(camera);
 }
+
+const cameraAt = new Vector3();

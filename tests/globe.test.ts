@@ -1,4 +1,4 @@
-import { Vector3 } from 'three';
+import { PerspectiveCamera, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { SkyMaterial } from '../src/components/Sky/sky-material';
 import { EARTH_RADIUS, Globe } from '../src/sdk/projection/globe';
@@ -226,6 +226,67 @@ describe('Globe, uniforms', () => {
     expect(uGlobe.value.w).toBe(0);
     g.setUp(new Vector3(0, 2, 0));
     expect(uGlobeUp.value.toArray()).toEqual([0, 1, 0]);
+  });
+});
+
+describe('Globe, the camera', () => {
+  it('sets what the shaders read of the camera, far off', () => {
+    const g = globe();
+    const eye = g.place(1000 + 200000, -2000 + 30000, 500, new Vector3());
+    g.setCamera(eye);
+    const {
+      uGlobeCamera,
+      uGlobeCameraUp,
+      uGlobeCameraRadial,
+      uGlobeCameraDip,
+    } = g.uniforms;
+    const r = fromCentre(g, eye);
+    expect(uGlobeCamera.value.x).toBeCloseTo(g.altitude(eye) + LEVEL, 6);
+    expect(uGlobeCamera.value.x).toBeCloseTo(500 + LEVEL, 3);
+    expect(uGlobeCamera.value.y / (r * r - R * R)).toBeCloseTo(1, 9);
+    expect(uGlobeCamera.value.z).toBeCloseTo(r - R, 3);
+    expect(uGlobeCameraUp.value.distanceTo(g.upAt(eye, new Vector3()))).toBe(0);
+    const radial = eye.clone().sub(g.centre).normalize();
+    expect(uGlobeCameraRadial.value.x).toBeCloseTo(radial.x, 12);
+    expect(uGlobeCameraRadial.value.y).toBeCloseTo(radial.y, 12);
+    expect(uGlobeCameraRadial.value.z).toBeCloseTo(radial.z, 12);
+    expect(uGlobeCameraRadial.value.w).toBeCloseTo(Math.sqrt(r * r - R * R), 3);
+    const dip = Math.acos(R / r);
+    expect(uGlobeCameraDip.value.x).toBeCloseTo(Math.sin(dip), 9);
+    expect(uGlobeCameraDip.value.y).toBeCloseTo(Math.cos(dip), 9);
+  });
+
+  it('over the disc: the height is along the scene up, and up is the scene up', () => {
+    const g = globe();
+    g.setCamera(new Vector3(2000, LEVEL + 40, -1000));
+    expect(g.uniforms.uGlobeCamera.value.x).toBeCloseTo(LEVEL + 40, 9);
+    expect(g.uniforms.uGlobeCameraUp.value.toArray()).toEqual([0, 1, 0]);
+  });
+
+  it('follows the globe, and a new place', () => {
+    const g = globe();
+    const eye = new Vector3(1000 + 50000, LEVEL + 100, -2000);
+    g.setCamera(eye);
+    const before = g.uniforms.uGlobeCamera.value.x;
+    // The same place again, the disc moved under it: set again, not kept.
+    g.setDisc([46000, -3000, 54000, -1000]);
+    g.setCamera(eye);
+    expect(g.uniforms.uGlobeCamera.value.x).toBeCloseTo(LEVEL + 100, 9);
+    // 50 km off the old disc, the sphere lay (50² − 5²) km² / 2R ≈ 194 m lower.
+    expect(before - (LEVEL + 100)).toBeCloseTo(194, 0);
+    g.setCamera(eye.clone().setY(LEVEL + 300));
+    expect(g.uniforms.uGlobeCamera.value.x).toBeCloseTo(LEVEL + 300, 9);
+  });
+
+  it('SkyMaterial.syncCamera takes the camera from its world matrix', () => {
+    const sky = new SkyMaterial();
+    sky.setFlatSea(BOUNDS);
+    const camera = new PerspectiveCamera();
+    camera.position.set(1000, 250, -2000);
+    camera.updateMatrixWorld();
+    sky.syncCamera(camera);
+    expect(sky.globe.uniforms.uGlobeCamera.value.x).toBeCloseTo(250, 9);
+    sky.dispose();
   });
 });
 

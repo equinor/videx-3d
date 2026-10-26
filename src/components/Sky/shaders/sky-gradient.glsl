@@ -49,9 +49,9 @@ uniform vec4 uSkyStageFlat; // the disc about the scene the sea stays flat over:
 #define SKY_RIM_HEIGHT 60000.0
 #define SKY_RIM_SHOWN vec2(20000.0, 80000.0)
 
-// The camera's height over the air's ground, over the globe (globeHeight).
+// The camera's height over the air's ground, over the globe (globeCameraHeight).
 float skyCameraHeight() {
-  return globeHeight(cameraPosition) - uSkyAir.x;
+  return globeCameraHeight() - uSkyAir.x;
 }
 
 // How much of the air lies below the camera: 0 on its ground, toward 1 high above it.
@@ -80,18 +80,18 @@ float skyAirMean(float start, float rise, float scale) {
   return exp(-min(a, b)) * (span > 1e-4 ? (1.0 - exp(-span)) / span : 1.0);
 }
 
-// How much the air hazes what lies `dist` along `dir` from `origin`: the low haze layer and
-// the clear air above it, each thinning with height, so a ray down from high up crosses the
-// layer only at its end, and one along the sea hazes most. Heights over the globe, so a long
-// view rises over it as the Earth curves away.
+// How much the air hazes what lies `dist` along `dir` from a view's `origin` (the camera, or
+// a point straight along up from it: globeViewHeight): the low haze layer and the clear air
+// above it, each thinning with height, so a ray down from high up crosses the layer only at
+// its end, and one along the sea hazes most. Heights over the globe, so a long view rises
+// over it as the Earth curves away (globeCameraRise).
 float skyAirHaze(vec3 origin, vec3 dir, float dist) {
   if(uSkyAir.z <= 0.0)
     return 0.0;
-  float height = globeHeight(origin);
-  float start = max(height - uSkyAir.x, 0.0);
+  float start = max(globeViewHeight(origin) - uSkyAir.x, 0.0);
   float mean = 1.0;
   if(uSkyAir.y > 0.0) {
-    float rise = globeHeight(origin + dir * dist) - height;
+    float rise = globeCameraRise(dir, dist);
     float clear = skyAirMean(start, rise, uSkyAir.y);
     float layer = uSkyHaze.x > 0.0 ? skyAirMean(start, rise, uSkyHaze.x) : clear;
     mean = mix(clear, layer, uSkyHaze.y);
@@ -99,18 +99,18 @@ float skyAirHaze(vec3 origin, vec3 dir, float dist) {
   return 1.0 - exp(-dist * mean / uSkyAir.z);
 }
 
-// The sine of the elevation of the sea's horizon along `dir`, seen from `origin` `height`
+// The sine of the elevation of the sea's horizon along `dir`, seen from the camera `height`
 // above the air's ground: 0 on a flat sea, lower the higher up as the Earth curves it away.
-// From the globe (globeHorizon): where the view grazes it, about the origin's own up.
-float skyHorizonAt(vec3 dir, vec3 origin, float height) {
+// From the globe (globeCameraHorizon): where the view grazes it, about the camera's own up.
+float skyHorizonAt(vec3 dir, float height) {
   if(uSkyCurvature <= 0.0 || height <= 0.0)
     return 0.0;
-  return globeHorizon(origin, dir);
+  return globeCameraHorizon(dir);
 }
 
 // The same from the camera, over the air's ground.
 float skyHorizon(vec3 dir) {
-  return skyHorizonAt(dir, cameraPosition, skyCameraHeight());
+  return skyHorizonAt(dir, skyCameraHeight());
 }
 
 // The lowest height over the air's ground a view along `dir` from `height` passes: the
@@ -119,7 +119,7 @@ float skyHorizon(vec3 dir) {
 float skyLowest(vec3 dir, float height) {
   if(uSkyCurvature <= 0.0)
     return height;
-  return height - globeDescent(cameraPosition, dir);
+  return height - globeCameraDescent(dir);
 }
 
 // The sky's light where it is seen: by the sun over the horizon there, which the Earth's curve
@@ -152,7 +152,9 @@ float skyLightShareAt(float height) {
   return sqrt(clamp(height / camera, 0.0, 1.0));
 }
 
-// The same for a view along `dir` from `height`: by the lowest it passes.
+// The same for a view along `dir` from `height`: by the lowest it passes. 0 from the air's
+// ground or below it. ⚠️ No early return for that: through the D3D compiler it cost the
+// stage's shader 1.6 ms a frame (40 m over the field), all the descent it skipped and more.
 float skyLightShare(vec3 dir, float height) {
   return skyLightShareAt(skyLowest(dir, height));
 }
@@ -194,11 +196,16 @@ float skyAirBelowAt(float height) {
 
 // How high a view along `dir` from `height` is, by the little air it passes: the lowest it
 // reaches and, from high up, higher the more steeply it looks up, as it leaves the air sooner.
-// Up from the horizon as seen, so it runs on smoothly across the level. Air only.
-float skyAirHeight(vec3 dir, float height) {
-  float up = max(skyOverHorizon(dot(dir, uSkyUp), skyHorizonAt(dir, cameraPosition, height)), 0.0);
+// Up from the horizon as seen, so it runs on smoothly across the level. Air only. From the
+// horizon's sine along it and the lowest it passes, where those are known.
+float skyAirHeightFrom(vec3 dir, float height, float horizon, float lowest) {
+  float up = max(skyOverHorizon(dot(dir, uSkyUp), horizon), 0.0);
   float steeper = SKY_AIR_PATH * uSkyAir.y * log(1.0 + SKY_AIR_LEVEL_MASS * up);
-  return skyLowest(dir, height) + steeper * skyAirBelowAt(height);
+  return lowest + steeper * skyAirBelowAt(height);
+}
+
+float skyAirHeight(vec3 dir, float height) {
+  return skyAirHeightFrom(dir, height, skyHorizonAt(dir, height), skyLowest(dir, height));
 }
 
 // Whether a view from `height` can reach the air that darkens toward space.
@@ -215,11 +222,11 @@ float skySpace(vec3 dir, float height) {
   return skyNearSpace(height) ? skySpaceAbove(skyAirHeight(dir, height)) : 0.0;
 }
 
-// Gradient, daylight, the sun's halo and the twilight glow; no disc. Seen from `height` over
-// the air's ground, which lowers the horizon: the air's own light, without the dark of space.
-vec3 skySurfaceAt(vec3 dir, float blend, float height) {
-  float y = skyOverHorizon(dot(dir, uSkyUp), skyHorizonAt(dir, cameraPosition, height));
-  SkyLight seen = skyLight(skyLightShare(dir, height));
+// Gradient, daylight, the sun's halo and the twilight glow; no disc. Seen along `dir` with
+// the horizon's sine along its bearing `horizon` (skyHorizonAt), in the light `seen`: the
+// air's own light, without the dark of space.
+vec3 skySurfaceSeen(vec3 dir, float blend, float horizon, SkyLight seen) {
+  float y = skyOverHorizon(dot(dir, uSkyUp), horizon);
   // Higher up, the sky deepens, and its haze closes onto the horizon as the camera rises out of it.
   float below = skyAirBelow();
   vec3 zenith = mix(uSkyZenithColor, skyDeepZenith(), below * below);
@@ -268,34 +275,44 @@ vec3 skySurfaceAt(vec3 dir, float blend, float height) {
   return color;
 }
 
+// The same seen from `height` over the air's ground, which lowers the horizon.
+vec3 skySurfaceAt(vec3 dir, float blend, float height) {
+  return skySurfaceSeen(dir, blend, skyHorizonAt(dir, height), skyLight(skyLightShare(dir, height)));
+}
+
 // The same from the camera. Toward space, by the air the view passes, it deepens to the blue
 // overhead, bluer still through the ozone layer, and goes black, but for a glow over the
-// Earth's edge: pale low down, deep blue higher, brighter toward the sun.
+// Earth's edge: pale low down, deep blue higher, brighter toward the sun. The horizon and the
+// lowest the view passes taken once, for all of it.
 vec3 skySurface(vec3 dir, float blend) {
   float height = skyCameraHeight();
-  vec3 color = skySurfaceAt(dir, blend, height);
+  float horizon = skyHorizonAt(dir, height);
+  float lowest = skyLowest(dir, height);
+  // skyLightShare, from the lowest already found.
+  SkyLight seen = skyLight(skyLightShareAt(lowest));
+  vec3 color = skySurfaceSeen(dir, blend, horizon, seen);
   if(!skyNearSpace(height))
     return color;
-  float air = skyAirHeight(dir, height);
+  float air = skyAirHeightFrom(dir, height, horizon, lowest);
   float space = skySpaceAbove(air);
-  SkyLight seen = skyLight(skyLightShare(dir, height));
   color = mix(color, skyDeepZenith() * mix(SKY_NIGHT_LEVEL, 1.0, seen.daylight), smoothstep(0.0, 0.5, space));
   float ozone = 1.0 - smoothstep(0.0, SKY_OZONE_LAYER.y, abs(air - SKY_OZONE_LAYER.x));
   color *= mix(vec3(1.0), SKY_OZONE, ozone) * (1.0 - space);
-  float lowest = max(skyLowest(dir, height), 0.0);
-  float rim = exp(-lowest / SKY_RIM_HEIGHT) * smoothstep(SKY_RIM_SHOWN.x, SKY_RIM_SHOWN.y, height);
+  float above = max(lowest, 0.0);
+  float rim = exp(-above / SKY_RIM_HEIGHT) * smoothstep(SKY_RIM_SHOWN.x, SKY_RIM_SHOWN.y, height);
   if(rim > 1e-3) {
     float toward = max(dot(dir, uSkySunDirection), 0.0);
-    vec3 glow = mix(skyDeepZenith(), uSkyHorizonColor, exp(-lowest / (0.35 * SKY_RIM_HEIGHT)));
+    vec3 glow = mix(skyDeepZenith(), uSkyHorizonColor, exp(-above / (0.35 * SKY_RIM_HEIGHT)));
     color += glow * rim * seen.daylight * (0.55 + 0.45 * toward * toward);
   }
   return color;
 }
 
 // The horizon's colour along the bearing `way` (unit, level), where it is seen from the
-// camera: the light of the air the far sea fades into.
+// camera: the light of the air the far sea fades into. Shaded with the horizon just found.
 vec3 skyHorizonColor(vec3 way, float blend) {
   float height = skyCameraHeight();
-  float sine = skyHorizonAt(way, cameraPosition, height);
-  return skySurfaceAt(way * sqrt(1.0 - sine * sine) + uSkyUp * sine, blend, height);
+  float sine = skyHorizonAt(way, height);
+  vec3 dir = way * sqrt(1.0 - sine * sine) + uSkyUp * sine;
+  return skySurfaceSeen(dir, blend, sine, skyLight(skyLightShare(dir, height)));
 }

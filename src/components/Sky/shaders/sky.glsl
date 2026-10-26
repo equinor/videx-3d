@@ -392,7 +392,7 @@ float skyCloudBandTop(float height) {
 float skyCloudBandSquash(vec3 origin) {
   if(uSkyCurvature <= 0.0)
     return 1.0;
-  return clamp(skyCloudBandTop(globeHeight(origin)) / skyCloudBandTop(0.0), 1e-3, 1.0);
+  return clamp(skyCloudBandTop(globeViewHeight(origin)) / skyCloudBandTop(0.0), 1e-3, 1.0);
 }
 
 // Distant clouds along the horizon, fixed to directions: so far off that the camera's moves
@@ -402,7 +402,7 @@ float skyCloudBandSquash(vec3 origin) {
 // their tops sink, until from high above they are a thin strip along it, and flatten,
 // quickly at first and then hardly at all. ⚠️ Derivatives, taken before it branches.
 vec3 skyCloudBand(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
-  float shown = 1.0 - smoothstep(SKY_CLOUD_BAND_FADE.x, SKY_CLOUD_BAND_FADE.y, globeHeight(origin));
+  float shown = 1.0 - smoothstep(SKY_CLOUD_BAND_FADE.x, SKY_CLOUD_BAND_FADE.y, globeViewHeight(origin));
   if(uSkyCloudsShape.z < 0.5 || uSkyClouds.x <= 0.0 || uSkyCloudsColor.a <= 0.0 || shown <= 0.0)
     return color;
   vec3 light = skyCloudLight().daylight > 0.0 ? uSkySunDirection : uSkyMoonDirection;
@@ -411,7 +411,7 @@ vec3 skyCloudBand(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
   float y = dot(dir, uSkyUp);
   float over = asin(clamp(y, -1.0, 1.0)) - asin(skyHorizon(dir));
   vec2 span = skyCloudBandSpan();
-  float climb = 1.0 - exp(-max(globeHeight(origin), 0.0) / (1.5 * uSkyClouds.y));
+  float climb = 1.0 - exp(-max(globeViewHeight(origin), 0.0) / (1.5 * uSkyClouds.y));
   float e = max(over, 0.0) / skyCloudBandSquash(origin);
   if(over <= -0.002 || e >= span.y)
     return color;
@@ -433,7 +433,7 @@ vec3 skyCloudBand(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
   vec3 level = dir - uSkyUp * y;
   float side = 0.5 - 0.5 * dot(level, light) / max(length(level), 1e-4);
   float tops = uSkyClouds.y + uSkyCloudsShape.y;
-  float above = clamp((globeHeight(origin) - tops) / max(uSkyCloudsShape.y, 500.0), 0.0, 1.0);
+  float above = clamp((globeViewHeight(origin) - tops) / max(uSkyCloudsShape.y, 500.0), 0.0, 1.0);
   lit = clamp(0.5 * lit + 0.5 * mix(side, 1.0, above), 0.35, 1.0);
   float hazed = skyAirHaze(origin, dir, far);
   vec3 cloud = skyCloudColor(dir, n, threshold, edge, density, lit, haze, hazed, angle, aa, 1.0 - above);
@@ -447,7 +447,7 @@ vec3 skyCloudBand(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
 // With the band, the deck is seen along the ray turned down so that its horizon sits at the
 // band's base, and dissolves where the view runs nearly parallel to it. ⚠️ Derivatives.
 vec3 skyClouds(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
-  float below = uSkyClouds.y - globeHeight(origin);
+  float below = uSkyClouds.y - globeViewHeight(origin);
   bool bandOnly = uSkyCloudsShape.z > 0.5 && uSkyCloudsShape.z < 1.5;
   if(below <= 0.0 || bandOnly || uSkyClouds.x <= 0.0 || uSkyCloudsColor.a <= 0.0)
     return color;
@@ -466,7 +466,7 @@ vec3 skyClouds(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
   }
   // From the camera's own up: the deck's sphere is about the globe's centre, which lies
   // straight under the camera along it, so it needs no origin. Over the field the scene's.
-  float y = dot(ray, globeUpAt(origin));
+  float y = dot(ray, globeCameraUp());
   // Rays that never reach the plane take the mirrored hit, so the derivatives stay continuous.
   float plane = below / max(abs(elevationSine), 1e-4);
   // On the sphere about the globe's centre, at the Earth's radius and the deck's altitude.
@@ -993,7 +993,7 @@ vec4 skyAbyssWalls(vec3 dir, vec3 origin, float pixel) {
 // the view below the horizon (`depths`, skyAbyssDepths). `walls` (skyAbyssWalls) is laid
 // over the lid; the depths have theirs already. Background only, so it never hides data.
 vec3 skyAbyss(vec3 color, vec3 dir, vec3 origin, vec3 depths, vec4 walls) {
-  float depth = uSkyAbyssLevel - globeHeight(origin);
+  float depth = uSkyAbyssLevel - globeViewHeight(origin);
   #ifdef SKY_OCEAN
     // The level is the seabed: going through it is going through rock.
   float under = step(0.0, depth);
@@ -1040,7 +1040,7 @@ vec3 skyRadiance(vec3 dir, vec3 origin) {
   // the sky is not shaded at all. The same for every pixel, so its derivatives stay sound.
   bool covered = false;
   #ifdef SKY_ABYSS
-  float underLid = uSkyAbyssLevel - globeHeight(origin);
+  float underLid = uSkyAbyssLevel - globeViewHeight(origin);
     #ifdef SKY_OCEAN
   covered = underLid >= 0.0;
     #else
@@ -1096,7 +1096,7 @@ vec3 skyRadiance(vec3 dir, vec3 origin) {
     #ifdef SKY_ABYSS_WALLS
   // Once for the depths and the lid; from above the lid only looking down, where the void can show.
   float pixel = length(fwidth(dir));
-  if(y < 0.0 || globeHeight(origin) < uSkyAbyssLevel)
+  if(y < 0.0 || globeViewHeight(origin) < uSkyAbyssLevel)
     walls = skyAbyssWalls(dir, origin, pixel);
   depths = depths * (1.0 - walls.a) + walls.rgb;
     #endif
@@ -1107,9 +1107,11 @@ vec3 skyRadiance(vec3 dir, vec3 origin) {
   vec3 open = color;
     // Kept a few pixels inside the stage's rim, so the rim still has the seabed behind it.
     // Without a seabed there is nothing to leave to the stage, nor from inside an occupant's.
-  bool staged = skyOceanStaged(dir, origin, 4.0, false) && uSkyOceanSeabed > 0.5 && uSkyOceanBuried < 0.5;
+    // The ray's reach found once for both tests.
+  float stagedAt = skyOceanStagedReach(dir, origin);
+  bool staged = skyOceanStagedAlong(dir, origin, stagedAt, 4.0, false) && uSkyOceanSeabed > 0.5 && uSkyOceanBuried < 0.5;
     // Staged pixels are replaced below; their sea is skipped where the quad surely is.
-  bool surelyStaged = skyOceanStaged(dir, origin, 8.0, true);
+  bool surelyStaged = skyOceanStagedAlong(dir, origin, stagedAt, 8.0, true);
   skip = staged && surelyStaged;
   // One view in the water for both uses below: each call compiles a full copy of the waves.
   vec3 inWater = open;

@@ -7,6 +7,11 @@
 uniform vec3 uGlobeUp; // the scene's up, normalised
 uniform vec4 uGlobeDisc; // the disc's centre on the level plane, and its radius
 uniform vec4 uGlobe; // the sphere's radius, its centre's depth below the disc's centre, the disc's radius squared, 1 while on
+// The camera drawing, as `Globe.setCamera` sets it (once, on the CPU, instead of per pixel):
+uniform vec4 uGlobeCamera; // its height (globeHeight), |camera − C|² − R², and |camera − C| − R
+uniform vec3 uGlobeCameraUp; // up at it (globeUpAt)
+uniform vec4 uGlobeCameraRadial; // away from the sphere's centre through it, and how far its view runs to graze the sphere
+uniform vec2 uGlobeCameraDip; // the sine and cosine of its horizon's dip below its own level
 
 bool globeOn() {
   return uGlobe.w > 0.5;
@@ -38,6 +43,17 @@ float globeHeight(vec3 p) {
   return globeAltitude(p) + globeLevel();
 }
 
+// The camera's height (globeHeight), from its uniform: no square root per pixel.
+float globeCameraHeight() {
+  return globeOn() ? uGlobeCamera.x : dot(cameraPosition, uGlobeUp);
+}
+
+// The height (globeHeight) of a view's `origin`: the camera, or a point moved straight along
+// up from it over the disc, where the globe is the level plane.
+float globeViewHeight(vec3 origin) {
+  return globeCameraHeight() + dot(origin - cameraPosition, uGlobeUp);
+}
+
 // Up at `p`: the scene's above the disc, away from the sphere's centre beyond.
 vec3 globeUpAt(vec3 p) {
   vec3 v = p - uGlobeDisc.xyz;
@@ -45,6 +61,11 @@ vec3 globeUpAt(vec3 p) {
   if(!globeOn() || dot(across, across) <= uGlobe.z)
     return uGlobeUp;
   return normalize(v + uGlobeUp * uGlobe.y);
+}
+
+// Up at the camera (globeUpAt), from its uniform.
+vec3 globeCameraUp() {
+  return globeOn() ? uGlobeCameraUp : uGlobeUp;
 }
 
 // `v` turned as the scene's up turns onto `up` (unit): a normal or a direction of the flat
@@ -133,23 +154,18 @@ vec2 globeReach(vec3 origin, vec3 dir, float below) {
 // along the bearing of `dir`: where a view grazes the sphere, about the origin's own up;
 // or, from low over the field, where it leaves the disc's plane. 0 with the globe off, or
 // from on or under the plane inside the sphere.
-float globeHorizon(vec3 origin, vec3 dir) {
-  if(!globeOn())
-    return 0.0;
-  vec3 v = origin - uGlobeDisc.xyz;
+// From what it takes of the origin: `v` its offset from the disc's centre, `n` away from
+// the sphere's centre through it, `outside` |origin − C|² − R², `reach` √outside and `dip`
+// the sine and cosine of its horizon's dip.
+float globeHorizonFrom(vec3 v, vec3 n, float outside, float reach, vec2 dip, vec3 dir) {
   float up = dot(v, uGlobeUp);
-  float s = uGlobe.y;
-  vec3 n = normalize(v + uGlobeUp * s);
   vec3 level = dir - n * dot(dir, n);
   float l2 = dot(level, level);
   // Straight up or down: the horizon is the same all round.
   vec3 way = l2 > 1e-12 ? level * inversesqrt(l2) : normalize(cross(n, abs(n.x) < 0.9 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 0.0, 1.0)));
-  // |origin − C|² − R²: outside the sphere, the view that grazes it.
-  float outside = dot(v, v) + 2.0 * s * up - uGlobe.z;
+  // Outside the sphere, the view that grazes it.
   if(outside > 0.0) {
-    float reach = sqrt(outside);
-    float sinDip = reach / sqrt(uGlobe.x * uGlobe.x + outside);
-    vec3 graze = way * sqrt(max(1.0 - sinDip * sinDip, 0.0)) - n * sinDip;
+    vec3 graze = way * dip.y - n * dip.x;
     // Unless it grazes the cut-off cap, over the field.
     vec3 at = v + graze * reach;
     float over = dot(at, uGlobeUp);
@@ -168,19 +184,61 @@ float globeHorizon(vec3 origin, vec3 dir) {
   return -up * inversesqrt(max(run * run + up * up, 1e-12));
 }
 
-// How far below the camera's own altitude over the sphere the lowest point of a view from
-// `origin` along `dir` (unit) lies: 0 for one rising from it.
-float globeDescent(vec3 origin, vec3 dir) {
+float globeHorizon(vec3 origin, vec3 dir) {
   if(!globeOn())
     return 0.0;
   vec3 v = origin - uGlobeDisc.xyz;
   float s = uGlobe.y;
-  float b = dot(v, dir) + s * dot(dir, uGlobeUp);
+  // |origin − C|² − R².
+  float outside = dot(v, v) + 2.0 * s * dot(v, uGlobeUp) - uGlobe.z;
+  float reach = sqrt(max(outside, 0.0));
+  float sinDip = reach / sqrt(uGlobe.x * uGlobe.x + max(outside, 0.0));
+  vec2 dip = vec2(sinDip, sqrt(max(1.0 - sinDip * sinDip, 0.0)));
+  return globeHorizonFrom(v, normalize(v + uGlobeUp * s), outside, reach, dip, dir);
+}
+
+// The same from the camera, from its uniforms.
+float globeCameraHorizon(vec3 dir) {
+  if(!globeOn())
+    return 0.0;
+  return globeHorizonFrom(cameraPosition - uGlobeDisc.xyz, uGlobeCameraRadial.xyz, uGlobeCamera.y, uGlobeCameraRadial.w, uGlobeCameraDip, dir);
+}
+
+// How far below the origin's own altitude over the sphere the lowest point of a view from
+// it along `dir` (unit) lies: 0 for one rising from it. From `v` its offset from the disc's
+// centre, `outside` |origin − C|² − R² and `above` its altitude over the sphere.
+float globeDescentFrom(vec3 v, float outside, float above, vec3 dir) {
+  float b = dot(v, dir) + uGlobe.y * dot(dir, uGlobeUp);
   if(b >= 0.0)
     return 0.0;
   float R = uGlobe.x;
-  float outside = dot(v, v) + 2.0 * s * dot(v, uGlobeUp) - uGlobe.z;
   float lowest = outside - b * b;
-  float camera = outside / (sqrt(max(R * R + outside, 0.0)) + R);
-  return camera - lowest / (sqrt(max(R * R + lowest, 0.0)) + R);
+  return above - lowest / (sqrt(max(R * R + lowest, 0.0)) + R);
+}
+
+float globeDescent(vec3 origin, vec3 dir) {
+  if(!globeOn())
+    return 0.0;
+  vec3 v = origin - uGlobeDisc.xyz;
+  float R = uGlobe.x;
+  float outside = dot(v, v) + 2.0 * uGlobe.y * dot(v, uGlobeUp) - uGlobe.z;
+  return globeDescentFrom(v, outside, outside / (sqrt(max(R * R + outside, 0.0)) + R), dir);
+}
+
+// The same from the camera, from its uniforms.
+float globeCameraDescent(vec3 dir) {
+  if(!globeOn())
+    return 0.0;
+  return globeDescentFrom(cameraPosition - uGlobeDisc.xyz, uGlobeCamera.y, uGlobeCamera.z, dir);
+}
+
+// How much higher than the camera a point `dist` along `dir` (unit) from it lies: over the
+// sphere about the camera, to second order in `dist` over the camera's distance from its
+// centre — under 1% of the rise off at 1000 km, and over the disc the cap's few metres —
+// enough for what the air does, with no square root. Flat with the globe off.
+float globeCameraRise(vec3 dir, float dist) {
+  if(!globeOn())
+    return dot(dir, uGlobeUp) * dist;
+  float mu = dot(dir, uGlobeCameraRadial.xyz);
+  return dist * (mu + 0.5 * dist * (1.0 - mu * mu) / (uGlobe.x + uGlobeCamera.z));
 }

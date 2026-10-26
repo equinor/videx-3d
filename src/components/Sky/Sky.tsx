@@ -1786,6 +1786,7 @@ export const Sky = ({
           frustumCulled={false}
           renderOrder={renderOrder}
           visible={drawn && ready && !debug?.hide?.includes('background')}
+          onBeforeRender={material.onBeforeDraw}
           dispose={null}
         />
         {surfaceLayer && oceanWater && (
@@ -1797,6 +1798,7 @@ export const Sky = ({
             renderOrder={renderOrder + 1}
             // Shown each frame.
             visible={false}
+            onBeforeRender={material.onBeforeDraw}
             dispose={null}
           />
         )}

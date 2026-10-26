@@ -1,4 +1,4 @@
-import { Uniform, Vector3, Vector4 } from 'three';
+import { Uniform, Vector2, Vector3, Vector4 } from 'three';
 
 /** The Earth's mean radius, in metres. */
 export const EARTH_RADIUS = 6371000;
@@ -30,6 +30,21 @@ export type GlobeUniforms = {
    * disc's radius squared (z), and 1 while on (w)
    */
   uGlobe: Uniform<Vector4>;
+  /**
+   * the camera drawing ({@link Globe.setCamera}): its height along up as measured over the
+   * globe (`altitude` + `level`, x), `|camera − C|² − R²` (y), its height over the whole
+   * sphere, `|camera − C| − R` (z)
+   */
+  uGlobeCamera: Uniform<Vector4>;
+  /** up at the camera ({@link Globe.upAt}) */
+  uGlobeCameraUp: Uniform<Vector3>;
+  /**
+   * away from the sphere's centre through the camera (xyz), and how far its view runs to
+   * graze the sphere, `√(|camera − C|² − R²)` (w; 0 from inside it)
+   */
+  uGlobeCameraRadial: Uniform<Vector4>;
+  /** the sine and cosine of how far the camera's horizon dips below its own level */
+  uGlobeCameraDip: Uniform<Vector2>;
 };
 
 /** A rectangle in world X/Z: `[minX, minZ, maxX, maxZ]`. */
@@ -72,6 +87,9 @@ export class Globe {
   private readonly c = new Vector3();
   private s = 0;
   private readonly C = new Vector3();
+  // Where the camera uniforms were last set for, and whether the globe changed since.
+  private readonly cameraAt = new Vector3();
+  private cameraStale = true;
 
   constructor(radius = EARTH_RADIUS) {
     this.radius = radius;
@@ -79,6 +97,10 @@ export class Globe {
       uGlobeUp: new Uniform(new Vector3(0, 1, 0)),
       uGlobeDisc: new Uniform(new Vector4()),
       uGlobe: new Uniform(new Vector4()),
+      uGlobeCamera: new Uniform(new Vector4()),
+      uGlobeCameraUp: new Uniform(new Vector3(0, 1, 0)),
+      uGlobeCameraRadial: new Uniform(new Vector4(0, 1, 0, 0)),
+      uGlobeCameraDip: new Uniform(new Vector2(0, 1)),
     };
     this.update();
   }
@@ -278,7 +300,50 @@ export class Globe {
     return reached(t, true);
   }
 
+  /**
+   * Set the camera uniforms (`uGlobeCamera…`) for a camera at `position` (world): what the
+   * shaders would otherwise work out per pixel from `cameraPosition` — its height, its up,
+   * and its horizon — once, in 64-bit floats. Call it for each camera that draws with them,
+   * before it draws (an object's `onBeforeRender`); a call for the same place and globe
+   * returns at once.
+   */
+  setCamera(position: Vector3) {
+    if (!this.cameraStale && position.equals(this.cameraAt)) return;
+    this.cameraAt.copy(position);
+    this.cameraStale = false;
+    const {
+      uGlobeCamera,
+      uGlobeCameraUp,
+      uGlobeCameraRadial,
+      uGlobeCameraDip,
+    } = this.uniforms;
+    const up = this.sceneUp;
+    const R = this.radius;
+    const s = this.s;
+    v.subVectors(position, this.c);
+    const h = v.dot(up);
+    // |camera − C|² − R², about the disc's centre.
+    const outside = v.lengthSq() + 2 * s * h - this.discR * this.discR;
+    const fromCentre = Math.sqrt(Math.max(R * R + outside, 0));
+    const reach = Math.sqrt(Math.max(outside, 0));
+    const radial = way.copy(v).addScaledVector(up, s).normalize();
+    uGlobeCameraRadial.value.set(radial.x, radial.y, radial.z, reach);
+    const sinDip = fromCentre > 0 ? reach / fromCentre : 0;
+    uGlobeCameraDip.value.set(
+      sinDip,
+      Math.sqrt(Math.max(1 - sinDip * sinDip, 0)),
+    );
+    uGlobeCamera.value.set(
+      this.altitude(position) + this.seaLevel,
+      outside,
+      outside / (fromCentre + R),
+      0,
+    );
+    this.upAt(position, uGlobeCameraUp.value);
+  }
+
   private update() {
+    this.cameraStale = true;
     const up = this.sceneUp;
     this.c
       .set(this.discX, 0, this.discZ)

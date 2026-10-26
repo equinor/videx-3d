@@ -32,7 +32,7 @@ void main() {
 
   vec3 dir = stageViewRay();
   float blend = max(uSkyHorizonBlend, fwidth(dot(dir, uSkyUp)));
-  float altitude = skyOceanAltitude(cameraPosition);
+  float altitude = skyOceanCameraAltitude();
   float y = dot(dir, uSkyUp);
 
   // The flat caps are shaded where the ray meets their plane, exactly; from above, beyond the
@@ -77,7 +77,24 @@ void main() {
   // stage leaves it, and everything beyond, alone.
   bool dry = uSkyOceanWater < 0.5;
   float bedAltitude = altitude + uSkyOceanDepth;
-  bool staged = skyOceanStaged(dir, cameraPosition, 1.0, false);
+  #if !defined(STAGE_SURFACE)
+  vec3 surfaceReach = skyOceanReach(cameraPosition, dir, altitude);
+  #endif
+  // Where the stage's test meets the level it tests (skyOceanStagedReach): from above the
+  // water the surface, and over a dry sea the seabed from above it, both reached already.
+  float stagedAt;
+  #if defined(STAGE_SURFACE)
+  if(altitude > 0.0 && !dry)
+    stagedAt = reach.x;
+  #else
+  if(altitude > 0.0 && !dry)
+    stagedAt = surfaceReach.x;
+  else if(dry && bedAltitude > 0.0)
+    stagedAt = reach.x;
+  #endif
+  else
+    stagedAt = skyOceanStagedReach(dir, cameraPosition);
+  bool staged = skyOceanStagedAlong(dir, cameraPosition, stagedAt, 1.0, false);
   bool outsideWater = dry || altitude > 0.0 || bedAltitude < 0.0;
   bool skyDraws = outsideWater && !staged;
   // From the void the lid hides the water, seabed or not: through an occupant's section,
@@ -87,7 +104,6 @@ void main() {
   #if defined(STAGE_SURFACE)
   float overSea = reach.z;
   #else
-  vec3 surfaceReach = skyOceanReach(cameraPosition, dir, altitude);
   float overSea = altitude > 0.0 && !dry ? surfaceReach.z : bedAltitude > 0.0 && dry ? reach.z : 0.0;
   #endif
   bool overCurve = uSkyCurvature > 0.0 && planeAltitude > 0.0 && overSea > 0.5;

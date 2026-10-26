@@ -55,6 +55,7 @@ varying vec3 vSkyDirection;
 #else
 varying vec3 vReliefWorld;
 varying vec2 vReliefPlane;
+varying vec3 vReliefUp;
 #endif
 
 vec3 reliefAlbedo(float height, float weight) {
@@ -113,7 +114,7 @@ vec3 reliefThroughAir(vec3 color, vec3 dir, float dist, float blend) {
 }
 
 void main() {
-  float altitude = skyOceanAltitude(cameraPosition);
+  float altitude = skyOceanCameraAltitude();
   #ifdef RELIEF_FAR
   vec3 dir = normalize(vSkyDirection);
   vec3 hit = skyOceanReach(cameraPosition, dir, max(altitude, 1e-3));
@@ -151,9 +152,13 @@ void main() {
   // Land or sea by the map at this pixel.
   vec2 ground = reliefGround(xz, lod, bed);
   #else
-  bool staged = skyOceanStaged(dir, cameraPosition, 1.0, false);
-  // The map's normal, turned onto the globe where the tile lies.
-  vec3 normal = globeTurn(reliefTileNormal(), globeUpAt(world));
+  // The sea along the view, from above the water: both for the stage's test below and for
+  // which of the sea and the ground shows.
+  float sea = uSkyOceanWater > 0.5 && altitude > 0.0 ? skyOceanReach(cameraPosition, dir, altitude).x : 0.0;
+  // Only taken from above the water, with water: where the stage's test reaches the sea.
+  bool staged = skyOceanStagedAlong(dir, cameraPosition, sea, 1.0, false);
+  // The map's normal, turned onto the globe where the tile lies (its up, from the vertices).
+  vec3 normal = globeTurn(reliefTileNormal(), normalize(vReliefUp));
   vec2 ground = vec2(reliefTileHeight(), 1.0);
   #endif
   float height = ground.x;
@@ -175,8 +180,7 @@ void main() {
   // The triangles' chords sag under the globe's sea, by up to tens of metres on the coarse
   // tiles far off. So the ground's height decides which of the two shows: the seabed stays
   // behind the sea, and where the sea would be met over land there is none, so the land
-  // comes in front of it.
-  float sea = water && altitude > 0.0 ? skyOceanReach(cameraPosition, dir, altitude).x : 0.0;
+  // comes in front of it (`sea`, above).
   // The cutaway takes the seabed in front of the view, and the water over it, as over the
   // stage's own; the land stands.
   float cutaway = skyOceanCutawayAlong(cameraPosition, world);
