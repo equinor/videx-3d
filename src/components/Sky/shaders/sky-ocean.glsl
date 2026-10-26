@@ -133,13 +133,14 @@ vec4 skyOceanThroughAir(vec4 surface, vec3 origin, vec3 dir, float dist, float b
   float haze = skyAirHaze(origin, dir, dist);
   vec4 near = surface;
   if(haze > 0.0) {
-    vec3 level = dir - uSkyUp * dot(dir, uSkyUp);
+    vec3 look = globeCameraLook();
+    vec3 level = dir - look * dot(dir, look);
     float n2 = dot(level, level);
     vec3 horizon = n2 > 1e-8 ? skyHorizonColor(level * inversesqrt(n2), blend) : vec3(0.0);
     float dusk = min(uSkyTwilight.x * uSkyTwilight.y, 1.0);
     float toward = pow(n2, 2.0 + 14.0 * dusk);
     if(toward < 0.999)
-      horizon = mix(skySurfaceAt(uSkyUp, blend, 0.0), horizon, toward);
+      horizon = mix(skySurfaceAt(look, blend, 0.0), horizon, toward);
     float alpha = haze + (1.0 - haze) * surface.a;
     near = vec4((haze * horizon + (1.0 - haze) * surface.a * surface.rgb) / alpha, alpha);
   }
@@ -374,7 +375,9 @@ vec3 skyOceanUndersideOf(vec3 normal, vec3 dir, float blend, float depth) {
   if(dot(exitDir, exitDir) <= 0.0)
     return farWater;
   // On the air side, so the window's rim fades to the mirror instead of cutting off.
-  float fresnel = pow(1.0 - max(dot(exitDir, -normal), 0.0), uFresnelPower);
+  // Clamped to 1: straight up through a flat surface it rounds over, and pow() of the
+  // negative base is NaN.
+  float fresnel = pow(1.0 - clamp(dot(exitDir, -normal), 0.0, 1.0), uFresnelPower);
   return mix(skySurface(normalize(exitDir), blend), farWater, fresnel);
 }
 
@@ -478,20 +481,17 @@ vec4 skyOceanSurfaceLayer(vec3 dir, vec3 origin, float blend) {
   if(altitude <= 0.0)
     return vec4(0.0);
 
-  float y = dot(dir, uSkyUp);
+  float y = dot(dir, globeCameraLook());
   vec3 reach = skyOceanReach(origin, dir, altitude);
   float t = reach.x;
   vec2 p = skyOceanPlane(origin + dir * t);
   float texel = max(length(fwidth(p)), 1e-3);
   vec2 rimAt = skyOceanCutawayRimAt(origin + dir * t, origin);
   // Skipped where hidden with a margin, so a quad's pixels that still shade are hidden too
-  // and the derivatives they take across the skipped ones never show. From space about the
-  // camera's own up and horizon, where the field's up is not up (skyFromSpace).
+  // and the derivatives they take across the skipped ones never show. From the level the
+  // camera sees the sky by (globeCameraLook): its own far off, where the field's is not up.
   float over = y - skyHorizonAt(dir, altitude);
-  float space = skyFromSpace();
-  if(space > 0.0)
-    over = mix(over, dot(dir, globeCameraUp()) + uGlobeCameraDip.x, space);
-  if(over >= 2.0 * fwidth(mix(y, over, space)) || skyOceanOnStage(p, t + 2.0 * fwidth(t), 4.0 * texel))
+  if(over >= 2.0 * fwidth(y) || skyOceanOnStage(p, t + 2.0 * fwidth(t), 4.0 * texel))
     return vec4(0.0);
   SkyOceanWave wave = skyOceanWave(p, texel, t);
   skyOceanTiltWave(wave, globeUpAt(origin + dir * t));

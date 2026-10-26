@@ -232,16 +232,16 @@ export const SkyDebugPanel = ({
   const [showReadout, setShowReadout] = useState(true);
 
   const sun = skySunPosition(args);
-  const dip = (height: number) =>
-    args.globe && height > 0
-      ? Math.acos(SKY_EARTH_RADIUS / (SKY_EARTH_RADIUS + height))
-      : 0;
 
   // The sky's globe, found again whenever there is none yet.
   const globe = useRef<Globe | null>(null);
   const currentGlobe = () => {
     if (!globe.current) globe.current = findSceneGlobe(scene);
     return globe.current;
+  };
+  const dip = (height: number) => {
+    const R = currentGlobe()?.radius ?? SKY_EARTH_RADIUS;
+    return args.globe && height > 0 ? Math.acos(R / (R + height)) : 0;
   };
   // The map point under the camera and its height over the sea: over the globe with one.
   const where = () => {

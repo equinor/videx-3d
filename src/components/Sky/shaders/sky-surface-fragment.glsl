@@ -8,7 +8,7 @@ varying vec3 vSkyDirection;
 
 void main() {
   vec3 dir = normalize(vSkyDirection);
-  float blend = max(uSkyHorizonBlend, fwidth(dot(dir, uSkyUp)));
+  float blend = max(uSkyHorizonBlend, fwidth(dot(dir, globeCameraLook())));
   vec4 surface = skyOceanSurfaceLayer(dir, cameraPosition, blend);
   gl_FragColor = vec4(skyDebugTint(surface.rgb, SKY_DEBUG_LAYER) * uSkyIntensity, surface.a);
 

@@ -17,6 +17,7 @@ import {
   Uniform,
   UniformsLib,
   UniformsUtils,
+  Vector2,
   Vector3,
   Vector4,
   WebGLCubeRenderTarget,
@@ -93,6 +94,13 @@ export class SkyBaker {
     // The globe off: a flat sea.
     uGlobe: new Uniform(new Vector4()),
     uSkyDebug: new Uniform(0),
+    // The field's light, as the scene's lights are: the visible sky's is where the camera
+    // is (SkyMaterial.fieldLight). Filled in before each film.
+    uSkySunColor: new Uniform(new Color()),
+    uSkyDaylight: new Uniform(1),
+    uSkyTwilight: new Uniform(new Vector2()),
+    uSkyMoonlight: new Uniform(0),
+    uSkyNight: new Uniform(0),
     ...UniformsUtils.clone(UniformsLib.lights),
   };
   // The seabed is lit as the scene lights it; the probe is the previous bake's.
@@ -336,7 +344,13 @@ export class SkyBaker {
       return;
     }
     this.sync();
-    const { source } = this;
+    const { source, overrides } = this;
+    const field = source.fieldLight;
+    overrides.uSkySunColor.value.copy(field.sunColor);
+    overrides.uSkyDaylight.value = field.daylight;
+    overrides.uSkyTwilight.value.set(source.sunTwilight, field.twilight);
+    overrides.uSkyMoonlight.value = field.moonlight;
+    overrides.uSkyNight.value = field.night;
     const level = source.ocean
       ? source.oceanLevel
       : source.abyss

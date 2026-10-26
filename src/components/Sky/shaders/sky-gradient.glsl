@@ -52,11 +52,13 @@ uniform vec4 uSkyStageFlat; // the disc about the scene the sea stays flat over:
 // heights over the air's ground the ground, the sea and the rim come to be lit by the sun
 // over their own horizon (skyDayAt). Below, the sky's light, the camera's sun's, holds.
 #define SKY_FROM_SPACE vec2(100000.0, 1000000.0)
-// From space: the sea's colour, as a share of the blue overhead; the sun's glint off it, its
-// sharpness and strength; and how pale the air over the ground is, toward the horizon's colour.
+// From space: the sea's colour, as a share of the blue overhead deepened once more; the
+// sun's glint off it, its sharpness and strength; and how pale the air over the ground is,
+// toward the horizon's colour. Seen from space the air adds blue, not grey: pale, it greyed
+// the sea from navy to slate and the land toward the horizon's colour.
 #define SKY_SPACE_SEA 0.35
 #define SKY_SPACE_GLINT vec2(300.0, 2.0)
-#define SKY_SPACE_AIR_PALE 0.35
+#define SKY_SPACE_AIR_PALE 0.1
 
 // The camera's height over the air's ground, over the globe (globeCameraHeight).
 float skyCameraHeight() {
@@ -64,9 +66,9 @@ float skyCameraHeight() {
 }
 
 // How far the view is seen from space (SKY_FROM_SPACE): 0 in the air, 1 well above it.
-// The sky's light, its gradient and the sea's shading take their elevations from the
-// scene's up, the field's; from space, round the Earth from it, those mean nothing, and what
-// lies below is shaded by where it lies instead (skyFromSpaceOver).
+// The sky's light, its gradient and the sea's shading are the camera's (globeCameraLook);
+// from space the view takes in places round the Earth from it, lit otherwise, so what lies
+// below is shaded by where it lies instead (skyFromSpaceOver).
 float skyFromSpace() {
   return smoothstep(SKY_FROM_SPACE.x, SKY_FROM_SPACE.y, skyCameraHeight());
 }
@@ -133,7 +135,8 @@ float skyAirHaze(vec3 origin, vec3 dir, float dist) {
 
 // The sine of the elevation of the sea's horizon along `dir`, seen from the camera `height`
 // above the air's ground: 0 on a flat sea, lower the higher up as the Earth curves it away.
-// From the globe (globeCameraHorizon): where the view grazes it, about the camera's own up.
+// From the globe (globeCameraHorizon): where the view grazes it, about the camera's own up,
+// from the level the camera sees the sky by (globeCameraLook).
 float skyHorizonAt(vec3 dir, float height) {
   if(uSkyCurvature <= 0.0 || height <= 0.0)
     return 0.0;
@@ -171,7 +174,7 @@ SkyLight skyLight(float share) {
   seen.twilight = mix(uSkyTwilight.y, uSkyAirLight.y, share);
   seen.moonlight = mix(uSkyMoonlight, uSkyAirLight.z, share);
   seen.sun = mix(uSkySunColor, uSkyAirSunColor, share);
-  seen.sunY = sin(asin(clamp(dot(uSkySunDirection, uSkyUp), -1.0, 1.0)) + uSkyAirLight.w * share);
+  seen.sunY = sin(asin(clamp(dot(uSkySunDirection, globeCameraLook()), -1.0, 1.0)) + uSkyAirLight.w * share);
   return seen;
 }
 
@@ -215,12 +218,14 @@ vec3 skyDeepZenith() {
   return 0.85 * uSkyZenithColor * uSkyZenithColor / max(max(uSkyZenithColor.r, max(uSkyZenithColor.g, uSkyZenithColor.b)), 1e-4);
 }
 
-// The open sea seen from space along `dir`, where its up is `up`: dark blue as the sun lights
+// The open sea seen from space along `dir`, where its up is `up`: deep blue as the sun lights
 // it there, with the sun's glint off it. Unhazed (skyFromSpaceOver).
 vec3 skySpaceSea(vec3 dir, vec3 up) {
   float sun = max(dot(uSkySunDirection, up), 0.0);
   float glint = pow(max(dot(reflect(dir, up), uSkySunDirection), 0.0), SKY_SPACE_GLINT.x);
-  return SKY_SPACE_SEA * skyDeepZenith() * (0.2 + 0.8 * sun) + uSkySunColor * glint * SKY_SPACE_GLINT.y;
+  vec3 deep = skyDeepZenith();
+  deep *= deep / max(max(deep.r, max(deep.g, deep.b)), 1e-4);
+  return SKY_SPACE_SEA * deep * (0.2 + 0.8 * sun) + uSkySunColor * glint * SKY_SPACE_GLINT.y;
 }
 
 // `near`, as the sky shades it in the air, toward what it is from space: `lit`, its colour
@@ -242,15 +247,10 @@ float skyOverHorizon(float y, float horizon) {
   return (y - horizon) / (y >= horizon ? 1.0 - horizon : 1.0 + horizon);
 }
 
-// How far over the sea's horizon `dir` looks (skyOverHorizon's): from the scene's level, as
-// the sky's gradient takes it; from space about the camera's own up and its own horizon,
-// where the field's up is not up (skyFromSpace).
+// How far over the sea's horizon `dir` looks (skyOverHorizon's), from the level the camera
+// sees the sky by (globeCameraLook): the scene's over the field, its own far off.
 float skyOverSeaHorizon(vec3 dir) {
-  float y = skyOverHorizon(dot(dir, uSkyUp), skyHorizon(dir));
-  float space = skyFromSpace();
-  if(space <= 0.0)
-    return y;
-  return mix(y, skyOverHorizon(dot(dir, globeCameraUp()), -uGlobeCameraDip.x), space);
+  return skyOverHorizon(dot(dir, globeCameraLook()), skyHorizon(dir));
 }
 
 // How much of the air lies below `height` over its ground: 0 on it, toward 1 high above it.
@@ -263,7 +263,7 @@ float skyAirBelowAt(float height) {
 // Up from the horizon as seen, so it runs on smoothly across the level. Air only. From the
 // horizon's sine along it and the lowest it passes, where those are known.
 float skyAirHeightFrom(vec3 dir, float height, float horizon, float lowest) {
-  float up = max(skyOverHorizon(dot(dir, uSkyUp), horizon), 0.0);
+  float up = max(skyOverHorizon(dot(dir, globeCameraLook()), horizon), 0.0);
   float steeper = SKY_AIR_PATH * uSkyAir.y * log(1.0 + SKY_AIR_LEVEL_MASS * up);
   return lowest + steeper * skyAirBelowAt(height);
 }
@@ -290,7 +290,8 @@ float skySpace(vec3 dir, float height) {
 // the horizon's sine along its bearing `horizon` (skyHorizonAt), in the light `seen`: the
 // air's own light, without the dark of space.
 vec3 skySurfaceSeen(vec3 dir, float blend, float horizon, SkyLight seen) {
-  float y = skyOverHorizon(dot(dir, uSkyUp), horizon);
+  vec3 look = globeCameraLook();
+  float y = skyOverHorizon(dot(dir, look), horizon);
   // Higher up, the sky deepens, and its haze closes onto the horizon as the camera rises out of it.
   float below = skyAirBelow();
   vec3 zenith = mix(uSkyZenithColor, skyDeepZenith(), below * below);
@@ -308,9 +309,9 @@ vec3 skySurfaceSeen(vec3 dir, float blend, float horizon, SkyLight seen) {
   // replacing the blue, which would turn it pink; a faint pink belt opposite.
   float twilight = uSkyTwilight.x * seen.twilight;
   if(twilight > 0.0) {
-    vec3 across = dir - uSkyUp * dot(dir, uSkyUp);
+    vec3 across = dir - look * dot(dir, look);
     float sunY = seen.sunY;
-    vec3 sunAcross = uSkySunDirection - uSkyUp * dot(uSkySunDirection, uSkyUp);
+    vec3 sunAcross = uSkySunDirection - look * dot(uSkySunDirection, look);
     float facing = 0.5 + 0.5 * dot(across, sunAcross) * inversesqrt(max(dot(across, across) * dot(sunAcross, sunAcross), 1e-8));
     float rise = max(y, 0.0);
     // Gold while the sun is up, orange about sunset, deep orange high up.
@@ -380,6 +381,6 @@ vec3 skySurface(vec3 dir, float blend) {
 vec3 skyHorizonColor(vec3 way, float blend) {
   float height = skyCameraHeight();
   float sine = skyHorizonAt(way, height);
-  vec3 dir = way * sqrt(1.0 - sine * sine) + uSkyUp * sine;
+  vec3 dir = way * sqrt(1.0 - sine * sine) + globeCameraLook() * sine;
   return skySurfaceSeen(dir, blend, sine, skyLight(skyLightShare(dir, height)));
 }

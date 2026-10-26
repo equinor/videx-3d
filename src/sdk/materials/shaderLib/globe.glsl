@@ -10,6 +10,7 @@ uniform vec4 uGlobe; // the sphere's radius, its centre's depth below the disc's
 // The camera drawing, as `Globe.setCamera` sets it (once, on the CPU, instead of per pixel):
 uniform vec4 uGlobeCamera; // its height (globeHeight), |camera − C|² − R², and |camera − C| − R
 uniform vec3 uGlobeCameraUp; // up at it (globeUpAt)
+uniform vec3 uGlobeCameraLook; // the up it sees the sky by (Globe.lookUp)
 uniform vec4 uGlobeCameraRadial; // away from the sphere's centre through it, and how far its view runs to graze the sphere
 uniform vec2 uGlobeCameraDip; // the sine and cosine of its horizon's dip below its own level
 
@@ -66,6 +67,12 @@ vec3 globeUpAt(vec3 p) {
 // Up at the camera (globeUpAt), from its uniform.
 vec3 globeCameraUp() {
   return globeOn() ? uGlobeCameraUp : uGlobeUp;
+}
+
+// The up the camera sees the sky by (Globe.lookUp): the scene's over the disc, up where the
+// camera is far off, eased between.
+vec3 globeCameraLook() {
+  return globeOn() ? uGlobeCameraLook : uGlobeUp;
 }
 
 // `v` turned as the scene's up turns onto `up` (unit): a normal or a direction of the flat
@@ -253,14 +260,14 @@ vec2 globeReach(vec3 origin, vec3 dir, float below) {
   return vec2(t, 0.0);
 }
 
-// The sine of the elevation, from the scene's level, of the horizon seen from `origin`
-// along the bearing of `dir`: where a view grazes the sphere, about the origin's own up;
-// or, from low over the field, where it leaves the disc's plane. 0 with the globe off, or
-// from on or under the plane inside the sphere.
+// The sine of the elevation, from the level of `look` (unit), of the horizon seen from
+// `origin` along the bearing of `dir`: where a view grazes the sphere, about the origin's
+// own up; or, from low over the field, where it leaves the disc's plane. 0 with the globe
+// off, or from on or under the plane inside the sphere.
 // From what it takes of the origin: `v` its offset from the disc's centre, `n` away from
 // the sphere's centre through it, `outside` |origin − C|² − R², `reach` √outside and `dip`
 // the sine and cosine of its horizon's dip.
-float globeHorizonFrom(vec3 v, vec3 n, float outside, float reach, vec2 dip, vec3 dir) {
+float globeHorizonFrom(vec3 v, vec3 n, float outside, float reach, vec2 dip, vec3 dir, vec3 look) {
   float up = dot(v, uGlobeUp);
   vec3 level = dir - n * dot(dir, n);
   float l2 = dot(level, level);
@@ -274,19 +281,22 @@ float globeHorizonFrom(vec3 v, vec3 n, float outside, float reach, vec2 dip, vec
     float over = dot(at, uGlobeUp);
     at -= uGlobeUp * over;
     if(over <= 0.0 || dot(at, at) > uGlobe.z)
-      return dot(graze, uGlobeUp);
+      return dot(graze, look);
   }
   if(up <= 0.0)
     return 0.0;
-  // Where the view along the bearing leaves the disc's plane.
+  // Where the view along the bearing leaves the disc's plane. From the scene's level, and
+  // by how far `look` tilts from it: nothing over the disc, where it is the scene's up.
   vec3 across = v - uGlobeUp * up;
   vec3 flatWay = way - uGlobeUp * dot(way, uGlobeUp);
   flatWay *= inversesqrt(max(dot(flatWay, flatWay), 1e-12));
   float a = dot(across, flatWay);
   float run = -a + sqrt(max(a * a - dot(across, across) + uGlobe.z, 0.0));
-  return -up * inversesqrt(max(run * run + up * up, 1e-12));
+  float tilt = dot(flatWay * run - uGlobeUp * up, look - uGlobeUp);
+  return (tilt - up) * inversesqrt(max(run * run + up * up, 1e-12));
 }
 
+// From the scene's level.
 float globeHorizon(vec3 origin, vec3 dir) {
   if(!globeOn())
     return 0.0;
@@ -297,14 +307,15 @@ float globeHorizon(vec3 origin, vec3 dir) {
   float reach = sqrt(max(outside, 0.0));
   float sinDip = reach / sqrt(uGlobe.x * uGlobe.x + max(outside, 0.0));
   vec2 dip = vec2(sinDip, sqrt(max(1.0 - sinDip * sinDip, 0.0)));
-  return globeHorizonFrom(v, normalize(v + uGlobeUp * s), outside, reach, dip, dir);
+  return globeHorizonFrom(v, normalize(v + uGlobeUp * s), outside, reach, dip, dir, uGlobeUp);
 }
 
-// The same from the camera, from its uniforms.
+// The same from the camera, from its uniforms, and from the level it sees the sky by
+// (globeCameraLook): far off, the dip all round.
 float globeCameraHorizon(vec3 dir) {
   if(!globeOn())
     return 0.0;
-  return globeHorizonFrom(cameraPosition - uGlobeDisc.xyz, uGlobeCameraRadial.xyz, uGlobeCamera.y, uGlobeCameraRadial.w, uGlobeCameraDip, dir);
+  return globeHorizonFrom(cameraPosition - uGlobeDisc.xyz, uGlobeCameraRadial.xyz, uGlobeCamera.y, uGlobeCameraRadial.w, uGlobeCameraDip, dir, uGlobeCameraLook);
 }
 
 // How far below the origin's own altitude over the sphere the lowest point of a view from

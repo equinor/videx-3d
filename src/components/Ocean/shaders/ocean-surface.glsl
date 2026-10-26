@@ -186,10 +186,11 @@ vec3 oceanWaveNormal(vec2 worldXZ, float texel, float flatness, out vec2 slope, 
 }
 
 // Fresnel, analytically widened to avoid grazing-angle shading aliasing. `ndvAA` is the
-// widened cosine, which also stands in for depth in the body colour.
+// widened cosine, which also stands in for depth in the body colour. Clamped to 1: looking
+// straight down on a flat normal it rounds a hair over, and pow() of the negative base is NaN.
 float oceanFresnel(vec3 N, vec3 V, out float ndvAA) {
-  float ndv = max(dot(N, V), 0.0);
-  ndvAA = max(ndv, fwidth(ndv));
+  float ndv = clamp(dot(N, V), 0.0, 1.0);
+  ndvAA = min(max(ndv, fwidth(ndv)), 1.0);
   return pow(1.0 - ndvAA, uFresnelPower);
 }
 

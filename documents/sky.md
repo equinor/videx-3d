@@ -140,7 +140,8 @@ the deck clears it from overhead out toward the horizon.
 
 A flat deck shows no parallax: climbing only zooms it, moving only slides it, so it reads
 as a painted ceiling. Two cheap departures from the plane give it depth. The deck lies on
-a sphere about the Earth's centre, `SKY_EARTH_RADIUS` plus `altitude` in radius, so it
+a sphere about the Earth's centre, the globe's radius plus `altitude` (`SKY_EARTH_RADIUS`
+without a frame; with one, the Earth's there, as the globe has it), so it
 bends down toward the horizon and is not squeezed into streaks there; it costs a square
 root more than a plane. A tighter dome looks curved further up but puts the horizon a
 finite distance away: clouds then slide over its rim as the camera moves instead of
@@ -282,13 +283,15 @@ and, round the Earth from the field, the field's up is not up. So between 100 an
 over the air's ground (`SKY_FROM_SPACE`, `skyFromSpace`) what lies below is shaded by where
 it lies instead (`skyFromSpaceOver`):
 
-- **the sea:** dark blue as the sun lights it there, with the sun's glint off it
-  (`skySpaceSea`; `SKY_SPACE_SEA`, `SKY_SPACE_GLINT`);
+- **the sea:** deep blue as the sun lights it there, the blue overhead deepened once more
+  (`skyDeepZenith`'s step again), with the sun's glint off it (`skySpaceSea`;
+  `SKY_SPACE_SEA`, `SKY_SPACE_GLINT`);
 - **the relief:** its own lighting (the scene's sun on its normals), the night side's
   ambient taken out;
 - **over both, the air** the view crosses (`skyAirHaze`, which measures the path through
-  the air from anywhere), coloured as the sky overhead and lit by the sun there
-  (`SKY_SPACE_AIR_PALE`): dark where the sun is down, down to the night's level;
+  the air from anywhere), coloured as the deep blue overhead, barely paled toward the
+  horizon's colour (`SKY_SPACE_AIR_PALE` 0.1; at 0.35 it greyed the sea from navy to
+  slate), and lit by the sun there: dark where the sun is down, down to the night's level;
 - **the rim** over the Earth's edge lit where the view passes closest to it (`skyDayAt`),
   so it is dark over the night side;
 - **the stars and the sea's layer** test the horizon about the camera's own up and its own
@@ -301,7 +304,9 @@ physical atmosphere (scattering tables) is left for the 3D clouds' work.
 ## The globe
 
 `globe` (default on) lets the sea, the sky and the clouds follow the Earth's curve
-(`SKY_EARTH_RADIUS`): as the camera climbs, the horizon drops below the level by about
+(`SKY_EARTH_RADIUS`, or with a frame the Earth's radius there, 6385.6 km at Volve in the
+map's units; the sky and its clouds take the globe's since 2026-10-26): as the camera
+climbs, the horizon drops below the level by about
 √(2h/R) — 0.2° at 40 m, 1° at 1 km, 4° at 15 km — and from high up it bows across the
 view. The sea ends at it, its waves tipped with the curve so that the view grazes them there
 and they reflect the horizon's colour. The sky's gradient, its twilight and the haze's colour
@@ -311,8 +316,8 @@ where it lies, with its own level horizon: far out, where the sea is tipped with
 wave's reflection is turned back by that tilt. Off, every one of them is as on a flat sea:
 right for one field seen from near it, but far from it the horizon never drops and the
 relief and anchored content stay flat. It is kept for comparison and for a host that needs
-a level horizon, to be revisited with the view's origin
-([world.md, step 4](./world.md#6-order-of-work)).
+a level horizon. Step 4 has the sky's look frame follow the camera instead
+([world.md, step 4](./world.md#12-step-4-in-detail-the-sky-anywhere-on-the-globe)).
 
 The Earth is a fixed globe (`SkyMaterial.globe`, an sdk `Globe`; see
 [world.md](./world.md#9-step-2-in-detail-the-sky-on-a-fixed-globe)): a sphere whose centre
@@ -333,7 +338,10 @@ stays flat, a carrier for pixels each shaded where the view meets the globe, and
 the disc it leaves the sky above the curved horizon to the background, which then draws
 the very same sea. With the camera beyond the disc its planes sink under it, so they lie
 below it however far the globe falls away. Past its reach the background draws the sea;
-from space, all of it (flat planes cannot stand for the globe there). The void and the subsurface, the views from in
+from space, all of it (flat planes cannot stand for the globe there). It claims the sea
+only while the camera is over its rectangle on the field's half of the Earth
+(`SkyMaterial`'s `claimStage`): off it, its sunk planes would miss some of what it
+claims, and a point on the far side would project back inside it. The void and the subsurface, the views from in
 the water and below the seabed, and the bakes stay flat: the bakes film a level horizon, as
 a few degrees barely change the light, so climbing never bakes. Switching it only changes a
 uniform; it costs about a square root per pixel.

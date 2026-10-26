@@ -59,7 +59,6 @@ import {
 import { SkyCutawayHandle } from './sky-cutaway-handle';
 import { createSkyGeometry, SkyMaterial } from './sky-material';
 import {
-  SKY_EARTH_RADIUS,
   SKY_HDR_SUN_RADIANCE,
   SkyAbyss,
   SkyAir,
@@ -327,6 +326,7 @@ const DEFAULT_UP: Vec3 = [0, 1, 0];
 const DEFAULT_NORTH: Vec3 = [0, 0, -1];
 
 const scratch = new Color();
+const lookScratch = new Vector3();
 // Primitive dependency for a colour prop, so an inline `new Color()` does not re-bake every render.
 const toHex = (value: ColorRepresentation) => scratch.set(value).getHex();
 
@@ -1456,14 +1456,23 @@ export const Sky = ({
         ready &&
         !debug?.hide?.includes('surface') &&
         height > material.oceanLevel;
-    // From high up the sky's own light goes by the sun over the lowered horizon; the sea's,
-    // the scene's and the bakes' stay by the sea's.
+    // The sky's own light where the camera is: by the sun over the level it sees the sky by
+    // (Globe.lookUp), the field's over the field. From high up, over the horizon the
+    // Earth's curve lowers. The scene's lights and the bakes stay the field's.
+    const look = material.globe.lookUp(camera.position, lookScratch);
+    const seen = look.equals(material.globe.up)
+      ? null
+      : MathUtils.radToDeg(
+          Math.asin(MathUtils.clamp(look.dot(material.sunDirection), -1, 1)),
+        );
+    material.setSeenSun(seen, moonShine);
     const airHeight = height - airLevel;
+    const earth = material.globe.radius;
     const dip =
       material.globeEnabled && airHeight > 0
-        ? Math.acos(SKY_EARTH_RADIUS / (SKY_EARTH_RADIUS + airHeight))
+        ? Math.acos(earth / (earth + airHeight))
         : 0;
-    material.setAirLight(elevation, dip, moonShine);
+    material.setAirLight(seen ?? elevation, dip, moonShine);
     const zone = skyZone(height, {
       ocean: material.ocean,
       oceanLevel: material.oceanLevel,

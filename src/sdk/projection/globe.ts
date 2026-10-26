@@ -47,6 +47,8 @@ export type GlobeUniforms = {
   uGlobeCamera: Uniform<Vector4>;
   /** up at the camera ({@link Globe.upAt}) */
   uGlobeCameraUp: Uniform<Vector3>;
+  /** the up the camera sees the sky by ({@link Globe.lookUp}) */
+  uGlobeCameraLook: Uniform<Vector3>;
   /**
    * away from the sphere's centre through the camera (xyz), and how far its view runs to
    * graze the sphere, `√(|camera − C|² − R²)` (w; 0 from inside it)
@@ -185,6 +187,7 @@ export class Globe {
       uGlobe: new Uniform(new Vector4()),
       uGlobeCamera: new Uniform(new Vector4()),
       uGlobeCameraUp: new Uniform(new Vector3(0, 1, 0)),
+      uGlobeCameraLook: new Uniform(new Vector3(0, 1, 0)),
       uGlobeCameraRadial: new Uniform(new Vector4(0, 1, 0, 0)),
       uGlobeCameraDip: new Uniform(new Vector2(0, 1)),
       uGlobeEast: new Uniform(new Vector3(1, 0, 0)),
@@ -466,6 +469,25 @@ export class Globe {
   }
 
   /**
+   * The up a view from `point` sees the sky by: the scene's over the disc, eased past its
+   * edge, over one more disc radius, into up there ({@link upAt}), which jumps at the edge
+   * by the disc's radius over the globe's. The sky's horizon, gradient and light follow it,
+   * so they are the scene's over the field and level wherever the camera is.
+   */
+  lookUp(point: Vector3, target: Vector3): Vector3 {
+    const up = this.sceneUp;
+    v.subVectors(point, this.c);
+    const h = v.dot(up);
+    const d = flat.copy(v).addScaledVector(up, -h).length();
+    const r = this.discR;
+    if (!this.on || d <= r) return target.copy(up);
+    const t = Math.min((d - r) / Math.max(r, 1), 1);
+    const ease = t * t * (3 - 2 * t);
+    target.copy(v).addScaledVector(up, this.s).normalize();
+    return target.lerp(up, 1 - ease).normalize();
+  }
+
+  /**
    * The point `height` over the ground at world X/Z (`x`, `z`): over the disc, the level
    * plane's; beyond, with a {@link frame}, the map's point where its latitude and longitude
    * lie ({@link geodetic}); without, the plane's point carried along the line from the
@@ -624,6 +646,7 @@ export class Globe {
     const {
       uGlobeCamera,
       uGlobeCameraUp,
+      uGlobeCameraLook,
       uGlobeCameraRadial,
       uGlobeCameraDip,
     } = this.uniforms;
@@ -650,6 +673,7 @@ export class Globe {
       0,
     );
     this.upAt(position, uGlobeCameraUp.value);
+    this.lookUp(position, uGlobeCameraLook.value);
   }
 
   // Where the frame has the disc's centre on the Earth, and the sphere matched there: its

@@ -411,7 +411,8 @@ vec3 skyCloudBand(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
   vec3 light = skyCloudLight().daylight > 0.0 ? uSkySunDirection : uSkyMoonDirection;
   float angle = atan(length(cross(dir, light)), dot(dir, light));
   float aa = max(fwidth(angle), 1e-5);
-  float y = dot(dir, uSkyUp);
+  vec3 look = globeCameraLook();
+  float y = dot(dir, look);
   float over = asin(clamp(y, -1.0, 1.0)) - asin(skyHorizon(dir));
   vec2 span = skyCloudBandSpan();
   float climb = 1.0 - exp(-max(globeViewHeight(origin), 0.0) / (1.5 * uSkyClouds.y));
@@ -420,7 +421,9 @@ vec3 skyCloudBand(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
     return color;
   float v = e / span.y;
   float far = uSkyCloudsShape.w;
-  vec2 around = normalize(vec2(dot(dir, uSkyEast), dot(dir, uSkyNorth)) + 1e-6);
+  // Its bearing in the level the camera sees the sky by: the field's east and north turned
+  // onto it.
+  vec2 around = normalize(vec2(dot(dir, globeTurn(uSkyEast, look)), dot(dir, globeTurn(uSkyNorth, look))) + 1e-6);
   float across = SKY_CLOUD_BAND_WIDTH * far / uSkyClouds.z;
   float up = far / (SKY_CLOUD_BAND_HEIGHT * max(uSkyCloudsShape.y, 100.0));
   vec3 q = vec3(around * across, e * up * (1.0 + SKY_CLOUD_BAND_FLATTEN * climb)) + vec3(uSkyCloudsSeed * 0.01, 0.0);
@@ -433,7 +436,7 @@ vec3 skyCloudBand(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
   // Brighter toward their tops, and the side seen lit as much as it faces the light; from over
   // their tops, a thickness up, the sunlit tops themselves.
   float lit = clamp(1.0 - (skyNoise3Fbm(q + vec3(0.0, 0.0, 0.25)) - n) * 4.0, 0.35, 1.0);
-  vec3 level = dir - uSkyUp * y;
+  vec3 level = dir - look * y;
   float side = 0.5 - 0.5 * dot(level, light) / max(length(level), 1e-4);
   float tops = uSkyClouds.y + uSkyCloudsShape.y;
   float above = clamp((globeViewHeight(origin) - tops) / max(uSkyCloudsShape.y, 500.0), 0.0, 1.0);
@@ -454,7 +457,8 @@ vec3 skyClouds(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
   bool bandOnly = uSkyCloudsShape.z > 0.5 && uSkyCloudsShape.z < 1.5;
   if(below <= 0.0 || bandOnly || uSkyClouds.x <= 0.0 || uSkyCloudsColor.a <= 0.0)
     return color;
-  float elevationSine = dot(dir, uSkyUp);
+  vec3 look = globeCameraLook();
+  float elevationSine = dot(dir, look);
   float horizon = skyHorizon(dir);
   bool hinged = uSkyCloudsShape.z > 1.5;
   vec3 ray = dir;
@@ -463,9 +467,9 @@ vec3 skyClouds(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
     float hinge = skyCloudBandSpan().x * skyCloudBandSquash(origin) + asin(horizon);
     float elevation = asin(clamp(elevationSine, -1.0, 1.0));
     float turned = (elevation - hinge) * (1.5707963 / (1.5707963 - hinge));
-    vec3 across = dir - uSkyUp * elevationSine;
+    vec3 across = dir - look * elevationSine;
     float l = length(across);
-    ray = (l > 1e-6 ? across / l : uSkyNorth) * cos(turned) + uSkyUp * sin(turned);
+    ray = (l > 1e-6 ? across / l : globeTurn(uSkyNorth, look)) * cos(turned) + look * sin(turned);
   }
   // From the camera's own up: the deck's sphere is about the globe's centre, which lies
   // straight under the camera along it, so it needs no origin. Over the field the scene's.
@@ -515,7 +519,8 @@ vec3 skyClouds(vec3 color, vec3 haze, vec3 dir, vec3 origin) {
 #ifdef SKY_OCEAN
 // Where a stage's real geometry draws the sea instead: xy min, zw max in the wave plane.
 uniform vec4 uSkyOceanStage;
-// How far from the camera the stage draws it: out to the far plane.
+// How far from the camera the stage draws it: out to the far plane, 0 while the camera is
+// off its rectangle on the globe (SkyMaterial.claimStage).
 uniform float uSkyOceanStageReach;
 
 // Coordinates in the wave plane the Ocean works in: world X/Z in the default frame.
@@ -1034,7 +1039,8 @@ vec3 skyRadiance(vec3 dir, vec3 origin) {
   if(uSkyOceanBuried > 0.5)
     origin -= uSkyUp * (dot(origin, uSkyUp) - uSkyOceanLevel + uSkyOceanDepth + 1.0);
   #endif
-  float y = dot(dir, uSkyUp);
+  // The sky as the camera sees it, by its look up; what lies under the field, by the scene's.
+  float y = dot(dir, globeCameraLook());
   float dy = fwidth(y);
   float blend = max(uSkyHorizonBlend, dy);
   float horizon = skyHorizon(dir);
@@ -1072,7 +1078,7 @@ vec3 skyRadiance(vec3 dir, vec3 origin) {
     SkyLight seen = skyLight(skyLightShare(uSkySunDirection, skyCameraHeight()));
     color = mix(color, skySunDiscRadiance(seen), disc * uSkySunDisc);
     // Over the disc too, so it is never dimmer than its glare; above the horizon, while the sun is up.
-    float sunOver = skyOverHorizon(dot(uSkySunDirection, uSkyUp), skyHorizon(uSkySunDirection));
+    float sunOver = skyOverHorizon(dot(uSkySunDirection, globeCameraLook()), skyHorizon(uSkySunDirection));
     float up = smoothstep(-blend, 0.0, skyOverHorizon(y, horizon)) * smoothstep(-uSkySunSize, uSkySunSize, sunOver);
     vec3 light = skyTwilightLight(seen);
     // Full while warm (to ~15° up), a quarter once white (~20°).

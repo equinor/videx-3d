@@ -31,7 +31,7 @@ void main() {
   #include <logdepthbuf_fragment>
 
   vec3 dir = stageViewRay();
-  float blend = max(uSkyHorizonBlend, fwidth(dot(dir, uSkyUp)));
+  float blend = max(uSkyHorizonBlend, fwidth(dot(dir, globeCameraLook())));
   float altitude = skyOceanCameraAltitude();
   float y = dot(dir, uSkyUp);
 

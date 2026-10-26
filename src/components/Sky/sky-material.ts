@@ -128,6 +128,24 @@ export class SkyMaterial extends ShaderMaterial {
   private observing = false;
   private starsLoading = false;
   private starGeneration = 0;
+  /**
+   * The field's light, as {@link setSun} and the light's setters leave it: the scene's
+   * lights and the bakes take it. The sky's own uniforms hold the light where the camera
+   * is ({@link setSeenSun}), the same over the field.
+   */
+  readonly fieldLight = {
+    sunColor: new Color(),
+    daylight: 1,
+    twilight: 0,
+    moonlight: 0,
+    night: 0,
+  };
+  // The sun's elevation where the camera is (setSeenSun), null for the field's.
+  private seenElevation: number | null = null;
+  private seenMoonShine = 1;
+  // The stage's reach as set (setOceanStage); the uniform holds it only while the stage
+  // can draw what it claims (claimStage).
+  private stageReach = 0;
 
   constructor(parameters: ShaderMaterialParameters = {}) {
     const { sun, colors, abyss, ocean } = skyDefaults;
@@ -302,18 +320,54 @@ export class SkyMaterial extends ShaderMaterial {
   setSun(azimuth: number, elevation: number, frame?: CompassFrame) {
     const direction = directionFromCompass(azimuth, elevation, frame);
     this.uniforms.uSkySunDirection.value.fromArray(direction);
-    skySunColor(elevation, this.uniforms.uSkySunColor.value);
-    this.uniforms.uSkyDaylight.value = skyDaylight(elevation);
+    this.sunColor = skySunColor(elevation, this.fieldLight.sunColor);
+    this.daylight = skyDaylight(elevation);
     this.twilight = skyTwilight(elevation);
     this.moonlight = skyMoonlight(elevation);
     this.setAirLight(elevation, 0);
   }
 
   /**
+   * The sky's own light, for the sun `elevation` degrees over the level the camera sees the
+   * sky by (`Globe.lookUp`): far round the Earth from the field it is not the field's.
+   * `null` for the field's, as over the field. `moonShine` scales the moonlight, as for an
+   * observer's moon. The scene's lights and the bakes keep the field's ({@link fieldLight}).
+   */
+  setSeenSun(elevation: number | null, moonShine = 1) {
+    if (elevation === this.seenElevation && moonShine === this.seenMoonShine)
+      return;
+    this.seenElevation = elevation;
+    this.seenMoonShine = moonShine;
+    const u = this.uniforms;
+    const field = this.fieldLight;
+    if (elevation === null) {
+      u.uSkySunColor.value.copy(field.sunColor);
+      u.uSkyDaylight.value = field.daylight;
+      u.uSkyTwilight.value.y = field.twilight;
+      u.uSkyMoonlight.value = field.moonlight;
+      u.uSkyNight.value = field.night;
+      return;
+    }
+    skySunColor(elevation, u.uSkySunColor.value);
+    const daylight = skyDaylight(elevation);
+    u.uSkyDaylight.value = daylight;
+    u.uSkyTwilight.value.y = skyTwilight(elevation);
+    u.uSkyMoonlight.value = MathUtils.clamp(
+      skyMoonlight(elevation) * moonShine,
+      0,
+      1,
+    );
+    // As the sky's own stars show by the field's: by night.
+    u.uSkyNight.value = 1 - daylight;
+  }
+
+  /**
    * The sky's light seen from the camera's height, where the Earth's curve lowers the horizon
-   * by `dip` (radians): for the sun at `elevation` (degrees) plus that drop, so from high up
-   * the air stays lit after the sea's sunset. The sea, the scene's light and the bakes keep
-   * the sea's ({@link setSun}). `moonShine` scales the moonlight, as for an observer's moon.
+   * by `dip` (radians): for the sun at `elevation` (degrees, over the level the camera sees
+   * the sky by; see {@link setSeenSun}) plus that drop, so from high up the air stays lit
+   * after the sea's sunset. The sea keeps the sun at `elevation` ({@link setSeenSun}), the
+   * scene's light and the bakes the field's ({@link fieldLight}). `moonShine` scales the
+   * moonlight, as for an observer's moon.
    */
   setAirLight(elevation: number, dip: number, moonShine = 1) {
     const seen = elevation + MathUtils.radToDeg(dip);
@@ -385,11 +439,14 @@ export class SkyMaterial extends ShaderMaterial {
     this.uniforms.uSkySunDirection.value.copy(value).normalize();
   }
 
+  /** the sun's colour at the field ({@link fieldLight}) */
   get sunColor(): Color {
-    return this.uniforms.uSkySunColor.value;
+    return this.fieldLight.sunColor;
   }
   set sunColor(value: ColorRepresentation) {
-    this.uniforms.uSkySunColor.value.set(value);
+    this.fieldLight.sunColor.set(value);
+    if (this.seenElevation === null)
+      this.uniforms.uSkySunColor.value.copy(this.fieldLight.sunColor);
   }
 
   /** angular radius of the sun disc, in degrees */
@@ -415,20 +472,30 @@ export class SkyMaterial extends ShaderMaterial {
     this.uniforms.uSkyTwilight.value.x = Math.max(value, 0);
   }
 
-  /** how much the horizon glows for the sun's elevation, 0 to 1 (`skyTwilight`) */
+  /**
+   * how much the horizon glows for the sun's elevation at the field, 0 to 1 (`skyTwilight`;
+   * {@link fieldLight})
+   */
   get twilight(): number {
-    return this.uniforms.uSkyTwilight.value.y;
+    return this.fieldLight.twilight;
   }
   set twilight(value: number) {
-    this.uniforms.uSkyTwilight.value.y = MathUtils.clamp(value, 0, 1);
+    this.fieldLight.twilight = MathUtils.clamp(value, 0, 1);
+    if (this.seenElevation === null)
+      this.uniforms.uSkyTwilight.value.y = this.fieldLight.twilight;
   }
 
-  /** how much the moon lights the clouds for the sun's elevation, 0 to 1 (`skyMoonlight`) */
+  /**
+   * how much the moon lights the clouds for the sun's elevation at the field, 0 to 1
+   * (`skyMoonlight`; {@link fieldLight})
+   */
   get moonlight(): number {
-    return this.uniforms.uSkyMoonlight.value;
+    return this.fieldLight.moonlight;
   }
   set moonlight(value: number) {
-    this.uniforms.uSkyMoonlight.value = MathUtils.clamp(value, 0, 1);
+    this.fieldLight.moonlight = MathUtils.clamp(value, 0, 1);
+    if (this.seenElevation === null)
+      this.uniforms.uSkyMoonlight.value = this.fieldLight.moonlight;
   }
 
   /** strength of the bright glare hugging the sun disc */
@@ -516,12 +583,17 @@ export class SkyMaterial extends ShaderMaterial {
     this.uniforms.uSkyMoonDay.value = MathUtils.clamp(value, 0, 1);
   }
 
-  /** 0 by day to 1 at night: how much the moon and the stars show; 0 hides them */
+  /**
+   * 0 by day to 1 at night at the field: how much the moon and the stars show; 0 hides them
+   * ({@link fieldLight})
+   */
   get night(): number {
-    return this.uniforms.uSkyNight.value;
+    return this.fieldLight.night;
   }
   set night(value: number) {
-    this.uniforms.uSkyNight.value = MathUtils.clamp(value, 0, 1);
+    this.fieldLight.night = MathUtils.clamp(value, 0, 1);
+    if (this.seenElevation === null)
+      this.uniforms.uSkyNight.value = this.fieldLight.night;
   }
 
   /** the stars' brightness, and the share of the sky's cells holding one (0 for none) */
@@ -610,12 +682,14 @@ export class SkyMaterial extends ShaderMaterial {
     this.uniforms.uSkyHorizonBlend.value = Math.max(value, 1e-4);
   }
 
-  /** 0 (night) to 1 (day); see {@link setSun} */
+  /** 0 (night) to 1 (day) at the field; see {@link setSun} and {@link fieldLight} */
   get daylight(): number {
-    return this.uniforms.uSkyDaylight.value;
+    return this.fieldLight.daylight;
   }
   set daylight(value: number) {
-    this.uniforms.uSkyDaylight.value = MathUtils.clamp(value, 0, 1);
+    this.fieldLight.daylight = MathUtils.clamp(value, 0, 1);
+    if (this.seenElevation === null)
+      this.uniforms.uSkyDaylight.value = this.fieldLight.daylight;
   }
 
   get intensity(): number {
@@ -678,7 +752,7 @@ export class SkyMaterial extends ShaderMaterial {
       MathUtils.clamp(clouds.softness, 0, 1),
     );
     this.uniforms.uSkyCloudsShape.value.set(
-      SKY_EARTH_RADIUS + Math.max(clouds.altitude, 1),
+      this.globe.radius + Math.max(clouds.altitude, 1),
       Math.max(clouds.thickness, 0),
       { deck: 0, band: 1, both: 2 }[clouds.layers],
       Math.max(clouds.bandDistance, 1),
@@ -1151,11 +1225,34 @@ export class SkyMaterial extends ShaderMaterial {
 
   /**
    * Leave the sea inside this rectangle, `[minX, minZ, maxX, maxZ]` in the wave plane, and
-   * within `reach` of the camera, to a stage's real geometry; `null` for none.
+   * within `reach` of the camera, to a stage's real geometry; `null` for none. On the globe,
+   * only while the camera is over the rectangle on the field's half of it (see claimStage).
    */
   setOceanStage(bounds: [number, number, number, number] | null, reach = 1e30) {
     this.uniforms.uSkyOceanStage.value.fromArray(bounds ?? NO_STAGE);
-    this.uniforms.uSkyOceanStageReach.value = bounds ? reach : 0;
+    this.stageReach = bounds ? reach : 0;
+    this.claimStage(cameraAt);
+  }
+
+  // The stage claims the sea only while the camera is on the field's half of the globe and
+  // over its rectangle in the wave plane. Then every ray it claims crosses its planes, which
+  // lie over the rectangle between the camera and the globe, sunk or not (stage-vertex). Off
+  // the rectangle its sunk planes miss some of them, and past the field's half a point on
+  // the far side projects back inside it, where the stage draws nothing: the void or the bare
+  // seabed showed. The same for the sky, the stage and the relief, which all take the test.
+  private claimStage(camera: Vector3) {
+    let reach = this.stageReach;
+    if (reach > 0 && this.globe.enabled) {
+      const u = this.uniforms;
+      const stage = u.uSkyOceanStage.value;
+      const x = camera.dot(u.uSkyEast.value);
+      const z = -camera.dot(u.uSkyNorth.value);
+      const fieldSide =
+        stageAway.subVectors(camera, this.globe.centre).dot(this.globe.up) > 0;
+      const over = x > stage.x && x < stage.z && z > stage.y && z < stage.w;
+      if (!fieldSide || !over) reach = 0;
+    }
+    this.uniforms.uSkyOceanStageReach.value = reach;
   }
 
   /** For stage geometry, which rebuilds each pixel's view ray: call before drawing it. */
@@ -1175,6 +1272,10 @@ export class SkyMaterial extends ShaderMaterial {
    */
   syncCamera(camera: Camera) {
     this.globe.setCamera(cameraAt.setFromMatrixPosition(camera.matrixWorld));
+    // The deck lies at its altitude over the globe, whose radius its frame sets.
+    this.uniforms.uSkyCloudsShape.value.x =
+      this.globe.radius + this.uniforms.uSkyClouds.value.y;
+    this.claimStage(cameraAt);
   }
 
   /** An `onBeforeRender` for a mesh drawn with this sky's shaders: {@link syncCamera}. */
@@ -1186,3 +1287,4 @@ export class SkyMaterial extends ShaderMaterial {
 }
 
 const cameraAt = new Vector3();
+const stageAway = new Vector3();

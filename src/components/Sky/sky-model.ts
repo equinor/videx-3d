@@ -81,8 +81,8 @@ export type SkyCloudLayers = 'deck' | 'band' | 'both';
 
 /**
  * Still clouds over a {@link Sky}, lit by the sun, or the moon at night, and not reflected by
- * the water: a deck overhead, on a sphere about the Earth's centre ({@link SKY_EARTH_RADIUS}
- * plus `altitude` in radius), and a band of distant clouds along the horizon (`layers`). The
+ * the water: a deck overhead, on a sphere about the Earth's centre (the globe's radius plus
+ * `altitude`), and a band of distant clouds along the horizon (`layers`). The
  * deck fades out close to the camera, wisps before cores, so climbing to it clears it from
  * overhead outward.
  */
@@ -471,7 +471,10 @@ export function skySubsurfaceLightPosition(
   };
 }
 
-/** The Earth's mean radius, in world units (metres): the sdk's `EARTH_RADIUS`. */
+/**
+ * The Earth's mean radius, in world units (metres): the sdk's `EARTH_RADIUS`. The globe's
+ * radius without a frame; with one, the sky takes the globe's (`Globe.radius`).
+ */
 export const SKY_EARTH_RADIUS = EARTH_RADIUS;
 
 export const skyDefaults = {
