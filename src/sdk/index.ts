@@ -78,6 +78,7 @@ export * from './projection/conformal-sphere';
 export * from './projection/crs';
 export * from './projection/geo-frame';
 export * from './projection/globe';
+export * from './projection/ocean-charts';
 export * from './projection/place-frame';
 
 export * from './tiles/quadtree';

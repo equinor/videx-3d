@@ -68,7 +68,6 @@ void main() {
     #endif
   #endif
   vec2 p = skyOceanPlane(world);
-  float texel = max(length(fwidth(p)), 1e-3);
   float dist = distance(cameraPosition, world);
   #ifdef STAGE_SURFACE
   vec2 rimAt = skyOceanCutawayRimAt(world, cameraPosition);
@@ -110,8 +109,9 @@ void main() {
 
   #if defined(STAGE_SURFACE)
   // One wave for both sides: each call compiles a full copy of it.
-  SkyOceanWave wave = skyOceanWave(p, texel, dist);
-  skyOceanTiltWave(wave, globeUpAt(world));
+  vec3 delta = dir * reach.x;
+  float texel = skyOceanTexel(delta);
+  SkyOceanWave wave = skyOceanWave(delta, globeUpAt(world), texel, dist);
   bool cutThrough = false;
   if(altitude > 0.0) {
     vec4 surface = skyOceanThroughAir(skyOceanSurfaceOf(wave, p, texel, dir, blend), cameraPosition, dir, dist, blend);

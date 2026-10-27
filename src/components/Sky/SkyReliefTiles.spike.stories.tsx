@@ -37,6 +37,7 @@ import { SkyAnchor } from './SkyAnchor';
 import { SkyBoxStage, SkyBoxStageRelief } from './SkyBoxStage';
 import type { SkyReliefTileStats } from './SkyBoxStageReliefTiles';
 import type { SkyStageBounds } from './sky-stage';
+import { useLevelHorizon } from './useLevelHorizon';
 
 // Early testing of the relief drawn from tiles (documents/tiles.md): the demo reliefs
 // merged around Volve. The reliefs are made on demand: `npm run generate-relief`.
@@ -145,9 +146,17 @@ type ReliefTilesArgs = SkyArgs &
     tileStats: boolean;
     tileDebug: 'none' | 'tiles' | 'layers';
     panel: boolean;
+    levelHorizon: boolean;
     field: 'anchored' | 'free' | 'none';
     facility: 'field' | 'anchored' | 'free' | 'none';
   };
+
+// The host's side of levelling the horizon far off (useLevelHorizon), in the `World` so it
+// finds the sky's globe.
+const LevelHorizon = ({ enabled }: { enabled: boolean }) => {
+  useLevelHorizon({ enabled });
+  return null;
+};
 
 /**
  * A stand-in for the field's content, flat at sea level as a field's is: a 4 km plate and
@@ -234,6 +243,7 @@ const ReliefTiles = (storyArgs: ReliefTilesArgs) => {
   return (
     <World frame={FRAME}>
       <SkyStoryRendering args={args} />
+      <LevelHorizon enabled={args.levelHorizon} />
       {args.panel && (
         <SkyDebugPanel
           args={args}
@@ -373,6 +383,11 @@ const meta = {
         'Buttons over the view: the camera\u2019s height, moves to set altitudes, places from Volve to the fjords, and views.',
       table: { category: 'Debug' },
     },
+    levelHorizon: {
+      description:
+        'Keeps the camera\u2019s horizon level far from the field (`useLevelHorizon`): its up follows the globe\u2019s up where it is, below 100 km. Off, a camera far off keeps the field\u2019s up and its horizon tilts by the angle round the Earth.',
+      table: { category: 'Stage' },
+    },
   },
   args: {
     ...skyArgs,
@@ -387,6 +402,7 @@ const meta = {
     tileStats: true,
     tileDebug: 'none',
     panel: true,
+    levelHorizon: false,
     field: 'anchored',
     facility: 'none',
   },
@@ -418,5 +434,5 @@ export const Earth: Story = {
     cameraPosition: [0, 14000000, 14000000],
     cameraTarget: [0, LEVEL - DEPTH, 0],
   },
-  args: { field: 'none', sunFromTime: true },
+  args: { field: 'none', sunFromTime: true, levelHorizon: true },
 };

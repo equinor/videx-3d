@@ -332,11 +332,21 @@ and they reflect the horizon's colour. The sky's gradient, its twilight and the 
 are measured from it, the sun, moon and stars set behind it rather than at the level, and the
 clouds' band sits on it, squashed onto it from high up. The water reflects the sky as seen from
 where it lies, with its own level horizon: far out, where the sea is tipped with the curve, a
-wave's reflection is turned back by that tilt. Off, every one of them is as on a flat sea:
+wave's reflection is turned by that tilt onto the up the sky is seen by (`globeTurnFrom`):
+turned into the field's frame instead, far round the Earth it fell below the camera's
+horizon, and half the sea went dark at sunset. Off, every one of them is as on a flat sea:
 right for one field seen from near it, but far from it the horizon never drops and the
 relief and anchored content stay flat. It is kept for comparison and for a host that needs
 a level horizon. Step 4 has the sky's look frame follow the camera instead
 ([world.md, step 4](./world.md#12-step-4-in-detail-the-sky-anywhere-on-the-globe)).
+
+The waves are drawn in charts fixed on the Earth (`SkyMaterial.oceanCharts`, an sdk
+`OceanCharts`): the field's wave plane out to 1000 km, past it 162 stereographic charts, so
+far round the Earth they lie on the sea there instead of on the field's plane seen edge on,
+keep the wind's compass bearing, and are as sharp as over the field. Where two charts meet
+the waves calm over a strip 8 km wide. A point's waves depend on the point alone, not on
+where the camera came from, for waves driven by data later
+([world.md, 4d](./world.md#4d-the-waves-far-off-built-2026-10-27)).
 
 The Earth is a fixed globe (`SkyMaterial.globe`, an sdk `Globe`; see
 [world.md](./world.md#9-step-2-in-detail-the-sky-on-a-fixed-globe)): a sphere whose centre
@@ -347,7 +357,9 @@ without a stage the disc is a point at the world origin. Every point of the sea 
 place whatever the camera does: nothing rises or sinks as it moves. Heights are over the
 globe — far from the scene scene Y is not altitude: at Y = 40 m, 200 km off, the camera is
 3 km over the sea — and so is up, which far off tilts from the scene's (1.8° at 200 km).
-The camera's controls keep the scene's up, so there the horizon rolls a little. How low a
+The camera's controls keep the scene's up, so there the horizon rolls a little, and round
+the Earth it stands on end: `useLevelHorizon()` levels it, by the camera's up
+([world.md, 4e](./world.md#4e-a-level-horizon-for-a-host-built-2026-10-26)). How low a
 view passes through the air, which darkens the sky toward space, is measured on the same
 globe, so the rim of air sits on the sea's edge.
 

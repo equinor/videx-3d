@@ -30,6 +30,7 @@ import {
   SurfaceDetailUniforms,
 } from '../../sdk/materials/surface-detail';
 import { Globe } from '../../sdk/projection/globe';
+import { OceanCharts } from '../../sdk/projection/ocean-charts';
 import { Vec2, Vec3 } from '../../sdk/types/common';
 import {
   compassBasis,
@@ -104,6 +105,12 @@ export class SkyMaterial extends ShaderMaterial {
    * not to be set directly.
    */
   readonly globe = new Globe();
+  /**
+   * The charts the sea's waves are drawn in on the {@link globe}: the field's wave plane
+   * over the field, fixed ones on the Earth far off. Kept in step with the globe and the
+   * camera ({@link syncCamera}).
+   */
+  readonly oceanCharts = new OceanCharts(this.globe);
   private bedDetail: SurfaceDetail | undefined;
   private bedDetailKey = '';
   // How far in front of the camera clipAbyssWalls cuts the walls away.
@@ -304,8 +311,13 @@ export class SkyMaterial extends ShaderMaterial {
 
     this.setSun(sun.azimuth, sun.elevation);
     this.oceanBedDetail = ocean.seabed.detail;
-    // The globe's own uniform objects, so every material sharing the sky's shares them too.
-    Object.assign(this.uniforms, this.globe.uniforms);
+    // The globe's own uniform objects, so every material sharing the sky's shares them too;
+    // the same for the sea's charts.
+    Object.assign(
+      this.uniforms,
+      this.globe.uniforms,
+      this.oceanCharts.uniforms,
+    );
     this.globe.enabled = this.globeEnabled;
     this.globe.level = this.oceanLevel;
 
@@ -387,6 +399,11 @@ export class SkyMaterial extends ShaderMaterial {
     this.uniforms.uSkyNorth.value.fromArray(north);
     this.uniforms.uSkyEast.value.fromArray(east);
     this.globe.setUp(this.uniforms.uSkyUp.value);
+    // The wave plane's X and Z: east and south (skyOceanPlane).
+    this.oceanCharts.setPlane(
+      this.uniforms.uSkyEast.value,
+      planeZ.copy(this.uniforms.uSkyNorth.value).negate(),
+    );
   }
 
   /** the world's up direction (normalised); see {@link setFrame} */
@@ -1273,6 +1290,9 @@ export class SkyMaterial extends ShaderMaterial {
    */
   syncCamera(camera: Camera) {
     this.globe.setCamera(cameraAt.setFromMatrixPosition(camera.matrixWorld));
+    // Out to where the sea's detail has faded (OceanMaterial.detailFadeDistance).
+    const fade = this.uniforms.uDetailFade?.value as Vector2 | undefined;
+    this.oceanCharts.setCamera(cameraAt, fade ? fade.y : Infinity);
     // The deck lies at its altitude over the globe, whose radius its frame sets.
     this.uniforms.uSkyCloudsShape.value.x =
       this.globe.radius + this.uniforms.uSkyClouds.value.y;
@@ -1289,3 +1309,4 @@ export class SkyMaterial extends ShaderMaterial {
 
 const cameraAt = new Vector3();
 const stageAway = new Vector3();
+const planeZ = new Vector3();

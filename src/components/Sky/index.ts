@@ -18,3 +18,4 @@ export * from './sky-defs';
 export * from './sky-material';
 export * from './sky-model';
 export * from './sky-stage';
+export * from './useLevelHorizon';

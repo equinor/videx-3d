@@ -1,10 +1,10 @@
 # World: where on Earth, and more than one field
 
-> **Status (2026-10-26): design, decisions taken; steps 1,
+> **Status (2026-10-27): design, decisions taken; steps 1,
 > [2](#9-step-2-in-detail-the-sky-on-a-fixed-globe),
-> [3](#10-step-3-in-detail-fields-placed-on-the-earth) and
-> [6](#11-step-6-in-detail-tiles-on-the-globe) built,
-> [4](#12-step-4-in-detail-the-sky-anywhere-on-the-globe) in progress.** How the scene
+> [3](#10-step-3-in-detail-fields-placed-on-the-earth),
+> [4](#12-step-4-in-detail-the-sky-anywhere-on-the-globe) and
+> [6](#11-step-6-in-detail-tiles-on-the-globe) built.** How the scene
 > places itself on the Earth, what more than one field needs, and a plan for it. The open
 > questions are settled ([Decided](#7-decided-2026-10-26)): the Earth is a fixed globe, and
 > a `World` says once where the scene lies on it. Step 3 found the view's origin (step 4)
@@ -177,7 +177,7 @@ Nothing above is needed for one field. What keeps it cheap to add later:
 | 1 | **One place for where:** sdk helpers that derive the relief's frame and the sky's observer place from the CRS a `UtmArea` is given; the sky stories take all three from one CRS (`demoCrs`) | ✅ built (2026-10-25); the helpers became `geoFrameFromCrs` and `geoFrameLocation` in step 3 |
 | 2 | **The sky on a fixed globe** ([in detail](#9-step-2-in-detail-the-sky-on-a-fixed-globe)): the sea, the horizon, the air and the clouds on a sphere fixed below the chosen field, flat over its disc; the relief and anchored content placed on it with no camera in the sum; `followFlatSea` and `followAway` go | ✅ built (2026-10-26): the same pictures at one field, nothing moving anywhere, at 0–1 ms a frame over the sea (2e) |
 | 3 | **Fields placed on the Earth** ([in detail](#10-step-3-in-detail-fields-placed-on-the-earth)): `GeoFrame` (was `ReliefFrame`); a `World` holding the scene's; a `UtmArea` in another frame placed in it, on the globe with a sky; the observer's place and the relief's frame from the `World` | ✅ built (2026-10-26): a second field in UTM 32N, 123 km out, placed to about 10 cm 5 km around (ReliefTiles' `facility: 'field'`), with the sky and without |
-| 4 | **The sky anywhere on the globe** ([in detail](#12-step-4-in-detail-the-sky-anywhere-on-the-globe)), was the view's origin. Its precision came free in step 3: three.js composes each draw's model-view matrix in 64 bits, so a placed field is as precise 300 km out as at home. Left: the sky seen from far off. The world stays fixed and the sky's look frame follows the camera: its up, horizon and light where the camera is; the waves on a chart near it. A host levels its horizon by its camera's up (`Globe.upAt`) | in progress (2026-10-26) |
+| 4 | **The sky anywhere on the globe** ([in detail](#12-step-4-in-detail-the-sky-anywhere-on-the-globe)), was the view's origin. Its precision came free in step 3: three.js composes each draw's model-view matrix in 64 bits, so a placed field is as precise 300 km out as at home. Left: the sky seen from far off. The world stays fixed and the sky's look frame follows the camera: its up, horizon and light where the camera is; the waves on fixed charts on the Earth (`OceanCharts`). A host levels its horizon with `useLevelHorizon` | ✅ built (2026-10-27); the cloud deck far off is left for step 8 |
 | 5 | **The relief in its own frame** — folded into step 6. In a frame of its own the relief would part from the chosen field's UTM by the two maps' scale (UTM's 0.9996 against 1: 3 m at 8 km), right where its column meets it; laid in the chosen field's frame it meets it exactly, and a placed field's to its placement's precision | → step 6 |
 | 6 | **Tiles on the globe** ([in detail](#11-step-6-in-detail-tiles-on-the-globe)): tile keys by latitude and longitude, the relief contract unchanged (a tile asks each layer for a window of its own grid, as now); the overlays' tiles move with them, sharing the core. Everything placed by latitude and longitude on one sphere, the ellipsoid's conformal sphere matched at the chosen field; each field's column samples the relief through its transform | ✅ built (2026-10-26) in five parts: 6a the geographic globe, 6b geographic tiles, 6c the relief drawn from them, 6d the whole globe — the Earth from 20 000 km, the far side included; 6e a clean-up |
 | 7 | **Two fields:** a story with two fields in two UTM zones, the camera flying between them, either chosen: the `World`'s frame switched, a stage per field | the goal; step 3 placed the second field |
@@ -392,9 +392,10 @@ planes face up).
   at map X/Z, to place a camera or a target; the stories' `videx3d` bridge gets the same
   (`videx3d.globe`). A helper only: the library never moves the camera.
 - **The horizon tilts far off.** The camera's controls keep the scene's up, so at 200 km
-  a view across the direction to the field shows the horizon rolled by 1.8°. A host can
-  level it by setting its camera's up to the globe's there (`globe.upAt`); step 4 adds a
-  helper for it ([Step 4 in detail](#12-step-4-in-detail-the-sky-anywhere-on-the-globe)).
+  a view across the direction to the field shows the horizon rolled by 1.8°, and a quarter
+  of the way round the Earth it stands on end. A host levels it with `useLevelHorizon()`
+  (Sky, built 2026-10-26; [4e](#4e-a-level-horizon-for-a-host)), or by setting its
+  camera's up to the globe's there itself (`globe.lookUp`).
 - **A field with a map of its own** (another UTM zone, a field far off) goes in a
   `UtmArea` of its own inside the `World`, which places it on the globe
   ([Step 3 in detail](#10-step-3-in-detail-fields-placed-on-the-earth)).
@@ -774,8 +775,9 @@ night side dark, the sea lit where it lies), a physical atmosphere left for the 
 
 Decided (2026-10-26): **the world stays fixed**, and the sky's look frame follows the
 camera. Only the sky's own light follows the camera's place; the scene's lights and the
-bakes stay the field's, where the data is. Far from the field the waves take geographic
-coordinates.
+bakes stay the field's, where the data is. Far from the field the waves take charts fixed
+on the Earth ([4d](#4d-the-waves-far-off-built-2026-10-27)). Built 2026-10-26–27: 4a–4f,
+but for the pixel A/B, dropped.
 
 Moving the world under the camera, as §6 first had it, would change every placed thing's
 matrix each frame and need the host's controls moved by a callback. The sky only needs to
@@ -804,7 +806,7 @@ About 30 uses switch to the look frame; about 70 stay with the place.
 | `globe.glsl` | `globeHorizonFrom`'s sine, for the camera (`globeCameraHorizon`): from the look up; outside the flat cap the horizon is then the dip all round | `globeHorizon(origin, …)` for other origins, the cap, `globeUpAt`, the reach |
 | `sky-gradient.glsl` | `skySurfaceSeen` (elevation, twilight's bearing), `skyHorizonColor`, `skyAirHeightFrom`, `skyOverSeaHorizon`, `skyLight`'s sun elevation | — |
 | `sky.glsl` | `skyRadiance`'s elevation, blend and the sun over the horizon; `skySunGlare`'s side; `skyCloudBand` (elevation, bearing, level); `skyClouds`' elevation and hinge | the deck's pattern (its hit along east and north, the slope, toward the light); `skyOceanPlane`; the void (lid, rock, walls, haze); the buried camera's origin |
-| `sky-ocean.glsl` | `skyOceanThroughAir` (bearing, the sky overhead); `skyOceanSurfaceLayer`'s over-horizon test; the flat `skyOceanReach` (globe off, so the same) | the cutaway (5 uses); `skyOceanLift` and the wave's up; `skyOceanInWater` and `skyOcean`'s seabed (in the water or dry, which is at the field); `skyOceanThroughCutaway` |
+| `sky-ocean.glsl` | `skyOceanThroughAir` (bearing, the sky overhead); `skyOceanSurfaceLayer`'s over-horizon test; the flat `skyOceanReach` (globe off, so the same) | the cutaway (5 uses); the waves' chart (`oceanChartAt`, see 4d) and their up; `skyOceanInWater` and `skyOcean`'s seabed (in the water or dry, which is at the field); `skyOceanThroughCutaway` |
 | `relief-fragment.glsl` | the air's colour over the relief, the blend | the void through the cutaway |
 | `stage-fragment.glsl` | the blend, the elevation | the stage's own offset |
 | `sky-stand-in-fragment.glsl` | the elevation | — |
@@ -832,26 +834,112 @@ About 30 uses switch to the look frame; about 70 stay with the place.
   also fixes the disc over Fiji (6e).
 - Checked by a pixel A/B at the field.
 
-### 4d: the waves far off
+### 4d: the waves far off (built 2026-10-27)
 
-The wave plane is the field's level, so far round the Earth it collapses (about 90° off,
-the sea is edge-on to it). And a world position 10 000 km out has about 1 m of float
-precision, too coarse for 10 m waves. The waves near the camera need a chart near it:
-offsets from the camera along a tangent frame (precise), and the chart's own place passed
-from the CPU. Over the field, the scene's plane as now, blended into the chart a few
-hundred km out. How the chart follows the camera without the waves jumping or swimming is
-to be decided before 4d. The cloud deck's pattern has the same problem; it can take the
-same chart, or wait for the 3D clouds (step 8).
+The wave plane was the field's level, so far round the Earth it collapsed: a quarter of the
+way round (Rio) the sea is seen edge on to it, and the waves streaked toward the horizon.
+And a world position 10 000 km out has about 1 m of float precision, too coarse for 10 m
+waves.
 
-### 4e: a level horizon for a host
+Decided (2026-10-26): **fixed charts on the Earth**, so the sea is a function of the place
+and the time alone, ready for waves driven by data (wind at points or on a grid). A chart
+that followed the camera would have made the sea depend on the camera's path.
 
-The library never changes the camera's controls. A host levels its horizon far off by
-setting its camera's up to the globe's there (`Globe.upAt`). 4e adds a small helper for
-it, and a story arg that turns it on.
+- **`OceanCharts`** (sdk, `projection/ocean-charts.ts`, and `ocean-charts.glsl`):
+  - **the field's chart** out to 1000 km from the disc's centre
+    (`OCEAN_FIELD_CHART_REACH`): stereographic about it, the wave plane over the disc
+    (world X/Z there, within a centimetre 100 km out), so the field is drawn as before;
+  - **fixed charts** about the 162 points of a geodesic sphere (an icosahedron, each face
+    split 4 times), about 2000 km apart, fixed on the Earth by the globe's frame. Each point
+    takes the nearest. Stereographic, so conformal, and within a chart stretched by under 1%;
+  - **the wind:** each fixed chart's X has the compass bearing at its centre that the wave
+    plane's X has at the field, so the waves keep the wind's bearing;
+  - **where two meet:** the waves calm over a strip 8 km wide (`OCEAN_CHART_CALM`), down to
+    the glint their slopes give, and the charts switch on its middle, where there are none
+    to seam. Cross-faded instead, the waves are summed twice; the second sum cost the stage
+    1.4–2 ms at the field, even where no pixel ran it (D3D), so the strip it is;
+  - **precision:** the camera's coordinates in each chart are worked out on the CPU in 64
+    bits (`setCamera`, from `SkyMaterial.syncCamera`), and a pixel's from its offset from the
+    camera, in terms that subtract nothing near-equal. Emulated in 32-bit floats, a point
+    at the antipode lands within 0.15 m of its exact place;
+  - **one chart for the frame:** while no line where two charts meet lies within the waves'
+    fade (`detailFadeDistance`, 60 km) of the camera, every pixel takes the camera's chart
+    (`uOceanChartOnly`) and none looks for its own. That is always so at the field.
+- **The sky's sea** takes it everywhere the waves are drawn: its surface layer, a stage's
+  surface, and the view from in the water (`skyOceanWave(delta, up, …)`, the normal turned
+  from its chart onto the globe there). The stage's rectangle, the cutaway and the floating
+  objects' contact foam keep the field's plane. With the globe off (and in the bakes), the
+  field's plane.
+- **Checked:** at the field, charts on and off differ by at most one level in 255 (mean
+  0.001); at Rio, the antipode and Antarctica the waves look as at the field, at noon and
+  sunset; straight down on a line between two charts from 300 m and 1.5 km, and across it,
+  no seam. Timed (GPU ms, median, 1746 × 1088): the stage at the field 7.18 / 7.22 at 40 m
+  level and 3 km 30° down, against 7.08 / 7.10 before; the background and the relief the
+  same. Far off the sea is drawn by the background's surface layer: 4.1 ms at Rio, the same
+  on a chart line, about what the stage's surface costs at the field.
+- **Next, for data-driven waves:** a field of wind (speed and direction) by latitude and
+  longitude, read where each pixel's waves are drawn, scaling the wave set's amplitudes
+  (and their slope variance for the glint); the wave set itself stays the same everywhere,
+  so the waves never tear where the wind turns. A CPU sampler of the sky's sea for floating
+  objects far off (the Ocean's `OceanSampler` is the field's plane's) takes `OceanCharts`
+  the same way.
+- **Not done:** the cloud deck's pattern is still laid on the field's plane and streaks far
+  off; left for the 3D clouds (step 8), which can take the same charts.
+
+### 4e: a level horizon for a host (built 2026-10-26)
+
+The library never changes the camera's controls unless asked. `useLevelHorizon()` (Sky)
+is the asking: each frame it sets the camera's `up` to the up the sky is seen by there
+(`Globe.lookUp`: the scene's over the field, the globe's far off, eased between, so
+nothing turns at the disc's edge). It does so only once that up has turned 0.25° (`step`),
+and not above 100 km (`below`), where the up runs along a view down at the Earth.
+- With default controls that take a new up (`makeDefault`; camera-controls, drei's
+  `CameraControls`), their orbit is re-based on it (`updateCameraUp`), keeping where the
+  camera is and where it is heading. three's `OrbitControls` read the up only when made,
+  and are not levelled by it.
+- Turned off or unmounted, it puts the camera's own up back.
+- Inside a `Sky`, or a `World` holding one, or with its `globe`.
+- ReliefTiles' `levelHorizon` turns it on (on in its Earth story). With it the tour below
+  is level everywhere, within 0.1°; without, at Rio, the antipode and Antarctica the
+  horizon stands on end or upside down, as the field's up there says.
 
 ### 4f: checks
 
-- A pixel A/B at the field, at noon, sunset and night.
+- A pixel A/B at the field, at noon, sunset and night: dropped (2026-10-26). Steps since
+  have changed the field's look on purpose.
 - A low-altitude tour far from the field at noon, sunset and night: the North Sea, Rio,
-  the antipode, Antarctica.
-- Timings: the field tour as documented, and from space.
+  the antipode, Antarctica (done 2026-10-26, 300 m up, looking 3° down, away from the sun
+  at noon and into it at sunset).
+  - **Light:** right everywhere: the sun's elevation where the camera is sets the sky's
+    light (4b), so each place has its own noon, sunset glow and night.
+  - **Horizon, twilight's bearing:** right, by the look frame (4c).
+  - **Found and fixed:** the waves' reflection was turned into the field's frame
+    (`globeUnturn`), so far round the Earth part of the sea reflected the sky below the
+    horizon. At Antarctica's and Rio's sunset half the sea was dark, edged hard along the
+    waves' tilt. It now turns onto the look up (`globeTurnFrom`), the same over the field.
+  - **The waves** streaked toward the horizon a quarter of the way round the Earth (Rio),
+    where the field's plane is seen edge on: fixed in [4d](#4d-the-waves-far-off-built-2026-10-27),
+    after which the tour looks the same at all four places.
+- Timings (2026-10-26, ReliefTiles, 1746 × 1088 pixels, GPU ms median; the 2e numbers
+  were at a smaller window, so they compare only roughly):
+
+  | Pose | Frame | Background | Relief | Stage | Sea layer | Main thread |
+  |--|--|--|--|--|--|--|
+  | 40 m over Volve, level | 12.9 | 3.1 | 1.9 | 7.1 | 0.3 | 4–6 |
+  | 3 km, 30° down | 14.8 | 0.5 | 6.9 | 7.1 | 0.04 | 8–10 |
+  | 100 km, level | 11.5 | 4.3 | 4.2 | 2.5 | 0.3 | 9.5 |
+  | 500 m over the coast | 11.7 | 3.0 | 3.7 | 4.4 | 0.3 | 7.3 |
+  | 1500 m over Lysefjord | 11.4 | 3.0 | 4.2 | 3.7 | 0.3 | 2.8 |
+  | 50 m down, in the water | 8.0 | 0.8 | 3.8 | 2.9 | — | 9.7 |
+  | 600 m below the seabed | 4.4 | 1.0 | 0.4 | — | — | 4.2 |
+  | 400 km, to the Earth's edge | 14.7 | 3.7 | 7.6 | 2.9 | 0.3 | 11.6 |
+  | 2500 km over the Atlantic | 16.3 | 8.8 | 4.9 | 0.6 | 1.8 | 12.5 |
+  | 2500 km, the day/night line | 15.7 | 8.9 | 5.1 | 0.06 | 1.4 | 12.5 |
+  | 15 000 km, the whole Earth | 13.9 | 10.7 | 2.1 | 0.1 | 0.8 | 8.7 |
+
+  The relief's column includes its overview past the far plane. Below the seabed, where
+  the data is, the sky costs 1.4 ms in all. From space the background costs the most, 9–11 ms,
+  though most of the view is black: left for a pass on what it shades there, before the 3D
+  clouds add to it. The main thread's 9–12 ms from high up is to be looked at with them.
+  The Lysefjord preset at 500 m now lies inside the mountain (665 m there), where nothing
+  of the sea or the relief is drawn, so it is timed at 1500 m.

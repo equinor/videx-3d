@@ -82,6 +82,11 @@ function Buoy() {
 Use `useOceanContact` to spread foam where an object meets the water (see the
 `Tanker` component for a full example). Both are no-ops outside an `<Ocean>`.
 
+⚠️ The `OceanSampler` reads the waves in the Ocean's own plane. A `Sky`'s sea far from
+the field draws them in charts fixed on the Earth instead (`OceanCharts`, see
+[world.md, 4d](./world.md#4d-the-waves-far-off-built-2026-10-27)); a sampler for it is
+still to come.
+
 ## Water over a chunk stack
 
 A subsurface block can carry its own sea instead of an `<Ocean>` of its own:

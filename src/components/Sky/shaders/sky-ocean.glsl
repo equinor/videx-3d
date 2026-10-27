@@ -11,6 +11,7 @@
 // where every pixel of the 2x2 quad discards the result (see skyOceanStaged's `sure`).
 
 #include ../../Ocean/shaders/ocean-surface.glsl
+#include ../../../sdk/materials/shaderLib/ocean-charts.glsl
 #include <bsdfs>
 #include <lights_pars_begin>
 #include ../../../sdk/materials/shaderLib/scene-light.glsl
@@ -189,11 +190,6 @@ vec4 skyOceanCutawayMark(vec4 surface, vec3 p, vec2 rimAt) {
   return vec4(alpha > 0.0 ? color / alpha : vec3(0.0), alpha);
 }
 
-// A +Y-up vector of the wave plane, in the world.
-vec3 skyOceanLift(vec3 v) {
-  return uSkyEast * v.x + uSkyUp * v.y - uSkyNorth * v.z;
-}
-
 // Where a view ray from a view's `origin` (the camera, or a point straight along up from
 // it), `height` above a level of the sea (its surface or its seabed), meets it: flat over the
 // disc about the scene, the globe beyond (globeReach). How far along the ray, 0, and 1 if the
@@ -312,9 +308,8 @@ float skyOceanBedPathLight(vec3 origin, float bedDepth) {
   return skyOceanLight(0.5 * (bedDepth + depth));
 }
 
-// The waves at plane point `p`, `dist` along the view ray. Each call compiles to a full
-// copy of the wave sum and its detail, so a shader shading both sides takes it once.
-// ⚠️ Derivatives.
+// The waves at a point of the sea, `dist` along the view ray. Each wave sum compiles to a
+// full copy of it and its detail, so a shader shading both sides takes it once.
 struct SkyOceanWave {
   vec3 normal;
   vec2 slope;
@@ -322,26 +317,35 @@ struct SkyOceanWave {
   vec2 np;
   float flatness;
   float rough;
-  vec3 up; // the sea's own up there, which the globe tilts (skyOceanTiltWave)
+  vec3 up; // the sea's own up there, which the globe tilts
+  vec2 p; // where it lies in its chart, for the tonal patches
+  float keep; // how much of the waves its chart keeps there (OceanChart): 0 where two meet
 };
 
-SkyOceanWave skyOceanWave(vec2 p, float texel, float dist) {
+// The waves at the sea point `delta` from the camera, where the sea's up is `up` (globeUpAt),
+// `texel` world units a pixel there: in its chart (ocean-charts.glsl), turned onto the globe
+// there, calm on the strip where two charts meet. Once: a second wave sum, to cross-fade
+// two charts, cost the stage 1.4–2 ms at the field (D3D), even where no pixel ran it.
+SkyOceanWave skyOceanWave(vec3 delta, vec3 up, float texel, float dist) {
   SkyOceanWave wave;
+  OceanChart chart = oceanChartAt(delta);
   wave.flatness = oceanFlatness(dist);
-  wave.normal = skyOceanLift(oceanWaveNormal(p, texel, wave.flatness, wave.slope, wave.height, wave.np, wave.rough));
-  wave.up = uSkyUp;
+  wave.keep = chart.keep;
+  wave.up = up;
+  wave.p = oceanChartCoords(chart.index, delta);
+  vec3 n = oceanWaveNormal(wave.p, texel, 1.0 - (1.0 - wave.flatness) * chart.keep, wave.slope, wave.height, wave.np, wave.rough);
+  wave.normal = oceanChartNormal(chart.index, n, up);
   return wave;
 }
 
-// `wave` where the sea's up is `up` (globeUpAt): turned onto the globe there.
-void skyOceanTiltWave(inout SkyOceanWave wave, vec3 up) {
-  wave.normal = globeTurn(wave.normal, up);
-  wave.up = up;
+// World units a pixel spans at the sea point `delta` from the camera, for the waves.
+float skyOceanTexel(vec3 delta) {
+  return max(length(fwidth(delta)), 1e-3);
 }
 
-// The surface seen from above at plane point `p`, with its `wave` there: its colour,
-// and how much of what lies under it that covers. `texel` is world units per pixel.
-// ⚠️ Derivatives.
+// The surface seen from above at plane point `p` (the field's wave plane: the stage, the
+// contacts), with its `wave` there: its colour, and how much of what lies under it that
+// covers. `texel` is world units per pixel. ⚠️ Derivatives.
 vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float blend) {
   float flatness = wave.flatness;
   vec3 normal = wave.normal;
@@ -353,13 +357,15 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   vec3 waterColor = mix(uShallowColor, uDeepColor, clamp(ndvAA, 0.0, 1.0)) * night;
   float tonalReflect;
   float tonalSpec;
-  oceanTonal(p, flatness, waterColor, tonalReflect, tonalSpec);
+  // In the wave's chart, and calm with it where two charts meet.
+  oceanTonal(wave.p, 1.0 - (1.0 - flatness) * wave.keep, waterColor, tonalReflect, tonalSpec);
 
   vec3 r = reflect(dir, normal);
   // Steep waves can tip a reflection below the sea's horizon; mirror it back up. Then the sky
-  // it sees is the one over that sea's own horizon: about the camera's, far off it would fold.
+  // it sees is the one over that sea's own horizon, turned onto the up the sky is seen by
+  // (globeCameraLook): far off, into the field's frame, it fell below the camera's horizon.
   r -= 2.0 * min(dot(r, wave.up), 0.0) * wave.up;
-  r = globeUnturn(r, wave.up);
+  r = globeTurnFrom(r, wave.up, globeCameraLook());
   vec3 surface = oceanShade(normal, V, waterColor, skySurfaceAt(normalize(r), blend, 0.0), fresnel, tonalReflect, tonalSpec, wave.rough);
 
   float foamFar;
@@ -388,9 +394,10 @@ vec3 skyOceanUndersideOf(vec3 normal, vec3 dir, float blend, float depth) {
   return mix(skySurface(normalize(exitDir), blend), farWater, fresnel);
 }
 
-// The same at plane point `p`, `dist` along the view ray. ⚠️ Derivatives.
-vec3 skyOceanUnderside(vec2 p, float texel, float dist, vec3 dir, float blend, float depth) {
-  return skyOceanUndersideOf(-skyOceanWave(p, texel, dist).normal, dir, blend, depth);
+// The same at the sea point `delta` from the camera, where the sea's up is `up`, `dist`
+// along the view ray. ⚠️ Derivatives.
+vec3 skyOceanUnderside(vec3 delta, vec3 up, float texel, float dist, vec3 dir, float blend, float depth) {
+  return skyOceanUndersideOf(-skyOceanWave(delta, up, texel, dist).normal, dir, blend, depth);
 }
 
 // What is seen from `origin`, in the water, along `dir`: the surface's underside above,
@@ -404,9 +411,8 @@ vec3 skyOceanInWater(vec3 origin, vec3 dir, float blend, float bedDepth, vec3 de
 
   // Rays that miss a plane take the mirrored hit, so the derivatives stay continuous.
   float tSurface = -altitude / ay;
-  vec2 p = skyOceanPlane(origin + dir * tSurface);
-  float texel = max(length(fwidth(p)), 1e-3);
-  vec3 underside = skyOceanUnderside(p, texel, tSurface, dir, blend, -altitude);
+  vec3 delta = origin - cameraPosition + dir * tSurface;
+  vec3 underside = skyOceanUnderside(delta, globeUpAt(origin + dir * tSurface), skyOceanTexel(delta), tSurface, dir, blend, -altitude);
   vec3 above = skyOceanFog(underside, skyOceanCutawayPath(tSurface, wall, 1.0), skyOceanLight(-0.5 * altitude));
 
   float tBed = max(altitude + bedDepth, 0.0) / ay;
@@ -498,6 +504,8 @@ vec4 skyOceanSurfaceLayer(vec3 dir, vec3 origin, float blend) {
   float t = reach.x;
   vec2 p = skyOceanPlane(origin + dir * t);
   float texel = max(length(fwidth(p)), 1e-3);
+  vec3 delta = origin - cameraPosition + dir * t;
+  float waveTexel = skyOceanTexel(delta);
   vec2 rimAt = skyOceanCutawayRimAt(origin + dir * t, origin);
   // Skipped where hidden with a margin, so a quad's pixels that still shade are hidden too
   // and the derivatives they take across the skipped ones never show. From the level the
@@ -505,9 +513,8 @@ vec4 skyOceanSurfaceLayer(vec3 dir, vec3 origin, float blend) {
   float over = y - skyHorizonAt(dir, altitude);
   if(over >= 2.0 * fwidth(y) || skyOceanOnStage(p, t + 2.0 * fwidth(t), 4.0 * texel))
     return vec4(0.0);
-  SkyOceanWave wave = skyOceanWave(p, texel, t);
-  skyOceanTiltWave(wave, globeUpAt(origin + dir * t));
-  vec4 surface = skyOceanSurfaceOf(wave, p, texel, dir, blend);
+  SkyOceanWave wave = skyOceanWave(delta, globeUpAt(origin + dir * t), waveTexel, t);
+  vec4 surface = skyOceanSurfaceOf(wave, p, waveTexel, dir, blend);
   // The band a pixel inside the stage's edge too, which the stage leaves to this layer:
   // the same test on both sides (skyOceanStaged), so every pixel is drawn exactly once. All
   // zero, so a colour from those derivatives cannot reach the blend.

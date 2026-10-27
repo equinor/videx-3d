@@ -91,8 +91,9 @@ export class SkyBaker {
     uSkyOceanCutawayShape: new Uniform(new Vector3()),
     uSkyOceanSeabedOpacity: new Uniform(1),
     uSkyCurvature: new Uniform(0),
-    // The globe off: a flat sea.
+    // The globe off: a flat sea, and the waves on the field's plane.
     uGlobe: new Uniform(new Vector4()),
+    uOceanCharts: new Uniform(new Vector4()),
     uSkyDebug: new Uniform(0),
     // The field's light, as the scene's lights are: the visible sky's is where the camera
     // is (SkyMaterial.fieldLight). Filled in before each film.

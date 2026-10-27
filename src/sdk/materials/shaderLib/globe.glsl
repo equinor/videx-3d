@@ -75,17 +75,22 @@ vec3 globeCameraLook() {
   return globeOn() ? uGlobeCameraLook : uGlobeUp;
 }
 
+// `v` turned as `from` turns onto `to` (both unit): the shortest turn between them. Not for
+// opposite ones.
+vec3 globeTurnFrom(vec3 v, vec3 from, vec3 to) {
+  vec3 c = cross(from, to);
+  return v + cross(c, v) + cross(c, cross(c, v)) / (1.0 + dot(from, to));
+}
+
 // `v` turned as the scene's up turns onto `up` (unit): a normal or a direction of the flat
 // frame, as it lies where the globe's up is `up`.
 vec3 globeTurn(vec3 v, vec3 up) {
-  vec3 c = cross(uGlobeUp, up);
-  return v + cross(c, v) + cross(c, cross(c, v)) / (1.0 + dot(uGlobeUp, up));
+  return globeTurnFrom(v, uGlobeUp, up);
 }
 
 // The inverse: `v` where the globe's up is `up`, turned back into the flat frame.
 vec3 globeUnturn(vec3 v, vec3 up) {
-  vec3 c = cross(up, uGlobeUp);
-  return v + cross(c, v) + cross(c, cross(c, v)) / (1.0 + dot(uGlobeUp, up));
+  return globeTurnFrom(v, up, uGlobeUp);
 }
 
 // The point `height` over the ground at world X/Z `xz`: over the disc, the level plane's;
