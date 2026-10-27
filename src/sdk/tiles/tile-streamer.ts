@@ -59,6 +59,7 @@ export class TileStreamer<T> {
   private queue: { key: number; priority: number }[] = [];
   private frame = 0;
   private held = 0;
+  private settled = 0;
   private disposed = false;
 
   constructor(source: TileSource<T>, options: TileStreamerOptions<T> = {}) {
@@ -76,13 +77,17 @@ export class TileStreamer<T> {
     return this.resident.get(key)?.tile;
   }
 
-  /** What it holds and does now. */
+  /**
+   * What it holds and does now; `settled` counts the loads that came back since it was
+   * made, with a tile, with none, or failed.
+   */
   get stats() {
     return {
       resident: this.resident.size,
       bytes: this.held,
       loading: this.loading.size,
       queued: this.queue.length,
+      settled: this.settled,
     };
   }
 
@@ -127,7 +132,7 @@ export class TileStreamer<T> {
       this.source
         .load(key)
         .then(tile => {
-          this.loading.delete(key);
+          if (this.loading.delete(key)) this.settled++;
           if (this.disposed) return;
           if (!tile) {
             this.failed.set(key, this.frame);
@@ -141,7 +146,7 @@ export class TileStreamer<T> {
           this.pump();
         })
         .catch(error => {
-          this.loading.delete(key);
+          if (this.loading.delete(key)) this.settled++;
           if (this.disposed) return;
           this.failed.set(key, this.frame);
           console.warn(`TileStreamer: tile ${tileAddress(key)} failed`, error);

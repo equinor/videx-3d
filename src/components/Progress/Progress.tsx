@@ -1,35 +1,39 @@
 import { CSSProperties, ReactNode, useCallback, useMemo } from 'react';
 import {
-  CHUNK_PROGRESS_LABELS,
-  ChunkProgressLabelOverrides,
-  ChunkProgressSnapshot,
-  ChunkProgressStore,
-  ChunkProgressView,
-  describeChunkProgress,
-} from './chunk-progress';
-import { useChunkProgress } from './useChunkProgress';
+  describeProgress,
+  PROGRESS_LABELS,
+  ProgressLabelOverrides,
+  ProgressSnapshot,
+  ProgressStore,
+  ProgressView,
+} from './progress-store';
+import { useProgress } from './useProgress';
 
 /**
- * What a {@link ChunkProgress} shows besides its title, percentage and bar.
+ * What a {@link Progress} shows besides its title, percentage and bar.
  *
  * @group Components
  */
-export type ChunkProgressDetails = {
+export type ProgressDetails = {
   /** the step being worked on */
   stage?: boolean;
-  /** one row per chunk, when the stack has more than one */
-  chunks?: boolean;
+  /** one row per item of the source shown, or per source when it shows several */
+  rows?: boolean;
 };
 
 /**
- * {@link ChunkProgress} props.
+ * {@link Progress} props.
  * @expand
  * @group Components
  */
-export type ChunkProgressProps = {
-  store: ChunkProgressStore;
+export type ProgressProps = {
+  store: ProgressStore;
+  /** Show only this source. */
+  source?: string;
+  /** Show only the sources of this group (see `ProgressSourceOptions.group`). */
+  group?: string;
   /** Default: none — the title, percentage and bar only. */
-  details?: ChunkProgressDetails;
+  details?: ProgressDetails;
   /** Put the details behind a toggle button. Default false. */
   expandable?: boolean;
   /**
@@ -40,45 +44,42 @@ export type ChunkProgressProps = {
   /** Shows a dismiss button (`×`) at the end of the header, which calls this. */
   onDismiss?: () => void;
   /**
-   * Extra content rendered last, e.g. the build time and size once it is done
-   * (`view.durationMs`, `view.tiles`, `view.triangles`). Return nothing to leave
-   * it out.
+   * Extra content rendered last, e.g. the time and size once a run is done
+   * (`view.durationMs`, `view.stats`). Return nothing to leave it out.
    */
-  footer?: (
-    view: ChunkProgressView,
-    snapshot: ChunkProgressSnapshot,
-  ) => ReactNode;
-  labels?: ChunkProgressLabelOverrides;
+  footer?: (view: ProgressView, snapshot: ProgressSnapshot) => ReactNode;
+  labels?: ProgressLabelOverrides;
   className?: string;
   style?: CSSProperties;
 };
 
-const CLASS = 'videx-chunk-progress';
+const CLASS = 'videx-progress';
 
 /**
- * A chunk stack's build progress as plain HTML, rendered where it is placed.
- * Render it in the host's DOM, OUTSIDE the R3F canvas, fed by a
- * {@link ChunkProgressStore}.
+ * Progress from a {@link ProgressStore} as plain HTML, rendered where it is placed: all
+ * its sources as one, or one `source` or `group` of them. Render it in the host's DOM,
+ * OUTSIDE the R3F canvas.
  *
- * Unstyled: the only inline styles are the fill's width and a
- * `--videx-chunk-progress` custom property (0 to 1) on the root. Style it through
- * the `videx-chunk-progress` classes (`__header`, `__title`, `__percent`,
- * `__dismiss`, `__bar`, `__fill`, `__toggle`, `__details`, `__stage`, `__chunks`,
- * `__chunk`, `__chunk-name`, `__chunk-stage`, `__chunk-percent`, `__footer`) and the root's
- * `data-state` (`building` | `idle`), `data-outcome` (`ready` | `failed`) and
- * `data-expanded` attributes; a chunk row carries its own `data-state`.
+ * Unstyled: the only inline styles are the fill's width and a `--videx-progress` custom
+ * property (0 to 1) on the root. Style it through the `videx-progress` classes
+ * (`__header`, `__title`, `__percent`, `__dismiss`, `__bar`, `__fill`, `__toggle`,
+ * `__details`, `__stage`, `__rows`, `__row`, `__row-name`, `__row-stage`,
+ * `__row-percent`, `__footer`) and the root's `data-state` (`building` | `idle`),
+ * `data-outcome` (`ready` | `failed`) and `data-expanded` attributes; a row carries its
+ * own `data-state`.
  *
- * Renders nothing before the stack's first report, and the finished state
- * afterwards. See {@link ChunkProgressPopup} for one that shows only while
- * building.
+ * Renders nothing while none of its sources is there, and the finished state afterwards.
+ * See {@link ProgressPopup} for one that shows only while building.
  *
  * @example
- * <ChunkProgress store={progress} details={{ stage: true, chunks: true }} expandable />
+ * <Progress store={progress} details={{ stage: true, rows: true }} expandable />
  *
  * @group Components
  */
-export const ChunkProgress = ({
+export const Progress = ({
   store,
+  source,
+  group,
   details,
   expandable = false,
   defaultExpanded = false,
@@ -87,24 +88,24 @@ export const ChunkProgress = ({
   labels,
   className,
   style,
-}: ChunkProgressProps) => {
-  const snapshot = useChunkProgress(store);
+}: ProgressProps) => {
+  const snapshot = useProgress(store);
   const expanded = snapshot.expanded ?? defaultExpanded;
   const toggle = useCallback(
     () => store.setExpanded(!expanded),
     [store, expanded],
   );
   const view = useMemo(
-    () => describeChunkProgress(snapshot, labels),
-    [snapshot, labels],
+    () => describeProgress(snapshot, { source, group, labels }),
+    [snapshot, source, group, labels],
   );
-  if (!snapshot.progress) return null;
+  if (!view) return null;
 
   const stage = details?.stage ? view.stage : null;
-  const chunks = details?.chunks && view.chunks.length > 1 ? view.chunks : null;
-  const hasDetails = stage !== null || chunks !== null;
+  const rows = details?.rows && view.rows.length > 1 ? view.rows : null;
+  const hasDetails = stage !== null || rows !== null;
   const open = !expandable || expanded;
-  const dismissLabel = labels?.dismiss ?? CHUNK_PROGRESS_LABELS.dismiss;
+  const dismissLabel = labels?.dismiss ?? PROGRESS_LABELS.dismiss;
   const extra = footer?.(view, snapshot);
 
   return (
@@ -113,7 +114,7 @@ export const ChunkProgress = ({
       style={
         {
           ...style,
-          '--videx-chunk-progress': view.percent / 100,
+          '--videx-progress': view.percent / 100,
         } as CSSProperties
       }
       data-state={view.building ? 'building' : 'idle'}
@@ -149,8 +150,8 @@ export const ChunkProgress = ({
           onClick={toggle}
         >
           {expanded
-            ? (labels?.hideDetails ?? CHUNK_PROGRESS_LABELS.hideDetails)
-            : (labels?.showDetails ?? CHUNK_PROGRESS_LABELS.showDetails)}
+            ? (labels?.hideDetails ?? PROGRESS_LABELS.hideDetails)
+            : (labels?.showDetails ?? PROGRESS_LABELS.showDetails)}
         </button>
       )}
       {open && hasDetails && (
@@ -160,19 +161,19 @@ export const ChunkProgress = ({
               {stage}
             </div>
           )}
-          {chunks && (
-            <ul className={`${CLASS}__chunks`}>
-              {chunks.map(row => (
+          {rows && (
+            <ul className={`${CLASS}__rows`}>
+              {rows.map(row => (
                 <li
                   key={row.key}
-                  className={`${CLASS}__chunk`}
+                  className={`${CLASS}__row`}
                   data-state={row.state}
                 >
-                  <span className={`${CLASS}__chunk-name`}>{row.name}</span>
-                  <span className={`${CLASS}__chunk-stage`} title={row.stage}>
+                  <span className={`${CLASS}__row-name`}>{row.name}</span>
+                  <span className={`${CLASS}__row-stage`} title={row.stage}>
                     {row.stage}
                   </span>
-                  <span className={`${CLASS}__chunk-percent`}>
+                  <span className={`${CLASS}__row-percent`}>
                     {row.percent}%
                   </span>
                   <div className={`${CLASS}__bar`} aria-hidden="true">

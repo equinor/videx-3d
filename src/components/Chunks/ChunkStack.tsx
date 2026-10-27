@@ -334,8 +334,8 @@ export type ChunkStackProps = {
    * Called whenever a child chunk starts building, reports a step, or finishes —
    * for a busy indicator or a progress bar. See {@link ChunkStackProgress} for the
    * chunk count, the step a chunk is on and the weighted estimate. Reports once
-   * more, with no chunks, when the stack unmounts. Pass a
-   * {@link ChunkProgressStore}'s `report` to show it in the host's DOM.
+   * more, with no chunks, when the stack unmounts. To show it in the host's DOM,
+   * pass it to a `ProgressStore` source through {@link chunkProgressReport}.
    */
   onProgress?: (progress: ChunkStackProgress) => void;
 };
@@ -1285,7 +1285,7 @@ export const ChunkStack = ({
   const seaVolume = sea?.volume;
   useLayoutEffect(() => {
     if (seaRoot.current && seaSurface)
-      void precompile(gl, seaRoot.current, camera, scene, 'scene', true);
+      void precompile(gl, seaRoot.current, camera, scene);
   }, [gl, camera, scene, seaSurface, seaVolume, seaGeometry]);
 
   // ⭐ The face that CLOSES the water body at a cut, off the sea's own channels —

@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { ChunkBuildProgress } from '../src/components/Chunks/chunk-defs';
 import {
   aggregateChunkProgress,
-  CHUNK_PROGRESS_LABELS,
-  createChunkProgressStore,
-  describeChunkProgress,
+  chunkProgressReport,
   formatChunkStep,
 } from '../src/components/Chunks/chunk-progress';
+import {
+  createProgressStore,
+  describeProgress,
+} from '../src/components/Progress/progress-store';
 import { SurfaceChunkMetrics } from '../src/sdk';
 
 const metrics = (triangles: number) => ({ triangles }) as SurfaceChunkMetrics;
@@ -80,94 +82,16 @@ describe('aggregateChunkProgress', () => {
   });
 });
 
-describe('createChunkProgressStore', () => {
-  const building = (estimate: number) =>
-    aggregateChunkProgress([
-      { key: 'a', state: 'building', step: step('refine', 1, 2, estimate) },
-    ]);
-  const finished = (state: 'ready' | 'failed') =>
-    aggregateChunkProgress([{ key: 'a', state }]);
+describe('chunkProgressReport', () => {
+  // A stack's report through a store and back out as a display would show it.
+  const show = (progress: ReturnType<typeof aggregateChunkProgress>) => {
+    const store = createProgressStore();
+    store.source('model', { title: 'Building model' })(
+      chunkProgressReport(progress),
+    );
+    return { store, view: describeProgress(store.getSnapshot())! };
+  };
 
-  it('starts a session per build and never moves the percentage backwards', () => {
-    const store = createChunkProgressStore();
-    expect(store.getSnapshot()).toMatchObject({
-      progress: null,
-      building: false,
-      session: 0,
-    });
-
-    store.report(building(0.4));
-    expect(store.getSnapshot()).toMatchObject({
-      building: true,
-      session: 1,
-      percent: 40,
-      outcome: null,
-    });
-    store.report(building(0.2));
-    expect(store.getSnapshot().percent).toBe(40);
-    store.report(building(1));
-    expect(store.getSnapshot().percent).toBe(99);
-
-    store.report(finished('ready'));
-    const done = store.getSnapshot();
-    expect(done).toMatchObject({
-      building: false,
-      percent: 100,
-      outcome: 'ready',
-    });
-    expect(done.finishedAt).not.toBeNull();
-
-    store.report(building(0.1));
-    expect(store.getSnapshot()).toMatchObject({
-      session: 2,
-      percent: 10,
-      finishedAt: null,
-    });
-    store.report(finished('failed'));
-    expect(store.getSnapshot().outcome).toBe('failed');
-  });
-
-  it('ends a build with no outcome when the stack goes away mid-build', () => {
-    const store = createChunkProgressStore();
-    store.report(building(0.3));
-    store.report(aggregateChunkProgress([]));
-    expect(store.getSnapshot()).toMatchObject({
-      building: false,
-      percent: 30,
-      outcome: null,
-    });
-  });
-
-  it('notifies subscribers until they unsubscribe', () => {
-    const store = createChunkProgressStore();
-    let heard = 0;
-    const unsubscribe = store.subscribe(() => heard++);
-    store.report(building(0.5));
-    unsubscribe();
-    store.report(finished('ready'));
-    expect(heard).toBe(1);
-  });
-
-  it('remembers the expanded details across reports and builds', () => {
-    const store = createChunkProgressStore();
-    expect(store.getSnapshot().expanded).toBeNull();
-    let heard = 0;
-    store.subscribe(() => heard++);
-    store.setExpanded(true);
-    expect(heard).toBe(1);
-    store.setExpanded(true);
-    expect(heard).toBe(1);
-
-    store.report(building(0.5));
-    store.report(finished('ready'));
-    store.report(building(0.1));
-    expect(store.getSnapshot()).toMatchObject({ session: 2, expanded: true });
-    store.setExpanded(false);
-    expect(store.getSnapshot().expanded).toBe(false);
-  });
-});
-
-describe('progress text', () => {
   it('counts a step only when it has several units', () => {
     expect(formatChunkStep(step('tessellate', 3, 16, 0))).toBe(
       'Building mesh 3/16',
@@ -181,38 +105,36 @@ describe('progress text', () => {
   });
 
   it('names chunks, falls back to their position, and labels the stage by chunk', () => {
-    const store = createChunkProgressStore();
     const current = step('caps', 2, 5, 0.9);
-    store.report(
-      aggregateChunkProgress([
-        { key: 'a', name: 'Overburden', state: 'building', step: current },
-        { key: 'b' },
-        { key: 'c', state: 'empty' },
-      ]),
-    );
-    const view = describeChunkProgress(store.getSnapshot());
-    expect(view.title).toBe(CHUNK_PROGRESS_LABELS.title.building);
+    const progress = aggregateChunkProgress([
+      { key: 'a', name: 'Overburden', state: 'building', step: current },
+      { key: 'b' },
+      { key: 'c', state: 'empty' },
+    ]);
+    const { view } = show(progress);
+    expect(view.title).toBe('Building model');
     expect(view.stage).toBe('Overburden: Adding layers 2/5');
-    expect(view.chunks.map(c => [c.name, c.stage, c.percent])).toEqual([
+    expect(view.rows.map(c => [c.name, c.stage, c.percent])).toEqual([
       ['Overburden', 'Adding layers 2/5', 90],
       ['Chunk 2', 'Preparing', 0],
       ['Chunk 3', 'Nothing to show', 100],
     ]);
 
-    const relabelled = describeChunkProgress(store.getSnapshot(), {
+    const relabelled = chunkProgressReport(progress, {
       chunk: n => `Del ${n}`,
-      states: { preparing: 'Forbereder' },
+      phases: { caps: 'Legger til lag' },
     });
-    expect(relabelled.chunks[1]).toMatchObject({
-      name: 'Del 2',
-      stage: 'Forbereder',
-    });
-    expect(relabelled.title).toBe(CHUNK_PROGRESS_LABELS.title.building);
+    expect(relabelled.items.map(item => item.name)).toEqual([
+      'Overburden',
+      'Del 2',
+      'Del 3',
+    ]);
+    expect(relabelled.items[0].step?.label).toBe('Legger til lag');
+    expect(relabelled.current).toBe('a');
   });
 
   it('leaves the stage unnamed for a single chunk, and empty once idle', () => {
-    const store = createChunkProgressStore();
-    store.report(
+    const { store, view } = show(
       aggregateChunkProgress([
         {
           key: 'a',
@@ -222,72 +144,92 @@ describe('progress text', () => {
         },
       ]),
     );
-    expect(describeChunkProgress(store.getSnapshot()).stage).toBe(
-      'Planning mesh',
+    expect(view.stage).toBe('Planning mesh');
+    store.source('model')(
+      chunkProgressReport(
+        aggregateChunkProgress([{ key: 'a', state: 'failed' }]),
+      ),
     );
-    store.report(aggregateChunkProgress([{ key: 'a', state: 'failed' }]));
-    const view = describeChunkProgress(store.getSnapshot());
-    expect(view.stage).toBeNull();
-    expect(view.title).toBe(CHUNK_PROGRESS_LABELS.title.failed);
+    const done = describeProgress(store.getSnapshot())!;
+    expect(done.stage).toBeNull();
+    expect(done.title).toBe('Finished with errors');
   });
 
-  it('sums time, tiles and triangles once the build is done, null where unknown', () => {
-    const store = createChunkProgressStore();
-    store.report(
-      aggregateChunkProgress([
-        {
-          key: 'a',
-          state: 'building',
-          step: step('tessellate', 2, 9, 0.5),
-          counts: { tessellate: 9 },
-          startedAt: 10,
-        },
-        { key: 'b' },
-      ]),
+  it('sums time, tiles and triangles once the build is done, absent where unknown', () => {
+    const store = createProgressStore();
+    const model = store.source('model');
+    model(
+      chunkProgressReport(
+        aggregateChunkProgress([
+          {
+            key: 'a',
+            state: 'building',
+            step: step('tessellate', 2, 9, 0.5),
+            counts: { tessellate: 9 },
+            startedAt: 10,
+          },
+          { key: 'b' },
+        ]),
+      ),
     );
-    const building = describeChunkProgress(store.getSnapshot());
-    expect(building).toMatchObject({
-      durationMs: null,
-      tiles: null,
-      triangles: null,
-    });
-    expect(building.chunks[0]).toMatchObject({
-      tiles: 9,
-      triangles: null,
+    const building = describeProgress(store.getSnapshot())!;
+    expect(building).toMatchObject({ durationMs: null, stats: {} });
+    expect(building.rows[0]).toMatchObject({
+      stats: { tiles: 9 },
       durationMs: null,
     });
 
-    store.report(
-      aggregateChunkProgress([
-        {
-          key: 'a',
-          state: 'ready',
-          counts: { tessellate: 9 },
-          metrics: metrics(1000),
-          startedAt: 10,
-          finishedAt: 60,
-        },
-        {
-          key: 'b',
-          state: 'ready',
-          counts: { tessellate: 4 },
-          metrics: metrics(500),
-          startedAt: 20,
-          finishedAt: 90,
-        },
-      ]),
+    model(
+      chunkProgressReport(
+        aggregateChunkProgress([
+          {
+            key: 'a',
+            state: 'ready',
+            counts: { tessellate: 9 },
+            metrics: metrics(1000),
+            startedAt: 10,
+            finishedAt: 60,
+          },
+          {
+            key: 'b',
+            state: 'ready',
+            counts: { tessellate: 4 },
+            metrics: metrics(500),
+            startedAt: 20,
+            finishedAt: 90,
+          },
+        ]),
+      ),
     );
     const snapshot = store.getSnapshot();
-    const done = describeChunkProgress(snapshot);
-    expect(done.tiles).toBe(13);
-    expect(done.triangles).toBe(1500);
-    expect(done.durationMs).toBe(snapshot.finishedAt! - snapshot.startedAt!);
-    expect(done.chunks.map(row => row.durationMs)).toEqual([50, 70]);
+    const done = describeProgress(snapshot)!;
+    expect(done.stats).toEqual({ tiles: 13, triangles: 1500 });
+    expect(done.durationMs).toBe(
+      snapshot.all.finishedAt! - snapshot.all.startedAt!,
+    );
+    expect(done.rows.map(row => row.durationMs)).toEqual([50, 70]);
 
-    store.report(aggregateChunkProgress([{ key: 'a', state: 'empty' }]));
-    expect(describeChunkProgress(store.getSnapshot())).toMatchObject({
-      tiles: null,
-      triangles: null,
-    });
+    model(
+      chunkProgressReport(
+        aggregateChunkProgress([{ key: 'a', state: 'empty' }]),
+      ),
+    );
+    expect(describeProgress(store.getSnapshot())!.stats).toEqual({});
+  });
+
+  it('ends the run with no outcome when the stack goes away mid-build', () => {
+    const store = createProgressStore();
+    const model = store.source('model');
+    model(
+      chunkProgressReport(
+        aggregateChunkProgress([
+          { key: 'a', state: 'building', step: step('refine', 1, 2, 0.3) },
+        ]),
+      ),
+    );
+    model(chunkProgressReport(aggregateChunkProgress([])));
+    const { all, sources } = store.getSnapshot();
+    expect(sources).toEqual([]);
+    expect(all).toMatchObject({ building: false, percent: 30, outcome: null });
   });
 });

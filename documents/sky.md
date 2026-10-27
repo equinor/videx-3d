@@ -807,12 +807,34 @@ ShaderChunk.logdepthbuf_pars_fragment = ShaderChunk.logdepthbuf_pars_fragment.re
 
 - The shaders are large. Measured cold on an Intel Iris Xe laptop (ANGLE / Direct3D
   11): the background ~2.5 s, the sea surface layer ~1.7 s, a stage's surface ~1.6 s,
-  each seabed part ~0.4 s. Clouds add ~0.4 s to the background.
+  each seabed part ~0.4 s. Clouds add ~0.4 s to the background. Fully cold (Chrome's and
+  the driver's caches bypassed, every program at once, 2026-10-27, RTX A1000 laptop):
+  ~39 s of Direct3D compiling in all, a stage's surface 10.9 s and the sea surface layer
+  ~8.5 s, twice (drawn to the screen and into the bakes, without a `RenderingPipeline`).
 - They compile in the background where the browser has `KHR_parallel_shader_compile`:
   until the sky, its stages and its bakes are ready, a stand-in (the void's grey
   gradient, without its detail) is drawn, a stage draws nothing and nothing is
   baked. A recompile (below) shows the stand-in again for as long as it takes. A
-  `ChunkStack`'s meshes likewise stay hidden until theirs are ready.
+  `ChunkStack`'s meshes likewise stay hidden until theirs are ready. The stand-in and the
+  void's cliffs (`bakeSkyCliffs`) are compiled the same way, the stand-in first.
+- `onProgress` tells a host how far it has come: its shaders compiled of those it waits
+  for, and its relief tiles loaded of those wanted, for a progress display (see
+  [progress.md](./progress.md)).
+- ⚠️ Never draw with a program before it is ready. Chrome's GPU process then waits for it
+  on its main thread, which draws every tab and the browser itself, so the whole browser
+  freezes; and the wait is behind every compile queued before it. Measured: 3.4 s for the
+  cliffs' small bake drawn at once, and still ~1 s for a host's `MeshBasicMaterial` drawn
+  while the sky's compiles fill all 19 of Chrome's compile threads.
+- So `precompile` keeps only a few programs compiling at once (`PRECOMPILE_SLOTS`, 4 on
+  a 20-thread laptop), the rest queued: the stand-in first, the scene's own content next,
+  the sky's own programs, stages, bakes and cliffs last (`PRECOMPILE_PRIORITY`). Measured
+  fully cold: a host's material drawn while the sky compiles waits ~0.25 s instead of
+  ~1 s, the Direct3D compiling takes 22 s instead of 39 s in all (less contention), and
+  the sky shows at 64–67 s instead of 84 s. ⚠️ That is still late: the background and
+  the bakes' copy of it take ~50 s each in Direct3D's compiler, fully cold.
+- The first frame that draws the background or a relief still stalls ~0.15–2 s
+  (measured, fully cold): the driver's own compile, after Direct3D's, which nothing in
+  WebGL can do ahead.
 - The bakes draw with the very programs the background and its surface layer do, so
   they cost no compile of their own — when both draw into a render target (a
   `RenderingPipeline`) and with the same lights (the sky's own directional light and
@@ -942,7 +964,8 @@ basic ones show in every story, the advanced and debug ones only in `StageDebug`
   the surface layer and a stage's materials are made with the waves' defines.
 - Compiling ahead goes through `precompile` (`src/rendering/precompile.ts`, internal):
   it compiles as the scene draws, i.e. for the `RenderingPipeline`'s render target and
-  through the `OITRenderPass`'s variants. The sky waits for its own meshes, the stages
+  through the `OITRenderPass`'s variants, each object when its turn in the renderer's
+  queue comes (see Performance). The sky waits for its own meshes, the stages
   registered through `SkyOceanState.stage`, and the baker's scenes and PMREM prefilter.
 - The water lies on one mesh (`createSkyStagePlane`): `bounds` as a 4 × 4 grid, then rings
   each about twice as wide as the one inside, out to the far plane. The flat parts are

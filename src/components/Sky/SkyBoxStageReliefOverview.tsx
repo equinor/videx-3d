@@ -1,7 +1,7 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Mesh, Texture } from 'three';
-import { precompile } from '../../rendering/precompile';
+import { precompile, PRECOMPILE_PRIORITY } from '../../rendering/precompile';
 import type { ReliefGeoGrid } from '../../sdk/geometries/relief-grid';
 import type { SkyReliefResponse } from './sky-defs';
 import {
@@ -94,14 +94,9 @@ export const SkyBoxStageReliefOverview = ({
   useLayoutEffect(() => {
     if (!material || !mesh.current) return;
     let current = true;
-    const pending = precompile(
-      gl,
-      mesh.current,
-      sceneCamera,
-      scene,
-      'scene',
-      true,
-    );
+    const pending = precompile(gl, mesh.current, sceneCamera, scene, 'scene', {
+      priority: PRECOMPILE_PRIORITY.background,
+    });
     if (!pending) setCompiled(material);
     else
       pending.then(() => {

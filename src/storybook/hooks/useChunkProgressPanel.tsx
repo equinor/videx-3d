@@ -10,7 +10,7 @@ function formatDuration(ms: number) {
  * Report a `ChunkStack`'s build status into the OutputPanel's global store: a
  * `Building chunks` / `Chunks built` / `Error` label, the rebuild count and the
  * last build's time. The step-by-step progress is the progress displays' job
- * (`ChunkProgress` / `ChunkProgressPopup`).
+ * (`Progress` / `ProgressPopup`, fed through `chunkProgressReport`).
  *
  * A chunk story runs INSIDE the R3F canvas, so it cannot render DOM itself; the
  * panel is added as the outermost decorator and reads the store.

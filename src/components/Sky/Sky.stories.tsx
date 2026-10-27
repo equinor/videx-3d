@@ -9,6 +9,7 @@ import {
   skyDecorators,
   skyOceanFromArgs,
   skyPropsFromArgs,
+  skyProgressArgs,
   skyReliefArgs,
   SkyReliefArgs,
   skyReliefArgTypes,
@@ -16,6 +17,10 @@ import {
   skyReliefFromArgs,
   skySunPosition,
 } from '../../storybook/components/sky-controls';
+import {
+  ProgressArgs,
+  progressArgTypes,
+} from '../../storybook/decorators/progress-decorator';
 import {
   formatSkyHour,
   useSunClock,
@@ -40,7 +45,8 @@ type TimelapseArgs = {
   speed: number;
   tanker: boolean;
 } & SkyArgs &
-  SkyReliefArgs;
+  SkyReliefArgs &
+  ProgressArgs;
 
 // A line of text over the canvas, outside the scene.
 const ClockOverlay = ({ text }: { text: string }) => {
@@ -136,6 +142,7 @@ const meta = {
   argTypes: {
     ...skyArgTypes(),
     ...skyReliefArgTypes(),
+    ...progressArgTypes,
     playing: {
       control: { type: 'boolean' },
       description: 'Run the clock.',
@@ -182,6 +189,7 @@ const meta = {
   args: {
     ...skyArgs,
     ...skyReliefArgs,
+    ...skyProgressArgs,
     playing: true,
     speed: 0.5,
     sunFromTime: true,

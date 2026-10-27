@@ -22,6 +22,7 @@ import {
   skyOceanFromArgs,
   skyOutlineArgType,
   skyPropsFromArgs,
+  skyProgressArgs,
   skyReliefArgs,
   SkyReliefArgs,
   skyReliefArgTypes,
@@ -32,6 +33,10 @@ import {
   skyWallDebugArgTypes,
   skyWallDebugFromArgs,
 } from '../../storybook/components/sky-controls';
+import {
+  ProgressArgs,
+  progressArgTypes,
+} from '../../storybook/decorators/progress-decorator';
 import {
   SkyDebugPanel,
   useSkyTimelapse,
@@ -194,7 +199,8 @@ type StageDebugArgs = {
   panel: boolean;
 } & SkyArgs &
   SkyReliefArgs &
-  SkyWallDebugArgs;
+  SkyWallDebugArgs &
+  ProgressArgs;
 
 const StageDebug = (storyArgs: StageDebugArgs) => {
   const hide = skyHideFromArgs(storyArgs.hide);
@@ -328,6 +334,7 @@ const meta = {
   argTypes: {
     // Every control, advanced and debug ones included.
     ...skyArgTypes({ debug: true }),
+    ...progressArgTypes,
     ...skyReliefArgTypes(),
     stage: {
       description:
@@ -409,6 +416,7 @@ const meta = {
     ...skyArgs,
     ...skyReliefArgs,
     ...skyWallDebugArgs,
+    ...skyProgressArgs,
     stage: true,
     stageWidth: 16,
     stageLength: 16,

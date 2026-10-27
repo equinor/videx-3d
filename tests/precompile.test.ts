@@ -14,8 +14,11 @@ import { describe, expect, test } from 'vitest';
 import { attachOitVariants } from '../src/rendering/oit-material';
 import { OITRenderPass } from '../src/rendering/passes/OITRenderPass';
 import {
+  createPrecompileCount,
   oitVariantPasses,
   precompile,
+  PRECOMPILE_PRIORITY,
+  PRECOMPILE_SLOTS,
   setPipelinePasses,
 } from '../src/rendering/precompile';
 
@@ -149,6 +152,117 @@ describe('precompile', () => {
     ready = true;
     await pending;
     expect(resolved).toBe(true);
+  });
+});
+
+describe('the precompile queue', () => {
+  const meshes = (count: number) =>
+    Array.from(
+      { length: count },
+      () => new Mesh(new BufferGeometry(), new MeshBasicMaterial()),
+    );
+
+  test(`keeps ${PRECOMPILE_SLOTS} programs compiling at once`, async () => {
+    let ready = false;
+    const { renderer, compiled } = mockRenderer(() => ready);
+    const scene = new Scene();
+    const root = new Group().add(...meshes(PRECOMPILE_SLOTS + 2));
+
+    const pending = precompile(renderer, root, camera, scene);
+    expect(compiled).toHaveLength(PRECOMPILE_SLOTS);
+    ready = true;
+    await pending;
+    expect(compiled).toHaveLength(PRECOMPILE_SLOTS + 2);
+  });
+
+  test('starts the higher priority first, then in the order asked for', async () => {
+    let ready = false;
+    const { renderer, compiled } = mockRenderer(() => ready);
+    const scene = new Scene();
+    const blockers = new Group().add(...meshes(PRECOMPILE_SLOTS));
+    const [late] = meshes(1);
+    const [early] = meshes(1);
+    const [first] = meshes(1);
+
+    const waits = [
+      precompile(renderer, blockers, camera, scene),
+      precompile(renderer, late, camera, scene, 'scene', {
+        priority: PRECOMPILE_PRIORITY.background,
+      }),
+      precompile(renderer, early, camera, scene),
+      precompile(renderer, first, camera, scene, 'scene', {
+        priority: PRECOMPILE_PRIORITY.first,
+      }),
+    ];
+    ready = true;
+    await Promise.all(waits);
+    expect(compiled.slice(PRECOMPILE_SLOTS).map(c => c.material)).toEqual([
+      first.material,
+      early.material,
+      late.material,
+    ]);
+  });
+
+  test('drops an object whose material is disposed of before its turn', async () => {
+    let ready = false;
+    const { renderer, compiled } = mockRenderer(() => ready);
+    const scene = new Scene();
+    const blockers = new Group().add(...meshes(PRECOMPILE_SLOTS));
+    const [gone] = meshes(1);
+
+    const waits = [
+      precompile(renderer, blockers, camera, scene),
+      precompile(renderer, gone, camera, scene),
+    ];
+    gone.material.dispose();
+    ready = true;
+    await Promise.all(waits);
+    expect(compiled.map(c => c.material)).not.toContain(gone.material);
+  });
+
+  test('tells its progress once queued, then as each object is ready', async () => {
+    let ready = false;
+    const { renderer } = mockRenderer(() => ready);
+    const scene = new Scene();
+    const told: [number, number][] = [];
+    const pending = precompile(
+      renderer,
+      new Group().add(...meshes(2)),
+      camera,
+      scene,
+      'scene',
+      { onProgress: (done, total) => told.push([done, total]) },
+    );
+    expect(told).toEqual([[0, 2]]);
+    ready = true;
+    await pending;
+    expect(told).toEqual([
+      [0, 2],
+      [1, 2],
+      [2, 2],
+    ]);
+
+    const none: [number, number][] = [];
+    precompile(renderer, new Group(), camera, scene, 'scene', {
+      onProgress: (done, total) => none.push([done, total]),
+    });
+    expect(none).toEqual([[0, 0]]);
+  });
+
+  test('counts several calls as one until all are done', () => {
+    let changes = 0;
+    const count = createPrecompileCount(() => changes++);
+    const a = count.track();
+    const b = count.track();
+    a(1, 2);
+    b(0, 3);
+    expect(count.count()).toEqual({ done: 1, total: 5 });
+    expect(changes).toBe(2);
+    a(2, 2);
+    b(3, 3);
+    expect(count.count()).toEqual({ done: 5, total: 5 });
+    count.track()(0, 1);
+    expect(count.count()).toEqual({ done: 0, total: 1 });
   });
 });
 

@@ -18,6 +18,7 @@ import {
   skyOceanFromArgs,
   skyOutlineArgType,
   skyPropsFromArgs,
+  skyProgressArgs,
   skyReliefArgs,
   SkyReliefArgs,
   skyReliefArgTypes,
@@ -28,6 +29,10 @@ import {
   skyWallDebugArgTypes,
   skyWallDebugFromArgs,
 } from '../../storybook/components/sky-controls';
+import {
+  ProgressArgs,
+  progressArgTypes,
+} from '../../storybook/decorators/progress-decorator';
 import { SkyStoryRendering } from '../../storybook/components/sky-story-rendering';
 import {
   SYNTHETIC_COLUMN_PREFIX,
@@ -105,7 +110,8 @@ type SkySpikeArgs = {
   outline: boolean;
 } & SkyArgs &
   SkyReliefArgs &
-  SkyWallDebugArgs;
+  SkyWallDebugArgs &
+  ProgressArgs;
 
 // A stage around the wells' outline, a surface baked into its relief as the seabed.
 const FieldStage = (args: SkySpikeArgs) => {
@@ -308,6 +314,7 @@ const meta = {
   argTypes: {
     ...skyArgTypes(),
     ...skyReliefArgTypes('stage'),
+    ...progressArgTypes,
     abyss: {
       control: { type: 'boolean' },
       description:
@@ -375,6 +382,7 @@ export const Default: Story = {
   args: {
     ...skyArgs,
     ...skyReliefArgs,
+    ...skyProgressArgs,
     sunElevation: 30,
     abyss: true,
     abyssLevel: 0,

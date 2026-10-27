@@ -17,5 +17,7 @@ export * from './sky-context';
 export * from './sky-defs';
 export * from './sky-material';
 export * from './sky-model';
+export { SKY_PROGRESS_LABELS } from './sky-progress';
+export type { SkyProgressLabels, SkyReliefLoading } from './sky-progress';
 export * from './sky-stage';
 export * from './useLevelHorizon';

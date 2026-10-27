@@ -25,7 +25,11 @@ import {
   WebGLRenderTarget,
 } from 'three';
 import { LightProbeGenerator } from 'three/examples/jsm/lights/LightProbeGenerator.js';
-import { precompile } from '../../rendering/precompile';
+import {
+  precompile,
+  PRECOMPILE_PRIORITY,
+  PrecompileOptions,
+} from '../../rendering/precompile';
 import skyVertexShader from './shaders/sky-vertex.glsl';
 import subsurfaceFragmentShader from './shaders/subsurface-fragment.glsl';
 import { createSkyGeometry, SkyMaterial } from './sky-material';
@@ -60,12 +64,14 @@ type ZoneBake = {
   prefiltered: WebGLRenderTarget | null;
 };
 
-// PMREMGenerator makes its prefilter material only with its first targets, privately.
+// PMREMGenerator makes its prefilter material only with its first targets, privately, and
+// the material `fromCubemap` copies the cube with on demand.
 type PmremInternals = {
   _setSize?: (cubeSize: number) => void;
   _allocateTargets?: () => WebGLRenderTarget;
   _ggxMaterial?: Material | null;
   _blurMaterial?: Material | null;
+  _cubemapMaterial?: Material | null;
 };
 
 const compileCamera = new PerspectiveCamera();
@@ -226,7 +232,10 @@ export class SkyBaker {
    * `precompile`). Set the lights first: they are compiled in. `null` when all is ready
    * already.
    */
-  precompile(renderer: WebGLRenderer): Promise<void> | null {
+  precompile(
+    renderer: WebGLRenderer,
+    onProgress?: PrecompileOptions['onProgress'],
+  ): Promise<void> | null {
     this.sync();
     return precompile(
       renderer,
@@ -234,16 +243,19 @@ export class SkyBaker {
       compileCamera,
       this.scene,
       'offscreen',
+      { priority: PRECOMPILE_PRIORITY.background, onProgress },
     );
   }
 
   /**
    * The same for the subsurface's bake — and with an environment of `resolution`, the
-   * prefilter every environment bake takes. Small, so it is ready first.
+   * prefilter every environment bake takes. Small, so it is ready first. `track` gives
+   * each of its compiles an `onProgress` (see `createPrecompileCount`).
    */
   precompileSubsurface(
     renderer: WebGLRenderer,
     resolution: number | null,
+    track?: () => PrecompileOptions['onProgress'],
   ): Promise<void> | null {
     const waits = [
       precompile(
@@ -252,13 +264,20 @@ export class SkyBaker {
         compileCamera,
         this.subsurfaceScene,
         'offscreen',
+        { onProgress: track?.() },
       ),
-      resolution === null ? null : this.precompilePmrem(renderer, resolution),
+      resolution === null
+        ? null
+        : this.precompilePmrem(renderer, resolution, track?.()),
     ].filter(wait => wait !== null);
     return waits.length > 0 ? Promise.all(waits).then(() => {}) : null;
   }
 
-  private precompilePmrem(renderer: WebGLRenderer, resolution: number) {
+  private precompilePmrem(
+    renderer: WebGLRenderer,
+    resolution: number,
+    onProgress?: PrecompileOptions['onProgress'],
+  ) {
     this.pmrem ??= new PMREMGenerator(renderer);
     const pmrem = this.pmrem as unknown as PmremInternals;
     if (pmrem._setSize && pmrem._allocateTargets) {
@@ -266,11 +285,26 @@ export class SkyBaker {
       // Its working target and material stay, for the bakes of this size.
       pmrem._allocateTargets().dispose();
     }
-    const material = pmrem._ggxMaterial ?? pmrem._blurMaterial;
-    if (!material) return null;
+    // Made by three's own compile, for the target bound: one, as `fromCubemap` draws it.
+    if (!pmrem._cubemapMaterial) {
+      const previous = renderer.getRenderTarget();
+      const face = renderer.getActiveCubeFace();
+      const mipmap = renderer.getActiveMipmapLevel();
+      renderer.setRenderTarget(this.probeTarget);
+      this.pmrem.compileCubemapShader();
+      renderer.setRenderTarget(previous, face, mipmap);
+    }
+    const materials = [
+      pmrem._ggxMaterial ?? pmrem._blurMaterial,
+      pmrem._cubemapMaterial,
+    ].filter(material => !!material);
+    if (materials.length === 0) return null;
     const scene = new Scene();
-    scene.add(new Mesh(this.geometry, material));
-    return precompile(renderer, scene, compileCamera, scene, 'offscreen');
+    for (const material of materials)
+      scene.add(new Mesh(this.geometry, material));
+    return precompile(renderer, scene, compileCamera, scene, 'offscreen', {
+      onProgress,
+    });
   }
 
   /** A zone's last environment map; `null` before the first. */

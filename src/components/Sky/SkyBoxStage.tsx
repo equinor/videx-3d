@@ -48,6 +48,7 @@ import {
 } from './sky-relief-tiles';
 import type { ReliefSampler } from './sky-relief-sampler';
 import { useSkyOcean } from './sky-context';
+import type { SkyReliefLoading } from './sky-progress';
 import { placeOnGlobe, releaseFromGlobe } from './sky-anchor';
 import { useWorld } from '../World/world-context';
 import { skyRelief, SkyReliefResponse } from './sky-defs';
@@ -486,6 +487,13 @@ export const SkyBoxStage = ({
   // The relief's ground under the camera, which the sky takes for its own there: the
   // seabed below the sea surface, and in the ground above it, rock.
   const reliefGround = useRef<number | null>(null);
+  // How its tiles load, for the sky's progress.
+  const reportRelief = ocean?.relief;
+  const reliefKey = useMemo(() => ({}), []);
+  const reliefLoading = useCallback(
+    (loading: SkyReliefLoading | null) => reportRelief?.(reliefKey, loading),
+    [reportRelief, reliefKey],
+  );
   useEffect(() => {
     if (!sky || !tiled) return;
     return () => {
@@ -753,6 +761,7 @@ export const SkyBoxStage = ({
           bedDetail={bedDetail}
           visible={shown('relief')}
           onStats={relief.onStats}
+          onLoading={reliefLoading}
           cameraGround={reliefGround}
           stage={[minX, minZ, maxX, maxZ]}
           seeThrough={seeThrough}

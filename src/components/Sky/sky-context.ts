@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
 import { Color, Object3D, Vector3 } from 'three';
 import type { SkyMaterial } from './sky-material';
+import type { SkyReliefLoading } from './sky-progress';
 
 /**
  * What a {@link Sky} shares with its children.
@@ -62,6 +63,8 @@ export type SkyOceanState = {
    * either is drawn; again whenever they change. Returns the release.
    */
   stage: (parts: Object3D) => () => void;
+  /** tell the sky how a stage's relief tiles load (its `onProgress`), keyed by anything the stage keeps; null once gone */
+  relief: (key: object, loading: SkyReliefLoading | null) => void;
 };
 
 export const SkyOceanContext = createContext<SkyOceanState | null>(null);

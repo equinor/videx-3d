@@ -13,6 +13,7 @@ import {
   skyDecorators,
   skyOceanFromArgs,
   skyPropsFromArgs,
+  skyProgressArgs,
   skyReliefLookArgs,
   SkyReliefLookArgs,
   skyReliefLookArgTypes,
@@ -20,6 +21,10 @@ import {
   SKY_DEMO_BAKED_SEABED,
   SKY_DEMO_RELIEF_LAYERS,
 } from '../../storybook/components/sky-controls';
+import {
+  ProgressArgs,
+  progressArgTypes,
+} from '../../storybook/decorators/progress-decorator';
 import {
   SkyDebugPanel,
   useSkyTimelapse,
@@ -136,7 +141,8 @@ function useTileStats(shown: boolean) {
 }
 
 type ReliefTilesArgs = SkyArgs &
-  SkyReliefLookArgs & {
+  SkyReliefLookArgs &
+  ProgressArgs & {
     relief: 'tiles' | 'none';
     layers: string[];
     pixelError: number;
@@ -307,6 +313,7 @@ const meta = {
   },
   argTypes: {
     ...skyArgTypes({ debug: true }),
+    ...progressArgTypes,
     relief: {
       control: { type: 'inline-radio' },
       options: ['tiles', 'none'],
@@ -391,6 +398,7 @@ const meta = {
   },
   args: {
     ...skyArgs,
+    ...skyProgressArgs,
     relief: 'tiles',
     layers: LAYERS.map(layer => layer.id).filter(id => id !== BAKED_SEABED),
     pixelError: 2,

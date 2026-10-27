@@ -30,6 +30,7 @@ import { TileStreamer } from '../../sdk/tiles/tile-streamer';
 import { pixelsPerUnit } from '../../sdk/utils/lod';
 import { skyReliefTile, SkyReliefTileResponse } from './sky-defs';
 import type { SkyMaterial } from './sky-material';
+import type { SkyReliefLoading } from './sky-progress';
 import {
   geoAt,
   geoSquareOver,
@@ -114,6 +115,8 @@ type SkyBoxStageReliefTilesProps = {
   bedDetail?: string;
   visible: boolean;
   onStats?: (stats: SkyReliefTileStats) => void;
+  /** told of the tiles as they load (see `SkyReliefLoading`) whenever that changes, and null once gone */
+  onLoading?: (loading: SkyReliefLoading | null) => void;
   /**
    * Written each frame: the relief's height under the camera (world Y, on the finest tile
    * in there), or null where no tile is in.
@@ -165,6 +168,7 @@ export const SkyBoxStageReliefTiles = ({
   bedDetail,
   visible,
   onStats,
+  onLoading,
   cameraGround,
   stage,
   seeThrough,
@@ -391,6 +395,19 @@ export const SkyBoxStageReliefTiles = ({
   useEffect(() => {
     stats.current = onStats;
   });
+  const loadingRef = useRef(onLoading);
+  useEffect(() => {
+    loadingRef.current = onLoading;
+  });
+  // What was last told of the tiles' loading; a new streamer starts over.
+  const loadingTold = useRef('');
+  useEffect(
+    () => () => {
+      loadingTold.current = '';
+      loadingRef.current?.(null);
+    },
+    [streaming],
+  );
   const frame = useRef(0);
   const view = useMemo(
     () => ({
@@ -564,6 +581,14 @@ export const SkyBoxStageReliefTiles = ({
     if (streaming.resident.pinnedIn) {
       streaming.resident.pinnedIn = false;
       setSamplerVersion(version => version + 1);
+    }
+    if (loadingRef.current) {
+      const { settled, loading, queued } = streamer.stats;
+      const told = `${settled}|${loading}|${queued}`;
+      if (told !== loadingTold.current) {
+        loadingTold.current = told;
+        loadingRef.current({ settled, loading, queued });
+      }
     }
 
     const array = tiles.array as Float32Array;

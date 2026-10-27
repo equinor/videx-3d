@@ -418,9 +418,9 @@ Geometry building is asynchronous and can take seconds, so a host needs to know:
   current?, chunks }` from the stack; `current` is the step a building chunk is on,
   `estimate` a weighted whole-build percentage (see
   [streaming.md](./chunk-stack/streaming.md#build-progress)) and `chunks` the same
-  per chunk, named by `ChunkProps.name`. To show it in the host's DOM, feed a
-  `ChunkProgressStore` and use `useChunkProgress`, `ChunkProgress` or
-  `ChunkProgressPopup` (see
+  per chunk, named by `ChunkProps.name`. To show it in the host's DOM, report it to a
+  `ProgressStore` source through `chunkProgressReport` and use `useProgress`,
+  `Progress` or `ProgressPopup` (see [progress.md](./progress.md) and
   [coordination.md](./chunk-stack/coordination.md#showing-progress-in-the-host)).
 
 A chunk of a stack's column also shows a coarse PREVIEW within about a second, drawn

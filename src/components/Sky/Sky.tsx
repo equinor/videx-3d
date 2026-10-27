@@ -26,7 +26,7 @@ import {
   Vector3,
   Vector4,
 } from 'three';
-import { precompile } from '../../rendering/precompile';
+import { precompile, PRECOMPILE_PRIORITY } from '../../rendering/precompile';
 import { surfaceDetailKey } from '../../sdk/materials/surface-detail';
 import {
   geoFrameAt,
@@ -38,6 +38,7 @@ import { directionFromCompass } from '../../sdk/utils/vector-operations';
 import { OceanMaterial } from '../Ocean/ocean-material';
 import { applyOceanWaterProps } from '../Ocean/ocean-material-sync';
 import { useWorld } from '../World/world-context';
+import type { ProgressReport } from '../Progress/progress-store';
 import {
   createOceanContactRegistry,
   OceanContactContext,
@@ -46,6 +47,11 @@ import {
   createOceanSampler,
   OceanSamplerContext,
 } from '../Ocean/ocean-sampler';
+import {
+  createSkyProgress,
+  SKY_PROGRESS_LABELS,
+  SkyProgressLabels,
+} from './sky-progress';
 import standInFragmentShader from './shaders/sky-stand-in-fragment.glsl';
 import skyVertexShader from './shaders/sky-vertex.glsl';
 import { SkyBaker } from './sky-baker';
@@ -305,6 +311,15 @@ export type SkyProps = {
   renderOrder?: number;
   /** debug views (see {@link SkyDebug}) */
   debug?: SkyDebug;
+  /**
+   * Told how far the sky has come whenever that changes, for a progress display (see
+   * `ProgressStore.source`): its `shaders` compiling, and with a tiled relief the
+   * `relief` tiles loading, each a run from when it is waited for until it is done; once
+   * more with no items when the sky goes away.
+   */
+  onProgress?: (report: ProgressReport) => void;
+  /** the texts of its progress (see {@link SKY_PROGRESS_LABELS}) */
+  progressLabels?: Partial<SkyProgressLabels>;
   children?: ReactNode;
 };
 
@@ -388,6 +403,8 @@ export const Sky = ({
   hdr,
   renderOrder = 1e9,
   debug,
+  onProgress,
+  progressLabels,
   children,
 }: SkyProps) => {
   const gl = useThree(state => state.gl);
@@ -644,6 +661,54 @@ export const Sky = ({
     [material, standIn, geometry, baker],
   );
 
+  // The stand-in is drawn while the sky compiles, so it compiles first, ahead of the sky's
+  // own, and is drawn once it has: drawn before, Chrome's GPU process waits for it behind
+  // everything queued before it, freezing the browser (see `bakeSkyCliffs`).
+  // What the sky reports to `onProgress`: its compiles and its stages' relief tiles.
+  const reportRef = useRef(onProgress);
+  const labelsRef = useRef(progressLabels);
+  useEffect(() => {
+    reportRef.current = onProgress;
+    labelsRef.current = progressLabels;
+  });
+  const [progress] = useState(() =>
+    createSkyProgress(
+      report => reportRef.current?.(report),
+      () => ({ ...SKY_PROGRESS_LABELS, ...labelsRef.current }),
+    ),
+  );
+  // Told again on mounting: a remount (React's strict mode) follows a report of none.
+  useEffect(() => {
+    progress.emit();
+    return () => progress.close();
+  }, [progress]);
+
+  const [standInReady, setStandInReady] = useState(false);
+  useLayoutEffect(() => {
+    const pending = precompile(
+      gl,
+      new Mesh(geometry, standIn),
+      sceneCamera,
+      scene,
+      'scene',
+      {
+        priority: PRECOMPILE_PRIORITY.first,
+        onProgress: progress.compiles.track(),
+      },
+    );
+    if (!pending) {
+      setStandInReady(true);
+      return;
+    }
+    let current = true;
+    pending.then(() => {
+      if (current) setStandInReady(true);
+    });
+    return () => {
+      current = false;
+    };
+  }, [gl, scene, sceneCamera, standIn, geometry, progress]);
+
   const state = useMemo<SkyState>(() => {
     const frame = {
       up: [upX, upY, upZ] as Vec3,
@@ -739,16 +804,18 @@ export const Sky = ({
   useLayoutEffect(() => {
     material.setAbyssWallLight(wallLightDirection, subsurfaceColor);
   }, [material, wallLightDirection, subsurfaceColor]);
-  // Their cliffs, baked once while they are on.
+  // Their cliffs, baked once while they are on; the walls are drawn once they are.
   useEffect(() => {
     if (!hasWalls) return;
-    const cliffs = bakeSkyCliffs(gl);
-    material.abyssWallRock = cliffs.texture;
+    const cliffs = bakeSkyCliffs(gl, undefined, progress.compiles.track());
+    void cliffs.ready.then(baked => {
+      if (baked) material.abyssWallRock = cliffs.target.texture;
+    });
     return () => {
       material.abyssWallRock = null;
       cliffs.dispose();
     };
-  }, [gl, material, hasWalls]);
+  }, [gl, material, hasWalls, progress]);
   const light = useRef<DirectionalLight>(null);
   // 0 the sky's light, 1 the subsurface's; null until the first frame, which takes the zone's.
   const subsurfaceShare = useRef<number | null>(null);
@@ -783,6 +850,7 @@ export const Sky = ({
             visible: drawn,
             ready,
             stage: addStage,
+            relief: progress.relief,
           }
         : null,
     [
@@ -799,6 +867,7 @@ export const Sky = ({
       drawn,
       ready,
       addStage,
+      progress,
     ],
   );
 
@@ -883,6 +952,7 @@ export const Sky = ({
     const pending = baker.precompileSubsurface(
       gl,
       hasEnvironment ? environmentResolution : null,
+      progress.compiles.track,
     );
     if (!pending) {
       setSubsurfaceReady(true);
@@ -896,7 +966,7 @@ export const Sky = ({
     return () => {
       current = false;
     };
-  }, [gl, baker, hasEnvironment, environmentResolution]);
+  }, [gl, baker, hasEnvironment, environmentResolution, progress]);
 
   useLayoutEffect(() => {
     material.setFrame({
@@ -1257,9 +1327,12 @@ export const Sky = ({
     );
     const pending = [
       ...[group, ...stages.current].map(root =>
-        precompile(gl, root, sceneCamera, scene),
+        precompile(gl, root, sceneCamera, scene, 'scene', {
+          priority: PRECOMPILE_PRIORITY.background,
+          onProgress: progress.compiles.track(),
+        }),
       ),
-      baker.precompile(gl),
+      baker.precompile(gl, progress.compiles.track()),
     ].filter(wait => wait !== null);
     if (pending.length === 0) {
       setReady(true);
@@ -1294,6 +1367,7 @@ export const Sky = ({
     bedDetailKey,
     hasWalls,
     voided,
+    progress,
   ]);
 
   const cutawayOptions = cutaway === true ? {} : cutaway || null;
@@ -1879,7 +1953,7 @@ export const Sky = ({
         material={standIn}
         frustumCulled={false}
         renderOrder={renderOrder}
-        visible={drawn && !ready}
+        visible={drawn && !ready && standInReady}
         dispose={null}
       />
       {hasProbe && <primitive object={probe} />}

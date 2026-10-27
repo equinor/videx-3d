@@ -30,6 +30,12 @@ import { solarPosition } from '../../sdk/utils/solar-position';
 import { bakedReliefId } from '../data/baked-reliefs';
 import { demoFrame } from '../data/demo-crs';
 import {
+  progressArgs,
+  ProgressArgs,
+  progressDecorator,
+  storyProgress,
+} from '../decorators/progress-decorator';
+import {
   skyCutawayArgs,
   SkyCutawayArgs,
   skyCutawayArgTypes,
@@ -383,12 +389,30 @@ const skyObserverNowDecorator: Decorator = Story => {
 
 /**
  * The decorators the {@link SkyArgs} need: the cutaway's grip writing its offset back,
- * and `observerNow`. Add them last (outermost): `useArgs` is valid only in a decorator.
+ * `observerNow`, and the progress display the sky reports to (`storyProgress`). Add them
+ * last (outermost): `useArgs` is valid only in a decorator.
  */
 export const skyDecorators: Decorator[] = [
   skyCutawayDecorator,
   skyObserverNowDecorator,
+  progressDecorator,
 ];
+
+/**
+ * The progress controls for a sky story: a popup along the top that waits half a second,
+ * so the few relief tiles a camera move loads do not flash it.
+ */
+export const skyProgressArgs: ProgressArgs = {
+  ...progressArgs,
+  progressPosition: 'top',
+  progressDelay: 500,
+};
+
+// Where a story's sky reports its progress.
+const reportSkyProgress = storyProgress.source('sky', {
+  name: 'Sky',
+  title: 'Preparing the sky',
+});
 
 /** A Sky's `sun` from {@link SkyArgs}. */
 export const skySunFromArgs = (args: SkyArgs): SkySun => ({
@@ -543,6 +567,7 @@ export const skyPropsFromArgs = (args: SkyArgs) =>
     capture: { interval: args.captureInterval, maxWait: args.captureMaxWait },
     cutaway: skyCutawayFromArgs(args),
     debug: { tint: args.tint, environment: args.showEnvironment },
+    onProgress: reportSkyProgress,
   }) satisfies Partial<SkyProps>;
 
 const range = (
