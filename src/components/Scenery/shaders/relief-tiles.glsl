@@ -49,15 +49,23 @@ int reliefTileLayer() {
   return int(texelFetch(uReliefTileLayers, ivec3(ivec2(vReliefTileNode), int(vReliefTileSlot + 0.5)), 0).r * 255.0 + 0.5);
 }
 
-// Whether the tile has ground at or above the sea under `p`: false off the tile. Its
-// latitude taken linearly between its edges, near enough for the coast.
-bool reliefTileClearsAt(vec3 p) {
+// The ground under `p` as the tile holds it: 1 at or above the sea, 0 below it, -1 off the
+// tile. Its latitude found along the tile's quadratic rows (reliefTileLatitudeAt) by a
+// Newton step from the linear guess, so the coast falls where the tile draws it.
+float reliefTileGroundAt(vec3 p) {
   vec2 offset = globeSphereOffset(p);
-  vec2 along = vec2((offset.y - vReliefTileLongitude.x) / (vReliefTileLongitude.y - vReliefTileLongitude.x), (offset.x - vReliefTileLatitude.x) / (vReliefTileLatitude.z - vReliefTileLatitude.x));
+  vec3 chi = vReliefTileLatitude;
+  float span = chi.z - chi.x;
+  float t = (offset.x - chi.x) / span;
+  // d/dt of the quadratic through the three, at t.
+  float slope = chi.x * (4.0 * t - 3.0) + chi.y * (4.0 - 8.0 * t) + chi.z * (4.0 * t - 1.0);
+  float at = chi.x * (1.0 - t) * (1.0 - 2.0 * t) + chi.y * 4.0 * t * (1.0 - t) + chi.z * t * (2.0 * t - 1.0);
+  t -= (at - offset.x) / (abs(slope) > 1e-12 ? slope : span);
+  vec2 along = vec2((offset.y - vReliefTileLongitude.x) / (vReliefTileLongitude.y - vReliefTileLongitude.x), t);
   vec2 node = along * uReliefTileCells + 1.5;
   if(any(lessThan(node, vec2(1.5))) || any(greaterThan(node, vec2(uReliefTileCells + 1.5))))
-    return false;
-  return reliefTileHeightAt(node) >= 0.0;
+    return -1.0;
+  return reliefTileHeightAt(node) >= 0.0 ? 1.0 : 0.0;
 }
 
 // A skirt only closes a crack seen from above the ground. From under the ground the tiles'

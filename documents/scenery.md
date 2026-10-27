@@ -343,6 +343,16 @@ it lies instead (`skyFromSpaceOver`):
   toward it crosses (`skySpace` along it), so from space it is white and through the air
   over the Earth's edge still red; the moon's glow, the air's, goes as the air does.
 
+Below 1000 km the near shading still shows in part, and it is the scene's, lit by the
+field's sun. So far round the Earth it takes the day where it lies (2026-10-27): the
+relief's ground and the seabed are dimmed by the day there as a share of the day over the
+field (`skyDayFrom`, never brighter), the sea's surface by the day there against the day
+the camera sees the sky by, and the sea's glint, near (`oceanShade`'s, through
+`skyOceanSurfaceOf`) and from space (`skySpaceSea`), shows only while the sun stands over
+the horizon there (`skyLightFrom`, `skySunDiscUp`). Over the field nothing changes. From
+530 km the sea 15° past the terminator had kept a bright glint streak, and the land on
+the night side was lit as by day.
+
 The deck of clouds is not drawn from above it and the band is gone above 250 km, so from
 space there are none (3D clouds would change that). Below 100 km nothing changes. A
 physical atmosphere (scattering tables) is left for the 3D clouds' work.
@@ -401,7 +411,12 @@ only while the camera is over its rectangle on the field's half of the Earth
 (`SceneryMaterial`'s `claimStage`): off it, its sunk planes would miss some of what it
 claims, and a point on the far side would project back inside it. The void and the subsurface, the views from in
 the water and below the seabed, and the bakes stay flat: the bakes film a level horizon, as
-a few degrees barely change the light, so climbing never bakes. Switching it only changes a
+a few degrees barely change the light, so climbing never bakes. The view from in the water
+is level under the camera's own up (`globeCameraUp`), the scene's over the disc: by the
+field's, 500 km off its surface and seabed tilted 4.5°, the window to the sky skewed and a
+black line crossed the view (2026-10-27). The stage's planes, sunk under a camera far off,
+take only the rays that rise to them from below, and the view in the water leaves the
+stage no ray that only grazes the seabed's curve. Switching it only changes a
 uniform; it costs about a square root per pixel.
 
 What is drawn flat beyond the disc goes onto the globe with a `SceneryAnchor` (about a point,

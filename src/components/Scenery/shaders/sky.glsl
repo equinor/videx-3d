@@ -9,7 +9,6 @@
 
 uniform vec3 uSkyNorth; // normalised, perpendicular to uSkyUp
 uniform vec3 uSkyEast;
-uniform float uSkySunSize; // angular radius, radians
 uniform float uSkySunRadiance; // disc multiplier; > 1 only when tone mapped
 uniform float uSkySunDisc; // 0 in the environment / light-probe bakes: no discs, no stars
 uniform vec3 uSkyMoonDirection; // world space, normalised
@@ -1240,7 +1239,7 @@ vec4 skyWaterLayer(vec3 dir, vec3 origin, float blend) {
     #ifndef SKY_ABYSS
     view = skyOceanOverVoid(view, dir);
     #endif
-    float rise = dot(dir, uSkyUp);
+    float rise = dot(dir, globeCameraUp());
     bool through = rise > 0.0 && skyOceanCutawayWall(origin, dir) * rise > -skyOceanViewAltitude(origin);
     if(through)
       view *= 1.0 - uSkyOceanCutawayCuts.x;

@@ -9,6 +9,7 @@ uniform vec3 uSkyGroundColor;
 uniform vec3 uSkyNadirColor;
 uniform vec3 uSkySunDirection; // world space, normalised
 uniform vec3 uSkySunColor;
+uniform float uSkySunSize; // angular radius, radians
 uniform float uSkySunGlow;
 uniform float uSkyDaylight;
 uniform vec2 uSkyTwilight; // strength, and how much the horizon glows for the sun's elevation (skyTwilight)
@@ -91,6 +92,32 @@ float skyFromSpace() {
 // How sunlit the ground is under `up` (its up there): 0 by night, 1 by day.
 float skySunlit(vec3 up) {
   return smoothstep(-0.1, 0.05, dot(uSkySunDirection, up));
+}
+
+// How much of the sun's disc stands over the horizon where its elevation's sine is `sine`.
+float skySunDiscUp(float sine) {
+  float r = max(uSkySunSize, 1e-3);
+  return smoothstep(-r, r, sine);
+}
+
+// How much of the light it is shaded by holds for what lies under `up`, when that light is
+// the one under `ref` (the field's up for the scene's lights; globeCameraLook for the sky
+// the camera sees): the day there as a share of the day under `ref`, down to the night's
+// level where the sun has set there. Never more than 1: a share of a near shading cannot
+// brighten it. 1 under `ref`, so over the field nothing changes.
+float skyDayFrom(vec3 ref, vec3 up) {
+  float from = mix(SKY_NIGHT_LEVEL, 1.0, skySunlit(ref));
+  return min(mix(SKY_NIGHT_LEVEL, 1.0, skySunlit(up)) / from, 1.0);
+}
+
+// How much of a light along `light` (unit), as it shines under `ref` (the field's up for the
+// scene's lights), still reaches what lies under `up`: all while it stands over the horizon
+// there, or as high as under `ref`; none once it lies a sun's breadth lower. For a glint,
+// which a light below the horizon cannot give: over the field the scene's light shines on
+// from a little below it.
+float skyLightFrom(vec3 light, vec3 ref, vec3 up) {
+  float r = max(uSkySunSize, 1e-3);
+  return smoothstep(-2.0 * r, 0.0, dot(light, up) - min(dot(light, ref), 0.0));
 }
 
 // The sun's colour seen through the air at an elevation whose sine is `sine`: the GLSL twin
@@ -268,7 +295,8 @@ vec3 skySpaceAir(float haze, float sine) {
 
 // The open sea seen from space along `dir`, where its up is `up`: deep blue as the sun lights
 // it there, reflecting more of the sky the more it is seen edge on, and the sun's glint off
-// its waves, broad, in the sun's colour there. Unhazed (skyFromSpaceOver).
+// its waves, broad, in the sun's colour there, only while the sun is up there. Unhazed
+// (skyFromSpaceOver).
 vec3 skySpaceSea(vec3 dir, vec3 up) {
   float sine = dot(uSkySunDirection, up);
   float sun = max(sine, 0.0);
@@ -278,7 +306,7 @@ vec3 skySpaceSea(vec3 dir, vec3 up) {
   deep *= deep / max(max(deep.r, max(deep.g, deep.b)), 1e-4);
   vec3 body = SKY_SPACE_SEA * deep * (0.2 + 0.8 * sun);
   vec3 sky = uSkyZenithColor * skySunlit(up);
-  float glint = pow(max(dot(reflect(dir, up), uSkySunDirection), 0.0), SKY_SPACE_GLINT.x);
+  float glint = pow(max(dot(reflect(dir, up), uSkySunDirection), 0.0), SKY_SPACE_GLINT.x) * skySunDiscUp(sine);
   return mix(body, sky, reflected) + skySunColorAt(sine) * glint * SKY_SPACE_GLINT.y * (1.0 + 4.0 * edgeOn);
 }
 

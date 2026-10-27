@@ -36,18 +36,22 @@ void main() {
   float y = dot(dir, uSkyUp);
 
   // The flat caps are shaded where the ray meets their plane, exactly; from above, beyond the
-  // scene, where it meets them on the globe, as the sky's own sea.
+  // scene, where it meets them on the globe, as the sky's own sea. From below, level under
+  // the camera (globeCameraUp), as the background's view in the water: far off the globe
+  // tilts the field's up away.
   #if defined(STAGE_SURFACE)
   float planeAltitude = altitude;
   #else
   float planeAltitude = altitude + uSkyOceanDepth;
   #endif
-  vec3 reach = planeAltitude > 0.0 ? skyOceanReach(cameraPosition, dir, planeAltitude) : vec3(-planeAltitude / max(abs(y), 1e-6), 0.0, 0.0);
+  vec3 reach = planeAltitude > 0.0 ? skyOceanReach(cameraPosition, dir, planeAltitude) : vec3(-planeAltitude / max(abs(dot(dir, globeCameraUp())), 1e-6), 0.0, 0.0);
   vec3 world = cameraPosition + dir * reach.x;
   // Sunk under a camera far off (stage-vertex), the plane bends back up toward the scene,
   // where a ray that crossed it crosses it again, from the other side: only the crossing
-  // from the camera's side draws. The planes' triangles face up.
-  bool fromBehind = gl_FrontFacing != (planeAltitude > 0.0);
+  // from the camera's side draws. The planes' triangles face up. From below a plane, which
+  // is level under the camera (`reach`), only a ray rising over that level reaches it: far
+  // off, the sunk plane still meets rays that do not, down to the field's level.
+  bool fromBehind = gl_FrontFacing != (planeAltitude > 0.0) || (planeAltitude <= 0.0 && dot(dir, globeCameraUp()) <= 0.0);
   #ifdef STAGE_CURVED_DEPTH
   // At the sea's own depth where it lies on the globe, which a relief beyond the scene, on
   // the globe too, meets. Over the disc the globe is the plane the geometry lies on.

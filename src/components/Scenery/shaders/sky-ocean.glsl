@@ -219,8 +219,9 @@ float skyOceanLight(float depth) {
 // Where skyOceanStaged tests a view ray from a view's `origin`: how far along it, the level it
 // tests (the surface from above the water, else the seabed). From above it, on the curved sea
 // (skyOceanReach): a caller that has reached that level already passes its own to
-// skyOceanStagedAlong instead.
-float skyOceanStagedReach(vec3 dir, vec3 origin) {
+// skyOceanStagedAlong instead. `met` is whether the ray meets that level, not only grazes
+// its curve.
+float skyOceanStagedReach(vec3 dir, vec3 origin, out bool met) {
   float altitude = skyOceanViewAltitude(origin);
   bool surface = altitude > 0.0 && uSkyOceanWater > 0.5;
   float height = surface ? altitude : altitude + uSkyOceanDepth;
@@ -228,9 +229,18 @@ float skyOceanStagedReach(vec3 dir, vec3 origin) {
   // is the camera, or straight along up from it over the disc, where up is the camera's.
   // One return: the D3D compiler takes an early one for an uninitialised value.
   float t = -height / max(abs(dot(dir, globeCameraUp())), 1e-6);
-  if(height > 0.0)
-    t = skyOceanReach(origin, dir, height).x;
+  met = true;
+  if(height > 0.0) {
+    vec3 reach = skyOceanReach(origin, dir, height);
+    t = reach.x;
+    met = reach.z < 0.5;
+  }
   return t;
+}
+
+float skyOceanStagedReach(vec3 dir, vec3 origin) {
+  bool met;
+  return skyOceanStagedReach(dir, origin, met);
 }
 
 // skyOceanStaged, from where the ray meets the level it tests, `t` along it
@@ -296,8 +306,10 @@ vec4 skyOceanOverVoid(vec4 layer, vec3 dir) {
   return vec4(layer.rgb + skyOceanVoid(dir) * (1.0 - layer.a), 1.0);
 }
 
-// The seabed at `world`, `depth` under the surface, facing `up` (the slope it lies on):
-// lit by the scene's lights, and dimmed by the water over it. ⚠️ Derivatives.
+// The seabed at `world`, `depth` under the surface, facing `up` (its up there, globeUpAt):
+// lit by the scene's lights, and dimmed by the water over it. The lights are the field's:
+// far round the Earth, where the sun has set, it is dark as by night, as the relief's ground
+// is (skyDayFrom). ⚠️ Derivatives.
 vec3 skyOceanBed(vec3 world, vec3 up, float depth) {
   vec3 position = (viewMatrix * vec4(world, 1.0)).xyz;
   vec3 normal = normalize(mat3(viewMatrix) * up);
@@ -305,7 +317,7 @@ vec3 skyOceanBed(vec3 world, vec3 up, float depth) {
   #ifdef SURFACE_DETAIL
   albedo *= surfaceDetail(normal, world, position, 0.0, true);
   #endif
-  vec3 lit = sceneBlinnPhong(albedo, uSkyOceanBedSpecular, uSkyOceanBedShininess, uSkyOceanBedAmbient, position, normal);
+  vec3 lit = sceneBlinnPhong(albedo, uSkyOceanBedSpecular, uSkyOceanBedShininess, uSkyOceanBedAmbient, position, normal) * skyDayFrom(uSkyUp, up);
   // The sky's own scale is applied to everything it draws, last; a lit surface keeps the scene's.
   return lit * waterFogDim(depth, uSkyOceanFogDensity) / max(uSkyIntensity, 1e-4);
 }
@@ -390,13 +402,19 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   // (globeCameraLook): far off, into the field's frame, it fell below the camera's horizon.
   r -= 2.0 * min(dot(r, wave.up), 0.0) * wave.up;
   r = globeTurnFrom(r, wave.up, globeCameraLook());
-  vec3 surface = oceanShade(normal, V, waterColor, skySurfaceAt(normalize(r), blend, 0.0), fresnel, tonalReflect, tonalSpec, wave.rough);
+  // The glint is the scene's light's, which is the field's: far round the Earth only while it
+  // stands over the sea's horizon there (skyLightFrom).
+  float glint = skyLightFrom(normalize(uSunDirection), uSkyUp, wave.up);
+  vec3 surface = oceanShade(normal, V, waterColor, skySurfaceAt(normalize(r), blend, 0.0), fresnel, tonalReflect, tonalSpec * glint, wave.rough);
 
   float foamFar;
   float coverage = max(oceanWindFoam(wave.slope, wave.height), oceanContactFoam(p, uTime));
   float foamBlend = oceanFoam(wave.np, texel, coverage, foamFar);
   float foamOpacity = foamBlend * (1.0 - clamp(foamFar * OCEAN_FOAM_FAR_FADE, 0.0, 1.0));
   surface = mix(surface, uFoamColor * night, foamOpacity);
+  // Lit as the sky the camera sees is (its daylight, its reflection): far round the Earth,
+  // where the sun has set, dark as by night (skyDayFrom).
+  surface *= skyDayFrom(globeCameraLook(), wave.up);
 
   // Far off, where its detail has faded, and from a few kilometres up, the water hides what lies under it.
   float above = skyOceanCameraAltitude();
@@ -426,11 +444,12 @@ vec3 skyOceanUnderside(vec3 delta, vec3 up, float texel, float dist, vec3 dir, f
 
 // What is seen from `origin`, in the water, along `dir`, as a layer over the void beyond
 // the seabed (premultiplied): the surface's underside above, the seabed below, water all
-// round: `bed` as shaded where the view reaches it, `tBed` along (skyOceanBedReach).
+// round: `bed` as shaded where the view reaches it, `tBed` along (skyOceanBedReach). Both
+// level under the camera (globeCameraUp): far off the globe tilts the field's up away.
 // ⚠️ Derivatives.
 vec4 skyOceanInWaterOver(vec3 origin, vec3 dir, float blend, float tBed, vec3 bed) {
   float altitude = skyOceanViewAltitude(origin);
-  float y = dot(dir, uSkyUp);
+  float y = dot(dir, globeCameraUp());
   float ay = max(abs(y), 1e-6);
   float wall = skyOceanCutawayWall(origin, dir);
 
@@ -461,13 +480,13 @@ bool skyOceanSeesBed(vec3 origin) {
 
 // Where the background's view along `dir` from `origin` reaches the seabed: x along it, z
 // 1 where it misses it (skyOceanReach). From in the water (`inWater`) straight to its
-// plane, the mirrored hit for a ray going up so the derivatives stay continuous; else as
-// skyOceanReach finds it. The bed is shaded once there (skyOceanBed): each call compiles a
-// full copy of its detail.
+// plane, level under the camera (globeCameraUp), the mirrored hit for a ray going up so the
+// derivatives stay continuous; else as skyOceanReach finds it. The bed is shaded once there
+// (skyOceanBed): each call compiles a full copy of its detail.
 vec3 skyOceanBedReach(vec3 origin, vec3 dir, bool inWater) {
   float altitude = skyOceanViewAltitude(origin);
   if(inWater)
-    return vec3(max(altitude + uSkyOceanDepth, 0.0) / max(abs(dot(dir, uSkyUp)), 1e-6), 0.0, 0.0);
+    return vec3(max(altitude + uSkyOceanDepth, 0.0) / max(abs(dot(dir, globeCameraUp())), 1e-6), 0.0, 0.0);
   return skyOceanReach(origin, dir, altitude + uSkyOceanDepth);
 }
 
@@ -552,12 +571,15 @@ SkyOceanStagedView skyOceanStagedView(vec3 dir, vec3 origin) {
   float dy = fwidth(y);
   // The ray's reach found once for both tests. Kept a few pixels inside the stage's rim, so
   // the rim still has the seabed behind it. Without a seabed there is nothing to leave to
-  // the stage, nor from inside an occupant's.
-  float stagedAt = skyOceanStagedReach(dir, origin);
+  // the stage, nor from inside an occupant's. From in the water a ray that only grazes the
+  // seabed's curve, just under the level, meets no stage: nothing lies under the water's
+  // layer to show there, so it is the water's own.
+  bool met;
+  float stagedAt = skyOceanStagedReach(dir, origin, met);
   bool staged = skyOceanStagedAlong(dir, origin, stagedAt, 4.0, false);
   bool surely = skyOceanStagedAlong(dir, origin, stagedAt, 8.0, true);
   SkyOceanStagedView view;
-  view.staged = staged && uSkyOceanSeabed > 0.5 && uSkyOceanBuried < 0.5;
+  view.staged = staged && (met || !skyOceanNeedsWaterView(origin)) && uSkyOceanSeabed > 0.5 && uSkyOceanBuried < 0.5;
   view.skip = view.staged && surely;
   view.below = y < (uSkyCurvature > 0.0 ? skyHorizon(dir) - 2.0 * dy : 0.0);
   return view;
@@ -574,7 +596,7 @@ bool skyOceanShowsVoid(vec3 dir, vec3 origin, SkyOceanStagedView staged) {
     return false;
   bool water = skyOceanNeedsWaterView(origin);
   vec3 reach = skyOceanBedReach(origin, dir, water);
-  bool floor = water ? dot(dir, uSkyUp) <= 0.0 : skyOceanFromAirReach(origin, dir, reach).y < 0.5;
+  bool floor = water ? dot(dir, globeCameraUp()) <= 0.0 : skyOceanFromAirReach(origin, dir, reach).y < 0.5;
   return floor && skyOceanFloorShown(skyOceanCutawayAlong(origin, origin + dir * reach.x)) < 1.0;
 }
 

@@ -570,11 +570,15 @@ and the sea hold still against each other as the camera moves or turns.
   globe part by `d² / 2R`, about 5 m at 8 km from its point. `UtmPosition` and
   `Wgs84Position` place flat ([world.md, For a host](./world.md#for-a-host)).
 - **Land past the horizon stays behind.** Where the triangles miss the curved sea, the
-  relief brings land in front of the sea it should clear. A tile holds only its own ground,
-  so it does so only where the sea is met within two of its cells, or over ground of the
-  same tile; otherwise the sea is met over open water well in front, and the land lies
-  past the horizon. (Judged by the fragment's own height alone, the UK's coast showed as
-  bright streaks below the horizon from 300 km off.)
+  relief brings land in front of the sea it should clear. Where the tile holds the point the
+  view meets the sea, its ground there decides: land, or open water with the land past the
+  horizon, reached only under the sea where the coarse tiles' chords sag. Where it does
+  not, land met within two of its cells of the sea stands for that point; farther, the sea
+  is met over open water well in front. Land past the horizon is discarded rather than left
+  for the stage's sea to hide by depth: the stage leaves a few pixels at the horizon to the
+  background, and claims nothing far off or from space, so tiles behind the Earth's bulge
+  showed there as dark dashes (2026-10-27). (Judged by the fragment's own height alone, the
+  UK's coast showed as bright streaks below the horizon from 300 km off.)
 
 Before the globe (2026-10-25) the sky lowered its sea beyond a flat disc, measured along
 each view's level line from where the view left the disc. Seen from far off to one side

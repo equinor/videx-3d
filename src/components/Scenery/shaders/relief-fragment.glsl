@@ -190,8 +190,9 @@ void main() {
   vec2 ground = reliefGround(lonLat, lod, bed);
   #else
   // The sea along the view, from above the water: both for the stage's test below and for
-  // which of the sea and the ground shows.
-  float sea = uSkyOceanWater > 0.5 && altitude > 0.0 ? skyOceanReach(cameraPosition, dir, altitude).x : 0.0;
+  // which of the sea and the ground shows; z 1 where the view only grazes it (skyOceanReach).
+  vec3 seaHit = uSkyOceanWater > 0.5 && altitude > 0.0 ? skyOceanReach(cameraPosition, dir, altitude) : vec3(0.0, 0.0, 1.0);
+  float sea = seaHit.x;
   // Only taken from above the water, with water: where the stage's test reaches the sea.
   bool staged = skyOceanStagedAlong(dir, cameraPosition, sea, 1.0, false);
   // The tile's normal, along true east, up and true south where it lies on the globe.
@@ -221,6 +222,9 @@ void main() {
   vec3 position = (viewMatrix * vec4(world, 1.0)).xyz;
   vec3 albedo = reliefAlbedo(height, ground.y, look);
   vec3 color = sceneBlinnPhong(albedo, under ? uSkyOceanBedSpecular : RELIEF_LAND_SPECULAR, under ? uSkyOceanBedShininess : RELIEF_LAND_SHININESS, uSkyOceanBedAmbient, position, normalize(mat3(viewMatrix) * normal));
+  // The scene's lights are the field's: far round the Earth, where the sun has set, the
+  // ground is dark as by night (skyDayFrom).
+  color *= skyDayFrom(uSkyUp, up);
   // From high up, as the sun lights it where it lies (skyFromSpaceOver): the same for every
   // pixel, so the branch is uniform.
   bool fromSpace = skyFromSpace() > 0.0;
@@ -251,6 +255,10 @@ void main() {
   if(reliefOnOccupant(xz))
     seabed = 1.0;
   #endif
+  // Land the view reaches only through the sea's surface (met, not grazed) lies past the
+  // horizon, behind the globe's bulge: left to what the sea draws in front of it, whether a
+  // stage's or the background's (`clears`, below).
+  bool beyond = false;
   if(under && water) {
     // Through the water over it, from where the view enters it.
     color *= waterFogDim(-height, uSkyOceanFogDensity);
@@ -262,13 +270,18 @@ void main() {
   } else if(altitude > 0.0) {
     color = skyFromSpaceOver(reliefThroughAir(color, dir, dist, blend), lit, world);
     // Also where the land only just clears the sea: there the two depths tie, and the sea
-    // won. The tile holds its own ground only. Land met within a couple of its cells of the
-    // sea stands for the sea's point; past that, the ground there decides when the tile
-    // holds it, and else the sea is met over open water well in front: the land lies past
-    // the horizon, and stays behind.
-    bool clears = height >= 0.0 && (dist - sea < 2.0 * reliefTileCell() || reliefTileClearsAt(cameraPosition + dir * sea));
+    // won. Where the tile holds the point the view meets the sea, its ground there decides:
+    // land in front of the sea, or open water, and the land met past it lies past the
+    // horizon, reached only under the sea where the coarse tiles' chords sag. Where it does
+    // not, land met within a couple of its cells of the sea stands for the sea's point, and
+    // past that the sea is met over open water well in front. Land past the horizon used to
+    // keep its own depth for the stage's sea to hide, but the stage leaves a few pixels at
+    // the horizon to the background, and none far off or from space.
+    float ground = reliefTileGroundAt(cameraPosition + dir * sea);
+    bool clears = height >= 0.0 && (ground > 0.5 || (ground < -0.5 && dist - sea < 2.0 * reliefTileCell()));
     if(water && sea < dist * 1.0001 && clears)
       gl_FragDepth = reliefDepthAt(dir, min(sea, dist) * 0.9999);
+    beyond = water && seaHit.z < 0.5 && sea < dist && !clears;
   }
   // Bitten through: the void, as the background draws it through the gap.
   if(seabed < 1.0)
@@ -291,7 +304,7 @@ void main() {
   // Once the derivatives above are taken. Seabed under water only where the stage's sea
   // covers it: past it the background's sea lies behind.
   bool past = under && water && altitude > 0.0 ? !staged : dist > uReliefReach;
-  if(seabed < 1e-3 || past || reliefTileSkirtHidden() || reliefTileLeftToOther(xz) || reliefCutAway())
+  if(seabed < 1e-3 || past || beyond || reliefTileSkirtHidden() || reliefTileLeftToOther(xz) || reliefCutAway())
     discard;
   #endif
 
