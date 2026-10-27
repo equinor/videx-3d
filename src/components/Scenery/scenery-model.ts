@@ -607,9 +607,9 @@ export function skyMoonlight(elevation: number) {
 export type SkyObserver = {
   /** the moment */
   date: Date;
-  /** degrees north. Default the enclosing `World`'s origin's */
+  /** degrees north. Default the enclosing `World`'s origin's, or without one its stage's relief frame's */
   latitude?: number;
-  /** degrees east. Default the enclosing `World`'s origin's */
+  /** degrees east. Default the enclosing `World`'s origin's, or without one its stage's relief frame's */
   longitude?: number;
 };
 

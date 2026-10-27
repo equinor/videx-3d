@@ -467,9 +467,9 @@ export const SceneryStageReliefTiles = ({
           geoReliefTileHeightAt(tile, eye.longitude, eye.latitude, true);
     }
     if (cameraGround) cameraGround.current = ground;
-    // Under it, the skirts are seen from below, where there are no cracks to close.
-    material.uniforms.uReliefCameraUnder.value =
-      ground !== null && y < ground ? 1 : 0;
+    // Under it, nothing of the relief higher than the camera is seen (reliefTileHiddenFromBelow).
+    const under = ground !== null && y < ground;
+    material.uniforms.uReliefCameraUnder.value = under ? 1 : 0;
     // In it, above the sea's own seabed, the camera is in rock: the sky draws the void
     // (SceneryMaterial.oceanBuried), and none of the relief is drawn. Chosen and streamed still.
     const buried = ground !== null && y <= ground && y > level - sky.oceanDepth;
@@ -543,14 +543,13 @@ export const SceneryStageReliefTiles = ({
       pixelsPerUnit: pixelsPerUnit(camera, size.height * viewport.dpr),
       pixelError,
       // Under the ground the tiles' tops face away: their shading is not seen.
-      cellPixels:
-        ground !== null && y < ground
-          ? undefined
-          : {
-              cells: RELIEF_TILE_CELLS,
-              pixels: cellPixels,
-              minSlope: CELL_MIN_SLOPE,
-            },
+      cellPixels: under
+        ? undefined
+        : {
+            cells: RELIEF_TILE_CELLS,
+            pixels: cellPixels,
+            minSlope: CELL_MIN_SLOPE,
+          },
       maxDepth: MAX_DEPTH,
       info,
       split: streaming.split,
@@ -600,6 +599,7 @@ export const SceneryStageReliefTiles = ({
     const drops = skirts.array as Float32Array;
     let count = 0;
     let deepest = 0;
+    let lowest = Infinity;
     for (const key of selection.draw) {
       if (count >= SKY_RELIEF_MAX_TILES) break;
       const tile = streamer.get(key);
@@ -607,6 +607,7 @@ export const SceneryStageReliefTiles = ({
       if (!tile || slot === undefined || slot < 0) continue;
       const [depth] = tileAddress(key);
       deepest = Math.max(deepest, depth);
+      lowest = Math.min(lowest, level + tile.min);
       geoTileOffsets(globe, key, array, 4 * count, chiArray, 3 * count);
       array[4 * count + 2] = depth;
       array[4 * count + 3] = slot;
@@ -683,7 +684,9 @@ export const SceneryStageReliefTiles = ({
       }
     }
     subset.instanceCount = inStage;
-    if (buried) {
+    // Under the ground and below all of it drawn, every pixel would be dropped
+    // (reliefTileHiddenFromBelow): the void's, deep under the field, costs nothing.
+    if (buried || (under && y < lowest)) {
       geometry.instanceCount = 0;
       subset.instanceCount = 0;
     }

@@ -27,6 +27,7 @@ import {
 import { precompile, PRECOMPILE_PRIORITY } from '../../rendering/precompile';
 import { surfaceDetailKey } from '../../sdk/materials/surface-detail';
 import {
+  type GeoFrame,
   geoFrameAt,
   geoFrameLocation,
   placeGeoFrame,
@@ -178,7 +179,8 @@ export type SceneryProps = {
   /**
    * Where and when the sky is seen from: the sun and the moon — with its phase, up by
    * day too — are then the real ones for that moment and place, and so are the stars and
-   * the planets. Inside a `World`, a date alone will do: the place is its origin's.
+   * the planets. Inside a `World`, a date alone will do: the place is its origin's; without
+   * one, a `SceneryStage`'s relief `frame` gives it the same way.
    * `sun.azimuth` and `elevation` are ignored while it is valid; without one, they set the
    * sun, the moon is a full one opposite it and the stars are procedural.
    */
@@ -186,7 +188,11 @@ export type SceneryProps = {
   colors?: SkyColors;
   /** the world's up direction. Default `[0, 1, 0]` */
   up?: Vec3;
-  /** compass north, i.e. azimuth 0. Default `[0, 0, -1]` (see `CRS.utmToWorld`) */
+  /**
+   * compass north, i.e. azimuth 0. Default true north at the origin of the `World`'s frame,
+   * or without one a `SceneryStage`'s relief `frame` — the frame the globe lies on the Earth
+   * by; with neither, `[0, 0, -1]` (see `CRS.utmToWorld`)
+   */
   north?: Vec3;
   /** scales the whole sky: background, environment and light probe. Default 1 */
   intensity?: number;
@@ -377,17 +383,29 @@ export const Scenery = ({
   );
   const cutaway = features.cutaway;
 
-  // The World's place, for an observer that gives only a date.
+  // Where the sky lies on the Earth: the World's frame, or without one the frame a stage
+  // reads its relief in (SceneryOceanState.frame). Its place is an observer's that gives only
+  // a date. Kept as a key, so a stage's frame made anew changes nothing.
   const world = useWorld();
-  const worldFrame = world?.frame ?? null;
-  const worldPlace = useMemo(
-    () => (worldFrame ? geoFrameLocation(worldFrame) : null),
-    [worldFrame],
+  const [stageFrameKey, setStageFrameKey] = useState('');
+  const reportStageFrame = useCallback(
+    (frame: GeoFrame | null) =>
+      setStageFrameKey(frame ? JSON.stringify(frame) : ''),
+    [],
+  );
+  const stageFrame = useMemo(
+    () => (stageFrameKey ? (JSON.parse(stageFrameKey) as GeoFrame) : null),
+    [stageFrameKey],
+  );
+  const geoFrame = world?.frame ?? stageFrame;
+  const geoPlace = useMemo(
+    () => (geoFrame ? geoFrameLocation(geoFrame) : null),
+    [geoFrame],
   );
   const located = observer && {
     date: observer.date,
-    latitude: observer.latitude ?? worldPlace?.latitude,
-    longitude: observer.longitude ?? worldPlace?.longitude,
+    latitude: observer.latitude ?? geoPlace?.latitude,
+    longitude: observer.longitude ?? geoPlace?.longitude,
   };
   // Primitives, so an observer object made each render recomputes nothing.
   const observing = skyObserverValid(located);
@@ -455,16 +473,16 @@ export const Scenery = ({
   const ground = toHex(colors?.ground ?? sceneryDefaults.colors.ground);
   const nadir = toHex(colors?.nadir ?? sceneryDefaults.colors.nadir);
   const [upX, upY, upZ] = up ?? DEFAULT_UP;
-  // In a World, compass north is true north at its origin: its map's grid north turned by
-  // the map's convergence there.
+  // On the Earth (a World's frame, or a stage's), compass north is true north at the frame's
+  // origin: its map's grid north turned by the map's convergence there, as the globe's.
   const trueNorth = useMemo((): Vec3 | null => {
-    if (!worldFrame || !worldPlace) return null;
+    if (!geoFrame || !geoPlace) return null;
     const { rotation } = placeGeoFrame(
-      geoFrameAt(worldPlace.longitude, worldPlace.latitude),
-      { projection: worldFrame.projection, origin: worldFrame.origin },
+      geoFrameAt(geoPlace.longitude, geoPlace.latitude),
+      { projection: geoFrame.projection, origin: geoFrame.origin },
     );
     return [-Math.sin(rotation), 0, -Math.cos(rotation)];
-  }, [worldFrame, worldPlace]);
+  }, [geoFrame, geoPlace]);
   const [northX, northY, northZ] = north ?? trueNorth ?? DEFAULT_NORTH;
 
   const abyssOptions: SceneryAbyssProps | null = features.abyss;
@@ -868,6 +886,7 @@ export const Scenery = ({
             ready,
             stage: addStage,
             relief: progress.relief,
+            frame: reportStageFrame,
           }
         : null,
     [
@@ -885,6 +904,7 @@ export const Scenery = ({
       ready,
       addStage,
       progress,
+      reportStageFrame,
     ],
   );
 
@@ -1204,12 +1224,12 @@ export const Scenery = ({
     () => provideGlobe?.(material.globe),
     [provideGlobe, material],
   );
-  // And it lies on the Earth where the World says.
+  // And it lies on the Earth where the World, or a stage, says.
   useLayoutEffect(() => {
-    if (!worldFrame) return;
-    material.globe.setFrame(worldFrame);
+    if (!geoFrame) return;
+    material.globe.setFrame(geoFrame);
     return () => material.globe.setFrame(null);
-  }, [material, worldFrame]);
+  }, [material, geoFrame]);
 
   useLayoutEffect(() => {
     if (water) material.linkOcean(water);

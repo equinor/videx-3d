@@ -14,8 +14,7 @@ flat varying vec2 vReliefTileLongitude;
 flat varying vec3 vReliefTileLatitude;
 flat varying vec2 vReliefTileDepthCell;
 varying vec3 vReliefEast;
-varying float vReliefSkirt;
-varying float vReliefSkirtTop;
+flat varying float vReliefSkirt;
 
 // The height at `node` of the tile's texel grid: bilinear between the four nodes around it
 // (32-bit floats, which are not filtered).
@@ -68,13 +67,15 @@ float reliefTileGroundAt(vec3 p) {
   return reliefTileHeightAt(node) >= 0.0 ? 1.0 : 0.0;
 }
 
-// A skirt only closes a crack seen from above the ground. From under the ground the tiles'
-// tops face away, and a skirt would show as a line on the void's lid — but not where the
-// ground lies deeper than the camera (a trench seen from the void), whose top it sees.
-// Whether the camera stands over the ground cannot be told from the skirt alone: in a
-// fjord the crack up a cliff lies above it.
-bool reliefTileSkirtHidden() {
-  return uReliefCameraUnder > 0.5 && vReliefSkirt > 0.0 && globeCameraHeight() < vReliefSkirtTop;
+// From under the ground, nothing of the relief higher than the camera is seen: the rock
+// lies in front of it. A skirt only closes a crack seen from above, and would show as a
+// line on the void's lid; a top facing the camera there (a steep slope) is seen through
+// rock. What lies deeper than the camera (a trench seen from the void) is seen from above,
+// cracks and all, and kept. Whether the camera stands over the ground cannot be told from
+// the height alone: in a fjord the crack up a cliff lies above it. `height` is the top's
+// at the pixel: on a skirt, the edge it hangs from.
+bool reliefTileHiddenFromBelow(float height) {
+  return uReliefCameraUnder > 0.5 && globeCameraHeight() < uSkyOceanLevel + height;
 }
 
 // The stage's area (SceneryStage `bounds`), min X/Z and max X/Z.

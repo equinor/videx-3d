@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react';
 import { Color, Object3D, Vector3 } from 'three';
+import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import type { SceneryMaterial } from './scenery-material';
 import type { SceneryReliefLoading } from './scenery-progress';
 
@@ -65,6 +66,12 @@ export type SceneryOceanState = {
   stage: (parts: Object3D) => () => void;
   /** tell the sky how a stage's relief tiles load (its `onProgress`), keyed by anything the stage keeps; null once gone */
   relief: (key: object, loading: SceneryReliefLoading | null) => void;
+  /**
+   * Tell the sky the frame a stage reads its relief in, outside a `World`; null once gone.
+   * The sky's globe then lies on the Earth there, and its true north and an observer's
+   * place are that frame's, as a `World`'s would be. Stable.
+   */
+  frame: (frame: GeoFrame | null) => void;
 };
 
 export const SceneryOceanContext = createContext<SceneryOceanState | null>(

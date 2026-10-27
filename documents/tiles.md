@@ -539,14 +539,26 @@ start-up only).
   occupant's seabed is under the camera, no deeper than the sea's own seabed (under that
   lies the void); so the sky knows the camera is under the ground anywhere the relief has
   data, and the lighting and the void follow.
-- **The skirts from below (built 2026-10-25):** no winding hides a skirt from below and
-  keeps it from above, as which face shows depends on which side of the edge the camera
-  is. A skirt pixel is dropped while the camera is under the ground where it is AND below
-  the edge the skirt hangs from (`reliefTileSkirtHidden`). Either test alone fails: in a
-  fjord a crack up a cliff lies above the camera, and from the void a deep trench (or
-  ground curved away far off) is seen from above, with its cracks. Measured from 500 m
-  under Volve: every skirt pixel gone (8.6 k), the tops of what lies deeper left; under
-  the coast 95 % of them gone, the rest of tiles curved below the camera.
+- **The skirts from below (built 2026-10-25; every pixel since 2026-10-27):** no winding
+  hides a skirt from below and keeps it from above, as which face shows depends on which
+  side of the edge the camera is. A relief pixel is dropped while the camera is under the
+  ground where it is AND below the top at that pixel — on a skirt, the edge it hangs from
+  (`reliefTileHiddenFromBelow`). Either test alone fails: in a fjord a crack up a cliff
+  lies above the camera, and from the void a deep trench (or ground curved away far off)
+  is seen from above, with its cracks. Measured from 500 m under Volve: every skirt pixel
+  gone (8.6 k), the tops of what lies deeper left; under the coast 95 % of them gone, the
+  rest of tiles curved below the camera.
+  - ⚠️ The test used to be for skirts only, told by an interpolated `vReliefSkirt > 0`.
+    From deep in the void (54 km down, looking level) a skirt 150–400 km off is a sliver
+    under a pixel, sampled just past its edge, where the interpolated value is 0 or
+    below: thin dashed lines along the tiles' edges on the lid. Now the test is by height,
+    for tops as well (one facing the camera from under the ground is seen through rock),
+    and `vReliefSkirt` is `flat`, from each triangle's last vertex (the provoking vertex
+    in WebGL 2), which the patch's index order makes a skirt's lower edge on a skirt and a
+    grid node on the grid (`tests/scenery-relief-tile-patch.test.ts`); the see-through
+    draw's leaving out of skirts (`reliefTileLeftToOther`) relies on it.
+  - Under the ground and below the lowest top of every tile drawn, every pixel would be
+    dropped: the tiles are not drawn at all, as when the camera is in rock (`buried`).
 - **Debug (built 2026-10-25):** `debug.relief`: `'tiles'` tints each tile by its depth
   and outlines it, `'layers'` colours each node by the layer that gave it (grey for the
   base; the tiles' layer ids are uploaded as a third texture, 1 byte a node). An

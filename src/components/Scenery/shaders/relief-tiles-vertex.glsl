@@ -36,9 +36,12 @@ flat varying vec2 vReliefTileLongitude;
 flat varying vec3 vReliefTileLatitude;
 // Its depth, and its cells' width along a meridian.
 flat varying vec2 vReliefTileDepthCell;
-// Above 0 on a skirt, and the world height of the tile's edge it hangs from.
-varying float vReliefSkirt;
-varying float vReliefSkirtTop;
+// 1 on a skirt, 0 on the grid: flat, from a triangle's last vertex (the provoking vertex in
+// WebGL 2), which the patch's index order makes a skirt's lower edge on every skirt's
+// triangle and a grid node on every other (createSceneryReliefTilePatch). Interpolated, a
+// skirt seen edge-on, a sliver under a pixel, is sampled past its edge, where the value
+// falls to 0 and below.
+flat varying float vReliefSkirt;
 #ifdef RELIEF_CUT_OCCUPANT
 // Where the ground lies, the curve's drop left out: the frame an occupant's cut is in.
 varying vec3 vReliefFlat;
@@ -57,7 +60,6 @@ float reliefTileLatitudeAt(vec3 chi, float t) {
 void main() {
   ivec2 node = ivec2(position.xz + 0.5) + 1;
   float height = texelFetch(uReliefTileHeights, ivec3(node, int(reliefTile.w + 0.5)), 0).r;
-  float top = height;
   height -= reliefSkirt * reliefTileSkirt;
   vec2 t = position.xz / uReliefTileCells;
   vec2 offset = vec2(reliefTileLatitudeAt(reliefTileChi, t.y), mix(reliefTile.x, reliefTile.y, t.x));
@@ -77,7 +79,6 @@ void main() {
   vReliefTileLatitude = reliefTileChi;
   vReliefTileDepthCell = vec2(reliefTile.z, abs(reliefTileChi.z - reliefTileChi.x) * uGlobe.x / uReliefTileCells);
   vReliefSkirt = reliefSkirt;
-  vReliefSkirtTop = uSkyOceanLevel + top;
   #ifdef RELIEF_CUT_OCCUPANT
   vReliefFlat = vec3(world.x, uSkyOceanLevel + height, world.z);
   #endif

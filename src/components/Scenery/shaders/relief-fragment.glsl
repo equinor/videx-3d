@@ -304,7 +304,7 @@ void main() {
   // Once the derivatives above are taken. Seabed under water only where the stage's sea
   // covers it: past it the background's sea lies behind.
   bool past = under && water && altitude > 0.0 ? !staged : dist > uReliefReach;
-  if(seabed < 1e-3 || past || beyond || reliefTileSkirtHidden() || reliefTileLeftToOther(xz) || reliefCutAway())
+  if(seabed < 1e-3 || past || beyond || reliefTileHiddenFromBelow(height) || reliefTileLeftToOther(xz) || reliefCutAway())
     discard;
   #endif
 

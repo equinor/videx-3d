@@ -358,13 +358,15 @@ export const SceneryStage = ({
   const tiled = !!relief?.layers.length && hasBed && !!reliefFrame;
 
   // A relief is placed by latitude and longitude: the globe lies on the Earth where its
-  // frame says, the World's (set by the Scenery) or, without a World, the relief's own.
+  // frame says, the World's (set by the Scenery) or, without a World, the relief's own,
+  // handed to the Scenery so its true north and observer's place are that frame's too.
   const ownFrame = !world && relief?.frame ? JSON.stringify(relief.frame) : '';
+  const reportFrame = ocean?.frame;
   useLayoutEffect(() => {
-    if (!sky || !ownFrame) return;
-    sky.globe.setFrame(JSON.parse(ownFrame) as GeoFrame);
-    return () => sky.globe.setFrame(null);
-  }, [sky, ownFrame]);
+    if (!reportFrame || !ownFrame) return;
+    reportFrame(JSON.parse(ownFrame) as GeoFrame);
+    return () => reportFrame(null);
+  }, [reportFrame, ownFrame]);
 
   const generator = useGenerator<SceneryReliefResponse>(sceneryRelief);
   // The first (coarsest) layer is the overview past the tiles, made the first time the

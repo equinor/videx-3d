@@ -40,7 +40,9 @@ projection and an origin; step 3, built 2026-10-26), and what needs it takes it 
 | `SceneryStage` `relief.frame` | the frame itself, when it gives none | reading the reliefs onto the scene's X/Z |
 
 Without a `World` each still takes its own, as before: a `UtmArea` is then the scene's
-frame, the observer gives its place and the relief its `frame`.
+frame, the observer gives its place and the relief its `frame`. A `SceneryStage`'s relief
+`frame` then stands in for the `World`'s above the surface: the globe lies on the Earth
+there, and the `Scenery`'s true north and an observer's place are its (since 2026-10-27).
 
 Above the surface the sky draws the Earth as a fixed globe (step 2, built 2026-10-26): a
 sphere whose centre lies fixed below the scene and whose cap over a disc about it (the
@@ -142,7 +144,7 @@ the scene's ([Step 3 in detail](#10-step-3-in-detail-fields-placed-on-the-earth)
 | Chunks, wells, surfaces | in `UtmArea` | unchanged, inside their field's `UtmArea` |
 | `SceneryAnchor` | places flat content on the globe, where it is, rigidly (step 2) | ✅ places as the globe places the ground there (`Globe.tangent`), as a placed `UtmArea` is; for content without a frame of its own; takes the `World`'s globe outside the `Scenery` |
 | Sky curve | a fixed globe, its cap over the chosen field cut flat (step 2) | the same; its disc from the chosen field's stage |
-| Sky observer | given by the host | ✅ its place from the `World`'s origin when it gives only a date; the date the host's |
+| Sky observer | given by the host | ✅ its place from the `World`'s origin (or, without one, the stage's relief frame's) when it gives only a date; the date the host's |
 | Relief | read in the stage's `frame`, the scene's | ✅ the `World`'s frame by default, the chosen field's, where its column meets it exactly; its own frame waits for step 6 |
 | Relief tiles | keyed in the frame's X/Z, roots of 2097 km about its origin | keyed by latitude and longitude for the whole globe (step 6); until then as now, within one region |
 | `SceneryStage` | one stage, one occupant, at the scene's frame | as before, at the chosen field; a stage per field is step 7's |
@@ -655,10 +657,23 @@ as much. So the relief, `place`, `tangent`, `foot` and the placed fields switch 
 - **Read back the same way:** the ground under the camera from the camera's latitude and
   longitude (`globe.geographic`); the column's relief samples through `geoAt` (a sampler
   tile is its square and its cells along and across, `ReliefSamplerTile`).
-- **True north with a `World`:** the `Scenery`'s default `north` is true north at the
-  `World`'s frame (`placeGeoFrame`), so the sun stands where it does on the Earth. Without
-  a `World` the stage gives the globe its frame, but the `Scenery` cannot see it, and its
-  north stays grid north.
+- **True north with a `World`, or a stage's relief frame (2026-10-27):** the `Scenery`'s
+  default `north` is true north at the origin of the frame the globe lies on
+  (`placeGeoFrame`), so the sun stands where it does on the Earth. Without a `World` the
+  stage hands its relief `frame` to the `Scenery` (`SceneryOceanState.frame`), which sets
+  the globe's frame from it as from a `World`'s. Before, the stage set the globe's frame
+  itself and the `Scenery` could not see it: its north stayed grid north, and the whole sky
+  stood turned by the map's convergence (0.94° at Volve, up to about 3° at a UTM zone's edge
+  in the far north) — found by comparing the sky with an ephemeris (`astronomy-engine`) at
+  Volve and ten places around the Earth. With true north, Venus and six bright stars agree
+  at Volve to 0.02°. What is left far off is the globe's and the sky's own:
+  - **the stars and planets**, up to 0.4° on the far side: up and north there are the
+    conformal sphere's, matched at the field (0.03° in New York, Tokyo and at the poles;
+    0.4° in Cape Town, Rio, Sydney; a model of the sphere predicts each to 0.02°);
+  - **the sun**, 0.37° high everywhere at a 2.6° sun: its refraction at the observer
+    (`solarPosition`) is in its one world direction;
+  - **the moon**, up to 1.8° far off: its direction is the observer's (topocentric), its
+    parallax not taken again elsewhere.
 - **With the globe off** (`globe: false`), `geodetic` is stereographic about the disc's
   centre, as the GPU draws it then, and `geographic` its inverse.
 - **Coarser over flat ground, by one step.** Over Volve's flat seabed, geographic tiles

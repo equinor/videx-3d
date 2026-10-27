@@ -60,7 +60,9 @@ const warped: [number, number] = [0, 0];
  * globe's disc's centre, its depth and its slot), a `reliefTileChi` (its north edge's,
  * middle's and south edge's latitude there: `Globe.sphereOffset`) and a `reliefTileSkirt`
  * (how far its skirt drops). Its triangles' diagonals run from node (i + 1, j) to
- * (i, j + 1), as `buildReliefTile` measures a tile's error.
+ * (i, j + 1), as `buildReliefTile` measures a tile's error; each triangle's last vertex
+ * is a skirt's lower edge on a skirt and a grid node on the grid, which the shader's flat
+ * `vReliefSkirt` relies on.
  */
 export function createSceneryReliefTilePatch(
   cells: number,
@@ -102,7 +104,9 @@ export function createSceneryReliefTilePatch(
     const top1 = j1 * n + i1;
     const low0 = n * n + k;
     const low1 = n * n + ((k + 1) % ring.length);
-    // Facing out: a crack shows the farther tile's skirt from outside.
+    // Facing out: a crack shows the farther tile's skirt from outside. Each ends on its
+    // lower edge, as the grid's end on the grid: the shader tells a skirt by its
+    // triangle's last vertex (`vReliefSkirt`, flat).
     indices.push(top0, top1, low0, top1, low1, low0);
   }
   const geometry = new InstancedBufferGeometry();
