@@ -822,6 +822,8 @@ export const Sky = ({
 
   // Whether what the sky draws is compiled; until then the stand-in is drawn instead.
   const [ready, setReady] = useState(false);
+  // Whether what its bakes draw with is compiled: compiled after what it draws.
+  const [bakeReady, setBakeReady] = useState(false);
   // Stages hand over their parts, compiled with the sky's own (see SkyOceanState.stage).
   const stages = useRef(new Set<Object3D>());
   const [stageVersion, setStageVersion] = useState(0);
@@ -1297,7 +1299,7 @@ export const Sky = ({
   const [bakeProbe] = useState(() => new LightProbe());
 
   // After the effects above set the defines: anything new compiles in the background while
-  // the stand-in is drawn, and the bakes wait for it.
+  // the stand-in is drawn, and the bakes wait for theirs, compiled after it.
   const own = useRef<Group>(null);
   const compiling = useRef('');
   useLayoutEffect(() => {
@@ -1325,22 +1327,25 @@ export const Sky = ({
         : null,
       hasProbe ? bakeProbe : null,
     );
-    const pending = [
-      ...[group, ...stages.current].map(root =>
+    // What is drawn first, then what only bakes: without a RenderingPipeline the bakes
+    // draw with copies of the background's programs, which wait behind it.
+    const shown = [group, ...stages.current]
+      .map(root =>
         precompile(gl, root, sceneCamera, scene, 'scene', {
           priority: PRECOMPILE_PRIORITY.background,
           onProgress: progress.compiles.track(),
         }),
-      ),
-      baker.precompile(gl, progress.compiles.track()),
-    ].filter(wait => wait !== null);
-    if (pending.length === 0) {
-      setReady(true);
-      return;
-    }
-    setReady(false);
-    Promise.all(pending).then(() => {
-      if (compiling.current === key) setReady(true);
+      )
+      .filter(wait => wait !== null);
+    const bakes = baker.precompile(gl, progress.compiles.track());
+    setReady(shown.length === 0);
+    setBakeReady(bakes === null);
+    if (shown.length > 0)
+      Promise.all(shown).then(() => {
+        if (compiling.current === key) setReady(true);
+      });
+    bakes?.then(() => {
+      if (compiling.current === key) setBakeReady(true);
     });
     // The defines are read from the material: the props that set them are deps too.
   }, [
@@ -1837,7 +1842,7 @@ export const Sky = ({
               ? 'blocked'
               : 'due'
             : 'none',
-      { sky: ready, subsurface: subsurfaceReady },
+      { sky: bakeReady, subsurface: subsurfaceReady },
       captureInterval,
       captureMaxWait,
     );

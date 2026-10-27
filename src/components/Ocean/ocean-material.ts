@@ -145,6 +145,7 @@ export const DEFAULT_OCEAN_WATER_OPACITY = 0.7;
  */
 export const OCEAN_SURFACE_UNIFORMS = [
   'uTime',
+  'uOceanDetailOctaves',
   'uWindDirection',
   'uWindSpeed',
   'uSignificantHeight',
@@ -239,7 +240,6 @@ export class OceanMaterial extends ShaderMaterial {
       side: DoubleSide,
       defines: {
         OCEAN_WAVE_COUNT: waveCount,
-        OCEAN_DETAIL_OCTAVES: detailOctaves,
         OCEAN_CONTACT_COUNT: contactCount,
         ...(sectionPlane ? { OCEAN_SECTION: '' } : {}),
         ...(fence ? { OCEAN_FENCE: '' } : {}),
@@ -252,6 +252,7 @@ export class OceanMaterial extends ShaderMaterial {
         // merging a `ShaderLib` entry gets these for free; this one does not.
         ...UniformsUtils.clone(UniformsLib.fog),
         uTime: new Uniform(0),
+        uOceanDetailOctaves: new Uniform(detailOctaves),
         uWindDirection: new Uniform(new Vector2(1, 0).normalize()),
         uWindSpeed: new Uniform(10),
         uSteepness: new Uniform(0.7),

@@ -60,13 +60,15 @@ import {
 // The naked-eye planets (`PLANETS`); sky.glsl's `uSkyPlanets` has as many.
 const SKY_PLANET_COUNT = 5;
 
+// Octaves of the cloud band's noise.
+const SKY_CLOUD_BAND_OCTAVES = 5;
+
 // An empty rectangle: nothing is on a stage.
 const NO_STAGE = [1, 1, -1, -1] as const;
 
 /** The defines a material drawing the sky's sea takes over from the {@link SkyMaterial}. */
 export const SKY_SHARED_DEFINES = [
   'OCEAN_WAVE_COUNT',
-  'OCEAN_DETAIL_OCTAVES',
   'OCEAN_CONTACT_COUNT',
   ...SURFACE_DETAIL_DEFINES,
 ];
@@ -196,6 +198,8 @@ export class SkyMaterial extends ShaderMaterial {
             () => new Vector4(0, 0, 1, 99),
           ),
         ),
+        uSkyPlanetCount: new Uniform(0),
+        uSkyCloudBandOctaves: new Uniform(SKY_CLOUD_BAND_OCTAVES),
         uSkyStarCells: new Uniform<DataTexture | null>(null),
         uSkyStarList: new Uniform<DataTexture | null>(null),
         uSkySunRadiance: new Uniform(1),
@@ -261,6 +265,7 @@ export class SkyMaterial extends ShaderMaterial {
         uSkyAbyssWallRock: new Uniform<Texture | null>(null),
         // The grid their mesh is laid on (updateAbyssWallGrid): columns, rows and depth.
         uSkyAbyssWallGrid: new Uniform(new Vector3()),
+        uSkyAbyssWallTests: new Uniform(2),
         uSkyClouds: new Uniform(new Vector4()),
         uSkyCloudsColor: new Uniform(new Vector4(1, 1, 1, 1)),
         uSkyCloudsSeed: new Uniform(new Vector2()),
@@ -673,6 +678,10 @@ export class SkyMaterial extends ShaderMaterial {
       if (planet) value.set(...planet.direction, planet.magnitude);
       else value.w = 99;
     });
+    this.uniforms.uSkyPlanetCount.value = Math.min(
+      planets.length,
+      SKY_PLANET_COUNT,
+    );
   }
 
   dispose() {
@@ -1108,15 +1117,12 @@ export class SkyMaterial extends ShaderMaterial {
       this.uniforms[name] = water.uniforms[name];
     }
     const waves = water.uniforms.uWaveA.value.length;
-    const octaves = water.defines.OCEAN_DETAIL_OCTAVES;
     const contacts = water.contactCount;
     if (
       this.defines.OCEAN_WAVE_COUNT !== waves ||
-      this.defines.OCEAN_DETAIL_OCTAVES !== octaves ||
       this.defines.OCEAN_CONTACT_COUNT !== contacts
     ) {
       this.defines.OCEAN_WAVE_COUNT = waves;
-      this.defines.OCEAN_DETAIL_OCTAVES = octaves;
       this.defines.OCEAN_CONTACT_COUNT = contacts;
       this.needsUpdate = true;
     }

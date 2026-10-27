@@ -18,9 +18,6 @@
 #ifndef OCEAN_WAVE_COUNT
 #define OCEAN_WAVE_COUNT 16
 #endif
-#ifndef OCEAN_DETAIL_OCTAVES
-#define OCEAN_DETAIL_OCTAVES 4
-#endif
 // Brightness multiplier applied when the surface is viewed from below (the
 // underside, inside the water body) so looking up through the water reads
 // darker than looking down onto the sky-lit top. 1.0 disables the effect.

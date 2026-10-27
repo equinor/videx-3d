@@ -161,11 +161,11 @@ void main() {
   } else {
       #ifdef SKY_ABYSS_WALLS
     // The walls' fill stands in front of the lid here, or, from under their foot, the rock
-    // that runs on down below it (skyAbyssWallUnder): the background draws both, so it is
-    // left before the lid is shaded. Their faces are a mesh of their own, which hides the
+    // that runs on down below it (skyAbyssWallStartUnder): the background draws both, so it
+    // is left before the lid is shaded. Their faces are a mesh of their own, which hides the
     // lid by depth.
-    vec3 wallStart = skyAbyssWallStart(cameraPosition, dir);
-    if((wallStart.y > 0.0 && wallStart.x < dist) || skyAbyssWallUnder(cameraPosition, dir, wallStart) < dist)
+    vec4 wallStart = skyAbyssWallStartUnder(cameraPosition, dir);
+    if((wallStart.y > 0.0 && wallStart.x < dist) || wallStart.w < dist)
       discard;
     // From the void: the lid, as the background draws it.
     color = skyAbyssLid(cameraPosition, dir, dist, lidFootprint);

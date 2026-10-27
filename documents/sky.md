@@ -827,18 +827,30 @@ ShaderChunk.logdepthbuf_pars_fragment = ShaderChunk.logdepthbuf_pars_fragment.re
   while the sky's compiles fill all 19 of Chrome's compile threads.
 - So `precompile` keeps only a few programs compiling at once (`PRECOMPILE_SLOTS`, 4 on
   a 20-thread laptop), the rest queued: the stand-in first, the scene's own content next,
-  the sky's own programs, stages, bakes and cliffs last (`PRECOMPILE_PRIORITY`). Measured
-  fully cold: a host's material drawn while the sky compiles waits ~0.25 s instead of
-  ~1 s, the Direct3D compiling takes 22 s instead of 39 s in all (less contention), and
-  the sky shows at 64–67 s instead of 84 s. ⚠️ That is still late: the background and
-  the bakes' copy of it take ~50 s each in Direct3D's compiler, fully cold.
+  the sky's own programs, stages and cliffs after, and what only bakes last
+  (`PRECOMPILE_PRIORITY`). Measured fully cold: a host's material drawn while the sky
+  compiles waits ~0.25 s instead of ~1 s, the Direct3D compiling takes 22 s instead of
+  39 s in all (less contention), and the sky shows at 64–67 s instead of 84 s. ⚠️ That is
+  still late: the background takes ~23 s alone in Direct3D's compiler, fully cold.
+- Why: it is one program for every zone and feature, and Direct3D's compile time grows
+  about as its size to the power 2.5. Measured on its HLSL with `D3DCompile` itself
+  (2026-10-27): the abyss and its walls, the sea from the air, the clouds and the view in
+  the water are each a third to two thirds of it. So, with no change to what is drawn:
+  loops whose count Direct3D would copy out per iteration take it from a uniform
+  (`uOceanDetailOctaves`, `uSkyCloudBandOctaves`, `uSkyPlanetCount`), the seabed is
+  shaded once for the views from the air and in the water (`skyOceanBedReach`), and the
+  walls' two rock tests share one copy of their shape (`skyAbyssWallStartUnder`): the
+  background compiles ~30% faster (320 → 244 KB of bytecode), a stage's surface ~35%
+  and the sea surface layer ~42%. Splitting the program into passes is the next step.
 - The first frame that draws the background or a relief still stalls ~0.15–2 s
   (measured, fully cold): the driver's own compile, after Direct3D's, which nothing in
   WebGL can do ahead.
 - The bakes draw with the very programs the background and its surface layer do, so
   they cost no compile of their own — when both draw into a render target (a
   `RenderingPipeline`) and with the same lights (the sky's own directional light and
-  probe).
+  probe). Without one, three keys a program on the output's colour space too, so the
+  bakes take copies: those compile after what is drawn, and the sky shows before its
+  bakes are ready (they wait for theirs).
 - ⚠️ ANGLE on Direct3D compiles a program's pixel shader for one colour attachment,
   and again at its first draw into several. `OITRenderPass` draws into several with
   `mergeFront` or `tailSlices`, so the first frame that shows a stage's see-through

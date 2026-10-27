@@ -23,6 +23,9 @@ uniform vec2 uSkyStars; // brightness, and the share of the sky's cells holding 
 uniform mat3 uSkyStarFrame; // world direction -> the turning star sphere's
 uniform float uSkyObserved; // 1 with an observer: the catalogue's stars and the planets, over a faint procedural filler
 uniform vec4 uSkyPlanets[5]; // world direction, and apparent magnitude
+// How many of them are set: 0 without an observer. A uniform also keeps the loop over
+// them a loop in Direct3D.
+uniform int uSkyPlanetCount;
 uniform sampler2D uSkyStarCells; // each cell of a cube-face grid over the star sphere: its first entry, and count
 uniform sampler2D uSkyStarList; // each entry: the star's direction scaled by 2 + its B-V, and its magnitude
 uniform float uSkyHorizonBlend; // width of the horizon -> ground transition, in dot(dir, up)
@@ -196,7 +199,7 @@ vec3 skyCatalogue(vec3 s, float pixel, float sunElevation) {
 vec3 skyPlanets(vec3 dir, float pixel, float sunElevation) {
   const float colorIndex[5] = float[5](0.93, 0.82, 1.36, 0.83, 1.04);
   vec3 light = vec3(0.0);
-  for(int i = 0; i < 5; i++) {
+  for(int i = 0; i < uSkyPlanetCount; i++) {
     vec4 planet = uSkyPlanets[i];
     float shine = skyStarShine(planet.w) * skyStarSeen(planet.w, sunElevation);
     light += skyStarColor(colorIndex[i]) * skyPoint(dir, planet.xyz, shine * uSkyStars.x, pixel);
@@ -286,6 +289,7 @@ uniform vec2 uSkyCloudsSeed; // offset of the pattern
 // Radius of the deck's sphere about the Earth's centre and their thickness (world units); the
 // layers (0 deck, 1 band, 2 both); the band's distance (world units).
 uniform vec4 uSkyCloudsShape;
+uniform int uSkyCloudBandOctaves; // octaves of the band's noise (skyNoise3Fbm)
 // Most a cloud's core shifts against its outline, in cloud sizes.
 #define SKY_CLOUD_PARALLAX 0.3
 // How much they hide the sun, moon and stars behind them, at opacity 0.5 and up.
@@ -305,18 +309,19 @@ uniform vec4 uSkyCloudsShape;
 // parallel to it.
 #define SKY_CLOUD_GRAZE 0.15
 
-// skyNoise3 over five octaves, in [0, 1].
+// skyNoise3 over `uSkyCloudBandOctaves` octaves (5), in [0, 1]. A uniform count keeps the
+// loop a loop in Direct3D, rather than a copy per octave at each of its calls.
 float skyNoise3Fbm(vec3 p) {
   float sum = 0.0;
   float amp = 0.5;
   float norm = 0.0;
-  for(int o = 0; o < 5; o++) {
+  for(int o = 0; o < uSkyCloudBandOctaves; o++) {
     sum += amp * skyNoise3(p);
     norm += amp;
     p = p * 2.03 + vec3(17.1, 3.7, 9.2);
     amp *= 0.5;
   }
-  return sum / norm;
+  return sum / max(norm, 1e-4);
 }
 
 // The light where the clouds are, at their base.
@@ -627,6 +632,8 @@ uniform float uSkyAbyssWallFade; // the distance beyond their rim the hollow's l
 // How near, as a share of the way there, a view rising from under their foot may pass their
 // rock there and still go into it: about a pixel, so the rock overlaps the mesh's last edge.
 #define SKY_ABYSS_FOOT_OVERLAP 0.003
+// The rock tests skyAbyssWallStartUnder makes (2): a uniform, so they share one loop.
+uniform int uSkyAbyssWallTests;
 uniform float uSkyAbyssWallCover; // 1 while the seabed beyond the stage, which the background draws, hides what lies below it
 
 // Where a view along `dir` from `origin` goes below the lid: 0 from under it; -1 for never.
@@ -688,48 +695,51 @@ float skyAbyssWallInRock(vec3 p, float h) {
   return r > -skyAbyssWallLap() / uSkyAbyssWallGrid.x ? skyAbyssWallInto(p, h) : r;
 }
 
-// Where along `dir` from `origin` the walls can show: below the lid and past the plane they
+// Where along `dir` from `origin` the walls can show (xyz), and where a view rising from
+// under their foot goes into their rock (w). xyz: below the lid and past the plane they
 // are cut away up to (x, 1e30 for never); how far into their rock the view starts there,
 // above 0 where the fill shows and hides all beyond (y); 1 if it starts at the lid, from
 // above (z). Below their foot the camera is never in their rock, which is black there
-// anyway: a view from it rises to the hollow's opening or into that rock (skyAbyssWallUnder).
-vec3 skyAbyssWallStart(vec3 origin, vec3 dir) {
+// anyway: a view from it rises to the hollow's opening or into that rock. w: the rock
+// under the foot runs on down without a mesh, and is solid from where the view meets it;
+// 1e30 for never, or if the view passes into what the cut takes away first. Within about
+// a pixel of that rock counts as in it (SKY_ABYSS_FOOT_OVERLAP), so no crack shows between
+// it and the mesh's last edge.
+// The two rock tests take turns in one loop, its count a uniform (uSkyAbyssWallTests, 2):
+// Direct3D then compiles the walls' shape once, not once for each.
+vec4 skyAbyssWallStartUnder(vec3 origin, vec3 dir) {
   float lid = skyAbyssLidStart(origin, dir);
   float cut = skyAbyssWallCut(origin, dir);
-  if(lid < 0.0 || cut >= 1e29)
-    return vec3(1e30, -1.0, 0.0);
   float t = max(lid, cut);
   vec3 p = origin + dir * t;
   float h = dot(p, uSkyUp);
-  if(h > uSkyAbyssLevel + 1.0)
-    return vec3(1e30, -1.0, 0.0);
-  float r = t <= 0.0 && h < uSkyAbyssLevel - uSkyAbyssWallGrid.z ? -1.0 : skyAbyssWallInRock(p, h);
-  return vec3(t, r, lid > 0.0 && lid >= cut ? 1.0 : 0.0);
-}
-
-// Where a view along `dir` from `origin`, rising from under the walls' foot (`start`,
-// skyAbyssWallStart), is up to it outside the hollow: it went into their rock, which runs
-// on down without a mesh, and is solid from there; 1e30 for never, or if it passes into
-// what the cut takes away first. Within about a pixel of that rock counts as in it
-// (SKY_ABYSS_FOOT_OVERLAP), so no crack shows between it and the mesh's last edge.
-float skyAbyssWallUnder(vec3 origin, vec3 dir, vec3 start) {
-  float y = dot(dir, uSkyUp);
+  bool starts = lid >= 0.0 && cut < 1e29 && h <= uSkyAbyssLevel + 1.0;
   float foot = uSkyAbyssLevel - uSkyAbyssWallGrid.z;
-  float under = start.x < 1e29 ? foot - dot(origin + dir * start.x, uSkyUp) : 0.0;
-  float t = 1e30;
-  if(y > 0.0 && under > 0.0) {
-    float at = start.x + under / y;
-    if(at < skyAbyssWallCutEnd(origin, dir) && skyAbyssWallInRock(origin + dir * at, foot) > -SKY_ABYSS_FOOT_OVERLAP * at)
-      t = at;
+  bool atStart = starts && !(t <= 0.0 && h < foot);
+  float y = dot(dir, uSkyUp);
+  float under = starts ? foot - h : 0.0;
+  float at = t + under / max(y, 1e-6);
+  bool atFoot = y > 0.0 && under > 0.0 && at < skyAbyssWallCutEnd(origin, dir);
+  vec2 rock = vec2(-1.0, -1e30);
+  for(int i = 0; i < uSkyAbyssWallTests; i++) {
+    bool first = i == 0;
+    if(first ? atStart : atFoot) {
+      float r = skyAbyssWallInRock(first ? p : origin + dir * at, first ? h : foot);
+      if(first)
+        rock.x = r;
+      else
+        rock.y = r;
+    }
   }
-  return t;
+  vec3 start = starts ? vec3(t, rock.x, lid > 0.0 && lid >= cut ? 1.0 : 0.0) : vec3(1e30, -1.0, 0.0);
+  return vec4(start, atFoot && rock.y > -SKY_ABYSS_FOOT_OVERLAP * at ? at : 1e30);
 }
 
 // Whether the walls' face `t` along `dir` from `origin` is hidden: cut away, behind their
 // fill, or past where the view went into their rock under the foot.
 bool skyAbyssWallHidden(vec3 origin, vec3 dir, float t) {
-  vec3 start = skyAbyssWallStart(origin, dir);
-  return t < start.x || start.y > 0.0 || t > skyAbyssWallCutEnd(origin, dir) || t > skyAbyssWallUnder(origin, dir, start);
+  vec4 start = skyAbyssWallStartUnder(origin, dir);
+  return t < start.x || start.y > 0.0 || t > skyAbyssWallCutEnd(origin, dir) || t > start.w;
 }
 
 #ifndef SKY_OCEAN
@@ -979,7 +989,8 @@ vec3 skyAbyssLid(vec3 origin, vec3 dir, float reach, float footprint) {
 // is out of the hollow by the time it is up to it went into that rock: the same.
 // ⚠️ One return: with early ones, Direct3D's compiler (ANGLE on Windows) warns X4000.
 vec4 skyAbyssWalls(vec3 dir, vec3 origin, float pixel) {
-  vec3 start = skyAbyssWallStart(origin, dir);
+  vec4 startUnder = skyAbyssWallStartUnder(origin, dir);
+  vec3 start = startUnder.xyz;
   float y = dot(dir, uSkyUp);
   float foot = uSkyAbyssLevel - uSkyAbyssWallGrid.z;
   vec4 walls = vec4(0.0);
@@ -991,7 +1002,7 @@ vec4 skyAbyssWalls(vec3 dir, vec3 origin, float pixel) {
     float t = skyAbyssLidStart(origin, dir) + max(uSkyAbyssWalls.z, (h - foot) / -y);
     walls = vec4(skyAbyssWallHaze(vec3(0.0), 1.0, origin, dir, t), 1.0);
   } else {
-    float t = skyAbyssWallUnder(origin, dir, start);
+    float t = startUnder.w;
     if(t < 1e29)
       walls = vec4(skyAbyssWallHaze(vec3(0.0), 1.0, origin, dir, t), 1.0);
   }
@@ -1131,11 +1142,21 @@ vec3 skyRadiance(vec3 dir, vec3 origin) {
   bool surelyStaged = skyOceanStagedAlong(dir, origin, stagedAt, 8.0, true);
   skip = staged && surelyStaged;
   // One view in the water for both uses below: each call compiles a full copy of the waves.
+  // And one seabed for both views, shaded where whichever view sees it reaches it: each
+  // call compiles a full copy of its detail. None from below it, where neither shows it.
   vec3 inWater = open;
-  if(!skip && skyOceanNeedsWaterView(origin))
-    inWater = skyOceanWaterView(dir, origin, blend, depths);
-  if(!skip)
-    color = skyOcean(color, dir, origin, inWater, depths, blend);
+  if(!skip) {
+    bool waterView = skyOceanNeedsWaterView(origin);
+    vec3 bedReach = skyOceanBedReach(origin, dir, waterView);
+    vec3 bed = vec3(0.0);
+    if(skyOceanSeesBed(origin)) {
+      vec3 bedPoint = origin + dir * bedReach.x;
+      bed = skyOceanBed(bedPoint, globeUpAt(bedPoint), uSkyOceanDepth);
+    }
+    if(waterView)
+      inWater = skyOceanWaterView(dir, origin, blend, depths, bedReach.x, bed);
+    color = skyOcean(color, dir, origin, inWater, depths, blend, bedReach, bed);
+  }
   #endif
 
   #ifdef SKY_ABYSS

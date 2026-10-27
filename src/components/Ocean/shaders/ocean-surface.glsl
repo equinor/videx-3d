@@ -9,9 +9,6 @@
 #ifndef OCEAN_WAVE_COUNT
 #define OCEAN_WAVE_COUNT 16
 #endif
-#ifndef OCEAN_DETAIL_OCTAVES
-#define OCEAN_DETAIL_OCTAVES 4
-#endif
 // Maximum number of floating-object contact footprints that can spread foam on
 // the surface (see uContactCount / uContactA / uContactB).
 #ifndef OCEAN_CONTACT_COUNT
@@ -25,6 +22,9 @@
 #define OCEAN_COX_MUNK(wind) (0.003 + 0.00512 * (wind))
 
 uniform float uTime;
+// Octaves of the fine detail's noise (oceanFbm). A uniform, not a define: Direct3D then
+// keeps its loop a loop rather than a copy per octave, at every one of its calls.
+uniform int uOceanDetailOctaves;
 uniform vec2 uWindDirection;
 uniform float uWindSpeed; // m/s (drives foam coverage)
 uniform float uSignificantHeight; // Hs (m) for foam crest normalisation
@@ -105,7 +105,7 @@ float oceanFbm(vec2 p) {
   float sum = 0.0;
   float amp = 0.5;
   float norm = 0.0;
-  for(int i = 0; i < OCEAN_DETAIL_OCTAVES; i++) {
+  for(int i = 0; i < uOceanDetailOctaves; i++) {
     sum += amp * oceanNoise(p);
     norm += amp;
     p = rot * p * 2.03 + 17.1; // rotate + scale + offset per octave

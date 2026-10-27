@@ -401,9 +401,9 @@ vec3 skyOceanUnderside(vec3 delta, vec3 up, float texel, float dist, vec3 dir, f
 }
 
 // What is seen from `origin`, in the water, along `dir`: the surface's underside above,
-// the seabed `bedDepth` down below, water all round. `depths` is the void along it
-// (skyOceanVoid). ⚠️ Derivatives.
-vec3 skyOceanInWater(vec3 origin, vec3 dir, float blend, float bedDepth, vec3 depths) {
+// the seabed below, water all round: `bed` as shaded where the view reaches it, `tBed`
+// along (skyOceanBedReach). `depths` is the void along it (skyOceanVoid). ⚠️ Derivatives.
+vec3 skyOceanInWater(vec3 origin, vec3 dir, float blend, vec3 depths, float tBed, vec3 bed) {
   float altitude = skyOceanViewAltitude(origin);
   float y = dot(dir, uSkyUp);
   float ay = max(abs(y), 1e-6);
@@ -415,12 +415,10 @@ vec3 skyOceanInWater(vec3 origin, vec3 dir, float blend, float bedDepth, vec3 de
   vec3 underside = skyOceanUnderside(delta, globeUpAt(origin + dir * tSurface), skyOceanTexel(delta), tSurface, dir, blend, -altitude);
   vec3 above = skyOceanFog(underside, skyOceanCutawayPath(tSurface, wall, 1.0), skyOceanLight(-0.5 * altitude));
 
-  float tBed = max(altitude + bedDepth, 0.0) / ay;
   vec3 bedPoint = origin + dir * tBed;
-  vec3 bed = skyOceanBed(bedPoint, globeUpAt(bedPoint), bedDepth);
   float cutaway = skyOceanCutawayAlong(origin, bedPoint);
   vec3 ground = skyOceanFloor(bed, depths, cutaway);
-  vec3 below = skyOceanFog(ground, skyOceanCutawayPath(tBed, wall, skyOceanCutawayWater(cutaway)), skyOceanBedPathLight(origin, bedDepth));
+  vec3 below = skyOceanFog(ground, skyOceanCutawayPath(tBed, wall, skyOceanCutawayWater(cutaway)), skyOceanBedPathLight(origin, uSkyOceanDepth));
 
   return y > 0.0 ? above : below;
 }
@@ -432,17 +430,36 @@ bool skyOceanNeedsWaterView(vec3 origin) {
   return uSkyOceanWater > 0.5 && altitude <= 0.0 && altitude + uSkyOceanDepth > 0.0;
 }
 
-// That view, from the camera in the water. Each call compiles a full copy of the waves, so
-// it is taken once (see skyOcean). ⚠️ Derivatives.
-vec3 skyOceanWaterView(vec3 dir, vec3 origin, float blend, vec3 depths) {
-  return skyOceanInWater(origin, dir, blend, uSkyOceanDepth, depths);
+// Whether the background sees the seabed from `origin`: from anywhere above it.
+bool skyOceanSeesBed(vec3 origin) {
+  return skyOceanViewAltitude(origin) + uSkyOceanDepth > 0.0;
+}
+
+// Where the background's view along `dir` from `origin` reaches the seabed: x along it, z
+// 1 where it misses it (skyOceanReach). From in the water (`inWater`) straight to its
+// plane, the mirrored hit for a ray going up so the derivatives stay continuous; else as
+// skyOceanReach finds it. Both views take the bed shaded once there (skyOceanBed): each
+// call compiles a full copy of its detail.
+vec3 skyOceanBedReach(vec3 origin, vec3 dir, bool inWater) {
+  float altitude = skyOceanViewAltitude(origin);
+  if(inWater)
+    return vec3(max(altitude + uSkyOceanDepth, 0.0) / max(abs(dot(dir, uSkyUp)), 1e-6), 0.0, 0.0);
+  return skyOceanReach(origin, dir, altitude + uSkyOceanDepth);
+}
+
+// That view, from the camera in the water, with the seabed as skyOceanBedReach reaches it.
+// Each call compiles a full copy of the waves, so it is taken once (see skyOcean).
+// ⚠️ Derivatives.
+vec3 skyOceanWaterView(vec3 dir, vec3 origin, float blend, vec3 depths, float tBed, vec3 bed) {
+  return skyOceanInWater(origin, dir, blend, depths, tBed, bed);
 }
 
 // The background's sea, for a camera at `origin` looking along `dir`, `inWater` its view
 // from in the water (skyOceanWaterView) and `depths` the void along it (skyOceanVoid).
 // From above the water it is only the seabed: the surface is a layer of its own, blended
 // over it (and over a stage) by the GPU, so the sky and a stage composite it the same way.
-vec3 skyOcean(vec3 color, vec3 dir, vec3 origin, vec3 inWater, vec3 depths, float blend) {
+// The seabed is `bed`, as shaded where the view reaches it (`reach`, skyOceanBedReach).
+vec3 skyOcean(vec3 color, vec3 dir, vec3 origin, vec3 inWater, vec3 depths, float blend, vec3 reach, vec3 bed) {
   float altitude = skyOceanViewAltitude(origin);
   if(altitude + uSkyOceanDepth <= 0.0)
     return color;
@@ -459,13 +476,11 @@ vec3 skyOcean(vec3 color, vec3 dir, vec3 origin, vec3 inWater, vec3 depths, floa
   // continuous; they are discarded at the end. Dry, the bed is the same distance away
   // from below the sea level too, and the fog is off. Beyond the scene both fall away with
   // the Earth's curve: above the sea's horizon there is neither, though the seabed's is lower.
-  vec3 reach = skyOceanReach(origin, dir, altitude + uSkyOceanDepth);
   bool wet = altitude > 0.0 && uSkyOceanWater > 0.5;
   vec3 surface = skyOceanReach(origin, dir, altitude);
   float missed = wet ? surface.z : reach.z;
   float path = wet && uSkyCurvature > 0.0 ? max(reach.x - surface.x, 0.0) : uSkyOceanDepth / ay;
   vec3 bedPoint = origin + dir * reach.x;
-  vec3 bed = skyOceanBed(bedPoint, globeUpAt(bedPoint), uSkyOceanDepth);
   float cutaway = skyOceanCutawayAlong(origin, bedPoint);
   vec3 ground = skyOceanFloor(bed, depths, cutaway);
   vec3 seen = skyOceanFog(ground, path * skyOceanCutawayWater(cutaway), skyOceanBedPathLight(origin, uSkyOceanDepth));

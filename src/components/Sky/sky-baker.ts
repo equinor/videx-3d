@@ -243,7 +243,7 @@ export class SkyBaker {
       compileCamera,
       this.scene,
       'offscreen',
-      { priority: PRECOMPILE_PRIORITY.background, onProgress },
+      { priority: PRECOMPILE_PRIORITY.last, onProgress },
     );
   }
 
