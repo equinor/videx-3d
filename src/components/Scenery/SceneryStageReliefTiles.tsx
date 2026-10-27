@@ -111,8 +111,8 @@ type SceneryStageReliefTilesProps = {
   pixelError: number;
   /** the most a tile's cell may span on screen, in pixels, where finer data lies under it */
   cellPixels: number;
-  /** the sky's seabed detail (its key), compiled into the material with the sky's defines */
-  bedDetail?: string;
+  /** what it compiles with from the sky, as a key (`SceneryOceanState.definesKey`): a new one needs a new material */
+  definesKey?: string;
   visible: boolean;
   onStats?: (stats: SceneryReliefTileStats) => void;
   /** told of the tiles as they load (see `SceneryReliefLoading`) whenever that changes, and null once gone */
@@ -165,7 +165,7 @@ export const SceneryStageReliefTiles = ({
   level,
   pixelError,
   cellPixels,
-  bedDetail,
+  definesKey,
   visible,
   onStats,
   onLoading,
@@ -207,9 +207,9 @@ export const SceneryStageReliefTiles = ({
         debug,
         occupants,
       ),
-    // The seabed's detail is compiled in, from the sky's defines: a new one needs a new material.
+    // The sky's defines are compiled in (the seabed's detail, the graticule): new ones need a new material.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sky, textures, looks, bedDetail, seeThrough, debug, occupants],
+    [sky, textures, looks, definesKey, seeThrough, debug, occupants],
   );
   useEffect(() => () => material.dispose(), [material]);
   const seeThroughMaterial = useMemo(

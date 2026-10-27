@@ -6,6 +6,10 @@
 
 #include ./sky-gradient.glsl
 #include ./sky-void.glsl
+#ifndef SKY_NO_GRATICULE
+// Lines on the Earth over what is seen of it from the air (SceneryGraticule).
+#include ../../../sdk/materials/shaderLib/graticule.glsl
+#endif
 
 uniform vec3 uSkyNorth; // normalised, perpendicular to uSkyUp
 uniform vec3 uSkyEast;
@@ -1208,6 +1212,14 @@ vec4 skyOceanStagedOver(vec4 layer, SkyOceanStagedView staged, vec3 dir, vec3 or
 vec4 skySeaLayer(vec3 dir, vec3 origin, float blend) {
   SkyOceanStagedView staged = skyOceanStagedView(dir, origin);
   bool water = skyOceanNeedsWaterView(origin);
+  #ifndef SKY_NO_GRATICULE
+  // Dry, the seabed is what is seen of the Earth from the air: where it lies, for the lines
+  // over it, before anything branches (the branch is the same for every pixel).
+  bool lined = uSkyOceanWater < 0.5;
+  GraticuleAt graticule;
+  if(lined)
+    graticule = graticuleAt(origin + dir * skyOceanBedReach(origin, dir, false).x);
+  #endif
   vec4 sea = vec4(0.0);
   // Staged pixels are left to the stage; their sea is skipped where the quad surely is.
   if(!staged.skip && !water && skyOceanSeesBed(origin)) {
@@ -1216,6 +1228,11 @@ vec4 skySeaLayer(vec3 dir, vec3 origin, float blend) {
     vec3 bed = skyOceanBed(bedPoint, globeUpAt(bedPoint), uSkyOceanDepth);
     bool reached;
     sea = skyOceanFromAir(dir, origin, blend, reach, bed, reached);
+    #ifndef SKY_NO_GRATICULE
+    // Premultiplied.
+    if(lined && sea.a > 0.0)
+      sea.rgb = graticuleOver(sea.rgb / sea.a, graticule) * sea.a;
+    #endif
     #ifndef SKY_ABYSS
     if(reached)
       sea = skyOceanOverVoid(sea, dir);

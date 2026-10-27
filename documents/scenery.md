@@ -9,6 +9,7 @@ anywhere under it:
 | Component | Adds |
 |--|--|
 | `<SceneryClouds>` | still clouds: a band along the horizon, a deck overhead, or both |
+| `<SceneryGraticule>` | lines on the Earth: latitude and longitude, the UTM zones, the nautical time zones |
 | `<SceneryOcean>` | an endless sea with a seabed, and the void below it |
 | `<SceneryAbyss>` | the void's look below a level (with a sea, its seabed), and its walls |
 | `<SceneryCutaway>` | a cut through the sea's water and seabed in front of the view |
@@ -238,6 +239,90 @@ are left as they are.
 ⚠️ `altitude` is measured along `up` from the world origin, not from sea level. The
 clouds are part of the background only: the water does not reflect them, and they do
 not dim the scene's light.
+
+## Graticule (built 2026-10-27)
+
+`<SceneryGraticule>` draws lines on the Earth over what is seen of it from the air — the
+sea's surface, the land of a stage's relief, and a dry seabed — from the field out to the
+horizon and from space; none in the water, under the ground or in the void:
+
+```tsx
+<Scenery observer={observer}>
+  <SceneryOcean />
+  <SceneryGraticule
+    latLon={{ interval: 1 }}
+    utm={{ color: '#ffd23f', thickness: 2 }}
+    timeZones
+  />
+  <SceneryStage bounds={bounds} relief={relief} />
+</Scenery>
+```
+
+| Kind | Lines | Default |
+|--|--|--|
+| `latLon` | parallels and meridians every `interval` degrees; left out, following the zoom (below) | on |
+| `utm` | the zones' edges every 6° from 80°S to 84°N, Norway's 32V reaching west to 3°E (56°N–64°N) and Svalbard's 31X, 33X, 35X and 37X edged at 9°, 21°, 33° and 42°E (72°N–84°N); and the latitude bands' parallels every 8° from 80°S, the last (X) 12° to 84°N | off |
+| `timeZones` | the nautical time zones: meridians at 7.5° and every 15° from it, and the date line at 180° | off |
+
+Each kind is `true` (its defaults), `false`, or `{ color, thickness, opacity }` (`latLon`
+also `interval` and `minSpacing`): white, 1.5 pixels and 0.8 by default. The lines are the
+SDK's pristine lines (`pristineLine`, `grid.glsl`, after Ben Golus's grid shader, as `Grid`
+and `Surface` draw theirs), their width in screen pixels at any distance, measured by how
+fast latitude and longitude change across the pixel (their screen derivatives, longitude's
+unwrapped across 180°), so a line is as wide seen edge-on as from above. A set of lines
+fades out only where it crowds too close to tell apart, from 6 pixels apart to none at 2:
+toward the horizon, and meridians toward the poles. UTM lines go over the time zones', and
+those over latitude and longitude.
+
+**Following the zoom.** Without an `interval`, latitude and longitude take one step for the
+whole view, the same for meridians and parallels everywhere on screen: the finest of 30°,
+10°, 5°, 1°, 30′, 10′, 5′ and 1′ whose lines lie `minSpacing` pixels apart (default 120) on
+the ground the view is centred on, and the next finer one fading in as its lines go from
+half that apart to all of it (`graticuleStep`). The `Scenery` measures it each frame: the
+distance along the view's centre to the sea (or, over the horizon, to the horizon), its
+pixel's span there, and how foreshortened the ground is (the mean of along and across the
+view), so an oblique view follows what it looks at, not what lies under it
+(`graticuleDegreesPerPixel`). A first try chose the step pixel by pixel, each direction on
+its own: at an angle the parallels, squeezed along the view, dropped to a coarser step than
+the meridians, and lines went missing or half faded everywhere but from straight above.
+
+**Where.** Each surface works out its latitude and longitude (`globeGeographic`) and their
+derivatives before anything branches, and lays the lines over its final colour, before tone
+mapping: the background's sea surface (`skyOceanSurfaceLayer`), a stage's surface, or its
+seabed when dry, the background's dry seabed (`skySeaLayer`), and the relief's tiles and
+overview over land or a dry seabed. The bakes leave them out: lines are no light, nor
+anything to reflect.
+
+**Needs the sky on the Earth:** a `World`, or a stage's relief `frame`. Without one the
+lines draw nothing (`uGlobeSphere.w`), and in development a warning says so.
+
+**Cost.** The lines are compiled into the sea's layers, the stages and the relief always,
+and switched by uniforms (`graticuleOn`: the globe on the Earth and a kind with a width):
+adding, removing or restyling `<SceneryGraticule>` recompiles nothing. Off, a pixel pays a
+uniform branch. On, it works out its latitude and longitude once (a few transcendental
+functions) and tests each kind's lines: two steps of latitude and longitude at most. The
+bakes compile without them (`SKY_NO_GRATICULE`, fixed). A first version compiled them in
+with a switch, which recompiled every layer, stage and relief whenever the graticule came
+or went.
+
+**Labels** (`latLon: { labels: true }`, off by default): each line's name, `60°30′N`,
+`2°E`, painted flat on the sea's level along it (a `LabelLayer`, see
+[labels.md](./labels.md)), on every second line (`every`, counted from 0°), half a step past
+each labelled line across, `reach` lines (default 10) either way from where the view is
+centred (`graticuleLabels`, named by `graticuleLabelText`: minutes and seconds only as the
+step needs). Their font is a fraction (`size`, default 0.1) of a cell's narrower side, the
+east–west one, which shrinks with the cosine of the latitude (`graticuleLabelSize`): sized
+by the step alone, a parallel's labels ran into each other end to end at 58°N. A test
+keeps every label clear of every other at any latitude and step. They keep their size on
+screen as the step does; they come and go with the lines but never slide, and the layer
+writes nothing again while the nearest lines to the view's centre stay the same. Small and
+light by default (`GRATICULE_LABEL_STYLE`: weight 500, a thin, soft halo), in the lines'
+colour, drawn down to a grazing view (`minFacing` 0.08), lifted over the waves near the
+field (`lift`, 5 % of the font, 5 m at least). At sea level: high land hides them.
+
+Found on the way: `globeSphereOffset` lost the latitude across the Earth from the field,
+where `e² / (q + w)` rounds to nothing in 32-bit floats: speckled lines and missing
+meridians along 180° seen from Volve. It is `w − q` there, written so neither cancels.
 
 ## The air
 
@@ -952,7 +1037,7 @@ ShaderChunk.logdepthbuf_pars_fragment = ShaderChunk.logdepthbuf_pars_fragment.re
   parts still stalls (~1.6 s for its surface, measured cold). Without either, nothing
   stalls.
 - Adding or removing a feature compiles or drops only its own layer (see
-  [Rendering](#rendering)); the seabed's `detail` and the sea's wave count recompile the
+  [Rendering](#rendering)), but for the graticule, which compiles nothing; the seabed's `detail` and the sea's wave count recompile the
   sea's layers and its stages; `background: 'void'` the sky's own; and a stage recompiles
   when `seabedOpacity` crosses 1 (its seabed turns see-through, `STAGE_SEE_THROUGH`).
   Every other option only changes uniforms. While a layer compiles the stand-in is drawn
@@ -1051,7 +1136,7 @@ basic ones show in every story, the advanced and debug ones only in `StageDebug`
 | File | Role |
 |--|--|
 | `Scenery.tsx` | the component: props and its features' → material, the layers and which are drawn each frame, the directional light, the bakes |
-| `SceneryClouds.tsx`, `SceneryOcean.tsx`, `SceneryAbyss.tsx` | the features: each hands its props to the `Scenery` (`scenery-registry.ts`) |
+| `SceneryClouds.tsx`, `SceneryOcean.tsx`, `SceneryAbyss.tsx`, `SceneryGraticule.tsx` | the features: each hands its props to the `Scenery` (`scenery-registry.ts`) |
 | `SceneryCutaway.tsx` | the cutaway: its props, its grip, and its per-frame placement, which the `Scenery` runs |
 | `scenery-layers.ts` | the background's layers: their order, defines, materials, and where each can show (`sceneryLayersShown`) |
 | `scenery-model.ts` | option types, defaults, and the pure rules (`sceneryZone`, `skyDaylight`, `skyMoonlight`, `skySunColor`, …) |
@@ -1068,6 +1153,7 @@ basic ones show in every story, the advanced and debug ones only in `StageDebug`
 | `shaders/sky-stand-in-fragment.glsl` | the stand-in drawn while the sky compiles: the void's gradient |
 | `shaders/sky-ocean.glsl` | the sea: surface, water, seabed, cutaway |
 | `shaders/stage-fragment.glsl`, `sky-surface-fragment.glsl` | the stage's parts, and the sea surface layer |
+| `sdk/materials/graticule.ts`, `sdk/materials/shaderLib/graticule.glsl` | the graticule's uniforms, its step for a view (`graticuleStep`, `graticuleDegreesPerPixel`) and its lines (`graticuleAt`, `graticuleOver`), for any shader on the globe |
 
 - The layers', the stage's and the baker's materials share the `SceneryMaterial`'s UNIFORM
   OBJECTS, so they follow every change to it. Its features are `switches`, not its own

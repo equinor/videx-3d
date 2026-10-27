@@ -9,6 +9,7 @@ export * from './components/EventEmitter';
 export * from './components/Grids';
 export * from './components/Highlighter';
 export * from './components/Html';
+export * from './components/Labels';
 export * from './components/ObservableGroup/ObservableGroup';
 export * from './components/Ocean';
 export * from './components/Pipeline';

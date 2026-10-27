@@ -3,6 +3,7 @@ export * from './SceneryAbyss';
 export * from './SceneryAnchor';
 export * from './SceneryClouds';
 export * from './SceneryCutaway';
+export * from './SceneryGraticule';
 export * from './SceneryOcean';
 export * from './SceneryStage';
 export type { SceneryReliefTileStats } from './SceneryStageReliefTiles';
@@ -29,4 +30,13 @@ export type {
   SceneryReliefLoading,
 } from './scenery-progress';
 export * from './scenery-stage';
+export {
+  GRATICULE_LABEL_EVERY,
+  GRATICULE_LABEL_REACH,
+  GRATICULE_LABEL_SIZE,
+  graticuleLabels,
+  graticuleLabelSize,
+  graticuleLabelText,
+} from './scenery-graticule-labels';
+export { GRATICULE_LABEL_STYLE } from './SceneryGraticuleLabels';
 export * from './useLevelHorizon';

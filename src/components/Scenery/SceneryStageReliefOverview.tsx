@@ -34,8 +34,8 @@ type SceneryStageReliefOverviewProps = {
   looks: Texture;
   /** how far from the camera the tiles draw: the overview draws past it */
   reach: number;
-  /** the sky's seabed detail (its key), compiled into the material with the sky's defines */
-  bedDetail?: string;
+  /** what it compiles with from the sky, as a key (`SceneryOceanState.definesKey`): a new one needs a new material */
+  definesKey?: string;
   /** the sky's sea surface layer's `renderOrder`: the overview draws after it */
   skyOrder: number;
   visible: boolean;
@@ -55,7 +55,7 @@ export const SceneryStageReliefOverview = ({
   generator,
   looks,
   reach,
-  bedDetail,
+  definesKey,
   skyOrder,
   visible,
 }: SceneryStageReliefOverviewProps) => {
@@ -116,9 +116,9 @@ export const SceneryStageReliefOverview = ({
 
   const material = useMemo(
     () => (far ? createSceneryReliefFarMaterial(sky, far, base, looks) : null),
-    // The seabed's detail is compiled in, from the sky's defines: a new one needs a new material.
+    // The sky's defines are compiled in: new ones need a new material.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sky, far, looks, bedDetail],
+    [sky, far, looks, definesKey],
   );
   useEffect(() => () => material?.dispose(), [material]);
   useEffect(() => {

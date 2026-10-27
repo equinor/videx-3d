@@ -165,6 +165,10 @@ void main() {
   vec2 xz = vReliefPlane;
   #endif
   float blend = max(uSkyHorizonBlend, fwidth(dot(dir, globeCameraLook())));
+  #ifndef SKY_NO_GRATICULE
+  // Where it lies on the Earth, for the lines over it, before anything branches.
+  GraticuleAt graticule = graticuleAt(world);
+  #endif
 
   #ifdef RELIEF_FAR
   // The slope from the maps, as finely as the pixel sees the ground: degrees east and north
@@ -292,6 +296,12 @@ void main() {
 
   #if defined(RELIEF_DEBUG_TILES) || defined(RELIEF_DEBUG_LAYERS)
   color = reliefTileDebug(color);
+  #endif
+  #ifndef SKY_NO_GRATICULE
+  // Over what is seen of the Earth from the air: land, or a dry seabed; under water, the
+  // sea's surface draws them.
+  if(!(under && water))
+    color = graticuleOver(color, graticule);
   #endif
   gl_FragColor = vec4(color, 1.0);
   gl_FragColor.rgb = skyDebugTint(gl_FragColor.rgb, vec3(0.95, 0.6, 0.1));

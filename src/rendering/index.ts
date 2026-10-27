@@ -1,3 +1,4 @@
+export * from './anchor-occlusion';
 export * from './fullscreen-renderer';
 export * from './gpu-timer';
 export * from './oit-material';

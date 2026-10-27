@@ -46,6 +46,10 @@ void main() {
   #endif
   vec3 reach = planeAltitude > 0.0 ? skyOceanReach(cameraPosition, dir, planeAltitude) : vec3(-planeAltitude / max(abs(dot(dir, globeCameraUp())), 1e-6), 0.0, 0.0);
   vec3 world = cameraPosition + dir * reach.x;
+  #ifndef SKY_NO_GRATICULE
+  // Where it lies on the Earth, for the lines over it, before anything branches.
+  GraticuleAt graticule = graticuleAt(world);
+  #endif
   // Sunk under a camera far off (stage-vertex), the plane bends back up toward the scene,
   // where a ray that crossed it crosses it again, from the other side: only the crossing
   // from the camera's side draws. The planes' triangles face up. From below a plane, which
@@ -120,6 +124,9 @@ void main() {
   if(altitude > 0.0) {
     vec4 surface = skyOceanThroughAir(skyOceanSurfaceOf(wave, p, texel, dir, blend), cameraPosition, dir, dist, blend);
     gl_FragColor = skyOceanCutawayMark(surface, world, rimAt);
+    #ifndef SKY_NO_GRATICULE
+    gl_FragColor.rgb = graticuleOver(gl_FragColor.rgb, graticule);
+    #endif
   } else {
     vec3 underside = skyOceanUndersideOf(-wave.normal, dir, blend, -altitude);
     float wall = skyOceanCutawayWall(cameraPosition, dir);
@@ -161,6 +168,11 @@ void main() {
         // rock: it cannot show in the edge's fade under the rim, and would cost a copy.
     if(seabed < 1.0)
       color = mix(skyOceanThroughCutaway(skyAbyssGradient(y), dir, cameraPosition), color, seabed);
+      #endif
+      #ifndef SKY_NO_GRATICULE
+    // Dry, the seabed is what is seen of the Earth from the air; under water, the surface is.
+    if(dry)
+      color = graticuleOver(color, graticule);
       #endif
   } else {
       #ifdef SKY_ABYSS_WALLS

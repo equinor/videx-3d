@@ -117,6 +117,7 @@ export * from './utils/vector-operations';
 export * from './materials/apply-globe';
 export * from './materials/depth-material';
 export * from './materials/fence-field';
+export * from './materials/graticule';
 export * from './materials/height-field-clip';
 export * from './materials/surface-detail';
 export * from './materials/tube-material';

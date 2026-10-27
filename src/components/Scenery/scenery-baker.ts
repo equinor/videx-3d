@@ -51,6 +51,12 @@ const PROBE_RESOLUTION = 32;
 // How far above the sea surface (or the abyss level) the air is filmed from, in world units.
 const AIR_BAKE_HEIGHT = 100;
 
+// The visible sky's switches the bakes compile with, the graticule left out: its lines are
+// no light, nor anything to reflect. Fixed, so turning the lines on bakes nothing again.
+function bakedSwitches(switches: Record<string, unknown>) {
+  return { ...switches, SKY_NO_GRATICULE: '' };
+}
+
 /** The sun a {@link SceneryBaker} lights the seabed with: as the sky's directional light. */
 export type SceneryBakerSun = {
   direction: Vector3;
@@ -213,10 +219,13 @@ export class SceneryBaker {
       material.defines = { ...source.defines };
       material.needsUpdate = true;
     }
-    if (JSON.stringify(material.switches) !== JSON.stringify(source.switches)) {
+    if (
+      JSON.stringify(material.switches) !==
+      JSON.stringify(bakedSwitches(source.switches))
+    ) {
       for (const key of Object.keys(material.switches))
         delete material.switches[key];
-      Object.assign(material.switches, source.switches);
+      Object.assign(material.switches, bakedSwitches(source.switches));
       material.switchesVersion++;
     }
 

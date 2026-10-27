@@ -22,6 +22,16 @@ import {
   WebGLRenderer,
 } from 'three';
 import {
+  createGraticuleUniforms,
+  GraticuleKind,
+  GraticuleStep,
+  graticuleStep,
+  GraticuleStyle,
+  GraticuleUniforms,
+  setGraticuleStep,
+  setGraticuleUniforms,
+} from '../../sdk/materials/graticule';
+import {
   applySurfaceDetail,
   createSurfaceDetailUniforms,
   SURFACE_DETAIL_DEFINES,
@@ -66,10 +76,16 @@ const SKY_CLOUD_BAND_OCTAVES = 5;
 // An empty rectangle: nothing is on a stage.
 const NO_STAGE = [1, 1, -1, -1] as const;
 
-/** The defines a material drawing the sky's sea takes over from the {@link SceneryMaterial}. */
+const graticuleStepScratch: GraticuleStep = { step: 0, finer: 0, weight: 0 };
+
+/**
+ * The defines a material drawing the sky's sea takes over from the {@link SceneryMaterial}.
+ * `SKY_NO_GRATICULE` is set by bakes alone, which draw no lines.
+ */
 export const SCENERY_SHARED_DEFINES = [
   'OCEAN_WAVE_COUNT',
   'OCEAN_CONTACT_COUNT',
+  'SKY_NO_GRATICULE',
   ...SURFACE_DETAIL_DEFINES,
 ];
 
@@ -155,6 +171,9 @@ export class SceneryMaterial extends ShaderMaterial {
   };
   // The sun's elevation where the camera is (setSeenSun), null for the field's.
   private seenElevation: number | null = null;
+  // Latitude and longitude's look, and the view's scale they last followed (setGraticuleView).
+  private graticuleLatLon: GraticuleStyle | null = null;
+  private graticuleScale = -1;
   private seenMoonShine = 1;
   // The stage's reach as set (setOceanStage); the uniform holds it only while the stage
   // can draw what it claims (claimStage).
@@ -170,6 +189,7 @@ export class SceneryMaterial extends ShaderMaterial {
         // `fog: true` makes three write these once a scene has fog (see `useImmersionFog`).
         ...UniformsUtils.clone(UniformsLib.fog),
         ...createSurfaceDetailUniforms(),
+        ...createGraticuleUniforms(),
         uSkyUp: new Uniform(new Vector3(0, 1, 0)),
         uSkyNorth: new Uniform(new Vector3(0, 0, -1)),
         uSkyEast: new Uniform(new Vector3(1, 0, 0)),
@@ -765,6 +785,40 @@ export class SceneryMaterial extends ShaderMaterial {
   }
   set clouds(value: boolean) {
     this.setSwitch('SKY_CLOUDS', value);
+  }
+
+  /**
+   * Lines on the Earth over what is seen of it from the air, each kind drawn with its style
+   * or off (null or left out). By uniforms alone: compiled into the layers, stages and
+   * reliefs that draw them, so turning them on or off recompiles nothing.
+   */
+  setGraticule(styles: Partial<Record<GraticuleKind, GraticuleStyle | null>>) {
+    setGraticuleUniforms(this.uniforms as unknown as GraticuleUniforms, styles);
+    this.graticuleLatLon = styles.latLon ?? null;
+    this.graticuleScale = -1;
+  }
+
+  /**
+   * How far the view is zoomed, as the degrees (of latitude) a pixel spans on the ground it
+   * is centred on (`graticuleDegreesPerPixel`): latitude and longitude's step follows it
+   * (`graticuleStep`), unless they have an interval of their own. A no-op while it stays
+   * the same.
+   */
+  setGraticuleView(degreesPerPixel: number) {
+    const latLon = this.graticuleLatLon;
+    if (!latLon || degreesPerPixel === this.graticuleScale) return;
+    this.graticuleScale = degreesPerPixel;
+    const interval = latLon.interval ?? 0;
+    setGraticuleStep(
+      this.uniforms as unknown as GraticuleUniforms,
+      interval > 0
+        ? { step: interval, finer: interval, weight: 0 }
+        : graticuleStep(
+            degreesPerPixel,
+            latLon.minSpacing,
+            graticuleStepScratch,
+          ),
+    );
   }
 
   /**

@@ -13,6 +13,7 @@ import {
   type SceneryAbyssProps,
   type SceneryCloudLayers,
   type SceneryCloudsProps,
+  type SceneryGraticuleProps,
   type SkyMoon,
   type SkyObserver,
   type SceneryOceanProps,
@@ -21,6 +22,10 @@ import {
 } from '../../components/Scenery/scenery-model';
 import { DEFAULT_OCEAN_WATER_OPACITY } from '../../components/Ocean/ocean-material';
 import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../../components/Ocean/ocean-volume-material';
+import {
+  GRATICULE_LABEL_EVERY,
+  GRATICULE_LABEL_SIZE,
+} from '../../components/Scenery/scenery-graticule-labels';
 import { builtInColorRamps } from '../../common/color-ramps';
 import { ContourColorMode } from '../../common/types';
 import type { ReliefLayer } from '../../sdk/geometries/relief-tiles';
@@ -86,6 +91,24 @@ export type SceneryArgs = {
   cloudSoftness: number;
   cloudOpacity: number;
   cloudSeed: number;
+  // Graticule
+  graticuleLatLon: boolean;
+  graticuleLatLonColor: string;
+  graticuleLatLonThickness: number;
+  /** degrees between lines; 0 follows the view */
+  graticuleLatLonInterval: number;
+  /** following the view, the least spacing on screen, in pixels */
+  graticuleLatLonMinSpacing: number;
+  graticuleLatLonLabels: boolean;
+  graticuleLatLonLabelSize: number;
+  graticuleLatLonLabelEvery: number;
+  graticuleUtm: boolean;
+  graticuleUtmColor: string;
+  graticuleUtmThickness: number;
+  graticuleTimeZones: boolean;
+  graticuleTimeZonesColor: string;
+  graticuleTimeZonesThickness: number;
+  graticuleOpacity: number;
   // Scenery
   drawSky: boolean;
   skyVoid: boolean;
@@ -217,6 +240,21 @@ export const sceneryArgs: SceneryArgs = {
   cloudSoftness: sceneryDefaults.clouds.softness,
   cloudOpacity: sceneryDefaults.clouds.opacity,
   cloudSeed: sceneryDefaults.clouds.seed,
+  graticuleLatLon: false,
+  graticuleLatLonColor: sceneryDefaults.graticule.lines.color,
+  graticuleLatLonThickness: sceneryDefaults.graticule.lines.thickness,
+  graticuleLatLonInterval: 0,
+  graticuleLatLonMinSpacing: sceneryDefaults.graticule.minSpacing,
+  graticuleLatLonLabels: false,
+  graticuleLatLonLabelSize: GRATICULE_LABEL_SIZE,
+  graticuleLatLonLabelEvery: GRATICULE_LABEL_EVERY,
+  graticuleUtm: false,
+  graticuleUtmColor: sceneryDefaults.graticule.lines.color,
+  graticuleUtmThickness: sceneryDefaults.graticule.lines.thickness,
+  graticuleTimeZones: false,
+  graticuleTimeZonesColor: sceneryDefaults.graticule.lines.color,
+  graticuleTimeZonesThickness: sceneryDefaults.graticule.lines.thickness,
+  graticuleOpacity: sceneryDefaults.graticule.lines.opacity,
   drawSky: true,
   skyVoid: false,
   air: true,
@@ -444,6 +482,37 @@ export const sceneryCloudsFromArgs = (
     seed: args.cloudSeed,
   };
 
+/** A `SceneryGraticule`'s props from {@link SceneryArgs}; `false` for none. */
+export const sceneryGraticuleFromArgs = (
+  args: SceneryArgs,
+): SceneryGraticuleProps | false => {
+  const opacity = args.graticuleOpacity;
+  const props: SceneryGraticuleProps = {
+    latLon: args.graticuleLatLon && {
+      color: args.graticuleLatLonColor,
+      thickness: args.graticuleLatLonThickness,
+      opacity,
+      interval: args.graticuleLatLonInterval || undefined,
+      minSpacing: args.graticuleLatLonMinSpacing,
+      labels: args.graticuleLatLonLabels && {
+        size: args.graticuleLatLonLabelSize,
+        every: args.graticuleLatLonLabelEvery,
+      },
+    },
+    utm: args.graticuleUtm && {
+      color: args.graticuleUtmColor,
+      thickness: args.graticuleUtmThickness,
+      opacity,
+    },
+    timeZones: args.graticuleTimeZones && {
+      color: args.graticuleTimeZonesColor,
+      thickness: args.graticuleTimeZonesThickness,
+      opacity,
+    },
+  };
+  return !!(props.latLon || props.utm || props.timeZones) && props;
+};
+
 /** A Scenery's `moon` from {@link SceneryArgs}. */
 export const skyMoonFromArgs = (args: SceneryArgs): SkyMoon | false =>
   args.moon && { intensity: args.moonIntensity };
@@ -665,6 +734,7 @@ const ADVANCED = new Set<string>([
 
 const SUN = 'Sun';
 const CLOUDS = 'Clouds';
+const GRATICULE = 'Graticule';
 const SKY = 'Scenery';
 const SEA = 'Sea';
 const SUBSURFACE = 'Subsurface';
@@ -814,6 +884,90 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     ...range(0, 100, 1, CLOUDS, 'Picks another pattern.'),
     if: { arg: 'clouds' },
   },
+  graticuleLatLon: toggle(
+    GRATICULE,
+    'Lines of latitude and longitude (`SceneryGraticule` `latLon`) on the sea\u2019s surface, the land and a dry seabed, at any distance. By uniforms: turning any line on or off recompiles nothing.',
+  ),
+  graticuleLatLonColor: {
+    ...color(GRATICULE),
+    if: { arg: 'graticuleLatLon' },
+  },
+  graticuleLatLonThickness: {
+    ...range(0.5, 6, 0.25, GRATICULE, 'Width in screen pixels.'),
+    if: { arg: 'graticuleLatLon' },
+  },
+  graticuleLatLonInterval: {
+    ...range(
+      0,
+      30,
+      0.25,
+      GRATICULE,
+      'Degrees between lines; 0 follows the view: 30\u00b0, and each of 10\u00b0, 5\u00b0, 1\u00b0, 30\u2032, 10\u2032, 5\u2032 and 1\u2032 only where its lines lie `graticuleLatLonMinSpacing` pixels apart.',
+    ),
+    if: { arg: 'graticuleLatLon' },
+  },
+  graticuleLatLonMinSpacing: {
+    ...range(
+      30,
+      400,
+      10,
+      GRATICULE,
+      'Following the view (interval 0), how far apart on screen its lines are at the least, in pixels (`minSpacing`): a finer step fades in over the halving before.',
+    ),
+    if: { arg: 'graticuleLatLon' },
+  },
+  graticuleLatLonLabels: {
+    ...toggle(
+      GRATICULE,
+      'Each line\u2019s name painted flat on the sea along it (`latLon.labels`): a `LabelLayer` around where the view is centred, at the lines\u2019 step.',
+    ),
+    if: { arg: 'graticuleLatLon' },
+  },
+  graticuleLatLonLabelSize: {
+    ...range(
+      0.02,
+      0.3,
+      0.01,
+      GRATICULE,
+      'The labels\u2019 font size, as a fraction of a cell\u2019s narrower side on the ground (`labels.size`).',
+    ),
+    if: { arg: 'graticuleLatLonLabels' },
+  },
+  graticuleLatLonLabelEvery: {
+    ...range(
+      1,
+      5,
+      1,
+      GRATICULE,
+      'Which lines are labelled: every `every`th, counted from 0\u00b0 (`labels.every`).',
+    ),
+    if: { arg: 'graticuleLatLonLabels' },
+  },
+  graticuleUtm: toggle(
+    GRATICULE,
+    'The UTM zones (`utm`): their edges every 6\u00b0 from 80\u00b0S to 84\u00b0N, Norway\u2019s 32V reaching west to 3\u00b0E (just east of Volve) and Svalbard\u2019s 31X\u201337X, and their latitude bands every 8\u00b0.',
+  ),
+  graticuleUtmColor: {
+    ...color(GRATICULE),
+    if: { arg: 'graticuleUtm' },
+  },
+  graticuleUtmThickness: {
+    ...range(0.5, 6, 0.25, GRATICULE, 'Width in screen pixels.'),
+    if: { arg: 'graticuleUtm' },
+  },
+  graticuleTimeZones: toggle(
+    GRATICULE,
+    'The nautical time zones (`timeZones`): meridians 15\u00b0 apart either side of Greenwich, and the date line at 180\u00b0.',
+  ),
+  graticuleTimeZonesColor: {
+    ...color(GRATICULE),
+    if: { arg: 'graticuleTimeZones' },
+  },
+  graticuleTimeZonesThickness: {
+    ...range(0.5, 6, 0.25, GRATICULE, 'Width in screen pixels.'),
+    if: { arg: 'graticuleTimeZones' },
+  },
+  graticuleOpacity: range(0, 1, 0.05, GRATICULE, 'Every line\u2019s opacity.'),
   drawSky: toggle(
     SKY,
     'Draw the sky and its stage behind the scene (`background`). Switched instantly, with nothing rebuilt or baked: off, the sky still lights the scene, by the subsurface.',

@@ -47,8 +47,11 @@ export type SceneryOceanState = {
   seabed: boolean;
   /** how much of what lies beyond the seabed it hides, 0 to 1 (see `SceneryOceanProps.seabedOpacity`) */
   seabedOpacity: number;
-  /** the seabed's detail, as a key: a new one recompiles the sea (see `SceneryMaterial.oceanBedDetail`) */
-  bedDetail: string;
+  /**
+   * what a stage and its relief compile with from the sky (`sceneryOceanDefines`: the
+   * seabed's detail, the waves, the graticule), as a key: a new one recompiles them
+   */
+  definesKey: string;
   /** the void has walls (see `SceneryAbyssProps.walls`): a stage's seabed recompiles to leave them to the sky */
   abyssWalls: boolean;
   /** height of the sea surface along `up` */

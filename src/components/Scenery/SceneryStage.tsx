@@ -316,7 +316,7 @@ export const SceneryStage = ({
   const hasBed = ocean?.seabed ?? true;
   const seabedOpacity = ocean?.seabedOpacity ?? 1;
   const seeThrough = seabedOpacity < 1;
-  const bedDetail = ocean?.bedDetail;
+  const definesKey = ocean?.definesKey;
   const abyssWalls = ocean?.abyssWalls;
 
   const extent: SceneryStageBounds = useMemo(
@@ -379,9 +379,9 @@ export const SceneryStage = ({
         }),
         bed: createSceneryStageMaterial(sky, 'bed', { seeThrough }),
       },
-    // The seabed's detail is compiled in, from the sky's defines: a new one needs new materials.
+    // The sky's defines are compiled in (the seabed's detail, the graticule): new ones need new materials.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sky, bedDetail, abyssWalls, seeThrough, tiled],
+    [sky, definesKey, abyssWalls, seeThrough, tiled],
   );
 
   // The occupants' outlines, for the relief: over them the cutaway takes
@@ -747,7 +747,7 @@ export const SceneryStage = ({
           generator={generator}
           looks={looks.texture}
           reach={far}
-          bedDetail={bedDetail}
+          definesKey={definesKey}
           skyOrder={ocean.renderOrder + 1}
           visible={shown('relief')}
         />
@@ -764,7 +764,7 @@ export const SceneryStage = ({
           level={level}
           pixelError={relief.pixelError ?? 2}
           cellPixels={relief.cellPixels ?? 8}
-          bedDetail={bedDetail}
+          definesKey={definesKey}
           visible={shown('relief')}
           onStats={relief.onStats}
           onLoading={reliefLoading}

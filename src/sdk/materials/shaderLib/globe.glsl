@@ -186,9 +186,11 @@ vec2 globeSphereOffset(vec3 p) {
   float cosChi0 = uGlobeSphere.y;
   // The direction's latitude about the disc's centre's, from its parts: sin and cos of
   // Δχ, scaled alike, with its distance from the axis `w` and its part along it `q`.
+  // e² / (q + w) is w − q, written so neither cancels: the first near the field, the second
+  // across the Earth from it, where q + w would round to nothing.
   float q = u * cosChi0 - n * sinChi0;
   float w = sqrt(e * e + q * q);
-  float sinD = n - sinChi0 * e * e / max(q + w, 1e-30);
+  float sinD = n - sinChi0 * (q > 0.0 ? e * e / (q + w) : w - q);
   float cosD = n * sinChi0 * cosChi0 + u * sinChi0 * sinChi0 + w * cosChi0;
   return vec2(atan(sinD, cosD), atan(e, q));
 }

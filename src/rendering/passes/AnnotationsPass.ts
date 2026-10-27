@@ -3,20 +3,9 @@ import {
   CanvasTexture,
   Clock,
   createCanvasElement,
-  DataTexture,
-  FloatType,
-  GLSL3,
   Matrix4,
-  NearestFilter,
-  NoColorSpace,
   PerspectiveCamera,
-  RedFormat,
-  RGBAFormat,
-  ShaderMaterial,
-  Texture,
-  Uniform,
   Vector2,
-  Vector3,
   WebGLRenderer,
   WebGLRenderTarget,
 } from 'three';
@@ -24,15 +13,17 @@ import {
 import { useAnnotationsState } from '../../components/Annotations/annotations-state';
 import { AnnotationInstance } from '../../components/Annotations/types';
 
-import { UnsignedByteType } from 'three';
-import fragmentShader from '../../components/Annotations/shaders/annotations-frag.glsl';
-import vertexShader from '../../components/Annotations/shaders/annotations-vert.glsl';
 import {
   annotationsActivity,
   postProcessInstances,
   preprocessInstances,
   updateInstanceDOMElements,
 } from '../../components/Annotations/update-annotations';
+import {
+  ANCHOR_IN_VIEW,
+  ANCHOR_OCCLUDED,
+  AnchorOcclusion,
+} from '../anchor-occlusion';
 import { FullscreenRenderer } from '../fullscreen-renderer';
 import { Pass } from '../Pass';
 
@@ -51,12 +42,9 @@ export class AnnotationsPass extends Pass {
   pointer: Vector2;
   ctx: CanvasRenderingContext2D;
   overlayTexture: CanvasTexture | null = null;
-  annotationsTexSize: number = 100;
-  annotationsRenderTarget: WebGLRenderTarget;
-  annotationsBuffer: Uint8Array;
-  annotationsMaterial: ShaderMaterial;
+  /** whether the anchors are hidden behind the scene, tested on the GPU (shared with the labels' pass) */
+  occlusion: AnchorOcclusion;
   annotationsData: AnnotationInstance[] = [];
-  isBusy: boolean = false;
   dataTextureNeedsUpdate = false;
   fullscreenRenderer = new FullscreenRenderer();
   unsubscribeListeners: () => void;
@@ -100,43 +88,7 @@ export class AnnotationsPass extends Pass {
     if (!ctx) throw Error('Unable to create canvas drawing context!');
     this.ctx = ctx;
 
-    this.annotationsRenderTarget = new WebGLRenderTarget(
-      this.annotationsTexSize,
-      1,
-      {
-        depthBuffer: false,
-        stencilBuffer: false,
-        format: RedFormat,
-        type: UnsignedByteType,
-        magFilter: NearestFilter,
-        minFilter: NearestFilter,
-        samples: 0,
-        colorSpace: NoColorSpace,
-        generateMipmaps: false,
-      },
-    );
-
-    this.annotationsBuffer = new Uint8Array(this.annotationsTexSize);
-
-    const perspectiveCamera = camera as PerspectiveCamera;
-    const depthConstant =
-      2.0 / (Math.log(perspectiveCamera.far + 1.0) / Math.LN2);
-    const material = new ShaderMaterial({
-      vertexShader,
-      fragmentShader,
-      uniforms: {
-        cameraPosition: new Uniform<Vector3>(new Vector3()),
-        vMatrix: new Uniform<Matrix4>(new Matrix4()),
-        pMatrix: new Uniform<Matrix4>(new Matrix4()),
-        depthTexture: new Uniform<Texture | null>(null),
-        dataTexture: new Uniform<Texture | null>(null),
-        logDepthBufFC: new Uniform<number>(depthConstant),
-        resolution: new Uniform<Vector2>(new Vector2()),
-      },
-      glslVersion: GLSL3,
-    });
-
-    this.annotationsMaterial = material;
+    this.occlusion = new AnchorOcclusion(camera);
 
     const unsubInstanceState = useAnnotationsState.subscribe(
       state => state.instances,
@@ -163,8 +115,8 @@ export class AnnotationsPass extends Pass {
 
     annotationsData.forEach((instance, i) => {
       if (i < buffer.length) {
-        const isOccluded = (buffer[i] & 0b01) == 1;
-        const isInViewSpace = (buffer[i] & 0b10) == 2;
+        const isOccluded = (buffer[i] & ANCHOR_OCCLUDED) !== 0;
+        const isInViewSpace = (buffer[i] & ANCHOR_IN_VIEW) !== 0;
 
         if (
           instance.state.inViewSpace !== isInViewSpace ||
@@ -327,21 +279,9 @@ export class AnnotationsPass extends Pass {
 
   updateDataTexture() {
     const instances = this.annotationsData;
-    let dataTexture: DataTexture | undefined =
-      this.annotationsMaterial.uniforms.dataTexture.value;
 
     if (instances.length) {
-      const size = instances.length;
-
-      if (size !== this.annotationsTexSize) {
-        this.annotationsRenderTarget.setSize(size, 1, 0);
-        this.annotationsBuffer = new Uint8Array(size * 2);
-        this.annotationsTexSize = size;
-        dataTexture?.dispose();
-        dataTexture = undefined;
-      }
-
-      const data = new Float32Array(size * 4);
+      const data = new Float32Array(instances.length * 4);
       for (let i = 0, j = 0; i < instances.length; i++, j += 4) {
         const instance = instances[i];
 
@@ -350,19 +290,7 @@ export class AnnotationsPass extends Pass {
         data[j + 2] = instance.state.position[2];
         data[j + 3] = instance.layer.anchorOcclusionRadius;
       }
-
-      if (this.annotationsMaterial.uniforms.dataTexture.value) {
-        this.annotationsMaterial.uniforms.dataTexture.value.dispose();
-      }
-
-      if (!dataTexture) {
-        dataTexture = new DataTexture(data, size, 1, RGBAFormat, FloatType);
-      } else {
-        dataTexture.image.data = data;
-      }
-
-      dataTexture.needsUpdate = true;
-      this.annotationsMaterial.uniforms.dataTexture.value = dataTexture;
+      this.occlusion.setAnchors(data, instances.length);
     }
 
     this.dataTextureNeedsUpdate = false;
@@ -370,12 +298,7 @@ export class AnnotationsPass extends Pass {
 
   dispose() {
     this.unsubscribeListeners();
-    this.annotationsMaterial.dispose();
-    if (this.annotationsMaterial.uniforms.dataTexture.value) {
-      this.annotationsMaterial.uniforms.dataTexture.value.dispose();
-    }
-    this.annotationsMaterial.dispose();
-    this.annotationsRenderTarget.dispose();
+    this.occlusion.dispose();
     this.fullscreenRenderer.dispose();
     this.overlayTexture?.dispose();
   }
@@ -383,45 +306,25 @@ export class AnnotationsPass extends Pass {
   render(renderer: WebGLRenderer, buffer: WebGLRenderTarget | null) {
     renderer.getSize(size);
 
-    const {
-      camera,
-      maxVisible,
-      annotationsMaterial: occlusionMaterial,
-      annotationsData: instances,
-      isBusy,
-    } = this;
+    const { camera, maxVisible, annotationsData: instances } = this;
 
-    if (buffer?.depthTexture && this.annotationsData.length && !isBusy) {
+    if (
+      buffer?.depthTexture &&
+      this.annotationsData.length &&
+      !this.occlusion.busy
+    ) {
       if (this.dataTextureNeedsUpdate) {
         this.updateDataTexture();
       }
-      this.isBusy = true;
-      occlusionMaterial.uniforms.cameraPosition.value.copy(camera.position);
-      occlusionMaterial.uniforms.depthTexture.value = buffer.depthTexture;
-      occlusionMaterial.uniforms.pMatrix.value = camera.projectionMatrix;
-      occlusionMaterial.uniforms.vMatrix.value = camera.matrixWorldInverse;
-      occlusionMaterial.uniforms.resolution.value.set(
-        buffer.width,
-        buffer.height,
-      );
-      this.fullscreenRenderer.renderMaterial(
-        renderer,
-        this.annotationsRenderTarget,
-        this.annotationsMaterial,
-      );
-      renderer
-        .readRenderTargetPixelsAsync(
-          this.annotationsRenderTarget,
-          0,
-          0,
-          this.annotationsTexSize,
-          1,
-          this.annotationsBuffer,
+      this.occlusion
+        .test(
+          renderer,
+          camera,
+          buffer.depthTexture,
+          buffer.width,
+          buffer.height,
         )
-        .then(buffer => this.updateAnnotationsData(buffer as Uint8Array))
-        .finally(() => {
-          this.isBusy = false;
-        });
+        ?.then(read => this.updateAnnotationsData(read));
     }
     const visibleInstances = preprocessInstances(
       instances,
