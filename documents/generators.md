@@ -25,8 +25,8 @@ The generator functions can be imported from `@equinor/videx-3d/generators` (def
 | **Perimeter** | perimeterGeometry | generatePerimeterGeometry | - position-logs |
 | **FormationMarkers** | formationSymbols | generateFormationMarkers | - position-logs<br/>- formations |
 | **Shoes** | shoeSymbols | generateShoes | - position-logs<br/>- casings |
-| **SkyBoxStage** _(`relief`, its tiles)_ | skyReliefTile | generateSkyReliefTile | - relief-meta<br/>- relief-values |
-| **SkyBoxStage** _(`relief`, its overview past a short far plane: the first layer)_ | skyRelief | generateSkyRelief | - relief-meta<br/>- relief-values |
+| **SceneryStage** _(`relief`, its tiles)_ | sceneryReliefTile | generateSceneryReliefTile | - relief-meta<br/>- relief-values |
+| **SceneryStage** _(`relief`, its overview past a short far plane: the first layer)_ | sceneryRelief | generateSceneryRelief | - relief-meta<br/>- relief-values |
 | **Surface** | surfaceGeometry | generateSurfaceGeometry | - surface-meta<br/>- surface-values |
 | **Surface** | surfaceTextures | generateSurfaceTextureData | - surface-meta<br/>- surface-values |
 | **Trajectory** | trajectory | generateTrajectory | - position-logs |
@@ -132,10 +132,10 @@ Each provider connects to the store on its own port:
 ```tsx
 <GeneratorsProvider registry={registry}>
   <ChunkStack /* builds on the first worker */ />
-  <GeneratorsProvider registry={skyRegistry /* skyReliefTile, skyRelief */}>
-    <Sky>
-      <SkyBoxStage /* ... */ />
-    </Sky>
+  <GeneratorsProvider registry={sceneryRegistry /* sceneryReliefTile, sceneryRelief */}>
+    <Scenery>
+      <SceneryStage /* ... */ />
+    </Scenery>
   </GeneratorsProvider>
 </GeneratorsProvider>
 ```

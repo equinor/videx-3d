@@ -63,7 +63,7 @@ export function heightFieldWarp(
 
 /**
  * Ground drawn as a height field from tiles, for whatever must end where it is drawn: a
- * `ChunkStack`'s faces at the relief a `SkyBoxStage` draws over it, say
+ * `ChunkStack`'s faces at the relief a `SceneryStage` draws over it, say
  * (`ChunkStackProps.clip`). Generic: anything that draws ground from tiles of heights can
  * hand one out. Its owner keeps it current every frame, over a region of the scene, in
  * the frame the ground is drawn in, as the triangles draw it — whatever their depth.

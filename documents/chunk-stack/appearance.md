@@ -57,8 +57,8 @@ only opens that unit.
 
 `drawCap: false` keeps a layer's cap in the build — its walls, cuts and hidden-cap
 culling are unchanged — but does not draw it, because something else does: typically a
-`SkyBoxStage` whose relief is the ground over the column (see
-[sky.md](../sky.md#skyboxstage)), which the stack's sea bed is built on
+`SceneryStage` whose relief is the ground over the column (see
+[scenery.md](../scenery.md#skyboxstage)), which the stack's sea bed is built on
 (`ChunkStack.relief`). ⚠️ Culling still counts the cap as covering what is under it, so
 whatever draws it must draw it opaque, and whole or cut exactly as the stack cuts it: the
 stack hands its cut out through `onCut` for that, and a relief kept whole over the column

@@ -3,7 +3,7 @@ import {
   SKY_STAR_MARGIN,
   skyStarCatalogue,
   skyStarCell,
-} from '../src/components/Sky/sky-star-catalogue';
+} from '../src/components/Scenery/sky-star-catalogue';
 import { brightStars } from '../src/sdk/utils/bright-stars';
 
 const direction = (ra: number, dec: number) => {

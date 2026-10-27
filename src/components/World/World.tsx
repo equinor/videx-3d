@@ -22,19 +22,20 @@ export type WorldProps = {
  *
  * - a `UtmArea` in another frame (another UTM zone, a field 300 km off) places itself:
  *   where the world's map has its origin, turned and scaled to the world's grid there, and
- *   on the `Sky`'s globe when there is one. One in the world's own frame is not moved.
- * - a `Sky` takes its `observer`'s place from it, when the observer gives only a date, and
+ *   on the `Scenery`'s globe when there is one. One in the world's own frame is not moved.
+ * - a `Scenery` takes its `observer`'s place from it, when the observer gives only a date, and
  *   hands the world its globe;
- * - a `SkyBoxStage`'s `relief` is read in it, when it gives no `frame` of its own.
+ * - a `SceneryStage`'s `relief` is read in it, when it gives no `frame` of its own.
  *
- * Renders nothing of its own. Without a `Sky` nothing curves: fields are placed flat, as on
+ * Renders nothing of its own. Without a `Scenery` nothing curves: fields are placed flat, as on
  * a map. See `documents/world.md`.
  *
  * @example
  * <World frame={geoFrameFromCrs(crs)}>
- *   <Sky observer={{ date }} ocean>
- *     <SkyBoxStage bounds={bounds} relief={{ layers }} />
- *   </Sky>
+ *   <Scenery observer={{ date }}>
+ *     <SceneryOcean />
+ *     <SceneryStage bounds={bounds} relief={{ layers }} />
+ *   </Scenery>
  *   <UtmArea crsInstance={crs} origin={crs.originUtm}>{field}</UtmArea>
  *   <UtmArea frame={otherField}>{other}</UtmArea>
  * </World>

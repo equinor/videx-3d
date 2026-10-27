@@ -405,7 +405,7 @@ export type ChunkMaterialParameters = {
   tileLevels?: ChunkTileUniforms;
   /**
    * Leave out what lies above the ground drawn over the stack — the relief a
-   * `SkyBoxStage` draws, through `ChunkStackProps.clip` — per fragment, in the mesh's
+   * `SceneryStage` draws, through `ChunkStackProps.clip` — per fragment, in the mesh's
    * OWN object space. SHARED like `sectionPlane`: one binding for every material, which
    * follows the clip as it is drawn. ⚠️ Read at CONSTRUCTION.
    */

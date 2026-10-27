@@ -8,7 +8,7 @@ artifact-free when zoomed out. It composites correctly with subsurface geometry
 through the `OITRenderPass`.
 
 For an endless sea that is part of the sky — with a seabed, seen from above, in and
-below the water — see the `<Sky>`'s `ocean` in [Sky](./sky.md).
+below the water — see `<SceneryOcean>` in [Scenery](./scenery.md).
 
 ## Basic usage
 
@@ -32,9 +32,9 @@ patches give way to a flat mirror of the sky. The sun's glint widens by every sl
 cannot show rather than shrinking to a point: the waves too small for its footprint or faded
 out with distance, and the small ones no wave stands for once the fine ripples fade, as much
 as the wind gives (Cox and Munk's mean square slope, `0.003 + 0.00512 × windSpeed`). So far
-off, and from high up, it spreads into a broad soft patch, as seen from aircraft. The `<Sky>`'s endless
+off, and from high up, it spreads into a broad soft patch, as seen from aircraft. The `<Scenery>`'s endless
 sea takes the same prop. `OceanMaterial.sunGlintSpread` (default 0) widens the
-glint further at the same peak, so its path broadens and brightens; the `<Sky>`
+glint further at the same peak, so its path broadens and brightens; the `<Scenery>`
 raises it about sunrise and sunset for a broad glitter path.
 
 ## Geometry builders
@@ -82,7 +82,7 @@ function Buoy() {
 Use `useOceanContact` to spread foam where an object meets the water (see the
 `Tanker` component for a full example). Both are no-ops outside an `<Ocean>`.
 
-⚠️ The `OceanSampler` reads the waves in the Ocean's own plane. A `Sky`'s sea far from
+⚠️ The `OceanSampler` reads the waves in the Ocean's own plane. A `Scenery`'s sea far from
 the field draws them in charts fixed on the Earth instead (`OceanCharts`, see
 [world.md, 4d](./world.md#4d-the-waves-far-off-built-2026-10-27)); a sampler for it is
 still to come.

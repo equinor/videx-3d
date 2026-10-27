@@ -42,7 +42,7 @@ export const Videx3dBridge = ({ manager }: { manager: CameraManager }) => {
 
 export const Canvas3dDecorator = (Story: any, { parameters, args }: any) => {
   const scale = parameters.scale || 100;
-  // `parameters.ownLighting(args)`: the story lights itself (a `<Sky>`), so add none here.
+  // `parameters.ownLighting(args)`: the story lights itself (a `<Scenery>`), so add none here.
   const defaultLighting = !parameters.ownLighting?.(args);
   // Lazy initialiser, NOT `useRef(new CameraManager())` — that argument is
   // evaluated on every render and only the first result is ever kept.

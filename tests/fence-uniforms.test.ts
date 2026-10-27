@@ -106,7 +106,10 @@ describe('fence uniforms', () => {
     ],
     ['ocean material', 'src/components/Ocean/ocean-material.ts'],
     ['ocean volume material', 'src/components/Ocean/ocean-volume-material.ts'],
-    ['sky relief tile material', 'src/components/Sky/sky-relief-tiles.ts'],
+    [
+      'sky relief tile material',
+      'src/components/Scenery/scenery-relief-tiles.ts',
+    ],
   ])('%s binds the fence with applyFenceField', (_name, path) => {
     const source = readFileSync(path, 'utf-8');
     expect(source).toContain('applyFenceField(');
@@ -130,7 +133,7 @@ describe('fence uniforms', () => {
       'src/components/Chunks/inference-material.ts',
       'src/components/Ocean/shaders/fragment.glsl',
       'src/components/Ocean/shaders/volume-fragment.glsl',
-      'src/components/Sky/shaders/relief-tiles.glsl',
+      'src/components/Scenery/shaders/relief-tiles.glsl',
     ].map(path => [path, readFileSync(path, 'utf-8')] as const);
 
     const declares = (source: string, key: string) =>

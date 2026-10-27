@@ -4,7 +4,7 @@ import type { Globe } from '../../sdk/projection/globe';
 import { Vec2, Vec3 } from '../../sdk/types/common';
 
 /**
- * The sky's globe, from the scene: Storybook's helpers lie outside the `Sky`. Null without
+ * The sky's globe, from the scene: Storybook's helpers lie outside the `Scenery`. Null without
  * one.
  */
 export function findSceneGlobe(scene: Object3D): Globe | null {
@@ -12,9 +12,9 @@ export function findSceneGlobe(scene: Object3D): Globe | null {
   scene.traverse(object => {
     if (globe) return;
     const material = (object as Mesh).material as
-      | { isSkyMaterial?: boolean; globe?: Globe }
+      | { isSceneryMaterial?: boolean; globe?: Globe }
       | undefined;
-    if (material && !Array.isArray(material) && material.isSkyMaterial)
+    if (material && !Array.isArray(material) && material.isSceneryMaterial)
       globe = material.globe ?? null;
   });
   return globe;
@@ -50,7 +50,7 @@ const RAD = Math.PI / 180;
 
 /**
  * The globe's slice of `window.videx3d`. Each call finds the globe again, so it follows the
- * story the frame shows; every answer is null without a `Sky`.
+ * story the frame shows; every answer is null without a `Scenery`.
  */
 export function videx3dGlobe(
   scene: Object3D,

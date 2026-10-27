@@ -53,7 +53,7 @@ const shift = new Matrix4();
  *
  * Inside a {@link World} whose frame is another — another UTM zone, a field 300 km off —
  * the area places itself: where the world's map has its origin, turned and scaled to the
- * world's grid there (`placeGeoFrame`), and on the `Sky`'s globe when there is one, as the
+ * world's grid there (`placeGeoFrame`), and on the `Scenery`'s globe when there is one, as the
  * globe places the ground there (`Globe.tangent`). What is inside it stays in the area's own
  * frame, its conversions too. In the world's own frame it is not moved, as without a world.
  *

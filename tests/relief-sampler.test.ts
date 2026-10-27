@@ -5,7 +5,7 @@ import {
   ReliefPins,
   ReliefSamplerTile,
   reliefSquareTile,
-} from '../src/components/Sky/sky-relief-sampler';
+} from '../src/components/Scenery/scenery-relief-sampler';
 import type { ReliefTile } from '../src/sdk/geometries/relief-tiles';
 
 const CELLS = 4;

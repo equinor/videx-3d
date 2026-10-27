@@ -1,7 +1,7 @@
 /**
  * The demo store bakes any of its surfaces into a relief on demand, under the surface's
  * id with this prefix (`surfaceToRelief`, in the demo field's map): a local layer for a
- * `SkyBoxStage` relief.
+ * `SceneryStage` relief.
  */
 export const BAKED_RELIEF_PREFIX = 'surface:';
 

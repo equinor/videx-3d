@@ -27,6 +27,13 @@ vec3 waterFog(vec3 color, float dist, float density, vec3 shallowColor, vec3 dee
   return mix(color, mix(shallowColor, deepColor, fog) * light, fog);
 }
 
+// waterFog as a layer: `layer` premultiplied, its alpha how much it hides of what lies behind
+// it, so waterFog of what then shows is the result over that.
+vec4 waterFogOver(vec4 layer, float dist, float density, vec3 shallowColor, vec3 deepColor, float light) {
+  float fog = 1.0 - exp(-dist * density);
+  return mix(layer, vec4(mix(shallowColor, deepColor, fog) * light, 1.0), fog);
+}
+
 // The cutaway through the water in front of the view:
 // everything nearer than a line across the view, `shape.x` ahead of `anchor` along
 // `heading`, waved across it by `waveA` and `waveB` (amplitude, angular frequency, phase).

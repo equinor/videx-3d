@@ -1,0 +1,448 @@
+import { SceneryArgsFeatures } from '../../storybook/components/scenery-features';
+import type { Meta, StoryObj } from '@storybook/react-vite';
+import { useThree } from '@react-three/fiber';
+import proj4 from 'proj4';
+import { useCallback, useEffect, useRef } from 'react';
+import type { ReliefLayer } from '../../sdk/geometries/relief-tiles';
+import { getProjectionDefFromUtmZone } from '../../sdk/projection/crs';
+import type { GeoFrame } from '../../sdk/projection/geo-frame';
+import {
+  sceneryArgs,
+  SceneryArgs,
+  sceneryArgTypes,
+  sceneryDecorators,
+  sceneryPropsFromArgs,
+  sceneryProgressArgs,
+  sceneryReliefLookArgs,
+  SceneryReliefLookArgs,
+  sceneryReliefLookArgTypes,
+  sceneryReliefLookFromArgs,
+  SCENERY_DEMO_BAKED_SEABED,
+  SCENERY_DEMO_RELIEF_LAYERS,
+} from '../../storybook/components/scenery-controls';
+import {
+  ProgressArgs,
+  progressArgTypes,
+} from '../../storybook/decorators/progress-decorator';
+import {
+  SceneryDebugPanel,
+  useSceneryTimelapse,
+} from '../../storybook/components/scenery-debug-panel';
+import { SceneryStoryRendering } from '../../storybook/components/scenery-story-rendering';
+import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
+import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
+import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
+import { SceneryGenerators } from '../../storybook/decorators/scenery-generators';
+import { demoFrame } from '../../storybook/data/demo-crs';
+import { UtmArea } from '../UtmArea/UtmArea';
+import { World } from '../World/World';
+import { Scenery } from './Scenery';
+import { SceneryAnchor } from './SceneryAnchor';
+import { SceneryStage, SceneryStageRelief } from './SceneryStage';
+import type { SceneryReliefTileStats } from './SceneryStageReliefTiles';
+import type { SceneryStageBounds } from './scenery-stage';
+import { useLevelHorizon } from './useLevelHorizon';
+
+// Early testing of the relief drawn from tiles (documents/tiles.md): the demo reliefs
+// merged around Volve. The reliefs are made on demand: `npm run generate-relief`.
+
+const LEVEL = 0;
+const DEPTH = 100;
+
+// The scene at the demo field, as its `UtmArea` places it: scene X east, Z south. The
+// story's `World`: the relief is read in it, and the field below placed in it.
+const FRAME: GeoFrame = demoFrame;
+
+// The generated sea bed baked into a relief (`surfaceToRelief`): a coast and an island
+// over the field, made up, to see a local layer merge.
+const BAKED_SEABED = SCENERY_DEMO_BAKED_SEABED;
+
+// Coarse to fine: later ones win where they have data.
+const LAYERS: ReliefLayer[] = [
+  ...SCENERY_DEMO_RELIEF_LAYERS,
+  { id: BAKED_SEABED, feather: 500 },
+];
+
+// From Volve: east over the Norwegian Trench to the coast and the fjords.
+const POSITIONS: Record<string, [number, number]> = {
+  Volve: [0, 0],
+  'Volve edge': [30000, 0],
+  trench: [123000, -7000],
+  coast: [215000, -40000],
+  Lysefjord: [256000, -62000],
+};
+
+// A second field over the trench, in the next UTM zone (32N), with a map of its own about
+// its point, to the metre: as a host gives a field it has data for there.
+const UTM_32N = getProjectionDefFromUtmZone('32N');
+const TRENCH_FRAME: GeoFrame = {
+  projection: UTM_32N,
+  origin: proj4(FRAME.projection, UTM_32N, [
+    FRAME.origin[0] + POSITIONS.trench[0],
+    FRAME.origin[1] - POSITIONS.trench[1],
+  ]).map(Math.round) as [number, number],
+};
+// Points on the second field's own grid, east and north of its origin, in metres.
+const TRENCH_MARKS: [number, number][] = [
+  [5000, 0],
+  [0, 5000],
+  [-5000, 0],
+  [0, -5000],
+  [3500, 3500],
+  [-3500, -3500],
+];
+// The same points as the World's map has them: its X/Z.
+const TRENCH_CHECKS = TRENCH_MARKS.map(([e, n]): [number, number] => {
+  const [x, y] = proj4(UTM_32N, FRAME.projection, [
+    TRENCH_FRAME.origin[0] + e,
+    TRENCH_FRAME.origin[1] + n,
+  ]);
+  return [x - FRAME.origin[0], FRAME.origin[1] - y];
+});
+
+/** What the tiles draw and hold, as a line of text over the canvas, bottom right. */
+function useTileStats(shown: boolean) {
+  const gl = useThree(state => state.gl);
+  const element = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!shown) return;
+    const host = document.createElement('div');
+    Object.assign(host.style, {
+      position: 'absolute',
+      right: '10px',
+      bottom: '10px',
+      zIndex: '10',
+      padding: '4px 8px',
+      font: '12px monospace',
+      color: '#fff',
+      background: 'rgba(0, 0, 0, 0.55)',
+      borderRadius: '3px',
+      pointerEvents: 'none',
+      whiteSpace: 'pre',
+    });
+    (gl.domElement.parentElement ?? document.body).appendChild(host);
+    element.current = host;
+    return () => {
+      element.current = null;
+      host.remove();
+    };
+  }, [gl, shown]);
+  return useCallback((stats: SceneryReliefTileStats) => {
+    if (!element.current) return;
+    const cell =
+      stats.cell >= 1000
+        ? `${(stats.cell / 1000).toFixed(1)} km`
+        : `${stats.cell.toFixed(0)} m`;
+    element.current.textContent =
+      `tiles ${stats.drawn}  ·  ${(stats.triangles / 1e6).toFixed(2)} M triangles  ·  deepest ${stats.depth} (${cell} cells)\n` +
+      `in ${stats.resident} (${(stats.bytes / 1e6).toFixed(1)} MB)  ·  loading ${stats.loading}  ·  waiting ${stats.queued}`;
+  }, []);
+}
+
+type ReliefTilesArgs = SceneryArgs &
+  SceneryReliefLookArgs &
+  ProgressArgs & {
+    relief: 'tiles' | 'none';
+    layers: string[];
+    pixelError: number;
+    cellPixels: number;
+    baseDepth: number;
+    stageWidth: number;
+    tileStats: boolean;
+    tileDebug: 'none' | 'tiles' | 'layers';
+    panel: boolean;
+    levelHorizon: boolean;
+    field: 'anchored' | 'free' | 'none';
+    facility: 'field' | 'anchored' | 'free' | 'none';
+  };
+
+// The host's side of levelling the horizon far off (useLevelHorizon), in the `World` so it
+// finds the sky's globe.
+const LevelHorizon = ({ enabled }: { enabled: boolean }) => {
+  useLevelHorizon({ enabled });
+  return null;
+};
+
+/**
+ * A stand-in for the field's content, flat at sea level as a field's is: a 4 km plate and
+ * a 1.5 km mast, to see from far off whether it stays on the sea. `at` is its middle.
+ */
+const FieldStandIn = ({ at = [0, 0] }: { at?: [number, number] }) => (
+  <group position={[at[0], 0, at[1]]}>
+    <mesh position-y={2}>
+      <boxGeometry args={[4000, 4, 4000]} />
+      <meshBasicMaterial color="#ff7a1a" />
+    </mesh>
+    <mesh position-y={750}>
+      <boxGeometry args={[120, 1500, 120]} />
+      <meshBasicMaterial color="#ffd21a" />
+    </mesh>
+  </group>
+);
+
+/** A post `height` tall at `at`, on the sea. */
+const Post = ({
+  at,
+  width,
+  height,
+  color,
+}: {
+  at: [number, number];
+  width: number;
+  height: number;
+  color: string;
+}) => (
+  <mesh position={[at[0], height / 2, at[1]]}>
+    <boxGeometry args={[width, height, width]} />
+    <meshBasicMaterial color={color} />
+  </mesh>
+);
+
+/**
+ * The second field, drawn in its own map (UTM 32N) and placed by its `UtmArea` in the
+ * World's: the stand-in at its origin, and magenta posts on its own grid. Thin cyan posts
+ * mark the same points as the World's map has them, each anchored on the globe on its own:
+ * they run through the middle of the magenta ones where the placement is right.
+ */
+const TrenchField = () => (
+  <>
+    <UtmArea frame={TRENCH_FRAME}>
+      <FieldStandIn />
+      {TRENCH_MARKS.map(([e, n]) => (
+        <Post
+          key={`${e},${n}`}
+          at={[e, -n]}
+          width={80}
+          height={400}
+          color="#e040fb"
+        />
+      ))}
+    </UtmArea>
+    {TRENCH_CHECKS.map(at => (
+      <SceneryAnchor key={at.join(',')} at={at}>
+        <Post at={at} width={20} height={700} color="#18ffff" />
+      </SceneryAnchor>
+    ))}
+  </>
+);
+
+const ReliefTiles = (storyArgs: ReliefTilesArgs) => {
+  const { args, timelapse } = useSceneryTimelapse(storyArgs);
+  const half = args.stageWidth * 500;
+  const bounds: SceneryStageBounds = [-half, -half, half, half];
+  const onStats = useTileStats(args.tileStats && args.relief === 'tiles');
+  // Storybook leaves out the relief's own args (their `if`) while `relief` is NONE.
+  const layers = LAYERS.filter(layer => (args.layers ?? []).includes(layer.id));
+  const relief: SceneryStageRelief | undefined =
+    args.relief === 'tiles'
+      ? {
+          layers,
+          depth: args.baseDepth,
+          pixelError: args.pixelError,
+          cellPixels: args.cellPixels,
+          ...sceneryReliefLookFromArgs(args, layers),
+          onStats,
+        }
+      : undefined;
+
+  return (
+    <World frame={FRAME}>
+      <SceneryStoryRendering args={args} />
+      <LevelHorizon enabled={args.levelHorizon} />
+      {args.panel && (
+        <SceneryDebugPanel
+          args={args}
+          level={LEVEL}
+          positions={POSITIONS}
+          timelapse={timelapse}
+        />
+      )}
+      <SceneryGenerators>
+        <Scenery
+          {...sceneryPropsFromArgs(args)}
+          debug={{ tint: args.tint, environment: args.showEnvironment }}
+        >
+          <SceneryArgsFeatures
+            args={args}
+            ocean={{ level: LEVEL, depth: DEPTH }}
+            abyss={{}}
+          />
+          <SceneryStage
+            bounds={bounds}
+            relief={relief}
+            debug={{
+              relief: args.tileDebug === 'none' ? undefined : args.tileDebug,
+            }}
+          />
+          {args.field === 'anchored' && (
+            <SceneryAnchor>
+              <FieldStandIn />
+            </SceneryAnchor>
+          )}
+          {args.field === 'free' && <FieldStandIn />}
+          {args.facility === 'anchored' && (
+            <SceneryAnchor at={POSITIONS.trench}>
+              <FieldStandIn at={POSITIONS.trench} />
+            </SceneryAnchor>
+          )}
+          {args.facility === 'free' && <FieldStandIn at={POSITIONS.trench} />}
+        </Scenery>
+      </SceneryGenerators>
+      {/* Outside the Scenery: the World hands it the Scenery's globe. */}
+      {args.facility === 'field' && <TrenchField />}
+    </World>
+  );
+};
+
+const meta = {
+  title: 'Spikes/Scenery/ReliefTiles',
+  component: ReliefTiles,
+  decorators: [
+    Canvas3dDecorator,
+    // The reliefs' tiles, built from the store by a generator.
+    GeneratorsProviderDecorator,
+    DataProviderDecorator,
+    ...sceneryDecorators,
+  ],
+  parameters: {
+    scale: 1000,
+    // Past the horizon from 100 km up (1130 km).
+    far: 3000000,
+    autoClear: true,
+    cameraPosition: [9000, 2500, 9000],
+    cameraTarget: [0, LEVEL - DEPTH, 0],
+    ownLighting: () => true,
+  },
+  argTypes: {
+    ...sceneryArgTypes({ debug: true }),
+    ...progressArgTypes,
+    relief: {
+      control: { type: 'inline-radio' },
+      options: ['tiles', 'none'],
+      description:
+        'The relief drawn from TILES merged from the layers below, or NONE: the stage\u2019s flat seabed. Made on demand: `npm run generate-relief`.',
+      table: { category: 'Relief' },
+    },
+    layers: {
+      control: { type: 'check' },
+      options: LAYERS.map(layer => layer.id),
+      description:
+        'The reliefs merged, coarse to fine whatever the order ticked: ETOPO 2022 at 10′ (the world), ETOPO 2022 at 2′ (Norway to the British Isles), ETOPO 2022 at 15″ and EMODnet at 1/8′ (Volve east to the coast; EMODnet has no land), EMODnet at 1/16′ around Volve, and the generated sea bed baked from its surface (a made-up coast and island over the field, off by default). A later one wins where it has data, faded in over 20, 3, 1.5, 0.5 and 0.5 km from where its data ends.',
+      table: { category: 'Relief' },
+      if: { arg: 'relief', eq: 'tiles' },
+    },
+    pixelError: {
+      control: { type: 'range', min: 0.5, max: 16, step: 0.5 },
+      description:
+        'The most a tile\u2019s error may show on screen, in pixels: larger draws coarser tiles.',
+      table: { category: 'Relief' },
+      if: { arg: 'relief', eq: 'tiles' },
+    },
+    cellPixels: {
+      control: { type: 'range', min: 1, max: 64, step: 1 },
+      description:
+        'The most a tile\u2019s cell may span on screen, in pixels, where finer data lies under it: what keeps the shading and the coast sharp from high up, where the error alone splits nothing. Larger draws fewer, blurrier tiles.',
+      table: { category: 'Relief' },
+      if: { arg: 'relief', eq: 'tiles' },
+    },
+    ...sceneryReliefLookArgTypes(),
+    baseDepth: {
+      control: { type: 'range', min: 0, max: 500, step: 10 },
+      description:
+        'The flat seabed where no layer has data, metres below the sea. Changing it builds every tile again.',
+      table: { category: 'Relief' },
+      if: { arg: 'relief', eq: 'tiles' },
+    },
+    stageWidth: {
+      control: { type: 'range', min: 2, max: 80, step: 1 },
+      description:
+        'The stage\u2019s width, in km. The relief covers it too when drawn from tiles.',
+      table: { category: 'Stage' },
+    },
+    tileStats: {
+      description:
+        'What the tiles draw and hold, bottom right: tiles and triangles drawn, the deepest tile, and tiles in, loading and waiting.',
+      table: { category: 'Debug' },
+      if: { arg: 'relief', eq: 'tiles' },
+    },
+    tileDebug: {
+      control: { type: 'inline-radio' },
+      options: ['none', 'tiles', 'layers'],
+      description:
+        'TILES tints each tile by its depth and outlines it; LAYERS colours the ground by the layer that gave it (grey for the flat base).',
+      table: { category: 'Debug' },
+      if: { arg: 'relief', eq: 'tiles' },
+    },
+    field: {
+      control: { type: 'inline-radio' },
+      options: ['anchored', 'free', 'none'],
+      description:
+        'A stand-in for the field\u2019s content at Volve (a 4 km plate and a 1.5 km mast), flat at sea level: ANCHORED in a `SceneryAnchor` or FREE, left where it is. The globe is flat over the stage, so the two are the same: it stays on the sea from anywhere.',
+      table: { category: 'Debug' },
+    },
+    facility: {
+      control: { type: 'inline-radio' },
+      options: ['field', 'anchored', 'free', 'none'],
+      description:
+        'Something 123 km east, over the trench, beyond the globe\u2019s flat disc. FIELD: a second field in the next UTM zone (32N), drawn in its own map and placed by its `UtmArea` in the story\u2019s `World` \u2014 the stand-in, and magenta posts 5 km out on its own grid, through which thin cyan posts run, the same points converted to the World\u2019s map and anchored one by one. ANCHORED: the stand-in in the World\u2019s map, in a `SceneryAnchor` at its point: on the sea, upright on the globe. FREE: flat as `UtmPosition` places it, 1.2 km over the sea, leaning 1.1\u00b0 from the globe\u2019s up there.',
+      table: { category: 'Debug' },
+    },
+    panel: {
+      description:
+        'Buttons over the view: the camera\u2019s height, moves to set altitudes, places from Volve to the fjords, and views.',
+      table: { category: 'Debug' },
+    },
+    levelHorizon: {
+      description:
+        'Keeps the camera\u2019s horizon level far from the field (`useLevelHorizon`): its up follows the globe\u2019s up where it is, below 100 km. Off, a camera far off keeps the field\u2019s up and its horizon tilts by the angle round the Earth.',
+      table: { category: 'Stage' },
+    },
+  },
+  args: {
+    ...sceneryArgs,
+    ...sceneryProgressArgs,
+    relief: 'tiles',
+    layers: LAYERS.map(layer => layer.id).filter(id => id !== BAKED_SEABED),
+    pixelError: 2,
+    cellPixels: 8,
+    ...sceneryReliefLookArgs,
+    reliefColor: 'ramp',
+    baseDepth: DEPTH,
+    stageWidth: 16,
+    tileStats: true,
+    tileDebug: 'none',
+    panel: true,
+    levelHorizon: false,
+    field: 'anchored',
+    facility: 'none',
+  },
+} satisfies Meta<typeof ReliefTiles>;
+
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+export const Default: Story = {};
+
+/**
+ * A far plane of 200 km, short of the horizon from a few hundred metres up: the tiles end
+ * there, and past it the first layer's overview is drawn flat on the sea, at the far
+ * plane, out to the horizon.
+ */
+export const ShortFarPlane: Story = {
+  parameters: { far: 200000 },
+};
+
+/**
+ * The whole Earth: a far plane of 50 000 km, the camera 20 000 km out over the field. The
+ * world's relief (ETOPO 2022 at 10′) under the finer ones, the far side hidden behind the
+ * globe, and seen from up there the night side dark; the sun and the real stars and
+ * planets for the date. Fly back down to the field from here.
+ */
+export const Earth: Story = {
+  parameters: {
+    far: 50000000,
+    cameraPosition: [0, 14000000, 14000000],
+    cameraTarget: [0, LEVEL - DEPTH, 0],
+  },
+  args: { field: 'none', sunFromTime: true, levelHorizon: true },
+};

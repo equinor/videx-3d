@@ -357,7 +357,7 @@ const onProgress = useCallback(
 Only what reads the store re-renders: passing `setState` to `onProgress` instead would
 re-render the whole `<Canvas>` on every report.
 
-The `FieldColumn` story shows it (`progressDisplay`), and in `WithSky` next to the sky's
+The `FieldColumn` story shows it (`progressDisplay`), and in `WithScenery` next to the sky's
 own progress (`progressSplit`); its output panel keeps only a `Building chunks` /
 `Chunks built` / `Error` status, the rebuild count and the time.
 ---

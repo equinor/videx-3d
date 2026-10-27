@@ -61,7 +61,7 @@ export function crsFromGeoFrame(frame: GeoFrame): CRS {
 }
 
 /**
- * Where on the Earth `frame`'s origin lies, in degrees north and east (WGS84). The `Sky`
+ * Where on the Earth `frame`'s origin lies, in degrees north and east (WGS84). The `Scenery`
  * takes its observer's place from the `World`'s frame this way; spread it into an
  * `observer` with a date to give it yourself: `{ date, ...geoFrameLocation(frame) }`.
  *

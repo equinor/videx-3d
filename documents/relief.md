@@ -1,6 +1,6 @@
 # Relief: land and seabed around the stage
 
-A `SkyBoxStage` can put land and seabed from your own elevation data around the scene: a
+A `SceneryStage` can put land and seabed from your own elevation data around the scene: a
 `relief`, merged from several data sets at once — global, regional, local — and drawn from
 tiles, as fine as the data where the camera is and no finer anywhere else. Below sea level
 it is the seabed, seen through the water as the stage's own seabed is; above sea level it
@@ -11,8 +11,9 @@ stand on the horizon where they should. It is off by default.
 
 ```tsx
 <World frame={geoFrameFromCrs(crs)}>
-  <Sky ocean={{ level: 0, depth: 120 }}>
-    <SkyBoxStage
+  <Scenery>
+    <SceneryOcean level={0} depth={120} />
+    <SceneryStage
       bounds={[minX, minZ, maxX, maxZ]}
       occupants={[{ outline, onStage, onGround }]}
       relief={{
@@ -29,7 +30,7 @@ stand on the horizon where they should. It is off by default.
         layerLooks: { 'my-survey': { color: { ramp: 'rainbow', min: -130, max: -60 } } },
       }}
     />
-  </Sky>
+  </Scenery>
 </World>
 ```
 
@@ -59,10 +60,10 @@ from the deepest seabed to the mountain tops. A layer fades in over its `feather
 units) from where its data ends, its holes and a coast without land data included, so a
 finer survey merges into the one under it without a step.
 
-The `skyReliefTile` generator (`generateSkyReliefTile`) builds each tile where the
+The `sceneryReliefTile` generator (`generateSceneryReliefTile`) builds each tile where the
 generators run: it reads the blocks it needs from every layer, projects them into the
 scene and merges them, so the stage needs a `GeneratorsProvider`. Nest a second provider
-around the `Sky`, on a worker of its own, and the tiles stream while a column builds on
+around the `Scenery`, on a worker of its own, and the tiles stream while a column builds on
 the other.
 
 `frame` says where the scene lies on the map, a `GeoFrame`: the projection it is drawn in
@@ -86,7 +87,7 @@ ignores), and `npm run build-static` runs it first, so the deployed Storybook ha
 The demo store also bakes any of its surfaces into a relief on demand
 (`surface:<id>`, with `surfaceToRelief`), and makes StageDebug's synthetic ground; the
 stories add them over the demo reliefs as their own finest layers (`reliefLayers`,
-`skyReliefFromArgs`).
+`sceneryReliefFromArgs`).
 
 ## How it fits the stage
 
@@ -112,11 +113,11 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
   the relief is placed on the same globe, and the stage's sea surface writes the depth of
   the sea on it, so land beyond the scene meets it there. Nothing in either depends on the
   camera, so the ground holds still against the sea from anywhere. What is drawn flat
-  beyond the disc stands off it unless placed on the globe (`SkyAnchor`, `applyGlobe`; see
-  [sky.md](./sky.md#the-globe)).
+  beyond the disc stands off it unless placed on the globe (`SceneryAnchor`, `applyGlobe`; see
+  [scenery.md](./scenery.md#the-globe)).
 - The ground under the camera is the sky's (`oceanGround`), sampled on the triangles drawn:
   under the relief the camera is in the ground, for the lighting and the void — below the
-  sea, and in land above it too. In it (`SkyMaterial.oceanBuried`) none of the sea, the
+  sea, and in land above it too. In it (`SceneryMaterial.oceanBuried`) none of the sea, the
   relief or its overview is drawn: the sky shows the void as from just below the sea's
   seabed and the scene is lit as the subsurface, so from inside a hill the data is seen in
   rock rather than the sea through it. ⚠️ The void is laid out in the field's frame: far
@@ -127,7 +128,7 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
 ## Colour and contours
 
 How the relief looks is data, not shader code: changing any of it uploads a small table
-(`SkyReliefLooks`) and compiles nothing.
+(`SceneryReliefLooks`) and compiles nothing.
 
 - **`color`**, one of:
   - a colour: the land flat, the seabed the sea's seabed colour. Default `#34433b`.
@@ -202,7 +203,7 @@ The tiles, and the stage's sea and seabed, reach the camera's far plane, measure
 the curved sea; past that the sky's own sea takes over. Any shorter, and the scene between
 would show through the sky's sea, which is drawn on the far plane. Where the far plane
 falls short of the sea's horizon, an overview draws the relief's FIRST layer on past the
-tiles, on a fullscreen layer at the far plane (the `skyRelief` generator resamples it):
+tiles, on a fullscreen layer at the far plane (the `sceneryRelief` generator resamples it):
 what it holds above the sea, shaded and faded through the air, but flat on the curved sea.
 
 For mountains on the horizon, set the far plane past it from the highest the camera goes:

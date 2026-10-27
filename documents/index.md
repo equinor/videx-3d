@@ -7,7 +7,7 @@ This section provides further documentation and examples on how to use this libr
 - [Ocean](./ocean.md)
 - [Order-Independent Transparency (OIT) Guide](./oit-guide.md)
 - [Relief: land and seabed beyond the stage](./relief.md)
-- [Sky](./sky.md)
+- [Scenery](./scenery.md)
 - [Trajectory](./trajectory.md)
 - [Trajectory migration guide](./trajectory-migration.md)
 - [Wellbore fence](./fence-curves.md)

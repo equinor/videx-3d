@@ -8,9 +8,9 @@ import type { Globe } from '../../sdk/projection/globe';
 export type WorldState = {
   /** the scene's frame on the Earth: world X/Z are its map's, about its origin */
   frame: GeoFrame;
-  /** the globe what is placed in the world is set on: a `Sky`'s, while one is drawn; else null, and all is flat */
+  /** the globe what is placed in the world is set on: a `Scenery`'s, while one is drawn; else null, and all is flat */
   globe: Globe | null;
-  /** A `Sky` hands the world its globe; returns the release. */
+  /** A `Scenery` hands the world its globe; returns the release. */
   provideGlobe: (globe: Globe) => () => void;
 };
 

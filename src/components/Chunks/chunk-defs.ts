@@ -392,7 +392,7 @@ export type ChunkLayer = {
   keepCap?: boolean;
   /**
    * Draw this layer's cap. Default true. `false` leaves it to someone else — a
-   * `SkyBoxStage` whose relief is the ground over the column, say — while the layer stays
+   * `SceneryStage` whose relief is the ground over the column, say — while the layer stays
    * in the build: walls, cuts and hidden-cap culling go on as if it were drawn.
    *
    * ⚠️ Culling still counts it as covering what lies under it, so whatever draws it

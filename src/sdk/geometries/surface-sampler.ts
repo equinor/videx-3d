@@ -2,7 +2,7 @@ import type { TinSample } from './tin-sampler';
 
 /**
  * Read-only height queries against ground as it is DRAWN: the surfaces a `ChunkStack`
- * draws (`createSurfaceSampler`), or a relief a `SkyBoxStage` draws from tiles
+ * draws (`createSurfaceSampler`), or a relief a `SceneryStage` draws from tiles
  * (`ReliefSampler`). What is placed on the ground — a pipeline, a structure, a marker —
  * asks one, through `useSurfaceSampler`.
  *

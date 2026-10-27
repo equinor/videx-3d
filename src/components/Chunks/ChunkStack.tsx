@@ -176,7 +176,7 @@ export type ChunkStackProps = {
   seabed?: string | null;
   /**
    * The relief the column's sea bed (`seabed`) is built on, instead of on its surface's
-   * own values: merged onto the column's grid as a `SkyBoxStage` merges its tiles, and
+   * own values: merged onto the column's grid as a `SceneryStage` merges its tiles, and
    * covering the whole column, so the column's top is the ground the stage draws. Derive
    * it from the stage's props with `reliefSource`. The sea bed's surface still plans the
    * grid. Needs the shared column (an `outline` or a `cutSource`). The column is built
@@ -206,7 +206,7 @@ export type ChunkStackProps = {
   reliefSampler?: SurfaceSampler | null;
   /**
    * Draw the `water`. Default true. `false` keeps the sea built but hides it, the bed
-   * tint and the immersion fog in it with it — while a `SkyBoxStage` owns the water over
+   * tint and the immersion fog in it with it — while a `SceneryStage` owns the water over
    * the column, say (see its occupant's `onStage`). A hidden sea keeps no bed whole: a
    * cut takes the sea bed's cap like any other. Switching it rebuilds no geometry.
    */
@@ -286,7 +286,7 @@ export type ChunkStackProps = {
   /**
    * Called with the stack's cut — its section's plane and its fence — as the uniform
    * objects its own materials read, so something drawn for the stack can be cut with it:
-   * the relief over it, as a `SkyBoxStage` occupant's `cut`, say. Once; the objects follow
+   * the relief over it, as a `SceneryStage` occupant's `cut`, say. Once; the objects follow
    * the cut every frame, and cut nothing while it is off. `null` on unmount.
    */
   onCut?: (cut: CutUniforms | null) => void;

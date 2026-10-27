@@ -129,7 +129,7 @@ used to patch through `makeOitCompatible`. Three reasons it is worth owning:
   overall `strength`. ⭐ The library ships the presets but never assigns one — which unit
   is sand is host knowledge, exactly like colour (§ "colour is config"). The names match
   `SedimentClass` so a generated column maps straight through. The presets and the shader
-  (`shaderLib/surface-detail.glsl`) live in the sdk as `SurfaceDetail`, which the `Sky`'s
+  (`shaderLib/surface-detail.glsl`) live in the sdk as `SurfaceDetail`, which the `Scenery`'s
   seabed uses too.
 - **World anchoring instead of a UV.** The pattern coordinate is the WORLD position
   projected onto the plane the face most nearly lies in. A cap carries a per-layer grid

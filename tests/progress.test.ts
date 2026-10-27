@@ -78,7 +78,7 @@ describe('createProgressStore', () => {
 
   it('hands out the same report function for a key, with the latest options', () => {
     const store = createProgressStore();
-    const first = store.source('sky', { name: 'Sky' });
+    const first = store.source('sky', { name: 'Scenery' });
     const again = store.source('sky', { name: 'Himmel', group: 'scene' });
     expect(again).toBe(first);
     first(report(working('x', 0)));
@@ -192,7 +192,7 @@ describe('several sources', () => {
 describe('describeProgress', () => {
   it('shows a lone source by its title and items, and several by a row each', () => {
     const store = createProgressStore();
-    store.source('sky', { name: 'Sky', title: 'Preparing the sky' })(
+    store.source('sky', { name: 'Scenery', title: 'Preparing the sky' })(
       report(
         working('shaders', 0.5, 'Compiling shaders', { name: 'Shaders' }),
         working('relief', 0, undefined, { name: 'Relief' }),
@@ -213,7 +213,7 @@ describe('describeProgress', () => {
     expect(both.title).toBe('Loading');
     expect(both.stage).toBe('Model: Building mesh 1/4');
     expect(both.rows.map(r => [r.key, r.name, r.stage, r.percent])).toEqual([
-      ['sky', 'Sky', 'Compiling shaders 1/4', 25],
+      ['sky', 'Scenery', 'Compiling shaders 1/4', 25],
       ['model', 'Model', 'Building mesh 1/4', 20],
     ]);
 
@@ -232,13 +232,13 @@ describe('describeProgress', () => {
       report({ ...done('chunk'), stats: { tiles: 4 } }),
     );
     const sky = store.source('sky', {
-      name: 'Sky',
+      name: 'Scenery',
       title: 'Preparing the sky',
     });
     sky(report(working('shaders', 0.5, 'Compiling shaders')));
     expect(describeProgress(store.getSnapshot())!).toMatchObject({
       title: 'Preparing the sky',
-      stage: 'Sky: Compiling shaders 1/4',
+      stage: 'Scenery: Compiling shaders 1/4',
     });
     sky(report({ ...done('shaders'), stats: { programs: 9 } }));
     expect(describeProgress(store.getSnapshot())!.stats).toEqual({

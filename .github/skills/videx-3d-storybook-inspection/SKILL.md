@@ -48,12 +48,12 @@ Then `screenshot_page`.
 | `camera.pose()` | current pose, in the form `orbit` takes — paste it back to return |
 | `camera.settled()` | resolves when the controls stop moving |
 | `profile({frames, warmup, groups, timeout})` | frame GPU ms (timer query) and main-thread ms as median/p90, bake frames apart; with `groups` (`{ name: object => boolean }`) a second pass times those objects' draws |
-| `globe.orbit({at: [x, z], height, azimuth, polar, distance, transition})` | `camera.orbit` about the point `height` over the sea at map X/Z, its angles about the globe's up there (a story with a `Sky`) |
-| `globe.place(x, z, height)` / `globe.foot(p)` / `globe.altitude(p)` / `globe.up(p)` | the sky's globe in plain arrays: a point over the sea, the map point under `p`, its height over the sea, up there; `null` without a `Sky` |
+| `globe.orbit({at: [x, z], height, azimuth, polar, distance, transition})` | `camera.orbit` about the point `height` over the sea at map X/Z, its angles about the globe's up there (a story with a `Scenery`) |
+| `globe.place(x, z, height)` / `globe.foot(p)` / `globe.altitude(p)` / `globe.up(p)` | the sky's globe in plain arrays: a point over the sea, the map point under `p`, its height over the sea, up there; `null` without a `Scenery` |
 
-⚠️ Under a `Sky` far from the field (beyond its stage), **scene Y is not altitude**: the
+⚠️ Under a `Scenery` far from the field (beyond its stage), **scene Y is not altitude**: the
 sea lies on a globe, 3 km below Y = 0 at 200 km. Pose there with `globe.orbit` or
-`globe.place`, never with a hard-coded Y. Sky stories with a `SkyDebugPanel` have buttons
+`globe.place`, never with a hard-coded Y. Sky stories with a `SceneryDebugPanel` have buttons
 for the same.
 
 `profile` needs the tab in front and the user's hands off (ask first), and no other GPU
@@ -99,7 +99,14 @@ coordinates yourself.
 - Storybook URL args: `?id=<story>&viewMode=story&args=key:value;key2:value2`,
   booleans as `!true` / `!false`, `#` in colours as `%23`. Prefer `setArgs` over
   URL args once the page is up.
-- Story ids used here: `spikes-chunks-fieldcolumn--default`.
+- Story ids used here: `spikes-chunks-fieldcolumn--default`,
+  `spikes-scenery-stagedebug--default`, `spikes-scenery-relieftiles--default`.
+- ⚠️ `camera.settled()` never resolves with the camera in the water (StageDebug at −30 m): a
+  script awaiting it hangs. After `transition: false` the pose has landed; wait two
+  animation frames instead.
+- To wait for a `Scenery` to finish compiling (after an arg that recompiles, say), poll
+  `videx3d.scene` until no visible mesh has a material named `scenery-stand-in` and one
+  named `scenery-*` is visible: the stand-in is drawn in the background's place meanwhile.
 
 ## Measuring instead of looking
 

@@ -211,7 +211,7 @@ export function createReliefTopSampler(
     seabed: string;
     /** how far above the relief its cap is built */
     margin: number;
-    /** the relief's own sampler (`SkyBoxStageRelief.onSampler`) */
+    /** the relief's own sampler (`SceneryStageRelief.onSampler`) */
     relief?: SurfaceSampler | null;
   },
 ): SurfaceSampler {

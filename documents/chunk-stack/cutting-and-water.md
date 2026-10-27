@@ -586,7 +586,7 @@ count grows with the **square** of the field size. `DEFAULT_WATER_RESOLUTION` is
 
 `useStackWater` also creates the wave **sampler** (`createOceanSampler(surface,
 -depth)`) and a contact registry (`createOceanContactRegistry`, shared with `<Ocean>`
-and `<Sky>`), and `ChunkStack` provides them as
+and `<Scenery>`), and `ChunkStack` provides them as
 `OceanSamplerContext` / `OceanContactContext`. A floating child — a vessel, a buoy —
 heaves with the swell and spreads foam exactly as it would inside an `<Ocean>`,
 with nothing extra wired. Heights come back **absolute** in the stack's frame, so
@@ -605,7 +605,7 @@ See [../ocean.md](../ocean.md).
 fog, and zeroes the water tint (`waterTintShown`), while keeping everything built:
 the sea itself, the cut that leaves room for it, the bed's tint materials. Turning
 it back on shows it at once. It is for a sky that owns the water over the column
-(`SkyBoxStage`'s `onStage` `water`; see [../sky.md](../sky.md)), so the two seas
+(`SceneryStage`'s `onStage` `water`; see [../scenery.md](../scenery.md)), so the two seas
 hand over without a stutter.
 
 ---

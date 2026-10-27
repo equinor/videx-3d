@@ -16,7 +16,7 @@ What reports lives inside the canvas; what shows it belongs in the host's DOM. A
 ```tsx
 const progress = useMemo(createProgressStore, []);
 // inside the canvas
-<Sky onProgress={progress.source('sky', { name: 'Sky' })} />
+<Scenery onProgress={progress.source('sky', { name: 'Scenery' })} />
 <ChunkStack onProgress={onModelProgress}>…</ChunkStack>
 // anywhere in the host's DOM
 <ProgressPopup store={progress} position="top" split="source" />
@@ -88,12 +88,12 @@ each `videx-progress-popup__card` in its `__stack`. The bar is decorative
 - **`ChunkStack.onProgress`** reports its own detailed `ChunkStackProgress`;
   `chunkProgressReport(progress, labels?)` turns it into a report, a chunk an item (see
   [chunk-stack/coordination.md](./chunk-stack/coordination.md#showing-progress-in-the-host)).
-- **`Sky.onProgress`** reports two items: `shaders`, its programs compiled of those it
+- **`Scenery.onProgress`** reports two items: `shaders`, its programs compiled of those it
   waits for (the stand-in, its own, its stages', its bakes' and the cliffs'), and with a
   tiled relief `relief`, its stages' tiles loaded of those wanted. The relief runs from
   when a tile is waited for to when none is, so moving the camera starts a short run: a
-  popup's `delay` keeps those from flashing it. Its texts are `SKY_PROGRESS_LABELS`,
-  overridable through `progressLabels`. See [sky.md](./sky.md#performance) for why its
+  popup's `delay` keeps those from flashing it. Its texts are `SCENERY_PROGRESS_LABELS`,
+  overridable through `progressLabels`. See [scenery.md](./scenery.md#performance) for why its
   shaders take long the first time.
 - Anything of the host's own can report through a source as well.
 
@@ -101,7 +101,7 @@ each `videx-progress-popup__card` in its `__stack`. The bar is decorative
 
 Every story drawing a sky, and the `FieldColumn` story, report into one store held
 outside the canvas (`storyProgress` in `src/storybook/decorators/progress-decorator.tsx`):
-the sky as `sky`, the chunk stack as `model`. `skyDecorators` include its decorator, and
+the sky as `sky`, the chunk stack as `model`. `sceneryDecorators` include its decorator, and
 the `Progress` controls choose the display (`progressDisplay`), its `progressSplit`,
 `progressDelay` and the rest. The look is the stories' own stylesheet,
 `src/storybook/styles/progress.css`.

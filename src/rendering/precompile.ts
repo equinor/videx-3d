@@ -35,13 +35,15 @@ export const PRECOMPILE_SLOTS = Math.max(
 /**
  * @internal
  * Which compiles go first in the queue: higher first, then in the order asked for. The
- * sky's large programs are `background`, so the scene's own content does not wait behind
- * them; what is drawn while they compile is `first`; what only bakes, `last`.
+ * scenery's large programs are `background`, so the scene's own content does not wait
+ * behind them; those it draws only elsewhere (another zone's layers), `later`; what is
+ * drawn while they compile is `first`; what only bakes, `last`.
  */
 export const PRECOMPILE_PRIORITY = {
   first: 1,
   normal: 0,
   background: -1,
+  later: -1.5,
   last: -2,
 };
 

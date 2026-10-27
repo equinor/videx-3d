@@ -3,9 +3,9 @@
 > **Status (2026-10-26): built, steps 1–7; [world.md step 2](./world.md#9-step-2-in-detail-the-sky-on-a-fixed-globe)
 > (the sky on a fixed globe), then [overlays](#8-overlays-shapes-on-the-relief-the-sea-and-the-seabed),
 > are next.** What a user needs is in [relief.md](./relief.md), [data.md](./data.md),
-> [sky.md](./sky.md) and the [chunk stack's documents](./chunk-stack/index.md); this stays
+> [scenery.md](./scenery.md) and the [chunk stack's documents](./chunk-stack/index.md); this stays
 > the maintainers' design and its record. Early testing happens in the Storybook story
-> `Spikes/Sky/ReliefTiles` (see [Order of work](#10-order-of-work)).
+> `Spikes/Scenery/ReliefTiles` (see [Order of work](#10-order-of-work)).
 
 - [Why](#why)
 - [Decisions](#decisions)
@@ -26,7 +26,7 @@
 
 ## Why
 
-Today a `SkyBoxStage` relief is ONE data set, resampled whole into one texture of at most
+Today a `SceneryStage` relief is ONE data set, resampled whole into one texture of at most
 2048² around the stage — about 2 km a texel over the 2000 km it must reach — and drawn
 with CDLOD. The stage keeps a flat seabed over `bounds` and eases it into the seabed an
 occupant hands it.
@@ -344,10 +344,10 @@ type TileSource<T> = {
   most `concurrency` arrive in a frame: nothing a budget would smooth.
 - **A worker of its own (built 2026-10-25),** with no change to the library: the stage
   asks `useGenerator`, which the nearest `GeneratorsProvider` answers, so a host nests a
-  second provider around the `Sky`, with a registry on a worker of its own holding the
-  sky's generators (`skyReliefTile`, `skyRelief`). Each provider connects to
-  the store by a port of its own. The stories do it with `SkyGenerators`
-  (`storybook/decorators/sky-generators.tsx`); FieldColumn's column builds, with their
+  second provider around the `Scenery`, with a registry on a worker of its own holding the
+  sky's generators (`sceneryReliefTile`, `sceneryRelief`). Each provider connects to
+  the store by a port of its own. The stories do it with `SceneryGenerators`
+  (`storybook/decorators/scenery-generators.tsx`); FieldColumn's column builds, with their
   serial phases of one to two seconds, then never hold up a tile.
 
 ---
@@ -356,7 +356,7 @@ type TileSource<T> = {
 
 ### Building one
 
-A generator, `skyReliefTile` — run where the generators run at first, and on a worker of
+A generator, `sceneryReliefTile` — run where the generators run at first, and on a worker of
 its own from step 3 (see [Costs and risks](#12-costs-and-risks)); its work is
 three.js-free in the sdk (`buildReliefTile`):
 
@@ -435,13 +435,13 @@ sampled as a grid are its heights exactly (tested).
 Built (2026-10-25) as the single-texture relief's own machinery, reused rather than a new
 generator: when the camera's far plane falls short of the farthest horizon, the stage
 draws the relief's FIRST, coarsest layer on a fullscreen far layer
-(`SkyBoxStageReliefOverview`): land flat on the curved sea, at the far plane, past where
+(`SceneryStageReliefOverview`): land flat on the curved sea, at the far plane, past where
 the tiles end. The first layer stands for the merge out there: past a few hundred
 kilometres the finer layers are regional and lie nearer. The `ShortFarPlane` story (a
 200 km far plane) shows it.
 
 **Geographic since 2026-10-26** (world.md
-[6d](./world.md#6d-the-whole-globe-built-2026-10-26)): the `skyRelief` generator resamples
+[6d](./world.md#6d-the-whole-globe-built-2026-10-26)): the `sceneryRelief` generator resamples
 the first layer onto longitude and latitude over all of it (`resampleReliefGeographic`,
 at most 4096 texels a side, all the way round for a world relief), and the far layer reads
 it where each view meets the globe's sea (`globeGeographic`): from anywhere, the far side
@@ -460,7 +460,7 @@ start-up only).
 ## 5. Drawing the relief
 
 ```tsx
-<SkyBoxStage
+<SceneryStage
   bounds={bounds}
   relief={{
     frame,                                     // where the scene lies on the map
@@ -494,9 +494,9 @@ start-up only).
   seabed, flat at `depth` where no layer has data. Without one, its flat seabed covers
   everything, as today without an occupant's seabed.
 - **See-through (built 2026-10-25):** below the sea's `seabedOpacity` of 1, the tiles
-  over `bounds` are drawn a second time (`createSkyReliefTileSubset`: the same patch,
+  over `bounds` are drawn a second time (`createSceneryReliefTileSubset`: the same patch,
   instances of its own) with a see-through variant
-  (`createSkyReliefTileSeeThroughMaterial`, OIT-wired as the stage's see-through seabed),
+  (`createSceneryReliefTileSeeThroughMaterial`, OIT-wired as the stage's see-through seabed),
   which keeps only what lies inside `bounds`, at the seabed's opacity; the opaque draw
   leaves it out (`RELIEF_STAGE_AROUND`). The see-through draw has no skirts: two
   see-through skirts over each other would show as a line. That leaves a crack only while
@@ -520,7 +520,7 @@ start-up only).
     turn `keepBed` off; past one, the stage warns and the first cuts it.
   - **Up to 4 outlines, in one texture.** Each occupant's `polygonDistanceField` (256
     texels a side, exact within 4 of the boundary, so a straight edge is found exactly) is
-    a square of one float texture (`SkyReliefOccupantFields`). The shader reads it with
+    a square of one float texture (`SceneryReliefOccupantFields`). The shader reads it with
     `texelFetch`, each read clamped to its own square, through one sampler and a
     uniform array of frames. Every outline keeps the cutaway off the ground over it; the
     cutting occupant's says where its cut applies.
@@ -563,8 +563,8 @@ by their latitudes and longitudes (`globeGeodetic` in `relief-tiles-vertex.glsl`
 Nothing is measured from the camera but the horizon, so the relief
 and the sea hold still against each other as the camera moves or turns.
 
-- **What is drawn flat goes onto the globe, rigidly.** `SkyAnchor` (inside the `Sky`) and
-  `SkyBoxStageOccupant.anchor` (a group outside it, such as the field's `UtmArea`) place
+- **What is drawn flat goes onto the globe, rigidly.** `SceneryAnchor` (inside the `Scenery`) and
+  `SceneryStageOccupant.anchor` (a group outside it, such as the field's `UtmArea`) place
   it where the globe has its point, turned to the up there (`placeOnGlobe`). Over the disc
   that moves nothing, so a field never moves; across what is placed the plane and the
   globe part by `d² / 2R`, about 5 m at 8 km from its point. `UtmPosition` and
@@ -643,17 +643,18 @@ const relief = { frame, layers };
 const source = useMemo(() => reliefSource(relief, ocean), [relief, ocean]);
 const [ground, setGround] = useState<HeightFieldClip | null>(null);
 const [cut, setCut] = useState<CutUniforms | null>(null);
-const [stage, setStage] = useState<SkyBoxStageOccupantState>(OFF_STAGE);
+const [stage, setStage] = useState<SceneryStageOccupantState>(OFF_STAGE);
 
-<Sky ocean={ocean}>
-  <SkyBoxStage
+<Scenery>
+  <SceneryOcean {...ocean} />
+  <SceneryStage
     bounds={bounds}
     relief={relief}
     occupants={[
       { outline, cut: cut ?? undefined, onStage: setStage, onGround: setGround },
     ]}
   />
-</Sky>
+</Scenery>
 <ChunkStack
   outline={outline}
   seabed={seabedId}
@@ -681,7 +682,7 @@ type ReliefSource = ReliefTileSource & {
 Built (2026-10-25): `ReliefSource` in the sdk (`geometries/relief-tiles.ts`), the tiles'
 source (`frame`, `layers`, and `base`, the flat seabed's height where no layer has data)
 plus the sea's level, the margin and the key. `reliefSource(relief, ocean, margin?)` in
-`components/Sky` derives it from the stage's `relief` and the sky's `ocean` with the
+`components/Scenery` derives it from the stage's `relief` and the `<SceneryOcean>`'s props with the
 sky's own defaults, keyed by its content, so it may be built inline. It is `undefined`
 for a relief drawn from one texture. `margin` defaults, in `ChunkStack`, to its
 `maxError` (5 m by default; see Seams).
@@ -785,7 +786,7 @@ ground over you" (a relief is set, loaded and compiled, and the sea has a seabed
 `seabedOpacity` and `water` mean what they mean today. A chunk layer still uses it for
 `drawCap` and `capOpacity`.
 
-Built (2026-10-25): `SkyBoxStage.occupants`, each with an `outline` (scene X/Z),
+Built (2026-10-25): `SceneryStage.occupants`, each with an `outline` (scene X/Z),
 `cut`, `keepBed`, `onStage`, `onGround` and `anchor`. Every occupant is told `onStage`.
 Each gets its own ground (`onGround`) over its outline's bounds, which is also where the
 relief's error shows half a pixel at most. Each anchor is placed about the middle of its
@@ -836,7 +837,7 @@ type ReliefSampler = SurfaceSampler & {
   instead: `sampleReliefSource(store, source, points)` (see [Sampling the same ground
   elsewhere](#sampling-the-same-ground-elsewhere)), the same merge at full detail, one
   call for the whole route, nothing pinned.
-- **The curve.** `SkyAnchor` places field-sized content rigidly. Something long, outside
+- **The curve.** `SceneryAnchor` places field-sized content rigidly. Something long, outside
   the field, must be placed on the globe per vertex as the relief is, or it floats off it
   from afar: the sdk's `globe.glsl` for any material to include, with `Globe` its CPU
   twin.
@@ -942,7 +943,7 @@ a curtain down to its reservoir, an anchor for a label.
 
 None of this has been released. Gone (2026-10-25), with step 5:
 
-- `SkyBoxStageOccupant.seabed`, `SkyBoxStageProps.seabedFalloff`, the single `occupant`
+- `SceneryStageOccupant.seabed`, `SceneryStageProps.seabedFalloff`, the single `occupant`
   (now `occupants`), the stage's `falloff`, `occupant-bed` and flat-bed-around-an-outline
   parts and the helpers that build them (`skyStageRim`, `skyStageNearBounds`,
   `createSkyStageRings`, `createSkyStageFalloff`, `createSkyStageBed`,
@@ -954,8 +955,8 @@ None of this has been released. Gone (2026-10-25), with step 5:
 
 What is left of them, and what changed with them:
 
-- **The overview stays.** `resampleRelief` and the `skyRelief` generator now feed only the
-  overview past a short far plane (`SkyBoxStageReliefOverview`, `createSkyReliefFarMaterial`);
+- **The overview stays.** `resampleRelief` and the `sceneryRelief` generator now feed only the
+  overview past a short far plane (`SceneryStageReliefOverview`, `createSceneryReliefFarMaterial`);
   the near mesh, its vertex shader (`relief-vertex.glsl`) and its morph table are gone, and
   `relief-fragment.glsl` draws either the tiles (`RELIEF_TILES`) or the overview
   (`RELIEF_FAR`). The overview no longer eases into the stage's area: nothing of it is
@@ -980,7 +981,7 @@ What is left of them, and what changed with them:
 ## 10. Order of work
 
 A thin slice first, to see the tiles and what they cost before building the rest on them.
-New code is drawn in its own story, `Spikes/Sky/ReliefTiles`; the old relief keeps
+New code is drawn in its own story, `Spikes/Scenery/ReliefTiles`; the old relief keeps
 working beside it until step 4. Stories that break on the way may be switched off, and
 are back by step 6.
 
@@ -995,12 +996,12 @@ are back by step 6.
 | 7 | ✅ Documents, checks, timings; the bed tint from the column's channel | built (2026-10-26), [timed below](#timed-the-column-with-the-relief-and-without-2026-10-26) |
 | 8 | [Overlays](#8-overlays-shapes-on-the-relief-the-sea-and-the-seabed): the contract and its mapper, overlay tiles, the second draw's overlay material, on the sea, picking; a demo set of discoveries | after [world.md step 2](./world.md#9-step-2-in-detail-the-sky-on-a-fixed-globe) (2026-10-26) |
 
-Measured as the sky's [frame cost by zone](./sky.md#frame-cost-by-zone) is, before and
+Measured as the sky's [frame cost by zone](./scenery.md#frame-cost-by-zone) is, before and
 after. The bar: inside the column and below the seabed, no cost beyond the noise.
 
 ### The thin slice, measured (2026-10-25)
 
-`Spikes/Sky/ReliefTiles`, all four layers, `pixelError` 2, Iris Xe at 1.92 megapixels,
+`Spikes/Scenery/ReliefTiles`, all four layers, `pixelError` 2, Iris Xe at 1.92 megapixels,
 GPU ms (median of 120). "Relief" is the relief's own draw, timed apart; the frame moves
 with the GPU's clock and with what the stage draws instead (with tiles it draws no flat
 seabed of its own), so judge by it.
@@ -1102,8 +1103,8 @@ the ground under the camera, and the sky's own worker.
 
 ### The stories (2026-10-25)
 
-- **One control for the demo reliefs**, `reliefLayers` (`skyReliefArgTypes`), in every
-  story taking the shared `relief` toggle; `skyReliefFromArgs(args, frame, local)` adds a
+- **One control for the demo reliefs**, `reliefLayers` (`sceneryReliefArgTypes`), in every
+  story taking the shared `relief` toggle; `sceneryReliefFromArgs(args, frame, local)` adds a
   story's own layers over them, finest last, and draws them even with the demo reliefs
   off.
 - **The demo store makes reliefs**: any store surface baked on demand under

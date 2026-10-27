@@ -28,7 +28,7 @@ export type Videx3dHandle = {
   getArgs: () => Record<string, unknown> | null;
   /** GPU and main-thread frame times, and per-draw times of named groups (see `profileFrames`) */
   profile: (options?: ProfileOptions) => Promise<ProfileResult>;
-  /** the sky's globe: where the sea is far from the field, and poses over it (null answers without a `Sky`) */
+  /** the sky's globe: where the sea is far from the field, and poses over it (null answers without a `Scenery`) */
   globe: Videx3dGlobe;
 };
 

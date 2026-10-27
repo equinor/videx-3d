@@ -2,7 +2,7 @@ import type { Vec2 } from '../../types/common';
 
 /**
  * A relief in the store (`relief-meta`): a grid of heights in a map of its own, which a
- * `SkyBoxStage` draws as land and seabed. Its heights are read by window, at any of the
+ * `SceneryStage` draws as land and seabed. Its heights are read by window, at any of the
  * grid's levels (`relief-values` with a {@link ReliefWindow}).
  *
  * @group Data

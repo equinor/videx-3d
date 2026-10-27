@@ -16,8 +16,8 @@ import { useProgress } from '../../components/Progress/useProgress';
 import '../styles/progress.css';
 
 /**
- * The stories' progress, held OUTSIDE the canvas as a host would: a `Sky` reports into it
- * as `sky` (through `skyPropsFromArgs`), a chunk stack as `model`. Each source goes away
+ * The stories' progress, held OUTSIDE the canvas as a host would: a `Scenery` reports into it
+ * as `sky` (through `sceneryPropsFromArgs`), a chunk stack as `model`. Each source goes away
  * when what reports it unmounts, so a story never shows another's.
  */
 export const storyProgress = createProgressStore();
@@ -200,7 +200,7 @@ const ProgressStrip = ({
 
 /**
  * Show {@link storyProgress} OUTSIDE the canvas, the way a host would. Put it after
- * `Canvas3dDecorator` in the array, so it wraps the canvas; `skyDecorators` include it.
+ * `Canvas3dDecorator` in the array, so it wraps the canvas; `sceneryDecorators` include it.
  */
 export const progressDecorator: Decorator = (Story, { args }) => {
   const a = { ...progressArgs, ...(args as Partial<ProgressArgs>) };

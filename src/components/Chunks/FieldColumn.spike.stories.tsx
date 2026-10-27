@@ -1,3 +1,4 @@
+import { SceneryArgsFeatures } from '../../storybook/components/scenery-features';
 import { useFrame, useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { CurveInterpolator } from 'curve-interpolator';
@@ -43,19 +44,17 @@ import {
 import { ResourceMonitor } from '../../storybook/components/ResourceMonitor';
 import { SeabedFacility } from '../../storybook/components/SeabedFacility';
 import {
-  skyAbyssFromArgs,
-  skyArgs,
-  SkyArgs,
-  skyArgTypes,
-  skyDecorators,
-  skyOceanFromArgs,
-  skyPropsFromArgs,
-  skyReliefArgs,
-  SkyReliefArgs,
-  skyReliefArgTypes,
-  skyBakedReliefLayer,
-  skyReliefFromArgs,
-} from '../../storybook/components/sky-controls';
+  sceneryArgs,
+  SceneryArgs,
+  sceneryArgTypes,
+  sceneryDecorators,
+  sceneryPropsFromArgs,
+  sceneryReliefArgs,
+  SceneryReliefArgs,
+  sceneryReliefArgTypes,
+  sceneryBakedReliefLayer,
+  sceneryReliefFromArgs,
+} from '../../storybook/components/scenery-controls';
 import { RendererToneMapping } from '../../storybook/components/tone-mapping-controls';
 import { chunkTimings } from '../../storybook/data/chunk-timings';
 import { demoCrs, demoFrame } from '../../storybook/data/demo-crs';
@@ -85,7 +84,7 @@ import {
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
-import { SkyGenerators } from '../../storybook/decorators/sky-generators';
+import { SceneryGenerators } from '../../storybook/decorators/scenery-generators';
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
 import { createOutputPanelDecorator } from '../../storybook/decorators/output-panel-decorator';
 import { WellMapDecorator } from '../../storybook/decorators/well-map-decorator';
@@ -98,11 +97,14 @@ import { EventEmitterCallbackEvent } from '../EventEmitter';
 import { useHighlighter } from '../Highlighter/highlight-state';
 import { Highlighter } from '../Highlighter/Highlighter';
 import { RenderStats } from '../Html/RenderStats/RenderStats';
-import { Sky } from '../Sky/Sky';
-import { SkyBoxStage, SkyBoxStageOccupantState } from '../Sky/SkyBoxStage';
-import type { SkyBoxStageRelief } from '../Sky/SkyBoxStage';
-import type { ReliefSampler } from '../Sky/sky-relief-sampler';
-import { reliefSource } from '../Sky/sky-relief-source';
+import { Scenery } from '../Scenery/Scenery';
+import {
+  SceneryStage,
+  SceneryStageOccupantState,
+} from '../Scenery/SceneryStage';
+import type { SceneryStageRelief } from '../Scenery/SceneryStage';
+import type { ReliefSampler } from '../Scenery/scenery-relief-sampler';
+import { reliefSource } from '../Scenery/scenery-relief-source';
 import { UtmArea } from '../UtmArea';
 import { UtmPosition } from '../UtmArea/UtmPosition';
 import { Trajectory } from '../Wellbores/Trajectory/Trajectory';
@@ -195,7 +197,7 @@ function reliefMarkerSites(outline: PlanarPolygonGeometry): {
 }
 
 // Where the stack reports its build, read OUTSIDE the canvas by the progress decorator
-// (`skyDecorators`), next to the sky's: what a host would hold.
+// (`sceneryDecorators`), next to the sky's: what a host would hold.
 const reportModel = storyProgress.source('model', {
   name: 'Model',
   title: 'Building model',
@@ -238,7 +240,7 @@ const GENERATED_SEABED = SEABED_ID
  * never happens.
  */
 // Without a stage, the column draws its own sea bed and water.
-const OFF_STAGE: SkyBoxStageOccupantState = {
+const OFF_STAGE: SceneryStageOccupantState = {
   seabed: false,
   seabedOpacity: 1,
   water: false,
@@ -587,8 +589,8 @@ type FieldColumnStoryProps = {
   reliefCut: boolean;
   reliefMarkers: boolean;
 } & ProgressArgs &
-  SkyArgs &
-  SkyReliefArgs;
+  SceneryArgs &
+  SceneryReliefArgs;
 
 // Between the rim's samples along the outline, and how far to either side one is tried
 // again where the outline's own edge misses the cap.
@@ -916,7 +918,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
   const drawsSeabed =
     !!seabedMeta && selected[0]?.id === seabedMeta.id && !(props.peel > 0);
   // What the sky's stage does for the column: draws its sea bed, owns the water.
-  const [stage, setStage] = useState<SkyBoxStageOccupantState>(OFF_STAGE);
+  const [stage, setStage] = useState<SceneryStageOccupantState>(OFF_STAGE);
   const bedOnStage = drawsSeabed && stage.seabed;
   const [stackCut, setStackCut] = useState<CutUniforms | null>(null);
   // The ground as the stage draws it, which the column's faces end at.
@@ -1441,14 +1443,14 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
   // no unit is cut away where the bathymetry lies deeper. Its flat base is given here
   // rather than taken from the sea's depth, which waits for the column's rim: the column
   // would be built twice.
-  const demoRelief = skyReliefFromArgs(
+  const demoRelief = sceneryReliefFromArgs(
     props,
     reliefFrame,
     props.relief && props.bakeSeabed && seabedMeta
-      ? [skyBakedReliefLayer(seabedMeta.id)]
+      ? [sceneryBakedReliefLayer(seabedMeta.id)]
       : [],
   );
-  const stageRelief: SkyBoxStageRelief | undefined = demoRelief && {
+  const stageRelief: SceneryStageRelief | undefined = demoRelief && {
     ...demoRelief,
     depth: RELIEF_BASE_DEPTH,
     onSampler: setReliefSampler,
@@ -1615,25 +1617,25 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       </group>
       {props.wellbores && <Highlighter />}
       {props.sky && bedHeight !== null && (
-        <SkyGenerators>
-          <Sky
-            {...skyPropsFromArgs(props)}
-            abyss={skyAbyssFromArgs(props)}
-            ocean={{
-              ...skyOceanFromArgs(props),
-              seabed:
-                props.skySeabed &&
-                (props.matchBed
-                  ? {
-                      color: bedColor,
-                      detail: layers[0]?.detail ?? false,
-                    }
-                  : { color: props.skySeabedColor }),
-              level: skyLevel,
-              depth: Math.max(skyLevel - bedHeight, 1),
-            }}
-          >
-            <SkyBoxStage
+        <SceneryGenerators>
+          <Scenery {...sceneryPropsFromArgs(props)}>
+            <SceneryArgsFeatures
+              args={props}
+              ocean={{
+                seabed:
+                  props.skySeabed &&
+                  (props.matchBed
+                    ? {
+                        color: bedColor,
+                        detail: layers[0]?.detail ?? false,
+                      }
+                    : { color: props.skySeabedColor }),
+                level: skyLevel,
+                depth: Math.max(skyLevel - bedHeight, 1),
+              }}
+              abyss={{}}
+            />
+            <SceneryStage
               bounds={[
                 outlineMin[0] - margin,
                 outlineMin[1] - margin,
@@ -1657,8 +1659,8 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
               ]}
               relief={stageRelief}
             />
-          </Sky>
-        </SkyGenerators>
+          </Scenery>
+        </SceneryGenerators>
       )}
       {props.resources && <ResourceMonitor interval={props.resourceInterval} />}
       {props.stats && <RenderStats origin="bottom-left" />}
@@ -1717,8 +1719,8 @@ type Story = StoryObj<typeof FieldColumnStory>;
 
 export const Default: Story = {
   args: {
-    ...skyArgs,
-    ...skyReliefArgs,
+    ...sceneryArgs,
+    ...sceneryReliefArgs,
     // Surfaces
     outline: 'field',
     cropSize: 7,
@@ -1847,7 +1849,7 @@ export const Default: Story = {
     resources: true,
     resourceInterval: 1000,
     ...progressArgs,
-    // Sky: it lights the column, and draws nothing behind it (`drawSky`; see `WithSky`).
+    // Scenery: it lights the column, and draws nothing behind it (`drawSky`; see `WithScenery`).
     sky: true,
     drawSky: false,
     matchBed: true,
@@ -1860,50 +1862,50 @@ export const Default: Story = {
   },
   argTypes: {
     // Behind `sky`; the story draws through its own OIT pipeline always.
-    ...skyArgTypes({ shownIf: 'sky' }),
-    ...skyReliefArgTypes('sky'),
+    ...sceneryArgTypes({ shownIf: 'sky' }),
+    ...sceneryReliefArgTypes('sky'),
     relief: {
-      ...skyReliefArgTypes('sky').relief,
+      ...sceneryReliefArgTypes('sky').relief,
       description:
         'The relief drawn from tiles \u2014 the demo reliefs merged, Volve\u2019s survey finest \u2014 and the column\u2019s sea bed built on it (`ChunkStack.relief`), so its top is the ground the stage draws, and the stage draws it as the sea\u2019s. Off, the stage\u2019s seabed is flat, and the column draws its own. Rebuilds the column. Made on demand: `npm run generate-relief`.',
     },
     pipeline: { table: { disable: true } },
     sky: {
       description:
-        'Put the field under the videx `<Sky>`, which lights the scene instead of the default lights, with the column as its stage\u2019s occupant. The sky owns the water then: the column\u2019s own `water` is hidden while it is on (`ChunkStack.drawWater`).',
-      table: { category: 'Sky' },
+        'Put the field under the videx `<Scenery>`, which lights the scene instead of the default lights, with the column as its stage\u2019s occupant. The sky owns the water then: the column\u2019s own `water` is hidden while it is on (`ChunkStack.drawWater`).',
+      table: { category: 'Scenery' },
     },
     drawSky: {
       control: { type: 'boolean' },
       description:
-        'Draw the sky and its stage behind the scene (`Sky.background`). Switched instantly, with nothing rebuilt or baked: off, the sky still lights the scene, and the column draws its own water and sea bed again.',
+        'Draw the sky and its stage behind the scene (`Scenery.background`). Switched instantly, with nothing rebuilt or baked: off, the sky still lights the scene, and the column draws its own water and sea bed again.',
       if: { arg: 'sky' },
-      table: { category: 'Sky' },
+      table: { category: 'Scenery' },
     },
     skyWater: {
       description:
         'The sky\u2019s water, everywhere: off, there is none, the column\u2019s own included. With the cutaway, it cuts the seabed.',
       if: { arg: 'sky' },
-      table: { category: 'Sky' },
+      table: { category: 'Scenery' },
     },
     skySeabed: {
       description:
         'The sky\u2019s seabed, everywhere: off, the void lies below the water, and the column draws its own sea bed again. With the cutaway, it cuts the water alone.',
       if: { arg: 'sky' },
-      table: { category: 'Sky' },
+      table: { category: 'Scenery' },
     },
     skySeabedOpacity: {
       control: { type: 'range', min: 0, max: 1, step: 0.01 },
       description:
         'How much of what lies under the seabed it hides, the column\u2019s sea bed included. Below 1 the column stops culling under it (`capOpacity`), and both rebuild their materials once.',
       if: { arg: 'sky' },
-      table: { category: 'Sky' },
+      table: { category: 'Scenery' },
     },
     matchBed: {
       description:
         'The sky\u2019s seabed takes the look of the column\u2019s sea bed: its unit\u2019s colour, even while the column starts below it, and `detail`. So does the column\u2019s sea bed while the stage draws it, as the sea\u2019s.',
       if: { arg: 'sky' },
-      table: { category: 'Sky' },
+      table: { category: 'Scenery' },
     },
     skyBed: {
       control: { type: 'inline-radio' },
@@ -1911,32 +1913,32 @@ export const Default: Story = {
       description:
         'Where the sky\u2019s flat seabed lies: at the shallowest, median or deepest point of the column\u2019s top surface along its outline.',
       if: { arg: 'sky' },
-      table: { category: 'Sky' },
+      table: { category: 'Scenery' },
     },
     stageMargin: {
       control: { type: 'range', min: 0, max: 20000, step: 100 },
       description:
         'How far past the outline the stage\u2019s real geometry reaches, in metres.',
       if: { arg: 'sky' },
-      table: { category: 'Sky' },
+      table: { category: 'Scenery' },
     },
     bakeSeabed: {
       description:
         'With the relief: the column\u2019s own sea bed baked into it as its finest layer (the demo store\u2019s `surface:<id>`, `surfaceToRelief`), faded in over 0.5 km from the survey\u2019s edge. The ground over the field is then the column\u2019s top, and no unit is cut away where the demo bathymetry lies deeper than the column\u2019s horizons. Rebuilds the column.',
       if: { arg: 'relief' },
-      table: { category: 'Sky' },
+      table: { category: 'Scenery' },
     },
     reliefCut: {
       description:
         'With the relief: the column\u2019s section or fence cuts the relief over it too, inside the outline (the occupant\u2019s `keepBed` off), so the opening goes down from the ground. Off (the default), the relief stays whole over the column as its floor.',
       if: { arg: 'relief' },
-      table: { category: 'Sky' },
+      table: { category: 'Scenery' },
     },
     reliefMarkers: {
       description:
-        'With the relief: subsea facilities placed from UTM positions by sampling. Two inside the outline, through the stack\u2019s sampler (`ChunkStack.reliefSampler`), which answers the column\u2019s top from the relief; two past it, through the relief\u2019s own (`SkyBoxStageRelief.onSampler`). Of each pair, one stands on a levelled base, one on the slope. Their footprints pin the finest tiles under them, so they settle on the ground as it is drawn close up.',
+        'With the relief: subsea facilities placed from UTM positions by sampling. Two inside the outline, through the stack\u2019s sampler (`ChunkStack.reliefSampler`), which answers the column\u2019s top from the relief; two past it, through the relief\u2019s own (`SceneryStageRelief.onSampler`). Of each pair, one stands on a levelled base, one on the slope. Their footprints pin the finest tiles under them, so they settle on the ground as it is drawn close up.',
       if: { arg: 'relief' },
-      table: { category: 'Sky' },
+      table: { category: 'Scenery' },
     },
     outline: {
       control: { type: 'inline-radio' },
@@ -2620,13 +2622,13 @@ export const Default: Story = {
       fontSize: 11,
       opacity: 0.75,
     }),
-    ...skyDecorators,
+    ...sceneryDecorators,
   ],
 };
 
 // The field under the videx sky: its sea over the column, the column's sea bed drawn by
 // the sky's stage as the sea's, and the sky's seabed eased into it around the outline.
-export const WithSky: Story = {
+export const WithScenery: Story = {
   ...Default,
   args: { ...Default.args, sky: true, drawSky: true },
 };

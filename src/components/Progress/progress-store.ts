@@ -145,7 +145,7 @@ export type ProgressSnapshot = {
 
 /**
  * Holds progress outside the R3F canvas, from any number of sources: a `ChunkStack`, a
- * `Sky`, your own loaders. Each reports through {@link ProgressStore.source}; read it
+ * `Scenery`, your own loaders. Each reports through {@link ProgressStore.source}; read it
  * with `useProgress`, `Progress` or `ProgressPopup` anywhere in the host's DOM.
  *
  * @group Components
@@ -257,7 +257,7 @@ type Level = { snapshot: ProgressLevelSnapshot; taking: Set<string> };
  * @example
  * const progress = useMemo(createProgressStore, []);
  * // inside the canvas
- * <Sky onProgress={progress.source('sky', { name: 'Sky' })} />
+ * <Scenery onProgress={progress.source('sky', { name: 'Scenery' })} />
  * // anywhere in the host's DOM
  * <ProgressPopup store={progress} position="top" />
  *

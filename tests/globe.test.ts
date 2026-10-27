@@ -1,6 +1,6 @@
 import { Matrix4, PerspectiveCamera, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
-import { SkyMaterial } from '../src/components/Sky/sky-material';
+import { SceneryMaterial } from '../src/components/Scenery/scenery-material';
 import { EARTH_RADIUS, Globe } from '../src/sdk/projection/globe';
 
 const R = EARTH_RADIUS;
@@ -278,8 +278,8 @@ describe('Globe, the camera', () => {
     expect(g.uniforms.uGlobeCamera.value.x).toBeCloseTo(LEVEL + 300, 9);
   });
 
-  it('SkyMaterial.syncCamera takes the camera from its world matrix', () => {
-    const sky = new SkyMaterial();
+  it('SceneryMaterial.syncCamera takes the camera from its world matrix', () => {
+    const sky = new SceneryMaterial();
     sky.setFlatSea(BOUNDS);
     const camera = new PerspectiveCamera();
     camera.position.set(1000, 250, -2000);
@@ -290,9 +290,9 @@ describe('Globe, the camera', () => {
   });
 });
 
-describe('SkyMaterial.globe', () => {
+describe('SceneryMaterial.globe', () => {
   it('follows the sky: its stage, its sea level, its curve and its up', () => {
-    const sky = new SkyMaterial();
+    const sky = new SceneryMaterial();
     expect(sky.globe.enabled).toBe(sky.globeEnabled);
     expect(sky.globe.level).toBe(sky.oceanLevel);
     sky.setFlatSea(BOUNDS);
