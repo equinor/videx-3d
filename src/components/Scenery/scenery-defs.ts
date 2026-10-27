@@ -3,9 +3,9 @@ import type { ReliefTile } from '../../sdk/geometries/relief-tiles';
 
 /**
  * Generator key for a `SceneryStage`'s relief overview: a `relief-meta` record and its
- * `relief-values`, resampled onto longitude and latitude over all of it (see
- * `generateSceneryRelief`), which the stage draws past its tiles' reach from the relief's
- * first layer.
+ * `relief-values`, resampled onto longitude and latitude over all of it, its coverage faded
+ * in over a layer's `feather` (see `generateSceneryRelief`). The stage draws past its
+ * tiles' reach each of the relief's layers so, merged as the tiles merge them.
  */
 export const sceneryRelief = 'sceneryRelief';
 

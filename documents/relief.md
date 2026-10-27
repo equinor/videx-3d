@@ -150,15 +150,15 @@ How the relief looks is data, not shader code: changing any of it uploads a smal
   edge, as wide on steep ground and at grazing angles as on flat ground: its distance
   from the line is measured in pixels by the height's slope on screen. Lines fade out
   between 8 and 3 pixels apart, minor ones first, so a distant view is no smear or moiré.
-  `Surface` contours are drawn the same way (`contours.glsl`). Only on the tiles: they
-  fade out over the last fifth of the tiles' reach, past which the overview has none.
+  `Surface` contours are drawn the same way (`contours.glsl`). The tiles and the overview
+  past them draw the same lines, so they run on across where one hands over to the other.
 - **`layerLooks`**: a look of its own for a layer, by its id, `{ color?, contours? }`,
   each falling back to the relief's. A local survey can be a rainbow over its depths with
   5 m contours while the regional data stays a terrain ramp. Each tile node keeps the
   layer that gave most of it (as `debug.relief: 'layers'` shows), so the look changes
   where one layer's data takes over from another's, node by node: a hard edge, at the
-  tile's resolution. The overview takes the relief's own look. Up to 31 layers have looks
-  of their own; past that a layer takes the relief's.
+  tile's resolution. The overview past the tiles takes them the same way, pixel by pixel.
+  Up to 31 layers have looks of their own; past that a layer takes the relief's.
 
 The colour ramps are shared with `Surface` and the seismic views
 ([color-ramps.ts](../src/common/color-ramps.ts)): a texture of up to 64 rows. Rows 0–9

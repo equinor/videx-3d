@@ -452,6 +452,42 @@ about 12 MB on the GPU), and compiled in the background before it shows. With a 
 layer first, the overview is the world's 10′ (18 km), coarser near the field than the
 Nordic layer's 2′ was.
 
+**Every layer since 2026-10-27, merged and looked as the tiles.** The first layer alone
+stood for the merge on the assumption that past a few hundred kilometres the finer layers
+lie nearer. A short far plane seen from high up breaks it: from 472 km over the North Sea
+with a 500 km far plane, the ground just past the far plane lies right below, under the
+Nordic layer, and the tiles' disc (165 km about the nadir, at the Nordic 2′ and finer)
+stood in a sea of the world's 10′. Now:
+
+- **Each layer is baked on its own** (the generator, per layer), as fine as it is: a
+  layer in longitude and latitude is copied texel for texel (each texel's centre on a node
+  of its own, so the texture *is* the data), and its coverage is faded in over its
+  `feather` (`reliefLayerWeight`, the tiles' weight, from the layer's distance to its
+  edge). The demo's five: 2160 × 1080, 1320 × 690, 1200 × 360, 2400 × 720 and 960 × 480,
+  about 31 MB on the GPU with their mips against 12 MB.
+- **The far layer merges them as the tiles do** (`relief.glsl`): from the tiles' base,
+  `h = mix(h, layer, weight)` over the layers in turn, each read at the mip level the
+  pixel's footprint sees and skipped without a read where its window does not reach; the
+  normal's four samples the same, a footprint apart, no finer than the finest map there.
+- **And looks them as the tiles do:** the look of the last layer that gave more than half
+  (as a tile's node takes it; a layer that holds nothing keeps its number), and the
+  contours, with the screen gradient taken from the normal's samples (a discard comes
+  before them, so derivatives are not to be had). The tiles' contours no longer fade out
+  over the last fifth of their reach: the lines run on across.
+- **At most six layers** (`SCENERY_RELIEF_FAR_MAX_LAYERS`): each is a texture unit, of
+  which the far material uses about ten of the sixteen WebGL 2 promises, and samplers
+  cannot be indexed by a loop's counter, so the reads are written out per layer. A relief
+  with more merges its first six there, coarse to fine (a warning in development).
+- **Supersampling would buy nothing** for a layer in longitude and latitude: the bake is
+  the data, and the GPU's bilinear magnification draws the surface the tiles draw between
+  their nodes. Only a layer in a map (resampled twice, softening its finest detail a
+  little) or one past `maxSize` (downsampled: raise it instead) would gain.
+
+Checked at the pose above: the disc is gone, the coasts and the contour lines run on
+across where the tiles end, and the finest layer's own look (a rainbow over Volve, sea
+only, with the water off) is the same from 394 km on the tiles and from 525 km on the
+overview.
+
 Not done: drawing the overview under the tiles while their roots load (a moment at
 start-up only).
 

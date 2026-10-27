@@ -188,8 +188,9 @@ export type SceneryStageRelief = {
    * The reliefs in the store — `relief-meta` records (`ReliefMeta`) and their
    * `relief-values` — coarse to fine: later ones win where they have data. Read by the
    * `sceneryReliefTile` generator, so it needs a `GeneratorsProvider`. Where the ground in view
-   * reaches past the camera's far plane, the first is also drawn past the tiles as an
-   * overview, from anywhere on the Earth, read by the `sceneryRelief` generator; a layer in
+   * reaches past the camera's far plane, they are also drawn past the tiles as an overview,
+   * from anywhere on the Earth, merged and looked as the tiles merge and look them (the
+   * first six: each is a texture unit), read by the `sceneryRelief` generator; a layer in
    * longitude and latitude all the way round (a world relief) covers it everywhere.
    */
   layers: ReliefLayer[];
@@ -369,9 +370,6 @@ export const SceneryStage = ({
   }, [reportFrame, ownFrame]);
 
   const generator = useGenerator<SceneryReliefResponse>(sceneryRelief);
-  // The first (coarsest) layer is the overview past the tiles, made the first time the
-  // ground in view reaches past the far plane.
-  const reliefId = tiled ? (relief?.layers[0]?.id ?? null) : null;
 
   const materials = useMemo(
     () =>
@@ -739,10 +737,13 @@ export const SceneryStage = ({
 
   return (
     <group ref={root} visible={ocean.visible && ocean.ready}>
-      {tiled && relief && reliefId && sky && (
+      {/* Past the tiles, the overview: the same layers, merged and looked the same, made
+          the first time the ground in view reaches past the far plane. */}
+      {tiled && relief && sky && (
         <SceneryStageReliefOverview
           sky={sky}
-          reliefId={reliefId}
+          layers={relief.layers}
+          base={-(relief.depth ?? ocean.depth)}
           generator={generator}
           looks={looks.texture}
           reach={far}

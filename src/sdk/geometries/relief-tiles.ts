@@ -140,6 +140,18 @@ type ReliefDetail = {
   levels: { size: Vec2; detail: Float32Array }[];
 };
 
+/**
+ * Where a layer's data ends, as a prepared layer holds it: metres to its edge, on a coarse
+ * level of its grid (see {@link reliefLayerWeight}).
+ *
+ * @group Geometries
+ */
+export type ReliefLayerEdge = {
+  level: number;
+  size: Vec2;
+  distance: Float32Array;
+};
+
 /** A layer made ready for tiles: its record, its map, its distance to its edge, its detail. */
 type PreparedLayer = {
   meta: ReliefMeta;
@@ -149,7 +161,7 @@ type PreparedLayer = {
    */
   toNode: (x: number, z: number) => Vec2 | null;
   /** metres to where the data ends, on a coarse level of the grid */
-  edge: { level: number; size: Vec2; distance: Float32Array };
+  edge: ReliefLayerEdge;
   /** how far the data strays from each level's surface, or null where none was read */
   detail: ReliefDetail | null;
   /** the level whose single value covers the grid */
@@ -458,6 +470,30 @@ const smoothstep = (a: number, b: number, t: number) => {
   const u = Math.min(Math.max((t - a) / (b - a), 0), 1);
   return u * u * (3 - 2 * u);
 };
+
+/**
+ * How much of a layer a point at its node (`col`, `row`) gets, given the layer's coverage
+ * there: the coverage, faded in over `feather` metres from where the layer's data ends
+ * (`ReliefLayer.feather`). The tiles merge each layer by it, `h += (layer − h) × weight`
+ * over the layers in turn; a bake of the layer weighted by it merges the same way.
+ *
+ * @param edge the layer's distance to its edge, as {@link ReliefReader.layer} prepares it
+ *
+ * @group Geometries
+ */
+export function reliefLayerWeight(
+  edge: ReliefLayerEdge,
+  feather: number,
+): (col: number, row: number, coverage: number) => number {
+  const [w, h] = edge.size;
+  return (col, row, coverage) => {
+    if (coverage <= 0 || feather <= 0) return coverage;
+    const [c, r] = reliefNodeToLevel(edge.level, col, row);
+    return (
+      coverage * smoothstep(0, feather, bilinear(edge.distance, w, h, c, r))
+    );
+  };
+}
 
 const DEG = Math.PI / 180;
 
@@ -811,16 +847,7 @@ function readReliefLayers(
       ]);
       if (!window) return null;
 
-      const feather = spec.feather ?? 0;
-      const [ew, eh] = edge.size;
-      const weightAt = (col: number, row: number, coverage: number) => {
-        if (coverage <= 0 || feather <= 0) return coverage;
-        const [ec, er] = reliefNodeToLevel(edge.level, col, row);
-        return (
-          coverage *
-          smoothstep(0, feather, bilinear(edge.distance, ew, eh, ec, er))
-        );
-      };
+      const weightAt = reliefLayerWeight(edge, spec.feather ?? 0);
       return {
         index,
         lattice,

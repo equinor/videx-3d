@@ -9,9 +9,10 @@
 // area out and RELIEF_SEE_THROUGH draws it alone, at the sea's seabed opacity
 // (relief-tiles.glsl). RELIEF_OCCUPANTS keeps the cutaway off the ground over the stage's
 // occupants, and RELIEF_CUT_OCCUPANT cuts it with one of them, inside its outline.
-// RELIEF_FAR draws the overview past the tiles' reach instead, on a fullscreen layer: what
-// a map of the first layer in longitude and latitude holds above the sea, flat on the
-// globe's sea, per pixel, wherever on the Earth.
+// RELIEF_FAR draws the overview past the tiles' reach instead, on a fullscreen layer: the
+// relief's layers from maps in longitude and latitude, merged and looked as the tiles merge
+// and look them (relief.glsl), above the sea, flat on the globe's sea, per pixel, wherever
+// on the Earth.
 
 #include <common>
 #ifndef RELIEF_FAR
@@ -88,16 +89,15 @@ vec3 reliefAlbedo(float height, float weight, int look) {
 }
 
 // `color` with look `look`'s contour lines over it, for ground `height` metres from the
-// sea's level, `gHeight` its gradient on screen (contourGradient), `dist` from the camera;
-// on the seabed only if the look says so. They fade out over the last fifth of the tiles'
-// reach: past it the overview, which has none, draws the ground.
-vec3 reliefContours(vec3 color, float height, float gHeight, float dist, int look) {
+// sea's level, `gHeight` its gradient on screen (contourGradient); on the seabed only if
+// the look says so. The tiles and the overview past them draw the same lines, so they run
+// on across where one hands over to the other.
+vec3 reliefContours(vec3 color, float height, float gHeight, int look) {
   vec4 lines = reliefLookRow(look, 3);
   if(lines.x <= 0.0 || (height < 0.0 && lines.w < 0.5))
     return color;
   vec4 shade = reliefLookRow(look, 4);
   float cover = contourCover(height, gHeight, lines.x, lines.y, lines.z);
-  cover *= 1.0 - smoothstep(0.8 * uReliefReach, uReliefReach, dist);
   return contourShade(color, cover, int(reliefLookRow(look, 1).w + 0.5), shade.w, shade.rgb);
 }
 
@@ -167,27 +167,30 @@ void main() {
   float blend = max(uSkyHorizonBlend, fwidth(dot(dir, globeCameraLook())));
 
   #ifdef RELIEF_FAR
-  // The slope from the map, as finely as the pixel sees the ground: degrees east and north
-  // a pixel spans, no finer than a texel north–south.
+  // The slope from the maps, as finely as the pixel sees the ground: degrees east and north
+  // a pixel spans, no finer than a texel north–south of the finest map there.
   float metresPerDegree = uGlobe.x * PI / 180.0;
-  float footprint = max(length(fwidth(world)), uReliefMapFrame.w * metresPerDegree);
+  float pixel = length(fwidth(world));
+  float footprint = max(pixel, reliefMapCell(lonLat) * metresPerDegree);
   vec2 span = footprint / metresPerDegree * vec2(1.0 / max(cos(radians(lonLat.y)), 1e-3), 1.0);
   // Only where the sea is met past the tiles. Every derivative is taken above.
   if(altitude <= 0.0 || hit.z > 0.5 || dist < uReliefReach)
     discard;
-  float lod = clamp(log2(max(span.x / uReliefMapFrame.z, span.y / uReliefMapFrame.w)), 0.0, uReliefMapSize.z);
-  float bed = -uSkyOceanDepth;
-  float west = reliefGround(lonLat - vec2(span.x, 0.0), lod, bed).x;
-  float east = reliefGround(lonLat + vec2(span.x, 0.0), lod, bed).x;
-  float north = reliefGround(lonLat + vec2(0.0, span.y), lod, bed).x;
-  float south = reliefGround(lonLat - vec2(0.0, span.y), lod, bed).x;
+  float west = reliefGround(lonLat - vec2(span.x, 0.0), span).x;
+  float east = reliefGround(lonLat + vec2(span.x, 0.0), span).x;
+  float north = reliefGround(lonLat + vec2(0.0, span.y), span).x;
+  float south = reliefGround(lonLat - vec2(0.0, span.y), span).x;
   // Along true east, up and true south where it lies on the globe, as the tiles' normals.
   vec3 up = globeUpAt(world);
   vec3 trueEast = globeGeodeticEast(offset);
   trueEast = normalize(trueEast - up * dot(trueEast, up));
   vec3 normal = normalize(trueEast * (west - east) + up * (2.0 * footprint) + cross(trueEast, up) * (north - south));
-  // Land or sea by the map at this pixel.
-  vec2 ground = reliefGround(lonLat, lod, bed);
+  // Land or sea by the maps at this pixel, and the look of the layer that gave it.
+  vec3 merged = reliefGround(lonLat, span);
+  vec2 ground = merged.xy;
+  // The height's change over a pixel for the contours (contourGradient), from the samples
+  // a footprint apart: past a discard, derivatives are not to be had.
+  float gHeight = 0.5 * length(vec2(east - west, north - south)) * min(pixel / footprint, 1.0);
   #else
   // The sea along the view, from above the water: both for the stage's test below and for
   // which of the sea and the ground shows; z 1 where the view only grazes it (skyOceanReach).
@@ -206,9 +209,10 @@ void main() {
   bool under = height < 0.0;
   bool water = uSkyOceanWater > 0.5;
   #ifdef RELIEF_FAR
-  // The overview is the relief's first layer: the relief's own look.
-  int look = 0;
-  // The background's own sea and seabed show where the map holds nothing, or water covers it.
+  // The look of the layer that gave it, as the tiles' (reliefTileLayer).
+  int look = int(merged.z + 0.5);
+  look = look < textureSize(uReliefLook, 0).x ? look : 0;
+  // The background's own sea and seabed show where the maps hold nothing, or water covers it.
   if(ground.y <= 0.0 || (under && water))
     discard;
   #else
@@ -229,11 +233,9 @@ void main() {
   // pixel, so the branch is uniform.
   bool fromSpace = skyFromSpace() > 0.0;
   vec3 lit = fromSpace ? skySpaceGround(albedo, normal, world) : color;
-  #ifndef RELIEF_FAR
   // Lines over the lit ground, under the air and the water it is seen through.
-  color = reliefContours(color, height, gHeight, dist, look);
-  lit = fromSpace ? reliefContours(lit, height, gHeight, dist, look) : color;
-  #endif
+  color = reliefContours(color, height, gHeight, look);
+  lit = fromSpace ? reliefContours(lit, height, gHeight, look) : color;
   // The sky's own scale is applied to everything it draws, last; a lit surface keeps the scene's.
   color /= max(uSkyIntensity, 1e-4);
   lit /= max(uSkyIntensity, 1e-4);

@@ -232,6 +232,39 @@ describe('resampleReliefGeographic', () => {
     );
     expect(geoTexel(grid, 2, 58).height).toBeCloseTo(50, 0);
   });
+
+  it('weights each texel by what weightAt gives its node, heights kept', () => {
+    const height = (lon: number, lat: number) => 10 * lon + 100 * lat;
+    const { values, meta } = lonLatGrid(-2, 54, 1 / 30, 120, 90, height);
+    const rows: number[] = [];
+    // Faded in over the 10 westernmost columns, as a layer's feather fades it from its edge.
+    const grid = resampleReliefGeographic(values, meta, {
+      weightAt: (col, row, coverage) => {
+        rows.push(row);
+        return coverage * Math.min(col / 10, 1);
+      },
+    })!;
+    for (const [col, weight] of [
+      [0, 0],
+      [5, 0.5],
+      [10, 1],
+      [60, 1],
+    ]) {
+      const sample = geoTexel(grid, -2 + col / 30, 55);
+      expect(sample.coverage).toBeCloseTo(weight, 2);
+    }
+    // Where it gives anything, the height is the relief's.
+    for (const col of [5, 10, 60]) {
+      const lon = -2 + col / 30;
+      expect(geoTexel(grid, lon, 55).height).toBeCloseTo(height(lon, 55), -1);
+    }
+    // Its nodes as the relief numbers them: rows from the north.
+    expect(Math.min(...rows)).toBeCloseTo(0, 6);
+    expect(Math.max(...rows)).toBeCloseTo(89, 6);
+    // Unweighted, it is as before.
+    const plain = resampleReliefGeographic(values, meta)!;
+    expect(geoTexel(plain, -2, 55).coverage).toBeCloseTo(1, 2);
+  });
 });
 
 describe('toHalfFloatBits', () => {

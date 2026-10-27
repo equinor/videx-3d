@@ -201,6 +201,11 @@ export type ReliefGeoGrid = {
  * wraps. A relief across the 180th meridian that does not go all the way round is not
  * handled.
  *
+ * With `weightAt`, each texel's coverage is what it gives for the node it reads (the
+ * relief's fractional column and row from the north) and the coverage there: a layer's
+ * feather (`reliefLayerWeight`), so a reader merges the grids of a relief's layers as its
+ * tiles merge them.
+ *
  * @returns `null` where the relief holds nothing
  *
  * @group Geometries
@@ -208,7 +213,13 @@ export type ReliefGeoGrid = {
 export function resampleReliefGeographic(
   values: Float32Array,
   meta: SurfaceMeta,
-  { maxSize = 4096 }: { maxSize?: number } = {},
+  {
+    maxSize = 4096,
+    weightAt,
+  }: {
+    maxSize?: number;
+    weightAt?: (col: number, row: number, coverage: number) => number;
+  } = {},
 ): ReliefGeoGrid | null {
   const { nx, ny, xori, yori, xinc, yinc, rot } = meta.header;
   const theta = (rot * Math.PI) / 180;
@@ -303,7 +314,17 @@ export function resampleReliefGeographic(
       lattice[2 * (j * lw + i) + 1] = r;
     }
   }
-  const sampled = sampleLattice(values, nx, ny, lattice, lw, lh, width, height);
+  const sampled = sampleLattice(
+    values,
+    nx,
+    ny,
+    lattice,
+    lw,
+    lh,
+    width,
+    height,
+    weightAt,
+  );
   if (!sampled) return null;
   return {
     origin: [west, south],
@@ -319,6 +340,7 @@ export function resampleReliefGeographic(
 // a `width` x `height` grid, its fractional nodes given on a lattice of every LATTICE-th
 // texel (`lw` x `lh`, column and row interleaved) and interpolated between: heights times
 // coverage, coverage, and the lowest and highest heights; null where it holds nothing.
+// With `weightAt`, the coverage is what it gives for the node and the coverage there.
 function sampleLattice(
   values: Float32Array,
   nx: number,
@@ -328,6 +350,7 @@ function sampleLattice(
   lh: number,
   width: number,
   height: number,
+  weightAt?: (col: number, row: number, coverage: number) => number,
 ): {
   premultiplied: Float32Array;
   coverage: Float32Array;
@@ -376,13 +399,19 @@ function sampleLattice(
         }
       }
       const texel = j * width + i;
-      premultiplied[texel] = sum;
-      coverage[texel] = weight;
       if (weight > 0) {
         const value = sum / weight;
         min = Math.min(min, value);
         max = Math.max(max, value);
+        if (weightAt) {
+          const given = weightAt(c, r, weight);
+          premultiplied[texel] = value * given;
+          coverage[texel] = given;
+          continue;
+        }
       }
+      premultiplied[texel] = sum;
+      coverage[texel] = weight;
     }
   }
   return min <= max ? { premultiplied, coverage, min, max } : null;
