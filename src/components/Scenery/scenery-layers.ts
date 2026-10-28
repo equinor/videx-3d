@@ -145,12 +145,13 @@ export function useSceneryLayerMaterial(
 export type SceneryLayerView = {
   /** the camera's height along up, as the sky measures it (`SceneryMaterial.heightOf`) */
   height: number;
-  /** the sea, if any: its levels, its switches, and whether the camera is in rock under a stage's ground (`SceneryMaterial.oceanBuried`) */
+  /** the sea, if any: its levels, its switches, and whether the camera is in rock under a stage's ground (`SceneryMaterial.oceanBuried`) or over it below the sea's seabed (`SceneryMaterial.oceanTrench`) */
   ocean: {
     level: number;
     depth: number;
     water: boolean;
     buried: boolean;
+    trench?: boolean;
   } | null;
   /** the void, if any: its level and how far below it it fades in (without a sea; with one it is the seabed) */
   abyss: { level: number; transition: number } | null;
@@ -170,7 +171,7 @@ const LEVEL_MARGIN = 0.01;
  * shows itself, so near a level both sides are drawn.
  */
 export function sceneryLayersShown({
-  height,
+  height: cameraHeight,
   ocean,
   abyss,
   cutawayWater,
@@ -181,6 +182,10 @@ export function sceneryLayersShown({
 > {
   const m = LEVEL_MARGIN;
   const bed = ocean ? ocean.level - ocean.depth : 0;
+  // In a trench, every layer's view starts just above the seabed (skyViewOrigin).
+  const height = ocean?.trench
+    ? bed + Math.min(1, 0.5 * ocean.depth)
+    : cameraHeight;
   // Surely below the seabed, as every layer's view starts from there in rock (skyViewOrigin).
   const belowBed = !!ocean && (ocean.buried || height < bed - m);
   const maybeBelowBed = !!ocean && (ocean.buried || height < bed + m);

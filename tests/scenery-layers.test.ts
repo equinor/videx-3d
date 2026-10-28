@@ -162,6 +162,17 @@ describe('sceneryLayersShown', () => {
     ).toEqual(only);
   });
 
+  it('draws the view in the water in a trench below the seabed, over a stage’s ground', () => {
+    const trench = view({ height: -500, ocean: { ...sea, trench: true } });
+    expect(sceneryLayersShown(trench)).toEqual({
+      sky: false,
+      clouds: false,
+      abyss: false,
+      sea: false,
+      water: true,
+    });
+  });
+
   it('fades the void in over the sky without a sea', () => {
     const fading = sceneryLayersShown(view({ ocean: null, height: -200 }));
     expect(fading.sky && fading.abyss).toBe(true);

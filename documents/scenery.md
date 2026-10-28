@@ -836,6 +836,15 @@ or without a seabed its lid is a roof from below. With walls, the lid is in thei
 haze's: `fadeDistance`, `depthDetail` and, but for `background: 'void'` and the stand-in,
 `depth` and `falloff` apply only without them, and `ceiling` only without their `sand`.
 
+Under a `SceneryStage`'s relief the void starts under the relief, at whatever depth: over
+it, down a trench below the sea's `depth`, the camera is still in the water. From the void
+the relief itself is the lid — its underside, shaded as the flat lid is (with walls as
+their sand's underside), raked by the walls' light (their bearing and `lightElevation`,
+with or without walls) so its shape shows — and nothing above it is drawn: not the water,
+the land, nor a trench's floor deeper than the camera. Past the relief's reach the flat lid
+carries on, the two in one colour where the relief lies level (see
+[tiles.md](./tiles.md)).
+
 `walls` (off by default; a prototype) adds cliffs about the stage, from the lid down, so
 moving in the void shows its scale. They follow the stage's rectangle (the one the flat
 sea keeps level over) pushed out by `distance`, a rounded rectangle given by one signed
@@ -922,7 +931,8 @@ bays and headlands without their sharp relief, and is shaded dull and matte in
 contact with the rock eases over a fifth of its depth either way and wanders a little
 round the outline; where the walls are cut, the sand shows thin laminae instead of the
 rock's beds. The lid seen from below is that sand's underside (`skyAbyssLid`, for the
-background and a stage's seabed from below alike), rippled by the void's `detail`, the
+background and a stage's seabed from below alike; `skyAbyssLidFacing` for a relief's,
+which faces the way its ground does), rippled by the void's `detail`, the
 ripples fading as the walls' haze thickens, in that haze. A dim light at the top of the
 stage (`glow`, in `glowColor`) lights the lid and the sand over the stage, fading out over
 about `distance` beyond it. Without sand the lid is the void's own colour (`ceiling`), in

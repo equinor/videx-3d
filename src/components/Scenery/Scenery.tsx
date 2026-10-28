@@ -774,6 +774,7 @@ export const Scenery = ({
             depth: material.oceanDepth,
             water: material.oceanWater,
             buried: material.oceanBuried,
+            trench: material.oceanTrench,
           }
         : null,
       abyss: material.abyss
@@ -1588,6 +1589,13 @@ export const Scenery = ({
       material.oceanGround !== null &&
       height <= material.oceanGround &&
       height > material.oceanLevel - material.oceanDepth;
+    // Over a stage's ground below the sea's own seabed, as in a trench: in the water, or
+    // over a dry sea's bed in the air.
+    material.oceanTrench =
+      material.ocean &&
+      material.oceanGround !== null &&
+      height > material.oceanGround &&
+      height <= material.oceanLevel - material.oceanDepth;
     // From the sea surface down the layer is clear everywhere (skyOceanSurfaceLayer), and
     // in rock there is no sea to see.
     if (surfaceMesh.current)

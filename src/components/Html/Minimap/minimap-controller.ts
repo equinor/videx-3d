@@ -1,17 +1,20 @@
 import { Vector3, type Camera, type Texture } from 'three';
 import { cornerStyle, type Corner } from '../../../common/corner-style';
+import { globeMapSurface, type Globe } from '../../../sdk/projection/globe';
 import {
   adaptiveMapExtent,
-  dropMarker,
+  dropMarkerOn,
   easeMapExtent,
+  flatMapSurface,
   MAP_NORTH,
   mapViewMetresPerPixel,
   mapViewPan,
   mapViewUp,
   rayAtSeaLevel,
-  setMarkerAltitude,
+  setMarkerHeight,
   stepMapZoom,
   type MapOrientation,
+  type MapSurface,
   type MapView,
 } from '../../../sdk/projection/map-view';
 import type { Vec2, Vec3 } from '../../../sdk/types/common';
@@ -41,6 +44,11 @@ export type MinimapOptions = {
   autoZoomSmoothing: number;
   /** the sea's height in the scene (Y) */
   level: number;
+  /**
+   * the globe the scene is placed on (a `World`'s, from its `Scenery`), or null: with one,
+   * heights are over its sea and positions the map's points under them (`globeMapSurface`)
+   */
+  globe: Globe | null;
   /** what the map is centred on */
   center: MinimapCenter;
   orientation: MapOrientation;
@@ -158,7 +166,11 @@ export class MinimapController {
   onDrop: (kind: 'camera' | 'target', at: Vec2) => void = () => {};
   private readonly canvasSlot = document.createElement('div');
   private renderer: MinimapRenderer | null = null;
+  // What the renderer was made for: a change of base alone does not make a new one.
+  private relief: MinimapRelief | null = null;
   private options: MinimapOptions | null = null;
+  // Heights and map points, flat or on the globe, by the options.
+  private surface: MapSurface = flatMapSurface();
   // What it last followed: what a drop moves.
   private camera: Camera | null = null;
   private controls: unknown = null;
@@ -297,7 +309,8 @@ export class MinimapController {
     const camera = this.camera;
     if (camera && this.canDrag()) {
       camera.getWorldPosition(position);
-      const pose = dropMarker(
+      const pose = dropMarkerOn(
+        this.surface,
         kind,
         [position.x, position.y, position.z],
         [pivot.x, pivot.y, pivot.z],
@@ -316,17 +329,17 @@ export class MinimapController {
     smooth: boolean,
   ) {
     const camera = this.camera;
-    const o = this.options;
-    if (!camera || !o || !this.canDrag()) return;
+    if (!camera || !this.options || !this.canDrag()) return;
     camera.getWorldPosition(position);
     moveControls(
       this.controls,
       camera,
-      setMarkerAltitude(
+      setMarkerHeight(
+        this.surface,
         kind,
         [position.x, position.y, position.z],
         [pivot.x, pivot.y, pivot.z],
-        o.level + metres,
+        metres,
       ),
       smooth,
     );
@@ -353,6 +366,14 @@ export class MinimapController {
   setOptions(options: MinimapOptions) {
     const before = this.options;
     this.options = options;
+    if (
+      !before ||
+      before.globe !== options.globe ||
+      before.level !== options.level
+    )
+      this.surface = options.globe
+        ? globeMapSurface(options.globe, options.level)
+        : flatMapSurface(options.level);
     const style = this.container.style;
     // Reset all four first: a corner change leaves the old pair set otherwise.
     style.left = style.right = style.top = style.bottom = '';
@@ -373,12 +394,27 @@ export class MinimapController {
     this.dirty = true;
   }
 
-  /** Draw `relief`, or nothing while it is made (null). */
+  /**
+   * Draw `relief`, or nothing while it is made (null). A renderer — a WebGL context — is made
+   * only for new layers or looks: a new base is set on the one there is.
+   */
   setRelief(relief: MinimapRelief | null) {
+    const was = this.relief;
+    this.relief = relief;
+    this.dirty = true;
+    if (
+      relief &&
+      was &&
+      this.renderer &&
+      relief.layers === was.layers &&
+      relief.looks === was.looks
+    ) {
+      this.renderer.setBase(relief.base);
+      return;
+    }
     this.renderer?.canvas.remove();
     this.renderer?.dispose();
     this.renderer = null;
-    this.dirty = true;
     if (!relief?.layers.length) return;
     try {
       this.renderer = new MinimapRenderer(
@@ -393,6 +429,11 @@ export class MinimapController {
     this.canvasSlot.appendChild(this.renderer.canvas);
     this.applySize();
     if (this.options) this.renderer.setAppearance(this.options.appearance);
+  }
+
+  /** Draw the map again at the next frame, as its look (its colours, contours) changed. */
+  invalidate() {
+    this.dirty = true;
   }
 
   /**
@@ -435,25 +476,24 @@ export class MinimapController {
     up.set(0, 1, 0).transformDirection(camera.matrixWorld);
 
     // What the camera looks at, on the sea's level: the controls' target dropped to it.
+    const surface = this.surface;
+    const eye: Vec3 = [position.x, position.y, position.z];
     const hasControls = controlsTarget(controls, pivot);
+    const aim: Vec3 = [pivot.x, pivot.y, pivot.z];
     const target: Vec2 = hasControls
-      ? [pivot.x, pivot.z]
+      ? surface.foot(aim)
       : rayAtSeaLevel(
-          [position.x, position.y, position.z],
+          eye,
           [forward.x, forward.y, forward.z],
           o.level,
           TARGET_REACH,
         );
-    const targetAltitude = hasControls ? pivot.y - o.level : 0;
-    if (hasControls && !this.home)
-      this.home = {
-        position: [position.x, position.y, position.z],
-        target: [pivot.x, pivot.y, pivot.z],
-      };
-    const cameraAt: Vec2 = [position.x, position.z];
+    const targetAltitude = hasControls ? surface.altitude(aim) : 0;
+    if (hasControls && !this.home) this.home = { position: eye, target: aim };
+    const cameraAt = surface.foot(eye);
 
     const zooms = o.zooms;
-    const altitude = position.y - o.level;
+    const altitude = surface.altitude(eye);
     const wanted =
       o.zoom === 'auto'
         ? adaptiveMapExtent(
@@ -573,6 +613,9 @@ export class MinimapController {
     this.container.removeEventListener('contextmenu', this.onContextMenu);
     this.renderer?.dispose();
     this.renderer = null;
+    this.relief = null;
+    this.camera = null;
+    this.controls = null;
     this.container.remove();
   }
 

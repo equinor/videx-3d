@@ -13,6 +13,8 @@
 // relief's layers from maps in longitude and latitude, merged and looked as the tiles merge
 // and look them (relief.glsl), above the sea, flat on the globe's sea, per pixel, wherever
 // on the Earth.
+// RELIEF_FROM_BELOW draws the tiles' undersides alone (their back faces), while the camera
+// is under the ground: the void's lid, shaded as the void draws its own (its main, below).
 
 #include <common>
 #ifndef RELIEF_FAR
@@ -142,6 +144,70 @@ vec3 reliefThroughAir(vec3 color, vec3 dir, float dist, float blend) {
   return color * kept + scatter * (1.0 - kept);
 }
 
+#ifdef RELIEF_FROM_BELOW
+// From under the ground, the relief is the void's lid: what the camera sees of it is its
+// underside, and nothing above it — not the water, the land, nor a trench's floor deeper
+// than the camera, which its walls' undersides stand in front of. Shaded as the lid the
+// background and a stage's flat seabed draw from below (with walls the sand's underside in
+// their haze, without the void's own lid), facing the way it faces, so its shape shows in
+// the walls' raking light, and darkened with the camera's depth as they are: where it lies
+// level, the relief and the flat lid past it meet in one colour. A skirt is shaded as the
+// lid it hangs from, so a crack between tiles shows none.
+void main() {
+  #include <logdepthbuf_fragment>
+  vec3 world = vReliefWorld;
+  vec3 toPoint = world - cameraPosition;
+  float dist = length(toPoint);
+  vec3 dir = toPoint / max(dist, 1e-6);
+  float height = reliefTileHeight();
+  // The way its underside faces: down its tile's normal, along true east, up and true south.
+  vec3 tileNormal = reliefTileNormal();
+  vec3 up = normalize(vReliefUp);
+  vec3 east = normalize(vReliefEast - up * dot(vReliefEast, up));
+  vec3 surface = -normalize(east * tileNormal.x + up * tileNormal.y + cross(east, up) * tileNormal.z);
+  // Before any pixel leaves: the lid's derivatives.
+  #ifdef SKY_ABYSS_WALLS
+  float lidFootprint = skyAbyssLidFootprint(world);
+  #else
+  // Its shape in the raking light, as much as the lid has not faded into the horizon.
+  float near = uSkyAbyssFadeDistance > 0.0 ? exp(-dist / uSkyAbyssFadeDistance) : 1.0;
+  vec3 color = skyAbyssCeiling(world, dist) * mix(1.0, skyAbyssLidRake(surface), near);
+  #endif
+  // The cutaway bites the seabed from below too, as it does a stage's; not over an occupant.
+  float seabed = height < 0.0 ? skyOceanCutawaySeabed(skyOceanCutawayAlong(cameraPosition, world)) : 1.0;
+  #ifdef RELIEF_OCCUPANTS
+  if(reliefOnOccupant(vReliefPlane))
+    seabed = 1.0;
+  #endif
+  if(seabed < 1e-3 || reliefTileLeftToOther(vReliefPlane) || reliefCutAway())
+    discard;
+  #ifdef SKY_ABYSS_WALLS
+  // The walls' fill stands in front of the lid here, or, from under their foot, the rock
+  // that runs on down below it (skyAbyssWallStartUnder): the background draws both.
+  vec4 wallStart = skyAbyssWallStartUnder(cameraPosition, dir);
+  if((wallStart.y > 0.0 && wallStart.x < dist) || wallStart.w < dist)
+    discard;
+  vec3 color = skyAbyssLidFacing(cameraPosition, dir, dist, lidFootprint, surface);
+  #endif
+  if(uSkyAbyssDarkening > 0.0)
+    color *= exp(min(skyOceanCameraAltitude() + uSkyOceanDepth, 0.0) / uSkyAbyssDarkening);
+
+  gl_FragColor = vec4(color, 1.0);
+  gl_FragColor.rgb = skyDebugTint(gl_FragColor.rgb, vec3(0.95, 0.6, 0.1));
+  gl_FragColor.rgb *= uSkyIntensity;
+
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+  #include <dithering_fragment>
+
+  #ifdef RELIEF_SEE_THROUGH
+  gl_FragColor.a = seabed * uSkyOceanSeabedOpacity;
+  #endif
+  #ifdef USE_OIT
+  gl_FragColor = oitProcess(gl_FragColor);
+  #endif
+}
+#else
 void main() {
   float altitude = skyOceanCameraAltitude();
   #ifdef RELIEF_FAR
@@ -212,6 +278,10 @@ void main() {
   float height = ground.x;
   bool under = height < 0.0;
   bool water = uSkyOceanWater > 0.5;
+  #ifndef RELIEF_FAR
+  // Seen through the water: the seabed, and from in the water everything, land included.
+  bool seenInWater = water && (under || altitude <= 0.0);
+  #endif
   #ifdef RELIEF_FAR
   // The look of the layer that gave it, as the tiles' (reliefTileLayer).
   int look = int(merged.z + 0.5);
@@ -265,12 +335,13 @@ void main() {
   // horizon, behind the globe's bulge: left to what the sea draws in front of it, whether a
   // stage's or the background's (`clears`, below).
   bool beyond = false;
-  if(under && water) {
-    // Through the water over it, from where the view enters it.
-    color *= waterFogDim(-height, uSkyOceanFogDensity);
+  if(seenInWater) {
+    // Through the water over it, from where the view enters it; land, from in the water,
+    // through the water the view crosses before it leaves the sea.
+    color *= waterFogDim(max(-height, 0.0), uSkyOceanFogDensity);
     float below = altitude > 0.0 ? max(dist - sea, 0.0) : skyOceanPathBelowSurface(cameraPosition, world);
     float path = skyOceanCutawayPath(below, skyOceanCutawayWall(cameraPosition, dir), skyOceanCutawayWater(cutaway));
-    color = skyOceanFog(color, path, skyOceanLight(0.5 * (-height + max(-altitude, 0.0))));
+    color = skyOceanFog(color, path, skyOceanLight(0.5 * (max(-height, 0.0) + max(-altitude, 0.0))));
     if(altitude > 0.0 && sea > dist)
       gl_FragDepth = reliefDepthAt(dir, sea * 1.0001);
   } else if(altitude > 0.0) {
@@ -300,7 +371,11 @@ void main() {
   #ifndef SKY_NO_GRATICULE
   // Over what is seen of the Earth from the air: land, or a dry seabed; under water, the
   // sea's surface draws them.
+  #ifdef RELIEF_FAR
   if(!(under && water))
+  #else
+  if(!seenInWater)
+  #endif
     color = graticuleOver(color, graticule);
   #endif
   gl_FragColor = vec4(color, 1.0);
@@ -316,7 +391,7 @@ void main() {
   // Once the derivatives above are taken. Seabed under water only where the stage's sea
   // covers it: past it the background's sea lies behind.
   bool past = under && water && altitude > 0.0 ? !staged : dist > uReliefReach;
-  if(seabed < 1e-3 || past || beyond || reliefTileHiddenFromBelow(height) || reliefTileLeftToOther(xz) || reliefCutAway())
+  if(seabed < 1e-3 || past || beyond || reliefTileLeftToOther(xz) || reliefCutAway())
     discard;
   #endif
 
@@ -328,3 +403,4 @@ void main() {
   gl_FragColor = oitProcess(gl_FragColor);
   #endif
 }
+#endif

@@ -137,10 +137,10 @@ scene's controls (R3F's `state.controls`; `draggable` on each marker, `dragContr
 - While a marker is dragged the map is held still under it, then follows the camera again. A
   dropped marker stays where it was dropped while the camera flies there. The marker you drop
   ends up where you dropped it: if the map is centred on it, the map then re-centres.
+  The pose a drop asks for is `dropMarkerOn` (sdk), on the map's surface: flat, or the globe's.
 - Without controls there is nothing to move, and the markers cannot be dragged. With
   `dragControls={false}` a drop is only reported, `onMarkerDrop(kind, [x, z])`, for a host with
   controls of its own to act on; it is reported after the controls move otherwise.
-  `dropMarker` (sdk) is the pose a drop asks for.
 
 ## Altitude: the readout and the control
 
@@ -169,8 +169,9 @@ hairline groove with a mark at each end and in the middle, and a round knob.
 - **The range** is `altitudeControl.min` to `altitudeControl.max` (default −5 km to +50 km, so
   the seabed has its share). A height already outside it can move back, and no farther out
   (`moveAltitude`). `altitudeControl.color` colours it (default white).
-- **The camera takes its target along**, by the same height, so it looks the same way at the same
-  angle from the new height; its target alone leaves the camera (`setMarkerAltitude`). It uses
+- **The camera takes its target along**, by the same move, straight up or down where it is
+  (along the globe's up far out), so it looks the same way at the same angle from the new
+  height; its target alone leaves the camera (`setMarkerHeight`). It uses
   the same controls as dropping a marker (`dragControls`), and is dimmed and inert without them.
   The adaptive zoom follows the camera's height.
 
@@ -207,7 +208,13 @@ vertical wherever it sits.
 - A WebGL context of its own, so the layers' maps are held on the GPU twice (the stage's
   overview holds its own): the demo's five layers are about 31 MB with their mips, as the
   overview's (`maxSize` only trims a layer larger than it: lower it for less). Browsers limit
-  contexts, so it is given back (`forceContextLoss`) on unmount.
+  contexts, so it is given back (`forceContextLoss`) on unmount. A new context is made only
+  for new layers (or a new look table); a new `base` is set on the one there is.
+- The colour ramps and the looks are the scene's textures, drawn from textures of the
+  minimap's own that share their data: three keeps every renderer a texture was uploaded to
+  alive through a listener on that texture, so sharing the scene's own would keep each
+  disposed minimap renderer alive. A change to them (`color`, `contours`, `layerLooks`, a
+  ramp registered) redraws the map.
 - At most six layers (`SCENERY_RELIEF_FAR_MAX_LAYERS`), as the overview's.
 - Heights are RG half floats: above 2000 m the shading steps by a metre or two. A layer
   coarser than the pixel shows its cells (bilinear, so its shading is blocky). They are
@@ -217,8 +224,12 @@ vertical wherever it sits.
 - A pixel's neighbours are sampled for the slope, so the fragment shader merges the layers five
   times. It runs only when the view moves a quarter pixel, or its scale, turn, size or style
   change.
-- Height over the sea is the camera's Y minus `level`: far from the field under a `Scenery`'s
-  globe, Y is not altitude (see [scenery.md](./scenery.md#the-globe)).
+- Heights over the sea (the readout, `'auto'`, the altitude control) and the camera's and
+  target's places on the map are the globe's under a `Scenery` (the `World`'s globe,
+  `globeMapSurface`): far from the field the sea curves below Y = 0, and the map's point under
+  the camera is its foot on the globe, not its scene X/Z. A dropped marker keeps its height
+  over the sea there. Without a `Scenery`, the plane Y = `level` (`flatMapSurface`). Without
+  controls, the target is where the view ray meets the plane Y = `level`.
 - Not done: globe mode, resizing by dragging, custom buttons, and a mode switch among the controls.
 - Longitudes across the 180th meridian are handled only for a layer that wraps.
 

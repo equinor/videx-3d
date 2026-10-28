@@ -5,14 +5,18 @@ import {
   geoFrameLonLat,
 } from '../src/sdk/projection/geo-frame';
 import { CRS, getProjectionDefFromUtmZone } from '../src/sdk/projection/crs';
+import { Globe, globeMapSurface } from '../src/sdk/projection/globe';
 import {
   adaptiveMapExtent,
   altitudeRate,
   boostFactor,
   dropMarker,
+  dropMarkerOn,
+  flatMapSurface,
   mapViewPan,
   moveAltitude,
   setMarkerAltitude,
+  setMarkerHeight,
   easeMapExtent,
   mapViewFromPixel,
   mapViewGrid,
@@ -278,6 +282,75 @@ describe('setMarkerAltitude', () => {
       expect(moved.target[i] - moved.camera[i]).toBeCloseTo(
         target[i] - camera[i],
       );
+  });
+});
+
+describe('map surfaces', () => {
+  const camera: [number, number, number] = [100, 3000, 200];
+  const target: [number, number, number] = [150, -80, 50];
+
+  it('flat: heights over the sea level, the map point straight under', () => {
+    const flat = flatMapSurface(-20);
+    expect(flat.altitude(camera)).toBe(3020);
+    expect(flat.foot(camera)).toEqual([100, 200]);
+    expect(flat.place(5, 6, 30)).toEqual([5, 10, 6]);
+    // The sea at Y = 0, the helpers before surfaces.
+    expect(
+      setMarkerHeight(flatMapSurface(), 'camera', camera, target, 500),
+    ).toEqual(setMarkerAltitude('camera', camera, target, 500));
+    expect(
+      dropMarkerOn(flatMapSurface(-20), 'camera', camera, target, [0, 0]),
+    ).toEqual(dropMarker('camera', camera, target, [0, 0]));
+  });
+
+  // The demo field's frame (UTM 31N, ED50), the stage's disc 8 km across about its origin.
+  const globe = new Globe();
+  globe.setDisc([-4000, -4000, 4000, 4000]);
+  globe.setFrame({
+    projection: getProjectionDefFromUtmZone('31N'),
+    origin: [434500, 6478000],
+  });
+  const onGlobe = globeMapSurface(globe);
+  const far = (x: number, z: number, height: number) =>
+    onGlobe.place(x, z, height);
+
+  it('globe: over the disc it is flat', () => {
+    expect(onGlobe.altitude([100, 300, 200])).toBeCloseTo(300, 6);
+    expect(onGlobe.foot([100, 300, 200])).toEqual([100, 200]);
+  });
+
+  it('globe: 200 km out, scene Y is not the height over the sea, but the surface’s is', () => {
+    const p = far(200000, 0, 300);
+    // The sea lies some 3 km below Y = 0 there.
+    expect(p[1]).toBeLessThan(-2000);
+    expect(onGlobe.altitude(p)).toBeCloseTo(300, 3);
+    const [x, z] = onGlobe.foot(p);
+    expect(x).toBeCloseTo(200000, 2);
+    expect(z).toBeCloseTo(0, 2);
+  });
+
+  it('globe: a height set or a marker dropped far out keeps heights over the sea', () => {
+    const eye = far(200000, 0, 300);
+    const aim = far(205000, 1000, 0);
+    const climbed = setMarkerHeight(onGlobe, 'camera', eye, aim, 1500);
+    expect(onGlobe.altitude(climbed.camera)).toBeCloseTo(1500, 3);
+    // The target comes up by the same move.
+    expect(onGlobe.altitude(climbed.target)).toBeCloseTo(1200, 0);
+    const aimed = setMarkerHeight(onGlobe, 'target', eye, aim, -50);
+    expect(aimed.camera).toEqual(eye);
+    expect(onGlobe.altitude(aimed.target)).toBeCloseTo(-50, 3);
+
+    const dropped = dropMarkerOn(onGlobe, 'camera', eye, aim, [250000, 0]);
+    expect(onGlobe.altitude(dropped.camera)).toBeCloseTo(300, 3);
+    expect(onGlobe.altitude(dropped.target)).toBeCloseTo(0, 3);
+    const [tx, tz] = onGlobe.foot(dropped.target);
+    expect(tx).toBeCloseTo(255000, 1);
+    expect(tz).toBeCloseTo(1000, 1);
+  });
+
+  it('globe: heights measured from a sea level of the map’s own', () => {
+    const p = far(200000, 0, 300);
+    expect(globeMapSurface(globe, -10).altitude(p)).toBeCloseTo(310, 3);
   });
 });
 

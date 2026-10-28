@@ -603,29 +603,42 @@ start-up only).
   finest tile in under the camera (`geoReliefTileHeightAt`, the tile found with
   `geoTileKeyAt` at the camera's latitude and longitude), drawn or not. Below the sea it
   is the sky's `oceanGround` wherever no
-  occupant's seabed is under the camera, no deeper than the sea's own seabed (under that
-  lies the void); so the sky knows the camera is under the ground anywhere the relief has
-  data, and the lighting and the void follow.
-- **The skirts from below (built 2026-10-25; every pixel since 2026-10-27):** no winding
-  hides a skirt from below and keeps it from above, as which face shows depends on which
-  side of the edge the camera is. A relief pixel is dropped while the camera is under the
-  ground where it is AND below the top at that pixel — on a skirt, the edge it hangs from
-  (`reliefTileHiddenFromBelow`). Either test alone fails: in a fjord a crack up a cliff
-  lies above the camera, and from the void a deep trench (or ground curved away far off)
-  is seen from above, with its cracks. Measured from 500 m under Volve: every skirt pixel
-  gone (8.6 k), the tops of what lies deeper left; under the coast 95 % of them gone, the
-  rest of tiles curved below the camera.
-  - ⚠️ The test used to be for skirts only, told by an interpolated `vReliefSkirt > 0`.
-    From deep in the void (54 km down, looking level) a skirt 150–400 km off is a sliver
-    under a pixel, sampled just past its edge, where the interpolated value is 0 or
-    below: thin dashed lines along the tiles' edges on the lid. Now the test is by height,
-    for tops as well (one facing the camera from under the ground is seen through rock),
-    and `vReliefSkirt` is `flat`, from each triangle's last vertex (the provoking vertex
-    in WebGL 2), which the patch's index order makes a skirt's lower edge on a skirt and a
+  occupant's seabed is under the camera, at whatever depth (since 2026-10-28; it was held
+  no deeper than the sea's own seabed, which put a camera in a trench in the void); so the
+  sky knows the camera is under the ground anywhere the relief has data, and the
+  lighting, the water and the void follow. Over the ground in a trench, below the sea's
+  own seabed, the camera is in the water (`SceneryMaterial.oceanTrench`): the background's
+  layers see as from just above that seabed, as they see from just below it in rock
+  (`oceanBuried`).
+- **The relief from below (built 2026-10-28; it replaced the skirts' test below):** under
+  the ground the relief is the void's lid. The same tiles are drawn with a second
+  material instead (`createSceneryReliefTileFromBelowMaterial`, `RELIEF_FROM_BELOW`): their
+  back faces alone, shaded as the lid the background draws — with walls the sand's
+  underside in their haze (`skyAbyssLidFacing`), without the void's own lid
+  (`skyAbyssCeiling`), both raked by the walls' light by the way they face
+  (`skyAbyssLidRake`), so the ground's shape shows, and level, the two lids meet in one
+  colour. With walls, a pixel the walls' rock stands in front of is left to the background,
+  as the stage's flat lid leaves it. Nothing above the lid is drawn from there — not the
+  water, the land, nor a trench's floor deeper than the camera — and a skirt is shaded as
+  the lid it hangs from, so the cracks show none. Both materials are compiled with the
+  stage; the frame shows one pair of meshes or the other (opaque and see-through).
+  - ⚠️ Until 2026-10-28 the tops were drawn from below too, every pixel above the camera
+    dropped (`reliefTileHiddenFromBelow`), and what lay deeper (a trench seen from the
+    void) shaded as seen from above through the water: blue streaks along the horizon in
+    the void, and with walls inside the hollow. The lid itself was the background's,
+    flat at the sea's depth.
+  - `vReliefSkirt` is `flat`, from each triangle's last vertex (the provoking vertex in
+    WebGL 2), which the patch's index order makes a skirt's lower edge on a skirt and a
     grid node on the grid (`tests/scenery-relief-tile-patch.test.ts`); the see-through
-    draw's leaving out of skirts (`reliefTileLeftToOther`) relies on it.
-  - Under the ground and below the lowest top of every tile drawn, every pixel would be
-    dropped: the tiles are not drawn at all, as when the camera is in rock (`buried`).
+    draw's leaving out of skirts (`reliefTileLeftToOther`) relies on it. Interpolated, a
+    skirt seen edge-on far off, a sliver under a pixel, is sampled past its edge.
+- **From in the water (2026-10-28):** land seen from in the water is seen through it, as
+  the seabed is: fogged over the stretch of the view under the sea surface, without the
+  graticule (the sea's surface draws it). Before, only ground below the sea took the water,
+  and land on the horizon showed through it. Below the horizon, where the stage's seabed
+  is opaque and nothing opens it, the background's water layer draws the water's own view
+  under the stage too, so the pixel or so a relief deeper or shallower than the sea's
+  depth leaves short of the horizon shows water, not the void (a black hairline).
 - **Debug (built 2026-10-25):** `debug.relief`: `'tiles'` tints each tile by its depth
   and outlines it, `'layers'` colours each node by the layer that gave it (grey for the
   base; the tiles' layer ids are uploaded as a third texture, 1 byte a node). An
@@ -1309,7 +1322,9 @@ enough, and the plan comes first.
 - **Coasts:** EMODnet has no land; at the coast the land fades in from ETOPO 15″ over the
   feather, which can move the coastline by a cell or so.
 - **The void's walls** (a prototype) stand at the flat seabed's level; ground deeper than
-  the sea's `depth` inside `bounds` will meet them. To be looked at in StageDebug.
+  the sea's `depth` inside `bounds` will meet them. To be looked at in StageDebug. From
+  below, the relief's lid meets their top where it lies at the sea's depth; where it lies
+  above it, the background's flat lid shows in the strip between, in the same colour.
 - **A local layer's detail from afar** is bounded down to the level a layer's edge is
   read at (512 values a side); finer than that, a tile sees it one level ahead, as
   before (see [The detail under a tile](#4-relief-tiles)). A layer larger than 512 values

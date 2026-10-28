@@ -4,6 +4,7 @@ import {
   Frustum,
   InstancedBufferAttribute,
   Matrix4,
+  Mesh,
   Texture,
   Vector3,
   Vector4,
@@ -47,6 +48,7 @@ import {
   ReliefSampler,
 } from './scenery-relief-sampler';
 import {
+  createSceneryReliefTileFromBelowMaterial,
   createSceneryReliefTileMaterial,
   createSceneryReliefTilePatch,
   createSceneryReliefTileSeeThroughMaterial,
@@ -118,6 +120,8 @@ type SceneryStageReliefTilesProps = {
   transition: number;
   /** what it compiles with from the sky, as a key (`SceneryOceanState.definesKey`): a new one needs a new material */
   definesKey?: string;
+  /** the void has walls: from below, the relief is shaded as their lid (`SceneryOceanState.abyssWalls`) */
+  abyssWalls?: boolean;
   visible: boolean;
   onStats?: (stats: SceneryReliefTileStats) => void;
   /** told of the tiles as they load (see `SceneryReliefLoading`) whenever that changes, and null once gone */
@@ -172,6 +176,7 @@ export const SceneryStageReliefTiles = ({
   cellPixels,
   transition,
   definesKey,
+  abyssWalls = false,
   visible,
   onStats,
   onLoading,
@@ -224,6 +229,28 @@ export const SceneryStageReliefTiles = ({
     [material, seeThrough],
   );
   useEffect(() => () => seeThroughMaterial?.dispose(), [seeThroughMaterial]);
+  // From under the ground, the void's lid: the same tiles' undersides, drawn instead (see
+  // the frame loop). Compiled with the stage's, hidden or not.
+  const belowMaterial = useMemo(
+    () => createSceneryReliefTileFromBelowMaterial(material, abyssWalls),
+    [material, abyssWalls],
+  );
+  useEffect(() => () => belowMaterial.dispose(), [belowMaterial]);
+  const belowSeeThroughMaterial = useMemo(
+    () =>
+      seeThrough
+        ? createSceneryReliefTileSeeThroughMaterial(belowMaterial)
+        : null,
+    [belowMaterial, seeThrough],
+  );
+  useEffect(
+    () => () => belowSeeThroughMaterial?.dispose(),
+    [belowSeeThroughMaterial],
+  );
+  const aboveMesh = useRef<Mesh>(null);
+  const aboveSeeThroughMesh = useRef<Mesh>(null);
+  const belowMesh = useRef<Mesh>(null);
+  const belowSeeThroughMesh = useRef<Mesh>(null);
   // The tiles over the stage's area, drawn again see-through.
   const subset = useMemo(
     () => createSceneryReliefTileSubset(geometry),
@@ -495,12 +522,17 @@ export const SceneryStageReliefTiles = ({
           geoReliefTileHeightAt(tile, eye.longitude, eye.latitude, true);
     }
     if (cameraGround) cameraGround.current = ground;
-    // Under it, nothing of the relief higher than the camera is seen (reliefTileHiddenFromBelow).
+    // Under it — in the void, or in rock above the sea's own seabed — the relief is the
+    // void's lid: its undersides are drawn instead of its tops.
     const under = ground !== null && y < ground;
-    material.uniforms.uReliefCameraUnder.value = under ? 1 : 0;
-    // In it, above the sea's own seabed, the camera is in rock: the sky draws the void
-    // (SceneryMaterial.oceanBuried), and none of the relief is drawn. Chosen and streamed still.
-    const buried = ground !== null && y <= ground && y > level - sky.oceanDepth;
+    for (const [mesh, shows] of [
+      [aboveMesh, !under],
+      [aboveSeeThroughMesh, !under],
+      [belowMesh, under],
+      [belowSeeThroughMesh, under],
+    ] as const) {
+      if (mesh.current) mesh.current.visible = visible && shows;
+    }
 
     // No farther than can be seen: past the globe's horizon, the highest ground's own, and
     // the disc's flat sea, over which a view runs on level.
@@ -627,7 +659,6 @@ export const SceneryStageReliefTiles = ({
     drawnKeys.length = 0;
     let count = 0;
     let deepest = 0;
-    let lowest = Infinity;
     for (const { key, from, blend } of drawnTiles) {
       if (count >= SKY_RELIEF_MAX_TILES) break;
       const tile = streamer.get(key);
@@ -635,7 +666,6 @@ export const SceneryStageReliefTiles = ({
       if (!tile || slot === undefined || slot < 0) continue;
       const [depth] = tileAddress(key);
       deepest = Math.max(deepest, depth);
-      lowest = Math.min(lowest, level + tile.min);
       geoTileOffsets(globe, key, array, 4 * count, chiArray, 3 * count);
       array[4 * count + 2] = depth;
       array[4 * count + 3] = slot;
@@ -713,12 +743,6 @@ export const SceneryStageReliefTiles = ({
       }
     }
     subset.instanceCount = inStage;
-    // Under the ground and below all of it drawn, every pixel would be dropped
-    // (reliefTileHiddenFromBelow): the void's, deep under the field, costs nothing.
-    if (buried || (under && y < lowest)) {
-      geometry.instanceCount = 0;
-      subset.instanceCount = 0;
-    }
 
     // The ground handed out over each region: the tiles there, in their squares scaled to
     // metres about the region's middle (the warp's coordinates), the warp from the world's
@@ -808,21 +832,42 @@ export const SceneryStageReliefTiles = ({
     }
   });
 
+  // Shown each frame: the tops from above the ground, the undersides from under it.
   return (
     <>
       <mesh
+        ref={aboveMesh}
         geometry={geometry}
         material={material}
         frustumCulled={false}
-        visible={visible}
+        visible={false}
+        onBeforeRender={sky.onBeforeDraw}
+      />
+      <mesh
+        ref={belowMesh}
+        geometry={geometry}
+        material={belowMaterial}
+        frustumCulled={false}
+        visible={false}
         onBeforeRender={sky.onBeforeDraw}
       />
       {seeThroughMaterial && (
         <mesh
+          ref={aboveSeeThroughMesh}
           geometry={subset}
           material={seeThroughMaterial}
           frustumCulled={false}
-          visible={visible}
+          visible={false}
+          onBeforeRender={sky.onBeforeDraw}
+        />
+      )}
+      {belowSeeThroughMaterial && (
+        <mesh
+          ref={belowSeeThroughMesh}
+          geometry={subset}
+          material={belowSeeThroughMaterial}
+          frustumCulled={false}
+          visible={false}
           onBeforeRender={sky.onBeforeDraw}
         />
       )}

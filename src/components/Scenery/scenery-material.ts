@@ -313,6 +313,8 @@ export class SceneryMaterial extends ShaderMaterial {
         uSkyOceanBedAmbient: new Uniform(new Vector2(...ocean.seabed.ambient)),
         uSkyOceanFogDensity: new Uniform(ocean.bodyFogDensity),
         uSkyOceanBuried: new Uniform(0),
+        uSkyOceanTrench: new Uniform(0),
+        uSkyOceanStageOpen: new Uniform(0),
         uSkyOceanCutawayAnchor: new Uniform(new Vector3()),
         uSkyOceanCutawayHeading: new Uniform(new Vector3(0, 0, -1)),
         uSkyOceanCutawayShape: new Uniform(new Vector3()),
@@ -1060,10 +1062,16 @@ export class SceneryMaterial extends ShaderMaterial {
     const covers =
       this.ocean && this.oceanSeabed && this.oceanSeabedOpacity >= 1;
     this.uniforms.uSkyAbyssWallCover.value = covers ? 1 : 0;
+    let opening = false;
+    for (const open of this.abyssOpenings) {
+      if (open()) {
+        opening = true;
+        break;
+      }
+    }
+    this.uniforms.uSkyOceanStageOpen.value = opening ? 1 : 0;
     if (!this.ocean) return false;
-    if (!covers || cutaway) return true;
-    for (const open of this.abyssOpenings) if (open()) return true;
-    return false;
+    return !covers || cutaway || opening;
   }
 
   /** the walls' look (see {@link SceneryAbyssWalls}) */
@@ -1287,9 +1295,21 @@ export class SceneryMaterial extends ShaderMaterial {
   }
 
   /**
+   * the camera is over the ground a stage draws but below the sea's own seabed, as in a
+   * trench of a relief deeper than the sea's `depth` (see {@link oceanGround}): the
+   * background's view starts just above that seabed, in the water
+   */
+  get oceanTrench(): boolean {
+    return this.uniforms.uSkyOceanTrench.value > 0;
+  }
+  set oceanTrench(value: boolean) {
+    this.uniforms.uSkyOceanTrench.value = value ? 1 : 0;
+  }
+
+  /**
    * The ground's height under the camera where a stage draws its own (`SceneryStage`, its
-   * relief drawn from tiles): the seabed, or land above the sea, no lower than the sea's own
-   * seabed. `null` where the sea's flat seabed is.
+   * relief drawn from tiles): the seabed, or land above the sea, at whatever depth — deeper
+   * than the sea's own seabed in a trench. `null` where the sea's flat seabed is.
    */
   oceanGround: number | null = null;
 

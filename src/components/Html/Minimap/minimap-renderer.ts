@@ -54,6 +54,22 @@ export type MinimapRenderLayer = {
 
 const NO_LAYERS = new Vector4();
 
+// A texture of this renderer's own over `shared`'s image: three ties a texture to every
+// renderer that uploads it with a listener on its `dispose`, which a renderer's own disposal
+// leaves behind, so a texture shared with the scene's renderer would keep every disposed
+// minimap renderer alive. The clone shares the data; `syncShared` follows its changes.
+function ownTexture<T extends Texture>(shared: T): T {
+  const own = shared.clone() as T;
+  own.version = shared.version;
+  return own;
+}
+
+// Upload the shared texture's changes to this context: by the texture's own version, not the
+// shared source's, which the scene's renderer would then upload again.
+function syncShared(own: Texture, shared: Texture) {
+  if (own.version !== shared.version) own.version = shared.version;
+}
+
 /**
  * Draws a relief, merged from its layers in longitude and latitude, top-down on a canvas of
  * its own: a small grid whose vertices carry their longitude and latitude, and a fragment
@@ -73,6 +89,9 @@ export class MinimapRenderer {
   private readonly textures: DataTexture[];
   private readonly grids: ReliefGeoGrid[];
   private readonly frames: Vector4[];
+  // The looks and the colour ramps, shared with the scene, and this context's own of each.
+  private readonly shared: [Texture, Texture][];
+  private readonly base: Uniform<number>;
   private readonly minimap = new Vector4(0, 2, 0.8, 1);
   private readonly seaColor = new Color();
   private readonly outlineColor = new Color();
@@ -83,7 +102,8 @@ export class MinimapRenderer {
    * @param layers the relief's layers, coarse to fine, at most
    *   {@link SCENERY_RELIEF_FAR_MAX_LAYERS} (the rest are left out)
    * @param base the height where no layer has data, metres over the sea
-   * @param looks the relief's looks (`SceneryReliefLooks.texture`); not disposed here
+   * @param looks the relief's looks (`SceneryReliefLooks.texture`); not disposed here, and
+   *   drawn from a texture of this renderer's own, so changes to it show at the next render
    * @throws if there is no WebGL 2 context to be had
    */
   constructor(layers: MinimapRenderLayer[], base: number, looks: Texture) {
@@ -128,6 +148,13 @@ export class MinimapRenderer {
     this.geometry.setAttribute('aGeo', this.geoAttribute);
     this.geometry.setIndex(index);
 
+    const ownLooks = ownTexture(looks);
+    const ownRamps = ownTexture(colorRampTexture);
+    this.shared = [
+      [looks, ownLooks],
+      [colorRampTexture, ownRamps],
+    ];
+    this.base = new Uniform(base);
     const uniforms: Record<string, Uniform> = {
       uReliefMapFrames: new Uniform(
         this.frames.length ? this.frames : [NO_LAYERS],
@@ -144,9 +171,9 @@ export class MinimapRenderer {
         ),
       ),
       uReliefMapLooks: new Uniform(used.map(({ look }) => look)),
-      uReliefBase: new Uniform(base),
-      uReliefLook: new Uniform(looks),
-      uColorRamps: new Uniform(colorRampTexture),
+      uReliefBase: this.base,
+      uReliefLook: new Uniform(ownLooks),
+      uColorRamps: new Uniform(ownRamps),
       uMinimap: new Uniform(this.minimap),
       uSeaColor: new Uniform(this.seaColor),
       uOutlineColor: new Uniform(this.outlineColor),
@@ -224,12 +251,19 @@ export class MinimapRenderer {
     this.minimap.w = view.metresPerPixel / this.pixelRatio;
   }
 
+  /** The height where no layer has data, metres over the sea. Call {@link render} after. */
+  setBase(base: number) {
+    this.base.value = base;
+  }
+
   render() {
+    for (const [shared, own] of this.shared) syncShared(own, shared);
     this.renderer.render(this.scene, this.camera);
   }
 
   dispose() {
     this.textures.forEach(texture => texture.dispose());
+    for (const [, own] of this.shared) own.dispose();
     this.geometry.dispose();
     this.material.dispose();
     this.renderer.dispose();

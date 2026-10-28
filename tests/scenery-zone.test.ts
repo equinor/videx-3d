@@ -54,6 +54,9 @@ describe('sceneryZone', () => {
     expect(sceneryZone(-60, { ...sea, oceanGround: -20 })).toBe('subsurface');
     // In a valley sunk below it: in the water.
     expect(sceneryZone(-120, { ...sea, oceanGround: -150 })).toBe('water');
+    // Deep in a trench, far below the sea's depth: in the water, the void under its floor.
+    expect(sceneryZone(-280, { ...sea, oceanGround: -300 })).toBe('water');
+    expect(sceneryZone(-320, { ...sea, oceanGround: -300 })).toBe('subsurface');
     expect(sceneryZone(-60, { ...sea, oceanGround: null })).toBe('water');
     // Inside land above the sea: in the ground; over it, in the air.
     expect(sceneryZone(600, { ...sea, oceanGround: 830 })).toBe('subsurface');

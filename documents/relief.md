@@ -117,11 +117,15 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
   [scenery.md](./scenery.md#the-globe)).
 - The ground under the camera is the sky's (`oceanGround`), sampled on the triangles drawn:
   under the relief the camera is in the ground, for the lighting and the void — below the
-  sea, and in land above it too. In it (`SceneryMaterial.oceanBuried`) none of the sea, the
-  relief or its overview is drawn: the sky shows the void as from just below the sea's
-  seabed and the scene is lit as the subsurface, so from inside a hill the data is seen in
-  rock rather than the sea through it. ⚠️ The void is laid out in the field's frame: far
-  from the field (any hill on land, from Volve) it is black.
+  sea, and in land above it too — and over it in the water, however deep (a trench below
+  the sea's `depth`: `SceneryMaterial.oceanTrench`). Under it the relief is the void's lid:
+  its undersides are drawn, shaded as the void's lid, and nothing above them is. In it
+  above the sea's own seabed (`SceneryMaterial.oceanBuried`) none of the sea or the
+  overview is drawn: the sky shows the void as from just below the sea's seabed and the
+  scene is lit as the subsurface, so from inside a hill the data is seen in rock rather
+  than the sea through it. ⚠️ The void is laid out in the field's frame: far from the
+  field (any hill on land, from Volve) it is black.
+- From in the water, land is seen through the water as the seabed is.
 - `debug.hide: ['relief']` hides it, like the stage's other layers; `debug.relief`
   shows its tiles by depth (`'tiles'`) or which layer gave each node (`'layers'`).
 

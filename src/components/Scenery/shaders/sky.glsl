@@ -35,11 +35,16 @@ uniform float uSkyHorizonBlend; // width of the horizon -> ground transition, in
 uniform float uSkyIntensity;
 uniform float uSkyDebug; // 1: tint each part by what draws it (SceneryDebug.tint)
 // The sea's levels, and whether the camera is under a stage's ground above its seabed
-// (SceneryMaterial.oceanBuried): every layer of the background starts its view from there
+// (SceneryMaterial.oceanBuried), or over a stage's ground below it, in a trench
+// (SceneryMaterial.oceanTrench): every layer of the background starts its view from there
 // (skyViewOrigin), with a sea or not.
 uniform float uSkyOceanLevel; // along uSkyUp
 uniform float uSkyOceanDepth;
 uniform float uSkyOceanBuried;
+uniform float uSkyOceanTrench;
+// How far above the sea's seabed a view from a trench starts (skyViewOrigin): within the
+// water however shallow the sea. sceneryLayersShown takes the same.
+#define SKY_OCEAN_TRENCH_LIFT min(1.0, 0.5 * uSkyOceanDepth)
 
 // Debug tints (SceneryDebug.tint): the sky's own sea, seabed and void; what it leaves to a
 // stage; its surface layer.
@@ -547,6 +552,8 @@ uniform vec4 uSkyOceanStage;
 // How far from the camera the stage draws it: out to the far plane, 0 while the camera is
 // off its rectangle on the globe (SceneryMaterial.claimStage).
 uniform float uSkyOceanStageReach;
+// 1 while a stage's occupant's cut opens its seabed to the void (SceneryMaterial.abyssOpenings).
+uniform float uSkyOceanStageOpen;
 
 // Coordinates in the wave plane the Ocean works in: world X/Z in the default frame.
 vec2 skyOceanPlane(vec3 p) {
@@ -569,7 +576,20 @@ uniform float uSkyAbyssDarkening; // depth over which the void dims; 0 = off
 uniform float uSkyAbyssDetail;
 uniform float uSkyAbyssDetailScale; // world units
 uniform vec2 uSkyAbyssDepthDetail; // the rock in the depths: strength, and feature size
+// Toward the light raking the walls (world): the subsurface light's bearing, at the walls'
+// light elevation; set with or without walls (SceneryMaterial.setAbyssWallLight).
+uniform vec3 uSkyAbyssWallLight;
 // Its colours and the depths' falloff: sky-void.glsl.
+
+// How strongly a relief's lid shows its shape in the raking light (skyAbyssLidRake).
+#define SKY_ABYSS_LID_RAKE 0.6
+
+// How a lid facing `surface` (-uSkyUp where it lies level) is lit, against a level lid, by
+// the walls' raking light: 1 where level, so a relief's lid meets the flat one without a
+// seam; lighter on a slope facing the light, darker on one facing away.
+float skyAbyssLidRake(vec3 surface) {
+  return max(1.0 + SKY_ABYSS_LID_RAKE * dot(surface + uSkyUp, uSkyAbyssWallLight), 0.2);
+}
 
 // The lid seen at `hit`, `reach` away: it recedes into the horizon colour over the fade
 // distance, or never (0). ⚠️ Derivatives.
@@ -622,7 +642,6 @@ uniform vec3 uSkyAbyssWallCutColor; // their rock's inside, where they are cut
 #define SKY_ABYSS_JOINTS 0.25
 #define SKY_ABYSS_CUT_EDGE 1.8
 uniform vec2 uSkyAbyssWallMist; // how dense the mist clinging to them is, 0 to 1; how far it hangs off the rock (world units)
-uniform vec3 uSkyAbyssWallLight; // toward the light raking them (world)
 uniform vec3 uSkyAbyssWallLightColor;
 uniform vec3 uSkyAbyssWallFillTop; // the subsurface's light map: its backdrop overhead,
 uniform vec3 uSkyAbyssWallFillBottom; // underfoot,
@@ -987,15 +1006,21 @@ float skyAbyssLidFootprint(vec3 hit) {
 // the top of the stage over it); without, the void's own lid colour. Faintly rippled as
 // the void's lid is (uSkyAbyssDetail), the ripples fading as the haze thickens and
 // smoothed over the `footprint` a pixel spans there (skyAbyssLidFootprint), and darkened
-// far from the hollow (skyAbyssWallFar). It takes no derivatives, so a pixel may discard
-// before it.
-vec3 skyAbyssLid(vec3 origin, vec3 dir, float reach, float footprint) {
+// far from the hollow (skyAbyssWallFar). `surface` is the way it faces there: -uSkyUp where
+// it lies level, as the flat lid does; a relief's tells its shape. It takes no derivatives,
+// so a pixel may discard before it.
+vec3 skyAbyssLidFacing(vec3 origin, vec3 dir, float reach, float footprint, vec3 surface) {
   vec3 hit = origin + dir * reach;
   float clear = skyAbyssWallClear(origin, dir, reach, uSkyAbyssWalls.z);
-  vec3 lid = uSkyAbyssWallSand.x > 0.0 ? skyAbyssWallSandShade(-uSkyUp, hit) : uSkyAbyssCeilingColor;
+  vec3 lid = uSkyAbyssWallSand.x > 0.0 ? skyAbyssWallSandShade(surface, hit) : uSkyAbyssCeilingColor * skyAbyssLidRake(surface);
   if(uSkyAbyssDetail > 0.0)
     lid *= 1.0 + pnFbmSigned2FilteredOver(skyAbyssLidCells(hit), 5, footprint) * 2.0 * uSkyAbyssDetail * clear;
   return mix(skyAbyssHazeColor(dot(hit, uSkyUp)), lid * skyAbyssWallFar(hit), clear);
+}
+
+// The level lid (skyAbyssLidFacing).
+vec3 skyAbyssLid(vec3 origin, vec3 dir, float reach, float footprint) {
+  return skyAbyssLidFacing(origin, dir, reach, footprint, -uSkyUp);
 }
 
 // What the background draws of the walls along `dir` from `origin`, below the lid, laid
@@ -1081,10 +1106,14 @@ vec4 skyAbyss(vec3 dir, vec3 origin, vec3 depths, vec4 walls) {
 
 // Where every layer's view starts: the camera. Under a stage's ground it is in the rock:
 // seen as from just below the sea's seabed, by its height over the globe, which far off lies
-// well below the scene's level.
+// well below the scene's level. Over a stage's ground below the sea's seabed, in a trench,
+// it is in the water: seen as from just above that seabed.
 vec3 skyViewOrigin() {
+  float altitude = globeCameraHeight() - uSkyOceanLevel;
   if(uSkyOceanBuried > 0.5)
-    return cameraPosition - uSkyUp * (globeCameraHeight() - uSkyOceanLevel + uSkyOceanDepth + 1.0);
+    return cameraPosition - uSkyUp * (altitude + uSkyOceanDepth + 1.0);
+  if(uSkyOceanTrench > 0.5)
+    return cameraPosition - uSkyUp * (altitude + uSkyOceanDepth - SKY_OCEAN_TRENCH_LIFT);
   return cameraPosition;
 }
 
@@ -1248,7 +1277,13 @@ vec4 skyWaterLayer(vec3 dir, vec3 origin, float blend) {
   SkyOceanStagedView staged = skyOceanStagedView(dir, origin);
   bool water = skyOceanNeedsWaterView(origin);
   vec4 view = vec4(0.0);
-  if(!staged.skip && water) {
+  // Under an opaque seabed with no opening in it, below the horizon, the water's own view
+  // everywhere, the stage's area included: what the stage draws hides it by depth, at no
+  // cost, and a gap shows the water, as it would, not the void. A relief's ground deeper
+  // than the sea's depth curves away below the view a pixel or so short of the horizon the
+  // sea's seabed has. The cutaway takes it as it takes the stage's.
+  bool own = water && staged.staged && staged.below && uSkyOceanSeabedOpacity >= 1.0 && uSkyOceanStageOpen < 0.5;
+  if((!staged.skip || own) && water) {
     vec3 reach = skyOceanBedReach(origin, dir, true);
     vec3 bedPoint = origin + dir * reach.x;
     vec3 bed = skyOceanBed(bedPoint, globeUpAt(bedPoint), uSkyOceanDepth);
@@ -1261,6 +1296,8 @@ vec4 skyWaterLayer(vec3 dir, vec3 origin, float blend) {
     if(through)
       view *= 1.0 - uSkyOceanCutawayCuts.x;
   }
+  if(own)
+    return skyDebugTintOver(view, SKY_DEBUG_SEA);
   return water ? skyOceanStagedOver(view, staged, dir, origin) : vec4(0.0);
 }
 #endif

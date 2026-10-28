@@ -5,8 +5,6 @@ uniform highp sampler2DArray uReliefTileHeights;
 uniform highp sampler2DArray uReliefTileNormals;
 uniform float uReliefTileNodes;
 uniform float uReliefTileCells;
-// 1 while the camera is under the ground where it is (SceneryStageReliefTiles).
-uniform float uReliefCameraUnder;
 
 varying vec2 vReliefTileNode;
 flat varying float vReliefTileSlot;
@@ -88,17 +86,6 @@ float reliefTileGroundAt(vec3 p) {
   if(any(lessThan(node, vec2(1.5))) || any(greaterThan(node, vec2(uReliefTileCells + 1.5))))
     return -1.0;
   return reliefTileHeightAt(node) >= 0.0 ? 1.0 : 0.0;
-}
-
-// From under the ground, nothing of the relief higher than the camera is seen: the rock
-// lies in front of it. A skirt only closes a crack seen from above, and would show as a
-// line on the void's lid; a top facing the camera there (a steep slope) is seen through
-// rock. What lies deeper than the camera (a trench seen from the void) is seen from above,
-// cracks and all, and kept. Whether the camera stands over the ground cannot be told from
-// the height alone: in a fjord the crack up a cliff lies above it. `height` is the top's
-// at the pixel: on a skirt, the edge it hangs from.
-bool reliefTileHiddenFromBelow(float height) {
-  return uReliefCameraUnder > 0.5 && globeCameraHeight() < uSkyOceanLevel + height;
 }
 
 // The stage's area (SceneryStage `bounds`), min X/Z and max X/Z.

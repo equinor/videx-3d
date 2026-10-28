@@ -8,6 +8,7 @@ import {
 } from './conformal-sphere';
 import { wgs84Def } from './crs';
 import { GeoFrame, geoFrameAt, placeGeoFrame } from './geo-frame';
+import type { MapSurface } from './map-view';
 
 /** The Earth's mean radius, in metres. */
 export const EARTH_RADIUS = 6371000;
@@ -789,4 +790,30 @@ export class Globe {
       this.sphere?.halfLogC ?? 0,
     );
   }
+}
+
+/**
+ * The {@link MapSurface} of `globe`: heights over its sea, measured from `level` (the scene Y
+ * the map takes the sea to be at: the globe's own level, unless the map says otherwise), the
+ * map's point under a point ({@link Globe.foot}) and a point over one ({@link Globe.place}).
+ * Over the disc it is the flat surface; far off, scene Y is not height. It reads the globe as
+ * it is at each call.
+ *
+ * @group Utils
+ */
+export function globeMapSurface(globe: Globe, level = globe.level): MapSurface {
+  const point = new Vector3();
+  const out = new Vector3();
+  return {
+    altitude: ([x, y, z]) =>
+      globe.altitude(point.set(x, y, z)) + globe.level - level,
+    foot: ([x, y, z]) => {
+      globe.foot(point.set(x, y, z), out);
+      return [out.x, out.z];
+    },
+    place: (x, z, height) => {
+      globe.place(x, z, height + level - globe.level, out);
+      return [out.x, out.y, out.z];
+    },
+  };
 }

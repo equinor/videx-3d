@@ -23,11 +23,11 @@ export type MinimapState = {
   northAngle: number;
   /** the camera's horizontal field of view, in radians */
   fov: number;
-  /** the camera's height over the sea, in metres */
+  /** the camera's height over the sea, in metres (over the globe's sea under a `Scenery`) */
   altitude: number;
   /** the height of what the camera looks at over the sea, in metres: the controls' target's (0 without controls) */
   targetAltitude: number;
-  /** the camera's position on the ground, scene X/Z: not the map's middle when it is centred on the target */
+  /** the camera's position on the map, scene X/Z (on a globe, the map's point under it): not the map's middle when it is centred on the target */
   camera: Vec2;
   /** what the camera looks at, on the sea's level (the controls' target, or where the view ray meets it), scene X/Z */
   target: Vec2;

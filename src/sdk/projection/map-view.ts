@@ -204,11 +204,70 @@ export function niceScaleLength(
 }
 
 /**
+ * How a map reads heights and places points over the sea: flat (`flatMapSurface`), or on a
+ * `Scenery`'s globe (`globeMapSurface`), where far from the field scene Y is not height and
+ * a point's scene X/Z is not quite the map's point under it.
+ *
+ * @group Utils
+ */
+export type MapSurface = {
+  /** the height of `point` over the sea, metres */
+  altitude(point: Vec3): number;
+  /** the map's point (scene X/Z) under `point` */
+  foot(point: Vec3): Vec2;
+  /** the point `height` metres over the sea at map X/Z */
+  place(x: number, z: number, height: number): Vec3;
+};
+
+/**
+ * The flat {@link MapSurface}: the sea is the plane Y = `level`, heights are Y over it.
+ *
+ * @group Utils
+ */
+export function flatMapSurface(level = 0): MapSurface {
+  return {
+    altitude: point => point[1] - level,
+    foot: point => [point[0], point[2]],
+    place: (x, z, height) => [x, level + height, z],
+  };
+}
+
+/**
  * The camera's and its target's positions after the user drops one of their markers at `at`
- * (scene X/Z) on a minimap: the height stays what it is, for both.
- * - `'target'`: the camera stays and looks at the new point: only the target's X/Z change.
+ * (map X/Z) on a minimap, on `surface`: the heights over the sea stay what they are, for both.
+ * - `'target'`: the camera stays and looks at the new point.
  * - `'camera'`: the camera is moved there and takes its target along, so the view is the
  *   same from the new place.
+ *
+ * @group Utils
+ */
+export function dropMarkerOn(
+  surface: MapSurface,
+  kind: 'camera' | 'target',
+  camera: Vec3,
+  target: Vec3,
+  at: Vec2,
+): { camera: Vec3; target: Vec3 } {
+  const targetHeight = surface.altitude(target);
+  if (kind === 'target')
+    return {
+      camera: [...camera],
+      target: surface.place(at[0], at[1], targetHeight),
+    };
+  const from = surface.foot(camera);
+  const under = surface.foot(target);
+  return {
+    camera: surface.place(at[0], at[1], surface.altitude(camera)),
+    target: surface.place(
+      under[0] + at[0] - from[0],
+      under[1] + at[1] - from[1],
+      targetHeight,
+    ),
+  };
+}
+
+/**
+ * {@link dropMarkerOn} a flat sea: only X/Z change, the heights stay.
  *
  * @group Utils
  */
@@ -218,22 +277,43 @@ export function dropMarker(
   target: Vec3,
   at: Vec2,
 ): { camera: Vec3; target: Vec3 } {
-  if (kind === 'target')
-    return { camera: [...camera], target: [at[0], target[1], at[1]] };
-  const dx = at[0] - camera[0];
-  const dz = at[1] - camera[2];
-  return {
-    camera: [at[0], camera[1], at[1]],
-    target: [target[0] + dx, target[1], target[2] + dz],
-  };
+  return dropMarkerOn(flatMapSurface(), kind, camera, target, at);
 }
 
 /**
  * The camera's and its target's positions after the user sets the height of one of them,
- * `kind`, to `y` (scene Y):
- * - `'camera'`: the camera goes to `y` and takes its target along by the same height, so it
- *   looks the same way, at the same angle, from the new height.
- * - `'target'`: only the target's Y changes, so the camera stays and its view tilts.
+ * `kind`, to `height` metres over the sea of `surface`:
+ * - `'camera'`: the camera goes there, straight up or down where it is, and takes its target
+ *   along by the same move, so it looks the same way, at the same angle, from the new height.
+ * - `'target'`: only the target moves, so the camera stays and its view tilts.
+ *
+ * @group Utils
+ */
+export function setMarkerHeight(
+  surface: MapSurface,
+  kind: 'camera' | 'target',
+  camera: Vec3,
+  target: Vec3,
+  height: number,
+): { camera: Vec3; target: Vec3 } {
+  if (kind === 'target') {
+    const [x, z] = surface.foot(target);
+    return { camera: [...camera], target: surface.place(x, z, height) };
+  }
+  const [x, z] = surface.foot(camera);
+  const moved = surface.place(x, z, height);
+  return {
+    camera: moved,
+    target: [
+      target[0] + moved[0] - camera[0],
+      target[1] + moved[1] - camera[1],
+      target[2] + moved[2] - camera[2],
+    ],
+  };
+}
+
+/**
+ * {@link setMarkerHeight} over a flat sea at Y = 0: `y` is scene Y.
  *
  * @group Utils
  */
@@ -243,12 +323,7 @@ export function setMarkerAltitude(
   target: Vec3,
   y: number,
 ): { camera: Vec3; target: Vec3 } {
-  return kind === 'camera'
-    ? {
-        camera: [camera[0], y, camera[2]],
-        target: [target[0], target[1] + (y - camera[1]), target[2]],
-      }
-    : { camera: [...camera], target: [target[0], y, target[2]] };
+  return setMarkerHeight(flatMapSurface(), kind, camera, target, y);
 }
 
 /**

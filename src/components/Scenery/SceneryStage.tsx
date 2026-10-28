@@ -574,9 +574,9 @@ export const SceneryStage = ({
       surface.current.visible =
         surfaceShown && altitude + sky.oceanDepth >= 0 && !buried;
     if (!tiled) return;
-    // No deeper than the sea's own seabed: under it lies the void, wherever the relief is
-    // deeper (documents/tiles.md, Costs and risks).
-    sky.oceanGround = underRelief === null ? null : Math.max(underRelief, bed);
+    // At whatever depth: the void starts under the relief, and over it below the sea's own
+    // seabed, as in a trench, the camera is in the water (SceneryMaterial.oceanTrench).
+    sky.oceanGround = underRelief;
   });
 
   // Told on every change: the occupant draws its own seabed whenever the stage does not,
@@ -773,6 +773,7 @@ export const SceneryStage = ({
           cellPixels={relief.cellPixels ?? 8}
           transition={relief.transition ?? 300}
           definesKey={definesKey}
+          abyssWalls={!!abyssWalls}
           visible={shown('relief')}
           onStats={relief.onStats}
           onLoading={reliefLoading}

@@ -1,4 +1,5 @@
 import {
+  BackSide,
   BufferAttribute,
   DataArrayTexture,
   DataTexture,
@@ -434,7 +435,6 @@ export function createSceneryReliefTileMaterial(
   uniforms.uReliefTileNodes = new Uniform(textures.nodes);
   uniforms.uReliefTileCells = new Uniform(textures.nodes - 3);
   uniforms.uReliefReach = new Uniform(1e30);
-  uniforms.uReliefCameraUnder = new Uniform(0);
   uniforms.uReliefStage = new Uniform(new Vector4());
   if (occupants && occupants.fields.count > 0) {
     defines.RELIEF_OCCUPANTS = occupants.fields.count;
@@ -466,10 +466,38 @@ export function createSceneryReliefTileMaterial(
 }
 
 /**
+ * The relief's underside, for a camera under the ground (`opaque` from
+ * {@link createSceneryReliefTileMaterial}, whose uniform objects and defines it shares): the
+ * void's lid, its tiles' back faces alone, shaded as the void shades its own lid — with
+ * `walls`, as the walls' (`SKY_ABYSS_WALLS`). Nothing above the lid is drawn from there.
+ * Its see-through copy is {@link createSceneryReliefTileSeeThroughMaterial} of it.
+ */
+export function createSceneryReliefTileFromBelowMaterial(
+  opaque: ShaderMaterial,
+  walls: boolean,
+) {
+  const defines: Record<string, unknown> = {
+    ...opaque.defines,
+    RELIEF_FROM_BELOW: '',
+  };
+  if (walls) defines.SKY_ABYSS_WALLS = '';
+  return new ShaderMaterial({
+    vertexShader,
+    fragmentShader,
+    uniforms: opaque.uniforms,
+    defines,
+    side: BackSide,
+    lights: true,
+    dithering: true,
+  });
+}
+
+/**
  * The stage's area of a relief drawn from tiles, at the sea's seabed opacity
  * (`SceneryMaterial.oceanSeabedOpacity`), as the stage's own see-through seabed is: a
  * transparent part wired for the `OITRenderPass`, its skirts left out. It shares
- * `opaque`'s uniform objects (see {@link createSceneryReliefTileMaterial} with `'around'`).
+ * `opaque`'s uniform objects (see {@link createSceneryReliefTileMaterial} with `'around'`),
+ * and the side it draws (from below, see {@link createSceneryReliefTileFromBelowMaterial}).
  */
 export function createSceneryReliefTileSeeThroughMaterial(
   opaque: ShaderMaterial,
@@ -482,6 +510,7 @@ export function createSceneryReliefTileSeeThroughMaterial(
     fragmentShader,
     uniforms: opaque.uniforms,
     defines,
+    side: opaque.side,
     transparent: true,
     depthWrite: false,
     lights: true,

@@ -21,14 +21,15 @@ import {
   sceneryRelief,
   type SceneryReliefResponse,
 } from '../../Scenery/scenery-defs';
+import { SCENERY_RELIEF_FAR_MAX_LAYERS } from '../../Scenery/scenery-relief';
 import {
   SceneryReliefLooks,
   type ReliefColor,
   type ReliefContours,
   type ReliefLook,
 } from '../../Scenery/scenery-relief-look';
-import { SCENERY_RELIEF_FAR_MAX_LAYERS } from '../../Scenery/scenery-relief';
 import { useWorld } from '../../World/world-context';
+import type { MinimapCenter } from './minimap-context';
 import {
   MinimapController,
   type MinimapHome,
@@ -36,13 +37,12 @@ import {
   type MinimapRelief,
   type MinimapZoom,
 } from './minimap-controller';
-import type { MinimapMode } from './minimap-renderer';
-import type { MinimapCenter } from './minimap-context';
 import {
   resolveMinimapAltitudeControl,
   type MinimapAltitudeControlOptions,
   type MinimapLayout,
 } from './minimap-layout';
+import type { MinimapMode } from './minimap-renderer';
 import {
   MINIMAP_CONTROLS,
   MinimapOverlay,
@@ -136,7 +136,11 @@ export type MinimapProps = {
   autoZoomFactor?: number;
   /** `'auto'`: seconds a change in zoom takes (to close all but 1/e of it); 0 for none. Default 0.3 */
   autoZoomSmoothing?: number;
-  /** the sea's height in the scene (Y), what `'auto'` measures the camera's height from. Default 0 */
+  /**
+   * the sea's height in the scene (Y), what heights are measured from: the readout, `'auto'`
+   * and the altitude control. Under a `Scenery` they are over its globe's sea, so far from the
+   * field, where the sea curves below Y = 0, they are still heights over it. Default 0
+   */
   level?: number;
   /** zoom with the mouse wheel over the map. Default `true` */
   wheelZoom?: boolean;
@@ -281,7 +285,7 @@ export const Minimap = ({
   dragControls = true,
   onMarkerDrop,
   altitude = true,
-  altitudeControl = true,
+  altitudeControl = false,
   layout,
   home,
   pan = true,
@@ -298,6 +302,7 @@ export const Minimap = ({
   const gl = useThree(state => state.gl);
   const world = useWorld();
   const mapFrame = frame ?? world?.frame ?? null;
+  const globe = world?.globe ?? null;
   const generator = useGenerator<SceneryReliefResponse>(sceneryRelief);
 
   const [handle, setHandle] = useState<{
@@ -373,9 +378,11 @@ export const Minimap = ({
       { color, contours },
       specs.map(([id]) => layerLooks?.[id]),
     );
+    // Written in place: the map has to be drawn again to show it.
+    handle?.controller.invalidate();
     // The look by value: an inline `color` is a new object each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [looks, lookKey]);
+  }, [looks, lookKey, handle]);
 
   useEffect(() => {
     handle?.controller.setRelief(
@@ -430,6 +437,7 @@ export const Minimap = ({
       autoZoomFactor,
       autoZoomSmoothing,
       level,
+      globe,
       center: activeCenter,
       orientation: activeOrientation,
       appearance: {
@@ -460,6 +468,7 @@ export const Minimap = ({
       autoZoomFactor,
       autoZoomSmoothing,
       level,
+      globe,
       activeCenter,
       activeOrientation,
       mode,
