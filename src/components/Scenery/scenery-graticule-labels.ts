@@ -9,7 +9,47 @@ export const GRATICULE_LABEL_REACH = 10;
 export const GRATICULE_LABEL_EVERY = 2;
 
 /** A graticule label's font size, by default, as a fraction of its cell's narrower side. */
-export const GRATICULE_LABEL_SIZE = 0.1;
+export const GRATICULE_LABEL_SIZE = 0.18;
+
+/**
+ * The finer step's weight its labels switch to it at, going finer, and back at, going
+ * coarser: apart, so they do not flicker between the two at the switch.
+ */
+export const GRATICULE_LABEL_SWITCH: readonly [number, number] = [0.55, 0.45];
+
+/** How much larger than its step's size a label drawn `'smooth'` grows at the most. */
+export const GRATICULE_LABEL_SMOOTH_MAX = 1.6;
+
+/**
+ * The step a graticule's labels follow: the one its lines are seen at — the finer of the
+ * two drawn (`graticuleStep`) once its weight passes {@link GRATICULE_LABEL_SWITCH}, the
+ * coarser before — kept from `previous` across the switch.
+ */
+export function graticuleLabelStep(
+  step: number,
+  finer: number,
+  weight: number,
+  previous?: number,
+) {
+  if (!(finer > 0) || finer === step) return step;
+  const [up, down] = GRATICULE_LABEL_SWITCH;
+  return weight >= (previous === finer ? down : up) ? finer : step;
+}
+
+/**
+ * The spacing a graticule's lines are seen at, between their two steps as the finer fades
+ * in, on a log scale as it does: what labels drawn `'smooth'` follow. It meets the step on
+ * either side of a change of step, so it never jumps.
+ */
+export function graticuleLabelSpacing(
+  step: number,
+  finer: number,
+  weight: number,
+) {
+  if (!(finer > 0) || finer === step) return step;
+  const w = Math.min(Math.max(weight, 0), 1);
+  return step ** (1 - w) * finer ** w;
+}
 
 // Metres along a meridian per degree of latitude, on the Earth's mean sphere.
 const METRES_PER_DEGREE = (Math.PI / 180) * 6371008.8;
@@ -63,14 +103,50 @@ const wrap = (longitude: number) =>
 const at = new Vector3();
 const toward = new Vector3();
 const up = new Vector3();
+const level = new Vector3();
+
+/**
+ * Where a view from `position` along `dir` is centred on the sea of `globe` (it needs a
+ * frame), as latitude and longitude: where it meets the sea; past the horizon, the horizon
+ * the way it looks, where the lines' step is judged then, so the labels nearest the camera
+ * are not drawn at a step meant for far away; straight up, under the camera.
+ */
+export function graticuleLabelCentre(
+  globe: Globe,
+  position: Vector3,
+  dir: Vector3,
+  target = { latitude: 0, longitude: 0 },
+): { latitude: number; longitude: number } {
+  const reached = globe.reach(position, dir, 0);
+  if (reached.hit) {
+    at.copy(position).addScaledVector(dir, reached.distance / dir.length());
+    return globe.geographic(at, target);
+  }
+  globe.upAt(position, up);
+  level.copy(dir).addScaledVector(up, -dir.dot(up));
+  const height = globe.altitude(position);
+  if (height <= 0 || level.lengthSq() < 1e-12 * dir.lengthSq())
+    return globe.geographic(position, target);
+  // The horizon: down from level by the dip, √(h (2R + h)) away.
+  const R = globe.radius;
+  const sinDip = Math.sqrt(height * (2 * R + height)) / (R + height);
+  const cosDip = R / (R + height);
+  const far = Math.sqrt(height * (2 * R + height));
+  level.normalize();
+  at.copy(position)
+    .addScaledVector(level, far * cosDip)
+    .addScaledVector(up, -far * sinDip);
+  return globe.geographic(at, target);
+}
 
 /**
  * Labels for latitude and longitude's lines every `step` degrees, on the sea's level of
  * `globe` (it needs a frame): those `reach` lines either way from the line nearest
- * `centre` that are labelled — every `every`th, counted from 0° — each parallel at every
- * labelled meridian, half a step east of it, reading east, each meridian at every labelled
- * parallel, half a step north, reading north, lying flat on the Earth. Where they lie
- * depends on the step alone, so they never slide as the view moves: they come and go.
+ * `centre` that are labelled — every `every`th, counted from 0° — each parallel in every
+ * cell between two labelled meridians, at its middle, reading east, each meridian in every
+ * cell between two labelled parallels, at its middle, reading north, lying flat on the
+ * Earth. Where they lie depends on the step alone, so they never slide as the view moves:
+ * they come and go.
  */
 export function graticuleLabels(
   globe: Globe,
@@ -110,17 +186,17 @@ export function graticuleLabels(
     for (let j = j0 - lonSteps; j <= j0 + lonSteps; j++) {
       if (!labelled(j)) continue;
       const longitude = wrap(j * step);
-      // Half a step past the crossing along each line: clear of the lines across it, the
-      // labelled ones and those between.
+      // In the middle of its cell, between the labelled lines across it.
+      const half = (n * step) / 2;
       labels.push(
         label(
           graticuleLabelText(latitude, step, 'lat'),
           latitude,
-          longitude + step / 2,
+          longitude + half,
           false,
         ),
       );
-      const middle = latitude + step / 2;
+      const middle = latitude + half;
       if (Math.abs(middle) < 90)
         labels.push(
           label(

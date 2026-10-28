@@ -60,10 +60,15 @@ export type LabelStyle = {
   offset: [number, number];
   /** every label's opacity, 0 to 1. Default 1 */
   opacity: number;
-  /** smaller than this on screen (its font's size, in CSS pixels), not drawn. Default 6 */
+  /** smaller than this on screen (its text's height as seen, its slant included, in CSS pixels), not drawn. Default 6 */
   minPixels: number;
   /** from this size on screen, in CSS pixels, drawn fully; it fades in from `minPixels`. Left out, 1.5 times `minPixels` */
   fullPixels?: number;
+  /**
+   * the largest it is drawn on screen (its font's size face-on, in CSS pixels): nearer, it
+   * is shrunk to this rather than growing; for labels sized for far off. Default Infinity
+   */
+  maxPixels: number;
   /**
    * how squarely it must face the camera to be drawn: the cosine between its normal and the
    * way to the camera. Never drawn from behind. Default 0.2
@@ -84,6 +89,13 @@ export type LabelStyle = {
    * not cut through it. Default 1
    */
   lift: number;
+  /**
+   * more lift for every world unit of its distance from the camera, so it clears what it
+   * lies on far off too, where the depth buffer and the surfaces' own detail grow coarse.
+   * A move of the quad itself, not a depth bias: it holds with any depth buffer three.js
+   * draws with — linear, logarithmic or reversed. Default 0
+   */
+  liftPerDistance: number;
 };
 
 /** What a {@link LabelsProvider} is given: the view the labels are drawn for. */
@@ -115,10 +127,12 @@ export const LABEL_STYLE_DEFAULTS: LabelStyle = {
   offset: [0, 0],
   opacity: 1,
   minPixels: 6,
+  maxPixels: Infinity,
   minFacing: 0.2,
   minDistance: 0,
   maxDistance: Infinity,
   fadeDistance: 0,
   depthTest: true,
   lift: 1,
+  liftPerDistance: 0,
 };

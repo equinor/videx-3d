@@ -39,19 +39,37 @@ Per layer (`LabelStyle`, defaults in `LABEL_STYLE_DEFAULTS`).
   the browser's canvas supports it), `color`; `haloColor` (its alpha kept) and `haloWidth`,
   a fraction of `size`. Font, weight, style, spacing and halo width are drawn into the
   atlas (`labelAtlasKey`); the colours are uniforms, so layers of any colours share texts.
-- **Size**: `size`, the font's size (the em) in world units. Nothing else changes it.
+- **Size**: `size`, the font's size (the em) in world units. Nothing else changes it but
+  `scaleRef`, an optional live multiplier read each frame and set on the GPU alone (no
+  render, nothing written again): for a size that follows the view smoothly, as the
+  graticule's `'smooth'` labels do.
 - **Placement**: `align` (`'left'` starts the text at its position, `'center'`, `'right'`
   ends it there) and `baseline` (`'top'` hangs it below, `'middle'`, `'bottom'` stands it
   above), by its quad, halo included (`labelAnchor`); then `offset`, `[along, up]` in ems,
   in its plane, so it scales with `size`: a label beside its line or marker.
 - **Fades**: from behind, never drawn. `minFacing` to `fullFacing` (cosine between the
   normal and the way to the camera; default twice `minFacing`), `minPixels` to
-  `fullPixels` (the font on screen, in CSS pixels; default 1.5 times `minPixels`),
+  `fullPixels` (its text's height on screen **as seen**, its slant included: the font
+  face-on times the facing cosine, in CSS pixels; default 1.5 times `minPixels`),
   `minDistance` and `maxDistance` softened over `fadeDistance` (0 cuts there; with no
   `minDistance`, nothing fades near the camera), all times `opacity`. A full bound short of
-  its least makes a step there (`labelRamp`). The shader and `labelFade` do the same.
-- **Depth**: `depthTest` (default on) hides labels behind the scene; `lift` (world units)
-  draws them that much toward the camera, so the surface they lie on does not cut through.
+  its least makes a step there (`labelRamp`). The shader and `labelFade` do the same. By
+  its height as seen, a label lying flat fades out toward the horizon as it thins to a
+  sliver, which would only shimmer — however large it is face-on.
+- **Depth**: `depthTest` (default on) hides labels behind the scene. `lift` (world units),
+  plus `liftPerDistance` for every world unit from the camera, draws them that much toward
+  it, so the surface they lie on does not cut through, far off too. A move of the quad,
+  not a depth bias (`polygonOffset` is lost with a logarithmic depth buffer writing
+  `gl_FragDepth`, and turns round with a reversed one), so it holds with any depth buffer
+  three.js draws with: linear, logarithmic or reversed.
+- **The far plane**: a label fades out as its farthest corner along the view goes from 90 %
+  to 99 % of the camera's `far` (`LabelLayer` passes it each frame), rather than being
+  clipped whole or in part by it. From space, beyond a far plane the sky still draws the
+  Earth past, labels were cut to pieces that looked like z-fighting. To see labels farther
+  out, give the camera a farther plane.
+- **Too large**: `maxPixels` (default none) is the largest a label is drawn on screen, its
+  font face-on: nearer, it is shrunk to it rather than growing. For labels sized for far
+  away that come near the camera (the graticule's, 48).
 
 ## How it is drawn
 

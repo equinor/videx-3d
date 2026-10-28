@@ -77,9 +77,13 @@ const ranges: LabelFadeRanges = { facing: [0, 0], pixels: [0, 0] };
 /**
  * How much of a label shows, 0 to 1: none from behind or outside its layer's distances,
  * fading out over `fadeDistance` toward them; fading in from `minFacing` to `fullFacing`,
- * and from `minPixels` to `fullPixels`; times its layer's `opacity`. `facing` is the cosine
- * between its normal and the way to the camera; `pixels` its font's size on screen, in CSS
- * pixels.
+ * and, by its text's height on screen as seen (`pixels`, capped at `maxPixels` as the
+ * label is shrunk to it, times `facing`), from `minPixels` to `fullPixels`; fading out as
+ * `depth` (its farthest corner along the view) nears `far`, the camera's far plane, from
+ * 90 % of it to 99 % (none with no `far`); times its layer's `opacity`. `facing` is the
+ * cosine between its normal and the way to the camera; `pixels` its font's size on screen
+ * face-on, in CSS pixels. So a label lying flat fades out toward the horizon as it thins to
+ * slivers, which would only shimmer, however large it is face-on.
  *
  * ⚠️ The labels' vertex shader (`shaders/label-vertex.glsl`) does the same: keep them alike.
  */
@@ -88,6 +92,8 @@ export function labelFade(
   facing: number,
   pixels: number,
   distance: number,
+  depth = 0,
+  far = 0,
 ) {
   if (facing <= 0) return 0;
   const { minDistance, maxDistance, fadeDistance } = style;
@@ -95,13 +101,16 @@ export function labelFade(
   const fade = Math.max(fadeDistance, 0);
   const near =
     minDistance > 0 ? labelRamp(distance, minDistance, minDistance + fade) : 1;
-  const far = labelRamp(-distance, -maxDistance, -maxDistance + fade);
+  const farthest = labelRamp(-distance, -maxDistance, -maxDistance + fade);
+  const beyond = far > 0 ? 1 - labelRamp(depth, 0.9 * far, 0.99 * far) : 1;
+  const drawn = Math.min(pixels, style.maxPixels);
   labelFadeRanges(style, ranges);
   return (
     near *
-    far *
+    farthest *
+    beyond *
     labelRamp(facing, ranges.facing[0], ranges.facing[1]) *
-    labelRamp(pixels, ranges.pixels[0], ranges.pixels[1]) *
+    labelRamp(drawn * facing, ranges.pixels[0], ranges.pixels[1]) *
     style.opacity
   );
 }

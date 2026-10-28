@@ -127,6 +127,9 @@ export class LabelLayerMesh {
   /** the `LabelAtlas.generation` its texts were looked up in */
   generation = -1;
   private data = new Float32Array(0);
+  // The style's size, and the live multiplier on it (setScale).
+  private size = 1;
+  private scale = 1;
 
   constructor() {
     const material = new ShaderMaterial({
@@ -143,8 +146,10 @@ export class LabelLayerMesh {
         uOpacity: new Uniform(1),
         uAnchor: new Uniform(new Vector2()),
         uOffset: new Uniform(new Vector2()),
-        uLift: new Uniform(0),
+        uLift: new Uniform(new Vector2()),
         uViewHeight: new Uniform(1),
+        uFar: new Uniform(0),
+        uMaxPixels: new Uniform(3.4e38),
       },
       transparent: true,
       premultipliedAlpha: true,
@@ -173,10 +178,12 @@ export class LabelLayerMesh {
     uniforms.uColor.value.set(fill.x, fill.y, fill.z);
     const halo = cssDisplayColor(style.haloColor, uniforms.uHaloColor.value);
     if (style.haloWidth <= 0) halo.w = 0;
-    uniforms.uSize.value = style.size;
+    this.size = style.size;
+    uniforms.uSize.value = style.size * this.scale;
     const { facing, pixels } = labelFadeRanges(style, scratchRanges);
     uniforms.uFacing.value.set(facing[0], facing[1]);
     uniforms.uPixels.value.set(pixels[0], pixels[1]);
+    uniforms.uMaxPixels.value = Math.min(style.maxPixels, 3.4e38);
     // A float's largest, for Infinity.
     uniforms.uDistance.value.set(
       style.minDistance,
@@ -186,7 +193,7 @@ export class LabelLayerMesh {
     uniforms.uOpacity.value = style.opacity;
     uniforms.uAnchor.value.fromArray(labelAnchor(style.align, style.baseline));
     uniforms.uOffset.value.fromArray(style.offset);
-    uniforms.uLift.value = style.lift;
+    uniforms.uLift.value.set(style.lift, style.liftPerDistance);
     this.mesh.material.depthTest = style.depthTest;
   }
 
@@ -196,6 +203,18 @@ export class LabelLayerMesh {
 
   setViewHeight(height: number) {
     this.mesh.material.uniforms.uViewHeight.value = height;
+  }
+
+  /** The camera's far plane (0: none known): labels fade out before it. */
+  setFar(far: number) {
+    this.mesh.material.uniforms.uFar.value = far;
+  }
+
+  /** Scale every label by `scale`, on the GPU alone: nothing is written again. */
+  setScale(scale: number) {
+    if (scale === this.scale) return;
+    this.scale = scale;
+    this.mesh.material.uniforms.uSize.value = this.size * scale;
   }
 
   /**

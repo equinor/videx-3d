@@ -22,6 +22,11 @@ export type LabelLayerProps = Partial<LabelStyle> & {
   labels?: Label[];
   /** labels for each view: keep it stable (`useCallback`), or it is asked again each render. The same array as last time writes nothing again */
   provider?: LabelsProvider;
+  /**
+   * a live multiplier on `size`, read each frame: for a size that follows the view
+   * smoothly, set on the GPU alone, with no render and nothing written again
+   */
+  scaleRef?: { readonly current: number };
 };
 
 const NO_LABELS: Label[] = [];
@@ -57,6 +62,7 @@ export const LabelLayer = ({
   visible = true,
   labels = NO_LABELS,
   provider,
+  scaleRef,
   ...style
 }: LabelLayerProps) => {
   const atlas = useLabelAtlas();
@@ -76,6 +82,7 @@ export const LabelLayer = ({
       ...(JSON.parse(styleKey) as Partial<LabelStyle>),
       // JSON has no Infinity.
       maxDistance: style.maxDistance ?? LABEL_STYLE_DEFAULTS.maxDistance,
+      maxPixels: style.maxPixels ?? LABEL_STYLE_DEFAULTS.maxPixels,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [styleKey],
@@ -103,6 +110,8 @@ export const LabelLayer = ({
     if (!visible) return;
     const state = drawn.current;
     layer.setViewHeight(size.height);
+    layer.setFar((camera as { far?: number }).far ?? 0);
+    layer.setScale(scaleRef?.current ?? 1);
     let dirty = state.dirty || layer.generation !== atlas.generation;
     if (provider) {
       viewProjection.multiplyMatrices(

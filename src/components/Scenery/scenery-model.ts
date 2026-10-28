@@ -146,13 +146,15 @@ export type SceneryGraticuleLatLon = SceneryGraticuleLines & {
 
 /**
  * Latitude and longitude's labels: their names, `60°30′N`, `2°E`, painted flat on the sea's
- * level along every second line (`every`), half a step past each labelled line across,
- * around where the view is centred (a `LabelLayer`). They follow the lines' step: as large
- * as a fraction of a cell's narrower side (east–west, shrinking with the latitude), so
- * they keep their size on screen as the step does and fit between each other; they come
- * and go with the lines but never slide. At sea level, lifted over the waves: high land
- * hides them. Their look as a label layer's (`LabelStyle`): small and light by default,
- * with a thin, soft halo (`GRATICULE_LABEL_STYLE`), in the lines' colour.
+ * level along every second line (`every`), centred in each cell between the labelled
+ * lines across it, around where the view is centred (a `LabelLayer`). They follow the
+ * lines' step: as large as a fraction of a cell's narrower side (east–west, shrinking with
+ * the latitude), so they keep their size on screen as the step does and fit between each
+ * other; they come and go with the lines but never slide. Never faded for being seen at a
+ * slant, only when too small on screen (`minPixels`); always centred on their places. At
+ * sea level, lifted over the waves: high land hides them. Their look as a label layer's
+ * (`LabelStyle`): small and light by default, with a thin, soft halo
+ * (`GRATICULE_LABEL_STYLE`), in the lines' colour.
  */
 export type SceneryGraticuleLabels = Partial<
   Pick<
@@ -167,18 +169,27 @@ export type SceneryGraticuleLabels = Partial<
     | 'opacity'
     | 'minPixels'
     | 'fullPixels'
+    | 'maxPixels'
     | 'minFacing'
     | 'fullFacing'
     | 'depthTest'
     | 'lift'
   >
 > & {
-  /** the font's size, as a fraction of a cell's narrower side on the ground. Default 0.1 */
+  /** the font's size, as a fraction of a cell's narrower side on the ground. Default 0.18 */
   size?: number;
   /** how many lines either way from where the view is centred are looked at. Default 10 */
   reach?: number;
   /** which lines are labelled: every `every`th, counted from 0°. Default 2 */
   every?: number;
+  /**
+   * how their size follows the zoom: `'stepped'`, by the step the lines are seen at, fixed
+   * between changes of step, so they stay glued; `'smooth'`, by the lines' spacing as the
+   * finer step fades in, so they scale with the cells as the view moves and never jump
+   * (up to `GRATICULE_LABEL_SMOOTH_MAX` times the stepped size). Both are placed by the
+   * step the lines are seen at. Default 'stepped'
+   */
+  sizing?: 'stepped' | 'smooth';
 };
 
 /**

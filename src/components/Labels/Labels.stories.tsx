@@ -166,6 +166,7 @@ type LabelsStoryArgs = {
   opacity: number;
   minPixels: number;
   fullPixels: number;
+  maxPixels: number;
   minFacing: number;
   fullFacing: number;
   minDistance: number;
@@ -190,14 +191,16 @@ const LabelsStory = ({
   offsetAlong,
   offsetUp,
   fullPixels,
+  maxPixels,
   fullFacing,
   ...rest
 }: LabelsStoryArgs) => {
-  // 0: the defaults (1.5 and 2 times the least).
+  // 0: the defaults (1.5 and 2 times the least; no most).
   const style = {
     ...rest,
     offset: [offsetAlong, offsetUp] as [number, number],
     fullPixels: fullPixels || undefined,
+    maxPixels: maxPixels || undefined,
     fullFacing: fullFacing || undefined,
   };
   const hill = useMemo(createHill, []);
@@ -313,6 +316,7 @@ const meta = {
     opacity: { control: { type: 'range', min: 0, max: 1, step: 0.05 } },
     minPixels: { control: { type: 'range', min: 0, max: 30, step: 1 } },
     fullPixels: { control: { type: 'range', min: 0, max: 60, step: 1 } },
+    maxPixels: { control: { type: 'range', min: 0, max: 400, step: 4 } },
     minFacing: { control: { type: 'range', min: 0, max: 0.9, step: 0.05 } },
     fullFacing: { control: { type: 'range', min: 0, max: 1, step: 0.05 } },
     minDistance: { control: { type: 'range', min: 0, max: 500, step: 10 } },
@@ -350,6 +354,7 @@ export const Default: Story = {
     opacity: 1,
     minPixels: 6,
     fullPixels: 0,
+    maxPixels: 0,
     minFacing: 0.2,
     fullFacing: 0,
     minDistance: 0,

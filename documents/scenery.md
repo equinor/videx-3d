@@ -307,18 +307,36 @@ or went.
 
 **Labels** (`latLon: { labels: true }`, off by default): each line's name, `60°30′N`,
 `2°E`, painted flat on the sea's level along it (a `LabelLayer`, see
-[labels.md](./labels.md)), on every second line (`every`, counted from 0°), half a step past
-each labelled line across, `reach` lines (default 10) either way from where the view is
+[labels.md](./labels.md)), on every second line (`every`, counted from 0°), centred in each
+cell between the labelled lines across it (with `every` 2, the unlabelled line between
+crosses the text's middle), `reach` lines (default 10) either way from where the view is
 centred (`graticuleLabels`, named by `graticuleLabelText`: minutes and seconds only as the
-step needs). Their font is a fraction (`size`, default 0.1) of a cell's narrower side, the
+step needs). Their font is a fraction (`size`, default 0.18) of a cell's narrower side, the
 east–west one, which shrinks with the cosine of the latitude (`graticuleLabelSize`): sized
 by the step alone, a parallel's labels ran into each other end to end at 58°N. A test
-keeps every label clear of every other at any latitude and step. They keep their size on
-screen as the step does; they come and go with the lines but never slide, and the layer
-writes nothing again while the nearest lines to the view's centre stay the same. Small and
-light by default (`GRATICULE_LABEL_STYLE`: weight 500, a thin, soft halo), in the lines'
-colour, drawn down to a grazing view (`minFacing` 0.08), lifted over the waves near the
-field (`lift`, 5 % of the font, 5 m at least). At sea level: high land hides them.
+keeps every label clear of every other at any latitude and step, drawn smooth too. They
+follow **the step the lines are seen at**: the finer of the two drawn once its weight passes
+0.55, back below 0.45 (`graticuleLabelStep`, `GRATICULE_LABEL_SWITCH`). Following the step
+`graticuleStep` chooses, the coarser, they doubled — up to six times — as the view tilted,
+while the finer lines, all but faded in, kept the cells the same on screen. `sizing`:
+`'stepped'` (default) sizes them by that step, fixed between changes of it, so they stay
+glued; `'smooth'` by the lines' spacing between their two steps on a log scale
+(`graticuleLabelSpacing`), set on the GPU each frame (`LabelLayer`'s `scaleRef`), so they
+scale with the cells and never jump, up to `GRATICULE_LABEL_SMOOTH_MAX` (1.6) times the
+stepped size. They come and go with the lines but never slide, and the layer writes nothing
+again while the nearest lines to the view's centre stay the same: where the view meets the
+sea, or, looking past the horizon, the horizon the way it looks (`graticuleLabelCentre`),
+where the step is judged then — centred under the camera, they were drawn at a step meant
+for the horizon right below it, several times too large. Small and light by
+default (`GRATICULE_LABEL_STYLE`: weight 500, a thin, soft halo), in the lines' colour,
+never faded for being seen at a slant (`minFacing` 0) but when too small on screen as seen
+(`minPixels`, their slant included: toward the horizon they thin to slivers that would only
+shimmer), and never drawn larger than 48 pixels (`maxPixels`: nearer, shrunk to it),
+always centred (`align`, `baseline` and `offset`
+fixed), lifted over the waves near the field (`lift`, 5 % of the font, 5 m at least). They
+fade out just before the camera's far plane rather than be cut by it (see labels.md): a
+farther plane shows them farther. At sea level: high land hides
+them.
 
 Found on the way: `globeSphereOffset` lost the latitude across the Earth from the field,
 where `e² / (q + w)` rounds to nothing in 32-bit floats: speckled lines and missing

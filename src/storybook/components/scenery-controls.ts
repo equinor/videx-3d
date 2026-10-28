@@ -102,6 +102,7 @@ export type SceneryArgs = {
   graticuleLatLonLabels: boolean;
   graticuleLatLonLabelSize: number;
   graticuleLatLonLabelEvery: number;
+  graticuleLatLonLabelSizing: 'stepped' | 'smooth';
   graticuleUtm: boolean;
   graticuleUtmColor: string;
   graticuleUtmThickness: number;
@@ -248,6 +249,7 @@ export const sceneryArgs: SceneryArgs = {
   graticuleLatLonLabels: false,
   graticuleLatLonLabelSize: GRATICULE_LABEL_SIZE,
   graticuleLatLonLabelEvery: GRATICULE_LABEL_EVERY,
+  graticuleLatLonLabelSizing: 'stepped',
   graticuleUtm: false,
   graticuleUtmColor: sceneryDefaults.graticule.lines.color,
   graticuleUtmThickness: sceneryDefaults.graticule.lines.thickness,
@@ -497,6 +499,7 @@ export const sceneryGraticuleFromArgs = (
       labels: args.graticuleLatLonLabels && {
         size: args.graticuleLatLonLabelSize,
         every: args.graticuleLatLonLabelEvery,
+        sizing: args.graticuleLatLonLabelSizing,
       },
     },
     utm: args.graticuleUtm && {
@@ -942,6 +945,14 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
       'Which lines are labelled: every `every`th, counted from 0\u00b0 (`labels.every`).',
     ),
     if: { arg: 'graticuleLatLonLabels' },
+  },
+  graticuleLatLonLabelSizing: {
+    control: { type: 'inline-radio' },
+    options: ['stepped', 'smooth'],
+    description:
+      'How the labels\u2019 size follows the zoom (`labels.sizing`): `stepped` by the step the lines are seen at, glued between changes of step; `smooth` with the lines\u2019 spacing as the finer step fades in, never jumping.',
+    if: { arg: 'graticuleLatLonLabels' },
+    table: { category: GRATICULE },
   },
   graticuleUtm: toggle(
     GRATICULE,

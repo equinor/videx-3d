@@ -34,8 +34,13 @@ export {
   GRATICULE_LABEL_EVERY,
   GRATICULE_LABEL_REACH,
   GRATICULE_LABEL_SIZE,
+  GRATICULE_LABEL_SMOOTH_MAX,
+  GRATICULE_LABEL_SWITCH,
+  graticuleLabelCentre,
   graticuleLabels,
   graticuleLabelSize,
+  graticuleLabelSpacing,
+  graticuleLabelStep,
   graticuleLabelText,
 } from './scenery-graticule-labels';
 export { GRATICULE_LABEL_STYLE } from './SceneryGraticuleLabels';

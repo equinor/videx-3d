@@ -76,11 +76,23 @@ describe('labelFade', () => {
     labelFade(style(patch), facing, pixels, 1000);
 
   it('hides a label from behind, and fades it in as it turns to face the camera', () => {
-    expect(fade({ minFacing: 0 }, -0.1)).toBe(0);
-    expect(fade({ minFacing: 0 }, 0.01)).toBe(1);
-    expect(fade({ minFacing: 0.2 }, 0.19)).toBe(0);
-    expect(fade({ minFacing: 0.2 }, 0.3)).toBeCloseTo(0.5, 9);
-    expect(fade({ minFacing: 0.2 }, 0.4)).toBe(1);
+    // Large enough on screen whatever its slant.
+    const big = 1e4;
+    expect(fade({ minFacing: 0 }, -0.1, big)).toBe(0);
+    expect(fade({ minFacing: 0 }, 0.01, big)).toBe(1);
+    expect(fade({ minFacing: 0.2 }, 0.19, big)).toBe(0);
+    expect(fade({ minFacing: 0.2 }, 0.3, big)).toBeCloseTo(0.5, 9);
+    expect(fade({ minFacing: 0.2 }, 0.4, big)).toBe(1);
+  });
+
+  it('fades a label out as its slant thins it to a sliver, however large face-on', () => {
+    // 100 pixels face-on, seen at a cosine of 0.05: 5 high, under the least, 6.
+    expect(fade({ minFacing: 0, minPixels: 6 }, 0.05, 100)).toBe(0);
+    // At 0.075: 7.5 high, halfway into 6–9.
+    expect(fade({ minFacing: 0, minPixels: 6 }, 0.075, 100)).toBeCloseTo(
+      0.5,
+      9,
+    );
   });
 
   it('fades a label in as it grows on screen', () => {
@@ -106,6 +118,26 @@ describe('labelFade', () => {
     // No least distance: no fade near the camera.
     expect(fade({ fadeDistance: 5000 })).toBe(1);
     expect(fade({ opacity: 0.3 })).toBeCloseTo(0.3, 9);
+  });
+
+  it('caps a label at its largest on screen, shrunk rather than faded', () => {
+    expect(fade({ maxPixels: 48 }, 1, 1e4)).toBe(1);
+    // Shrunk to 48 face-on, seen at a cosine of 0.15: 7.2 high, 40% into 6–9.
+    expect(fade({ maxPixels: 48, minFacing: 0 }, 0.15, 1e4)).toBeCloseTo(
+      0.4,
+      9,
+    );
+    expect(fade({ minFacing: 0 }, 0.15, 1e4)).toBe(1);
+  });
+
+  it('fades a label out before the far plane, by its farthest corner', () => {
+    const near = (depth: number, far: number) =>
+      labelFade(style(), 1, 100, 1000, depth, far);
+    expect(near(900, 1000)).toBe(1);
+    expect(near(945, 1000)).toBeCloseTo(0.5, 9);
+    expect(near(990, 1000)).toBe(0);
+    // No far plane known: no fade.
+    expect(near(1e9, 0)).toBe(1);
   });
 });
 
