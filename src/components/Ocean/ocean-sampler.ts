@@ -1,6 +1,6 @@
 import { useFrame } from '@react-three/fiber';
 import { createContext, RefObject, useContext } from 'react';
-import { Object3D, Vector4 } from 'three';
+import { Object3D, Vector3, Vector4 } from 'three';
 import { OceanMaterial } from './ocean-material';
 
 /**
@@ -16,13 +16,42 @@ import { OceanMaterial } from './ocean-material';
  * plausible floating response, and skipping them keeps sampling cheap.
  *
  * Coordinates are in the Ocean group's local frame (sea level = local y 0),
- * which equals world space for the typical flat, unrotated planar ocean.
+ * which equals world space for the typical flat, unrotated planar ocean. Under a
+ * `Scenery` they are the scene's, which its sampler takes into the waves' plane
+ * ({@link OceanPlane}).
  */
 export interface OceanSampler {
   /** Water surface height (local y) at the given local X/Z. */
   getHeightAt(x: number, z: number): number;
   /** Significant wave height (m) of the current sea state. */
   readonly significantHeight: number;
+}
+
+/**
+ * The plane a sea's waves are laid out in, seen from the frame floating objects move in:
+ * the waves' X along `east`, their Z along `-north`, both level (no Y), through the
+ * frame's origin. Read live, so they may be a shader's uniform values. A `Scenery` lays
+ * its sea out in true east and south at the field, which a projected grid (UTM, say) turns
+ * from the scene's own X and Z by the grid's convergence: about 1° at Volve, so tens of
+ * metres a few kilometres out. Without one, the frame's own X and Z.
+ */
+export type OceanPlane = {
+  east: Vector3;
+  north: Vector3;
+};
+
+/** The point `x`, `z` of the objects' frame in `plane`'s coordinates, into `out`. */
+export function toOceanPlane(
+  plane: OceanPlane,
+  x: number,
+  z: number,
+  out: { x: number; z: number },
+): { x: number; z: number } {
+  const { east, north } = plane;
+  const px = x * east.x + z * east.z;
+  out.z = -(x * north.x + z * north.z);
+  out.x = px;
+  return out;
 }
 
 /**
@@ -34,13 +63,23 @@ export interface OceanSampler {
  *   this at 0 because its own group IS sea level; a `ChunkStack` passes the sea's
  *   level so the heights come back ABSOLUTE in the stack's frame and a floating
  *   object needs no sea-level parent group of its own.
+ * @param plane the plane the waves are laid out in, when it is not the frame's own X/Z
+ *   (a `Scenery`'s): the point asked for is taken into it first, so an object rides the
+ *   waves drawn under it.
  */
 export function createOceanSampler(
   material: OceanMaterial,
   level = 0,
+  plane?: OceanPlane,
 ): OceanSampler {
+  const at = { x: 0, z: 0 };
   return {
     getHeightAt(x: number, z: number): number {
+      if (plane) {
+        toOceanPlane(plane, x, z, at);
+        x = at.x;
+        z = at.z;
+      }
       const waveA = material.uniforms.uWaveA.value as Vector4[];
       const waveB = material.uniforms.uWaveB.value as Vector4[];
       const t = material.uniforms.uTime.value as number;

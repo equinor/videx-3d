@@ -80,7 +80,8 @@ function Buoy() {
 ```
 
 Use `useOceanContact` to spread foam where an object meets the water (see the
-`Tanker` component for a full example). Both are no-ops outside an `<Ocean>`.
+`Tanker` component for a full example). Both are no-ops outside an `<Ocean>`. With more
+footprints than the material draws (`contactCount`, 8), those nearest the camera are drawn.
 
 ⚠️ The `OceanSampler` reads the waves in the Ocean's own plane. A `Scenery`'s sea far from
 the field draws them in charts fixed on the Earth instead (`OceanCharts`, see

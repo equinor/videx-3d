@@ -63,7 +63,9 @@ export type TankerProps = {
   weight?: number;
   /**
    * Spread foam where the hull meets the water when rendered inside an
-   * `<Ocean>`. No effect outside an `<Ocean>`. Default `true`.
+   * `<Ocean>` (or a `Scenery`'s sea). No effect outside one. An `<Ocean>`
+   * or `Scenery` draws the foam of the vessels nearest the camera, up to its
+   * material's `contactCount` (8). Default `true`.
    */
   contactFoam?: boolean;
   /**

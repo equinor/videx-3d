@@ -48,6 +48,7 @@ import {
 import {
   createOceanSampler,
   OceanSamplerContext,
+  type OceanPlane,
 } from '../Ocean/ocean-sampler';
 import {
   createSceneryProgress,
@@ -649,9 +650,21 @@ export const Scenery = ({
   useEffect(() => () => water?.dispose(), [water]);
 
   // For floating children, as in an `Ocean`: the waves they ride, and their contact foam.
+  // Both in the waves' plane, true east and south at the field (skyOceanPlane), which a
+  // projected grid turns from the scene's X and Z; read live, so it follows the frame.
+  const wavePlane = useMemo<OceanPlane>(
+    () => ({
+      east: material.uniforms.uSkyEast.value,
+      north: material.uniforms.uSkyNorth.value,
+    }),
+    [material],
+  );
   const sampler = useMemo(
-    () => (water && oceanWater ? createOceanSampler(water, oceanLevel) : null),
-    [water, oceanWater, oceanLevel],
+    () =>
+      water && oceanWater
+        ? createOceanSampler(water, oceanLevel, wavePlane)
+        : null,
+    [water, oceanWater, oceanLevel, wavePlane],
   );
   const contacts = useMemo(createOceanContactRegistry, []);
 
@@ -1543,7 +1556,7 @@ export const Scenery = ({
   useFrame(({ camera }, delta) => {
     if (water) {
       water.time += delta;
-      contacts.upload(water);
+      contacts.upload(water, { plane: wavePlane, from: camera.position });
     }
     if (sunShimmer && sunRays > 0) material.sunRayPhase += delta;
     material.sunRadiance =

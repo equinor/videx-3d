@@ -713,6 +713,14 @@ the wave sampler (`OceanSamplerContext`) and the contact-foam registry
 its surface. Heights are absolute, the sea level included. ⚠️ Assumes the default `up`
 (+Y).
 
+Both are in the sea's wave plane (`skyOceanPlane`: true east and south at the field),
+which a projected grid turns from the scene's X and Z by its convergence (about 1° at
+Volve): `<Scenery>` takes each sample point and each footprint into it (`OceanPlane`),
+so a vessel kilometres from the origin rides the waves drawn under it and its foam hugs
+its hull. ⚠️ Until 2026-10-28 they were taken in the scene's X and Z: the foam lay off to
+one side, tens of metres a few kilometres out. With more footprints than the sea draws
+(`OceanMaterial.contactCount`, 8), those nearest the camera are drawn.
+
 ## SceneryStage
 
 `<SceneryStage>` puts the sky's sea and seabed on real geometry between the scene and the

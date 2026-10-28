@@ -7,8 +7,9 @@ import {
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
 } from 'react';
-import { BufferGeometry, Group } from 'three';
+import { BufferGeometry, Group, Vector3 } from 'three';
 import { CommonComponentProps, CustomMaterialProps } from '../../common/types';
 import { OceanBedMaterial } from './ocean-bed-material';
 import {
@@ -200,6 +201,8 @@ export const Ocean = forwardRef(
     // Children register a source via OceanContactContext (see useOceanContact);
     // their footprints are collected and uploaded to the material each frame.
     const contactRegistry = useMemo(createOceanContactRegistry, []);
+    // The camera in the ocean's own frame, where its floating children report their footprints.
+    const [viewFrom] = useState(() => new Vector3());
 
     // Sync prop-driven uniforms onto the material.
     useEffect(() => {
@@ -352,14 +355,20 @@ export const Ocean = forwardRef(
     ]);
 
     // Advance the animation clock.
-    useFrame((_, delta) => {
+    useFrame(({ camera }, delta) => {
       if (material instanceof OceanMaterial) {
         material.time += delta;
 
         // Collect the registered floating-object footprints and upload them as
-        // contact foam. Skipped entirely when nothing is registered, so there is
-        // no per-frame cost on an ocean with no floating children.
-        contactRegistry.upload(material);
+        // contact foam, the nearest the camera when there are more than it draws.
+        // Skipped entirely when nothing is registered, so there is no per-frame
+        // cost on an ocean with no floating children.
+        const group = ref.current;
+        contactRegistry.upload(material, {
+          from: group
+            ? group.worldToLocal(viewFrom.copy(camera.position))
+            : camera.position,
+        });
       }
       if (volumeMaterial) {
         volumeMaterial.time += delta;

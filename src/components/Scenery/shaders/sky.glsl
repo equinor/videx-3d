@@ -555,7 +555,9 @@ uniform float uSkyOceanStageReach;
 // 1 while a stage's occupant's cut opens its seabed to the void (SceneryMaterial.abyssOpenings).
 uniform float uSkyOceanStageOpen;
 
-// Coordinates in the wave plane the Ocean works in: world X/Z in the default frame.
+// Coordinates in the wave plane the Ocean works in: world X/Z in the default frame. Under a
+// projected grid (UTM) true east and south, turned from the scene's X and Z: what floats is
+// taken into it on the CPU (OceanPlane: Scenery's sampler and contact foam).
 vec2 skyOceanPlane(vec3 p) {
   return vec2(dot(p, uSkyEast), -dot(p, uSkyNorth));
 }

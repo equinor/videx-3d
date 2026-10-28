@@ -30,7 +30,8 @@ const STAGE_BOUNDS: [number, number, number, number] = [
   -8000, -8000, 8000, 8000,
 ];
 
-export type Discovery = {
+// ⚠️ Not exported: Storybook makes every named export of a stories file a story.
+type Discovery = {
   name: string;
   status: string;
   hcType: 'OIL' | 'GAS' | 'OIL/GAS' | 'GAS/CONDENSATE';
@@ -39,14 +40,14 @@ export type Discovery = {
   url: string;
 };
 
-export const HC_COLORS: Record<Discovery['hcType'], string> = {
+const HC_COLORS: Record<Discovery['hcType'], string> = {
   OIL: '#2fbf4a',
   GAS: '#e5383b',
   'OIL/GAS': '#f59f00',
   'GAS/CONDENSATE': '#c44dff',
 };
 
-export function useDiscoveries() {
+function useDiscoveries() {
   const [data, setData] = useState<GeoJsonFeatureCollection<Discovery> | null>(
     null,
   );
