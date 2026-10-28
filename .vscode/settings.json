@@ -7,5 +7,16 @@
     "npx vitest": true,
     "npx oxlint": true,
     "npx prettier": true
+  },
+  "files.watcherExclude": {
+    "**/dist/**": true,
+    "**/coverage/**": true,
+    "**/storybook-static/**": true,
+    "**/private/**": true
+  },
+  "search.exclude": {
+    "**/dist": true,
+    "**/coverage": true,
+    "**/storybook-static": true
   }
 }
