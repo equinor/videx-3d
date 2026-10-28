@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   PINNED_TILE_PRIORITY,
+  PREFETCH_TILE_PRIORITY,
   QuadtreeTileInfo,
   selectPinnedTiles,
   selectQuadtreeTiles,
@@ -175,6 +176,79 @@ describe('selectQuadtreeTiles', () => {
     expect(want.map(w => w.key)).toEqual([missing]);
     expect(want[0].priority).toBeGreaterThan(0);
     expect(overlaps(draw)).toBe(false);
+  });
+
+  it('with fill, draws the children in and fills those not in from the parent', () => {
+    const info = everyTile();
+    const missing = tileKey(1, 0, 0);
+    const options = {
+      eye: [512, 50, 512] as [number, number, number],
+      reach: 100,
+      pixelsPerUnit: ppu,
+      pixelError: 2,
+      rootSize: ROOT,
+      info: (key: number) => (key === missing ? undefined : info(key)),
+    };
+    const plain = selectQuadtreeTiles(options);
+    const filled = selectQuadtreeTiles({ ...options, fill: true });
+    expect(filled.draw).not.toContain(tileKey(0, 0, 0));
+    expect(filled.fills).toEqual([{ key: missing, source: tileKey(0, 0, 0) }]);
+    expect(filled.want.map(w => w.key)).toEqual(plain.want.map(w => w.key));
+    // Drawn and filled together cover the view once, as without fills.
+    const all = [...filled.draw, ...filled.fills.map(f => f.key)];
+    expect(overlaps(all)).toBe(false);
+    expect(coverage(all, [512, 512], 100).every(n => n === 1)).toBe(true);
+    // Finer than without: the children in are split as they would be.
+    expect(
+      Math.max(...filled.draw.map(k => tileAddress(k)[0])),
+    ).toBeGreaterThan(Math.max(...plain.draw.map(k => tileAddress(k)[0])));
+  });
+
+  it('with fill, draws a tile none of whose children are in whole', () => {
+    const info = everyTile();
+    const { draw, fills } = selectQuadtreeTiles({
+      eye: [10, 50, 10],
+      reach: 100,
+      pixelsPerUnit: ppu,
+      pixelError: 2,
+      rootSize: ROOT,
+      fill: true,
+      info: key => (tileAddress(key)[0] >= 1 ? undefined : info(key)),
+    });
+    expect(fills).toEqual([]);
+    expect(draw).toContain(tileKey(0, 0, 0));
+  });
+
+  it('prefetches the siblings of the drawn tiles’ parents, last', () => {
+    const info = everyTile();
+    const options = {
+      eye: [10, 50, 10] as [number, number, number],
+      reach: 100,
+      pixelsPerUnit: ppu,
+      pixelError: 2,
+      rootSize: ROOT,
+    };
+    // Every tile in: nothing wanted, and the parents' siblings kept.
+    const full = selectQuadtreeTiles({ ...options, info, prefetch: true });
+    expect(full.want).toEqual([]);
+    expect(full.prefetched.length).toBeGreaterThan(0);
+    // Only the tiles the view needs in: their parents' siblings are wanted, after the rest.
+    const needed = new Set<number>();
+    for (const key of full.draw)
+      for (let at = key; ; at = tileParent(at)) {
+        needed.add(at);
+        if (tileAddress(at)[0] === 0) break;
+      }
+    const some = selectQuadtreeTiles({
+      ...options,
+      prefetch: true,
+      info: key => (needed.has(key) ? info(key) : undefined),
+    });
+    expect(some.want.length).toBeGreaterThan(0);
+    expect(some.want.every(w => w.priority === PREFETCH_TILE_PRIORITY)).toBe(
+      true,
+    );
+    expect(some.draw.sort()).toEqual(full.draw.sort());
   });
 
   it('wants a root that is not in, above everything', () => {

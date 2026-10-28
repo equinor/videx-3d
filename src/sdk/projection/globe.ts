@@ -178,6 +178,7 @@ export class Globe {
   // Where the camera uniforms were last set for, and whether the globe changed since.
   private readonly cameraAt = new Vector3();
   private cameraStale = true;
+  private changes = 0;
 
   constructor(radius = EARTH_RADIUS) {
     this.givenRadius = radius;
@@ -223,6 +224,14 @@ export class Globe {
   set level(value: number) {
     this.seaLevel = value;
     this.update();
+  }
+
+  /**
+   * How many times the globe has changed (its frame, disc, level, up, radius or switch):
+   * what is derived from where it places things can be kept while this holds.
+   */
+  get version(): number {
+    return this.changes;
   }
 
   /** the scene's up (normalised); read only, see {@link setUp} */
@@ -752,6 +761,7 @@ export class Globe {
   }
 
   private update() {
+    this.changes++;
     this.cameraStale = true;
     const up = this.sceneUp;
     this.c

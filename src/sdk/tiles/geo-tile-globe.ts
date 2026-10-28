@@ -65,13 +65,81 @@ export function geoTileWidth(globe: Globe, key: number): number {
   return along * Math.sqrt(Math.max(Math.cos((north - span / 2) * DEG), 1e-3));
 }
 
+// What a tile's place on the globe gives that does not depend on the camera: its corners on
+// the conformal sphere, and its bounding box between two heights. Kept per globe while it
+// does not change (`Globe.version`), for at most TILE_CACHE_LIMIT tiles.
+type TileGeometry = {
+  chiNorth: number;
+  lonWest: number;
+  chiSouth: number;
+  lonEast: number;
+  box: Box3 | null;
+  low: number;
+  high: number;
+};
+type GlobeTileCache = {
+  version: number;
+  tiles: Map<number, TileGeometry>;
+  // The eye's offset on the sphere, for the latitude and longitude it was found at.
+  eyeLatitude: number;
+  eyeLongitude: number;
+  chiEye: number;
+  lonEye: number;
+};
+const TILE_CACHE_LIMIT = 16384;
+const tileCaches = new WeakMap<Globe, GlobeTileCache>();
+
+function tileCache(globe: Globe): GlobeTileCache {
+  let cache = tileCaches.get(globe);
+  if (!cache || cache.version !== globe.version) {
+    cache = {
+      version: globe.version,
+      tiles: new Map(),
+      eyeLatitude: NaN,
+      eyeLongitude: NaN,
+      chiEye: 0,
+      lonEye: 0,
+    };
+    tileCaches.set(globe, cache);
+  }
+  return cache;
+}
+
+function tileGeometry(globe: Globe, key: number): TileGeometry {
+  const cache = tileCache(globe);
+  let geometry = cache.tiles.get(key);
+  if (geometry) return geometry;
+  const [west, north, span] = geoTileRegion(key);
+  const chi0 = globe.sphereLatitude;
+  globe.sphereOffset(north, west, offset);
+  const chiNorth = chi0 + offset.x;
+  const lonWest = offset.y;
+  globe.sphereOffset(north - span, west + span, offset);
+  const chiSouth = chi0 + offset.x;
+  let lonEast = offset.y;
+  if (lonEast <= lonWest) lonEast += 2 * Math.PI;
+  if (cache.tiles.size >= TILE_CACHE_LIMIT) cache.tiles.clear();
+  geometry = {
+    chiNorth,
+    lonWest,
+    chiSouth,
+    lonEast,
+    box: null,
+    low: NaN,
+    high: NaN,
+  };
+  cache.tiles.set(key, geometry);
+  return geometry;
+}
+
 /**
  * The point of a geographic tile nearest the eye over the globe, as an offset on the
  * conformal sphere from the disc's centre (`Globe.sphereOffset`). The tile is a rectangle
  * of latitude and longitude on that sphere too, so the point is exact there: on the eye's
  * meridian where the tile spans it, else on its nearer side's, at the latitude nearest the
  * eye along it — not where the eye's latitude is, which far east or west of the tile lies
- * tens of degrees off.
+ * tens of degrees off. The tile's corners, and the eye's place, are kept while the globe
+ * and the eye hold.
  *
  * @group Tiles
  */
@@ -81,18 +149,21 @@ export function geoTileNearest(
   eyeAt: { latitude: number; longitude: number },
   target: Vector2,
 ): Vector2 {
-  const [west, north, span] = geoTileRegion(key);
   const chi0 = globe.sphereLatitude;
-  globe.sphereOffset(eyeAt.latitude, eyeAt.longitude, offset);
-  const chiEye = chi0 + offset.x;
-  const lonEye = offset.y;
-  globe.sphereOffset(north, west, offset);
-  const chiNorth = chi0 + offset.x;
-  const lonWest = offset.y;
-  globe.sphereOffset(north - span, west + span, offset);
-  const chiSouth = chi0 + offset.x;
-  let lonEast = offset.y;
-  if (lonEast <= lonWest) lonEast += 2 * Math.PI;
+  const cache = tileCache(globe);
+  if (
+    cache.eyeLatitude !== eyeAt.latitude ||
+    cache.eyeLongitude !== eyeAt.longitude
+  ) {
+    globe.sphereOffset(eyeAt.latitude, eyeAt.longitude, offset);
+    cache.eyeLatitude = eyeAt.latitude;
+    cache.eyeLongitude = eyeAt.longitude;
+    cache.chiEye = chi0 + offset.x;
+    cache.lonEye = offset.y;
+  }
+  const chiEye = cache.chiEye;
+  const lonEye = cache.lonEye;
+  const { chiNorth, lonWest, chiSouth, lonEast } = tileGeometry(globe, key);
   // East of the west side, and how far the tile spans.
   const along =
     (((lonEye - lonWest) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
@@ -184,6 +255,10 @@ export function geoTileInView(
       return false;
   }
   const steps = span > 20 ? 6 : span > 2 ? 3 : 1;
+  // Its box between these heights, kept while they and the globe hold.
+  const geometry = tileGeometry(globe, key);
+  if (geometry.box && geometry.low === low && geometry.high === high)
+    return frustum.intersectsBox(geometry.box);
   box.makeEmpty();
   for (let j = 0; j <= steps; j++) {
     for (let i = 0; i <= steps; i++) {
@@ -202,6 +277,9 @@ export function geoTileInView(
   // Between its points the sphere bulges out, most across a diagonal of their grid.
   const across = ((span / steps) * Math.SQRT2 * DEG) / 2;
   box.expandByScalar((R + Math.max(high, 0)) * (1 - Math.cos(across)));
+  geometry.box = (geometry.box ?? new Box3()).copy(box);
+  geometry.low = low;
+  geometry.high = high;
   return frustum.intersectsBox(box);
 }
 
@@ -292,16 +370,42 @@ export type GeoTileView = {
  * @group Tiles
  */
 export function geoTileLayout(view: GeoTileView): QuadtreeLayout {
-  const distance = (key: number, minY: number, maxY: number) =>
-    geoTileDistance(
-      view.globe,
+  // Each tile's distance, once per eye and heights: the choice asks for it to test a tile
+  // and again to visit it.
+  const known = new Map<number, { low: number; high: number; d: number }>();
+  const eyeKey = { x: NaN, y: NaN, z: NaN, version: NaN, altitude: NaN };
+  const distance = (key: number, minY: number, maxY: number) => {
+    const { eye, globe } = view;
+    if (
+      eyeKey.x !== eye.x ||
+      eyeKey.y !== eye.y ||
+      eyeKey.z !== eye.z ||
+      eyeKey.version !== globe.version ||
+      eyeKey.altitude !== view.altitude
+    ) {
+      known.clear();
+      eyeKey.x = eye.x;
+      eyeKey.y = eye.y;
+      eyeKey.z = eye.z;
+      eyeKey.version = globe.version;
+      eyeKey.altitude = view.altitude;
+    }
+    const low = minY - view.level;
+    const high = maxY - view.level;
+    const hit = known.get(key);
+    if (hit && hit.low === low && hit.high === high) return hit.d;
+    const d = geoTileDistance(
+      globe,
       key,
-      view.eye,
+      eye,
       view.eyeAt,
       view.altitude,
-      minY - view.level,
-      maxY - view.level,
+      low,
+      high,
     );
+    known.set(key, { low, high, d });
+    return d;
+  };
   return {
     roots: GEO_TILE_ROOTS,
     square: geoTileSquare,

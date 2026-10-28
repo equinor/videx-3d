@@ -541,19 +541,54 @@ start-up only).
     not in yet.
   - The relief appears at once where nothing was drawn (an opaque fade would need
     dithering).
-  - **Not yet (seen 2026-10-28, to fix later):** while the view shifts quickly or zooms
-    out, the relief still at times shows a hole (the sea's blue) for a moment, and falls
-    back to its coarsest tiles in (depth 4–5, the ones always kept) for about 80 ms after a
-    large zoom-out before finer ones load. The choice draws a loaded ancestor where
-    children are missing, and a merge into it replaces finer tiles drawn at once when they
-    do not cover it all. Likely fixes: keep the finer tiles drawn as stand-ins and draw the
-    coarse tile only where they leave a gap (per-quadrant draws, or a mask), prefetch a
-    ring of tiles a level coarser around the view, and find where the hole comes from
-    (eviction under the budget, or out-of-view tests on tiles not in yet).
+  - **Fixed (2026-10-28), what was seen then:** while the view shifted quickly or zoomed
+    out, the relief at times showed a hole (the sea's blue) for a moment, and fell back to
+    its coarsest tiles for about 80 ms after a large zoom-out before finer ones loaded.
+    - **The hole:** a merge under way (its finer tiles held, blending back toward it) taken
+      over by a coarser merge, or none, as a fast zoom-out goes on; its held tiles were let
+      go at once, with nothing yet drawn over their area. `TileTransitions` now hands them
+      back as ordinary drawn tiles, which the new choice keeps as stand-ins or holds for its
+      own merge (`tests/tile-transitions.test.ts`, which fails without it).
+    - **The coarse fallback: fills.** A split tile some of whose children in view are in no
+      longer draws whole: its children in are drawn, each as chosen, and the squares of
+      those not in are *filled* from it (`selectQuadtreeTiles`'s `fill`; `fills`). A fill
+      is an instance in the child's square that samples the parent's data all the way
+      (`reliefTileFrom` at blend 0: heights, normal, the layer look), so the children and
+      the fills cover the parent exactly; `TileTransitions` takes them as in (`proxy`), and
+      once the child's own tile is in it blends from the parent as a split does. The
+      grounds handed out index a fill's source after the tiles drawn.
+    - **Prefetch:** the siblings of each drawn tile's parent are wanted last
+      (`prefetch`, `PREFETCH_TILE_PRIORITY`), and kept in once loaded, so a zoom-out finds
+      the next level in.
+    - **The frustum** is built from the camera's matrices of this frame
+      (`camera.updateMatrixWorld()` first): controls move the camera before the frame loop
+      but leave its matrices to the render. Measured, it changed nothing in the story; kept,
+      as `useChunkLod` does it too.
+    - Measured on Minimap/Subsurface (the relief alone drawn, the sea dry, so any gap is a
+      pixel left at the clear colour): a zoom-out from 2 to 200 km in 40 frames had 7 frames
+      with gaps (0.31 % of the view at worst), now none. During a zoom-out from 1.5 to 90 km
+      the deepest tile drawn stays the finest (12) throughout, up to 29 of the instances
+      fills, none once loaded. What is left: under 0.3 % of pixels, at the screen's edge,
+      for a frame, when panning at 5 km a frame.
   - **Not over the ground handed out** (`grounds`, a column's `HeightFieldClip`): those tiles
     swap at once (`fixed`), so what meets the relief there meets what is drawn exactly.
   - Settled tiles take the old path (one branch per tile); the bookkeeping cost 0.2 ms a
     frame in `FieldColumn` while the camera moved.
+- **The choice's cost (2026-10-28):** with the camera held still it ran in full every frame,
+  some 7–9 ms of main thread over Volve (10k globe calls a frame: each tile's box rebuilt
+  from up to 98 points, its corners and the eye placed on the sphere again for every
+  tile, its distance found twice). Now:
+  - **Nothing changed, nothing done:** the choice, the instances and the grounds handed out
+    stand while the camera's matrices, the viewport, the tiles in, the pins, the grounds
+    asked for and the props that feed the choice hold, and no swap is blending, as
+    `GeoPolygons` already did.
+  - **Kept per globe** (`geo-tile-globe.ts`, by `Globe.version`, at most 16k tiles): each
+    tile's corners on the sphere and its box between two heights; the eye's place once per
+    frame; each tile's distance once a frame (`geoTileLayout`).
+  - Measured (Minimap/Subsurface, dev build): held still at 3 km, 300 km up or grazing, 0
+    globe calls a frame (was 10k–25k); main thread 1.4 ms a frame in all (was 7.4). Moving
+    at 3 km, about 1000 a frame (`tests/geo-tile-cache.test.ts` checks the kept answers
+    against a fresh globe's).
 - **The rest is today's relief:** the coast per pixel from the height map, the colour ramp,
   the land fading through the air, the drop with the Earth's curve, the cutaway, and the
   layer past the far plane (from the overview).
@@ -622,6 +657,18 @@ start-up only).
   water, the land, nor a trench's floor deeper than the camera — and a skirt is shaded as
   the lid it hangs from, so the cracks show none. Both materials are compiled with the
   stage; the frame shows one pair of meshes or the other (opaque and see-through).
+  - **It ends at the horizon:** inside the globe's sphere, ground higher than the camera
+    is met below its level only where the sphere curves it away, a band past the flat
+    lid's end. It is left to the void's depths, as the background's lid leaves it, so the
+    lid ends at the horizon as the flat one does; what lies deeper than the camera (a
+    trench's walls across the void) is still drawn there, fading with distance into the
+    depths the background draws below the horizon, not into the lid's horizon colour
+    (without walls; with them it fades to black far from the hollow, as they do): a deep
+    basin's floor tens of kilometres off is gone, not pale streaks cut at its tiles'
+    edges. The debug tint (amber relief,
+    red background) shows the line, and `debug.relief` its tiles from below too. Leaving
+    out of the choice tiles wholly below the camera's level changed no count (the few at
+    the horizon are the ones overhead), so the choice is as above the ground.
   - ⚠️ Until 2026-10-28 the tops were drawn from below too, every pixel above the camera
     dropped (`reliefTileHiddenFromBelow`), and what lay deeper (a trench seen from the
     void) shaded as seen from above through the water: blue streaks along the horizon in

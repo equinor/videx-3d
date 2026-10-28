@@ -17,6 +17,11 @@ export type TileTransitionDraw = {
   from: number | null;
   /** 0: the source's look, 1: its own */
   blend: number;
+  /**
+   * a fill (see {@link TileTransitionTiles.proxy}): the ancestor it is drawn from, all of it,
+   * in its own square; `from` and `blend` then do not apply. Absent for a tile of its own
+   */
+  proxy?: number;
 };
 
 /**
@@ -45,6 +50,13 @@ export type TileTransitionTiles = {
    * ancestor of a tile it holds for. Omitted, none is
    */
   fixed?: (key: number) => boolean;
+  /**
+   * a chosen tile not in, to be drawn as a fill from an ancestor that is in (a quadtree's
+   * `fills`): that ancestor, or null. A fill counts as in and drawable while its ancestor is
+   * in; once its own tile comes in, it blends from the ancestor to its own look. Omitted,
+   * none is
+   */
+  proxy?: (key: number) => number | null;
 };
 
 type Entry = {
@@ -53,6 +65,8 @@ type Entry = {
   start: number;
   /** held after the choice let it go, blending back toward `from`, which replaces it */
   held: boolean;
+  /** drawn from this ancestor, as a fill, while its own tile is not in */
+  proxy: number | null;
 };
 
 /**
@@ -94,7 +108,10 @@ export function tileOffsetIn(
  *   chosen in its place are in and cover all of it (blank tiles counted), whatever the
  *   choice says; those already in wait for the rest, so nothing is drawn twice. Then they
  *   replace it, blending from it. Only where nothing is chosen any more (out of view) does a
- *   drawn tile go at once.
+ *   drawn tile go at once. A merge given up — a coarser one, or none, chosen in its place
+ *   before it is done — gives its held tiles back as ordinary drawn ones.
+ * - **Fills** (`proxy`): a chosen tile not in, drawn from an ancestor that is, counts as in;
+ *   once its own tile comes in, it blends from that ancestor.
  * - **A change of mind** — a merge undone before it ends — takes the blend on from where it
  *   is.
  *
@@ -165,10 +182,43 @@ export class TileTransitions {
   update(
     chosen: Iterable<number>,
     now: number,
-    { isIn, drawable = isIn, isBlank, fixed }: TileTransitionTiles,
+    {
+      isIn: inData,
+      drawable: drawableData = inData,
+      isBlank,
+      fixed,
+      proxy,
+    }: TileTransitionTiles,
   ): TileTransitionDraw[] {
     const target = new Set(chosen);
     const entries = this.entries;
+    // Fills chosen now, and what each is drawn from: counted as in, and drawable.
+    const proxyNow = new Map<number, number>();
+    if (proxy) {
+      for (const key of target) {
+        const source = proxy(key);
+        if (source !== null && !inData(key) && inData(source))
+          proxyNow.set(key, source);
+      }
+    }
+    const proxyOf = (key: number): number | null => {
+      const chosenFrom = proxyNow.get(key);
+      if (chosenFrom !== undefined) return chosenFrom;
+      const source = entries.get(key)?.proxy ?? null;
+      return source !== null && inData(source) ? source : null;
+    };
+    const isIn = (key: number) => inData(key) || proxyOf(key) !== null;
+    const drawable = (key: number) => proxyNow.has(key) || drawableData(key);
+    // A tile held for a merge given up, as a coarser one or none took its place: an ordinary
+    // drawn tile again, its own look, which the choice below keeps as a stand-in or holds for
+    // the new merge. Let go, its area would be bare until the new merge is done.
+    for (const [key, entry] of entries) {
+      if (!entry.held || entry.from === null || target.has(key)) continue;
+      if (target.has(entry.from) && isIn(entry.from)) continue;
+      entry.held = false;
+      entry.from = null;
+      entry.start = -Infinity;
+    }
     // A chosen tile that can be drawn now.
     const ready = (key: number) => target.has(key) && drawable(key);
     const blank = (key: number) => !!isBlank?.(key);
@@ -269,7 +319,12 @@ export class TileTransitions {
           known.start = -Infinity;
           known.held = false;
         } else {
-          entries.set(key, { from: null, start: -Infinity, held: false });
+          entries.set(key, {
+            from: null,
+            start: -Infinity,
+            held: false,
+            proxy: null,
+          });
         }
         continue;
       }
@@ -285,7 +340,12 @@ export class TileTransitions {
       if (this.waiting.has(key)) continue;
       const ancestor = this.drawnAncestor(key, isIn);
       if (ancestor !== null) {
-        entries.set(key, { from: ancestor, start: now, held: false });
+        entries.set(key, {
+          from: ancestor,
+          start: now,
+          held: false,
+          proxy: null,
+        });
         continue;
       }
       const under = above.has(key) ? heldUnder(key) : [];
@@ -303,7 +363,26 @@ export class TileTransitions {
         from: null,
         start: this.fadeIn && under.length === 0 ? now : -Infinity,
         held: false,
+        proxy: null,
       });
+    }
+
+    // Fills: drawn from their ancestor while chosen as one; their own tile in, they blend
+    // from it to their own look, as a split does.
+    for (const key of target) {
+      const entry = entries.get(key);
+      if (!entry) continue;
+      const source = proxyNow.get(key);
+      if (source !== undefined) {
+        entry.proxy = source;
+      } else if (entry.proxy !== null) {
+        if (drawableData(key) && inData(entry.proxy)) {
+          entry.from = entry.proxy;
+          entry.start = now;
+          entry.held = false;
+        }
+        entry.proxy = null;
+      }
     }
 
     // Tiles let go: stand-ins stay until replaced; held ones until their blend is done (or
@@ -333,7 +412,12 @@ export class TileTransitions {
       }
       if (now >= until || !holding) {
         this.waiting.delete(key);
-        entries.set(key, { from: null, start: -Infinity, held: false });
+        entries.set(key, {
+          from: null,
+          start: -Infinity,
+          held: false,
+          proxy: null,
+        });
       }
     }
 
@@ -345,8 +429,13 @@ export class TileTransitions {
       if (!isIn(key)) continue;
       let blend = this.progress(entry, now);
       let from = entry.from;
+      // From a fill: from what it is drawn from.
+      if (from !== null && !inData(from)) {
+        const filled = entries.get(from)?.proxy ?? null;
+        if (filled !== null) from = filled;
+      }
       // A source gone: its own look at once.
-      if (from !== null && !isIn(from)) {
+      if (from !== null && !inData(from)) {
         from = null;
         blend = 1;
       }
@@ -358,9 +447,15 @@ export class TileTransitions {
       } else {
         busy = true;
       }
+      const filled = entry.proxy !== null && inData(entry.proxy);
+      if (filled) keep.add(entry.proxy!);
       if (from !== null) keep.add(from);
-      if (!ready(key)) keep.add(key);
-      draw.push({ key, from, blend });
+      if (!ready(key) && !filled) keep.add(key);
+      draw.push(
+        filled
+          ? { key, from, blend, proxy: entry.proxy! }
+          : { key, from, blend },
+      );
     }
     this.kept = [...keep];
     this.busy = busy;

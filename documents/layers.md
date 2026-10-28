@@ -81,7 +81,9 @@ from meshes of the polygons:
   outside), so the inside of a large polygon is never split. A polygon smaller than a texel
   shows as a dot, so none is lost from afar.
 - **Chosen only when something changed**: the view, the canvas's size, the tiles in, the
-  globe or the height. A view held still costs nothing. Each tile's bounds — flat, at a
+  globe or the height. A view held still costs nothing. The view is taken from the
+  camera's matrices of this frame (`camera.updateMatrixWorld()` first), as the relief's is.
+  Each tile's bounds — flat, at a
   fixed height, on a globe placed once — are kept between frames (`OverlayTileBounds`), so
   choosing costs a few vector operations a tile rather than `geoTileInView`'s placements.
   An empty tile holds no texels, so the streamer's budget goes to what is drawn.

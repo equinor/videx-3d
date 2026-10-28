@@ -65,8 +65,15 @@ float reliefTileCell() {
 uniform highp sampler2DArray uReliefTileLayers;
 
 // The layer that gave the nearest node: 1 + its place among the relief's, or 0 for the base.
+// While a tile looks mostly like the one it blends from — a fill, all of it — that one's.
 int reliefTileLayer() {
-  return int(texelFetch(uReliefTileLayers, ivec3(ivec2(vReliefTileNode), int(vReliefTileSlot + 0.5)), 0).r * 255.0 + 0.5);
+  vec2 node = vReliefTileNode;
+  float slot = vReliefTileSlot;
+  if(reliefTileBlending() && vReliefTileBlend < 0.5) {
+    node = reliefTileFromNode(node);
+    slot = vReliefTileFrom.w;
+  }
+  return int(texelFetch(uReliefTileLayers, ivec3(ivec2(node), int(slot + 0.5)), 0).r * 255.0 + 0.5);
 }
 
 // The ground under `p` as the tile holds it: 1 at or above the sea, 0 below it, -1 off the

@@ -354,6 +354,9 @@ export const GeoPolygons = <P,>({
 
     const level = placed!.level;
     const y = level + height;
+    // Controls move the camera before this runs but leave its matrices to the render: last
+    // frame's frustum culls the tiles a quick turn brings in at the edges.
+    camera.updateMatrixWorld();
     view.matrix.multiplyMatrices(
       camera.projectionMatrix,
       camera.matrixWorldInverse,

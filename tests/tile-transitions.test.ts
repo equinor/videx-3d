@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { tileChildren, tileKey } from '../src/sdk/tiles/tile-keys';
+import {
+  tileAddress,
+  tileChildren,
+  tileKey,
+  tileParent,
+} from '../src/sdk/tiles/tile-keys';
 import {
   tileOffsetIn,
   TileTransitions,
@@ -248,6 +253,83 @@ describe('TileTransitions', () => {
       { key: parent, from: null, blend: 1 },
     ]);
     expect(t.active).toBe(false);
+  });
+});
+
+// Whether the tiles drawn cover every one of `area`'s descendants `levels` down.
+const coversAll = (
+  draw: TileTransitionDraw[],
+  area: number,
+  levels: number,
+) => {
+  const drawn = new Set(draw.map(d => d.key));
+  let squares = [area];
+  for (let l = 0; l < levels; l++) squares = squares.flatMap(tileChildren);
+  return squares.every(square => {
+    for (let at = square; ; at = tileParent(at)) {
+      if (drawn.has(at)) return true;
+      if (tileAddress(at)[0] === 0) return false;
+    }
+  });
+};
+
+describe('TileTransitions: a merge given up, and fills', () => {
+  const grand = tileParent(parent);
+  const aunts = tileChildren(grand).filter(k => k !== parent);
+
+  it('never leaves a hole when a coarser merge takes over one under way', () => {
+    const t = new TileTransitions(300, false);
+    t.update([...children, ...aunts], 0, tiles);
+    // A merge into the parent, under way, then one into the grandparent over it.
+    t.update([parent, ...aunts], 1000, tiles);
+    for (let now = 1100; now <= 1600; now += 25) {
+      const draw = t.update([grand], now, tiles);
+      expect(coversAll(draw, grand, 2)).toBe(true);
+    }
+    expect([...byKey(t.update([grand], 1700, tiles)).keys()]).toEqual([grand]);
+  });
+
+  it('draws a fill from its ancestor, and blends from it once its own tile is in', () => {
+    const t = new TileTransitions(300, false);
+    const [own, ...filled] = children;
+    let loaded = new Set([parent, own]);
+    const ts = {
+      isIn: (k: number) => loaded.has(k),
+      proxy: (k: number) => (filled.includes(k) ? parent : null),
+    };
+    t.update([parent], 0, ts);
+    let draw = byKey(t.update(children, 1000, ts));
+    // The parent is no longer drawn: its children and fills cover it.
+    expect(draw.has(parent)).toBe(false);
+    for (const k of filled) expect(draw.get(k)!.proxy).toBe(parent);
+    expect(draw.get(own)!.proxy).toBeUndefined();
+    expect(t.keep).toContain(parent);
+    // One fill's own tile comes in: no longer a fill, it blends from the parent.
+    loaded = new Set([parent, own, filled[0]]);
+    draw = byKey(
+      t.update(children, 2000, {
+        isIn: ts.isIn,
+        proxy: k => (filled.slice(1).includes(k) ? parent : null),
+      }),
+    );
+    expect(draw.get(filled[0])).toEqual({
+      key: filled[0],
+      from: parent,
+      blend: 0,
+    });
+    expect(draw.get(filled[1])!.proxy).toBe(parent);
+  });
+
+  it('keeps finer tiles drawn where a fill is chosen over them until it is in', () => {
+    const t = new TileTransitions(300, false);
+    // Grandchildren of one child drawn; then the child is chosen as a fill.
+    t.update(grandchildren, 0, tiles);
+    const draw = t.update(children, 1000, {
+      isIn: k => k !== children[0],
+      proxy: k => (k === children[0] ? parent : null),
+    });
+    // The fill holds them for a merge back to it, drawn the while: no hole.
+    expect(coversAll(draw, parent, 2)).toBe(true);
   });
 });
 

@@ -472,6 +472,15 @@ export const SceneryStageReliefTiles = ({
       transitions: new TileTransitions(transition, false),
       // The tiles drawn, in the order of their instances.
       drawnKeys: [] as number[],
+      // The fills chosen this frame: each tile not in, and the ancestor it is drawn from.
+      fillSource: new Map<number, number>(),
+      // What the tiles were last chosen for (see the frame loop): nothing changed, nothing to do.
+      chosen: {
+        key: '',
+        pins: null as readonly [number, number, number, number][] | null,
+        streaming: null as unknown,
+        handed: null as unknown,
+      },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- its duration is set each frame
   }, [sky]);
@@ -502,6 +511,9 @@ export const SceneryStageReliefTiles = ({
     const eye = globe.geographic(camera.position, view.eye);
     const altitude = globe.altitude(camera.position);
     const y = level + altitude;
+    // Controls move the camera before this runs but leave its matrices to the render: last
+    // frame's frustum culls the tiles a quick turn or zoom-out brings in at the edges.
+    camera.updateMatrixWorld();
     view.matrix.multiplyMatrices(
       camera.projectionMatrix,
       camera.matrixWorldInverse,
@@ -569,6 +581,25 @@ export const SceneryStageReliefTiles = ({
     view.layout.level = level;
     const layout = view.tiles;
 
+    // Nothing moved, nothing came in or went, nothing asked for changed: the tiles chosen,
+    // their instances and the grounds handed out stand. A view held still costs nothing
+    // here once the swaps' blends are done (GeoPolygons does the same).
+    const e = view.matrix.elements;
+    const pinnedNow = pinnedSquares();
+    const chosenKey = `${e.join(',')}|${size.width}x${size.height}x${viewport.dpr}|${streaming.resident.changes}|${y}|${seen}|${pixelError}|${cellPixels}|${transition}|${under}|${globe.version}|${groundsKey}|${groundLive}|${visible}|${!!seeThroughMaterial}|${stageMinX},${stageMinZ},${stageMaxX},${stageMaxZ}`;
+    if (
+      chosenKey === view.chosen.key &&
+      pinnedNow === view.chosen.pins &&
+      streaming === view.chosen.streaming &&
+      handed === view.chosen.handed &&
+      !view.transitions.active
+    )
+      return;
+    view.chosen.key = chosenKey;
+    view.chosen.pins = pinnedNow;
+    view.chosen.streaming = streaming;
+    view.chosen.handed = handed;
+
     const selection = selectQuadtreeTiles({
       eye: [0, y, 0],
       reach: seen,
@@ -591,17 +622,28 @@ export const SceneryStageReliefTiles = ({
         pixelError: GROUND_PIXEL_ERROR,
       })),
       layout,
+      // After a zoom-out, finer tiles in stay drawn; the squares still loading are filled
+      // from their parent. The level a further zoom-out needs is fetched ahead, last.
+      fill: true,
+      prefetch: true,
     });
     streaming.split = selection.split;
+    const fillSource = view.fillSource;
+    fillSource.clear();
+    for (const fill of selection.fills) fillSource.set(fill.key, fill.source);
     // Soft swaps (TileTransitions): each tile drawn blends from the tile it replaces. Not
     // over the ground handed out, which must meet what is drawn exactly.
     const transitions = view.transitions;
     transitions.duration = transition;
     const drawnTiles = transitions.update(
-      selection.draw.filter(key => (slotOf.get(key) ?? -1) >= 0),
+      [
+        ...selection.draw.filter(key => (slotOf.get(key) ?? -1) >= 0),
+        ...fillSource.keys(),
+      ],
       performance.now(),
       {
         isIn: key => (slotOf.get(key) ?? -1) >= 0,
+        proxy: key => fillSource.get(key) ?? null,
         fixed:
           handed.length > 0
             ? key => {
@@ -615,7 +657,7 @@ export const SceneryStageReliefTiles = ({
       },
     );
     // What is pinned is held in down to the finest, whatever the view.
-    const pinned = pinnedSquares();
+    const pinned = pinnedNow;
     const pinning =
       pinned.length > 0
         ? selectPinnedTiles({
@@ -632,6 +674,7 @@ export const SceneryStageReliefTiles = ({
       [
         ...selection.draw,
         ...selection.split,
+        ...selection.prefetched,
         ...(pinning ? pinning.keep : []),
         ...transitions.keep,
       ],
@@ -659,31 +702,41 @@ export const SceneryStageReliefTiles = ({
     drawnKeys.length = 0;
     let count = 0;
     let deepest = 0;
-    for (const { key, from, blend } of drawnTiles) {
+    for (const { key, from, blend, proxy } of drawnTiles) {
       if (count >= SKY_RELIEF_MAX_TILES) break;
-      const tile = streamer.get(key);
-      const slot = slotOf.get(key);
+      // A fill: its own square, all of it drawn from the ancestor in its place.
+      const data = proxy ?? key;
+      const tile = streamer.get(data);
+      const slot = slotOf.get(data);
       if (!tile || slot === undefined || slot < 0) continue;
       const [depth] = tileAddress(key);
-      deepest = Math.max(deepest, depth);
+      deepest = Math.max(deepest, tileAddress(data)[0]);
       geoTileOffsets(globe, key, array, 4 * count, chiArray, 3 * count);
       array[4 * count + 2] = depth;
       array[4 * count + 3] = slot;
       // Deep enough to close the crack to a neighbour a level coarser.
-      const parent = depth > 0 ? streamer.get(tileParent(key)) : undefined;
+      const parent =
+        proxy === undefined && depth > 0
+          ? streamer.get(tileParent(key))
+          : undefined;
       drops[count] =
         Math.max(tile.error, parent?.error ?? 0) +
         (geoTileWidth(globe, key) / RELIEF_TILE_CELLS) * 0.05;
-      const fromSlot = from === null ? -1 : (slotOf.get(from) ?? -1);
+      const blendSource = proxy ?? from;
+      const fromSlot =
+        blendSource === null ? -1 : (slotOf.get(blendSource) ?? -1);
       if (fromSlot >= 0) {
-        fromArray.set(tileOffsetIn(key, from!), 4 * count);
+        fromArray.set(tileOffsetIn(key, blendSource!), 4 * count);
         fromArray[4 * count + 3] = fromSlot;
         // Blending from a coarser tile, its skirt drops as deep as that tile's error.
-        drops[count] = Math.max(drops[count], streamer.get(from!)?.error ?? 0);
+        drops[count] = Math.max(
+          drops[count],
+          streamer.get(blendSource!)?.error ?? 0,
+        );
       } else {
         fromArray.set(NO_SOURCE, 4 * count);
       }
-      blendArray[count] = fromSlot >= 0 ? blend : 1;
+      blendArray[count] = proxy !== undefined ? 0 : fromSlot >= 0 ? blend : 1;
       drawnKeys.push(key);
       count++;
     }
@@ -792,7 +845,10 @@ export const SceneryStageReliefTiles = ({
       // Indexed again only when the tiles drawn there, or those in, change.
       const there: SceneryReliefTileGroundTile[] = [];
       let indexed = `${streaming.resident.changes}`;
-      for (const key of selection.draw) {
+      // The tiles drawn first, then what the fills there are drawn from: the first indexed
+      // over a square wins, so a fill's source answers only where no drawn tile does.
+      const sources = [...new Set(fillSource.values())];
+      for (const key of [...selection.draw, ...sources]) {
         const [a, b, width] = geoTileSquare(key);
         if (a >= a1 || b >= b1 || a + width <= a0 || b + width <= b0) continue;
         const tile = streamer.get(key);

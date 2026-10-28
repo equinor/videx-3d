@@ -172,6 +172,10 @@ void main() {
   // Its shape in the raking light, as much as the lid has not faded into the horizon.
   float near = uSkyAbyssFadeDistance > 0.0 ? exp(-dist / uSkyAbyssFadeDistance) : 1.0;
   vec3 color = skyAbyssCeiling(world, dist) * mix(1.0, skyAbyssLidRake(surface), near);
+  // Below the horizon (a trench's floor deeper than the camera) it fades into the depths the
+  // background draws there, not into the lid's horizon colour, so far off it is gone.
+  if(dot(dir, uSkyUp) < 0.0)
+    color += (skyAbyssDepths(dir) - uSkyAbyssHorizonColor) * (1.0 - near);
   #endif
   // The cutaway bites the seabed from below too, as it does a stage's; not over an occupant.
   float seabed = height < 0.0 ? skyOceanCutawaySeabed(skyOceanCutawayAlong(cameraPosition, world)) : 1.0;
@@ -179,7 +183,12 @@ void main() {
   if(reliefOnOccupant(vReliefPlane))
     seabed = 1.0;
   #endif
-  if(seabed < 1e-3 || reliefTileLeftToOther(vReliefPlane) || reliefCutAway())
+  // Below the camera's level, where the background draws the void's depths, only what lies
+  // deeper than the camera: a trench's walls seen across the void. Ground higher than the
+  // camera is met below its level only as the globe curves it away, past where the
+  // background's flat lid ends at the horizon: left to the depths, as the lid leaves it.
+  bool curvedAway = dot(dir, globeCameraUp()) <= 0.0 && height > skyOceanCameraAltitude();
+  if(seabed < 1e-3 || curvedAway || reliefTileLeftToOther(vReliefPlane) || reliefCutAway())
     discard;
   #ifdef SKY_ABYSS_WALLS
   // The walls' fill stands in front of the lid here, or, from under their foot, the rock
@@ -191,6 +200,9 @@ void main() {
   #endif
   if(uSkyAbyssDarkening > 0.0)
     color *= exp(min(skyOceanCameraAltitude() + uSkyOceanDepth, 0.0) / uSkyAbyssDarkening);
+  #if defined(RELIEF_DEBUG_TILES) || defined(RELIEF_DEBUG_LAYERS)
+  color = reliefTileDebug(color);
+  #endif
 
   gl_FragColor = vec4(color, 1.0);
   gl_FragColor.rgb = skyDebugTint(gl_FragColor.rgb, vec3(0.95, 0.6, 0.1));

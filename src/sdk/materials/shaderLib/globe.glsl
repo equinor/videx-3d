@@ -283,11 +283,15 @@ float globeHorizonFrom(vec3 v, vec3 n, float outside, float reach, vec2 dip, vec
   // Outside the sphere, the view that grazes it.
   if(outside > 0.0) {
     vec3 graze = way * dip.y - n * dip.x;
-    // Unless it grazes the cut-off cap, over the field.
+    // Unless it grazes the cut-off cap, from over the field: there the view leaves the disc's
+    // plane (below). From off the disc, or below its plane — far off, at about the distance
+    // the field lies on the horizon — the cap lies but a sagitta under the sphere, and the
+    // plane's horizon, level from there, would stand a column of horizon up over the field.
     vec3 at = v + graze * reach;
     float over = dot(at, uGlobeUp);
     at -= uGlobeUp * over;
-    if(over <= 0.0 || dot(at, at) > uGlobe.z)
+    vec3 off = v - uGlobeUp * up;
+    if(over <= 0.0 || dot(at, at) > uGlobe.z || up <= 0.0 || dot(off, off) > uGlobe.z)
       return dot(graze, look);
   }
   if(up <= 0.0)

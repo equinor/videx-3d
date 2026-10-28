@@ -5,6 +5,7 @@ import {
   tileAddress,
   tileChildren,
   tileKey,
+  tileParent,
 } from './tile-keys';
 
 // ⚠️ What a tile holds, and how the view is tested, are the caller's.
@@ -106,7 +107,23 @@ export type QuadtreeSelectOptions = {
    * the layout's coordinates
    */
   layout?: QuadtreeLayout;
+  /**
+   * Where a split tile has some of its children in view in and others not: draw those in,
+   * each as it is chosen, and fill the squares of those not in from the tile itself
+   * (`fills`), rather than drawing the tile over all of them. Finer tiles already in then
+   * stay drawn after a large zoom-out while the rest load. A tile none of whose children in
+   * view are in is drawn whole, as without it. Default `false`
+   */
+  fill?: boolean;
+  /**
+   * Also want, at `prefetchPriority`, the siblings of each drawn tile's parent that are not
+   * in: the level a zoom-out goes to next, ahead of it. Default `false`
+   */
+  prefetch?: boolean;
 };
+
+/** The priority {@link selectQuadtreeTiles} wants prefetched tiles at: after every other. */
+export const PREFETCH_TILE_PRIORITY = -1;
 
 /**
  * What {@link selectQuadtreeTiles} chose.
@@ -114,12 +131,19 @@ export type QuadtreeSelectOptions = {
  * @group Tiles
  */
 export type QuadtreeSelection = {
-  /** the tiles to draw: together they cover what is in view, once */
+  /** the tiles to draw: together with `fills`, they cover what is in view, once */
   draw: number[];
+  /**
+   * squares to draw from an ancestor's data until their own tile is in (`fill`): `key` the
+   * tile not in, `source` the ancestor drawn in its place, which is in. Empty without `fill`
+   */
+  fills: { key: number; source: number }[];
   /** the tiles wanted and not in, with how much: pixels of error over the limit, Infinity for a root */
   want: { key: number; priority: number }[];
   /** the tiles split this time, for the next call's `split` */
   split: Set<number>;
+  /** prefetched tiles that are in (`prefetch`): keep them in as the drawn ones are */
+  prefetched: number[];
 };
 
 /**
@@ -129,9 +153,10 @@ export type QuadtreeSelection = {
  * does — or while its error is over `errorCap` there, or (with `cellPixels`) while its
  * cells span more pixels there than allowed. Over `finer` squares the limit is theirs. A
  * split tile is drawn until all four of its
- * children in view are in, and those not in are wanted: the ground is never missing, nor
- * drawn twice. Tiles out of view are left out, judged by their own heights once in and
- * by their parent's until then.
+ * children in view are in — or, with `fill`, its children in are drawn and the squares of
+ * those not in are filled from it — and those not in are wanted: the ground is never
+ * missing, nor drawn twice. Tiles out of view are left out, judged by their own heights
+ * once in and by their parent's until then.
  *
  * @group Tiles
  */
@@ -152,9 +177,12 @@ export function selectQuadtreeTiles(
     cellPixels,
     split: wasSplit,
     layout,
+    fill = false,
+    prefetch = false,
   } = options;
   const [ex, ey, ez] = eye;
   const draw: number[] = [];
+  const fills: QuadtreeSelection['fills'] = [];
   const want: QuadtreeSelection['want'] = [];
   const split = new Set<number>();
 
@@ -259,6 +287,7 @@ export function selectQuadtreeTiles(
     const children = tileChildren(key);
     const inside: [number, QuadtreeTileInfo | undefined][] = [];
     let missing = false;
+    let some = false;
     for (let c = 0; c < 4; c++) {
       const child = children[c];
       const childInfo = info(child);
@@ -266,9 +295,9 @@ export function selectQuadtreeTiles(
       if (!showsTile(child, squareOf(child), range.minY, range.maxY)) continue;
       inside.push([child, childInfo]);
       if (!childInfo) missing = true;
+      else some = true;
     }
     if (missing) {
-      draw.push(key);
       const priority = Math.max(
         shown - limit,
         cellOver,
@@ -277,10 +306,39 @@ export function selectQuadtreeTiles(
       for (const [child, childInfo] of inside) {
         if (!childInfo) want.push({ key: child, priority });
       }
+      if (!fill || !some) {
+        draw.push(key);
+        return;
+      }
+      // Those in as chosen, the rest filled from this tile.
+      split.add(key);
+      for (const [child, childInfo] of inside) {
+        if (childInfo) visit(child, childInfo);
+        else fills.push({ key: child, source: key });
+      }
       return;
     }
     split.add(key);
     for (const [child, childInfo] of inside) visit(child, childInfo!);
+  };
+
+  // The siblings of each drawn tile's parent not in: wanted last.
+  const prefetched: number[] = [];
+  const prefetchAround = () => {
+    if (!prefetch) return;
+    const seen = new Set<number>();
+    for (const key of draw) {
+      if (tileAddress(key)[0] < 2) continue;
+      const parent = tileParent(key);
+      const grand = tileParent(parent);
+      if (seen.has(grand)) continue;
+      seen.add(grand);
+      for (const aunt of tileChildren(grand)) {
+        if (aunt === parent) continue;
+        if (info(aunt)) prefetched.push(aunt);
+        else want.push({ key: aunt, priority: PREFETCH_TILE_PRIORITY });
+      }
+    }
   };
 
   if (layout) {
@@ -293,7 +351,8 @@ export function selectQuadtreeTiles(
       if (!showsTile(key, squareOf(key), root.minY, root.maxY)) continue;
       visit(key, root);
     }
-    return { draw, want, split };
+    prefetchAround();
+    return { draw, fills, want, split, prefetched };
   }
   const i0 = Math.floor((ex - reach) / rootSize);
   const i1 = Math.floor((ex + reach) / rootSize);
@@ -314,7 +373,8 @@ export function selectQuadtreeTiles(
       visit(key, root);
     }
   }
-  return { draw, want, split };
+  prefetchAround();
+  return { draw, fills, want, split, prefetched };
 }
 
 /**
