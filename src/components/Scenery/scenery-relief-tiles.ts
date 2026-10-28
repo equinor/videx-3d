@@ -58,8 +58,10 @@ const warped: [number, number] = [0, 0];
  * edge marked by `reliefSkirt`), facing out. Instanced per geographic tile by a
  * `reliefTile` (its west and east edges' longitude on the conformal sphere from the
  * globe's disc's centre, its depth and its slot), a `reliefTileChi` (its north edge's,
- * middle's and south edge's latitude there: `Globe.sphereOffset`) and a `reliefTileSkirt`
- * (how far its skirt drops). Its triangles' diagonals run from node (i + 1, j) to
+ * middle's and south edge's latitude there: `Globe.sphereOffset`), a `reliefTileSkirt`
+ * (how far its skirt drops), a `reliefTileFrom` (where it lies in the tile it blends from,
+ * `tileOffsetIn`, and that tile's slot, -1 for none) and a `reliefTileBlend` (0 that
+ * tile's look, 1 its own: see `TileTransitions`). Its triangles' diagonals run from node (i + 1, j) to
  * (i, j + 1), as `buildReliefTile` measures a tile's error; each triangle's last vertex
  * is a skirt's lower edge on a skirt and a grid node on the grid, which the shader's flat
  * `vReliefSkirt` relies on.
@@ -506,8 +508,8 @@ export function createSceneryReliefTileSubset(
   return geometry;
 }
 
-// Per tile (see createSceneryReliefTilePatch): `reliefTile`, `reliefTileChi` and
-// `reliefTileSkirt`, for `maxTiles` tiles, none drawn yet.
+// Per tile (see createSceneryReliefTilePatch): `reliefTile`, `reliefTileChi`,
+// `reliefTileSkirt`, `reliefTileFrom` and `reliefTileBlend`, for `maxTiles` tiles, none drawn yet.
 function addTileAttributes(
   geometry: InstancedBufferGeometry,
   maxTiles: number,
@@ -516,6 +518,8 @@ function addTileAttributes(
     ['reliefTile', 4],
     ['reliefTileChi', 3],
     ['reliefTileSkirt', 1],
+    ['reliefTileFrom', 4],
+    ['reliefTileBlend', 1],
   ] as const) {
     const attribute = new InstancedBufferAttribute(
       new Float32Array(size * maxTiles),
@@ -527,9 +531,11 @@ function addTileAttributes(
   geometry.instanceCount = 0;
 }
 
-/** A relief tile's attributes for one draw (`reliefTile`, `reliefTileChi`, `reliefTileSkirt`). */
+/** A relief tile's attributes for one draw (see `createSceneryReliefTilePatch`). */
 export const SKY_RELIEF_TILE_ATTRIBUTES = [
   'reliefTile',
   'reliefTileChi',
   'reliefTileSkirt',
+  'reliefTileFrom',
+  'reliefTileBlend',
 ] as const;

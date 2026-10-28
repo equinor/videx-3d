@@ -98,6 +98,25 @@ export function geoFrameLonLat(
 }
 
 /**
+ * A converter from longitude and latitude (WGS84, degrees) to `frame`'s scene X/Z: how a
+ * `World` places a point, flat, the reverse of {@link geoFrameLonLat}. Made once, as
+ * proj4 builds its transform: call the result per point.
+ *
+ * @group Utils
+ */
+export function geoFrameXZ(
+  frame: GeoFrame,
+): (longitude: number, latitude: number) => Vec2 {
+  const convert = proj4(wgs84Def, frame.projection);
+  const [e0, n0] = frame.origin;
+  const [offsetX, offsetZ] = frame.offset ?? [0, 0];
+  return (longitude, latitude) => {
+    const [e, n] = convert.forward([longitude, latitude]);
+    return [e - e0 + offsetX, n0 - n + offsetZ];
+  };
+}
+
+/**
  * Whether `a` and `b` are the same map about the same point: the same projection and
  * origin. Their offsets are not compared.
  *

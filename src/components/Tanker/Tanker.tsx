@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+} from 'react';
 import { Group } from 'three';
 import { useOceanContact } from '../Ocean/ocean-contact';
 import { OceanContact } from '../Ocean/ocean-material';
@@ -73,30 +80,41 @@ export type TankerProps = {
   contactFoamEndFalloff?: number;
 };
 
-export const Tanker = ({
-  position,
-  heading = 0,
-  length = 253,
-  width = 44.2,
-  height = 20,
-  waterline = 13,
-  lengthSegments = 128,
-  profileSegments = 16,
-  bowLength = 0.2,
-  bowRoundness = 0.6,
-  wireframe = false,
-  details = 'medium',
-  lowerHullColor = '#7a2b1c',
-  upperHullColor = '#23303a',
-  deckColor = '#3a7a40',
-  stripeColor = '#0d1b2a',
-  superstructureColor = '#d8d8d8',
-  buoyancy = true,
-  weight = REFERENCE_DISPLACEMENT,
-  contactFoam = true,
-  contactFoamIntensity = 1,
-  contactFoamEndFalloff = 0.6,
-}: TankerProps) => {
+/**
+ * A tanker: its hull, superstructure and deck, floating on an `<Ocean>`'s waves (or a
+ * `Scenery`'s) when inside one. Its ref is its group: move it (`position.x`, `position.z`,
+ * `rotation.y`) to sail it without a React render — buoyancy only sets its height, pitch
+ * and roll, so it follows — as a `TrackLayer` does.
+ *
+ * @group Components
+ */
+export const Tanker = forwardRef<Group, TankerProps>(function Tanker(
+  {
+    position,
+    heading = 0,
+    length = 253,
+    width = 44.2,
+    height = 20,
+    waterline = 13,
+    lengthSegments = 128,
+    profileSegments = 16,
+    bowLength = 0.2,
+    bowRoundness = 0.6,
+    wireframe = false,
+    details = 'medium',
+    lowerHullColor = '#7a2b1c',
+    upperHullColor = '#23303a',
+    deckColor = '#3a7a40',
+    stripeColor = '#0d1b2a',
+    superstructureColor = '#d8d8d8',
+    buoyancy = true,
+    weight = REFERENCE_DISPLACEMENT,
+    contactFoam = true,
+    contactFoamIntensity = 1,
+    contactFoamEndFalloff = 0.6,
+  },
+  ref,
+) {
   const hullGeometry = useMemo(
     () =>
       createTankerHull({
@@ -126,6 +144,7 @@ export const Tanker = ({
   useEffect(() => () => hullGeometry.dispose(), [hullGeometry]);
 
   const groupRef = useRef<Group>(null);
+  useImperativeHandle(ref, () => groupRef.current as Group, []);
 
   // Buoyancy sample points at the hull extents (bow / stern / port /
   // starboard), kept slightly inboard. Their span encodes the ship's length and
@@ -235,4 +254,4 @@ export const Tanker = ({
       />
     </group>
   );
-};
+});

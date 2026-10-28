@@ -5,6 +5,7 @@ import {
   InstancedBufferAttribute,
   Matrix4,
   Texture,
+  Vector3,
   Vector4,
 } from 'three';
 import { useGenerator } from '../../hooks/useGenerator';
@@ -16,31 +17,30 @@ import {
 } from '../../sdk/geometries/relief-tiles';
 import type { HeightFieldClip } from '../../sdk/materials/height-field-clip';
 import {
-  QuadtreeLayout,
   selectPinnedTiles,
   selectQuadtreeTiles,
 } from '../../sdk/tiles/quadtree';
+import { geoTileKeyAt, geoTileRegion } from '../../sdk/tiles/geo-tile-keys';
 import {
-  GEO_TILE_ROOTS,
-  geoTileKeyAt,
-  geoTileRegion,
-} from '../../sdk/tiles/geo-tile-keys';
+  geoAt,
+  geoSquareOver,
+  geoTileLayout,
+  geoTileOffsets,
+  geoTileSquare,
+  geoTileWidth,
+  GeoTileView,
+} from '../../sdk/tiles/geo-tile-globe';
 import { tileAddress, tileParent } from '../../sdk/tiles/tile-keys';
 import { TileStreamer } from '../../sdk/tiles/tile-streamer';
+import {
+  tileOffsetIn,
+  TileTransitions,
+} from '../../sdk/tiles/tile-transitions';
 import { pixelsPerUnit } from '../../sdk/utils/lod';
 import { sceneryReliefTile, SceneryReliefTileResponse } from './scenery-defs';
 import type { SceneryMaterial } from './scenery-material';
 import type { SceneryReliefLoading } from './scenery-progress';
-import {
-  geoAt,
-  geoSquareOver,
-  geoTileDistance,
-  geoTileInView,
-  geoTileOffsets,
-  geoTileSquare,
-  geoTileWidth,
-  geoWarp,
-} from './scenery-relief-geo';
+import { geoWarp } from './scenery-relief-geo';
 import {
   createReliefSampler,
   ReliefPins,
@@ -52,6 +52,7 @@ import {
   createSceneryReliefTileSeeThroughMaterial,
   createSceneryReliefTileSubset,
   SKY_RELIEF_MAX_TILES,
+  SKY_RELIEF_TILE_ATTRIBUTES,
   SceneryReliefTileDebug,
   SceneryReliefTileGround,
   SceneryReliefTileGroundTile,
@@ -68,6 +69,8 @@ const TILE_BYTES = (RELIEF_TILE_CELLS + 3) ** 2 * (4 + 4 + 1);
 const TILE_TRIANGLES = 2 * RELIEF_TILE_CELLS ** 2 + 8 * RELIEF_TILE_CELLS;
 // The deepest tile: about 1 m cells north–south (geographic tiles, 180° / 2^19 / 32).
 const MAX_DEPTH = 19;
+// A tile blending from nothing: `reliefTileFrom` with no source's slot.
+const NO_SOURCE = [0, 0, 1, -1];
 // The slope a tile's surface may stray from the ground's before its cells' size on screen
 // splits it too: about 0.6°. Flat seabed is shaded alike at any depth.
 const CELL_MIN_SLOPE = 0.01;
@@ -111,6 +114,8 @@ type SceneryStageReliefTilesProps = {
   pixelError: number;
   /** the most a tile's cell may span on screen, in pixels, where finer data lies under it */
   cellPixels: number;
+  /** ms a swap between levels of detail takes (see `SceneryStage`'s `relief.transition`); 0 at once */
+  transition: number;
   /** what it compiles with from the sky, as a key (`SceneryOceanState.definesKey`): a new one needs a new material */
   definesKey?: string;
   visible: boolean;
@@ -165,6 +170,7 @@ export const SceneryStageReliefTiles = ({
   level,
   pixelError,
   cellPixels,
+  transition,
   definesKey,
   visible,
   onStats,
@@ -226,9 +232,8 @@ export const SceneryStageReliefTiles = ({
   // Its own tiles only: the vertices and triangles are the patch's.
   useEffect(
     () => () => {
-      subset.deleteAttribute('reliefTile');
-      subset.deleteAttribute('reliefTileChi');
-      subset.deleteAttribute('reliefTileSkirt');
+      for (const name of SKY_RELIEF_TILE_ATTRIBUTES)
+        subset.deleteAttribute(name);
       subset.dispose();
     },
     [subset],
@@ -413,25 +418,48 @@ export const SceneryStageReliefTiles = ({
     [streaming],
   );
   const frame = useRef(0);
-  const view = useMemo(
-    () => ({
-      frustum: new Frustum(),
+  const view = useMemo(() => {
+    const frustum = new Frustum();
+    const eye = { latitude: 0, longitude: 0 };
+    const layout: GeoTileView = {
+      globe: sky.globe,
+      eye: new Vector3(),
+      eyeAt: eye,
+      altitude: 0,
+      frustum,
+      seen: 0,
+      level: 0,
+    };
+    return {
+      frustum,
       matrix: new Matrix4(),
-      eye: { latitude: 0, longitude: 0 },
+      eye,
       warp: new Matrix4(),
       stage: {
         key: '',
         square: [0, 0, 0, 0] as [number, number, number, number],
       },
-    }),
-    [],
-  );
+      layout,
+      tiles: geoTileLayout(layout),
+      // Soft swaps between levels of detail; the relief appears at once where nothing was.
+      transitions: new TileTransitions(transition, false),
+      // The tiles drawn, in the order of their instances.
+      drawnKeys: [] as number[],
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- its duration is set each frame
+  }, [sky]);
   const tiles = geometry.getAttribute('reliefTile') as InstancedBufferAttribute;
   const chis = geometry.getAttribute(
     'reliefTileChi',
   ) as InstancedBufferAttribute;
   const skirts = geometry.getAttribute(
     'reliefTileSkirt',
+  ) as InstancedBufferAttribute;
+  const froms = geometry.getAttribute(
+    'reliefTileFrom',
+  ) as InstancedBufferAttribute;
+  const blends = geometry.getAttribute(
+    'reliefTileBlend',
   ) as InstancedBufferAttribute;
 
   useFrame(({ camera, size, viewport }) => {
@@ -502,40 +530,12 @@ export const SceneryStageReliefTiles = ({
     };
     // Where the tiles lie: on the globe by their latitudes and longitudes. Their lowest
     // reaches a skirt lower.
-    const layout: QuadtreeLayout = {
-      roots: GEO_TILE_ROOTS,
-      square: geoTileSquare,
-      distance: (key, minY, maxY) =>
-        geoTileDistance(
-          globe,
-          key,
-          camera.position,
-          eye,
-          altitude,
-          minY - level,
-          maxY - level,
-        ),
-      shows: (key, minY, maxY) =>
-        geoTileDistance(
-          globe,
-          key,
-          camera.position,
-          eye,
-          altitude,
-          minY - level,
-          maxY - level,
-        ) <= seen &&
-        geoTileInView(
-          globe,
-          key,
-          view.frustum,
-          camera.position,
-          eye,
-          minY - level - geoTileWidth(globe, key) * 0.01,
-          maxY - level,
-        ),
-      width: key => geoTileWidth(globe, key),
-    };
+    view.layout.globe = globe;
+    view.layout.eye = camera.position;
+    view.layout.altitude = altitude;
+    view.layout.seen = seen;
+    view.layout.level = level;
+    const layout = view.tiles;
 
     const selection = selectQuadtreeTiles({
       eye: [0, y, 0],
@@ -561,6 +561,27 @@ export const SceneryStageReliefTiles = ({
       layout,
     });
     streaming.split = selection.split;
+    // Soft swaps (TileTransitions): each tile drawn blends from the tile it replaces. Not
+    // over the ground handed out, which must meet what is drawn exactly.
+    const transitions = view.transitions;
+    transitions.duration = transition;
+    const drawnTiles = transitions.update(
+      selection.draw.filter(key => (slotOf.get(key) ?? -1) >= 0),
+      performance.now(),
+      {
+        isIn: key => (slotOf.get(key) ?? -1) >= 0,
+        fixed:
+          handed.length > 0
+            ? key => {
+                const [a, b, width] = geoTileSquare(key);
+                return handed.some(
+                  ({ square: [a0, b0, a1, b1] }) =>
+                    a < a1 && b < b1 && a + width > a0 && b + width > b0,
+                );
+              }
+            : undefined,
+      },
+    );
     // What is pinned is held in down to the finest, whatever the view.
     const pinned = pinnedSquares();
     const pinning =
@@ -576,9 +597,12 @@ export const SceneryStageReliefTiles = ({
           })
         : null;
     streamer.update(
-      pinning
-        ? [...selection.draw, ...selection.split, ...pinning.keep]
-        : [...selection.draw, ...selection.split],
+      [
+        ...selection.draw,
+        ...selection.split,
+        ...(pinning ? pinning.keep : []),
+        ...transitions.keep,
+      ],
       pinning ? [...pinning.want, ...selection.want] : selection.want,
     );
     if (streaming.resident.pinnedIn) {
@@ -597,10 +621,14 @@ export const SceneryStageReliefTiles = ({
     const array = tiles.array as Float32Array;
     const chiArray = chis.array as Float32Array;
     const drops = skirts.array as Float32Array;
+    const fromArray = froms.array as Float32Array;
+    const blendArray = blends.array as Float32Array;
+    const drawnKeys = view.drawnKeys;
+    drawnKeys.length = 0;
     let count = 0;
     let deepest = 0;
     let lowest = Infinity;
-    for (const key of selection.draw) {
+    for (const { key, from, blend } of drawnTiles) {
       if (count >= SKY_RELIEF_MAX_TILES) break;
       const tile = streamer.get(key);
       const slot = slotOf.get(key);
@@ -616,6 +644,17 @@ export const SceneryStageReliefTiles = ({
       drops[count] =
         Math.max(tile.error, parent?.error ?? 0) +
         (geoTileWidth(globe, key) / RELIEF_TILE_CELLS) * 0.05;
+      const fromSlot = from === null ? -1 : (slotOf.get(from) ?? -1);
+      if (fromSlot >= 0) {
+        fromArray.set(tileOffsetIn(key, from!), 4 * count);
+        fromArray[4 * count + 3] = fromSlot;
+        // Blending from a coarser tile, its skirt drops as deep as that tile's error.
+        drops[count] = Math.max(drops[count], streamer.get(from!)?.error ?? 0);
+      } else {
+        fromArray.set(NO_SOURCE, 4 * count);
+      }
+      blendArray[count] = fromSlot >= 0 ? blend : 1;
+      drawnKeys.push(key);
       count++;
     }
     geometry.instanceCount = count;
@@ -625,6 +664,8 @@ export const SceneryStageReliefTiles = ({
         [tiles, 4],
         [chis, 3],
         [skirts, 1],
+        [froms, 4],
+        [blends, 1],
       ] as const) {
         attribute.clearUpdateRanges();
         attribute.addUpdateRange(0, size * count);
@@ -646,39 +687,27 @@ export const SceneryStageReliefTiles = ({
         ]);
       }
       const [s0, t0, s1, t1] = view.stage.square;
-      const subsetTiles = subset.getAttribute(
-        'reliefTile',
-      ) as InstancedBufferAttribute;
-      const subsetChis = subset.getAttribute(
-        'reliefTileChi',
-      ) as InstancedBufferAttribute;
-      const subsetSkirts = subset.getAttribute(
-        'reliefTileSkirt',
-      ) as InstancedBufferAttribute;
-      const into = subsetTiles.array as Float32Array;
-      const intoChis = subsetChis.array as Float32Array;
-      const intoSkirts = subsetSkirts.array as Float32Array;
-      let drawn = 0;
-      for (const key of selection.draw) {
-        const slot = slotOf.get(key);
-        if (!streamer.get(key) || slot === undefined || slot < 0) continue;
-        const i = drawn++;
-        if (i >= count) break;
-        const [a, b, width] = geoTileSquare(key);
+      const into = SKY_RELIEF_TILE_ATTRIBUTES.map(name => {
+        const attribute = subset.getAttribute(name) as InstancedBufferAttribute;
+        const from = geometry.getAttribute(name) as InstancedBufferAttribute;
+        return {
+          attribute,
+          step: attribute.itemSize,
+          to: attribute.array as Float32Array,
+          from: from.array as Float32Array,
+        };
+      });
+      for (let i = 0; i < count; i++) {
+        const [a, b, width] = geoTileSquare(drawnKeys[i]);
         if (a >= s1 || b >= t1 || a + width <= s0 || b + width <= t0) continue;
-        into.set(array.subarray(4 * i, 4 * i + 4), 4 * inStage);
-        intoChis.set(chiArray.subarray(3 * i, 3 * i + 3), 3 * inStage);
-        intoSkirts[inStage] = drops[i];
+        for (const { step, to, from } of into)
+          to.set(from.subarray(step * i, step * (i + 1)), step * inStage);
         inStage++;
       }
       if (inStage > 0) {
-        for (const [attribute, size] of [
-          [subsetTiles, 4],
-          [subsetChis, 3],
-          [subsetSkirts, 1],
-        ] as const) {
+        for (const { attribute, step } of into) {
           attribute.clearUpdateRanges();
-          attribute.addUpdateRange(0, size * inStage);
+          attribute.addUpdateRange(0, step * inStage);
           attribute.needsUpdate = true;
         }
       }

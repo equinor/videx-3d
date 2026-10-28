@@ -146,6 +146,7 @@ type ReliefTilesArgs = SceneryArgs &
     layers: string[];
     pixelError: number;
     cellPixels: number;
+    transition: number;
     baseDepth: number;
     stageWidth: number;
     tileStats: boolean;
@@ -240,6 +241,7 @@ const ReliefTiles = (storyArgs: ReliefTilesArgs) => {
           depth: args.baseDepth,
           pixelError: args.pixelError,
           cellPixels: args.cellPixels,
+          transition: args.transition,
           ...sceneryReliefLookFromArgs(args, layers),
           onStats,
         }
@@ -345,6 +347,13 @@ const meta = {
       table: { category: 'Relief' },
       if: { arg: 'relief', eq: 'tiles' },
     },
+    transition: {
+      control: { type: 'range', min: 0, max: 2000, step: 50 },
+      description:
+        'Milliseconds a swap between levels of detail takes: each tile blends its heights, slopes and colour from the tile it replaces (0: at once).',
+      table: { category: 'Relief' },
+      if: { arg: 'relief', eq: 'tiles' },
+    },
     ...sceneryReliefLookArgTypes(),
     baseDepth: {
       control: { type: 'range', min: 0, max: 500, step: 10 },
@@ -405,6 +414,7 @@ const meta = {
     layers: LAYERS.map(layer => layer.id).filter(id => id !== BAKED_SEABED),
     pixelError: 2,
     cellPixels: 8,
+    transition: 300,
     ...sceneryReliefLookArgs,
     reliefColor: 'ramp',
     baseDepth: DEPTH,

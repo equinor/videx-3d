@@ -521,8 +521,39 @@ start-up only).
   `DataArrayTexture`s (16-bit floats), one slot per resident tile; the layer ids in a third
   only while the debug view asks for them. The vertex shader reads its node with
   `texelFetch`, and a skirt vertex drops by the tile's error.
-- **No morph:** a tile changing depth pops by at most `pixelError` pixels, as the chunks'
-  levels do.
+- **Soft swaps (built 2026-10-28; until then no morph, a tile changing depth popped by up
+  to `pixelError` pixels and its shading jumped):** `relief.transition` (default 300 ms).
+  Each tile drawn blends from the tile it replaces (`TileTransitions`, `sdk/tiles`), both
+  in the texture arrays: per instance a `reliefTileFrom` (where it lies in that tile,
+  `tileOffsetIn`, and that tile's slot) and a `reliefTileBlend`.
+  - The vertex shader mixes its node's height with the source's at the same place, on the
+    source's triangles (`reliefTileTriangleHeight`, the GLSL twin of `heightFieldPatchAt`),
+    so a split starts exactly on what the parent drew: a geomorph.
+  - The fragment shader mixes the per-pixel height (colour, coast) and the normal the same
+    way.
+  - On a merge the children stay drawn, blending back toward the parent, and are replaced
+    by it when they look the same — when they cover it all; else at once.
+  - A blending tile's skirt drops as deep as its source's error.
+  - **Never a hole**: a tile drawn stays drawn (a stand-in) until the tiles chosen in its
+    place are in and cover all of it that is in view; those in already wait for the rest,
+    so nothing is drawn twice. The relief's choice already draws a parent until its four
+    children are in, so this matters most for the overlay (layers.md), which chooses tiles
+    not in yet.
+  - The relief appears at once where nothing was drawn (an opaque fade would need
+    dithering).
+  - **Not yet (seen 2026-10-28, to fix later):** while the view shifts quickly or zooms
+    out, the relief still at times shows a hole (the sea's blue) for a moment, and falls
+    back to its coarsest tiles in (depth 4–5, the ones always kept) for about 80 ms after a
+    large zoom-out before finer ones load. The choice draws a loaded ancestor where
+    children are missing, and a merge into it replaces finer tiles drawn at once when they
+    do not cover it all. Likely fixes: keep the finer tiles drawn as stand-ins and draw the
+    coarse tile only where they leave a gap (per-quadrant draws, or a mask), prefetch a
+    ring of tiles a level coarser around the view, and find where the hole comes from
+    (eviction under the budget, or out-of-view tests on tiles not in yet).
+  - **Not over the ground handed out** (`grounds`, a column's `HeightFieldClip`): those tiles
+    swap at once (`fixed`), so what meets the relief there meets what is drawn exactly.
+  - Settled tiles take the old path (one branch per tile); the bookkeeping cost 0.2 ms a
+    frame in `FieldColumn` while the camera moved.
 - **The rest is today's relief:** the coast per pixel from the height map, the colour ramp,
   the land fading through the air, the drop with the Earth's curve, the cutaway, and the
   layer past the far plane (from the overview).
@@ -935,7 +966,13 @@ horizon, the plain one 1.5 km above it.
 
 ## 8. Overlays: shapes on the relief, the sea and the seabed
 
-> Design (2026-10-25), not built: after the see-through draw (step 3), which it shares.
+> Design (2026-10-25), not built as written. **Superseded (2026-10-28) by
+> [layers.md](./layers.md)**: the overlay (`GeoPolygons`) draws geographic tiles of its own
+> rather than the relief's again, so it needs no relief, and is split by its own detail —
+> over flat seabed the relief's tiles stop too coarse for a distance field of small shapes.
+> The distance field per tile, its id channel, the shared keys and the see-through,
+> OIT-ready draw are as below; on the relief's ground is a later step there. Kept for the
+> reasoning.
 
 Polygons — discoveries, fields, licences, safety zones — drawn on the ground or on the
 sea, with effects of their own (glow, hatching, outlines, pulses, a fade with the water's
@@ -1046,7 +1083,7 @@ are back by step 6.
 | 5 | ✅ [What goes](#9-what-goes) | built (2026-10-25); every story still compiles and draws |
 | 6 | ✅ Stories: layer toggles; FieldColumn and StageDebug through the bridge, baking the column's seabed by default | built (2026-10-25), [below](#the-stories-2026-10-25); with it, [the detail under a tile](#4-relief-tiles) and `sampleReliefSource` on one-node-wide grids (a route) fixed |
 | 7 | ✅ Documents, checks, timings; the bed tint from the column's channel | built (2026-10-26), [timed below](#timed-the-column-with-the-relief-and-without-2026-10-26) |
-| 8 | [Overlays](#8-overlays-shapes-on-the-relief-the-sea-and-the-seabed): the contract and its mapper, overlay tiles, the second draw's overlay material, on the sea, picking; a demo set of discoveries | after [world.md step 2](./world.md#9-step-2-in-detail-the-sky-on-a-fixed-globe) (2026-10-26) |
+| 8 | [Overlays](#8-overlays-shapes-on-the-relief-the-sea-and-the-seabed): the contract and its mapper, overlay tiles, the second draw's overlay material, on the sea, picking; a demo set of discoveries | ✅ built otherwise (2026-10-28): see [layers.md](./layers.md) — overlay tiles of their own, on the sea or at any height; on the relief's ground, on the sea's surface and picking not yet |
 
 Measured as the sky's [frame cost by zone](./scenery.md#frame-cost-by-zone) is, before and
 after. The bar: inside the column and below the seabed, no cost beyond the noise.

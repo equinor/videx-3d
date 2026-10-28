@@ -46,7 +46,8 @@
     "test": "vitest",
     "coverage": "vitest run --coverage",
     "coverage:ci": "vitest run --coverage",
-    "generate-relief": "node scripts/generate-relief.js"
+    "generate-relief": "node scripts/generate-relief.js",
+    "generate-overlays": "node scripts/generate-overlays.js"
   },
   "dependencies": {
     "curve-interpolator": "^3.3.1",

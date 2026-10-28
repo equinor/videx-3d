@@ -13,21 +13,44 @@ flat varying float vReliefTileSlot;
 flat varying vec2 vReliefTileLongitude;
 flat varying vec3 vReliefTileLatitude;
 flat varying vec2 vReliefTileDepthCell;
+// The tile it blends from (TileTransitions): where it lies there and that tile's slot (-1
+// for none), and how far it is from that tile's look (0) to its own (1).
+flat varying vec4 vReliefTileFrom;
+flat varying float vReliefTileBlend;
 varying vec3 vReliefEast;
 flat varying float vReliefSkirt;
 
-// The height at `node` of the tile's texel grid: bilinear between the four nodes around it
-// (32-bit floats, which are not filtered).
-float reliefTileHeightAt(vec2 node) {
+// The height at `node` of the texel grid of the tile in `slot`: bilinear between the four
+// nodes around it (32-bit floats, which are not filtered).
+float reliefTileHeightIn(int slot, vec2 node) {
   vec2 texel = clamp(node - 0.5, vec2(0.0), vec2(uReliefTileNodes - 1.001));
   ivec2 base = ivec2(floor(texel));
   vec2 f = texel - vec2(base);
-  int slot = int(vReliefTileSlot + 0.5);
   float h00 = texelFetch(uReliefTileHeights, ivec3(base, slot), 0).r;
   float h10 = texelFetch(uReliefTileHeights, ivec3(base + ivec2(1, 0), slot), 0).r;
   float h01 = texelFetch(uReliefTileHeights, ivec3(base + ivec2(0, 1), slot), 0).r;
   float h11 = texelFetch(uReliefTileHeights, ivec3(base + ivec2(1, 1), slot), 0).r;
   return mix(mix(h00, h10, f.x), mix(h01, h11, f.x), f.y);
+}
+
+// Whether the tile is blending from another (see vReliefTileFrom).
+bool reliefTileBlending() {
+  return vReliefTileBlend < 1.0 && vReliefTileFrom.w >= 0.0;
+}
+
+// The node of the tile it blends from at `node` of its own grid.
+vec2 reliefTileFromNode(vec2 node) {
+  vec2 t = (node - 1.5) / uReliefTileCells;
+  return (vReliefTileFrom.xy + t * vReliefTileFrom.z) * uReliefTileCells + 1.5;
+}
+
+// The height at `node` of the tile's texel grid, blended from the tile it replaces while
+// it does.
+float reliefTileHeightAt(vec2 node) {
+  float height = reliefTileHeightIn(int(vReliefTileSlot + 0.5), node);
+  if(reliefTileBlending())
+    height = mix(reliefTileHeightIn(int(vReliefTileFrom.w + 0.5), reliefTileFromNode(node)), height, vReliefTileBlend);
+  return height;
 }
 
 // The height at this pixel.
@@ -49,7 +72,7 @@ int reliefTileLayer() {
 }
 
 // The ground under `p` as the tile holds it: 1 at or above the sea, 0 below it, -1 off the
-// tile. Its latitude found along the tile's quadratic rows (reliefTileLatitudeAt) by a
+// tile. Its latitude found along the tile's quadratic rows (geoTileLatitudeAt) by a
 // Newton step from the linear guess, so the coast falls where the tile draws it.
 float reliefTileGroundAt(vec3 p) {
   vec2 offset = globeSphereOffset(p);
@@ -96,9 +119,13 @@ bool reliefTileLeftToOther(vec2 xz) {
 }
 
 // The normal at this pixel, along true east (x), up (y) and true south (z) where its node
-// lies on the globe.
+// lies on the globe; blended from the tile it replaces while it does.
 vec3 reliefTileNormal() {
   vec2 n = texture(uReliefTileNormals, vec3(vReliefTileNode / uReliefTileNodes, vReliefTileSlot)).rg;
+  if(reliefTileBlending()) {
+    vec2 from = texture(uReliefTileNormals, vec3(reliefTileFromNode(vReliefTileNode) / uReliefTileNodes, vReliefTileFrom.w)).rg;
+    n = mix(from, n, vReliefTileBlend);
+  }
   return normalize(vec3(n.x, sqrt(max(1.0 - dot(n, n), 0.0)), n.y));
 }
 

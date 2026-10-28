@@ -8,6 +8,7 @@
 #include <common>
 #include <logdepthbuf_pars_vertex>
 #include ../../../sdk/materials/shaderLib/globe.glsl
+#include ../../../sdk/materials/shaderLib/geo-tile.glsl
 
 uniform float uSkyOceanLevel;
 
@@ -21,6 +22,10 @@ attribute float reliefSkirt; // 1 on a skirt's lower edge
 attribute vec4 reliefTile;
 attribute vec3 reliefTileChi;
 attribute float reliefTileSkirt; // how far its skirt drops
+// The tile it blends from (TileTransitions): where it lies there (tileOffsetIn) and that
+// tile's slot, -1 for none; and how far it is from that tile's look (0) to its own (1).
+attribute vec4 reliefTileFrom;
+attribute float reliefTileBlend;
 
 varying vec3 vReliefWorld;
 varying vec2 vReliefPlane;
@@ -36,6 +41,8 @@ flat varying vec2 vReliefTileLongitude;
 flat varying vec3 vReliefTileLatitude;
 // Its depth, and its cells' width along a meridian.
 flat varying vec2 vReliefTileDepthCell;
+flat varying vec4 vReliefTileFrom;
+flat varying float vReliefTileBlend;
 // 1 on a skirt, 0 on the grid: flat, from a triangle's last vertex (the provoking vertex in
 // WebGL 2), which the patch's index order makes a skirt's lower edge on every skirt's
 // triangle and a grid node on every other (createSceneryReliefTilePatch). Interpolated, a
@@ -51,18 +58,33 @@ varying vec3 vReliefFlat;
 varying vec3 vViewPosition;
 #endif
 
-// A latitude along the tile, `t` from its north edge (0) to its south edge (1): the
-// quadratic through its three, which neighbours along an edge share.
-float reliefTileLatitudeAt(vec3 chi, float t) {
-  return chi.x * (1.0 - t) * (1.0 - 2.0 * t) + chi.y * 4.0 * t * (1.0 - t) + chi.z * t * (2.0 * t - 1.0);
+// The height at `at` (node coordinates, 0…cells) of the tile in `slot`, on its triangles as
+// the patch draws them (diagonals from node (i + 1, j) to (i, j + 1)): where a tile blending
+// from it starts, exactly on what it drew.
+float reliefTileTriangleHeight(int slot, vec2 at) {
+  vec2 cell = clamp(floor(at), vec2(0.0), vec2(uReliefTileCells - 1.0));
+  vec2 f = at - cell;
+  ivec2 base = ivec2(cell) + 1;
+  float h10 = texelFetch(uReliefTileHeights, ivec3(base + ivec2(1, 0), slot), 0).r;
+  float h01 = texelFetch(uReliefTileHeights, ivec3(base + ivec2(0, 1), slot), 0).r;
+  // The lower triangle's corner (i, j), or the upper's (i + 1, j + 1), measured from it.
+  bool lower = f.x + f.y <= 1.0;
+  float corner = texelFetch(uReliefTileHeights, ivec3(base + (lower ? ivec2(0) : ivec2(1)), slot), 0).r;
+  vec2 g = lower ? f : 1.0 - f;
+  return corner + g.x * ((lower ? h10 : h01) - corner) + g.y * ((lower ? h01 : h10) - corner);
 }
 
 void main() {
   ivec2 node = ivec2(position.xz + 0.5) + 1;
   float height = texelFetch(uReliefTileHeights, ivec3(node, int(reliefTile.w + 0.5)), 0).r;
-  height -= reliefSkirt * reliefTileSkirt;
   vec2 t = position.xz / uReliefTileCells;
-  vec2 offset = vec2(reliefTileLatitudeAt(reliefTileChi, t.y), mix(reliefTile.x, reliefTile.y, t.x));
+  // A soft swap: from the surface of the tile it replaces, at the same place (a geomorph).
+  if(reliefTileBlend < 1.0 && reliefTileFrom.w >= 0.0) {
+    float from = reliefTileTriangleHeight(int(reliefTileFrom.w + 0.5), geoTileFrom(reliefTileFrom.xyz, t) * uReliefTileCells);
+    height = mix(from, height, reliefTileBlend);
+  }
+  height -= reliefSkirt * reliefTileSkirt;
+  vec2 offset = geoTileOffset(reliefTile.xy, reliefTileChi, t);
 
   // Heights from the sea's level, which is the globe's.
   vec3 world = globeGeodetic(offset, height);
@@ -78,6 +100,8 @@ void main() {
   vReliefTileLongitude = reliefTile.xy;
   vReliefTileLatitude = reliefTileChi;
   vReliefTileDepthCell = vec2(reliefTile.z, abs(reliefTileChi.z - reliefTileChi.x) * uGlobe.x / uReliefTileCells);
+  vReliefTileFrom = reliefTileFrom;
+  vReliefTileBlend = reliefTileBlend;
   vReliefSkirt = reliefSkirt;
   #ifdef RELIEF_CUT_OCCUPANT
   vReliefFlat = vec3(world.x, uSkyOceanLevel + height, world.z);

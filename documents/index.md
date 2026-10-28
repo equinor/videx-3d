@@ -4,6 +4,7 @@ This section provides further documentation and examples on how to use this libr
 - [Data](./data.md)
 - [Distance & bounds (level of detail)](./distance.md)
 - [Generators](./generators.md)
+- [Geographic layers: polygons, labels and tracks](./layers.md)
 - [Ocean](./ocean.md)
 - [Minimap: an inlet map of the relief](./minimap.md)
 - [Order-Independent Transparency (OIT) Guide](./oit-guide.md)

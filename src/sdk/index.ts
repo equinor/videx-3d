@@ -40,6 +40,7 @@ export * from './geometries/height-field-clip';
 export * from './geometries/planar-geometry';
 export * from './geometries/polygon-cap';
 export * from './geometries/polygon-distance-field';
+export * from './geometries/polygon-label';
 export * from './geometries/polygon-outline';
 export * from './geometries/procedural-noise';
 export * from './geometries/procedural-relief';
@@ -71,6 +72,11 @@ export * from './geometries/triangulate-grid-delaunay';
 export * from './geometries/wellbore-fence';
 export * from './geometries/wellbore-outline';
 
+export * from './layers/geo-features';
+export * from './layers/layer-visibility';
+export * from './layers/overlay-tiles';
+export * from './layers/tracks';
+
 export * from './managers/CameraManager';
 export * from './managers/WellboreManager';
 
@@ -83,10 +89,12 @@ export * from './projection/ocean-charts';
 export * from './projection/place-frame';
 
 export * from './tiles/quadtree';
+export * from './tiles/geo-tile-globe';
 export * from './tiles/geo-tile-keys';
 export * from './tiles/tile-keys';
 export * from './tiles/tile-lod';
 export * from './tiles/tile-streamer';
+export * from './tiles/tile-transitions';
 
 export * from './types/common';
 

@@ -1,11 +1,11 @@
 import { Frustum, Matrix4, PerspectiveCamera, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
+import { geoWarp } from '../src/components/Scenery/scenery-relief-geo';
 import {
   geoAt,
   geoTileDistance,
   geoTileInView,
-  geoWarp,
-} from '../src/components/Scenery/scenery-relief-geo';
+} from '../src/sdk/tiles/geo-tile-globe';
 import { heightFieldWarp } from '../src/sdk/materials/height-field-clip';
 import { getProjectionDefFromUtmZone } from '../src/sdk/projection/crs';
 import type { GeoFrame } from '../src/sdk/projection/geo-frame';

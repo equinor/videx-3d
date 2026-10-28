@@ -206,6 +206,13 @@ export type SceneryStageRelief = {
    * camera under the ground, where the tiles' tops face away. Default 8
    */
   cellPixels?: number;
+  /**
+   * ms a swap between levels of detail takes: each tile blends from the one it replaces —
+   * its heights (a geomorph), its slopes and its colour — instead of popping, and children
+   * merging back into their parent blend toward it first. Not over the ground handed to a
+   * column, which must meet what is drawn exactly. 0 swaps at once. Default 300
+   */
+  transition?: number;
   /** Told what the tiles draw and hold, every few frames */
   onStats?: (stats: SceneryReliefTileStats) => void;
   /**
@@ -764,6 +771,7 @@ export const SceneryStage = ({
           level={level}
           pixelError={relief.pixelError ?? 2}
           cellPixels={relief.cellPixels ?? 8}
+          transition={relief.transition ?? 300}
           definesKey={definesKey}
           visible={shown('relief')}
           onStats={relief.onStats}
