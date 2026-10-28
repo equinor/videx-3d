@@ -1,5 +1,6 @@
 export * from './OutputPanel';
 export * from './Panel/Panel';
+export * from './Minimap';
 export * from './RenderStats/RenderStats';
 export * from './WellMap';
 export * from './WellMap/well-map-context';

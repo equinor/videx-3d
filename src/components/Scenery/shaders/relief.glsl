@@ -63,13 +63,43 @@ float reliefMapCell(vec2 geo) {
 // A layer's height over the sea at `geo` and its weight there, read at the mip level a
 // pixel `span` degrees east and north wide sees: none beyond its map, fading out over its
 // last texels.
+#ifdef RELIEF_EXACT
+// Bilinear at mip level `level` from four texel fetches, in full precision: the GPU's own
+// filter has about 8 bits of sub-texel weight, so a map many pixels to a texel is read as a
+// staircase, which a slope taken from it (the minimap's shading) shows as stripes.
+vec2 reliefFetchBilinear(sampler2D map, vec2 texel, int level, bool wrapX) {
+  ivec2 dims = textureSize(map, level);
+  vec2 p = texel * exp2(-float(level)) - 0.5;
+  vec2 base = floor(p);
+  vec2 f = p - base;
+  ivec2 i0 = ivec2(base);
+  ivec2 i1 = i0 + 1;
+  if(wrapX) {
+    i0.x -= dims.x * int(floor(float(i0.x) / float(dims.x)));
+    i1.x -= dims.x * int(floor(float(i1.x) / float(dims.x)));
+  } else {
+    i0.x = clamp(i0.x, 0, dims.x - 1);
+    i1.x = clamp(i1.x, 0, dims.x - 1);
+  }
+  i0.y = clamp(i0.y, 0, dims.y - 1);
+  i1.y = clamp(i1.y, 0, dims.y - 1);
+  vec2 lower = mix(texelFetch(map, ivec2(i0.x, i0.y), level).rg, texelFetch(map, ivec2(i1.x, i0.y), level).rg, f.x);
+  vec2 upper = mix(texelFetch(map, ivec2(i0.x, i1.y), level).rg, texelFetch(map, ivec2(i1.x, i1.y), level).rg, f.x);
+  return mix(lower, upper, f.y);
+}
+#endif
+
 vec2 reliefSample(sampler2D map, vec4 frame, vec4 size, vec2 geo, vec2 span) {
   vec2 texel = reliefMapTexel(geo, frame, size);
   float inside = reliefMapInside(texel, size);
   if(inside <= 0.0)
     return vec2(0.0);
   float lod = clamp(log2(max(span.x / frame.z, span.y / frame.w)), 0.0, size.z);
+  #ifdef RELIEF_EXACT
+  vec2 sampled = reliefFetchBilinear(map, texel, int(lod + 0.5), size.w > 0.5);
+  #else
   vec2 sampled = textureLod(map, texel / size.xy, lod).rg;
+  #endif
   return vec2(sampled.y > 1e-4 ? sampled.x / sampled.y : 0.0, sampled.y * inside);
 }
 

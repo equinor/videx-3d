@@ -60,4 +60,5 @@ export * from './layers/layers';
 export * from './rendering';
 
 export * from './common/color-ramps';
+export * from './common/corner-style';
 export * from './common/types';

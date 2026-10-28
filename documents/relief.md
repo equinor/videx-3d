@@ -222,4 +222,5 @@ the tiles, and the stage's sea and seabed, keep their vertices just inside it.
 - Where a layer's data ends with no layer under it, the ground falls to the flat seabed at
   `depth`.
 - The environment bakes do not include it.
+- The same layers can be drawn as a minimap that follows the camera: see [minimap.md](./minimap.md).
 - ⚠️ It assumes the default `up` (+Y), as the stage does.

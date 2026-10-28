@@ -1,5 +1,6 @@
 import { addAfterEffect, addEffect, useThree } from '@react-three/fiber';
 import { useEffect } from 'react';
+import { Corner, cornerStyle } from '../../../common/corner-style';
 import { GpuTimer } from '../../../rendering';
 
 /**
@@ -13,7 +14,7 @@ export type RenderStatsProps = {
    */
   parent?: HTMLElement | null;
   /** Corner the overlay is anchored to. */
-  origin?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  origin?: Corner;
   /** Pixel offset `[x, y]` from the anchored corner. */
   offset?: [number, number];
   /** UI refresh interval in milliseconds (the metrics themselves sample every frame). */
@@ -26,16 +27,6 @@ export type RenderStatsProps = {
   gpu?: boolean;
   /** Optional class name applied to the overlay container (for custom styling). */
   className?: string;
-};
-
-const ORIGIN_STYLES: Record<
-  NonNullable<RenderStatsProps['origin']>,
-  (x: number, y: number) => Partial<CSSStyleDeclaration>
-> = {
-  'top-left': (x, y) => ({ left: `${x}px`, top: `${y}px` }),
-  'top-right': (x, y) => ({ right: `${x}px`, top: `${y}px` }),
-  'bottom-left': (x, y) => ({ left: `${x}px`, bottom: `${y}px` }),
-  'bottom-right': (x, y) => ({ right: `${x}px`, bottom: `${y}px` }),
 };
 
 /**
@@ -94,7 +85,7 @@ export const RenderStats = ({
       color: '#fff',
       font: '11px/1.4 monospace',
       whiteSpace: 'pre',
-      ...ORIGIN_STYLES[origin](offsetX, offsetY),
+      ...cornerStyle(origin, [offsetX, offsetY]),
     } as Partial<CSSStyleDeclaration>);
 
     // label -> value cell

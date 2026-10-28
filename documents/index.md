@@ -5,6 +5,7 @@ This section provides further documentation and examples on how to use this libr
 - [Distance & bounds (level of detail)](./distance.md)
 - [Generators](./generators.md)
 - [Ocean](./ocean.md)
+- [Minimap: an inlet map of the relief](./minimap.md)
 - [Order-Independent Transparency (OIT) Guide](./oit-guide.md)
 - [Relief: land and seabed beyond the stage](./relief.md)
 - [Scenery](./scenery.md)

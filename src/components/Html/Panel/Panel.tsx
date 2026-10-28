@@ -1,4 +1,5 @@
 import { forwardRef, PropsWithChildren, useMemo } from 'react';
+import { Corner, cornerStyle } from '../../../common/corner-style';
 
 /**
  * Panel props
@@ -17,15 +18,8 @@ export type PanelProps = {
   padding?: number;
   /** Root font size in px. Everything inside is sized in `em`, so this scales it all. */
   fontSize?: number;
-  origin?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  origin?: Corner;
 };
-
-type PanelPositionStyles = [
-  string | undefined,
-  string | undefined,
-  string | undefined,
-  string | undefined,
-];
 
 /**
  * A simple HTML panel that can be used as an overlay on the 3d canvas.
@@ -46,21 +40,10 @@ export const Panel = forwardRef<HTMLDivElement, PropsWithChildren<PanelProps>>(
     },
     fref,
   ) => {
-    const [left, bottom, right, top] = useMemo<PanelPositionStyles>(() => {
-      if (origin === 'top-left') {
-        return [`${offset[0]}px`, undefined, undefined, `${offset[1]}px`];
-      }
-
-      if (origin === 'top-right') {
-        return [undefined, undefined, `${offset[0]}px`, `${offset[1]}px`];
-      }
-
-      if (origin === 'bottom-right') {
-        return [undefined, `${offset[1]}px`, `${offset[0]}px`, undefined];
-      }
-
-      return [`${offset[0]}px`, `${offset[1]}px`, undefined, undefined];
-    }, [origin, offset]);
+    const { left, bottom, right, top } = useMemo(
+      () => cornerStyle(origin, offset),
+      [origin, offset],
+    );
 
     return (
       <div
