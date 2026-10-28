@@ -74,7 +74,13 @@ Per layer (`LabelStyle`, defaults in `LABEL_STYLE_DEFAULTS`).
   to 99 % of the camera's `far` (`LabelLayer` passes it each frame), rather than being
   clipped whole or in part by it. From space, beyond a far plane the sky still draws the
   Earth past, labels were cut to pieces that looked like z-fighting. To see labels farther
-  out, give the camera a farther plane.
+  out, give the camera a farther plane. Well inside it, too, a label's clip depth is held
+  just short of it (`z ≤ 0.999999 w`; `≥ 10⁻⁶ w` with a reversed depth buffer): with a near
+  plane far closer than the far one (0.1 m to 3000 km), anything over a few hundred
+  kilometres off lies within a float's rounding of the far plane, so the clip test passed
+  and failed corner by corner as the view moved — labels flickered, cut through on a
+  diagonal, at 1600 km. A logarithmic depth buffer writes its depth from `w`, so only the
+  clipping changes there.
 - **Too large**: `maxPixels` (default none) is the largest a label is drawn on screen, its
   font face-on: nearer, it is shrunk to it rather than growing. For labels sized for far
   away that come near the camera (the graticule's, 48).

@@ -27,9 +27,21 @@ uniform vec3 uGraticuleSeries;
 #define GRATICULE_UTM 1
 #define GRATICULE_TIME_ZONES 2
 
-// Within this of the camera's ground on the sphere (radians, ~190 km), the lines are
-// measured from it; beyond, by the latitude and longitude themselves.
+// Within this of the camera's ground on the sphere, north or south (radians, ~190 km), the
+// latitude is measured from it (its series); beyond, from the latitude itself. The
+// longitude is measured from it everywhere.
 #define GRATICULE_NEAR 0.03
+
+// Meridians run on to a pole past the last parallel before it only when that parallel lies
+// within this latitude (degrees), and are thinned toward the poles to keep cells at least
+// this wide for their height (graticuleMeridianThinning, GRATICULE_POLE_CAP and
+// GRATICULE_CELL_ASPECT in graticule.ts).
+#define GRATICULE_POLE_CAP 60.0
+#define GRATICULE_CELL_ASPECT 0.5
+
+// How the step's meridians thin toward the poles, then the finer step's: twelve each, 0
+// past the end (graticuleMeridianChain).
+uniform vec4 uGraticuleThinning[6];
 
 // The lines themselves, as the SDK's grids draw them.
 #include ./grid.glsl
@@ -71,8 +83,11 @@ GraticuleAt graticuleAt(vec3 p) {
   vec2 offset = globeSphereOffset(p);
   vec2 lonLat = (globeGeographicAt(offset) * (180.0 / GLOBE_PI)).yx;
   at.base = uGraticuleBase.xy;
-  // From the camera's ground: longitude closed form (globeGeographicAt's), latitude by its
-  // series; far off, or before it is set, the latitude and longitude themselves.
+  // From the camera's ground: longitude closed form (globeGeographicAt's), good anywhere;
+  // latitude by its series, within GRATICULE_NEAR of it north or south. Not by longitude
+  // too: about a pole, ground a few kilometres off lies at any longitude, and the latitude
+  // itself is coarsest there (an asin near 1: tens of metres), so the ring around a polar
+  // cap came out grainy. Before it is set, the latitude and longitude themselves.
   vec2 d = offset - uGraticuleOrigin.xy;
   d.y -= 2.0 * GLOBE_PI * floor(d.y / (2.0 * GLOBE_PI) + 0.5);
   float lon = d.y - (uGlobeSphere.z - 1.0) * (sin(offset.y) - sin(uGraticuleOrigin.y));
@@ -81,8 +96,8 @@ GraticuleAt graticuleAt(vec3 p) {
   vec2 near = uGraticuleBase.zw + vec2(lon * (180.0 / GLOBE_PI), lat);
   vec2 far = lonLat - at.base;
   far.x -= 360.0 * floor(far.x / 360.0 + 0.5);
-  bool close = uGraticuleOrigin.w > 0.5 && max(abs(d.x), abs(d.y)) < GRATICULE_NEAR;
-  at.local = close ? near : far;
+  bool set = uGraticuleOrigin.w > 0.5;
+  at.local = vec2(set ? near.x : far.x, set && abs(d.x) < GRATICULE_NEAR ? near.y : far.y);
   at.lonLat = lonLat;
   vec2 dLon = vec2(dFdx(at.local.x), dFdy(at.local.x));
   at.dLon = dLon - 360.0 * floor(dLon / 360.0 + 0.5);
@@ -130,12 +145,72 @@ float graticuleFrom(float base, float local, float at) {
   return (base - at) + local;
 }
 
-// Lines every `step` degrees of latitude and longitude.
-float graticuleLatLonAt(GraticuleAt at, float step, float width) {
+// Degrees of longitude from `at` the shorter way round: `base + local` is measured from the
+// camera's longitude, so a meridian may lie a turn away from it.
+float graticuleFromLon(float base, float local, float at) {
+  float v = graticuleFrom(base, local, at);
+  return v - 360.0 * floor(v / 360.0 + 0.5);
+}
+
+// The first of a step's thinning (uGraticuleThinning from `from`) that is `needed` or
+// more; 0 if none is (graticuleThinningPick).
+float graticuleThinningPick(int from, float needed) {
+  float m = 0.0;
+  float least = needed * (1.0 - 1e-4);
+  for(int i = 2; i >= 0; i--) {
+    vec4 c = uGraticuleThinning[from + i];
+    m = c.w >= least ? c.w : m;
+    m = c.z >= least ? c.z : m;
+    m = c.y >= least ? c.y : m;
+    m = c.x >= least ? c.x : m;
+  }
+  return m;
+}
+
+// Which of the meridians every `step` degrees are drawn where `at` lies, `offParallel`
+// degrees from the nearest parallel: every m-th, 0 for none (graticuleMeridianThinning).
+// The band is told by which side of that parallel it lies, so m changes exactly under it.
+float graticuleMeridianThinning(GraticuleAt at, float step, float offParallel, int from) {
+  float nearest = floor((at.lonLat.y - offParallel) / step + 0.5);
+  float band = offParallel >= 0.0 ? nearest : nearest - 1.0;
+  float a = abs(band * step);
+  float b = abs((band + 1.0) * step);
+  float equatorward = min(a, b);
+  float poleward = min(max(a, b), 90.0);
+  if(equatorward >= 90.0)
+    return 0.0;
+  bool last = poleward >= 90.0 - 1e-4;
+  if(last && equatorward > GRATICULE_POLE_CAP + 1e-4)
+    return 0.0;
+  float narrowest = cos(radians(last ? equatorward : poleward));
+  return graticuleThinningPick(from, GRATICULE_CELL_ASPECT / max(narrowest, 1e-6));
+}
+
+// Degrees of longitude to the nearest of every m-th meridian every `step` degrees, as
+// precisely as `local`: from the nearest meridian (graticuleOffAt), on by whole steps to
+// the nearest kept, which is that one wherever a line is drawn. `m` divides the meridians
+// round the Earth, so the kept meet themselves at the date line.
+float graticuleMeridianOff(GraticuleAt at, float step, float m) {
+  float off = graticuleOffAt(at.base.x, at.local.x, step, 0.0);
+  if(m <= 1.0)
+    return off;
+  float j = floor((at.lonLat.x - off) / step + 0.5);
+  float dj = j - m * floor(j / m + 0.5);
+  return off + dj * step;
+}
+
+// Lines every `step` degrees of latitude and longitude, the meridians thinned toward the
+// poles by the step's thinning from `from` in uGraticuleThinning: cut clean under the
+// parallels where they thin, and none in a cap that holds too few.
+float graticuleLatLonAt(GraticuleAt at, float step, float width, int from) {
   float lon = length(at.dLon);
   float lat = length(at.dLat);
-  float meridian = graticuleLine(graticuleOffAt(at.base.x, at.local.x, step, 0.0), step, lon, width);
-  float parallel = graticuleLine(graticuleOffAt(at.base.y, at.local.y, step, 0.0), step, lat, width);
+  float offParallel = graticuleOffAt(at.base.y, at.local.y, step, 0.0);
+  float m = graticuleMeridianThinning(at, step, offParallel, from);
+  float meridian = m > 0.0 ? graticuleLine(graticuleMeridianOff(at, step, m), step * m, lon, width) : 0.0;
+  // None at a pole itself, a point, which would be drawn as a ring a line wide.
+  float nearest = floor((at.lonLat.y - offParallel) / step + 0.5) * step;
+  float parallel = abs(nearest) >= 90.0 - 1e-4 ? 0.0 : graticuleLine(offParallel, step, lat, width);
   return max(meridian, parallel);
 }
 
@@ -144,9 +219,9 @@ float graticuleLatLonAt(GraticuleAt at, float step, float width) {
 // next finer one's.
 float graticuleLatLon(GraticuleAt at, float width) {
   vec3 steps = uGraticuleLatLon;
-  float cover = graticuleLatLonAt(at, steps.x, width);
+  float cover = graticuleLatLonAt(at, steps.x, width, 0);
   if(steps.z > 0.0)
-    cover = max(cover, steps.z * graticuleLatLonAt(at, steps.y, width));
+    cover = max(cover, steps.z * graticuleLatLonAt(at, steps.y, width, 3));
   return cover;
 }
 
@@ -159,9 +234,9 @@ float graticuleUtmMeridian(GraticuleAt at) {
   float b = at.base.x;
   float l = at.local.x;
   if(lat >= 56.0 && lat < 64.0 && lon >= 0.0 && lon <= 12.0)
-    return min(min(abs(graticuleFrom(b, l, 0.0)), abs(graticuleFrom(b, l, 3.0))), abs(graticuleFrom(b, l, 12.0)));
+    return min(min(abs(graticuleFromLon(b, l, 0.0)), abs(graticuleFromLon(b, l, 3.0))), abs(graticuleFromLon(b, l, 12.0)));
   if(lat >= 72.0 && lat < 84.0 && lon >= 0.0 && lon <= 42.0)
-    return min(min(min(abs(graticuleFrom(b, l, 0.0)), abs(graticuleFrom(b, l, 9.0))), min(abs(graticuleFrom(b, l, 21.0)), abs(graticuleFrom(b, l, 33.0)))), abs(graticuleFrom(b, l, 42.0)));
+    return min(min(min(abs(graticuleFromLon(b, l, 0.0)), abs(graticuleFromLon(b, l, 9.0))), min(abs(graticuleFromLon(b, l, 21.0)), abs(graticuleFromLon(b, l, 33.0)))), abs(graticuleFromLon(b, l, 42.0)));
   return abs(graticuleOffAt(b, l, 6.0, 0.0));
 }
 

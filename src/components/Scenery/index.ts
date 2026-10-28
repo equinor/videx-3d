@@ -38,6 +38,7 @@ export {
   GRATICULE_LABEL_SMOOTH_MAX,
   GRATICULE_LABEL_SWITCH,
   graticuleLabelCentre,
+  graticuleLabelColumns,
   graticuleLabelPattern,
   graticuleLabelPeriod,
   graticuleLabels,

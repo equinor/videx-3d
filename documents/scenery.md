@@ -363,16 +363,48 @@ works out in 64-bit floats where the ground under the camera lies: its whole deg
 what is left of them (`uGraticuleBase`), its offset on the globe's sphere
 (`uGraticuleOrigin`), and the latitude's change as a series in the sphere's latitude
 offset (`uGraticuleSeries`, three terms by central differences of
-`Globe.sphereGeographicLatitude`). Within 0.03 rad (~190 km) of it, `graticuleAt` takes a
-pixel's latitude and longitude as whole degrees plus what is left (`local`), from the
-sphere offset's difference — the longitude in closed form, the latitude by the series —
-which 32-bit floats hold to a centimetre (a test emulates it in `Math.fround`); farther
-off, from the latitude and longitude themselves, where a pixel is far larger than their
-error. Every line's offset is measured along `base + local` (`graticuleOffAt`): the whole
+`Globe.sphereGeographicLatitude`). `graticuleAt` takes a pixel's latitude and longitude as
+whole degrees plus what is left (`local`), from the sphere offset's difference — the
+longitude in closed form, everywhere; the latitude by the series, within 0.03 rad (~190 km)
+north or south of the camera — which 32-bit floats hold to a centimetre (a test emulates it
+in `Math.fround`); farther north or south, from the latitude itself, where a pixel is far
+larger than its error. Not limited by longitude: about a pole, ground a few kilometres off
+lies at any longitude, and the latitude itself is coarsest there (an `asin` near 1: tens
+of metres), so the ring around a polar cap came out grainy. Every line's offset is measured along `base + local` (`graticuleOffAt`): the whole
 degrees brought to the nearest line first (exact for steps of whole degrees, none for
 steps that divide a degree), then `local`; the UTM zones' and time zones' edges the same
 way. Only the geometry's precision changed: still a geometric measure in each pixel, so
-it holds with any depth buffer.
+it holds with any depth buffer. ⚠️ Measured from the camera's longitude, a meridian may lie
+a turn away from it: anything not reduced by a step that divides 360° (the UTM zones'
+exceptions about Norway and Svalbard, at 3°, 9°, 21° and 33°E) is taken the shorter way
+round (`graticuleFromLon`). Looking across the pole, they were 360° out and vanished.
+
+**Toward the poles, cells keep their proportion.** Meridians close in by the cosine of the
+latitude while parallels stay as far apart, so cells narrow to slivers: at 0.5° over 89°N,
+720 meridians lay a kilometre apart (3–4 px from 174 km up), a moiré just above the
+crowding fade. Now each band between two parallels draws every m-th meridian
+(`graticuleMeridianThinning`): the least that keeps its cells at least half as wide as
+tall (`GRATICULE_CELL_ASPECT`) where they are narrowest, at its poleward parallel. `m` steps
+by twos or threes (`graticuleMeridianChain`), each dividing the meridians round the Earth
+— so cells keep between ½ and 1.5 times as wide as tall, those kept meet themselves evenly
+at the date line, and are among those kept nearer the equator — while four or more are
+left (`GRATICULE_MIN_MERIDIANS`); past that, none: a plain cap. The band reaching the pole
+keeps its meridians only if its parallel lies within 60° (`GRATICULE_POLE_CAP`; 30°: twelve
+to the pole), else it is a cap too. Changing only at a parallel — the shader tells the band
+by which side of the nearest parallel a pixel lies — the meridians are cut clean under it,
+never faded. Judged on the ground, not on screen, so nothing pops as the view moves. So 10°
+draws every 2nd from 60°, every 4th from 70°, none past 80°; 0.5° every 16th (8°) from
+87.5°, 48th (24°) from 88°, 144th (72°) from 89°, none past 89.5°. Each step's chain (twelve at most,
+`GRATICULE_THINNING_MAX`) is set with the step (`setGraticuleStep`, `uGraticuleThinning`),
+the finer step's beside it, so the shader picks from it unrolled. The labels follow
+(`graticuleLabelColumns`): their columns as wide as the meridians drawn either side, so a
+meridian is named only where it is drawn, and a parallel in the middle of the narrower
+drawn cell beside it. No parallel is drawn at a pole itself, a point that came out as a
+ring a line wide. UTM and the time zones are left as they are (UTM stops at 84°N and 80°S
+anyway).
+
+Labels appear with the lines: not until what draws them is compiled (the Scenery's
+`ready`, when the stand-in goes), so never over the stand-in while the sky compiles.
 
 ## The air
 

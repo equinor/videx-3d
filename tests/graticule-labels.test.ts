@@ -1,8 +1,13 @@
 import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import {
+  graticuleMeridianChain,
+  graticuleMeridianThinning,
+} from '../src/sdk/materials/graticule';
+import {
   GRATICULE_LABEL_SMOOTH_MAX,
   graticuleLabelCentre,
+  graticuleLabelColumns,
   graticuleLabelPattern,
   graticuleLabelPeriod,
   graticuleLabels,
@@ -68,12 +73,22 @@ describe('graticuleLabels', () => {
       expect(new Vector3().fromArray(label.normal!).dot(up)).toBeCloseTo(1, 9);
       g.geographic(at, there);
       const meridian = !/[NS]$/.test(label.text);
-      // On its line, halfway between two of the others.
+      // On its line, halfway between two of the others drawn across it: parallels, or the
+      // meridians drawn either side of a parallel, the narrower cells' (thinned poleward).
       const [own, across] = meridian
         ? [there.longitude, there.latitude]
         : [there.latitude, there.longitude];
       expect(Math.abs(own / step - Math.round(own / step))).toBeLessThan(1e-6);
-      const half = across / step - 0.5;
+      const index = Math.round(there.latitude / step);
+      const cell = meridian
+        ? step
+        : step *
+          Math.min(
+            ...[index - 1, index]
+              .map(band => graticuleMeridianThinning(step, band))
+              .filter(m => m > 0),
+          );
+      const half = across / cell - 0.5;
       expect(Math.abs(half - Math.round(half))).toBeLessThan(1e-6);
       // Reading along its line: north up a meridian, east along a parallel.
       const direction = new Vector3().fromArray(label.direction!).normalize();
@@ -132,7 +147,7 @@ describe('graticuleLabels', () => {
       // wider, poleward, for each time the meridians are thinned. A meridian's names change
       // phase where its rows are thinned differently: two cells apart there at the least.
       const zone = (latitude: number) =>
-        graticuleLabelThinning(1, Math.floor(latitude), 58.4);
+        graticuleLabelColumns(1, Math.floor(latitude), 58.4);
       for (const [text, places] of along) {
         places.sort((a, b) => a - b);
         const parallel = /[NS]$/.test(text);
@@ -172,20 +187,42 @@ describe('graticuleLabels', () => {
     }
   });
 
-  it('thins the meridians named toward the poles, in powers of two, never closer than 4/5', () => {
+  it('names a meridian only where it is drawn, as the lines thin toward the poles', () => {
+    const g = globe();
+    const there = { latitude: 0, longitude: 0 };
+    for (const step of [10, 1, 0.5, 1 / 6])
+      for (const latitude of [62, 75, 88, -88]) {
+        const labels = graticuleLabels(
+          g,
+          step,
+          { latitude, longitude: 2 },
+          { density: 1, reference: 58.4 },
+        );
+        const meridians = labels.filter(label => !/[NS]$/.test(label.text));
+        for (const label of meridians) {
+          g.geographic(new Vector3().fromArray(label.position), there);
+          const band = Math.floor(there.latitude / step);
+          const m = graticuleMeridianThinning(step, band);
+          const j = Math.round(there.longitude / step);
+          expect(m > 0 && j % m === 0, `${label.text}, ${step}°`).toBe(true);
+        }
+      }
+  });
+
+  it('thins the meridians named toward the poles as the lines do, never closer than 4/5', () => {
     const DEG = Math.PI / 180;
     for (const step of [1, 1 / 6, 1 / 60]) {
+      const chain = graticuleMeridianChain(step);
       let previous = 1;
-      // Round the Earth in four columns at the least: as far as it thins.
-      const most = 2 ** Math.floor(Math.log2(90 / step));
       for (let latitude = 0; latitude < 89.9; latitude += 0.25) {
         const m = graticuleLabelThinning(step, latitude, 58.4);
-        expect(Math.log2(m) % 1).toBe(0);
-        expect(m).toBeGreaterThanOrEqual(previous);
+        expect(chain).toContain(m);
+        expect(m % previous).toBe(0);
         previous = m;
         expect(latitude > 58.4 || m === 1, `${latitude}°`).toBe(true);
+        // Unless round the Earth in as few columns as the lines thin to.
         expect(
-          m === most ||
+          m === chain[chain.length - 1] ||
             m * Math.cos(latitude * DEG) >= 0.8 * Math.cos(58.4 * DEG) - 1e-9,
           `${latitude}°, step ${step}`,
         ).toBe(true);

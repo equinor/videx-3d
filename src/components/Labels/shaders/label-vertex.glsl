@@ -94,6 +94,17 @@ void main() {
   float lift = min(uLift.x + uLift.y * away, 0.5 * away);
   vec3 corner = at + (worldAlong * local.x + top * local.y) * size + toCamera / away * lift;
   gl_Position = projectionMatrix * viewMatrix * vec4(corner, 1.0);
+  // Kept inside the far plane: with a near plane far closer than the far one (0.1 m to
+  // 3000 km), anything over a few hundred kilometres off lies within a float's rounding of
+  // it, so the clip test passed and failed corner by corner as the view moved, cutting
+  // labels through. Labels nearing the far plane are faded out above, so this only absorbs
+  // the rounding. The far plane is z = w, or z = 0 with a reversed depth buffer; a
+  // logarithmic one writes its depth from w, so only the clipping changes.
+  #ifdef USE_REVERSED_DEPTH_BUFFER
+  gl_Position.z = max(gl_Position.z, gl_Position.w * 1e-6);
+  #else
+  gl_Position.z = min(gl_Position.z, gl_Position.w * (1.0 - 1e-6));
+  #endif
 
   #include <logdepthbuf_vertex>
 

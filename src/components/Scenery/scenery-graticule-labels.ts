@@ -1,5 +1,10 @@
 import { Vector3 } from 'three';
 import type { Label } from '../Labels/types';
+import {
+  graticuleMeridianChain,
+  graticuleMeridianThinning,
+  graticuleThinningPick,
+} from '../../sdk/materials/graticule';
 import type { Globe } from '../../sdk/projection/globe';
 
 /** How many lines either way from where the view is centred a graticule labels, by default. */
@@ -164,25 +169,46 @@ export function graticuleLabelPeriod(density = GRATICULE_LABEL_DENSITY) {
 const DEG = Math.PI / 180;
 
 /**
- * How many of the lines' steps from one labelled meridian to the next at `latitude`, a
- * power of two: 1 until the meridians close in to 4/5 of their spacing at `reference`, the
- * latitude the labels' size is judged at ({@link graticuleLabelSize}) — as close as the
- * labels' stagger allows — then as many as keep them no closer. Powers of two, so those
- * labelled farther poleward are among those labelled nearer. Four columns round the Earth
- * at the least.
+ * How many of the lines' steps from one labelled meridian to the next at `latitude`, one
+ * of the lines' own thinning ({@link graticuleMeridianChain}): 1 until the meridians close
+ * in to 4/5 of their spacing at `reference`, the latitude the labels' size is judged at
+ * ({@link graticuleLabelSize}) — as close as the labels' stagger allows — then the least
+ * that keeps them no closer; the last, four or more columns round the Earth, beyond. So
+ * those labelled farther poleward are among those labelled nearer.
  */
 export function graticuleLabelThinning(
   step: number,
   latitude: number,
   reference: number,
 ) {
+  const chain = graticuleMeridianChain(step);
   const ratio =
     Math.max(Math.cos(reference * DEG), 0.05) /
     Math.max(Math.cos(latitude * DEG), 1e-9) /
     GRATICULE_LABEL_SQUEEZE;
-  if (!(ratio > 1 + 1e-9)) return 1;
-  const most = 2 ** Math.max(Math.floor(Math.log2(90 / step)), 0);
-  return Math.min(2 ** Math.ceil(Math.log2(ratio)), most);
+  return graticuleThinningPick(chain, ratio) || chain[chain.length - 1];
+}
+
+/**
+ * How many of the lines' steps wide the labels' columns are about parallel `index` (steps
+ * from the equator): as {@link graticuleLabelThinning} has them there, and no fewer than
+ * the meridians drawn either side of it ({@link graticuleMeridianThinning}), so a meridian
+ * is named only where it is drawn.
+ */
+export function graticuleLabelColumns(
+  step: number,
+  index: number,
+  reference: number,
+) {
+  const chain = graticuleMeridianChain(step);
+  let needed = graticuleLabelThinning(
+    step,
+    Math.min(Math.abs(index * step), 90),
+    reference,
+  );
+  for (const band of [index - 1, index])
+    needed = Math.max(needed, graticuleMeridianThinning(step, band));
+  return graticuleThinningPick(chain, needed) || chain[chain.length - 1];
 }
 
 // How much closer than at the reference latitude labelled meridians may be: the stagger
@@ -264,9 +290,10 @@ export type GraticuleLabelOptions = {
  * ({@link graticuleLabelPeriod}), spread over the cells by {@link graticuleLabelPattern} so
  * that no parallel's name meets a meridian's where the two lines cross, no two names line
  * up in bands, and every line is named wherever the view is. Toward the poles the
- * columns are `m` meridians wide ({@link graticuleLabelThinning}): the pattern stretched,
- * never squeezed, where the meridians close in; a row whose two parallels differ in `m`
- * names no meridians. Where they lie depends on the step, the density and the reference
+ * columns are `m` meridians wide ({@link graticuleLabelColumns}): the pattern stretched,
+ * never squeezed, where the meridians close in, and on drawn meridians only, as the lines
+ * thin; a row whose two parallels differ in `m`, or whose meridians are not drawn, names
+ * no meridians. Where they lie depends on the step, the density and the reference
  * alone, so they never slide as the view moves: they come and go.
  */
 export function graticuleLabels(
@@ -294,8 +321,7 @@ export function graticuleLabels(
   const most = Math.floor((around - 1) / 2);
   const i0 = Math.round(centre.latitude / step);
   const j0 = Math.round(centre.longitude / step);
-  const thinning = (i: number) =>
-    graticuleLabelThinning(step, Math.min(Math.abs(i * step), 90), reference);
+  const thinning = (i: number) => graticuleLabelColumns(step, i, reference);
   // Each labelled meridian about the view at `m`, by its index from −180° and its column.
   const columns = (m: number, visit: (j: number, column: number) => void) => {
     const cols = Math.min(span * m, most);
@@ -325,19 +351,30 @@ export function graticuleLabels(
   };
   for (let i = i0 - span; i <= i0 + span; i++) {
     const latitude = i * step;
-    // The parallel, named in the middle of its columns `≡ s·i`.
+    // The parallel, named where its columns `≡ s·i` start, in the middle of the drawn cell
+    // there: of the narrower of the rows either side, so off the meridians of both.
     if (Math.abs(latitude) < 90) {
       const m = thinning(i);
+      const drawn = [i - 1, i]
+        .map(band => graticuleMeridianThinning(step, band))
+        .filter(n => n > 0);
+      const cell = drawn.length ? Math.min(...drawn) : m;
       const text = graticuleLabelText(latitude, step, 'lat');
       columns(m, (j, column) => {
         if (mod(column - s * i, k) === 0)
-          labels.push(label(text, latitude, (j + m / 2) * step, false));
+          labels.push(label(text, latitude, (j + cell / 2) * step, false));
       });
     }
-    // The meridians in the row above it, named in its middle where it is `≡ t·j + h`.
+    // The meridians in the row above it, named in its middle where it is `≡ t·j + h`; none
+    // where its meridians are not drawn (graticuleMeridianThinning).
     const middle = latitude + step / 2;
     const m = thinning(i);
-    if (Math.abs(middle) >= 90 || thinning(i + 1) !== m) continue;
+    if (
+      Math.abs(middle) >= 90 ||
+      thinning(i + 1) !== m ||
+      graticuleMeridianThinning(step, i) === 0
+    )
+      continue;
     columns(m, (j, column) => {
       if (mod(i - t * column - h, k) === 0) {
         const longitude = wrap(j * step);

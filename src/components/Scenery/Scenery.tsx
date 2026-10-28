@@ -1875,7 +1875,8 @@ export const Scenery = ({
           </OceanContactContext.Provider>
         </OceanSamplerContext.Provider>
       </SceneryOceanContext.Provider>
-      {graticuleLabels && (
+      {/* Once the lines are drawn: not over the stand-in while the sky compiles. */}
+      {graticuleLabels && ready && (
         <SceneryGraticuleLabelLayer
           material={material}
           options={graticuleLabels}

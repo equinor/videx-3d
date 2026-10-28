@@ -3,6 +3,12 @@ import { describe, expect, it } from 'vitest';
 import {
   createGraticuleUniforms,
   graticuleStep,
+  GRATICULE_CELL_ASPECT,
+  GRATICULE_MIN_MERIDIANS,
+  GRATICULE_STEPS,
+  GRATICULE_THINNING_MAX,
+  graticuleMeridianChain,
+  graticuleMeridianThinning,
   setGraticuleOrigin,
   setGraticuleUniforms,
 } from '../src/sdk/materials/graticule';
@@ -114,5 +120,65 @@ describe('setGraticuleOrigin', () => {
     const uniforms = createGraticuleUniforms();
     setGraticuleOrigin(uniforms, new Globe(), new Vector3());
     expect(uniforms.uGraticuleOrigin.value.w).toBe(0);
+  });
+});
+
+describe('graticuleMeridianChain', () => {
+  it('thins by twos and threes, each dividing the meridians round the Earth, four at least', () => {
+    for (const step of GRATICULE_STEPS) {
+      const chain = graticuleMeridianChain(step);
+      const around = Math.round(360 / step);
+      expect(chain[0]).toBe(1);
+      expect(chain.length).toBeLessThanOrEqual(GRATICULE_THINNING_MAX);
+      for (let i = 1; i < chain.length; i++)
+        expect([2, 3]).toContain(chain[i] / chain[i - 1]);
+      for (const m of chain) {
+        expect(around % m, `${step}°, every ${m}`).toBe(0);
+        expect(around / m).toBeGreaterThanOrEqual(GRATICULE_MIN_MERIDIANS);
+      }
+    }
+    // 0.5°: 720 round the Earth, down to every 144th, five of them.
+    expect(graticuleMeridianChain(0.5)).toEqual([1, 2, 4, 8, 16, 48, 144]);
+  });
+});
+
+describe('graticuleMeridianThinning', () => {
+  const DEG = Math.PI / 180;
+
+  it('keeps cells at least half as wide as tall, thinning only at a parallel', () => {
+    for (const step of GRATICULE_STEPS) {
+      const bands = Math.ceil(90 / step - 1e-9);
+      let previous = 1;
+      let stopped = false;
+      for (let band = 0; band < bands; band++) {
+        const m = graticuleMeridianThinning(step, band);
+        // The same south of the equator.
+        expect(graticuleMeridianThinning(step, -band - 1)).toBe(m);
+        // Once stopped, stopped all the way to the pole; else among the last band's.
+        expect(stopped && m !== 0, `${step}°, band ${band}`).toBe(false);
+        expect(m === 0 || m % previous === 0).toBe(true);
+        stopped ||= m === 0;
+        previous = m || previous;
+        const poleward = Math.min((band + 1) * step, 90);
+        const narrowest = poleward < 90 ? Math.cos(poleward * DEG) : 1;
+        expect(m === 0 || m * narrowest >= GRATICULE_CELL_ASPECT - 1e-9).toBe(
+          true,
+        );
+      }
+    }
+  });
+
+  it('runs 30° to the pole, and caps finer steps where they would crowd', () => {
+    expect(graticuleMeridianThinning(30, 2)).toBe(1);
+    // 10°: every 2nd from 60°, 4th from 70°, none past 80°.
+    expect([5, 6, 7, 8].map(b => graticuleMeridianThinning(10, b))).toEqual([
+      1, 2, 4, 0,
+    ]);
+    // 0.5° about 89°N (the view from 174 km): every 24°, then 72°, not 720 of them; none
+    // past 89.5°.
+    expect(graticuleMeridianThinning(0.5, 177)).toBe(48);
+    expect(graticuleMeridianThinning(0.5, 178)).toBe(144);
+    expect(graticuleMeridianThinning(0.5, 179)).toBe(0);
+    expect(graticuleMeridianThinning(0, 0)).toBe(0);
   });
 });
