@@ -47,6 +47,14 @@ Per layer (`LabelStyle`, defaults in `LABEL_STYLE_DEFAULTS`).
   ends it there) and `baseline` (`'top'` hangs it below, `'middle'`, `'bottom'` stands it
   above), by its quad, halo included (`labelAnchor`); then `offset`, `[along, up]` in ems,
   in its plane, so it scales with `size`: a label beside its line or marker.
+- **Flip**: `flip` (default off) turns a label to read left to right from wherever it is
+  seen: where its way of reading points away from 10° above screen right by more than a
+  right angle (`labelReadsBackward`, `LABEL_FLIP_TILT`: so near-vertical text reads
+  upward, the map maker's way, and a line straight up the screen does not flip back and
+  forth as the view turns by a hair), its text is mirrored both ways inside its own quad —
+  turned half round, not moved — so it keeps its place, alignment and offset. Per label,
+  in the vertex shader, from where its reading direction projects: nothing is written
+  again. The graticule's labels flip by default.
 - **Fades**: from behind, never drawn. `minFacing` to `fullFacing` (cosine between the
   normal and the way to the camera; default twice `minFacing`), `minPixels` to
   `fullPixels` (its text's height on screen **as seen**, its slant included: the font

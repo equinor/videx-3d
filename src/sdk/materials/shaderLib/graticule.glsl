@@ -15,18 +15,35 @@ uniform vec4 uGraticuleLines[3];
 // Latitude and longitude's step for the whole view, in degrees (graticuleStep, from how
 // far the view is zoomed), the next finer step, and how much of it is drawn.
 uniform vec3 uGraticuleLatLon;
+// Where the lines are measured from, under the camera (setGraticuleOrigin): its whole
+// degrees of longitude and latitude, and what is left of them; its offset on the globe's
+// sphere (Δχ, ΔΛ, radians), w 1 once set; and the latitude from it in degrees, a series in
+// Δχ from its (δ, δ², δ³).
+uniform vec4 uGraticuleBase;
+uniform vec4 uGraticuleOrigin;
+uniform vec3 uGraticuleSeries;
 
 #define GRATICULE_LAT_LON 0
 #define GRATICULE_UTM 1
 #define GRATICULE_TIME_ZONES 2
 
+// Within this of the camera's ground on the sphere (radians, ~190 km), the lines are
+// measured from it; beyond, by the latitude and longitude themselves.
+#define GRATICULE_NEAR 0.03
+
 // The lines themselves, as the SDK's grids draw them.
 #include ./grid.glsl
 
-// Where a pixel lies on the Earth: its longitude and latitude (degrees), and how much each
-// changes from it to the next pixel along x and y (longitude unwrapped across 180°).
+// Where a pixel lies on the Earth, for the lines: its longitude and latitude in degrees as
+// whole degrees (`base`, the same for every pixel) and what is left (`local`), which
+// 32-bit floats hold to a centimetre near the camera, where the latitude and longitude
+// themselves hold to half a metre (`lonLat`: for which zone a pixel is in, never for a
+// line's offset); and how much `local` changes from it to the next pixel along x and y
+// (longitude unwrapped across 180°).
 struct GraticuleAt {
   vec2 lonLat;
+  vec2 base;
+  vec2 local;
   vec2 dLon;
   vec2 dLat;
 };
@@ -44,16 +61,32 @@ bool graticuleOn() {
 GraticuleAt graticuleAt(vec3 p) {
   GraticuleAt at;
   at.lonLat = vec2(0.0);
+  at.base = vec2(0.0);
+  at.local = vec2(0.0);
   at.dLon = vec2(0.0);
   at.dLat = vec2(0.0);
   // The same for every pixel: the derivatives below stay defined.
   if(!graticuleOn())
     return at;
-  vec2 latLon = globeGeographic(p) * (180.0 / GLOBE_PI);
-  at.lonLat = latLon.yx;
-  vec2 dLon = vec2(dFdx(at.lonLat.x), dFdy(at.lonLat.x));
+  vec2 offset = globeSphereOffset(p);
+  vec2 lonLat = (globeGeographicAt(offset) * (180.0 / GLOBE_PI)).yx;
+  at.base = uGraticuleBase.xy;
+  // From the camera's ground: longitude closed form (globeGeographicAt's), latitude by its
+  // series; far off, or before it is set, the latitude and longitude themselves.
+  vec2 d = offset - uGraticuleOrigin.xy;
+  d.y -= 2.0 * GLOBE_PI * floor(d.y / (2.0 * GLOBE_PI) + 0.5);
+  float lon = d.y - (uGlobeSphere.z - 1.0) * (sin(offset.y) - sin(uGraticuleOrigin.y));
+  vec3 s = uGraticuleSeries;
+  float lat = d.x * (s.x + d.x * (s.y + d.x * s.z));
+  vec2 near = uGraticuleBase.zw + vec2(lon * (180.0 / GLOBE_PI), lat);
+  vec2 far = lonLat - at.base;
+  far.x -= 360.0 * floor(far.x / 360.0 + 0.5);
+  bool close = uGraticuleOrigin.w > 0.5 && max(abs(d.x), abs(d.y)) < GRATICULE_NEAR;
+  at.local = close ? near : far;
+  at.lonLat = lonLat;
+  vec2 dLon = vec2(dFdx(at.local.x), dFdy(at.local.x));
   at.dLon = dLon - 360.0 * floor(dLon / 360.0 + 0.5);
-  at.dLat = vec2(dFdx(at.lonLat.y), dFdy(at.lonLat.y));
+  at.dLat = vec2(dFdx(at.local.y), dFdy(at.local.y));
   return at;
 }
 
@@ -80,12 +113,29 @@ float graticuleOff(float value, float step, float from) {
   return v - step * floor(v / step + 0.5);
 }
 
+// The same along a coordinate `base + local` (GraticuleAt), so it holds where `local` does:
+// `base` (whole degrees) less `from` (whole or half) brought to the nearest line first,
+// exactly for steps of whole degrees, and to none for steps that divide a degree, then
+// `local` from there.
+float graticuleOffAt(float base, float local, float step, float from) {
+  float b = base - from;
+  float perDegree = 1.0 / step;
+  bool divides = step < 1.0 && abs(perDegree - floor(perDegree + 0.5)) < 1e-3 && from == floor(from);
+  b = divides ? 0.0 : b - step * floor(b / step + 0.5);
+  return graticuleOff(b + local, step, 0.0);
+}
+
+// Degrees from `at` along a coordinate `base + local`, as precisely as `local`.
+float graticuleFrom(float base, float local, float at) {
+  return (base - at) + local;
+}
+
 // Lines every `step` degrees of latitude and longitude.
 float graticuleLatLonAt(GraticuleAt at, float step, float width) {
   float lon = length(at.dLon);
   float lat = length(at.dLat);
-  float meridian = graticuleLine(graticuleOff(at.lonLat.x, step, 0.0), step, lon, width);
-  float parallel = graticuleLine(graticuleOff(at.lonLat.y, step, 0.0), step, lat, width);
+  float meridian = graticuleLine(graticuleOffAt(at.base.x, at.local.x, step, 0.0), step, lon, width);
+  float parallel = graticuleLine(graticuleOffAt(at.base.y, at.local.y, step, 0.0), step, lat, width);
   return max(meridian, parallel);
 }
 
@@ -100,17 +150,19 @@ float graticuleLatLon(GraticuleAt at, float width) {
   return cover;
 }
 
-// Degrees of longitude to the nearest UTM zone's edge at `lonLat`: every 6°, but Norway's
+// Degrees of longitude to the nearest UTM zone's edge at `at`: every 6°, but Norway's
 // zone 32V reaching west to 3°E (56°N–64°N), and Svalbard's 31X, 33X, 35X and 37X edged at
 // 9°, 21°, 33° and 42°E (72°N–84°N).
-float graticuleUtmMeridian(vec2 lonLat) {
-  float lon = lonLat.x;
-  float lat = lonLat.y;
+float graticuleUtmMeridian(GraticuleAt at) {
+  float lon = at.lonLat.x;
+  float lat = at.lonLat.y;
+  float b = at.base.x;
+  float l = at.local.x;
   if(lat >= 56.0 && lat < 64.0 && lon >= 0.0 && lon <= 12.0)
-    return min(min(abs(lon), abs(lon - 3.0)), abs(lon - 12.0));
+    return min(min(abs(graticuleFrom(b, l, 0.0)), abs(graticuleFrom(b, l, 3.0))), abs(graticuleFrom(b, l, 12.0)));
   if(lat >= 72.0 && lat < 84.0 && lon >= 0.0 && lon <= 42.0)
-    return min(min(min(abs(lon), abs(lon - 9.0)), min(abs(lon - 21.0), abs(lon - 33.0))), abs(lon - 42.0));
-  return abs(graticuleOff(lon, 6.0, 0.0));
+    return min(min(min(abs(graticuleFrom(b, l, 0.0)), abs(graticuleFrom(b, l, 9.0))), min(abs(graticuleFrom(b, l, 21.0)), abs(graticuleFrom(b, l, 33.0)))), abs(graticuleFrom(b, l, 42.0)));
+  return abs(graticuleOffAt(b, l, 6.0, 0.0));
 }
 
 // The UTM zones: their edges from 80°S to 84°N, and their latitude bands' every 8° from
@@ -120,9 +172,9 @@ float graticuleUtm(GraticuleAt at, float width) {
   float lat = length(at.dLat);
   float y = at.lonLat.y;
   float inside = step(-80.0, y) * step(y, 84.0);
-  float meridian = inside * graticuleLine(graticuleUtmMeridian(at.lonLat), 6.0, lon, width);
-  float band = y <= 76.0 ? abs(graticuleOff(y, 8.0, -80.0)) : abs(y - 84.0);
-  band = y < -84.0 ? abs(y + 80.0) : band;
+  float meridian = inside * graticuleLine(graticuleUtmMeridian(at), 6.0, lon, width);
+  float band = y <= 76.0 ? abs(graticuleOffAt(at.base.y, at.local.y, 8.0, -80.0)) : abs(graticuleFrom(at.base.y, at.local.y, 84.0));
+  band = y < -84.0 ? abs(graticuleFrom(at.base.y, at.local.y, -80.0)) : band;
   float parallel = graticuleLine(band, 8.0, lat, width);
   return max(meridian, parallel);
 }
@@ -130,7 +182,7 @@ float graticuleUtm(GraticuleAt at, float width) {
 // The nautical time zones: meridians 7.5° east and west of every 15th, and the date line.
 float graticuleTimeZones(GraticuleAt at, float width) {
   float lon = length(at.dLon);
-  float off = min(abs(graticuleOff(at.lonLat.x, 15.0, 7.5)), 180.0 - abs(at.lonLat.x));
+  float off = min(abs(graticuleOffAt(at.base.x, at.local.x, 15.0, 7.5)), abs(graticuleOffAt(at.base.x, at.local.x, 360.0, 180.0)));
   return graticuleLine(off, 15.0, lon, width);
 }
 

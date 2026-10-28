@@ -31,17 +31,22 @@ export type {
 } from './scenery-progress';
 export * from './scenery-stage';
 export {
-  GRATICULE_LABEL_EVERY,
+  GRATICULE_LABEL_DENSITY,
+  GRATICULE_LABEL_PERIOD,
   GRATICULE_LABEL_REACH,
   GRATICULE_LABEL_SIZE,
   GRATICULE_LABEL_SMOOTH_MAX,
   GRATICULE_LABEL_SWITCH,
   graticuleLabelCentre,
+  graticuleLabelPattern,
+  graticuleLabelPeriod,
   graticuleLabels,
   graticuleLabelSize,
   graticuleLabelSpacing,
   graticuleLabelStep,
   graticuleLabelText,
+  graticuleLabelThinning,
 } from './scenery-graticule-labels';
+export type { GraticuleLabelOptions } from './scenery-graticule-labels';
 export { GRATICULE_LABEL_STYLE } from './SceneryGraticuleLabels';
 export * from './useLevelHorizon';

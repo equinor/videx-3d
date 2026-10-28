@@ -402,6 +402,20 @@ export class Globe {
   }
 
   /**
+   * The latitude (WGS84, degrees) at a latitude `offset` (radians) on the conformal sphere
+   * from the disc's centre ({@link sphereOffset}'s x): latitude alone, as it depends on
+   * nothing else there. Needs a {@link frame}.
+   */
+  sphereGeographicLatitude(offset: number): number {
+    const sphere = this.sphere;
+    if (!sphere)
+      throw new Error(
+        'Globe.sphereGeographicLatitude needs a frame (Globe.setFrame)',
+      );
+    return geodeticLatitude(sphere, sphere.chi0 + offset) / DEG;
+  }
+
+  /**
    * The latitude and longitude (WGS84, degrees) of the ground under `point`: the inverse
    * of {@link geodetic}, its height left out. Needs a {@link frame}.
    */

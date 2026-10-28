@@ -23,7 +23,7 @@ import {
 import { DEFAULT_OCEAN_WATER_OPACITY } from '../../components/Ocean/ocean-material';
 import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../../components/Ocean/ocean-volume-material';
 import {
-  GRATICULE_LABEL_EVERY,
+  GRATICULE_LABEL_DENSITY,
   GRATICULE_LABEL_SIZE,
 } from '../../components/Scenery/scenery-graticule-labels';
 import { builtInColorRamps } from '../../common/color-ramps';
@@ -101,7 +101,7 @@ export type SceneryArgs = {
   graticuleLatLonMinSpacing: number;
   graticuleLatLonLabels: boolean;
   graticuleLatLonLabelSize: number;
-  graticuleLatLonLabelEvery: number;
+  graticuleLatLonLabelDensity: number;
   graticuleLatLonLabelSizing: 'stepped' | 'smooth';
   graticuleUtm: boolean;
   graticuleUtmColor: string;
@@ -248,7 +248,7 @@ export const sceneryArgs: SceneryArgs = {
   graticuleLatLonMinSpacing: sceneryDefaults.graticule.minSpacing,
   graticuleLatLonLabels: false,
   graticuleLatLonLabelSize: GRATICULE_LABEL_SIZE,
-  graticuleLatLonLabelEvery: GRATICULE_LABEL_EVERY,
+  graticuleLatLonLabelDensity: GRATICULE_LABEL_DENSITY,
   graticuleLatLonLabelSizing: 'stepped',
   graticuleUtm: false,
   graticuleUtmColor: sceneryDefaults.graticule.lines.color,
@@ -498,7 +498,7 @@ export const sceneryGraticuleFromArgs = (
       minSpacing: args.graticuleLatLonMinSpacing,
       labels: args.graticuleLatLonLabels && {
         size: args.graticuleLatLonLabelSize,
-        every: args.graticuleLatLonLabelEvery,
+        density: args.graticuleLatLonLabelDensity,
         sizing: args.graticuleLatLonLabelSizing,
       },
     },
@@ -936,13 +936,13 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     ),
     if: { arg: 'graticuleLatLonLabels' },
   },
-  graticuleLatLonLabelEvery: {
+  graticuleLatLonLabelDensity: {
     ...range(
+      0.1,
       1,
-      5,
-      1,
+      0.05,
       GRATICULE,
-      'Which lines are labelled: every `every`th, counted from 0\u00b0 (`labels.every`).',
+      'How densely the lines are named: at 1 a name every 4 cells along its line, at 0.5 every 8 (`labels.density`).',
     ),
     if: { arg: 'graticuleLatLonLabels' },
   },

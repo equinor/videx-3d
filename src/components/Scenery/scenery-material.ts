@@ -28,6 +28,7 @@ import {
   graticuleStep,
   GraticuleStyle,
   GraticuleUniforms,
+  setGraticuleOrigin,
   setGraticuleStep,
   setGraticuleUniforms,
 } from '../../sdk/materials/graticule';
@@ -818,6 +819,18 @@ export class SceneryMaterial extends ShaderMaterial {
             latLon.minSpacing,
             graticuleStepScratch,
           ),
+    );
+  }
+
+  /**
+   * Where the lines are measured from, near the camera at `point` (`setGraticuleOrigin`):
+   * so close in they hold in 32-bit floats. Each frame the lines are drawn.
+   */
+  setGraticuleOrigin(point: Vector3) {
+    setGraticuleOrigin(
+      this.uniforms as unknown as GraticuleUniforms,
+      this.globe,
+      point,
     );
   }
 

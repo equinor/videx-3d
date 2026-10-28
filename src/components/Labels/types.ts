@@ -58,6 +58,12 @@ export type LabelStyle = {
   baseline: LabelBaseline;
   /** the text moved off its position in its plane, in ems: along the way it reads, and toward its top. Default [0, 0] */
   offset: [number, number];
+  /**
+   * turned to read left to right wherever the camera is: where the way it reads points
+   * left on screen, its text is mirrored both ways (turned half round) inside its own quad,
+   * so it keeps its place, alignment and offset. Default false
+   */
+  flip: boolean;
   /** every label's opacity, 0 to 1. Default 1 */
   opacity: number;
   /** smaller than this on screen (its text's height as seen, its slant included, in CSS pixels), not drawn. Default 6 */
@@ -125,6 +131,7 @@ export const LABEL_STYLE_DEFAULTS: LabelStyle = {
   align: 'center',
   baseline: 'middle',
   offset: [0, 0],
+  flip: false,
   opacity: 1,
   minPixels: 6,
   maxPixels: Infinity,

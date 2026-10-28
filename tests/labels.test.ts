@@ -7,6 +7,7 @@ import {
 import {
   labelAnchor,
   labelFade,
+  labelReadsBackward,
   labelFadeRanges,
   labelFrame,
 } from '../src/components/Labels/label-geometry';
@@ -138,6 +139,24 @@ describe('labelFade', () => {
     expect(near(990, 1000)).toBe(0);
     // No far plane known: no fade.
     expect(near(1e9, 0)).toBe(1);
+  });
+});
+
+describe('labelReadsBackward', () => {
+  it('reads backward pointing away from a little above screen right', () => {
+    expect(labelReadsBackward(1, 0)).toBe(false);
+    expect(labelReadsBackward(-1, 0)).toBe(true);
+    // Up and down the screen: read upward, either side of vertical.
+    expect(labelReadsBackward(0, 1)).toBe(false);
+    expect(labelReadsBackward(-0.05, 1)).toBe(false);
+    expect(labelReadsBackward(0, -1)).toBe(true);
+    expect(labelReadsBackward(0.05, -1)).toBe(true);
+    // Exactly one of a label's two ways reads forward.
+    for (let a = 0; a < 360; a += 7.5) {
+      const x = Math.cos((a * Math.PI) / 180);
+      const y = Math.sin((a * Math.PI) / 180);
+      expect(labelReadsBackward(x, y)).not.toBe(labelReadsBackward(-x, -y));
+    }
   });
 });
 

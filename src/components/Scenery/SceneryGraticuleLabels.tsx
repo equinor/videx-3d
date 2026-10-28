@@ -5,7 +5,7 @@ import type { GraticuleUniforms } from '../../sdk/materials/graticule';
 import { LabelLayer } from '../Labels/LabelLayer';
 import type { Label, LabelsProvider, LabelStyle } from '../Labels/types';
 import {
-  GRATICULE_LABEL_EVERY,
+  GRATICULE_LABEL_DENSITY,
   GRATICULE_LABEL_REACH,
   GRATICULE_LABEL_SIZE,
   GRATICULE_LABEL_SMOOTH_MAX,
@@ -22,7 +22,8 @@ import type { SceneryGraticuleLabels } from './scenery-model';
  * Latitude and longitude's labels' look, by default: small and light, a thin soft halo,
  * so they read without covering the scene; and never faded for being seen at a slant,
  * only when too small on screen (`minPixels`); never drawn larger than `maxPixels`, either:
- * one near the camera while the lines' step is judged far away is shrunk to it.
+ * one near the camera while the lines' step is judged far away is shrunk to it. Turned to
+ * read left to right from wherever they are seen (`flip`).
  */
 export const GRATICULE_LABEL_STYLE: Partial<LabelStyle> = {
   fontWeight: 500,
@@ -30,6 +31,7 @@ export const GRATICULE_LABEL_STYLE: Partial<LabelStyle> = {
   haloColor: 'rgba(0, 0, 0, 0.55)',
   minFacing: 0,
   maxPixels: 48,
+  flip: true,
 };
 
 // Centred on their places, whatever the options: the cells' middles.
@@ -58,7 +60,7 @@ export const SceneryGraticuleLabelLayer = ({
   const {
     size: fraction = GRATICULE_LABEL_SIZE,
     reach = GRATICULE_LABEL_REACH,
-    every = GRATICULE_LABEL_EVERY,
+    density = GRATICULE_LABEL_DENSITY,
     sizing = 'stepped',
     lift,
     ...style
@@ -88,23 +90,29 @@ export const SceneryGraticuleLabelLayer = ({
   });
 
   // The same labels while the nearest lines to the view's centre stay the same, so the
-  // layer writes nothing again as the view moves.
+  // layer writes nothing again as the view moves. Thinned toward the poles from the
+  // latitude their size is judged at, the field's.
   const provider = useMemo<LabelsProvider>(() => {
     let key = '';
     let labels = NO_LABELS;
     return ({ camera }) => {
       const globe = material.globe;
-      if (!step || !globe.location) return NO_LABELS;
+      const location = globe.location;
+      if (!step || !location) return NO_LABELS;
       camera.getWorldDirection(dir);
       graticuleLabelCentre(globe, camera.position, dir, there);
-      const now = `${Math.round(there.latitude / step)}|${Math.round(there.longitude / step)}`;
+      const now = `${Math.round(there.latitude / step)}|${Math.round(there.longitude / step)}|${location.latitude}`;
       if (now !== key) {
         key = now;
-        labels = graticuleLabels(globe, step, there, reach, every);
+        labels = graticuleLabels(globe, step, there, {
+          reach,
+          density,
+          reference: location.latitude,
+        });
       }
       return labels;
     };
-  }, [material, step, reach, every]);
+  }, [material, step, reach, density]);
 
   const location = material.globe.location;
   if (!step || !location) return null;

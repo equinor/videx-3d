@@ -6,9 +6,11 @@ import {
   OrthographicCamera,
   PerspectiveCamera,
   Uniform,
+  Vector2,
   Vector3,
   Vector4,
 } from 'three';
+import type { Globe } from '../projection/globe';
 
 /** The kinds of lines a graticule draws, in the order of its uniforms (`graticule.glsl`). */
 export const GRATICULE_KINDS = ['latLon', 'utm', 'timeZones'] as const;
@@ -62,6 +64,12 @@ export type GraticuleUniforms = {
   uGraticuleLines: Uniform<Vector4[]>;
   /** latitude and longitude's step, the next finer step, and how much of it is drawn (see {@link GraticuleStep}) */
   uGraticuleLatLon: Uniform<Vector3>;
+  /** where lines are measured from, near the camera ({@link setGraticuleOrigin}): its whole degrees of longitude and latitude, and what is left of them */
+  uGraticuleBase: Uniform<Vector4>;
+  /** its offset on the globe's sphere (Δχ, ΔΛ, radians), and 1 once set */
+  uGraticuleOrigin: Uniform<Vector4>;
+  /** latitude from it, in degrees, per radian of Δχ from its, to the first, second and third power */
+  uGraticuleSeries: Uniform<Vector3>;
 };
 
 /** A graticule's uniforms, every kind off. */
@@ -70,7 +78,51 @@ export function createGraticuleUniforms(): GraticuleUniforms {
     uGraticuleColors: new Uniform(GRATICULE_KINDS.map(() => new Vector4())),
     uGraticuleLines: new Uniform(GRATICULE_KINDS.map(() => new Vector4())),
     uGraticuleLatLon: new Uniform(new Vector3(GRATICULE_STEPS[0], 0, 0)),
+    uGraticuleBase: new Uniform(new Vector4()),
+    uGraticuleOrigin: new Uniform(new Vector4()),
+    uGraticuleSeries: new Uniform(new Vector3()),
   };
+}
+
+// How far either way the latitude's series is sampled from, in radians of Δχ.
+const SERIES_STEP = 1e-3;
+const offset = new Vector2();
+const under = { latitude: 0, longitude: 0 };
+
+/**
+ * Where the lines are measured from: the ground under `point` (the camera), in 64-bit
+ * floats. Latitude and longitude are near 1 radian, which 32-bit floats hold to about half
+ * a metre: close in, the lines' offsets and their change over a pixel came in steps of
+ * it, and the lines broke into strands and dashes. Measured from here instead — whole
+ * degrees, what is left of them, and the latitude's change as a series in the sphere's
+ * offset, which a shader holds to a centimetre near it — they hold. Needs `globe` placed
+ * on the Earth (a frame); a no-op without.
+ */
+export function setGraticuleOrigin(
+  uniforms: GraticuleUniforms,
+  globe: Globe,
+  point: Vector3,
+) {
+  if (!globe.location) {
+    uniforms.uGraticuleOrigin.value.w = 0;
+    return;
+  }
+  const { latitude, longitude } = globe.geographic(point, under);
+  globe.sphereOffset(latitude, longitude, offset);
+  const lon = Math.floor(longitude);
+  const lat = Math.floor(latitude);
+  uniforms.uGraticuleBase.value.set(lon, lat, longitude - lon, latitude - lat);
+  uniforms.uGraticuleOrigin.value.set(offset.x, offset.y, 0, 1);
+  // φ(Δχ₀ + δ) − φ(Δχ₀) = a₁δ + a₂δ² + a₃δ³, by central differences.
+  const h = SERIES_STEP;
+  const f = (d: number) =>
+    globe.sphereGeographicLatitude(offset.x + d) - latitude;
+  const [m2, m1, p1, p2] = [f(-2 * h), f(-h), f(h), f(2 * h)];
+  uniforms.uGraticuleSeries.value.set(
+    (p1 - m1) / (2 * h),
+    (p1 + m1) / (2 * h * h),
+    (p2 - 2 * p1 + 2 * m1 - m2) / (12 * h * h * h),
+  );
 }
 
 const color = new Color();

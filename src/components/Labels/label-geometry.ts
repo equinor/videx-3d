@@ -75,6 +75,29 @@ export function labelAnchor(
 const ranges: LabelFadeRanges = { facing: [0, 0], pixels: [0, 0] };
 
 /**
+ * How far the readable way of a label is turned from screen right toward up, in degrees
+ * (`LabelStyle.flip`): a label reading within it of straight down is turned to read up,
+ * the map maker's way, and one along a line straight up or down the screen does not flip
+ * back and forth as the view turns by a hair.
+ */
+export const LABEL_FLIP_TILT = 10;
+
+const FLIP_COS = Math.cos((LABEL_FLIP_TILT * Math.PI) / 180);
+const FLIP_SIN = Math.sin((LABEL_FLIP_TILT * Math.PI) / 180);
+
+/**
+ * Whether a label whose way of reading runs `x`, `y` on screen (right and up) reads
+ * backward, and is turned half round when its layer flips (`LabelStyle.flip`): pointing
+ * away from {@link LABEL_FLIP_TILT} above screen right by more than a right angle.
+ *
+ * ⚠️ The labels' vertex shader (`shaders/label-vertex.glsl`) does the same: keep them alike.
+ */
+export function labelReadsBackward(x: number, y: number) {
+  const along = x * FLIP_COS + y * FLIP_SIN;
+  return along < 0 || (along === 0 && y * FLIP_COS - x * FLIP_SIN < 0);
+}
+
+/**
  * How much of a label shows, 0 to 1: none from behind or outside its layer's distances,
  * fading out over `fadeDistance` toward them; fading in from `minFacing` to `fullFacing`,
  * and, by its text's height on screen as seen (`pixels`, capped at `maxPixels` as the

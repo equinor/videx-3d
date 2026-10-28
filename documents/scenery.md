@@ -307,14 +307,27 @@ or went.
 
 **Labels** (`latLon: { labels: true }`, off by default): each line's name, `60°30′N`,
 `2°E`, painted flat on the sea's level along it (a `LabelLayer`, see
-[labels.md](./labels.md)), on every second line (`every`, counted from 0°), centred in each
-cell between the labelled lines across it (with `every` 2, the unlabelled line between
-crosses the text's middle), `reach` lines (default 10) either way from where the view is
-centred (`graticuleLabels`, named by `graticuleLabelText`: minutes and seconds only as the
-step needs). Their font is a fraction (`size`, default 0.18) of a cell's narrower side, the
+[labels.md](./labels.md)), a parallel's in the middle of a cell along it, a meridian's in
+the middle of a cell along it, at least `reach` lines (default 10) either way from where the
+view is centred (`graticuleLabels`, named by `graticuleLabelText`: minutes and seconds only
+as the step needs). **Every line is named**, each once every `k` cells along it: `density`
+(0.1–1, default 0.5) sets `k` (`graticuleLabelPeriod`: 4 at 1, 8 at 0.5, 40 at 0.1). A
+parallel's name reaches the meridians either side of it and a meridian's the parallels
+above and below, so names closer than 4 cells along a line would meet across a crossing,
+however placed. The names are spread by `graticuleLabelPattern`: parallel `i` in the
+columns `≡ s·i`, meridian `j` in the rows `≡ t·j + h` (mod `k`), the pattern that never
+meets and keeps every name farthest from every other, found once per `k` (`s` 3 for 8: a
+lattice, where `s` 1 — the first try — set them in diagonal bands; `k` 4 and 6 allow
+diagonals only). **Toward the poles** the meridians close in: the names' columns widen to
+`m` meridians (`graticuleLabelThinning`, a power of two, so those named farther poleward
+are among those nearer), once they would be closer than 4/5 of their spacing at the
+latitude the font is sized at (the field's); a row between parallels of different `m`
+names no meridians. Where they lie depends on the step, density and that latitude alone.
+Their font is a fraction (`size`, default 0.18) of a cell's narrower side, the
 east–west one, which shrinks with the cosine of the latitude (`graticuleLabelSize`): sized
 by the step alone, a parallel's labels ran into each other end to end at 58°N. A test
-keeps every label clear of every other at any latitude and step, drawn smooth too. They
+keeps every label clear of every other at any latitude up to 88°, step and density, drawn
+smooth too. They
 follow **the step the lines are seen at**: the finer of the two drawn once its weight passes
 0.55, back below 0.45 (`graticuleLabelStep`, `GRATICULE_LABEL_SWITCH`). Following the step
 `graticuleStep` chooses, the coarser, they doubled — up to six times — as the view tilted,
@@ -341,6 +354,25 @@ them.
 Found on the way: `globeSphereOffset` lost the latitude across the Earth from the field,
 where `e² / (q + w)` rounds to nothing in 32-bit floats: speckled lines and missing
 meridians along 180° seen from Volve. It is `w − q` there, written so neither cancels.
+
+**Close in, the lines are measured from under the camera.** Latitude and longitude are near
+1 radian, which 32-bit floats hold to about half a metre: a few hundred metres up, the
+lines' offsets and their change over a pixel came in steps of that, and the lines broke
+into parallel strands and dashes. Each frame the lines are drawn, `setGraticuleOrigin`
+works out in 64-bit floats where the ground under the camera lies: its whole degrees and
+what is left of them (`uGraticuleBase`), its offset on the globe's sphere
+(`uGraticuleOrigin`), and the latitude's change as a series in the sphere's latitude
+offset (`uGraticuleSeries`, three terms by central differences of
+`Globe.sphereGeographicLatitude`). Within 0.03 rad (~190 km) of it, `graticuleAt` takes a
+pixel's latitude and longitude as whole degrees plus what is left (`local`), from the
+sphere offset's difference — the longitude in closed form, the latitude by the series —
+which 32-bit floats hold to a centimetre (a test emulates it in `Math.fround`); farther
+off, from the latitude and longitude themselves, where a pixel is far larger than their
+error. Every line's offset is measured along `base + local` (`graticuleOffAt`): the whole
+degrees brought to the nearest line first (exact for steps of whole degrees, none for
+steps that divide a degree), then `local`; the UTM zones' and time zones' edges the same
+way. Only the geometry's precision changed: still a geometric measure in each pixel, so
+it holds with any depth buffer.
 
 ## The air
 

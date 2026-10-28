@@ -146,8 +146,10 @@ export type SceneryGraticuleLatLon = SceneryGraticuleLines & {
 
 /**
  * Latitude and longitude's labels: their names, `60°30′N`, `2°E`, painted flat on the sea's
- * level along every second line (`every`), centred in each cell between the labelled
- * lines across it, around where the view is centred (a `LabelLayer`). They follow the
+ * level along the lines, around where the view is centred (a `LabelLayer`): every line
+ * named, each name once every few cells along its line (`density`), staggered so a
+ * parallel's name never meets a meridian's, and the meridians' thinned toward the poles,
+ * where they close in. They follow the
  * lines' step: as large as a fraction of a cell's narrower side (east–west, shrinking with
  * the latitude), so they keep their size on screen as the step does and fit between each
  * other; they come and go with the lines but never slide. Never faded for being seen at a
@@ -170,6 +172,7 @@ export type SceneryGraticuleLabels = Partial<
     | 'minPixels'
     | 'fullPixels'
     | 'maxPixels'
+    | 'flip'
     | 'minFacing'
     | 'fullFacing'
     | 'depthTest'
@@ -178,10 +181,13 @@ export type SceneryGraticuleLabels = Partial<
 > & {
   /** the font's size, as a fraction of a cell's narrower side on the ground. Default 0.18 */
   size?: number;
-  /** how many lines either way from where the view is centred are looked at. Default 10 */
+  /** how many lines either way from where the view is centred are looked at, at least (a period of the names, at least). Default 10 */
   reach?: number;
-  /** which lines are labelled: every `every`th, counted from 0°. Default 2 */
-  every?: number;
+  /**
+   * how densely the lines are named, 0.1 to 1: at 1 a line's name comes every 4 cells along
+   * it, at 0.5 every 8, at 0.1 every 40 (`graticuleLabelPeriod`). Default 0.5
+   */
+  density?: number;
   /**
    * how their size follows the zoom: `'stepped'`, by the step the lines are seen at, fixed
    * between changes of step, so they stay glued; `'smooth'`, by the lines' spacing as the

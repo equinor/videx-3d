@@ -32,6 +32,8 @@ uniform float uViewHeight;
 uniform float uFar;
 // The largest it is drawn on screen (its font face-on, CSS pixels): shrunk to it nearer.
 uniform float uMaxPixels;
+// 1: turned to read left to right (LabelStyle.flip).
+uniform float uFlip;
 
 varying vec2 vUv;
 varying float vOpacity;
@@ -95,8 +97,23 @@ void main() {
 
   #include <logdepthbuf_vertex>
 
+  // Reading backward on screen (labelReadsBackward: away from 10° above right by more than
+  // a right angle), turned half round inside its quad: the text mirrored both ways, the
+  // quad where it was. The same for its four corners.
+  vec2 uv = position.xy;
+  if (uFlip > 0.5) {
+    vec4 ahead = projectionMatrix * viewMatrix * vec4(at + worldAlong * size, 1.0);
+    vec2 way = ahead.w > 0.0
+      ? (ahead.xy / ahead.w - centre.xy / centre.w) * vec2(projectionMatrix[1][1] / projectionMatrix[0][0], 1.0)
+      : (mat3(viewMatrix) * worldAlong).xy;
+    // cos and sin of LABEL_FLIP_TILT.
+    const vec2 tilt = vec2(0.98480775, 0.17364818);
+    float along = way.x * tilt.x + way.y * tilt.y;
+    if (along < 0.0 || (along == 0.0 && way.y * tilt.x - way.x * tilt.y < 0.0))
+      uv = -uv;
+  }
   vUv = vec2(
-    mix(labelRect.x, labelRect.z, position.x + 0.5),
-    mix(labelRect.w, labelRect.y, position.y + 0.5)
+    mix(labelRect.x, labelRect.z, uv.x + 0.5),
+    mix(labelRect.w, labelRect.y, uv.y + 0.5)
   );
 }

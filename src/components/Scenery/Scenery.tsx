@@ -1551,6 +1551,7 @@ export const Scenery = ({
         graticuleDegreesPerPixel(camera, distance, gl.domElement.height) /
           Math.sqrt(facing),
       );
+      material.setGraticuleOrigin(camera.position);
     }
     // Camera controls move the camera before this runs but leave its matrices to the render:
     // read with this frame's position, last frame's would swing the cuts as it moves. Once,

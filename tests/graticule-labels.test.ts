@@ -3,11 +3,14 @@ import { describe, expect, it } from 'vitest';
 import {
   GRATICULE_LABEL_SMOOTH_MAX,
   graticuleLabelCentre,
+  graticuleLabelPattern,
+  graticuleLabelPeriod,
   graticuleLabels,
   graticuleLabelSize,
   graticuleLabelSpacing,
   graticuleLabelStep,
   graticuleLabelText,
+  graticuleLabelThinning,
 } from '../src/components/Scenery/scenery-graticule-labels';
 import { getProjectionDefFromUtmZone } from '../src/sdk/projection/crs';
 import type { GeoFrame } from '../src/sdk/projection/geo-frame';
@@ -53,12 +56,9 @@ describe('graticuleLabels', () => {
       g,
       step,
       { latitude: 58.4, longitude: 1.9 },
-      2,
-      // Every line.
-      1,
+      { reach: 2, density: 1, reference: 58.4 },
     );
-    // 5 parallels and 5 meridians, a label of each in each of 5 cells.
-    expect(labels).toHaveLength(2 * 5 * 5);
+    expect(labels.length).toBeGreaterThan(0);
     const there = { latitude: 0, longitude: 0 };
     const up = new Vector3();
     for (const label of labels) {
@@ -67,7 +67,7 @@ describe('graticuleLabels', () => {
       g.upAt(at, up);
       expect(new Vector3().fromArray(label.normal!).dot(up)).toBeCloseTo(1, 9);
       g.geographic(at, there);
-      const meridian = label.text.endsWith('E') || label.text.endsWith('W');
+      const meridian = !/[NS]$/.test(label.text);
       // On its line, halfway between two of the others.
       const [own, across] = meridian
         ? [there.longitude, there.latitude]
@@ -104,33 +104,96 @@ describe('graticuleLabels', () => {
     expect(shared.length).toBeGreaterThan(0.8 * a.length);
   });
 
-  it('labels every second line, from 0°', () => {
+  it('names every line in view, each once a period along it, the names staggered', () => {
     const g = globe();
-    const labels = graticuleLabels(
-      g,
-      0.5,
-      { latitude: 58.4, longitude: 1.9 },
-      2,
-    );
-    // Lines 115–119 of latitude, 2–6 of longitude: 116 and 118, and 2, 4 and 6.
-    expect(labels).toHaveLength(2 * 2 * 3);
-    expect(new Set(labels.map(l => l.text))).toEqual(
-      new Set(['58°00′N', '59°00′N', '1°00′E', '2°00′E', '3°00′E']),
-    );
-    // Each in the middle of its cell, between the labelled lines across it: a step past
-    // the one it starts from, on the unlabelled line between.
     const there = { latitude: 0, longitude: 0 };
-    for (const label of labels) {
-      g.geographic(new Vector3().fromArray(label.position), there);
-      const meridian = label.text.endsWith('E');
-      const across = meridian ? there.latitude : there.longitude;
-      // Cells 1° across (two steps of 0.5°): their middles at a half degree.
-      const cell = across - 0.5;
-      expect(Math.abs(cell - Math.round(cell))).toBeLessThan(1e-6);
+    for (const density of [1, 0.5]) {
+      const k = graticuleLabelPeriod(density);
+      const labels = graticuleLabels(
+        g,
+        1,
+        { latitude: 58.4, longitude: 2 },
+        { density, reference: 58.4 },
+      );
+      // Where along its line each name is, in steps.
+      const along = new Map<string, number[]>();
+      for (const label of labels) {
+        g.geographic(new Vector3().fromArray(label.position), there);
+        const meridian = !/[NS]$/.test(label.text);
+        const at = meridian ? there.latitude : there.longitude;
+        along.set(label.text, [...(along.get(label.text) ?? []), at]);
+      }
+      // Every line within a period of the view's centre.
+      for (let i = 58 - k; i <= 58 + k; i++)
+        expect(along.has(graticuleLabelText(i, 1, 'lat')), `${i}°`).toBe(true);
+      for (let j = 2 - k; j <= 2 + k; j++)
+        expect(along.has(graticuleLabelText(j, 1, 'lon')), `${j}°`).toBe(true);
+      // No nearer than a period apart along its line, and a parallel's names a column
+      // wider, poleward, for each time the meridians are thinned. A meridian's names change
+      // phase where its rows are thinned differently: two cells apart there at the least.
+      const zone = (latitude: number) =>
+        graticuleLabelThinning(1, Math.floor(latitude), 58.4);
+      for (const [text, places] of along) {
+        places.sort((a, b) => a - b);
+        const parallel = /[NS]$/.test(text);
+        const m = parallel ? zone(parseFloat(text)) : 1;
+        for (let n = 1; n < places.length; n++) {
+          const same = parallel || zone(places[n]) === zone(places[n - 1]);
+          expect(places[n] - places[n - 1], text).toBeGreaterThan(
+            (same ? k * m : 2) - 1e-6,
+          );
+        }
+      }
     }
   });
 
-  it('keeps every label clear of every other, at any latitude and step, drawn smooth too', () => {
+  it('spreads the names over the cells rather than in diagonal bands, never meeting', () => {
+    for (let k = 4; k <= 40; k++) {
+      const { s, t, h } = graticuleLabelPattern(k);
+      expect((s * t) % k).toBe(1);
+      const mod = (a: number) => ((a % k) + k) % k;
+      for (let i = 0; i < k; i++)
+        for (const j of [s * i, s * i + 1]) {
+          const row = mod(t * j + h);
+          expect([mod(i), mod(i - 1)]).not.toContain(row);
+        }
+    }
+    // Wider apart than a diagonal step (√2 cells) once there is room.
+    for (let k = 8; k <= 40; k++) {
+      const { s } = graticuleLabelPattern(k);
+      const mod = (a: number) => ((a % k) + k) % k;
+      let nearest = Infinity;
+      for (let i = 1; i < k; i++) {
+        const dx = Math.abs(mod(s * i + k / 2) - k / 2);
+        const dy = Math.abs(mod(i + k / 2) - k / 2);
+        nearest = Math.min(nearest, Math.hypot(dx, dy));
+      }
+      expect(nearest, `k ${k}, s ${s}`).toBeGreaterThan(2);
+    }
+  });
+
+  it('thins the meridians named toward the poles, in powers of two, never closer than 4/5', () => {
+    const DEG = Math.PI / 180;
+    for (const step of [1, 1 / 6, 1 / 60]) {
+      let previous = 1;
+      // Round the Earth in four columns at the least: as far as it thins.
+      const most = 2 ** Math.floor(Math.log2(90 / step));
+      for (let latitude = 0; latitude < 89.9; latitude += 0.25) {
+        const m = graticuleLabelThinning(step, latitude, 58.4);
+        expect(Math.log2(m) % 1).toBe(0);
+        expect(m).toBeGreaterThanOrEqual(previous);
+        previous = m;
+        expect(latitude > 58.4 || m === 1, `${latitude}°`).toBe(true);
+        expect(
+          m === most ||
+            m * Math.cos(latitude * DEG) >= 0.8 * Math.cos(58.4 * DEG) - 1e-9,
+          `${latitude}°, step ${step}`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('keeps every label clear of every other, at any latitude, step and density, drawn smooth too', () => {
     const g = globe();
     // A generous width for sans-serif: an em and a half of halo, 0.65 em a character.
     const extent = (text: string, size: number) => ({
@@ -138,48 +201,59 @@ describe('graticuleLabels', () => {
       halfHeight: 0.65 * size,
     });
     const normal = new Vector3();
-    // Stepped, and as large as smooth sizing grows them.
+    // Stepped, and as large as smooth sizing grows them; sized at the field's latitude, the
+    // view anywhere up to the pole.
+    const views = [
+      [0, 0],
+      [30, 30],
+      [58.4, 58.4],
+      [70, 58.4],
+      [80, 58.4],
+      [88, 58.4],
+      [-75, 58.4],
+    ];
     for (const scale of [1, GRATICULE_LABEL_SMOOTH_MAX])
-      for (const latitude of [0, 30, 58.4, 70])
-        for (const step of [1, 1 / 6, 1 / 60]) {
-          const size = graticuleLabelSize(step, latitude) * scale;
-          const labels = graticuleLabels(
-            g,
-            step,
-            { latitude, longitude: 2 },
-            6,
-          );
-          const boxes = labels.map(l => {
-            const at = new Vector3().fromArray(l.position);
-            normal.fromArray(l.normal!);
-            const u = new Vector3().fromArray(l.direction!).normalize();
-            const v = new Vector3().crossVectors(normal, u);
-            return { at, u, v, text: l.text, ...extent(l.text, size) };
-          });
-          type Box = (typeof boxes)[number];
-          // Apart along an axis: their half-widths along it fall short of their distance.
-          const apart = (a: Box, b: Box, axis: Vector3) => {
-            const d = Math.abs(b.at.clone().sub(a.at).dot(axis));
-            const r = (box: Box) =>
-              box.half * Math.abs(box.u.dot(axis)) +
-              box.halfHeight * Math.abs(box.v.dot(axis));
-            return d > r(a) + r(b);
-          };
-          for (let i = 0; i < boxes.length; i++)
-            for (let j = i + 1; j < boxes.length; j++) {
-              const [a, b] = [boxes[i], boxes[j]];
-              if (a.at.distanceTo(b.at) > 4 * (a.half + b.half)) continue;
-              const clear =
-                apart(a, b, a.u) ||
-                apart(a, b, a.v) ||
-                apart(a, b, b.u) ||
-                apart(a, b, b.v);
-              expect(
-                clear,
-                `${a.text} and ${b.text}, ${latitude}°, step ${step}, ×${scale}`,
-              ).toBe(true);
-            }
-        }
+      for (const density of [1, 0.5])
+        for (const [latitude, reference] of views)
+          for (const step of [1, 1 / 6, 1 / 60]) {
+            const size = graticuleLabelSize(step, reference) * scale;
+            const labels = graticuleLabels(
+              g,
+              step,
+              { latitude, longitude: 2 },
+              { reach: 6, density, reference },
+            );
+            const boxes = labels.map(l => {
+              const at = new Vector3().fromArray(l.position);
+              normal.fromArray(l.normal!);
+              const u = new Vector3().fromArray(l.direction!).normalize();
+              const v = new Vector3().crossVectors(normal, u);
+              return { at, u, v, text: l.text, ...extent(l.text, size) };
+            });
+            type Box = (typeof boxes)[number];
+            // Apart along an axis: their half-widths along it fall short of their distance.
+            const apart = (a: Box, b: Box, axis: Vector3) => {
+              const d = Math.abs(b.at.clone().sub(a.at).dot(axis));
+              const r = (box: Box) =>
+                box.half * Math.abs(box.u.dot(axis)) +
+                box.halfHeight * Math.abs(box.v.dot(axis));
+              return d > r(a) + r(b);
+            };
+            for (let i = 0; i < boxes.length; i++)
+              for (let j = i + 1; j < boxes.length; j++) {
+                const [a, b] = [boxes[i], boxes[j]];
+                if (a.at.distanceTo(b.at) > 4 * (a.half + b.half)) continue;
+                const clear =
+                  apart(a, b, a.u) ||
+                  apart(a, b, a.v) ||
+                  apart(a, b, b.u) ||
+                  apart(a, b, b.v);
+                expect(
+                  clear,
+                  `${a.text} and ${b.text}, ${latitude}°, step ${step}, ×${scale}, density ${density}`,
+                ).toBe(true);
+              }
+          }
   });
 });
 

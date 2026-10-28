@@ -150,6 +150,7 @@ export class LabelLayerMesh {
         uViewHeight: new Uniform(1),
         uFar: new Uniform(0),
         uMaxPixels: new Uniform(3.4e38),
+        uFlip: new Uniform(0),
       },
       transparent: true,
       premultipliedAlpha: true,
@@ -193,6 +194,7 @@ export class LabelLayerMesh {
     uniforms.uOpacity.value = style.opacity;
     uniforms.uAnchor.value.fromArray(labelAnchor(style.align, style.baseline));
     uniforms.uOffset.value.fromArray(style.offset);
+    uniforms.uFlip.value = style.flip ? 1 : 0;
     uniforms.uLift.value.set(style.lift, style.liftPerDistance);
     this.mesh.material.depthTest = style.depthTest;
   }

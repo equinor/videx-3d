@@ -163,6 +163,7 @@ type LabelsStoryArgs = {
   baseline: LabelBaseline;
   offsetAlong: number;
   offsetUp: number;
+  flip: boolean;
   opacity: number;
   minPixels: number;
   fullPixels: number;
@@ -351,6 +352,7 @@ export const Default: Story = {
     baseline: 'middle',
     offsetAlong: 0,
     offsetUp: 0,
+    flip: false,
     opacity: 1,
     minPixels: 6,
     fullPixels: 0,
