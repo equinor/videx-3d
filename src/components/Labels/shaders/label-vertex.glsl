@@ -1,4 +1,5 @@
-// A label: a quad painted in the plane square to its normal, as large as uSize (no larger
+// A label: a quad painted in the plane square to its normal, as large as uSize times its
+// own labelSize (no larger
 // on screen than uMaxPixels), placed by its anchor and offset, faded as it turns edge-on,
 // grows small or nears its distances or the far plane.
 // ⚠️ The fade is `labelFade` (label-geometry.ts): keep them alike.
@@ -10,6 +11,8 @@ attribute vec3 labelAlong;
 attribute vec4 labelRect;
 // Its width and height, in ems.
 attribute vec2 labelExtent;
+// Its own size, a multiple of uSize (Label.size).
+attribute float labelSize;
 
 uniform float uSize;
 // Where its fades start and end: the cosine facing the camera, its font's size on screen
@@ -59,9 +62,10 @@ void main() {
   vec4 centre = projectionMatrix * viewMatrix * vec4(at, 1.0);
   // Its font's size on screen face-on, no larger than uMaxPixels, the size that gives, and
   // its text's height as seen, less its slant.
-  float faceOn = uSize * projectionMatrix[1][1] * uViewHeight * 0.5 / max(centre.w, 1e-6);
+  float own = uSize * labelSize;
+  float faceOn = own * projectionMatrix[1][1] * uViewHeight * 0.5 / max(centre.w, 1e-6);
   float shrink = faceOn > uMaxPixels ? uMaxPixels / faceOn : 1.0;
-  float size = uSize * shrink;
+  float size = own * shrink;
   faceOn *= shrink;
   float pixels = faceOn * max(facing, 0.0);
 
@@ -69,7 +73,9 @@ void main() {
   // from 90 % of the way to 99 %, by its farthest corner along the view. A host sees them
   // farther with a farther plane.
   vec3 forward = -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
-  float reach = (length(labelExtent) + length(uOffset)) * size;
+  // Its farthest corner from its position: half its extent about its middle, which its
+  // anchor moves off its position, and its offset.
+  float reach = (length(labelExtent * (abs(uAnchor) + 0.5)) + length(uOffset)) * size;
   float deepest = dot(at - cameraPosition, forward) + reach;
   float opacity = 0.0;
   if (facing > 0.0 && away >= uDistance.x && away <= uDistance.y) {

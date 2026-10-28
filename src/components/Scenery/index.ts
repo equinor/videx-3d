@@ -49,5 +49,15 @@ export {
   graticuleLabelThinning,
 } from './scenery-graticule-labels';
 export type { GraticuleLabelOptions } from './scenery-graticule-labels';
+export {
+  GRATICULE_ZONE_LABEL_SIZE,
+  graticuleZoneLabels,
+  graticuleZoneLabelSize,
+  timeZoneCells,
+  timeZoneLabelText,
+  utmZoneCells,
+  utmZoneLabelText,
+} from './scenery-zone-labels';
+export type { GraticuleZoneCell } from './scenery-zone-labels';
 export { GRATICULE_LABEL_STYLE } from './SceneryGraticuleLabels';
 export * from './useLevelHorizon';

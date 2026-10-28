@@ -230,12 +230,12 @@ describe('ShelfPacker', () => {
 });
 
 describe('writeLabelInstances', () => {
-  it('writes where each label is, its frame and its text', () => {
+  it('writes where each label is, its frame, its text and its own size', () => {
     const out = new Float32Array(2 * LABEL_INSTANCE_FLOATS);
     const written = writeLabelInstances(
       [
         { text: 'a', position: [1, 2, 3] },
-        { text: 'b', position: [4, 5, 6], normal: [0, 0, 2] },
+        { text: 'b', position: [4, 5, 6], normal: [0, 0, 2], size: 2.5 },
       ],
       style(),
       texts(),
@@ -248,11 +248,14 @@ describe('writeLabelInstances', () => {
       x => x + 0,
     );
     expect(first.slice(0, 9)).toEqual([1, 2, 3, 0, 1, 0, 1, 0, 0]);
+    // Its own size, 1 left out.
     expect(first.slice(9)).toEqual(
-      [0.1, 0.2, 0.3, 0.4, 2, 1.5].map(Math.fround),
+      [0.1, 0.2, 0.3, 0.4, 2, 1.5, 1].map(Math.fround),
     );
     // Its normal, unit length.
-    expect(Array.from(out.subarray(18, 21))).toEqual([0, 0, 1]);
+    const second = LABEL_INSTANCE_FLOATS;
+    expect(Array.from(out.subarray(second + 3, second + 6))).toEqual([0, 0, 1]);
+    expect(out[second + LABEL_INSTANCE_FLOATS - 1]).toBe(2.5);
   });
 
   it('tells when the texts ran out of room', () => {

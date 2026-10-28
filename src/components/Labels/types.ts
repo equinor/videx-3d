@@ -17,6 +17,8 @@ export type Label = {
    * `normal`, or +X lying flat
    */
   direction?: Vec3;
+  /** its size, as a multiple of its layer's `size` (and `scaleRef`). Default 1 */
+  size?: number;
 };
 
 /** Where a label's text lies along the way it reads, from its position. */

@@ -39,7 +39,9 @@ Per layer (`LabelStyle`, defaults in `LABEL_STYLE_DEFAULTS`).
   the browser's canvas supports it), `color`; `haloColor` (its alpha kept) and `haloWidth`,
   a fraction of `size`. Font, weight, style, spacing and halo width are drawn into the
   atlas (`labelAtlasKey`); the colours are uniforms, so layers of any colours share texts.
-- **Size**: `size`, the font's size (the em) in world units. Nothing else changes it but
+- **Size**: `size`, the font's size (the em) in world units, times each label's own
+  `size` (`Label.size`, default 1: labels of one layer at sizes of their own, as the
+  graticule's zone names, each its cell's). Nothing else changes it but
   `scaleRef`, an optional live multiplier read each frame and set on the GPU alone (no
   render, nothing written again): for a size that follows the view smoothly, as the
   graticule's `'smooth'` labels do.
@@ -72,7 +74,9 @@ Per layer (`LabelStyle`, defaults in `LABEL_STYLE_DEFAULTS`).
   three.js draws with: linear, logarithmic or reversed.
 - **The far plane**: a label fades out as its farthest corner along the view goes from 90 %
   to 99 % of the camera's `far` (`LabelLayer` passes it each frame), rather than being
-  clipped whole or in part by it. From space, beyond a far plane the sky still draws the
+  clipped whole or in part by it. Its farthest corner is half its extent about its middle,
+  where its anchor puts it, plus its offset: counted from its position as a whole extent,
+  large labels (a time zone's, 1300 km across) faded out 600 km early. From space, beyond a far plane the sky still draws the
   Earth past, labels were cut to pieces that looked like z-fighting. To see labels farther
   out, give the camera a farther plane. Well inside it, too, a label's clip depth is held
   just short of it (`z ≤ 0.999999 w`; `≥ 10⁻⁶ w` with a reversed depth buffer): with a near
@@ -95,8 +99,8 @@ Per layer (`LabelStyle`, defaults in `LABEL_STYLE_DEFAULTS`).
   so labels lying flat and seen at a slant stay sharp along their length. Texts are
   kept; when it is full, `repack` packs only those its layers still draw, larger if needed
   (up to 8192²), and every layer looks its entries up again (`generation`).
-- **Instances** (`label-mesh.ts`): a quad per label, 15 floats in one interleaved instanced
-  buffer (position, normal, reading direction, atlas rect, size in ems), written only when
+- **Instances** (`label-mesh.ts`): a quad per label, 16 floats in one interleaved instanced
+  buffer (position, normal, reading direction, atlas rect, size in ems, its own size), written only when
   the layer's labels change, or a provider hands over a new array.
 - **Shader** (`shaders/label-vertex.glsl`): corners from the frame and `size`; the fades
   (the same as `labelFade` in `label-geometry.ts`, which the tests check); a hidden label is

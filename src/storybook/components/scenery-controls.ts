@@ -106,9 +106,11 @@ export type SceneryArgs = {
   graticuleUtm: boolean;
   graticuleUtmColor: string;
   graticuleUtmThickness: number;
+  graticuleUtmLabels: boolean;
   graticuleTimeZones: boolean;
   graticuleTimeZonesColor: string;
   graticuleTimeZonesThickness: number;
+  graticuleTimeZonesLabels: boolean;
   graticuleOpacity: number;
   // Scenery
   drawSky: boolean;
@@ -253,9 +255,11 @@ export const sceneryArgs: SceneryArgs = {
   graticuleUtm: false,
   graticuleUtmColor: sceneryDefaults.graticule.lines.color,
   graticuleUtmThickness: sceneryDefaults.graticule.lines.thickness,
+  graticuleUtmLabels: false,
   graticuleTimeZones: false,
   graticuleTimeZonesColor: sceneryDefaults.graticule.lines.color,
   graticuleTimeZonesThickness: sceneryDefaults.graticule.lines.thickness,
+  graticuleTimeZonesLabels: false,
   graticuleOpacity: sceneryDefaults.graticule.lines.opacity,
   drawSky: true,
   skyVoid: false,
@@ -506,11 +510,13 @@ export const sceneryGraticuleFromArgs = (
       color: args.graticuleUtmColor,
       thickness: args.graticuleUtmThickness,
       opacity,
+      labels: args.graticuleUtmLabels,
     },
     timeZones: args.graticuleTimeZones && {
       color: args.graticuleTimeZonesColor,
       thickness: args.graticuleTimeZonesThickness,
       opacity,
+      labels: args.graticuleTimeZonesLabels,
     },
   };
   return !!(props.latLon || props.utm || props.timeZones) && props;
@@ -966,6 +972,13 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     ...range(0.5, 6, 0.25, GRATICULE, 'Width in screen pixels.'),
     if: { arg: 'graticuleUtm' },
   },
+  graticuleUtmLabels: {
+    ...toggle(
+      GRATICULE,
+      'Each UTM zone\u2019s name (`32N`) in the middle of each of its cells (`utm.labels`).',
+    ),
+    if: { arg: 'graticuleUtm' },
+  },
   graticuleTimeZones: toggle(
     GRATICULE,
     'The nautical time zones (`timeZones`): meridians 15\u00b0 apart either side of Greenwich, and the date line at 180\u00b0.',
@@ -976,6 +989,13 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
   },
   graticuleTimeZonesThickness: {
     ...range(0.5, 6, 0.25, GRATICULE, 'Width in screen pixels.'),
+    if: { arg: 'graticuleTimeZones' },
+  },
+  graticuleTimeZonesLabels: {
+    ...toggle(
+      GRATICULE,
+      'Each time zone\u2019s offset (`UTC+1`) in the middle of each of its cells, a row every UTM band (`timeZones.labels`).',
+    ),
     if: { arg: 'graticuleTimeZones' },
   },
   graticuleOpacity: range(0, 1, 0.05, GRATICULE, 'Every line\u2019s opacity.'),

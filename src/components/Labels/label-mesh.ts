@@ -32,9 +32,10 @@ export type LabelTexts = {
 
 /**
  * Floats per label in {@link writeLabelInstances}: its position, normal and reading
- * direction (3 each), its place in the atlas (4) and its size in ems (2).
+ * direction (3 each), its place in the atlas (4), its size in ems (2) and its own size,
+ * a multiple of the layer's (1).
  */
-export const LABEL_INSTANCE_FLOATS = 15;
+export const LABEL_INSTANCE_FLOATS = 16;
 
 const normal = new Vector3();
 const along = new Vector3();
@@ -73,6 +74,7 @@ export function writeLabelInstances(
     out[at++] = entry.v1;
     out[at++] = entry.width;
     out[at++] = entry.height;
+    out[at++] = label.size ?? 1;
   }
   return true;
 }
@@ -287,6 +289,7 @@ export class LabelLayerMesh {
     geometry.setAttribute('labelAlong', attribute(3, 6));
     geometry.setAttribute('labelRect', attribute(4, 9));
     geometry.setAttribute('labelExtent', attribute(2, 13));
+    geometry.setAttribute('labelSize', attribute(1, 15));
     geometry.instanceCount = 0;
     return geometry;
   }

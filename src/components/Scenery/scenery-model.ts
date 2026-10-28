@@ -199,6 +199,47 @@ export type SceneryGraticuleLabels = Partial<
 };
 
 /**
+ * The UTM zones' or the nautical time zones' names: one in the middle of each cell, painted
+ * flat on the sea's level reading east — UTM zones as their projections are named, `32N`,
+ * `23S`, the time zones by their offset, `UTC+1`, `UTC−3`, `UTC±0` — repeated in each
+ * latitude band (every 8° from 80°S, the last 12° to 84°N), so a zone is named wherever
+ * along it the view is. Each as large as a fraction of its cell's narrower side, so it fits
+ * at any latitude, capped on screen as latitude and longitude's are (`maxPixels`). Their
+ * look as those's (`GRATICULE_LABEL_STYLE`), in their lines' colour.
+ */
+export type SceneryGraticuleZoneLabels = Partial<
+  Pick<
+    LabelStyle,
+    | 'color'
+    | 'haloColor'
+    | 'haloWidth'
+    | 'fontFamily'
+    | 'fontWeight'
+    | 'fontStyle'
+    | 'letterSpacing'
+    | 'opacity'
+    | 'minPixels'
+    | 'fullPixels'
+    | 'maxPixels'
+    | 'flip'
+    | 'minFacing'
+    | 'fullFacing'
+    | 'depthTest'
+    | 'lift'
+    | 'liftPerDistance'
+  >
+> & {
+  /** the font's size, as a fraction of its cell's narrower side on the ground. Default 0.18 */
+  size?: number;
+};
+
+/** The UTM zones or the nautical time zones of a {@link SceneryGraticuleProps}. */
+export type SceneryGraticuleZones = SceneryGraticuleLines & {
+  /** each zone's name in its cells (see {@link SceneryGraticuleZoneLabels}); `true` for the defaults. Default false */
+  labels?: boolean | SceneryGraticuleZoneLabels;
+};
+
+/**
  * Lines on the Earth over a {@link Scenery}, drawn on what is seen of it from the air — the
  * sea's surface, the land and a dry seabed — out to the horizon and from space; none in the
  * water nor under the ground. Each kind is on with `true` (its defaults) or its own look,
@@ -212,9 +253,9 @@ export type SceneryGraticuleProps = {
    * the UTM zones: their meridians every 6° from 80°S to 84°N, Norway's (32V) and
    * Svalbard's (31X–37X) included, and their latitude bands' parallels. Default false
    */
-  utm?: boolean | SceneryGraticuleLines;
+  utm?: boolean | SceneryGraticuleZones;
   /** the nautical time zones: meridians 15° apart either side of Greenwich, and the date line at 180°. Default false */
-  timeZones?: boolean | SceneryGraticuleLines;
+  timeZones?: boolean | SceneryGraticuleZones;
 };
 
 /**

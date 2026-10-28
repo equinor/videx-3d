@@ -85,6 +85,7 @@ import {
   SceneryCloudsProps,
   SceneryGraticuleLabels,
   SceneryGraticuleLatLon,
+  SceneryGraticuleZoneLabels,
   SceneryGraticuleProps,
   SkyColors,
   skyDaylight,
@@ -117,7 +118,10 @@ import {
   SceneryAbyssWallLayer,
 } from './SceneryAbyssWallLayer';
 import { SceneryCubeView } from './SceneryCubeView';
-import { SceneryGraticuleLabelLayer } from './SceneryGraticuleLabels';
+import {
+  SceneryGraticuleLabelLayer,
+  SceneryGraticuleZoneLabelLayer,
+} from './SceneryGraticuleLabels';
 
 export type SceneryEnvironmentOptions = {
   /** `scene.environmentIntensity` while the sky provides the environment. Default 1 */
@@ -707,6 +711,25 @@ export const Scenery = ({
       ...labels,
       color: labels.color ?? `#${new Color(lineColor).getHexString()}`,
     };
+  }, [graticuleKey]);
+  // The UTM zones' and time zones' names likewise.
+  const zoneLabels = useMemo(() => {
+    const none = { utm: null, timeZones: null };
+    if (!graticuleKey) return none;
+    const options = JSON.parse(graticuleKey) as SceneryGraticuleProps;
+    const of = (
+      kind: 'utm' | 'timeZones',
+    ): SceneryGraticuleZoneLabels | null => {
+      const zones = options[kind] ?? sceneryDefaults.graticule[kind];
+      if (!zones || zones === true || !zones.labels) return null;
+      const labels = zones.labels === true ? {} : zones.labels;
+      const lineColor = zones.color ?? sceneryDefaults.graticule.lines.color;
+      return {
+        ...labels,
+        color: labels.color ?? `#${new Color(lineColor).getHexString()}`,
+      };
+    };
+    return { utm: of('utm'), timeZones: of('timeZones') };
   }, [graticuleKey]);
 
   // In render rather than an effect, so a stage or layer made in this commit compiles with
@@ -1880,6 +1903,20 @@ export const Scenery = ({
         <SceneryGraticuleLabelLayer
           material={material}
           options={graticuleLabels}
+        />
+      )}
+      {zoneLabels.utm && ready && (
+        <SceneryGraticuleZoneLabelLayer
+          material={material}
+          kind="utm"
+          options={zoneLabels.utm}
+        />
+      )}
+      {zoneLabels.timeZones && ready && (
+        <SceneryGraticuleZoneLabelLayer
+          material={material}
+          kind="timeZones"
+          options={zoneLabels.timeZones}
         />
       )}
       {debug?.environment && <SceneryCubeView cube={environmentCube} />}

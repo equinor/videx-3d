@@ -406,6 +406,26 @@ anyway).
 Labels appear with the lines: not until what draws them is compiled (the Scenery's
 `ready`, when the stand-in goes), so never over the stand-in while the sky compiles.
 
+**Zone names** (`utm: { labels: true }`, `timeZones: { labels: true }`, off by default): the
+UTM zones and the nautical time zones name areas, not lines, so each cell is named once, at
+its middle, flat on the sea reading east (`graticuleZoneLabels`). UTM zones as their
+projections are named, `32N`, `23S` (`utmZoneLabelText`), in cells by zone and latitude band
+(`utmZoneCells`): every 6°, bands every 8° from 80°S, X 12° to 84°N, Norway's 31V/32V split
+at 3°E and Svalbard's 31X, 33X, 35X and 37X (no 32X, 34X or 36X), as the lines draw them.
+Time zones by their offset, `UTC+1`, `UTC−3` (a true minus), `UTC±0`
+(`timeZoneLabelText`), 15° about every 15th meridian, the zone about 180° split at the date
+line into UTC+12 and UTC−12, in the same rows as the UTM bands (`timeZoneCells`), so a
+zone is named wherever along it the view is. Each name as large as `size` (0.18) of its
+cell's narrower side, east–west at its poleward edge (`graticuleZoneLabelSize`), so it
+fits its cell at any latitude: a label's own size (`Label.size`, see labels.md), the layer
+at `size` 1. All of them at once — about 1200 UTM names, 500 time zones — made once for the
+globe's place on the Earth, nothing written as the view moves; those facing away are not
+drawn. Their look is latitude and longitude's (`GRATICULE_LABEL_STYLE`: flipped to read,
+48 pixels at the most, depth tested), in their lines' colour, lifted 5 m and 1 m more per
+kilometre off, over the waves near the field and clear of the sea far off. Tests keep the
+cells tiling 80°S–84°N without gaps, the exceptions as drawn, and every name clear of every
+other and inside its cell.
+
 ## The air
 
 `air` (default on) thins with height, so the sky changes as the camera climbs: the
