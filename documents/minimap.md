@@ -60,13 +60,12 @@ view's: it draws on a canvas and a WebGL context of its own, only when the view 
 ## Zoom
 
 `zooms` are the host's own extents in metres across the map's shorter side, ascending: any
-list, with the default (1, 5, 25 and 100 km) only when none is given. The stories pass
-1, 5, 25, 100 and 1000 km.
+list, with the default (1, 5, 25, 100 and 1000 km) only when none is given.
 
 - **`zoom="auto"`** (the default): the extent follows the camera's height over the sea
   (`level`, the sea's Y): `autoZoomFactor` (4) times the height, between the least and the
   most of `zooms`, eased in log space over `autoZoomSmoothing` seconds. At 2.5 km up the map
-  is 10 km across; from 400 km up, the most the list has (100 km by default).
+  is 10 km across; from 250 km up, the most the list has (1000 km by default).
 - **a number**: an index into `zooms`. The + / − buttons and the wheel (`wheelZoom`) step
   one level from the map's own (from the adaptive extent when auto) and A returns to auto.
 - Controlled with `zoom` and `onZoomChange`, or uncontrolled with `defaultZoom`.
@@ -233,4 +232,8 @@ vertical wherever it sits.
 - Not done: globe mode, resizing by dragging, custom buttons, and a mode switch among the controls.
 - Longitudes across the 180th meridian are handled only for a layer that wraps.
 
-Story: `Components/Html/Minimap` (`src/components/Html/Minimap/Minimap.stories.tsx`).
+Story: `Components/Html/Minimap` (`src/components/Html/Minimap/Minimap.stories.tsx`). The
+stories with a `Scenery` (`Components/Misc/Scenery`, `Components/Layers/Tracks`, the
+`Spikes/Scenery` ones and `Spikes/Chunks/FieldColumn`) have a `minimap` switch, off by default:
+`SceneryArgsMinimap` (`src/storybook/components/scenery-features.tsx`), the minimap's defaults
+and a camera marker over the ticked demo reliefs, in the story's map and at its sea's level.

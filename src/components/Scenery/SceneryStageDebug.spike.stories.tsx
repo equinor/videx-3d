@@ -1,4 +1,3 @@
-import { SceneryArgsFeatures } from '../../storybook/components/scenery-features';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import {
@@ -10,6 +9,12 @@ import {
   SphereGeometry,
 } from 'three';
 import { PlanarPolygonGeometry } from '../../sdk/geometries/planar-geometry';
+import {
+  geoFrameAt,
+  geoFrameLonLat,
+  geoFrameXZ,
+  type GeoFrame,
+} from '../../sdk/projection/geo-frame';
 import type { Vec2 } from '../../sdk/types/common';
 import { EnvironmentProbes } from '../../storybook/components/EnvironmentProbes';
 import {
@@ -19,13 +24,15 @@ import {
   sceneryDecorators,
   sceneryHideArgType,
   sceneryHideFromArgs,
+  sceneryMinimapArgs,
+  SceneryMinimapArgs,
+  sceneryMinimapArgTypes,
   sceneryOutlineArgType,
-  sceneryPropsFromArgs,
   sceneryProgressArgs,
+  sceneryPropsFromArgs,
   sceneryReliefArgs,
   SceneryReliefArgs,
   sceneryReliefArgTypes,
-  sceneryReliefFrame,
   sceneryReliefFromArgs,
   sceneryWallDebugArgs,
   SceneryWallDebugArgs,
@@ -33,13 +40,13 @@ import {
   sceneryWallDebugFromArgs,
 } from '../../storybook/components/scenery-controls';
 import {
-  ProgressArgs,
-  progressArgTypes,
-} from '../../storybook/decorators/progress-decorator';
-import {
   SceneryDebugPanel,
   useSceneryTimelapse,
 } from '../../storybook/components/scenery-debug-panel';
+import {
+  SceneryArgsFeatures,
+  SceneryArgsMinimap,
+} from '../../storybook/components/scenery-features';
 import { SceneryStoryRendering } from '../../storybook/components/scenery-story-rendering';
 import {
   STAGE_GROUND_BASE_HALF,
@@ -48,10 +55,15 @@ import {
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
+import {
+  ProgressArgs,
+  progressArgTypes,
+} from '../../storybook/decorators/progress-decorator';
 import { Scenery } from './Scenery';
 import { SceneryAnchor } from './SceneryAnchor';
 import { SceneryStage } from './SceneryStage';
 import { SceneryStageBounds } from './scenery-stage';
+import { World } from '../World/World';
 
 // How the sky, its stage and an occupant fit together: a stage of any size, synthetic
 // ground under it, an occupant's outline, spheres standing in for data, and debug views
@@ -67,15 +79,25 @@ const SEGMENTS = 192;
 const BASE_HALF = STAGE_GROUND_BASE_HALF;
 // How far the synthetic ground fades in from its edge, the stage's.
 const GROUND_FEATHER = 2000;
-// The panel's places, about a stage `halfWidth` wide (east-west).
+// The scene's default place on the Earth: the demo field, Volve, offshore.
+const VOLVE = {
+  longitude: sceneryArgs.sunLongitude,
+  latitude: sceneryArgs.sunLatitude,
+};
+// Off the Norwegian coast, 200 km east and 50 km north of Volve: a fixed point on the Earth.
+const COAST = geoFrameLonLat(geoFrameAt(VOLVE.longitude, VOLVE.latitude))(
+  200000,
+  -50000,
+);
+// The panel's places, about a stage `halfWidth` wide (east-west), in the scene's `frame`.
 const stagePositions = (
   halfWidth: number,
+  frame: GeoFrame,
 ): Record<string, [number, number]> => ({
   centre: [0, 0],
   'stage edge': [halfWidth, 0],
   beyond: [halfWidth + 22000, 0],
-  // Off the Norwegian coast, from Volve, where the sun's place puts the relief.
-  coast: [200000, -50000],
+  coast: geoFrameXZ(frame)(COAST[0], COAST[1]),
 });
 
 // A lobed outline, so the stage meets it along turns of both hands.
@@ -182,6 +204,8 @@ const StandInSpheres = ({
 };
 
 type StageDebugArgs = {
+  longitude: number;
+  latitude: number;
   stage: boolean;
   stageWidth: number;
   stageLength: number;
@@ -199,6 +223,7 @@ type StageDebugArgs = {
 } & SceneryArgs &
   SceneryReliefArgs &
   SceneryWallDebugArgs &
+  SceneryMinimapArgs &
   ProgressArgs;
 
 const StageDebug = (storyArgs: StageDebugArgs) => {
@@ -224,25 +249,34 @@ const StageDebug = (storyArgs: StageDebugArgs) => {
     () =>
       occupant
         ? (x: number, z: number, radius: number) => {
-            const u = x / sx;
-            const w = z / sz;
-            const margin = radius / Math.min(sx, sz);
-            return Math.hypot(u, w) + margin <= rimRadius(Math.atan2(w, u));
-          }
+          const u = x / sx;
+          const w = z / sz;
+          const margin = radius / Math.min(sx, sz);
+          return Math.hypot(u, w) + margin <= rimRadius(Math.atan2(w, u));
+        }
         : (x: number, z: number, radius: number) =>
-            Math.abs(x) + radius <= halfWidth &&
-            Math.abs(z) + radius <= halfLength,
+          Math.abs(x) + radius <= halfWidth &&
+          Math.abs(z) + radius <= halfLength,
     [occupant, sx, sz, halfWidth, halfLength],
+  );
+  // Where the scene lies on the Earth: its own place, whatever the sun's.
+  const frame = useMemo(
+    () => geoFrameAt(args.longitude, args.latitude),
+    [args.longitude, args.latitude],
+  );
+  const positions = useMemo(
+    () => stagePositions(halfWidth, frame),
+    [halfWidth, frame],
   );
 
   return (
-    <>
+    <World frame={frame}>
       <SceneryStoryRendering args={args} />
       {args.panel && (
         <SceneryDebugPanel
           args={args}
           level={LEVEL}
-          positions={stagePositions(halfWidth)}
+          positions={positions}
           timelapse={timelapse}
         />
       )}
@@ -268,19 +302,19 @@ const StageDebug = (storyArgs: StageDebugArgs) => {
             }
             relief={sceneryReliefFromArgs(
               args,
-              sceneryReliefFrame(args),
+              frame,
               args.ground
                 ? [
-                    {
-                      id: stageGroundId(
-                        args.sunLongitude ?? sceneryArgs.sunLongitude,
-                        args.sunLatitude ?? sceneryArgs.sunLatitude,
-                        args.stageWidth,
-                        args.stageLength,
-                      ),
-                      feather: GROUND_FEATHER,
-                    },
-                  ]
+                  {
+                    id: stageGroundId(
+                      args.longitude,
+                      args.latitude,
+                      args.stageWidth,
+                      args.stageLength,
+                    ),
+                    feather: GROUND_FEATHER,
+                  },
+                ]
                 : [],
             )}
             debug={{
@@ -309,7 +343,10 @@ const StageDebug = (storyArgs: StageDebugArgs) => {
           />
         )}
       </Scenery>
-    </>
+      {args.minimap && (
+        <SceneryArgsMinimap frame={frame} reliefLayers={args.reliefLayers} />
+      )}
+    </World>
   );
 };
 
@@ -338,6 +375,19 @@ const meta = {
     ...sceneryArgTypes({ debug: true }),
     ...progressArgTypes,
     ...sceneryReliefArgTypes(),
+    ...sceneryMinimapArgTypes,
+    longitude: {
+      control: { type: 'range', min: -180, max: 180, step: 0.01 },
+      description:
+        'Where the scene lies on the Earth, degrees east: the stage, its ground and the relief about it, the panel\u2019s places, the minimap, and the sky\u2019s north and globe. The sun\u2019s place does not move it. Default Volve, offshore.',
+      table: { category: 'Stage' },
+    },
+    latitude: {
+      control: { type: 'range', min: -85, max: 85, step: 0.01 },
+      description:
+        'Where the scene lies on the Earth, degrees north (see `longitude`). Default Volve.',
+      table: { category: 'Stage' },
+    },
     stage: {
       description:
         'A `SceneryStage` over the stage\u2019s rectangle, centred on the origin. Off, there is none: the void\u2019s walls then close about a point.',
@@ -418,7 +468,10 @@ const meta = {
     ...sceneryArgs,
     ...sceneryReliefArgs,
     ...sceneryWallDebugArgs,
+    ...sceneryMinimapArgs,
     ...sceneryProgressArgs,
+    longitude: VOLVE.longitude,
+    latitude: VOLVE.latitude,
     stage: true,
     stageWidth: 16,
     stageLength: 16,

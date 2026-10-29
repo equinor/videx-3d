@@ -1,4 +1,7 @@
-import { SceneryArgsFeatures } from '../../storybook/components/scenery-features';
+import {
+  SceneryArgsFeatures,
+  SceneryArgsMinimap,
+} from '../../storybook/components/scenery-features';
 import { useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useMemo, useState } from 'react';
@@ -7,6 +10,9 @@ import {
   SceneryArgs,
   sceneryArgTypes,
   sceneryDecorators,
+  sceneryMinimapArgs,
+  SceneryMinimapArgs,
+  sceneryMinimapArgTypes,
   sceneryPropsFromArgs,
   sceneryProgressArgs,
   sceneryReliefArgs,
@@ -45,6 +51,7 @@ type TimelapseArgs = {
   tanker: boolean;
 } & SceneryArgs &
   SceneryReliefArgs &
+  SceneryMinimapArgs &
   ProgressArgs;
 
 // A line of text over the canvas, outside the scene.
@@ -99,6 +106,12 @@ const SceneryTimelapse = (args: TimelapseArgs) => {
         />
         {tanker}
       </Scenery>
+      {args.minimap && (
+        <SceneryArgsMinimap
+          frame={sceneryReliefFrame(args)}
+          reliefLayers={args.reliefLayers}
+        />
+      )}
       <ClockOverlay
         text={`${args.sunDate}  ${formatSkyHour(hour)} solar time  sun ${elevation.toFixed(1)}\u00b0`}
       />
@@ -142,6 +155,7 @@ const meta = {
   argTypes: {
     ...sceneryArgTypes(),
     ...sceneryReliefArgTypes(),
+    ...sceneryMinimapArgTypes,
     ...progressArgTypes,
     playing: {
       control: { type: 'boolean' },
@@ -189,6 +203,7 @@ const meta = {
   args: {
     ...sceneryArgs,
     ...sceneryReliefArgs,
+    ...sceneryMinimapArgs,
     ...sceneryProgressArgs,
     playing: true,
     speed: 0.5,

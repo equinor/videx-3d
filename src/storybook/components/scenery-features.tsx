@@ -1,3 +1,5 @@
+import { Minimap } from '../../components/Html/Minimap/Minimap';
+import { MinimapCameraMarker } from '../../components/Html/Minimap/MinimapLayers';
 import { SceneryAbyss } from '../../components/Scenery/SceneryAbyss';
 import { SceneryClouds } from '../../components/Scenery/SceneryClouds';
 import { SceneryCutaway } from '../../components/Scenery/SceneryCutaway';
@@ -7,11 +9,13 @@ import type {
   SceneryAbyssProps,
   SceneryOceanProps,
 } from '../../components/Scenery/scenery-model';
+import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import {
   SceneryArgs,
   sceneryAbyssFromArgs,
   sceneryCloudsFromArgs,
   sceneryGraticuleFromArgs,
+  sceneryMinimapLayers,
   sceneryOceanFromArgs,
 } from './scenery-controls';
 import { sceneryCutawayFromArgs } from './scenery-cutaway-controls';
@@ -44,3 +48,27 @@ export const SceneryArgsFeatures = ({
     </>
   );
 };
+
+/**
+ * A story's minimap (see `sceneryMinimapArgs`): the `Minimap`'s defaults and a camera marker,
+ * over the demo reliefs ticked in `reliefLayers` (all by default), in the story's `frame`,
+ * its heights over the sea at `level` (the sea's Y; default 0).
+ * Inside the `Canvas` and a `GeneratorsProvider` with the `sceneryRelief` generator.
+ */
+export const SceneryArgsMinimap = ({
+  frame,
+  reliefLayers,
+  level,
+}: {
+  frame: GeoFrame;
+  reliefLayers?: string[];
+  level?: number;
+}) => (
+  <Minimap
+    layers={sceneryMinimapLayers(reliefLayers)}
+    frame={frame}
+    level={level}
+  >
+    <MinimapCameraMarker />
+  </Minimap>
+);

@@ -1,5 +1,9 @@
 import type { ArgTypes, Decorator } from '@storybook/react-vite';
 import { useArgs, useEffect } from 'storybook/preview-api';
+import { builtInColorRamps } from '../../common/color-ramps';
+import { ContourColorMode } from '../../common/types';
+import { DEFAULT_OCEAN_WATER_OPACITY } from '../../components/Ocean/ocean-material';
+import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../../components/Ocean/ocean-volume-material';
 import type {
   SceneryLayer,
   SceneryProps,
@@ -9,25 +13,21 @@ import type {
   SceneryStageRelief,
 } from '../../components/Scenery/SceneryStage';
 import {
+  GRATICULE_LABEL_DENSITY,
+  GRATICULE_LABEL_SIZE,
+} from '../../components/Scenery/scenery-graticule-labels';
+import {
   sceneryDefaults,
   type SceneryAbyssProps,
   type SceneryCloudLayers,
   type SceneryCloudsProps,
   type SceneryGraticuleProps,
+  type SceneryOceanProps,
   type SkyMoon,
   type SkyObserver,
-  type SceneryOceanProps,
   type SkyStars,
   type SkySun,
 } from '../../components/Scenery/scenery-model';
-import { DEFAULT_OCEAN_WATER_OPACITY } from '../../components/Ocean/ocean-material';
-import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../../components/Ocean/ocean-volume-material';
-import {
-  GRATICULE_LABEL_DENSITY,
-  GRATICULE_LABEL_SIZE,
-} from '../../components/Scenery/scenery-graticule-labels';
-import { builtInColorRamps } from '../../common/color-ramps';
-import { ContourColorMode } from '../../common/types';
 import type { ReliefLayer } from '../../sdk/geometries/relief-tiles';
 import {
   GeoFrame,
@@ -44,10 +44,10 @@ import {
   storyProgress,
 } from '../decorators/progress-decorator';
 import {
-  skyCutawayArgs,
   SceneryCutawayArgs,
   sceneryCutawayArgTypes,
   sceneryCutawayDecorator,
+  skyCutawayArgs,
 } from './scenery-cutaway-controls';
 import {
   toneMappingArgs,
@@ -1912,7 +1912,7 @@ export function sceneryReliefArgTypes(
   return {
     relief: {
       ...toggle(
-        SEA,
+        SKY,
         'Land and seabed from the store, drawn from tiles over everything, the stage included: the demo reliefs ticked in `reliefLayers`, merged coarse to fine. Made on demand: `npm run generate-relief`.',
       ),
       ...(shownIf ? { if: { arg: shownIf } } : {}),
@@ -1922,7 +1922,7 @@ export function sceneryReliefArgTypes(
       options: SCENERY_DEMO_RELIEF_LAYERS.map(layer => layer.id),
       description:
         'The demo reliefs merged, coarse to fine whatever the order ticked: a later one wins where it has data, faded in over 3, 1.5 and 0.5 km from where its data ends. A story may add layers of its own over them. Changing them builds every tile again.',
-      table: { category: SEA },
+      table: { category: SKY },
       if: { arg: 'relief' },
     },
     ...sceneryReliefLookArgTypes('relief'),
@@ -1963,3 +1963,25 @@ export const sceneryReliefFromArgs = (
     ...sceneryReliefLookFromArgs(args, layers),
   };
 };
+
+/** A story's inlet map (`Minimap`), off by default. */
+export type SceneryMinimapArgs = {
+  minimap: boolean;
+};
+
+export const sceneryMinimapArgs: SceneryMinimapArgs = {
+  minimap: false,
+};
+
+export const sceneryMinimapArgTypes: ArgTypes<SceneryMinimapArgs> = {
+  minimap: toggle(
+    'Minimap',
+    'An inlet map (`Minimap`) with its defaults and a camera marker, bottom right: the demo reliefs ticked in the relief\u2019s layers, whether the relief is drawn or not, in the story\u2019s map.',
+  ),
+};
+
+/** The demo reliefs a story's minimap draws: those `ticked`, coarse to fine. All of them by default. */
+export const sceneryMinimapLayers = (
+  ticked: string[] = sceneryReliefArgs.reliefLayers,
+): ReliefLayer[] =>
+  SCENERY_DEMO_RELIEF_LAYERS.filter(layer => ticked.includes(layer.id));

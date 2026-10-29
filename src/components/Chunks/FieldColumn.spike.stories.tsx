@@ -1,4 +1,7 @@
-import { SceneryArgsFeatures } from '../../storybook/components/scenery-features';
+import {
+  SceneryArgsFeatures,
+  SceneryArgsMinimap,
+} from '../../storybook/components/scenery-features';
 import { useFrame, useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { CurveInterpolator } from 'curve-interpolator';
@@ -48,6 +51,9 @@ import {
   SceneryArgs,
   sceneryArgTypes,
   sceneryDecorators,
+  sceneryMinimapArgs,
+  SceneryMinimapArgs,
+  sceneryMinimapArgTypes,
   sceneryPropsFromArgs,
   sceneryReliefArgs,
   SceneryReliefArgs,
@@ -590,7 +596,8 @@ type FieldColumnStoryProps = {
   reliefMarkers: boolean;
 } & ProgressArgs &
   SceneryArgs &
-  SceneryReliefArgs;
+  SceneryReliefArgs &
+  SceneryMinimapArgs;
 
 // Between the rim's samples along the outline, and how far to either side one is tried
 // again where the outline's own edge misses the cap.
@@ -1662,6 +1669,16 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
           </Scenery>
         </SceneryGenerators>
       )}
+      {props.minimap && (
+        // On the sky's worker, with or without the sky: not the column's.
+        <SceneryGenerators>
+          <SceneryArgsMinimap
+            frame={reliefFrame}
+            reliefLayers={props.reliefLayers}
+            level={skyLevel}
+          />
+        </SceneryGenerators>
+      )}
       {props.resources && <ResourceMonitor interval={props.resourceInterval} />}
       {props.stats && <RenderStats origin="bottom-left" />}
       <RendererToneMapping
@@ -1721,6 +1738,7 @@ export const Default: Story = {
   args: {
     ...sceneryArgs,
     ...sceneryReliefArgs,
+    ...sceneryMinimapArgs,
     // Surfaces
     outline: 'field',
     cropSize: 7,
@@ -1864,6 +1882,7 @@ export const Default: Story = {
     // Behind `sky`; the story draws through its own OIT pipeline always.
     ...sceneryArgTypes({ shownIf: 'sky' }),
     ...sceneryReliefArgTypes('sky'),
+    ...sceneryMinimapArgTypes,
     relief: {
       ...sceneryReliefArgTypes('sky').relief,
       description:

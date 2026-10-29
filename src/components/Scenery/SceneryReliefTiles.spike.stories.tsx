@@ -1,4 +1,7 @@
-import { SceneryArgsFeatures } from '../../storybook/components/scenery-features';
+import {
+  SceneryArgsFeatures,
+  SceneryArgsMinimap,
+} from '../../storybook/components/scenery-features';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useThree } from '@react-three/fiber';
 import proj4 from 'proj4';
@@ -11,6 +14,9 @@ import {
   SceneryArgs,
   sceneryArgTypes,
   sceneryDecorators,
+  sceneryMinimapArgs,
+  SceneryMinimapArgs,
+  sceneryMinimapArgTypes,
   sceneryPropsFromArgs,
   sceneryProgressArgs,
   sceneryReliefLookArgs,
@@ -100,7 +106,7 @@ const TRENCH_CHECKS = TRENCH_MARKS.map(([e, n]): [number, number] => {
   return [x - FRAME.origin[0], FRAME.origin[1] - y];
 });
 
-/** What the tiles draw and hold, as a line of text over the canvas, bottom right. */
+/** What the tiles draw and hold, as a line of text over the canvas, bottom left. */
 function useTileStats(shown: boolean) {
   const gl = useThree(state => state.gl);
   const element = useRef<HTMLDivElement | null>(null);
@@ -109,7 +115,7 @@ function useTileStats(shown: boolean) {
     const host = document.createElement('div');
     Object.assign(host.style, {
       position: 'absolute',
-      right: '10px',
+      left: '10px',
       bottom: '10px',
       zIndex: '10',
       padding: '4px 8px',
@@ -141,6 +147,7 @@ function useTileStats(shown: boolean) {
 
 type ReliefTilesArgs = SceneryArgs &
   SceneryReliefLookArgs &
+  SceneryMinimapArgs &
   ProgressArgs & {
     relief: 'tiles' | 'none';
     layers: string[];
@@ -289,6 +296,9 @@ const ReliefTiles = (storyArgs: ReliefTilesArgs) => {
           )}
           {args.facility === 'free' && <FieldStandIn at={POSITIONS.trench} />}
         </Scenery>
+        {args.minimap && (
+          <SceneryArgsMinimap frame={FRAME} reliefLayers={args.layers} />
+        )}
       </SceneryGenerators>
       {/* Outside the Scenery: the World hands it the Scenery's globe. */}
       {args.facility === 'field' && <TrenchField />}
@@ -317,6 +327,7 @@ const meta = {
   },
   argTypes: {
     ...sceneryArgTypes({ debug: true }),
+    ...sceneryMinimapArgTypes,
     ...progressArgTypes,
     relief: {
       control: { type: 'inline-radio' },
@@ -370,7 +381,7 @@ const meta = {
     },
     tileStats: {
       description:
-        'What the tiles draw and hold, bottom right: tiles and triangles drawn, the deepest tile, and tiles in, loading and waiting.',
+        'What the tiles draw and hold, bottom left: tiles and triangles drawn, the deepest tile, and tiles in, loading and waiting.',
       table: { category: 'Debug' },
       if: { arg: 'relief', eq: 'tiles' },
     },
@@ -409,6 +420,7 @@ const meta = {
   },
   args: {
     ...sceneryArgs,
+    ...sceneryMinimapArgs,
     ...sceneryProgressArgs,
     relief: 'tiles',
     layers: LAYERS.map(layer => layer.id).filter(id => id !== BAKED_SEABED),

@@ -45,7 +45,8 @@ const STAGE_BOUNDS: [number, number, number, number] = [
   -8000, -8000, 8000, 8000,
 ];
 
-// The zoom levels the story offers: the host's own list, not the library's default.
+// The zoom levels the story offers, passed as a host passes its own list (the same as the
+// library's default here).
 const STORY_ZOOMS = [1000, 5000, 25000, 100000, 1000000];
 const ANCHORS: MinimapAnchor[] = [
   'top-left',

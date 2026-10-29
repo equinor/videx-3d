@@ -50,7 +50,7 @@ import {
 } from './MinimapOverlay';
 
 /** The extents a minimap zooms between by default, in metres across its shorter side. */
-export const MINIMAP_DEFAULT_ZOOMS = [1000, 5000, 25000, 100000];
+export const MINIMAP_DEFAULT_ZOOMS = [1000, 5000, 25000, 100000, 1000000];
 
 /**
  * Minimap props
@@ -120,7 +120,7 @@ export type MinimapProps = {
 
   /**
    * The zoom levels, in metres across the minimap's shorter side, ascending. Default
-   * {@link MINIMAP_DEFAULT_ZOOMS}: 1, 5, 25 and 100 km.
+   * {@link MINIMAP_DEFAULT_ZOOMS}: 1, 5, 25, 100 and 1000 km.
    */
   zooms?: number[];
   /**

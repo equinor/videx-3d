@@ -1,4 +1,7 @@
-import { SceneryArgsFeatures } from '../../storybook/components/scenery-features';
+import {
+  SceneryArgsFeatures,
+  SceneryArgsMinimap,
+} from '../../storybook/components/scenery-features';
 import { CameraControls } from '@react-three/drei';
 import { Canvas } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
@@ -15,6 +18,9 @@ import {
   sceneryDecorators,
   sceneryHideArgType,
   sceneryHideFromArgs,
+  sceneryMinimapArgs,
+  SceneryMinimapArgs,
+  sceneryMinimapArgTypes,
   sceneryOutlineArgType,
   sceneryPropsFromArgs,
   sceneryProgressArgs,
@@ -110,6 +116,7 @@ type ScenerySpikeArgs = {
 } & SceneryArgs &
   SceneryReliefArgs &
   SceneryWallDebugArgs &
+  SceneryMinimapArgs &
   ProgressArgs;
 
 // A stage around the wells' outline, a surface baked into its relief as the seabed.
@@ -257,6 +264,13 @@ const SceneryScene = (args: ScenerySpikeArgs) => {
         )}
       </Scenery>
       <Field {...args} />
+      {args.minimap && (
+        <SceneryArgsMinimap
+          frame={reliefFrame}
+          reliefLayers={args.reliefLayers}
+          level={args.oceanLevel}
+        />
+      )}
     </>
   );
 };
@@ -311,6 +325,7 @@ const meta = {
   argTypes: {
     ...sceneryArgTypes(),
     ...sceneryReliefArgTypes('stage'),
+    ...sceneryMinimapArgTypes,
     ...progressArgTypes,
     abyss: {
       control: { type: 'boolean' },
@@ -379,6 +394,7 @@ export const Default: Story = {
   args: {
     ...sceneryArgs,
     ...sceneryReliefArgs,
+    ...sceneryMinimapArgs,
     ...sceneryProgressArgs,
     sunElevation: 30,
     abyss: true,
