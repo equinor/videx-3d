@@ -553,6 +553,25 @@ export function sceneryZone(
 export const SCENERY_WATER_BAKE_DEPTH = 1;
 
 /**
+ * The void's lid over a camera at `height` along up, while it is in the ground: the ground
+ * under it where a stage draws its own (`oceanGround`), else the sea's flat seabed. From
+ * there the lid hides all above it — the relief draws its underside, the sea and the sky
+ * are not drawn — so nothing lying above it need be drawn either. Null over the ground, and
+ * without a sea. A dry sea's seabed, or one with a cutaway, is a lid all the same.
+ */
+export function sceneryLidOverCamera(
+  height: number,
+  levels: Pick<
+    SceneryZoneLevels,
+    'ocean' | 'oceanLevel' | 'oceanDepth' | 'oceanGround'
+  >,
+): number | null {
+  if (!levels.ocean) return null;
+  const ground = levels.oceanGround ?? levels.oceanLevel - levels.oceanDepth;
+  return height <= ground ? ground : null;
+}
+
+/**
  * The daylight left `depth` below the surface relative to what the water's bake saw, as
  * the sky's water dims it (`waterFogDim`).
  */

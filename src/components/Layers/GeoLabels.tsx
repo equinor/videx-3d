@@ -11,16 +11,14 @@ import type {
   GeoFeature,
   GeoJsonFeatureCollection,
 } from '../../sdk/layers/geo-features';
-import {
-  layerVisibilityAt,
-  type LayerVisibility,
-} from '../../sdk/layers/layer-visibility';
+import type { LayerVisibility } from '../../sdk/layers/layer-visibility';
 import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import type { Globe } from '../../sdk/projection/globe';
 import type { Vec2 } from '../../sdk/types/common';
 import { LabelLayer } from '../Labels/LabelLayer';
 import type { Label, LabelStyle } from '../Labels/types';
-import { useGeoFeatures, useLayerGlobe } from './layer-globe';
+import { useSceneryOcean } from '../Scenery/scenery-context';
+import { layerShownAt, useGeoFeatures, useLayerGlobe } from './layer-globe';
 
 const DEG = Math.PI / 180;
 const EARTH_RADIUS = 6371000;
@@ -79,7 +77,7 @@ export function geoFeatureLabelPoint(
  * @expand
  */
 export type GeoLabelsProps<P = Record<string, unknown>> = LayerVisibility &
-  Partial<Omit<LabelStyle, 'size'>> & {
+  Partial<Omit<LabelStyle, 'size' | 'maxDistance' | 'fadeDistance'>> & {
     /** the features, in longitude and latitude: GeoJSON, or features read from it */
     data: GeoJsonFeatureCollection<P> | GeoFeature<P>[] | null;
     /** each feature's text; null or empty for none. Keep it stable (`useCallback`) */
@@ -95,6 +93,14 @@ export type GeoLabelsProps<P = Record<string, unknown>> = LayerVisibility &
     maxSize?: number;
     /** metres over the sea's level, as the layer it labels (`GeoPolygons`' `height`). Default 0 */
     height?: number;
+    /**
+     * farther from the camera than this, in metres, a label is not drawn; the layer is not
+     * drawn at all once all of them are (or are too small to read, `minPixels`). Default
+     * 150000
+     */
+    maxDistance?: number;
+    /** over how far it fades out toward `maxDistance`. Default a tenth of it */
+    fadeDistance?: number;
     /** where the scene lies on the Earth, without a `World` or `Scenery` to say */
     frame?: GeoFrame;
   };
@@ -114,6 +120,13 @@ const up = new Vector3();
  * Labels are not kept apart: where polygons crowd, their labels may overlap; `minPixels`
  * (default 6) hides those too small to read.
  *
+ * Unlike a `LabelLayer`'s, its labels are drawn over everything by default (`depthTest`
+ * false) — they lie at a height, flat, while the relief rises through it in places and would
+ * bury them — and turned to read left to right whichever way the camera looks (`flip` true).
+ * Those past the globe's horizon face away, and are not drawn (`minFacing`); so are those
+ * farther than `maxDistance` (150 km), and the whole layer while the camera is in the ground
+ * under them (`layerShownAt`).
+ *
  * See `documents/layers.md`.
  *
  * @example
@@ -128,15 +141,20 @@ export const GeoLabels = <P,>({
   minSize = 150,
   maxSize = 3000,
   height = 0,
+  maxDistance = 150000,
+  fadeDistance,
   frame,
   visible = true,
   minHeight,
   maxHeight,
   fade,
+  depthTest = false,
+  flip = true,
   ...style
 }: GeoLabelsProps<P>) => {
   const placed = useLayerGlobe(frame);
   const globe = placed?.globe ?? null;
+  const ocean = useSceneryOcean();
   const features = useGeoFeatures(data);
 
   // Where each goes, in longitude and latitude, and its size: by the features alone.
@@ -194,9 +212,20 @@ export const GeoLabels = <P,>({
     if (placedAt.globe !== globe || placedAt.location !== globe.location)
       setPlacedAt({ globe, location: globe.location });
     const on =
-      layerVisibilityAt(globe.altitude(camera.position), options.current) > 0;
+      layerShownAt(camera.position, globe, ocean, options.current, height) > 0;
     if (on !== shown) setShown(on);
   });
 
-  return <LabelLayer {...style} labels={labels} size={1} visible={shown} />;
+  return (
+    <LabelLayer
+      {...style}
+      depthTest={depthTest}
+      flip={flip}
+      maxDistance={maxDistance}
+      fadeDistance={fadeDistance ?? 0.1 * maxDistance}
+      labels={labels}
+      size={1}
+      visible={shown}
+    />
+  );
 };

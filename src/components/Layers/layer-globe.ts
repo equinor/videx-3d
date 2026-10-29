@@ -1,13 +1,62 @@
 import { useMemo } from 'react';
+import type { Vector3 } from 'three';
 import {
   geoFeaturesFromGeoJson,
   type GeoFeature,
   type GeoJsonFeatureCollection,
 } from '../../sdk/layers/geo-features';
+import {
+  layerVisibilityAt,
+  type LayerVisibility,
+} from '../../sdk/layers/layer-visibility';
 import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import { Globe } from '../../sdk/projection/globe';
-import { useSceneryOcean } from '../Scenery/scenery-context';
+import {
+  useSceneryOcean,
+  type SceneryOceanState,
+} from '../Scenery/scenery-context';
+import { sceneryLidOverCamera } from '../Scenery/scenery-model';
 import { useWorld } from '../World/world-context';
+
+/**
+ * Where a geographic layer lies, for {@link layerShownAt}: on the ground (the relief a
+ * `Scenery`'s stage draws), or at a height in metres over the sea.
+ *
+ * @group Layers
+ */
+export type LayerLies = 'ground' | number;
+
+/**
+ * How much of a geographic layer shows to a camera at `position` (0 to 1), the one test
+ * every scene layer makes before it draws or does any work for the frame:
+ *
+ * - its band of camera heights over the sea (`layerVisibilityAt`);
+ * - inside a `Scenery` with a sea, nothing while the camera is in the ground and the layer
+ *   lies above it: the void's lid hides all above it (`sceneryLidOverCamera`), and where
+ *   the lid leaves pixels to the background — toward the horizon, or to the void's walls —
+ *   what is drawn above it would show through. On the ground (`lies` `'ground'`) is always
+ *   above the lid; at a height, where that is the lid's height over the camera or more. A
+ *   layer laid deeper than the ground, at a reservoir's depth say, is seen from the void.
+ *
+ * Zero means not drawn at all: a layer hides its mesh, and skips its frame's work.
+ *
+ * @group Layers
+ */
+export function layerShownAt(
+  position: Vector3,
+  globe: Globe,
+  ocean: SceneryOceanState | null,
+  visibility: LayerVisibility,
+  lies: LayerLies,
+): number {
+  const altitude = globe.altitude(position);
+  const shown = layerVisibilityAt(altitude, visibility);
+  if (shown <= 0 || !ocean) return shown;
+  const sky = ocean.material;
+  const lid = sceneryLidOverCamera(sky.oceanLevel + altitude, sky);
+  if (lid === null) return shown;
+  return lies === 'ground' || sky.oceanLevel + lies >= lid ? 0 : shown;
+}
 
 /**
  * What a geographic layer is placed on: the globe — the enclosing `Scenery`'s, else the

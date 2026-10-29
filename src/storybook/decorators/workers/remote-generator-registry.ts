@@ -12,7 +12,10 @@ import {
   surfaceTextures,
 } from '../../../components/Surfaces/surface-defs';
 import { sceneryReliefTile } from '../../../components/Scenery/scenery-defs';
-import { overlayTile } from '../../../components/Layers/layer-defs';
+import {
+  geoTubeNodes,
+  overlayTile,
+} from '../../../components/Layers/layer-defs';
 import { basicTrajectory } from '../../../components/Wellbores/BasicTrajectory/basic-trajectory-defs';
 import { casingAnnotations } from '../../../components/Wellbores/Casings/CasingAnnotations/casing-annotations-defs';
 import { casings } from '../../../components/Wellbores/Casings/casings-defs';
@@ -43,6 +46,7 @@ import {
   generatePerimeterGeometry,
   generatePositionMarkers,
   generateShoes,
+  generateGeoTubeNodes,
   generateOverlayTile,
   generateSceneryReliefTile,
   generateStackWater,
@@ -81,6 +85,7 @@ registry.add(surfaceGeometry, generateSurfaceGeometry);
 registry.add(surfaceTextures, generateSurfaceTexturesData);
 registry.add(sceneryReliefTile, generateSceneryReliefTile);
 registry.add(overlayTile, generateOverlayTile);
+registry.add(geoTubeNodes, generateGeoTubeNodes);
 registry.add(surfaceChunk, generateSurfaceChunk);
 registry.add(wellboreOutline, generateWellboreOutline);
 registry.add(stackWater, generateStackWater);

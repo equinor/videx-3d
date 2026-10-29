@@ -101,6 +101,14 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
   relief's `onSampler` hands out its sampler (`ReliefSampler`), which answers from the
   finest tiles in, as their triangles draw them; what is placed with it pins the finest
   tiles under it, whatever the view.
+- Each time it chooses, it tells the tiles it draws to its `Scenery`'s
+  `SceneryOceanState.reliefTiles` (a `SceneryReliefHub`: the heights' texture array, per
+  tile drawn its slot, the tile it blends from and how far, and the ground's range over any
+  geographic tile), so a tiled layer inside
+  the `Scenery` lies on it exactly (`drape`, see [layers.md](./layers.md#on-the-relief-drape)).
+  One stage's relief at a time. Its `keysVersion` changes only when the set of tiles drawn
+  does (its `index` and `ancestors` are kept meanwhile), so what was found over them is
+  looked for again only then (`GeoTubes`' nodes).
 - `color` and `contours`: see [Colour and contours](#colour-and-contours).
 - The tiles miss the curved sea by up to tens of metres where they are coarse, so the
   ground's height decides which shows: seabed stays behind the sea over it, and where the
@@ -124,7 +132,11 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
   overview is drawn: the sky shows the void as from just below the sea's seabed and the
   scene is lit as the subsurface, so from inside a hill the data is seen in rock rather
   than the sea through it. ⚠️ The void is laid out in the field's frame: far from the
-  field (any hill on land, from Volve) it is black.
+  field (any hill on land, from Volve) it is black. The lid leaves pixels to the background
+  (toward the horizon, and to the walls), so what lies above it is hidden by not being
+  drawn, not by depth: the sea surface hides itself, and the geographic layers do the same
+  (`sceneryLidOverCamera`, `layerShownAt`; see
+  [layers.md](./layers.md#when-a-layer-is-drawn)).
 - From in the water, land is seen through the water as the seabed is.
 - `debug.hide: ['relief']` hides it, like the stage's other layers; `debug.relief`
   shows its tiles by depth (`'tiles'`) or which layer gave each node (`'layers'`).

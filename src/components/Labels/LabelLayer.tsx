@@ -41,7 +41,8 @@ const viewProjection = new Matrix4();
  *
  * Positions, normals and directions are in the layer's own frame, its parent's: it can
  * sit in a group with the data it labels. Its CPU work is done only when its labels change,
- * or, with a provider, when the view does.
+ * or, with a provider, when the view does; and while none of them could show — all past
+ * `maxDistance`, or too small to read (`minPixels`) — it is not drawn at all.
  *
  * Drawn last by an `OITRenderPass` (`LAYERS.OVERLAY`), after the transparent layers
  * resolve, so its text and halos blend over everything as they are; elsewhere after the
@@ -107,7 +108,10 @@ export const LabelLayer = ({
   }, [layer, resolved, labels, provider, atlas]);
 
   useFrame(() => {
-    if (!visible) return;
+    if (!visible) {
+      layer.mesh.visible = false;
+      return;
+    }
     const state = drawn.current;
     layer.setViewHeight(size.height);
     layer.setFar((camera as { far?: number }).far ?? 0);
@@ -139,15 +143,18 @@ export const LabelLayer = ({
         }
       }
     }
-    if (!dirty) return;
-    state.dirty = false;
-    const all = !provider
-      ? labels
-      : labels.length
-        ? labels.concat(state.provided)
-        : state.provided;
-    layer.update(all, resolved, atlas);
+    if (dirty) {
+      state.dirty = false;
+      const all = !provider
+        ? labels
+        : labels.length
+          ? labels.concat(state.provided)
+          : state.provided;
+      layer.update(all, resolved, atlas);
+    }
+    // None could show (all too far, or too small to read): not drawn at all.
+    layer.mesh.visible = layer.reachable(camera, size.height);
   });
 
-  return <primitive object={layer.mesh} visible={visible} />;
+  return <primitive object={layer.mesh} />;
 };

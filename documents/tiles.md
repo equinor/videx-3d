@@ -1068,7 +1068,10 @@ horizon, the plain one 1.5 km above it.
 > over flat seabed the relief's tiles stop too coarse for a distance field of small shapes.
 > The distance field per tile, its id channel, the shared keys and the see-through,
 > OIT-ready draw are as below; on the relief's ground is a later step there. Kept for the
-> reasoning.
+> reasoning. **Built (2026-10-29):** any tiled layer lies on the relief's ground with
+> `drape` — drawn per relief tile under each of its tiles, reading the relief's heights as
+> the stage draws them — and is seen through the sea as the seabed with `water` `'fog'`
+> (layers.md, "The core: `GeoTileLayer`").
 
 Polygons — discoveries, fields, licences, safety zones — drawn on the ground or on the
 sea, with effects of their own (glow, hatching, outlines, pulses, a fade with the water's

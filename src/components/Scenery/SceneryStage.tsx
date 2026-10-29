@@ -768,6 +768,7 @@ export const SceneryStage = ({
           occupants={reliefOccupants}
           onSampler={relief.onSampler}
           skyOrder={ocean.renderOrder + 1}
+          hub={ocean.reliefTiles}
         />
       )}
       {parts.map(part => (

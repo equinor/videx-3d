@@ -66,6 +66,54 @@ export function conformalLatitude(
 }
 
 /**
+ * Where a globe's conformal sphere is matched (`Globe.conformalOrigin`): the sphere, and the
+ * longitude of the disc's centre (radians). Plain numbers: it can be sent to a worker.
+ *
+ * @group Utils
+ */
+export type ConformalOrigin = {
+  sphere: ConformalSphere;
+  longitude0: number;
+};
+
+// An angle in (−π, π].
+const wrapAngle = (angle: number) =>
+  angle - 2 * Math.PI * Math.round(angle / (2 * Math.PI));
+
+/**
+ * The conformal sphere's longitude of one `delta` from the disc's centre's (radians): n Δλ
+ * near it, where the sphere is conformal, but Δλ again on the far side of the Earth, so the
+ * sphere closes without a seam (n Δλ would overlap itself there, by (n − 1) · 360°).
+ *
+ * @group Utils
+ */
+export function sphereLongitude(n: number, delta: number): number {
+  return delta + (n - 1) * Math.sin(delta);
+}
+
+/**
+ * Where `latitude` and `longitude` (WGS84, degrees) lie on the conformal sphere of `origin`,
+ * from the disc's centre: its latitude there less the centre's (`out[0]`), and its
+ * longitude from the centre's (`out[1]`), radians — `Globe.sphereOffset`, without a globe.
+ *
+ * @group Utils
+ */
+export function conformalOffset(
+  origin: ConformalOrigin,
+  latitude: number,
+  longitude: number,
+  out: [number, number] = [0, 0],
+): [number, number] {
+  const { sphere, longitude0 } = origin;
+  out[0] = conformalLatitude(sphere, (latitude * Math.PI) / 180) - sphere.chi0;
+  out[1] = sphereLongitude(
+    sphere.n,
+    wrapAngle((longitude * Math.PI) / 180 - longitude0),
+  );
+  return out;
+}
+
+/**
  * The geodetic latitude (radians) of conformal latitude `chi` on `sphere`: the inverse of
  * {@link conformalLatitude}, to the last bit in a few steps.
  *

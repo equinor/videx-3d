@@ -49,6 +49,7 @@ uniform float intervalPaletteSize;        // number of palette entries
 #ifdef USE_OIT
 #include ../../../../sdk/materials/shaderLib/oit.glsl
 #endif
+#include ../../../../sdk/materials/shaderLib/tube-rim.glsl
 
 void main() {
   #include <clipping_planes_fragment>
@@ -76,18 +77,10 @@ void main() {
 
   #include <logdepthbuf_fragment>
 
-  // Silhouette-rim shading with analytic AA (the tube's built-in edge AA). The darkening
-  // is applied ADDITIVELY toward the rim: `pow(1 - N·V, falloff)` is exactly 0 at the
-  // front-facing point (N·V = 1) for ANY strength/falloff, so the tube centre stays
-  // EXACTLY the diffuse colour — important for data-viz colour coding. `fwidth` floors
-  // N·V so the dark rim can't shrink below ~1px (avoids a jagged fringe), and clamping
-  // keeps thin/far tubes flat at the exact colour. (Scene fog / great distance may still
-  // shift the colour — accepted.)
+  // Silhouette-rim shading with analytic AA (the tube's built-in edge AA; tube-rim.glsl).
   float rimDarken = 0.0;
   #ifndef FLAT_SHADED
-  float ndv = clamp(dot(normalize(vNormal), normalize(vViewPosition)), 0.0, 1.0);
-  float ndvAA = clamp(max(ndv, fwidth(ndv)), 0.0, 1.0);
-  rimDarken = shadingStrength * pow(1.0 - ndvAA, shadingFalloff);
+  rimDarken = tubeRimDarken(vNormal, vViewPosition, shadingStrength, shadingFalloff);
   #endif
   diffuseColor.rgb = mix(diffuseColor.rgb, shadingColor, rimDarken);
 

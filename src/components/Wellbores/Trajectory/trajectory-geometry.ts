@@ -5,6 +5,7 @@ import {
   InterleavedBufferAttribute,
   Sphere,
 } from 'three';
+import { createTubeSegmentGeometry } from '../../../sdk/geometries/tube-segment-geometry';
 import { TrajectorySegmentsType } from './trajectory-defs';
 
 // position(3) + tangent(3) + normal(3) + curvePosition(1)
@@ -108,48 +109,8 @@ export function createTrajectoryGeometry(
   radialSegments: number,
   attributesBuffer = createTrajectoryAttributes(section),
 ) {
-  const radialPositions = radialSegments + 1;
-  const nVertices = radialPositions * 2;
-
-  // vertex.x = position around the ring (0..1), vertex.y = along the segment (0=A,
-  // 1=B), vertex.z = radial scale (always 1 for the wall; the shader multiplies the
-  // radius by it). capSign is 0 for the wall (radial normal); caps use ±1.
-  const vertices = new Float32Array(nVertices * 3);
-  const capSigns = new Float32Array(nVertices);
-  const indices = new Uint32Array(radialSegments * 6);
-
-  for (let i = 0; i < radialPositions; i++) {
-    const x = i / radialSegments;
-    const j = i * 2 * 3;
-
-    // endpoint B (y = 1)
-    vertices[j] = x;
-    vertices[j + 1] = 1;
-    vertices[j + 2] = 1;
-
-    // endpoint A (y = 0)
-    vertices[j + 3] = x;
-    vertices[j + 4] = 0;
-    vertices[j + 5] = 1;
-  }
-
-  // winding mirrors the Casings outer ring so faces point outward (FrontSide)
-  for (let i = 0; i < radialSegments; i++) {
-    const vo = i * 2;
-    const j = i * 6;
-    indices[j] = vo;
-    indices[j + 1] = vo + 1;
-    indices[j + 2] = vo + 3;
-    indices[j + 3] = vo;
-    indices[j + 4] = vo + 3;
-    indices[j + 5] = vo + 2;
-  }
-
-  const geometry = new InstancedBufferGeometry();
+  const geometry = createTubeSegmentGeometry(radialSegments);
   geometry.instanceCount = section.segments - 1;
-  geometry.setIndex(new BufferAttribute(indices, 1));
-  geometry.setAttribute('vertex', new BufferAttribute(vertices, 3));
-  geometry.setAttribute('capSign', new BufferAttribute(capSigns, 1));
 
   geometry.setAttribute(
     'positionA',

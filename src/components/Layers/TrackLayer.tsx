@@ -15,8 +15,9 @@ import type { Globe } from '../../sdk/projection/globe';
 import type { Vec2 } from '../../sdk/types/common';
 import type { AnnotationProps } from '../Annotations/types';
 import { useAnnotations } from '../Annotations/annotations-state';
+import { useSceneryOcean } from '../Scenery/scenery-context';
 import { useWorld } from '../World/world-context';
-import { useLayerGlobe } from './layer-globe';
+import { layerShownAt, useLayerGlobe } from './layer-globe';
 
 /**
  * TrackLayer props
@@ -104,6 +105,7 @@ export const TrackLayer = <T extends Track>({
   fade,
 }: TrackLayerProps<T>) => {
   const placed = useLayerGlobe(frame);
+  const ocean = useSceneryOcean();
   const world = useWorld();
   const flatFrame = frame ?? world?.frame ?? null;
   const flatKey = flatFrame ? JSON.stringify(flatFrame) : '';
@@ -164,10 +166,16 @@ export const TrackLayer = <T extends Track>({
 
   useFrame(({ camera }, delta) => {
     if (!toScene) return;
-    const altitude = placed
-      ? placed.globe.altitude(camera.position)
-      : camera.position.y;
-    const shown = layerVisibilityAt(altitude, options.current) > 0;
+    const shown =
+      (placed
+        ? layerShownAt(
+            camera.position,
+            placed.globe,
+            ocean,
+            options.current,
+            height,
+          )
+        : layerVisibilityAt(camera.position.y, options.current)) > 0;
     const ease = smoothing > 0 ? Math.exp(-delta / (smoothing / 3)) : 0;
     const wall = Date.now();
     const now = performance.now();

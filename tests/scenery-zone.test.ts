@@ -6,6 +6,7 @@ import {
   skySunColor,
   skyTwilight,
   sceneryWaterDimming,
+  sceneryLidOverCamera,
   sceneryZone,
   SceneryZoneLevels,
 } from '../src/components/Scenery/scenery-model';
@@ -65,6 +66,27 @@ describe('sceneryZone', () => {
 
   it('is all subsurface when the sky is not drawn', () => {
     expect(sceneryZone(500, { ...sea, background: false })).toBe('subsurface');
+  });
+});
+
+describe('sceneryLidOverCamera', () => {
+  it("is the ground over a camera in it — a stage's, else the sea's seabed — and null over it", () => {
+    expect(sceneryLidOverCamera(-50, sea)).toBeNull();
+    expect(sceneryLidOverCamera(-150, sea)).toBe(-100);
+    // Inside a hill above the sea's seabed; in a trench below it, over its floor.
+    expect(sceneryLidOverCamera(-60, { ...sea, oceanGround: -20 })).toBe(-20);
+    expect(
+      sceneryLidOverCamera(-280, { ...sea, oceanGround: -300 }),
+    ).toBeNull();
+    expect(sceneryLidOverCamera(-320, { ...sea, oceanGround: -300 })).toBe(
+      -300,
+    );
+    // Inside land above the sea.
+    expect(sceneryLidOverCamera(600, { ...sea, oceanGround: 830 })).toBe(830);
+  });
+
+  it('is null without a sea: no lid', () => {
+    expect(sceneryLidOverCamera(-1e6, { ...sea, ocean: false })).toBeNull();
   });
 });
 

@@ -161,6 +161,15 @@ so layers are not re-rendered: they subscribe and move their SVG through refs.
 - `MinimapLayer`: a `<g>` handed to `onFrame(group, state)` as the minimap changes.
 - `useMinimapFrame(callback)` and `useMinimap()` (`project`, `unproject`) for your own.
 
+⚠️ **Cut paths to the map.** A browser strokes, dashes and fills an SVG path at its full
+length, off the map or not, on its raster thread, so it never shows in a JavaScript
+profile. Zoomed in to a kilometre, a route or an outline running on past the map reaches a
+million pixels beyond it: the zone's dashed outline and the `Pipelines` story's routes took
+120–160 ms a frame while the camera moved, and 17 ms once cut. `MinimapPolyline`,
+`MinimapGeoLayer` and the zone's outline write only what lies on the map and a margin round
+it (`minimapPathData`, `minimapClipRect`; `clipPolylineToRect`, `clipRingToRect` in the
+sdk). A layer of your own drawing long paths should do the same.
+
 ```tsx
 const Marker = ({ at }: { at: [number, number] }) => {
   const dot = useRef<SVGCircleElement>(null);

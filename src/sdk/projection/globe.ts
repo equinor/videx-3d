@@ -1,10 +1,12 @@
 import proj4 from 'proj4';
 import { Matrix4, Uniform, Vector2, Vector3, Vector4 } from 'three';
 import {
+  ConformalOrigin,
   ConformalSphere,
-  conformalLatitude,
+  conformalOffset,
   conformalSphere,
   geodeticLatitude,
+  sphereLongitude,
 } from './conformal-sphere';
 import { wgs84Def } from './crs';
 import { GeoFrame, geoFrameAt, placeGeoFrame } from './geo-frame';
@@ -105,12 +107,7 @@ const wrapAngle = (angle: number) =>
   angle - 2 * Math.PI * Math.round(angle / (2 * Math.PI));
 // Globe.foot's latitude and longitude.
 const under = { latitude: 0, longitude: 0 };
-
-// The conformal sphere's longitude of one `delta` from the disc's centre's (radians): n Δλ
-// near it, where the sphere is conformal, but Δλ again on the far side of the Earth, so the
-// sphere closes without a seam (n Δλ would overlap itself there, by (n − 1) · 360°).
-const sphereLongitude = (n: number, delta: number) =>
-  delta + (n - 1) * Math.sin(delta);
+const offsetPair: [number, number] = [0, 0];
 
 // Its inverse, by Newton's method: its slope is within (n − 1) of 1.
 const mapLongitude = (n: number, lambda: number) => {
@@ -165,6 +162,7 @@ export class Globe {
   private toMap: proj4.Converter | null = null;
   private sphere: ConformalSphere | null = null;
   private lambda0 = 0;
+  private origin: ConformalOrigin | null = null;
   private sinChi0 = 0;
   private cosChi0 = 1;
   private readonly trueEast = new Vector3(1, 0, 0);
@@ -402,13 +400,27 @@ export class Globe {
    * near the field, so 32-bit floats hold it to a millimetre. Needs a {@link frame}.
    */
   sphereOffset(latitude: number, longitude: number, target: Vector2): Vector2 {
-    const sphere = this.sphere;
-    if (!sphere)
+    const origin = this.conformalOrigin;
+    if (!origin)
       throw new Error('Globe.sphereOffset needs a frame (Globe.setFrame)');
-    return target.set(
-      conformalLatitude(sphere, latitude * DEG) - sphere.chi0,
-      sphereLongitude(sphere.n, wrapAngle(longitude * DEG - this.lambda0)),
-    );
+    conformalOffset(origin, latitude, longitude, offsetPair);
+    return target.set(offsetPair[0], offsetPair[1]);
+  }
+
+  /**
+   * The conformal sphere {@link sphereOffset} measures from, and the disc's centre's
+   * longitude: plain numbers, for `conformalOffset` where there is no globe (a worker).
+   * Null without a {@link frame}. A new object whenever the frame changes.
+   */
+  get conformalOrigin(): ConformalOrigin | null {
+    const sphere = this.sphere;
+    if (!sphere) return null;
+    if (
+      this.origin?.sphere !== sphere ||
+      this.origin.longitude0 !== this.lambda0
+    )
+      this.origin = { sphere, longitude0: this.lambda0 };
+    return this.origin;
   }
 
   /**

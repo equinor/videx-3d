@@ -10,6 +10,7 @@ export * from './depth-markers-generator';
 export * from './formation-markers-generator';
 export * from './generator-stats';
 export * from './generator-supersede';
+export * from './geo-tube-nodes-generator';
 export * from './overlay-tile-generator';
 export * from './perforations-generator';
 export * from './perimieter-generator';

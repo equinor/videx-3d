@@ -1,4 +1,4 @@
-import { Color, Vector3, Vector4 } from 'three';
+import { Color, PerspectiveCamera, Vector3, Vector4 } from 'three';
 import { describe, expect, it } from 'vitest';
 import {
   labelAtlasKey,
@@ -282,6 +282,69 @@ describe('LabelLayerMesh', () => {
     expect(layer.write(labels, style(), texts(5))).toBe(false);
     expect(layer.count).toBe(0);
     layer.dispose();
+  });
+
+  describe('reachable', () => {
+    // A 50° view 1000 pixels high, from the origin down -Z.
+    const camera = new PerspectiveCamera(50, 1, 1, 1e7);
+    camera.updateProjectionMatrix();
+    const at = (z: number, size = 100, patch: Partial<LabelStyle> = {}) => {
+      const layer = new LabelLayerMesh();
+      const given = style({ size, ...patch });
+      layer.setStyle(given);
+      layer.write([{ text: 'a', position: [0, 0, -z] }], given, texts());
+      return layer.reachable(camera, 1000);
+    };
+
+    it('is false with no labels', () => {
+      expect(new LabelLayerMesh().reachable(camera, 1000)).toBe(false);
+    });
+
+    it('is false past maxDistance, and nearer than minDistance', () => {
+      expect(at(5000, 100, { maxDistance: 10000 })).toBe(true);
+      expect(at(20000, 100, { maxDistance: 10000 })).toBe(false);
+      expect(at(50, 100, { minDistance: 1000 })).toBe(false);
+    });
+
+    it('is false once the largest could be no larger than minPixels', () => {
+      // 100 units at 10 km: about 11 pixels; at 1000 km, a tenth of one.
+      expect(at(10000)).toBe(true);
+      expect(at(1e6)).toBe(false);
+      // Never larger than maxPixels: below minPixels, never drawn.
+      expect(at(10000, 100, { maxPixels: 4 })).toBe(false);
+      // No least size: drawn at any distance.
+      expect(at(1e6, 100, { minPixels: 0 })).toBe(true);
+    });
+
+    it('judges a layer spread over a region by its nearest part', () => {
+      // A line of labels 1000 km long, 113 km below the camera.
+      const spread = (maxDistance: number) => {
+        const layer = new LabelLayerMesh();
+        const given = style({ size: 2500, maxDistance });
+        layer.setStyle(given);
+        layer.write(
+          Array.from({ length: 101 }, (_, i) => ({
+            text: `${i}`,
+            position: [(i - 50) * 10000, -113000, 0] as [
+              number,
+              number,
+              number,
+            ],
+          })),
+          given,
+          texts(),
+        );
+        return layer.reachable(camera, 1000);
+      };
+      expect(spread(60000)).toBe(false);
+      expect(spread(150000)).toBe(true);
+    });
+
+    it('counts how far its text reaches from its position', () => {
+      // 1 m from the label's position, its text 2 by 1.5 ems about it: 1.25 m.
+      expect(at(10001, 1, { maxDistance: 10000, minPixels: 0 })).toBe(true);
+      expect(at(10002, 1, { maxDistance: 10000, minPixels: 0 })).toBe(false);
+    });
   });
 });
 

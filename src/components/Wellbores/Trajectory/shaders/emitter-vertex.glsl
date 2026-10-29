@@ -21,13 +21,7 @@ flat varying float vEmitterId;
 #include <common>
 #include <logdepthbuf_pars_vertex>
 #include <clipping_planes_pars_vertex>
-
-// Same as the visual vertex shader: `v` rotated by -angle about the unit `axis`.
-vec3 rotateAboutAxis(vec3 v, vec3 axis, float angle) {
-  float s = sin(angle);
-  float c = cos(angle);
-  return v * c - cross(axis, v) * s + axis * (dot(axis, v) * (1.0 - c));
-}
+#include ../../../../sdk/materials/shaderLib/tube-segment.glsl
 
 // Mirrors the visual vertex shader's tube/caps reconstruction so the picking
 // silhouette matches exactly what is drawn — including the screen-space minimum
@@ -37,14 +31,11 @@ void main() {
   vec3 segmentPosition = mix(positionA, positionB, vertex.y);
   vec3 segmentTangent = normalize(mix(tangentA, tangentB, vertex.y));
 
-  float offsetAngle = (0.5 - vertex.x) * 2.0 * PI;
   vec3 directionalPoint = normalize(mix(normalA, normalB, vertex.y));
-  vec3 k = normalize(rotateAboutAxis(directionalPoint, segmentTangent, offsetAngle));
+  vec3 k = tubeRingDirection(directionalPoint, segmentTangent, tubeRingAngle(vertex.x));
 
   vec4 mvAxis = modelViewMatrix * vec4(segmentPosition, 1.0);
-  vec4 clipAxis = projectionMatrix * mvAxis;
-  float ndcPerPixel = 2.0 / resolution.y;
-  float minWorldRadius = (minPixelRadius * ndcPerPixel) * clipAxis.w / projectionMatrix[1][1];
+  float minWorldRadius = tubeMinWorldRadius(mvAxis, minPixelRadius, resolution);
   float effectiveRadius = max(radius * sizeMultiplier, minWorldRadius);
 
   vec3 transformed = segmentPosition + k * (effectiveRadius * vertex.z);

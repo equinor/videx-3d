@@ -1,16 +1,23 @@
 import { Frustum, Matrix4, PerspectiveCamera, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
-import { OverlayTileBounds } from '../src/components/Layers/geo-overlay';
+import { GeoTileBounds } from '../src/components/Layers/geo-tile-layer';
 import { getProjectionDefFromUtmZone } from '../src/sdk/projection/crs';
 import { Globe } from '../src/sdk/projection/globe';
 import { geoTileKeyAt, geoTileRegion } from '../src/sdk/tiles/geo-tile-keys';
 
-// An overlay's tiles lie flat at one height: their bounds are kept between frames
-// (OverlayTileBounds) instead of found per call (geoTileInView). They must keep every tile
-// any of whose ground can be seen, and never be farther than its nearest point.
-describe('OverlayTileBounds', () => {
-  for (const curved of [true, false]) {
-    it(`keeps every tile any of whose ground can be seen (${curved ? 'curved' : 'flat'})`, () => {
+// A layer's tiles lie between fixed heights (flat at one, or draped on a relief between its
+// lowest and highest ground): their bounds are kept between frames (GeoTileBounds) instead
+// of found per call (geoTileInView). They must keep every tile any of whose ground can be
+// seen, and never be farther than its nearest point.
+describe('GeoTileBounds', () => {
+  for (const [curved, low, high, perTile] of [
+    [true, 0, 0, false],
+    [false, 0, 0, false],
+    [true, -400, 1500, false],
+    // The same range, from the relief's ground tile by tile (draped).
+    [true, -400, 1500, true],
+  ] as const) {
+    it(`keeps every tile any of whose ground can be seen (${curved ? 'curved' : 'flat'}, ${low}…${high} m${perTile ? ', per tile' : ''})`, () => {
       const globe = new Globe();
       globe.setDisc([-8000, -8000, 8000, 8000]);
       globe.setFrame({
@@ -20,9 +27,10 @@ describe('OverlayTileBounds', () => {
       globe.enabled = curved;
       const R = globe.radius;
       const centre = globe.centre;
-      const height = 0;
-      const bounds = new OverlayTileBounds();
-      bounds.prepare(globe, height);
+      const bounds = new GeoTileBounds();
+      if (perTile)
+        bounds.prepare(globe, 0, 0, () => [low, high] as [number, number], 1);
+      else bounds.prepare(globe, low, high);
       let seed = 3;
       const random = () => {
         seed = (seed * 16807) % 2147483647;
@@ -70,6 +78,9 @@ describe('OverlayTileBounds', () => {
             let closest = Infinity;
             for (let j = 0; j <= 12; j++) {
               for (let i = 0; i <= 12; i++) {
+                // Anywhere between the heights the tile's ground may lie at.
+                const height =
+                  low + ((high - low) * ((i * 7 + j * 5) % 13)) / 12;
                 globe.geodetic(
                   north - (span * j) / 12,
                   west + (span * i) / 12,

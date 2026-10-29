@@ -51,6 +51,8 @@ export type DrapedPolyline = {
   gaps: number;
   /** greatest height `span` lifted the line off the ground (m) */
   lifted: number;
+  /** the ground under each of `points` (gaps carried across as in them): a point's lift off it is its height less this, less `clearance` */
+  ground: number[];
 };
 
 /** Nodes every `spacing` along the route, the given vertices always included. */
@@ -173,5 +175,5 @@ export function drapePolyline(
     }
   }
 
-  return { points, length, gaps, lifted };
+  return { points, length, gaps, lifted, ground: Array.from(ground) };
 }

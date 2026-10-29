@@ -18,6 +18,10 @@ export type {
   ReliefSeabedRamp,
 } from './scenery-relief-look';
 export type { SceneryReliefTileDebug } from './scenery-relief-tiles';
+export type {
+  SceneryReliefDrawn,
+  SceneryReliefHub,
+} from './scenery-relief-hub';
 export * from './scenery-context';
 export * from './scenery-defs';
 export { SCENERY_LAYER_ORDER } from './scenery-layers';

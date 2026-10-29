@@ -1,9 +1,11 @@
 import {
   BufferAttribute,
+  Camera,
   Color,
   InstancedBufferGeometry,
   InstancedInterleavedBuffer,
   InterleavedBufferAttribute,
+  Matrix4,
   Mesh,
   ShaderMaterial,
   SRGBColorSpace,
@@ -103,6 +105,12 @@ export function cssColorAlpha(css: string, color: Color) {
 }
 
 const scratchColor = new Color();
+const scratchCentre = new Vector3();
+const scratchInverse = new Matrix4();
+// LabelLayerMesh's bounds: cells along each side of its labels' box, and floats a cell (its
+// middle, its radius and its largest own size).
+const LABEL_GRID = 32;
+const LABEL_CELL_FLOATS = 5;
 const scratchDisplay = new Vector4();
 const scratchRanges: LabelFadeRanges = { facing: [0, 0], pixels: [0, 0] };
 const scratchRgb = { r: 0, g: 0, b: 0 };
@@ -132,6 +140,13 @@ export class LabelLayerMesh {
   // The style's size, and the live multiplier on it (setScale).
   private size = 1;
   private scale = 1;
+  // Its labels' bounds, in its frame: grid cells of them (see bound), LABEL_CELL_FLOATS a
+  // cell; the farthest any corner reaches from its position, as a multiple of the size.
+  private cells = new Float64Array(0);
+  private cellCount = 0;
+  private reach = 0;
+  private minDistance = 0;
+  private maxDistance = Infinity;
 
   constructor() {
     const material = new ShaderMaterial({
@@ -193,6 +208,8 @@ export class LabelLayerMesh {
       Math.min(style.maxDistance, 3.4e38),
       style.fadeDistance,
     );
+    this.minDistance = style.minDistance;
+    this.maxDistance = style.maxDistance;
     uniforms.uOpacity.value = style.opacity;
     uniforms.uAnchor.value.fromArray(labelAnchor(style.align, style.baseline));
     uniforms.uOffset.value.fromArray(style.offset);
@@ -249,6 +266,7 @@ export class LabelLayerMesh {
     const written = writeLabelInstances(labels, style, texts, this.data);
     const geometry = this.mesh.geometry;
     geometry.instanceCount = written ? labels.length : 0;
+    if (written) this.bound(labels.length, style);
     const buffer = (
       geometry.getAttribute('labelPosition') as InterleavedBufferAttribute
     ).data;
@@ -258,9 +276,143 @@ export class LabelLayerMesh {
     return written;
   }
 
+  /**
+   * Whether any label could show to `camera` (a view `viewHeight` CSS pixels high): one
+   * within its distances, and large enough on screen to read (`minPixels`) at the nearest
+   * it could be. False draws nothing at all, where each label would be dropped in the
+   * vertex shader anyway — a whole layer far off, or too small, costs no draw. Tested a grid
+   * cell of labels at a time, so a layer spread over a region is judged by its nearest part.
+   * Facing is left to the shader. Conservative: true where it cannot tell.
+   */
+  reachable(camera: Camera, viewHeight: number): boolean {
+    if (this.count === 0 || this.cellCount === 0) return false;
+    const { uniforms } = this.mesh.material;
+    if (uniforms.uOpacity.value <= 0) return false;
+    const fadesFrom = uniforms.uPixels.value.x;
+    // No larger on screen than maxPixels, as the shader shrinks it.
+    if (fadesFrom > 0 && uniforms.uMaxPixels.value <= fadesFrom) return false;
+    // The camera in its frame; distances there scaled to the world's. Label sizes are in
+    // world units.
+    const world = this.mesh.matrixWorld;
+    const scale = world.getMaxScaleOnAxis();
+    const eye = scratchCentre
+      .copy(camera.position)
+      .applyMatrix4(scratchInverse.copy(world).invert());
+    const size = this.size * this.scale;
+    const reach = this.reach * size;
+    const p = camera.projectionMatrix.elements;
+    const orthographic = p[15] === 1;
+    // Its size on screen per unit of own size, at a depth of 1 (or any, orthographic).
+    const perSize = p[5] * viewHeight * 0.5;
+    // In view, a point's depth is at least its distance times the cosine of the view's
+    // half diagonal.
+    const cosine = 1 / Math.sqrt(1 + 1 / (p[0] * p[0]) + 1 / (p[5] * p[5]));
+    const cells = this.cells;
+    for (let c = 0; c < this.cellCount; c++) {
+      const at = c * LABEL_CELL_FLOATS;
+      const toMiddle =
+        Math.hypot(
+          cells[at] - eye.x,
+          cells[at + 1] - eye.y,
+          cells[at + 2] - eye.z,
+        ) * scale;
+      const radius = cells[at + 3] * scale + reach;
+      const nearest = Math.max(toMiddle - radius, 0);
+      if (nearest > this.maxDistance) continue;
+      if (toMiddle + radius < this.minDistance) continue;
+      if (fadesFrom <= 0) return true;
+      const own = cells[at + 4] * size;
+      if (orthographic) {
+        if (own * perSize > fadesFrom) return true;
+        continue;
+      }
+      const depth = nearest * cosine;
+      if (depth <= 0 || (own * perSize) / depth > fadesFrom) return true;
+    }
+    return false;
+  }
+
   dispose() {
     this.mesh.geometry.dispose();
     this.mesh.material.dispose();
+  }
+
+  // The bounds of the `count` labels just written (see `reachable`): a grid of up to
+  // LABEL_GRID cells along each side of their box, each occupied one a sphere round its
+  // labels' positions and their largest own size; and how far any text reaches from its
+  // position, as the shader has it.
+  private bound(count: number, style: LabelStyle) {
+    const data = this.data;
+    const F = LABEL_INSTANCE_FLOATS;
+    let minX = Infinity;
+    let minY = Infinity;
+    let minZ = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    let maxZ = -Infinity;
+    for (let i = 0; i < count; i++) {
+      const x = data[i * F];
+      const y = data[i * F + 1];
+      const z = data[i * F + 2];
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      minZ = Math.min(minZ, z);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+      maxZ = Math.max(maxZ, z);
+    }
+    const side =
+      Math.max(maxX - minX, maxY - minY, maxZ - minZ) / LABEL_GRID || 1;
+    const cellOf = (v: number, min: number) =>
+      Math.min(Math.floor((v - min) / side), LABEL_GRID - 1);
+    // Each occupied cell's box and largest own size, by its index.
+    const boxes = new Map<number, number[]>();
+    const [ax, ay] = labelAnchor(style.align, style.baseline);
+    const offset = Math.hypot(style.offset[0], style.offset[1]);
+    let reach = 0;
+    for (let i = 0; i < count; i++) {
+      const at = i * F;
+      const x = data[at];
+      const y = data[at + 1];
+      const z = data[at + 2];
+      const own = data[at + 15];
+      const key =
+        (cellOf(x, minX) * LABEL_GRID + cellOf(y, minY)) * LABEL_GRID +
+        cellOf(z, minZ);
+      const box = boxes.get(key);
+      if (!box) boxes.set(key, [x, y, z, x, y, z, own]);
+      else {
+        box[0] = Math.min(box[0], x);
+        box[1] = Math.min(box[1], y);
+        box[2] = Math.min(box[2], z);
+        box[3] = Math.max(box[3], x);
+        box[4] = Math.max(box[4], y);
+        box[5] = Math.max(box[5], z);
+        box[6] = Math.max(box[6], own);
+      }
+      // As the shader's: half its extent about its middle, which its anchor moves off its
+      // position, and its offset.
+      const corner =
+        Math.hypot(
+          data[at + 13] * (Math.abs(ax) + 0.5),
+          data[at + 14] * (Math.abs(ay) + 0.5),
+        ) + offset;
+      reach = Math.max(reach, corner * own);
+    }
+    if (this.cells.length < boxes.size * LABEL_CELL_FLOATS)
+      this.cells = new Float64Array(boxes.size * LABEL_CELL_FLOATS);
+    let c = 0;
+    for (const box of boxes.values()) {
+      const at = c++ * LABEL_CELL_FLOATS;
+      this.cells[at] = (box[0] + box[3]) / 2;
+      this.cells[at + 1] = (box[1] + box[4]) / 2;
+      this.cells[at + 2] = (box[2] + box[5]) / 2;
+      this.cells[at + 3] =
+        Math.hypot(box[3] - box[0], box[4] - box[1], box[5] - box[2]) / 2;
+      this.cells[at + 4] = box[6];
+    }
+    this.cellCount = boxes.size;
+    this.reach = reach;
   }
 
   // A quad, -0.5 to 0.5 across and up, and room for `capacity` labels.

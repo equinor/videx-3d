@@ -8,6 +8,7 @@ import {
 } from '../../../sdk/projection/map-view';
 import { MinimapCameraIcon, MinimapTargetIcon } from './MinimapIcons';
 import { HANDLE_RADIUS, useDraggableMarker } from './minimap-drag';
+import { minimapClipRect, minimapPathData } from './minimap-path';
 
 /**
  * How far a minimap marker's shape reaches: metres on the ground, or `{ fraction }` of the
@@ -309,7 +310,8 @@ export type MinimapPolylineProps = {
 /**
  * A line or an outline on a {@link Minimap}, through points at scene X/Z: a wellbore's
  * trajectory, a licence's boundary. Redrawn as the camera moves without a React render,
- * and per point: for many thousands of points, simplify them first.
+ * and per point: for many thousands of points, simplify them first. Only what lies on the
+ * map is drawn (`minimapPathData`), however far the line reaches past it.
  *
  * @group Components
  */
@@ -324,24 +326,25 @@ export const MinimapPolyline = ({
 }: MinimapPolylineProps) => {
   const path = useRef<SVGPathElement>(null);
   useMinimapFrame(({ view }) => {
-    let d = '';
+    const pixels: Vec2[] = [];
     let last: Vec2 | null = null;
     for (let i = 0; i < points.length; i++) {
       const at = mapViewToPixel(view, points[i][0], points[i][1]);
       // In a projection, a long segment bends.
       if (last)
-        for (const [x, y] of mapViewBetween(
-          view,
-          points[i - 1],
-          points[i],
-          last,
-          at,
-        ))
-          d += `L${x.toFixed(1)} ${y.toFixed(1)}`;
-      d += `${i === 0 ? 'M' : 'L'}${at[0].toFixed(1)} ${at[1].toFixed(1)}`;
+        pixels.push(
+          ...mapViewBetween(view, points[i - 1], points[i], last, at),
+        );
+      pixels.push(at);
       last = at;
     }
-    path.current?.setAttribute('d', closed && d ? `${d}Z` : d);
+    // Cut to the map: filled, as an area; else as a line, closed back to its start.
+    const filled = closed && fill !== 'none';
+    if (closed && !filled && pixels.length > 1) pixels.push(pixels[0]);
+    path.current?.setAttribute(
+      'd',
+      minimapPathData(pixels, filled, minimapClipRect(view)),
+    );
   });
   return (
     <path
@@ -439,29 +442,31 @@ export const MinimapZoneOutline = ({
       return;
     }
     const pixel2 = view.metresPerPixel * view.metresPerPixel;
+    const clip = minimapClipRect(view);
     let d = '';
-    let started = false;
+    // A run of the outline's pixels, until the map does not reach it.
+    let run: Vec2[] = [];
     let lastX = Infinity;
     let lastZ = Infinity;
     for (let k = 0; k < ring.length; k++) {
       const [x, z] = ring[k];
       // Where the map does not reach it: the line breaks.
       if (!Number.isFinite(x) || !Number.isFinite(z)) {
-        started = false;
+        d += minimapPathData(run, false, clip);
+        run = [];
         continue;
       }
       if (
-        started &&
+        run.length > 0 &&
         k < ring.length - 1 &&
         (x - lastX) ** 2 + (z - lastZ) ** 2 < pixel2
       )
         continue;
-      const [px, py] = mapViewToPixel(view, x, z);
-      d += `${started ? 'L' : 'M'}${px.toFixed(1)} ${py.toFixed(1)}`;
-      started = true;
+      run.push(mapViewToPixel(view, x, z));
       lastX = x;
       lastZ = z;
     }
+    d += minimapPathData(run, false, clip);
     path.current.setAttribute('d', d);
   });
   return (

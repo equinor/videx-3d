@@ -48,6 +48,7 @@ import { pixelsPerUnit } from '../../sdk/utils/lod';
 import { sceneryReliefTile, SceneryReliefTileResponse } from './scenery-defs';
 import type { SceneryMaterial } from './scenery-material';
 import type { SceneryReliefLoading } from './scenery-progress';
+import type { SceneryReliefHub } from './scenery-relief-hub';
 import { geoWarp } from './scenery-relief-geo';
 import { SceneryReliefAtlas } from './scenery-relief-atlas';
 import {
@@ -216,6 +217,8 @@ type SceneryStageReliefTilesProps = {
   onSampler?: (sampler: ReliefSampler | null) => void;
   /** the sky's sea surface layer's `renderOrder`: the overview past the tiles draws after it */
   skyOrder: number;
+  /** told the tiles drawn, each time they are chosen, for what lies on them (`SceneryOceanState.reliefTiles`) */
+  hub?: SceneryReliefHub;
 };
 
 /** A region a relief drawn from tiles hands out its ground over (see `grounds`). */
@@ -255,6 +258,7 @@ export const SceneryStageReliefTiles = ({
   occupants,
   onSampler,
   skyOrder,
+  hub,
 }: SceneryStageReliefTilesProps) => {
   const gl = useThree(state => state.gl);
   const slots = useMemo(() => {
@@ -382,8 +386,8 @@ export const SceneryStageReliefTiles = ({
   const streaming = useMemo(() => {
     const plain = JSON.parse(sourceKey) as ReliefLayersSource;
     const slotOf = new Map<number, number>();
-    // The highest ground in so far, for the horizon.
-    const reached = { highest: 0 };
+    // The highest ground in so far, for the horizon; and the lowest, for what lies on it.
+    const reached = { highest: 0, lowest: 0 };
     // Tiles loaded or let go: what the ground's index is up to; and whether a tile under
     // a pin came in, which the sampler follows.
     const resident = { changes: 0, pinnedIn: false };
@@ -400,6 +404,7 @@ export const SceneryStageReliefTiles = ({
         onLoad: (key, tile) => {
           slotOf.set(key, textures.put(tile));
           reached.highest = Math.max(reached.highest, tile.max);
+          reached.lowest = Math.min(reached.lowest, tile.min);
           resident.changes++;
           const [x0, z0, width] = geoTileSquare(key);
           for (const [a0, b0, a1, b1] of pinnedSquares()) {
@@ -414,17 +419,38 @@ export const SceneryStageReliefTiles = ({
         },
       },
     );
+    // The ground over a geographic tile: from the finest tile in over it, whose range holds it.
+    const rangeAt = (key: number): [number, number] | null => {
+      for (let at = key; ; at = tileParent(at)) {
+        const tile = streamer.get(at);
+        if (tile) return [tile.min, tile.max];
+        if (tileAddress(at)[0] === 0) return null;
+      }
+    };
+    // The ground at a point, from the finest tile in there, on its triangles.
+    const heightAt = (longitude: number, latitude: number): number | null => {
+      for (let depth = MAX_DEPTH; depth >= 0; depth--) {
+        const tile = streamer.get(geoTileKeyAt(depth, longitude, latitude));
+        if (tile) return geoReliefTileHeightAt(tile, longitude, latitude, true);
+      }
+      return null;
+    };
     return {
       streamer,
       slotOf,
       reached,
       resident,
+      rangeAt,
+      heightAt,
       split: new Set<number>(),
       overviewSplit: new Set<number>(),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- pinnedSquares reads refs
   }, [generate, sourceKey, textures, slots, pins]);
   useEffect(() => () => streaming.streamer.dispose(), [streaming]);
+  // Who tells the hub: once gone, what lay on these tiles lies flat again.
+  const hubOwner = useMemo(() => ({}), []);
+  useEffect(() => () => hub?.publish(hubOwner, null), [hub, hubOwner]);
 
   // The relief's sampler: a new one whenever a pinned tile comes in, for what settled on
   // the ground to settle again. Its tiles are what is in, whatever the GPU holds.
@@ -621,6 +647,7 @@ export const SceneryStageReliefTiles = ({
     if (!globe.frame) {
       geometry.instanceCount = 0;
       subset.instanceCount = 0;
+      hub?.publish(hubOwner, null);
       return;
     }
     // The camera: where it is over the Earth, and its altitude over the globe.
@@ -955,6 +982,25 @@ export const SceneryStageReliefTiles = ({
       count++;
     }
     geometry.instanceCount = count;
+    // What lies on the relief (a draped GeoTileLayer) meets these tiles, as drawn now.
+    hub?.publish(
+      hubOwner,
+      visible && count > 0
+        ? {
+            heights: textures.heights,
+            cells: RELIEF_TILE_CELLS,
+            keys: drawnKeys,
+            tiles: array,
+            froms: fromArray,
+            blends: blendArray,
+            lowest: streaming.reached.lowest,
+            highest: streaming.reached.highest,
+            rangeAt: streaming.rangeAt,
+            heightAt: streaming.heightAt,
+            resident: streaming.resident.changes,
+          }
+        : null,
+    );
     // ⚠️ An empty update range uploads the whole array's tail instead.
     if (count > 0) {
       for (const [attribute, size] of [

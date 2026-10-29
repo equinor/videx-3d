@@ -33,14 +33,7 @@ varying float vAxial;
 #include <normal_pars_vertex>
 #include <logdepthbuf_pars_vertex>
 #include <clipping_planes_pars_vertex>
-
-// `v` rotated by -angle about the unit `axis` (Rodrigues): what the 4x4 rotation matrix
-// this replaces computed, without building it per vertex.
-vec3 rotateAboutAxis(vec3 v, vec3 axis, float angle) {
-  float s = sin(angle);
-  float c = cos(angle);
-  return v * c - cross(axis, v) * s + axis * (dot(axis, v) * (1.0 - c));
-}
+#include ../../../../sdk/materials/shaderLib/tube-segment.glsl
 
 void main() {
   vec3 segmentPosition = mix(positionA, positionB, vertex.y);
@@ -51,9 +44,9 @@ void main() {
   // fixed world axis avoids the ring collapsing/twisting into a "ribbon" where the
   // tangent aligns with that axis (near-horizontal sections). k is the outward radial
   // direction for this vertex and doubles as the surface normal.
-  float offsetAngle = (0.5 - vertex.x) * 2.0 * PI;
+  float offsetAngle = tubeRingAngle(vertex.x);
   vec3 directionalPoint = normalize(mix(normalA, normalB, vertex.y));
-  vec3 k = normalize(rotateAboutAxis(directionalPoint, segmentTangent, offsetAngle));
+  vec3 k = tubeRingDirection(directionalPoint, segmentTangent, offsetAngle);
 
   // End caps (capSign = -1 start / +1 end) face along the segment tangent; the tube
   // wall (capSign = 0) faces radially outward along k.
@@ -104,13 +97,10 @@ void main() {
   #include <defaultnormal_vertex>
   #include <normal_vertex>
 
-  // Screen-space minimum radius. Convert the desired pixel radius into the world-space
-  // radius that projects to that many pixels at the axis point's depth. Works for both
-  // perspective (clip.w = -viewZ) and orthographic (clip.w = 1) projections.
+  // Screen-space minimum radius: the world radius that projects to that many pixels at the
+  // axis point's depth.
   vec4 mvAxis = modelViewMatrix * vec4(segmentPosition, 1.0);
-  vec4 clipAxis = projectionMatrix * mvAxis;
-  float ndcPerPixel = 2.0 / resolution.y;
-  float minWorldRadius = (minPixelRadius * ndcPerPixel) * clipAxis.w / projectionMatrix[1][1];
+  float minWorldRadius = tubeMinWorldRadius(mvAxis, minPixelRadius, resolution);
   float effectiveRadius = max(radius * sizeMultiplier, minWorldRadius);
 
   // vertex.z is the radial scale: 1 along the tube wall / at a cap rim, 0 at a cap

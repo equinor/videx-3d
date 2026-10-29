@@ -198,6 +198,10 @@ the appearance, exactly as with the other wellbore components.
 
 ## See also
 
+- The tube's ring and its screen-space floor (`shaderLib/tube-segment.glsl`), its rim
+  shading (`shaderLib/tube-rim.glsl`) and its segment geometry (`createTubeSegmentGeometry`)
+  are shared with `GeoTubes` (see [layers.md](./layers.md#lines-geotubes)), whose
+  `minPixels`, like `GeoSymbols`', turns the floor off at 0 as `minPixelRadius` does.
 - [Trajectory migration guide](./trajectory-migration.md)
 - [Generators](./generators.md)
 - [Order-Independent Transparency (OIT) Guide](./oit-guide.md)

@@ -2,6 +2,7 @@ import { createContext, useContext } from 'react';
 import { Color, Object3D, Vector3 } from 'three';
 import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import type { SceneryMaterial } from './scenery-material';
+import type { SceneryReliefHub } from './scenery-relief-hub';
 import type { SceneryReliefLoading } from './scenery-progress';
 
 /**
@@ -75,6 +76,11 @@ export type SceneryOceanState = {
    * place are that frame's, as a `World`'s would be. Stable.
    */
   frame: (frame: GeoFrame | null) => void;
+  /**
+   * The relief tiles a stage draws, as it draws them: what a layer lying on the ground
+   * meets (a `GeoTileLayer`'s `drape`). Stable.
+   */
+  reliefTiles: SceneryReliefHub;
 };
 
 export const SceneryOceanContext = createContext<SceneryOceanState | null>(

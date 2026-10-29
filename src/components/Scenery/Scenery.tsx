@@ -78,6 +78,7 @@ import {
   SceneryRegistryContext,
 } from './scenery-registry';
 import { createSceneryGeometry, SceneryMaterial } from './scenery-material';
+import { SceneryReliefHub } from './scenery-relief-hub';
 import { sceneryOceanDefines } from './scenery-stage';
 import {
   SKY_HDR_SUN_RADIANCE,
@@ -984,6 +985,8 @@ export const Scenery = ({
     };
   }, []);
 
+  const reliefHub = useMemo(() => new SceneryReliefHub(), []);
+
   const oceanState = useMemo<SceneryOceanState | null>(
     () =>
       water
@@ -1002,6 +1005,7 @@ export const Scenery = ({
             stage: addStage,
             relief: progress.relief,
             frame: reportStageFrame,
+            reliefTiles: reliefHub,
           }
         : null,
     [
@@ -1020,6 +1024,7 @@ export const Scenery = ({
       addStage,
       progress,
       reportStageFrame,
+      reliefHub,
     ],
   );
 
