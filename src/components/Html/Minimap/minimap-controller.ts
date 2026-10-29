@@ -58,6 +58,7 @@ export type MinimapOptions = {
   origin: Corner;
   offset: [number, number];
   background: string;
+  border: string;
   borderRadius: number;
   opacity: number;
   wheelZoom: boolean;
@@ -381,6 +382,7 @@ export class MinimapController {
       width: `${options.width}px`,
       height: `${options.height}px`,
       background: options.background,
+      border: options.border,
       borderRadius: `${options.borderRadius}px`,
     });
     this.canvasSlot.style.opacity = String(options.opacity);

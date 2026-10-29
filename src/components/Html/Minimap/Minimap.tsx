@@ -208,7 +208,9 @@ export type MinimapProps = {
   offset?: [number, number];
   /** behind the relief, and where it has no data. Default a translucent dark */
   background?: string;
-  /** Default 6 */
+  /** CSS border, e.g., '1px solid white'. Default '1px solid white' */
+  border?: string;
+  /** Default 1 */
   borderRadius?: number;
   /** the relief's opacity, 0 to 1. Default 1 */
   opacity?: number;
@@ -294,7 +296,8 @@ export const Minimap = ({
   origin = 'bottom-right',
   offset = DEFAULT_OFFSET,
   background = 'rgba(8, 16, 24, 0.6)',
-  borderRadius = 6,
+  border = '2px solid rgba(255, 255, 255, 0.9)',
+  borderRadius = 2,
   opacity = 1,
   parent,
   children,
@@ -454,6 +457,7 @@ export const Minimap = ({
       origin,
       offset: [offsetX, offsetY],
       background,
+      border,
       borderRadius,
       opacity,
       wheelZoom,
@@ -484,6 +488,7 @@ export const Minimap = ({
       offsetX,
       offsetY,
       background,
+      border,
       borderRadius,
       opacity,
       wheelZoom,

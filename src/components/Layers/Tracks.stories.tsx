@@ -67,9 +67,9 @@ const NAMES = [
 // Metres east and north of the field's origin.
 const offsetOf = (ship: Ship) => [
   (ship.longitude - HOME.longitude) *
-    DEG *
-    EARTH_RADIUS *
-    Math.cos(HOME.latitude * DEG),
+  DEG *
+  EARTH_RADIUS *
+  Math.cos(HOME.latitude * DEG),
   (ship.latitude - HOME.latitude) * DEG * EARTH_RADIUS,
 ];
 
@@ -84,8 +84,8 @@ function createShips(count: number): Ship[] {
       longitude:
         HOME.longitude +
         (r * Math.sin(a)) /
-          (EARTH_RADIUS * Math.cos(HOME.latitude * DEG)) /
-          DEG,
+        (EARTH_RADIUS * Math.cos(HOME.latitude * DEG)) /
+        DEG,
       latitude: HOME.latitude + (r * Math.cos(a)) / EARTH_RADIUS / DEG,
       speed: knots(6 + next() * 10),
       course: next() * 360,
@@ -160,11 +160,11 @@ const ShipsStory = ({
     () =>
       labels
         ? {
-            layer: 'ships',
-            text: (ship: Ship) =>
-              `${ship.name} · ${(((ship.speed ?? 0) * 3600) / 1852).toFixed(1)} kn`,
-            height: 40,
-          }
+          layer: 'ships',
+          text: (ship: Ship) =>
+            `${ship.name} · ${(((ship.speed ?? 0) * 3600) / 1852).toFixed(1)} kn`,
+          height: 40,
+        }
         : undefined,
     [labels],
   );
@@ -173,7 +173,7 @@ const ShipsStory = ({
     <World frame={demoFrame}>
       <SceneryGenerators>
         <Annotations maxVisible={50}>
-          <AnnotationsLayer id="ships" name="Ships" maxDistance={40000} />
+          <AnnotationsLayer id="ships" name="Ships" maxDistance={40000} distanceFactor={1000} />
           <Scenery>
             <SceneryOcean level={LEVEL} depth={DEPTH} />
             <SceneryStage bounds={STAGE_BOUNDS} />
