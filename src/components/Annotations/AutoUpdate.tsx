@@ -8,15 +8,15 @@ const samples = 8;
 const supersample = 1;
 
 export const AutoUpdate = ({ maxVisible }: { maxVisible: number }) => {
-  const { scene, camera, pointer, clock } = useThree();
+  const { scene, camera, pointer } = useThree();
 
   const passes = useMemo(
     () => [
       new RenderPass(scene, camera),
-      new AnnotationsPass(camera, clock, pointer, maxVisible),
+      new AnnotationsPass(camera, pointer, maxVisible),
       new OutputPass(),
     ],
-    [scene, camera, clock, pointer, maxVisible],
+    [scene, camera, pointer, maxVisible],
   );
 
   return (
