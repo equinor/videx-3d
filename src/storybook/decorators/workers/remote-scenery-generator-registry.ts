@@ -1,13 +1,9 @@
 import { expose } from 'comlink';
 
-import {
-  sceneryRelief,
-  sceneryReliefTile,
-} from '../../../components/Scenery/scenery-defs';
+import { sceneryReliefTile } from '../../../components/Scenery/scenery-defs';
 import { overlayTile } from '../../../components/Layers/layer-defs';
 import {
   generateOverlayTile,
-  generateSceneryRelief,
   generateSceneryReliefTile,
 } from '../../../generators';
 import { GeneratorRegistry } from '../../../sdk';
@@ -17,7 +13,6 @@ import { GeneratorRegistry } from '../../../sdk';
 
 const registry = new GeneratorRegistry({ concurrentStoreCalls: 50 });
 
-registry.add(sceneryRelief, generateSceneryRelief);
 registry.add(sceneryReliefTile, generateSceneryReliefTile);
 registry.add(overlayTile, generateOverlayTile);
 

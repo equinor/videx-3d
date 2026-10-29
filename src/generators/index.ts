@@ -15,7 +15,6 @@ export * from './perforations-generator';
 export * from './perimieter-generator';
 export * from './position-markers-generator';
 export * from './shoes-generator';
-export * from './scenery-relief-generator';
 export * from './scenery-relief-tile-generator';
 export * from './stack-release-generator';
 export * from './stack-water-generator';

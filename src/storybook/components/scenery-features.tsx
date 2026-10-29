@@ -53,7 +53,7 @@ export const SceneryArgsFeatures = ({
  * A story's minimap (see `sceneryMinimapArgs`): the `Minimap`'s defaults and a camera marker,
  * over the demo reliefs ticked in `reliefLayers` (all by default), in the story's `frame`,
  * its heights over the sea at `level` (the sea's Y; default 0).
- * Inside the `Canvas` and a `GeneratorsProvider` with the `sceneryRelief` generator.
+ * Inside the `Canvas` and a `GeneratorsProvider` with the `sceneryReliefTile` generator.
  */
 export const SceneryArgsMinimap = ({
   frame,

@@ -1,5 +1,6 @@
 // A stage's relief drawn from tiles (RELIEF_TILES): the height and the normal under a
-// pixel, from the tile it lies on. Stands in for relief.glsl's map in relief-fragment.glsl.
+// pixel, from the tile it lies on. Stands in for relief-atlas.glsl's lookup in
+// relief-fragment.glsl, which the overview past the tiles reads the same tiles through.
 
 uniform highp sampler2DArray uReliefTileHeights;
 uniform highp sampler2DArray uReliefTileNormals;
@@ -17,6 +18,8 @@ flat varying vec4 vReliefTileFrom;
 flat varying float vReliefTileBlend;
 varying vec3 vReliefEast;
 flat varying float vReliefSkirt;
+// The height the pixel lies at on its triangle, metres over the sea (the vertex shader's).
+varying float vReliefHeight;
 
 // The height at `node` of the texel grid of the tile in `slot`: bilinear between the four
 // nodes around it (32-bit floats, which are not filtered).
@@ -51,9 +54,17 @@ float reliefTileHeightAt(vec2 node) {
   return height;
 }
 
-// The height at this pixel.
+// The height at this pixel, as the tile holds it: on a skirt, its tile's edge above it, so
+// a skirt is shaded, and judged from below, as the ground it hangs from.
 float reliefTileHeight() {
   return reliefTileHeightAt(vReliefTileNode);
+}
+
+// The height the pixel itself lies at: on the grid the tile's; on a skirt its own, down from
+// the tile's edge, so a skirt under the sea is seabed under the water, not the land at its
+// top drawn in front of the sea.
+float reliefTileSurfaceHeight() {
+  return vReliefSkirt > 0.5 ? vReliefHeight : reliefTileHeight();
 }
 
 // The width of the tile's cells along a meridian.

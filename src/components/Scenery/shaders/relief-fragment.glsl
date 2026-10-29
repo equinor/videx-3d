@@ -10,9 +10,8 @@
 // (relief-tiles.glsl). RELIEF_OCCUPANTS keeps the cutaway off the ground over the stage's
 // occupants, and RELIEF_CUT_OCCUPANT cuts it with one of them, inside its outline.
 // RELIEF_FAR draws the overview past the tiles' reach instead, on a fullscreen layer: the
-// relief's layers from maps in longitude and latitude, merged and looked as the tiles merge
-// and look them (relief.glsl), above the sea, flat on the globe's sea, per pixel, wherever
-// on the Earth.
+// relief's own tiles read per pixel through an index of those chosen for it
+// (relief-atlas.glsl), above the sea, flat on the globe's sea, wherever on the Earth.
 // RELIEF_FROM_BELOW draws the tiles' undersides alone (their back faces), while the camera
 // is under the ground: the void's lid, shaded as the void draws its own (its main, below).
 
@@ -23,7 +22,7 @@
 #include <dithering_pars_fragment>
 #include ./sky.glsl
 #ifdef RELIEF_FAR
-#include ./relief.glsl
+#include ./relief-atlas.glsl
 #else
 #include ./relief-tiles.glsl
 #endif
@@ -249,26 +248,28 @@ void main() {
   #endif
 
   #ifdef RELIEF_FAR
-  // The slope from the maps, as finely as the pixel sees the ground: degrees east and north
-  // a pixel spans, no finer than a texel north–south of the finest map there.
+  // The ground from the tiles (the index's coordinates: east and south), and the slope as
+  // finely as the pixel sees it: degrees east and north a pixel spans, no finer than the
+  // cell of the tile there.
+  vec2 atlasAt = vec2(lonLat.x, -lonLat.y);
+  vec4 merged = reliefAtlasGround(atlasAt);
   float metresPerDegree = uGlobe.x * PI / 180.0;
   float pixel = length(fwidth(world));
-  float footprint = max(pixel, reliefMapCell(lonLat) * metresPerDegree);
+  float footprint = max(pixel, (merged.w > 0.0 ? merged.w : 180.0) * metresPerDegree);
   vec2 span = footprint / metresPerDegree * vec2(1.0 / max(cos(radians(lonLat.y)), 1e-3), 1.0);
-  // Only where the sea is met past the tiles. Every derivative is taken above.
-  if(altitude <= 0.0 || hit.z > 0.5 || dist < uReliefReach)
+  // Only where the sea is met past the tiles, and a tile is in. Every derivative is taken above.
+  if(altitude <= 0.0 || hit.z > 0.5 || dist < uReliefReach || merged.w <= 0.0)
     discard;
-  float west = reliefGround(lonLat - vec2(span.x, 0.0), span).x;
-  float east = reliefGround(lonLat + vec2(span.x, 0.0), span).x;
-  float north = reliefGround(lonLat + vec2(0.0, span.y), span).x;
-  float south = reliefGround(lonLat - vec2(0.0, span.y), span).x;
+  float west = reliefAtlasGround(atlasAt - vec2(span.x, 0.0)).x;
+  float east = reliefAtlasGround(atlasAt + vec2(span.x, 0.0)).x;
+  float north = reliefAtlasGround(atlasAt - vec2(0.0, span.y)).x;
+  float south = reliefAtlasGround(atlasAt + vec2(0.0, span.y)).x;
   // Along true east, up and true south where it lies on the globe, as the tiles' normals.
   vec3 up = globeUpAt(world);
   vec3 trueEast = globeGeodeticEast(offset);
   trueEast = normalize(trueEast - up * dot(trueEast, up));
   vec3 normal = normalize(trueEast * (west - east) + up * (2.0 * footprint) + cross(trueEast, up) * (north - south));
-  // Land or sea by the maps at this pixel, and the look of the layer that gave it.
-  vec3 merged = reliefGround(lonLat, span);
+  // Land or sea at this pixel, how much of it a layer gave, and the look of the layer that gave it.
   vec2 ground = merged.xy;
   // The height's change over a pixel for the contours (contourGradient), from the samples
   // a footprint apart: past a discard, derivatives are not to be had.
@@ -285,7 +286,7 @@ void main() {
   vec3 up = normalize(vReliefUp);
   vec3 east = normalize(vReliefEast - up * dot(vReliefEast, up));
   vec3 normal = normalize(east * tileNormal.x + up * tileNormal.y + cross(east, up) * tileNormal.z);
-  vec2 ground = vec2(reliefTileHeight(), 1.0);
+  vec2 ground = vec2(reliefTileSurfaceHeight(), 1.0);
   #endif
   float height = ground.x;
   bool under = height < 0.0;
@@ -298,7 +299,7 @@ void main() {
   // The look of the layer that gave it, as the tiles' (reliefTileLayer).
   int look = int(merged.z + 0.5);
   look = look < textureSize(uReliefLook, 0).x ? look : 0;
-  // The background's own sea and seabed show where the maps hold nothing, or water covers it.
+  // The background's own sea and seabed show where no layer gave it, or water covers it.
   if(ground.y <= 0.0 || (under && water))
     discard;
   #else

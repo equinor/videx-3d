@@ -1,7 +1,11 @@
-import { useRef, type ReactNode } from 'react';
+import { useMemo, useRef, type ReactNode } from 'react';
 import type { Vec2 } from '../../../sdk/types/common';
 import { useMinimapFrame, type MinimapState } from './minimap-context';
-import { mapViewToPixel } from '../../../sdk/projection/map-view';
+import {
+  mapViewBetween,
+  mapViewCone,
+  mapViewToPixel,
+} from '../../../sdk/projection/map-view';
 import { MinimapCameraIcon, MinimapTargetIcon } from './MinimapIcons';
 import { HANDLE_RADIUS, useDraggableMarker } from './minimap-drag';
 
@@ -40,17 +44,32 @@ export type MinimapCameraMarkerProps = {
   draggable?: boolean;
 };
 
-// The shape's reach in pixels: its metres at the map's scale, or its share of the map's shorter side.
-function shapeReach(radius: MinimapShapeRadius, { view }: MinimapState) {
+// The shape's reach: metres on the ground, or pixels for a share of the map's shorter side.
+function shapeReach(
+  radius: MinimapShapeRadius,
+  { view }: MinimapState,
+): number | { pixels: number } {
   return typeof radius === 'number'
-    ? radius / view.metresPerPixel
-    : radius.fraction * Math.min(view.size[0], view.size[1]);
+    ? radius
+    : { pixels: radius.fraction * Math.min(view.size[0], view.size[1]) };
+}
+
+// An SVG path through `points`, closed.
+function closedPath(points: Vec2[]): string {
+  let d = '';
+  points.forEach(([x, y], i) => {
+    d += `${i === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`;
+  });
+  return d ? `${d}Z` : '';
 }
 
 /**
  * Where the camera is on a {@link Minimap}, and which way it looks: an arrow, turning with
- * its heading on a north-up map, and, round it, either its horizontal field of view as a cone,
- * or a circle of a set radius. The arrow is in the middle of the map unless the map is centred
+ * its heading, and, round it, either its horizontal field of view as a cone, or a circle of
+ * a set radius. Both are laid out on the ground and carried onto the map (`mapViewCone`),
+ * so they are true in any of its projections: a radius in metres reaches that far along the
+ * ground wherever it points, and the cone's angle is the camera's where the map is not
+ * conformal (Equal Earth). The arrow is in the middle of the map unless the map is centred
  * on the camera's target. Drag it and drop it on the map to fly the camera there.
  *
  * @group Components
@@ -65,46 +84,47 @@ export const MinimapCameraMarker = ({
 }: MinimapCameraMarkerProps) => {
   const turned = useRef<SVGGElement>(null);
   const wedge = useRef<SVGPathElement>(null);
-  const ring = useRef<SVGCircleElement>(null);
+  const ring = useRef<SVGPathElement>(null);
   const { group, handleCircle, handle } = useDraggableMarker(
     'camera',
     state => state.camera,
     draggable,
   );
   useMinimapFrame(state => {
-    const { heading, fov } = state;
+    const { heading, fov, view, camera, forward } = state;
     turned.current?.setAttribute(
       'transform',
       `rotate(${(heading * 180) / Math.PI})`,
     );
     const reach = shapeReach(radius, state);
-    if (wedge.current) {
-      const half = Math.min(fov, Math.PI * 0.95) / 2;
-      const dx = reach * Math.sin(half);
-      const dy = -reach * Math.cos(half);
+    if (wedge.current)
       wedge.current.setAttribute(
         'd',
-        `M0 0 L${-dx} ${dy} A${reach} ${reach} 0 0 1 ${dx} ${dy} Z`,
+        closedPath(mapViewCone(view, camera, forward, fov, reach)),
       );
-    }
-    ring.current?.setAttribute('r', String(reach));
+    if (ring.current)
+      ring.current.setAttribute(
+        'd',
+        closedPath(mapViewCone(view, camera, forward, Math.PI * 2, reach)),
+      );
   });
   return (
     <g ref={group}>
       {shape === 'circle' && (
-        <circle
+        <path
           ref={ring}
           fill={shapeColor}
           fillOpacity={0.1}
           stroke={shapeColor}
           strokeOpacity={0.85}
           strokeWidth={1.5}
+          strokeLinejoin="round"
         />
       )}
+      {shape === 'cone' && (
+        <path ref={wedge} fill={shapeColor} fillOpacity={0.25} />
+      )}
       <g ref={turned}>
-        {shape === 'cone' && (
-          <path ref={wedge} fill={shapeColor} fillOpacity={0.25} />
-        )}
         <MinimapCameraIcon size={size} color={color} />
       </g>
       {draggable && (
@@ -305,9 +325,21 @@ export const MinimapPolyline = ({
   const path = useRef<SVGPathElement>(null);
   useMinimapFrame(({ view }) => {
     let d = '';
+    let last: Vec2 | null = null;
     for (let i = 0; i < points.length; i++) {
-      const [x, y] = mapViewToPixel(view, points[i][0], points[i][1]);
-      d += `${i === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`;
+      const at = mapViewToPixel(view, points[i][0], points[i][1]);
+      // In a projection, a long segment bends.
+      if (last)
+        for (const [x, y] of mapViewBetween(
+          view,
+          points[i - 1],
+          points[i],
+          last,
+          at,
+        ))
+          d += `L${x.toFixed(1)} ${y.toFixed(1)}`;
+      d += `${i === 0 ? 'M' : 'L'}${at[0].toFixed(1)} ${at[1].toFixed(1)}`;
+      last = at;
     }
     path.current?.setAttribute('d', closed && d ? `${d}Z` : d);
   });
@@ -350,4 +382,97 @@ export const MinimapLayer = ({ onFrame, children }: MinimapLayerProps) => {
     if (group.current) onFrame(group.current, state);
   });
   return <g ref={group}>{children}</g>;
+};
+
+// Degrees between the points of a zone's outline: its meridians bend in the scene's map.
+const ZONE_STEP = 0.25;
+
+/**
+ * The bounds of the zone the scene's map is laid out for, on a {@link Minimap} (its
+ * `zoneBounds`): a box in longitude and latitude carried through the scene's map, so its
+ * meridians bend and close in toward the pole as they lie in it. Shown only while the map is
+ * drawn in the scene's map.
+ */
+export const MinimapZoneOutline = ({
+  bounds,
+  toXZ,
+  color,
+}: {
+  /** `[west, south, east, north]`, degrees */
+  bounds: [number, number, number, number];
+  /** longitude and latitude to scene X/Z (`geoFrameXZ`) */
+  toXZ: (longitude: number, latitude: number) => Vec2;
+  color: string;
+}) => {
+  const ring = useMemo(() => {
+    const [west, south, east, north] = bounds;
+    const corners: Vec2[] = [
+      [west, south],
+      [east, south],
+      [east, north],
+      [west, north],
+      [west, south],
+    ];
+    const points: Vec2[] = [];
+    for (let c = 0; c < 4; c++) {
+      const [a, b] = [corners[c], corners[c + 1]];
+      const steps = Math.max(
+        Math.ceil(
+          Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])) / ZONE_STEP,
+        ),
+        1,
+      );
+      for (let k = 0; k < steps; k++) {
+        const t = k / steps;
+        points.push(toXZ(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t));
+      }
+    }
+    points.push(points[0]);
+    return points;
+  }, [bounds, toXZ]);
+
+  const path = useRef<SVGPathElement>(null);
+  useMinimapFrame(({ view }) => {
+    if (!path.current) return;
+    if (view.projected) {
+      path.current.setAttribute('d', '');
+      return;
+    }
+    const pixel2 = view.metresPerPixel * view.metresPerPixel;
+    let d = '';
+    let started = false;
+    let lastX = Infinity;
+    let lastZ = Infinity;
+    for (let k = 0; k < ring.length; k++) {
+      const [x, z] = ring[k];
+      // Where the map does not reach it: the line breaks.
+      if (!Number.isFinite(x) || !Number.isFinite(z)) {
+        started = false;
+        continue;
+      }
+      if (
+        started &&
+        k < ring.length - 1 &&
+        (x - lastX) ** 2 + (z - lastZ) ** 2 < pixel2
+      )
+        continue;
+      const [px, py] = mapViewToPixel(view, x, z);
+      d += `${started ? 'L' : 'M'}${px.toFixed(1)} ${py.toFixed(1)}`;
+      started = true;
+      lastX = x;
+      lastZ = z;
+    }
+    path.current.setAttribute('d', d);
+  });
+  return (
+    <path
+      ref={path}
+      fill="none"
+      stroke={color}
+      strokeOpacity={0.75}
+      strokeWidth={1.25}
+      strokeDasharray="6 4"
+      strokeLinejoin="round"
+    />
+  );
 };

@@ -1,3 +1,4 @@
+import { mapProjectionScale, type MapPlane } from './map-projections';
 import type { Vec2, Vec3 } from '../types/common';
 
 // ⚠️ Free of three.js, like the frames: this is plain 2D math.
@@ -5,19 +6,84 @@ import type { Vec2, Vec3 } from '../types/common';
 /**
  * A top-down view of a flat scene on a rectangle of pixels, as a minimap draws it: the
  * scene X/Z under its middle, which way on the ground is up the screen, and its scale.
+ * Drawn in the scene's own map (its X/Z), or, with `projected`, in a projection's plane:
+ * its points are still given and taken as scene X/Z ({@link mapViewToPixel}).
  *
  * @group Utils
  */
 export type MapView = {
   /** scene X/Z at the middle of the view */
   center: Vec2;
-  /** a unit vector on the ground (X/Z): the direction that points up the screen */
+  /** a unit vector on the map (X/Z, or the plane's east and south): the direction that points up the screen */
   up: Vec2;
-  /** ground metres a pixel spans */
+  /** ground metres a pixel spans (at the middle, in a projection) */
   metresPerPixel: number;
   /** the view's width and height in pixels */
   size: Vec2;
+  /** drawn in a projection's plane, not the scene's map (see {@link projectMapView}) */
+  projected?: MapViewProjection;
 };
+
+/**
+ * A {@link MapView} in a projection's plane: the plane, the middle in it, and the plane's
+ * metres a ground metre spans there.
+ *
+ * @group Utils
+ */
+export type MapViewProjection = {
+  plane: MapPlane;
+  center: Vec2;
+  scale: number;
+};
+
+/**
+ * `view` drawn in `plane`: its middle and its scale there, and its way up turned into the
+ * plane — true north for `'north-up'`, the scene's direction carried across for any other.
+ *
+ * @group Utils
+ */
+export function projectMapView(
+  view: MapView,
+  plane: MapPlane,
+  orientation: MapOrientation,
+): MapView {
+  const [cx, cz] = view.center;
+  const center = plane.toPlane(cx, cz);
+  const [, latitude] = plane.lonLatAt(center[0], center[1]);
+  const scale = mapProjectionScale(plane.projection, 0, latitude);
+  let up: Vec2 = [MAP_NORTH[0], MAP_NORTH[1]];
+  if (orientation !== 'north-up') {
+    const step = view.metresPerPixel * 8;
+    const [ax, az] = plane.toPlane(
+      cx + view.up[0] * step,
+      cz + view.up[1] * step,
+    );
+    const length = Math.hypot(ax - center[0], az - center[1]);
+    if (length > 0) up = [(ax - center[0]) / length, (az - center[1]) / length];
+  }
+  return { ...view, up, projected: { plane, center, scale } };
+}
+
+/**
+ * The plane's point at pixel `[column, row]` of a projected `view` (its east and south),
+ * or the scene's X/Z for one in the scene's map.
+ *
+ * @group Utils
+ */
+export function mapViewPlaneAt(
+  view: MapView,
+  column: number,
+  row: number,
+): Vec2 {
+  const step = view.metresPerPixel * (view.projected?.scale ?? 1);
+  const [cx, cz] = view.projected?.center ?? view.center;
+  const right = (column - view.size[0] / 2) * step;
+  const ahead = (view.size[1] / 2 - row) * step;
+  return [
+    cx + right * -view.up[1] + ahead * view.up[0],
+    cz + right * view.up[0] + ahead * view.up[1],
+  ];
+}
 
 /** What the top of a map view points to: the north of the scene's map, or where the camera looks. */
 export type MapOrientation = 'north-up' | 'heading-up';
@@ -59,15 +125,111 @@ export function mapViewUp(
 
 /** Where scene X/Z `[x, z]` lands in pixels in `view`, `[column, row]` from its top left. */
 export function mapViewToPixel(view: MapView, x: number, z: number): Vec2 {
-  const dx = x - view.center[0];
-  const dz = z - view.center[1];
+  let dx = x - view.center[0];
+  let dz = z - view.center[1];
+  let step = view.metresPerPixel;
+  const projected = view.projected;
+  if (projected) {
+    const [u, v] = projected.plane.toPlane(x, z);
+    dx = u - projected.center[0];
+    dz = v - projected.center[1];
+    step *= projected.scale;
+  }
   // right = (-upZ, upX): east when north is up.
   const right = -dx * view.up[1] + dz * view.up[0];
   const ahead = dx * view.up[0] + dz * view.up[1];
-  return [
-    view.size[0] / 2 + right / view.metresPerPixel,
-    view.size[1] / 2 - ahead / view.metresPerPixel,
-  ];
+  return [view.size[0] / 2 + right / step, view.size[1] / 2 - ahead / step];
+}
+
+/**
+ * The pixels between `a` and `b` (scene X/Z, at pixels `pa` and `pb` of `view`) a line
+ * drawn between them passes through, no more than `maxPixels` apart: none in the scene's
+ * own map, where it is straight; in a projection, where it bends, as many as it needs
+ * (at most 64).
+ *
+ * @group Utils
+ */
+export function mapViewBetween(
+  view: MapView,
+  a: Vec2,
+  b: Vec2,
+  pa: Vec2,
+  pb: Vec2,
+  maxPixels = 12,
+): Vec2[] {
+  if (!view.projected) return [];
+  const n = Math.min(
+    Math.ceil(Math.hypot(pb[0] - pa[0], pb[1] - pa[1]) / maxPixels),
+    64,
+  );
+  const between: Vec2[] = [];
+  for (let k = 1; k < n; k++) {
+    const t = k / n;
+    between.push(
+      mapViewToPixel(view, a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t),
+    );
+  }
+  return between;
+}
+
+/**
+ * A camera's view cone — or, with `fov` a full turn, a circle — on `view`, as pixels
+ * relative to the camera's own (`mapViewToPixel` of `at`): the apex first (the origin, left
+ * out for a circle), then its arc, every 3° at most. `reach` is metres along the ground,
+ * the arc made of the ground's points at that distance, so it is true in any projection
+ * however far it reaches; or `{ pixels }`, a size on the map, its directions those of
+ * the ground's there, so its angle is true even where a projection is not conformal.
+ *
+ * @param at the camera's place, scene X/Z
+ * @param forward its heading on the ground, a unit vector in scene X/Z
+ * @param fov the horizontal field of view, radians
+ *
+ * @group Utils
+ */
+export function mapViewCone(
+  view: MapView,
+  at: Vec2,
+  forward: Vec2,
+  fov: number,
+  reach: number | { pixels: number },
+): Vec2[] {
+  const full = fov >= Math.PI * 2 - 1e-6;
+  const half = full ? Math.PI : Math.min(fov, Math.PI * 1.9) / 2;
+  const steps = Math.max(Math.ceil((2 * half) / ((3 * Math.PI) / 180)), 2);
+  const [ox, oy] = mapViewToPixel(view, at[0], at[1]);
+  const [fx, fz] = forward;
+  // Clockwise seen from above: right of north (−Z) is east (+X).
+  const rx = -fz;
+  const rz = fx;
+  const metres = typeof reach === 'number';
+  // A short step along the ground, for the directions: a few pixels at the middle's scale.
+  const step = view.metresPerPixel * 4;
+  const points: Vec2[] = full ? [] : [[0, 0]];
+  for (let k = 0; k <= (full ? steps - 1 : steps); k++) {
+    const a = -half + (2 * half * k) / steps;
+    const dx = fx * Math.cos(a) + rx * Math.sin(a);
+    const dz = fz * Math.cos(a) + rz * Math.sin(a);
+    if (metres) {
+      const [px, py] = mapViewToPixel(
+        view,
+        at[0] + dx * reach,
+        at[1] + dz * reach,
+      );
+      points.push([px - ox, py - oy]);
+    } else {
+      const [px, py] = mapViewToPixel(
+        view,
+        at[0] + dx * step,
+        at[1] + dz * step,
+      );
+      const length = Math.hypot(px - ox, py - oy) || 1;
+      points.push([
+        ((px - ox) / length) * reach.pixels,
+        ((py - oy) / length) * reach.pixels,
+      ]);
+    }
+  }
+  return points;
 }
 
 /** The scene X/Z at pixel `[column, row]` of `view`: the reverse of {@link mapViewToPixel}. */
@@ -76,12 +238,8 @@ export function mapViewFromPixel(
   column: number,
   row: number,
 ): Vec2 {
-  const right = (column - view.size[0] / 2) * view.metresPerPixel;
-  const ahead = (view.size[1] / 2 - row) * view.metresPerPixel;
-  return [
-    view.center[0] + right * -view.up[1] + ahead * view.up[0],
-    view.center[1] + right * view.up[0] + ahead * view.up[1],
-  ];
+  const [u, v] = mapViewPlaneAt(view, column, row);
+  return view.projected ? view.projected.plane.fromPlane(u, v) : [u, v];
 }
 
 /**

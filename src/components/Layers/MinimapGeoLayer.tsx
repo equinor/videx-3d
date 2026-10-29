@@ -10,7 +10,7 @@ import {
   type LayerVisibility,
 } from '../../sdk/layers/layer-visibility';
 import { geoFrameXZ, type GeoFrame } from '../../sdk/projection/geo-frame';
-import { mapViewToPixel } from '../../sdk/projection/map-view';
+import { mapViewBetween, mapViewToPixel } from '../../sdk/projection/map-view';
 import type { Vec2 } from '../../sdk/types/common';
 import { useMinimapFrame } from '../Html/Minimap/minimap-context';
 import { useGeoFeatures } from './layer-globe';
@@ -124,9 +124,13 @@ export const MinimapGeoLayer = <P,>({
     group.current?.setAttribute('opacity', String(shown));
     group.current?.setAttribute('visibility', shown > 0 ? 'visible' : 'hidden');
     if (shown <= 0) return;
-    // The map's bounds in X/Z, a pixel's worth of margin around it.
+    // The map's bounds in X/Z, a pixel's worth of margin around it; in a projection, whose
+    // scale varies over the map, a good deal more.
     const reach =
-      Math.hypot(view.size[0], view.size[1]) * 0.5 * view.metresPerPixel;
+      Math.hypot(view.size[0], view.size[1]) *
+      0.5 *
+      view.metresPerPixel *
+      (view.projected ? 4 : 1);
     const [cx, cz] = view.center;
     const pixel2 = view.metresPerPixel * view.metresPerPixel;
     projected.forEach((feature, i) => {
@@ -146,17 +150,29 @@ export const MinimapGeoLayer = <P,>({
       for (const ring of feature.rings) {
         let lastX = Infinity;
         let lastZ = Infinity;
+        let lastPixel: Vec2 | null = null;
         let started = false;
         for (let k = 0; k < ring.length; k++) {
           const [x, z] = ring[k];
           const last = k === ring.length - 1;
           if (!last && started && (x - lastX) ** 2 + (z - lastZ) ** 2 < pixel2)
             continue;
-          const [px, py] = mapViewToPixel(view, x, z);
-          d += `${started ? 'L' : 'M'}${px.toFixed(1)} ${py.toFixed(1)}`;
+          const pixel = mapViewToPixel(view, x, z);
+          // In a projection, a long edge bends.
+          if (lastPixel)
+            for (const [bx, by] of mapViewBetween(
+              view,
+              [lastX, lastZ],
+              [x, z],
+              lastPixel,
+              pixel,
+            ))
+              d += `L${bx.toFixed(1)} ${by.toFixed(1)}`;
+          d += `${started ? 'L' : 'M'}${pixel[0].toFixed(1)} ${pixel[1].toFixed(1)}`;
           started = true;
           lastX = x;
           lastZ = z;
+          lastPixel = pixel;
         }
         if (feature.closed && started) d += 'Z';
       }

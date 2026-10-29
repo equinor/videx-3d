@@ -23,6 +23,8 @@ export type MinimapState = {
   northAngle: number;
   /** the camera's horizontal field of view, in radians */
   fov: number;
+  /** the camera's heading on the ground: a unit vector in scene X/Z (see `mapViewCone`) */
+  forward: Vec2;
   /** the camera's height over the sea, in metres (over the globe's sea under a `Scenery`) */
   altitude: number;
   /** the height of what the camera looks at over the sea, in metres: the controls' target's (0 without controls) */

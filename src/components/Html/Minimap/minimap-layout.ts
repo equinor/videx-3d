@@ -81,7 +81,7 @@ export type MinimapAltitudeControlOptions = {
   boost?: number;
   /** seconds the speed takes to double, held at the end of the travel. Default 1 */
   boostTime?: number;
-  /** pixels the knob travels each way from the middle, at most. A short map shortens it. Default 100 */
+  /** pixels the knob travels each way from the middle, at most: a map shorter than six times it shortens it to a sixth of its height. Default 100 */
   dragRange?: number;
   /** the control's colour. Default white */
   color?: string;
@@ -107,13 +107,14 @@ export function resolveMinimapAltitudeControl(
   };
 }
 
-// The pixels of a map's height an altitude control leaves free: for its knob, and room at the ends.
-const ALTITUDE_CONTROL_MARGIN = 70;
+// The share of a map's height an altitude control's knob may travel each way: the whole
+// `dragRange` (100 by default) on a map 600 pixels tall, and in proportion on a shorter one.
+const ALTITUDE_CONTROL_SHARE = 1 / 6;
 
 /**
  * How far an altitude control's knob can travel each way on a map `mapHeight` pixels tall: its
- * `dragRange`, or less where the map is too short to hold it with room for the knob and the
- * map's other items at its ends.
+ * `dragRange` at most, and a sixth of the map's height on a map too short for that, so the
+ * control keeps its proportion to the map; never less than 12 pixels.
  *
  * @group Components
  */
@@ -121,10 +122,7 @@ export function altitudeControlTravel(
   dragRange: number,
   mapHeight: number,
 ): number {
-  return Math.max(
-    Math.min(dragRange, (mapHeight - ALTITUDE_CONTROL_MARGIN) / 2),
-    12,
-  );
+  return Math.max(Math.min(dragRange, mapHeight * ALTITUDE_CONTROL_SHARE), 12);
 }
 
 /**

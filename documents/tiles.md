@@ -345,7 +345,7 @@ type TileSource<T> = {
 - **A worker of its own (built 2026-10-25),** with no change to the library: the stage
   asks `useGenerator`, which the nearest `GeneratorsProvider` answers, so a host nests a
   second provider around the `Scenery`, with a registry on a worker of its own holding the
-  sky's generators (`sceneryReliefTile`, `sceneryRelief`). Each provider connects to
+  sky's generators (`sceneryReliefTile`). Each provider connects to
   the store by a port of its own. The stories do it with `SceneryGenerators`
   (`storybook/decorators/scenery-generators.tsx`); FieldColumn's column builds, with their
   serial phases of one to two seconds, then never hold up a tile.
@@ -386,6 +386,14 @@ same steps over a tile's longitudes and latitudes rather than scene X/Z, with no
 normals east and south where each node lies, errors, cells and feathers in metres
 (world.md [6b](./world.md#6b-geographic-tiles-built-2026-10-26)). `buildReliefTile`
 builds a tile in a frame as before.
+
+**Round the Earth.** A layer in longitude and latitude, not turned, 360° across — or 360° and
+its first column repeated — holds every longitude (`reliefWrapColumns`). The reader takes its
+columns round rather than clamping them: a window across the antimeridian reads the last
+columns and the first side by side (at a coarse level whose columns do not add up to whole
+ones, the nearest), its edge distance meets east and west, and a feather never fades it
+there. Without it a tile ending at 180° had no data in its last column or its border, and the
+minimap and the overview drew a line along the antimeridian.
 
 **The detail under a tile (built 2026-10-25).** The error at the half-cell points is
 measured against the level under the tile's: averages. A layer much smaller than a
@@ -457,37 +465,65 @@ stood for the merge on the assumption that past a few hundred kilometres the fin
 lie nearer. A short far plane seen from high up breaks it: from 472 km over the North Sea
 with a 500 km far plane, the ground just past the far plane lies right below, under the
 Nordic layer, and the tiles' disc (165 km about the nadir, at the Nordic 2′ and finer)
-stood in a sea of the world's 10′. Now:
+stood in a sea of the world's 10′. So each layer was baked on its own onto longitude and
+latitude (the `sceneryRelief` generator), and the far layer merged them per pixel as the
+tiles do, at most six (a texture unit each): the demo's five were about 31 MB on the GPU.
+Checked at the pose above, the disc was gone, and the coasts and contour lines ran on
+across where the tiles end.
 
-- **Each layer is baked on its own** (the generator, per layer), as fine as it is: a
-  layer in longitude and latitude is copied texel for texel (each texel's centre on a node
-  of its own, so the texture *is* the data), and its coverage is faded in over its
-  `feather` (`reliefLayerWeight`, the tiles' weight, from the layer's distance to its
-  edge). The demo's five: 2160 × 1080, 1320 × 690, 1200 × 360, 2400 × 720 and 960 × 480,
-  about 31 MB on the GPU with their mips against 12 MB.
-- **The far layer merges them as the tiles do** (`relief.glsl`): from the tiles' base,
-  `h = mix(h, layer, weight)` over the layers in turn, each read at the mip level the
-  pixel's footprint sees and skipped without a read where its window does not reach; the
-  normal's four samples the same, a footprint apart, no finer than the finest map there.
-- **And looks them as the tiles do:** the look of the last layer that gave more than half
-  (as a tile's node takes it; a layer that holds nothing keeps its number), and the
-  contours, with the screen gradient taken from the normal's samples (a discard comes
-  before them, so derivatives are not to be had). The tiles' contours no longer fade out
-  over the last fifth of their reach: the lines run on across.
-- **At most six layers** (`SCENERY_RELIEF_FAR_MAX_LAYERS`): each is a texture unit, of
-  which the far material uses about ten of the sixteen WebGL 2 promises, and samplers
-  cannot be indexed by a loop's counter, so the reads are written out per layer. A relief
-  with more merges its first six there, coarse to fine (a warning in development).
-- **Supersampling would buy nothing** for a layer in longitude and latitude: the bake is
-  the data, and the GPU's bilinear magnification draws the surface the tiles draw between
-  their nodes. Only a layer in a map (resampled twice, softening its finest detail a
-  little) or one past `maxSize` (downsampled: raise it instead) would gain.
+**From the tiles since 2026-10-29.** Baking a layer whole does not scale: the generator
+read level 0 of the entire grid (`count: meta.grid.size`) before downsampling it — for a
+terabyte layer, all of it — and the shader's cost and the texture units grew with the
+number of layers. Now the overview draws the relief's own tiles, as the `Minimap` does
+([minimap.md](./minimap.md)):
 
-Checked at the pose above: the disc is gone, the coasts and the contour lines run on
-across where the tiles end, and the finest layer's own look (a rainbow over Volve, sea
-only, with the water off) is the same from 394 km on the tiles and from 525 km on the
-overview.
-
+- **Chosen in the tiles' frame loop** (`SceneryStageReliefTiles`), by a second
+  `selectQuadtreeTiles` over the same geographic layout and the same rules (error,
+  `minSlope`, coasts), but out to the horizon (`seen`) with the camera's frustum less its far
+  plane, no deeper than `OVERVIEW_MAX_DEPTH` (14: 38 m cells), and leaving out tiles wholly
+  within the tiles' reach (their nearest point and twice their width). Its cells may span at
+  most `OVERVIEW_CELL_PIXELS` (2) on screen, not the tiles' `cellPixels` (8): it colours,
+  lights and draws its coast per pixel from the tiles' heights, where the tiles are geometry
+  lit from filtered normals — at 8 the coast far off stepped in blocks of cells. For the same
+  reason every tile reaching above the sea — and with the water off, every tile — is split by
+  its cells' size however flat (`rough`): `minSlope` kept plains, lakes and the seabed at
+  20 km cells from 3500 km up. Under the water only a slope's shading would show, and the
+  water hides it.
+- **One choice per pose.** Should it want more than `OVERVIEW_SLOT_SHARE` (half) of the
+  slots, or tiles deeper than its index holds over the region they cover (below), it is
+  chosen again in the same frame — coarser on screen by half, or no deeper — at most
+  `OVERVIEW_BUDGET_ATTEMPTS` (3) times, always from the finest. It first adapted across
+  frames (a quarter coarser while over its share, finer once under half of it), which left
+  it as coarse as the way to a pose had made it: 4.9 px cells over Europe from 3500 km where
+  2 were asked for, and a zoom that stepped finer, coarser and finer again. Now a slow zoom
+  out from there trades depth 6 for 5 steadily (156 → 136 tiles at 6 over a fifth more
+  height), and the same pose settles on the same tiles (450) each time.
+- **Shares the tiles' streamer.** Without `fill`: a tile is drawn until its four children
+  are in. Its kept and wanted tiles go into the same `TileStreamer.update` as the tiles', so
+  it shares their streamer, their slots and their textures: no maps of its own on the GPU,
+  and the coarse tiles it wants are mostly the ancestors the tiles keep anyway.
+- **Read per pixel through an index** (`SceneryReliefAtlas`, `relief-atlas.glsl`): the
+  tiles drawn, by `buildHeightFieldIndex` over the region they cover in `geoTileSquare`'s
+  coordinates (longitude east, latitude south), built again only when they change. The
+  index's entries are as wide as its narrowest tile, at most `OVERVIEW_MAX_ENTRIES` (512)
+  along a side — 4 MB — so over a region too wide for its finest tiles it is chosen no
+  deeper than the region allows (above). Seen
+  from 100 km over the coast with the 200 km far plane, the region is about 24° across and
+  the overview reaches depth 11 (306 m cells, about a pixel there).
+- **The index's entries lie on the tiles' grid** wherever the coordinates are taken about:
+  `buildHeightFieldIndex` aligns them to its narrowest tile, as it always said, not to the
+  coordinates' origin. Before, a tile given about a point off the grid (the minimap's, about
+  its view's middle) left the entries whose middle fell just outside it empty: half the
+  minimap stood blank. The ground handed out over a region (about its middle) was off the
+  same way, its gaps filled from `fill`.
+- **Merged and looked as the tiles**, since it is their data: the height bilinear between
+  a tile's nodes, the look of the layer that gave the nearest node, and how much of it a
+  layer gave (0 over the base, where the background's own sea and seabed show, as before).
+  The normal's four samples are a footprint apart, no finer than the tile's cell there.
+  Where no tile is in yet, it is not drawn.
+- **No layer cap, and nothing read but what is seen.** `SCENERY_RELIEF_FAR_MAX_LAYERS`,
+  `createSceneryReliefTexture`, `relief.glsl` and the `sceneryRelief` generator are gone;
+  `resampleReliefGeographic` stays in the sdk.
 Not done: drawing the overview under the tiles while their roots load (a moment at
 start-up only).
 
@@ -1104,9 +1140,11 @@ None of this has been released. Gone (2026-10-25), with step 5:
 
 What is left of them, and what changed with them:
 
-- **The overview stays.** `resampleRelief` and the `sceneryRelief` generator now feed only the
+- **The overview stays.** `resampleRelief` and the `sceneryRelief` generator then fed only the
   overview past a short far plane (`SceneryStageReliefOverview`, `createSceneryReliefFarMaterial`);
-  the near mesh, its vertex shader (`relief-vertex.glsl`) and its morph table are gone, and
+  since 2026-10-29 the overview reads the tiles themselves and that generator is gone too (see
+  [The overview](#the-overview)). The near mesh, its vertex shader (`relief-vertex.glsl`) and
+  its morph table are gone, and
   `relief-fragment.glsl` draws either the tiles (`RELIEF_TILES`) or the overview
   (`RELIEF_FAR`). The overview no longer eases into the stage's area: nothing of it is
   drawn near the scene.

@@ -45,9 +45,9 @@ const STAGE_BOUNDS: [number, number, number, number] = [
   -8000, -8000, 8000, 8000,
 ];
 
-// The zoom levels the story offers, passed as a host passes its own list (the same as the
-// library's default here).
-const STORY_ZOOMS = [1000, 5000, 25000, 100000, 1000000];
+// The zoom levels the story offers, passed as a host passes its own list: the library's
+// default, and two past it for a projection of the whole world (`projection`).
+const STORY_ZOOMS = [1000, 5000, 25000, 100000, 1000000, 5000000, 20000000];
 const ANCHORS: MinimapAnchor[] = [
   'top-left',
   'top-center',
@@ -72,7 +72,9 @@ type MinimapArgs = Omit<
   | 'altitude'
   | 'altitudeControl'
   | 'layout'
+  | 'zoneBounds'
 > & {
+  zoneOutline: boolean;
   zoom: (typeof ZOOM_OPTIONS)[number];
   layerIds: string[];
   markers: boolean;
@@ -130,6 +132,7 @@ const MinimapStory = ({
   altitudeControlAnchor,
   controlsAnchor,
   controlsDirection,
+  zoneOutline,
   ...args
 }: MinimapArgs) => {
   // The buttons, the wheel and the compass change these too: keep them, but follow the controls.
@@ -184,6 +187,7 @@ const MinimapStory = ({
             },
           }}
           level={LEVEL}
+          zoneBounds={zoneOutline ? undefined : false}
           onMarkerDrop={(kind, at) =>
             console.info(`Minimap: ${kind} dropped at`, at)
           }
@@ -254,6 +258,37 @@ const meta = {
       control: { type: 'boolean' },
       description: 'Contour lines, every 100 m.',
       table: { category: 'Look' },
+    },
+    projection: {
+      control: { type: 'inline-radio' },
+      options: [
+        'scene',
+        'web-mercator',
+        'equal-earth',
+        'lambert-conformal-conic',
+        'auto',
+      ],
+      description:
+        'What the map is drawn in: SCENE, the scene’s own map (UTM here); WEB-MERCATOR, EQUAL-EARTH or LAMBERT-CONFORMAL-CONIC (its standard parallels following the view), a projection about the meridian under the map’s middle; AUTO, the scene’s map up to the global extent below and the global projection past it. A change cross-fades. Zoom out to 5000 km or more to see a projection’s use.',
+      table: { category: 'Projection' },
+    },
+    globalProjection: {
+      control: { type: 'inline-radio' },
+      options: ['web-mercator', 'equal-earth', 'lambert-conformal-conic'],
+      description: 'AUTO: the projection past the global extent.',
+      table: { category: 'Projection' },
+    },
+    globalFrom: {
+      control: { type: 'range', min: 500000, max: 10000000, step: 100000 },
+      description:
+        'AUTO: the extent, metres across the shorter side, from which the global projection draws the map (back to the scene’s below 80 % of it).',
+      table: { category: 'Projection' },
+    },
+    zoneOutline: {
+      control: { type: 'boolean' },
+      description:
+        'The bounds of the scene’s UTM zone (31N here, 0–6°E), dashed, while the map is in the scene’s map: its meridians bend toward the pole as they lie in it.',
+      table: { category: 'Projection' },
     },
     zoom: {
       control: { type: 'select' },
@@ -361,7 +396,7 @@ const meta = {
     altitudeDragRange: {
       control: { type: 'range', min: 20, max: 300, step: 10 },
       description:
-        'Pixels the knob travels each way from the middle. A short map shortens it.',
+        'Pixels the knob travels each way from the middle, at most: a map shorter than six times it shortens it to a sixth of its height, so the control keeps its proportion to the map.',
       table: { category: 'Altitude' },
     },
     altitudeColor: {
@@ -426,6 +461,10 @@ const meta = {
     orientation: 'north-up',
     center: 'camera',
     contours: false,
+    projection: 'auto',
+    globalProjection: 'web-mercator',
+    globalFrom: 2000000,
+    zoneOutline: true,
     zoom: 'auto',
     autoZoomFactor: 4,
     origin: 'bottom-right',

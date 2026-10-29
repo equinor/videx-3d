@@ -206,9 +206,10 @@ least recently drawn go first under a budget. `onStats` reports what is drawn an
 The tiles, and the stage's sea and seabed, reach the camera's far plane, measured along
 the curved sea; past that the sky's own sea takes over. Any shorter, and the scene between
 would show through the sky's sea, which is drawn on the far plane. Where the far plane
-falls short of the sea's horizon, an overview draws the relief's FIRST layer on past the
-tiles, on a fullscreen layer at the far plane (the `sceneryRelief` generator resamples it):
-what it holds above the sea, shaded and faded through the air, but flat on the curved sea.
+falls short of the sea's horizon, an overview draws the relief on past the tiles, on a
+fullscreen layer at the far plane, from the same tiles, chosen for it as fine as the pixels
+there (see [tiles.md](./tiles.md#the-overview)): what it holds above the sea, shaded and
+faded through the air, but flat on the curved sea.
 
 For mountains on the horizon, set the far plane past it from the highest the camera goes:
 about 360 km from 10 km up, 760 km from 45 km and 1130 km from 100 km (the sky stories

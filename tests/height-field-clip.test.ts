@@ -48,6 +48,26 @@ describe('buildHeightFieldIndex', () => {
     expect(heightFieldIndexAt(index, 350, 50)).toBe(-1);
   });
 
+  it('aligns its entries to the tiles, wherever their coordinates are taken about', () => {
+    // The same tiles about a point off their grid: 37 and 13 less.
+    const index = buildHeightFieldIndex(
+      [tile(-37, -13, 200, 0), tile(163, -13, 100, 1), tile(163, 87, 100, 2)],
+      [-7, 7, 253, 167],
+    )!;
+    expect(index.entry).toBe(100);
+    expect(index.origin).toEqual([-37, -13]);
+    const slotAt = (x: number, z: number) => {
+      const at = heightFieldIndexAt(index, x, z);
+      return at < 0 ? -1 : index.data[at + 3];
+    };
+    // Just inside each tile's edges.
+    expect(slotAt(-36, -12)).toBe(0);
+    expect(slotAt(162, 186)).toBe(0);
+    expect(slotAt(164, -12)).toBe(1);
+    expect(slotAt(262, 86)).toBe(1);
+    expect(slotAt(164, 88)).toBe(2);
+  });
+
   it('keeps the earlier tile, and fills what none covers', () => {
     const asked: [number, number][] = [];
     const index = buildHeightFieldIndex(

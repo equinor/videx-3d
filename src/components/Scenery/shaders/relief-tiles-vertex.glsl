@@ -49,6 +49,8 @@ flat varying float vReliefTileBlend;
 // skirt seen edge-on, a sliver under a pixel, is sampled past its edge, where the value
 // falls to 0 and below.
 flat varying float vReliefSkirt;
+// The height the vertex lies at, metres over the sea: on a skirt, down from the tile's edge.
+varying float vReliefHeight;
 #ifdef RELIEF_CUT_OCCUPANT
 // Where the ground lies, the curve's drop left out: the frame an occupant's cut is in.
 varying vec3 vReliefFlat;
@@ -103,6 +105,7 @@ void main() {
   vReliefTileFrom = reliefTileFrom;
   vReliefTileBlend = reliefTileBlend;
   vReliefSkirt = reliefSkirt;
+  vReliefHeight = height;
   #ifdef RELIEF_CUT_OCCUPANT
   vReliefFlat = vec3(world.x, uSkyOceanLevel + height, world.z);
   #endif

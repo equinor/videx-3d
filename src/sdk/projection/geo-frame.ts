@@ -131,6 +131,46 @@ export function geoFrameSameMap(a: GeoFrame, b: GeoFrame): boolean {
 }
 
 /**
+ * The UTM zone `frame` is drawn in — its number, and whether it is a southern one — or null
+ * for a frame in any other map (a transverse Mercator about a point of its own, say). Read
+ * from the frame's projection, a proj4 definition or a name proj4 knows.
+ *
+ * @group Utils
+ */
+export function geoFrameUtmZone(
+  frame: GeoFrame,
+): { zone: number; south: boolean } | null {
+  try {
+    const proj = new proj4.Proj(frame.projection) as unknown as {
+      projName?: string;
+      zone?: number;
+      utmSouth?: boolean;
+    };
+    if (proj.projName !== 'utm' || !proj.zone) return null;
+    return { zone: proj.zone, south: !!proj.utmSouth };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The band of longitude and latitude a UTM zone is laid out for, `[west, south, east,
+ * north]` in degrees: its 6° of longitude, from the equator to 84°N for a northern zone and
+ * from 80°S to the equator for a southern one. The plain band: the grid's exceptions about
+ * Norway and Svalbard (32V, 31X–37X) are not applied, as the zone's map is not changed by
+ * them.
+ *
+ * @group Utils
+ */
+export function utmZoneBounds(
+  zone: number,
+  south = false,
+): [number, number, number, number] {
+  const west = -180 + (zone - 1) * 6;
+  return south ? [west, -80, west + 6, 0] : [west, 0, west + 6, 84];
+}
+
+/**
  * Where a frame lies in another, flat: its origin's X/Z there, and how its grid is turned
  * and scaled about that point (see {@link placeGeoFrame}).
  *

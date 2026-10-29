@@ -10,18 +10,25 @@ import {
 import { createRoot, type Root } from 'react-dom/client';
 import type { Corner } from '../../../common/corner-style';
 import { useGenerator } from '../../../hooks/useGenerator';
-import type { ReliefLayer } from '../../../sdk/geometries/relief-tiles';
+import {
+  RELIEF_TILE_CELLS,
+  type ReliefLayer,
+  type ReliefLayersSource,
+} from '../../../sdk/geometries/relief-tiles';
 import {
   geoFrameLonLat,
+  geoFrameUtmZone,
+  geoFrameXZ,
+  utmZoneBounds,
   type GeoFrame,
 } from '../../../sdk/projection/geo-frame';
+import type { MapProjection } from '../../../sdk/projection/map-projections';
 import type { MapOrientation } from '../../../sdk/projection/map-view';
 import type { Vec2 } from '../../../sdk/types/common';
 import {
-  sceneryRelief,
-  type SceneryReliefResponse,
+  sceneryReliefTile,
+  type SceneryReliefTileResponse,
 } from '../../Scenery/scenery-defs';
-import { SCENERY_RELIEF_FAR_MAX_LAYERS } from '../../Scenery/scenery-relief';
 import {
   SceneryReliefLooks,
   type ReliefColor,
@@ -34,7 +41,7 @@ import {
   MinimapController,
   type MinimapHome,
   type MinimapOptions,
-  type MinimapRelief,
+  type MinimapProjection,
   type MinimapZoom,
 } from './minimap-controller';
 import {
@@ -42,12 +49,13 @@ import {
   type MinimapAltitudeControlOptions,
   type MinimapLayout,
 } from './minimap-layout';
-import type { MinimapMode } from './minimap-renderer';
+import type { MinimapMode, MinimapTileSource } from './minimap-renderer';
 import {
   MINIMAP_CONTROLS,
   MinimapOverlay,
   type MinimapControl,
 } from './MinimapOverlay';
+import { MinimapZoneOutline } from './MinimapLayers';
 
 /** The extents a minimap zooms between by default, in metres across its shorter side. */
 export const MINIMAP_DEFAULT_ZOOMS = [1000, 5000, 25000, 100000, 1000000];
@@ -59,16 +67,60 @@ export const MINIMAP_DEFAULT_ZOOMS = [1000, 5000, 25000, 100000, 1000000];
 export type MinimapProps = {
   /**
    * The reliefs in the store (`relief-meta` and `relief-values`), coarse to fine: later ones
-   * win where they have data, as a `SceneryStage`'s `relief.layers` do. Read by the
-   * `sceneryRelief` generator, so it needs a `GeneratorsProvider`. At most six are used.
+   * win where they have data, as a `SceneryStage`'s `relief.layers` do. Merged onto the
+   * relief's tiles by the `sceneryReliefTile` generator, as the stage's are, so it needs a
+   * `GeneratorsProvider` with it. Any number, of any size: only the tiles in view are read.
    */
   layers: ReliefLayer[];
   /** the height where no layer has data, metres over the sea. Default -100 */
   base?: number;
-  /** the most texels a layer's map may have along either side: each is held on the GPU. Default 2048 */
-  maxSize?: number;
+  /**
+   * how detailed the map is: the most device pixels a cell of the relief's tiles spans (32
+   * cells to a tile). Lower is sharper, for more tiles: about four times as many at half.
+   * Default 2
+   */
+  cellPixels?: number;
   /** where the scene lies on the Earth. Default the enclosing `World`'s */
   frame?: GeoFrame;
+  /**
+   * What the map is drawn in:
+   * - `'scene'`: the scene's own map (the `frame`'s projection, a transverse Mercator such
+   *   as UTM): what the 3D view shows, true to scale for a few hundred kilometres about it;
+   * - `'web-mercator'`: conformal, shapes and bearings true, areas growing toward the poles;
+   * - `'equal-earth'`: equal-area, the whole world fairly;
+   * - `'lambert-conformal-conic'`: conformal, and nearly true to scale between its two
+   *   standard parallels — continents wider east–west than north–south at middle
+   *   latitudes. Its parallels follow the view (a sixth of the map in from its top and
+   *   bottom) unless given as `lambertParallels`;
+   * - `'auto'`: the scene's map up to `globalFrom`, `globalProjection` past it.
+   *
+   * A projection is centred on the meridian under the map's middle, so the antimeridian is
+   * its edge; markers and layers are placed through it. A change cross-fades. Default `'auto'`
+   */
+  projection?: MinimapProjection;
+  /** `'auto'`: the projection past `globalFrom`. Default `'web-mercator'` */
+  globalProjection?: MapProjection['name'];
+  /**
+   * `'auto'`: the extent, metres across the shorter side, from which `globalProjection`
+   * draws the map (back to the scene's map below 80 % of it). Give `zooms` reaching past it.
+   * Default 2 000 000 (2000 km)
+   */
+  globalFrom?: number;
+  /**
+   * `'lambert-conformal-conic'`: its two standard parallels, degrees north (negative
+   * south), fixed — `[35, 65]` for Europe as EPSG:3034 has them, say. Default: following
+   * the view
+   */
+  lambertParallels?: [number, number];
+  /**
+   * The bounds of the zone the scene's map is laid out for, `[west, south, east, north]` in
+   * degrees, drawn as a dashed outline while the map is in the scene's map — its meridians
+   * bent as they lie in it — or `false` for none. Default the `frame`'s UTM zone
+   * (`utmZoneBounds`), none for a frame in any other map: give it for one
+   */
+  zoneBounds?: [number, number, number, number] | false;
+  /** the zone's outline's colour. Default `'#ffffff'` */
+  zoneColor?: string;
 
   /** `'shaded'`: coloured by height and lit by its slope; `'outline'`: the coast and contours as lines. Default `'shaded'` */
   mode?: MinimapMode;
@@ -235,16 +287,16 @@ const defaultColor: ReliefColor = {
 
 /**
  * An inlet map of the relief that follows the camera: a small panel over the canvas, drawn
- * top-down from the relief's layers (the same data as a `SceneryStage`'s `relief`, in
- * longitude and latitude, merged as its tiles and its overview merge them) in the scene's
- * map. It shows the relief shaded or as an outline, zooms between discrete levels or
- * automatically with the camera's height over the sea, turns north-up or heading-up, and
- * carries layers of your own as SVG.
+ * top-down from the relief's tiles (the same tiles as a `SceneryStage`'s `relief`: its
+ * layers merged in longitude and latitude, loaded only where and as finely as the map shows
+ * them) in the scene's map. It shows the relief shaded or as an outline, zooms between
+ * discrete levels or automatically with the camera's height over the sea, turns north-up or
+ * heading-up, and carries layers of your own as SVG.
  *
  * Place it inside a `<Canvas>` (it needs the camera) and a `GeneratorsProvider` with the
- * `sceneryRelief` generator. It draws on a canvas and a WebGL context of its own, only
- * when the view changes, so it costs no frame of the 3D view's. The layers' maps are held on
- * the GPU a second time, for that context: see `maxSize`.
+ * `sceneryReliefTile` generator. It draws on a canvas and a WebGL context of its own, only
+ * when the view changes or tiles come in, so it costs no frame of the 3D view's. Its tiles
+ * are held on the GPU for that context: a few megabytes, whatever the relief.
  *
  * @see `documents/minimap.md`
  *
@@ -259,8 +311,14 @@ const defaultColor: ReliefColor = {
 export const Minimap = ({
   layers,
   base = -100,
-  maxSize = 2048,
+  cellPixels = 2,
   frame,
+  projection = 'auto',
+  globalProjection = 'web-mercator',
+  globalFrom = 2000000,
+  lambertParallels,
+  zoneBounds,
+  zoneColor = '#ffffff',
   mode = 'shaded',
   orientation,
   defaultOrientation = 'north-up',
@@ -306,7 +364,7 @@ export const Minimap = ({
   const world = useWorld();
   const mapFrame = frame ?? world?.frame ?? null;
   const globe = world?.globe ?? null;
-  const generator = useGenerator<SceneryReliefResponse>(sceneryRelief);
+  const generate = useGenerator<SceneryReliefTileResponse>(sceneryReliefTile);
 
   const [handle, setHandle] = useState<{
     controller: MinimapController;
@@ -341,36 +399,22 @@ export const Minimap = ({
     onCenterChange,
   );
 
-  // The relief's layers baked onto longitude and latitude, as the stage's overview bakes them.
+  // The relief's tiles, as the stage's: its layers merged over its base, by content (layers
+  // written inline are new objects each render).
   const layerKey = JSON.stringify(
-    layers
-      .slice(0, SCENERY_RELIEF_FAR_MAX_LAYERS)
-      .map(({ id, feather }) => [id, feather ?? 0]),
+    layers.map(({ id, feather }) => [id, feather ?? 0]),
   );
-  useEffect(() => {
-    if (import.meta.env.DEV && layers.length > SCENERY_RELIEF_FAR_MAX_LAYERS)
-      console.warn(
-        `Minimap: it draws the relief's first ${SCENERY_RELIEF_FAR_MAX_LAYERS} layers of ${layers.length}`,
-      );
-  }, [layers.length]);
-  const [baked, setBaked] = useState<MinimapRelief['layers'] | null>(null);
-  useEffect(() => {
-    let current = true;
+  const source = useMemo<MinimapTileSource | null>(() => {
     const specs = JSON.parse(layerKey) as [string, number][];
-    Promise.all(
-      specs.map(([id, feather]) => generator(id, { feather, maxSize })),
-    ).then(made => {
-      if (!current) return;
-      const grids = made.flatMap((grid, i) =>
-        grid ? [{ grid, look: i + 1 }] : [],
-      );
-      setBaked(grids.length ? grids : null);
-    });
-    return () => {
-      current = false;
-      setBaked(null);
+    if (!specs.length) return null;
+    const plain: ReliefLayersSource = {
+      layers: specs.map(([id, feather]) =>
+        feather ? { id, feather } : { id },
+      ),
+      base,
     };
-  }, [generator, layerKey, maxSize]);
+    return { base, load: key => generate(plain, key, RELIEF_TILE_CELLS) };
+  }, [generate, layerKey, base]);
 
   const looks = useMemo(() => new SceneryReliefLooks(), []);
   useEffect(() => () => looks.dispose(), [looks]);
@@ -389,9 +433,9 @@ export const Minimap = ({
 
   useEffect(() => {
     handle?.controller.setRelief(
-      baked ? { layers: baked, base, looks: looks.texture } : null,
+      source ? { source, cellPixels, looks: looks.texture } : null,
     );
-  }, [handle, baked, base, looks]);
+  }, [handle, source, cellPixels, looks]);
 
   const frameKey = JSON.stringify(mapFrame);
   const toLonLat = useMemo(
@@ -400,12 +444,35 @@ export const Minimap = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [frameKey],
   );
+  const toXZ = useMemo(
+    () => (mapFrame ? geoFrameXZ(mapFrame) : null),
+    // The frame by value.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [frameKey],
+  );
+  // The zone's bounds by value: a tuple written inline is a new array each render.
+  const zoneKey =
+    zoneBounds === false
+      ? 'none'
+      : zoneBounds
+        ? JSON.stringify(zoneBounds)
+        : '';
+  const zone = useMemo(() => {
+    if (zoneKey === 'none') return null;
+    if (zoneKey) return JSON.parse(zoneKey) as [number, number, number, number];
+    const utm = mapFrame ? geoFrameUtmZone(mapFrame) : null;
+    return utm ? utmZoneBounds(utm.zone, utm.south) : null;
+    // The frame by value.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoneKey, frameKey]);
   useEffect(() => {
     if (!mapFrame && import.meta.env.DEV)
       console.warn('Minimap: give it a `frame`, or place it in a <World>');
   }, [mapFrame]);
 
   const zoomsKey = JSON.stringify(zooms);
+  // The parallels by value: a tuple written inline is a new array each render.
+  const parallelsKey = lambertParallels ? JSON.stringify(lambertParallels) : '';
   const sortedZooms = useMemo(
     () => [...(JSON.parse(zoomsKey) as number[])].sort((a, b) => a - b),
     [zoomsKey],
@@ -435,6 +502,13 @@ export const Minimap = ({
   const options = useMemo<MinimapOptions>(
     () => ({
       toLonLat,
+      toXZ,
+      projection,
+      globalProjection,
+      globalFrom,
+      lambertParallels: parallelsKey
+        ? (JSON.parse(parallelsKey) as [number, number])
+        : null,
       zooms: sortedZooms.length ? sortedZooms : MINIMAP_DEFAULT_ZOOMS,
       zoom: activeZoom,
       autoZoomFactor,
@@ -467,6 +541,11 @@ export const Minimap = ({
     }),
     [
       toLonLat,
+      toXZ,
+      projection,
+      globalProjection,
+      globalFrom,
+      parallelsKey,
       sortedZooms,
       activeZoom,
       autoZoomFactor,
@@ -555,6 +634,9 @@ export const Minimap = ({
         onToggleCenter={toggleCenter}
         onReset={resetHome}
       >
+        {zone && toXZ && (
+          <MinimapZoneOutline bounds={zone} toXZ={toXZ} color={zoneColor} />
+        )}
         {children}
       </MinimapOverlay>,
     );
@@ -573,6 +655,9 @@ export const Minimap = ({
     toggleOrientation,
     toggleCenter,
     resetHome,
+    zone,
+    toXZ,
+    zoneColor,
     children,
   ]);
 

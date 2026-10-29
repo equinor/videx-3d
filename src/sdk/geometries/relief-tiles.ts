@@ -150,6 +150,8 @@ export type ReliefLayerEdge = {
   level: number;
   size: Vec2;
   distance: Float32Array;
+  /** for a layer round the Earth, its grid's columns round it (see `reliefWrapColumns`); else 0 */
+  wrap?: number;
 };
 
 /** A layer made ready for tiles: its record, its map, its distance to its edge, its detail. */
@@ -166,7 +168,31 @@ type PreparedLayer = {
   detail: ReliefDetail | null;
   /** the level whose single value covers the grid */
   maxLevel: number;
+  /** its grid's columns round the Earth, if it goes round it (`reliefWrapColumns`); else 0 */
+  wrap: number;
 };
+
+/**
+ * How many columns of a relief's grid go round the Earth, where it holds every longitude:
+ * a grid in longitude and latitude, not turned, 360° across — or 360° and a column more,
+ * its first repeated. 0 for any other. Such a layer is read across the antimeridian, its
+ * columns taken round: a tile there has data on both sides of it.
+ *
+ * @group Geometries
+ */
+export function reliefWrapColumns(meta: ReliefMeta): number {
+  const { cell, size, rotation = 0 } = meta.grid;
+  if (rotation !== 0 || !(cell[0] > 0)) return 0;
+  try {
+    const proj = new proj4.Proj(meta.crs) as unknown as { projName?: string };
+    if (proj.projName !== 'longlat') return 0;
+  } catch {
+    return 0;
+  }
+  for (const columns of [size[0], size[0] - 1])
+    if (Math.abs(columns * cell[0] - 360) < cell[0] / 2) return columns;
+  return 0;
+}
 
 /**
  * Reads relief records and blocks for {@link buildReliefTile}, and keeps them: blocks,
@@ -257,7 +283,11 @@ export class ReliefReader {
     return layer;
   }
 
-  /** `level` over columns `i0`–`i1` and rows `j0`–`j1` (inclusive, clamped to the level). */
+  /**
+   * `level` over columns `i0`–`i1` and rows `j0`–`j1` (inclusive, clamped to the level).
+   * With `wrap` (a layer's columns round the Earth, `reliefWrapColumns`) the columns are
+   * not clamped but taken round: past the last, the first again.
+   */
   async window(
     id: string,
     meta: ReliefMeta,
@@ -266,18 +296,65 @@ export class ReliefReader {
     j0: number,
     i1: number,
     j1: number,
+    wrap = 0,
   ): Promise<LevelWindow | null> {
     const [w, h] = reliefLevelSize(meta, level);
-    i0 = Math.max(i0, 0);
+    if (!wrap) {
+      i0 = Math.max(i0, 0);
+      i1 = Math.min(i1, w - 1);
+    }
     j0 = Math.max(j0, 0);
-    i1 = Math.min(i1, w - 1);
     j1 = Math.min(j1, h - 1);
     if (i1 < i0 || j1 < j0) return null;
     const width = i1 - i0 + 1;
     const height = j1 - j0 + 1;
     const values = new Float32Array(width * height);
-    const bx0 = Math.floor(i0 / RELIEF_BLOCK);
-    const bx1 = Math.floor(i1 / RELIEF_BLOCK);
+    // The level's column under the window's: round the Earth, a level's columns may not
+    // add up to whole ones, so the nearest.
+    const period = wrap / 2 ** level;
+    const columnOf = (i: number) =>
+      wrap ? Math.round(i - period * Math.floor(i / period)) % w : i;
+    // Runs of columns that lie side by side in the level: one, but where the window
+    // crosses where a layer round the Earth closes.
+    const reads: Promise<void>[] = [];
+    for (let start = i0; start <= i1; ) {
+      const first = columnOf(start);
+      let end = start;
+      while (end < i1 && columnOf(end + 1) === first + end + 1 - start) end++;
+      reads.push(
+        this.fill(
+          id,
+          level,
+          values,
+          width,
+          start - i0,
+          first,
+          first + end - start,
+          j0,
+          j1,
+        ),
+      );
+      start = end + 1;
+    }
+    await Promise.all(reads);
+    return new LevelWindow(level, i0, j0, width, height, values);
+  }
+
+  // Columns `c0`–`c1` and rows `j0`–`j1` of `level` into `values` (`width` a row), the
+  // first at column `at`.
+  private async fill(
+    id: string,
+    level: number,
+    values: Float32Array,
+    width: number,
+    at: number,
+    c0: number,
+    c1: number,
+    j0: number,
+    j1: number,
+  ) {
+    const bx0 = Math.floor(c0 / RELIEF_BLOCK);
+    const bx1 = Math.floor(c1 / RELIEF_BLOCK);
     const by0 = Math.floor(j0 / RELIEF_BLOCK);
     const by1 = Math.floor(j1 / RELIEF_BLOCK);
     const reads: Promise<void>[] = [];
@@ -285,13 +362,13 @@ export class ReliefReader {
       for (let bx = bx0; bx <= bx1; bx++) {
         reads.push(
           this.block(id, level, bx, by).then(block => {
-            const ci0 = Math.max(i0, bx * RELIEF_BLOCK);
-            const ci1 = Math.min(i1, (bx + 1) * RELIEF_BLOCK - 1);
+            const ci0 = Math.max(c0, bx * RELIEF_BLOCK);
+            const ci1 = Math.min(c1, (bx + 1) * RELIEF_BLOCK - 1);
             const cj0 = Math.max(j0, by * RELIEF_BLOCK);
             const cj1 = Math.min(j1, (by + 1) * RELIEF_BLOCK - 1);
             for (let j = cj0; j <= cj1; j++) {
               for (let i = ci0; i <= ci1; i++) {
-                values[(j - j0) * width + (i - i0)] = block
+                values[(j - j0) * width + at + (i - c0)] = block
                   ? block[
                       (j - by * RELIEF_BLOCK) * RELIEF_BLOCK +
                         (i - bx * RELIEF_BLOCK)
@@ -304,7 +381,6 @@ export class ReliefReader {
       }
     }
     await Promise.all(reads);
-    return new LevelWindow(level, i0, j0, width, height, values);
   }
 
   private trim() {
@@ -366,6 +442,7 @@ export class ReliefReader {
     );
     const [w, h] = reliefLevelSize(meta, level);
     const coarse = await this.window(id, meta, level, 0, 0, w - 1, h - 1);
+    const wrap = reliefWrapColumns(meta);
     // Metres per node along the grid's columns and rows, at its middle.
     const c = (nx - 1) / 2;
     const r = (ny - 1) / 2;
@@ -373,7 +450,7 @@ export class ReliefReader {
     const wx = between(c, r, 1, 0) * step || 1;
     const wy = between(c, r, 0, 1) * step || 1;
     const distance = coarse
-      ? edgeDistance(coarse.values, w, h, wx, wy)
+      ? edgeDistance(coarse.values, w, h, wx, wy, wrap > 0)
       : new Float32Array(w * h);
     // A small layer seen from afar averages away in the levels a tile reads: its detail
     // is bounded once, from the level its edge is measured on.
@@ -383,9 +460,10 @@ export class ReliefReader {
     return {
       meta,
       toNode,
-      edge: { level, size: [w, h], distance },
+      edge: { level, size: [w, h], distance, wrap },
       detail,
       maxLevel,
+      wrap,
     };
   }
 }
@@ -436,7 +514,8 @@ class LevelWindow {
 /**
  * Per value of a grid, how far it lies from where the data ends — a value that is NaN,
  * or past the grid's edge — with `wx` and `wy` units between values along X and Y; 0
- * where there is no data.
+ * where there is no data. With `wrap`, the grid goes round the Earth: its east and west
+ * edges meet, and no data ends there.
  */
 function edgeDistance(
   values: Float32Array,
@@ -444,22 +523,27 @@ function edgeDistance(
   h: number,
   wx: number,
   wy: number,
+  wrap = false,
 ): Float32Array {
-  // A border of no data around it, for the edge.
-  const pw = w + 2;
+  // A border of no data around it, for the edge; round the Earth, a copy of the grid
+  // either side of it instead.
+  const left = wrap ? w : 1;
+  const pw = wrap ? 3 * w : w + 2;
   const ph = h + 2;
   const mask = new Uint8Array(pw * ph).fill(1);
   for (let j = 0; j < h; j++) {
-    for (let i = 0; i < w; i++) {
+    for (let x = 0; x < pw; x++) {
+      const i = wrap ? (x - left + w) % w : x - left;
+      if (i < 0 || i >= w) continue;
       const value = values[j * w + i];
-      if (value === value) mask[(j + 1) * pw + i + 1] = 0;
+      if (value === value) mask[(j + 1) * pw + x] = 0;
     }
   }
   const padded = chamferDistance(mask, pw, ph, wx, wy);
   const distance = new Float32Array(w * h);
   for (let j = 0; j < h; j++) {
     distance.set(
-      padded.subarray((j + 1) * pw + 1, (j + 1) * pw + 1 + w),
+      padded.subarray((j + 1) * pw + left, (j + 1) * pw + left + w),
       j * w,
     );
   }
@@ -486,8 +570,11 @@ export function reliefLayerWeight(
   feather: number,
 ): (col: number, row: number, coverage: number) => number {
   const [w, h] = edge.size;
+  const wrap = edge.wrap ?? 0;
   return (col, row, coverage) => {
     if (coverage <= 0 || feather <= 0) return coverage;
+    // Round the Earth: the column the grid holds.
+    if (wrap) col -= wrap * Math.floor(col / wrap);
     const [c, r] = reliefNodeToLevel(edge.level, col, row);
     return (
       coverage * smoothstep(0, feather, bilinear(edge.distance, w, h, c, r))
@@ -629,28 +716,31 @@ function reliefDetail(
 /**
  * The most detail of `level` over `range` (the grid's columns and rows, fractional): how
  * far the data there may lie off that level's surface. 0 at or under the detail's base.
+ * With `wrap` (the grid's columns round the Earth), the columns are taken round.
  */
 function footprintDetail(
   detail: ReliefDetail,
   level: number,
   range: [number, number, number, number],
+  wrap = 0,
 ): number {
   const entry = detail.levels[level - detail.base - 1];
   if (!entry) return 0;
   const [w, h] = entry.size;
   const [i0, j0] = reliefNodeToLevel(level, range[0], range[1]);
   const [i1, j1] = reliefNodeToLevel(level, range[2], range[3]);
+  const first = wrap ? Math.floor(i0) : Math.max(Math.floor(i0), 0);
+  const last = wrap
+    ? Math.min(Math.ceil(i1), first + w - 1)
+    : Math.min(Math.ceil(i1), w - 1);
   let most = 0;
   for (
     let j = Math.max(Math.floor(j0), 0);
     j <= Math.min(Math.ceil(j1), h - 1);
     j++
   ) {
-    for (
-      let i = Math.max(Math.floor(i0), 0);
-      i <= Math.min(Math.ceil(i1), w - 1);
-      i++
-    ) {
+    for (let k = first; k <= last; k++) {
+      const i = wrap ? ((k % w) + w) % w : k;
       const value = entry.detail[j * w + i];
       if (value > most) most = value;
     }
@@ -804,7 +894,12 @@ function readReliefLayers(
       const range = lattice.range;
       if (!range) return null;
       const [nx, ny] = meta.grid.size;
-      if (range[2] < -1 || range[3] < -1 || range[0] > nx || range[1] > ny)
+      // Round the Earth, every column lies on the layer.
+      if (
+        range[3] < -1 ||
+        range[1] > ny ||
+        (!layer.wrap && (range[2] < -1 || range[0] > nx))
+      )
         return null;
 
       // The layer's nodes per metre along its finer axis, at the grid's middle.
@@ -839,6 +934,7 @@ function readReliefLayers(
           Math.floor(j0) - 1,
           Math.ceil(i1) + 1,
           Math.ceil(j1) + 1,
+          layer.wrap,
         );
       };
       const [window, halfWindow] = await Promise.all([
@@ -857,7 +953,7 @@ function readReliefLayers(
         halfWindow: halfWindow ?? window,
         detail:
           halves && layer.detail
-            ? footprintDetail(layer.detail, halfLevel, range)
+            ? footprintDetail(layer.detail, halfLevel, range, layer.wrap)
             : 0,
         spacing,
         weightAt,

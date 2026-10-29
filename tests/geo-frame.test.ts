@@ -13,7 +13,9 @@ import {
   geoFrameFromCrs,
   geoFrameLocation,
   geoFrameSameMap,
+  geoFrameUtmZone,
   placeGeoFrame,
+  utmZoneBounds,
 } from '../src/sdk/projection/geo-frame';
 import { Globe } from '../src/sdk/projection/globe';
 import { geoFrameMatrix } from '../src/sdk/projection/place-frame';
@@ -184,5 +186,42 @@ describe('geoFrameMatrix, on the globe', () => {
     expect(new Vector3(0, 1, 0).transformDirection(m).angleTo(up)).toBeLessThan(
       1e-9,
     );
+  });
+});
+
+describe('geoFrameUtmZone', () => {
+  it('reads the zone of a UTM frame, north or south', () => {
+    expect(geoFrameUtmZone(scene)).toEqual({ zone: 31, south: false });
+    expect(
+      geoFrameUtmZone({
+        projection: '+proj=utm +zone=33 +south +datum=WGS84 +units=m +no_defs',
+        origin: [500000, 7000000],
+      }),
+    ).toEqual({ zone: 33, south: true });
+  });
+
+  it('reads a name proj4 knows', () => {
+    proj4.defs(
+      'EPSG:32632',
+      '+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs',
+    );
+    expect(
+      geoFrameUtmZone({ projection: 'EPSG:32632', origin: [0, 0] }),
+    ).toEqual({ zone: 32, south: false });
+  });
+
+  it('is null for any other map', () => {
+    expect(geoFrameUtmZone(geoFrameAt(2, 58))).toBeNull();
+    expect(
+      geoFrameUtmZone({ projection: 'not a projection', origin: [0, 0] }),
+    ).toBeNull();
+  });
+});
+
+describe('utmZoneBounds', () => {
+  it('is the zone’s 6° band, to 84°N or from 80°S', () => {
+    expect(utmZoneBounds(31)).toEqual([0, 0, 6, 84]);
+    expect(utmZoneBounds(1)).toEqual([-180, 0, -174, 84]);
+    expect(utmZoneBounds(60, true)).toEqual([174, -80, 180, 0]);
   });
 });

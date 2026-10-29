@@ -109,13 +109,14 @@ describe('resolveMinimapAltitudeControl', () => {
 
 describe('altitudeControlTravel', () => {
   it('is the drag range on a map tall enough for it', () => {
-    expect(altitudeControlTravel(100, 300)).toBe(100);
+    expect(altitudeControlTravel(100, 600)).toBe(100);
+    expect(altitudeControlTravel(100, 900)).toBe(100);
     expect(altitudeControlTravel(60, 600)).toBe(60);
   });
 
-  it('is shortened to fit a short map, but never to nothing', () => {
-    expect(altitudeControlTravel(100, 220)).toBe(75);
-    expect(altitudeControlTravel(100, 100)).toBe(15);
-    expect(altitudeControlTravel(100, 20)).toBe(12);
+  it('is a sixth of a shorter map, but never to nothing', () => {
+    expect(altitudeControlTravel(100, 300)).toBe(50);
+    expect(altitudeControlTravel(100, 240)).toBe(40);
+    expect(altitudeControlTravel(100, 60)).toBe(12);
   });
 });

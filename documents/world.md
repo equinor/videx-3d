@@ -719,7 +719,8 @@ night side dark, the sea lit where it lies), a physical atmosphere left for the 
   `minSlope` says (tiles.md, `rough`): from 18 000 km 24 tiles of 78 km cells, not the two
   roots.
 - **The overview, geographic:** the first layer resampled onto longitude and latitude
-  (`resampleReliefGeographic`; the `sceneryRelief` generator), read where each view meets the
+  (`resampleReliefGeographic`; the `sceneryRelief` generator, gone since 2026-10-29: the
+  overview now reads the relief's own tiles), read where each view meets the
   globe's sea through `globeGeographic` (GLSL, the twin of `Globe.geographic`, from the
   globe's new `uGlobeLocation`): from anywhere with any far plane; made the first time
   it is needed (tiles.md, [The overview](./tiles.md#the-overview)).

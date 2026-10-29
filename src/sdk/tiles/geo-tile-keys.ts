@@ -34,6 +34,26 @@ export function geoTileRegion(key: number): [number, number, number] {
 }
 
 /**
+ * A geographic tile's square relative to a point (`originLongitude`, `originLatitude`):
+ * its west longitude east of the point (its middle taken the short way round), its north
+ * latitude south of it (degrees: as `geoTileSquare`'s, less the point's), and its span. Worked in
+ * 64-bit floats, so a shader reading the square in 32 keeps its precision near the point.
+ *
+ * @group Tiles
+ */
+export function geoTileSquareFrom(
+  key: number,
+  originLongitude: number,
+  originLatitude: number,
+): [number, number, number] {
+  const [west, north, span] = geoTileRegion(key);
+  // Its middle the short way round, so a tile about the point covers it either side.
+  let middle = west + span / 2 - originLongitude;
+  middle -= 360 * Math.floor((middle + 180) / 360);
+  return [middle - span / 2, originLatitude - north, span];
+}
+
+/**
  * The geographic tile at `depth` that holds `longitude`, `latitude` (degrees): the
  * longitude taken about the globe, the latitude clamped to the poles. A point on an edge
  * belongs to the tile east and south of it.

@@ -1263,8 +1263,8 @@ basic ones show in every story, the advanced and debug ones only in `StageDebug`
 | `scenery-material.ts` | `SceneryMaterial`: the sky's own layer, the uniform objects every layer shares, and the switches they compile with |
 | `scenery-baker.ts` | bakes the environment and light probe per zone (internal) |
 | `scenery-stage.ts`, `SceneryStage.tsx` | the stage's geometry and materials |
-| `SceneryStageReliefTiles.tsx`, `scenery-relief-tiles.ts`, `SceneryStageReliefOverview.tsx`, `scenery-relief.ts` | the relief: its tiles, and its overview past the far plane (see [tiles.md](./tiles.md)) |
-| `scenery-defs.ts`, `generators/scenery-relief-*.ts` | the `sceneryReliefTile` and `sceneryRelief` generators: the relief's tiles, and its overview's grid |
+| `SceneryStageReliefTiles.tsx`, `scenery-relief-tiles.ts`, `SceneryStageReliefOverview.tsx`, `scenery-relief.ts`, `scenery-relief-atlas.ts` | the relief: its tiles, and its overview past the far plane, read from the same tiles through an index (see [tiles.md](./tiles.md)) |
+| `scenery-defs.ts`, `generators/scenery-relief-tile-generator.ts` | the `sceneryReliefTile` generator: the relief's tiles, for the stage, its overview and the `Minimap` |
 | `scenery-context.ts` | `useScenery`, `useSceneryOcean` |
 | `shaders/sky.glsl` | the background's layers: `skyAir`, `skyCloudsLayer`, `skyAbyssLayer`, `skySeaLayer`, `skyWaterLayer`, and the sky, clouds and void they draw |
 | `shaders/sky-fragment.glsl`, `sky-layer-fragment.glsl` | the sky's layer, and the others over it (one by its `SKY_LAYER_*` define) |

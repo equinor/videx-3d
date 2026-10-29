@@ -33,8 +33,9 @@ export type HeightFieldIndex = {
 
 /**
  * Index the tiles drawn over `region` (min X, min Z, max X, max Z). The entries are as
- * wide as the narrowest tile and aligned to it, so a tile on the same grid covers whole
- * entries; past `maxEntries` along a side they are wider, each the tile at its middle.
+ * wide as the narrowest tile and aligned to it — tiles of a quadtree, whatever point their
+ * coordinates are taken about, then cover whole entries; past `maxEntries` along a side
+ * they are wider, each the tile at its middle.
  * An earlier tile is not overwritten by a later one. An entry no tile covers takes
  * `fill` at its middle, if given.
  *
@@ -50,15 +51,17 @@ export function buildHeightFieldIndex(
 ): HeightFieldIndex | null {
   if (tiles.length === 0) return null;
   const [x0, z0, x1, z1] = region;
-  let entry = Infinity;
-  for (const tile of tiles) entry = Math.min(entry, tile.width);
+  // The narrowest tile: the entries are on its grid, wherever the coordinates' origin lies.
+  let narrowest = tiles[0];
+  for (const tile of tiles) if (tile.width < narrowest.width) narrowest = tile;
+  let entry = narrowest.width;
   let ox = 0;
   let oz = 0;
   let nx = 1;
   let nz = 1;
   for (;;) {
-    ox = Math.floor(x0 / entry) * entry;
-    oz = Math.floor(z0 / entry) * entry;
+    ox = narrowest.minX + Math.floor((x0 - narrowest.minX) / entry) * entry;
+    oz = narrowest.minZ + Math.floor((z0 - narrowest.minZ) / entry) * entry;
     nx = Math.max(Math.ceil((x1 - ox) / entry), 1);
     nz = Math.max(Math.ceil((z1 - oz) / entry), 1);
     if (Math.max(nx, nz) <= maxEntries) break;

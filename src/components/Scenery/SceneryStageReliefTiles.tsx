@@ -16,12 +16,19 @@ import {
   ReliefLayersSource,
   ReliefTile,
 } from '../../sdk/geometries/relief-tiles';
+import type { HeightFieldTile } from '../../sdk/geometries/height-field-clip';
 import type { HeightFieldClip } from '../../sdk/materials/height-field-clip';
 import {
+  type QuadtreeLayout,
+  type QuadtreeSelection,
   selectPinnedTiles,
   selectQuadtreeTiles,
 } from '../../sdk/tiles/quadtree';
-import { geoTileKeyAt, geoTileRegion } from '../../sdk/tiles/geo-tile-keys';
+import {
+  GEO_TILE_ROOT_SPAN,
+  geoTileKeyAt,
+  geoTileRegion,
+} from '../../sdk/tiles/geo-tile-keys';
 import {
   geoAt,
   geoSquareOver,
@@ -42,6 +49,7 @@ import { sceneryReliefTile, SceneryReliefTileResponse } from './scenery-defs';
 import type { SceneryMaterial } from './scenery-material';
 import type { SceneryReliefLoading } from './scenery-progress';
 import { geoWarp } from './scenery-relief-geo';
+import { SceneryReliefAtlas } from './scenery-relief-atlas';
 import {
   createReliefSampler,
   ReliefPins,
@@ -62,6 +70,10 @@ import {
   SceneryReliefTileTextures,
 } from './scenery-relief-tiles';
 import type { SceneryStageBounds } from './scenery-stage';
+import {
+  SceneryStageReliefOverview,
+  type SceneryReliefOverviewState,
+} from './SceneryStageReliefOverview';
 
 /** The most tiles in at once: a layer of each tile texture per tile. */
 const MAX_SLOTS = 1024;
@@ -81,6 +93,58 @@ const CELL_MIN_SLOPE = 0.01;
 const GROUND_PIXEL_ERROR = 0.5;
 // Frames between reports.
 const STATS_EVERY = 15;
+// The deepest tile the overview past the tiles' reach draws: 180° / 2^14 / 32, about 38 m
+// cells north–south. A wide region is drawn coarser (see OVERVIEW_MAX_ENTRIES).
+const OVERVIEW_MAX_DEPTH = 14;
+// The most a cell of the overview's may span on screen, in pixels: it is coloured, lit and
+// its coast drawn per pixel from the tiles' heights, so they must be about as fine as the
+// pixels — the tiles', drawn as geometry and lit from filtered normals, need not be.
+const OVERVIEW_CELL_PIXELS = 2;
+// The share of the slots the overview's tiles may take: past it, its cells are chosen again
+// larger on screen (by half, at most OVERVIEW_BUDGET_ATTEMPTS times) until they fit, so the
+// tiles near the camera never go without.
+const OVERVIEW_SLOT_SHARE = 0.5;
+const OVERVIEW_BUDGET_ATTEMPTS = 3;
+// The most entries along a side of the overview's index (`SceneryReliefAtlas`): tiles no
+// narrower than an entry are drawn deeper than this allows over a wide region, so a region
+// that would need more is drawn from coarser tiles. 512 x 512 entries are 4 MB.
+const OVERVIEW_MAX_ENTRIES = 512;
+// A frustum plane every point lies in front of: the overview's frustum has no far plane.
+const NO_PLANE_NORMAL = new Vector3();
+
+// The region the overview's tiles cover (min X, min Z, max X, max Z in `geoTileSquare`'s
+// coordinates), and the deepest tile its index holds over it: no narrower than an entry of
+// at most OVERVIEW_MAX_ENTRIES along a side.
+function overviewRegion(draw: number[]) {
+  let west = Infinity;
+  let north = Infinity;
+  let east = -Infinity;
+  let south = -Infinity;
+  for (const key of draw) {
+    const [a, b, width] = geoTileSquare(key);
+    west = Math.min(west, a);
+    north = Math.min(north, b);
+    east = Math.max(east, a + width);
+    south = Math.max(south, b + width);
+  }
+  const extent = Math.max(east - west, south - north);
+  const depth =
+    extent > 0 && Number.isFinite(extent)
+      ? Math.max(
+          Math.min(
+            OVERVIEW_MAX_DEPTH,
+            Math.floor(
+              Math.log2((OVERVIEW_MAX_ENTRIES * GEO_TILE_ROOT_SPAN) / extent),
+            ),
+          ),
+          0,
+        )
+      : OVERVIEW_MAX_DEPTH;
+  return {
+    bounds: [west, north, east, south] as [number, number, number, number],
+    depth,
+  };
+}
 
 /**
  * What a stage's tiled relief draws and holds, for a debug view.
@@ -150,6 +214,8 @@ type SceneryStageReliefTilesProps = {
   occupants?: SceneryReliefTileOccupants;
   /** told the relief's sampler (see `ReliefSampler`): a new one whenever pinned tiles come in, and null once gone */
   onSampler?: (sampler: ReliefSampler | null) => void;
+  /** the sky's sea surface layer's `renderOrder`: the overview past the tiles draws after it */
+  skyOrder: number;
 };
 
 /** A region a relief drawn from tiles hands out its ground over (see `grounds`). */
@@ -188,6 +254,7 @@ export const SceneryStageReliefTiles = ({
   groundLive = false,
   occupants,
   onSampler,
+  skyOrder,
 }: SceneryStageReliefTilesProps) => {
   const gl = useThree(state => state.gl);
   const slots = useMemo(() => {
@@ -202,6 +269,17 @@ export const SceneryStageReliefTiles = ({
     [slots],
   );
   useEffect(() => () => textures.dispose(), [textures]);
+  // The overview past the tiles' reach: tiles of the same streamer, coarser, chosen in the
+  // frame loop and indexed over the globe for it to read per pixel.
+  const overviewAtlas = useMemo(
+    () => new SceneryReliefAtlas(textures),
+    [textures],
+  );
+  useEffect(() => () => overviewAtlas.dispose(), [overviewAtlas]);
+  const overviewState = useMemo<SceneryReliefOverviewState>(
+    () => ({ beyond: false }),
+    [],
+  );
   const geometry = useMemo(
     () => createSceneryReliefTilePatch(RELIEF_TILE_CELLS),
     [],
@@ -336,7 +414,14 @@ export const SceneryStageReliefTiles = ({
         },
       },
     );
-    return { streamer, slotOf, reached, resident, split: new Set<number>() };
+    return {
+      streamer,
+      slotOf,
+      reached,
+      resident,
+      split: new Set<number>(),
+      overviewSplit: new Set<number>(),
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- pinnedSquares reads refs
   }, [generate, sourceKey, textures, slots, pins]);
   useEffect(() => () => streaming.streamer.dispose(), [streaming]);
@@ -457,6 +542,36 @@ export const SceneryStageReliefTiles = ({
       seen: 0,
       level: 0,
     };
+    // The overview's: the same view without a far plane, out to the horizon, its tiles
+    // left out where they lie wholly within the tiles' reach.
+    const overviewFrustum = new Frustum();
+    const overviewLayout: GeoTileView = {
+      ...layout,
+      frustum: overviewFrustum,
+    };
+    const overviewGeo = geoTileLayout(overviewLayout);
+    const overview: {
+      frustum: Frustum;
+      layout: GeoTileView;
+      /** the tiles' reach: tiles wholly within it are theirs */
+      reach: number;
+      tiles: QuadtreeLayout;
+      /** what its index was last built from */
+      indexed: string;
+    } = {
+      frustum: overviewFrustum,
+      layout: overviewLayout,
+      reach: 0,
+      tiles: {
+        ...overviewGeo,
+        // A tile's farthest point lies no farther than its nearest and twice its width.
+        shows: (key, minY, maxY) =>
+          overviewGeo.shows(key, minY, maxY) &&
+          overviewGeo.distance(key, minY, maxY) + 2 * overviewGeo.width(key) >
+            overview.reach,
+      },
+      indexed: '',
+    };
     return {
       frustum,
       matrix: new Matrix4(),
@@ -468,6 +583,7 @@ export const SceneryStageReliefTiles = ({
       },
       layout,
       tiles: geoTileLayout(layout),
+      overview,
       // Soft swaps between levels of detail; the relief appears at once where nothing was.
       transitions: new TileTransitions(transition, false),
       // The tiles drawn, in the order of their instances.
@@ -549,14 +665,17 @@ export const SceneryStageReliefTiles = ({
     // No farther than can be seen: past the globe's horizon, the highest ground's own, and
     // the disc's flat sea, over which a view runs on level.
     let seen = reach;
+    let horizon = Infinity;
     if (sky.globeEnabled) {
       const R = globe.radius;
-      const horizon =
+      horizon =
         globe.discRadius +
         Math.sqrt(2 * R * Math.max(altitude, 0) + altitude * altitude) +
         Math.sqrt(2 * R * Math.max(streaming.reached.highest, 0));
       seen = Math.min(reach, horizon);
     }
+    // The ground in view reaches past the tiles: the overview draws it.
+    overviewState.beyond = horizon > reach;
 
     const info = (key: number) => {
       const tile = streamer.get(key);
@@ -586,7 +705,7 @@ export const SceneryStageReliefTiles = ({
     // here once the swaps' blends are done (GeoPolygons does the same).
     const e = view.matrix.elements;
     const pinnedNow = pinnedSquares();
-    const chosenKey = `${e.join(',')}|${size.width}x${size.height}x${viewport.dpr}|${streaming.resident.changes}|${y}|${seen}|${pixelError}|${cellPixels}|${transition}|${under}|${globe.version}|${groundsKey}|${groundLive}|${visible}|${!!seeThroughMaterial}|${stageMinX},${stageMinZ},${stageMaxX},${stageMaxZ}`;
+    const chosenKey = `${e.join(',')}|${size.width}x${size.height}x${viewport.dpr}|${streaming.resident.changes}|${y}|${seen}|${pixelError}|${cellPixels}|${transition}|${under}|${globe.version}|${groundsKey}|${groundLive}|${visible}|${!!seeThroughMaterial}|${stageMinX},${stageMinZ},${stageMaxX},${stageMaxZ}|${sky.oceanWater}`;
     if (
       chosenKey === view.chosen.key &&
       pinnedNow === view.chosen.pins &&
@@ -600,10 +719,11 @@ export const SceneryStageReliefTiles = ({
     view.chosen.streaming = streaming;
     view.chosen.handed = handed;
 
+    const perUnit = pixelsPerUnit(camera, size.height * viewport.dpr);
     const selection = selectQuadtreeTiles({
       eye: [0, y, 0],
       reach: seen,
-      pixelsPerUnit: pixelsPerUnit(camera, size.height * viewport.dpr),
+      pixelsPerUnit: perUnit,
       pixelError,
       // Under the ground the tiles' tops face away: their shading is not seen.
       cellPixels: under
@@ -628,6 +748,92 @@ export const SceneryStageReliefTiles = ({
       prefetch: true,
     });
     streaming.split = selection.split;
+    // Past the tiles' reach, while the ground in view lies farther: the overview's tiles,
+    // by the same rules, out to the horizon and no deeper than its index allows.
+    let overviewSelection: QuadtreeSelection | null = null;
+    const overview = view.overview;
+    if (overviewState.beyond && visible) {
+      overview.frustum.copy(view.frustum);
+      overview.frustum.planes[4].set(NO_PLANE_NORMAL, 1);
+      overview.layout.globe = globe;
+      overview.layout.eye = camera.position;
+      overview.layout.altitude = altitude;
+      overview.layout.seen = horizon;
+      overview.layout.level = level;
+      overview.reach = reach;
+      // Land is coloured by its height per pixel, and with the water off so is the seabed:
+      // their cells split by their size on screen however flat. Under the water only a
+      // slope's shading would show — and the water hides it.
+      const water = sky.oceanWater;
+      const overviewInfo = (key: number) => {
+        const known = info(key);
+        if (!known) return undefined;
+        known.rough ||= !water || known.maxY > level;
+        return known;
+      };
+      // As fine as OVERVIEW_CELL_PIXELS and OVERVIEW_MAX_DEPTH, chosen again in the same
+      // frame no deeper than its index allows over the region it covers, and coarser on
+      // screen while it wants more than its share of the slots: from the finest each time,
+      // so a pose has one choice whatever came before it.
+      const share = slots * OVERVIEW_SLOT_SHARE;
+      let pixels = OVERVIEW_CELL_PIXELS;
+      let maxDepth = OVERVIEW_MAX_DEPTH;
+      for (let attempt = 0; ; attempt++) {
+        const chosen = selectQuadtreeTiles({
+          eye: [0, y, 0],
+          reach: horizon,
+          pixelsPerUnit: perUnit,
+          pixelError,
+          cellPixels: under
+            ? undefined
+            : {
+                cells: RELIEF_TILE_CELLS,
+                pixels,
+                minSlope: CELL_MIN_SLOPE,
+              },
+          maxDepth,
+          info: overviewInfo,
+          split: streaming.overviewSplit,
+          layout: overview.tiles,
+        });
+        overviewSelection = chosen;
+        if (attempt >= OVERVIEW_BUDGET_ATTEMPTS) break;
+        const allowed = overviewRegion(chosen.draw).depth;
+        const deepest = Math.max(
+          0,
+          ...chosen.draw.map(key => tileAddress(key)[0]),
+          ...chosen.want.map(({ key }) => tileAddress(key)[0]),
+        );
+        if (deepest > allowed) maxDepth = allowed;
+        else if (chosen.draw.length + chosen.want.length > share) pixels *= 1.5;
+        else break;
+      }
+      streaming.overviewSplit = overviewSelection!.split;
+    }
+    // The overview's index over the region its tiles cover, built again only when they
+    // change; tiles deeper than the region allows (the last choice's, past its attempts)
+    // stand in for by their ancestors, in as a tile is split only once in.
+    const indexOverview = (draw: number[]) => {
+      const { bounds, depth } = overviewRegion(draw);
+      const keys = new Set<number>();
+      for (let key of draw) {
+        while (tileAddress(key)[0] > depth) key = tileParent(key);
+        keys.add(key);
+      }
+      const squares: HeightFieldTile[] = [];
+      let indexed = '';
+      for (const key of keys) {
+        const slot = slotOf.get(key) ?? -1;
+        if (slot < 0) continue;
+        const [minX, minZ, width] = geoTileSquare(key);
+        squares.push({ minX, minZ, width, slot });
+        indexed += `${key}:${slot},`;
+      }
+      if (indexed === overview.indexed) return;
+      overview.indexed = indexed;
+      // Two more for the region's ends, aligned to the entries.
+      overviewAtlas.set(squares, bounds, OVERVIEW_MAX_ENTRIES + 2);
+    };
     const fillSource = view.fillSource;
     fillSource.clear();
     for (const fill of selection.fills) fillSource.set(fill.key, fill.source);
@@ -677,9 +883,17 @@ export const SceneryStageReliefTiles = ({
         ...selection.prefetched,
         ...(pinning ? pinning.keep : []),
         ...transitions.keep,
+        ...(overviewSelection
+          ? [...overviewSelection.draw, ...overviewSelection.split]
+          : []),
       ],
-      pinning ? [...pinning.want, ...selection.want] : selection.want,
+      [
+        ...(pinning ? pinning.want : []),
+        ...selection.want,
+        ...(overviewSelection ? overviewSelection.want : []),
+      ],
     );
+    if (overviewSelection) indexOverview(overviewSelection.draw);
     if (streaming.resident.pinnedIn) {
       streaming.resident.pinnedIn = false;
       setSamplerVersion(version => version + 1);
@@ -888,9 +1102,21 @@ export const SceneryStageReliefTiles = ({
     }
   });
 
-  // Shown each frame: the tops from above the ground, the undersides from under it.
+  // Shown each frame: the tops from above the ground, the undersides from under it; and
+  // past the tiles' reach, the overview.
   return (
     <>
+      <SceneryStageReliefOverview
+        sky={sky}
+        atlas={overviewAtlas}
+        told={overviewState}
+        base={source.base}
+        looks={looks}
+        reach={reach}
+        definesKey={definesKey}
+        skyOrder={skyOrder}
+        visible={visible}
+      />
       <mesh
         ref={aboveMesh}
         geometry={geometry}

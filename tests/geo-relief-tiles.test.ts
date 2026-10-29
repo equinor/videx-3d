@@ -12,6 +12,7 @@ import {
   geoReliefTileHeightAt,
   ReliefReader,
   reliefTileHeightAt,
+  reliefWrapColumns,
 } from '../src/sdk/geometries/relief-tiles';
 import { wgs84Def } from '../src/sdk/projection/crs';
 import {
@@ -90,6 +91,31 @@ function lonLatGrid(): ReliefData {
       crs: LONLAT,
     },
     { id: 'lonlat', name: 'lonlat' },
+  );
+}
+
+// The whole Earth, 1° cells at their centres: smooth round it in longitude.
+const round = (lon: number, lat: number) =>
+  1000 * Math.sin((lon * Math.PI) / 180) + 10 * lat;
+function worldGrid(repeat = false): ReliefData {
+  const nx = repeat ? 361 : 360;
+  const ny = 180;
+  const west = repeat ? -180 : -179.5;
+  const values = new Float32Array(nx * ny);
+  for (let row = 0; row < ny; row++) {
+    for (let col = 0; col < nx; col++) {
+      values[row * nx + col] = round(west + col, 89.5 - row);
+    }
+  }
+  return gridToRelief(
+    {
+      values,
+      size: [nx, ny],
+      origin: [west, -89.5],
+      cell: [1, 1],
+      crs: LONLAT,
+    },
+    { id: 'world', name: 'world' },
   );
 }
 
@@ -253,5 +279,41 @@ describe('buildGeoReliefTile', () => {
     expect(
       geoReliefTileHeightAt(tile, west + span / 3, north - span / 5),
     ).toBeCloseTo(sloped(west + span / 3, north - span / 5), 3);
+  });
+
+  it('reads a layer round the Earth across the antimeridian', async () => {
+    for (const repeat of [false, true]) {
+      const world = worldGrid(repeat);
+      expect(reliefWrapColumns(world.meta)).toBe(360);
+      for (const feather of [0, 200000]) {
+        const reader = storeOf(world);
+        // Ending at 180°E and starting at 180°W: their borders lie across it.
+        for (const lon of [179, -179]) {
+          const key = geoTileKeyAt(3, lon, 10);
+          const tile = await buildGeoReliefTile(
+            reader,
+            { layers: [{ id: 'world', feather }], base: -5000 },
+            key,
+          );
+          const [west, north, span] = geoTileRegion(key);
+          const step = span / CELLS;
+          let worst = 0;
+          for (let v = 0; v < NODES; v++) {
+            for (let u = 0; u < NODES; u++) {
+              const k = v * NODES + u;
+              expect(tile.layers[k]).toBe(1);
+              const expected = round(
+                west + (u - 1) * step,
+                north - (v - 1) * step,
+              );
+              worst = Math.max(worst, Math.abs(tile.heights[k] - expected));
+            }
+          }
+          expect(worst).toBeLessThan(1);
+        }
+      }
+    }
+    expect(reliefWrapColumns(lonLatGrid().meta)).toBe(0);
+    expect(reliefWrapColumns(utmPlane().meta)).toBe(0);
   });
 });

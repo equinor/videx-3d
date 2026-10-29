@@ -21,7 +21,6 @@ import {
   Vector3,
   WebGLRenderer,
 } from 'three';
-import { useGenerator } from '../../hooks/useGenerator';
 import { createLayers, LAYERS } from '../../layers/layers';
 import type {
   PlanarPolygonCoordinates,
@@ -35,7 +34,6 @@ import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import type { ReliefLayer } from '../../sdk/geometries/relief-tiles';
 import type { CutUniforms } from '../../sdk/materials/fence-field';
 import type { HeightFieldClip } from '../../sdk/materials/height-field-clip';
-import { SceneryStageReliefOverview } from './SceneryStageReliefOverview';
 import {
   SceneryStageReliefTiles,
   SceneryReliefTileStats,
@@ -51,7 +49,6 @@ import { useSceneryOcean } from './scenery-context';
 import type { SceneryReliefLoading } from './scenery-progress';
 import { placeOnGlobe, releaseFromGlobe } from './scenery-anchor';
 import { useWorld } from '../World/world-context';
-import { sceneryRelief, SceneryReliefResponse } from './scenery-defs';
 import {
   createSceneryStageMaterial,
   createSceneryStageOutline,
@@ -186,12 +183,12 @@ type StagePartLayer = Exclude<SceneryStageLayer, 'relief'>;
 export type SceneryStageRelief = {
   /**
    * The reliefs in the store — `relief-meta` records (`ReliefMeta`) and their
-   * `relief-values` — coarse to fine: later ones win where they have data. Read by the
-   * `sceneryReliefTile` generator, so it needs a `GeneratorsProvider`. Where the ground in view
-   * reaches past the camera's far plane, they are also drawn past the tiles as an overview,
-   * from anywhere on the Earth, merged and looked as the tiles merge and look them (the
-   * first six: each is a texture unit), read by the `sceneryRelief` generator; a layer in
-   * longitude and latitude all the way round (a world relief) covers it everywhere.
+   * `relief-values` — coarse to fine: later ones win where they have data. Merged onto tiles
+   * by the `sceneryReliefTile` generator, so it needs a `GeneratorsProvider`; any number, of
+   * any size: only the tiles in view are read. Where the ground in view reaches past the
+   * camera's far plane, the same tiles, coarser, are also drawn past it as an overview, from
+   * anywhere on the Earth; a layer in longitude and latitude all the way round (a world
+   * relief) covers it everywhere.
    */
   layers: ReliefLayer[];
   /** the flat seabed where no layer has data, metres below the sea. Default the sea's depth */
@@ -375,8 +372,6 @@ export const SceneryStage = ({
     reportFrame(JSON.parse(ownFrame) as GeoFrame);
     return () => reportFrame(null);
   }, [reportFrame, ownFrame]);
-
-  const generator = useGenerator<SceneryReliefResponse>(sceneryRelief);
 
   const materials = useMemo(
     () =>
@@ -744,21 +739,8 @@ export const SceneryStage = ({
 
   return (
     <group ref={root} visible={ocean.visible && ocean.ready}>
-      {/* Past the tiles, the overview: the same layers, merged and looked the same, made
-          the first time the ground in view reaches past the far plane. */}
-      {tiled && relief && sky && (
-        <SceneryStageReliefOverview
-          sky={sky}
-          layers={relief.layers}
-          base={-(relief.depth ?? ocean.depth)}
-          generator={generator}
-          looks={looks.texture}
-          reach={far}
-          definesKey={definesKey}
-          skyOrder={ocean.renderOrder + 1}
-          visible={shown('relief')}
-        />
-      )}
+      {/* The relief's tiles, and past them the overview: the same tiles, coarser, drawn
+          per pixel where the ground in view reaches past the far plane. */}
       {tiled && relief && reliefFrame && sky && (
         <SceneryStageReliefTiles
           sky={sky}
@@ -785,6 +767,7 @@ export const SceneryStage = ({
           groundLive={seabedDrawn}
           occupants={reliefOccupants}
           onSampler={relief.onSampler}
+          skyOrder={ocean.renderOrder + 1}
         />
       )}
       {parts.map(part => (

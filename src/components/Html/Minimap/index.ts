@@ -10,6 +10,11 @@ export {
   type MinimapItemLayout,
   type MinimapLayout,
 } from './minimap-layout';
-export type { MinimapHome, MinimapZoom } from './minimap-controller';
+export type {
+  MinimapHome,
+  MinimapProjection,
+  MinimapZoom,
+} from './minimap-controller';
+export { MINIMAP_PROJECTION_FADE } from './minimap-controller';
 export type { MinimapMode } from './minimap-renderer';
 export { MINIMAP_CONTROLS, type MinimapControl } from './MinimapOverlay';

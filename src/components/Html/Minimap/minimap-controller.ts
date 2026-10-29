@@ -2,6 +2,13 @@ import { Vector3, type Camera, type Texture } from 'three';
 import { cornerStyle, type Corner } from '../../../common/corner-style';
 import { globeMapSurface, type Globe } from '../../../sdk/projection/globe';
 import {
+  lambertConformalConic,
+  lambertParallelsFor,
+  MAP_PROJECTIONS,
+  mapPlane,
+  type MapProjection,
+} from '../../../sdk/projection/map-projections';
+import {
   adaptiveMapExtent,
   dropMarkerOn,
   easeMapExtent,
@@ -10,6 +17,7 @@ import {
   mapViewMetresPerPixel,
   mapViewPan,
   mapViewUp,
+  projectMapView,
   rayAtSeaLevel,
   setMarkerHeight,
   stepMapZoom,
@@ -26,16 +34,37 @@ import {
 import {
   MinimapRenderer,
   type MinimapAppearance,
-  type MinimapRenderLayer,
+  type MinimapTileSource,
 } from './minimap-renderer';
 
 /** How a minimap is zoomed: `'auto'` follows the camera's height; a number is an index into its `zooms`. */
 export type MinimapZoom = 'auto' | number;
 
+/** What a minimap's map is drawn in: see `MinimapProps.projection`. */
+export type MinimapProjection = 'scene' | MapProjection['name'] | 'auto';
+
+/** The seconds a change of projection cross-fades over. */
+export const MINIMAP_PROJECTION_FADE = 0.3;
+// With 'auto', back to the scene's map only once this far under `globalFrom`: no flicker
+// while the extent hovers about it.
+const GLOBAL_HYSTERESIS = 0.8;
+// Ground metres a degree of latitude spans, on a sphere of the Earth's mean radius.
+const METRES_PER_DEGREE = (6371008.8 * Math.PI) / 180;
+
 /** What the controller needs of a {@link Minimap}'s props, resolved. */
 export type MinimapOptions = {
   /** scene X/Z to longitude and latitude; null without a frame */
   toLonLat: ((x: number, z: number) => Vec2) | null;
+  /** longitude and latitude to scene X/Z; null without a frame */
+  toXZ: ((longitude: number, latitude: number) => Vec2) | null;
+  /** what the map is drawn in */
+  projection: MinimapProjection;
+  /** `'auto'`: the projection past `globalFrom` */
+  globalProjection: MapProjection['name'];
+  /** `'auto'`: the extent, metres, from which `globalProjection` draws it */
+  globalFrom: number;
+  /** a Lambert conformal conic's standard parallels, degrees; null to follow the view */
+  lambertParallels: [number, number] | null;
   /** extents in metres across the shorter side, ascending */
   zooms: number[];
   zoom: MinimapZoom;
@@ -71,8 +100,10 @@ export type MinimapOptions = {
 };
 
 export type MinimapRelief = {
-  layers: MinimapRenderLayer[];
-  base: number;
+  /** where its tiles come from */
+  source: MinimapTileSource;
+  /** device pixels a tile's cell spans, at most */
+  cellPixels: number;
   /** `SceneryReliefLooks.texture`, not disposed by the controller */
   looks: Texture;
 };
@@ -167,7 +198,7 @@ export class MinimapController {
   onDrop: (kind: 'camera' | 'target', at: Vec2) => void = () => {};
   private readonly canvasSlot = document.createElement('div');
   private renderer: MinimapRenderer | null = null;
-  // What the renderer was made for: a change of base alone does not make a new one.
+  // What the renderer was made for: a new source or detail alone does not make a new one.
   private relief: MinimapRelief | null = null;
   private options: MinimapOptions | null = null;
   // Heights and map points, flat or on the globe, by the options.
@@ -189,7 +220,14 @@ export class MinimapController {
     offset: Vec2;
   } | null = null;
   private extent = NaN;
+  // The view in the scene's map, which a move is measured by, and as drawn: in a projection's
+  // plane, where one draws it.
   private view: MapView | null = null;
+  private drawn: MapView | null = null;
+  // What the map is drawn in now, and what it cross-fades from, and how far (0 to 1).
+  private kind: 'scene' | MapProjection['name'] | null = null;
+  private fade: { from: 'scene' | MapProjection['name']; t: number } | null =
+    null;
   private heading = NaN;
   private markers: {
     camera: Vec2;
@@ -210,14 +248,14 @@ export class MinimapController {
     // canvas's parent (R3F's event source), which the map sits in, so keep it from them.
     // The map's own buttons and handles have heard it by now: React's listener is below.
     event.stopPropagation();
-    if (event.button !== 2 || !this.options?.pan || this.frozen || !this.view)
+    if (event.button !== 2 || !this.options?.pan || this.frozen || !this.drawn)
       return;
     this.container.setPointerCapture(event.pointerId);
     this.panning = {
       id: event.pointerId,
       x: event.clientX,
       y: event.clientY,
-      view: this.view,
+      view: this.drawn,
       offset: [...this.panOffset],
     };
   };
@@ -281,6 +319,7 @@ export class MinimapController {
       heading: 0,
       northAngle: 0,
       fov: 1,
+      forward: [...MAP_NORTH],
       altitude: 0,
       targetAltitude: 0,
       camera: [0, 0],
@@ -397,37 +436,34 @@ export class MinimapController {
   }
 
   /**
-   * Draw `relief`, or nothing while it is made (null). A renderer — a WebGL context — is made
-   * only for new layers or looks: a new base is set on the one there is.
+   * Draw `relief`, or nothing (null). A renderer — a WebGL context — is made only for new
+   * looks: a new source or detail is set on the one there is.
    */
   setRelief(relief: MinimapRelief | null) {
     const was = this.relief;
     this.relief = relief;
     this.dirty = true;
-    if (
-      relief &&
-      was &&
-      this.renderer &&
-      relief.layers === was.layers &&
-      relief.looks === was.looks
-    ) {
-      this.renderer.setBase(relief.base);
+    if (relief && was && this.renderer && relief.looks === was.looks) {
+      if (relief.source !== was.source) this.renderer.setSource(relief.source);
+      this.renderer.setCellPixels(relief.cellPixels);
       return;
     }
     this.renderer?.canvas.remove();
     this.renderer?.dispose();
     this.renderer = null;
-    if (!relief?.layers.length) return;
+    if (!relief) return;
     try {
-      this.renderer = new MinimapRenderer(
-        relief.layers,
-        relief.base,
-        relief.looks,
-      );
+      this.renderer = new MinimapRenderer(relief.looks);
     } catch (error) {
       console.warn('Minimap: no WebGL context to draw the relief on', error);
       return;
     }
+    // A tile came in: draw the map again, and choose what it wants next.
+    this.renderer.onTiles = () => {
+      this.dirty = true;
+    };
+    this.renderer.setSource(relief.source);
+    this.renderer.setCellPixels(relief.cellPixels);
     this.canvasSlot.appendChild(this.renderer.canvas);
     this.applySize();
     if (this.options) this.renderer.setAppearance(this.options.appearance);
@@ -532,17 +568,42 @@ export class MinimapController {
       size,
     };
 
-    // The camera's heading on the map: its own, whichever way the map is turned.
-    const way = mapViewUp(
+    // What the map is drawn in: fixed, or with 'auto' the scene's map up to `globalFrom`
+    // and the global projection past it. A change cross-fades.
+    const kind = this.projectionFor(o);
+    if (kind !== this.kind) {
+      if (this.kind !== null && this.renderer)
+        this.fade = { from: this.kind, t: 0 };
+      this.kind = kind;
+      this.dirty = true;
+    }
+    if (this.fade) {
+      this.fade.t += dt / MINIMAP_PROJECTION_FADE;
+      if (this.fade.t >= 1) this.fade = null;
+      this.dirty = true;
+    }
+    const drawn = this.drawnView(view, kind, o);
+
+    // The camera's heading on the map: its own, whichever way the map is turned — and
+    // carried into a projection's plane where it is drawn in one.
+    const sceneWay = mapViewUp(
       'heading-up',
       [forward.x, forward.y, forward.z],
       [up.x, up.y, up.z],
     );
+    const way = drawn.projected
+      ? projectMapView(
+          { ...view, up: sceneWay },
+          drawn.projected.plane,
+          'heading-up',
+        ).up
+      : sceneWay;
+    const mapUpDrawn = drawn.up;
     const heading = Math.atan2(
-      -way[0] * mapUp[1] + way[1] * mapUp[0],
-      way[0] * mapUp[0] + way[1] * mapUp[1],
+      -way[0] * mapUpDrawn[1] + way[1] * mapUpDrawn[0],
+      way[0] * mapUpDrawn[0] + way[1] * mapUpDrawn[1],
     );
-    const northAngle = Math.atan2(-mapUp[0], -mapUp[1]);
+    const northAngle = Math.atan2(-mapUpDrawn[0], -mapUpDrawn[1]);
     const perspective = (camera as { fov?: number; aspect?: number }).fov;
     const aspect = (camera as { aspect?: number }).aspect ?? 1;
     const fov = perspective
@@ -578,8 +639,21 @@ export class MinimapController {
 
     if (moved || this.dirty) {
       this.view = view;
+      this.drawn = drawn;
       if (this.renderer) {
-        this.renderer.setView(view, o.toLonLat);
+        const fade = this.fade;
+        // Eased: the new projection comes in, and the old goes, gently at both ends.
+        const t = fade ? fade.t * fade.t * (3 - 2 * fade.t) : 1;
+        this.renderer.setView(
+          fade
+            ? [
+                { view: this.drawnView(view, fade.from, o), opacity: 1 - t },
+                { view: drawn, opacity: t },
+              ]
+            : { view: drawn, opacity: 1 },
+          o.toLonLat,
+          o.toXZ ?? undefined,
+        );
         this.renderer.render();
       }
     }
@@ -593,11 +667,12 @@ export class MinimapController {
       targetAltitude,
     };
     this.store.set({
-      view: this.view ?? view,
+      view: this.drawn ?? drawn,
       extent: this.extent,
       heading,
       northAngle,
       fov,
+      forward: sceneWay,
       altitude,
       targetAltitude,
       camera: cameraAt,
@@ -619,6 +694,44 @@ export class MinimapController {
     this.camera = null;
     this.controls = null;
     this.container.remove();
+  }
+
+  // What the map is drawn in at the extent now: fixed, or with 'auto' the global projection
+  // from `globalFrom` on, and back to the scene's map only once well under it.
+  private projectionFor(o: MinimapOptions): 'scene' | MapProjection['name'] {
+    if (!o.toLonLat || !o.toXZ) return 'scene';
+    if (o.projection !== 'auto') return o.projection;
+    const global = o.globalProjection;
+    const from =
+      this.kind === global ? o.globalFrom * GLOBAL_HYSTERESIS : o.globalFrom;
+    return this.extent >= from ? global : 'scene';
+  }
+
+  // `view` as drawn in `kind`: itself in the scene's map, or carried into the projection's
+  // plane about the meridian under its middle, so the antimeridian lies at the map's edge.
+  private drawnView(
+    view: MapView,
+    kind: 'scene' | MapProjection['name'],
+    o: MinimapOptions,
+  ): MapView {
+    if (kind === 'scene' || !o.toLonLat || !o.toXZ) return view;
+    const [longitude, latitude] = o.toLonLat(view.center[0], view.center[1]);
+    // A cone about the middle's parallel, its standard parallels following the map's
+    // extent north–south unless fixed.
+    const projection =
+      kind === 'lambert-conformal-conic'
+        ? lambertConformalConic(
+            o.lambertParallels ??
+              lambertParallelsFor(
+                latitude,
+                (Math.max(view.size[0], view.size[1]) * view.metresPerPixel) /
+                  METRES_PER_DEGREE,
+              ),
+            latitude,
+          )
+        : MAP_PROJECTIONS[kind];
+    const plane = mapPlane(projection, longitude, o.toLonLat, o.toXZ);
+    return projectMapView(view, plane, o.orientation);
   }
 
   // Whether the map moved enough since it was last drawn to draw it again: a quarter pixel
