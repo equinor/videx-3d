@@ -68,6 +68,7 @@ export class AnnotationsPass extends Pass {
   private prevPointerY = NaN;
   private prevSizeX = 0;
   private prevSizeY = 0;
+  private prevAnnotationsData: AnnotationInstance[] | null = null;
   private occlusionChanged = false;
 
   // Connector-length gate: suppress connector lines that stretch far beyond
@@ -431,9 +432,9 @@ export class AnnotationsPass extends Pass {
     );
 
     // Determine whether anything changed since last frame. When the scene is
-    // settled (camera static, no animations, no occlusion/position changes,
-    // pointer/size unchanged) we skip the expensive post-process, DOM and
-    // overlay redraw work and simply re-composite the existing overlay.
+    // settled (camera static, no animations, no annotation/occlusion/position
+    // changes, pointer/size unchanged) we skip the expensive post-process, DOM
+    // and overlay redraw work and simply re-composite the existing overlay.
     const cameraMoved = !this.prevCameraMatrix.equals(camera.matrixWorld);
     const pointerMoved =
       this.pointer.x !== this.prevPointerX ||
@@ -444,6 +445,7 @@ export class AnnotationsPass extends Pass {
       cameraMoved ||
       pointerMoved ||
       sizeChanged ||
+      instances !== this.prevAnnotationsData ||
       this.occlusionChanged ||
       annotationsActivity.animating ||
       annotationsActivity.positionChanged;
@@ -460,6 +462,7 @@ export class AnnotationsPass extends Pass {
     this.prevPointerY = this.pointer.y;
     this.prevSizeX = size.x;
     this.prevSizeY = size.y;
+    this.prevAnnotationsData = instances;
     this.occlusionChanged = false;
 
     if (this.overlayTexture !== null) {
