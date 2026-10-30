@@ -106,6 +106,9 @@ const OVERVIEW_CELL_PIXELS = 2;
 // tiles near the camera never go without.
 const OVERVIEW_SLOT_SHARE = 0.5;
 const OVERVIEW_BUDGET_ATTEMPTS = 3;
+// The share of the slots the streamer keeps tiles in (its budget, below): the overview's
+// share and the tiles' detail toward their reach (taking its rules) must fit in it together.
+const STREAM_SHARE = 0.9;
 // The nearest the overview starts, as a share of the tiles' reach (relief-fragment.glsl's
 // RELIEF_HANDOVER_MIN, the same): where the view meets the deepest ground past the reach, but
 // not nearer. From low over deep water that point comes near the camera, and the overview
@@ -412,7 +415,7 @@ export const SceneryStageReliefTiles = ({
           tile.layers.byteLength,
       },
       {
-        budget: Math.floor(slots * 0.9) * TILE_BYTES,
+        budget: Math.floor(slots * STREAM_SHARE) * TILE_BYTES,
         onLoad: (key, tile) => {
           slotOf.set(key, textures.put(tile));
           reached.highest = Math.max(reached.highest, tile.max);
@@ -816,13 +819,15 @@ export const SceneryStageReliefTiles = ({
         prefetch: true,
       });
     let selection = choose();
-    // Taking the overview's detail, they may want no more than their share of the slots
-    // (prefetches aside, at priority below 0): past it they are chosen again as before,
-    // rather than load tiles and let them go in turn (2939 asked for, 2026-10-30).
-    const wanted =
+    // Taking the overview's detail, they may hold no more than what the overview leaves of
+    // the streamer's budget (drawn, gone through and wanted; prefetches aside, at priority
+    // below 0): past it they are chosen again as before, rather than load tiles and let them
+    // go in turn (2939 asked for, 2026-10-30).
+    const held =
       selection.draw.length +
+      selection.split.size +
       selection.want.filter(({ priority }) => priority >= 0).length;
-    if (easing && wanted > slots * (1 - OVERVIEW_SLOT_SHARE)) {
+    if (easing && held > slots * (STREAM_SHARE - OVERVIEW_SLOT_SHARE)) {
       easing = false;
       selection = choose();
     }
@@ -890,10 +895,27 @@ export const SceneryStageReliefTiles = ({
           ...chosen.want.map(({ key }) => tileAddress(key)[0]),
         );
         if (deepest > allowed) maxDepth = allowed;
-        else if (chosen.draw.length + chosen.want.length > share) pixels *= 1.5;
+        else if (
+          chosen.draw.length + chosen.split.size + chosen.want.length >
+          share
+        )
+          pixels *= 1.5;
         else break;
       }
-      streaming.overviewSplit = overviewSelection!.split;
+      // Still over its share past its attempts: it wants only what fits, the most wanted
+      // first. What it holds — drawn, and gone through to reach them — and wants together
+      // never pass it, so the streamer is never asked for more than its budget holds: it
+      // would let tiles go that were wanted again, without end (2026-10-30).
+      const chosen = overviewSelection!;
+      const room = Math.max(
+        Math.floor(share) - chosen.draw.length - chosen.split.size,
+        0,
+      );
+      if (chosen.want.length > room)
+        chosen.want = [...chosen.want]
+          .sort((a, b) => b.priority - a.priority)
+          .slice(0, room);
+      streaming.overviewSplit = chosen.split;
       overview.pixels = pixels;
     }
     // The overview's index over the region its tiles cover, built again only when they
