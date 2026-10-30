@@ -2,6 +2,10 @@ import {
   SceneryArgsFeatures,
   SceneryArgsMinimap,
 } from '../../storybook/components/scenery-features';
+import {
+  DemoFacilities,
+  DemoPipelines,
+} from '../../storybook/components/demo-pipelines';
 import { CameraControls } from '@react-three/drei';
 import { Canvas } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
@@ -61,6 +65,7 @@ import { defaultMaterialOptions } from '../Wellbores/Casings/casings-defs';
 import { Trajectory } from '../Wellbores/Trajectory/Trajectory';
 import { Wellbore } from '../Wellbores/Wellbore/Wellbore';
 import { Wells } from '../Wellbores/Wells/Wells';
+import { World } from '../World/World';
 import { Scenery } from './Scenery';
 import { SceneryStage } from './SceneryStage';
 
@@ -113,6 +118,8 @@ type ScenerySpikeArgs = {
   casingRoughness: number;
   hide: string[];
   outline: boolean;
+  pipelines: boolean;
+  facilities: boolean;
 } & SceneryArgs &
   SceneryReliefArgs &
   SceneryWallDebugArgs &
@@ -241,8 +248,10 @@ const Field = (args: ScenerySpikeArgs) => {
 const SceneryScene = (args: ScenerySpikeArgs) => {
   const sea = args.skyWater || args.skySeabed;
 
+  // Where the field lies on the Earth, for the geographic layers: without it the sky's globe
+  // has a place only from a stage's relief (the same frame).
   return (
-    <>
+    <World frame={reliefFrame}>
       <SceneryStoryRendering args={args} />
       <ambientLight intensity={args.ambientIntensity} />
       <Scenery
@@ -262,6 +271,9 @@ const SceneryScene = (args: ScenerySpikeArgs) => {
             <FieldStage {...args} />
           </UtmArea>
         )}
+        {/* On the stage's relief, else the flat seabed; seen through the sea. */}
+        {args.pipelines && <DemoPipelines height={-args.oceanDepth} />}
+        {args.facilities && <DemoFacilities height={-args.oceanDepth} />}
       </Scenery>
       <Field {...args} />
       {args.minimap && (
@@ -271,7 +283,7 @@ const SceneryScene = (args: ScenerySpikeArgs) => {
           level={args.oceanLevel}
         />
       )}
-    </>
+    </World>
   );
 };
 
@@ -381,6 +393,18 @@ const meta = {
     casingRoughness: range(0, 1, 0.05, 'Scene'),
     hide: sceneryHideArgType,
     outline: sceneryOutlineArgType,
+    pipelines: {
+      control: { type: 'boolean' },
+      description:
+        'The demo pipelines on the Norwegian shelf (`GeoTubes`, demo-pipelines.tsx): on the stage\u2019s relief, else the flat seabed, seen through the sea.',
+      table: { category: 'Layers' },
+    },
+    facilities: {
+      control: { type: 'boolean' },
+      description:
+        'The demo facilities (`GeoSymbols`): at the surface yellow, subsea light blue, onshore white, out of service grey.',
+      table: { category: 'Layers' },
+    },
     ...sceneryWallDebugArgTypes,
   },
 } satisfies Meta<typeof ScenerySpike>;
@@ -416,6 +440,8 @@ export const Default: Story = {
     casingRoughness: 0.8,
     hide: [],
     outline: false,
+    pipelines: false,
+    facilities: false,
     ...sceneryWallDebugArgs,
   },
 };

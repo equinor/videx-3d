@@ -1,17 +1,23 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type {
-  GeoFeature,
-  GeoJsonFeatureCollection,
-} from '../../sdk/layers/geo-features';
+import { useMemo } from 'react';
+import type { GeoFeature } from '../../sdk/layers/geo-features';
 import type { LayerReveal } from '../../sdk/layers/layer-visibility';
+import {
+  DEMO_MEDIUM_COLORS,
+  demoFacilityStyle,
+  demoInService,
+  demoPipelineStyle,
+  useDemoFacilities,
+  useDemoPipelines,
+  type DemoFacility,
+  type DemoPipeline,
+} from '../../storybook/components/demo-pipelines';
 import { SCENERY_DEMO_RELIEF_LAYERS } from '../../storybook/components/scenery-controls';
 import { demoFrame } from '../../storybook/data/demo-crs';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { SceneryGenerators } from '../../storybook/decorators/scenery-generators';
-import { get } from '../../storybook/dependencies/api';
 import { Minimap } from '../Html/Minimap/Minimap';
 import { MinimapCameraMarker } from '../Html/Minimap/MinimapLayers';
 import { Scenery } from '../Scenery/Scenery';
@@ -19,57 +25,18 @@ import { SceneryOcean } from '../Scenery/SceneryOcean';
 import { SceneryStage } from '../Scenery/SceneryStage';
 import { World } from '../World/World';
 import { GeoLabels } from './GeoLabels';
-import { GeoSymbols, type GeoSymbolStyle } from './GeoSymbols';
-import { GeoTubes, type GeoTubeStyle } from './GeoTubes';
+import { GeoSymbols } from './GeoSymbols';
+import { GeoTubes } from './GeoTubes';
 import { MinimapGeoLayer, type MinimapGeoStyle } from './MinimapGeoLayer';
 
-// Pipelines and facilities on the Norwegian continental shelf (npm run generate-overlays;
-// Sodir, NLOD 2.0; the routes completed, and a hub at Volve made up), lying on the seabed
-// the stage's relief draws, about the demo field at Volve.
+// Pipelines and facilities on the Norwegian continental shelf (demo-pipelines.tsx), lying on
+// the seabed the stage's relief draws, about the demo field at Volve.
 
 const LEVEL = 0;
 const DEPTH = 100;
 const STAGE_BOUNDS: [number, number, number, number] = [
   -8000, -8000, 8000, 8000,
 ];
-const INCH = 0.0254;
-
-// ⚠️ Not exported: Storybook makes every named export of a stories file a story.
-type Pipeline = {
-  name: string;
-  medium: string;
-  diameter: number | null;
-  phase: string;
-};
-type Facility = {
-  name: string;
-  kind: string;
-  phase: string;
-  surface: string | null;
-};
-
-const MEDIUM_COLORS: Record<string, string> = {
-  Gas: '#e5383b',
-  Oil: '#2fbf4a',
-  Condensate: '#f59f00',
-  'Co2 injection': '#4dabf7',
-};
-const inService = (phase: string) =>
-  phase === 'IN SERVICE' || phase === 'INSTALLATION';
-
-function useCollection<P>(url: string) {
-  const [data, setData] = useState<GeoJsonFeatureCollection<P> | null>(null);
-  useEffect(() => {
-    let live = true;
-    get(url).then(found => {
-      if (live) setData(found);
-    });
-    return () => {
-      live = false;
-    };
-  }, [url]);
-  return data;
-}
 
 type PipelinesArgs = {
   sea: boolean;
@@ -93,31 +60,26 @@ type PipelinesArgs = {
   minimap: boolean;
 };
 
-const facilityName = (feature: GeoFeature<Facility>) => feature.properties.name;
+const facilityName = (feature: GeoFeature<DemoFacility>) =>
+  feature.properties.name;
 // On the minimap only what stands out at its scale: the facilities at the surface or on
 // land, not the subsea templates round them.
-const onMinimap = (feature: GeoFeature<Facility>) =>
+const onMinimap = (feature: GeoFeature<DemoFacility>) =>
   feature.properties.surface === 'Y' ||
   feature.properties.kind === 'ONSHORE FACILITY';
 const pipelineMinimapStyle = (
-  feature: GeoFeature<Pipeline>,
+  feature: GeoFeature<DemoPipeline>,
 ): MinimapGeoStyle => ({
-  stroke: MEDIUM_COLORS[feature.properties.medium] ?? '#999999',
-  strokeWidth: inService(feature.properties.phase) ? 1.5 : 0.75,
+  stroke: DEMO_MEDIUM_COLORS[feature.properties.medium] ?? '#999999',
+  strokeWidth: demoInService(feature.properties.phase) ? 1.5 : 0.75,
 });
 const facilityMinimapStyle = (
-  feature: GeoFeature<Facility>,
+  feature: GeoFeature<DemoFacility>,
 ): MinimapGeoStyle => ({
   fill: feature.properties.kind === 'ONSHORE FACILITY' ? '#ffffff' : '#ffd43b',
   stroke: '#000000',
   strokeWidth: 0.5,
   radius: feature.properties.kind === 'ONSHORE FACILITY' ? 3.5 : 2,
-});
-// As built: the diameter in inches; out of service, faded.
-const tubeStyle = (feature: GeoFeature<Pipeline>): GeoTubeStyle => ({
-  color: MEDIUM_COLORS[feature.properties.medium] ?? '#999999',
-  opacity: inService(feature.properties.phase) ? 1 : 0.45,
-  diameter: (feature.properties.diameter ?? 12) * INCH,
 });
 
 const PipelinesStory = ({
@@ -141,37 +103,19 @@ const PipelinesStory = ({
   revealFade,
   minimap,
 }: PipelinesArgs) => {
-  const pipelines = useCollection<Pipeline>('/data/overlays/pipelines.json');
-  const facilities = useCollection<Facility>('/data/overlays/facilities.json');
+  const pipelines = useDemoPipelines();
+  const facilities = useDemoFacilities();
   const shownPipelines = useMemo(
     () =>
       pipelines && inServiceOnly
         ? {
             ...pipelines,
             features: pipelines.features.filter(f =>
-              inService(f.properties.phase),
+              demoInService(f.properties.phase),
             ),
           }
         : pipelines,
     [pipelines, inServiceOnly],
-  );
-  // About as wide as they stand: platforms tens of metres, templates less, terminals more;
-  // out of service, darker.
-  const facilityStyle = useCallback(
-    (feature: GeoFeature<Facility>): GeoSymbolStyle => {
-      const { kind, phase, surface } = feature.properties;
-      const onshore = kind === 'ONSHORE FACILITY';
-      const tint = onshore
-        ? '#ffffff'
-        : surface === 'Y'
-          ? '#ffd43b'
-          : '#74c0fc';
-      return {
-        color: inService(phase) ? tint : '#777777',
-        size: onshore ? 400 : surface === 'Y' ? 80 : 25,
-      };
-    },
-    [],
   );
 
   const layers = relief ? SCENERY_DEMO_RELIEF_LAYERS : [];
@@ -200,7 +144,7 @@ const PipelinesStory = ({
           {/* Inside the Scenery: on its relief, seen through its sea (water). */}
           <GeoTubes
             data={shownPipelines}
-            style={tubeStyle}
+            style={demoPipelineStyle}
             spacingPerDistance={spacingPerDistance}
             span={span}
             height={height}
@@ -213,7 +157,7 @@ const PipelinesStory = ({
           {showFacilities && (
             <GeoSymbols
               data={facilities}
-              style={facilityStyle}
+              style={demoFacilityStyle}
               height={height}
               water={water}
               minPixels={facilityPixels}
