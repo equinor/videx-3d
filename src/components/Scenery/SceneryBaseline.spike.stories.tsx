@@ -5,6 +5,10 @@ import {
 import {
   DemoFacilities,
   DemoPipelines,
+  demoRevealArgs,
+  demoRevealArgTypes,
+  useDemoReveal,
+  type DemoRevealArgs,
 } from '../../storybook/components/demo-pipelines';
 import { CameraControls } from '@react-three/drei';
 import { Canvas } from '@react-three/fiber';
@@ -120,7 +124,8 @@ type ScenerySpikeArgs = {
   outline: boolean;
   pipelines: boolean;
   facilities: boolean;
-} & SceneryArgs &
+} & DemoRevealArgs &
+  SceneryArgs &
   SceneryReliefArgs &
   SceneryWallDebugArgs &
   SceneryMinimapArgs &
@@ -247,6 +252,7 @@ const Field = (args: ScenerySpikeArgs) => {
 
 const SceneryScene = (args: ScenerySpikeArgs) => {
   const sea = args.skyWater || args.skySeabed;
+  const revealed = useDemoReveal(args);
 
   // Where the field lies on the Earth, for the geographic layers: without it the sky's globe
   // has a place only from a stage's relief (the same frame).
@@ -271,9 +277,13 @@ const SceneryScene = (args: ScenerySpikeArgs) => {
             <FieldStage {...args} />
           </UtmArea>
         )}
-        {/* On the stage's relief, else the flat seabed; seen through the sea. */}
-        {args.pipelines && <DemoPipelines height={-args.oceanDepth} />}
-        {args.facilities && <DemoFacilities height={-args.oceanDepth} />}
+        {/* On the stage's relief, else the flat seabed; seen through the sea, or revealed over it. */}
+        {args.pipelines && (
+          <DemoPipelines height={-args.oceanDepth} reveal={revealed} />
+        )}
+        {args.facilities && (
+          <DemoFacilities height={-args.oceanDepth} reveal={revealed} />
+        )}
       </Scenery>
       <Field {...args} />
       {args.minimap && (
@@ -405,6 +415,7 @@ const meta = {
         'The demo facilities (`GeoSymbols`): at the surface yellow, subsea light blue, onshore white, out of service grey.',
       table: { category: 'Layers' },
     },
+    ...demoRevealArgTypes('Layers'),
     ...sceneryWallDebugArgTypes,
   },
 } satisfies Meta<typeof ScenerySpike>;
@@ -442,6 +453,7 @@ export const Default: Story = {
     outline: false,
     pipelines: false,
     facilities: false,
+    ...demoRevealArgs,
     ...sceneryWallDebugArgs,
   },
 };

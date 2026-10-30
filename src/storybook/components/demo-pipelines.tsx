@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import type { ArgTypes } from '@storybook/react-vite';
+import { useEffect, useMemo, useState } from 'react';
 import {
   GeoSymbols,
   type GeoSymbolsProps,
@@ -13,6 +14,7 @@ import type {
   GeoFeature,
   GeoJsonFeatureCollection,
 } from '../../sdk/layers/geo-features';
+import type { LayerReveal } from '../../sdk/layers/layer-visibility';
 import { get } from '../dependencies/api';
 
 // The demo's pipelines and facilities on the Norwegian continental shelf (npm run
@@ -134,3 +136,59 @@ export const DemoFacilities = (
     />
   );
 };
+
+/** Story args for the demo layers revealed as a map (see {@link useDemoReveal}). */
+export type DemoRevealArgs = {
+  reveal: boolean;
+  revealAbove: number;
+  revealFade: number;
+};
+
+/** Off; on, from 20 km up, fading in below it (none at 13 km). */
+export const demoRevealArgs: DemoRevealArgs = {
+  reveal: false,
+  revealAbove: 20000,
+  revealFade: 0.5,
+};
+
+/** Controls for {@link DemoRevealArgs}, under `category`. */
+export function demoRevealArgTypes(
+  category: string,
+): ArgTypes<DemoRevealArgs> {
+  return {
+    reveal: {
+      control: { type: 'boolean' },
+      description:
+        'Pipelines and facilities revealed as a map (`reveal`): lifted to the sea\u2019s level where they lie below it, and drawn over the sea, through its surface and seabed. Needs `water` fog.',
+      table: { category },
+    },
+    revealAbove: {
+      control: { type: 'range', min: 0, max: 200000, step: 1000 },
+      description:
+        'Revealed from this camera height over the sea up, in metres (`reveal.minHeight`); 0: at any height.',
+      table: { category },
+    },
+    revealFade: {
+      control: { type: 'range', min: 0, max: 2, step: 0.05 },
+      description:
+        'How far below `revealAbove` they fade in, as a ratio of it (`reveal.fade`); 0 at once.',
+      table: { category },
+    },
+  };
+}
+
+/** The layers' `reveal` from {@link DemoRevealArgs}: from `revealAbove` up, or always at 0. */
+export function useDemoReveal({
+  reveal,
+  revealAbove,
+  revealFade,
+}: DemoRevealArgs): LayerReveal {
+  return useMemo<LayerReveal>(
+    () =>
+      reveal && {
+        minHeight: revealAbove > 0 ? revealAbove : undefined,
+        fade: revealFade,
+      },
+    [reveal, revealAbove, revealFade],
+  );
+}
