@@ -1,10 +1,11 @@
 # World: where on Earth, and more than one field
 
-> **Status (2026-10-27): design, decisions taken; steps 1,
+> **Status (2026-10-30): design, decisions taken; steps 1,
 > [2](#9-step-2-in-detail-the-sky-on-a-fixed-globe),
 > [3](#10-step-3-in-detail-fields-placed-on-the-earth),
 > [4](#12-step-4-in-detail-the-sky-anywhere-on-the-globe) and
-> [6](#11-step-6-in-detail-tiles-on-the-globe) built.** How the scene
+> [6](#11-step-6-in-detail-tiles-on-the-globe) built; step
+> [7](#13-step-7-in-detail-more-than-one-field) designed.** How the scene
 > places itself on the Earth, what more than one field needs, and a plan for it. The open
 > questions are settled ([Decided](#7-decided-2026-10-26)): the Earth is a fixed globe, and
 > a `World` says once where the scene lies on it. Step 3 found the view's origin (step 4)
@@ -24,6 +25,7 @@
 - [10. Step 3 in detail: fields placed on the Earth](#10-step-3-in-detail-fields-placed-on-the-earth)
 - [11. Step 6 in detail: tiles on the globe](#11-step-6-in-detail-tiles-on-the-globe)
 - [12. Step 4 in detail: the sky anywhere on the globe](#12-step-4-in-detail-the-sky-anywhere-on-the-globe)
+- [13. Step 7 in detail: more than one field](#13-step-7-in-detail-more-than-one-field)
 
 ---
 
@@ -147,7 +149,7 @@ the scene's ([Step 3 in detail](#10-step-3-in-detail-fields-placed-on-the-earth)
 | Sky observer | given by the host | ✅ its place from the `World`'s origin (or, without one, the stage's relief frame's) when it gives only a date; the date the host's |
 | Relief | read in the stage's `frame`, the scene's | ✅ the `World`'s frame by default, the chosen field's, where its column meets it exactly; its own frame waits for step 6 |
 | Relief tiles | keyed in the frame's X/Z, roots of 2097 km about its origin | keyed by latitude and longitude for the whole globe (step 6); until then as now, within one region |
-| `SceneryStage` | one stage, one occupant, at the scene's frame | as before, at the chosen field; a stage per field is step 7's |
+| `SceneryStage` | one stage, one occupant, at the scene's frame | as before, at the chosen field; the chosen field switched by re-origin, every loaded field drawn, is [step 7's](#13-step-7-in-detail-more-than-one-field) |
 | Bridge (relief → chunk) | relief and column in the same frame | the same for the chosen field; a column in a placed field samples the relief through a transform, with step 6 |
 
 ---
@@ -182,10 +184,10 @@ Nothing above is needed for one field. What keeps it cheap to add later:
 | 4 | **The sky anywhere on the globe** ([in detail](#12-step-4-in-detail-the-sky-anywhere-on-the-globe)), was the view's origin. Its precision came free in step 3: three.js composes each draw's model-view matrix in 64 bits, so a placed field is as precise 300 km out as at home. Left: the sky seen from far off. The world stays fixed and the sky's look frame follows the camera: its up, horizon and light where the camera is; the waves on fixed charts on the Earth (`OceanCharts`). A host levels its horizon with `useLevelHorizon` | ✅ built (2026-10-27); the cloud deck far off is left for step 8 |
 | 5 | **The relief in its own frame** — folded into step 6. In a frame of its own the relief would part from the chosen field's UTM by the two maps' scale (UTM's 0.9996 against 1: 3 m at 8 km), right where its column meets it; laid in the chosen field's frame it meets it exactly, and a placed field's to its placement's precision | → step 6 |
 | 6 | **Tiles on the globe** ([in detail](#11-step-6-in-detail-tiles-on-the-globe)): tile keys by latitude and longitude, the relief contract unchanged (a tile asks each layer for a window of its own grid, as now); the overlays' tiles move with them, sharing the core. Everything placed by latitude and longitude on one sphere, the ellipsoid's conformal sphere matched at the chosen field; each field's column samples the relief through its transform | ✅ built (2026-10-26) in five parts: 6a the geographic globe, 6b geographic tiles, 6c the relief drawn from them, 6d the whole globe — the Earth from 20 000 km, the far side included; 6e a clean-up |
-| 7 | **Two fields:** a story with two fields in two UTM zones, the camera flying between them, either chosen: the `World`'s frame switched, a stage per field | the goal; step 3 placed the second field |
+| 7 | **More than one field** ([in detail](#13-step-7-in-detail-more-than-one-field)): every loaded field drawn in its own group on the globe, the selected one the `World`'s frame (re-origin on selection, the camera carried with it); the void the seabed's underside everywhere; the seabed see-through over each loaded field; wellbores as an Earth-level layer | designed (2026-10-30); step 3 placed the second field |
 
-Steps 1 to 3 and 6 are built. Step 7's stage per field waits for a host with two fields'
-columns at once.
+Steps 1 to 4 and 6 are built. Step 7 is designed ([§13](#13-step-7-in-detail-more-than-one-field)),
+to be built against a story with two fields of realistic size.
 
 ---
 
@@ -528,9 +530,10 @@ moved, as without a world, at no cost.
 
 - **A column in a placed field** samples the relief in its own frame, which the bridge
   does not yet carry: the chosen field's column only (step 6).
-- **A stage per field,** and switching the chosen one (the world's frame) with a camera
-  flying between them: step 7. Switching moves what is placed, not the camera, and the
-  relief's tiles are laid out again in the new frame.
+- **More than one field,** and switching the chosen one (the world's frame) with a camera
+  flying between them: step 7 ([in detail](#13-step-7-in-detail-more-than-one-field)).
+  Switching re-origins what is placed and carries the camera with it; the relief's tiles,
+  keyed by latitude and longitude, keep their keys and are placed again.
 - **`UtmPosition` and `Wgs84Position`** stay flat, as decided: a field far off is placed by
   its own `UtmArea`.
 
@@ -960,3 +963,165 @@ and not above 100 km (`below`), where the up runs along a view down at the Earth
   clouds add to it. The main thread's 9–12 ms from high up is to be looked at with them.
   The Lysefjord preset at 500 m now lies inside the mountain (665 m there), where nothing
   of the sea or the relief is drawn, so it is timed at 1500 m.
+
+---
+
+## 13. Step 7 in detail: more than one field
+
+> **Status (2026-10-30): designed, not built.** Every loaded field drawn at once, each in a
+> group of its own on the globe; one of them selected, the `World`'s frame. Proposed after
+> discussion; the numbers marked as estimates are to be measured in 7c.
+
+### Fields as groups
+
+A field is a group placed on the globe — a `UtmArea` with its own `frame`, as step 3 built
+it: its data flat in its own UTM (X east, −Z north) about its origin, the group turned to
+the globe's up there and placed by `placeGeoFrame` and `Globe.tangent`, so it tilts with the
+Earth while its data stays flat relative to each other. Precision is not a concern: three.js
+composes each draw's model-view matrix in 64 bits, and 25 km offsets are millimetre steps in
+32-bit floats.
+
+- **The selected field** works as today: its frame is the `World`'s, its stage's `bounds`
+  the globe's flat disc, where its column meets the sea and the relief exactly, and the
+  cutaway, the relief bridge and its full detail are its.
+- **Every other loaded field** is drawn too, with its data, wherever it is: a field is not
+  only seen while selected. Which are loaded, and at what detail, is the host's choice, by
+  distance (see [Data](#data)).
+
+### Field sizes and the Earth's curve
+
+A flat field parts from the curved Earth by `d² / 2R` at `d` from its origin. Fields as
+squares (real ones are not):
+
+| Field | Area | Side | Edge (half side) | Corner | At the edge | At the corner |
+|--|--|--|--|--|--|--|
+| The demo stage at Volve | 256 km² | 16 km | 8 km | 11 km | 5 m | 10 m |
+| A large field | 200–300 km² | 14–17 km | 7–9 km | 10–12 km | 4–6 m | 8–11 m |
+| Troll, among the largest | ~750 km² | ~27 km | ~14 km | ~19 km | ~15 m | ~28 m |
+
+A large field is the size everything is built and tested at already: only the largest go
+past it. Over the selected field's disc the sea is flat and the gap is absorbed there. A
+neighbour in a rigid, tilted group stands off the curved sea and relief by these amounts
+toward its edges: unseen from afar, a wellhead a few metres off the seabed close up.
+
+Placed from another UTM zone, a field is off by the two maps' second order too, which grows
+with the square of the distance from its origin: measured 10 cm at 5 km and 40 cm at 10 km
+(step 3), so an estimated 0.5–1.5 m at these sizes.
+
+### Selecting a field: re-origin
+
+Selecting a field switches the `World`'s frame to it. Every scene coordinate then changes by
+one rigid transform — the move between the two origins, and the Earth's turn between them
+(about 0.9° per 100 km) — and the camera and its controls' target are given the same
+transform in the same frame, so nothing on screen jumps. The library does not own the host's
+controls: a hook hands the host the transform (name to be decided, `onRebase(matrix)` say).
+
+What follows by itself: the relief's tiles, keyed by latitude and longitude, keep their keys
+and are placed again; the geographic layers lay themselves out again once (their keys hold
+the globe's disc); each field's group is placed again; the sky bakes again. A frame's cost,
+not a jump.
+
+What does not hide: the flat disc moves with the selection, so the field left bends and the
+one selected flattens, by the gaps above (5–10 m for a large field, ~30 m for Troll). Either
+switch while the camera is away from both, or morph it: shrink the old disc to nothing over
+half a second or so, re-origin, and grow the new one — the disc's radius is the flattening,
+so it can change by degrees.
+
+### The void: the seabed's underside, everywhere
+
+The void's lid is the relief's underside already, wherever its tiles are drawn, whatever the
+stage. What still belongs to the field is its shading: the void's gradient, its darkening
+with depth and the lid's shading are laid out in the field's place frame (`uSkyUp`,
+`uSkyNorth`, `uSkyEast`), so far from it the void is black ([relief.md](./relief.md)). They
+move to the camera's own up, which the sky already has (the look frame, step 4), and the void
+is the same under any field. The void's walls stay with the selected field, or are left
+out: they are the least of it.
+
+### The seabed see-through over each loaded field
+
+The relief is see-through, at the sea's `seabedOpacity`, only over the stage's `bounds`;
+around it, opaque, so a neighbour's wells under its seabed are hidden from above. A short
+list of regions, one per loaded field (a uniform array of rectangles in the relief's shader,
+in latitude and longitude), makes it see-through over each. Cheap, and far simpler than a
+flat cap per field (see [Considered](#considered-not-chosen)). From the void a neighbour's
+wells show already: `layerShownAt` hides only what lies above the ground.
+
+### The cutaway
+
+Anchored to the selected field, as now. It takes only the sea, the seabed and the void, so
+the data of other fields within sight stays drawn through it.
+
+### Wellbores as an Earth-level layer
+
+Besides each field's own wells in its group, the wells of a region can be one layer on the
+Earth, as the geographic layers are ([layers.md](./layers.md)):
+
+- **Placed per node on the globe:** each trajectory node by latitude, longitude and true
+  vertical depth, placed as `GeoTubes` places a pipeline's nodes (`conformalOffset` on the
+  CPU, `globeGeodetic` on the GPU), the depth along the local vertical — as it is measured.
+  Drawn as tubes with the pieces `GeoTubes` and `Trajectory` share (`tube-segment.glsl`,
+  `tube-rim.glsl`, `createTubeSegmentGeometry`).
+- **Loaded by tile and distance:** wells grouped by geographic tile, loaded where they are
+  near enough to be seen, simpler farther off (fewer nodes, as `GeoTubes` spaces them); the
+  selected field's always at full detail. One layer spans the fields: no seam between them.
+- **One placement per field:** inside the selected field's flat disc the layer and the
+  field's own data agree exactly (over the disc the globe is the plane). A neighbour in a
+  rigid group differs from it by the curve's gap at its edges (the table above): either bend
+  that field (below), or draw its wells from one place only.
+
+### Bending a neighbour, if it shows
+
+`applyGlobe` places flat content on the globe per vertex, for content in the `World`'s
+frame. Extended to a field's own frame, a neighbour bends with the Earth, and inside the
+selected field's disc nothing moves, so one patch serves both. Every field material needs
+it — chunks and their caps, surfaces, wells, fences and cut planes — and GPU picking too,
+whose own materials pick the flat position today. Built only if 7c shows the seam; more
+likely for fields of Troll's size than for a large one.
+
+### Data
+
+The `Store` interface (`get`, `all`, `query`) is enough as it is:
+
+- **A `field` data set:** its id and name, its `GeoFrame` (or CRS), its outline in latitude
+  and longitude (for distances and the minimap) and in its own frame, its stage's bounds,
+  and the id of its seabed's relief layer. The host decides from it alone which fields are
+  near, which selected, before any of their data is loaded.
+- **Data of the Earth, by global id:** the relief's layers (`relief-meta`, `relief-values`)
+  — each field's seabed one of them — and overlays in latitude and longitude. None names a
+  field.
+- **Data of a field:** `wellbore-headers`, `position-logs`, `surface-meta` and
+  `-values`, seismic, …, in the field's own CRS, with globally unique ids and a `fieldId`:
+  `store.query('wellbore-headers', { fieldId })`. One store serves every field.
+- **One relief, all fields' seabeds in it:** the relief's layers are one list, coarse to
+  fine — ETOPO, EMODnet, …, then each field's seabed (`surfaceToRelief`, as the demo store's
+  `surface:<id>`), empty outside its footprint and feathered in. Every field's seabed is in
+  the relief at once, whichever is selected; where surveys overlap, the later wins. The
+  relief belongs to the Earth, drawn once, not to the selected field's stage: it moves from
+  `SceneryStage` up to the `Scenery`. Up to 31 layers have looks of their own.
+
+### Order of work
+
+| # | Step | Ends with |
+|--|--|--|
+| 7a | The void's shading in the camera's frame; the seabed see-through over a list of regions | the void the same under any field; a neighbour's wells seen through its seabed |
+| 7b | Re-origin on selection: the `World`'s frame switched, the camera and the controls carried through a host hook; the disc morphed | a field selected while flying, with nothing jumping |
+| 7c | A story with two fields of realistic size (a large one, and one of Troll's size), in two UTM zones | the seam at a neighbour's edge measured: wells, surfaces and relief |
+| 7d | Bending a neighbour (`applyGlobe` in a field's frame), picking included | only if 7c shows the seam |
+| 7e | Wellbores as an Earth-level layer, by tile and distance | the region's wells seamless across fields |
+
+The relief bridge carrying a placed field's transform is not needed while columns and the
+cutaway are the selected field's only.
+
+### Considered, not chosen
+
+- **A flat cap per field:** the globe cut flat over every field's disc (a list of discs in
+  `globe.glsl`), so every field is staged at once. More invasive than re-origin and
+  see-through regions — every sea, relief and sky shader checks every disc, and discs must
+  not overlap — for what the selected field alone needs.
+- **A floating origin:** what is drawn relative to a point under the camera. Fields already
+  have its precision (64-bit model-view per draw); only shaders that work through world
+  positions (the sky's, the wellbore ribbon's) gain, at continent scale. Not needed for
+  fields a few hundred kilometres apart.
+- **Projecting a field's data into the camera's frame each frame:** a field's place on the
+  globe does not depend on the camera; only its composition with the camera's does, which
+  three.js already does per draw.
