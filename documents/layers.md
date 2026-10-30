@@ -331,7 +331,11 @@ shared too), unlit so its colour reads the same from any side.
   wide, and never thinner than `minPixels` (a radius found per vertex from its distance, as
   `Trajectory`'s `minPixelRadius`): the same tube is a pipe close up and a line of a couple
   of pixels from 100 km, at any angle. `minPixels` 0 turns the floor off: the tube is drawn
-  as built and thins out of sight with distance, as any geometry does.
+  as built and thins out of sight with distance, as any geometry does. Widened, never out of
+  the water: on ground under the sea's level, what of its ring would rise over the surface is
+  flattened under it (from 1400 km a 2 pixel tube is 3 km across, and stood up out of a 100 m
+  sea along the horizon), by more than the depth buffer resolves there — as wide from above,
+  under the sea from the side. On land it is round at any width.
 - **Nodes** (`geoTubeNodesAround`, `layGeoTubeNodes`): every route vertex, and between them
   one every `spacing` metres (20) near the camera, `spacingPerDistance` (1 %) of the distance
   to the camera farther off, the camera's height counted, so nodes go where they are seen.

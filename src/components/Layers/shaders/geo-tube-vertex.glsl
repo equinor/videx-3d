@@ -110,6 +110,16 @@ void main() {
   vTubeHeight = height;
 
   vec3 world = axis + k * radius;
+  // Widened, never out of the water: on ground under the sea's level, what of its ring would
+  // rise over the surface is flattened under it (from 1400 km a 2 pixel tube is 3 km across,
+  // and stood up out of a 100 m sea to the horizon), by more than the depth buffer resolves
+  // there; in shallows, onto the ground. As wide on screen from above; from the side, under
+  // the sea anyway.
+  if(height < 0.0) {
+    float under = max(height, -1e-5 * length(world - cameraPosition));
+    float over = height + radius + dot(world - axis, up);
+    world -= up * max(over - under, 0.0);
+  }
   vec4 mvPosition = viewMatrix * vec4(world, 1.0);
   vViewPosition = -mvPosition.xyz;
   vNormal = normalize(mat3(viewMatrix) * k);
