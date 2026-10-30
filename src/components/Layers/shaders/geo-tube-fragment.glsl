@@ -27,6 +27,11 @@ varying float vTubeHeight;
 
 void main() {
   #include <logdepthbuf_fragment>
+  #ifdef USE_LOGARITHMIC_DEPTH_BUFFER
+  // Past the far plane just in front of it, where the sky's background and a relief's
+  // overview lie: drawn over them, unless the sea hides it (geoThroughWater).
+  gl_FragDepth = min(gl_FragDepth, 1.0 - 1.0 / 2097152.0);
+  #endif
   vec3 rgb = mix(vTubeColor.rgb, shadingColor, tubeRimDarken(vNormal, vViewPosition, shadingStrength, shadingFalloff));
   float alpha = vTubeColor.a * uTubeOpacity;
   #ifdef GEO_TUBE_WATER

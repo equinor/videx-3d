@@ -3,8 +3,12 @@
 
 // `color` (linear, the layer's own) at `world`, `height` metres over the sea, seen from the
 // camera: from above, through the water over it; from in the water, through the water
-// between. Where the cutaway takes the seabed it takes this too: `alpha` with it.
+// between. Where the cutaway takes the seabed it takes this too: `alpha` with it. And under
+// what the background draws of the sea — its surface, its seabed, or either past the Earth's
+// curve — `alpha` takes its cover (skyOceanCover): the background lies on the far plane and
+// hides nothing by depth, so past a stage, and past the far plane, it hides it here.
 vec3 geoThroughWater(vec3 color, inout float alpha, vec3 world, float height) {
+  alpha *= 1.0 - skyOceanCover(world, height);
   float altitude = skyOceanCameraAltitude();
   if(uSkyOceanWater < 0.5 || (height >= 0.0 && altitude > 0.0))
     return color;

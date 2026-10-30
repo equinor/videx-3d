@@ -552,6 +552,9 @@ uniform vec4 uSkyOceanStage;
 // How far from the camera the stage draws it: out to the far plane, 0 while the camera is
 // off its rectangle on the globe (SceneryMaterial.claimStage).
 uniform float uSkyOceanStageReach;
+// How far from the camera a stage's relief draws its ground from tiles, 0 without one: from
+// in the water and over a dry sea its seabed too (SceneryMaterial.oceanReliefReach).
+uniform float uSkyOceanReliefReach;
 // 1 while a stage's occupant's cut opens its seabed to the void (SceneryMaterial.abyssOpenings).
 uniform float uSkyOceanStageOpen;
 

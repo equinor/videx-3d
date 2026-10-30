@@ -379,6 +379,13 @@ float skyOceanTexel(vec3 delta) {
   return max(length(fwidth(delta)), 1e-3);
 }
 
+// How much of what lies under the surface it covers, before its Fresnel and foam, where its
+// detail has faded by `flatness` (oceanFlatness): far off, and from a few kilometres up, all.
+float skyOceanSurfaceOpacity(float flatness) {
+  float above = skyOceanCameraAltitude();
+  return mix(uOpacity, 1.0, max(flatness, smoothstep(SKY_OCEAN_OPAQUE.x, SKY_OCEAN_OPAQUE.y, above)));
+}
+
 // The surface seen from above at plane point `p` (the field's wave plane: the stage, the
 // contacts), with its `wave` there: its colour, and how much of what lies under it that
 // covers. `texel` is world units per pixel. ⚠️ Derivatives.
@@ -417,8 +424,7 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   surface *= skyDayFrom(globeCameraLook(), wave.up);
 
   // Far off, where its detail has faded, and from a few kilometres up, the water hides what lies under it.
-  float above = skyOceanCameraAltitude();
-  float opacity = mix(uOpacity, 1.0, max(flatness, smoothstep(SKY_OCEAN_OPAQUE.x, SKY_OCEAN_OPAQUE.y, above)));
+  float opacity = skyOceanSurfaceOpacity(flatness);
   return vec4(surface, max(mix(opacity, 1.0, fresnel), foamOpacity));
 }
 
@@ -638,4 +644,59 @@ vec4 skyOceanSurfaceLayer(vec3 dir, vec3 origin, float blend) {
   seen.rgb = graticuleOver(seen.rgb, graticule);
   #endif
   return seen;
+}
+
+// How far before a point, as a share of its distance, the view must cross a level of the sea
+// for the point to lie past the Earth's curve from the camera (skyOceanCover).
+#define SKY_OCEAN_COVER_PAST_CURVE 1e-3
+
+// How much of the sea the background draws lies between the camera and `world`, `height`
+// metres over the sea's level (0 to 1): its surface, from above the water, over what lies
+// under it; its seabed, from anywhere above it, water or none, over what lies below it; and
+// either over what lies past the Earth's curve, where the view crosses it first. The two
+// blended as the GPU blends their layers. The background lies on the far plane, so it hides
+// nothing by depth: what is drawn under the sea or its seabed takes this to hide itself
+// (geo-water.glsl), and needs no depth, so it holds past the far plane too.
+// Nothing where a stage draws the sea along the view (its surface is drawn over what lies
+// under it, its seabed hides what lies below by depth); nor the seabed where a relief's tiles
+// draw it (by depth); nor from below the seabed or in rock under a stage's ground, where the
+// void's lid decides what shows (layerShownAt). No derivatives: call it anywhere.
+float skyOceanCover(vec3 world, float height) {
+  float altitude = skyOceanCameraAltitude();
+  if(altitude + uSkyOceanDepth <= 0.0 || uSkyOceanBuried > 0.5)
+    return 0.0;
+  vec3 toPoint = world - cameraPosition;
+  float dist = length(toPoint);
+  vec3 dir = toPoint / max(dist, 1e-6);
+  // The stage draws both where it draws the level it tests (skyOceanStaged). Taken a little
+  // inside its edge, so the band its own test leaves to the background is covered: twice in
+  // that band, where the sea is opaque.
+  float stagedAt = skyOceanStagedReach(dir, cameraPosition);
+  if(dot(dir, globeCameraUp()) < 0.0 && skyOceanOnStage(skyOceanPlane(cameraPosition + dir * stagedAt), stagedAt, 0.01 * stagedAt))
+    return 0.0;
+
+  // Clear of the heights' rounding far from the scene's origin.
+  float margin = 2.0 + 1e-6 * dist;
+  float pastCurve = dist * (1.0 - SKY_OCEAN_COVER_PAST_CURVE);
+  bool fromAir = uSkyOceanWater > 0.5 && altitude > 0.0;
+  float cutaway = skyOceanCutawayAlong(cameraPosition, world);
+  float surface = 0.0;
+  if(fromAir) {
+    vec3 reach = skyOceanReach(cameraPosition, dir, altitude);
+    if(height < -margin || (reach.z < 0.5 && reach.x < pastCurve)) {
+      // As the surface layer covers it (skyOceanSurfaceOf), on a calm sea.
+      float facing = clamp(dot(globeUpAt(cameraPosition + dir * reach.x), -dir), 0.0, 1.0);
+      float opacity = mix(skyOceanSurfaceOpacity(oceanFlatness(reach.x)), 1.0, pow(1.0 - facing, uFresnelPower));
+      surface = opacity * skyOceanCutawayWater(cutaway);
+    }
+  }
+  // From in the water, the seabed straight below the camera's level, as the water's layer has it.
+  bool inWater = uSkyOceanWater > 0.5 && altitude <= 0.0;
+  vec3 bedReach = skyOceanBedReach(cameraPosition, dir, inWater);
+  bool below = height < -uSkyOceanDepth - margin || (!inWater && bedReach.z < 0.5 && bedReach.x < pastCurve);
+  // A relief's tiles draw the seabed out to their reach, but from the air through water,
+  // where only a stage's area shows theirs.
+  bool reliefBed = uSkyOceanReliefReach > 0.0 && !fromAir && min(bedReach.x, dist) < uSkyOceanReliefReach;
+  float bed = below && !reliefBed ? skyOceanFloorShown(cutaway) : 0.0;
+  return 1.0 - (1.0 - surface) * (1.0 - bed);
 }

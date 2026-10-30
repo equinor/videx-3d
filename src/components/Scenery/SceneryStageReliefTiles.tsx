@@ -359,6 +359,13 @@ export const SceneryStageReliefTiles = ({
   useEffect(() => {
     material.uniforms.uReliefReach.value = reach;
   }, [material, reach]);
+  // Where the tiles draw the seabed, it hides what lies below it by depth (skyOceanCover).
+  useEffect(() => {
+    sky.oceanReliefReach = visible ? reach : 0;
+    return () => {
+      sky.oceanReliefReach = 0;
+    };
+  }, [sky, reach, visible]);
 
   const generate = useGenerator<SceneryReliefTileResponse>(sceneryReliefTile);
   // What is placed on the relief pins the ground under it (see `ReliefSampler`).

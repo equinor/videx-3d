@@ -329,6 +329,7 @@ export class SceneryMaterial extends ShaderMaterial {
         uSkyOceanSeabedOpacity: new Uniform(1),
         uSkyOceanStage: new Uniform(new Vector4(...NO_STAGE)),
         uSkyOceanStageReach: new Uniform(0),
+        uSkyOceanReliefReach: new Uniform(0),
         uSkyStageInverseProjection: new Uniform(new Matrix4()),
         uSkyStageViewport: new Uniform(new Vector4()),
       },
@@ -1330,6 +1331,19 @@ export class SceneryMaterial extends ShaderMaterial {
   }
   set oceanSeabed(value: boolean) {
     this.uniforms.uSkyOceanSeabed.value = value ? 1 : 0;
+  }
+
+  /**
+   * How far from the camera a stage's relief draws its ground from tiles (`SceneryStage`'s
+   * `relief`, out to the far plane), 0 without one. From in the water and over a dry sea it
+   * draws the seabed there too, which hides what lies below it by depth: there the
+   * background's seabed covers nothing for what is drawn under it (`skyOceanCover`).
+   */
+  get oceanReliefReach(): number {
+    return this.uniforms.uSkyOceanReliefReach.value;
+  }
+  set oceanReliefReach(value: number) {
+    this.uniforms.uSkyOceanReliefReach.value = Math.max(value, 0);
   }
 
   /** how much of what lies beyond the seabed it hides, 0 to 1 */

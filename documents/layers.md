@@ -183,6 +183,27 @@ wired for an `OITRenderPass`), so the waves lie over it. `'clear'` draws it on t
 everything see-through, as a map (`LAYERS.OVERLAY`, `renderOrder` 999). Outside a `Scenery`,
 always `'clear'`.
 
+**Under the background's sea.** A stage draws the sea out to the far plane, but no farther
+than 3000 km, and only while the camera is over its area (see
+[scenery.md](./scenery.md#the-globe)); past that the background draws it, on the far plane,
+where it hides nothing by depth. So with `'fog'` a layer hides itself under it
+(`skyOceanCover`, sky-ocean.glsl, taken in `geo-water.glsl`): its alpha takes the cover of
+what the background draws between the camera and it, by the layer's own height, with no depth
+needed — the same past the far plane:
+
+- the sea's surface, from above the water, over what lies under it, as opaque as the surface
+  is there (from a few kilometres up, and far off, all of it);
+- the seabed, from anywhere above it, with the water on or off, over what lies below the
+  sea's `depth`, as much as it hides (`seabedOpacity`, the cutaway; nothing without a
+  seabed). Not where a relief's tiles draw the seabed — out to the far plane from in the water
+  and over a dry sea, where they hide what lies below by depth;
+- either over what lies past the Earth's curve: nothing shows through the globe.
+
+What lies above both stays in sight, past the far plane too: `GeoTubes` and `GeoSymbols`
+keep their depth just inside it, in front of the background and the relief's overview drawn
+on it. Field data needs none of this: it lies in a stage's area, whose surface and seabed hide
+it by drawing and by depth.
+
 ## Polygons: `GeoPolygons`
 
 Drawn from **geographic tiles of their own** (the relief's quadtree, `geo-tile-keys`), not
@@ -305,7 +326,9 @@ shared too), unlit so its colour reads the same from any side.
   `geoSpanLift`), again as finer tiles come in, without laying the nodes again; handed to the
   GPU per node, over the ground it reads.
 - **Through the sea:** `water` `'fog'` dims it as the seabed under it (`geo-water.glsl`); like
-  the seabed, it is gone where the sea turns opaque from a few kilometres up.
+  the seabed, it is gone where the sea turns opaque from a few kilometres up, and under the
+  background's sea and seabed past a stage (see [Through the sea](#through-the-sea-water)).
+  Past the far plane no relief tile is drawn under it, so it lies at `height` there.
 
 ## Points: `GeoSymbols`
 
@@ -414,6 +437,11 @@ laid on another's tiles (`sdk/tiles/tile-cover.ts`: `tilesUnder`, `tileAncestors
 
 - **On the land, through the air**: draped over land, a layer is not hazed with distance as
   the land is (`reliefThroughAir`); seen from space, not lit as the land is.
+- **The relief past the far plane**: there only its overview is drawn, which the layers do not
+  read. `GeoTubes` and a draped `GeoTileLayer` lie at `height` there (a pipeline on land is
+  taken to lie on the seabed, and hidden under the sea); and what lies under the ground is
+  hidden only below the sea's `depth` (`skyOceanCover`), not under the relief's own land and
+  seabed. Reading the overview's index (`SceneryReliefAtlas`) per node would mend both.
 - **Labels on the ground**: `GeoLabels` lie flat at a height (the sea's, say), not on the
   relief. Draped labels would ask the worker (`sampleReliefSource`) rather than pin tiles
   under hundreds of features.

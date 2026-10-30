@@ -1062,6 +1062,15 @@ buffer, not a reversed one. Each layer rebuilds its view ray from a point at NDC
 not on the far plane: with a far plane far enough from the near one (50 000 km over
 0.1 m), the far plane's point rounds to infinity in 32-bit floats and the ray flips.
 
+⚠️ Drawn on the far plane, the background hides nothing by depth: what lies under its sea
+or its seabed — past a stage's reach (the far plane, at most 3000 km), off its area, or past
+the far plane — shows through it unless it hides itself. A stage's own surface is drawn over
+what lies under it, and its seabed and a relief's tiles hide what lies below by depth; past
+them a shader takes `skyOceanCover(world, height)` (sky-ocean.glsl): how much of the
+background's surface and seabed lies between the camera and the point, by its height, or
+past the Earth's curve, with no depth needed. The geographic layers take it with `water`
+`'fog'` (see [layers.md](./layers.md#through-the-sea-water)).
+
 ⚠️ R3F applies the Canvas `gl` props again whenever the Canvas re-renders, undoing
 anything set on the renderer since. Set tone mapping that should change at runtime on
 the renderer from an effect, and use the Canvas `flat` prop rather than

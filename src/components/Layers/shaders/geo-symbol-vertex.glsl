@@ -44,5 +44,7 @@ void main() {
   vViewPosition = -view.xyz;
   #endif
   gl_Position = projectionMatrix * view;
+  // ⚠️ Far off, clip z rounds past w in fp32 and clips vertices at random (as the tubes').
+  gl_Position.z = min(gl_Position.z, gl_Position.w * (1.0 - 1e-7));
   #include <logdepthbuf_vertex>
 }

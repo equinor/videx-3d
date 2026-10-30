@@ -20,6 +20,11 @@ varying float vSymbolHeight;
 
 void main() {
   #include <logdepthbuf_fragment>
+  #ifdef USE_LOGARITHMIC_DEPTH_BUFFER
+  // Past the far plane just in front of it, where the sky's background and a relief's
+  // overview lie: drawn over them, unless the sea hides it (geoThroughWater).
+  gl_FragDepth = min(gl_FragDepth, 1.0 - 1.0 / 2097152.0);
+  #endif
   float facing = dot(normalize(vSymbolNormal), normalize(vSymbolUp));
   vec3 rgb = vSymbolColor * (0.6 + 0.4 * max(facing, 0.0));
   float alpha = 1.0;
