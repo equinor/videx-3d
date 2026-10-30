@@ -4,6 +4,7 @@ import type {
   GeoFeature,
   GeoJsonFeatureCollection,
 } from '../../sdk/layers/geo-features';
+import type { LayerReveal } from '../../sdk/layers/layer-visibility';
 import { SCENERY_DEMO_RELIEF_LAYERS } from '../../storybook/components/scenery-controls';
 import { demoFrame } from '../../storybook/data/demo-crs';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
@@ -86,6 +87,9 @@ type PipelinesArgs = {
   labels: boolean;
   labelsMaxHeight: number;
   labelsMaxDistance: number;
+  reveal: boolean;
+  revealAbove: number;
+  revealFade: number;
   minimap: boolean;
 };
 
@@ -132,6 +136,9 @@ const PipelinesStory = ({
   labels,
   labelsMaxHeight,
   labelsMaxDistance,
+  reveal,
+  revealAbove,
+  revealFade,
   minimap,
 }: PipelinesArgs) => {
   const pipelines = useCollection<Pipeline>('/data/overlays/pipelines.json');
@@ -168,6 +175,15 @@ const PipelinesStory = ({
   );
 
   const layers = relief ? SCENERY_DEMO_RELIEF_LAYERS : [];
+  // On the sea as a map, through its surface and seabed: from `revealAbove` up, or always.
+  const revealed = useMemo<LayerReveal>(
+    () =>
+      reveal && {
+        minHeight: revealAbove > 0 ? revealAbove : undefined,
+        fade: revealFade,
+      },
+    [reveal, revealAbove, revealFade],
+  );
   return (
     <World frame={demoFrame}>
       <SceneryGenerators>
@@ -192,6 +208,7 @@ const PipelinesStory = ({
             exaggeration={exaggeration}
             minPixels={minPixels}
             opacity={opacity}
+            reveal={revealed}
           />
           {showFacilities && (
             <GeoSymbols
@@ -200,6 +217,7 @@ const PipelinesStory = ({
               height={height}
               water={water}
               minPixels={facilityPixels}
+              reveal={revealed}
             />
           )}
           {showFacilities && labels && (
@@ -270,6 +288,9 @@ const meta = {
     labels: true,
     labelsMaxHeight: 40000,
     labelsMaxDistance: 60000,
+    reveal: false,
+    revealAbove: 20000,
+    revealFade: 0.5,
     minimap: true,
   },
   argTypes: {
@@ -353,6 +374,23 @@ const meta = {
       description:
         'Farther from the camera than this (metres) a name is not drawn, nor the layer once all are (`GeoLabels`’ `maxDistance`).',
       table: { category: 'Facilities' },
+    },
+    reveal: {
+      description:
+        'Pipelines and facilities revealed as a map (`reveal`): lifted to the sea’s level where they lie below it, and drawn over the sea, through its surface and seabed. Needs `water` fog.',
+      table: { category: 'Reveal' },
+    },
+    revealAbove: {
+      control: { type: 'range', min: 0, max: 200000, step: 1000 },
+      description:
+        'Revealed from this camera height over the sea up, in metres (`reveal.minHeight`); 0: at any height.',
+      table: { category: 'Reveal' },
+    },
+    revealFade: {
+      control: { type: 'range', min: 0, max: 2, step: 0.05 },
+      description:
+        'How far below `revealAbove` they fade in, as a ratio of it (`reveal.fade`); 0 at once.',
+      table: { category: 'Reveal' },
     },
     minimap: {
       description:

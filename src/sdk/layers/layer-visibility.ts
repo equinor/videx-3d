@@ -45,3 +45,27 @@ export function layerVisibilityAt(
   }
   return opacity;
 }
+
+/**
+ * When a geographic layer in a `Scenery`'s sea is revealed as a map: lifted to the sea's
+ * level where it lies below it, and drawn over the sea, through its surface and its seabed.
+ * `true` always; else by the camera's height over the sea, as {@link LayerVisibility} says
+ * (`visible` the toggle, `minHeight` and `maxHeight` the band, `fade` its soft edge).
+ *
+ * @group Layers
+ */
+export type LayerReveal = boolean | LayerVisibility;
+
+/**
+ * How much of a layer is revealed (0 to 1) with the camera `height` metres over the sea (see
+ * {@link LayerReveal}): none without `reveal`.
+ *
+ * @group Layers
+ */
+export function layerRevealAt(
+  height: number,
+  reveal: LayerReveal | undefined,
+): number {
+  if (!reveal) return 0;
+  return reveal === true ? 1 : layerVisibilityAt(height, reveal);
+}

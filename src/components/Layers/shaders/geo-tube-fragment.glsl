@@ -13,6 +13,8 @@
 #include ../../../sdk/materials/shaderLib/oit.glsl
 #endif
 #include ../../../sdk/materials/shaderLib/tube-rim.glsl
+#define GEO_REVEAL_FRAGMENT
+#include ./geo-reveal.glsl
 
 uniform vec3 shadingColor;
 uniform float shadingStrength;
@@ -37,9 +39,9 @@ void main() {
   #ifdef GEO_TUBE_WATER
   rgb = geoThroughWater(rgb, alpha, vTubeWorld, vTubeHeight);
   #endif
-  // Opaque, the cutaway takes all of it or none.
+  // Opaque, the cutaway takes all of it or none; fading in as a map, a screen door.
   #ifdef OPAQUE
-  if(alpha < 0.5 * vTubeColor.a * uTubeOpacity)
+  if(alpha < 0.5 * vTubeColor.a * uTubeOpacity || geoRevealDoor())
     discard;
   #endif
   if(alpha <= 0.0)

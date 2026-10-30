@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import type { Vector3 } from 'three';
+import type { Object3D, Vector3 } from 'three';
+import { LAYERS } from '../../layers/layers';
 import {
   geoFeaturesFromGeoJson,
   type GeoFeature,
@@ -56,6 +57,27 @@ export function layerShownAt(
   const lid = sceneryLidOverCamera(sky.oceanLevel + altitude, sky);
   if (lid === null) return shown;
   return lies === 'ground' || sky.oceanLevel + lies >= lid ? 0 : shown;
+}
+
+/** The `renderOrder` of what is drawn over the sea without an `OITRenderPass`: after everything see-through. */
+export const OVER_SEA_ORDER = 999;
+
+/**
+ * Draws a geographic layer's mesh over the sea while `over` — a layer revealed as a map
+ * (`LayerReveal`): on `LAYERS.OVERLAY`, which an `OITRenderPass` draws after the
+ * see-through layers, and at {@link OVER_SEA_ORDER} without one, after the sea's surface —
+ * else at its own `renderOrder`. Its other layers are left as they are.
+ *
+ * @group Layers
+ */
+export function drawOverSea(
+  object: Object3D,
+  over: boolean,
+  renderOrder: number,
+) {
+  if (over) object.layers.enable(LAYERS.OVERLAY);
+  else object.layers.disable(LAYERS.OVERLAY);
+  object.renderOrder = over ? OVER_SEA_ORDER : renderOrder;
 }
 
 /**

@@ -26,7 +26,11 @@ import {
   type GeoTubeRoute,
   type GeoTubeRoutes,
 } from '../../sdk/layers/geo-tubes';
-import type { LayerVisibility } from '../../sdk/layers/layer-visibility';
+import {
+  layerRevealAt,
+  type LayerReveal,
+  type LayerVisibility,
+} from '../../sdk/layers/layer-visibility';
 import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import { useSceneryOcean } from '../Scenery/scenery-context';
 import { GeoTileStyles } from './geo-tile-layer';
@@ -36,7 +40,12 @@ import {
   GeoTubeNodes,
 } from './geo-tubes';
 import { geoTubeNodes } from './layer-defs';
-import { layerShownAt, useGeoFeatures, useLayerGlobe } from './layer-globe';
+import {
+  drawOverSea,
+  layerShownAt,
+  useGeoFeatures,
+  useLayerGlobe,
+} from './layer-globe';
 
 /**
  * How a line is drawn by {@link GeoTubes}.
@@ -89,6 +98,8 @@ export type GeoTubesProps<P = Record<string, unknown>> = LayerVisibility & {
   opacity?: number;
   /** inside a `Scenery` with a sea, `'fog'` is seen through the water as the seabed is; `'clear'` as it is. Default 'fog' */
   water?: 'fog' | 'clear';
+  /** with `water` 'fog', revealed as a map: lifted to the sea's level where it lies below it, and drawn over the sea, through its surface and seabed. `true` always, or by the camera's height (see `LayerReveal`) */
+  reveal?: LayerReveal;
   /** where the scene lies on the Earth, without a `World` or `Scenery` to say */
   frame?: GeoFrame;
   /** the most nodes made at once: past it, nodes are spaced farther apart until they fit. Default 131072 */
@@ -141,6 +152,7 @@ export const GeoTubes = <P,>({
   shadingFalloff = 2,
   opacity = 1,
   water = 'fog',
+  reveal,
   frame,
   maxNodes = 131072,
   visible = true,
@@ -291,6 +303,8 @@ export const GeoTubes = <P,>({
   }, []);
   const visibility = useRef<LayerVisibility>({});
   visibility.current = { visible, minHeight, maxHeight, fade };
+  const revealRef = useRef(reveal);
+  revealRef.current = reveal;
   const mesh = useRef<Mesh>(null);
 
   // The nodes near the camera on the ground the relief has in, free spans over the hollows.
@@ -331,7 +345,15 @@ export const GeoTubes = <P,>({
       mesh.current.visible = false;
       return;
     }
-    material.uniforms.uTubeOpacity.value = opacity * shown;
+    // Revealed as a map: on the sea, over it, fading in.
+    const revealed = sky ? layerRevealAt(altitude, revealRef.current) : 0;
+    drawOverSea(mesh.current, revealed > 0, 0);
+    (material.uniforms.uGeoReveal.value as Vector2).set(
+      revealed > 0 ? 1 : 0,
+      revealed > 0 ? revealed : 1,
+    );
+    material.uniforms.uTubeOpacity.value =
+      opacity * shown * (revealed > 0 ? revealed : 1);
     globe.geographic(camera.position, foot);
     const here: LonLat = [foot.longitude, foot.latitude];
     const relief = hub?.current ?? null;

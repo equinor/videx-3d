@@ -23,7 +23,11 @@ import type {
   GeoFeature,
   GeoJsonFeatureCollection,
 } from '../../sdk/layers/geo-features';
-import type { LayerVisibility } from '../../sdk/layers/layer-visibility';
+import {
+  layerRevealAt,
+  type LayerReveal,
+  type LayerVisibility,
+} from '../../sdk/layers/layer-visibility';
 import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import type { Globe } from '../../sdk/projection/globe';
 import type { Vec2 } from '../../sdk/types/common';
@@ -32,7 +36,12 @@ import { useSceneryOcean } from '../Scenery/scenery-context';
 import type { SceneryMaterial } from '../Scenery/scenery-material';
 import { sceneryOceanDefines } from '../Scenery/scenery-stage';
 import { Symbols } from '../Symbol/Symbol';
-import { layerShownAt, useGeoFeatures, useLayerGlobe } from './layer-globe';
+import {
+  drawOverSea,
+  layerShownAt,
+  useGeoFeatures,
+  useLayerGlobe,
+} from './layer-globe';
 import fragmentShader from './shaders/geo-symbol-fragment.glsl';
 import vertexShader from './shaders/geo-symbol-vertex.glsl';
 
@@ -63,6 +72,8 @@ export type GeoSymbolsProps<P = Record<string, unknown>> = LayerVisibility & {
   material?: Material;
   /** with its own material inside a `Scenery` with a sea: `'fog'` is seen through the water as the seabed is; `'clear'` as it is. Default 'fog' */
   water?: 'fog' | 'clear';
+  /** inside a `Scenery` with a sea and `water` 'fog', revealed as a map: lifted to the sea's level where it lies below it, and drawn over the sea, through its surface and seabed. `true` always, or by the camera's height (see `LayerReveal`). A material of your own is lifted and drawn over the sea, but not faded */
+  reveal?: LayerReveal;
   /** how many times larger than `size` each is drawn. Default 1 */
   exaggeration?: number;
   /** the least size drawn on screen, in pixels across, however far: it is widened, never raised, so it stays on the ground it stands on. 0 for none: drawn as built, shrinking out of sight with distance as any geometry does. Default 6 */
@@ -105,6 +116,8 @@ function createGeoSymbolMaterial(
     ...globe.uniforms,
     resolution: new Uniform(new Vector2(1, 1)),
     uSymbolMinPixels: new Uniform(0),
+    // Revealed as a map (geo-reveal.glsl): not, all of it shown.
+    uGeoReveal: new Uniform(new Vector2(0, 1)),
   };
   // The sky's own uniform objects, inherited rather than copied, as its other materials do.
   const uniforms = sky
@@ -145,6 +158,7 @@ export const GeoSymbols = <P,>({
   geometry,
   material,
   water = 'fog',
+  reveal,
   exaggeration = 1,
   minPixels = 6,
   onGround = true,
@@ -225,19 +239,32 @@ export const GeoSymbols = <P,>({
   const group = useRef<Group>(null);
   const visibility = useRef<LayerVisibility>({});
   visibility.current = { visible, minHeight, maxHeight, fade };
+  const revealRef = useRef(reveal);
+  revealRef.current = reveal;
 
   useFrame(({ camera }) => {
     const mesh = group.current?.children[0] as InstancedMesh | undefined;
     if (!group.current || !mesh || !globe || !globe.frame) return;
+    // Revealed as a map: on the sea where it stands under it, over the sea, fading in.
+    const revealed = sky
+      ? layerRevealAt(globe.altitude(camera.position), revealRef.current)
+      : 0;
+    const lifted = revealed > 0;
     const shown = layerShownAt(
       camera.position,
       globe,
       ocean,
       visibility.current,
-      hub ? 'ground' : height,
+      hub ? 'ground' : lifted ? Math.max(height, 0) : height,
     );
     group.current.visible = shown > 0;
     if (shown <= 0) return;
+    drawOverSea(mesh, lifted, 0);
+    if (ownMaterial)
+      (ownMaterial.uniforms.uGeoReveal.value as Vector2).set(
+        lifted ? 1 : 0,
+        lifted ? revealed : 1,
+      );
     // Moved every frame: the bounds three found once no longer hold.
     mesh.frustumCulled = false;
     // Drawn with the sky's shaders: their camera uniforms set for the camera drawing it.
@@ -262,12 +289,13 @@ export const GeoSymbols = <P,>({
     const seen = widenHere
       ? `${camera.position.x},${camera.position.y},${camera.position.z}|${size.height}|${minPixels}`
       : '';
-    const viewKey = `${seen}|${exaggeration}|${globe.discCentre.x},${globe.discCentre.z},${globe.radius},${globe.enabled}`;
+    const viewKey = `${seen}|${exaggeration}|${lifted}|${globe.discCentre.x},${globe.discCentre.z},${globe.radius},${globe.enabled}`;
     if (!changed && viewKey === state.current.view) return;
     state.current.view = viewKey;
     const perUnit = pixelsPerUnit(camera, size.height);
     for (let i = 0; i < at.length; i++) {
-      globe.geodetic(at[i][1], at[i][0], ground[i], position);
+      const standsOn = lifted ? Math.max(ground[i], 0) : ground[i];
+      globe.geodetic(at[i][1], at[i][0], standsOn, position);
       globe.upAt(position, up);
       turn.setFromUnitVectors(UP, up);
       const built = sizes[i] * exaggeration;

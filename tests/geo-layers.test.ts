@@ -5,7 +5,10 @@ import {
   geoFeaturesFromGeoJson,
   type GeoJsonFeatureCollection,
 } from '../src/sdk/layers/geo-features';
-import { layerVisibilityAt } from '../src/sdk/layers/layer-visibility';
+import {
+  layerRevealAt,
+  layerVisibilityAt,
+} from '../src/sdk/layers/layer-visibility';
 import {
   buildOverlayTile,
   OVERLAY_TILE_BAND,
@@ -330,5 +333,18 @@ describe('layerVisibilityAt', () => {
     expect(layerVisibilityAt(900, range)).toBeCloseTo(0.5);
     expect(layerVisibilityAt(50000, { ...range, visible: false })).toBe(0);
     expect(layerVisibilityAt(-10, {})).toBe(1);
+  });
+});
+
+describe('layerRevealAt', () => {
+  it('reveals never without one, always with true, else by its heights', () => {
+    expect(layerRevealAt(50000, undefined)).toBe(0);
+    expect(layerRevealAt(50000, false)).toBe(0);
+    expect(layerRevealAt(-10, true)).toBe(1);
+    const above = { minHeight: 20000, fade: 0.25 };
+    expect(layerRevealAt(5000, above)).toBe(0);
+    expect(layerRevealAt(18000, above)).toBeCloseTo(0.5);
+    expect(layerRevealAt(400000, above)).toBe(1);
+    expect(layerRevealAt(400000, { ...above, visible: false })).toBe(0);
   });
 });

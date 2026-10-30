@@ -11,6 +11,7 @@
 #include <logdepthbuf_pars_vertex>
 #include ../../../sdk/materials/shaderLib/globe.glsl
 #include ../../../sdk/materials/shaderLib/geo-tile.glsl
+#include ./geo-reveal.glsl
 
 uniform float uGeoTileCells;
 uniform float uGeoTileHeight;
@@ -61,6 +62,8 @@ void main() {
   #ifdef GEO_TILE_DRAPE
   height = geoTileReliefGround(layerTileRelief, layerTileReliefFrom, layerTileReliefBlend, t, height);
   #endif
+  // Revealed as a map, on the sea where it lies under it.
+  height = geoRevealHeight(height);
   vec3 world = globeGeodetic(geoTileOffset(layerTile.xy, layerTileChi, t), height);
   #ifdef GEO_TILE_WATER
   vGeoTileWorld = world;

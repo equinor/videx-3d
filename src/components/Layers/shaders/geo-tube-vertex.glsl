@@ -12,6 +12,7 @@
 #include <logdepthbuf_pars_vertex>
 #include ../../../sdk/materials/shaderLib/globe.glsl
 #include ../../../sdk/materials/shaderLib/tube-segment.glsl
+#include ./geo-reveal.glsl
 #ifdef GEO_TUBE_DRAPE
 #include ./relief-tile-height.glsl
 #endif
@@ -80,8 +81,9 @@ void main() {
   float diameter = tubeStyle(2 * id + 1).x;
 
   float t = vertex.y;
-  float heightA = tubeGround(tubeNodeA, tubeReliefA) + tubeNodeA.z;
-  float heightB = tubeGround(tubeNodeB, tubeReliefB) + tubeNodeB.z;
+  // Revealed as a map, on the sea where it lies under it.
+  float heightA = geoRevealHeight(tubeGround(tubeNodeA, tubeReliefA) + tubeNodeA.z);
+  float heightB = geoRevealHeight(tubeGround(tubeNodeB, tubeReliefB) + tubeNodeB.z);
   vec2 offset = mix(tubeNodeA.xy, tubeNodeB.xy, t);
   float height = mix(heightA, heightB, t);
   vec3 axis = mix(globeGeodetic(tubeNodeA.xy, heightA), globeGeodetic(tubeNodeB.xy, heightB), t);

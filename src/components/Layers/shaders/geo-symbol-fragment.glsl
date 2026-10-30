@@ -4,6 +4,8 @@
 
 #include <common>
 #include <logdepthbuf_pars_fragment>
+#define GEO_REVEAL_FRAGMENT
+#include ./geo-reveal.glsl
 #ifdef GEO_SYMBOL_WATER
 #include ../../Scenery/shaders/sky.glsl
 #include ./geo-water.glsl
@@ -25,6 +27,9 @@ void main() {
   // overview lie: drawn over them, unless the sea hides it (geoThroughWater).
   gl_FragDepth = min(gl_FragDepth, 1.0 - 1.0 / 2097152.0);
   #endif
+  // Fading in as a map: a screen door, so it stays opaque.
+  if(geoRevealDoor())
+    discard;
   float facing = dot(normalize(vSymbolNormal), normalize(vSymbolUp));
   vec3 rgb = vSymbolColor * (0.6 + 0.4 * max(facing, 0.0));
   float alpha = 1.0;

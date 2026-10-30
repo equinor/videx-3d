@@ -11,7 +11,11 @@ import {
   type IUniform,
 } from 'three';
 import { createLayers, LAYERS } from '../../layers/layers';
-import type { LayerVisibility } from '../../sdk/layers/layer-visibility';
+import {
+  layerRevealAt,
+  type LayerReveal,
+  type LayerVisibility,
+} from '../../sdk/layers/layer-visibility';
 import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import {
   geoTileLayout,
@@ -45,7 +49,12 @@ import {
   type GeoTileContent,
   type GeoTileFormat,
 } from './geo-tile-layer';
-import { layerShownAt, useLayerGlobe } from './layer-globe';
+import {
+  drawOverSea,
+  layerShownAt,
+  OVER_SEA_ORDER,
+  useLayerGlobe,
+} from './layer-globe';
 
 export type { GeoTileContent, GeoTileFormat } from './geo-tile-layer';
 
@@ -106,6 +115,12 @@ export type GeoTileLayerOptions = LayerVisibility & {
    * always `'clear'`. Default 'fog'
    */
   water?: 'fog' | 'clear';
+  /**
+   * with `water` 'fog' inside a `Scenery` with a sea, revealed as a map: lifted to the sea's
+   * level where it lies below it, and drawn over the sea, through its surface and seabed.
+   * `true` always, or by the camera's height (see `LayerReveal`)
+   */
+  reveal?: LayerReveal;
   /** the whole layer's. Default 1 */
   opacity?: number;
   /** drawn this far toward the camera, in world units, so the surface it lies on does not cut through. Default 0.5 */
@@ -191,6 +206,7 @@ export const GeoTileLayer = ({
   height = 0,
   drape = false,
   water = 'fog',
+  reveal,
   opacity = 1,
   lift = 0.5,
   liftPerDistance = 0.001,
@@ -350,6 +366,8 @@ export const GeoTileLayer = ({
   }, [globe, source]);
   const visibility = useRef<LayerVisibility>({});
   visibility.current = { visible, minHeight, maxHeight, fade };
+  const revealRef = useRef(reveal);
+  revealRef.current = reveal;
 
   // The squares drawn: each tile drawn, or, draped, its parts over the relief's tiles drawn
   // under it, each lying on its own. Again whenever either changes.
@@ -449,24 +467,37 @@ export const GeoTileLayer = ({
     // Placed by latitude and longitude: nothing without the map the scene is in.
     if (!globe || !globe.frame || !streaming || !source) return hide();
     const altitude = globe.altitude(camera.position);
+    // Revealed as a map: on the sea where it lies under it, over the sea, fading in.
+    const revealed = sky ? layerRevealAt(altitude, revealRef.current) : 0;
+    const laid = revealed > 0 ? Math.max(height, 0) : height;
     const shown =
       layerShownAt(
         camera.position,
         globe,
         ocean,
         visibility.current,
-        hub ? 'ground' : height,
+        hub ? 'ground' : laid,
       ) * opacity;
     if (shown <= 0) return hide();
-    material.uniforms.uGeoTileOpacity.value = shown;
+    drawOverSea(
+      mesh.current,
+      revealed > 0,
+      renderOrder ?? (sky ? 0.5 : OVER_SEA_ORDER),
+    );
+    (material.uniforms.uGeoReveal.value as Vector2).set(
+      revealed > 0 ? 1 : 0,
+      revealed > 0 ? revealed : 1,
+    );
+    material.uniforms.uGeoTileOpacity.value =
+      shown * (revealed > 0 ? revealed : 1);
     transitions.duration = transition;
 
     const level = placed!.level;
-    const y = level + height;
+    const y = level + laid;
     // Draped, each tile lies on the ground under it (GeoTileBounds, by the relief's range
     // there); the highest ground reaches farthest past the horizon.
     const relief = hub?.current ?? null;
-    const high = relief ? Math.max(height, relief.highest) : height;
+    const high = relief ? Math.max(laid, relief.highest) : laid;
     // Controls move the camera before this runs but leave its matrices to the render: last
     // frame's frustum culls the tiles a quick turn brings in at the edges.
     camera.updateMatrixWorld();
@@ -478,7 +509,7 @@ export const GeoTileLayer = ({
     // still costs nothing, once the swaps' blends are done.
     const { streamer, slotOf, resident } = streaming;
     const e = view.matrix.elements;
-    const chosenKey = `${e.join(',')}|${canvas.width}x${canvas.height}x${viewport.dpr}|${resident.changes}|${height}|${relief ? relief.resident : '-'}|${texelPixels}|${fallbackPixels}|${minDepth}|${maxDepth}|${globe.discCentre.x},${globe.discCentre.z},${globe.radius},${globe.enabled}`;
+    const chosenKey = `${e.join(',')}|${canvas.width}x${canvas.height}x${viewport.dpr}|${resident.changes}|${laid}|${relief ? relief.resident : '-'}|${texelPixels}|${fallbackPixels}|${minDepth}|${maxDepth}|${globe.discCentre.x},${globe.discCentre.z},${globe.radius},${globe.enabled}`;
     const choose = chosenKey !== view.chosen.key;
     if (!choose && !transitions.active) return;
     view.chosen.key = chosenKey;
@@ -505,8 +536,8 @@ export const GeoTileLayer = ({
 
       view.bounds.prepare(
         globe,
-        height,
-        height,
+        laid,
+        laid,
         relief?.rangeAt,
         relief?.resident,
       );
@@ -585,7 +616,7 @@ export const GeoTileLayer = ({
       geometry={geometry}
       material={material}
       frustumCulled={false}
-      renderOrder={renderOrder ?? (sky ? 0.5 : 999)}
+      renderOrder={renderOrder ?? (sky ? 0.5 : OVER_SEA_ORDER)}
       layers={sky ? LAYERS_FOG : LAYERS_OVERLAY}
       visible={false}
       onBeforeRender={sky ? sky.onBeforeDraw : undefined}

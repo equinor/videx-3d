@@ -204,6 +204,38 @@ keep their depth just inside it, in front of the background and the relief's ove
 on it. Field data needs none of this: it lies in a stage's area, whose surface and seabed hide
 it by drawing and by depth.
 
+### Revealed as a map: `reveal`
+
+A `'fog'` layer can be shown through the sea and its seabed — `GeoTubes`, `GeoSymbols` and
+`GeoTileLayer` (so `GeoPolygons`) take `reveal` (`LayerReveal`): `true` always, or by the
+camera's height over the sea as a `LayerVisibility` says — `visible` the toggle, `minHeight`
+and `maxHeight` the band, `fade` its soft edge (`layerRevealAt`):
+
+```tsx
+// On the sea as a map from 20 km up, fading in just below it; under the water, closer in.
+<GeoTubes data={pipelines} reveal={{ minHeight: 20000, fade: 0.5 }} />
+```
+
+Revealed, it is projected onto the sea as a map: lifted to the sea's level where it lies
+below it (`geo-reveal.glsl`, `geoRevealHeight`; for `GeoSymbols` in their matrices, so a
+material of your own is lifted too), and drawn over the sea (`drawOverSea`: on
+`LAYERS.OVERLAY`, which an `OITRenderPass` draws after the see-through layers, and at
+`renderOrder` 999 without one, after the sea's surface). Nothing else changes: lying on the
+sea, the water's dimming and cover leave it (`geoThroughWater`), depth puts it in front of
+every seabed and behind the land and what stands out of the sea, and what lies past the
+Earth's curve stays hidden. What lies on land stays where it is.
+
+- **Fading in**, its alpha takes the share revealed; opaque tubes and symbols are left out
+  by a screen door (a 4x4 Bayer pattern, `geoRevealDoor`), so they stay opaque. At 0 it is
+  drawn as before, at its depth: the two are never drawn at once, so the swap is seamless
+  where the sea is opaque — from a few kilometres up — and shows close up over clear water.
+- **Where it lies on the map**, not in 3D: an outline 2.5 km down is drawn at the surface,
+  over where it lies, so in an oblique view it does not meet a well's path at its depth.
+  Data at different depths share the sea's level (tubes keep their volume; flat layers their
+  lift toward the camera and their order).
+- **Under land** it stays under it: lifted to the sea's level only.
+- Only with `water` `'fog'` inside a `Scenery` with a sea; `'clear'` is always drawn as it is.
+
 ## Polygons: `GeoPolygons`
 
 Drawn from **geographic tiles of their own** (the relief's quadtree, `geo-tile-keys`), not

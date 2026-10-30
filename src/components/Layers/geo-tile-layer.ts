@@ -311,6 +311,8 @@ export function createGeoTileMaterial({
     uGeoTiles: new Uniform(textures.texture),
     uGeoTileSize: new Uniform(textures.size),
     uGeoTileOpacity: new Uniform(1),
+    // Revealed as a map (geo-reveal.glsl): not, all of it shown.
+    uGeoReveal: new Uniform(new Vector2(0, 1)),
   };
   if (relief) {
     defines.GEO_TILE_DRAPE = '';

@@ -441,6 +441,8 @@ export function createGeoTubeMaterial({
     uTubeStyles: new Uniform(styles),
     uTubeStylesWidth: new Uniform(GeoTileStyles.WIDTH),
     uTubeOpacity: new Uniform(1),
+    // Revealed as a map (geo-reveal.glsl): not, all of it shown.
+    uGeoReveal: new Uniform(new Vector2(0, 1)),
     shadingColor: new Uniform(new Color(0, 0, 0)),
     shadingStrength: new Uniform(0.6),
     shadingFalloff: new Uniform(2),
