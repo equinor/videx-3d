@@ -62,6 +62,7 @@ uniform float uReliefReach;
 #ifdef RELIEF_FAR
 // The deepest ground in, metres over the sea (0 or below): where the overview hands over.
 uniform float uReliefLowest;
+#define RELIEF_HANDOVER_MIN 0.8
 varying vec3 vSkyDirection;
 #else
 varying vec3 vReliefWorld;
@@ -270,7 +271,9 @@ void main() {
   // ground in (`uReliefLowest`) decides: past the reach, drawn. Where the tiles draw as well
   // they lie nearer, and win by depth; the sea's level alone left a ring to the background.
   vec3 deepest = skyOceanReach(cameraPosition, dir, max(altitude, 1e-3) - min(uReliefLowest, 0.0));
-  float handover = deepest.z > 0.5 ? 1e30 : deepest.x;
+  // No nearer than RELIEF_HANDOVER_MIN of the reach along the sea (OVERVIEW_HANDOVER_MIN in
+  // SceneryStageReliefTiles, where its tiles start).
+  float handover = min(deepest.z > 0.5 ? 1e30 : deepest.x, dist / RELIEF_HANDOVER_MIN);
   // Only where the sea is met past the tiles, and a tile is in. Every derivative is taken above.
   if(altitude <= 0.0 || hit.z > 0.5 || handover < uReliefReach || merged.w <= 0.0)
     discard;
