@@ -223,6 +223,18 @@ fullscreen layer at the far plane, from the same tiles, chosen for it as fine as
 there (see [tiles.md](./tiles.md#the-overview)): what it holds above the sea, shaded and
 faded through the air, but flat on the curved sea.
 
+The two hand over where the tiles' ground passes their reach. The overview lies on the sea's
+level, the ground below it by its depth, so the overview starts where the view meets the
+deepest ground in (`uReliefLowest`) past the reach, a little short of where it meets the
+sea; where the tiles still draw they lie nearer, and win by depth. Started where the view
+met the sea's level, it left the background's own flat seabed showing in a ring between the
+two, widest over deep water seen at a slant, with the water off (2026-10-30). Toward their
+reach the tiles take the overview's detail (its 2 pixel cells, and every tile split by
+them where it is coloured by height), eased in from half the reach, and where a pixel is
+finer than a cell the overview takes the tiles' contours and normals, so the two meet
+without a step. Left: flat on the sea, the overview's ground stands short of the tiles' by
+its depth over the slant (about 1.3 km, 2–3 pixels, from 380 km up over the Norwegian Sea).
+
 For mountains on the horizon, set the far plane past it from the highest the camera goes:
 about 360 km from 10 km up, 760 km from 45 km and 1130 km from 100 km (the sky stories
 use 3000 km, so no overview is made). With a logarithmic depth buffer that costs almost

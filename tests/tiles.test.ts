@@ -467,6 +467,28 @@ describe('selectQuadtreeTiles', () => {
       );
     });
 
+    it('takes a limit by distance, finer where it asks', () => {
+      // 4 px near the eye (depth 4), 1 px from 40 units on (depth 6), as at the reach
+      // the overview takes over.
+      const pixels = (distance: number) => (distance < 40 ? 4 : 1);
+      const { draw } = selectQuadtreeTiles({
+        ...base,
+        eye: [10, 0, 10],
+        info: flat(),
+        cellPixels: { cells: 16, pixels },
+      });
+      const nearEye = (key: number) => {
+        const [depth, i, j] = tileAddress(key);
+        const size = ROOT / 2 ** depth;
+        const dx = Math.max(i * size - 10, 10 - (i + 1) * size, 0);
+        const dz = Math.max(j * size - 10, 10 - (j + 1) * size, 0);
+        return Math.hypot(dx, dz);
+      };
+      for (const key of draw)
+        expect(tileAddress(key)[0]).toBe(nearEye(key) < 40 ? 4 : 6);
+      expect(coverage(draw, [10, 10], 100).every(n => n === 1)).toBe(true);
+    });
+
     it('merges back only once well under the limit', () => {
       // A root's cells are 64 px. Allowing 30 splits it; allowing 66 does not, unless it
       // was split, which it then stays until under 66 by the margin (0.8 × 66 < 64)...

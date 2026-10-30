@@ -281,7 +281,7 @@ export const SceneryStageReliefTiles = ({
   );
   useEffect(() => () => overviewAtlas.dispose(), [overviewAtlas]);
   const overviewState = useMemo<SceneryReliefOverviewState>(
-    () => ({ beyond: false }),
+    () => ({ beyond: false, lowest: 0 }),
     [],
   );
   const geometry = useMemo(
@@ -586,7 +586,7 @@ export const SceneryStageReliefTiles = ({
     const overview: {
       frustum: Frustum;
       layout: GeoTileView;
-      /** the tiles' reach: tiles wholly within it are theirs */
+      /** where its tiles start: tiles wholly within it are the tiles'. Short of their reach by as much as the view meets the sea's level before the deepest ground (see relief-fragment.glsl's hand-over) */
       reach: number;
       tiles: QuadtreeLayout;
       /** what its index was last built from */
@@ -710,6 +710,19 @@ export const SceneryStageReliefTiles = ({
     }
     // The ground in view reaches past the tiles: the overview draws it.
     overviewState.beyond = horizon > reach;
+    overviewState.lowest = streaming.reached.lowest;
+    // Toward their reach, where the overview takes over, the tiles take its rules, eased in
+    // from half the reach: cells as fine on screen as its (OVERVIEW_CELL_PIXELS), and every
+    // tile split by them where it colours by height — with the water off, or above the sea —
+    // so the two meet at the same detail. Nearer, as before.
+    const wet = sky.oceanWater;
+    const towardOverview = (distance: number) =>
+      overviewState.beyond
+        ? Math.min(Math.max((2 * distance) / reach - 1, 0), 1)
+        : 0;
+    const finest = Math.min(OVERVIEW_CELL_PIXELS, cellPixels);
+    const tileCellPixels = (distance: number) =>
+      cellPixels * (finest / cellPixels) ** towardOverview(distance);
 
     const info = (key: number) => {
       const tile = streamer.get(key);
@@ -724,6 +737,19 @@ export const SceneryStageReliefTiles = ({
         // where a finer layer ends, or over one between its nodes.
         rough: tile.edge || (tile.min < 0 && tile.max > 0),
       };
+    };
+    // The tiles' own choice: rough as the overview's toward their reach (above).
+    const tilesInfo = (key: number) => {
+      const known = info(key);
+      if (
+        known &&
+        !known.rough &&
+        overviewState.beyond &&
+        (!wet || known.maxY > level) &&
+        towardOverview(view.tiles.distance(key, known.minY, known.maxY)) > 0
+      )
+        known.rough = true;
+      return known;
     };
     // Where the tiles lie: on the globe by their latitudes and longitudes. Their lowest
     // reaches a skirt lower.
@@ -764,11 +790,11 @@ export const SceneryStageReliefTiles = ({
         ? undefined
         : {
             cells: RELIEF_TILE_CELLS,
-            pixels: cellPixels,
+            pixels: overviewState.beyond ? tileCellPixels : cellPixels,
             minSlope: CELL_MIN_SLOPE,
           },
       maxDepth: MAX_DEPTH,
-      info,
+      info: tilesInfo,
       split: streaming.split,
       // Over the ground handed out, what ends at it never stands off it visibly.
       finer: handed.map(({ square }) => ({
@@ -794,7 +820,10 @@ export const SceneryStageReliefTiles = ({
       overview.layout.altitude = altitude;
       overview.layout.seen = horizon;
       overview.layout.level = level;
-      overview.reach = reach;
+      overview.reach =
+        reach *
+        (Math.max(altitude, 1) /
+          (Math.max(altitude, 1) - Math.min(streaming.reached.lowest, 0)));
       // Land is coloured by its height per pixel, and with the water off so is the seabed:
       // their cells split by their size on screen however flat. Under the water only a
       // slope's shading would show — and the water hides it.

@@ -35,6 +35,7 @@ export function createSceneryReliefFarMaterial(
   Object.assign(uniforms, atlas.uniforms);
   uniforms.uReliefBase = new Uniform(base);
   uniforms.uReliefReach = new Uniform(1e30);
+  uniforms.uReliefLowest = new Uniform(0);
   uniforms.uReliefLook = new Uniform(looks);
   uniforms.uColorRamps = new Uniform(colorRampTexture);
   return new ShaderMaterial({

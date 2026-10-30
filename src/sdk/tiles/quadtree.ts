@@ -96,9 +96,14 @@ export type QuadtreeSelectOptions = {
    * than `pixels` on screen at its nearest point, however small its error — but only where
    * the ground's slope strays from the tile's by more than `minSlope` (its error over half
    * a cell; default 0, everywhere), or the tile is `rough`: flat ground is shaded alike at
-   * any depth. Omitted, only the error splits.
+   * any depth. `pixels` may be a function of the tile's distance (from its nearest point),
+   * for a limit that changes across the view. Omitted, only the error splits.
    */
-  cellPixels?: { cells: number; pixels: number; minSlope?: number };
+  cellPixels?: {
+    cells: number;
+    pixels: number | ((distance: number) => number);
+    minSlope?: number;
+  };
   /** the tiles split last time: one is merged back only once well under the limit */
   split?: ReadonlySet<number>;
   /**
@@ -251,19 +256,25 @@ export function selectQuadtreeTiles(
     const [depth] = tileAddress(key);
     const square = squareOf(key);
     const [minX, minZ, size] = square;
-    const scale = pixelsPerUnit(distanceOf(key, square, tile.minY, tile.maxY));
+    const distance = distanceOf(key, square, tile.minY, tile.maxY);
+    const scale = pixelsPerUnit(distance);
     const shown = tile.error * scale;
     // How far a cell spans on screen, over its limit (0 at the limit); only where the
     // ground's slope strays from the tile's.
     const cell = cellPixels
       ? (layout ? layout.width(key) : size) / cellPixels.cells
       : 0;
+    const cellLimit = !cellPixels
+      ? 0
+      : typeof cellPixels.pixels === 'function'
+        ? cellPixels.pixels(distance)
+        : cellPixels.pixels;
     const cellOver =
       cellPixels &&
       (!cellPixels.minSlope ||
         tile.rough ||
         tile.error > (cellPixels.minSlope * cell) / 2)
-        ? cell * scale - cellPixels.pixels
+        ? cell * scale - cellLimit
         : -Infinity;
     const cap = errorCap
       ? errorCap(minX, minZ, minX + size, minZ + size)
@@ -279,7 +290,7 @@ export function selectQuadtreeTiles(
         (wasThere && shown > limit * LOD_COARSEN_MARGIN) ||
         (wasThere &&
           !!cellPixels &&
-          cellOver > cellPixels.pixels * (LOD_COARSEN_MARGIN - 1)));
+          cellOver > cellLimit * (LOD_COARSEN_MARGIN - 1)));
     if (!splits) {
       draw.push(key);
       return;

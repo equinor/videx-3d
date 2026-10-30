@@ -524,6 +524,14 @@ number of layers. Now the overview draws the relief's own tiles, as the `Minimap
 - **No layer cap, and nothing read but what is seen.** `SCENERY_RELIEF_FAR_MAX_LAYERS`,
   `createSceneryReliefTexture`, `relief.glsl` and the `sceneryRelief` generator are gone;
   `resampleReliefGeographic` stays in the sdk.
+- **Handed over at the tiles' ground, at the same detail** (2026-10-30). It starts where
+  the view meets the deepest ground in past the tiles' reach, not the sea's level, and keeps
+  its tiles that far in: the tiles win by depth where both draw, and no ring of the
+  background's seabed is left between them. Toward their reach the tiles are chosen by its
+  rules (`OVERVIEW_CELL_PIXELS`, and `rough` where it colours by height), eased in from half
+  the reach through a `cellPixels.pixels` by distance (`selectQuadtreeTiles`); over the North
+  Sea from 470 km up they stopped at depth 7 where it went on to 9. Finer than a cell, it
+  takes the tiles' contour gradient and normals (`reliefAtlasNormal`).
 Not done: drawing the overview under the tiles while their roots load (a moment at
 start-up only).
 

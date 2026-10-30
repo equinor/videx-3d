@@ -60,6 +60,8 @@ uniform sampler2D uColorRamps;
 // How far from the camera the tiles draw it: past it, the stage's sea ends, and so do the tiles.
 uniform float uReliefReach;
 #ifdef RELIEF_FAR
+// The deepest ground in, metres over the sea (0 or below): where the overview hands over.
+uniform float uReliefLowest;
 varying vec3 vSkyDirection;
 #else
 varying vec3 vReliefWorld;
@@ -257,8 +259,20 @@ void main() {
   float pixel = length(fwidth(world));
   float footprint = max(pixel, (merged.w > 0.0 ? merged.w : 180.0) * metresPerDegree);
   vec2 span = footprint / metresPerDegree * vec2(1.0 / max(cos(radians(lonLat.y)), 1e-3), 1.0);
+  // Finer than a cell, the pixel takes what the tiles take: the height's gradient on screen
+  // and their own normals, so the two meet without a seam; spanning cells, averages a
+  // footprint wide. The gradient before anything branches.
+  float gExact = contourGradient(merged.x);
+  float cellMetres = merged.w * metresPerDegree;
+  float fine = 1.0 - smoothstep(1.0, 2.0, pixel / max(cellMetres, 1e-3));
+  // Handed over where the tiles' ground passes their reach. The ground lies past where the
+  // view meets the sea's level, by up to its depth, so the view's meeting with the deepest
+  // ground in (`uReliefLowest`) decides: past the reach, drawn. Where the tiles draw as well
+  // they lie nearer, and win by depth; the sea's level alone left a ring to the background.
+  vec3 deepest = skyOceanReach(cameraPosition, dir, max(altitude, 1e-3) - min(uReliefLowest, 0.0));
+  float handover = deepest.z > 0.5 ? 1e30 : deepest.x;
   // Only where the sea is met past the tiles, and a tile is in. Every derivative is taken above.
-  if(altitude <= 0.0 || hit.z > 0.5 || dist < uReliefReach || merged.w <= 0.0)
+  if(altitude <= 0.0 || hit.z > 0.5 || handover < uReliefReach || merged.w <= 0.0)
     discard;
   float west = reliefAtlasGround(atlasAt - vec2(span.x, 0.0)).x;
   float east = reliefAtlasGround(atlasAt + vec2(span.x, 0.0)).x;
@@ -268,12 +282,14 @@ void main() {
   vec3 up = globeUpAt(world);
   vec3 trueEast = globeGeodeticEast(offset);
   trueEast = normalize(trueEast - up * dot(trueEast, up));
-  vec3 normal = normalize(trueEast * (west - east) + up * (2.0 * footprint) + cross(trueEast, up) * (north - south));
+  vec3 sampled = normalize(trueEast * (west - east) + up * (2.0 * footprint) + cross(trueEast, up) * (north - south));
+  vec3 own = reliefAtlasNormal(atlasAt);
+  vec3 normal = normalize(mix(sampled, trueEast * own.x + up * own.y + cross(trueEast, up) * own.z, fine));
   // Land or sea at this pixel, how much of it a layer gave, and the look of the layer that gave it.
   vec2 ground = merged.xy;
   // The height's change over a pixel for the contours (contourGradient), from the samples
   // a footprint apart: past a discard, derivatives are not to be had.
-  float gHeight = 0.5 * length(vec2(east - west, north - south)) * min(pixel / footprint, 1.0);
+  float gHeight = mix(0.5 * length(vec2(east - west, north - south)) * min(pixel / footprint, 1.0), gExact, fine);
   #else
   // The sea along the view, from above the water: both for the stage's test below and for
   // which of the sea and the ground shows; z 1 where the view only grazes it (skyOceanReach).
