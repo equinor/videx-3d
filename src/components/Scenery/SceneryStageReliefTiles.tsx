@@ -989,10 +989,12 @@ export const SceneryStageReliefTiles = ({
       count++;
     }
     geometry.instanceCount = count;
-    // What lies on the relief (a draped GeoTileLayer) meets these tiles, as drawn now.
+    // What lies on the relief (a draped GeoTileLayer) meets these tiles, as drawn now. With
+    // none drawn — past the far plane — still told: the ground in (heightAt), the overview's
+    // tiles too, is what lies on it there stands on.
     hub?.publish(
       hubOwner,
-      visible && count > 0
+      visible
         ? {
             heights: textures.heights,
             cells: RELIEF_TILE_CELLS,

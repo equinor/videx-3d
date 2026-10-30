@@ -350,7 +350,11 @@ shared too), unlit so its colour reads the same from any side.
   longer drawn (the hub's `keysVersion`); each frame only the groups' small texture is
   rewritten (the tile's slot and blend, the tile it blends from), and uploaded only when it
   changed. Nodes over no tile drawn are kept by the tile where looking stopped, and looked
-  for again a tile at a time.
+  for again a tile at a time. Those lie on the ground of the relief's tiles in there instead
+  (`groundGeoTubeNodes`, `SceneryReliefDrawn.heightAt`), the overview's past the far plane,
+  coarser, so a pipeline on land stays on land: set when laid, and again as tiles come in or
+  the relief chooses again, no more often than every half second; only those nodes are
+  looked up. Without a relief, flat at `height`.
 - **Free spans:** a stiff pipe rests on the high points and bridges the hollows (`span`,
   `smoothing`): the nodes closer than the span are marked `near` where they are laid — farther
   off a span is under a pixel — and rested on the ground on the main thread, where the
@@ -360,7 +364,6 @@ shared too), unlit so its colour reads the same from any side.
 - **Through the sea:** `water` `'fog'` dims it as the seabed under it (`geo-water.glsl`); like
   the seabed, it is gone where the sea turns opaque from a few kilometres up, and under the
   background's sea and seabed past a stage (see [Through the sea](#through-the-sea-water)).
-  Past the far plane no relief tile is drawn under it, so it lies at `height` there.
 
 ## Points: `GeoSymbols`
 
@@ -369,7 +372,11 @@ Facilities, wells and buoys as 3D symbols: one `Symbols` instanced mesh, of any 
 on the relief (the relief's ground on the CPU, `heightAt`, again as finer tiles come in), its
 `size` in metres as it stands, `exaggeration` times as large. Never narrower than `minPixels`
 on screen — **widened, never raised**, so a symbol on the seabed stays under the water from
-afar. With its own material the widening is the vertex shader's, so a symbol's matrix is made
+afar. On the globe too: widened, its own material keeps each vertex as high over the globe as
+built over the symbol's foot, so a wide one follows the curve rather than stand off it at its
+rim (from 9000 km a 6 pixel disc is 60 km across, its rim 75 m over its foot's level), and the
+water over it is taken at that height. Past the far plane it stands on the relief's tiles in
+there (the overview's). With its own material the widening is the vertex shader's, so a symbol's matrix is made
 only when it moves on the Earth (its ground, the globe), never for the camera; with a material
 of your own, on the CPU each frame the camera moves. `minPixels` 0 turns the floor off: drawn
 as built, shrinking out of sight with distance. Its own material shades each face by
@@ -469,11 +476,12 @@ laid on another's tiles (`sdk/tiles/tile-cover.ts`: `tilesUnder`, `tileAncestors
 
 - **On the land, through the air**: draped over land, a layer is not hazed with distance as
   the land is (`reliefThroughAir`); seen from space, not lit as the land is.
-- **The relief past the far plane**: there only its overview is drawn, which the layers do not
-  read. `GeoTubes` and a draped `GeoTileLayer` lie at `height` there (a pipeline on land is
-  taken to lie on the seabed, and hidden under the sea); and what lies under the ground is
-  hidden only below the sea's `depth` (`skyOceanCover`), not under the relief's own land and
-  seabed. Reading the overview's index (`SceneryReliefAtlas`) per node would mend both.
+- **The relief past the far plane**: there only its overview is drawn. `GeoTubes` and
+  `GeoSymbols` stand on its tiles' ground (`heightAt`, from the tiles in), but a draped
+  `GeoTileLayer`, laid on the relief's tiles drawn, lies at `height` there; and what lies
+  under the ground is hidden only below the sea's `depth` (`skyOceanCover`), not under the
+  relief's own land and seabed. Reading the overview's index (`SceneryReliefAtlas`) per
+  vertex would mend both.
 - **Labels on the ground**: `GeoLabels` lie flat at a height (the sea's, say), not on the
   relief. Draped labels would ask the worker (`sampleReliefSource`) rather than pin tiles
   under hundreds of features.

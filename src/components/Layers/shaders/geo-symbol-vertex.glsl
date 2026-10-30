@@ -30,6 +30,14 @@ void main() {
   vec3 local = vec3(position.x * widen, position.y, position.z * widen);
   vec3 localNormal = vec3(normal.x / widen, normal.y, normal.z / widen);
   vec4 world = placed * vec4(local, 1.0);
+  // Widened, never raised: each vertex as high over the globe as built over the symbol's
+  // foot, so a wide one follows the globe's curve rather than stand off it at its rim (from
+  // 9000 km a 6 pixel disc is 60 km across, its rim 75 m over its foot's level). The water
+  // over it is taken at that height too.
+  float foot = globeAltitude(placed[3].xyz);
+  float over = foot + position.y * length(placed[1].xyz);
+  if(widen > 1.0)
+    world.xyz += globeUpAt(world.xyz) * (over - globeAltitude(world.xyz));
   #ifdef USE_INSTANCING_COLOR
   vSymbolColor = instanceColor;
   #else
@@ -38,7 +46,7 @@ void main() {
   vSymbolNormal = normalize(mat3(placed) * localNormal);
   vSymbolUp = globeUpAt(world.xyz);
   vSymbolWorld = world.xyz;
-  vSymbolHeight = globeAltitude(world.xyz);
+  vSymbolHeight = over;
   vec4 view = viewMatrix * world;
   #ifdef USE_OIT
   vViewPosition = -view.xyz;

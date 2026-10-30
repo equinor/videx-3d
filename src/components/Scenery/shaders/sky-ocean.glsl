@@ -675,8 +675,9 @@ float skyOceanCover(vec3 world, float height) {
   if(dot(dir, globeCameraUp()) < 0.0 && skyOceanOnStage(skyOceanPlane(cameraPosition + dir * stagedAt), stagedAt, 0.01 * stagedAt))
     return 0.0;
 
-  // Clear of the heights' rounding far from the scene's origin.
-  float margin = 2.0 + 1e-6 * dist;
+  // The heights are the layer's own, as laid, not found from its depth: what lies on a level
+  // is not below it, with a little to spare for a height found on the GPU (a symbol's foot).
+  const float margin = 2.0;
   float pastCurve = dist * (1.0 - SKY_OCEAN_COVER_PAST_CURVE);
   bool fromAir = uSkyOceanWater > 0.5 && altitude > 0.0;
   float cutaway = skyOceanCutawayAlong(cameraPosition, world);

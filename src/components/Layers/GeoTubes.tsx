@@ -20,6 +20,7 @@ import type {
 import { geoDistance, type LonLat } from '../../sdk/layers/geo-lines';
 import {
   geoTubeNodesAround,
+  groundGeoTubeNodes,
   liftGeoTubeNodes,
   packGeoTubeRoutes,
   type GeoTubeNodesLaid,
@@ -37,6 +38,7 @@ import { GeoTileStyles } from './geo-tile-layer';
 import {
   createGeoTubeGeometry,
   createGeoTubeMaterial,
+  GEO_TUBE_RELIEF_STRIDE,
   GeoTubeNodes,
 } from './geo-tubes';
 import { geoTubeNodes } from './layer-defs';
@@ -291,6 +293,9 @@ export const GeoTubes = <P,>({
     altitude: 0,
     resident: -1,
     time: 0,
+    // What the ground under the nodes no drawn tile holds was last taken from.
+    ground: '',
+    groundTime: 0,
   });
   // One request out at a time; the worker given up on once it fails.
   const job = useRef({ pending: false, worker: true, alive: true });
@@ -319,6 +324,23 @@ export const GeoTubes = <P,>({
     );
     if (written) nodes.upload(written[0], written[1]);
   };
+  // The nodes no relief tile drawn holds — past the far plane, say — on the ground of the
+  // relief's tiles in there (the overview's, coarser), as GeoSymbols stand: else a pipeline
+  // on land would lie at `height`, and be taken to lie under the sea.
+  const ground = () => {
+    const relief = hubRef.current?.current;
+    if (!relief) return;
+    const drawn = nodes.relief.array as Float32Array;
+    const written = groundGeoTubeNodes(
+      nodes.arrays,
+      nodes.count,
+      i => drawn[i * GEO_TUBE_RELIEF_STRIDE + 2] >= 0,
+      (longitude, latitude) => relief.heightAt(longitude, latitude),
+      height,
+      span > 0,
+    );
+    if (written) nodes.upload(written[0], written[1]);
+  };
   // Read when a request comes back, frames later.
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
@@ -326,6 +348,8 @@ export const GeoTubes = <P,>({
   hubRef.current = hub;
   const liftRef = useRef(lift);
   liftRef.current = lift;
+  const groundRef = useRef(ground);
+  groundRef.current = ground;
 
   useFrame(({ camera }) => {
     if (!mesh.current || !material) return;
@@ -408,6 +432,7 @@ export const GeoTubes = <P,>({
         state.time = performance.now();
         liftRef.current();
         nodes.groups.place(nodes, hubRef.current?.current ?? null);
+        groundRef.current();
       };
       if (job.current.worker) {
         job.current.pending = true;
@@ -443,6 +468,18 @@ export const GeoTubes = <P,>({
       state.resident = relief.resident;
       state.time = now;
       lift();
+    }
+    // Again as tiles come in or the relief chooses again, no more often than every half
+    // second; after the spans, which ground the near nodes over the whole of their parts.
+    const groundKey = relief ? `${relief.resident}|${relief.keysVersion}` : '';
+    if (
+      relief &&
+      groundKey !== state.ground &&
+      now - state.groundTime > 500
+    ) {
+      state.ground = groundKey;
+      state.groundTime = now;
+      ground();
     }
     geometry.instanceCount = Math.max(nodes.count - 1, 0);
     mesh.current.visible = nodes.count > 1;

@@ -5,6 +5,7 @@ import {
   GEO_TUBE_NODE_STRIDE as S,
   geoSpanLift,
   geoTubeNodesAround,
+  groundGeoTubeNodes,
   layGeoTubeNodes,
   liftGeoTubeNodes,
   packGeoTubeRoutes,
@@ -263,6 +264,53 @@ describe('liftGeoTubeNodes', () => {
       out,
     );
     expect(liftGeoTubeNodes(out, count, { span: 0 }, ground, 0)).toBeNull();
+  });
+});
+
+describe('groundGeoTubeNodes', () => {
+  const line: LonLat[] = [
+    [1.9, 58.44],
+    [2.926, 58.44],
+  ];
+  const lay = () => {
+    const out = arrays(10000);
+    const count = layGeoTubeNodes(
+      routes(route([line])),
+      centre,
+      0,
+      { spacing: 20 },
+      origin,
+      -100,
+      out,
+    );
+    return { out, count };
+  };
+  // Land east of 2.5°E, seabed west of it; nothing known past 2.9°E.
+  const ground = (longitude: number) =>
+    longitude > 2.9 ? null : longitude > 2.5 ? 12 : -80;
+
+  it('grounds the nodes no drawn tile holds, the rest as they are', () => {
+    const { out, count } = lay();
+    // The first half on drawn tiles.
+    const placed = (i: number) => i < count / 2;
+    const written = groundGeoTubeNodes(out, count, placed, ground, -100);
+    expect(written).not.toBeNull();
+    for (let i = 0; i < count; i++) {
+      const longitude = out.lonLat[2 * i];
+      const expected = placed(i) ? -100 : (ground(longitude) ?? -100);
+      expect(out.nodes[i * S + 3]).toBe(expected);
+    }
+    // Again on the same ground: nothing changes.
+    expect(groundGeoTubeNodes(out, count, placed, ground, -100)).toBeNull();
+  });
+
+  it('leaves the near nodes to the span with skipNear', () => {
+    const { out, count } = lay();
+    out.near[0] = 0;
+    out.near[count - 1] = 1;
+    groundGeoTubeNodes(out, count, () => false, () => 5, -100, true);
+    expect(out.nodes[(count - 1) * S + 3]).toBe(-100);
+    expect(out.nodes[3]).toBe(5);
   });
 });
 

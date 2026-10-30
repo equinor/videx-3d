@@ -41,7 +41,8 @@ export type SceneryReliefDrawn = {
 /**
  * Where a stage's relief tells what it draws (see {@link SceneryReliefDrawn}): one per
  * `Scenery`, shared through its `SceneryOceanContext`. Its `current` is null while no
- * relief is drawn.
+ * relief is shown; with no tile drawn (past the far plane, say) its tiles are none, but
+ * `heightAt` and `rangeAt` still answer from the tiles in.
  */
 export class SceneryReliefHub {
   current: SceneryReliefDrawn | null = null;

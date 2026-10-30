@@ -393,6 +393,41 @@ export function liftGeoTubeNodes(
   return written;
 }
 
+/**
+ * The ground under the nodes laid by {@link layGeoTubeNodes} that no relief tile drawn holds
+ * (`placed` false), where the GPU lays them on what the node holds: from `groundAt` — the
+ * relief's tiles in, coarser past the far plane — else `fallback`. With `skipNear`, the near
+ * ones are left to {@link liftGeoTubeNodes}. Returns the first and last node changed, or
+ * null for none.
+ *
+ * @group Layers
+ */
+export function groundGeoTubeNodes(
+  out: GeoTubeNodeArrays,
+  count: number,
+  placed: (index: number) => boolean,
+  groundAt: (longitude: number, latitude: number) => number | null,
+  fallback: number,
+  skipNear = false,
+): [number, number] | null {
+  const { nodes, lonLat, near } = out;
+  const S = GEO_TUBE_NODE_STRIDE;
+  let first = -1;
+  let last = -1;
+  for (let i = 0; i < count; i++) {
+    if (placed(i) || (skipNear && near[i])) continue;
+    const found = groundAt(lonLat[2 * i], lonLat[2 * i + 1]);
+    const ground = Math.fround(
+      found !== null && Number.isFinite(found) ? found : fallback,
+    );
+    if (nodes[i * S + 3] === ground) continue;
+    nodes[i * S + 3] = ground;
+    if (first < 0) first = i;
+    last = i;
+  }
+  return first < 0 ? null : [first, last];
+}
+
 // Where geoTubeNodesAround lays nodes: kept from call to call, grown as needed.
 let scratch: GeoTubeNodeArrays | null = null;
 function scratchFor(capacity: number): GeoTubeNodeArrays {
