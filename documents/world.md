@@ -7,7 +7,7 @@
 > [6](#11-step-6-in-detail-tiles-on-the-globe) built; step
 > [7](#13-step-7-in-detail-more-than-one-field) designed again (2026-11-02): the `World`
 > holds where things are, and the host times and covers a switch between fields; 7a–7f
-> built.** How the scene
+> built, 7g not needed.** How the scene
 > places itself on the Earth, what more than one field needs, and a plan for it. The open
 > questions are settled ([Decided](#7-decided-2026-10-26)): the Earth is a fixed globe, and
 > a `World` says once where the scene lies on it. Step 3 found the view's origin (step 4)
@@ -190,7 +190,7 @@ Nothing above is needed for one field. What keeps it cheap to add later:
 | 4 | **The sky anywhere on the globe** ([in detail](#12-step-4-in-detail-the-sky-anywhere-on-the-globe)), was the view's origin. Its precision came free in step 3: three.js composes each draw's model-view matrix in 64 bits, so a placed field is as precise 300 km out as at home. Left: the sky seen from far off. The world stays fixed and the sky's look frame follows the camera: its up, horizon and light where the camera is; the waves on fixed charts on the Earth (`OceanCharts`). A host levels its horizon with `useLevelHorizon` | ✅ built (2026-10-27); the cloud deck far off is left for step 8 |
 | 5 | **The relief in its own frame** — folded into step 6. In a frame of its own the relief would part from the chosen field's UTM by the two maps' scale (UTM's 0.9996 against 1: 3 m at 8 km), right where its column meets it; laid in the chosen field's frame it meets it exactly, and a placed field's to its placement's precision | → step 6 |
 | 6 | **Tiles on the globe** ([in detail](#11-step-6-in-detail-tiles-on-the-globe)): tile keys by latitude and longitude, the relief contract unchanged (a tile asks each layer for a window of its own grid, as now); the overlays' tiles move with them, sharing the core. Everything placed by latitude and longitude on one sphere, the ellipsoid's conformal sphere matched at the chosen field; each field's column samples the relief through its transform | ✅ built (2026-10-26) in five parts: 6a the geographic globe, 6b geographic tiles, 6c the relief drawn from them, 6d the whole globe — the Earth from 20 000 km, the far side included; 6e a clean-up |
-| 7 | **More than one field** ([in detail](#13-step-7-in-detail-more-than-one-field)): the `World` holds where things are — its frame (the anchor), the disc and the globe — whatever the scenery, and draws nothing; the relief Earth data of its own; switching the anchor a controlled switch, timed and covered by the host; every loaded field drawn in its own group; the void the seabed's underside everywhere; the seabed see-through over each loaded field | designed (2026-10-30), designed again (2026-11-02); 7a–7f built (2026-11-02); step 3 placed the second field |
+| 7 | **More than one field** ([in detail](#13-step-7-in-detail-more-than-one-field)): the `World` holds where things are — its frame (the anchor), the disc and the globe — whatever the scenery, and draws nothing; the relief Earth data of its own; switching the anchor a controlled switch, timed and covered by the host; every loaded field drawn in its own group; the void the seabed's underside everywhere; the seabed see-through over each loaded field | designed (2026-10-30), designed again (2026-11-02); 7a–7f built, 7g judged not needed (2026-11-02); step 3 placed the second field |
 
 Steps 1 to 4 and 6 are built. Step 7 is designed ([§13](#13-step-7-in-detail-more-than-one-field)),
 to be built against a story with two fields of realistic size.
@@ -996,7 +996,7 @@ and not above 100 km (`below`), where the up runs along a view down at the Earth
 
 ## 13. Step 7 in detail: more than one field
 
-> **Status (2026-11-02): 7a–7f built; 7g designed.** The `World` holds where things are
+> **Status (2026-11-02): 7a–7f built; 7g judged not needed.** The `World` holds where things are
 > and draws nothing; the relief becomes Earth data of its own; switching from one field to
 > another is a controlled switch, applied by the library in one frame and timed and covered by
 > the host. The estimates below were measured in 7a ([7a and 7b, built](#7a-and-7b-built-2026-11-02)).
@@ -1258,6 +1258,9 @@ other fields within sight stays drawn through it.
 
 ### Bending a neighbour, if it shows
 
+Not built: judged not needed (2026-11-02, [7g, judged](#7g-judged-2026-11-02)). The design, kept
+for if it ever is:
+
 A neighbour laid flat on the globe's tangent at its pivot stands off the sphere by `d² / 2R`.
 Lowered by that along its own up, in its own frame, before the model matrix, it lies on the
 Earth: one shared vertex chunk with a uniform per field (its pivot and `R`; nothing for the
@@ -1321,7 +1324,7 @@ and loaded by geographic tile and distance. Its design must settle:
 | 7d | The relief as Earth data of its own: out of `SceneryStage`, on the `World`'s globe, shaded plainly without a sky and by the sky with one | ✅ built (2026-11-02): 7d-1 `GeoRelief` in the `World`, the sky's shading kept, nothing changed on screen; 7d-2 the relief with the scenery off, its tiles kept across a toggle |
 | 7e | See-through regions per loaded field; the void's shading and levels far from the stage | ✅ built (2026-11-02): a neighbour's reservoir seen through its seabed, with the scenery and without; under a field 123 km off the void as under the anchored one, less the walls |
 | 7f | A pick says which field it hit ([§7](#7-decided-2026-10-26)) | ✅ built (2026-11-02): one handler for three fields, each pick in its own field's frame and map, anchored to either end |
-| 7g | Bending a neighbour in its own frame, picking included | only if 7a shows the seam |
+| 7g | Bending a neighbour in its own frame, picking included | only if 7a shows the seam — judged not needed (2026-11-02): unseen from afar, and kept out of close views by what is anchored |
 
 The relief bridge carrying a placed field's transform is not needed while columns and the
 cutaway are the anchored stage's only. Wellbores as an Earth-level layer follow, designed on
@@ -1545,6 +1548,32 @@ anchored to Volve, a reservoir sphere (250 m, its middle 2500 m deep) clicked fr
 above in each field reads 2251 m deep, within 12 m of its middle across (the 2° tilt), in
 that field's own frame — Trench 123 km east in UTM 32N, Overlap in its transverse Mercator,
 Volve in 31N; anchored to Trench, Volve's, 119 km west now, reads the same within 5 m.
+
+### 7g, judged (2026-11-02)
+
+Bending a neighbour onto the sphere ([Bending a neighbour, if it shows](#bending-a-neighbour-if-it-shows))
+is not built. Measured in `Spikes/World/Fields`, anchored to Volve, a sea-level sphere's height
+over the curved sea: Trench (27 km, Troll's size) 14.2 m at its edges and 28.5 m at its
+corners, Overlap up to 26.7 m at its far corner, the anchored field and the overlap 0 m (as
+in 7a). On screen a pixel spans about 0.00085 times the camera's distance, so 28.5 m is under
+a pixel beyond about 33 km — Trench seen from Volve, 123 km off, is 0.3 px — about 7 px at
+5 km, and 27 px at 1.2 km: Overlap's corner sphere, 100 m across, stands 27 px higher in the
+water anchored to Volve than anchored to Overlap. Seen side by side, unremarkable alone; a
+subsea template or a jacket's feet would show floating over the seabed. Picks are exact
+either way, in the field's own frame.
+
+So the gap shows only close to a neighbour that is not anchored, which is the host's to
+avoid, cheaply:
+
+- **Anchor the field the camera is over** (with some hysteresis, as each switch is covered):
+  neighbours are then seen from afar, where the gap is under a pixel or a few.
+- **Fields whose data meet share a stage:** adjacent fields with data across their border are
+  anchored together, one frame and one disc over both, so both lie flat on it, exact to each
+  other and to the sea and relief drawn there.
+
+Bending would take a vertex step in every field material (chunks and their caps, surfaces,
+wells, casings, fences, cut planes, symbols) and in picking, and its inverse on the CPU
+(`worldToArea`, `worldToUtm`, the samplers), for a gap only these views show.
 
 ### Considered, not chosen
 

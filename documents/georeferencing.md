@@ -151,7 +151,12 @@ blocks (`reliefWindow`). See [relief.md](./relief.md#data).
 - **More than one field:** each in its own `UtmArea` (its `bounds`, its stage, so it is placed
   best about its middle). Anchoring another is giving the `World` its `frame` and `bounds`;
   `onFrameChange` says how to carry the camera, `onFrameSettled` when to uncover the switch
-  ([world.md, step 7](./world.md#switching-the-anchor-a-controlled-switch)). Which field a
+  ([world.md, step 7](./world.md#switching-the-anchor-a-controlled-switch)). A field not
+  anchored lies flat on the globe's tangent at its middle, so toward its edges it stands off
+  the curved sea and relief (about 10 m at a 16 km field's corner, 29 m at a 27 km one's):
+  unseen from afar, a few pixels close up. Anchor the field the camera is over, and give
+  fields whose data meet across a border one stage between them
+  ([world.md, 7g](./world.md#7g-judged-2026-11-02)). Which field a
   pick hit: name each area (`id`) and register its listeners with its area as their `ref`
   (`useContext(UtmAreaContext)` inside it), or make each field's handler inside it; the
   area's `worldToArea` and `worldToUtm` read the pick's `position` in that field
