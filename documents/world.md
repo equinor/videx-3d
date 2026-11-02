@@ -55,8 +55,9 @@ Before it the sky faked the curve: flat over the disc and falling away by `½ κ
 measured along each view, with the disc moved under a camera far off. The data stays flat:
 a field in a frame of its own is placed on the globe by its `UtmArea`
 ([Step 3 in detail](#10-step-3-in-detail-fields-placed-on-the-earth)); other content drawn
-flat beyond the disc — `UtmPosition` and `Wgs84Position` included — goes onto it with a
-`SceneryAnchor` or `applyGlobe` ([For a host](#for-a-host)).
+flat beyond the disc — `UtmPosition`, and `Wgs84Position` inside a `UtmArea`, included — goes
+onto it with a `SceneryAnchor` or `applyGlobe` ([For a host](#for-a-host)). A `Wgs84Position`
+in the `World` itself, with no `UtmArea` around it, is placed on it already.
 
 Precision: the GPU works in 32-bit floats, a step of about 6 cm at 1000 km from the
 origin and 0.5 m at 8000 km. A field's data is drawn in its own group, whose transform
@@ -230,7 +231,10 @@ to be built against a story with two fields of realistic size.
   Y = `altitude`, as before, and far from the field what they place stands off the curved
   sea; the behaviour is documented ([For a host](#for-a-host)) rather than changed. Since
   step 3 a field far off has a `UtmArea` of its own, placed on the globe, and what it
-  places stands on the globe there.
+  places stands on the globe there. Decided again (2026-11-02): inside a `UtmArea` both stay
+  flat; a `Wgs84Position` in the `World` with no `UtmArea` around it is placed on the globe,
+  upright and facing true north (`placeGeoPoint`); a `UtmPosition` there throws, as the
+  `World`'s map is the anchored field's and changes with it.
 
 - **Step 3 in one go, with what of 4, 5 and 7 comes with it** (2026-10-26): the view's
   origin deferred, its precision found free; the relief kept in the chosen field's frame
@@ -426,8 +430,8 @@ planes face up).
   ([Step 3 in detail](#10-step-3-in-detail-fields-placed-on-the-earth)).
 - **Other content beyond the disc drawn flat** still needs a `SceneryAnchor` or `applyGlobe`,
   as before, but it no longer moves as the camera does.
-- **`UtmPosition` and `Wgs84Position` are flat** (decided, [above](#7-decided-2026-10-26)):
-  `altitude` is the area's Y. Over the disc that is exact. Beyond it what they place stands
+- **`UtmPosition` and `Wgs84Position` are flat inside a `UtmArea`** (decided,
+  [above](#7-decided-2026-10-26)): `altitude` is the area's Y. Over the disc that is exact. Beyond it what they place stands
   off the sea by `(d² − r²) / 2R` at `d` from the disc's middle — for a disc of 10 km about
   25 m at 20 km, 270 m at 60 km, 780 m at 100 km, 3.1 km at 200 km — upright in the scene
   rather than on the globe's up (`d / R`: 1.8° at 200 km), and, against the relief and the
@@ -438,6 +442,13 @@ planes face up).
   at its point (`at`, from `utmToArea`), such content stands on the globe, upright there;
   for a reading, `globe.foot(point)` and `globe.altitude(point)` give the map point and
   the altitude.
+- **A `Wgs84Position` in the `World` itself**, with no `UtmArea` around it, stands on the
+  Earth: its children at the point on the `World`'s globe, upright there and their −Z true
+  north, at any distance, and placed again as the anchor switches (`placeGeoPoint`,
+  `geoFrameMatrix`; re-placed only when the point, the frame or `globe.version` changes).
+  `altitude` is their Y, as in an area: the sea lies at the globe's level. For a facility or a
+  marker outside every field. A `UtmPosition` there throws: easting and northing need a map,
+  and the `World`'s is the anchored field's.
 
 ### With and without a sky
 

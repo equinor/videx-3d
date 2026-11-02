@@ -254,3 +254,21 @@ export function placeGeoFrame(
     ...pivoted,
   };
 }
+
+/**
+ * Where a point of the Earth, `longitude` and `latitude` (WGS84, degrees), lies in `scene`
+ * (its X/Z), flat, and how what stands there is turned for its −Z to be true north: the
+ * placement of a map about the point ({@link geoFrameAt}), turned by `scene`'s grid
+ * convergence there. Placed by `geoFrameMatrix`, on a globe or not, what is drawn about its
+ * origin stands at the point, upright and facing true north: as a `Wgs84Position` with no
+ * `UtmArea` around it places its children in a `World`.
+ *
+ * @group Utils
+ */
+export function placeGeoPoint(
+  longitude: number,
+  latitude: number,
+  scene: GeoFrame,
+): GeoFramePlacement {
+  return placeGeoFrame(geoFrameAt(longitude, latitude), scene);
+}

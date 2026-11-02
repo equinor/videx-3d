@@ -74,6 +74,7 @@ generator functions from `@equinor/videx-3d/generators`.
 | `geoFrameLocation(frame)` | the origin's longitude and latitude |
 | `geoFrameUtmZone(frame)` / `utmZoneBounds(zone, south)` | the UTM zone a frame is drawn in (null for any other map), and the band of longitude and latitude it covers; the minimap outlines it |
 | `placeGeoFrame(frame, scene)` | where another frame's origin lies in the scene, and how its grid is turned and scaled there |
+| `placeGeoPoint(longitude, latitude, scene)` | the same for a point of the Earth, turned for true north there; `geoFrameMatrix(placement, globe, target)` stands what is drawn about the origin on the globe there (as a `Wgs84Position` in the `World` does) |
 | `CRS` | a UTM (or other) map about an origin: `utmToWorld`, `worldToUtm`, `wgs84ToWorld`, `worldToWgs84` |
 | `getProjectionDefFromUtmZone('31N')` | the proj4 definition of a UTM zone |
 | `solarPosition(date, latitude, longitude)` | the sun's azimuth and elevation |
@@ -84,7 +85,7 @@ generator functions from `@equinor/videx-3d/generators`.
 |--|--|
 | `World` | says once, with a `frame`, where the scene lies on the Earth. Renders nothing |
 | `UtmArea` | a container for field data in a map: its children are drawn in its map's metres about its origin. A `UtmArea` in **another** frame than the `World`'s (another UTM zone, a field 300 km away) places itself where the world's map has it, turned and scaled, and on the globe when there is one |
-| `UtmPosition` / `Wgs84Position` | place children at an easting/northing or a longitude/latitude inside a `UtmArea` |
+| `UtmPosition` / `Wgs84Position` | place children at an easting/northing or a longitude/latitude inside a `UtmArea`, flat in its map. A `Wgs84Position` in the `World` itself, with no `UtmArea` around it, places them on the Earth instead: on the globe at the point, upright and facing true north, at any distance (`placeGeoPoint`). A `UtmPosition` needs a `UtmArea` |
 | `UtmAreaContext` | the area's conversions: `utmToArea`, `wgs84ToArea`, `areaToUtm`, `areaToWgs84`, `worldToArea`, `worldToUtm`, `worldToWgs84`; and its `id`, the host's name for the field |
 
 ### The surroundings: sky, sea, land and seabed
@@ -136,6 +137,9 @@ blocks (`reliefWindow`). See [relief.md](./relief.md#data).
         <UtmArea crsInstance bounds>     ← your field, in its map's metres
           <Wellbores … />
         </UtmArea>
+        <Wgs84Position long lat>         ← a facility by longitude/latitude, outside the field: on the globe
+          <MyPlatform />
+        </Wgs84Position>
         <GeoPolygons data />             ← GIS, by longitude/latitude, on the globe
         <Minimap layers>                 ← the same relief, in 2D, in the World's frame
           <MinimapCameraMarker />
@@ -252,6 +256,25 @@ the area moves them to the scene's origin.
 A second field in another zone gets a `UtmArea` of its own (with its own `CRS` or `frame`);
 inside the `World` it places itself where it belongs.
 
+**Recommended:** keep the `UtmArea` inside the `World` (step 2), even with a single field, and
+place what you have in longitude and latitude and is not the field's data — a facility, a
+marker — with a `Wgs84Position` outside the `UtmArea`, in the `World`. There it stands on the
+Earth at the point: on the globe, upright and facing true north, at any distance, and placed
+again when another field is anchored. Inside a `UtmArea` a `Wgs84Position` is field data,
+flat in the field's map, and far from the field stands off the curved sea. A `UtmPosition`
+needs a `UtmArea`: easting and northing are in its map.
+
+```tsx
+<World frame={frame} bounds={[-8000, -8000, 8000, 8000]}>
+  <UtmArea crsInstance={crs}>
+    <Wellbores /* … */ />
+  </UtmArea>
+  <Wgs84Position long={2.53} lat={58.62}>
+    <MyPlatform />
+  </Wgs84Position>
+</World>
+```
+
 ### 4. Sky and sea
 
 ```tsx
@@ -334,7 +357,8 @@ import { Canvas } from '@react-three/fiber'
 import { CameraControls } from '@react-three/drei'
 import {
   DataProvider, GeneratorsProvider, GeoLabels, GeoPolygons, GeoRelief, Minimap,
-  MinimapCameraMarker, MinimapGeoLayer, Scenery, SceneryOcean, SceneryStage, UtmArea, World,
+  MinimapCameraMarker, MinimapGeoLayer, Scenery, SceneryOcean, SceneryStage, UtmArea,
+  Wgs84Position, World,
 } from '@equinor/videx-3d'
 import { CRS, geoFrameFromCrs, getProjectionDefFromUtmZone } from '@equinor/videx-3d/sdk'
 
@@ -360,6 +384,11 @@ export const FieldView = ({ store, registry, licences }) => (
           <UtmArea crsInstance={crs}>
             {/* your field: wellbores, surfaces, … */}
           </UtmArea>
+
+          {/* a facility given by longitude and latitude, outside the field: on the globe */}
+          <Wgs84Position long={2.53} lat={58.62}>
+            <MyPlatform />
+          </Wgs84Position>
 
           <GeoPolygons data={licences} maxHeight={1500000} />
           <GeoLabels data={licences} text={f => f.properties.name} maxHeight={250000} />

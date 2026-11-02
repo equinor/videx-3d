@@ -10,7 +10,14 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Group, MeshStandardMaterial, SphereGeometry, Vector3 } from 'three';
+import {
+  BoxGeometry,
+  CylinderGeometry,
+  Group,
+  MeshStandardMaterial,
+  SphereGeometry,
+  Vector3,
+} from 'three';
 import { getProjectionDefFromUtmZone } from '../../sdk/projection/crs';
 import { GeoFrame, geoFrameAt } from '../../sdk/projection/geo-frame';
 import {
@@ -54,6 +61,7 @@ import type { SceneryStageBounds } from '../Scenery/scenery-stage';
 import { useLevelHorizon } from '../Scenery/useLevelHorizon';
 import { UtmArea } from '../UtmArea/UtmArea';
 import { UtmAreaContext, UtmAreaContextProps } from '../UtmArea/UtmAreaContext';
+import { Wgs84Position } from '../UtmArea/Wgs84Position';
 import { World, WorldFrameChange } from './World';
 
 // More than one field on the Earth (documents/world.md, step 7): three fields, each a frame,
@@ -148,10 +156,19 @@ const pointIn = (
   return [e - anchor.frame.origin[0], anchor.frame.origin[1] - n];
 };
 
-// The panel's places: each field's middle and its north-east corner, in the anchor's map.
-const placesIn = (anchor: Field) =>
-  Object.fromEntries(
-    FIELD_IDS.flatMap(id => {
+// A point of the Earth outside every field, 60 km east and 3 km north of Volve: longitude and
+// latitude, where the marker stands.
+const MARKER = proj4(demoFrame.projection, 'WGS84', demoPoint(60000, 3000)) as [
+  number,
+  number,
+];
+
+// The panel's places: each field's middle and its north-east corner, and the marker, in the
+// anchor's map.
+const placesIn = (anchor: Field) => {
+  const [e, n] = proj4('WGS84', anchor.frame.projection, MARKER);
+  return Object.fromEntries([
+    ...FIELD_IDS.flatMap(id => {
       const field = FIELDS[id];
       const [, minZ, maxX] = field.bounds;
       return [
@@ -159,9 +176,42 @@ const placesIn = (anchor: Field) =>
         [`${field.name} corner`, pointIn(anchor, field, [maxX, minZ])],
       ];
     }),
-  ) as Record<string, [number, number]>;
+    ['Marker', [e - anchor.frame.origin[0], anchor.frame.origin[1] - n]],
+  ]) as Record<string, [number, number]>;
+};
 
 const SPHERE = new SphereGeometry(1, 32, 16);
+const MAST = new CylinderGeometry(30, 30, 400, 16);
+const FLAG = new BoxGeometry(20, 60, 160);
+
+/**
+ * A mast at a point of the Earth outside every field, placed by its longitude and latitude in
+ * the `World` itself (`Wgs84Position`, no `UtmArea` around it): on the globe there, upright,
+ * its flag toward true north, whichever field is anchored.
+ */
+const EarthMarker = () => {
+  const material = useMemo(
+    () => new MeshStandardMaterial({ color: '#ffffff', roughness: 0.5 }),
+    [],
+  );
+  useEffect(() => () => material.dispose(), [material]);
+  return (
+    <Wgs84Position long={MARKER[0]} lat={MARKER[1]}>
+      <mesh
+        name="earth-marker"
+        geometry={MAST}
+        material={material}
+        position={[0, 200, 0]}
+      />
+      <mesh
+        name="earth-marker-flag"
+        geometry={FLAG}
+        material={material}
+        position={[0, 370, -80]}
+      />
+    </Wgs84Position>
+  );
+};
 
 // The spheres in a field's own frame: at the sea's level on its stage's middle, corners and
 // edges, where a flat field parts from the curved sea most; and three at the reservoir's depth.
@@ -479,6 +529,7 @@ const WorldFields = (storyArgs: WorldFieldsArgs) => {
       {FIELD_IDS.map(id => (
         <FieldSpheres key={id} id={id} onPick={onPick} />
       ))}
+      <EarthMarker />
     </World>
   );
 };

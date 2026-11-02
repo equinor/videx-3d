@@ -73,10 +73,25 @@ const shift = new Matrix4();
  * ground there (`Globe.tangent`), with or without a `Scenery`. What is inside it stays in the
  * area's own frame, its conversions too. In the world's own frame it is not moved, as without a world.
  *
+ * Recommended: wrap it in a `World`, even for a single field, and place what is given in
+ * longitude and latitude and is not the field's data (a facility, a marker) with a
+ * {@link Wgs84Position} outside the area, in the `World`: that stands on the Earth at the
+ * point, at any distance, where one inside the area is flat in the field's map.
+ *
  * @example
  * <UtmArea utmZone={utmZone} origin={origin} originUnits={originUnits} offset={offset}>
  *  { children }
  * </UtmArea>
+ *
+ * @example
+ * <World frame={frame} bounds={bounds}>
+ *  <UtmArea crsInstance={crs} bounds={bounds}>
+ *    <Wellbores />
+ *  </UtmArea>
+ *  <Wgs84Position long={4.2} lat={60.6}>
+ *    <PlatformModel />
+ *  </Wgs84Position>
+ * </World>
  *
  * @remarks
  * This component will return the internal CRS instance when passing a ref

@@ -14,7 +14,9 @@ import {
   geoFrameLocation,
   geoFrameSameMap,
   geoFrameUtmZone,
+  geoFrameXZ,
   placeGeoFrame,
+  placeGeoPoint,
   utmZoneBounds,
 } from '../src/sdk/projection/geo-frame';
 import { Globe } from '../src/sdk/projection/globe';
@@ -186,6 +188,60 @@ describe('geoFrameMatrix, on the globe', () => {
     expect(new Vector3(0, 1, 0).transformDirection(m).angleTo(up)).toBeLessThan(
       1e-9,
     );
+  });
+});
+
+describe('placeGeoPoint', () => {
+  // Out at the trench, 123 km east in the next zone, where the scene's grid is turned from
+  // true north by its convergence.
+  const [lon, lat] = proj4(utmDef, wgs84Def, [
+    scene.origin[0] + TRENCH[0],
+    scene.origin[1] - TRENCH[1],
+  ]);
+
+  it("places the point where the scene's map has it, its −Z true north", () => {
+    const toXZ = geoFrameXZ(scene);
+    const placed = placeGeoPoint(lon, lat, scene);
+    const [x, z] = toXZ(lon, lat);
+    expect(placed.x).toBeCloseTo(x, 2);
+    expect(placed.z).toBeCloseTo(z, 2);
+    // About 0.84° at 4°E, 58.4°N, a zone's middle meridian 3°E.
+    expect(Math.abs(placed.rotation)).toBeGreaterThan(0.01);
+    const m = geoFrameMatrix(placed, null, new Matrix4());
+    const [xn, zn] = toXZ(lon, lat + 0.01);
+    const north = new Vector3(xn - x, 0, zn - z).normalize();
+    expect(
+      new Vector3(0, 0, -1).transformDirection(m).angleTo(north),
+    ).toBeLessThan(1e-4);
+  });
+
+  it('is placed where each frame has it: a switch of the anchor', () => {
+    const placed = placeGeoPoint(lon, lat, trench);
+    expect(placed.x).toBeCloseTo(0, 2);
+    expect(placed.z).toBeCloseTo(0, 2);
+    // UTM 32N's middle meridian is 9°E: turned the other way, about 4.3°.
+    expect(placed.rotation).toBeLessThan(-0.05);
+  });
+
+  it('stands at the point on the globe, upright and facing true north there', () => {
+    const g = new Globe();
+    g.setFrame(scene);
+    g.setDisc([-4000, -4000, 4000, 4000]);
+    const m = geoFrameMatrix(placeGeoPoint(lon, lat, scene), g, new Matrix4());
+    const at = g.geodetic(lat, lon, 0, new Vector3());
+    // Its origin at the sea's level, where the globe has the point.
+    expect(
+      new Vector3(0, g.level, 0).applyMatrix4(m).distanceTo(at),
+    ).toBeLessThan(0.05);
+    const up = g.upAt(at, new Vector3());
+    expect(new Vector3(0, 1, 0).transformDirection(m).angleTo(up)).toBeLessThan(
+      1e-7,
+    );
+    const north = g.geodetic(lat + 0.01, lon, 0, new Vector3()).sub(at);
+    north.addScaledVector(up, -north.dot(up)).normalize();
+    expect(
+      new Vector3(0, 0, -1).transformDirection(m).angleTo(north),
+    ).toBeLessThan(1e-4);
   });
 });
 
