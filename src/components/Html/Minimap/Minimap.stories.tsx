@@ -6,7 +6,11 @@ import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decor
 import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator';
 import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator';
 import { SceneryGenerators } from '../../../storybook/decorators/scenery-generators';
-import { SCENERY_DEMO_RELIEF_LAYERS } from '../../../storybook/components/scenery-controls';
+import {
+  reportReliefProgress,
+  SCENERY_DEMO_RELIEF_LAYERS,
+} from '../../../storybook/components/scenery-controls';
+import { GeoRelief } from '../../Layers/GeoRelief';
 import { Scenery } from '../../Scenery/Scenery';
 import { SceneryOcean } from '../../Scenery/SceneryOcean';
 import { SceneryStage } from '../../Scenery/SceneryStage';
@@ -149,11 +153,14 @@ const MinimapStory = ({
       <SceneryGenerators>
         <Scenery>
           <SceneryOcean level={LEVEL} depth={DEPTH} />
-          <SceneryStage
-            bounds={STAGE_BOUNDS}
-            relief={{ layers, depth: DEPTH, color: { ramp: 'terrain' } }}
-          />
+          <SceneryStage bounds={STAGE_BOUNDS} />
         </Scenery>
+        <GeoRelief
+          layers={layers}
+          depth={DEPTH}
+          color={{ ramp: 'terrain' }}
+          onProgress={reportReliefProgress}
+        />
         <Minimap
           {...args}
           layers={layers}

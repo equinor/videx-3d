@@ -79,12 +79,30 @@ export type SkyAbyssWallCut = {
 // Of the walls' `distance`, how far inside the hollow the view of the stage must be before
 // the cut is gone: it eases open from where the view grazes their rock to there.
 const SKY_ABYSS_WALL_OPEN_EASE = 0.5;
+// Over how many times their `rimFade` past it the hollow's light fades out beyond the walls'
+// rim: the fade's own and SKY_ABYSS_FADED_OUT more (sky.glsl).
+const SKY_ABYSS_WALL_FADED_OUT = 1 + 2;
 const STAGE_CORNERS: readonly [number, number][] = [
   [1, 1],
   [1, -1],
   [-1, 1],
   [-1, -1],
 ];
+
+// How far out of the stage's rectangle (`centre`, half extents `half`) world X/Z (x, z)
+// lies: below 0 inside it.
+function outOfStage(
+  x: number,
+  z: number,
+  centre: [number, number],
+  half: [number, number],
+) {
+  const dx = Math.abs(x - centre[0]) - half[0];
+  const dz = Math.abs(z - centre[1]) - half[1];
+  return (
+    Math.hypot(Math.max(dx, 0), Math.max(dz, 0)) + Math.min(Math.max(dx, dz), 0)
+  );
+}
 
 /**
  * How far inside the void's hollow the view of the whole stage from a camera at `position`
@@ -110,25 +128,49 @@ export function skyAbyssWallInView(
     walls.flare * Math.max(level - h, 0) -
     walls.wander -
     walls.relief;
-  // Out from the stage's rectangle, world X and Z: below 0 inside it.
-  const out = (x: number, z: number) => {
-    const dx = Math.abs(x - centre[0]) - half[0];
-    const dz = Math.abs(z - centre[1]) - half[1];
-    return (
-      Math.hypot(Math.max(dx, 0), Math.max(dz, 0)) +
-      Math.min(Math.max(dx, dz), 0)
-    );
-  };
   const foot = level - depth;
-  if (height >= foot) return inner(height) - out(position.x, position.z);
+  if (height >= foot)
+    return inner(height) - outOfStage(position.x, position.z, centre, half);
   const t = (foot - height) / (level - height);
   let margin = Infinity;
   for (const [sx, sz] of STAGE_CORNERS) {
     const x = position.x + (centre[0] + sx * half[0] - position.x) * t;
     const z = position.z + (centre[1] + sz * half[1] - position.z) * t;
-    margin = Math.min(margin, inner(foot) - out(x, z));
+    margin = Math.min(margin, inner(foot) - outOfStage(x, z, centre, half));
   }
   return margin;
+}
+
+/**
+ * How much of the void's walls a camera at `position` sees (`uSkyAbyssWallNear`), 1 to 0:
+ * all of them in their hollow and near it, none once it is as far beyond their rim as the
+ * hollow's light reaches (`skyAbyssWallFar`: three times `rimFade` past it, or three times
+ * their `distance` without a fade), easing out between. The rim is their middle at the
+ * camera's depth, leaning out as they do, without its wander; `east`, `north` and `up` lay
+ * out the stage's frame. Far from the anchored stage, under another field, the void is
+ * then the plain one, rather than the rock round the hollow, faded to black.
+ */
+export function skyAbyssWallNear(
+  position: Vector3,
+  east: Vector3,
+  north: Vector3,
+  up: Vector3,
+  walls: SkyAbyssWallCut,
+  rimFade: number,
+) {
+  const depth = Math.max(walls.level - position.dot(up), 0);
+  const beyond =
+    outOfStage(
+      position.dot(east),
+      -position.dot(north),
+      walls.centre,
+      walls.half,
+    ) -
+    walls.distance -
+    walls.flare * depth;
+  const reach =
+    SKY_ABYSS_WALL_FADED_OUT * (rimFade > 0 ? rimFade : walls.distance);
+  return 1 - MathUtils.smoothstep(beyond, 0, reach);
 }
 
 const clipForward = new Vector3();

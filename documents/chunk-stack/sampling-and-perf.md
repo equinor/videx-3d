@@ -45,7 +45,7 @@ type SurfaceSampler = {
   getHeightAt(x, z, surface?): number | null;
   solidAt(x, y, z, floor?): number | null;
   readonly surfaces: string[];
-  // A sampler over tiles streamed by the view (a stage's relief): hold the finest
+  // A sampler over tiles streamed by the view (the relief): hold the finest
   // tiles under these squares in, whatever the view; returns a release.
   pin?(squares: [minX, minZ, maxX, maxZ][]): () => void;
 };

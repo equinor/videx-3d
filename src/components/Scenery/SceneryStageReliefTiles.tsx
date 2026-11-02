@@ -6,10 +6,11 @@ import {
   Matrix4,
   Mesh,
   Texture,
+  Vector2,
   Vector3,
-  Vector4,
 } from 'three';
 import { useGenerator } from '../../hooks/useGenerator';
+import { releaseMaterial } from '../../rendering/precompile';
 import {
   geoReliefTileHeightAt,
   RELIEF_TILE_CELLS,
@@ -45,6 +46,7 @@ import {
   TileTransitions,
 } from '../../sdk/tiles/tile-transitions';
 import { pixelsPerUnit } from '../../sdk/utils/lod';
+import type { Globe } from '../../sdk/projection/globe';
 import { sceneryReliefTile, SceneryReliefTileResponse } from './scenery-defs';
 import type { SceneryMaterial } from './scenery-material';
 import type { SceneryReliefLoading } from './scenery-progress';
@@ -57,6 +59,7 @@ import {
   ReliefSampler,
 } from './scenery-relief-sampler';
 import {
+  createReliefTilePlainMaterial,
   createSceneryReliefTileFromBelowMaterial,
   createSceneryReliefTileMaterial,
   createSceneryReliefTilePatch,
@@ -64,11 +67,13 @@ import {
   createSceneryReliefTileSubset,
   SKY_RELIEF_MAX_TILES,
   SKY_RELIEF_TILE_ATTRIBUTES,
+  SceneryReliefRegion,
   SceneryReliefTileDebug,
   SceneryReliefTileGround,
   SceneryReliefTileGroundTile,
   SceneryReliefTileOccupants,
   SceneryReliefTileTextures,
+  setReliefRegions,
 } from './scenery-relief-tiles';
 import type { SceneryStageBounds } from './scenery-stage';
 import {
@@ -120,6 +125,8 @@ const OVERVIEW_HANDOVER_MIN = 0.8;
 const OVERVIEW_MAX_ENTRIES = 512;
 // A frustum plane every point lies in front of: the overview's frustum has no far plane.
 const NO_PLANE_NORMAL = new Vector3();
+// A draw's hook without a sky: the plain relief reads none of the camera's globe uniforms.
+const NO_DRAW_HOOK = () => {};
 
 // The region the overview's tiles cover (min X, min Z, max X, max Z in `geoTileSquare`'s
 // coordinates), and the deepest tile its index holds over it: no narrower than an entry of
@@ -176,8 +183,13 @@ export type SceneryReliefTileStats = {
 };
 
 type SceneryStageReliefTilesProps = {
-  /** its globe needs a frame (`Globe.setFrame`): the tiles are placed by latitude and longitude */
-  sky: SceneryMaterial;
+  /**
+   * the sky that shades it (sea, air, void), or null to draw it plainly, lit by the scene's
+   * lights (see `createReliefTilePlainMaterial`): a change swaps its materials, its tiles kept
+   */
+  sky: SceneryMaterial | null;
+  /** the globe it lies on, the sky's if any (a `World`'s); it needs a frame (`Globe.setFrame`): the tiles are placed by latitude and longitude */
+  globe: Globe;
   source: ReliefLayersSource;
   /** its looks (`SceneryReliefLooks.texture`): the relief's own and its layers' */
   looks: Texture;
@@ -204,10 +216,27 @@ type SceneryStageReliefTilesProps = {
    * in there), or null where no tile is in.
    */
   cameraGround?: { current: number | null };
-  /** the stage's own area (`bounds`), drawn see-through with `seeThrough` */
+  /** the anchored stage's area (`bounds`), world X/Z: a see-through region with `seeThrough`; none when empty */
   stage: SceneryStageBounds;
-  /** the sea's seabed is see-through (`seabedOpacity` below 1): so is the relief over `stage` */
+  /** the loaded fields (`WorldField`): each a see-through region too, in its own frame (`setReliefRegions`) */
+  fields?: readonly SceneryReliefRegion[];
+  /**
+   * so is the relief over the regions (`stage`, `fields`): with a sky while the sea's seabed
+   * is (`seabedOpacity` below 1), at its opacity; without one at `fieldOpacity`
+   */
   seeThrough: boolean;
+  /**
+   * without a sky, how much of what lies beneath it is hidden, everywhere: below 1 every
+   * tile is drawn see-through, the regions at the lower of this and `fieldOpacity`.
+   * Default 1
+   */
+  opacity?: number;
+  /** without a sky, the same over the regions, drawn see-through with `seeThrough`. Default 1 */
+  fieldOpacity?: number;
+  /** without a sky, draw the ground at or above the sea's level. Default true */
+  land?: boolean;
+  /** without a sky, draw the ground below the sea's level. Default true */
+  seabed?: boolean;
   /** a debug view of the tiles */
   debug?: SceneryReliefTileDebug;
   /**
@@ -236,15 +265,18 @@ export type SceneryReliefTileGroundRequest = {
 };
 
 /**
- * A stage's relief drawn from geographic tiles (see documents/tiles.md and world.md, step
+ * The relief (`GeoRelief`) drawn from geographic tiles (see documents/tiles.md and world.md, step
  * 6): each frame the tiles to draw are chosen by their error and their cells' size on
  * screen, those wanted are loaded from the `sceneryReliefTile` generator, and every tile drawn
  * is one instance of the same patch, its nodes placed by their latitude and longitude on
- * the sky's globe. With a see-through seabed the tiles over the stage's own area are drawn
- * again, see-through, and the opaque draw leaves that area to them.
+ * the globe. With a see-through seabed the tiles over the stage's own area are drawn
+ * again, see-through, and the opaque draw leaves that area to them. With a sky it is shaded
+ * by it, drawn from below as the void's lid and past the far plane as an overview; without
+ * one plainly, and neither. Its tiles stay in whichever.
  */
 export const SceneryStageReliefTiles = ({
   sky,
+  globe,
   source,
   looks,
   reach,
@@ -259,7 +291,12 @@ export const SceneryStageReliefTiles = ({
   onLoading,
   cameraGround,
   stage,
+  fields,
   seeThrough,
+  opacity = 1,
+  fieldOpacity = 1,
+  land = true,
+  seabed = true,
   debug,
   grounds,
   groundLive = false,
@@ -298,44 +335,85 @@ export const SceneryStageReliefTiles = ({
   );
   useEffect(() => () => geometry.dispose(), [geometry]);
 
+  // Without a sky, see-through everywhere below an opacity of 1: one draw of every tile,
+  // instead of the opaque one.
+  const seeAll = !sky && opacity < 1;
   const material = useMemo(
     () =>
-      createSceneryReliefTileMaterial(
-        sky,
-        textures,
-        looks,
-        seeThrough ? 'around' : undefined,
-        debug,
-        occupants,
-      ),
+      sky
+        ? createSceneryReliefTileMaterial(
+            sky,
+            textures,
+            looks,
+            seeThrough ? 'around' : undefined,
+            debug,
+            occupants,
+          )
+        : createReliefTilePlainMaterial(globe, textures, looks, {
+            stage: seeThrough && !seeAll ? 'around' : undefined,
+            debug,
+            land,
+            seabed,
+          }),
     // The sky's defines are compiled in (the seabed's detail, the graticule): new ones need a new material.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sky, textures, looks, definesKey, seeThrough, debug, occupants],
+    [
+      sky,
+      globe,
+      textures,
+      looks,
+      definesKey,
+      seeThrough,
+      seeAll,
+      debug,
+      occupants,
+      land,
+      seabed,
+    ],
   );
-  useEffect(() => () => material.dispose(), [material]);
+  useEffect(() => () => releaseMaterial(gl, material), [gl, material]);
   const seeThroughMaterial = useMemo(
     () =>
-      seeThrough ? createSceneryReliefTileSeeThroughMaterial(material) : null,
-    [material, seeThrough],
+      seeAll
+        ? createSceneryReliefTileSeeThroughMaterial(material, 'all')
+        : seeThrough
+          ? createSceneryReliefTileSeeThroughMaterial(material)
+          : null,
+    [material, seeThrough, seeAll],
   );
-  useEffect(() => () => seeThroughMaterial?.dispose(), [seeThroughMaterial]);
+  useEffect(
+    () => () => {
+      if (seeThroughMaterial) releaseMaterial(gl, seeThroughMaterial);
+    },
+    [gl, seeThroughMaterial],
+  );
   // From under the ground, the void's lid: the same tiles' undersides, drawn instead (see
-  // the frame loop). Compiled with the stage's, hidden or not.
+  // the frame loop). Compiled with the stage's, hidden or not. Without a sky, nothing.
   const belowMaterial = useMemo(
-    () => createSceneryReliefTileFromBelowMaterial(material, abyssWalls),
-    [material, abyssWalls],
+    () =>
+      sky
+        ? createSceneryReliefTileFromBelowMaterial(material, abyssWalls)
+        : null,
+    [sky, material, abyssWalls],
   );
-  useEffect(() => () => belowMaterial.dispose(), [belowMaterial]);
+  useEffect(
+    () => () => {
+      if (belowMaterial) releaseMaterial(gl, belowMaterial);
+    },
+    [gl, belowMaterial],
+  );
   const belowSeeThroughMaterial = useMemo(
     () =>
-      seeThrough
+      belowMaterial && seeThrough
         ? createSceneryReliefTileSeeThroughMaterial(belowMaterial)
         : null,
     [belowMaterial, seeThrough],
   );
   useEffect(
-    () => () => belowSeeThroughMaterial?.dispose(),
-    [belowSeeThroughMaterial],
+    () => () => {
+      if (belowSeeThroughMaterial) releaseMaterial(gl, belowSeeThroughMaterial);
+    },
+    [gl, belowSeeThroughMaterial],
   );
   const aboveMesh = useRef<Mesh>(null);
   const aboveSeeThroughMesh = useRef<Mesh>(null);
@@ -355,20 +433,40 @@ export const SceneryStageReliefTiles = ({
     },
     [subset],
   );
+  // The see-through regions: the anchored stage's area in world X/Z, and each loaded field's
+  // in its own frame, read through its placement each frame.
   const [stageMinX, stageMinZ, stageMaxX, stageMaxZ] = stage;
-  useEffect(() => {
-    (material.uniforms.uReliefStage.value as Vector4).set(
-      stageMinX,
-      stageMinZ,
-      stageMaxX,
-      stageMaxZ,
-    );
-  }, [material, stageMinX, stageMinZ, stageMaxX, stageMaxZ]);
+  const regions = useMemo<SceneryReliefRegion[]>(
+    () => [
+      ...(stageMinX < stageMaxX && stageMinZ < stageMaxZ
+        ? [
+            {
+              bounds: [stageMinX, stageMinZ, stageMaxX, stageMaxZ] as [
+                number,
+                number,
+                number,
+                number,
+              ],
+            },
+          ]
+        : []),
+      ...(fields ?? []),
+    ],
+    [stageMinX, stageMinZ, stageMaxX, stageMaxZ, fields],
+  );
   useEffect(() => {
     material.uniforms.uReliefReach.value = reach;
   }, [material, reach]);
+  // Without a sky, its own opacities, and where its seabed darkens from: its base.
+  const base = source.base;
+  useEffect(() => {
+    const { uReliefOpacity, uReliefBedDepth } = material.uniforms;
+    (uReliefOpacity?.value as Vector2 | undefined)?.set(opacity, fieldOpacity);
+    if (uReliefBedDepth) uReliefBedDepth.value = Math.max(-base, 0);
+  }, [material, opacity, fieldOpacity, base]);
   // Where the tiles draw the seabed, it hides what lies below it by depth (skyOceanCover).
   useEffect(() => {
+    if (!sky) return;
     sky.oceanReliefReach = visible ? reach : 0;
     return () => {
       sky.oceanReliefReach = 0;
@@ -389,8 +487,8 @@ export const SceneryStageReliefTiles = ({
     if (geoPins.current.from !== squares) {
       geoPins.current = {
         from: squares,
-        squares: sky.globe.frame
-          ? squares.map(square => geoSquareOver(sky.globe, square))
+        squares: globe.frame
+          ? squares.map(square => geoSquareOver(globe, square))
           : [],
       };
     }
@@ -471,7 +569,6 @@ export const SceneryStageReliefTiles = ({
   // the ground to settle again. Its tiles are what is in, whatever the GPU holds.
   const [samplerVersion, setSamplerVersion] = useState(0);
   const sampler = useMemo(() => {
-    const globe = sky.globe;
     const there = { latitude: 0, longitude: 0 };
     return createReliefSampler(
       (x, z) => {
@@ -502,7 +599,7 @@ export const SceneryStageReliefTiles = ({
     );
     // A new sampler is the signal to settle again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streaming, level, pins, samplerVersion, sky]);
+  }, [streaming, level, pins, samplerVersion, globe]);
   const announceSampler = useRef(onSampler);
   useEffect(() => {
     announceSampler.current = onSampler;
@@ -575,7 +672,7 @@ export const SceneryStageReliefTiles = ({
     const frustum = new Frustum();
     const eye = { latitude: 0, longitude: 0 };
     const layout: GeoTileView = {
-      globe: sky.globe,
+      globe,
       eye: new Vector3(),
       eyeAt: eye,
       altitude: 0,
@@ -621,9 +718,12 @@ export const SceneryStageReliefTiles = ({
       matrix: new Matrix4(),
       eye,
       warp: new Matrix4(),
-      stage: {
-        key: '',
-        square: [0, 0, 0, 0] as [number, number, number, number],
+      regions: {
+        // Each region's box in world X/Z (setReliefRegions), and the geographic squares
+        // over them, found again when the boxes or the globe change.
+        boxes: [] as [number, number, number, number][],
+        squaresKey: '',
+        squares: [] as [number, number, number, number][],
       },
       layout,
       tiles: geoTileLayout(layout),
@@ -643,7 +743,7 @@ export const SceneryStageReliefTiles = ({
       },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- its duration is set each frame
-  }, [sky]);
+  }, [globe]);
   const tiles = geometry.getAttribute('reliefTile') as InstancedBufferAttribute;
   const chis = geometry.getAttribute(
     'reliefTileChi',
@@ -660,7 +760,6 @@ export const SceneryStageReliefTiles = ({
 
   useFrame(({ camera, size, viewport }) => {
     const { streamer, slotOf } = streaming;
-    const globe = sky.globe;
     // Placed by latitude and longitude: nothing without the map the scene is in.
     if (!globe.frame) {
       geometry.instanceCount = 0;
@@ -696,7 +795,8 @@ export const SceneryStageReliefTiles = ({
     }
     if (cameraGround) cameraGround.current = ground;
     // Under it — in the void, or in rock above the sea's own seabed — the relief is the
-    // void's lid: its undersides are drawn instead of its tops.
+    // void's lid: its undersides are drawn instead of its tops. Without a sky, nothing is:
+    // what lies under the ground is seen unhindered.
     const under = ground !== null && y < ground;
     for (const [mesh, shows] of [
       [aboveMesh, !under],
@@ -711,7 +811,7 @@ export const SceneryStageReliefTiles = ({
     // the disc's flat sea, over which a view runs on level.
     let seen = reach;
     let horizon = Infinity;
-    if (sky.globeEnabled) {
+    if (globe.enabled) {
       const R = globe.radius;
       horizon =
         globe.discRadius +
@@ -719,15 +819,15 @@ export const SceneryStageReliefTiles = ({
         Math.sqrt(2 * R * Math.max(streaming.reached.highest, 0));
       seen = Math.min(reach, horizon);
     }
-    // The ground in view reaches past the tiles: the overview draws it.
-    overviewState.beyond = horizon > reach;
+    // The ground in view reaches past the tiles: with a sky, the overview draws it.
+    overviewState.beyond = !!sky && horizon > reach;
     overviewState.lowest = streaming.reached.lowest;
     // Toward their reach, where the overview takes over, the tiles take its rules, eased in
     // from half the reach: cells as fine on screen as its (as it last chose them), and every
     // tile split by them where it colours by height — with the water off, or above the sea —
     // so the two meet at the same detail. Nearer, as before. Not if that would want more
-    // than their share of the slots (below).
-    const wet = sky.oceanWater;
+    // than their share of the slots (below). Without a sky there is no water.
+    const wet = sky?.oceanWater ?? false;
     let easing = overviewState.beyond;
     const towardOverview = (distance: number) =>
       easing ? Math.min(Math.max((2 * distance) / reach - 1, 0), 1) : 0;
@@ -775,7 +875,16 @@ export const SceneryStageReliefTiles = ({
     // here once the swaps' blends are done (GeoPolygons does the same).
     const e = view.matrix.elements;
     const pinnedNow = pinnedSquares();
-    const chosenKey = `${e.join(',')}|${size.width}x${size.height}x${viewport.dpr}|${streaming.resident.changes}|${y}|${seen}|${pixelError}|${cellPixels}|${transition}|${under}|${globe.version}|${groundsKey}|${groundLive}|${visible}|${!!seeThroughMaterial}|${stageMinX},${stageMinZ},${stageMaxX},${stageMaxZ}|${sky.oceanWater}`;
+    // The see-through regions, where they lie now (a switch of the anchor moves them): every
+    // frame, a handful of matrices, into the uniforms the materials share.
+    setReliefRegions(
+      material.uniforms,
+      regions,
+      [camera.position.x, camera.position.z],
+      view.regions.boxes,
+    );
+    const regionKey = `${view.regions.boxes.map(box => box.join(',')).join(';')}|${globe.version}`;
+    const chosenKey = `${e.join(',')}|${size.width}x${size.height}x${viewport.dpr}|${streaming.resident.changes}|${y}|${seen}|${pixelError}|${cellPixels}|${transition}|${under}|${globe.version}|${groundsKey}|${groundLive}|${visible}|${!!seeThroughMaterial}|${seeAll}|${regionKey}|${wet}|${!!sky}`;
     if (
       chosenKey === view.chosen.key &&
       pinnedNow === view.chosen.pins &&
@@ -854,7 +963,7 @@ export const SceneryStageReliefTiles = ({
       // Land is coloured by its height per pixel, and with the water off so is the seabed:
       // their cells split by their size on screen however flat. Under the water only a
       // slope's shading would show — and the water hides it.
-      const water = sky.oceanWater;
+      const water = wet;
       const overviewInfo = (key: number) => {
         const known = info(key);
         if (!known) return undefined;
@@ -1099,20 +1208,16 @@ export const SceneryStageReliefTiles = ({
       }
     }
 
-    // The tiles that touch the stage's area, again, for the see-through draw.
+    // The tiles that touch any region, again, for the see-through draw: each once.
     let inStage = 0;
-    if (seeThroughMaterial) {
-      const stageKey = `${stageMinX},${stageMinZ},${stageMaxX},${stageMaxZ},${globe.discCentre.x},${globe.radius}`;
-      if (view.stage.key !== stageKey) {
-        view.stage.key = stageKey;
-        view.stage.square = geoSquareOver(globe, [
-          stageMinX,
-          stageMinZ,
-          stageMaxX,
-          stageMaxZ,
-        ]);
+    if (seeThroughMaterial && !seeAll) {
+      if (view.regions.squaresKey !== regionKey) {
+        view.regions.squaresKey = regionKey;
+        view.regions.squares = view.regions.boxes.map(box =>
+          geoSquareOver(globe, box),
+        );
       }
-      const [s0, t0, s1, t1] = view.stage.square;
+      const squares = view.regions.squares;
       const into = SKY_RELIEF_TILE_ATTRIBUTES.map(name => {
         const attribute = subset.getAttribute(name) as InstancedBufferAttribute;
         const from = geometry.getAttribute(name) as InstancedBufferAttribute;
@@ -1125,7 +1230,11 @@ export const SceneryStageReliefTiles = ({
       });
       for (let i = 0; i < count; i++) {
         const [a, b, width] = geoTileSquare(drawnKeys[i]);
-        if (a >= s1 || b >= t1 || a + width <= s0 || b + width <= t0) continue;
+        const over = squares.some(
+          ([s0, t0, s1, t1]) =>
+            a < s1 && b < t1 && a + width > s0 && b + width > t0,
+        );
+        if (!over) continue;
         for (const { step, to, from } of into)
           to.set(from.subarray(step * i, step * (i + 1)), step * inStage);
         inStage++;
@@ -1144,7 +1253,7 @@ export const SceneryStageReliefTiles = ({
     // metres about the region's middle (the warp's coordinates), the warp from the world's
     // X/Z fitted when the region or the globe changes.
     for (const handout of handed) {
-      const globeKey = `${globe.discCentre.x},${globe.discCentre.z},${globe.radius},${globe.enabled}`;
+      const globeKey = `${globe.version}`;
       if (handout.globeKey !== globeKey) {
         handout.globeKey = globeKey;
         handout.square = geoSquareOver(globe, handout.bounds);
@@ -1232,44 +1341,51 @@ export const SceneryStageReliefTiles = ({
   });
 
   // Shown each frame: the tops from above the ground, the undersides from under it; and
-  // past the tiles' reach, the overview.
+  // past the tiles' reach, the overview. With a sky, each draw sets its camera's uniforms.
+  const beforeDraw = sky ? sky.onBeforeDraw : NO_DRAW_HOOK;
+  const aboveMaterial =
+    seeAll && seeThroughMaterial ? seeThroughMaterial : material;
   return (
     <>
-      <SceneryStageReliefOverview
-        sky={sky}
-        atlas={overviewAtlas}
-        told={overviewState}
-        base={source.base}
-        looks={looks}
-        reach={reach}
-        definesKey={definesKey}
-        skyOrder={skyOrder}
-        visible={visible}
-      />
+      {sky && (
+        <SceneryStageReliefOverview
+          sky={sky}
+          atlas={overviewAtlas}
+          told={overviewState}
+          base={source.base}
+          looks={looks}
+          reach={reach}
+          definesKey={definesKey}
+          skyOrder={skyOrder}
+          visible={visible}
+        />
+      )}
       <mesh
         ref={aboveMesh}
         geometry={geometry}
-        material={material}
+        material={aboveMaterial}
         frustumCulled={false}
         visible={false}
-        onBeforeRender={sky.onBeforeDraw}
+        onBeforeRender={beforeDraw}
       />
-      <mesh
-        ref={belowMesh}
-        geometry={geometry}
-        material={belowMaterial}
-        frustumCulled={false}
-        visible={false}
-        onBeforeRender={sky.onBeforeDraw}
-      />
-      {seeThroughMaterial && (
+      {belowMaterial && (
+        <mesh
+          ref={belowMesh}
+          geometry={geometry}
+          material={belowMaterial}
+          frustumCulled={false}
+          visible={false}
+          onBeforeRender={beforeDraw}
+        />
+      )}
+      {seeThroughMaterial && !seeAll && (
         <mesh
           ref={aboveSeeThroughMesh}
           geometry={subset}
           material={seeThroughMaterial}
           frustumCulled={false}
           visible={false}
-          onBeforeRender={sky.onBeforeDraw}
+          onBeforeRender={beforeDraw}
         />
       )}
       {belowSeeThroughMaterial && (
@@ -1279,7 +1395,7 @@ export const SceneryStageReliefTiles = ({
           material={belowSeeThroughMaterial}
           frustumCulled={false}
           visible={false}
-          onBeforeRender={sky.onBeforeDraw}
+          onBeforeRender={beforeDraw}
         />
       )}
     </>

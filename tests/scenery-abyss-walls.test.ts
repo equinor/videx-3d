@@ -10,6 +10,7 @@ import {
   skyAbyssWallGrid,
   skyAbyssWallInView,
   skyAbyssWallLap,
+  skyAbyssWallNear,
   skyAbyssWallReach,
 } from '../src/components/Scenery/scenery-abyss-walls';
 
@@ -312,5 +313,90 @@ describe('skyAbyssWallInView', () => {
 
   it('is -Infinity from above the lid', () => {
     expect(skyAbyssWallInView(new Vector3(0, 0, 0), up, walls)).toBe(-Infinity);
+  });
+});
+
+describe('skyAbyssWallNear', () => {
+  const up = new Vector3(0, 1, 0);
+  const east = new Vector3(1, 0, 0);
+  const north = new Vector3(0, 0, -1);
+  const walls: SkyAbyssWallCut = {
+    centre: [5000, -3000],
+    half: [8000, 4000],
+    level: -100,
+    depth: 20000,
+    cutDistance: 4800,
+    distance: 10500,
+    flare: 0.3,
+    wander: 4000,
+    relief: 5200,
+  };
+  const rimFade = 20000;
+  // Due east of the stage, `beyond` past the rim `depth` below the lid.
+  const at = (beyond: number, depth = 0) =>
+    new Vector3(
+      walls.centre[0] +
+        walls.half[0] +
+        walls.distance +
+        walls.flare * depth +
+        beyond,
+      walls.level - depth,
+      walls.centre[1],
+    );
+  const near = (p: Vector3, fade = rimFade) =>
+    skyAbyssWallNear(p, east, north, up, walls, fade);
+
+  it('sees all of them in the hollow and on its rim, from above the lid too', () => {
+    expect(near(new Vector3(walls.centre[0], -2000, walls.centre[1]))).toBe(1);
+    expect(near(new Vector3(walls.centre[0], 500, walls.centre[1]))).toBe(1);
+    expect(near(at(0, 3000))).toBe(1);
+    expect(near(at(-1, 3000))).toBe(1);
+  });
+
+  it('leans out with the rim as it deepens', () => {
+    expect(near(at(1000, 3000))).toBeCloseTo(near(at(1000, 0)), 12);
+    expect(near(at(1000, 3000))).toBeLessThan(1);
+  });
+
+  it('eases out to none three fades beyond the rim', () => {
+    const half = near(at(1.5 * rimFade));
+    expect(half).toBeCloseTo(0.5, 12);
+    expect(near(at(2.9 * rimFade))).toBeGreaterThan(0);
+    expect(near(at(3 * rimFade))).toBe(0);
+    expect(near(new Vector3(123000, -1000, -7000))).toBe(0);
+    let last = 1;
+    for (let b = 0; b <= 3 * rimFade; b += 1000) {
+      const n = near(at(b));
+      expect(n).toBeLessThanOrEqual(last);
+      last = n;
+    }
+  });
+
+  it('without a fade, over three times their distance', () => {
+    expect(near(at(1.5 * walls.distance), 0)).toBeCloseTo(0.5, 12);
+    expect(near(at(3 * walls.distance), 0)).toBe(0);
+  });
+
+  it('lays the stage out along its own east and north', () => {
+    // Turned a quarter: the stage's east is world -Z, its north world -X.
+    const p = new Vector3(
+      walls.centre[1] + 3000,
+      -500,
+      -(walls.centre[0] + 30000),
+    );
+    const turned = skyAbyssWallNear(
+      p,
+      new Vector3(0, 0, -1),
+      new Vector3(-1, 0, 0),
+      up,
+      walls,
+      rimFade,
+    );
+    const straight = near(
+      new Vector3(walls.centre[0] + 30000, -500, walls.centre[1] + 3000),
+    );
+    expect(turned).toBeCloseTo(straight, 12);
+    expect(straight).toBeGreaterThan(0);
+    expect(straight).toBeLessThan(1);
   });
 });

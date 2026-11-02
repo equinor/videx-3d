@@ -81,10 +81,10 @@ export function drawOverSea(
 }
 
 /**
- * What a geographic layer is placed on: the globe — the enclosing `Scenery`'s, else the
- * enclosing `World`'s — and the sea's level; or, with neither, a globe of its own that does
- * not curve, laid on `frame` (default the `World`'s), its sea at Y 0. Null without any
- * frame: nothing tells where the scene lies on the Earth.
+ * What a geographic layer is placed on: the globe — the enclosing `World`'s, else the
+ * enclosing `Scenery`'s — and the sea's level; or, with neither, a globe of its own that does
+ * not curve, laid on `frame`, its sea at Y 0. Null without any frame: nothing tells where the
+ * scene lies on the Earth.
  *
  * @group Layers
  */
@@ -94,8 +94,8 @@ export function useLayerGlobe(frame?: GeoFrame): {
 } | null {
   const ocean = useSceneryOcean();
   const world = useWorld();
-  const shared = ocean?.material.globe ?? world?.globe ?? null;
-  const own = frame ?? world?.frame ?? null;
+  const shared = world?.globe ?? ocean?.material.globe ?? null;
+  const own = frame ?? null;
   const frameKey = own ? JSON.stringify(own) : '';
   const flat = useMemo(() => {
     if (shared || !frameKey) return null;

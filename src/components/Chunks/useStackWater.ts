@@ -1,6 +1,7 @@
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo } from 'react';
 import { IUniform, Vector4 } from 'three';
+import { releaseMaterial } from '../../rendering/precompile';
 import {
   createOceanContactRegistry,
   OceanContactRegistry,
@@ -15,6 +16,7 @@ import { OceanVolumeMaterial } from '../Ocean/ocean-volume-material';
 import { ChunkDepthMap } from './chunk-depth-map';
 import { StackWater } from './chunk-defs';
 import { ChunkFenceUniforms } from './chunk-material';
+import { CHUNK_MATERIAL_LINGER } from './chunk-resources';
 
 /** What a {@link ChunkStackProps.water} sea is drawn and sampled with. */
 export type StackWaterMaterials = {
@@ -63,6 +65,7 @@ export function useStackWater(
 ): StackWaterMaterials | null {
   const enabled = !!water;
   const level = -(water?.depth ?? 0);
+  const gl = useThree(state => state.gl);
 
   const contacts = useMemo(createOceanContactRegistry, []);
 
@@ -92,12 +95,15 @@ export function useStackWater(
 
   useEffect(() => {
     if (!materials) return;
+    // Let go once their programs have linked, and kept a while for the next build's to take
+    // them over (`releaseMaterial`): the bathymetry comes with each build.
     return () => {
-      materials.surface.dispose();
-      materials.volume.dispose();
-      materials.face?.dispose();
+      const release = { linger: CHUNK_MATERIAL_LINGER };
+      releaseMaterial(gl, materials.surface, release);
+      releaseMaterial(gl, materials.volume, release);
+      if (materials.face) releaseMaterial(gl, materials.face, release);
     };
-  }, [materials]);
+  }, [gl, materials]);
 
   useEffect(() => {
     if (!materials || !water) return;

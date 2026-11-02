@@ -37,6 +37,7 @@ import {
 } from '../../sdk/tiles/tile-transitions';
 import { pixelsPerUnit } from '../../sdk/utils/lod';
 import { useSceneryOcean } from '../Scenery/scenery-context';
+import { useWorldRelief } from '../World/world-relief';
 import {
   createGeoTileMaterial,
   createGeoTilePatch,
@@ -227,7 +228,9 @@ export const GeoTileLayer = ({
   const globe = placed?.globe ?? null;
   const ocean = useSceneryOcean();
   const sky = water === 'fog' && ocean ? ocean.material : null;
-  const hub = drape && ocean ? ocean.reliefTiles : null;
+  // The relief's tiles drawn: the World's, else the sky's.
+  const reliefTiles = useWorldRelief()?.tiles ?? ocean?.reliefTiles ?? null;
+  const hub = drape ? reliefTiles : null;
   const size = source?.size ?? 1;
   const formatKey = JSON.stringify(source?.format ?? {});
 
@@ -509,7 +512,7 @@ export const GeoTileLayer = ({
     // still costs nothing, once the swaps' blends are done.
     const { streamer, slotOf, resident } = streaming;
     const e = view.matrix.elements;
-    const chosenKey = `${e.join(',')}|${canvas.width}x${canvas.height}x${viewport.dpr}|${resident.changes}|${laid}|${relief ? relief.resident : '-'}|${texelPixels}|${fallbackPixels}|${minDepth}|${maxDepth}|${globe.discCentre.x},${globe.discCentre.z},${globe.radius},${globe.enabled}`;
+    const chosenKey = `${e.join(',')}|${canvas.width}x${canvas.height}x${viewport.dpr}|${resident.changes}|${laid}|${relief ? relief.resident : '-'}|${texelPixels}|${fallbackPixels}|${minDepth}|${maxDepth}|${globe.version}`;
     const choose = chosenKey !== view.chosen.key;
     if (!choose && !transitions.active) return;
     view.chosen.key = chosenKey;

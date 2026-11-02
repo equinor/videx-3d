@@ -1,4 +1,4 @@
-// A stage's relief drawn from tiles (RELIEF_TILES): the height and the normal under a
+// The relief drawn from tiles (RELIEF_TILES): the height and the normal under a
 // pixel, from the tile it lies on. Stands in for relief-atlas.glsl's lookup in
 // relief-fragment.glsl, which the overview past the tiles reads the same tiles through.
 
@@ -106,18 +106,39 @@ float reliefTileGroundAt(vec3 p) {
   return reliefTileHeightAt(node) >= 0.0 ? 1.0 : 0.0;
 }
 
-// The stage's area (SceneryStage `bounds`), min X/Z and max X/Z.
-uniform vec4 uReliefStage;
+// The see-through regions (setReliefRegions): the anchored stage's area and each loaded
+// field's, each tested in its own frame — world to the field's group, as it is placed on the
+// globe — against its area there, min X/Z and max X/Z. Not by latitude and longitude: a
+// field's rectangle is turned from the graticule by its grid's convergence.
+#define RELIEF_MAX_REGIONS 8
+uniform int uReliefRegionCount;
+uniform mat4 uReliefRegions[RELIEF_MAX_REGIONS];
+uniform vec4 uReliefRegionBounds[RELIEF_MAX_REGIONS];
+
+// Whether `world` lies in any region: counted once where they overlap.
+bool reliefTileInRegion(vec3 world) {
+  bool inside = false;
+  for(int i = 0; i < RELIEF_MAX_REGIONS; i++) {
+    if(i >= uReliefRegionCount)
+      break;
+    vec3 p = (uReliefRegions[i] * vec4(world, 1.0)).xyz;
+    vec4 area = uReliefRegionBounds[i];
+    inside = inside || (p.x >= area.x && p.z >= area.y && p.x < area.z && p.z < area.w);
+  }
+  return inside;
+}
 
 // Whether this pixel is the other draw's: with a see-through seabed, the opaque tiles leave
-// the stage's area to the see-through draw, which keeps it alone — without skirts, as two
-// see-through skirts over each other would show as a line.
-bool reliefTileLeftToOther(vec2 xz) {
-  bool inside = all(greaterThanEqual(xz, uReliefStage.xy)) && all(lessThan(xz, uReliefStage.zw));
+// the regions to the see-through draw, which keeps them alone — without skirts, as two
+// see-through skirts over each other would show as a line. RELIEF_SEE_THROUGH_ALL draws
+// every tile see-through, none left to another draw, its skirts left out as well.
+bool reliefTileLeftToOther(vec3 world) {
   #if defined(RELIEF_STAGE_AROUND)
-  return inside;
+  return reliefTileInRegion(world);
+  #elif defined(RELIEF_SEE_THROUGH_ALL)
+  return vReliefSkirt > 0.0;
   #elif defined(RELIEF_SEE_THROUGH)
-  return !inside || vReliefSkirt > 0.0;
+  return !reliefTileInRegion(world) || vReliefSkirt > 0.0;
   #else
   return false;
   #endif

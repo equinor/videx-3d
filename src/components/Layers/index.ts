@@ -1,5 +1,6 @@
 export * from './GeoLabels';
 export * from './GeoPolygons';
+export * from './GeoRelief';
 export * from './GeoSymbols';
 export * from './GeoTileLayer';
 export * from './GeoTubes';

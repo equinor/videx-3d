@@ -1,43 +1,48 @@
-# Relief: land and seabed around the stage
+# Relief: land and seabed from your own elevation data
 
-A `SceneryStage` can put land and seabed from your own elevation data around the scene: a
-`relief`, merged from several data sets at once — global, regional, local — and drawn from
-tiles, as fine as the data where the camera is and no finer anywhere else. Below sea level
-it is the seabed, seen through the water as the stage's own seabed is; above sea level it
-is land, lit by the sky's sun and fading into the air as the far sea does. It covers
-everything out to the sea's horizon, the stage's own area and its occupants included, and
-with the sky's `globe` falls away with the Earth's curve, so coasts and mountains
-stand on the horizon where they should. It is off by default.
+A `GeoRelief` puts land and seabed from your own elevation data on the Earth: merged from
+several data sets at once — global, regional, local — and drawn from tiles, as fine as the
+data where the camera is and no finer anywhere else. It is Earth data, as the geographic
+layers are: placed by latitude and longitude on the `World`'s globe, anywhere inside the
+`World`, beside the `Scenery` or in it. With a `Scenery` and its sea, below sea level it is
+the seabed, seen through the water as the stage's own seabed is; above sea level it is land,
+lit by the sky's sun and fading into the air as the far sea does. It covers everything out
+to the sea's horizon, the stage's own area and its occupants included, and on a curved
+globe falls away with the Earth's curve, so coasts and mountains stand on the horizon where
+they should. Without a `Scenery` it is drawn plainly, lit by the scene's lights, at an
+`opacity` of its own (and a `fieldOpacity` over the fields: the `World`'s `bounds` and each
+field loaded in it), its land and seabed
+each on or off ([Without a Scenery](#without-a-scenery)), and its tiles stay in as a
+`Scenery` comes and goes.
 
 ```tsx
-<World frame={geoFrameFromCrs(crs)}>
+<World frame={geoFrameFromCrs(crs)} bounds={[minX, minZ, maxX, maxZ]}>
   <Scenery>
     <SceneryOcean level={0} depth={120} />
-    <SceneryStage
-      bounds={[minX, minZ, maxX, maxZ]}
-      occupants={[{ outline, onStage, onGround }]}
-      relief={{
-        // read in the World's frame; or a `frame` of its own (`geoFrameAt` about a point)
-        // coarse to fine: later layers win where they have data
-        layers: [
-          { id: 'etopo-2022-nordic' },
-          { id: 'emodnet-2020-sw-norway', feather: 1500 },
-          { id: 'my-survey', feather: 500 },
-        ],
-        depth: 100, // the flat seabed where no layer has data; default the sea's depth
-        color: { ramp: 'terrain', seabed: { ramp: 'bathymetry' } },
-        contours: { interval: 100, major: 5 },
-        layerLooks: { 'my-survey': { color: { ramp: 'rainbow', min: -130, max: -60 } } },
-      }}
-    />
+    <SceneryStage occupants={[{ outline, onStage, onGround }]} />
   </Scenery>
+  <GeoRelief
+    // laid out on the World's globe, by latitude and longitude
+    // coarse to fine: later layers win where they have data
+    layers={[
+      { id: 'etopo-2022-nordic' },
+      { id: 'emodnet-2020-sw-norway', feather: 1500 },
+      { id: 'my-survey', feather: 500 },
+    ]}
+    depth={100} // the flat seabed where no layer has data; default the sea's depth
+    color={{ ramp: 'terrain', seabed: { ramp: 'bathymetry' } }}
+    contours={{ interval: 100, major: 5 }}
+    layerLooks={{ 'my-survey': { color: { ramp: 'rainbow', min: -130, max: -60 } } }}
+    onProgress={reportReliefProgress} // its tiles loading, for a progress display
+  />
 </World>
 ```
 
-Without a relief the stage draws a flat seabed at the sea's depth, and its occupants draw
-their own. With one, the relief is the ground over the occupants too: a `ChunkStack`
-builds its column's top on it, ends its faces where it is drawn and places what stands on
-it by its sampler. See [tiles.md](./tiles.md) for the design and the bridge to the chunks.
+Without one the stage draws a flat seabed at the sea's depth, and its occupants draw their
+own. With one, the relief is the ground over the occupants too: a `ChunkStack` builds its
+column's top on it, ends its faces where it is drawn and places what stands on it by its
+sampler. See [tiles.md](./tiles.md) for the design and the bridge to the chunks. One
+`GeoRelief` with layers to a `World`.
 
 ## Data
 
@@ -62,20 +67,21 @@ finer survey merges into the one under it without a step.
 
 The `sceneryReliefTile` generator (`generateSceneryReliefTile`) builds each tile where the
 generators run: it reads the blocks it needs from every layer, projects them into the
-scene and merges them, so the stage needs a `GeneratorsProvider`. Nest a second provider
-around the `Scenery`, on a worker of its own, and the tiles stream while a column builds on
-the other.
+scene and merges them, so the relief needs a `GeneratorsProvider`. Nest a second provider
+around the `GeoRelief` (and the `Scenery`), on a worker of its own, and the tiles stream while
+a column builds on the other.
 
-`frame` says where the scene lies on the map, a `GeoFrame`: the projection it is drawn in
-and the map coordinates of its origin, as a `UtmArea` places a scene (scene X east, scene Z
-south). By default it is the enclosing `World`'s, which also gives the sky's `observer` its
-place and places each field, so the fields, the relief and the sun agree from one value
+Where the scene lies on the map is the enclosing `World`'s `frame`, a `GeoFrame`: the
+projection it is drawn in and the map coordinates of its origin, as a `UtmArea` places a
+scene (scene X east, scene Z south). It also gives the sky's `observer` its place and places
+each field, so the fields, the relief and the sun agree from one value
 ([world.md](./world.md#10-step-3-in-detail-fields-placed-on-the-earth)).
 `geoFrameFromCrs(crs)` gives the frame of a scene a `UtmArea` places with `crs`;
 `geoFrameAt(longitude, latitude)` gives a transverse Mercator map about a point, for a
 scene placed by its longitude and latitude only. The relief is laid out in that frame, the
 chosen field's, where it meets the field's column exactly; a field placed in another frame
-meets it to its placement's precision (about 10 cm 5 km around, 120 km off).
+meets it to its placement's precision (about 10 cm 5 km around, 120 km off). Without a
+`World` no relief is drawn.
 
 ### The demo reliefs
 
@@ -91,8 +97,14 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
 
 ## How it fits the stage
 
-- The relief is the stage's seabed, everywhere. Over `bounds` it is see-through at the
-  sea's `seabedOpacity`; around it, always opaque.
+- With a `SceneryStage`, the relief is its seabed, everywhere. Over the stage's `bounds`, and
+  over every field loaded in the `World` (each `UtmArea` with `bounds`, in its own frame;
+  `useWorldFields`), it is see-through at the sea's `seabedOpacity`, so a neighbour's wells
+  under its seabed show too; around them, always opaque. Up to eight such regions
+  (`SKY_RELIEF_MAX_REGIONS`), the eight nearest the camera when there are more, each tested
+  in its own field's frame, turned as it is (`reliefTileInRegion`). The stage hands the
+  `World` what only it has — its area, its occupants' outlines and cut, their ground — and the
+  relief takes them from there.
 - Over each occupant's `outline` the cutaway takes the water but not the ground. The
   relief stays whole under an occupant's `cut` unless its `keepBed` is off; then it is cut
   with the occupant inside the outline (one occupant at most).
@@ -101,12 +113,13 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
   relief's `onSampler` hands out its sampler (`ReliefSampler`), which answers from the
   finest tiles in, as their triangles draw them; what is placed with it pins the finest
   tiles under it, whatever the view.
-- Each time it chooses, it tells the tiles it draws to its `Scenery`'s
-  `SceneryOceanState.reliefTiles` (a `SceneryReliefHub`: the heights' texture array, per
+- Each time it chooses, it tells the tiles it draws to its `World`
+  (`WorldReliefState.tiles`, `useWorldRelief`; a `Scenery` in the `World` hands on the same as
+  `SceneryOceanState.reliefTiles`): a `SceneryReliefHub` — the heights' texture array, per
   tile drawn its slot, the tile it blends from and how far, and the ground's range over any
-  geographic tile), so a tiled layer inside
-  the `Scenery` lies on it exactly (`drape`, see [layers.md](./layers.md#on-the-relief-drape)).
-  One stage's relief at a time. Its `keysVersion` changes only when the set of tiles drawn
+  geographic tile — so a tiled layer in the `World` lies on it exactly (`drape`, see
+  [layers.md](./layers.md#on-the-relief-drape)).
+  One relief at a time. Its `keysVersion` changes only when the set of tiles drawn
   does (its `index` and `ancestors` are kept meanwhile), so what was found over them is
   looked for again only then (`GeoTubes`' nodes).
 - `color` and `contours`: see [Colour and contours](#colour-and-contours).
@@ -123,7 +136,8 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
   camera, so the ground holds still against the sea from anywhere. What is drawn flat
   beyond the disc stands off it unless placed on the globe (`SceneryAnchor`, `applyGlobe`; see
   [scenery.md](./scenery.md#the-globe)).
-- The ground under the camera is the sky's (`oceanGround`), sampled on the triangles drawn:
+- The ground under the camera is the sky's (`oceanGround`, which the `Scenery` takes from the
+  `World`'s relief each frame), sampled on the triangles drawn:
   under the relief the camera is in the ground, for the lighting and the void — below the
   sea, and in land above it too — and over it in the water, however deep (a trench below
   the sea's `depth`: `SceneryMaterial.oceanTrench`). Under it the relief is the void's lid:
@@ -131,15 +145,71 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
   above the sea's own seabed (`SceneryMaterial.oceanBuried`) none of the sea or the
   overview is drawn: the sky shows the void as from just below the sea's seabed and the
   scene is lit as the subsurface, so from inside a hill the data is seen in rock rather
-  than the sea through it. ⚠️ The void is laid out in the field's frame: far from the
-  field (any hill on land, from Volve) it is black. The lid leaves pixels to the background
+  than the sea through it. The void is the same under any field: its gradient and its lid
+  are laid out by the camera's own up (the look frame), the lid as deep over the camera as
+  it is under the seabed on the globe, and the void's walls stay with the anchored stage,
+  left out far from it (`uSkyAbyssWallNear`; see [scenery.md](./scenery.md)). The lid
+  leaves pixels to the background
   (toward the horizon, and to the walls), so what lies above it is hidden by not being
   drawn, not by depth: the sea surface hides itself, and the geographic layers do the same
   (`sceneryLidOverCamera`, `layerShownAt`; see
   [layers.md](./layers.md#when-a-layer-is-drawn)).
 - From in the water, land is seen through the water as the seabed is.
-- `debug.hide: ['relief']` hides it, like the stage's other layers; `debug.relief`
-  shows its tiles by depth (`'tiles'`) or which layer gave each node (`'layers'`).
+- `visible={false}` hides it, its tiles kept in; `debug` shows its tiles by depth
+  (`'tiles'`) or which layer gave each node (`'layers'`).
+- Its tiles loading reports through its own `onProgress` (`ProgressStore.source`), not the
+  `Scenery`'s.
+
+## Without a Scenery
+
+The relief is Earth data, and a host may show it with the scenery off: bathymetry and
+topography under its data, nothing of the sky in the way (world.md, step 7d-2).
+
+```tsx
+<World frame={frame} bounds={bounds}>
+  <ambientLight intensity={0.5} />
+  <directionalLight position={[-1, 2, -3]} />
+  <GeoRelief layers={layers} color="ramp" fieldOpacity={0.3} land={false} />
+  {data}
+</World>
+```
+
+- **Drawn plainly** (`relief-plain-fragment.glsl`): its looks as with a sky (the same table,
+  `relief-look.glsl`), lit by the scene's lights — the host's: without any it is black. Where
+  the look gives the seabed no ramp it is the sea's default seabed (`sceneryDefaults.ocean.seabed`:
+  its colour, shine and ambient), darkening from the relief's `depth` down. No water over the
+  seabed, no air, no graticule, no night side: nothing of the sky.
+- **To the far plane only:** no overview past it (that is the sky's; see
+  [The far plane](#the-far-plane)).
+- **Nothing from under the ground:** with the camera below the relief nothing of it is
+  drawn, so what lies under the seabed is seen unhindered. With a `Scenery` it is the void's
+  lid there, as before.
+- **Its opacity** (default 1 each):
+  - `opacity`: everywhere. Below 1 every tile is drawn see-through, in one draw instead of
+    the opaque one (`RELIEF_SEE_THROUGH_ALL`).
+  - `fieldOpacity`: over the fields — the anchored stage's area (the `World`'s `bounds`) and
+    each field loaded in the `World` (a `UtmArea` with `bounds`), in its own frame — so the
+    data under the seabed there shows through it; the lower of the two there. At `opacity` 1
+    the tiles around are drawn opaque and those over the fields again, see-through, as with
+    a sky.
+  - Without `bounds` or a field loaded, `fieldOpacity` has nowhere to apply. Its skirts are
+    left out of a see-through draw (two over each other would show as a line), so a crack
+    between tiles of different detail may show as a hairline.
+  - With a `Scenery` the sky decides instead: the sea's `seabedOpacity`, over the same fields.
+- **Its land and its seabed** (`land`, `seabed`, default true): either left out, by the
+  ground's height against the sea's level — on a skirt, the tile's edge it hangs from — so
+  the seabed alone shows the bathymetry with the coast cut clean. A define each: a change
+  recompiles. With a `Scenery` the sky decides.
+- **Its tiles stay in** as a `Scenery` comes and goes, and through a `Suspense` (an HDR
+  environment loading, say), which tears down layout effects while what suspended loads —
+  the `World`'s knowing it is there among them: it stays mounted whenever it has layers in a
+  `World`, drawn once the `World` knows. Only its materials are made again (compiled once each
+  way), its tiles, its sampler, its ground handed out and what lies on it (`drape`) carry on.
+  Its `depth` defaults to the sea's, as a `Scenery` last gave it (`sceneryDefaults.ocean.depth`
+  until one does): a `Scenery` with another depth coming in loads the tiles again, so give
+  `depth` to keep them.
+- What a `SceneryStage` takes from it — its occupants' ground, their outlines and cut — needs
+  the stage, so a `Scenery`.
 
 ## Colour and contours
 
@@ -234,6 +304,7 @@ them where it is coloured by height), eased in from half the reach, and where a 
 finer than a cell the overview takes the tiles' contours and normals, so the two meet
 without a step. Left: flat on the sea, the overview's ground stands short of the tiles' by
 its depth over the slant (about 1.3 km, 2–3 pixels, from 380 km up over the Norwegian Sea).
+The overview is the sky's: without a `Scenery` the relief ends at the far plane.
 
 For mountains on the horizon, set the far plane past it from the highest the camera goes:
 about 360 km from 10 km up, 760 km from 45 km and 1130 km from 100 km (the sky stories

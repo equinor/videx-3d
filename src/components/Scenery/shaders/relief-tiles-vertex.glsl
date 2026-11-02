@@ -1,4 +1,4 @@
-// A stage's relief drawn from geographic tiles (SceneryStage `relief.layers`): one patch per
+// The relief drawn from geographic tiles (GeoRelief `layers`): one patch per
 // tile, its heights read at its nodes from the tiles' texture array, a skirt down from each
 // side closing the cracks between tiles at different depths, each node placed on the globe
 // where its latitude and longitude lie (globeGeodetic): flat over the disc about the scene,
@@ -9,8 +9,6 @@
 #include <logdepthbuf_pars_vertex>
 #include ../../../sdk/materials/shaderLib/globe.glsl
 #include ../../../sdk/materials/shaderLib/geo-tile.glsl
-
-uniform float uSkyOceanLevel;
 
 uniform highp sampler2DArray uReliefTileHeights;
 uniform float uReliefTileCells;
@@ -107,7 +105,7 @@ void main() {
   vReliefSkirt = reliefSkirt;
   vReliefHeight = height;
   #ifdef RELIEF_CUT_OCCUPANT
-  vReliefFlat = vec3(world.x, uSkyOceanLevel + height, world.z);
+  vReliefFlat = vec3(world.x, globeLevel() + height, world.z);
   #endif
   vec4 view = viewMatrix * vec4(world, 1.0);
   #ifdef USE_OIT

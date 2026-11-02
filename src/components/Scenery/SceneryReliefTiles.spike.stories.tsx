@@ -10,6 +10,7 @@ import type { ReliefLayer } from '../../sdk/geometries/relief-tiles';
 import { getProjectionDefFromUtmZone } from '../../sdk/projection/crs';
 import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import {
+  reportReliefProgress,
   sceneryArgs,
   SceneryArgs,
   sceneryArgTypes,
@@ -40,11 +41,12 @@ import { DataProviderDecorator } from '../../storybook/decorators/data-provider-
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { SceneryGenerators } from '../../storybook/decorators/scenery-generators';
 import { demoFrame } from '../../storybook/data/demo-crs';
+import { GeoRelief, GeoReliefProps } from '../Layers/GeoRelief';
 import { UtmArea } from '../UtmArea/UtmArea';
 import { World } from '../World/World';
 import { Scenery } from './Scenery';
 import { SceneryAnchor } from './SceneryAnchor';
-import { SceneryStage, SceneryStageRelief } from './SceneryStage';
+import { SceneryStage } from './SceneryStage';
 import type { SceneryReliefTileStats } from './SceneryStageReliefTiles';
 import type { SceneryStageBounds } from './scenery-stage';
 import { useLevelHorizon } from './useLevelHorizon';
@@ -241,7 +243,7 @@ const ReliefTiles = (storyArgs: ReliefTilesArgs) => {
   const onStats = useTileStats(args.tileStats && args.relief === 'tiles');
   // Storybook leaves out the relief's own args (their `if`) while `relief` is NONE.
   const layers = LAYERS.filter(layer => (args.layers ?? []).includes(layer.id));
-  const relief: SceneryStageRelief | undefined =
+  const relief: GeoReliefProps | undefined =
     args.relief === 'tiles'
       ? {
           layers,
@@ -250,12 +252,14 @@ const ReliefTiles = (storyArgs: ReliefTilesArgs) => {
           cellPixels: args.cellPixels,
           transition: args.transition,
           ...sceneryReliefLookFromArgs(args, layers),
+          debug: args.tileDebug === 'none' ? undefined : args.tileDebug,
           onStats,
+          onProgress: reportReliefProgress,
         }
       : undefined;
 
   return (
-    <World frame={FRAME}>
+    <World frame={FRAME} globe={args.globe}>
       <SceneryStoryRendering args={args} />
       <LevelHorizon enabled={args.levelHorizon} />
       {args.panel && (
@@ -276,13 +280,7 @@ const ReliefTiles = (storyArgs: ReliefTilesArgs) => {
             ocean={{ level: LEVEL, depth: DEPTH }}
             abyss={{}}
           />
-          <SceneryStage
-            bounds={bounds}
-            relief={relief}
-            debug={{
-              relief: args.tileDebug === 'none' ? undefined : args.tileDebug,
-            }}
-          />
+          <SceneryStage bounds={bounds} />
           {args.field === 'anchored' && (
             <SceneryAnchor>
               <FieldStandIn />
@@ -296,11 +294,12 @@ const ReliefTiles = (storyArgs: ReliefTilesArgs) => {
           )}
           {args.facility === 'free' && <FieldStandIn at={POSITIONS.trench} />}
         </Scenery>
+        {relief && <GeoRelief {...relief} />}
         {args.minimap && (
           <SceneryArgsMinimap frame={FRAME} reliefLayers={args.layers} />
         )}
       </SceneryGenerators>
-      {/* Outside the Scenery: the World hands it the Scenery's globe. */}
+      {/* Outside the Scenery: placed on the World's globe. */}
       {args.facility === 'field' && <TrenchField />}
     </World>
   );

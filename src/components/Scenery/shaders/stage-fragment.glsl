@@ -33,7 +33,8 @@ void main() {
   vec3 dir = stageViewRay();
   float blend = max(uSkyHorizonBlend, fwidth(dot(dir, globeCameraLook())));
   float altitude = skyOceanCameraAltitude();
-  float y = dot(dir, uSkyUp);
+  // The void's gradient by the camera's look up, as the background draws it (skyAbyssDepths).
+  float y = dot(dir, globeCameraLook());
 
   // The flat caps are shaded where the ray meets their plane, exactly; from above, beyond the
   // scene, where it meets them on the globe, as the sky's own sea. From below, level under
@@ -179,12 +180,14 @@ void main() {
     // The walls' fill stands in front of the lid here, or, from under their foot, the rock
     // that runs on down below it (skyAbyssWallStartUnder): the background draws both, so it
     // is left before the lid is shaded. Their faces are a mesh of their own, which hides the
-    // lid by depth.
-    vec4 wallStart = skyAbyssWallStartUnder(cameraPosition, dir);
-    if((wallStart.y > 0.0 && wallStart.x < dist) || wallStart.w < dist)
-      discard;
+    // lid by depth. Not once they are left out, far beyond their rim (uSkyAbyssWallNear).
+    if(uSkyAbyssWallNear > 0.0) {
+      vec4 wallStart = skyAbyssWallStartUnder(cameraPosition, dir);
+      if((wallStart.y > 0.0 && wallStart.x < dist) || wallStart.w < dist)
+        discard;
+    }
     // From the void: the lid, as the background draws it.
-    color = skyAbyssLid(cameraPosition, dir, dist, lidFootprint);
+    color = skyAbyssLidNear(cameraPosition, dir, dist, lidFootprint);
       #else
     color = skyAbyssCeiling(world, distance(cameraPosition, world));
       #endif

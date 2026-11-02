@@ -8,7 +8,7 @@ import { CRS, wgs84Def } from './crs';
  * Where a flat frame lies on the Earth: the projection it is drawn in, and the point in
  * it that lies at the frame's `offset` (its X/Z). X runs east, along the projection's grid,
  * and Z south. Plain data, so a worker can read it. A `World` is given the scene's; a
- * `UtmArea` and a stage's relief take theirs from it, or their own.
+ * `UtmArea` takes its from it, or its own; a `GeoRelief` takes it from it.
  *
  * See `documents/world.md`.
  *
@@ -177,9 +177,9 @@ export function utmZoneBounds(
  * @group Utils
  */
 export type GeoFramePlacement = {
-  /** X of the frame's origin in the other frame */
+  /** X of the frame's origin — or of its {@link pivot}, given one — in the other frame */
   x: number;
-  /** Z of the frame's origin in the other frame */
+  /** Z of the frame's origin — or of its {@link pivot} — in the other frame */
   z: number;
   /**
    * how far the frame's grid is turned from the other's there, in radians, counter-clockwise
@@ -188,6 +188,11 @@ export type GeoFramePlacement = {
   rotation: number;
   /** the other frame's metres per the frame's metre there, along the ground */
   scale: number;
+  /**
+   * the point placed, in the frame's own X/Z, when not its origin: where the turn and the
+   * scale are measured, and what a globe places the frame about (`geoFrameMatrix`)
+   */
+  pivot?: Vec2;
 };
 
 // Half the span over which placeGeoFrame measures the grid's turn and scale, in metres.
@@ -201,23 +206,31 @@ const PLACEMENT_STEP = 100;
  * about 10 cm 5 km around its origin (40 cm at 10 km; the scale alone is 0.1% there). One
  * map about another origin is only moved, exactly. Heights are not scaled. Both
  * projections must be conformal (as UTM and transverse Mercator are) and in metres.
- * `frame`'s own `offset` is not used: the placement is of its origin.
+ * `frame`'s own `offset` is not used: the placement is of its origin, or of `pivot` (its own
+ * X/Z, X east and Z south of its origin): the middle of its field, say, so that is where it is
+ * placed best, the error growing with the square of the distance from it.
  *
  * @group Utils
  */
 export function placeGeoFrame(
   frame: GeoFrame,
   scene: GeoFrame,
+  pivot?: Vec2,
 ): GeoFramePlacement {
-  const [e0, n0] = frame.origin;
+  const [px, pz] = pivot ?? [0, 0];
+  const e0 = frame.origin[0] + px;
+  const n0 = frame.origin[1] - pz;
   const [sceneX, sceneZ] = scene.offset ?? [0, 0];
+  const pivoted = pivot ? { pivot: [px, pz] as Vec2 } : {};
   // One map: moved only, exactly (proj4's round trip through a datum is not, by a millimetre).
+  // The origins' difference first, so the same origin leaves the pivot where it is, exactly.
   if (frame.projection === scene.projection) {
     return {
-      x: e0 - scene.origin[0] + sceneX,
-      z: scene.origin[1] - n0 + sceneZ,
+      x: frame.origin[0] - scene.origin[0] + sceneX + px,
+      z: scene.origin[1] - frame.origin[1] + sceneZ + pz,
       rotation: 0,
       scale: 1,
+      ...pivoted,
     };
   }
   const convert = proj4(frame.projection, scene.projection);
@@ -238,5 +251,6 @@ export function placeGeoFrame(
     z: scene.origin[1] - at[1] + sceneZ,
     rotation: Math.atan2(en - ne, ee + nn),
     scale: Math.sqrt(Math.abs(ee * nn - en * ne)),
+    ...pivoted,
   };
 }

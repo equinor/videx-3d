@@ -22,6 +22,7 @@ import {
   WebGLRenderer,
 } from 'three';
 import { createLayers, LAYERS } from '../../layers/layers';
+import { releaseMaterial } from '../../rendering/precompile';
 import type {
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
@@ -30,25 +31,21 @@ import {
   PolygonDistanceField,
   polygonDistanceField,
 } from '../../sdk/geometries/polygon-distance-field';
-import type { GeoFrame } from '../../sdk/projection/geo-frame';
-import type { ReliefLayer } from '../../sdk/geometries/relief-tiles';
 import type { CutUniforms } from '../../sdk/materials/fence-field';
 import type { HeightFieldClip } from '../../sdk/materials/height-field-clip';
 import {
-  SceneryStageReliefTiles,
-  SceneryReliefTileStats,
-} from './SceneryStageReliefTiles';
-import {
   SKY_RELIEF_MAX_OCCUPANTS,
   SceneryReliefOccupantFields,
-  SceneryReliefTileDebug,
   SceneryReliefTileOccupants,
 } from './scenery-relief-tiles';
-import type { ReliefSampler } from './scenery-relief-sampler';
 import { useSceneryOcean } from './scenery-context';
-import type { SceneryReliefLoading } from './scenery-progress';
 import { placeOnGlobe, releaseFromGlobe } from './scenery-anchor';
 import { useWorld } from '../World/world-context';
+import {
+  useWorldRelief,
+  WorldReliefGroundRequest,
+  WorldReliefStage,
+} from '../World/world-relief';
 import {
   createSceneryStageMaterial,
   createSceneryStageOutline,
@@ -56,18 +53,14 @@ import {
   createSceneryStagePlane,
   SceneryStageBounds,
 } from './scenery-stage';
-import {
-  ReliefColor,
-  ReliefContours,
-  ReliefLook,
-  SceneryReliefLooks,
-} from './scenery-relief-look';
 
 // The farthest from the camera the stage draws the sea, past which the sky's own does: the
 // far plane, but no farther. Its flat planes, sunk under a camera far off, cannot stand for
 // the globe much beyond; from space the sky draws all of it.
 const STAGE_REACH = 3000000;
 const NO_OCCUPANTS: SceneryStageOccupant[] = [];
+// Where neither the stage nor its World gives bounds: nothing is drawn.
+const NO_BOUNDS: SceneryStageBounds = [0, 0, 0, 0];
 
 // The same array as last render while its items are: one written inline is new every render.
 function useStableList<T>(list: T[]): T[] {
@@ -95,7 +88,7 @@ const OUTLINE_ORDER = 1e9;
 // Drawn last by the OITRenderPass too, over its transparent layers.
 const OVERLAY_LAYERS = createLayers(LAYERS.OVERLAY);
 // Wireframe colours, as `SceneryDebug.tint` colours the layers.
-const WIRE_COLORS: Record<StagePartLayer, string> = {
+const WIRE_COLORS: Record<SceneryStageLayer, string> = {
   surface: '#1a59ff',
   bed: '#26cc33',
 };
@@ -165,83 +158,10 @@ export type SceneryStageOccupant = {
 };
 
 /**
- * A layer a {@link SceneryStage} draws: the sea `surface`; the flat `bed` without a relief;
- * and the `relief`, when it has one, and its overview.
+ * A layer a {@link SceneryStage} draws: the sea `surface`; and the flat `bed` where no
+ * `GeoRelief` is the seabed.
  */
-export type SceneryStageLayer = 'surface' | 'bed' | 'relief';
-
-// The layers drawn as plain meshes, which the wireframe view can draw too.
-type StagePartLayer = Exclude<SceneryStageLayer, 'relief'>;
-
-/**
- * Land and seabed around a {@link SceneryStage}, drawn from tiles: reliefs from the store
- * merged, covering everything out to the sea's horizon, the stage's own area and its
- * occupants included. It is land where it rises above the sea, lit and fading into the air
- * as the far sea does, and seabed below it, seen through the water as the stage's own is.
- * See-through at the sea's seabed opacity over the stage's own area only.
- */
-export type SceneryStageRelief = {
-  /**
-   * The reliefs in the store — `relief-meta` records (`ReliefMeta`) and their
-   * `relief-values` — coarse to fine: later ones win where they have data. Merged onto tiles
-   * by the `sceneryReliefTile` generator, so it needs a `GeneratorsProvider`; any number, of
-   * any size: only the tiles in view are read. Where the ground in view reaches past the
-   * camera's far plane, the same tiles, coarser, are also drawn past it as an overview, from
-   * anywhere on the Earth; a layer in longitude and latitude all the way round (a world
-   * relief) covers it everywhere.
-   */
-  layers: ReliefLayer[];
-  /** the flat seabed where no layer has data, metres below the sea. Default the sea's depth */
-  depth?: number;
-  /** The most a tile's error may show on screen, in pixels. Default 2 */
-  pixelError?: number;
-  /**
-   * the most a tile's cell may span on screen, in pixels, where finer data
-   * lies under it and the ground is rough. The relief is shaded from its tiles' cells —
-   * slopes, the coast, the colour by height — so this, not the error, keeps it sharp from
-   * high up, where the ground's error shows as next to nothing. Not applied with the
-   * camera under the ground, where the tiles' tops face away. Default 8
-   */
-  cellPixels?: number;
-  /**
-   * ms a swap between levels of detail takes: each tile blends from the one it replaces —
-   * its heights (a geomorph), its slopes and its colour — instead of popping, and children
-   * merging back into their parent blend toward it first. Not over the ground handed to a
-   * column, which must meet what is drawn exactly. 0 swaps at once. Default 300
-   */
-  transition?: number;
-  /** Told what the tiles draw and hold, every few frames */
-  onStats?: (stats: SceneryReliefTileStats) => void;
-  /**
-   * told the relief's sampler (see `ReliefSampler`), for what is placed on
-   * the relief: hand it on through `SurfaceSamplerContext`, and to a `ChunkStack` built
-   * on the relief (`reliefSampler`). A new one whenever the ground under a pin comes in;
-   * null once gone
-   */
-  onSampler?: (sampler: ReliefSampler | null) => void;
-  /**
-   * where the scene lies on the map: default the enclosing `World`'s frame, which keeps the
-   * relief, the fields and the sun in one place. `geoFrameAt` makes one about a longitude
-   * and latitude. Without either, no relief is drawn.
-   */
-  frame?: GeoFrame;
-  /**
-   * How the land and seabed are coloured: one colour for the land, the seabed taking the
-   * sea's; or by height through a colour ramp — a terrain ramp, or any other, such as
-   * `'rainbow'` — over a range of heights, the seabed the sea's, the same ramp, or a ramp of
-   * its own (see {@link ReliefColorRamp}). `'ramp'` is `{ ramp: 'terrain' }`. Changing it
-   * builds nothing again. Default `#34433b`, a dark green-grey
-   */
-  color?: ReliefColor;
-  /** contour lines over it (see {@link ReliefContours}); `true` for the defaults. Default none */
-  contours?: boolean | ReliefContours;
-  /**
-   * a look of its own for a layer, by its id: its `color` and `contours` where it gave the
-   * ground, over the relief's (a local survey by a rainbow and 10 m contours, say). Where
-   * layers overlap, the ground is the one that gave most of it, node by node.
-   */
-  layerLooks?: Record<string, ReliefLook>;
-};
+export type SceneryStageLayer = 'surface' | 'bed';
 
 /**
  * Views for seeing how a stage fits the sky and its occupant (and see `SceneryDebug.tint`).
@@ -254,12 +174,6 @@ export type SceneryStageDebug = {
   outline?: boolean;
   /** draw the triangles of every layer drawn, over everything, in the colour `SceneryDebug.tint` gives it */
   wireframe?: boolean;
-  /**
-   * With a relief: `'tiles'` tints each tile by its depth and outlines it; `'layers'`
-   * colours each node by the layer that gave it (grey for the flat base). Recompiles the
-   * relief's material.
-   */
-  relief?: SceneryReliefTileDebug;
 };
 
 /**
@@ -267,12 +181,14 @@ export type SceneryStageDebug = {
  * @expand
  */
 export type SceneryStageProps = {
-  /** the scene's rectangle, `[minX, minZ, maxX, maxZ]` in scene X/Z; it should hold the whole scene */
-  bounds: SceneryStageBounds;
+  /**
+   * the scene's rectangle, `[minX, minZ, maxX, maxZ]` in scene X/Z; it should hold the whole
+   * scene. Default the enclosing `World`'s `bounds`, the globe's flat disc: given both, keep
+   * them the same. Without either, nothing is drawn
+   */
+  bounds?: SceneryStageBounds;
   /** what claims parts of the stage: field columns, say. The relief knows the outlines of 4 at most */
   occupants?: SceneryStageOccupant[];
-  /** land and seabed, drawn from tiles (see {@link SceneryStageRelief}); none by default, and a flat seabed */
-  relief?: SceneryStageRelief;
   /** debug views (see {@link SceneryStageDebug}) */
   debug?: SceneryStageDebug;
 };
@@ -291,26 +207,34 @@ export type SceneryStageProps = {
  *
  * Its `occupants` claim parts of the stage: field columns, say, each by its footprint.
  *
- * A `relief` puts land and seabed from the store everywhere, drawn from tiles. It is the
- * ground over the occupants too: kept whole under their cuts unless one's `keepBed` is
- * off, and handed out to each as drawn (`onGround`). Without one, the stage draws a flat
- * seabed at the sea's depth, and the occupants draw their own.
+ * A `GeoRelief` in the `World` is its seabed, everywhere: the ground over the occupants
+ * too, kept whole under their cuts unless one's `keepBed` is off, and handed out to each as
+ * drawn (`onGround`). Without one, the stage draws a flat seabed at the sea's depth, and the
+ * occupants draw their own.
  *
  * ⚠️ Assumes the default `up` (+Y). Renders nothing without a sky ocean.
  *
  * @group Components
  */
 export const SceneryStage = ({
-  bounds,
+  bounds: givenBounds,
   occupants,
-  relief,
   debug,
 }: SceneryStageProps) => {
   const ocean = useSceneryOcean();
   const sky = ocean?.material ?? null;
   const far = useThree(state => state.camera.far);
+  // Its materials are let go once their programs have linked (`releaseMaterial`): a swap
+  // (a relief coming in, `curvedDepth`) may come while the sky still compiles them.
+  const gl = useThree(state => state.gl);
   const reach = Math.min(far, STAGE_REACH);
-  const [minX, minZ, maxX, maxZ] = bounds;
+  const world = useWorld();
+  const bounds = givenBounds ?? world?.bounds ?? null;
+  const hasBounds = bounds !== null;
+  const [minX, minZ, maxX, maxZ] = bounds ?? NO_BOUNDS;
+  // A World's bounds are its globe's disc, which it sets; a World given none leaves its
+  // globe's disc to the stage. Without a World, the sky's own globe takes it from the sky.
+  const setsWorldDisc = !!world && !world.bounds;
   const claims = occupants ?? NO_OCCUPANTS;
   const level = ocean?.level ?? 0;
   const bedY = level - (ocean?.depth ?? 0);
@@ -334,44 +258,10 @@ export const SceneryStage = ({
   );
   useEffect(() => () => plane.dispose(), [plane]);
 
-  // The relief's looks, and its layers', as its shaders read them: a texture, so a change
-  // of colour or contours is an upload, never a new program.
-  const looks = useMemo(() => new SceneryReliefLooks(), []);
-  useEffect(() => () => looks.dispose(), [looks]);
-  // Inline objects every render: compared by value.
-  const lookKey = relief
-    ? JSON.stringify([
-        relief.color,
-        relief.contours,
-        relief.layerLooks,
-        relief.layers.map(layer => layer.id),
-      ])
-    : '';
-  useEffect(() => {
-    if (!relief) return;
-    looks.update(
-      { color: relief.color, contours: relief.contours },
-      relief.layers.map(layer => relief.layerLooks?.[layer.id]),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [looks, lookKey]);
-
-  // A relief covers everything, the stage's own area included, and the stage draws no
-  // seabed of its own; only where the sea has one. Read in its own frame, or the World's.
-  const world = useWorld();
-  const reliefFrame = relief?.frame ?? world?.frame ?? null;
-  const tiled = !!relief?.layers.length && hasBed && !!reliefFrame;
-
-  // A relief is placed by latitude and longitude: the globe lies on the Earth where its
-  // frame says, the World's (set by the Scenery) or, without a World, the relief's own,
-  // handed to the Scenery so its true north and observer's place are that frame's too.
-  const ownFrame = !world && relief?.frame ? JSON.stringify(relief.frame) : '';
-  const reportFrame = ocean?.frame;
-  useLayoutEffect(() => {
-    if (!reportFrame || !ownFrame) return;
-    reportFrame(JSON.parse(ownFrame) as GeoFrame);
-    return () => reportFrame(null);
-  }, [reportFrame, ownFrame]);
+  // The World's relief covers everything, the stage's own area included, and the stage draws
+  // no seabed of its own; only where the sea has one.
+  const worldRelief = useWorldRelief();
+  const tiled = !!worldRelief?.present && hasBed;
 
   const materials = useMemo(
     () =>
@@ -388,9 +278,9 @@ export const SceneryStage = ({
 
   // The occupants' outlines, for the relief: over them the cutaway takes
   // the water, not the ground; and one occupant, its `keepBed` off, cuts the relief there.
+  // Made whether a relief is there yet or not, so one coming is compiled with them at once.
   const outlines = useStableList(claims.map(claim => claim.outline ?? null));
   const fielded = useMemo(() => {
-    if (!tiled) return null;
     const at = new Map<number, number>();
     const fields: PolygonDistanceField[] = [];
     outlines.forEach((shape, i) => {
@@ -406,22 +296,20 @@ export const SceneryStage = ({
     return fields.length > 0
       ? { at, fields: new SceneryReliefOccupantFields(fields) }
       : null;
-  }, [tiled, outlines]);
+  }, [outlines]);
   useEffect(() => () => fielded?.fields.dispose(), [fielded]);
-  const cutters = tiled
-    ? claims.flatMap((claim, i) =>
-        claim.keepBed === false &&
-        claim.cut &&
-        (claim.cut.plane || claim.cut.fence) &&
-        fielded?.at.has(i)
-          ? [i]
-          : [],
-      )
-    : [];
+  const cutters = claims.flatMap((claim, i) =>
+    claim.keepBed === false &&
+    claim.cut &&
+    (claim.cut.plane || claim.cut.fence) &&
+    fielded?.at.has(i)
+      ? [i]
+      : [],
+  );
   const cutter = cutters.length > 0 ? cutters[0] : -1;
   const reliefCut = cutter >= 0 ? claims[cutter].cut : undefined;
   const reliefCutAt = cutter >= 0 ? (fielded?.at.get(cutter) ?? -1) : -1;
-  const tooManyCutters = cutters.length > 1;
+  const tooManyCutters = tiled && cutters.length > 1;
   useEffect(() => {
     if (tooManyCutters)
       console.warn(
@@ -446,8 +334,8 @@ export const SceneryStage = ({
 
   // While an occupant's cut opens the relief over it, the void's walls show through it from
   // above.
-  const openingPlane = reliefCut?.plane;
-  const openingFence = reliefCut?.fence;
+  const openingPlane = tiled ? reliefCut?.plane : undefined;
+  const openingFence = tiled ? reliefCut?.fence : undefined;
   useEffect(() => {
     if (!sky || (!openingPlane && !openingFence)) return;
     const open = () => {
@@ -467,44 +355,29 @@ export const SceneryStage = ({
   useEffect(
     () => () => {
       if (!materials) return;
-      for (const material of Object.values(materials)) material.dispose();
+      for (const material of Object.values(materials))
+        releaseMaterial(gl, material);
     },
-    [materials],
+    [gl, materials],
   );
 
   useLayoutEffect(() => {
-    if (!sky) return;
+    if (!sky || !hasBounds) return;
     // Out to the far plane (stage-vertex keeps its vertices inside), as far as STAGE_REACH:
     // any shorter, and the scene between would show through the sky's sea, drawn on the far
     // plane. On the globe it claims nothing while the camera is off its rectangle, or on the
     // far half of the Earth (SceneryMaterial's claimStage).
     sky.setOceanStage(extent, reach);
     // Flat over the stage's whole area, so the scene and the ground about it meet level:
-    // the globe's disc.
+    // the globe's disc, unless the World holds it.
     sky.setFlatSea([minX, minZ, maxX, maxZ]);
+    if (setsWorldDisc) sky.globe.setDisc([minX, minZ, maxX, maxZ]);
     return () => {
       sky.setOceanStage(null);
       sky.setFlatSea(null);
+      if (setsWorldDisc) sky.globe.setDisc(null);
     };
-  }, [sky, extent, reach, minX, minZ, maxX, maxZ]);
-
-  // The relief's ground under the camera, which the sky takes for its own there: the
-  // seabed below the sea surface, and in the ground above it, rock.
-  const reliefGround = useRef<number | null>(null);
-  // How its tiles load, for the sky's progress.
-  const reportRelief = ocean?.relief;
-  const reliefKey = useMemo(() => ({}), []);
-  const reliefLoading = useCallback(
-    (loading: SceneryReliefLoading | null) =>
-      reportRelief?.(reliefKey, loading),
-    [reportRelief, reliefKey],
-  );
-  useEffect(() => {
-    if (!sky || !tiled) return;
-    return () => {
-      sky.oceanGround = null;
-    };
-  }, [sky, tiled]);
+  }, [sky, extent, reach, minX, minZ, maxX, maxZ, setsWorldDisc, hasBounds]);
 
   // The cutaway's size, from the first occupant's footprint.
   const radiusOutline = outlines.find(o => o) ?? null;
@@ -561,17 +434,13 @@ export const SceneryStage = ({
     // would discard every pixel. In the relief's ground above it the camera is in rock
     // (SceneryMaterial.oceanBuried), where none of the sea shows either.
     const altitude = sky.globe.altitude(camera.position);
-    const underRelief = tiled ? reliefGround.current : null;
+    const underRelief = tiled ? (worldRelief?.ground.current ?? null) : null;
     const bed = sky.oceanLevel - sky.oceanDepth;
     const y = sky.oceanLevel + altitude;
     const buried = underRelief !== null && y <= underRelief && y > bed;
     if (surface.current)
       surface.current.visible =
         surfaceShown && altitude + sky.oceanDepth >= 0 && !buried;
-    if (!tiled) return;
-    // At whatever depth: the void starts under the relief, and over it below the sea's own
-    // seabed, as in a trench, the camera is in the water (SceneryMaterial.oceanTrench).
-    sky.oceanGround = underRelief;
   });
 
   // Told on every change: the occupant draws its own seabed whenever the stage does not,
@@ -596,18 +465,64 @@ export const SceneryStage = ({
     [],
   );
 
-  // The ground handed out over each occupant that asks for it.
-  const groundRequests = claims.flatMap((claim, i) =>
+  // The ground handed out over each occupant that asks for it, by its latest callback: one
+  // written inline is new every render.
+  const groundClaims = claims.flatMap(claim =>
     claim.onGround
       ? [
           {
-            bounds: outlines[i]
-              ? outlineSquare(outlines[i]!)
-              : ([minX, minZ, maxX, maxZ] as SceneryStageBounds),
+            bounds: (claim.outline
+              ? outlineSquare(claim.outline)
+              : [minX, minZ, maxX, maxZ]) as [number, number, number, number],
             onGround: claim.onGround,
           },
         ]
       : [],
+  );
+  const latestGrounds = useRef(groundClaims);
+  useLayoutEffect(() => {
+    latestGrounds.current = groundClaims;
+  });
+  const groundsKey = JSON.stringify(groundClaims.map(claim => claim.bounds));
+  const grounds = useMemo<WorldReliefGroundRequest[]>(
+    () =>
+      (JSON.parse(groundsKey) as [number, number, number, number][]).map(
+        (square, i) => ({
+          bounds: square,
+          onGround: clip => latestGrounds.current[i]?.onGround(clip),
+        }),
+      ),
+    [groundsKey],
+  );
+  // What only a stage asks of the World's relief: see-through over its area, its occupants'
+  // outlines and cut, and their ground.
+  const provideStage = worldRelief?.provideStage;
+  const stagePart = useMemo<WorldReliefStage | null>(
+    () =>
+      hasBounds
+        ? {
+            bounds: [minX, minZ, maxX, maxZ],
+            seeThrough,
+            occupants: reliefOccupants,
+            grounds,
+            groundLive: seabedDrawn,
+          }
+        : null,
+    [
+      hasBounds,
+      minX,
+      minZ,
+      maxX,
+      maxZ,
+      seeThrough,
+      reliefOccupants,
+      grounds,
+      seabedDrawn,
+    ],
+  );
+  useLayoutEffect(
+    () => (stagePart && provideStage ? provideStage(stagePart) : undefined),
+    [stagePart, provideStage],
   );
 
   const setView = useCallback(
@@ -666,8 +581,8 @@ export const SceneryStage = ({
   const showWireframe = debug?.wireframe === true;
   const wireMaterials = useMemo(() => {
     if (!showWireframe) return null;
-    const made = {} as Record<StagePartLayer, MeshBasicMaterial>;
-    for (const layer of Object.keys(WIRE_COLORS) as StagePartLayer[]) {
+    const made = {} as Record<SceneryStageLayer, MeshBasicMaterial>;
+    for (const layer of Object.keys(WIRE_COLORS) as SceneryStageLayer[]) {
       made[layer] = new MeshBasicMaterial({
         color: WIRE_COLORS[layer],
         wireframe: true,
@@ -706,11 +621,11 @@ export const SceneryStage = ({
     outlineLines,
   ]);
 
-  if (!ocean || !materials) return null;
+  if (!ocean || !materials || !hasBounds) return null;
 
   const parts: {
     key: string;
-    layer: StagePartLayer;
+    layer: SceneryStageLayer;
     geometry: BufferGeometry;
     material: ShaderMaterial;
     y?: number;
@@ -739,38 +654,6 @@ export const SceneryStage = ({
 
   return (
     <group ref={root} visible={ocean.visible && ocean.ready}>
-      {/* The relief's tiles, and past them the overview: the same tiles, coarser, drawn
-          per pixel where the ground in view reaches past the far plane. */}
-      {tiled && relief && reliefFrame && sky && (
-        <SceneryStageReliefTiles
-          sky={sky}
-          source={{
-            layers: relief.layers,
-            base: -(relief.depth ?? ocean.depth),
-          }}
-          looks={looks.texture}
-          reach={far}
-          level={level}
-          pixelError={relief.pixelError ?? 2}
-          cellPixels={relief.cellPixels ?? 8}
-          transition={relief.transition ?? 300}
-          definesKey={definesKey}
-          abyssWalls={!!abyssWalls}
-          visible={shown('relief')}
-          onStats={relief.onStats}
-          onLoading={reliefLoading}
-          cameraGround={reliefGround}
-          stage={[minX, minZ, maxX, maxZ]}
-          seeThrough={seeThrough}
-          debug={debug?.relief}
-          grounds={groundRequests}
-          groundLive={seabedDrawn}
-          occupants={reliefOccupants}
-          onSampler={relief.onSampler}
-          skyOrder={ocean.renderOrder + 1}
-          hub={ocean.reliefTiles}
-        />
-      )}
       {parts.map(part => (
         <mesh
           key={part.key}

@@ -138,6 +138,15 @@ export function chunkBytes(chunk: SurfaceChunk): number {
 }
 
 /**
+ * How long a chunk's materials, and its sea's, are kept once let go, in ms
+ * (`releaseMaterial`'s `linger`). A rebuild lets the old chunk go at once (see `Chunk`), and
+ * the next one's materials, made as it comes in, then take over the programs they share
+ * instead of compiling them again: about 27 programs a rebuild in the FieldColumn story
+ * before. A rebuild slower than this compiles them again. A material holds no geometry.
+ */
+export const CHUNK_MATERIAL_LINGER = 5000;
+
+/**
  * Dispose a geometry AND drop its arrays.
  *
  * ⭐ `dispose()` only releases the GPU side. The CPU arrays go when the last

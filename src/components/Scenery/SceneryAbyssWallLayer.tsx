@@ -141,7 +141,8 @@ type SceneryAbyssWallLayerProps = {
  * The void's walls' faces as a mesh (see `SceneryAbyssWalls`): one fixed grid round their
  * outline and down from the lid, as many columns as the sky's grid has
  * (`uSkyAbyssWallGrid`). Drawn from below the lid, and from above it while the void can
- * show there; under an opaque seabed beyond the stage the background's seabed hides it
+ * show there, as long as the camera is near enough their hollow to see them
+ * (`SceneryMaterial.abyssWallNear`); under an opaque seabed beyond the stage the background's seabed hides it
  * (skyAbyssWallCovered), over the stage the stage's own. The background draws their fill
  * and what lies beyond them. Its work each frame is run by the sky once it has cut them
  * (`frame`), so the camera's matrices are updated and the cut made once a frame.
@@ -216,7 +217,9 @@ export const SceneryAbyssWallLayer = ({
       const m = mesh.current;
       if (!m) return;
       const height = sky.heightOf(camera.position) - sky.abyssLevel;
-      const shown = visible && sky.abyssWallRock !== null;
+      // Far beyond their rim they are left out (abyssWallNear): the void is the plain one.
+      const shown =
+        visible && sky.abyssWallRock !== null && sky.abyssWallNear > 0;
       m.visible = shown && (height < 0 || fromAbove);
       const clip = sky.uniforms.uSkyAbyssWallClip.value as Vector4;
       const cuts = clip.w > SKY_ABYSS_WALL_UNCUT / 2;

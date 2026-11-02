@@ -24,7 +24,7 @@ const PLACE_VERTEX = /* glsl */ `#include <project_vertex>
 /**
  * Place what `material` draws on `globe`, per vertex: its world X/Z taken as the map point
  * and its height over the sea's level kept along up there (`Globe.place`), exactly as a
- * `SceneryStage`'s relief and the sky's sea lie on it. For what is long and lies beyond the
+ * `GeoRelief` and the sky's sea lie on it. For what is long and lies beyond the
  * globe's flat disc — a route to shore, a coastline — which an anchor, placing content
  * rigidly about one point, would leave off the globe from afar. Nothing moves over the disc,
  * nor with the globe off; and nothing depends on the camera.

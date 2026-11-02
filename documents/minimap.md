@@ -45,7 +45,7 @@ they are, only the tiles the map shows are read, at the detail it shows them at.
   pixel through an index of the tiles drawn (`relief-atlas.glsl`, `SceneryReliefAtlas`, about
   the view's middle so it keeps its precision at metre-sized cells), bilinear between their
   nodes, looked from the same `SceneryReliefLooks` (`color`, `contours`, `layerLooks`, with the
-  same shapes as a `SceneryStage`'s relief; default the terrain ramp over the bathymetry ramp)
+  same shapes as a `GeoRelief`'s; default the terrain ramp over the bathymetry ramp)
   by the layer that gave the nearest node. Where no layer has data (the tiles' base) it is
   transparent, so the panel's `background` shows.
 - **`mode="shaded"`** (default): colour by height, lit from the upper left of the screen by

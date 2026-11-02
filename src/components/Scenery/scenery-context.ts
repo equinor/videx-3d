@@ -1,9 +1,7 @@
 import { createContext, useContext } from 'react';
 import { Color, Object3D, Vector3 } from 'three';
-import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import type { SceneryMaterial } from './scenery-material';
 import type { SceneryReliefHub } from './scenery-relief-hub';
-import type { SceneryReliefLoading } from './scenery-progress';
 
 /**
  * What a {@link Scenery} shares with its children.
@@ -68,17 +66,10 @@ export type SceneryOceanState = {
    * either is drawn; again whenever they change. Returns the release.
    */
   stage: (parts: Object3D) => () => void;
-  /** tell the sky how a stage's relief tiles load (its `onProgress`), keyed by anything the stage keeps; null once gone */
-  relief: (key: object, loading: SceneryReliefLoading | null) => void;
   /**
-   * Tell the sky the frame a stage reads its relief in, outside a `World`; null once gone.
-   * The sky's globe then lies on the Earth there, and its true north and an observer's
-   * place are that frame's, as a `World`'s would be. Stable.
-   */
-  frame: (frame: GeoFrame | null) => void;
-  /**
-   * The relief tiles a stage draws, as it draws them: what a layer lying on the ground
-   * meets (a `GeoTileLayer`'s `drape`). Stable.
+   * The relief tiles drawn, as drawn: what a layer lying on the ground meets (a
+   * `GeoTileLayer`'s `drape`) — inside a `World`, the World's (`WorldReliefState.tiles`).
+   * Stable.
    */
   reliefTiles: SceneryReliefHub;
 };

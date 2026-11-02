@@ -22,6 +22,7 @@ import {
 } from '../../sdk/projection/place-frame';
 import { Vec3 } from '../../sdk/types/common';
 import { useWorld } from '../World/world-context';
+import { useWorldFields } from '../World/world-fields';
 import { UtmAreaContext, UtmAreaContextProps } from './UtmAreaContext';
 
 /**
@@ -42,6 +43,15 @@ export type UtmAreaProps = {
    * world's is placed where the world's map has it, however its frame is given.
    */
   frame?: GeoFrame;
+  /**
+   * Its stage's area, `[minX, minZ, maxX, maxZ]` in its own X/Z (east and south of its
+   * origin): placed in a `World` in another frame, it is turned and set on the globe about
+   * this area's middle, where it then meets the globe exactly; flat, it stands off the curved
+   * Earth toward the area's edges by `d² / 2R` at `d` from there. Default about its origin.
+   * Given one, the area is a field the `World` has loaded: the relief (a `GeoRelief`) is
+   * see-through over it as over the anchored stage.
+   */
+  bounds?: [number, number, number, number];
 };
 
 const placing = new Matrix4();
@@ -53,9 +63,9 @@ const shift = new Matrix4();
  *
  * Inside a {@link World} whose frame is another — another UTM zone, a field 300 km off —
  * the area places itself: where the world's map has its origin, turned and scaled to the
- * world's grid there (`placeGeoFrame`), and on the `Scenery`'s globe when there is one, as the
- * globe places the ground there (`Globe.tangent`). What is inside it stays in the area's own
- * frame, its conversions too. In the world's own frame it is not moved, as without a world.
+ * world's grid there (`placeGeoFrame`), and on the world's globe, as the globe places the
+ * ground there (`Globe.tangent`), with or without a `Scenery`. What is inside it stays in the
+ * area's own frame, its conversions too. In the world's own frame it is not moved, as without a world.
  *
  * @example
  * <UtmArea utmZone={utmZone} origin={origin} originUnits={originUnits} offset={offset}>
@@ -82,6 +92,7 @@ export const UtmArea = forwardRef<CRS, PropsWithChildren<UtmAreaProps>>(
       originUnits = 'utm',
       offset = [0, 0, 0],
       frame,
+      bounds,
       children,
     },
     fref,
@@ -107,18 +118,26 @@ export const UtmArea = forwardRef<CRS, PropsWithChildren<UtmAreaProps>>(
     const own = useMemo(() => geoFrameFromCrs(crs), [crs]);
 
     // Where the World has it: not at all in the world's own map about the world's origin.
+    // Placed about its stage's middle, given one.
     const world = useWorld();
     const worldFrame = world?.frame ?? null;
+    const pivoted = bounds !== undefined;
+    const pivotX = bounds ? (bounds[0] + bounds[2]) / 2 : 0;
+    const pivotZ = bounds ? (bounds[1] + bounds[3]) / 2 : 0;
     const placement = useMemo(() => {
       if (!worldFrame) return null;
-      const placed = placeGeoFrame(own, worldFrame);
+      const placed = placeGeoFrame(
+        own,
+        worldFrame,
+        pivoted ? [pivotX, pivotZ] : undefined,
+      );
       const still =
-        placed.x === 0 &&
-        placed.z === 0 &&
+        placed.x === pivotX &&
+        placed.z === pivotZ &&
         placed.rotation === 0 &&
         placed.scale === 1;
       return still ? null : placed;
-    }, [own, worldFrame]);
+    }, [own, worldFrame, pivoted, pivotX, pivotZ]);
 
     const [ox, oy, oz] = offset;
     // Back to the offset alone, once no longer placed.
@@ -129,6 +148,16 @@ export const UtmArea = forwardRef<CRS, PropsWithChildren<UtmAreaProps>>(
       group.position.set(ox, oy, oz);
       group.updateMatrix();
     }, [placement, ox, oy, oz]);
+
+    // A field the World has loaded: given its stage's area, the relief is see-through over it
+    // (world.md, step 7e), read through the group's own placement.
+    const addField = useWorldFields()?.addField;
+    const [b0, b1, b2, b3] = bounds ?? [];
+    useLayoutEffect(() => {
+      const group = ref.current;
+      if (!addField || !group || !pivoted) return;
+      return addField({ object: group, bounds: [b0!, b1!, b2!, b3!] });
+    }, [addField, pivoted, b0, b1, b2, b3]);
 
     // Each frame, as the globe's disc or level may change under it: a handful of vector
     // operations, and the area's world matrices composed again only when it moves.

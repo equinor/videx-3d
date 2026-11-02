@@ -34,6 +34,7 @@ import {
 } from '../../sdk/layers/layer-visibility';
 import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import { useSceneryOcean } from '../Scenery/scenery-context';
+import { useWorldRelief } from '../World/world-relief';
 import { GeoTileStyles } from './geo-tile-layer';
 import {
   createGeoTubeGeometry,
@@ -130,10 +131,10 @@ const foot = { longitude: 0, latitude: 0 };
  * See `documents/layers.md`.
  *
  * @example
- * <Scenery>
- *   <SceneryStage bounds={bounds} relief={{ layers }} />
+ * <World frame={frame} bounds={bounds}>
+ *   <GeoRelief layers={layers} />
  *   <GeoTubes data={pipelines} style={f => ({ diameter: f.properties.diameter * 0.0254 })} exaggeration={20} />
- * </Scenery>
+ * </World>
  *
  * @group Components
  */
@@ -166,7 +167,8 @@ export const GeoTubes = <P,>({
   const globe = placed?.globe ?? null;
   const ocean = useSceneryOcean();
   const sky = water === 'fog' && ocean ? ocean.material : null;
-  const hub = ocean ? ocean.reliefTiles : null;
+  // The relief's tiles drawn: the World's, else the sky's.
+  const hub = useWorldRelief()?.tiles ?? ocean?.reliefTiles ?? null;
   const size = useThree(state => state.size);
   const features = useGeoFeatures(data);
 

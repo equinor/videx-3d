@@ -1,6 +1,6 @@
 import { CameraControls, Environment } from '@react-three/drei';
 import { Canvas, useThree } from '@react-three/fiber';
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { Color } from 'three';
 import { PI2 } from '../../sdk';
 import { CameraManager } from '../../sdk/managers/CameraManager';
@@ -107,12 +107,16 @@ export const Canvas3dDecorator = (Story: any, { parameters, args }: any) => {
           {/* ⚠️ Served from `public/`, NOT drei's `preset`. A preset fetches its HDR
               from raw.githubusercontent.com at runtime, and a 429 or an offline
               machine throws inside <Canvas>, replacing every 3D story with an error
-              boundary. */}
-          <Environment
-            files="/hdri/studio_small_03_1k.hdr"
-            environmentIntensity={0.5}
-            backgroundRotation={[0, PI2, 0]}
-          />
+              boundary. In a boundary of its own: loading it must not suspend the story,
+              which would tear down its layout effects (a story turning its own lighting
+              off, its Scenery, would lose what they set up). */}
+          <Suspense fallback={null}>
+            <Environment
+              files="/hdri/studio_small_03_1k.hdr"
+              environmentIntensity={0.5}
+              backgroundRotation={[0, PI2, 0]}
+            />
+          </Suspense>
         </>
       )}
 

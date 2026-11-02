@@ -39,7 +39,7 @@ export type SceneryAnchorProps = {
  * vertex (`applyGlobe`).
  *
  * ⚠️ Assumes the default `up` (+Y), as a `SceneryStage` does. Without a globe, or with it
- * off (`globe: false` on the `Scenery`), it does nothing.
+ * off (`globe: false` on the `World`, or on a `Scenery` outside one), it does nothing.
  *
  * @group Components
  */

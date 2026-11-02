@@ -33,6 +33,7 @@ import type { Globe } from '../../sdk/projection/globe';
 import type { Vec2 } from '../../sdk/types/common';
 import { pixelsPerUnit } from '../../sdk/utils/lod';
 import { useSceneryOcean } from '../Scenery/scenery-context';
+import { useWorldRelief } from '../World/world-relief';
 import type { SceneryMaterial } from '../Scenery/scenery-material';
 import { sceneryOceanDefines } from '../Scenery/scenery-stage';
 import { Symbols } from '../Symbol/Symbol';
@@ -172,7 +173,9 @@ export const GeoSymbols = <P,>({
   const placed = useLayerGlobe(frame);
   const globe = placed?.globe ?? null;
   const ocean = useSceneryOcean();
-  const hub = onGround && ocean ? ocean.reliefTiles : null;
+  // The relief's tiles drawn: the World's, else the sky's.
+  const reliefTiles = useWorldRelief()?.tiles ?? ocean?.reliefTiles ?? null;
+  const hub = onGround ? reliefTiles : null;
   const size = useThree(state => state.size);
   const features = useGeoFeatures(data);
 
@@ -289,7 +292,7 @@ export const GeoSymbols = <P,>({
     const seen = widenHere
       ? `${camera.position.x},${camera.position.y},${camera.position.z}|${size.height}|${minPixels}`
       : '';
-    const viewKey = `${seen}|${exaggeration}|${lifted}|${globe.discCentre.x},${globe.discCentre.z},${globe.radius},${globe.enabled}`;
+    const viewKey = `${seen}|${exaggeration}|${lifted}|${globe.version}`;
     if (!changed && viewKey === state.current.view) return;
     state.current.view = viewKey;
     const perUnit = pixelsPerUnit(camera, size.height);

@@ -4,14 +4,12 @@ import { builtInColorRamps } from '../../common/color-ramps';
 import { ContourColorMode } from '../../common/types';
 import { DEFAULT_OCEAN_WATER_OPACITY } from '../../components/Ocean/ocean-material';
 import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../../components/Ocean/ocean-volume-material';
+import type { GeoReliefProps } from '../../components/Layers/GeoRelief';
 import type {
   SceneryLayer,
   SceneryProps,
 } from '../../components/Scenery/Scenery';
-import type {
-  SceneryStageLayer,
-  SceneryStageRelief,
-} from '../../components/Scenery/SceneryStage';
+import type { SceneryStageLayer } from '../../components/Scenery/SceneryStage';
 import {
   GRATICULE_LABEL_DENSITY,
   GRATICULE_LABEL_SIZE,
@@ -458,6 +456,12 @@ export const sceneryProgressArgs: ProgressArgs = {
 const reportSkyProgress = storyProgress.source('sky', {
   name: 'Scenery',
   title: 'Preparing the sky',
+});
+
+/** Where a story's relief (a `GeoRelief`) reports how its tiles load. */
+export const reportReliefProgress = storyProgress.source('relief', {
+  name: 'Relief',
+  title: 'Loading the relief',
 });
 
 /** A Scenery's `sun` from {@link SceneryArgs}. */
@@ -1558,7 +1562,7 @@ export function sceneryArgTypes({
   return argTypes;
 }
 
-/** Story args for a `SceneryStage`'s relief (see {@link sceneryReliefFromArgs}). */
+/** Story args for the relief, a `GeoRelief` (see {@link sceneryReliefFromArgs}). */
 export type SceneryReliefArgs = SceneryReliefLookArgs & {
   relief: boolean;
   /** the demo reliefs merged, by id (see {@link SCENERY_DEMO_RELIEF_LAYERS}) */
@@ -1746,7 +1750,7 @@ const CONTOUR_MODES = {
 export function sceneryReliefLookFromArgs(
   args: Partial<SceneryReliefLookArgs>,
   layers: ReliefLayer[],
-): Pick<SceneryStageRelief, 'color' | 'contours' | 'layerLooks'> {
+): Pick<GeoReliefProps, 'color' | 'contours' | 'layerLooks'> {
   const a = { ...sceneryReliefLookArgs, ...args };
   const seabed =
     a.reliefSeabed === 'bathymetry' ? { ramp: 'bathymetry' } : a.reliefSeabed;
@@ -1831,24 +1835,34 @@ const SCENERY_HIDE_LAYERS: Record<string, SceneryLayer> = {
   'sky surface': 'surface',
   'sky walls': 'walls',
 };
-const STAGE_HIDE_LAYERS: SceneryStageLayer[] = ['surface', 'bed', 'relief'];
+const STAGE_HIDE_LAYERS: SceneryStageLayer[] = ['surface', 'bed'];
+// And the relief, a `GeoRelief`'s `visible`.
+const RELIEF_HIDE_LAYER = 'relief';
 
-/** A `hide` control for a sky story: layers of the sky and of its stage not to draw (see {@link sceneryHideFromArgs}). */
+/** A `hide` control for a sky story: layers of the sky, of its stage and the relief not to draw (see {@link sceneryHideFromArgs}). */
 export const sceneryHideArgType = {
   control: { type: 'check' },
-  options: [...Object.keys(SCENERY_HIDE_LAYERS), ...STAGE_HIDE_LAYERS],
+  options: [
+    ...Object.keys(SCENERY_HIDE_LAYERS),
+    ...STAGE_HIDE_LAYERS,
+    RELIEF_HIDE_LAYER,
+  ],
   description:
     'Layers not to draw. Only their visibility changes: nothing is rebuilt or baked again.',
   table: { category: 'Debug' },
 } as const;
 
-/** The layers a `hide` control's `hide` names, as the `Scenery`'s and a `SceneryStage`'s debug views take them. */
+/**
+ * The layers a `hide` control's `hide` names, as the `Scenery`'s and a `SceneryStage`'s debug
+ * views take them, and whether the relief (a `GeoRelief`) is shown.
+ */
 export function sceneryHideFromArgs(hide: string[] = []) {
   return {
     sky: hide
       .filter(l => l in SCENERY_HIDE_LAYERS)
       .map(l => SCENERY_HIDE_LAYERS[l]),
     stage: STAGE_HIDE_LAYERS.filter(l => hide.includes(l)),
+    relief: !hide.includes(RELIEF_HIDE_LAYER),
   };
 }
 
@@ -1940,15 +1954,14 @@ export const sceneryReliefFrame = (args: Partial<SceneryArgs>): GeoFrame =>
   );
 
 /**
- * A `SceneryStage`'s `relief` from {@link SceneryReliefArgs}, the scene placed by `frame`: the
- * demo reliefs ticked while `relief` is on, then the story's own `local` layers, finest
- * last. None without any.
+ * A `GeoRelief`'s props from {@link SceneryReliefArgs}: the demo reliefs ticked while `relief`
+ * is on, then the story's own `local` layers, finest last; its progress reported to the
+ * story's progress display. None without any layers.
  */
 export const sceneryReliefFromArgs = (
   args: Partial<SceneryReliefArgs>,
-  frame: GeoFrame,
   local: ReliefLayer[] = [],
-): SceneryStageRelief | undefined => {
+): GeoReliefProps | undefined => {
   const ticked = args.reliefLayers ?? sceneryReliefArgs.reliefLayers;
   const layers = [
     ...(args.relief
@@ -1958,9 +1971,9 @@ export const sceneryReliefFromArgs = (
   ];
   if (layers.length === 0) return undefined;
   return {
-    frame,
     layers,
     ...sceneryReliefLookFromArgs(args, layers),
+    onProgress: reportReliefProgress,
   };
 };
 

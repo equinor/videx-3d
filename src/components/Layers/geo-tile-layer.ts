@@ -455,7 +455,7 @@ export class GeoTileBounds {
     rangeAt?: ((key: number) => [number, number] | null) | null,
     version = 0,
   ) {
-    const key = `${globe.discCentre.x},${globe.discCentre.z},${globe.radius},${globe.enabled},${globe.level},${low},${high},${rangeAt ? version : '-'}`;
+    const key = `${globe.version},${low},${high},${rangeAt ? version : '-'}`;
     if (key !== this.placedFor || rangeAt !== this.rangeAt) {
       this.placedFor = key;
       this.kept.clear();

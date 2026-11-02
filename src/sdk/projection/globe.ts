@@ -232,6 +232,25 @@ export class Globe {
     return this.changes;
   }
 
+  /**
+   * A globe of its own, as this one is now: its radius, frame, disc, level, up and switch. What
+   * a change of the scene's frame keeps of the globe before it, to carry what lay on it onto
+   * the globe after (`globeCarry`).
+   */
+  clone(): Globe {
+    const copy = new Globe(this.givenRadius);
+    copy.on = this.on;
+    copy.seaLevel = this.seaLevel;
+    copy.sceneUp.copy(this.sceneUp);
+    copy.discX = this.discX;
+    copy.discZ = this.discZ;
+    copy.discR = this.discR;
+    copy.mapFrame = this.mapFrame;
+    copy.toMap = this.toMap;
+    copy.update();
+    return copy;
+  }
+
   /** the scene's up (normalised); read only, see {@link setUp} */
   get up(): Vector3 {
     return this.sceneUp;

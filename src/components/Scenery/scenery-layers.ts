@@ -1,3 +1,4 @@
+import { useThree } from '@react-three/fiber';
 import { useEffect, useMemo } from 'react';
 import {
   CustomBlending,
@@ -7,6 +8,7 @@ import {
   ShaderMaterial,
   SrcAlphaFactor,
 } from 'three';
+import { releaseMaterial } from '../../rendering/precompile';
 import layerFragmentShader from './shaders/sky-layer-fragment.glsl';
 import skyVertexShader from './shaders/sky-vertex.glsl';
 import type { SceneryMaterial } from './scenery-material';
@@ -133,11 +135,18 @@ export function useSceneryLayerMaterial(
   on: boolean,
 ) {
   const key = on ? JSON.stringify(sceneryLayerDefines(sky, layer)) : null;
+  const gl = useThree(state => state.gl);
   const material = useMemo(
     () => (key === null ? null : createSceneryLayerMaterial(sky, layer)),
     [sky, layer, key],
   );
-  useEffect(() => () => material?.dispose(), [material]);
+  // Let go once its program has linked (`releaseMaterial`).
+  useEffect(
+    () => () => {
+      if (material) releaseMaterial(gl, material);
+    },
+    [gl, material],
+  );
   return material;
 }
 

@@ -7,7 +7,7 @@ import type { SceneryReliefAtlas } from './scenery-relief-atlas';
 import { sceneryOceanDefines } from './scenery-stage';
 
 /**
- * The overview behind a stage's relief drawn from tiles, for a far plane short of the
+ * The overview behind the relief drawn from tiles, for a far plane short of the
  * farthest ground in view: the relief's own tiles, read per pixel through `atlas` (indexed
  * in `geoTileSquare`'s coordinates: longitude east, latitude south), above the sea past
  * `uReliefReach`, looked as the tiles look them, flat on the globe's sea, on a fullscreen

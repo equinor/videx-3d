@@ -4,7 +4,10 @@ import type {
   GeoFeature,
   GeoJsonFeatureCollection,
 } from '../../sdk/layers/geo-features';
-import { SCENERY_DEMO_RELIEF_LAYERS } from '../../storybook/components/scenery-controls';
+import {
+  reportReliefProgress,
+  SCENERY_DEMO_RELIEF_LAYERS,
+} from '../../storybook/components/scenery-controls';
 import { demoFrame } from '../../storybook/data/demo-crs';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
@@ -19,6 +22,7 @@ import { SceneryStage } from '../Scenery/SceneryStage';
 import { World } from '../World/World';
 import { GeoLabels } from './GeoLabels';
 import { GeoPolygons, type GeoPolygonStyle } from './GeoPolygons';
+import { GeoRelief } from './GeoRelief';
 import { MinimapGeoLayer } from './MinimapGeoLayer';
 
 // Discoveries on the Norwegian continental shelf (npm run generate-overlays; Sodir, NLOD
@@ -133,16 +137,15 @@ const DiscoveriesStory = ({
         {scenery && (
           <Scenery>
             <SceneryOcean level={LEVEL} depth={DEPTH} />
-            <SceneryStage
-              bounds={STAGE_BOUNDS}
-              relief={
-                layers.length
-                  ? { layers, depth: DEPTH, color: { ramp: 'terrain' } }
-                  : undefined
-              }
-            />
+            <SceneryStage bounds={STAGE_BOUNDS} />
           </Scenery>
         )}
+        <GeoRelief
+          layers={layers}
+          depth={DEPTH}
+          color={{ ramp: 'terrain' }}
+          onProgress={reportReliefProgress}
+        />
         <GeoPolygons
           data={data}
           style={style}
@@ -216,11 +219,11 @@ const meta = {
   argTypes: {
     scenery: {
       description:
-        'Inside a `Scenery` (on its globe, over its sea and relief), or in a `World` alone, flat on its frame: the layer needs neither.',
+        'Inside a `Scenery` (over its sea and relief), or in a `World` alone: on the `World`\u2019s globe either way, so the layer lies in the same place. It needs no `Scenery`.',
       table: { category: 'Scene' },
     },
     relief: {
-      description: 'The stage’s relief. The layer does not read it.',
+      description: 'The relief (`GeoRelief`). The layer does not read it.',
       table: { category: 'Scene' },
     },
     height: {

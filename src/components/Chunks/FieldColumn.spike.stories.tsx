@@ -108,10 +108,11 @@ import {
   SceneryStage,
   SceneryStageOccupantState,
 } from '../Scenery/SceneryStage';
-import type { SceneryStageRelief } from '../Scenery/SceneryStage';
+import { GeoRelief, GeoReliefProps } from '../Layers/GeoRelief';
 import type { ReliefSampler } from '../Scenery/scenery-relief-sampler';
 import { reliefSource } from '../Scenery/scenery-relief-source';
 import { UtmArea } from '../UtmArea';
+import { World } from '../World/World';
 import { UtmPosition } from '../UtmArea/UtmPosition';
 import { Trajectory } from '../Wellbores/Trajectory/Trajectory';
 import { TrajectoryColorInterval } from '../Wellbores/Trajectory/trajectory-defs';
@@ -935,14 +936,25 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     null,
   );
   // The column's top along its outline, ascending, where the sky's seabed lies: from the
-  // column first built, so the relief's sampler coming in later moves nothing.
-  const [rim, setRim] = useState<number[] | null>(null);
+  // column first built, so the relief's sampler coming in later moves nothing. A new column
+  // marks it stale rather than dropping it, and the next column's replaces it: the sky,
+  // mounted only once there is a seabed height, stays up through a rebuild instead of being
+  // made again, every program of it compiled anew.
+  const [rim, setRim] = useState<{ heights: number[]; stale: boolean } | null>(
+    null,
+  );
   const onRim = useCallback(
-    (next: number[]) => setRim(kept => kept ?? next),
+    (next: number[]) =>
+      setRim(kept =>
+        kept && !kept.stale ? kept : { heights: next, stale: false },
+      ),
     [],
   );
   const topId = selected[0]?.id;
-  useEffect(() => setRim(null), [outline, topId, props.maxError]);
+  useEffect(
+    () => setRim(kept => (kept ? { ...kept, stale: true } : kept)),
+    [outline, topId, props.maxError],
+  );
 
   // ⭐ COLOUR IS THE HOST'S JOB. The library takes array order as stratigraphic
   // order and never assigns a colour; here the story maps each surface's name to
@@ -1452,12 +1464,11 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
   // would be built twice.
   const demoRelief = sceneryReliefFromArgs(
     props,
-    reliefFrame,
     props.relief && props.bakeSeabed && seabedMeta
       ? [sceneryBakedReliefLayer(seabedMeta.id)]
       : [],
   );
-  const stageRelief: SceneryStageRelief | undefined = demoRelief && {
+  const stageRelief: GeoReliefProps | undefined = demoRelief && {
     ...demoRelief,
     depth: RELIEF_BASE_DEPTH,
     onSampler: setReliefSampler,
@@ -1473,10 +1484,10 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
   // deepest.
   const bedHeight = rim
     ? props.skyBed === 'top'
-      ? rim[rim.length - 1]
+      ? rim.heights[rim.heights.length - 1]
       : props.skyBed === 'bottom'
-        ? rim[0]
-        : rim[rim.length >> 1]
+        ? rim.heights[0]
+        : rim.heights[rim.heights.length >> 1]
     : null;
   // The sea bed's unit, as the whole column colours it: the column may start below it.
   const bedColor = drawsSeabed
@@ -1497,7 +1508,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       : null;
 
   return (
-    <>
+    <World frame={reliefFrame} globe={props.globe}>
       <group ref={fieldAnchor}>
         <UtmArea crsInstance={crs} origin={crs.originUtm}>
           <Videx3dLocate />
@@ -1664,9 +1675,10 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
                   anchor: fieldAnchor,
                 },
               ]}
-              relief={stageRelief}
             />
           </Scenery>
+          {/* The sky's ground: the relief, which the column is built on. */}
+          {stageRelief && <GeoRelief {...stageRelief} />}
         </SceneryGenerators>
       )}
       {props.minimap && (
@@ -1692,7 +1704,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
         tailSlices={props.tailSlices}
         tailSliceSpacing={props.tailSliceSpacing}
       />
-    </>
+    </World>
   );
 };
 
@@ -1955,7 +1967,7 @@ export const Default: Story = {
     },
     reliefMarkers: {
       description:
-        'With the relief: subsea facilities placed from UTM positions by sampling. Two inside the outline, through the stack\u2019s sampler (`ChunkStack.reliefSampler`), which answers the column\u2019s top from the relief; two past it, through the relief\u2019s own (`SceneryStageRelief.onSampler`). Of each pair, one stands on a levelled base, one on the slope. Their footprints pin the finest tiles under them, so they settle on the ground as it is drawn close up.',
+        'With the relief: subsea facilities placed from UTM positions by sampling. Two inside the outline, through the stack\u2019s sampler (`ChunkStack.reliefSampler`), which answers the column\u2019s top from the relief; two past it, through the relief\u2019s own (`GeoRelief.onSampler`). Of each pair, one stands on a levelled base, one on the slope. Their footprints pin the finest tiles under them, so they settle on the ground as it is drawn close up.',
       if: { arg: 'relief' },
       table: { category: 'Scenery' },
     },

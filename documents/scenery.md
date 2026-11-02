@@ -243,19 +243,22 @@ not dim the scene's light.
 ## Graticule (built 2026-10-27)
 
 `<SceneryGraticule>` draws lines on the Earth over what is seen of it from the air — the
-sea's surface, the land of a stage's relief, and a dry seabed — from the field out to the
+sea's surface, the land of a `GeoRelief`, and a dry seabed — from the field out to the
 horizon and from space; none in the water, under the ground or in the void:
 
 ```tsx
-<Scenery observer={observer}>
-  <SceneryOcean />
-  <SceneryGraticule
-    latLon={{ interval: 1 }}
-    utm={{ color: '#ffd23f', thickness: 2 }}
-    timeZones
-  />
-  <SceneryStage bounds={bounds} relief={relief} />
-</Scenery>
+<World frame={frame} bounds={bounds}>
+  <Scenery observer={observer}>
+    <SceneryOcean />
+    <SceneryGraticule
+      latLon={{ interval: 1 }}
+      utm={{ color: '#ffd23f', thickness: 2 }}
+      timeZones
+    />
+    <SceneryStage />
+  </Scenery>
+  <GeoRelief layers={layers} />
+</World>
 ```
 
 | Kind | Lines | Default |
@@ -293,8 +296,8 @@ seabed when dry, the background's dry seabed (`skySeaLayer`), and the relief's t
 overview over land or a dry seabed. The bakes leave them out: lines are no light, nor
 anything to reflect.
 
-**Needs the sky on the Earth:** a `World`, or a stage's relief `frame`. Without one the
-lines draw nothing (`uGlobeSphere.w`), and in development a warning says so.
+**Needs the sky on the Earth:** a `World`. Without one the lines draw nothing
+(`uGlobeSphere.w`), and in development a warning says so.
 
 **Cost.** The lines are compiled into the sea's layers, the stages and the relief always,
 and switched by uniforms (`graticuleOn`: the globe on the Earth and a kind with a width):
@@ -575,9 +578,12 @@ where the camera came from, for waves driven by data later
 The Earth is a fixed globe (`SceneryMaterial.globe`, an sdk `Globe`; see
 [world.md](./world.md#9-step-2-in-detail-the-sky-on-a-fixed-globe)): a sphere whose centre
 lies fixed below the scene, its cap over a disc about the scene — the one holding a
-`SceneryStage`'s `bounds` — cut flat, so what meets the water there meets it level. The plane
+`SceneryStage`'s `bounds`, or a `World`'s — cut flat, so what meets the water there meets it level. The plane
 and the sphere meet on the disc's edge, at an angle of `r / R` (0.1° for a 16 km stage);
-without a stage the disc is a point at the world origin. Every point of the sea has one
+without a stage the disc is a point at the world origin. Inside a `World` the globe is the
+World's, and so is whether it curves (its `globe`): the sky draws on it, and whatever the
+World places lies on it with or without a `Scenery`, so drawing the scenery or not moves
+nothing ([world.md, step 7](./world.md#the-anchor-the-worlds-frame)). Every point of the sea has one
 place whatever the camera does: nothing rises or sinks as it moves. Heights are over the
 globe — far from the scene scene Y is not altitude: at Y = 40 m, 200 km off, the camera is
 3 km over the sea — and so is up, which far off tilts from the scene's (1.8° at 200 km).
@@ -732,7 +738,7 @@ beyond `bounds`, so every view ray that can reach the scene crosses it. With the
 globe (see The globe).
 
 ```tsx
-const relief = { frame: geoFrameFromCrs(crs), layers: [{ id: 'etopo-2022-nordic' }] }
+const layers = [{ id: 'etopo-2022-nordic' }]
 const [cut, setCut] = useState<CutUniforms | null>(null)
 const [ground, setGround] = useState<HeightFieldClip | null>(null)
 const [sampler, setSampler] = useState<ReliefSampler | null>(null)
@@ -742,25 +748,25 @@ const [stage, setStage] = useState<SceneryStageOccupantState>({
   water: false,
 })
 
-<Scenery>
-  <SceneryOcean level={0} depth={120} />
-  <SceneryStage
-    bounds={[minX, minZ, maxX, maxZ]}
-    occupants={[{ outline, cut: cut ?? undefined, onStage: setStage, onGround: setGround }]}
-    relief={{ ...relief, onSampler: setSampler }}
-  />
-</Scenery>
-<ChunkStack
-  outline={outline}
-  seabed={meta.id}
-  relief={reliefSource(relief, { level: 0 })}
-  clip={ground}
-  reliefSampler={sampler}
-  water={water}
-  drawWater={!stage.water}
-  onCut={setCut}
-  /* ... */
->
+<World frame={geoFrameFromCrs(crs)} bounds={[minX, minZ, maxX, maxZ]}>
+  <Scenery>
+    <SceneryOcean level={0} depth={120} />
+    <SceneryStage
+      occupants={[{ outline, cut: cut ?? undefined, onStage: setStage, onGround: setGround }]}
+    />
+  </Scenery>
+  <GeoRelief layers={layers} onSampler={setSampler} />
+  <ChunkStack
+    outline={outline}
+    seabed={meta.id}
+    relief={reliefSource({ frame: geoFrameFromCrs(crs), layers }, { level: 0 })}
+    clip={ground}
+    reliefSampler={sampler}
+    water={water}
+    drawWater={!stage.water}
+    onCut={setCut}
+    /* ... */
+  >
   <Chunk
     layers={[
       {
@@ -775,20 +781,20 @@ const [stage, setStage] = useState<SceneryStageOccupantState>({
 </ChunkStack>
 ```
 
-`bounds` is the scene's rectangle in scene X/Z, and should hold the whole scene.
-`occupants` claim parts of it — typically field columns. The sky's sea is global: its
-`water`, `seabed` and their opacities hold over the occupants as everywhere else.
+`bounds` is the scene's rectangle in scene X/Z, and should hold the whole scene: by default
+the `World`'s. `occupants` claim parts of it — typically field columns. The sky's sea is
+global: its `water`, `seabed` and their opacities hold over the occupants as everywhere else.
 
-Without a `relief` the stage's seabed is flat, at the sea's depth, over everything: the
-occupants draw their own seabeds, and the flat one lies under them too. With one, the
-relief is the seabed everywhere, the occupants' ground included (see
+Without a `GeoRelief` in the `World` the stage's seabed is flat, at the sea's depth, over
+everything: the occupants draw their own seabeds, and the flat one lies under them too. With
+one, the relief is the seabed everywhere, the occupants' ground included (see
 [Relief](./relief.md)), and the bridge to a `ChunkStack` comes in three parts
 ([tiles.md](./tiles.md)): the stack builds its sea bed on the relief (`relief`, from
-`reliefSource`, derived from the very props the stage is given), ends its faces where the
+`reliefSource`, derived from the very props the relief is given), ends its faces where the
 relief is drawn (`clip`, from the occupant's `onGround`), and answers what is placed on
 its top from the relief (`reliefSampler`, from the relief's `onSampler`). Give the
 sampler through `SurfaceSamplerContext` to what stands past the column, too.
-`applyGlobe(material, globe)`, with the sky's globe (`useSceneryOcean()?.material.globe`),
+`applyGlobe(material, globe)`, with the World's globe (`useWorld()?.globe`),
 places a material's vertices on the globe as the relief's are, for what is long and
 outside any anchor.
 
@@ -844,7 +850,7 @@ or without a seabed its lid is a roof from below. With walls, the lid is in thei
 haze's: `fadeDistance`, `depthDetail` and, but for `background: 'void'` and the stand-in,
 `depth` and `falloff` apply only without them, and `ceiling` only without their `sand`.
 
-Under a `SceneryStage`'s relief the void starts under the relief, at whatever depth: over
+Under the `World`'s relief the void starts under the relief, at whatever depth: over
 it, down a trench below the sea's `depth`, the camera is still in the water. From the void
 the relief itself is the lid — its underside, shaded as the flat lid is (with walls as
 their sand's underside), raked by the walls' light (their bearing and `lightElevation`,
@@ -961,12 +967,22 @@ it can lie over (`skyAbyssWallClear`), each a box distance to the rim without it
 the haze is smooth. Inside the hollow it is as thick as without the fade, so little
 changes there. A point inside the rim however far it wanders skips the way round:
 the walls' faces, and anything in the hollow, pay one box distance for its light.
+The walls belong to the anchored stage: a camera far from it, under another field, sees
+none of them, and the void there is the plain one, as without walls, rather than their
+rock faded to black. How much of them the camera sees (`uSkyAbyssWallNear`, set each frame
+with their cut: `skyAbyssWallNear`) is all of it in the hollow and near it, and eases out
+to none as far beyond the rim, at the camera's depth, as the hollow's light reaches (three
+times `rimFade`, or three times `distance` without a fade). Between, their fill and lid
+are mixed with the plain void's lid and depths (`skyAbyssLidNear`, the rock of the depths
+coming back in), and their faces into those depths; with none left their mesh is hidden,
+and the stage's seabed and the relief draw the plain lid from below instead of leaving
+the fill's pixels to the background. Inside the hollow nothing of this changes.
 A view rising from under the foot counts as gone into the rock there once it passes within
 about a pixel of it (`SKY_ABYSS_FOOT_OVERLAP`), so that rock overlaps the mesh's last edge
 and no hairline of the lid shows between them.
 The mesh is drawn from below the lid, before the background, and from above it only while
 the void can show there: through a seabed that is off or see-through, a cutaway that takes
-the seabed, or a stage's relief cut with an occupant (a `SceneryStage` tells the sky while
+the seabed, or the relief cut with an occupant (a `SceneryStage` tells the sky while
 an occupant's `cut` opens its relief). From above, a view going down through the lid beyond the stage while the
 background's seabed there is opaque, and a cutaway does not take it, leaves the mesh hidden
 (`skyAbyssWallCovered`, which reads the sea's cutaway as the background does); over
@@ -1035,7 +1051,7 @@ default):
 | `water` | `<SceneryOcean>` | the view from in the water |
 | `surface` | `<SceneryOcean>` | the sea's surface, at the next `renderOrder` |
 
-The void's walls' mesh draws just before them all, and a stage's relief overview after
+The void's walls' mesh draws just before them all, and the relief's overview after
 them. Transparent parts draw after everything. It works with R3F's own render and with a
 `RenderingPipeline` of `OITRenderPass` + `OutputPass`.
 
@@ -1304,6 +1320,17 @@ basic ones show in every story, the advanced and debug ones only in `StageDebug`
   through the `OITRenderPass`'s variants, each object when its turn in the renderer's
   queue comes (see Performance). The sky waits for its own meshes, the stages
   registered through `SceneryOceanState.stage`, and the baker's scenes and PMREM prefilter.
+- Letting go goes through `releaseMaterial` (same file, internal) wherever a material is
+  replaced or unmounted while the scene draws — the sky, its layers and stand-in, the
+  baker's own, a stage's, the relief's, a chunk's and a stack's sea. A material disposed
+  while its program still links (`KHR_parallel_shader_compile`) makes Chrome warn
+  "glGetProgramiv: Program object expected" once per program as the link finishes, from
+  its own GPU process, so no JS hook sees the call (12 of 12 disposed mid-link warned, 0 of
+  12 disposed once linked, 2026-11-02). It waits for the link, and for every compile queued
+  before it to start, so a replacement queued in the same render takes the program over
+  instead of compiling it again (three gives a source that went and came back a new id). Its
+  `linger` keeps it longer for a replacement made later: a chunk's, whose rebuild lets the
+  old one go first (`CHUNK_MATERIAL_LINGER`).
 - The water lies on one mesh (`createSceneryStagePlane`): `bounds` as a 4 × 4 grid, then rings
   each about twice as wide as the one inside, out to the far plane. The flat parts are
   shaded at the ray's exact hit, so their triangles only need to grow with their distance

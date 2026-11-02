@@ -312,6 +312,35 @@ describe('SceneryMaterial.globe', () => {
     expect(sky.globe.discRadius).toBe(0);
     sky.dispose();
   });
+
+  it("on a World's globe: leaves its disc and its curve to the World, and follows the curve", () => {
+    const earth = new Globe();
+    earth.enabled = false;
+    earth.setDisc([-3000, -4000, 3000, 4000]);
+    const sky = new SceneryMaterial({}, earth);
+    expect(sky.globe).toBe(earth);
+    // Made on it, the sky does not curve it.
+    expect(earth.enabled).toBe(false);
+    expect(sky.globeEnabled).toBe(false);
+    expect(sky.uniforms.uSkyCurvature.value).toBe(0);
+    // The stage's own uniforms, not the World's disc.
+    sky.setFlatSea(BOUNDS);
+    expect(earth.discRadius).toBe(5000);
+    expect(earth.discCentre.x).toBe(0);
+    expect(sky.uniforms.uSkyStageBox.value.toArray()).toEqual([
+      1000, -2000, 4000, 3000,
+    ]);
+    // Curved by the World: the shaders take it as the sky is drawn.
+    earth.enabled = true;
+    const camera = new PerspectiveCamera();
+    camera.updateMatrixWorld();
+    sky.syncCamera(camera);
+    expect(sky.globeEnabled).toBe(true);
+    expect(sky.uniforms.uSkyCurvature.value).toBeGreaterThan(0);
+    sky.setFlatSea(null);
+    expect(earth.discRadius).toBe(5000);
+    sky.dispose();
+  });
 });
 
 describe('Globe.tangent', () => {

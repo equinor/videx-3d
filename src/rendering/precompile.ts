@@ -73,7 +73,12 @@ type Queue = {
   compiling: Job[];
   order: number;
   polling: boolean;
+  // Materials to dispose of once nothing they compile is linking, and the compiles queued
+  // before them have started (see releaseMaterial).
+  releases: Release[];
 };
+
+type Release = { material: Material; before: number };
 
 const queues = new WeakMap<WebGLRenderer, Queue>();
 
@@ -241,10 +246,78 @@ export function precompile(
 function queueOf(renderer: WebGLRenderer) {
   let queue = queues.get(renderer);
   if (!queue) {
-    queue = { waiting: [], compiling: [], order: 0, polling: false };
+    queue = {
+      waiting: [],
+      compiling: [],
+      order: 0,
+      polling: false,
+      releases: [],
+    };
     queues.set(renderer, queue);
   }
   return queue;
+}
+
+/**
+ * @internal
+ * Dispose of `material` without harm to what compiles: once no program `renderer` compiles
+ * for it is still linking, and every compile queued before now has started. Disposed while
+ * its program links (`KHR_parallel_shader_compile`), the browser warns
+ * ("glGetProgramiv: Program object expected") as it finishes; disposed before a replacement
+ * queued in the same render has started, the program the two would share is thrown away
+ * and compiled again. At once when neither holds; a compile of its own not started yet is
+ * dropped. Use it wherever a material is replaced or let go while the scene is drawn.
+ *
+ * `linger` (ms) keeps it, and so its programs, that much longer first: for what is replaced
+ * by a material made later, once a rebuild comes in, which then takes them over rather than
+ * compiling them again. A material holds no geometry; its textures are its owner's.
+ */
+export function releaseMaterial(
+  renderer: WebGLRenderer,
+  material: Material,
+  { linger = 0 }: { linger?: number } = {},
+) {
+  const queue = queueOf(renderer);
+  for (const job of [...queue.waiting]) {
+    if (!job.watched.includes(material)) continue;
+    queue.waiting.splice(queue.waiting.indexOf(job), 1);
+    finish(job);
+  }
+  if (linger > 0) {
+    setTimeout(() => releaseMaterial(renderer, material), linger);
+    return;
+  }
+  const release = { material, before: queue.order };
+  if (released(renderer, queue, release)) {
+    material.dispose();
+    return;
+  }
+  queue.releases.push(release);
+  keepPolling(renderer, queue);
+}
+
+function released(renderer: WebGLRenderer, queue: Queue, release: Release) {
+  const { material, before } = release;
+  if (!isReady(renderer, material)) return false;
+  if (queue.compiling.some(job => job.watched.includes(material))) return false;
+  return !queue.waiting.some(job => job.order < before);
+}
+
+function settleReleases(renderer: WebGLRenderer, queue: Queue) {
+  if (queue.releases.length === 0) return;
+  const left: Release[] = [];
+  for (const release of queue.releases) {
+    if (released(renderer, queue, release)) release.material.dispose();
+    else left.push(release);
+  }
+  queue.releases = left;
+}
+
+function keepPolling(renderer: WebGLRenderer, queue: Queue) {
+  if (queue.polling) return;
+  if (queue.compiling.length === 0 && queue.releases.length === 0) return;
+  queue.polling = true;
+  setTimeout(() => poll(renderer, queue), POLL_INTERVAL);
 }
 
 function finish(job: Job) {
@@ -277,10 +350,9 @@ function pump(renderer: WebGLRenderer, queue: Queue) {
     if (job.pending.length === 0) finish(job);
     else queue.compiling.push(job);
   }
-  if (queue.compiling.length > 0 && !queue.polling) {
-    queue.polling = true;
-    setTimeout(() => poll(renderer, queue), POLL_INTERVAL);
-  }
+  // Once the compiles have started: what they share with a material let go is kept.
+  settleReleases(renderer, queue);
+  keepPolling(renderer, queue);
 }
 
 function poll(renderer: WebGLRenderer, queue: Queue) {

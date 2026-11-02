@@ -19,6 +19,7 @@ import {
   precompile,
   PRECOMPILE_PRIORITY,
   PRECOMPILE_SLOTS,
+  releaseMaterial,
   setPipelinePasses,
 } from '../src/rendering/precompile';
 
@@ -263,6 +264,93 @@ describe('the precompile queue', () => {
     expect(count.count()).toEqual({ done: 5, total: 5 });
     count.track()(0, 1);
     expect(count.count()).toEqual({ done: 0, total: 1 });
+  });
+});
+
+describe('releaseMaterial', () => {
+  const meshes = (count: number) =>
+    Array.from(
+      { length: count },
+      () => new Mesh(new BufferGeometry(), new MeshBasicMaterial()),
+    );
+  const disposed = (material: Material) => {
+    const state = { at: -1 };
+    material.addEventListener('dispose', () => (state.at = performance.now()));
+    return state;
+  };
+  const settle = () => new Promise(r => setTimeout(r, 40));
+
+  test('disposes of a material at once when nothing compiles', () => {
+    const { renderer } = mockRenderer();
+    const material = new MeshBasicMaterial();
+    const state = disposed(material);
+    releaseMaterial(renderer, material);
+    expect(state.at).toBeGreaterThanOrEqual(0);
+  });
+
+  test('waits while its program is still linking', async () => {
+    let ready = false;
+    const { renderer } = mockRenderer(() => ready);
+    const [mesh] = meshes(1);
+    const state = disposed(mesh.material);
+    const pending = precompile(renderer, mesh, camera, new Scene());
+    releaseMaterial(renderer, mesh.material);
+    await settle();
+    expect(state.at).toBe(-1);
+    ready = true;
+    await pending;
+    await settle();
+    expect(state.at).toBeGreaterThanOrEqual(0);
+  });
+
+  test('waits for the compiles queued before it to start, so they share its program', async () => {
+    let ready = false;
+    const { renderer, compiled } = mockRenderer(() => ready);
+    const scene = new Scene();
+    const old = new MeshBasicMaterial();
+    const state = disposed(old);
+    const blockers = new Group().add(...meshes(PRECOMPILE_SLOTS));
+    const [replacement] = meshes(1);
+    const waits = [
+      precompile(renderer, blockers, camera, scene),
+      precompile(renderer, replacement, camera, scene),
+    ];
+    releaseMaterial(renderer, old);
+    await settle();
+    expect(state.at).toBe(-1);
+    ready = true;
+    await Promise.all(waits);
+    await settle();
+    expect(compiled.map(c => c.material)).toContain(replacement.material);
+    expect(state.at).toBeGreaterThanOrEqual(0);
+  });
+
+  test('drops a compile of its own that has not started, and disposes at once', async () => {
+    let ready = false;
+    const { renderer, compiled } = mockRenderer(() => ready);
+    const scene = new Scene();
+    const blockers = new Group().add(...meshes(PRECOMPILE_SLOTS));
+    const [gone] = meshes(1);
+    const state = disposed(gone.material);
+    const waits = [
+      precompile(renderer, blockers, camera, scene),
+      precompile(renderer, gone, camera, scene),
+    ];
+    releaseMaterial(renderer, gone.material);
+    expect(state.at).toBeGreaterThanOrEqual(0);
+    ready = true;
+    await Promise.all(waits);
+    expect(compiled.map(c => c.material)).not.toContain(gone.material);
+  });
+
+  test('lingers before it lets go, for a replacement made later to take its program over', async () => {
+    const { renderer } = mockRenderer();
+    const material = new MeshBasicMaterial();
+    const state = disposed(material);
+    releaseMaterial(renderer, material, { linger: 30 });
+    expect(state.at).toBe(-1);
+    await settle();
+    expect(state.at).toBeGreaterThanOrEqual(0);
   });
 });
 

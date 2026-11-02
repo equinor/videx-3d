@@ -1,6 +1,7 @@
 import {
   BackSide,
   BufferAttribute,
+  Color,
   DataArrayTexture,
   DataTexture,
   DynamicDrawUsage,
@@ -12,13 +13,17 @@ import {
   LinearFilter,
   Matrix4,
   NearestFilter,
+  Object3D,
   RedFormat,
   RGBAFormat,
   RGFormat,
   ShaderMaterial,
   Texture,
   Uniform,
+  UniformsLib,
+  UniformsUtils,
   UnsignedByteType,
+  Vector2,
   Vector3,
   Vector4,
 } from 'three';
@@ -42,13 +47,22 @@ import {
   heightFieldWarp,
 } from '../../sdk/materials/height-field-clip';
 import { attachOitVariants } from '../../rendering/oit-material';
+import type { Globe } from '../../sdk/projection/globe';
 import fragmentShader from './shaders/relief-fragment.glsl';
+import plainFragmentShader from './shaders/relief-plain-fragment.glsl';
 import vertexShader from './shaders/relief-tiles-vertex.glsl';
 import type { SceneryMaterial } from './scenery-material';
+import { sceneryDefaults } from './scenery-model';
 import { sceneryOceanDefines } from './scenery-stage';
 
 /** The most relief tiles drawn at once. */
 export const SKY_RELIEF_MAX_TILES = 2048;
+
+/**
+ * The most see-through regions a relief tells apart at once, the anchored stage and loaded
+ * fields: `RELIEF_MAX_REGIONS` in `relief-tiles.glsl`, the same.
+ */
+export const SKY_RELIEF_MAX_REGIONS = 8;
 
 // SceneryReliefTileGround.heightAt's warped point.
 const warped: [number, number] = [0, 0];
@@ -215,7 +229,7 @@ export type SceneryReliefTileGroundTile = {
 };
 
 /**
- * The ground a stage's relief tiles draw over a region, handed out as a
+ * The ground the relief's tiles draw over a region, handed out as a
  * `HeightFieldClip`: an index of the tiles there over the tiles' own heights texture, the
  * tiles' squares in the coordinates the `warp` (`heightFieldWarp`) takes the consumer's
  * X/Z into. `set` it when the tiles there change; it is live while `live` is set and it has
@@ -403,15 +417,15 @@ export type SceneryReliefTileOccupants = {
 };
 
 /**
- * A material for a stage's relief drawn from tiles: as the overview's
+ * A material for the relief drawn from tiles: as the overview's
  * (`createSceneryReliefFarMaterial`), land above the sea and seabed below it, opaque,
  * inheriting the sky material's uniform objects; but its heights and normals are its
  * tiles'. A change to the sky's defines needs a new one.
  *
  * @param looks the relief's looks (`SceneryReliefLooks.texture`), the relief's own and its
  *   layers', by the layer each node came from
- * @param stage with a see-through seabed: `'around'` leaves the stage's area
- *   (`uReliefStage`) to {@link createSceneryReliefTileSeeThroughMaterial}; omitted, the
+ * @param stage with a see-through seabed: `'around'` leaves the see-through regions
+ *   (`setReliefRegions`) to {@link createSceneryReliefTileSeeThroughMaterial}; omitted, the
  *   tiles are drawn everywhere
  * @param occupants the stage's occupants' outlines, and the cut of one of them
  */
@@ -424,18 +438,11 @@ export function createSceneryReliefTileMaterial(
   occupants?: SceneryReliefTileOccupants,
 ) {
   const defines = sceneryOceanDefines(sky);
-  defines.RELIEF_TILES = '';
-  if (stage === 'around') defines.RELIEF_STAGE_AROUND = '';
-  if (debug === 'tiles') defines.RELIEF_DEBUG_TILES = '';
-  if (debug === 'layers') defines.RELIEF_DEBUG_LAYERS = '';
-  const uniforms = Object.create(sky.uniforms) as Record<string, Uniform>;
-  uniforms.uReliefTileHeights = new Uniform(textures.heights);
-  uniforms.uReliefTileNormals = new Uniform(textures.normals);
-  uniforms.uReliefTileLayers = new Uniform(textures.layers);
-  uniforms.uReliefTileNodes = new Uniform(textures.nodes);
-  uniforms.uReliefTileCells = new Uniform(textures.nodes - 3);
-  uniforms.uReliefReach = new Uniform(1e30);
-  uniforms.uReliefStage = new Uniform(new Vector4());
+  reliefTileDefines(defines, stage, debug);
+  const uniforms = Object.assign(
+    Object.create(sky.uniforms) as Record<string, IUniform>,
+    reliefTileUniforms(textures, looks),
+  );
   if (occupants && occupants.fields.count > 0) {
     defines.RELIEF_OCCUPANTS = occupants.fields.count;
     uniforms.uReliefOccupantFields = new Uniform(occupants.fields.texture);
@@ -445,7 +452,7 @@ export function createSceneryReliefTileMaterial(
       defines.RELIEF_CUT_OCCUPANT = cut.index;
       if (cut.with.plane) {
         defines.RELIEF_OCCUPANT_SECTION = '';
-        (uniforms as Record<string, IUniform>).sectionPlane = cut.with.plane;
+        uniforms.sectionPlane = cut.with.plane;
       }
       if (cut.with.fence) {
         defines.RELIEF_OCCUPANT_FENCE = '';
@@ -453,8 +460,6 @@ export function createSceneryReliefTileMaterial(
       }
     }
   }
-  uniforms.uReliefLook = new Uniform(looks);
-  uniforms.uColorRamps = new Uniform(colorRampTexture);
   return new ShaderMaterial({
     vertexShader,
     fragmentShader,
@@ -463,6 +468,175 @@ export function createSceneryReliefTileMaterial(
     lights: true,
     dithering: true,
   });
+}
+
+/**
+ * A material for the relief drawn from tiles without a sky (a `GeoRelief` with no `Scenery`):
+ * its looks lit by the scene's lights, on `globe` (its uniform objects bound), and nothing of
+ * the sea, the air or the void (`relief-plain-fragment.glsl`). Its seabed is the sea's by
+ * default (`sceneryDefaults.ocean.seabed`), darkening from `uReliefBedDepth` metres down; its
+ * see-through copies ({@link createSceneryReliefTileSeeThroughMaterial}) are drawn at
+ * `uReliefOpacity`. Nothing is drawn from below without a sky.
+ *
+ * @param options.stage `'around'` leaves the see-through regions (`setReliefRegions`) to its
+ *   see-through copy; omitted, the tiles are drawn everywhere
+ * @param options.land `false` leaves out the ground at or above the sea's level
+ * @param options.seabed `false` leaves out the ground below it
+ */
+export function createReliefTilePlainMaterial(
+  globe: Globe,
+  textures: SceneryReliefTileTextures,
+  looks: Texture,
+  {
+    stage,
+    debug,
+    land = true,
+    seabed = true,
+  }: {
+    stage?: 'around';
+    debug?: SceneryReliefTileDebug;
+    land?: boolean;
+    seabed?: boolean;
+  } = {},
+) {
+  const defines: Record<string, unknown> = {};
+  reliefTileDefines(defines, stage, debug);
+  if (!land) defines.RELIEF_NO_LAND = '';
+  if (!seabed) defines.RELIEF_NO_SEABED = '';
+  const { seabed: bed, depth } = sceneryDefaults.ocean;
+  const uniforms: Record<string, IUniform> = {
+    ...UniformsUtils.clone(UniformsLib.lights),
+    ...globe.uniforms,
+    ...reliefTileUniforms(textures, looks),
+    uReliefBedColor: new Uniform(new Color(bed.color)),
+    uReliefBedSpecular: new Uniform(new Color(bed.specular)),
+    uReliefBedShininess: new Uniform(bed.shininess),
+    uReliefBedAmbient: new Uniform(new Vector2(...bed.ambient)),
+    uReliefBedDepth: new Uniform(depth),
+    // Everywhere, and over the see-through area.
+    uReliefOpacity: new Uniform(new Vector2(1, 1)),
+  };
+  return new ShaderMaterial({
+    vertexShader,
+    fragmentShader: plainFragmentShader,
+    uniforms,
+    defines,
+    lights: true,
+    dithering: true,
+  });
+}
+
+// What every relief tile material compiles with: its tiles, the area it leaves to a
+// see-through draw, and a debug view.
+function reliefTileDefines(
+  defines: Record<string, unknown>,
+  stage?: 'around',
+  debug?: SceneryReliefTileDebug,
+) {
+  defines.RELIEF_TILES = '';
+  if (stage === 'around') defines.RELIEF_STAGE_AROUND = '';
+  if (debug === 'tiles') defines.RELIEF_DEBUG_TILES = '';
+  if (debug === 'layers') defines.RELIEF_DEBUG_LAYERS = '';
+}
+
+// What every relief tile material reads: its tiles' textures, its reach, the see-through
+// regions, and its looks.
+function reliefTileUniforms(
+  textures: SceneryReliefTileTextures,
+  looks: Texture,
+): Record<string, IUniform> {
+  return {
+    uReliefTileHeights: new Uniform(textures.heights),
+    uReliefTileNormals: new Uniform(textures.normals),
+    uReliefTileLayers: new Uniform(textures.layers),
+    uReliefTileNodes: new Uniform(textures.nodes),
+    uReliefTileCells: new Uniform(textures.nodes - 3),
+    uReliefReach: new Uniform(1e30),
+    uReliefRegionCount: new Uniform(0),
+    uReliefRegions: new Uniform(
+      Array.from({ length: SKY_RELIEF_MAX_REGIONS }, () => new Matrix4()),
+    ),
+    uReliefRegionBounds: new Uniform(
+      Array.from({ length: SKY_RELIEF_MAX_REGIONS }, () => new Vector4()),
+    ),
+    uReliefLook: new Uniform(looks),
+    uColorRamps: new Uniform(colorRampTexture),
+  };
+}
+
+/**
+ * An area the relief is see-through over: `bounds`, `[minX, minZ, maxX, maxZ]`, in `object`'s
+ * own X/Z — a loaded field's group (`WorldField`), placed on the Earth — or, without one, in
+ * world X/Z (the anchored stage's).
+ */
+export type SceneryReliefRegion = {
+  object?: Object3D;
+  bounds: [number, number, number, number];
+};
+
+const regionCorner = new Vector3();
+
+/**
+ * Set a relief material's see-through regions (`uReliefRegionCount`, `uReliefRegions`: world
+ * to the area's own frame, through its object's whole placement, tilted on the globe as it
+ * is; `uReliefRegionBounds`), at most {@link SKY_RELIEF_MAX_REGIONS}, the nearest `eye` (world
+ * X/Z) kept past that. Writes each one's box in world X/Z into `boxes`, for the tiles over
+ * them, and returns how many.
+ */
+export function setReliefRegions(
+  uniforms: Record<string, IUniform>,
+  regions: readonly SceneryReliefRegion[],
+  eye: [number, number],
+  boxes: [number, number, number, number][],
+): number {
+  const placed = regions.map(region => {
+    const [minX, minZ, maxX, maxZ] = region.bounds;
+    if (!region.object) {
+      return { region, box: [minX, minZ, maxX, maxZ] as typeof region.bounds };
+    }
+    region.object.updateWorldMatrix(true, false);
+    const box: [number, number, number, number] = [
+      Infinity,
+      Infinity,
+      -Infinity,
+      -Infinity,
+    ];
+    for (const [x, z] of [
+      [minX, minZ],
+      [maxX, minZ],
+      [minX, maxZ],
+      [maxX, maxZ],
+    ]) {
+      regionCorner.set(x, 0, z).applyMatrix4(region.object.matrixWorld);
+      box[0] = Math.min(box[0], regionCorner.x);
+      box[1] = Math.min(box[1], regionCorner.z);
+      box[2] = Math.max(box[2], regionCorner.x);
+      box[3] = Math.max(box[3], regionCorner.z);
+    }
+    return { region, box };
+  });
+  const distance = ([a0, b0, a1, b1]: [number, number, number, number]) =>
+    Math.hypot(
+      Math.max(a0 - eye[0], 0, eye[0] - a1),
+      Math.max(b0 - eye[1], 0, eye[1] - b1),
+    );
+  const kept =
+    placed.length > SKY_RELIEF_MAX_REGIONS
+      ? [...placed]
+          .sort((a, b) => distance(a.box) - distance(b.box))
+          .slice(0, SKY_RELIEF_MAX_REGIONS)
+      : placed;
+  const matrices = uniforms.uReliefRegions.value as Matrix4[];
+  const areas = uniforms.uReliefRegionBounds.value as Vector4[];
+  kept.forEach(({ region, box }, i) => {
+    if (region.object) matrices[i].copy(region.object.matrixWorld).invert();
+    else matrices[i].identity();
+    areas[i].fromArray(region.bounds);
+    boxes[i] = box;
+  });
+  uniforms.uReliefRegionCount.value = kept.length;
+  boxes.length = kept.length;
+  return kept.length;
 }
 
 /**
@@ -482,8 +656,8 @@ export function createSceneryReliefTileFromBelowMaterial(
   };
   if (walls) defines.SKY_ABYSS_WALLS = '';
   return new ShaderMaterial({
-    vertexShader,
-    fragmentShader,
+    vertexShader: opaque.vertexShader,
+    fragmentShader: opaque.fragmentShader,
     uniforms: opaque.uniforms,
     defines,
     side: BackSide,
@@ -493,21 +667,25 @@ export function createSceneryReliefTileFromBelowMaterial(
 }
 
 /**
- * The stage's area of a relief drawn from tiles, at the sea's seabed opacity
- * (`SceneryMaterial.oceanSeabedOpacity`), as the stage's own see-through seabed is: a
- * transparent part wired for the `OITRenderPass`, its skirts left out. It shares
- * `opaque`'s uniform objects (see {@link createSceneryReliefTileMaterial} with `'around'`),
+ * The see-through area of a relief drawn from tiles: with a sky at the sea's seabed opacity
+ * (`SceneryMaterial.oceanSeabedOpacity`), as the stage's own see-through seabed is; without
+ * one (a plain `opaque`, {@link createReliefTilePlainMaterial}) at its `uReliefOpacity`. With
+ * `'all'` (plain only), every tile, see-through everywhere, drawn instead of `opaque`. A
+ * transparent part wired for the `OITRenderPass`, its skirts left out. It shares `opaque`'s
+ * shaders and uniform objects (see {@link createSceneryReliefTileMaterial} with `'around'`),
  * and the side it draws (from below, see {@link createSceneryReliefTileFromBelowMaterial}).
  */
 export function createSceneryReliefTileSeeThroughMaterial(
   opaque: ShaderMaterial,
+  area: 'stage' | 'all' = 'stage',
 ) {
   const defines: Record<string, unknown> = { ...opaque.defines };
   delete defines.RELIEF_STAGE_AROUND;
   defines.RELIEF_SEE_THROUGH = '';
+  if (area === 'all') defines.RELIEF_SEE_THROUGH_ALL = '';
   const material = new ShaderMaterial({
-    vertexShader,
-    fragmentShader,
+    vertexShader: opaque.vertexShader,
+    fragmentShader: opaque.fragmentShader,
     uniforms: opaque.uniforms,
     defines,
     side: opaque.side,

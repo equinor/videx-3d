@@ -14,7 +14,7 @@ import {
   Vector4,
 } from 'three';
 import { useReleasedFrame } from '../../hooks/useReleasedFrame';
-import { precompile } from '../../rendering/precompile';
+import { precompile, releaseMaterial } from '../../rendering/precompile';
 import {
   PlanarPolygonCoordinates,
   SurfaceChunk,
@@ -35,7 +35,7 @@ import {
   openIntervals,
 } from './cap-visibility';
 import { ChunkContactTexture, resolveLayerContacts } from './chunk-contacts';
-import { releaseGeometry } from './chunk-resources';
+import { CHUNK_MATERIAL_LINGER, releaseGeometry } from './chunk-resources';
 import { ChunkDepthMap } from './chunk-depth-map';
 import { ChunkDetail } from './chunk-detail';
 import {
@@ -380,6 +380,12 @@ export const ChunkMeshes = ({
   const seaBedBySection = seaBed && (!sectionWater || keepBed);
   const seaBedByFence = seaBed && (!fenceWater || keepBed);
 
+  // Its materials are let go through the renderer's compile queue (`releaseMaterial`): not
+  // while their programs link, and kept a while for the next build's, made once it comes in,
+  // to take their programs over rather than compile them again (Chunk lets the old chunk
+  // go at once).
+  const gl = useThree(state => state.gl);
+
   const materials = useMemo(() => {
     // Every material built here is owned here and disposed on cleanup.
     const owned: Material[] = [];
@@ -699,8 +705,11 @@ export const ChunkMeshes = ({
   ]);
 
   useEffect(() => {
-    return () => materials.owned.forEach(m => m.dispose());
-  }, [materials]);
+    return () =>
+      materials.owned.forEach(m =>
+        releaseMaterial(gl, m, { linger: CHUNK_MATERIAL_LINGER }),
+      );
+  }, [materials, gl]);
 
   // The marking is drawn OVER the unit's own material rather than being part of
   // it, so it works over a caller-supplied (possibly textured) Material as well as
@@ -739,8 +748,11 @@ export const ChunkMeshes = ({
 
   useEffect(() => {
     const { built } = overlays;
-    return () => built.forEach(m => m?.dispose());
-  }, [overlays]);
+    return () =>
+      built.forEach(
+        m => m && releaseMaterial(gl, m, { linger: CHUNK_MATERIAL_LINGER }),
+      );
+  }, [overlays, gl]);
 
   // The cut face of each filled interval, rebuilt every frame from the chunk's own
   // channels. It is drawn with the interval's own fill material, so per-layer
@@ -871,7 +883,6 @@ export const ChunkMeshes = ({
 
   // A material not drawn before compiles in the background with the chunk hidden, rather
   // than stalling the frame that first draws it. Checked every render: caps stream in.
-  const gl = useThree(state => state.gl);
   const scene = useThree(state => state.scene);
   const camera = useThree(state => state.camera);
   const compiled = useRef(new WeakSet<Material>());

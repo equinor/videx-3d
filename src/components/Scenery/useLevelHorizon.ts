@@ -79,7 +79,7 @@ function setCameraUp(camera: Camera, controls: unknown, up: Vector3) {
  * is heading. Controls that read the up only when made, as three's `OrbitControls`, are not
  * levelled by it. Turned off or unmounted, the camera's own up is put back.
  *
- * Call it inside the `Scenery` or a `World` holding one, or pass the `globe`.
+ * Call it inside a `World` or a `Scenery`, or pass the `globe`.
  */
 export function useLevelHorizon({
   enabled = true,

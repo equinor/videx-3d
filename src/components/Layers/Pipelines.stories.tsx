@@ -15,7 +15,10 @@ import {
   type DemoPipeline,
   type DemoRevealArgs,
 } from '../../storybook/components/demo-pipelines';
-import { SCENERY_DEMO_RELIEF_LAYERS } from '../../storybook/components/scenery-controls';
+import {
+  reportReliefProgress,
+  SCENERY_DEMO_RELIEF_LAYERS,
+} from '../../storybook/components/scenery-controls';
 import { demoFrame } from '../../storybook/data/demo-crs';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
@@ -28,12 +31,13 @@ import { SceneryOcean } from '../Scenery/SceneryOcean';
 import { SceneryStage } from '../Scenery/SceneryStage';
 import { World } from '../World/World';
 import { GeoLabels } from './GeoLabels';
+import { GeoRelief } from './GeoRelief';
 import { GeoSymbols } from './GeoSymbols';
 import { GeoTubes } from './GeoTubes';
 import { MinimapGeoLayer, type MinimapGeoStyle } from './MinimapGeoLayer';
 
 // Pipelines and facilities on the Norwegian continental shelf (demo-pipelines.tsx), lying on
-// the seabed the stage's relief draws, about the demo field at Volve.
+// the seabed the relief (GeoRelief) draws, about the demo field at Volve.
 
 const LEVEL = 0;
 const DEPTH = 100;
@@ -126,13 +130,12 @@ const PipelinesStory = ({
       <SceneryGenerators>
         <Scenery>
           <SceneryOcean level={LEVEL} depth={DEPTH} water={sea} />
-          <SceneryStage
-            bounds={STAGE_BOUNDS}
-            relief={
-              layers.length
-                ? { layers, depth: DEPTH, color: { ramp: 'terrain' } }
-                : undefined
-            }
+          <SceneryStage bounds={STAGE_BOUNDS} />
+          <GeoRelief
+            layers={layers}
+            depth={DEPTH}
+            color={{ ramp: 'terrain' }}
+            onProgress={reportReliefProgress}
           />
           {/* Inside the Scenery: on its relief, seen through its sea (water). */}
           <GeoTubes

@@ -441,11 +441,15 @@ export class SceneryBaker {
     camera.update(renderer, this.scene);
   }
 
-  dispose() {
+  /**
+   * Dispose of everything it holds; its own materials through `release` (default
+   * `dispose`), such as `releaseMaterial`, so none goes while its program still links.
+   */
+  dispose(release: (material: Material) => void = m => m.dispose()) {
     this.generation++;
     this.geometry.dispose();
-    this.material.dispose();
-    for (const { mesh } of this.layers.values()) mesh.material.dispose();
+    release(this.material);
+    for (const { mesh } of this.layers.values()) release(mesh.material);
     this.subsurface.dispose();
     this.probeTarget.dispose();
     for (const bake of Object.values(this.bakes)) {

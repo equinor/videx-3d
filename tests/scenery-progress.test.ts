@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { ProgressReport } from '../src/components/Progress/progress-store';
 import {
+  createReliefProgress,
   createSceneryProgress,
+  RELIEF_PROGRESS_LABELS,
   SCENERY_PROGRESS_LABELS,
 } from '../src/components/Scenery/scenery-progress';
 
@@ -10,6 +12,14 @@ function listen() {
   const progress = createSceneryProgress(r => reports.push(r));
   const last = () => reports[reports.length - 1];
   const item = (key: string) => last()?.items.find(i => i.key === key);
+  return { reports, progress, item };
+}
+
+function listenRelief() {
+  const reports: ProgressReport[] = [];
+  const progress = createReliefProgress(r => reports.push(r));
+  const last = () => reports[reports.length - 1];
+  const item = () => last()?.items.find(i => i.key === 'relief');
   return { reports, progress, item };
 }
 
@@ -35,52 +45,62 @@ describe('createSceneryProgress', () => {
     expect(item('shaders')?.step).toMatchObject({ done: 0, total: 4 });
   });
 
-  it('reports the relief only once a stage has tiles, counting a run from when it waits', () => {
-    const { progress, item } = listen();
-    progress.compiles.track()(0, 0);
-    expect(item('relief')).toBeUndefined();
-
-    const stage = {};
-    // Tiles in before the run do not count toward it.
-    progress.relief(stage, { settled: 10, loading: 0, queued: 0 });
-    expect(item('relief')).toMatchObject({ state: 'ready', estimate: 1 });
-    progress.relief(stage, { settled: 10, loading: 4, queued: 6 });
-    expect(item('relief')).toMatchObject({
-      name: SCENERY_PROGRESS_LABELS.relief,
-      state: 'working',
-      step: { label: SCENERY_PROGRESS_LABELS.loading, done: 0, total: 10 },
-    });
-    progress.relief(stage, { settled: 15, loading: 4, queued: 1 });
-    expect(item('relief')?.step).toMatchObject({ done: 5, total: 10 });
-    progress.relief(stage, { settled: 20, loading: 0, queued: 0 });
-    expect(item('relief')).toMatchObject({ state: 'ready', estimate: 1 });
-
-    // The next run starts from what is in by then.
-    progress.relief(stage, { settled: 20, loading: 2, queued: 0 });
-    expect(item('relief')?.step).toMatchObject({ done: 0, total: 2 });
-  });
-
-  it('counts a stage that comes along mid-run from its own start', () => {
-    const { progress, item } = listen();
-    const first = {};
-    const second = {};
-    progress.relief(first, { settled: 5, loading: 2, queued: 0 });
-    progress.relief(second, { settled: 3, loading: 1, queued: 0 });
-    expect(item('relief')?.step).toMatchObject({ done: 0, total: 3 });
-    progress.relief(second, { settled: 4, loading: 0, queued: 0 });
-    expect(item('relief')?.step).toMatchObject({ done: 1, total: 3 });
-    progress.relief(first, null);
-    expect(item('relief')).toMatchObject({ state: 'ready' });
-    progress.relief(second, null);
-    expect(item('relief')).toBeUndefined();
-  });
-
   it('reports only what changed, and no items once closed', () => {
     const { reports, progress } = listen();
     const a = progress.compiles.track();
     a(0, 2);
     a(0, 2);
     expect(reports).toHaveLength(1);
+    progress.close();
+    expect(reports[reports.length - 1]).toEqual({ items: [] });
+  });
+
+  it('reports no relief: a GeoRelief reports its own', () => {
+    const { progress, item } = listen();
+    progress.compiles.track()(0, 0);
+    expect(item('relief')).toBeUndefined();
+  });
+});
+
+describe('createReliefProgress', () => {
+  it('reports the relief only once it has tiles, counting a run from when it waits', () => {
+    const { reports, progress, item } = listenRelief();
+    progress.emit();
+    expect(reports[reports.length - 1]).toEqual({ items: [] });
+
+    // Tiles in before the run do not count toward it.
+    progress.loading({ settled: 10, loading: 0, queued: 0 });
+    expect(item()).toMatchObject({ state: 'ready', estimate: 1 });
+    progress.loading({ settled: 10, loading: 4, queued: 6 });
+    expect(item()).toMatchObject({
+      name: RELIEF_PROGRESS_LABELS.relief,
+      state: 'working',
+      step: { label: RELIEF_PROGRESS_LABELS.loading, done: 0, total: 10 },
+    });
+    progress.loading({ settled: 15, loading: 4, queued: 1 });
+    expect(item()?.step).toMatchObject({ done: 5, total: 10 });
+    progress.loading({ settled: 20, loading: 0, queued: 0 });
+    expect(item()).toMatchObject({ state: 'ready', estimate: 1 });
+
+    // The next run starts from what is in by then.
+    progress.loading({ settled: 20, loading: 2, queued: 0 });
+    expect(item()?.step).toMatchObject({ done: 0, total: 2 });
+  });
+
+  it('counts its first report, mid-run, from its own start', () => {
+    const { progress, item } = listenRelief();
+    progress.loading({ settled: 5, loading: 2, queued: 0 });
+    expect(item()?.step).toMatchObject({ done: 0, total: 2 });
+    progress.loading({ settled: 6, loading: 1, queued: 0 });
+    expect(item()?.step).toMatchObject({ done: 1, total: 2 });
+  });
+
+  it('reports no items once gone, or closed', () => {
+    const { reports, progress } = listenRelief();
+    progress.loading({ settled: 1, loading: 1, queued: 0 });
+    progress.loading(null);
+    expect(reports[reports.length - 1]).toEqual({ items: [] });
+    progress.loading({ settled: 1, loading: 1, queued: 0 });
     progress.close();
     expect(reports[reports.length - 1]).toEqual({ items: [] });
   });

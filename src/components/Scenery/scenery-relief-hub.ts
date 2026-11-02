@@ -39,8 +39,9 @@ export type SceneryReliefDrawn = {
 };
 
 /**
- * Where a stage's relief tells what it draws (see {@link SceneryReliefDrawn}): one per
- * `Scenery`, shared through its `SceneryOceanContext`. Its `current` is null while no
+ * Where the relief tells what it draws (see {@link SceneryReliefDrawn}): one per
+ * `World` (`useWorldRelief().tiles`), and one per `Scenery` without a `World`, shared
+ * through its `SceneryOceanContext`. Its `current` is null while no
  * relief is shown; with no tile drawn (past the far plane, say) its tiles are none, but
  * `heightAt` and `rangeAt` still answer from the tiles in.
  */
@@ -58,7 +59,7 @@ export class SceneryReliefHub {
 
   /**
    * Tell what `owner` draws now: `drawn` its instances' arrays and how many there are, or
-   * null for nothing. A second stage's relief is ignored while the first one's is there.
+   * null for nothing. A second relief is ignored while the first one's is there.
    */
   publish(
     owner: object,

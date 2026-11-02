@@ -62,6 +62,7 @@ import storyArgs from '../../storybook/story-args.json';
 import { demoCrs } from '../../storybook/data/demo-crs';
 import { EventEmitter } from '../EventEmitter/EventEmitter';
 import { EventEmitterCallbackEvent } from '../EventEmitter/EventEmitterContext';
+import { GeoRelief } from '../Layers/GeoRelief';
 import { Surface } from '../Surfaces/Surface';
 import { UtmArea, UtmPosition } from '../UtmArea';
 import { Casings, MaterialOptions } from '../Wellbores/Casings/Casings';
@@ -131,7 +132,7 @@ type ScenerySpikeArgs = {
   SceneryMinimapArgs &
   ProgressArgs;
 
-// A stage around the wells' outline, a surface baked into its relief as the seabed.
+// A stage around the wells' outline.
 const FieldStage = (args: ScenerySpikeArgs) => {
   const outline = useFieldOutline();
   if (!outline) return null;
@@ -140,11 +141,6 @@ const FieldStage = (args: ScenerySpikeArgs) => {
   return (
     <SceneryStage
       bounds={[min[0] - m, min[1] - m, max[0] + m, max[1] + m]}
-      relief={sceneryReliefFromArgs(
-        args,
-        reliefFrame,
-        args.seabedSurface ? [sceneryBakedReliefLayer(args.seabedSurface)] : [],
-      )}
       debug={{
         hide: sceneryHideFromArgs(args.hide).stage,
         outline: args.outline,
@@ -253,11 +249,15 @@ const Field = (args: ScenerySpikeArgs) => {
 const SceneryScene = (args: ScenerySpikeArgs) => {
   const sea = args.skyWater || args.skySeabed;
   const revealed = useDemoReveal(args);
+  // The relief: the demo's, and a surface baked into it as the seabed.
+  const relief = sceneryReliefFromArgs(
+    args,
+    args.seabedSurface ? [sceneryBakedReliefLayer(args.seabedSurface)] : [],
+  );
 
-  // Where the field lies on the Earth, for the geographic layers: without it the sky's globe
-  // has a place only from a stage's relief (the same frame).
+  // Where the field lies on the Earth: the sky's place, the relief's and the layers'.
   return (
-    <World frame={reliefFrame}>
+    <World frame={reliefFrame} globe={args.globe}>
       <SceneryStoryRendering args={args} />
       <ambientLight intensity={args.ambientIntensity} />
       <Scenery
@@ -277,7 +277,7 @@ const SceneryScene = (args: ScenerySpikeArgs) => {
             <FieldStage {...args} />
           </UtmArea>
         )}
-        {/* On the stage's relief, else the flat seabed; seen through the sea, or revealed over it. */}
+        {/* On the relief, else the flat seabed; seen through the sea, or revealed over it. */}
         {args.pipelines && (
           <DemoPipelines height={-args.oceanDepth} reveal={revealed} />
         )}
@@ -285,6 +285,13 @@ const SceneryScene = (args: ScenerySpikeArgs) => {
           <DemoFacilities height={-args.oceanDepth} reveal={revealed} />
         )}
       </Scenery>
+      {relief && (
+        <GeoRelief
+          {...relief}
+          depth={args.oceanDepth}
+          visible={sceneryHideFromArgs(args.hide).relief}
+        />
+      )}
       <Field {...args} />
       {args.minimap && (
         <SceneryArgsMinimap

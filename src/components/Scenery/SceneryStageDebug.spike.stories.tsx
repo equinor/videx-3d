@@ -64,6 +64,7 @@ import { SceneryAnchor } from './SceneryAnchor';
 import { SceneryStage } from './SceneryStage';
 import { SceneryStageBounds } from './scenery-stage';
 import { World } from '../World/World';
+import { GeoRelief } from '../Layers/GeoRelief';
 
 // How the sky, its stage and an occupant fit together: a stage of any size, synthetic
 // ground under it, an occupant's outline, spheres standing in for data, and debug views
@@ -268,9 +269,26 @@ const StageDebug = (storyArgs: StageDebugArgs) => {
     () => stagePositions(halfWidth, frame),
     [halfWidth, frame],
   );
+  // The relief: the demo's, and the stage's synthetic ground over them.
+  const relief = sceneryReliefFromArgs(
+    args,
+    args.ground
+      ? [
+        {
+          id: stageGroundId(
+            args.longitude,
+            args.latitude,
+            args.stageWidth,
+            args.stageLength,
+          ),
+          feather: GROUND_FEATHER,
+        },
+      ]
+      : [],
+  );
 
   return (
-    <World frame={frame}>
+    <World frame={frame} globe={args.globe}>
       <SceneryStoryRendering args={args} />
       {args.panel && (
         <SceneryDebugPanel
@@ -300,23 +318,6 @@ const StageDebug = (storyArgs: StageDebugArgs) => {
             occupants={
               occupantOutline ? [{ outline: occupantOutline }] : undefined
             }
-            relief={sceneryReliefFromArgs(
-              args,
-              frame,
-              args.ground
-                ? [
-                  {
-                    id: stageGroundId(
-                      args.longitude,
-                      args.latitude,
-                      args.stageWidth,
-                      args.stageLength,
-                    ),
-                    feather: GROUND_FEATHER,
-                  },
-                ]
-                : [],
-            )}
             debug={{
               outline: args.outline,
               wireframe: args.wireframe,
@@ -343,6 +344,7 @@ const StageDebug = (storyArgs: StageDebugArgs) => {
           />
         )}
       </Scenery>
+      {relief && <GeoRelief {...relief} visible={hide.relief} />}
       {args.minimap && (
         <SceneryArgsMinimap frame={frame} reliefLayers={args.reliefLayers} />
       )}

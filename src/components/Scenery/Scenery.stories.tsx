@@ -34,7 +34,9 @@ import { SceneryStoryRendering } from '../../storybook/components/scenery-story-
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
+import { GeoRelief } from '../Layers/GeoRelief';
 import { Tanker } from '../Tanker/Tanker';
+import { World } from '../World/World';
 import { Scenery } from './Scenery';
 import { SceneryStage } from './SceneryStage';
 import { SceneryStageBounds } from './scenery-stage';
@@ -91,8 +93,12 @@ const SceneryTimelapse = (args: TimelapseArgs) => {
     [args.tanker],
   );
 
+  // Where the sky is seen from: the sun's place, which the relief lies about too.
+  const frame = sceneryReliefFrame(args);
+  const relief = sceneryReliefFromArgs(args);
+
   return (
-    <>
+    <World frame={frame} globe={args.globe}>
       <SceneryStoryRendering args={args} />
       <Scenery {...sceneryPropsFromArgs(sunArgs)}>
         <SceneryArgsFeatures
@@ -100,22 +106,17 @@ const SceneryTimelapse = (args: TimelapseArgs) => {
           ocean={{ level: 0, depth: DEPTH }}
           abyss={{}}
         />
-        <SceneryStage
-          bounds={BOUNDS}
-          relief={sceneryReliefFromArgs(args, sceneryReliefFrame(args))}
-        />
+        <SceneryStage bounds={BOUNDS} />
         {tanker}
       </Scenery>
+      {relief && <GeoRelief {...relief} />}
       {args.minimap && (
-        <SceneryArgsMinimap
-          frame={sceneryReliefFrame(args)}
-          reliefLayers={args.reliefLayers}
-        />
+        <SceneryArgsMinimap frame={frame} reliefLayers={args.reliefLayers} />
       )}
       <ClockOverlay
         text={`${args.sunDate}  ${formatSkyHour(hour)} solar time  sun ${elevation.toFixed(1)}\u00b0`}
       />
-    </>
+    </World>
   );
 };
 

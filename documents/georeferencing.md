@@ -46,14 +46,15 @@ minimap.
 
 ### Flat, or on a globe
 
-Without a `Scenery` nothing curves: the scene is the map, flat, which is exactly right for a
-field and a few tens of kilometres around it.
+A `World` lies on a **globe**, with or without a `Scenery`: over a flat disc around the field
+(the `World`'s `bounds`, or a `SceneryStage`'s) the globe *is* the field's plane, so field data
+never moves; beyond it the Earth falls away. The `Scenery` only draws on it — the sea, the
+sky, the relief — so coasts and mountains sit on the horizon where they belong, and turning it
+on or off moves nothing. The GIS layers lie on the same globe. Your field data stays flat in
+its own frame either way; the globe only changes how the far surroundings are placed.
 
-With a `Scenery`, the sea, the sky, the relief and the GIS layers lie on a **globe**. Over a flat
-disc around the field (a `SceneryStage`'s `bounds`) the globe *is* the field's plane, so field
-data never moves. Beyond it the Earth falls away, so coasts and mountains sit on the horizon
-where they belong. Your field data stays flat in its own frame either way; the globe only
-changes how the far surroundings are drawn.
+With the `World`'s `globe` off, nothing curves: the scene is the map, flat, which is exactly
+right for a field and a few tens of kilometres around it.
 
 ---
 
@@ -126,12 +127,13 @@ blocks (`reliefWindow`). See [relief.md](./relief.md#data).
 <Canvas>                                 three.js / R3F
   <DataProvider store>                   your data: wells, relief-meta, relief-values …
     <GeneratorsProvider registry>        incl. the sceneryReliefTile generator
-      <World frame>                      ← where the scene lies on the Earth, once
-        <Scenery observer={{ date }}>    ← sun from the frame's origin + date; owns the globe
+      <World frame bounds>               ← where the scene lies on the Earth, once; owns the globe
+        <Scenery observer={{ date }}>    ← sun from the frame's origin + date; draws on the globe
           <SceneryOcean />
-          <SceneryStage bounds relief /> ← relief read in the World's frame
+          <SceneryStage />               ← its bounds the World's
         </Scenery>
-        <UtmArea crsInstance>            ← your field, in its map's metres
+        <GeoRelief layers />             ← land and seabed, by longitude/latitude, on the globe
+        <UtmArea crsInstance bounds>     ← your field, in its map's metres
           <Wellbores … />
         </UtmArea>
         <GeoPolygons data />             ← GIS, by longitude/latitude, on the globe
@@ -141,12 +143,18 @@ blocks (`reliefWindow`). See [relief.md](./relief.md#data).
       </World>
 ```
 
-- **Everything reads the `World`.** The `Scenery` takes its place for the sky, the stage's relief
-  its frame, the GIS layers and the minimap their conversions. One value, so they always agree.
-- **The `Scenery` owns the globe** and hands it to the `World`; `SceneryAnchor`, the layers,
-  `useLevelHorizon` and the minimap's altitudes use it.
-- **The relief is shared.** The stage, its far overview and the minimap draw the same tiles from
-  the same `relief-meta` / `relief-values`, built by the `sceneryReliefTile` generator.
+- **Everything reads the `World`.** The `Scenery` takes its place for the sky, the relief its
+  frame, the GIS layers and the minimap their conversions. One value, so they always agree.
+- **The `World` owns the globe,** with or without a `Scenery`: the sky draws on it, and
+  `UtmArea`, `SceneryAnchor`, the layers, `useLevelHorizon` and the minimap's altitudes use it,
+  so turning the scenery on or off moves nothing.
+- **More than one field:** each in its own `UtmArea` (its `bounds`, its stage, so it is placed
+  best about its middle). Anchoring another is giving the `World` its `frame` and `bounds`;
+  `onFrameChange` says how to carry the camera, `onFrameSettled` when to uncover the switch
+  ([world.md, step 7](./world.md#switching-the-anchor-a-controlled-switch)).
+- **The relief is shared.** The `GeoRelief`, its far overview and the minimap draw the same
+  tiles from the same `relief-meta` / `relief-values`, built by the `sceneryReliefTile`
+  generator. Layers in the `World` lie on what the relief draws (`drape`).
 - **Field data stays flat** in its `UtmArea`. Nothing about the sky or the globe changes it.
 
 ---
@@ -246,24 +254,27 @@ inside the `World` it places itself where it belongs.
 The date alone is enough: the place comes from the `World`'s frame, so the sun stands where it
 stood over the field at that moment, and compass north is true north there.
 
-### 5. Land and seabed: a stage with relief
+### 5. Land and seabed: a stage and a relief
 
-The stage is the area of the field (scene X/Z, in metres): there the sea and seabed are real
-geometry and the globe is flat. `relief` adds the land and seabed from your grids, coarse to
-fine, each finer one winning where it has data.
+The stage is the area of the field (scene X/Z, in metres; the `World`'s `bounds`): there the
+sea and seabed are real geometry and the globe is flat. A `GeoRelief` adds the land and seabed
+from your grids, coarse to fine, each finer one winning where it has data.
 
 ```tsx
-<SceneryStage
-  bounds={[-8000, -8000, 8000, 8000]}
-  relief={{
-    layers: [{ id: 'etopo' }, { id: 'my-survey', feather: 500 }],
-    color: { ramp: 'terrain', seabed: { ramp: 'bathymetry' } },
-  }}
-/>
+<World frame={frame} bounds={[-8000, -8000, 8000, 8000]}>
+  <Scenery observer={{ date }}>
+    <SceneryOcean level={0} depth={100} />
+    <SceneryStage />
+  </Scenery>
+  <GeoRelief
+    layers={[{ id: 'etopo' }, { id: 'my-survey', feather: 500 }]}
+    color={{ ramp: 'terrain', seabed: { ramp: 'bathymetry' } }}
+  />
+</World>
 ```
 
-It goes inside the `Scenery`. Its relief is read in the `World`'s frame, so the survey meets the
-field exactly.
+The stage goes inside the `Scenery`; the relief anywhere in the `World`, which it is laid out
+in, so the survey meets the field exactly.
 
 ### 6. GIS layers
 
@@ -293,7 +304,7 @@ a dashed outline marks the frame's UTM zone (`zoneBounds` to give another, `fals
 </Minimap>
 ```
 
-It needs the same generator as the stage, and sits inside the `Canvas` (it follows the camera).
+It needs the same generator as the relief, and sits inside the `Canvas` (it follows the camera).
 
 ### 8. Going far: camera, horizon and depth
 
@@ -313,8 +324,8 @@ It needs the same generator as the stage, and sits inside the `Canvas` (it follo
 import { Canvas } from '@react-three/fiber'
 import { CameraControls } from '@react-three/drei'
 import {
-  DataProvider, GeneratorsProvider, GeoLabels, GeoPolygons, Minimap, MinimapCameraMarker,
-  MinimapGeoLayer, Scenery, SceneryOcean, SceneryStage, UtmArea, World,
+  DataProvider, GeneratorsProvider, GeoLabels, GeoPolygons, GeoRelief, Minimap,
+  MinimapCameraMarker, MinimapGeoLayer, Scenery, SceneryOcean, SceneryStage, UtmArea, World,
 } from '@equinor/videx-3d'
 import { CRS, geoFrameFromCrs, getProjectionDefFromUtmZone } from '@equinor/videx-3d/sdk'
 
@@ -327,14 +338,15 @@ export const FieldView = ({ store, registry, licences }) => (
     <CameraControls makeDefault />
     <DataProvider store={store}>
       <GeneratorsProvider registry={registry}>
-        <World frame={frame}>
+        <World frame={frame} bounds={[-8000, -8000, 8000, 8000]}>
           <Scenery observer={{ date: new Date('2024-09-10T12:00:00Z') }}>
             <SceneryOcean level={0} depth={100} />
-            <SceneryStage
-              bounds={[-8000, -8000, 8000, 8000]}
-              relief={{ layers: relief, color: { ramp: 'terrain', seabed: { ramp: 'bathymetry' } } }}
-            />
+            <SceneryStage />
           </Scenery>
+          <GeoRelief
+            layers={relief}
+            color={{ ramp: 'terrain', seabed: { ramp: 'bathymetry' } }}
+          />
 
           <UtmArea crsInstance={crs}>
             {/* your field: wellbores, surfaces, … */}

@@ -24,13 +24,16 @@ import {
   Vector2,
   Vector3,
 } from 'three';
-import { precompile, PRECOMPILE_PRIORITY } from '../../rendering/precompile';
+import {
+  precompile,
+  PRECOMPILE_PRIORITY,
+  releaseMaterial,
+} from '../../rendering/precompile';
 import {
   graticuleDegreesPerPixel,
   type GraticuleStyle,
 } from '../../sdk/materials/graticule';
 import {
-  type GeoFrame,
   geoFrameAt,
   geoFrameLocation,
   placeGeoFrame,
@@ -40,6 +43,7 @@ import { directionFromCompass } from '../../sdk/utils/vector-operations';
 import { OceanMaterial } from '../Ocean/ocean-material';
 import { applyOceanWaterProps } from '../Ocean/ocean-material-sync';
 import { useWorld } from '../World/world-context';
+import { useWorldRelief } from '../World/world-relief';
 import type { ProgressReport } from '../Progress/progress-store';
 import {
   createOceanContactRegistry,
@@ -193,8 +197,7 @@ export type SceneryProps = {
   /**
    * Where and when the sky is seen from: the sun and the moon — with its phase, up by
    * day too — are then the real ones for that moment and place, and so are the stars and
-   * the planets. Inside a `World`, a date alone will do: the place is its origin's; without
-   * one, a `SceneryStage`'s relief `frame` gives it the same way.
+   * the planets. Inside a `World`, a date alone will do: the place is its origin's.
    * `sun.azimuth` and `elevation` are ignored while it is valid; without one, they set the
    * sun, the moon is a full one opposite it and the stars are procedural.
    */
@@ -203,9 +206,9 @@ export type SceneryProps = {
   /** the world's up direction. Default `[0, 1, 0]` */
   up?: Vec3;
   /**
-   * compass north, i.e. azimuth 0. Default true north at the origin of the `World`'s frame,
-   * or without one a `SceneryStage`'s relief `frame` — the frame the globe lies on the Earth
-   * by; with neither, `[0, 0, -1]` (see `CRS.utmToWorld`)
+   * compass north, i.e. azimuth 0. Default true north at the origin of the `World`'s frame —
+   * the frame the globe lies on the Earth by; without one, `[0, 0, -1]` (see
+   * `CRS.utmToWorld`)
    */
   north?: Vec3;
   /** scales the whole sky: background, environment and light probe. Default 1 */
@@ -218,10 +221,12 @@ export type SceneryProps = {
    * Under a `SceneryStage` the sea stays flat over the disc that holds its `bounds`. The
    * bakes keep a level horizon. Default true
    *
+   * Inside a `World` the globe is the World's, and so is this choice (its `globe`): this one
+   * is not used there, so that drawing the scenery or not never moves what is placed.
+   *
    * ⚠️ Off, the sea is a flat plane everywhere: right for one field seen from near it, wrong
    * far from it, where the relief and anchored content stay flat too and the horizon never
-   * drops. Kept for comparison and for a host that needs a level horizon; to be revisited
-   * with the view's origin (see `documents/world.md`).
+   * drops. Kept for comparison and for a host that needs a level horizon.
    */
   globe?: boolean;
   /**
@@ -269,9 +274,9 @@ export type SceneryProps = {
   debug?: SceneryDebug;
   /**
    * Told how far the scenery has come whenever that changes, for a progress display (see
-   * `ProgressStore.source`): its `shaders` compiling, and with a tiled relief the
-   * `relief` tiles loading, each a run from when it is waited for until it is done; once
-   * more with no items when the scenery goes away.
+   * `ProgressStore.source`): its `shaders` compiling, a run from when one is waited for until
+   * all are done; once more with no items when the scenery goes away. A `GeoRelief` reports
+   * its tiles loading on its own.
    */
   onProgress?: (report: ProgressReport) => void;
   /** the texts of its progress (see {@link SCENERY_PROGRESS_LABELS}) */
@@ -408,21 +413,11 @@ export const Scenery = ({
   );
   const cutaway = features.cutaway;
 
-  // Where the sky lies on the Earth: the World's frame, or without one the frame a stage
-  // reads its relief in (SceneryOceanState.frame). Its place is an observer's that gives only
-  // a date. Kept as a key, so a stage's frame made anew changes nothing.
+  // Where the sky lies on the Earth: the World's frame. Its place is an observer's that gives
+  // only a date.
   const world = useWorld();
-  const [stageFrameKey, setStageFrameKey] = useState('');
-  const reportStageFrame = useCallback(
-    (frame: GeoFrame | null) =>
-      setStageFrameKey(frame ? JSON.stringify(frame) : ''),
-    [],
-  );
-  const stageFrame = useMemo(
-    () => (stageFrameKey ? (JSON.parse(stageFrameKey) as GeoFrame) : null),
-    [stageFrameKey],
-  );
-  const geoFrame = world?.frame ?? stageFrame;
+  const worldRelief = useWorldRelief();
+  const geoFrame = world?.frame ?? null;
   const geoPlace = useMemo(
     () => (geoFrame ? geoFrameLocation(geoFrame) : null),
     [geoFrame],
@@ -626,7 +621,8 @@ export const Scenery = ({
   const probeIntensity = probeOptions?.intensity ?? 1;
 
   const [material] = useState(() => {
-    const sky = new SceneryMaterial();
+    // On the World's globe, inside one: what the World places, and the sky, lie on one Earth.
+    const sky = new SceneryMaterial(undefined, world?.globe);
     // The bakes take the define, so they share its program, but not the depth test.
     sky.defines.SKY_AT_FAR = '';
     sky.depthTest = true;
@@ -677,11 +673,10 @@ export const Scenery = ({
   const graticuleKey = graticuleOn ? JSON.stringify(graticuleOptions) : '';
   useEffect(() => {
     if (!import.meta.env.DEV || !graticuleOptions || geoFrame) return;
-    // A stage hands over its frame just after mounting: only one still missing warns.
     const timer = setTimeout(
       () =>
         console.warn(
-          'SceneryGraticule draws nothing without the sky placed on the Earth: a World, or a stage relief with a frame',
+          'SceneryGraticule draws nothing without the sky placed on the Earth: place the Scenery in a World',
         ),
       1000,
     );
@@ -802,12 +797,14 @@ export const Scenery = ({
 
   useEffect(
     () => () => {
-      material.dispose();
-      standIn.dispose();
+      // Let go once their programs have linked (`releaseMaterial`): a Scenery mounted again
+      // in their place takes them over rather than compiling them anew.
+      releaseMaterial(gl, material);
+      releaseMaterial(gl, standIn);
       geometry.dispose();
-      baker.dispose();
+      baker.dispose(m => releaseMaterial(gl, m));
     },
-    [material, standIn, geometry, baker],
+    [gl, material, standIn, geometry, baker],
   );
 
   // The stand-in is drawn while the sky compiles, so it compiles first, ahead of the sky's
@@ -985,7 +982,9 @@ export const Scenery = ({
     };
   }, []);
 
-  const reliefHub = useMemo(() => new SceneryReliefHub(), []);
+  // The relief tiles drawn, for layers lying on them: the World's, inside one.
+  const ownReliefHub = useMemo(() => new SceneryReliefHub(), []);
+  const reliefHub = worldRelief?.tiles ?? ownReliefHub;
 
   const oceanState = useMemo<SceneryOceanState | null>(
     () =>
@@ -1003,8 +1002,6 @@ export const Scenery = ({
             visible: drawn,
             ready,
             stage: addStage,
-            relief: progress.relief,
-            frame: reportStageFrame,
             reliefTiles: reliefHub,
           }
         : null,
@@ -1022,10 +1019,14 @@ export const Scenery = ({
       drawn,
       ready,
       addStage,
-      progress,
-      reportStageFrame,
       reliefHub,
     ],
+  );
+  // The World's relief is shaded with this sky's sea.
+  const provideSky = worldRelief?.provideSky;
+  useLayoutEffect(
+    () => (oceanState && provideSky ? provideSky(oceanState) : undefined),
+    [oceanState, provideSky],
   );
 
   // Made with the sea's water; the seabed's detail, which it does not draw, leaves it be.
@@ -1037,7 +1038,12 @@ export const Scenery = ({
   // The walls' layer's work each frame, run after their cut (see SceneryAbyssWallLayer).
   const wallFrame = useRef<SceneryAbyssWallFrame | null>(null);
 
-  useEffect(() => () => surfaceLayer?.dispose(), [surfaceLayer]);
+  useEffect(
+    () => () => {
+      if (surfaceLayer) releaseMaterial(gl, surfaceLayer);
+    },
+    [gl, surfaceLayer],
+  );
 
   const dirty = useRef(true);
   // The subsurface's bakes owe nothing to the sky: they are due only when their own inputs change.
@@ -1333,23 +1339,19 @@ export const Scenery = ({
     wallRimFade,
   ]);
 
-  // Not baked: the bakes keep a level horizon.
+  // Not baked: the bakes keep a level horizon. Inside a World, the World's `globe` says.
+  const inWorld = world !== null;
   useLayoutEffect(() => {
-    material.globeEnabled = globe;
-  }, [material, globe]);
+    if (!inWorld) material.globeEnabled = globe;
+  }, [material, globe, inWorld]);
 
-  // What a World places is set on this globe.
-  const provideGlobe = world?.provideGlobe;
-  useLayoutEffect(
-    () => provideGlobe?.(material.globe),
-    [provideGlobe, material],
-  );
-  // And it lies on the Earth where the World, or a stage, says.
+  // Without a World, the sky's own globe lies on the Earth where a stage says (a World sets
+  // its own globe's frame).
   useLayoutEffect(() => {
-    if (!geoFrame) return;
+    if (inWorld || !geoFrame) return;
     material.globe.setFrame(geoFrame);
     return () => material.globe.setFrame(null);
-  }, [material, geoFrame]);
+  }, [material, geoFrame, inWorld]);
 
   useLayoutEffect(() => {
     if (water) material.linkOcean(water);
@@ -1600,14 +1602,19 @@ export const Scenery = ({
     // for the walls' cut and the cutaway alike.
     if (material.abyssWalls || cutaway) camera.updateMatrixWorld();
     if (material.abyssWalls) material.clipAbyssWalls(camera);
-    // Under a stage's ground above the sea's own seabed, as from inside rock: below the sea
+    // The relief's ground under the camera: the void starts under it, at whatever depth.
+    material.oceanGround =
+      worldRelief?.present && worldRelief.sky === oceanState
+        ? worldRelief.ground.current
+        : null;
+    // Under the relief's ground above the sea's own seabed, as from inside rock: below the sea
     // or in land above it.
     material.oceanBuried =
       material.ocean &&
       material.oceanGround !== null &&
       height <= material.oceanGround &&
       height > material.oceanLevel - material.oceanDepth;
-    // Over a stage's ground below the sea's own seabed, as in a trench: in the water, or
+    // Over the relief's ground below the sea's own seabed, as in a trench: in the water, or
     // over a dry sea's bed in the air.
     material.oceanTrench =
       material.ocean &&

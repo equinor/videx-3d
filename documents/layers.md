@@ -3,17 +3,17 @@
 Data of your own, in longitude and latitude, laid over the world: licences, fields,
 discoveries and safety zones as polygons; pipelines and cables as tubes; facilities as
 symbols; their names; ships and vehicles from a tracking feed. Each layer places itself by
-latitude and longitude — on a `Scenery`'s globe when there is one, else flat on the `World`'s
-frame — and **needs no relief**: with one, without one, or with no `Scenery` at all. Inside a
-`Scenery` they can also lie on its relief, the seabed and the land, and be seen through its
-sea as the seabed is (`water`).
+latitude and longitude on the `World`'s globe, and **needs no relief**: with one, without
+one, or with no `Scenery` at all. With a `GeoRelief` in the `World` they can also lie on it,
+the seabed and the land, and inside a `Scenery` be seen through its sea as the seabed is
+(`water`).
 
 ```tsx
-<World frame={frame}>
+<World frame={frame} bounds={bounds}>
   <Scenery>
     <SceneryOcean />
-    <SceneryStage bounds={bounds} relief={{ layers }} />
-    {/* Inside the Scenery: on its relief, seen through its sea. */}
+    <SceneryStage />
+    {/* Inside the Scenery: seen through its sea. */}
     <GeoTubes
       data={pipelines}
       style={f => ({ color: '#e5383b', diameter: f.properties.diameter * 0.0254 })}
@@ -22,6 +22,8 @@ sea as the seabed is (`water`).
     />
     <GeoSymbols data={facilities} style={{ color: '#ffd43b', size: 80 }} />
   </Scenery>
+  {/* The ground the pipelines and the facilities lie on. */}
+  <GeoRelief layers={layers} />
   <GeoPolygons
     data={discoveries}
     style={f => ({ fill: f.properties.hcType === 'GAS' ? '#e5383b' : '#2fbf4a' })}
@@ -61,9 +63,9 @@ until the data changes.
 
 ### Where it lies on the Earth
 
-`useLayerGlobe(frame?)` is what each layer is placed on: the enclosing `Scenery`'s globe, else
-the `World`'s, else a globe of its own that does not curve, laid on `frame` (default the
-`World`'s). With the curve off, the globe lays the Earth flat stereographically about the
+`useLayerGlobe(frame?)` is what each layer is placed on: the enclosing `World`'s globe, else
+the `Scenery`'s, else a globe of its own that does not curve, laid on `frame`. In a `World`
+the layer lies in the same place with or without a `Scenery`. With the curve off, the globe lays the Earth flat stereographically about the
 scene's origin, as the relief draws it then, while a `UtmArea` uses its map's projection: the
 two agree to centimetres over a field and drift to metres 100 km out.
 
@@ -147,11 +149,11 @@ const shader: GeoTileLayerShader = {
 
 ### On the relief: `drape`
 
-With `drape`, inside a `Scenery`, the layer lies on the relief its `SceneryStage` draws —
-the seabed and the land — exactly as drawn, through its swaps between levels of detail too.
-The stage tells what it draws each time it chooses (`SceneryOceanState.reliefTiles`, a
-`SceneryReliefHub`: the heights' texture array, and per tile drawn its slot, the tile it
-blends from and how far). The relief's tiles and the layer's share the geographic quadtree,
+With `drape`, the layer lies on the relief the `World`'s `GeoRelief` draws — the seabed and
+the land — exactly as drawn, through its swaps between levels of detail too. The relief
+tells what it draws each time it chooses (`WorldReliefState.tiles`, also handed on as
+`SceneryOceanState.reliefTiles`, a `SceneryReliefHub`: the heights' texture array, and per
+tile drawn its slot, the tile it blends from and how far). The relief's tiles and the layer's share the geographic quadtree,
 so each tile of the layer is drawn as one square per relief tile under it
 (`tilesUnder`): the tile itself where a relief tile holds all of it, or each finer relief
 tile drawn under it. Each square is a patch of 32 cells — the relief's own, so its nodes

@@ -83,6 +83,10 @@ void main() {
     // Dimmed with the camera's depth, as the background dims the void (skyAbyss).
     if(uSkyAbyssDarkening > 0.0)
       color *= exp((dot(cameraPosition, uSkyUp) - uSkyAbyssLevel) / uSkyAbyssDarkening);
+    // Far beyond their rim they are left out (uSkyAbyssWallNear): into the depths the
+    // background draws without them, as the camera sees them only from above the lid there.
+    if(uSkyAbyssWallNear < 1.0)
+      color = mix(skyAbyssDepths(dir), color, uSkyAbyssWallNear);
   }
   gl_FragColor = vec4(skyDebugTint(color, vec3(0.95, 0.85, 0.1)), 1.0);
   gl_FragColor.rgb *= uSkyIntensity;

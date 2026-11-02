@@ -540,23 +540,27 @@ start-up only).
 ## 5. Drawing the relief
 
 ```tsx
-<SceneryStage
-  bounds={bounds}
-  relief={{
-    frame,                                     // where the scene lies on the map
-    layers: [                                  // later layers win where they have data
+<World frame={frame} bounds={bounds}>               {/* where the scene lies on the map */}
+  <Scenery>
+    <SceneryOcean />
+    <SceneryStage occupants={[{ outline, cut, onStage, onGround }]} />
+  </Scenery>
+  <GeoRelief
+    layers={[                                      // later layers win where they have data
       { id: 'etopo-2022-nordic' },
       { id: 'etopo-2022-15s-sw-norway', feather: 2000 },
       { id: 'emodnet-2020-sw-norway', feather: 1000 },
       { id: 'emodnet-2020-volve', feather: 500 },
-    ],
-    depth: 120,                                // where no layer has data; default the sea's depth
-    color: 'ramp',
-    pixelError: 2,
-  }}
-  occupants={[{ outline, cut, onStage, onGround }]}
-/>
+    ]}
+    depth={120}                                    // where no layer has data; default the sea's depth
+    color="ramp"
+    pixelError={2}
+  />
+</World>
 ```
+
+(Until 2026-11-02 this was `SceneryStage`'s `relief` prop; the relief is the `World`'s now,
+see [world.md, 7d](./world.md#7d-1-built-2026-11-02).)
 
 - **One draw:** a `T × T` patch with a skirt round it, instanced once per tile drawn. Per
   tile: its edges on the globe (its west and east longitude, its north, middle and south
@@ -707,7 +711,8 @@ start-up only).
     lid ends at the horizon as the flat one does; what lies deeper than the camera (a
     trench's walls across the void) is still drawn there, fading with distance into the
     depths the background draws below the horizon, not into the lid's horizon colour
-    (without walls; with them it fades to black far from the hollow, as they do): a deep
+    (without walls, or far from them; near them it fades to black far from the hollow, as
+    they do): a deep
     basin's floor tens of kilometres off is gone, not pale streaks cut at its tiles'
     edges. The debug tint (amber relief,
     red background) shows the line, and `debug.relief` its tiles from below too. Leaving
@@ -832,26 +837,27 @@ const [ground, setGround] = useState<HeightFieldClip | null>(null);
 const [cut, setCut] = useState<CutUniforms | null>(null);
 const [stage, setStage] = useState<SceneryStageOccupantState>(OFF_STAGE);
 
-<Scenery>
-  <SceneryOcean {...ocean} />
-  <SceneryStage
-    bounds={bounds}
-    relief={relief}
-    occupants={[
-      { outline, cut: cut ?? undefined, onStage: setStage, onGround: setGround },
-    ]}
-  />
-</Scenery>
-<ChunkStack
-  outline={outline}
-  seabed={seabedId}
-  relief={source}
-  clip={ground ?? undefined}
-  onCut={setCut}
-  drawWater={!stage.water}
->
-  <Chunk layers={...} />
-</ChunkStack>
+<World frame={frame} bounds={bounds}>
+  <Scenery>
+    <SceneryOcean {...ocean} />
+    <SceneryStage
+      occupants={[
+        { outline, cut: cut ?? undefined, onStage: setStage, onGround: setGround },
+      ]}
+    />
+  </Scenery>
+  <GeoRelief layers={layers} />
+  <ChunkStack
+    outline={outline}
+    seabed={seabedId}
+    relief={source}
+    clip={ground ?? undefined}
+    onCut={setCut}
+    drawWater={!stage.water}
+  >
+    <Chunk layers={...} />
+  </ChunkStack>
+</World>
 ```
 
 ```ts

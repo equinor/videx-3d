@@ -55,6 +55,7 @@ import {
   SkyAbyssWallCut,
   skyAbyssWallClipPlane,
   skyAbyssWallGrid,
+  skyAbyssWallNear,
 } from './scenery-abyss-walls';
 import {
   SCENERY_EARTH_RADIUS,
@@ -121,18 +122,20 @@ export function createSceneryGeometry() {
 export class SceneryMaterial extends ShaderMaterial {
   isSceneryMaterial = true;
   /**
-   * The Earth the sky draws: flat over the stage's disc ({@link setFlatSea}), at the
-   * sea's level, curved while {@link globeEnabled}. What else lies on the globe — the
-   * relief, a route, an anchored field — takes it from here. Kept in step by the setters;
-   * not to be set directly.
+   * The Earth the sky draws: flat over the stage's disc, at the sea's level, curved while
+   * {@link globeEnabled}. A `World`'s, given at construction, whose frame, disc and curvature
+   * the `World` sets; or, without one, its own, which the sky and its stage set. What else lies
+   * on the globe — the relief, a route, an anchored field — takes it from here.
    */
-  readonly globe = new Globe();
+  readonly globe: Globe;
   /**
    * The charts the sea's waves are drawn in on the {@link globe}: the field's wave plane
    * over the field, fixed ones on the Earth far off. Kept in step with the globe and the
    * camera ({@link syncCamera}).
    */
-  readonly oceanCharts = new OceanCharts(this.globe);
+  readonly oceanCharts: OceanCharts;
+  // Whether the globe is the sky's own, which it then sets (curvature): not a World's.
+  private readonly ownsGlobe: boolean;
   private bedDetail: SurfaceDetail | undefined;
   private bedDetailKey = '';
   // How far in front of the camera clipAbyssWalls cuts the walls away.
@@ -180,7 +183,11 @@ export class SceneryMaterial extends ShaderMaterial {
   // can draw what it claims (claimStage).
   private stageReach = 0;
 
-  constructor(parameters: ShaderMaterialParameters = {}) {
+  /**
+   * @param globe the Earth to draw on: a `World`'s, which sets its frame, disc and curvature
+   *   ({@link globeEnabled} then follows it). Default a globe of its own.
+   */
+  constructor(parameters: ShaderMaterialParameters = {}, globe?: Globe) {
     const { sun, colors, abyss, ocean } = sceneryDefaults;
     super({
       vertexShader,
@@ -272,6 +279,8 @@ export class SceneryMaterial extends ShaderMaterial {
         uSkyAbyssWallGlowColor: new Uniform(new Color(abyss.walls.glowColor)),
         // The distance beyond their rim the hollow's light and haze fade out over.
         uSkyAbyssWallFade: new Uniform(abyss.walls.rimFade),
+        // How much of them the camera sees (clipAbyssWalls): 1 near their hollow, 0 far beyond.
+        uSkyAbyssWallNear: new Uniform(1),
         // 1 while the seabed beyond the stage, which the background draws, hides them from above.
         uSkyAbyssWallCover: new Uniform(0),
         // The plane they are cut away up to (clipAbyssWalls): what is on the far side of its normal shows.
@@ -344,6 +353,9 @@ export class SceneryMaterial extends ShaderMaterial {
 
     this.setSun(sun.azimuth, sun.elevation);
     this.oceanBedDetail = ocean.seabed.detail;
+    this.globe = globe ?? new Globe();
+    this.ownsGlobe = !globe;
+    this.oceanCharts = new OceanCharts(this.globe);
     // The globe's own uniform objects, so every material sharing the sky's shares them too;
     // the same for the sea's charts.
     Object.assign(
@@ -351,7 +363,9 @@ export class SceneryMaterial extends ShaderMaterial {
       this.globe.uniforms,
       this.oceanCharts.uniforms,
     );
-    this.globe.enabled = this.globeEnabled;
+    if (this.ownsGlobe)
+      this.globe.enabled = this.uniforms.uSkyCurvature.value > 0;
+    else this.syncCurvature();
     this.globe.level = this.oceanLevel;
 
     if (Object.keys(parameters).length) this.setValues(parameters);
@@ -907,21 +921,29 @@ export class SceneryMaterial extends ShaderMaterial {
 
   /**
    * The sea, the sky and the clouds lie on the {@link globe}, so the horizon drops as the
-   * camera climbs; off, on a flat plane everywhere. The `Scenery`'s `globe`.
+   * camera climbs; off, on a flat plane everywhere. The `Scenery`'s `globe`, or a `World`'s:
+   * on a `World`'s globe it follows the globe ({@link syncCamera}), and is not to be set.
    */
   get globeEnabled(): boolean {
-    return this.uniforms.uSkyCurvature.value > 0;
+    return this.globe.enabled;
   }
   set globeEnabled(value: boolean) {
-    this.uniforms.uSkyCurvature.value = value ? 1 / SCENERY_EARTH_RADIUS : 0;
     this.globe.enabled = value;
+    this.syncCurvature();
+  }
+
+  // The shaders' curvature, the globe's: 1 over the Earth's radius, 0 for a flat sea.
+  private syncCurvature() {
+    this.uniforms.uSkyCurvature.value = this.globe.enabled
+      ? 1 / SCENERY_EARTH_RADIUS
+      : 0;
   }
 
   /**
-   * With {@link globeEnabled}, keep the sea flat over the disc that holds this rectangle,
-   * `[minX, minZ, maxX, maxZ]` in world X/Z: where the scene is, so what meets the water
-   * there meets it level. The {@link globe}'s disc: beyond it, the sea is the sphere. `null`
-   * for none.
+   * Keep the sea flat over the disc that holds this rectangle, `[minX, minZ, maxX, maxZ]` in
+   * world X/Z: where the scene is, so what meets the water there meets it level. On its own
+   * {@link globe} this is the globe's disc too; a `World`'s globe has its disc set by the
+   * `World` (its `bounds`), or by the stage where it has none. `null` for none.
    */
   setFlatSea(bounds: [number, number, number, number] | null) {
     if (!bounds) {
@@ -942,7 +964,7 @@ export class SceneryMaterial extends ShaderMaterial {
         (maxZ - minZ) / 2,
       );
     }
-    this.globe.setDisc(bounds);
+    if (this.ownsGlobe) this.globe.setDisc(bounds);
     this.updateAbyssWallGrid();
   }
 
@@ -1141,8 +1163,8 @@ export class SceneryMaterial extends ShaderMaterial {
    * Cut the walls away up to a vertical plane facing `camera`'s heading, as the cutaway's
    * does: through the stage's centre, or {@link SceneryAbyssWalls.cutDistance} in front of the camera
    * once that is further, and below the lid past the stage, until the whole stage is in view
-   * through the hollow (see `skyAbyssWallClipPlane`). Every frame, with the camera's
-   * matrices this frame's.
+   * through the hollow (see `skyAbyssWallClipPlane`). With it, how much of the walls the
+   * camera sees ({@link abyssWallNear}). Every frame, with the camera's matrices this frame's.
    */
   clipAbyssWalls(camera: Camera) {
     const u = this.uniforms;
@@ -1168,6 +1190,22 @@ export class SceneryMaterial extends ShaderMaterial {
       cut,
       u.uSkyAbyssWallClip.value as Vector4,
     );
+    u.uSkyAbyssWallNear.value = skyAbyssWallNear(
+      camera.position,
+      u.uSkyEast.value as Vector3,
+      u.uSkyNorth.value as Vector3,
+      this.up,
+      cut,
+      u.uSkyAbyssWallFade.value,
+    );
+  }
+
+  /**
+   * How much of the void's walls the camera sees, 1 near their hollow to 0 far beyond their
+   * rim (`skyAbyssWallNear`), where the void is the plain one: set by {@link clipAbyssWalls}.
+   */
+  get abyssWallNear(): number {
+    return this.uniforms.uSkyAbyssWallNear.value;
   }
 
   /** the raking light the walls are shaded by: `direction` toward it, in the subsurface light's `color` */
@@ -1334,8 +1372,8 @@ export class SceneryMaterial extends ShaderMaterial {
   }
 
   /**
-   * How far from the camera a stage's relief draws its ground from tiles (`SceneryStage`'s
-   * `relief`, out to the far plane), 0 without one. From in the water and over a dry sea it
+   * How far from the camera the relief draws its ground from tiles (a `GeoRelief`,
+   * out to the far plane), 0 without one. From in the water and over a dry sea it
    * draws the seabed there too, which hides what lies below it by depth: there the
    * background's seabed covers nothing for what is drawn under it (`skyOceanCover`).
    */
@@ -1405,6 +1443,8 @@ export class SceneryMaterial extends ShaderMaterial {
    * second view draws from a camera of its own. Returns at once for the same place.
    */
   syncCamera(camera: Camera) {
+    // A World's globe may have been curved or flattened since.
+    if (!this.ownsGlobe) this.syncCurvature();
     this.globe.setCamera(cameraAt.setFromMatrixPosition(camera.matrixWorld));
     // Out to where the sea's detail has faded (OceanMaterial.detailFadeDistance).
     const fade = this.uniforms.uDetailFade?.value as Vector2 | undefined;

@@ -211,7 +211,7 @@ export function createReliefTopSampler(
     seabed: string;
     /** how far above the relief its cap is built */
     margin: number;
-    /** the relief's own sampler (`SceneryStageRelief.onSampler`) */
+    /** the relief's own sampler (`GeoRelief`'s `onSampler`) */
     relief?: SurfaceSampler | null;
   },
 ): SurfaceSampler {

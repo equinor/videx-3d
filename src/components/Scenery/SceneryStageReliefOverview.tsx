@@ -1,7 +1,11 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Mesh, Texture } from 'three';
-import { precompile, PRECOMPILE_PRIORITY } from '../../rendering/precompile';
+import {
+  precompile,
+  PRECOMPILE_PRIORITY,
+  releaseMaterial,
+} from '../../rendering/precompile';
 import { createSceneryReliefFarMaterial } from './scenery-relief';
 import type { SceneryReliefAtlas } from './scenery-relief-atlas';
 import {
@@ -37,7 +41,7 @@ type SceneryStageReliefOverviewProps = {
 };
 
 /**
- * The overview behind a stage's relief drawn from tiles: past the tiles' reach, while the
+ * The overview behind the relief drawn from tiles: past the tiles' reach, while the
  * farthest ground in view lies farther, a fullscreen layer draws the land flat on the
  * globe's sea, from the relief's own tiles — chosen for it by the tiles' frame loop, coarser
  * than theirs, and read per pixel through `atlas` — looked as the tiles look them, wherever
@@ -57,6 +61,7 @@ export const SceneryStageReliefOverview = ({
   visible,
 }: SceneryStageReliefOverviewProps) => {
   const [wanted, setWanted] = useState(false);
+  const gl = useThree(state => state.gl);
   const material = useMemo(
     () =>
       wanted ? createSceneryReliefFarMaterial(sky, atlas, base, looks) : null,
@@ -64,7 +69,13 @@ export const SceneryStageReliefOverview = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [wanted, sky, atlas, looks, definesKey],
   );
-  useEffect(() => () => material?.dispose(), [material]);
+  // Let go once its program has linked (`releaseMaterial`).
+  useEffect(
+    () => () => {
+      if (material) releaseMaterial(gl, material);
+    },
+    [gl, material],
+  );
   useEffect(() => {
     if (material) material.uniforms.uReliefReach.value = reach;
   }, [material, reach]);
@@ -78,7 +89,6 @@ export const SceneryStageReliefOverview = ({
   // it would otherwise stall the frame that first draws it.
   const mesh = useRef<Mesh>(null);
   const [compiled, setCompiled] = useState<object | null>(null);
-  const gl = useThree(state => state.gl);
   const scene = useThree(state => state.scene);
   const sceneCamera = useThree(state => state.camera);
   useLayoutEffect(() => {
