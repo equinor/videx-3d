@@ -16,13 +16,14 @@
 #include <lights_pars_begin>
 #include ../../../sdk/materials/shaderLib/scene-light.glsl
 #include ../../../sdk/materials/shaderLib/surface-detail.glsl
-#include ../../../sdk/materials/shaderLib/water-fog.glsl
 
 #define SKY_OCEAN_WATER_IOR 1.333
 // Over the sea, the camera's heights over which the water turns opaque (world units).
 #define SKY_OCEAN_OPAQUE vec2(2000.0, 5000.0)
 
 // uSkyOceanLevel, uSkyOceanDepth and uSkyOceanBuried: sky.glsl, which every layer reads.
+// So are water-fog.glsl and the cutaway's shape and cuts (uSkyOceanCutaway{Anchor, Heading,
+// Shape, WaveA, WaveB, Cuts}).
 uniform vec3 uSkyOceanBedColor;
 uniform vec3 uSkyOceanBedSpecular;
 uniform float uSkyOceanBedShininess;
@@ -31,15 +32,9 @@ uniform float uSkyOceanFogDensity; // per world unit
 uniform float uSkyOceanWater; // 0: no water, the seabed lies dry (SceneryMaterial.oceanWater)
 uniform float uSkyOceanSeabed; // 0: no seabed, the void lies below the water; from the void its lid still hides it (SceneryMaterial.oceanSeabed)
 uniform float uSkyOceanSeabedOpacity; // how much of the void beyond the seabed it hides (SceneryMaterial.oceanSeabedOpacity)
-// The cutaway through the water and the seabed in front of the view (see WaterFogCutaway, Sky's `cutaway`).
-uniform vec3 uSkyOceanCutawayAnchor;
-uniform vec3 uSkyOceanCutawayHeading;
-uniform vec3 uSkyOceanCutawayShape;
-uniform vec3 uSkyOceanCutawayWaveA;
-uniform vec3 uSkyOceanCutawayWaveB;
+// How the cutaway (sky.glsl) is drawn on the sea's surface.
 uniform vec4 uSkyOceanCutawayRim; // colour, and width in pixels
 uniform vec2 uSkyOceanCutawayShadow; // opacity, and width in world units
-uniform vec2 uSkyOceanCutawayCuts; // how much of the water it cuts (1 all, 0 none), and whether the seabed (1 or 0)
 uniform vec2 uSkyOceanCutawayGrip; // 1 to draw the grip on the rim, and its scale
 
 // A point's height over the sea, over the globe (globeHeight).

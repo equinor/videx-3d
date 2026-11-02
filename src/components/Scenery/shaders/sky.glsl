@@ -573,6 +573,21 @@ bool skyOceanOnStage(vec2 p, float dist, float inset) {
 }
 #endif
 
+// The sea's cutaway through the water and the seabed in front of the view (see
+// WaterFogCutaway, Sky's `cutaway`): read by sky-ocean.glsl, which declares the rest of its
+// uniforms, and by the walls without the sea for where it takes the seabed
+// (skyAbyssWallCovered). Included once here: vite-plugin-glsl inlines every #include
+// regardless of these guards, and warns on a chunk included twice.
+#if defined(SKY_OCEAN) || (defined(SKY_ABYSS) && defined(SKY_ABYSS_WALLS))
+#include ../../../sdk/materials/shaderLib/water-fog.glsl
+uniform vec3 uSkyOceanCutawayAnchor;
+uniform vec3 uSkyOceanCutawayHeading;
+uniform vec3 uSkyOceanCutawayShape;
+uniform vec3 uSkyOceanCutawayWaveA;
+uniform vec3 uSkyOceanCutawayWaveB;
+uniform vec2 uSkyOceanCutawayCuts; // how much of the water it cuts (1 all, 0 none), and whether the seabed (1 or 0)
+#endif
+
 #ifdef SKY_ABYSS
 uniform float uSkyAbyssLevel; // height of the lid along uSkyUp, world units
 uniform float uSkyAbyssFadeDistance;
@@ -785,15 +800,6 @@ bool skyAbyssWallHidden(vec3 origin, vec3 dir, float t) {
 }
 
 #ifndef SKY_OCEAN
-// The sea's cutaway, as sky-ocean.glsl reads it, for where it takes the seabed (skyAbyssWallCovered).
-#include ../../../sdk/materials/shaderLib/water-fog.glsl
-uniform vec3 uSkyOceanCutawayAnchor;
-uniform vec3 uSkyOceanCutawayHeading;
-uniform vec3 uSkyOceanCutawayShape;
-uniform vec3 uSkyOceanCutawayWaveA;
-uniform vec3 uSkyOceanCutawayWaveB;
-uniform vec2 uSkyOceanCutawayCuts;
-
 // Whether a view along `dir` from `origin` above the lid goes down through it beyond the
 // stage where the seabed there, which the background draws, hides what lies below it
 // (uSkyAbyssWallCover), and a cutaway does not take it. Over the stage its own seabed
