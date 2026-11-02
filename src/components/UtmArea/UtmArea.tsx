@@ -30,6 +30,12 @@ import { UtmAreaContext, UtmAreaContextProps } from './UtmAreaContext';
  * @expand
  */
 export type UtmAreaProps = {
+  /**
+   * Which field this is, as the host names it (`UtmAreaContext`'s `id`): what is drawn inside
+   * can tell which field it is in, and hand that on, as the `ref` a pick listener is
+   * registered with, say.
+   */
+  id?: string;
   crsInstance?: CRS;
   utmZone?: string;
   /** with `utmZone`: the map point at the area's origin, in `originUnits` */
@@ -86,6 +92,7 @@ const shift = new Matrix4();
 export const UtmArea = forwardRef<CRS, PropsWithChildren<UtmAreaProps>>(
   (
     {
+      id,
       crsInstance,
       utmZone,
       origin,
@@ -202,6 +209,11 @@ export const UtmArea = forwardRef<CRS, PropsWithChildren<UtmAreaProps>>(
         return ref.current.worldToLocal(new Vector3(x, y, z));
       };
 
+      const worldToArea = (x: number, y: number, z: number): Vec3 => {
+        const local = toArea(x, y, z);
+        return [local.x, local.y, local.z];
+      };
+
       const worldToUtm = (x: number, y: number, z: number) => {
         const local = toArea(x, y, z);
         return crs.worldToUtm(local.x, local.y, local.z);
@@ -235,19 +247,21 @@ export const UtmArea = forwardRef<CRS, PropsWithChildren<UtmAreaProps>>(
       };
 
       return {
+        id,
         originUtm: crs.originUtm,
         originWgs84: crs.originWgs84,
         frame: own,
         utmToArea,
         wgs84ToArea,
         areaToUtm,
+        worldToArea,
         worldToUtm,
         areaToWgs84,
         worldToWgs84,
         getWorldPosition,
         getUtmOrigin,
       };
-    }, [crs, own]);
+    }, [id, crs, own]);
 
     return (
       <group ref={ref} position={offset}>

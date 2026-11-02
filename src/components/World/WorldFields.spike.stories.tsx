@@ -2,8 +2,15 @@ import type { CameraControls } from '@react-three/drei';
 import { useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import proj4 from 'proj4';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { MeshStandardMaterial, SphereGeometry, Vector3 } from 'three';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { Group, MeshStandardMaterial, SphereGeometry, Vector3 } from 'three';
 import { getProjectionDefFromUtmZone } from '../../sdk/projection/crs';
 import { GeoFrame, geoFrameAt } from '../../sdk/projection/geo-frame';
 import {
@@ -27,6 +34,7 @@ import { SceneryStoryRendering } from '../../storybook/components/scenery-story-
 import { demoFrame } from '../../storybook/data/demo-crs';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
+import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import {
   ProgressArgs,
@@ -34,12 +42,18 @@ import {
   storyProgress,
 } from '../../storybook/decorators/progress-decorator';
 import { SceneryGenerators } from '../../storybook/decorators/scenery-generators';
+import {
+  EventEmitterCallback,
+  EventEmitterCallbackEvent,
+  useEventEmitter,
+} from '../EventEmitter/EventEmitterContext';
 import { GeoRelief } from '../Layers/GeoRelief';
 import { Scenery } from '../Scenery/Scenery';
 import { SceneryStage } from '../Scenery/SceneryStage';
 import type { SceneryStageBounds } from '../Scenery/scenery-stage';
 import { useLevelHorizon } from '../Scenery/useLevelHorizon';
 import { UtmArea } from '../UtmArea/UtmArea';
+import { UtmAreaContext, UtmAreaContextProps } from '../UtmArea/UtmAreaContext';
 import { World, WorldFrameChange } from './World';
 
 // More than one field on the Earth (documents/world.md, step 7): three fields, each a frame,
@@ -163,16 +177,37 @@ const fieldMarks = ([minX, minZ, maxX, maxZ]: SceneryStageBounds) => {
   return { atSea, deep };
 };
 
-/** A field: its spheres, in its own frame, placed in the World's by its `UtmArea`. */
-const FieldSpheres = ({ field }: { field: Field }) => {
+/**
+ * A field's spheres, in its own frame. Its listener is registered with the field's area as
+ * its `ref`, taken from where it is drawn (`UtmAreaContext`, inside the field's `UtmArea`), so
+ * `onPick` is one handler for every field.
+ */
+const FieldMarks = ({
+  field,
+  onPick,
+}: {
+  field: Field;
+  onPick: EventEmitterCallback;
+}) => {
   const { atSea, deep } = useMemo(() => fieldMarks(field.bounds), [field]);
   const material = useMemo(
     () => new MeshStandardMaterial({ color: field.color, roughness: 0.6 }),
     [field],
   );
   useEffect(() => () => material.dispose(), [material]);
+  const group = useRef<Group>(null);
+  const emitter = useEventEmitter();
+  const area = useContext(UtmAreaContext);
+  useEffect(() => {
+    if (!emitter || !group.current) return;
+    return emitter.register({
+      object: group.current,
+      handlers: { click: onPick },
+      ref: area,
+    });
+  }, [emitter, area, onPick]);
   return (
-    <UtmArea frame={field.frame} bounds={field.bounds}>
+    <group ref={group}>
       {atSea.map(at => (
         <mesh
           key={at.join(',')}
@@ -191,9 +226,68 @@ const FieldSpheres = ({ field }: { field: Field }) => {
           scale={DEEP_MARK}
         />
       ))}
+    </group>
+  );
+};
+
+/** A field: its spheres, placed in the World's frame by its `UtmArea`, named by its id. */
+const FieldSpheres = ({
+  id,
+  onPick,
+}: {
+  id: FieldId;
+  onPick: EventEmitterCallback;
+}) => {
+  const field = FIELDS[id];
+  return (
+    <UtmArea id={id} frame={field.frame} bounds={field.bounds}>
+      <FieldMarks field={field} onPick={onPick} />
     </UtmArea>
   );
 };
+
+// The host's side of a pick (world.md, step 7f): one handler for every field, told by the
+// listener's `ref` which field it hit (its area) and so where, in that field's own frame and
+// map. Shown over the view.
+function usePickReadout() {
+  const gl = useThree(state => state.gl);
+  const [readout] = useState(() => {
+    const element = document.createElement('div');
+    Object.assign(element.style, {
+      position: 'absolute',
+      left: '50%',
+      bottom: '12px',
+      transform: 'translateX(-50%)',
+      padding: '4px 10px',
+      borderRadius: '4px',
+      background: 'rgba(13, 26, 38, 0.8)',
+      color: '#fff',
+      font: '12px monospace',
+      whiteSpace: 'pre',
+      pointerEvents: 'none',
+      zIndex: '4',
+    });
+    element.textContent = 'Click a sphere';
+    return element;
+  });
+  useEffect(() => {
+    (gl.domElement.parentElement ?? document.body).appendChild(readout);
+    return () => readout.remove();
+  }, [gl, readout]);
+  return useCallback(
+    ({ ref, position }: EventEmitterCallbackEvent) => {
+      const area = ref as UtmAreaContextProps | null;
+      if (!area || !position) return;
+      const [x, y, z] = area.worldToArea(...position);
+      const { easting, northing } = area.worldToUtm(...position);
+      const name = FIELDS[area.id as FieldId]?.name ?? area.id;
+      readout.textContent =
+        `${name}: x ${x.toFixed(1)}, y ${y.toFixed(1)}, z ${z.toFixed(1)} in its frame; ` +
+        `E ${easting.toFixed(1)}, N ${northing.toFixed(1)} in its map`;
+    },
+    [readout],
+  );
+}
 
 // The host's side of levelling the horizon far off (useLevelHorizon), in the World.
 const LevelHorizon = ({ enabled }: { enabled: boolean }) => {
@@ -339,6 +433,7 @@ const WorldFields = (storyArgs: WorldFieldsArgs) => {
   const anchor = FIELDS[shown];
   const places = useMemo(() => placesIn(anchor), [anchor]);
   const relief = sceneryReliefFromArgs(args);
+  const onPick = usePickReadout();
 
   return (
     <World
@@ -382,7 +477,7 @@ const WorldFields = (storyArgs: WorldFieldsArgs) => {
         )}
       </SceneryGenerators>
       {FIELD_IDS.map(id => (
-        <FieldSpheres key={id} field={FIELDS[id]} />
+        <FieldSpheres key={id} id={id} onPick={onPick} />
       ))}
     </World>
   );
@@ -392,6 +487,8 @@ const meta = {
   title: 'Spikes/World/Fields',
   component: WorldFields,
   decorators: [
+    // Picks on the spheres, inside the canvas.
+    EventEmitterDecorator,
     Canvas3dDecorator,
     // The reliefs' tiles, built from the store by a generator.
     GeneratorsProviderDecorator,
@@ -495,6 +592,7 @@ type Story = StoryObj<typeof meta>;
 /**
  * Three fields, each a stage, a frame and spheres: at the sea's level on its stage's middle,
  * corners and edges, and at a reservoir's depth. Anchor each in turn — covered by a fade, the
- * camera carried — and toggle the scenery: nothing placed moves.
+ * camera carried — and toggle the scenery: nothing placed moves. Click a sphere: one handler
+ * for all three is told which field it hit and where, in that field's own frame and map.
  */
 export const Default: Story = {};

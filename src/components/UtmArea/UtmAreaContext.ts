@@ -10,6 +10,8 @@ export type Wgs84Coords = { lng: number; lat: number; alt: number };
  * @expand
  */
 export type UtmAreaContextProps = {
+  /** the area's `id`: which field it is, as the host named it */
+  id?: string;
   originUtm: Vec2;
   originWgs84: Vec2;
   /** the area's map and origin on the Earth */
@@ -17,6 +19,11 @@ export type UtmAreaContextProps = {
   utmToArea: (easting: number, northing: number, altitude?: number) => Vec3;
   wgs84ToArea: (longitude: number, latitude: number, altitude?: number) => Vec3;
   areaToUtm: (x: number, y: number, z: number) => UtmCoords;
+  /**
+   * A world point in the area's own X/Y/Z (a pick's `position`, say): through its whole
+   * transform, placed by a `World` or not.
+   */
+  worldToArea: (x: number, y: number, z: number) => Vec3;
   /** through the area's whole transform, placed by a `World` or not */
   worldToUtm: (x: number, y: number, z: number) => UtmCoords;
   areaToWgs84: (x: number, y: number, z: number) => Wgs84Coords;

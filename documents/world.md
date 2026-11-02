@@ -6,7 +6,7 @@
 > [4](#12-step-4-in-detail-the-sky-anywhere-on-the-globe) and
 > [6](#11-step-6-in-detail-tiles-on-the-globe) built; step
 > [7](#13-step-7-in-detail-more-than-one-field) designed again (2026-11-02): the `World`
-> holds where things are, and the host times and covers a switch between fields; 7a–7e
+> holds where things are, and the host times and covers a switch between fields; 7a–7f
 > built.** How the scene
 > places itself on the Earth, what more than one field needs, and a plan for it. The open
 > questions are settled ([Decided](#7-decided-2026-10-26)): the Earth is a fixed globe, and
@@ -190,7 +190,7 @@ Nothing above is needed for one field. What keeps it cheap to add later:
 | 4 | **The sky anywhere on the globe** ([in detail](#12-step-4-in-detail-the-sky-anywhere-on-the-globe)), was the view's origin. Its precision came free in step 3: three.js composes each draw's model-view matrix in 64 bits, so a placed field is as precise 300 km out as at home. Left: the sky seen from far off. The world stays fixed and the sky's look frame follows the camera: its up, horizon and light where the camera is; the waves on fixed charts on the Earth (`OceanCharts`). A host levels its horizon with `useLevelHorizon` | ✅ built (2026-10-27); the cloud deck far off is left for step 8 |
 | 5 | **The relief in its own frame** — folded into step 6. In a frame of its own the relief would part from the chosen field's UTM by the two maps' scale (UTM's 0.9996 against 1: 3 m at 8 km), right where its column meets it; laid in the chosen field's frame it meets it exactly, and a placed field's to its placement's precision | → step 6 |
 | 6 | **Tiles on the globe** ([in detail](#11-step-6-in-detail-tiles-on-the-globe)): tile keys by latitude and longitude, the relief contract unchanged (a tile asks each layer for a window of its own grid, as now); the overlays' tiles move with them, sharing the core. Everything placed by latitude and longitude on one sphere, the ellipsoid's conformal sphere matched at the chosen field; each field's column samples the relief through its transform | ✅ built (2026-10-26) in five parts: 6a the geographic globe, 6b geographic tiles, 6c the relief drawn from them, 6d the whole globe — the Earth from 20 000 km, the far side included; 6e a clean-up |
-| 7 | **More than one field** ([in detail](#13-step-7-in-detail-more-than-one-field)): the `World` holds where things are — its frame (the anchor), the disc and the globe — whatever the scenery, and draws nothing; the relief Earth data of its own; switching the anchor a controlled switch, timed and covered by the host; every loaded field drawn in its own group; the void the seabed's underside everywhere; the seabed see-through over each loaded field | designed (2026-10-30), designed again (2026-11-02); 7a–7e built (2026-11-02); step 3 placed the second field |
+| 7 | **More than one field** ([in detail](#13-step-7-in-detail-more-than-one-field)): the `World` holds where things are — its frame (the anchor), the disc and the globe — whatever the scenery, and draws nothing; the relief Earth data of its own; switching the anchor a controlled switch, timed and covered by the host; every loaded field drawn in its own group; the void the seabed's underside everywhere; the seabed see-through over each loaded field | designed (2026-10-30), designed again (2026-11-02); 7a–7f built (2026-11-02); step 3 placed the second field |
 
 Steps 1 to 4 and 6 are built. Step 7 is designed ([§13](#13-step-7-in-detail-more-than-one-field)),
 to be built against a story with two fields of realistic size.
@@ -221,7 +221,10 @@ to be built against a story with two fields of realistic size.
   the sea is the globe. Curved everywhere would put the column's top 5 m off the sea at
   8 km.
 - **Picking and annotations across fields:** each field's `UtmArea` keeps its own
-  context; a pick says which field it hit.
+  context; a pick says which field it hit. Built in 7f without the `EventEmitter` knowing of
+  fields: a listener's `ref`, its generic reference, carries what the host or the component
+  registering it puts there (the field's area, from its `UtmAreaContext`), or the host's
+  handler knows its field by where it was made.
 - **The date** stays the host's, as the sky observer's is.
 - **`UtmPosition` and `Wgs84Position` stay flat** for now: they place at the area's
   Y = `altitude`, as before, and far from the field what they place stands off the curved
@@ -993,7 +996,7 @@ and not above 100 km (`below`), where the up runs along a view down at the Earth
 
 ## 13. Step 7 in detail: more than one field
 
-> **Status (2026-11-02): 7a–7e built; 7f–7g designed.** The `World` holds where things are
+> **Status (2026-11-02): 7a–7f built; 7g designed.** The `World` holds where things are
 > and draws nothing; the relief becomes Earth data of its own; switching from one field to
 > another is a controlled switch, applied by the library in one frame and timed and covered by
 > the host. The estimates below were measured in 7a ([7a and 7b, built](#7a-and-7b-built-2026-11-02)).
@@ -1317,7 +1320,7 @@ and loaded by geographic tile and distance. Its design must settle:
 | 7c | The controlled switch: `frame` and `bounds` applied in one frame; `onFrameChange` with its matrix, and `onFrameSettled`; the matrix as an sdk helper; fields pivoting at their stage's middle; the story's fade | ✅ built (2026-11-02): anchored from field to field, covered, the camera carried by where it is on the Earth (`carry`) |
 | 7d | The relief as Earth data of its own: out of `SceneryStage`, on the `World`'s globe, shaded plainly without a sky and by the sky with one | ✅ built (2026-11-02): 7d-1 `GeoRelief` in the `World`, the sky's shading kept, nothing changed on screen; 7d-2 the relief with the scenery off, its tiles kept across a toggle |
 | 7e | See-through regions per loaded field; the void's shading and levels far from the stage | ✅ built (2026-11-02): a neighbour's reservoir seen through its seabed, with the scenery and without; under a field 123 km off the void as under the anchored one, less the walls |
-| 7f | A pick says which field it hit ([§7](#7-decided-2026-10-26)) | picks across fields |
+| 7f | A pick says which field it hit ([§7](#7-decided-2026-10-26)) | ✅ built (2026-11-02): one handler for three fields, each pick in its own field's frame and map, anchored to either end |
 | 7g | Bending a neighbour in its own frame, picking included | only if 7a shows the seam |
 
 The relief bridge carrying a placed field's transform is not needed while columns and the
@@ -1519,6 +1522,29 @@ sand's lid are as before (`near` 1). Swept east from Volve, the lid's mean colou
 Trench through its see-through seabed, the void's grey depths instead of black. Anchored to
 Trench, the walls are under Trench. Without walls, with them, FieldColumn and the anchor's
 switch: no shader warning.
+
+### 7f, built (2026-11-02)
+
+A pick says which field it hit, and the `EventEmitter` knows nothing of fields:
+
+- **`UtmArea`'s `id`**, the host's name for the field, in its context (`UtmAreaContext.id`), so
+  what is drawn inside can tell which field it is in; and `worldToArea`, a world point (a
+  pick's `position`) in the area's own X/Y/Z through its whole transform, as `worldToUtm` is.
+- **Which field, by the listener's `ref`:** the generic reference a listener is registered
+  with, and handed back on each of its events. A component drawn in a field registers with
+  what it knows of where it is (the field's area, from its `UtmAreaContext`); a library
+  component's `ref` stays its own (a wellbore's id), and the host's handler for it knows its
+  field by where it was made: one handler per field, made inside it. Not by walking up the
+  scene graph from what was hit.
+- Considered and not taken: the `EventEmitter` stamping the area on each listener as it is
+  registered (`useEventEmitter` reading `UtmAreaContext`), which would tie it to `UtmArea`.
+
+Checked in `Spikes/World/Fields` (an `EventEmitter` added, the spheres of each field one
+listener, its area its `ref`, one click handler for all three, the hit shown over the view):
+anchored to Volve, a reservoir sphere (250 m, its middle 2500 m deep) clicked from straight
+above in each field reads 2251 m deep, within 12 m of its middle across (the 2° tilt), in
+that field's own frame — Trench 123 km east in UTM 32N, Overlap in its transverse Mercator,
+Volve in 31N; anchored to Trench, Volve's, 119 km west now, reads the same within 5 m.
 
 ### Considered, not chosen
 

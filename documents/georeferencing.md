@@ -85,7 +85,7 @@ generator functions from `@equinor/videx-3d/generators`.
 | `World` | says once, with a `frame`, where the scene lies on the Earth. Renders nothing |
 | `UtmArea` | a container for field data in a map: its children are drawn in its map's metres about its origin. A `UtmArea` in **another** frame than the `World`'s (another UTM zone, a field 300 km away) places itself where the world's map has it, turned and scaled, and on the globe when there is one |
 | `UtmPosition` / `Wgs84Position` | place children at an easting/northing or a longitude/latitude inside a `UtmArea` |
-| `UtmAreaContext` | the area's conversions: `utmToArea`, `wgs84ToArea`, `areaToUtm`, `areaToWgs84`, `worldToUtm`, `worldToWgs84` |
+| `UtmAreaContext` | the area's conversions: `utmToArea`, `wgs84ToArea`, `areaToUtm`, `areaToWgs84`, `worldToArea`, `worldToUtm`, `worldToWgs84`; and its `id`, the host's name for the field |
 
 ### The surroundings: sky, sea, land and seabed
 
@@ -151,7 +151,11 @@ blocks (`reliefWindow`). See [relief.md](./relief.md#data).
 - **More than one field:** each in its own `UtmArea` (its `bounds`, its stage, so it is placed
   best about its middle). Anchoring another is giving the `World` its `frame` and `bounds`;
   `onFrameChange` says how to carry the camera, `onFrameSettled` when to uncover the switch
-  ([world.md, step 7](./world.md#switching-the-anchor-a-controlled-switch)).
+  ([world.md, step 7](./world.md#switching-the-anchor-a-controlled-switch)). Which field a
+  pick hit: name each area (`id`) and register its listeners with its area as their `ref`
+  (`useContext(UtmAreaContext)` inside it), or make each field's handler inside it; the
+  area's `worldToArea` and `worldToUtm` read the pick's `position` in that field
+  ([world.md, 7f](./world.md#7f-built-2026-11-02)).
 - **The relief is shared.** The `GeoRelief`, its far overview and the minimap draw the same
   tiles from the same `relief-meta` / `relief-values`, built by the `sceneryReliefTile`
   generator. Layers in the `World` lie on what the relief draws (`drape`).
