@@ -1315,6 +1315,11 @@ The `Store` interface (`get`, `all`, `query`) is enough as it is:
 
 ### Wellbores as an Earth-level layer: a step of its own
 
+> **Draft plan (2026-11-03):** [geo-subsurface.md](./geo-subsurface.md), with surfaces and
+> models on the Earth; not built. It places each well rigidly at its wellhead in its own CRS
+> (a new `WellboreHeader.crs`) rather than node by node as sketched below, so the overview and
+> a well's detailed components lie exactly on each other when one replaces the other.
+
 Moved out of step 7 (2026-11-02): a feature of its own, not needed for more than one field.
 Besides each field's own wells in its group, the wells of a region as one layer on the Earth,
 as the geographic layers are ([layers.md](./layers.md)): each trajectory node placed by

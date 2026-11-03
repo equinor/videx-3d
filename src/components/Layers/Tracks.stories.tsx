@@ -24,20 +24,31 @@ import { TrackLayer } from './TrackLayer';
 
 // Ships about the demo field, as a tracking feed (AIS) would report them: generated, then
 // fed a new fix every few seconds — moved on, a little off where dead reckoning put them,
-// and turned now and then — which the layer eases into.
+// and turned now and then — which the layer eases into. With `far`, a few more about
+// places far past the stage's flat disc, where the sea curves away: each stands on the sea
+// there.
 
 const LEVEL = 0;
 const DEPTH = 100;
 const STAGE_BOUNDS: [number, number, number, number] = [
   -8000, -8000, 8000, 8000,
 ];
-// Kept within this many metres of the field, inside the stage's flat disc.
+// Kept within this many metres of their home: the field's within the stage's flat disc.
 const AREA = 5000;
 const EARTH_RADIUS = 6371000;
 const DEG = Math.PI / 180;
 const HOME = geoFrameLocation(demoFrame);
+// Far from the field: 150 km west, 400 km south, the Norwegian Sea and the mid-Atlantic.
+const FAR_HOMES = [
+  { longitude: HOME.longitude - 2.6, latitude: HOME.latitude },
+  { longitude: HOME.longitude, latitude: HOME.latitude - 3.6 },
+  { longitude: HOME.longitude + 2, latitude: HOME.latitude + 7.6 },
+  { longitude: -35, latitude: 45 },
+];
+const SHIPS_PER_FAR_HOME = 3;
 
-type Ship = Track & { name: string; length: number };
+type Home = { longitude: number; latitude: number };
+type Ship = Track & { name: string; length: number; home: Home };
 
 // A small seeded random: the same ships every time.
 function random(seed: number) {
@@ -70,29 +81,38 @@ const NAMES = [
   'Grane',
 ];
 
-// Metres east and north of the field's origin.
+// Metres east and north of the ship's home.
 const offsetOf = (ship: Ship) => [
-  (ship.longitude - HOME.longitude) *
+  (ship.longitude - ship.home.longitude) *
   DEG *
   EARTH_RADIUS *
-  Math.cos(HOME.latitude * DEG),
-  (ship.latitude - HOME.latitude) * DEG * EARTH_RADIUS,
+  Math.cos(ship.home.latitude * DEG),
+  (ship.latitude - ship.home.latitude) * DEG * EARTH_RADIUS,
 ];
 
-function createShips(count: number): Ship[] {
+function createShips(count: number, far: boolean): Ship[] {
   const next = random(7);
-  return Array.from({ length: count }, (_, i) => {
+  const homes: Home[] = [
+    ...Array.from({ length: count }, () => HOME),
+    ...(far
+      ? FAR_HOMES.flatMap(home =>
+        Array.from({ length: SHIPS_PER_FAR_HOME }, () => home),
+      )
+      : []),
+  ];
+  return homes.map((home, i) => {
     const r = AREA * Math.sqrt(next());
     const a = next() * 2 * Math.PI;
     return {
       id: i,
       name: NAMES[i % NAMES.length],
+      home,
       longitude:
-        HOME.longitude +
+        home.longitude +
         (r * Math.sin(a)) /
-        (EARTH_RADIUS * Math.cos(HOME.latitude * DEG)) /
+        (EARTH_RADIUS * Math.cos(home.latitude * DEG)) /
         DEG,
-      latitude: HOME.latitude + (r * Math.cos(a)) / EARTH_RADIUS / DEG,
+      latitude: home.latitude + (r * Math.cos(a)) / EARTH_RADIUS / DEG,
       speed: knots(6 + next() * 10),
       course: next() * 360,
       length: 150 + next() * 180,
@@ -102,7 +122,7 @@ function createShips(count: number): Ship[] {
 }
 
 // A new fix for each ship: where it is now, give or take `noise` metres, its course turned
-// a little, or back toward the field once it is far out.
+// a little, or back toward its home once it is far out.
 function nextFixes(ships: Ship[], noise: number, next: () => number): Ship[] {
   const now = Date.now();
   return ships.map(ship => {
@@ -129,6 +149,7 @@ function nextFixes(ships: Ship[], noise: number, next: () => number): Ship[] {
 
 type ShipsArgs = {
   count: number;
+  far: boolean;
   moving: boolean;
   feed: boolean;
   feedSeconds: number;
@@ -141,6 +162,7 @@ type ShipsArgs = {
 
 const ShipsStory = ({
   count,
+  far,
   moving,
   feed,
   feedSeconds,
@@ -151,8 +173,8 @@ const ShipsStory = ({
   maxHeight,
   minimap,
 }: ShipsArgs) => {
-  const [ships, setShips] = useState(() => createShips(count));
-  useEffect(() => setShips(createShips(count)), [count]);
+  const [ships, setShips] = useState(() => createShips(count, far));
+  useEffect(() => setShips(createShips(count, far)), [count, far]);
   // The feed: new fixes every few seconds while the ships move.
   useEffect(() => {
     if (!feed || !moving) return;
@@ -228,6 +250,7 @@ const meta = {
   },
   args: {
     count: 12,
+    far: true,
     moving: true,
     feed: true,
     feedSeconds: 5,
@@ -241,6 +264,11 @@ const meta = {
   argTypes: {
     count: {
       control: { type: 'range', min: 1, max: 40, step: 1 },
+      table: { category: 'Data' },
+    },
+    far: {
+      description:
+        'Three ships more about each of four places far past the stage’s flat disc — 150 km west, 400 km south, the Norwegian Sea and the mid-Atlantic — each standing on the curved sea there.',
       table: { category: 'Data' },
     },
     moving: {

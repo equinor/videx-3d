@@ -1,10 +1,14 @@
-import { Matrix4, Object3D, Vector3 } from 'three';
+import { Matrix4, Object3D, Quaternion, Vector3 } from 'three';
 import type { Vec2 } from '../types/common';
 import { GeoFrame, GeoFramePlacement, placeGeoFrame } from './geo-frame';
 import type { Globe } from './globe';
 
 const onGlobe = new Matrix4();
 const shifted = new Matrix4();
+// globeUprightMatrix's.
+const upThere = new Vector3();
+const foot = new Vector3();
+const tilt = new Quaternion();
 
 /**
  * The matrix that places a frame's content in the scene: flat by `placement` (see
@@ -32,6 +36,36 @@ export function geoFrameMatrix(
   target.set(c, 0, s, tx, 0, 1, 0, 0, -s, 0, c, tz, 0, 0, 0, 1);
   if (globe) target.premultiply(globe.tangent(x, z, onGlobe));
   return target;
+}
+
+/**
+ * The matrix that stands what is drawn flat about a point upright on `globe` there: what
+ * lies at the point's foot on the level plane (straight down along the scene's up, at the
+ * globe's `level`) goes to `point`, turned from the scene's up to the globe's up at `point`
+ * by the least rotation (`Globe.upAt`), so it keeps the X/Z and the heading it is drawn
+ * with, tilted with the Earth there. `point` is where the globe places something on its
+ * sea's level: `Globe.geodetic` at height 0.
+ *
+ * The identity over the disc, where such a point lies on the level plane, and with the
+ * globe off: content drawn flat there is not moved. Through no map, unlike
+ * `Globe.tangent`, so it holds anywhere on the Earth, the far side included, but at the
+ * disc's antipode, where the turn has no one axis. Nothing is squeezed: for an object of a
+ * ship's size, not a field's.
+ *
+ * @group Utils
+ */
+export function globeUprightMatrix(
+  globe: Globe,
+  point: Vector3,
+  target: Matrix4,
+): Matrix4 {
+  const up = globe.up;
+  tilt.setFromUnitVectors(up, globe.upAt(point, upThere));
+  foot.copy(point).addScaledVector(up, globe.level - point.dot(up));
+  // T(point) · R(tilt) · T(−foot).
+  target.makeRotationFromQuaternion(tilt);
+  foot.applyMatrix4(target);
+  return target.setPosition(foot.subVectors(point, foot));
 }
 
 /**

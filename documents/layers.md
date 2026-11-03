@@ -54,7 +54,7 @@ and facilities on the seabed, `On the seabed` and `To the coast`) and
 | `GeoSymbols` | points as 3D symbols of any geometry, standing on the ground, their size as built (exaggerated), never narrower than a few pixels | one instanced mesh (`Symbols`) |
 | `GeoLabels` | a label per feature, flat inside a polygon, by a point | a `LabelLayer`, placed on the globe |
 | `MinimapGeoLayer` | the same features as the scene's layers, less what its `filter` leaves out, on a `Minimap` | SVG paths and dots, carried to scene X/Z once |
-| `TrackLayer` | things that move: anything you render, a `Tanker` say | dead reckoning between fixes, an object moved per frame |
+| `TrackLayer` | things that move: anything you render, a `Tanker` say | dead reckoning between fixes, an object moved per frame, stood upright on the globe where it is |
 
 The data is GeoJSON (`GeoJsonFeatureCollection`) or features read from it
 (`geoFeaturesFromGeoJson`, `GeoFeature`): their geometry a `PlanarGeometry` in longitude and
@@ -435,8 +435,8 @@ React render:
 - turns it to its course in the scene (`courseToHeading`: a short step along the course
   carried into the scene, so the map's convergence is counted — 1.7° 2° east of the meridian
   at 58° N);
-- eases into a new fix over `smoothing` seconds, its position and its heading the short way
-  round, instead of jumping;
+- eases into a new fix over `smoothing` seconds, its position (in degrees) and its heading
+  the short way round, instead of jumping;
 - moves what `children(track, ref)` attached to `ref`: its `position.x`, `position.z` and
   `rotation.y` only, and its `position.y` once, so a `Tanker`'s buoyancy keeps its own height,
   pitch and roll (its ref is its group).
@@ -445,8 +445,25 @@ A new fix is a new array with a changed track (another `time`, position, speed o
 `annotations` puts a label per track on an `Annotations` layer, anchored to its object's
 world matrix, so it follows it.
 
-⚠️ Placed flat: on a `Scenery`'s globe, keep what floats within the stage's flat disc, past
-which the sea curves away. Each track is an object of its own: for thousands, instance them.
+**Anywhere on the Earth.** Each object is drawn in a group of the layer's, which stands it
+upright on the globe where its track is (`placeTrackOnGlobe`): the point the globe places at
+its latitude and longitude on the sea's level (`Globe.geodetic`), turned from the scene's up
+to the globe's up there by the least rotation (`globeUprightMatrix`, in the sdk). The
+object's own X/Z stay the point's in the scene, and its heading is the course's step carried
+onto the globe and turned back into the group. Over the globe's flat disc the group is the
+identity, so a ship there is drawn exactly as flat; beyond it, it floats on the curved sea —
+150 km out, 400 km out, or the mid-Atlantic seen from the North Sea (the `Ships` story's
+`far`). No map is involved, unlike `Globe.tangent`, so it holds where the `World`'s
+transverse Mercator does not (90° from its meridian); only at the disc's antipode is the turn
+ill defined. Without a globe with a frame (a `Scenery` alone), flat on `frame`.
+
+- **Waves far off:** `useBuoyancy` and the sea's contact foam take the object's X/Z and
+  heading as the scene's, exact over the disc; far from it they follow the flat wave field,
+  not the waves drawn there (see [world.md, 4d](./world.md#4d-the-waves-far-off-built-2026-10-27)), which shows
+  only close up — where a `World` anchored at the target (`useTargetAnchor`) has the ship on
+  its disc again.
+- **Cost:** two `Globe.geodetic` and one `upAt` a track a frame. Each track is an object of
+  its own: for thousands, instance them.
 
 ## The minimap: `MinimapGeoLayer`
 
@@ -462,7 +479,8 @@ leaves out what would clutter a small map (the `Pipelines` story's subsea templa
 
 `geoFeaturesFromGeoJson`, `densifyPlanarGeometry`, `projectGeoFeature`; `polygonLabelPoint`;
 `layerVisibilityAt`, `layerShownAt` (see [When a layer is drawn](#when-a-layer-is-drawn));
-`advanceTrack`, `courseToHeading`, `knots`; `buildOverlayTile`,
+`advanceTrack`, `courseToHeading`, `knots`; `globeUprightMatrix` (what is drawn flat about a
+point, stood upright on the globe there, through no map); `buildOverlayTile`,
 `packOverlayShapes`; `geoDistance`, `greatCircleSteps`, `joinNearestEnd`, `simplifyGeoLine`
 (lines in longitude and latitude); `packGeoTubeRoutes`, `geoTubeNodesAround`,
 `layGeoTubeNodes`, `liftGeoTubeNodes`, `geoSpanLift` (tubes' nodes); `conformalOffset`
@@ -497,6 +515,9 @@ laid on another's tiles (`sdk/tiles/tile-cover.ts`: `tilesUnder`, `tileAncestors
 - **Tubes' nodes** are laid on the main thread; for a much larger network than the demo's,
   lay them on a worker and cull those behind the camera.
 - **Instanced tracks** for large fleets, and a time scale for replaying a feed.
+- **Wells, surfaces and models on the Earth** as layers — a region's wells with their related
+  data close up, surfaces in their own CRS, glTF models on the relief: a draft plan,
+  [geo-subsurface.md](./geo-subsurface.md).
 - Features across the 180th meridian.
 - **The relief's own choosing** costs 3.6 to 8.5 ms of the main thread a frame in the same
   view, still or moving (`SceneryStageReliefTiles`, unchanged here): the same two steps — skip

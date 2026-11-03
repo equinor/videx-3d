@@ -1,6 +1,6 @@
 import { useFrame } from '@react-three/fiber';
-import { Fragment, ReactNode, useEffect, useMemo, useRef } from 'react';
-import { Object3D, Vector3 } from 'three';
+import { ReactNode, useEffect, useMemo, useRef } from 'react';
+import { Group, Matrix4, Object3D } from 'three';
 import {
   layerVisibilityAt,
   type LayerVisibility,
@@ -11,13 +11,17 @@ import {
   type Track,
 } from '../../sdk/layers/tracks';
 import { geoFrameXZ, type GeoFrame } from '../../sdk/projection/geo-frame';
-import type { Globe } from '../../sdk/projection/globe';
+import {
+  releaseObjectMatrix,
+  setObjectMatrix,
+} from '../../sdk/projection/place-frame';
 import type { Vec2 } from '../../sdk/types/common';
 import type { AnnotationProps } from '../Annotations/types';
 import { useAnnotations } from '../Annotations/annotations-state';
 import { useSceneryOcean } from '../Scenery/scenery-context';
 import { useWorld } from '../World/world-context';
 import { layerShownAt, useLayerGlobe } from './layer-globe';
+import { placeTrackOnGlobe, type TrackPlacement } from './track-placement';
 
 /**
  * TrackLayer props
@@ -33,7 +37,9 @@ export type TrackLayerProps<T extends Track> = LayerVisibility & {
    * what to draw for a track, attached to `ref`: an object the layer moves each frame —
    * its `position.x`, `position.z` and `rotation.y` (0 along +X) — so it sets its own
    * height, pitch and roll (a `Tanker`'s buoyancy, say). Its `position.y` is set once, to
-   * `height` over the sea's level, when it is attached
+   * `height` over the sea's level, when it is attached. On a globe it is drawn inside a
+   * group of the layer's, which stands it upright on the curved sea where the track is;
+   * its X/Z stay the scene's there, where the waves are sampled
    */
   children: (track: T, ref: (object: Object3D | null) => void) => ReactNode;
   /** carry each track on along its speed and course between fixes (dead reckoning). Default true */
@@ -59,7 +65,10 @@ type Moving = {
   /** the fix it is carried on from, and when it was received if it has no time */
   fix: Track;
   received: number;
-  /** where it was drawn last, and what is left to ease out of a new fix */
+  /**
+   * where it was drawn last (longitude, latitude), and what is left to ease out of a new
+   * fix, in degrees: the same on a globe and flat
+   */
   drawn: Vec2 | null;
   offset: Vec2;
   turn: number;
@@ -68,19 +77,29 @@ type Moving = {
 
 type Attached = { object: Object3D; placed: boolean };
 
-const at = new Vector3();
+// The frame a track's object is drawn in, and its place in it.
+const framing = new Matrix4();
+const placement: TrackPlacement = { x: 0, z: 0, heading: 0 };
+
+// A difference of longitudes, the short way round: (−180, 180].
+const wrapDegrees = (degrees: number) =>
+  degrees - 360 * Math.round(degrees / 360);
 
 /**
  * Things that move over the Earth — ships, vessels, vehicles, from a tracking feed (AIS, say)
  * or a simulation — each drawn by `children` and moved by the layer every frame, without a
  * React render: placed at its latitude and longitude, carried on along its speed and course
  * between fixes (`advanceTrack`), turned to its course (the map's convergence counted), and
- * eased into each new fix over `smoothing` seconds. On a `Scenery`'s globe, else flat on the
- * `World`'s frame.
+ * eased into each new fix over `smoothing` seconds.
  *
- * ⚠️ Placed flat: on a `Scenery`'s globe, keep what floats on its sea within the stage's
- * flat disc; past it the sea curves away under it. Not for thousands of tracks: each is an
- * object of its own (instance them yourself for a fleet).
+ * On the `World`'s globe (or a `Scenery`'s) anywhere on the Earth: over the globe's flat
+ * disc as drawn flat, and beyond it stood upright on the curved sea where the track is
+ * (`placeTrackOnGlobe`), however far — a ship 400 km off floats on the sea there. Without a
+ * globe, flat on `frame`. A floating object's waves are sampled where it is in the scene;
+ * far from the disc they follow the flat wave field, not the waves drawn there exactly.
+ *
+ * ⚠️ Not for thousands of tracks: each is an object of its own (instance them yourself for
+ * a fleet).
  *
  * See `documents/layers.md`.
  *
@@ -109,23 +128,18 @@ export const TrackLayer = <T extends Track>({
   const world = useWorld();
   const flatFrame = frame ?? world?.frame ?? null;
   const flatKey = flatFrame ? JSON.stringify(flatFrame) : '';
-  // From longitude and latitude to the scene: on the globe where there is one, else flat.
-  const toScene = useMemo(() => {
-    const globe: Globe | null = placed?.globe ?? null;
-    if (globe?.frame) {
-      return (lon: number, lat: number): Vec2 => {
-        globe.geodetic(lat, lon, 0, at);
-        return [at.x, at.z];
-      };
-    }
-    if (!flatKey) return null;
-    return geoFrameXZ(JSON.parse(flatKey) as GeoFrame);
-  }, [placed, flatKey]);
+  // From longitude and latitude to the scene flat, for a globe with no frame to place by.
+  const flatXZ = useMemo(
+    () => (flatKey ? geoFrameXZ(JSON.parse(flatKey) as GeoFrame) : null),
+    [flatKey],
+  );
   const level = placed?.level ?? 0;
 
   const moving = useRef(new Map<string | number, Moving>());
   // The objects drawn for the tracks, by id: set by their refs, at commit.
   const attached = useRef(new Map<string | number, Attached>());
+  // The groups the layer draws each track's object in, by id: placed on the globe.
+  const frames = useRef(new Map<string | number, Group>());
   // New fixes: a track whose fix changed starts from it, easing out of where it was drawn.
   useEffect(() => {
     const now = performance.now();
@@ -165,7 +179,9 @@ export const TrackLayer = <T extends Track>({
   const there = { longitude: 0, latitude: 0 };
 
   useFrame(({ camera }, delta) => {
-    if (!toScene) return;
+    // On the globe where it has a frame to place by, else flat.
+    const globe = placed?.globe.frame ? placed.globe : null;
+    if (!globe && !flatXZ) return;
     const shown =
       (placed
         ? layerShownAt(
@@ -192,33 +208,57 @@ export const TrackLayer = <T extends Track>({
           ? (wall - fix.time) / 1000
           : (now - state.received) / 1000;
       advanceTrack(fix, Math.max(seconds, 0), there);
-      const [x, z] = toScene(there.longitude, there.latitude);
-      const heading = courseToHeading(
-        toScene,
-        there.longitude,
-        there.latitude,
-        fix.course ?? 0,
-      );
-      if (Number.isNaN(state.offset[0])) {
-        // A new fix: ease from where it was drawn, and from its heading the short way round.
+      const fresh = Number.isNaN(state.offset[0]);
+      const wasDrawn = state.drawn !== null;
+      if (fresh) {
+        // A new fix: ease from where it was drawn.
         state.offset = state.drawn
-          ? [state.drawn[0] - x, state.drawn[1] - z]
+          ? [
+              wrapDegrees(state.drawn[0] - there.longitude),
+              state.drawn[1] - there.latitude,
+            ]
           : [0, 0];
-        const turn = state.heading - heading;
-        state.turn = state.drawn
-          ? Math.atan2(Math.sin(turn), Math.cos(turn))
-          : 0;
       } else {
         state.offset[0] *= ease;
         state.offset[1] *= ease;
+      }
+      const longitude = there.longitude + state.offset[0];
+      const latitude = there.latitude + state.offset[1];
+      state.drawn = [longitude, latitude];
+      const course = fix.course ?? 0;
+      const frameGroup = frames.current.get(id);
+      if (globe) {
+        placeTrackOnGlobe(
+          globe,
+          longitude,
+          latitude,
+          course,
+          framing,
+          placement,
+        );
+        if (frameGroup) setObjectMatrix(frameGroup, framing);
+      } else {
+        [placement.x, placement.z] = flatXZ!(longitude, latitude);
+        placement.heading = courseToHeading(
+          flatXZ!,
+          longitude,
+          latitude,
+          course,
+        );
+        if (frameGroup && !frameGroup.matrixAutoUpdate)
+          releaseObjectMatrix(frameGroup);
+      }
+      const { heading } = placement;
+      if (fresh) {
+        // And from its heading the short way round.
+        const turn = state.heading - heading;
+        state.turn = wasDrawn ? Math.atan2(Math.sin(turn), Math.cos(turn)) : 0;
+      } else {
         state.turn *= ease;
       }
-      const drawnX = x + state.offset[0];
-      const drawnZ = z + state.offset[1];
-      state.drawn = [drawnX, drawnZ];
       state.heading = heading + state.turn;
-      object.position.x = drawnX;
-      object.position.z = drawnZ;
+      object.position.x = placement.x;
+      object.position.z = placement.z;
       object.rotation.y = state.heading;
       if (!slot.placed) {
         object.position.y = level + height;
@@ -232,6 +272,21 @@ export const TrackLayer = <T extends Track>({
     () => new Map<string | number, (object: Object3D | null) => void>(),
     [],
   );
+  const frameRefs = useMemo(
+    () => new Map<string | number, (group: Group | null) => void>(),
+    [],
+  );
+  const frameFor = (id: string | number) => {
+    let ref = frameRefs.get(id);
+    if (!ref) {
+      ref = (group: Group | null) => {
+        if (group) frames.current.set(id, group);
+        else frames.current.delete(id);
+      };
+      frameRefs.set(id, ref);
+    }
+    return ref;
+  };
   const refFor = (id: string | number) => {
     let ref = refs.get(id);
     if (!ref) {
@@ -247,7 +302,9 @@ export const TrackLayer = <T extends Track>({
   return (
     <>
       {tracks.map(track => (
-        <Fragment key={track.id}>{children(track, refFor(track.id))}</Fragment>
+        <group key={track.id} ref={frameFor(track.id)}>
+          {children(track, refFor(track.id))}
+        </group>
       ))}
       {annotations && (
         <TrackAnnotations
