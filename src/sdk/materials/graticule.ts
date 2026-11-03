@@ -313,6 +313,51 @@ function writeThinning(target: Vector4[], from: number, step: number) {
 const METRES_PER_DEGREE = (Math.PI / 180) * 6371008.8;
 
 /**
+ * The least the ground a view is centred on is taken to face it (the sine of its grazing
+ * angle), for {@link graticuleViewDegreesPerPixel}: a view over the horizon is as
+ * foreshortened as this.
+ */
+export const GRATICULE_LEAST_FACING = 0.05;
+
+// graticuleViewDegreesPerPixel's.
+const viewDir = new Vector3();
+const viewPoint = new Vector3();
+const viewUp = new Vector3();
+const viewReach = { distance: 0, hit: false };
+
+/**
+ * How far a view by `camera` is zoomed over `globe`, for {@link graticuleStep}: the
+ * degrees of latitude a pixel spans on the ground the view is centred on — where the view
+ * meets the sea's level, foreshortened as it is seen there (the mean of along and across
+ * the view), or, looking over the horizon, the horizon — the view `pixels` tall (the
+ * drawing buffer's height). So an oblique view follows what it looks at, not what lies
+ * under it.
+ */
+export function graticuleViewDegreesPerPixel(
+  globe: Globe,
+  camera: Camera,
+  pixels: number,
+): number {
+  const altitude = globe.altitude(camera.position);
+  camera.getWorldDirection(viewDir);
+  const centred = globe.reach(camera.position, viewDir, 0, viewReach);
+  let distance: number;
+  let facing = GRATICULE_LEAST_FACING;
+  if (centred.hit) {
+    distance = centred.distance;
+    viewPoint.copy(camera.position).addScaledVector(viewDir, distance);
+    facing = Math.max(
+      -viewDir.dot(globe.upAt(viewPoint, viewUp)),
+      GRATICULE_LEAST_FACING,
+    );
+  } else {
+    const R = globe.radius;
+    distance = Math.sqrt(Math.max(2 * R * altitude + altitude * altitude, 1));
+  }
+  return graticuleDegreesPerPixel(camera, distance, pixels) / Math.sqrt(facing);
+}
+
+/**
  * How far a view is zoomed, for {@link graticuleStep}: the degrees of latitude a pixel
  * spans on ground `distance` from `camera`, seen face on, the view `pixels` tall (the
  * drawing buffer's height, as the shaders' pixels are). Pass the distance to the ground the

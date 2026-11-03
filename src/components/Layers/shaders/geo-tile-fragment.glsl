@@ -30,8 +30,9 @@ flat varying float vGeoTileSlot;
 flat varying float vGeoTileBlend;
 flat varying float vGeoTileFromSlot;
 flat varying vec2 vGeoTileTexelMetres;
-#ifdef GEO_TILE_WATER
+// Where the pixel lies on the Earth, before the lift: for a sample of where it is.
 varying vec3 vGeoTileWorld;
+#ifdef GEO_TILE_WATER
 varying float vGeoTileGround;
 #endif
 

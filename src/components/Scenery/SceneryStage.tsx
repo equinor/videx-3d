@@ -290,7 +290,7 @@ export const SceneryStage = ({
         }),
         bed: createSceneryStageMaterial(sky, 'bed', { seeThrough }),
       },
-    // The sky's defines are compiled in (the seabed's detail, the graticule): new ones need new materials.
+    // The sky's defines are compiled in (the seabed's detail): new ones need new materials.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [sky, definesKey, seeThrough, tiled],
   );

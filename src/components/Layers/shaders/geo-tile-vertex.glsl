@@ -2,9 +2,10 @@
 // of it over a finer tile of the relief — each node placed on the globe where its latitude
 // and longitude lie (globeGeodetic): flat at `uGeoTileHeight` over the sea's level, or,
 // draped (GEO_TILE_DRAPE), on the relief's tile drawn under it, on its triangles as the
-// relief draws them, through its soft swaps too. Then drawn toward the camera by a lift, so
-// the surface it lies on does not cut through it: a move of the vertex, not a depth bias,
-// so it holds with any depth buffer — linear, logarithmic or reversed.
+// relief draws them, through its soft swaps too, never below `uGeoTileFloor`. Then drawn
+// toward the camera by a lift, so the surface it lies on does not cut through it: a move of
+// the vertex, not a depth bias, so it holds with any depth buffer — linear, logarithmic or
+// reversed.
 // ⚠️ Assumes the default `up` (+Y).
 
 #include <common>
@@ -15,6 +16,7 @@
 
 uniform float uGeoTileCells;
 uniform float uGeoTileHeight;
+uniform float uGeoTileFloor;
 uniform float uGeoTileSize;
 // How far toward the camera it is drawn: in world units, and per world unit of distance.
 uniform vec2 uGeoTileLift;
@@ -46,9 +48,10 @@ flat varying float vGeoTileBlend;
 flat varying float vGeoTileFromSlot;
 // A texel's width along a meridian, in metres: of its tile, and of the tile it blends from.
 flat varying vec2 vGeoTileTexelMetres;
-#ifdef GEO_TILE_WATER
-// Where it lies, before the lift, and its height over the sea.
+// Where it lies on the Earth, before the lift: for a sample of where a pixel is.
 varying vec3 vGeoTileWorld;
+#ifdef GEO_TILE_WATER
+// Its height over the sea.
 varying float vGeoTileGround;
 #endif
 #ifdef USE_OIT
@@ -62,11 +65,12 @@ void main() {
   #ifdef GEO_TILE_DRAPE
   height = geoTileReliefGround(layerTileRelief, layerTileReliefFrom, layerTileReliefBlend, t, height);
   #endif
+  height = max(height, uGeoTileFloor);
   // Revealed as a map, on the sea where it lies under it.
   height = geoRevealHeight(height);
   vec3 world = globeGeodetic(geoTileOffset(layerTile.xy, layerTileChi, t), height);
-  #ifdef GEO_TILE_WATER
   vGeoTileWorld = world;
+  #ifdef GEO_TILE_WATER
   vGeoTileGround = height;
   #endif
   vec3 toCamera = cameraPosition - world;

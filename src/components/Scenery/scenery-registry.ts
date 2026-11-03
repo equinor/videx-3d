@@ -4,7 +4,6 @@ import type { SceneryMaterial } from './scenery-material';
 import type {
   SceneryAbyssProps,
   SceneryCloudsProps,
-  SceneryGraticuleProps,
   SceneryOceanProps,
   SceneryZone,
 } from './scenery-model';
@@ -34,7 +33,6 @@ export type SceneryFeatures = {
   ocean: SceneryOceanProps | null;
   abyss: SceneryAbyssProps | null;
   cutaway: SceneryCutawayFeature | null;
-  graticule: SceneryGraticuleProps | null;
 };
 
 export type SceneryRegistry = {
@@ -55,7 +53,6 @@ const COMPONENTS: Record<keyof SceneryFeatures, string> = {
   ocean: 'SceneryOcean',
   abyss: 'SceneryAbyss',
   cutaway: 'SceneryCutaway',
-  graticule: 'SceneryGraticule',
 };
 
 /**

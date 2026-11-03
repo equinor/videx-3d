@@ -307,6 +307,8 @@ export function createGeoTileMaterial({
     ...uniforms,
     uGeoTileCells: new Uniform(cells),
     uGeoTileHeight: new Uniform(0),
+    // Draped, never lower than this over the sea (GeoTileLayer's `floor`): none.
+    uGeoTileFloor: new Uniform(-1e9),
     uGeoTileLift: new Uniform(new Vector2()),
     uGeoTiles: new Uniform(textures.texture),
     uGeoTileSize: new Uniform(textures.size),

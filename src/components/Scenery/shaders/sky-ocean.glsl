@@ -614,10 +614,6 @@ vec4 skyOceanSurfaceLayer(vec3 dir, vec3 origin, float blend) {
   float t = reach.x;
   vec2 p = skyOceanPlane(origin + dir * t);
   float texel = max(length(fwidth(p)), 1e-3);
-  #ifndef SKY_NO_GRATICULE
-  // Where it lies on the Earth, for the lines over it, before anything branches.
-  GraticuleAt graticule = graticuleAt(origin + dir * t);
-  #endif
   vec3 delta = origin - cameraPosition + dir * t;
   float waveTexel = skyOceanTexel(delta);
   vec2 rimAt = skyOceanCutawayRimAt(origin + dir * t, origin);
@@ -635,9 +631,6 @@ vec4 skyOceanSurfaceLayer(vec3 dir, vec3 origin, float blend) {
   if(reach.z > 0.5 || skyOceanOnStage(p, t, texel))
     return vec4(0.0);
   vec4 seen = skyOceanCutawayMark(skyOceanThroughAir(surface, origin, dir, t, blend), origin + dir * t, rimAt);
-  #ifndef SKY_NO_GRATICULE
-  seen.rgb = graticuleOver(seen.rgb, graticule);
-  #endif
   return seen;
 }
 

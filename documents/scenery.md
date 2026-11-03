@@ -9,7 +9,6 @@ anywhere under it:
 | Component | Adds |
 |--|--|
 | `<SceneryClouds>` | still clouds: a band along the horizon, a deck overhead, or both |
-| `<SceneryGraticule>` | lines on the Earth: latitude and longitude, the UTM zones, the nautical time zones |
 | `<SceneryOcean>` | an endless sea with a seabed, and the void below it |
 | `<SceneryAbyss>` | the void's look below a level (with a sea, its seabed) |
 | `<SceneryCutaway>` | a cut through the sea's water and seabed in front of the view |
@@ -240,194 +239,13 @@ are left as they are.
 clouds are part of the background only: the water does not reflect them, and they do
 not dim the scene's light.
 
-## Graticule (built 2026-10-27)
+## Graticule
 
-`<SceneryGraticule>` draws lines on the Earth over what is seen of it from the air — the
-sea's surface, the land of a `GeoRelief`, and a dry seabed — from the field out to the
-horizon and from space; none in the water, under the ground or in the void:
-
-```tsx
-<World frame={frame} boundary={boundary}>
-  <Scenery observer={observer}>
-    <SceneryOcean />
-    <SceneryGraticule
-      latLon={{ interval: 1 }}
-      utm={{ color: '#ffd23f', thickness: 2 }}
-      timeZones
-    />
-    <SceneryStage />
-  </Scenery>
-  <GeoRelief layers={layers} />
-</World>
-```
-
-| Kind | Lines | Default |
-|--|--|--|
-| `latLon` | parallels and meridians every `interval` degrees; left out, following the zoom (below) | on |
-| `utm` | the zones' edges every 6° from 80°S to 84°N, Norway's 32V reaching west to 3°E (56°N–64°N) and Svalbard's 31X, 33X, 35X and 37X edged at 9°, 21°, 33° and 42°E (72°N–84°N); and the latitude bands' parallels every 8° from 80°S, the last (X) 12° to 84°N | off |
-| `timeZones` | the nautical time zones: meridians at 7.5° and every 15° from it, and the date line at 180° | off |
-
-Each kind is `true` (its defaults), `false`, or `{ color, thickness, opacity }` (`latLon`
-also `interval` and `minSpacing`): white, 1.5 pixels and 0.8 by default. The lines are the
-SDK's pristine lines (`pristineLine`, `grid.glsl`, after Ben Golus's grid shader, as `Grid`
-and `Surface` draw theirs), their width in screen pixels at any distance, measured by how
-fast latitude and longitude change across the pixel (their screen derivatives, longitude's
-unwrapped across 180°), so a line is as wide seen edge-on as from above. A set of lines
-fades out only where it crowds too close to tell apart, from 6 pixels apart to none at 2:
-toward the horizon, and meridians toward the poles. UTM lines go over the time zones', and
-those over latitude and longitude.
-
-**Following the zoom.** Without an `interval`, latitude and longitude take one step for the
-whole view, the same for meridians and parallels everywhere on screen: the finest of 30°,
-10°, 5°, 1°, 30′, 10′, 5′ and 1′ whose lines lie `minSpacing` pixels apart (default 120) on
-the ground the view is centred on, and the next finer one fading in as its lines go from
-half that apart to all of it (`graticuleStep`). The `Scenery` measures it each frame: the
-distance along the view's centre to the sea (or, over the horizon, to the horizon), its
-pixel's span there, and how foreshortened the ground is (the mean of along and across the
-view), so an oblique view follows what it looks at, not what lies under it
-(`graticuleDegreesPerPixel`). A first try chose the step pixel by pixel, each direction on
-its own: at an angle the parallels, squeezed along the view, dropped to a coarser step than
-the meridians, and lines went missing or half faded everywhere but from straight above.
-
-**Where.** Each surface works out its latitude and longitude (`globeGeographic`) and their
-derivatives before anything branches, and lays the lines over its final colour, before tone
-mapping: the background's sea surface (`skyOceanSurfaceLayer`), a stage's surface, or its
-seabed when dry, the background's dry seabed (`skySeaLayer`), and the relief's tiles and
-overview over land or a dry seabed. The bakes leave them out: lines are no light, nor
-anything to reflect.
-
-**Needs the sky on the Earth:** a `World`. Without one the lines draw nothing
-(`uGlobeSphere.w`), and in development a warning says so.
-
-**Cost.** The lines are compiled into the sea's layers, the stages and the relief always,
-and switched by uniforms (`graticuleOn`: the globe on the Earth and a kind with a width):
-adding, removing or restyling `<SceneryGraticule>` recompiles nothing. Off, a pixel pays a
-uniform branch. On, it works out its latitude and longitude once (a few transcendental
-functions) and tests each kind's lines: two steps of latitude and longitude at most. The
-bakes compile without them (`SKY_NO_GRATICULE`, fixed). A first version compiled them in
-with a switch, which recompiled every layer, stage and relief whenever the graticule came
-or went.
-
-**Labels** (`latLon: { labels: true }`, off by default): each line's name, `60°30′N`,
-`2°E`, painted flat on the sea's level along it (a `LabelLayer`, see
-[labels.md](./labels.md)), a parallel's in the middle of a cell along it, a meridian's in
-the middle of a cell along it, at least `reach` lines (default 10) either way from where the
-view is centred (`graticuleLabels`, named by `graticuleLabelText`: minutes and seconds only
-as the step needs). **Every line is named**, each once every `k` cells along it: `density`
-(0.1–1, default 0.5) sets `k` (`graticuleLabelPeriod`: 4 at 1, 8 at 0.5, 40 at 0.1). A
-parallel's name reaches the meridians either side of it and a meridian's the parallels
-above and below, so names closer than 4 cells along a line would meet across a crossing,
-however placed. The names are spread by `graticuleLabelPattern`: parallel `i` in the
-columns `≡ s·i`, meridian `j` in the rows `≡ t·j + h` (mod `k`), the pattern that never
-meets and keeps every name farthest from every other, found once per `k` (`s` 3 for 8: a
-lattice, where `s` 1 — the first try — set them in diagonal bands; `k` 4 and 6 allow
-diagonals only). **Toward the poles** the meridians close in: the names' columns widen to
-`m` meridians (`graticuleLabelThinning`, a power of two, so those named farther poleward
-are among those nearer), once they would be closer than 4/5 of their spacing at the
-latitude the font is sized at (the field's); a row between parallels of different `m`
-names no meridians. Where they lie depends on the step, density and that latitude alone.
-Their font is a fraction (`size`, default 0.18) of a cell's narrower side, the
-east–west one, which shrinks with the cosine of the latitude (`graticuleLabelSize`): sized
-by the step alone, a parallel's labels ran into each other end to end at 58°N. A test
-keeps every label clear of every other at any latitude up to 88°, step and density, drawn
-smooth too. They
-follow **the step the lines are seen at**: the finer of the two drawn once its weight passes
-0.55, back below 0.45 (`graticuleLabelStep`, `GRATICULE_LABEL_SWITCH`). Following the step
-`graticuleStep` chooses, the coarser, they doubled — up to six times — as the view tilted,
-while the finer lines, all but faded in, kept the cells the same on screen. `sizing`:
-`'stepped'` (default) sizes them by that step, fixed between changes of it, so they stay
-glued; `'smooth'` by the lines' spacing between their two steps on a log scale
-(`graticuleLabelSpacing`), set on the GPU each frame (`LabelLayer`'s `scaleRef`), so they
-scale with the cells and never jump, up to `GRATICULE_LABEL_SMOOTH_MAX` (1.6) times the
-stepped size. They come and go with the lines but never slide, and the layer writes nothing
-again while the nearest lines to the view's centre stay the same: where the view meets the
-sea, or, looking past the horizon, the horizon the way it looks (`graticuleLabelCentre`),
-where the step is judged then — centred under the camera, they were drawn at a step meant
-for the horizon right below it, several times too large. Small and light by
-default (`GRATICULE_LABEL_STYLE`: weight 500, a thin, soft halo), in the lines' colour,
-never faded for being seen at a slant (`minFacing` 0) but when too small on screen as seen
-(`minPixels`, their slant included: toward the horizon they thin to slivers that would only
-shimmer), and never drawn larger than 48 pixels (`maxPixels`: nearer, shrunk to it),
-always centred (`align`, `baseline` and `offset`
-fixed), lifted over the waves near the field (`lift`, 5 % of the font, 5 m at least). They
-fade out just before the camera's far plane rather than be cut by it (see labels.md): a
-farther plane shows them farther. At sea level: high land hides
-them.
-
-Found on the way: `globeSphereOffset` lost the latitude across the Earth from the field,
-where `e² / (q + w)` rounds to nothing in 32-bit floats: speckled lines and missing
-meridians along 180° seen from Volve. It is `w − q` there, written so neither cancels.
-
-**Close in, the lines are measured from under the camera.** Latitude and longitude are near
-1 radian, which 32-bit floats hold to about half a metre: a few hundred metres up, the
-lines' offsets and their change over a pixel came in steps of that, and the lines broke
-into parallel strands and dashes. Each frame the lines are drawn, `setGraticuleOrigin`
-works out in 64-bit floats where the ground under the camera lies: its whole degrees and
-what is left of them (`uGraticuleBase`), its offset on the globe's sphere
-(`uGraticuleOrigin`), and the latitude's change as a series in the sphere's latitude
-offset (`uGraticuleSeries`, three terms by central differences of
-`Globe.sphereGeographicLatitude`). `graticuleAt` takes a pixel's latitude and longitude as
-whole degrees plus what is left (`local`), from the sphere offset's difference — the
-longitude in closed form, everywhere; the latitude by the series, within 0.03 rad (~190 km)
-north or south of the camera — which 32-bit floats hold to a centimetre (a test emulates it
-in `Math.fround`); farther north or south, from the latitude itself, where a pixel is far
-larger than its error. Not limited by longitude: about a pole, ground a few kilometres off
-lies at any longitude, and the latitude itself is coarsest there (an `asin` near 1: tens
-of metres), so the ring around a polar cap came out grainy. Every line's offset is measured along `base + local` (`graticuleOffAt`): the whole
-degrees brought to the nearest line first (exact for steps of whole degrees, none for
-steps that divide a degree), then `local`; the UTM zones' and time zones' edges the same
-way. Only the geometry's precision changed: still a geometric measure in each pixel, so
-it holds with any depth buffer. ⚠️ Measured from the camera's longitude, a meridian may lie
-a turn away from it: anything not reduced by a step that divides 360° (the UTM zones'
-exceptions about Norway and Svalbard, at 3°, 9°, 21° and 33°E) is taken the shorter way
-round (`graticuleFromLon`). Looking across the pole, they were 360° out and vanished.
-
-**Toward the poles, cells keep their proportion.** Meridians close in by the cosine of the
-latitude while parallels stay as far apart, so cells narrow to slivers: at 0.5° over 89°N,
-720 meridians lay a kilometre apart (3–4 px from 174 km up), a moiré just above the
-crowding fade. Now each band between two parallels draws every m-th meridian
-(`graticuleMeridianThinning`): the least that keeps its cells at least half as wide as
-tall (`GRATICULE_CELL_ASPECT`) where they are narrowest, at its poleward parallel. `m` steps
-by twos or threes (`graticuleMeridianChain`), each dividing the meridians round the Earth
-— so cells keep between ½ and 1.5 times as wide as tall, those kept meet themselves evenly
-at the date line, and are among those kept nearer the equator — while four or more are
-left (`GRATICULE_MIN_MERIDIANS`); past that, none: a plain cap. The band reaching the pole
-keeps its meridians only if its parallel lies within 60° (`GRATICULE_POLE_CAP`; 30°: twelve
-to the pole), else it is a cap too. Changing only at a parallel — the shader tells the band
-by which side of the nearest parallel a pixel lies — the meridians are cut clean under it,
-never faded. Judged on the ground, not on screen, so nothing pops as the view moves. So 10°
-draws every 2nd from 60°, every 4th from 70°, none past 80°; 0.5° every 16th (8°) from
-87.5°, 48th (24°) from 88°, 144th (72°) from 89°, none past 89.5°. Each step's chain (twelve at most,
-`GRATICULE_THINNING_MAX`) is set with the step (`setGraticuleStep`, `uGraticuleThinning`),
-the finer step's beside it, so the shader picks from it unrolled. The labels follow
-(`graticuleLabelColumns`): their columns as wide as the meridians drawn either side, so a
-meridian is named only where it is drawn, and a parallel in the middle of the narrower
-drawn cell beside it. No parallel is drawn at a pole itself, a point that came out as a
-ring a line wide. UTM and the time zones are left as they are (UTM stops at 84°N and 80°S
-anyway).
-
-Labels appear with the lines: not until what draws them is compiled (the Scenery's
-`ready`, when the stand-in goes), so never over the stand-in while the sky compiles.
-
-**Zone names** (`utm: { labels: true }`, `timeZones: { labels: true }`, off by default): the
-UTM zones and the nautical time zones name areas, not lines, so each cell is named once, at
-its middle, flat on the sea reading east (`graticuleZoneLabels`). UTM zones as their
-projections are named, `32N`, `23S` (`utmZoneLabelText`), in cells by zone and latitude band
-(`utmZoneCells`): every 6°, bands every 8° from 80°S, X 12° to 84°N, Norway's 31V/32V split
-at 3°E and Svalbard's 31X, 33X, 35X and 37X (no 32X, 34X or 36X), as the lines draw them.
-Time zones by their offset, `UTC+1`, `UTC−3` (a true minus), `UTC±0`
-(`timeZoneLabelText`), 15° about every 15th meridian, the zone about 180° split at the date
-line into UTC+12 and UTC−12, in the same rows as the UTM bands (`timeZoneCells`), so a
-zone is named wherever along it the view is. Each name as large as `size` (0.18) of its
-cell's narrower side, east–west at its poleward edge (`graticuleZoneLabelSize`), so it
-fits its cell at any latitude: a label's own size (`Label.size`, see labels.md), the layer
-at `size` 1. All of them at once — about 1200 UTM names, 500 time zones — made once for the
-globe's place on the Earth, nothing written as the view moves; those facing away are not
-drawn. Their look is latitude and longitude's (`GRATICULE_LABEL_STYLE`: flipped to read,
-48 pixels at the most, depth tested), in their lines' colour, lifted 5 m and 1 m more per
-kilometre off, over the waves near the field and clear of the sea far off. Tests keep the
-cells tiling 80°S–84°N without gaps, the exceptions as drawn, and every name clear of every
-other and inside its cell.
+Lines on the Earth — latitude and longitude, the UTM zones, the nautical time zones — are a
+layer of their own since 2026-11-03, `<GeoGraticule>`, with or without a `Scenery`: see
+[layers.md, Graticule](./layers.md#graticule-geograticule). Placed inside the `Scenery` (or
+anywhere in its `World`), it lies on its sea's surface over the sea and is hidden from in the
+water.
 
 ## The air
 
@@ -1096,7 +914,7 @@ ShaderChunk.logdepthbuf_pars_fragment = ShaderChunk.logdepthbuf_pars_fragment.re
   parts still stalls (~1.6 s for its surface, measured cold). Without either, nothing
   stalls.
 - Adding or removing a feature compiles or drops only its own layer (see
-  [Rendering](#rendering)), but for the graticule, which compiles nothing; the seabed's `detail` and the sea's wave count recompile the
+  [Rendering](#rendering)); the seabed's `detail` and the sea's wave count recompile the
   sea's layers and its stages; `background: 'void'` the sky's own; and a stage recompiles
   when `seabedOpacity` crosses 1 (its seabed turns see-through, `STAGE_SEE_THROUGH`).
   Every other option only changes uniforms. While a layer compiles the stand-in is drawn
@@ -1181,7 +999,7 @@ basic ones show in every story, the advanced and debug ones only in `StageDebug`
 | File | Role |
 |--|--|
 | `Scenery.tsx` | the component: props and its features' → material, the layers and which are drawn each frame, the directional light, the bakes |
-| `SceneryClouds.tsx`, `SceneryOcean.tsx`, `SceneryAbyss.tsx`, `SceneryGraticule.tsx` | the features: each hands its props to the `Scenery` (`scenery-registry.ts`) |
+| `SceneryClouds.tsx`, `SceneryOcean.tsx`, `SceneryAbyss.tsx` | the features: each hands its props to the `Scenery` (`scenery-registry.ts`) |
 | `SceneryCutaway.tsx` | the cutaway: its props, its grip, and its per-frame placement, which the `Scenery` runs |
 | `scenery-layers.ts` | the background's layers: their order, defines, materials, and where each can show (`sceneryLayersShown`) |
 | `scenery-model.ts` | option types, defaults, and the pure rules (`sceneryZone`, `skyDaylight`, `skyMoonlight`, `skySunColor`, …) |
@@ -1198,7 +1016,6 @@ basic ones show in every story, the advanced and debug ones only in `StageDebug`
 | `shaders/sky-stand-in-fragment.glsl` | the stand-in drawn while the sky compiles: the void's gradient |
 | `shaders/sky-ocean.glsl` | the sea: surface, water, seabed, cutaway |
 | `shaders/stage-fragment.glsl`, `sky-surface-fragment.glsl` | the stage's parts, and the sea surface layer |
-| `sdk/materials/graticule.ts`, `sdk/materials/shaderLib/graticule.glsl` | the graticule's uniforms, its step for a view (`graticuleStep`, `graticuleDegreesPerPixel`) and its lines (`graticuleAt`, `graticuleOver`), for any shader on the globe |
 
 - The layers', the stage's and the baker's materials share the `SceneryMaterial`'s UNIFORM
   OBJECTS, so they follow every change to it. Its features are `switches`, not its own

@@ -48,7 +48,7 @@ export type SceneryOceanState = {
   seabedOpacity: number;
   /**
    * what a stage and its relief compile with from the sky (`sceneryOceanDefines`: the
-   * seabed's detail, the waves, the graticule), as a key: a new one recompiles them
+   * seabed's detail, the waves), as a key: a new one recompiles them
    */
   definesKey: string;
   /** height of the sea surface along `up` */

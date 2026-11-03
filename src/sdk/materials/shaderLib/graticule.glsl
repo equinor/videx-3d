@@ -1,12 +1,11 @@
-// Lines on the Earth (a graticule), as a SceneryGraticule draws them over what is seen of
-// the Earth from the air: latitude and longitude, the UTM zones and the nautical time zones,
-// each a width in screen pixels at any distance (the SDK's pristine lines, grid.glsl),
-// fading out where they crowd. Needs <common> and globe.glsl, and the globe placed on the
-// Earth (a frame: uGlobeSphere.w). On and off by its uniforms (graticuleOn): compiled in,
-// it costs a uniform branch while off.
+// Lines on the Earth (a graticule), as a GeoGraticule draws them over what is seen of the
+// Earth — latitude and longitude, the UTM zones and the nautical time zones — each a width
+// in screen pixels at any distance (the SDK's pristine lines, grid.glsl), fading out where
+// they crowd. Needs <common> and globe.glsl, and the globe placed on the Earth (a frame:
+// uGlobeSphere.w). On and off by its uniforms (graticuleOn).
 //
 // Take graticuleAt where control flow is uniform (it takes derivatives), then
-// graticuleOver anywhere.
+// graticuleLines anywhere.
 
 // Per kind (GRATICULE_LAT_LON, GRATICULE_UTM, GRATICULE_TIME_ZONES): its colour, linear,
 // and opacity; and its width in pixels (0: off).
@@ -122,6 +121,17 @@ float graticuleLine(float off, float spacing, float perPixel, float width) {
   return line * graticuleKept(spacing / p, 2.0, 6.0);
 }
 
+// Whether lines `spacing` degrees apart, `width` pixels wide, their coordinate changing by
+// `perPixel` degrees a pixel, surely cover none of a pixel `off` degrees from the nearest of
+// them, or of any lines among a set it is the nearest of: graticuleLine is 0 beyond its
+// width and its edge's softening, unless they crowd (half a cell wide, clamped). Tested
+// first, so most pixels, far from every line, skip the rest.
+bool graticuleClear(float off, float spacing, float perPixel, float width) {
+  float p = max(perPixel, 1e-9);
+  float w = max(0.5 * width, 1.0);
+  return spacing >= 4.0 * w * p && abs(off) > (w + 1.5) * p;
+}
+
 // Degrees to the nearest multiple of `step` from `from`.
 float graticuleOff(float value, float step, float from) {
   float v = value - from;
@@ -219,6 +229,12 @@ float graticuleLatLonAt(GraticuleAt at, float step, float width, int from) {
 // next finer one's.
 float graticuleLatLon(GraticuleAt at, float width) {
   vec3 steps = uGraticuleLatLon;
+  // Far from every parallel and meridian of the finest step drawn, unthinned: the rest
+  // are among them.
+  float finest = steps.z > 0.0 ? steps.y : steps.x;
+  if(graticuleClear(graticuleOffAt(at.base.y, at.local.y, finest, 0.0), finest, length(at.dLat), width) &&
+    graticuleClear(graticuleOffAt(at.base.x, at.local.x, finest, 0.0), finest, length(at.dLon), width))
+    return 0.0;
   float cover = graticuleLatLonAt(at, steps.x, width, 0);
   if(steps.z > 0.0)
     cover = max(cover, steps.z * graticuleLatLonAt(at, steps.y, width, 3));
@@ -245,6 +261,11 @@ float graticuleUtmMeridian(GraticuleAt at) {
 float graticuleUtm(GraticuleAt at, float width) {
   float lon = length(at.dLon);
   float lat = length(at.dLat);
+  // Far from every 3rd meridian (each zone's edge is one) and every band's parallel.
+  float bands = min(abs(graticuleOffAt(at.base.y, at.local.y, 8.0, -80.0)), abs(graticuleFrom(at.base.y, at.local.y, 84.0)));
+  if(graticuleClear(graticuleOffAt(at.base.x, at.local.x, 3.0, 0.0), 6.0, lon, width) &&
+    graticuleClear(bands, 8.0, lat, width))
+    return 0.0;
   float y = at.lonLat.y;
   float inside = step(-80.0, y) * step(y, 84.0);
   float meridian = inside * graticuleLine(graticuleUtmMeridian(at), 6.0, lon, width);
@@ -257,29 +278,34 @@ float graticuleUtm(GraticuleAt at, float width) {
 // The nautical time zones: meridians 7.5° east and west of every 15th, and the date line.
 float graticuleTimeZones(GraticuleAt at, float width) {
   float lon = length(at.dLon);
+  // Far from every meridian 7.5° apart: the zones' edges and the date line are among them.
+  if(graticuleClear(graticuleOffAt(at.base.x, at.local.x, 7.5, 0.0), 15.0, lon, width))
+    return 0.0;
   float off = min(abs(graticuleOffAt(at.base.x, at.local.x, 15.0, 7.5)), abs(graticuleOffAt(at.base.x, at.local.x, 360.0, 180.0)));
   return graticuleLine(off, 15.0, lon, width);
 }
 
-// `color` with the lines over it: latitude and longitude, then the time zones, then the
-// UTM zones on top. Nothing without the globe on the Earth.
-vec3 graticuleOver(vec3 color, GraticuleAt at) {
+// `under` (premultiplied) with `coverage` of a kind's lines in `tint` over it.
+vec4 graticuleOverLines(vec4 under, vec4 tint, float coverage) {
+  float a = tint.a * coverage;
+  return vec4(tint.rgb * a, a) + under * (1.0 - a);
+}
+
+// The lines alone, over nothing: their premultiplied colour, see-through between them —
+// latitude and longitude, then the time zones, then the UTM zones on top. Nothing without
+// the globe on the Earth.
+vec4 graticuleLines(GraticuleAt at) {
+  vec4 color = vec4(0.0);
   if(!graticuleOn())
     return color;
   vec4 lines = uGraticuleLines[GRATICULE_LAT_LON];
-  if(lines.x > 0.0) {
-    vec4 tint = uGraticuleColors[GRATICULE_LAT_LON];
-    color = mix(color, tint.rgb, tint.a * graticuleLatLon(at, lines.x));
-  }
+  if(lines.x > 0.0)
+    color = graticuleOverLines(color, uGraticuleColors[GRATICULE_LAT_LON], graticuleLatLon(at, lines.x));
   lines = uGraticuleLines[GRATICULE_TIME_ZONES];
-  if(lines.x > 0.0) {
-    vec4 tint = uGraticuleColors[GRATICULE_TIME_ZONES];
-    color = mix(color, tint.rgb, tint.a * graticuleTimeZones(at, lines.x));
-  }
+  if(lines.x > 0.0)
+    color = graticuleOverLines(color, uGraticuleColors[GRATICULE_TIME_ZONES], graticuleTimeZones(at, lines.x));
   lines = uGraticuleLines[GRATICULE_UTM];
-  if(lines.x > 0.0) {
-    vec4 tint = uGraticuleColors[GRATICULE_UTM];
-    color = mix(color, tint.rgb, tint.a * graticuleUtm(at, lines.x));
-  }
+  if(lines.x > 0.0)
+    color = graticuleOverLines(color, uGraticuleColors[GRATICULE_UTM], graticuleUtm(at, lines.x));
   return color;
 }

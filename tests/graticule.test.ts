@@ -1,14 +1,17 @@
-import { Vector2, Vector3 } from 'three';
+import { PerspectiveCamera, Vector2, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import {
   createGraticuleUniforms,
+  graticuleDegreesPerPixel,
   graticuleStep,
   GRATICULE_CELL_ASPECT,
+  GRATICULE_LEAST_FACING,
   GRATICULE_MIN_MERIDIANS,
   GRATICULE_STEPS,
   GRATICULE_THINNING_MAX,
   graticuleMeridianChain,
   graticuleMeridianThinning,
+  graticuleViewDegreesPerPixel,
   setGraticuleOrigin,
   setGraticuleUniforms,
 } from '../src/sdk/materials/graticule';
@@ -180,5 +183,58 @@ describe('graticuleMeridianThinning', () => {
     expect(graticuleMeridianThinning(0.5, 178)).toBe(144);
     expect(graticuleMeridianThinning(0.5, 179)).toBe(0);
     expect(graticuleMeridianThinning(0, 0)).toBe(0);
+  });
+});
+
+describe('graticuleViewDegreesPerPixel', () => {
+  // The demo field's frame (UTM 31N, ED50), the stage's disc 8 km across about its origin.
+  const globe = () => {
+    const g = new Globe();
+    g.setDisc([-4000, -4000, 4000, 4000]);
+    g.setFrame({
+      projection: getProjectionDefFromUtmZone('31N'),
+      origin: [434500, 6478000],
+    });
+    return g;
+  };
+  const PIXELS = 1000;
+  const camera = (position: Vector3, target: Vector3) => {
+    const c = new PerspectiveCamera(50, 1.5, 1, 1e8);
+    c.position.copy(position);
+    c.lookAt(target);
+    c.updateMatrixWorld();
+    return c;
+  };
+
+  it('is the pixel’s span on the sea under a view straight down', () => {
+    const g = globe();
+    const c = camera(new Vector3(0, 3000, 0), new Vector3(0, 0, 0));
+    expect(graticuleViewDegreesPerPixel(g, c, PIXELS)).toBeCloseTo(
+      graticuleDegreesPerPixel(c, 3000, PIXELS),
+      12,
+    );
+  });
+
+  it('follows what an oblique view looks at, foreshortened as it is seen there', () => {
+    const g = globe();
+    // 45° down onto the sea 3 km off, over the field's flat disc.
+    const c = camera(new Vector3(0, 3000, 3000), new Vector3(0, 0, 0));
+    const distance = 3000 * Math.SQRT2;
+    expect(graticuleViewDegreesPerPixel(g, c, PIXELS)).toBeCloseTo(
+      graticuleDegreesPerPixel(c, distance, PIXELS) / Math.sqrt(Math.SQRT1_2),
+      9,
+    );
+  });
+
+  it('takes the horizon for a view over it, as foreshortened as the least', () => {
+    const g = globe();
+    const h = 10000;
+    const c = camera(new Vector3(0, h, 0), new Vector3(0, h + 1000, -10000));
+    const horizon = Math.sqrt(2 * g.radius * h + h * h);
+    expect(graticuleViewDegreesPerPixel(g, c, PIXELS)).toBeCloseTo(
+      graticuleDegreesPerPixel(c, horizon, PIXELS) /
+        Math.sqrt(GRATICULE_LEAST_FACING),
+      9,
+    );
   });
 });

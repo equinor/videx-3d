@@ -3,7 +3,7 @@ import { MinimapCameraMarker } from '../../components/Html/Minimap/MinimapLayers
 import { SceneryAbyss } from '../../components/Scenery/SceneryAbyss';
 import { SceneryClouds } from '../../components/Scenery/SceneryClouds';
 import { SceneryCutaway } from '../../components/Scenery/SceneryCutaway';
-import { SceneryGraticule } from '../../components/Scenery/SceneryGraticule';
+import { GeoGraticule } from '../../components/Layers/GeoGraticule';
 import { SceneryOcean } from '../../components/Scenery/SceneryOcean';
 import type {
   SceneryAbyssProps,
@@ -41,7 +41,7 @@ export const SceneryArgsFeatures = ({
   return (
     <>
       {clouds && <SceneryClouds {...clouds} />}
-      {graticule && <SceneryGraticule {...graticule} />}
+      {graticule && <GeoGraticule {...graticule} />}
       {ocean && <SceneryOcean {...sceneryOceanFromArgs(args)} {...ocean} />}
       {abyss && <SceneryAbyss {...sceneryAbyssFromArgs(args)} {...abyss} />}
       {cutaway && <SceneryCutaway {...cutaway} />}

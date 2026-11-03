@@ -30,10 +30,6 @@ import {
   releaseMaterial,
 } from '../../rendering/precompile';
 import {
-  graticuleDegreesPerPixel,
-  type GraticuleStyle,
-} from '../../sdk/materials/graticule';
-import {
   geoFrameAt,
   geoFrameLocation,
   placeGeoFrame,
@@ -89,10 +85,6 @@ import {
   SceneryAbyssProps,
   SkyAir,
   SceneryCloudsProps,
-  SceneryGraticuleLabels,
-  SceneryGraticuleLatLon,
-  SceneryGraticuleZoneLabels,
-  SceneryGraticuleProps,
   SkyColors,
   skyDaylight,
   sceneryDefaults,
@@ -119,10 +111,6 @@ import {
   sceneryZone,
 } from './scenery-model';
 import { SceneryCubeView } from './SceneryCubeView';
-import {
-  SceneryGraticuleLabelLayer,
-  SceneryGraticuleZoneLabelLayer,
-} from './SceneryGraticuleLabels';
 
 export type SceneryEnvironmentOptions = {
   /** `scene.environmentIntensity` while the sky provides the environment. Default 1 */
@@ -296,16 +284,6 @@ const DEFAULT_NORTH: Vec3 = [0, 0, -1];
 
 const scratch = new Color();
 const lookScratch = new Vector3();
-// Where the view is centred, for the graticule's step.
-const graticuleView = {
-  dir: new Vector3(),
-  point: new Vector3(),
-  up: new Vector3(),
-  reach: { distance: 0, hit: false },
-};
-// The least the ground the view is centred on is taken to face it (the sine of its
-// grazing angle): a view over the horizon is as foreshortened as this.
-const GRATICULE_LEAST_FACING = 0.05;
 // Primitive dependency for a colour prop, so an inline `new Color()` does not re-bake every render.
 const toHex = (value: ColorRepresentation) => scratch.set(value).getHex();
 
@@ -328,7 +306,6 @@ const NO_FEATURES: SceneryFeatures = {
   ocean: null,
   abyss: null,
   cutaway: null,
-  graticule: null,
 };
 
 // Each layer mesh's own, for which compiles first (sceneryLayersShown).
@@ -622,82 +599,6 @@ export const Scenery = ({
     [water, oceanWater, oceanLevel, wavePlane],
   );
   const contacts = useMemo(createOceanContactRegistry, []);
-
-  // Lines on the Earth, where the sky lies on it (a World's frame, or a stage's). By
-  // uniforms alone: always compiled in, drawing nothing until a stage hands over its frame
-  // (graticule.glsl), so adding or removing them compiles nothing.
-  const graticuleOptions = features.graticule;
-  const graticuleOn = graticuleOptions !== null;
-  const graticuleKey = graticuleOn ? JSON.stringify(graticuleOptions) : '';
-  useEffect(() => {
-    if (!import.meta.env.DEV || !graticuleOptions || geoFrame) return;
-    const timer = setTimeout(
-      () =>
-        console.warn(
-          'SceneryGraticule draws nothing without the sky placed on the Earth: place the Scenery in a World',
-        ),
-      1000,
-    );
-    return () => clearTimeout(timer);
-  }, [graticuleOptions, geoFrame]);
-  useLayoutEffect(() => {
-    if (!graticuleKey) {
-      material.setGraticule({});
-      return;
-    }
-    const options = JSON.parse(graticuleKey) as SceneryGraticuleProps;
-    const { lines, minSpacing, ...on } = sceneryDefaults.graticule;
-    const style = (kind: keyof typeof on): GraticuleStyle | null => {
-      const value = options[kind] ?? on[kind];
-      if (!value) return null;
-      const own: SceneryGraticuleLatLon = value === true ? {} : value;
-      return {
-        color: own.color ?? lines.color,
-        thickness: own.thickness ?? lines.thickness,
-        opacity: own.opacity ?? lines.opacity,
-        interval: own.interval,
-        minSpacing: own.minSpacing ?? minSpacing,
-      };
-    };
-    material.setGraticule({
-      latLon: style('latLon'),
-      utm: style('utm'),
-      timeZones: style('timeZones'),
-    });
-  }, [material, graticuleKey]);
-  // Latitude and longitude's labels: off unless asked for; in the lines' colour unless
-  // given their own.
-  const graticuleLabels = useMemo<SceneryGraticuleLabels | null>(() => {
-    if (!graticuleKey) return null;
-    const options = JSON.parse(graticuleKey) as SceneryGraticuleProps;
-    const latLon = options.latLon ?? sceneryDefaults.graticule.latLon;
-    if (!latLon || latLon === true || !latLon.labels) return null;
-    const labels = latLon.labels === true ? {} : latLon.labels;
-    const lineColor = latLon.color ?? sceneryDefaults.graticule.lines.color;
-    return {
-      ...labels,
-      color: labels.color ?? `#${new Color(lineColor).getHexString()}`,
-    };
-  }, [graticuleKey]);
-  // The UTM zones' and time zones' names likewise.
-  const zoneLabels = useMemo(() => {
-    const none = { utm: null, timeZones: null };
-    if (!graticuleKey) return none;
-    const options = JSON.parse(graticuleKey) as SceneryGraticuleProps;
-    const of = (
-      kind: 'utm' | 'timeZones',
-    ): SceneryGraticuleZoneLabels | null => {
-      const zones = options[kind] ?? sceneryDefaults.graticule[kind];
-      if (!zones || zones === true || !zones.labels) return null;
-      const labels = zones.labels === true ? {} : zones.labels;
-      const lineColor = zones.color ?? sceneryDefaults.graticule.lines.color;
-      return {
-        ...labels,
-        color: labels.color ?? `#${new Color(lineColor).getHexString()}`,
-      };
-    };
-    return { utm: of('utm'), timeZones: of('timeZones') };
-  }, [graticuleKey]);
 
   // In render rather than an effect, so a stage or layer made in this commit compiles with
   // it. A no-op unless a switch changed. The waves' defines likewise, for the sea's layers.
@@ -1457,32 +1358,6 @@ export const Scenery = ({
 
     // Along up as it is measured over the field: the camera's altitude over the globe.
     const height = material.heightOf(camera.position);
-    // Latitude and longitude's step follows how far the view is zoomed: by the ground the
-    // view is centred on, foreshortened as it is seen there (the mean of along and across
-    // the view), or, looking over the horizon, the horizon.
-    if (graticuleOn) {
-      const altitude = height - material.oceanLevel;
-      const { dir, reach, point, up } = graticuleView;
-      camera.getWorldDirection(dir);
-      const centred = material.globe.reach(camera.position, dir, 0, reach);
-      const R = material.globe.radius;
-      let distance: number;
-      let facing = GRATICULE_LEAST_FACING;
-      if (centred.hit) {
-        distance = centred.distance;
-        point.copy(camera.position).addScaledVector(dir, distance);
-        facing = Math.max(-dir.dot(material.globe.upAt(point, up)), facing);
-      } else {
-        distance = Math.sqrt(
-          Math.max(2 * R * altitude + altitude * altitude, 1),
-        );
-      }
-      material.setGraticuleView(
-        graticuleDegreesPerPixel(camera, distance, gl.domElement.height) /
-          Math.sqrt(facing),
-      );
-      material.setGraticuleOrigin(camera.position);
-    }
     // Camera controls move the camera before this runs but leave its matrices to the render:
     // read with this frame's position, last frame's would swing the cutaway as it moves.
     if (cutaway) camera.updateMatrixWorld();
@@ -1801,27 +1676,6 @@ export const Scenery = ({
           </OceanContactContext.Provider>
         </OceanSamplerContext.Provider>
       </SceneryOceanContext.Provider>
-      {/* Once the lines are drawn: not over the stand-in while the sky compiles. */}
-      {graticuleLabels && ready && (
-        <SceneryGraticuleLabelLayer
-          material={material}
-          options={graticuleLabels}
-        />
-      )}
-      {zoneLabels.utm && ready && (
-        <SceneryGraticuleZoneLabelLayer
-          material={material}
-          kind="utm"
-          options={zoneLabels.utm}
-        />
-      )}
-      {zoneLabels.timeZones && ready && (
-        <SceneryGraticuleZoneLabelLayer
-          material={material}
-          kind="timeZones"
-          options={zoneLabels.timeZones}
-        />
-      )}
       {debug?.environment && <SceneryCubeView cube={environmentCube} />}
     </SceneryContext.Provider>
   );

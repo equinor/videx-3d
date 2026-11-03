@@ -60,7 +60,8 @@ export type TileCover = { square: number; under: number };
  * How the tiles another layer of the same quadtree draws cover tile `key`: the one drawn
  * over all of it — itself or an ancestor — or else, square by square, those of its
  * descendants drawn. Where neither is drawn there is nothing: the part of `key` with no
- * tile of `drawn` over it is left out.
+ * tile of `drawn` over it is left out, or, with `fill`, comes out too, as the coarsest
+ * squares that hold none, each `under` -1 (all of `key` where nothing is drawn near it).
  *
  * To lie on another layer's surface exactly, draw each square once, from `key`'s data at
  * its offset (`tileOffsetIn(square, key)`) and the other layer's at its own
@@ -68,6 +69,7 @@ export type TileCover = { square: number; under: number };
  *
  * @param drawn the other layer's tiles drawn
  * @param ancestors every strict ancestor of `drawn` ({@link tileAncestors})
+ * @param fill also the squares of `key` no tile of `drawn` lies under, `under` -1
  *
  * @group Tiles
  */
@@ -76,6 +78,7 @@ export function tilesUnder(
   drawn: { has(key: number): boolean },
   ancestors: ReadonlySet<number>,
   out: TileCover[] = [],
+  fill = false,
 ): TileCover[] {
   for (let at = key; ; at = tileParent(at)) {
     if (drawn.has(at)) {
@@ -84,11 +87,15 @@ export function tilesUnder(
     }
     if (tileAddress(at)[0] === 0) break;
   }
-  if (!ancestors.has(key)) return out;
+  if (!ancestors.has(key)) {
+    if (fill) out.push({ square: key, under: -1 });
+    return out;
+  }
   const below = (at: number) => {
     for (const child of tileChildren(at)) {
       if (drawn.has(child)) out.push({ square: child, under: child });
       else if (ancestors.has(child)) below(child);
+      else if (fill) out.push({ square: child, under: -1 });
     }
   };
   below(key);

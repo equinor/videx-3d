@@ -5,21 +5,24 @@ import { ContourColorMode } from '../../common/types';
 import { DEFAULT_OCEAN_WATER_OPACITY } from '../../components/Ocean/ocean-material';
 import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../../components/Ocean/ocean-volume-material';
 import type { GeoReliefProps } from '../../components/Layers/GeoRelief';
+import {
+  GRATICULE_LABEL_DENSITY,
+  GRATICULE_LABEL_SIZE,
+} from '../../components/Layers/graticule-labels';
+import {
+  GRATICULE_DEFAULTS,
+  type GeoGraticuleOptions,
+} from '../../components/Layers/graticule-options';
 import type {
   SceneryLayer,
   SceneryProps,
 } from '../../components/Scenery/Scenery';
 import type { SceneryStageLayer } from '../../components/Scenery/SceneryStage';
 import {
-  GRATICULE_LABEL_DENSITY,
-  GRATICULE_LABEL_SIZE,
-} from '../../components/Scenery/scenery-graticule-labels';
-import {
   sceneryDefaults,
   type SceneryAbyssProps,
   type SceneryCloudLayers,
   type SceneryCloudsProps,
-  type SceneryGraticuleProps,
   type SceneryOceanProps,
   type SkyMoon,
   type SkyObserver,
@@ -221,23 +224,23 @@ export const sceneryArgs: SceneryArgs = {
   cloudOpacity: sceneryDefaults.clouds.opacity,
   cloudSeed: sceneryDefaults.clouds.seed,
   graticuleLatLon: false,
-  graticuleLatLonColor: sceneryDefaults.graticule.lines.color,
-  graticuleLatLonThickness: sceneryDefaults.graticule.lines.thickness,
+  graticuleLatLonColor: GRATICULE_DEFAULTS.lines.color,
+  graticuleLatLonThickness: GRATICULE_DEFAULTS.lines.thickness,
   graticuleLatLonInterval: 0,
-  graticuleLatLonMinSpacing: sceneryDefaults.graticule.minSpacing,
+  graticuleLatLonMinSpacing: GRATICULE_DEFAULTS.minSpacing,
   graticuleLatLonLabels: false,
   graticuleLatLonLabelSize: GRATICULE_LABEL_SIZE,
   graticuleLatLonLabelDensity: GRATICULE_LABEL_DENSITY,
   graticuleLatLonLabelSizing: 'stepped',
   graticuleUtm: false,
-  graticuleUtmColor: sceneryDefaults.graticule.lines.color,
-  graticuleUtmThickness: sceneryDefaults.graticule.lines.thickness,
+  graticuleUtmColor: GRATICULE_DEFAULTS.lines.color,
+  graticuleUtmThickness: GRATICULE_DEFAULTS.lines.thickness,
   graticuleUtmLabels: false,
   graticuleTimeZones: false,
-  graticuleTimeZonesColor: sceneryDefaults.graticule.lines.color,
-  graticuleTimeZonesThickness: sceneryDefaults.graticule.lines.thickness,
+  graticuleTimeZonesColor: GRATICULE_DEFAULTS.lines.color,
+  graticuleTimeZonesThickness: GRATICULE_DEFAULTS.lines.thickness,
   graticuleTimeZonesLabels: false,
-  graticuleOpacity: sceneryDefaults.graticule.lines.opacity,
+  graticuleOpacity: GRATICULE_DEFAULTS.lines.opacity,
   drawSky: true,
   skyVoid: false,
   air: true,
@@ -449,35 +452,37 @@ export const sceneryCloudsFromArgs = (
     seed: args.cloudSeed,
   };
 
-/** A `SceneryGraticule`'s props from {@link SceneryArgs}; `false` for none. */
+/** A `GeoGraticule`'s lines from {@link SceneryArgs}; `false` for none. */
 export const sceneryGraticuleFromArgs = (
   args: SceneryArgs,
-): SceneryGraticuleProps | false => {
+): GeoGraticuleOptions | false => {
   const opacity = args.graticuleOpacity;
-  const props: SceneryGraticuleProps = {
+  const props: GeoGraticuleOptions = {
     latLon: args.graticuleLatLon && {
       color: args.graticuleLatLonColor,
       thickness: args.graticuleLatLonThickness,
       opacity,
       interval: args.graticuleLatLonInterval || undefined,
       minSpacing: args.graticuleLatLonMinSpacing,
-      labels: args.graticuleLatLonLabels && {
-        size: args.graticuleLatLonLabelSize,
-        density: args.graticuleLatLonLabelDensity,
-        sizing: args.graticuleLatLonLabelSizing,
-      },
     },
     utm: args.graticuleUtm && {
       color: args.graticuleUtmColor,
       thickness: args.graticuleUtmThickness,
       opacity,
-      labels: args.graticuleUtmLabels,
     },
     timeZones: args.graticuleTimeZones && {
       color: args.graticuleTimeZonesColor,
       thickness: args.graticuleTimeZonesThickness,
       opacity,
-      labels: args.graticuleTimeZonesLabels,
+    },
+    labels: {
+      latLon: args.graticuleLatLonLabels && {
+        size: args.graticuleLatLonLabelSize,
+        density: args.graticuleLatLonLabelDensity,
+        sizing: args.graticuleLatLonLabelSizing,
+      },
+      utm: args.graticuleUtmLabels,
+      timeZones: args.graticuleTimeZonesLabels,
     },
   };
   return !!(props.latLon || props.utm || props.timeZones) && props;
@@ -834,7 +839,7 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
   },
   graticuleLatLon: toggle(
     GRATICULE,
-    'Lines of latitude and longitude (`SceneryGraticule` `latLon`) on the sea\u2019s surface, the land and a dry seabed, at any distance. By uniforms: turning any line on or off recompiles nothing.',
+    'Lines of latitude and longitude (`GeoGraticule` `latLon`): on the sea\u2019s surface, the land and a dry seabed, at any distance. A layer of its own, drawn over what lies under it.',
   ),
   graticuleLatLonColor: {
     ...color(GRATICULE),
@@ -867,7 +872,7 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
   graticuleLatLonLabels: {
     ...toggle(
       GRATICULE,
-      'Each line\u2019s name painted flat on the sea along it (`latLon.labels`): a `LabelLayer` around where the view is centred, at the lines\u2019 step.',
+      'Each line\u2019s name painted flat on the sea along it (`labels.latLon`): a `LabelLayer` around where the view is centred, at the lines\u2019 step.',
     ),
     if: { arg: 'graticuleLatLon' },
   },
@@ -877,7 +882,7 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
       0.3,
       0.01,
       GRATICULE,
-      'The labels\u2019 font size, as a fraction of a cell\u2019s narrower side on the ground (`labels.size`).',
+      'The labels\u2019 font size, as a fraction of a cell\u2019s narrower side on the ground (`labels.latLon.size`).',
     ),
     if: { arg: 'graticuleLatLonLabels' },
   },
@@ -887,7 +892,7 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
       1,
       0.05,
       GRATICULE,
-      'How densely the lines are named: at 1 a name every 4 cells along its line, at 0.5 every 8 (`labels.density`).',
+      'How densely the lines are named: at 1 a name every 4 cells along its line, at 0.5 every 8 (`labels.latLon.density`).',
     ),
     if: { arg: 'graticuleLatLonLabels' },
   },
@@ -895,7 +900,7 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     control: { type: 'inline-radio' },
     options: ['stepped', 'smooth'],
     description:
-      'How the labels\u2019 size follows the zoom (`labels.sizing`): `stepped` by the step the lines are seen at, glued between changes of step; `smooth` with the lines\u2019 spacing as the finer step fades in, never jumping.',
+      'How the labels\u2019 size follows the zoom (`labels.latLon.sizing`): `stepped` by the step the lines are seen at, glued between changes of step; `smooth` with the lines\u2019 spacing as the finer step fades in, never jumping.',
     if: { arg: 'graticuleLatLonLabels' },
     table: { category: GRATICULE },
   },
@@ -914,7 +919,7 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
   graticuleUtmLabels: {
     ...toggle(
       GRATICULE,
-      'Each UTM zone\u2019s name (`32N`) in the middle of each of its cells (`utm.labels`).',
+      'Each UTM zone\u2019s name (`32N`) in the middle of each of its cells (`labels.utm`).',
     ),
     if: { arg: 'graticuleUtm' },
   },
@@ -933,7 +938,7 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
   graticuleTimeZonesLabels: {
     ...toggle(
       GRATICULE,
-      'Each time zone\u2019s offset (`UTC+1`) in the middle of each of its cells, a row every UTM band (`timeZones.labels`).',
+      'Each time zone\u2019s offset (`UTC+1`) in the middle of each of its cells, a row every UTM band (`labels.timeZones`).',
     ),
     if: { arg: 'graticuleTimeZones' },
   },

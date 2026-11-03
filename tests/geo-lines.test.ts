@@ -125,6 +125,37 @@ describe('tile-cover', () => {
     expect(tilesUnder(key, elsewhere, tileAncestors(elsewhere))).toEqual([]);
   });
 
+  it('with fill, gives the parts no tile is drawn under too, under -1', () => {
+    const [a, b, c, d] = tileChildren(key);
+    const [d0, d1] = tileChildren(d);
+    const drawn = new Set([a, d0, d1]);
+    const covers = tilesUnder(key, drawn, tileAncestors(drawn), [], true);
+    const [, , d2, d3] = tileChildren(d);
+    expect(
+      covers
+        .filter(cover => cover.under >= 0)
+        .map(({ square }) => square)
+        .sort(),
+    ).toEqual([a, d0, d1].sort());
+    // b and c whole, and d's quarters not drawn: the coarsest squares that hold none.
+    expect(
+      covers
+        .filter(cover => cover.under < 0)
+        .map(({ square }) => square)
+        .sort(),
+    ).toEqual([b, c, d2, d3].sort());
+    // Nothing drawn anywhere near: all of it.
+    const elsewhere = new Set([geoTileKeyAt(8, 20, 40)]);
+    expect(
+      tilesUnder(key, elsewhere, tileAncestors(elsewhere), [], true),
+    ).toEqual([{ square: key, under: -1 }]);
+    // Drawn over all of it: as without.
+    const self = new Set([key]);
+    expect(tilesUnder(key, self, tileAncestors(self), [], true)).toEqual([
+      { square: key, under: key },
+    ]);
+  });
+
   it('composes offsets as tileOffsetIn gives them across two ancestors', () => {
     const child = tileChildren(tileChildren(key)[3])[1];
     const middle = tileParent(child);

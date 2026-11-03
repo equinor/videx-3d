@@ -8,7 +8,7 @@ import {
   utmZoneCells,
   utmZoneLabelText,
   type GraticuleZoneCell,
-} from '../src/components/Scenery/scenery-zone-labels';
+} from '../src/components/Layers/graticule-zone-labels';
 import { getProjectionDefFromUtmZone } from '../src/sdk/projection/crs';
 import { Globe } from '../src/sdk/projection/globe';
 

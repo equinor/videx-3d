@@ -3,7 +3,6 @@ export * from './SceneryAbyss';
 export * from './SceneryAnchor';
 export * from './SceneryClouds';
 export * from './SceneryCutaway';
-export * from './SceneryGraticule';
 export * from './SceneryOcean';
 export * from './SceneryStage';
 export type { SceneryReliefTileStats } from './SceneryStageReliefTiles';
@@ -34,34 +33,4 @@ export type {
   SceneryReliefLoading,
 } from './scenery-progress';
 export * from './scenery-stage';
-export {
-  GRATICULE_LABEL_DENSITY,
-  GRATICULE_LABEL_PERIOD,
-  GRATICULE_LABEL_REACH,
-  GRATICULE_LABEL_SIZE,
-  GRATICULE_LABEL_SMOOTH_MAX,
-  GRATICULE_LABEL_SWITCH,
-  graticuleLabelCentre,
-  graticuleLabelColumns,
-  graticuleLabelPattern,
-  graticuleLabelPeriod,
-  graticuleLabels,
-  graticuleLabelSize,
-  graticuleLabelSpacing,
-  graticuleLabelStep,
-  graticuleLabelText,
-  graticuleLabelThinning,
-} from './scenery-graticule-labels';
-export type { GraticuleLabelOptions } from './scenery-graticule-labels';
-export {
-  GRATICULE_ZONE_LABEL_SIZE,
-  graticuleZoneLabels,
-  graticuleZoneLabelSize,
-  timeZoneCells,
-  timeZoneLabelText,
-  utmZoneCells,
-  utmZoneLabelText,
-} from './scenery-zone-labels';
-export type { GraticuleZoneCell } from './scenery-zone-labels';
-export { GRATICULE_LABEL_STYLE } from './SceneryGraticuleLabels';
 export * from './useLevelHorizon';

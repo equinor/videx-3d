@@ -354,7 +354,7 @@ export const SceneryStageReliefTiles = ({
             land,
             seabed,
           }),
-    // The sky's defines are compiled in (the seabed's detail, the graticule): new ones need a new material.
+    // The sky's defines are compiled in (the seabed's detail): new ones need a new material.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       sky,

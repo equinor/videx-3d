@@ -176,7 +176,8 @@ topography under its data, nothing of the sky in the way (world.md, step 7d-2).
   `relief-look.glsl`), lit by the scene's lights — the host's: without any it is black. Where
   the look gives the seabed no ramp it is the sea's default seabed (`sceneryDefaults.ocean.seabed`:
   its colour, shine and ambient), darkening from the relief's `depth` down. No water over the
-  seabed, no air, no graticule, no night side: nothing of the sky.
+  seabed, no air, no night side: nothing of the sky. Lines on it are a layer's
+  (`GeoGraticule`, draped), with a sky or without.
 - **To the far plane only:** no overview past it (that is the sky's; see
   [The far plane](#the-far-plane)).
 - **Nothing from under the ground:** with the camera below the relief nothing of it is

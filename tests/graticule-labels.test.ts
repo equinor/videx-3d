@@ -16,7 +16,7 @@ import {
   graticuleLabelStep,
   graticuleLabelText,
   graticuleLabelThinning,
-} from '../src/components/Scenery/scenery-graticule-labels';
+} from '../src/components/Layers/graticule-labels';
 import { getProjectionDefFromUtmZone } from '../src/sdk/projection/crs';
 import type { GeoFrame } from '../src/sdk/projection/geo-frame';
 import { Globe } from '../src/sdk/projection/globe';
