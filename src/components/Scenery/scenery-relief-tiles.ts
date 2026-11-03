@@ -36,6 +36,14 @@ import {
   HeightFieldTile,
 } from '../../sdk/geometries/height-field-clip';
 import type { PolygonDistanceField } from '../../sdk/geometries/polygon-distance-field';
+import { polygonDistanceField } from '../../sdk/geometries/polygon-distance-field';
+import {
+  Boundary,
+  boundaryBox,
+  boundaryOutline,
+  boundaryShape,
+} from '../../sdk/geometries/boundary';
+import type { Vec2 } from '../../sdk/types/common';
 import type { ReliefTile } from '../../sdk/geometries/relief-tiles';
 import { applyFenceField, CutUniforms } from '../../sdk/materials/fence-field';
 import type {
@@ -556,58 +564,187 @@ function reliefTileUniforms(
     uReliefRegions: new Uniform(
       Array.from({ length: SKY_RELIEF_MAX_REGIONS }, () => new Matrix4()),
     ),
-    uReliefRegionBounds: new Uniform(
+    uReliefRegionKinds: new Uniform(
+      Array.from({ length: SKY_RELIEF_MAX_REGIONS }, () => REGION_BOX),
+    ),
+    uReliefRegionShapes: new Uniform(
       Array.from({ length: SKY_RELIEF_MAX_REGIONS }, () => new Vector4()),
     ),
+    uReliefRegionFields: new Uniform<DataArrayTexture | null>(null),
     uReliefLook: new Uniform(looks),
     uColorRamps: new Uniform(colorRampTexture),
   };
 }
 
 /**
- * An area the relief is see-through over: `bounds`, `[minX, minZ, maxX, maxZ]`, in `object`'s
- * own X/Z — a loaded field's group (`WorldField`), placed on the Earth — or, without one, in
- * world X/Z (the anchored stage's).
+ * An area the relief is see-through over: `boundary`, in `object`'s own X/Z — a loaded
+ * field's group (`WorldField`), placed on the Earth — or, without one, in world X/Z (the
+ * anchored stage's).
  */
 export type SceneryReliefRegion = {
   object?: Object3D;
-  bounds: [number, number, number, number];
+  boundary: Boundary;
 };
+
+// What relief-tiles.glsl's reliefTileInRegion tells a region's shape by (uReliefRegionKinds).
+const REGION_BOX = 0;
+const REGION_CIRCLE = 1;
+const REGION_POLYGON = 2;
+
+// A region as the shader tests it: its kind, its shape in its own X/Z (uReliefRegionShapes),
+// a turned box's turn undone about its middle, and the corners of what it covers, for its
+// box in world X/Z.
+type PreparedRegion = {
+  object?: Object3D;
+  kind: number;
+  shape: Vector4;
+  turn: Matrix4 | null;
+  corners: Vec2[];
+};
+
+/**
+ * A relief's see-through regions, ready for its materials ({@link setReliefRegions}): each
+ * one's shape as the shader tests it, a box (turned or not), a circle or a polygon, and the
+ * polygons' outlines as distance fields (`polygonDistanceField`), a layer each of one
+ * texture. Made again when the regions change, not each frame; dispose of it once replaced.
+ */
+export class SceneryReliefRegions {
+  /** the polygons' outlines, a layer each; null without any */
+  readonly fields: DataArrayTexture | null;
+  /** @internal */
+  readonly prepared: readonly PreparedRegion[];
+
+  constructor(regions: readonly SceneryReliefRegion[]) {
+    const fields: PolygonDistanceField[] = [];
+    const prepared: PreparedRegion[] = [];
+    for (const { object, boundary } of regions) {
+      const shape = boundaryShape(boundary);
+      if (shape.kind === 'box') {
+        const [minX, minZ, maxX, maxZ] = shape.box;
+        if (!(minX < maxX && minZ < maxZ)) continue;
+        let turn: Matrix4 | null = null;
+        if (shape.rotation !== 0) {
+          const cx = (minX + maxX) / 2;
+          const cz = (minZ + maxZ) / 2;
+          turn = new Matrix4()
+            .makeTranslation(cx, 0, cz)
+            .multiply(new Matrix4().makeRotationY(-shape.rotation))
+            .multiply(new Matrix4().makeTranslation(-cx, 0, -cz));
+        }
+        prepared.push({
+          object,
+          kind: REGION_BOX,
+          shape: new Vector4(minX, minZ, maxX, maxZ),
+          turn,
+          corners: boundaryOutline(boundary)[0],
+        });
+        continue;
+      }
+      if (shape.kind === 'circle') {
+        if (!(shape.radius > 0)) continue;
+        prepared.push({
+          object,
+          kind: REGION_CIRCLE,
+          shape: new Vector4(shape.centre[0], shape.centre[1], shape.radius, 0),
+          turn: null,
+          corners: boxCorners(boundaryBox(boundary)),
+        });
+        continue;
+      }
+      const field =
+        ringsArea(shape.rings) > 0 ? polygonDistanceField([shape.rings]) : null;
+      if (!field) continue;
+      prepared.push({
+        object,
+        kind: REGION_POLYGON,
+        shape: new Vector4(
+          field.origin[0],
+          field.origin[1],
+          field.cell,
+          fields.length,
+        ),
+        turn: null,
+        corners: boxCorners(boundaryBox(boundary)),
+      });
+      fields.push(field);
+    }
+    this.prepared = prepared;
+    this.fields = fields.length > 0 ? regionFieldsTexture(fields) : null;
+  }
+
+  dispose() {
+    this.fields?.dispose();
+  }
+}
+
+// The rings' areas, each taken as positive: none for a polygon of no area (its points in a line).
+function ringsArea(rings: Vec2[][]) {
+  let area = 0;
+  for (const ring of rings) {
+    let twice = 0;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++)
+      twice += (ring[j][0] - ring[i][0]) * (ring[j][1] + ring[i][1]);
+    area += Math.abs(twice) / 2;
+  }
+  return area;
+}
+
+function boxCorners([minX, minZ, maxX, maxZ]: [
+  number,
+  number,
+  number,
+  number,
+]): Vec2[] {
+  return [
+    [minX, minZ],
+    [maxX, minZ],
+    [maxX, maxZ],
+    [minX, maxZ],
+  ];
+}
+
+// The polygons' distance fields, all of one size, a layer each.
+function regionFieldsTexture(fields: PolygonDistanceField[]) {
+  const size = fields[0].size;
+  const data = new Float32Array(size * size * fields.length);
+  fields.forEach((field, k) => data.set(field.values, k * size * size));
+  const texture = new DataArrayTexture(data, size, size, fields.length);
+  texture.format = RedFormat;
+  texture.type = FloatType;
+  texture.minFilter = NearestFilter;
+  texture.magFilter = NearestFilter;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  return texture;
+}
 
 const regionCorner = new Vector3();
 
 /**
  * Set a relief material's see-through regions (`uReliefRegionCount`, `uReliefRegions`: world
  * to the area's own frame, through its object's whole placement, tilted on the globe as it
- * is; `uReliefRegionBounds`), at most {@link SKY_RELIEF_MAX_REGIONS}, the nearest `eye` (world
- * X/Z) kept past that. Writes each one's box in world X/Z into `boxes`, for the tiles over
- * them, and returns how many.
+ * is, and a turned box's turn undone; `uReliefRegionKinds`, `uReliefRegionShapes`,
+ * `uReliefRegionFields`), at most {@link SKY_RELIEF_MAX_REGIONS}, the nearest `eye` (world
+ * X/Z) kept past that. Writes the box in world X/Z that holds each one into `boxes`, for the
+ * tiles over them, and returns how many.
  */
 export function setReliefRegions(
   uniforms: Record<string, IUniform>,
-  regions: readonly SceneryReliefRegion[],
+  regions: SceneryReliefRegions,
   eye: [number, number],
   boxes: [number, number, number, number][],
 ): number {
-  const placed = regions.map(region => {
-    const [minX, minZ, maxX, maxZ] = region.bounds;
-    if (!region.object) {
-      return { region, box: [minX, minZ, maxX, maxZ] as typeof region.bounds };
-    }
-    region.object.updateWorldMatrix(true, false);
+  const placed = regions.prepared.map(region => {
     const box: [number, number, number, number] = [
       Infinity,
       Infinity,
       -Infinity,
       -Infinity,
     ];
-    for (const [x, z] of [
-      [minX, minZ],
-      [maxX, minZ],
-      [minX, maxZ],
-      [maxX, maxZ],
-    ]) {
-      regionCorner.set(x, 0, z).applyMatrix4(region.object.matrixWorld);
+    region.object?.updateWorldMatrix(true, false);
+    for (const [x, z] of region.corners) {
+      regionCorner.set(x, 0, z);
+      if (region.object) regionCorner.applyMatrix4(region.object.matrixWorld);
       box[0] = Math.min(box[0], regionCorner.x);
       box[1] = Math.min(box[1], regionCorner.z);
       box[2] = Math.max(box[2], regionCorner.x);
@@ -627,14 +764,18 @@ export function setReliefRegions(
           .slice(0, SKY_RELIEF_MAX_REGIONS)
       : placed;
   const matrices = uniforms.uReliefRegions.value as Matrix4[];
-  const areas = uniforms.uReliefRegionBounds.value as Vector4[];
+  const kinds = uniforms.uReliefRegionKinds.value as number[];
+  const shapes = uniforms.uReliefRegionShapes.value as Vector4[];
   kept.forEach(({ region, box }, i) => {
     if (region.object) matrices[i].copy(region.object.matrixWorld).invert();
     else matrices[i].identity();
-    areas[i].fromArray(region.bounds);
+    if (region.turn) matrices[i].premultiply(region.turn);
+    kinds[i] = region.kind;
+    shapes[i].copy(region.shape);
     boxes[i] = box;
   });
   uniforms.uReliefRegionCount.value = kept.length;
+  uniforms.uReliefRegionFields.value = regions.fields;
   boxes.length = kept.length;
   return kept.length;
 }
@@ -642,19 +783,17 @@ export function setReliefRegions(
 /**
  * The relief's underside, for a camera under the ground (`opaque` from
  * {@link createSceneryReliefTileMaterial}, whose uniform objects and defines it shares): the
- * void's lid, its tiles' back faces alone, shaded as the void shades its own lid — with
- * `walls`, as the walls' (`SKY_ABYSS_WALLS`). Nothing above the lid is drawn from there.
+ * void's lid, its tiles' back faces alone, shaded as the void shades its own lid. Nothing
+ * above the lid is drawn from there.
  * Its see-through copy is {@link createSceneryReliefTileSeeThroughMaterial} of it.
  */
 export function createSceneryReliefTileFromBelowMaterial(
   opaque: ShaderMaterial,
-  walls: boolean,
 ) {
   const defines: Record<string, unknown> = {
     ...opaque.defines,
     RELIEF_FROM_BELOW: '',
   };
-  if (walls) defines.SKY_ABYSS_WALLS = '';
   return new ShaderMaterial({
     vertexShader: opaque.vertexShader,
     fragmentShader: opaque.fragmentShader,

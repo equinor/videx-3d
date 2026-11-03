@@ -106,7 +106,7 @@ const SceneryTimelapse = (args: TimelapseArgs) => {
           ocean={{ level: 0, depth: DEPTH }}
           abyss={{}}
         />
-        <SceneryStage bounds={BOUNDS} />
+        <SceneryStage boundary={BOUNDS} />
         {tanker}
       </Scenery>
       {relief && <GeoRelief {...relief} />}

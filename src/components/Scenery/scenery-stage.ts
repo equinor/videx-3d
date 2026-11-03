@@ -47,7 +47,6 @@ export function createSceneryStagePlane(
 const OUTLINE_RIM = new Color('#ffffff');
 const OUTLINE_SURFACE = new Color('#000000');
 const OUTLINE_BOUNDS = new Color('#909090');
-const OUTLINE_FOOT = new Color('#505050');
 
 // Line segments with vertex colours, a closed loop at a time.
 function outlineLoops() {
@@ -88,10 +87,11 @@ function outlineLoops() {
 
 /**
  * Debug lines, as segments with vertex colours: the `outlines` at `bedY` in white and at
- * the sea `level` in black, and `bounds` at `bedY` in grey.
+ * the sea `level` in black, and the stage's own outline (`boundaryOutline`, closed rings) at
+ * `bedY` in grey.
  */
 export function createSceneryStageOutline(
-  bounds: SceneryStageBounds,
+  stage: Vec2[][],
   outlines: PlanarPolygonGeometry[],
   level: number,
   bedY: number,
@@ -101,22 +101,7 @@ export function createSceneryStageOutline(
     loop(points, () => bedY, OUTLINE_RIM);
     loop(points, () => level, OUTLINE_SURFACE);
   }
-  loop(rectangle(bounds), () => bedY, OUTLINE_BOUNDS);
-  return build();
-}
-
-/**
- * The same outlines and `bounds`, flat at height 0 in a faint grey: moved down to the void
- * walls' foot, it shows how far they lean out from the stage.
- */
-export function createSceneryStageFootprint(
-  bounds: SceneryStageBounds,
-  outlines: PlanarPolygonGeometry[],
-): BufferGeometry {
-  const { loop, build } = outlineLoops();
-  for (const points of outlineRings(outlines))
-    loop(points, () => 0, OUTLINE_FOOT);
-  loop(rectangle(bounds), () => 0, OUTLINE_FOOT);
+  for (const ring of stage) loop(ring, () => bedY, OUTLINE_BOUNDS);
   return build();
 }
 
@@ -131,20 +116,6 @@ function outlineRings(outlines: PlanarPolygonGeometry[]): Vec2[][] {
         ),
     );
   });
-}
-
-function rectangle([
-  minX,
-  minZ,
-  maxX,
-  maxZ,
-]: SceneryStageBounds): Coordinates2D {
-  return [
-    [minX, minZ],
-    [maxX, minZ],
-    [maxX, maxZ],
-    [minX, maxZ],
-  ];
 }
 
 // Points per side of every ring rectangle; the same for all of them, so rings share vertices.
@@ -301,8 +272,6 @@ export function createSceneryStageMaterial(
   else defines.STAGE_BED = '';
   if (surface && curvedDepth) defines.STAGE_CURVED_DEPTH = '';
   if (!surface && seeThrough) defines.STAGE_SEE_THROUGH = '';
-  // Its lid, seen from the void, leaves the cave's walls to the background.
-  if (!surface && sky.abyssWalls) defines.SKY_ABYSS_WALLS = '';
 
   const transparent = surface || seeThrough;
   const material = new ShaderMaterial({

@@ -68,6 +68,7 @@ import {
   SKY_RELIEF_MAX_TILES,
   SKY_RELIEF_TILE_ATTRIBUTES,
   SceneryReliefRegion,
+  SceneryReliefRegions,
   SceneryReliefTileDebug,
   SceneryReliefTileGround,
   SceneryReliefTileGroundTile,
@@ -75,6 +76,7 @@ import {
   SceneryReliefTileTextures,
   setReliefRegions,
 } from './scenery-relief-tiles';
+import type { Boundary } from '../../sdk/geometries/boundary';
 import type { SceneryStageBounds } from './scenery-stage';
 import {
   SceneryStageReliefOverview,
@@ -205,8 +207,6 @@ type SceneryStageReliefTilesProps = {
   transition: number;
   /** what it compiles with from the sky, as a key (`SceneryOceanState.definesKey`): a new one needs a new material */
   definesKey?: string;
-  /** the void has walls: from below, the relief is shaded as their lid (`SceneryOceanState.abyssWalls`) */
-  abyssWalls?: boolean;
   visible: boolean;
   onStats?: (stats: SceneryReliefTileStats) => void;
   /** told of the tiles as they load (see `SceneryReliefLoading`) whenever that changes, and null once gone */
@@ -216,8 +216,8 @@ type SceneryStageReliefTilesProps = {
    * in there), or null where no tile is in.
    */
   cameraGround?: { current: number | null };
-  /** the anchored stage's area (`bounds`), world X/Z: a see-through region with `seeThrough`; none when empty */
-  stage: SceneryStageBounds;
+  /** the anchored stage's area (its `boundary`), world X/Z: a see-through region with `seeThrough`; none when null */
+  stage: Boundary | null;
   /** the loaded fields (`WorldField`): each a see-through region too, in its own frame (`setReliefRegions`) */
   fields?: readonly SceneryReliefRegion[];
   /**
@@ -285,7 +285,6 @@ export const SceneryStageReliefTiles = ({
   cellPixels,
   transition,
   definesKey,
-  abyssWalls = false,
   visible,
   onStats,
   onLoading,
@@ -390,11 +389,8 @@ export const SceneryStageReliefTiles = ({
   // From under the ground, the void's lid: the same tiles' undersides, drawn instead (see
   // the frame loop). Compiled with the stage's, hidden or not. Without a sky, nothing.
   const belowMaterial = useMemo(
-    () =>
-      sky
-        ? createSceneryReliefTileFromBelowMaterial(material, abyssWalls)
-        : null,
-    [sky, material, abyssWalls],
+    () => (sky ? createSceneryReliefTileFromBelowMaterial(material) : null),
+    [sky, material],
   );
   useEffect(
     () => () => {
@@ -434,26 +430,17 @@ export const SceneryStageReliefTiles = ({
     [subset],
   );
   // The see-through regions: the anchored stage's area in world X/Z, and each loaded field's
-  // in its own frame, read through its placement each frame.
-  const [stageMinX, stageMinZ, stageMaxX, stageMaxZ] = stage;
-  const regions = useMemo<SceneryReliefRegion[]>(
-    () => [
-      ...(stageMinX < stageMaxX && stageMinZ < stageMaxZ
-        ? [
-            {
-              bounds: [stageMinX, stageMinZ, stageMaxX, stageMaxZ] as [
-                number,
-                number,
-                number,
-                number,
-              ],
-            },
-          ]
-        : []),
-      ...(fields ?? []),
-    ],
-    [stageMinX, stageMinZ, stageMaxX, stageMaxZ, fields],
+  // in its own frame, read through its placement each frame; their shapes made ready (the
+  // polygons' outlines as fields) once, as they change.
+  const regions = useMemo(
+    () =>
+      new SceneryReliefRegions([
+        ...(stage ? [{ boundary: stage } as SceneryReliefRegion] : []),
+        ...(fields ?? []),
+      ]),
+    [stage, fields],
   );
+  useEffect(() => () => regions.dispose(), [regions]);
   useEffect(() => {
     material.uniforms.uReliefReach.value = reach;
   }, [material, reach]);

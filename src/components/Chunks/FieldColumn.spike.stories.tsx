@@ -1654,7 +1654,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
               abyss={{}}
             />
             <SceneryStage
-              bounds={[
+              boundary={[
                 outlineMin[0] - margin,
                 outlineMin[1] - margin,
                 outlineMax[0] + margin,

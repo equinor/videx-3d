@@ -16,7 +16,6 @@ import {
   RELIEF_PROGRESS_LABELS,
   ReliefProgressLabels,
 } from '../Scenery/scenery-progress';
-import type { SceneryStageBounds } from '../Scenery/scenery-stage';
 import { sceneryDefaults } from '../Scenery/scenery-model';
 import {
   SceneryStageReliefTiles,
@@ -25,9 +24,6 @@ import {
 import { useWorld } from '../World/world-context';
 import { useWorldFields } from '../World/world-fields';
 import { useWorldRelief } from '../World/world-relief';
-
-// Where neither a stage nor the World gives an area: none is see-through.
-const NO_STAGE: SceneryStageBounds = [0, 0, 0, 0];
 
 /**
  * GeoRelief props
@@ -92,9 +88,10 @@ export type GeoReliefProps = {
   opacity?: number;
   /**
    * Without a `Scenery`, the same over the fields — the anchored stage's area (the `World`'s
-   * `bounds`) and each field loaded in the `World` (a `UtmArea` with `bounds`), in its own
-   * frame — so the data under the seabed there shows through it: the lower of this and
-   * `opacity` there. With one, the sea's `seabedOpacity` decides, over the same. Default 1
+   * `boundary`) and each field loaded in the `World` (a `UtmArea` with a `boundary`), in its
+   * own frame, each of its own shape — so the data under the seabed there shows through it:
+   * the lower of this and `opacity` there. With one, the sea's `seabedOpacity` decides, over
+   * the same. Default 1
    */
   fieldOpacity?: number;
   /**
@@ -143,7 +140,7 @@ export type GeoReliefProps = {
  * void's lid; past the camera's far plane, an overview out to the horizon. A `SceneryStage`
  * then has it for its seabed, the ground its occupants are built on (`onGround`). Over the
  * fields — the anchored stage's area and each field loaded in the `World` (a `UtmArea` with
- * `bounds`) — it is see-through at the sea's seabed opacity. Without a `Scenery` it is drawn
+ * a `boundary`) — it is see-through at the sea's seabed opacity. Without a `Scenery` it is drawn
  * plainly: its looks lit by the scene's lights, out to the far plane, nothing of it from under
  * the ground, at its own `opacity` (and `fieldOpacity` over the fields), its `land` and
  * `seabed` each as asked. Its tiles stay in as the `Scenery` comes and goes, and through a
@@ -152,7 +149,7 @@ export type GeoReliefProps = {
  * One `GeoRelief` with layers to a `World`.
  *
  * @example
- * <World frame={frame} bounds={bounds}>
+ * <World frame={frame} boundary={boundary}>
  *   <Scenery>
  *     <SceneryOcean level={0} depth={120} />
  *     <SceneryStage />
@@ -281,7 +278,6 @@ export const GeoRelief = ({
     register,
     mounted,
     sky?.definesKey,
-    sky?.abyssWalls,
     sky?.seabedOpacity,
     stage?.occupants,
     debug,
@@ -303,12 +299,11 @@ export const GeoRelief = ({
         cellPixels={cellPixels}
         transition={transition}
         definesKey={sky?.definesKey}
-        abyssWalls={sky?.abyssWalls}
         visible={visible && shown}
         onStats={onStats}
         onLoading={progress.loading}
         cameraGround={shown ? relief.ground : undefined}
-        stage={stage?.bounds ?? world.bounds ?? NO_STAGE}
+        stage={stage?.boundary ?? world.boundary}
         fields={fields}
         seeThrough={sky ? sky.seabedOpacity < 1 : fieldOpacity < 1}
         opacity={sky ? 1 : opacity}

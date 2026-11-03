@@ -137,7 +137,7 @@ const DiscoveriesStory = ({
         {scenery && (
           <Scenery>
             <SceneryOcean level={LEVEL} depth={DEPTH} />
-            <SceneryStage bounds={STAGE_BOUNDS} />
+            <SceneryStage boundary={STAGE_BOUNDS} />
           </Scenery>
         )}
         <GeoRelief

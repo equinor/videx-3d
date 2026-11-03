@@ -8,6 +8,8 @@ import {
   useState,
 } from 'react';
 import { Matrix4 } from 'three';
+import { useStableBoundary } from '../../hooks/useStableBoundary';
+import { Boundary, boundaryDisc } from '../../sdk/geometries/boundary';
 import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import { Globe } from '../../sdk/projection/globe';
 import {
@@ -18,7 +20,7 @@ import {
 import type { Vec2 } from '../../sdk/types/common';
 import type { SceneryOceanState } from '../Scenery/scenery-context';
 import { SceneryReliefHub } from '../Scenery/scenery-relief-hub';
-import { WorldBounds, WorldContext, WorldState } from './world-context';
+import { WorldContext, WorldState } from './world-context';
 import {
   WorldField,
   WorldFieldsContext,
@@ -43,9 +45,9 @@ export type WorldFrameChange = {
   to: GeoFrame;
   /**
    * From the old coordinates to the new as the new anchored field is carried
-   * (`geoFrameChangeMatrix`): exact for its own content, about its stage's middle (the
-   * `World`'s `bounds`); an affine fit elsewhere (a camera 500 m over a field 123 km away
-   * lands 37 m low)
+   * (`geoFrameChangeMatrix`): exact for its own content, about the middle of its stage's disc
+   * (the `World`'s `boundary`); an affine fit elsewhere (a camera 500 m over a field 123 km
+   * away lands 37 m low)
    */
   matrix: Matrix4;
   /**
@@ -68,12 +70,15 @@ export type WorldProps = {
    */
   frame: GeoFrame;
   /**
-   * The anchored stage's area, `[minX, minZ, maxX, maxZ]` in world X/Z: the globe is cut flat
-   * over the disc that holds it, so the stage's fields meet the sea and the relief there
-   * exactly, with or without a `Scenery`. A `SceneryStage` takes it by default. Without it, a
-   * `SceneryStage` sets the disc while it is drawn. Change it with `frame`, at once.
+   * The anchored stage's area in world X/Z (see {@link Boundary}): a box, `[minX, minZ, maxX,
+   * maxZ]`; a turned box, `{ box, rotation }`; a circle, `{ centre, radius }`; or a polygon
+   * (a `PlanarPolygonGeometry`, or a ring of `[x, z]` points). The globe is cut flat over the
+   * smallest disc that holds it (`boundaryDisc`), so the stage's fields meet the sea and the
+   * relief there exactly, with or without a `Scenery`. A `SceneryStage` takes it by default.
+   * Without it, a `SceneryStage` sets the disc while it is drawn. Change it with `frame`, at
+   * once.
    */
-  bounds?: WorldBounds;
+  boundary?: Boundary;
   /**
    * The Earth is curved: the sea, the relief, the geographic layers and every field placed in
    * the world lie on a sphere, flat over the disc. Off, everything lies on the level plane, as
@@ -108,12 +113,12 @@ export type WorldProps = {
  * - a `Scenery` draws on the globe, and takes its `observer`'s place from the frame when the
  *   observer gives only a date;
  * - the geographic layers lie on the globe;
- * - a `SceneryStage` takes `bounds`, and the `relief` (a `GeoRelief`) is read in the frame.
+ * - a `SceneryStage` takes `boundary`, and the `relief` (a `GeoRelief`) is read in the frame.
  *
  * Renders nothing of its own: with or without a `Scenery`, everything is placed the same. See
  * `documents/world.md`.
  *
- * Switching the anchored field is changing `frame` and `bounds` together, when the host
+ * Switching the anchored field is changing `frame` and `boundary` together, when the host
  * chooses: everything is placed anew before the next frame is drawn, `onFrameChange` says
  * how to carry the camera, and `onFrameSettled` when the first frame with it has been drawn.
  * How the switch is covered — a fade, say — is the host's.
@@ -121,7 +126,7 @@ export type WorldProps = {
  * @example
  * <World
  *   frame={anchor.frame}
- *   bounds={anchor.bounds}
+ *   boundary={anchor.boundary}
  *   onFrameChange={({ carry }) => carryCamera(carry)}
  *   onFrameSettled={uncover}
  * >
@@ -130,15 +135,15 @@ export type WorldProps = {
  *     <SceneryStage />
  *   </Scenery>
  *   <GeoRelief layers={layers} />
- *   <UtmArea frame={volve.frame} bounds={volve.bounds}>{volveData}</UtmArea>
- *   <UtmArea frame={other.frame} bounds={other.bounds}>{otherData}</UtmArea>
+ *   <UtmArea frame={volve.frame} boundary={volve.boundary}>{volveData}</UtmArea>
+ *   <UtmArea frame={other.frame} boundary={other.boundary}>{otherData}</UtmArea>
  * </World>
  *
  * @group Components
  */
 export const World = ({
   frame,
-  bounds,
+  boundary: givenBoundary,
   globe: curved = true,
   onFrameChange,
   onFrameSettled,
@@ -148,11 +153,10 @@ export const World = ({
   const key = JSON.stringify(frame);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
   const stable = useMemo(() => frame, [key]);
-  const [minX, minZ, maxX, maxZ] = bounds ?? [];
-  const given = bounds !== undefined;
-  const disc = useMemo<WorldBounds | null>(
-    () => (given ? [minX!, minZ!, maxX!, maxZ!] : null),
-    [given, minX, minZ, maxX, maxZ],
+  const boundary = useStableBoundary(givenBoundary);
+  const disc = useMemo(
+    () => (boundary ? boundaryDisc(boundary) : null),
+    [boundary],
   );
   // On the Earth from the start, as what is placed in it may ask before an effect has run.
   const [globe] = useState(() => {
@@ -193,10 +197,10 @@ export const World = ({
     applied.current = stable;
     if (!changed) return;
     if (tell && before && from) {
-      // The new stage's middle, in its own X/Z: what the new field is placed about.
+      // The new stage's disc's middle, in its own X/Z: what the new field is placed about.
       const [ox, oz] = stable.offset ?? [0, 0];
       const pivot: Vec2 | undefined = disc
-        ? [(disc[0] + disc[2]) / 2 - ox, (disc[1] + disc[3]) / 2 - oz]
+        ? [disc.centre[0] - ox, disc.centre[1] - oz]
         : undefined;
       tell({
         from,
@@ -221,8 +225,8 @@ export const World = ({
     });
   }, [globe, stable, curved, disc]);
   const state = useMemo<WorldState>(
-    () => ({ frame: stable, bounds: disc, globe }),
-    [stable, disc, globe],
+    () => ({ frame: stable, boundary, globe }),
+    [stable, boundary, globe],
   );
 
   // The relief's: what it shares (the tiles it draws, the ground under the camera), and the

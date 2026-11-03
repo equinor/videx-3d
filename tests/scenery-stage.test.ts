@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BufferAttribute, BufferGeometry } from 'three';
+import { boundaryOutline } from '../src/sdk/geometries/boundary';
 import {
   createSceneryStageOutline,
   createSceneryStagePlane,
@@ -69,9 +70,14 @@ describe('sky stage', () => {
       ] as PlanarPolygonCoordinates;
     const a = new PlanarPolygonGeometry(square(100));
     const b = new PlanarPolygonGeometry(square(10), [500, 700]);
-    const lines = createSceneryStageOutline(bounds, [a, b], 0, -100);
+    const lines = createSceneryStageOutline(
+      boundaryOutline(bounds),
+      [a, b],
+      0,
+      -100,
+    );
     const position = lines.getAttribute('position') as BufferAttribute;
-    // Each ring twice (at the seabed and at the surface), and the bounds once: as segments.
+    // Each ring twice (at the seabed and at the surface), and the stage's once: as segments.
     expect(position.count).toBe(2 * (4 + 4) * 2 + 4 * 2);
     const points = new Set<string>();
     for (let i = 0; i < position.count; i++)

@@ -575,10 +575,9 @@ bool skyOceanOnStage(vec2 p, float dist, float inset) {
 
 // The sea's cutaway through the water and the seabed in front of the view (see
 // WaterFogCutaway, Sky's `cutaway`): read by sky-ocean.glsl, which declares the rest of its
-// uniforms, and by the walls without the sea for where it takes the seabed
-// (skyAbyssWallCovered). Included once here: vite-plugin-glsl inlines every #include
-// regardless of these guards, and warns on a chunk included twice.
-#if defined(SKY_OCEAN) || (defined(SKY_ABYSS) && defined(SKY_ABYSS_WALLS))
+// uniforms. Included once here: vite-plugin-glsl inlines every #include regardless of these
+// guards, and warns on a chunk included twice.
+#ifdef SKY_OCEAN
 #include ../../../sdk/materials/shaderLib/water-fog.glsl
 uniform vec3 uSkyOceanCutawayAnchor;
 uniform vec3 uSkyOceanCutawayHeading;
@@ -596,24 +595,19 @@ uniform float uSkyAbyssDarkening; // depth over which the void dims; 0 = off
 uniform float uSkyAbyssDetail;
 uniform float uSkyAbyssDetailScale; // world units
 uniform vec2 uSkyAbyssDepthDetail; // the rock in the depths: strength, and feature size
-// Toward the light raking the walls (world): the subsurface light's bearing, at the walls'
-// light elevation; set with or without walls (SceneryMaterial.setAbyssWallLight).
-uniform vec3 uSkyAbyssWallLight;
-// With walls, how much of them the camera sees (skyAbyssWallNear, scenery-abyss-walls.ts): 1
-// in and near their hollow, 0 far beyond their rim, where the void is the plain one, as
-// without them, and eased between. Their lid, fill and haze are mixed into the plain void's
-// by it, and the rock of its depths back in.
-uniform float uSkyAbyssWallNear;
+// Toward the light raking the lid (world): the subsurface light's bearing
+// (SceneryMaterial.setAbyssLight).
+uniform vec3 uSkyAbyssLight;
 // Its colours and the depths' falloff: sky-void.glsl.
 
 // How strongly a relief's lid shows its shape in the raking light (skyAbyssLidRake).
 #define SKY_ABYSS_LID_RAKE 0.6
 
 // How a lid facing `surface` (-`up` where it lies level) is lit, against a level lid, by
-// the walls' raking light: 1 where level, so a relief's lid meets the flat one without a
-// seam; lighter on a slope facing the light, darker on one facing away.
+// the subsurface's raking light: 1 where level, so a relief's lid meets the flat one without
+// a seam; lighter on a slope facing the light, darker on one facing away.
 float skyAbyssLidRake(vec3 surface, vec3 up) {
-  return max(1.0 + SKY_ABYSS_LID_RAKE * dot(surface + up, uSkyAbyssWallLight), 0.2);
+  return max(1.0 + SKY_ABYSS_LID_RAKE * dot(surface + up, uSkyAbyssLight), 0.2);
 }
 
 // The lid's ripples' cells (uSkyAbyssDetailScale) at `hit` on the lid.
@@ -621,8 +615,8 @@ vec2 skyAbyssLidCells(vec3 hit) {
   return vec2(dot(hit, uSkyEast), dot(hit, uSkyNorth)) / uSkyAbyssDetailScale;
 }
 
-// How many of the ripples' cells a pixel spans at `hit` on the lid, for skyAbyssLid and
-// skyAbyssCeilingOver. ⚠️ Derivatives: taken before any pixel discards or branches its own way.
+// How many of the ripples' cells a pixel spans at `hit` on the lid, for skyAbyssCeilingOver.
+// ⚠️ Derivatives: taken before any pixel discards or branches its own way.
 float skyAbyssLidFootprint(vec3 hit) {
   vec2 d = fwidth(skyAbyssLidCells(hit));
   return max(d.x, d.y);
@@ -665,432 +659,10 @@ float skyAbyssRock(vec3 dir) {
 }
 
 // The gradient below the horizon (skyAbyssGradient, sky-void.glsl) along `dir`, by the
-// camera's look up (globeCameraLook), so it is the same under any field, with its rock;
-// with walls, only as much of the rock as they leave (uSkyAbyssWallNear): it lies at
-// infinity, they do not.
+// camera's look up (globeCameraLook), so it is the same under any field, with its rock.
 vec3 skyAbyssDepths(vec3 dir) {
-  vec3 depths = skyAbyssGradient(dot(dir, globeCameraLook()));
-  #ifdef SKY_ABYSS_WALLS
-  float rock = 1.0;
-  if(uSkyAbyssWallNear < 1.0)
-    rock = mix(skyAbyssRock(dir), 1.0, uSkyAbyssWallNear);
-  #else
-  float rock = skyAbyssRock(dir);
-  #endif
-  return depths * rock;
+  return skyAbyssGradient(dot(dir, globeCameraLook())) * skyAbyssRock(dir);
 }
-
-#ifdef SKY_ABYSS_WALLS
-#include ./sky-abyss-wall-shape.glsl
-uniform vec4 uSkyAbyssWallClip; // the plane they are cut away up to: what lies past w along its normal shows
-uniform vec3 uSkyAbyssWallColor; // their rock's
-uniform vec3 uSkyAbyssWallCutColor; // their rock's inside, where they are cut
-// The cut's beds as a share of uSkyAbyssWalls.w, its joints' spacing likewise, and how much paler its edge is.
-#define SKY_ABYSS_BED 0.06
-#define SKY_ABYSS_JOINTS 0.25
-#define SKY_ABYSS_CUT_EDGE 1.8
-uniform vec2 uSkyAbyssWallMist; // how dense the mist clinging to them is, 0 to 1; how far it hangs off the rock (world units)
-uniform vec3 uSkyAbyssWallLightColor;
-uniform vec3 uSkyAbyssWallFillTop; // the subsurface's light map: its backdrop overhead,
-uniform vec3 uSkyAbyssWallFillBottom; // underfoot,
-uniform vec3 uSkyAbyssWallFillBelow; // and its panels below
-// How much of the light map's backdrop fills in their shade, and of its panels below bounces up.
-#define SKY_ABYSS_FILL 2.0
-#define SKY_ABYSS_BOUNCE 0.05
-// How bright their mist is against the void's horizon colour, and how thick it lies on rock seen face on.
-#define SKY_ABYSS_MIST_LIGHT 1.3
-#define SKY_ABYSS_MIST_VEIL 0.6
-uniform vec3 uSkyAbyssWallSandColor; // the sand over their rock's
-uniform vec3 uSkyAbyssWallGlowColor; // the dim light at the top of the stage's
-uniform float uSkyAbyssWallHazeDepth; // depth below the lid over which the haze in the hollow darkens; 0 for never
-// How bright the glow at the top of the stage is, at full `glow`, against its colour.
-#define SKY_ABYSS_GLOW 4.0
-// The sand's laminae where it is cut, as a share of uSkyAbyssWalls.w.
-#define SKY_ABYSS_SAND_BED 0.02
-uniform float uSkyAbyssWallFade; // the distance beyond their rim the hollow's light and haze fade out over (skyAbyssWallFar, skyAbyssWallFog); 0 for none
-// How much of that light is left at the fade's far end, and over how many times its
-// distance on from there the rest fades out.
-#define SKY_ABYSS_FADED 0.2
-#define SKY_ABYSS_FADED_OUT 2.0
-// How many stretches of a view their haze is summed over (skyAbyssWallClear).
-#define SKY_ABYSS_FOG_SAMPLES 6
-// How near, as a share of the way there, a view rising from under their foot may pass their
-// rock there and still go into it: about a pixel, so the rock overlaps the mesh's last edge.
-#define SKY_ABYSS_FOOT_OVERLAP 0.003
-// The rock tests skyAbyssWallStartUnder makes (2): a uniform, so they share one loop.
-uniform int uSkyAbyssWallTests;
-uniform float uSkyAbyssWallCover; // 1 while the seabed beyond the stage, which the background draws, hides what lies below it
-
-// Where a view along `dir` from `origin` goes below the lid: 0 from under it; -1 for never.
-float skyAbyssLidStart(vec3 origin, vec3 dir) {
-  float h0 = dot(origin, uSkyUp);
-  if(h0 <= uSkyAbyssLevel)
-    return 0.0;
-  float y = dot(dir, uSkyUp);
-  return y < 0.0 ? (h0 - uSkyAbyssLevel) / -y : -1.0;
-}
-
-// The plane the walls are cut away up to cuts away all that lies short of it
-// (skyAbyssWallClipPlane), whichever side of it the camera is on. A view from the side cut
-// away starts where it is past the plane; one from the side kept ends there. At the plane
-// the two agree, so a camera crossing it, or rounding either side of it, changes nothing.
-
-// Where a view along `dir` from `origin` is past the plane the walls are cut away up to; 1e30 for never.
-float skyAbyssWallCut(vec3 origin, vec3 dir) {
-  float behind = uSkyAbyssWallClip.w - dot(uSkyAbyssWallClip.xyz, origin);
-  if(behind <= 0.0)
-    return 0.0;
-  float toward = dot(dir, uSkyAbyssWallClip.xyz);
-  return toward > 0.0 ? behind / toward : 1e30;
-}
-
-// Where a view along `dir` from `origin` on the side kept goes past the plane, into what is
-// cut away; 1e30 for never, and from the side cut away.
-float skyAbyssWallCutEnd(vec3 origin, vec3 dir) {
-  float ahead = dot(uSkyAbyssWallClip.xyz, origin) - uSkyAbyssWallClip.w;
-  float toward = dot(dir, uSkyAbyssWallClip.xyz);
-  return ahead >= 0.0 && toward < 0.0 ? ahead / -toward : 1e30;
-}
-
-// How far into the walls' rock `p` (`h` high) is as their mesh lays it: past the plane of
-// its triangle over p's way round and depth, along its normal; above 0 in it. Below the
-// mesh, its last row's triangles run on down.
-float skyAbyssWallInto(vec3 p, float h) {
-  vec2 grid = uSkyAbyssWallGrid.xy;
-  float depth = clamp(uSkyAbyssLevel - h, 0.0, uSkyAbyssWallGrid.z);
-  vec2 around = skyAbyssWallAround(skyAbyssWallPlane(p), uSkyAbyssWalls.x);
-  vec2 at = vec2(around.x / around.y * grid.x, sqrt(depth / uSkyAbyssWallGrid.z) * grid.y);
-  vec2 cell = min(floor(at), grid - 1.0);
-  float top = skyAbyssWallRowDepth(cell.y);
-  vec2 f = vec2(at.x - cell.x, (depth - top) / (skyAbyssWallRowDepth(cell.y + 1.0) - top));
-  // A cell's triangles meet along its diagonal from (i + 1, j) to (i, j + 1).
-  float first = f.x + f.y < 1.0 ? 1.0 : -1.0;
-  vec3 a = skyAbyssWallVertex(first > 0.0 ? cell : cell + 1.0).xyz;
-  vec3 b = skyAbyssWallVertex(cell + vec2(1.0, 0.0)).xyz;
-  vec3 c = skyAbyssWallVertex(cell + vec2(0.0, 1.0)).xyz;
-  // Round x down points out of the hollow, as east = north x up (compassBasis).
-  return dot(p - a, normalize(cross(b - a, c - a))) * first;
-}
-
-// How far into the walls' rock `p` (`h` high) is, above 0 in it: surely short of it by the
-// cheap test, else as their mesh lays it (skyAbyssWallInto), a column's width to spare for
-// its triangles' chords at the corners.
-float skyAbyssWallInRock(vec3 p, float h) {
-  float r = -skyAbyssWallGap(p, h);
-  return r > -skyAbyssWallLap() / uSkyAbyssWallGrid.x ? skyAbyssWallInto(p, h) : r;
-}
-
-// Where along `dir` from `origin` the walls can show (xyz), and where a view rising from
-// under their foot goes into their rock (w). xyz: below the lid and past the plane they
-// are cut away up to (x, 1e30 for never); how far into their rock the view starts there,
-// above 0 where the fill shows and hides all beyond (y); 1 if it starts at the lid, from
-// above (z). Below their foot the camera is never in their rock, which is black there
-// anyway: a view from it rises to the hollow's opening or into that rock. w: the rock
-// under the foot runs on down without a mesh, and is solid from where the view meets it;
-// 1e30 for never, or if the view passes into what the cut takes away first. Within about
-// a pixel of that rock counts as in it (SKY_ABYSS_FOOT_OVERLAP), so no crack shows between
-// it and the mesh's last edge.
-// The two rock tests take turns in one loop, its count a uniform (uSkyAbyssWallTests, 2):
-// Direct3D then compiles the walls' shape once, not once for each.
-vec4 skyAbyssWallStartUnder(vec3 origin, vec3 dir) {
-  float lid = skyAbyssLidStart(origin, dir);
-  float cut = skyAbyssWallCut(origin, dir);
-  float t = max(lid, cut);
-  vec3 p = origin + dir * t;
-  float h = dot(p, uSkyUp);
-  bool starts = lid >= 0.0 && cut < 1e29 && h <= uSkyAbyssLevel + 1.0;
-  float foot = uSkyAbyssLevel - uSkyAbyssWallGrid.z;
-  bool atStart = starts && !(t <= 0.0 && h < foot);
-  float y = dot(dir, uSkyUp);
-  float under = starts ? foot - h : 0.0;
-  float at = t + under / max(y, 1e-6);
-  bool atFoot = y > 0.0 && under > 0.0 && at < skyAbyssWallCutEnd(origin, dir);
-  vec2 rock = vec2(-1.0, -1e30);
-  for(int i = 0; i < uSkyAbyssWallTests; i++) {
-    bool first = i == 0;
-    if(first ? atStart : atFoot) {
-      float r = skyAbyssWallInRock(first ? p : origin + dir * at, first ? h : foot);
-      if(first)
-        rock.x = r;
-      else
-        rock.y = r;
-    }
-  }
-  vec3 start = starts ? vec3(t, rock.x, lid > 0.0 && lid >= cut ? 1.0 : 0.0) : vec3(1e30, -1.0, 0.0);
-  return vec4(start, atFoot && rock.y > -SKY_ABYSS_FOOT_OVERLAP * at ? at : 1e30);
-}
-
-// Whether the walls' face `t` along `dir` from `origin` is hidden: cut away, behind their
-// fill, or past where the view went into their rock under the foot.
-bool skyAbyssWallHidden(vec3 origin, vec3 dir, float t) {
-  vec4 start = skyAbyssWallStartUnder(origin, dir);
-  return t < start.x || start.y > 0.0 || t > skyAbyssWallCutEnd(origin, dir) || t > start.w;
-}
-
-#ifndef SKY_OCEAN
-// Whether a view along `dir` from `origin` above the lid goes down through it beyond the
-// stage where the seabed there, which the background draws, hides what lies below it
-// (uSkyAbyssWallCover), and a cutaway does not take it. Over the stage its own seabed
-// hides them by depth, but where cut. Only the walls' own shaders ask, without the sea.
-bool skyAbyssWallCovered(vec3 origin, vec3 dir) {
-  float lid = skyAbyssLidStart(origin, dir);
-  bool covered = false;
-  if(uSkyAbyssWallCover > 0.5 && lid > 0.0) {
-    vec2 q = abs(skyAbyssWallPlane(origin + dir * lid));
-    WaterFogCutaway cutaway = WaterFogCutaway(uSkyOceanCutawayAnchor, uSkyOceanCutawayHeading, uSkyOceanCutawayShape, uSkyOceanCutawayWaveA, uSkyOceanCutawayWaveB);
-    float cut = waterFogCutawayAlong(cutaway, origin, origin + dir, uSkyUp) * uSkyOceanCutawayCuts.y;
-    covered = (q.x > uSkyStageBox.z || q.y > uSkyStageBox.w) && cut < 0.5;
-  }
-  return covered;
-}
-#endif
-
-// Of the light in the hollow, how much is left `h` high: it dims with depth below the lid,
-// to nearly black by uSkyAbyssWallShape.z (`lightDepth`). On the rock, the sand and the glow.
-float skyAbyssDim(float h) {
-  return exp(3.0 * min(h - uSkyAbyssLevel, 0.0) / uSkyAbyssWallShape.z);
-}
-
-// The haze in the hollow `h` high: the void's horizon colour, darkening with depth below the
-// lid to nearly black by uSkyAbyssWallHazeDepth (`hazeDepth`), or never.
-vec3 skyAbyssHazeColor(float h) {
-  float dim = uSkyAbyssWallHazeDepth > 0.0 ? exp(3.0 * min(h - uSkyAbyssLevel, 0.0) / uSkyAbyssWallHazeDepth) : 1.0;
-  return uSkyAbyssHorizonColor * dim;
-}
-
-// The light on the walls' rock facing `surface`, `h` high: raked by uSkyAbyssWallLight as
-// strongly as uSkyAbyssWalls.y, filled in by the subsurface's light map (its backdrop, and
-// its panels below bouncing up), dimming with depth.
-vec3 skyAbyssWallLit(vec3 surface, float h) {
-  float up = dot(surface, uSkyUp);
-  vec3 fill = SKY_ABYSS_FILL * mix(uSkyAbyssWallFillBottom, uSkyAbyssWallFillTop, 0.5 + 0.5 * up) +
-    SKY_ABYSS_BOUNCE * uSkyAbyssWallFillBelow * max(-up, 0.0);
-  vec3 key = uSkyAbyssWallLightColor * (uSkyAbyssWalls.y * max(dot(surface, uSkyAbyssWallLight), 0.0));
-  return (key + fill) * skyAbyssDim(h);
-}
-
-// The walls' rock lit, facing `surface` `h` high, its creases shadowed (`open`, low in them).
-vec3 skyAbyssWallShade(vec3 surface, float open, float h) {
-  return uSkyAbyssWallColor * skyAbyssWallLit(surface, h) * mix(0.45, 1.0, open);
-}
-
-// The dim light at the top of the stage, at `p`, in its own colour: over the stage, fading
-// out beyond it over the walls' distance, and dimming with depth as the rock's light does.
-vec3 skyAbyssWallGlow(vec3 p) {
-  float beyond = max(sdfBox(skyAbyssWallPlane(p), uSkyStageBox.zw), 0.0);
-  float glow = SKY_ABYSS_GLOW * uSkyAbyssWallSand.y * exp(-beyond / uSkyAbyssWalls.x);
-  return uSkyAbyssWallGlowColor * (glow * skyAbyssDim(dot(p, uSkyUp)));
-}
-
-// The sand over their rock at `p`, facing `surface`: dull and matte, lit as the rock is
-// and by the glow at the top of the stage, faintly mottled.
-vec3 skyAbyssWallSandShade(vec3 surface, vec3 p) {
-  float mottle = 0.9 + 0.2 * pnValueNoise2(skyAbyssWallPlane(p) / (0.2 * uSkyAbyssWalls.w));
-  return uSkyAbyssWallSandColor * (skyAbyssWallLit(surface, dot(p, uSkyUp)) + skyAbyssWallGlow(p)) * mottle;
-}
-
-// The sand's bedding where the walls are cut, `depth` below the lid and `across` along the
-// cut, a pixel `footprint` wide there: thin laminae of varying tone, warped, about 1, gone
-// where a pixel spans them.
-float skyAbyssWallSandLaminae(float depth, float across, float footprint) {
-  float size = SKY_ABYSS_SAND_BED * uSkyAbyssWalls.w;
-  float warp = (pnValueNoise2(vec2(across / (2.0 * uSkyAbyssWalls.w), depth / uSkyAbyssWalls.w)) - 0.5) * 2.0 * size;
-  float l = (depth + warp) / size;
-  float tone = mix(skyHash(vec3(floor(l), 9.0, 2.0)), skyHash(vec3(floor(l) + 1.0, 9.0, 2.0)), smoothstep(0.7, 1.0, fract(l)));
-  return 1.0 + 0.3 * (tone - 0.5) * (1.0 - smoothstep(0.3, 1.0, footprint / size));
-}
-
-// The rock's bedding where the walls are cut, `depth` below the lid and `across` along the
-// cut (world units), a pixel `footprint` wide there: its tone about 1 (x), and a joint
-// crossing it, 0 to 1 (y). Beds of varying tone, warped so they lean and pinch out, finer
-// laminae in them; joints straight down, here and there, each within its bed.
-vec2 skyAbyssWallStrata(float depth, float across, float footprint) {
-  float size = uSkyAbyssWalls.w;
-  float warp = (pnValueNoise2(vec2(across / (3.0 * size), depth / (2.0 * size))) - 0.5) * 0.3 * size;
-  float d = (depth + warp) / (SKY_ABYSS_BED * size);
-  float bed = floor(d);
-  float tone = mix(skyHash(vec3(bed, 3.0, 7.0)), skyHash(vec3(bed + 1.0, 3.0, 7.0)), smoothstep(0.9, 1.0, fract(d)));
-  // Laminae, a fifth of a bed, gone where a pixel spans them.
-  float l = 5.0 * d;
-  float lamina = mix(skyHash(vec3(floor(l), 5.0, 1.0)), skyHash(vec3(floor(l) + 1.0, 5.0, 1.0)), smoothstep(0.8, 1.0, fract(l)));
-  lamina = (lamina - 0.5) * (1.0 - smoothstep(0.1, 0.4, footprint / (0.2 * SKY_ABYSS_BED * size)));
-  float cell = SKY_ABYSS_JOINTS * size;
-  float j = across / cell;
-  float width = max(0.003 * cell, footprint);
-  float joint = step(0.7, skyHash(vec3(floor(j), bed, 11.0))) * (1.0 - smoothstep(width, 2.0 * width, abs(fract(j) - 0.5) * cell));
-  return vec2(0.6 + 0.6 * tone + 0.2 * lamina, joint);
-}
-
-// The fill where the plane they are cut away up to, or from above the lid, cuts the walls'
-// rock, where a view along `dir` from `origin` starts in it (`start`, skyAbyssWallStart):
-// the rock's inside, bedded and jointed, in its own colour, lit flat and matte; in the sand
-// over it, the sand's thin laminae; with a thin, paler edge where it meets their own face.
-vec3 skyAbyssWallFill(vec3 origin, vec3 dir, vec3 start, float pixel) {
-  float t = start.x;
-  vec3 p = origin + dir * t;
-  float h = dot(p, uSkyUp);
-  float depth = uSkyAbyssLevel - h;
-  bool lid = start.z > 0.5;
-  vec3 normal = lid ? uSkyUp : -uSkyAbyssWallClip.xyz;
-  vec3 across = lid ? uSkyEast : normalize(cross(uSkyUp, normal));
-  float footprint = t * pixel;
-  float slant = footprint / max(abs(dot(normal, dir)), 0.2);
-  vec2 strata = skyAbyssWallStrata(depth, dot(p, across), slant);
-  vec3 color = uSkyAbyssWallCutColor * skyAbyssWallLit(normal, h) * strata.x * (1.0 - 0.6 * strata.y);
-  if(uSkyAbyssWallSand.x > 0.0) {
-    vec2 around = skyAbyssWallAround(skyAbyssWallPlane(p), uSkyAbyssWalls.x);
-    float rock = skyAbyssWallRockShare(depth, around.x / around.y);
-    if(rock < 1.0)
-      color = mix(skyAbyssWallSandShade(normal, p) * skyAbyssWallSandLaminae(depth, dot(p, across), slant), color, rock);
-  }
-  // Its edge, where the rock it cuts is thinnest: a pixel or two wide.
-  return mix(color, color * SKY_ABYSS_CUT_EDGE, 1.0 - smoothstep(footprint, 3.0 * footprint, start.y));
-}
-
-// How much mist clings to the walls about `p`, 0 to 1: patches fixed in the world, a few
-// times as wide as it hangs off the rock.
-float skyAbyssWallMistAt(vec3 p) {
-  vec3 q = p / (3.0 * uSkyAbyssWallMist.y);
-  return smoothstep(0.45, 0.75, 0.65 * skyNoise3(q) + 0.35 * skyNoise3(q * 2.3 + 7.1));
-}
-
-// The mist's light `h` high: paler than the haze it is of, darkening with depth as it does.
-vec3 skyAbyssWallMistLight(float h) {
-  return SKY_ABYSS_MIST_LIGHT * skyAbyssHazeColor(h);
-}
-
-// How much of the hollow's light is left at `p`, beyond the walls' rim: all of it inside,
-// down to SKY_ABYSS_FADED uSkyAbyssWallFade beyond, and to none SKY_ABYSS_FADED_OUT times
-// that again further on, the two easing into each other. The rim is their middle at p's
-// depth, wandering and leaning out as they do, so the dark follows the hollow's own outline.
-float skyAbyssWallFar(vec3 p) {
-  float far = 1.0;
-  if(uSkyAbyssWallFade > 0.0) {
-    vec2 q = skyAbyssWallPlane(p);
-    float depth = max(uSkyAbyssLevel - dot(p, uSkyUp), 0.0);
-    float beyond = sdfBox(q, uSkyStageBox.zw) - uSkyAbyssWalls.x - uSkyAbyssWallShape.y * depth;
-    // Inside the rim however far it wanders in, the way round is not needed.
-    if(beyond > -uSkyAbyssWallShape.w) {
-      vec2 around = skyAbyssWallAround(q, uSkyAbyssWalls.x);
-      beyond -= uSkyAbyssWallShape.w * skyAbyssWallWander(around.x / around.y, depth);
-      float fade = uSkyAbyssWallFade;
-      far = mix(1.0, SKY_ABYSS_FADED, smoothstep(0.0, fade, beyond)) *
-        (1.0 - smoothstep(fade, (1.0 + SKY_ABYSS_FADED_OUT) * fade, beyond));
-    }
-  }
-  return far;
-}
-
-// How thick the walls' haze is `depth` below the lid at `q` (skyAbyssWallPlane), 0 to 1: all
-// of it inside their rim, thinning to none uSkyAbyssWallFade beyond. Their rim without its
-// wander, a box distance alone: the haze is smooth, and summed along the view.
-float skyAbyssWallFog(vec2 q, float depth) {
-  float beyond = sdfBox(q, uSkyStageBox.zw) - uSkyAbyssWalls.x - uSkyAbyssWallShape.y * depth;
-  return 1.0 - smoothstep(0.0, uSkyAbyssWallFade, beyond);
-}
-
-// How much of what lies `t` along `dir` from `origin` shows through a haze `haze` long where
-// it is thickest (skyAbyssWallFog): its thickness summed along the view, at the middles of
-// SKY_ABYSS_FOG_SAMPLES stretches of the part of it over the rectangle the haze can lie
-// over. Without the fade, as thick everywhere; all of it with no haze (`haze` 0).
-float skyAbyssWallClear(vec3 origin, vec3 dir, float t, float haze) {
-  float thick = t;
-  if(uSkyAbyssWallFade > 0.0 && haze > 0.0) {
-    float deepest = max(uSkyAbyssLevel - min(dot(origin, uSkyUp), dot(origin + dir * t, uSkyUp)), 0.0);
-    vec2 reach = uSkyStageBox.zw + uSkyAbyssWalls.x + uSkyAbyssWallShape.y * deepest + uSkyAbyssWallFade;
-    vec2 q = skyAbyssWallPlane(origin);
-    vec2 along = vec2(dot(dir, uSkyEast), -dot(dir, uSkyNorth));
-    vec2 toward = vec2(along.x < 0.0 ? -1.0 : 1.0, along.y < 0.0 ? -1.0 : 1.0) / max(abs(along), vec2(1e-9));
-    vec2 a = (-reach - q) * toward;
-    vec2 b = (reach - q) * toward;
-    float from = max(max(min(a.x, b.x), min(a.y, b.y)), 0.0);
-    float to = min(min(max(a.x, b.x), max(a.y, b.y)), t);
-    thick = 0.0;
-    if(to > from) {
-      float stretch = (to - from) / float(SKY_ABYSS_FOG_SAMPLES);
-      for(int i = 0; i < SKY_ABYSS_FOG_SAMPLES; i++) {
-        vec3 x = origin + dir * (from + (float(i) + 0.5) * stretch);
-        thick += skyAbyssWallFog(skyAbyssWallPlane(x), max(uSkyAbyssLevel - dot(x, uSkyUp), 0.0));
-      }
-      thick *= stretch;
-    }
-  }
-  return haze > 0.0 ? exp(-thick / haze) : 1.0;
-}
-
-// `color` `t` along `dir` from `origin`, in the walls' own haze (skyAbyssHazeColor where it
-// ends), thick in the hollow and thinning out beyond its rim (skyAbyssWallClear). `color`
-// is darkened by the hollow's light left where it is (`far`, skyAbyssWallFar; 1 on their
-// rim), so far from the hollow all fades to black. Solid: hazed into what lies behind,
-// its horizon would show through them.
-vec3 skyAbyssWallHaze(vec3 color, float far, vec3 origin, vec3 dir, float t) {
-  vec3 haze = skyAbyssHazeColor(dot(origin + dir * t, uSkyUp));
-  return mix(haze, color * far, skyAbyssWallClear(origin, dir, t, uSkyAbyssWalls.z));
-}
-
-// The lid seen from below `reach` along `dir` from `origin`, in the walls' haze: with sand
-// over the walls' rock, the sand's underside, lit as the sand in the walls is (the glow at
-// the top of the stage over it); without, the void's own lid colour. Faintly rippled as
-// the void's lid is (uSkyAbyssDetail), the ripples fading as the haze thickens and
-// smoothed over the `footprint` a pixel spans there (skyAbyssLidFootprint), and darkened
-// far from the hollow (skyAbyssWallFar). `surface` is the way it faces there: -uSkyUp where
-// it lies level, as the flat lid does; a relief's tells its shape. It takes no derivatives,
-// so a pixel may discard before it.
-vec3 skyAbyssLidFacing(vec3 origin, vec3 dir, float reach, float footprint, vec3 surface) {
-  vec3 hit = origin + dir * reach;
-  float clear = skyAbyssWallClear(origin, dir, reach, uSkyAbyssWalls.z);
-  vec3 lid = uSkyAbyssWallSand.x > 0.0 ? skyAbyssWallSandShade(surface, hit) : uSkyAbyssCeilingColor * skyAbyssLidRake(surface, uSkyUp);
-  if(uSkyAbyssDetail > 0.0)
-    lid *= 1.0 + pnFbmSigned2FilteredOver(skyAbyssLidCells(hit), 5, footprint) * 2.0 * uSkyAbyssDetail * clear;
-  return mix(skyAbyssHazeColor(dot(hit, uSkyUp)), lid * skyAbyssWallFar(hit), clear);
-}
-
-// The level lid (skyAbyssLidFacing).
-vec3 skyAbyssLid(vec3 origin, vec3 dir, float reach, float footprint) {
-  return skyAbyssLidFacing(origin, dir, reach, footprint, -uSkyUp);
-}
-
-// The level lid as the camera sees it from below, `reach` along `dir` from `origin`: the
-// walls' (skyAbyssLid) near their hollow, the plain void's (skyAbyssCeilingOver) far beyond
-// their rim, eased between by uSkyAbyssWallNear. It takes no derivatives.
-vec3 skyAbyssLidNear(vec3 origin, vec3 dir, float reach, float footprint) {
-  vec3 lid = vec3(0.0);
-  if(uSkyAbyssWallNear > 0.0)
-    lid = skyAbyssLid(origin, dir, reach, footprint);
-  if(uSkyAbyssWallNear < 1.0)
-    lid = mix(skyAbyssCeilingOver(origin + dir * reach, reach, footprint), lid, uSkyAbyssWallNear);
-  return lid;
-}
-
-// What the background draws of the walls along `dir` from `origin`, below the lid, laid
-// over what lies behind (premultiplied): their fill where the view starts in their rock,
-// hiding the rest. Their faces are their mesh's, down to its foot; their rock runs on down
-// without one. Below the horizon a view that meets none of the mesh passes under its
-// foot, and is drawn as a wall would be there, past the foot and at least a haze length
-// into the hollow: as dark as their haze is that deep. Rising from under the foot, one that
-// is out of the hollow by the time it is up to it went into that rock: the same.
-// ⚠️ One return: with early ones, Direct3D's compiler (ANGLE on Windows) warns X4000.
-vec4 skyAbyssWalls(vec3 dir, vec3 origin, float pixel) {
-  vec4 startUnder = skyAbyssWallStartUnder(origin, dir);
-  vec3 start = startUnder.xyz;
-  float y = dot(dir, uSkyUp);
-  float foot = uSkyAbyssLevel - uSkyAbyssWallGrid.z;
-  vec4 walls = vec4(0.0);
-  if(start.y > 0.0) {
-    vec3 color = skyAbyssWallFill(origin, dir, start, pixel);
-    walls = vec4(skyAbyssWallHaze(color, skyAbyssWallFar(origin + dir * start.x), origin, dir, start.x), 1.0);
-  } else if(y < 0.0) {
-    float h = min(dot(origin, uSkyUp), uSkyAbyssLevel);
-    float t = skyAbyssLidStart(origin, dir) + max(uSkyAbyssWalls.z, (h - foot) / -y);
-    walls = vec4(skyAbyssWallHaze(vec3(0.0), 1.0, origin, dir, t), 1.0);
-  } else {
-    float t = startUnder.w;
-    if(t < 1e29)
-      walls = vec4(skyAbyssWallHaze(vec3(0.0), 1.0, origin, dir, t), 1.0);
-  }
-  return walls;
-}
-#endif
 
 // How far the void covers the view of a camera at `origin` below its level: fading in over
 // uSkyAbyssTransition, or under a sea at once at its seabed. The same for every pixel.
@@ -1106,12 +678,11 @@ float skyAbyssUnder(vec3 origin) {
 
 // Below the level, an endless lid overhead hides the sky and a bottomless gradient fills
 // the view below the horizon (`depths`, skyAbyssDepths), as a layer over everything else
-// (premultiplied), as much as it has faded in (skyAbyssUnder). `walls` (skyAbyssWalls) is
-// laid over the lid; the depths have theirs already. The lid lies level over the camera, by
-// its look up (globeCameraLook), as deep over it as the camera is under the seabed on the
-// globe: far from the stage too, it is where that seabed is. Background only, so it never
-// hides data.
-vec4 skyAbyss(vec3 dir, vec3 origin, vec3 depths, vec4 walls) {
+// (premultiplied), as much as it has faded in (skyAbyssUnder). The lid lies level over the
+// camera, by its look up (globeCameraLook), as deep over it as the camera is under the seabed
+// on the globe: far from the stage too, it is where that seabed is. Background only, so it
+// never hides data.
+vec4 skyAbyss(vec3 dir, vec3 origin, vec3 depths) {
   float depth = uSkyAbyssLevel - globeViewHeight(origin);
   float under = skyAbyssUnder(origin);
   if(under <= 0.0)
@@ -1120,14 +691,9 @@ vec4 skyAbyss(vec3 dir, vec3 origin, vec3 depths, vec4 walls) {
   float y = dot(dir, globeCameraLook());
   // Rays that never reach the lid take the mirrored hit, so the derivatives stay continuous.
   float reach = depth / max(abs(y), 1e-6);
-  vec3 hit = origin + dir * reach;
-  #ifdef SKY_ABYSS_WALLS
-  vec3 ceiling = skyAbyssLidNear(origin, dir, reach, skyAbyssLidFootprint(hit));
-  #else
-  vec3 ceiling = skyAbyssCeiling(hit, reach);
-  #endif
+  vec3 ceiling = skyAbyssCeiling(origin + dir * reach, reach);
 
-  vec3 abyss = y > 0.0 ? ceiling * (1.0 - walls.a) + walls.rgb : depths;
+  vec3 abyss = y > 0.0 ? ceiling : depths;
   if(uSkyAbyssDarkening > 0.0)
     abyss *= exp(-depth / uSkyAbyssDarkening);
 
@@ -1217,15 +783,10 @@ vec4 skyCloudsLayer(vec3 dir, vec3 origin, float blend) {
 // The void: for a camera below its level, the lid overhead and the depths below the horizon,
 // over everything, as much as it has faded in (skyAbyss). From above it, with a sea, the
 // depths where the sea's layers leave them showing (skyOceanShowsVoid), under those layers:
-// nothing elsewhere. The walls (skyAbyssWalls) are taken once, for the depths and the lid,
-// and only where the void shows. ⚠️ Derivatives.
+// nothing elsewhere. ⚠️ Derivatives.
 vec4 skyAbyssLayer(vec3 dir, vec3 origin) {
-  float y = dot(dir, globeCameraLook());
   #ifdef SKY_OCEAN
   SkyOceanStagedView staged = skyOceanStagedView(dir, origin);
-  #endif
-  #ifdef SKY_ABYSS_WALLS
-  float pixel = length(fwidth(dir));
   #endif
   float under = skyAbyssUnder(origin);
   bool shown = under > 0.0;
@@ -1236,26 +797,18 @@ vec4 skyAbyssLayer(vec3 dir, vec3 origin) {
 
   // The void below the horizon, with its rock: taken once, as each call compiles a copy.
   vec3 depths = vec3(0.0);
-  vec4 walls = vec4(0.0);
   if(shown) {
     #ifdef SKY_OCEAN
     depths = skyOceanVoid(dir);
     #else
     depths = skyAbyssDepths(dir);
     #endif
-    #ifdef SKY_ABYSS_WALLS
-    // From above the lid only looking down, where the void can show; as much of them as the
-    // camera sees (uSkyAbyssWallNear), none far beyond their rim.
-    if(uSkyAbyssWallNear > 0.0 && (y < 0.0 || globeViewHeight(origin) < uSkyAbyssLevel))
-      walls = skyAbyssWalls(dir, origin, pixel) * uSkyAbyssWallNear;
-    depths = depths * (1.0 - walls.a) + walls.rgb;
-    #endif
   }
 
   vec4 layer = vec4(0.0);
   // The same for every pixel: the lid's derivatives stay sound.
   if(under > 0.0)
-    layer = skyAbyss(dir, origin, depths, walls);
+    layer = skyAbyss(dir, origin, depths);
   else if(shown)
     layer = vec4(depths, 1.0);
   return skyDebugTintOver(layer, SKY_DEBUG_SEA);

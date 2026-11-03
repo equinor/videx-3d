@@ -8,6 +8,8 @@ import {
   useRef,
 } from 'react';
 import { Group, Matrix4, Vector3 } from 'three';
+import { useStableBoundary } from '../../hooks/useStableBoundary';
+import { Boundary, boundaryDisc } from '../../sdk/geometries/boundary';
 import { CRS, getProjectionDefFromUtmZone } from '../../sdk/projection/crs';
 import {
   crsFromGeoFrame,
@@ -50,14 +52,17 @@ export type UtmAreaProps = {
    */
   frame?: GeoFrame;
   /**
-   * Its stage's area, `[minX, minZ, maxX, maxZ]` in its own X/Z (east and south of its
-   * origin): placed in a `World` in another frame, it is turned and set on the globe about
-   * this area's middle, where it then meets the globe exactly; flat, it stands off the curved
-   * Earth toward the area's edges by `d² / 2R` at `d` from there. Default about its origin.
-   * Given one, the area is a field the `World` has loaded: the relief (a `GeoRelief`) is
-   * see-through over it as over the anchored stage.
+   * Its stage's area in its own X/Z (east and south of its origin; see {@link Boundary}): a
+   * box, `[minX, minZ, maxX, maxZ]`; a turned box, `{ box, rotation }`; a circle,
+   * `{ centre, radius }`; or a polygon (a `PlanarPolygonGeometry`, or a ring of `[x, z]`
+   * points). Placed in a `World` in another frame, the area is turned and set on the globe
+   * about the middle of the smallest disc that holds it (`boundaryDisc`), where it then
+   * meets the globe exactly; flat, it stands off the curved Earth toward its edges by
+   * `d² / 2R` at `d` from there. Default about its origin. Given one, the area is a field the
+   * `World` has loaded: the relief (a `GeoRelief`) is see-through over it, in its shape, as
+   * over the anchored stage.
    */
-  bounds?: [number, number, number, number];
+  boundary?: Boundary;
 };
 
 const placing = new Matrix4();
@@ -84,8 +89,8 @@ const shift = new Matrix4();
  * </UtmArea>
  *
  * @example
- * <World frame={frame} bounds={bounds}>
- *  <UtmArea crsInstance={crs} bounds={bounds}>
+ * <World frame={frame} boundary={boundary}>
+ *  <UtmArea crsInstance={crs} boundary={boundary}>
  *    <Wellbores />
  *  </UtmArea>
  *  <Wgs84Position long={4.2} lat={60.6}>
@@ -114,7 +119,7 @@ export const UtmArea = forwardRef<CRS, PropsWithChildren<UtmAreaProps>>(
       originUnits = 'utm',
       offset = [0, 0, 0],
       frame,
-      bounds,
+      boundary: givenBoundary,
       children,
     },
     fref,
@@ -140,12 +145,16 @@ export const UtmArea = forwardRef<CRS, PropsWithChildren<UtmAreaProps>>(
     const own = useMemo(() => geoFrameFromCrs(crs), [crs]);
 
     // Where the World has it: not at all in the world's own map about the world's origin.
-    // Placed about its stage's middle, given one.
+    // Placed about the middle of its stage's disc, given one.
     const world = useWorld();
     const worldFrame = world?.frame ?? null;
-    const pivoted = bounds !== undefined;
-    const pivotX = bounds ? (bounds[0] + bounds[2]) / 2 : 0;
-    const pivotZ = bounds ? (bounds[1] + bounds[3]) / 2 : 0;
+    const boundary = useStableBoundary(givenBoundary);
+    const pivoted = boundary !== null;
+    const disc = useMemo(
+      () => (boundary ? boundaryDisc(boundary) : null),
+      [boundary],
+    );
+    const [pivotX, pivotZ] = disc ? disc.centre : [0, 0];
     const placement = useMemo(() => {
       if (!worldFrame) return null;
       const placed = placeGeoFrame(
@@ -174,12 +183,11 @@ export const UtmArea = forwardRef<CRS, PropsWithChildren<UtmAreaProps>>(
     // A field the World has loaded: given its stage's area, the relief is see-through over it
     // (world.md, step 7e), read through the group's own placement.
     const addField = useWorldFields()?.addField;
-    const [b0, b1, b2, b3] = bounds ?? [];
     useLayoutEffect(() => {
       const group = ref.current;
-      if (!addField || !group || !pivoted) return;
-      return addField({ object: group, bounds: [b0!, b1!, b2!, b3!] });
-    }, [addField, pivoted, b0, b1, b2, b3]);
+      if (!addField || !group || !boundary) return;
+      return addField({ object: group, boundary });
+    }, [addField, boundary]);
 
     // Each frame, as the globe's disc or level may change under it: a handful of vector
     // operations, and the area's world matrices composed again only when it moves.

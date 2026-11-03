@@ -47,7 +47,7 @@ minimap.
 ### Flat, or on a globe
 
 A `World` lies on a **globe**, with or without a `Scenery`: over a flat disc around the field
-(the `World`'s `bounds`, or a `SceneryStage`'s) the globe *is* the field's plane, so field data
+(the one holding the `World`'s `boundary`, or a `SceneryStage`'s) the globe *is* the field's plane, so field data
 never moves; beyond it the Earth falls away. The `Scenery` only draws on it — the sea, the
 sky, the relief — so coasts and mountains sit on the horizon where they belong, and turning it
 on or off moves nothing. The GIS layers lie on the same globe. Your field data stays flat in
@@ -94,7 +94,7 @@ generator functions from `@equinor/videx-3d/generators`.
 |--|--|
 | `Scenery` | the sky and the light, with the globe. `observer={{ date }}` inside a `World` puts the sun, moon and stars where they are at that moment over the frame's origin |
 | `SceneryOcean` | the endless sea (`level`) and seabed (`depth`) |
-| `SceneryStage` | the sea and seabed on real geometry around the field (`bounds`), and with `relief` the land and seabed beyond, from your elevation data, read in the `World`'s frame |
+| `SceneryStage` | the sea and seabed on real geometry around the field (its `boundary`), and with `relief` the land and seabed beyond, from your elevation data, read in the `World`'s frame |
 | `SceneryAnchor` | places rigid content far from the field on the globe (a facility 100 km out) |
 | `applyGlobe(material, globe)` | puts long content (a pipeline) on the globe per vertex |
 | `useLevelHorizon()` | keeps the horizon level when the camera is far from the field |
@@ -152,8 +152,9 @@ blocks (`reliefWindow`). See [relief.md](./relief.md#data).
 - **The `World` owns the globe,** with or without a `Scenery`: the sky draws on it, and
   `UtmArea`, `SceneryAnchor`, the layers, `useLevelHorizon` and the minimap's altitudes use it,
   so turning the scenery on or off moves nothing.
-- **More than one field:** each in its own `UtmArea` (its `bounds`, its stage, so it is placed
-  best about its middle). Anchoring another is giving the `World` its `frame` and `bounds`;
+- **More than one field:** each in its own `UtmArea` (its `boundary`, its stage, so it is
+  placed best about its middle). Anchoring another is giving the `World` its `frame` and
+  `boundary`;
   `onFrameChange` says how to carry the camera, `onFrameSettled` when to uncover the switch
   ([world.md, step 7](./world.md#switching-the-anchor-a-controlled-switch)). A field not
   anchored lies flat on the globe's tangent at its middle, so toward its edges it stands off
@@ -265,7 +266,7 @@ flat in the field's map, and far from the field stands off the curved sea. A `Ut
 needs a `UtmArea`: easting and northing are in its map.
 
 ```tsx
-<World frame={frame} bounds={[-8000, -8000, 8000, 8000]}>
+<World frame={frame} boundary={[-8000, -8000, 8000, 8000]}>
   <UtmArea crsInstance={crs}>
     <Wellbores /* … */ />
   </UtmArea>
@@ -288,12 +289,16 @@ stood over the field at that moment, and compass north is true north there.
 
 ### 5. Land and seabed: a stage and a relief
 
-The stage is the area of the field (scene X/Z, in metres; the `World`'s `bounds`): there the
-sea and seabed are real geometry and the globe is flat. A `GeoRelief` adds the land and seabed
+The stage is the area of the field (scene X/Z, in metres; the `World`'s `boundary`): there the
+sea and seabed are real geometry and the globe is flat. A `boundary` is a box
+(`[minX, minZ, maxX, maxZ]`), a turned box (`{ box, rotation }`), a circle
+(`{ centre, radius }`) or a polygon (a `PlanarPolygonGeometry`, or a ring of `[x, z]` points),
+so a field turned against its grid needs no larger stage than itself; see
+[scenery.md](./scenery.md#boundaries). A `GeoRelief` adds the land and seabed
 from your grids, coarse to fine, each finer one winning where it has data.
 
 ```tsx
-<World frame={frame} bounds={[-8000, -8000, 8000, 8000]}>
+<World frame={frame} boundary={[-8000, -8000, 8000, 8000]}>
   <Scenery observer={{ date }}>
     <SceneryOcean level={0} depth={100} />
     <SceneryStage />
@@ -371,7 +376,7 @@ export const FieldView = ({ store, registry, licences }) => (
     <CameraControls makeDefault />
     <DataProvider store={store}>
       <GeneratorsProvider registry={registry}>
-        <World frame={frame} bounds={[-8000, -8000, 8000, 8000]}>
+        <World frame={frame} boundary={[-8000, -8000, 8000, 8000]}>
           <Scenery observer={{ date: new Date('2024-09-10T12:00:00Z') }}>
             <SceneryOcean level={0} depth={100} />
             <SceneryStage />

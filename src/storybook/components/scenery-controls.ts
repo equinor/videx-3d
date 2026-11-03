@@ -173,27 +173,6 @@ export type SceneryArgs = {
   abyssDepthDetail: number;
   abyssDepthDetailScale: number;
   abyssFalloff: number;
-  abyssWalls: boolean;
-  abyssWallDistance: number;
-  abyssWallColor: string;
-  abyssWallCutColor: string;
-  abyssWallLightStrength: number;
-  abyssWallLightElevation: number;
-  abyssWallLightDepth: number;
-  abyssWallHazeDistance: number;
-  abyssWallHazeDepth: number;
-  abyssWallMist: number;
-  abyssWallMistReach: number;
-  abyssWallRockSize: number;
-  abyssWallRelief: number;
-  abyssWallFlare: number;
-  abyssWallWander: number;
-  abyssWallCutDistance: number;
-  abyssWallSand: number;
-  abyssWallSandColor: string;
-  abyssWallGlow: number;
-  abyssWallGlowColor: string;
-  abyssWallRimFade: number;
   // Environment
   globe: boolean;
   environment: boolean;
@@ -319,28 +298,6 @@ export const sceneryArgs: SceneryArgs = {
   abyssDepthDetail: sceneryDefaults.abyss.depthDetail,
   abyssDepthDetailScale: sceneryDefaults.abyss.depthDetailScale,
   abyssFalloff: sceneryDefaults.abyss.falloff,
-  // TODO: back to false once the walls are done.
-  abyssWalls: true,
-  abyssWallDistance: sceneryDefaults.abyss.walls.distance,
-  abyssWallColor: sceneryDefaults.abyss.walls.color,
-  abyssWallCutColor: sceneryDefaults.abyss.walls.cutColor,
-  abyssWallLightStrength: sceneryDefaults.abyss.walls.lightStrength,
-  abyssWallLightElevation: sceneryDefaults.abyss.walls.lightElevation,
-  abyssWallLightDepth: sceneryDefaults.abyss.walls.lightDepth,
-  abyssWallHazeDistance: sceneryDefaults.abyss.walls.hazeDistance,
-  abyssWallHazeDepth: sceneryDefaults.abyss.walls.hazeDepth,
-  abyssWallMist: sceneryDefaults.abyss.walls.mist,
-  abyssWallMistReach: sceneryDefaults.abyss.walls.mistReach,
-  abyssWallRockSize: sceneryDefaults.abyss.walls.rockSize,
-  abyssWallRelief: sceneryDefaults.abyss.walls.relief,
-  abyssWallFlare: sceneryDefaults.abyss.walls.flare,
-  abyssWallWander: sceneryDefaults.abyss.walls.wander,
-  abyssWallCutDistance: sceneryDefaults.abyss.walls.cutDistance,
-  abyssWallSand: sceneryDefaults.abyss.walls.sand,
-  abyssWallSandColor: sceneryDefaults.abyss.walls.sandColor,
-  abyssWallGlow: sceneryDefaults.abyss.walls.glow,
-  abyssWallGlowColor: sceneryDefaults.abyss.walls.glowColor,
-  abyssWallRimFade: sceneryDefaults.abyss.walls.rimFade,
   globe: sceneryDefaults.globe,
   environment: true,
   lightProbe: true,
@@ -574,28 +531,6 @@ export const sceneryAbyssFromArgs = (args: SceneryArgs): SceneryAbyssProps => ({
   depthDetail: args.abyssDepthDetail,
   depthDetailScale: args.abyssDepthDetailScale,
   falloff: args.abyssFalloff,
-  walls: args.abyssWalls && {
-    distance: args.abyssWallDistance,
-    color: args.abyssWallColor,
-    cutColor: args.abyssWallCutColor,
-    lightStrength: args.abyssWallLightStrength,
-    lightElevation: args.abyssWallLightElevation,
-    lightDepth: args.abyssWallLightDepth,
-    hazeDistance: args.abyssWallHazeDistance,
-    hazeDepth: args.abyssWallHazeDepth,
-    mist: args.abyssWallMist,
-    mistReach: args.abyssWallMistReach,
-    rockSize: args.abyssWallRockSize,
-    relief: args.abyssWallRelief,
-    flare: args.abyssWallFlare,
-    wander: args.abyssWallWander,
-    cutDistance: args.abyssWallCutDistance,
-    sand: args.abyssWallSand,
-    sandColor: args.abyssWallSandColor,
-    glow: args.abyssWallGlow,
-    glowColor: args.abyssWallGlowColor,
-    rimFade: args.abyssWallRimFade,
-  },
 });
 
 /**
@@ -1010,7 +945,7 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
   skyVoid: {
     ...toggle(
       SKY,
-      "The void\u2019s grey gradient in the sky\u2019s place (`background: 'void'`), as the stand-in draws it while the sky compiles: no air, sun, moon, stars or clouds, and the scene lit by the subsurface everywhere. The void, its walls and a sea are drawn as ever. Recompiles.",
+      "The void\u2019s grey gradient in the sky\u2019s place (`background: 'void'`), as the stand-in draws it while the sky compiles: no air, sun, moon, stars or clouds, and the scene lit by the subsurface everywhere. The void and a sea are drawn as ever. Recompiles.",
     ),
     if: { arg: 'drawSky' },
   },
@@ -1219,28 +1154,19 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     ...range(0, 20, 0.1, SUBSURFACE),
     if: { arg: 'subsurfaceBelow' },
   },
-  abyssCeiling: color(
-    SUBSURFACE,
-    'The void\u2019s lid overhead. With walls, only while they have no sand.',
-  ),
+  abyssCeiling: color(SUBSURFACE, 'The void\u2019s lid overhead.'),
   abyssHorizon: color(
     SUBSURFACE,
-    'Where the void\u2019s lid and depths meet, far away. With walls, the colour of their haze and mist.',
+    'Where the void\u2019s lid and depths meet, far away.',
   ),
-  abyssDepth: color(
+  abyssDepth: color(SUBSURFACE, 'Straight down, deep in the void.'),
+  abyssFadeDistance: range(
+    0,
+    100000,
+    500,
     SUBSURFACE,
-    'Straight down, deep in the void. With walls, only in the void background (`skyVoid`) and while the sky compiles: their haze fills the depths.',
+    'Distance over which the void\u2019s lid recedes into its horizon colour, in metres; 0 for never.',
   ),
-  abyssFadeDistance: {
-    ...range(
-      0,
-      100000,
-      500,
-      SUBSURFACE,
-      'Distance over which the void\u2019s lid recedes into its horizon colour, in metres; 0 for never. Without walls only: with them the lid is in their haze (`abyssWallHazeDistance`).',
-    ),
-    if: { arg: 'abyssWalls', truthy: false },
-  },
   abyssTransition: range(
     1,
     2000,
@@ -1260,7 +1186,7 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     1,
     0.01,
     SUBSURFACE,
-    'Noise ripples on the void\u2019s lid, the sand\u2019s underside with walls; 0 for none.',
+    'Noise ripples on the void\u2019s lid; 0 for none.',
   ),
   abyssDetailScale: range(
     50,
@@ -1269,210 +1195,27 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     SUBSURFACE,
     'Size of those ripples, in metres.',
   ),
-  abyssDepthDetail: {
-    ...range(
-      0,
-      0.5,
-      0.01,
-      SUBSURFACE,
-      'Faint distant rock in the void\u2019s depths, wavy strata broken by crags; 0 for none. Without walls only.',
-    ),
-    if: { arg: 'abyssWalls', truthy: false },
-  },
-  abyssDepthDetailScale: {
-    ...range(0.25, 4, 0.05, SUBSURFACE, 'Size of the rock\u2019s features.'),
-    if: { arg: 'abyssWalls', truthy: false },
-  },
+  abyssDepthDetail: range(
+    0,
+    0.5,
+    0.01,
+    SUBSURFACE,
+    'Faint distant rock in the void\u2019s depths, wavy strata broken by crags; 0 for none.',
+  ),
+  abyssDepthDetailScale: range(
+    0.25,
+    4,
+    0.05,
+    SUBSURFACE,
+    'Size of the rock\u2019s features.',
+  ),
   abyssFalloff: range(
     0.1,
     3,
     0.05,
     SUBSURFACE,
-    'How the void\u2019s depths darken below the horizon: the gradient\u2019s exponent. Smaller reaches the depth colour sooner. With walls, only in the void background (`skyVoid`) and while the sky compiles.',
+    'How the void\u2019s depths darken below the horizon: the gradient\u2019s exponent. Smaller reaches the depth colour sooner.',
   ),
-  abyssWalls: toggle(
-    SUBSURFACE,
-    'Prototype: cliffs about the stage in the void, so moving in it shows its scale.',
-  ),
-  abyssWallDistance: {
-    ...range(
-      1000,
-      50000,
-      500,
-      SUBSURFACE,
-      'How far out from the stage\u2019s edge the walls stand at the lid, in metres. Also how far the glow reaches beyond the stage, and what caps `abyssWallRelief` and `abyssWallWander`.',
-    ),
-    if: { arg: 'abyssWalls' },
-  },
-  abyssWallColor: {
-    ...color(SUBSURFACE, 'The walls\u2019 rock.'),
-    if: { arg: 'abyssWalls' },
-  },
-  abyssWallCutColor: {
-    ...color(SUBSURFACE, 'The rock\u2019s inside, where the walls are cut.'),
-    if: { arg: 'abyssWalls' },
-  },
-  abyssWallLightStrength: {
-    ...range(
-      0,
-      1,
-      0.01,
-      SUBSURFACE,
-      'How strongly the walls\u2019 own light rakes them, bringing out the cliffs; 0 for none, the subsurface\u2019s light map alone.',
-    ),
-    if: { arg: 'abyssWalls' },
-  },
-  abyssWallLightElevation: {
-    ...range(
-      -90,
-      90,
-      1,
-      SUBSURFACE,
-      'Elevation of that raking light, in degrees, at the subsurface light\u2019s bearing; below 0 from below.',
-    ),
-    if: { arg: 'abyssWalls' },
-  },
-  abyssWallLightDepth: {
-    ...range(
-      1000,
-      50000,
-      500,
-      SUBSURFACE,
-      'Depth below the lid over which the light on the walls, the sand and the glow fades to nearly black, in metres: larger lights them deeper. The walls\u2019 mesh reaches 2.5 times as deep. The haze darkens by its own (`abyssWallHazeDepth`).',
-    ),
-    if: { arg: 'abyssWalls' },
-  },
-  abyssWallHazeDistance: {
-    ...range(
-      0,
-      200000,
-      1000,
-      SUBSURFACE,
-      'Distance over which the walls, the lid and the depths fade into the haze in the hollow, in metres: smaller is thicker; 0 for none. Its colour is `abyssHorizon`.',
-    ),
-    if: { arg: 'abyssWalls' },
-  },
-  abyssWallHazeDepth: {
-    ...range(
-      0,
-      50000,
-      500,
-      SUBSURFACE,
-      'Depth below the lid over which that haze, and the mist, darken to nearly black, in metres: larger keeps the haze lit deeper, so more of it shows; 0 for never.',
-    ),
-    if: { arg: 'abyssWalls' },
-  },
-  abyssWallMist: {
-    ...range(
-      0,
-      1,
-      0.01,
-      SUBSURFACE,
-      'How dense the mist clinging to the walls is, in patches; 0 for none. The open gap stays clear.',
-    ),
-    if: { arg: 'abyssWalls' },
-  },
-  abyssWallMistReach: {
-    ...range(
-      100,
-      10000,
-      100,
-      SUBSURFACE,
-      'How far the mist hangs off the rock, in metres.',
-    ),
-    if: { arg: 'abyssWalls' },
-  },
-  abyssWallRockSize: {
-    ...range(
-      200,
-      20000,
-      100,
-      SUBSURFACE,
-      'Size of the walls\u2019 rock features, in metres: the cliffs, the beds and joints where they are cut, the sand\u2019s mottle. Smaller is finer, and needs more of the mesh\u2019s columns (at most 1024 round).',
-    ),
-    if: { arg: 'abyssWalls' },
-  },
-  abyssWallRelief: {
-    ...range(
-      0,
-      10000,
-      100,
-      SUBSURFACE,
-      'How far the walls\u2019 rock stands in and out, in metres; at most 0.9 of `abyssWallDistance`.',
-    ),
-    if: { arg: 'abyssWalls' },
-  },
-  abyssWallFlare: {
-    ...range(
-      0,
-      2,
-      0.05,
-      SUBSURFACE,
-      'How far the walls lean out per metre of depth, so the hollow widens; 0 for straight down.',
-    ),
-    if: { arg: 'abyssWalls' },
-  },
-  abyssWallWander: {
-    ...range(
-      0,
-      20000,
-      100,
-      SUBSURFACE,
-      'How far the walls\u2019 outline wanders in and out in long bays and headlands, in metres; 0 for none; at most `abyssWallDistance` less `abyssWallRelief`.',
-    ),
-    if: { arg: 'abyssWalls' },
-  },
-  abyssWallCutDistance: {
-    ...range(
-      0,
-      20000,
-      100,
-      SUBSURFACE,
-      'How far in front of the camera, at least, a vertical plane cuts the walls away, in metres; it cuts through the stage\u2019s centre while that is further, and below the lid past the stage, so no cut face stands behind it (easing in over this distance down from the lid). Once the whole stage is in view through the hollow, nothing is cut.',
-    ),
-    if: { arg: 'abyssWalls' },
-  },
-  abyssWallSand: {
-    ...range(
-      0,
-      5000,
-      100,
-      SUBSURFACE,
-      'How thick the soft sand over the walls\u2019 rock is, below the lid, in metres: the hollow\u2019s top in it is smooth, draped over the rock\u2019s large shape, and the lid seen from below is that sand. 0 for none: all rock, and the void\u2019s own lid.',
-    ),
-    if: { arg: 'abyssWalls' },
-  },
-  abyssWallSandColor: {
-    ...color(
-      SUBSURFACE,
-      'The sand over the walls\u2019 rock, and the lid from below.',
-    ),
-    if: { arg: 'abyssWalls' },
-  },
-  abyssWallGlow: {
-    ...range(
-      0,
-      1,
-      0.01,
-      SUBSURFACE,
-      'A dim light at the top of the stage: on the lid and the sand over it, fading out beyond it over about `abyssWallDistance`; 0 for none. Needs sand.',
-    ),
-    if: { arg: 'abyssWalls' },
-  },
-  abyssWallGlowColor: {
-    ...color(SUBSURFACE, 'That light\u2019s colour.'),
-    if: { arg: 'abyssWalls' },
-  },
-  abyssWallRimFade: {
-    ...range(
-      0,
-      200000,
-      1000,
-      SUBSURFACE,
-      'The distance beyond the walls\u2019 rim over which the hollow\u2019s light fades to a fifth, and the rest to black over twice that again, and their haze thins to none, in metres: far from the hollow the lid, the sand and the cut darken to black, seen through clear air, instead of fading into the haze\u2019s grey. 0 for none.',
-    ),
-    if: { arg: 'abyssWalls' },
-  },
   globe: toggle(
     ENVIRONMENT,
     'The Earth is a fixed globe: the sea, the sky and the clouds follow its curve, so the horizon drops as the camera climbs: about 1\u00b0 at 1 km, 4\u00b0 at 15 km. The sea stays flat over the scene. Off, a flat sea everywhere: only right near one field.',
@@ -1833,7 +1576,6 @@ const SCENERY_HIDE_LAYERS: Record<string, SceneryLayer> = {
   'sky sea': 'sea',
   'sky water': 'water',
   'sky surface': 'surface',
-  'sky walls': 'walls',
 };
 const STAGE_HIDE_LAYERS: SceneryStageLayer[] = ['surface', 'bed'];
 // And the relief, a `GeoRelief`'s `visible`.
@@ -1869,49 +1611,9 @@ export function sceneryHideFromArgs(hide: string[] = []) {
 /** A `SceneryStage`'s `outline` debug view as a control. */
 export const sceneryOutlineArgType = {
   description:
-    'The stage\u2019s `bounds` (grey) and its occupants\u2019 outlines at the sea\u2019s seabed (white) and at its surface (black), drawn over everything.',
+    'The stage\u2019s `boundary` (grey) and its occupants\u2019 outlines at the sea\u2019s seabed (white) and at its surface (black), drawn over everything.',
   table: { category: 'Debug' },
 } as const;
-
-/** Story args for the void walls' debug views (see {@link sceneryWallDebugFromArgs}). */
-export type SceneryWallDebugArgs = {
-  wallWireframe: boolean;
-  wallFlat: boolean;
-  wallCut: boolean;
-};
-
-export const sceneryWallDebugArgs: SceneryWallDebugArgs = {
-  wallWireframe: false,
-  wallFlat: false,
-  wallCut: false,
-};
-
-export const sceneryWallDebugArgTypes: ArgTypes<SceneryWallDebugArgs> = {
-  wallWireframe: {
-    description:
-      'The void walls\u2019 mesh drawn as its triangles\u2019 edges, in one colour.',
-    table: { category: 'Debug' },
-  },
-  wallFlat: {
-    description:
-      'The void walls shaded as their mesh\u2019s triangles face, without the rock\u2019s finer relief from the cliffs\u2019 normal map; and the faces of their cut (on the cut plane, and on the lid from above) drawn as geometry, so they hide the data behind the rock.',
-    table: { category: 'Debug' },
-  },
-  wallCut: {
-    description:
-      'The vertical plane the void walls are cut along, as a grid over everything: it faces the camera\u2019s heading, through the stage\u2019s centre or `abyssWallCutDistance` in front of the camera, and below the lid past the stage, from the lid down to the walls\u2019 foot; gone once the whole stage is in view through the hollow and nothing is cut.',
-    table: { category: 'Debug' },
-  },
-};
-
-/** The void walls' debug views (`SceneryDebug.walls`) from {@link SceneryWallDebugArgs}. */
-export function sceneryWallDebugFromArgs(args: SceneryWallDebugArgs) {
-  return {
-    wireframe: args.wallWireframe,
-    flat: args.wallFlat,
-    cut: args.wallCut,
-  };
-}
 
 export const sceneryReliefArgs: SceneryReliefArgs = {
   ...sceneryReliefLookArgs,

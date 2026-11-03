@@ -118,11 +118,6 @@ import {
   SceneryZone,
   sceneryZone,
 } from './scenery-model';
-import { bakeSkyCliffs } from './scenery-cliffs';
-import {
-  SceneryAbyssWallFrame,
-  SceneryAbyssWallLayer,
-} from './SceneryAbyssWallLayer';
 import { SceneryCubeView } from './SceneryCubeView';
 import {
   SceneryGraticuleLabelLayer,
@@ -157,7 +152,7 @@ export type SceneryCaptureOptions = {
 /**
  * A layer the {@link Scenery} draws itself: its background's (see `SceneryBackgroundLayer`:
  * the sky itself, its clouds, the void, the sea seen from the air, the view from in the
- * water, the sea's surface), all of them at once (`background`), and its void's walls' mesh.
+ * water, the sea's surface), and all of them at once (`background`).
  */
 export type SceneryLayer =
   | 'background'
@@ -166,8 +161,7 @@ export type SceneryLayer =
   | 'abyss'
   | 'sea'
   | 'water'
-  | 'surface'
-  | 'walls';
+  | 'surface';
 
 /**
  * Views for seeing how the sky and a `SceneryStage` fit together. They only change what
@@ -184,8 +178,6 @@ export type SceneryDebug = {
   hide?: SceneryLayer[];
   /** the environment's bake for the zone in view as its six faces, in the canvas' lower right corner (`+Y` over `-X -Z +X +Z`, `-Y` under) */
   environment?: boolean;
-  /** the void's walls' mesh: its triangles drawn as lines in one colour (`wireframe`); shaded as its triangles face, without the rock's relief, with the faces of the cut drawn as geometry that hides what lies behind the rock (`flat`); and the plane they are cut along, as a grid over everything (`cut`) */
-  walls?: { wireframe?: boolean; flat?: boolean; cut?: boolean };
 };
 
 /**
@@ -218,7 +210,7 @@ export type SceneryProps = {
   /**
    * The Earth is a fixed globe (`SceneryMaterial.globe`): the sea, the sky and the clouds follow
    * its curve, so the horizon drops as the camera climbs (about 1° at 1 km, 4° at 15 km).
-   * Under a `SceneryStage` the sea stays flat over the disc that holds its `bounds`. The
+   * Under a `SceneryStage` the sea stays flat over the disc that holds its `boundary`. The
    * bakes keep a level horizon. Default true
    *
    * Inside a `World` the globe is the World's, and so is this choice (its `globe`): this one
@@ -234,7 +226,7 @@ export type SceneryProps = {
    * is rebuilt or baked again, and the environment and the light probe stay on, lit by
    * the `subsurface`. `'void'` draws the void's grey gradient in the sky's place (the
    * stand-in's, while the sky compiles): no air, sun, moon, stars or clouds, and the
-   * scene lit by the `subsurface` everywhere; the void, its walls and a sea are drawn as
+   * scene lit by the `subsurface` everywhere; the void and a sea are drawn as
    * ever. Changing to or from it recompiles the sky's own layer. Default true
    */
   background?: boolean | 'void';
@@ -297,6 +289,8 @@ const PROBE_EASE = 0.15;
 const DEFAULT_CAPTURE_MAX_WAIT = 1000;
 // Roughness added to the sea's sun glint at the height of twilight (OceanMaterial.sunGlintSpread).
 const SKY_TWILIGHT_GLINT_SPREAD = 0.08;
+// The elevation of the light raking the void's lid from below, in degrees: level.
+const ABYSS_LIGHT_ELEVATION = 0;
 const DEFAULT_UP: Vec3 = [0, 1, 0];
 const DEFAULT_NORTH: Vec3 = [0, 0, -1];
 
@@ -530,42 +524,6 @@ export const Scenery = ({
   const abyssDepthDetailScale =
     abyssOptions?.depthDetailScale ?? abyssDefaults.depthDetailScale;
   const abyssFalloff = abyssOptions?.falloff ?? abyssDefaults.falloff;
-  const wallsOptions =
-    abyssOptions?.walls === true ? {} : abyssOptions?.walls || null;
-  const hasWalls = wallsOptions !== null;
-  const wallDistance = wallsOptions?.distance ?? abyssDefaults.walls.distance;
-  const wallColor = toHex(wallsOptions?.color ?? abyssDefaults.walls.color);
-  const wallCutColor = toHex(
-    wallsOptions?.cutColor ?? abyssDefaults.walls.cutColor,
-  );
-  const wallLightStrength =
-    wallsOptions?.lightStrength ?? abyssDefaults.walls.lightStrength;
-  const wallLightElevation =
-    wallsOptions?.lightElevation ?? abyssDefaults.walls.lightElevation;
-  const wallLightDepth =
-    wallsOptions?.lightDepth ?? abyssDefaults.walls.lightDepth;
-  const wallHazeDistance =
-    wallsOptions?.hazeDistance ?? abyssDefaults.walls.hazeDistance;
-  const wallHazeDepth =
-    wallsOptions?.hazeDepth ?? abyssDefaults.walls.hazeDepth;
-  const wallMist = wallsOptions?.mist ?? abyssDefaults.walls.mist;
-  const wallMistReach =
-    wallsOptions?.mistReach ?? abyssDefaults.walls.mistReach;
-  const wallRockSize = wallsOptions?.rockSize ?? abyssDefaults.walls.rockSize;
-  const wallRelief = wallsOptions?.relief ?? abyssDefaults.walls.relief;
-  const wallFlare = wallsOptions?.flare ?? abyssDefaults.walls.flare;
-  const wallWander = wallsOptions?.wander ?? abyssDefaults.walls.wander;
-  const wallCutDistance =
-    wallsOptions?.cutDistance ?? abyssDefaults.walls.cutDistance;
-  const wallSand = wallsOptions?.sand ?? abyssDefaults.walls.sand;
-  const wallSandColor = toHex(
-    wallsOptions?.sandColor ?? abyssDefaults.walls.sandColor,
-  );
-  const wallGlow = wallsOptions?.glow ?? abyssDefaults.walls.glow;
-  const wallGlowColor = toHex(
-    wallsOptions?.glowColor ?? abyssDefaults.walls.glowColor,
-  );
-  const wallRimFade = wallsOptions?.rimFade ?? abyssDefaults.walls.rimFade;
   // Drawn at all; the void's gradient in the sky's place; the sky itself.
   const drawn = background !== false;
   const voided = background === 'void';
@@ -744,7 +702,6 @@ export const Scenery = ({
   // In render rather than an effect, so a stage or layer made in this commit compiles with
   // it. A no-op unless a switch changed. The waves' defines likewise, for the sea's layers.
   material.oceanBedDetail = bedDetail;
-  material.abyssWalls = hasWalls;
   material.voidBackground = voided;
   material.clouds = cloudsOn;
   material.ocean = hasOcean;
@@ -809,7 +766,7 @@ export const Scenery = ({
 
   // The stand-in is drawn while the sky compiles, so it compiles first, ahead of the sky's
   // own, and is drawn once it has: drawn before, Chrome's GPU process waits for it behind
-  // everything queued before it, freezing the browser (see `bakeSkyCliffs`).
+  // everything queued before it, freezing the browser.
   // What the sky reports to `onProgress`: its compiles and its stages' relief tiles.
   const reportRef = useRef(onProgress);
   const labelsRef = useRef(progressLabels);
@@ -926,42 +883,21 @@ export const Scenery = ({
     subsurfaceLight?.transition ?? subsurfaceDefaults.transition,
     0,
   );
-  // The void's walls stand in the subsurface: raked by a light at its light's bearing, at
-  // their own elevation, and filled in by its light map.
-  const wallLightDirection = useMemo(
+  // The void's lid is raked by a light level at the subsurface light's bearing, so a relief's
+  // underside shows its shape.
+  const abyssLightDirection = useMemo(
     () =>
       new Vector3().fromArray(
-        directionFromCompass(subsurfaceAzimuth, wallLightElevation, {
+        directionFromCompass(subsurfaceAzimuth, ABYSS_LIGHT_ELEVATION, {
           up: [upX, upY, upZ],
           north: [northX, northY, northZ],
         }),
       ),
-    [
-      subsurfaceAzimuth,
-      wallLightElevation,
-      upX,
-      upY,
-      upZ,
-      northX,
-      northY,
-      northZ,
-    ],
+    [subsurfaceAzimuth, upX, upY, upZ, northX, northY, northZ],
   );
   useLayoutEffect(() => {
-    material.setAbyssWallLight(wallLightDirection, subsurfaceColor);
-  }, [material, wallLightDirection, subsurfaceColor]);
-  // Their cliffs, baked once while they are on; the walls are drawn once they are.
-  useEffect(() => {
-    if (!hasWalls) return;
-    const cliffs = bakeSkyCliffs(gl, undefined, progress.compiles.track());
-    void cliffs.ready.then(baked => {
-      if (baked) material.abyssWallRock = cliffs.target.texture;
-    });
-    return () => {
-      material.abyssWallRock = null;
-      cliffs.dispose();
-    };
-  }, [gl, material, hasWalls, progress]);
+    material.setAbyssLight(abyssLightDirection);
+  }, [material, abyssLightDirection]);
   const light = useRef<DirectionalLight>(null);
   // 0 the sky's light, 1 the subsurface's; null until the first frame, which takes the zone's.
   const subsurfaceShare = useRef<number | null>(null);
@@ -998,7 +934,6 @@ export const Scenery = ({
             seabed: oceanSeabed,
             seabedOpacity: oceanSeabedOpacity,
             definesKey,
-            abyssWalls: hasWalls,
             visible: drawn,
             ready,
             stage: addStage,
@@ -1015,7 +950,6 @@ export const Scenery = ({
       oceanSeabed,
       oceanSeabedOpacity,
       definesKey,
-      hasWalls,
       drawn,
       ready,
       addStage,
@@ -1035,8 +969,6 @@ export const Scenery = ({
     [water, material],
   );
   const surfaceMesh = useRef<Mesh>(null);
-  // The walls' layer's work each frame, run after their cut (see SceneryAbyssWallLayer).
-  const wallFrame = useRef<SceneryAbyssWallFrame | null>(null);
 
   useEffect(
     () => () => {
@@ -1089,8 +1021,6 @@ export const Scenery = ({
         : { light: scenerySubsurfaceColors(subsurface) },
     );
     subsurfaceDirty.current = true;
-    // A map of its own lights the scene; the walls keep to the panels.
-    material.setAbyssWallFill(scenerySubsurfaceColors(subsurface));
     // `subsurface` is an inline object: compared by value, as `panelsKey`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baker, material, subsurfaceMap, panelsKey]);
@@ -1275,28 +1205,6 @@ export const Scenery = ({
     material.abyssDepthDetail = abyssDepthDetail;
     material.abyssDepthDetailScale = abyssDepthDetailScale;
     material.abyssFalloff = abyssFalloff;
-    material.setAbyssWalls({
-      distance: wallDistance,
-      color: wallColor,
-      cutColor: wallCutColor,
-      lightStrength: wallLightStrength,
-      lightElevation: wallLightElevation,
-      lightDepth: wallLightDepth,
-      hazeDistance: wallHazeDistance,
-      hazeDepth: wallHazeDepth,
-      mist: wallMist,
-      mistReach: wallMistReach,
-      rockSize: wallRockSize,
-      relief: wallRelief,
-      flare: wallFlare,
-      wander: wallWander,
-      cutDistance: wallCutDistance,
-      sand: wallSand,
-      sandColor: wallSandColor,
-      glow: wallGlow,
-      glowColor: wallGlowColor,
-      rimFade: wallRimFade,
-    });
     dirty.current = true;
   }, [
     material,
@@ -1316,27 +1224,6 @@ export const Scenery = ({
     abyssDepthDetail,
     abyssDepthDetailScale,
     abyssFalloff,
-    hasWalls,
-    wallDistance,
-    wallColor,
-    wallCutColor,
-    wallLightStrength,
-    wallLightElevation,
-    wallLightDepth,
-    wallHazeDistance,
-    wallHazeDepth,
-    wallMist,
-    wallMistReach,
-    wallRockSize,
-    wallRelief,
-    wallFlare,
-    wallWander,
-    wallCutDistance,
-    wallSand,
-    wallSandColor,
-    wallGlow,
-    wallGlowColor,
-    wallRimFade,
   ]);
 
   // Not baked: the bakes keep a level horizon. Inside a World, the World's `globe` says.
@@ -1554,7 +1441,6 @@ export const Scenery = ({
     hasOcean,
     cloudsOn,
     definesKey,
-    hasWalls,
     voided,
     progress,
   ]);
@@ -1598,10 +1484,8 @@ export const Scenery = ({
       material.setGraticuleOrigin(camera.position);
     }
     // Camera controls move the camera before this runs but leave its matrices to the render:
-    // read with this frame's position, last frame's would swing the cuts as it moves. Once,
-    // for the walls' cut and the cutaway alike.
-    if (material.abyssWalls || cutaway) camera.updateMatrixWorld();
-    if (material.abyssWalls) material.clipAbyssWalls(camera);
+    // read with this frame's position, last frame's would swing the cutaway as it moves.
+    if (cutaway) camera.updateMatrixWorld();
     // The relief's ground under the camera: the void starts under it, at whatever depth.
     material.oceanGround =
       worldRelief?.present && worldRelief.sky === oceanState
@@ -1693,10 +1577,8 @@ export const Scenery = ({
       (material.uniforms.uSkyOceanCutawayGrip.value as Vector2).x = 0;
     }
 
-    // The walls' own placements, by this frame's cut; from above the lid only while the
-    // void can show there, as through this frame's cutaway.
+    // Whether the void can show from above the lid, as through this frame's cutaway.
     const voidOpen = material.abyssOpenFromAbove(cutsSeabed);
-    if (material.abyssWalls) wallFrame.current?.(camera, voidOpen);
 
     // The background's layers where they can show from here; each draws nothing elsewhere.
     const shown = sceneryLayersShown(layerView(height, voidOpen));
@@ -1891,18 +1773,6 @@ export const Scenery = ({
             visible={false}
             onBeforeRender={material.onBeforeDraw}
             dispose={null}
-          />
-        )}
-        {/* Shown each frame. Drawn just before the background, which fills only what it leaves. */}
-        {hasWalls && (
-          <SceneryAbyssWallLayer
-            sky={material}
-            renderOrder={renderOrder - 1}
-            visible={drawn && ready && !debug?.hide?.includes('walls')}
-            wireframe={debug?.walls?.wireframe}
-            flat={debug?.walls?.flat}
-            cut={debug?.walls?.cut}
-            frame={wallFrame}
           />
         )}
       </group>

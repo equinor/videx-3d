@@ -151,10 +151,6 @@ void main() {
     color = skyOceanBed(world, up, bedDepth);
   float cutaway = skyOceanCutawayAlong(cameraPosition, world);
   float seabed = skyOceanCutawaySeabed(cutaway);
-    #ifdef SKY_ABYSS_WALLS
-  // The lid's ripples' footprint, before any pixel leaves or takes its own side below.
-  float lidFootprint = skyAbyssLidFootprint(cameraPosition + dir * dist);
-    #endif
   if(fromAbove) {
     // Dry, the fog's density is 0.
     float light = skyOceanLight(0.5 * (bedDepth + max(-altitude, 0.0)));
@@ -176,21 +172,8 @@ void main() {
       color = graticuleOver(color, graticule);
       #endif
   } else {
-      #ifdef SKY_ABYSS_WALLS
-    // The walls' fill stands in front of the lid here, or, from under their foot, the rock
-    // that runs on down below it (skyAbyssWallStartUnder): the background draws both, so it
-    // is left before the lid is shaded. Their faces are a mesh of their own, which hides the
-    // lid by depth. Not once they are left out, far beyond their rim (uSkyAbyssWallNear).
-    if(uSkyAbyssWallNear > 0.0) {
-      vec4 wallStart = skyAbyssWallStartUnder(cameraPosition, dir);
-      if((wallStart.y > 0.0 && wallStart.x < dist) || wallStart.w < dist)
-        discard;
-    }
     // From the void: the lid, as the background draws it.
-    color = skyAbyssLidNear(cameraPosition, dir, dist, lidFootprint);
-      #else
     color = skyAbyssCeiling(world, distance(cameraPosition, world));
-      #endif
     if(uSkyAbyssDarkening > 0.0)
       color *= exp((altitude + bedDepth) / uSkyAbyssDarkening);
   }

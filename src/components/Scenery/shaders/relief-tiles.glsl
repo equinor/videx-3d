@@ -108,24 +108,57 @@ float reliefTileGroundAt(vec3 p) {
 
 // The see-through regions (setReliefRegions): the anchored stage's area and each loaded
 // field's, each tested in its own frame — world to the field's group, as it is placed on the
-// globe — against its area there, min X/Z and max X/Z. Not by latitude and longitude: a
-// field's rectangle is turned from the graticule by its grid's convergence.
+// globe, and a turned box's turn undone — against its shape there. Not by latitude and
+// longitude: a field's area is turned from the graticule by its grid's convergence.
 #define RELIEF_MAX_REGIONS 8
+#define RELIEF_REGION_CIRCLE 1
+#define RELIEF_REGION_POLYGON 2
 uniform int uReliefRegionCount;
 uniform mat4 uReliefRegions[RELIEF_MAX_REGIONS];
-uniform vec4 uReliefRegionBounds[RELIEF_MAX_REGIONS];
+// Per region (SceneryReliefRegions) its kind, 0 a box, 1 a circle, 2 a polygon; and its shape:
+// a box's min X/Z and max X/Z; a circle's centre X/Z and radius; a polygon's outline's field
+// (uReliefRegionFields): its min corner X/Z, a texel's width and its layer.
+uniform int uReliefRegionKinds[RELIEF_MAX_REGIONS];
+uniform vec4 uReliefRegionShapes[RELIEF_MAX_REGIONS];
+// The polygons' outlines (polygonDistanceField), a layer each: positive inside.
+uniform highp sampler2DArray uReliefRegionFields;
+
+// A polygon's outline at X/Z of its own: positive inside. Bilinear between the texels about
+// it, each clamped to its square, as polygonDistanceAt reads it.
+float reliefRegionOutline(vec4 field, vec2 xz) {
+  int size = textureSize(uReliefRegionFields, 0).x;
+  int layer = int(field.w + 0.5);
+  vec2 texel = (xz - field.xy) / field.z - 0.5;
+  vec2 base = floor(texel);
+  vec2 f = texel - base;
+  ivec2 b = ivec2(base);
+  ivec2 hi = ivec2(size - 1);
+  float s00 = texelFetch(uReliefRegionFields, ivec3(clamp(b, ivec2(0), hi), layer), 0).r;
+  float s10 = texelFetch(uReliefRegionFields, ivec3(clamp(b + ivec2(1, 0), ivec2(0), hi), layer), 0).r;
+  float s01 = texelFetch(uReliefRegionFields, ivec3(clamp(b + ivec2(0, 1), ivec2(0), hi), layer), 0).r;
+  float s11 = texelFetch(uReliefRegionFields, ivec3(clamp(b + ivec2(1, 1), ivec2(0), hi), layer), 0).r;
+  return mix(mix(s00, s10, f.x), mix(s01, s11, f.x), f.y);
+}
 
 // Whether `world` lies in any region: counted once where they overlap.
 bool reliefTileInRegion(vec3 world) {
-  bool inside = false;
   for(int i = 0; i < RELIEF_MAX_REGIONS; i++) {
     if(i >= uReliefRegionCount)
       break;
-    vec3 p = (uReliefRegions[i] * vec4(world, 1.0)).xyz;
-    vec4 area = uReliefRegionBounds[i];
-    inside = inside || (p.x >= area.x && p.z >= area.y && p.x < area.z && p.z < area.w);
+    vec2 p = (uReliefRegions[i] * vec4(world, 1.0)).xz;
+    vec4 shape = uReliefRegionShapes[i];
+    int kind = uReliefRegionKinds[i];
+    bool inside;
+    if(kind == RELIEF_REGION_CIRCLE)
+      inside = distance(p, shape.xy) < shape.z;
+    else if(kind == RELIEF_REGION_POLYGON)
+      inside = reliefRegionOutline(shape, p) > 0.0;
+    else
+      inside = p.x >= shape.x && p.y >= shape.y && p.x < shape.z && p.y < shape.w;
+    if(inside)
+      return true;
   }
-  return inside;
+  return false;
 }
 
 // Whether this pixel is the other draw's: with a see-through seabed, the opaque tiles leave

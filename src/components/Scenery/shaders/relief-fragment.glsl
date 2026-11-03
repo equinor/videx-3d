@@ -121,11 +121,10 @@ vec3 reliefAbyssPlain(vec3 world, float dist, vec3 dir, float footprint, vec3 su
 // From under the ground, the relief is the void's lid: what the camera sees of it is its
 // underside, and nothing above it — not the water, the land, nor a trench's floor deeper
 // than the camera, which its walls' undersides stand in front of. Shaded as the lid the
-// background and a stage's flat seabed draw from below (with walls the sand's underside in
-// their haze, without them, or far beyond their rim, the void's own lid), facing the way it
-// faces, so its shape shows in the walls' raking light, and darkened with the camera's depth
-// as they are: where it lies level, the relief and the flat lid past it meet in one colour. A
-// skirt is shaded as the lid it hangs from, so a crack between tiles shows none.
+// background and a stage's flat seabed draw from below, facing the way it faces, so its
+// shape shows in the subsurface's raking light, and darkened with the camera's depth as they
+// are: where it lies level, the relief and the flat lid past it meet in one colour. A skirt
+// is shaded as the lid it hangs from, so a crack between tiles shows none.
 void main() {
   #include <logdepthbuf_fragment>
   vec3 world = vReliefWorld;
@@ -153,23 +152,7 @@ void main() {
   bool curvedAway = dot(dir, globeCameraUp()) <= 0.0 && height > skyOceanCameraAltitude();
   if(seabed < 1e-3 || curvedAway || reliefTileLeftToOther(vReliefWorld) || reliefCutAway())
     discard;
-  #ifdef SKY_ABYSS_WALLS
-  // The walls' fill stands in front of the lid here, or, from under their foot, the rock
-  // that runs on down below it (skyAbyssWallStartUnder): the background draws both. Not
-  // once they are left out, far beyond their rim (uSkyAbyssWallNear), where the lid eases
-  // into the plain void's.
-  vec3 color = vec3(0.0);
-  if(uSkyAbyssWallNear > 0.0) {
-    vec4 wallStart = skyAbyssWallStartUnder(cameraPosition, dir);
-    if((wallStart.y > 0.0 && wallStart.x < dist) || wallStart.w < dist)
-      discard;
-    color = skyAbyssLidFacing(cameraPosition, dir, dist, lidFootprint, surface);
-  }
-  if(uSkyAbyssWallNear < 1.0)
-    color = mix(reliefAbyssPlain(world, dist, dir, lidFootprint, surface, up), color, uSkyAbyssWallNear);
-  #else
   vec3 color = reliefAbyssPlain(world, dist, dir, lidFootprint, surface, up);
-  #endif
   if(uSkyAbyssDarkening > 0.0)
     color *= exp(min(skyOceanCameraAltitude() + uSkyOceanDepth, 0.0) / uSkyAbyssDarkening);
   #if defined(RELIEF_DEBUG_TILES) || defined(RELIEF_DEBUG_LAYERS)

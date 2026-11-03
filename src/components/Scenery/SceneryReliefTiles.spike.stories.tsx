@@ -280,7 +280,7 @@ const ReliefTiles = (storyArgs: ReliefTilesArgs) => {
             ocean={{ level: LEVEL, depth: DEPTH }}
             abyss={{}}
           />
-          <SceneryStage bounds={bounds} />
+          <SceneryStage boundary={bounds} />
           {args.field === 'anchored' && (
             <SceneryAnchor>
               <FieldStandIn />

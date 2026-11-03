@@ -11,7 +11,7 @@ anywhere under it:
 | `<SceneryClouds>` | still clouds: a band along the horizon, a deck overhead, or both |
 | `<SceneryGraticule>` | lines on the Earth: latitude and longitude, the UTM zones, the nautical time zones |
 | `<SceneryOcean>` | an endless sea with a seabed, and the void below it |
-| `<SceneryAbyss>` | the void's look below a level (with a sea, its seabed), and its walls |
+| `<SceneryAbyss>` | the void's look below a level (with a sea, its seabed) |
 | `<SceneryCutaway>` | a cut through the sea's water and seabed in front of the view |
 | `<SceneryStage>` | the sea, the seabed and the relief on real geometry about the field |
 
@@ -247,7 +247,7 @@ sea's surface, the land of a `GeoRelief`, and a dry seabed — from the field ou
 horizon and from space; none in the water, under the ground or in the void:
 
 ```tsx
-<World frame={frame} bounds={bounds}>
+<World frame={frame} boundary={boundary}>
   <Scenery observer={observer}>
     <SceneryOcean />
     <SceneryGraticule
@@ -577,8 +577,8 @@ where the camera came from, for waves driven by data later
 
 The Earth is a fixed globe (`SceneryMaterial.globe`, an sdk `Globe`; see
 [world.md](./world.md#9-step-2-in-detail-the-sky-on-a-fixed-globe)): a sphere whose centre
-lies fixed below the scene, its cap over a disc about the scene — the one holding a
-`SceneryStage`'s `bounds`, or a `World`'s — cut flat, so what meets the water there meets it level. The plane
+lies fixed below the scene, its cap over a disc about the scene — the smallest one holding a
+`SceneryStage`'s `boundary`, or a `World`'s (`boundaryDisc`) — cut flat, so what meets the water there meets it level. The plane
 and the sphere meet on the disc's edge, at an angle of `r / R` (0.1° for a 16 km stage);
 without a stage the disc is a point at the world origin. Inside a `World` the globe is the
 World's, and so is whether it curves (its `globe`): the sky draws on it, and whatever the
@@ -668,13 +668,13 @@ horizon's, and the depths' below, measured from the horizon the Earth's curve lo
 from high up it meets the far ground's haze without a seam. There is no air, sun, moon,
 stars or clouds (all compiled
 out of the sky's layer, `SKY_VOID`, and the clouds' layer is not drawn). The void itself,
-its walls, a stage and a sea are drawn as ever; with neither water nor a seabed it is the
+a stage and a sea are drawn as ever; with neither water nor a seabed it is the
 void all round. The scene is lit by the subsurface everywhere, as with `false`, so only its
 zone is baked. Changing to or from it recompiles the sky's own layer.
 
 ```tsx
 <Scenery background="void">
-  <SceneryAbyss walls />
+  <SceneryAbyss />
   <SceneryOcean water={false} seabed={false} />
 </Scenery>
 ```
@@ -683,7 +683,7 @@ zone is baked. Changing to or from it recompiles the sky's own layer.
 
 `<SceneryOcean>` adds a sea: a wavy surface at `level` over a flat seabed `depth` below it,
 seen from above, from inside the water and, below the seabed, as the void. With a sea the
-void below its seabed is always there; `<SceneryAbyss>` sets its look and its walls.
+void below its seabed is always there; `<SceneryAbyss>` sets its look.
 
 ```tsx
 <Scenery>
@@ -733,8 +733,8 @@ one side, tens of metres a few kilometres out. With more footprints than the sea
 background, drawn with the sky's own shading so the two meet without a seam. Being
 geometry, the water lies in front of what is under it, and the seabed hides what is
 below it at the sea's `seabedOpacity` — unless the camera is below it too. It reaches the camera's far plane
-beyond `bounds`, so every view ray that can reach the scene crosses it. With the sky's
-`globe` it stays flat but shades the sea beyond the disc holding `bounds` on the
+beyond its `boundary`, so every view ray that can reach the scene crosses it. With the sky's
+`globe` it stays flat but shades the sea beyond the disc holding its `boundary` on the
 globe (see The globe).
 
 ```tsx
@@ -748,7 +748,7 @@ const [stage, setStage] = useState<SceneryStageOccupantState>({
   water: false,
 })
 
-<World frame={geoFrameFromCrs(crs)} bounds={[minX, minZ, maxX, maxZ]}>
+<World frame={geoFrameFromCrs(crs)} boundary={[minX, minZ, maxX, maxZ]}>
   <Scenery>
     <SceneryOcean level={0} depth={120} />
     <SceneryStage
@@ -781,8 +781,9 @@ const [stage, setStage] = useState<SceneryStageOccupantState>({
 </ChunkStack>
 ```
 
-`bounds` is the scene's rectangle in scene X/Z, and should hold the whole scene: by default
-the `World`'s. `occupants` claim parts of it — typically field columns. The sky's sea is
+`boundary` is the scene's area in scene X/Z, and should hold the whole scene: by default
+the `World`'s (see [Boundaries](#boundaries)). `occupants` claim parts of it — typically field
+columns. The sky's sea is
 global: its `water`, `seabed` and their opacities hold over the occupants as everywhere else.
 
 Without a `GeoRelief` in the `World` the stage's seabed is flat, at the sea's depth, over
@@ -810,7 +811,7 @@ Each occupant:
   frame at no cost. A `ChunkStack` hands out its own through `onCut`. They must be in the
   scene frame. The relief over the occupant stays whole by default (`keepBed`), as the
   occupant's floor; with `keepBed: false` it is cut with the occupant inside the outline,
-  for one occupant at most, and the sky draws the void's walls through the opening.
+  for one occupant at most, and the void shows through the opening.
 - `anchor` is the occupant's own group, drawn outside the `Scenery`, which the stage places
   on the globe about the outline's middle (see `SceneryAnchor`): over the disc, where an
   occupant lies, that moves nothing. How the scene places itself on the Earth, a `World`
@@ -836,6 +837,49 @@ an occupant's own top lies deeper, the flat seabed hides it unless the cutaway o
 The stage's transparent parts are ready for the `OITRenderPass`. ⚠️ It assumes the
 default `up` (+Y), and renders nothing without a `<SceneryOcean>`.
 
+### Boundaries
+
+A stage's area — a `World`'s, a `SceneryStage`'s, a field's (a `UtmArea`'s, in its own X/Z) —
+is a `Boundary` (sdk, `geometries/boundary.ts`), in X/Z, in one of four forms:
+
+| form | what |
+| --- | --- |
+| `[minX, minZ, maxX, maxZ]` | an axis-aligned box |
+| `{ box, rotation }` | a box turned about its middle: `rotation` in radians, counter-clockwise seen from above (+X toward −Z), as three.js turns about +Y; `box` its extent before it is turned. A field turned against its grid needs no larger stage than itself |
+| `{ centre, radius }` | a circle |
+| a `PlanarPolygonGeometry`, or a ring of `[x, z]` points | a polygon, as a chunk stack's outline: holes too, inside by the even-odd rule |
+
+```tsx
+<World frame={volve.frame} boundary={{ centre: [0, 0], radius: 9000 }}>
+  <UtmArea frame={troll.frame} boundary={{ box: [-13500, -6500, 13500, 6500], rotation: Math.PI / 6 }}>
+    {trollData}
+  </UtmArea>
+  <UtmArea frame={other.frame} boundary={other.outline}>{otherData}</UtmArea>
+</World>
+```
+
+What each part makes of it:
+
+- **The globe** is cut flat over the smallest disc that holds it (`boundaryDisc`: a box's
+  about its middle, half its diagonal across; a polygon's through two or three of its
+  points), and a field not anchored is placed about that disc's middle.
+- **The relief** is see-through over the shape itself (the sea's `seabedOpacity`, or a
+  `GeoRelief`'s `fieldOpacity`): each region is tested in its own frame in the shader — a box
+  with its turn undone in its matrix, a circle, or a polygon by its outline's distance field
+  (`polygonDistanceField`, 256², one layer each of an array texture made when the regions
+  change, not each frame). A polygon's edge is as fine as a texel of its field, 1/246 of its
+  span (65 m for a 16 km field); its corners are rounded within one.
+- **What is laid out on the grid** — the stage's plane, the sea's claim, the ground handed
+  out to an occupant without an outline — takes the axis-aligned box that holds it
+  (`boundaryBox`).
+
+Helpers, from the sdk: `boundaryShape` (the one form of three the others work on: a box,
+turned or not; a circle; or a polygon's rings, its offset applied), `boundaryDisc`,
+`boundaryBox`, `boundaryContains`, `boundaryOutline` (closed rings, to draw it),
+`boundaryKey`, `enclosingCircle`, and `orientedBounds(points)`: the smallest turned box that
+holds a field's outline or its data's footprint, for a stage as tight as a polygon at the
+cost of a box.
+
 ## The void (`SceneryAbyss`)
 
 `<SceneryAbyss>` puts an endless lid overhead below a `level` and a bottomless gradient below the
@@ -844,156 +888,22 @@ background, so it never hides anything in the scene, including objects above the
 The lid recedes into the horizon colour (`fadeDistance`; 0 for never) and has a noise relief
 (`detail`, `detailScale`); the depths have faint distant rock (`depthDetail`) and a
 `falloff`. A `<SceneryOcean>` turns the void on below its seabed by itself (then the
-void's `level` is the seabed's, and `<SceneryAbyss>` only sets its look and walls), and with
-or without a seabed its lid is a roof from below. With walls, the lid is in their haze instead
-(`hazeDistance`), the depths are their haze, and the void's `horizon` colour is that
-haze's: `fadeDistance`, `depthDetail` and, but for `background: 'void'` and the stand-in,
-`depth` and `falloff` apply only without them, and `ceiling` only without their `sand`.
+void's `level` is the seabed's, and `<SceneryAbyss>` only sets its look), and with
+or without a seabed its lid is a roof from below. Its gradient, its rock and its lid are laid
+out by the camera's own up (the look frame), so the void is the same under any field.
 
 Under the `World`'s relief the void starts under the relief, at whatever depth: over
 it, down a trench below the sea's `depth`, the camera is still in the water. From the void
-the relief itself is the lid — its underside, shaded as the flat lid is (with walls as
-their sand's underside), raked by the walls' light (their bearing and `lightElevation`,
-with or without walls) so its shape shows — and nothing above it is drawn: not the water,
+the relief itself is the lid — its underside, shaded as the flat lid is, raked by a level
+light at the subsurface light's bearing (`SceneryMaterial.setAbyssLight`) so its shape
+shows — and nothing above it is drawn: not the water,
 the land, nor a trench's floor deeper than the camera. Past the relief's reach the flat lid
 carries on, the two in one colour where the relief lies level (see
 [tiles.md](./tiles.md)).
 
-`walls` (off by default; a prototype) adds cliffs about the stage, from the lid down, so
-moving in the void shows its scale. They follow the stage's rectangle (the one the flat
-sea keeps level over) pushed out by `distance`, a rounded rectangle given by one signed
-distance; their outline wanders in and out by `wander` in a few long waves, whole numbers
-of them round it, drifting with depth, and leans out by `flare` per unit of depth, so the
-hollow they leave widens.
-Their rock stands in and out of that outline by up to `relief`, as a baked cliff texture
-says (`bakeSkyCliffs`, a 1024² tile repeating both ways, with mip levels): bays and
-headlands, tall ridged buttresses and gullies, and ledges with sheer faces under them that
-come and go, features `rockSize` across. It is laid along the walls by the distance round
-the outline, a whole number of tiles round so it has no seam, and down them by depth.
-The walls' faces are a mesh (`SceneryAbyssWallLayer`), not a search per pixel, and a light
-one: a single fixed grid round the outline and down from the lid, a column every 4 texels
-of the cliffs (128 to 1024 of them, about 400 for Volve) and 32 rows, closer together near
-the lid, to `2.5 x lightDepth` deep; past that the walls are black. Every vertex holds its
-column and row and is pushed out to the rock's face in the vertex shader, the cliffs read
-as coarsely as its cells are wide, and faces as the mesh lies across its neighbours. It is
-one draw of some 25k triangles, the same every frame wherever the camera is: no level of
-detail, no culling, nothing to pop or crack. Its detail is the fragment shader's, from the
-baked relief (see below). Its grid (`skyAbyssWallGrid`) is the sky material's, which the
-background needs too. They are cut away up to a vertical plane facing the camera's heading
-(as the cutaway's, so looking straight down the top of the screen decides which side is
-kept): through the stage's centre, or `cutDistance` in front of the camera once that is further,
-so from a distance the near half of the hollow is gone and nothing of it stands in front of
-the scene. Like a section, it turns with the camera, sweeping the cut through the rock.
-Looking up, the bottom of the screen decides instead, so the plane keeps its side as the
-view tilts past 45° and straight up (laid level, the view and the screen's top or bottom
-agree looking level). The cut takes away all that lies short of the plane, whichever side
-of it the camera is on: a view from the side cut away starts at the plane, one from the
-side kept ends there, and at the plane the two agree, so the plane can pass through the
-camera without a jump. Below the lid the plane is pushed on past the stage's far corner
-(easing in over `cutDistance` down from the lid), so the whole stage lies in what is cut away and
-no cut face or rim ever stands behind it, whatever the view; the lid shows over the rock
-taken away. Once the whole stage is in view through the hollow, nothing is cut: the plane
-eases back through the camera and past the far rim, and then is gone, so from inside the
-hollow, or from the dark below it looking up through its opening, the whole lit rim and
-the lid over it show (`skyAbyssWallInView`: how far inside the hollow, at its narrowest,
-the camera is, or below the walls' foot the sight lines to the stage's corners pass; the
-hollow is convex at every depth, so its corners prove all of it). Below their foot the
-camera never counts as inside their rock, which is black anyway. A view rising into that
-rock from under the foot is black, and hides the walls' faces beyond it (from there, each
-of their pixels checks that: at most three reads of the cliffs). A camera in their rock is
-never in view of the stage, so it always has its cut (`skyAbyssWallClipPlane`,
-tested in `tests/sky-abyss-walls.test.ts`).
-Views start past the plane. Where it cuts their rock, a solid fill, drawn by the background
-(the mesh leaves every pixel behind it), shows the rock's inside,
-unlike the eroded outside of the walls: beds of varying tone (`cutColor`), warped so they
-lean and pinch out, finer laminae in them, and joints straight down here and there, each
-within its bed; lit flat and matte, darkening with depth and hazing as the walls do, with a
-thin paler edge where it meets their face. Whether a view starts in the rock is decided by
-the mesh itself: the triangle over the start's way round and depth, its three vertices
-laid as the vertex shader lays them, so fill and faces meet without a gap. From above, the
-lid cuts the rock the same way, so outside the hollow its top shows.
-The rock, `color`, faces as its mesh does. Its finer relief, columns as tall cells of
-varying width that end at their own heights, finer flutes on them and cracks down some of
-their creases, is the baked tile's normal map and creases, laid three ways and blended by how each face turns: round the outline and
-down where it faces into the hollow, out across it and down on a protrusion's sides, round
-and out where it faces up or down (only the ways that show are read); laid one way only, it smears on the others. It is raked
-by a light of its own, at the subsurface light's bearing and `lightElevation` (level by
-default, which brings out the cliffs; below 0 from below), as strongly as `lightStrength`
-(0 for none), and filled in by the subsurface's light map (its backdrop, and its panels
-below bouncing up), its creases shadowed, and the light on it dims with depth to nearly
-black by `lightDepth`, as does the sand's and the glow's.
-The data keep the subsurface light. Walls and fill fade
-over `hazeDistance` (0 for none) into a haze of their own, the void's horizon colour
-darkening with depth to nearly black by `hazeDepth` (0 for never), apart from the light on
-the rock: a deeper `lightDepth` lights the rock further down without lighting more haze,
-and a deeper `hazeDepth` shows more haze. They stay solid: hazed into what lies behind, the
-void's horizon would show through
-them as the view tilts. With walls the depths below the horizon are that haze too: a view
-that meets none of the mesh passes under its foot, and is drawn as a wall would be there,
-at least a haze length on, so as dark as the walls' foot; they lose the gradient and its
-faint strata (`depthDetail`). Their rock runs on down past the mesh's foot (the fill cuts
-it there too), so from under the foot a view rising out of the hollow before it is up to
-the foot has met that rock, and is as dark; one that rises into the hollow sees it, and
-the lid over it. Mist clings to the walls in patches fixed in the world (`mist`), hanging
-`mistReach` off the rock: a veil in front of it, thicker the more a view runs along it,
-lit as the haze is. The open gap stays clear.
-Their top is a layer of soft `sand` over the rock (default 1000 deep; 0 for none, all
-rock), as the overburden over older rock under a real sea: in it the mesh follows the
-rock's large shape alone, its cliffs read three mip levels coarser, so the sand drapes the
-bays and headlands without their sharp relief, and is shaded dull and matte in
-`sandColor`, faintly mottled, with no reads of the cliffs where it is all sand. Its
-contact with the rock eases over a fifth of its depth either way and wanders a little
-round the outline; where the walls are cut, the sand shows thin laminae instead of the
-rock's beds. The lid seen from below is that sand's underside (`skyAbyssLid`, for the
-background and a stage's seabed from below alike; `skyAbyssLidFacing` for a relief's,
-which faces the way its ground does), rippled by the void's `detail`, the
-ripples fading as the walls' haze thickens, in that haze. A dim light at the top of the
-stage (`glow`, in `glowColor`) lights the lid and the sand over the stage, fading out over
-about `distance` beyond it. Without sand the lid is the void's own colour (`ceiling`), in
-the walls' haze as well.
-Far from the hollow its light fades out (`rimFade`, default 20 km; 0 for none), so zoomed out
-the lid, the sand and the cut darken toward black instead of fading into the haze's grey.
-It is measured beyond the rim itself, the walls' middle at each depth, wandering and leaning
-out as they do (`skyAbyssWallFar`), so the dark follows the hollow's own outline rather
-than a rectangle or a circle, and eases down to a fifth of the light over `rimFade`, then the
-rest to black over twice that again (`SKY_ABYSS_FADED_OUT`), the two easing into each
-other. What is
-seen is darkened by what is left where it is (the walls' faces stand on the rim and keep
-all of it). Their haze thins out over the same `rimFade` beyond the rim (`skyAbyssWallFog`):
-thick in the hollow, gone far from it, so from far out a view passes clear air until it
-nears the hollow and the darkened lid shows rather than a grey haze. Its thickness along a
-view is summed at the middles of six stretches of the part of the view over the rectangle
-it can lie over (`skyAbyssWallClear`), each a box distance to the rim without its wander:
-the haze is smooth. Inside the hollow it is as thick as without the fade, so little
-changes there. A point inside the rim however far it wanders skips the way round:
-the walls' faces, and anything in the hollow, pay one box distance for its light.
-The walls belong to the anchored stage: a camera far from it, under another field, sees
-none of them, and the void there is the plain one, as without walls, rather than their
-rock faded to black. How much of them the camera sees (`uSkyAbyssWallNear`, set each frame
-with their cut: `skyAbyssWallNear`) is all of it in the hollow and near it, and eases out
-to none as far beyond the rim, at the camera's depth, as the hollow's light reaches (three
-times `rimFade`, or three times `distance` without a fade). Between, their fill and lid
-are mixed with the plain void's lid and depths (`skyAbyssLidNear`, the rock of the depths
-coming back in), and their faces into those depths; with none left their mesh is hidden,
-and the stage's seabed and the relief draw the plain lid from below instead of leaving
-the fill's pixels to the background. Inside the hollow nothing of this changes.
-A view rising from under the foot counts as gone into the rock there once it passes within
-about a pixel of it (`SKY_ABYSS_FOOT_OVERLAP`), so that rock overlaps the mesh's last edge
-and no hairline of the lid shows between them.
-The mesh is drawn from below the lid, before the background, and from above it only while
-the void can show there: through a seabed that is off or see-through, a cutaway that takes
-the seabed, or the relief cut with an occupant (a `SceneryStage` tells the sky while
-an occupant's `cut` opens its relief). From above, a view going down through the lid beyond the stage while the
-background's seabed there is opaque, and a cutaway does not take it, leaves the mesh hidden
-(`skyAbyssWallCovered`, which reads the sea's cutaway as the background does); over
-the stage the stage's own seabed hides it by depth, but where it is cut. The fill and the
-haze beyond show wherever
-the void does: from inside it, and looking into it from above through a cutaway, a
-see-through seabed or a section (but in the band under a cutaway's rim, which the stage
-draws). A stage's seabed seen from below leaves the fill to the background where it hangs
-in front, and from under the foot the rock below it, where a view went into that rock
-first; the faces hide it by depth. Without walls the void costs nothing extra
-(`SKY_ABYSS_WALLS`).
+The void had walls, cliffs about the anchored stage to show scale, until 2026-11-03: they
+belonged to one field, fitted badly with several, cost 0.5–2.5 ms a frame and tied the stage to
+an axis-aligned rectangle. Removed, and parked on the branch `parked/abyss-walls`.
 
 ## Cutaway
 
@@ -1051,13 +961,11 @@ default):
 | `water` | `<SceneryOcean>` | the view from in the water |
 | `surface` | `<SceneryOcean>` | the sea's surface, at the next `renderOrder` |
 
-The void's walls' mesh draws just before them all, and the relief's overview after
-them. Transparent parts draw after everything. It works with R3F's own render and with a
+The relief's overview draws after them. Transparent parts draw after everything. It works with R3F's own render and with a
 `RenderingPipeline` of `OITRenderPass` + `OutputPass`.
 
 - Each layer is a program of its own, compiled with only the switches it needs
-  (`sceneryLayerDefines`): adding clouds compiles their layer and nothing else; the walls
-  recompile only the void's; the seabed's detail only the sea's, the water's and the
+  (`sceneryLayerDefines`): adding clouds compiles their layer and nothing else; the seabed's detail only the sea's, the water's and the
   stages'. The sky's own (`SceneryMaterial`) recompiles only for `background: 'void'`.
 - Each frame a layer that can show nothing from where the camera is is not drawn at all
   (`sceneryLayersShown`): in the water the sky and the clouds only through a cutaway's cut;
@@ -1138,20 +1046,20 @@ ShaderChunk.logdepthbuf_pars_fragment = ShaderChunk.logdepthbuf_pars_fragment.re
   while the sky's compiles fill all 19 of Chrome's compile threads.
 - So `precompile` keeps only a few programs compiling at once (`PRECOMPILE_SLOTS`, 4 on
   a 20-thread laptop), the rest queued: the stand-in first, the scene's own content next,
-  the sky's own programs, stages and cliffs after, and what only bakes last
+  the sky's own programs and stages after, and what only bakes last
   (`PRECOMPILE_PRIORITY`). Measured fully cold: a host's material drawn while the sky
   compiles waits ~0.25 s instead of ~1 s, the Direct3D compiling takes 22 s instead of
   39 s in all (less contention), and the sky shows at 64–67 s instead of 84 s. ⚠️ That is
   still late: the background takes ~23 s alone in Direct3D's compiler, fully cold.
 - Why it was slow: the background was one program for every zone and feature, and
   Direct3D's compile time grows about as a program's size to the power 2.5. Measured on
-  its HLSL with `D3DCompile` itself (2026-10-27): the abyss and its walls, the sea from the
+  its HLSL with `D3DCompile` itself (2026-10-27): the abyss and its walls (since removed), the sea from the
   air, the clouds and the view in the water were each a third to two thirds of it. First,
   with no change to what is drawn: loops whose count Direct3D would copy out per iteration
   take it from a uniform (`uOceanDetailOctaves`, `uSkyCloudBandOctaves`,
   `uSkyPlanetCount`), the seabed is shaded once for the views from the air and in the water
-  (`skyOceanBedReach`), and the walls' two rock tests share one copy of their shape
-  (`skyAbyssWallStartUnder`): ~30% faster (320 → 244 KB of bytecode), a stage's surface
+  (`skyOceanBedReach`), and the walls' two rock tests shared one copy of their shape:
+  ~30% faster (320 → 244 KB of bytecode), a stage's surface
   ~35% and the sea surface layer ~42%.
 - Then the background was split into its layers (see [Rendering](#rendering)), each
   compiled on its own and in parallel. Timed one at a time with `D3DCompile` (RTX A1000
@@ -1239,34 +1147,20 @@ fill-bound: they scale with the pixels drawn, about double at 1080p.
   stage's sea seen from below writes no depth, so the background is still shaded behind
   it) and 1.6 → 0.1 below the seabed; the frame 0.5–1.2 ms less.
 
-### The void and its walls
+### The void
 
 Under the lid the background shades no sky at all: the void covers all of it. From below,
-a stage's flat seabed shades no sea floor (only seen from above), and where the walls' rock
-is in front of the lid it discards before shading the lid. Same pixels (one channel of one
-pixel off by 1/255, from rounding). GPU ms, StageDebug with walls, the sea and seabed on,
-210 spheres, Iris Xe at 1.92 megapixels:
-
-| Camera | Frame | Stage's seabed | Background | Walls |
-|--|--|--|--|--|
-| 94 km down, looking up | 13.5 → 9.4 | 7.3 → 3.8 | 3.4 → 2.8 | 2.1 |
-| In the hollow, 4 km down | 7.8 → 7.0 | 4.1 → 3.3 | 0.4 | 2.0 |
-| 150 km out, 33 km down | 8.0 → 6.0 | 3.7 → 2.8 | 3.4 → 2.6 | 0.5 |
-| At the rim, 500 m down | 9.0 → 7.8 | 2.0 → 1.5 | 3.0 → 2.4 | 2.5 |
-
-What is left: the walls' mesh writes its depth (log depth), so it gets no early depth test;
-the lid's ripples cost about 1 ms, and the haze's sampling (`hazeDistance`, `rimFade`)
-about 1.3 ms on the seabed.
+a stage's flat seabed shades no sea floor (only seen from above). Measured with the void's
+walls, since removed (2026-11-03), on StageDebug, the sea and seabed on, 210 spheres, Iris Xe
+at 1.92 megapixels, they cost 0.5–2.5 ms a frame below the lid: their mesh, which wrote its
+depth and so had no early depth test, and their haze's sampling on the seabed (about 1.3 ms).
 
 ## Debugging
 
 `<Scenery debug={...}>` tints each part by what draws it (`tint`), hides layers (`hide`: each
-of the background's by name, all of them as `background`, and the walls' mesh) and
-shows the environment's bake for the zone in view (`environment`). Its `walls` views draw
-the void walls' mesh as lines (`wireframe`); flat, without the rock's relief, with the
-faces of their cut drawn as geometry, so they hide what lies behind the rock (`flat`); and
-the plane they are cut along as a grid (`cut`). `<SceneryStage debug={...}>` hides stage layers, and draws
-its outline (with, under walls, a faint copy at their foot) and wireframe over everything.
+of the background's by name, and all of them as `background`) and shows the environment's
+bake for the zone in view (`environment`). `<SceneryStage debug={...}>` hides stage layers,
+and draws its outline and wireframe over everything.
 None of them rebuild or bake anything.
 
 The Storybook stories `Spikes/Scenery/StageDebug` (a stage of any size, synthetic ground under
@@ -1331,7 +1225,8 @@ basic ones show in every story, the advanced and debug ones only in `StageDebug`
   instead of compiling it again (three gives a source that went and came back a new id). Its
   `linger` keeps it longer for a replacement made later: a chunk's, whose rebuild lets the
   old one go first (`CHUNK_MATERIAL_LINGER`).
-- The water lies on one mesh (`createSceneryStagePlane`): `bounds` as a 4 × 4 grid, then rings
+- The water lies on one mesh (`createSceneryStagePlane`): the box holding the `boundary`
+  (`boundaryBox`) as a 4 × 4 grid, then rings
   each about twice as wide as the one inside, out to the far plane. The flat parts are
   shaded at the ray's exact hit, so their triangles only need to grow with their distance
   from the scene: ~1000 km triangles crack where the GPU clips them. Without a relief the

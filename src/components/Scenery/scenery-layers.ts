@@ -20,7 +20,7 @@ import {
 /**
  * The layers of a `Scenery`'s background, in the order they are drawn, each blended over
  * those before it: the sky itself (the `SceneryMaterial`'s own program), its clouds, the
- * void (lid, depths and walls), the sea seen from the air, the view from in the water, and
+ * void (lid and depths), the sea seen from the air, the view from in the water, and
  * the sea's surface. Each is a program of its own, so each compiles on its own and a switch
  * recompiles only the layers it touches.
  */
@@ -35,7 +35,7 @@ export type SceneryBackgroundLayer =
 /** A layer drawn with a material of its own, over the sky's. */
 export type SceneryOverLayer = Exclude<SceneryBackgroundLayer, 'sky'>;
 
-/** Each layer's `renderOrder` after the scenery's. The walls' mesh draws just before the sky. */
+/** Each layer's `renderOrder` after the scenery's. */
 export const SCENERY_LAYER_ORDER: Record<SceneryBackgroundLayer, number> = {
   sky: 0,
   clouds: 0.2,
@@ -71,7 +71,6 @@ export function sceneryLayerDefines(
   } else if (layer === 'abyss') {
     defines.SKY_LAYER_ABYSS = '';
     defines.SKY_ABYSS = '';
-    if (sky.abyssWalls) defines.SKY_ABYSS_WALLS = '';
     // Under a sea, where it leaves the void showing: the sea's code, but not its seabed's detail.
     if (sky.ocean) {
       defines.SKY_OCEAN = '';

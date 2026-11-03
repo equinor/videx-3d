@@ -45,7 +45,6 @@ describe('sceneryLayerDefines', () => {
     sky.clouds = true;
     sky.ocean = true;
     sky.abyss = true;
-    sky.abyssWalls = true;
     expect(key(sky.defines)).toBe(before);
     expect(sky.switchesVersion).toBeGreaterThan(version);
   });
@@ -56,21 +55,9 @@ describe('sceneryLayerDefines', () => {
     const clouds = key(sceneryLayerDefines(sky, 'clouds'));
     sky.ocean = true;
     sky.abyss = true;
-    sky.abyssWalls = true;
     // The default seabed has a detail of its own: off is a change.
     sky.oceanBedDetail = undefined;
     expect(key(sceneryLayerDefines(sky, 'clouds'))).toBe(clouds);
-  });
-
-  it('recompiles the void, not the sea, for its walls', () => {
-    const sky = new SceneryMaterial();
-    sky.ocean = true;
-    sky.abyss = true;
-    const abyss = key(sceneryLayerDefines(sky, 'abyss'));
-    const sea = key(sceneryLayerDefines(sky, 'sea'));
-    sky.abyssWalls = true;
-    expect(key(sceneryLayerDefines(sky, 'abyss'))).not.toBe(abyss);
-    expect(key(sceneryLayerDefines(sky, 'sea'))).toBe(sea);
   });
 
   it('recompiles the sea, not the void, for the seabed’s detail', () => {

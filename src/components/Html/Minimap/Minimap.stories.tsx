@@ -153,7 +153,7 @@ const MinimapStory = ({
       <SceneryGenerators>
         <Scenery>
           <SceneryOcean level={LEVEL} depth={DEPTH} />
-          <SceneryStage bounds={STAGE_BOUNDS} />
+          <SceneryStage boundary={STAGE_BOUNDS} />
         </Scenery>
         <GeoRelief
           layers={layers}

@@ -10,13 +10,13 @@ lit by the sky's sun and fading into the air as the far sea does. It covers ever
 to the sea's horizon, the stage's own area and its occupants included, and on a curved
 globe falls away with the Earth's curve, so coasts and mountains stand on the horizon where
 they should. Without a `Scenery` it is drawn plainly, lit by the scene's lights, at an
-`opacity` of its own (and a `fieldOpacity` over the fields: the `World`'s `bounds` and each
+`opacity` of its own (and a `fieldOpacity` over the fields: the `World`'s `boundary` and each
 field loaded in it), its land and seabed
 each on or off ([Without a Scenery](#without-a-scenery)), and its tiles stay in as a
 `Scenery` comes and goes.
 
 ```tsx
-<World frame={geoFrameFromCrs(crs)} bounds={[minX, minZ, maxX, maxZ]}>
+<World frame={geoFrameFromCrs(crs)} boundary={[minX, minZ, maxX, maxZ]}>
   <Scenery>
     <SceneryOcean level={0} depth={120} />
     <SceneryStage occupants={[{ outline, onStage, onGround }]} />
@@ -97,9 +97,9 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
 
 ## How it fits the stage
 
-- With a `SceneryStage`, the relief is its seabed, everywhere. Over the stage's `bounds`, and
-  over every field loaded in the `World` (each `UtmArea` with `bounds`, in its own frame;
-  `useWorldFields`), it is see-through at the sea's `seabedOpacity`, so a neighbour's wells
+- With a `SceneryStage`, the relief is its seabed, everywhere. Over the stage's `boundary`, and
+  over every field loaded in the `World` (each `UtmArea` with a `boundary`, in its own frame,
+  each of its own shape; `useWorldFields`), it is see-through at the sea's `seabedOpacity`, so a neighbour's wells
   under its seabed show too; around them, always opaque. Up to eight such regions
   (`SKY_RELIEF_MAX_REGIONS`), the eight nearest the camera when there are more, each tested
   in its own field's frame, turned as it is (`reliefTileInRegion`). The stage hands the
@@ -130,7 +130,7 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
   blue a little fastest, so distant land turns blue before it fades into the horizon,
   but keeps its own colour in most views. From space the sky's own dry seabed past the
   tiles is lit and hazed as their ground is, so the two meet without a seam at their reach.
-- The sea stays flat over the disc holding `bounds` and lies on the sky's globe beyond it;
+- The sea stays flat over the disc holding the `boundary` and lies on the sky's globe beyond it;
   the relief is placed on the same globe, and the stage's sea surface writes the depth of
   the sea on it, so land beyond the scene meets it there. Nothing in either depends on the
   camera, so the ground holds still against the sea from anywhere. What is drawn flat
@@ -147,10 +147,8 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
   scene is lit as the subsurface, so from inside a hill the data is seen in rock rather
   than the sea through it. The void is the same under any field: its gradient and its lid
   are laid out by the camera's own up (the look frame), the lid as deep over the camera as
-  it is under the seabed on the globe, and the void's walls stay with the anchored stage,
-  left out far from it (`uSkyAbyssWallNear`; see [scenery.md](./scenery.md)). The lid
-  leaves pixels to the background
-  (toward the horizon, and to the walls), so what lies above it is hidden by not being
+  it is under the seabed on the globe. The lid leaves pixels to the background
+  (toward the horizon), so what lies above it is hidden by not being
   drawn, not by depth: the sea surface hides itself, and the geographic layers do the same
   (`sceneryLidOverCamera`, `layerShownAt`; see
   [layers.md](./layers.md#when-a-layer-is-drawn)).
@@ -166,7 +164,7 @@ The relief is Earth data, and a host may show it with the scenery off: bathymetr
 topography under its data, nothing of the sky in the way (world.md, step 7d-2).
 
 ```tsx
-<World frame={frame} bounds={bounds}>
+<World frame={frame} boundary={boundary}>
   <ambientLight intensity={0.5} />
   <directionalLight position={[-1, 2, -3]} />
   <GeoRelief layers={layers} color="ramp" fieldOpacity={0.3} land={false} />
@@ -187,12 +185,12 @@ topography under its data, nothing of the sky in the way (world.md, step 7d-2).
 - **Its opacity** (default 1 each):
   - `opacity`: everywhere. Below 1 every tile is drawn see-through, in one draw instead of
     the opaque one (`RELIEF_SEE_THROUGH_ALL`).
-  - `fieldOpacity`: over the fields — the anchored stage's area (the `World`'s `bounds`) and
-    each field loaded in the `World` (a `UtmArea` with `bounds`), in its own frame — so the
+  - `fieldOpacity`: over the fields — the anchored stage's area (the `World`'s `boundary`) and
+    each field loaded in the `World` (a `UtmArea` with a `boundary`), in its own frame — so the
     data under the seabed there shows through it; the lower of the two there. At `opacity` 1
     the tiles around are drawn opaque and those over the fields again, see-through, as with
     a sky.
-  - Without `bounds` or a field loaded, `fieldOpacity` has nowhere to apply. Its skirts are
+  - Without a `boundary` or a field loaded, `fieldOpacity` has nowhere to apply. Its skirts are
     left out of a see-through draw (two over each other would show as a line), so a crack
     between tiles of different detail may show as a hairline.
   - With a `Scenery` the sky decides instead: the sea's `seabedOpacity`, over the same fields.

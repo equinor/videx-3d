@@ -130,7 +130,7 @@ const PipelinesStory = ({
       <SceneryGenerators>
         <Scenery>
           <SceneryOcean level={LEVEL} depth={DEPTH} water={sea} />
-          <SceneryStage bounds={STAGE_BOUNDS} />
+          <SceneryStage boundary={STAGE_BOUNDS} />
           <GeoRelief
             layers={layers}
             depth={DEPTH}

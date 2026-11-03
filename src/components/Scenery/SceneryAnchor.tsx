@@ -14,7 +14,8 @@ import { useSceneryOcean } from './scenery-context';
 export type SceneryAnchorProps = {
   /**
    * World X/Z of the point placed on the globe: what lies there meets the globe's sea level
-   * and square. Default the middle of the globe's disc — a `SceneryStage`'s `bounds` — where
+   * and square. Default the middle of the globe's disc — the one holding a `SceneryStage`'s
+   * `boundary` — where
    * a field usually lies, and where nothing moves.
    */
   at?: Vec2;

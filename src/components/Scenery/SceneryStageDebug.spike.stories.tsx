@@ -34,10 +34,6 @@ import {
   SceneryReliefArgs,
   sceneryReliefArgTypes,
   sceneryReliefFromArgs,
-  sceneryWallDebugArgs,
-  SceneryWallDebugArgs,
-  sceneryWallDebugArgTypes,
-  sceneryWallDebugFromArgs,
 } from '../../storybook/components/scenery-controls';
 import {
   SceneryDebugPanel,
@@ -223,7 +219,6 @@ type StageDebugArgs = {
   panel: boolean;
 } & SceneryArgs &
   SceneryReliefArgs &
-  SceneryWallDebugArgs &
   SceneryMinimapArgs &
   ProgressArgs;
 
@@ -304,7 +299,6 @@ const StageDebug = (storyArgs: StageDebugArgs) => {
           tint: args.tint,
           hide: hide.sky,
           environment: args.showEnvironment,
-          walls: sceneryWallDebugFromArgs(args),
         }}
       >
         <SceneryArgsFeatures
@@ -314,7 +308,7 @@ const StageDebug = (storyArgs: StageDebugArgs) => {
         />
         {args.stage && (
           <SceneryStage
-            bounds={bounds}
+            boundary={bounds}
             occupants={
               occupantOutline ? [{ outline: occupantOutline }] : undefined
             }
@@ -392,7 +386,7 @@ const meta = {
     },
     stage: {
       description:
-        'A `SceneryStage` over the stage\u2019s rectangle, centred on the origin. Off, there is none: the void\u2019s walls then close about a point.',
+        'A `SceneryStage` over the stage\u2019s rectangle, centred on the origin. Off, there is none.',
       table: { category: 'Stage' },
     },
     stageWidth: {
@@ -458,7 +452,6 @@ const meta = {
         'The triangles of every layer drawn, over everything, in their `tint` colours.',
       table: { category: 'Debug' },
     },
-    ...sceneryWallDebugArgTypes,
     hide: sceneryHideArgType,
     panel: {
       description:
@@ -469,7 +462,6 @@ const meta = {
   args: {
     ...sceneryArgs,
     ...sceneryReliefArgs,
-    ...sceneryWallDebugArgs,
     ...sceneryMinimapArgs,
     ...sceneryProgressArgs,
     longitude: VOLVE.longitude,

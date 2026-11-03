@@ -1,5 +1,6 @@
 import proj4 from 'proj4';
 import { Matrix4, Uniform, Vector2, Vector3, Vector4 } from 'three';
+import { Boundary, boundaryDisc } from '../geometries/boundary';
 import {
   ConformalOrigin,
   ConformalSphere,
@@ -74,9 +75,6 @@ export type GlobeUniforms = {
    */
   uGlobeLocation: Uniform<Vector2>;
 };
-
-/** A rectangle in world X/Z: `[minX, minZ, maxX, maxZ]`. */
-type Bounds = [number, number, number, number];
 
 const v = new Vector3();
 const offsetAt = new Vector2();
@@ -263,16 +261,16 @@ export class Globe {
   }
 
   /**
-   * Set the disc the sea is flat over: the one holding `bounds` (world X/Z), centred on
-   * its middle, its radius half its diagonal. `null`: a disc of no size at the origin, the
-   * sphere touching the level plane there.
+   * Set the disc the sea is flat over: the smallest one holding `boundary` (world X/Z; see
+   * {@link boundaryDisc}) — a box's about its middle, half its diagonal across. `null`: a
+   * disc of no size at the origin, the sphere touching the level plane there.
    */
-  setDisc(bounds: Bounds | null) {
-    if (bounds) {
-      const [minX, minZ, maxX, maxZ] = bounds;
-      this.discX = (minX + maxX) / 2;
-      this.discZ = (minZ + maxZ) / 2;
-      this.discR = Math.hypot(maxX - minX, maxZ - minZ) / 2;
+  setDisc(boundary: Boundary | null) {
+    if (boundary) {
+      const { centre, radius } = boundaryDisc(boundary);
+      this.discX = centre[0];
+      this.discZ = centre[1];
+      this.discR = radius;
     } else {
       this.discX = 0;
       this.discZ = 0;

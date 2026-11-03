@@ -12,17 +12,22 @@ import {
   Camera,
   Group,
   LineBasicMaterial,
-  LineSegments,
   Mesh,
   MeshBasicMaterial,
   Object3D,
   Scene,
   ShaderMaterial,
-  Vector3,
   WebGLRenderer,
 } from 'three';
 import { createLayers, LAYERS } from '../../layers/layers';
+import { useStableBoundary } from '../../hooks/useStableBoundary';
 import { releaseMaterial } from '../../rendering/precompile';
+import {
+  Boundary,
+  boundaryBox,
+  boundaryDisc,
+  boundaryOutline,
+} from '../../sdk/geometries/boundary';
 import type {
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
@@ -49,7 +54,6 @@ import {
 import {
   createSceneryStageMaterial,
   createSceneryStageOutline,
-  createSceneryStageFootprint,
   createSceneryStagePlane,
   SceneryStageBounds,
 } from './scenery-stage';
@@ -59,7 +63,7 @@ import {
 // the globe much beyond; from space the sky draws all of it.
 const STAGE_REACH = 3000000;
 const NO_OCCUPANTS: SceneryStageOccupant[] = [];
-// Where neither the stage nor its World gives bounds: nothing is drawn.
+// Where neither the stage nor its World gives a boundary: nothing is drawn.
 const NO_BOUNDS: SceneryStageBounds = [0, 0, 0, 0];
 
 // The same array as last render while its items are: one written inline is new every render.
@@ -123,8 +127,7 @@ export type SceneryStageOccupant = {
    * The occupant's own cut — a `ChunkStack`'s, from its `onCut` — which the stage cuts the
    * relief over it with, as the occupant cuts itself, while its `keepBed` is off. The same
    * uniform objects, so it follows the cut every frame; they must be in the scene frame.
-   * While it cuts, the void shows through the relief, and the sky draws the void's walls
-   * from above too.
+   * While it cuts, the void shows through the relief.
    */
   cut?: CutUniforms;
   /**
@@ -139,7 +142,7 @@ export type SceneryStageOccupant = {
   onStage?: (state: SceneryStageOccupantState) => void;
   /**
    * With a relief: told the ground as the relief draws it over the
-   * occupant (its `outline`'s bounds, or the stage's `bounds` without one), as a
+   * occupant (its `outline`'s bounds, or the box holding the stage's `boundary` without one), as a
    * `HeightFieldClip` — hand it to a `ChunkStack` built on the relief (`clip`), whose
    * faces then end where the ground is drawn — and null once there is none. Live only
    * while the stage draws the occupant's seabed (`onStage`). Over that region a tile's
@@ -148,8 +151,9 @@ export type SceneryStageOccupant = {
   onGround?: (clip: HeightFieldClip | null) => void;
   /**
    * The occupant's own group, which the stage places on the sky's globe (see `SceneryAnchor`),
-   * about the middle of its `outline` (or of `bounds` without one): for an occupant drawn
-   * outside the `Scenery`. On the globe's disc — the stage's own `bounds` — nothing moves; an
+   * about the middle of its `outline` (or of the stage's disc without one): for an occupant
+   * drawn outside the `Scenery`. On the globe's disc — the one holding the stage's own
+   * `boundary` — nothing moves; an
    * occupant beyond it is placed onto the globe where it lies. It is set back as it was
    * once the stage lets go of it. ⚠️ Its matrix is the stage's (its position, rotation and
    * scale are not read meanwhile): give it a group of its own.
@@ -170,7 +174,7 @@ export type SceneryStageLayer = 'surface' | 'bed';
 export type SceneryStageDebug = {
   /** layers not to draw */
   hide?: SceneryStageLayer[];
-  /** draw the occupants' outlines at the sea's seabed (white) and at its surface (black), and `bounds` (grey), over everything; with the void's walls, both again faintly at their foot */
+  /** draw the occupants' outlines at the sea's seabed (white) and at its surface (black), and `boundary` (grey), over everything */
   outline?: boolean;
   /** draw the triangles of every layer drawn, over everything, in the colour `SceneryDebug.tint` gives it */
   wireframe?: boolean;
@@ -182,11 +186,13 @@ export type SceneryStageDebug = {
  */
 export type SceneryStageProps = {
   /**
-   * the scene's rectangle, `[minX, minZ, maxX, maxZ]` in scene X/Z; it should hold the whole
-   * scene. Default the enclosing `World`'s `bounds`, the globe's flat disc: given both, keep
-   * them the same. Without either, nothing is drawn
+   * the scene's area in scene X/Z (see `Boundary`): a box, `[minX, minZ, maxX, maxZ]`; a
+   * turned box, `{ box, rotation }`; a circle, `{ centre, radius }`; or a polygon. It should
+   * hold the whole scene. The sea is flat over the smallest disc that holds it; the relief is
+   * see-through over its own shape. Default the enclosing `World`'s `boundary`, the globe's
+   * flat disc: given both, keep them the same. Without either, nothing is drawn
    */
-  bounds?: SceneryStageBounds;
+  boundary?: Boundary;
   /** what claims parts of the stage: field columns, say. The relief knows the outlines of 4 at most */
   occupants?: SceneryStageOccupant[];
   /** debug views (see {@link SceneryStageDebug}) */
@@ -200,9 +206,9 @@ export type SceneryStageProps = {
  * the surface is seen through it — and the seabed hides what is below it (all of it at
  * the sea's `seabedOpacity` of 1), unless the camera is below it too.
  *
- * It reaches the camera's far plane beyond `bounds`, so every view ray that can reach
+ * It reaches the camera's far plane beyond its `boundary`, so every view ray that can reach
  * the scene crosses it rather than the sky's background. With the sky's `globe` its
- * geometry stays flat, but beyond the disc that holds `bounds` it shades the sea falling
+ * geometry stays flat, but beyond the disc that holds its `boundary` it shades the sea falling
  * away with the Earth's curve, as the background does.
  *
  * Its `occupants` claim parts of the stage: field columns, say, each by its footprint.
@@ -217,7 +223,7 @@ export type SceneryStageProps = {
  * @group Components
  */
 export const SceneryStage = ({
-  bounds: givenBounds,
+  boundary: givenBoundary,
   occupants,
   debug,
 }: SceneryStageProps) => {
@@ -229,12 +235,23 @@ export const SceneryStage = ({
   const gl = useThree(state => state.gl);
   const reach = Math.min(far, STAGE_REACH);
   const world = useWorld();
-  const bounds = givenBounds ?? world?.bounds ?? null;
-  const hasBounds = bounds !== null;
-  const [minX, minZ, maxX, maxZ] = bounds ?? NO_BOUNDS;
-  // A World's bounds are its globe's disc, which it sets; a World given none leaves its
+  const own = useStableBoundary(givenBoundary);
+  const boundary = own ?? world?.boundary ?? null;
+  const hasBoundary = boundary !== null;
+  // The box that holds it, for what is laid out on the grid (the plane, the sea's claim, the
+  // ground); and the disc, for what is placed about its middle.
+  const box = useMemo(
+    () => (boundary ? boundaryBox(boundary) : NO_BOUNDS),
+    [boundary],
+  );
+  const disc = useMemo(
+    () => (boundary ? boundaryDisc(boundary) : null),
+    [boundary],
+  );
+  const [minX, minZ, maxX, maxZ] = box;
+  // A World's boundary is its globe's disc, which it sets; a World given none leaves its
   // globe's disc to the stage. Without a World, the sky's own globe takes it from the sky.
-  const setsWorldDisc = !!world && !world.bounds;
+  const setsWorldDisc = !!world && !world.boundary;
   const claims = occupants ?? NO_OCCUPANTS;
   const level = ocean?.level ?? 0;
   const bedY = level - (ocean?.depth ?? 0);
@@ -245,7 +262,6 @@ export const SceneryStage = ({
   const seabedOpacity = ocean?.seabedOpacity ?? 1;
   const seeThrough = seabedOpacity < 1;
   const definesKey = ocean?.definesKey;
-  const abyssWalls = ocean?.abyssWalls;
 
   const extent: SceneryStageBounds = useMemo(
     () => [minX - reach, minZ - reach, maxX + reach, maxZ + reach],
@@ -273,7 +289,7 @@ export const SceneryStage = ({
       },
     // The sky's defines are compiled in (the seabed's detail, the graticule): new ones need new materials.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sky, definesKey, abyssWalls, seeThrough, tiled],
+    [sky, definesKey, seeThrough, tiled],
   );
 
   // The occupants' outlines, for the relief: over them the cutaway takes
@@ -332,8 +348,7 @@ export const SceneryStage = ({
     [fielded, reliefCutAt, reliefCut?.plane, reliefCut?.fence],
   );
 
-  // While an occupant's cut opens the relief over it, the void's walls show through it from
-  // above.
+  // While an occupant's cut opens the relief over it, the void shows through it from above.
   const openingPlane = tiled ? reliefCut?.plane : undefined;
   const openingFence = tiled ? reliefCut?.fence : undefined;
   useEffect(() => {
@@ -362,22 +377,22 @@ export const SceneryStage = ({
   );
 
   useLayoutEffect(() => {
-    if (!sky || !hasBounds) return;
+    if (!sky || !boundary) return;
     // Out to the far plane (stage-vertex keeps its vertices inside), as far as STAGE_REACH:
     // any shorter, and the scene between would show through the sky's sea, drawn on the far
     // plane. On the globe it claims nothing while the camera is off its rectangle, or on the
     // far half of the Earth (SceneryMaterial's claimStage).
     sky.setOceanStage(extent, reach);
-    // Flat over the stage's whole area, so the scene and the ground about it meet level:
-    // the globe's disc, unless the World holds it.
-    sky.setFlatSea([minX, minZ, maxX, maxZ]);
-    if (setsWorldDisc) sky.globe.setDisc([minX, minZ, maxX, maxZ]);
+    // Flat over the disc that holds the stage's area, so the scene and the ground about it
+    // meet level: the globe's disc, unless the World holds it.
+    sky.setFlatSea(boundary);
+    if (setsWorldDisc) sky.globe.setDisc(boundary);
     return () => {
       sky.setOceanStage(null);
       sky.setFlatSea(null);
       if (setsWorldDisc) sky.globe.setDisc(null);
     };
-  }, [sky, extent, reach, minX, minZ, maxX, maxZ, setsWorldDisc, hasBounds]);
+  }, [sky, extent, reach, boundary, setsWorldDisc]);
 
   // The cutaway's size, from the first occupant's footprint.
   const radiusOutline = outlines.find(o => o) ?? null;
@@ -392,17 +407,18 @@ export const SceneryStage = ({
 
   const surface = useRef<Mesh>(null);
   const surfaceShown = !debug?.hide?.includes('surface');
-  // Each occupant's group, placed about the middle of its outline, or of `bounds`.
+  // Each occupant's group, placed about the middle of its outline, or of the stage's disc.
   const anchors = useStableList(claims.map(claim => claim.anchor ?? null));
+  const discX = disc?.centre[0] ?? 0;
+  const discZ = disc?.centre[1] ?? 0;
   const anchorCentres = useMemo(
     () =>
       outlines.map((shape): [number, number] => {
-        const [x0, z0, x1, z1] = shape
-          ? outlineSquare(shape)
-          : [minX, minZ, maxX, maxZ];
+        if (!shape) return [discX, discZ];
+        const [x0, z0, x1, z1] = outlineSquare(shape);
         return [(x0 + x1) / 2, (z0 + z1) / 2];
       }),
-    [outlines, minX, minZ, maxX, maxZ],
+    [outlines, discX, discZ],
   );
   // The occupants' objects last placed, put back as they were once the stage lets go.
   const placed = useRef<Object3D[]>([]);
@@ -415,13 +431,11 @@ export const SceneryStage = ({
   );
   useFrame(({ camera }) => {
     if (!sky || !ocean) return;
-    const cx = (minX + maxX) / 2;
-    const cz = (minZ + maxZ) / 2;
     const now: Object3D[] = [];
     anchors.forEach((anchor, i) => {
       const object = anchor?.current;
       if (!object) return;
-      const [ax, az] = anchorCentres[i] ?? [cx, cz];
+      const [ax, az] = anchorCentres[i] ?? [discX, discZ];
       placeOnGlobe(object, sky.globe, ax, az);
       now.push(object);
     });
@@ -499,26 +513,16 @@ export const SceneryStage = ({
   const provideStage = worldRelief?.provideStage;
   const stagePart = useMemo<WorldReliefStage | null>(
     () =>
-      hasBounds
+      boundary
         ? {
-            bounds: [minX, minZ, maxX, maxZ],
+            boundary,
             seeThrough,
             occupants: reliefOccupants,
             grounds,
             groundLive: seabedDrawn,
           }
         : null,
-    [
-      hasBounds,
-      minX,
-      minZ,
-      maxX,
-      maxZ,
-      seeThrough,
-      reliefOccupants,
-      grounds,
-      seabedDrawn,
-    ],
+    [boundary, seeThrough, reliefOccupants, grounds, seabedDrawn],
   );
   useLayoutEffect(
     () => (stagePart && provideStage ? provideStage(stagePart) : undefined),
@@ -538,32 +542,17 @@ export const SceneryStage = ({
   );
   const outlineLines = useMemo(
     () =>
-      showOutline
+      showOutline && boundary
         ? createSceneryStageOutline(
-            [minX, minZ, maxX, maxZ],
+            boundaryOutline(boundary),
             drawnOutlines,
             level,
             bedY,
           )
         : null,
-    [showOutline, minX, minZ, maxX, maxZ, drawnOutlines, level, bedY],
+    [showOutline, boundary, drawnOutlines, level, bedY],
   );
   useEffect(() => () => outlineLines?.dispose(), [outlineLines]);
-  const footprintLines = useMemo(
-    () =>
-      showOutline && abyssWalls
-        ? createSceneryStageFootprint([minX, minZ, maxX, maxZ], drawnOutlines)
-        : null,
-    [showOutline, abyssWalls, minX, minZ, maxX, maxZ, drawnOutlines],
-  );
-  useEffect(() => () => footprintLines?.dispose(), [footprintLines]);
-  const footprint = useRef<LineSegments>(null);
-  // At the void walls' foot, wherever their depth puts it.
-  useFrame(() => {
-    if (!footprint.current || !sky) return;
-    const grid = sky.uniforms.uSkyAbyssWallGrid.value as Vector3;
-    footprint.current.position.y = sky.abyssLevel - grid.z;
-  });
   const lineMaterial = useMemo(
     () =>
       new LineBasicMaterial({
@@ -621,7 +610,7 @@ export const SceneryStage = ({
     outlineLines,
   ]);
 
-  if (!ocean || !materials || !hasBounds) return null;
+  if (!ocean || !materials || !hasBoundary) return null;
 
   const parts: {
     key: string;
@@ -685,16 +674,6 @@ export const SceneryStage = ({
       {outlineLines && (
         <lineSegments
           geometry={outlineLines}
-          material={lineMaterial}
-          renderOrder={OUTLINE_ORDER + 1}
-          layers={OVERLAY_LAYERS}
-          frustumCulled={false}
-        />
-      )}
-      {footprintLines && (
-        <lineSegments
-          ref={footprint}
-          geometry={footprintLines}
           material={lineMaterial}
           renderOrder={OUTLINE_ORDER + 1}
           layers={OVERLAY_LAYERS}

@@ -49,7 +49,7 @@ before; there is no relief (since 7d-1, 2026-11-02: until then a `SceneryStage`'
 
 Above the surface the sky draws the Earth as a fixed globe (step 2, built 2026-10-26): a
 sphere whose centre lies fixed below the scene and whose cap over a disc about it (the
-stage's `bounds`) is cut flat, so the scene meets the sea level and nothing rises or sinks
+one holding the stage's `boundary`) is cut flat, so the scene meets the sea level and nothing rises or sinks
 as the camera moves ([Step 2 in detail](#9-step-2-in-detail-the-sky-on-a-fixed-globe)).
 Before it the sky faked the curve: flat over the disc and falling away by `½ κ d²` beyond,
 measured along each view, with the disc moved under a camera far off. The data stays flat:
@@ -319,8 +319,8 @@ the disc's middle — meets nothing, as it leaves the sphere again over the plan
 ### The surface
 
 In the scene frame, until the view's origin moves (step 4), with `c` the middle of the
-chosen field's disc at the sea's level, `r` its radius (the stage's `bounds`, as
-`setFlatSea` takes them now) and `up` the scene's:
+chosen field's disc at the sea's level, `r` its radius (the smallest disc holding the
+stage's `boundary`, as `setFlatSea` takes it now) and `up` the scene's:
 
 - **The centre** `C = c − s · up`, `s = √(R² − r²)`: a little less than `R` below, by
   `r² / 2R` (5 m for a disc of 8 km), so the level plane meets the sphere on the disc's
@@ -509,7 +509,7 @@ converted into the field's frame. The globe is a way of drawing, applied on top.
 <World frame={geoFrameFromCrs(crs)}>
   <Scenery observer={{ date }}>
     <SceneryOcean />
-    <SceneryStage bounds={bounds} />
+    <SceneryStage boundary={boundary} />
   </Scenery>
   <GeoRelief layers={layers} />
   <UtmArea crsInstance={crs} origin={crs.originUtm}>{field}</UtmArea>
@@ -524,7 +524,7 @@ converted into the field's frame. The globe is a way of drawing, applied on top.
 - **`World`** holds the scene's frame: world X/Z are its map's about its origin. It renders
   nothing; `useWorld()` reads it. A `Scenery` inside hands it its globe (`provideGlobe`), so
   what the world places outside the `Scenery` is set on the same globe. Since step 7 (7b) the
-  `World` owns the globe instead, with its disc (`bounds`) and its curve (`globe`).
+  `World` owns the globe instead, with its disc (holding its `boundary`) and its curve (`globe`).
 - **The `Scenery`'s `observer`** may give only a date: its place is the world's origin's.
 - **A stage's `relief.frame`** defaults to the world's. `reliefSource` still takes one:
   give it the world's. (Since 7d-1 the relief is a `GeoRelief`, its frame always the
@@ -1047,11 +1047,11 @@ by it (decided 2026-11-02):
 
 | Part | Holds or draws | With what |
 |--|--|--|
-| `World` | the anchor (its `frame`), the disc (`bounds`), the globe (its shape, curved or flat), the switch and its hooks, the place the sky is seen from | always; draws nothing |
+| `World` | the anchor (its `frame`), the disc (holding its `boundary`), the globe (its shape, curved or flat), the switch and its hooks, the place the sky is seen from | always; draws nothing |
 | The relief | seabed and land from tiles; the see-through over loaded fields | the `World`'s globe; shaded plainly without a sky, by the sky with one ([The relief](#the-relief-earth-data-of-its-own)) |
 | Layers | global data: geographic layers and tiles | the `World`'s globe, with or without a sky (as now) |
 | `Scenery` | air and clouds, sun, moon and stars, the ocean, the void | optional; on the `World`'s globe, the observer at the `World`'s place |
-| The anchored stage (`SceneryStage`) | the sea plane over the disc, the cutaway, the void's walls; its columns' bridge to the relief | the `Scenery` |
+| The anchored stage (`SceneryStage`) | the sea plane over the disc, the cutaway; its columns' bridge to the relief | the `Scenery` |
 | Fields (`UtmArea`) | their data | placed by the `World` |
 
 ### The anchor: the World's frame
@@ -1061,8 +1061,8 @@ by it (decided 2026-11-02):
   matched at the disc's middle, in the map's units, step 6) and cut flat over the disc, so the
   anchored stage's fields meet the sea and the relief exactly. A field at home is placed
   exactly as today.
-- **The disc is the `World`'s** (`bounds`, the anchored stage's area, as `SceneryStage`'s
-  `bounds` gives it today); `SceneryStage` takes it from there by default. With no stage
+- **The disc is the `World`'s** (the smallest holding its `boundary`, the anchored stage's
+  area); `SceneryStage` takes the `boundary` from there by default. With no stage
   drawn the globe is still cut there, so nothing placed depends on the scenery.
 - **The `World` owns the `Globe`:** the `Scenery` draws on it, and makes its own only without
   a `World`, as now. Curved or flat is the `World`'s choice, for everything (the `Scenery`'s
@@ -1085,13 +1085,13 @@ by it (decided 2026-11-02):
 
 ### Switching the anchor: a controlled switch
 
-The host asks by changing the `World`'s `frame` and `bounds`, when it chooses; the library
+The host asks by changing the `World`'s `frame` and `boundary`, when it chooses; the library
 applies them together and tells it (built in 7c):
 
 ```tsx
 <World
   frame={anchor.frame}
-  bounds={anchor.bounds}
+  boundary={anchor.boundary}
   onFrameChange={({ from, to, matrix, carry }) => carryCamera(carry)}
   onFrameSettled={() => uncover()}
 >
@@ -1127,7 +1127,7 @@ applies them together and tells it (built in 7c):
   overlapping fields is exact. Switched with the camera far off or high, most of it is under a
   pixel.
 - **The host covers it as it likes.** The story shows a fade: a curtain over the canvas closes
-  (250 ms), the story changes `frame` and `bounds` and carries its camera on `onFrameChange`,
+  (250 ms), the story changes `frame` and `boundary` and carries its camera on `onFrameChange`,
   and the curtain opens once settled and the progress is quiet (at most 3 s). The library
   draws none: the host's pipeline and look are its own.
 
@@ -1159,7 +1159,7 @@ A field is a group placed on the globe — a `UtmArea` with its own `frame`, as 
 its data flat in its own UTM (X east, −Z north) about its origin, the group placed by
 `placeGeoFrame` and `Globe.tangent`, turned to the globe's up there, so it tilts with the
 Earth while its data stays flat relative to each other. It pivots at its stage's middle, not
-at its frame's origin, which may lie anywhere (its `bounds`, since 7c): the gaps below grow
+at its frame's origin, which may lie anywhere (the disc holding its `boundary`, since 7c): the gaps below grow
 with the square of the distance from the pivot. Precision is not a concern: three.js composes
 each draw's model-view matrix in 64 bits, and 25 km offsets are millimetre steps in 32-bit
 floats.
@@ -1234,7 +1234,9 @@ was its shading and its levels:
   darkening by depth under it, as the relief's underside already takes the camera's
   altitude — or are left to the relief's underside where its tiles are drawn.
 
-The void's walls stay with the anchored stage, or are left out: they are the least of it.
+The void's walls stayed with the anchored stage (faded out far from it, 7e) until they were
+removed (2026-11-03): they belonged to one field, cost 0.5–2.5 ms a frame and tied the stage to
+an axis-aligned rectangle (parked on `parked/abyss-walls`; see [scenery.md](./scenery.md)).
 Field data seen from the void is hidden by depth alone (`layerShownAt` is the geographic
 layers' test), so a neighbour's wells show from there already.
 
@@ -1336,6 +1338,9 @@ and loaded by geographic tile and distance. Its design must settle:
 | 7e | See-through regions per loaded field; the void's shading and levels far from the stage | ✅ built (2026-11-02): a neighbour's reservoir seen through its seabed, with the scenery and without; under a field 123 km off the void as under the anchored one, less the walls |
 | 7f | A pick says which field it hit ([§7](#7-decided-2026-10-26)) | ✅ built (2026-11-02): one handler for three fields, each pick in its own field's frame and map, anchored to either end |
 | 7g | Bending a neighbour in its own frame, picking included | only if 7a shows the seam — judged not needed (2026-11-02): unseen from afar, and kept out of close views by what is anchored |
+
+After 7g the void's walls were removed and a stage's area may be any shape
+([Boundaries, built](#boundaries-built-2026-11-03)).
 
 The relief bridge carrying a placed field's transform is not needed while columns and the
 cutaway are the anchored stage's only. Wellbores as an Earth-level layer follow, designed on
@@ -1585,6 +1590,33 @@ avoid, cheaply:
 Bending would take a vertex step in every field material (chunks and their caps, surfaces,
 wells, casings, fences, cut planes, symbols) and in picking, and its inverse on the CPU
 (`worldToArea`, `worldToUtm`, the samplers), for a gap only these views show.
+
+### Boundaries, built (2026-11-03)
+
+A stage's area was an axis-aligned box, `bounds`, everywhere: a field turned against its grid
+needed a larger stage than itself, and the disc holding it larger still. It is now a `Boundary`
+(`sdk/geometries/boundary.ts`), on the `World`, a `UtmArea` and a `SceneryStage` alike
+(`boundary`; `bounds` is gone, never released): a box, a turned box (`{ box, rotation }`), a
+circle (`{ centre, radius }`) or a polygon (a `PlanarPolygonGeometry`, as a chunk stack's
+outline, or a ring of `[x, z]` points). The void's walls, which tied the stage to a rectangle,
+were removed first ([The void](#the-void-the-seabeds-underside-everywhere)). See
+[scenery.md, Boundaries](./scenery.md#boundaries).
+
+- **The disc** is the smallest holding the boundary (`boundaryDisc`; a polygon's by Welzl's),
+  and a field is placed about its middle. `Globe.setDisc` and `SceneryMaterial.setFlatSea`
+  take any boundary; a box gives the same disc as before.
+- **The see-through regions** (`SceneryReliefRegions`, made when the regions change, not each
+  frame): a kind per region (`uReliefRegionKinds`) and its shape (`uReliefRegionShapes`, in
+  place of `uReliefRegionBounds`); a turned box's turn folded into its matrix; a polygon tested
+  by its outline's distance field, one layer each of `uReliefRegionFields` (an array texture,
+  so no width limit as fields come). One sampler more: the relief's programs bind 6 of 16 in
+  the story.
+- **What is laid out on the grid** (the stage's plane, the sea's claim, an occupant's ground)
+  takes the box that holds it (`boundaryBox`).
+- **Checked:** each shape against `boundaryContains` on a grid (`relief-regions.test.ts`), in a
+  field placed 123 km off too, and a polygon with a hole. In the story Volve is a circle,
+  Trench a box turned 30° and Overlap an L: each see-through in its own shape with the
+  scenery and without, each anchored in turn.
 
 ### Considered, not chosen
 

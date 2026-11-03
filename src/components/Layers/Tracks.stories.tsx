@@ -183,7 +183,7 @@ const ShipsStory = ({
           <AnnotationsLayer id="ships" name="Ships" maxDistance={40000} distanceFactor={1000} />
           <Scenery>
             <SceneryOcean level={LEVEL} depth={DEPTH} />
-            <SceneryStage bounds={STAGE_BOUNDS} />
+            <SceneryStage boundary={STAGE_BOUNDS} />
             <TrackLayer
               tracks={ships}
               extrapolate={moving}

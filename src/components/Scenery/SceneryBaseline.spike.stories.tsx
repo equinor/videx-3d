@@ -37,10 +37,6 @@ import {
   sceneryReliefArgTypes,
   sceneryBakedReliefLayer,
   sceneryReliefFromArgs,
-  sceneryWallDebugArgs,
-  SceneryWallDebugArgs,
-  sceneryWallDebugArgTypes,
-  sceneryWallDebugFromArgs,
 } from '../../storybook/components/scenery-controls';
 import {
   ProgressArgs,
@@ -128,7 +124,6 @@ type ScenerySpikeArgs = {
 } & DemoRevealArgs &
   SceneryArgs &
   SceneryReliefArgs &
-  SceneryWallDebugArgs &
   SceneryMinimapArgs &
   ProgressArgs;
 
@@ -140,7 +135,7 @@ const FieldStage = (args: ScenerySpikeArgs) => {
   const m = args.stageMargin;
   return (
     <SceneryStage
-      bounds={[min[0] - m, min[1] - m, max[0] + m, max[1] + m]}
+      boundary={[min[0] - m, min[1] - m, max[0] + m, max[1] + m]}
       debug={{
         hide: sceneryHideFromArgs(args.hide).stage,
         outline: args.outline,
@@ -264,7 +259,6 @@ const SceneryScene = (args: ScenerySpikeArgs) => {
         {...sceneryPropsFromArgs(args)}
         debug={{
           hide: sceneryHideFromArgs(args.hide).sky,
-          walls: sceneryWallDebugFromArgs(args),
         }}
       >
         <SceneryArgsFeatures
@@ -423,7 +417,6 @@ const meta = {
       table: { category: 'Layers' },
     },
     ...demoRevealArgTypes('Layers'),
-    ...sceneryWallDebugArgTypes,
   },
 } satisfies Meta<typeof ScenerySpike>;
 
@@ -461,7 +454,6 @@ export const Default: Story = {
     pipelines: false,
     facilities: false,
     ...demoRevealArgs,
-    ...sceneryWallDebugArgs,
   },
 };
 

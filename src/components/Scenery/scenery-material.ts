@@ -12,7 +12,6 @@ import {
   Scene,
   ShaderMaterial,
   ShaderMaterialParameters,
-  Texture,
   Uniform,
   UniformsLib,
   UniformsUtils,
@@ -21,6 +20,7 @@ import {
   Vector4,
   WebGLRenderer,
 } from 'three';
+import { Boundary, boundaryDisc } from '../../sdk/geometries/boundary';
 import {
   createGraticuleUniforms,
   GraticuleKind,
@@ -52,20 +52,12 @@ import { OCEAN_SURFACE_UNIFORMS, OceanMaterial } from '../Ocean/ocean-material';
 import fragmentShader from './shaders/sky-fragment.glsl';
 import vertexShader from './shaders/sky-vertex.glsl';
 import {
-  SkyAbyssWallCut,
-  skyAbyssWallClipPlane,
-  skyAbyssWallGrid,
-  skyAbyssWallNear,
-} from './scenery-abyss-walls';
-import {
   SCENERY_EARTH_RADIUS,
-  SceneryAbyssWalls,
   SceneryCloudsProps,
   skyDaylight,
   sceneryDefaults,
   skyMoonlight,
   skySunColor,
-  ScenerySubsurfaceColors,
   skyTwilight,
 } from './scenery-model';
 
@@ -138,21 +130,6 @@ export class SceneryMaterial extends ShaderMaterial {
   private readonly ownsGlobe: boolean;
   private bedDetail: SurfaceDetail | undefined;
   private bedDetailKey = '';
-  // How far in front of the camera clipAbyssWalls cuts the walls away.
-  private abyssWallCutDistance: number =
-    sceneryDefaults.abyss.walls.cutDistance;
-  // What clipAbyssWalls cuts by, kept to fill in each frame.
-  private readonly abyssWallCut: SkyAbyssWallCut = {
-    centre: [0, 0],
-    half: [0, 0],
-    level: 0,
-    depth: 0,
-    cutDistance: 0,
-    distance: 0,
-    flare: 0,
-    wander: 0,
-    relief: 0,
-  };
   // The disc the sea is flat over (setFlatSea): the globe's.
   private get flatSea(): Vector4 {
     return this.uniforms.uSkyStageFlat.value;
@@ -253,53 +230,8 @@ export class SceneryMaterial extends ShaderMaterial {
           new Vector2(abyss.depthDetail, abyss.depthDetailScale),
         ),
         uSkyAbyssFalloff: new Uniform(abyss.falloff),
-        uSkyAbyssWalls: new Uniform(
-          new Vector4(
-            abyss.walls.distance,
-            abyss.walls.lightStrength,
-            abyss.walls.hazeDistance,
-            abyss.walls.rockSize,
-          ),
-        ),
-        uSkyAbyssWallShape: new Uniform(
-          new Vector4(
-            abyss.walls.relief,
-            abyss.walls.flare,
-            abyss.walls.lightDepth,
-            abyss.walls.wander,
-          ),
-        ),
-        // The depth over which the haze in the hollow darkens; 0 for never.
-        uSkyAbyssWallHazeDepth: new Uniform(abyss.walls.hazeDepth),
-        // Their sand: how thick, how bright the glow over the stage, and its colour.
-        uSkyAbyssWallSand: new Uniform(
-          new Vector2(abyss.walls.sand, abyss.walls.glow),
-        ),
-        uSkyAbyssWallSandColor: new Uniform(new Color(abyss.walls.sandColor)),
-        uSkyAbyssWallGlowColor: new Uniform(new Color(abyss.walls.glowColor)),
-        // The distance beyond their rim the hollow's light and haze fade out over.
-        uSkyAbyssWallFade: new Uniform(abyss.walls.rimFade),
-        // How much of them the camera sees (clipAbyssWalls): 1 near their hollow, 0 far beyond.
-        uSkyAbyssWallNear: new Uniform(1),
-        // 1 while the seabed beyond the stage, which the background draws, hides them from above.
-        uSkyAbyssWallCover: new Uniform(0),
-        // The plane they are cut away up to (clipAbyssWalls): what is on the far side of its normal shows.
-        uSkyAbyssWallClip: new Uniform(new Vector4(0, 0, 1, -1e30)),
-        uSkyAbyssWallColor: new Uniform(new Color(abyss.walls.color)),
-        uSkyAbyssWallCutColor: new Uniform(new Color(abyss.walls.cutColor)),
-        uSkyAbyssWallMist: new Uniform(
-          new Vector2(abyss.walls.mist, abyss.walls.mistReach),
-        ),
-        uSkyAbyssWallLight: new Uniform(new Vector3(0, 1, 0)),
-        uSkyAbyssWallLightColor: new Uniform(new Color(1, 1, 1)),
-        // The subsurface's light map (scenerySubsurfaceColors), filling in their shade.
-        uSkyAbyssWallFillTop: new Uniform(new Color()),
-        uSkyAbyssWallFillBottom: new Uniform(new Color()),
-        uSkyAbyssWallFillBelow: new Uniform(new Color()),
-        uSkyAbyssWallRock: new Uniform<Texture | null>(null),
-        // The grid their mesh is laid on (updateAbyssWallGrid): columns, rows and depth.
-        uSkyAbyssWallGrid: new Uniform(new Vector3()),
-        uSkyAbyssWallTests: new Uniform(2),
+        // Toward the subsurface's light raking the lid (setAbyssLight).
+        uSkyAbyssLight: new Uniform(new Vector3(0, 1, 0)),
         uSkyClouds: new Uniform(new Vector4()),
         uSkyCloudsColor: new Uniform(new Vector4(1, 1, 1, 1)),
         uSkyCloudsSeed: new Uniform(new Vector2()),
@@ -312,8 +244,6 @@ export class SceneryMaterial extends ShaderMaterial {
           sceneryDefaults.globe ? 1 / SCENERY_EARTH_RADIUS : 0,
         ),
         uSkyStageFlat: new Uniform(new Vector4()),
-        // The rectangle setFlatSea was given: its centre and half extents, world X/Z.
-        uSkyStageBox: new Uniform(new Vector4()),
         uSkyOceanLevel: new Uniform(ocean.level),
         uSkyOceanDepth: new Uniform(ocean.depth),
         uSkyOceanBedColor: new Uniform(new Color(ocean.seabed.color)),
@@ -940,32 +870,19 @@ export class SceneryMaterial extends ShaderMaterial {
   }
 
   /**
-   * Keep the sea flat over the disc that holds this rectangle, `[minX, minZ, maxX, maxZ]` in
-   * world X/Z: where the scene is, so what meets the water there meets it level. On its own
-   * {@link globe} this is the globe's disc too; a `World`'s globe has its disc set by the
-   * `World` (its `bounds`), or by the stage where it has none. `null` for none.
+   * Keep the sea flat over the disc that holds `boundary` (world X/Z; see
+   * {@link boundaryDisc}): where the scene is, so what meets the water there meets it level.
+   * On its own {@link globe} this is the globe's disc too; a `World`'s globe has its disc set
+   * by the `World` (its `boundary`), or by the stage where it has none. `null` for none.
    */
-  setFlatSea(bounds: [number, number, number, number] | null) {
-    if (!bounds) {
+  setFlatSea(boundary: Boundary | null) {
+    if (!boundary) {
       this.flatSea.set(0, 0, 0, 0);
-      this.uniforms.uSkyStageBox.value.set(0, 0, 0, 0);
     } else {
-      const [minX, minZ, maxX, maxZ] = bounds;
-      this.flatSea.set(
-        (minX + maxX) / 2,
-        0,
-        (minZ + maxZ) / 2,
-        Math.hypot(maxX - minX, maxZ - minZ) / 2,
-      );
-      this.uniforms.uSkyStageBox.value.set(
-        (minX + maxX) / 2,
-        (minZ + maxZ) / 2,
-        (maxX - minX) / 2,
-        (maxZ - minZ) / 2,
-      );
+      const { centre, radius } = boundaryDisc(boundary);
+      this.flatSea.set(centre[0], 0, centre[1], radius);
     }
-    if (this.ownsGlobe) this.globe.setDisc(bounds);
-    this.updateAbyssWallGrid();
+    if (this.ownsGlobe) this.globe.setDisc(boundary);
   }
 
   /** height of the lid along {@link up} */
@@ -997,7 +914,7 @@ export class SceneryMaterial extends ShaderMaterial {
     this.uniforms.uSkyAbyssDepthColor.value.set(value);
   }
 
-  /** distance over which the lid recedes into the horizon colour; 0 for never (without walls) */
+  /** distance over which the lid recedes into the horizon colour; 0 for never */
   get abyssFadeDistance(): number {
     return this.uniforms.uSkyAbyssFadeDistance.value;
   }
@@ -1061,30 +978,20 @@ export class SceneryMaterial extends ShaderMaterial {
     this.uniforms.uSkyAbyssFalloff.value = Math.max(value, 0.01);
   }
 
-  /** the void's walls (see {@link SceneryAbyssWalls}); changing it recompiles the layers that draw them */
-  get abyssWalls(): boolean {
-    return this.switches.SKY_ABYSS_WALLS !== undefined;
-  }
-  set abyssWalls(value: boolean) {
-    this.setSwitch('SKY_ABYSS_WALLS', value);
-  }
-
   /**
    * Openings to the void from above that stages make (a `SceneryStage` occupant's cut),
-   * each telling whether it is open now. While one is, the walls are drawn from above the lid.
+   * each telling whether it is open now.
    */
   readonly abyssOpenings = new Set<() => boolean>();
 
   /**
-   * Whether the void, and with it the walls, can show from above the lid: through a seabed
-   * that is off or see-through, a cutaway taking the seabed (`cutaway`), or a stage's
-   * opening ({@link abyssOpenings}). Sets whether the seabed beyond the stage, which the
-   * background draws, hides them there.
+   * Whether the void can show from above the lid: through a seabed that is off or
+   * see-through, a cutaway taking the seabed (`cutaway`), or a stage's opening
+   * ({@link abyssOpenings}). Sets whether a stage's opening is open now.
    */
   abyssOpenFromAbove(cutaway: boolean) {
     const covers =
       this.ocean && this.oceanSeabed && this.oceanSeabedOpacity >= 1;
-    this.uniforms.uSkyAbyssWallCover.value = covers ? 1 : 0;
     let opening = false;
     for (const open of this.abyssOpenings) {
       if (open()) {
@@ -1097,130 +1004,9 @@ export class SceneryMaterial extends ShaderMaterial {
     return !covers || cutaway || opening;
   }
 
-  /** the walls' look (see {@link SceneryAbyssWalls}) */
-  setAbyssWalls(walls: Required<SceneryAbyssWalls>) {
-    const distance = Math.max(walls.distance, 1);
-    const relief = MathUtils.clamp(walls.relief, 1, 0.9 * distance);
-    this.uniforms.uSkyAbyssWalls.value.set(
-      distance,
-      MathUtils.clamp(walls.lightStrength, 0, 1),
-      Math.max(walls.hazeDistance, 0),
-      Math.max(walls.rockSize, 1),
-    );
-    this.uniforms.uSkyAbyssWallShape.value.set(
-      relief,
-      Math.max(walls.flare, 0),
-      Math.max(walls.lightDepth, 1),
-      MathUtils.clamp(walls.wander, 0, distance - relief),
-    );
-    this.uniforms.uSkyAbyssWallHazeDepth.value = Math.max(walls.hazeDepth, 0);
-    (this.uniforms.uSkyAbyssWallColor.value as Color).set(walls.color);
-    (this.uniforms.uSkyAbyssWallCutColor.value as Color).set(walls.cutColor);
-    (this.uniforms.uSkyAbyssWallMist.value as Vector2).set(
-      MathUtils.clamp(walls.mist, 0, 1),
-      Math.max(walls.mistReach, 1),
-    );
-    (this.uniforms.uSkyAbyssWallSand.value as Vector2).set(
-      Math.max(walls.sand, 0),
-      MathUtils.clamp(walls.glow, 0, 1),
-    );
-    (this.uniforms.uSkyAbyssWallSandColor.value as Color).set(walls.sandColor);
-    (this.uniforms.uSkyAbyssWallGlowColor.value as Color).set(walls.glowColor);
-    this.uniforms.uSkyAbyssWallFade.value = Math.max(walls.rimFade, 0);
-    this.abyssWallCutDistance = Math.max(walls.cutDistance, 0);
-    this.updateAbyssWallGrid();
-  }
-
-  // The grid the walls' mesh is laid on, for the stage, the walls and their cliffs.
-  private updateAbyssWallGrid() {
-    const rock = this.uniforms.uSkyAbyssWallRock.value as Texture | null;
-    if (!rock) return;
-    const box = this.uniforms.uSkyStageBox.value as Vector4;
-    const walls = this.uniforms.uSkyAbyssWalls.value as Vector4;
-    const shape = this.uniforms.uSkyAbyssWallShape.value as Vector4;
-    const grid = skyAbyssWallGrid(
-      [box.z, box.w],
-      walls.x,
-      walls.w,
-      shape.z,
-      (rock.image as { width: number }).width,
-    );
-    (this.uniforms.uSkyAbyssWallGrid.value as Vector3).set(
-      grid.columns,
-      grid.rows,
-      grid.depth,
-    );
-  }
-
-  /** the subsurface's light map, filling in the walls' shade */
-  setAbyssWallFill(colors: ScenerySubsurfaceColors) {
-    this.uniforms.uSkyAbyssWallFillTop.value.copy(colors.top);
-    this.uniforms.uSkyAbyssWallFillBottom.value.copy(colors.bottom);
-    this.uniforms.uSkyAbyssWallFillBelow.value.copy(colors.below);
-  }
-
-  /**
-   * Cut the walls away up to a vertical plane facing `camera`'s heading, as the cutaway's
-   * does: through the stage's centre, or {@link SceneryAbyssWalls.cutDistance} in front of the camera
-   * once that is further, and below the lid past the stage, until the whole stage is in view
-   * through the hollow (see `skyAbyssWallClipPlane`). With it, how much of the walls the
-   * camera sees ({@link abyssWallNear}). Every frame, with the camera's matrices this frame's.
-   */
-  clipAbyssWalls(camera: Camera) {
-    const u = this.uniforms;
-    const box = u.uSkyStageBox.value as Vector4;
-    const walls = u.uSkyAbyssWalls.value as Vector4;
-    const shape = u.uSkyAbyssWallShape.value as Vector4;
-    const cut = this.abyssWallCut;
-    cut.centre[0] = box.x;
-    cut.centre[1] = box.y;
-    cut.half[0] = box.z;
-    cut.half[1] = box.w;
-    cut.level = this.abyssLevel;
-    cut.depth = (u.uSkyAbyssWallGrid.value as Vector3).z;
-    cut.cutDistance = this.abyssWallCutDistance;
-    cut.distance = walls.x;
-    cut.flare = shape.y;
-    cut.wander = shape.w;
-    cut.relief = shape.x;
-    skyAbyssWallClipPlane(
-      camera.matrixWorld,
-      camera.position,
-      this.up,
-      cut,
-      u.uSkyAbyssWallClip.value as Vector4,
-    );
-    u.uSkyAbyssWallNear.value = skyAbyssWallNear(
-      camera.position,
-      u.uSkyEast.value as Vector3,
-      u.uSkyNorth.value as Vector3,
-      this.up,
-      cut,
-      u.uSkyAbyssWallFade.value,
-    );
-  }
-
-  /**
-   * How much of the void's walls the camera sees, 1 near their hollow to 0 far beyond their
-   * rim (`skyAbyssWallNear`), where the void is the plain one: set by {@link clipAbyssWalls}.
-   */
-  get abyssWallNear(): number {
-    return this.uniforms.uSkyAbyssWallNear.value;
-  }
-
-  /** the raking light the walls are shaded by: `direction` toward it, in the subsurface light's `color` */
-  setAbyssWallLight(direction: Vector3, color: Color) {
-    this.uniforms.uSkyAbyssWallLight.value.copy(direction).normalize();
-    this.uniforms.uSkyAbyssWallLightColor.value.copy(color);
-  }
-
-  /** the cliffs the walls are drawn from (`bakeSkyCliffs`) */
-  get abyssWallRock(): Texture | null {
-    return this.uniforms.uSkyAbyssWallRock.value;
-  }
-  set abyssWallRock(value: Texture | null) {
-    this.uniforms.uSkyAbyssWallRock.value = value;
-    this.updateAbyssWallGrid();
+  /** the light raking the void's lid from below, to show a relief's shape: `direction` toward it */
+  setAbyssLight(direction: Vector3) {
+    this.uniforms.uSkyAbyssLight.value.copy(direction).normalize();
   }
 
   /** the endless sea (see {@link SceneryOceanProps}); link its water first ({@link linkOcean}). Changing it recompiles the layers that draw it */

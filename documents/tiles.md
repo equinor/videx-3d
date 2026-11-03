@@ -28,7 +28,7 @@
 
 Today a `SceneryStage` relief is ONE data set, resampled whole into one texture of at most
 2048² around the stage — about 2 km a texel over the 2000 km it must reach — and drawn
-with CDLOD. The stage keeps a flat seabed over `bounds` and eases it into the seabed an
+with CDLOD. The stage keeps a flat seabed over its `boundary` and eases it into the seabed an
 occupant hands it.
 
 What is wanted:
@@ -540,7 +540,7 @@ start-up only).
 ## 5. Drawing the relief
 
 ```tsx
-<World frame={frame} bounds={bounds}>               {/* where the scene lies on the map */}
+<World frame={frame} boundary={boundary}>           {/* where the scene lies on the map */}
   <Scenery>
     <SceneryOcean />
     <SceneryStage occupants={[{ outline, cut, onStage, onGround }]} />
@@ -644,10 +644,11 @@ see [world.md, 7d](./world.md#7d-1-built-2026-11-02).)
   seabed, flat at `depth` where no layer has data. Without one, its flat seabed covers
   everything, as today without an occupant's seabed.
 - **See-through (built 2026-10-25):** below the sea's `seabedOpacity` of 1, the tiles
-  over `bounds` are drawn a second time (`createSceneryReliefTileSubset`: the same patch,
+  over the see-through regions (the stage's `boundary` and each loaded field's) are drawn a
+  second time (`createSceneryReliefTileSubset`: the same patch,
   instances of its own) with a see-through variant
   (`createSceneryReliefTileSeeThroughMaterial`, OIT-wired as the stage's see-through seabed),
-  which keeps only what lies inside `bounds`, at the seabed's opacity; the opaque draw
+  which keeps only what lies inside them, each by its own shape, at the seabed's opacity; the opaque draw
   leaves it out (`RELIEF_STAGE_AROUND`). The see-through draw has no skirts: two
   see-through skirts over each other would show as a line. That leaves a crack only while
   a finer tile next to a coarser one is loading.
@@ -676,7 +677,7 @@ see [world.md, 7d](./world.md#7d-1-built-2026-11-02).)
     cutting occupant's says where its cut applies.
   - **The cut is tested where the ground lies flat** (`vReliefFlat`: the height without the
     curve's drop), the frame the occupant's cut and the column are in. While it opens, the
-    sky draws the void's walls, as for the occupant's seabed (`abyssOpenings`).
+    void shows through it from above, as for the occupant's seabed (`abyssOpenings`).
   - **Seen in `FieldColumn`** (`reliefCut`): a section opens the relief inside the outline
     on its side only, down to the column's cut face, whose top meets the relief's cut edge
     on one line at 700 m. With `keepBed` on, the relief stays whole over the same cut. With
@@ -696,12 +697,9 @@ see [world.md, 7d](./world.md#7d-1-built-2026-11-02).)
 - **The relief from below (built 2026-10-28; it replaced the skirts' test below):** under
   the ground the relief is the void's lid. The same tiles are drawn with a second
   material instead (`createSceneryReliefTileFromBelowMaterial`, `RELIEF_FROM_BELOW`): their
-  back faces alone, shaded as the lid the background draws — with walls the sand's
-  underside in their haze (`skyAbyssLidFacing`), without the void's own lid
-  (`skyAbyssCeiling`), both raked by the walls' light by the way they face
-  (`skyAbyssLidRake`), so the ground's shape shows, and level, the two lids meet in one
-  colour. With walls, a pixel the walls' rock stands in front of is left to the background,
-  as the stage's flat lid leaves it. Nothing above the lid is drawn from there — not the
+  back faces alone, shaded as the lid the background draws (`skyAbyssCeiling`), raked by a
+  level light by the way they face (`skyAbyssLidRake`), so the ground's shape shows, and
+  level, the two lids meet in one colour. Nothing above the lid is drawn from there — not the
   water, the land, nor a trench's floor deeper than the camera — and a skirt is shaded as
   the lid it hangs from, so the cracks show none. Both materials are compiled with the
   stage; the frame shows one pair of meshes or the other (opaque and see-through).
@@ -710,9 +708,7 @@ see [world.md, 7d](./world.md#7d-1-built-2026-11-02).)
     lid's end. It is left to the void's depths, as the background's lid leaves it, so the
     lid ends at the horizon as the flat one does; what lies deeper than the camera (a
     trench's walls across the void) is still drawn there, fading with distance into the
-    depths the background draws below the horizon, not into the lid's horizon colour
-    (without walls, or far from them; near them it fades to black far from the hollow, as
-    they do): a deep
+    depths the background draws below the horizon, not into the lid's horizon colour: a deep
     basin's floor tens of kilometres off is gone, not pale streaks cut at its tiles'
     edges. The debug tint (amber relief,
     red background) shows the line, and `debug.relief` its tiles from below too. Leaving
@@ -721,7 +717,7 @@ see [world.md, 7d](./world.md#7d-1-built-2026-11-02).)
   - ⚠️ Until 2026-10-28 the tops were drawn from below too, every pixel above the camera
     dropped (`reliefTileHiddenFromBelow`), and what lay deeper (a trench seen from the
     void) shaded as seen from above through the water: blue streaks along the horizon in
-    the void, and with walls inside the hollow. The lid itself was the background's,
+    the void. The lid itself was the background's,
     flat at the sea's depth.
   - `vReliefSkirt` is `flat`, from each triangle's last vertex (the provoking vertex in
     WebGL 2), which the patch's index order makes a skirt's lower edge on a skirt and a
@@ -837,7 +833,7 @@ const [ground, setGround] = useState<HeightFieldClip | null>(null);
 const [cut, setCut] = useState<CutUniforms | null>(null);
 const [stage, setStage] = useState<SceneryStageOccupantState>(OFF_STAGE);
 
-<World frame={frame} bounds={bounds}>
+<World frame={frame} boundary={boundary}>
   <Scenery>
     <SceneryOcean {...ocean} />
     <SceneryStage
@@ -1368,7 +1364,7 @@ a run. Then `profile` at fixed poses for the GPU and main-thread time per frame.
   at a time, and a block cache of 128 MB in the worker.
 - **`depth` or `base`:** the flat seabed where no layer has data is named `depth` here,
   positive down, as the sea's is.
-- **Land inside `bounds`** is see-through with the seabed: the opacity applies to all the
+- **Land inside the `boundary`** is see-through with the seabed: the opacity applies to all the
   ground over the scene.
 - **The finer tiles over the occupants** (half a pixel of error, see Seams) cost more
   tiles near the camera where the seabed is rough. If that costs too much, a larger
@@ -1405,7 +1401,7 @@ enough, and the plan comes first.
 
 ## 12. Costs and risks
 
-- **See-through under the seabed:** below `seabedOpacity` 1 the ground over `bounds` is
+- **See-through under the seabed:** below `seabedOpacity` 1 the ground over the `boundary` is
   thousands of see-through triangles, drawn in every OIT sub-pass — where the headroom
   matters most. If it costs too much, the see-through draw takes coarser tiles.
 - **One worker:** the generators share one worker, and a column build has serial phases
@@ -1423,10 +1419,6 @@ enough, and the plan comes first.
   the stories bake it by default, and hosts with a seabed of their own should too.
 - **Coasts:** EMODnet has no land; at the coast the land fades in from ETOPO 15″ over the
   feather, which can move the coastline by a cell or so.
-- **The void's walls** (a prototype) stand at the flat seabed's level; ground deeper than
-  the sea's `depth` inside `bounds` will meet them. To be looked at in StageDebug. From
-  below, the relief's lid meets their top where it lies at the sea's depth; where it lies
-  above it, the background's flat lid shows in the strip between, in the same colour.
 - **A local layer's detail from afar** is bounded down to the level a layer's edge is
   read at (512 values a side); finer than that, a tile sees it one level ahead, as
   before (see [The detail under a tile](#4-relief-tiles)). A layer larger than 512 values

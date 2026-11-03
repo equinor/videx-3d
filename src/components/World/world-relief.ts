@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react';
+import type { Boundary } from '../../sdk/geometries/boundary';
 import type { HeightFieldClip } from '../../sdk/materials/height-field-clip';
 import type { SceneryOceanState } from '../Scenery/scenery-context';
 import type { SceneryReliefHub } from '../Scenery/scenery-relief-hub';
@@ -18,8 +19,8 @@ export type WorldReliefGroundRequest = {
  */
 export type WorldReliefStage = {
   /** the stage's area, world X/Z: see-through over it with `seeThrough` */
-  bounds: [number, number, number, number];
-  /** the sea's seabed is see-through (its `seabedOpacity` below 1): so is the relief over `bounds` */
+  boundary: Boundary;
+  /** the sea's seabed is see-through (its `seabedOpacity` below 1): so is the relief over `boundary` */
   seeThrough: boolean;
   /** the occupants' outlines, and the cut of one of them (see `SceneryReliefTileOccupants`) */
   occupants?: SceneryReliefTileOccupants;

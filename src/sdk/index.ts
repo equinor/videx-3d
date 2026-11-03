@@ -16,6 +16,7 @@ export * from './data/relief/relief-window';
 export * from './data/relief/stack-layer-to-relief';
 export * from './data/relief/surface-to-relief';
 
+export * from './geometries/boundary';
 export * from './geometries/boundary-loops';
 export * from './geometries/cap-normal-map';
 export * from './geometries/chamfer';

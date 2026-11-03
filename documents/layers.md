@@ -9,7 +9,7 @@ the seabed and the land, and inside a `Scenery` be seen through its sea as the s
 (`water`).
 
 ```tsx
-<World frame={frame} bounds={bounds}>
+<World frame={frame} boundary={boundary}>
   <Scenery>
     <SceneryOcean />
     <SceneryStage />
@@ -93,8 +93,7 @@ depth buffer or a shader to discard. It holds:
   the relief a stage draws, else the sea's flat seabed — the void's lid hides all above it
   (see [relief.md](./relief.md)), so nothing lying above it is drawn (`sceneryLidOverCamera`).
   Depth alone does not hide it: the lid leaves pixels to the background, which writes none —
-  toward the horizon where the globe curves the ground below the camera's level, and where
-  the void's walls stand in front — and a layer drawn without the depth test (`GeoLabels`)
+  toward the horizon where the globe curves the ground below the camera's level — and a layer drawn without the depth test (`GeoLabels`)
   is hidden by nothing. `lies` says where the layer is: `'ground'` (draped, on the relief),
   always above the lid; or a height over the sea, above it where it is at the lid's height
   over the camera or higher. A layer laid deeper, at a reservoir's depth say, is still seen

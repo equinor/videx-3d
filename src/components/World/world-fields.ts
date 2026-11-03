@@ -1,16 +1,15 @@
 import { createContext, useContext } from 'react';
 import type { Object3D } from 'three';
-import type { WorldBounds } from './world-context';
+import type { Boundary } from '../../sdk/geometries/boundary';
 
 /**
  * A field loaded in a {@link World}: the group its data is drawn in, placed on the Earth (a
- * `UtmArea`'s), and its stage's area in that group's own X/Z, `[minX, minZ, maxX, maxZ]`.
- * Whatever tells fields apart reads its place from `object.matrixWorld` each time: a switch
- * of the anchor moves it.
+ * `UtmArea`'s), and its area, `boundary`, in that group's own X/Z. Whatever tells fields
+ * apart reads its place from `object.matrixWorld` each time: a switch of the anchor moves it.
  */
 export type WorldField = {
   object: Object3D;
-  bounds: WorldBounds;
+  boundary: Boundary;
 };
 
 /**
@@ -19,7 +18,7 @@ export type WorldField = {
  */
 export type WorldFieldsState = {
   fields: readonly WorldField[];
-  /** A field tells it is loaded (a `UtmArea` with `bounds`); returns the release. */
+  /** A field tells it is loaded (a `UtmArea` with a `boundary`); returns the release. */
   addField: (field: WorldField) => () => void;
 };
 

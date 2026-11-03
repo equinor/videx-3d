@@ -19,6 +19,11 @@ import {
   Vector3,
 } from 'three';
 import { getProjectionDefFromUtmZone } from '../../sdk/projection/crs';
+import {
+  Boundary,
+  boundaryDisc,
+  boundaryOutline,
+} from '../../sdk/geometries/boundary';
 import { GeoFrame, geoFrameAt } from '../../sdk/projection/geo-frame';
 import {
   sceneryArgs,
@@ -57,7 +62,6 @@ import {
 import { GeoRelief } from '../Layers/GeoRelief';
 import { Scenery } from '../Scenery/Scenery';
 import { SceneryStage } from '../Scenery/SceneryStage';
-import type { SceneryStageBounds } from '../Scenery/scenery-stage';
 import { useLevelHorizon } from '../Scenery/useLevelHorizon';
 import { UtmArea } from '../UtmArea/UtmArea';
 import { UtmAreaContext, UtmAreaContextProps } from '../UtmArea/UtmAreaContext';
@@ -81,19 +85,12 @@ type FieldId = 'volve' | 'trench' | 'overlap';
 type Field = {
   name: string;
   frame: GeoFrame;
-  /** its stage's area, in its own frame: `[minX, minZ, maxX, maxZ]` */
-  bounds: SceneryStageBounds;
+  /** its stage's area, in its own frame */
+  boundary: Boundary;
   color: string;
 };
 
 const FIELD_IDS: FieldId[] = ['volve', 'trench', 'overlap'];
-
-const square = (side: number): SceneryStageBounds => [
-  -side / 2,
-  -side / 2,
-  side / 2,
-  side / 2,
-];
 
 // A point `east` and `north` metres from the demo field's origin, in its map.
 const demoPoint = (east: number, north: number): [number, number] => [
@@ -103,16 +100,18 @@ const demoPoint = (east: number, north: number): [number, number] => [
 
 const UTM_32N = getProjectionDefFromUtmZone('32N');
 
+// Each field's area a shape of its own (a circle, a turned box, a polygon), so the relief's
+// see-through over each shows that it follows the shape.
 const FIELDS: Record<FieldId, Field> = {
-  // The demo field: a 16 km stage, a large field's size.
+  // The demo field: a circle 18 km across, a large field's size.
   volve: {
     name: 'Volve',
     frame: demoFrame,
-    bounds: square(16000),
+    boundary: { centre: [0, 0], radius: 9000 },
     color: '#ff7a1a',
   },
   // Over the Norwegian Trench, 123 km east, in the next UTM zone, with a map of its own about
-  // its point, to the metre; its stage of Troll's size, among the largest.
+  // its point, to the metre; a stage of Troll's length, 27 x 13 km, turned 30° from its grid.
   trench: {
     name: 'Trench',
     frame: {
@@ -121,11 +120,11 @@ const FIELDS: Record<FieldId, Field> = {
         Math.round,
       ) as [number, number],
     },
-    bounds: square(27000),
+    boundary: { box: [-13500, -6500, 13500, 6500], rotation: Math.PI / 6 },
     color: '#e040fb',
   },
   // Overlapping Volve's stage, 10 km east and 4 km north, in a transverse Mercator about its
-  // own middle: another projection over the same ground.
+  // own middle: another projection over the same ground. An L, 16 km on its long sides.
   overlap: {
     name: 'Overlap',
     frame: geoFrameAt(
@@ -134,7 +133,14 @@ const FIELDS: Record<FieldId, Field> = {
         number,
       ]),
     ),
-    bounds: square(16000),
+    boundary: [
+      [-8000, -8000],
+      [8000, -8000],
+      [8000, 0],
+      [0, 0],
+      [0, 8000],
+      [-8000, 8000],
+    ],
     color: '#18ffff',
   },
 };
@@ -163,17 +169,20 @@ const MARKER = proj4(demoFrame.projection, 'WGS84', demoPoint(60000, 3000)) as [
   number,
 ];
 
-// The panel's places: each field's middle and its north-east corner, and the marker, in the
-// anchor's map.
+// The panel's places: each field's middle (its disc's) and the point of its outline farthest
+// north-east, and the marker, in the anchor's map.
 const placesIn = (anchor: Field) => {
   const [e, n] = proj4('WGS84', anchor.frame.projection, MARKER);
   return Object.fromEntries([
     ...FIELD_IDS.flatMap(id => {
       const field = FIELDS[id];
-      const [, minZ, maxX] = field.bounds;
+      const { centre } = boundaryDisc(field.boundary);
+      const corner = boundaryOutline(field.boundary)[0].reduce((a, b) =>
+        b[0] - b[1] > a[0] - a[1] ? b : a,
+      );
       return [
-        [field.name, pointIn(anchor, field, [0, 0])],
-        [`${field.name} corner`, pointIn(anchor, field, [maxX, minZ])],
+        [field.name, pointIn(anchor, field, centre)],
+        [`${field.name} corner`, pointIn(anchor, field, corner)],
       ];
     }),
     ['Marker', [e - anchor.frame.origin[0], anchor.frame.origin[1] - n]],
@@ -213,16 +222,22 @@ const EarthMarker = () => {
   );
 };
 
-// The spheres in a field's own frame: at the sea's level on its stage's middle, corners and
-// edges, where a flat field parts from the curved sea most; and three at the reservoir's depth.
-const fieldMarks = ([minX, minZ, maxX, maxZ]: SceneryStageBounds) => {
-  const midX = (minX + maxX) / 2;
-  const midZ = (minZ + maxZ) / 2;
-  const atSea = [minX, midX, maxX].flatMap(x =>
-    [minZ, midZ, maxZ].map((z): [number, number, number] => [x, LEVEL, z]),
-  );
-  const deep = [(minX + midX) / 2, midX, (midX + maxX) / 2].map(
-    (x): [number, number, number] => [x, LEVEL - RESERVOIR, midZ],
+// The spheres in a field's own frame: at the sea's level on its disc's middle and along its
+// outline, where a flat field parts from the curved sea most; and three at the reservoir's
+// depth, across its middle.
+const fieldMarks = (boundary: Boundary) => {
+  const {
+    centre: [cx, cz],
+    radius,
+  } = boundaryDisc(boundary);
+  // Once each: a polygon's disc may be centred on one of its corners (the L's is).
+  const atSea = [[cx, cz], ...boundaryOutline(boundary, 8)[0]]
+    .filter(
+      ([x, z], i, all) => all.findIndex(([u, v]) => u === x && v === z) === i,
+    )
+    .map(([x, z]): [number, number, number] => [x, LEVEL, z]);
+  const deep = [cx - radius / 3, cx, cx + radius / 3].map(
+    (x): [number, number, number] => [x, LEVEL - RESERVOIR, cz],
   );
   return { atSea, deep };
 };
@@ -239,7 +254,7 @@ const FieldMarks = ({
   field: Field;
   onPick: EventEmitterCallback;
 }) => {
-  const { atSea, deep } = useMemo(() => fieldMarks(field.bounds), [field]);
+  const { atSea, deep } = useMemo(() => fieldMarks(field.boundary), [field]);
   const material = useMemo(
     () => new MeshStandardMaterial({ color: field.color, roughness: 0.6 }),
     [field],
@@ -290,7 +305,7 @@ const FieldSpheres = ({
 }) => {
   const field = FIELDS[id];
   return (
-    <UtmArea id={id} frame={field.frame} bounds={field.bounds}>
+    <UtmArea id={id} frame={field.frame} boundary={field.boundary}>
       <FieldMarks field={field} onPick={onPick} />
     </UtmArea>
   );
@@ -488,7 +503,7 @@ const WorldFields = (storyArgs: WorldFieldsArgs) => {
   return (
     <World
       frame={anchor.frame}
-      bounds={anchor.bounds}
+      boundary={anchor.boundary}
       globe={args.globe}
       onFrameChange={onFrameChange}
       onFrameSettled={onFrameSettled}
@@ -563,7 +578,7 @@ const meta = {
       control: { type: 'inline-radio' },
       options: FIELD_IDS,
       description:
-        'The field the scene is anchored to: the `World`\u2019s frame, and the stage\u2019s area. VOLVE: the demo field, a 16 km stage, orange. TRENCH: 123 km east over the Norwegian Trench, in the next UTM zone (32N), a stage of Troll\u2019s size (27 km), magenta. OVERLAP: 10 km east and 4 km north of Volve, overlapping its stage, in a transverse Mercator about its own middle, 16 km, cyan. Switched under a cover (`fade`), the camera carried by the `World`\u2019s `onFrameChange` (`carryCamera`).',
+        'The field the scene is anchored to: the `World`\u2019s frame, and the stage\u2019s area. Each field\u2019s area is a shape of its own (`boundary`). VOLVE: the demo field, a circle 18 km across, orange. TRENCH: 123 km east over the Norwegian Trench, in the next UTM zone (32N), a box of Troll\u2019s length (27 x 13 km) turned 30\u00b0, magenta. OVERLAP: 10 km east and 4 km north of Volve, overlapping its stage, in a transverse Mercator about its own middle, an L-shaped polygon 16 km across, cyan. Switched under a cover (`fade`), the camera carried by the `World`\u2019s `onFrameChange` (`carryCamera`).',
       table: { category: 'World' },
     },
     fade: {
@@ -641,9 +656,10 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 /**
- * Three fields, each a stage, a frame and spheres: at the sea's level on its stage's middle,
- * corners and edges, and at a reservoir's depth. Anchor each in turn — covered by a fade, the
- * camera carried — and toggle the scenery: nothing placed moves. Click a sphere: one handler
- * for all three is told which field it hit and where, in that field's own frame and map.
+ * Three fields, each a stage of its own shape, a frame and spheres: at the sea's level on its
+ * stage's middle and along its outline, and at a reservoir's depth. Anchor each in turn —
+ * covered by a fade, the camera carried — and toggle the scenery: nothing placed moves. Click
+ * a sphere: one handler for all three is told which field it hit and where, in that field's
+ * own frame and map.
  */
 export const Default: Story = {};

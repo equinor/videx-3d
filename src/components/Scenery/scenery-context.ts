@@ -51,8 +51,6 @@ export type SceneryOceanState = {
    * seabed's detail, the waves, the graticule), as a key: a new one recompiles them
    */
   definesKey: string;
-  /** the void has walls (see `SceneryAbyssProps.walls`): a stage's seabed recompiles to leave them to the sky */
-  abyssWalls: boolean;
   /** height of the sea surface along `up` */
   level: number;
   /** depth of the seabed below the surface */

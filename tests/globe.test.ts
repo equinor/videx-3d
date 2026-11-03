@@ -327,8 +327,8 @@ describe('SceneryMaterial.globe', () => {
     sky.setFlatSea(BOUNDS);
     expect(earth.discRadius).toBe(5000);
     expect(earth.discCentre.x).toBe(0);
-    expect(sky.uniforms.uSkyStageBox.value.toArray()).toEqual([
-      1000, -2000, 4000, 3000,
+    expect(sky.uniforms.uSkyStageFlat.value.toArray()).toEqual([
+      1000, 0, -2000, 5000,
     ]);
     // Curved by the World: the shaders take it as the sky is drawn.
     earth.enabled = true;

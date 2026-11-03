@@ -1,11 +1,7 @@
 import { createContext, useContext } from 'react';
+import type { Boundary } from '../../sdk/geometries/boundary';
 import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import type { Globe } from '../../sdk/projection/globe';
-
-/**
- * A rectangle in world X/Z: `[minX, minZ, maxX, maxZ]`.
- */
-export type WorldBounds = [number, number, number, number];
 
 /**
  * What a {@link World} shares with what is placed in it.
@@ -14,10 +10,11 @@ export type WorldState = {
   /** the scene's frame on the Earth: world X/Z are its map's, about its origin */
   frame: GeoFrame;
   /**
-   * the anchored stage's area, in world X/Z: the globe is cut flat over the disc that holds
-   * it. Null when the `World` is given none, and a `SceneryStage` sets the disc.
+   * the anchored stage's area, in world X/Z: the globe is cut flat over the smallest disc that
+   * holds it (`boundaryDisc`). Null when the `World` is given none, and a `SceneryStage` sets
+   * the disc. The same object while its shape is the same
    */
-  bounds: WorldBounds | null;
+  boundary: Boundary | null;
   /**
    * the Earth everything in the world is placed on, with or without a `Scenery`: lying on the
    * Earth where `frame` says, flat over the disc, curved or not as the `World`'s `globe` says
