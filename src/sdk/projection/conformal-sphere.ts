@@ -28,12 +28,17 @@ export type ConformalSphere = {
   chi0: number;
 };
 
-// atanh(sin φ) − e atanh(e sin φ): the isometric latitude of the ellipsoid.
-const isometric = (sinPhi: number) =>
-  Math.atanh(sinPhi) - E * Math.atanh(E * sinPhi);
+// The isometric latitude ψ of the ellipsoid at geodetic latitude φ: atanh(sin φ) − e atanh(e sin φ),
+// its first term as asinh(tan φ), which keeps its digits near a pole where 1 − sin φ cancels.
+const isometric = (phi: number) =>
+  Math.asinh(Math.tan(phi)) - E * Math.atanh(E * Math.sin(phi));
+
+// The latitude whose isometric latitude on a sphere is `y`: asin(tanh y), as atan(sinh y), which
+// keeps its digits near a pole (to nanometres there, where asin(tanh y) keeps 10 cm).
+const fromIsometric = (y: number) => Math.atan(Math.sinh(y));
 
 /**
- * The {@link ConformalSphere} matched at `latitude0` (radians).
+ * The {@link ConformalSphere} matched at `latitude0` (radians), a pole included.
  *
  * @group Utils
  */
@@ -44,12 +49,32 @@ export function conformalSphere(latitude0: number): ConformalSphere {
   // ρ₀ ν₀ = a² (1 − e²) / w².
   const radius = (WGS84_A * Math.sqrt(1 - WGS84_E2)) / w;
   const n = Math.sqrt(1 + (WGS84_E2 * cos0 ** 4) / (1 - WGS84_E2));
-  // sin χ₀ before c: tanh(n ψ₀), and c so the sphere's latitude scale is 1 at φ₀.
-  const sinChi1 = Math.tanh(n * isometric(sin0));
-  const c = ((n + sin0) * (1 - sinChi1)) / ((n - sin0) * (1 + sinChi1));
-  const halfLogC = 0.5 * Math.log(c);
-  const chi0 = Math.asin(Math.tanh(halfLogC + n * isometric(sin0)));
-  return { latitude0, radius, n, halfLogC, chi0 };
+  // c, so the sphere's latitude scale is 1 at φ₀: (n + sin φ₀)(1 − tanh nψ₀) / ((n − sin φ₀)(1 +
+  // tanh nψ₀)), that is (n + sin φ₀) / (n − sin φ₀) · e^(−2nψ₀). Toward a pole n − |sin φ₀| goes
+  // to 0: as (n − 1) + (1 − |sin φ₀|), neither cancelling.
+  const psi0 = isometric(latitude0);
+  const near =
+    (WGS84_E2 * cos0 ** 4) / ((1 - WGS84_E2) * (n + 1)) +
+    (cos0 * cos0) / (1 + Math.abs(sin0));
+  const far = n + Math.abs(sin0);
+  // At a pole itself, should cos φ₀ come out 0: the limit, n = 1 and ½ ln c = ±e atanh e (its
+  // sign the hemisphere's, as c at −φ₀ is 1 / c at φ₀).
+  if (!(near > 0))
+    return {
+      latitude0,
+      radius,
+      n: 1,
+      halfLogC: Math.sign(sin0) * E * Math.atanh(E),
+      chi0: Math.sign(sin0) * (Math.PI / 2),
+    };
+  const half = 0.5 * Math.log(sin0 >= 0 ? far / near : near / far);
+  return {
+    latitude0,
+    radius,
+    n,
+    halfLogC: half - n * psi0,
+    chi0: fromIsometric(half),
+  };
 }
 
 /**
@@ -61,8 +86,7 @@ export function conformalLatitude(
   sphere: ConformalSphere,
   latitude: number,
 ): number {
-  const sinPhi = Math.max(-1 + 1e-15, Math.min(1 - 1e-15, Math.sin(latitude)));
-  return Math.asin(Math.tanh(sphere.halfLogC + sphere.n * isometric(sinPhi)));
+  return fromIsometric(sphere.halfLogC + sphere.n * isometric(latitude));
 }
 
 /**
@@ -120,16 +144,20 @@ export function conformalOffset(
  * @group Utils
  */
 export function geodeticLatitude(sphere: ConformalSphere, chi: number): number {
-  const sinChi = Math.max(-1 + 1e-15, Math.min(1 - 1e-15, Math.sin(chi)));
-  const q = (Math.atanh(sinChi) - sphere.halfLogC) / sphere.n;
-  let sinPhi = Math.tanh(q);
+  // Past a pole, back over it (as sin χ would read it).
+  if (chi > Math.PI / 2) chi = Math.PI - chi;
+  else if (chi < -Math.PI / 2) chi = -Math.PI - chi;
+  // ψ, the isometric latitude: (asinh(tan χ) − ½ ln c) / n; then φ with ψ + e atanh(e sin φ)
+  // its sphere's, by fixed point (e² is small), each in the form that keeps its digits near a pole.
+  const q = (Math.asinh(Math.tan(chi)) - sphere.halfLogC) / sphere.n;
+  let phi = fromIsometric(q);
   for (let i = 0; i < 8; i++) {
-    const next = Math.tanh(q + E * Math.atanh(E * sinPhi));
-    if (Math.abs(next - sinPhi) < 1e-16) {
-      sinPhi = next;
+    const next = fromIsometric(q + E * Math.atanh(E * Math.sin(phi)));
+    if (Math.abs(next - phi) < 1e-16) {
+      phi = next;
       break;
     }
-    sinPhi = next;
+    phi = next;
   }
-  return Math.asin(sinPhi);
+  return phi;
 }
