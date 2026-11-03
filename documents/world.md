@@ -424,7 +424,7 @@ planes face up).
 - **The horizon tilts far off.** The camera's controls keep the scene's up, so at 200 km
   a view across the direction to the field shows the horizon rolled by 1.8°, and a quarter
   of the way round the Earth it stands on end. A host levels it with `useLevelHorizon()`
-  (Sky, built 2026-10-26; [4e](#4e-a-level-horizon-for-a-host)), or by setting its
+  (Sky, built 2026-10-26; [4e](#4e-a-level-horizon-for-a-host-built-2026-10-26)), or by setting its
   camera's up to the globe's there itself (`globe.lookUp`).
 - **A field with a map of its own** (another UTM zone, a field far off) goes in a
   `UtmArea` of its own inside the `World`, which places it on the globe
