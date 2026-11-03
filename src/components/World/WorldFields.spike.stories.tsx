@@ -663,7 +663,7 @@ const meta = {
       control: { type: 'inline-radio' },
       options: ['field', 'target'],
       description:
-        'FIELD: anchored to the field chosen (`anchor`, `fade`, `carryCamera`). TARGET: anchored to wherever the camera\u2019s target is (`useTargetAnchor`): to the field it is over, or to a point about it over none, judged once the camera is at rest and switched without anything on screen moving. The readout top left says where it is anchored.',
+        'FIELD: anchored to the field chosen (`anchor`, `fade`, `carryCamera`). TARGET: anchored to wherever the camera\u2019s target is (`useTargetAnchor`): to the field it is over, or to a point about it over none, judged once the camera is at rest and switched without anything on screen moving. The readout top left says where it is anchored. \u26a0\ufe0f It follows the controls\u2019 target as it is: zoomed far out, the orbit controls carry it far from what is seen, under the ground too.',
       table: { category: 'World' },
     },
     anchor: {

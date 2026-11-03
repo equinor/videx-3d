@@ -191,10 +191,11 @@ Nothing above is needed for one field. What keeps it cheap to add later:
 | 4 | **The sky anywhere on the globe** ([in detail](#12-step-4-in-detail-the-sky-anywhere-on-the-globe)), was the view's origin. Its precision came free in step 3: three.js composes each draw's model-view matrix in 64 bits, so a placed field is as precise 300 km out as at home. Left: the sky seen from far off. The world stays fixed and the sky's look frame follows the camera: its up, horizon and light where the camera is; the waves on fixed charts on the Earth (`OceanCharts`). A host levels its horizon with `useLevelHorizon` | ✅ built (2026-10-27); the cloud deck far off is left for step 8 |
 | 5 | **The relief in its own frame** — folded into step 6. In a frame of its own the relief would part from the chosen field's UTM by the two maps' scale (UTM's 0.9996 against 1: 3 m at 8 km), right where its column meets it; laid in the chosen field's frame it meets it exactly, and a placed field's to its placement's precision | → step 6 |
 | 6 | **Tiles on the globe** ([in detail](#11-step-6-in-detail-tiles-on-the-globe)): tile keys by latitude and longitude, the relief contract unchanged (a tile asks each layer for a window of its own grid, as now); the overlays' tiles move with them, sharing the core. Everything placed by latitude and longitude on one sphere, the ellipsoid's conformal sphere matched at the chosen field; each field's column samples the relief through its transform | ✅ built (2026-10-26) in five parts: 6a the geographic globe, 6b geographic tiles, 6c the relief drawn from them, 6d the whole globe — the Earth from 20 000 km, the far side included; 6e a clean-up |
-| 7 | **More than one field** ([in detail](#13-step-7-in-detail-more-than-one-field)): the `World` holds where things are — its frame (the anchor), the disc and the globe — whatever the scenery, and draws nothing; the relief Earth data of its own; switching the anchor a controlled switch, timed and covered by the host; every loaded field drawn in its own group; the void the seabed's underside everywhere; the seabed see-through over each loaded field | designed (2026-10-30), designed again (2026-11-02); 7a–7f built, 7g judged not needed (2026-11-02); step 3 placed the second field |
+| 7 | **More than one field** ([in detail](#13-step-7-in-detail-more-than-one-field)): the `World` holds where things are — its frame (the anchor), the disc and the globe — whatever the scenery, and draws nothing; the relief Earth data of its own; switching the anchor a controlled switch, timed and covered by the host; every loaded field drawn in its own group; the void the seabed's underside everywhere; the seabed see-through over each loaded field | ✅ built: designed (2026-10-30), designed again (2026-11-02); 7a–7f built, 7g judged not needed (2026-11-02); step 3 placed the second field. Then stages and fields of any shape, and a `World` anchored where the camera looks (2026-11-03) |
 
-Steps 1 to 4 and 6 are built. Step 7 is designed ([§13](#13-step-7-in-detail-more-than-one-field)),
-to be built against a story with two fields of realistic size.
+Steps 1 to 4, 6 and 7 are built ([§13](#13-step-7-in-detail-more-than-one-field)), against a story
+with three fields of realistic size (WorldFields). Left for later: the cloud deck far off (step
+8), and wellbores as an Earth-level layer, a step of its own.
 
 ---
 
@@ -1679,6 +1680,18 @@ looks, so no field has to be chosen.
   3 pixels across, at the frame's edge; 1 pixel at the snap to Trench). Tests:
   `target-anchor.test.ts`, `crs-datum.test.ts`, `globe-polar.test.ts`, and the stage's plane
   about a point (`scenery-stage.test.ts`; a stage of no area looped forever building it).
+- **The controls stay the host's** (decided 2026-11-03). Zoomed out over the story with orbit
+  controls, 602 km up, the controls' target had drifted 1 985 km below the sea, 4 229 km from the
+  camera, while the view met the sea 772 km off, some 3 100 km south of Volve: the view turned
+  about a point inside the Earth, and the target anchor, which reads the target as it is (its
+  X/Z, flat), would have anchored about 1 000 km from what was seen. The horizon there was
+  30.8° off level, `useLevelHorizon` holding the up above its `below`. Considered: anchoring
+  where the view meets the ground, putting the target back on the ground at rest, and levelling
+  at any height but views straight down. Not done: orbit controls are for a field's scale, and
+  a host showing regional or global views chooses controls for them, or constrains its own
+  (`maxDistance`, a target kept on the ground). Documented for hosts
+  ([georeferencing.md, Going far](./georeferencing.md#8-going-far-camera-horizon-and-depth));
+  helpers follow if a need shows.
 
 ### Considered, not chosen
 

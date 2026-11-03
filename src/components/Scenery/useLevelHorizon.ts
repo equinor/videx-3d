@@ -26,8 +26,8 @@ export type LevelHorizonOptions = {
   globe?: Globe;
   /**
    * the highest the camera is levelled from, in scene units over the globe: above it the up
-   * is held as it was, since from space the up there runs along a view down at the Earth.
-   * Default 100 000
+   * is held as it was, since looking straight down from space the up runs along the view and a
+   * roll has no meaning. For oblique views from space, raise it (`Infinity`). Default 100 000
    */
   below?: number;
   /**

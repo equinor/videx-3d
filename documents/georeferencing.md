@@ -390,7 +390,24 @@ It needs the same generator as the relief, and sits inside the `Canvas` (it foll
   the camera is exactly as you drive it. `mode: 'continuous'` keeps it level all the while
   instead, a few thousandths of a degree a frame.
 - **Following the camera.** `useTargetAnchor` keeps the scene anchored where the camera looks,
-  so no field has to be chosen and the origin stays near what is seen.
+  so no field has to be chosen and the origin stays near what is seen. It anchors at the
+  controls' target as it is: see the next point.
+- **Camera controls at globe scale are yours to choose and constrain.** Orbit-type controls
+  (drei's `CameraControls`, three's `OrbitControls`) suit a field: they turn and zoom about
+  their target. At the distances a globe allows the target drifts far from what is seen as you
+  zoom out, orbit and pan: from 602 km up it was measured 1 985 km below the sea, so the view
+  turned about a point inside the Earth, zooming went toward it, and a target anchor would
+  follow it. The library leaves this to you, as it depends on how your users move about:
+  - limit how far the camera zooms out (`maxDistance`), to keep orbit controls to the scale
+    they suit;
+  - keep the target on the ground: once the camera is at rest (`CameraRest`), move it to where
+    the view toward it meets the sea — along the view, so nothing on screen moves;
+  - or change to controls made for the globe (turning the Earth under the camera, flying)
+    for regional and global views, and keep orbit controls for the field.
+
+  `useLevelHorizon` does not level above `below` (100 km by default): looking straight down
+  from space the up runs along the view, where a roll has no meaning. For oblique views from
+  space, raise it (`below: Infinity`).
 
 ### The whole thing
 
@@ -467,6 +484,10 @@ The Storybook stories `Components/Misc/Scenery`, `Components/Html/Minimap` and
   stand on the globe.
 - **The datum.** `getProjectionDefFromUtmZone` assumes ED50; WGS84 coordinates read as ED50
   land some 200 m off. See [The datum](#the-datum).
+- **Orbit controls zoomed far out** pivot about a target that may lie hundreds of kilometres
+  from what is seen, under the ground too, and `useTargetAnchor` follows that target. Constrain
+  them, keep their target on the ground, or use globe controls for wide views: see
+  [Going far](#8-going-far-camera-horizon-and-depth).
 - **A field in another UTM zone** goes in its own `UtmArea` inside the `World`, not converted
   point by point into the main zone.
 - **No relief?** The stage and the minimap need the `sceneryReliefTile` generator in the

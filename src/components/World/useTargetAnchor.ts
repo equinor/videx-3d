@@ -64,6 +64,11 @@ const target = new Vector3();
  * anchor goes to or from a field only when the sea over its disc moves by less than a pixel.
  * Levelling the horizon is left to `useLevelHorizon`.
  *
+ * ⚠️ It anchors at the controls' target as it is. Orbit controls zoomed far out, orbited and
+ * panned, carry their target far from what is seen, under the ground too (1 985 km below the sea
+ * from 602 km up, measured): constrain them (`maxDistance`), keep their target on the ground, or
+ * use globe controls for wide views. See documents/georeferencing.md, Going far.
+ *
  * Inside the `Canvas`, above the `World` it anchors:
  *
  * @example
