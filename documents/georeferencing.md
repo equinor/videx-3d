@@ -131,18 +131,21 @@ blocks (`reliefWindow`). See [relief.md](./relief.md#data).
 <Canvas>                                 three.js / R3F
   <DataProvider store>                   your data: wells, relief-meta, relief-values …
     <GeneratorsProvider registry>        incl. the sceneryReliefTile generator
-      <World frame bounds>               ← where the scene lies on the Earth, once; owns the globe
+      <World frame boundary>             ← where the scene lies on the Earth, once; owns the globe
         <Scenery observer={{ date }}>    ← sun from the frame's origin + date; draws on the globe
           <SceneryOcean />
-          <SceneryStage />               ← its bounds the World's
+          <SceneryStage />               ← its boundary the World's
         </Scenery>
         <GeoRelief layers />             ← land and seabed, by longitude/latitude, on the globe
-        <UtmArea crsInstance bounds>     ← your field, in its map's metres
+        <UtmArea crsInstance boundary>   ← your field, in its map's metres
           <Wellbores … />
         </UtmArea>
         <Wgs84Position long lat>         ← a facility by longitude/latitude, outside the field: on the globe
           <MyPlatform />
         </Wgs84Position>
+        <UtmPosition projection e n>     ← or by easting/northing in a map of its own: on the globe
+          <MyBuoy />
+        </UtmPosition>
         <GeoPolygons data />             ← GIS, by longitude/latitude, on the globe
         <Minimap layers>                 ← the same relief, in 2D, in the World's frame
           <MinimapCameraMarker />
@@ -156,9 +159,11 @@ blocks (`reliefWindow`). See [relief.md](./relief.md#data).
   `UtmArea`, `SceneryAnchor`, the layers, `useLevelHorizon` and the minimap's altitudes use it,
   so turning the scenery on or off moves nothing.
 - **More than one field:** each in its own `UtmArea` (its `boundary`, its stage, so it is
-  placed best about its middle). Anchoring another is giving the `World` its `frame` and
-  `boundary`;
-  `onFrameChange` says how to carry the camera, `onFrameSettled` when to uncover the switch
+  placed best about its middle; a box, a turned box, a circle or a polygon). Anchoring another
+  is giving the `World` its `frame` and `boundary`;
+  `onFrameChange` says how to carry the camera (`carryCamera(change.carry, camera, controls)`
+  does it for drei's `CameraControls`, three's `OrbitControls` or none), `onFrameSettled` when
+  to uncover the switch
   ([world.md, step 7](./world.md#switching-the-anchor-a-controlled-switch)). A field not
   anchored lies flat on the globe's tangent at its middle, so toward its edges it stands off
   the curved sea and relief (about 10 m at a 16 km field's corner, 29 m at a 27 km one's):
@@ -490,6 +495,11 @@ The Storybook stories `Components/Misc/Scenery`, `Components/Html/Minimap` and
   [Going far](#8-going-far-camera-horizon-and-depth).
 - **A field in another UTM zone** goes in its own `UtmArea` inside the `World`, not converted
   point by point into the main zone.
+- **Near the poles** fields work as anywhere (measured from Svalbard to 89.999°N and 89.99°S,
+  and a `World` anchored at a pole itself), but a UTM zone is defined to 84°N and 80°S only:
+  give fields beyond in Universal Polar Stereographic (EPSG:32661 north, 32761 south), by its
+  proj4 definition or a name registered with `proj4.defs`. The
+  graticule's lines are coarse within a kilometre or two of a pole.
 - **No relief?** The stage and the minimap need the `sceneryReliefTile` generator in the
   nearest `GeneratorsProvider`, and the store must answer `relief-meta` and `relief-values`.
 - **The far plane** must reach what you want to see, or the overview takes over past it; use a
