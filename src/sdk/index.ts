@@ -92,6 +92,7 @@ export * from './projection/map-projections';
 export * from './projection/map-view';
 export * from './projection/ocean-charts';
 export * from './projection/place-frame';
+export * from './projection/target-anchor';
 
 export * from './tiles/quadtree';
 export * from './tiles/geo-tile-globe';

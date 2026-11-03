@@ -958,6 +958,10 @@ and not above 100 km (`below`), where the up runs along a view down at the Earth
   and are not levelled by it.
 - Turned off or unmounted, it puts the camera's own up back.
 - Inside a `Scenery`, or a `World` holding one, or with its `globe`.
+- Changed since (2026-11-03): the 0.25° step re-based the controls mid-drag, cutting a drag's
+  momentum for a frame; it now levels at rest, eased, or all the while by the up alone
+  (`mode`), the orbit re-based at rest ([the target anchor and the
+  datum](#the-target-anchor-and-the-datum-built-2026-11-03)).
 - ReliefTiles' `levelHorizon` turns it on (on in its Earth story). With it the tour below
   is level everywhere, within 0.1°; without, at Rio, the antipode and Antarctica the
   horizon stands on end or upside down, as the field's up there says.
@@ -1340,7 +1344,9 @@ and loaded by geographic tile and distance. Its design must settle:
 | 7g | Bending a neighbour in its own frame, picking included | only if 7a shows the seam — judged not needed (2026-11-02): unseen from afar, and kept out of close views by what is anchored |
 
 After 7g the void's walls were removed and a stage's area may be any shape
-([Boundaries, built](#boundaries-built-2026-11-03)).
+([Boundaries, built](#boundaries-built-2026-11-03)); then a `World` anchored where the camera
+looks, `UtmPosition` on the Earth and the datum
+([The target anchor and the datum](#the-target-anchor-and-the-datum-built-2026-11-03)).
 
 The relief bridge carrying a placed field's transform is not needed while columns and the
 cutaway are the anchored stage's only. Wellbores as an Earth-level layer follow, designed on
@@ -1617,6 +1623,62 @@ were removed first ([The void](#the-void-the-seabeds-underside-everywhere)). See
   field placed 123 km off too, and a polygon with a hole. In the story Volve is a circle,
   Trench a box turned 30° and Overlap an L: each see-through in its own shape with the
   scenery and without, each anchored in turn.
+
+### The target anchor and the datum (built 2026-11-03)
+
+After the boundaries, three things a host asked for: placing by easting and northing in the
+`World` itself, saying which datum a UTM zone is in, and a `World` anchored where the camera
+looks, so no field has to be chosen.
+
+- **`UtmPosition` with a `projection`** (a proj4 definition, a name proj4 knows, or a `CRS`): in
+  the `World` with no `UtmArea` around it, its children stand on the globe at the point,
+  upright, their X/Z along that map's grid (`placeMapPoint`), as a `Wgs84Position` stands its
+  own facing true north; both share the one placement (re-placed only on `globe.version`).
+  Inside a `UtmArea` the point is converted to the area's map; without a `projection` there it
+  throws, as before. The story's mast in UTM 32N stands at altitude 0.000, untilted, its flag
+  5.2° west of the `Wgs84Position` mast's: zone 32's grid convergence there.
+- **The datum** (`getProjectionDefFromUtmZone(zone, datum = 'ED50')`, `UtmDatum`): `'ED50'`
+  (its definition unchanged, byte for byte), `'WGS84'`, `'ETRS89'`, or `{ ellps, towgs84 }`.
+  The same easting and northing lie 234 m apart between ED50 and WGS84 at Volve; the default
+  3-parameter ED50 shift is 2–3 m from the 7-parameter North Sea ones. A `UtmArea` takes it as
+  `datum` with `utmZone`, and its `utmProjectionDef` (declared, never read) now replaces the
+  zone's definition. One-digit zones (`'5S'`, as `getUtmZoneFromLatLng` gives) were read as
+  `+zone=undefined`; anything not a zone now throws.
+- **`useTargetAnchor`** (`TargetAnchorPicker` in the sdk, `carryCamera`, `CameraRest`): the host
+  lists its fields (id, frame, boundary) and gives the `World` the hook's `frame`, `boundary`
+  and `onFrameChange`. Over a field the anchor is that field; over none, a map about the target
+  (`geoFrameAt`) with no boundary, and a `SceneryStage` then draws its sea about the origin with
+  no area of its own. It judges once per rest only (no pointer held, no wheel for 300 ms, the
+  camera unmoved 10 frames), and switches between point anchors once the target is farther
+  from the origin than the camera is (10 km at least); to or from a field only when the sea
+  over either field's disc moves by under a pixel (`ρ² / 2R` over the disc, sampled, from the
+  camera), with a margin of 5% of the disc's radius before it leaves one; past 200 km, anyway.
+  A switch costs a dropped frame at most (measured, 7c's switch), and nothing moves on
+  screen: the camera, its target and its up are carried by where they are on the Earth.
+- **The camera is the user's.** The first `useLevelHorizon` re-based camera-controls whenever
+  the up had turned 0.25°, mid-drag too: measured on a 40 km truck, the camera's step fell from
+  240 m to 14 m a frame at that moment. camera-controls aims the camera with `camera.up` on
+  each update, so writing the up alone rolls the view without touching the drag (steps of
+  0.0036° at most, the speed within a drag's own variation); the orbit is re-based at rest,
+  where nothing on screen changes. `'rest'` (default) holds the up while moving and eases it
+  level over 0.6 s once at rest (36 frames for the 0.34° of that truck), cancelled the moment
+  the user takes the controls; `'continuous'` writes it every frame. Both cost a few vector
+  operations a frame.
+- **The poles.** Fields at 78–89.999°N and 89.99°S place to under a millimetre, in UTM, UPS and
+  transverse Mercator frames. A `World` anchored exactly at a pole (UPS's own origin, or the
+  target anchor crossing one) made the globe NaN: the conformal sphere's `c` is 0 / 0 there.
+  `conformal-sphere.ts` is now written so it keeps its digits to the pole (`asinh(tan φ)` for
+  `atanh(sin φ)`, `atan(sinh y)` for `asin(tanh y)`, `n − sin φ₀` as `(n − 1) + (1 − sin φ₀)`):
+  latitudes go there and back to 1e-14 rad everywhere, where 10 cm was lost within a kilometre
+  of a pole. Left: the shader's latitude (the graticule) is 32-bit, coarse within a kilometre
+  or two of a pole, as `globe.glsl` says.
+- **Checked:** in the story's target mode the anchor went from Volve to a point 60 km off, to
+  Trench, and back to a point, each once the camera rested; nothing switched while the mouse
+  was held; next to Trench's edge with the camera low it waited, and went once the camera was
+  high. The image before and after a switch differs by under a pixel (7 pixels of one sphere
+  3 pixels across, at the frame's edge; 1 pixel at the snap to Trench). Tests:
+  `target-anchor.test.ts`, `crs-datum.test.ts`, `globe-polar.test.ts`, and the stage's plane
+  about a point (`scenery-stage.test.ts`; a stage of no area looped forever building it).
 
 ### Considered, not chosen
 

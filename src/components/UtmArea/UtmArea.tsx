@@ -10,7 +10,11 @@ import {
 import { Group, Matrix4, Vector3 } from 'three';
 import { useStableBoundary } from '../../hooks/useStableBoundary';
 import { Boundary, boundaryDisc } from '../../sdk/geometries/boundary';
-import { CRS, getProjectionDefFromUtmZone } from '../../sdk/projection/crs';
+import {
+  CRS,
+  getProjectionDefFromUtmZone,
+  UtmDatum,
+} from '../../sdk/projection/crs';
 import {
   crsFromGeoFrame,
   GeoFrame,
@@ -39,11 +43,18 @@ export type UtmAreaProps = {
    */
   id?: string;
   crsInstance?: CRS;
+  /** the area's UTM zone, `'31N'` (with `origin`), in `datum` */
   utmZone?: string;
+  /** with `utmZone`: the geodetic datum its coordinates are in (see {@link UtmDatum}). Default `'ED50'` */
+  datum?: UtmDatum;
   /** with `utmZone`: the map point at the area's origin, in `originUnits` */
   origin?: [number, number];
   originUnits?: 'utm' | 'lnglat';
   offset?: Vec3;
+  /**
+   * A proj4 definition of the area's map, instead of `utmZone` and `datum`'s (with `origin`):
+   * another datum's shift, say, or another projection in metres.
+   */
   utmProjectionDef?: string;
   /**
    * The area's map and origin, instead of `crsInstance` or `utmZone` and `origin`; its
@@ -115,9 +126,11 @@ export const UtmArea = forwardRef<CRS, PropsWithChildren<UtmAreaProps>>(
       id,
       crsInstance,
       utmZone,
+      datum,
       origin,
       originUnits = 'utm',
       offset = [0, 0, 0],
+      utmProjectionDef,
       frame,
       boundary: givenBoundary,
       children,
@@ -125,19 +138,36 @@ export const UtmArea = forwardRef<CRS, PropsWithChildren<UtmAreaProps>>(
     fref,
   ) => {
     const ref = useRef<Group>(null);
-    // By its content: a frame written inline is a new object every render.
+    // By its content: a frame, an origin or a datum written inline is a new object every render.
     const frameKey = frame ? JSON.stringify(frame) : '';
+    const datumKey = datum ? JSON.stringify(datum) : '';
+    const [originA, originB] = origin ?? [];
     const crs = useMemo(() => {
       if (frameKey) return crsFromGeoFrame(JSON.parse(frameKey) as GeoFrame);
       if (crsInstance) return crsInstance;
-      if (utmZone && origin) {
-        const utmDef = getProjectionDefFromUtmZone(utmZone.toUpperCase());
-        return new CRS(utmDef, origin, originUnits);
-      }
+      const def =
+        utmProjectionDef ??
+        (utmZone
+          ? getProjectionDefFromUtmZone(
+              utmZone,
+              datumKey ? (JSON.parse(datumKey) as UtmDatum) : undefined,
+            )
+          : null);
+      if (def && originA !== undefined && originB !== undefined)
+        return new CRS(def, [originA, originB], originUnits);
       throw Error(
-        'Either a frame, a CRS instance or a UTM zone (string containing zone number + N/S for north/south hemisphere) with an origin must be provided as props to the UtmArea component!',
+        'Either a frame, a CRS instance, or a UTM zone (its number and N or S) or a projection definition (`utmProjectionDef`) with an origin must be provided as props to the UtmArea component!',
       );
-    }, [frameKey, crsInstance, utmZone, origin, originUnits]);
+    }, [
+      frameKey,
+      crsInstance,
+      utmProjectionDef,
+      utmZone,
+      datumKey,
+      originA,
+      originB,
+      originUnits,
+    ]);
 
     useImperativeHandle(fref, () => crs, [crs]);
 

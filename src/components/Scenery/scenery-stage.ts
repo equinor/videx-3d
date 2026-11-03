@@ -145,8 +145,9 @@ function createRings(
   inner: SceneryStageBounds,
   outer: SceneryStageBounds,
 ): BufferGeometry {
+  // A box of no size would never grow: at least a metre across.
   const first =
-    Math.max(inner[2] - inner[0], inner[3] - inner[1]) / RING_SEGMENTS;
+    Math.max(inner[2] - inner[0], inner[3] - inner[1], 1) / RING_SEGMENTS;
   const boundaries = [inner];
   for (let grow = first; ; grow = 2 * grow + first) {
     const ring: SceneryStageBounds = [

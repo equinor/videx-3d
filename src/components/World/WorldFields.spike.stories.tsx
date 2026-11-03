@@ -1,4 +1,3 @@
-import type { CameraControls } from '@react-three/drei';
 import { useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import proj4 from 'proj4';
@@ -16,7 +15,6 @@ import {
   Group,
   MeshStandardMaterial,
   SphereGeometry,
-  Vector3,
 } from 'three';
 import { getProjectionDefFromUtmZone } from '../../sdk/projection/crs';
 import {
@@ -24,7 +22,13 @@ import {
   boundaryDisc,
   boundaryOutline,
 } from '../../sdk/geometries/boundary';
-import { GeoFrame, geoFrameAt } from '../../sdk/projection/geo-frame';
+import {
+  GeoFrame,
+  geoFrameAt,
+  geoFrameLonLat,
+} from '../../sdk/projection/geo-frame';
+import type { TargetAnchorField } from '../../sdk/projection/target-anchor';
+import { carryCamera } from '../../sdk/utils/camera';
 import {
   sceneryArgs,
   SceneryArgs,
@@ -62,10 +66,12 @@ import {
 import { GeoRelief } from '../Layers/GeoRelief';
 import { Scenery } from '../Scenery/Scenery';
 import { SceneryStage } from '../Scenery/SceneryStage';
-import { useLevelHorizon } from '../Scenery/useLevelHorizon';
+import { LevelHorizonMode, useLevelHorizon } from '../Scenery/useLevelHorizon';
 import { UtmArea } from '../UtmArea/UtmArea';
 import { UtmAreaContext, UtmAreaContextProps } from '../UtmArea/UtmAreaContext';
+import { UtmPosition } from '../UtmArea/UtmPosition';
 import { Wgs84Position } from '../UtmArea/Wgs84Position';
+import { useTargetAnchor } from './useTargetAnchor';
 import { World, WorldFrameChange } from './World';
 
 // More than one field on the Earth (documents/world.md, step 7): three fields, each a frame,
@@ -145,21 +151,18 @@ const FIELDS: Record<FieldId, Field> = {
   },
 };
 
-// `field`'s point at its own X/Z, as `anchor`'s map has it: X east and Z south of its origin.
+// `field`'s point at its own X/Z, as `scene`'s map has it: X east and Z south of its origin.
 const pointIn = (
-  anchor: Field,
+  scene: GeoFrame,
   field: Field,
   [x, z]: [number, number],
 ): [number, number] => {
   const [e0, n0] = field.frame.origin;
   const [e, n] =
-    field === anchor
+    field.frame.projection === scene.projection
       ? [e0 + x, n0 - z]
-      : proj4(field.frame.projection, anchor.frame.projection, [
-          e0 + x,
-          n0 - z,
-        ]);
-  return [e - anchor.frame.origin[0], anchor.frame.origin[1] - n];
+      : proj4(field.frame.projection, scene.projection, [e0 + x, n0 - z]);
+  return [e - scene.origin[0], scene.origin[1] - n];
 };
 
 // A point of the Earth outside every field, 60 km east and 3 km north of Volve: longitude and
@@ -169,10 +172,26 @@ const MARKER = proj4(demoFrame.projection, 'WGS84', demoPoint(60000, 3000)) as [
   number,
 ];
 
+// The same point, a mast placed by its easting and northing in UTM 32N (WGS84) instead,
+// 2 km east of the marker.
+const UTM_32N_WGS84 = getProjectionDefFromUtmZone('32N', 'WGS84');
+const UTM_MAST = proj4(
+  demoFrame.projection,
+  UTM_32N_WGS84,
+  demoPoint(62000, 3000),
+) as [number, number];
+
+// The fields as the target anchor takes them.
+const TARGET_FIELDS: TargetAnchorField[] = FIELD_IDS.map(id => ({
+  id,
+  frame: FIELDS[id].frame,
+  boundary: FIELDS[id].boundary,
+}));
+
 // The panel's places: each field's middle (its disc's) and the point of its outline farthest
-// north-east, and the marker, in the anchor's map.
-const placesIn = (anchor: Field) => {
-  const [e, n] = proj4('WGS84', anchor.frame.projection, MARKER);
+// north-east, and the marker, in the World's map, whatever it is anchored to.
+const placesIn = (scene: GeoFrame) => {
+  const [e, n] = proj4('WGS84', scene.projection, MARKER);
   return Object.fromEntries([
     ...FIELD_IDS.flatMap(id => {
       const field = FIELDS[id];
@@ -181,11 +200,11 @@ const placesIn = (anchor: Field) => {
         b[0] - b[1] > a[0] - a[1] ? b : a,
       );
       return [
-        [field.name, pointIn(anchor, field, centre)],
-        [`${field.name} corner`, pointIn(anchor, field, corner)],
+        [field.name, pointIn(scene, field, centre)],
+        [`${field.name} corner`, pointIn(scene, field, corner)],
       ];
     }),
-    ['Marker', [e - anchor.frame.origin[0], anchor.frame.origin[1] - n]],
+    ['Marker', [e - scene.origin[0], scene.origin[1] - n]],
   ]) as Record<string, [number, number]>;
 };
 
@@ -219,6 +238,39 @@ const EarthMarker = () => {
         position={[0, 370, -80]}
       />
     </Wgs84Position>
+  );
+};
+
+/**
+ * A mast placed by its easting and northing in UTM 32N, WGS84 (`UtmPosition` with its
+ * `projection`, no `UtmArea` around it): on the globe there, upright, its flag toward that
+ * grid's north, a few degrees east of true north here, whichever field is anchored.
+ */
+const UtmMarker = () => {
+  const material = useMemo(
+    () => new MeshStandardMaterial({ color: '#ffd23f', roughness: 0.5 }),
+    [],
+  );
+  useEffect(() => () => material.dispose(), [material]);
+  return (
+    <UtmPosition
+      projection={UTM_32N_WGS84}
+      easting={UTM_MAST[0]}
+      northing={UTM_MAST[1]}
+    >
+      <mesh
+        name="utm-marker"
+        geometry={MAST}
+        material={material}
+        position={[0, 200, 0]}
+      />
+      <mesh
+        name="utm-marker-flag"
+        geometry={FLAG}
+        material={material}
+        position={[0, 370, -80]}
+      />
+    </UtmPosition>
   );
 };
 
@@ -355,10 +407,53 @@ function usePickReadout() {
 }
 
 // The host's side of levelling the horizon far off (useLevelHorizon), in the World.
-const LevelHorizon = ({ enabled }: { enabled: boolean }) => {
-  useLevelHorizon({ enabled });
+const LevelHorizon = ({
+  enabled,
+  mode,
+}: {
+  enabled: boolean;
+  mode: LevelHorizonMode;
+}) => {
+  useLevelHorizon({ enabled, mode });
   return null;
 };
+
+// Where the World is anchored, and how many times it has switched, shown over the view.
+function useAnchorReadout(frame: GeoFrame, field: string | null) {
+  const gl = useThree(state => state.gl);
+  const [readout] = useState(() => {
+    const element = document.createElement('div');
+    Object.assign(element.style, {
+      position: 'absolute',
+      left: '12px',
+      top: '12px',
+      padding: '4px 10px',
+      borderRadius: '4px',
+      background: 'rgba(13, 26, 38, 0.8)',
+      color: '#fff',
+      font: '12px monospace',
+      whiteSpace: 'pre',
+      pointerEvents: 'none',
+      zIndex: '4',
+    });
+    return element;
+  });
+  useEffect(() => {
+    (gl.domElement.parentElement ?? document.body).appendChild(readout);
+    return () => readout.remove();
+  }, [gl, readout]);
+  const switches = useRef(-1);
+  useEffect(() => {
+    switches.current++;
+    const [longitude, latitude] = geoFrameLonLat(frame)(0, 0);
+    const at = field
+      ? FIELDS[field as FieldId].name
+      : `a point, ${latitude.toFixed(4)}\u00b0N ${longitude.toFixed(4)}\u00b0E`;
+    readout.textContent = `Anchored to ${at} (${switches.current} switches)`;
+    readout.dataset.anchor = field ?? 'point';
+    readout.dataset.switches = String(switches.current);
+  }, [readout, frame, field]);
+}
 
 // How long the story's cover takes to close and to open, in ms.
 const FADE = 250;
@@ -419,38 +514,14 @@ function progressQuiet(most: number) {
 
 /**
  * The host's side of a switch: carries the camera, its controls' target and its up to the
- * new frame by where they are on the Earth, so the view does not move.
+ * new frame by where they are on the Earth (`carryCamera`), so the view does not move.
  */
 function useCarryCamera(enabled: boolean) {
   const camera = useThree(state => state.camera);
-  const controls = useThree(
-    state => state.controls,
-  ) as unknown as CameraControls | null;
+  const controls = useThree(state => state.controls);
   return useCallback(
     ({ carry }: WorldFrameChange) => {
-      if (!enabled) return;
-      const position = controls
-        ? controls.getPosition(new Vector3(), false)
-        : camera.position.clone();
-      const target = controls?.getTarget(new Vector3(), false) ?? null;
-      const up = carry.direction(camera.up, position, new Vector3());
-      carry.point(position, position);
-      camera.up.copy(up);
-      if (controls && target) {
-        carry.point(target, target);
-        controls.updateCameraUp();
-        void controls.setLookAt(
-          position.x,
-          position.y,
-          position.z,
-          target.x,
-          target.y,
-          target.z,
-          false,
-        );
-      } else {
-        camera.position.copy(position);
-      }
+      if (enabled) carryCamera(carry, camera, controls);
     },
     [enabled, camera, controls],
   );
@@ -459,6 +530,7 @@ function useCarryCamera(enabled: boolean) {
 type WorldFieldsArgs = SceneryArgs &
   SceneryReliefArgs &
   ProgressArgs & {
+    anchorMode: 'field' | 'target';
     anchor: FieldId;
     fade: boolean;
     carryCamera: boolean;
@@ -469,6 +541,7 @@ type WorldFieldsArgs = SceneryArgs &
     reliefShowSeabed: boolean;
     panel: boolean;
     levelHorizon: boolean;
+    levelHorizonMode: LevelHorizonMode;
   };
 
 const WorldFields = (storyArgs: WorldFieldsArgs) => {
@@ -477,7 +550,7 @@ const WorldFields = (storyArgs: WorldFieldsArgs) => {
   const [shown, setShown] = useState<FieldId>(args.anchor);
   const curtain = useCurtain();
   useEffect(() => {
-    if (args.anchor === shown) return;
+    if (!args.anchor || args.anchor === shown) return;
     if (!args.fade) {
       setShown(args.anchor);
       return;
@@ -490,26 +563,37 @@ const WorldFields = (storyArgs: WorldFieldsArgs) => {
       live = false;
     };
   }, [args.anchor, args.fade, shown, curtain]);
-  const onFrameChange = useCarryCamera(args.carryCamera);
+  const carried = useCarryCamera(args.carryCamera);
   const onFrameSettled = useCallback(() => {
     void progressQuiet(FADE_WAIT).then(curtain.open);
   }, [curtain]);
 
-  const anchor = FIELDS[shown];
-  const places = useMemo(() => placesIn(anchor), [anchor]);
+  // Anchored to the field chosen, or to wherever the camera's target is (useTargetAnchor),
+  // starting from the field chosen.
+  const following = args.anchorMode === 'target';
+  const target = useTargetAnchor({
+    fields: TARGET_FIELDS,
+    initial: shown,
+    enabled: following,
+  });
+  const chosen = FIELDS[shown];
+  const frame = following ? target.frame : chosen.frame;
+  const boundary = following ? target.boundary : chosen.boundary;
+  useAnchorReadout(frame, following ? target.field : shown);
+  const places = useMemo(() => placesIn(frame), [frame]);
   const relief = sceneryReliefFromArgs(args);
   const onPick = usePickReadout();
 
   return (
     <World
-      frame={anchor.frame}
-      boundary={anchor.boundary}
+      frame={frame}
+      boundary={boundary}
       globe={args.globe}
-      onFrameChange={onFrameChange}
-      onFrameSettled={onFrameSettled}
+      onFrameChange={following ? target.onFrameChange : carried}
+      onFrameSettled={following ? undefined : onFrameSettled}
     >
       <SceneryStoryRendering args={args} />
-      <LevelHorizon enabled={args.levelHorizon} />
+      <LevelHorizon enabled={args.levelHorizon} mode={args.levelHorizonMode} />
       {args.panel && (
         <SceneryDebugPanel
           args={args}
@@ -526,7 +610,7 @@ const WorldFields = (storyArgs: WorldFieldsArgs) => {
               ocean={{ level: LEVEL, depth: DEPTH }}
               abyss={{}}
             />
-            {/* Its area is the World's: the anchored field's stage. */}
+            {/* Its area is the World's: the anchored field's stage, or none at a point. */}
             <SceneryStage />
           </Scenery>
         )}
@@ -545,6 +629,7 @@ const WorldFields = (storyArgs: WorldFieldsArgs) => {
         <FieldSpheres key={id} id={id} onPick={onPick} />
       ))}
       <EarthMarker />
+      <UtmMarker />
     </World>
   );
 };
@@ -574,6 +659,13 @@ const meta = {
     ...sceneryArgTypes(),
     ...sceneryReliefArgTypes(),
     ...progressArgTypes,
+    anchorMode: {
+      control: { type: 'inline-radio' },
+      options: ['field', 'target'],
+      description:
+        'FIELD: anchored to the field chosen (`anchor`, `fade`, `carryCamera`). TARGET: anchored to wherever the camera\u2019s target is (`useTargetAnchor`): to the field it is over, or to a point about it over none, judged once the camera is at rest and switched without anything on screen moving. The readout top left says where it is anchored.',
+      table: { category: 'World' },
+    },
     anchor: {
       control: { type: 'inline-radio' },
       options: FIELD_IDS,
@@ -632,6 +724,14 @@ const meta = {
         'Keeps the camera\u2019s horizon level far from the anchored field (`useLevelHorizon`).',
       table: { category: 'World' },
     },
+    levelHorizonMode: {
+      control: { type: 'inline-radio' },
+      options: ['rest', 'continuous'],
+      description:
+        'REST: levelled once the camera is at rest, its view rolled level over 0.6 s; while it moves it is exactly as you drive it. CONTINUOUS: kept level all the while, a little each frame, the orbit re-based at rest.',
+      table: { category: 'World' },
+      if: { arg: 'levelHorizon' },
+    },
   },
   args: {
     ...sceneryArgs,
@@ -639,6 +739,7 @@ const meta = {
     ...sceneryProgressArgs,
     relief: true,
     reliefColor: 'ramp',
+    anchorMode: 'field',
     anchor: 'volve',
     fade: true,
     carryCamera: true,
@@ -649,6 +750,7 @@ const meta = {
     reliefShowSeabed: true,
     panel: true,
     levelHorizon: true,
+    levelHorizonMode: 'rest',
   },
 } satisfies Meta<typeof WorldFields>;
 

@@ -70,10 +70,52 @@ export class CRS {
   }
 }
 
-export function getProjectionDefFromUtmZone(utmZone: string) {
+/**
+ * The geodetic datum a UTM zone's coordinates are given in ({@link getProjectionDefFromUtmZone}):
+ *
+ * - `'ED50'`: European Datum 1950 (International 1924 ellipsoid), shifted to WGS84 by the
+ *   3-parameter `-87,-98,-121`, about 2–3 m from the 7-parameter shifts published for the
+ *   North Sea. Much of the North Sea's older well and seismic data is in it.
+ * - `'WGS84'`: what GPS, and most web maps, give.
+ * - `'ETRS89'`: Europe's (GRS80 ellipsoid), within a metre of WGS84, taken as equal to it.
+ * - `{ ellps, towgs84 }`: any other, as proj4 takes it: an ellipsoid name, and the shift to
+ *   WGS84, 3 or 7 numbers (metres, and for 7, rotations in arc seconds and the scale in ppm,
+ *   in the position vector convention: published coordinate frame rotations change sign).
+ *
+ * @group Utils
+ */
+export type UtmDatum =
+  | 'ED50'
+  | 'WGS84'
+  | 'ETRS89'
+  | { ellps: string; towgs84: number[] };
+
+function datumDef(datum: UtmDatum) {
+  if (datum === 'ED50') return '+ellps=intl +towgs84=-87,-98,-121,0,0,0,0';
+  if (datum === 'WGS84') return '+datum=WGS84';
+  if (datum === 'ETRS89') return '+ellps=GRS80 +towgs84=0,0,0,0,0,0,0';
+  return `+ellps=${datum.ellps} +towgs84=${datum.towgs84.join(',')}`;
+}
+
+/**
+ * The proj4 definition of a UTM zone: its number and hemisphere, `'31N'` or `'5S'`, in
+ * `datum` (default `'ED50'`; see {@link UtmDatum}). Throws for anything else.
+ *
+ * @group Utils
+ */
+export function getProjectionDefFromUtmZone(
+  utmZone: string,
+  datum: UtmDatum = 'ED50',
+) {
   const [, zone, hemisphere] =
-    new RegExp(/^([0-9]{2})([N|S]?)$/).exec(utmZone) || [];
-  return `+proj=utm +zone=${zone}${hemisphere === 'S' ? ' +south' : ''} +ellps=intl +towgs84=-87,-98,-121,0,0,0,0 +units=m +no_defs`;
+    /^([0-9]{1,2})([NS]?)$/i.exec(utmZone.trim()) || [];
+  const number = Number(zone);
+  if (!zone || number < 1 || number > 60)
+    throw new Error(
+      `getProjectionDefFromUtmZone: '${utmZone}' is not a UTM zone: its number, 1 to 60, and N or S`,
+    );
+  const south = hemisphere?.toUpperCase() === 'S';
+  return `+proj=utm +zone=${number}${south ? ' +south' : ''} ${datumDef(datum)} +units=m +no_defs`;
 }
 
 export function getUtmZoneFromLatLng([lng, lat]: [number, number]) {

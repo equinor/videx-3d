@@ -63,8 +63,9 @@ import {
 // the globe much beyond; from space the sky draws all of it.
 const STAGE_REACH = 3000000;
 const NO_OCCUPANTS: SceneryStageOccupant[] = [];
-// Where neither the stage nor its World gives a boundary: nothing is drawn.
-const NO_BOUNDS: SceneryStageBounds = [0, 0, 0, 0];
+// Where neither the stage nor its World gives a boundary: the plane's finest part, about the
+// scene's origin.
+const ORIGIN_BOX: SceneryStageBounds = [-500, -500, 500, 500];
 
 // The same array as last render while its items are: one written inline is new every render.
 function useStableList<T>(list: T[]): T[] {
@@ -190,7 +191,10 @@ export type SceneryStageProps = {
    * turned box, `{ box, rotation }`; a circle, `{ centre, radius }`; or a polygon. It should
    * hold the whole scene. The sea is flat over the smallest disc that holds it; the relief is
    * see-through over its own shape. Default the enclosing `World`'s `boundary`, the globe's
-   * flat disc: given both, keep them the same. Without either, nothing is drawn
+   * flat disc: given both, keep them the same. Without either — a `World` anchored to a point,
+   * as `useTargetAnchor` anchors it away from the fields — the stage has no area of its own:
+   * it draws the sea about the scene's origin, curved from there (no flat disc), and nothing
+   * is see-through but the fields loaded in the `World`
    */
   boundary?: Boundary;
   /** what claims parts of the stage: field columns, say. The relief knows the outlines of 4 at most */
@@ -237,11 +241,10 @@ export const SceneryStage = ({
   const world = useWorld();
   const own = useStableBoundary(givenBoundary);
   const boundary = own ?? world?.boundary ?? null;
-  const hasBoundary = boundary !== null;
   // The box that holds it, for what is laid out on the grid (the plane, the sea's claim, the
-  // ground); and the disc, for what is placed about its middle.
+  // ground), or about the origin without one; and the disc, for what is placed about its middle.
   const box = useMemo(
-    () => (boundary ? boundaryBox(boundary) : NO_BOUNDS),
+    () => (boundary ? boundaryBox(boundary) : ORIGIN_BOX),
     [boundary],
   );
   const disc = useMemo(
@@ -377,7 +380,7 @@ export const SceneryStage = ({
   );
 
   useLayoutEffect(() => {
-    if (!sky || !boundary) return;
+    if (!sky) return;
     // Out to the far plane (stage-vertex keeps its vertices inside), as far as STAGE_REACH:
     // any shorter, and the scene between would show through the sky's sea, drawn on the far
     // plane. On the globe it claims nothing while the camera is off its rectangle, or on the
@@ -480,9 +483,10 @@ export const SceneryStage = ({
   );
 
   // The ground handed out over each occupant that asks for it, by its latest callback: one
-  // written inline is new every render.
+  // written inline is new every render. One without an outline takes the stage's area, and
+  // gets none from a stage without one.
   const groundClaims = claims.flatMap(claim =>
-    claim.onGround
+    claim.onGround && (claim.outline || boundary)
       ? [
           {
             bounds: (claim.outline
@@ -511,21 +515,18 @@ export const SceneryStage = ({
   // What only a stage asks of the World's relief: see-through over its area, its occupants'
   // outlines and cut, and their ground.
   const provideStage = worldRelief?.provideStage;
-  const stagePart = useMemo<WorldReliefStage | null>(
-    () =>
-      boundary
-        ? {
-            boundary,
-            seeThrough,
-            occupants: reliefOccupants,
-            grounds,
-            groundLive: seabedDrawn,
-          }
-        : null,
+  const stagePart = useMemo<WorldReliefStage>(
+    () => ({
+      boundary,
+      seeThrough,
+      occupants: reliefOccupants,
+      grounds,
+      groundLive: seabedDrawn,
+    }),
     [boundary, seeThrough, reliefOccupants, grounds, seabedDrawn],
   );
   useLayoutEffect(
-    () => (stagePart && provideStage ? provideStage(stagePart) : undefined),
+    () => (provideStage ? provideStage(stagePart) : undefined),
     [stagePart, provideStage],
   );
 
@@ -542,9 +543,9 @@ export const SceneryStage = ({
   );
   const outlineLines = useMemo(
     () =>
-      showOutline && boundary
+      showOutline
         ? createSceneryStageOutline(
-            boundaryOutline(boundary),
+            boundary ? boundaryOutline(boundary) : [],
             drawnOutlines,
             level,
             bedY,
@@ -610,7 +611,7 @@ export const SceneryStage = ({
     outlineLines,
   ]);
 
-  if (!ocean || !materials || !hasBoundary) return null;
+  if (!ocean || !materials) return null;
 
   const parts: {
     key: string;

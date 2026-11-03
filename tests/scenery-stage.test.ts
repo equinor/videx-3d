@@ -55,6 +55,15 @@ describe('sky stage', () => {
     }
   });
 
+  it('builds a plane about a point too, out to the extent: a stage of no area', () => {
+    const plane = createSceneryStagePlane([0, 0, 0, 0], [-3e6, -3e6, 3e6, 3e6]);
+    const p = plane.getAttribute('position') as BufferAttribute;
+    expect(p.count).toBeLessThan(2000);
+    let far = 0;
+    for (let i = 0; i < p.count; i++) far = Math.max(far, Math.abs(p.getX(i)));
+    expect(far).toBe(3e6);
+  });
+
   it('outlines every occupant, where its offset puts it', () => {
     const square = (size: number) =>
       [

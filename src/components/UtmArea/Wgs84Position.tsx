@@ -1,21 +1,7 @@
-import { useFrame } from '@react-three/fiber';
-import {
-  PropsWithChildren,
-  useContext,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-} from 'react';
-import { Group, Matrix4 } from 'three';
-import {
-  GeoFramePlacement,
-  placeGeoPoint,
-} from '../../sdk/projection/geo-frame';
-import {
-  geoFrameMatrix,
-  setObjectMatrix,
-} from '../../sdk/projection/place-frame';
+import { PropsWithChildren, useContext, useMemo } from 'react';
+import { placeGeoPoint } from '../../sdk/projection/geo-frame';
 import { useWorld, WorldState } from '../World/world-context';
+import { EarthPlacement } from './EarthPlacement';
 import { UtmAreaContext, UtmAreaContextProps } from './UtmAreaContext';
 
 /**
@@ -45,8 +31,8 @@ export type Wgs84PositionProps = {
  * </UtmArea>
  *
  * @example
- * <World frame={frame} bounds={bounds}>
- *  <UtmArea crsInstance={crs} bounds={bounds}>
+ * <World frame={frame} boundary={boundary}>
+ *  <UtmArea crsInstance={crs} boundary={boundary}>
  *    { field data }
  *  </UtmArea>
  *  <Wgs84Position long={4.2} lat={60.6}>
@@ -98,8 +84,6 @@ const AreaPosition = ({
   return <group position={position}>{children}</group>;
 };
 
-const placing = new Matrix4();
-
 const EarthPosition = ({
   world,
   long,
@@ -107,36 +91,13 @@ const EarthPosition = ({
   altitude = 0,
   children,
 }: PropsWithChildren<Wgs84PositionProps & { world: WorldState }>) => {
-  const group = useRef<Group>(null);
   const placement = useMemo(
     () => placeGeoPoint(long, lat, world.frame),
     [long, lat, world.frame],
   );
-  // What it was last placed by: again only once the point, the frame or the globe changes.
-  const placed = useRef<{
-    placement: GeoFramePlacement | null;
-    version: number;
-  }>({ placement: null, version: -1 });
-  const place = () => {
-    const object = group.current;
-    const { globe } = world;
-    const last = placed.current;
-    if (
-      !object ||
-      (last.placement === placement && last.version === globe.version)
-    )
-      return;
-    last.placement = placement;
-    last.version = globe.version;
-    setObjectMatrix(object, geoFrameMatrix(placement, globe, placing));
-  };
-  // Before its first frame is drawn, and each frame after, as the World's globe may change.
-  useLayoutEffect(place);
-  useFrame(place);
-
   return (
-    <group ref={group}>
-      <group position={[0, altitude, 0]}>{children}</group>
-    </group>
+    <EarthPlacement world={world} placement={placement} altitude={altitude}>
+      {children}
+    </EarthPlacement>
   );
 };

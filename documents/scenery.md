@@ -589,7 +589,9 @@ globe — far from the scene scene Y is not altitude: at Y = 40 m, 200 km off, t
 3 km over the sea — and so is up, which far off tilts from the scene's (1.8° at 200 km).
 The camera's controls keep the scene's up, so there the horizon rolls a little, and round
 the Earth it stands on end: `useLevelHorizon()` levels it, by the camera's up
-([world.md, 4e](./world.md#4e-a-level-horizon-for-a-host-built-2026-10-26)). How low a
+([world.md, 4e](./world.md#4e-a-level-horizon-for-a-host-built-2026-10-26)): by default once
+the camera is at rest, rolling the view level over a moment and never while the user drives
+it; or all the while, a little each frame (`mode: 'continuous'`). How low a
 view passes through the air, which darkens the sky toward space, is measured on the same
 globe, so the rim of air sits on the sea's edge.
 
@@ -782,7 +784,11 @@ const [stage, setStage] = useState<SceneryStageOccupantState>({
 ```
 
 `boundary` is the scene's area in scene X/Z, and should hold the whole scene: by default
-the `World`'s (see [Boundaries](#boundaries)). `occupants` claim parts of it — typically field
+the `World`'s (see [Boundaries](#boundaries)). Without either — a `World` anchored to a point,
+as `useTargetAnchor` anchors it away from the fields — the stage has no area of its own: it
+draws the sea about the scene's origin, curved from there (no flat disc), the relief is
+see-through only over the fields loaded in the `World`, and an occupant without an `outline`
+is handed no ground. `occupants` claim parts of it — typically field
 columns. The sky's sea is
 global: its `water`, `seabed` and their opacities hold over the occupants as everywhere else.
 

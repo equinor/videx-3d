@@ -272,3 +272,23 @@ export function placeGeoPoint(
 ): GeoFramePlacement {
   return placeGeoFrame(geoFrameAt(longitude, latitude), scene);
 }
+
+/**
+ * Where a point of a map, `easting` and `northing` in `projection` (a proj4 definition, or a
+ * name proj4 knows; projected, in metres), lies in `scene` (its X/Z), flat, and how what stands
+ * there is turned and scaled for its X/Z to run along that map's grid, east and south: the
+ * placement of `projection` about the point. Placed by `geoFrameMatrix`, on a globe or not,
+ * what is drawn about its origin stands at the point, upright, in that map's grid: as a
+ * `UtmPosition` with a `projection` and no `UtmArea` around it places its children in a
+ * `World`. In `scene`'s own projection only moved, exactly.
+ *
+ * @group Utils
+ */
+export function placeMapPoint(
+  projection: string,
+  easting: number,
+  northing: number,
+  scene: GeoFrame,
+): GeoFramePlacement {
+  return placeGeoFrame({ projection, origin: [easting, northing] }, scene);
+}

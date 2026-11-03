@@ -75,8 +75,10 @@ generator functions from `@equinor/videx-3d/generators`.
 | `geoFrameUtmZone(frame)` / `utmZoneBounds(zone, south)` | the UTM zone a frame is drawn in (null for any other map), and the band of longitude and latitude it covers; the minimap outlines it |
 | `placeGeoFrame(frame, scene)` | where another frame's origin lies in the scene, and how its grid is turned and scaled there |
 | `placeGeoPoint(longitude, latitude, scene)` | the same for a point of the Earth, turned for true north there; `geoFrameMatrix(placement, globe, target)` stands what is drawn about the origin on the globe there (as a `Wgs84Position` in the `World` does) |
+| `placeMapPoint(projection, easting, northing, scene)` | the same for a point of a map, turned to that map's grid there |
+| `TargetAnchorPicker` | where to anchor a `World` as the camera's target goes about the Earth (`useTargetAnchor`) |
 | `CRS` | a UTM (or other) map about an origin: `utmToWorld`, `worldToUtm`, `wgs84ToWorld`, `worldToWgs84` |
-| `getProjectionDefFromUtmZone('31N')` | the proj4 definition of a UTM zone |
+| `getProjectionDefFromUtmZone('31N', datum?)` | the proj4 definition of a UTM zone, in a datum: `'ED50'` (the default), `'WGS84'`, `'ETRS89'` or a shift of your own (see [The datum](#the-datum)) |
 | `solarPosition(date, latitude, longitude)` | the sun's azimuth and elevation |
 
 ### The scene and your field data
@@ -85,7 +87,8 @@ generator functions from `@equinor/videx-3d/generators`.
 |--|--|
 | `World` | says once, with a `frame`, where the scene lies on the Earth. Renders nothing |
 | `UtmArea` | a container for field data in a map: its children are drawn in its map's metres about its origin. A `UtmArea` in **another** frame than the `World`'s (another UTM zone, a field 300 km away) places itself where the world's map has it, turned and scaled, and on the globe when there is one |
-| `UtmPosition` / `Wgs84Position` | place children at an easting/northing or a longitude/latitude inside a `UtmArea`, flat in its map. A `Wgs84Position` in the `World` itself, with no `UtmArea` around it, places them on the Earth instead: on the globe at the point, upright and facing true north, at any distance (`placeGeoPoint`). A `UtmPosition` needs a `UtmArea` |
+| `UtmPosition` / `Wgs84Position` | place children at an easting/northing or a longitude/latitude inside a `UtmArea`, flat in its map. In the `World` itself, with no `UtmArea` around them, they place them on the Earth instead: on the globe at the point, upright, at any distance; a `Wgs84Position` facing true north (`placeGeoPoint`), a `UtmPosition` given its `projection` along that map's grid (`placeMapPoint`). Without one a `UtmPosition` needs a `UtmArea` |
+| `useTargetAnchor({ fields, initial })` | anchors the `World` where the camera looks: to the field its target is over, or to a point about it over none; judged at rest, switched without anything moving on screen |
 | `UtmAreaContext` | the area's conversions: `utmToArea`, `wgs84ToArea`, `areaToUtm`, `areaToWgs84`, `worldToArea`, `worldToUtm`, `worldToWgs84`; and its `id`, the host's name for the field |
 
 ### The surroundings: sky, sea, land and seabed
@@ -97,7 +100,7 @@ generator functions from `@equinor/videx-3d/generators`.
 | `SceneryStage` | the sea and seabed on real geometry around the field (its `boundary`), and with `relief` the land and seabed beyond, from your elevation data, read in the `World`'s frame |
 | `SceneryAnchor` | places rigid content far from the field on the globe (a facility 100 km out) |
 | `applyGlobe(material, globe)` | puts long content (a pipeline) on the globe per vertex |
-| `useLevelHorizon()` | keeps the horizon level when the camera is far from the field |
+| `useLevelHorizon()` | keeps the horizon level when the camera is far from the field: once the camera is at rest, rolling its view level (the default), or all the while (`mode: 'continuous'`) |
 | `globe.place(x, z, height, target)`, `globe.altitude(p)`, `globe.foot(p, target)` | a point a given height over the sea at map X/Z, and the other way round. Far from the field, scene Y is not the altitude |
 
 The globe is the `Scenery`'s; read it with `useWorld().globe` (or `useScenery`).
@@ -166,6 +169,13 @@ blocks (`reliefWindow`). See [relief.md](./relief.md#data).
   (`useContext(UtmAreaContext)` inside it), or make each field's handler inside it; the
   area's `worldToArea` and `worldToUtm` read the pick's `position` in that field
   ([world.md, 7f](./world.md#7f-built-2026-11-02)).
+- **Or no field chosen at all:** `useTargetAnchor` anchors the `World` where the camera's
+  target is: to the field it is over (its frame and boundary, so that field meets the sea and
+  its stage is the anchored one), or to a point about it over none, with no stage area of its
+  own. It judges only once the camera is at rest and never takes the controls from you; a
+  switch changes nothing on screen (the camera is carried), and goes to or from a field only
+  when the sea over its disc would move by less than a pixel
+  ([world.md, the target anchor](./world.md#the-target-anchor-and-the-datum-built-2026-11-03)).
 - **The relief is shared.** The `GeoRelief`, its far overview and the minimap draw the same
   tiles from the same `relief-meta` / `relief-values`, built by the `sceneryReliefTile`
   generator. Layers in the `World` lie on what the relief draws (`drape`).
@@ -240,6 +250,25 @@ const frame = geoFrameFromCrs(crs)
 
 No UTM field, just a place? `geoFrameAt(longitude, latitude)` gives a frame about it.
 
+#### The datum
+
+`getProjectionDefFromUtmZone('31N')` assumes **ED50**, as much of the North Sea's older data is
+in it; say which datum your coordinates are in when they are not, as the same easting and
+northing lie some 200 m apart between ED50 and WGS84 (234 m at Volve):
+
+```ts
+getProjectionDefFromUtmZone('31N', 'WGS84')   // GPS, most web maps
+getProjectionDefFromUtmZone('31N', 'ETRS89')  // Europe's, within a metre of WGS84
+getProjectionDefFromUtmZone('31N', { ellps: 'intl', towgs84: [-90.365, -101.13, -123.384, 0.333, 0.077, 0.894, 1.994] })
+```
+
+A `UtmArea` takes the same as `datum` with `utmZone`, or a whole proj4 definition as
+`utmProjectionDef`. ED50's default shift is the 3-parameter one, 2–3 m from the 7-parameter
+shifts published for the North Sea; give yours where that matters. ⚠️ proj4 reads a
+7-parameter `towgs84` in the *position vector* convention: parameters published in the
+*coordinate frame* convention (EPSG method 9607) need their three rotations negated. Heights
+are not changed by any of this: an `altitude` is metres over the sea, as your data has it.
+
 ### 3. Put the field in a `UtmArea`
 
 Field data goes inside a `UtmArea` with the same `CRS`: its children work in the map's metres,
@@ -262,8 +291,11 @@ place what you have in longitude and latitude and is not the field's data — a 
 marker — with a `Wgs84Position` outside the `UtmArea`, in the `World`. There it stands on the
 Earth at the point: on the globe, upright and facing true north, at any distance, and placed
 again when another field is anchored. Inside a `UtmArea` a `Wgs84Position` is field data,
-flat in the field's map, and far from the field stands off the curved sea. A `UtmPosition`
-needs a `UtmArea`: easting and northing are in its map.
+flat in the field's map, and far from the field stands off the curved sea. What you have in
+easting and northing goes the same way in a `UtmPosition` given its `projection`
+(`getProjectionDefFromUtmZone('32N', 'WGS84')`, say), its children along that map's grid;
+without one a `UtmPosition` needs a `UtmArea`, and its easting and northing are in the area's
+map.
 
 ```tsx
 <World frame={frame} boundary={[-8000, -8000, 8000, 8000]}>
@@ -352,8 +384,13 @@ It needs the same generator as the relief, and sits inside the `Canvas` (it foll
 - **Placing the camera far away.** Over the globe, scene Y is not altitude (the sea is 3 km below
   Y = 0 at 200 km). Use the globe: `globe.place(x, z, 2000, target)` is the point 2 km over the
   sea at map X/Z.
-- **Level horizon.** `useLevelHorizon()` (inside the `Scenery`) keeps the horizon level far from
-  the field.
+- **Level horizon.** `useLevelHorizon()` (inside the `World` or the `Scenery`) keeps the
+  horizon level far from the field. By default it waits until the camera is at rest and rolls the
+  view level over a moment, stopping the instant you take the controls again: while you move,
+  the camera is exactly as you drive it. `mode: 'continuous'` keeps it level all the while
+  instead, a few thousandths of a degree a frame.
+- **Following the camera.** `useTargetAnchor` keeps the scene anchored where the camera looks,
+  so no field has to be chosen and the origin stays near what is seen.
 
 ### The whole thing
 
@@ -424,9 +461,12 @@ The Storybook stories `Components/Misc/Scenery`, `Components/Html/Minimap` and
   as relief data: give it `EPSG:4326`).
 - **Scene Y is not altitude far from the field.** Under a `Scenery` the sea curves away beyond
   the stage. Place and read heights there with `globe.place` / `globe.altitude`, not Y.
-- **`UtmPosition` and `Wgs84Position` are flat.** Right over the field; far out, content they
-  place floats over the curved sea (about 3 km at 200 km). Wrap it in a `SceneryAnchor` at its
-  point, or give it a `UtmArea` of its own.
+- **`UtmPosition` and `Wgs84Position` inside a `UtmArea` are flat.** Right over the field; far
+  out, content they place floats over the curved sea (about 3 km at 200 km). Put them in the
+  `World` instead, outside the `UtmArea` (a `UtmPosition` with its `projection`), where they
+  stand on the globe.
+- **The datum.** `getProjectionDefFromUtmZone` assumes ED50; WGS84 coordinates read as ED50
+  land some 200 m off. See [The datum](#the-datum).
 - **A field in another UTM zone** goes in its own `UtmArea` inside the `World`, not converted
   point by point into the main zone.
 - **No relief?** The stage and the minimap need the `sceneryReliefTile` generator in the

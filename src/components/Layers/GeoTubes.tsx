@@ -131,7 +131,7 @@ const foot = { longitude: 0, latitude: 0 };
  * See `documents/layers.md`.
  *
  * @example
- * <World frame={frame} bounds={bounds}>
+ * <World frame={frame} boundary={boundary}>
  *   <GeoRelief layers={layers} />
  *   <GeoTubes data={pipelines} style={f => ({ diameter: f.properties.diameter * 0.0254 })} exaggeration={20} />
  * </World>

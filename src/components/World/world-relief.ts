@@ -18,8 +18,8 @@ export type WorldReliefGroundRequest = {
  * What the anchored stage (a `SceneryStage`) asks of the relief: what only a stage has.
  */
 export type WorldReliefStage = {
-  /** the stage's area, world X/Z: see-through over it with `seeThrough` */
-  boundary: Boundary;
+  /** the stage's area, world X/Z: see-through over it with `seeThrough`; null for a stage with none */
+  boundary: Boundary | null;
   /** the sea's seabed is see-through (its `seabedOpacity` below 1): so is the relief over `boundary` */
   seeThrough: boolean;
   /** the occupants' outlines, and the cut of one of them (see `SceneryReliefTileOccupants`) */
