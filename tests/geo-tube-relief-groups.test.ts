@@ -30,6 +30,7 @@ const relief = (keys: number[]): SceneryReliefDrawn => {
     highest: 0,
     rangeAt: () => null,
     heightAt: () => null,
+    tileAt: () => null,
     resident: 0,
     keysVersion: ++version,
   };

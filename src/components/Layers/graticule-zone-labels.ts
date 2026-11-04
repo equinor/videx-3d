@@ -130,28 +130,41 @@ const toward = new Vector3();
 const up = new Vector3();
 
 /**
- * A label for each of `cells` on the sea's level of `globe` (it needs a frame): its name at
- * its middle, lying flat on the Earth and reading east, its own size in metres
- * ({@link graticuleZoneLabelSize}; draw them in a layer of `size` 1).
+ * A label for each of `cells` on the sea's level of `globe` (it needs a frame), or at
+ * `heightAt` over it (by its place, its text and its size: over the highest ground under
+ * it, say): its name at its middle, lying flat on the Earth and reading east, its own size
+ * in metres ({@link graticuleZoneLabelSize}; draw them in a layer of `size` 1), kept by its
+ * cell (`id`) whatever its height.
  */
 export function graticuleZoneLabels(
   globe: Globe,
   cells: readonly GraticuleZoneCell[],
   fraction = GRATICULE_ZONE_LABEL_SIZE,
+  heightAt?: (
+    latitude: number,
+    longitude: number,
+    text: string,
+    size: number,
+  ) => number,
 ): Label[] {
   return cells.map(cell => {
     const latitude = (cell.south + cell.north) / 2;
     const longitude = (cell.west + cell.east) / 2;
-    const position = globe.geodetic(latitude, longitude, 0, at).toArray();
+    const size = graticuleZoneLabelSize(cell, fraction);
+    const height = heightAt
+      ? heightAt(latitude, longitude, cell.text, size)
+      : 0;
+    const position = globe.geodetic(latitude, longitude, height, at).toArray();
     const normal = globe.upAt(at, up).toArray();
-    globe.geodetic(latitude, longitude + 1e-3, 0, toward);
+    globe.geodetic(latitude, longitude + 1e-3, height, toward);
     const direction = toward.sub(at).toArray();
     return {
       text: cell.text,
       position,
       normal,
       direction,
-      size: graticuleZoneLabelSize(cell, fraction),
+      size,
+      id: `${cell.text}@${cell.south},${cell.west}`,
     };
   });
 }

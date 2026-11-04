@@ -15,6 +15,7 @@ import {
 import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import type { Globe } from '../../sdk/projection/globe';
 import { LabelLayer } from '../Labels/LabelLayer';
+import { labelReachEstimate } from '../Labels/label-geometry';
 import type { Label, LabelsProvider, LabelStyle } from '../Labels/types';
 import { useSceneryOcean } from '../Scenery/scenery-context';
 import { useWorldRelief } from '../World/world-relief';
@@ -45,6 +46,7 @@ import {
   utmZoneCells,
 } from './graticule-zone-labels';
 import { useLayerGlobe } from './layer-globe';
+import { ReliefCeiling, useReliefCeiling } from './relief-ceiling';
 import sample from './shaders/geo-graticule-sample.glsl';
 
 /**
@@ -77,20 +79,21 @@ const EVERYWHERE: GeoTileLayerSource = { size: 16, covers: () => true };
 const CELL_PIXELS = 16;
 
 /**
- * The look of a `GeoGraticule`'s names, by default: small and light, a thin soft halo, so
- * they read without covering the scene; and never faded for being seen at a slant, only
- * when too small on screen (`minPixels`); never drawn larger than `maxPixels`, either: one
- * near the camera while the lines' step is judged far away is shrunk to it. Turned to read
- * left to right from wherever they are seen (`flip`).
+ * The look of a `GeoGraticule`'s names, over a label layer's defaults: never faded for
+ * being seen at a slant, only when too small on screen (`minPixels`); never drawn larger
+ * than `maxPixels`, either: one near the camera while the lines' step is judged far away is
+ * shrunk to it.
  */
 export const GRATICULE_LABEL_STYLE: Partial<LabelStyle> = {
-  fontWeight: 500,
-  haloWidth: 0.07,
-  haloColor: 'rgba(0, 0, 0, 0.55)',
   minFacing: 0,
   maxPixels: 48,
-  flip: true,
 };
+
+/** Where labels meet, latitude and longitude's names give way to data labels (priority 0). */
+export const GRATICULE_LABEL_PRIORITY = -1;
+
+/** Where labels meet, the zones' names give way to latitude and longitude's. */
+export const GRATICULE_ZONE_LABEL_PRIORITY = -2;
 
 // Centred on their places, whatever the options: the cells' middles.
 const CENTRED: Partial<LabelStyle> = {
@@ -209,6 +212,8 @@ export const GeoGraticule = ({
     () => graticuleZoneLabelsOf(options, 'timeZones'),
     [options],
   );
+  // The names lie over the highest ground under them, or the relief would bury them.
+  const ceiling = useReliefCeiling();
   // No kind on: nothing to draw, nor tiles to choose.
   const lined = !!(styles.latLon || styles.utm || styles.timeZones);
 
@@ -233,34 +238,53 @@ export const GeoGraticule = ({
         fade={fade}
       />
       {visible && globe && labels && (
-        <LatLonLabels globe={globe} uniforms={uniforms} options={labels} />
+        <LatLonLabels
+          globe={globe}
+          uniforms={uniforms}
+          options={labels}
+          ceiling={ceiling}
+        />
       )}
       {visible && globe && utmLabels && (
-        <ZoneLabels globe={globe} kind="utm" options={utmLabels} />
+        <ZoneLabels
+          globe={globe}
+          kind="utm"
+          options={utmLabels}
+          ceiling={ceiling}
+        />
       )}
       {visible && globe && timeZoneLabels && (
-        <ZoneLabels globe={globe} kind="timeZones" options={timeZoneLabels} />
+        <ZoneLabels
+          globe={globe}
+          kind="timeZones"
+          options={timeZoneLabels}
+          ceiling={ceiling}
+        />
       )}
     </>
   );
 };
 
 // Latitude and longitude's names (GraticuleLabels): a LabelLayer around where the view is
-// centred, at the step of the lines `uniforms` draw on `globe`.
+// centred, at the step of the lines `uniforms` draw on `globe`, over the highest ground
+// under each (`ceiling`).
 const LatLonLabels = ({
   globe,
   uniforms,
   options,
+  ceiling,
 }: {
   globe: Globe;
   uniforms: GraticuleUniforms;
   options: GraticuleLabels;
+  ceiling: ReliefCeiling | null;
 }) => {
   const {
     size: fraction = GRATICULE_LABEL_SIZE,
     reach = GRATICULE_LABEL_REACH,
     density = GRATICULE_LABEL_DENSITY,
     sizing = 'stepped',
+    priority = GRATICULE_LABEL_PRIORITY,
     lift,
     ...style
   } = options;
@@ -287,9 +311,28 @@ const LatLonLabels = ({
         : 1;
   });
 
-  // The same labels while the nearest lines to the view's centre stay the same, so the
-  // layer writes nothing again as the view moves. Thinned toward the poles from the
-  // latitude their size is judged at, the field's.
+  // The same labels while the nearest lines to the view's centre stay the same, and the
+  // relief in under them, so the layer writes nothing again as the view moves. Thinned
+  // toward the poles from the latitude their size is judged at, the field's. Each over the
+  // highest ground its text could cover, at its largest (`'smooth'`).
+  const fontSize = globe.location
+    ? graticuleLabelSize(step, globe.location.latitude, fraction)
+    : 0;
+  const heightAt = useMemo(
+    () =>
+      ceiling
+        ? (latitude: number, longitude: number, text: string) =>
+            Math.max(
+              ceiling.around(
+                longitude,
+                latitude,
+                labelReachEstimate(text, fontSize * GRATICULE_LABEL_SMOOTH_MAX),
+              ) ?? 0,
+              0,
+            )
+        : undefined,
+    [ceiling, fontSize],
+  );
   const provider = useMemo<LabelsProvider>(() => {
     let key = '';
     let found = NO_LABELS;
@@ -305,11 +348,12 @@ const LatLonLabels = ({
           reach,
           density,
           reference: location.latitude,
+          heightAt,
         });
       }
       return found;
     };
-  }, [globe, step, reach, density]);
+  }, [globe, step, reach, density, heightAt]);
 
   const location = globe.location;
   if (!step || !location) return null;
@@ -320,6 +364,7 @@ const LatLonLabels = ({
       provider={provider}
       size={size}
       scaleRef={scale}
+      priority={priority}
       // Over the waves near the field, which would cut through text at the sea's level.
       lift={lift ?? Math.max(5, 0.05 * size)}
       {...GRATICULE_LABEL_STYLE}
@@ -330,22 +375,44 @@ const LatLonLabels = ({
 };
 
 // The UTM zones' or the time zones' names (GraticuleZoneLabels): one in the middle of each
-// cell, sized by its cell (graticuleZoneLabels). All of them, made once for the globe's
-// place on the Earth, so nothing is written as the view moves; those facing away are not
-// drawn.
+// cell, sized by its cell (graticuleZoneLabels), over the highest ground its text could
+// cover (`ceiling`). All of them, made once for the globe's place on the Earth and again as
+// the relief's tiles change, so nothing is written as the view moves; those facing away are
+// not drawn.
 const ZoneLabels = ({
   globe,
   kind,
   options,
+  ceiling,
 }: {
   globe: Globe;
   kind: 'utm' | 'timeZones';
   options: GraticuleZoneLabels;
+  ceiling: ReliefCeiling | null;
 }) => {
-  const { size: fraction = GRATICULE_ZONE_LABEL_SIZE, ...style } = options;
+  const {
+    size: fraction = GRATICULE_ZONE_LABEL_SIZE,
+    priority = GRATICULE_ZONE_LABEL_PRIORITY,
+    ...style
+  } = options;
   const cells = useMemo(
     () => (kind === 'utm' ? utmZoneCells() : timeZoneCells()),
     [kind],
+  );
+  const heightAt = useMemo(
+    () =>
+      ceiling
+        ? (latitude: number, longitude: number, text: string, size: number) =>
+            Math.max(
+              ceiling.around(
+                longitude,
+                latitude,
+                labelReachEstimate(text, size),
+              ) ?? 0,
+              0,
+            )
+        : undefined,
+    [ceiling],
   );
   // Made again only when the globe is placed anew (its location a new object).
   const provider = useMemo<LabelsProvider>(() => {
@@ -356,17 +423,18 @@ const ZoneLabels = ({
       if (!location) return NO_LABELS;
       if (location !== placed) {
         placed = location;
-        found = graticuleZoneLabels(globe, cells, fraction);
+        found = graticuleZoneLabels(globe, cells, fraction, heightAt);
       }
       return found;
     };
-  }, [globe, cells, fraction]);
+  }, [globe, cells, fraction, heightAt]);
   if (!globe.location) return null;
   return (
     <LabelLayer
       provider={provider}
       // Each label its own size in metres (Label.size).
       size={1}
+      priority={priority}
       // Over the waves near the field, and clear of the sea far off.
       lift={5}
       liftPerDistance={1e-3}

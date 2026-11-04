@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { colorRampIndex, colorRampRow } from '../src/common/color-ramps';
 import { ContourColorMode } from '../src/common/types';
 import {
+  RELIEF_CONTOUR_LABEL_DEFAULTS,
   RELIEF_LOOKS,
+  resolveReliefContourLabels,
+  resolveReliefContours,
   SceneryReliefLooks,
 } from '../src/components/Scenery/scenery-relief-look';
 
@@ -86,5 +89,65 @@ describe('relief looks', () => {
     expect(row(looks, 2, 3)).toEqual(row(looks, 0, 3));
     // Past the layers given, the relief's.
     expect(row(looks, 5, 0)).toEqual(row(looks, 0, 0));
+  });
+});
+
+describe('relief contour labels', () => {
+  const labelsOf = (contours: Parameters<typeof resolveReliefContours>[0]) =>
+    resolveReliefContourLabels(resolveReliefContours(contours));
+
+  it('has none unless asked', () => {
+    expect(labelsOf(true)).toBeNull();
+    expect(labelsOf({ labels: false })).toBeNull();
+    expect(labelsOf(undefined)).toBeNull();
+  });
+
+  it('writes in the lines\u2019 own colour, as strongly as they shade', () => {
+    // Darkening: black, as strong as the lines, a hair of light grey round it.
+    const dark = labelsOf({ labels: true, factor: 0.4 })!;
+    expect(dark.color).toBe('#000000');
+    expect(dark.opacity).toBeCloseTo(0.4);
+    expect(dark.haloColor).toBe('rgba(210, 210, 210, 0.3)');
+    expect(dark.haloWidth).toBe(RELIEF_CONTOUR_LABEL_DEFAULTS.haloWidth);
+    // Mixed: their colour; a light one takes a dark grey halo.
+    const mixed = labelsOf({
+      labels: true,
+      colorMode: ContourColorMode.mixed,
+      color: '#ffcc00',
+    })!;
+    expect(mixed.color).toBe('#ffcc00');
+    expect(mixed.opacity).toBeCloseTo(0.5);
+    expect(mixed.haloColor).toBe('rgba(45, 45, 45, 0.3)');
+    // Lightening: white, a quarter as strong.
+    const light = labelsOf({
+      labels: true,
+      colorMode: ContourColorMode.lighten,
+      factor: 0.8,
+    })!;
+    expect(light.color).toBe('#ffffff');
+    expect(light.opacity).toBeCloseTo(0.2);
+    // Never more than whole.
+    expect(labelsOf({ labels: true, factor: 3 })!.opacity).toBe(1);
+  });
+
+  it('takes what is given over what the lines give', () => {
+    const given = labelsOf({
+      factor: 0.4,
+      labels: { color: '#ff0000', opacity: 0.9, haloWidth: 0 },
+    })!;
+    expect(given.color).toBe('#ff0000');
+    expect(given.opacity).toBe(0.9);
+    expect(given.haloWidth).toBe(0);
+    // Left out, the defaults.
+    expect(given.size).toBe(RELIEF_CONTOUR_LABEL_DEFAULTS.size);
+  });
+
+  it('lies across its line and reads left to right by default', () => {
+    const labels = labelsOf({ labels: true })!;
+    expect(labels.baseline).toBe('middle');
+    expect(labels.flip).toBe(true);
+    const given = labelsOf({ labels: { baseline: 'top', flip: false } })!;
+    expect(given.baseline).toBe('top');
+    expect(given.flip).toBe(false);
   });
 });

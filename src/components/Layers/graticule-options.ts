@@ -41,9 +41,9 @@ export type GraticuleLatLon = GraticuleLines & {
  * narrower side (east–west, shrinking with the latitude), so they keep their size on screen
  * as the step does and fit between each other; they come and go with the lines but never
  * slide. Never faded for being seen at a slant, only when too small on screen
- * (`minPixels`); always centred on their places. At sea level, lifted over the waves: high
- * land hides them. Their look as a label layer's (`LabelStyle`): small and light by
- * default, with a thin, soft halo (`GRATICULE_LABEL_STYLE`), in the lines' colour.
+ * (`minPixels`); always centred on their places. Over the highest ground of the relief
+ * under them, or the sea's level, lifted over the waves. Their look as a label layer's (`LabelStyle`): its defaults, a thin crisp
+ * halo, turned to read left to right (`GRATICULE_LABEL_STYLE`), in the lines' colour.
  */
 export type GraticuleLabels = Partial<
   Pick<
@@ -57,17 +57,22 @@ export type GraticuleLabels = Partial<
     | 'letterSpacing'
     | 'opacity'
     | 'minPixels'
-    | 'fullPixels'
+    | 'fadePixels'
     | 'maxPixels'
     | 'flip'
     | 'minFacing'
-    | 'fullFacing'
+    | 'fadeFacing'
     | 'depthTest'
     | 'lift'
   >
 > & {
   /** the font's size, as a fraction of a cell's narrower side on the ground. Default 0.18 */
   size?: number;
+  /**
+   * how much they are wanted where labels meet on screen (`LabelLayer`'s `priority`): below
+   * data labels', above the zones'. Default -1
+   */
+  priority?: number;
   /** how many lines either way from where the view is centred are looked at, at least (a period of the names, at least). Default 10 */
   reach?: number;
   /**
@@ -106,11 +111,11 @@ export type GraticuleZoneLabels = Partial<
     | 'letterSpacing'
     | 'opacity'
     | 'minPixels'
-    | 'fullPixels'
+    | 'fadePixels'
     | 'maxPixels'
     | 'flip'
     | 'minFacing'
-    | 'fullFacing'
+    | 'fadeFacing'
     | 'depthTest'
     | 'lift'
     | 'liftPerDistance'
@@ -118,6 +123,11 @@ export type GraticuleZoneLabels = Partial<
 > & {
   /** the font's size, as a fraction of its cell's narrower side on the ground. Default 0.18 */
   size?: number;
+  /**
+   * how much they are wanted where labels meet on screen (`LabelLayer`'s `priority`): below
+   * latitude and longitude's. Default -2
+   */
+  priority?: number;
 };
 
 /**

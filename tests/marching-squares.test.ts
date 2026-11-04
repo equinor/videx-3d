@@ -55,6 +55,20 @@ describe('marchingSquares', () => {
     const f = new Float32Array(16).fill(1);
     expect(marchingSquares(f, 4, 4, 0.5)).toEqual([]);
   });
+
+  it('traces a line running out of the field whole, from edge to edge', () => {
+    // Inside east of column 2.5: one line down the field, open at both ends.
+    const cols = 6;
+    const rows = 8;
+    const f = field(cols, rows, c => c >= 3);
+    const rings = marchingSquares(f, cols, rows, 0.5);
+    expect(rings.length).toBe(1);
+    const rowsAlong = rings[0].map(([, row]) => row).sort((a, b) => a - b);
+    expect(rowsAlong[0]).toBe(0);
+    expect(rowsAlong[rowsAlong.length - 1]).toBe(rows - 1);
+    expect(rings[0].length).toBe(rows);
+    for (const [col] of rings[0]) expect(col).toBe(2.5);
+  });
 });
 
 describe('ringsToPolygonCoordinates', () => {

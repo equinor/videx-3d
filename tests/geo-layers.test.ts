@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { polygonLabelPoint } from '../src/sdk/geometries/polygon-label';
+import {
+  polygonLabelPlaces,
+  polygonLabelPoint,
+  polygonLabelRect,
+  polygonMainAxis,
+} from '../src/sdk/geometries/polygon-label';
 import {
   densifyPlanarGeometry,
   geoFeaturesFromGeoJson,
@@ -279,6 +284,165 @@ describe('polygonLabelPoint', () => {
         ],
       ]),
     ).toBeNull();
+  });
+});
+
+describe('polygonLabelRect', () => {
+  const rect = (w: number, h: number, angle = 0): Vec2[] => {
+    const c = Math.cos(angle);
+    const s = Math.sin(angle);
+    return (
+      [
+        [-w / 2, -h / 2],
+        [w / 2, -h / 2],
+        [w / 2, h / 2],
+        [-w / 2, h / 2],
+        [-w / 2, -h / 2],
+      ] as Vec2[]
+    ).map(([x, z]) => [x * c - z * s + 5, x * s + z * c + 7] as Vec2);
+  };
+
+  it('fills a rectangle of its own shape, and is as high as one of another fits', () => {
+    const own = polygonLabelRect([[rect(8, 2)]], 4, 0, 1e-4)!;
+    expect(own.centre[0]).toBeCloseTo(5, 3);
+    expect(own.centre[1]).toBeCloseTo(7, 3);
+    expect(own.width).toBeCloseTo(8, 3);
+    expect(own.height).toBeCloseTo(2, 3);
+    // Twice as wide as high in an 8 × 2: as high as it is.
+    const wide = polygonLabelRect([[rect(8, 2)]], 2, 0, 1e-4)!;
+    expect(wide.height).toBeCloseTo(2, 3);
+    expect(wide.width).toBeCloseTo(4, 3);
+    // Eight times: as wide.
+    const narrow = polygonLabelRect([[rect(8, 2)]], 8, 0, 1e-4)!;
+    expect(narrow.width).toBeCloseTo(8, 3);
+    expect(narrow.height).toBeCloseTo(1, 3);
+  });
+
+  it('fits along a turned polygon when turned with it, far larger than level', () => {
+    const turned = [[rect(20, 2, Math.PI / 6)]];
+    const along = polygonLabelRect(turned, 5, Math.PI / 6)!;
+    expect(along.height).toBeCloseTo(2, 1);
+    expect(along.centre[0]).toBeCloseTo(5, 1);
+    expect(along.centre[1]).toBeCloseTo(7, 1);
+    const level = polygonLabelRect(turned, 5, 0)!;
+    expect(level.height).toBeLessThan(along.height / 2);
+  });
+
+  it('keeps out of a concave polygon’s mouth and its holes', () => {
+    // An L: its long arm 10 × 3 along the bottom, its short one 3 × 10 up the left.
+    const l: Vec2[] = [
+      [0, 0],
+      [10, 0],
+      [10, 3],
+      [3, 3],
+      [3, 10],
+      [0, 10],
+      [0, 0],
+    ];
+    const found = polygonLabelRect([[l]], 3, 0, 1e-4)!;
+    // Three times as wide as high: along the bottom arm, as high as it.
+    expect(found.height).toBeCloseTo(3, 2);
+    expect(found.centre[1]).toBeCloseTo(1.5, 2);
+    expect(found.centre[0] - found.width / 2).toBeGreaterThanOrEqual(-1e-3);
+    // A hole in the middle of a square: the band beside it.
+    const holed = polygonLabelRect([[square(0, 0, 10), square(3, 3, 4)]], 3)!;
+    const [cx, cz] = holed.centre;
+    const clear =
+      cz + holed.height / 2 <= 3 + 0.2 || cz - holed.height / 2 >= 7 - 0.2;
+    expect(
+      clear || cx + holed.width / 2 <= 3.2 || cx - holed.width / 2 >= 6.8,
+    ).toBe(true);
+  });
+
+  it('takes the part with the most room, and is null without area', () => {
+    const found = polygonLabelRect(
+      [[square(0, 0, 1)], [square(10, 10, 4)]],
+      1,
+    )!;
+    expect(found.centre[0]).toBeCloseTo(12, 1);
+    expect(found.height).toBeCloseTo(4, 1);
+    expect(
+      polygonLabelRect(
+        [
+          [
+            [
+              [0, 0],
+              [1, 0],
+              [2, 0],
+              [0, 0],
+            ],
+          ],
+        ],
+        2,
+      ),
+    ).toBeNull();
+  });
+
+  it('turns a label along a long polygon only where that gives far more room', () => {
+    const shapes = [
+      { width: 5, height: 1 },
+      { width: 2.5, height: 2.2 },
+    ];
+    const [wide, tall] = polygonLabelPlaces(
+      [[rect(20, 2, Math.PI / 6)]],
+      shapes,
+    );
+    expect(wide!.angle).toBeCloseTo(Math.PI / 6, 6);
+    expect(wide!.height).toBeCloseTo(2, 1);
+    expect(tall!.angle).toBeCloseTo(Math.PI / 6, 6);
+    // Not asked to: level.
+    expect(
+      polygonLabelPlaces([[rect(20, 2, Math.PI / 6)]], shapes, false)[0]!.angle,
+    ).toBe(0);
+    // A square has no main axis: level.
+    expect(
+      polygonLabelPlaces([[rect(10, 10, 0.3)]], shapes).map(r => r!.angle),
+    ).toEqual([0, 0]);
+  });
+});
+
+describe('polygonMainAxis', () => {
+  it('runs along a rectangle, however it is turned or wound', () => {
+    const turned = (angle: number, reverse = false) => {
+      const ring: Vec2[] = [
+        [-3, -0.5],
+        [3, -0.5],
+        [3, 0.5],
+        [-3, 0.5],
+      ].map(([x, z]) => [
+        x * Math.cos(angle) - z * Math.sin(angle) + 100,
+        x * Math.sin(angle) + z * Math.cos(angle) - 40,
+      ]);
+      return [[reverse ? ring.reverse() : ring]];
+    };
+    for (const angle of [0, 0.4, -1.1, 1.5]) {
+      const axis = polygonMainAxis(turned(angle))!;
+      expect(axis.angle).toBeCloseTo(angle, 6);
+      expect(axis.elongation).toBeCloseTo(6, 6);
+      expect(polygonMainAxis(turned(angle, true))!.angle).toBeCloseTo(angle, 6);
+    }
+    // Pointing back: the same axis, within (−π/2, π/2].
+    expect(polygonMainAxis(turned(Math.PI - 0.3))!.angle).toBeCloseTo(-0.3, 6);
+  });
+
+  it('counts holes out, and is 1 for a square', () => {
+    const square10 = square(0, 0, 10);
+    expect(polygonMainAxis([[square10]])!.elongation).toBeCloseTo(1, 6);
+    // A square with a slot along X taken out: its mass lies more across it.
+    const slotted = polygonMainAxis([
+      [
+        square10,
+        [
+          [1, 4],
+          [9, 4],
+          [9, 6],
+          [1, 6],
+          [1, 4],
+        ],
+      ],
+    ])!;
+    expect(Math.abs(Math.abs(slotted.angle) - Math.PI / 2)).toBeLessThan(1e-6);
+    expect(slotted.elongation).toBeGreaterThan(1);
   });
 });
 

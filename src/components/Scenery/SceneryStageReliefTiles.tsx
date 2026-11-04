@@ -535,6 +535,8 @@ export const SceneryStageReliefTiles = ({
       }
       return null;
     };
+    const tileAt = (key: number): ReliefTile | null =>
+      streamer.get(key) ?? null;
     return {
       streamer,
       slotOf,
@@ -542,6 +544,7 @@ export const SceneryStageReliefTiles = ({
       resident,
       rangeAt,
       heightAt,
+      tileAt,
       split: new Set<number>(),
       overviewSplit: new Set<number>(),
     };
@@ -1176,6 +1179,7 @@ export const SceneryStageReliefTiles = ({
             highest: streaming.reached.highest,
             rangeAt: streaming.rangeAt,
             heightAt: streaming.heightAt,
+            tileAt: streaming.tileAt,
             resident: streaming.resident.changes,
           }
         : null,

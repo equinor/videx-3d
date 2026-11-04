@@ -1,4 +1,5 @@
 import type { DataArrayTexture } from 'three';
+import type { ReliefTile } from '../../sdk/geometries/relief-tiles';
 import { tileAncestors } from '../../sdk/tiles/tile-cover';
 
 /**
@@ -29,6 +30,13 @@ export type SceneryReliefDrawn = {
   rangeAt: (key: number) => [low: number, high: number] | null;
   /** the ground at a point (degrees), metres over the sea, from the finest relief tile in there, on its triangles; null where none is */
   heightAt: (longitude: number, latitude: number) => number | null;
+  /**
+   * a relief tile in, by its key — its nodes' heights and which layer gave each (see
+   * `ReliefTile`) — or null where it is not: for what is found on the tiles drawn
+   * (`index`), such as their contour lines' labels. Its arrays are its own: read, never
+   * written
+   */
+  tileAt: (key: number) => ReliefTile | null;
   /** counts the relief tiles loaded and let go: `rangeAt` may answer otherwise when it changes */
   resident: number;
   /**
@@ -101,6 +109,7 @@ export class SceneryReliefHub {
         highest: drawn.highest,
         rangeAt: drawn.rangeAt,
         heightAt: drawn.heightAt,
+        tileAt: drawn.tileAt,
         resident: drawn.resident,
         keysVersion: this.keysVersion,
       };

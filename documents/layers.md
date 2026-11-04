@@ -55,7 +55,7 @@ and facilities on the seabed, `On the seabed` and `To the coast`),
 | `GeoGraticule` | lines on the Earth: latitude and longitude, the UTM zones, the nautical time zones, and their names | a `GeoTileLayer` with no data: each pixel's lines worked out from where it lies |
 | `GeoTubes` | lines as 3D tubes on the ground, their diameter as built (exaggerated), never thinner than a few pixels | one instanced tube, a segment per instance, nodes laid about the camera |
 | `GeoSymbols` | points as 3D symbols of any geometry, standing on the ground, their size as built (exaggerated), never narrower than a few pixels | one instanced mesh (`Symbols`) |
-| `GeoLabels` | a label per feature, flat inside a polygon, by a point | a `LabelLayer`, placed on the globe |
+| `GeoLabels` | a label per feature: a polygon's fitted inside it, broken into lines and turned along it where that fits better; by a point | a `LabelLayer`, placed on the globe |
 | `MinimapGeoLayer` | the same features as the scene's layers, less what its `filter` leaves out, on a `Minimap` | SVG paths and dots, carried to scene X/Z once |
 | `TrackLayer` | things that move: anything you render, a `Tanker` say | dead reckoning between fixes, an object moved per frame, stood upright on the globe where it is |
 
@@ -96,7 +96,7 @@ depth buffer or a shader to discard. It holds:
   the relief a stage draws, else the sea's flat seabed — the void's lid hides all above it
   (see [relief.md](./relief.md)), so nothing lying above it is drawn (`sceneryLidOverCamera`).
   Depth alone does not hide it: the lid leaves pixels to the background, which writes none —
-  toward the horizon where the globe curves the ground below the camera's level — and a layer drawn without the depth test (`GeoLabels`)
+  toward the horizon where the globe curves the ground below the camera's level — and a layer drawn without the depth test (a `GeoLabels` given `depthTest` false)
   is hidden by nothing. `lies` says where the layer is: `'ground'` (draped, on the relief),
   always above the lid; or a height over the sea, above it where it is at the lid's height
   over the camera or higher. A layer laid deeper, at a reservoir's depth say, is still seen
@@ -422,30 +422,81 @@ The minimap draws the same two files: one dataset, whatever draws it.
 
 ## Labels: `GeoLabels`
 
-Each feature's `text`, as a `Label` lying flat (read from above, reading east): a polygon's
-at the point inside it farthest from its edge (`geoFeatureLabelPoint`, `polygonLabelPoint`:
-inside however concave), a line's at the middle of its longest part, points' at the first.
-`size` `'fit'` (default) sizes each to the room it has there, between `minSize` and
-`maxSize` metres. On the globe by latitude and longitude (`Globe.geodetic`, its normal and
-reading direction there), placed again when the globe is. The rest is `LabelLayer`'s: one
-instanced draw, faded when too small on screen (`minPixels`), every `LabelStyle` option.
+Each feature's `text`, as a `Label` lying flat (read from above): a line's at the middle of
+its longest part, points' at the first, reading east. On the globe by latitude and
+longitude (`Globe.geodetic`, its normal and reading direction there), placed again when the
+globe is. The rest is `LabelLayer`'s: kept apart on screen from every label layer's in the
+scene (`priority` 0, over the graticule's names), faded when too small on screen
+(`minPixels`), every `LabelStyle` option.
 
-Two of those differ from a `LabelLayer`'s defaults: **`depthTest` false**, drawn over
-everything — the labels lie flat at `height` (the sea's, by default), and the relief rises
-through it in places (land, a terminal onshore) and would bury them — and **`flip` true**,
-turned to read left to right whichever way the camera looks. Labels past the globe's horizon
-face away from the camera and are not drawn (`minFacing`), with or without the depth test.
+**In a polygon**, its name goes where it fits best (`geoPolygonLabelPlaces`): for each way
+of breaking it into lines, up to `maxLines` (default 3; `labelTextVariants`, balanced:
+`wrapLabelText`), the largest rectangle of that shape inside the polygon
+(`polygonLabelPlaces`), its room the rectangle's, 85 % of it each way
+(`GEO_LABEL_PADDING`), so the text keeps clear of the edge. The rectangle reads east, or,
+with `turn` (default on), along the polygon's main axis (`polygonMainAxis`, its area's
+second moments) where the polygon is elongated (1.5 or more) and that gives 1.25 times the
+room (`POLYGON_LABEL_TURN_GAIN`): text reads best level. A way whose text could be no larger
+than in fewer lines is left out, never drawn. Then, by `size`:
+
+- **`'fit'`** (default; metres, `sizing` `'world'`): each name as large as it fits
+  between `minSize` (150 m: smaller still, it overflows) and `maxSize` (3 km), in the fewest
+  lines that make it so (more lines must make it 15 % larger) — but never drawn larger on
+  screen than reads clearly: `maxPixels`, 18 CSS pixels by default
+  (`GEO_LABEL_MAX_PIXELS`). Nearer, a name is held at that size rather than filling its
+  polygon, and broken into fewer lines where the polygon then has room: every way is a
+  `Label.places` entry, its room the polygon's (made as much larger where `minSize` makes
+  the name overflow, so it is never shrunk below it), and the label group draws the first
+  that fits at the size drawn.
+- **On screen** (a preset, or `sizing` `'screen'` or `'auto'`; `'fit'` is then `'small'`),
+  or **a number of metres**: every way is a `Label.places` entry, and the label group draws
+  the first that fits at the size it is drawn, else the roomiest, shrunk to fit — again as
+  the view zooms (see labels.md, *Wrapping and places*). Zooming out, names break into more
+  lines, then shrink, then fade out once too small to read: a polygon labels itself only
+  while its name fits in it. `maxPixels` is 18 by default in metres, none on screen (the
+  size is on screen already).
+
+The rectangle is `polygonLabelRect`: stretched along its angle by one over its aspect, a
+rectangle is a square, and the largest square about a point inside the polygon reaches its
+Chebyshev (L∞) distance to the edge — so the rectangle's middle is the polygon's pole of
+inaccessibility in that norm, found as `polylabel` finds the Euclidean one
+(`polygonLabelPoint`), with a binary heap, the distance to each segment exact (convex and
+piecewise linear along it), segments whose box lies farther than the nearest so far
+skipped. Its default precision is a twentieth of the stretched polygon's smaller side
+(within 10 % of the best; never larger than fits). Rings are simplified to a fiftieth of
+their size first (`simplifyRing`). Measured 2026-11-03 on the 598 discoveries (61 654
+vertices; up to 3 ways each, two angles where elongated): 1.6 s as first written, with a
+closure per segment, a sorted array for a queue and a hundredth's precision; ~95 ms now.
+Still too long for one frame, so `GeoLabels` fits polygons a few at a time between frames
+(4 ms a turn, `setTimeout`), handing its labels on as they come in (every 100 ms, and when
+done): all 598 in about 0.7 s, no frame waiting on them.
+
+**Over the relief**: each label lies at `height` (the sea's, by default), or over the highest
+ground of the relief under it where that is higher (`useReliefCeiling`), placed again as the
+relief's tiles come in, and is depth tested: ground between it and the camera hides it, the
+ground under it never buries it. The highest ground is `reliefCeiling`'s: the most of the
+relief hub's `rangeAt` over the geographic tiles about as large as the label's footprint (a
+polygon place's room, or `labelReachEstimate` from a point's text and size), each from the
+finest relief tile in there — never lower than the ground as drawn, as a tile's range holds
+its nodes and a coarser tile's nodes average its children's. Over the sea it changes
+nothing; over land a label floats over lower ground near a peak, at a slant by as much off
+its place. A first version drew them without the depth test, over everything, as the relief
+rose through them; they then showed through mountains in front of them as well. Lifted 5 m,
+and 1 m more each kilometre off (`lift`, `liftPerDistance`), over the waves near the field
+and clear of the sea far off. As every label layer's,
+they turn to read left to right whichever way the camera looks (`flip`). Labels past the globe's horizon
+face away from the camera and are not drawn.
 
 Not drawn far off either: past `maxDistance` (default 150 km, fading over its last tenth,
 `fadeDistance`) a label is dropped, and while none of a layer's could show — all past it, or
-too small to read at the nearest any could be (`minPixels`) — the `LabelLayer` is not drawn
-at all (`LabelLayerMesh.reachable`: a sphere round its labels, their size at the least depth
+too small to read at the nearest any could be (`minPixels`) — the `LabelLayer` costs nothing
+(`LabelBounds.reachable`: a sphere round its labels, their size at the least depth
 in view). In the ground under them (see [When a layer is drawn](#when-a-layer-is-drawn)) the
-layer is hidden: without the depth test, nothing else would hide it.
+layer is hidden: the void's lid leaves pixels to the background, which would not hide it.
 
-Labels are glued to the world: they are not kept apart, and where polygons crowd they may
-overlap. For a label that keeps its size on screen and is kept clear of others — on
-something that moves, say — use an `Annotations` layer (as `TrackLayer` does).
+Where polygons crowd, their names are kept apart on screen, the less wanted fading out
+(see labels.md, *Overlap and priority*). For a label that keeps its size on screen and
+follows something that moves, use an `Annotations` layer (as `TrackLayer` does).
 
 ## Tracks: `TrackLayer`
 
@@ -611,16 +662,20 @@ stepped size. They come and go with the lines but never slide, and the layer wri
 again while the nearest lines to the view's centre stay the same: where the view meets the
 sea, or, looking past the horizon, the horizon the way it looks (`graticuleLabelCentre`),
 where the step is judged then — centred under the camera, they were drawn at a step meant
-for the horizon right below it, several times too large. Small and light by
-default (`GRATICULE_LABEL_STYLE`: weight 500, a thin, soft halo), in the lines' colour,
-never faded for being seen at a slant (`minFacing` 0) but when too small on screen as seen
+for the horizon right below it, several times too large. In a label layer's default look
+(a thin crisp halo, turned to read left to right; see labels.md), in the lines' colour,
+never faded for being seen at a slant (`minFacing` 0, `GRATICULE_LABEL_STYLE`) but when too small on screen as seen
 (`minPixels`, their slant included: toward the horizon they thin to slivers that would only
 shimmer), and never drawn larger than 48 pixels (`maxPixels`: nearer, shrunk to it),
 always centred (`align`, `baseline` and `offset`
 fixed), lifted over the waves near the field (`lift`, 5 % of the font, 5 m at least). They
 fade out just before the camera's far plane rather than be cut by it (see labels.md): a
-farther plane shows them farther. At sea level: high land hides
-them.
+farther plane shows them farther. Each lies at sea level or over the highest ground of the
+relief under it, its text at its largest (`'smooth'`), as `GeoLabels`' do (`heightAt`,
+`useReliefCeiling`): the plateau of southern Norway, 1–1.5 km high, buried the names lying at
+sea level in all but its fjords, seen from 530 km up. Kept by their lines and places (`Label.id`) as
+their heights change. Where labels meet on screen they give way to data labels (`priority` −1,
+`GRATICULE_LABEL_PRIORITY`; see labels.md, *Overlap and priority*).
 
 Found on the way: `globeSphereOffset` lost the latitude across the Earth from the field,
 where `e² / (q + w)` rounds to nothing in 32-bit floats: speckled lines and missing
@@ -692,9 +747,13 @@ cell's narrower side, east–west at its poleward edge (`graticuleZoneLabelSize`
 fits its cell at any latitude: a label's own size (`Label.size`, see labels.md), the layer
 at `size` 1. All of them at once — about 1200 UTM names, 500 time zones — made once for the
 globe's place on the Earth, nothing written as the view moves; those facing away are not
-drawn. Their look is latitude and longitude's (`GRATICULE_LABEL_STYLE`: flipped to read,
-48 pixels at the most, depth tested), in their lines' colour, lifted 5 m and 1 m more per
-kilometre off, over the waves near the field and clear of the sea far off. Tests keep the
+drawn. Their look is latitude and longitude's (`GRATICULE_LABEL_STYLE` over a label layer's
+defaults: flipped to read, 48 pixels at the most, depth tested), in their lines' colour, each
+over the highest ground of the relief under it, lifted 5 m and 1 m more per
+kilometre off, over the waves near the field and clear of the sea far off. Where labels meet
+on screen they give way to latitude and longitude's (`priority` −2,
+`GRATICULE_ZONE_LABEL_PRIORITY`); a UTM zone's and a time zone's name, of one priority,
+keep whichever was shown first. Tests keep the
 cells tiling 80°S–84°N without gaps, the exceptions as drawn, and every name clear of every
 other and inside its cell.
 
@@ -710,8 +769,9 @@ leaves out what would clutter a small map (the `Pipelines` story's subsea templa
 
 ## Helpers (sdk)
 
-`geoFeaturesFromGeoJson`, `densifyPlanarGeometry`, `projectGeoFeature`; `polygonLabelPoint`;
-`layerVisibilityAt`, `layerShownAt` (see [When a layer is drawn](#when-a-layer-is-drawn));
+`geoFeaturesFromGeoJson`, `densifyPlanarGeometry`, `projectGeoFeature`; `polygonLabelPoint`,
+`polygonLabelRect`, `polygonLabelPlaces`, `polygonMainAxis` (where a label goes in a
+polygon); `layerVisibilityAt`, `layerShownAt` (see [When a layer is drawn](#when-a-layer-is-drawn));
 `advanceTrack`, `courseToHeading`, `knots`; `globeUprightMatrix` (what is drawn flat about a
 point, stood upright on the globe there, through no map); `buildOverlayTile`,
 `packOverlayShapes`; `geoDistance`, `greatCircleSteps`, `joinNearestEnd`, `simplifyGeoLine`

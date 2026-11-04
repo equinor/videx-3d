@@ -1335,6 +1335,9 @@ export type SceneryReliefLookArgs = {
   reliefContourFactor: number;
   reliefContourColor: string;
   reliefContourSeabed: boolean;
+  reliefContourLabels: boolean;
+  reliefContourLabelBaseline: 'top' | 'middle' | 'bottom';
+  reliefContourLabelFlip: boolean;
   reliefLocalLook: boolean;
 };
 
@@ -1355,6 +1358,9 @@ export const sceneryReliefLookArgs: SceneryReliefLookArgs = {
   reliefContourFactor: 0.5,
   reliefContourColor: '#000000',
   reliefContourSeabed: true,
+  reliefContourLabels: false,
+  reliefContourLabelBaseline: 'middle',
+  reliefContourLabelFlip: true,
   reliefLocalLook: false,
 };
 
@@ -1475,6 +1481,28 @@ export function sceneryReliefLookArgTypes(
       ...toggle(RELIEF, 'Contour lines on the seabed too.'),
       ...lined,
     },
+    reliefContourLabels: {
+      ...toggle(
+        RELIEF,
+        'The major lines\u2019 heights written along them on the ground (`contours.labels`); none on the seabed while the sea has water.',
+      ),
+      ...lined,
+    },
+    reliefContourLabelBaseline: {
+      control: { type: 'inline-radio' },
+      options: ['top', 'middle', 'bottom'],
+      description:
+        'Where a contour label\u2019s text lies by its line (`contours.labels.baseline`): across it (MIDDLE), hanging from it on the downhill side (TOP), or standing on it on the uphill side (BOTTOM).',
+      table: { category: RELIEF },
+      ...lined,
+    },
+    reliefContourLabelFlip: {
+      ...toggle(
+        RELIEF,
+        'Contour labels turned to read left to right on screen (`contours.labels.flip`); off, the top of the text always uphill, as on a paper map.',
+      ),
+      ...lined,
+    },
     reliefLocalLook: {
       ...toggle(
         RELIEF,
@@ -1490,6 +1518,13 @@ const CONTOUR_MODES = {
   lighten: ContourColorMode.lighten,
   mixed: ContourColorMode.mixed,
 };
+
+// The contour labels asked for: the defaults, but where the text lies by its line and
+// whether it turns to read left to right.
+const contourLabelsOf = (a: SceneryReliefLookArgs) => ({
+  baseline: a.reliefContourLabelBaseline,
+  flip: a.reliefContourLabelFlip,
+});
 
 /**
  * A relief's `color`, `contours` and `layerLooks` from {@link SceneryReliefLookArgs}, for a
@@ -1523,13 +1558,21 @@ export function sceneryReliefLookFromArgs(
       factor: a.reliefContourFactor,
       color: a.reliefContourColor,
       seabed: a.reliefContourSeabed,
+      labels: a.reliefContourLabels && contourLabelsOf(a),
     },
     layerLooks:
       a.reliefLocalLook && finest
         ? {
             [finest.id]: {
               color: { ramp: 'rainbow', min: -130, max: -60, seabed: 'ramp' },
-              contours: { interval: 5, major: 5 },
+              contours: {
+                interval: 5,
+                major: 5,
+                labels:
+                  a.reliefContours &&
+                  a.reliefContourLabels &&
+                  contourLabelsOf(a),
+              },
             },
           }
         : undefined,

@@ -16,6 +16,7 @@ import { SceneryGenerators } from '../../storybook/decorators/scenery-generators
 import { get } from '../../storybook/dependencies/api';
 import { Minimap } from '../Html/Minimap/Minimap';
 import { MinimapCameraMarker } from '../Html/Minimap/MinimapLayers';
+import type { LabelSizePreset, LabelSizing } from '../Labels/types';
 import { Scenery } from '../Scenery/Scenery';
 import { SceneryOcean } from '../Scenery/SceneryOcean';
 import { SceneryStage } from '../Scenery/SceneryStage';
@@ -82,6 +83,11 @@ type DiscoveriesArgs = {
   maxHeight: number;
   producingOnly: boolean;
   labels: boolean;
+  labelSize: 'fit' | LabelSizePreset | number;
+  labelSizing: LabelSizing;
+  labelMaxLines: number;
+  labelTurn: boolean;
+  labelMaxPixels: number;
   labelsMaxHeight: number;
   minimap: boolean;
 };
@@ -106,6 +112,11 @@ const DiscoveriesStory = ({
   maxHeight,
   producingOnly,
   labels,
+  labelSize,
+  labelSizing,
+  labelMaxLines,
+  labelTurn,
+  labelMaxPixels,
   labelsMaxHeight,
   minimap,
 }: DiscoveriesArgs) => {
@@ -164,6 +175,11 @@ const DiscoveriesStory = ({
             data={data}
             text={name}
             height={height}
+            size={labelSize}
+            sizing={labelSizing}
+            maxLines={labelMaxLines}
+            turn={labelTurn}
+            maxPixels={labelMaxPixels > 0 ? labelMaxPixels : undefined}
             maxHeight={labelsMaxHeight > 0 ? labelsMaxHeight : undefined}
           />
         )}
@@ -213,6 +229,11 @@ const meta = {
     maxHeight: 0,
     producingOnly: false,
     labels: true,
+    labelSize: 'fit',
+    labelSizing: 'world',
+    labelMaxLines: 3,
+    labelTurn: true,
+    labelMaxPixels: 0,
     labelsMaxHeight: 250000,
     minimap: true,
   },
@@ -287,7 +308,46 @@ const meta = {
     },
     labels: {
       description:
-        'Their names (`GeoLabels`), flat inside each, sized to fit it; hidden when too small to read.',
+        'Their names (`GeoLabels`), flat inside each where they fit best, broken into lines where that fits better; hidden when too small to read.',
+      table: { category: 'Labels' },
+    },
+    labelSize: {
+      control: 'select',
+      options: [
+        'fit',
+        'xsmall',
+        'small',
+        'medium',
+        'large',
+        'xlarge',
+        300,
+        1000,
+      ],
+      description:
+        '`fit`: metres, each name as large as it fits its polygon (150 m to 3 km), once. A preset: a size on screen, each name broken into the fewest lines that fit its polygon and shrunk where none do, again as you zoom. A number: metres, fitted as a preset is.',
+      table: { category: 'Labels' },
+    },
+    labelSizing: {
+      control: 'inline-radio',
+      options: ['world', 'screen', 'auto'],
+      description:
+        'How the size follows the view: a preset is drawn on screen unless `auto` (`fit` on screen is the `small` preset).',
+      table: { category: 'Labels' },
+    },
+    labelMaxLines: {
+      control: { type: 'range', min: 1, max: 4, step: 1 },
+      description: 'The most lines a name is broken into to fit.',
+      table: { category: 'Labels' },
+    },
+    labelTurn: {
+      description:
+        'A name turned along a long, narrow polygon where that gives it far more room.',
+      table: { category: 'Labels' },
+    },
+    labelMaxPixels: {
+      control: { type: 'range', min: 0, max: 64, step: 1 },
+      description:
+        'The largest a name is drawn on screen, CSS pixels: nearer, held at it, in fewer lines where its polygon has room. 0: the default (18 sized in metres, none on screen).',
       table: { category: 'Labels' },
     },
     labelsMaxHeight: {

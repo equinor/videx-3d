@@ -1,11 +1,26 @@
 import {
   DataTexture,
+  FloatType,
   LinearFilter,
   LinearMipmapLinearFilter,
+  NearestFilter,
+  RGBAFormat,
   RGFormat,
   UnsignedByteType,
 } from 'three';
-import type { LabelStyle } from './types';
+import {
+  LABEL_CELL_HEIGHT,
+  LABEL_CELL_PADDING,
+  labelFont,
+  labelFontKey,
+  labelFontMetrics,
+  labelLineWidth,
+  layoutLabelText,
+  resetLabelFontMetrics,
+  setLabelFont,
+  type LabelFontStyle,
+  type LabelTextStyle,
+} from './label-text';
 
 /** A place in a {@link ShelfPacker}'s area, in its pixels: from its top left. */
 export type PackedRect = { x: number; y: number };
@@ -50,76 +65,156 @@ export class ShelfPacker {
   }
 }
 
-/** The font size texts are drawn in the atlas at, in its pixels. */
+/** The font size glyphs are drawn in the atlas at, in its pixels. */
 export const LABEL_RASTER_SIZE = 48;
 
+/** What a glyph's look in the atlas depends on: its font and halo width; not its colours. */
+export type LabelGlyphStyle = LabelFontStyle &
+  Pick<LabelTextStyle, 'haloWidth'>;
+
+/** The key a glyph is kept by in a {@link LabelAtlas}: its character, font and halo width. */
+export const labelGlyphKey = (char: string, style: LabelGlyphStyle) =>
+  `${labelFontKey(style)}|${style.haloWidth}|${char}`;
+
 /**
- * A text in a {@link LabelAtlas}: where it is, in texture coordinates (`v0` its top row),
- * and its size, in ems of its font, its halo included.
+ * A glyph in a {@link LabelAtlas}: its index in the atlas's glyph table, where its cell is,
+ * in texture coordinates (`v0` its top row), and the cell's box about its pen on its line's
+ * middle, in ems: from `x0` to `x1` along, `half` up and down.
  */
-export type LabelAtlasEntry = {
+export type LabelGlyphEntry = {
+  index: number;
   u0: number;
   v0: number;
   u1: number;
   v1: number;
-  width: number;
-  height: number;
+  x0: number;
+  x1: number;
+  half: number;
 };
 
-// What a text's look in the atlas depends on: not its colours, which are the layer's.
-type AtlasStyle = Pick<
-  LabelStyle,
-  'fontFamily' | 'fontWeight' | 'fontStyle' | 'letterSpacing' | 'haloWidth'
->;
+/** Texels a glyph takes in a {@link LabelAtlas}'s glyph table: its cell (u0, v0, u1, v1) and its box (x0, x1, half, 0). */
+export const LABEL_GLYPH_TEXELS = 2;
 
-/** The key a text is kept by in a {@link LabelAtlas}: it and all of its style the atlas draws. */
-export const labelAtlasKey = (text: string, style: AtlasStyle) =>
-  `${style.fontStyle}|${style.fontWeight}|${style.fontFamily}|${style.letterSpacing}|${style.haloWidth}|${text}`;
+/** Texels across a {@link LabelAtlas}'s glyph table: 1024 glyphs a row. */
+export const LABEL_GLYPHS_WIDTH = 2048;
 
-/** The CSS font a {@link LabelAtlas} draws a style's texts in, at `size` pixels. */
-export const labelAtlasFont = (style: AtlasStyle, size: number) =>
-  `${style.fontStyle} ${style.fontWeight} ${size}px ${style.fontFamily}`;
-
-const MAX_SIZE = 8192;
+/** Floats per glyph of a {@link LabelTextRun}: its index in the glyph table, its pen's place from its cell's left in ems, its line, 0. */
+export const LABEL_RUN_FLOATS = 4;
 
 /**
- * The labels' texts, each drawn once with the canvas API into one texture: its fill's
- * coverage in red, its halo's (the fill's within it) in green, so its colours are the
- * layer's to choose. Mipmapped, so far labels stay smooth; magnified past
- * `LABEL_RASTER_SIZE` they grow soft.
+ * A text in a {@link LabelAtlas}'s glyphs, as a label draws it: each glyph with ink
+ * ({@link LABEL_RUN_FLOATS} each, `count` of them), in order, line by line; its lines; its
+ * cell's size in ems, its halo included; and its ink's, the box its glyphs and halo fill,
+ * about its middle either way (so mirrored, turned half round, it is the same): what labels
+ * keep apart on screen.
+ */
+export type LabelTextRun = {
+  glyphs: Float32Array;
+  count: number;
+  lines: number;
+  width: number;
+  height: number;
+  inkWidth: number;
+  inkHeight: number;
+};
+
+const MAX_SIZE = 8192;
+// Texts laid out kept at the most: cleared past it.
+const MAX_RUNS = 50000;
+
+/** A CSS font family list's names, unquoted and in lower case: to match a `FontFace`'s. */
+export const labelFontFamilies = (fontFamily: string) =>
+  fontFamily
+    .split(',')
+    .map(name =>
+      name
+        .trim()
+        .replace(/^(["'])(.*)\1$/, '$2')
+        .toLowerCase(),
+    )
+    .filter(Boolean);
+
+/**
+ * The labels' glyphs, each drawn once with the canvas API into one texture — per character,
+ * font and halo width, however many texts use it — and the texts as runs of them
+ * (`text`). A glyph's fill's coverage is in red, its halo's (the fill's within it) in green,
+ * so its colours are the layer's to choose; its cell and box are in a float texture, the
+ * glyph table (`glyphTable`), for the labels' shader to find. Mipmapped, so far labels stay
+ * smooth; magnified past `LABEL_RASTER_SIZE`, the labels' shader keeps their edges about a
+ * pixel wide.
  *
- * Texts are added as they are asked for and kept; when the texture is full, `repack` packs
- * it again with only those its users still draw, larger if they need it.
+ * Texts are laid out glyph by glyph (`layoutLabelText`): each character's advance and each
+ * pair's kerning as the canvas sets them (`LabelFontMetrics`), letter spacing and line
+ * breaks the layout's. So 600 names of 20 characters take some 70 glyphs, not 600 texts'
+ * room.
+ *
+ * Glyphs are added as they are asked for and kept; when the texture is full, `repack` draws
+ * it again with only those of the texts its users still draw, larger if they need it.
+ *
+ * A font the page declares (`@font-face`) but has not loaded is asked for as a glyph is
+ * drawn in it; drawn meanwhile in the family's next font, its glyphs are drawn and measured
+ * again once it is in (`generation` changes, as when packed again).
  */
 export class LabelAtlas {
   size: number;
   texture: DataTexture;
-  /** bumped whenever its texts change; its `texture` may be a new one */
+  /** each glyph's cell and box (`LABEL_GLYPH_TEXELS` texels, `LABEL_GLYPHS_WIDTH` a row) */
+  glyphTable: DataTexture;
+  /** bumped whenever its glyphs change; its textures may be new ones */
   version = 0;
-  /** bumped whenever it is packed again: every user's entries are then stale */
+  /** bumped whenever it is packed again: every user's runs are then stale */
   generation = 0;
   private data: Uint8Array;
   private packer: ShelfPacker;
-  private entries = new Map<string, LabelAtlasEntry>();
+  private glyphs = new Map<string, LabelGlyphEntry>();
+  private table: Float32Array;
+  private runs = new Map<string, LabelTextRun>();
   private ctx: CanvasRenderingContext2D;
   // The texts each user draws, kept when it is packed again.
-  private users = new Map<object, [readonly { text: string }[], AtlasStyle]>();
+  private users = new Map<
+    object,
+    [readonly { text: string }[], LabelTextStyle]
+  >();
   private anisotropy = 1;
+  // Uploaded whole at its next upload — made anew, packed again or freed on the GPU — till
+  // three tells it has uploaded it (`onUpdate`); after, only the rows glyphs were drawn
+  // into since (`queued`).
+  private whole = true;
+  private queued: Uint8Array;
+  // The fonts asked of the page so far, and every family drawn in.
+  private requested = new Set<string>();
+  private families = new Set<string>();
+  private fonts: FontFaceSet | null = null;
+  private listening = false;
+  private onFontsLoaded = (event: Event) => {
+    const faces = (event as FontFaceSetLoadEvent).fontfaces ?? [];
+    if (
+      faces.some(face => this.families.has(labelFontFamilies(face.family)[0]))
+    ) {
+      resetLabelFontMetrics();
+      this.repack();
+    }
+  };
 
   constructor(size = 1024) {
     this.size = size;
     this.data = new Uint8Array(size * size * 2);
+    this.queued = new Uint8Array(size);
     this.packer = new ShelfPacker(size, size);
     this.texture = this.createTexture();
+    this.table = new Float32Array(LABEL_GLYPHS_WIDTH * 4);
+    this.glyphTable = this.createTable();
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) throw Error('Unable to create canvas drawing context!');
     this.ctx = ctx;
+    this.fonts = document.fonts ?? null;
+    this.listen();
   }
 
-  /** the texts in it */
+  /** the glyphs in it */
   get count() {
-    return this.entries.size;
+    return this.glyphs.size;
   }
 
   /**
@@ -130,25 +225,69 @@ export class LabelAtlas {
     if (this.anisotropy === samples) return;
     this.anisotropy = samples;
     this.texture.anisotropy = samples;
-    this.texture.needsUpdate = true;
+    this.uploadWhole();
   }
 
-  /** Where `text` is, drawn in `style`, drawing it if it is not yet; null if it is full. */
-  entry(text: string, style: AtlasStyle): LabelAtlasEntry | null {
-    const key = labelAtlasKey(text, style);
-    const found = this.entries.get(key);
+  /** `char`, drawn in `style`, drawing it if it is not yet; null if it is full. */
+  glyph(char: string, style: LabelGlyphStyle): LabelGlyphEntry | null {
+    const key = labelGlyphKey(char, style);
+    const found = this.glyphs.get(key);
     if (found) return found;
-    const added = this.draw(text, style);
+    const added = this.draw(char, style);
     if (added) {
-      this.entries.set(key, added);
+      this.glyphs.set(key, added);
+      this.queueRows(
+        Math.round(added.v0 * this.size),
+        Math.round(added.v1 * this.size),
+      );
       this.texture.needsUpdate = true;
       this.version++;
     }
     return added;
   }
 
+  /**
+   * `text` in `style`, as a run of its glyphs (`layoutLabelText`), drawing those it has not
+   * yet; null if it is full. Kept, so the same text is laid out once.
+   */
+  text(text: string, style: LabelTextStyle): LabelTextRun | null {
+    const key = `${labelFontKey(style)}|${style.haloWidth}|${style.letterSpacing}|${style.align}|${text}`;
+    const found = this.runs.get(key);
+    if (found) return found;
+    const layout = layoutLabelText(text, style, labelFontMetrics(style));
+    const glyphs = new Float32Array(layout.chars.length * LABEL_RUN_FLOATS);
+    for (let i = 0; i < layout.chars.length; i++) {
+      const glyph = this.glyph(layout.chars[i], style);
+      if (!glyph) return null;
+      glyphs[i * LABEL_RUN_FLOATS] = glyph.index;
+      glyphs[i * LABEL_RUN_FLOATS + 1] = layout.xs[i];
+      glyphs[i * LABEL_RUN_FLOATS + 2] = layout.lines[i];
+    }
+    const run: LabelTextRun = {
+      glyphs,
+      count: layout.chars.length,
+      lines: layout.lineCount,
+      width: layout.width,
+      height: layout.height,
+      inkWidth: layout.inkWidth,
+      inkHeight: layout.inkHeight,
+    };
+    if (this.runs.size >= MAX_RUNS) this.runs.clear();
+    this.runs.set(key, run);
+    return run;
+  }
+
+  /** How wide `line` is set in `style`, in ems of its font, its halo left out: for wrapping. */
+  measure(line: string, style: LabelTextStyle) {
+    return labelLineWidth(line, style.letterSpacing, labelFontMetrics(style));
+  }
+
   /** Keep `user`'s texts, in `style`, whenever it is packed again (see `repack`). */
-  track(user: object, texts: readonly { text: string }[], style: AtlasStyle) {
+  track(
+    user: object,
+    texts: readonly { text: string }[],
+    style: LabelTextStyle,
+  ) {
     this.users.set(user, [texts, style]);
   }
 
@@ -158,8 +297,9 @@ export class LabelAtlas {
   }
 
   /**
-   * Pack it again with only the texts its users draw (see `track`), when it is full: every
-   * user must then look its entries up again (`generation` changes).
+   * Draw it again with only the glyphs of the texts its users draw (see `track`), when it
+   * is full or its fonts came in: every user must then lay its texts out again
+   * (`generation` changes).
    */
   repack() {
     const users = [...this.users.values()];
@@ -167,44 +307,83 @@ export class LabelAtlas {
       (function* () {
         for (const [texts, style] of users)
           for (const { text } of texts)
-            yield [text, style] as [string, AtlasStyle];
+            yield [text, style] as [string, LabelTextStyle];
       })(),
     );
     this.generation++;
   }
 
   /**
-   * Empty it and draw `texts` again, only those: in a larger texture if they do not fit.
-   * Their entries, and maybe the texture, are new.
+   * Empty it and draw the glyphs of `texts` again, only those: in a larger texture if they
+   * do not fit. Their indices, and maybe the textures, are new.
    */
-  rebuild(texts: Iterable<[string, AtlasStyle]>) {
-    const list = [...texts];
+  rebuild(texts: Iterable<[string, LabelGlyphStyle]>) {
+    const wanted = new Map<string, [string, LabelGlyphStyle]>();
+    for (const [text, style] of texts) {
+      const metrics = labelFontMetrics(style);
+      for (const char of text) {
+        const key = labelGlyphKey(char, style);
+        if (!wanted.has(key) && metrics.glyph(char).ink)
+          wanted.set(key, [char, style]);
+      }
+    }
+    this.runs.clear();
     for (let size = this.size; size <= MAX_SIZE; size *= 2) {
       if (size !== this.size) {
         this.size = size;
         this.data = new Uint8Array(size * size * 2);
+        this.queued = new Uint8Array(size);
         this.texture.dispose();
         this.texture = this.createTexture();
       } else {
         this.data.fill(0);
       }
+      // All of it drawn again: uploaded whole.
+      this.uploadWhole();
       this.packer = new ShelfPacker(size, size);
-      this.entries.clear();
+      this.glyphs.clear();
       let fits = true;
-      for (const [text, style] of list) {
-        if (!this.entry(text, style)) {
+      for (const [char, style] of wanted.values()) {
+        if (!this.glyph(char, style)) {
           fits = false;
           break;
         }
       }
       if (fits) break;
     }
+    this.glyphTable.needsUpdate = true;
     this.texture.needsUpdate = true;
     this.version++;
   }
 
+  /** Free its textures and stop listening for fonts; used again, it starts again. */
   dispose() {
+    this.fonts?.removeEventListener?.('loadingdone', this.onFontsLoaded);
+    this.listening = false;
     this.texture.dispose();
+    this.glyphTable.dispose();
+  }
+
+  // Listen for the page's fonts coming in, once.
+  private listen() {
+    if (this.listening || !this.fonts?.addEventListener) return;
+    this.listening = true;
+    this.fonts.addEventListener('loadingdone', this.onFontsLoaded);
+  }
+
+  // Ask the page for `font` if it declares it and has not loaded it: once in, the
+  // 'loadingdone' event draws its glyphs again (onFontsLoaded).
+  private request(font: string, family: string, text: string) {
+    for (const name of labelFontFamilies(family)) this.families.add(name);
+    this.listen();
+    const fonts = this.fonts;
+    if (!fonts || this.requested.has(font)) return;
+    this.requested.add(font);
+    try {
+      if (!fonts.check(font, text)) fonts.load(font, text).catch(() => {});
+    } catch {
+      // Not a font the page can parse: drawn as the canvas falls back.
+    }
   }
 
   private createTexture() {
@@ -220,26 +399,75 @@ export class LabelAtlas {
     texture.generateMipmaps = true;
     texture.anisotropy = this.anisotropy;
     texture.needsUpdate = true;
+    // Freed on the GPU (by its group, or anyone), it is made anew at its next use from what
+    // is to upload: the whole of it, not the rows last queued.
+    texture.addEventListener('dispose', () => {
+      if (texture === this.texture) this.uploadWhole();
+    });
+    // Uploaded: rows will do from now on.
+    texture.onUpdate = () => {
+      if (texture !== this.texture) return;
+      this.whole = false;
+      this.queued.fill(0);
+    };
+    this.whole = true;
     return texture;
   }
 
-  // Draw `text` into a free place: its fill into red, its halo into green.
-  private draw(text: string, style: AtlasStyle): LabelAtlasEntry | null {
+  private createTable() {
+    const texture = new DataTexture(
+      this.table,
+      LABEL_GLYPHS_WIDTH,
+      this.table.length / (LABEL_GLYPHS_WIDTH * 4),
+      RGBAFormat,
+      FloatType,
+    );
+    texture.minFilter = NearestFilter;
+    texture.magFilter = NearestFilter;
+    texture.generateMipmaps = false;
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  // Upload it whole at its next upload: nothing queued, so three uploads all of it.
+  private uploadWhole() {
+    this.whole = true;
+    this.texture.clearUpdateRanges();
+    this.queued.fill(0);
+    this.texture.needsUpdate = true;
+  }
+
+  // Queue rows `from` to `to` (not `to`) to upload, each its whole width once: three takes
+  // a range a row at a time, in RGBA elements (four a texel) whatever the format, so a
+  // row's range is four times its texels.
+  private queueRows(from: number, to: number) {
+    if (this.whole) return;
+    const { size, queued, texture } = this;
+    for (let row = Math.max(from, 0); row < Math.min(to, size); row++) {
+      if (queued[row]) continue;
+      queued[row] = 1;
+      texture.addUpdateRange(row * size * 4, size * 4);
+    }
+  }
+
+  // Draw `char` into a free place — its fill into red, its halo into green — and its cell
+  // and box into the glyph table.
+  private draw(char: string, style: LabelGlyphStyle): LabelGlyphEntry | null {
     const { ctx } = this;
-    const font = labelAtlasFont(style, LABEL_RASTER_SIZE);
-    const halo = Math.max(style.haloWidth, 0) * LABEL_RASTER_SIZE;
-    // Not in every browser: without it, letters keep their own spacing.
-    const spaced = ctx as CanvasRenderingContext2D & { letterSpacing?: string };
-    const spacing = `${(style.letterSpacing || 0) * LABEL_RASTER_SIZE}px`;
-    const setFont = () => {
-      ctx.font = font;
-      if ('letterSpacing' in spaced) spaced.letterSpacing = spacing;
-    };
-    setFont();
-    const width = Math.ceil(ctx.measureText(text).width + 2 * halo + 4);
-    const height = Math.ceil(LABEL_RASTER_SIZE * 1.3 + 2 * halo);
+    const R = LABEL_RASTER_SIZE;
+    this.request(labelFont(style, R), style.fontFamily, char);
+    const metrics = labelFontMetrics(style).glyph(char);
+    const halo = Math.max(style.haloWidth, 0) * R;
+    const padding = LABEL_CELL_PADDING * R;
+    const width = Math.max(
+      Math.ceil((metrics.left + metrics.right) * R + 2 * halo + 2 * padding),
+      1,
+    );
+    const height = Math.ceil(LABEL_CELL_HEIGHT * R + 2 * halo);
     const place = this.packer.pack(width, height);
     if (!place) return null;
+    // Its pen, so its ink starts its halo and padding in.
+    const x = padding + halo + metrics.left * R;
 
     const { canvas } = ctx;
     if (canvas.width < width || canvas.height < height) {
@@ -249,17 +477,16 @@ export class LabelAtlas {
     const coverage = (withHalo: boolean) => {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, width, height);
-      setFont();
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
+      // Set again: resizing the canvas resets its state.
+      setLabelFont(ctx, style, R);
       ctx.fillStyle = '#fff';
       if (withHalo && halo > 0) {
         ctx.strokeStyle = '#fff';
         ctx.lineJoin = 'round';
         ctx.lineWidth = 2 * halo;
-        ctx.strokeText(text, width / 2, height / 2);
+        ctx.strokeText(char, x, height / 2);
       }
-      ctx.fillText(text, width / 2, height / 2);
+      ctx.fillText(char, x, height / 2);
       return ctx.getImageData(0, 0, width, height).data;
     };
     const fill = coverage(false);
@@ -273,13 +500,39 @@ export class LabelAtlas {
         data[to + 1] = outline[from];
       }
     }
-    return {
+    const entry: LabelGlyphEntry = {
+      index: this.glyphs.size,
       u0: place.x / size,
       v0: place.y / size,
       u1: (place.x + width) / size,
       v1: (place.y + height) / size,
-      width: width / LABEL_RASTER_SIZE,
-      height: height / LABEL_RASTER_SIZE,
+      x0: -(padding + halo) / R - metrics.left,
+      x1: -(padding + halo) / R - metrics.left + width / R,
+      half: height / 2 / R,
     };
+    this.setTableRow(entry);
+    return entry;
+  }
+
+  // Write `entry` into the glyph table, grown to hold it.
+  private setTableRow(entry: LabelGlyphEntry) {
+    const at = entry.index * LABEL_GLYPH_TEXELS * 4;
+    if (at + LABEL_GLYPH_TEXELS * 4 > this.table.length) {
+      const grown = new Float32Array(this.table.length * 2);
+      grown.set(this.table);
+      this.table = grown;
+      this.glyphTable.dispose();
+      this.glyphTable = this.createTable();
+    }
+    const t = this.table;
+    t[at] = entry.u0;
+    t[at + 1] = entry.v0;
+    t[at + 2] = entry.u1;
+    t[at + 3] = entry.v1;
+    t[at + 4] = entry.x0;
+    t[at + 5] = entry.x1;
+    t[at + 6] = entry.half;
+    t[at + 7] = 0;
+    this.glyphTable.needsUpdate = true;
   }
 }

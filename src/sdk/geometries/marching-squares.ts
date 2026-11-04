@@ -3,10 +3,12 @@ import { Vec2 } from '../types/common';
 /**
  * Extract iso-contours from a scalar field with marching squares, returning
  * closed rings of `[column, row]` field coordinates (fractional, from linear
- * edge interpolation). A sample is treated as "inside" when its value is `>=`
- * `isoLevel`; each ring therefore encloses a connected inside region (outer
- * boundaries and holes both come out as separate rings — see
- * {@link ringsToPolygonCoordinates} to group them).
+ * edge interpolation) — and, where a contour runs out of the field, open lines,
+ * each whole from one end on the field's edge to the other. A sample is treated
+ * as "inside" when its value is `>=` `isoLevel`; each ring therefore encloses a
+ * connected inside region (outer boundaries and holes both come out as separate
+ * rings — see {@link ringsToPolygonCoordinates} to group them). Pad the field
+ * with outside values for closed rings only.
  *
  * Crossings are keyed by the grid edge they sit on (not their floating-point
  * position), so segments from adjacent cells stitch together exactly into closed
@@ -143,9 +145,11 @@ export function marchingSquares(
     }
   }
 
-  // Stitch the undirected segment graph into closed loops. Each crossing has an
-  // even degree (2 in a clean contour, 4 at a resolved saddle), so we can always
-  // leave a node by an unused incident segment.
+  // Stitch the undirected segment graph into chains. Each crossing inside the field has an
+  // even degree (2 in a clean contour, 4 at a resolved saddle), so we can always leave a
+  // node by an unused incident segment; a crossing on the field's edge, where a contour
+  // runs out of it, has degree 1. Open lines are walked first, from such an end, so each
+  // comes out whole; then the closed rings.
   const incident = new Map<string, number[]>();
   segments.forEach(([a, b], i) => {
     (incident.get(a) ?? incident.set(a, []).get(a)!).push(i);
@@ -154,9 +158,7 @@ export function marchingSquares(
   const used = new Uint8Array(segments.length);
 
   const rings: Vec2[][] = [];
-  for (let s = 0; s < segments.length; s++) {
-    if (used[s]) continue;
-    const start = segments[s][0];
+  const walk = (s: number, start: string) => {
     const ring: Vec2[] = [];
     let cur = start;
     let edge = s;
@@ -179,7 +181,15 @@ export function marchingSquares(
       }
       if (cur === start) break;
     }
+    // Open: its first point too (a ring ends on the point it started from).
+    if (cur !== start) ring.unshift(points.get(start)!);
     if (ring.length >= 3) rings.push(ring);
+  };
+  for (const [id, inc] of incident) {
+    if (inc.length === 1 && !used[inc[0]]) walk(inc[0], id);
+  }
+  for (let s = 0; s < segments.length; s++) {
+    if (!used[s]) walk(s, segments[s][0]);
   }
 
   return rings;

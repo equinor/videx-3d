@@ -7,6 +7,8 @@ import {
   ReliefColor,
   ReliefContours,
   ReliefLook,
+  resolveReliefContourLabels,
+  resolveReliefContours,
   SceneryReliefLooks,
 } from '../Scenery/scenery-relief-look';
 import type { ReliefSampler } from '../Scenery/scenery-relief-sampler';
@@ -24,6 +26,10 @@ import {
 import { useWorld } from '../World/world-context';
 import { useWorldFields } from '../World/world-fields';
 import { useWorldRelief } from '../World/world-relief';
+import {
+  GeoReliefContourLabels,
+  type ReliefContourLabelLook,
+} from './GeoReliefContourLabels';
 
 /**
  * GeoRelief props
@@ -71,7 +77,10 @@ export type GeoReliefProps = {
    * builds nothing again. Default `#34433b`, a dark green-grey
    */
   color?: ReliefColor;
-  /** contour lines over it (see {@link ReliefContours}); `true` for the defaults. Default none */
+  /**
+   * contour lines over it (see {@link ReliefContours}); `true` for the defaults. With
+   * `labels`, their heights written along them on the ground. Default none
+   */
   contours?: boolean | ReliefContours;
   /**
    * a look of its own for a layer, by its id: its `color` and `contours` where it gave the
@@ -215,6 +224,42 @@ export const GeoRelief = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [looks, lookKey]);
 
+  // What each look's contour labels label (`ReliefContours.labels`): by its place in the
+  // looks, as its tiles mark their nodes — the relief's, then each layer's (its own look's
+  // contours, else the relief's).
+  const contourLabels = useMemo(() => {
+    const [, base, own, ids] = JSON.parse(lookKey) as [
+      unknown,
+      boolean | ReliefContours | null,
+      Record<string, ReliefLook> | null,
+      string[],
+    ];
+    const resolve = (
+      given: boolean | ReliefContours | null | undefined,
+    ): ReliefContourLabelLook | null => {
+      const lines = resolveReliefContours(given ?? undefined);
+      const labels = resolveReliefContourLabels(lines);
+      if (!lines || !labels) return null;
+      const major = labels.lines === 'major' && lines.major > 1;
+      return {
+        step: lines.interval * (major ? lines.major : 1),
+        seabed: lines.seabed,
+        labels,
+      };
+    };
+    const first = resolve(base);
+    return [
+      first,
+      ...ids.map(id => {
+        const look = own?.[id];
+        return look && look.contours !== undefined
+          ? resolve(look.contours)
+          : first;
+      }),
+    ];
+  }, [lookKey]);
+  const labelled = contourLabels.some(Boolean);
+
   // The World knows it is there: a stage draws no seabed of its own, and lies on it.
   const addRelief = relief?.addRelief;
   useLayoutEffect(
@@ -318,6 +363,16 @@ export const GeoRelief = ({
         skyOrder={sky ? sky.renderOrder + 1 : 0}
         hub={relief.tiles}
       />
+      {labelled && (
+        <GeoReliefContourLabels
+          hub={relief.tiles}
+          globe={world.globe}
+          looks={contourLabels}
+          water={!!sky?.water}
+          visible={visible && shown && (sky ? sky.visible && sky.ready : true)}
+          cellPixels={cellPixels}
+        />
+      )}
     </group>
   );
 };

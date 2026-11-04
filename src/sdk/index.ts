@@ -46,6 +46,7 @@ export * from './geometries/polygon-outline';
 export * from './geometries/procedural-noise';
 export * from './geometries/procedural-relief';
 export * from './geometries/relief-grid';
+export * from './geometries/relief-contour-labels';
 export * from './geometries/relief-tiles';
 export * from './geometries/surface-chunk';
 export * from './geometries/surface-chunk-packing';

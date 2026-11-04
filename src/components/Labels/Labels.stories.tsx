@@ -15,9 +15,17 @@ import { OutputPass } from '../../rendering/passes/OutputPass';
 import { RenderingPipeline } from '../../rendering/RenderingPipeline';
 import { Vec3 } from '../../sdk/types/common';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
+import { labelAnchor } from './label-geometry';
 import { LabelLayer } from './LabelLayer';
 import { Labels } from './Labels';
-import { Label, LabelAlign, LabelBaseline, LabelsProvider } from './types';
+import {
+  Label,
+  LabelAlign,
+  LabelBaseline,
+  LabelSizePreset,
+  LabelSizing,
+  LabelsProvider,
+} from './types';
 
 // A hill, its contours, and a grid on the ground round it.
 const HILL_HEIGHT = 60;
@@ -114,14 +122,74 @@ const gridLabels: LabelsProvider = ({ camera }) => {
   return labels;
 };
 
-// Many labels, lying level at random, for measuring.
+// Texts lying flat on the ground beside the hill, each with room of its own (`bounds`):
+// broken into the fewest lines that fit it at the size drawn, shrunk where none do.
+const WRAP_TEXTS = [
+  'A long label that wraps to fit its bounds',
+  'Johan Sverdrup Phase Two',
+  'Short',
+];
+const WRAP_AT = (i: number): Vec3 => {
+  const x = -150;
+  const z = -110 + i * 70;
+  return [x, hillHeight(x, z), z];
+};
+
+const wrapLabels = (width: number, height: number) =>
+  WRAP_TEXTS.map((text, i): Label => {
+    const at = WRAP_AT(i);
+    return {
+      text,
+      position: at,
+      normal: hillNormal(at[0], at[2]),
+      direction: [1, 0, 0],
+      bounds: [width, height],
+    };
+  });
+
+// Each wrapped label's room, outlined on the ground: anchored as its text (reading +X, its
+// top toward -Z).
+const wrapOutlines = (
+  width: number,
+  height: number,
+  align: LabelAlign,
+  baseline: LabelBaseline,
+) => {
+  const [ax, ay] = labelAnchor(align, baseline);
+  const points = WRAP_TEXTS.flatMap((_, i) => {
+    const [x, , z] = WRAP_AT(i);
+    const cx = x + ax * width;
+    const cz = z - ay * height;
+    const corners = [
+      [cx - width / 2, cz - height / 2],
+      [cx + width / 2, cz - height / 2],
+      [cx + width / 2, cz + height / 2],
+      [cx - width / 2, cz + height / 2],
+    ];
+    return corners.flatMap((corner, k) => {
+      const next = corners[(k + 1) % 4];
+      return [corner, next].flatMap(([px, pz]) => [
+        px,
+        hillHeight(px, pz) + 0.3,
+        pz,
+      ]);
+    });
+  });
+  return new BufferGeometry().setAttribute(
+    'position',
+    new Float32BufferAttribute(points, 3),
+  );
+};
+
+// Many labels, lying level at random, for measuring: 500 texts at the most, as an atlas holds
+// a few thousand distinct ones (each drawn at 48 px), so every label is drawn.
 const stressLabels = (count: number) => {
   let seed = 1;
   const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   return Array.from({ length: count }, (_, i): Label => {
     const a = random() * Math.PI * 2;
     return {
-      text: `Label ${i}`,
+      text: `Label ${i % 500}`,
       position: [
         (random() - 0.5) * GRID_SIZE,
         random() * 100,
@@ -151,11 +219,20 @@ type LabelsStoryArgs = {
   labelsPerContour: number;
   grid: boolean;
   stressLabels: number;
+  wrap: boolean;
+  wrapWidth: number;
+  wrapHeight: number;
+  maxLines: number;
   glass: boolean;
   markers: boolean;
   color: string;
   gridColor: string;
+  sizing: LabelSizing;
   size: number;
+  preset: 'none' | LabelSizePreset;
+  slantGrowth: number;
+  distanceFactor: number;
+  minScale: number;
   fontWeight: number;
   fontStyle: string;
   letterSpacing: number;
@@ -166,10 +243,10 @@ type LabelsStoryArgs = {
   flip: boolean;
   opacity: number;
   minPixels: number;
-  fullPixels: number;
+  fadePixels: number;
   maxPixels: number;
   minFacing: number;
-  fullFacing: number;
+  fadeFacing: number;
   minDistance: number;
   maxDistance: number;
   fadeDistance: number;
@@ -185,24 +262,30 @@ const LabelsStory = ({
   labelsPerContour,
   grid,
   stressLabels: stressCount,
+  wrap,
+  wrapWidth,
+  wrapHeight,
   glass,
   markers,
   color,
   gridColor,
+  size,
+  preset,
   offsetAlong,
   offsetUp,
-  fullPixels,
+  fadePixels,
   maxPixels,
-  fullFacing,
+  fadeFacing,
   ...rest
 }: LabelsStoryArgs) => {
-  // 0: the defaults (1.5 and 2 times the least; no most).
+  // 0: the defaults (0.6 and half the least whole; no most).
   const style = {
     ...rest,
+    size: preset === 'none' ? size : preset,
     offset: [offsetAlong, offsetUp] as [number, number],
-    fullPixels: fullPixels || undefined,
+    fadePixels: fadePixels || undefined,
     maxPixels: maxPixels || undefined,
-    fullFacing: fullFacing || undefined,
+    fadeFacing: fadeFacing || undefined,
   };
   const hill = useMemo(createHill, []);
   const levels = useMemo(
@@ -218,6 +301,14 @@ const LabelsStory = ({
     [levels, labelsPerContour],
   );
   const stress = useMemo(() => stressLabels(stressCount), [stressCount]);
+  const wrapped = useMemo(
+    () => wrapLabels(wrapWidth, wrapHeight),
+    [wrapWidth, wrapHeight],
+  );
+  const outlines = useMemo(
+    () => wrapOutlines(wrapWidth, wrapHeight, rest.align, rest.baseline),
+    [wrapWidth, wrapHeight, rest.align, rest.baseline],
+  );
   // Where each contour label is placed from, to see its alignment and offset.
   const anchors = useMemo(
     () =>
@@ -271,6 +362,11 @@ const LabelsStory = ({
         </mesh>
       )}
       {pipeline === 'oit' && <OitPipeline />}
+      {wrap && (
+        <lineSegments geometry={outlines}>
+          <lineBasicMaterial color="#ff9de2" />
+        </lineSegments>
+      )}
       <Labels>
         <LabelLayer
           visible={contours}
@@ -290,6 +386,13 @@ const LabelsStory = ({
           color="#9ad0ff"
           {...style}
         />
+        <LabelLayer
+          visible={wrap}
+          labels={wrapped}
+          color="#ff9de2"
+          priority={1}
+          {...style}
+        />
       </Labels>
     </>
   );
@@ -304,7 +407,38 @@ const meta = {
     contourCount: { control: { type: 'range', min: 1, max: 12, step: 1 } },
     labelsPerContour: { control: { type: 'range', min: 1, max: 16, step: 1 } },
     stressLabels: { control: { type: 'range', min: 0, max: 20000, step: 500 } },
+    wrap: {
+      description:
+        'Texts lying flat beside the hill, each with room of its own (`Label.bounds`, outlined): broken into the fewest lines that fit it at the size drawn, shrunk where none do — again as you zoom.',
+    },
+    wrapWidth: { control: { type: 'range', min: 5, max: 120, step: 1 } },
+    wrapHeight: { control: { type: 'range', min: 2, max: 60, step: 1 } },
+    maxLines: {
+      control: { type: 'range', min: 1, max: 5, step: 1 },
+      description: 'The most lines a label with `bounds` is broken into.',
+    },
+    sizing: {
+      control: 'inline-radio',
+      options: ['world', 'screen', 'auto'],
+      description:
+        '`world`: `size` in world units; `screen`: `size` in CSS pixels at any distance; `auto`: CSS pixels near, shrinking once the view spans more than `distanceFactor`.',
+    },
     size: { control: { type: 'range', min: 1, max: 30, step: 0.5 } },
+    preset: {
+      control: 'select',
+      options: ['none', 'xsmall', 'small', 'medium', 'large', 'xlarge'],
+      description:
+        'A size on screen tuned to read well, with its halo and least size: drawn `screen` unless `auto`. `none`: `size`.',
+    },
+    distanceFactor: {
+      control: { type: 'range', min: 10, max: 5000, step: 10 },
+    },
+    minScale: { control: { type: 'range', min: 0.1, max: 1, step: 0.05 } },
+    slantGrowth: {
+      control: { type: 'range', min: 1, max: 3, step: 0.1 },
+      description:
+        'Drawn `screen` or `auto`: the most a label lying at a slant is drawn larger, to read about as large as seen; 1 for never.',
+    },
     fontWeight: { control: { type: 'range', min: 100, max: 900, step: 100 } },
     fontStyle: { control: 'inline-radio', options: ['normal', 'italic'] },
     letterSpacing: {
@@ -316,10 +450,10 @@ const meta = {
     offsetUp: { control: { type: 'range', min: -3, max: 3, step: 0.1 } },
     opacity: { control: { type: 'range', min: 0, max: 1, step: 0.05 } },
     minPixels: { control: { type: 'range', min: 0, max: 30, step: 1 } },
-    fullPixels: { control: { type: 'range', min: 0, max: 60, step: 1 } },
+    fadePixels: { control: { type: 'range', min: 0, max: 30, step: 0.5 } },
     maxPixels: { control: { type: 'range', min: 0, max: 400, step: 4 } },
     minFacing: { control: { type: 'range', min: 0, max: 0.9, step: 0.05 } },
-    fullFacing: { control: { type: 'range', min: 0, max: 1, step: 0.05 } },
+    fadeFacing: { control: { type: 'range', min: 0, max: 1, step: 0.05 } },
     minDistance: { control: { type: 'range', min: 0, max: 500, step: 10 } },
     maxDistance: { control: { type: 'range', min: 50, max: 5000, step: 50 } },
     fadeDistance: { control: { type: 'range', min: 0, max: 1000, step: 10 } },
@@ -340,29 +474,38 @@ export const Default: Story = {
     labelsPerContour: 6,
     grid: true,
     stressLabels: 0,
+    wrap: true,
+    wrapWidth: 40,
+    wrapHeight: 20,
+    maxLines: 3,
     glass: false,
     markers: false,
     color: '#ffd23f',
     gridColor: '#ffffff',
+    sizing: 'auto',
     size: 5,
-    fontWeight: 600,
+    preset: 'small',
+    distanceFactor: 200,
+    minScale: 0.6,
+    slantGrowth: 2,
+    fontWeight: 400,
     fontStyle: 'normal',
     letterSpacing: 0,
     align: 'center',
     baseline: 'middle',
     offsetAlong: 0,
     offsetUp: 0,
-    flip: false,
+    flip: true,
     opacity: 1,
-    minPixels: 6,
-    fullPixels: 0,
+    minPixels: 7,
+    fadePixels: 0,
     maxPixels: 0,
-    minFacing: 0.2,
-    fullFacing: 0,
+    minFacing: 0.15,
+    fadeFacing: 0,
     minDistance: 0,
     maxDistance: 5000,
     fadeDistance: 0,
-    haloWidth: 0.15,
+    haloWidth: 0.1,
     depthTest: true,
     lift: 1,
   },

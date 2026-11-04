@@ -280,11 +280,16 @@ export type GraticuleLabelOptions = {
   density?: number;
   /** the latitude the labels' size is judged at (see {@link graticuleLabelThinning}). Default 0 */
   reference?: number;
+  /**
+   * each label's height over the sea's level, metres, by its place and text: over the
+   * highest ground under it, say, so the relief does not bury it. Default 0
+   */
+  heightAt?: (latitude: number, longitude: number, text: string) => number;
 };
 
 /**
  * Labels for latitude and longitude's lines every `step` degrees, on the sea's level of
- * `globe` (it needs a frame), around `centre`, lying flat on the Earth: every line named,
+ * `globe` (it needs a frame) or at `heightAt` over it, around `centre`, lying flat on the Earth: every line named,
  * a parallel in the middle of a cell along it, reading east, a meridian in the middle of a
  * cell along it, reading north; each name once every `k` cells along its line
  * ({@link graticuleLabelPeriod}), spread over the cells by {@link graticuleLabelPattern} so
@@ -304,6 +309,7 @@ export function graticuleLabels(
     reach = GRATICULE_LABEL_REACH,
     density = GRATICULE_LABEL_DENSITY,
     reference = 0,
+    heightAt,
   }: GraticuleLabelOptions = {},
 ): Label[] {
   const labels: Label[] = [];
@@ -342,12 +348,15 @@ export function graticuleLabels(
     longitude: number,
     north: boolean,
   ): Label => {
-    const position = globe.geodetic(latitude, longitude, 0, at).toArray();
+    const height = heightAt ? heightAt(latitude, longitude, text) : 0;
+    const position = globe.geodetic(latitude, longitude, height, at).toArray();
     const normal = globe.upAt(at, up).toArray();
-    if (north) globe.geodetic(latitude + along, longitude, 0, toward);
-    else globe.geodetic(latitude, longitude + along, 0, toward);
+    if (north) globe.geodetic(latitude + along, longitude, height, toward);
+    else globe.geodetic(latitude, longitude + along, height, toward);
     const direction = toward.sub(at).toArray();
-    return { text, position, normal, direction };
+    // Kept by its line and place, whatever its height.
+    const id = `${text}@${latitude},${longitude}`;
+    return { text, position, normal, direction, id };
   };
   for (let i = i0 - span; i <= i0 + span; i++) {
     const latitude = i * step;

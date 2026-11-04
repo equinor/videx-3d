@@ -227,7 +227,7 @@ How the relief looks is data, not shader code: changing any of it uploads a smal
     to half 600 m below the stage's seabed), `'ramp'` (the same ramp across land and
     seabed alike) or a ramp of its own (`{ ramp: 'bathymetry' }`).
   - `'ramp'`: short for `{ ramp: 'terrain' }`.
-- **`contours`**: `true`, or `{ interval?, major?, thickness?, colorMode?, factor?, color?, seabed? }`.
+- **`contours`**: `true`, or `{ interval?, major?, thickness?, colorMode?, factor?, color?, seabed?, labels? }`.
   Lines every `interval` metres from the sea's level (default 100), a major one twice as
   wide every `major`-th (default 5; 0 for none), shading the ground as a `Surface`'s do
   (`ContourColorMode`, default darken by 0.5). On the seabed too unless `seabed: false`.
@@ -244,6 +244,71 @@ How the relief looks is data, not shader code: changing any of it uploads a smal
   where one layer's data takes over from another's, node by node: a hard edge, at the
   tile's resolution. The overview past the tiles takes them the same way, pixel by pixel.
   Up to 31 layers have looks of their own; past that a layer takes the relief's.
+
+### Contour labels
+
+`contours: { labels: true }` (or an options object, `ReliefContourLabels`) writes each line's
+height along it on the ground. They are meant to be barely there, part of the lines:
+
+- **Look**: 9 px monospace numbers (`size`, `fontFamily`, `fontWeight`) in the lines' own
+  colour and strength. Darkening lines give black at `factor`, mixed ones their `color` at
+  `factor`; both blend over the ground as the lines do, so the text is the line's colour on
+  any ground. Lightening lines give white at a quarter of `factor`, as close as see-through
+  white gets to a multiply. A hair of a halo, 0.015 em, light grey at 30 % of the text's
+  opacity (dark grey under light text), keeps the digits apart from the line they sit on,
+  where a minus sign would otherwise merge into it. `color`, `opacity`, `haloColor` and
+  `haloWidth` override these.
+- **Which way it reads**: turned to read left to right on screen wherever the camera is
+  (`flip`, default true), turned in its own place so it keeps its side of the line. A paper
+  map writes contour heights with their top uphill instead, so the label shows which way
+  the ground rises; in a 3D view the shaded relief shows that already, and the camera
+  turning would leave half the labels upside down (an upside-down 600 reads as 009).
+  `flip: false` keeps the map's way.
+- **Which lines**: the major ones (`lines: 'major'`, default) or `'all'`. None on the
+  coastline (0 m). Under the sea's level only with seabed lines (`contours.seabed`), and
+  never while a `Scenery`'s sea has water over them. A layer's look (`layerLooks`) labels
+  its own lines, node by node as it colours them.
+- **Where**: found on each relief tile drawn, from its own heights (`marchingSquares`, then
+  `reliefContourLabelPoints`). The relief shades its lines where the height, bilinear
+  between each cell's four nodes, crosses their level; inside a cell that is a curve where
+  marching squares' chords run straight, a third of a cell off at most, which close in is
+  tens of pixels. So each label's point is moved onto that curve (a few Newton steps down
+  the bilinear height's gradient), then laid on the triangle it lies on as the tile is
+  drawn and lifted toward the camera by 5 m plus 2 % of its distance, so the ground round
+  it doesn't cut through it. The text lies across its line (`baseline: 'middle'`, default),
+  hangs from it on the downhill side (`'top'`), or stands on it on the uphill side
+  (`'bottom'`). A place where the line turns too much to read along, or too near the
+  tile's edge, is passed over.
+- **How many**: `spacing` (default 320) is the distance between a line's labels along it on
+  screen, in CSS pixels; they stay between that and twice it at any distance. A tile's
+  rank-0 labels are `2 · spacing / cellPixels` rows apart, `spacing` on screen when its
+  cells are half `cellPixels` across. Nearer, where cells grow without the tile splitting
+  (the finest data, or flat ground), finer ranks halve the gaps; the labels already there
+  keep their places. Each rank fades in as its spacing on screen grows from 60 % of
+  `spacing` to all of it (`RELIEF_CONTOUR_LABEL_FADE`). A line too short for a rank, such
+  as a ring round a summit, gets its first label at the first rank it is long enough for.
+  Finer ranks look less far along the line for its turns, so short, curvy lines high up
+  are labelled once near enough for a label to fit along them. Lengths are measured on the
+  ground, where a geographic cell is `cos(latitude)` as wide as it is tall.
+- **Where lines crowd, none**: a label is also whole only where the next line labelled is
+  at least 48 px off on screen (`RELIEF_CONTOUR_LABEL_LINE_PIXELS`), worked out from the
+  ground's slope under it, and fades out below 60 % of that. Steep ground seen from afar,
+  where the lines bunch up (and soon fade out themselves), is left unlabelled. Gentle
+  ground keeps its labels from high up.
+- **No fixed distance**: these two rules are all that limit how far off a label shows, so
+  they hold for any data. 300 m Norwegian tiles get labels within a few kilometres;
+  Greenland, with only ETOPO's 10′ (about 20 km cells), gets them on the ice sheet from
+  hundreds of kilometres. Each label's reach, the nearer of the two, rounded down to a
+  power of two (`reliefContourLabelClass`), picks its `LabelLayer`, and that layer's
+  `maxDistance` is the reach at the camera's focal length.
+- **When**: `maxDistance` (none by default; fading over its last quarter) and `maxHeight`
+  cap them if given. Whole only where 6 px or more as seen and facing the camera at least
+  0.3 (cosine), so not toward the horizon. Never grown at a slant.
+- **Among other labels**: `priority` −0.5 (`RELIEF_CONTOUR_LABEL_PRIORITY`), below data
+  labels and above the graticule's names. One `LabelGroup` keeps them all apart.
+- **Cost**: a tile's ranks are found once, when the camera first comes near enough for
+  them, at most 3 ms a frame. They are let go a rank late as it moves away. What is drawn
+  is handed on at most every 0.2 s.
 
 The colour ramps are shared with `Surface` and the seismic views
 ([color-ramps.ts](../src/common/color-ramps.ts)): a texture of up to 64 rows. Rows 0–9
