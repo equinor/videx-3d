@@ -298,3 +298,5 @@ outline, and change the page only when their text does.
   short way round (`geoTileSquareFrom`).
 - **Not done**: picking features on the map (a click on a polygon), drawing the twins' data in
   the map's WebGL context for very large data sets, and a rotation gesture.
+- **Later, an idea**: a seamless zoom between a full-window `GeoMap` and the 3D view, handing
+  over at a threshold at the same place: [map-3d-handoff.md](./map-3d-handoff.md).
