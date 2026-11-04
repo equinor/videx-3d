@@ -165,19 +165,36 @@ function markCells(
   const sc = c < tc ? 1 : -1;
   const sr = r < tr ? 1 : -1;
   let err = dc + dr;
-  const seen = new Set<number>();
+  // ⭐ The steps taken so far, instead of a Set of the cells visited: the walk advances its
+  // major axis every step, so only the last `2 * dilation` windows can hold a cell of this
+  // one. Same cells, same order, and none of the hashing that was most of this function.
+  const steps: number[] = [];
+  const lookBack = 2 * dilation;
   for (;;) {
     for (let jr = -dilation; jr <= dilation; jr++) {
       for (let jc = -dilation; jc <= dilation; jc++) {
         const cc = c + jc;
         const rr = r + jr;
         if (cc < 0 || cc >= nx || rr < 0 || rr >= ny) continue;
-        const key = rr * nx + cc;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        visit(key);
+        let seen = false;
+        for (
+          let s = steps.length - 2, n = 0;
+          s >= 0 && n < lookBack;
+          s -= 2, n++
+        ) {
+          if (
+            Math.abs(steps[s] - cc) <= dilation &&
+            Math.abs(steps[s + 1] - rr) <= dilation
+          ) {
+            seen = true;
+            break;
+          }
+        }
+        if (seen) continue;
+        visit(rr * nx + cc);
       }
     }
+    steps.push(c, r);
     if (c === tc && r === tr) break;
     const e2 = 2 * err;
     if (e2 >= dr) {
@@ -243,22 +260,28 @@ export function buildFenceSegmentIndex(
   let truncated = 0;
   let flips = 0;
   let total = 0;
+  const centre: Vec2 = [0, 0];
+  // The distance of each of a bucket's segments from its cell's centre, by position in it.
+  const ds: number[] = [];
   for (const [key, bucket] of buckets) {
-    const cx = origin[0] + ((key % nx) + 0.5) * reach;
-    const cz = origin[1] + (Math.floor(key / nx) + 0.5) * reach;
+    centre[0] = origin[0] + ((key % nx) + 0.5) * reach;
+    centre[1] = origin[1] + (Math.floor(key / nx) + 0.5) * reach;
     let nearest = Infinity;
-    const scored = bucket.map(i => {
-      const d = distanceToSegment2D([cx, cz], curve[i - 1], curve[i]);
+    for (let k = 0; k < bucket.length; k++) {
+      const i = bucket[k];
+      const d = distanceToSegment2D(centre, curve[i - 1], curve[i]);
+      ds[k] = d;
       if (d < nearest) nearest = d;
-      return { i, d };
-    });
+    }
     const limit = nearest + 2 * half;
     // ⚠️ Sorted by distance so that a cell which STILL overflows keeps the nearest segments.
     // Truncating in insertion order could drop the very segment that wins — measured as ~40%
     // of well vertices reading on the WRONG SIDE, and four sides inverted outright.
-    const survivors = scored
-      .filter(s => s.d <= limit)
-      .sort((a, b) => a.d - b.d);
+    // Positions into `bucket`; the sort is stable, so ties keep the curve's order.
+    const survivors: number[] = [];
+    for (let k = 0; k < bucket.length; k++)
+      if (ds[k] <= limit) survivors.push(k);
+    survivors.sort((p, q) => ds[p] - ds[q]);
     if (survivors.length > maxCount) maxCount = survivors.length;
     if (survivors.length > FENCE_MAX_SEGMENTS) {
       truncated++;
@@ -266,12 +289,12 @@ export function buildFenceSegmentIndex(
       // is all the shader reads (F-1 at margin 0.1: 11 cells truncated, 0 flips, |d| off by ≤ 7 mm).
       const x0 = origin[0] + (key % nx) * reach;
       const z0 = origin[1] + Math.floor(key / nx) * reach;
-      const sideOf = (p: Vec2, list: typeof survivors) => {
+      const sideOf = (p: Vec2, list: number[]) => {
         let best = Infinity;
         let cross = 0;
-        for (const s of list) {
-          const a = curve[s.i - 1];
-          const b = curve[s.i];
+        for (const k of list) {
+          const a = curve[bucket[k] - 1];
+          const b = curve[bucket[k]];
           const d = distanceToSegment2D(p, a, b);
           if (d < best) {
             best = d;
@@ -301,7 +324,7 @@ export function buildFenceSegmentIndex(
     total += survivors.length;
     kept.set(
       key,
-      survivors.map(s => s.i),
+      survivors.map(k => bucket[k]),
     );
   }
 

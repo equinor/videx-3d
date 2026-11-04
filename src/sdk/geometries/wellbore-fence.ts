@@ -1465,24 +1465,11 @@ export function createFenceField(
   // expensive thing this function did.
   const far = SEGMENT_RINGS * grid.size;
 
-  const distanceTo = (i: number, px: number, pz: number) => {
-    const a = positions[i];
-    const b = positions[Math.min(i + 1, positions.length - 1)];
-    const ex = b[0] - a[0];
-    const ez = b[1] - a[1];
-    const len2 = ex * ex + ez * ez;
-    let t = 0;
-    if (len2 > 0) {
-      t = ((px - a[0]) * ex + (pz - a[1]) * ez) / len2;
-      t = t < 0 ? 0 : t > 1 ? 1 : t;
-    }
-    const qx = a[0] + ex * t;
-    const qz = a[1] + ez * t;
-    return {
-      d2: (px - qx) * (px - qx) + (pz - qz) * (pz - qz),
-      cross: ex * (pz - a[1]) - ez * (px - a[0]),
-    };
-  };
+  const last = positions.length - 1;
+  // ⭐ The node that last tested each segment. A segment is listed in every bucket it is
+  // dilated into, so a node's rings meet it several times; a repeat cannot beat `best`
+  // (strictly less), so skipping it changes nothing but the cost.
+  const testedBy = new Int32Array(positions.length).fill(-1);
 
   for (let r = 0; r < ny; r++) {
     const pz = origin[1] + r * cell;
@@ -1510,10 +1497,27 @@ export function createFenceField(
             if (!edge && cc !== bc - ring && cc !== bc + ring) continue;
             const key = rr * grid.bx + cc;
             for (let k = grid.starts[key]; k < grid.starts[key + 1]; k++) {
-              const hit = distanceTo(grid.items[k], px, pz);
-              if (hit.d2 < best) {
-                best = hit.d2;
-                bestCross = hit.cross;
+              // ⚠️ Inline, not a helper returning `{ d2, cross }`: this runs nodes x nearby
+              // segments, and the object per test was most of the field's cost.
+              const i = grid.items[k];
+              if (testedBy[i] === at) continue;
+              testedBy[i] = at;
+              const a = positions[i];
+              const b = positions[i < last ? i + 1 : last];
+              const ex = b[0] - a[0];
+              const ez = b[1] - a[1];
+              const len2 = ex * ex + ez * ez;
+              let t = 0;
+              if (len2 > 0) {
+                t = ((px - a[0]) * ex + (pz - a[1]) * ez) / len2;
+                t = t < 0 ? 0 : t > 1 ? 1 : t;
+              }
+              const qx = a[0] + ex * t;
+              const qz = a[1] + ez * t;
+              const d2 = (px - qx) * (px - qx) + (pz - qz) * (pz - qz);
+              if (d2 < best) {
+                best = d2;
+                bestCross = ex * (pz - a[1]) - ez * (px - a[0]);
               }
             }
           }
