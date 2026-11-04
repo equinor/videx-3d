@@ -224,10 +224,17 @@ export function fenceViewPose(
     return [dx / len, dz / len];
   };
 
-  // The trace axis is unsigned; walking the well head→TD is what gives `side` a meaning,
-  // so orient it that way before taking a normal.
-  const axis = armAxis() ?? principalDirection2D(points);
-  if (axis[0] * (last[0] - first[0]) + axis[1] * (last[1] - first[1]) < 0) {
+  // ⚠️ Only the TRACE axis needs orienting: it is unsigned, and walking the well head→TD is what
+  // gives `side` a meaning. The arm chord runs head tip → TD tip, so it is already oriented — and
+  // checking it against the well's own first→last can only break it. On 19 B the fence's line
+  // (78°) is near square to the well (179°), the check flipped it, and every heading the pose
+  // started from looked into the KEPT half: the scan then reached only the edge of the window.
+  const arm = armAxis();
+  const axis = arm ?? principalDirection2D(points);
+  if (
+    !arm &&
+    axis[0] * (last[0] - first[0]) + axis[1] * (last[1] - first[1]) < 0
+  ) {
     axis[0] = -axis[0];
     axis[1] = -axis[1];
   }
