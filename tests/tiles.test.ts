@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  BALANCE_TILE_PRIORITY,
   PINNED_TILE_PRIORITY,
   PREFETCH_TILE_PRIORITY,
   QuadtreeTileInfo,
@@ -249,6 +250,117 @@ describe('selectQuadtreeTiles', () => {
       true,
     );
     expect(some.draw.sort()).toEqual(full.draw.sort());
+  });
+
+  // The tiles at one depth touching a tile, across its edges and its corners.
+  const touching = (key: number) => {
+    const [d, i, j] = tileAddress(key);
+    const out: number[] = [];
+    for (let dj = -1; dj <= 1; dj++)
+      for (let di = -1; di <= 1; di++)
+        if (di !== 0 || dj !== 0) out.push(tileKey(d, i + di, j + dj));
+    return out;
+  };
+  // The most two drawn tiles touching (an edge or a corner) differ in depth.
+  const largestStep = (keys: number[]) => {
+    let most = 0;
+    const squares = keys.map(key => tileSquare(key, ROOT));
+    for (let a = 0; a < keys.length; a++)
+      for (let b = a + 1; b < keys.length; b++) {
+        const [ax, az, as] = squares[a];
+        const [bx, bz, bs] = squares[b];
+        if (ax <= bx + bs && bx <= ax + as && az <= bz + bs && bz <= az + as)
+          most = Math.max(
+            most,
+            Math.abs(tileAddress(keys[a])[0] - tileAddress(keys[b])[0]),
+          );
+      }
+    return most;
+  };
+
+  it('balanced, draws no tile more than a level coarser than one touching it', () => {
+    // A small square split to the leaves amid coarse tiles: steps of several levels.
+    const options = {
+      eye: [10, 50, 10] as [number, number, number],
+      reach: 900,
+      pixelsPerUnit: near,
+      pixelError: 2,
+      rootSize: ROOT,
+      info: everyTile(),
+      finer: [
+        {
+          bounds: [300, 300, 316, 316] as [number, number, number, number],
+          pixelError: 0.001,
+        },
+      ],
+    };
+    const plain = selectQuadtreeTiles(options);
+    expect(largestStep(plain.draw)).toBeGreaterThan(1);
+    const balanced = selectQuadtreeTiles({ ...options, balance: touching });
+    expect(largestStep(balanced.draw)).toBe(1);
+    expect(balanced.want).toEqual([]);
+    // Still the view covered once, never coarser than before.
+    expect(overlaps(balanced.draw)).toBe(false);
+    expect(coverage(balanced.draw, [10, 10], 900).every(n => n === 1)).toBe(
+      true,
+    );
+    expect(balanced.draw.length).toBeGreaterThan(plain.draw.length);
+    // Never coarser than the view chose: each tile it chose drawn, or split.
+    for (const key of plain.draw)
+      expect(balanced.draw.includes(key) || balanced.split.has(key)).toBe(true);
+  });
+
+  it('balanced, wants the children it would split for that are not in, and fills them', () => {
+    const info = everyTile();
+    const base = {
+      eye: [10, 50, 10] as [number, number, number],
+      reach: 900,
+      pixelsPerUnit: near,
+      pixelError: 2,
+      rootSize: ROOT,
+      finer: [
+        {
+          bounds: [300, 300, 316, 316] as [number, number, number, number],
+          pixelError: 0.001,
+        },
+      ],
+      balance: touching,
+      fill: true,
+    };
+    const full = selectQuadtreeTiles({ ...base, info });
+    // Only what the view splits for in: those balance would split are wanted.
+    const plain = selectQuadtreeTiles({ ...base, balance: undefined, info });
+    const needed = new Set<number>();
+    for (const key of plain.draw)
+      for (let at = key; ; at = tileParent(at)) {
+        needed.add(at);
+        if (tileAddress(at)[0] === 0) break;
+      }
+    const some = selectQuadtreeTiles({
+      ...base,
+      info: key => (needed.has(key) ? info(key) : undefined),
+    });
+    expect(some.want.length).toBeGreaterThan(0);
+    expect(some.want.every(w => w.priority === BALANCE_TILE_PRIORITY)).toBe(
+      true,
+    );
+    // What is in and what is filled cover the view once.
+    const all = [...some.draw, ...some.fills.map(f => f.key)];
+    expect(overlaps(all)).toBe(false);
+    expect(coverage(all, [10, 10], 900).every(n => n === 1)).toBe(true);
+    // Once what it wants is in, a level at most between tiles touching, as with all in.
+    let chosen = some;
+    for (let round = 0; round < 10 && chosen.want.length > 0; round++) {
+      for (const { key } of chosen.want) needed.add(key);
+      chosen = selectQuadtreeTiles({
+        ...base,
+        info: key => (needed.has(key) ? info(key) : undefined),
+      });
+    }
+    expect(chosen.want).toEqual([]);
+    expect(chosen.fills).toEqual([]);
+    expect(largestStep(chosen.draw)).toBe(1);
+    expect(largestStep(full.draw)).toBe(1);
   });
 
   it('wants a root that is not in, above everything', () => {

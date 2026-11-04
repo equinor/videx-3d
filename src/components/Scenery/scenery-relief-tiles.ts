@@ -83,8 +83,10 @@ const warped: [number, number] = [0, 0];
  * globe's disc's centre, its depth and its slot), a `reliefTileChi` (its north edge's,
  * middle's and south edge's latitude there: `Globe.sphereOffset`), a `reliefTileSkirt`
  * (how far its skirt drops), a `reliefTileFrom` (where it lies in the tile it blends from,
- * `tileOffsetIn`, and that tile's slot, -1 for none) and a `reliefTileBlend` (0 that
- * tile's look, 1 its own: see `TileTransitions`). Its triangles' diagonals run from node (i + 1, j) to
+ * `tileOffsetIn`, and that tile's slot, -1 for none), a `reliefTileBlend` (0 that
+ * tile's look, 1 its own: see `TileTransitions`) and a `reliefTileEdges` (its edge mask,
+ * `tileCoarserEdges`, and its parent's slot, -1 for none: toward the edges and corners a
+ * coarser tile touches, its parent's surface). Its triangles' diagonals run from node (i + 1, j) to
  * (i, j + 1), as `buildReliefTile` measures a tile's error; each triangle's last vertex
  * is a skirt's lower edge on a skirt and a grid node on the grid, which the shader's flat
  * `vReliefSkirt` relies on.
@@ -855,7 +857,8 @@ export function createSceneryReliefTileSubset(
 }
 
 // Per tile (see createSceneryReliefTilePatch): `reliefTile`, `reliefTileChi`,
-// `reliefTileSkirt`, `reliefTileFrom` and `reliefTileBlend`, for `maxTiles` tiles, none drawn yet.
+// `reliefTileSkirt`, `reliefTileFrom`, `reliefTileBlend` and `reliefTileEdges`, for
+// `maxTiles` tiles, none drawn yet.
 function addTileAttributes(
   geometry: InstancedBufferGeometry,
   maxTiles: number,
@@ -866,6 +869,7 @@ function addTileAttributes(
     ['reliefTileSkirt', 1],
     ['reliefTileFrom', 4],
     ['reliefTileBlend', 1],
+    ['reliefTileEdges', 2],
   ] as const) {
     const attribute = new InstancedBufferAttribute(
       new Float32Array(size * maxTiles),
@@ -884,4 +888,5 @@ export const SKY_RELIEF_TILE_ATTRIBUTES = [
   'reliefTileSkirt',
   'reliefTileFrom',
   'reliefTileBlend',
+  'reliefTileEdges',
 ] as const;

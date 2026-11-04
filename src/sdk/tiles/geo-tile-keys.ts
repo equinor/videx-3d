@@ -76,3 +76,39 @@ export function geoTileKeyAt(
     Math.min(Math.floor(south / span), rows - 1),
   );
 }
+
+/**
+ * The geographic tile at the same depth `columns` east and `rows` south of `key`: round
+ * the globe in longitude, null past a pole.
+ *
+ * @group Tiles
+ */
+export function geoTileNeighbour(
+  key: number,
+  columns: number,
+  rows: number,
+): number | null {
+  const [depth, i, j] = tileAddress(key);
+  const row = j + rows;
+  if (row < 0 || row >= 2 ** depth) return null;
+  const across = 2 ** (depth + 1);
+  return tileKey(depth, (((i + columns) % across) + across) % across, row);
+}
+
+/**
+ * The geographic tiles at the same depth touching `key`, across its edges and its corners
+ * (none past a pole): the neighbours a quadtree balanced over them (`balance` of
+ * `selectQuadtreeTiles`) keeps within a level of it.
+ *
+ * @group Tiles
+ */
+export function geoTileNeighbours(key: number): number[] {
+  const out: number[] = [];
+  for (let rows = -1; rows <= 1; rows++)
+    for (let columns = -1; columns <= 1; columns++) {
+      if (columns === 0 && rows === 0) continue;
+      const neighbour = geoTileNeighbour(key, columns, rows);
+      if (neighbour !== null && neighbour !== key) out.push(neighbour);
+    }
+  return out;
+}

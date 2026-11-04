@@ -12,8 +12,13 @@ float contourGradient(float v) {
 
 // How much of the pixel the nearest line covers (0 to 1), for lines where `v` is a whole
 // number, `g` its gradient on screen (contourGradient) and `width` the line's in pixels.
+// Where `v` does not change over the pixel, to within a few of its float steps (gridded
+// data's flats often sit exactly at a level), no line crosses it: such ground counts as on
+// one side, as marching squares counts it, so a flat at a level is outlined, not filled.
 float contourLineCover(float v, float g, float width) {
-  float pixels = abs(v - floor(v + 0.5)) / max(g, 1e-6);
+  if(g < max(1e-6, 4e-7 * abs(v)))
+    return 0.0;
+  float pixels = abs(v - floor(v + 0.5)) / g;
   return clamp(0.5 * width + 0.5 - pixels, 0.0, 1.0);
 }
 

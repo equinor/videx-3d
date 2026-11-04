@@ -125,10 +125,27 @@ export type QuadtreeSelectOptions = {
    * in: the level a zoom-out goes to next, ahead of it. Default `false`
    */
   prefetch?: boolean;
+  /**
+   * The tiles at the same depth touching a tile, across its edges and its corners
+   * (`geoTileNeighbours`, say): given, no tile is drawn more than a level coarser than one
+   * touching it. A coarser one is split, as the view would split it — a leaf too, whose
+   * children hold no more than it — its children not in wanted, at
+   * {@link BALANCE_TILE_PRIORITY}, and with `fill` their squares filled from it; so a
+   * tile's edge blended toward its parent meets what is drawn next to it (a relief's seams).
+   * Fills, and a tile whose children in view are none in (or without `fill`, not all),
+   * are not split. Omitted, none.
+   */
+  balance?: (key: number) => readonly number[];
 };
 
 /** The priority {@link selectQuadtreeTiles} wants prefetched tiles at: after every other. */
 export const PREFETCH_TILE_PRIORITY = -1;
+
+/**
+ * The priority {@link selectQuadtreeTiles} wants the tiles its `balance` splits for at:
+ * after those the view wants, before prefetched ones.
+ */
+export const BALANCE_TILE_PRIORITY = 0;
 
 /**
  * What {@link selectQuadtreeTiles} chose.
@@ -184,6 +201,7 @@ export function selectQuadtreeTiles(
     layout,
     fill = false,
     prefetch = false,
+    balance,
   } = options;
   const [ex, ey, ez] = eye;
   const draw: number[] = [];
@@ -333,6 +351,78 @@ export function selectQuadtreeTiles(
     for (const [child, childInfo] of inside) visit(child, childInfo!);
   };
 
+  // Balanced (`balance`): a drawn tile more than a level coarser than one touching it is
+  // split, until none is; each tile split brings its children in to be looked at in turn.
+  const balanceDrawn = () => {
+    if (!balance) return;
+    const drawn = new Set(draw);
+    const filled = new Set(fills.map(f => f.key));
+    const wanted = new Set(want.map(w => w.key));
+    // The tile drawn or filled over a square: it, or its nearest ancestor that is.
+    const covering = (key: number): number | null => {
+      for (let at = key; ; at = tileParent(at)) {
+        if (drawn.has(at) || filled.has(at)) return at;
+        if (tileAddress(at)[0] === 0) return null;
+      }
+    };
+    // Split `at` for balance: false where it cannot be (its children in view not in). A leaf
+    // too: its children hold no more than it, but meet a finer neighbour's parent.
+    const splitFor = (at: number): boolean => {
+      const tile = info(at);
+      if (!tile || tileAddress(at)[0] >= maxDepth) return false;
+      const inside: [number, boolean][] = [];
+      let some = false;
+      let missing = false;
+      for (const child of tileChildren(at)) {
+        const childInfo = info(child);
+        const range = childInfo ?? tile;
+        if (!showsTile(child, squareOf(child), range.minY, range.maxY))
+          continue;
+        inside.push([child, !!childInfo]);
+        if (childInfo) some = true;
+        else missing = true;
+      }
+      for (const [child, isIn] of inside) {
+        if (isIn || wanted.has(child)) continue;
+        wanted.add(child);
+        want.push({ key: child, priority: BALANCE_TILE_PRIORITY });
+      }
+      if (inside.length === 0 || (missing && (!fill || !some))) return false;
+      drawn.delete(at);
+      split.add(at);
+      for (const [child, isIn] of inside) {
+        if (isIn) drawn.add(child);
+        else {
+          filled.add(child);
+          fills.push({ key: child, source: at });
+        }
+        queue.push(child);
+      }
+      return true;
+    };
+    const queue = [...draw, ...filled];
+    while (queue.length > 0) {
+      const key = queue.pop()!;
+      if (!drawn.has(key) && !filled.has(key)) continue;
+      const [depth] = tileAddress(key);
+      if (depth < 2) continue;
+      // Each neighbour's tile split until within a level of this one, or it cannot be.
+      for (const neighbour of balance(key)) {
+        for (;;) {
+          const at = covering(neighbour);
+          if (at === null || !drawn.has(at)) break;
+          if (tileAddress(at)[0] >= depth - 1 || !splitFor(at)) break;
+        }
+      }
+    }
+    // In the order chosen, those split for it left out and their children after.
+    const order = draw.filter(key => drawn.has(key));
+    const kept = new Set(order);
+    for (const key of drawn) if (!kept.has(key)) order.push(key);
+    draw.length = 0;
+    draw.push(...order);
+  };
+
   // The siblings of each drawn tile's parent not in: wanted last.
   const prefetched: number[] = [];
   const prefetchAround = () => {
@@ -362,6 +452,7 @@ export function selectQuadtreeTiles(
       if (!showsTile(key, squareOf(key), root.minY, root.maxY)) continue;
       visit(key, root);
     }
+    balanceDrawn();
     prefetchAround();
     return { draw, fills, want, split, prefetched };
   }
@@ -384,6 +475,7 @@ export function selectQuadtreeTiles(
       visit(key, root);
     }
   }
+  balanceDrawn();
   prefetchAround();
   return { draw, fills, want, split, prefetched };
 }

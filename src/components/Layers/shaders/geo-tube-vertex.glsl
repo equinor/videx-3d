@@ -39,8 +39,8 @@ attribute float tubeIdA;
 attribute vec3 tubeReliefA;
 attribute vec3 tubeReliefB;
 #ifdef GEO_TUBE_DRAPE
-// Two texels a group: its tile's slot and blend (x, y); where it lies in the tile it blends
-// from, and that tile's slot.
+// Two texels a group: its tile's slot and blend, its edge mask and its parent's slot
+// (x, y, z, w); where it lies in the tile it blends from, and that tile's slot.
 uniform highp sampler2D uTubeReliefGroups;
 #endif
 
@@ -64,7 +64,7 @@ float tubeGround(vec4 node, vec3 relief) {
   int width = GEO_TUBE_GROUPS_WIDTH;
   vec4 own = texelFetch(uTubeReliefGroups, ivec2(i % width, i / width), 0);
   vec4 from = texelFetch(uTubeReliefGroups, ivec2((i + 1) % width, (i + 1) / width), 0);
-  return geoTileReliefGround(vec4(0.0, 0.0, 1.0, own.x), from, own.y, relief.xy, node.w);
+  return geoTileReliefGround(vec4(0.0, 0.0, 1.0, own.x), from, own.y, own.zw, relief.xy, node.w);
   #else
   return node.w;
   #endif

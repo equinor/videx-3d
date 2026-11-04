@@ -235,6 +235,9 @@ How the relief looks is data, not shader code: changing any of it uploads a smal
   edge, as wide on steep ground and at grazing angles as on flat ground: its distance
   from the line is measured in pixels by the height's slope on screen. Lines fade out
   between 8 and 3 pixels apart, minor ones first, so a distant view is no smear or moiré.
+  Ground lying exactly at a line's level (gridded data's flats often do: EMODnet east of
+  Volve has runs of −100.00 m) counts as on one side of it, as marching squares counts it,
+  so such a flat is outlined rather than filled with the line's colour.
   `Surface` contours are drawn the same way (`contours.glsl`). The tiles and the overview
   past them draw the same lines, so they run on across where one hands over to the other.
 - **`layerLooks`**: a look of its own for a layer, by its id, `{ color?, contours? }`,
@@ -343,8 +346,12 @@ more than `cellPixels` (default 8) where the ground is rough, across a coast, or
 finer layer ends, as the relief is shaded from its cells. A tile with no finer data under
 it is never split; a layer smaller than a tile's cells still splits it, so a small local
 layer draws at its own detail from every height. A split tile is drawn until
-its four children are in, so ground is never missing; skirts close the cracks between
-tiles of different depths. Tiles load a few at a time, the most wanted first, and the
+its four children are in, so ground is never missing. No tile is drawn more than a level
+coarser than one touching it (edges and corners), and toward an edge or corner a coarser
+tile touches, a tile's surface eases into its parent's over 4 cells, which meets that tile
+exactly: contour lines and shading run on across the seams (see
+[tiles.md, Seams between depths](./tiles.md#5-drawing-the-relief)). Skirts close what
+cracks are left. Tiles load a few at a time, the most wanted first, and the
 least recently drawn go first under a budget. `onStats` reports what is drawn and held.
 
 ## The far plane

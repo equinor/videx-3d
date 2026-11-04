@@ -2,6 +2,8 @@
 // pixel, from the tile it lies on. Stands in for relief-atlas.glsl's lookup in
 // relief-fragment.glsl, which the overview past the tiles reads the same tiles through.
 
+#include ../../../sdk/materials/shaderLib/tile-edges.glsl
+
 uniform highp sampler2DArray uReliefTileHeights;
 uniform highp sampler2DArray uReliefTileNormals;
 uniform float uReliefTileNodes;
@@ -16,6 +18,9 @@ flat varying vec2 vReliefTileDepthCell;
 // for none), and how far it is from that tile's look (0) to its own (1).
 flat varying vec4 vReliefTileFrom;
 flat varying float vReliefTileBlend;
+// Its edge mask, toward the edges a coarser tile touches, and its parent's slot (-1: none):
+// tile-edges.glsl.
+flat varying vec2 vReliefTileEdges;
 varying vec3 vReliefEast;
 flat varying float vReliefSkirt;
 // The height the pixel lies at on its triangle, metres over the sea (the vertex shader's).
@@ -45,10 +50,25 @@ vec2 reliefTileFromNode(vec2 node) {
   return (vReliefTileFrom.xy + t * vReliefTileFrom.z) * uReliefTileCells + 1.5;
 }
 
-// The height at `node` of the tile's texel grid, blended from the tile it replaces while
-// it does.
+// Whether the tile blends toward its parent's surface where a coarser tile touches it.
+bool reliefTileEdged() {
+  return vReliefTileEdges.y >= 0.0;
+}
+
+// `node` of the tile's texel grid, in its parent's (see reliefTileEdged).
+vec2 reliefTileParentNode(vec2 node) {
+  return tileEdgeParentAt(vReliefTileEdges.x, (node - 1.5) / uReliefTileCells) * uReliefTileCells + 1.5;
+}
+
+// The height at `node` of the tile's texel grid: toward an edge a coarser tile touches, its
+// parent's, which meets that tile; blended from the tile it replaces while it does.
 float reliefTileHeightAt(vec2 node) {
   float height = reliefTileHeightIn(int(vReliefTileSlot + 0.5), node);
+  if(reliefTileEdged()) {
+    float edge = tileEdgeWeight(vReliefTileEdges.x, (node - 1.5) / uReliefTileCells, uReliefTileCells);
+    if(edge > 0.0)
+      height = mix(height, reliefTileHeightIn(int(vReliefTileEdges.y + 0.5), reliefTileParentNode(node)), edge);
+  }
   if(reliefTileBlending())
     height = mix(reliefTileHeightIn(int(vReliefTileFrom.w + 0.5), reliefTileFromNode(node)), height, vReliefTileBlend);
   return height;
@@ -178,9 +198,15 @@ bool reliefTileLeftToOther(vec3 world) {
 }
 
 // The normal at this pixel, along true east (x), up (y) and true south (z) where its node
-// lies on the globe; blended from the tile it replaces while it does.
+// lies on the globe: toward an edge a coarser tile touches, its parent's; blended from the
+// tile it replaces while it does.
 vec3 reliefTileNormal() {
   vec2 n = texture(uReliefTileNormals, vec3(vReliefTileNode / uReliefTileNodes, vReliefTileSlot)).rg;
+  // Sampled whatever the weight: the condition is the triangle's, so derivatives hold.
+  if(reliefTileEdged()) {
+    vec2 parent = texture(uReliefTileNormals, vec3(reliefTileParentNode(vReliefTileNode) / uReliefTileNodes, vReliefTileEdges.y)).rg;
+    n = mix(n, parent, tileEdgeWeight(vReliefTileEdges.x, (vReliefTileNode - 1.5) / uReliefTileCells, uReliefTileCells));
+  }
   if(reliefTileBlending()) {
     vec2 from = texture(uReliefTileNormals, vec3(reliefTileFromNode(vReliefTileNode) / uReliefTileNodes, vReliefTileFrom.w)).rg;
     n = mix(from, n, vReliefTileBlend);

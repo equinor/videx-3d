@@ -249,9 +249,16 @@ Each frame, from the roots within reach:
   `LOD_COARSEN_MARGIN`, so a tile on the edge does not flip every frame (as
   `selectLodLevel`);
 - a tile marked `leaf` — no data finer than it under it, by the data in its layers'
-  windows, not only what its nodes took — is never split;
+  windows, not only what its nodes took — is never split for the view (only for
+  `balance`, below);
 - **a split tile is drawn until all four children are in**, and those not in are wanted.
   Ground is never missing, and never drawn twice;
+- **balanced** (`balance`, built 2026-11-04): given each tile's neighbours at its depth
+  (`geoTileNeighbours`: across its edges and corners), no tile is drawn more than a level
+  coarser than one touching it; a coarser one is split, a leaf too, its children not in
+  wanted at `BALANCE_TILE_PRIORITY`. The relief blends a tile's edges toward its parent
+  where a coarser tile touches it, so neighbours at different depths meet (see
+  [Seams between depths](#5-drawing-the-relief));
 - a region may cap the error (the bridge does, see
   [Seams](#seams)): a tile over it is split while its error is over the cap, whatever its
   size on screen;
@@ -622,6 +629,42 @@ see [world.md, 7d](./world.md#7d-1-built-2026-11-02).)
     swap at once (`fixed`), so what meets the relief there meets what is drawn exactly.
   - Settled tiles take the old path (one branch per tile); the bookkeeping cost 0.2 ms a
     frame in `FieldColumn` while the camera moved.
+- **Seams between depths (built 2026-11-04; until then skirts only):** a tile drawn next to
+  a coarser one did not meet it. The coarse tile reads a coarser level of the data, and
+  draws its edge straight between nodes twice as far apart, so the two edges differed:
+  measured on the demo data, by up to 0.3 m on Volve's flat seabed (EMODnet, depth 10
+  against 11) and up to 58 m inland at 59.25°N 7.8°E (ETOPO 2′, depth 7 against 8; 120 m
+  against 9). Skirts closed the cracks, but the ground stepped at the seam: contour lines
+  broke and jumped there, and on ground within a metre of a line's level its screen-space
+  width read the step as a steep slope, a dashed line along the tile's edge. Two parts:
+  - **No tile more than a level coarser than one touching it** (`selectQuadtreeTiles`'s
+    `balance`, `geoTileNeighbours`): over all eight neighbours, edges and corners, as a
+    corner two levels apart would still leave its four tiles disagreeing. A coarser tile
+    is split as the view would split it — a leaf too, whose children hold no more than it
+    but meet a finer neighbour's parent (inland the 15″ layer ends at 6.5°E, and the 2′
+    data east of it leaves at depth 7) — its children not in wanted at
+    `BALANCE_TILE_PRIORITY` (0) and filled meanwhile. A few more tiles where depths
+    change: 7 instead of 5 inland from 45 km.
+  - **Its edges blended toward its parent's surface** (`sdk/tiles/tile-edges.ts`,
+    `tile-edges.glsl`): tiles at one depth meet node for node (both read the same level at
+    the same points), so a tile's parent meets the coarser tile beside it exactly. Per
+    instance a `reliefTileEdges` (its edge mask, `tileCoarserEdges`: which edges and
+    corners a tile drawn coarser touches, by the depth of the data drawn over each, a fill's
+    its source's; and its parent's slot): within `TILE_EDGE_BAND` (4) cells of a marked
+    edge or corner, its heights (vertex, on the parent's triangles; fragment, bilinear)
+    and normals ease toward its parent's (`tileEdgeWeight`, a smoothstep). From a corner
+    the distance is the larger one along the axes, so two tiles at one depth either side of
+    an edge — one with a coarser tile beside it, the other with that tile at its corner —
+    blend alike along it. The parent is always in: the choice holds every tile it split.
+    Not a fill's (drawn from its parent already), nor over the ground handed out.
+  - What lies on the relief follows it: a draped `GeoTileLayer` (`layerTileReliefEdges`),
+    `GeoTubes` (the groups' texels' spare two floats) and the contour labels
+    (`blendTileEdgeHeights` on the tile's nodes), from `SceneryReliefDrawn.edges`.
+  - Seams remain only for a moment where a tile's children are still loading (a fill two
+    levels finer than its neighbour), and over the ground handed out.
+  - `tests/tile-edges.test.ts` builds two tiles at one depth and the finer child of one
+    from bumpy data: unblended its edge is over a metre off the coarser tile's, blended
+    within a millimetre.
 - **The choice's cost (2026-10-28):** with the camera held still it ran in full every frame,
   some 7–9 ms of main thread over Volve (10k globe calls a frame: each tile's box rebuilt
   from up to 98 points, its corners and the eye placed on the sphere again for every

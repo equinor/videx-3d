@@ -28,6 +28,8 @@ import {
 import {
   GEO_TILE_ROOT_SPAN,
   geoTileKeyAt,
+  geoTileNeighbour,
+  geoTileNeighbours,
   geoTileRegion,
 } from '../../sdk/tiles/geo-tile-keys';
 import {
@@ -40,6 +42,7 @@ import {
   GeoTileView,
 } from '../../sdk/tiles/geo-tile-globe';
 import { tileAddress, tileParent } from '../../sdk/tiles/tile-keys';
+import { tileCoarserEdges, TILE_EDGE_SIDES } from '../../sdk/tiles/tile-edges';
 import { TileStreamer } from '../../sdk/tiles/tile-streamer';
 import {
   tileOffsetIn,
@@ -722,6 +725,8 @@ export const SceneryStageReliefTiles = ({
       transitions: new TileTransitions(transition, false),
       // The tiles drawn, in the order of their instances.
       drawnKeys: [] as number[],
+      // Per tile drawn, how deep the data drawn over it is (a fill's, its source's).
+      drawnDepth: new Map<number, number>(),
       // The fills chosen this frame: each tile not in, and the ancestor it is drawn from.
       fillSource: new Map<number, number>(),
       // What the tiles were last chosen for (see the frame loop): nothing changed, nothing to do.
@@ -746,6 +751,9 @@ export const SceneryStageReliefTiles = ({
   ) as InstancedBufferAttribute;
   const blends = geometry.getAttribute(
     'reliefTileBlend',
+  ) as InstancedBufferAttribute;
+  const edges = geometry.getAttribute(
+    'reliefTileEdges',
   ) as InstancedBufferAttribute;
 
   useFrame(({ camera, size, viewport }) => {
@@ -916,6 +924,9 @@ export const SceneryStageReliefTiles = ({
         // from their parent. The level a further zoom-out needs is fetched ahead, last.
         fill: true,
         prefetch: true,
+        // No tile more than a level coarser than one touching it: each blends its edges
+        // toward its parent where a coarser one touches it (reliefTileEdges), and so meets it.
+        balance: geoTileNeighbours,
       });
     let selection = choose();
     // Taking the overview's detail, they may hold no more than what the overview leaves of
@@ -1044,6 +1055,18 @@ export const SceneryStageReliefTiles = ({
     const fillSource = view.fillSource;
     fillSource.clear();
     for (const fill of selection.fills) fillSource.set(fill.key, fill.source);
+    // Over the ground handed out, which must meet what is drawn exactly: no soft swaps, and
+    // no edges blended toward a parent.
+    const onHanded =
+      handed.length > 0
+        ? (key: number) => {
+            const [a, b, width] = geoTileSquare(key);
+            return handed.some(
+              ({ square: [a0, b0, a1, b1] }) =>
+                a < a1 && b < b1 && a + width > a0 && b + width > b0,
+            );
+          }
+        : undefined;
     // Soft swaps (TileTransitions): each tile drawn blends from the tile it replaces. Not
     // over the ground handed out, which must meet what is drawn exactly.
     const transitions = view.transitions;
@@ -1057,16 +1080,7 @@ export const SceneryStageReliefTiles = ({
       {
         isIn: key => (slotOf.get(key) ?? -1) >= 0,
         proxy: key => fillSource.get(key) ?? null,
-        fixed:
-          handed.length > 0
-            ? key => {
-                const [a, b, width] = geoTileSquare(key);
-                return handed.some(
-                  ({ square: [a0, b0, a1, b1] }) =>
-                    a < a1 && b < b1 && a + width > a0 && b + width > b0,
-                );
-              }
-            : undefined,
+        fixed: onHanded,
       },
     );
     // What is pinned is held in down to the finest, whatever the view.
@@ -1119,8 +1133,18 @@ export const SceneryStageReliefTiles = ({
     const drops = skirts.array as Float32Array;
     const fromArray = froms.array as Float32Array;
     const blendArray = blends.array as Float32Array;
+    const edgeArray = edges.array as Float32Array;
     const drawnKeys = view.drawnKeys;
     drawnKeys.length = 0;
+    // How deep the data drawn over each tile is: what its neighbours' edges meet.
+    const drawnDepth = view.drawnDepth;
+    drawnDepth.clear();
+    for (const { key, proxy } of drawnTiles) {
+      const data = proxy ?? key;
+      if ((slotOf.get(data) ?? -1) >= 0 && streamer.get(data))
+        drawnDepth.set(key, tileAddress(data)[0]);
+    }
+    const depthOf = (key: number) => drawnDepth.get(key);
     let count = 0;
     let deepest = 0;
     for (const { key, from, blend, proxy } of drawnTiles) {
@@ -1158,6 +1182,19 @@ export const SceneryStageReliefTiles = ({
         fromArray.set(NO_SOURCE, 4 * count);
       }
       blendArray[count] = proxy !== undefined ? 0 : fromSlot >= 0 ? blend : 1;
+      // Toward the edges and corners a coarser tile touches, its parent's surface, which
+      // meets that tile (tileCoarserEdges). Not a fill's, drawn from its parent already,
+      // nor over the ground handed out.
+      const parentSlot =
+        proxy === undefined && depth > 0 && !onHanded?.(key)
+          ? (slotOf.get(tileParent(key)) ?? -1)
+          : -1;
+      const mask =
+        parentSlot >= 0
+          ? tileCoarserEdges(key, depth, depthOf, geoTileNeighbour)
+          : 0;
+      edgeArray[2 * count] = mask;
+      edgeArray[2 * count + 1] = mask & TILE_EDGE_SIDES ? parentSlot : -1;
       drawnKeys.push(key);
       count++;
     }
@@ -1175,6 +1212,7 @@ export const SceneryStageReliefTiles = ({
             tiles: array,
             froms: fromArray,
             blends: blendArray,
+            edges: edgeArray,
             lowest: streaming.reached.lowest,
             highest: streaming.reached.highest,
             rangeAt: streaming.rangeAt,
@@ -1192,6 +1230,7 @@ export const SceneryStageReliefTiles = ({
         [skirts, 1],
         [froms, 4],
         [blends, 1],
+        [edges, 2],
       ] as const) {
         attribute.clearUpdateRanges();
         attribute.addUpdateRange(0, size * count);

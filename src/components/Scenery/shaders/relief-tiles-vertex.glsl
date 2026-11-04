@@ -9,6 +9,7 @@
 #include <logdepthbuf_pars_vertex>
 #include ../../../sdk/materials/shaderLib/globe.glsl
 #include ../../../sdk/materials/shaderLib/geo-tile.glsl
+#include ../../../sdk/materials/shaderLib/tile-edges.glsl
 
 uniform highp sampler2DArray uReliefTileHeights;
 uniform float uReliefTileCells;
@@ -24,6 +25,9 @@ attribute float reliefTileSkirt; // how far its skirt drops
 // tile's slot, -1 for none; and how far it is from that tile's look (0) to its own (1).
 attribute vec4 reliefTileFrom;
 attribute float reliefTileBlend;
+// Its edge mask (tile-edges.glsl): toward the edges and corners a coarser tile touches,
+// its parent's surface, which meets that tile; and its parent's slot, -1 for none.
+attribute vec2 reliefTileEdges;
 
 varying vec3 vReliefWorld;
 varying vec2 vReliefPlane;
@@ -41,6 +45,7 @@ flat varying vec3 vReliefTileLatitude;
 flat varying vec2 vReliefTileDepthCell;
 flat varying vec4 vReliefTileFrom;
 flat varying float vReliefTileBlend;
+flat varying vec2 vReliefTileEdges;
 // 1 on a skirt, 0 on the grid: flat, from a triangle's last vertex (the provoking vertex in
 // WebGL 2), which the patch's index order makes a skirt's lower edge on every skirt's
 // triangle and a grid node on every other (createSceneryReliefTilePatch). Interpolated, a
@@ -78,6 +83,12 @@ void main() {
   ivec2 node = ivec2(position.xz + 0.5) + 1;
   float height = texelFetch(uReliefTileHeights, ivec3(node, int(reliefTile.w + 0.5)), 0).r;
   vec2 t = position.xz / uReliefTileCells;
+  // Toward an edge a coarser tile touches: its parent's surface, which meets that tile.
+  if(reliefTileEdges.y >= 0.0) {
+    float edge = tileEdgeWeight(reliefTileEdges.x, t, uReliefTileCells);
+    if(edge > 0.0)
+      height = mix(height, reliefTileTriangleHeight(int(reliefTileEdges.y + 0.5), tileEdgeParentAt(reliefTileEdges.x, t) * uReliefTileCells), edge);
+  }
   // A soft swap: from the surface of the tile it replaces, at the same place (a geomorph).
   if(reliefTileBlend < 1.0 && reliefTileFrom.w >= 0.0) {
     float from = reliefTileTriangleHeight(int(reliefTileFrom.w + 0.5), geoTileFrom(reliefTileFrom.xyz, t) * uReliefTileCells);
@@ -102,6 +113,7 @@ void main() {
   vReliefTileDepthCell = vec2(reliefTile.z, abs(reliefTileChi.z - reliefTileChi.x) * uGlobe.x / uReliefTileCells);
   vReliefTileFrom = reliefTileFrom;
   vReliefTileBlend = reliefTileBlend;
+  vReliefTileEdges = reliefTileEdges;
   vReliefSkirt = reliefSkirt;
   vReliefHeight = height;
   #ifdef RELIEF_CUT_OCCUPANT

@@ -2,6 +2,8 @@
 // GeoTubes): its heights' texture array and its tiles' cells (SceneryReliefDrawn), and a
 // height on a tile's triangles as the relief's patch draws them.
 
+#include ../../../sdk/materials/shaderLib/tile-edges.glsl
+
 uniform highp sampler2DArray uReliefTileHeights;
 uniform float uReliefTileCells;
 
@@ -21,13 +23,20 @@ float geoTileReliefHeight(int slot, vec2 at) {
 }
 
 // The ground as the relief draws it at `uv` (0…1 east and south) across its tile `own`
-// (its slot in w; -1: none, `fallback`), blending from where that lies in the tile it
-// replaces (`from`: its corner and scale there, its slot in w) by `blend`, as the relief's
-// soft swaps do.
-float geoTileReliefGround(vec4 own, vec4 from, float blend, vec2 uv, float fallback) {
+// (its slot in w; -1: none, `fallback`): toward the edges a coarser tile touches, its
+// parent's surface (`edges`: its edge mask and its parent's slot, SceneryReliefDrawn.edges;
+// tile-edges.glsl); blending from where that lies in the tile it replaces (`from`: its
+// corner and scale there, its slot in w) by `blend`, as the relief's soft swaps do.
+float geoTileReliefGround(vec4 own, vec4 from, float blend, vec2 edges, vec2 uv, float fallback) {
   if(own.w < 0.0)
     return fallback;
-  float height = geoTileReliefHeight(int(own.w + 0.5), (own.xy + uv * own.z) * uReliefTileCells);
+  vec2 at = own.xy + uv * own.z;
+  float height = geoTileReliefHeight(int(own.w + 0.5), at * uReliefTileCells);
+  if(edges.y >= 0.0) {
+    float edge = tileEdgeWeight(edges.x, at, uReliefTileCells);
+    if(edge > 0.0)
+      height = mix(height, geoTileReliefHeight(int(edges.y + 0.5), tileEdgeParentAt(edges.x, at) * uReliefTileCells), edge);
+  }
   if(blend < 1.0 && from.w >= 0.0) {
     float source = geoTileReliefHeight(int(from.w + 0.5), (from.xy + uv * from.z) * uReliefTileCells);
     height = mix(source, height, blend);

@@ -84,7 +84,10 @@ function walkTo(miss: number, relief: SceneryReliefDrawn): Walked | null {
  * the tile where looking stopped, and looked for again a tile at a time.
  */
 export class GeoTubeReliefGroups {
-  /** two texels a group: its tile's slot, its blend (x, y); where it lies in the tile it blends from, that tile's slot */
+  /**
+   * two texels a group: its tile's slot, its blend, its edge mask and its parent's slot
+   * (`SceneryReliefDrawn.edges`); where it lies in the tile it blends from, that tile's slot
+   */
   readonly texture: DataTexture;
   private readonly data: Float32Array;
   private readonly max: number;
@@ -201,9 +204,19 @@ export class GeoTubeReliefGroups {
       const at = 8 * s;
       const slot = instance === undefined ? -1 : relief.tiles[4 * instance + 3];
       const blend = instance === undefined ? 1 : relief.blends[instance];
-      if (data[at] !== slot || data[at + 1] !== blend) {
+      const mask = instance === undefined ? 0 : relief.edges[2 * instance];
+      const parent =
+        instance === undefined ? -1 : relief.edges[2 * instance + 1];
+      if (
+        data[at] !== slot ||
+        data[at + 1] !== blend ||
+        data[at + 2] !== mask ||
+        data[at + 3] !== parent
+      ) {
         data[at] = slot;
         data[at + 1] = blend;
+        data[at + 2] = mask;
+        data[at + 3] = parent;
         changed = true;
       }
       for (let k = 0; k < 4; k++) {

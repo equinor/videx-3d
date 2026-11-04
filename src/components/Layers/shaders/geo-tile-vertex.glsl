@@ -34,10 +34,12 @@ attribute vec4 layerTileFrom;
 #ifdef GEO_TILE_DRAPE
 #include ./relief-tile-height.glsl
 // Where it lies in the relief's tile drawn under it, and that tile's slot (-1: flat); where
-// it lies in the tile that one blends from, and its slot; and that blend.
+// it lies in the tile that one blends from, and its slot; that blend; and that tile's edge
+// mask and its parent's slot (SceneryReliefDrawn.edges).
 attribute vec4 layerTileRelief;
 attribute vec4 layerTileReliefFrom;
 attribute float layerTileReliefBlend;
+attribute vec2 layerTileReliefEdges;
 #endif
 
 // Across its tile's data, and across the data of the tile it blends from.
@@ -63,7 +65,7 @@ void main() {
   vec2 t = position.xz / uGeoTileCells;
   float height = uGeoTileHeight;
   #ifdef GEO_TILE_DRAPE
-  height = geoTileReliefGround(layerTileRelief, layerTileReliefFrom, layerTileReliefBlend, t, height);
+  height = geoTileReliefGround(layerTileRelief, layerTileReliefFrom, layerTileReliefBlend, layerTileReliefEdges, t, height);
   #endif
   height = max(height, uGeoTileFloor);
   // Revealed as a map, on the sea where it lies under it.

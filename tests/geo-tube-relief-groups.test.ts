@@ -26,6 +26,9 @@ const relief = (keys: number[]): SceneryReliefDrawn => {
     tiles,
     froms,
     blends: new Float32Array(keys.length).fill(0.5),
+    edges: new Float32Array(keys.length * 2).map((_, k) =>
+      k % 2 === 0 ? 5 : 20 + k / 2 - 0.5,
+    ),
     lowest: 0,
     highest: 0,
     rangeAt: () => null,
@@ -63,8 +66,9 @@ describe('GeoTubeReliefGroups', () => {
     const array = nodes.relief.array as Float32Array;
     expect(array[0]).toBeCloseTo((inside[0] - west) / extent, 5);
     expect(array[1]).toBeCloseTo((north - inside[1]) / extent, 5);
-    // The group's tile as drawn: its slot and blend, the tile it blends from.
-    expect(texel(nodes, group)).toEqual([10, 0.5, 0, 0, 0.25, 0.5, 0.5, 3]);
+    // The group's tile as drawn: its slot and blend, its edge mask and its parent's slot,
+    // the tile it blends from.
+    expect(texel(nodes, group)).toEqual([10, 0.5, 5, 20, 0.25, 0.5, 0.5, 3]);
   });
 
   it('places them again once their tile splits, and finds the homeless once a tile is drawn over them', () => {

@@ -164,12 +164,14 @@ With `drape`, the layer lies on the relief the `World`'s `GeoRelief` draws — t
 the land — exactly as drawn, through its swaps between levels of detail too. The relief
 tells what it draws each time it chooses (`WorldReliefState.tiles`, also handed on as
 `SceneryOceanState.reliefTiles`, a `SceneryReliefHub`: the heights' texture array, and per
-tile drawn its slot, the tile it blends from and how far). The relief's tiles and the layer's share the geographic quadtree,
+tile drawn its slot, the tile it blends from and how far, and its edge mask and parent's slot,
+toward the edges a coarser tile touches). The relief's tiles and the layer's share the geographic quadtree,
 so each tile of the layer is drawn as one square per relief tile under it
 (`tilesUnder`): the tile itself where a relief tile holds all of it, or each finer relief
 tile drawn under it. Each square is a patch of 32 cells — the relief's own, so its nodes
 include the relief's — whose heights are read on the relief tile's triangles as the relief
-reads them, and mixed with the tile it blends from as the relief mixes them. The layer's
+reads them, eased toward its parent's at the edges a coarser tile touches and mixed with
+the tile it blends from as the relief does both (tiles.md, Seams between depths). The layer's
 data is read at the square's place in its own tile (`tileOffsetIn`), so no tile of the layer
 is loaded for the relief's sake. Where no relief tile is drawn, flat at `height`: the whole
 tile, or each part of it no relief tile is drawn under (`tilesUnder` with `fill`), so none
@@ -376,7 +378,8 @@ shared too), unlit so its colour reads the same from any side.
   the ground. The nodes are grouped by tile (`GeoTubeReliefGroups`): each holds where it lies
   across its tile and its group, written when it is laid and again only once its tile is no
   longer drawn (the hub's `keysVersion`); each frame only the groups' small texture is
-  rewritten (the tile's slot and blend, the tile it blends from), and uploaded only when it
+  rewritten (the tile's slot and blend, its edge mask and parent's slot, the tile it blends
+  from), and uploaded only when it
   changed. Nodes over no tile drawn are kept by the tile where looking stopped, and looked
   for again a tile at a time. Those lie on the ground of the relief's tiles in there instead
   (`groundGeoTubeNodes`, `SceneryReliefDrawn.heightAt`), the overview's past the far plane,

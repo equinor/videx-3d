@@ -11,6 +11,8 @@ import {
   GEO_TILE_ROOT_SPAN,
   geoTileRegion,
 } from '../../sdk/tiles/geo-tile-keys';
+import { blendTileEdgeHeights } from '../../sdk/tiles/tile-edges';
+import { tileParent } from '../../sdk/tiles/tile-keys';
 import { LabelLayer } from '../Labels/LabelLayer';
 import type { Label } from '../Labels/types';
 import { useSceneryOcean } from '../Scenery/scenery-context';
@@ -129,8 +131,19 @@ function contourLabel(
 // those of one class are whole within the same distance) and its rank.
 type Found = { group: number; reach: number; rank: number; label: Label };
 
-// A tile's labels found, to the rank it needed last.
-type TileFound = { tile: ReliefTile; rank: number; found: Found[] };
+// A tile's labels found, to the rank it needed last: on its heights as drawn (`ground`:
+// toward the edges a coarser tile touches, its parent's surface; SceneryReliefDrawn.edges),
+// for its edge mask and parent then.
+type TileFound = {
+  tile: ReliefTile;
+  edges: number;
+  parent: ReliefTile | null;
+  ground: ArrayLike<number>;
+  low: number;
+  high: number;
+  rank: number;
+  found: Found[];
+};
 
 // One `LabelLayer`: a style's group's labels of one reach class.
 type Handed = { key: string; group: number; reach: number; labels: Label[] };
@@ -226,10 +239,11 @@ export const GeoReliefContourLabels = ({
   // The camera's focal length, CSS pixels, and the relief tiles' cells: the classes' reach.
   const [view, setView] = useState({ focal: 0, cells: 0 });
 
-  // A tile's labels of ranks `from` to `to` (each look's no finer than its finest).
+  // A tile's labels of ranks `from` to `to` (each look's no finer than its finest), on its
+  // heights as drawn.
   const tileLabels = (
     key: number,
-    tile: ReliefTile,
+    { tile, ground, low, high }: Omit<TileFound, 'rank' | 'found'>,
     from: number,
     to: number,
   ): Found[] => {
@@ -254,11 +268,7 @@ export const GeoReliefContourLabels = ({
       if (from > ranks) continue;
       const dry = water || !look.seabed;
       const levels: number[] = [];
-      for (
-        let n = Math.ceil(tile.min / look.step);
-        n * look.step <= tile.max;
-        n++
-      ) {
+      for (let n = Math.ceil(low / look.step); n * look.step <= high; n++) {
         const level = n * look.step;
         // Not on the coastline, nor under the sea where it is not labelled.
         if (level === 0 || (level < 0 && dry)) continue;
@@ -271,7 +281,7 @@ export const GeoReliefContourLabels = ({
               layers[(1 + row) * nodes + 1 + column] === at
           : undefined;
       for (const point of reliefContourLabelPoints(
-        tile,
+        { cells, heights: ground },
         levels,
         groups.steps[group],
         { aspect, ranks, from, keep },
@@ -375,8 +385,21 @@ export const GeoReliefContourLabels = ({
           (tile.max - tile.min) / 2;
         const away = Math.max(here.distanceTo(camera.position) - half, 0);
         const rank = rankFor(rowM, away, focal);
+        // Its edges toward a coarser tile, blended toward its parent as the relief draws it.
+        const instance = drawn.index.get(key)!;
+        const parent =
+          drawn.edges[2 * instance + 1] >= 0
+            ? drawn.tileAt(tileParent(key))
+            : null;
+        const edges = parent ? drawn.edges[2 * instance] : 0;
         let found = cache.current.get(key);
-        if (found && found.tile !== tile) found = undefined;
+        if (
+          found &&
+          (found.tile !== tile ||
+            found.edges !== edges ||
+            found.parent !== parent)
+        )
+          found = undefined;
         if (found && found.rank >= rank) {
           // Ranks no longer near let go, a rank late.
           if (found.rank > rank + 1) {
@@ -390,12 +413,28 @@ export const GeoReliefContourLabels = ({
           pending = true;
           break;
         }
-        const from = found ? found.rank + 1 : 0;
-        const more = tileLabels(key, tile, from, rank);
-        if (found) {
-          found.found.push(...more);
-          found.rank = rank;
-        } else cache.current.set(key, { tile, rank, found: more });
+        if (!found) {
+          found = {
+            tile,
+            edges,
+            parent,
+            ground: parent
+              ? blendTileEdgeHeights(
+                  tile.heights,
+                  parent.heights,
+                  tile.cells,
+                  edges,
+                )
+              : tile.heights,
+            low: Math.min(tile.min, parent?.min ?? Infinity),
+            high: Math.max(tile.max, parent?.max ?? -Infinity),
+            rank: -1,
+            found: [],
+          };
+          cache.current.set(key, found);
+        }
+        found.found.push(...tileLabels(key, found, found.rank + 1, rank));
+        found.rank = rank;
         s.dirty = true;
       }
       if (drawn.keysVersion !== s.version) s.dirty = true;

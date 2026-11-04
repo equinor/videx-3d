@@ -100,6 +100,7 @@ export * from './tiles/geo-tile-globe';
 export * from './tiles/geo-tile-keys';
 export * from './tiles/geo-tile-select';
 export * from './tiles/tile-cover';
+export * from './tiles/tile-edges';
 export * from './tiles/tile-keys';
 export * from './tiles/tile-lod';
 export * from './tiles/tile-streamer';

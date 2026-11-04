@@ -23,6 +23,12 @@ export type SceneryReliefDrawn = {
   froms: Float32Array;
   /** per instance: from the look of the tile it replaces (0) to its own (1) */
   blends: Float32Array;
+  /**
+   * per instance, 2 floats: its edge mask (`tileCoarserEdges`) and its parent's slot, -1
+   * for none — toward the edges and corners a coarser tile touches, its surface is its
+   * parent's (`tileEdgeWeight`), which meets that tile
+   */
+  edges: Float32Array;
   /** the lowest and highest ground in so far, metres over the sea */
   lowest: number;
   highest: number;
@@ -105,6 +111,7 @@ export class SceneryReliefHub {
         tiles: drawn.tiles,
         froms: drawn.froms,
         blends: drawn.blends,
+        edges: drawn.edges,
         lowest: drawn.lowest,
         highest: drawn.highest,
         rangeAt: drawn.rangeAt,

@@ -219,6 +219,7 @@ export const GEO_TILE_ATTRIBUTES = [
   ['layerTileRelief', 4],
   ['layerTileReliefFrom', 4],
   ['layerTileReliefBlend', 1],
+  ['layerTileReliefEdges', 2],
 ] as const;
 
 /**
@@ -232,9 +233,10 @@ export const GEO_TILE_ATTRIBUTES = [
  * - `layerTileUv`: where it lies in its tile's data (`tileOffsetIn`: a square drawn is its
  *   tile, or part of it over a finer tile of the relief); `layerTileFrom`: where it lies in
  *   the tile it blends from, and that tile's slot, -1 for none (`TileTransitions`);
- * - `layerTileRelief`, `layerTileReliefFrom`, `layerTileReliefBlend`: draped, where it lies in
- *   the relief's tile drawn under it and its slot (-1: flat), and that tile's own blend
- *   from its source, as the relief draws it.
+ * - `layerTileRelief`, `layerTileReliefFrom`, `layerTileReliefBlend`, `layerTileReliefEdges`:
+ *   draped, where it lies in the relief's tile drawn under it and its slot (-1: flat), that
+ *   tile's own blend from its source, and its edge mask and parent's slot
+ *   (`SceneryReliefDrawn.edges`), as the relief draws it.
  *
  * No skirts: drawn see-through, two over each other would show.
  */

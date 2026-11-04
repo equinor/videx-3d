@@ -216,6 +216,7 @@ type Squares = {
   reliefs: Float32Array;
   reliefFroms: Float32Array;
   reliefBlends: Float32Array;
+  reliefEdges: Float32Array;
 };
 
 function squaresInto(geometry: InstancedBufferGeometry): Squares {
@@ -232,6 +233,7 @@ function squaresInto(geometry: InstancedBufferGeometry): Squares {
     reliefs: attribute('layerTileRelief'),
     reliefFroms: attribute('layerTileReliefFrom'),
     reliefBlends: attribute('layerTileReliefBlend'),
+    reliefEdges: attribute('layerTileReliefEdges'),
   };
 }
 
@@ -308,7 +310,9 @@ export const GeoTileLayer = ({
   const size = source?.size ?? 1;
   // Drawn from its shader alone: no texels, one placeholder slot for the sampler.
   const shaded = !!source && !source.load;
-  const formatKey = shaded ? '{"channels":1}' : JSON.stringify(source?.format ?? {});
+  const formatKey = shaded
+    ? '{"channels":1}'
+    : JSON.stringify(source?.format ?? {});
 
   const slots = useMemo(() => {
     const context = gl.getContext() as WebGL2RenderingContext;
@@ -550,8 +554,16 @@ export const GeoTileLayer = ({
         const into = under >= 0 && relief ? draped : flat;
         if (into.count >= GEO_TILE_MAX_INSTANCES) continue;
         const i = into.count++;
-        const { tiles, chis, uvs, froms, reliefs, reliefFroms, reliefBlends } =
-          into;
+        const {
+          tiles,
+          chis,
+          uvs,
+          froms,
+          reliefs,
+          reliefFroms,
+          reliefBlends,
+          reliefEdges,
+        } = into;
         const own =
           square === key ? GEO_TILE_IDENTITY : tileOffsetIn(square, key);
         geoTileOffsets(globe, square, tiles, 4 * i, chis, 3 * i);
@@ -585,10 +597,14 @@ export const GeoTileLayer = ({
             reliefFroms.set(NO_SOURCE, 4 * i);
           }
           reliefBlends[i] = relief.blends[at];
+          reliefEdges[2 * i] = relief.edges[2 * at];
+          reliefEdges[2 * i + 1] = relief.edges[2 * at + 1];
         } else {
           reliefs.set(NO_SOURCE, 4 * i);
           reliefFroms.set(NO_SOURCE, 4 * i);
           reliefBlends[i] = 1;
+          reliefEdges[2 * i] = 0;
+          reliefEdges[2 * i + 1] = -1;
         }
       }
     }
