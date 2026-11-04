@@ -7,7 +7,12 @@ import {
   Vec2,
   WellboreFence,
 } from '../src/sdk';
-import { fenceFor, wellboreIds, wellboreName } from './fence-fixtures';
+import {
+  fenceFor,
+  SWEEP_ALL,
+  sweepWellboreIds,
+  wellboreName,
+} from './fence-fixtures';
 
 /**
  * Framing a fence, and choosing the half to remove from where the camera is.
@@ -21,12 +26,11 @@ import { fenceFor, wellboreIds, wellboreName } from './fence-fixtures';
 /**
  * A handful of real wells, at the margin the rest of the suite already builds.
  *
- * ⭐ `FENCE_VIEW=all` sweeps every well instead. Env-guarded because a build is
- * ~250 ms and the invariant is not per-well — the sweep is for when the RULE
- * changes, not for every run.
+ * ⭐ `FENCE_SWEEP=all` sweeps every well instead (see `sweepWellboreIds`). Env-guarded
+ * because a build is ~250 ms and the invariant is not per-well — the sweep is for when the
+ * RULE changes, not for every run.
  */
-const wells =
-  process.env.FENCE_VIEW === 'all' ? wellboreIds : wellboreIds.slice(0, 3);
+const wells = SWEEP_ALL ? sweepWellboreIds : sweepWellboreIds.slice(0, 3);
 
 /**
  * The first test pays for every fence it touches; the rest read the cache.

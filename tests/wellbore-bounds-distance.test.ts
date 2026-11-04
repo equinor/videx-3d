@@ -99,10 +99,11 @@ describe('wellboreBoundsDistance', () => {
         let last = NaN;
         let worst = 0;
         for (let s = -20000; s <= 20000; s += step) {
-          const p = [0, 1, 2].map(k => target[k] + (dir[k] / len) * s) as Vec3;
           const value = wellboreBoundsDistance(
             bounds,
-            ...p,
+            target[0] + (dir[0] / len) * s,
+            target[1] + (dir[1] / len) * s,
+            target[2] + (dir[2] / len) * s,
             zoom,
             3000,
             padding,

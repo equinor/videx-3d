@@ -53,6 +53,8 @@ import {
   bounds,
   fenceFor,
   ringsFor,
+  SWEEP_ALL,
+  sweepWellboreIds,
   trajectoryCurve,
   wellboreIds,
   wellboreName,
@@ -63,6 +65,9 @@ import {
 // ⚠️ Margin must be > 0 (the cut is an offset of the trace). 0.5 and 5 are the two the
 // whole field builds cleanly at; 0.1 and 20 each have one known, accepted failure.
 const MARGINS = [0.5, 5];
+
+/** The sweep builds every fence the file reads, so it alone needs the room. */
+const SWEEP_TIMEOUT = SWEEP_ALL ? 60_000 : 30_000;
 
 /** A well that drops vertically with survey scatter, then kicks off and deviates. */
 function syntheticWell(scatter: number): Vec3[] {
@@ -259,8 +264,9 @@ describe('buildWellboreFence on real wellbores', () => {
   it('builds a sound fence for every wellbore at every margin', () => {
     // ⚠️ A SWEEP, not a spot check. The previous implementation was verified at
     // one setting per well and hid failures that only appeared at others.
+    // ⭐ Every MARGIN for the wells of `sweepWellboreIds`; `FENCE_SWEEP=all` for every well.
     const failures: string[] = [];
-    for (const id of wellboreIds) {
+    for (const id of sweepWellboreIds) {
       const curve = trajectoryCurve(id);
       if (!curve) continue;
       for (const margin of MARGINS) {
@@ -277,10 +283,10 @@ describe('buildWellboreFence on real wellbores', () => {
     expect(failures).toEqual([]);
     // Builds every fence the rest of the file then reads from cache, so it wears
     // the whole suite's cost and needs more than the 5s default.
-  }, 60_000);
+  }, SWEEP_TIMEOUT);
 
   it('leaves both halves usable once a clearance is baked in', () => {
-    for (const id of wellboreIds) {
+    for (const id of sweepWellboreIds) {
       const curve = trajectoryCurve(id);
       if (!curve) continue;
       const fence = fenceFor(id, 5)!;
@@ -299,7 +305,7 @@ describe('buildWellboreFence on real wellbores', () => {
 
   it('puts the cut face exactly on the cut', () => {
     // ⭐ The invariant that replaces every CPU/GPU parity contract.
-    for (const id of wellboreIds) {
+    for (const id of sweepWellboreIds) {
       const curve = trajectoryCurve(id);
       if (!curve) continue;
       const fence = fenceFor(id, 5)!;
@@ -340,7 +346,7 @@ describe('buildWellboreFence on real wellbores', () => {
     const buried: string[] = [];
     const shortfalls: string[] = [];
     let worstShortfall = 0;
-    for (const id of wellboreIds) {
+    for (const id of sweepWellboreIds) {
       if (!trajectoryCurve(id)) continue;
       for (const margin of MARGINS) {
         const fence = fenceFor(id, margin);
@@ -379,7 +385,7 @@ describe('buildWellboreFence on real wellbores', () => {
   });
 
   it('covers the whole footprint with the field', () => {
-    const fence = fenceFor(wellboreIds[0], 0.5)!;
+    const fence = fenceFor(sweepWellboreIds[0], 0.5)!;
     const { field } = fence.left;
     expect(field.origin[0]).toBeLessThanOrEqual(bounds[0]);
     expect(field.origin[1]).toBeLessThanOrEqual(bounds[1]);

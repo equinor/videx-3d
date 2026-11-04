@@ -51,6 +51,32 @@ export function wellboreName(id: string): string {
   return headers[id]?.name ?? id;
 }
 
+/**
+ * The wells a fence test sweeps: by default the five the fence code's comments name most
+ * as having broken, every well with `FENCE_SWEEP=all`.
+ *
+ * ⭐ A build is ~200 ms, so the full sweep (every well at every margin a test asks for) was
+ * most of the suite's wall clock. The rules are not per-well — run the full sweep when the
+ * construction changes:
+ *
+ *   FENCE_SWEEP=all npx vitest run tests/wellbore-fence.test.ts tests/fence-view.test.ts
+ *
+ * (PowerShell: `$env:FENCE_SWEEP='all'; npx vitest run ...`)
+ */
+export const SWEEP_ALL = process.env.FENCE_SWEEP === 'all';
+
+const SWEEP_DEFAULT = [
+  'NO 15/9-F-15 D',
+  'NO 15/9-F-12',
+  'NO 15/9-F-11 A',
+  'NO 15/9-F-1 B',
+  'NO 15/9-19 A',
+];
+
+export const sweepWellboreIds = SWEEP_ALL
+  ? wellboreIds
+  : wellboreIds.filter(id => SWEEP_DEFAULT.includes(wellboreName(id)));
+
 /** The field's records with the extra wellbores appended — see `withExtraWellbores`. */
 const withExtras = withExtraWellbores(headers, logs);
 

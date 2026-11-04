@@ -55,6 +55,10 @@ describe('skyStarCatalogue', () => {
     let seed = 1;
     const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     const near = Math.cos(SKY_STAR_MARGIN * 0.95);
+    // Every star's direction, once: the trials only ever read them.
+    const all = new Float64Array(stars.count * 3);
+    for (let j = 0; j < stars.count; j++)
+      all.set(direction(stars.rightAscension[j], stars.declination[j]), j * 3);
     for (let trial = 0; trial < 2000; trial++) {
       // About a random star, up to just inside its margin.
       const i = Math.floor(random() * stars.count);
@@ -69,10 +73,12 @@ describe('skyStarCatalogue', () => {
       );
       const entries = listed(d[0], d[1], d[2]);
       for (let j = 0; j < stars.count; j++) {
-        const s = direction(stars.rightAscension[j], stars.declination[j]);
-        if (s[0] * d[0] + s[1] * d[1] + s[2] * d[2] < near) continue;
+        const sx = all[j * 3];
+        const sy = all[j * 3 + 1];
+        const sz = all[j * 3 + 2];
+        if (sx * d[0] + sy * d[1] + sz * d[2] < near) continue;
         const found = entries.some(
-          e => e[0] * s[0] + e[1] * s[1] + e[2] * s[2] > 1 - 1e-9,
+          e => e[0] * sx + e[1] * sy + e[2] * sz > 1 - 1e-9,
         );
         expect(found).toBe(true);
       }

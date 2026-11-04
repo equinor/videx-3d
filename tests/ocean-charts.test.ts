@@ -155,16 +155,25 @@ describe('OceanCharts', () => {
     let crossings = 0;
     // The most of the waves kept where the chart changes.
     let keptAtSwitch = 0;
+    // The steepest step of the fade, and where: asserted once, as 70,000 expect() calls
+    // were two thirds of this test's time.
+    let steepest = 0;
+    let steepestAt = 0;
     for (let i = 1; i <= 70000; i++) {
       const now = charts.chartAt(sea(globe, 58.44, 1.88 + i * step));
-      // The strip's fade is 4 km a side: no more than a few percent a step.
-      expect(Math.abs(now.keep - last.keep)).toBeLessThan(0.05);
+      const change = Math.abs(now.keep - last.keep);
+      if (change > steepest) {
+        steepest = change;
+        steepestAt = i;
+      }
       if (now.chart !== last.chart) {
         crossings++;
         keptAtSwitch = Math.max(keptAtSwitch, now.keep, last.keep);
       }
       last = now;
     }
+    // The strip's fade is 4 km a side: no more than a few percent a step.
+    expect(steepest, `at step ${steepestAt}`).toBeLessThan(0.05);
     expect(crossings).toBeGreaterThan(3);
     expect(keptAtSwitch).toBeLessThan(0.01);
     expect(OCEAN_FIELD_CHART_REACH).toBeGreaterThan(OCEAN_CHART_CALM);
