@@ -4,7 +4,7 @@ import type { Vec2, Vec3 } from '../types/common';
 // ⚠️ Free of three.js, like the frames: this is plain 2D math.
 
 /**
- * A top-down view of a flat scene on a rectangle of pixels, as a minimap draws it: the
+ * A top-down view of a flat scene on a rectangle of pixels, as a map (`GeoMap`) draws it: the
  * scene X/Z under its middle, which way on the ground is up the screen, and its scale.
  * Drawn in the scene's own map (its X/Z), or, with `projected`, in a projection's plane:
  * its points are still given and taken as scene X/Z ({@link mapViewToPixel}).
@@ -20,6 +20,12 @@ export type MapView = {
   metresPerPixel: number;
   /** the view's width and height in pixels */
   size: Vec2;
+  /**
+   * the longitude and latitude at the middle, degrees, when known: what the map is drawn
+   * about. Exact anywhere on the Earth, where `center` (scene X/Z) holds only as far as the
+   * scene's map does
+   */
+  lonLat?: Vec2;
   /** drawn in a projection's plane, not the scene's map (see {@link projectMapView}) */
   projected?: MapViewProjection;
 };
@@ -139,6 +145,85 @@ export function mapViewToPixel(view: MapView, x: number, z: number): Vec2 {
   const right = -dx * view.up[1] + dz * view.up[0];
   const ahead = dx * view.up[0] + dz * view.up[1];
   return [view.size[0] / 2 + right / step, view.size[1] / 2 - ahead / step];
+}
+
+/**
+ * Where longitude and latitude (degrees) land in pixels in `view`, `[column, row]` from its
+ * top left: through the projection's plane directly in a projected view, so a point anywhere
+ * on the Earth lands right; through the scene's map (`toXZ`, `geoFrameXZ`) in the scene's.
+ *
+ * @group Utils
+ */
+export function mapViewLonLatToPixel(
+  view: MapView,
+  longitude: number,
+  latitude: number,
+  toXZ: (longitude: number, latitude: number) => Vec2,
+): Vec2 {
+  const projected = view.projected;
+  if (!projected) {
+    const [x, z] = toXZ(longitude, latitude);
+    return mapViewToPixel(view, x, z);
+  }
+  const [u, v] = projected.plane.fromLonLat(longitude, latitude);
+  return mapViewPlaneToPixel(view, u, v);
+}
+
+/**
+ * Where a point of the plane a `view` is drawn in lands in pixels: the projection's plane's
+ * east and south in a projected view, scene X/Z in the scene's map.
+ *
+ * @group Utils
+ */
+export function mapViewPlaneToPixel(view: MapView, u: number, v: number): Vec2 {
+  const projected = view.projected;
+  const [cx, cz] = projected?.center ?? view.center;
+  const step = view.metresPerPixel * (projected?.scale ?? 1);
+  const dx = u - cx;
+  const dz = v - cz;
+  const right = -dx * view.up[1] + dz * view.up[0];
+  const ahead = dx * view.up[0] + dz * view.up[1];
+  return [view.size[0] / 2 + right / step, view.size[1] / 2 - ahead / step];
+}
+
+/**
+ * The longitude and latitude at pixel `[column, row]` of `view`: from the projection's plane
+ * in a projected view, so anywhere on the Earth; through the scene's map (`toLonLat`,
+ * `geoFrameLonLat`) in the scene's.
+ *
+ * @group Utils
+ */
+export function mapViewLonLatAt(
+  view: MapView,
+  column: number,
+  row: number,
+  toLonLat: (x: number, z: number) => Vec2,
+): Vec2 {
+  const [u, v] = mapViewPlaneAt(view, column, row);
+  const projected = view.projected;
+  if (!projected) return toLonLat(u, v);
+  const [dLon, latitude] = projected.plane.lonLatAt(u, v);
+  let longitude = dLon + projected.plane.meridian;
+  longitude -= 360 * Math.floor((longitude + 180) / 360);
+  return [longitude, latitude];
+}
+
+/**
+ * The middle of `view` zoomed by `factor` (its metres a pixel times it) about pixel
+ * `[column, row]`, so the ground under it stays under it: as a point of the plane it is drawn
+ * in (scene X/Z, or the projection's plane's east and south).
+ *
+ * @group Utils
+ */
+export function mapViewZoomAt(
+  view: MapView,
+  column: number,
+  row: number,
+  factor: number,
+): Vec2 {
+  const [px, pz] = mapViewPlaneAt(view, column, row);
+  const [cx, cz] = view.projected?.center ?? view.center;
+  return [px + (cx - px) * factor, pz + (cz - pz) * factor];
 }
 
 /**
@@ -359,6 +444,23 @@ export function niceScaleLength(
   const lead = raw / power;
   const metres = (lead >= 5 ? 5 : lead >= 2 ? 2 : 1) * power;
   return { metres, pixels: metres / metresPerPixel };
+}
+
+/** The share of a map's width its scale bar aims for, and the fewest pixels it takes. */
+export const MAP_SCALE_BAR = { share: 0.25, minPixels: 72 };
+
+/**
+ * The scale bar of `view`: a round length ({@link niceScaleLength}) about a quarter of its
+ * width and at least 72 pixels — what a map's distance bar shows, and how far a camera
+ * marker's cone reaches, so the two always read alike.
+ *
+ * @group Utils
+ */
+export function mapScaleBar(view: MapView): { metres: number; pixels: number } {
+  return niceScaleLength(
+    view.metresPerPixel,
+    Math.max(view.size[0] * MAP_SCALE_BAR.share, MAP_SCALE_BAR.minPixels),
+  );
 }
 
 /**

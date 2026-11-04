@@ -14,6 +14,7 @@ export type {
   ReliefColorRamp,
   ReliefContours,
   ReliefLook,
+  ReliefLookProps,
   ReliefSeabedRamp,
 } from './scenery-relief-look';
 export type { SceneryReliefTileDebug } from './scenery-relief-tiles';

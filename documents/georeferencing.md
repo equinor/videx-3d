@@ -111,9 +111,12 @@ The globe is the `Scenery`'s; read it with `useWorld().globe` (or `useScenery`).
 |--|--|
 | `GeoPolygons`, `GeoLabels` | GeoJSON polygons and their names, by longitude and latitude, on the globe (or flat without one) |
 | `TrackLayer` | moving things from a tracking feed |
-| `Minimap` | a 2D map of the same relief, following the camera. Draws in the scene's map, or in Web Mercator, Equal Earth or Lambert conformal conic (`projection`), switching for wide views with `'auto'` |
-| `MinimapCameraMarker`, `MinimapTargetMarker`, `MinimapPoints`, `MinimapPolyline` | overlays at scene X/Z |
-| `MinimapGeoLayer` | GeoJSON on the minimap |
+| `Minimap` | a 2D map of the same relief, following the camera, in a resizable, closable panel. Draws in the scene's map, or in Web Mercator, Equal Earth or Lambert conformal conic (`projection`), switching for wide views with `'auto'` |
+| `GeoMap` | the map on its own: a full view over the 3D one, or a page of its own with no 3D view; panned and zoomed by the user |
+| `GeoMapCamera`, `GeoMapCameraMarker`, `GeoMapTargetMarker` | the camera on a map, following it, moved by dropping its markers |
+| `GeoMapPoints`, `GeoMapPolyline` | overlays at scene X/Z |
+| `GeoMapPolygons`, `GeoMapLines`, `GeoMapSymbols`, `GeoMapLabels`, `GeoMapGraticule`, `GeoMapTracks`, `GeoMapFields` | the scene's GIS layers on a map, from the same props |
+| `Overlay`, `OverlayItem`, `AltitudeControl` | where the maps and gadgets sit over the 3D view |
 
 ### Elevation data (the store)
 
@@ -147,9 +150,11 @@ blocks (`reliefWindow`). See [relief.md](./relief.md#data).
           <MyBuoy />
         </UtmPosition>
         <GeoPolygons data />             ← GIS, by longitude/latitude, on the globe
-        <Minimap layers>                 ← the same relief, in 2D, in the World's frame
-          <MinimapCameraMarker />
-        </Minimap>
+        <Overlay>                        ← HTML over the view, seeing the World
+          <Minimap layers>               ← the same relief, in 2D, in the World's frame
+            <GeoMapCameraMarker />
+          </Minimap>
+        </Overlay>
       </World>
 ```
 
@@ -362,23 +367,34 @@ data changes.
 
 ### 7. A minimap
 
-The minimap draws the same relief from above, follows the camera and carries overlays at scene
-X/Z. By default (`projection="auto"`) it draws in the scene's map close in and switches to Web
-Mercator for wide views; give `zooms` reaching past 2000 km for it to switch. In the scene's map
-a dashed outline marks the frame's UTM zone (`zoneBounds` to give another, `false` for none).
+The minimap draws the same relief from above, follows the camera and carries layers of its own:
+the scene's GIS layers' twins from the same props, points and lines at scene X/Z. By default
+(`projection="auto"`) it draws in the scene's map close in and switches to Web Mercator for wide
+views; give `zooms` reaching past 2000 km for it to switch. In the scene's map a dashed outline
+marks the frame's UTM zone (`zoneBounds` to give another, `false` for none). It sits in an
+`Overlay` over the view (or in a layout of your own in a `CanvasHtml`), resized by its edges
+and closed into a button; a `GeoMap` in the overlay can fill the view instead.
 
 ```tsx
-<Minimap
-  layers={[{ id: 'etopo' }, { id: 'my-survey', feather: 500 }]}
-  zooms={[1000, 5000, 25000, 100000, 1000000, 5000000]}
->
-  <MinimapCameraMarker />
-  <MinimapPoints points={[{ at: [0, 0], label: 'Field' }]} />
-  <MinimapGeoLayer data={licences} frame={frame} />
-</Minimap>
+const licenceLayer = { data: licences, maxHeight: 1500000 };
+
+<GeoPolygons {...licenceLayer} />
+<Overlay>
+  <Minimap
+    anchor="bottom-right"
+    layers={[{ id: 'etopo' }, { id: 'my-survey', feather: 500 }]}
+    zooms={[1000, 5000, 25000, 100000, 1000000, 5000000]}
+  >
+    <GeoMapPolygons {...licenceLayer} />
+    <GeoMapPoints points={[{ at: [0, 0], label: 'Field' }]} />
+    <GeoMapCameraMarker />
+  </Minimap>
+  <AltitudeControl anchor="left-center" />
+</Overlay>
 ```
 
-It needs the same generator as the relief, and sits inside the `Canvas` (it follows the camera).
+It needs the same generator as the relief, and sits inside the `Canvas` and the `World` (it
+follows the camera).
 
 ### 8. Going far: camera, horizon and depth
 
@@ -420,9 +436,9 @@ It needs the same generator as the relief, and sits inside the `Canvas` (it foll
 import { Canvas } from '@react-three/fiber'
 import { CameraControls } from '@react-three/drei'
 import {
-  DataProvider, GeneratorsProvider, GeoLabels, GeoPolygons, GeoRelief, Minimap,
-  MinimapCameraMarker, MinimapGeoLayer, Scenery, SceneryOcean, SceneryStage, UtmArea,
-  Wgs84Position, World,
+  AltitudeControl, DataProvider, GeneratorsProvider, GeoLabels, GeoMapCameraMarker,
+  GeoMapPolygons, GeoPolygons, GeoRelief, Minimap, Overlay, Scenery, SceneryOcean,
+  SceneryStage, UtmArea, Wgs84Position, World,
 } from '@equinor/videx-3d'
 import { CRS, geoFrameFromCrs, getProjectionDefFromUtmZone } from '@equinor/videx-3d/sdk'
 
@@ -457,10 +473,17 @@ export const FieldView = ({ store, registry, licences }) => (
           <GeoPolygons data={licences} maxHeight={1500000} />
           <GeoLabels data={licences} text={f => f.properties.name} maxHeight={250000} />
 
-          <Minimap layers={relief} zooms={[1000, 5000, 25000, 100000, 1000000, 5000000]}>
-            <MinimapCameraMarker />
-            <MinimapGeoLayer data={licences} frame={frame} />
-          </Minimap>
+          <Overlay>
+            <Minimap
+              anchor="bottom-right"
+              layers={relief}
+              zooms={[1000, 5000, 25000, 100000, 1000000, 5000000]}
+            >
+              <GeoMapPolygons data={licences} maxHeight={1500000} />
+              <GeoMapCameraMarker />
+            </Minimap>
+            <AltitudeControl anchor="left-center" />
+          </Overlay>
         </World>
       </GeneratorsProvider>
     </DataProvider>
@@ -512,5 +535,7 @@ The Storybook stories `Components/Misc/Scenery`, `Components/Html/Minimap` and
   streams.
 - [scenery.md](./scenery.md): the sky, the sea, the stage and the globe in detail.
 - [layers.md](./layers.md): GIS polygons, labels and tracks.
-- [minimap.md](./minimap.md): the minimap, its projections and overlays.
+- [minimap.md](./minimap.md): the minimap, following the camera.
+- [geo-map.md](./geo-map.md): the map itself, its projections and layers, the scene's layers on it.
+- [overlay.md](./overlay.md): the overlay over the 3D view, panels, the altitude control.
 - [data.md](./data.md) and [generators.md](./generators.md): the store and the generators.

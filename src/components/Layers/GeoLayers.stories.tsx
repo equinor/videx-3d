@@ -14,8 +14,13 @@ import { DataProviderDecorator } from '../../storybook/decorators/data-provider-
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { SceneryGenerators } from '../../storybook/decorators/scenery-generators';
 import { get } from '../../storybook/dependencies/api';
+import { GeoMapCameraMarker } from '../Html/GeoMap/GeoMapMarkers';
+import {
+  GeoMapLabels,
+  GeoMapPolygons,
+} from '../Html/GeoMap/layers/GeoMapFeatureLayers';
 import { Minimap } from '../Html/Minimap/Minimap';
-import { MinimapCameraMarker } from '../Html/Minimap/MinimapLayers';
+import { Overlay } from '../Html/Overlay/Overlay';
 import type { LabelSizePreset, LabelSizing } from '../Labels/types';
 import { Scenery } from '../Scenery/Scenery';
 import { SceneryOcean } from '../Scenery/SceneryOcean';
@@ -24,7 +29,6 @@ import { World } from '../World/World';
 import { GeoLabels } from './GeoLabels';
 import { GeoPolygons, type GeoPolygonStyle } from './GeoPolygons';
 import { GeoRelief } from './GeoRelief';
-import { MinimapGeoLayer } from './MinimapGeoLayer';
 
 // Discoveries on the Norwegian continental shelf (npm run generate-overlays; Sodir, NLOD
 // 2.0), about the demo field at Volve.
@@ -93,9 +97,6 @@ type DiscoveriesArgs = {
 };
 
 const name = (feature: GeoFeature<Discovery>) => feature.properties.name;
-const minimapStyle = (feature: GeoFeature<Discovery>) => ({
-  fill: HC_COLORS[feature.properties.hcType] ?? '#999999',
-});
 
 const DiscoveriesStory = ({
   scenery,
@@ -142,6 +143,20 @@ const DiscoveriesStory = ({
     [fillOpacity],
   );
   const layers = relief ? SCENERY_DEMO_RELIEF_LAYERS : [];
+  // One object of props for the scene's layer and the map's: the same data, style and band.
+  const polygons = {
+    data,
+    style,
+    strokeWidth,
+    opacity,
+    minHeight: minHeight > 0 ? minHeight : undefined,
+    maxHeight: maxHeight > 0 ? maxHeight : undefined,
+  };
+  const labelled = {
+    data,
+    text: name,
+    maxHeight: labelsMaxHeight > 0 ? labelsMaxHeight : undefined,
+  };
   return (
     <World frame={demoFrame}>
       <SceneryGenerators>
@@ -158,40 +173,37 @@ const DiscoveriesStory = ({
           onProgress={reportReliefProgress}
         />
         <GeoPolygons
-          data={data}
-          style={style}
+          {...polygons}
           height={height}
-          strokeWidth={strokeWidth}
-          opacity={opacity}
           texelPixels={texelPixels}
           transition={transition}
           fallbackPixels={fallbackPixels > 0 ? fallbackPixels : undefined}
           minDepth={minDepth}
-          minHeight={minHeight > 0 ? minHeight : undefined}
-          maxHeight={maxHeight > 0 ? maxHeight : undefined}
         />
         {labels && (
           <GeoLabels
-            data={data}
-            text={name}
+            {...labelled}
             height={height}
             size={labelSize}
             sizing={labelSizing}
             maxLines={labelMaxLines}
             turn={labelTurn}
             maxPixels={labelMaxPixels > 0 ? labelMaxPixels : undefined}
-            maxHeight={labelsMaxHeight > 0 ? labelsMaxHeight : undefined}
           />
         )}
         {minimap && scenery && (
-          <Minimap layers={layers} origin="bottom-right" level={LEVEL}>
-            <MinimapGeoLayer
-              data={data}
-              frame={demoFrame}
-              style={minimapStyle}
-            />
-            <MinimapCameraMarker />
-          </Minimap>
+          <Overlay>
+            <Minimap
+              layers={layers}
+              depth={DEPTH}
+              anchor="bottom-right"
+              level={LEVEL}
+            >
+              <GeoMapPolygons {...polygons} />
+              {labels && <GeoMapLabels {...labelled} />}
+              <GeoMapCameraMarker />
+            </Minimap>
+          </Overlay>
         )}
       </SceneryGenerators>
     </World>
@@ -358,7 +370,7 @@ const meta = {
     },
     minimap: {
       description:
-        'The same data on a `Minimap` (`MinimapGeoLayer`), with the `Scenery`.',
+        'The same data on a `Minimap`, from the same props as the scene’s layers (`GeoMapPolygons`, `GeoMapLabels`), with the `Scenery`.',
       table: { category: 'Minimap' },
     },
   },

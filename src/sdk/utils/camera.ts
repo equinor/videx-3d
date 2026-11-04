@@ -176,6 +176,49 @@ export function carryCamera(
 }
 
 /**
+ * Put the camera at `pose.camera` looking at `pose.target` through the installed controls:
+ * camera-controls (drei's `CameraControls`) fly there with their transition unless `smooth` is
+ * off; controls holding their `target` (three's `OrbitControls`) are set at once. Points in the
+ * scene. A camera with neither is left alone: nothing would keep the new pose.
+ *
+ * @returns whether the controls took the pose
+ *
+ * @group Utils
+ */
+export function setCameraPose(
+  controls: unknown,
+  camera: Camera,
+  pose: {
+    camera: readonly [number, number, number];
+    target: readonly [number, number, number];
+  },
+  smooth = true,
+): boolean {
+  const c = controls as {
+    setLookAt?: (
+      positionX: number,
+      positionY: number,
+      positionZ: number,
+      targetX: number,
+      targetY: number,
+      targetZ: number,
+      enableTransition?: boolean,
+    ) => unknown;
+  } | null;
+  if (typeof c?.setLookAt === 'function') {
+    void c.setLookAt(...pose.camera, ...pose.target, smooth);
+    return true;
+  }
+  const held = targetHolding(controls);
+  if (!held) return false;
+  camera.position.set(...pose.camera);
+  held.target.set(...pose.target);
+  camera.lookAt(held.target);
+  held.update?.();
+  return true;
+}
+
+/**
  * The size of a screen pixel, in scene units, `distance` from a camera whose view is `height`
  * pixels high: for a perspective camera it grows with the distance; for an orthographic one
  * it is the same everywhere.

@@ -1,5 +1,7 @@
+import type { ReactNode } from 'react';
+import { GeoMapCameraMarker } from '../../components/Html/GeoMap/GeoMapMarkers';
 import { Minimap } from '../../components/Html/Minimap/Minimap';
-import { MinimapCameraMarker } from '../../components/Html/Minimap/MinimapLayers';
+import { Overlay } from '../../components/Html/Overlay/Overlay';
 import { SceneryAbyss } from '../../components/Scenery/SceneryAbyss';
 import { SceneryClouds } from '../../components/Scenery/SceneryClouds';
 import { SceneryCutaway } from '../../components/Scenery/SceneryCutaway';
@@ -52,23 +54,31 @@ export const SceneryArgsFeatures = ({
 /**
  * A story's minimap (see `sceneryMinimapArgs`): the `Minimap`'s defaults and a camera marker,
  * over the demo reliefs ticked in `reliefLayers` (all by default), in the story's `frame`,
- * its heights over the sea at `level` (the sea's Y; default 0).
- * Inside the `Canvas` and a `GeneratorsProvider` with the `sceneryReliefTile` generator.
+ * its heights over the sea at `level` (the sea's Y; default 0). Directly in the `Canvas`, in
+ * an `Overlay` of its own, bottom right; inside a `GeneratorsProvider` with the
+ * `sceneryReliefTile` generator.
  */
 export const SceneryArgsMinimap = ({
   frame,
   reliefLayers,
   level,
+  children,
 }: {
   frame: GeoFrame;
   reliefLayers?: string[];
   level?: number;
+  /** layers of the story's own, under the camera marker */
+  children?: ReactNode;
 }) => (
-  <Minimap
-    layers={sceneryMinimapLayers(reliefLayers)}
-    frame={frame}
-    level={level}
-  >
-    <MinimapCameraMarker />
-  </Minimap>
+  <Overlay>
+    <Minimap
+      anchor="bottom-right"
+      layers={sceneryMinimapLayers(reliefLayers)}
+      frame={frame}
+      level={level}
+    >
+      {children}
+      <GeoMapCameraMarker />
+    </Minimap>
+  </Overlay>
 );

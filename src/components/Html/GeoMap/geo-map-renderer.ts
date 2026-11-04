@@ -39,11 +39,11 @@ import { TileStreamer } from '../../../sdk/tiles/tile-streamer';
 import type { Vec2 } from '../../../sdk/types/common';
 import { SceneryReliefAtlas } from '../../Scenery/scenery-relief-atlas';
 import { SceneryReliefTileTextures } from '../../Scenery/scenery-relief-tiles';
-import fragmentShader from './shaders/minimap-fragment.glsl';
-import vertexShader from './shaders/minimap-vertex.glsl';
+import fragmentShader from './shaders/geo-map-fragment.glsl';
+import vertexShader from './shaders/geo-map-vertex.glsl';
 
-/** Cells along each side of the minimap's grid in the scene's map: the longitude and latitude are exact at its corners and interpolated between. */
-export const MINIMAP_GRID = 8;
+/** Cells along each side of a map's grid in the scene's map: the longitude and latitude are exact at its corners and interpolated between. */
+export const GEO_MAP_GRID = 8;
 // The same in a projection, whose longitudes and latitudes bend across a whole hemisphere,
 // and in the scene's map past SCENE_WIDE_FROM, where it bends too and may stop holding.
 const PROJECTED_GRID = 32;
@@ -56,10 +56,13 @@ const ROUND_TRIP = 0.05;
 // map tears there, and the cell is left out. Across a pole or the antimeridian it does not:
 // the wide grid carries directions, not longitudes and latitudes.
 const TEAR = 60;
+const TEAR_DOT = Math.cos((TEAR * Math.PI) / 180);
 
-// The most tiles a minimap holds: a full view at the default detail draws about a hundred,
-// with the ancestors that stand in while they load.
-const MAX_SLOTS = 512;
+// The fewest tiles a map holds: a small map's full view at the default detail draws about a
+// hundred, with the ancestors that stand in while they load.
+const MIN_SLOTS = 512;
+// The most, whatever the GPU allows: about 22 MB of tiles.
+const MAX_SLOTS = 2048;
 // What a tile holds on the GPU, in bytes: heights, normals and layers per node.
 const TILE_BYTES = (RELIEF_TILE_CELLS + 3) ** 2 * (4 + 4 + 1);
 // The deepest tile, as the stage's.
@@ -67,9 +70,9 @@ const MAX_DEPTH = 19;
 // Loads at a time: the stage's tiles come from the same generators, and come first.
 const CONCURRENCY = 2;
 // Device-pixel metres past which a projected view works out each pixel's longitude and
-// latitude from the plane (see minimap-fragment.glsl `uMinimapExact`).
+// latitude from the plane (see geo-map-fragment.glsl `uGeoMapExact`).
 const EXACT_FROM = 100;
-// What minimap-fragment.glsl's uMinimapProjection numbers each projection.
+// What geo-map-fragment.glsl's uGeoMapProjection numbers each projection.
 const PROJECTION_CODE = {
   scene: 0,
   'web-mercator': 1,
@@ -77,12 +80,38 @@ const PROJECTION_CODE = {
   'lambert-conformal-conic': 3,
 };
 
-/** How the minimap draws the relief: see {@link MinimapProps.mode}. */
-export type MinimapMode = 'shaded' | 'outline';
+/**
+ * How many tiles a map of `width` x `height` CSS pixels at `pixelRatio` holds, at `cellPixels`
+ * device pixels a cell: about two and a half times the tiles a view across it shows at the
+ * detail asked (the rest stand in while finer ones load, and come in with a move), from 512,
+ * to no more than the GPU's texture arrays allow (`maxLayers`), and 2048 at most.
+ *
+ * @group Components
+ */
+export function geoMapTileSlots(
+  width: number,
+  height: number,
+  pixelRatio: number,
+  cellPixels: number,
+  maxLayers = MAX_SLOTS,
+): number {
+  const tile = RELIEF_TILE_CELLS * Math.max(cellPixels, 0.25);
+  const across =
+    (Math.ceil((width * pixelRatio) / tile) + 1) *
+    (Math.ceil((height * pixelRatio) / tile) + 1);
+  return Math.min(
+    Math.max(Math.ceil(across * 2.5), MIN_SLOTS),
+    MAX_SLOTS,
+    maxLayers,
+  );
+}
 
-/** What a minimap's relief looks like beyond its colours (`SceneryReliefLooks`). */
-export type MinimapAppearance = {
-  mode: MinimapMode;
+/** How a map draws the relief: see `GeoMapProps.mode`. */
+export type GeoMapMode = 'shaded' | 'outline';
+
+/** What a map's relief looks like beyond its colours (`SceneryReliefLooks`). */
+export type GeoMapAppearance = {
+  mode: GeoMapMode;
   /** the slope's vertical exaggeration in the shading */
   exaggeration: number;
   /** how strongly the slope shades, 0 to 1 */
@@ -97,10 +126,10 @@ export type MinimapAppearance = {
 };
 
 /**
- * Where a minimap's relief tiles come from: the relief's layers merged onto geographic tiles
+ * Where a map's relief tiles come from: the relief's layers merged onto geographic tiles
  * (`buildGeoReliefTile`, through the `sceneryReliefTile` generator), as the stage's are.
  */
-export type MinimapTileSource = {
+export type GeoMapTileSource = {
   /** the tile, or null where there is none */
   load: (key: number) => Promise<ReliefTile | null>;
   /** the height where no layer has data, metres over the sea (the tiles' base) */
@@ -108,7 +137,7 @@ export type MinimapTileSource = {
 };
 
 /** A view to draw, and how much of it: two cross-fade while a projection gives way to another. */
-export type MinimapLayerView = {
+export type GeoMapDrawnView = {
   view: MapView;
   /** 0 to 1 */
   opacity: number;
@@ -117,7 +146,7 @@ export type MinimapLayerView = {
 // A texture of this renderer's own over `shared`'s image: three ties a texture to every
 // renderer that uploads it with a listener on its `dispose`, which a renderer's own disposal
 // leaves behind, so a texture shared with the scene's renderer would keep every disposed
-// minimap renderer alive. The clone shares the data; `syncShared` follows its changes.
+// map renderer alive. The clone shares the data; `syncShared` follows its changes.
 function ownTexture<T extends Texture>(shared: T): T {
   const own = shared.clone() as T;
   own.version = shared.version;
@@ -133,10 +162,14 @@ function syncShared(own: Texture, shared: Texture) {
 // One view's mesh: a grid over the canvas whose vertices carry their longitude and latitude
 // from the middle (`aGeo`); in a projection, their point of its plane (`aPlane`); and in the
 // scene's map seen wide, their direction from the Earth's centre (`aDir`).
-class MinimapLayer {
+class GeoMapMesh {
   readonly mesh: Mesh;
   readonly cells: number;
   private readonly geometry = new BufferGeometry();
+  // Every cell's two triangles at most: the cells kept are written to the front, and drawn.
+  private readonly index: BufferAttribute;
+  // Whether every cell is drawn now.
+  private full = false;
   readonly geo: BufferAttribute;
   readonly plane: BufferAttribute;
   readonly dir: BufferAttribute;
@@ -153,15 +186,7 @@ class MinimapLayer {
         position[at + 1] = 1 - (j / cells) * 2;
       }
     }
-    const index: number[] = [];
-    for (let j = 0; j < cells; j++) {
-      for (let i = 0; i < cells; i++) {
-        const a = j * (cells + 1) + i;
-        const b = a + 1;
-        const c = a + cells + 1;
-        index.push(a, c, b, b, c, c + 1);
-      }
-    }
+    this.index = new BufferAttribute(new Uint16Array(cells * cells * 6), 1);
     this.geo = new BufferAttribute(new Float32Array(count * 2), 2);
     this.plane = new BufferAttribute(new Float32Array(count * 2), 2);
     this.dir = new BufferAttribute(new Float32Array(count * 3), 3);
@@ -169,17 +194,18 @@ class MinimapLayer {
     this.geometry.setAttribute('aGeo', this.geo);
     this.geometry.setAttribute('aPlane', this.plane);
     this.geometry.setAttribute('aDir', this.dir);
-    this.geometry.setIndex(index);
+    this.geometry.setIndex(this.index);
+    this.keepCells();
     this.material = new ShaderMaterial({
       vertexShader,
       fragmentShader,
       uniforms: {
         ...uniforms,
-        uMinimapOpacity: new Uniform(1),
-        uMinimapProjection: new Uniform(0),
-        uMinimapCone: new Uniform(new Vector4()),
-        uMinimapExact: new Uniform(0),
-        uMinimapSphere: new Uniform(0),
+        uGeoMapOpacity: new Uniform(1),
+        uGeoMapProjection: new Uniform(0),
+        uGeoMapCone: new Uniform(new Vector4()),
+        uGeoMapExact: new Uniform(0),
+        uGeoMapSphere: new Uniform(0),
       },
       depthTest: false,
       depthWrite: false,
@@ -202,18 +228,30 @@ class MinimapLayer {
 
   /** Draw only the cells `keep` keeps (column, row from the top left); all of them without one. */
   keepCells(keep?: (i: number, j: number) => boolean) {
+    // All of them already: nothing to write.
+    if (!keep && this.full) return;
+    this.full = !keep;
     const cells = this.cells;
-    const index: number[] = [];
+    const index = this.index.array as Uint16Array;
+    let n = 0;
     for (let j = 0; j < cells; j++) {
       for (let i = 0; i < cells; i++) {
         if (keep && !keep(i, j)) continue;
         const a = j * (cells + 1) + i;
         const b = a + 1;
         const c = a + cells + 1;
-        index.push(a, c, b, b, c, c + 1);
+        index[n++] = a;
+        index[n++] = c;
+        index[n++] = b;
+        index[n++] = b;
+        index[n++] = c;
+        index[n++] = c + 1;
       }
     }
-    this.geometry.setIndex(index);
+    this.geometry.setDrawRange(0, n);
+    this.index.clearUpdateRanges();
+    if (n > 0) this.index.addUpdateRange(0, n);
+    this.index.needsUpdate = true;
   }
 }
 
@@ -228,7 +266,7 @@ class MinimapLayer {
  * renders only when asked. However many layers, and however large, only the tiles in view
  * are ever read.
  */
-export class MinimapRenderer {
+export class GeoMapRenderer {
   readonly canvas: HTMLCanvasElement;
   /** a tile came in or went: the map should be drawn again (see {@link setView}) */
   onTiles: () => void = () => {};
@@ -236,17 +274,19 @@ export class MinimapRenderer {
   private readonly scene = new Scene();
   private readonly camera = new OrthographicCamera();
   private readonly uniforms: Record<string, Uniform>;
-  private readonly layers: Record<
+  private readonly meshes: Record<
     'scene' | 'sceneWide' | 'projected',
-    MinimapLayer[]
+    GeoMapMesh[]
   >;
-  private readonly textures: SceneryReliefTileTextures;
+  private textures: SceneryReliefTileTextures;
   private readonly atlas: SceneryReliefAtlas;
+  // The most array layers this context's textures may have.
+  private readonly maxLayers: number;
   // The looks and the colour ramps, shared with the scene, and this context's own of each.
   private readonly shared: [Texture, Texture][];
   private readonly base: Uniform<number>;
   private readonly latitude = new Uniform(0);
-  private readonly minimap = new Vector4(0, 2, 0.8, 1);
+  private readonly look = new Vector4(0, 2, 0.8, 1);
   private readonly seaColor = new Color();
   private readonly outlineColor = new Color();
   private readonly outlineFill = new Vector4();
@@ -254,6 +294,8 @@ export class MinimapRenderer {
   private cellPixels = 2;
   private streamer: TileStreamer<ReliefTile> | null = null;
   private readonly slotOf = new Map<number, number>();
+  // The size, in CSS pixels, the slots were last sized for.
+  private size: Vec2 = [1, 1];
 
   /**
    * @param looks the relief's looks (`SceneryReliefLooks.texture`); not disposed here, and
@@ -272,11 +314,13 @@ export class MinimapRenderer {
     this.canvas = this.renderer.domElement;
 
     const context = this.renderer.getContext() as WebGL2RenderingContext;
-    const slots = Math.min(
-      MAX_SLOTS,
-      context.getParameter(context.MAX_ARRAY_TEXTURE_LAYERS) as number,
+    this.maxLayers = context.getParameter(
+      context.MAX_ARRAY_TEXTURE_LAYERS,
+    ) as number;
+    this.textures = new SceneryReliefTileTextures(
+      RELIEF_TILE_CELLS,
+      Math.min(MIN_SLOTS, this.maxLayers),
     );
-    this.textures = new SceneryReliefTileTextures(RELIEF_TILE_CELLS, slots);
     this.atlas = new SceneryReliefAtlas(this.textures);
 
     const ownLooks = ownTexture(looks);
@@ -289,26 +333,26 @@ export class MinimapRenderer {
     this.uniforms = {
       ...this.atlas.uniforms,
       uReliefBase: this.base,
-      uMinimapLatitude: this.latitude,
+      uGeoMapLatitude: this.latitude,
       uReliefLook: new Uniform(ownLooks),
       uColorRamps: new Uniform(ownRamps),
-      uMinimap: new Uniform(this.minimap),
+      uGeoMap: new Uniform(this.look),
       uSeaColor: new Uniform(this.seaColor),
       uOutlineColor: new Uniform(this.outlineColor),
       uOutlineFill: new Uniform(this.outlineFill),
     };
     // Two of each kind: a projection may cross-fade into another.
-    this.layers = { scene: [], sceneWide: [], projected: [] };
+    this.meshes = { scene: [], sceneWide: [], projected: [] };
     for (let i = 0; i < 2; i++) {
       for (const kind of ['scene', 'sceneWide', 'projected'] as const) {
-        const layer = new MinimapLayer(
-          kind === 'scene' ? MINIMAP_GRID : PROJECTED_GRID,
+        const mesh = new GeoMapMesh(
+          kind === 'scene' ? GEO_MAP_GRID : PROJECTED_GRID,
           this.uniforms,
         );
-        layer.mesh.visible = false;
-        layer.mesh.renderOrder = i;
-        this.layers[kind].push(layer);
-        this.scene.add(layer.mesh);
+        mesh.mesh.visible = false;
+        mesh.mesh.renderOrder = i;
+        this.meshes[kind].push(mesh);
+        this.scene.add(mesh.mesh);
       }
     }
   }
@@ -317,13 +361,13 @@ export class MinimapRenderer {
    * Where the tiles come from: tiles from another source are let go, and the new ones are
    * loaded as the view asks for them (see {@link setView}).
    */
-  setSource(source: MinimapTileSource | null) {
+  setSource(source: GeoMapTileSource | null) {
     this.streamer?.dispose();
     this.streamer = null;
     this.atlas.set([], [0, 0, 0, 0]);
     if (!source) return;
     this.base.value = source.base;
-    const { textures, slotOf } = this;
+    const { slotOf } = this;
     this.streamer = new TileStreamer<ReliefTile>(
       {
         load: source.load,
@@ -331,13 +375,13 @@ export class MinimapRenderer {
       },
       {
         concurrency: CONCURRENCY,
-        budget: Math.floor(textures.slots * 0.9) * TILE_BYTES,
+        budget: this.budget(),
         onLoad: (key, tile) => {
-          slotOf.set(key, textures.put(tile));
+          slotOf.set(key, this.textures.put(tile));
           this.onTiles();
         },
         onEvict: key => {
-          textures.release(slotOf.get(key) ?? -1);
+          this.textures.release(slotOf.get(key) ?? -1);
           slotOf.delete(key);
         },
       },
@@ -347,15 +391,17 @@ export class MinimapRenderer {
   /** Set the canvas's size in CSS pixels, and the device pixels to a CSS pixel. */
   setSize(width: number, height: number, pixelRatio: number) {
     this.pixelRatio = pixelRatio;
+    this.size = [width, height];
     this.renderer.setPixelRatio(pixelRatio);
     this.renderer.setSize(width, height);
+    this.fitSlots();
   }
 
   /** How it looks: the mode, the shading, the colours. */
-  setAppearance(a: MinimapAppearance) {
-    this.minimap.x = a.mode === 'outline' ? 1 : 0;
-    this.minimap.y = a.exaggeration;
-    this.minimap.z = a.strength;
+  setAppearance(a: GeoMapAppearance) {
+    this.look.x = a.mode === 'outline' ? 1 : 0;
+    this.look.y = a.exaggeration;
+    this.look.z = a.strength;
     this.seaColor.set(a.seaColor);
     this.outlineColor.set(a.outlineColor);
     const fill = new Color(a.outlineFill);
@@ -365,6 +411,39 @@ export class MinimapRenderer {
   /** How detailed the map is: device pixels a tile's cell spans, at most. */
   setCellPixels(cellPixels: number) {
     this.cellPixels = Math.max(cellPixels, 0.25);
+    this.fitSlots();
+  }
+
+  // What the tiles in may hold: most of the slots, the rest left for those loading.
+  private budget() {
+    return Math.floor(this.textures.slots * 0.9) * TILE_BYTES;
+  }
+
+  // More slots for a map grown larger or finer than they hold: the textures made again, and
+  // the tiles in put back in them. Never fewer while it lives.
+  private fitSlots() {
+    const wanted = geoMapTileSlots(
+      this.size[0],
+      this.size[1],
+      this.pixelRatio,
+      this.cellPixels,
+      this.maxLayers,
+    );
+    if (wanted <= this.textures.slots) return;
+    const was = this.textures;
+    const textures = new SceneryReliefTileTextures(RELIEF_TILE_CELLS, wanted);
+    for (const [key] of this.slotOf) {
+      const tile = this.streamer?.get(key);
+      this.slotOf.set(key, tile ? textures.put(tile) : -1);
+    }
+    this.textures = textures;
+    const u = this.atlas.uniforms;
+    u.uReliefAtlasHeights.value = textures.heights;
+    u.uReliefAtlasNormals.value = textures.normals;
+    u.uReliefAtlasLayers.value = textures.layers;
+    was.dispose();
+    this.streamer?.setBudget(this.budget());
+    this.onTiles();
   }
 
   /**
@@ -381,17 +460,18 @@ export class MinimapRenderer {
    *   — and left out farther off, where a transverse Mercator such as UTM folds and tears
    */
   setView(
-    views: MinimapLayerView | MinimapLayerView[],
+    views: GeoMapDrawnView | GeoMapDrawnView[],
     toLonLat: (x: number, z: number) => Vec2,
     toXZ?: (longitude: number, latitude: number) => Vec2,
   ) {
     const list = (Array.isArray(views) ? views : [views]).slice(0, 2);
     if (!list.length) return;
     const first = list[0].view;
-    const [centerLon, centerLat] = toLonLat(first.center[0], first.center[1]);
+    const [centerLon, centerLat] =
+      first.lonLat ?? toLonLat(first.center[0], first.center[1]);
     this.latitude.value = centerLat;
     const devicePixel = first.metresPerPixel / this.pixelRatio;
-    this.minimap.w = devicePixel;
+    this.look.w = devicePixel;
 
     let minLon = Infinity;
     let maxLon = -Infinity;
@@ -400,23 +480,24 @@ export class MinimapRenderer {
     // Per projected view: the scale at the middle, for each tile's depth.
     const scales: { view: MapView; scale: number }[] = [];
     const used = { scene: 0, sceneWide: 0, projected: 0 };
-    for (const layer of this.allLayers()) layer.mesh.visible = false;
+    for (const mesh of this.allMeshes()) mesh.mesh.visible = false;
     list.forEach(({ view, opacity }, order) => {
       const projected = view.projected;
       const wide =
         Math.max(view.size[0], view.size[1]) * view.metresPerPixel >
         SCENE_WIDE_FROM;
       const kind = projected ? 'projected' : wide ? 'sceneWide' : 'scene';
-      const layer = this.layers[kind][used[kind]++];
-      layer.mesh.visible = opacity > 0;
-      layer.mesh.renderOrder = order;
-      layer.material.uniforms.uMinimapOpacity.value = opacity;
-      layer.material.uniforms.uMinimapProjection.value = projected
+      const mesh = this.meshes[kind][used[kind]++];
+      const uniforms = mesh.material.uniforms;
+      mesh.mesh.visible = opacity > 0;
+      mesh.mesh.renderOrder = order;
+      uniforms.uGeoMapOpacity.value = opacity;
+      uniforms.uGeoMapProjection.value = projected
         ? PROJECTION_CODE[projected.plane.projection.name]
         : 0;
       const cone = projected?.plane.projection.cone;
       if (cone)
-        (layer.material.uniforms.uMinimapCone.value as Vector4).set(
+        (uniforms.uGeoMapCone.value as Vector4).set(
           cone.n,
           cone.rf,
           cone.rho0,
@@ -424,16 +505,16 @@ export class MinimapRenderer {
         );
       // Wide: per pixel from the plane, which 32 bits hold to a metre or two, so no grid
       // cell straddling the map's edge smears it; close: interpolated, more precise.
-      layer.material.uniforms.uMinimapExact.value =
+      uniforms.uGeoMapExact.value =
         projected && view.metresPerPixel / this.pixelRatio > EXACT_FROM ? 1 : 0;
       // The scene's map seen wide: directions, interpolated through a pole or across the
       // antimeridian without a jump, and turned into longitude and latitude per pixel.
-      layer.material.uniforms.uMinimapSphere.value =
-        kind === 'sceneWide' ? 1 : 0;
-      const geo = layer.geo.array as Float32Array;
-      const plane = layer.plane.array as Float32Array;
-      const dir = layer.dir.array as Float32Array;
-      const cells = layer.cells;
+      uniforms.uGeoMapSphere.value = kind === 'sceneWide' ? 1 : 0;
+      const geo = mesh.geo.array as Float32Array;
+      const plane = mesh.plane.array as Float32Array;
+      const dir = mesh.dir.array as Float32Array;
+      const cells = mesh.cells;
+      const row = cells + 1;
       const put = (i: number, lon: number, lat: number) => {
         // Across the antimeridian: the short way round.
         let dLon = lon - centerLon;
@@ -451,16 +532,16 @@ export class MinimapRenderer {
       const extend = (i: number) => {
         const dLon = geo[i * 2];
         const dLat = geo[i * 2 + 1];
-        minLon = Math.min(minLon, dLon);
-        maxLon = Math.max(maxLon, dLon);
-        minLat = Math.min(minLat, dLat);
-        maxLat = Math.max(maxLat, dLat);
+        if (dLon < minLon) minLon = dLon;
+        if (dLon > maxLon) maxLon = dLon;
+        if (dLat < minLat) minLat = dLat;
+        if (dLat > maxLat) maxLat = dLat;
       };
       if (projected) {
         const { plane: map } = projected;
         for (let j = 0; j <= cells; j++) {
           for (let i = 0; i <= cells; i++) {
-            const k = j * (cells + 1) + i;
+            const k = j * row + i;
             const [u, v] = mapViewPlaneAt(
               view,
               (i / cells) * view.size[0],
@@ -476,7 +557,7 @@ export class MinimapRenderer {
         scales.push({ view, scale: projected.scale });
       } else {
         // Where the scene's map holds: its point comes back through it.
-        const holds = new Uint8Array((cells + 1) ** 2);
+        const holds = new Uint8Array(row * row);
         const tolerance =
           (ROUND_TRIP *
             Math.max(view.size[0], view.size[1]) *
@@ -493,48 +574,48 @@ export class MinimapRenderer {
           put(k, ok ? lon : centerLon, ok ? lat : centerLat);
         });
         if (toXZ) {
-          const row = cells + 1;
+          // A tear: corners farther apart on the Earth than any cell spans.
+          const near = (a: number, b: number) =>
+            dir[a * 3] * dir[b * 3] +
+              dir[a * 3 + 1] * dir[b * 3 + 1] +
+              dir[a * 3 + 2] * dir[b * 3 + 2] >=
+            TEAR_DOT;
           const keep = (i: number, j: number) => {
-            const corners = [
-              j * row + i,
-              j * row + i + 1,
-              (j + 1) * row + i,
-              (j + 1) * row + i + 1,
-            ];
-            if (corners.some(k => !holds[k])) return false;
-            // A tear: corners farther apart on the Earth than any cell spans.
-            const near = Math.cos((TEAR * Math.PI) / 180);
-            for (let a = 0; a < 4; a++)
-              for (let b = a + 1; b < 4; b++) {
-                const ka = corners[a] * 3;
-                const kb = corners[b] * 3;
-                const dot =
-                  dir[ka] * dir[kb] +
-                  dir[ka + 1] * dir[kb + 1] +
-                  dir[ka + 2] * dir[kb + 2];
-                if (dot < near) return false;
-              }
-            return true;
+            const a = j * row + i;
+            const b = a + 1;
+            const c = a + row;
+            const d = c + 1;
+            return (
+              !!holds[a] &&
+              !!holds[b] &&
+              !!holds[c] &&
+              !!holds[d] &&
+              near(a, b) &&
+              near(a, c) &&
+              near(a, d) &&
+              near(b, c) &&
+              near(b, d) &&
+              near(c, d)
+            );
           };
-          layer.keepCells(keep);
+          mesh.keepCells(keep);
           for (let j = 0; j < cells; j++)
             for (let i = 0; i < cells; i++)
-              if (keep(i, j))
-                for (const k of [
-                  j * row + i,
-                  j * row + i + 1,
-                  (j + 1) * row + i,
-                  (j + 1) * row + i + 1,
-                ])
-                  extend(k);
+              if (keep(i, j)) {
+                const a = j * row + i;
+                extend(a);
+                extend(a + 1);
+                extend(a + row);
+                extend(a + row + 1);
+              }
         } else {
-          layer.keepCells();
+          mesh.keepCells();
           for (let k = 0; k < holds.length; k++) extend(k);
         }
       }
-      layer.geo.needsUpdate = true;
-      layer.plane.needsUpdate = true;
-      layer.dir.needsUpdate = true;
+      mesh.geo.needsUpdate = true;
+      mesh.plane.needsUpdate = true;
+      mesh.dir.needsUpdate = true;
     });
 
     const streamer = this.streamer;
@@ -641,11 +722,11 @@ export class MinimapRenderer {
     ]);
   }
 
-  private allLayers() {
+  private allMeshes() {
     return [
-      ...this.layers.scene,
-      ...this.layers.sceneWide,
-      ...this.layers.projected,
+      ...this.meshes.scene,
+      ...this.meshes.sceneWide,
+      ...this.meshes.projected,
     ];
   }
 
@@ -661,7 +742,7 @@ export class MinimapRenderer {
     this.textures.dispose();
     this.atlas.dispose();
     for (const [, own] of this.shared) own.dispose();
-    for (const layer of this.allLayers()) layer.dispose();
+    for (const mesh of this.allMeshes()) mesh.dispose();
     this.renderer.dispose();
     // Browsers allow only so many contexts: give it back now, not when it is collected.
     this.renderer.forceContextLoss();

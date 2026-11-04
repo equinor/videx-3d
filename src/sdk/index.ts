@@ -79,6 +79,7 @@ export * from './layers/geo-features';
 export * from './layers/geo-lines';
 export * from './layers/geo-tubes';
 export * from './layers/layer-visibility';
+export * from './layers/map-draw';
 export * from './layers/overlay-tiles';
 export * from './layers/tracks';
 

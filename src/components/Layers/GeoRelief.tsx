@@ -9,8 +9,8 @@ import {
   ReliefLook,
   resolveReliefContourLabels,
   resolveReliefContours,
-  SceneryReliefLooks,
 } from '../Scenery/scenery-relief-look';
+import { useReliefLooks } from '../Scenery/useReliefLooks';
 import type { ReliefSampler } from '../Scenery/scenery-relief-sampler';
 import type { SceneryReliefTileDebug } from '../Scenery/scenery-relief-tiles';
 import {
@@ -206,23 +206,13 @@ export const GeoRelief = ({
   }, [world]);
 
   // Its looks, and its layers', as its shaders read them: a texture, so a change of colour or
-  // contours is an upload, never a new program.
-  const looks = useMemo(() => new SceneryReliefLooks(), []);
-  useEffect(() => () => looks.dispose(), [looks]);
-  // Inline objects every render: compared by value.
-  const lookKey = JSON.stringify([
-    color,
-    contours,
-    layerLooks,
-    layers.map(layer => layer.id),
-  ]);
-  useEffect(() => {
-    looks.update(
-      { color, contours },
-      layers.map(layer => layerLooks?.[layer.id]),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [looks, lookKey]);
+  // contours is an upload, never a new program. Compared by value.
+  const idsKey = JSON.stringify(layers.map(layer => layer.id));
+  const layerIds = useMemo(() => JSON.parse(idsKey) as string[], [idsKey]);
+  const { looks, key: lookKey } = useReliefLooks(
+    { color, contours, layerLooks },
+    layerIds,
+  );
 
   // What each look's contour labels label (`ReliefContours.labels`): by its place in the
   // looks, as its tiles mark their nodes — the relief's, then each layer's (its own look's

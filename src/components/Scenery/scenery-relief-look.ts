@@ -170,6 +170,24 @@ export type ReliefLook = {
   contours?: boolean | ReliefContours;
 };
 
+/**
+ * How a relief looks, as both a `GeoRelief` and a `GeoMap` take it: give one object to both
+ * and the map is coloured as the scene is.
+ *
+ * @group Components
+ */
+export type ReliefLookProps = {
+  /** how the land and seabed are coloured (see {@link ReliefColor}) */
+  color?: ReliefColor;
+  /** contour lines over it (see {@link ReliefContours}); `true` for the defaults */
+  contours?: boolean | ReliefContours;
+  /**
+   * a look of its own for a layer, by its id: its `color` and `contours` where it gave the
+   * ground, over the relief's
+   */
+  layerLooks?: Record<string, ReliefLook>;
+};
+
 /** Looks the table holds: the relief's own (0), then one per layer by its place (1 + i). */
 export const RELIEF_LOOKS = 32;
 // A relief's flat land by default, a dark green-grey, which keeps its colour through the air.

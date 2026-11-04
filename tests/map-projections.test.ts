@@ -10,9 +10,14 @@ import {
   WEB_MERCATOR_MAX_LATITUDE,
 } from '../src/sdk/projection/map-projections';
 import {
+  mapScaleBar,
   mapViewCone,
   mapViewFromPixel,
+  mapViewLonLatAt,
+  mapViewLonLatToPixel,
   mapViewToPixel,
+  mapViewZoomAt,
+  niceScaleLength,
   projectMapView,
   type MapView,
 } from '../src/sdk/projection/map-view';
@@ -256,5 +261,82 @@ describe('projectMapView', () => {
     );
     expect(projected.up[0]).toBeCloseTo(1, 2);
     expect(Math.abs(projected.up[1])).toBeLessThan(0.05);
+  });
+});
+
+describe('map views in longitude and latitude', () => {
+  const view: MapView = {
+    center: [2e5, -58e5],
+    up: [0, -1],
+    metresPerPixel: 1000,
+    size: [200, 100],
+  };
+
+  it('takes a point of the Earth to the plane directly, as through the scene', () => {
+    const plane = mapPlane(webMercator, 2, toLonLat, toXZ);
+    const [u, v] = plane.fromLonLat(5, 60);
+    const [su, sv] = plane.toPlane(...toXZ(5, 60));
+    expect(u).toBeCloseTo(su, 6);
+    expect(v).toBeCloseTo(sv, 6);
+    // Across the antimeridian from 170°E: the short way round.
+    const far = mapPlane(webMercator, 170, toLonLat, toXZ);
+    expect(far.fromLonLat(-175, 0)[0]).toBeCloseTo(
+      webMercator.forward(15, 0)[0],
+      3,
+    );
+  });
+
+  it('lands longitude and latitude where scene X/Z land, and back', () => {
+    const plane = mapPlane(equalEarth, 2, toLonLat, toXZ);
+    for (const v of [view, projectMapView(view, plane, 'north-up')]) {
+      const [c, r] = mapViewLonLatToPixel(v, 3, 57.5, toXZ);
+      const [sc, sr] = mapViewToPixel(v, ...toXZ(3, 57.5));
+      expect(c).toBeCloseTo(sc, 6);
+      expect(r).toBeCloseTo(sr, 6);
+      const [lon, lat] = mapViewLonLatAt(v, c, r, toLonLat);
+      expect(lon).toBeCloseTo(3, 6);
+      expect(lat).toBeCloseTo(57.5, 6);
+    }
+  });
+
+  it('reads longitudes about the plane’s meridian, wrapped to ±180', () => {
+    const plane = mapPlane(webMercator, 179, toLonLat, toXZ);
+    const projected = projectMapView(
+      { ...view, center: toXZ(179, 0), metresPerPixel: 3000 },
+      plane,
+      'north-up',
+    );
+    // 50 pixels east of the middle at 3 km a pixel: 1.35°, past the antimeridian.
+    const [lon] = mapViewLonLatAt(projected, 150, 50, toLonLat);
+    expect(lon).toBeLessThan(-179);
+    expect(lon).toBeGreaterThan(-180);
+  });
+
+  it('zooms about a pixel: the ground under it stays under it', () => {
+    for (const up of [
+      [0, -1],
+      [Math.SQRT1_2, -Math.SQRT1_2],
+    ] as Vec2[]) {
+      const before = { ...view, up };
+      const centre = mapViewZoomAt(before, 160, 20, 0.5);
+      const after: MapView = {
+        ...before,
+        center: centre,
+        metresPerPixel: before.metresPerPixel * 0.5,
+      };
+      const [x, z] = mapViewFromPixel(before, 160, 20);
+      const [c, r] = mapViewToPixel(after, x, z);
+      expect(c).toBeCloseTo(160, 6);
+      expect(r).toBeCloseTo(20, 6);
+    }
+    // About the middle: the middle stays.
+    expect(mapViewZoomAt(view, 100, 50, 3)).toEqual(view.center);
+  });
+
+  it('measures the scale bar a quarter of the width, at least 72 pixels', () => {
+    expect(mapScaleBar(view)).toEqual(niceScaleLength(1000, 72));
+    expect(mapScaleBar({ ...view, size: [800, 400] })).toEqual(
+      niceScaleLength(1000, 200),
+    );
   });
 });

@@ -34,9 +34,17 @@ the seabed and the land, and inside a `Scenery` be seen through its sea as the s
   <TrackLayer tracks={ships} annotations={{ layer: 'ships', text: s => s.name }}>
     {(ship, ref) => <Tanker ref={ref} length={ship.length} />}
   </TrackLayer>
-  <Minimap layers={layers}>
-    <MinimapGeoLayer data={discoveries} frame={frame} />
-  </Minimap>
+  <Overlay>
+    {/* The same data on a map: the twins take the scene's layers' props. */}
+    <Minimap layers={layers}>
+      <GeoMapPolygons
+        data={discoveries}
+        style={f => ({ fill: f.properties.hcType === 'GAS' ? '#e5383b' : '#2fbf4a' })}
+        maxHeight={1500000}
+      />
+      <GeoMapTracks tracks={ships} annotations={{ text: s => s.name }} />
+    </Minimap>
+  </Overlay>
 </World>
 ```
 
@@ -56,7 +64,7 @@ and facilities on the seabed, `On the seabed` and `To the coast`),
 | `GeoTubes` | lines as 3D tubes on the ground, their diameter as built (exaggerated), never thinner than a few pixels | one instanced tube, a segment per instance, nodes laid about the camera |
 | `GeoSymbols` | points as 3D symbols of any geometry, standing on the ground, their size as built (exaggerated), never narrower than a few pixels | one instanced mesh (`Symbols`) |
 | `GeoLabels` | a label per feature: a polygon's fitted inside it, broken into lines and turned along it where that fits better; by a point | a `LabelLayer`, placed on the globe |
-| `MinimapGeoLayer` | the same features as the scene's layers, less what its `filter` leaves out, on a `Minimap` | SVG paths and dots, carried to scene X/Z once |
+| `GeoMapPolygons`, `GeoMapLines`, `GeoMapSymbols`, `GeoMapLabels`, `GeoMapGraticule`, `GeoMapTracks` | the same data on a `GeoMap` or a `Minimap`, from the same props as the scene's layers | the map's canvas, carried to its map once (see [On a map](#on-a-map-the-twins)) |
 | `TrackLayer` | things that move: anything you render, a `Tanker` say | dead reckoning between fixes, an object moved per frame, stood upright on the globe where it is |
 
 The data is GeoJSON (`GeoJsonFeatureCollection`) or features read from it
@@ -79,8 +87,9 @@ height over the sea, in metres — and `fade`, a ratio of the bound (a layer up 
 `fade` 0.2 is gone at 60 km), so it fades alike at 1 km and at 1000 km
 (`layerVisibilityAt`). The height is `globe.altitude(camera)`: under a `Scenery` far from the
 field, scene Y is not the height (see [scenery.md](./scenery.md#the-globe)). Outside its
-heights a layer draws nothing and loads nothing. `MinimapGeoLayer` takes the map's extent
-instead (`minExtent`, `maxExtent`).
+heights a layer draws nothing and loads nothing. On a map, its twin takes the same band to the
+extents the map shows from those heights (`layerExtentVisibilityAt`), or a band of extents of
+its own (`minExtent`, `maxExtent`).
 
 ## When a layer is drawn
 
@@ -760,21 +769,36 @@ keep whichever was shown first. Tests keep the
 cells tiling 80°S–84°N without gaps, the exceptions as drawn, and every name clear of every
 other and inside its cell.
 
-## The minimap: `MinimapGeoLayer`
+## On a map: the twins
 
-A `Minimap`'s layers render in a React root of their own and see no `World`: give it the
-`frame`. Its features are carried to scene X/Z once (`geoFrameXZ`, densified every 0.05° so
-long edges keep their shape), and their paths are written as the map changes: those off the
-map emptied, vertices and points closer than a pixel dropped, and what is left cut to the
-map and a margin (`minimapPathData`; see [minimap.md](./minimap.md)), so the scene's own data
-is drawn as it is: no simpler copy is needed. Points are dots `radius` pixels across. `filter`
-leaves out what would clutter a small map (the `Pipelines` story's subsea templates).
+Each layer has a twin for a `GeoMap` or a `Minimap` that takes the same props — its data, its
+style and its band of heights — so one object of props draws it in the scene and on the map:
+
+```tsx
+const discoveries = { data, style: f => ({ fill: colour(f) }), maxHeight: 1500000 };
+<GeoPolygons {...discoveries} />    // in the scene
+<GeoMapPolygons {...discoveries} /> // on a map
+```
+
+`GeoMapPolygons` (↔ `GeoPolygons`), `GeoMapLines` (↔ `GeoTubes`), `GeoMapSymbols` (↔
+`GeoSymbols`), `GeoMapLabels` (↔ `GeoLabels`), `GeoMapGraticule` (↔ `GeoGraticule`) and
+`GeoMapTracks` (↔ `TrackLayer`), and `GeoMapFields` for the `World`'s fields. They draw on the
+map's canvas: carried to scene X/Z once (densified every 0.05° so long edges keep their
+shape) for the scene's map, and straight into a projection's plane in one, so data far from
+the scene lands where it is; those off the map passed over, vertices closer than a pixel
+dropped, what is left cut to the map and a margin (`traceMapPixels`), so the scene's own data
+is drawn as it is: no simpler copy is needed. `filter` leaves out what would clutter a small
+map (the `Pipelines` story's subsea templates). Nothing is mirrored: a map shows what is
+declared in it. See [geo-map.md](./geo-map.md#the-scenes-layers-on-a-map).
 
 ## Helpers (sdk)
 
 `geoFeaturesFromGeoJson`, `densifyPlanarGeometry`, `projectGeoFeature`; `polygonLabelPoint`,
 `polygonLabelRect`, `polygonLabelPlaces`, `polygonMainAxis` (where a label goes in a
-polygon); `layerVisibilityAt`, `layerShownAt` (see [When a layer is drawn](#when-a-layer-is-drawn));
+polygon); `layerVisibilityAt`, `layerShownAt` (see [When a layer is drawn](#when-a-layer-is-drawn)),
+`layerExtentVisibilityAt` (a band of heights on a map); drawing on a map's canvas
+(`sdk/layers/map-draw.ts`: `traceMapPixels`, `mapPathData`, `mapViewGeoLine`,
+`mapViewLonLatBox`, `lonLatBoxesMeet`, `paintMapPath`, `drawMapLabel`, `MapLabelSpacer`);
 `advanceTrack`, `courseToHeading`, `knots`; `globeUprightMatrix` (what is drawn flat about a
 point, stood upright on the globe there, through no map); `buildOverlayTile`,
 `packOverlayShapes`; `geoDistance`, `greatCircleSteps`, `joinNearestEnd`, `simplifyGeoLine`

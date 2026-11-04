@@ -128,8 +128,12 @@ export; oxlint's resolver cannot follow it. Types come from `vite/client`.
   surface into two meshes that share a layer. Keying on it would collide.
 - `src/components/Wellbores/Casings/Casings.tsx`: a section is positional — its material
   options, render order and `sectionIndex` are all looked up by the same index.
-- `src/components/Html/Minimap/MinimapLayers.tsx` (`MinimapPoints`): a point has no
-  identity of its own, and the frame loop finds its element by index.
+
+**`jsx-a11y/no-noninteractive-element-interactions`**, **`jsx-a11y/no-noninteractive-tabindex`**
+in `src/components/Html/GeoMap/GeoMap.tsx` — a map is a composite widget the user pans and
+zooms with the pointer and, focused, with the arrow keys and + and −: WAI-ARIA's
+`application` role (with `aria-roledescription="map"`) says exactly that, and the rules
+count it as non-interactive. Its buttons are buttons of their own.
 
 **`oxc/no-map-spread`** — the copy is the point:
 

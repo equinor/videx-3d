@@ -47,7 +47,7 @@ type Resident<T> = { tile: T; bytes: number; used: number };
 export class TileStreamer<T> {
   private readonly source: TileSource<T>;
   private readonly concurrency: number;
-  private readonly budget: number;
+  private budget: number;
   private readonly keepDepth: number;
   private readonly retryAfter: number;
   private readonly onLoad?: (key: number, tile: T) => void;
@@ -75,6 +75,11 @@ export class TileStreamer<T> {
   /** The tile, if it is in. */
   get(key: number): T | undefined {
     return this.resident.get(key)?.tile;
+  }
+
+  /** What the tiles in may hold together, in bytes, from now on: a smaller budget lets go at the next update. */
+  setBudget(bytes: number) {
+    this.budget = bytes;
   }
 
   /**

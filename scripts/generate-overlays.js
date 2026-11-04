@@ -23,7 +23,8 @@
  *     lines to Navion Saga, its storage ship, and Sleipner A, and Navion Saga (removed
  *     since) added back to the facilities.
  *
- * A minimap draws the same files (`MinimapGeoLayer` thins them as it draws, and filters).
+ * A minimap draws the same files (its twins of the scene's layers — `GeoMapLines`,
+ * `GeoMapSymbols` — thin them as they draw, and filter).
  */
 
 import fs from 'node:fs';

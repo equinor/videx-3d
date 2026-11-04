@@ -15,6 +15,7 @@ import { GeneratorsProviderDecorator } from '../../storybook/decorators/generato
 import { SceneryGenerators } from '../../storybook/decorators/scenery-generators';
 import { Annotations } from '../Annotations/Annotations';
 import { AnnotationsLayer } from '../Annotations/AnnotationsLayer';
+import { GeoMapTracks } from '../Html/GeoMap/layers/GeoMapTracks';
 import { Scenery } from '../Scenery/Scenery';
 import { SceneryOcean } from '../Scenery/SceneryOcean';
 import { SceneryStage } from '../Scenery/SceneryStage';
@@ -84,9 +85,9 @@ const NAMES = [
 // Metres east and north of the ship's home.
 const offsetOf = (ship: Ship) => [
   (ship.longitude - ship.home.longitude) *
-  DEG *
-  EARTH_RADIUS *
-  Math.cos(ship.home.latitude * DEG),
+    DEG *
+    EARTH_RADIUS *
+    Math.cos(ship.home.latitude * DEG),
   (ship.latitude - ship.home.latitude) * DEG * EARTH_RADIUS,
 ];
 
@@ -96,8 +97,8 @@ function createShips(count: number, far: boolean): Ship[] {
     ...Array.from({ length: count }, () => HOME),
     ...(far
       ? FAR_HOMES.flatMap(home =>
-        Array.from({ length: SHIPS_PER_FAR_HOME }, () => home),
-      )
+          Array.from({ length: SHIPS_PER_FAR_HOME }, () => home),
+        )
       : []),
   ];
   return homes.map((home, i) => {
@@ -110,8 +111,8 @@ function createShips(count: number, far: boolean): Ship[] {
       longitude:
         home.longitude +
         (r * Math.sin(a)) /
-        (EARTH_RADIUS * Math.cos(home.latitude * DEG)) /
-        DEG,
+          (EARTH_RADIUS * Math.cos(home.latitude * DEG)) /
+          DEG,
       latitude: home.latitude + (r * Math.cos(a)) / EARTH_RADIUS / DEG,
       speed: knots(6 + next() * 10),
       course: next() * 360,
@@ -189,11 +190,11 @@ const ShipsStory = ({
     () =>
       labels
         ? {
-          layer: 'ships',
-          text: (ship: Ship) =>
-            `${ship.name} · ${(((ship.speed ?? 0) * 3600) / 1852).toFixed(1)} kn`,
-          height: 40,
-        }
+            layer: 'ships',
+            text: (ship: Ship) =>
+              `${ship.name} · ${(((ship.speed ?? 0) * 3600) / 1852).toFixed(1)} kn`,
+            height: 40,
+          }
         : undefined,
     [labels],
   );
@@ -202,7 +203,12 @@ const ShipsStory = ({
     <World frame={demoFrame}>
       <SceneryGenerators>
         <Annotations maxVisible={50}>
-          <AnnotationsLayer id="ships" name="Ships" maxDistance={40000} distanceFactor={1000} />
+          <AnnotationsLayer
+            id="ships"
+            name="Ships"
+            maxDistance={40000}
+            distanceFactor={1000}
+          />
           <Scenery>
             <SceneryOcean level={LEVEL} depth={DEPTH} />
             <SceneryStage boundary={STAGE_BOUNDS} />
@@ -226,7 +232,17 @@ const ShipsStory = ({
             </TrackLayer>
           </Scenery>
         </Annotations>
-        {minimap && <SceneryArgsMinimap frame={demoFrame} />}
+        {minimap && (
+          <SceneryArgsMinimap frame={demoFrame}>
+            {/* The same ships, and their annotations' text, on the map. */}
+            <GeoMapTracks
+              tracks={ships}
+              extrapolate={moving}
+              annotations={annotations}
+              maxHeight={maxHeight > 0 ? maxHeight : undefined}
+            />
+          </SceneryArgsMinimap>
+        )}
       </SceneryGenerators>
     </World>
   );

@@ -52,6 +52,7 @@ export * from './events/depth-events';
 export * from './events/interaction-events';
 export * from './events/wellbore-events';
 
+export * from './hooks/useControllable';
 export * from './hooks/useData';
 export * from './hooks/useGenerator';
 export * from './hooks/useWellboreContext';
@@ -60,6 +61,7 @@ export * from './layers/layers';
 
 export * from './rendering';
 
+export * from './common/anchor';
 export * from './common/color-ramps';
 export * from './common/corner-style';
 export * from './common/types';

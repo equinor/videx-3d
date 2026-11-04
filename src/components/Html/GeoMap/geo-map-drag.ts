@@ -1,5 +1,4 @@
 import {
-  useContext,
   useEffect,
   useRef,
   type PointerEvent as ReactPointerEvent,
@@ -7,14 +6,14 @@ import {
 import {
   mapViewFromPixel,
   mapViewToPixel,
-  type MapView,
 } from '../../../sdk/projection/map-view';
 import type { Vec2 } from '../../../sdk/types/common';
+import { useGeoMapCameraHost } from './geo-map-camera';
 import {
-  MinimapContext,
-  useMinimapFrame,
-  type MinimapState,
-} from './minimap-context';
+  useGeoMap,
+  useGeoMapFrame,
+  type GeoMapCameraState,
+} from './geo-map-context';
 
 // The pixels round a marker's centre that grab it, at most; and at least, where the other marker is nearer.
 export const HANDLE_RADIUS = 12;
@@ -28,15 +27,13 @@ const HOLD_PIXELS = 3;
 const CANCEL_OPACITY = '0.35';
 
 /**
- * A marker on a {@link Minimap} at a scene position that the user can drag and drop: the
- * camera's or its target's. It keeps itself in place as the map changes. Drag it and it
- * follows the pointer, the map held still; drop it on the map and the controls move there
- * (`Minimap`'s `dragControls`, `onMarkerDrop`); drop it outside the map, or press Escape,
- * and nothing happens. While the camera flies to the drop the marker stays where it was
- * dropped.
+ * A marker on a {@link GeoMap} at the camera's place or its target's that the user can drag
+ * and drop: it keeps itself in place as the map changes. Drag it and it follows the pointer,
+ * the map held still; drop it on the map and the controls move there (`GeoMapCamera`'s
+ * `dragControls`, `onMarkerDrop`); drop it outside the map, or press Escape, and nothing
+ * happens. While the camera flies to the drop the marker stays where it was dropped.
  *
- * @param kind which marker it is, for what a drop does
- * @param where its scene X/Z in the minimap's state
+ * @param kind which marker it is: where it is, and what a drop does
  * @param draggable whether it can be dragged at all
  * @returns a ref for the SVG group it places (translated to its pixel; draw about 0, 0), and
  *   the props, and a ref, for the circle that is its handle (its radius is kept to the room
@@ -44,38 +41,42 @@ const CANCEL_OPACITY = '0.35';
  */
 export function useDraggableMarker(
   kind: 'camera' | 'target',
-  where: (state: MinimapState) => Vec2,
   draggable: boolean,
 ) {
-  const store = useContext(MinimapContext);
-  if (!store) throw new Error('useDraggableMarker: not inside a <Minimap>');
+  const host = useGeoMapCameraHost('useDraggableMarker');
+  const { controller } = useGeoMap();
+  const store = controller.store;
   const group = useRef<SVGGElement>(null);
   const handleCircle = useRef<SVGCircleElement>(null);
   const dragging = useRef(false);
   const held = useRef<{ at: Vec2; until: number } | null>(null);
-  const latest = useRef(where);
-  useEffect(() => {
-    latest.current = where;
-  });
+  const where = (camera: GeoMapCameraState) =>
+    kind === 'camera' ? camera.camera : camera.target;
 
-  useMinimapFrame(state => {
+  useGeoMapFrame(state => {
+    const el = group.current;
+    const camera = state.camera;
+    if (!camera) {
+      el?.setAttribute('visibility', 'hidden');
+      return;
+    }
+    el?.removeAttribute('visibility');
     // The camera's and its target's handles share the map: each reaches no further than half
     // way to the other, so neither covers the other where they are close.
     if (handleCircle.current) {
       const [ox, oy] = mapViewToPixel(
         state.view,
-        ...(kind === 'camera' ? state.target : state.camera),
+        ...(kind === 'camera' ? camera.target : camera.camera),
       );
-      const [mx, my] = mapViewToPixel(state.view, ...latest.current(state));
+      const [mx, my] = mapViewToPixel(state.view, ...where(camera));
       const reach = Math.hypot(ox - mx, oy - my) / 2;
       handleCircle.current.setAttribute(
         'r',
         String(Math.min(HANDLE_RADIUS, Math.max(reach, HANDLE_MIN_RADIUS))),
       );
     }
-    const el = group.current;
     if (!el || dragging.current) return;
-    let at = latest.current(state);
+    let at = where(camera);
     const hold = held.current;
     if (hold) {
       const [hx, hy] = mapViewToPixel(state.view, hold.at[0], hold.at[1]);
@@ -94,8 +95,7 @@ export function useDraggableMarker(
 
   // Where the pointer is on the map, in its pixels; and whether that is on it.
   const pointer = (event: { clientX: number; clientY: number }) => {
-    const rect = store.host.element?.getBoundingClientRect();
-    if (!rect) return null;
+    const rect = controller.domElement.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
     return {
@@ -116,13 +116,14 @@ export function useDraggableMarker(
   } | null>(null);
 
   const onPointerDown = (event: ReactPointerEvent<SVGElement>) => {
-    if (!draggable || !store.host.canDrag() || event.button !== 0) return;
+    if (!draggable || !host.canDrag() || event.button !== 0) return;
     const handle = event.currentTarget;
     handle.setPointerCapture(event.pointerId);
+    // The map does not pan under a marker taken.
     event.stopPropagation();
     dragging.current = true;
     held.current = null;
-    store.host.freeze(true);
+    host.freeze(true);
     handle.style.cursor = 'grabbing';
 
     const finish = (drop: Vec2 | null) => {
@@ -130,19 +131,17 @@ export function useDraggableMarker(
       drag.current = null;
       window.removeEventListener('keydown', onKey);
       dragging.current = false;
-      store.host.freeze(false);
+      host.freeze(false);
       handle.style.cursor = 'grab';
       if (drop) {
         held.current = { at: drop, until: performance.now() + HOLD_MS };
-        store.host.drop(kind, drop);
+        host.drop(kind, drop);
       }
       // Back where it belongs: the camera's or target's place, or where it was dropped.
       const el = group.current;
-      if (el && !drop) {
-        const [x, y] = mapViewToPixel(
-          store.state.view,
-          ...latest.current(store.state),
-        );
+      const camera = store.state.camera;
+      if (el && !drop && camera) {
+        const [x, y] = mapViewToPixel(store.state.view, ...where(camera));
         el.setAttribute('transform', `translate(${x} ${y})`);
         el.removeAttribute('opacity');
       }
@@ -159,8 +158,8 @@ export function useDraggableMarker(
 
   const onPointerMove = (event: ReactPointerEvent<SVGElement>) => {
     if (!dragging.current || event.pointerId !== drag.current?.id) return;
+    event.stopPropagation();
     const at = pointer(event);
-    if (!at) return;
     // Outside the map the marker waits dimmed at its edge: a drop there is cancelled.
     const x = Math.min(Math.max(at.x, 0), at.width);
     const y = Math.min(Math.max(at.y, 0), at.height);
@@ -172,10 +171,12 @@ export function useDraggableMarker(
 
   const end = (event: ReactPointerEvent<SVGElement>, cancelled: boolean) => {
     if (!dragging.current || event.pointerId !== drag.current?.id) return;
+    event.stopPropagation();
     const at = pointer(event);
-    const view: MapView = store.state.view;
     drag.current.finish(
-      !cancelled && at?.inside ? mapViewFromPixel(view, at.x, at.y) : null,
+      !cancelled && at?.inside
+        ? mapViewFromPixel(store.state.view, at.x, at.y)
+        : null,
     );
   };
 
@@ -191,7 +192,7 @@ export function useDraggableMarker(
       onPointerEnter: (event: ReactPointerEvent<SVGElement>) => {
         if (!dragging.current)
           event.currentTarget.style.cursor =
-            draggable && store.host.canDrag() ? 'grab' : 'default';
+            draggable && host.canDrag() ? 'grab' : 'default';
       },
     },
   };

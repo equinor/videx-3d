@@ -69,3 +69,46 @@ export function layerRevealAt(
   if (!reveal) return 0;
   return reveal === true ? 1 : layerVisibilityAt(height, reveal);
 }
+
+/**
+ * When a layer shows on a map, by the ground the map shows across (metres): its own band of
+ * extents, or else its band of camera heights (`minHeight`, `maxHeight`) taken to the extents
+ * a map shows from those heights.
+ *
+ * @group Layers
+ */
+export type LayerExtentVisibility = LayerVisibility & {
+  /** below this extent the layer fades out on a map; omitted, from `minHeight` */
+  minExtent?: number;
+  /** above this extent the layer fades out on a map; omitted, from `maxHeight` */
+  maxExtent?: number;
+};
+
+/**
+ * How much of a layer shows (0 to 1) on a map `extent` metres across: as
+ * {@link layerVisibilityAt} at the height whose map that is — `extent / heightPerExtent`, the
+ * metres a map shows across per metre of a camera's height (an adaptive minimap's
+ * `autoZoomFactor`, 4) — unless the layer gives a band of extents of its own.
+ *
+ * @group Layers
+ */
+export function layerExtentVisibilityAt(
+  extent: number,
+  {
+    minExtent,
+    maxExtent,
+    minHeight,
+    maxHeight,
+    ...rest
+  }: LayerExtentVisibility,
+  heightPerExtent = 4,
+): number {
+  const factor = heightPerExtent > 0 ? heightPerExtent : 4;
+  return layerVisibilityAt(extent, {
+    ...rest,
+    minHeight:
+      minExtent ?? (minHeight === undefined ? undefined : minHeight * factor),
+    maxHeight:
+      maxExtent ?? (maxHeight === undefined ? undefined : maxHeight * factor),
+  });
+}

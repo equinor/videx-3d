@@ -1,134 +1,94 @@
-import { useFrame, useThree } from '@react-three/fiber';
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
-import { createRoot, type Root } from 'react-dom/client';
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import type { Corner } from '../../../common/corner-style';
-import { useGenerator } from '../../../hooks/useGenerator';
-import {
-  RELIEF_TILE_CELLS,
-  type ReliefLayer,
-  type ReliefLayersSource,
-} from '../../../sdk/geometries/relief-tiles';
-import {
-  geoFrameLonLat,
-  geoFrameUtmZone,
-  geoFrameXZ,
-  utmZoneBounds,
-  type GeoFrame,
-} from '../../../sdk/projection/geo-frame';
-import type { MapProjection } from '../../../sdk/projection/map-projections';
+import { useControllable } from '../../../hooks/useControllable';
 import type { MapOrientation } from '../../../sdk/projection/map-view';
+import { stepMapZoom } from '../../../sdk/projection/map-view';
 import type { Vec2 } from '../../../sdk/types/common';
+import { GeoMap, type GeoMapHandle, type GeoMapProps } from '../GeoMap/GeoMap';
+import { GeoMapCamera, type GeoMapCameraHandle } from '../GeoMap/GeoMapCamera';
+import type { GeoMapHome } from '../GeoMap/geo-map-camera';
+import { useGeoMapFrame } from '../GeoMap/geo-map-context';
+import type { GeoMapLayout } from '../GeoMap/GeoMapControls';
+import { GeoMapIcon, GeoMapMarkerIcon } from '../GeoMap/GeoMapIcons';
 import {
-  sceneryReliefTile,
-  type SceneryReliefTileResponse,
-} from '../../Scenery/scenery-defs';
+  formatHudAltitude,
+  HUD_ACTIVE,
+  HUD_BUTTON,
+  HUD_IDLE,
+  HUD_LABEL,
+  setHudText,
+} from '../hud';
+import type { OverlayAnchor } from '../Overlay/overlay-context';
 import {
-  SceneryReliefLooks,
-  type ReliefColor,
-  type ReliefContours,
-  type ReliefLook,
-} from '../../Scenery/scenery-relief-look';
-import { useWorld } from '../../World/world-context';
-import type { MinimapCenter } from './minimap-context';
-import {
-  MinimapController,
-  type MinimapHome,
-  type MinimapOptions,
-  type MinimapProjection,
-  type MinimapZoom,
-} from './minimap-controller';
-import {
-  resolveMinimapAltitudeControl,
-  type MinimapAltitudeControlOptions,
-  type MinimapLayout,
-} from './minimap-layout';
-import type { MinimapMode, MinimapTileSource } from './minimap-renderer';
-import {
-  MINIMAP_CONTROLS,
-  MinimapOverlay,
-  type MinimapControl,
-} from './MinimapOverlay';
-import { MinimapZoneOutline } from './MinimapLayers';
+  Panel,
+  usePanel,
+  type PanelCollapsed,
+  type PanelResizeLimits,
+} from '../Panel/Panel';
 
 /** The extents a minimap zooms between by default, in metres across its shorter side. */
 export const MINIMAP_DEFAULT_ZOOMS = [1000, 5000, 25000, 100000, 1000000];
+
+/** How a minimap is zoomed: `'auto'` follows the camera's height; a number is an index into its `zooms`. */
+export type MinimapZoom = 'auto' | number;
+
+/** What a minimap is centred on: the camera, or what it looks at (its target, at the sea's level). */
+export type MinimapCenter = 'camera' | 'target';
+
+/**
+ * A button a {@link Minimap} can show: `'zoom-in'`, `'zoom-out'`, `'zoom-auto'` (the
+ * adaptive zoom), `'center'` (the camera / target toggle; double-click: home) and `'close'`
+ * (into its button, a closable minimap's).
+ *
+ * @group Components
+ */
+export type MinimapControl =
+  | 'zoom-in'
+  | 'zoom-out'
+  | 'zoom-auto'
+  | 'center'
+  | 'close';
+
+/** Every {@link MinimapControl}, in the order they are shown by default. */
+export const MINIMAP_CONTROLS: MinimapControl[] = [
+  'zoom-in',
+  'zoom-out',
+  'zoom-auto',
+  'center',
+  'close',
+];
 
 /**
  * Minimap props
  * @expand
  */
-export type MinimapProps = {
-  /**
-   * The reliefs in the store (`relief-meta` and `relief-values`), coarse to fine: later ones
-   * win where they have data, as a `SceneryStage`'s `relief.layers` do. Merged onto the
-   * relief's tiles by the `sceneryReliefTile` generator, as the stage's are, so it needs a
-   * `GeneratorsProvider` with it. Any number, of any size: only the tiles in view are read.
-   */
-  layers: ReliefLayer[];
-  /** the height where no layer has data, metres over the sea. Default -100 */
-  base?: number;
-  /**
-   * how detailed the map is: the most device pixels a cell of the relief's tiles spans (32
-   * cells to a tile). Lower is sharper, for more tiles: about four times as many at half.
-   * Default 2
-   */
-  cellPixels?: number;
-  /** where the scene lies on the Earth. Default the enclosing `World`'s */
-  frame?: GeoFrame;
-  /**
-   * What the map is drawn in:
-   * - `'scene'`: the scene's own map (the `frame`'s projection, a transverse Mercator such
-   *   as UTM): what the 3D view shows, true to scale for a few hundred kilometres about it;
-   * - `'web-mercator'`: conformal, shapes and bearings true, areas growing toward the poles;
-   * - `'equal-earth'`: equal-area, the whole world fairly;
-   * - `'lambert-conformal-conic'`: conformal, and nearly true to scale between its two
-   *   standard parallels — continents wider east–west than north–south at middle
-   *   latitudes. Its parallels follow the view (a sixth of the map in from its top and
-   *   bottom) unless given as `lambertParallels`;
-   * - `'auto'`: the scene's map up to `globalFrom`, `globalProjection` past it.
-   *
-   * A projection is centred on the meridian under the map's middle, so the antimeridian is
-   * its edge; markers and layers are placed through it. A change cross-fades. Default `'auto'`
-   */
-  projection?: MinimapProjection;
-  /** `'auto'`: the projection past `globalFrom`. Default `'web-mercator'` */
-  globalProjection?: MapProjection['name'];
-  /**
-   * `'auto'`: the extent, metres across the shorter side, from which `globalProjection`
-   * draws the map (back to the scene's map below 80 % of it). Give `zooms` reaching past it.
-   * Default 2 000 000 (2000 km)
-   */
-  globalFrom?: number;
-  /**
-   * `'lambert-conformal-conic'`: its two standard parallels, degrees north (negative
-   * south), fixed — `[35, 65]` for Europe as EPSG:3034 has them, say. Default: following
-   * the view
-   */
-  lambertParallels?: [number, number];
-  /**
-   * The bounds of the zone the scene's map is laid out for, `[west, south, east, north]` in
-   * degrees, drawn as a dashed outline while the map is in the scene's map — its meridians
-   * bent as they lie in it — or `false` for none. Default the `frame`'s UTM zone
-   * (`utmZoneBounds`), none for a frame in any other map: give it for one
-   */
-  zoneBounds?: [number, number, number, number] | false;
-  /** the zone's outline's colour. Default `'#ffffff'` */
-  zoneColor?: string;
-
-  /** `'shaded'`: coloured by height and lit by its slope; `'outline'`: the coast and contours as lines. Default `'shaded'` */
-  mode?: MinimapMode;
+export type MinimapProps = Omit<
+  GeoMapProps,
+  | 'view'
+  | 'defaultView'
+  | 'onViewChange'
+  | 'wheel'
+  | 'onStepZoom'
+  | 'buttons'
+  | 'items'
+  | 'controls'
+  | 'onCompassClick'
+  | 'compassTitle'
+  | 'minExtent'
+  | 'maxExtent'
+  | 'smoothing'
+  | 'heightPerExtent'
+  | 'layout'
+  | 'pan'
+  | 'doubleClickZoom'
+  | 'keyboard'
+  | 'children'
+  | 'style'
+> & {
   /**
    * what points up the map: `'north-up'` (the scene's map north) or `'heading-up'` (where the
-   * camera looks). The compass toggles it. Give it to control the orientation; the compass
-   * then asks for a change through `onOrientationChange`. Default `'north-up'` (see
-   * `defaultOrientation`)
+   * camera looks). The compass toggles it. Give it to control it; the compass then asks for a
+   * change through `onOrientationChange`
    */
   orientation?: MapOrientation;
   /** the orientation before the user changes it, when not controlled. Default `'north-up'` */
@@ -136,49 +96,19 @@ export type MinimapProps = {
   onOrientationChange?: (orientation: MapOrientation) => void;
   /**
    * what the map is centred on: `'camera'`, or `'target'`: what the camera looks at, at the
-   * sea's level (the controls' target — R3F's `state.controls`, drei's `CameraControls` or
-   * `OrbitControls` — dropped to it; without controls, where the view ray meets the sea).
-   * The marker button toggles it. Give it to control it; the button then asks for a change
-   * through `onCenterChange`.
+   * sea's level. The marker button toggles it. Give it to control it; the button then asks
+   * for a change through `onCenterChange`
    */
   center?: MinimapCenter;
   /** the centre before the user changes it, when not controlled. Default `'camera'` */
   defaultCenter?: MinimapCenter;
   onCenterChange?: (center: MinimapCenter) => void;
-  /** the colour by height, as a `SceneryStage` relief's. Default the terrain ramp over the bathymetry ramp */
-  color?: ReliefColor;
-  /** contour lines, as a `SceneryStage` relief's. Default none */
-  contours?: boolean | ReliefContours;
-  /** a look of its own for a layer, by id */
-  layerLooks?: Record<string, ReliefLook>;
-  /** shaded mode: the slope's lighting */
-  shading?: {
-    /** vertical exaggeration of the slope. Default 2 */
-    exaggeration?: number;
-    /** how strongly it shades, 0 to 1. Default 0.8 */
-    strength?: number;
-  };
-  /** the sea's colour where the look's seabed takes it. Default `'#1c4a66'` */
-  seaColor?: string;
-  /** outline mode */
-  outline?: {
-    /** the coast's and the contours' colour. Default white */
-    color?: string;
-    /** the land's fill. Default white */
-    fill?: string;
-    /** Default 0.15 */
-    fillOpacity?: number;
-  };
 
-  /**
-   * The zoom levels, in metres across the minimap's shorter side, ascending. Default
-   * {@link MINIMAP_DEFAULT_ZOOMS}: 1, 5, 25, 100 and 1000 km.
-   */
+  /** The zoom levels, in metres across the minimap's shorter side, ascending. Default {@link MINIMAP_DEFAULT_ZOOMS}: 1, 5, 25, 100 and 1000 km */
   zooms?: number[];
   /**
-   * `'auto'` zooms with the camera's height over the sea (the adaptive mode: the nearer the
-   * ground, the finer the map); a number is an index into `zooms`. Give it to control the zoom;
-   * its buttons and wheel then ask for a change through `onZoomChange`.
+   * `'auto'` zooms with the camera's height over the sea; a number is an index into `zooms`.
+   * Give it to control the zoom; its buttons and wheel then ask through `onZoomChange`
    */
   zoom?: MinimapZoom;
   /** the zoom before the user changes it, when not controlled. Default `'auto'` */
@@ -186,206 +116,150 @@ export type MinimapProps = {
   onZoomChange?: (zoom: MinimapZoom) => void;
   /** `'auto'`: metres of map across per metre of height. Default 4 */
   autoZoomFactor?: number;
-  /** `'auto'`: seconds a change in zoom takes (to close all but 1/e of it); 0 for none. Default 0.3 */
+  /** seconds a change in zoom takes (to close all but 1/e of it); 0 for none. Default 0.3 */
   autoZoomSmoothing?: number;
   /**
-   * the sea's height in the scene (Y), what heights are measured from: the readout, `'auto'`
-   * and the altitude control. Under a `Scenery` they are over its globe's sea, so far from the
-   * field, where the sea curves below Y = 0, they are still heights over it. Default 0
+   * the sea's height in the scene (Y), what heights are measured from: the readout, `'auto'`.
+   * In a `World`, over its globe's sea. Default 0
    */
   level?: number;
-  /** zoom with the mouse wheel over the map. Default `true` */
+  /** step the zoom with the mouse wheel over the map. Default `true` */
   wheelZoom?: boolean;
   /**
-   * Which buttons to show: `true` for all of {@link MINIMAP_CONTROLS}, `false` for none, or a
-   * list of them, in the order they are shown: `'zoom-in'`, `'zoom-out'`, `'zoom-auto'` and
-   * `'center'` (the camera / target toggle, drawn as the marker it centres on). Default `true`
+   * which buttons to show, in order: `true` for all of {@link MINIMAP_CONTROLS} (`'close'` only
+   * when `closable`), `false` for none, or a list. Default `true`
    */
   controls?: boolean | MinimapControl[];
-  /** a compass turning with the map, which a click toggles north-up and heading-up. Default `true` */
-  compass?: boolean;
   /**
-   * whether dropping a marker (`MinimapCameraMarker`, `MinimapTargetMarker`) moves the scene's
-   * controls (R3F's `state.controls`: drei's `CameraControls`, which fly there, or
-   * `OrbitControls`): the camera marker flies the camera, with its target, to the drop; the
-   * target marker re-aims the camera at it. Both keep their heights. Set it to `false` to
-   * handle the drop yourself in `onMarkerDrop`. Default `true`
+   * whether dropping a marker (`GeoMapCameraMarker`, `GeoMapTargetMarker`) moves the scene's
+   * controls (drei's `CameraControls`, which fly there, or `OrbitControls`). Set it to `false`
+   * to handle the drop yourself in `onMarkerDrop`. Default `true`
    */
   dragControls?: boolean;
-  /** a marker was dropped on the map, at scene X/Z (a drop outside the map, or cancelled, is not reported) */
+  /** a marker was dropped on the map, at scene X/Z */
   onMarkerDrop?: (kind: 'camera' | 'target', at: Vec2) => void;
-  /**
-   * the altitude readout, top centre: the height over the sea of what the map is centred on (the
-   * camera, or its target), as text like the extent. A display only; see `altitudeControl`.
-   * Default `true`
-   */
+  /** the height over the sea of what the map is centred on, top centre: a display. Default `true` */
   altitude?: boolean;
   /**
-   * the altitude control: a slim vertical control fixed on the map, on its left edge, to change
-   * the height of what the map is centred on. Pull its knob up to climb or down to descend: it
-   * sets the speed directly, in metres a second, the same at any height, growing with the square
-   * of how far the knob is from the middle up to `maxSpeed` at the end of its travel. Held at
-   * the end it accelerates, doubling every `boostTime` seconds up to `boost` times `maxSpeed`;
-   * pulled back from the end it is at once direct again. Let go and it springs back, Escape puts
-   * the height back. `true` for the defaults, `false` to leave it out, or
-   * {@link MinimapAltitudeControlOptions}: the range (default -5 km to +50 km), `maxSpeed`
-   * (100), `boost` (200) and `boostTime` (1), the travel (`dragRange`) and the `color`. It moves
-   * the controls as dropping a marker does (see `dragControls`): the camera takes its target
-   * along, at the same angle; its target alone leaves the camera. Dimmed and inert without
-   * controls. Default `true`
+   * where the compass, the altitude readout (`altitude`), the buttons (`controls`) and the
+   * extent and distance labels go (see `GeoMapLayout`)
    */
-  altitudeControl?: boolean | MinimapAltitudeControlOptions;
-  /**
-   * where the compass, the altitude readout and control, the buttons and the extent and
-   * distance labels go: an anchor each (a corner, or the middle of an edge), how the buttons
-   * flow (`direction`) and, among those at one anchor, their `order`. See
-   * `MINIMAP_DEFAULT_LAYOUT`
-   */
-  layout?: MinimapLayout;
-  /**
-   * the pose the camera and its target go back to when the marker button is double-clicked:
-   * `{ position, target }` in the scene. Default the pose they had at the first frame
-   */
-  home?: MinimapHome;
-  /** pan the map by dragging it with the right mouse button; it eases back to its centre on release. Default `true` */
+  layout?: GeoMapLayout;
+  /** the pose a double-click on the marker button sends the camera back to. Default the pose it had at the first frame */
+  home?: GeoMapHome;
+  /** drag the map to look around; it eases back to its centre when let go. Default `true` */
   pan?: boolean;
 
-  /** in CSS pixels. Default 220 */
+  /** in CSS pixels, the width it starts at. Default 220 */
   width?: number;
-  /** in CSS pixels. Default 220 */
+  /** in CSS pixels, the height it starts at. Default 220 */
   height?: number;
-  /** the corner it sits in, as a `Panel`'s. Default `'bottom-right'` */
-  origin?: Corner;
-  /** pixels in from the corner, `[x, y]`. Default `[10, 10]` */
-  offset?: [number, number];
-  /** behind the relief, and where it has no data. Default a translucent dark */
-  background?: string;
-  /** CSS border, e.g., '1px solid white'. Default '1px solid white' */
-  border?: string;
-  /** Default 1 */
-  borderRadius?: number;
-  /** the relief's opacity, 0 to 1. Default 1 */
-  opacity?: number;
-  /** DOM element it is appended to. Default the renderer canvas's parent, falling back to `document.body` */
-  parent?: HTMLElement | null;
-
+  /** in an `Overlay`, where it sits. Default `origin` */
+  anchor?: OverlayAnchor;
+  /** in an `Overlay`, its order among the items at its anchor. Default 0 */
+  order?: number;
+  /** names it in the overlay's `layout` */
+  id?: string;
   /**
-   * Layers over the relief: SVG, in the minimap's pixels (`MinimapCameraMarker`,
-   * `MinimapPoints`, `MinimapPolyline`, `MinimapLayer`, your own with `useMinimapFrame`).
-   * They are rendered in a React root of their own, so they do not see the contexts the
-   * `Canvas` provides.
+   * outside an `Overlay`, the corner of its container it sits in (unless `inline`); either
+   * way, its resize handles face away from it. Default `'bottom-right'`
+   */
+  origin?: Corner;
+  /** outside an `Overlay`, at a corner: pixels in from it. Default `[10, 10]` */
+  offset?: [number, number];
+  /**
+   * outside an `Overlay`: in the flow of its container, where a layout of your own puts it,
+   * rather than at a corner of it. Default false
+   */
+  inline?: boolean;
+  /** CSS border. Default `'2px solid rgba(255, 255, 255, 0.9)'` */
+  border?: string;
+  /** Default 2 */
+  borderRadius?: number;
+  /** resized by dragging its edges away from where it sits, within limits. Default `true`: at least 120 x 120 */
+  resizable?: boolean | PanelResizeLimits;
+  /** its size, `[width, height]`, when the host controls it */
+  size?: [number, number];
+  /** told once a resize ends */
+  onSizeChange?: (size: [number, number]) => void;
+  /**
+   * it can be closed into a button (its `'close'` control), which opens it again: closed, the
+   * map is unmounted — its WebGL context given back, nothing done per frame — and its size,
+   * zoom, orientation and centre kept. Default `true`
+   */
+  closable?: boolean;
+  /** whether it is open, when the host controls it */
+  open?: boolean;
+  /** whether it starts open, when not controlled. Default true */
+  defaultOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** the button a closed minimap becomes. Default a folded map, where the minimap sits */
+  collapsed?: PanelCollapsed;
+  /**
+   * Its layers: `GeoMapCameraMarker`, `GeoMapTargetMarker`, and any of a `GeoMap`'s
+   * (`GeoMapPoints`, `GeoMapPolygons`, …)
    */
   children?: ReactNode;
 };
 
-const DEFAULT_OFFSET: [number, number] = [10, 10];
-
-const defaultColor: ReliefColor = {
-  ramp: 'terrain',
-  seabed: { ramp: 'bathymetry' },
-};
+const RESIZE_LIMITS: PanelResizeLimits = { minWidth: 120, minHeight: 120 };
 
 /**
- * An inlet map of the relief that follows the camera: a small panel over the canvas, drawn
- * top-down from the relief's tiles (the same tiles as a `SceneryStage`'s `relief`: its
- * layers merged in longitude and latitude, loaded only where and as finely as the map shows
- * them) in the scene's map. It shows the relief shaded or as an outline, zooms between
- * discrete levels or automatically with the camera's height over the sea, turns north-up or
- * heading-up, and carries layers of your own as SVG.
+ * An inlet map of the relief that follows the camera: a `GeoMap` with a `GeoMapCamera` in a
+ * resizable, closable `Panel` — the relief shaded or as an outline, centred on the camera or
+ * what it looks at, zoomed by level or by the camera's height, north-up or heading-up, with
+ * layers of your own. Dragged, it looks around and eases back; its markers dropped on it fly
+ * the camera there. Closed into its button, it is unmounted, and keeps its size, zoom,
+ * orientation and centre for when it opens again.
  *
- * Place it inside a `<Canvas>` (it needs the camera) and a `GeneratorsProvider` with the
- * `sceneryReliefTile` generator. It draws on a canvas and a WebGL context of its own, only
- * when the view changes or tiles come in, so it costs no frame of the 3D view's. Its tiles
- * are held on the GPU for that context: a few megabytes, whatever the relief.
+ * HTML that follows the 3D view's camera, so it needs the `Canvas`'s contexts: render it in
+ * an `Overlay` (at `anchor`), or in a layout of your own in a `CanvasHtml` — over the view or
+ * in an element of the page beside it — at a corner of its container (`origin`) or in its
+ * flow (`inline`). Inside a `World` and a `GeneratorsProvider` with the `sceneryReliefTile`
+ * generator. Not directly in the `<Canvas>`: it is not a 3D object.
  *
  * @see `documents/minimap.md`
  *
  * @example
- * <Minimap layers={[{ id: 'etopo-2022-nordic' }, { id: 'emodnet-2020-volve', feather: 500 }]}>
- *   <MinimapCameraMarker />
- *   <MinimapPoints points={wellheads} />
- * </Minimap>
+ * <Overlay>
+ *   <Minimap anchor="bottom-right" layers={[{ id: 'etopo-2022-nordic' }]}>
+ *     <GeoMapTargetMarker />
+ *     <GeoMapCameraMarker />
+ *   </Minimap>
+ * </Overlay>
  *
  * @group Components
  */
 export const Minimap = ({
-  layers,
-  base = -100,
-  cellPixels = 2,
-  frame,
-  projection = 'auto',
-  globalProjection = 'web-mercator',
-  globalFrom = 2000000,
-  lambertParallels,
-  zoneBounds,
-  zoneColor = '#ffffff',
-  mode = 'shaded',
+  zoom,
+  defaultZoom = 'auto',
+  onZoomChange,
   orientation,
   defaultOrientation = 'north-up',
   onOrientationChange,
   center,
   defaultCenter = 'camera',
   onCenterChange,
-  color = defaultColor,
-  contours,
-  layerLooks,
-  shading,
-  seaColor = '#1c4a66',
-  outline,
-  zooms = MINIMAP_DEFAULT_ZOOMS,
-  zoom,
-  defaultZoom = 'auto',
-  onZoomChange,
-  autoZoomFactor = 4,
-  autoZoomSmoothing = 0.3,
-  level = 0,
-  wheelZoom = true,
-  controls = true,
-  compass = true,
-  dragControls = true,
-  onMarkerDrop,
-  altitude = true,
-  altitudeControl = false,
-  layout,
-  home,
-  pan = true,
   width = 220,
   height = 220,
+  anchor,
+  order,
+  id,
   origin = 'bottom-right',
-  offset = DEFAULT_OFFSET,
-  background = 'rgba(8, 16, 24, 0.6)',
+  offset,
+  inline,
   border = '2px solid rgba(255, 255, 255, 0.9)',
   borderRadius = 2,
-  opacity = 1,
-  parent,
-  children,
+  resizable = true,
+  size,
+  onSizeChange,
+  closable = true,
+  open,
+  defaultOpen,
+  onOpenChange,
+  collapsed,
+  ...rest
 }: MinimapProps) => {
-  const gl = useThree(state => state.gl);
-  const world = useWorld();
-  const mapFrame = frame ?? world?.frame ?? null;
-  const globe = world?.globe ?? null;
-  const generate = useGenerator<SceneryReliefTileResponse>(sceneryReliefTile);
-
-  const [handle, setHandle] = useState<{
-    controller: MinimapController;
-    root: Root;
-  } | null>(null);
-  const controllerRef = useRef<MinimapController | null>(null);
-  useEffect(() => {
-    const host = parent ?? gl.domElement.parentElement ?? document.body;
-    const controller = new MinimapController(host);
-    const root = createRoot(controller.overlay);
-    controllerRef.current = controller;
-    setHandle({ controller, root });
-    return () => {
-      controllerRef.current = null;
-      setHandle(null);
-      controller.dispose();
-      // Not while React is rendering: it warns of unmounting a root from inside one.
-      setTimeout(() => root.unmount());
-    };
-  }, [gl, parent]);
-
   const [activeZoom, requestZoom] = useControllable(
     zoom,
     defaultZoom,
@@ -398,193 +272,6 @@ export const Minimap = ({
     defaultCenter,
     onCenterChange,
   );
-
-  // The relief's tiles, as the stage's: its layers merged over its base, by content (layers
-  // written inline are new objects each render).
-  const layerKey = JSON.stringify(
-    layers.map(({ id, feather }) => [id, feather ?? 0]),
-  );
-  const source = useMemo<MinimapTileSource | null>(() => {
-    const specs = JSON.parse(layerKey) as [string, number][];
-    if (!specs.length) return null;
-    const plain: ReliefLayersSource = {
-      layers: specs.map(([id, feather]) =>
-        feather ? { id, feather } : { id },
-      ),
-      base,
-    };
-    return { base, load: key => generate(plain, key, RELIEF_TILE_CELLS) };
-  }, [generate, layerKey, base]);
-
-  const looks = useMemo(() => new SceneryReliefLooks(), []);
-  useEffect(() => () => looks.dispose(), [looks]);
-  const lookKey = JSON.stringify([color, contours, layerLooks, layerKey]);
-  useEffect(() => {
-    const specs = JSON.parse(layerKey) as [string, number][];
-    looks.update(
-      { color, contours },
-      specs.map(([id]) => layerLooks?.[id]),
-    );
-    // Written in place: the map has to be drawn again to show it.
-    handle?.controller.invalidate();
-    // The look by value: an inline `color` is a new object each render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [looks, lookKey, handle]);
-
-  useEffect(() => {
-    handle?.controller.setRelief(
-      source ? { source, cellPixels, looks: looks.texture } : null,
-    );
-  }, [handle, source, cellPixels, looks]);
-
-  const frameKey = JSON.stringify(mapFrame);
-  const toLonLat = useMemo(
-    () => (mapFrame ? geoFrameLonLat(mapFrame) : null),
-    // The frame by value.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [frameKey],
-  );
-  const toXZ = useMemo(
-    () => (mapFrame ? geoFrameXZ(mapFrame) : null),
-    // The frame by value.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [frameKey],
-  );
-  // The zone's bounds by value: a tuple written inline is a new array each render.
-  const zoneKey =
-    zoneBounds === false
-      ? 'none'
-      : zoneBounds
-        ? JSON.stringify(zoneBounds)
-        : '';
-  const zone = useMemo(() => {
-    if (zoneKey === 'none') return null;
-    if (zoneKey) return JSON.parse(zoneKey) as [number, number, number, number];
-    const utm = mapFrame ? geoFrameUtmZone(mapFrame) : null;
-    return utm ? utmZoneBounds(utm.zone, utm.south) : null;
-    // The frame by value.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [zoneKey, frameKey]);
-  useEffect(() => {
-    if (!mapFrame && import.meta.env.DEV)
-      console.warn('Minimap: give it a `frame`, or place it in a <World>');
-  }, [mapFrame]);
-
-  const zoomsKey = JSON.stringify(zooms);
-  // The parallels by value: a tuple written inline is a new array each render.
-  const parallelsKey = lambertParallels ? JSON.stringify(lambertParallels) : '';
-  const sortedZooms = useMemo(
-    () => [...(JSON.parse(zoomsKey) as number[])].sort((a, b) => a - b),
-    [zoomsKey],
-  );
-  // Objects the host may give inline, by value: a new one each render must not redraw the map.
-  const homeKey = JSON.stringify(home ?? null);
-  const stableHome = useMemo(
-    () => (JSON.parse(homeKey) as MinimapHome | null) ?? undefined,
-    [homeKey],
-  );
-  const altitudeControlKey = JSON.stringify(altitudeControl);
-  const altitudeControlOptions = useMemo(() => {
-    const given = JSON.parse(altitudeControlKey) as
-      | boolean
-      | MinimapAltitudeControlOptions
-      | undefined;
-    return given === false
-      ? null
-      : resolveMinimapAltitudeControl(typeof given === 'object' ? given : {});
-  }, [altitudeControlKey]);
-  const layoutKey = JSON.stringify(layout ?? null);
-  const stableLayout = useMemo(
-    () => (JSON.parse(layoutKey) as MinimapLayout | null) ?? undefined,
-    [layoutKey],
-  );
-  const [offsetX, offsetY] = offset;
-  const options = useMemo<MinimapOptions>(
-    () => ({
-      toLonLat,
-      toXZ,
-      projection,
-      globalProjection,
-      globalFrom,
-      lambertParallels: parallelsKey
-        ? (JSON.parse(parallelsKey) as [number, number])
-        : null,
-      zooms: sortedZooms.length ? sortedZooms : MINIMAP_DEFAULT_ZOOMS,
-      zoom: activeZoom,
-      autoZoomFactor,
-      autoZoomSmoothing,
-      level,
-      globe,
-      center: activeCenter,
-      orientation: activeOrientation,
-      appearance: {
-        mode,
-        exaggeration: shading?.exaggeration ?? 2,
-        strength: shading?.strength ?? 0.8,
-        seaColor,
-        outlineColor: outline?.color ?? '#ffffff',
-        outlineFill: outline?.fill ?? '#ffffff',
-        outlineFillOpacity: outline?.fillOpacity ?? 0.15,
-      },
-      width,
-      height,
-      origin,
-      offset: [offsetX, offsetY],
-      background,
-      border,
-      borderRadius,
-      opacity,
-      wheelZoom,
-      dragControls,
-      pan,
-      home: stableHome,
-    }),
-    [
-      toLonLat,
-      toXZ,
-      projection,
-      globalProjection,
-      globalFrom,
-      parallelsKey,
-      sortedZooms,
-      activeZoom,
-      autoZoomFactor,
-      autoZoomSmoothing,
-      level,
-      globe,
-      activeCenter,
-      activeOrientation,
-      mode,
-      shading?.exaggeration,
-      shading?.strength,
-      seaColor,
-      outline?.color,
-      outline?.fill,
-      outline?.fillOpacity,
-      width,
-      height,
-      origin,
-      offsetX,
-      offsetY,
-      background,
-      border,
-      borderRadius,
-      opacity,
-      wheelZoom,
-      dragControls,
-      pan,
-      stableHome,
-    ],
-  );
-  useEffect(() => {
-    handle?.controller.setOptions(options);
-  }, [handle, options]);
-
-  const autoZoom = useCallback(() => requestZoom('auto'), [requestZoom]);
-  const stepZoom = useCallback(
-    (direction: 1 | -1) => controllerRef.current?.stepZoom(direction),
-    [],
-  );
   const toggleOrientation = useCallback(
     () =>
       requestOrientation(
@@ -596,99 +283,275 @@ export const Minimap = ({
     () => requestCenter(centerNow.current === 'target' ? 'camera' : 'target'),
     [requestCenter, centerNow],
   );
-  useEffect(() => {
-    if (!handle) return;
-    handle.controller.onZoom = requestZoom;
-  }, [handle, requestZoom]);
-  const onDrop = useRef(onMarkerDrop);
-  useEffect(() => {
-    onDrop.current = onMarkerDrop;
-  });
-  useEffect(() => {
-    if (!handle) return;
-    handle.controller.onDrop = (kind, at) => onDrop.current?.(kind, at);
-  }, [handle]);
-  const buttons = useMemo(
-    () => (controls === true ? MINIMAP_CONTROLS : controls || []),
-    [controls],
-  );
-  const resetHome = useCallback(
-    () => controllerRef.current?.store.host.reset(),
-    [],
-  );
-  useEffect(() => {
-    handle?.root.render(
-      <MinimapOverlay
-        store={handle.controller.store}
+  return (
+    <Panel
+      anchor={anchor ?? origin}
+      order={order}
+      id={id}
+      origin={origin}
+      offset={offset}
+      inline={inline}
+      width={width}
+      height={height}
+      resizable={resizable === true ? RESIZE_LIMITS : resizable}
+      size={size}
+      onSizeChange={onSizeChange}
+      closable={closable}
+      closeButton={false}
+      open={open}
+      defaultOpen={defaultOpen}
+      onOpenChange={onOpenChange}
+      collapsed={{ icon: <GeoMapIcon />, title: 'Show the map', ...collapsed }}
+      background="none"
+      border={border}
+      borderRadius={borderRadius}
+      padding={0}
+    >
+      <MinimapBody
+        {...rest}
+        closable={closable}
         zoom={activeZoom}
-        center={activeCenter}
+        requestZoom={requestZoom}
         orientation={activeOrientation}
-        controls={buttons}
-        compass={compass}
-        altitude={altitude}
-        altitudeControl={altitudeControlOptions}
-        layout={stableLayout}
-        onStep={stepZoom}
-        onAuto={autoZoom}
-        onToggleOrientation={toggleOrientation}
-        onToggleCenter={toggleCenter}
-        onReset={resetHome}
-      >
-        {zone && toXZ && (
-          <MinimapZoneOutline bounds={zone} toXZ={toXZ} color={zoneColor} />
-        )}
-        {children}
-      </MinimapOverlay>,
-    );
-  }, [
-    handle,
-    activeZoom,
-    activeCenter,
-    activeOrientation,
-    buttons,
-    compass,
-    altitude,
-    altitudeControlOptions,
-    stableLayout,
-    stepZoom,
-    autoZoom,
-    toggleOrientation,
-    toggleCenter,
-    resetHome,
-    zone,
-    toXZ,
-    zoneColor,
-    children,
-  ]);
-
-  useFrame((state, dt) => {
-    controllerRef.current?.update(state.camera, dt, state.controls);
-  });
-
-  return null;
+        toggleOrientation={toggleOrientation}
+        center={activeCenter}
+        toggleCenter={toggleCenter}
+      />
+    </Panel>
+  );
 };
 
-// A value the host may control or leave to the component: `request` asks for a change, which
-// the component takes itself unless the host gives `value`.
-function useControllable<T>(
-  value: T | undefined,
-  initial: T,
-  onChange?: (next: T) => void,
-): [T, (next: T) => void, { readonly current: T }] {
-  const [inner, setInner] = useState(initial);
-  const controlled = value !== undefined;
-  const shown = controlled ? value : inner;
-  const latest = useRef({ controlled, onChange });
-  // What it is now, ahead of the next render: a toggle clicked twice in a frame toggles twice.
-  const current = useRef(shown);
-  useEffect(() => {
-    latest.current = { controlled, onChange };
-    current.current = shown;
+type MinimapBodyProps = Omit<
+  MinimapProps,
+  'zoom' | 'orientation' | 'center'
+> & {
+  zoom: MinimapZoom;
+  requestZoom: (zoom: MinimapZoom) => void;
+  orientation: MapOrientation;
+  toggleOrientation: () => void;
+  center: MinimapCenter;
+  toggleCenter: () => void;
+};
+
+// The height of what the map is centred on, as plain text like the extent: a display.
+const AltitudeReadout = ({ center }: { center: MinimapCenter }) => {
+  const label = useRef<HTMLSpanElement>(null);
+  useGeoMapFrame(({ camera }) => {
+    if (!camera) return;
+    setHudText(
+      label.current,
+      formatHudAltitude(
+        center === 'target' ? camera.targetAltitude : camera.altitude,
+      ),
+    );
   });
-  const request = useCallback((next: T) => {
-    current.current = next;
-    if (!latest.current.controlled) setInner(next);
-    latest.current.onChange?.(next);
-  }, []);
-  return [shown, request, current];
-}
+  return (
+    <div
+      title={`Height of the ${center} over the sea`}
+      style={{
+        ...HUD_LABEL,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
+        padding: '2px 4px',
+      }}
+    >
+      <GeoMapMarkerIcon marker={center} box={12} size={10} />
+      <span ref={label} />
+    </div>
+  );
+};
+
+// The map: following the camera, zoomed by level or with its height, its buttons the
+// minimap's.
+const MinimapBody = ({
+  zooms = MINIMAP_DEFAULT_ZOOMS,
+  zoom,
+  requestZoom,
+  orientation,
+  toggleOrientation,
+  center,
+  toggleCenter,
+  autoZoomFactor = 4,
+  autoZoomSmoothing = 0.3,
+  level = 0,
+  wheelZoom = true,
+  controls = true,
+  dragControls = true,
+  onMarkerDrop,
+  altitude = true,
+  layout,
+  home,
+  pan = true,
+  closable = true,
+  children,
+  ...map
+}: MinimapBodyProps) => {
+  const panel = usePanel();
+  const mapRef = useRef<GeoMapHandle>(null);
+  const cameraRef = useRef<GeoMapCameraHandle>(null);
+  const zoomsKey = JSON.stringify(zooms);
+  const levels = useMemo(() => {
+    const sorted = [...(JSON.parse(zoomsKey) as number[])].sort(
+      (a, b) => a - b,
+    );
+    return sorted.length ? sorted : MINIMAP_DEFAULT_ZOOMS;
+  }, [zoomsKey]);
+  const levelAt = (index: number) =>
+    levels[Math.min(Math.max(Math.round(index), 0), levels.length - 1)];
+  const extent = zoom === 'auto' ? ('auto' as const) : levelAt(zoom);
+
+  // A step in or out from where the map is: from its level when it has one (so a second click
+  // before the first has eased in goes on a level), else from the adaptive extent now.
+  const latest = useRef({ zoom, levels });
+  useEffect(() => {
+    latest.current = { zoom, levels };
+  });
+  const stepZoom = useCallback(
+    (direction: 1 | -1) => {
+      const { zoom: now, levels: list } = latest.current;
+      const from =
+        now === 'auto'
+          ? (mapRef.current?.getView()?.extent ?? list[0])
+          : list[Math.min(Math.max(Math.round(now), 0), list.length - 1)];
+      requestZoom(stepMapZoom(list, from, direction));
+    },
+    [requestZoom],
+  );
+  const zoomIn = useCallback(() => stepZoom(1), [stepZoom]);
+  const zoomOut = useCallback(() => stepZoom(-1), [stepZoom]);
+  const zoomAuto = useCallback(() => requestZoom('auto'), [requestZoom]);
+  const goHome = useCallback(() => cameraRef.current?.home(), []);
+
+  const shown = controls === true ? MINIMAP_CONTROLS : controls || [];
+  const onTarget = center === 'target';
+  const auto = zoom === 'auto';
+  const buttons = shown.map(control => {
+    switch (control) {
+      case 'zoom-in':
+      case 'zoom-out': {
+        const inward = control === 'zoom-in';
+        const title = inward ? 'Zoom in' : 'Zoom out';
+        return (
+          <button
+            key={control}
+            type="button"
+            style={HUD_BUTTON}
+            title={title}
+            aria-label={title}
+            onClick={inward ? zoomIn : zoomOut}
+          >
+            {inward ? '+' : '−'}
+          </button>
+        );
+      }
+      case 'zoom-auto':
+        return (
+          <button
+            key={control}
+            type="button"
+            style={{
+              ...HUD_BUTTON,
+              fontSize: 11,
+              borderColor: auto ? HUD_ACTIVE : HUD_IDLE,
+              color: auto ? HUD_ACTIVE : '#fff',
+            }}
+            title="Zoom with the camera's height"
+            aria-label="Automatic zoom"
+            aria-pressed={auto}
+            onClick={zoomAuto}
+          >
+            A
+          </button>
+        );
+      case 'center':
+        return (
+          <button
+            key={control}
+            type="button"
+            style={HUD_BUTTON}
+            title={
+              (onTarget
+                ? 'Centred on what the camera looks at: click to centre on the camera'
+                : 'Centred on the camera: click to centre on what it looks at') +
+              '. Double-click to send the camera home.'
+            }
+            aria-label={onTarget ? 'Centred on target' : 'Centred on camera'}
+            aria-pressed={onTarget}
+            onClick={toggleCenter}
+            onDoubleClick={goHome}
+          >
+            <GeoMapMarkerIcon marker={center} box={22} size={16} />
+          </button>
+        );
+      default:
+        return closable && panel ? (
+          <button
+            key={control}
+            type="button"
+            style={HUD_BUTTON}
+            title="Hide the map"
+            aria-label="Hide the map"
+            onClick={panel.close}
+          >
+            ×
+          </button>
+        ) : null;
+    }
+  });
+
+  return (
+    <GeoMap
+      ref={mapRef}
+      {...map}
+      controls={false}
+      buttons={buttons}
+      items={
+        altitude
+          ? [
+              {
+                id: 'altitude',
+                node: <AltitudeReadout center={center} />,
+                placement: {
+                  anchor: 'top-center',
+                  direction: 'column',
+                  order: 0,
+                },
+              },
+            ]
+          : undefined
+      }
+      layout={layout}
+      wheel={wheelZoom ? 'steps' : 'none'}
+      onStepZoom={stepZoom}
+      pan={pan}
+      doubleClickZoom={false}
+      keyboard={false}
+      minExtent={levels[0]}
+      maxExtent={levels[levels.length - 1]}
+      smoothing={autoZoomSmoothing}
+      heightPerExtent={autoZoomFactor}
+      compassTitle={
+        orientation === 'north-up'
+          ? 'North up: click to point the map where the camera looks'
+          : 'Heading up: click to point the map north'
+      }
+      onCompassClick={toggleOrientation}
+    >
+      <GeoMapCamera
+        ref={cameraRef}
+        follow={center}
+        extent={extent}
+        autoZoomFactor={autoZoomFactor}
+        autoZoomRange={[levels[0], levels[levels.length - 1]]}
+        headingUp={orientation === 'heading-up'}
+        level={level}
+        dragControls={dragControls}
+        onMarkerDrop={onMarkerDrop}
+        home={home}
+      >
+        {children}
+      </GeoMapCamera>
+    </GeoMap>
+  );
+};

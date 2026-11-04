@@ -1,32 +1,39 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
-import type { MinimapAnchor } from './minimap-layout';
+import type { Anchor } from '../../../common/anchor';
+import {
+  reportReliefProgress,
+  SCENERY_DEMO_RELIEF_LAYERS,
+} from '../../../storybook/components/scenery-controls';
 import { demoFrame } from '../../../storybook/data/demo-crs';
 import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator';
 import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator';
 import { SceneryGenerators } from '../../../storybook/decorators/scenery-generators';
-import {
-  reportReliefProgress,
-  SCENERY_DEMO_RELIEF_LAYERS,
-} from '../../../storybook/components/scenery-controls';
 import { GeoRelief } from '../../Layers/GeoRelief';
 import { Scenery } from '../../Scenery/Scenery';
 import { SceneryOcean } from '../../Scenery/SceneryOcean';
 import { SceneryStage } from '../../Scenery/SceneryStage';
 import { World } from '../../World/World';
-import { Minimap, type MinimapProps } from './Minimap';
+import { AltitudeControl } from '../AltitudeControl/AltitudeControl';
 import {
-  MinimapCameraMarker,
-  MinimapPoints,
-  MinimapPolyline,
-  MinimapTargetMarker,
-} from './MinimapLayers';
-import { MINIMAP_CONTROLS, type MinimapControl } from './MinimapOverlay';
-import type { MinimapZoom } from './minimap-controller';
+  GeoMapCameraMarker,
+  GeoMapTargetMarker,
+} from '../GeoMap/GeoMapMarkers';
+import { GeoMapPoints, GeoMapPolyline } from '../GeoMap/layers/GeoMapLayers';
+import { Overlay } from '../Overlay/Overlay';
+import {
+  Minimap,
+  MINIMAP_CONTROLS,
+  type MinimapControl,
+  type MinimapProps,
+  type MinimapZoom,
+} from './Minimap';
 
-// The inlet map over the demo reliefs around Volve (npm run generate-relief): shaded or
-// as an outline, zoomed by the camera's height or by level, with layers of its own.
+// The inlet map over the demo reliefs around Volve (npm run generate-relief), in an
+// Overlay over the 3D view with the altitude gadget: shaded or as an outline, zoomed by the
+// camera's height or by level, with layers of its own; resized by its edges, closed into a
+// button.
 
 const LEVEL = 0;
 const DEPTH = 100;
@@ -52,10 +59,12 @@ const STAGE_BOUNDS: [number, number, number, number] = [
 // The zoom levels the story offers, passed as a host passes its own list: the library's
 // default, and two past it for a projection of the whole world (`projection`).
 const STORY_ZOOMS = [1000, 5000, 25000, 100000, 1000000, 5000000, 20000000];
-const ANCHORS: MinimapAnchor[] = [
+const ANCHORS: Anchor[] = [
   'top-left',
   'top-center',
   'top-right',
+  'left-center',
+  'right-center',
   'bottom-left',
   'bottom-center',
   'bottom-right',
@@ -72,12 +81,12 @@ type MinimapArgs = Omit<
   | 'children'
   | 'controls'
   | 'zooms'
-  | 'radius'
   | 'altitude'
-  | 'altitudeControl'
   | 'layout'
   | 'zoneBounds'
+  | 'anchor'
 > & {
+  anchor: Anchor;
   zoneOutline: boolean;
   zoom: (typeof ZOOM_OPTIONS)[number];
   layerIds: string[];
@@ -86,23 +95,19 @@ type MinimapArgs = Omit<
   markerColor: string;
   shapeColor: string;
   shape: 'cone' | 'circle' | 'none';
-  // 0: a fraction of the map; else the radius in metres
+  // 0: the scale bar's length; else the reach in metres
   radiusMetres: number;
   targetMarker: boolean;
   draggable: boolean;
   altitudeReadout: boolean;
-  altitudeControlOn: boolean;
-  altitudeMin: number;
-  altitudeMax: number;
+  altitudeGadget: boolean;
+  altitudeMarker: 'camera' | 'target';
+  altitudeAnchor: Anchor;
   altitudeMaxSpeed: number;
   altitudeBoost: number;
-  altitudeBoostTime: number;
-  altitudeDragRange: number;
-  altitudeColor: string;
-  compassAnchor: MinimapAnchor;
-  altitudeAnchor: MinimapAnchor;
-  altitudeControlAnchor: MinimapAnchor;
-  controlsAnchor: MinimapAnchor;
+  compassAnchor: Anchor;
+  readoutAnchor: Anchor;
+  controlsAnchor: Anchor;
   controlsDirection: 'row' | 'column';
 };
 
@@ -123,17 +128,13 @@ const MinimapStory = ({
   targetMarker,
   draggable,
   altitudeReadout,
-  altitudeControlOn,
-  altitudeMin,
-  altitudeMax,
+  altitudeGadget,
+  altitudeMarker,
+  altitudeAnchor,
   altitudeMaxSpeed,
   altitudeBoost,
-  altitudeBoostTime,
-  altitudeDragRange,
-  altitudeColor,
   compassAnchor,
-  altitudeAnchor,
-  altitudeControlAnchor,
+  readoutAnchor,
   controlsAnchor,
   controlsDirection,
   zoneOutline,
@@ -161,62 +162,62 @@ const MinimapStory = ({
           color={{ ramp: 'terrain' }}
           onProgress={reportReliefProgress}
         />
-        <Minimap
-          {...args}
-          layers={layers}
-          zooms={STORY_ZOOMS}
-          zoom={currentZoom}
-          onZoomChange={setCurrentZoom}
-          orientation={currentOrientation}
-          onOrientationChange={setCurrentOrientation}
-          center={currentCenter}
-          onCenterChange={setCurrentCenter}
-          controls={controlButtons}
-          altitude={altitudeReadout}
-          altitudeControl={
-            altitudeControlOn && {
-              min: altitudeMin,
-              max: altitudeMax,
-              maxSpeed: altitudeMaxSpeed,
-              boost: altitudeBoost,
-              boostTime: altitudeBoostTime,
-              dragRange: altitudeDragRange,
-              color: altitudeColor,
+        <Overlay>
+          <Minimap
+            {...args}
+            layers={layers}
+            depth={DEPTH}
+            zooms={STORY_ZOOMS}
+            zoom={currentZoom}
+            onZoomChange={setCurrentZoom}
+            orientation={currentOrientation}
+            onOrientationChange={setCurrentOrientation}
+            center={currentCenter}
+            onCenterChange={setCurrentCenter}
+            controls={controlButtons}
+            altitude={altitudeReadout}
+            layout={{
+              compass: { anchor: compassAnchor },
+              altitude: { anchor: readoutAnchor },
+              controls: {
+                anchor: controlsAnchor,
+                direction: controlsDirection,
+              },
+            }}
+            level={LEVEL}
+            zoneBounds={zoneOutline ? undefined : false}
+            onMarkerDrop={(kind, at) =>
+              console.info(`Minimap: ${kind} dropped at`, at)
             }
-          }
-          layout={{
-            compass: { anchor: compassAnchor },
-            altitude: { anchor: altitudeAnchor },
-            altitudeControl: { anchor: altitudeControlAnchor },
-            controls: {
-              anchor: controlsAnchor,
-              direction: controlsDirection,
-            },
-          }}
-          level={LEVEL}
-          zoneBounds={zoneOutline ? undefined : false}
-          onMarkerDrop={(kind, at) =>
-            console.info(`Minimap: ${kind} dropped at`, at)
-          }
-        >
-          <MinimapPolyline
-            points={SQUARE}
-            closed
-            stroke="#ffd21a"
-            fill="#ffd21a"
-          />
-          {markers && <MinimapPoints points={PLACES} />}
-          {targetMarker && (
-            <MinimapTargetMarker color={markerColor} draggable={draggable} />
+          >
+            <GeoMapPolyline
+              points={SQUARE}
+              closed
+              stroke="#ffd21a"
+              fill="#ffd21a"
+            />
+            {markers && <GeoMapPoints points={PLACES} />}
+            {targetMarker && (
+              <GeoMapTargetMarker color={markerColor} draggable={draggable} />
+            )}
+            <GeoMapCameraMarker
+              color={markerColor}
+              shapeColor={shapeColor}
+              shape={shape}
+              radius={radiusMetres > 0 ? radiusMetres : undefined}
+              draggable={draggable}
+            />
+          </Minimap>
+          {altitudeGadget && (
+            <AltitudeControl
+              anchor={altitudeAnchor}
+              marker={altitudeMarker}
+              level={LEVEL}
+              maxSpeed={altitudeMaxSpeed}
+              boost={altitudeBoost}
+            />
           )}
-          <MinimapCameraMarker
-            color={markerColor}
-            shapeColor={shapeColor}
-            shape={shape}
-            radius={radiusMetres > 0 ? radiusMetres : undefined}
-            draggable={draggable}
-          />
-        </Minimap>
+        </Overlay>
       </SceneryGenerators>
     </World>
   );
@@ -244,7 +245,7 @@ const meta = {
       control: { type: 'check' },
       options: LAYERS.map(layer => layer.id),
       description:
-        'The reliefs it merges, coarse to fine, as a `SceneryStage` merges its `relief.layers`.',
+        'The reliefs it merges, coarse to fine, as a `GeoRelief` merges its `layers`.',
       table: { category: 'Data' },
     },
     mode: {
@@ -264,6 +265,13 @@ const meta = {
     contours: {
       control: { type: 'boolean' },
       description: 'Contour lines, every 100 m.',
+      table: { category: 'Look' },
+    },
+    center: {
+      control: { type: 'inline-radio' },
+      options: ['camera', 'target'],
+      description:
+        'What the map is centred on: the camera, or what it looks at (the controls’ target, at the sea’s level). The marker button toggles it.',
       table: { category: 'Look' },
     },
     projection: {
@@ -308,30 +316,33 @@ const meta = {
       control: { type: 'range', min: 1, max: 12, step: 0.5 },
       table: { category: 'Zoom' },
     },
-    origin: {
+    anchor: {
       control: { type: 'select' },
-      options: ['top-left', 'top-right', 'bottom-left', 'bottom-right'],
+      options: ANCHORS,
+      description: 'Where it sits in the overlay.',
       table: { category: 'Panel' },
     },
     width: {
-      control: { type: 'range', min: 100, max: 600, step: 10 },
+      control: { type: 'range', min: 120, max: 600, step: 10 },
+      description: 'The width it starts at; drag its edges to resize it.',
       table: { category: 'Panel' },
     },
     height: {
-      control: { type: 'range', min: 100, max: 600, step: 10 },
+      control: { type: 'range', min: 120, max: 600, step: 10 },
+      description: 'The height it starts at.',
       table: { category: 'Panel' },
     },
-    markers: {
+    resizable: {
+      control: { type: 'boolean' },
       description:
-        'Layers of its own: Volve, the trench and the coast as points.',
-      table: { category: 'Layers' },
+        'Resized by dragging its edges and corner away from where it sits.',
+      table: { category: 'Panel' },
     },
-    center: {
-      control: { type: 'inline-radio' },
-      options: ['camera', 'target'],
+    closable: {
+      control: { type: 'boolean' },
       description:
-        'What the map is centred on: the camera, or what it looks at (the controls’ target, at the sea’s level). The marker button toggles it.',
-      table: { category: 'Look' },
+        'Its × closes it into a button where it sat, which opens it again: closed, the map is unmounted (its WebGL context given back), and keeps its size, zoom, orientation and centre.',
+      table: { category: 'Panel' },
     },
     controlButtons: {
       control: { type: 'check' },
@@ -344,6 +355,21 @@ const meta = {
         'The compass, which a click turns between north-up and heading-up.',
       table: { category: 'Panel' },
     },
+    pan: {
+      description:
+        'Drag the map to look around (left button, or a finger); it eases back to its centre on release. The markers are taken first.',
+      table: { category: 'Panel' },
+    },
+    altitudeReadout: {
+      description:
+        'The altitude readout: the height of what the map is centred on, as text.',
+      table: { category: 'Panel' },
+    },
+    markers: {
+      description:
+        'Layers of its own: Volve, the trench and the coast as points.',
+      table: { category: 'Layers' },
+    },
     targetMarker: {
       description: 'A marker on the camera’s target.',
       table: { category: 'Layers' },
@@ -355,75 +381,69 @@ const meta = {
     },
     dragControls: {
       description:
-        'Whether a drop, the altitude bar and the reset move the controls; off, a drop is only reported (`onMarkerDrop`).',
+        'Whether a drop and the home button move the controls; off, a drop is only reported (`onMarkerDrop`).',
       table: { category: 'Layers' },
     },
-    pan: {
+    shape: {
+      control: { type: 'inline-radio' },
+      options: ['cone', 'circle', 'none'],
       description:
-        'Pan the map with the right mouse button; it eases back to its centre on release.',
-      table: { category: 'Panel' },
+        'Round the camera’s arrow: its field of view as a CONE, or a CIRCLE, reaching as far as the scale bar measures (or the radius below).',
+      table: { category: 'Layers' },
     },
-    altitudeReadout: {
+    radiusMetres: {
+      control: { type: 'range', min: 0, max: 500000, step: 500 },
       description:
-        'The altitude readout, top centre: the height of what the map is centred on, as text. A display only.',
+        'The circle’s radius, or the cone’s reach, in metres; 0 for the scale bar’s length, which reads as the distance the bar shows at every zoom.',
+      table: { category: 'Layers' },
+    },
+    markerColor: {
+      control: { type: 'color' },
+      description: 'The camera’s arrow and the target marker.',
+      table: { category: 'Layers' },
+    },
+    shapeColor: {
+      control: { type: 'color' },
+      description: 'The cone or circle.',
+      table: { category: 'Layers' },
+    },
+    altitudeGadget: {
+      description:
+        'The altitude control, a gadget of the overlay anchored to the 3D view: pull its knob up to climb, down to descend; let go and it springs back. Escape puts the height back.',
       table: { category: 'Altitude' },
     },
-    altitudeControlOn: {
+    altitudeMarker: {
+      control: { type: 'inline-radio' },
+      options: ['camera', 'target'],
       description:
-        'The altitude control, fixed on the map: pull its knob up to climb, down to descend. The further from the middle, the faster (with the square of the distance); let go and it springs back. Escape puts the height back.',
+        'Whose height it changes: the camera’s (its target comes along) or its target’s alone.',
       table: { category: 'Altitude' },
     },
-    altitudeMin: {
-      control: { type: 'range', min: -50000, max: -100, step: 100 },
-      description: 'The lowest height it moves to, metres from the sea.',
-      table: { category: 'Altitude' },
-    },
-    altitudeMax: {
-      control: { type: 'range', min: 1000, max: 1000000, step: 1000 },
-      description: 'The highest.',
+    altitudeAnchor: {
+      control: { type: 'select' },
+      options: ANCHORS,
       table: { category: 'Altitude' },
     },
     altitudeMaxSpeed: {
       control: { type: 'range', min: 1, max: 1000, step: 1 },
       description:
-        'Metres a second with the knob at the end of its travel: the knob sets the speed directly, the same at any height, growing with the square of how far it is from the middle.',
+        'Metres a second with the knob at the end of its travel: the knob sets the speed directly, growing with the square of how far it is from the middle.',
       table: { category: 'Altitude' },
     },
     altitudeBoost: {
       control: { type: 'range', min: 1, max: 1000, step: 1 },
       description:
-        'How many times that speed it can accelerate to, held at the end of the travel. Pulled back from the end it is direct again at once. 1: no acceleration.',
-      table: { category: 'Altitude' },
-    },
-    altitudeBoostTime: {
-      control: { type: 'range', min: 0.1, max: 5, step: 0.1 },
-      description: 'Seconds the speed takes to double, held at the end.',
-      table: { category: 'Altitude' },
-    },
-    altitudeDragRange: {
-      control: { type: 'range', min: 20, max: 300, step: 10 },
-      description:
-        'Pixels the knob travels each way from the middle, at most: a map shorter than six times it shortens it to a sixth of its height, so the control keeps its proportion to the map.',
-      table: { category: 'Altitude' },
-    },
-    altitudeColor: {
-      control: { type: 'color' },
-      description: 'The control’s colour.',
+        'How many times that speed it can accelerate to, held at the end of the travel. 1: no acceleration.',
       table: { category: 'Altitude' },
     },
     compassAnchor: {
       control: { type: 'select' },
       options: ANCHORS,
       description:
-        'Layout: where each item sits, a corner or the middle of an edge.',
+        'Layout: where each item sits on the map, a corner or the middle of an edge.',
       table: { category: 'Layout' },
     },
-    altitudeAnchor: {
-      control: { type: 'select' },
-      options: ANCHORS,
-      table: { category: 'Layout' },
-    },
-    altitudeControlAnchor: {
+    readoutAnchor: {
       control: { type: 'select' },
       options: ANCHORS,
       table: { category: 'Layout' },
@@ -438,29 +458,6 @@ const meta = {
       options: ['column', 'row'],
       table: { category: 'Layout' },
     },
-    shape: {
-      control: { type: 'inline-radio' },
-      options: ['cone', 'circle', 'none'],
-      description:
-        'Round the camera’s arrow: its field of view as a CONE, or a CIRCLE of the radius below.',
-      table: { category: 'Layers' },
-    },
-    radiusMetres: {
-      control: { type: 'range', min: 0, max: 500000, step: 500 },
-      description:
-        'The circle’s radius, or the cone’s reach, in metres; 0 for a share of the map (0.45 of its width), which keeps its size at every zoom.',
-      table: { category: 'Layers' },
-    },
-    markerColor: {
-      control: { type: 'color' },
-      description: 'The camera’s arrow and the target marker.',
-      table: { category: 'Layers' },
-    },
-    shapeColor: {
-      control: { type: 'color' },
-      description: 'The cone or circle.',
-      table: { category: 'Layers' },
-    },
   },
   args: {
     layerIds: LAYERS.map(layer => layer.id),
@@ -474,34 +471,32 @@ const meta = {
     zoneOutline: true,
     zoom: 'auto',
     autoZoomFactor: 4,
-    origin: 'bottom-right',
+    anchor: 'bottom-right',
     width: 240,
     height: 240,
+    resizable: true,
+    closable: true,
     controlButtons: MINIMAP_CONTROLS,
     compass: true,
+    pan: true,
+    altitudeReadout: true,
     markers: true,
     targetMarker: true,
     draggable: true,
     dragControls: true,
-    pan: true,
-    altitudeReadout: true,
-    altitudeControlOn: true,
-    altitudeMin: -5000,
-    altitudeMax: 50000,
-    altitudeMaxSpeed: 100,
-    altitudeBoost: 200,
-    altitudeBoostTime: 1,
-    altitudeDragRange: 100,
-    altitudeColor: '#ffffff',
-    compassAnchor: 'top-left',
-    altitudeAnchor: 'top-center',
-    altitudeControlAnchor: 'left-center',
-    controlsAnchor: 'top-right',
-    controlsDirection: 'column',
     shape: 'cone',
     radiusMetres: 0,
     markerColor: '#ffffff',
     shapeColor: '#ffffff',
+    altitudeGadget: true,
+    altitudeMarker: 'camera',
+    altitudeAnchor: 'left-center',
+    altitudeMaxSpeed: 100,
+    altitudeBoost: 200,
+    compassAnchor: 'top-left',
+    readoutAnchor: 'top-center',
+    controlsAnchor: 'top-right',
+    controlsDirection: 'column',
   },
 } satisfies Meta<typeof MinimapStory>;
 
@@ -520,15 +515,25 @@ export const FromHigh: Story = {
   parameters: { cameraPosition: [0, 400000, 1], cameraTarget: [0, 0, 0] },
 };
 
-/** Centred on what the camera looks at, with a circle of 5 km round the camera. */
+/** Centred on what the camera looks at, with a circle round the camera as far as the scale bar measures. */
 export const CentredOnTarget: Story = {
-  args: { center: 'target', shape: 'circle', radiusMetres: 5000 },
+  args: { center: 'target', shape: 'circle' },
 };
 
-/** The camera under the sea, 300 m down: the altitude bar reaches below the sea's level. */
+/** The camera under the sea, 300 m down: the altitude gadget reaches below the sea's level. */
 export const Subsurface: Story = {
   parameters: {
     cameraPosition: [3000, -300, 3000],
     cameraTarget: [0, -100, 0],
+  },
+};
+
+/** Larger, top left, and closed into its button to start with: open it, resize it, close it again. */
+export const Closed: Story = {
+  args: {
+    anchor: 'top-left',
+    width: 360,
+    height: 280,
+    defaultOpen: false,
   },
 };

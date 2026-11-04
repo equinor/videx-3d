@@ -2,7 +2,6 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useMemo } from 'react';
 import type { GeoFeature } from '../../sdk/layers/geo-features';
 import {
-  DEMO_MEDIUM_COLORS,
   demoFacilityStyle,
   demoInService,
   demoPipelineStyle,
@@ -24,8 +23,13 @@ import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorato
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { SceneryGenerators } from '../../storybook/decorators/scenery-generators';
+import { GeoMapCameraMarker } from '../Html/GeoMap/GeoMapMarkers';
+import {
+  GeoMapLines,
+  GeoMapSymbols,
+} from '../Html/GeoMap/layers/GeoMapFeatureLayers';
 import { Minimap } from '../Html/Minimap/Minimap';
-import { MinimapCameraMarker } from '../Html/Minimap/MinimapLayers';
+import { Overlay } from '../Html/Overlay/Overlay';
 import { Scenery } from '../Scenery/Scenery';
 import { SceneryOcean } from '../Scenery/SceneryOcean';
 import { SceneryStage } from '../Scenery/SceneryStage';
@@ -34,7 +38,6 @@ import { GeoLabels } from './GeoLabels';
 import { GeoRelief } from './GeoRelief';
 import { GeoSymbols } from './GeoSymbols';
 import { GeoTubes } from './GeoTubes';
-import { MinimapGeoLayer, type MinimapGeoStyle } from './MinimapGeoLayer';
 
 // Pipelines and facilities on the Norwegian continental shelf (demo-pipelines.tsx), lying on
 // the seabed the relief (GeoRelief) draws, about the demo field at Volve.
@@ -71,20 +74,11 @@ const facilityName = (feature: GeoFeature<DemoFacility>) =>
 const onMinimap = (feature: GeoFeature<DemoFacility>) =>
   feature.properties.surface === 'Y' ||
   feature.properties.kind === 'ONSHORE FACILITY';
-const pipelineMinimapStyle = (
-  feature: GeoFeature<DemoPipeline>,
-): MinimapGeoStyle => ({
-  stroke: DEMO_MEDIUM_COLORS[feature.properties.medium] ?? '#999999',
-  strokeWidth: demoInService(feature.properties.phase) ? 1.5 : 0.75,
-});
-const facilityMinimapStyle = (
-  feature: GeoFeature<DemoFacility>,
-): MinimapGeoStyle => ({
-  fill: feature.properties.kind === 'ONSHORE FACILITY' ? '#ffffff' : '#ffd43b',
-  stroke: '#000000',
-  strokeWidth: 0.5,
-  radius: feature.properties.kind === 'ONSHORE FACILITY' ? 3.5 : 2,
-});
+// The map's own: the pipelines in service wider, the terminals larger.
+const pipelineWidth = (feature: GeoFeature<DemoPipeline>) =>
+  demoInService(feature.properties.phase) ? 1.5 : 0.75;
+const facilityRadius = (feature: GeoFeature<DemoFacility>) =>
+  feature.properties.kind === 'ONSHORE FACILITY' ? 3.5 : 2;
 
 const PipelinesStory = ({
   sea,
@@ -125,6 +119,9 @@ const PipelinesStory = ({
   const layers = relief ? SCENERY_DEMO_RELIEF_LAYERS : [];
   // On the sea as a map, through its surface and seabed: from `revealAbove` up, or always.
   const revealed = useDemoReveal({ reveal, revealAbove, revealFade });
+  // One object of props for the scene's layer and the map's.
+  const tubes = { data: shownPipelines, style: demoPipelineStyle, opacity };
+  const symbols = { data: facilities, style: demoFacilityStyle };
   return (
     <World frame={demoFrame}>
       <SceneryGenerators>
@@ -139,21 +136,18 @@ const PipelinesStory = ({
           />
           {/* Inside the Scenery: on its relief, seen through its sea (water). */}
           <GeoTubes
-            data={shownPipelines}
-            style={demoPipelineStyle}
+            {...tubes}
             spacingPerDistance={spacingPerDistance}
             span={span}
             height={height}
             water={water}
             exaggeration={exaggeration}
             minPixels={minPixels}
-            opacity={opacity}
             reveal={revealed}
           />
           {showFacilities && (
             <GeoSymbols
-              data={facilities}
-              style={demoFacilityStyle}
+              {...symbols}
               height={height}
               water={water}
               minPixels={facilityPixels}
@@ -173,23 +167,25 @@ const PipelinesStory = ({
           )}
         </Scenery>
         {minimap && (
-          <Minimap layers={layers} origin="bottom-right" level={LEVEL}>
-            <MinimapGeoLayer
-              data={shownPipelines}
-              frame={demoFrame}
-              style={pipelineMinimapStyle}
-            />
-            {showFacilities && (
-              <MinimapGeoLayer
-                data={facilities}
-                frame={demoFrame}
-                style={facilityMinimapStyle}
-                filter={onMinimap}
-                maxExtent={400000}
-              />
-            )}
-            <MinimapCameraMarker />
-          </Minimap>
+          <Overlay>
+            <Minimap
+              layers={layers}
+              depth={DEPTH}
+              anchor="bottom-right"
+              level={LEVEL}
+            >
+              <GeoMapLines {...tubes} strokeWidth={pipelineWidth} />
+              {showFacilities && (
+                <GeoMapSymbols
+                  {...symbols}
+                  filter={onMinimap}
+                  radius={facilityRadius}
+                  maxExtent={400000}
+                />
+              )}
+              <GeoMapCameraMarker />
+            </Minimap>
+          </Overlay>
         )}
       </SceneryGenerators>
     </World>
@@ -316,7 +312,7 @@ const meta = {
     ...demoRevealArgTypes('Reveal'),
     minimap: {
       description:
-        'The same data on a `Minimap` (`MinimapGeoLayer`), less the subsea facilities (its `filter`): the routes thinned to a pixel as they are drawn.',
+        'The same data on a `Minimap`, from the same props as the scene’s layers (`GeoMapLines`, `GeoMapSymbols`), less the subsea facilities (its `filter`): the routes thinned to a pixel as they are drawn.',
       table: { category: 'Minimap' },
     },
   },

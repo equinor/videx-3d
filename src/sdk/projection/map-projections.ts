@@ -12,7 +12,7 @@ const DEG = Math.PI / 180;
  * @group Utils
  */
 export type MapProjection = {
-  /** what the `Minimap`'s `projection` names it */
+  /** what a `GeoMap`'s (and a `Minimap`'s) `projection` names it */
   name: 'web-mercator' | 'equal-earth' | 'lambert-conformal-conic';
   /** metres east and north of longitude 0 (the central meridian) on the equator — or, for a cone, on its origin's parallel */
   forward(longitude: number, latitude: number): Vec2;
@@ -148,7 +148,7 @@ export const equalEarth: MapProjection = {
   },
 };
 
-/** The projections of the whole world by the `Minimap`'s name for them; a cone is made per view (see {@link lambertConformalConic}). */
+/** The projections of the whole world by a `GeoMap`'s name for them; a cone is made per view (see {@link lambertConformalConic}). */
 export const MAP_PROJECTIONS: Record<
   'web-mercator' | 'equal-earth',
   MapProjection
@@ -293,6 +293,8 @@ export type MapPlane = {
   meridian: number;
   /** scene X/Z to the plane */
   toPlane(x: number, z: number): Vec2;
+  /** longitude and latitude, degrees, to the plane: anywhere on the Earth, without the scene's map */
+  fromLonLat(longitude: number, latitude: number): Vec2;
   /** the plane to scene X/Z: off the map, the nearest point it holds */
   fromPlane(u: number, v: number): Vec2;
   /** longitude (from `meridian`) and latitude at a point of the plane */
@@ -322,6 +324,10 @@ export function mapPlane(
     meridian,
     toPlane(x, z) {
       const [longitude, latitude] = toLonLat(x, z);
+      const [u, n] = projection.forward(wrap(longitude), latitude);
+      return [u, -n];
+    },
+    fromLonLat(longitude, latitude) {
       const [u, n] = projection.forward(wrap(longitude), latitude);
       return [u, -n];
     },

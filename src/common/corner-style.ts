@@ -1,5 +1,6 @@
 /**
- * A corner of its container an overlay (`Panel`, `RenderStats`, `Minimap`) is anchored to.
+ * A corner of its container an overlay (`Panel`, `RenderStats`, a `Minimap` placed directly in
+ * the `Canvas`) is anchored to.
  *
  * @group Utils
  */
