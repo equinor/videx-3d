@@ -48,6 +48,8 @@ type CasingSectionProps = {
   schematic?: boolean;
 } & PointerEvents;
 
+const noEffects: CasingEffects = {};
+
 export const CasingSection = ({
   section,
   materialOptions,
@@ -58,7 +60,7 @@ export const CasingSection = ({
   autoSlicePosition = false,
   opacity = 1,
   renderOrder,
-  effects = {},
+  effects = noEffects,
   wellLength = 1,
   sectionIndex = -1,
   schematic = false,

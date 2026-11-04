@@ -29,6 +29,7 @@ export type WellboreProps = {
 } & PointerEvents;
 
 const vec = new Vector3();
+const defaultPosition: Vec3 = [0, 0, 0];
 
 /**
  * The `Wellbore` component serves as a provider/container component only. It does not visualize anything alone!
@@ -63,7 +64,7 @@ export const Wellbore = ({
   fromMsl,
   segmentsPerMeter = 0.1,
   simplificationThreshold = 0,
-  position = [0, 0, 0],
+  position = defaultPosition,
   visible = true,
   onPointerClick,
   onPointerEnter,

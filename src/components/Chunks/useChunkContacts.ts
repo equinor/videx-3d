@@ -39,6 +39,7 @@ export function useChunkContacts(
       let added = false;
       for (const [id, surface] of wanted) {
         if (maps.current.has(id)) continue;
+        // oxlint-disable-next-line eslint/no-await-in-loop -- one at a time: each is a full grid, and a cancel stops the rest
         const values = await store.get<Float32Array>('surface-values', id);
         if (cancelled) return;
         if (!values) continue;

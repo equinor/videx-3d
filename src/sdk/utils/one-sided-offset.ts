@@ -2157,8 +2157,8 @@ export function oneSidedOffset(
         near.point[1] + (p[1] - near.point[1]) * s,
       ];
     });
-    for (const index of reliable) {
-      rod = holdPolylineChords2D(rod, index, margin, {
+    for (const oi of reliable) {
+      rod = holdPolylineChords2D(rod, oi, margin, {
         // ⛔ Between the well and a ring the lift can cut into the ring: X08 at margin 1.9–2.1, 2 cm.
         blocked: (a, p, b) => inZone(a, p) >= 0 || inZone(p, b) >= 0,
         label: 'oneSidedOffset: stiff rod',

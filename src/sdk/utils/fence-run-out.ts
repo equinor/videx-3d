@@ -478,8 +478,8 @@ export function freeRunBetween(
   let inB = cb.startsInside;
   if (inA && inB) return 0;
   const events = [
-    ...ca.crossings.map(c => ({ ...c, zone: 0 })),
-    ...cb.crossings.map(c => ({ ...c, zone: 1 })),
+    ...ca.crossings.map(c => ({ arc: c.arc, entering: c.entering, zone: 0 })),
+    ...cb.crossings.map(c => ({ arc: c.arc, entering: c.entering, zone: 1 })),
   ].sort((p, q) => p.arc - q.arc);
   let best = Infinity;
   let left: { zone: number; at: number } | null = null;

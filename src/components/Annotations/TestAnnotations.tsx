@@ -11,6 +11,8 @@ type Props = {
   radius?: number;
 };
 
+const defaultPosition: Vec3 = [0, 0, 0];
+
 /**
  * @interal for testing purposes
  */
@@ -18,7 +20,7 @@ export const TestAnnotations = ({
   layer,
   count = 10,
   radius = 1000,
-  position = [0, 0, 0],
+  position = defaultPosition,
 }: Props) => {
   const scope = useMemo(() => nanoid(), []);
 

@@ -41,14 +41,12 @@ export const ActiveTrack = ({
   const strokeWidth = useMemo(() => (ratio > 0 ? ratio * 10 : 0), [ratio]);
 
   const segments = useMemo(() => {
-    const segments: [number, number][] = [];
+    const points: [number, number][] = [];
     if (wellbore) {
       let fromSlot = slotsById[wellbore.id];
       let current: WellboreHeader | undefined = wellbore;
 
-      const x = getSlotPosition(fromSlot);
-      const y = depthScale(wellbore.depthMdMsl);
-      segments.push([x, y]);
+      points.push([getSlotPosition(fromSlot), depthScale(wellbore.depthMdMsl)]);
 
       while (current) {
         const parent: WellboreHeader | undefined = current.parent
@@ -60,16 +58,13 @@ export const ActiveTrack = ({
             : -current.depthReferenceElevation;
         const toSlot = parent ? slotsById[parent.id] : fromSlot;
 
-        const x = getSlotPosition(toSlot);
-        const y = depthScale(toDepth);
-
-        segments.push([x, y]);
+        points.push([getSlotPosition(toSlot), depthScale(toDepth)]);
 
         fromSlot = toSlot;
         current = parent;
       }
     }
-    return segments.reverse();
+    return points.reverse();
   }, [wellbore, depthScale, getSlotPosition, slotsById, wellboresByName]);
 
   const kickoff = useMemo(() => {
@@ -84,18 +79,18 @@ export const ActiveTrack = ({
   }, [wellbore, depthScale]);
 
   const pathStr = useCallback(
-    (segments: [number, number][]) => {
+    (points: [number, number][]) => {
       const pathFunc = path();
-      if (segments.length < 2) return '';
+      if (points.length < 2) return '';
 
-      let x1 = segments[0][0];
-      let y1 = segments[0][1];
+      let x1 = points[0][0];
+      let y1 = points[0][1];
 
       pathFunc.moveTo(x1, y1);
 
-      for (let i = 1; i < segments.length; i++) {
-        const x2 = segments[i][0];
-        const y2 = segments[i][1];
+      for (let i = 1; i < points.length; i++) {
+        const x2 = points[i][0];
+        const y2 = points[i][1];
 
         pathFunc.lineTo(x1, y1);
         if (x1 !== x2) {

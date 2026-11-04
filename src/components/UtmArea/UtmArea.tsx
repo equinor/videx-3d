@@ -78,6 +78,7 @@ export type UtmAreaProps = {
 
 const placing = new Matrix4();
 const shift = new Matrix4();
+const zeroOffset: Vec3 = [0, 0, 0];
 
 /**
  * A container component that maps a UTM reference point to a 3d world space origin. This can be used by sub components to
@@ -129,7 +130,7 @@ export const UtmArea = forwardRef<CRS, PropsWithChildren<UtmAreaProps>>(
       datum,
       origin,
       originUnits = 'utm',
-      offset = [0, 0, 0],
+      offset = zeroOffset,
       utmProjectionDef,
       frame,
       boundary: givenBoundary,
@@ -291,12 +292,11 @@ export const UtmArea = forwardRef<CRS, PropsWithChildren<UtmAreaProps>>(
 
       const getUtmOrigin = (): Vec3 => {
         const worldPosition = getWorldPosition();
-        const origin: Vec3 = [
+        return [
           worldPosition[0] - crs.originUtm[0],
           -worldPosition[1],
           worldPosition[2] + crs.originUtm[1],
         ];
-        return origin;
       };
 
       return {

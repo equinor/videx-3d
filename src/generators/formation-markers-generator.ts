@@ -50,33 +50,26 @@ export async function generateFormationMarkers(
 
   if (!trajectory) return null;
 
-  const mappedFormationMarkers = formationMarkers.map(d => {
+  const transformations = new Float32Array(formationMarkers.length * 16);
+  const colors = new Float32Array(formationMarkers.length * 3);
+  const symbolData: SymbolData[] = [];
+
+  formationMarkers.forEach((pick, i) => {
     const pos = clamp(
-      (d.mdMsl - trajectory.measuredTop) / trajectory.measuredLength,
+      (pick.mdMsl - trajectory.measuredTop) / trajectory.measuredLength,
       0,
       1,
     );
-    return {
-      ...d,
-      position: trajectory.curve.getPointAt(pos) as Vec3,
-      direction: trajectory.curve.getTangentAt(pos) as Vec3,
-    };
-  });
-
-  const transformations = new Float32Array(mappedFormationMarkers.length * 16);
-  const colors = new Float32Array(mappedFormationMarkers.length * 3);
-  const symbolData: SymbolData[] = [];
-
-  mappedFormationMarkers.forEach((pick, i) => {
-    positionVector.set(...pick.position);
+    const direction = trajectory.curve.getTangentAt(pos) as Vec3;
+    positionVector.set(...(trajectory.curve.getPointAt(pos) as Vec3));
     transformationMatrix.identity();
     const radius = baseRadius;
     scaleVector.set(radius, radius, radius);
 
     targetVector.set(
-      positionVector.x + pick.direction[0],
-      positionVector.y + pick.direction[1],
-      positionVector.z + pick.direction[2],
+      positionVector.x + direction[0],
+      positionVector.y + direction[1],
+      positionVector.z + direction[2],
     );
 
     transformationMatrix.lookAt(positionVector, targetVector, upVector);
@@ -95,7 +88,7 @@ export async function generateFormationMarkers(
       depth: pick.mdMsl,
       tvd: pick.tvdMsl,
       level: pick.level,
-      direction: pick.direction,
+      direction,
     };
   });
 

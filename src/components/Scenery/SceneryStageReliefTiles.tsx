@@ -1224,7 +1224,7 @@ export const SceneryStageReliefTiles = ({
     );
     // ⚠️ An empty update range uploads the whole array's tail instead.
     if (count > 0) {
-      for (const [attribute, size] of [
+      for (const [attribute, itemSize] of [
         [tiles, 4],
         [chis, 3],
         [skirts, 1],
@@ -1233,7 +1233,7 @@ export const SceneryStageReliefTiles = ({
         [edges, 2],
       ] as const) {
         attribute.clearUpdateRanges();
-        attribute.addUpdateRange(0, size * count);
+        attribute.addUpdateRange(0, itemSize * count);
         attribute.needsUpdate = true;
       }
     }
@@ -1354,7 +1354,7 @@ export const SceneryStageReliefTiles = ({
     }
 
     if (stats.current && frame.current++ % STATS_EVERY === 0) {
-      const held = streamer.stats;
+      const streamed = streamer.stats;
       stats.current({
         drawn: count,
         triangles: count * TILE_TRIANGLES,
@@ -1362,10 +1362,10 @@ export const SceneryStageReliefTiles = ({
         cell:
           ((180 / 2 ** deepest / RELIEF_TILE_CELLS) * Math.PI * globe.radius) /
           180,
-        resident: held.resident,
-        loading: held.loading,
-        queued: held.queued,
-        bytes: held.bytes,
+        resident: streamed.resident,
+        loading: streamed.loading,
+        queued: streamed.queued,
+        bytes: streamed.bytes,
       });
     }
   });

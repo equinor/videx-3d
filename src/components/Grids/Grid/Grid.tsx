@@ -119,6 +119,10 @@ const projectionMaterial = new ShaderMaterial();
 const direction = new Vector3();
 const ray = new Ray();
 
+const zero3: Vec3 = [0, 0, 0];
+const zero2: Vec2 = [0, 0];
+const one2: Vec2 = [1, 1];
+
 const defaultCellSizeDistanceFactors = [
   [0, 0.1],
   [2.5, 0.25],
@@ -149,9 +153,9 @@ const defaultCellSizeDistanceFactors = [
 export const Grid = ({
   plane,
   size,
-  position = [0, 0, 0],
+  position = zero3,
   gridOrigin,
-  gridScale = [1, 1],
+  gridScale = one2,
   cellSize = 10,
   subDivisions = 0,
   background = 0x102030,
@@ -167,7 +171,7 @@ export const Grid = ({
   axesColor = '#fff',
   axesLineWidth = gridLineWidth || 0.05,
   axesTickSize = 0.1,
-  originValue = [0, 0],
+  originValue = zero2,
   radial = false,
   dynamicSegments = false,
   showRulers = false,

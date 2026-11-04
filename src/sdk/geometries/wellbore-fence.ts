@@ -808,6 +808,7 @@ export function planFenceHead(
   );
   if (loops.length > 0) {
     // the neck still decides what is absorbed; only the hull and the head's end come from the loop
+    // oxlint-disable-next-line oxc/no-map-spread -- a copy: the spans may be the caller's own (`options.problems`), and the neck holds them
     const loopSpans = spans.map(
       (s): TraceProblemSpan =>
         isTracePocket(s) && loops.includes(s)

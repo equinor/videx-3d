@@ -1,14 +1,24 @@
-import { PropsWithChildren, useEffect, useRef, useState } from 'react';
+import {
+  PropsWithChildren,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { Color, Group, Vector3 } from 'three';
 import { CommonComponentProps } from '../../../common/types';
 import { Vec3 } from '../../../sdk/types/common';
 import {
   BoxPadding,
   ObservableGroup,
+  ObservableGroupState,
 } from '../../ObservableGroup/ObservableGroup';
 import { Grid } from '../Grid/Grid';
 
 const pos = new Vector3();
+
+const zero3: Vec3 = [0, 0, 0];
+const one3: Vec3 = [1, 1, 1];
 
 /**
  * BoxGrid props
@@ -88,13 +98,13 @@ export const BoxGrid = ({
   layers,
   renderOrder,
   userData,
-  size = [0, 0, 0],
+  size = zero3,
   cellSize = 10,
-  gridScale = [1, 1, 1],
-  gridOrigin = [0, 0, 0],
-  originValue = [0, 0, 0],
+  gridScale = one3,
+  gridOrigin = zero3,
+  originValue = zero3,
   subDivisions = 5,
-  position = [0, 0, 0],
+  position = zero3,
   gridLineWidth = 0.02,
   background = 0x102030,
   backgroundOpacity = 1,
@@ -151,6 +161,11 @@ export const BoxGrid = ({
       setWorldPosition(pos.toArray());
     }
   }, [gridPosition]);
+
+  const onObservedChange = useCallback((state: ObservableGroupState) => {
+    setGridSize(state.size);
+    setGridPosition(state.center);
+  }, []);
 
   return (
     <group ref={containerRef} name={name} userData={userData} visible={visible}>
@@ -350,10 +365,7 @@ export const BoxGrid = ({
           padding={autoSizePadding}
           updateRate={autoSizeUpdateRate}
           snapTo={cellSize}
-          onChange={state => {
-            setGridSize(state.size);
-            setGridPosition(state.center);
-          }}
+          onChange={onObservedChange}
         >
           {children}
         </ObservableGroup>

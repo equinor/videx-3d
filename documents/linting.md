@@ -64,11 +64,11 @@ values that feed an expensive rebuild (the `stableLayers` / content-key pattern 
 `Chunk.tsx`), which the linter could not have enforced anyway. This rule was firing on
 *presentational* props where the cost is nil, and drowning the signal.
 
-## 3. `vitest/valid-expect` — off for `tests/*`
+## 3. `vitest/valid-expect` and `no-await-in-loop` — off for `tests/*`
 
-**Was:** 3 errors.
+**Was:** 3 errors, and 3 warnings.
 
-The rule is modelled on Jest, where `expect` takes exactly one argument. **Vitest
+The `valid-expect` rule is modelled on Jest, where `expect` takes exactly one argument. **Vitest
 supports a second `message` argument**, and it carries real value in a loop:
 
 ```ts
@@ -78,6 +78,10 @@ expect(covered, `${id} has no data`).toBeGreaterThan(0);
 Without the message, a failure in a loop over generated scenarios does not say which
 scenario broke. The code is correct; the rule is wrong about this runtime.
 
+`no-await-in-loop` is about throughput, which a test does not have: awaiting one case
+after another keeps a failure and its log in order, and keeps one case's state from
+leaking into the next.
+
 ## 4. `documents/*` added to `ignorePatterns`
 
 `documents/` holds explanatory sketch scripts alongside the prose (for example
@@ -85,11 +89,26 @@ scenario broke. The code is correct; the rule is wrong about this runtime.
 one-off illustrations, not shipped code — the same category as `scripts/*`, which was
 already ignored.
 
+## 5. `import/no-unassigned-import` — stylesheets allowed
+
+**Was:** 3 warnings, every one an `import './x.css'` / `import './x.scss'`.
+
+A stylesheet is imported for its side effect alone; there is nothing to assign. The rule
+stays on for scripts, where an import kept only for its side effect is worth a second look.
+
+## 6. `react-perf/jsx-no-new-function-as-prop` — off for `src/storybook/**`
+
+**Was:** 9 warnings, in the story decorators.
+
+Storybook scaffolding, not shipped: the decorators render once per story, and the inline
+callbacks keep each one readable next to the component it demonstrates. The rule stays on
+for the library itself (see below).
+
 ---
 
 ## Inline exemptions
 
-Two findings are suppressed at the call site rather than in the config, because they
+These findings are suppressed at the call site rather than in the config, because they
 are one-offs and the reason is local:
 
 **`import/default`** in `src/generators/workers/stack-worker-pool.ts` — the import is
@@ -102,10 +121,26 @@ import RefineWorker from './stack-refine.worker?worker&inline';
 The `?worker&inline` query is resolved by the bundler into a module with a default
 export; oxlint's resolver cannot follow it. Types come from `vite/client`.
 
-**`react/no-array-index-key`** in `src/components/Chunks/ChunkMeshes.tsx` (×2) — the
-array index is the *correct* key here. The data-dependent alternative the rule wants
-is the mesh's `layer` index, and that is **not unique**: a `void` seal splits one
-surface into two meshes that share a layer. Keying on it would collide.
+**`react/no-array-index-key`** — the array index is the *correct* key here:
+
+- `src/components/Chunks/ChunkMeshes.tsx` (×2): the data-dependent alternative the rule
+  wants is the mesh's `layer` index, and that is **not unique**: a `void` seal splits one
+  surface into two meshes that share a layer. Keying on it would collide.
+- `src/components/Wellbores/Casings/Casings.tsx`: a section is positional — its material
+  options, render order and `sectionIndex` are all looked up by the same index.
+- `src/components/Html/Minimap/MinimapLayers.tsx` (`MinimapPoints`): a point has no
+  identity of its own, and the frame loop finds its element by index.
+
+**`oxc/no-map-spread`** — the copy is the point:
+
+- `src/generators/casings-generator.ts`: the items come from the store, which may cache
+  them; writing into them would change what the next caller gets.
+- `src/sdk/geometries/wellbore-fence.ts` (`loopSpans`): the spans may be the caller's own
+  (`options.problems`), and the neck wrapped from them still holds them.
+
+**`eslint/no-await-in-loop`** in `src/components/Chunks/useChunkContacts.ts` — the
+surfaces are fetched one at a time on purpose: each is a full grid, and a cancelled build
+stops before the next one is fetched.
 
 ---
 
@@ -119,17 +154,34 @@ migration were resolved as follows:
 | `src/components/Annotations/AnnotationsHMTL.tsx` (×2) | `jsx-a11y/click-events-have-key-events`, `jsx-a11y/no-static-element-interactions` | The label wrapper carries `role="presentation"`: it positions a host-provided label component, and the click/hover handlers are a pointer convenience, not a control of its own. Keyboard access, where wanted, belongs in the label component. |
 | `tests/mesh-boundary.test.ts` (×2) | `vitest/no-conditional-expect` | Restructured: the loop collects the paired half-edges, and the checks run on that list afterwards. |
 
-The warnings (86) are mostly pre-existing (`no-shadow`,
-`no-object-type-as-default-prop`, `jsx-no-new-function-as-prop`) and were left alone
-deliberately.
+The warnings (86) were mostly pre-existing (`no-shadow`,
+`no-object-type-as-default-prop`, `jsx-no-new-function-as-prop`) and were left alone at
+the time; they were cleared on 2026-11-04 (below).
+
+## Warnings cleared (2026-11-04)
+
+`npm run lint` reports **0 errors and 0 warnings**. Besides the config changes (§3, §5,
+§6) and inline exemptions above, the 97 warnings were fixed in the code:
+
+| Rule | Fix |
+| --- | --- |
+| `no-shadow` (37) | Renames only. |
+| `no-object-type-as-default-prop` (15) | Default `[]` / `{}` props are module constants. One was live churn: `WellMap`'s `theme = { ...DarkTheme }` re-ran `setStyles` on every render. |
+| `jsx-no-new-function-as-prop` (7) | `useCallback`. `BoxGrid`'s inline `onChange` restarted `ObservableGroup`'s observer on every render. The callback refs in a `.map()` (`MinimapPoints`, `MinimapGeoLayer`) use `useIndexedRefs` (`src/hooks`), one stable ref callback per index. |
+| `no-accumulating-spread` (7) | `reduce` with `{ ...acc, [k]: v }` (quadratic) became `Object.fromEntries`. |
+| `no-map-spread` (6 fixed, 2 exempt) | Fresh objects are written into rather than copied; the event records in `fence-run-out` carry only the fields read. |
+| `no-unmodified-loop-condition` (3) | All three were loop-invariant guards or a flag set in a closure; hoisted or moved into the body, behaviour unchanged. |
+| `jsx-no-constructed-context-values` (1) | `DataProvider` memoises its value; it re-rendered every consumer on each render. |
+| `approx-constant` (1) | `Math.SQRT1_2` in the test — the same double. |
 
 ## Rules considered and deliberately kept
 
-- **`react-perf/jsx-no-new-function-as-prop`** (13 warnings) — kept as a warning.
-  Unlike the object/array case, an unmemoised callback passed to an R3F object really
-  does cause handler re-attachment, so the finding is sometimes real.
-- **`react/no-object-type-as-default-prop`** (14 warnings) — kept. Low value in most
-  of the hits, but it is a correct observation about default `[]` / `{}` values.
+- **`react-perf/jsx-no-new-function-as-prop`** — kept as a warning (0 left; off only in
+  `src/storybook/**`, §6). Unlike the object/array case, an unmemoised callback passed to
+  an R3F object really does cause handler re-attachment, and one passed to a component
+  that lists it in an effect's dependencies restarts that effect (`BoxGrid` did).
+- **`react/no-object-type-as-default-prop`** — kept (0 left). A default `[]` / `{}` is a
+  new identity per render, which breaks any memo or effect keyed on the prop.
 
 ## React hooks rules: mostly still enforced
 

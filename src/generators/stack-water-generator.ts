@@ -134,9 +134,9 @@ export async function generateStackWater(
     const { positionsXZ, indices, heights, intervals, inferred } =
       build.section;
     transferables.push(positionsXZ.buffer, indices.buffer);
-    for (const at of heights) transferables.push(at.buffer);
-    for (const at of intervals) if (at) transferables.push(at.buffer);
-    for (const at of inferred ?? []) transferables.push(at.buffer);
+    for (const array of heights) transferables.push(array.buffer);
+    for (const array of intervals) if (array) transferables.push(array.buffer);
+    for (const array of inferred ?? []) transferables.push(array.buffer);
   }
 
   // ⚠️ The section shares buffers with the packed geometries above — the shared

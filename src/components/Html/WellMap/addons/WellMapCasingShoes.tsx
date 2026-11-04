@@ -32,7 +32,9 @@ export const WellMapCasingShoes = ({
 }: WellMapCasingShoesProps) => {
   const store = useData();
 
-  const [data, setData] = useState<Record<string, CasingItem[]> | null>(null);
+  const [data, setData] = useState<Record<string, CasingItem[] | null> | null>(
+    null,
+  );
 
   const wellMapState = useWellMapState();
   const wellboreIds = wellMapState(state => state.wellboreIds);
@@ -56,14 +58,9 @@ export const WellMapCasingShoes = ({
         store.get<CasingItem[]>('casings', id),
       );
       Promise.all(dataPromises).then(response => {
-        const data = response.reduce(
-          (acc, d, i) => ({
-            ...acc,
-            [wellboreIds[i]]: d,
-          }),
-          {},
+        setData(
+          Object.fromEntries(response.map((d, i) => [wellboreIds[i], d])),
         );
-        setData(data);
       });
     }
   }, [wellboreIds, store]);

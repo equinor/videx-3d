@@ -43,15 +43,15 @@ export const DepthCursor = ({
 
   const cursorPath = useMemo(() => {
     const cursorHeight = styles.depthAxisWidth * 0.65;
-    const cursorPath = path();
-    cursorPath.moveTo(0, -cursorHeight / 2);
-    cursorPath.lineTo(styles.depthAxisWidth / 2, -cursorHeight / 2);
-    cursorPath.lineTo(styles.depthAxisWidth, 0);
-    cursorPath.lineTo(styles.depthAxisWidth / 2, cursorHeight / 2);
-    cursorPath.lineTo(0, cursorHeight / 2);
-    cursorPath.lineTo(0, -cursorHeight / 2);
+    const p = path();
+    p.moveTo(0, -cursorHeight / 2);
+    p.lineTo(styles.depthAxisWidth / 2, -cursorHeight / 2);
+    p.lineTo(styles.depthAxisWidth, 0);
+    p.lineTo(styles.depthAxisWidth / 2, cursorHeight / 2);
+    p.lineTo(0, cursorHeight / 2);
+    p.lineTo(0, -cursorHeight / 2);
 
-    return cursorPath.toString();
+    return p.toString();
   }, [styles.depthAxisWidth]);
 
   const y = useMemo(() => depthScale(depth), [depth, depthScale]);
@@ -64,11 +64,10 @@ export const DepthCursor = ({
   useEffect(() => {
     function dragged(event: DragEvent) {
       if (!depthCursorRef.current) return;
-      const range = depthScale.range();
-      const pos = clamp(event.y, range[0], range[1]);
-      const depth = depthScale.invert(pos);
+      const [top, bottom] = depthScale.range();
+      const pos = clamp(event.y, top, bottom);
 
-      if (setDepth) setDepth(depth);
+      if (setDepth) setDepth(depthScale.invert(pos));
     }
 
     function dragStart() {

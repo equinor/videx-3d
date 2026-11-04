@@ -110,23 +110,12 @@ export const createWellMapState = () =>
       const _allWellbores = wellboreHeaders;
       const wellbores = _allWellbores.filter(d => d.drilled);
       const wellboreIds = wellbores.map(d => d.id);
-      const wellboresById: Record<string, WellboreHeader> =
-        _allWellbores.reduce(
-          (acc, w) => ({
-            ...acc,
-            [w.id]: w,
-          }),
-          {},
-        );
+      const wellboresById: Record<string, WellboreHeader> = Object.fromEntries(
+        _allWellbores.map(w => [w.id, w]),
+      );
 
       const wellboresByName: Record<string, WellboreHeader> =
-        _allWellbores.reduce(
-          (acc, w) => ({
-            ...acc,
-            [w.name]: w,
-          }),
-          {},
-        );
+        Object.fromEntries(_allWellbores.map(w => [w.name, w]));
 
       const segments = calculateWellSegments(wellboresByName, wellbores);
 

@@ -59,10 +59,10 @@ const WellMapSelector = ({ colorScale, camera = true }: Props) => {
 
   const store = useData();
 
-  const onDepthChange = useCallback((depth: number, flyTo = false) => {
-    setDepth(depth);
+  const onDepthChange = useCallback((md: number, flyTo = false) => {
+    setDepth(md);
     if (wellboreState.current) {
-      const point = wellboreState.current.getPointAtDepth(depth, true) as Vec3;
+      const point = wellboreState.current.getPointAtDepth(md, true) as Vec3;
       point[0] += offsetPosition.current[0];
       point[1] += offsetPosition.current[1];
       point[2] += offsetPosition.current[2];
@@ -161,12 +161,12 @@ const WellMapSelector = ({ colorScale, camera = true }: Props) => {
     };
   }, [store, selected, wellIdentifier, onDepthChange, camera]);
 
-  const onSelect = useCallback((id: string, depth: number) => {
+  const onSelect = useCallback((id: string, md: number) => {
     if (wellboreState.current) {
       dispatchEvent(
         new WellboreSelectedEvent({
           id,
-          depth,
+          depth: md,
           flyTo: true,
         }),
       );

@@ -80,7 +80,7 @@ function calculateSegments(
 
   const frenetFrames = calculateFrenetFrames(
     curve,
-    positions.map(p => p[0]),
+    positions.map(pos => pos[0]),
   );
 
   const l = to - from;
@@ -132,6 +132,7 @@ export async function generateCasings(
         d.mdBottomMsl > trajectory.measuredTop &&
         (fromMsl === undefined || d.mdBottomMsl > fromMsl),
     )
+    // oxlint-disable-next-line oxc/no-map-spread -- a copy: the items are the store's, and may be cached
     .map(d => ({
       ...d,
       mdTopMsl: Math.max(d.mdTopMsl, trajectory.measuredTop),

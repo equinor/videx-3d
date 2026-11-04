@@ -24,14 +24,22 @@
     "react/react-in-jsx-scope": "off",
     "no-underscore-dangle": "off",
     "react-perf/jsx-no-new-array-as-prop": "off",
-    "react-perf/jsx-no-new-object-as-prop": "off"
+    "react-perf/jsx-no-new-object-as-prop": "off",
+    "import/no-unassigned-import": ["warn", {"allow": ["**/*.css", "**/*.scss"]}]
   },
   "overrides": [
     {
         "files": ["tests/*"],
         "plugins": ["vitest"],
         "rules": {
-            "vitest/valid-expect": "off"
+            "vitest/valid-expect": "off",
+            "no-await-in-loop": "off"
+        }
+    },
+    {
+        "files": ["src/storybook/**"],
+        "rules": {
+            "react-perf/jsx-no-new-function-as-prop": "off"
         }
     },
     {

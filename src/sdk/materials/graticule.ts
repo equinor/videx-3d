@@ -56,7 +56,9 @@ export function graticuleMeridianChain(step: number): number[] {
   const whole = Math.round(around);
   const even = step > 0 && Math.abs(around - whole) < 1e-6 * around;
   let m = 1;
-  while (step > 0 && chain.length < GRATICULE_THINNING_MAX) {
+  // No thinning for a step that is not positive: the chain stays [1].
+  const most = step > 0 ? GRATICULE_THINNING_MAX : chain.length;
+  while (chain.length < most) {
     let next = 0;
     for (const factor of [2, 3]) {
       if (!even || whole % (m * factor) === 0) {

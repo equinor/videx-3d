@@ -748,9 +748,10 @@ export function nearestOnIndexedPolyline(
   const total = index.arc[b.length - 1];
   let radius = Math.max(1e-6, total / Math.max(1, b.length - 1));
   const span = Math.max(total, 1);
-  while (bestJ < 0 && radius < span * 4) {
+  while (radius < span * 4) {
     sweep(radius);
     radius *= 2;
+    if (bestJ >= 0) break;
   }
   if (bestJ < 0) {
     // Nothing within four curve-lengths: the query is degenerate, not merely far.

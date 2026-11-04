@@ -153,8 +153,7 @@ export const WellboreRibbon = ({ children }: PropsWithChildren) => {
       store
         .get<PositionLog>('position-logs', id)
         .then(response => {
-          const trajectory = getTrajectory(id, response);
-          setTrajectory(trajectory);
+          setTrajectory(getTrajectory(id, response));
         })
         .catch(err => console.error(err));
     }

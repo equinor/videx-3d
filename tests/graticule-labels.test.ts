@@ -265,7 +265,8 @@ describe('graticuleLabels', () => {
               normal.fromArray(l.normal!);
               const u = new Vector3().fromArray(l.direction!).normalize();
               const v = new Vector3().crossVectors(normal, u);
-              return { at, u, v, text: l.text, ...extent(l.text, size) };
+              const { half, halfHeight } = extent(l.text, size);
+              return { at, u, v, text: l.text, half, halfHeight };
             });
             type Box = (typeof boxes)[number];
             // Apart along an axis: their half-widths along it fall short of their distance.

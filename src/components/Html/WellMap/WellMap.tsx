@@ -72,7 +72,7 @@ export const WellMap = ({
   interactive = true,
   headless = false,
   depthCursor = true,
-  theme = { ...DarkTheme },
+  theme = DarkTheme,
   axisHeader,
   children,
 }: PropsWithChildren<WellMapProps>) => {
@@ -88,13 +88,10 @@ export const WellMap = ({
   const setStyles = wellMapstate(state => state.setStyles);
   const setDepth = wellMapstate(state => state.setDepth);
 
-  const validDepth = useMemo(() => {
-    let validDepth = depth;
-    if (validDepth !== undefined) {
-      validDepth = clamp(validDepth, domain[0], domain[1]);
-    }
-    return validDepth;
-  }, [depth, domain]);
+  const validDepth = useMemo(
+    () => (depth !== undefined ? clamp(depth, domain[0], domain[1]) : depth),
+    [depth, domain],
+  );
 
   useEffect(() => {
     setStyles(theme);
@@ -113,10 +110,11 @@ export const WellMap = ({
           .query<WellboreHeader>('wellbore-headers', { well: wellIdentifier })
           .then(response => {
             if (response && Array.isArray(response)) {
-              const wellbores = Array.isArray(excluded)
-                ? response.filter(d => !excluded.includes(d.id))
-                : response;
-              setWellbores(wellbores);
+              setWellbores(
+                Array.isArray(excluded)
+                  ? response.filter(d => !excluded.includes(d.id))
+                  : response,
+              );
             }
           });
       }
@@ -127,12 +125,8 @@ export const WellMap = ({
     if (!colors) return undefined;
 
     if (typeof colors === 'function') {
-      return wellbores.reduce(
-        (acc, wellbore) => ({
-          ...acc,
-          [wellbore.id]: colors(wellbore, slotsById[wellbore.id]),
-        }),
-        {},
+      return Object.fromEntries(
+        wellbores.map(w => [w.id, colors(w, slotsById[w.id])]),
       );
     }
 

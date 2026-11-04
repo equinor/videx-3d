@@ -276,11 +276,10 @@ function calculateTubeSegments(
     positions.map(s => s[0]),
   );
 
-  return positions.map((s, i) => ({
-    radius: s[1],
-    theta: s[2],
-    ...frenetFrames[i],
-  }));
+  // The frames are fresh, so each becomes its segment instead of being copied.
+  return positions.map((s, i) =>
+    Object.assign(frenetFrames[i], { radius: s[1], theta: s[2] }),
+  );
 }
 
 function generateTubeGeometry(
@@ -669,10 +668,8 @@ export function createTubeGeometries(
         [],
         segmentsPerMeter,
         simplificationThreshold,
-      ).map(s => ({
-        ...s,
-        theta: s.theta - PI,
-      }));
+      );
+      for (const s of innerSegments) s.theta -= PI;
     }
 
     geometries.push(

@@ -75,58 +75,109 @@ export const Track = ({
   const strokeWidth = useMemo(() => (ratio > 0 ? ratio * 10 : 0), [ratio]);
 
   const pathStr = useCallback(
-    (x1: number, x2: number, y1: number, y2: number) => {
+    (fromX: number, toX: number, fromY: number, toY: number) => {
       const pathFunc = path();
 
-      pathFunc.moveTo(x1, y1);
-      if (x1 !== x2) {
-        if (y2 - y1 > strokeWidth) {
-          const y3 = y1 + strokeWidth;
-          pathFunc.arcTo(x2, y1, x2, y3, strokeWidth);
+      pathFunc.moveTo(fromX, fromY);
+      if (fromX !== toX) {
+        if (toY - fromY > strokeWidth) {
+          const y3 = fromY + strokeWidth;
+          pathFunc.arcTo(toX, fromY, toX, y3, strokeWidth);
         } else {
-          pathFunc.lineTo(x2, y1);
+          pathFunc.lineTo(toX, fromY);
         }
       }
-      pathFunc.lineTo(x2, y2);
+      pathFunc.lineTo(toX, toY);
       return pathFunc.toString();
     },
     [strokeWidth],
   );
 
   const { active, inactive, kickoff, termination } = useMemo(() => {
-    let active: [number, number, number, number] | null = null;
-    let inactive: [number, number, number, number] | null = null;
-    let termination = 0;
+    let activeSpan: [number, number, number, number] | null = null;
+    let inactiveSpan: [number, number, number, number] | null = null;
+    let terminationY = 0;
     let top = 0;
-    let kickoff: number | null = null;
+    let kickoffY: number | null = null;
     if (wellbore) {
       const activeToDepth = activeDepths[wellbore.id];
       let fromMsl = -wellbore.depthReferenceElevation;
       if (wellbore.kickoffDepthMsl !== null) {
         fromMsl = wellbore.kickoffDepthMsl;
-        kickoff = depthScale(wellbore.kickoffDepthMsl);
+        kickoffY = depthScale(wellbore.kickoffDepthMsl);
       }
 
       top = depthScale(fromMsl);
-      termination = depthScale(wellbore.depthMdMsl);
+      terminationY = depthScale(wellbore.depthMdMsl);
 
       if (activeToDepth !== undefined) {
         const activeTo = depthScale(activeToDepth);
-        active = [x1, x2, top, activeTo];
+        activeSpan = [x1, x2, top, activeTo];
         if (activeTo > top) {
-          inactive = [x2, x2, activeTo, termination];
+          inactiveSpan = [x2, x2, activeTo, terminationY];
         }
       } else {
-        inactive = [x1, x2, top, termination];
+        inactiveSpan = [x1, x2, top, terminationY];
       }
     }
-    return { active, inactive, kickoff, termination };
+    return {
+      active: activeSpan,
+      inactive: inactiveSpan,
+      kickoff: kickoffY,
+      termination: terminationY,
+    };
   }, [depthScale, wellbore, activeDepths, x1, x2]);
 
   const filterColor = useMemo(() => {
     const v = styles.darkMode ? 0 : 240;
     return `rgba(${v}, ${v}, ${v}, .9)`;
   }, [styles.darkMode]);
+
+  const depthAt = useCallback(
+    (event: MouseEvent<SVGGElement>) => {
+      const [, y] = pointer(event);
+      return depthScale.invert(clamp(y, range[0], range[1]));
+    },
+    [depthScale, range],
+  );
+
+  const onClick = useCallback(
+    (event: MouseEvent<SVGGElement>) => {
+      let depth = 0;
+      if (setDepth && event && event.clientY) {
+        depth = depthAt(event);
+        setDepth(depth);
+      }
+      if (setSelected && !isSelected) {
+        setSelected(wellboreId, depth);
+      }
+    },
+    [depthAt, setDepth, setSelected, isSelected, wellboreId],
+  );
+
+  const onPointerMove = useCallback(
+    (event: MouseEvent<SVGGElement>) => {
+      if (
+        wellbore &&
+        onWellboreOver &&
+        event &&
+        event.clientY &&
+        event.target instanceof SVGPathElement
+      ) {
+        onWellboreOver(wellbore, depthAt(event));
+      }
+    },
+    [depthAt, wellbore, onWellboreOver],
+  );
+
+  const onPointerLeave = useCallback(
+    (event: MouseEvent<SVGGElement>) => {
+      if (onWellboreOver && event && event.target instanceof SVGPathElement) {
+        onWellboreOver(null, undefined);
+      }
+    },
+    [onWellboreOver],
+  );
 
   if (!wellbore) return null;
 
@@ -140,48 +191,10 @@ export const Track = ({
         pointerEvents: 'painted',
         opacity: !interactive || isSelected ? 1 : 0.75,
       }}
-      onClick={
-        interactive
-          ? (event: MouseEvent<SVGGElement>) => {
-              let depth = 0;
-              if (setDepth && event && event.clientY) {
-                const [, y] = pointer(event);
-                const pos = clamp(y, range[0], range[1]);
-                depth = depthScale.invert(pos);
-
-                setDepth(depth);
-              }
-              if (setSelected && !isSelected) {
-                setSelected(wellboreId, depth);
-              }
-            }
-          : undefined
-      }
-      onPointerMove={
-        interactive && onWellboreOver
-          ? (event: MouseEvent<SVGGElement>) => {
-              let depth = 0;
-              if (
-                event &&
-                event.clientY &&
-                event.target instanceof SVGPathElement
-              ) {
-                const [, y] = pointer(event);
-                const pos = clamp(y, range[0], range[1]);
-                depth = depthScale.invert(pos);
-                onWellboreOver(wellbore, depth);
-              }
-            }
-          : undefined
-      }
+      onClick={interactive ? onClick : undefined}
+      onPointerMove={interactive && onWellboreOver ? onPointerMove : undefined}
       onPointerLeave={
-        interactive && onWellboreOver
-          ? (event: MouseEvent<SVGGElement>) => {
-              if (event && event.target instanceof SVGPathElement) {
-                onWellboreOver(null, undefined);
-              }
-            }
-          : undefined
+        interactive && onWellboreOver ? onPointerLeave : undefined
       }
     >
       <title>{wellbore.name}</title>

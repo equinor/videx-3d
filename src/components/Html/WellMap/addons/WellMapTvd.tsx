@@ -54,7 +54,7 @@ export const WellMapTvd = ({
   }, [wellboreIds, store]);
 
   const tvds = useMemo(() => {
-    const tvds: [number, number | null][] = [];
+    const values: [number, number | null][] = [];
     if (trajectories) {
       wellboreIds.forEach((id, slot) => {
         const position = getSlotPosition(slot);
@@ -66,10 +66,10 @@ export const WellMapTvd = ({
             tvd[1] = tvdMsl;
           }
         }
-        tvds.push(tvd);
+        values.push(tvd);
       });
     }
-    return tvds;
+    return values;
   }, [depth, getSlotPosition, wellboreIds, trajectories]);
 
   const y = useMemo(() => svgHeight - ratio * 15, [ratio, svgHeight]);

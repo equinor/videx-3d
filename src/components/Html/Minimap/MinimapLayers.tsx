@@ -1,4 +1,5 @@
 import { useMemo, useRef, type ReactNode } from 'react';
+import { useIndexedRefs } from '../../../hooks/useIndexedRefs';
 import type { Vec2 } from '../../../sdk/types/common';
 import { useMinimapFrame, type MinimapState } from './minimap-context';
 import {
@@ -234,7 +235,7 @@ export const MinimapPoints = ({
   radius = 3.5,
   fontSize = 10,
 }: MinimapPointsProps) => {
-  const nodes = useRef<(SVGGElement | null)[]>([]);
+  const [nodes, nodeAt] = useIndexedRefs<SVGGElement>();
   useMinimapFrame(({ view }) => {
     points.forEach(({ at, radius: r = radius }, i) => {
       const node = nodes.current[i];
@@ -254,10 +255,9 @@ export const MinimapPoints = ({
     <>
       {points.map(({ color: c = color, radius: r = radius, label }, i) => (
         <g
+          // oxlint-disable-next-line react/no-array-index-key -- the points have no identity of their own, and the frame loop finds them by index
           key={i}
-          ref={node => {
-            nodes.current[i] = node;
-          }}
+          ref={nodeAt(i)}
         >
           <circle
             r={r}

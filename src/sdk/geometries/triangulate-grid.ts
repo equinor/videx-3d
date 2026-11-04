@@ -73,33 +73,33 @@ export function triangulateGrid(
   let vertexMap1: (number | null)[] = new Array(columns).fill(null);
   const edgeMap: (TriangleEdge | null)[] = new Array(columns - 1).fill(null);
 
-  function addVertex(c: number, r: number, value: number) {
-    vertices.push({ x: c * scaleX, y: value, z: r * scaleY, edge: null });
-    uvs.push(c / (columns - 1), 1 - r / (rows - 1));
+  function addVertex(vc: number, vr: number, value: number) {
+    vertices.push({ x: vc * scaleX, y: value, z: vr * scaleY, edge: null });
+    uvs.push(vc / (columns - 1), 1 - vr / (rows - 1));
     return vertexCount++;
   }
 
-  function addFace(v0: number, v1: number, v2: number) {
+  function addFace(f0: number, f1: number, f2: number) {
     edge0 = {
       index: edgeCount++,
-      tail: v0,
-      head: v1,
+      tail: f0,
+      head: f1,
       twin: null,
       prev: null,
       next: null,
     };
     edge1 = {
       index: edgeCount++,
-      tail: v1,
-      head: v2,
+      tail: f1,
+      head: f2,
       twin: null,
       prev: null,
       next: null,
     };
     edge2 = {
       index: edgeCount++,
-      tail: v2,
-      head: v0,
+      tail: f2,
+      head: f0,
       twin: null,
       prev: null,
       next: null,
@@ -113,18 +113,18 @@ export function triangulateGrid(
     edge1.prev = edge0;
     edge2.prev = edge1;
 
-    if (!vertices[v0].edge) {
-      vertices[v0].edge = edge0;
+    if (!vertices[f0].edge) {
+      vertices[f0].edge = edge0;
     }
-    if (!vertices[v1].edge) {
-      vertices[v1].edge = edge1;
+    if (!vertices[f1].edge) {
+      vertices[f1].edge = edge1;
     }
-    if (!vertices[v2].edge) {
-      vertices[v2].edge = edge2;
+    if (!vertices[f2].edge) {
+      vertices[f2].edge = edge2;
     }
 
     edges.push(edge0, edge1, edge2);
-    indices.push(v0, v1, v2);
+    indices.push(f0, f1, f2);
   }
 
   // pattern specifies one of the vertex pattern below, otherwise 0:

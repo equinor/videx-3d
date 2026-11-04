@@ -50,17 +50,14 @@ function calculateSegments(
     d => d.well,
   );
 
-  let allSegments: Record<string, [number, number]> = {};
+  const allSegments: Record<string, [number, number]> = {};
 
   grouped.forEach((wellbores, well) => {
     const included = includedGrouped.get(well) || [];
 
-    const dictionary = wellbores.reduce(
-      (dict, w) => ({ ...dict, [w.name]: w }),
-      {},
-    );
+    const dictionary = Object.fromEntries(wellbores.map(w => [w.name, w]));
     const wellSegments = calculateWellSegments(dictionary, included, selected);
-    allSegments = { ...allSegments, ...wellSegments };
+    Object.assign(allSegments, wellSegments);
   });
 
   //console.log(allSegments)
@@ -106,11 +103,7 @@ export const Wells = forwardRef<WellsRefType, WellsProps>(
     fref,
   ) => {
     const dictionary = useMemo<Record<string, WellboreHeader>>(
-      () =>
-        wellbores.reduce(
-          (dict, wellbore) => ({ ...dict, [wellbore.id]: wellbore }),
-          {},
-        ),
+      () => Object.fromEntries(wellbores.map(w => [w.id, w])),
       [wellbores],
     );
 

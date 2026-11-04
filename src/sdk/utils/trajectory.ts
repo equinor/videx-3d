@@ -270,7 +270,7 @@ export function getProjectedTrajectory(
       ];
 
       let extensionPoint: Vec2 = last;
-      for (let i = 0; i < steps; i++) {
+      for (let k = 0; k < steps; k++) {
         extensionPoint = addVec2(extensionPoint, stepVector);
         positions.push(extensionPoint);
       }
@@ -313,7 +313,7 @@ export function getProjectedTrajectory(
       ];
 
       let extensionPoint: Vec2 = first;
-      for (let i = 0; i < steps; i++) {
+      for (let k = 0; k < steps; k++) {
         extensionPoint = addVec2(extensionPoint, stepVector);
         positions.unshift(extensionPoint);
       }

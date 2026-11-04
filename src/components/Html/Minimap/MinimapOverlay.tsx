@@ -268,106 +268,119 @@ const AltitudeControl = ({ options, center }: AltitudeControlProps) => {
   });
   // A drag ends with the item.
   useEffect(() => () => stop.current?.(), []);
-  if (!store) return null;
 
   // Put the knob `offset` pixels from the middle (positive down): the fill from the middle to
   // it, heavier the harder the push.
-  const place = (offset: number, push: number) => {
-    if (knob.current)
-      knob.current.style.transform = `translateY(${offset}px) scale(${1 + 0.15 * push})`;
-    if (fill.current) {
-      fill.current.style.top = `${travel + KNOB / 2 + Math.min(offset, 0)}px`;
-      fill.current.style.height = `${Math.abs(offset)}px`;
-      fill.current.style.opacity = String(0.35 + 0.65 * push);
-    }
-  };
-
-  const onDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0 || !store.host.canDrag() || !track.current) return;
-    const element = event.currentTarget;
-    element.setPointerCapture(event.pointerId);
-    event.stopPropagation();
-    const rect = track.current.getBoundingClientRect();
-    const middle = rect.top + travel + KNOB / 2;
-    // On the knob it stays where it was grabbed; elsewhere on the groove it comes to the pointer.
-    const knobAt =
-      middle + (parseFloat(knob.current?.dataset.offset ?? '0') || 0);
-    const grab =
-      Math.abs(event.clientY - knobAt) <= KNOB / 2 + 3
-        ? event.clientY - knobAt
-        : 0;
-    const start = store.state;
-    const first = kind === 'target' ? start.targetAltitude : start.altitude;
-    const range: [number, number] = [options.min, options.max];
-    // The height it has been taken to, in metres: the state is only told of a change past a
-    // few centimetres, so it is kept here.
-    let height = first;
-    let offset = 0;
-    // How long the knob has been at the end of its travel, in one direction: the boost.
-    let held = 0;
-    let heldWay = 0;
-    let last = performance.now();
-    let frame = 0;
-    const pull = (y: number) => {
-      offset = Math.max(-travel, Math.min(y - middle - grab, travel));
-    };
-    pull(event.clientY);
-    if (knob.current) knob.current.style.transition = 'none';
-    setDragging(true);
-
-    const tick = (now: number) => {
-      const dt = Math.min((now - last) / 1000, MAX_STEP_SECONDS);
-      last = now;
-      // The knob sets the speed directly; only at the end of its travel does it speed up.
-      const rate = altitudeRate(-offset, travel);
-      const atEnd = Math.abs(offset) >= travel - 0.5;
-      const way = Math.sign(-offset);
-      if (atEnd && way === heldWay) {
-        held += dt;
-      } else {
-        held = 0;
-        heldWay = atEnd ? way : 0;
+  const place = useCallback(
+    (offset: number, push: number) => {
+      if (knob.current)
+        knob.current.style.transform = `translateY(${offset}px) scale(${1 + 0.15 * push})`;
+      if (fill.current) {
+        fill.current.style.top = `${travel + KNOB / 2 + Math.min(offset, 0)}px`;
+        fill.current.style.height = `${Math.abs(offset)}px`;
+        fill.current.style.opacity = String(0.35 + 0.65 * push);
       }
-      const velocity =
-        rate *
-        options.maxSpeed *
-        (atEnd ? boostFactor(held, options.boostTime, options.boost) : 1);
-      if (velocity !== 0) {
-        height = moveAltitude(height, velocity, dt, range);
-        store.host.setAltitude(kind, height, false);
-      }
-      if (knob.current) knob.current.dataset.offset = String(offset);
-      place(offset, Math.abs(rate));
+    },
+    [travel],
+  );
+
+  const onDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (
+        !store ||
+        event.button !== 0 ||
+        !store.host.canDrag() ||
+        !track.current
+      )
+        return;
+      const element = event.currentTarget;
+      element.setPointerCapture(event.pointerId);
+      event.stopPropagation();
+      const rect = track.current.getBoundingClientRect();
+      const middle = rect.top + travel + KNOB / 2;
+      // On the knob it stays where it was grabbed; elsewhere on the groove it comes to the pointer.
+      const knobAt =
+        middle + (parseFloat(knob.current?.dataset.offset ?? '0') || 0);
+      const grab =
+        Math.abs(event.clientY - knobAt) <= KNOB / 2 + 3
+          ? event.clientY - knobAt
+          : 0;
+      const start = store.state;
+      const first = kind === 'target' ? start.targetAltitude : start.altitude;
+      const range: [number, number] = [options.min, options.max];
+      // The height it has been taken to, in metres: the state is only told of a change past a
+      // few centimetres, so it is kept here.
+      let height = first;
+      let offset = 0;
+      // How long the knob has been at the end of its travel, in one direction: the boost.
+      let held = 0;
+      let heldWay = 0;
+      let last = performance.now();
+      let frame = 0;
+      const pull = (y: number) => {
+        offset = Math.max(-travel, Math.min(y - middle - grab, travel));
+      };
+      pull(event.clientY);
+      if (knob.current) knob.current.style.transition = 'none';
+      setDragging(true);
+
+      const tick = (now: number) => {
+        const dt = Math.min((now - last) / 1000, MAX_STEP_SECONDS);
+        last = now;
+        // The knob sets the speed directly; only at the end of its travel does it speed up.
+        const rate = altitudeRate(-offset, travel);
+        const atEnd = Math.abs(offset) >= travel - 0.5;
+        const way = Math.sign(-offset);
+        if (atEnd && way === heldWay) {
+          held += dt;
+        } else {
+          held = 0;
+          heldWay = atEnd ? way : 0;
+        }
+        const velocity =
+          rate *
+          options.maxSpeed *
+          (atEnd ? boostFactor(held, options.boostTime, options.boost) : 1);
+        if (velocity !== 0) {
+          height = moveAltitude(height, velocity, dt, range);
+          store.host.setAltitude(kind, height, false);
+        }
+        if (knob.current) knob.current.dataset.offset = String(offset);
+        place(offset, Math.abs(rate));
+        frame = requestAnimationFrame(tick);
+      };
+      const onMove = (move: PointerEvent) => pull(move.clientY);
+      const onKey = (key: KeyboardEvent) => {
+        if (key.key !== 'Escape') return;
+        store.host.setAltitude(kind, first, false);
+        end();
+      };
+      const end = () => {
+        cancelAnimationFrame(frame);
+        element.removeEventListener('pointermove', onMove);
+        element.removeEventListener('pointerup', end);
+        element.removeEventListener('pointercancel', end);
+        window.removeEventListener('keydown', onKey);
+        stop.current = null;
+        // The spring: back to the middle.
+        if (knob.current) {
+          knob.current.style.transition = `transform ${SPRING_MS}ms ease-out`;
+          knob.current.dataset.offset = '0';
+        }
+        place(0, 0);
+        setDragging(false);
+      };
+      element.addEventListener('pointermove', onMove);
+      element.addEventListener('pointerup', end);
+      element.addEventListener('pointercancel', end);
+      window.addEventListener('keydown', onKey);
+      stop.current = end;
       frame = requestAnimationFrame(tick);
-    };
-    const onMove = (move: PointerEvent) => pull(move.clientY);
-    const onKey = (key: KeyboardEvent) => {
-      if (key.key !== 'Escape') return;
-      store.host.setAltitude(kind, first, false);
-      end();
-    };
-    const end = () => {
-      cancelAnimationFrame(frame);
-      element.removeEventListener('pointermove', onMove);
-      element.removeEventListener('pointerup', end);
-      element.removeEventListener('pointercancel', end);
-      window.removeEventListener('keydown', onKey);
-      stop.current = null;
-      // The spring: back to the middle.
-      if (knob.current) {
-        knob.current.style.transition = `transform ${SPRING_MS}ms ease-out`;
-        knob.current.dataset.offset = '0';
-      }
-      place(0, 0);
-      setDragging(false);
-    };
-    element.addEventListener('pointermove', onMove);
-    element.addEventListener('pointerup', end);
-    element.addEventListener('pointercancel', end);
-    window.addEventListener('keydown', onKey);
-    stop.current = end;
-    frame = requestAnimationFrame(tick);
-  };
+    },
+    [store, travel, kind, options, place],
+  );
+
+  if (!store) return null;
 
   const length = 2 * travel + KNOB;
   const edge = '0 0 0 1px rgba(0, 0, 0, 0.5)';

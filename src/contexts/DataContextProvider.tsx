@@ -54,9 +54,10 @@ export const DataProvider = ({ store, children }: DataProviderProps) => {
     return Promise.reject('Unable to connect to store!');
   }, [store, isRemote]);
 
-  return (
-    <DataContext.Provider value={{ isRemote, connect, connectByMessagePort }}>
-      {children}
-    </DataContext.Provider>
+  const value = useMemo(
+    () => ({ isRemote, connect, connectByMessagePort }),
+    [isRemote, connect, connectByMessagePort],
   );
+
+  return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 };

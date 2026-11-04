@@ -214,6 +214,7 @@ export const Casings = forwardRef(
           sectionMaterialOptions &&
           sections.map((section, i) => (
             <CasingSection
+              // oxlint-disable-next-line react/no-array-index-key -- positional: material options, render order and section index follow it too
               key={i}
               materialOptions={sectionMaterialOptions[i]}
               opacity={opacity}

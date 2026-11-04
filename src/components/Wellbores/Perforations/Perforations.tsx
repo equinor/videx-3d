@@ -109,7 +109,7 @@ export const Perforations = forwardRef(
         uLength: new Uniform(0),
       };
 
-      const material = new ShaderMaterial({
+      const display = new ShaderMaterial({
         uniforms,
         vertexShader: vertexShader,
         fragmentShader: fragmentShader,
@@ -138,9 +138,9 @@ export const Perforations = forwardRef(
         blending: NoBlending,
         transparent: false,
       });
-      material.userData.occlusionDepthMaterial = occlusionDepthMaterial;
+      display.userData.occlusionDepthMaterial = occlusionDepthMaterial;
 
-      return material;
+      return display;
     }, [customMaterial]);
 
     // Dispose the paired depth-stamp material alongside the display material.
@@ -174,8 +174,8 @@ export const Perforations = forwardRef(
     const onPropsChange = useMemo(() => {
       return onMaterialPropertiesChange
         ? onMaterialPropertiesChange
-        : (props: Record<string, any>, material: Material | Material[]) => {
-            const m = material as ShaderMaterial;
+        : (props: Record<string, any>, target: Material | Material[]) => {
+            const m = target as ShaderMaterial;
             m.uniforms.uTime.value = props.time;
             m.uniforms.uRadius.value = props.baseRadius;
             m.uniforms.uLength.value = props.length;

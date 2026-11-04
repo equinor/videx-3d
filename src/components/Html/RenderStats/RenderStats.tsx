@@ -29,6 +29,8 @@ export type RenderStatsProps = {
   className?: string;
 };
 
+const defaultOffset: [number, number] = [10, 10];
+
 /**
  * A lightweight render-statistics overlay for R3F. It reports metrics that the
  * usual FPS/frame-time counters miss and that matter most when profiling large
@@ -62,7 +64,7 @@ export type RenderStatsProps = {
 export const RenderStats = ({
   parent,
   origin = 'top-right',
-  offset = [10, 10],
+  offset = defaultOffset,
   interval = 200,
   gpu = true,
   className,

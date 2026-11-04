@@ -21,6 +21,8 @@ export type PanelProps = {
   origin?: Corner;
 };
 
+const defaultOffset: [number, number] = [10, 10];
+
 /**
  * A simple HTML panel that can be used as an overlay on the 3d canvas.
  * @see {@link OutputPanel}
@@ -32,7 +34,7 @@ export const Panel = forwardRef<HTMLDivElement, PropsWithChildren<PanelProps>>(
       origin = 'bottom-left',
       width = 400,
       height,
-      offset = [10, 10],
+      offset = defaultOffset,
       opacity = 0.8,
       padding = 0,
       fontSize = 16,

@@ -1,4 +1,5 @@
 import { useMemo, useRef } from 'react';
+import { useIndexedRefs } from '../../hooks/useIndexedRefs';
 import type { PlanarPolygonCoordinates } from '../../sdk/geometries/planar-geometry';
 import type {
   GeoFeature,
@@ -155,7 +156,7 @@ export const MinimapGeoLayer = <P,>({
   );
 
   const group = useRef<SVGGElement>(null);
-  const paths = useRef<(SVGPathElement | null)[]>([]);
+  const [paths, pathAt] = useIndexedRefs<SVGPathElement>();
   const options = useRef<LayerVisibility>({});
   options.current = {
     visible,
@@ -247,9 +248,7 @@ export const MinimapGeoLayer = <P,>({
         return (
           <path
             key={feature.index}
-            ref={node => {
-              paths.current[i] = node;
-            }}
+            ref={pathAt(i)}
             fill={projected[i]?.closed ? fill : 'none'}
             fillOpacity={s.fillOpacity ?? (projected[i]?.dots ? 1 : 0.35)}
             fillRule="evenodd"

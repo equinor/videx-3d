@@ -293,11 +293,11 @@ export const useAnnotations = (layer: string, scope: string) => {
   const add = useAnnotationsState(state => state.addLayerAnnotations);
   const remove = useAnnotationsState(state => state.removeLayerAnnotations);
 
-  const annotations = useMemo(() => {
+  const api = useMemo(() => {
     return {
-      addAnnotations: (annotations: AnnotationProps[]) => {
-        if (annotations.length) {
-          add(layer, scope, annotations);
+      addAnnotations: (items: AnnotationProps[]) => {
+        if (items.length) {
+          add(layer, scope, items);
           return () => {
             remove(layer, scope);
           };
@@ -307,5 +307,5 @@ export const useAnnotations = (layer: string, scope: string) => {
     };
   }, [add, remove, layer, scope]);
 
-  return annotations;
+  return api;
 };

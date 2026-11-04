@@ -44,6 +44,12 @@ export const DepthSelector = () => {
     }
   }, []);
 
+  const onChange = useCallback(
+    (e: ChangeEvent) =>
+      updatePosition(Number.parseFloat((e.target as HTMLInputElement).value!)),
+    [updatePosition],
+  );
+
   useEffect(() => {
     function onSelectWellbore(event: WellboreSelectedEvent) {
       trajectory.current = null;
@@ -123,11 +129,7 @@ export const DepthSelector = () => {
           defaultValue={0}
           step={0.0001}
           disabled={disabled}
-          onChange={(e: ChangeEvent) =>
-            updatePosition(
-              Number.parseFloat((e.target as HTMLInputElement).value!),
-            )
-          }
+          onChange={onChange}
           style={{
             writingMode: 'vertical-lr',
             accentColor: 'darkgray',

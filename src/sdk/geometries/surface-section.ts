@@ -605,7 +605,8 @@ export function sectionStackInterval(
           m++;
         }
       }
-      for (let e = 0; e < 9 && strict > 0; e++) {
+      const edgeCount = strict > 0 ? 9 : 0;
+      for (let e = 0; e < edgeCount; e++) {
         let i0 = EDGES[e][0];
         let i1 = EDGES[e][1];
         // ⭐⭐ THE watertightness step. Two triangles sharing an XZ edge list its

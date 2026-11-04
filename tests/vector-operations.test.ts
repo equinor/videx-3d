@@ -119,7 +119,9 @@ describe('vector operations', () => {
     expect(rotateVec3([1, 0, 0])).toEqual([1, 0, 0]);
     expect(rotateVec3([1, 0, 0], [1, 0, 0], Math.PI / 4)).toEqual([1, 0, 0]);
     expect(rotateVec3([1, 0, 0], [0, 1, 0], Math.PI / 4)).toEqual([
-      0.7071067811865476, 0, -0.7071067811865475,
+      Math.SQRT1_2,
+      0,
+      -0.7071067811865475,
     ]);
   });
 

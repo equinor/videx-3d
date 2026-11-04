@@ -332,11 +332,11 @@ export function graticuleLabels(
   const columns = (m: number, visit: (j: number, column: number) => void) => {
     const cols = Math.min(span * m, most);
     for (
-      let t = Math.ceil((j0 - cols) / m);
-      t <= Math.floor((j0 + cols) / m);
-      t++
+      let c = Math.ceil((j0 - cols) / m);
+      c <= Math.floor((j0 + cols) / m);
+      c++
     ) {
-      const j = wrapIndex(t * m);
+      const j = wrapIndex(c * m);
       if (mod(j, m) === 0) visit(j, j / m);
     }
   };

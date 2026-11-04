@@ -94,22 +94,21 @@ export const useHighlighter = () => {
     d.object.layers.isEnabled(LAYERS.EMITTER) &&
     d.object.visible;
 
+  const toSet = (highlighted: ObjectRef[]): Record<string, ObjectRef> =>
+    Object.fromEntries(
+      highlighted.map(d => [keyOf(d.object, d.instanceIndex), d]),
+    );
+
   return {
     highlight: (obj: Object3D, index?: number) =>
       set(prev => {
-        const objSet: Record<string, ObjectRef> = prev.highlighted.reduce(
-          (acc, d) => ({ ...acc, [keyOf(d.object, d.instanceIndex)]: d }),
-          {},
-        );
+        const objSet = toSet(prev.highlighted);
         addObjects(obj, objSet, index);
         return { highlighted: Object.values(objSet).filter(live) };
       }),
     removeHighlight: (obj: Object3D, index?: number) =>
       set(prev => {
-        const objSet: Record<string, ObjectRef> = prev.highlighted.reduce(
-          (acc, d) => ({ ...acc, [keyOf(d.object, d.instanceIndex)]: d }),
-          {},
-        );
+        const objSet = toSet(prev.highlighted);
         removeObjects(obj, objSet, index);
         return { highlighted: Object.values(objSet).filter(live) };
       }),
