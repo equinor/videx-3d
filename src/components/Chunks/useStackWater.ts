@@ -13,6 +13,7 @@ import {
 import { OceanMaterial } from '../Ocean/ocean-material';
 import { createOceanSampler, OceanSampler } from '../Ocean/ocean-sampler';
 import { OceanVolumeMaterial } from '../Ocean/ocean-volume-material';
+import { useWeatherOceanWind } from '../Weather/useWeatherOceanWind';
 import { ChunkDepthMap } from './chunk-depth-map';
 import { StackWater } from './chunk-defs';
 import { ChunkFenceUniforms } from './chunk-material';
@@ -68,6 +69,9 @@ export function useStackWater(
   const gl = useThree(state => state.gl);
 
   const contacts = useMemo(createOceanContactRegistry, []);
+  // Its own wind where given, the enclosing Weather's for what it leaves out.
+  const { windSpeed: seaWindSpeed, windDirection: seaWindDirection } =
+    useWeatherOceanWind(water?.windSpeed, water?.windDirection);
 
   // ⚠️ The section is a DEFINE, so cutting the sea or leaving it whole means new
   // materials. That is a discrete choice, unlike the sea state, which is swept.
@@ -108,27 +112,25 @@ export function useStackWater(
   useEffect(() => {
     if (!materials || !water) return;
     const opacity = water.opacity ?? 1;
-    applyOceanWaterProps(materials.surface, { ...water, opacity });
+    const props = {
+      ...water,
+      windSpeed: seaWindSpeed,
+      windDirection: seaWindDirection,
+      opacity,
+    };
+    applyOceanWaterProps(materials.surface, props);
     // The bed grid is in the stack's frame, so the level it is measured against
     // has to be too.
     materials.surface.waterLevel = level;
     // The body shares the surface's wave tables by reference, so its top edge
     // follows the same swells.
-    applyOceanBodyProps(
-      materials.volume,
-      { ...water, opacity },
-      materials.surface,
-    );
+    applyOceanBodyProps(materials.volume, props, materials.surface);
     if (materials.face)
-      applyOceanBodyProps(
-        materials.face,
-        { ...water, opacity },
-        materials.surface,
-      );
+      applyOceanBodyProps(materials.face, props, materials.surface);
     materials.surface.wireframe = wireframe;
     materials.volume.wireframe = wireframe;
     if (materials.face) materials.face.wireframe = wireframe;
-  }, [materials, water, wireframe, level]);
+  }, [materials, water, seaWindSpeed, seaWindDirection, wireframe, level]);
 
   useFrame((_, delta) => {
     if (!materials) return;

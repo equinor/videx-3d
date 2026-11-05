@@ -9,7 +9,7 @@ import type { ReliefMeta, ReliefWindow } from '../data/types/ReliefMeta';
 import { WGS84_A, WGS84_E2 } from '../projection/conformal-sphere';
 import { wgs84Def } from '../projection/crs';
 import { geoTileRegion } from '../tiles/geo-tile-keys';
-import { TILE_ROOT_SIZE, tileSquare } from '../tiles/tile-keys';
+import { TILE_ROOT_SIZE, tileKey, tileSquare } from '../tiles/tile-keys';
 import type { Vec2 } from '../types/common';
 import { toHalfFloatBits } from '../utils/half-float';
 import { chamferDistance } from './chamfer';
@@ -1104,6 +1104,86 @@ export function geoReliefTileHeightAt(
   return tileHeightAt(tile, east / span, (north - latitude) / span, drawn);
 }
 
+/**
+ * Heights on a grid of longitude and latitude (see {@link geoReliefTileGrid}): row by row
+ * south from its north-west node, column by column east, `step` degrees apart.
+ *
+ * @group Geometries
+ */
+export type GeoReliefGrid = {
+  /** `columns × rows` heights, metres above mean sea level */
+  heights: Float32Array;
+  columns: number;
+  rows: number;
+  /** the north-west node's longitude and latitude, degrees */
+  west: number;
+  north: number;
+  /** degrees between nodes, along both */
+  step: number;
+  /** the lowest and highest of its heights */
+  min: number;
+  max: number;
+};
+
+/**
+ * Geographic relief tiles of one `depth` (`buildGeoReliefTile`, `cells` along each side)
+ * stitched into one {@link GeoReliefGrid} of their nodes: `tileColumns × tileRows` tiles from
+ * column `firstColumn` and row `firstRow` (`geoTileRegion`'s), the columns wrapping round the
+ * Earth. Where two tiles meet their edge's nodes are taken once; a tile `tileAt` has none
+ * of leaves `fill` under it.
+ *
+ * @group Geometries
+ */
+export function geoReliefTileGrid(
+  tileAt: (key: number) => ReliefTile | null | undefined,
+  depth: number,
+  firstColumn: number,
+  tileColumns: number,
+  firstRow: number,
+  tileRows: number,
+  cells: number,
+  fill = 0,
+): GeoReliefGrid {
+  const columns = tileColumns * cells + 1;
+  const rows = tileRows * cells + 1;
+  const heights = new Float32Array(columns * rows).fill(fill);
+  const around = 2 ** (depth + 1);
+  const nodes = cells + 3;
+  for (let r = 0; r < tileRows; r++) {
+    for (let c = 0; c < tileColumns; c++) {
+      const i = (((firstColumn + c) % around) + around) % around;
+      const tile = tileAt(tileKey(depth, i, firstRow + r));
+      if (!tile) continue;
+      if (tile.cells !== cells)
+        throw new Error(
+          `geoReliefTileGrid: a tile of ${tile.cells} cells, not ${cells}`,
+        );
+      for (let j = 0; j <= cells; j++) {
+        const from = (1 + j) * nodes + 1;
+        const to = (r * cells + j) * columns + c * cells;
+        heights.set(tile.heights.subarray(from, from + cells + 1), to);
+      }
+    }
+  }
+  let min = Infinity;
+  let max = -Infinity;
+  for (const h of heights) {
+    if (h < min) min = h;
+    if (h > max) max = h;
+  }
+  const [west, north, span] = geoTileRegion(tileKey(depth, 0, firstRow));
+  return {
+    heights,
+    columns,
+    rows,
+    west: west + firstColumn * span,
+    north,
+    step: span / cells,
+    min,
+    max,
+  };
+}
+
 // A tile's height at (`u`, `v`), its own nodes from 0 to 1 along each side, clamped:
 // bilinear, or `drawn` on its triangles, whose diagonals run from (i + 1, j) to (i, j + 1).
 function tileHeightAt(
@@ -1173,6 +1253,9 @@ export async function buildReliefTile(
  *
  * @param key the tile (see `geoTileKeyAt`)
  * @param cells cells along the tile's side
+ * @param heightsOnly only its heights, lowest and highest (and `leaf`, `edge`): no normals
+ * (none), and no error (0), which take most of the work. For what samples the ground
+ * without drawing it.
  *
  * @group Geometries
  */
@@ -1181,6 +1264,7 @@ export async function buildGeoReliefTile(
   source: ReliefLayersSource,
   key: number,
   cells = RELIEF_TILE_CELLS,
+  heightsOnly = false,
 ): Promise<ReliefTile> {
   const [west, north, span] = geoTileRegion(key);
   const step = span / cells;
@@ -1188,20 +1272,27 @@ export async function buildGeoReliefTile(
     Math.min(Math.max(north - (v - 1) * step, -90), 90);
   const [meridian] = ellipsoidRadii(north - span / 2);
   const cellV = step * DEG * meridian;
-  return buildTile(reader, source, key, cells, {
-    space: null,
-    point: (u, v) => [west + (u - 1) * step, latitudeAt(v)],
-    cellU: v => {
-      const latitude = latitudeAt(v);
-      const [, across] = ellipsoidRadii(latitude);
-      // At a pole a row is a point: kept a sliver wide, so its slopes stay finite.
-      return Math.max(
-        step * DEG * across * Math.cos(latitude * DEG),
-        cellV * 1e-3,
-      );
+  return buildTile(
+    reader,
+    source,
+    key,
+    cells,
+    {
+      space: null,
+      point: (u, v) => [west + (u - 1) * step, latitudeAt(v)],
+      cellU: v => {
+        const latitude = latitudeAt(v);
+        const [, across] = ellipsoidRadii(latitude);
+        // At a pole a row is a point: kept a sliver wide, so its slopes stay finite.
+        return Math.max(
+          step * DEG * across * Math.cos(latitude * DEG),
+          cellV * 1e-3,
+        );
+      },
+      cellV,
     },
-    cellV,
-  });
+    heightsOnly,
+  );
 }
 
 /** Where a tile's nodes lie, and how far apart, for `buildTile`. */
@@ -1221,11 +1312,12 @@ async function buildTile(
   key: number,
   cells: number,
   grid: TileGrid,
+  heightsOnly = false,
 ): Promise<ReliefTile> {
   // The tile's nodes and a border of one around them.
   const nodes = cells + 3;
   // Its half-cell points: the nodes and the midpoints between them, without the border.
-  const fine = 2 * cells + 1;
+  const fine = heightsOnly ? 0 : 2 * cells + 1;
   const heights = new Float32Array(nodes * nodes).fill(source.base);
   const halves = new Float64Array(fine * fine).fill(source.base);
   const layers = new Uint8Array(nodes * nodes);
@@ -1251,7 +1343,7 @@ async function buildTile(
     nodes,
     midCellU,
     grid.cellV,
-    true,
+    !heightsOnly,
   );
 
   for (const read of reads) {
@@ -1320,8 +1412,8 @@ async function buildTile(
     }
   }
 
-  const normals = new Uint16Array(nodes * nodes * 2);
-  for (let v = 0; v < nodes; v++) {
+  const normals = new Uint16Array(heightsOnly ? 0 : nodes * nodes * 2);
+  for (let v = 0; v < (heightsOnly ? 0 : nodes); v++) {
     const v0 = Math.max(v - 1, 0);
     const v1 = Math.min(v + 1, nodes - 1);
     const cellU = grid.cellU(v);
@@ -1341,5 +1433,16 @@ async function buildTile(
     }
   }
 
-  return { key, cells, heights, normals, layers, min, max, error, leaf, edge };
+  return {
+    key,
+    cells,
+    heights,
+    normals,
+    layers,
+    min,
+    max,
+    error: heightsOnly ? 0 : error,
+    leaf,
+    edge,
+  };
 }

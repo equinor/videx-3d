@@ -1,6 +1,5 @@
 import {
   forwardRef,
-  useContext,
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
@@ -13,12 +12,9 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
-import { GeneratorsContext } from '../../../contexts/GeneratorsContext';
-import { useGenerator } from '../../../hooks/useGenerator';
 import {
   RELIEF_TILE_CELLS,
   type ReliefLayer,
-  type ReliefLayersSource,
 } from '../../../sdk/geometries/relief-tiles';
 import {
   geoFrameLonLat,
@@ -28,10 +24,7 @@ import {
   type GeoFrame,
 } from '../../../sdk/projection/geo-frame';
 import type { MapProjection } from '../../../sdk/projection/map-projections';
-import {
-  sceneryReliefTile,
-  type SceneryReliefTileResponse,
-} from '../../Scenery/scenery-defs';
+import { useReliefTileLoader } from '../../Layers/relief-tile-loader';
 import type {
   ReliefColor,
   ReliefLookProps,
@@ -226,29 +219,20 @@ const defaultColor: ReliefColor = {
 
 const NO_LAYERS: ReliefLayer[] = [];
 
-// The relief's tiles from the `sceneryReliefTile` generator, by the layers' content (layers
-// written inline are new objects each render); null without layers or a generator.
+// The relief's tiles from the `sceneryReliefTile` generator; null without layers or a generator.
 function useGeoMapTileSource(
   layers: readonly ReliefLayer[],
   base: number,
 ): GeoMapTileSource | null {
-  const provided = useContext(GeneratorsContext) !== null;
-  const generate = useGenerator<SceneryReliefTileResponse>(sceneryReliefTile);
-  const layerKey = JSON.stringify(
-    layers.map(({ id, feather }) => [id, feather ?? 0]),
+  const loader = useReliefTileLoader(layers, base);
+  return useMemo<GeoMapTileSource | null>(
+    () =>
+      loader && {
+        base: loader.base,
+        load: key => loader.load(key, RELIEF_TILE_CELLS),
+      },
+    [loader],
   );
-  return useMemo<GeoMapTileSource | null>(() => {
-    const specs = JSON.parse(layerKey) as [string, number][];
-    if (!specs.length || !provided) return null;
-    const plain: ReliefLayersSource = {
-      layers: specs.map(([id, feather]) =>
-        feather ? { id, feather } : { id },
-      ),
-      base,
-    };
-    return { base, load: key => generate(plain, key, RELIEF_TILE_CELLS) };
-    // Without a provider the generator is new each render, and there are no tiles: null.
-  }, [provided, generate, layerKey, base]);
 }
 
 /**

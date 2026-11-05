@@ -9,8 +9,10 @@ import type {
 import {
   buildGeoReliefTile,
   buildReliefTile,
+  geoReliefTileGrid,
   geoReliefTileHeightAt,
   ReliefReader,
+  ReliefTile,
   reliefTileHeightAt,
   reliefWrapColumns,
 } from '../src/sdk/geometries/relief-tiles';
@@ -315,5 +317,69 @@ describe('buildGeoReliefTile', () => {
     }
     expect(reliefWrapColumns(lonLatGrid().meta)).toBe(0);
     expect(reliefWrapColumns(utmPlane().meta)).toBe(0);
+  });
+
+  it('builds the same heights alone, without normals or error', async () => {
+    const reader = storeOf(lonLatGrid());
+    const source = { layers: [{ id: 'lonlat' }], base: 0 };
+    const key = geoTileKeyAt(8, 3.3, 59.1);
+    const full = await buildGeoReliefTile(reader, source, key);
+    const plain = await buildGeoReliefTile(reader, source, key, CELLS, true);
+    expect(Array.from(plain.heights)).toEqual(Array.from(full.heights));
+    expect([plain.min, plain.max]).toEqual([full.min, full.max]);
+    expect(plain.normals.length).toBe(0);
+    expect(plain.error).toBe(0);
+  });
+});
+
+describe('geoReliefTileGrid', () => {
+  it('stitches tiles into one grid, across the antimeridian', async () => {
+    const reader = storeOf(worldGrid());
+    const source = { layers: [{ id: 'world' }], base: -5000 };
+    const depth = 3;
+    // The last column, ending at 180°E, and the first, from 180°W; two rows from 22.5°N.
+    const tiles = new Map<number, ReliefTile>();
+    for (const lon of [170, -170])
+      for (const lat of [20, 0]) {
+        const key = geoTileKeyAt(depth, lon, lat);
+        tiles.set(
+          key,
+          await buildGeoReliefTile(reader, source, key, CELLS, true),
+        );
+      }
+    const [, column, row] = tileAddress(geoTileKeyAt(depth, 170, 20));
+    const grid = geoReliefTileGrid(
+      key => tiles.get(key),
+      depth,
+      column,
+      2,
+      row,
+      2,
+      CELLS,
+    );
+    expect([grid.columns, grid.rows]).toEqual([2 * CELLS + 1, 2 * CELLS + 1]);
+    expect(grid.west).toBeCloseTo(157.5, 9);
+    expect(grid.north).toBeCloseTo(22.5, 9);
+    expect(grid.step).toBeCloseTo(22.5 / CELLS, 9);
+    let worst = 0;
+    for (let j = 0; j < grid.rows; j++)
+      for (let i = 0; i < grid.columns; i++) {
+        const expected = round(
+          grid.west + i * grid.step,
+          grid.north - j * grid.step,
+        );
+        worst = Math.max(
+          worst,
+          Math.abs(grid.heights[j * grid.columns + i] - expected),
+        );
+      }
+    expect(worst).toBeLessThan(1);
+    expect(grid.max).toBeGreaterThan(grid.min);
+  });
+
+  it('leaves the fill where a tile is missing', () => {
+    const grid = geoReliefTileGrid(() => null, 2, 0, 1, 1, 1, 4, -7);
+    expect(grid.heights.length).toBe(25);
+    expect(grid.heights.every(h => h === -7)).toBe(true);
   });
 });

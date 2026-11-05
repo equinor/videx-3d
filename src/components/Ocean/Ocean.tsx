@@ -11,6 +11,7 @@ import {
 } from 'react';
 import { BufferGeometry, Group, Vector3 } from 'three';
 import { CommonComponentProps, CustomMaterialProps } from '../../common/types';
+import { useWeatherOceanWind } from '../Weather/useWeatherOceanWind';
 import { OceanBedMaterial } from './ocean-bed-material';
 import {
   applyOceanBedProps,
@@ -167,6 +168,11 @@ export const Ocean = forwardRef(
 
     useImperativeHandle(fref, () => ref.current!);
 
+    // Its own wind where given, the enclosing Weather's for what it leaves out.
+    const wind = useWeatherOceanWind(windSpeed, windDirection);
+    const seaWindSpeed = wind.windSpeed;
+    const seaWindDirection = wind.windDirection;
+
     const material = useMemo(() => {
       if (customMaterial) return customMaterial;
       return new OceanMaterial({ waveCount, detailOctaves });
@@ -209,8 +215,8 @@ export const Ocean = forwardRef(
       if (!(material instanceof OceanMaterial)) {
         onMaterialPropertiesChange?.(
           {
-            windDirection,
-            windSpeed,
+            windDirection: seaWindDirection,
+            windSpeed: seaWindSpeed,
             amplitude,
             directionalSpread,
             steepness,
@@ -241,8 +247,8 @@ export const Ocean = forwardRef(
       }
 
       applyOceanWaterProps(material, {
-        windDirection,
-        windSpeed,
+        windDirection: seaWindDirection,
+        windSpeed: seaWindSpeed,
         amplitude,
         directionalSpread,
         steepness,
@@ -269,8 +275,8 @@ export const Ocean = forwardRef(
       });
     }, [
       material,
-      windDirection,
-      windSpeed,
+      seaWindDirection,
+      seaWindSpeed,
       amplitude,
       directionalSpread,
       steepness,

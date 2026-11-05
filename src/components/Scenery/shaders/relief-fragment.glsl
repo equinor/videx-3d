@@ -62,6 +62,13 @@ vec3 reliefAlbedo(float height, float weight, int look) {
   return mix(uSkyOceanBedColor, color, max(weight, smoothstep(-1.0, 1.0, height)));
 }
 
+// How much nearer land that only just clears the sea is drawn than the sea, as a share of the
+// distance: some ten times what the depth buffer tells apart (a logarithmic one some 1e-6 of
+// the distance, fp32's log2 a little more), so the land wins the tie. ⚠️ Not more: the 3D
+// clouds (SceneryCloudVolume) lie a few hundred metres over the sea, and land drawn 1e-4 of
+// 20 000 km nearer (2 km) cut through them from space.
+#define RELIEF_DEPTH_TIE 1e-5
+
 // The depth of the point `t` along this pixel's view ray `dir`, as the stage writes the curved sea's.
 #ifndef RELIEF_FAR
 float reliefDepthAt(vec3 dir, float t) {
@@ -280,7 +287,9 @@ void main() {
   #endif
   vec3 position = (viewMatrix * vec4(world, 1.0)).xyz;
   vec3 albedo = reliefAlbedo(height, ground.y, look);
-  vec3 color = sceneBlinnPhong(albedo, under ? uSkyOceanBedSpecular : RELIEF_LAND_SPECULAR, under ? uSkyOceanBedShininess : RELIEF_LAND_SHININESS, uSkyOceanBedAmbient, position, normalize(mat3(viewMatrix) * normal));
+  // The sun's light as much as the clouds let through here (skyCloudShadow): on land.
+  float shade = under ? 1.0 : skyCloudShadow(world);
+  vec3 color = sceneBlinnPhongShaded(albedo, under ? uSkyOceanBedSpecular : RELIEF_LAND_SPECULAR, under ? uSkyOceanBedShininess : RELIEF_LAND_SHININESS, uSkyOceanBedAmbient, position, normalize(mat3(viewMatrix) * normal), shade);
   // The scene's lights are the field's: far round the Earth, where the sun has set, the
   // ground is dark as by night (skyDayFrom).
   color *= skyDayFrom(uSkyUp, up);
@@ -319,7 +328,7 @@ void main() {
   if(seenInWater) {
     // Through the water over it, from where the view enters it; land, from in the water,
     // through the water the view crosses before it leaves the sea.
-    color *= waterFogDim(max(-height, 0.0), uSkyOceanFogDensity);
+    color *= skyOceanDim(-height);
     float below = altitude > 0.0 ? max(dist - sea, 0.0) : skyOceanPathBelowSurface(cameraPosition, world);
     float path = skyOceanCutawayPath(below, skyOceanCutawayWall(cameraPosition, dir), skyOceanCutawayWater(cutaway));
     color = skyOceanFog(color, path, skyOceanLight(0.5 * (max(-height, 0.0) + max(-altitude, 0.0))));
@@ -338,7 +347,7 @@ void main() {
     float ground = reliefTileGroundAt(cameraPosition + dir * sea);
     bool clears = height >= 0.0 && (ground > 0.5 || (ground < -0.5 && dist - sea < 2.0 * reliefTileCell()));
     if(water && sea < dist * 1.0001 && clears)
-      gl_FragDepth = reliefDepthAt(dir, min(sea, dist) * 0.9999);
+      gl_FragDepth = reliefDepthAt(dir, min(sea, dist) * (1.0 - RELIEF_DEPTH_TIE));
     beyond = water && seaHit.z < 0.5 && sea < dist && !clears;
   }
   // Bitten through: the void, as the background draws it through the gap.

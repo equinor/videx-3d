@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
 import type { Boundary } from '../../sdk/geometries/boundary';
 import type { HeightFieldClip } from '../../sdk/materials/height-field-clip';
+import type { ReliefTileLoader } from '../Layers/relief-tile-loader';
 import type { SceneryOceanState } from '../Scenery/scenery-context';
 import type { SceneryReliefHub } from '../Scenery/scenery-relief-hub';
 import type { SceneryReliefTileOccupants } from '../Scenery/scenery-relief-tiles';
@@ -45,12 +46,19 @@ export type WorldReliefState = {
   sky: SceneryOceanState | null;
   /** the anchored stage's part, null without a `SceneryStage` */
   stage: WorldReliefStage | null;
+  /**
+   * its tiles on demand, as its `GeoRelief` merges them: for what samples the same ground
+   * elsewhere (the clouds' terrain). Null without a relief with layers, or a generator
+   */
+  loader: ReliefTileLoader | null;
   /** A `GeoRelief` with layers tells it is there; returns the release. */
   addRelief: () => () => void;
   /** A `Scenery` with a sea offers it to shade the relief with; returns the release. */
   provideSky: (sky: SceneryOceanState) => () => void;
   /** A `SceneryStage` hands over its part; again whenever it changes. Returns the release. */
   provideStage: (stage: WorldReliefStage) => () => void;
+  /** A `GeoRelief` hands over its tiles' loader; again whenever it changes. Returns the release. */
+  provideLoader: (loader: ReliefTileLoader) => () => void;
 };
 
 export const WorldReliefContext = createContext<WorldReliefState | null>(null);

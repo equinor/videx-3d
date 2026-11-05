@@ -1,6 +1,7 @@
 # Documents
 This section provides further documentation and examples on how to use this library.
 - [Architecture](./architecture.md)
+- [Clouds and weather](./clouds.md)
 - [Data](./data.md)
 - [Distance & bounds (level of detail)](./distance.md)
 - [Generators](./generators.md)

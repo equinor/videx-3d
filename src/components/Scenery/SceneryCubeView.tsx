@@ -17,6 +17,9 @@ const FACE_SIZE = 80;
 const MARGIN = 12;
 // Drawn last by the OITRenderPass too, over its transparent layers.
 const OVERLAY_LAYERS = createLayers(LAYERS.OVERLAY);
+// After everything a Scenery draws, from its renderOrder (default 1e9) on: its layers, the
+// clouds drawn over them (SceneryCloudVolume) and the transparent scene.
+const CUBE_VIEW_ORDER = 1e12;
 
 // Each face: its cell in the 4 x 3 cross, and the direction, right and up it is seen with.
 const FACES: [number, number, number[], number[], number[]][] = [
@@ -116,7 +119,7 @@ export const SceneryCubeView = ({ cube }: { cube: () => Texture | null }) => {
       geometry={geometry}
       material={material}
       frustumCulled={false}
-      renderOrder={1e9}
+      renderOrder={CUBE_VIEW_ORDER}
       layers={OVERLAY_LAYERS}
     />
   );

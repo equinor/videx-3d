@@ -3,6 +3,7 @@ import {
   Camera,
   Color,
   ColorRepresentation,
+  CubeTexture,
   DataTexture,
   DoubleSide,
   Float32BufferAttribute,
@@ -12,6 +13,7 @@ import {
   Scene,
   ShaderMaterial,
   ShaderMaterialParameters,
+  Texture,
   Uniform,
   UniformsLib,
   UniformsUtils,
@@ -49,6 +51,10 @@ import {
   skySunColor,
   skyTwilight,
 } from './scenery-model';
+import type {
+  ScenerySkyReflection,
+  ScenerySkyShadow,
+} from './scenery-registry';
 
 // The naked-eye planets (`PLANETS`); sky.glsl's `uSkyPlanets` has as many.
 const SKY_PLANET_COUNT = 5;
@@ -248,6 +254,19 @@ export class SceneryMaterial extends ShaderMaterial {
         uSkyOceanStage: new Uniform(new Vector4(...NO_STAGE)),
         uSkyOceanStageReach: new Uniform(0),
         uSkyOceanReliefReach: new Uniform(0),
+        uSkyOceanClouds: new Uniform<CubeTexture | null>(null),
+        uSkyOceanCloudsOn: new Uniform(0),
+        // What the sea reflects of them away from where they were filmed (setOceanCloudReflection).
+        uSkyOceanCloudBase: new Uniform(0),
+        uSkyOceanCloudMap: new Uniform<CubeTexture | null>(null),
+        uSkyOceanCloudEarth: new Uniform(new Matrix3()),
+        uSkyOceanCloudFar: new Uniform(new Vector4(0, 0, 1, 0)),
+        // The clouds' shadows (cloud-shadow.glsl, setCloudShadow).
+        uSkyCloudShadow: new Uniform<Texture | null>(null),
+        uSkyCloudShadowPlace: new Uniform(new Vector4()),
+        uSkyCloudShadowEast: new Uniform(new Vector3(1, 0, 0)),
+        uSkyCloudShadowNorth: new Uniform(new Vector3(0, 0, -1)),
+        uSkyCloudShadowLight: new Uniform(new Vector2(1, 0)),
         uSkyStageInverseProjection: new Uniform(new Matrix4()),
         uSkyStageViewport: new Uniform(new Vector4()),
       },
@@ -1101,6 +1120,73 @@ export class SceneryMaterial extends ShaderMaterial {
   }
   set oceanReliefReach(value: number) {
     this.uniforms.uSkyOceanReliefReach.value = Math.max(value, 0);
+  }
+
+  /**
+   * What draws itself in the sky (the 3D clouds) as seen from the scene, a cube map of
+   * premultiplied colour and alpha without the sky's intensity: the sea reflects it over the
+   * sky. Null for none.
+   */
+  get oceanClouds(): CubeTexture | null {
+    return this.uniforms.uSkyOceanClouds.value;
+  }
+  set oceanClouds(value: CubeTexture | null) {
+    this.uniforms.uSkyOceanClouds.value = value;
+    this.uniforms.uSkyOceanCloudsOn.value = value ? 1 : 0;
+  }
+
+  /**
+   * What the sea reflects of what draws itself in the sky away from where {@link oceanClouds}
+   * was filmed (`ScenerySkyReflection`): the film blurred as much as reading it by direction
+   * alone blows its clouds up from over the sea, and far off the weather's own cover. Null for
+   * neither.
+   */
+  setOceanCloudReflection(reflection: ScenerySkyReflection | null) {
+    const u = this.uniforms;
+    const far = u.uSkyOceanCloudFar.value as Vector4;
+    if (!reflection) {
+      u.uSkyOceanCloudBase.value = 0;
+      u.uSkyOceanCloudMap.value = null;
+      far.set(0, 0, 1, 0);
+      return;
+    }
+    u.uSkyOceanCloudBase.value = reflection.base;
+    u.uSkyOceanCloudMap.value = reflection.map;
+    (u.uSkyOceanCloudEarth.value as Matrix3).copy(reflection.earth);
+    far.set(
+      reflection.map ? reflection.strength : 0,
+      reflection.near,
+      reflection.far,
+      reflection.texels,
+    );
+  }
+
+  /**
+   * The shadows of what draws itself in the sky (the 3D clouds) on the sea and the relief
+   * (cloud-shadow.glsl): `shadow`, their map about the camera, or null for none; `dimmed`, the
+   * share of the light the scene's light was already dimmed to, which the map's share
+   * replaces where they read it, and which stands past the map; and `strength`, how much they
+   * apply (0 where the scene's light is not the sky's).
+   */
+  setCloudShadow(
+    shadow: ScenerySkyShadow | null,
+    dimmed: number,
+    strength: number,
+  ) {
+    const u = this.uniforms;
+    u.uSkyCloudShadow.value = shadow?.texture ?? null;
+    const place = u.uSkyCloudShadowPlace.value as Vector4;
+    if (shadow) {
+      place.set(
+        shadow.centre.x,
+        shadow.centre.y,
+        shadow.centre.z,
+        shadow.reach,
+      );
+      (u.uSkyCloudShadowEast.value as Vector3).copy(shadow.east);
+      (u.uSkyCloudShadowNorth.value as Vector3).copy(shadow.north);
+    } else place.w = 0;
+    (u.uSkyCloudShadowLight.value as Vector2).set(dimmed, strength);
   }
 
   /** how much of what lies beyond the seabed it hides, 0 to 1 */

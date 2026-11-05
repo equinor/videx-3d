@@ -20,7 +20,7 @@ vec3 geoThroughWater(vec3 color, inout float alpha, vec3 world, float height) {
     alpha *= skyOceanCutawaySeabed(cutaway);
   // In the sky's own scale, as the relief's colour is.
   color /= max(uSkyIntensity, 1e-4);
-  color *= waterFogDim(max(-height, 0.0), uSkyOceanFogDensity);
+  color *= skyOceanDim(-height);
   float sea = altitude > 0.0 ? skyOceanReach(cameraPosition, dir, altitude).x : 0.0;
   float below = altitude > 0.0 ? max(dist - sea, 0.0) : skyOceanPathBelowSurface(cameraPosition, world);
   float path = skyOceanCutawayPath(below, skyOceanCutawayWall(cameraPosition, dir), skyOceanCutawayWater(cutaway));

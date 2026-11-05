@@ -10,4 +10,5 @@ export * from './graticule-options';
 export * from './graticule-zone-labels';
 export * from './layer-defs';
 export * from './layer-globe';
+export * from './relief-tile-loader';
 export * from './TrackLayer';

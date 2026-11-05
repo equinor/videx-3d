@@ -135,7 +135,12 @@ export * from './utils/typed-2d-array';
 export * from './utils/typed-array';
 export * from './utils/vector-operations';
 
+export * from './weather/weather';
+export * from './weather/weather-systems';
+
 export * from './materials/apply-globe';
+export * from './materials/blue-noise';
+export * from './materials/cloud-noise';
 export * from './materials/depth-material';
 export * from './materials/fence-field';
 export * from './materials/graticule';

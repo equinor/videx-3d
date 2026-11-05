@@ -71,6 +71,13 @@ scene and merges them, so the relief needs a `GeneratorsProvider`. Nest a second
 around the `GeoRelief` (and the `Scenery`), on a worker of its own, and the tiles stream while
 a column builds on the other.
 
+What samples the same ground elsewhere takes the relief's tiles from the `World`
+(`useWorldRelief().loader`, a `ReliefTileLoader`; `useReliefTileLoader` makes one for any
+layers): geographic tiles of any depth and cells, or with `heightsOnly` their heights alone,
+without the normals and the error that take most of a tile's work. `geoReliefTileGrid`
+stitches tiles of one depth into a grid of longitude and latitude. The 3D clouds take their
+terrain so ([clouds.md](./clouds.md), "Over the ground"); a `GeoMap` loads its own the same way.
+
 Where the scene lies on the map is the enclosing `World`'s `frame`, a `GeoFrame`: the
 projection it is drawn in and the map coordinates of its origin, as a `UtmArea` places a
 scene (scene X east, scene Z south). It also gives the sky's `observer` its place and places
@@ -85,7 +92,8 @@ meets it to its placement's precision (about 10 cm 5 km around, 120 km off). Wit
 
 ### The demo reliefs
 
-The stories' store holds four, coarse to fine: ETOPO 2022 from 12°W to 32°E and 49°N to
+The stories' store holds five, coarse to fine: ETOPO 2022 over the whole world at 10 arc-minutes
+(`etopo-2022-world`), ETOPO 2022 from 12°W to 32°E and 49°N to
 72°N at 2 arc-minutes (`etopo-2022-nordic`), ETOPO 2022 at 15″ and EMODnet at 1/8′ from
 Volve east to the coast (EMODnet has no land), and EMODnet at 1/16′ around Volve. They
 are not in git: `npm run generate-relief` fetches them into `public/relief/` (which git
@@ -395,3 +403,14 @@ the tiles, and the stage's sea and seabed, keep their vertices just inside it.
 - The environment bakes do not include it.
 - The same layers can be drawn as a minimap that follows the camera: see [minimap.md](./minimap.md).
 - ⚠️ It assumes the default `up` (+Y), as the stage does.
+- **Ground below sea level is sea.** With a `Scenery`, everything under 0 m is drawn under
+  the sea's water, at the sea's level: dry depressions are flooded (the Qattara Depression,
+  Death Valley, the Dead Sea's shores, Turpan, Danakil), their rims a coastline that moves with
+  the tiles' detail. Planned (2026-11-05): mark the exceptions, the dry depressions, as places
+  where ground below 0 m stays land, rather than deciding it from the relief (a flood fill
+  from the ocean dried the Caspian and the deep lake beds too).
+- **Lakes** are not water: the relief holds their beds (ETOPO), not their surfaces. A lake
+  above sea level is a dry basin; the parts of a deep one below 0 m (Superior, Baikal) fill to
+  the sea's level, hundreds of metres under its real surface. Real lakes need data with their
+  surface heights (lake polygons) and water drawn at their own level: a feature of their own,
+  later.

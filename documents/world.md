@@ -944,7 +944,9 @@ that followed the camera would have made the sea depend on the camera's path.
   objects far off (the Ocean's `OceanSampler` is the field's plane's) takes `OceanCharts`
   the same way.
 - **Not done:** the cloud deck's pattern is still laid on the field's plane and streaks far
-  off; left for the 3D clouds (step 8), which can take the same charts.
+  off; left for the 3D clouds (step 8), which can take the same charts. The 3D clouds
+  (`SceneryCloudVolume`, [clouds.md](./clouds.md), 2026-11-04) need none: their pattern is read
+  in a frame fixed to the Earth, one field from sea level to space.
 
 ### 4e: a level horizon for a host (built 2026-10-26)
 

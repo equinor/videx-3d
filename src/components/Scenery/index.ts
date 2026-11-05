@@ -2,6 +2,13 @@ export * from './Scenery';
 export * from './SceneryAbyss';
 export * from './SceneryAnchor';
 export * from './SceneryClouds';
+export * from './SceneryCloudVolume';
+export {
+  CLOUD_VOLUME_LAYERS,
+  CLOUD_VOLUME_QUALITY,
+  cloudVolumeLight,
+} from './scenery-cloud-volume';
+export type { CloudVolumeQualityLevel } from './scenery-cloud-volume';
 export * from './SceneryCutaway';
 export * from './SceneryOcean';
 export * from './SceneryStage';

@@ -30,6 +30,7 @@ import {
   GeoReliefContourLabels,
   type ReliefContourLabelLook,
 } from './GeoReliefContourLabels';
+import { useReliefTileLoader } from './relief-tile-loader';
 
 /**
  * GeoRelief props
@@ -294,6 +295,14 @@ export const GeoRelief = ({
   useEffect(() => {
     if (skyDepth !== undefined) setSeaDepth(skyDepth);
   }, [skyDepth]);
+  const base = -(depth ?? skyDepth ?? seaDepth);
+  // Its tiles on demand, for what samples the same ground elsewhere (the clouds' terrain).
+  const loader = useReliefTileLoader(layers, base);
+  const provideLoader = relief?.provideLoader;
+  useEffect(
+    () => (mounted && loader ? provideLoader?.(loader) : undefined),
+    [mounted, loader, provideLoader],
+  );
   // The ground under the camera: none while not shown.
   const ground = relief?.ground;
   useEffect(() => {
@@ -326,7 +335,7 @@ export const GeoRelief = ({
       <SceneryStageReliefTiles
         sky={sky?.material ?? null}
         globe={world.globe}
-        source={{ layers, base: -(depth ?? skyDepth ?? seaDepth) }}
+        source={{ layers, base }}
         looks={looks.texture}
         reach={far}
         level={sky?.level ?? world.globe.level}

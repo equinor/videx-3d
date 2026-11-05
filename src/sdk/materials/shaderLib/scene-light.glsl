@@ -2,7 +2,8 @@
 // loops of `lights_fragment_begin` without shadows — for a shader that shades a surface it has
 // no mesh of its own for (a ray-traced plane, say). `ambient` redistributes the ambient light
 // by orientation, x facing up and y facing down, as `ChunkMaterial`'s `ambient` does; (1, 1)
-// leaves it flat. `position` and `normal` are in view space.
+// leaves it flat. `position` and `normal` are in view space. `sceneBlinnPhongShaded` scales
+// the directional lights by a shadow of the caller's (a cloud's).
 // ⚠️ Needs <common>, <bsdfs> and <lights_pars_begin>, and a material with `lights: true`.
 
 void sceneBlinnPhongDirect(IncidentLight light, vec3 normal, vec3 viewDir, vec3 specularColor, float shininess, inout vec3 direct, inout vec3 specular) {
@@ -13,7 +14,8 @@ void sceneBlinnPhongDirect(IncidentLight light, vec3 normal, vec3 viewDir, vec3 
 
 // ⚠️ The loops are unrolled as three unrolls its own (a one-light loop warns on ANGLE), so
 // their bodies may only index with `[ i ]` and declare nothing.
-vec3 sceneBlinnPhong(vec3 diffuseColor, vec3 specularColor, float shininess, vec2 ambient, vec3 position, vec3 normal) {
+// `shade` scales the directional lights' share (a cloud's shadow): 1 leaves them whole.
+vec3 sceneBlinnPhongShaded(vec3 diffuseColor, vec3 specularColor, float shininess, vec2 ambient, vec3 position, vec3 normal, float shade) {
   vec3 viewDir = isOrthographic ? vec3(0.0, 0.0, 1.0) : normalize(-position);
   vec3 direct = vec3(0.0);
   vec3 specular = vec3(0.0);
@@ -27,6 +29,8 @@ vec3 sceneBlinnPhong(vec3 diffuseColor, vec3 specularColor, float shininess, vec
   }
   #pragma unroll_loop_end
   #endif
+  direct *= shade;
+  specular *= shade;
 
   #if NUM_POINT_LIGHTS > 0
   #pragma unroll_loop_start
@@ -61,4 +65,8 @@ vec3 sceneBlinnPhong(vec3 diffuseColor, vec3 specularColor, float shininess, vec
   irradiance *= mix(ambient.y, ambient.x, worldNormal.y * 0.5 + 0.5);
 
   return (direct + irradiance) * BRDF_Lambert(diffuseColor) + specular;
+}
+
+vec3 sceneBlinnPhong(vec3 diffuseColor, vec3 specularColor, float shininess, vec2 ambient, vec3 position, vec3 normal) {
+  return sceneBlinnPhongShaded(diffuseColor, specularColor, shininess, ambient, position, normal, 1.0);
 }

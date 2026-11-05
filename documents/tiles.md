@@ -736,7 +736,12 @@ see [world.md, 7d](./world.md#7d-1-built-2026-11-02).)
   lighting, the water and the void follow. Over the ground in a trench, below the sea's
   own seabed, the camera is in the water (`SceneryMaterial.oceanTrench`): the background's
   layers see as from just above that seabed, as they see from just below it in rock
-  (`oceanBuried`).
+  (`oceanBuried`). There the water's light is the camera's own depth's (`skyOceanViewDepth`),
+  the sea's own seabed (over the camera) is not drawn — below lies water down to the relief's
+  ground — and the surface above is seen through all the water up to it. However deep, the
+  water's light and the dimming of what lies in it stop at an optical depth of 1.6
+  (`SKY_OCEAN_DARKEST`, some 400 m in the default water): a trench's floor at 4 km was black,
+  now a dark blue (2026-11-05).
 - **The relief from below (built 2026-10-28; it replaced the skirts' test below):** under
   the ground the relief is the void's lid. The same tiles are drawn with a second
   material instead (`createSceneryReliefTileFromBelowMaterial`, `RELIEF_FROM_BELOW`): their

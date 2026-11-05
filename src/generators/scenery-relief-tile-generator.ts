@@ -21,12 +21,15 @@ const readers = new WeakMap<ReadonlyStore, ReliefReader>();
  * @param source the layers and the base, and for a tile in a map where the scene lies on it
  * @param key the tile (see `geoTileKeyAt`, or `tileKey`)
  * @param cells cells along its side
+ * @param heightsOnly a geographic tile's heights alone (`buildGeoReliefTile`'s), for what
+ * samples the ground without drawing it
  */
 export async function generateSceneryReliefTile(
   this: ReadonlyStore,
   source: ReliefLayersSource | ReliefTileSource,
   key: number,
   cells?: number,
+  heightsOnly?: boolean,
 ): Promise<SceneryReliefTileResponse> {
   let reader = readers.get(this);
   if (!reader) {
@@ -38,7 +41,7 @@ export async function generateSceneryReliefTile(
   const tile =
     'frame' in source && source.frame
       ? await buildReliefTile(reader, source, key, cells)
-      : await buildGeoReliefTile(reader, source, key, cells);
+      : await buildGeoReliefTile(reader, source, key, cells, heightsOnly);
   return transfer(tile, [
     tile.heights.buffer as ArrayBuffer,
     tile.normals.buffer as ArrayBuffer,

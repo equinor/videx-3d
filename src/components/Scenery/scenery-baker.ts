@@ -2,12 +2,15 @@ import {
   BufferGeometry,
   Color,
   CubeCamera,
+  CustomBlending,
   DirectionalLight,
   HalfFloatType,
   IUniform,
   LightProbe,
   Material,
   Mesh,
+  OneFactor,
+  OneMinusSrcAlphaFactor,
   PerspectiveCamera,
   PMREMGenerator,
   Scene,
@@ -46,10 +49,47 @@ import {
   SceneryOverLayer,
 } from './scenery-layers';
 import { sceneryOceanDefines } from './scenery-stage';
+import type { ScenerySkyOverlay } from './scenery-registry';
 
 const PROBE_RESOLUTION = 32;
 // How far above the sea surface (or the abyss level) the air is filmed from, in world units.
 const AIR_BAKE_HEIGHT = 100;
+// After every layer of the sky, the sea's surface the last (at 1).
+const OVERLAY_ORDER = 2;
+
+const overlayFragmentShader = /* glsl */ `
+uniform samplerCube uOverlay;
+uniform float uSkyIntensity;
+varying vec3 vSkyDirection;
+void main() {
+  vec4 overlay = textureCube(uOverlay, normalize(vSkyDirection));
+  if(overlay.a <= 0.0)
+    discard;
+  gl_FragColor = vec4(overlay.rgb * uSkyIntensity, overlay.a);
+}`;
+
+/**
+ * Where the bakes film `zone` of the sky of `source` from (world): over the disc's centre,
+ * some way over the sea's surface (or the abyss level) for the air, and some way under it for
+ * the water. The subsurface's from the origin.
+ */
+export function sceneryBakePosition(
+  source: SceneryMaterial,
+  zone: SceneryZone,
+  target: Vector3,
+): Vector3 {
+  if (zone === 'subsurface') return target.set(0, 0, 0);
+  const level = source.ocean
+    ? source.oceanLevel
+    : source.abyss
+      ? source.abyssLevel
+      : 0;
+  const height =
+    zone === 'water'
+      ? level - SCENERY_WATER_BAKE_DEPTH
+      : level + AIR_BAKE_HEIGHT;
+  return target.copy(source.up).multiplyScalar(height);
+}
 
 /** The sun a {@link SceneryBaker} lights the seabed with: as the sky's directional light. */
 export type SceneryBakerSun = {
@@ -106,9 +146,11 @@ export class SceneryBaker {
     uSkyOceanCutawayShape: new Uniform(new Vector3()),
     uSkyOceanSeabedOpacity: new Uniform(1),
     uSkyCurvature: new Uniform(0),
-    // The globe off: a flat sea, and the waves on the field's plane.
-    uGlobe: new Uniform(new Vector4()),
-    uOceanCharts: new Uniform(new Vector4()),
+    // The globe off: a flat sea, and the waves on the field's plane. ⚠️ Their w is the switch,
+    // and a Vector4's default w is 1: with it, the globe was on with no radius, and the
+    // half of the bake's sea away from the sun lay in night.
+    uGlobe: new Uniform(new Vector4(0, 0, 0, 0)),
+    uOceanCharts: new Uniform(new Vector4(0, 0, 0, 0)),
     uSkyDebug: new Uniform(0),
     // The field's light, as the scene's lights are: the visible sky's is where the camera
     // is (SceneryMaterial.fieldLight). Filled in before each film.
@@ -143,13 +185,36 @@ export class SceneryBaker {
   private pmrem: PMREMGenerator | null = null;
   // Bumped by dispose(): a readback still in flight is then reading released targets.
   private generation = 0;
+  // What draws itself in the sky, drawn over the air's bakes (setOverlay).
+  private overlay: ScenerySkyOverlay | null = null;
+  private readonly overlayMaterial = new ShaderMaterial({
+    vertexShader: skyVertexShader,
+    fragmentShader: overlayFragmentShader,
+    uniforms: {
+      uOverlay: new Uniform<Texture | null>(null),
+      uSkyIntensity: new Uniform(1),
+    },
+    depthTest: false,
+    depthWrite: false,
+    // Premultiplied.
+    blending: CustomBlending,
+    blendSrc: OneFactor,
+    blendDst: OneMinusSrcAlphaFactor,
+    blendSrcAlpha: OneFactor,
+    blendDstAlpha: OneMinusSrcAlphaFactor,
+  });
+  private readonly overlayMesh = new Mesh(this.geometry, this.overlayMaterial);
 
   constructor(private readonly source: SceneryMaterial) {
     // Same uniform objects as the visible sky, but for the overrides.
     this.material.uniforms = { ...source.uniforms, ...this.overrides };
     const mesh = new Mesh(this.geometry, this.material);
     mesh.frustumCulled = false;
-    this.scene.add(mesh, this.sun, this.probe);
+    this.overlayMaterial.uniforms.uSkyIntensity = source.uniforms.uSkyIntensity;
+    this.overlayMesh.frustumCulled = false;
+    this.overlayMesh.renderOrder = OVERLAY_ORDER;
+    this.overlayMesh.visible = false;
+    this.scene.add(mesh, this.sun, this.probe, this.overlayMesh);
 
     this.subsurface = new ShaderMaterial({
       vertexShader: skyVertexShader,
@@ -184,6 +249,14 @@ export class SceneryBaker {
       this.probe.sh.copy(probe.sh);
       this.probe.intensity = probe.intensity;
     }
+  }
+
+  /**
+   * What draws itself in the sky (the 3D clouds): filmed and drawn over the sky in the bakes
+   * of the air from now on; null for none.
+   */
+  setOverlay(overlay: ScenerySkyOverlay | null) {
+    this.overlay = overlay;
   }
 
   /** What the `'subsurface'` zone films from now on. */
@@ -404,7 +477,8 @@ export class SceneryBaker {
     );
   }
 
-  // The sky from where its zone is seen, or the subsurface.
+  // The sky from where its zone is seen, or the subsurface. The air with what draws itself in
+  // the sky (setOverlay) over it, filmed from there first.
   private film(renderer: WebGLRenderer, zone: SceneryZone, camera: CubeCamera) {
     if (zone === 'subsurface') {
       camera.position.set(0, 0, 0);
@@ -419,16 +493,13 @@ export class SceneryBaker {
     overrides.uSkyTwilight.value.set(source.sunTwilight, field.twilight);
     overrides.uSkyMoonlight.value = field.moonlight;
     overrides.uSkyNight.value = field.night;
-    const level = source.ocean
-      ? source.oceanLevel
-      : source.abyss
-        ? source.abyssLevel
-        : 0;
-    const height =
-      zone === 'water'
-        ? level - SCENERY_WATER_BAKE_DEPTH
-        : level + AIR_BAKE_HEIGHT;
-    camera.position.copy(source.up).multiplyScalar(height);
+    sceneryBakePosition(source, zone, camera.position);
+    const overlay = zone === 'air' ? this.overlay : null;
+    this.overlayMesh.visible = overlay !== null;
+    if (overlay) {
+      overlay.film(renderer, camera.position);
+      this.overlayMaterial.uniforms.uOverlay.value = overlay.texture;
+    }
     camera.update(renderer, this.scene);
   }
 
@@ -440,6 +511,7 @@ export class SceneryBaker {
     this.generation++;
     this.geometry.dispose();
     release(this.material);
+    release(this.overlayMaterial);
     for (const { mesh } of this.layers.values()) release(mesh.material);
     this.subsurface.dispose();
     this.probeTarget.dispose();

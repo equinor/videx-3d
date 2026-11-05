@@ -21,6 +21,7 @@ export * from './components/SubseaTemplate';
 export * from './components/Surfaces';
 export * from './components/Symbol';
 export * from './components/UtmArea';
+export * from './components/Weather';
 export * from './components/Wellbores/BasicTrajectory';
 export * from './components/Wellbores/Casings';
 export * from './components/Wellbores/CompletionTools';

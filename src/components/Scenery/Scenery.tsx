@@ -40,6 +40,7 @@ import { OceanMaterial } from '../Ocean/ocean-material';
 import { applyOceanWaterProps } from '../Ocean/ocean-material-sync';
 import { useWorld } from '../World/world-context';
 import { useWorldRelief } from '../World/world-relief';
+import { useWeatherOceanWind } from '../Weather/useWeatherOceanWind';
 import type { ProgressReport } from '../Progress/progress-store';
 import {
   createOceanContactRegistry,
@@ -76,6 +77,7 @@ import {
   SceneryFeatures,
   SceneryRegistry,
   SceneryRegistryContext,
+  ScenerySkyOverlay,
 } from './scenery-registry';
 import { createSceneryGeometry, SceneryMaterial } from './scenery-material';
 import { SceneryReliefHub } from './scenery-relief-hub';
@@ -564,8 +566,15 @@ export const Scenery = ({
     sky.name = 'scenery-sky';
     return sky;
   });
+  // What draws itself in the sky (the 3D clouds), for the light: see ScenerySkyOverlay.
+  const overlay = useRef<ScenerySkyOverlay | null>(null);
   const registry = useMemo<SceneryRegistry>(
-    () => ({ material, set: setFeature }),
+    () => ({
+      material,
+      set: setFeature,
+      view: { clouds: false, renderOrder: 0 },
+      overlay,
+    }),
     [material, setFeature],
   );
   const [standIn] = useState(() => createSceneryStandInMaterial(material));
@@ -879,6 +888,8 @@ export const Scenery = ({
   );
 
   const dirty = useRef(true);
+  // The version of what draws itself in the sky (overlay) the bakes were last due for.
+  const overlayVersion = useRef(-1);
   // The subsurface's bakes owe nothing to the sky: they are due only when their own inputs change.
   const subsurfaceDirty = useRef(true);
   // The zones whose environment and light probe are due a bake; each zone's coefficients.
@@ -1172,40 +1183,43 @@ export const Scenery = ({
     oceanSeabedOpacity,
   ]);
 
+  // Its own wind where given, the enclosing Weather's for what it leaves out: in the wave
+  // plane, true east and south, as the default compass frame's X and Z.
+  const { windSpeed: seaWindSpeed, windDirection: seaWindDirection } =
+    useWeatherOceanWind(oceanOptions?.windSpeed, oceanOptions?.windDirection);
+
   // Every render: the props are an inline object, and applying them is cheap.
   useLayoutEffect(() => {
     if (!water || !oceanOptions) return;
-    applyOceanWaterProps(water, oceanOptions);
+    applyOceanWaterProps(water, {
+      ...oceanOptions,
+      windSpeed: seaWindSpeed,
+      windDirection: seaWindDirection,
+    });
   });
 
   // The bakes see the water too, but an inline object is new every render. Not the seabed's
   // opacity: the bakes take the seabed whole.
   const waterKey = oceanOptions
-    ? JSON.stringify({ ...oceanOptions, seabedOpacity: undefined })
+    ? JSON.stringify({
+        ...oceanOptions,
+        windSpeed: seaWindSpeed,
+        windDirection: seaWindDirection,
+        seabedOpacity: undefined,
+      })
     : '';
   useEffect(() => {
     dirty.current = true;
   }, [waterKey]);
 
+  // The glint's colour is set each frame, with the light the sky's clouds let through.
   useLayoutEffect(() => {
     if (!water) return;
     water.sunDirection = lightDirection;
-    // The glint goes with the light, as the sky does.
-    water.sunColor = scratch
-      .copy(lightColor)
-      .multiplyScalar(lightIntensity / Math.max(sunIntensity, 1e-6));
     // A low sun lays a broad glitter path.
     water.sunGlintSpread =
       SKY_TWILIGHT_GLINT_SPREAD * state.twilight * sunTwilight;
-  }, [
-    water,
-    lightDirection,
-    lightColor,
-    lightIntensity,
-    sunIntensity,
-    state.twilight,
-    sunTwilight,
-  ]);
+  }, [water, lightDirection, state.twilight, sunTwilight]);
 
   useEffect(() => {
     dirty.current = true;
@@ -1352,6 +1366,26 @@ export const Scenery = ({
       water.time += delta;
       contacts.upload(water, { plane: wavePlane, from: camera.position });
     }
+    // What draws itself in the sky (the 3D clouds): in the air's bakes, which are due again
+    // as it changes; in the sea's reflection; and the share of the light it lets through.
+    const skyOverlay = overlay.current;
+    baker.setOverlay(skyOverlay);
+    material.oceanClouds = skyOverlay?.texture ?? null;
+    material.setOceanCloudReflection(skyOverlay?.reflection ?? null);
+    const overlayKey = skyOverlay ? skyOverlay.version : -1;
+    if (overlayKey !== overlayVersion.current) {
+      overlayVersion.current = overlayKey;
+      dirty.current = true;
+    }
+    const lightThrough = skyOverlay ? skyOverlay.light : 1;
+    if (water) {
+      // The glint goes with the light, as the sky does.
+      water.sunColor
+        .copy(lightColor)
+        .multiplyScalar(
+          (lightIntensity / Math.max(sunIntensity, 1e-6)) * lightThrough,
+        );
+    }
     if (sunShimmer && sunRays > 0) material.sunRayPhase += delta;
     material.sunRadiance =
       (hdr ?? gl.toneMapping !== NoToneMapping) ? SKY_HDR_SUN_RADIANCE : 1;
@@ -1432,16 +1466,25 @@ export const Scenery = ({
       share = below;
     }
     subsurfaceShare.current = share;
+    const toSubsurface = share * share * (3 - 2 * share);
     if (light.current) {
-      const t = share * share * (3 - 2 * share);
+      const t = toSubsurface;
       light.current.position.copy(lightDirection).lerp(subsurfaceDirection, t);
       light.current.color.copy(lightColor).lerp(subsurfaceColor, t);
+      // The sky's light, as much as its clouds let through; the subsurface's is its own.
       light.current.intensity = MathUtils.lerp(
-        lightIntensity,
+        lightIntensity * lightThrough,
         subsurfaceIntensity,
         t,
       );
     }
+    // Where the sea and the relief read the clouds' shadows, their share of the light there
+    // in place of the share it was dimmed to: the sky's light's, not the subsurface's.
+    material.setCloudShadow(
+      skyOverlay?.shadow ?? null,
+      lightThrough,
+      skyOverlay && sunLight ? 1 - toSubsurface : 0,
+    );
 
     // The cutaway's own work (SceneryCutaway), by this frame's height, zone and matrices.
     // Without one nothing is cut.
@@ -1471,6 +1514,15 @@ export const Scenery = ({
     showLayer(abyssMesh.current, 'abyss');
     showLayer(seaMesh.current, 'sea');
     showLayer(waterMesh.current, 'water');
+    // For the clouds that draw themselves (SceneryCloudVolume): as the clouds' layer would be.
+    registry.view.renderOrder = renderOrder;
+    registry.view.clouds =
+      drawn &&
+      ready &&
+      !voided &&
+      shown.clouds &&
+      !debug?.hide?.includes('clouds') &&
+      !debug?.hide?.includes('background');
 
     const { environment: environmentDue, probe: probeDue } = stale.current;
     const now = performance.now();
@@ -1512,7 +1564,7 @@ export const Scenery = ({
           ? {
               direction: lightDirection,
               color: lightColor,
-              intensity: lightIntensity,
+              intensity: lightIntensity * lightThrough,
             }
           : null,
         hasProbe ? bakeProbe : null,

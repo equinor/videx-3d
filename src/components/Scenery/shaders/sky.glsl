@@ -6,6 +6,7 @@
 
 #include ./sky-gradient.glsl
 #include ./sky-void.glsl
+#include ./cloud-shadow.glsl
 
 uniform vec3 uSkyNorth; // normalised, perpendicular to uSkyUp
 uniform vec3 uSkyEast;
@@ -553,6 +554,21 @@ uniform float uSkyOceanStageReach;
 uniform float uSkyOceanReliefReach;
 // 1 while a stage's occupant's cut opens its seabed to the void (SceneryMaterial.abyssOpenings).
 uniform float uSkyOceanStageOpen;
+// What draws itself in the sky (the 3D clouds) as seen from the scene, all round by direction:
+// premultiplied colour and alpha, without the sky's intensity; while uSkyOceanCloudsOn. The sea
+// reflects it over the sky (SceneryMaterial.oceanClouds).
+uniform samplerCube uSkyOceanClouds;
+uniform float uSkyOceanCloudsOn;
+// What the sea reflects of it away from where it was filmed (skyOceanReflectedClouds,
+// SceneryMaterial.setOceanCloudReflection): the lowest clouds' base (world units); the weather
+// far off, a cube map fixed on the Earth of the share under cloud (r low, b middle, a high),
+// and world directions into its frame; how far the cover far off follows it (x, 0 for none),
+// from the field's middle where it starts to and where it has (yz, world units), and its texels
+// per world unit (w).
+uniform float uSkyOceanCloudBase;
+uniform samplerCube uSkyOceanCloudMap;
+uniform mat3 uSkyOceanCloudEarth;
+uniform vec4 uSkyOceanCloudFar;
 
 // Coordinates in the wave plane the Ocean works in: world X/Z in the default frame. Under a
 // projected grid (UTM) true east and south, turned from the scene's X and Z: what floats is

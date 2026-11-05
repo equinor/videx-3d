@@ -20,6 +20,9 @@
 #define SKY_OCEAN_WATER_IOR 1.333
 // Over the sea, the camera's heights over which the water turns opaque (world units).
 #define SKY_OCEAN_OPAQUE vec2(2000.0, 5000.0)
+// The share of the water's own colour that is the sun's light, by day: what a cloud's shadow
+// takes of it (skyCloudLightAt).
+#define SKY_OCEAN_SUN_SHARE 0.5
 
 // uSkyOceanLevel, uSkyOceanDepth and uSkyOceanBuried: sky.glsl, which every layer reads.
 // So are water-fog.glsl and the cutaway's shape and cuts (uSkyOceanCutaway{Anchor, Heading,
@@ -206,9 +209,32 @@ vec3 skyOceanReach(vec3 origin, vec3 dir, float height) {
   return vec3(reach.x, 0.0, reach.y);
 }
 
+// The most optical depth the water's light, and what lies in the water, are dimmed by (the
+// light falls to e^(−0.8) of the surface's): deeper, they keep that much. However deep a
+// relief's trench goes, its ground stays dark blue but seen, rather than black.
+#define SKY_OCEAN_DARKEST 1.6
+
+// `depth` below the surface, no deeper than the water's light is taken (SKY_OCEAN_DARKEST).
+float skyOceanLitDepth(float depth) {
+  return min(depth, SKY_OCEAN_DARKEST / max(uSkyOceanFogDensity, 1e-6));
+}
+
 // Daylight left `depth` below the surface; night keeps a little, as the sky does.
 float skyOceanLight(float depth) {
-  return waterFogLight(depth, uSkyOceanFogDensity, uSkyDaylight);
+  return waterFogLight(skyOceanLitDepth(depth), uSkyOceanFogDensity, uSkyDaylight);
+}
+
+// How much of its light what lies `depth` below the surface keeps, by the water over it.
+float skyOceanDim(float depth) {
+  return waterFogDim(skyOceanLitDepth(max(depth, 0.0)), uSkyOceanFogDensity);
+}
+
+// How deep a view from `origin` takes the water's light at: its own depth; from a trench, the
+// camera's, however far up its view is started (skyViewOrigin), so the water about it is lit
+// as the relief's ground in it is.
+float skyOceanViewDepth(vec3 origin) {
+  float depth = max(-skyOceanViewAltitude(origin), 0.0);
+  return uSkyOceanTrench > 0.5 ? max(depth, -skyOceanCameraAltitude()) : depth;
 }
 
 // Where skyOceanStaged tests a view ray from a view's `origin`: how far along it, the level it
@@ -314,7 +340,7 @@ vec3 skyOceanBed(vec3 world, vec3 up, float depth) {
   #endif
   vec3 lit = sceneBlinnPhong(albedo, uSkyOceanBedSpecular, uSkyOceanBedShininess, uSkyOceanBedAmbient, position, normal) * skyDayFrom(uSkyUp, up);
   // The sky's own scale is applied to everything it draws, last; a lit surface keeps the scene's.
-  return lit * waterFogDim(depth, uSkyOceanFogDensity) / max(uSkyIntensity, 1e-4);
+  return lit * skyOceanDim(depth) / max(uSkyIntensity, 1e-4);
 }
 
 // How far the segment from a view's origin `a` to `b` runs through the water.
@@ -335,8 +361,7 @@ float skyOceanPathBelowSurface(vec3 a, vec3 b) {
 // The light the water between the camera and a seabed point `bedDepth` down carries:
 // taken half way down.
 float skyOceanBedPathLight(vec3 origin, float bedDepth) {
-  float depth = max(-skyOceanViewAltitude(origin), 0.0);
-  return skyOceanLight(0.5 * (bedDepth + depth));
+  return skyOceanLight(0.5 * (bedDepth + skyOceanViewDepth(origin)));
 }
 
 // The waves at a point of the sea, `dist` along the view ray. Each wave sum compiles to a
@@ -381,18 +406,53 @@ float skyOceanSurfaceOpacity(float flatness) {
   return mix(uOpacity, 1.0, max(flatness, smoothstep(SKY_OCEAN_OPAQUE.x, SKY_OCEAN_OPAQUE.y, above)));
 }
 
+// The film's (uSkyOceanClouds) coarsest level: its side, CUBE_SIZE in scenery-cloud-volume.ts, is 128.
+#define SKY_OCEAN_CLOUD_LODS 7.0
+// The least cloud base its blur is reckoned from (world units).
+#define SKY_OCEAN_CLOUD_BASE 100.0
+// How much of the sky the weather far off hides where a level is all cloud: low, middle, and
+// high (thin, of ice).
+#define SKY_OCEAN_CLOUD_LEVELS vec3(0.9, 0.6, 0.25)
+
+// The clouds the sea reflects along `r` at `world` (`up` there, `texel` world units per pixel),
+// premultiplied, over `sky`, the sky it reflects there. The film (uSkyOceanClouds), read by
+// direction alone, shows them as from the scene: from over the sea point it blows them up by
+// its height over the point against their base, one cloud across half the sea from high up;
+// so read as blurred as that, on its mips. Far from the scene, where the weather is another's,
+// the cover the weather systems give there (uSkyOceanCloudMap), coloured as the film's clouds
+// overhead are on average (with none there, a grey as bright as the sky).
+vec4 skyOceanReflectedClouds(vec3 r, vec3 sky, vec3 world, vec3 up, float texel) {
+  float over = max(dot(cameraPosition - world, up), 0.0);
+  float lod = clamp(log2(max(over / max(uSkyOceanCloudBase, SKY_OCEAN_CLOUD_BASE), 1.0)), 0.0, SKY_OCEAN_CLOUD_LODS);
+  vec4 clouds = textureLod(uSkyOceanClouds, r, lod);
+  float weight = uSkyOceanCloudFar.x * smoothstep(uSkyOceanCloudFar.y, uSkyOceanCloudFar.z, length(up - uSkyUp) * uGlobe.x);
+  if(weight <= 0.0)
+    return clouds;
+  vec4 map = textureLod(uSkyOceanCloudMap, uSkyOceanCloudEarth * up, log2(max(2.0 * texel * uSkyOceanCloudFar.w, 1.0)));
+  vec3 clear = 1.0 - map.rba * SKY_OCEAN_CLOUD_LEVELS;
+  float cover = 1.0 - clear.x * clear.y * clear.z;
+  vec4 mean = textureLod(uSkyOceanClouds, globeCameraLook(), SKY_OCEAN_CLOUD_LODS);
+  vec3 grey = vec3(dot(sky, vec3(0.2126, 0.7152, 0.0722)));
+  vec3 colour = mix(grey, mean.rgb / max(mean.a, 1e-4), smoothstep(0.02, 0.1, mean.a));
+  return mix(clouds, vec4(colour * cover, cover), weight);
+}
+
 // The surface seen from above at plane point `p` (the field's wave plane: the stage, the
-// contacts), with its `wave` there: its colour, and how much of what lies under it that
-// covers. `texel` is world units per pixel. ⚠️ Derivatives.
-vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float blend) {
+// contacts), with its `wave` there, at `world`: its colour, and how much of what lies under it
+// that covers. `texel` is world units per pixel. ⚠️ Derivatives.
+vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float blend, vec3 world) {
   float flatness = wave.flatness;
   vec3 normal = wave.normal;
   float night = mix(SKY_NIGHT_LEVEL, 1.0, uSkyDaylight);
+  // Under the clouds' shadow (cloud-shadow.glsl): the glint goes, and the water darkens by
+  // the share of its light that is the sun's.
+  float through = skyCloudLightAt(world);
+  float shade = skyCloudShadow(world);
 
   vec3 V = -dir;
   float ndvAA;
   float fresnel = oceanFresnel(normal, V, ndvAA);
-  vec3 waterColor = mix(uShallowColor, uDeepColor, clamp(ndvAA, 0.0, 1.0)) * night;
+  vec3 waterColor = mix(uShallowColor, uDeepColor, clamp(ndvAA, 0.0, 1.0)) * night * mix(1.0 - SKY_OCEAN_SUN_SHARE * uSkyDaylight, 1.0, through);
   float tonalReflect;
   float tonalSpec;
   // In the wave's chart, and calm with it where two charts meet.
@@ -404,10 +464,16 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   // (globeCameraLook): far off, into the field's frame, it fell below the camera's horizon.
   r -= 2.0 * min(dot(r, wave.up), 0.0) * wave.up;
   r = globeTurnFrom(r, wave.up, globeCameraLook());
+  // Over the sky, the clouds it reflects (skyOceanReflectedClouds).
+  vec3 reflected = skySurfaceAt(normalize(r), blend, 0.0);
+  if(uSkyOceanCloudsOn > 0.5) {
+    vec4 clouds = skyOceanReflectedClouds(normalize(r), reflected, world, wave.up, texel);
+    reflected = reflected * (1.0 - clouds.a) + clouds.rgb;
+  }
   // The glint is the scene's light's, which is the field's: far round the Earth only while it
   // stands over the sea's horizon there (skyLightFrom).
-  float glint = skyLightFrom(normalize(uSunDirection), uSkyUp, wave.up);
-  vec3 surface = oceanShade(normal, V, waterColor, skySurfaceAt(normalize(r), blend, 0.0), fresnel, tonalReflect, tonalSpec * glint, wave.rough);
+  float glint = skyLightFrom(normalize(uSunDirection), uSkyUp, wave.up) * shade;
+  vec3 surface = oceanShade(normal, V, waterColor, reflected, fresnel, tonalReflect, tonalSpec * glint, wave.rough);
 
   float foamFar;
   float coverage = max(oceanWindFoam(wave.slope, wave.height), oceanContactFoam(p, uTime));
@@ -457,9 +523,16 @@ vec4 skyOceanInWaterOver(vec3 origin, vec3 dir, float blend, float tBed, vec3 be
   // Rays that miss a plane take the mirrored hit, so the derivatives stay continuous.
   float tSurface = -altitude / ay;
   vec3 delta = origin - cameraPosition + dir * tSurface;
-  vec3 underside = skyOceanUnderside(delta, globeUpAt(origin + dir * tSurface), skyOceanTexel(delta), tSurface, dir, blend, -altitude);
-  vec3 above = skyOceanFog(underside, skyOceanCutawayPath(tSurface, wall, 1.0), skyOceanLight(-0.5 * altitude));
+  // From a trench, as deep as the camera is: its view starts just over the sea's own seabed
+  // (skyViewOrigin), but the water up to the surface is the camera's.
+  float depth = skyOceanViewDepth(origin);
+  vec3 underside = skyOceanUnderside(delta, globeUpAt(origin + dir * tSurface), skyOceanTexel(delta), tSurface, dir, blend, depth);
+  vec3 above = skyOceanFog(underside, skyOceanCutawayPath(depth / ay, wall, 1.0), skyOceanLight(0.5 * depth));
 
+  // In a trench the sea's own seabed lies over the camera: below, water, down to the relief's
+  // ground, which is drawn over it.
+  if(uSkyOceanTrench > 0.5)
+    return y > 0.0 ? vec4(above, 1.0) : skyOceanFogOver(vec4(0.0), 1e6, skyOceanLight(depth));
   vec3 bedPoint = origin + dir * tBed;
   float cutaway = skyOceanCutawayAlong(origin, bedPoint);
   vec4 below = skyOceanFogOver(skyOceanFloorOver(bed, cutaway), skyOceanCutawayPath(tBed, wall, skyOceanCutawayWater(cutaway)), skyOceanBedPathLight(origin, uSkyOceanDepth));
@@ -624,7 +697,7 @@ vec4 skyOceanSurfaceLayer(vec3 dir, vec3 origin, float blend) {
   if(over >= 2.0 * fwidth(y) || skyOceanOnStage(p, t + 2.0 * fwidth(t), 4.0 * texel))
     return vec4(0.0);
   SkyOceanWave wave = skyOceanWave(delta, globeUpAt(origin + dir * t), waveTexel, t);
-  vec4 surface = skyOceanSurfaceOf(wave, p, waveTexel, dir, blend);
+  vec4 surface = skyOceanSurfaceOf(wave, p, waveTexel, dir, blend, origin + dir * t);
   // The band a pixel inside the stage's edge too, which the stage leaves to this layer:
   // the same test on both sides (skyOceanStaged), so every pixel is drawn exactly once. All
   // zero, so a colour from those derivatives cannot reach the blend.

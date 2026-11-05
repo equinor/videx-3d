@@ -18,6 +18,7 @@ import {
   compassBasis,
   directionFromCompass,
 } from '../../sdk/utils/vector-operations';
+import type { CloudLayer, CloudLayersPreset } from '../../sdk/weather/weather';
 import type { OceanWaterProps } from '../Ocean/ocean-material-sync';
 import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../Ocean/ocean-volume-material';
 
@@ -113,6 +114,81 @@ export type SceneryCloudsProps = {
   color?: ColorRepresentation;
   /** picks another pattern. Default 0 */
   seed?: number;
+};
+
+/**
+ * How much a {@link SceneryCloudVolumeProps}'s clouds spend for how they look, from `'low'` (a
+ * laptop's integrated GPU, a few milliseconds) to `'ultra'` (powerful GPUs).
+ */
+export type SceneryCloudVolumeQuality = 'low' | 'medium' | 'high' | 'ultra';
+
+/**
+ * 3D clouds over a {@link Scenery} (see `documents/clouds.md`): its layers of cumulus and stratus
+ * marched through on the globe, lit by the sun, or the moon, where they lie, and drawn over the
+ * scene at the depth their light comes from. One field from sea level to space: far off and
+ * from high up the same clouds are a layer draped over the Earth. Fixed to the Earth.
+ */
+export type SceneryCloudVolumeProps = {
+  /** false hides them, still compiled, so showing them again is instant. Default true */
+  enabled?: boolean;
+  /**
+   * The cloud layers: one at each level (`CloudLevel`: low, mid, high; `CLOUD_VOLUME_LAYERS`), of
+   * two at a level the one covering more. Or by name (`CloudLayersPreset`): a sky
+   * (`SKY_PRESETS`: `'clear'`, `'fair'`, `'scattered'`, `'mackerel'`, `'cirrus'`,
+   * `'stratocumulus'`, `'warm-front'`, `'showers'`, `'overcast'`, `'overcast-rain'`), or a
+   * report's cover, cumulus unless the type follows (`'broken'`, `'overcast stratus'`). Default
+   * the enclosing `Weather`'s, and without one scattered cumulus (`weatherPreset`)
+   */
+  layers?: CloudLayer[] | CloudLayersPreset;
+  /**
+   * How far the cover away from the scene follows the weather systems — fronts and
+   * cyclones, clear highs, fields of cellular convection, some thousands of kilometres across
+   * — rather than the layers', from 0 (the layers' cover everywhere) to 1. About the scene
+   * (within some 100 km of the globe's disc's centre) the cover is always the layers' own;
+   * some 400 km off, the systems'. Default the enclosing `Weather`'s (`WeatherState.systems`),
+   * and without one 1
+   */
+  systems?: number;
+  /** size of the clouds and the gaps between them, relative: 2 makes them twice as large. Default 1 */
+  scale?: number;
+  /** how dense they are inside, relative: lower lets more light through their edges. Default 1 */
+  density?: number;
+  /** their colour in full light. Default `#ffffff` */
+  color?: ColorRepresentation;
+  /**
+   * picks another pattern of clouds, and other weather systems unless the enclosing
+   * `Weather` picks them (`WeatherSystems.seed`). Default 0
+   */
+  seed?: number;
+  /**
+   * how much they spend for how they look (`CLOUD_VOLUME_QUALITY`): `'low'` and `'medium'` march
+   * one pixel in four a frame, in turn, and take the rest from the frames before, at a budget of
+   * rays a frame; `'high'` marches every pixel; `'ultra'` at a finer resolution with more steps,
+   * for powerful GPUs. Default `'medium'`
+   */
+  quality?: SceneryCloudVolumeQuality;
+  /**
+   * the share of the screen's resolution their image is drawn at, from 0.25 to 1, instead of the
+   * quality's (and then without its budget of rays); more from high up, as the quality has it.
+   * Default the quality's
+   */
+  resolution?: number;
+  /** most steps along each view, instead of the quality's: fewer is cheaper and coarser. Default the quality's */
+  steps?: number;
+  /**
+   * accumulate the frames: each jitters its steps and sub-pixel places, and the last frames'
+   * image, moved to where the view now sees it, is blended in. Off, each frame stands alone,
+   * grainier, and softened instead. Default true
+   */
+  temporal?: boolean;
+  /**
+   * shaped by the ground of the enclosing `World`'s `GeoRelief`: their layers rise over high
+   * ground, they gather on the slopes the wind blows up and part in the lee of ridges, and the
+   * ground stands in them — veiled by the cloud in front of it, hiding the cloud behind. Its
+   * tiles are loaded at two levels (some 20 km over the Earth, some 600 m about the camera),
+   * and the clouds first show once the Earth's are in. On the globe only. Default true
+   */
+  terrain?: boolean;
 };
 
 /**
@@ -460,6 +536,15 @@ export const sceneryDefaults = {
     opacity: 1,
     color: '#ffffff',
     seed: 0,
+  },
+  cloudVolume: {
+    scale: 1,
+    density: 1,
+    color: '#ffffff',
+    seed: 0,
+    quality: 'medium' as SceneryCloudVolumeQuality,
+    temporal: true,
+    terrain: true,
   },
   air: { scaleHeight: 8000, visibility: 60000, haze: 0.75, hazeHeight: 1500 },
   colors: {

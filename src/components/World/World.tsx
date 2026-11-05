@@ -18,6 +18,7 @@ import {
   globeCarry,
 } from '../../sdk/projection/place-frame';
 import type { Vec2 } from '../../sdk/types/common';
+import type { ReliefTileLoader } from '../Layers/relief-tile-loader';
 import type { SceneryOceanState } from '../Scenery/scenery-context';
 import { SceneryReliefHub } from '../Scenery/scenery-relief-hub';
 import { WorldContext, WorldState } from './world-context';
@@ -248,6 +249,11 @@ export const World = ({
     setStage(handed);
     return () => setStage(current => (current === handed ? null : current));
   }, []);
+  const [loader, setLoader] = useState<ReliefTileLoader | null>(null);
+  const provideLoader = useCallback((handed: ReliefTileLoader) => {
+    setLoader(handed);
+    return () => setLoader(current => (current === handed ? null : current));
+  }, []);
   const relief = useMemo<WorldReliefState>(
     () => ({
       tiles,
@@ -255,11 +261,24 @@ export const World = ({
       present: reliefs > 0,
       sky,
       stage,
+      loader,
       addRelief,
       provideSky,
       provideStage,
+      provideLoader,
     }),
-    [tiles, ground, reliefs, sky, stage, addRelief, provideSky, provideStage],
+    [
+      tiles,
+      ground,
+      reliefs,
+      sky,
+      stage,
+      loader,
+      addRelief,
+      provideSky,
+      provideStage,
+      provideLoader,
+    ],
   );
   useEffect(() => {
     if (reliefs > 1)

@@ -9,6 +9,7 @@ anywhere under it:
 | Component | Adds |
 |--|--|
 | `<SceneryClouds>` | still clouds: a band along the horizon, a deck overhead, or both |
+| `<SceneryCloudVolume>` | 3D clouds, from sea level to space, from a `Weather` (see [clouds.md](./clouds.md)) |
 | `<SceneryOcean>` | an endless sea with a seabed, and the void below it |
 | `<SceneryAbyss>` | the void's look below a level (with a sea, its seabed) |
 | `<SceneryCutaway>` | a cut through the sea's water and seabed in front of the view |
@@ -141,6 +142,11 @@ The catalogue: Hoffleit, D. & Warren, W. H. Jr. (1991), *The Bright Star Catalog
 Revised Ed.*, Astronomical Data Center, NSSDC/ADC; CDS catalogue V/50.
 
 ## Clouds
+
+3D clouds are on their way: `<SceneryCloudVolume>` (see [clouds.md](./clouds.md)) marches the
+weather's layers of cumulus and stratus on the globe, from sea level to space, and draws them
+over the scene. It is to replace the deck below; the band along the horizon stays as a cheap
+option.
 
 `<SceneryClouds>` adds still clouds, lit by the sun, or the moon at night: a deck seen
 from below, and a band of distant ones along the horizon (see below). Without it there
@@ -461,6 +467,16 @@ once and only the light it casts waits. A sky that keeps changing (a timelapse) 
 at least every `capture.maxWait` (default 1000 ms). The scene's light probe eases toward
 each new bake of its zone over a fraction of a second, so the light does not step as the
 sun moves; another zone's is swapped in at once. The environment map is swapped in.
+
+With 3D clouds (`SceneryCloudVolume`), the air's bakes take them too, filmed from where the
+air is filmed and drawn over the sky; the sea reflects them (blurred from high up, and far off
+the weather's own cover); the directional light and the
+sea's glint are dimmed by the share of the light they let through, so overcast takes the sun
+and lights the scene with grey bakes alone; and their shadows lie on the sea and the relief
+about the camera ([clouds.md](./clouds.md), "The scene's light"). They hand that over through
+the scenery's registry (`ScenerySkyOverlay`); a change to them makes the bakes due again. Until 2026-11-05 the baker's overrides that turn the globe off for the
+bakes (`uGlobe`, `uOceanCharts`) were `new Vector4()`, whose w of 1 is the globe's switch: the
+bakes drew the globe on with no radius, and half their sea lay in night.
 
 `subsurface` is the light where the sky's own means nothing: below the seabed, and
 wherever the sky is not drawn (`background: false`, or `'void'`). By default it is a dark backdrop
@@ -1000,6 +1016,7 @@ basic ones show in every story, the advanced and debug ones only in `StageDebug`
 |--|--|
 | `Scenery.tsx` | the component: props and its features' → material, the layers and which are drawn each frame, the directional light, the bakes |
 | `SceneryClouds.tsx`, `SceneryOcean.tsx`, `SceneryAbyss.tsx` | the features: each hands its props to the `Scenery` (`scenery-registry.ts`) |
+| `SceneryCloudVolume.tsx`, `scenery-cloud-volume.ts`, `shaders/cloud-volume-*.glsl` | the 3D clouds, which draw themselves and read the scenery's material and `SceneryView` from its registry ([clouds.md](./clouds.md)) |
 | `SceneryCutaway.tsx` | the cutaway: its props, its grip, and its per-frame placement, which the `Scenery` runs |
 | `scenery-layers.ts` | the background's layers: their order, defines, materials, and where each can show (`sceneryLayersShown`) |
 | `scenery-model.ts` | option types, defaults, and the pure rules (`sceneryZone`, `skyDaylight`, `skyMoonlight`, `skySunColor`, …) |

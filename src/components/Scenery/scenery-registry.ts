@@ -1,5 +1,12 @@
 import { createContext, useContext, useEffect, useLayoutEffect } from 'react';
-import type { Camera } from 'three';
+import type {
+  Camera,
+  CubeTexture,
+  Matrix3,
+  Texture,
+  Vector3,
+  WebGLRenderer,
+} from 'three';
 import type { SceneryMaterial } from './scenery-material';
 import type {
   SceneryAbyssProps,
@@ -35,6 +42,76 @@ export type SceneryFeatures = {
   cutaway: SceneryCutawayFeature | null;
 };
 
+/**
+ * What a scenery's layers can show this frame, as its last frame decided: for what draws
+ * itself rather than as one of its background's layers.
+ */
+export type SceneryView = {
+  /** the clouds: the sky is drawn and ready, the camera's zone shows it, and they are not hidden (`SceneryDebug.hide`) */
+  clouds: boolean;
+  /** the scenery's `renderOrder`: its sea's surface draws at the next one */
+  renderOrder: number;
+};
+
+/**
+ * The shadows of what draws itself in a scenery's sky (`ScenerySkyOverlay.shadow`): over a
+ * square about the camera's foot, the share of the light that reaches the ground (r, 0 to 1),
+ * texel by texel along `east` and `north` from `-reach` to `reach` about `centre` (world).
+ */
+export type ScenerySkyShadow = {
+  texture: Texture;
+  centre: Vector3;
+  east: Vector3;
+  north: Vector3;
+  reach: number;
+};
+
+/**
+ * What draws itself in a scenery's sky rather than as one of its background's layers (the 3D
+ * clouds, `SceneryCloudVolume`) hands its scenery, for the light: what it looks like from the
+ * scene, for the bakes of the air over the sea and for the sea to reflect, how much of the
+ * scene's light it lets through, and its shadows.
+ */
+export type ScenerySkyOverlay = {
+  /**
+   * as seen from the scene all round, by direction (world): premultiplied colour and alpha,
+   * without the sky's intensity, with its mipmaps. Drawn by {@link film}
+   */
+  texture: CubeTexture;
+  /** draw {@link texture} as seen from `position` (world): before each bake of the air */
+  film: (renderer: WebGLRenderer, position: Vector3) => void;
+  /** counts changes to what it looks like, but for the sky's own (the sun's): the bakes are drawn again */
+  version: number;
+  /** how much of the light (the sun's, or the moon's) the scene's light keeps past it, 0 to 1 */
+  light: number;
+  /** its shadows about the camera, read by the sea and the relief; null for none */
+  shadow: ScenerySkyShadow | null;
+  /** what the sea reflects of it away from where it was filmed */
+  reflection: ScenerySkyReflection;
+};
+
+/**
+ * What the sea reflects of a {@link ScenerySkyOverlay} away from where {@link ScenerySkyOverlay.texture}
+ * was filmed (sky-ocean.glsl, `skyOceanReflectedClouds`): read by direction alone, the film
+ * blows its clouds up by the camera's height over the sea against their base, and far off the
+ * weather is another's.
+ */
+export type ScenerySkyReflection = {
+  /** the lowest clouds' base over the sea (world units) */
+  base: number;
+  /** the weather far off: a cube map fixed on the Earth of the share under cloud, r low, b middle, a high; null for none */
+  map: CubeTexture | null;
+  /** world directions into {@link map}'s frame */
+  earth: Matrix3;
+  /** {@link map}'s texels per world unit, at a face's middle */
+  texels: number;
+  /** how far the cover far off follows {@link map}, 0 to 1 */
+  strength: number;
+  /** from the scene's middle (world units), where its own clouds start giving way to {@link map}'s, and where they have */
+  near: number;
+  far: number;
+};
+
 export type SceneryRegistry = {
   /** the scenery's material: every feature's uniforms are its */
   material: SceneryMaterial;
@@ -42,6 +119,10 @@ export type SceneryRegistry = {
     feature: K,
     value: SceneryFeatures[K],
   ) => void;
+  /** kept up to date each frame; the same object for the scenery's life */
+  view: SceneryView;
+  /** what draws itself in its sky, for the light; null for none. The same object for the scenery's life */
+  overlay: { current: ScenerySkyOverlay | null };
 };
 
 export const SceneryRegistryContext = createContext<SceneryRegistry | null>(
