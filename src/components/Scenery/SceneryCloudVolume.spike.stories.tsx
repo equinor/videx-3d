@@ -98,6 +98,10 @@ type CloudVolumeArgs = {
   systemsSeed: number;
   volumeScale: number;
   density: number;
+  /** each level drawn (`levels`) */
+  lowOn: boolean;
+  midOn: boolean;
+  highOn: boolean;
   quality: SceneryCloudVolumeQuality;
   /** resolution and steps of their own (the controls below) instead of the quality's */
   ownQuality: boolean;
@@ -110,6 +114,8 @@ type CloudVolumeArgs = {
   cloudTerrain: boolean;
   /** the waves from the weather's wind (the sea's own wind left out) */
   weatherWind: boolean;
+  /** the weather's clock held: the clouds and the waves stand still */
+  weatherPaused: boolean;
 } & SceneryArgs &
   SceneryReliefArgs &
   ProgressArgs;
@@ -122,6 +128,12 @@ function layersFromArgs(args: CloudVolumeArgs): CloudLayer[] {
     cloudLayerPreset(args.midCover, args.midType),
     cloudLayerPreset(args.highCover, args.highType),
   ].filter((layer): layer is CloudLayer => layer !== null);
+}
+
+// The levels drawn, from the story's toggles.
+function levelsFromArgs(args: CloudVolumeArgs): CloudLevel[] {
+  const on = { low: args.lowOn, mid: args.midOn, high: args.highOn };
+  return CLOUD_LEVELS.filter(level => on[level]);
 }
 
 // The weather from the story's controls: its layers, the wind the sea's controls set (the
@@ -171,7 +183,13 @@ const CloudVolumeStory = (storyArgs: CloudVolumeArgs) => {
           fly={flyFromArgs(args)}
         />
       )}
-      <Weather weather={weather}>
+      <Weather
+        weather={weather}
+        // An hour of weather an hour of the timelapse: the clouds stream past, the systems
+        // travel and the waves race with the sun.
+        timeScale={timelapse.playing ? timelapse.speed * 3600 : 1}
+        paused={args.weatherPaused}
+      >
         <Scenery {...sceneryPropsFromArgs(args)}>
           <SceneryArgsFeatures
             args={args}
@@ -193,6 +211,7 @@ const CloudVolumeStory = (storyArgs: CloudVolumeArgs) => {
               }
               scale={args.volumeScale}
               density={args.density}
+              levels={levelsFromArgs(args)}
               quality={args.quality}
               resolution={args.ownQuality ? args.resolution : undefined}
               steps={args.ownQuality ? args.steps : undefined}
@@ -235,6 +254,12 @@ const levelType = (level: CloudLevel, description: string) => ({
   table: { category: `Cloud volume: ${level}` },
 });
 
+const levelOn = (level: CloudLevel) => ({
+  control: { type: 'boolean' as const },
+  description: `Draw the ${level} level (\`levels\`): off, neither its layer nor the weather systems’ cloud at its level far off is drawn, and it costs nothing.`,
+  table: { category: `Cloud volume: ${level}` },
+});
+
 const meta = {
   title: 'Spikes/Scenery/CloudVolume',
   component: CloudVolumeStory,
@@ -272,6 +297,7 @@ const meta = {
       description: 'The 3D clouds (`SceneryCloudVolume`).',
       table: { category: 'Cloud volume' },
     },
+    lowOn: levelOn('low'),
     lowCover: levelCover(
       'low',
       'How much of the sky the weather’s low layer covers, as a report says it (`cloudLayerPreset`): CLEAR for none.',
@@ -280,6 +306,7 @@ const meta = {
       'low',
       'What the low layer is made of: heaped cumulus, a lumpy deck of stratocumulus, an even sheet of stratus, or deep, dark nimbostratus.',
     ),
+    midOn: levelOn('mid'),
     midCover: levelCover(
       'mid',
       'How much of the sky the weather’s middle layer covers (some 4–5 km up): CLEAR for none.',
@@ -288,6 +315,7 @@ const meta = {
       'mid',
       'What the middle layer is made of: small puffs of altocumulus in rows across the wind, or a thin grey sheet of altostratus.',
     ),
+    highOn: levelOn('high'),
     highCover: levelCover(
       'high',
       'How much of the sky the weather’s high layer covers (some 8–9 km up): CLEAR for none.',
@@ -344,6 +372,12 @@ const meta = {
       if: { arg: 'ownQuality' },
     },
     volumeSeed: range(0, 20, 1, 'Picks another pattern.'),
+    weatherPaused: {
+      control: { type: 'boolean' },
+      description:
+        'Hold the weather’s clock (`Weather` `paused`): the clouds stop drifting and changing, the weather systems stop travelling and the waves stand still. Running, the timelapse (the panel) runs it an hour of weather an hour of the sun’s.',
+      table: { category: 'Cloud volume' },
+    },
     temporal: {
       control: { type: 'boolean' },
       description:
@@ -374,6 +408,9 @@ const meta = {
     relief: true,
     panel: true,
     volume: true,
+    lowOn: true,
+    midOn: true,
+    highOn: true,
     lowCover: 'scattered',
     lowType: 'cumulus',
     midCover: 'clear',
@@ -393,6 +430,7 @@ const meta = {
     temporal: sceneryDefaults.cloudVolume.temporal,
     cloudTerrain: sceneryDefaults.cloudVolume.terrain,
     weatherWind: true,
+    weatherPaused: false,
   },
 } satisfies Meta<typeof CloudVolumeStory>;
 

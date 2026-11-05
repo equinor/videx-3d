@@ -18,7 +18,11 @@ import {
   compassBasis,
   directionFromCompass,
 } from '../../sdk/utils/vector-operations';
-import type { CloudLayer, CloudLayersPreset } from '../../sdk/weather/weather';
+import type {
+  CloudLayer,
+  CloudLayersPreset,
+  CloudLevel,
+} from '../../sdk/weather/weather';
 import type { OceanWaterProps } from '../Ocean/ocean-material-sync';
 import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../Ocean/ocean-volume-material';
 
@@ -140,6 +144,12 @@ export type SceneryCloudVolumeProps = {
    * the enclosing `Weather`'s, and without one scattered cumulus (`weatherPreset`)
    */
   layers?: CloudLayer[] | CloudLayersPreset;
+  /**
+   * The levels drawn (`CloudLevel`: `'low'`, `'mid'`, `'high'`): one left out is not drawn at
+   * all, its layer nor the weather systems' cloud at its level far off, and costs nothing.
+   * Default all three
+   */
+  levels?: readonly CloudLevel[];
   /**
    * How far the cover away from the scene follows the weather systems — fronts and
    * cyclones, clear highs, fields of cellular convection, some thousands of kilometres across

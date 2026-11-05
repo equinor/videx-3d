@@ -67,13 +67,20 @@ uniform vec4 uCloudStyles[CLOUD_LAYERS];
 // across its rows (along the wind, or across it), fixed on the Earth, over their spacing (xyz),
 // and where the camera lies among them (w).
 uniform vec4 uCloudRows[CLOUD_LAYERS];
+// and its wind at its level, fixed on the Earth: the way it blows (xyz), which its clouds are
+// drawn out along and drift with, and its speed (w, m/s).
+uniform vec4 uCloudWinds[CLOUD_LAYERS];
 uniform int uCloudLayerCount;
 uniform float uCloudQuantiles[17]; // the coverage's distribution (CloudNoise.coverage)
 // The coverage's standard deviation and its mean.
 uniform vec2 uCloudCoverage;
 // The weather far off (scenery-cloud-map.ts): over the Earth, fixed on it, the share of the
-// ground under cloud (r) and how thick it is (g).
+// ground under cloud (r) and how thick it is (g). As the clock runs, two drawings of it some
+// time apart, blended (cloudMapRead): the older, the newer, the newer's share, and how long ago
+// each was drawn (weather seconds).
 uniform samplerCube uCloudMap;
+uniform samplerCube uCloudMapNext;
+uniform vec3 uCloudMapTimes;
 // The weather systems' strength (0 to 1), how far from the middle of the scene the scene's
 // layers start giving way to them and where they have (world units), and the map's texels per
 // world unit.
@@ -366,12 +373,54 @@ float cloudGround(vec3 upEarth) {
   return mix(near, earth, smoothstep(0.85, 1.0, edge));
 }
 
+// How fast the weather systems travel east at `s`, the sine of the latitude (m/s): the twin of
+// weatherSystemDrift (weather-systems.ts): the trades' easterlies, the westerlies of the storm
+// tracks, weaker toward the poles.
+#define CLOUD_MAP_DRIFT vec2(-5.0, 12.0)
+// Where the older drawing of the map gives way to the newer (cloudMapRead): a value noise of
+// cells some 1/x radians across (some 400 km) picks when, and each place takes y of the time
+// between them.
+#define CLOUD_MAP_DISSOLVE vec2(16.0, 0.3)
+float cloudMapDrift(float s) {
+  float a = degrees(asin(clamp(abs(s), 0.0, 1.0)));
+  return CLOUD_MAP_DRIFT.x + (CLOUD_MAP_DRIFT.y - CLOUD_MAP_DRIFT.x) * smoothstep(18.0, 35.0, a) * (1.0 - 0.6 * smoothstep(60.0, 80.0, a));
+}
+
+// Where what lies at `way` (fixed on the Earth, z toward the north pole) lay `seconds` before:
+// back along the systems' drift, a turn about the pole.
+vec3 cloudMapBack(vec3 way, float seconds) {
+  float across = max(length(way.xy), 0.05);
+  float turn = -cloudMapDrift(way.z) * seconds / (uGlobe.x * across);
+  float c = cos(turn);
+  float s = sin(turn);
+  return vec3(c * way.x - s * way.y, s * way.x + c * way.y, way.z);
+}
+
+// The cloud map at `way` at the level `lod`, as the clock has it: each drawing read where its
+// cloud has drifted to since (cloudMapBack), and the older giving way to the newer place by place
+// (CLOUD_MAP_DISSOLVE), each over a share of the time between them at a time of its own: blended
+// everywhere at once, two drawings hours apart halved each other's cloud into a grey veil.
+vec4 cloudMapRead(vec3 way, float lod) {
+  float share = uCloudMapTimes.x;
+  if(share > 0.0) {
+    float at = cloudValueNoise(way * CLOUD_MAP_DISSOLVE.x + 17.0) * (1.0 - CLOUD_MAP_DISSOLVE.y);
+    share = smoothstep(at, at + CLOUD_MAP_DISSOLVE.y, share);
+  }
+  vec4 older = vec4(0.0);
+  if(share < 1.0)
+    older = textureLod(uCloudMap, cloudMapBack(way, uCloudMapTimes.y), lod);
+  if(share <= 0.0)
+    return older;
+  vec4 newer = textureLod(uCloudMapNext, cloudMapBack(way, uCloudMapTimes.z), lod);
+  return mix(older, newer, share);
+}
+
 // The weather systems' cloud at `way` (unit, fixed on the Earth) in the cloud map at level of
 // detail `lod`, at a layer's `level` (0 low, 1 middle, 2 high: uCloudLayers.w): its cover (x),
 // and how thick (y): the low level's own; the higher ones' by how deep the system is under them
 // (the low level's thickness, CLOUD_MAP_UPPER).
 vec2 cloudMapAt(vec3 way, float lod, float level) {
-  vec4 map = textureLod(uCloudMap, way, lod);
+  vec4 map = cloudMapRead(way, lod);
   if(level < 0.5)
     return map.rg;
   return vec2(level < 1.5 ? map.b : map.a, mix(CLOUD_MAP_UPPER.x, CLOUD_MAP_UPPER.y, smoothstep(CLOUD_MAP_UPPER.z, CLOUD_MAP_UPPER.w, map.g)));
@@ -432,19 +481,20 @@ struct CloudKind {
   vec4 forms;
   vec4 styles;
   vec4 rows;
+  vec4 wind;
   int offsets;
 };
 
 CloudKind cloudKindOf(int l) {
-  return CloudKind(uCloudLooks[l], uCloudShapes[l], uCloudForms[l], uCloudStyles[l], uCloudRows[l], 4 * l);
+  return CloudKind(uCloudLooks[l], uCloudShapes[l], uCloudForms[l], uCloudStyles[l], uCloudRows[l], uCloudWinds[l], 4 * l);
 }
 
 // `v`, fixed on the Earth, in the frame a layer of `kind` reads its patterns in: drawn out
-// along the wind as far as its type is (styles.x). The wind's way at the scene, the same all
+// along its wind as far as its type is (styles.x). Its wind's way at the scene, the same all
 // over the Earth: far off, where the weather systems lay the cover, the clouds' look stands
 // for theirs.
 vec3 cloudStretched(vec3 v, CloudKind kind) {
-  return v + uCloudWind.xyz * (dot(v, uCloudWind.xyz) * kind.styles.x);
+  return v + kind.wind.xyz * (dot(v, kind.wind.xyz) * kind.styles.x);
 }
 
 // What varies slowly in the coverage about a point `offset` from the camera (fixed on the

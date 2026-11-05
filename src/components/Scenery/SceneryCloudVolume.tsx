@@ -13,13 +13,16 @@ import {
   releaseMaterial,
 } from '../../rendering/precompile';
 import {
+  CLOUD_LEVELS,
   cloudLayersByLevel,
   cloudLayersOf,
   weatherPreset,
   weatherSystemsOf,
   type CloudLayer,
+  type CloudLevel,
 } from '../../sdk/weather/weather';
-import { useWeather } from '../Weather/weather-context';
+import { WeatherClock } from '../../sdk/weather/weather-clock';
+import { useWeather, useWeatherClock } from '../Weather/weather-context';
 import { useWorldRelief } from '../World/world-relief';
 import {
   CloudVolumeRenderer,
@@ -65,6 +68,7 @@ const toHex = (value: ColorRepresentation) => scratch.set(value).getHex();
 export const SceneryCloudVolume = ({
   enabled = true,
   layers,
+  levels = CLOUD_LEVELS,
   systems,
   scale = sceneryDefaults.cloudVolume.scale,
   density = sceneryDefaults.cloudVolume.density,
@@ -155,9 +159,14 @@ export const SceneryCloudVolume = ({
   }, [layersKey]);
   const windSpeed = weather?.wind?.speed;
   const windFrom = weather?.wind?.from;
+  // In the order of CLOUD_LEVELS, compared by value.
+  const levelsKey = CLOUD_LEVELS.filter(level => levels.includes(level)).join(
+    ',',
+  );
   useLayoutEffect(() => {
     volume?.set({
       layers: JSON.parse(layersKey) as CloudLayer[],
+      levels: levelsKey ? (levelsKey.split(',') as CloudLevel[]) : [],
       systems: strength,
       wind:
         windSpeed === undefined || windFrom === undefined
@@ -173,6 +182,7 @@ export const SceneryCloudVolume = ({
   }, [
     volume,
     layersKey,
+    levelsKey,
     strength,
     windSpeed,
     windFrom,
@@ -234,14 +244,19 @@ export const SceneryCloudVolume = ({
   // As the scenery's own clouds' layer is shown: where the camera's zone shows the sky. Once
   // its programs are ready, its terrain is drawn as it comes in and its map of the weather
   // systems a few strips a frame (once the terrain's Earth is in), and it shows once there is
-  // one: on the screen, and as seen from the scene for the light.
+  // one: on the screen, and as seen from the scene for the light. They drift and change on the
+  // Weather's clock, without one on their own.
+  const weatherClock = useWeatherClock();
+  const [ownClock] = useState(() => new WeatherClock());
   useFrame((_, delta) => {
     if (!volume || !registry) return;
+    volume.time = (weatherClock ?? ownClock).time;
     if (ready) volume.updateTerrain(gl, camera);
     const mapped = ready && volume.bakeMap(gl, mapSeed);
     const shown = mapped && enabled && volume.cloudy;
     volume.filmable = shown;
     volume.updateLight(delta);
+    volume.updateFilm();
     volume.updateShadow(gl, camera);
     volume.updateReflection();
     volume.composite.renderOrder = registry.view.renderOrder + AFTER_SURFACE;

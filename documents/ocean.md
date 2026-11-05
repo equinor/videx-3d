@@ -29,7 +29,9 @@ reflection and opacity are all tunable via props.
 Inside a `<Weather>` (see [clouds.md](./clouds.md#the-weather)), `windSpeed` and
 `windDirection` left out are the weather's wind: its speed, and the way it blows toward. The
 `<Scenery>`'s endless sea and a `ChunkStack`'s water take it the same way. Given, the sea's own
-win.
+win. The waves also run at the weather's clock's pace (`timeScale`, `paused`), as many seconds a
+frame as it ran (`useWeatherStep`): a timelapse races them, a paused weather holds them still.
+Its jumps (a `time` set) do not move them.
 
 Far from the camera the detail fades out: between the two distances of
 `detailFadeDistance` (default `[15000, 60000]` m) the waves, foam and tonal

@@ -7,8 +7,10 @@ import {
   cloudLayerPreset,
   cloudLayersByLevel,
   cloudLayersOf,
+  cloudLayerWind,
   cloudLevelOf,
   cloudStreetsOf,
+  cloudWindAt,
   isSkyPreset,
   oktasToCover,
   SKY_PRESETS,
@@ -190,5 +192,34 @@ describe('wind', () => {
     expect(weatherOceanWind(weatherPreset('few'), {}).windSpeed).toBe(
       undefined,
     );
+  });
+});
+
+describe('wind aloft', () => {
+  const wind = { speed: 10, from: 350 };
+
+  it('is stronger and turned further the higher the level', () => {
+    const levels = CLOUD_LEVELS.map(level => cloudWindAt(wind, level)!);
+    for (let i = 1; i < levels.length; i++)
+      expect(levels[i].speed).toBeGreaterThan(levels[i - 1].speed);
+    expect(levels[0].speed).toBeGreaterThan(wind.speed);
+    // Veering in the north: clockwise, and across north.
+    expect(levels[0].from).toBeCloseTo(5);
+    expect(levels[2].from).toBeCloseTo(30);
+  });
+
+  it('backs in the south', () => {
+    expect(cloudWindAt(wind, 'mid', -40)!.from).toBeCloseTo(320);
+  });
+
+  it('is none without a wind', () => {
+    expect(cloudWindAt(undefined, 'low')).toBeNull();
+  });
+
+  it("takes a layer's own wind first", () => {
+    const layer = cloudLayerPreset('scattered', 'cirrus')!;
+    expect(cloudLayerWind(layer, wind)).toEqual(cloudWindAt(wind, 'high'));
+    const own = { speed: 40, from: 270 };
+    expect(cloudLayerWind({ ...layer, wind: own }, wind)).toBe(own);
   });
 });

@@ -12,6 +12,7 @@ import {
 import { BufferGeometry, Group, Vector3 } from 'three';
 import { CommonComponentProps, CustomMaterialProps } from '../../common/types';
 import { useWeatherOceanWind } from '../Weather/useWeatherOceanWind';
+import { useWeatherStep } from '../Weather/useWeatherStep';
 import { OceanBedMaterial } from './ocean-bed-material';
 import {
   applyOceanBedProps,
@@ -360,10 +361,12 @@ export const Ocean = forwardRef(
       opacity,
     ]);
 
-    // Advance the animation clock.
+    // Advance the animation clock: the enclosing Weather's pace.
+    const step = useWeatherStep();
     useFrame(({ camera }, delta) => {
+      const waveStep = step(delta);
       if (material instanceof OceanMaterial) {
-        material.time += delta;
+        material.time += waveStep;
 
         // Collect the registered floating-object footprints and upload them as
         // contact foam, the nearest the camera when there are more than it draws.
@@ -377,7 +380,7 @@ export const Ocean = forwardRef(
         });
       }
       if (volumeMaterial) {
-        volumeMaterial.time += delta;
+        volumeMaterial.time += waveStep;
       }
     });
 

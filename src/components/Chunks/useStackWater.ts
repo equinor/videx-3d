@@ -14,6 +14,7 @@ import { OceanMaterial } from '../Ocean/ocean-material';
 import { createOceanSampler, OceanSampler } from '../Ocean/ocean-sampler';
 import { OceanVolumeMaterial } from '../Ocean/ocean-volume-material';
 import { useWeatherOceanWind } from '../Weather/useWeatherOceanWind';
+import { useWeatherStep } from '../Weather/useWeatherStep';
 import { ChunkDepthMap } from './chunk-depth-map';
 import { StackWater } from './chunk-defs';
 import { ChunkFenceUniforms } from './chunk-material';
@@ -132,11 +133,14 @@ export function useStackWater(
     if (materials.face) materials.face.wireframe = wireframe;
   }, [materials, water, seaWindSpeed, seaWindDirection, wireframe, level]);
 
+  // The waves at the enclosing Weather's pace.
+  const step = useWeatherStep();
   useFrame((_, delta) => {
+    const waveStep = step(delta);
     if (!materials) return;
-    materials.surface.time += delta;
-    materials.volume.time += delta;
-    if (materials.face) materials.face.time += delta;
+    materials.surface.time += waveStep;
+    materials.volume.time += waveStep;
+    if (materials.face) materials.face.time += waveStep;
 
     // Collect the registered floating-object footprints and upload them as
     // contact foam. Skipped entirely when nothing is registered, so a sea with no

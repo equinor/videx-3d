@@ -17,8 +17,8 @@ import {
   WebGLRenderer,
 } from 'three';
 import {
-  createWeatherSystemCentres,
   WEATHER_SYSTEM_COUNT,
+  weatherSystemCentresAt,
   WeatherSystemCentre,
 } from '../../sdk/weather/weather-systems';
 import { createSceneryGeometry } from './scenery-material';
@@ -56,10 +56,14 @@ export type CloudMap = {
   /** the weather systems' wind (xyz, fixed on the Earth) and pressure (w) */
   readonly flow: WebGLCubeRenderTarget;
   readonly seed: number;
+  /** the weather's time it is drawn at (seconds): the systems as they are then (`weatherSystemCentresAt`) */
+  readonly time: number;
   /** the ground's height and slopes over the Earth (`CloudTerrain`), null for none */
   readonly terrain: Texture | null;
-  /** its seed and its terrain's: what it is shared by */
+  /** its seed, its terrain's and its time: what it is shared by */
   readonly key: string;
+  /** its seed and its terrain's: maps of the same weather at other times share it */
+  readonly base: string;
   /** the weather systems it is drawn about */
   readonly systems: readonly WeatherSystemCentre[];
   /** what draws it: compile them first (`precompile`), then {@link bakeCloudMap} */
@@ -73,9 +77,12 @@ export type CloudMap = {
 /** What a cloud map is drawn over: a `CloudTerrain`'s Earth map, and which drawing of it. */
 export type CloudMapTerrain = { texture: Texture; version: number };
 
-/** The key a cloud map for `seed` over `terrain` is shared by. */
+/** The key the cloud maps for `seed` over `terrain` share, at any time. */
 export const cloudMapKey = (seed: number, terrain: CloudMapTerrain | null) =>
   terrain ? `${seed}:${terrain.texture.uuid}:${terrain.version}` : `${seed}`;
+
+/** The strips a cloud map is drawn in (`bakeCloudMap`): the wind's six faces, then the cloud's. */
+export const CLOUD_MAP_STRIPS = STRIPS;
 
 type Shared = {
   flowGenerator: Mesh;
@@ -88,6 +95,7 @@ const shared = new WeakMap<WebGLRenderer, Shared>();
 function createMap(
   seed: number,
   terrain: CloudMapTerrain | null,
+  time: number,
   own: Shared,
 ) {
   const target = new WebGLCubeRenderTarget(CLOUD_MAP_SIZE, {
@@ -111,9 +119,11 @@ function createMap(
     texture: target.texture,
     flow,
     seed,
+    time,
     terrain: terrain?.texture ?? null,
-    key: cloudMapKey(seed, terrain),
-    systems: createWeatherSystemCentres(seed),
+    key: `${cloudMapKey(seed, terrain)}@${time}`,
+    base: cloudMapKey(seed, terrain),
+    systems: weatherSystemCentresAt(seed, time),
     generators: [own.flowGenerator, own.generator],
     strips: 0,
     get ready() {
@@ -150,13 +160,14 @@ const createGenerator = (
 };
 
 /**
- * `renderer`'s cloud map for `seed` over `terrain`, made (not drawn yet) the first time: let
- * go with {@link releaseCloudMap}.
+ * `renderer`'s cloud map for `seed` over `terrain` at the weather's `time`, made (not drawn yet)
+ * the first time: let go with {@link releaseCloudMap}.
  */
 export function acquireCloudMap(
   renderer: WebGLRenderer,
   seed: number,
   terrain: CloudMapTerrain | null = null,
+  time = 0,
 ): CloudMap {
   let own = shared.get(renderer);
   if (!own) {
@@ -181,10 +192,10 @@ export function acquireCloudMap(
     };
     shared.set(renderer, own);
   }
-  const key = cloudMapKey(seed, terrain);
+  const key = `${cloudMapKey(seed, terrain)}@${time}`;
   let map = own.maps.get(key);
   if (!map) {
-    map = createMap(seed, terrain, own);
+    map = createMap(seed, terrain, time, own);
     own.maps.set(key, map);
   }
   map.users++;

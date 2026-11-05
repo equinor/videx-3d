@@ -1,2 +1,2 @@
 export * from './Weather';
-export { useWeather } from './weather-context';
+export { useWeather, useWeatherClock } from './weather-context';

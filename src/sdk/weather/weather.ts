@@ -82,6 +82,11 @@ export type CloudLayer = {
   base: number;
   /** height of its tops over the sea, in metres: the tallest of them, for cumulus */
   top: number;
+  /**
+   * the wind at its height, which its clouds drift with. Default the weather's wind turned and
+   * strengthened aloft ({@link cloudWindAt})
+   */
+  wind?: WeatherWind;
 };
 
 /**
@@ -388,7 +393,10 @@ export function cloudLayersOf(preset: CloudLayersPreset): CloudLayer[] {
     return SKY_PRESETS[preset].flatMap(
       ([cover, type]) => cloudLayerPreset(cover, type) ?? [],
     );
-  const [cover, type] = preset.split(' ') as [CloudCover, CloudType | undefined];
+  const [cover, type] = preset.split(' ') as [
+    CloudCover,
+    CloudType | undefined,
+  ];
   const layer = cloudLayerPreset(cover, type ?? 'cumulus');
   return layer ? [layer] : [];
 }
@@ -423,4 +431,56 @@ export function weatherOceanWind(
     windDirection:
       own.windDirection ?? (wind ? windToward(wind, frame) : undefined),
   };
+}
+
+/**
+ * How the wind at each {@link CloudLevel} stands to the wind over the sea ({@link WeatherWind}):
+ * stronger (`speed` times), away from the sea's drag, and turned (`veer` degrees) with height:
+ * clockwise in the north, anticlockwise in the south, as the friction that turns it toward low
+ * pressure fades (the Ekman spiral). Typical of a mid-latitude atmosphere: some 1.5 times the
+ * surface wind at the low clouds (850 hPa), twice at the middle (600 hPa) and three times at the
+ * high (300 hPa, toward the jet).
+ *
+ * @group Weather
+ */
+export const CLOUD_WIND_ALOFT: Readonly<
+  Record<CloudLevel, { speed: number; veer: number }>
+> = {
+  low: { speed: 1.5, veer: 15 },
+  mid: { speed: 2.2, veer: 30 },
+  high: { speed: 3, veer: 40 },
+};
+
+/**
+ * The wind at `level`'s clouds from the wind over the sea, `wind`, at `latitude` (degrees:
+ * which way it turns with height, {@link CLOUD_WIND_ALOFT}); null without one.
+ *
+ * @group Weather
+ */
+export function cloudWindAt(
+  wind: WeatherWind | null | undefined,
+  level: CloudLevel,
+  latitude = 45,
+): WeatherWind | null {
+  if (!wind) return null;
+  const aloft = CLOUD_WIND_ALOFT[level];
+  const turn = latitude >= 0 ? aloft.veer : -aloft.veer;
+  return {
+    speed: wind.speed * aloft.speed,
+    from: (((wind.from + turn) % 360) + 360) % 360,
+  };
+}
+
+/**
+ * The wind `layer`'s clouds drift with: its own (`CloudLayer.wind`), else the wind over the sea
+ * turned and strengthened to its level ({@link cloudWindAt}); null for none.
+ *
+ * @group Weather
+ */
+export function cloudLayerWind(
+  layer: CloudLayer,
+  wind: WeatherWind | null | undefined,
+  latitude = 45,
+): WeatherWind | null {
+  return layer.wind ?? cloudWindAt(wind, cloudLevelOf(layer.type), latitude);
 }

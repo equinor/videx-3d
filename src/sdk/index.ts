@@ -136,6 +136,7 @@ export * from './utils/typed-array';
 export * from './utils/vector-operations';
 
 export * from './weather/weather';
+export * from './weather/weather-clock';
 export * from './weather/weather-systems';
 
 export * from './materials/apply-globe';

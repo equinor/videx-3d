@@ -41,6 +41,7 @@ import { applyOceanWaterProps } from '../Ocean/ocean-material-sync';
 import { useWorld } from '../World/world-context';
 import { useWorldRelief } from '../World/world-relief';
 import { useWeatherOceanWind } from '../Weather/useWeatherOceanWind';
+import { useWeatherStep } from '../Weather/useWeatherStep';
 import type { ProgressReport } from '../Progress/progress-store';
 import {
   createOceanContactRegistry,
@@ -1361,9 +1362,12 @@ export const Scenery = ({
   ]);
 
   // Bakes run here so several prop changes in one frame cost one bake.
+  const step = useWeatherStep();
   useFrame(({ camera }, delta) => {
+    // The waves at the enclosing Weather's pace.
+    const waveStep = step(delta);
     if (water) {
-      water.time += delta;
+      water.time += waveStep;
       contacts.upload(water, { plane: wavePlane, from: camera.position });
     }
     // What draws itself in the sky (the 3D clouds): in the air's bakes, which are due again

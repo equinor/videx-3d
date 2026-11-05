@@ -51,6 +51,8 @@ import type { Globe } from '../../sdk/projection/globe';
 import {
   CLOUD_LEVELS,
   cloudLayerPreset,
+  cloudLayerWind,
+  cloudLevelOf,
   cloudLayersByLevel,
   cloudStreetsOf,
   type CloudLayer,
@@ -62,6 +64,7 @@ import {
   acquireCloudMap,
   bakeCloudMap,
   CLOUD_MAP_SIZE,
+  CLOUD_MAP_STRIPS,
   CloudMap,
   cloudMapKey,
   releaseCloudMap,
@@ -197,10 +200,21 @@ const SCENE_FAR = 400000;
 const SCENE_WARP = 120000;
 const PERIOD_SCENE_WARP = 150000;
 // Strips of the cloud map drawn a frame (scenery-cloud-map.ts): the first map, which the clouds
-// wait for (some half a second), and a new one for another seed, drawn while the clouds show the
-// old (some three seconds).
+// wait for (some half a second), and a new one for another seed, or the next ahead as the clock
+// runs, drawn while the clouds show the old (some three seconds).
 const MAP_STRIPS_FIRST = 16;
 const MAP_STRIPS_NEXT = 1;
+// As the clock runs, the map is drawn again for times this far apart (weather seconds) at
+// least, and blended between: the systems travel some 20 km in it. Under a timelapse, further
+// apart, so each is drawn (in the background) in at most MAP_DRAW_SHARE of the time between:
+// MAP_STRIPS_NEXT strips a frame, more (up to MAP_STRIPS_MOST) where that would set them more
+// than MAP_SPAN_MOST apart. On a laptop's GPU at an hour a second, some 6 h.
+const MAP_SPAN = 1800;
+const MAP_SPAN_MOST = 6 * 3600;
+const MAP_DRAW_SHARE = 0.5;
+const MAP_STRIPS_MOST = 4;
+// A jump of the clock this far (weather seconds) from the maps drawn starts them over.
+const MAP_JUMP = 12 * 3600;
 // The field that warps where the coverage is read (at scale 1), so its tiles do not line up.
 const PERIOD_WARP = 22000;
 // The clouds as seen from the scene (film): texels along a side of each face, and the share of
@@ -223,6 +237,15 @@ const SHADOW_HIGHEST = 400000;
 // at 2 km, with the sun at 35°, moves some 100 m, under a texel of the map from 3 km up. A
 // timelapse at 1 h/s draws them some 15 times a second.
 const SHADOW_TURN = 1.5e-4;
+// The share of the lowest layer's clouds' lifetime after which their shadows are drawn again,
+// as the clouds have changed (they are carried with the drift meanwhile): some 25 s of weather
+// for cumulus, every frame or so under a timelapse.
+const SHADOW_LIVED = 0.02;
+// What was filmed of them for the bakes is stale once the lowest layer's clouds have drifted
+// this share of a cloud's breadth, or lived this share of their lifetime; but no sooner than
+// this long after the last (ms): each bake films them all round.
+const FILM_SHARE = 0.25;
+const FILM_LONGEST = 3000;
 
 // What a type of cloud looks like (cloud-volume-march.glsl), at scale and density 1.
 type CloudLook = {
@@ -258,6 +281,11 @@ type CloudLook = {
   stretch: number;
   // The share of its thickness the light crosses on its slant through it (cloudVolumeLight).
   slant: number;
+  // How long one of its clouds lasts, forming and fading (weather seconds): its patterns are
+  // read on through the noise, a cloud's breadth in this long (CLOUD_LIFE_*). And how fast its
+  // billows rise in it (m/s): heaped clouds boil upward.
+  lifetime: number;
+  rise: number;
 };
 const LOOKS: Record<CloudType, CloudLook> = {
   // Heaped, separate clouds with flat bases.
@@ -276,6 +304,8 @@ const LOOKS: Record<CloudType, CloudLook> = {
     wisps: 0,
     stretch: 1,
     slant: 0.6,
+    lifetime: 1200,
+    rise: 0.6,
   },
   // A lumpy deck of rolls and cells, broken by gaps, their tops gently domed.
   stratocumulus: {
@@ -293,6 +323,8 @@ const LOOKS: Record<CloudType, CloudLook> = {
     wisps: 0.4,
     stretch: 1.3,
     slant: 0.7,
+    lifetime: 3600,
+    rise: 0.1,
   },
   // A low, even sheet, its base undulating.
   stratus: {
@@ -310,6 +342,8 @@ const LOOKS: Record<CloudType, CloudLook> = {
     wisps: 1,
     stretch: 1,
     slant: 0.8,
+    lifetime: 7200,
+    rise: 0,
   },
   // Deep and dark, its base ragged.
   nimbostratus: {
@@ -327,6 +361,8 @@ const LOOKS: Record<CloudType, CloudLook> = {
     wisps: 1,
     stretch: 1,
     slant: 0.9,
+    lifetime: 5400,
+    rise: 0,
   },
   // Small puffs in rows across the wind: a mackerel sky.
   altocumulus: {
@@ -344,6 +380,8 @@ const LOOKS: Record<CloudType, CloudLook> = {
     wisps: 0,
     stretch: 1,
     slant: 0.7,
+    lifetime: 2400,
+    rise: 0.2,
   },
   // A thin grey sheet the sun shows through.
   altostratus: {
@@ -361,6 +399,8 @@ const LOOKS: Record<CloudType, CloudLook> = {
     wisps: 1,
     stretch: 1.5,
     slant: 0.8,
+    lifetime: 7200,
+    rise: 0,
   },
   // Streaks of ice drawn out along the wind.
   cirrus: {
@@ -378,6 +418,8 @@ const LOOKS: Record<CloudType, CloudLook> = {
     wisps: 1,
     stretch: 6,
     slant: 0.5,
+    lifetime: 3600,
+    rise: 0,
   },
   // A milky veil of ice.
   cirrostratus: {
@@ -395,6 +437,8 @@ const LOOKS: Record<CloudType, CloudLook> = {
     wisps: 1,
     stretch: 2,
     slant: 0.8,
+    lifetime: 7200,
+    rise: 0,
   },
 };
 
@@ -417,17 +461,26 @@ const FAR_TYPES: Record<CloudLevel, CloudType> = {
 };
 
 /**
- * The layers the clouds draw of `layers`, one at each level (`cloudLayersByLevel`): where none
- * is given, the level's far type at no cover.
+ * The layers the clouds draw of `layers`, one at each of `levels` in their order
+ * (`cloudLayersByLevel`): where none is given, the level's far type at no cover. A level left
+ * out is not drawn at all, not even far off.
  */
-function cloudVolumeSlots(layers: readonly CloudLayer[]): CloudLayer[] {
-  return cloudLayersByLevel(layers).map((layer, i) => {
-    if (layer) return layer;
+function cloudVolumeSlots(
+  layers: readonly CloudLayer[],
+  levels: readonly CloudLevel[],
+): CloudLayer[] {
+  return cloudLayersByLevel(layers).flatMap((layer, i) => {
+    if (!levels.includes(CLOUD_LEVELS[i])) return [];
+    if (layer) return [layer];
     const far = cloudLayerPreset('scattered', FAR_TYPES[CLOUD_LEVELS[i]])!;
     far.cover = 0;
-    return far;
+    return [far];
   });
 }
+
+// A slot's level's index in CLOUD_LEVELS (uCloudLayers.w: the cloud map's channel for it).
+const levelIndexOf = (layer: CloudLayer) =>
+  CLOUD_LEVELS.indexOf(cloudLevelOf(layer.type));
 // The clouds' image holds log2 of their distance over this as its depth (cloud-volume-*.glsl):
 // out to 4 · 10⁹ world units.
 const DEPTH_RANGE = '32.0';
@@ -493,6 +546,8 @@ function releaseNoise() {
 /** What a {@link CloudVolumeRenderer} draws, resolved. */
 export type CloudVolumeSettings = {
   layers: readonly CloudLayer[];
+  /** the levels drawn: one left out is not drawn at all, not even far off */
+  levels: readonly CloudLevel[];
   /** the weather systems' strength far off, 0 to 1 */
   systems: number;
   /** the wind at the scene: what lines its cumulus up into streets */
@@ -543,6 +598,33 @@ export function cloudVolumeLight(
 // it is marched again only four frames on.
 const TEMPORAL_BLEND = 0.1;
 const TEMPORAL_BLEND_SPARSE = 0.2;
+// The most of a sparse march's frame the pixels it did not reach take, as the clouds change
+// where they are fast on the screen (from some 0.02 to 0.3 of a pixel a frame). Under a
+// timelapse their drift counts too: their cover changes in place as fast (the map's systems
+// and its dissolve), and held three frames in four they stood out as dotted streaks. At real
+// time the drift alone took a share each march at rest, and the march's jitter shook the
+// whole layer with it.
+const SPARSE_FAST = 0.3;
+// The clock running more than this many times faster than the wall: a timelapse.
+const TIMELAPSE_RATE = 2;
+// The share of TEMPORAL_BLEND (or _SPARSE) a frame takes once the view has stood still, what
+// the march reads but the clock has changed less than CALM_INPUTS of itself (the sun on a
+// real-time clock moves less: a slider more), and the clouds changed less than CALM_CHANGE of
+// a pixel (beyond their drift) and moved less than CALM_DRIFT since the frame before, for
+// CALM_FRAMES frames, eased in over those: a quarter halves the grain left. Never under a
+// timelapse. Calm, a change of light took some 5 s to settle rather than 1.5.
+const CALM_SHARE = 0.25;
+const CALM_FRAMES = 20;
+const CALM_INPUTS = 1e-4;
+const CALM_CHANGE = 0.05;
+const CALM_DRIFT = 0.5;
+// Far clouds softened, where a pixel's grain is as large as their shapes: the resolve blends a
+// frame's rays about a pixel by how far from its middle they crossed, by a Gaussian of up to
+// BLUR_MOST pixels of the image, from the nearest the clouds lie along the view (at least
+// BLUR_NEAR, world units) to BLUR_OCTAVES doublings of it further.
+const BLUR_MOST = 1;
+const BLUR_NEAR = 1000;
+const BLUR_OCTAVES = 3;
 // Longer than this (ms) between two frames of a camera, its history starts over.
 const TEMPORAL_GAP = 500;
 // The pixel of each 2 × 2 a sparse march takes in turn: across the block first, so a moving
@@ -556,6 +638,32 @@ const CELLS = [
 // Frames a camera's view and what the march reads stay unchanged before its march stops and
 // its image is held (holdAtRest): by then the frames before have settled into it.
 const REST_FRAMES = 48;
+// With the clock stopped, frames marched at its time before the image is held: the history
+// keeps more of them once calm (CALM_SHARE).
+const REST_SETTLED = 2 * REST_FRAMES;
+// At rest with the clock running: marched again once any level may have moved or changed this
+// share of a pixel of the image, or this long after the last (ms); a layer the camera is in
+// counts as this near (world units).
+const REST_CHANGE = 0.3;
+const REST_LONGEST = 2000;
+const REST_NEAR = 50;
+// The shallowest a view's slope toward a layer counts as (sine): the Earth's curve brings even
+// a level view down to it some way off.
+const REST_SLOPE = 0.02;
+// The view's corners (NDC), for the rays steepest toward a layer.
+const CORNERS = [
+  [-1, -1],
+  [1, -1],
+  [-1, 1],
+  [1, 1],
+];
+// The march's uniforms the clock moves.
+const CLOCK_UNIFORMS = [
+  'uCloudFrame',
+  'uCloudOffsets',
+  'uCloudRows',
+  'uCloudMapTimes',
+];
 // The sub-pixel places the march's rays take in turn (Halton 2, 3), in pixels from the middle.
 const JITTER = [
   [0.5, 0.333],
@@ -621,7 +729,9 @@ const createCompositeMaterial = (
 
 // What a camera's frames leave the next: the images resolved (one read, the other written),
 // where the camera was and how it looked, and what the march last read (holdAtRest): its
-// values, and for how many frames they have not changed.
+// values, and for how many frames they have not changed; the weather's time at the last
+// resolve, and at the last march (and the wall time then), how many marches since that time
+// last changed, and how many frames in a row have been calm (CALM_SHARE).
 type TemporalState = {
   images: [WebGLRenderTarget, WebGLRenderTarget];
   index: number;
@@ -633,6 +743,11 @@ type TemporalState = {
   position: Vector3;
   inputs: number[];
   still: number;
+  weather: number;
+  marched: number;
+  marchedWall: number;
+  calm: number;
+  steady: number;
 };
 
 const v = new Vector3();
@@ -655,9 +770,18 @@ function pushInput(out: number[], value: unknown) {
   else out.push(-1);
 }
 
-function sameInputs(a: number[], b: number[]) {
+// Whether two lists of inputs are the same, each within `tolerance` of the larger (or of 1).
+function sameInputs(a: number[], b: number[], tolerance = 0) {
   if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (
+      x !== y &&
+      !(Math.abs(x - y) <= tolerance * Math.max(Math.abs(x), Math.abs(y), 1))
+    )
+      return false;
+  }
   return true;
 }
 const shadowCentre = new Vector3();
@@ -673,6 +797,25 @@ const windEarth = new Vector3();
 const across = new Vector3();
 const v4 = new Vector3();
 const cameraAt = new Vector3();
+const way = new Vector3();
+const moved = new Vector3();
+const sliced = new Vector3();
+const toWorld = new Matrix3();
+const upAt = new Vector3();
+const ray = new Vector3();
+const rotationNow = new Matrix3();
+const pace = { moving: 0, changing: 0, nearest: 0 };
+
+// How far a pattern is read on through the noise in a cloud's lifetime: a quarter of its
+// period, a cloud's breadth (CLOUD_CELL in the shader), so one cloud has made way for another.
+const CLOUD_CELL_SHARE = 0.25;
+// A lifetime where no layer says (weather seconds); how many times longer the broad octave's
+// clusters last, and the second tap's; how long the detail's wisps last, and the warp.
+const CLOUD_LIFE_DEFAULT = 3600;
+const CLOUD_LIFE_BROAD = 4;
+const CLOUD_LIFE_SECOND = 1.5;
+const CLOUD_LIFE_DETAIL = 600;
+const CLOUD_LIFE_WARP = 7200;
 
 /**
  * The 3D clouds of a `SceneryCloudVolume`: a march through each layer at a share of the
@@ -744,6 +887,7 @@ export class CloudVolumeRenderer {
     version: -1,
     terrain: -1,
     globe: -1,
+    time: 0,
   };
   /**
    * the clouds' shadows over a square about the camera's foot ({@link updateShadow}), null
@@ -768,6 +912,19 @@ export class CloudVolumeRenderer {
   private readonly target: WebGLRenderTarget;
   private readonly histories = new Map<Camera, TemporalState>();
   /**
+   * The weather's time (seconds) the clouds are drawn at: they drift with each level's wind
+   * and form and fade as it runs. Set each frame (`SceneryCloudVolume`: its `Weather`'s clock).
+   */
+  time = 0;
+  /** each level's wind in the world (m/s, by its index in `CLOUD_LEVELS`): how its clouds drift */
+  readonly drifts = CLOUD_LEVELS.map(() => new Vector3());
+  // The heights (over the sea) between the low and middle levels and the middle and high: which
+  // level's drift a cloud's front follows (the resolve).
+  private splits = [3000, 6500];
+  // The weather's time and the wall time (ms) they were last marked stale for the film at.
+  private filmTime = 0;
+  private filmWall = 0;
+  /**
    * Stop marching a camera's view once it and what the march reads have not changed for some
    * frames, and hold the image the frames settled into until they do: none of the march's cost
    * while the view rests. False marches every frame (to time it).
@@ -790,13 +947,23 @@ export class CloudVolumeRenderer {
     renderer: WebGLRenderer;
     noise: CloudNoiseVolumes;
   } | null = null;
-  // The cloud maps of the renderer drawing it: the one it draws with, and one for another seed
-  // being drawn meanwhile.
+  // The cloud maps of the renderer drawing it: the two it blends between as the clock runs
+  // (older and newer, from blendStart; one alone while older is null), and one being drawn
+  // meanwhile: the next ahead, or for another seed, ground or a jump of the clock (fresh).
   private maps: {
     renderer: WebGLRenderer;
-    current: CloudMap | null;
+    older: CloudMap | null;
+    newer: CloudMap | null;
     next: CloudMap | null;
+    fresh: boolean;
+    blendStart: number;
   } | null = null;
+  // How fast the clock runs (weather seconds a wall second) and a frame's wall time (s), eased;
+  // and the clock and the wall time at the last bakeMap.
+  private pace = 0;
+  private frameWall = 1 / 60;
+  private paceTime = 0;
+  private paceWall = 0;
 
   constructor(sky: SceneryMaterial, renderOrder: number) {
     this.sky = sky;
@@ -840,12 +1007,18 @@ export class CloudVolumeRenderer {
         uCloudForms: new Uniform(layerVectors()),
         uCloudStyles: new Uniform(layerVectors()),
         uCloudRows: new Uniform(layerVectors()),
+        // Each layer's wind, fixed on the Earth: the way it blows (xyz) and its speed (w, m/s).
+        uCloudWinds: new Uniform(layerVectors()),
         uCloudLayerCount: new Uniform(0),
         uCloudQuantiles: new Uniform(Array.from(noise.coverage.quantiles)),
         uCloudCoverage: new Uniform(
           new Vector2(noise.coverage.deviation, noise.coverage.mean),
         ),
         uCloudMap: new Uniform<CubeTexture | null>(null),
+        // The map blended into as the clock runs, and the blend (cloudMapRead): the newer's
+        // share, and the older's and the newer's age (weather seconds).
+        uCloudMapNext: new Uniform<CubeTexture | null>(null),
+        uCloudMapTimes: new Uniform(new Vector3()),
         uCloudWeather: new Uniform(new Vector4(1, SCENE_NEAR, SCENE_FAR, 0)),
         uCloudWarp: new Uniform(PERIOD_WARP),
         ...this.terrain.uniforms,
@@ -874,7 +1047,9 @@ export class CloudVolumeRenderer {
       ...marchShader.matchAll(/uniform\s+\w+\s+(\w+)\s*(?:\[[^\]]*\])?\s*;/g),
     ]
       .map(match => match[1])
-      .filter(name => name !== 'uCloudFrame' && name in uniforms);
+      // The frame's count, and what the clock moves (where the camera lies among the drifting
+      // patterns): the clock's run is weighed apart (paceOf).
+      .filter(name => !CLOCK_UNIFORMS.includes(name) && name in uniforms);
 
     this.target = createImage();
 
@@ -890,12 +1065,17 @@ export class CloudVolumeRenderer {
         uCloudHistoryDepth: new Uniform<Texture | null>(null),
         uCloudImageSize: new Uniform(new Vector2(1, 1)),
         uCloudCurrentSize: new Uniform(new Vector2(1, 1)),
-        uCloudSparse: new Uniform(new Vector3()),
+        uCloudSparse: new Uniform(new Vector4()),
         uCloudPreviousRotation: new Uniform(new Matrix3()),
         uCloudPreviousProjection: new Uniform(new Matrix4()),
         uCloudCameraMove: new Uniform(new Vector3()),
+        uCloudDrift: new Uniform(CLOUD_LEVELS.map(() => new Vector3())),
+        uCloudLevels: new Uniform(new Vector4(0, 0, 3000, 6500)),
+        uCloudUp: new Uniform(new Vector3(0, 1, 0)),
         uCloudBlend: new Uniform(1),
         uCloudJitter: new Uniform(new Vector2()),
+        uCloudSample: new Uniform(new Vector2(0.5, 0.5)),
+        uCloudBlur: new Uniform(new Vector3()),
       },
       depthTest: true,
       depthFunc: AlwaysDepth,
@@ -967,7 +1147,18 @@ export class CloudVolumeRenderer {
     this.version++;
     const u = this.marchMaterial.uniforms;
     const scale = settings.scale;
-    this.slots = cloudVolumeSlots(settings.layers);
+    this.slots = cloudVolumeSlots(settings.layers, settings.levels);
+    // Each level's heights, as drawn or as its far type's.
+    const heights = CLOUD_LEVELS.map(level => {
+      const layer =
+        this.slots.find(slot => cloudLevelOf(slot.type) === level) ??
+        cloudLayerPreset('scattered', FAR_TYPES[level])!;
+      return [Math.min(layer.base, layer.top), Math.max(layer.base, layer.top)];
+    });
+    this.splits = [
+      0.5 * (heights[0][1] + heights[1][0]),
+      0.5 * (heights[1][1] + heights[2][0]),
+    ];
     u.uCloudLayerCount.value = this.slots.length;
     const streets = cloudStreetsOf(settings.wind);
     this.slots.forEach((layer, i) => {
@@ -977,7 +1168,7 @@ export class CloudVolumeRenderer {
         base,
         Math.max(layer.top, base + 1),
         Math.min(Math.max(layer.cover, 0), 1),
-        i,
+        levelIndexOf(layer),
       );
       (u.uCloudLooks.value[i] as Vector4).set(
         look.extinction * settings.density,
@@ -1023,7 +1214,7 @@ export class CloudVolumeRenderer {
   /** Whether any layer can show: with cover, or far off through the weather systems. */
   get cloudy(): boolean {
     const settings = this.settings;
-    if (!settings) return false;
+    if (!settings || this.slots.length === 0) return false;
     return settings.systems > 0 || this.slots.some(layer => layer.cover > 0);
   }
 
@@ -1053,12 +1244,41 @@ export class CloudVolumeRenderer {
     const lowest =
       this.slots.find(layer => layer.cover > 0) ?? this.slots[0] ?? null;
     reflection.base = lowest ? Math.min(lowest.base, lowest.top) : 0;
-    reflection.map = this.shown ? (this.maps?.current?.texture ?? null) : null;
+    reflection.map = this.shown ? (this.maps?.newer?.texture ?? null) : null;
     reflection.earth.copy(this.earth);
     reflection.texels = CLOUD_MAP_SIZE / (2 * globe.radius);
     reflection.strength = settings
       ? Math.min(Math.max(settings.systems, 0), 1)
       : 0;
+  }
+
+  /**
+   * As the clock runs: mark what was filmed of them stale ({@link version}: the bakes of the air
+   * and the sea's reflection are drawn again) once the clouds have drifted or changed enough
+   * since, a share of a cloud, at most every few seconds. In the frame loop.
+   */
+  updateFilm() {
+    const elapsed = Math.abs(this.time - this.filmTime);
+    if (elapsed === 0 || !this.shown) {
+      this.filmTime = this.time;
+      return;
+    }
+    const now = performance.now();
+    if (now - this.filmWall < FILM_LONGEST) return;
+    const lowest = this.slots[0];
+    if (!lowest) return;
+    const look = LOOKS[lowest.type];
+    const breadth =
+      CLOUD_CELL_SHARE * look.period * (this.settings?.scale ?? 1);
+    const drifted = this.shadowDrift().length() * elapsed;
+    if (
+      drifted > FILM_SHARE * breadth ||
+      elapsed > FILM_SHARE * look.lifetime
+    ) {
+      this.filmTime = this.time;
+      this.filmWall = now;
+      this.version++;
+    }
   }
 
   /**
@@ -1075,7 +1295,7 @@ export class CloudVolumeRenderer {
       sine = up.dot(this.sky.uniforms.uSkyMoonDirection.value as Vector3);
     const shown = settings !== null && this.shown;
     const target = shown
-      ? cloudVolumeLight(settings.layers, settings.density, sine)
+      ? cloudVolumeLight(this.slots, settings.density, sine)
       : 1;
     this.light += (target - this.light) * (1 - Math.exp(-delta / LIGHT_EASE));
     if (Math.abs(target - this.light) < 1e-3) this.light = target;
@@ -1124,6 +1344,11 @@ export class CloudVolumeRenderer {
         : (this.sky.uniforms.uSkyMoonDirection.value as Vector3);
 
     const drawn = this.shadowDrawn;
+    // The clouds' drift since drawn, as far as the map has been carried, and how much of a
+    // cloud has changed meanwhile (a cloud's breadth a lifetime, of the lowest layer's).
+    const elapsed = Math.abs(this.time - drawn.time);
+    const lowest = this.slots[0];
+    const lived = lowest ? elapsed / LOOKS[lowest.type].lifetime : 0;
     const stale =
       !drawn.valid ||
       drawn.version !== this.version ||
@@ -1131,6 +1356,8 @@ export class CloudVolumeRenderer {
       drawn.globe !== globe.version ||
       drawn.light.dot(light) < 1 - SHADOW_TURN ||
       drawn.centre.distanceTo(centre) > SHADOW_MOVE * drawn.reach ||
+      this.shadowDrift().length() * elapsed > SHADOW_MOVE * drawn.reach ||
+      lived > SHADOW_LIVED ||
       Math.abs(Math.log(reach / Math.max(drawn.reach, 1))) > Math.log(1.2);
     if (stale) {
       this.sky.syncCamera(camera);
@@ -1166,6 +1393,7 @@ export class CloudVolumeRenderer {
       drawn.light.copy(light);
       drawn.centre.copy(centre);
       drawn.reach = reach;
+      drawn.time = this.time;
       const shadow = (this.shadow ??= {
         texture: this.shadowTarget.texture,
         centre: new Vector3(),
@@ -1173,11 +1401,22 @@ export class CloudVolumeRenderer {
         north: new Vector3(),
         reach: 0,
       });
-      shadow.centre.copy(centre);
       shadow.east.copy(eastward);
       shadow.north.copy(north);
       shadow.reach = reach;
     }
+    // Carried with the clouds since they were drawn: the lowest level's drift, which casts most
+    // of them.
+    if (this.shadow)
+      this.shadow.centre
+        .copy(drawn.centre)
+        .addScaledVector(this.shadowDrift(), this.time - drawn.time);
+  }
+
+  // The drift the clouds' shadows are carried with (world, m/s): the lowest level drawn's.
+  private shadowDrift() {
+    const lowest = this.slots[0];
+    return lowest ? this.drifts[levelIndexOf(lowest)] : this.drifts[0];
   }
 
   // The frame fixed to the Earth: its axes toward latitude and longitude 0, longitude 90°
@@ -1217,6 +1456,93 @@ export class CloudVolumeRenderer {
       .applyMatrix3(this.earth);
   }
 
+  // `target` (fixed on the Earth, at the scene) the way a wind from bearing `from` (degrees)
+  // blows.
+  private wayOf(from: number, target: Vector3) {
+    const toward = ((from + 180) * Math.PI) / 180;
+    return target
+      .copy(this.northEarth)
+      .multiplyScalar(Math.cos(toward))
+      .addScaledVector(this.eastEarth, Math.sin(toward));
+  }
+
+  // Each layer's wind (uCloudWinds), turned and strengthened to its level (cloudLayerWind) at
+  // the scene's latitude, and each level's in the world (drifts), for the resolve and the rest.
+  private updateWinds() {
+    const settings = this.settings!;
+    const u = this.marchMaterial.uniforms;
+    const upEarth = u.uCloudUpEarth.value as Vector3;
+    const latitude =
+      (Math.asin(MathUtils.clamp(upEarth.z, -1, 1)) * 180) / Math.PI;
+    const winds = u.uCloudWinds.value as Vector4[];
+    // Back from the Earth's frame to the world's: the frame's transpose (a rotation).
+    toWorld.copy(this.earth).transpose();
+    for (const drift of this.drifts) drift.set(0, 0, 0);
+    for (let i = 0; i < CLOUD_VOLUME_LAYERS; i++) {
+      const layer = this.slots[i];
+      const wind = layer
+        ? cloudLayerWind(layer, settings.wind, latitude)
+        : null;
+      this.wayOf(wind?.from ?? settings.wind?.from ?? 0, way);
+      const speed = wind?.speed ?? 0;
+      winds[i].set(way.x, way.y, way.z, speed);
+      if (layer)
+        this.drifts[levelIndexOf(layer)]
+          .copy(way)
+          .applyMatrix3(toWorld)
+          .multiplyScalar(speed);
+    }
+  }
+
+  // How fast `camera` sees the clouds at the image's middle from `altitude`, in its pixels a
+  // weather second: any level's moving or changing (`moving`: its drift, its clouds' change, a
+  // cloud's breadth a lifetime, and rise), and changing alone (`changing`: what the resolve
+  // does not follow), each over the nearest the level lies along the view (along its corner
+  // rays: the steepest toward it; REST_NEAR inside it); and the nearest any lies (`nearest`).
+  private paceOf(altitude: number, camera: Camera) {
+    const u = this.marchMaterial.uniforms;
+    const winds = u.uCloudWinds.value as Vector4[];
+    cameraAt.setFromMatrixPosition(camera.matrixWorld);
+    const up = this.sky.globe.upAt(cameraAt, upAt);
+    let down = 0;
+    let rising = 0;
+    for (const [x, y] of CORNERS) {
+      const s = ray
+        .set(x, y, 0.5)
+        .unproject(camera)
+        .sub(cameraAt)
+        .normalize()
+        .dot(up);
+      down = Math.max(down, -s);
+      rising = Math.max(rising, s);
+    }
+    let moving = 0;
+    let changing = 0;
+    let nearest = Infinity;
+    this.slots.forEach((layer, i) => {
+      const look = LOOKS[layer.type];
+      const forms = u.uCloudForms.value[i] as Vector4;
+      const change = (CLOUD_CELL_SHARE * forms.x) / look.lifetime + look.rise;
+      const base = Math.min(layer.base, layer.top);
+      const top = Math.max(layer.base, layer.top);
+      const near =
+        altitude < base
+          ? (base - altitude) / Math.max(rising, REST_SLOPE)
+          : altitude > top
+            ? (altitude - top) / Math.max(down, REST_SLOPE)
+            : 0;
+      nearest = Math.min(nearest, near);
+      const reach = Math.max(near, REST_NEAR);
+      moving = Math.max(moving, (Math.abs(winds[i].w) + change) / reach);
+      changing = Math.max(changing, change / reach);
+    });
+    const pixel = Math.max((u.uCloudMarch.value as Vector4).w, 1e-9);
+    pace.moving = moving / pixel;
+    pace.changing = changing / pixel;
+    pace.nearest = nearest;
+    return pace;
+  }
+
   // The march's uniforms for `camera`: where it lies in each pattern's tile, from 64-bit
   // floats; and how large a pixel of the clouds' image is.
   private updateCamera(camera: Camera, height: number) {
@@ -1227,12 +1553,11 @@ export class CloudVolumeRenderer {
     fromCentre.setFromMatrixPosition(camera.matrixWorld).sub(globe.centre);
     const earth = v.copy(fromCentre).applyMatrix3(this.earth);
     (u.uCloudCameraEarth.value as Vector3).copy(earth);
-    // The way the wind blows (from the bearing it blows toward), fixed on the Earth.
-    const toward = (((settings.wind?.from ?? 0) + 180) * Math.PI) / 180;
-    windEarth
-      .copy(this.northEarth)
-      .multiplyScalar(Math.cos(toward))
-      .addScaledVector(this.eastEarth, Math.sin(toward));
+    // The way the wind blows over the sea, fixed on the Earth.
+    this.wayOf(settings.wind?.from ?? 0, windEarth);
+    this.updateWinds();
+    const time = this.time;
+    const upEarth = u.uCloudUpEarth.value as Vector3;
 
     const offsets = u.uCloudOffsets.value as Vector3[];
     const seed = settings.seed;
@@ -1253,18 +1578,42 @@ export class CloudVolumeRenderer {
         wrap(from.z / period + (seed * 0.137 + k * 0.611) * shift),
       );
     };
+    // `from` read on through the noise along up by `share` of `period` (CLOUD_LIFE_*): the
+    // pattern changes where it lies rather than moving.
+    const through = (from: Vector3, period: number, share: number) =>
+      sliced.copy(from).addScaledVector(upEarth, -share * period);
     // Each layer's coverage, its broad octave, its second tap and its shape volume (the
-    // shader's CLOUD_OFFSET_*), in a frame drawn out along the wind as far as its type is
-    // (cloudStretched).
+    // shader's CLOUD_OFFSET_*), where the camera lies among its clouds as they have drifted
+    // with its wind (`time` × its wind), in a frame drawn out along that wind as far as its
+    // type is (cloudStretched); read on through the noise as they form and fade (a quarter of
+    // a period, a cloud's breadth, each lifetime), the billows rising.
+    const winds = u.uCloudWinds.value as Vector4[];
     for (let i = 0; i < CLOUD_VOLUME_LAYERS; i++) {
       const forms = u.uCloudForms.value[i] as Vector4;
       const k = (u.uCloudStyles.value[i] as Vector4).x;
-      stretched
-        .copy(earth)
-        .addScaledVector(windEarth, earth.dot(windEarth) * k);
-      turned.copy(stretched).applyMatrix3(TURN);
+      const wind = winds[i];
+      way.set(wind.x, wind.y, wind.z);
+      moved.copy(earth).addScaledVector(way, -wind.w * time);
+      stretched.copy(moved).addScaledVector(way, moved.dot(way) * k);
+      const look = this.slots[i] ? LOOKS[this.slots[i].type] : null;
+      const lives = time / (look?.lifetime ?? CLOUD_LIFE_DEFAULT);
+      const shapes = u.uCloudShapes.value[i] as Vector4;
       const first = 11 * i;
-      place(offsets[4 * i], stretched, forms.x, first);
+      place(
+        offsets[4 * i],
+        through(stretched, forms.x, CLOUD_CELL_SHARE * lives),
+        forms.x,
+        first,
+      );
+      turned
+        .copy(
+          through(
+            stretched,
+            forms.x * CLOUD_NOISE_BROAD,
+            (CLOUD_CELL_SHARE * lives) / CLOUD_LIFE_BROAD,
+          ),
+        )
+        .applyMatrix3(TURN);
       place(
         offsets[4 * i + 1],
         turned,
@@ -1272,32 +1621,71 @@ export class CloudVolumeRenderer {
         first + 1,
         true,
       );
+      turned
+        .copy(
+          through(
+            stretched,
+            forms.x * CLOUD_NOISE_SECOND,
+            (CLOUD_CELL_SHARE * lives) / CLOUD_LIFE_SECOND,
+          ),
+        )
+        .applyMatrix3(TURN);
       place(
         offsets[4 * i + 2],
         turned,
         forms.x * CLOUD_NOISE_SECOND,
         first + 5,
       );
-      place(offsets[4 * i + 3], stretched, forms.y, first + 9);
+      // The billows: flattened by shapes.z up the layer, as the shader reads them.
+      const risen = (look?.rise ?? 0) * time * shapes.z;
+      place(
+        offsets[4 * i + 3],
+        through(stretched, forms.y, CLOUD_CELL_SHARE * lives + risen / forms.y),
+        forms.y,
+        first + 9,
+      );
     }
-    const common = 4 * CLOUD_VOLUME_LAYERS;
-    place(offsets[common], earth, (u.uCloudVolumes.value as Vector2).x, 4);
-    place(offsets[common + 1], earth, PERIOD_SCENE_WARP, 7, true);
-    place(offsets[common + 2], earth, u.uCloudWarp.value, 8);
+    // The detail and the warp drift with the lowest layer drawn, the nearest the camera
+    // most often, and the detail changes in minutes.
+    const low = winds[0];
+    way.set(low.x, low.y, low.z);
+    moved.copy(earth).addScaledVector(way, -low.w * time);
+    const detail = (u.uCloudVolumes.value as Vector2).x;
+    place(
+      offsets[4 * CLOUD_VOLUME_LAYERS],
+      through(moved, detail, (CLOUD_CELL_SHARE * time) / CLOUD_LIFE_DETAIL),
+      detail,
+      4,
+    );
+    place(
+      offsets[4 * CLOUD_VOLUME_LAYERS + 1],
+      earth,
+      PERIOD_SCENE_WARP,
+      7,
+      true,
+    );
+    const warp = u.uCloudWarp.value as number;
+    place(
+      offsets[4 * CLOUD_VOLUME_LAYERS + 2],
+      through(moved, warp, (CLOUD_CELL_SHARE * time) / CLOUD_LIFE_WARP),
+      warp,
+      8,
+    );
 
-    // Each layer's rows: across the way they run (along the wind, or across it), over their
-    // spacing, and where the camera lies among them.
-    across
-      .copy(this.eastEarth)
-      .multiplyScalar(Math.cos(toward))
-      .addScaledVector(this.northEarth, -Math.sin(toward));
+    // Each layer's rows: across the way they run (along its wind, or across it), over their
+    // spacing, and where the camera lies among them as they drift.
     this.slots.forEach((layer, i) => {
       const look = LOOKS[layer.type];
+      const wind = winds[i];
+      way.set(wind.x, wind.y, wind.z);
+      // Across the wind: its way turned a quarter clockwise about up.
+      across.crossVectors(way, upEarth);
       const rows = u.uCloudRows.value[i] as Vector4;
-      v4.copy(look.rowsAcross ? windEarth : across).divideScalar(
+      v4.copy(look.rowsAcross ? way : across).divideScalar(
         look.rowSpacing * settings.scale,
       );
-      rows.set(v4.x, v4.y, v4.z, fract(earth.dot(v4) + seed * 0.43 + i * 0.29));
+      moved.copy(earth).addScaledVector(way, -wind.w * time);
+      rows.set(v4.x, v4.y, v4.z, fract(moved.dot(v4) + seed * 0.43 + i * 0.29));
     });
     // The wind the ground lifts the air by: the way it blows, and its speed.
     (u.uCloudWind.value as Vector4).set(
@@ -1338,70 +1726,170 @@ export class CloudVolumeRenderer {
   }
 
   /**
-   * The cloud map `renderer` draws it with for the weather systems' `seed`, over its terrain
-   * as drawn so far: acquired the first time, not drawn yet. Compile its generator, then
-   * {@link bakeMap}.
-   */
-  map(renderer: WebGLRenderer, seed: number): CloudMap {
-    if (this.maps?.renderer !== renderer) {
-      this.releaseMaps();
-      this.maps = { renderer, current: null, next: null };
-    }
-    const maps = this.maps;
-    const terrain = this.terrain.mapTerrain;
-    const key = cloudMapKey(seed, terrain);
-    if (maps.current?.key === key) {
-      if (maps.next) releaseCloudMap(renderer, maps.next);
-      maps.next = null;
-      return maps.current;
-    }
-    if (maps.next?.key !== key) {
-      if (maps.next) releaseCloudMap(renderer, maps.next);
-      maps.next = acquireCloudMap(renderer, seed, terrain);
-    }
-    return maps.next;
-  }
-
-  /**
    * What draws `renderer`'s cloud maps, the same for every seed: compile them before
    * {@link bakeMap}.
    */
   mapGenerators(renderer: WebGLRenderer) {
-    const maps = this.maps?.renderer === renderer ? this.maps : null;
-    return this.map(renderer, maps?.next?.seed ?? maps?.current?.seed ?? 0)
-      .generators;
+    const maps = this.ensureMaps(renderer);
+    const any = maps.next ?? maps.newer;
+    if (any) return any.generators;
+    // Made (not drawn) to compile with: the first one bakeMap draws.
+    maps.next = acquireCloudMap(renderer, 0, this.terrain.mapTerrain, 0);
+    maps.fresh = true;
+    return maps.next.generators;
+  }
+
+  private ensureMaps(renderer: WebGLRenderer) {
+    if (this.maps?.renderer !== renderer) {
+      this.releaseMaps();
+      this.maps = {
+        renderer,
+        older: null,
+        newer: null,
+        next: null,
+        fresh: true,
+        blendStart: 0,
+      };
+    }
+    return this.maps;
   }
 
   /**
-   * Draw more of the cloud map for `seed` with `renderer`, a few strips a frame, and draw with
-   * it once it is done; until then, with the one before. While its terrain is coming in, none
-   * is begun: one without the ground would be drawn again at once. Whether it has a map to
-   * draw with.
+   * Draw more of the cloud maps for `seed` with `renderer`, a few strips a frame, and draw with
+   * them once done; until then, with the ones before. As the clock runs, the next one ahead is
+   * drawn in the background and blended into (`documents/clouds.md`, "Motion"). While its
+   * terrain is coming in, none is begun: one without the ground would be drawn again at once.
+   * Whether it has a map to draw with.
    */
   bakeMap(renderer: WebGLRenderer, seed: number): boolean {
-    if (this.terrain.waiting) return this.maps?.current != null;
-    const map = this.map(renderer, seed);
-    const maps = this.maps!;
-    if (map !== maps.current) {
-      const strips = maps.current ? MAP_STRIPS_NEXT : MAP_STRIPS_FIRST;
-      if (bakeCloudMap(renderer, map, strips)) {
-        if (maps.current) releaseCloudMap(renderer, maps.current);
-        maps.current = map;
+    const maps = this.ensureMaps(renderer);
+    const time = this.time;
+    // The clock's pace, and a frame's wall time, eased over some half a second.
+    const wall = performance.now() / 1000;
+    if (this.paceWall > 0) {
+      const dw = Math.min(Math.max(wall - this.paceWall, 1e-3), 0.25);
+      const ease = 1 - Math.exp(-dw / 0.5);
+      this.pace += ((time - this.paceTime) / dw - this.pace) * ease;
+      this.frameWall += (dw - this.frameWall) * ease;
+    }
+    this.paceTime = time;
+    this.paceWall = wall;
+    if (this.terrain.waiting) return maps.newer !== null;
+
+    const terrain = this.terrain.mapTerrain;
+    const base = cloudMapKey(seed, terrain);
+    const newer = maps.newer;
+    const fresh =
+      !newer ||
+      newer.base !== base ||
+      time > newer.time + MAP_JUMP ||
+      time < (maps.older ?? newer).time - MAP_SPAN;
+    if (fresh) {
+      // Drawn anew at the time now, and shown alone once drawn.
+      if (!maps.fresh || maps.next?.base !== base) this.dropNext();
+      if (!maps.next) {
+        maps.next = acquireCloudMap(renderer, seed, terrain, time);
+        maps.fresh = true;
+      }
+    } else if (
+      !maps.next &&
+      this.pace > 0 &&
+      newer.time < time + this.mapSpan()
+    ) {
+      // The next one ahead, while the clock runs on toward the newer.
+      maps.next = acquireCloudMap(
+        renderer,
+        seed,
+        terrain,
+        newer.time + this.mapSpan(),
+      );
+      maps.fresh = false;
+    }
+
+    const next = maps.next;
+    if (next) {
+      const strips = !newer ? MAP_STRIPS_FIRST : this.mapStrips();
+      // The next one ahead takes over once the clock has come to the newer.
+      const due = maps.fresh || !newer || time >= newer.time;
+      if (bakeCloudMap(renderer, next, strips) && due) {
+        if (maps.fresh) {
+          this.releaseMap(maps.older);
+          this.releaseMap(maps.newer);
+          maps.older = null;
+        } else {
+          this.releaseMap(maps.older);
+          maps.older = maps.newer;
+        }
+        maps.newer = next;
         maps.next = null;
-        this.marchMaterial.uniforms.uCloudMap.value = map.texture;
+        maps.blendStart = time;
         this.version++;
       }
     }
-    return maps.current !== null;
+    this.updateMapUniforms();
+    return maps.newer !== null;
+  }
+
+  // Strips of the next map drawn a frame as the clock runs: enough to draw it in MAP_DRAW_SHARE
+  // of MAP_SPAN_MOST at the pace, if they can.
+  private mapStrips() {
+    const wall =
+      (MAP_DRAW_SHARE * MAP_SPAN_MOST) / Math.max(Math.abs(this.pace), 1e-6);
+    const strips = Math.ceil((CLOUD_MAP_STRIPS * this.frameWall) / wall);
+    return MathUtils.clamp(strips, MAP_STRIPS_NEXT, MAP_STRIPS_MOST);
+  }
+
+  // The time between two maps as the clock runs (weather seconds): MAP_SPAN, or as long as one
+  // takes to draw at the pace, over MAP_DRAW_SHARE.
+  private mapSpan() {
+    const drawn = (CLOUD_MAP_STRIPS / this.mapStrips()) * this.frameWall;
+    return Math.max(MAP_SPAN, (drawn * Math.abs(this.pace)) / MAP_DRAW_SHARE);
+  }
+
+  // The march's maps and how it blends them (cloudMapRead): the older and the newer, the newer's
+  // share by the clock between the blend's start and the newer's time, and each one's age.
+  private updateMapUniforms() {
+    const u = this.marchMaterial.uniforms;
+    const maps = this.maps;
+    const newer = maps?.newer ?? null;
+    const older = maps?.older ?? newer;
+    u.uCloudMap.value = older?.texture ?? null;
+    u.uCloudMapNext.value = newer?.texture ?? null;
+    let share = 0;
+    if (maps && older && newer && older !== newer) {
+      const span = newer.time - maps.blendStart;
+      share =
+        span > 1
+          ? MathUtils.clamp((this.time - maps.blendStart) / span, 0, 1)
+          : 1;
+    }
+    (u.uCloudMapTimes.value as Vector3).set(
+      share,
+      older ? this.time - older.time : 0,
+      newer ? this.time - newer.time : 0,
+    );
+  }
+
+  private dropNext() {
+    const maps = this.maps;
+    if (!maps?.next) return;
+    releaseCloudMap(maps.renderer, maps.next);
+    maps.next = null;
+  }
+
+  private releaseMap(map: CloudMap | null) {
+    if (map && this.maps) releaseCloudMap(this.maps.renderer, map);
   }
 
   private releaseMaps() {
     const maps = this.maps;
     if (!maps) return;
-    if (maps.current) releaseCloudMap(maps.renderer, maps.current);
-    if (maps.next) releaseCloudMap(maps.renderer, maps.next);
+    for (const map of [maps.older, maps.newer, maps.next])
+      if (map) releaseCloudMap(maps.renderer, map);
     this.maps = null;
-    this.marchMaterial.uniforms.uCloudMap.value = null;
+    const u = this.marchMaterial.uniforms;
+    u.uCloudMap.value = null;
+    u.uCloudMapNext.value = null;
   }
 
   /** March the clouds for `camera` into their image, at the share of `renderer`'s target. */
@@ -1457,22 +1945,40 @@ export class CloudVolumeRenderer {
       (2 * (cy - 0.5 + jy)) / height,
     );
     this.updateCamera(camera, height);
+    this.paceOf(altitude, camera);
 
     const composite = this.compositeMaterial.uniforms;
-    // At rest: the image the frames settled into, held while nothing the march reads changes.
-    if (state && this.holdAtRest) {
+    // What the march reads, against the frame before: unchanged (still), or nearly (calm).
+    let near = false;
+    if (state) {
       const inputs = this.inputsOf(camera, width, height, this.inputs);
+      near = state.valid && sameInputs(inputs, state.inputs, CALM_INPUTS);
       state.still =
         state.valid && sameInputs(inputs, state.inputs) ? state.still + 1 : 0;
       this.inputs = state.inputs;
       state.inputs = inputs;
+    }
+    // At rest: the image the frames settled into, held while nothing the march reads changes
+    // but the clock; as it runs, marched again once the clouds may have moved a share of a
+    // pixel (paceOf), or a while has passed.
+    if (state && this.holdAtRest) {
       if (state.still >= REST_FRAMES) {
-        const image = state.images[state.index];
-        composite.uCloudImage.value = image.texture;
-        composite.uCloudDepth.value = image.depthTexture;
-        composite.uCloudSoften.value = 0;
-        (composite.uCloudImageSize.value as Vector2).set(width, height);
-        return;
+        // The clock running: held until enough has changed. Stopped: marched on until the
+        // frames have settled at its time (calm), then held.
+        const elapsed = Math.abs(this.time - state.marched);
+        const hold =
+          elapsed > 0
+            ? pace.moving * elapsed < REST_CHANGE &&
+              performance.now() - state.marchedWall < REST_LONGEST
+            : state.calm >= REST_SETTLED;
+        if (hold) {
+          const image = state.images[state.index];
+          composite.uCloudImage.value = image.texture;
+          composite.uCloudDepth.value = image.depthTexture;
+          composite.uCloudSoften.value = 0;
+          (composite.uCloudImageSize.value as Vector2).set(width, height);
+          return;
+        }
       }
     }
 
@@ -1485,6 +1991,13 @@ export class CloudVolumeRenderer {
     renderer.shadowMap.autoUpdate = false;
     renderer.setRenderTarget(this.target);
     renderer.render(this.marchScene, camera);
+    const wall = performance.now();
+    const wallElapsed = state ? (wall - state.marchedWall) / 1000 : 0;
+    if (state) {
+      state.calm = this.time === state.marched ? state.calm + 1 : 0;
+      state.marched = this.time;
+      state.marchedWall = wall;
+    }
 
     if (state) {
       const read = state.images[state.index];
@@ -1495,16 +2008,68 @@ export class CloudVolumeRenderer {
         cameraAt,
         state.position,
       );
+      // And the clouds' drift since the last frame, each level's (a jump of the clock moves
+      // them out of the view, and the history starts over).
+      const elapsed = state.valid ? this.time - state.weather : 0;
+      const timelapse = Math.abs(elapsed) > TIMELAPSE_RATE * wallElapsed;
+      // What the reprojection does not follow, in pixels: the clouds' change where they are,
+      // and under a timelapse their drift too (SPARSE_FAST).
+      const changed =
+        (timelapse ? pace.moving : pace.changing) * Math.abs(elapsed);
+      // Changing fast, the pixels a sparse march did not reach take some of it.
+      (r.uCloudSparse.value as Vector4).set(
+        sparse ? 1 : 0,
+        cx,
+        cy,
+        sparse ? SPARSE_FAST * MathUtils.smoothstep(changed, 0.02, 0.3) : 0,
+      );
+      // Where this frame's rays crossed their texels, from each one's first pixel of the image.
+      (r.uCloudSample.value as Vector2).set(
+        cx + (sparse ? 0.5 : 0) + jx,
+        cy + (sparse ? 0.5 : 0) + jy,
+      );
+      (r.uCloudBlur.value as Vector3).set(
+        Math.log2(Math.max(Math.min(pace.nearest, 1e9), BLUR_NEAR)),
+        1 / BLUR_OCTAVES,
+        BLUR_MOST,
+      );
+      (r.uCloudDrift.value as Vector3[]).forEach((drift, l) =>
+        drift.copy(this.drifts[l]).multiplyScalar(elapsed),
+      );
+      const globe = this.sky.globe;
+      (r.uCloudLevels.value as Vector4).set(
+        altitude,
+        globe.uniforms.uGlobe.value.w > 0.5 ? 0.5 / globe.radius : 0,
+        this.splits[0],
+        this.splits[1],
+      );
+      globe.upAt(cameraAt, r.uCloudUp.value as Vector3);
+      state.weather = this.time;
       // A jump (a move to a place, a new view) starts over rather than smearing the old.
       const jump = move.length() > Math.max(1000, 0.25 * altitude);
       (r.uCloudImageSize.value as Vector2).set(width, height);
       (r.uCloudCurrentSize.value as Vector2).set(marchWidth, marchHeight);
-      (r.uCloudSparse.value as Vector3).set(sparse ? 1 : 0, cx, cy);
+      // Calm (the view still, what the march reads nearly so, the clouds changing slowly): the
+      // frames before kept longer.
+      const unmoved =
+        move.lengthSq() === 0 &&
+        rotationNow
+          .setFromMatrix4(camera.matrixWorldInverse)
+          .equals(state.rotation) &&
+        camera.projectionMatrix.equals(state.projection);
+      state.steady =
+        near &&
+        unmoved &&
+        !timelapse &&
+        changed < CALM_CHANGE &&
+        pace.moving * Math.abs(elapsed) < CALM_DRIFT
+          ? state.steady + 1
+          : 0;
+      const calm = MathUtils.smoothstep(state.steady, 0, CALM_FRAMES);
       const blend =
         state.valid && !jump
-          ? sparse
-            ? TEMPORAL_BLEND_SPARSE
-            : TEMPORAL_BLEND
+          ? (sparse ? TEMPORAL_BLEND_SPARSE : TEMPORAL_BLEND) *
+            (1 - (1 - CALM_SHARE) * calm)
           : 1;
       r.uCloudHistory.value = read.texture;
       // ⚠️ Only once it holds a frame at this size: its depth texture keeps its old size until
@@ -1547,7 +2112,7 @@ export class CloudVolumeRenderer {
     out: number[],
   ) {
     out.length = 0;
-    out.push(width, height, this.version, this.terrain.version);
+    out.push(width, height, this.terrain.version);
     camera.matrixWorld.toArray(out, out.length);
     camera.projectionMatrix.toArray(out, out.length);
     const uniforms = this.marchMaterial.uniforms;
@@ -1635,6 +2200,11 @@ export class CloudVolumeRenderer {
         position: new Vector3(),
         inputs: [],
         still: 0,
+        weather: 0,
+        marched: 0,
+        marchedWall: 0,
+        calm: 0,
+        steady: 0,
       };
       this.histories.set(camera, state);
     }

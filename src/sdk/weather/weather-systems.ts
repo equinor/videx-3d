@@ -92,7 +92,7 @@ function createSystem(next: () => number): WeatherSystemCentre {
 /**
  * Weather systems over the whole Earth, the same for the same `seed`: `count` lows and highs
  * where the climate has them (see {@link WeatherSystemCentre}), apart by at least most of
- * their reaches, so they do not stack.
+ * their reaches, so they do not stack. As they are at time 0 ({@link weatherSystemCentresAt}).
  *
  * @group Weather
  */
@@ -102,7 +102,11 @@ export function createWeatherSystemCentres(
 ): WeatherSystemCentre[] {
   const next = random(seed + 1);
   const systems: WeatherSystemCentre[] = [];
-  for (let attempt = 0; systems.length < count && attempt < count * 200; attempt++) {
+  for (
+    let attempt = 0;
+    systems.length < count && attempt < count * 200;
+    attempt++
+  ) {
     const candidate = createSystem(next);
     // Closer than this lets one swallow the other; the more attempts fail, the closer they
     // may come, so the count is always reached.
@@ -115,4 +119,120 @@ export function createWeatherSystemCentres(
     if (fits) systems.push(candidate);
   }
   return systems;
+}
+
+/**
+ * How fast weather systems travel east (m/s, negative west) at `latitude` (degrees), carried by
+ * the flow aloft that steers them: the trade winds' easterlies by the equator, the westerlies of
+ * the storm tracks from some 35°, weaker toward the poles. What the clouds far off drift with
+ * between two drawings of their map (`documents/clouds.md`, "Motion").
+ *
+ * @group Weather
+ */
+export function weatherSystemDrift(latitude: number): number {
+  const a = Math.abs(latitude);
+  return (
+    WEATHER_SYSTEM_DRIFT.trades +
+    (WEATHER_SYSTEM_DRIFT.westerlies - WEATHER_SYSTEM_DRIFT.trades) *
+      smoothstep(18, 35, a) *
+      (1 - 0.6 * smoothstep(60, 80, a))
+  );
+}
+
+/**
+ * The drift of {@link weatherSystemDrift}: east, m/s, in the trades and the westerlies; and how
+ * fast lows head poleward (m/s).
+ *
+ * @group Weather
+ */
+export const WEATHER_SYSTEM_DRIFT = {
+  trades: -5,
+  westerlies: 12,
+  poleward: 2,
+} as const;
+
+const smoothstep = (a: number, b: number, x: number) => {
+  const t = Math.min(Math.max((x - a) / (b - a), 0), 1);
+  return t * t * (3 - 2 * t);
+};
+
+// How long a system lives (seconds): lows 3–6 days, tropical ones 5–9, highs 5–10.
+function lifetimeOf(system: WeatherSystemCentre, next: () => number) {
+  const day = 86400;
+  if (system.pressure > 0) return (5 + 5 * next()) * day;
+  return (
+    (Math.abs(system.latitude) < 30 ? 5 + 4 * next() : 3 + 3 * next()) * day
+  );
+}
+
+// The share of a system's life over which it deepens, and over which it fills at the end.
+const DEEPENING = 0.15;
+const FILLING = 0.2;
+// The step its track is followed in (seconds).
+const TRACK_STEP = 3 * 3600;
+
+// Where `system`, at its place, lies `seconds` on (back, when negative): carried east by the
+// drift at its latitude, and a low heading poleward.
+function travel(
+  system: WeatherSystemCentre,
+  seconds: number,
+): WeatherSystemCentre {
+  let latitude = system.latitude;
+  let longitude = system.longitude;
+  const north = latitude >= 0 ? 1 : -1;
+  const poleward = system.pressure < 0 ? WEATHER_SYSTEM_DRIFT.poleward : 0;
+  const sign = seconds < 0 ? -1 : 1;
+  const span = Math.abs(seconds);
+  const km = 1 / 1000;
+  for (let t = 0; t < span; t += TRACK_STEP) {
+    const dt = sign * Math.min(TRACK_STEP, span - t);
+    const east = weatherSystemDrift(latitude) * dt * km;
+    longitude +=
+      east / (EARTH_KM * Math.max(Math.cos(latitude * DEG), 0.05)) / DEG;
+    latitude = Math.min(
+      Math.max(latitude + (north * poleward * dt * km) / EARTH_KM / DEG, -85),
+      85,
+    );
+  }
+  longitude = ((((longitude + 180) % 360) + 360) % 360) - 180;
+  return { ...system, latitude, longitude };
+}
+
+/**
+ * The weather systems of `seed` at `time` (seconds from when they are as
+ * {@link createWeatherSystemCentres} places them): each travels with the flow that steers it
+ * ({@link weatherSystemDrift}; lows heading poleward), deepens and fills over its life (lows
+ * 3–6 days, highs 5–10), and gives way to a new one somewhere else, so there are always as many.
+ * The same for the same seed and time, whichever came before.
+ *
+ * @group Weather
+ */
+export function weatherSystemCentresAt(
+  seed = 0,
+  time = 0,
+  count = WEATHER_SYSTEM_COUNT,
+): WeatherSystemCentre[] {
+  const first = createWeatherSystemCentres(seed, count);
+  return first.map((born, i) => {
+    const next = random(seed * 7919 + i * 104729 + 17);
+    const lifetime = lifetimeOf(born, next);
+    // Each is at full strength at time 0, somewhere in the middle of its life.
+    const start = (DEEPENING + (1 - DEEPENING - FILLING) * next()) * lifetime;
+    const lived = start + time;
+    const generation = Math.floor(lived / lifetime);
+    const age = lived - generation * lifetime;
+    // Its first life passes where it lies at time 0; later (and earlier) ones begin anywhere the
+    // climate has them.
+    const system =
+      generation === 0
+        ? travel(born, -start)
+        : createSystem(
+            random(seed * 15485863 + i * 32452843 + generation * 49979687),
+          );
+    const strength =
+      smoothstep(0, DEEPENING, age / lifetime) *
+      (1 - smoothstep(1 - FILLING, 1, age / lifetime));
+    const there = travel(system, age);
+    return { ...there, pressure: system.pressure * strength };
+  });
 }
