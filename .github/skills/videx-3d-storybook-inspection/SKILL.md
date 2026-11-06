@@ -121,6 +121,21 @@ like a broken one.
 value measured outside the footprint means nothing, and reporting one as a cause
 has wasted whole sessions here.
 
+### Memory across story switches
+
+Switch stories inside one preview page, as the manager does, rather than reloading:
+`__STORYBOOK_ADDONS_CHANNEL__.emit('setCurrentStory', { storyId, viewMode: 'story' })` and
+wait for its `storyRendered`. Then count what is still alive after a forced GC (CDP
+`HeapProfiler.collectGarbage`, then `Runtime.queryObjects` on a prototype — the renderer's,
+taken from any mesh's `onBeforeRender`). With nothing leaking, one `WebGLRenderer` stays;
+find what holds the others from a heap snapshot's retainer paths.
+
+- ⚠️ A Playwright `waitForFunction` whose predicate returns an object (`() =>
+  window.videx3d && window.videx3d.scene`) hands back a handle that keeps it — and through
+  a scene its whole renderer — alive: every story looked leaked. Return a boolean (`!!(…)`).
+- Story switches leaked about 25 MB each through React Refresh until `guardReactRefresh`
+  (`src/storybook/debug/react-refresh-guard.ts`, called from `.storybook/preview.tsx`).
+
 ## Frame-time tour (performance)
 
 A zoom from above is not a test: it never takes the camera through the block. Run

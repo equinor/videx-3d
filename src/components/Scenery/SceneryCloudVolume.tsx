@@ -242,18 +242,20 @@ export const SceneryCloudVolume = ({
   }, [gl, scene, camera, volume]);
 
   // As the scenery's own clouds' layer is shown: where the camera's zone shows the sky. Once
-  // its programs are ready, its terrain is drawn as it comes in and its map of the weather
-  // systems a few strips a frame (once the terrain's Earth is in), and it shows once there is
-  // one: on the screen, and as seen from the scene for the light. They drift and change on the
-  // Weather's clock, without one on their own.
+  // its programs are ready, and while enabled, its terrain is drawn as it comes in and its map
+  // of the weather systems a few strips a frame (once the terrain's Earth is in), and it shows
+  // once there is one: on the screen, and as seen from the scene for the light. They drift and
+  // change on the Weather's clock, without one on their own. Off, none of it is drawn; on
+  // again, the map is drawn anew once the weather has moved on from it.
   const weatherClock = useWeatherClock();
   const [ownClock] = useState(() => new WeatherClock());
   useFrame((_, delta) => {
     if (!volume || !registry) return;
     volume.time = (weatherClock ?? ownClock).time;
-    if (ready) volume.updateTerrain(gl, camera);
-    const mapped = ready && volume.bakeMap(gl, mapSeed);
-    const shown = mapped && enabled && volume.cloudy;
+    const drawing = ready && enabled;
+    if (drawing) volume.updateTerrain(gl, camera);
+    const mapped = drawing && volume.bakeMap(gl, mapSeed);
+    const shown = mapped && volume.cloudy;
     volume.filmable = shown;
     volume.updateLight(delta);
     volume.updateFilm();

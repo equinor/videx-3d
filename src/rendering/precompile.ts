@@ -14,8 +14,13 @@ import { OITRenderPass } from './passes/OITRenderPass';
 
 // The passes a RenderingPipeline draws each scene with: programs are compiled for them.
 const pipelines = new WeakMap<Object3D, readonly Pass[]>();
-// three keys a program on whether a render target is bound, not on which one.
-const offscreenTargets = new WeakMap<WebGLRenderer, WebGLRenderTarget>();
+// three keys a program on whether a render target is bound, not on which one. Kept on the
+// renderer itself: in a WeakMap keyed by it, the target's framebuffer led back to the renderer
+// (its context, its canvas, three's context-lost listener) and none was ever let go.
+const OFFSCREEN_TARGET = Symbol('precompile offscreen target');
+type WithOffscreenTarget = WebGLRenderer & {
+  [OFFSCREEN_TARGET]?: WebGLRenderTarget;
+};
 
 const POLL_INTERVAL = 10;
 
@@ -435,10 +440,8 @@ function isReady(renderer: WebGLRenderer, material: Material) {
 }
 
 function offscreenTarget(renderer: WebGLRenderer) {
-  let target = offscreenTargets.get(renderer);
-  if (!target) {
-    target = new WebGLRenderTarget(1, 1, { depthBuffer: false });
-    offscreenTargets.set(renderer, target);
-  }
-  return target;
+  const holder = renderer as WithOffscreenTarget;
+  return (holder[OFFSCREEN_TARGET] ??= new WebGLRenderTarget(1, 1, {
+    depthBuffer: false,
+  }));
 }

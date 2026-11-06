@@ -133,7 +133,10 @@ export type SceneryCloudVolumeQuality = 'low' | 'medium' | 'high' | 'ultra';
  * from high up the same clouds are a layer draped over the Earth. Fixed to the Earth.
  */
 export type SceneryCloudVolumeProps = {
-  /** false hides them, still compiled, so showing them again is instant. Default true */
+  /**
+   * false hides them, still compiled, so showing them again is instant; nor are their ground
+   * and their map of the weather drawn meanwhile. Default true
+   */
   enabled?: boolean;
   /**
    * The cloud layers: one at each level (`CloudLevel`: low, mid, high; `CLOUD_VOLUME_LAYERS`), of

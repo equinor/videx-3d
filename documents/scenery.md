@@ -1054,6 +1054,9 @@ basic ones show in every story, the advanced and debug ones only in `StageDebug`
   through the `OITRenderPass`'s variants, each object when its turn in the renderer's
   queue comes (see Performance). The sky waits for its own meshes, the stages
   registered through `SceneryOceanState.stage`, and the baker's scenes and PMREM prefilter.
+  The 1 × 1 target it binds for `'offscreen'` is kept on the renderer itself: kept in a
+  `WeakMap` keyed by the renderer, its framebuffer led back to the renderer (its context, its
+  canvas, three's context-lost listener) and no unmounted `Canvas`'s renderer was let go.
 - Letting go goes through `releaseMaterial` (same file, internal) wherever a material is
   replaced or unmounted while the scene draws — the sky, its layers and stand-in, the
   baker's own, a stage's, the relief's, a chunk's and a stack's sea. A material disposed

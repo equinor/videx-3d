@@ -397,6 +397,10 @@ rays then off).
   (iris Xe, medium): 0.5 marches a second from 200 km and from space, 8 at 40 m over the sea,
   24 from 3 km over the field, every frame inside a layer. Stopped, it marches on until 96
   frames have settled at that time (calm keeps more of each), then holds.
+- **Off** (`enabled` false): nothing is marched, filmed or shadowed, nor are its ground and
+  its map of the weather drawn; its programs stay compiled. On again, the map is drawn anew
+  (a few strips a frame) once the weather has moved on from the one it had. Unmounted, it
+  lets go of all of it.
 - **Far off, the clusters:** past the level of the noise where the coverage's tile is its mean,
   half of its broad octave's reach is kept for two levels more (`CLOUD_BROAD_LODS`,
   `CLOUD_BROAD_FAR`): a smaller image reaches those levels nearer, and `'low'` had lost the
