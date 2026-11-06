@@ -20,6 +20,7 @@ import {
   useGenerator,
 } from '../../../main';
 import { attachOitVariants } from '../../../rendering/oit-material';
+import { useSharedTextures } from '../../../hooks/useSharedTextures';
 import { unpackBufferGeometry } from '../../../sdk';
 import fragmentShader from './shaders/frag.glsl';
 import vertexShader from './shaders/vert.glsl';
@@ -120,6 +121,8 @@ export const WellboreSeismicSection = ({
     });
     return attachOitVariants(m, { side: DoubleSide });
   }, [uniforms]);
+  // Its ramp is the shared one, drawn through the OIT variants too.
+  useSharedTextures();
 
   useEffect(() => {
     return () => {

@@ -1,5 +1,6 @@
 import { ShaderMaterial, Texture, Uniform } from 'three';
 import { colorRampTexture } from '../../common/color-ramps';
+import { drawsSharedTextures } from '../../common/shared-textures';
 import fragmentShader from './shaders/relief-fragment.glsl';
 import skyVertexShader from './shaders/sky-vertex.glsl';
 import type { SceneryMaterial } from './scenery-material';
@@ -38,13 +39,15 @@ export function createSceneryReliefFarMaterial(
   uniforms.uReliefLowest = new Uniform(0);
   uniforms.uReliefLook = new Uniform(looks);
   uniforms.uColorRamps = new Uniform(colorRampTexture);
-  return new ShaderMaterial({
-    vertexShader: skyVertexShader,
-    fragmentShader,
-    uniforms,
-    defines,
-    depthWrite: false,
-    lights: true,
-    dithering: true,
-  });
+  return drawsSharedTextures(
+    new ShaderMaterial({
+      vertexShader: skyVertexShader,
+      fragmentShader,
+      uniforms,
+      defines,
+      depthWrite: false,
+      lights: true,
+      dithering: true,
+    }),
+  );
 }

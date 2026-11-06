@@ -11,8 +11,10 @@ import {
   Texture,
   UniformsUtils,
   Vector2,
+  WebGLRenderer,
 } from 'three';
 import { colorRampTexture } from '../../common/color-ramps';
+import { watchSharedTextures } from '../../common/shared-textures';
 import { ContourColorMode } from '../../common/types';
 import { attachOitVariants } from '../../rendering/oit-material';
 import fragmentShader from './shaders/surface-frag.glsl';
@@ -250,6 +252,12 @@ export class SurfaceMaterial extends ShaderMaterial {
   dispose(): void {
     super.dispose();
     this.uniforms.elevationTexture.value?.dispose();
+  }
+
+  // @ignore
+  // The shared colour ramps: let go of by this renderer as it goes (shared-textures.ts).
+  onBeforeRender(renderer: WebGLRenderer) {
+    if (this.defines.USE_COLOR_RAMP) watchSharedTextures(renderer);
   }
 
   // @ignore

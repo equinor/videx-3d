@@ -28,6 +28,7 @@ import {
   Vector4,
 } from 'three';
 import { colorRampTexture } from '../../common/color-ramps';
+import { drawsSharedTextures } from '../../common/shared-textures';
 import {
   buildHeightFieldIndex,
   HeightFieldIndex,
@@ -470,14 +471,16 @@ export function createSceneryReliefTileMaterial(
       }
     }
   }
-  return new ShaderMaterial({
-    vertexShader,
-    fragmentShader,
-    uniforms,
-    defines,
-    lights: true,
-    dithering: true,
-  });
+  return drawsSharedTextures(
+    new ShaderMaterial({
+      vertexShader,
+      fragmentShader,
+      uniforms,
+      defines,
+      lights: true,
+      dithering: true,
+    }),
+  );
 }
 
 /**
@@ -526,14 +529,16 @@ export function createReliefTilePlainMaterial(
     // Everywhere, and over the see-through area.
     uReliefOpacity: new Uniform(new Vector2(1, 1)),
   };
-  return new ShaderMaterial({
-    vertexShader,
-    fragmentShader: plainFragmentShader,
-    uniforms,
-    defines,
-    lights: true,
-    dithering: true,
-  });
+  return drawsSharedTextures(
+    new ShaderMaterial({
+      vertexShader,
+      fragmentShader: plainFragmentShader,
+      uniforms,
+      defines,
+      lights: true,
+      dithering: true,
+    }),
+  );
 }
 
 // What every relief tile material compiles with: its tiles, the area it leaves to a

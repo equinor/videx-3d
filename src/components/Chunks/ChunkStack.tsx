@@ -13,6 +13,7 @@ import { BufferGeometry, Group, Matrix4, Plane, Vector3, Vector4 } from 'three';
 import { useData } from '../../hooks/useData';
 import { precompile } from '../../rendering/precompile';
 import { useGenerator } from '../../hooks/useGenerator';
+import { useSharedTextures } from '../../hooks/useSharedTextures';
 import {
   CutUniforms,
   createHeightFieldClipBinding,
@@ -919,6 +920,8 @@ export const ChunkStack = ({
     fence?.enabled !== false,
     fenceSide,
   );
+  // Its palette is a shared one (`colorRampPalette`).
+  useSharedTextures();
 
   // ⚠️ Held in a ref, like `onFence`, so an inline callback does not re-announce the same side.
   const announceSide = useRef(onFenceSide);

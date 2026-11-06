@@ -135,6 +135,11 @@ find what holds the others from a heap snapshot's retainer paths.
   a scene its whole renderer — alive: every story looked leaked. Return a boolean (`!!(…)`).
 - Story switches leaked about 25 MB each through React Refresh until `guardReactRefresh`
   (`src/storybook/debug/react-refresh-guard.ts`, called from `.storybook/preview.tsx`).
+- A texture kept for the page (the colour ramps) kept every renderer that drew with it alive,
+  through three's per-renderer `dispose` listener: such a texture goes through `shareTexture`,
+  and what binds it registers its renderer (`watchSharedTextures`, `drawsSharedTextures`,
+  `useSharedTextures`), so it is disposed — and uploaded again where still drawn — as a
+  renderer loses its context.
 
 ## Frame-time tour (performance)
 

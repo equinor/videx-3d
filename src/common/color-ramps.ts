@@ -9,6 +9,7 @@ import {
   SRGBColorSpace,
   UnsignedByteType,
 } from 'three';
+import { shareTexture } from './shared-textures';
 
 /** @deprecated draws a ramp onto a canvas row; see {@link ColorRamp} */
 export type RampFunction = (ctx: CanvasRenderingContext2D, y: number) => void;
@@ -474,16 +475,20 @@ const rampData = new Uint8Array(COLOR_RAMP_WIDTH * COLOR_RAMP_CAPACITY * 4);
 /**
  * The colour ramps, a row each, {@link COLOR_RAMP_WIDTH} wide and {@link COLOR_RAMP_CAPACITY}
  * high whatever is registered, so a shader's row count never changes. Sample row `i` at
- * `(i + 0.5) / COLOR_RAMP_CAPACITY` ({@link colorRampRow}). sRGB, so it samples linear.
+ * `(i + 0.5) / COLOR_RAMP_CAPACITY` ({@link colorRampRow}). sRGB, so it samples linear. Kept
+ * for the page: each renderer lets go of it as one that drew with it goes, and those still
+ * drawing upload it again.
  *
  * @group Utils
  */
-export const colorRampTexture = new DataTexture(
-  rampData,
-  COLOR_RAMP_WIDTH,
-  COLOR_RAMP_CAPACITY,
-  RGBAFormat,
-  UnsignedByteType,
+export const colorRampTexture = shareTexture(
+  new DataTexture(
+    rampData,
+    COLOR_RAMP_WIDTH,
+    COLOR_RAMP_CAPACITY,
+    RGBAFormat,
+    UnsignedByteType,
+  ),
 );
 colorRampTexture.magFilter = LinearFilter;
 colorRampTexture.minFilter = NearestFilter;
@@ -658,19 +663,22 @@ export function colorRampRow(index: number): number {
  * for `ChunkFenceOverlay.palette`, or anything else that maps a value to a colour. Kept in
  * step when its ramp is registered anew.
  *
- * ⚠️ Shared and cached per index: do not dispose it.
+ * ⚠️ Shared and cached per index: do not dispose it. Like `colorRampTexture`, each renderer
+ * lets go of it as one that drew with it goes, and those still drawing upload it again.
  */
 export function colorRampPalette(index: number): DataTexture {
   const row = Math.min(Math.max(Math.round(index), 0), registry.length - 1);
   let palette = palettes.get(row);
   if (!palette) {
     const start = row * COLOR_RAMP_WIDTH * 4;
-    palette = new DataTexture(
-      rampData.slice(start, start + COLOR_RAMP_WIDTH * 4),
-      COLOR_RAMP_WIDTH,
-      1,
-      RGBAFormat,
-      UnsignedByteType,
+    palette = shareTexture(
+      new DataTexture(
+        rampData.slice(start, start + COLOR_RAMP_WIDTH * 4),
+        COLOR_RAMP_WIDTH,
+        1,
+        RGBAFormat,
+        UnsignedByteType,
+      ),
     );
     palette.colorSpace = SRGBColorSpace;
     palette.magFilter = LinearFilter;
