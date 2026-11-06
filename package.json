@@ -42,6 +42,7 @@
     "build-lib": "tsc && vite build",
     "build-static": "node scripts/generate-relief.js && node scripts/generate-story-args.js && storybook build -o static && typedoc",
     "lint": "oxlint",
+    "typecheck": "tsc --noEmit -p tsconfig.json --incremental --tsBuildInfoFile node_modules/.cache/tsc/tsconfig.tsbuildinfo",
     "storybook": "node scripts/generate-story-args.js && storybook dev -p 6006",
     "test": "vitest",
     "coverage": "vitest run --coverage",
