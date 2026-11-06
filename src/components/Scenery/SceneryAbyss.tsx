@@ -2,14 +2,19 @@ import { useSceneryFeature } from './scenery-registry';
 import type { SceneryAbyssProps } from './scenery-model';
 
 /**
- * The void below a level (with a `SceneryOcean`, below its seabed) under a {@link Scenery}'s
- * sky: an endless lid overhead and a bottomless gradient below the horizon, and optionally
- * walls about the stage (see {@link SceneryAbyssProps}). A layer of its own, compiled on its
- * own. Anywhere under the `Scenery`.
+ * The void under a {@link Scenery}'s sky, below a level (with a `SceneryOcean`, below its
+ * seabed). By default a hollow in the crust about the field ({@link SceneryHollow}): crater
+ * walls down to a floor some 35 km under the seabed, the seabed its lid. Peeling the seabed
+ * (`SceneryOcean`'s `seabed={false}`) opens it: the relief and the seabed are cut away inside
+ * its rim, and the data under the field is seen against the crater. Past its walls and under
+ * its floor the void is solid rock: black, with the lid overhead. With `hollow={false}`, the
+ * plain void: an endless lid overhead and a bottomless gradient below the horizon. A layer of
+ * its own, compiled on its own; nothing it changes re-bakes. Anywhere under the `Scenery`.
  *
  * @example
  * <Scenery>
- *   <SceneryAbyss level={-120} walls />
+ *   <SceneryOcean seabed={false} />
+ *   <SceneryAbyss hollow={{ radius: 400000, pulse: 0.1 }} />
  * </Scenery>
  *
  * @group Components

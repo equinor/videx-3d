@@ -1200,11 +1200,18 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     if: { arg: 'subsurfaceBelow' },
   },
   abyssCeiling: color(SUBSURFACE, 'The void\u2019s lid overhead.'),
-  abyssHorizon: color(
-    SUBSURFACE,
-    'Where the void\u2019s lid and depths meet, far away.',
-  ),
-  abyssDepth: color(SUBSURFACE, 'Straight down, deep in the void.'),
+  // The plain void's own: with the hollow on, the void past it is black.
+  abyssHorizon: {
+    ...color(
+      SUBSURFACE,
+      'The plain void (hollow off): where its lid and depths meet, far away.',
+    ),
+    if: { arg: 'hollow', truthy: false },
+  },
+  abyssDepth: {
+    ...color(SUBSURFACE, 'The plain void (hollow off): straight down, deep in it.'),
+    if: { arg: 'hollow', truthy: false },
+  },
   abyssFadeDistance: range(
     0,
     100000,
@@ -1240,27 +1247,36 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     SUBSURFACE,
     'Size of those ripples, in metres.',
   ),
-  abyssDepthDetail: range(
-    0,
-    0.5,
-    0.01,
-    SUBSURFACE,
-    'Faint distant rock in the void\u2019s depths, wavy strata broken by crags; 0 for none.',
-  ),
-  abyssDepthDetailScale: range(
-    0.25,
-    4,
-    0.05,
-    SUBSURFACE,
-    'Size of the rock\u2019s features.',
-  ),
-  abyssFalloff: range(
-    0.1,
-    3,
-    0.05,
-    SUBSURFACE,
-    'How the void\u2019s depths darken below the horizon: the gradient\u2019s exponent. Smaller reaches the depth colour sooner.',
-  ),
+  abyssDepthDetail: {
+    ...range(
+      0,
+      0.5,
+      0.01,
+      SUBSURFACE,
+      'The plain void (hollow off): faint distant rock in its depths, wavy strata broken by crags; 0 for none.',
+    ),
+    if: { arg: 'hollow', truthy: false },
+  },
+  abyssDepthDetailScale: {
+    ...range(
+      0.25,
+      4,
+      0.05,
+      SUBSURFACE,
+      'The plain void (hollow off): size of the rock\u2019s features.',
+    ),
+    if: { arg: 'hollow', truthy: false },
+  },
+  abyssFalloff: {
+    ...range(
+      0.1,
+      3,
+      0.05,
+      SUBSURFACE,
+      'The plain void (hollow off): how its depths darken below the horizon, the gradient\u2019s exponent. Smaller reaches the depth colour sooner.',
+    ),
+    if: { arg: 'hollow', truthy: false },
+  },
   hollow: toggle(
     SUBSURFACE,
     'The void as a hollow in the crust under the field (`SceneryAbyss`\u2019s `hollow`): a floor deep under the seabed and walls about it. Peeling the seabed opens it, the relief and the seabed cut away inside its rim and whole around it. Off, the bottomless gradient, and a peeled seabed gone everywhere.',

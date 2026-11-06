@@ -870,7 +870,7 @@ About 30 uses switch to the look frame; about 70 stay with the place.
 | `relief-fragment.glsl` | the air's colour over the relief, the blend | the void through the cutaway |
 | `stage-fragment.glsl` | the blend, the elevation | the stage's own offset |
 | `sky-stand-in-fragment.glsl` | the elevation | — |
-| abyss walls, `subsurface-fragment.glsl`, `SceneryAbyssWallLayer` | — | all (under the field) |
+| the hollow (`hollow-*.glsl`, `scenery-hollow.ts`, see [void.md](./void.md); in place of the abyss walls), `subsurface-fragment.glsl` | — | all (under the field) |
 | `sky-material.ts`, `sky-baker.ts` | — | the frame's uniforms; the bake keeps the field's |
 
 ### 4b: the sky's light at the camera's place

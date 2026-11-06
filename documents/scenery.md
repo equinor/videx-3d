@@ -745,6 +745,18 @@ The void had walls, cliffs about the anchored stage to show scale, until 2026-11
 belonged to one field, fitted badly with several, cost 0.5–2.5 ms a frame and tied the stage to
 an axis-aligned rectangle. Removed, and parked on the branch `parked/abyss-walls`.
 
+### The hollow
+
+By default the void is a hollow in the crust about the field (`SceneryAbyss`'s `hollow`): a
+crater 500 km across the rim, its walls of rock down to a floor 35 km under the seabed, the
+seabed its lid. Peeling the seabed (`<SceneryOcean seabed={false} />`) opens it: the relief
+and the seabed are cut away inside its rim and kept whole around it, and the data under the
+field is seen against the crater. Past its walls and under its floor the void is black, with
+the lid overhead. It is real geometry with baked textures, drawn with the background, and
+peeling, moving or flying into it re-bakes and recompiles nothing. `hollow={false}` keeps the
+plain void above, the bottomless gradient. Its design, look, light and cost:
+[void.md](./void.md).
+
 ## Cutaway
 
 `<SceneryCutaway>` cuts the sea's water and seabed away in front of the view, so what lies under

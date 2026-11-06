@@ -236,9 +236,9 @@ export type SkyColors = {
 };
 
 /**
- * Below `level`, an endless lid overhead hides the sky and a bottomless gradient fills
- * the view below the horizon. It is part of the background, so it never hides anything
- * in the scene, including objects above the level.
+ * Below `level`, the void: by default a hollow in the crust about the field (`hollow`), else
+ * an endless lid overhead and a bottomless gradient below the horizon. It is part of the
+ * background, so it never hides anything in the scene, including objects above the level.
  */
 export type SceneryAbyssProps = {
   /** height of the lid along `up`, in world units; with a sea, its seabed's. Default 0 */
@@ -246,9 +246,9 @@ export type SceneryAbyssProps = {
   colors?: {
     /** the lid overhead */
     ceiling?: ColorRepresentation;
-    /** where lid and depths meet, far away */
+    /** where lid and depths meet, far away. The plain void's only (`hollow: false`): past the hollow the void is black */
     horizon?: ColorRepresentation;
-    /** straight down */
+    /** straight down. The plain void's only (`hollow: false`) */
     depth?: ColorRepresentation;
   };
   /** distance over which the lid recedes into the horizon colour, in world units; 0 for never. Default 20000 */
@@ -261,18 +261,19 @@ export type SceneryAbyssProps = {
   detail?: number;
   /** size of the noise relief, in world units. Default 1000 */
   detailScale?: number;
-  /** strength of the faint distant rock in the depths, wavy strata broken by crags; 0 for none. Default 0.08 */
+  /** strength of the faint distant rock in the depths, wavy strata broken by crags; 0 for none. The plain void's only (`hollow: false`). Default 0.08 */
   depthDetail?: number;
-  /** size of that rock's features, relative. Default 1 */
+  /** size of that rock's features, relative. The plain void's only (`hollow: false`). Default 1 */
   depthDetailScale?: number;
-  /** how the depths darken below the horizon: the gradient's exponent; smaller reaches the depth colour sooner. Default 0.5 */
+  /** how the depths darken below the horizon: the gradient's exponent; smaller reaches the depth colour sooner. The plain void's only (`hollow: false`). Default 0.5 */
   falloff?: number;
   /**
    * The void as a hollow in the crust under the field (see {@link SceneryHollow}): a floor
    * deep under the seabed and walls about it, which the seabed is the lid of. Peeling the
    * seabed (`SceneryOcean`'s `seabed: false`) opens it: the relief and the sea's seabed are
-   * cut away inside its rim and stay whole around it. `false` leaves the bottomless gradient
-   * alone, and a peeled seabed gone everywhere. Default on
+   * cut away inside its rim and stay whole around it. Past its walls and under its floor the
+   * void is black, with the lid overhead. `false` for the plain void, its bottomless gradient
+   * alone, and a peeled seabed gone everywhere. See documents/void.md. Default on
    */
   hollow?: boolean | SceneryHollow;
 };
@@ -306,7 +307,7 @@ export type SceneryHollow = {
   lightFalloff?: number;
   /** how much the void's air darkens with depth, 0 for none. Default 1 */
   murk?: number;
-  /** how far the embers' glow dims, at most, as it slowly pulses (a share of it; 0 holds it steady). Default 0.2 */
+  /** how far the embers' glow dims, at most, as it slowly pulses across the floor (a share of it; 0 holds it steady). It moves only while frames are drawn. Default 0.2 */
   pulse?: number;
 };
 

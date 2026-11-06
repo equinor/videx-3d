@@ -34,7 +34,7 @@ export type LayerLies = 'ground' | number;
  * - its band of camera heights over the sea (`layerVisibilityAt`);
  * - inside a `Scenery` with a sea, nothing while the camera is in the ground and the layer
  *   lies above it: the void's lid hides all above it (`sceneryLidOverCamera`), and where
- *   the lid leaves pixels to the background — toward the horizon, or to the void's walls —
+ *   the lid leaves pixels to the background — toward the horizon, or to the hollow's walls —
  *   what is drawn above it would show through. On the ground (`lies` `'ground'`) is always
  *   above the lid; at a height, where that is the lid's height over the camera or more. A
  *   layer laid deeper than the ground, at a reservoir's depth say, is seen from the void.
