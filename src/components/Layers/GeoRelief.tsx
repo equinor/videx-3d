@@ -282,12 +282,13 @@ export const GeoRelief = ({
   // is there among them) while what suspended loads. Drawn once the World knows it is there,
   // as a stage then turns to it in the same render: what both compile with changes once.
   // With a sky, by it, and only where the sea has a seabed (without one the void lies below
-  // the water); without one, plainly, its land and seabed as asked.
+  // the water), or the void is a hollow, whose opening its shader cuts while the seabed is
+  // peeled, the ground kept whole around it; without one, plainly, its land and seabed as asked.
   const sky = relief?.sky ?? null;
   const stage = relief?.stage ?? null;
   const mounted = !!world && hasLayers && !!relief;
   const drawn = mounted && !!relief?.present;
-  const shown = drawn && (sky ? sky.seabed : land || seabed);
+  const shown = drawn && (sky ? sky.seabed || sky.hollow : land || seabed);
   // The sea's depth where no layer has data, as the sky last gave it: the tiles' base, which
   // would load them all again were it to change as the sky goes.
   const [seaDepth, setSeaDepth] = useState<number>(sceneryDefaults.ocean.depth);

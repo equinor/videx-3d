@@ -145,6 +145,10 @@ export class SceneryBaker {
     uSkyOceanStageOpen: new Uniform(0),
     uSkyOceanCutawayShape: new Uniform(new Vector3()),
     uSkyOceanSeabedOpacity: new Uniform(1),
+    // The seabed on and the hollow off: the bakes take the seabed whole, peeled or not, so
+    // peeling it bakes nothing.
+    uSkyOceanSeabed: new Uniform(1),
+    uSkyHollow: new Uniform(new Vector4(0, 0, 0, 0)),
     uSkyCurvature: new Uniform(0),
     // The globe off: a flat sea, and the waves on the field's plane. ⚠️ Their w is the switch,
     // and a Vector4's default w is 1: with it, the globe was on with no radius, and the

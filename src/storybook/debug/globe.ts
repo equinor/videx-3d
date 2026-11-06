@@ -32,13 +32,14 @@ export type Videx3dGlobe = {
   up: (point: Vec3) => Vec3 | null;
   /**
    * `camera.orbit` about the point `height` over the sea at map `at`, its angles about the
-   * up there: `azimuth` from the map's +X toward +Z, `polar` from straight down (0) to
-   * level (90). The controls keep the scene's up, so far off the view rolls a little.
+   * up there: `azimuth` from the map's +X toward +Z (0 if left out), `polar` from straight
+   * down (0) to level (90). The controls keep the scene's up, so far off the view rolls a
+   * little.
    */
   orbit: (options: {
     at: Vec2;
     height?: number;
-    azimuth: number;
+    azimuth?: number;
     polar: number;
     distance: number;
     transition?: boolean;
@@ -74,7 +75,7 @@ export function videx3dGlobe(
     orbit: async ({
       at: [x, z],
       height = 0,
-      azimuth,
+      azimuth = 0,
       polar,
       distance,
       ...rest

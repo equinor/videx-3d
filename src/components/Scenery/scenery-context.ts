@@ -47,6 +47,11 @@ export type SceneryOceanState = {
   /** how much of what lies beyond the seabed it hides, 0 to 1 (see `SceneryOceanProps.seabedOpacity`) */
   seabedOpacity: number;
   /**
+   * the void is a hollow under the field (`SceneryAbyssProps.hollow`): with the seabed peeled,
+   * the relief and the seabed stay drawn around its opening, cut only inside it
+   */
+  hollow: boolean;
+  /**
    * what a stage and its relief compile with from the sky (`sceneryOceanDefines`: the
    * seabed's detail, the waves), as a key: a new one recompiles them
    */

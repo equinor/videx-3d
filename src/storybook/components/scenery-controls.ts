@@ -176,6 +176,17 @@ export type SceneryArgs = {
   abyssDepthDetail: number;
   abyssDepthDetailScale: number;
   abyssFalloff: number;
+  /** the void as a hollow under the field (`SceneryAbyss`'s `hollow`) */
+  hollow: boolean;
+  hollowRadius: number;
+  hollowFloorDepth: number;
+  hollowWalls: string;
+  hollowFloor: string;
+  hollowEmberColor: string;
+  hollowEmbers: number;
+  hollowLightFalloff: number;
+  hollowMurk: number;
+  hollowPulse: number;
   // Environment
   globe: boolean;
   environment: boolean;
@@ -301,6 +312,16 @@ export const sceneryArgs: SceneryArgs = {
   abyssDepthDetail: sceneryDefaults.abyss.depthDetail,
   abyssDepthDetailScale: sceneryDefaults.abyss.depthDetailScale,
   abyssFalloff: sceneryDefaults.abyss.falloff,
+  hollow: true,
+  hollowRadius: sceneryDefaults.abyss.hollow.radius,
+  hollowFloorDepth: sceneryDefaults.abyss.hollow.floorDepth,
+  hollowWalls: sceneryDefaults.abyss.hollow.colors.walls,
+  hollowFloor: sceneryDefaults.abyss.hollow.colors.floor,
+  hollowEmberColor: sceneryDefaults.abyss.hollow.colors.embers,
+  hollowEmbers: sceneryDefaults.abyss.hollow.embers,
+  hollowLightFalloff: sceneryDefaults.abyss.hollow.lightFalloff,
+  hollowMurk: sceneryDefaults.abyss.hollow.murk,
+  hollowPulse: sceneryDefaults.abyss.hollow.pulse,
   globe: sceneryDefaults.globe,
   environment: true,
   lightProbe: true,
@@ -536,6 +557,19 @@ export const sceneryAbyssFromArgs = (args: SceneryArgs): SceneryAbyssProps => ({
   depthDetail: args.abyssDepthDetail,
   depthDetailScale: args.abyssDepthDetailScale,
   falloff: args.abyssFalloff,
+  hollow: args.hollow && {
+    radius: args.hollowRadius,
+    floorDepth: args.hollowFloorDepth,
+    colors: {
+      walls: args.hollowWalls,
+      floor: args.hollowFloor,
+      embers: args.hollowEmberColor,
+    },
+    embers: args.hollowEmbers,
+    lightFalloff: args.hollowLightFalloff,
+    murk: args.hollowMurk,
+    pulse: args.hollowPulse,
+  },
 });
 
 /**
@@ -656,6 +690,12 @@ const ADVANCED = new Set<string>([
   'abyssDepthDetail',
   'abyssDepthDetailScale',
   'abyssFalloff',
+  'hollowWalls',
+  'hollowFloor',
+  'hollowEmberColor',
+  'hollowLightFalloff',
+  'hollowMurk',
+  'hollowPulse',
   'subsurfaceIntensity',
   'subsurfacePanelColor',
   'subsurfaceBelow',
@@ -1018,7 +1058,7 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
   ),
   skySeabed: toggle(
     SEA,
-    'The sea\u2019s seabed, everywhere, an occupant\u2019s included. Off, the void lies below the water, its lid still a roof from below, and the cutaway cuts the water alone.',
+    'The sea\u2019s seabed, everywhere, an occupant\u2019s included. Off, it is peeled: with the void a hollow (`hollow`), the relief and the seabed are cut away over the hollow and stay around it; without, the void lies below the water. From below its lid is still a roof, and the cutaway cuts the water alone.',
   ),
   waterOpacity: range(0, 1, 0.01, SEA, 'The water\u2019s own opacity.'),
   skySeabedOpacity: range(
@@ -1221,6 +1261,82 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     SUBSURFACE,
     'How the void\u2019s depths darken below the horizon: the gradient\u2019s exponent. Smaller reaches the depth colour sooner.',
   ),
+  hollow: toggle(
+    SUBSURFACE,
+    'The void as a hollow in the crust under the field (`SceneryAbyss`\u2019s `hollow`): a floor deep under the seabed and walls about it. Peeling the seabed opens it, the relief and the seabed cut away inside its rim and whole around it. Off, the bottomless gradient, and a peeled seabed gone everywhere.',
+  ),
+  hollowRadius: {
+    ...range(
+      50000,
+      1500000,
+      10000,
+      SUBSURFACE,
+      'The hollow\u2019s rim, along the sea from the field, in metres: at 500 km its walls stand at the horizon seen from the sea.',
+    ),
+    if: { arg: 'hollow' },
+  },
+  hollowFloorDepth: {
+    ...range(
+      5000,
+      100000,
+      1000,
+      SUBSURFACE,
+      'Depth of the hollow\u2019s floor under the seabed, in metres: about where the mantle begins.',
+    ),
+    if: { arg: 'hollow' },
+  },
+  hollowWalls: {
+    ...color(SUBSURFACE, 'The hollow\u2019s walls\u2019 rock.'),
+    if: { arg: 'hollow' },
+  },
+  hollowFloor: {
+    ...color(SUBSURFACE, 'The hollow\u2019s floor\u2019s rock.'),
+    if: { arg: 'hollow' },
+  },
+  hollowEmberColor: {
+    ...color(SUBSURFACE, 'The glow in the floor\u2019s cracks.'),
+    if: { arg: 'hollow' },
+  },
+  hollowEmbers: {
+    ...range(
+      0,
+      3,
+      0.05,
+      SUBSURFACE,
+      'How much the floor\u2019s cracks glow; 0 for none.',
+    ),
+    if: { arg: 'hollow' },
+  },
+  hollowLightFalloff: {
+    ...range(
+      1000,
+      50000,
+      500,
+      SUBSURFACE,
+      'Depth under the seabed over which the light from the opening falls by e, in metres.',
+    ),
+    if: { arg: 'hollow' },
+  },
+  hollowMurk: {
+    ...range(
+      0,
+      4,
+      0.05,
+      SUBSURFACE,
+      'How much the void\u2019s air darkens with depth; 0 for none.',
+    ),
+    if: { arg: 'hollow' },
+  },
+  hollowPulse: {
+    ...range(
+      0,
+      1,
+      0.05,
+      SUBSURFACE,
+      'How far the embers\u2019 glow dims as it slowly pulses (a share of it); 0 holds it steady.',
+    ),
+    if: { arg: 'hollow' },
+  },
   globe: toggle(
     ENVIRONMENT,
     'The Earth is a fixed globe: the sea, the sky and the clouds follow its curve, so the horizon drops as the camera climbs: about 1\u00b0 at 1 km, 4\u00b0 at 15 km. The sea stays flat over the scene. Off, a flat sea everywhere: only right near one field.',

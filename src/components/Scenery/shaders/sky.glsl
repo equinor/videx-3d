@@ -6,6 +6,7 @@
 
 #include ./sky-gradient.glsl
 #include ./sky-void.glsl
+#include ./hollow.glsl
 #include ./cloud-shadow.glsl
 
 uniform vec3 uSkyNorth; // normalised, perpendicular to uSkyUp
@@ -223,14 +224,15 @@ vec3 skyPlanets(vec3 dir, float pixel, float sunElevation) {
   return light;
 }
 
-// The moon and the stars over `color`, as night falls, and by day where the sky is space;
-// the moon by day too, while it can be up. ⚠️ Derivatives.
-vec3 skyNight(vec3 color, vec3 dir, float blend) {
+// The moon and the stars over `color`, as night falls, and by day where the sky is space, or
+// its air `gone` (over the open hollow, hollowAirGone); the moon by day too, while it can be
+// up. ⚠️ Derivatives.
+vec3 skyNight(vec3 color, vec3 dir, float blend, float gone) {
   float height = skyCameraHeight();
-  if(uSkyNight <= 0.0 && uSkyMoonDay <= 0.0 && !skyNearSpace(height))
+  if(uSkyNight <= 0.0 && uSkyMoonDay <= 0.0 && !skyNearSpace(height) && gone <= 0.0)
     return color;
   // By day too where the sky has gone all but black, under a twentieth of its light.
-  float space = skySpace(dir, height);
+  float space = max(skySpace(dir, height), gone);
   float black = smoothstep(0.95, 1.0, space);
   // From high up, by the sun over the lowered horizon, where it can still be up.
   float share = skyLightShare(dir, height);
@@ -600,6 +602,7 @@ uniform vec2 uSkyOceanCutawayCuts; // how much of the water it cuts (1 all, 0 no
 #endif
 
 #ifdef SKY_ABYSS
+#include ./hollow-look.glsl
 uniform float uSkyAbyssLevel; // height of the lid along uSkyUp, world units
 uniform float uSkyAbyssFadeDistance;
 uniform float uSkyAbyssTransition;
@@ -636,13 +639,22 @@ float skyAbyssLidFootprint(vec3 hit) {
 
 // The lid seen at `hit`, `reach` away: it recedes into the horizon colour over the fade
 // distance, or never (0). Its ripples are smoothed over the `footprint` a pixel spans there
-// (skyAbyssLidFootprint): it takes no derivatives.
+// (skyAbyssLidFootprint): it takes no derivatives. Over the hollow (hollow-look.glsl), inside
+// its rim and seen from inside it, the underside of the sediments its walls' top is cut in,
+// rippled as the plain lid is.
 vec3 skyAbyssCeilingOver(vec3 hit, float reach, float footprint) {
   float near = uSkyAbyssFadeDistance > 0.0 ? exp(-reach / uSkyAbyssFadeDistance) : 1.0;
   vec3 ceiling = mix(uSkyAbyssHorizonColor, uSkyAbyssCeilingColor, near);
   // Pinned to the lid, so it slides and scales as the camera moves; far hits fade out.
+  float ripple = 1.0;
   if(uSkyAbyssDetail > 0.0)
-    ceiling *= 1.0 + pnFbmSigned2FilteredOver(skyAbyssLidCells(hit), 5, footprint) * 2.0 * uSkyAbyssDetail * near;
+    ripple += pnFbmSigned2FilteredOver(skyAbyssLidCells(hit), 5, footprint) * 2.0 * uSkyAbyssDetail * near;
+  ceiling *= ripple;
+  if(uSkyHollow.x > 0.5 && uHollowView.x > 0.5) {
+    float inside = hollowInside(hit);
+    vec3 lid = hollowLid(hit, reach, inside, footprint * uSkyAbyssDetailScale) * ripple;
+    ceiling = mix(ceiling, lid, smoothstep(-3000.0, 0.0, inside));
+  }
   return ceiling;
 }
 
@@ -688,12 +700,27 @@ float skyAbyssUnder(vec3 origin) {
   #endif
 }
 
+// How far along `dir` a view from `origin`, `depth` under the lid, meets the lid as it lies on
+// the globe, seen from below: the sphere through it, from inside, so it curves down to meet
+// the hollow's walls where they stand on it. Its radial at the camera's (globeCameraUp), and
+// |origin − C|² − ρ² as −depth (2R + …): nothing near-equal subtracted.
+float skyAbyssLidCurved(vec3 dir, float depth) {
+  float R = uGlobe.x;
+  float lid = uSkyAbyssLevel - globeLevel();
+  float h = lid - depth;
+  float b = (R + h) * dot(dir, globeCameraUp());
+  float c = -depth * (2.0 * R + h + lid);
+  float root = sqrt(max(b * b - c, 0.0));
+  return b > 0.0 ? -c / (b + root) : root - b;
+}
+
 // Below the level, an endless lid overhead hides the sky and a bottomless gradient fills
 // the view below the horizon (`depths`, skyAbyssDepths), as a layer over everything else
 // (premultiplied), as much as it has faded in (skyAbyssUnder). The lid lies level over the
 // camera, by its look up (globeCameraLook), as deep over it as the camera is under the seabed
-// on the globe: far from the stage too, it is where that seabed is. Background only, so it
-// never hides data.
+// on the globe: far from the stage too, it is where that seabed is. Inside the hollow's rim
+// it curves down with the globe to meet the hollow's walls (skyAbyssLidCurved), and every
+// view the walls and floor leave is the lid's. Background only, so it never hides data.
 vec4 skyAbyss(vec3 dir, vec3 origin, vec3 depths) {
   float depth = uSkyAbyssLevel - globeViewHeight(origin);
   float under = skyAbyssUnder(origin);
@@ -703,9 +730,14 @@ vec4 skyAbyss(vec3 dir, vec3 origin, vec3 depths) {
   float y = dot(dir, globeCameraLook());
   // Rays that never reach the lid take the mirrored hit, so the derivatives stay continuous.
   float reach = depth / max(abs(y), 1e-6);
+  // The same for every pixel: the lid's derivatives stay sound. Outside the hollow's rim, past
+  // its walls, the camera is in solid rock, the void black there below the horizon.
+  bool curved = uSkyHollow.x > 0.5 && globeOn() && uHollowView.x > 0.5;
+  if(curved)
+    reach = skyAbyssLidCurved(dir, depth);
   vec3 ceiling = skyAbyssCeiling(origin + dir * reach, reach);
 
-  vec3 abyss = y > 0.0 ? ceiling : depths;
+  vec3 abyss = y > 0.0 || curved ? ceiling : depths;
   if(uSkyAbyssDarkening > 0.0)
     abyss *= exp(-depth / uSkyAbyssDarkening);
 
@@ -753,7 +785,26 @@ vec3 skyAir(vec3 dir, float blend) {
   #ifdef SKY_VOID
   return skyVoidGradient(skyOverHorizon(y, horizon));
   #else
-  vec3 color = skySurface(dir, blend);
+  // Below the horizon into the hollow's open opening: the view dips into the hollow and out
+  // again over the globe at the angle it went in, meeting nothing but the air beyond, not the
+  // ground the sky paints there: the sky as far over the horizon as it looks under it, along
+  // its bearing, so the sky runs on mirrored down to the far rim.
+  vec3 sees = dir;
+  if(uSkyHollow.y > 0.5 && y < horizon) {
+    vec2 hit = globeReach(cameraPosition, dir, 0.0);
+    // From at or under the sea's level, inside the rim, every view down is into the opening:
+    // there is no level for it to meet first.
+    bool into = globeCameraHeight() - globeLevel() <= 0.0 ? hollowInside(cameraPosition) > 0.0 : hit.y < 0.5 && hollowOpenAt(cameraPosition + dir * hit.x);
+    if(into) {
+      vec3 level = dir - globeCameraLook() * y;
+      float over = horizon - skyOverHorizon(y, horizon) * (1.0 - horizon);
+      sees = level * inversesqrt(max(dot(level, level), 1e-12)) * sqrt(max(1.0 - over * over, 0.0)) + globeCameraLook() * over;
+    }
+  }
+  vec3 color = skySurface(sees, blend);
+  // Over the open hollow its air is drained (hollowAirGone): the sky there darkens toward space's.
+  float gone = hollowAirGone();
+  color *= 1.0 - gone;
   if(uSkySunDisc > 0.0) {
     float cosSun = dot(dir, uSkySunDirection);
     // atan2 keeps the angle precise for the small radii a disc uses.
@@ -774,9 +825,9 @@ vec3 skyAir(vec3 dir, float blend) {
     // Full while warm (to ~15° up), a quarter once white (~20°).
     float white = min(light.r, min(light.g, light.b)) / max(max(light.r, max(light.g, light.b)), 1e-4);
     float glare = uSkySunRadiance > 1.0 ? 1.0 : mix(1.0, SKY_SUN_DAY_GLARE, smoothstep(0.3, 0.7, white));
-    color += light * skySunGlare(dir, angle, aa) * glare * up * uSkySunDisc;
+    color += light * skySunGlare(dir, angle, aa) * glare * up * uSkySunDisc * (1.0 - gone);
   }
-  return skyNight(color, dir, blend);
+  return skyNight(color, dir, blend, gone);
   #endif
 }
 

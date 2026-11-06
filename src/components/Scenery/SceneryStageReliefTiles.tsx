@@ -46,12 +46,14 @@ import { tileCoarserEdges, TILE_EDGE_SIDES } from '../../sdk/tiles/tile-edges';
 import { TileStreamer } from '../../sdk/tiles/tile-streamer';
 import {
   tileOffsetIn,
+  type TileTransitionDraw,
   TileTransitions,
 } from '../../sdk/tiles/tile-transitions';
 import { pixelsPerUnit } from '../../sdk/utils/lod';
 import type { Globe } from '../../sdk/projection/globe';
 import { sceneryReliefTile, SceneryReliefTileResponse } from './scenery-defs';
 import type { SceneryMaterial } from './scenery-material';
+import { sceneryHollowHoldsTile } from './scenery-hollow';
 import type { SceneryReliefLoading } from './scenery-progress';
 import type { SceneryReliefHub } from './scenery-relief-hub';
 import { geoWarp } from './scenery-relief-geo';
@@ -727,6 +729,13 @@ export const SceneryStageReliefTiles = ({
       drawnKeys: [] as number[],
       // Per tile drawn, how deep the data drawn over it is (a fill's, its source's).
       drawnDepth: new Map<number, number>(),
+      // The tiles in the order of their instances while the hollow is open: those it peels
+      // wholly away last, past the draw (see the frame loop), and which those are, per tile
+      // while the globe and the hollow's radius hold.
+      hollowOrder: [] as TileTransitionDraw[],
+      hollowCut: [] as TileTransitionDraw[],
+      hollowHolds: new Map<number, boolean>(),
+      hollowHoldsKey: '',
       // The fills chosen this frame: each tile not in, and the ancestor it is drawn from.
       fillSource: new Map<number, number>(),
       // What the tiles were last chosen for (see the frame loop): nothing changed, nothing to do.
@@ -1145,9 +1154,41 @@ export const SceneryStageReliefTiles = ({
         drawnDepth.set(key, tileAddress(data)[0]);
     }
     const depthOf = (key: number) => drawnDepth.get(key);
+    // Seen from over it, the hollow's open opening peels the ground away (relief-fragment):
+    // the tiles wholly inside it go last and are not drawn, which spares their vertices and
+    // their pixels, each of which would only be discarded. Still told to the hub: what lies
+    // on the relief takes its ground from them. From under the ground they are the lid.
+    let order = drawnTiles;
+    let kept = drawnTiles.length;
+    if (sky?.hollowOpen && !under) {
+      const radius = sky.hollowRadius;
+      const holdsKey = `${globe.version},${radius}`;
+      if (view.hollowHoldsKey !== holdsKey) {
+        view.hollowHoldsKey = holdsKey;
+        view.hollowHolds.clear();
+      }
+      const holds = view.hollowHolds;
+      order = view.hollowOrder;
+      const cut = view.hollowCut;
+      order.length = 0;
+      cut.length = 0;
+      for (const tile of drawnTiles) {
+        let inside = holds.get(tile.key);
+        if (inside === undefined) {
+          inside = sceneryHollowHoldsTile(globe, radius, tile.key);
+          holds.set(tile.key, inside);
+        }
+        (inside ? cut : order).push(tile);
+      }
+      kept = order.length;
+      for (const tile of cut) order.push(tile);
+    }
     let count = 0;
+    let drawn = -1;
     let deepest = 0;
-    for (const { key, from, blend, proxy } of drawnTiles) {
+    for (let at = 0; at < order.length; at++) {
+      if (at === kept) drawn = count;
+      const { key, from, blend, proxy } = order[at];
       if (count >= SKY_RELIEF_MAX_TILES) break;
       // A fill: its own square, all of it drawn from the ancestor in its place.
       const data = proxy ?? key;
@@ -1198,7 +1239,7 @@ export const SceneryStageReliefTiles = ({
       drawnKeys.push(key);
       count++;
     }
-    geometry.instanceCount = count;
+    geometry.instanceCount = drawn < 0 ? count : drawn;
     // What lies on the relief (a draped GeoTileLayer) meets these tiles, as drawn now. With
     // none drawn — past the far plane — still told: the ground in (heightAt), the overview's
     // tiles too, is what lies on it there stands on.

@@ -16,6 +16,7 @@ void main() {
   vec3 origin = skyViewOrigin();
   #if defined(SKY_LAYER_CLOUDS)
   vec4 layer = skyCloudsLayer(dir, origin, skyBlendAt(dir));
+  layer.rgb = hollowDullSky(layer.rgb);
   #elif defined(SKY_LAYER_ABYSS)
   vec4 layer = skyAbyssLayer(dir, origin);
   #elif defined(SKY_LAYER_SEA)

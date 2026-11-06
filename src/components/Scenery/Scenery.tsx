@@ -81,6 +81,12 @@ import {
   ScenerySkyOverlay,
 } from './scenery-registry';
 import { createSceneryGeometry, SceneryMaterial } from './scenery-material';
+import {
+  SceneryHollowParts,
+  sceneryHollowAirGone,
+  sceneryHollowInside,
+  sceneryHollowLook,
+} from './scenery-hollow';
 import { SceneryReliefHub } from './scenery-relief-hub';
 import { sceneryOceanDefines } from './scenery-stage';
 import {
@@ -504,6 +510,13 @@ export const Scenery = ({
   const abyssDepthDetailScale =
     abyssOptions?.depthDetailScale ?? abyssDefaults.depthDetailScale;
   const abyssFalloff = abyssOptions?.falloff ?? abyssDefaults.falloff;
+  // The void as a hollow in the crust about the field: on by default. Compared by value, as
+  // the props are an inline object.
+  const hollowKey = JSON.stringify(abyssOptions?.hollow ?? null);
+  const hollowLook = useMemo(
+    () => sceneryHollowLook(JSON.parse(hollowKey) ?? undefined),
+    [hollowKey],
+  );
   // Drawn at all; the void's gradient in the sky's place; the sky itself.
   const drawn = background !== false;
   const voided = background === 'void';
@@ -581,6 +594,19 @@ export const Scenery = ({
   const [standIn] = useState(() => createSceneryStandInMaterial(material));
   const [geometry] = useState(createSceneryGeometry);
   const [baker] = useState(() => new SceneryBaker(material));
+  // The hollow under the seabed: on with the void, unless turned off.
+  const hollowOn = (hasAbyss || hasOcean) && hollowLook !== null;
+  const hollowOpen = hollowOn && hasOcean && !oceanSeabed;
+  const [hollow] = useState(() => new SceneryHollowParts(material));
+  useEffect(() => () => hollow.dispose(), [hollow]);
+  // Uniforms only: nothing recompiles, and the bakes take the seabed whole, so nothing bakes.
+  useLayoutEffect(() => {
+    material.hollow = hollowOn;
+    material.hollowOpen = hollowOpen;
+    if (!hollowLook) return;
+    material.hollowRadius = hollowLook.radius;
+    hollow.setLook(hollowLook);
+  }, [material, hollow, hollowOn, hollowOpen, hollowLook]);
   const [probe] = useState(() => new LightProbe());
   const [lightTarget] = useState(() => new Object3D());
   // The sea's water: never drawn, the sky's sea shares its uniforms.
@@ -696,6 +722,11 @@ export const Scenery = ({
     progress.emit();
     return () => progress.close();
   }, [progress]);
+
+  // The hollow's rock and cliffs, baked once their programs compile.
+  useLayoutEffect(() => {
+    hollow.makeTextures(gl, progress.compiles.track());
+  }, [hollow, gl, progress]);
 
   const [standInReady, setStandInReady] = useState(false);
   useLayoutEffect(() => {
@@ -844,6 +875,7 @@ export const Scenery = ({
             water: oceanWater,
             seabed: oceanSeabed,
             seabedOpacity: oceanSeabedOpacity,
+            hollow: hollowOn,
             definesKey,
             visible: drawn,
             ready,
@@ -860,6 +892,7 @@ export const Scenery = ({
       oceanWater,
       oceanSeabed,
       oceanSeabedOpacity,
+      hollowOn,
       definesKey,
       drawn,
       ready,
@@ -1107,9 +1140,11 @@ export const Scenery = ({
   useLayoutEffect(() => {
     material.abyss = hasAbyss || hasOcean;
     material.abyssLevel = hasOcean ? oceanLevel - oceanDepth : abyssLevel;
+    // The hollow is all of the void there is: past its walls and under its floor, the rock is
+    // black below the horizon, and the void's lid overhead recedes into black.
     material.abyssCeilingColor = abyssCeiling;
-    material.abyssHorizonColor = abyssHorizon;
-    material.abyssDepthColor = abyssDepth;
+    material.abyssHorizonColor = hollowOn ? 0x000000 : abyssHorizon;
+    material.abyssDepthColor = hollowOn ? 0x000000 : abyssDepth;
     material.abyssFadeDistance = abyssFadeDistance;
     material.abyssTransition = abyssTransition;
     material.abyssDarkening = abyssDarkening;
@@ -1137,6 +1172,7 @@ export const Scenery = ({
     abyssDepthDetail,
     abyssDepthDetailScale,
     abyssFalloff,
+    hollowOn,
   ]);
 
   // Not baked: the bakes keep a level horizon. Inside a World, the World's `globe` says.
@@ -1283,6 +1319,7 @@ export const Scenery = ({
       resolution,
       sunLight,
       hasProbe,
+      hollowOn,
     ].join('|');
     if (key === compiling.current) return;
     compiling.current = key;
@@ -1359,6 +1396,7 @@ export const Scenery = ({
     definesKey,
     voided,
     progress,
+    hollowOn,
   ]);
 
   // Bakes run here so several prop changes in one frame cost one bake.
@@ -1418,6 +1456,17 @@ export const Scenery = ({
       material.oceanGround !== null &&
       height > material.oceanGround &&
       height <= material.oceanLevel - material.oceanDepth;
+    // How far inside the hollow's rim the camera is, and whether inside it: its walls about
+    // the camera and its lid over it, at any depth; under its floor, seen through the rock.
+    const cameraInside =
+      hollowLook && hollowOn
+        ? sceneryHollowInside(
+            material.globe,
+            hollowLook.radius,
+            camera.position,
+          )
+        : -Infinity;
+    const inHollow = !!hollowLook && cameraInside > 0;
     // From the sea surface down the layer is clear everywhere (skyOceanSurfaceLayer), and
     // in rock there is no sea to see.
     if (surfaceMesh.current)
@@ -1516,6 +1565,45 @@ export const Scenery = ({
     showLayer(skyMesh.current, 'sky');
     showLayer(cloudsMesh.current, 'clouds');
     showLayer(abyssMesh.current, 'abyss');
+    // The hollow, where it can show: through an opening in the seabed, or from below it inside
+    // its rim. Below it outside the rim the camera is in solid crust: the void's own layer.
+    if (hollowLook) {
+      hollow.update({
+        radius: hollowLook.radius,
+        floorDepth: hollowLook.floorDepth,
+        bed: material.abyssLevel - material.globe.level,
+      });
+      const belowBed = height < material.abyssLevel || material.oceanBuried;
+      const hollowShown =
+        hollowOn &&
+        drawn &&
+        ready &&
+        hollow.ready &&
+        (voidOpen || belowBed) &&
+        (inHollow || !belowBed) &&
+        !debug?.hide?.includes('abyss') &&
+        !debug?.hide?.includes('background');
+      hollow.floor.visible = hollowShown;
+      hollow.walls.visible = hollowShown;
+      if (hollowShown) hollow.cull(camera);
+      hollow.setView(
+        inHollow,
+        !voidOpen || belowBed,
+        hollowOpen
+          ? sceneryHollowAirGone(
+              cameraInside,
+              hollowLook.radius,
+              height - material.globe.level,
+            )
+          : 0,
+        material.abyssLevel - hollowLook.floorDepth - height,
+        delta,
+      );
+      hollow.setOrder(renderOrder);
+    } else {
+      hollow.floor.visible = false;
+      hollow.walls.visible = false;
+    }
     showLayer(seaMesh.current, 'sea');
     showLayer(waterMesh.current, 'water');
     // For the clouds that draw themselves (SceneryCloudVolume): as the clouds' layer would be.
@@ -1666,6 +1754,13 @@ export const Scenery = ({
             onBeforeRender={material.onBeforeDraw}
             dispose={null}
           />
+        )}
+        {/* The hollow under the seabed, just before the background, which skips it by depth. */}
+        {hollowOn && (
+          <>
+            <primitive object={hollow.walls} dispose={null} />
+            <primitive object={hollow.floor} dispose={null} />
+          </>
         )}
         {seaLayer && (
           <mesh

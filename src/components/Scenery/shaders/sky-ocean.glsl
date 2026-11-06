@@ -129,7 +129,11 @@ vec2 skyOceanCutawayGrip(vec2 rimAt) {
 // seabed as the relief's ground is lit there, so the two meet without a seam at its reach.
 // `keep` is how much of `surface.rgb` the result keeps: the rest is the air's own.
 vec4 skyOceanThroughAirOver(vec4 surface, vec3 origin, vec3 dir, float dist, float blend, bool dry, out float keep) {
-  float haze = skyAirHaze(origin, dir, dist);
+  // Toward the open hollow's rim its air is draining into it (hollowAir): the surface loses
+  // the sky's light, and its haze.
+  float air = hollowAir(origin + dir * dist);
+  surface.rgb *= mix(HOLLOW_AIR_GROUND, 1.0, air);
+  float haze = skyAirHaze(origin, dir, dist) * air;
   vec4 near = surface;
   keep = 1.0;
   if(haze > 0.0) {
@@ -302,17 +306,23 @@ vec3 skyOceanVoid(vec3 dir) {
   #endif
 }
 
-// How much of what lies beyond the seabed it hides where the cutaway covers `cutaway` of it:
-// none without one.
-float skyOceanFloorShown(float cutaway) {
-  return uSkyOceanSeabed > 0.5 ? skyOceanCutawaySeabed(cutaway) * uSkyOceanSeabedOpacity : 0.0;
+// Whether the sea has a seabed at `p`: everywhere while it is on; peeled, only around the
+// hollow's opening (hollow.glsl), where the crust stays whole.
+bool skyOceanSeabedAt(vec3 p) {
+  return uSkyOceanSeabed > 0.5 || (uSkyHollow.x > 0.5 && hollowInside(p) <= 0.0);
 }
 
-// What a ray reaches at the seabed's level, as a layer over the void beyond (premultiplied,
-// its alpha how much of the void it hides): the `bed`, as much as it shows there. `cutaway` is
-// how much of it the cutaway covers there.
-vec4 skyOceanFloorOver(vec3 bed, float cutaway) {
-  float shown = skyOceanFloorShown(cutaway);
+// How much of what lies beyond the seabed it hides at `bedPoint` where the cutaway covers
+// `cutaway` of it: none without one.
+float skyOceanFloorShown(float cutaway, vec3 bedPoint) {
+  return skyOceanSeabedAt(bedPoint) ? skyOceanCutawaySeabed(cutaway) * uSkyOceanSeabedOpacity : 0.0;
+}
+
+// What a ray reaches at the seabed's level, at `bedPoint`, as a layer over the void beyond
+// (premultiplied, its alpha how much of the void it hides): the `bed`, as much as it shows
+// there. `cutaway` is how much of it the cutaway covers there.
+vec4 skyOceanFloorOver(vec3 bed, float cutaway, vec3 bedPoint) {
+  float shown = skyOceanFloorShown(cutaway, bedPoint);
   return vec4(bed * shown, shown);
 }
 
@@ -535,7 +545,7 @@ vec4 skyOceanInWaterOver(vec3 origin, vec3 dir, float blend, float tBed, vec3 be
     return y > 0.0 ? vec4(above, 1.0) : skyOceanFogOver(vec4(0.0), 1e6, skyOceanLight(depth));
   vec3 bedPoint = origin + dir * tBed;
   float cutaway = skyOceanCutawayAlong(origin, bedPoint);
-  vec4 below = skyOceanFogOver(skyOceanFloorOver(bed, cutaway), skyOceanCutawayPath(tBed, wall, skyOceanCutawayWater(cutaway)), skyOceanBedPathLight(origin, uSkyOceanDepth));
+  vec4 below = skyOceanFogOver(skyOceanFloorOver(bed, cutaway, bedPoint), skyOceanCutawayPath(tBed, wall, skyOceanCutawayWater(cutaway)), skyOceanBedPathLight(origin, uSkyOceanDepth));
 
   return y > 0.0 ? vec4(above, 1.0) : below;
 }
@@ -592,7 +602,7 @@ vec4 skyOceanFromAir(vec3 dir, vec3 origin, float blend, vec3 reach, vec3 bed, o
   float path = wet && uSkyCurvature > 0.0 ? max(reach.x - surface.x, 0.0) : uSkyOceanDepth / ay;
   vec3 bedPoint = origin + dir * reach.x;
   float cutaway = skyOceanCutawayAlong(origin, bedPoint);
-  vec4 seen = skyOceanFogOver(skyOceanFloorOver(bed, cutaway), path * skyOceanCutawayWater(cutaway), skyOceanBedPathLight(origin, uSkyOceanDepth));
+  vec4 seen = skyOceanFogOver(skyOceanFloorOver(bed, cutaway, bedPoint), path * skyOceanCutawayWater(cutaway), skyOceanBedPathLight(origin, uSkyOceanDepth));
   // Dry, from high up: through the air and as space sees it, as the relief's ground past
   // which it shows. Eased in by the same share, so nothing changes in the air. Over an
   // opaque surface the air's light is what it adds to the share of it that it keeps.
@@ -671,7 +681,13 @@ bool skyOceanShowsVoid(vec3 dir, vec3 origin, SkyOceanStagedView staged) {
   bool water = skyOceanNeedsWaterView(origin);
   vec3 reach = skyOceanBedReach(origin, dir, water);
   bool floor = water ? dot(dir, globeCameraUp()) <= 0.0 : skyOceanFromAirReach(origin, dir, reach).y < 0.5;
-  return floor && skyOceanFloorShown(skyOceanCutawayAlong(origin, origin + dir * reach.x)) < 1.0;
+  vec3 bedPoint = origin + dir * reach.x;
+  // Into the hollow's open opening: what lies there the hollow's walls and floor draw; a view
+  // they leave passes through the hollow and out over its rim, never to meet the seabed's
+  // sphere again: the sky's, not the void's.
+  if(hollowOpenAt(bedPoint))
+    return false;
+  return floor && skyOceanFloorShown(skyOceanCutawayAlong(origin, bedPoint), bedPoint) < 1.0;
 }
 
 
@@ -759,6 +775,6 @@ float skyOceanCover(vec3 world, float height) {
   // A relief's tiles draw the seabed out to their reach, but from the air through water,
   // where only a stage's area shows theirs.
   bool reliefBed = uSkyOceanReliefReach > 0.0 && !fromAir && min(bedReach.x, dist) < uSkyOceanReliefReach;
-  float bed = below && !reliefBed ? skyOceanFloorShown(cutaway) : 0.0;
+  float bed = below && !reliefBed ? skyOceanFloorShown(cutaway, cameraPosition + dir * min(bedReach.x, dist)) : 0.0;
   return 1.0 - (1.0 - surface) * (1.0 - bed);
 }

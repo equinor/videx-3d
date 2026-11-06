@@ -140,12 +140,15 @@ export * from './weather/weather-clock';
 export * from './weather/weather-systems';
 
 export * from './materials/apply-globe';
+export * from './materials/bake-texture';
 export * from './materials/blue-noise';
+export * from './materials/cliff-texture';
 export * from './materials/cloud-noise';
 export * from './materials/depth-material';
 export * from './materials/fence-field';
 export * from './materials/graticule';
 export * from './materials/height-field-clip';
+export * from './materials/rock-texture';
 export * from './materials/surface-detail';
 export * from './materials/tube-material';
 export * from './materials/uv-material';

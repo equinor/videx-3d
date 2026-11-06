@@ -10,7 +10,7 @@ varying vec3 vSkyDirection;
 
 void main() {
   vec3 dir = normalize(vSkyDirection);
-  gl_FragColor = vec4(skyAir(dir, skyBlendAt(dir)) * uSkyIntensity, 1.0);
+  gl_FragColor = vec4(hollowDullSky(skyAir(dir, skyBlendAt(dir))) * uSkyIntensity, 1.0);
 
   #include <tonemapping_fragment>
   #include <colorspace_fragment>

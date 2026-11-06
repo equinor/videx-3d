@@ -281,18 +281,20 @@ export const SceneryStage = ({
   // no seabed of its own; only where the sea has one.
   const worldRelief = useWorldRelief();
   const tiled = !!worldRelief?.present && hasBed;
+  // Drawn at all: with the seabed peeled too while the void is a hollow, around its opening.
+  const reliefDrawn = !!worldRelief?.present && (hasBed || !!ocean?.hollow);
 
   const materials = useMemo(
     () =>
       sky && {
         surface: createSceneryStageMaterial(sky, 'surface', {
-          curvedDepth: tiled,
+          curvedDepth: reliefDrawn,
         }),
         bed: createSceneryStageMaterial(sky, 'bed', { seeThrough }),
       },
     // The sky's defines are compiled in (the seabed's detail): new ones need new materials.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sky, definesKey, seeThrough, tiled],
+    [sky, definesKey, seeThrough, reliefDrawn],
   );
 
   // The occupants' outlines, for the relief: over them the cutaway takes

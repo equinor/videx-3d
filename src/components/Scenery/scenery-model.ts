@@ -267,7 +267,69 @@ export type SceneryAbyssProps = {
   depthDetailScale?: number;
   /** how the depths darken below the horizon: the gradient's exponent; smaller reaches the depth colour sooner. Default 0.5 */
   falloff?: number;
+  /**
+   * The void as a hollow in the crust under the field (see {@link SceneryHollow}): a floor
+   * deep under the seabed and walls about it, which the seabed is the lid of. Peeling the
+   * seabed (`SceneryOcean`'s `seabed: false`) opens it: the relief and the sea's seabed are
+   * cut away inside its rim and stay whole around it. `false` leaves the bottomless gradient
+   * alone, and a peeled seabed gone everywhere. Default on
+   */
+  hollow?: boolean | SceneryHollow;
 };
+
+/**
+ * The hollow under a {@link Scenery}'s seabed ({@link SceneryAbyssProps.hollow}): the void
+ * as a gap in the crust, from the seabed down to a floor where the mantle would begin, closed
+ * by walls of rock about the field — dark, dull rock that frames the data in it. Centred on
+ * the field (the `World`'s anchor, the globe's disc), a fixed size: from the sea over the
+ * field its rim lies at the horizon. Real geometry, drawn with the background: it never hides
+ * the scene. Changing any of it recompiles nothing and bakes nothing.
+ */
+export type SceneryHollow = {
+  /** its rim's radius along the sea, in world units. Default 500 000 */
+  radius?: number;
+  /** depth of its floor under the seabed, in world units. Default 35 000 */
+  floorDepth?: number;
+  colors?: {
+    /** the walls' rock. Default `#42403d` */
+    walls?: ColorRepresentation;
+    /** the floor's rock. Default `#3d3937` */
+    floor?: ColorRepresentation;
+    /** the glow in the floor's cracks, and its warmth on the walls. Default `#ff7326` */
+    embers?: ColorRepresentation;
+  };
+  /** how much the floor's cracks glow; 0 for none. Default 1 */
+  embers?: number;
+  /** width of the band inside the rim over which the floor cools to plain rock, in world units. Default 0.35 of the radius, at least 40 000 */
+  cooling?: number;
+  /** depth under the seabed over which the light from above falls by e, in world units. Default 11 000 */
+  lightFalloff?: number;
+  /** how much the void's air darkens with depth, 0 for none. Default 1 */
+  murk?: number;
+  /** how far the embers' glow dims, at most, as it slowly pulses (a share of it; 0 holds it steady). Default 0.2 */
+  pulse?: number;
+};
+
+/**
+ * How a hollow's rim (see {@link SceneryHollow}) wanders round its axis, in and out of its
+ * radius: per wave its number round the rim, its share of the radius and its phase. Some 6%
+ * at most, so the size holds: broad bays and headlands, and a ragged edge some tens of km
+ * across that reads from across the hollow. The walls are built along it, and the relief and
+ * the seabed are cut along it (`uSkyHollowRim`).
+ */
+export const SCENERY_HOLLOW_RIM: readonly (readonly [number, number, number])[] = [
+  [3, 0.016, 0.4],
+  [5, 0.011, 2.1],
+  [7, 0.008, 4.0],
+  [11, 0.006, 1.2],
+  [17, 0.004, 5.3],
+  [29, 0.003, 0.7],
+  [43, 0.0025, 3.3],
+  [71, 0.002, 2.6],
+  [97, 0.0035, 1.9],
+  [151, 0.0025, 4.4],
+  [233, 0.0015, 0.3],
+];
 
 /**
  * The water settings an endless sea shares with the `Ocean` component, under the same
@@ -580,6 +642,16 @@ export const sceneryDefaults = {
     depthDetail: 0.08,
     depthDetailScale: 1,
     falloff: 0.5,
+    hollow: {
+      radius: 500000,
+      floorDepth: 35000,
+      colors: { walls: '#42403d', floor: '#3d3937', embers: '#ff7326' },
+      embers: 1,
+      cooling: null as number | null,
+      lightFalloff: 11000,
+      murk: 1,
+      pulse: 0.2,
+    },
   },
   ocean: {
     level: 0,

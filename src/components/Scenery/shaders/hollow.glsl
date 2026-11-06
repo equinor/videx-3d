@@ -1,0 +1,88 @@
+// The hollow under the seabed (SceneryAbyss's `hollow`, scenery-hollow.ts): the void as a
+// confined gap in the crust, under a cap of the globe about the field's disc centre, its rim
+// `radius` out along the sea, wandering in and out round it. While its opening is open (the
+// sea's seabed peeled), the relief and the sea's seabed are cut inside the rim and stay whole
+// around it. Needs globe.glsl. About the disc's centre, as globe.glsl: nothing near-equal is
+// subtracted.
+
+// x: 1 while the hollow is on; y: 1 while its opening is open (on, and the seabed peeled);
+// z: the angle its rim makes about the globe's centre, before it wanders (with the globe on);
+// w: its radius along the sea, world units (with the globe off, across).
+uniform vec4 uSkyHollow;
+// How the rim wanders round the axis (SCENERY_HOLLOW_RIM): per wave its number round the rim,
+// its share of the radius and its phase. The CPU builds the walls along the same.
+#define HOLLOW_RIM_WAVES 11
+uniform vec3 uSkyHollowRim[HOLLOW_RIM_WAVES];
+// Where the camera is, set each frame (SceneryHollowParts.setView). x: 1 inside the hollow's
+// rim, where its walls stand about the camera and its lid is drawn, at any depth; outside it
+// the camera is in solid rock. y: how shut the hollow is, 1 under the lid (the seabed in
+// place, or the camera under it), eased. z: how much of the air about the camera has drained
+// into the open hollow. w: how far under the floor the camera is, in the rock (0 over it).
+uniform vec4 uHollowView;
+
+// The rim's radius at `turn` radians round the axis (from true east toward true north), as a
+// share of its radius.
+float hollowRimScale(float turn) {
+  float scale = 1.0;
+  for(int i = 0; i < HOLLOW_RIM_WAVES; i++) {
+    vec3 wave = uSkyHollowRim[i];
+    scale += wave.y * sin(wave.x * turn + wave.z);
+  }
+  return scale;
+}
+
+// How far inside the rim `p` lies, across the hollow's axis at its own height: positive
+// inside, negative outside, in world units.
+float hollowInside(vec3 p) {
+  vec3 v = p - uGlobeDisc.xyz;
+  float h = dot(v, uGlobeUp);
+  vec3 across = v - uGlobeUp * h;
+  float turn = atan(dot(across, uGlobeNorth), dot(across, uGlobeEast));
+  float scale = hollowRimScale(turn);
+  float limit = globeOn() ? tan(uSkyHollow.z * scale) * (h + uGlobe.y) : uSkyHollow.w * scale;
+  return limit - length(across);
+}
+
+// Whether `p` lies in the hollow's open opening: there the relief and the seabed are cut away.
+bool hollowOpenAt(vec3 p) {
+  return uSkyHollow.y > 0.5 && hollowInside(p) > 0.0;
+}
+
+// The sky's own colour while the hollow is open: greyed and dimmed, so it stays a backdrop and
+// the eye goes down into the hollow. Not in the bakes, which take the hollow off.
+#define HOLLOW_SKY_SATURATION 0.35
+#define HOLLOW_SKY_LIGHT 0.7
+vec3 hollowDullSky(vec3 color) {
+  if(uSkyHollow.y < 0.5)
+    return color;
+  float grey = dot(color, vec3(0.2126, 0.7152, 0.0722));
+  return mix(vec3(grey), color, HOLLOW_SKY_SATURATION) * HOLLOW_SKY_LIGHT;
+}
+
+// While the hollow is open its air drains into the void: all but this share of it gone over
+// the opening, thinning over a band outside the rim this share of its radius wide, whole
+// beyond. The ground about it loses the sky's light toward the rim, to this share of it, and
+// its haze, so the crater does not stand out of a bright land; and the sky over it darkens
+// toward space's. Not in the bakes, which take the hollow off.
+#define HOLLOW_AIR_KEPT 0.1
+#define HOLLOW_AIR_BAND 0.4
+#define HOLLOW_AIR_GROUND 0.45
+
+// How much of the air is left `inside` the rim (hollowInside, negative outside): 1 beyond the
+// band, HOLLOW_AIR_KEPT over the opening.
+float hollowAirAt(float inside) {
+  if(uSkyHollow.y < 0.5)
+    return 1.0;
+  return mix(HOLLOW_AIR_KEPT, 1.0, smoothstep(0.0, HOLLOW_AIR_BAND * uSkyHollow.w, -inside));
+}
+
+// How much of the air is left at `p` (hollowAirAt).
+float hollowAir(vec3 p) {
+  return uSkyHollow.y < 0.5 ? 1.0 : hollowAirAt(hollowInside(p));
+}
+
+// How much of the air the sky's view finds gone: about the camera, low enough to be in it
+// (uHollowView.z, sceneryHollowAirGone), the same for every pixel.
+float hollowAirGone() {
+  return uSkyHollow.y > 0.5 ? uHollowView.z : 0.0;
+}

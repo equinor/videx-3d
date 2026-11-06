@@ -85,9 +85,12 @@ float reliefDepthAt(vec3 dir, float t) {
 // `color` seen through the air from the camera, `dist` along `dir`, channel by channel:
 // into the sky's blue over short paths and the horizon's colour over long ones. Looking
 // down, into the sky overhead as seen from the sea, as the sea's haze does
-// (skyOceanThroughAir), so the sun's side cannot show as a wedge below.
-vec3 reliefThroughAir(vec3 color, vec3 dir, float dist, float blend) {
-  float haze = skyAirHaze(cameraPosition, dir, dist);
+// (skyOceanThroughAir), so the sun's side cannot show as a wedge below. As much of the air as
+// is left there (`air`, hollowAirAt): toward the open hollow's rim it drains into it, and the
+// ground loses the sky's light, and its haze.
+vec3 reliefThroughAir(vec3 color, vec3 dir, float dist, float blend, float air) {
+  color *= mix(HOLLOW_AIR_GROUND, 1.0, air);
+  float haze = skyAirHaze(cameraPosition, dir, dist) * air;
   if(haze <= 0.0)
     return color;
   vec3 look = globeCameraLook();
@@ -204,6 +207,12 @@ void main() {
   vec3 dir = toPoint / max(dist, 1e-6);
   vec2 xz = vReliefPlane;
   #endif
+  // Well inside the hollow's open opening the ground is peeled away: there a whole quad
+  // leaves at once, before any shading, so no pixel left takes a derivative across the gap.
+  // Near the rim each pixel is cut exactly, at the end. How far inside, once for all of it.
+  float hollowIn = uSkyHollow.y > 0.5 ? hollowInside(world) : -1e30;
+  if(hollowIn > 2.0 * length(fwidth(world)))
+    discard;
   float blend = max(uSkyHorizonBlend, fwidth(dot(dir, globeCameraLook())));
 
   #ifdef RELIEF_FAR
@@ -230,8 +239,9 @@ void main() {
   // No nearer than RELIEF_HANDOVER_MIN of the reach along the sea (OVERVIEW_HANDOVER_MIN in
   // SceneryStageReliefTiles, where its tiles start).
   float handover = min(deepest.z > 0.5 ? 1e30 : deepest.x, dist / RELIEF_HANDOVER_MIN);
-  // Only where the sea is met past the tiles, and a tile is in. Every derivative is taken above.
-  if(altitude <= 0.0 || hit.z > 0.5 || handover < uReliefReach || merged.w <= 0.0)
+  // Only where the sea is met past the tiles, and a tile is in, outside the hollow's open
+  // opening. Every derivative is taken above.
+  if(altitude <= 0.0 || hit.z > 0.5 || handover < uReliefReach || merged.w <= 0.0 || hollowIn > 0.0)
     discard;
   float west = reliefAtlasGround(atlasAt - vec2(span.x, 0.0)).x;
   float east = reliefAtlasGround(atlasAt + vec2(span.x, 0.0)).x;
@@ -306,7 +316,7 @@ void main() {
 
   #ifdef RELIEF_FAR
   // From high up, as lit where it lies (skyFromSpaceOver): dark over the Earth's night side.
-  color = skyFromSpaceOver(reliefThroughAir(color, dir, dist, blend), lit, world);
+  color = skyFromSpaceOver(reliefThroughAir(color, dir, dist, blend, hollowAirAt(hollowIn)), lit, world);
   #else
   // The triangles' chords sag under the globe's sea, by up to tens of metres on the coarse
   // tiles far off. So the ground's height decides which of the two shows: the seabed stays
@@ -335,7 +345,7 @@ void main() {
     if(altitude > 0.0 && sea > dist)
       gl_FragDepth = reliefDepthAt(dir, sea * 1.0001);
   } else if(altitude > 0.0) {
-    color = skyFromSpaceOver(reliefThroughAir(color, dir, dist, blend), lit, world);
+    color = skyFromSpaceOver(reliefThroughAir(color, dir, dist, blend, hollowAirAt(hollowIn)), lit, world);
     // Also where the land only just clears the sea: there the two depths tie, and the sea
     // won. Where the tile holds the point the view meets the sea, its ground there decides:
     // land in front of the sea, or open water, and the land met past it lies past the
@@ -369,9 +379,10 @@ void main() {
 
   #ifndef RELIEF_FAR
   // Once the derivatives above are taken. Seabed under water only where the stage's sea
-  // covers it: past it the background's sea lies behind.
+  // covers it: past it the background's sea lies behind. Inside the hollow's open opening
+  // the ground is peeled away, the void's walls and floor seen through it.
   bool past = under && water && altitude > 0.0 ? !staged : dist > uReliefReach;
-  if(seabed < 1e-3 || past || beyond || reliefTileLeftToOther(world) || reliefCutAway())
+  if(seabed < 1e-3 || past || beyond || reliefTileLeftToOther(world) || reliefCutAway() || hollowIn > 0.0)
     discard;
   #endif
 

@@ -44,6 +44,7 @@ import fragmentShader from './shaders/sky-fragment.glsl';
 import vertexShader from './shaders/sky-vertex.glsl';
 import {
   SCENERY_EARTH_RADIUS,
+  SCENERY_HOLLOW_RIM,
   SceneryCloudsProps,
   skyDaylight,
   sceneryDefaults,
@@ -217,6 +218,39 @@ export class SceneryMaterial extends ShaderMaterial {
         uSkyAbyssFalloff: new Uniform(abyss.falloff),
         // Toward the subsurface's light raking the lid (setAbyssLight).
         uSkyAbyssLight: new Uniform(new Vector3(0, 1, 0)),
+        // The hollow under the seabed (hollow.glsl): on, open, its rim's angle, its radius;
+        // and how its rim wanders round it.
+        uSkyHollow: new Uniform(new Vector4(0, 0, 0, abyss.hollow.radius)),
+        uSkyHollowRim: new Uniform(
+          SCENERY_HOLLOW_RIM.map(([k, a, p]) => new Vector3(k, a, p)),
+        ),
+        // The hollow's look (hollow-look.glsl), set by the Scenery: its rock (a RockTexture),
+        // its shape (floor depth, radius, cooling band, light falloff), its colours, and how
+        // much its fissures glow and its air darkens. Its walls and floor read them, and so
+        // does the void's lid over it.
+        uHollowRock: new Uniform<Texture | null>(null),
+        uHollowRockSlope: new Uniform(1),
+        uHollowCliff: new Uniform<Texture | null>(null),
+        uHollowShape: new Uniform(
+          new Vector4(
+            abyss.hollow.floorDepth,
+            abyss.hollow.radius,
+            Math.max(40000, 0.35 * abyss.hollow.radius),
+            abyss.hollow.lightFalloff,
+          ),
+        ),
+        uHollowWallColor: new Uniform(new Color(abyss.hollow.colors.walls)),
+        uHollowFloorColor: new Uniform(new Color(abyss.hollow.colors.floor)),
+        uHollowEmberColor: new Uniform(new Color(abyss.hollow.colors.embers)),
+        uHollowLook: new Uniform(
+          new Vector2(abyss.hollow.embers, abyss.hollow.murk),
+        ),
+        // Where the camera is, set each frame (SceneryHollowParts.setView): x 1 inside the
+        // hollow's rim, at any depth; y how shut it is, 1 under the lid, eased; z how much of
+        // the air about it has drained into the open hollow; w how far under the floor it is.
+        uHollowView: new Uniform(new Vector4()),
+        // The embers' pulse: its two waves' phases, and how far it dims (sceneryHollowPulse).
+        uHollowPulse: new Uniform(new Vector3()),
         uSkyClouds: new Uniform(new Vector4()),
         uSkyCloudsColor: new Uniform(new Vector4(1, 1, 1, 1)),
         uSkyCloudsSeed: new Uniform(new Vector2()),
@@ -961,6 +995,44 @@ export class SceneryMaterial extends ShaderMaterial {
     this.uniforms.uSkyAbyssLight.value.copy(direction).normalize();
   }
 
+  /**
+   * The hollow under the seabed is drawn (`SceneryAbyssProps.hollow`): the void confined to a
+   * gap in the crust about the field. A uniform: nothing recompiles.
+   */
+  get hollow(): boolean {
+    return this.uniforms.uSkyHollow.value.x > 0.5;
+  }
+  set hollow(value: boolean) {
+    this.uniforms.uSkyHollow.value.x = value ? 1 : 0;
+  }
+
+  /**
+   * The hollow's opening is open: the seabed is peeled, so the relief and the sea's seabed are
+   * cut inside its rim, and stay whole around it. Only while {@link hollow}.
+   */
+  get hollowOpen(): boolean {
+    return this.uniforms.uSkyHollow.value.y > 0.5;
+  }
+  set hollowOpen(value: boolean) {
+    this.uniforms.uSkyHollow.value.y = value ? 1 : 0;
+  }
+
+  /** the hollow's radius along the sea, about the globe's disc centre, in world units */
+  get hollowRadius(): number {
+    return this.uniforms.uSkyHollow.value.w;
+  }
+  set hollowRadius(value: number) {
+    this.uniforms.uSkyHollow.value.w = Math.max(value, 0);
+    this.syncHollow();
+  }
+
+  // The rim's angle about the globe's centre, as hollow.glsl takes it: the globe's radius may
+  // have changed since (a World's frame).
+  private syncHollow() {
+    const hollow = this.uniforms.uSkyHollow.value as Vector4;
+    hollow.z = Math.min(hollow.w / this.globe.radius, 1.5);
+  }
+
   /** the endless sea (see {@link SceneryOceanProps}); link its water first ({@link linkOcean}). Changing it recompiles the layers that draw it */
   get ocean(): boolean {
     return this.switches.SKY_OCEAN !== undefined;
@@ -1257,6 +1329,7 @@ export class SceneryMaterial extends ShaderMaterial {
     // The deck lies at its altitude over the globe, whose radius its frame sets.
     this.uniforms.uSkyCloudsShape.value.x =
       this.globe.radius + this.uniforms.uSkyClouds.value.y;
+    this.syncHollow();
     this.claimStage(cameraAt);
   }
 
