@@ -16,6 +16,12 @@ export type SceneryCutawayHandleEvents = {
   reset: () => void;
 };
 
+/** How a {@link SceneryCutawayHandle} feels: the grip itself is drawn by a shader. */
+export type SceneryCutawayHandleLook = {
+  /** the cursor over it. Default `ns-resize` */
+  cursor?: string;
+};
+
 /** The invisible target over a cutaway's grip. Internal to `Scenery`. */
 export class SceneryCutawayHandle {
   readonly element = document.createElement('div');
@@ -32,6 +38,7 @@ export class SceneryCutawayHandle {
   constructor(
     parent: HTMLElement,
     private readonly events: SceneryCutawayHandleEvents,
+    look: SceneryCutawayHandleLook = {},
   ) {
     const element = this.element;
     Object.assign(element.style, {
@@ -41,7 +48,7 @@ export class SceneryCutawayHandle {
       width: `${WIDTH}px`,
       height: `${HEIGHT}px`,
       display: 'none',
-      cursor: 'ns-resize',
+      cursor: look.cursor ?? 'ns-resize',
       touchAction: 'none',
       userSelect: 'none',
       pointerEvents: 'auto',

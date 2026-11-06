@@ -279,6 +279,16 @@ export type SceneryAbyssProps = {
 };
 
 /**
+ * How a hollow looks ({@link SceneryHollow.style}):
+ * - `'calm'`: grey rock, the crust in section on its walls, the floor's cracks dark: a sober
+ *   backdrop. The default.
+ * - `'molten'`: the floor the mantle's cooled top, warm, its cracks glowing and pulsing dully.
+ * - `'simple'`: a diagram: walls a plain even slope, flat shading, lines every 5 km of depth on
+ *   the walls and every 50 km across the floor, a ring along the rim on the ground.
+ */
+export type SceneryHollowStyle = 'calm' | 'molten' | 'simple';
+
+/**
  * The hollow under a {@link Scenery}'s seabed ({@link SceneryAbyssProps.hollow}): the void
  * as a gap in the crust, from the seabed down to a floor where the mantle would begin, closed
  * by walls of rock about the field — dark, dull rock that frames the data in it. Centred on
@@ -287,19 +297,23 @@ export type SceneryAbyssProps = {
  * the scene. Changing any of it recompiles nothing and bakes nothing.
  */
 export type SceneryHollow = {
+  /** how it looks, and what its colours, `embers` and `pulse` default to. Default `'calm'` */
+  style?: SceneryHollowStyle;
   /** its rim's radius along the sea, in world units. Default 500 000 */
   radius?: number;
   /** depth of its floor under the seabed, in world units. Default 35 000 */
   floorDepth?: number;
   colors?: {
-    /** the walls' rock. Default `#42403d` */
+    /** the walls' rock. Default `#3d3f41` (calm), `#42403d` (molten), `#7c7d7e` (simple) */
     walls?: ColorRepresentation;
-    /** the floor's rock. Default `#3d3937` */
+    /** the floor's rock. Default `#36393c` (calm), `#3d3937` (molten), `#252525` (simple) */
     floor?: ColorRepresentation;
     /** the glow in the floor's cracks, and its warmth on the walls. Default `#ff7326` */
     embers?: ColorRepresentation;
+    /** the lid's underside, seen from inside: the simple style's only (the others' is the sediments' rock). Default `#b0b0b0` */
+    lid?: ColorRepresentation;
   };
-  /** how much the floor's cracks glow; 0 for none. Default 1 */
+  /** how much the floor's cracks glow; 0 for none. Default 0 (calm, simple), 1 (molten) */
   embers?: number;
   /** width of the band inside the rim over which the floor cools to plain rock, in world units. Default 0.35 of the radius, at least 40 000 */
   cooling?: number;
@@ -307,8 +321,20 @@ export type SceneryHollow = {
   lightFalloff?: number;
   /** how much the void's air darkens with depth, 0 for none. Default 1 */
   murk?: number;
-  /** how far the embers' glow dims, at most, as it slowly pulses across the floor (a share of it; 0 holds it steady). It moves only while frames are drawn. Default 0.2 */
+  /** how far the embers' glow dims, at most, as it slowly pulses across the floor (a share of it; 0 holds it steady). It moves only while frames are drawn. Default 0 (calm, simple), 0.2 (molten) */
   pulse?: number;
+  /** how much of the air is left over the open hollow, 0 to 1: the rest drains into it, darkening the sky over it and taking the haze off the land about its rim. Default 0.35 (calm), 0.1 (molten), 1 (simple) */
+  air?: number;
+  /**
+   * Grips on the rim, in the simple style only (four small cubes at its true east, north,
+   * west and south), that drag its
+   * radius: a ghost ring follows the pointer, and on release the hollow takes the new radius
+   * (`onRadiusChange`). The dragged radius is kept until `radius` changes; a double click or
+   * tap puts the default radius (500 km) back. Default false
+   */
+  handle?: boolean;
+  /** called with the radius a drag of a grip (`handle`) leaves, or a reset puts back */
+  onRadiusChange?: (radius: number) => void;
 };
 
 /**
@@ -318,7 +344,11 @@ export type SceneryHollow = {
  * across that reads from across the hollow. The walls are built along it, and the relief and
  * the seabed are cut along it (`uSkyHollowRim`).
  */
-export const SCENERY_HOLLOW_RIM: readonly (readonly [number, number, number])[] = [
+export const SCENERY_HOLLOW_RIM: readonly (readonly [
+  number,
+  number,
+  number,
+])[] = [
   [3, 0.016, 0.4],
   [5, 0.011, 2.1],
   [7, 0.008, 4.0],
@@ -644,14 +674,56 @@ export const sceneryDefaults = {
     depthDetailScale: 1,
     falloff: 0.5,
     hollow: {
+      style: 'calm' as SceneryHollowStyle,
       radius: 500000,
       floorDepth: 35000,
-      colors: { walls: '#42403d', floor: '#3d3937', embers: '#ff7326' },
-      embers: 1,
       cooling: null as number | null,
       lightFalloff: 11000,
       murk: 1,
-      pulse: 0.2,
+      // What each style defaults to; anything set on the hollow overrides it.
+      styles: {
+        calm: {
+          colors: {
+            walls: '#3d3f41',
+            floor: '#36393c',
+            embers: '#ff7326',
+            lid: '#b0b0b0',
+          },
+          embers: 0,
+          pulse: 0,
+          air: 0.35,
+        },
+        molten: {
+          colors: {
+            walls: '#42403d',
+            floor: '#3d3937',
+            embers: '#ff7326',
+            lid: '#b0b0b0',
+          },
+          embers: 1,
+          pulse: 0.2,
+          air: 0.1,
+        },
+        simple: {
+          colors: {
+            walls: '#7c7d7e',
+            floor: '#252525',
+            embers: '#ff7326',
+            lid: '#b0b0b0',
+          },
+          embers: 0,
+          pulse: 0,
+          air: 1,
+        },
+      } satisfies Record<
+        SceneryHollowStyle,
+        {
+          colors: { walls: string; floor: string; embers: string; lid: string };
+          embers: number;
+          pulse: number;
+          air: number;
+        }
+      >,
     },
   },
   ocean: {

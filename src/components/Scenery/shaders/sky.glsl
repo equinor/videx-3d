@@ -652,7 +652,7 @@ vec3 skyAbyssCeilingOver(vec3 hit, float reach, float footprint) {
   ceiling *= ripple;
   if(uSkyHollow.x > 0.5 && uHollowView.x > 0.5) {
     float inside = hollowInside(hit);
-    vec3 lid = hollowLid(hit, reach, inside, footprint * uSkyAbyssDetailScale) * ripple;
+    vec3 lid = hollowLid(hit, reach, inside, footprint * uSkyAbyssDetailScale) * (hollowStyleSimple() ? 1.0 : ripple);
     ceiling = mix(ceiling, lid, smoothstep(-3000.0, 0.0, inside));
   }
   return ceiling;

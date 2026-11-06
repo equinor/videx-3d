@@ -19,10 +19,26 @@ uniform vec3 uSkyHollowRim[HOLLOW_RIM_WAVES];
 // place, or the camera under it), eased. z: how much of the air about the camera has drained
 // into the open hollow. w: how far under the floor the camera is, in the rock (0 over it).
 uniform vec4 uHollowView;
+// The hollow's look's switches (scenery-hollow.ts, setLook), read here and by hollow-look.glsl.
+// x: how much the fissures glow; y: how much the air darkens with depth; z: 1 for the calm
+// style (grey rock, dark cracks, no warmth from below), 0 for the molten one; w: how much of
+// the air is left over the open hollow (hollowAirAt).
+uniform vec4 uHollowLook;
+
+// How calm the hollow's style is, for blending: 0 molten, 1 calm or simple (grey rock, no
+// warmth from below). And whether it is the simple style, a diagram (uHollowLook.z 2).
+float hollowStyleCalm() {
+  return min(uHollowLook.z, 1.0);
+}
+bool hollowStyleSimple() {
+  return uHollowLook.z > 1.5;
+}
 
 // The rim's radius at `turn` radians round the axis (from true east toward true north), as a
-// share of its radius.
+// share of its radius. The simple style's is round.
 float hollowRimScale(float turn) {
+  if(hollowStyleSimple())
+    return 1.0;
   float scale = 1.0;
   for(int i = 0; i < HOLLOW_RIM_WAVES; i++) {
     vec3 wave = uSkyHollowRim[i];
@@ -53,27 +69,31 @@ bool hollowOpenAt(vec3 p) {
 #define HOLLOW_SKY_SATURATION 0.35
 #define HOLLOW_SKY_LIGHT 0.7
 vec3 hollowDullSky(vec3 color) {
-  if(uSkyHollow.y < 0.5)
+  if(uSkyHollow.y < 0.5 || hollowStyleSimple())
     return color;
   float grey = dot(color, vec3(0.2126, 0.7152, 0.0722));
   return mix(vec3(grey), color, HOLLOW_SKY_SATURATION) * HOLLOW_SKY_LIGHT;
 }
 
-// While the hollow is open its air drains into the void: all but this share of it gone over
+// While the hollow is open its air drains into the void: all but uHollowLook.w of it gone over
 // the opening, thinning over a band outside the rim this share of its radius wide, whole
 // beyond. The ground about it loses the sky's light toward the rim, to this share of it, and
 // its haze, so the crater does not stand out of a bright land; and the sky over it darkens
 // toward space's. Not in the bakes, which take the hollow off.
-#define HOLLOW_AIR_KEPT 0.1
 #define HOLLOW_AIR_BAND 0.4
 #define HOLLOW_AIR_GROUND 0.45
 
+// The simple style's ring along the open hollow's rim on the ground (relief-fragment): its
+// half-width in pixels, and its colour (linear).
+#define HOLLOW_SIMPLE_RIM 1.5
+#define HOLLOW_SIMPLE_RIM_COLOR vec3(0.85)
+
 // How much of the air is left `inside` the rim (hollowInside, negative outside): 1 beyond the
-// band, HOLLOW_AIR_KEPT over the opening.
+// band, uHollowLook.w over the opening.
 float hollowAirAt(float inside) {
   if(uSkyHollow.y < 0.5)
     return 1.0;
-  return mix(HOLLOW_AIR_KEPT, 1.0, smoothstep(0.0, HOLLOW_AIR_BAND * uSkyHollow.w, -inside));
+  return mix(uHollowLook.w, 1.0, smoothstep(0.0, HOLLOW_AIR_BAND * uSkyHollow.w, -inside));
 }
 
 // How much of the air is left at `p` (hollowAirAt).

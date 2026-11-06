@@ -23,6 +23,7 @@ import {
   type SceneryAbyssProps,
   type SceneryCloudLayers,
   type SceneryCloudsProps,
+  type SceneryHollowStyle,
   type SceneryOceanProps,
   type SkyMoon,
   type SkyObserver,
@@ -178,15 +179,21 @@ export type SceneryArgs = {
   abyssFalloff: number;
   /** the void as a hollow under the field (`SceneryAbyss`'s `hollow`) */
   hollow: boolean;
+  hollowStyle: SceneryHollowStyle;
   hollowRadius: number;
   hollowFloorDepth: number;
-  hollowWalls: string;
-  hollowFloor: string;
-  hollowEmberColor: string;
-  hollowEmbers: number;
+  hollowWalls?: string;
+  hollowFloor?: string;
+  hollowEmberColor?: string;
+  hollowLidColor?: string;
+  hollowEmbers?: number;
   hollowLightFalloff: number;
   hollowMurk: number;
-  hollowPulse: number;
+  hollowPulse?: number;
+  hollowAir?: number;
+  hollowHandle: boolean;
+  /** set by {@link sceneryHollowDecorator}: the radius the rim grip left */
+  onHollowRadius?: (radius: number) => void;
   // Environment
   globe: boolean;
   environment: boolean;
@@ -313,15 +320,12 @@ export const sceneryArgs: SceneryArgs = {
   abyssDepthDetailScale: sceneryDefaults.abyss.depthDetailScale,
   abyssFalloff: sceneryDefaults.abyss.falloff,
   hollow: true,
+  hollowStyle: sceneryDefaults.abyss.hollow.style,
   hollowRadius: sceneryDefaults.abyss.hollow.radius,
   hollowFloorDepth: sceneryDefaults.abyss.hollow.floorDepth,
-  hollowWalls: sceneryDefaults.abyss.hollow.colors.walls,
-  hollowFloor: sceneryDefaults.abyss.hollow.colors.floor,
-  hollowEmberColor: sceneryDefaults.abyss.hollow.colors.embers,
-  hollowEmbers: sceneryDefaults.abyss.hollow.embers,
   hollowLightFalloff: sceneryDefaults.abyss.hollow.lightFalloff,
   hollowMurk: sceneryDefaults.abyss.hollow.murk,
-  hollowPulse: sceneryDefaults.abyss.hollow.pulse,
+  hollowHandle: false,
   globe: sceneryDefaults.globe,
   environment: true,
   lightProbe: true,
@@ -387,6 +391,18 @@ export function skySunArgsAt(
   };
 }
 
+/** Writes a radius dragged with the hollow's rim grip back into `hollowRadius`. */
+const sceneryHollowDecorator: Decorator = (Story, context) => {
+  const [, updateArgs] = useArgs<SceneryArgs>();
+  return Story({
+    args: {
+      ...context.args,
+      onHollowRadius: (radius: number) =>
+        updateArgs({ hollowRadius: Math.round(radius / 1000) * 1000 }),
+    },
+  });
+};
+
 /** Ticking `observerNow` sets the time to now and the place to the browser's (if it may tell), then clears it. */
 const skyObserverNowDecorator: Decorator = Story => {
   const [args, updateArgs] = useArgs<SceneryArgs>();
@@ -419,6 +435,7 @@ const skyObserverNowDecorator: Decorator = Story => {
  */
 export const sceneryDecorators: Decorator[] = [
   sceneryCutawayDecorator,
+  sceneryHollowDecorator,
   skyObserverNowDecorator,
   progressDecorator,
 ];
@@ -558,17 +575,22 @@ export const sceneryAbyssFromArgs = (args: SceneryArgs): SceneryAbyssProps => ({
   depthDetailScale: args.abyssDepthDetailScale,
   falloff: args.abyssFalloff,
   hollow: args.hollow && {
+    style: args.hollowStyle,
     radius: args.hollowRadius,
     floorDepth: args.hollowFloorDepth,
     colors: {
       walls: args.hollowWalls,
       floor: args.hollowFloor,
       embers: args.hollowEmberColor,
+      lid: args.hollowLidColor,
     },
     embers: args.hollowEmbers,
     lightFalloff: args.hollowLightFalloff,
     murk: args.hollowMurk,
     pulse: args.hollowPulse,
+    air: args.hollowAir,
+    handle: args.hollowHandle,
+    onRadiusChange: args.onHollowRadius,
   },
 });
 
@@ -693,9 +715,12 @@ const ADVANCED = new Set<string>([
   'hollowWalls',
   'hollowFloor',
   'hollowEmberColor',
+  'hollowLidColor',
   'hollowLightFalloff',
   'hollowMurk',
   'hollowPulse',
+  'hollowAir',
+  'hollowHandle',
   'subsurfaceIntensity',
   'subsurfacePanelColor',
   'subsurfaceBelow',
@@ -1281,6 +1306,14 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     SUBSURFACE,
     'The void as a hollow in the crust under the field (`SceneryAbyss`\u2019s `hollow`): a floor deep under the seabed and walls about it. Peeling the seabed opens it, the relief and the seabed cut away inside its rim and whole around it. Off, the bottomless gradient, and a peeled seabed gone everywhere.',
   ),
+  hollowStyle: {
+    control: { type: 'inline-radio' },
+    options: ['calm', 'molten', 'simple'],
+    description:
+      'How the hollow looks (`hollow.style`): `calm`, grey rock and dark cracks, a sober backdrop; `molten`, a warm floor, its cracks glowing and pulsing; `simple`, a diagram, an even slope with depth lines, floor rings and a ring along the rim. Its colours, embers, pulse and air follow it unless set.',
+    if: { arg: 'hollow' },
+    table: { category: SUBSURFACE },
+  },
   hollowRadius: {
     ...range(
       50000,
@@ -1302,15 +1335,19 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     if: { arg: 'hollow' },
   },
   hollowWalls: {
-    ...color(SUBSURFACE, 'The hollow\u2019s walls\u2019 rock.'),
+    ...color(SUBSURFACE, 'The hollow\u2019s walls\u2019 rock; unset, the style\u2019s.'),
     if: { arg: 'hollow' },
   },
   hollowFloor: {
-    ...color(SUBSURFACE, 'The hollow\u2019s floor\u2019s rock.'),
+    ...color(SUBSURFACE, 'The hollow\u2019s floor\u2019s rock; unset, the style\u2019s.'),
     if: { arg: 'hollow' },
   },
   hollowEmberColor: {
-    ...color(SUBSURFACE, 'The glow in the floor\u2019s cracks.'),
+    ...color(SUBSURFACE, 'The glow in the floor\u2019s cracks; unset, the style\u2019s.'),
+    if: { arg: 'hollow' },
+  },
+  hollowLidColor: {
+    ...color(SUBSURFACE, 'The simple style\u2019s lid, seen from inside; unset, the style\u2019s.'),
     if: { arg: 'hollow' },
   },
   hollowEmbers: {
@@ -1319,7 +1356,7 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
       3,
       0.05,
       SUBSURFACE,
-      'How much the floor\u2019s cracks glow; 0 for none.',
+      'How much the floor\u2019s cracks glow; 0 for none. Unset, the style\u2019s.',
     ),
     if: { arg: 'hollow' },
   },
@@ -1349,9 +1386,26 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
       1,
       0.05,
       SUBSURFACE,
-      'How far the embers\u2019 glow dims as it slowly pulses (a share of it); 0 holds it steady.',
+      'How far the embers\u2019 glow dims as it slowly pulses (a share of it); 0 holds it steady. Unset, the style\u2019s.',
     ),
     if: { arg: 'hollow' },
+  },
+  hollowAir: {
+    ...range(
+      0,
+      1,
+      0.05,
+      SUBSURFACE,
+      'How much of the air is left over the open hollow; the rest drains into it, darkening the sky over it. Unset, the style\u2019s.',
+    ),
+    if: { arg: 'hollow' },
+  },
+  hollowHandle: {
+    ...toggle(
+      SUBSURFACE,
+      'A grip on the rim that drags the radius (`hollow.handle`), in the simple style only: a ghost ring follows, and the hollow takes the radius on release. A double click puts it back.',
+    ),
+    if: { arg: 'hollowStyle', eq: 'simple' },
   },
   globe: toggle(
     ENVIRONMENT,

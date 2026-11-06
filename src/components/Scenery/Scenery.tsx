@@ -85,8 +85,10 @@ import {
   SceneryHollowParts,
   sceneryHollowAirGone,
   sceneryHollowInside,
+  sceneryHollowRadiusRange,
   sceneryHollowLook,
 } from './scenery-hollow';
+import { SceneryHollowGrip } from './scenery-hollow-grip';
 import { SceneryReliefHub } from './scenery-relief-hub';
 import { sceneryOceanDefines } from './scenery-stage';
 import {
@@ -599,12 +601,61 @@ export const Scenery = ({
   const hollowOpen = hollowOn && hasOcean && !oceanSeabed;
   const [hollow] = useState(() => new SceneryHollowParts(material));
   useEffect(() => () => hollow.dispose(), [hollow]);
+  // The radius the rim grip left (SceneryHollow.handle), kept until `radius` changes.
+  const hollowDragged = useRef<number | null>(null);
+  const hollowRadius = () =>
+    hollowDragged.current ?? hollowLook?.radius ?? 0;
+  const onHollowRadius = useRef<((radius: number) => void) | undefined>(
+    undefined,
+  );
+  useLayoutEffect(() => {
+    const given = abyssOptions?.hollow;
+    onHollowRadius.current =
+      typeof given === 'object' ? given.onRadiusChange : undefined;
+  });
+  const hollowGrip = useRef<SceneryHollowGrip | null>(null);
+  useEffect(() => {
+    if (!hollowGrip.current?.active) hollowDragged.current = null;
+    if (hollowLook) material.hollowRadius = hollowRadius();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on a new radius
+  }, [hollowLook?.radius]);
+  const getThree = useThree(state => state.get);
+  const hollowHandleOn = !!hollowLook?.handle && hollowOn;
+  useEffect(() => {
+    if (!hollowHandleOn) return;
+    const grip = new SceneryHollowGrip(
+      material.globe,
+      gl.domElement,
+      () => getThree().camera,
+      {
+        drop: radius => {
+          hollowDragged.current = radius;
+          material.hollowRadius = radius;
+          onHollowRadius.current?.(radius);
+        },
+        reset: () => {
+          const radius = sceneryDefaults.abyss.hollow.radius;
+          hollowDragged.current = radius;
+          material.hollowRadius = radius;
+          onHollowRadius.current?.(radius);
+        },
+      },
+    );
+    hollowGrip.current = grip;
+    scene.add(grip.object);
+    return () => {
+      scene.remove(grip.object);
+      grip.dispose();
+      hollowGrip.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the radius is read when used
+  }, [hollowHandleOn, material, gl, scene, getThree]);
   // Uniforms only: nothing recompiles, and the bakes take the seabed whole, so nothing bakes.
   useLayoutEffect(() => {
     material.hollow = hollowOn;
     material.hollowOpen = hollowOpen;
     if (!hollowLook) return;
-    material.hollowRadius = hollowLook.radius;
+    material.hollowRadius = hollowDragged.current ?? hollowLook.radius;
     hollow.setLook(hollowLook);
   }, [material, hollow, hollowOn, hollowOpen, hollowLook]);
   const [probe] = useState(() => new LightProbe());
@@ -1462,8 +1513,10 @@ export const Scenery = ({
       hollowLook && hollowOn
         ? sceneryHollowInside(
             material.globe,
-            hollowLook.radius,
+            hollowRadius(),
             camera.position,
+            // The simple style's rim is round.
+            hollowLook.style === 'simple' ? 1 : undefined,
           )
         : -Infinity;
     const inHollow = !!hollowLook && cameraInside > 0;
@@ -1569,9 +1622,10 @@ export const Scenery = ({
     // its rim. Below it outside the rim the camera is in solid crust: the void's own layer.
     if (hollowLook) {
       hollow.update({
-        radius: hollowLook.radius,
+        radius: hollowRadius(),
         floorDepth: hollowLook.floorDepth,
         bed: material.abyssLevel - material.globe.level,
+        simple: hollowLook.style === 'simple',
       });
       const belowBed = height < material.abyssLevel || material.oceanBuried;
       const hollowShown =
@@ -1586,14 +1640,21 @@ export const Scenery = ({
       hollow.floor.visible = hollowShown;
       hollow.walls.visible = hollowShown;
       if (hollowShown) hollow.cull(camera);
+      // The rim grips over the open hollow, seen from over the seabed.
+      hollowGrip.current?.update(
+        hollowRadius(),
+        sceneryHollowRadiusRange(hollowLook.floorDepth),
+        hollowShown && voidOpen && !belowBed,
+      );
       hollow.setView(
         inHollow,
         !voidOpen || belowBed,
         hollowOpen
           ? sceneryHollowAirGone(
               cameraInside,
-              hollowLook.radius,
+              hollowRadius(),
               height - material.globe.level,
+              hollowLook.air,
             )
           : 0,
         material.abyssLevel - hollowLook.floorDepth - height,

@@ -64,6 +64,41 @@ built again only when the globe, the radius, the floor depth or the seabed's hei
 
 ## Look
 
+### Styles
+
+`style` sets the look, and what the colours, `embers`, `pulse` and `air` default to; anything
+set on the hollow overrides it. A uniform (`uHollowLook.z`): switching recompiles nothing.
+
+| | `calm` (default) | `molten` | `simple` |
+|--|--|--|--|
+| Walls | the crust in section, `#3d3f41`, the bands' warm/cool shift a third (`HOLLOW_CALM_HUE`) | the crust in section, `#42403d`, warmer bands, a warmer top | one even slope (`SIMPLE_SLOPE`), matte `#7c7d7e`, a line every 5 km of depth, a shadow under the rim |
+| Floor | grey rock, its fissures dark cracks (`HOLLOW_CALM_CRACKS`), as light as the walls' foot (`HOLLOW_CALM_FLOOR`) | the mantle's cooled top: charcoal, brown and rust, its fissures glowing and pulsing | flat `#252525`, a ring every 50 km |
+| Rim | — | — | a ring a few pixels wide on the ground (`HOLLOW_SIMPLE_RIM`) |
+| Warmth from below | none | on the walls and the lid | none |
+| Lid | the sediments' underside, mottled | the same, faintly warm | plain `#b0b0b0` (`colors.lid`), a soft shade toward the walls (`HOLLOW_SIMPLE_LID_EDGE`) |
+| Air over the opening | dulled, 0.35 left | dulled, 0.1 left | untouched (`air` 1, no dulled sky) |
+| `embers`, `pulse`, `air` | 0, 0, 0.35 | 1, 0.2, 0.1 | 0, 0, 1 |
+
+The calm one is the sober backdrop for engineers; the molten one the dramatic one; the simple
+one a diagram, as the cutaway is an illustration (`HOLLOW_SIMPLE_*` in `hollow-fragment.glsl`).
+Its geometry is built apart (`SceneryHollowShape.simple`): switching to or from it rebuilds the
+geometry once, nothing else. A faint grain from the baked rock (`HOLLOW_SIMPLE_GRAIN`, ±6%) keeps
+its floor, walls and lid from looking flat close up; the mips average it out far off.
+
+#### The radius grips (simple style)
+
+`handle` puts four grips on the rim, at its true east, north, west and south: small cubes, as
+large on screen at any distance (7 drawing-buffer pixels, a little wider than the rim's ring),
+centred on the ring, each under an invisible element that takes the pointer
+(`SceneryHollowGrip`, on the cutaway's `SceneryCutawayHandle`). Cubes rather than flat marks:
+they read the same from any angle and point no way in particular. Dragging any
+draws a ghost ring at sea level under the pointer, the hollow left as it is; on release the
+hollow takes the radius, its geometry rebuilt once, and `onRadiusChange` reports it. A double
+click puts the default radius back. The radius is kept between the walls' reach plus 20 km and
+1500 km (`sceneryHollowRadiusRange`); the dragged one holds until the `radius` prop changes.
+
+### Parts
+
 - **Textures** (`src/sdk/materials`): `createRockTexture` (512², slope, shade, a crack network)
   and `createCliffTexture` (1024², shade, normal, openness), each drawn once by `bakeTexture`
   after its program has compiled (drawing a compiling program stalls Chrome's GPU process).
@@ -123,10 +158,11 @@ draws it near the field, the background beyond.
 
 - The sky over the open hollow is greyed and dimmed (`hollowDullSky`) so the eye goes down into
   the hollow.
-- **Its air drains into the void:** all but 10% (`HOLLOW_AIR_KEPT`) over the opening, thinning
-  over a band 0.4 of the radius wide outside the rim (`HOLLOW_AIR_BAND`). The ground there loses
-  the sky's light (to `HOLLOW_AIR_GROUND`) and its haze, and the sky about a camera low over the
-  opening darkens toward space's (`sceneryHollowAirGone`, fading out between 50 and 150 km up).
+- **Its air drains into the void:** all but `air` of it over the opening (0.35 calm, 0.1
+  molten), thinning over a band 0.4 of the radius wide outside the rim (`HOLLOW_AIR_BAND`). The
+  ground there loses the sky's light (to `HOLLOW_AIR_GROUND`) and its haze, and the sky about a
+  camera low over the opening darkens toward space's (`sceneryHollowAirGone`, fading out between
+  50 and 150 km up).
 - Views down into the opening see the sky mirrored about the horizon (`skyAir`), not the ground
   the sky paints below it. From at or below the sea's level, inside the rim, every view down is
   into the opening.

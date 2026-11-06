@@ -27,6 +27,7 @@ import vertexShader from './shaders/hollow-vertex.glsl';
 import {
   SCENERY_HOLLOW_RIM,
   SceneryHollow,
+  SceneryHollowStyle,
   sceneryDefaults,
 } from './scenery-model';
 import type { SceneryMaterial } from './scenery-material';
@@ -41,6 +42,13 @@ export const SCENERY_HOLLOW_ORDER = { walls: -0.2, floor: -0.1 };
 
 /** Seconds over which the walls' shade under the lid eases in and out (setView). */
 export const SCENERY_HOLLOW_SHUT_EASE = 0.3;
+
+/** Each style as `uHollowLook.z` gives it to the shaders (hollow.glsl). */
+export const SCENERY_HOLLOW_STYLE_INDEX: Record<SceneryHollowStyle, number> = {
+  molten: 0,
+  calm: 1,
+  simple: 2,
+};
 
 /** The embers' pulse's two periods, in seconds (hollowPulseAt, hollow-look.glsl). */
 export const SCENERY_HOLLOW_PULSE_PERIODS = [7, 17] as const;
@@ -81,6 +89,9 @@ const ROWS = 72;
 // foot of their face, and how far their apron of fallen rock runs on over the floor.
 const WALL_INSET = 0.45;
 const WALL_APRON = 0.35;
+// The simple style's walls: one even slope, reaching in from the rim as far as the crater's
+// walls with their apron do, over the floor's depth.
+const SIMPLE_SLOPE = WALL_INSET + WALL_APRON;
 // Their terraces' strength (0 a plain slope; up to 1, the benches flat between sheer faces).
 const TERRACES = 0.8;
 // Buttresses along the rim, standing proud of the face with steep sides, so one side catches
@@ -107,16 +118,20 @@ const FLOOR_FORMS = 70000;
 
 /** A {@link SceneryHollow} with every default filled in. */
 export type SceneryHollowLook = {
+  style: SceneryHollowStyle;
   radius: number;
   floorDepth: number;
   walls: Color;
   floor: Color;
   embers: Color;
+  lid: Color;
   emberStrength: number;
   cooling: number;
   lightFalloff: number;
   murk: number;
   pulse: number;
+  air: number;
+  handle: boolean;
 };
 
 /** The hollow's look from its props: `null` for none (`hollow: false`). */
@@ -126,23 +141,29 @@ export function sceneryHollowLook(
   if (hollow === false) return null;
   const given: SceneryHollow = hollow === true || !hollow ? {} : hollow;
   const defaults = sceneryDefaults.abyss.hollow;
+  const style = given.style ?? defaults.style;
+  const styled = defaults.styles[style] ?? defaults.styles.calm;
   const radius = Math.max(given.radius ?? defaults.radius, 1);
   const color = (value: ColorRepresentation | undefined, fallback: string) =>
     new Color(value ?? fallback);
   return {
+    style,
     radius,
     floorDepth: Math.max(given.floorDepth ?? defaults.floorDepth, 1),
-    walls: color(given.colors?.walls, defaults.colors.walls),
-    floor: color(given.colors?.floor, defaults.colors.floor),
-    embers: color(given.colors?.embers, defaults.colors.embers),
-    emberStrength: Math.max(given.embers ?? defaults.embers, 0),
+    walls: color(given.colors?.walls, styled.colors.walls),
+    floor: color(given.colors?.floor, styled.colors.floor),
+    embers: color(given.colors?.embers, styled.colors.embers),
+    lid: color(given.colors?.lid, styled.colors.lid),
+    emberStrength: Math.max(given.embers ?? styled.embers, 0),
     cooling: Math.max(
       given.cooling ?? defaults.cooling ?? Math.max(40000, 0.35 * radius),
       1,
     ),
     lightFalloff: Math.max(given.lightFalloff ?? defaults.lightFalloff, 1),
     murk: Math.max(given.murk ?? defaults.murk, 0),
-    pulse: MathUtils.clamp(given.pulse ?? defaults.pulse, 0, 1),
+    pulse: MathUtils.clamp(given.pulse ?? styled.pulse, 0, 1),
+    air: MathUtils.clamp(given.air ?? styled.air, 0, 1),
+    handle: style === 'simple' && !!given.handle,
   };
 }
 
@@ -192,6 +213,53 @@ export function sceneryHollowInside(
 export const SCENERY_HOLLOW_RIM_LEAST =
   1 - SCENERY_HOLLOW_RIM.reduce((sum, [, share]) => sum + share, 0);
 
+/** The largest radius the rim grip drags a hollow to (SceneryHollow.handle), in world units. */
+export const SCENERY_HOLLOW_RADIUS_MAX = 1500000;
+
+/**
+ * The radii the rim grip drags a simple hollow `floorDepth` deep between: its walls' reach and
+ * 20 km of floor at least, {@link SCENERY_HOLLOW_RADIUS_MAX} at most.
+ */
+export function sceneryHollowRadiusRange(floorDepth: number): [number, number] {
+  return [SIMPLE_SLOPE * floorDepth + 20000, SCENERY_HOLLOW_RADIUS_MAX];
+}
+
+/**
+ * The point `across` along the sea from `globe`'s disc centre at `turn` radians round it (from
+ * true east toward true north), `height` over the sea's level, into `target`: about the disc's
+ * centre (add `discCentre` to place it), as the hollow's geometry lays its points.
+ */
+export function sceneryHollowPointAt(
+  globe: Globe,
+  turn: number,
+  across: number,
+  height: number,
+  target: Vector3,
+): Vector3 {
+  const up = globe.up;
+  east.copy(globe.uniforms.uGlobeEast.value);
+  east.addScaledVector(up, -east.dot(up)).normalize();
+  north.crossVectors(up, east);
+  let flat = across;
+  let along = height;
+  if (globe.enabled) {
+    const R = globe.radius;
+    const s = globe.centreDepth;
+    const rho = R + height;
+    const half = Math.sin(across / R / 2);
+    flat = rho * Math.sin(across / R);
+    // ρ cos α − s, as (R − s) + (ρ − R) − 2ρ sin²(α / 2): nothing near-equal subtracted.
+    along = globe.discRadius ** 2 / (R + s) + height - 2 * rho * half * half;
+  }
+  const dx = Math.cos(turn);
+  const dz = Math.sin(turn);
+  return target
+    .copy(east)
+    .multiplyScalar(flat * dx)
+    .addScaledVector(north, flat * dz)
+    .addScaledVector(up, along);
+}
+
 /**
  * Whether the geographic tile `key` lies wholly inside the hollow's rim on `globe`, for a
  * hollow of `radius`, a couple of km in from where the rim reaches in furthest: all its
@@ -226,8 +294,6 @@ const HOLLOW_TILE_MARGIN = 2000;
 const tileOffset = new Vector2();
 const tilePoint = new Vector3();
 
-/** The share of the air left over the open hollow's opening (HOLLOW_AIR_KEPT). */
-export const SCENERY_HOLLOW_AIR_KEPT = 0.1;
 /** The band outside the rim, as a share of its radius, over which its air thins (HOLLOW_AIR_BAND). */
 export const SCENERY_HOLLOW_AIR_BAND = 0.4;
 /** The camera's altitudes over which the sky's drained air fades out: above, the sky is space. */
@@ -235,17 +301,19 @@ export const SCENERY_HOLLOW_AIR_HEIGHTS = [50000, 150000] as const;
 
 /**
  * How much of the air about a camera `inside` the open hollow's rim (sceneryHollowInside),
- * `altitude` over the sea, has drained into it, for a hollow of `radius`: all but
- * {@link SCENERY_HOLLOW_AIR_KEPT} over the opening, none beyond the band outside its rim (as
- * `hollowAir`, hollow.glsl), and less the higher the camera, where the sky is space's anyway.
+ * `altitude` over the sea, has drained into it, for a hollow of `radius` that keeps `kept` of
+ * it (SceneryHollowLook.air): all but that over the opening, none beyond the band outside its
+ * rim (as `hollowAirAt`, hollow.glsl), and less the higher the camera, where the sky is
+ * space's anyway.
  */
 export function sceneryHollowAirGone(
   inside: number,
   radius: number,
   altitude: number,
+  kept: number,
 ) {
   const air = MathUtils.lerp(
-    SCENERY_HOLLOW_AIR_KEPT,
+    kept,
     1,
     MathUtils.smoothstep(-inside, 0, SCENERY_HOLLOW_AIR_BAND * radius),
   );
@@ -410,6 +478,8 @@ export type SceneryHollowShape = {
   floorDepth: number;
   /** the seabed's height over the sea's level: the void's lid, its walls' top */
   bed: number;
+  /** a plain even slope from the rim to the floor, and a flat floor: the simple style's */
+  simple?: boolean;
 };
 
 const pow2Ceil = (n: number) => 2 ** Math.ceil(Math.log2(Math.max(n, 1)));
@@ -431,7 +501,7 @@ const pow2Ceil = (n: number) => 2 ** Math.ceil(Math.log2(Math.max(n, 1)));
  */
 export function createSceneryHollowGeometry(
   globe: Globe,
-  { radius, floorDepth, bed }: SceneryHollowShape,
+  { radius, floorDepth, bed, simple = false }: SceneryHollowShape,
 ) {
   const up = globe.up;
   east.copy(globe.uniforms.uGlobeEast.value);
@@ -476,9 +546,11 @@ export function createSceneryHollowGeometry(
     );
     uv?.push(flat * dx, flat * dz);
   };
-  // The rim's arc out from the axis at `turn`, a few metres beyond the cut.
+  // The rim's arc out from the axis at `turn`, a few metres beyond the cut: round for the
+  // simple style (hollowRimScale).
   const rimAt = (turn: number) =>
-    (on ? rimAngle * R : radius) * sceneryHollowRimScale(turn) + 3;
+    (on ? rimAngle * R : radius) * (simple ? 1 : sceneryHollowRimScale(turn)) +
+    3;
 
   // The walls' insets and depths, row by row down each column; neither shrinks down a column,
   // so where buttresses, gullies and terraces cross the face never leans out over itself.
@@ -489,12 +561,10 @@ export function createSceneryHollowGeometry(
     let last = -Infinity;
     let deepest = -Infinity;
     for (let row = 0; row <= ROWS; row++) {
-      const [inset, depth] = sceneryHollowWallAt(
-        turn,
-        row / ROWS,
-        floorDepth,
-        rimLength,
-      );
+      const t = row / ROWS;
+      const [inset, depth] = simple
+        ? [SIMPLE_SLOPE * floorDepth * t, floorDepth * t]
+        : sceneryHollowWallAt(turn, t, floorDepth, rimLength);
       last = Math.max(inset, last);
       deepest = Math.min(Math.max(depth, deepest), floorDepth);
       insets[row * SEGMENTS + k] = last;
@@ -581,6 +651,7 @@ export function createSceneryHollowGeometry(
   const counts: number[] = [1];
   const starts: number[] = [0];
   const swellAt = (turn: number, across: number, f: number) => {
+    if (simple) return 0;
     const x = (across * Math.cos(turn)) / FLOOR_FORMS;
     const y = (across * Math.sin(turn)) / FLOOR_FORMS;
     // None at the foot, which meets the walls' last row.
@@ -688,7 +759,7 @@ export class SceneryHollowParts {
   private built = '';
   // The embers' pulse: seconds drawn so far, and how far it dims (SceneryHollowLook.pulse).
   private clock = 0;
-  private pulseDepth: number = sceneryDefaults.abyss.hollow.pulse;
+  private pulseDepth = 0;
 
   constructor(private readonly sky: SceneryMaterial) {
     // The sky's uniform objects, its hollow's look among them (hollow-look.glsl), which the
@@ -768,7 +839,13 @@ export class SceneryHollowParts {
     (u.uHollowWallColor.value as Color).copy(look.walls);
     (u.uHollowFloorColor.value as Color).copy(look.floor);
     (u.uHollowEmberColor.value as Color).copy(look.embers);
-    (u.uHollowLook.value as Vector2).set(look.emberStrength, look.murk);
+    (u.uHollowLidColor.value as Color).copy(look.lid);
+    (u.uHollowLook.value as Vector4).set(
+      look.emberStrength,
+      look.murk,
+      SCENERY_HOLLOW_STYLE_INDEX[look.style],
+      look.air,
+    );
     this.pulseDepth = look.pulse;
   }
 
@@ -806,9 +883,13 @@ export class SceneryHollowParts {
   /** Its geometry for `shape` on the sky's globe: built again only when either changed. */
   update(shape: SceneryHollowShape) {
     const globe = this.sky.globe;
-    const key = [globe.version, shape.radius, shape.floorDepth, shape.bed].join(
-      ',',
-    );
+    const key = [
+      globe.version,
+      shape.radius,
+      shape.floorDepth,
+      shape.bed,
+      !!shape.simple,
+    ].join(',');
     if (key === this.built) return;
     this.built = key;
     const { floor, walls, wallSpheres } = createSceneryHollowGeometry(

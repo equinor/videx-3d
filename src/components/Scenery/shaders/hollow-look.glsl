@@ -14,8 +14,9 @@ uniform vec4 uHollowShape;
 uniform vec3 uHollowWallColor;
 uniform vec3 uHollowFloorColor;
 uniform vec3 uHollowEmberColor;
-// x: how much the fissures glow; y: how much the air darkens with depth.
-uniform vec2 uHollowLook;
+// The simple style's lid's underside (SceneryHollow.colors.lid).
+uniform vec3 uHollowLidColor;
+// The hollow's look's switches are in uHollowLook (hollow.glsl).
 // The embers' pulse (sceneryHollowPulse): its two waves' phases, and how far it dims.
 uniform vec3 uHollowPulse;
 
@@ -48,6 +49,11 @@ uniform vec3 uHollowPulse;
 // field, falling early: seen from inside, everything past a few tens of km crowds into the
 // degree or two over the walls, so a fade kept for the rim reads as a thin band there.
 #define HOLLOW_LID_EDGE vec2(1.0, 0.4)
+// The simple style's lid: its light at the rim, as a share of its own colour.
+#define HOLLOW_SIMPLE_LID_EDGE 0.6
+// How much the simple style's faint grain lightens or darkens, either way (hollowSimpleGrain);
+// on the lid two thirds of it.
+#define HOLLOW_SIMPLE_GRAIN 0.06
 
 // The depth over which the rock under the floor dims a view through it by e, and the share of
 // the hollow it never takes: from deep under it the hollow still shows, faintly, overhead.
@@ -121,7 +127,7 @@ vec3 hollowLight(vec3 n, vec3 up, vec3 rake, float wrap, float lit, float alt, f
   float scattered = HOLLOW_SCATTER * (0.75 + 0.25 * facing);
   float direct = mix(raked, scattered, uHollowView.y) * hollowAbove(lit);
   float fill = HOLLOW_FILL * (0.35 + 0.65 * sky);
-  vec3 warmth = uHollowEmberColor * (0.18 * warm * hollowBelow(alt) * (0.6 - 0.4 * facing) * pulse);
+  vec3 warmth = uHollowEmberColor * (0.18 * warm * hollowBelow(alt) * (0.6 - 0.4 * facing) * pulse * (1.0 - hollowStyleCalm()));
   // Creases only a little darker: the light, not the shade, carries the walls' shape.
   return vec3((direct + fill) * mix(0.85, 1.0, open)) + warmth * mix(0.8, 1.0, open);
 }
@@ -155,27 +161,39 @@ float hollowRockLevel(float size, float pixel) {
 // by its floor, receding into its own dark far off and darkening toward the walls. The way it
 // faces at large is its caller's to shade. No derivatives.
 vec3 hollowLid(vec3 hit, float reach, float inside, float pixel) {
-  vec3 v = hit - uGlobeDisc.xyz;
-  vec2 plane = vec2(dot(v, uGlobeEast), dot(v, uGlobeNorth));
-  // Three sizes, each turned its own way, so close up and far off it is rough rock.
-  vec4 a = hollowRockLod(plane / 40000.0 + vec2(0.31, 0.77), vec2(0.8, 0.6), hollowRockLevel(40000.0, pixel));
-  vec4 b = hollowRockLod(plane / 6000.0 + vec2(0.11, 0.53), vec2(-0.5, 0.866), hollowRockLevel(6000.0, pixel));
-  vec4 c = hollowRockLod(plane / 1000.0 + vec2(0.67, 0.29), vec2(0.6, -0.8), hollowRockLevel(1000.0, pixel));
-  float mottle = 0.62 + 0.55 * a.z + 0.3 * (b.z - 0.5) + 0.18 * (c.z - 0.5);
-  // Its roughness in a light from the hollow's middle, the glow and the opening's, so it reads
-  // as a rough underside: slopes facing in lit, facing out shaded. The slopes average out in
-  // the mips, so it smooths away far off.
-  vec2 toward = -plane * inversesqrt(max(dot(plane, plane), 1.0));
-  float relief = (0.25 * dot(a.xy, toward) + 0.35 * dot(b.xy, toward) + 0.3 * dot(c.xy, toward)) / uHollowRockSlope;
-  mottle *= clamp(1.0 + relief, 0.4, 1.6);
   float near = exp(-reach / HOLLOW_LID_FADE.x);
+  float fade = mix(HOLLOW_LID_FADE.y, 1.0, near);
   // From the middle out, falling fastest near it, all of it by the rim.
   float s = clamp(inside / (HOLLOW_LID_EDGE.x * uHollowShape.y), 0.0, 1.0);
-  float shade = mix(HOLLOW_LID_EDGE.y, 1.0, s * s);
-  float fade = mix(HOLLOW_LID_FADE.y, 1.0, near);
-  vec3 sand = uHollowWallColor * HOLLOW_SAND * (HOLLOW_LID * mottle * fade);
-  // The floor's glow on it: faint, half greyed, fading as its own light does, so far off it
-  // never takes the lid over.
-  vec3 ember = mix(vec3(dot(uHollowEmberColor, vec3(0.2126, 0.7152, 0.0722))), uHollowEmberColor, HOLLOW_LID_WARM.y);
-  return (sand + ember * (HOLLOW_LID_WARM.x * uHollowLook.x * hollowPulseAt(plane, a.z) * fade)) * shade * hollowThroughRock(reach, hit);
+  // The simple style's: a plain even underside in its own colour, its corner with the walls
+  // shaded softly, no rock, no warmth. One return: the D3D compiler takes an early one for an
+  // uninitialised value.
+  vec3 lid;
+  if(hollowStyleSimple()) {
+    vec3 v = hit - uGlobeDisc.xyz;
+    vec2 plane = vec2(dot(v, uGlobeEast), dot(v, uGlobeNorth));
+    float grain = hollowRockLod(plane / 20000.0 + vec2(0.31, 0.77), vec2(0.8, 0.6), hollowRockLevel(20000.0, pixel)).z;
+    lid = uHollowLidColor * fade * mix(HOLLOW_SIMPLE_LID_EDGE, 1.0, s) * (1.0 + 1.33 * HOLLOW_SIMPLE_GRAIN * (grain - 0.5));
+  } else {
+    vec3 v = hit - uGlobeDisc.xyz;
+    vec2 plane = vec2(dot(v, uGlobeEast), dot(v, uGlobeNorth));
+    // Three sizes, each turned its own way, so close up and far off it is rough rock.
+    vec4 a = hollowRockLod(plane / 40000.0 + vec2(0.31, 0.77), vec2(0.8, 0.6), hollowRockLevel(40000.0, pixel));
+    vec4 b = hollowRockLod(plane / 6000.0 + vec2(0.11, 0.53), vec2(-0.5, 0.866), hollowRockLevel(6000.0, pixel));
+    vec4 c = hollowRockLod(plane / 1000.0 + vec2(0.67, 0.29), vec2(0.6, -0.8), hollowRockLevel(1000.0, pixel));
+    float mottle = 0.62 + 0.55 * a.z + 0.3 * (b.z - 0.5) + 0.18 * (c.z - 0.5);
+    // Its roughness in a light from the hollow's middle, the glow and the opening's, so it
+    // reads as a rough underside: slopes facing in lit, facing out shaded. The slopes average
+    // out in the mips, so it smooths away far off.
+    vec2 toward = -plane * inversesqrt(max(dot(plane, plane), 1.0));
+    float relief = (0.25 * dot(a.xy, toward) + 0.35 * dot(b.xy, toward) + 0.3 * dot(c.xy, toward)) / uHollowRockSlope;
+    mottle *= clamp(1.0 + relief, 0.4, 1.6);
+    float shade = mix(HOLLOW_LID_EDGE.y, 1.0, s * s);
+    vec3 sand = uHollowWallColor * HOLLOW_SAND * (HOLLOW_LID * mottle * fade);
+    // The floor's glow on it: faint, half greyed, fading as its own light does, so far off it
+    // never takes the lid over.
+    vec3 ember = mix(vec3(dot(uHollowEmberColor, vec3(0.2126, 0.7152, 0.0722))), uHollowEmberColor, HOLLOW_LID_WARM.y);
+    lid = (sand + ember * (HOLLOW_LID_WARM.x * uHollowLook.x * hollowPulseAt(plane, a.z) * fade)) * shade;
+  }
+  return lid * hollowThroughRock(reach, hit);
 }

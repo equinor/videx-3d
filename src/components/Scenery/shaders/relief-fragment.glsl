@@ -211,7 +211,11 @@ void main() {
   // leaves at once, before any shading, so no pixel left takes a derivative across the gap.
   // Near the rim each pixel is cut exactly, at the end. How far inside, once for all of it.
   float hollowIn = uSkyHollow.y > 0.5 ? hollowInside(world) : -1e30;
-  if(hollowIn > 2.0 * length(fwidth(world)))
+  // How far a pixel spans here, for the cut's edge; and how far the cut's distance changes
+  // across one, for the simple style's ring along it.
+  float hollowPixel = length(fwidth(world));
+  float hollowInPixel = fwidth(hollowIn);
+  if(hollowIn > 2.0 * hollowPixel)
     discard;
   float blend = max(uSkyHorizonBlend, fwidth(dot(dir, globeCameraLook())));
 
@@ -364,6 +368,13 @@ void main() {
   if(seabed < 1.0)
     color = mix(skyOceanThroughCutaway(skyAbyssGradient(dot(dir, globeCameraLook())), dir, cameraPosition), color, seabed);
   #endif
+  // The simple style's ring along the open hollow's rim, a few pixels wide, as the cutaway's:
+  // by how far outside the rim the pixel is, in pixels (the cut's distance's own change).
+  if(hollowStyleSimple() && hollowIn > -1e29) {
+    float outside = -hollowIn / max(hollowInPixel, 1e-3);
+    float ring = 1.0 - smoothstep(HOLLOW_SIMPLE_RIM, HOLLOW_SIMPLE_RIM + 1.0, abs(outside - HOLLOW_SIMPLE_RIM));
+    color = mix(color, HOLLOW_SIMPLE_RIM_COLOR / max(uSkyIntensity, 1e-4), ring);
+  }
 
   #if defined(RELIEF_DEBUG_TILES) || defined(RELIEF_DEBUG_LAYERS)
   color = reliefTileDebug(color);

@@ -239,11 +239,27 @@ export class SceneryMaterial extends ShaderMaterial {
             abyss.hollow.lightFalloff,
           ),
         ),
-        uHollowWallColor: new Uniform(new Color(abyss.hollow.colors.walls)),
-        uHollowFloorColor: new Uniform(new Color(abyss.hollow.colors.floor)),
-        uHollowEmberColor: new Uniform(new Color(abyss.hollow.colors.embers)),
+        uHollowWallColor: new Uniform(
+          new Color(abyss.hollow.styles.calm.colors.walls),
+        ),
+        uHollowFloorColor: new Uniform(
+          new Color(abyss.hollow.styles.calm.colors.floor),
+        ),
+        uHollowEmberColor: new Uniform(
+          new Color(abyss.hollow.styles.calm.colors.embers),
+        ),
+        uHollowLidColor: new Uniform(
+          new Color(abyss.hollow.styles.calm.colors.lid),
+        ),
+        // How much its fissures glow, how much its air darkens, 1 for the calm style, and how
+        // much of the air is left over it while open.
         uHollowLook: new Uniform(
-          new Vector2(abyss.hollow.embers, abyss.hollow.murk),
+          new Vector4(
+            abyss.hollow.styles.calm.embers,
+            abyss.hollow.murk,
+            1,
+            abyss.hollow.styles.calm.air,
+          ),
         ),
         // Where the camera is, set each frame (SceneryHollowParts.setView): x 1 inside the
         // hollow's rim, at any depth; y how shut it is, 1 under the lid, eased; z how much of
