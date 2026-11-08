@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CLOUD_VOLUME_QUALITY,
+  cloudVolumeFormOf,
   cloudVolumeQuality,
 } from '../src/components/Scenery/scenery-cloud-volume';
 
@@ -12,8 +13,12 @@ describe('cloudVolumeQuality', () => {
       const less = CLOUD_VOLUME_QUALITY[ORDER[i - 1]];
       const more = CLOUD_VOLUME_QUALITY[ORDER[i]];
       expect(more.resolution).toBeGreaterThanOrEqual(less.resolution);
-      expect(more.rays).toBeGreaterThan(less.rays);
-      expect(more.steps).toBeGreaterThanOrEqual(less.steps);
+      expect(more.iterations).toBeGreaterThan(less.iterations);
+      expect(more.samples).toBeGreaterThanOrEqual(less.samples);
+      expect(more.lightSamples).toBeGreaterThanOrEqual(less.lightSamples);
+      expect(more.stratoSamples).toBeGreaterThanOrEqual(less.stratoSamples);
+      // Drawn as themselves down to smaller clouds.
+      expect(more.pixels).toBeLessThanOrEqual(less.pixels);
     }
   });
 
@@ -21,17 +26,27 @@ describe('cloudVolumeQuality', () => {
     expect(cloudVolumeQuality('medium')).toEqual(CLOUD_VOLUME_QUALITY.medium);
   });
 
-  it('takes a resolution of its own without the budget of rays', () => {
+  it('takes a resolution of its own and keeps the rest', () => {
     const level = cloudVolumeQuality('low', { resolution: 0.8 });
-    expect(level.resolution).toBe(0.8);
-    expect(level.rays).toBe(Infinity);
-    expect(level.sparse).toBe(CLOUD_VOLUME_QUALITY.low.sparse);
-    expect(level.steps).toBe(CLOUD_VOLUME_QUALITY.low.steps);
+    expect(level).toEqual({ ...CLOUD_VOLUME_QUALITY.low, resolution: 0.8 });
+  });
+});
+
+describe('cloudVolumeFormOf', () => {
+  it('draws cumulus as cumulus and the low decks as strato', () => {
+    expect(cloudVolumeFormOf('cumulus')).toBe('cumulus');
+    expect(cloudVolumeFormOf('stratus')).toBe('strato');
+    expect(cloudVolumeFormOf('stratocumulus')).toBe('strato');
+    expect(cloudVolumeFormOf('nimbostratus')).toBe('strato');
   });
 
-  it('takes steps of its own and keeps the budget', () => {
-    const level = cloudVolumeQuality('medium', { steps: 20 });
-    expect(level.steps).toBe(20);
-    expect(level.rays).toBe(CLOUD_VOLUME_QUALITY.medium.rays);
+  it('draws none of the middle and high types yet', () => {
+    for (const type of [
+      'altocumulus',
+      'altostratus',
+      'cirrus',
+      'cirrostratus',
+    ] as const)
+      expect(cloudVolumeFormOf(type)).toBeNull();
   });
 });

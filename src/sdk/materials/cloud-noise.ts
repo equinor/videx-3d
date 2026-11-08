@@ -452,3 +452,56 @@ export function createCloudNoise(size = 32, seed = 0): CloudNoise {
   noise.coverage.deviation = Math.sqrt(variance / samples.length);
   return noise;
 }
+
+/**
+ * A tileable map of 2D curl noise, `size`² texels, RGBA floats (x fastest, then y), about -1 to 1:
+ * in r and g the curl of a smooth potential (value noise at 2 and 4 cells across the tile), which
+ * swirls without gathering or spreading, as turbulence moves air; in b and a another's. What the
+ * clouds' billows are read through in their bake, so their edges swirl rather than swell round
+ * (Schneider, "The Real-time Volumetric Cloudscapes of Horizon Zero Dawn", SIGGRAPH 2015).
+ *
+ * @group Weather
+ */
+export function curlNoiseMap(size = 128, seed = 0): Float32Array {
+  const map = new Float32Array(size * size * 4);
+  const potential = new Float32Array(size * size);
+  const quintic = (t: number) => t * t * t * (t * (6 * t - 15) + 10);
+  const salt = mod289(Math.round(seed) * 31);
+  let most = 0;
+  for (let layer = 0; layer < 2; layer++) {
+    potential.fill(0);
+    for (const [cells, weight] of [
+      [2, 0.6],
+      [4, 0.4],
+    ]) {
+      const at = (i: number, j: number) =>
+        permute(permute(permute(mod289(salt + 7 * layer + cells)) + (j % cells)) + (i % cells)) /
+        289;
+      for (let y = 0; y < size; y++)
+        for (let x = 0; x < size; x++) {
+          const u = (x / size) * cells;
+          const v = (y / size) * cells;
+          const i = Math.floor(u);
+          const j = Math.floor(v);
+          const fu = quintic(u - i);
+          const fv = quintic(v - j);
+          potential[y * size + x] +=
+            weight *
+            ((at(i, j) * (1 - fu) + at(i + 1, j) * fu) * (1 - fv) +
+              (at(i, j + 1) * (1 - fu) + at(i + 1, j + 1) * fu) * fv);
+        }
+    }
+    for (let y = 0; y < size; y++)
+      for (let x = 0; x < size; x++) {
+        const dx =
+          potential[y * size + ((x + 1) % size)] - potential[y * size + ((x + size - 1) % size)];
+        const dy =
+          potential[((y + 1) % size) * size + x] - potential[((y + size - 1) % size) * size + x];
+        map[4 * (y * size + x) + 2 * layer] = dy;
+        map[4 * (y * size + x) + 2 * layer + 1] = -dx;
+        most = Math.max(most, Math.abs(dx), Math.abs(dy));
+      }
+  }
+  for (let i = 0; i < map.length; i++) map[i] /= most;
+  return map;
+}

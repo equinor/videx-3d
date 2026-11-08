@@ -4,6 +4,7 @@ import {
   cloudCoverageThreshold,
   cloudValueNoise,
   createCloudNoise,
+  curlNoiseMap,
   sampleCloudNoise,
 } from '../src/sdk/materials/cloud-noise';
 
@@ -104,5 +105,42 @@ describe('cloud coverage', () => {
     expect(mean).toBeGreaterThan(quantiles[4]);
     expect(mean).toBeLessThan(quantiles[12]);
     expect(deviation).toBeGreaterThan(0.02);
+  });
+});
+
+describe('curlNoiseMap', () => {
+  const size = 64;
+  const map = curlNoiseMap(size, 3);
+  const at = (x: number, y: number, c: number) =>
+    map[4 * (((y + size) % size) * size + ((x + size) % size)) + c];
+
+  it('swirls within -1 to 1, reaching it', () => {
+    let most = 0;
+    for (const v of map) most = Math.max(most, Math.abs(v));
+    expect(most).toBeCloseTo(1, 6);
+  });
+
+  it('neither gathers nor spreads', () => {
+    let worst = 0;
+    for (let layer = 0; layer < 2; layer++)
+      for (let y = 0; y < size; y++)
+        for (let x = 0; x < size; x++) {
+          const divergence =
+            at(x + 1, y, 2 * layer) - at(x - 1, y, 2 * layer) +
+            at(x, y + 1, 2 * layer + 1) - at(x, y - 1, 2 * layer + 1);
+          worst = Math.max(worst, Math.abs(divergence));
+        }
+    expect(worst).toBeLessThan(1e-5);
+  });
+
+  it('tiles without a seam', () => {
+    let seam = 0;
+    let within = 0;
+    for (let y = 0; y < size; y++)
+      for (let c = 0; c < 4; c++) {
+        seam = Math.max(seam, Math.abs(at(size - 1, y, c) - at(0, y, c)));
+        within = Math.max(within, Math.abs(at(size / 2, y, c) - at(size / 2 - 1, y, c)));
+      }
+    expect(seam).toBeLessThan(2 * within);
   });
 });

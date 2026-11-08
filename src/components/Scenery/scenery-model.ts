@@ -18,11 +18,8 @@ import {
   compassBasis,
   directionFromCompass,
 } from '../../sdk/utils/vector-operations';
-import type {
-  CloudLayer,
-  CloudLayersPreset,
-  CloudLevel,
-} from '../../sdk/weather/weather';
+import type { CloudLayer, CloudLayersPreset } from '../../sdk/weather/weather';
+import type { Atmosphere } from '../../sdk/weather/atmosphere';
 import type { OceanWaterProps } from '../Ocean/ocean-material-sync';
 import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../Ocean/ocean-volume-material';
 
@@ -122,90 +119,86 @@ export type SceneryCloudsProps = {
 
 /**
  * How much a {@link SceneryCloudVolumeProps}'s clouds spend for how they look, from `'low'` (a
- * laptop's integrated GPU, a few milliseconds) to `'ultra'` (powerful GPUs).
+ * laptop's integrated GPU, some 2 ms) to `'ultra'` (powerful GPUs).
  */
 export type SceneryCloudVolumeQuality = 'low' | 'medium' | 'high' | 'ultra';
 
 /**
- * 3D clouds over a {@link Scenery} (see `documents/clouds.md`): its layers of cumulus and stratus
- * marched through on the globe, lit by the sun, or the moon, where they lie, and drawn over the
- * scene at the depth their light comes from. One field from sea level to space: far off and
- * from high up the same clouds are a layer draped over the Earth. Fixed to the Earth. The
- * enclosing `Weather`'s: local, its layers about one place and none beyond; global, the
- * weather systems over the whole Earth (`WeatherState.local`).
+ * What a {@link SceneryCloudVolumeProps}'s clouds show instead of themselves, to see how they
+ * are made: `view` `'cost'` the march's iterations along each view (blue none, through green and
+ * yellow, to red at the quality's most), `'unlit'` white, as opaque as they are; `air` false
+ * leaves out the air's haze between them and the camera. `reference`: how an `atmosphere`'s
+ * clouds are marched (`steps` along a view); their light taken from a baked light volume beyond
+ * a point's near cloud (`bakedLight`, default), or marched in full by brute force
+ * (`lightSamples` toward the light and `skySamples` straight up); and blended between the bakes
+ * the clock lies between (`blend`, default), or stepped from one to the next. Slow.
+ */
+export type SceneryCloudVolumeDebug = {
+  view?: 'cost' | 'unlit';
+  air?: boolean;
+  reference?: {
+    steps?: number;
+    lightSamples?: number;
+    skySamples?: number;
+    bakedLight?: boolean;
+    blend?: boolean;
+  };
+};
+
+/**
+ * 3D clouds over a {@link Scenery} (see `documents/clouds.md`): one layer of a local weather —
+ * separate cumulus, or soft strato veils drawn out along the wind — marched through on the globe
+ * every frame, lit by the sun, or the moon, where they lie, and drawn over the scene at the depth
+ * of their front. Fixed to the Earth, drifting with the layer's wind, each cumulus forming,
+ * building up and fading on the weather's clock.
+ *
+ * Being rebuilt (2026-11-08): the scenery's bakes, the sea's reflection, the scene's light and
+ * the shadows take none of them, nor do the ground, a global weather or the middle and high
+ * levels shape them, until each is added back.
  */
 export type SceneryCloudVolumeProps = {
-  /**
-   * false hides them, still compiled, so showing them again is instant; nor are their ground
-   * and their map of the weather drawn meanwhile. Default true
-   */
+  /** false hides them, still compiled, so showing them again is instant. Default true */
   enabled?: boolean;
   /**
-   * The cloud layers of a local weather, its own whatever the weather's: one at each level
-   * (`CloudLevel`: low, mid, high; `CLOUD_VOLUME_LAYERS`), of two at a level the one covering
-   * more. Or by name (`CloudLayersPreset`): a sky (`SKY_PRESETS`: `'clear'`, `'fair'`,
-   * `'scattered'`, `'streets'`, `'marine-sc'`, `'low-stratus'`, `'warm-front-approach'`,
-   * `'warm-front-rain'`, `'showers'`, `'mackerel'`, `'high-overcast'`, `'unsettled'`), or a
-   * report's cover, cumulus unless the type follows (`'broken'`, `'overcast stratus'`). Given,
-   * the weather is local (about the enclosing `Weather`'s `local`, or its defaults). Default
-   * the enclosing `Weather`'s, and without one scattered cumulus (`weatherPreset`), local
+   * The cloud layers of a local weather, its own whatever the weather's: the low level's is
+   * drawn (`CloudLevel`; of two there, the one covering more) — cumulus as separate clouds,
+   * stratus, stratocumulus and nimbostratus as strato veils. Or by name (`CloudLayersPreset`): a
+   * sky (`SKY_PRESETS`), or a report's cover, cumulus unless the type follows (`'broken'`,
+   * `'overcast stratus'`). Given, the weather is local (about the enclosing `Weather`'s `local`,
+   * or its defaults). Default the enclosing `Weather`'s, and without one scattered cumulus
+   * (`weatherPreset`), local
    */
   layers?: CloudLayer[] | CloudLayersPreset;
-  /**
-   * The levels drawn (`CloudLevel`: `'low'`, `'mid'`, `'high'`): one left out is not drawn at
-   * all, its layer nor the weather systems' cloud at its level, and costs nothing: a global
-   * weather's levels are on or off. Default all three
-   */
-  levels?: readonly CloudLevel[];
   /** size of the clouds and the gaps between them, relative: 2 makes them twice as large. Default 1 */
   scale?: number;
   /** how dense they are inside, relative: lower lets more light through their edges. Default 1 */
   density?: number;
   /** their colour in full light. Default `#ffffff` */
   color?: ColorRepresentation;
-  /**
-   * picks another pattern of clouds, and other weather systems unless the enclosing
-   * `Weather` picks them (`WeatherSystems.seed`). Default 0
-   */
+  /** picks another pattern of clouds. Default 0 */
   seed?: number;
   /**
-   * how much they spend for how they look (`CLOUD_VOLUME_QUALITY`): `'low'` and `'medium'` march
-   * one pixel in four a frame, in turn, and take the rest from the frames before, at a budget of
-   * rays a frame; `'high'` marches every pixel; `'ultra'` at a finer resolution with more steps,
-   * for powerful GPUs. Default `'medium'`
+   * how much they spend for how they look (`CLOUD_VOLUME_QUALITY`): the share of the screen's
+   * resolution they are marched at, how finely, and from how small their clouds are drawn as
+   * their mean. Every pixel is marched every frame. Default `'medium'`
    */
   quality?: SceneryCloudVolumeQuality;
   /**
    * the share of the screen's resolution their image is drawn at, from 0.25 to 1, instead of the
-   * quality's (and then without its budget of rays); more from high up, as the quality has it.
-   * Default the quality's
+   * quality's. Default the quality's
    */
   resolution?: number;
-  /** most steps along each view, instead of the quality's: fewer is cheaper and coarser. Default the quality's */
-  steps?: number;
+  /** what they show instead of themselves, to see how they are made. Default none */
+  debug?: SceneryCloudVolumeDebug;
   /**
-   * accumulate the frames: each jitters its steps and sub-pixel places, and the last frames'
-   * image, moved to where the view now sees it, is blended in. Off, each frame stands alone,
-   * grainier, and softened instead. Default true
+   * the atmosphere the clouds come out of (`Atmosphere`, `ATMOSPHERE_PRESETS`: the air's
+   * temperature and moisture with height, its inversion, the surface's heating): drawn instead
+   * of `layers`, over a square some 16 km across about the middle, marched by brute force. Its
+   * clouds live on the enclosing `Weather`'s clock (each thermal's cloud forms, grows, spreads
+   * and evaporates, and its place starts another) and drift with its wind, leaning with the
+   * atmosphere's `shear`. Being built (2026-11-08): slow. Default none
    */
-  temporal?: boolean;
-  /**
-   * shaped by the ground of the enclosing `World`'s `GeoRelief`: their layers rise over high
-   * ground, they gather on the slopes the wind blows up and part in the lee of ridges, and the
-   * ground stands in them — veiled by the cloud in front of it, hiding the cloud behind. Its
-   * tiles are loaded at two levels (some 20 km over the Earth, some 600 m about the camera),
-   * and the clouds first show once the Earth's are in. On the globe only. Default true
-   */
-  terrain?: boolean;
-  /**
-   * each layer's clouds pass along its level's chain of types (`CLOUD_TYPE_CHAINS`: cumulus,
-   * stratocumulus, stratus; altocumulus, altostratus; cirrus, cirrostratus), a patch some tens
-   * of kilometres across at a time: about the scene by its cover (`cloudTypeMix`: cumulus
-   * closing up spread out into stratocumulus, stratus thinning breaks into it), far off by the
-   * weather systems (closed cells a deck, open cells heaped, the fronts' sheets). Off, a layer
-   * is its own type all over. Default true
-   */
-  mixTypes?: boolean;
+  atmosphere?: Atmosphere;
 };
 
 /**
@@ -653,9 +646,6 @@ export const sceneryDefaults = {
     color: '#ffffff',
     seed: 0,
     quality: 'medium' as SceneryCloudVolumeQuality,
-    temporal: true,
-    terrain: true,
-    mixTypes: true,
   },
   air: { scaleHeight: 8000, visibility: 60000, haze: 0.75, hazeHeight: 1500 },
   colors: {
