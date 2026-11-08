@@ -17,6 +17,7 @@ import {
   WEATHER_SYSTEMS_DEFAULTS,
   weatherOceanWind,
   weatherPreset,
+  weatherPresetOf,
   weatherSystemsOf,
   windToward,
   type CloudLevel,
@@ -65,28 +66,44 @@ describe('cloud cover', () => {
   });
 
   it('names skies, which win over a cover of the same name', () => {
-    expect(isSkyPreset('warm-front')).toBe(true);
+    expect(isSkyPreset('warm-front-approach')).toBe(true);
     expect(isSkyPreset('broken')).toBe(false);
     expect(isSkyPreset('toString')).toBe(false);
-    expect(cloudLayersOf('scattered')).toEqual([cloudLayerPreset('scattered')]);
-    expect(cloudLayersOf('overcast')).toEqual([
-      cloudLayerPreset('overcast', 'stratocumulus'),
+    expect(cloudLayersOf('scattered').map(layer => layer.type)).toEqual([
+      'cumulus',
+      'cirrus',
     ]);
-    expect(cloudLayersOf('overcast cumulus')).toEqual([
+    expect(cloudLayersOf('scattered cumulus')).toEqual([
+      cloudLayerPreset('scattered'),
+    ]);
+    expect(cloudLayersOf('overcast')).toEqual([
       cloudLayerPreset('overcast', 'cumulus'),
     ]);
-    expect(cloudLayersOf('warm-front').map(layer => layer.type)).toEqual([
-      'altostratus',
-      'cirrostratus',
-    ]);
+    expect(
+      cloudLayersOf('warm-front-approach').map(layer => layer.type),
+    ).toEqual(['altostratus', 'cirrostratus']);
   });
 
-  it('lays every sky at most one layer to a level', () => {
+  it('lays every sky at most one layer to a level, each over the one below', () => {
     for (const sky of Object.keys(SKY_PRESETS) as SkyPreset[]) {
-      const layers = cloudLayersOf(sky);
-      const levels = layers.map(layer => cloudLevelOf(layer.type));
-      expect(new Set(levels).size).toBe(levels.length);
+      const layers = cloudLayersByLevel(cloudLayersOf(sky));
+      const drawn = layers.filter(layer => layer !== null);
+      expect(drawn.length, sky).toBe(cloudLayersOf(sky).length);
+      for (const layer of drawn)
+        expect(layer.top, sky).toBeGreaterThan(layer.base);
+      for (let i = 1; i < drawn.length; i++)
+        expect(drawn[i].base, sky).toBeGreaterThan(drawn[i - 1].top);
     }
+  });
+
+  it('makes each sky a local weather with its wind, copied', () => {
+    const weather = weatherPresetOf('marine-sc', { radius: 30000 });
+    expect(weather.local).toEqual({ radius: 30000 });
+    expect(weather.wind).toEqual(SKY_PRESETS['marine-sc'].wind);
+    expect(weather.clouds).toEqual(SKY_PRESETS['marine-sc'].layers);
+    weather.clouds![0].cover = 0;
+    expect(SKY_PRESETS['marine-sc'].layers[0].cover).toBeGreaterThan(0);
+    expect(weatherPreset('few').local).toEqual({});
   });
 });
 
@@ -128,22 +145,10 @@ describe('cloud levels', () => {
 
 describe('weather systems', () => {
   it('takes a component’s own first, then the weather’s, then the defaults', () => {
-    const weather = { systems: { strength: 0.3, seed: 4 } };
-    expect(weatherSystemsOf(weather, { strength: 0.8 })).toEqual({
-      strength: 0.8,
-      seed: 4,
-    });
-    expect(weatherSystemsOf(weather)).toEqual({ strength: 0.3, seed: 4 });
+    const weather = { systems: { seed: 4 } };
+    expect(weatherSystemsOf(weather, { seed: 7 })).toEqual({ seed: 7 });
+    expect(weatherSystemsOf(weather)).toEqual({ seed: 4 });
     expect(weatherSystemsOf(null)).toEqual(WEATHER_SYSTEMS_DEFAULTS);
-    expect(weatherSystemsOf({}, { seed: 2 })).toEqual({
-      strength: WEATHER_SYSTEMS_DEFAULTS.strength,
-      seed: 2,
-    });
-  });
-
-  it('clamps the strength to 0–1', () => {
-    expect(weatherSystemsOf(null, { strength: 3 }).strength).toBe(1);
-    expect(weatherSystemsOf({ systems: { strength: -1 } }).strength).toBe(0);
   });
 });
 

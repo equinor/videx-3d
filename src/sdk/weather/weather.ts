@@ -75,6 +75,11 @@ export function cloudLevelOf(type: CloudType): CloudLevel {
  * @group Weather
  */
 export type CloudLayer = {
+  /**
+   * what its clouds are made of. The 3D clouds (`SceneryCloudVolume`, with `mixTypes`) move a
+   * share of them on to the next type of its level (`CLOUD_TYPE_CHAINS`) by its cover:
+   * cumulus closing up spread out into stratocumulus, stratus thinning breaks into it
+   */
   type: CloudType;
   /** the share of the ground the layer's cloud lies over, from 0 (none) to 1 (overcast) */
   cover: number;
@@ -122,31 +127,59 @@ export type WeatherWind = {
 
 /**
  * The weather away from the scene: weather systems — fronts and cyclones, clear highs,
- * fields of cellular convection — over the whole Earth, which the scene's own layers give way
- * to some hundreds of kilometres off (see `documents/clouds.md`, "The weather far off").
+ * fields of cellular convection — over the whole Earth: a global weather's cloud, everywhere
+ * (see `documents/clouds.md`, "The weather far off").
  *
  * @group Weather
  */
 export type WeatherSystems = {
-  /**
-   * how far the cover away from the scene follows the systems rather than the scene's
-   * layers, from 0 (the layers' cover everywhere) to 1 (the systems' alone). Default 1
-   */
-  strength?: number;
   /** which weather: another seed is other systems, elsewhere. Default 0 */
   seed?: number;
 };
 
 /**
- * The weather at the scene: its wind and its cloud layers, in any order, and the weather
- * systems away from it. A `Weather` component hands it to what draws it: the sea's waves and
- * the clouds.
+ * A local weather: its cloud layers alone, about one place on the Earth, and none beyond.
+ *
+ * @group Weather
+ */
+export type WeatherLocal = {
+  /**
+   * where its middle lies (WGS84, degrees), with {@link longitude}. Default where the
+   * `World`'s anchor lies as the local weather is first drawn: kept there as the anchor moves
+   */
+  latitude?: number;
+  longitude?: number;
+  /**
+   * how far its layers reach from its middle (metres), their cover thinning out over the
+   * outer fifth. Default {@link WEATHER_LOCAL_RADIUS}
+   */
+  radius?: number;
+};
+
+/**
+ * How far a {@link WeatherLocal}'s layers reach from its middle unless it says (metres).
+ *
+ * @group Weather
+ */
+export const WEATHER_LOCAL_RADIUS = 100000;
+
+/**
+ * The weather: its wind, and its cloud. A `Weather` component hands it to what draws it: the
+ * sea's waves and the clouds.
+ *
+ * - **Local** (with {@link local}): its cloud layers, about one place, and no cloud beyond.
+ * - **Global** (without): the weather systems over the whole Earth ({@link systems}), the
+ *   scene included; its layers are not drawn.
  *
  * @group Weather
  */
 export type WeatherState = {
   wind?: WeatherWind;
+  /** its cloud layers, in any order: drawn while it is local */
   clouds?: CloudLayer[];
+  /** local: its layers alone, about one place; without it, global */
+  local?: WeatherLocal;
+  /** the weather systems, while it is global */
   systems?: WeatherSystems;
 };
 
@@ -156,13 +189,12 @@ export type WeatherState = {
  * @group Weather
  */
 export const WEATHER_SYSTEMS_DEFAULTS: Readonly<Required<WeatherSystems>> = {
-  strength: 1,
   seed: 0,
 };
 
 /**
  * The weather systems to draw: `own` where it says (a component's props), then the
- * weather's, then {@link WEATHER_SYSTEMS_DEFAULTS}; the strength clamped to 0–1.
+ * weather's, then {@link WEATHER_SYSTEMS_DEFAULTS}.
  *
  * @group Weather
  */
@@ -170,12 +202,8 @@ export function weatherSystemsOf(
   weather: WeatherState | null | undefined,
   own: WeatherSystems = {},
 ): Required<WeatherSystems> {
-  const systems = weather?.systems;
-  const strength =
-    own.strength ?? systems?.strength ?? WEATHER_SYSTEMS_DEFAULTS.strength;
   return {
-    strength: Math.min(Math.max(strength, 0), 1),
-    seed: own.seed ?? systems?.seed ?? WEATHER_SYSTEMS_DEFAULTS.seed,
+    seed: own.seed ?? weather?.systems?.seed ?? WEATHER_SYSTEMS_DEFAULTS.seed,
   };
 }
 
@@ -282,8 +310,9 @@ export function cloudLayerPreset(
 }
 
 /**
- * The weather with one layer of `type` covering as much as `cover` says (none for `clear`),
- * and `wind` if given: without one, what reads the weather keeps its own.
+ * A local weather with one layer of `type` covering as much as `cover` says (none for
+ * `clear`), at the type's heights, and `wind` if given: without one, what reads the weather
+ * keeps its own.
  *
  * @example
  * <Weather weather={weatherPreset('broken', 'cumulus', { speed: 12, from: 240 })}>
@@ -296,11 +325,16 @@ export function weatherPreset(
   wind?: WeatherWind,
 ): WeatherState {
   const layer = cloudLayerPreset(cover, type);
-  return { ...(wind ? { wind } : {}), clouds: layer ? [layer] : [] };
+  return {
+    ...(wind ? { wind } : {}),
+    clouds: layer ? [layer] : [],
+    local: {},
+  };
 }
 
 /**
- * Skies by name, each a layer or two at their levels (see {@link SKY_PRESETS}).
+ * Skies by name: weather as it comes, each its layers at their heights and its wind (see
+ * {@link SKY_PRESETS}).
  *
  * @group Weather
  */
@@ -308,62 +342,151 @@ export type SkyPreset =
   | 'clear'
   | 'fair'
   | 'scattered'
-  | 'mackerel'
-  | 'cirrus'
-  | 'stratocumulus'
-  | 'warm-front'
+  | 'streets'
+  | 'marine-sc'
+  | 'low-stratus'
+  | 'warm-front-approach'
+  | 'warm-front-rain'
   | 'showers'
-  | 'overcast'
-  | 'overcast-rain';
+  | 'mackerel'
+  | 'high-overcast'
+  | 'unsettled';
 
 /**
- * The layers each {@link SkyPreset} names, by cover and type ({@link cloudLayerPreset}):
- *
- * - `clear`: none;
- * - `fair`: a few fair-weather cumulus under a few cirrus;
- * - `scattered`: scattered cumulus;
- * - `mackerel`: broken altocumulus, in rows;
- * - `cirrus`: scattered cirrus in a blue sky;
- * - `stratocumulus`: a broken deck of stratocumulus;
- * - `warm-front`: a warm front coming: broken altostratus under a veil of cirrostratus;
- * - `showers`: broken, towering cumulus under scattered cirrus;
- * - `overcast`: an overcast deck of stratocumulus;
- * - `overcast-rain`: overcast nimbostratus.
+ * A {@link SkyPreset}'s weather: its layers, each at the heights it lies at in that weather,
+ * and its wind.
  *
  * @group Weather
  */
-export const SKY_PRESETS: Readonly<
-  Record<SkyPreset, readonly (readonly [CloudCover, CloudType])[]>
-> = {
-  clear: [],
-  fair: [
-    ['few', 'cumulus'],
-    ['few', 'cirrus'],
-  ],
-  scattered: [['scattered', 'cumulus']],
-  mackerel: [['broken', 'altocumulus']],
-  cirrus: [['scattered', 'cirrus']],
-  stratocumulus: [['broken', 'stratocumulus']],
-  'warm-front': [
-    ['broken', 'altostratus'],
-    ['overcast', 'cirrostratus'],
-  ],
-  showers: [
-    ['broken', 'cumulus'],
-    ['scattered', 'cirrus'],
-  ],
-  overcast: [['overcast', 'stratocumulus']],
-  'overcast-rain': [['overcast', 'nimbostratus']],
+export type SkyPresetWeather = {
+  layers: readonly CloudLayer[];
+  wind: WeatherWind;
 };
+
+// A layer covering as much as `cover` says (the middle of its oktas), from `base` to `top`.
+const skyLayer = (
+  cover: CloudCover,
+  type: CloudType,
+  base: number,
+  top: number,
+): CloudLayer => {
+  const [least, most] = CLOUD_COVER_OKTAS[cover];
+  return { type, cover: oktasToCover((least + most) / 2), base, top };
+};
+
+/**
+ * The weather each {@link SkyPreset} names: layers as they come together, at the heights they
+ * lie at in it, and the wind that goes with it.
+ *
+ * - `clear`: a high's clear sky, a light breeze;
+ * - `fair`: a few small fair-weather cumulus, flat-topped under the high's inversion;
+ * - `scattered`: an afternoon's scattered cumulus, a few cirrus far above;
+ * - `streets`: scattered cumulus lined up into streets in a fresh, cold wind;
+ * - `marine-sc`: a broken deck of stratocumulus low over the sea, nothing above its inversion;
+ * - `low-stratus`: an overcast of stratus a few hundred metres up, drizzle weather;
+ * - `warm-front-approach`: a veil of cirrostratus over altostratus thickening under it;
+ * - `warm-front-rain`: overcast nimbostratus from low down to the middle level, a fresh wind;
+ * - `showers`: behind a cold front, broken towering cumulus under scattered cirrus, a strong
+ *   wind;
+ * - `mackerel`: broken altocumulus in rows, a few cirrus;
+ * - `high-overcast`: a milky veil of cirrostratus alone;
+ * - `unsettled`: scattered cumulus, broken altocumulus and scattered cirrus.
+ *
+ * @group Weather
+ */
+export const SKY_PRESETS: Readonly<Record<SkyPreset, SkyPresetWeather>> = {
+  clear: { layers: [], wind: { speed: 4, from: 300 } },
+  fair: {
+    layers: [skyLayer('few', 'cumulus', 1000, 1600)],
+    wind: { speed: 5, from: 270 },
+  },
+  scattered: {
+    layers: [
+      skyLayer('scattered', 'cumulus', 1200, 2400),
+      skyLayer('few', 'cirrus', 8500, 9300),
+    ],
+    wind: { speed: 6, from: 240 },
+  },
+  streets: {
+    layers: [skyLayer('scattered', 'cumulus', 900, 1800)],
+    wind: { speed: 13, from: 330 },
+  },
+  'marine-sc': {
+    layers: [skyLayer('broken', 'stratocumulus', 500, 900)],
+    wind: { speed: 7, from: 200 },
+  },
+  'low-stratus': {
+    layers: [skyLayer('overcast', 'stratus', 250, 600)],
+    wind: { speed: 6, from: 180 },
+  },
+  'warm-front-approach': {
+    layers: [
+      skyLayer('broken', 'altostratus', 4200, 5400),
+      skyLayer('overcast', 'cirrostratus', 8200, 9000),
+    ],
+    wind: { speed: 9, from: 170 },
+  },
+  'warm-front-rain': {
+    layers: [skyLayer('overcast', 'nimbostratus', 600, 3400)],
+    wind: { speed: 12, from: 160 },
+  },
+  showers: {
+    layers: [
+      skyLayer('broken', 'cumulus', 800, 3400),
+      skyLayer('scattered', 'cirrus', 8000, 8900),
+    ],
+    wind: { speed: 14, from: 290 },
+  },
+  mackerel: {
+    layers: [
+      skyLayer('broken', 'altocumulus', 3800, 4400),
+      skyLayer('few', 'cirrus', 8600, 9300),
+    ],
+    wind: { speed: 8, from: 250 },
+  },
+  'high-overcast': {
+    layers: [skyLayer('overcast', 'cirrostratus', 8500, 9300)],
+    wind: { speed: 8, from: 230 },
+  },
+  unsettled: {
+    layers: [
+      skyLayer('scattered', 'cumulus', 1000, 2200),
+      skyLayer('broken', 'altocumulus', 4000, 4600),
+      skyLayer('scattered', 'cirrus', 8200, 9000),
+    ],
+    wind: { speed: 9, from: 240 },
+  },
+};
+
+/**
+ * The local weather a {@link SkyPreset} names: its layers and its wind, about `local`'s middle
+ * (default the `World`'s anchor, {@link WeatherLocal}).
+ *
+ * @example
+ * <Weather weather={weatherPresetOf('marine-sc')}>
+ *
+ * @group Weather
+ */
+export function weatherPresetOf(
+  name: SkyPreset,
+  local: WeatherLocal = {},
+): WeatherState {
+  const { layers, wind } = SKY_PRESETS[name];
+  return {
+    wind: { ...wind },
+    clouds: structuredClone(layers) as CloudLayer[],
+    local: { ...local },
+  };
+}
 
 /**
  * Cloud layers by name: a {@link SkyPreset}; or as a report gives a layer, a
  * {@link CloudCover} alone (cumulus) or with its {@link CloudType} after it. Where a sky and a
- * cover share a name, the sky's: `'overcast'` is a deck of stratocumulus, `'overcast
- * cumulus'` the cumulus.
+ * cover share a name, the sky's: `'scattered'` is an afternoon's cumulus with a few cirrus,
+ * `'scattered cumulus'` the cumulus alone.
  *
  * @example
- * <SceneryCloudVolume layers="warm-front" />
+ * <SceneryCloudVolume layers="warm-front-approach" />
  * <SceneryCloudVolume layers="overcast stratus" />
  *
  * @group Weather
@@ -383,16 +506,14 @@ export function isSkyPreset(name: string): name is SkyPreset {
 }
 
 /**
- * The layers a {@link CloudLayersPreset} names: a sky's ({@link SKY_PRESETS}), or one layer
- * ({@link cloudLayerPreset}); none for `clear`.
+ * The layers a {@link CloudLayersPreset} names: a sky's ({@link SKY_PRESETS}, at its
+ * heights), or one layer ({@link cloudLayerPreset}); none for `clear`.
  *
  * @group Weather
  */
 export function cloudLayersOf(preset: CloudLayersPreset): CloudLayer[] {
   if (isSkyPreset(preset))
-    return SKY_PRESETS[preset].flatMap(
-      ([cover, type]) => cloudLayerPreset(cover, type) ?? [],
-    );
+    return structuredClone(SKY_PRESETS[preset].layers) as CloudLayer[];
   const [cover, type] = preset.split(' ') as [
     CloudCover,
     CloudType | undefined,

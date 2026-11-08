@@ -14,7 +14,8 @@
 // of their density. Over the ground (a relief's: the clouds' terrain) the layers rise with its
 // broad height, gain cover up the slopes the wind blows up near the scene, and each view ends
 // where it meets the ground, so what stands in a layer is veiled by the cloud in front of it
-// and hides the cloud behind.
+// and hides the cloud behind. With mixTypes (CLOUD_MIX_TYPES) a layer's clouds pass along its
+// level's chain of types patch by patch (cloudTypesAt, cloudMixedAt).
 
 #include <common>
 #include ./sky-gradient.glsl
@@ -42,34 +43,47 @@ uniform vec3 uCloudCameraEarth; // the camera from the sphere's centre, fixed on
 // The scene's up, fixed on the Earth: for the globe off, and toward the middle of the scene
 // (the disc's centre).
 uniform vec3 uCloudUpEarth;
+// Each layer's chain of types (CLOUD_TYPE_CHAINS, cloudTypeMix in scenery-cloud-volume.ts),
+// CLOUD_CHAIN_MOST from CLOUD_CHAIN_MOST × the layer's index: each type's looks.
+#define CLOUD_KINDS (CLOUD_LAYERS * CLOUD_CHAIN_MOST)
 // Where the camera lies in each pattern (CLOUD_OFFSET_*), from 64-bit floats: in its tile for
 // the noise's, modulo 289 cells for the procedural ones. What is added to a point's offset
 // from the camera, over the period, to read the pattern there.
-uniform vec3 uCloudOffsets[4 * CLOUD_LAYERS + 3];
+uniform vec3 uCloudOffsets[4 * CLOUD_KINDS + 2 + CLOUD_LAYERS];
 // The layers, one at each level from the ground up (cloudVolumeSlots in
-// scenery-cloud-volume.ts), each as its type looks (CloudLook there):
-// its base and top over the sea's sphere, its cover, and its level (0 low, 1 middle, 2 high:
-// the cloud map's channel far off, cloudMapAt);
+// scenery-cloud-volume.ts): its base and top over the sea's sphere, its cover, and its level
+// (0 low, 1 middle, 2 high: the cloud map's channel far off, cloudMapAt);
 uniform vec4 uCloudLayers[CLOUD_LAYERS];
-// its extinction in cloud (1 / world unit), its edge's softness, how far its coverage's level
-// rises toward its tops (heaped), and how far it lines up into rows (uCloudRows);
-uniform vec4 uCloudLooks[CLOUD_LAYERS];
-// its billows' and detail's reach (in the coverage's standard deviations), how much flatter
-// its billows are than they are broad, and how much they take of the Worley billows;
-uniform vec4 uCloudShapes[CLOUD_LAYERS];
-// its coverage's period and its shape volume's (world units), and its density up the layer:
-// all of it from the first share of its thickness up, none again from the second to its top;
-uniform vec4 uCloudForms[CLOUD_LAYERS];
-// how far it is drawn out along the wind (1 / stretch − 1: cloudStretched), its detail at its
-// base (wisps 1, or its billows' undersides 0), the optical depth straight up through the
-// layers over it, and how far its base rises and falls (a share of its thickness);
-uniform vec4 uCloudStyles[CLOUD_LAYERS];
-// across its rows (along the wind, or across it), fixed on the Earth, over their spacing (xyz),
-// and where the camera lies among them (w).
-uniform vec4 uCloudRows[CLOUD_LAYERS];
+// its chain of types: how many (1 to CLOUD_CHAIN_MOST), its place on it about the scene (0 the
+// first; between two, that share of its patches the second's), its patches' period (world
+// units), and 1 where it is optically thin all through (CLOUD_THIN);
+uniform vec4 uCloudChains[CLOUD_LAYERS];
 // and its wind at its level, fixed on the Earth: the way it blows (xyz), which its clouds are
 // drawn out along and drift with, and its speed (w, m/s).
 uniform vec4 uCloudWinds[CLOUD_LAYERS];
+// Each type on each layer's chain, as it looks (CloudLook there): its extinction in cloud
+// (1 / world unit), its edge's softness, how far its coverage's level rises toward its tops
+// (heaped), and how far it lines up into rows (uCloudRows);
+uniform vec4 uCloudLooks[CLOUD_KINDS];
+// its billows' and detail's reach (in the coverage's standard deviations), how much flatter
+// its billows are than they are broad, and how much they take of the Worley billows;
+uniform vec4 uCloudShapes[CLOUD_KINDS];
+// its coverage's period and its shape volume's (world units), and its profile up the layer:
+// all of its density from the first share of its thickness up, its clouds giving way from the
+// second to its top (cloudAt);
+uniform vec4 uCloudForms[CLOUD_KINDS];
+// how far it is drawn out along the wind (1 / stretch − 1: cloudStretched), its detail at its
+// base (wisps 1, or its billows' undersides 0), the optical depth straight up through the
+// layers over its layer, and how far its base rises and falls (a share of its thickness);
+uniform vec4 uCloudStyles[CLOUD_KINDS];
+// and across its rows (along the wind, or across it), fixed on the Earth, over their spacing
+// (xyz), and where the camera lies among them (w);
+uniform vec4 uCloudRows[CLOUD_KINDS];
+// and its span up its layer (x its base, y its top: shares of the layer's thickness).
+uniform vec4 uCloudSpans[CLOUD_KINDS];
+// The types read at a point whose patch lies between two (with mixTypes, CLOUD_MIX_TYPES): 2.
+// A uniform count keeps the loop over them a loop in Direct3D.
+uniform int uCloudKindsMixed;
 uniform int uCloudLayerCount;
 uniform float uCloudQuantiles[17]; // the coverage's distribution (CloudNoise.coverage)
 // The coverage's standard deviation and its mean.
@@ -81,10 +95,16 @@ uniform vec2 uCloudCoverage;
 uniform samplerCube uCloudMap;
 uniform samplerCube uCloudMapNext;
 uniform vec3 uCloudMapTimes;
-// The weather systems' strength (0 to 1), how far from the middle of the scene the scene's
-// layers start giving way to them and where they have (world units), and the map's texels per
-// world unit.
+// The same drawings' types (CloudMap.types, half as many texels a side): each level's place
+// along its chain, over the chain's last (r low, g middle, b high).
+uniform samplerCube uCloudTypes;
+uniform samplerCube uCloudTypesNext;
+// The weather: x 1 global (the weather systems everywhere, the cloud map's), 0 local (the
+// layers alone, about uCloudLocal); w the map's texels per world unit.
 uniform vec4 uCloudWeather;
+// A local weather's middle, fixed on the Earth (xyz, unit), and its radius (w, world units):
+// its layers within it, their cover thinning over its outer CLOUD_LOCAL_EDGE, none beyond.
+uniform vec4 uCloudLocal;
 // The period of the field that warps where the coverage is read (world units).
 uniform float uCloudWarp;
 // The ground (scenery-cloud-terrain.ts), fixed on the Earth: over all of it its height over the
@@ -112,15 +132,16 @@ uniform vec3 uCloudColor;
 
 varying vec3 vCloudDirection;
 
-// Each layer's patterns, four to a layer from 4 × its index (CLOUD_OFFSET_* + 4 l): its
-// coverage, its broad octave, its second tap and its shape volume; then those all share.
+// Each type's patterns, four to a type from 4 × its index among the kinds (CLOUD_OFFSET_* + 4 k):
+// its coverage, its broad octave, its second tap and its shape volume; then those all share;
+// then each layer's types' patches (cloudTypesAt).
 #define CLOUD_OFFSET_COVERAGE 0
 #define CLOUD_OFFSET_BROAD 1
 #define CLOUD_OFFSET_SECOND 2
 #define CLOUD_OFFSET_SHAPE 3
-#define CLOUD_OFFSET_DETAIL (4 * CLOUD_LAYERS)
-#define CLOUD_OFFSET_SCENE (4 * CLOUD_LAYERS + 1)
-#define CLOUD_OFFSET_WARP (4 * CLOUD_LAYERS + 2)
+#define CLOUD_OFFSET_DETAIL (4 * CLOUD_KINDS)
+#define CLOUD_OFFSET_WARP (4 * CLOUD_KINDS + 1)
+#define CLOUD_OFFSET_TYPES (4 * CLOUD_KINDS + 2)
 // The noise volumes' means and standard deviations (measured, scenery-cloud-noise.ts): their
 // Perlin-Worley (shape r), billows (shape gba, weighted), fine billows (detail rgb, weighted)
 // and wisps (detail a). Each moves an edge in standard deviations of its own.
@@ -146,9 +167,6 @@ varying vec3 vCloudDirection;
 #define CLOUD_SECOND_WEIGHT 0.5
 #define CLOUD_BROAD 3.1
 #define CLOUD_BROAD_WEIGHT 0.35
-// Where the scene's layers give way to the weather systems, the border is moved by up to this
-// far (world units, y) by a field of this period (x), so it follows no circle: defined by the
-// renderer (SCENE_WARP, PERIOD_SCENE_WARP).
 // How far rows move the coverage's level (in its standard deviations), at a layer's rows of 1.
 #define CLOUD_ROWS 1.2
 // The weather systems' cloud's density against the layer's, from the map's thinnest to its
@@ -196,31 +214,36 @@ varying vec3 vCloudDirection;
 // lies inside whatever reaches into the layer (a mountain) and so flickers against it.
 #define CLOUD_FRONT 0.1
 // In cloud a step spans at most this optical depth (but no shorter than this share of the
-// shortest step): where the view enters a cloud from clear air with a longer one, it steps
-// back and goes in again with these, so a cloud's front is not wherever a step happened to
-// land, a pixel's noise the frames have to average away.
+// shortest step).
 #define CLOUD_STEP_DEPTH 2.0
 #define CLOUD_STEP_FLOOR 0.5
-// The most a step grows per unit of distance, however long the runs. Grown to fit a view along a
-// layer from inside it (30–150 km of it), the steps a few kilometres off were a kilometre long,
-// a cumulus's breadth, and which clouds they landed in changed as the camera moved: patches came
-// and went. What the steps do not reach, the tail takes at once (the march's slabs).
-#define CLOUD_GROWTH_MOST 0.06
+// The most a step grows per unit of distance, however long the runs: what the steps do not
+// reach, the tail takes at once at the pattern's mean (the march's slabs). From inside a layer,
+// the view along it is 30–150 km long; at 0.06 the steps ran out within a few kilometres and
+// the tail drew a flat, cloudless band beyond, which came and went as the camera crossed the
+// layer's top; grown much faster, the steps a few kilometres off were longer than the clouds
+// and which clouds they landed in changed as the camera moved.
+#define CLOUD_GROWTH_MOST 0.12
 // The samples toward the light take in at least this share of the span each stands for: the
 // billows they cross, not each one's crevices, which flicker from frame to frame as the view's
-// samples move.
+// samples move. The first is no further than CLOUD_LIGHT_NEAR (world units) off: the billows'
+// shading on each other, which a first sample a fifth of the cloud's depth in passed over.
 #define CLOUD_LIGHT_BLUR 0.3
-// The light scattered many times over inside a cloud: its share of the sun's, and how fast it
-// falls off with the optical depth toward the sun (1 / (1 + y depth), against e^(−depth)).
-#define CLOUD_MULTIPLE vec2(0.2, 0.3)
+#define CLOUD_LIGHT_NEAR 120.0
+// The light scattered many times over inside a cloud, as octaves of the light straight through
+// (after Wrenninge): each x of the one before, falling off y as fast with the optical depth
+// toward the light, its phase z as peaked. A cloud's shaded side is lit through it, deeper in
+// darker, rather than by a flat share of the sun's.
+#define CLOUD_OCTAVES vec3(0.5, 0.5, 0.5)
 // The sun's weight against the sky's.
-#define CLOUD_SUN 0.95
+#define CLOUD_SUN 0.8
 // The sky's light: how far overhead is toward the zenith's blue from the horizon's; the
 // ground's below, and how much of overhead's reaches the underside anyway, off the clouds and
 // the air around; and its weight. Less of it with the sun low (CLOUD_SKY_LOW at 5°, all from
-// 30°).
-#define CLOUD_SKY vec4(0.85, 0.7, 0.5, 1.3)
+// 30°), and at a cloud's base (CLOUD_SKY_BASE of it), shaded by the cloud over it.
+#define CLOUD_SKY vec4(0.85, 0.7, 0.5, 0.95)
 #define CLOUD_SKY_LOW 0.5
+#define CLOUD_SKY_BASE 0.55
 // Under a deck (cloudLight's `deck`: the optical depth straight up to the open sky): how fast
 // the sky's blue is lost (e^(−x deck)), how fast the grey light the deck lets through, many
 // times scattered, dims (1 / (1 + y deck)), and how much of the sun's light falling on the
@@ -396,85 +419,128 @@ vec3 cloudMapBack(vec3 way, float seconds) {
   return vec3(c * way.x - s * way.y, s * way.x + c * way.y, way.z);
 }
 
-// The cloud map at `way` at the level `lod`, as the clock has it: each drawing read where its
-// cloud has drifted to since (cloudMapBack), and the older giving way to the newer place by place
-// (CLOUD_MAP_DISSOLVE), each over a share of the time between them at a time of its own: blended
-// everywhere at once, two drawings hours apart halved each other's cloud into a grey veil.
-vec4 cloudMapRead(vec3 way, float lod) {
+// The newer drawing's share of the cloud map at `way` (unit, fixed on the Earth), as the clock
+// has it: the older giving way to the newer place by place (CLOUD_MAP_DISSOLVE), each over a
+// share of the time between them at a time of its own: blended everywhere at once, two
+// drawings hours apart halved each other's cloud into a grey veil.
+float cloudMapShare(vec3 way) {
   float share = uCloudMapTimes.x;
   if(share > 0.0) {
     float at = cloudValueNoise(way * CLOUD_MAP_DISSOLVE.x + 17.0) * (1.0 - CLOUD_MAP_DISSOLVE.y);
     share = smoothstep(at, at + CLOUD_MAP_DISSOLVE.y, share);
   }
-  vec4 older = vec4(0.0);
-  if(share < 1.0)
-    older = textureLod(uCloudMap, cloudMapBack(way, uCloudMapTimes.y), lod);
-  if(share <= 0.0)
-    return older;
-  vec4 newer = textureLod(uCloudMapNext, cloudMapBack(way, uCloudMapTimes.z), lod);
-  return mix(older, newer, share);
+  return share;
 }
 
-// The weather systems' cloud at `way` (unit, fixed on the Earth) in the cloud map at level of
-// detail `lod`, at a layer's `level` (0 low, 1 middle, 2 high: uCloudLayers.w): its cover (x),
-// and how thick (y): the low level's own; the higher ones' by how deep the system is under them
-// (the low level's thickness, CLOUD_MAP_UPPER).
-vec2 cloudMapAt(vec3 way, float lod, float level) {
-  vec4 map = cloudMapRead(way, lod);
+// A map drawn of the weather (the cloud map, or its types) at `way` at the level `lod`, from
+// its `older` and `newer` drawings, each read where its cloud has drifted to since
+// (cloudMapBack), the newer's `share` of it (cloudMapShare).
+vec4 cloudMapBlend(samplerCube older, samplerCube newer, vec3 way, float lod, float share) {
+  vec4 before = vec4(0.0);
+  if(share < 1.0)
+    before = textureLod(older, cloudMapBack(way, uCloudMapTimes.y), lod);
+  if(share <= 0.0)
+    return before;
+  return mix(before, textureLod(newer, cloudMapBack(way, uCloudMapTimes.z), lod), share);
+}
+
+// The cloud map at `way` at the level `lod`, as the clock has it.
+vec4 cloudMapRead(vec3 way, float lod) {
+  return cloudMapBlend(uCloudMap, uCloudMapNext, way, lod, cloudMapShare(way));
+}
+
+// The weather systems' cloud in the cloud map's `map` (cloudMapRead) at a layer's `level` (0
+// low, 1 middle, 2 high: uCloudLayers.w): its cover (x), and how thick (y): the low level's
+// own; the higher ones' by how deep the system is under them (the low level's thickness,
+// CLOUD_MAP_UPPER).
+vec2 cloudMapLevel(vec4 map, float level) {
   if(level < 0.5)
     return map.rg;
   return vec2(level < 1.5 ? map.b : map.a, mix(CLOUD_MAP_UPPER.x, CLOUD_MAP_UPPER.y, smoothstep(CLOUD_MAP_UPPER.z, CLOUD_MAP_UPPER.w, map.g)));
 }
 
-// The weather about the column whose foot is `column` (from the camera, fixed on the Earth), as
-// a footprint `spread` across (world units) takes it in: `layer`'s cover there (x), how dense
-// its cloud is against the layer's own (y), and how much of it is the scene's own (z: where
-// its rows show). About the scene, its layers' cover, more up the ground the wind blows up and
-// less down it (`upslope`, cloudUpslope; none gained where the layer has none); some hundreds
-// of kilometres off, the weather systems' at the layer's level (the cloud map), at their
-// strength. Between, a border warped so it follows no circle.
-vec3 cloudWeather(vec4 layer, vec3 column, float spread, float upslope) {
-  float own = layer.z;
-  if(upslope != 0.0)
-    own = clamp(own + CLOUD_UPSLOPE.y * upslope * (upslope > 0.0 ? smoothstep(0.0, 0.1, own) : 1.0), 0.0, 1.0);
-  float strength = uCloudWeather.x;
-  if(strength <= 0.0)
-    return vec3(own, 1.0, 1.0);
-  vec3 way = normalize(uCloudCameraEarth + column);
-  float away = length(way - uCloudUpEarth) * uGlobe.x;
-  float near = uCloudWeather.y;
-  float far = uCloudWeather.z;
-  float scene = 0.0;
-  if(away < far + CLOUD_SCENE_WARP.y) {
-    float warp = 0.0;
-    if(away > near - CLOUD_SCENE_WARP.y)
-      warp = (2.0 * cloudValueNoise(column / CLOUD_SCENE_WARP.x + uCloudOffsets[CLOUD_OFFSET_SCENE]) - 1.0) * CLOUD_SCENE_WARP.y;
-    scene = 1.0 - smoothstep(near, far, away + warp);
-  }
-  vec2 systems = vec2(0.0, 0.5);
-  if(scene < 1.0)
-    systems = cloudMapAt(way, log2(max(2.0 * spread * uCloudWeather.w, 1.0)), layer.w);
-  float weight = strength * (1.0 - scene);
-  return vec3(mix(own, systems.x, weight), mix(1.0, exp2(mix(CLOUD_MAP_DENSITY.x, CLOUD_MAP_DENSITY.y, systems.y)), weight), 1.0 - weight);
+// The weather systems' cloud at `way` (unit, fixed on the Earth) in the cloud map at level of
+// detail `lod`, at a layer's `level` (cloudMapLevel).
+vec2 cloudMapAt(vec3 way, float lod, float level) {
+  return cloudMapLevel(cloudMapRead(way, lod), level);
 }
 
-// Whether the weather leaves `layer` clear all along a run `span` of a view along `dirEarth`
-// (fixed on the Earth): the scene's layers' cover reaches none of it, and the cloud map's level
-// spanning it holds none at the layer's level.
+// How far `point` (from the sphere's centre, fixed on the Earth) lies from a local weather's
+// axis (the line from the Earth's centre through its middle, uCloudLocal): its distance from
+// the middle as a column, nearly the distance over the ground within some hundreds of km.
+float cloudFromLocal(vec3 point) {
+  vec3 c = uCloudLocal.xyz;
+  return length(point - dot(point, c) * c);
+}
+
+// The stretch of a view from the camera along `dirEarth` (fixed on the Earth) within a local
+// weather's radius of its axis (cloudFromLocal): its near and far distance, x > y where the
+// view passes outside it. What lies outside holds no cloud, and is not marched.
+vec2 cloudLocalSpan(vec3 dirEarth) {
+  vec3 c = uCloudLocal.xyz;
+  vec3 o = uCloudCameraEarth - dot(uCloudCameraEarth, c) * c;
+  vec3 d = dirEarth - dot(dirEarth, c) * c;
+  float a = dot(d, d);
+  float b = dot(o, d);
+  float outside = dot(o, o) - uCloudLocal.w * uCloudLocal.w;
+  // Along the axis itself.
+  if(a < 1e-12)
+    return outside <= 0.0 ? vec2(0.0, CLOUD_FAR) : vec2(1.0, 0.0);
+  float disc = b * b - a * outside;
+  if(disc < 0.0)
+    return vec2(1.0, 0.0);
+  float s = sqrt(disc);
+  return vec2((-b - s) / a, (-b + s) / a);
+}
+
+// The weather about the column whose foot is `column` (from the camera, fixed on the Earth), as
+// a footprint `spread` across (world units) takes it in: `layer`'s cover there (x), how dense
+// its cloud is against the layer's own (y), how much of it is the layer's own (z: where its
+// rows show, and its types take their spans), and where it lies along the layer's `chain` of
+// types (w: uCloudChains). Local: the layer's own cover, more up the ground the wind blows up
+// and less down it (`upslope`, cloudUpslope; none gained where the layer has none), thinning
+// out over the outer CLOUD_LOCAL_EDGE of the weather's radius, none beyond; its place on its
+// chain its own. Global: the weather systems' at the layer's level everywhere (the cloud map
+// and its types).
+vec4 cloudWeather(vec4 layer, vec4 chain, vec3 column, float spread, float upslope) {
+  vec3 point = uCloudCameraEarth + column;
+  if(uCloudWeather.x < 0.5) {
+    float own = layer.z;
+    if(upslope != 0.0)
+      own = clamp(own + CLOUD_UPSLOPE.y * upslope * (upslope > 0.0 ? smoothstep(0.0, 0.1, own) : 1.0), 0.0, 1.0);
+    float radius = uCloudLocal.w;
+    own *= 1.0 - smoothstep((1.0 - CLOUD_LOCAL_EDGE) * radius, radius, cloudFromLocal(point));
+    return vec4(own, 1.0, 1.0, chain.y);
+  }
+  vec3 way = normalize(point);
+  float lod = log2(max(2.0 * spread * uCloudWeather.w, 1.0));
+  float share = cloudMapShare(way);
+  vec2 systems = cloudMapLevel(cloudMapBlend(uCloudMap, uCloudMapNext, way, lod, share), layer.w);
+  float place = chain.y;
+  // Its types: a level's place over its chain's last (its texels twice as broad).
+#ifdef CLOUD_MIX_TYPES
+  if(chain.x > 1.5) {
+    vec4 types = cloudMapBlend(uCloudTypes, uCloudTypesNext, way, max(lod - 1.0, 0.0), share);
+    place = (layer.w < 0.5 ? types.r : (layer.w < 1.5 ? types.g : types.b)) * (chain.x - 1.0);
+  }
+#endif
+  return vec4(systems.x, exp2(mix(CLOUD_MAP_DENSITY.x, CLOUD_MAP_DENSITY.y, systems.y)), 0.0, place);
+}
+
+// Whether a global weather leaves `layer` clear all along a run `span` of a view along
+// `dirEarth` (fixed on the Earth): the cloud map's level spanning it holds none at the layer's
+// level.
 bool cloudRunClear(vec4 layer, vec3 dirEarth, vec2 span) {
-  float strength = uCloudWeather.x;
-  if(strength <= 0.0 || (strength < 1.0 && layer.z > 0.0))
+  if(uCloudWeather.x < 0.5)
     return false;
   float middle = 0.5 * (span.x + span.y);
   float run = span.y - span.x;
   vec3 way = normalize(uCloudCameraEarth + dirEarth * middle);
-  if(layer.z > 0.0 && length(way - uCloudUpEarth) * uGlobe.x - 0.5 * run < uCloudWeather.z + CLOUD_SCENE_WARP.y)
-    return false;
   return cloudMapAt(way, log2(max(run * uCloudWeather.w, 1.0)) + 2.0, layer.w).x < 0.002;
 }
 
-// A layer's look (uCloudLooks and the rest), read once a step, and where its patterns' offsets
-// start (CLOUD_OFFSET_*).
+// A type's look (uCloudLooks and the rest, `k` its index among the kinds), read once a step,
+// with its layer's wind, and where its patterns' offsets start (CLOUD_OFFSET_*).
 struct CloudKind {
   vec4 look;
   vec4 shapes;
@@ -485,8 +551,8 @@ struct CloudKind {
   int offsets;
 };
 
-CloudKind cloudKindOf(int l) {
-  return CloudKind(uCloudLooks[l], uCloudShapes[l], uCloudForms[l], uCloudStyles[l], uCloudRows[l], uCloudWinds[l], 4 * l);
+CloudKind cloudKindOf(int k) {
+  return CloudKind(uCloudLooks[k], uCloudShapes[k], uCloudForms[k], uCloudStyles[k], uCloudRows[k], uCloudWinds[k / CLOUD_CHAIN_MOST], 4 * k);
 }
 
 // `v`, fixed on the Earth, in the frame a layer of `kind` reads its patterns in: drawn out
@@ -498,7 +564,8 @@ vec3 cloudStretched(vec3 v, CloudKind kind) {
 }
 
 // What varies slowly in the coverage about a point `offset` from the camera (fixed on the
-// Earth), `altitude` over the sea's sphere, where its up is `upEarth`, in `layer` (of `kind`):
+// Earth), `altitude` over the sea's sphere, where its up is `upEarth`, in `layer` (a column's
+// part of it, cloudLayerOf: its patterns read at z, its layer's own base) of `kind`:
 // where a broad, smooth field moves the place its pattern is read (xyz, world units), and its
 // broad octave there (w). Both change little over a cloud, so the samples toward the light
 // take the view's. The warp, by up to a third of a tile, keeps the tiles, a few clouds across,
@@ -506,7 +573,7 @@ vec3 cloudStretched(vec3 v, CloudKind kind) {
 // most of a tile the pattern fades into its mean (cloudAt), and needs none.
 vec4 cloudSlow(vec3 offset, float altitude, vec3 upEarth, vec4 layer, CloudKind kind, float spread) {
   float period = kind.forms.x;
-  vec3 column = offset - upEarth * (altitude - layer.x);
+  vec3 column = offset - upEarth * (altitude - layer.z);
   vec3 warp = vec3(0.0);
   if(spread < 4.0)
     warp = (textureLod(uCloudNoise, column / uCloudWarp + uCloudOffsets[CLOUD_OFFSET_WARP], 0.0).rba - 0.5) * period * 0.6;
@@ -524,18 +591,19 @@ float cloudLod(float period, float footprint) {
 
 // The density a layer of `kind` has `h` up it (0 its base, 1 its top), against its own, where
 // the weather gives it `density` and its pattern is `c` (the coverage, against the `level` it
-// must pass): up from its base and down to its top (forms.z, forms.w). A deck (styles.w) is
-// thinner toward its cells' edges, and in the pattern's troughs where it is overcast, its base
-// raised and its top lowered as far, and less dense: lighter and darker patches underneath and
-// lumps on top.
+// must pass): up from its base (forms.z), and whole on up to its top, where its clouds give
+// way instead (cloudAt: forms.w). A deck (styles.w) is thinner toward its cells' edges, and in
+// the pattern's troughs where it is overcast, its base raised as far, and less dense: lighter
+// and darker patches underneath.
 float cloudProfile(float h, float c, float level, CloudKind kind, float density) {
   float margin = (c - max(level, uCloudCoverage.y - 1.5 * uCloudCoverage.x)) / uCloudCoverage.x;
   float thin = kind.styles.w * clamp(1.0 - 0.5 * margin, 0.0, 1.0);
-  return smoothstep(thin, thin + kind.forms.z, h) * (1.0 - smoothstep(kind.forms.w - thin, 1.0 - thin, h)) * density * (1.0 - 1.5 * thin);
+  return smoothstep(thin, thin + kind.forms.z, h) * density * (1.0 - 1.5 * thin);
 }
 
 // The cloud at a point `offset` from the camera (fixed on the Earth), `altitude` over the sea's
-// sphere, where its up is `upEarth`, in `layer` (with its `look`) under the `weather` there
+// sphere, where its up is `upEarth`, in `layer` (a column's part of it, cloudLayerOf: x its
+// base, y its top, z the layer's own base its patterns are read at) under the `weather` there
 // (cloudWeather), with its slowly varying part `slow` (cloudSlow): how far into the cloud it
 // lies across its edge (x: −1 at its outer side, 1 at its inner, in the edge's widths;
 // cloudShare), the density in cloud by its height and the weather (y, against the layer's
@@ -543,7 +611,7 @@ float cloudProfile(float h, float c, float level, CloudKind kind, float density)
 // noise (cloudLod, for the footprint as stretched over the layer); the billows, the detail and
 // the streets take the level for a footprint `footprint` across. With `puffs`, the edge is
 // roughened by the detail as far as the footprint resolves it; without (toward the light), the
-// detail is taken as averaged away. Its layer's `kind` shapes it.
+// detail is taken as averaged away. Its type's `kind` shapes it.
 vec3 cloudAt(vec3 offset, float altitude, vec3 upEarth, vec4 layer, CloudKind kind, vec3 weather, vec4 slow, float lod, float footprint, bool puffs) {
   float thickness = max(layer.y - layer.x, 1.0);
   float h = (altitude - layer.x) / thickness;
@@ -554,7 +622,7 @@ vec3 cloudAt(vec3 offset, float altitude, vec3 upEarth, vec4 layer, CloudKind ki
   vec4 look = kind.look;
   vec4 shapes = kind.shapes;
   vec4 forms = kind.forms;
-  vec3 above = upEarth * (altitude - layer.x);
+  vec3 above = upEarth * (altitude - layer.z);
   vec3 foot = offset - above;
   vec3 column = cloudStretched(foot + slow.xyz, kind);
 
@@ -598,6 +666,18 @@ vec3 cloudAt(vec3 offset, float altitude, vec3 upEarth, vec4 layer, CloudKind ki
   float level = threshold + max(1.0 - threshold, 0.0) * 0.95 * rise;
   // The coverage's own spread the coarser levels averaged away: all of it once it is its mean.
   float coverageLost = sigma * smoothstep(0.0, CLOUD_MEAN_LOD, lod);
+  // Over its top (from forms.w up) the clouds give way rather than thin out: the level rises
+  // on to past the most the pattern reaches there (its highest, the billows', the detail's and
+  // the rows' reach, and the edge as wide as here), so each cloud's top rounds off at a height
+  // of its own, and none is left on the layer's top shell, near or far (cloudAbove past the
+  // distribution's end). Thinned instead, every cloud reaching the top was cut flat into a
+  // see-through film over the layer, which a view along it looked through to the clouds below,
+  // changing as the camera moved.
+  if(h > forms.w) {
+    float spreadLost = coverageLost * coverageLost + billowsReach * billowsReach * (1.0 - billowsKept * billowsKept) + detailReach * detailReach * (1.0 - detailKept * detailKept);
+    float ceiling = uCloudQuantiles[16] + 2.0 * (billowsReach * billowsKept + detailReach * detailKept) + weather.z * look.w * CLOUD_ROWS * sigma + sqrt(look.y * look.y + CLOUD_SPREAD_WIDTH * CLOUD_SPREAD_WIDTH * spreadLost);
+    level = mix(level, max(ceiling, level), smoothstep(forms.w, 1.0, h));
+  }
   float profile = cloudProfile(h, c, level, kind, weather.y);
 
   // Once the coverage is its mean, the share of a footprint in cloud is the share of the
@@ -660,6 +740,101 @@ vec3 cloudAt(vec3 offset, float altitude, vec3 upEarth, vec4 layer, CloudKind ki
   if(kind.styles.w > 0.0)
     profile = cloudProfile(h, c, level, kind, weather.y);
   return vec3(mix((c - level) / width, edgeFar, far), profile, h);
+}
+
+// How softly a patch of one type gives way to the next (cloudTypesAt): the standard deviations
+// of the patches' pattern its edge spans either way. Narrower, the patches showed as plates
+// with long, smooth rims.
+#define CLOUD_TYPE_EDGE 0.8
+
+// The types at the column whose foot is `column` (from the camera, fixed on the Earth) of
+// layer `l` (its `chain`: uCloudChains), whose weather puts it `place` along its chain
+// (cloudWeather), as a footprint `spread` across takes it in: the type before (x, its index
+// among the kinds), the type after (y), and the share of the second (z). The patches' pattern
+// (the coverage's noise, broad: uCloudChains.z; its two taps as the coverage's, the second
+// finer, so the coverage's distribution holds and a patch's rim is ragged) gives the second
+// type as many of them as `place` says, each patch one type or the other but across its edge;
+// once the footprint takes the pattern in as its mean, the share itself.
+vec3 cloudTypesAt(int l, vec4 chain, float place, vec3 column, float spread) {
+#ifndef CLOUD_MIX_TYPES
+  // Its own type everywhere (mixTypes off: its place is its own type's).
+  float own = float(CLOUD_CHAIN_MOST * l) + floor(chain.y + 0.5);
+  return vec3(own, own, 0.0);
+#else
+  float below = clamp(floor(place), 0.0, chain.x - 1.0);
+  float share = clamp(place - below, 0.0, 1.0);
+  float k = float(CLOUD_CHAIN_MOST * l) + below;
+  if(uCloudKindsMixed < 2 || share <= 0.0)
+    return vec3(k, k, 0.0);
+  float lod = cloudLod(chain.z, spread);
+  float second = share;
+  if(lod < CLOUD_MEAN_LOD) {
+    vec3 at = uCloudOffsets[CLOUD_OFFSET_TYPES + l];
+    float pattern = textureLod(uCloudNoise, column / chain.z + at, lod).r;
+    pattern = mix(pattern, textureLod(uCloudNoise, uCloudTurn * column * (CLOUD_SECOND / chain.z) + at.zxy, lod + log2(CLOUD_SECOND)).r, CLOUD_SECOND_WEIGHT);
+    float level = cloudThreshold(share);
+    float edge = CLOUD_TYPE_EDGE * uCloudCoverage.x;
+    second = mix(smoothstep(level - edge, level + edge, pattern), share, smoothstep(2.0, CLOUD_MEAN_LOD, lod));
+  }
+  if(second <= 0.001)
+    return vec3(k, k, 0.0);
+  if(second >= 0.999)
+    return vec3(k + 1.0, k + 1.0, 0.0);
+  return vec3(k, k + 1.0, second);
+#endif
+}
+
+// The part of `layer` the cloud of a column whose `types` mix there (cloudTypesAt) takes: each
+// type's span up the layer (uCloudSpans), weighed, so a column's cloud deepens or thins from
+// one type's to the next's across a patch's edge; as far as its cover is its layer's own
+// (`own`: cloudWeather's z, 1 for a local weather's). In a global weather the weather systems'
+// thickness (the cloud map's) says how deep their cloud is, and each type fills the layer:
+// spanned there too, the fronts' decks thinned to a veil seen from space. Its base (x) and top
+// (y), the layer's own base (z), where the patterns are read so they do not shift with the
+// span, and its level (w).
+vec4 cloudLayerOf(vec4 layer, vec3 types, float own) {
+  vec2 span = mix(uCloudSpans[int(types.x)].xy, uCloudSpans[int(types.y)].xy, types.z);
+  span = mix(vec2(0.0, 1.0), span, own);
+  return vec4(mix(layer.x, layer.y, span.x), mix(layer.x, layer.y, span.y), layer.x, layer.w);
+}
+
+// The cloud at a point (cloudAt) of `layer` (the part of it the column's types take:
+// cloudLayerOf) where its `types` (cloudTypesAt) mix: each type's, at its own levels of detail (the coverage's for a footprint `spread` across over the layer,
+// at least `lodLeast`), weighed: how far into the cloud it lies (x), the extinction there (y:
+// each type's own extinction times its density), and the height up the layer (z). Their
+// slowly varying parts (cloudSlow) worked out here where `fresh`, into `slowA` and `slowB`,
+// else taken from them (toward the light: the view's). A uniform count of types keeps the
+// loop a loop in Direct3D, with one copy of cloudAt in it. The loop costs some 15 % of the
+// march even where it runs once: without mixTypes (CLOUD_MIX_TYPES), one type, no loop.
+vec3 cloudMixedAt(vec3 offset, float altitude, vec3 upEarth, vec4 layer, vec3 types, vec4 weather, float spread, float lodLeast, float footprint, bool puffs, bool fresh, inout vec4 slowA, inout vec4 slowB) {
+#ifndef CLOUD_MIX_TYPES
+  CloudKind kind = cloudKindOf(int(types.x));
+  float lod = max(cloudLod(kind.forms.x, spread), lodLeast);
+  if(fresh)
+    slowA = lod < CLOUD_MEAN_LOD + CLOUD_BROAD_LODS ? cloudSlow(offset, altitude, upEarth, layer, kind, lod) : vec4(0.0);
+  vec3 cloud = cloudAt(offset, altitude, upEarth, layer, kind, weather.xyz, slowA, lod, footprint, puffs);
+  return vec3(cloud.x, kind.look.x * cloud.y, cloud.z);
+#else
+  vec3 mixed = vec3(0.0);
+  for(int i = 0; i < uCloudKindsMixed; i++) {
+    float weight = i == 0 ? 1.0 - types.z : types.z;
+    if(weight <= 0.0)
+      break;
+    CloudKind kind = cloudKindOf(int(i == 0 ? types.x : types.y));
+    float lod = max(cloudLod(kind.forms.x, spread), lodLeast);
+    vec4 slow = i == 0 ? slowA : slowB;
+    if(fresh) {
+      slow = lod < CLOUD_MEAN_LOD + CLOUD_BROAD_LODS ? cloudSlow(offset, altitude, upEarth, layer, kind, lod) : vec4(0.0);
+      if(i == 0)
+        slowA = slow;
+      else
+        slowB = slow;
+    }
+    vec3 cloud = cloudAt(offset, altitude, upEarth, layer, kind, weather.xyz, slow, lod, footprint, puffs);
+    mixed += weight * vec3(cloud.x, kind.look.x * cloud.y, cloud.z);
+  }
+  return mixed;
+#endif
 }
 
 // The share of a footprint in cloud at a point `edge` into it (cloudAt's x): a ramp across
@@ -727,14 +902,16 @@ vec3 cloudLightWay(vec3 up) {
 // the terminator glow.
 //
 // The light that comes straight through, by the phase, falls off as e^(−depth); the light
-// scattered many times over inside a cloud far slower (CLOUD_MULTIPLE), and evenly all round,
-// so a cloud's shaded side is lit through it rather than left to the ambient. The sky's light
-// is mostly the blue overhead, and reaches the underside too, off the clouds and the air
-// around: their shadows take its blue in daylight, not a grey. About sunrise and sunset the
-// sky lights them less (CLOUD_SKY_LOW), so the sun's colour carries. Under a deck, `deck` deep
-// (the optical depth straight up from the point to the open sky, through its own layer and those
-// over it), the sky's blue gives way to the grey light the deck lets through, many times
-// scattered, dimmer the deeper it is (CLOUD_DECK): an overcast's grey underside.
+// scattered many times over inside a cloud as octaves of it, each weaker, falling off slower
+// and spread wider (CLOUD_OCTAVES), so a cloud's shaded side is lit through it, the deeper the
+// darker, and a backlit cloud is grey but for its thin edges. The sky's light is mostly the
+// blue overhead, less at a cloud's base under the cloud over it (CLOUD_SKY_BASE), and reaches
+// the underside too, off the clouds and the air around: their shadows take its blue in
+// daylight, not a grey. About sunrise and sunset the sky lights them less (CLOUD_SKY_LOW), so
+// the sun's colour carries. Under a deck, `deck` deep (the optical depth straight up from the
+// point to the open sky, through its own layer and those over it), the sky's blue gives way to
+// the grey light the deck lets through, many times scattered, dimmer the deeper it is
+// (CLOUD_DECK): an overcast's grey underside.
 vec3 cloudLight(vec3 dir, vec3 up, float h, float depth, float deck) {
   float sine = dot(up, uSkySunDirection);
   float elevation = degrees(asin(clamp(sine, -1.0, 1.0)));
@@ -747,18 +924,24 @@ vec3 cloudLight(vec3 dir, vec3 up, float h, float depth, float deck) {
   vec3 light = cloudLightWay(up);
   vec3 direct = light == uSkySunDirection ? sun : moon;
   float cosine = dot(dir, light);
-  float phase = min(mix(cloudPhase(cosine, -0.3), cloudPhase(cosine, 0.6), 0.7), 4.0);
-  float through = phase * exp(-depth) + CLOUD_MULTIPLE.x / (1.0 + CLOUD_MULTIPLE.y * depth);
+  float through = 0.0;
+  vec3 octave = vec3(1.0);
+  for(int o = 0; o < 3; o++) {
+    float phase = min(mix(cloudPhase(cosine, -0.3 * octave.z), cloudPhase(cosine, 0.6 * octave.z), 0.7), 4.0);
+    through += octave.x * phase * exp(-octave.y * depth);
+    octave *= CLOUD_OCTAVES;
+  }
 
   // The sky above and the sea below, as dark as the night is where it lies.
   float dayLevel = mix(SKY_NIGHT_LEVEL, 1.0, skySunlit(up));
   vec3 overhead = mix(uSkyHorizonColor, uSkyZenithColor, CLOUD_SKY.x) * dayLevel;
   vec3 under = mix(mix(uSkyGroundColor, uSkyHorizonColor, 0.5) * CLOUD_SKY.y * dayLevel, overhead, CLOUD_SKY.z);
-  vec3 ambient = mix(under, overhead, smoothstep(0.0, 1.0, h));
+  float upward = smoothstep(0.0, 1.0, h);
+  vec3 ambient = mix(under, overhead, upward);
   // About sunrise and sunset their undersides catch the glow, most toward the sun.
   float facing = 0.5 + 0.5 * dot(dir, uSkySunDirection);
   ambient += SKY_TWILIGHT_ORANGE * dusk * 0.25 * facing * facing * (1.0 - h);
-  ambient *= CLOUD_SKY.w * mix(CLOUD_SKY_LOW, 1.0, smoothstep(5.0, 30.0, elevation));
+  ambient *= CLOUD_SKY.w * mix(CLOUD_SKY_LOW, 1.0, smoothstep(5.0, 30.0, elevation)) * mix(CLOUD_SKY_BASE, 1.0, upward);
   if(deck > 0.0) {
     vec3 onTop = direct * max(dot(up, light), 0.0) * CLOUD_DECK.z + ambient;
     float grey = dot(onTop, vec3(0.2126, 0.7152, 0.0722)) / (1.0 + CLOUD_DECK.y * deck);
@@ -828,10 +1011,14 @@ void main() {
     slack = max(cloudGround(normalize(uCloudCameraEarth)) - height + CLOUD_TERRAIN_SLACK, 0.0);
 
   // Each layer's runs along the view, nearest first: but those the weather leaves clear all
-  // along. A uniform count keeps the loop a loop in Direct3D.
+  // along, and of a local weather, only within its radius. A uniform count keeps the loop a
+  // loop in Direct3D.
+  vec2 localSpan = uCloudWeather.x < 0.5 ? cloudLocalSpan(dirEarth) : vec2(0.0, CLOUD_FAR);
   vec4 runs[2 * CLOUD_LAYERS];
   int count = 0;
   for(int l = 0; l < uCloudLayerCount; l++) {
+    if(localSpan.x >= localSpan.y)
+      break;
     vec4 layer = uCloudLayers[l];
     // Clear here and everywhere else.
     if(layer.z <= 0.0 && uCloudWeather.x <= 0.0)
@@ -860,10 +1047,12 @@ void main() {
         cloudRuns(o, dir, height, layer.xy + rises + vec2(-CLOUD_TERRAIN_SPARE, CLOUD_TERRAIN_SPARE), ground, spans[0], spans[1]);
     }
     for(int s = 0; s < 2; s++) {
-      vec2 span = spans[s];
-      // Flagged where the layer is optically thin all through (CLOUD_THIN).
+      // Within a local weather's radius (cloudLocalSpan): none of it marched beyond.
+      vec2 span = vec2(max(spans[s].x, localSpan.x), min(spans[s].y, localSpan.y));
+      // Flagged where the layer is optically thin all through (CLOUD_THIN: every type it shows
+      // about the scene, uCloudChains.w).
       if(span.x < span.y && !cloudRunClear(layer, dirEarth, span))
-        runs[count++] = vec4(span, float(l), uCloudLooks[l].x * (layer.y - layer.x) < CLOUD_THIN ? 1.0 : 0.0);
+        runs[count++] = vec4(span, float(l), uCloudChains[l].w);
     }
   }
   for(int i = 1; i < 2 * CLOUD_LAYERS; i++) {
@@ -898,20 +1087,19 @@ void main() {
   bool started = false;
   bool first = true;
   float lastEdge = -8.0;
-  float lastProfile = 0.0;
+  float lastExtinction = 0.0;
   vec3 lastLight = vec3(0.0);
   // The extinction over the last step, where it was in cloud: it bounds the next
-  // (CLOUD_STEP_DEPTH). And a cloud a step from clear air landed in, too long a step in, so
-  // stepped back from: up to where, and its extinction there.
+  // (CLOUD_STEP_DEPTH).
   float lastSigma = 0.0;
-  float entered = -1.0;
-  float enteredSigma = 0.0;
-  // Steps grow through clear air, and shrink again at the next cloud.
-  float skip = 1.0;
   int steps = int(uCloudMarch.x);
-  // Steps growing with distance, at least fast enough for the runs to fit the steps there are
-  // (those through optically thin layers take three steps a run, and none of the rest), but no
-  // faster than CLOUD_GROWTH_MOST: the last steps, one for each run left, are the tail.
+  // Steps growing with distance as fast as the runs need to fit the steps there are (those
+  // through optically thin layers take three steps a run, and none of the rest), and no faster
+  // than CLOUD_GROWTH_MOST: the last steps, one for each run left, are the tail. No faster
+  // than they need, either: grown by at least a fixed share of the distance, a view across a
+  // layer took a few of its steps in it, a stride longer than the clouds, and a cloud smaller
+  // than a stride was hit or missed by where the strides landed, which moved with the camera
+  // (the clouds came and went as it moved, see-through where averaged).
   float reachStart = 1e30;
   float reachEnd = 0.0;
   int thinRuns = 0;
@@ -927,7 +1115,7 @@ void main() {
   }
   reachStart = reachEnd > 0.0 ? max(reachStart, uCloudMarch.y) : 1.0;
   reachEnd = max(reachEnd, reachStart);
-  float growth = clamp(log(reachEnd / reachStart) / (0.8 * float(max(steps - 3 * thinRuns, 1))), uCloudMarch.z, CLOUD_GROWTH_MOST);
+  float growth = clamp(log(reachEnd / reachStart) / (0.8 * float(max(steps - 3 * thinRuns, 1))), 0.0, CLOUD_GROWTH_MOST);
 
   for(int i = 0; i < steps; i++) {
     if(current >= count || transmit < 0.01)
@@ -935,11 +1123,10 @@ void main() {
     vec4 run = runs[current];
     int l = int(run.z);
     vec4 layer = uCloudLayers[l];
-    CloudKind kind = cloudKindOf(l);
-    vec4 look = kind.look;
-    float period = kind.forms.x;
+    vec4 chain = uCloudChains[l];
+    // The type nearest its place about the scene: what the run's steps are planned by.
+    CloudKind own = cloudKindOf(CLOUD_CHAIN_MOST * l + int(chain.y + 0.5));
     float thickness = max(layer.y - layer.x, 1.0);
-    float breadth = period * CLOUD_CELL;
 
     // Longer the further off, but at least three to a run, whose ends lie on the layer's
     // shells where it has no density, and in cloud no deeper than CLOUD_STEP_DEPTH; a run's
@@ -953,12 +1140,11 @@ void main() {
     // from where they got to, at the pattern's mean.
     bool tail = i >= steps - (count - current);
     float from = started ? t : run.x;
-    bool slab = tail || (!started && thin && (run.y - run.x < 0.5 * kind.forms.y || cloudLod(period, max(uCloudMarch.w * run.x, 1.0)) >= CLOUD_MEAN_LOD));
+    bool slab = tail || (!started && thin && (run.y - run.x < 0.5 * own.forms.y || cloudLod(own.forms.x, max(uCloudMarch.w * run.x, 1.0)) >= CLOUD_MEAN_LOD));
     if(started) {
-      stride = min(max(uCloudMarch.y, growth * t) * skip, (run.y - run.x) / 3.0);
-      float sigmaAhead = lastSigma > 0.0 ? lastSigma : (t < entered ? enteredSigma : 0.0);
-      if(sigmaAhead > 0.0)
-        stride = min(stride, cloudStepIn(sigmaAhead));
+      stride = min(max(uCloudMarch.y, growth * t), (run.y - run.x) / 3.0);
+      if(lastSigma > 0.0)
+        stride = min(stride, cloudStepIn(lastSigma));
       // Through a thin layer, three steps.
       if(thin)
         stride = (run.y - run.x) / 3.0;
@@ -994,45 +1180,53 @@ void main() {
     // Stretched over the layer as the view grazes it (CLOUD_STRETCH). The tail at the pattern's
     // mean, as one sample stands for all it takes.
     float spread = footprint * sqrt(min(1.0 / max(abs(dot(dir, up)), 1e-3), CLOUD_STRETCH));
-    float lod = tail ? max(cloudLod(period, spread), CLOUD_MEAN_LOD) : cloudLod(period, spread);
-    // The weather over the column: about the scene its layers', far off the systems'.
-    vec3 weather = cloudWeather(layer, offset - upEarth * (altitude - layer.x), spread, upslope);
-    vec4 slow = vec4(0.0);
+    float lodLeast = tail ? CLOUD_MEAN_LOD : 0.0;
+    // The weather over the column: about the scene its layers', far off the systems'; and the
+    // types it gives the column (one, or two across a patch's edge).
+    vec3 column = offset - upEarth * (altitude - layer.x);
+    vec4 weather = cloudWeather(layer, chain, column, spread, upslope);
+    vec3 types = cloudTypesAt(l, chain, weather.w, column, spread);
+    CloudKind kindA = cloudKindOf(int(types.x));
+    CloudKind kindB = cloudKindOf(int(types.y));
+    // The part of the layer the column's cloud takes, and its looks, weighed.
+    vec4 shown = cloudLayerOf(layer, types, weather.z);
+    float depthShown = max(shown.y - shown.x, 1.0);
+    vec4 look = mix(kindA.look, kindB.look, types.z);
+    float breadth = mix(kindA.forms.x, kindB.forms.x, types.z) * CLOUD_CELL;
+    // The profile's mean up the layer (the slabs).
+    float profileMean = 0.5 * (1.0 + mix(kindA.forms.w - kindA.forms.z, kindB.forms.w - kindB.forms.z, types.z));
+    // Each type's slowly varying part, worked out at each step: kept along the view instead,
+    // the warp would move with the camera, and the clouds with it (cloudMixedAt).
+    vec4 slowA = vec4(0.0);
+    vec4 slowB = vec4(0.0);
     vec3 cloud = vec3(-8.0, 0.0, clamp((altitude - layer.x) / thickness, 0.0, 1.0));
-    if(weather.x > 0.001) {
-      // At each step: kept along the view instead, the warp would move with the camera, and
-      // the clouds with it. None where even the broad octave is its mean (cloudAt).
-      if(lod < CLOUD_MEAN_LOD + CLOUD_BROAD_LODS)
-        slow = cloudSlow(offset, altitude, upEarth, layer, kind, lod);
-      // The coverage, a pattern on the layer, by the footprint as stretched over it; the
-      // billows and the detail, in 3D, by the ray's own.
-      cloud = cloudAt(offset, altitude, upEarth, layer, kind, weather, slow, lod, footprint, true);
+    // A slab's one sample, at its run's middle (near the layer's), moved up or down into the
+    // column's part of the layer where that is raised off its base or lowered from its top (a
+    // neighbour type's span): there it would stand outside the cloud, which from far off went
+    // missing where the weather systems laid that type. Straight up, keeping its column.
+    float altitudeAt = altitude;
+    if(slab) {
+      float margin = 0.3 * depthShown;
+      altitudeAt = max(altitudeAt, shown.x + margin * smoothstep(0.0, 0.05 * thickness, shown.x - layer.x));
+      altitudeAt = min(altitudeAt, shown.y - margin * smoothstep(0.0, 0.05 * thickness, layer.y - shown.y));
     }
-
-    // Landed in cloud from clear air with a longer step than it takes: back, and in again with
-    // shorter ones (once per cloud: up to where it landed).
-    if(!slab && started && stride > 0.0 && lastEdge <= -1.0 && cloud.x > -1.0 && t >= entered) {
-      float sigmaHere = cloudExtinction(look.x * cloud.y, cloudShare(cloud.x), cloudChord(dir, up, thickness, breadth));
-      if(sigmaHere > 0.0 && stride > 1.5 * cloudStepIn(sigmaHere)) {
-        entered = at;
-        enteredSigma = sigmaHere;
-        skip = 1.0;
-        continue;
-      }
-    }
+    // The coverage, a pattern on the layer, by the footprint as stretched over it; the billows
+    // and the detail, in 3D, by the ray's own. Its y the extinction there.
+    if(weather.x > 0.001)
+      cloud = cloudMixedAt(offset + upEarth * (altitudeAt - altitude), altitudeAt, upEarth, shown, types, weather, spread, lodLeast, footprint, true, true, slowA, slowB);
 
     // Its light, where it is cloud at all.
     vec3 scattered = vec3(0.0);
     if(cloud.x > -1.0) {
-      // Toward the light: close up two samples, the cloud it crosses close by and further
-      // in; further off, one across both. With the view's weather, warp and broad octave,
-      // which change little over a cloud. Across a heaped cloud's thickness; through a sheet,
-      // its deck, on to its top (heap, look.z): an overcast's base lies in its shadow.
+      // Toward the light: close up two samples, the cloud it crosses close by (within
+      // CLOUD_LIGHT_NEAR) and further in; further off, one across both. With the view's
+      // weather, warp and broad octave, which change little over a cloud. Across a heaped
+      // cloud's thickness; through a sheet, its deck, on to its top (heap, look.z): an
+      // overcast's base lies in its shadow.
       vec3 light = cloudLightWay(up);
       vec3 lightEarth = uCloudEarth * light;
-      float lightChord = cloudChord(light, up, thickness, breadth);
       float rising = max(dot(light, up), 0.1);
-      float path = mix(clamp(max(layer.y - altitude, 0.0) / rising, 0.05 * thickness, 4.0 * thickness), thickness, look.z);
+      float path = mix(clamp(max(shown.y - altitude, 0.0) / rising, 0.05 * depthShown, 4.0 * depthShown), depthShown, look.z);
       // Toward the light, the weather systems' cloud as dense as the layer's, but for a share
       // (CLOUD_MAP_LIGHT): thinned as much, a thin veil was lit through and outshone the deep
       // cloud about it, bright rims round every system seen from space.
@@ -1040,40 +1234,45 @@ void main() {
       // The tail's at the pattern's mean, as its own sample is: through a heaped layer it is
       // lit by what lies toward the light, not as a thin layer is (as if even up to its top,
       // which darkened a layer's far edge).
-      float lightLod = tail ? max(cloudLod(period, footprint), CLOUD_MEAN_LOD) : cloudLod(period, footprint);
       // A uniform count keeps the loop a loop in Direct3D, rather than a copy of the sample
       // per iteration inlined in the march's own loop (scenery.md, Performance). A thin layer
       // takes none: as if even up to its top.
-      int samples = thin ? 0 : (footprint < 0.1 * thickness ? uCloudLightSamples : 1);
-      float depth = thin ? look.x * cloud.y * lightDensity * cloudShare(cloud.x) * path : 0.0;
+      int samples = thin ? 0 : (footprint < 0.1 * depthShown ? uCloudLightSamples : 1);
+      float depth = thin ? cloud.y * lightDensity * cloudShare(cloud.x) * path : 0.0;
+      float near = min(0.2 * path, CLOUD_LIGHT_NEAR);
       for(int k = 0; k < uCloudLightSamples; k++) {
         if(k >= samples)
           break;
-        float d = path * (samples == 1 ? 0.3 : (k == 0 ? 0.1 : 0.45));
-        float span = path * (samples == 1 ? 0.7 : (k == 0 ? 0.2 : 0.5));
+        float d = samples == 1 ? 0.3 * path : (k == 0 ? 0.5 * near : 0.5 * (near + 0.7 * path));
+        float span = samples == 1 ? 0.7 * path : (k == 0 ? near : 0.7 * path - near);
         vec3 xk = x + light * d;
         float rk = length(xk);
         float altitudeK = globeOn() ? rk - R : altitude + dot(light, uGlobeUp) * d;
         vec3 offsetK = offset + lightEarth * d;
         vec3 upK = globeOn() ? (uCloudCameraEarth + offsetK) / rk : uCloudUpEarth;
-        vec3 there = cloudAt(offsetK, altitudeK, upK, layer, kind, weather, slow, lightLod, max(footprint, span * CLOUD_LIGHT_BLUR), false);
-        depth += cloudExtinction(look.x * there.y * lightDensity, cloudShare(there.x), lightChord) * span;
+        // The cloud the light crosses, its density summed as it is: not as a footprint's
+        // share of the view's sky hides what lies behind (cloudExtinction). Taken so, toward the
+        // light a thin edge of the cloud a point lies in let most of the sun through, and a
+        // cloud facing the sun glowed white all over.
+        vec3 there = cloudMixedAt(offsetK, altitudeK, upK, shown, types, weather, footprint, lodLeast, max(footprint, span * CLOUD_LIGHT_BLUR), false, false, slowA, slowB);
+        depth += there.y * lightDensity * cloudShare(there.x) * span;
       }
       // The deck over it: through its own layer up, a sheet's (heap, look.z), as the samples
       // toward the light found it on the way to its top, and through the layers over it, which
       // the light crosses too.
-      float above = kind.styles.z;
+      float above = kindA.styles.z;
       float deck = (1.0 - look.z) * depth * rising * 1.4 + above;
       scattered = cloudLight(dir, up, cloud.z, depth + above / rising, deck);
     }
 
     // A slab (above): all of the run (from where the steps got to) at once, as its middle has
-    // it — its density there taken down to the profile's mean up the layer — and on to the next.
+    // it — its density there taken down to the profile's mean up the layer (the clouds giving
+    // way over its top as much as they once thinned) — and on to the next.
     if(slab) {
       float share = cloudShare(cloud.x);
       float runLength = run.y - from;
       if(share > 0.0) {
-        float sigma = cloudExtinction(look.x * cloud.y * 0.5 * (1.0 + kind.forms.w - kind.forms.z), share, cloudChord(dir, up, thickness, breadth));
+        float sigma = cloudExtinction(cloud.y * profileMean, share, cloudChord(dir, up, depthShown, breadth));
         float transmitStep = exp(-sigma * runLength);
         float absorbed = transmit * (1.0 - transmitStep);
         color += absorbed * scattered;
@@ -1090,7 +1289,6 @@ void main() {
       current++;
       started = false;
       first = true;
-      skip = 1.0;
       lastSigma = 0.0;
       if(current < count)
         t = runs[current].x;
@@ -1101,8 +1299,8 @@ void main() {
       float share = cloudShareAlong(lastEdge, cloud.x);
       lastSigma = 0.0;
       if(share > 0.0) {
-        float sigma = look.x * 0.5 * (lastProfile + cloud.y);
-        lastSigma = cloudExtinction(sigma, share, cloudChord(dir, up, thickness, breadth));
+        float sigma = 0.5 * (lastExtinction + cloud.y);
+        lastSigma = cloudExtinction(sigma, share, cloudChord(dir, up, depthShown, breadth));
         float transmitStep = exp(-lastSigma * stride);
         float absorbed = transmit * (1.0 - transmitStep);
         // Each end's light as far as it is cloud: one outside it has none to give.
@@ -1121,12 +1319,11 @@ void main() {
           front = t + stride * clamp((transmit - 1.0 + CLOUD_FRONT) / max(absorbed, 1e-6), 0.0, 1.0);
         transmit *= transmitStep;
       }
-      skip = max(lastEdge, cloud.x) > -2.0 ? 1.0 : min(skip * 1.5, 3.0);
       first = false;
     }
     started = true;
     lastEdge = cloud.x;
-    lastProfile = cloud.y;
+    lastExtinction = cloud.y;
     lastLight = scattered;
     t = at;
 
@@ -1134,7 +1331,6 @@ void main() {
       current++;
       started = false;
       first = true;
-      skip = 1.0;
       lastSigma = 0.0;
       if(current < count)
         t = runs[current].x;
@@ -1205,11 +1401,11 @@ void main() {
     vec4 layer = uCloudLayers[l];
     if(layer.z <= 0.0 && uCloudWeather.x <= 0.0)
       continue;
-    CloudKind kind = cloudKindOf(l);
-    vec4 look = kind.look;
-    float period = kind.forms.x;
+    vec4 chain = uCloudChains[l];
+    // The type nearest its place about the scene: the clouds' breadth the light crosses.
+    CloudKind own = cloudKindOf(CLOUD_CHAIN_MOST * l + int(chain.y + 0.5));
     float thickness = max(layer.y - layer.x, 1.0);
-    float breadth = period * CLOUD_CELL;
+    float breadth = own.forms.x * CLOUD_CELL;
     // Across the layer as it rises over the ground here, toward the light.
     float rise = terrain ? cloudRiseOf(layer) * cloudTerrainBroad(upEarth).x : 0.0;
     float start = max(cloudBelow(oGround, light, ground, layer.x + rise).y, 0.0);
@@ -1234,13 +1430,15 @@ void main() {
         if(uCloudWind.w > 0.0)
           upslope = cloudUpslope(broad, upK);
       }
-      float lod = cloudLod(period, footprint);
-      vec3 weather = cloudWeather(layerK, offset - upK * (altitude - layerK.x), footprint, upslope);
+      vec3 column = offset - upK * (altitude - layerK.x);
+      vec4 weather = cloudWeather(layerK, chain, column, footprint, upslope);
       if(weather.x <= 0.001)
         continue;
-      vec4 slow = lod < CLOUD_MEAN_LOD + CLOUD_BROAD_LODS ? cloudSlow(offset, altitude, upK, layerK, kind, lod) : vec4(0.0);
-      vec3 cloud = cloudAt(offset, altitude, upK, layerK, kind, weather, slow, lod, footprint, false);
-      depth += cloudExtinction(look.x * cloud.y, cloudShare(cloud.x), chord) * segment;
+      vec3 types = cloudTypesAt(l, chain, weather.w, column, footprint);
+      vec4 slowA = vec4(0.0);
+      vec4 slowB = vec4(0.0);
+      vec3 cloud = cloudMixedAt(offset, altitude, upK, cloudLayerOf(layerK, types, weather.z), types, weather, footprint, 0.0, footprint, false, true, slowA, slowB);
+      depth += cloudExtinction(cloud.y, cloudShare(cloud.x), chord) * segment;
     }
   }
   gl_FragColor = vec4(exp(-depth), 0.0, 0.0, 1.0);

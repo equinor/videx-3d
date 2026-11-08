@@ -6,9 +6,9 @@ look is a first pass. The `<SceneryClouds>` deck is to be replaced by it; the ba
 horizon stays as a cheap option.
 
 ```tsx
-import { Scenery, SceneryCloudVolume, SceneryOcean, Weather, weatherPreset } from '@equinor/videx-3d'
+import { Scenery, SceneryCloudVolume, SceneryOcean, Weather, weatherPresetOf } from '@equinor/videx-3d'
 
-<Weather weather={weatherPreset('scattered', 'cumulus', { speed: 10, from: 240 })}>
+<Weather weather={weatherPresetOf('scattered')}>
   <Scenery>
     <SceneryOcean />
     <SceneryCloudVolume />
@@ -16,18 +16,24 @@ import { Scenery, SceneryCloudVolume, SceneryOcean, Weather, weatherPreset } fro
 </Weather>
 ```
 
-The story is `Spikes/Scenery/CloudVolume` (with an `Earth` variant from 20 000 km). Its panel
-moves the camera to set altitudes up to 4000 km, to the whole Earth (`earth`: 4000 km up,
+The story is `Spikes/Scenery/CloudVolume` (with an `Earth` variant from 20 000 km, global). Its
+panel moves the camera to set altitudes up to 4000 km, to the whole Earth (`earth`: 4000 km up,
 looking at its centre, the camera's up along the Earth's axis, so dragging spins the globe about
 its poles), runs a timelapse of the sun, and a double-click on the ground or the sea flies
 there: 300 m over the highest ground within a kilometre (the `World`'s relief, traced along the
 view; the sea where there is none), looking into the middle of the cloud layer some 6 km on, or
 level where the ground lifts the camera over it, its horizon level (`SceneryDebugPanel`'s
-`fly`). The flight keeps the scene's anchor: far from it, what shows is the weather systems'
-cloud, not the story's layers, which hold within some 100 km of it. A `layersPreset` control
-sets the clouds' own `layers` by name, whatever the weather's; `cloudTerrain` turns the ground's
-part off (see "Over the ground"), and `showEnvironment` shows the environment's bake, as in
-StageDebug.
+`fly`). The flight keeps the scene's anchor. Its weather controls:
+
+- **`weatherMode`**: `local` or `global` (see "The weather").
+- **Local:** a `preset` (a sky, `SKY_PRESETS`) fills in each level's cover, type, base and
+  thickness and the wind, to change from there (`custom` once one is changed by hand); a level's
+  cover or type changed sets its heights to the type's typical ones. The middle (latitude and
+  longitude, unset for the anchor) and radius (km).
+- **Global:** each level on or off, and the weather systems' seed.
+
+`cloudTerrain` turns the ground's part off (see "Over the ground"), and `showEnvironment` shows
+the environment's bake, as in StageDebug.
 
 ## Decided (2026-11-04)
 
@@ -47,12 +53,22 @@ StageDebug.
 ## The weather
 
 `WeatherState` (`sdk/weather/weather.ts`) is the wind (`speed` in m/s, `from` a compass bearing,
-as reports give it), the cloud layers (`CloudLayer`: `type`, `cover` 0 to 1, `base` and `top`
-in metres over the sea), and the weather systems away from the scene (`WeatherSystems`:
-`strength` 0 to 1, default 1, and a `seed`; see "The weather far off").
-`weatherPreset(cover, type, wind)` makes one from a report's words: `clear`, `few`,
-`scattered`, `broken` and `overcast` (METAR's oktas; `CLOUD_COVER_OKTAS`), at the type's usual
-heights (`CLOUD_TYPE_HEIGHTS`: cumulus grow taller the more they cover, the decks a little).
+as reports give it) and the cloud, one of two kinds (decided 2026-11-07):
+
+- **Local** (`local: WeatherLocal`): its cloud layers (`clouds`, `CloudLayer`: `type`, `cover`
+  0 to 1, `base` and `top` in metres over the sea) about one place, and no cloud beyond. Its
+  middle is `latitude` and `longitude` (WGS84 degrees), or where the `World`'s anchor lies as
+  it is first drawn — kept there as the anchor moves; its `radius` (metres; default
+  `WEATHER_LOCAL_RADIUS`, 100 km), the cover thinning out over its outer fifth. A level with no
+  layer has no cloud.
+- **Global** (no `local`): the weather systems over the whole Earth, the scene included
+  (`systems: WeatherSystems`, its `seed`; see "The weather far off"). Its layers are not drawn:
+  a global weather is not one grade of cloud. The clouds' `levels` turn each level on or off.
+
+`weatherPreset(cover, type, wind)` makes a local one with one layer from a report's words:
+`clear`, `few`, `scattered`, `broken` and `overcast` (METAR's oktas; `CLOUD_COVER_OKTAS`), at the
+type's usual heights (`CLOUD_TYPE_HEIGHTS`: cumulus grow taller the more they cover, the decks a
+little).
 
 **The types**, by the cloud atlas's genera, each at its level (`CloudLevel`, `cloudLevelOf`,
 `CLOUD_TYPE_LEVELS`):
@@ -71,13 +87,27 @@ heights (`CLOUD_TYPE_HEIGHTS`: cumulus grow taller the more they cover, the deck
 No two levels' heights overlap. The clouds draw one layer at each level (`cloudLayersByLevel`):
 of two at a level, the one covering more, with a warning in development.
 
-**Skies by name** (`SkyPreset`, `SKY_PRESETS`): `clear`; `fair` (few cumulus, few cirrus);
-`scattered` (cumulus); `mackerel` (broken altocumulus); `cirrus` (scattered); `stratocumulus`
-(broken); `warm-front` (broken altostratus under an overcast cirrostratus veil); `showers`
-(broken cumulus under scattered cirrus); `overcast` (a deck of stratocumulus); `overcast-rain`
-(nimbostratus). `cloudLayersOf` takes a sky's name or a report's (`'broken'`, cumulus; `'overcast
-stratus'`): where they share a name the sky's wins, so `'overcast'` is the stratocumulus deck and
-`'overcast cumulus'` the cumulus.
+**Skies by name** (`SkyPreset`, `SKY_PRESETS`): weather as it comes, each its layers at the
+heights they lie at in it and its wind; `weatherPresetOf(name, local)` makes the local weather.
+
+| Sky | Layers | Wind |
+| --- | --- | --- |
+| `clear` | none: a high | 4 m/s |
+| `fair` | few cumulus, 1000–1600 m, flat under the high's inversion | 5 m/s |
+| `scattered` | scattered cumulus 1200–2400 m, few cirrus 8500–9300 m | 6 m/s |
+| `streets` | scattered cumulus 900–1800 m in a fresh, cold wind (streets) | 13 m/s |
+| `marine-sc` | broken stratocumulus 500–900 m, nothing above its inversion | 7 m/s |
+| `low-stratus` | overcast stratus 250–600 m: drizzle | 6 m/s |
+| `warm-front-approach` | broken altostratus 4200–5400 m under overcast cirrostratus 8200–9000 m | 9 m/s |
+| `warm-front-rain` | overcast nimbostratus 600–3400 m | 12 m/s |
+| `showers` | broken towering cumulus 800–3400 m, scattered cirrus 8000–8900 m (behind a cold front) | 14 m/s |
+| `mackerel` | broken altocumulus 3800–4400 m, few cirrus | 8 m/s |
+| `high-overcast` | overcast cirrostratus 8500–9300 m alone | 8 m/s |
+| `unsettled` | scattered cumulus, broken altocumulus, scattered cirrus | 9 m/s |
+
+`cloudLayersOf` takes a sky's name or a report's (`'broken'`, cumulus; `'overcast stratus'`):
+where they share a name the sky's wins, so `'scattered'` is the afternoon's cumulus and cirrus
+and `'scattered cumulus'` the cumulus alone.
 
 `<Weather weather={…}>` hands it down; `useWeather()` reads it (`null` without one).
 
@@ -87,12 +117,12 @@ stratus'`): where they share a name the sky's wins, so `'overcast'` is the strat
   compass frame (`windToward`): world X/Z, and a `Scenery`'s wave plane, east and south. A
   value once applied stays on the material when the weather goes away, as a removed prop's
   does.
-- **The clouds:** `<SceneryCloudVolume>` draws the weather's layers unless given `layers` (its
-  own, or by name, `CloudLayersPreset`: a sky, or a report's cover and type; `cloudLayersOf`),
-  the weather's systems unless given `systems` (their strength; `weatherSystemsOf`), and lines
-  its cumulus up into streets in the weather's wind (`cloudStreetsOf`: from 7 m/s, fully by 15).
-  `levels` leaves a level out altogether (its layer and the weather systems' cloud at it far
-  off), a quality control as much as a look: each costs its share of the march.
+- **The clouds:** `<SceneryCloudVolume>` draws the weather as it is: a local one's layers (or
+  `layers` of its own, by name too, `CloudLayersPreset`: given, the weather is local about the
+  weather's `local` or its defaults), a global one's systems (their `seed`, else the clouds'),
+  and lines its cumulus up into streets in the weather's wind (`cloudStreetsOf`: from 7 m/s,
+  fully by 15). Without a `Weather`, scattered cumulus, local. `levels` leaves a level out
+  altogether, a quality control as much as a look: each costs its share of the march.
 - **The clock:** `<Weather>` holds a `WeatherClock` (`sdk/weather/weather-clock.ts`;
   `useWeatherClock()`): the weather's time in seconds, running from the wall's at `timeScale`
   (3600: an hour a second), held while `paused`, and set by the host with `time` (a new value
@@ -107,10 +137,21 @@ wind, and a wave forecast's height, period and direction for the spectrum.
 
 ## The model
 
-`SceneryCloudVolume` (`scenery-cloud-volume.ts`, `shaders/cloud-volume-*.glsl`) draws three
-layers (`CLOUD_VOLUME_LAYERS`), one at each level: the scene's layer there, or where it has none
-the level's far type (cumulus, altostratus, cirrus) at no cover of its own, which shows only
-far off where the weather systems lay cloud at its level (`cloudVolumeSlots`).
+`SceneryCloudVolume` (`scenery-cloud-volume.ts`, `shaders/cloud-volume-*.glsl`) draws up to three
+layers (`CLOUD_VOLUME_LAYERS`), one at each level (`cloudVolumeSlots`): a local weather's layers
+(a level with none draws nothing); a global weather's far type at each level drawn (cumulus,
+altostratus, cirrus) at no cover of its own, the weather systems laying its cloud.
+
+**A local weather** (2026-11-07) is drawn about its middle (`uCloudLocal`: fixed on the Earth,
+from its latitude and longitude on the globe's conformal sphere, `updateLocal`; or the anchor's,
+captured as it is first drawn) within its radius: each view's runs through a layer are cut to
+the cylinder of that radius about the line from the Earth's centre through the middle
+(`cloudLocalSpan`), so what lies outside it is not marched at all, and the layers' cover thins
+out over its outer fifth (`cloudWeather`, `CLOUD_LOCAL_EDGE`), a soft edge rather than a wall.
+No cloud map is drawn (`dropMaps`); the scene's light and the sea's reflection take the layers.
+**A global weather** reads the cloud map everywhere, the scene included; the scene's light takes
+the map's cover over the scene, read back once a drawing (`readSceneCover`: one texel, without
+waiting for it).
 
 **The types' looks** are data, one row per type (`LOOKS` in `scenery-cloud-volume.ts`), handed
 to the march per layer as uniforms (`uCloudLooks`, `uCloudShapes`, `uCloudForms`,
@@ -118,19 +159,76 @@ to the march per layer as uniforms (`uCloudLooks`, `uCloudShapes`, `uCloudForms`
 breadth is a quarter of it) and the shape volume's; extinction and the edge's softness; the
 billows' and detail's reach and flattening; how far the level rises toward the tops (`heap`: 1
 heaped, 0 a sheet); rows, along the wind (cumulus streets, in a fresh wind) or across it
-(altocumulus billows), and their spacing; the density's profile up the layer; how far a deck's
-base rises and its top falls where its pattern is weak (`undulation`: lighter and darker patches
-underneath an overcast, lumps on top); wisps or the billows' undersides at the base; how far the
+(altocumulus billows), and their spacing; the profile up the layer (`profile`: how far up its
+base the density grows, and from where its clouds give way to its top); how far a deck's
+base rises where its pattern is weak (`undulation`: lighter and darker patches
+underneath an overcast); wisps or the billows' undersides at the base; how far the
 pattern is drawn out along the wind (cirrus 6 times); and the share of the thickness the light
 crosses on its slant (`cloudVolumeLight`). A sheet keeps its cover as its billows and detail
 resolve: its level lies as much further from the coverage's mean as their spread with the
 coverage's is wider than the coverage's alone (a broken deck's spread pulled it toward half).
+
+**The tops give way, they do not thin** (2026-11-07). Over the top of a layer (from
+`profile[1]` up) the level the coverage must pass rises on to past the most it reaches there:
+the coverage's highest, the billows', the detail's and the rows' reach, and the edge as wide as
+it is at that level of detail. So each cloud's top rounds off at a height of its own, from its
+pattern's strength, and nothing reaches the layer's top shell, near or far (the share far off,
+`cloudAbove`, is none past the distribution's end). The density stays whole up to the top.
+Thinned instead (the density fading over the top 10 % of a cumulus layer, 25–35 % of a deck),
+every cloud reaching the top was cut flat into a see-through film over the layer: a view along
+the tops looked through it to the clouds below, and as the steps through the film moved with
+the camera, so did what showed through. An overcast deck from above was a flat white sheet; it
+now has lumps of its own on top. The profile's mean (the slabs, the light under a deck,
+`columnDepth`) stays as it was: the clouds give way over the top as much as they thinned.
 
 **Thin layers** (`CLOUD_THIN`: the whole thickness optically thinner than 3 — altostratus,
 cirrus, cirrostratus) take no samples toward the light (lit as if even up to their top) and
 three steps a run; a run short against their billows (seen steeply) or whose pattern a footprint
 takes as its mean (far off) is one sample at its middle, integrated as a slab at the profile's
 mean. From high up the two upper layers would otherwise double the march's iterations.
+
+**Types mixed within a level** (`mixTypes`, on by default; 2026-11-07). Each level's types lie
+on a chain, heaped to sheet (`CLOUD_TYPE_CHAINS`): cumulus, stratocumulus, stratus;
+altocumulus, altostratus; cirrus, cirrostratus. Nimbostratus is a chain of its own. A layer's
+type is where it starts on its chain, and a column lies at a place along it:
+
+- **Local**, by the layer's cover (`cloudTypeMix`, `TYPE_DRIFTS`): cumulus closing up
+  spread out into stratocumulus (from cover 0.55, at most 0.8 of the patches overcast), a
+  stratocumulus deck thinning breaks into heaps, stratus thinning breaks into lumps of
+  stratocumulus, altocumulus closes into a sheet and altostratus breaks into puffs, cirrus
+  thickens into a veil and cirrostratus frays into streaks. With no cover, its own type.
+- **Global**, by the weather systems: a second, smaller map drawn alongside the cloud map
+  (`CloudMap.types`, 512² a face, the same program with `CLOUD_MAP_TYPES`, its strips drawn
+  after the cloud map's): each part of the weather at its type's place, weighed by the cover it
+  lays. Low: the open cells and the trades' cumulus heaped, the closed cells stratocumulus, the
+  systems' sheets stratocumulus, stratus where they run deep or the air is polar, heaped again
+  in the convergence zone. Middle: the warm air riding up the fronts and the deep hearts
+  altostratus, weaker lift altocumulus. High: the shield ahead of the fronts and the deep tops
+  cirrostratus, the anvils and the jets' streaks cirrus (`cloudWeather`).
+
+Between two types, a place's share of the second type is the share of the column's **patches**
+that are that type (`cloudTypesAt`): a broad pattern (60 km tile, the coverage's noise read as
+the coverage is, in two taps, the second finer, so its measured quantiles hold and a patch's rim
+is ragged) is one type over the level the share asks, the other under it, mixed only across a
+band of 0.8 of its standard deviation (`CLOUD_TYPE_EDGE`; at 0.3 the patches read as plates with
+long, smooth rims). In the band both types' clouds are read (`cloudMixedAt`), each at its own
+levels of detail, and their edges blended, not their shares, so one type's shapes grow into
+the other's rather than two patterns showing through each other. Once the footprint takes the
+patches in as their mean, the share itself.
+
+Each type takes a **span of its layer** (`cloudTypeSpan`, `uCloudSpans`): its own type all of
+it, a neighbour as thick as its kind lies at the layer's cover (`CLOUD_TYPE_HEIGHTS`), under
+the layer's top (cumulus spreading out under their tops) or on its base (stratus), blended
+across a patch's edge so a column's cloud deepens or thins. Filling the cumulus layer's whole
+1.8 km, stratocumulus patches were a dark, thick overcast. Only in a local weather: in a global
+one the weather systems' thickness says how deep their cloud is, and spanned there too, the
+fronts' decks thinned to a veil seen from space. The patterns are read at the layer's own base,
+so they do not shift with the span, and a slab's one sample is moved into a raised or lowered
+span (its run's middle stood outside it, and far off whole regions of decks went missing).
+
+Without `mixTypes` the march is compiled without the loop over two types (`CLOUD_MIX_TYPES`):
+the loop costs some 15 % of the march even where it runs once. Changing it compiles the march
+again.
 
 **The decks' light.** Through a sheet (`heap` under 1) the samples toward the light reach on to
 its top, so an overcast's base lies in its own shadow. Under a deck — its own layer up to its top
@@ -154,8 +252,8 @@ heap up where the pattern is strongest: the level rises with height, so they hav
 and rounded tops; stratus are an even slab. Close up, a detail noise moves the edge either way
 (the puffs), keeping the cover. In a fresh wind cumulus line up into streets along it: rows
 across the wind some 3 km apart, in patches, wandering with the coverage, which breaks them
-into clouds (`CLOUD_STREETS`); about the scene only, and only as far as the cumulus themselves
-are resolved.
+into clouds (`CLOUD_STREETS`); in a local weather only, and only as far as the cumulus
+themselves are resolved.
 
 **What they are made of.** Two noise volumes, drawn on the GPU slice by slice once per renderer
 (`scenery-cloud-noise.ts`, `cloud-noise-volume.glsl`, integer hashes so every GPU makes the
@@ -257,13 +355,11 @@ about it, bright rims round every system.
   of GPU each): 16 strips a frame for the first map, which the clouds wait for (some half a
   second, after the terrain's Earth when there is a relief), and one a frame for another seed's
   or a new drawing of the terrain's, drawn while the clouds still show the old (some three
-  seconds).
-- **Where it takes over:** the scene's layers rule within 100 km of the middle of the scene (the
-  globe's disc), the map from 400 km, the border moved by up to 120 km by a value noise 150 km
-  across, so it follows no circle. `strength` mixes the layers' cover back in everywhere (0 for
-  the layers' cover everywhere; the `systems` prop overrides the weather's). With no layer at a
-  level (a clear sky at the scene), the far weather still lies at that level's far type's
-  heights, with no cover of its own about the scene.
+  seconds). Each strip is followed by the same rows of the type map (`CloudMap.types`, half as
+  many texels a side: some 25 % more GPU time a strip; 8 MB a drawing with its mips).
+- **Where it holds:** a global weather's, everywhere, the scene included; a local weather draws
+  none (until 2026-11-07 the scene's layers ruled within some 100 km and gave way to the map
+  by 400 km, at a `strength`: a mix neither local nor global, which the two kinds replace).
 - **Read at each step** at the level two texels to the footprint take in (a run's cover kept
   along the view would make the cover depend on the view); a run the map's level spanning it
   holds no cloud over, outside the scene's reach, is skipped whole. Smooth noise to roughen the
@@ -298,7 +394,7 @@ Under the sea, the sea's level.
   are as tall as the rise along that view (read at five places along each), not the highest
   ground's anywhere: stepping through the rise over Everest drew the clouds over the sea as a
   thin veil from space.
-- **About the scene** the layers gain cover up the slopes the weather's wind blows up (0.3 of
+- **In a local weather** the layers gain cover up the slopes the weather's wind blows up (0.3 of
   cover at 0.4 m/s of lift and more) and lose it down them; a layer with no cover gains none.
 - **The view ends where it meets the ground** (the map about the camera's, eased into the
   Earth's toward its sides; read only below the highest ground), so what stands in a layer is
@@ -314,22 +410,27 @@ Under the sea, the sea's level.
 
 **The march.** In the clouds' own image (its share of the screen's resolution and its steps
 from `quality`, below) along each pixel's ray, over each layer's
-runs between its shells, up to the Earth. Steps grow with distance, at least fast enough for
-the runs to fit the quality's steps but by no more than 6 % of the distance
-(`CLOUD_GROWTH_MOST`), and longer through clear air; at least three to a run. Grown to fit a
-view along a layer from inside it (30–150 km of it), the steps were a kilometre long a few
-kilometres off, a cumulus's breadth: which clouds they landed in changed as the camera moved,
-and patches came and went as it tilted. What the steps do not reach the last of them take, one
+runs between its shells, up to the Earth. Steps grow with distance as fast as the runs need to
+fit the quality's steps, no faster than 12 % of the distance (`CLOUD_GROWTH_MOST`), and no
+slower either: at least three to a run. Grown by at least 4 % of the distance, and three times
+longer still through clear air, a view across a layer took a few of its steps in it, strides
+longer than the clouds: a cloud smaller than a stride was hit or missed by where the strides
+landed, which moved with the camera, so the clouds came and went as it moved and were
+see-through where the frames averaged them (40 % too little cloud along a dolly from 5 km up,
+changing as it went: 0.50 to 0.64 opacity against 0.88 from 12 times the steps; now 0.84 and
+0.82). Capped at 6 %, a view from inside the layer ran out of steps within a few kilometres and
+the tail drew a flat, cloudless band beyond, which came and went as the camera crossed the
+layer's top. What the steps do not reach the last of them take, one
 for each run left (the tail): the rest of the run at once, a slab at the pattern's mean, its
 sample toward the light at the mean too, so the far field fades to the layer's look rather
 than ending (lit as a thin layer is, as if even up to its top, a cumulus layer's far edge went
 dark).
 Between two samples the share in cloud is integrated (the edge value linear between them,
 `cloudShareAlong`), so the steps do not slice the clouds into shells; only each run's first
-step has a length of its own per pixel. In cloud a step spans at most an optical depth of 2,
-and a step that lands in cloud from clear air any longer steps back and goes in again with
-those: so a cloud's front is not wherever a step happened to land, a per-pixel noise the frames
-would have to average away. The samples toward the light take in at least 0.3 of the span each
+step has a length of its own per pixel. In cloud a step spans at most an optical depth of 2.
+A step that landed in cloud from clear air used to step back and go in again with shorter
+ones: a choice per pixel, which drew flat, hard-edged disks on the clouds' tops that moved
+with the camera. The samples toward the light take in at least 0.3 of the span each
 stands for, so they cross the billows rather than flicker with each one's crevices.
 
 **Temporal accumulation** (`temporal`, on by default; `cloud-volume-resolve.glsl`). Each frame
@@ -455,16 +556,27 @@ CPU, by where the march reads its patterns: the march's own work is the same.
 
 **The light.** Lit where each point lies: the sun's colour and daylight for its elevation there
 (so the night side is dark and the terminator warm), the moon by night, one or two samples
-toward the light (`uCloudLightSamples`, a uniform so Direct3D keeps the loop a loop), a
-two-lobed phase (silver linings), and the sky above and the sea below as ambient. The sun's
-light straight through falls off as e^(−depth) toward it; what is scattered many times over
-inside falls off far slower (`CLOUD_MULTIPLE`, 1 / (1 + 0.3 depth)) and evenly all round, so a
-cloud's shaded side is lit through it. The sky's light is mostly the zenith's blue, reaches the
-underside too (off the clouds and the air around), and outweighs the sun's in the shade
+toward the light (`uCloudLightSamples`, a uniform so Direct3D keeps the loop a loop), the first
+within 120 m (`CLOUD_LIGHT_NEAR`: a fifth of the cloud's depth in, it passed over the billows'
+shading on each other), a two-lobed phase (silver linings), and the sky above and the sea below
+as ambient. The samples toward the light sum the cloud's density as it is, not as a footprint's
+share of the sky hides what lies behind (`cloudExtinction`): taken so, a thin edge of the cloud
+a point lay in let most of the sun through, and clouds facing the sun glowed white all over
+(median 1.84 under `none` looking level toward the sun, 96 % of the cloud over 1; then 0.41
+and 13 %, grey bodies with bright rims). The sun's light straight through falls off as
+e^(−depth) toward it; what is scattered
+many times over inside as three octaves of it, each half as strong, falling off half as fast
+and spread wider (`CLOUD_OCTAVES`, after Wrenninge), so a cloud's shaded side is lit through
+it, the deeper the darker; a flat share of the sun's instead (`1 / (1 + 0.3 depth)`) lit every
+cloud near evenly, overexposed with no definition. The sky's light is mostly the zenith's blue,
+reaches the underside too (off the clouds and the air around), less at a cloud's base under
+the cloud over it (`CLOUD_SKY_BASE`), and outweighs the sun's in the shade
 (`CLOUD_SKY`): by day a cloud's shadows are blue-grey, as in a photograph, not the ash grey a
 mean of the sky's colours with the ground's gave. With the sun low the sky lights them less
-(`CLOUD_SKY_LOW`), so sunset's colours carry. Then the air's haze over the distance their light
-comes from on average, as the relief is hazed, and from space the air over them.
+(`CLOUD_SKY_LOW`), so sunset's colours carry. Calibrated under `toneMapping: 'none'`: sunlit
+tops some 0.5–1.2, shade 0.2–0.5, only the silver linings over 1. Then the air's haze over the
+distance their light comes from on average, as the relief is hazed, and from space the air
+over them.
 
 **Drawn over the scene.** The march writes premultiplied colour and, as depth, log2 of the
 distance to the clouds' front, where they hide a tenth of what lies behind (`CLOUD_FRONT`; the
@@ -508,11 +620,10 @@ the zone, `background`, `debug.hide`).
   height over the point against their base (some 200 times from 400 km: one cloud across half
   the sea). The film has its mipmaps, and the sea reads it as blurred as that
   (`skyOceanReflectedClouds`, from `ScenerySkyReflection`): over the field from near the sea,
-  as filmed. Far from the field (100 to 400 km off, as the march's weather), where the
-  weather is another's, it reflects the cloud map's cover at the sea point instead (low,
-  middle and high, as much as 0.9, 0.6 and 0.25 of the sky each), at the weather systems'
-  strength, coloured as the film's clouds overhead are on average, with none a grey as bright
-  as the sky. The bakes still light the sea with the field's light.
+  as filmed. Far from the field (100 to 400 km off), in a global weather, it reflects the cloud
+  map's cover at the sea point instead (low, middle and high, as much as 0.9, 0.6 and 0.25 of
+  the sky each), coloured as the film's clouds overhead are on average, with none a grey as
+  bright as the sky. The bakes still light the sea with the field's light.
 - **The sun's light:** the scene's directional light, and the sea's glint with it, are scaled
   by the share of the light the layers let through about the scene (`cloudVolumeLight`):
   e^(−optical depth) along the light's slant through each layer, weighed by its cover squared.
@@ -539,6 +650,16 @@ the zone, `background`, `debug.hide`).
   subsurface's light); not on what the host draws (it takes the dimmed light).
 
 ## Measured
+
+**The step plan (2026-11-07).** Scattered cumulus in a local weather, `medium`, march alone
+timed back to back (readPixels to sync, Iris Xe, 375 × 233 sparse); the timings here swung
+20–40 % between rounds, so take them as rough. Looking down along a dolly from 5 km up: the old
+steps (4 % growth at least, three times longer in clear air, the step back) 7–10 ms; the steps
+the budget sets 11–13 ms. The samples toward the light are most of the march: none at all,
+5.3 ms against 11. Skipping them where the view was already mostly hidden saved nothing (a
+GPU's neighbouring pixels run in lockstep, so one that still needs them holds up the rest);
+reusing the last step's light
+neither.
 
 GPU ms per frame, march + composite, Intel Iris Xe (ANGLE, Direct3D 11) at 1280 × 800,
 scattered cumulus, sun 35°, in the story, 2026-11-04. The march's time is taken around the
@@ -612,6 +733,52 @@ off), 4.5 from 200 km. Coarser levels read faster than the per-step warp costs.
   (RMS) with steps up to 0.42 before, 0.02–0.03 with steps up to 0.09 now; marched every frame
   with the clock stopped, 0.03. The resolve's Catmull-Rom reads and far softening cost nothing
   measurable (some 0.01 ms either way at 636 × 458).
+- **The tops given way** (2026-11-07, `low`, 634 × 464, scattered cumulus from 2.9 km looking
+  along the tops some 7 km ahead, the weather paused; the image read back after 160 frames at
+  each pose): a quarter of a degree's tilt changed the lower part of the image by 0.0187
+  (mean per channel) with the tops thinned, 0.0149 with them given way (0.0152 → 0.0133 in an
+  earlier run; the same pose settled twice, 0.0023). Unchanged from 40 m under the cumulus
+  (0.001 apart), from 200 km and from 4000 km (0.002, 0.001; mean brightness the same to
+  0.0003). Broken stratocumulus as stable (0.0370 → 0.0368; toward the horizon 0.0313 →
+  0.0288). An overcast stratus seen from above changes most: its flat white top (a tilt changed
+  it by 0.0031) now has lumps (0.0071), and its far edge against the sky shows them as small
+  notches. The march's time the same (2.86 → 2.89 ms, the three interleaved), as long as the
+  rise is worked out only over the top: worked out everywhere, 3.13. Letting the steps grow
+  through optically thin cloud too (not only clear air) made it worse (0.0133 → 0.0187): they
+  stepped through the edges' thin parts.
+- **A map of the columns' cloud, not built** (2026-11-07, `medium`, scattered cumulus): what a
+  map of each column's lowest base and highest top about the camera (with their extremes over
+  each mip's area) could save, counted per pixel in the march. Of its iterations (11.6 a pixel
+  40 m over the sea looking up, 17.5 from 2.9 km along the tops, 18.4 from 3 km 30° down, 20.9
+  inside the layer along it, 6.5 from 200 km, 5.6 from the Earth view), 48–76 % land in clear
+  air, but only 21–53 % where the point's own column could hold no cloud at that height
+  (`cloudAt` returns before the billows and the detail: off the layer, or under the level by
+  more than their reach), and 17–35 % follow another such (7 % from the Earth view, mostly
+  outside a map about the camera anyway): the only steps such a map lets the march stride
+  past, and already its cheapest. Emulated as a map exact and free (steps growing ×2 up to 8×
+  through such stretches, instead of ×1.5 up to 3× through clear air): 5.97 → 5.40 ms along
+  the tops, 7.02 → 6.36 from 3 km, 6.20 → 6.05 inside the layer (interleaved). A real one
+  reads a texture every iteration, is drawn again as the clouds drift and change, and, a bound
+  over a texel's area, skips less: not worth its machinery.
+- **Types mixed** (2026-11-07, `medium`, the march alone, back to back, `mixTypes` on and off
+  interleaved; the GPU's clock drifted from run to run, so ratios): broken cumulus from 10 km
+  +40 % (5.2 → 7.9 ms in one run), scattered cumulus from 2.9 km along the tops +45–50 %, from
+  200 km +40–48 %. Of it, the loop over the types +2–9 % where it
+  runs once; the patches' pattern (two taps) +2 % where only the weather systems mix far off, +20
+  % where the scene's layer mixes everywhere about the scene; the rest is what is drawn: the
+  decks the patches and the map now lay keep more of each ray in cloud than the cumulus look did.
+  The band's width barely mattered (0.3 to 0.8 of a deviation, within the runs' spread); two
+  copies of cloudAt instead of the loop (a branch for the second) cost more, +33–100 %, and the
+  loop working out each type's slow part again for each sample toward the light +55 %. The
+  Earth view's mean brightness 0.388 → 0.423 (the decks fill more of their column than heaped
+  cloud at the same cover); a quarter of a degree's tilt changed the image as much (0.0156 and
+  0.0155).
+- **Local and global** (2026-11-07, `medium`, the march alone, local and global in turn, twice):
+  from 400 km, local (`scattered`, 100 km) 2.65 ms against global 8.32: the views that miss
+  its cylinder are not marched. From 3 km over the field local 8.21 against global 4.18, from
+  what each draws there: the local sky's cumulus overhead, where the weather systems happened
+  to leave the scene nearly clear (low cover read back over it: 0.008). A local weather draws
+  no cloud map (some 70 MB and its strips spared).
 
 ## Known issues and next steps
 
@@ -623,13 +790,16 @@ off), 4.5 from 200 km. Coarser levels read faster than the per-step warp costs.
    powder term. The map's cover is about a third of the real Earth's. The open cells from space read as scribbles rather
    than cells; thin streaks' edges still show faint stairs from some 1000 km (whole regions'
    no longer: `CLOUD_WHOLE`), and a faint short line is left here and there where the flow
-   tears the air apart. Whole cloud from above, far off, is flat and pale.
+   tears the air apart. Whole cloud from above, far off, is flat and pale. An overcast's
+   lumps on top (its clouds giving way over the top 35 % of a stratus layer) notch its far
+   edge against the sky; a narrower band for the decks would keep their tops flatter.
 2. **The levels:** broken cumulus seen from under it reads as a flat grey ceiling, and the decks
-   from above are pale; the types' looks are first tunings. Cirrus everywhere is drawn out along
-   the scene's wind (the map's wind is not handed to the march), and far off a level's look is its
-   far type's whatever the map's weather (a convergence zone's anvils are cirrus streaks). More
-   types (cumulonimbus, fog) would be rows in the table, and the levels could take more than one
-   type each by blending two rows by the map.
+   from above are pale; the types' looks, their chains' cover rules and the type map's weights
+   are first tunings. Cirrus everywhere is drawn out along the scene's wind (the map's wind is
+   not handed to the march). Cumulonimbus would span the levels (a deep layer of its own, where
+   the map has deep convection); fog would be a row in the table. Mixed types cost: the patches'
+   pattern in every column a layer mixes, and both types' clouds across a patch's edge (see
+   "Measured").
 3. **Clouds between the camera and the data**: the occlusion modes.
 4. **Motion:** far off, the map's own wind does not move the cloud between two drawings: the
    systems' mean drift by latitude does, so a cyclone's spiral does not turn as it travels. The
@@ -642,16 +812,22 @@ off), 4.5 from 200 km. Coarser levels read faster than the per-step warp costs.
 6. **The noise:** the shape volume is RGBA, of which the march needs one value per type: one
    channel would read a quarter as much. The coverage's own 32³ cube (CPU) is read twice to
    keep its period from showing; one non-repeating source would read half as much.
-7. **The light:** the scene's light is dimmed by the scene's own layers even far from it, where
-   the weather systems' cloud lies (the shadows there are the right ones, so this shows only on
-   what the shadows do not reach: the host's own objects, and past the shadows' square). The
+7. **The light:** the scene's light is dimmed by the cloud over the scene (a local weather's
+   layers, a global one's map read back there) even far from it (the shadows there are the
+   right ones, so this shows only on
+   what the shadows do not reach: the host's own objects, and past the shadows' square). A
+   local weather's film, read by direction, puts its clouds in the sea's reflection even past
+   its radius. The
    shadows are not on what the host draws (wellbores, a chunk's columns), nor on the stage's
    own seabed under the water. An object inside a layer that is
    not the relief's ground (a platform in stratus) takes the clouds' front depth, so cloud
    behind it is drawn over it where it stands in cloud.
-8. **Streets far off**: the map's wind could line its cumulus up in streets too; for now only
-   about the scene, in the weather's wind.
+8. **Streets in a global weather**: the map's wind could line its cumulus up in streets too; for
+   now only in a local weather, in the weather's wind.
 9. **The ground:** it does not deflect the map's wind, nor do the clouds' bases follow it finer
    than some 110 km (a cap cloud on a single peak, a fog filling a valley); the terrain is the
    relief's as loaded, the demo's coarse world layer where no finer one lies (some 20 km; the
    map about the camera reads the finest there is).
+10. **A global weather's controls** without data: only its seed, and each level on or off.
+    Proposed: a share of the Earth under cloud (the systems' lift threshold, so the map's mean
+    cover follows it), how stormy (the lows' depth and number), and named climates as presets.

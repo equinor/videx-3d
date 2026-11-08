@@ -16,6 +16,7 @@ import {
   CLOUD_LEVELS,
   cloudLayersByLevel,
   cloudLayersOf,
+  WEATHER_LOCAL_RADIUS,
   weatherPreset,
   weatherSystemsOf,
   type CloudLayer,
@@ -44,23 +45,23 @@ const toHex = (value: ColorRepresentation) => scratch.set(value).getHex();
  * `documents/clouds.md`): its layers of cumulus and stratus, marched through on the globe at a
  * share of the screen's resolution and drawn over the scene, so what lies in front of them
  * hides them and they hide what lies behind. The same field from sea level to space, fixed to
- * the Earth; some hundreds of kilometres from the scene, the weather systems' cover over the
- * whole Earth. Its layers, the wind that lines its cumulus up into streets and the weather
- * systems are the enclosing `Weather`'s unless given. Over the ground of the enclosing `World`'s
+ * the Earth. The enclosing `Weather`'s: a local one's layers about its middle and none beyond
+ * (`WeatherState.local`), a global one's weather systems over the whole Earth; its wind lines
+ * cumulus up into streets. Over the ground of the enclosing `World`'s
  * `GeoRelief` they rise over high ground, gather on windward slopes and part in the lee, and the
  * ground stands in them (`terrain`). Anywhere under the `Scenery`; it
- * compiles its own programs and draws its noise and its map of the weather systems, and shows
- * once they are ready.
+ * compiles its own programs and draws its noise and, for a global weather, its map of the
+ * weather systems, and shows once they are ready.
  *
  * @example
- * <Weather weather={weatherPreset('broken', 'cumulus')}>
+ * <Weather weather={weatherPresetOf('scattered')}>
  *   <Scenery>
  *     <SceneryCloudVolume />
  *   </Scenery>
  * </Weather>
  *
  * @example
- * // Its own layers, by name, whatever the weather's
+ * // Its own layers, by name, whatever the weather's: local
  * <SceneryCloudVolume layers="overcast stratus" />
  *
  * @group Components
@@ -69,7 +70,6 @@ export const SceneryCloudVolume = ({
   enabled = true,
   layers,
   levels = CLOUD_LEVELS,
-  systems,
   scale = sceneryDefaults.cloudVolume.scale,
   density = sceneryDefaults.cloudVolume.density,
   color = sceneryDefaults.cloudVolume.color,
@@ -79,6 +79,7 @@ export const SceneryCloudVolume = ({
   steps,
   temporal = sceneryDefaults.cloudVolume.temporal,
   terrain = sceneryDefaults.cloudVolume.terrain,
+  mixTypes = sceneryDefaults.cloudVolume.mixTypes,
 }: SceneryCloudVolumeProps) => {
   const registry = useContext(SceneryRegistryContext);
   const gl = useThree(state => state.gl);
@@ -134,18 +135,22 @@ export const SceneryCloudVolume = ({
 
   // Inline arrays and colours, compared by value.
   const colorHex = toHex(color);
-  // The weather systems: the strength given here, else the weather's; their seed the
-  // weather's, else the clouds' own.
-  const weatherSystems = weatherSystemsOf(weather, {
-    strength: systems,
+  // The weather systems' seed: the weather's, else the clouds' own.
+  const mapSeed = weatherSystemsOf(weather, {
     seed: weather?.systems?.seed ?? seed,
-  });
-  const strength = weatherSystems.strength;
-  const mapSeed = weatherSystems.seed;
-  const own =
-    (typeof layers === 'string' ? cloudLayersOf(layers) : layers) ??
-    weather?.clouds ??
-    DEFAULT_LAYERS;
+  }).seed;
+  const named = typeof layers === 'string' ? cloudLayersOf(layers) : layers;
+  const own = named ?? weather?.clouds ?? DEFAULT_LAYERS;
+  // Local with layers of its own, without a weather, or as the weather is; else global.
+  const local =
+    named || !weather ? (weather?.local ?? {}) : (weather.local ?? null);
+  const localKey = local
+    ? JSON.stringify({
+        latitude: local.latitude,
+        longitude: local.longitude,
+        radius: local.radius ?? WEATHER_LOCAL_RADIUS,
+      })
+    : '';
   const layersKey = JSON.stringify(own);
   // One layer a level is drawn: the others are left out.
   useEffect(() => {
@@ -167,7 +172,13 @@ export const SceneryCloudVolume = ({
     volume?.set({
       layers: JSON.parse(layersKey) as CloudLayer[],
       levels: levelsKey ? (levelsKey.split(',') as CloudLevel[]) : [],
-      systems: strength,
+      local: localKey
+        ? (JSON.parse(localKey) as {
+            latitude?: number;
+            longitude?: number;
+            radius: number;
+          })
+        : null,
       wind:
         windSpeed === undefined || windFrom === undefined
           ? null
@@ -178,12 +189,13 @@ export const SceneryCloudVolume = ({
       seed,
       quality: cloudVolumeQuality(quality, { resolution, steps }),
       temporal,
+      mixTypes,
     });
   }, [
     volume,
     layersKey,
     levelsKey,
-    strength,
+    localKey,
     windSpeed,
     windFrom,
     scale,
@@ -194,6 +206,7 @@ export const SceneryCloudVolume = ({
     resolution,
     steps,
     temporal,
+    mixTypes,
   ]);
 
   // Hidden until its programs are compiled: drawn before, the browser waits for them.
@@ -254,7 +267,9 @@ export const SceneryCloudVolume = ({
     volume.time = (weatherClock ?? ownClock).time;
     const drawing = ready && enabled;
     if (drawing) volume.updateTerrain(gl, camera);
-    const mapped = drawing && volume.bakeMap(gl, mapSeed);
+    // A local weather draws no map of the weather systems, and lets go of any it had.
+    if (volume.local) volume.dropMaps();
+    const mapped = drawing && (volume.local || volume.bakeMap(gl, mapSeed));
     const shown = mapped && volume.cloudy;
     volume.filmable = shown;
     volume.updateLight(delta);

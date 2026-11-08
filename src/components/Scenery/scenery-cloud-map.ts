@@ -27,6 +27,11 @@ import fragmentShader from './shaders/cloud-map.glsl';
 
 /** Texels along a side of each of the cloud map's faces: some 10 km to a texel. */
 export const CLOUD_MAP_SIZE = 1024;
+/**
+ * Texels along a side of each of the type map's faces (`CloudMap.types`): some 20 km to a
+ * texel. The types change over the weather systems' breadth, not their edges'.
+ */
+export const CLOUD_TYPE_MAP_SIZE = 512;
 // Texels along a side of each of the wind's faces (cloud-map-flow.glsl): some 80 km to a texel.
 const FLOW_SIZE = 128;
 // Rows of a face of the cloud map drawn at a time (bakeCloudMap): some 1–2 ms of a mid-range
@@ -53,6 +58,13 @@ void main() {
 export type CloudMap = {
   readonly target: WebGLCubeRenderTarget;
   readonly texture: CubeTexture;
+  /**
+   * the same weather's types (`cloud-map.glsl`, `CLOUD_MAP_TYPES`): where each level's cloud
+   * lies along its chain of types, low (r, over 2), middle (g) and high (b), at
+   * {@link CLOUD_TYPE_MAP_SIZE}
+   */
+  readonly typesTarget: WebGLCubeRenderTarget;
+  readonly types: CubeTexture;
   /** the weather systems' wind (xyz, fixed on the Earth) and pressure (w) */
   readonly flow: WebGLCubeRenderTarget;
   readonly seed: number;
@@ -87,6 +99,7 @@ export const CLOUD_MAP_STRIPS = STRIPS;
 type Shared = {
   flowGenerator: Mesh;
   generator: Mesh;
+  typesGenerator: Mesh;
   maps: Map<string, CloudMap & { users: number }>;
 };
 
@@ -106,6 +119,14 @@ function createMap(
     minFilter: LinearMipmapLinearFilter,
     magFilter: LinearFilter,
   });
+  const typesTarget = new WebGLCubeRenderTarget(CLOUD_TYPE_MAP_SIZE, {
+    format: RGBAFormat,
+    type: UnsignedByteType,
+    depthBuffer: false,
+    generateMipmaps: false,
+    minFilter: LinearMipmapLinearFilter,
+    magFilter: LinearFilter,
+  });
   const flow = new WebGLCubeRenderTarget(FLOW_SIZE, {
     format: RGBAFormat,
     type: HalfFloatType,
@@ -117,6 +138,8 @@ function createMap(
   return {
     target,
     texture: target.texture,
+    typesTarget,
+    types: typesTarget.texture,
     flow,
     seed,
     time,
@@ -124,7 +147,7 @@ function createMap(
     key: `${cloudMapKey(seed, terrain)}@${time}`,
     base: cloudMapKey(seed, terrain),
     systems: weatherSystemCentresAt(seed, time),
-    generators: [own.flowGenerator, own.generator],
+    generators: [own.flowGenerator, own.generator, own.typesGenerator],
     strips: 0,
     get ready() {
       return this.strips >= STRIPS;
@@ -188,6 +211,16 @@ export function acquireCloudMap(
         uMapTerrain: new Uniform<Texture | null>(null),
         uMapTerrainOn: new Uniform(0),
       }),
+      typesGenerator: createGenerator(
+        'scenery-cloud-map-types',
+        fragmentShader,
+        {
+          uMapFlow: new Uniform<CubeTexture | null>(null),
+          uMapTerrain: new Uniform<Texture | null>(null),
+          uMapTerrainOn: new Uniform(0),
+        },
+        { CLOUD_MAP_TYPES: 1 },
+      ),
       maps: new Map(),
     };
     shared.set(renderer, own);
@@ -209,10 +242,15 @@ export function releaseCloudMap(renderer: WebGLRenderer, map: CloudMap) {
   if (!own || !held || --held.users > 0) return;
   own.maps.delete(map.key);
   held.target.dispose();
+  held.typesTarget.dispose();
   held.flow.dispose();
   if (own.maps.size > 0) return;
   shared.delete(renderer);
-  for (const generator of [own.flowGenerator, own.generator]) {
+  for (const generator of [
+    own.flowGenerator,
+    own.generator,
+    own.typesGenerator,
+  ]) {
     generator.geometry.dispose();
     (generator.material as ShaderMaterial).dispose();
   }
@@ -264,19 +302,27 @@ export function bakeCloudMap(
   renderer.info.autoReset = false;
   renderer.shadowMap.autoUpdate = false;
 
-  const [flowGenerator, generator] = map.generators;
+  const [flowGenerator, generator, typesGenerator] = map.generators;
   const flowUniforms = (flowGenerator.material as ShaderMaterial).uniforms;
   const uniforms = (generator.material as ShaderMaterial).uniforms;
+  const typesUniforms = (typesGenerator.material as ShaderMaterial).uniforms;
   flowUniforms.uMapSeed.value = map.seed;
   flowUniforms.uMapSize.value = FLOW_SIZE;
   setSystems(flowUniforms, map.systems);
-  uniforms.uMapSeed.value = map.seed;
-  uniforms.uMapSize.value = CLOUD_MAP_SIZE;
-  uniforms.uMapFlow.value = map.flow.texture;
-  uniforms.uMapTerrain.value = map.terrain;
-  uniforms.uMapTerrainOn.value = map.terrain ? 1 : 0;
-  const { target } = map;
+  for (const [u, size] of [
+    [uniforms, CLOUD_MAP_SIZE],
+    [typesUniforms, CLOUD_TYPE_MAP_SIZE],
+  ] as const) {
+    u.uMapSeed.value = map.seed;
+    u.uMapSize.value = size;
+    u.uMapFlow.value = map.flow.texture;
+    u.uMapTerrain.value = map.terrain;
+    u.uMapTerrainOn.value = map.terrain ? 1 : 0;
+  }
+  const { target, typesTarget } = map;
   const perFace = CLOUD_MAP_SIZE / STRIP_ROWS;
+  // The type map's rows a strip of the cloud map's spans.
+  const typeRows = (STRIP_ROWS * CLOUD_TYPE_MAP_SIZE) / CLOUD_MAP_SIZE;
   for (let n = 0; n < strips && map.strips < STRIPS; n++, map.strips++) {
     if (map.strips < 6) {
       const face = map.strips;
@@ -290,18 +336,35 @@ export function bakeCloudMap(
     const strip = map.strips - 6;
     const face = Math.floor(strip / perFace);
     const row = (strip % perFace) * STRIP_ROWS;
+    // Their mipmaps once, after the last strip.
+    const last = map.strips === STRIPS - 1;
     uniforms.uMapFace.value = face;
     target.scissor.set(0, row, CLOUD_MAP_SIZE, STRIP_ROWS);
     target.scissorTest = true;
-    // Its mipmaps once, after the last strip.
-    target.texture.generateMipmaps = map.strips === STRIPS - 1;
+    target.texture.generateMipmaps = last;
     scene.add(generator);
     renderer.setRenderTarget(target, face);
     renderer.render(scene, camera);
     scene.remove(generator);
+    // The same rows of the type map.
+    typesUniforms.uMapFace.value = face;
+    typesTarget.scissor.set(
+      0,
+      (row * CLOUD_TYPE_MAP_SIZE) / CLOUD_MAP_SIZE,
+      CLOUD_TYPE_MAP_SIZE,
+      typeRows,
+    );
+    typesTarget.scissorTest = true;
+    typesTarget.texture.generateMipmaps = last;
+    scene.add(typesGenerator);
+    renderer.setRenderTarget(typesTarget, face);
+    renderer.render(scene, camera);
+    scene.remove(typesGenerator);
   }
   target.texture.generateMipmaps = false;
   target.scissorTest = false;
+  typesTarget.texture.generateMipmaps = false;
+  typesTarget.scissorTest = false;
 
   renderer.setRenderTarget(outer, cubeFace, mipLevel);
   renderer.autoClear = autoClear;

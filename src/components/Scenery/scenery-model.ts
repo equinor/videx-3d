@@ -130,7 +130,9 @@ export type SceneryCloudVolumeQuality = 'low' | 'medium' | 'high' | 'ultra';
  * 3D clouds over a {@link Scenery} (see `documents/clouds.md`): its layers of cumulus and stratus
  * marched through on the globe, lit by the sun, or the moon, where they lie, and drawn over the
  * scene at the depth their light comes from. One field from sea level to space: far off and
- * from high up the same clouds are a layer draped over the Earth. Fixed to the Earth.
+ * from high up the same clouds are a layer draped over the Earth. Fixed to the Earth. The
+ * enclosing `Weather`'s: local, its layers about one place and none beyond; global, the
+ * weather systems over the whole Earth (`WeatherState.local`).
  */
 export type SceneryCloudVolumeProps = {
   /**
@@ -139,29 +141,22 @@ export type SceneryCloudVolumeProps = {
    */
   enabled?: boolean;
   /**
-   * The cloud layers: one at each level (`CloudLevel`: low, mid, high; `CLOUD_VOLUME_LAYERS`), of
-   * two at a level the one covering more. Or by name (`CloudLayersPreset`): a sky
-   * (`SKY_PRESETS`: `'clear'`, `'fair'`, `'scattered'`, `'mackerel'`, `'cirrus'`,
-   * `'stratocumulus'`, `'warm-front'`, `'showers'`, `'overcast'`, `'overcast-rain'`), or a
-   * report's cover, cumulus unless the type follows (`'broken'`, `'overcast stratus'`). Default
-   * the enclosing `Weather`'s, and without one scattered cumulus (`weatherPreset`)
+   * The cloud layers of a local weather, its own whatever the weather's: one at each level
+   * (`CloudLevel`: low, mid, high; `CLOUD_VOLUME_LAYERS`), of two at a level the one covering
+   * more. Or by name (`CloudLayersPreset`): a sky (`SKY_PRESETS`: `'clear'`, `'fair'`,
+   * `'scattered'`, `'streets'`, `'marine-sc'`, `'low-stratus'`, `'warm-front-approach'`,
+   * `'warm-front-rain'`, `'showers'`, `'mackerel'`, `'high-overcast'`, `'unsettled'`), or a
+   * report's cover, cumulus unless the type follows (`'broken'`, `'overcast stratus'`). Given,
+   * the weather is local (about the enclosing `Weather`'s `local`, or its defaults). Default
+   * the enclosing `Weather`'s, and without one scattered cumulus (`weatherPreset`), local
    */
   layers?: CloudLayer[] | CloudLayersPreset;
   /**
    * The levels drawn (`CloudLevel`: `'low'`, `'mid'`, `'high'`): one left out is not drawn at
-   * all, its layer nor the weather systems' cloud at its level far off, and costs nothing.
-   * Default all three
+   * all, its layer nor the weather systems' cloud at its level, and costs nothing: a global
+   * weather's levels are on or off. Default all three
    */
   levels?: readonly CloudLevel[];
-  /**
-   * How far the cover away from the scene follows the weather systems — fronts and
-   * cyclones, clear highs, fields of cellular convection, some thousands of kilometres across
-   * — rather than the layers', from 0 (the layers' cover everywhere) to 1. About the scene
-   * (within some 100 km of the globe's disc's centre) the cover is always the layers' own;
-   * some 400 km off, the systems'. Default the enclosing `Weather`'s (`WeatherState.systems`),
-   * and without one 1
-   */
-  systems?: number;
   /** size of the clouds and the gaps between them, relative: 2 makes them twice as large. Default 1 */
   scale?: number;
   /** how dense they are inside, relative: lower lets more light through their edges. Default 1 */
@@ -202,6 +197,15 @@ export type SceneryCloudVolumeProps = {
    * and the clouds first show once the Earth's are in. On the globe only. Default true
    */
   terrain?: boolean;
+  /**
+   * each layer's clouds pass along its level's chain of types (`CLOUD_TYPE_CHAINS`: cumulus,
+   * stratocumulus, stratus; altocumulus, altostratus; cirrus, cirrostratus), a patch some tens
+   * of kilometres across at a time: about the scene by its cover (`cloudTypeMix`: cumulus
+   * closing up spread out into stratocumulus, stratus thinning breaks into it), far off by the
+   * weather systems (closed cells a deck, open cells heaped, the fronts' sheets). Off, a layer
+   * is its own type all over. Default true
+   */
+  mixTypes?: boolean;
 };
 
 /**
@@ -651,6 +655,7 @@ export const sceneryDefaults = {
     quality: 'medium' as SceneryCloudVolumeQuality,
     temporal: true,
     terrain: true,
+    mixTypes: true,
   },
   air: { scaleHeight: 8000, visibility: 60000, haze: 0.75, hazeHeight: 1500 },
   colors: {

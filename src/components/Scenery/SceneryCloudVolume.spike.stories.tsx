@@ -1,5 +1,6 @@
-import type { Meta, StoryObj } from '@storybook/react-vite';
+import type { Decorator, Meta, StoryObj } from '@storybook/react-vite';
 import { useMemo } from 'react';
+import { useArgs, useEffect, useRef } from 'storybook/preview-api';
 import {
   sceneryArgs,
   SceneryArgs,
@@ -28,17 +29,23 @@ import {
   progressArgTypes,
 } from '../../storybook/decorators/progress-decorator';
 import {
+  CLOUD_COVER_OKTAS,
   CLOUD_LEVELS,
+  CLOUD_TYPE_HEIGHTS,
   CLOUD_TYPE_LEVELS,
+  cloudCoverOf,
   cloudLayerPreset,
-  cloudLayersOf,
+  cloudLayersByLevel,
+  isSkyPreset,
+  oktasToCover,
   SKY_PRESETS,
+  WEATHER_LOCAL_RADIUS,
   WEATHER_SYSTEMS_DEFAULTS,
   type CloudCover,
   type CloudLayer,
-  type CloudLayersPreset,
   type CloudLevel,
   type CloudType,
+  type SkyPreset,
   type WeatherState,
 } from '../../sdk/weather/weather';
 import { GeoRelief } from '../Layers/GeoRelief';
@@ -75,33 +82,36 @@ const LEVEL_TYPES = Object.fromEntries(
     ),
   ]),
 ) as Record<CloudLevel, CloudType[]>;
-// The clouds' own layers by name: skies, and a cover alone (cumulus).
-const PRESETS: CloudLayersPreset[] = [
-  ...(Object.keys(SKY_PRESETS) as CloudLayersPreset[]),
-  'few',
-  'broken',
-];
+// The skies a local weather starts from (SKY_PRESETS), or the levels' controls alone.
+type WeatherPresetArg = 'custom' | SkyPreset;
+const PRESETS = [
+  'custom',
+  ...(Object.keys(SKY_PRESETS) as SkyPreset[]),
+] as WeatherPresetArg[];
+
+// Each level's controls: its cover ('clear' for none), type, base and thickness (metres).
+type LevelArgs = {
+  [K in CloudLevel as `${K}Cover`]: CloudCover;
+} & { [K in CloudLevel as `${K}Type`]: CloudType } & {
+  [K in CloudLevel as `${K}Base`]: number;
+} & { [K in CloudLevel as `${K}Thickness`]: number } & {
+  [K in CloudLevel as `${K}On`]: boolean;
+};
 
 type CloudVolumeArgs = {
   panel: boolean;
   volume: boolean;
-  /** each level's layer of the weather: its cover ('clear' for none) and type */
-  lowCover: CloudCover;
-  lowType: CloudType;
-  midCover: CloudCover;
-  midType: CloudType;
-  highCover: CloudCover;
-  highType: CloudType;
-  /** the clouds' own layers by name (`layers`), whatever the weather's; 'weather' for none */
-  layersPreset: 'weather' | CloudLayersPreset;
-  systems: number;
+  /** local: the levels' layers about a middle, none beyond; global: the weather systems */
+  weatherMode: 'local' | 'global';
+  /** a sky to fill the levels' controls and the wind from (local), or 'custom' */
+  preset: WeatherPresetArg;
+  /** a local weather's middle (degrees; unset: the anchor as it is first drawn) and radius (km) */
+  localLatitude?: number;
+  localLongitude?: number;
+  localRadius: number;
   systemsSeed: number;
   volumeScale: number;
   density: number;
-  /** each level drawn (`levels`) */
-  lowOn: boolean;
-  midOn: boolean;
-  highOn: boolean;
   quality: SceneryCloudVolumeQuality;
   /** resolution and steps of their own (the controls below) instead of the quality's */
   ownQuality: boolean;
@@ -112,48 +122,119 @@ type CloudVolumeArgs = {
   temporal: boolean;
   /** the clouds shaped by the relief's ground (`terrain`) */
   cloudTerrain: boolean;
+  /** each layer's clouds passing along its level's chain of types (`mixTypes`) */
+  mixTypes: boolean;
   /** the waves from the weather's wind (the sea's own wind left out) */
   weatherWind: boolean;
   /** the weather's clock held: the clouds and the waves stand still */
   weatherPaused: boolean;
-} & SceneryArgs &
+} & LevelArgs &
+  SceneryArgs &
   SceneryReliefArgs &
   ProgressArgs;
 
-// The weather's layers from the story's controls: one at each level, as covered and of the
-// type they say.
+// A type's typical heights at a cover (CLOUD_TYPE_HEIGHTS; none for clear), to 10 m.
+function heightsOf(cover: CloudCover, type: CloudType) {
+  const [least, most] = CLOUD_COVER_OKTAS[cover];
+  const share = oktasToCover((least + most) / 2);
+  const { base, top } = CLOUD_TYPE_HEIGHTS[type];
+  const thickness = top[0] + (top[1] - top[0]) * share - base;
+  return { base, thickness: Math.round(thickness / 10) * 10 };
+}
+
+// The levels' controls and the wind's for a sky (SKY_PRESETS): its layers' covers, types and
+// heights; a level it leaves clear keeps its type, at its typical heights.
+function presetArgs(
+  preset: SkyPreset,
+  args: CloudVolumeArgs,
+): Partial<CloudVolumeArgs> {
+  const { layers, wind } = SKY_PRESETS[preset];
+  const byLevel = cloudLayersByLevel(layers);
+  const out: Record<string, unknown> = {
+    windSpeed: wind.speed,
+    // The sea's controls take the bearing it blows toward.
+    windDirection: (wind.from + 180) % 360,
+  };
+  CLOUD_LEVELS.forEach((level, i) => {
+    const layer = byLevel[i];
+    if (layer) {
+      out[`${level}Cover`] = cloudCoverOf(layer.cover);
+      out[`${level}Type`] = layer.type;
+      out[`${level}Base`] = layer.base;
+      out[`${level}Thickness`] = layer.top - layer.base;
+    } else {
+      const type = args[`${level}Type`];
+      out[`${level}Cover`] = 'clear';
+      Object.assign(out, levelHeights(level, heightsOf('clear', type)));
+    }
+  });
+  return out as Partial<CloudVolumeArgs>;
+}
+
+// A level's height controls.
+const levelHeights = (
+  level: CloudLevel,
+  { base, thickness }: { base: number; thickness: number },
+) => ({ [`${level}Base`]: base, [`${level}Thickness`]: thickness });
+// The same, typed for the story's args.
+const levelHeightArgs = (
+  level: CloudLevel,
+  heights: { base: number; thickness: number },
+) => levelHeights(level, heights) as Partial<LevelArgs>;
+
+// The local weather's layers from the levels' controls: each level's, as covered, of the type
+// and at the heights they say.
 function layersFromArgs(args: CloudVolumeArgs): CloudLayer[] {
-  return [
-    cloudLayerPreset(args.lowCover, args.lowType),
-    cloudLayerPreset(args.midCover, args.midType),
-    cloudLayerPreset(args.highCover, args.highType),
-  ].filter((layer): layer is CloudLayer => layer !== null);
+  return CLOUD_LEVELS.flatMap(level => {
+    const cover = args[`${level}Cover`];
+    // Clear, or hidden (a global weather's: undefined).
+    if (!cover || cover === 'clear') return [];
+    const [least, most] = CLOUD_COVER_OKTAS[cover];
+    const base = args[`${level}Base`];
+    return [
+      {
+        type: args[`${level}Type`],
+        cover: oktasToCover((least + most) / 2),
+        base,
+        top: base + Math.max(args[`${level}Thickness`], 10),
+      },
+    ];
+  });
 }
 
-// The levels drawn, from the story's toggles.
+// The levels drawn: a global weather's toggles; a local one's all (a level left clear has
+// none).
 function levelsFromArgs(args: CloudVolumeArgs): CloudLevel[] {
-  const on = { low: args.lowOn, mid: args.midOn, high: args.highOn };
-  return CLOUD_LEVELS.filter(level => on[level]);
+  if (args.weatherMode === 'local') return [...CLOUD_LEVELS];
+  return CLOUD_LEVELS.filter(level => args[`${level}On`]);
 }
 
-// The weather from the story's controls: its layers, the wind the sea's controls set (the
-// bearing they blow toward, as a report's `from`), and the weather systems far off.
+// The weather from the story's controls: its wind (the sea's controls give the bearing it
+// blows toward, a report its `from`), and local, its layers about its middle; global, the
+// weather systems.
 function weatherFromArgs(args: CloudVolumeArgs): WeatherState {
+  const wind = {
+    speed: args.windSpeed,
+    from: (args.windDirection + 180) % 360,
+  };
+  if (args.weatherMode === 'global')
+    return { wind, systems: { seed: args.systemsSeed } };
   return {
-    wind: { speed: args.windSpeed, from: (args.windDirection + 180) % 360 },
+    wind,
     clouds: layersFromArgs(args),
-    systems: { strength: args.systems, seed: args.systemsSeed },
+    local: {
+      latitude: args.localLatitude,
+      longitude: args.localLongitude,
+      radius: args.localRadius * 1000,
+    },
   };
 }
 
 // Where a double-click on the globe takes the camera: low over the ground or the sea, looking
 // up into the middle of the lowest cloud layer some kilometres on (the panel's `fly`).
 function flyFromArgs(args: CloudVolumeArgs) {
-  const preset = args.layersPreset;
-  const layers =
-    preset === 'weather' ? layersFromArgs(args) : cloudLayersOf(preset);
   const lowest =
-    [...layers].sort((a, b) => a.base - b.base)[0] ??
+    [...layersFromArgs(args)].sort((a, b) => a.base - b.base)[0] ??
     cloudLayerPreset('scattered', 'cumulus')!;
   return {
     height: 300,
@@ -161,6 +242,57 @@ function flyFromArgs(args: CloudVolumeArgs) {
     ahead: 6000,
   };
 }
+
+/**
+ * Keeps the weather's controls together: a sky chosen fills the levels' controls and the
+ * wind; a level's cover or type changed sets its heights to the type's typical ones; any of a
+ * level's controls changed by hand makes the sky 'custom'. `useArgs` is valid only in a
+ * decorator.
+ */
+const cloudWeatherDecorator: Decorator = Story => {
+  const [args, updateArgs] = useArgs<CloudVolumeArgs>();
+  const seen = useRef<CloudVolumeArgs | null>(null);
+  useEffect(() => {
+    const before = seen.current;
+    seen.current = args;
+    // Only within a local weather: switching it hides the levels' controls, whose args then
+    // come and go as undefined.
+    if (
+      !before ||
+      args.weatherMode !== 'local' ||
+      before.weatherMode !== 'local'
+    )
+      return;
+    let changes: Partial<CloudVolumeArgs> = {};
+    if (args.preset !== before.preset && isSkyPreset(args.preset))
+      changes = presetArgs(args.preset, args);
+    else
+      for (const level of CLOUD_LEVELS) {
+        const cover = args[`${level}Cover`];
+        const type = args[`${level}Type`];
+        if (
+          cover !== before[`${level}Cover`] ||
+          type !== before[`${level}Type`]
+        )
+          Object.assign(changes, levelHeights(level, heightsOf(cover, type)), {
+            preset: 'custom',
+          });
+        else if (
+          args[`${level}Base`] !== before[`${level}Base`] ||
+          args[`${level}Thickness`] !== before[`${level}Thickness`]
+        )
+          Object.assign(changes, { preset: 'custom' });
+      }
+    const changed = Object.entries(changes).filter(
+      ([key, value]) => args[key as keyof CloudVolumeArgs] !== value,
+    );
+    if (changed.length === 0) return;
+    const update = Object.fromEntries(changed) as Partial<CloudVolumeArgs>;
+    seen.current = { ...args, ...update };
+    updateArgs(update);
+  }, [args, updateArgs]);
+  return Story();
+};
 
 const CloudVolumeStory = (storyArgs: CloudVolumeArgs) => {
   const { args, timelapse } = useSceneryTimelapse(storyArgs);
@@ -206,9 +338,6 @@ const CloudVolumeStory = (storyArgs: CloudVolumeArgs) => {
           <SceneryStage boundary={BOUNDS} />
           {args.volume && (
             <SceneryCloudVolume
-              layers={
-                args.layersPreset === 'weather' ? undefined : args.layersPreset
-              }
               scale={args.volumeScale}
               density={args.density}
               levels={levelsFromArgs(args)}
@@ -218,6 +347,7 @@ const CloudVolumeStory = (storyArgs: CloudVolumeArgs) => {
               seed={args.volumeSeed}
               temporal={args.temporal}
               terrain={args.cloudTerrain}
+              mixTypes={args.mixTypes}
             />
           )}
         </Scenery>
@@ -240,24 +370,58 @@ const range = (
   table: { category: 'Cloud volume' },
 });
 
+const LOCAL = { arg: 'weatherMode', eq: 'local' } as const;
+const GLOBAL = { arg: 'weatherMode', eq: 'global' } as const;
+
 const levelCover = (level: CloudLevel, description: string) => ({
   control: { type: 'inline-radio' as const },
   options: COVERS,
   description,
-  table: { category: `Cloud volume: ${level}` },
+  table: { category: `Weather: ${level}` },
+  if: LOCAL,
 });
 
 const levelType = (level: CloudLevel, description: string) => ({
   control: { type: 'inline-radio' as const },
   options: LEVEL_TYPES[level],
   description,
-  table: { category: `Cloud volume: ${level}` },
+  table: { category: `Weather: ${level}` },
+  if: LOCAL,
 });
+
+const levelHeight = (
+  level: CloudLevel,
+  min: number,
+  max: number,
+  description: string,
+) => ({
+  control: { type: 'range' as const, min, max, step: 50 },
+  description,
+  table: { category: `Weather: ${level}` },
+  if: LOCAL,
+});
+
+const levelBase = (level: CloudLevel) =>
+  levelHeight(
+    level,
+    0,
+    12000,
+    `Height of the ${level} layer’s base over the sea (metres): set to its type’s as its cover or type changes.`,
+  );
+
+const levelThickness = (level: CloudLevel) =>
+  levelHeight(
+    level,
+    100,
+    6000,
+    `How thick the ${level} layer is (metres), from its base to its tops: set to its type’s as its cover or type changes.`,
+  );
 
 const levelOn = (level: CloudLevel) => ({
   control: { type: 'boolean' as const },
-  description: `Draw the ${level} level (\`levels\`): off, neither its layer nor the weather systems’ cloud at its level far off is drawn, and it costs nothing.`,
-  table: { category: `Cloud volume: ${level}` },
+  description: `Draw the ${level} level (\`levels\`): off, none of the weather systems’ cloud at its level is drawn, and it costs nothing.`,
+  table: { category: 'Weather' },
+  if: GLOBAL,
 });
 
 const meta = {
@@ -269,6 +433,7 @@ const meta = {
     GeneratorsProviderDecorator,
     DataProviderDecorator,
     ...sceneryDecorators,
+    cloudWeatherDecorator,
   ],
   parameters: {
     scale: 1000,
@@ -297,52 +462,88 @@ const meta = {
       description: 'The 3D clouds (`SceneryCloudVolume`).',
       table: { category: 'Cloud volume' },
     },
+    weatherMode: {
+      control: { type: 'inline-radio' },
+      options: ['local', 'global'],
+      description:
+        'LOCAL: the weather’s layers (the levels below, or a sky’s) about a middle, within a radius, and no cloud beyond (`WeatherState.local`). GLOBAL: the weather systems over the whole Earth, the scene included — fronts, cyclones, clear highs, cellular convection — each level on or off.',
+      table: { category: 'Weather' },
+    },
+    preset: {
+      control: { type: 'select' },
+      options: PRESETS,
+      description:
+        'A sky (`SKY_PRESETS`, `weatherPresetOf`): fills in the levels’ controls and the wind, to change from there. CUSTOM once one is changed by hand.',
+      table: { category: 'Weather' },
+      if: LOCAL,
+    },
+    localLatitude: {
+      control: { type: 'number', min: -90, max: 90, step: 0.01 },
+      description:
+        'Latitude of the local weather’s middle (degrees). Unset: where the World’s anchor lies as it is first drawn, kept there as the anchor moves.',
+      table: { category: 'Weather' },
+      if: LOCAL,
+    },
+    localLongitude: {
+      control: { type: 'number', min: -180, max: 180, step: 0.01 },
+      description:
+        'Longitude of the local weather’s middle (degrees). Unset, with the latitude: the anchor’s.',
+      table: { category: 'Weather' },
+      if: LOCAL,
+    },
+    localRadius: {
+      ...range(
+        5,
+        500,
+        5,
+        'How far the local weather’s layers reach from its middle (km), thinning out over the outer fifth.',
+      ),
+      table: { category: 'Weather' },
+      if: LOCAL,
+    },
     lowOn: levelOn('low'),
+    midOn: levelOn('mid'),
+    highOn: levelOn('high'),
+    systemsSeed: {
+      ...range(
+        0,
+        20,
+        1,
+        'Other weather systems (`WeatherSystems.seed`): their map is drawn anew over a second or so.',
+      ),
+      table: { category: 'Weather' },
+      if: GLOBAL,
+    },
     lowCover: levelCover(
       'low',
-      'How much of the sky the weather’s low layer covers, as a report says it (`cloudLayerPreset`): CLEAR for none.',
+      'How much of the sky the low layer covers, as a report says it: CLEAR for none.',
     ),
     lowType: levelType(
       'low',
       'What the low layer is made of: heaped cumulus, a lumpy deck of stratocumulus, an even sheet of stratus, or deep, dark nimbostratus.',
     ),
-    midOn: levelOn('mid'),
+    lowBase: levelBase('low'),
+    lowThickness: levelThickness('low'),
     midCover: levelCover(
       'mid',
-      'How much of the sky the weather’s middle layer covers (some 4–5 km up): CLEAR for none.',
+      'How much of the sky the middle layer covers (some 4–5 km up): CLEAR for none.',
     ),
     midType: levelType(
       'mid',
       'What the middle layer is made of: small puffs of altocumulus in rows across the wind, or a thin grey sheet of altostratus.',
     ),
-    highOn: levelOn('high'),
+    midBase: levelBase('mid'),
+    midThickness: levelThickness('mid'),
     highCover: levelCover(
       'high',
-      'How much of the sky the weather’s high layer covers (some 8–9 km up): CLEAR for none.',
+      'How much of the sky the high layer covers (some 8–9 km up): CLEAR for none.',
     ),
     highType: levelType(
       'high',
       'What the high layer is made of: streaks of cirrus along the wind, or a milky veil of cirrostratus.',
     ),
-    layersPreset: {
-      control: { type: 'select' },
-      options: ['weather', ...PRESETS],
-      description:
-        'The clouds’ own layers by name (`SceneryCloudVolume`’s `layers`, a `CloudLayersPreset`), whatever the weather’s: a sky (`SKY_PRESETS`), or a cover of cumulus. WEATHER for the weather’s layers above.',
-      table: { category: 'Cloud volume' },
-    },
-    systems: range(
-      0,
-      1,
-      0.05,
-      'The weather’s systems (`WeatherSystems.strength`): how far the cover away from the scene follows fronts, cyclones, clear highs and cellular convection over the Earth. Within some 100 km of the scene the cover is the weather’s layers’.',
-    ),
-    systemsSeed: range(
-      0,
-      20,
-      1,
-      'Other weather systems (`WeatherSystems.seed`): their map is drawn anew over a second or so.',
-    ),
+    highBase: levelBase('high'),
+    highThickness: levelThickness('high'),
     volumeScale: range(0.25, 4, 0.05, 'Size of the clouds, relative.'),
     density: range(0.1, 3, 0.05, 'How dense they are inside, relative.'),
     quality: {
@@ -390,6 +591,12 @@ const meta = {
         'Shaped by the relief’s ground (`terrain`): the layers rise over high ground, gather on the slopes the wind blows up and part in the lee of ridges, and the ground stands in them. Needs the relief.',
       table: { category: 'Cloud volume' },
     },
+    mixTypes: {
+      control: { type: 'boolean' },
+      description:
+        'Each layer’s clouds pass along its level’s chain of types (`mixTypes`, `CLOUD_TYPE_CHAINS`), a patch some tens of kilometres across at a time: about the scene by its cover (cumulus closing up spread into stratocumulus, stratus thinning breaks into it), far off by the weather systems. Off: each layer its own type all over.',
+      table: { category: 'Cloud volume' },
+    },
     weatherWind: {
       control: { type: 'boolean' },
       description:
@@ -408,17 +615,26 @@ const meta = {
     relief: true,
     panel: true,
     volume: true,
+    // A local weather: the 'scattered' sky (SKY_PRESETS) about the anchor, its wind.
+    weatherMode: 'local',
+    preset: 'scattered',
+    localRadius: WEATHER_LOCAL_RADIUS / 1000,
+    windSpeed: SKY_PRESETS.scattered.wind.speed,
+    windDirection: (SKY_PRESETS.scattered.wind.from + 180) % 360,
+    lowCover: 'scattered',
+    lowType: 'cumulus',
+    lowBase: 1200,
+    lowThickness: 1200,
+    midCover: 'clear',
+    midType: 'altocumulus',
+    ...levelHeightArgs('mid', heightsOf('clear', 'altocumulus')),
+    highCover: 'few',
+    highType: 'cirrus',
+    highBase: 8500,
+    highThickness: 800,
     lowOn: true,
     midOn: true,
     highOn: true,
-    lowCover: 'scattered',
-    lowType: 'cumulus',
-    midCover: 'clear',
-    midType: 'altocumulus',
-    highCover: 'clear',
-    highType: 'cirrus',
-    layersPreset: 'weather',
-    systems: WEATHER_SYSTEMS_DEFAULTS.strength,
     systemsSeed: WEATHER_SYSTEMS_DEFAULTS.seed,
     volumeScale: sceneryDefaults.cloudVolume.scale,
     density: sceneryDefaults.cloudVolume.density,
@@ -429,6 +645,7 @@ const meta = {
     volumeSeed: sceneryDefaults.cloudVolume.seed,
     temporal: sceneryDefaults.cloudVolume.temporal,
     cloudTerrain: sceneryDefaults.cloudVolume.terrain,
+    mixTypes: sceneryDefaults.cloudVolume.mixTypes,
     weatherWind: true,
     weatherPaused: false,
   },
@@ -439,8 +656,9 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
 
-/** The whole Earth from 20 000 km: the same clouds, draped over it. Fly down to the field. */
+/** The whole Earth from 20 000 km: the weather systems over it (global). Fly down to the field. */
 export const Earth: Story = {
+  args: { weatherMode: 'global' },
   parameters: {
     cameraPosition: [0, 14000000, 14000000],
     cameraTarget: [0, 0, 0],

@@ -1,7 +1,9 @@
 // The 3D clouds' weather far off (scenery-cloud-map.ts): a cube map over the whole Earth, fixed on
 // it (z toward the north pole, x toward latitude and longitude 0), of the share of the ground
 // under low cloud (r) and how thick it is (g: 0 a thin veil, 1 a front's or a cyclone's deep
-// cloud), and the share under cloud at the middle level (b) and the high (a).
+// cloud), and the share under cloud at the middle level (b) and the high (a). With
+// CLOUD_MAP_TYPES, the same weather's types instead: where each level's cloud lies along its
+// chain of types (r low, g middle, b high), for a smaller cube map drawn alongside.
 // The second of two passes: the first draws the weather systems' wind and pressure
 // (cloud-map-flow.glsl), and this one traces each place's air back along that wind, some
 // 2000 km, and reads where it came from.
@@ -176,5 +178,23 @@ void main() {
   float highLift = 1.5 * shield * lowered * smoothstep(-0.6, 0.6, streaks + 0.4 * ragged) + 0.9 * deep + 1.4 * itcz * smoothstep(-0.4, 0.8, streaks + ragged) + 0.6 * stormTrack * smoothstep(0.3, 1.1, streaks) + 0.2 * detail;
   float high = smoothstep(0.45 - fwidth(highLift), 1.2, highLift);
 
+#ifdef CLOUD_MAP_TYPES
+  // Where each level's cloud lies along its chain of types (CLOUD_TYPE_CHAINS in
+  // scenery-cloud-volume.ts), each part at its own place weighed by how much of the cover it
+  // lays. Low (cumulus 0, stratocumulus 1, stratus 2): the open cells and the trades' cumulus
+  // heaped; the closed cells' decks; the systems' sheets, stratus where they run deep or the
+  // air is polar, heaped again in the convergence zone's thunderstorms. Middle (altocumulus 0,
+  // altostratus 1): the warm air riding up the fronts and the systems' deep hearts a sheet,
+  // what weaker lift there is elsewhere in puffs. High (cirrus 0, cirrostratus 1): the shield
+  // ahead of the fronts and the deep systems' tops a veil; the anvils and the jets' streaks.
+  float sheets = mix(1.0 + max(deep, polar), 0.0, itcz);
+  float lowPlace = (synoptic * sheets + closed) / max(synoptic + open + closed + fair, 1e-3);
+  float midSheet = 1.6 * ahead * lowered * smoothstep(-0.9, 0.3, streaks) + 1.2 * deep;
+  float midPlace = midSheet / (midSheet + max(0.3 * moisture + 0.25 * detail, 0.0) + 0.1);
+  float highVeil = 1.5 * shield * lowered * smoothstep(-0.6, 0.6, streaks + 0.4 * ragged) + 0.9 * deep;
+  float highStreaks = 1.4 * itcz * smoothstep(-0.4, 0.8, streaks + ragged) + 0.6 * stormTrack * smoothstep(0.3, 1.1, streaks) + max(0.2 * detail, 0.0) + 0.1;
+  gl_FragColor = vec4(clamp(0.5 * lowPlace, 0.0, 1.0), clamp(midPlace, 0.0, 1.0), clamp(highVeil / (highVeil + highStreaks), 0.0, 1.0), 1.0);
+#else
   gl_FragColor = vec4(clamp(cover, 0.0, 1.0), clamp(thickness, 0.0, 1.0), clamp(mid, 0.0, 1.0), clamp(high, 0.0, 1.0));
+#endif
 }

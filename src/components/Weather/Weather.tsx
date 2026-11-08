@@ -9,8 +9,9 @@ import { WeatherClockContext, WeatherContext } from './weather-context';
  */
 export type WeatherProps = {
   /**
-   * the wind and the cloud layers (see {@link WeatherState}); `weatherPreset` makes one from
-   * a report's words. Kept as given: a new object is a new weather
+   * the wind and the cloud: local, its layers about one place, or global, the weather systems
+   * (see {@link WeatherState}); `weatherPresetOf` makes a local one from a sky's name,
+   * `weatherPreset` from a report's words. Kept as given: a new object is a new weather
    */
   weather: WeatherState;
   /**
@@ -28,7 +29,8 @@ export type WeatherProps = {
 
 /**
  * The weather for everything inside it: the wind raises the waves of an `Ocean`, a
- * `SceneryOcean` and a `ChunkStack`'s water, the cloud layers are what a `SceneryCloudVolume`
+ * `SceneryOcean` and a `ChunkStack`'s water, its cloud (a local weather's layers, a global
+ * one's weather systems) is what a `SceneryCloudVolume`
  * draws, and its clock (`WeatherClock`, `useWeatherClock`) moves both: the clouds drift with
  * the wind and change, the weather systems travel, and the waves run at its pace. Each still
  * takes its own props first: the weather fills in only what they leave out. It draws nothing,
