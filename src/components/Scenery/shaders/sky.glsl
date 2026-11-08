@@ -639,9 +639,10 @@ float skyAbyssLidFootprint(vec3 hit) {
 
 // The lid seen at `hit`, `reach` away: it recedes into the horizon colour over the fade
 // distance, or never (0). Its ripples are smoothed over the `footprint` a pixel spans there
-// (skyAbyssLidFootprint): it takes no derivatives. Over the hollow (hollow-look.glsl), inside
-// its rim and seen from inside it, the underside of the sediments its walls' top is cut in,
-// rippled as the plain lid is.
+// (skyAbyssLidFootprint): it takes no derivatives. With the hollow on, the hollow's lid
+// (hollow-look.glsl) everywhere, over its rim or past it, from inside it or out: the underside
+// of the sediments its walls' top is cut in, rippled as the plain lid is, so nothing overhead
+// changes as the camera crosses the rim.
 vec3 skyAbyssCeilingOver(vec3 hit, float reach, float footprint) {
   float near = uSkyAbyssFadeDistance > 0.0 ? exp(-reach / uSkyAbyssFadeDistance) : 1.0;
   vec3 ceiling = mix(uSkyAbyssHorizonColor, uSkyAbyssCeilingColor, near);
@@ -650,11 +651,8 @@ vec3 skyAbyssCeilingOver(vec3 hit, float reach, float footprint) {
   if(uSkyAbyssDetail > 0.0)
     ripple += pnFbmSigned2FilteredOver(skyAbyssLidCells(hit), 5, footprint) * 2.0 * uSkyAbyssDetail * near;
   ceiling *= ripple;
-  if(uSkyHollow.x > 0.5 && uHollowView.x > 0.5) {
-    float inside = hollowInside(hit);
-    vec3 lid = hollowLid(hit, reach, inside, footprint * uSkyAbyssDetailScale) * (hollowStyleSimple() ? 1.0 : ripple);
-    ceiling = mix(ceiling, lid, smoothstep(-3000.0, 0.0, inside));
-  }
+  if(uSkyHollow.x > 0.5)
+    ceiling = hollowLid(hit, reach, hollowInside(hit), footprint * uSkyAbyssDetailScale) * (hollowStyleSimple() ? 1.0 : ripple);
   return ceiling;
 }
 

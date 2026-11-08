@@ -1,7 +1,7 @@
 // The hollow's look (scenery-hollow.ts): its rock, its light and its crust's top layer, shared
-// by its walls and floor (hollow-fragment.glsl) and by the void's lid over it (sky.glsl's
-// skyAbyssCeilingOver), so the lid is the underside of the layer the walls' top is cut in.
-// Needs globe.glsl and hollow.glsl.
+// by its walls and floor (hollow-fragment.glsl) and by the void's lid everywhere while it is on
+// (sky.glsl's skyAbyssCeilingOver), so the lid is the underside of the layer the walls' top is
+// cut in. Needs globe.glsl and hollow.glsl.
 
 // The rock (createRockTexture): slope along u and v, shade, fissures; and the slope r and g span.
 uniform sampler2D uHollowRock;
@@ -49,6 +49,8 @@ uniform vec3 uHollowPulse;
 // field, falling early: seen from inside, everything past a few tens of km crowds into the
 // degree or two over the walls, so a fade kept for the rim reads as a thin band there.
 #define HOLLOW_LID_EDGE vec2(1.0, 0.4)
+// How far past the rim the floor's warmth on the lid fades out, in world units.
+#define HOLLOW_LID_PAST 20000.0
 // The simple style's lid: its light at the rim, as a share of its own colour.
 #define HOLLOW_SIMPLE_LID_EDGE 0.6
 // How much the simple style's faint grain lightens or darkens, either way (hollowSimpleGrain);
@@ -155,11 +157,12 @@ float hollowRockLevel(float size, float pixel) {
   return log2(max(pixel * float(textureSize(uHollowRock, 0).x) / size, 1.0));
 }
 
-// The lid over the hollow seen from below at `hit`, `reach` away, `inside` the rim
-// (hollowInside), where a pixel spans `pixel` world units: the underside of the sediments the
-// walls' top is cut in, matte, faintly mottled, lit by what the hollow keeps and faintly warmed
-// by its floor, receding into its own dark far off and darkening toward the walls. The way it
-// faces at large is its caller's to shade. No derivatives.
+// The lid seen from below at `hit`, `reach` away, `inside` the hollow's rim (hollowInside),
+// where a pixel spans `pixel` world units: the underside of the sediments the walls' top is cut
+// in, matte, faintly mottled, lit by what the hollow keeps and faintly warmed by its floor,
+// receding into its own dark far off and darkening toward the walls. Past the rim it goes on
+// as it is at the rim, without the floor's warmth: the same lid everywhere. The way it faces
+// at large is its caller's to shade. No derivatives.
 vec3 hollowLid(vec3 hit, float reach, float inside, float pixel) {
   float near = exp(-reach / HOLLOW_LID_FADE.x);
   float fade = mix(HOLLOW_LID_FADE.y, 1.0, near);
@@ -191,9 +194,10 @@ vec3 hollowLid(vec3 hit, float reach, float inside, float pixel) {
     float shade = mix(HOLLOW_LID_EDGE.y, 1.0, s * s);
     vec3 sand = uHollowWallColor * HOLLOW_SAND * (HOLLOW_LID * mottle * fade);
     // The floor's glow on it: faint, half greyed, fading as its own light does, so far off it
-    // never takes the lid over.
+    // never takes the lid over; gone past the rim, over no floor.
     vec3 ember = mix(vec3(dot(uHollowEmberColor, vec3(0.2126, 0.7152, 0.0722))), uHollowEmberColor, HOLLOW_LID_WARM.y);
-    lid = (sand + ember * (HOLLOW_LID_WARM.x * uHollowLook.x * hollowPulseAt(plane, a.z) * fade)) * shade;
+    float over = smoothstep(-HOLLOW_LID_PAST, 0.0, inside);
+    lid = (sand + ember * (HOLLOW_LID_WARM.x * uHollowLook.x * hollowPulseAt(plane, a.z) * fade * over)) * shade;
   }
   return lid * hollowThroughRock(reach, hit);
 }

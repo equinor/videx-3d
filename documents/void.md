@@ -33,7 +33,7 @@ dark, dull rock that gives scale and depth.
   hollow, or any of its look changes: those are uniforms. The bakes (environment, light probe)
   never see the hollow or the peel (`scenery-baker.ts` overrides both).
 - **Past its walls and under its floor the void is solid rock:** black below the horizon, with
-  the lid overhead.
+  the hollow's lid overhead, the same lid as inside the rim.
 
 ## Geometry (`scenery-hollow.ts`)
 
@@ -141,15 +141,18 @@ click puts the default radius back. The radius is kept between the walls' reach 
 
 ## The lid
 
-From inside the rim, the lid is the seabed's underside: the sediments' underside, mottled at
-three sizes and rippled as the plain lid is, with faint relief lit from the hollow's middle
-(`hollowLid`). It curves down with the globe to meet the walls (`skyAbyssLidCurved`). The relief
-draws it near the field, the background beyond.
+While the hollow is on, the lid is the same everywhere: the seabed's underside, the sediments'
+underside, mottled at three sizes and rippled as the plain lid is, with faint relief lit from the
+hollow's middle (`hollowLid`, used by `skyAbyssCeilingOver` for the sky, the relief's underside
+and the stage alike). Inside the rim it curves down with the globe to meet the walls
+(`skyAbyssLidCurved`); past the rim it lies level over the camera. Crossing the rim under the
+seabed changes nothing overhead. The relief draws it near the field, the background beyond.
 
 - It darkens with distance from the camera, to 45% over 60 km (`HOLLOW_LID_FADE`), and toward
   the walls from above the field, to 40% at the rim (`HOLLOW_LID_EDGE`), so it reads as one
-  surface down to the walls, not a black band.
-- The floor's warmth on it is faint and half grey (`HOLLOW_LID_WARM`).
+  surface down to the walls, not a black band. Past the rim it stays as it is at the rim.
+- The floor's warmth on it is faint and half grey (`HOLLOW_LID_WARM`), fading out within 20 km
+  past the rim (`HOLLOW_LID_PAST`), where there is no floor below.
 - It switches on exactly where the camera passes through the seabed, as the relief flips to
   its underside there. A fade-in was tried and removed: half faded, the layers meant for above
   the seabed showed through it.
@@ -170,8 +173,8 @@ draws it near the field, the background beyond.
 ## From outside and below
 
 - **Past the walls**, under the seabed, the camera is in the rock: the hollow is not drawn, the
-  plain lid is overhead and the void below the horizon is black (`Scenery` sets the plain
-  void's horizon and depth colours black while the hollow is on).
+  hollow's own lid is overhead (as inside the rim) and the void below the horizon is black
+  (`Scenery` sets the plain void's horizon and depth colours black while the hollow is on).
 - **Under the floor**, the hollow and its lid stay drawn, seen through the rock: each view is
   dimmed by the length of rock it crosses under the floor, by e every 30 km
   (`HOLLOW_ROCK_FADE`), never below 15% (`HOLLOW_ROCK_KEPT`). The path is zero at the floor, so
