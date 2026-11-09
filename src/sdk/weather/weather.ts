@@ -114,6 +114,31 @@ export function cloudLayersByLevel(
 }
 
 /**
+ * `layers` (one at each {@link CloudLevel}, as {@link cloudLayersByLevel} gives them) kept in
+ * proportion, so one level dominates the sky: the layer covering most keeps its cover, and
+ * every other's is cut by `dominance` times that cover. With `dominance` 1, an overcast leaves
+ * no other level any cloud, as from under it none shows; 0 leaves them all as they are. Several
+ * levels with a lot of cloud are a deep frontal system, which draws as one deep layer
+ * (nimbostratus).
+ *
+ * @group Weather
+ */
+export function cloudLayersInProportion(
+  layers: readonly (CloudLayer | null)[],
+  dominance: number,
+): (CloudLayer | null)[] {
+  let most = -1;
+  layers.forEach((layer, k) => {
+    if (layer && (most < 0 || layer.cover > layers[most]!.cover)) most = k;
+  });
+  if (most < 0) return layers.slice();
+  const cut = 1 - Math.min(Math.max(dominance, 0), 1) * layers[most]!.cover;
+  return layers.map((layer, k) =>
+    !layer || k === most ? layer : { ...layer, cover: layer.cover * cut },
+  );
+}
+
+/**
  * The wind over the sea.
  *
  * @group Weather

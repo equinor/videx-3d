@@ -4,11 +4,12 @@ export * from './SceneryAnchor';
 export * from './SceneryClouds';
 export * from './SceneryCloudVolume';
 export {
+  CLOUD_VOLUME_LEVELS,
+  CLOUD_VOLUME_LOOKS,
   CLOUD_VOLUME_QUALITY,
-  cloudVolumeFormOf,
 } from './scenery-cloud-volume';
 export type {
-  CloudVolumeForm,
+  CloudVolumeLook,
   CloudVolumeQualityLevel,
 } from './scenery-cloud-volume';
 export * from './SceneryCutaway';

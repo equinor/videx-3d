@@ -1,13 +1,14 @@
-// The soft clouds' cover map (CloudCoverMap, scenery-cloud-cover.ts): a tile of noise over the
-// field, repeating, of how much each column is clouded over (any value: the layer's share under
+// The clouds' cover map (CloudCoverMap, scenery-cloud-cover.ts): a tile of noise over the
+// field, repeating, of how much each column is clouded over (any value: a level's share under
 // cloud picks a level of it, softCoverLevel). Broad patches of cloud and clear sky (gradient
-// noise in octaves) with masses in them (rounded bumps of many sizes about scattered points, at
-// three scales): clouds from some kilometres across down to a few hundred metres, clustered.
-// Integer hashes, so every GPU makes the same.
+// noise in octaves), and apart from them masses (rounded bumps of many sizes about scattered
+// points, at three scales): clouds from some kilometres across down to a few hundred metres,
+// clustered. Each cloud level reads the tile at its own scale, turn and stretch, and weighs the
+// masses against the patches as its look says. Integer hashes, so every GPU makes the same.
 //
-// Out: (cover, cover²) at the texel's middle, so the mipmaps' filtering gives what a footprint
-// holds: its mean and its spread. With COVER_SAMPLE, the cover at a point scattered over the
-// tile, for its distribution (softCoverStatistics).
+// Out: (patches, masses, patches², masses²) at the texel's middle, so the mipmaps' filtering
+// gives what a footprint holds: each one's mean and spread. With COVER_SAMPLE, the patches and
+// the masses at a point scattered over the tile, for the distribution (softCoverStatistics).
 
 precision highp float;
 precision highp int;
@@ -15,8 +16,6 @@ precision highp int;
 // Texels along the map's side (or the samples' grid, with COVER_SAMPLE), and the seed.
 uniform vec2 uCoverSize;
 uniform float uCoverSeed;
-// How much the masses weigh against the patches.
-uniform float uCoverMasses;
 
 uint coverHash(uvec3 p) {
   uint h = (p.x * 0x8da6b343u) ^ (p.y * 0xd8163841u) ^ (p.z * 0xcb1ab31fu);
@@ -77,8 +76,9 @@ float coverMasses(vec2 p, float cells, uint layer) {
   return 1.0 - left;
 }
 
-// The cover at `p` in the tile.
-float coverAt(vec2 p) {
+// The cover at `p` in the tile: its broad patches (x) and its masses (y), which a level weighs
+// against each other as its look says (its masses' weight).
+vec2 coverAt(vec2 p) {
   uint seed = uint(uCoverSeed) * 16u;
   float patches = 0.0;
   float weight = 0.0;
@@ -92,7 +92,7 @@ float coverAt(vec2 p) {
   }
   patches /= weight;
   float masses = 0.5 * coverMasses(p, 24.0, seed + 8u) + 0.3 * coverMasses(p, 48.0, seed + 9u) + 0.2 * coverMasses(p, 96.0, seed + 10u);
-  return patches + uCoverMasses * masses;
+  return vec2(patches, masses);
 }
 
 void main() {
@@ -100,9 +100,9 @@ void main() {
   uvec2 at = uvec2(gl_FragCoord.xy);
   uint h = coverHash(uvec3(at, 0x51ed270bu + uint(uCoverSeed)));
   vec2 p = vec2(coverRandom(h), coverRandom(h * 0x9e3779b9u + 0x632be5abu));
-  gl_FragColor = vec4(coverAt(p), 0.0, 0.0, 1.0);
+  gl_FragColor = vec4(coverAt(p), 0.0, 1.0);
 #else
-  float c = coverAt(gl_FragCoord.xy / uCoverSize);
-  gl_FragColor = vec4(c, c * c, 0.0, 1.0);
+  vec2 c = coverAt(gl_FragCoord.xy / uCoverSize);
+  gl_FragColor = vec4(c, c * c);
 #endif
 }

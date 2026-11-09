@@ -6,6 +6,7 @@ import {
   cloudCoverOf,
   cloudLayerPreset,
   cloudLayersByLevel,
+  cloudLayersInProportion,
   cloudLayersOf,
   cloudLayerWind,
   cloudLevelOf,
@@ -140,6 +141,34 @@ describe('cloud levels', () => {
     // The first of equals.
     const other = { ...stratus, type: 'stratocumulus' as const };
     expect(cloudLayersByLevel([stratus, other])[0]).toBe(stratus);
+  });
+
+  it('keeps the layers in proportion to the one covering most', () => {
+    const low = cloudLayerPreset('overcast', 'stratus')!;
+    const mid = cloudLayerPreset('broken', 'altostratus')!;
+    const high = cloudLayerPreset('scattered', 'cirrus')!;
+    const [a, b, c] = cloudLayersInProportion([low, mid, high], 1);
+    expect(a).toBe(low);
+    expect(b!.cover).toBe(0);
+    expect(c!.cover).toBe(0);
+    const [, d, e] = cloudLayersInProportion([low, mid, high], 0.5);
+    expect(d!.cover).toBeCloseTo(mid.cover * 0.5, 9);
+    expect(e!.cover).toBeCloseTo(high.cover * 0.5, 9);
+    // The dominant is whichever covers most, wherever it lies; none and all left alone.
+    const few = cloudLayerPreset('few', 'cumulus')!;
+    const [f, g] = cloudLayersInProportion([few, mid, null], 1);
+    expect(g).toBe(mid);
+    expect(f!.cover).toBeCloseTo(few.cover * (1 - mid.cover), 9);
+    expect(cloudLayersInProportion([low, mid, high], 0)).toEqual([
+      low,
+      mid,
+      high,
+    ]);
+    expect(cloudLayersInProportion([null, null, null], 1)).toEqual([
+      null,
+      null,
+      null,
+    ]);
   });
 });
 

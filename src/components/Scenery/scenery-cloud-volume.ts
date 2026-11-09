@@ -30,28 +30,9 @@ import { LAYERS } from '../../layers/layers';
 import { conformalOffset } from '../../sdk/projection/conformal-sphere';
 import type { Globe } from '../../sdk/projection/globe';
 import {
-  CUMULUS_BODY,
-  CUMULUS_GRIDS,
-  CUMULUS_MARGIN,
-  CUMULUS_REACH,
-  CUMULUS_WRAP,
-  cumulusEpoch,
-  cumulusGrids,
-  cumulusGridSeed,
-  cumulusGridTurn,
-  STRATO_EDGE,
-  STRATO_GAIN,
-  STRATO_LACUNARITY,
-  STRATO_OCTAVES,
-  STRATO_PERIOD,
-  STRATO_STRETCH,
-  STRATO_WARP,
-  stratoOctave,
-  stratoOctaveShift,
-  stratoStatistics,
-  stratoThreshold,
-} from '../../sdk/weather/cloud-field';
-import { softCoverLevel } from '../../sdk/weather/soft-clouds';
+  SOFT_COVER_QUANTILES,
+  softCoverLevel,
+} from '../../sdk/weather/soft-clouds';
 import {
   cloudLayerWind,
   type CloudLayer,
@@ -67,6 +48,7 @@ import {
 import { CLOUD_COVER_SIZE, CloudCoverMap } from './scenery-cloud-cover';
 import { createSceneryGeometry, SceneryMaterial } from './scenery-material';
 import type {
+  SceneryCloudLook,
   SceneryCloudVolumeDebug,
   SceneryCloudVolumeQuality,
 } from './scenery-model';
@@ -83,20 +65,10 @@ import vertexShader from './shaders/cloud-volume-vertex.glsl';
 export type CloudVolumeQualityLevel = {
   /** the share of the screen's resolution their image is drawn at */
   resolution: number;
-  /** the most iterations along a view: crossings of the cumulus's cells and columns, and samples */
-  iterations: number;
-  /** samples across a cumulus's radius */
-  samples: number;
-  /** samples toward the light from each sample in a cumulus */
+  /** stretches along each run of a view through a dense level (thin levels take fewer) */
+  steps: number;
+  /** stretches toward the light from each point lit: its skin, then the rest */
   lightSamples: number;
-  /** samples along a view through the strato layer */
-  stratoSamples: number;
-  /** a size of cumulus is drawn as its clouds while they are this many pixels across; smaller, as their mean */
-  pixels: number;
-  /** stretches along each run of a view through the soft clouds' layer (`soft`) */
-  softSamples: number;
-  /** stretches toward the light from each stretch in the soft clouds: its skin, then the rest */
-  softLightSamples: number;
 };
 
 /**
@@ -109,46 +81,10 @@ export type CloudVolumeQualityLevel = {
 export const CLOUD_VOLUME_QUALITY: Readonly<
   Record<SceneryCloudVolumeQuality, CloudVolumeQualityLevel>
 > = {
-  low: {
-    resolution: 0.35,
-    iterations: 96,
-    samples: 3,
-    lightSamples: 1,
-    stratoSamples: 16,
-    pixels: 3,
-    softSamples: 24,
-    softLightSamples: 2,
-  },
-  medium: {
-    resolution: 0.5,
-    iterations: 128,
-    samples: 4,
-    lightSamples: 2,
-    stratoSamples: 24,
-    pixels: 2,
-    softSamples: 32,
-    softLightSamples: 2,
-  },
-  high: {
-    resolution: 0.75,
-    iterations: 160,
-    samples: 6,
-    lightSamples: 2,
-    stratoSamples: 32,
-    pixels: 1.5,
-    softSamples: 48,
-    softLightSamples: 3,
-  },
-  ultra: {
-    resolution: 1,
-    iterations: 224,
-    samples: 8,
-    lightSamples: 3,
-    stratoSamples: 48,
-    pixels: 1,
-    softSamples: 64,
-    softLightSamples: 4,
-  },
+  low: { resolution: 0.35, steps: 24, lightSamples: 2 },
+  medium: { resolution: 0.5, steps: 32, lightSamples: 2 },
+  high: { resolution: 0.75, steps: 48, lightSamples: 3 },
+  ultra: { resolution: 1, steps: 64, lightSamples: 4 },
 };
 
 /** `quality`'s level, with a `resolution` of its own instead of the quality's. */
@@ -161,61 +97,150 @@ export function cloudVolumeQuality(
 }
 
 /**
- * How a `SceneryCloudVolume` draws a {@link CloudType}: as separate heaped clouds
- * (`'cumulus'`), or as a soft field of veils drawn out along the wind (`'strato'`: stratus,
- * stratocumulus and nimbostratus for now). Null: not drawn yet (the middle and high types).
+ * How a `SceneryCloudVolume` draws a {@link CloudType}: each of {@link SceneryCloudLook}'s.
  *
  * @group Components
  */
-export type CloudVolumeForm = 'cumulus' | 'strato';
+export type CloudVolumeLook = Required<SceneryCloudLook>;
 
-/** How a `SceneryCloudVolume` draws `type` ({@link CloudVolumeForm}); null where it does not. */
-export function cloudVolumeFormOf(type: CloudType): CloudVolumeForm | null {
-  if (type === 'cumulus') return 'cumulus';
-  if (type === 'stratus' || type === 'stratocumulus' || type === 'nimbostratus')
-    return 'strato';
-  return null;
-}
+/**
+ * How a `SceneryCloudVolume` draws each {@link CloudType} unless told (`looks`): heaped
+ * cumulus, lumpy stratocumulus decks, flat stratus sheets, deep soft nimbostratus, small
+ * altocumulus puffs in patches, thin altostratus veils, and ice — cirrus streaks drawn out
+ * along the wind, cirrostratus milky veils.
+ *
+ * @group Components
+ */
+export const CLOUD_VOLUME_LOOKS: Readonly<Record<CloudType, CloudVolumeLook>> =
+  {
+    cumulus: {
+      scale: 1,
+      stretch: 1,
+      softness: 0.05,
+      lumps: 0.3,
+      towering: 0.4,
+      masses: 0.6,
+      extinction: 0.03,
+    },
+    stratocumulus: {
+      scale: 1.2,
+      stretch: 1.3,
+      softness: 0.08,
+      lumps: 0.3,
+      towering: 0.2,
+      masses: 0.4,
+      extinction: 0.03,
+    },
+    stratus: {
+      scale: 2,
+      stretch: 1.5,
+      softness: 0.15,
+      lumps: 0.15,
+      towering: 0.05,
+      masses: 0.1,
+      extinction: 0.02,
+    },
+    nimbostratus: {
+      scale: 3,
+      stretch: 1.5,
+      softness: 0.2,
+      lumps: 0.2,
+      towering: 0.3,
+      masses: 0.2,
+      extinction: 0.03,
+    },
+    altocumulus: {
+      scale: 0.4,
+      stretch: 1.5,
+      softness: 0.08,
+      lumps: 0.25,
+      towering: 0.2,
+      masses: 0.8,
+      extinction: 0.02,
+    },
+    altostratus: {
+      scale: 2,
+      stretch: 2,
+      softness: 0.3,
+      lumps: 0.1,
+      towering: 0.05,
+      masses: 0.1,
+      extinction: 0.004,
+    },
+    cirrus: {
+      scale: 1,
+      stretch: 6,
+      softness: 0.3,
+      lumps: 0.1,
+      towering: 0.1,
+      masses: 0.3,
+      extinction: 0.002,
+    },
+    cirrostratus: {
+      scale: 3,
+      stretch: 2,
+      softness: 0.5,
+      lumps: 0.05,
+      towering: 0.02,
+      masses: 0,
+      extinction: 0.0015,
+    },
+  };
 
-// The extinction in a cumulus (1 / metre, at density 1), and the optical depth straight up
-// through a strato veil's core (at density 1), whatever its thickness.
-const CUMULUS_EXTINCTION = 0.02;
-const STRATO_DEPTH = 5;
-// The detail volume's period (metres, at scale 1).
-const PERIOD_DETAIL = 600;
-// A local weather's layer thins out over this outer share of its radius.
-const LOCAL_EDGE = 0.2;
+/**
+ * The most cloud levels a `SceneryCloudVolume` draws: one at each `CloudLevel`.
+ *
+ * @group Components
+ */
+export const CLOUD_VOLUME_LEVELS = 3;
+
+// A local weather's clouds give way, breaking up, over this outer share of its radius, and a
+// broad noise pushes its edge in and out by this share of it, so it is no circle
+// (cloud-volume-march.glsl, cloudLocalEdge): over the outer fifth of a circle it showed from
+// high up as a disc.
+const LOCAL_FADE = 0.5;
+const LOCAL_WOBBLE = 0.2;
 // The image's depth: log2 of the distance over this many doublings (cloud-volume-composite.glsl).
 const DEPTH_RANGE = '32.0';
-// The soft clouds (`soft`): their cover map's texel (metres, at scale 1: its tile 2048 of them),
-// the extinction inside them (1 / metre, at density 1), and the size of a cloud (metres, at
-// scale 1: how a stretch of cloud and sky mixed hides what lies behind). Their lumps are the
-// shape volume tiled this many times over the map's tile.
-const SOFT_TEXEL = 100;
-const SOFT_EXTINCTION = 0.03;
-const SOFT_CHUNK = 1500;
-const SOFT_LUMP_TILES = 100;
-// How the cover a column needs rises up the soft clouds' layer (a power): domed tops over flat
-// bases.
-const SOFT_DOME = 2;
-// The most short steps through each part of a soft clouds' step holding cloud
-// (cloud-volume-march.glsl, softFine): a part up to 16 mean free paths long is walked in steps of
-// 2, a longer one in longer steps.
-const SOFT_FINE_STEPS = 8;
+// The cover map's texel (metres, at scale 1 and a look's scale 1: its tile CLOUD_COVER_SIZE of
+// them), and the size of a cloud (metres, likewise: how a stretch of cloud and sky mixed hides
+// what lies behind). The lumps are the shape volume tiled this many times over the map's tile.
+const COVER_TEXEL = 100;
+const CHUNK = 1500;
+const LUMP_TILES = 100;
+// The lumps' second tiling (cloud-volume-march.glsl): turned (cosine, sine) and broader.
+const LUMP_TURN = [0.8, 0.6] as const;
+const LUMP_BROADER = 1.618;
+// By a level's top, the cover a column needs is past the most any reaches by this many of the
+// lumps' and the edge's widths: no cloud reaches the top (cloud-volume-march.glsl, cloudShare).
+const ROUND_REACH = 3;
+// The most short steps through each part of a step holding cloud (cloud-volume-march.glsl,
+// cloudFine): a part up to 16 mean free paths long is walked in steps of 1, a longer one in
+// longer steps.
+const FINE_STEPS = 16;
+// A level as optically deep straight through as this, or deeper, takes the quality's steps; a
+// thinner one, fewer (down to a quarter).
+const DEEP = 8;
 // The most the composite draws the clouds nearer than their depth, to take in the spread of a
 // texel's depth over a slanting layer: 2 % of the distance, in the image's depth units.
 const DEPTH_MARGIN = (Math.log2(1 / 0.98) / Number(DEPTH_RANGE)).toFixed(7);
 
+/** A level a {@link CloudVolumeRenderer} draws: its layer, and how its type is drawn. */
+export type CloudVolumeLevel = {
+  layer: CloudLayer;
+  look: CloudVolumeLook;
+};
+
 /** What a {@link CloudVolumeRenderer} draws, resolved. */
 export type CloudVolumeSettings = {
-  /** the layer drawn; null for none */
-  layer: CloudLayer | null;
+  /** the levels drawn, from the ground up (at most {@link CLOUD_VOLUME_LEVELS}); none for none */
+  levels: CloudVolumeLevel[];
   /**
-   * the local weather it lies in: about its middle (where the World's anchor lies as it is
+   * the local weather they lie in: about its middle (where the World's anchor lies as it is
    * first drawn, unless it says), within its radius (world units)
    */
   local: { latitude?: number; longitude?: number; radius: number };
-  /** the wind over the sea: the layer's, turned and strengthened aloft, unless it has its own */
+  /** the wind over the sea: each layer's, turned and strengthened aloft, unless it has its own */
   wind: WeatherWind | null;
   scale: number;
   density: number;
@@ -223,20 +248,7 @@ export type CloudVolumeSettings = {
   seed: number;
   /** how much they spend for how they look (cloudVolumeQuality) */
   quality: CloudVolumeQualityLevel;
-  /**
-   * the low layer drawn as soft clouds instead (a spike: SceneryCloudVolumeSoft, resolved); null
-   * for the layer's own form
-   */
-  soft: CloudVolumeSoft | null;
   debug: SceneryCloudVolumeDebug;
-};
-
-/** A {@link CloudVolumeSettings}'s soft clouds: each of SceneryCloudVolumeSoft's, resolved. */
-export type CloudVolumeSoft = {
-  softness: number;
-  lumps: number;
-  towering: number;
-  masses: number;
 };
 
 // The clouds' image: premultiplied colour and alpha, and the distance to their front as depth
@@ -293,14 +305,15 @@ const fromCentre = new Vector3();
 const toWorld = new Matrix3();
 const localOffset: [number, number] = [0, 0];
 
-const gridVectors = () =>
-  Array.from({ length: CUMULUS_GRIDS }, () => new Vector4());
+const levelVectors = () =>
+  Array.from({ length: CLOUD_VOLUME_LEVELS }, () => new Vector4());
 
 /**
- * The 3D clouds of a `SceneryCloudVolume` (see `documents/clouds.md`): one layer of a local
- * weather, cumulus or strato (or soft clouds, a spike: `soft`), marched along each pixel's view
- * at a share of the screen's resolution every frame, and laid over the scene at the depth of
- * their front. Drawn from its {@link composite}'s `onBeforeRender`, with the camera drawing it.
+ * The 3D clouds of a `SceneryCloudVolume` (see `documents/clouds.md`): up to three levels of a
+ * local weather, each rounded masses from a map of the cover fixed to the Earth drawn as its
+ * type's look says, marched along each pixel's view at a share of the screen's resolution every
+ * frame, and laid over the scene at the depth of their front. Drawn from its {@link composite}'s
+ * `onBeforeRender`, with the camera drawing it.
  */
 export class CloudVolumeRenderer {
   /** drawn in the scene, last (`LAYERS.OVERLAY` in an `OITRenderPass`) */
@@ -310,8 +323,8 @@ export class CloudVolumeRenderer {
   readonly marchMaterial: ShaderMaterial;
   readonly compositeMaterial: ShaderMaterial;
   /**
-   * The weather's time (seconds) the clouds are drawn at: they drift with the layer's wind
-   * and form and fade as it runs. Set each frame (`SceneryCloudVolume`: its `Weather`'s clock).
+   * The weather's time (seconds) the clouds are drawn at: they drift with each level's wind.
+   * Set each frame (`SceneryCloudVolume`: its `Weather`'s clock).
    */
   time = 0;
   /** How fast the weather's clock runs (its seconds a second; 0 stood). Set each frame with {@link time}. */
@@ -319,12 +332,9 @@ export class CloudVolumeRenderer {
   private readonly sky: SceneryMaterial;
   private readonly marchScene = new Scene();
   private readonly target = createImage();
-  // The soft clouds' cover map (`soft`), drawn once they are.
+  // The cover map the levels read, drawn once they are.
   private readonly cover = new CloudCoverMap();
   private settings: CloudVolumeSettings | null = null;
-  private form: CloudVolumeForm | 'soft' | null = null;
-  // The cumulus's grids (cumulusGrids), for the clock and the drift.
-  private grids: ReturnType<typeof cumulusGrids>['grids'] = [];
   // The noise volumes of the renderer drawing it (one at a time).
   private volumes: {
     renderer: WebGLRenderer;
@@ -338,17 +348,14 @@ export class CloudVolumeRenderer {
   // A local weather's middle as the World's anchor lay when it was first drawn (degrees), kept
   // as the anchor moves; null while the weather says where.
   private localAnchor: { latitude: number; longitude: number } | null = null;
-  // The field's axes in the world (east, north and up at the weather's middle), and the
-  // layer's wind on it (the way it blows, east and north, and its speed).
+  // The field's axes in the world: east, north and up at the weather's middle.
   private readonly frameE = new Vector3(1, 0, 0);
   private readonly frameN = new Vector3(0, 0, -1);
   private readonly frameM = new Vector3(0, 1, 0);
-  private readonly wind = new Vector3(0, 1, 0);
 
   constructor(sky: SceneryMaterial, renderOrder: number) {
     this.sky = sky;
     const geometry = createSceneryGeometry();
-    const statistics = stratoStatistics();
 
     this.marchMaterial = new ShaderMaterial({
       name: 'scenery-cloud-volume-march',
@@ -356,80 +363,35 @@ export class CloudVolumeRenderer {
       fragmentShader: marchShader,
       defines: {
         CLOUD_DEPTH_RANGE: DEPTH_RANGE,
-        CLOUD_LOCAL_EDGE: LOCAL_EDGE.toFixed(2),
-        CLOUD_GRIDS: CUMULUS_GRIDS,
-        CLOUD_WRAP: CUMULUS_WRAP,
-        CLOUD_REACH: CUMULUS_REACH.toFixed(4),
-        CLOUD_CUMULUS_BODY: CUMULUS_BODY.toFixed(4),
-        CLOUD_MARGIN: CUMULUS_MARGIN.toFixed(4),
-        CLOUD_STRATO_OCTAVES: STRATO_OCTAVES,
-        CLOUD_STRATO_STRETCH: STRATO_STRETCH.toFixed(4),
-        CLOUD_STRATO_WARP: STRATO_WARP.toFixed(4),
-        CLOUD_STRATO_EDGE: STRATO_EDGE.toFixed(4),
-        CLOUD_STRATO_GAIN: STRATO_GAIN.toFixed(4),
-        CLOUD_STRATO_LACUNARITY: STRATO_LACUNARITY.toFixed(4),
+        CLOUD_LEVELS_MOST: CLOUD_VOLUME_LEVELS,
+        CLOUD_COVER_SIZE: CLOUD_COVER_SIZE.toFixed(1),
+        CLOUD_LUMP_TILES: LUMP_TILES.toFixed(1),
       },
       uniforms: {
         // The sky's own uniform objects: the sun, the air, the globe.
         ...sky.uniforms,
         uCloudShape: new Uniform<Texture | null>(null),
-        uCloudDetail: new Uniform<Texture | null>(null),
+        uCloudCover: new Uniform<Texture>(this.cover.target.texture),
         uCloudFrameE: new Uniform(this.frameE),
         uCloudFrameN: new Uniform(this.frameN),
         uCloudFrameM: new Uniform(this.frameM),
         uCloudCamera: new Uniform(new Vector3()),
         uCloudInvRadius: new Uniform(0),
-        uCloudLayer: new Uniform(new Vector4()),
-        uCloudWind: new Uniform(new Vector4(0, 1, 0, 0)),
-        uCloudLook: new Uniform(
-          new Vector4(CUMULUS_EXTINCTION, PERIOD_DETAIL, 1, 0),
-        ),
-        uCloudGrids: new Uniform(gridVectors()),
-        uCloudGridClocks: new Uniform(gridVectors()),
-        uCloudGridShifts: new Uniform(
-          Array.from({ length: CUMULUS_GRIDS }, () => new Vector2()),
-        ),
-        uCloudGridTurns: new Uniform(
-          Array.from(
-            { length: CUMULUS_GRIDS },
-            (_, k) =>
-              new Vector2(
-                Math.cos(cumulusGridTurn(k)),
-                Math.sin(cumulusGridTurn(k)),
-              ),
-          ),
-        ),
-        uCloudGridMeans: new Uniform(gridVectors()),
-        uCloudGridCount: new Uniform(CUMULUS_GRIDS),
-        uCloudStratoMatrices: new Uniform(
-          Array.from({ length: STRATO_OCTAVES + 1 }, (_, o) =>
-            new Vector4().fromArray(stratoOctave(o - 1).matrix),
-          ),
-        ),
-        uCloudStratoShifts: new Uniform(
-          Array.from({ length: STRATO_OCTAVES + 1 }, () => new Vector3()),
-        ),
-        uCloudStrato: new Uniform(
-          new Vector4(
-            0,
-            statistics.deviation,
-            statistics.octaveVariance,
-            STRATO_PERIOD,
-          ),
-        ),
-        uCloudMarch: new Uniform(new Vector4(96, 3, 16, 1e-3)),
-        uCloudPixels: new Uniform(2),
-        uCloudLightSamples: new Uniform(1),
+        uCloudLocalRadius: new Uniform(1),
+        uCloudLocalShape: new Uniform(new Vector2(LOCAL_FADE, LOCAL_WOBBLE)),
+        uCloudScale: new Uniform(1),
+        uCloudLevelCount: new Uniform(0),
+        uCloudShells: new Uniform(levelVectors()),
+        uCloudNeeds: new Uniform(levelVectors()),
+        uCloudLooks: new Uniform(levelVectors()),
+        uCloudMaps: new Uniform(levelVectors()),
+        uCloudShifts: new Uniform(levelVectors()),
+        uCloudMarch: new Uniform(new Vector4(32, 0, 0, 1e-3)),
+        uCloudLightSamples: new Uniform(2),
+        uCloudFineSteps: new Uniform(FINE_STEPS),
+        uCloudRunsMost: new Uniform(0),
         uCloudDebug: new Uniform(0),
         uCloudAir: new Uniform(1),
-        uSoftCover: new Uniform<Texture>(this.cover.target.texture),
-        uSoftMap: new Uniform(
-          new Vector4(CLOUD_COVER_SIZE * SOFT_TEXEL, 0, 0, SOFT_TEXEL),
-        ),
-        uSoftLevel: new Uniform(new Vector4(1, 1, 0.01, 2)),
-        uSoftLumps: new Uniform(new Vector4(1000, 0, SOFT_CHUNK, 0)),
-        uSoftLightSamples: new Uniform(4),
-        uSoftFineSteps: new Uniform(SOFT_FINE_STEPS),
         uCloudJitter: new Uniform(new Vector2()),
         uCloudColor: new Uniform(new Color(1, 1, 1)),
       },
@@ -466,23 +428,6 @@ export class CloudVolumeRenderer {
   set(settings: CloudVolumeSettings) {
     this.settings = settings;
     const u = this.marchMaterial.uniforms;
-    const layer = settings.layer;
-    const form = layer ? cloudVolumeFormOf(layer.type) : null;
-    // Drawn soft (a spike), whatever the layer's type; else as its type is drawn.
-    const soft = !!settings.soft && !!layer && layer.cover > 0;
-    this.form = soft ? 'soft' : form && layer && layer.cover > 0 ? form : null;
-    // The strato, the cumulus and the soft clouds are a program each: the others' code left out.
-    const strato = !soft && form === 'strato';
-    if ('CLOUD_STRATO' in this.marchMaterial.defines !== strato) {
-      if (strato) this.marchMaterial.defines.CLOUD_STRATO = '';
-      else delete this.marchMaterial.defines.CLOUD_STRATO;
-      this.marchMaterial.needsUpdate = true;
-    }
-    if ('CLOUD_SOFT_CLOUDS' in this.marchMaterial.defines !== soft) {
-      if (soft) this.marchMaterial.defines.CLOUD_SOFT_CLOUDS = '';
-      else delete this.marchMaterial.defines.CLOUD_SOFT_CLOUDS;
-      this.marchMaterial.needsUpdate = true;
-    }
     // A local weather's middle as the anchor lies now, until it says.
     if (
       settings.local.latitude !== undefined &&
@@ -492,71 +437,40 @@ export class CloudVolumeRenderer {
     this.globeVersion = -1;
 
     const scale = settings.scale;
-    const base = layer ? Math.min(layer.base, layer.top) : 0;
-    const top = layer ? Math.max(layer.top, base + 1) : 1;
-    const cover = layer ? MathUtils.clamp(layer.cover, 0, 1) : 0;
-    (u.uCloudLayer.value as Vector4).set(
-      base,
-      top,
-      cover,
-      settings.local.radius,
-    );
-    const look = u.uCloudLook.value as Vector4;
-    look.set(
-      soft
-        ? SOFT_EXTINCTION * settings.density
-        : strato
-          ? (STRATO_DEPTH * settings.density) / (top - base)
-          : CUMULUS_EXTINCTION * settings.density,
-      PERIOD_DETAIL * scale,
-      scale,
-      0,
-    );
-
-    // The cumulus's grids: their cells, sizes and share held, and far off their mean.
-    const { grids } = cumulusGrids({ base, top, cover }, scale);
-    this.grids = grids;
-    grids.forEach((grid, k) => {
-      (u.uCloudGrids.value[k] as Vector4).set(
-        grid.cell,
-        grid.least,
-        grid.most,
-        grid.occupancy,
+    const quality = settings.quality;
+    const levels = settings.levels.slice(0, CLOUD_VOLUME_LEVELS);
+    u.uCloudLevelCount.value = levels.length;
+    u.uCloudRunsMost.value = 2 * levels.length;
+    u.uCloudLocalRadius.value = settings.local.radius;
+    u.uCloudScale.value = scale;
+    // Each level's shell, above the one under it, and its look: a thin level takes fewer steps.
+    let under = -Infinity;
+    levels.forEach(({ layer, look }, k) => {
+      const base = Math.max(Math.min(layer.base, layer.top), under);
+      const top = Math.max(layer.top, base + 1);
+      under = top;
+      const extinction = look.extinction * settings.density;
+      const deep = MathUtils.clamp((extinction * (top - base)) / DEEP, 0.25, 1);
+      (u.uCloudShells.value[k] as Vector4).set(
+        base,
+        top,
+        extinction,
+        Math.max(Math.round(quality.steps * deep), 4),
       );
-      (u.uCloudGridMeans.value[k] as Vector4).set(
-        grid.cover,
-        grid.meanRadius,
-        grid.meanHeight,
+      const reach = scale * look.scale;
+      (u.uCloudLooks.value[k] as Vector4).set(
+        look.masses,
         0,
+        CHUNK * reach,
+        COVER_TEXEL * reach,
       );
     });
-    // The strato field: the level it must pass for the cover.
-    const strato4 = u.uCloudStrato.value as Vector4;
-    strato4.x = stratoThreshold(cover);
-    strato4.w = STRATO_PERIOD * scale;
-
-    const quality = settings.quality;
     (u.uCloudMarch.value as Vector4).set(
-      Math.max(Math.round(quality.iterations), 1),
-      Math.max(quality.samples, 0.5),
-      Math.max(
-        Math.round(soft ? quality.softSamples : quality.stratoSamples),
-        1,
-      ),
+      Math.max(Math.round(quality.steps), 1),
+      0,
+      0,
       (u.uCloudMarch.value as Vector4).w,
     );
-    u.uSoftLightSamples.value = Math.max(
-      Math.round(quality.softLightSamples),
-      1,
-    );
-    // The soft clouds' map's period and lumps' tile, by their scale.
-    const period = CLOUD_COVER_SIZE * SOFT_TEXEL * scale;
-    (u.uSoftMap.value as Vector4).x = period;
-    (u.uSoftMap.value as Vector4).w = period / CLOUD_COVER_SIZE;
-    const lumps = u.uSoftLumps.value as Vector4;
-    lumps.x = period / SOFT_LUMP_TILES;
-    lumps.z = SOFT_CHUNK * scale;
-    u.uCloudPixels.value = Math.max(quality.pixels, 0.25);
     u.uCloudLightSamples.value = Math.max(Math.round(quality.lightSamples), 1);
     u.uCloudDebug.value =
       settings.debug.view === 'cost'
@@ -568,9 +482,9 @@ export class CloudVolumeRenderer {
     (u.uCloudColor.value as Color).copy(settings.color);
   }
 
-  /** Whether there is anything to draw: a layer of a form drawn, with cover. */
+  /** Whether there is anything to draw: a level with cover. */
   get cloudy(): boolean {
-    return this.form !== null;
+    return (this.settings?.levels.length ?? 0) > 0;
   }
 
   // The frame fixed on the Earth (world -> Earth), and the scene's true east and north in it.
@@ -642,9 +556,9 @@ export class CloudVolumeRenderer {
     this.frameM.set(cosChi * cosL, cosChi * sinL, sinChi).applyMatrix3(toWorld);
   }
 
-  // Where `camera` lies on the field's frame (64-bit, then the shader's single precision), the
-  // layer's wind on the field, and where the patterns have drifted and the clouds' clocks
-  // stand at `time`; and the angle a pixel of the image `height` texels high spans.
+  // Where `camera` lies on the field's frame (64-bit, then the shader's single precision), each
+  // level's map on the field (turned with its wind, stretched along it) and how far its wind has
+  // carried it at `time`; and the angle a pixel of the image `height` texels high spans.
   private updateCamera(camera: Camera, height: number) {
     const settings = this.settings!;
     const globe = this.sky.globe;
@@ -670,51 +584,39 @@ export class CloudVolumeRenderer {
       u.uCloudInvRadius.value = 0;
     }
 
-    // The layer's wind at its level, at the scene's latitude: the way it blows toward on the
-    // field (east, north), and how far it has carried the patterns.
-    const layer = settings.layer;
+    // Each level's wind at its height, at the scene's latitude: the way it blows toward on the
+    // field (east, north), its map turned to it and stretched along it, and the map's drift (in
+    // tiles, wrapped: 64-bit here, so it keeps its precision however long the clock runs).
     const latitude = globe.location?.latitude ?? 45;
-    const wind = layer ? cloudLayerWind(layer, settings.wind, latitude) : null;
-    const toward =
-      (((wind?.from ?? settings.wind?.from ?? 0) + 180) * Math.PI) / 180;
-    const speed = wind?.speed ?? 0;
-    this.wind.set(Math.sin(toward), Math.cos(toward), speed);
-    (u.uCloudWind.value as Vector4).set(this.wind.x, this.wind.y, speed, 0);
     const time = this.time;
-    const driftE = this.wind.x * speed * time;
-    const driftN = this.wind.y * speed * time;
-    // The soft clouds' map, carried by the wind, wrapped to its period (the lumps' tile repeats
-    // within it, so they wrap with it).
-    const map = u.uSoftMap.value as Vector4;
-    map.y = wrap(driftE, map.x);
-    map.z = wrap(driftN, map.x);
-
-    // Each grid's drift, wrapped to its cells' period, and its clock.
-    this.grids.forEach((grid, k) => {
-      const period = grid.cell * CUMULUS_WRAP;
-      (u.uCloudGridShifts.value[k] as Vector2).set(
-        wrap(driftE, period),
-        wrap(driftN, period),
-      );
-      const { epoch, share } = cumulusEpoch(grid, time);
-      (u.uCloudGridClocks.value[k] as Vector4).set(
-        epoch,
-        share,
-        cumulusGridSeed(settings.seed, k),
-        grid.lifetime,
-      );
-    });
-
-    // The strato field's octaves, drifted along and across the wind and changing.
-    const period = STRATO_PERIOD * settings.scale;
-    const along =
-      (driftE * this.wind.x + driftN * this.wind.y) / (period * STRATO_STRETCH);
-    const across = (-driftE * this.wind.y + driftN * this.wind.x) / period;
-    (u.uCloudStratoShifts.value as Vector3[]).forEach((shift, o) =>
-      shift.fromArray(
-        stratoOctaveShift(o - 1, along, across, time + settings.seed * 7919),
-      ),
-    );
+    settings.levels
+      .slice(0, CLOUD_VOLUME_LEVELS)
+      .forEach(({ layer, look }, k) => {
+        const wind = cloudLayerWind(layer, settings.wind, latitude);
+        const toward = (((wind?.from ?? 0) + 180) * Math.PI) / 180;
+        const speed = wind?.speed ?? 0;
+        const ae = Math.sin(toward);
+        const an = Math.cos(toward);
+        const period =
+          CLOUD_COVER_SIZE * COVER_TEXEL * settings.scale * look.scale;
+        const along = 1 / (period * Math.max(look.stretch, 1e-3));
+        const across = 1 / period;
+        // Rows: along the wind, across it. Column-major for the shader's mat2.
+        const m = [ae * along, -an * across, an * along, ae * across];
+        (u.uCloudMaps.value[k] as Vector4).fromArray(m);
+        const de = ae * speed * time;
+        const dn = an * speed * time;
+        // Each level its own place in the tile.
+        const x = m[0] * de + m[2] * dn + 0.37 * k;
+        const y = m[1] * de + m[3] * dn + 0.61 * k;
+        const s = LUMP_TILES / LUMP_BROADER;
+        (u.uCloudShifts.value[k] as Vector4).set(
+          fract(x),
+          fract(y),
+          fract((LUMP_TURN[0] * x - LUMP_TURN[1] * y) * s + 0.37),
+          fract((LUMP_TURN[1] * x + LUMP_TURN[0] * y) * s + 0.71),
+        );
+      });
 
     // The angle a pixel of the clouds' image spans, at the middle of the view. Its magnitude:
     // a CubeCamera's faces are drawn with a field of view of −90°.
@@ -731,9 +633,7 @@ export class CloudVolumeRenderer {
       if (this.volumes) releaseCloudNoiseVolumes(this.volumes.renderer);
       const noise = acquireCloudNoiseVolumes(renderer);
       this.volumes = { renderer, noise };
-      const u = this.marchMaterial.uniforms;
-      u.uCloudShape.value = noise.shape.texture;
-      u.uCloudDetail.value = noise.detail.texture;
+      this.marchMaterial.uniforms.uCloudShape.value = noise.shape.texture;
     }
     return this.volumes.noise;
   }
@@ -743,26 +643,36 @@ export class CloudVolumeRenderer {
     generateCloudNoiseVolumes(renderer, this.noise(renderer));
   }
 
-  // The soft clouds' cover map drawn (`soft`), and the levels of it their layer's cover and
-  // profile pick, from its distribution: false until that is read back.
-  private updateSoft(renderer: WebGLRenderer): boolean {
+  // The cover map drawn, and the cover each level's columns need, from its distribution (with
+  // the level's masses weighed against the patches): false until that is read back.
+  private updateLevels(renderer: WebGLRenderer): boolean {
     const settings = this.settings!;
-    const soft = settings.soft!;
-    if (!this.cover.update(renderer, settings.seed, soft.masses)) return false;
-    const stats = this.cover.statistics!;
+    if (!this.cover.update(renderer, settings.seed)) return false;
     const u = this.marchMaterial.uniforms;
-    const cover = MathUtils.clamp(settings.layer?.cover ?? 0, 0, 1);
-    // At its base the layer's share under cloud passes; at its top, the strongest columns of
-    // it: more of them the more it towers.
-    const base = softCoverLevel(stats, cover);
-    const top = softCoverLevel(stats, cover * (0.02 + 0.3 * soft.towering));
-    (u.uSoftLevel.value as Vector4).set(
-      base,
-      Math.max(top, base + 1e-4),
-      Math.max(soft.softness * stats.deviation, 1e-4),
-      SOFT_DOME,
-    );
-    (u.uSoftLumps.value as Vector4).y = soft.lumps * stats.deviation;
+    settings.levels
+      .slice(0, CLOUD_VOLUME_LEVELS)
+      .forEach(({ layer, look }, k) => {
+        const stats = this.cover.statistics(look.masses)!;
+        const cover = MathUtils.clamp(layer.cover, 0, 1);
+        // At its base the level's share under cloud passes; at its top, the strongest columns of
+        // it: more of them the more it towers.
+        const base = softCoverLevel(stats, cover);
+        const top = Math.max(
+          softCoverLevel(stats, cover * (0.02 + 0.3 * look.towering)),
+          base + 1e-4,
+        );
+        const edge = Math.max(look.softness * stats.deviation, 1e-4);
+        const lumps = look.lumps * stats.deviation;
+        // Over its upper part the need climbs on past the most any column reaches.
+        const round = Math.max(
+          stats.quantiles[SOFT_COVER_QUANTILES] +
+            ROUND_REACH * (lumps + edge) -
+            top,
+          0,
+        );
+        (u.uCloudNeeds.value[k] as Vector4).set(base, top, edge, round);
+        (u.uCloudLooks.value[k] as Vector4).y = lumps;
+      });
     return true;
   }
 
@@ -772,7 +682,7 @@ export class CloudVolumeRenderer {
    */
   render(renderer: WebGLRenderer, camera: Camera) {
     const settings = this.settings;
-    if (!settings || !this.form) return;
+    if (!settings || settings.levels.length === 0) return;
     this.generate(renderer);
     const outer = renderer.getRenderTarget();
     const cubeFace = renderer.getActiveCubeFace();
@@ -787,7 +697,7 @@ export class CloudVolumeRenderer {
     if (this.target.width !== width || this.target.height !== height)
       this.target.setSize(width, height);
     this.updateCamera(camera, height);
-    if (this.form === 'soft' && !this.updateSoft(renderer)) return;
+    if (!this.updateLevels(renderer)) return;
 
     // Nested in the scene's render: leave its counters, shadows and clearing alone.
     const autoClear = renderer.autoClear;
@@ -819,4 +729,4 @@ export class CloudVolumeRenderer {
   }
 }
 
-const wrap = (x: number, period: number) => x - Math.floor(x / period) * period;
+const fract = (x: number) => x - Math.floor(x);

@@ -9,7 +9,6 @@ import {
   OrthographicCamera,
   RepeatWrapping,
   RGBAFormat,
-  RGFormat,
   Scene,
   ShaderMaterial,
   Uniform,
@@ -24,7 +23,7 @@ import {
 import { createSceneryGeometry } from './scenery-material';
 import fragmentShader from './shaders/cloud-cover-map.glsl';
 
-/** Texels along the soft clouds' cover map's side: a tile of them repeats over the field. */
+/** Texels along the clouds' cover map's side: a tile of them repeats over the field. */
 export const CLOUD_COVER_SIZE = 2048;
 // Samples of the map's values taken for its distribution (a grid this many each way).
 const SAMPLES = 128;
@@ -38,12 +37,13 @@ const scene = new Scene();
 const camera = new OrthographicCamera();
 
 /**
- * The soft clouds' cover map (`cloud-cover-map.glsl`): a tile of noise of how much each column
- * is clouded over, (cover, cover²) in half floats with mipmaps and filtered anisotropically, so a
- * read along a stretch of a view gives the mean and the spread of what it passes over. Drawn on
- * the GPU when its seed or its masses' weight change, with a few thousand of its values sampled
- * and read back (without stalling) for its distribution ({@link statistics}): the cover's level
- * a share of the ground under cloud picks. Some 21 MB.
+ * The clouds' cover map (`cloud-cover-map.glsl`): a tile of noise of how much each column is
+ * clouded over, as broad patches and rounded masses apart — (patches, masses, patches²,
+ * masses²) in half floats with mipmaps, filtered anisotropically — so a read along a stretch of
+ * a view gives the mean and the spread of what it passes over, for any weight of the masses
+ * against the patches (a level's look). Drawn on the GPU when its seed changes, with a few
+ * thousand of its values sampled and read back (without stalling) for their distribution
+ * ({@link statistics}): the cover's level a share of the ground under cloud picks. Some 45 MB.
  */
 export class CloudCoverMap {
   readonly target: WebGLRenderTarget;
@@ -52,13 +52,16 @@ export class CloudCoverMap {
   private readonly sampleMaterial: ShaderMaterial;
   private readonly mesh: Mesh;
   private key = '';
-  private stats: SoftCoverStatistics | null = null;
+  // The samples read back (patches, masses, …, a pixel each); null until they are.
+  private read: Float32Array | null = null;
+  // Their distribution by the masses' weight.
+  private readonly stats = new Map<number, SoftCoverStatistics>();
   private disposed = false;
 
   constructor() {
     this.target = new WebGLRenderTarget(CLOUD_COVER_SIZE, CLOUD_COVER_SIZE, {
       type: HalfFloatType,
-      format: RGFormat,
+      format: RGBAFormat,
       depthBuffer: false,
       generateMipmaps: true,
       minFilter: LinearMipmapLinearFilter,
@@ -78,7 +81,6 @@ export class CloudCoverMap {
     const uniforms = {
       uCoverSize: new Uniform(new Vector2(CLOUD_COVER_SIZE, CLOUD_COVER_SIZE)),
       uCoverSeed: new Uniform(0),
-      uCoverMasses: new Uniform(0.6),
     };
     const common = {
       vertexShader,
@@ -101,24 +103,42 @@ export class CloudCoverMap {
     this.mesh.frustumCulled = false;
   }
 
-  /** The distribution of its values, once read back; null until then. */
-  get statistics(): SoftCoverStatistics | null {
-    return this.stats;
+  /** Whether its samples are read back: {@link statistics} has them from then on. */
+  get ready(): boolean {
+    return this.read !== null;
   }
 
   /**
-   * Drawn with `seed` and `masses` (their weight against the patches), with `renderer`: at once
-   * if they changed, its distribution read back over the next frames. Whether it is ready to
-   * draw with. Within the scene's draw: `renderer`'s target and settings are left as they were.
+   * The distribution of its values with the masses weighed `masses` against the patches
+   * (patches + masses × masses' value), once read back; null until then.
    */
-  update(renderer: WebGLRenderer, seed: number, masses: number): boolean {
-    const key = `${seed}|${masses}`;
-    if (key === this.key) return this.stats !== null;
+  statistics(masses: number): SoftCoverStatistics | null {
+    const read = this.read;
+    if (!read) return null;
+    let stats = this.stats.get(masses);
+    if (!stats) {
+      const mixed = new Float32Array(read.length / 4);
+      for (let i = 0; i < mixed.length; i++)
+        mixed[i] = read[i * 4] + masses * read[i * 4 + 1];
+      stats = softCoverStatistics(mixed);
+      this.stats.set(masses, stats);
+    }
+    return stats;
+  }
+
+  /**
+   * Drawn with `seed`, with `renderer`: at once if it changed, its distribution read back over
+   * the next frames. Whether it is ready to draw with. Within the scene's draw: `renderer`'s
+   * target and settings are left as they were.
+   */
+  update(renderer: WebGLRenderer, seed: number): boolean {
+    const key = `${seed}`;
+    if (key === this.key) return this.read !== null;
     this.key = key;
-    this.stats = null;
+    this.read = null;
+    this.stats.clear();
     const u = this.material.uniforms;
     u.uCoverSeed.value = Math.max(Math.round(seed), 0);
-    u.uCoverMasses.value = masses;
 
     const outer = renderer.getRenderTarget();
     const cubeFace = renderer.getActiveCubeFace();
@@ -145,8 +165,7 @@ export class CloudCoverMap {
     renderer
       .readRenderTargetPixelsAsync(this.samples, 0, 0, SAMPLES, SAMPLES, buffer)
       .then(() => {
-        if (this.key === key && !this.disposed)
-          this.stats = softCoverStatistics(buffer, 4);
+        if (this.key === key && !this.disposed) this.read = buffer;
       })
       .catch(error =>
         console.warn('SceneryCloudVolume: no cover statistics', error),

@@ -18,7 +18,11 @@ import {
   compassBasis,
   directionFromCompass,
 } from '../../sdk/utils/vector-operations';
-import type { CloudLayer, CloudLayersPreset } from '../../sdk/weather/weather';
+import type {
+  CloudLayer,
+  CloudLayersPreset,
+  CloudType,
+} from '../../sdk/weather/weather';
 import type { OceanWaterProps } from '../Ocean/ocean-material-sync';
 import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../Ocean/ocean-volume-material';
 
@@ -134,48 +138,59 @@ export type SceneryCloudVolumeDebug = {
 };
 
 /**
- * A {@link SceneryCloudVolumeProps}'s low layer drawn as soft clouds (a spike, 2026-11-09):
- * rounded masses of many sizes, domed over flat bases, soft-edged, from a map of how much each
- * column is clouded over (fixed to the Earth, drifting with the wind) and a profile up the
- * layer; the layer's cover, base and top as given. Each sample takes in what its stretch of the
- * view holds, never finer, so they hold still however fast and far the camera moves. Shares and
- * weights from 0 to 1.
+ * How a {@link SceneryCloudVolumeProps}'s clouds draw a `CloudType` (`CLOUD_VOLUME_LOOKS` its
+ * defaults): rounded masses of many sizes, domed over flat bases and rounding off below their
+ * layer's top, from a map of how much each column is clouded over (fixed to the Earth, drifting
+ * with the layer's wind). Shares and weights from 0 to 1 unless said.
  */
-export type SceneryCloudVolumeSoft = {
-  /** how soft their edges are. Default 0.05 */
+export type SceneryCloudLook = {
+  /** how large its clouds and the gaps between them are, relative to cumulus' */
+  scale?: number;
+  /** how far its pattern is drawn out along the wind: 1 not at all, 6 cirrus' streaks */
+  stretch?: number;
+  /** how soft its clouds' edges are */
   softness?: number;
-  /** how far lumps of a few hundred metres move their surface, close up. Default 0.3 */
+  /** how far lumps of a few hundred metres move its clouds' surface, close up */
   lumps?: number;
-  /** how many of their columns reach the layer's top: few, flat clouds; many, tall. Default 0.4 */
+  /** how many of its columns reach far up its layer: few, flat clouds; many, tall */
   towering?: number;
-  /** how much rounded masses weigh against broad patches in their pattern. Default 0.6 */
+  /** how much rounded masses weigh against broad patches in its pattern (to 1.5) */
   masses?: number;
+  /** how much light a metre of its cloud takes (1 / metre, by the `density`): thin veils far less */
+  extinction?: number;
 };
 
 /**
- * 3D clouds over a {@link Scenery} (see `documents/clouds.md`): one layer of a local weather —
- * separate cumulus, or soft strato veils drawn out along the wind — marched through on the globe
- * every frame, lit by the sun, or the moon, where they lie, and drawn over the scene at the depth
- * of their front. Fixed to the Earth, drifting with the layer's wind, each cumulus forming,
- * building up and fading on the weather's clock.
+ * 3D clouds over a {@link Scenery} (see `documents/clouds.md`): a local weather's layers, one at
+ * each level (low, middle, high), each its type's rounded masses marched through on the globe
+ * every frame, lit by the sun, or the moon, where they lie, the levels over a cloud shading it,
+ * and drawn over the scene at the depth of their front. Fixed to the Earth, each level drifting
+ * with its wind.
  *
- * Being rebuilt (2026-11-08): the scenery's bakes, the sea's reflection, the scene's light and
- * the shadows take none of them, nor do the ground, a global weather or the middle and high
- * levels shape them, until each is added back.
+ * Being rebuilt (2026-11-09): the scenery's bakes, the sea's reflection, the scene's light and
+ * the shadows take none of them, nor do the ground or a global weather shape them, until each is
+ * added back.
  */
 export type SceneryCloudVolumeProps = {
   /** false hides them, still compiled, so showing them again is instant. Default true */
   enabled?: boolean;
   /**
-   * The cloud layers of a local weather, its own whatever the weather's: the low level's is
-   * drawn (`CloudLevel`; of two there, the one covering more) — cumulus as separate clouds,
-   * stratus, stratocumulus and nimbostratus as strato veils. Or by name (`CloudLayersPreset`): a
-   * sky (`SKY_PRESETS`), or a report's cover, cumulus unless the type follows (`'broken'`,
-   * `'overcast stratus'`). Given, the weather is local (about the enclosing `Weather`'s `local`,
-   * or its defaults). Default the enclosing `Weather`'s, and without one scattered cumulus
-   * (`weatherPreset`), local
+   * The cloud layers of a local weather, its own whatever the weather's: one a level is drawn
+   * (`CloudLevel`; of two there, the one covering more), kept in proportion (`dominance`). Or by
+   * name (`CloudLayersPreset`): a sky (`SKY_PRESETS`), or a report's cover, cumulus unless the
+   * type follows (`'broken'`, `'overcast stratus'`). Given, the weather is local (about the
+   * enclosing `Weather`'s `local`, or its defaults). Default the enclosing `Weather`'s, and
+   * without one scattered cumulus (`weatherPreset`), local
    */
   layers?: CloudLayer[] | CloudLayersPreset;
+  /**
+   * how far the level covering most dominates the sky (`cloudLayersInProportion`): every other
+   * level's cover is cut by this times its cover. 1: under an overcast no other level shows; 0:
+   * each level as given. Default 0.8
+   */
+  dominance?: number;
+  /** how each type is drawn, by type, over `CLOUD_VOLUME_LOOKS`. Default those */
+  looks?: Partial<Record<CloudType, SceneryCloudLook>>;
   /** size of the clouds and the gaps between them, relative: 2 makes them twice as large. Default 1 */
   scale?: number;
   /** how dense they are inside, relative: lower lets more light through their edges. Default 1 */
@@ -186,8 +201,8 @@ export type SceneryCloudVolumeProps = {
   seed?: number;
   /**
    * how much they spend for how they look (`CLOUD_VOLUME_QUALITY`): the share of the screen's
-   * resolution they are marched at, how finely, and from how small their clouds are drawn as
-   * their mean. Every pixel is marched every frame. Default `'medium'`
+   * resolution they are marched at, and how finely. Every pixel is marched every frame. Default
+   * `'medium'`
    */
   quality?: SceneryCloudVolumeQuality;
   /**
@@ -197,11 +212,6 @@ export type SceneryCloudVolumeProps = {
   resolution?: number;
   /** what they show instead of themselves, to see how they are made. Default none */
   debug?: SceneryCloudVolumeDebug;
-  /**
-   * the low layer drawn as soft clouds (a spike: `SceneryCloudVolumeSoft`), whatever its type;
-   * `true` for the defaults. Default none: the layer's own form
-   */
-  soft?: SceneryCloudVolumeSoft | boolean;
 };
 
 /**
@@ -649,7 +659,7 @@ export const sceneryDefaults = {
     color: '#ffffff',
     seed: 0,
     quality: 'medium' as SceneryCloudVolumeQuality,
-    soft: { softness: 0.05, lumps: 0.3, towering: 0.4, masses: 0.6 },
+    dominance: 0.8,
   },
   air: { scaleHeight: 8000, visibility: 60000, haze: 0.75, hazeHeight: 1500 },
   colors: {

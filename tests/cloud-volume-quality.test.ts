@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CLOUD_VOLUME_LOOKS,
   CLOUD_VOLUME_QUALITY,
-  cloudVolumeFormOf,
   cloudVolumeQuality,
 } from '../src/components/Scenery/scenery-cloud-volume';
+import { cloudLevelOf, type CloudType } from '../src/sdk/weather/weather';
 
 const ORDER = ['low', 'medium', 'high', 'ultra'] as const;
 
@@ -13,16 +14,8 @@ describe('cloudVolumeQuality', () => {
       const less = CLOUD_VOLUME_QUALITY[ORDER[i - 1]];
       const more = CLOUD_VOLUME_QUALITY[ORDER[i]];
       expect(more.resolution).toBeGreaterThanOrEqual(less.resolution);
-      expect(more.iterations).toBeGreaterThan(less.iterations);
-      expect(more.samples).toBeGreaterThanOrEqual(less.samples);
+      expect(more.steps).toBeGreaterThan(less.steps);
       expect(more.lightSamples).toBeGreaterThanOrEqual(less.lightSamples);
-      expect(more.stratoSamples).toBeGreaterThanOrEqual(less.stratoSamples);
-      expect(more.softSamples).toBeGreaterThan(less.softSamples);
-      expect(more.softLightSamples).toBeGreaterThanOrEqual(
-        less.softLightSamples,
-      );
-      // Drawn as themselves down to smaller clouds.
-      expect(more.pixels).toBeLessThanOrEqual(less.pixels);
     }
   });
 
@@ -36,21 +29,29 @@ describe('cloudVolumeQuality', () => {
   });
 });
 
-describe('cloudVolumeFormOf', () => {
-  it('draws cumulus as cumulus and the low decks as strato', () => {
-    expect(cloudVolumeFormOf('cumulus')).toBe('cumulus');
-    expect(cloudVolumeFormOf('stratus')).toBe('strato');
-    expect(cloudVolumeFormOf('stratocumulus')).toBe('strato');
-    expect(cloudVolumeFormOf('nimbostratus')).toBe('strato');
+describe('CLOUD_VOLUME_LOOKS', () => {
+  it('draws the high ice thinner than any low cloud, and cirrus drawn out most', () => {
+    const types = Object.keys(CLOUD_VOLUME_LOOKS) as CloudType[];
+    const low = types.filter(type => cloudLevelOf(type) === 'low');
+    const high = types.filter(type => cloudLevelOf(type) === 'high');
+    const thinnestLow = Math.min(
+      ...low.map(type => CLOUD_VOLUME_LOOKS[type].extinction),
+    );
+    for (const type of high)
+      expect(CLOUD_VOLUME_LOOKS[type].extinction).toBeLessThan(thinnestLow);
+    const stretch = types.map(type => CLOUD_VOLUME_LOOKS[type].stretch);
+    expect(CLOUD_VOLUME_LOOKS.cirrus.stretch).toBe(Math.max(...stretch));
   });
 
-  it('draws none of the middle and high types yet', () => {
-    for (const type of [
-      'altocumulus',
-      'altostratus',
-      'cirrus',
-      'cirrostratus',
-    ] as const)
-      expect(cloudVolumeFormOf(type)).toBeNull();
+  it('keeps every look within its ranges', () => {
+    for (const look of Object.values(CLOUD_VOLUME_LOOKS)) {
+      expect(look.scale).toBeGreaterThan(0);
+      expect(look.stretch).toBeGreaterThanOrEqual(1);
+      for (const share of [look.softness, look.lumps, look.towering])
+        expect(share).toBeGreaterThanOrEqual(0);
+      expect(look.masses).toBeGreaterThanOrEqual(0);
+      expect(look.masses).toBeLessThanOrEqual(1.5);
+      expect(look.extinction).toBeGreaterThan(0);
+    }
   });
 });
