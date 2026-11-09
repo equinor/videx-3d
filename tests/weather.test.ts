@@ -106,6 +106,15 @@ describe('cloud cover', () => {
     expect(SKY_PRESETS['marine-sc'].layers[0].cover).toBeGreaterThan(0);
     expect(weatherPreset('few').local).toEqual({});
   });
+
+  it('keeps few-high, the clouds’ default, high and thin: nothing low, little cover', () => {
+    const layers = cloudLayersOf('few-high');
+    expect(layers.length).toBeGreaterThan(0);
+    for (const layer of layers) {
+      expect(cloudLevelOf(layer.type), layer.type).not.toBe('low');
+      expect(layer.cover, layer.type).toBeLessThanOrEqual(0.25);
+    }
+  });
 });
 
 describe('cloud levels', () => {

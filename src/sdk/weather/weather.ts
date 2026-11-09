@@ -384,6 +384,7 @@ export function weatherPreset(
 export type SkyPreset =
   | 'clear'
   | 'fair'
+  | 'few-high'
   | 'scattered'
   | 'streets'
   | 'marine-sc'
@@ -406,13 +407,15 @@ export type SkyPresetWeather = {
   wind: WeatherWind;
 };
 
-// A layer covering as much as `cover` says (the middle of its oktas), from `base` to `top`.
+// A layer covering as much as `cover` says (the middle of its oktas, or a share of the sky), from
+// `base` to `top`.
 const skyLayer = (
-  cover: CloudCover,
+  cover: CloudCover | number,
   type: CloudType,
   base: number,
   top: number,
 ): CloudLayer => {
+  if (typeof cover === 'number') return { type, cover, base, top };
   const [least, most] = CLOUD_COVER_OKTAS[cover];
   return { type, cover: oktasToCover((least + most) / 2), base, top };
 };
@@ -423,6 +426,8 @@ const skyLayer = (
  *
  * - `clear`: a high's clear sky, a light breeze;
  * - `fair`: a few small fair-weather cumulus, flat-topped under the high's inversion;
+ * - `few-high`: a few cirrus streaks and altocumulus patches, nothing low: a sky that hides
+ *   little of what lies under it (`SceneryCloudVolume`'s default);
  * - `scattered`: an afternoon's scattered cumulus, a few cirrus far above;
  * - `streets`: scattered cumulus lined up into streets in a fresh, cold wind;
  * - `marine-sc`: a broken deck of stratocumulus low over the sea, nothing above its inversion;
@@ -442,6 +447,13 @@ export const SKY_PRESETS: Readonly<Record<SkyPreset, SkyPresetWeather>> = {
   fair: {
     layers: [skyLayer('few', 'cumulus', 1000, 1600)],
     wind: { speed: 5, from: 270 },
+  },
+  'few-high': {
+    layers: [
+      skyLayer(0.1, 'altocumulus', 3800, 4200),
+      skyLayer(0.2, 'cirrus', 8500, 9300),
+    ],
+    wind: { speed: 6, from: 240 },
   },
   scattered: {
     layers: [

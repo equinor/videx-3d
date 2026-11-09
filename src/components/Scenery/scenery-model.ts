@@ -194,7 +194,7 @@ export type SceneryCloudVolumeProps = {
    * name (`CloudLayersPreset`): a sky (`SKY_PRESETS`), or a report's cover, cumulus unless the
    * type follows (`'broken'`, `'overcast stratus'`). Given, the weather is local (about the
    * enclosing `Weather`'s `local`, or its defaults). Default the enclosing `Weather`'s, and
-   * without one scattered cumulus (`weatherPreset`), local
+   * without one a few high clouds (`'few-high'`), local, so they hide little of the scene
    */
   layers?: CloudLayer[] | CloudLayersPreset;
   /**

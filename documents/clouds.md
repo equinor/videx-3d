@@ -94,6 +94,7 @@ heights they lie at in it and its wind; `weatherPresetOf(name, local)` makes the
 | --- | --- | --- |
 | `clear` | none: a high | 4 m/s |
 | `fair` | few cumulus, 1000–1600 m, flat under the high's inversion | 5 m/s |
+| `few-high` | altocumulus 0.1 at 3800–4200 m, cirrus 0.2 at 8500–9300 m, nothing low: the clouds' default without a `Weather`, hiding little of the scene | 6 m/s |
 | `scattered` | scattered cumulus 1200–2400 m, few cirrus 8500–9300 m | 6 m/s |
 | `streets` | scattered cumulus 900–1800 m in a fresh, cold wind (streets) | 13 m/s |
 | `marine-sc` | broken stratocumulus 500–900 m, nothing above its inversion | 7 m/s |

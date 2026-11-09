@@ -18,7 +18,6 @@ import {
   cloudLayersInProportion,
   cloudLayersOf,
   WEATHER_LOCAL_RADIUS,
-  weatherPreset,
   weatherSystemsOf,
   type CloudLayer,
   type CloudType,
@@ -38,8 +37,8 @@ import {
 import { sceneryDefaults, SceneryCloudVolumeProps } from './scenery-model';
 import { SceneryRegistryContext } from './scenery-registry';
 
-// Without layers of its own or a Weather's.
-const DEFAULT_LAYERS: CloudLayer[] = weatherPreset('scattered').clouds ?? [];
+// Without layers of its own or a Weather's: a few high clouds, hiding little of the scene.
+const DEFAULT_LAYERS: CloudLayer[] = cloudLayersOf('few-high');
 // Drawn after the scenery's sea's surface (at its renderOrder + 1).
 const AFTER_SURFACE = 2;
 const NO_DEBUG = {};
