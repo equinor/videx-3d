@@ -1,6 +1,8 @@
+import { useFrame } from '@react-three/fiber';
 import type { Decorator, Meta, StoryObj } from '@storybook/react-vite';
 import {
   type CSSProperties,
+  type ReactNode,
   useMemo,
   useEffect as useReactEffect,
   useState as useReactState,
@@ -15,16 +17,23 @@ import {
   sceneryDecorators,
   sceneryPropsFromArgs,
   sceneryProgressArgs,
+  sceneryReliefArgs,
+  SceneryReliefArgs,
+  sceneryReliefArgTypes,
   sceneryReliefFrame,
+  sceneryReliefFromArgs,
 } from '../../storybook/components/scenery-controls';
 import {
   SCENERY_DEBUG_HIGH_ALTITUDES,
   SceneryDebugPanel,
-  useSceneryTimelapse,
+  type SceneryDebugRow,
 } from '../../storybook/components/scenery-debug-panel';
 import { SceneryArgsFeatures } from '../../storybook/components/scenery-features';
 import { SceneryStoryRendering } from '../../storybook/components/scenery-story-rendering';
+import { setStoryArgs } from '../../storybook/debug/videx3d';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
+import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
+import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import {
   ProgressArgs,
   progressArgTypes,
@@ -42,13 +51,17 @@ import {
   type SkyPreset,
   type WeatherState,
 } from '../../sdk/weather/weather';
+import { GeoRelief } from '../Layers/GeoRelief';
 import { Weather } from '../Weather/Weather';
+import { useWeatherClock } from '../Weather/weather-context';
 import { World } from '../World/World';
 import { Scenery } from './Scenery';
 import { SceneryCloudVolume } from './SceneryCloudVolume';
+import { SceneryStage } from './SceneryStage';
 import {
   CLOUD_VOLUME_LOOKS,
   CLOUD_VOLUME_QUALITY,
+  cloudVolumeChainLayer,
   type CloudVolumeLook,
 } from './scenery-cloud-volume';
 import {
@@ -56,13 +69,15 @@ import {
   type SceneryCloudLook,
   type SceneryCloudVolumeQuality,
 } from './scenery-model';
+import type { SceneryStageBounds } from './scenery-stage';
 
 // The 3D clouds (documents/clouds.md) being rebuilt: a local weather's layers, one at each level
-// (low, middle, high), each drawn as its type looks, over the Scenery's sky and sun alone — no
-// sea, no relief, no bakes — from sea level to space, without tone mapping. The views to judge
-// them from are the stories below; the clouds' panel (top right) sets the sky, each level, the
-// looks, the light and the views, and the scenery's moves the camera to set altitudes and runs a
-// timelapse.
+// (low, middle, high), each drawn as its type looks, or a global weather's systems, over the
+// Scenery's sea, relief and sky as the other Scenery stories set them, from sea level to space,
+// without tone mapping. The views to judge them from are the stories below. The panel (top right)
+// moves the camera to set altitudes, to views by the level edited, to the whole Earth and, on a
+// double-click, under the clouds where it points; runs the weather's clock, which the sun runs on
+// with SYNC CLOCKS; and sets each type's look.
 
 // Each level's types, and the skies (SKY_PRESETS).
 const TYPES: Record<CloudLevel, CloudType[]> = {
@@ -87,7 +102,6 @@ type LevelArgs = {
 };
 
 type CloudVolumeArgs = {
-  panel: boolean;
   volume: boolean;
   /** a local weather (its layers about its middle) or a global one (the weather systems) */
   weatherMode: 'local' | 'global';
@@ -101,8 +115,6 @@ type CloudVolumeArgs = {
   globalTypes: boolean;
   /** being chosen: the low cloud's thickness sets a global weather's depth (`debug.thickness`) */
   globalThickness: boolean;
-  /** being compared: the clouds' pattern on the Earth's curved surface or on a plane (`debug.cover`) */
-  cover: 'sphere' | 'plane';
   /** a sky to fill the levels' controls and the wind from, or 'custom' */
   preset: PresetArg;
   /** the level the panel's level and look controls set */
@@ -129,30 +141,14 @@ type CloudVolumeArgs = {
   cloudMinutes: number;
   /** the weather clock's rate (weather seconds a second) */
   cloudRate: number;
-  /** the sun as one of the light conditions, or as the sun's controls set it ('custom') */
-  light: LightArg;
+  /** the sun on the weather's clock: from the sun's hour, date and place, on as the clock runs */
+  syncClocks: boolean;
   /** the weather's clock held: the clouds stand still */
   weatherPaused: boolean;
 } & LevelArgs &
   SceneryArgs &
+  SceneryReliefArgs &
   ProgressArgs;
-
-// Light conditions to judge the clouds in: the sun's elevation and bearing (degrees).
-type LightArg = 'custom' | 'low' | 'mid' | 'high' | 'sunset' | 'night';
-const LIGHTS: Record<Exclude<LightArg, 'custom'>, [number, number]> = {
-  low: [10, 150],
-  mid: [35, 200],
-  high: [70, 180],
-  sunset: [2, 250],
-  night: [-25, 250],
-};
-
-// The story's args with the sun set by `light`, unless 'custom'.
-function lightArgs<T extends CloudVolumeArgs>(args: T): T {
-  if (args.light === 'custom') return args;
-  const [sunElevation, sunAzimuth] = LIGHTS[args.light];
-  return { ...args, sunFromTime: false, sunElevation, sunAzimuth };
-}
 
 // A level's controls for `type` at `cover`, at the type's typical heights (CLOUD_TYPE_HEIGHTS,
 // to 10 m).
@@ -251,7 +247,9 @@ const cloudLayerDecorator: Decorator = Story => {
     seen.current = args;
     if (!before) return;
     let changes: Partial<CloudVolumeArgs> = {};
-    if (args.preset !== before.preset && args.preset !== 'custom')
+    // The sun on the weather's clock: set from the time, its hour, date and place shown.
+    if (args.syncClocks && !args.sunFromTime) changes = { sunFromTime: true };
+    else if (args.preset !== before.preset && args.preset !== 'custom')
       changes = presetArgs(args.preset);
     else {
       const typed = CLOUD_LEVELS.find(
@@ -276,13 +274,16 @@ const cloudLayerDecorator: Decorator = Story => {
   return Story();
 };
 
-// Where a double-click on the globe takes the camera: low over the sea, looking into the middle
-// of the level edited some kilometres on (the panel's `fly`).
-const flyFromArgs = (args: CloudVolumeArgs) => ({
-  height: 300,
-  lookAt: 0.5 * (args[`${args.edit}Base`] + args[`${args.edit}Top`]),
-  ahead: 6000,
-});
+// Where a double-click on the globe takes the camera (the scenery's panel's `fly`): 300 m over
+// the ground or the sea, looking into the middle of the level edited some kilometres on: its
+// layer's in a local weather, its chain's shell's in a global one.
+const flyFromArgs = (args: CloudVolumeArgs) => {
+  const chain =
+    args.weatherMode === 'global' ? cloudVolumeChainLayer(args.edit) : null;
+  const base = chain?.base ?? args[`${args.edit}Base`];
+  const top = chain?.top ?? args[`${args.edit}Top`];
+  return { height: 300, lookAt: 0.5 * (base + top), ahead: 6000 };
+};
 
 // Views to judge the clouds from by the edited level's heights (scene metres: X east, Z south;
 // the local weather's middle at 0, 0): the camera's place and what it looks at. LEVEL in the
@@ -323,60 +324,13 @@ function viewsOf(args: CloudVolumeArgs): Record<string, [Vec3, Vec3]> {
   };
 }
 
-const LIGHT_NAMES: LightArg[] = [
-  'low',
-  'mid',
-  'high',
-  'sunset',
-  'night',
-  'custom',
-];
-const QUALITIES: SceneryCloudVolumeQuality[] = [
-  'low',
-  'medium',
-  'high',
-  'ultra',
-];
-const RESOLUTIONS = [0.35, 0.5, 0.75, 1];
-// The weather clock's rates (weather seconds a second): real time to ten minutes a second; 0
-// held.
-const RATES = [0, 1, 10, 60, 600];
-const DEBUG_VIEWS: CloudVolumeArgs['debugView'][] = [
-  'none',
-  'cost',
-  'unlit',
-  'map',
-];
-// The seabed under the sea (as the other Scenery stories lay it).
+// The weather clock's rates (weather seconds a second): real time to an hour a second; 0 held.
+const RATES = [0, 1, 10, 60, 600, 3600];
+// The seabed under the sea, and the stage about the field (as the other Scenery stories lay them).
 const DEPTH = 100;
+const BOUNDS: SceneryStageBounds = [-5000, -5000, 5000, 5000];
 
-// The args holding a number.
-type NumberArg = {
-  [K in keyof CloudVolumeArgs]-?: CloudVolumeArgs[K] extends number ? K : never;
-}[keyof CloudVolumeArgs];
-// The panel's sliders: the arg, its range and step, and its label.
-const SLIDERS: [NumberArg, number, number, number, string][] = [
-  ['dominance', 0, 1, 0.05, 'dominance'],
-  ['volumeScale', 0.25, 4, 0.05, 'scale'],
-  ['density', 0.1, 3, 0.05, 'density'],
-  ['volumeSeed', 0, 20, 1, 'seed'],
-  ['cloudMinutes', 0, 240, 1, 'jump to min'],
-  ['windSpeed', 0, 30, 0.5, 'wind m/s'],
-  ['windDirection', 0, 355, 5, 'wind toward °'],
-];
-// The edited level's sliders: its cover and heights.
-const LEVEL_SLIDERS: [
-  'Cover' | 'Base' | 'Top',
-  number,
-  number,
-  number,
-  string,
-][] = [
-  ['Cover', 0, 1, 0.01, 'cover'],
-  ['Base', 0, 12000, 50, 'base m'],
-  ['Top', 0, 13000, 50, 'top m'],
-];
-// The edited level's type's look's sliders.
+// A type's look's sliders.
 const LOOK_SLIDERS: [keyof CloudVolumeLook, number, number, number][] = [
   ['scale', 0.1, 5, 0.05],
   ['stretch', 1, 10, 0.1],
@@ -387,22 +341,6 @@ const LOOK_SLIDERS: [keyof CloudVolumeLook, number, number, number][] = [
   ['extinction', 0.0005, 0.06, 0.0005],
 ];
 
-const PANEL: CSSProperties = {
-  position: 'fixed',
-  top: 8,
-  width: 300,
-  maxHeight: 'calc(100% - 16px)',
-  overflowY: 'auto',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 3,
-  padding: 6,
-  font: '11px sans-serif',
-  color: '#fff',
-  background: 'rgba(0, 0, 0, 0.5)',
-  borderRadius: 3,
-  zIndex: 10,
-};
 const ROW: CSSProperties = {
   display: 'flex',
   flexWrap: 'wrap',
@@ -468,7 +406,7 @@ function Choices<T>({
 }) {
   return (
     <div style={ROW}>
-      <span style={{ width: 40 }}>{label}</span>
+      <span style={{ width: 62 }}>{label}</span>
       {options.map(option => (
         <button
           key={name(option)}
@@ -482,127 +420,36 @@ function Choices<T>({
   );
 }
 
-// The panel over the canvas: the sky, the level edited (its type, cover, heights and look), the
-// light, the views, the clock, the quality and the sliders, so the shared page (without
-// Storybook's controls) can drive the clouds.
-const CloudPanel = ({
-  args,
-  update,
-}: {
-  args: CloudVolumeArgs;
-  update: (args: Partial<CloudVolumeArgs>) => void;
-}) => {
-  const [open, setOpen] = useReactState(true);
-  const views = viewsOf(args);
-  const view = (name: string) => {
-    const [position, target] = views[name];
-    dispatchEvent(
-      new CameraLookAtEvent({ position, target, transition: false }),
-    );
-  };
-  const edit = args.edit;
-  const type = args[`${edit}Type`];
+// All the clouds' types, for their looks.
+const ALL_TYPES = Object.keys(CLOUD_VOLUME_LOOKS) as CloudType[];
+
+// The story's args changed from the panel (in the scenery panel's own React root, outside the
+// decorators that `useArgs` is valid in).
+const update = (args: Partial<CloudVolumeArgs>) => void setStoryArgs(args);
+
+// Each type's look, which has no Storybook control of its own: shown with LOOKS, a type picked,
+// its sliders, and its look set back to the default.
+const LookControls = ({ args }: { args: CloudVolumeArgs }) => {
+  const [shown, setShown] = useReactState(false);
+  // The type whose look the sliders set: the edited level's to begin with.
+  const [type, setType] = useReactState<CloudType>(args[`${args.edit}Type`]);
   const look = { ...CLOUD_VOLUME_LOOKS[type], ...args.looks[type] };
-  const summary = CLOUD_LEVELS.map(level =>
-    args[`${level}Cover`] > 0
-      ? `${level} ${args[`${level}Type`]} ${args[`${level}Cover`].toFixed(2)}`
-      : `${level} -`,
-  ).join(' · ');
   return (
-    // Top right, left of the scenery's own panel where that is shown; the stats are bottom left.
-    <div style={{ ...PANEL, right: args.panel ? 330 : 8 }}>
+    <>
       <div style={ROW}>
-        <button style={BUTTON} onClick={() => setOpen(!open)}>
-          {open ? 'hide' : 'clouds'}
+        <span style={{ width: 62 }}>looks</span>
+        <button style={shown ? ON : BUTTON} onClick={() => setShown(!shown)}>
+          {shown ? 'hide' : 'show'}
         </button>
-        {open && <span>{summary}</span>}
       </div>
-      {open && (
+      {shown && (
         <>
           <Choices
-            label="weather"
-            options={['local', 'global'] as const}
-            chosen={mode => args.weatherMode === mode}
-            pick={weatherMode => update({ weatherMode })}
-          />
-          <Choices
-            label="cover"
-            options={['sphere', 'plane'] as const}
-            chosen={cover => args.cover === cover}
-            pick={cover => update({ cover })}
-          />
-          {args.weatherMode === 'global' && (
-            <>
-              <Choices
-                label="levels"
-                options={['globalLow', 'globalMid', 'globalHigh'] as const}
-                name={key => key.slice(6).toLowerCase()}
-                chosen={key => args[key]}
-                pick={key => update({ [key]: !args[key] })}
-              />
-              <Choices
-                label="types"
-                options={['blend', 'first'] as const}
-                chosen={look => args.globalTypes === (look === 'blend')}
-                pick={look => update({ globalTypes: look === 'blend' })}
-              />
-              <Choices
-                label="depth"
-                options={['thickness', 'type'] as const}
-                chosen={depth =>
-                  args.globalThickness === (depth === 'thickness')
-                }
-                pick={depth =>
-                  update({ globalThickness: depth === 'thickness' })
-                }
-              />
-              <PanelSlider
-                label="systems seed"
-                value={args.systemsSeed}
-                min={0}
-                max={20}
-                step={1}
-                set={systemsSeed => update({ systemsSeed })}
-              />
-            </>
-          )}
-          <Choices
-            label="sky"
-            options={PRESETS}
-            chosen={preset => args.preset === preset}
-            pick={preset => update({ preset })}
-          />
-          <PanelSlider
-            label="local radius km"
-            value={args.localRadius}
-            min={20}
-            max={1000}
-            step={10}
-            set={localRadius => update({ localRadius })}
-          />
-          <Choices
-            label="edit"
-            options={CLOUD_LEVELS}
-            chosen={level => edit === level}
-            pick={level => update({ edit: level })}
-          />
-          <Choices
             label="type"
-            options={TYPES[edit]}
+            options={ALL_TYPES}
             chosen={option => type === option}
-            pick={option => update({ [`${edit}Type`]: option })}
+            pick={setType}
           />
-          {LEVEL_SLIDERS.map(([key, min, max, step, label]) => (
-            <PanelSlider
-              key={`${edit}${key}`}
-              label={label}
-              value={args[`${edit}${key}`]}
-              min={min}
-              max={max}
-              step={step}
-              set={value => update({ [`${edit}${key}`]: value })}
-            />
-          ))}
           {LOOK_SLIDERS.map(([key, min, max, step]) => (
             <PanelSlider
               key={`${type}-${key}`}
@@ -633,88 +480,110 @@ const CloudPanel = ({
               {`${type}'s look as default`}
             </button>
           </div>
-          <Choices
-            label="light"
-            options={LIGHT_NAMES}
-            chosen={light => args.light === light}
-            pick={light => update({ light })}
-          />
-          <Choices
-            label="view"
-            options={Object.keys(views)}
-            chosen={() => false}
-            pick={view}
-          />
-          <Choices
-            label="time"
-            options={RATES}
-            name={rate => (rate ? `${rate}×` : 'pause')}
-            chosen={rate =>
-              rate
-                ? !args.weatherPaused && args.cloudRate === rate
-                : args.weatherPaused
-            }
-            pick={rate =>
-              update(
-                rate
-                  ? { weatherPaused: false, cloudRate: rate }
-                  : { weatherPaused: true },
-              )
-            }
-          />
-          <Choices
-            label="quality"
-            options={QUALITIES}
-            chosen={quality => !args.ownResolution && args.quality === quality}
-            pick={quality => update({ quality, ownResolution: false })}
-          />
-          <Choices
-            label="res"
-            options={RESOLUTIONS}
-            chosen={resolution =>
-              args.ownResolution && args.resolution === resolution
-            }
-            pick={resolution => update({ ownResolution: true, resolution })}
-          />
-          <Choices
-            label="debug"
-            options={DEBUG_VIEWS}
-            chosen={debugView => args.debugView === debugView}
-            pick={debugView => update({ debugView })}
-          />
-          {SLIDERS.map(([key, min, max, step, label]) => (
-            <PanelSlider
-              key={key}
-              label={label}
-              value={args[key]}
-              min={min}
-              max={max}
-              step={step}
-              set={value => update({ [key]: value })}
-            />
-          ))}
         </>
       )}
-    </div>
-  );
-};
-
-// The panel, over the story. `useArgs` is valid only in a decorator.
-const cloudPanelDecorator: Decorator = Story => {
-  const [args, updateArgs] = useArgs<CloudVolumeArgs>();
-  return (
-    <>
-      {Story()}
-      <CloudPanel args={args} update={updateArgs} />
     </>
   );
 };
 
-const CloudVolumeStory = (storyArgs: CloudVolumeArgs) => {
-  const timed = useSceneryTimelapse(storyArgs);
-  const timelapse = timed.timelapse;
-  const args = lightArgs(timed.args);
+// The panel's rows of the story's own: views by the level edited, and the weather's clock (pause,
+// its rates) and whether the sun runs on it.
+function cloudRows(args: CloudVolumeArgs): SceneryDebugRow[] {
+  const views = viewsOf(args);
+  return [
+    {
+      label: 'clouds',
+      buttons: Object.entries(views).map(([label, [position, target]]) => ({
+        label,
+        title: `A view by the ${args.edit} level (EDIT)`,
+        click: () =>
+          dispatchEvent(
+            new CameraLookAtEvent({ position, target, transition: false }),
+          ),
+      })),
+    },
+    {
+      label: 'time',
+      buttons: [
+        ...RATES.map(rate => ({
+          label: rate ? `${rate}×` : 'pause',
+          title: rate
+            ? `The weather's clock at ${rate} weather seconds a second`
+            : 'Hold the weather’s clock',
+          on: rate
+            ? !args.weatherPaused && args.cloudRate === rate
+            : args.weatherPaused,
+          click: () =>
+            update(
+              rate
+                ? { weatherPaused: false, cloudRate: rate }
+                : { weatherPaused: true },
+            ),
+        })),
+        {
+          label: 'sync',
+          title:
+            'The sun on the weather’s clock: from the sun’s hour, date and place, on as the clock runs (SYNC CLOCKS)',
+          on: args.syncClocks,
+          click: () => update({ syncClocks: !args.syncClocks }),
+        },
+      ],
+    },
+  ];
+}
+
+// The weather's hours after which the sun's hour is set again: ten weather seconds.
+const SUN_STEP = 10 / 3600;
+
+// The Scenery under the weather, its sun on the weather's clock with SYNC CLOCKS: the sun's hour
+// when the clock reads 0, on by the weather's hours since, so the sun moves with the clouds (a
+// jump of the clock moves both); and the panel, its readout by the same sun, with the story's own
+// rows and the types' looks.
+const ClockedScenery = ({
+  args,
+  children,
+}: {
+  args: CloudVolumeArgs;
+  children: ReactNode;
+}) => {
+  const clock = useWeatherClock();
+  const clocked = args.syncClocks;
+  const start = args.sunHour ?? sceneryArgs.sunHour;
+  const hourNow = () => (((start + (clock?.time ?? 0) / 3600) % 24) + 24) % 24;
+  const [hour, setHour] = useReactState(hourNow);
+  useFrame(() => {
+    if (!clocked) return;
+    const now = hourNow();
+    if (Math.abs(now - hour) >= SUN_STEP) setHour(now);
+  });
+  const sky = clocked
+    ? {
+        ...args,
+        sunFromTime: true,
+        sunHour: hour,
+        sunDate: args.sunDate ?? sceneryArgs.sunDate,
+        sunLatitude: args.sunLatitude ?? sceneryArgs.sunLatitude,
+        sunLongitude: args.sunLongitude ?? sceneryArgs.sunLongitude,
+      }
+    : args;
+  return (
+    <>
+      <SceneryDebugPanel
+        args={sky}
+        altitudes={SCENERY_DEBUG_HIGH_ALTITUDES}
+        fly={flyFromArgs(args)}
+        rows={cloudRows(args)}
+      >
+        <LookControls args={args} />
+      </SceneryDebugPanel>
+      <Scenery {...sceneryPropsFromArgs(sky)}>{children}</Scenery>
+    </>
+  );
+};
+
+const CloudVolumeStory = (args: CloudVolumeArgs) => {
   const frame = sceneryReliefFrame(args);
+  const relief = sceneryReliefFromArgs(args);
   const sea = args.skyWater || args.skySeabed;
   const weatherKey = JSON.stringify(weatherFromArgs(args));
   const weather = useMemo(
@@ -730,29 +599,21 @@ const CloudVolumeStory = (storyArgs: CloudVolumeArgs) => {
   return (
     <World frame={frame} globe={args.globe}>
       <SceneryStoryRendering args={args} />
-      {args.panel && (
-        <SceneryDebugPanel
-          args={args}
-          timelapse={timelapse}
-          altitudes={SCENERY_DEBUG_HIGH_ALTITUDES}
-          fly={flyFromArgs(args)}
-        />
-      )}
       <Weather
         weather={weather}
-        // Jumped to the minutes chosen; run at the rate chosen, or an hour of weather an hour of
-        // the timelapse: the clouds stream past with the sun.
+        // Jumped to the minutes chosen, run at the rate chosen: the sun too, with SYNC CLOCKS.
         time={args.cloudMinutes * 60}
-        timeScale={timelapse.playing ? timelapse.speed * 3600 : args.cloudRate}
+        timeScale={args.cloudRate}
         paused={args.weatherPaused}
       >
-        <Scenery {...sceneryPropsFromArgs(args)}>
-          {/* The sea and the void as in the other Scenery stories: the Sea controls set them. */}
+        <ClockedScenery args={args}>
+          {/* The sea, the void and the stage as in the other Scenery stories. */}
           <SceneryArgsFeatures
             args={args}
             ocean={sea && { level: 0, depth: DEPTH }}
             abyss={{}}
           />
+          {sea && <SceneryStage boundary={BOUNDS} />}
           {args.volume && (
             <SceneryCloudVolume
               dominance={args.dominance}
@@ -770,14 +631,14 @@ const CloudVolumeStory = (storyArgs: CloudVolumeArgs) => {
               debug={{
                 view: args.debugView === 'none' ? undefined : args.debugView,
                 air: args.debugAir,
-                cover: args.cover,
                 types: args.globalTypes,
                 thickness: args.globalThickness,
               }}
             />
           )}
-        </Scenery>
+        </ClockedScenery>
       </Weather>
+      {relief && <GeoRelief {...relief} />}
     </World>
   );
 };
@@ -843,9 +704,11 @@ const meta = {
   component: CloudVolumeStory,
   decorators: [
     Canvas3dDecorator,
+    // The relief's, read from the store by a generator.
+    GeneratorsProviderDecorator,
+    DataProviderDecorator,
     ...sceneryDecorators,
     cloudLayerDecorator,
-    cloudPanelDecorator,
   ],
   parameters: {
     scale: 1000,
@@ -858,13 +721,8 @@ const meta = {
   },
   argTypes: {
     ...sceneryArgTypes(),
+    ...sceneryReliefArgTypes(),
     ...progressArgTypes,
-    panel: {
-      control: { type: 'boolean' },
-      description:
-        'Buttons over the canvas: the camera’s height, moves to set altitudes up to 4000 km, views, and a timelapse of the sun. Double-click the sea to fly there, 300 m over it, looking into the level edited.',
-      table: { category: 'Debug' },
-    },
     volume: {
       control: { type: 'boolean' },
       description: 'The 3D clouds (`SceneryCloudVolume`).',
@@ -911,13 +769,6 @@ const meta = {
         'Being chosen: the low cloud’s thickness sets how deep and dense a global weather’s cloud is; off, its type alone (`debug.thickness`).',
       table: { category: 'Weather' },
     },
-    cover: {
-      control: { type: 'inline-radio' },
-      options: ['sphere', 'plane'],
-      description:
-        'Being compared: the clouds’ pattern read on the Earth’s curved surface (SPHERE, a cover volume), or on the plane touching it at the weather’s middle (PLANE, the cover map, which squashes them far round the Earth) (`debug.cover`).',
-      table: { category: 'Debug' },
-    },
     preset: {
       control: { type: 'select' },
       options: ['custom', ...PRESETS],
@@ -929,7 +780,7 @@ const meta = {
       control: { type: 'inline-radio' },
       options: CLOUD_LEVELS,
       description:
-        'The level the panel’s type, cover, heights and look sliders set, and the views are taken by.',
+        'The level the panel’s views are taken by, and a double-click looks into.',
       table: { category: 'Weather' },
     },
     dominance: range(
@@ -968,7 +819,7 @@ const meta = {
     weatherPaused: {
       control: { type: 'boolean' },
       description:
-        'Hold the weather’s clock (`Weather` `paused`): the clouds stop drifting. Running, the timelapse (the panel) runs it an hour of weather an hour of the sun’s.',
+        'Hold the weather’s clock (`Weather` `paused`): the clouds stop drifting, and with SYNC CLOCKS the sun stands.',
       table: { category: 'Weather' },
     },
     volumeScale: range(0.25, 4, 0.05, 'Size of the clouds, relative.'),
@@ -1007,39 +858,37 @@ const meta = {
       description: 'The air’s haze between the clouds and the camera.',
       table: { category: 'Debug' },
     },
-    light: {
-      control: { type: 'inline-radio' },
-      options: ['custom', 'low', 'mid', 'high', 'sunset', 'night'],
+    syncClocks: {
+      control: { type: 'boolean' },
       description:
-        'The sun as a light condition to judge the clouds in: LOW 10° in the south-east, MID 35°, HIGH 70°, SUNSET 2° in the west, NIGHT (the moon). CUSTOM: the sun’s own controls.',
-      table: { category: 'Cloud volume' },
+        'The sun on the weather’s clock: from the Sun’s hour, date and place when the clock reads 0, on as it runs and jumps, so it moves with the clouds. Off, the Sun’s controls alone set it, and the clock moves the clouds alone.',
+      table: { category: 'Weather' },
     },
     cloudMinutes: range(
       0,
       240,
       1,
-      'Jump the weather’s clock this far on (minutes): the clouds drift with the wind.',
+      'Jump the weather’s clock this far on (minutes): the clouds drift with the wind, and with SYNC CLOCKS the sun moves on too.',
       'Weather',
     ),
     cloudRate: {
       control: { type: 'select' },
       options: RATES.filter(rate => rate > 0),
       description:
-        'The weather clock’s rate (weather seconds a second): 1 real time. Held with WEATHER PAUSED.',
+        'The weather clock’s rate (weather seconds a second): 1 real time, 3600 an hour a second. Held with WEATHER PAUSED.',
       table: { category: 'Weather' },
     },
   },
   args: {
     ...sceneryArgs,
+    ...sceneryReliefArgs,
     ...sceneryProgressArgs,
+    // The demo's relief: land for the clouds to cross.
+    relief: true,
     // The band along the horizon off: the volume reaches it on its own.
     clouds: false,
-    // The sea dry, its seabed the ground under the clouds (as Baseline's Stage with no water).
-    skyWater: false,
-    skySeabed: true,
     // Frame rate and frame times, bottom left.
     stats: true,
-    panel: true,
     volume: true,
     weatherMode: 'local',
     systemsSeed: 0,
@@ -1048,7 +897,6 @@ const meta = {
     globalHigh: true,
     globalTypes: true,
     globalThickness: true,
-    cover: 'sphere',
     preset: 'scattered',
     ...presetArgs('scattered'),
     edit: 'low',
@@ -1065,7 +913,9 @@ const meta = {
     debugAir: true,
     cloudMinutes: 0,
     cloudRate: 1,
-    light: 'low',
+    // The sun on the weather's clock, from the Sun's hour, date and place.
+    syncClocks: true,
+    sunFromTime: true,
     weatherPaused: false,
   } as CloudVolumeArgs,
 } satisfies Meta<typeof CloudVolumeStory>;
@@ -1111,7 +961,7 @@ export const Strato: Story = {
 
 /** An unsettled sky: cumulus under altocumulus, cirrus over them. */
 export const Levels: Story = {
-  args: { preset: 'unsettled', ...presetArgs('unsettled'), light: 'mid' },
+  args: { preset: 'unsettled', ...presetArgs('unsettled') },
 };
 
 /** A global weather from 200 km up. */

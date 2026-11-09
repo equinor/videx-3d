@@ -1,5 +1,12 @@
 import { useFrame, useThree } from '@react-three/fiber';
-import { Ref, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Ref,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { Camera, Plane, Ray, Sphere, Vector2, Vector3 } from 'three';
 import { SCENERY_EARTH_RADIUS } from '../../components/Scenery/scenery-model';
@@ -110,8 +117,17 @@ const PANEL = {
   color: '#fff',
   background: 'rgba(0, 0, 0, 0.45)',
   borderRadius: '3px',
+  // Scrolled when taller than the view (a story's own rows and children).
+  maxHeight: 'calc(100vh - 20px)',
+  overflowY: 'auto',
+  boxSizing: 'border-box',
 } as const;
-const ROW = { display: 'flex', alignItems: 'center', gap: '3px' } as const;
+const ROW = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  alignItems: 'center',
+  gap: '3px',
+} as const;
 const LABEL = { width: '62px' } as const;
 const READOUT = { font: '12px monospace', whiteSpace: 'pre' } as const;
 const BUTTON = {
@@ -122,20 +138,25 @@ const BUTTON = {
 } as const;
 const ON = { ...BUTTON, fontWeight: 'bold' } as const;
 
-type PanelButton = {
+/** A button of a {@link SceneryDebugRow}: bold while `on`. */
+export type SceneryDebugButton = {
   label: string;
   title?: string;
   on?: boolean;
   click: () => void;
 };
-type PanelRow = { label: string; buttons: PanelButton[] };
+/** A row of buttons in a {@link SceneryDebugPanel}, under its label. */
+export type SceneryDebugRow = { label: string; buttons: SceneryDebugButton[] };
+type PanelRow = SceneryDebugRow;
 
 const PanelView = ({
   rows,
   readout,
+  children,
 }: {
   rows: PanelRow[];
   readout: Ref<HTMLDivElement> | null;
+  children?: ReactNode;
 }) => (
   <div style={PANEL}>
     {readout && <div ref={readout} style={READOUT} />}
@@ -154,6 +175,7 @@ const PanelView = ({
         ))}
       </div>
     ))}
+    {children}
   </div>
 );
 
@@ -240,6 +262,10 @@ export type SceneryDebugPanelProps = {
   altitudes?: [string, number][];
   /** double-click the ground or the sea to go there (see {@link SceneryDebugFly}) */
   fly?: SceneryDebugFly;
+  /** the story's own rows of buttons, after the views */
+  rows?: SceneryDebugRow[];
+  /** the story's own controls, at the panel's end (rendered in the panel's own React root) */
+  children?: ReactNode;
 };
 
 const ndc = new Vector2();
@@ -335,6 +361,8 @@ export const SceneryDebugPanel = ({
   timelapse,
   altitudes = ALTITUDES,
   fly,
+  rows: own,
+  children,
 }: SceneryDebugPanelProps) => {
   const gl = useThree(state => state.gl);
   const camera = useThree(state => state.camera);
@@ -457,7 +485,12 @@ export const SceneryDebugPanel = ({
     const heightAt = g?.frame && ground ? ground.heightAt : null;
     let found: Vector3 | null = null;
     if (g && heightAt)
-      found = traceSurface(g, heightAt, level, Math.max(ground?.highest ?? 0, 0));
+      found = traceSurface(
+        g,
+        heightAt,
+        level,
+        Math.max(ground?.highest ?? 0, 0),
+      );
     else if (
       g && g.enabled
         ? ray.intersectSphere(sphere.set(g.centre, g.radius), hit)
@@ -542,7 +575,12 @@ export const SceneryDebugPanel = ({
     out.normalize();
     // Never straight down the axis, where the orbit has no bearing.
     if (Math.abs(out.dot(axis)) > 0.995)
-      out.addScaledVector(new Vector3().crossVectors(axis, g.north).normalize(), 0.1).normalize();
+      out
+        .addScaledVector(
+          new Vector3().crossVectors(axis, g.north).normalize(),
+          0.1,
+        )
+        .normalize();
     const position = centre
       .clone()
       .addScaledVector(out, g.radius + EARTH_VIEW_HEIGHT);
@@ -613,6 +651,7 @@ export const SceneryDebugPanel = ({
         : []),
     ],
   });
+  if (own) rows.push(...own);
   if (timelapse)
     rows.push({
       label: 'timelapse',
@@ -656,7 +695,9 @@ export const SceneryDebugPanel = ({
   // Every render: the buttons close over this render's camera and sun.
   useEffect(() => {
     root.current?.render(
-      <PanelView rows={rows} readout={showReadout ? readout : null} />,
+      <PanelView rows={rows} readout={showReadout ? readout : null}>
+        {children}
+      </PanelView>,
     );
   });
 

@@ -173,7 +173,6 @@ export const SceneryCloudVolume = ({
   const windFrom = weather?.wind?.from;
   const debugView = debug.view;
   const debugAir = debug.air;
-  const debugCover = debug.cover;
 
   useLayoutEffect(() => {
     if (!volume) return;
@@ -198,7 +197,7 @@ export const SceneryCloudVolume = ({
       color: new Color(colorHex),
       seed,
       quality: cloudVolumeQuality(quality, { resolution }),
-      debug: { view: debugView, air: debugAir, cover: debugCover },
+      debug: { view: debugView, air: debugAir },
     });
   }, [
     volume,
@@ -216,7 +215,6 @@ export const SceneryCloudVolume = ({
     resolution,
     debugView,
     debugAir,
-    debugCover,
   ]);
 
   // Hidden until its programs are compiled: drawn before, the browser waits for them.

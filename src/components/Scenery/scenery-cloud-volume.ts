@@ -57,9 +57,7 @@ import {
 } from './scenery-cloud-noise';
 import {
   CLOUD_COVER_PATCHES,
-  CLOUD_COVER_SIZE,
   CLOUD_COVER_VOLUME_SIZE,
-  CloudCoverMap,
   CloudCoverVolume,
 } from './scenery-cloud-cover';
 import { CLOUD_MAP_SIZE } from './scenery-cloud-map';
@@ -262,21 +260,15 @@ const LOCAL_FADE = 0.5;
 const LOCAL_WOBBLE = 0.2;
 // The image's depth: log2 of the distance over this many doublings (cloud-volume-composite.glsl).
 const DEPTH_RANGE = '32.0';
-// The cover map's texel (metres, at scale 1 and a look's scale 1: its tile CLOUD_COVER_SIZE of
-// them), and the size of a cloud (metres, likewise: how a stretch of cloud and sky mixed hides
-// what lies behind). The lumps are the shape volume tiled this many times over the map's tile.
-const COVER_TEXEL = 100;
+// The size of a cloud (metres, at scale 1 and a look's scale 1: how a stretch of cloud and sky
+// mixed hides what lies behind).
 const CHUNK = 1500;
-const LUMP_TILES = 100;
-// The lumps' second tiling (cloud-volume-march.glsl): turned (cosine, sine) and broader.
-const LUMP_TURN = [0.8, 0.6] as const;
-const LUMP_BROADER = 1.618;
 // The cover volume's tile (metres, at scale 1 and a look's scale 1): its broadest masses (four
-// cells across it) as broad as the cover map's (24 across its tile). The lumps' tile is the
-// cover map's, so as many of them to the volume's tile.
-const VOLUME_TILE = (CLOUD_COVER_SIZE * COVER_TEXEL * 4) / 24;
-const VOLUME_LUMP_TILES =
-  (VOLUME_TILE * LUMP_TILES) / (CLOUD_COVER_SIZE * COVER_TEXEL);
+// cells across it) some 8.5 km across. The lumps (the shape volume) tile it this many times.
+const VOLUME_TILE = 204800 / 6;
+const VOLUME_LUMP_TILES = 100 / 6;
+// The lumps' second tiling (cloud-volume-march.glsl): broader (and turned, LUMPS_TURN).
+const LUMP_BROADER = 1.618;
 // Turns fixed on the Earth (column-major, a GLSL mat3's): the cover volume's lattice, so no
 // place on the Earth has a tile's axis for its up; the cover's broad read; and the lumps' second
 // tiling. Odd axes and angles, so none lines up with another.
@@ -468,9 +460,7 @@ export class CloudVolumeRenderer {
   private readonly sky: SceneryMaterial;
   private readonly marchScene = new Scene();
   private readonly target = createImage();
-  // The cover the levels read, drawn once they are: the volume on the Earth's curved surface, or
-  // (being compared, then removed) the map on the plane touching it at the weather's middle.
-  private readonly cover = new CloudCoverMap();
+  // The cover volume the levels read, drawn once they are.
   private readonly coverVolume = new CloudCoverVolume();
   // A global weather's maps of the weather systems, and each type's quantiles of the cover map
   // (and what they were filled for).
@@ -507,7 +497,6 @@ export class CloudVolumeRenderer {
       defines: {
         CLOUD_DEPTH_RANGE: DEPTH_RANGE,
         CLOUD_LEVELS_MOST: CLOUD_VOLUME_LEVELS,
-        // The cover volume's (set), or with CLOUD_PLANE the cover map's.
         CLOUD_COVER_SIZE: CLOUD_COVER_VOLUME_SIZE.toFixed(1),
         CLOUD_LUMP_TILES: VOLUME_LUMP_TILES.toFixed(4),
         CLOUD_PATCHES_TURN: glslMat3(PATCHES_TURN),
@@ -534,8 +523,6 @@ export class CloudVolumeRenderer {
         uCloudShells: new Uniform(levelVectors()),
         uCloudNeeds: new Uniform(levelVectors()),
         uCloudLooks: new Uniform(levelVectors()),
-        uCloudMaps: new Uniform(levelVectors()),
-        uCloudShifts: new Uniform(levelVectors()),
         uCloudTurns: new Uniform(
           Array.from({ length: CLOUD_VOLUME_LEVELS }, () => new Matrix3()),
         ),
@@ -628,25 +615,7 @@ export class CloudVolumeRenderer {
       0,
     );
     this.coverTableKey = '';
-    // The cover on the Earth's curved surface (the volume), or (being compared) on the plane
-    // touching it at the weather's middle (the map).
-    const plane = settings.debug.cover === 'plane';
-    const defines = this.marchMaterial.defines;
-    if ('CLOUD_PLANE' in defines !== plane) {
-      if (plane) defines.CLOUD_PLANE = '';
-      else delete defines.CLOUD_PLANE;
-      defines.CLOUD_COVER_SIZE = (
-        plane ? CLOUD_COVER_SIZE : CLOUD_COVER_VOLUME_SIZE
-      ).toFixed(1);
-      defines.CLOUD_LUMP_TILES = (
-        plane ? LUMP_TILES : VOLUME_LUMP_TILES
-      ).toFixed(4);
-      this.marchMaterial.needsUpdate = true;
-    }
-    u.uCloudCover.value = plane
-      ? this.cover.target.texture
-      : this.coverVolume.target.texture;
-    const texel = plane ? COVER_TEXEL : VOLUME_TILE / CLOUD_COVER_VOLUME_SIZE;
+    const texel = VOLUME_TILE / CLOUD_COVER_VOLUME_SIZE;
 
     const scale = settings.scale;
     const quality = settings.quality;
@@ -848,25 +817,6 @@ export class CloudVolumeRenderer {
         const speed = wind?.speed ?? 0;
         const ae = Math.sin(toward);
         const an = Math.cos(toward);
-        const period =
-          CLOUD_COVER_SIZE * COVER_TEXEL * settings.scale * look.scale;
-        const along = 1 / (period * Math.max(look.stretch, 1e-3));
-        const across = 1 / period;
-        // Rows: along the wind, across it. Column-major for the shader's mat2.
-        const m = [ae * along, -an * across, an * along, ae * across];
-        (u.uCloudMaps.value[k] as Vector4).fromArray(m);
-        const de = ae * speed * time;
-        const dn = an * speed * time;
-        // Each level its own place in the tile.
-        const x = m[0] * de + m[2] * dn + 0.37 * k;
-        const y = m[1] * de + m[3] * dn + 0.61 * k;
-        const s = LUMP_TILES / LUMP_BROADER;
-        (u.uCloudShifts.value[k] as Vector4).set(
-          fract(x),
-          fract(y),
-          fract((LUMP_TURN[0] * x - LUMP_TURN[1] * y) * s + 0.37),
-          fract((LUMP_TURN[1] * x + LUMP_TURN[0] * y) * s + 0.71),
-        );
 
         // Its pattern on the Earth (the cover volume's): from metres fixed on the Earth to the
         // volume's tiles, turned as its wind has carried it about the Earth's centre (so it
@@ -972,24 +922,13 @@ export class CloudVolumeRenderer {
     generateCloudNoiseVolumes(renderer, this.noise(renderer));
   }
 
-  // The cover the levels read: the volume, or (being compared) the map.
-  private get activeCover(): CloudCoverMap | CloudCoverVolume {
-    return this.settings?.debug.cover === 'plane'
-      ? this.cover
-      : this.coverVolume;
-  }
-
   // A global weather's: each type's quantiles of the cover (its masses weighed against the
   // patches), its look as the march takes it, its heights and its extinction, and the most its
   // cover reaches; once for each set of looks.
   private updateTypes() {
     const settings = this.settings!;
-    const cover = this.activeCover;
-    const key = JSON.stringify([
-      settings.looks,
-      settings.density,
-      cover === this.cover,
-    ]);
+    const cover = this.coverVolume;
+    const key = JSON.stringify([settings.looks, settings.density]);
     if (key === this.coverTableKey) return;
     this.coverTableKey = key;
     const u = this.marchMaterial.uniforms;
@@ -1029,7 +968,7 @@ export class CloudVolumeRenderer {
   // each type's: updateTypes): false until that is read back.
   private updateLevels(renderer: WebGLRenderer): boolean {
     const settings = this.settings!;
-    const source = this.activeCover;
+    const source = this.coverVolume;
     if (!source.update(renderer, settings.seed)) return false;
     if (settings.global) {
       this.updateTypes();
@@ -1116,7 +1055,6 @@ export class CloudVolumeRenderer {
   dispose() {
     this.target.dispose();
     this.march.geometry.dispose();
-    this.cover.dispose();
     this.coverVolume.dispose();
     this.weather.dispose();
     this.coverTable.dispose();

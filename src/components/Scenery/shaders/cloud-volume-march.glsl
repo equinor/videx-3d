@@ -33,27 +33,19 @@ uniform vec4 uCloudMarch;
 uniform int uCloudDebug;
 // 1 hazed by the air between them and the camera, 0 not.
 uniform float uCloudAir;
-#if defined(CLOUD_PLANE)
-// The cover map: (patches, masses, patches², masses²), with mipmaps, filtered anisotropically,
-// repeating, laid on the plane touching the Earth at the weather's middle (cloudFieldOf): being
-// compared with the volume (2026-11-09), then removed. Far round the Earth that plane squashed
-// the clouds (60 times 83° from the middle) and past 90° could not reach at all.
-uniform sampler2D uCloudCover;
-#else
 // The cover volume (CloudCoverVolume): (patches, masses, patches², masses²), with mipmaps,
 // repeating every way, read on the Earth's curved surface where each column stands
-// (cloudFootOf), so the clouds are fixed to the Earth and keep their shape anywhere on it.
+// (cloudFootOf), so the clouds are fixed to the Earth and keep their shape anywhere on it. Laid
+// on the plane touching the Earth at the weather's middle instead (a 2D map, 2026-11-09), they
+// were squashed far round the Earth (60 times, 83° from the middle) and past 90° not reached.
 uniform sampler3D uCloudCover;
-#endif
 // The levels drawn (a uniform count keeps the loops loops in Direct3D), from the ground up;
 // each one's shell (base and top over the sea, m; its extinction in cloud, 1 / m; its steps
 // along a run), the cover its columns need (at its base: its share under cloud, softCoverLevel;
 // at its top: its tallest clouds'), its edge's width and how far that need climbs over its
 // upper part (cover); its look (the masses' weight against the patches, how far the lumps move
-// the cover, a cloud's size in m for how cloud and sky mixed hide what lies behind, the map's
-// texel across the wind in m); with CLOUD_PLANE, the field to its map (2 × 2, column-major:
-// turned with its wind, stretched along it) and its map's drift and its second lump tiling's
-// (in tiles); else its pattern on the Earth: from metres fixed on the Earth to its cover
+// the cover, a cloud's size in m for how cloud and sky mixed hide what lies behind, the cover
+// volume's texel in m); its pattern on the Earth: from metres fixed on the Earth to its cover
 // volume's tiles (turned as its wind has carried it about the Earth's centre, stretched along
 // it), and where the camera lies in it, from 64-bit floats (in the cover, its broad read, and
 // the lumps' two tilings: four a level).
@@ -61,8 +53,6 @@ uniform int uCloudLevelCount;
 uniform vec4 uCloudShells[CLOUD_LEVELS_MOST];
 uniform vec4 uCloudNeeds[CLOUD_LEVELS_MOST];
 uniform vec4 uCloudLooks[CLOUD_LEVELS_MOST];
-uniform vec4 uCloudMaps[CLOUD_LEVELS_MOST];
-uniform vec4 uCloudShifts[CLOUD_LEVELS_MOST];
 uniform mat3 uCloudTurns[CLOUD_LEVELS_MOST];
 uniform vec3 uCloudPlaces[4 * CLOUD_LEVELS_MOST];
 // The field's frame to the Earth's (columns: east, north and up at the weather's middle), and
@@ -137,9 +127,8 @@ varying vec3 vCloudDirection;
 #define CLOUD_LOGISTIC 1.702
 // The shape volume's broadest features: this share of its tile.
 #define CLOUD_FEATURE 0.25
-// The lumps' second tiling: this many times broader, and shifted in height (in its tiles).
+// The lumps' second tiling: this many times broader (turned, CLOUD_LUMPS_TURN).
 #define CLOUD_LUMP_BROADER 1.618
-#define CLOUD_LUMP_RISE 0.13
 // The clouds' tops round off from this share of a level's depth up (cloudShare).
 #define CLOUD_ROUNDED 0.5
 // How the cover a column needs rises up a level (a power): domed tops over flat bases.
@@ -197,16 +186,11 @@ struct CloudLevel {
   vec4 shell;
   vec4 need;
   vec4 look;
-#if defined(CLOUD_PLANE)
-  mat2 map;
-  vec4 shift;
-#else
   mat3 turn;
   vec3 place;
   vec3 broad;
   vec3 lump;
   vec3 lump2;
-#endif
   vec4 kind;
 };
 
@@ -215,17 +199,11 @@ CloudLevel cloudLevel(int l) {
   L.shell = uCloudShells[l];
   L.need = uCloudNeeds[l];
   L.look = uCloudLooks[l];
-#if defined(CLOUD_PLANE)
-  vec4 m = uCloudMaps[l];
-  L.map = mat2(m.xy, m.zw);
-  L.shift = uCloudShifts[l];
-#else
   L.turn = uCloudTurns[l];
   L.place = uCloudPlaces[4 * l];
   L.broad = uCloudPlaces[4 * l + 1];
   L.lump = uCloudPlaces[4 * l + 2];
   L.lump2 = uCloudPlaces[4 * l + 3];
-#endif
   L.kind = uCloudKinds[l];
   return L;
 }
@@ -410,16 +388,12 @@ float cloudRisingAt(vec3 p) {
 }
 
 // The broad noise pushing the local weather's edge in and out at `field` (fixed on the Earth),
-// −1 to 1: the cover map's broadest patches, a few across it. It changes over tens of kilometres,
+// −1 to 1: the cover volume's patches, read as a plane a few across it. It changes over tens of kilometres,
 // so it is read once a step along a view (gEdgeNoise), not in every sample of it.
 float cloudEdgeNoise(vec2 field) {
   if(uCloudLocalShape.y <= 0.0)
     return 0.0;
-#if defined(CLOUD_PLANE)
-  return clamp(3.0 * textureLod(uCloudCover, field / (3.0 * uCloudLocalRadius) + 0.29, 5.0).r, -1.0, 1.0);
-#else
   return clamp(3.0 * textureLod(uCloudCover, vec3(field / (3.0 * uCloudLocalRadius) + 0.29, 0.37), 1.0).r, -1.0, 1.0);
-#endif
 }
 float gEdgeNoise = 0.0;
 
@@ -456,7 +430,6 @@ vec3 cloudUpOf(vec3 p) {
   return uCloudInvRadius > 0.0 ? normalize(vec3(p.xy, p.z + 1.0 / uCloudInvRadius)) : vec3(0.0, 0.0, 1.0);
 }
 
-#if !defined(CLOUD_PLANE)
 // Where the column through the point `o` from the camera (on the field's frame), whose up is
 // `up` and which lies `altitude` over the sea, stands on the sea's sphere: from the camera,
 // fixed on the Earth (m). A level's pattern lies there, the same all up the column.
@@ -480,43 +453,12 @@ vec2 cloudCoverAt(CloudLevel L, vec3 foot, float extent) {
   float spread = max(b.z - b.x * b.x, 0.0) + f * f * max(c.z - c.x * c.x, 0.0) + w * w * max(c.w - c.y * c.y, 0.0);
   return vec2(b.x + f * c.x + w * c.y, spread);
 }
-#endif
-
-// The cover of level `L`'s map from its patches and masses (`c`: their means and second
-// moments): its mean and its spread (variance). The two are independent noises, so their mix's
-// spread is the patches' and the weighed masses' together.
-vec2 cloudCoverOf(CloudLevel L, vec4 c) {
-  float w = L.look.x;
-  float spread = max(c.z - c.x * c.x, 0.0) + w * w * max(c.w - c.y * c.y, 0.0);
-  return vec2(c.x + w * c.y, spread);
-}
-
-// Level `L`'s cover's mean and spread over a stretch at `field`: `along` the stretch's extent
-// on the field (m), `across` the width it takes in across it (m). Filtered anisotropically,
-// long along the stretch and narrow across it.
-#if defined(CLOUD_PLANE)
-vec2 cloudCoverOver(CloudLevel L, vec2 field, vec2 along, float across) {
-  vec2 uv = L.map * field - L.shift.xy;
-  float a = length(along);
-  vec2 axis = a > 1e-3 ? along / a : vec2(1.0, 0.0);
-  vec2 gx = L.map * (axis * max(a, across));
-  vec2 gy = L.map * (vec2(-axis.y, axis.x) * across);
-  return cloudCoverOf(L, textureGrad(uCloudCover, uv, gx, gy));
-}
-
-// Its mean and spread about `field`, over `extent` (m) every way: coarser and cheaper, for the
-// light.
-vec2 cloudCoverAround(CloudLevel L, vec2 field, float extent) {
-  vec2 uv = L.map * field - L.shift.xy;
-  return cloudCoverOf(L, textureLod(uCloudCover, uv, max(log2(extent / L.look.w), 0.0)));
-}
-#endif
 
 // The share in cloud of a stretch of a view about `p` in level `L` (x), and how much of the
 // spread its edge was widened by is the stretch's own unresolved detail rather than the clouds'
 // soft edge (y): `along` the stretch's extent on the field (m), `across` the width it takes in
-// across it (m), `rise` how far it climbs (m). Not `fine` (toward the light), the map read
-// every way over the stretch's extent, and the lumps' spread alone. In a global weather, `L`
+// across it (m), `rise` how far it climbs (m). Not `fine` (toward the light), the lumps' spread
+// alone. In a global weather, `L`
 // as the weather systems have it there (cloudPlace, read by the caller). Only the part of the
 // stretch's climb within L's shell holds cloud: its share of the climb, read at its middle. Read
 // at the stretch's middle alone, a place's cloud thinner than its level's shell was missed
@@ -543,12 +485,8 @@ vec2 cloudShare(CloudLevel L, vec3 o, vec2 along, float across, float rise, bool
   if(base <= 0.0 || u >= 1.0)
     return vec2(0.0);
   vec2 field = cloudFieldOf(p);
-#if defined(CLOUD_PLANE)
-  vec2 c = fine ? cloudCoverOver(L, field, along, across) : cloudCoverAround(L, field, max(length(along), across));
-#else
   vec3 up = cloudUpOf(p);
   vec2 c = cloudCoverAt(L, cloudFootOf(o, up, own), max(length(along), across));
-#endif
   // The cover the column needs here, and its spread over the stretch's climb.
   float h = clamp(u, 0.0, 1.0);
   float span = L.need.y - L.need.x;
@@ -572,17 +510,11 @@ vec2 cloudShare(CloudLevel L, vec3 o, vec2 along, float across, float rise, bool
     // Read twice, the second turned and CLOUD_LUMP_BROADER times broader, at equal weight: one
     // tiling's period showed as a grid over a whole deck (as the coverage's once did).
     float broader = tile * CLOUD_LUMP_BROADER;
-#if defined(CLOUD_PLANE)
-    vec2 at = L.map * field;
-    vec3 q = vec3((at - L.shift.xy) * CLOUD_LUMP_TILES, altitude / tile);
-    vec3 q2 = vec3(mat2(0.8, 0.6, -0.6, 0.8) * at * (CLOUD_LUMP_TILES / CLOUD_LUMP_BROADER) - L.shift.zw, altitude / broader + CLOUD_LUMP_RISE);
-#else
     // In 3D where the point lies (at the middle of its climb within the level), fixed on the
     // Earth.
     vec3 at = L.turn * (uCloudFieldEarth * (o + up * (altitude - own))) * CLOUD_LUMP_TILES;
     vec3 q = at + L.lump;
     vec3 q2 = CLOUD_LUMPS_TURN * at / CLOUD_LUMP_BROADER + L.lump2;
-#endif
     float lod = max(log2(max(res, 1.0) * CLOUD_SHAPE_TEXELS / tile), 0.0);
     float lod2 = max(log2(max(res, 1.0) * CLOUD_SHAPE_TEXELS / broader), 0.0);
     float n = textureLod(uCloudShape, q, lod).r + textureLod(uCloudShape, q2, lod2).r;
